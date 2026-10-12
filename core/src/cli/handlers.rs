@@ -135,6 +135,11 @@ pub(super) fn handle_run(
         }
         run_result = env.reset_stack(sid).and_then(|()| env.run(sid));
     }
+    // A static value that could not be kept is rebuilt on every run, which
+    // is correct and slow; say which one.
+    for warning in env.take_static_warnings(sid) {
+        eprintln!("warning: {warning}");
+    }
     let run_elapsed = run_started.elapsed();
 
     // Snapshot the observed values now. The map is a snapshot by contract, and

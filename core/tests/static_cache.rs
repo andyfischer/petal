@@ -462,6 +462,118 @@ fn an_in_place_write_to_a_kept_value_copies() {
     assert!(frame(&mut w).starts_with("2 [[1, 2], [3, 4]]"));
 }
 
+// --- `const` and the lint ----------------------------------------------------
+
+/// A `const` is checked to be static when it is compiled and kept like the
+/// `let` it is; the classifier that answers both runs once.
+#[test]
+fn a_const_is_classified_once_and_kept() {
+    let src = format!(
+        "fn row(n)\n  {{n: n, sq: n * n}}\nend\nconst ROWS = [row(1), row(2), row(3)]\nlet PLAIN = [[1, 2], [3, 4]]\n{COUNTER}print(n, ROWS[n % 3].sq, PLAIN)\n"
+    );
+    let before = petal::static_classify::analyses_run();
+    let mut w = world(&src, RunPolicy::REPLAY);
+    frame(&mut w);
+    frame(&mut w);
+    assert_eq!(
+        petal::static_classify::analyses_run() - before,
+        1,
+        "the `const` check and the lowering share one analysis"
+    );
+    let values = w.env.static_values(w.sid).unwrap();
+    let slot = |name: &str| values.slots.iter().find(|(i, _)| i.name.as_deref() == Some(name)).unwrap().clone();
+    assert!(slot("ROWS").0.is_const && matches!(slot("ROWS").1, StaticSlotState::Filled(_)));
+    assert!(!slot("PLAIN").0.is_const);
+    assert!(values.stats.skips >= 1);
+
+    // A native registered after the compile may change what is constant,
+    // so the kept analysis is not served to a lowering that follows it.
+    let before = petal::static_classify::analyses_run();
+    w.env.register_native("later", lying_pending, NativeEffects::CONST);
+    w.env.set_static_cache(false);
+    frame(&mut w);
+    w.env.set_static_cache(true);
+    frame(&mut w);
+    assert_eq!(petal::static_classify::analyses_run() - before, 1, "classified again");
+
+    // Without a `const` nothing is classified at compile time.
+    let before = petal::static_classify::analyses_run();
+    let mut plain = world(&src.replace("const ", "let "), RunPolicy::REPLAY.with_static_cache(false));
+    frame(&mut plain);
+    assert_eq!(petal::static_classify::analyses_run() - before, 0);
+}
+
+/// What `petal lint --fix --rules-include=state-as-constant` writes is kept:
+/// the cell that was seeded once per stack becomes a value built once per
+/// load.
+#[test]
+fn the_lint_rewrite_of_a_state_table_is_kept() {
+    use petal::lint::{LintOptions, RuleFilter, STATE_AS_CONSTANT, lint_source};
+    let src = format!(
+        "state TILES = [\n  {{name: \"grass\", cost: 1}},\n  {{name: \"road\", cost: 0}},\n]\nstate RAW = [3, 1, 2]\nstate ORDER = sort(RAW)\n{COUNTER}print(n, TILES[n % 2].name, ORDER)\n"
+    );
+    let options = LintOptions {
+        rules: RuleFilter { include: Some(vec![STATE_AS_CONSTANT.to_string()]), exclude: Vec::new() },
+        ..LintOptions::default()
+    };
+    let fixed = lint_source(&src, &options).unwrap().output;
+    assert!(fixed.contains("const TILES = [") && fixed.contains("const ORDER = sort(RAW)"), "{fixed}");
+
+    // The same prints before and after the rewrite, cache on and off.
+    let (mut was, mut on, mut off) = (
+        world(&src, RunPolicy::REPLAY),
+        world(&fixed, RunPolicy::REPLAY),
+        world(&fixed, RunPolicy::REPLAY.with_static_cache(false)),
+    );
+    let prints = |f: String| f.split("\n=>").next().unwrap().to_string();
+    for i in 0..4 {
+        let (a, b, c) = (frame(&mut was), frame(&mut on), frame(&mut off));
+        assert_eq!(b, c, "frame {i}");
+        assert_eq!(prints(a), prints(b), "frame {i}: the rewrite prints what the cells did");
+    }
+    let values = on.env.static_values(on.sid).unwrap();
+    for name in ["TILES", "ORDER"] {
+        let (info, state) = values.slots.iter().find(|(i, _)| i.name.as_deref() == Some(name)).unwrap();
+        assert!(info.is_const && matches!(state, StaticSlotState::Filled(_)), "{name}: {state:?}");
+    }
+    assert!(values.stats.skips >= 3);
+    assert!(values.warnings().is_empty());
+}
+
+/// A `const` passes its check when it is static, and a static value can
+/// still be one the stack cannot keep. It is then built on every run, and
+/// the host is told once per load, in words that say it was a `const`.
+#[test]
+fn a_const_that_cannot_be_kept_warns_once_per_load() {
+    let src = format!(
+        "native fn later()\nconst BAD = [[1], [later()]]\nlet ALSO = [[2], [later()], [3]]\n{COUNTER}print(n, len(BAD[n % 2]), len(ALSO))\n"
+    );
+    let setup = |env: &mut Env| {
+        env.register_native("later", lying_pending, NativeEffects::CONST);
+    };
+    let mut on = world_with(&src, RunPolicy::REPLAY, setup);
+    let mut off = world_with(&src, RunPolicy::REPLAY.with_static_cache(false), setup);
+    assert_eq!(frame(&mut on), frame(&mut off));
+    let warnings = on.env.take_static_warnings(on.sid);
+    assert!(
+        warnings.contains(
+            &"const BAD (line 2) holds a pending result, which cannot be kept between runs, so it is rebuilt on every run"
+                .to_string()
+        ),
+        "{warnings:?}"
+    );
+    assert!(off.env.take_static_warnings(off.sid).is_empty());
+    for i in 0..3 {
+        assert_eq!(frame(&mut on), frame(&mut off), "frame {i}");
+        assert!(on.env.take_static_warnings(on.sid).is_empty(), "said once");
+    }
+    // After a reload the table is new, and so is the warning.
+    let edited = src.replace("[[1], [later()]]", "[[1], [later()], [4]]");
+    on.env.reload_program(on.sid, &edited, None).unwrap();
+    run_frame(&mut on);
+    assert_eq!(on.env.take_static_warnings(on.sid).len(), warnings.len());
+}
+
 // --- enum constant data -----------------------------------------------------
 
 const KINDS: &str = "enum Kind\n  road(code: 1, label: \"Road\", cost: [10, 20]),\n  park(code: 2, label: \"Park\", cost: [5, 5 + 1]),\n  lake(code: 3, label: \"Lake\", cost: []),\nend\n";

@@ -826,6 +826,7 @@ mod tests {
             method_natives: None,
             requires: Vec::new(),
             imports: Default::default(),
+            static_analysis: None,
             introspect: Default::default(),
         }
     }

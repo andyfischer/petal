@@ -805,6 +805,7 @@ impl Compiler {
                 .collect(),
             enums,
             introspect: Default::default(),
+            static_analysis: None,
             native_links,
             method_natives: Some(std::mem::take(&mut self.method_natives)),
             requires: {

@@ -132,6 +132,9 @@ pub struct StaticSlotInfo {
     pub at: Option<String>,
     /// That term.
     pub term: Option<TermId>,
+    /// Declared with `const`: the author asked for it to be constant, so a
+    /// value that cannot be kept is worth saying louder.
+    pub is_const: bool,
 }
 
 /// One skippable run of static instructions.
@@ -212,6 +215,9 @@ pub struct StaticSlots {
     slots: Vec<Slot>,
     pending: Vec<u32>,
     rejected: Vec<(u32, &'static str)>,
+    /// How many of `rejected` a host has been told about
+    /// ([`take_unreported`](Self::take_unreported)).
+    reported: usize,
     pub stats: StaticStats,
 }
 
@@ -238,6 +244,7 @@ impl StaticSlots {
         self.pending.clear();
         self.pending.extend(layout.runs.iter().map(|r| r.feeds.len() as u32));
         self.rejected.clear();
+        self.reported = 0;
     }
 
     /// Drop every value. The next run rebuilds them.
@@ -249,6 +256,7 @@ impl StaticSlots {
         self.slots.clear();
         self.pending.clear();
         self.rejected.clear();
+        self.reported = 0;
     }
 
     /// How many slots the table has, and how many hold a value.
@@ -275,6 +283,14 @@ impl StaticSlots {
     /// The slots whose value could not be kept, with what it held.
     pub fn rejected(&self) -> &[(u32, &'static str)] {
         &self.rejected
+    }
+
+    /// The rejections since the last call: each is handed out once per
+    /// life of the table, so a host that prints them prints each once per
+    /// load and once more after each reload that leaves it standing.
+    pub fn take_unreported(&mut self) -> &[(u32, &'static str)] {
+        let from = std::mem::replace(&mut self.reported, self.rejected.len());
+        &self.rejected[from.min(self.rejected.len())..]
     }
 
     /// Whether `slot` was given up on (see [`rejected`](Self::rejected)).
@@ -879,6 +895,7 @@ pub fn apply(
                 }),
                 at: term.and_then(|t| crate::static_audit::position(program, t)),
                 term,
+                is_const: term.is_some_and(|t| program.get_term(t).is_const),
             });
         }
         let stores: Vec<u32> = (0..run.own.len() as u32).map(|i| run.first_slot + i).collect();

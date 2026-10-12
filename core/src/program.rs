@@ -713,6 +713,12 @@ pub struct Program {
     /// program loaded from IR.
     #[serde(skip)]
     pub imports: ImportTable,
+    /// The static classification the compile computed for the `const`
+    /// check, kept for the lowering that follows it so the classifier runs
+    /// once ([`crate::static_classify::KeptAnalysis`]). `None` for a
+    /// program with no `const`: the lowering classifies it itself.
+    #[serde(skip)]
+    pub static_analysis: Option<crate::static_classify::KeptAnalysis>,
 }
 
 /// See [`Program::imports`].

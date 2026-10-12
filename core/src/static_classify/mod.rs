@@ -608,6 +608,7 @@ fn readers_text(d: &StaticDecl) -> String {
 
 /// The whole analysis: the report, plus the class of every term for a caller
 /// that needs to walk the graph (a later stage's lowering).
+#[derive(Clone)]
 pub struct StaticAnalysis {
     pub report: StaticReport,
     classes: Vec<TermClass>,
@@ -625,6 +626,53 @@ impl StaticAnalysis {
     }
 }
 
+thread_local! {
+    static ANALYSES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// How many times [`analyze`] ran on this thread: what a test reads to see
+/// that a compile and the lowering after it shared one analysis.
+pub fn analyses_run() -> u64 {
+    ANALYSES.with(|n| n.get())
+}
+
+/// An analysis kept beside the program it is of
+/// ([`Program::static_analysis`]), with what it was computed from: the
+/// native table's revision (a registration can change what is constant) and
+/// the size of the term graph. A literal patched in place leaves it valid,
+/// since the classification never reads a literal's value.
+#[derive(Clone)]
+pub struct KeptAnalysis {
+    natives: u64,
+    terms: usize,
+    analysis: std::sync::Arc<StaticAnalysis>,
+}
+
+impl KeptAnalysis {
+    pub fn new(program: &Program, natives: &NativeFnTable, analysis: StaticAnalysis) -> Self {
+        KeptAnalysis {
+            natives: natives.revision(),
+            terms: program.terms.len(),
+            analysis: std::sync::Arc::new(analysis),
+        }
+    }
+
+    /// The analysis, if it is still the one [`analyze`] would compute.
+    pub fn get(&self, program: &Program, natives: &NativeFnTable) -> Option<&StaticAnalysis> {
+        (self.natives == natives.revision() && self.terms == program.terms.len())
+            .then_some(&*self.analysis)
+    }
+}
+
+/// [`analyze`], served from the analysis kept beside `program` when the
+/// compile left one that still holds.
+pub fn analyze_kept<'p>(program: &'p Program, natives: &NativeFnTable) -> std::borrow::Cow<'p, StaticAnalysis> {
+    match program.static_analysis.as_ref().and_then(|k| k.get(program, natives)) {
+        Some(kept) => std::borrow::Cow::Borrowed(kept),
+        None => std::borrow::Cow::Owned(analyze(program, natives)),
+    }
+}
+
 /// Classify every top-level declaration of `program` against the natives of
 /// `natives` (the table of the `Env` that compiled it).
 pub fn classify(program: &Program, natives: &NativeFnTable) -> StaticReport {
@@ -633,6 +681,7 @@ pub fn classify(program: &Program, natives: &NativeFnTable) -> StaticReport {
 
 /// [`classify`], keeping the per-term classes.
 pub fn analyze(program: &Program, natives: &NativeFnTable) -> StaticAnalysis {
+    ANALYSES.with(|n| n.set(n.get() + 1));
     let mut pass = Pass::new(program, natives);
     pass.solve();
     let mut report = pass.report();

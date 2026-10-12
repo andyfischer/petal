@@ -572,6 +572,10 @@ pub struct NativeFnTable {
     /// must not be a scan of the table (which is ~150 entries deep and answers
     /// with a string compare per entry).
     by_name: HashMap<String, NativeFnId>,
+    /// Bumped by every change to the table: a registration, a class, a
+    /// class method, a signature. An answer computed from the table (the
+    /// static classification of a program) is stamped with it.
+    revision: u64,
     /// IDs for higher-order builtins that need evaluator intrinsic dispatch.
     pub intrinsic_map: Option<NativeFnId>,
     pub intrinsic_filter: Option<NativeFnId>,
@@ -625,12 +629,19 @@ impl NativeFnTable {
             intrinsic_fn_info: None,
             intrinsic_fn_ast: None,
             class_methods: HashMap::new(),
+            revision: 0,
         }
+    }
+
+    /// How many times the table changed (see the field).
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// Index an already-registered native as the built-in implementation of
     /// `class.method`. See [`NativeFnTable::class_methods`].
     pub fn register_class_method(&mut self, class: &str, method: &str, id: NativeFnId) {
+        self.revision += 1;
         self.class_methods
             .entry(class.to_string())
             .or_default()
@@ -666,6 +677,7 @@ impl NativeFnTable {
     }
 
     fn insert(&mut self, name: &str, func: NativeImpl, effects: NativeEffects) -> NativeFnId {
+        self.revision += 1;
         let id = NativeFnId(self.entries.len() as u32);
         self.entries.push(NativeFnEntry {
             name: name.to_string(),
@@ -688,6 +700,7 @@ impl NativeFnTable {
     /// applied afterward by id. The row's `pending` field is updated too, so
     /// the two never disagree.
     pub fn set_class(&mut self, id: NativeFnId, class: NativeClass) {
+        self.revision += 1;
         let entry = &mut self.entries[id.0 as usize];
         entry.class = class;
         entry.effects.pending = class;
@@ -708,6 +721,7 @@ impl NativeFnTable {
     /// a positional argument list, exactly the one the equivalent positional
     /// call would have passed.
     pub fn declare_params(&mut self, id: NativeFnId, spec: &str) -> Result<(), String> {
+        self.revision += 1;
         let sig = NativeSignature::parse(spec)?;
         self.entries[id.0 as usize].signatures.push(sig);
         Ok(())
@@ -718,6 +732,7 @@ impl NativeFnTable {
     /// ([`Env::declare_natives`](crate::env::Env::declare_natives)), so
     /// applying the same interface twice is harmless.
     pub fn set_signatures(&mut self, id: NativeFnId, signatures: Vec<NativeSignature>) {
+        self.revision += 1;
         self.entries[id.0 as usize].signatures = signatures;
     }
 

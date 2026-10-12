@@ -420,7 +420,7 @@ impl Env {
         // The static audit indexes the root code it is about to watch, and in
         // its static-only mode rewrites it (see `crate::static_audit`).
         if self.static_audit.enabled {
-            let analysis = crate::static_classify::analyze(program, &self.native_fns);
+            let analysis = crate::static_classify::analyze_kept(program, &self.native_fns);
             self.static_audit.prepare(pid, program, &mut bc, &analysis)?;
         }
         self.bytecode.insert(pid, (flags, bc));
@@ -964,7 +964,14 @@ impl Env {
         if !program.terms.iter().any(|t| t.is_const) {
             return;
         }
-        let report = crate::static_classify::classify(program, &self.native_fns);
+        let analysis = crate::static_classify::analyze(program, &self.native_fns);
+        let report = analysis.report.clone();
+        // The lowering that follows this compile wants the same answer.
+        program.static_analysis = Some(crate::static_classify::KeptAnalysis::new(
+            program,
+            &self.native_fns,
+            analysis,
+        ));
         for d in &report.declarations {
             if d.const_check != Some(ConstCheck::NotConstant) {
                 continue;

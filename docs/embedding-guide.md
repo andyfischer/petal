@@ -479,6 +479,28 @@ disk, so editing a helper module reloads the scripts that import it. Take a
 fresh watch after each attempt (the new program's imports may differ), even
 a failed one, so a broken save is reported once rather than every frame.
 
+### Showing what `petal check` would say
+
+A program that loads can still hold lines that fail whenever they run: a name
+nothing defines, a call with an argument count no overload takes. Every
+compile leaves these on the program as diagnostics, each a warning or an
+error, and the check is one call:
+
+```rust
+let report = env.check_program(pid);       // petal::check::CheckReport
+if !report.passed() {
+    // report.errors(), report.lower_error
+}
+eprint!("{}", env.diagnostics_text(pid));  // the text `petal check` prints
+```
+
+`petal run` refuses to start a program whose report has an error. A host
+that reloads a script while it is being edited should print the diagnostics
+after a load and after a reload that recompiled, and run anyway: a
+half-typed line must not stop the frame loop. petal-sdl and `petal-ui-run`
+do this. Nothing here links; a program loaded into an `Env` that is not
+check-only (`Env::set_check_only`) was linked when it loaded.
+
 ### Persisting an observed call back to source
 
 Once you can observe that a script called `color_scheme("dark")`, you often want

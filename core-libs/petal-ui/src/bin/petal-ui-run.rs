@@ -209,6 +209,11 @@ fn run() -> Result<i32, String> {
     // as inert, deterministic stubs and `import garden` resolves, so panel
     // drawers run headlessly (see [`petal_ui::panel_stubs`]).
     let mut ui = Headless::panel_from_file_with_paths(&args.app, size.0, size.1, &args.module_paths)?;
+    // What `petal check` says about the app, on stderr beside the trace.
+    eprint!(
+        "{}",
+        ui.core().env.diagnostics_text(ui.core().program_id())
+    );
 
     // Prints belong in the trace's `prints` field and nowhere else: echoing
     // them to stdout as well would interleave them with the JSONL.

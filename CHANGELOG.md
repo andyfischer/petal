@@ -416,6 +416,24 @@ Breaking changes made during development, newest first. For the import and
 package changes below, `petal fix-imports` does the rewriting and
 [docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
 
+- `petal run` starts with the check `petal check` does and does not run a
+  program that fails it. Any check error (an unknown name, an argument count
+  no overload takes, a bad named argument, method syntax that needs an import)
+  stops the program before its first line, whether or not the line would
+  have been reached; before, only unknown names did, and the other errors
+  were printed while the program ran. The output is `check`'s, and `--json`
+  reports `"phase": "check"`. `bench`, `pending-report` and `propose-edit`
+  do the same. The check is `Env::check_program` for embedders, the language
+  server reports the same findings, and petal-sdl and `petal-ui-run` print
+  them on load and reload.
+- `petal check` no longer warns about the `export` spelling of `pub`;
+  `petal lint` (rule `prefer-pub`) reports it and `petal fmt` rewrites it.
+- `petal lint-fix` is removed; write `petal lint --fix`.
+- `petal show-provenance`, `show-dependents` and `show-slice` are removed;
+  `petal graph` is the one command (`--direction forward` for dependents,
+  several `--term`s or `--slice` for a slice). Its JSON carries
+  `target_terms` in place of the aliases' `root`, `ancestors`, `dependents`
+  and `slice` keys.
 - A `match` whose arms are all variants of one enum is now a compile error
   unless it has an arm for every variant or a catch-all (`when _ ->`). A
   guarded arm, or one whose payload patterns can fail, does not cover its
@@ -446,7 +464,6 @@ package changes below, `petal fix-imports` does the rewriting and
   the old unqualified tags, which equal no variant now.
   See [Enums](docs/language-guide.md#enums) and
   [Pattern Matching](docs/language-guide.md#pattern-matching).
-
 - The domain builtins are behind imports. What reads as language stays global
   (`print`, `len`, `str`, `range`, the casts, the collection and string
   functions, the plain math including `clamp`, `pow`, `fract`, `radians`,

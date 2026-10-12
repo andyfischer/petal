@@ -22,7 +22,7 @@ pub fn check_hot_reload(
     reload_rx: &mpsc::Receiver<()>,
     source_path: &str,
     env: &mut Env,
-    _program_id: ProgramId,
+    program_id: ProgramId,
     stack_id: StackKey,
 ) -> bool {
     use petal::env::ReloadOutcome;
@@ -50,6 +50,9 @@ pub fn check_hot_reload(
                     "[hot-reload] preserved: {}, dropped: {}",
                     report.state_preserved, report.state_dropped
                 );
+                // What `petal check` would say about the edit. Printed, not
+                // enforced: a half-typed line must not stop the frame loop.
+                eprint!("{}", env.diagnostics_text(program_id));
                 true
             }
         },

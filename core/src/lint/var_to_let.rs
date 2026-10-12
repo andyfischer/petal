@@ -139,7 +139,6 @@ impl ExprVisitor for Finder<'_> {
                 }
                 self.block(body)
             }
-            ExprKind::Block(stmts) => self.block(stmts),
             _ => walk_expr(self, e),
         }
     }

@@ -278,7 +278,7 @@ impl Walker {
                     if let Some(g) = &arm.guard {
                         self.walk_expr(g, true);
                     }
-                    self.walk_expr(&arm.body, used);
+                    self.walk_block(&arm.body, used);
                 }
             }
             ExprKind::For { var, iter, body } => {
@@ -290,7 +290,6 @@ impl Walker {
                 self.walk_block(body, used);
                 self.pop_scope();
             }
-            ExprKind::Block(stmts) => self.walk_block(stmts, used),
             ExprKind::Lambda { params, body } => {
                 self.push_scope();
                 for p in params {
@@ -389,7 +388,6 @@ fn can_be_continued(expr: &Expr) -> bool {
         ExprKind::If { .. }
             | ExprKind::Match { .. }
             | ExprKind::For { .. }
-            | ExprKind::Block(_)
             | ExprKind::Lambda { .. }
             | ExprKind::Element { .. }
     )

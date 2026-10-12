@@ -507,14 +507,6 @@ impl Walker<'_> {
                 }
             }
             ExprKind::StringInterp { exprs, .. } => exprs.iter().for_each(|x| self.expr(x)),
-            ExprKind::Block(stmts) => {
-                for s in stmts {
-                    if stmt_may_exit(s) {
-                        break;
-                    }
-                    self.stmt(s);
-                }
-            }
             ExprKind::Literal(_)
             | ExprKind::Ident(_)
             | ExprKind::AtVar(_)

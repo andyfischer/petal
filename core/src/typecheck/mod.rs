@@ -1612,7 +1612,7 @@ impl<'a, 't> Checker<'a, 't> {
                     if let Some(g) = &arm.guard {
                         self.check_expr(g);
                     }
-                    let t = self.check_expr(&arm.body);
+                    let t = self.check_block_scoped(&arm.body);
                     self.pop_scope();
                     result = Some(match result {
                         None => t,
@@ -1705,7 +1705,6 @@ impl<'a, 't> Checker<'a, 't> {
                 self.tolerant_access = true;
                 self.check_expr(inner)
             }
-            ExprKind::Block(stmts) => self.check_block_scoped(stmts),
             ExprKind::Lambda { params, body } => {
                 self.push_scope();
                 self.check_and_bind_params(params, expr.span);

@@ -921,7 +921,6 @@ impl Cmp {
                 },
             ) => self.expr(o1, o2) && self.expr(i1, i2),
             (ExprKind::OptionalAccess(x), ExprKind::OptionalAccess(y)) => self.expr(x, y),
-            (ExprKind::Block(x), ExprKind::Block(y)) => self.stmts(x, y),
             (
                 ExprKind::Lambda {
                     params: p1,
@@ -974,7 +973,7 @@ impl Cmp {
     fn arm(&mut self, a: &MatchArm, b: &MatchArm) -> bool {
         same_pattern(&a.pattern, &b.pattern)
             && self.opt_expr(a.guard.as_ref(), b.guard.as_ref())
-            && self.expr(&a.body, &b.body)
+            && self.stmts(&a.body, &b.body)
     }
 }
 

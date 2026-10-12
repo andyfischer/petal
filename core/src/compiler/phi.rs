@@ -67,7 +67,7 @@ impl Compiler {
     }
 
     /// Same as `detect_rebinds_stmts` but for expression-shaped bodies
-    /// (match arm expressions and while conditions).
+    /// (an `elsif` and while conditions).
     pub(super) fn detect_rebinds_exprs(&self, bodies: &[&Expr]) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
@@ -567,7 +567,7 @@ impl ExprVisitor for AssignedNames<'_> {
                     if let Some(g) = &arm.guard {
                         self.visit_expr(g);
                     }
-                    self.visit_expr(&arm.body);
+                    self.visit_stmts(&arm.body);
                     self.pop_scope();
                 }
             }
@@ -580,7 +580,6 @@ impl ExprVisitor for AssignedNames<'_> {
                 }
                 self.pop_scope();
             }
-            ExprKind::Block(stmts) => self.visit_stmts(stmts),
             _ => ast::walk_expr(self, e),
         }
     }

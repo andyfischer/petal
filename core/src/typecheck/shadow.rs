@@ -196,7 +196,7 @@ impl ShadowWalker<'_> {
                         if let Some(g) = &arm.guard {
                             w.walk_expr(g);
                         }
-                        w.walk_expr(&arm.body);
+                        w.walk_block(&arm.body);
                     });
                 }
             }
@@ -207,7 +207,6 @@ impl ShadowWalker<'_> {
                     body.iter().for_each(|s| w.walk_stmt(s));
                 });
             }
-            ExprKind::Block(stmts) => self.walk_block(stmts),
             ExprKind::Lambda { params, body } => self.walk_fn(params, body),
             _ => ast::walk_expr(self, expr),
         }

@@ -320,10 +320,6 @@ impl Printer {
                 self.line(depth, "OptionalAccess", span);
                 self.expr(inner, depth + 1);
             }
-            ExprKind::Block(stmts) => {
-                self.line(depth, "Block", span);
-                self.stmts(stmts, depth + 1);
-            }
             ExprKind::Lambda { params, body } => {
                 self.line(depth, &format!("Lambda {}", fmt_params(params)), span);
                 self.param_defaults(params, depth + 1);
@@ -370,7 +366,7 @@ impl Printer {
             self.line(depth + 1, "Guard", None);
             self.expr(guard, depth + 2);
         }
-        self.expr(&arm.body, depth + 1);
+        self.stmts(&arm.body, depth + 1);
     }
 }
 
@@ -543,15 +539,18 @@ Let m @1:1-5:4
   Match @1:9-5:4
     Ident x @1:15
     Arm 0
-      Literal \"zero\" @2:13-2:19
+      Expr @2:13-2:19
+        Literal \"zero\" @2:13-2:19
     Arm n
       Guard
         BinaryOp Gt @3:13-3:18
           Ident n @3:13
           Literal 1 @3:17
-      Literal \"big\" @3:22-3:27
+      Expr @3:22-3:27
+        Literal \"big\" @3:22-3:27
     Arm _
-      Literal \"other\" @4:13-4:20
+      Expr @4:13-4:20
+        Literal \"other\" @4:13-4:20
 ";
         assert_eq!(render(src), expected);
     }

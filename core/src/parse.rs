@@ -1986,7 +1986,6 @@ impl Parser {
             | ExprKind::OptionalAccess(_)
             | ExprKind::Call { .. }
             | ExprKind::Lambda { .. }
-            | ExprKind::Block(_)
             | ExprKind::If { .. }
             | ExprKind::Match { .. } => Ok(()),
 
@@ -2279,7 +2278,7 @@ impl Parser {
             self.advance(); // consume 'do'
             let stmts = self.parse_block_until(&[Token::End])?;
             self.expect_block_end(start, "a `do` block")?;
-            self.mk_expr(ExprKind::Block(stmts), start)
+            stmts
         } else {
             self.expect(&Token::Arrow)?;
             // The body is a statement list, like an `if` branch: it runs to
@@ -2294,7 +2293,7 @@ impl Parser {
                     token_desc(self.peek())
                 )));
             }
-            arrow_arm_body(stmts)
+            stmts
         };
         self.ev_close(); // MatchArm
         self.skip_newlines();
@@ -2774,29 +2773,6 @@ pub(crate) fn parse_color_hex(hex: &str) -> Vec<(&'static str, i64)> {
             ("a", parse2(b[6], b[7])),
         ],
         _ => unreachable!("lexer validates hex length"),
-    }
-}
-
-/// The body of a `when pattern -> …` arm, from the statements written after
-/// the arrow. One expression is the arm's body as it stands; anything else is
-/// a block, spanning its first statement through its last.
-///
-/// Shared by the parser and the CST projection, which must agree.
-pub(crate) fn arrow_arm_body(mut stmts: Vec<Stmt>) -> Expr {
-    if stmts.len() == 1 && matches!(stmts[0].kind, StmtKind::Expr(_)) {
-        let StmtKind::Expr(expr) = stmts.remove(0).kind else {
-            unreachable!("just matched an expression statement");
-        };
-        return expr;
-    }
-    let (first, last) = (stmts[0].span, stmts[stmts.len() - 1].span);
-    Expr {
-        kind: ExprKind::Block(stmts),
-        span: SourceSpan {
-            start: first.start,
-            end: last.end,
-            file: first.file,
-        },
     }
 }
 

@@ -893,7 +893,6 @@ fn describe_expr(kind: &ExprKind) -> &'static str {
         ExprKind::Match { .. } => "a `match` expression",
         ExprKind::For { .. } => "a `for` expression",
         ExprKind::Lambda { .. } => "a lambda",
-        ExprKind::Block(_) => "a block",
         ExprKind::FieldAccess { .. } => "a field access",
         ExprKind::IndexAccess { .. } => "an index access",
         ExprKind::Element { .. } => "an element literal",

@@ -28,7 +28,7 @@
 use crate::ast::*;
 use crate::cst::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 use crate::lexer::Token;
-use crate::parse::{arrow_arm_body, expr_to_assign_target, parse_color_hex};
+use crate::parse::{expr_to_assign_target, parse_color_hex};
 use crate::source_map::{ENTRY_FILE, FileId, SourcePosition, SourceSpan};
 
 /// Project the statements of a whole-file `Root` node, with spans tagged as
@@ -1154,28 +1154,11 @@ impl Projector {
                 body_node.kind()
             ));
         }
-        let stmts = self.block_stmts(body_node)?;
-        let do_tok = direct_tokens(node)
-            .into_iter()
-            .find(|t| matches!(t.token(), Some(Token::Do)));
-        let body = match do_tok {
-            // `when pat do … end` — a block expression spanning `do` .. `end`.
-            Some(do_tok) => Expr {
-                kind: ExprKind::Block(stmts),
-                span: SourceSpan {
-                    start: self.pos_at(do_tok.offset()),
-                    end: self.end_of(node)?,
-                    file: self.file,
-                },
-            },
-            // `when pat -> …` — the statements up to the next arm.
-            None => arrow_arm_body(stmts),
-        };
         Ok(MatchArm {
             pattern,
             pattern_span: self.node_span(pattern_node)?,
             guard,
-            body,
+            body: self.block_stmts(body_node)?,
         })
     }
 

@@ -59,11 +59,11 @@ print(step(Cmd.quit))`;
     expect(lines(code)).toEqual(["at 1,2", "at 11,22", "hi!", "bye"]);
   });
 
-  it("keeps a one-expression arm as that expression, and makes a longer body a block", () => {
+  it("parses an arm body as a statement list", () => {
     const ast = showAstJson('match x\n  when 1 -> "one"\n  when 2 ->\n    let a = 1\n    a\nend');
     const arms = ast[0].kind.Expr.kind.Match.arms;
-    expect(Object.keys(arms[0].body.kind)).toEqual(["Literal"]);
-    expect(arms[1].body.kind.Block).toHaveLength(2);
+    expect(arms[0].body).toHaveLength(1);
+    expect(arms[1].body).toHaveLength(2);
   });
 
   it("accepts arms on one line, bodies on the next line, and `do … end` arms", () => {

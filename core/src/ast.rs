@@ -132,7 +132,6 @@ pub enum ExprKind {
     /// short-circuit: in `a?.b.c` a missing `b` yields nil instead of erroring
     /// on the `.c`.
     OptionalAccess(Box<Expr>),
-    Block(Vec<Stmt>),
     Lambda {
         params: Vec<Param>,
         body: Vec<Stmt>,
@@ -181,7 +180,9 @@ pub struct MatchArm {
     pub pattern_span: SourceSpan,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub guard: Option<Expr>,
-    pub body: Expr,
+    /// A statement list, like an `if` branch: its last expression is the
+    /// arm's value.
+    pub body: Vec<Stmt>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -694,7 +695,9 @@ pub fn walk_expr<V: ExprVisitor + ?Sized>(v: &mut V, e: &Expr) {
                 if let Some(g) = &arm.guard {
                     v.visit_expr(g);
                 }
-                v.visit_expr(&arm.body);
+                for s in &arm.body {
+                    v.visit_stmt(s);
+                }
             }
         }
         ExprKind::For { iter, body, .. } => {
@@ -720,11 +723,6 @@ pub fn walk_expr<V: ExprVisitor + ?Sized>(v: &mut V, e: &Expr) {
         ExprKind::IndexAccess { object, index } => {
             v.visit_expr(object);
             v.visit_expr(index);
-        }
-        ExprKind::Block(stmts) => {
-            for s in stmts {
-                v.visit_stmt(s);
-            }
         }
         ExprKind::Lambda { params, body } => {
             for d in params.iter().filter_map(|p| p.default.as_ref()) {
@@ -862,7 +860,9 @@ pub fn walk_expr_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, e: &mut Expr) {
                 if let Some(g) = &mut arm.guard {
                     v.visit_expr(g);
                 }
-                v.visit_expr(&mut arm.body);
+                for s in arm.body.iter_mut() {
+                    v.visit_stmt(s);
+                }
             }
         }
         ExprKind::For { iter, body, .. } => {
@@ -888,11 +888,6 @@ pub fn walk_expr_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, e: &mut Expr) {
         ExprKind::IndexAccess { object, index } => {
             v.visit_expr(object);
             v.visit_expr(index);
-        }
-        ExprKind::Block(stmts) => {
-            for s in stmts.iter_mut() {
-                v.visit_stmt(s);
-            }
         }
         ExprKind::Lambda { params, body } => {
             for d in params.iter_mut().filter_map(|p| p.default.as_mut()) {

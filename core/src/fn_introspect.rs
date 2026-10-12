@@ -536,6 +536,22 @@ fn else_json(e: &ElseBranch) -> J {
     }
 }
 
+/// A match arm's body: a one-expression arm is that expression, anything else
+/// a `Block` of its statements, placed at the first one.
+fn arm_body_json(body: &[Stmt]) -> J {
+    match body {
+        [Stmt {
+            kind: StmtKind::Expr(e),
+            ..
+        }] => expr_json(e),
+        _ => node(
+            "Block",
+            body.first().map(|s| s.span).unwrap_or_default(),
+            json!({"body": stmts_json(body)}),
+        ),
+    }
+}
+
 fn expr_json(e: &Expr) -> J {
     let (tag, fields) = match &e.kind {
         ExprKind::Literal(lit) => ("Literal", literal_json(lit)),
@@ -572,7 +588,7 @@ fn expr_json(e: &Expr) -> J {
             json!({"subject": expr_json(subject), "arms": arms.iter().map(|arm| json!({
                 "pattern": serde_json::to_value(&arm.pattern).unwrap_or(J::Null),
                 "guard": arm.guard.as_ref().map(expr_json),
-                "body": expr_json(&arm.body),
+                "body": arm_body_json(&arm.body),
             })).collect::<Vec<J>>()}),
         ),
         ExprKind::For { var, iter, body } => (
@@ -595,7 +611,6 @@ fn expr_json(e: &Expr) -> J {
             json!({"object": expr_json(object), "index": expr_json(index)}),
         ),
         ExprKind::OptionalAccess(inner) => ("OptionalAccess", json!({"value": expr_json(inner)})),
-        ExprKind::Block(stmts) => ("Block", json!({"body": stmts_json(stmts)})),
         ExprKind::Lambda { params, body } => (
             "Lambda",
             json!({"params": params_json(params), "body": stmts_json(body)}),

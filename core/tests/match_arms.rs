@@ -185,16 +185,11 @@ print(f(3))
 }
 
 #[test]
-fn a_one_expression_arm_is_what_it_always_was() {
-    // The AST of a one-expression arm is that expression, not a block; a
-    // longer body is a block of its statements.
+fn an_arm_body_is_its_statement_list() {
     let stmts = parse("match x\n  when 1 -> \"one\"\n  when 2 ->\n    let a = 1\n    a\nend\n");
     let arms = first_match_arms(&stmts);
-    assert!(matches!(arms[0].body.kind, ExprKind::Literal(_)));
-    let ExprKind::Block(body) = &arms[1].body.kind else {
-        panic!("expected a block body, got {:?}", arms[1].body.kind);
-    };
-    assert_eq!(body.len(), 2);
+    assert_eq!(arms[0].body.len(), 1);
+    assert_eq!(arms[1].body.len(), 2);
 
     // On one line, on the line below the arrow, and several arms to a line.
     let src = "

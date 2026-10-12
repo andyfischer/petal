@@ -337,7 +337,6 @@ impl ExprVisitorMut for LiftAt<'_> {
                     None => {}
                 }
             }
-            ExprKind::Block(stmts) => desugar_stmts(stmts),
             ExprKind::Lambda { body, .. } => desugar_stmts(body),
             // Arm bodies are conditional expressions; v1 does not lift into them.
             ExprKind::Match { subject, .. } => self.visit_expr(subject),
@@ -411,7 +410,6 @@ impl ExprVisitor for AtCounter {
             ExprKind::AtVar(_) => self.count += 1,
             ExprKind::Call { .. }
             | ExprKind::If { .. }
-            | ExprKind::Block(_)
             | ExprKind::Lambda { .. }
             | ExprKind::Match { .. }
             | ExprKind::Ident(_)
@@ -466,7 +464,6 @@ impl ExprVisitorMut for AtReplacer {
             }
             ExprKind::Call { .. }
             | ExprKind::If { .. }
-            | ExprKind::Block(_)
             | ExprKind::Lambda { .. }
             | ExprKind::Match { .. }
             | ExprKind::Ident(_)

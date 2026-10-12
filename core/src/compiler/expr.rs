@@ -399,19 +399,6 @@ impl Compiler {
             // gets, requested explicitly.
             ExprKind::OptionalAccess(inner) => self.compile_expr_optional(inner),
 
-            // A block is a match arm's body. A non-empty one is compiled as
-            // the arm's statement list (`compile_arm_body`); this is what is
-            // left: the empty `do end`, and a block reached any other way.
-            ExprKind::Block(stmts) => {
-                self.push_scope(false);
-                let nil_cid = self.constants.intern(ConstantValue::Nil);
-                let nil = self.emit_term(TermOp::Constant(nil_cid), smallvec![], None);
-                self.compile_stmts(stmts, value_used);
-                self.pop_scope();
-                let last = self.last_term_in_block.get(&self.current_block);
-                last.copied().unwrap_or(nil)
-            }
-
             ExprKind::Lambda { params, body } => {
                 let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
                 let optional = params.iter().filter(|p| p.has_default()).count();
@@ -773,8 +760,8 @@ impl Compiler {
 
         // Pre-scan all arm bodies for names that will be rebound,
         // emit phis in the parent block before the Match term.
-        let arm_body_refs: Vec<&Expr> = arms.iter().map(|a| &a.body).collect();
-        let names = self.detect_rebinds_exprs(&arm_body_refs);
+        let bodies: Vec<&[Stmt]> = arms.iter().map(|a| a.body.as_slice()).collect();
+        let names = self.detect_rebinds_stmts(&bodies);
         let phis = self.emit_phis(&names, span);
 
         let mut child_blocks: SmallVec<[BlockId; 2]> = SmallVec::new();
@@ -819,7 +806,7 @@ impl Compiler {
                     c.scope_bind(var_name.clone(), phantom);
                 }
                 c.seed_arm_entry_copies(body_block, &phis);
-                c.compile_arm_body(&arm.body, value_used);
+                c.compile_stmts(&arm.body, value_used);
                 c.carry_slots.pop();
             });
 
@@ -861,19 +848,6 @@ impl Compiler {
             self.wire_phi_outs(*body_block, &phis);
         }
         match_tid
-    }
-
-    /// Compile a match arm's body into the current block. A block body is a
-    /// statement list in the arm's own block and scope, exactly as an `if`
-    /// branch is ([`Self::compile_if`]): its last statement is the arm's value.
-    fn compile_arm_body(&mut self, body: &Expr, value_used: bool) {
-        match &body.kind {
-            ExprKind::Block(stmts) if !stmts.is_empty() => self.compile_stmts(stmts, value_used),
-            _ => {
-                self.value_used = value_used;
-                self.compile_expr(body);
-            }
-        }
     }
 
     fn compile_record(&mut self, fields: &[RecordField]) -> TermId {

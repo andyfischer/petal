@@ -823,11 +823,6 @@ fn collect_definitions_from_expr(expr: &Expr, src: &[char], defs: &mut Vec<Defin
                 }
             }
         }
-        ExprKind::Block(stmts) => {
-            for s in stmts {
-                collect_definitions_from_stmt(s, src, defs);
-            }
-        }
         ExprKind::Lambda { params, body, .. } => {
             for p in params {
                 defs.push(param_definition(p, expr.span, src));

@@ -260,7 +260,6 @@ fn find_declaration(stmts: &[Stmt], offset: u32) -> Option<(Stmt, Vec<Stmt>)> {
                     }
                     self.block(body);
                 }
-                ExprKind::Block(stmts) => self.block(stmts),
                 _ => walk_expr(self, e),
             }
         }
@@ -701,7 +700,6 @@ impl ExprVisitor for Uses<'_> {
                     self.block(body);
                 }
             }
-            ExprKind::Block(stmts) => self.block(stmts),
             ExprKind::Match { subject, arms } => {
                 self.visit_expr(subject);
                 for arm in arms {
@@ -712,7 +710,7 @@ impl ExprVisitor for Uses<'_> {
                     if let Some(g) = &arm.guard {
                         self.visit_expr(g);
                     }
-                    self.visit_expr(&arm.body);
+                    self.block(&arm.body);
                 }
             }
             _ => walk_expr(self, e),

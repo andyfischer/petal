@@ -327,7 +327,6 @@ fn loop_tail_expr(e: &Expr) -> LoopTail {
     };
     match &e.kind {
         ExprKind::For { .. } => LoopTail::All,
-        ExprKind::Block(stmts) => loop_tail(stmts),
         ExprKind::If {
             then_body,
             else_body,
@@ -342,7 +341,7 @@ fn loop_tail_expr(e: &Expr) -> LoopTail {
             },
         ]),
         ExprKind::Match { arms, .. } => {
-            let arms: Vec<LoopTail> = arms.iter().map(|a| loop_tail_expr(&a.body)).collect();
+            let arms: Vec<LoopTail> = arms.iter().map(|a| loop_tail(&a.body)).collect();
             join(&arms)
         }
         _ => LoopTail::None,
@@ -546,11 +545,9 @@ impl ExprVisitor for Walker<'_> {
                     if let Some(guard) = &arm.guard {
                         self.visit_expr(guard);
                     }
-                    self.expr_position = position.clone();
-                    self.visit_expr(&arm.body);
+                    self.walk_body(&arm.body, position.clone());
                 }
             }
-            ExprKind::Block(stmts) => self.walk_body(stmts, position),
             ExprKind::For { var, iter, body } => {
                 self.evidence.rebound.insert(var.clone());
                 self.visit_expr(iter);

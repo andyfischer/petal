@@ -903,12 +903,71 @@ impl Env {
             &self.modules,
             &self.modules.base_implicit_imports,
         )?;
-        let program = Compiler::new().compile_modules(&modules, program_id, &self.native_fns)?;
+        let mut program =
+            Compiler::new().compile_modules(&modules, program_id, &self.native_fns)?;
+        self.scan_unresolved(&mut program);
         if !self.check_only {
             self.check_requires(&program)?;
             self.link_program(&program)?;
         }
         Ok(program)
+    }
+
+    /// The name scan that ends every compile: each call to, or read of, a
+    /// name nothing defines, and each named argument a native cannot take,
+    /// joins the program's diagnostics as an error
+    /// ([`unresolved_globals`](crate::typecheck::globals::unresolved_globals)).
+    /// The compiler leaves these to fail when their line runs; with the scan
+    /// done here, everything that reads a program's `warnings` — `petal
+    /// check`, `petal run`, the LSP, a host — sees the same findings.
+    fn scan_unresolved(&self, program: &mut Program) {
+        let found = crate::typecheck::globals::unresolved_globals(program, |name| {
+            self.native_signatures(name)
+        });
+        program.warnings.extend(found);
+    }
+
+    /// Check a loaded program: will it run? The findings of its compile
+    /// (which include the name scan), plus whether it lowers to bytecode
+    /// under the policy in effect. See [`crate::check`].
+    ///
+    /// The lowering is the one a run would do and is kept, so checking a
+    /// program before running it costs nothing extra. Nothing is linked: a
+    /// program written for a host this `Env` is not can still pass; a run
+    /// follows a passed check with [`link`](Self::link).
+    pub fn check_program(&mut self, pid: ProgramId) -> crate::check::CheckReport {
+        let lower_error = self.ensure_bytecode(pid).err();
+        crate::check::CheckReport {
+            diagnostics: self
+                .programs
+                .get(&pid)
+                .map(|p| p.warnings.clone())
+                .unwrap_or_default(),
+            lower_error,
+        }
+    }
+
+    /// Every finding of `pid`'s compile, rendered as `petal check` prints
+    /// them (empty when there are none). For a host that has no diagnostics
+    /// surface of its own: print this to stderr after a load or a reload.
+    pub fn diagnostics_text(&self, pid: ProgramId) -> String {
+        self.programs
+            .get(&pid)
+            .map(|p| crate::check::render_diagnostics(p, &p.warnings, false))
+            .unwrap_or_default()
+    }
+
+    /// Link a program that was loaded [check-only](Self::set_check_only):
+    /// the host interfaces it requires and the natives it declares must be
+    /// this `Env`'s ([`check_requires`](Self::check_requires),
+    /// [`link_program`](Self::link_program)). A load that is not check-only
+    /// has already done this.
+    pub fn link(&self, pid: ProgramId) -> Result<(), crate::error::LoadError> {
+        let Some(program) = self.programs.get(&pid) else {
+            return Ok(());
+        };
+        self.check_requires(program)?;
+        self.link_program(program)
     }
 
     /// Compile for `petal suggest`: the evidence every module's type checker
@@ -955,9 +1014,11 @@ impl Env {
             &self.modules,
             &self.modules.base_implicit_imports,
         )?;
-        Compiler::new()
+        let (mut program, inferences, classes) = Compiler::new()
             .collecting_inferences()
-            .compile_modules_collecting(&modules, ProgramId(0), &self.native_fns)
+            .compile_modules_collecting(&modules, ProgramId(0), &self.native_fns)?;
+        self.scan_unresolved(&mut program);
+        Ok((program, inferences, classes))
     }
 
     /// Compile source code into a Program without loading it.
@@ -1146,6 +1207,7 @@ impl Env {
                 return Err(message);
             }
         }
+        self.scan_unresolved(&mut program);
         let id = ProgramId(self.next_program_id);
         self.next_program_id += 1;
         program.id = id;

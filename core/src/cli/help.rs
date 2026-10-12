@@ -288,13 +288,18 @@ SYNOPSIS
        petal <file>
 
 DESCRIPTION
-       Compiles <file> and runs it. 'petal <file>' with no subcommand is
+       Checks <file>, then runs it. 'petal <file>' with no subcommand is
        shorthand for this command, and accepts the same options.
+
+       The check is the one 'petal check' does, and its findings are printed
+       the same way. A program with a check error is not run: no line of it
+       executes, whether or not the line at fault would have been reached.
+       Warnings are printed and the program runs.
 
        This command provides the core builtins and the builtin packages
        (creative, vec2, noise, color, json, io, autodiff) only. A script that
        imports a host's interface, such as 'ui', checks clean but is refused
-       here when it loads, naming the natives or the interface this host
+       here before it starts, naming the natives or the interface this host
        lacks: run it with that host's runner (petal-sdl for 'ui').
 
        The nearest petal.toml is found by walking up from <file>, and its
@@ -414,9 +419,10 @@ DESCRIPTION
        'text_layout' and 'glsl' are bundled in this binary, and any other
        host's package is found through the project's petal.toml (a path
        under [dependencies]) or with -I (for Garden:
-       -I garden/garden-script/packages). 'petal run' agrees with 'check'
-       on every script; a script that imports 'ui' is refused by 'run' when
-       it loads, because 'run' registers the core builtins only.
+       -I garden/garden-script/packages). 'petal run' starts with this
+       same check and does not run a program that fails it; a script that
+       imports 'ui' passes the check and is then refused by 'run', because
+       'run' registers the core builtins only.
 
        The nearest petal.toml is found by walking up from the script, as in
        every command that compiles: its [dependencies] are importable by

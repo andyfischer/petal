@@ -174,7 +174,7 @@ describe("overloaded functions (multi-arity)", () => {
       end
       add(1)
     `);
-    expect(err).toContain("add()");
+    expect(err).toContain("`add`");
     expect(err).toContain("2 or 3");
     expect(err).toContain("got 1");
   });

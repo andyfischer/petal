@@ -12,6 +12,7 @@ pub mod classes;
 pub mod cli;
 pub mod closure_table;
 pub mod compiler;
+pub mod check;
 pub mod constant_table;
 pub mod cst;
 pub mod cst_project;

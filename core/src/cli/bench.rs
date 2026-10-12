@@ -16,8 +16,8 @@ use crate::policy::RunPolicy;
 use crate::profile::{CallBench, CallStats, commas};
 use crate::program::{FunctionDef, FunctionId, Program, TermOp, base_fn_name};
 
-use super::handlers::{eprint_warnings, load_into, make_env};
-use super::{BenchOpts, SourceInput, die, die_error, print_json};
+use super::handlers::{load_checked_or_die, load_into, make_env};
+use super::{BenchOpts, SourceInput, die, print_json};
 
 /// How long each of the two measurements (optimizer on, optimizer off) keeps
 /// re-running the file when `--iters` does not pin the count.
@@ -73,12 +73,8 @@ pub(super) fn handle_bench(
     // by the compiler in source order, so they are the same in every later
     // compile of the same source.
     let mut probe = make_env(include_dirs);
-    let pid = match load_into(&mut probe, source, source_input) {
-        Ok(pid) => pid,
-        Err(e) => die_error(json, &e, serde_json::Value::Null, source),
-    };
+    let pid = load_checked_or_die(&mut probe, json, false, source, source_input);
     let program = probe.get_program(pid).expect("just loaded");
-    eprint_warnings(program);
     let targets = match resolve_targets(program, &opts.fns) {
         Ok(t) => t,
         Err(e) => die(json, &e, "bench"),

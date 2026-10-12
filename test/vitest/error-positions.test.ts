@@ -20,7 +20,7 @@ let c = a / b`);
   it("reports position for undefined variable", () => {
     const err = runPetalError("let x = foo + 1");
     expect(err).toMatch(/line 1/);
-    expect(err).toMatch(/Undefined variable/);
+    expect(err).toMatch(/undefined variable `foo`/);
   });
 
   it("reports position for type errors", () => {

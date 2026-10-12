@@ -8,6 +8,7 @@
 //! - the arity a `native fn` declares;
 //! - method syntax reaching a native only in a file that has it in scope;
 //! - a name nothing defines, in a line that would never have run;
+//! - every other error `check` reports, which `run` refuses to start on;
 //! - a call through a plain import, held to the module the name resolved to;
 //! - a qualified call, held to the module its qualifier names and no other;
 //! - a `let` that starts as `nil` and is assigned later, passed on;
@@ -198,22 +199,145 @@ fn run_refuses_a_name_nothing_defines_before_the_first_line() {
     assert!(err.contains("unknown function `totally_unknown`"), "{err}");
     assert!(err.contains("undefined variable `nowhere`"), "{err}");
 
-    let (out, err, code) = petal_in(&t.root, &["run", "un.ptl"]);
-    assert_eq!((out.as_str(), code), ("", 1), "nothing may run: {err}");
-    assert!(err.contains("Unknown function: totally_unknown"), "{err}");
-    assert!(err.contains("Undefined variable: nowhere"), "{err}");
+    // `run` starts with the same check, and says it in the same words.
+    let (out, run_err, code) = petal_in(&t.root, &["run", "un.ptl"]);
+    assert_eq!((out.as_str(), code), ("", 1), "nothing may run: {run_err}");
+    assert_eq!(
+        run_err,
+        err.replace(
+            "2 errors found by check",
+            "2 errors found by check; the program was not run"
+        )
+    );
 
     // The same for a host native reached without its interface package.
     t.write("d.ptl", "print(\"before\")\ndraw_rect(1, 2, 3, 4)\n");
     let (out, err, code) = petal_in(&t.root, &["run", "d.ptl"]);
     assert_eq!((out.as_str(), code), ("", 1), "{err}");
-    assert!(err.contains("Unknown function: draw_rect"), "{err}");
+    assert!(err.contains("unknown function `draw_rect`"), "{err}");
 
     let (out, _, code) = petal_in(&t.root, &["run", "--json", "d.ptl"]);
     assert_eq!(code, 1);
     let obj: serde_json::Value = serde_json::from_str(out.trim()).expect("one JSON document");
-    assert_eq!(obj["phase"], "compile");
+    assert_eq!(obj["phase"], "check");
     assert_eq!(obj["line"], 2);
+    assert_eq!(obj["errors"].as_array().map(Vec::len), Some(1));
+}
+
+/// Every kind of error `check` exits 1 on stops `run` before its first line,
+/// whether or not the line at fault would have been reached — and a script
+/// with only warnings runs.
+#[test]
+fn run_refuses_whatever_check_rejects() {
+    let t = Tree::new("refuses");
+    let rejected = [
+        // the type checker's: an argument count, a named argument on a `fn`
+        "fn f(a, b) a + b end\nprint(\"ran\")\nif false then print(f(1)) end\n",
+        "fn f(a, b) a + b end\nprint(\"ran\")\nif false then print(f(1, c: 2)) end\n",
+        // method syntax that needs an import
+        "print(\"ran\")\nlet v = [1, 2]\nif false then print(v.mag()) end\n",
+        // the name scan's: a named argument a builtin does not have
+        "print(\"ran\")\nif false then print(clamp(5, low: 0, hi: 3)) end\n",
+        "print(\"ran\")\nif false then print(1, sep: 2) end\n",
+        "print(\"ran\")\nif false then print(nope) end\n",
+    ];
+    for (i, src) in rejected.iter().enumerate() {
+        let name = format!("r{i}.ptl");
+        t.write(&name, src);
+        let (_, check_err, code) = petal_in(&t.root, &["check", &name]);
+        assert_eq!(code, 1, "check {src}: {check_err}");
+        let (out, run_err, code) = petal_in(&t.root, &["run", &name]);
+        assert_eq!((out.as_str(), code), ("", 1), "run {src}: {run_err}");
+        assert_eq!(
+            run_err,
+            check_err.replace(
+                "1 error found by check",
+                "1 error found by check; the program was not run"
+            ),
+            "{src}"
+        );
+    }
+
+    t.write("w.ptl", "let x: int = \"s\"\nprint(\"ran\")\n");
+    let (_, check_err, code) = petal_in(&t.root, &["check", "w.ptl"]);
+    assert_eq!(code, 0, "{check_err}");
+    let (out, run_err, code) = petal_in(&t.root, &["run", "w.ptl"]);
+    assert_eq!((out.as_str(), code), ("ran\n", 0));
+    assert_eq!(run_err, check_err);
+}
+
+/// `run` refusing on a check error makes a checker false positive a program
+/// that will not start, so these are held here: each runs, and so each must
+/// pass `check`.
+#[test]
+fn check_passes_what_runs_when_a_set_joins_a_lower_precedence_one() {
+    let t = Tree::new("joins");
+    // `std` exports `count(xs, pred)`. A `count(xs)` from anywhere else joins
+    // that set instead of replacing it, so both arities are callable.
+    t.write("counter.ptl", "pub fn count(xs) 999 end\n");
+    t.write(
+        "imported.ptl",
+        "import ./counter: count\nprint(count([1, 2, 3]))\nprint(count([1, 2, 3], fn(x) x > 1 end))\n",
+    );
+    t.write(
+        "own.ptl",
+        // `std` is loaded when a file names one of its exports, and a name
+        // the file declares itself does not count: `sum` brings it in.
+        "let total = sum([1])\nfn count(xs) 999 end\nprint(count([1, 2, 3]))\nprint(count([1, 2, 3], fn(x) x > 1 end))\n",
+    );
+    for file in ["imported.ptl", "own.ptl"] {
+        let (_, err, code) = petal_in(&t.root, &["check", "--strict", file]);
+        assert_eq!((err.as_str(), code), ("", 0), "check {file}");
+        let (out, err, code) = petal_in(&t.root, &["run", file]);
+        assert_eq!((out.as_str(), code), ("999\n2\n", 0), "run {file}: {err}");
+    }
+    // An arity neither side has is still an error, for both commands.
+    t.write(
+        "neither.ptl",
+        "let total = sum([1])\nfn count(xs) 999 end\nprint(count([1], 2, 3))\n",
+    );
+    let (_, err, code) = petal_in(&t.root, &["check", "neither.ptl"]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("`count` expects 1 or 2 arguments, got 3"), "{err}");
+}
+
+#[test]
+fn check_passes_a_native_used_above_the_fn_that_takes_its_name() {
+    let t = Tree::new("above");
+    // Above `fn max(r)` the name is still the builtin, so the alias holds
+    // the two-argument native, not the one-argument `fn`.
+    t.write(
+        "alias.ptl",
+        "let native_max = max\nfn max(r)\n  native_max(r.a, r.b)\nend\nprint(max({a: 1, b: 2}))\n",
+    );
+    let (_, err, code) = petal_in(&t.root, &["check", "--strict", "alias.ptl"]);
+    assert_eq!((err.as_str(), code), ("", 0));
+    let (out, err, code) = petal_in(&t.root, &["run", "alias.ptl"]);
+    assert_eq!((out.as_str(), code), ("2\n", 0), "{err}");
+    // Below the declaration the `fn` speaks for the name, as before.
+    t.write("below.ptl", "fn max(r)\n  r.a\nend\nprint(max(1, 2))\n");
+    let (_, err, code) = petal_in(&t.root, &["check", "below.ptl"]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("`max` expects 1 argument, got 2"), "{err}");
+}
+
+/// A script with an error of its own, written for a host this is not, is
+/// told about the error: the check comes before the link.
+#[test]
+fn run_checks_before_it_links() {
+    let t = Tree::new("order");
+    t.write("u.ptl", "import ui\nprint(nope)\n");
+    let (out, err, code) = petal_in(&t.root, &["run", "u.ptl"]);
+    assert_eq!((out.as_str(), code), ("", 1), "{err}");
+    assert!(err.contains("undefined variable `nope`"), "{err}");
+    assert!(!err.contains("does not register"), "{err}");
+
+    t.write("ok.ptl", "import ui\nprint(1)\n");
+    let (_, err, code) = petal_in(&t.root, &["check", "ok.ptl"]);
+    assert_eq!(code, 0, "{err}");
+    let (out, err, code) = petal_in(&t.root, &["run", "ok.ptl"]);
+    assert_eq!((out.as_str(), code), ("", 1), "{err}");
+    assert!(err.contains("does not register"), "{err}");
 }
 
 #[test]
@@ -239,7 +363,7 @@ fn a_call_through_an_import_is_held_to_the_module_it_resolved_to() {
     assert!(err.contains("[line 6, column 7]"), "{err}");
     assert!(err.contains("1 error found by check"), "{err}");
     let (out, run_err, code) = petal_in(&t.root, &["run", "main.ptl"]);
-    assert_eq!((out.as_str(), code), ("3\n6\n1\n", 1));
+    assert_eq!((out.as_str(), code), ("", 1), "run does not start");
     assert!(run_err.contains("score() is missing a value for parameter 'b'"), "{run_err}");
 }
 

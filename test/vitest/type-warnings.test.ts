@@ -284,8 +284,9 @@ describe("statically-known arity errors", () => {
     expect(out.warnings).toHaveLength(1);
     expect(out.warnings[0].severity).toBe("error");
     expect(out.warnings[0].message).toBe("`f` expects 2 arguments, got 1");
-    const { stderr } = runWithStderr("fn f(a, b)\n  a\nend\nprint(f(1))");
-    expect(stderr).toMatch(/f\(\) expects 2 arguments, got 1/);
+    const { stdout, stderr } = runWithStderr('print("before")\nfn f(a, b)\n  a\nend\nprint(f(1))');
+    expect(stderr).toContain("`f` expects 2 arguments, got 1");
+    expect(stdout).toBe("");
   });
 
   it("accepts any declared arity and names them all when none matches", () => {

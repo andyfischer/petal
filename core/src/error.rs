@@ -52,6 +52,10 @@ pub enum Phase {
     Module,
     /// Compiling statements to the term graph (`crate::compiler`).
     Compile,
+    /// The check: the program compiled, and a finding of the compile is a
+    /// line that fails whenever it runs (`crate::check`). `petal run` refuses
+    /// to start on these.
+    Check,
     /// Lowering the term graph to bytecode (`crate::backend::bytecode`).
     Lower,
     /// Linking: a `native fn` the program declares is not registered in the
@@ -67,6 +71,7 @@ impl Phase {
             Phase::Parse => "parse",
             Phase::Module => "module",
             Phase::Compile => "compile",
+            Phase::Check => "check",
             Phase::Lower => "lower",
             Phase::Link => "link",
         }

@@ -8,10 +8,12 @@
 //! the moment the line runs must not pass `petal check`, nor start under
 //! `petal run`.
 //!
-//! [`unresolved_globals`] closes that hole after the compile, by scanning the
-//! program's IR for those terms; [`deferred_errors`] is the same scan in the
-//! run's own words, which `petal run` refuses to start on. No host is
-//! consulted: a name is in scope because the file declares it, an import
+//! [`unresolved_globals`] closes that hole by scanning the program's IR for
+//! those terms. Every compile an `Env` does ends with it
+//! (`Env::scan_unresolved`), so its findings are on the program as errors
+//! for everything that reads them: `petal check` fails on them, `petal run`
+//! refuses to start on them ([`crate::check`]), and the LSP shows them. No
+//! host is consulted: a name is in scope because the file declares it, an import
 //! binds it, or it is a `core`/`std` builtin, and for no other reason. A
 //! host's natives are answered for by its interface package (`import ui`),
 //! whose `native fn` declarations carry the parameter lists a named call is
@@ -94,36 +96,6 @@ pub fn named_native_call_error(
     // optional one, or too many arguments. The binder's own sentence says
     // which.
     sig.bind(name, &indices, names).err()
-}
-
-/// The compiler's deferred errors, in the words the run would fail with:
-/// every `Error` term of the program, with its position and the module it is
-/// in (`None` for the entry file). Each is a line that fails whenever it
-/// runs — an unbound name, a qualifier read as a value, a member a module
-/// does not export. `petal check` reports them
-/// ([`unresolved_globals`]); `petal run` refuses to start on them, so the two
-/// agree on a script whether or not the line would have been reached.
-pub fn deferred_errors(program: &Program) -> Vec<(Diagnostic, Option<String>)> {
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-    for term in &program.terms {
-        let TermOp::Error(cid) = term.op else {
-            continue;
-        };
-        let (Some(msg), Some(span)) = (
-            program.get_string_constant(cid),
-            program.source_map.get(term.id),
-        ) else {
-            continue;
-        };
-        if seen.insert((span.file, span.start.offset, msg)) {
-            out.push((
-                Diagnostic::error(*span, msg.to_string()),
-                program.source_map.file_name_for_span(span).map(str::to_string),
-            ));
-        }
-    }
-    out
 }
 
 /// Report every call to, or read of, a name that nothing defines, and every

@@ -251,11 +251,12 @@ describe("field and method checks on a class-typed value", () => {
     expect(out.warnings).toHaveLength(1);
     expect(out.warnings[0].severity).toBe("error");
     expect(out.warnings[0].message).toBe("method `P.shift` expects 1 argument, got 0");
-    // The same call is a hard error at runtime — that is the gap `check` closes.
+    // `run` starts with the same check, so it refuses the script in the
+    // same words. The count is of the arguments the call site wrote, not the
+    // hidden receiver.
     const { stderr } = runWithStderr(`${src}print(P(1, 2).shift())`);
-    // The runtime counts the arguments the call site wrote, not the hidden
-    // receiver, so it agrees with the error above rather than saying "2".
-    expect(stderr).toMatch(/P\.shift\(\) expects 1 argument, got 0/);
+    expect(stderr).toContain("method `P.shift` expects 1 argument, got 0");
+    expect(stderr).toContain("the program was not run");
     expect(checkJson(`${src}print(P(1, 2).shift(3))`).warnings).toEqual([]);
   });
 
@@ -301,23 +302,33 @@ describe("an undefined method on a class instance names the class", () => {
 });
 
 // Arity messages count what the user wrote. The receiver is a parameter the
-// *call site* supplies, so `C(1).foo()` wrote zero arguments, not one.
+// *call site* supplies, so `C(1).foo()` wrote zero arguments, not one. A call
+// the checker can see is refused before the program starts, in the checker's
+// words; one it cannot see fails when it runs, in the runtime's.
 describe("arity errors", () => {
   it("excludes the receiver from a method's argument count", () => {
     const { stderr } = runWithStderr(
       "class C\n  a: int,\nend\nfn C.foo(c: C, n: int)\n  n\nend\nprint(C(1).foo())"
     );
-    expect(stderr).toContain("C.foo() expects 1 argument, got 0");
+    expect(stderr).toContain("method `C.foo` expects 1 argument, got 0");
   });
 
   it("counts a plain function's arguments as written", () => {
     const { stderr } = runWithStderr("fn f(a, b)\n  a\nend\nprint(f(1))");
+    expect(stderr).toContain("`f` expects 2 arguments, got 1");
+  });
+
+  it("the runtime counts them the same way, for a call only it can see", () => {
+    const { stdout, stderr } = runWithStderr(
+      'fn f(a, b)\n  a\nend\nlet fs = [f]\nprint("before")\nprint(fs[0](1))'
+    );
+    expect(stdout).toBe("before\n");
     expect(stderr).toContain("f() expects 2 arguments, got 1");
   });
 
   it("words a builtin's arity error the same way", () => {
     const { stderr } = runWithStderr("print(len())");
-    expect(stderr).toContain("len() expects 1 argument, got 0");
+    expect(stderr).toContain("`len` expects 1 argument, got 0");
   });
 });
 
@@ -421,15 +432,15 @@ describe("the built-in Rect class", () => {
       "bottom(0)",
     ]) {
       const { stderr } = runWithStderr(`print(Rect(0, 0, 10, 10).${call})`);
-      expect(stderr, `Rect(0, 0, 10, 10).${call}`).toMatch(/expects no arguments/);
+      expect(stderr, `Rect(0, 0, 10, 10).${call}`).toMatch(/expects 0 arguments, got \d/);
     }
   });
 
   it("rejects the wrong argument count to inset / offset", () => {
     const inset = runWithStderr("print(Rect(0, 0, 10, 10).inset(1, 2))");
-    expect(inset.stderr).toMatch(/Rect\.inset\(\) expects 1 argument, got 2/);
+    expect(inset.stderr).toContain("method `Rect.inset` expects 1 argument, got 2");
     const offset = runWithStderr("print(Rect(0, 0, 10, 10).offset(1))");
-    expect(offset.stderr).toMatch(/Rect\.offset\(\) expects 2 arguments, got 1/);
+    expect(offset.stderr).toContain("method `Rect.offset` expects 2 arguments, got 1");
   });
 
   it("rejects a non-numeric argument to inset / offset", () => {

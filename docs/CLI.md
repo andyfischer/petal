@@ -100,7 +100,12 @@ petal run [options] -e '<code>'
 petal <file.ptl>
 ```
 
-Compiles the program and runs it. Output goes to stdout. Exits 1 on error.
+Checks the program, then runs it. Output goes to stdout. Exits 1 on error.
+
+`run` starts with what [`check`](#check--compile-without-running) does, and
+prints the same findings to stderr. A program with a check **error** is not
+run: no line of it executes, whether or not the line at fault would have been
+reached, and the command exits 1. Warnings are printed and the program runs.
 
 ```
 $ petal run -e 'print(1 + 2)'
@@ -486,9 +491,11 @@ and `--json` carries a `requires` array of `{interface, version, package}`.
 `check` never fails on them; a run in a host that does not provide one does
 ([packages.md](packages.md#requires)).
 
-`check` and `run` agree on every script. `check` never links, so a script that
-imports `ui` checks clean; `petal run` of it stops at load, before any line
-runs, because `run` registers the core builtins only:
+`check` and `run` agree on every script: `run` begins with the same check and
+does not start a program that fails it. The one thing `run` adds is linking.
+`check` never links, so a script that imports `ui` checks clean; `petal run`
+of it stops after the check, before any line runs, because `run` registers the
+core builtins only:
 
 ```
 $ petal run -e 'import ui
@@ -536,11 +543,10 @@ An **error** is a line that fails whenever it runs, so `check` exits 1 on it:
 A host native is held to the parameter names and counts its interface
 package declares, like a builtin.
 
-`petal run` refuses the first two kinds before the first line runs, with the
-message the line would have failed with (`Unknown function: frob`, phase
-`compile`), whether or not the line would have been reached: a script `check`
-rejects for a name nothing defines does not start. The other errors are
-printed and the run goes on until the line is reached.
+`petal run` refuses every one of these before the first line runs, whether or
+not the line would have been reached: it prints what `check` prints, then
+`N errors found by check; the program was not run`, and exits 1. With `--json`
+the error object has `"phase": "check"` and one `errors` entry per finding.
 
 ```
 $ petal check -e 'print(nope)'
@@ -556,8 +562,7 @@ $ echo $?
 
 An unknown-name error on a host's name means the script does not import the
 host's interface package (or `check` was not given the `-I` that finds it).
-`run` reports these too, before running, and still runs the program — the
-failing line may never execute.
+`run` reports these the same way and does not start the program.
 
 Everything else is a **warning**, and does not change the exit code unless
 `--strict` is set:
@@ -589,7 +594,9 @@ the program:
 | `parse` | The tokens are not a valid program — a missing `=`, an unclosed construct, an unexpected token. |
 | `module` | An `import` could not be resolved, or the imports form a cycle. |
 | `compile` | The program parses but is not well-formed — writing a `var` with `=`, assigning to a binding from an outer function, importing a name a module does not export. |
-| `lower` | The term graph could not be lowered to bytecode. Only `check` reaches this. |
+| `check` | The program compiled, and the check found an error: a line that fails whenever it runs (`run` only; `check` reports these in `warnings` with `"ok": false`). |
+| `lower` | The term graph could not be lowered to bytecode. |
+| `link` | The program needs a host interface or a native this host does not provide (`run` only). |
 | `runtime` | The program compiled and ran, and failed during execution (`run` only). |
 | `state-storage` | The `--state-storage` file could not be loaded or written (`run` only). |
 

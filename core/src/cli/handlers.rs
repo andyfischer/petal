@@ -100,27 +100,7 @@ pub(super) fn handle_run(
     if effect_audit {
         env.set_effect_audit(true);
     }
-    let pid = load_or_die(&mut env, json, ir, source, source_input);
-    // Surface type-checker warnings on stderr before running. Warnings go to
-    // stderr even in --json mode, so JSON consumers of stdout are unaffected.
-    if let Some(program) = env.get_program(pid) {
-        eprint_warnings(program);
-        // A name nothing defines is not left to fail when its line runs:
-        // `petal check` rejects the script, so `petal run` does too, before
-        // the first line — the two agree on every script.
-        let deferred = crate::typecheck::globals::deferred_errors(program);
-        if !deferred.is_empty() {
-            die_error(
-                json,
-                &crate::error::LoadError::from_attributed_diagnostics(
-                    crate::error::Phase::Compile,
-                    &deferred,
-                ),
-                serde_json::Value::Null,
-                source,
-            );
-        }
-    }
+    let pid = load_checked_or_die(&mut env, json, ir, source, source_input);
     let sid = stack_or_die(&mut env, json, pid);
     match opts.state_storage.as_deref() {
         Some(path) => load_state_storage(&mut env, json, pid, sid, path),
@@ -330,7 +310,7 @@ pub(super) fn handle_pending_report(
     include_dirs: &[PathBuf],
 ) {
     let mut env = make_env(include_dirs);
-    let pid = load_or_die(&mut env, json, false, source, source_input);
+    let pid = load_checked_or_die(&mut env, json, false, source, source_input);
     let sid = stack_or_die(&mut env, json, pid);
     // Record absorptions too, so a caller inspecting the report sees per-frame
     // absorption counts populated.
@@ -558,7 +538,7 @@ pub(super) fn handle_propose_edit(
     // The per-term trace supplies the values the arithmetic solver inverts
     // against; without it only statically-known siblings can be used.
     env.trace_mut().enable();
-    let pid = load_or_die(&mut env, json, false, source, source_input);
+    let pid = load_checked_or_die(&mut env, json, false, source, source_input);
     let sid = stack_or_die(&mut env, json, pid);
     if let Err(e) = env.run(sid) {
         die(json, &e, "runtime");
@@ -868,53 +848,13 @@ pub(super) fn handle_explain(
     }
 }
 
-/// Format the `[line N, column M]` (or `[file line N, column M]`) position tag
-/// for a warning's span — mirrors `backend::errors::format_position`.
-fn warning_position(program: &Program, span: &crate::source_map::SourceSpan) -> String {
-    match program.source_map.file_name_for_span(span) {
-        Some(file) => format!(
-            "[{} line {}, column {}]",
-            file, span.start.line, span.start.column
-        ),
-        None => format!("[line {}, column {}]", span.start.line, span.start.column),
-    }
-}
-
-/// Render a program's type-checker diagnostics as human-readable text (for
-/// stderr). Each diagnostic becomes a `warning:` or `error:` line (its
-/// [`Severity`](crate::diagnostic::Severity)), a ` --> <position>`
-/// line, and (when a real span + source exist) a caret snippet.
-///
-/// Under `--error-format bare` the position line and the snippet are dropped,
-/// for the same reason they are dropped from errors: they encode where the
-/// diagnostic sits in the file, so a re-indenting refactor would change them
-/// without changing anything about the program. Only the message survives.
-fn render_warnings_text(program: &Program) -> String {
-    let bare = super::bare_errors();
-    let mut out = String::new();
-    for d in &program.warnings {
-        out.push_str(&format!("{}: {}\n", d.severity.label(), d.message));
-        if bare {
-            continue;
-        }
-        out.push_str(&format!(" --> {}\n", warning_position(program, &d.span)));
-        let src = program
-            .source_map
-            .source_for_span(&d.span)
-            .unwrap_or(&program.source);
-        if let Some(snippet) = crate::backend::errors::format_source_snippet(src, &d.span) {
-            out.push_str(&snippet);
-            out.push('\n');
-        }
-    }
-    out
-}
-
-/// Print a program's type-checker warnings to stderr (nothing when there are
-/// none). Used before running and by `check`; stderr keeps them off the stdout
-/// JSON channel.
+/// Print a program's diagnostics — the findings of its compile, warnings
+/// and errors — to stderr (nothing when there are none), as
+/// [`crate::check::render_diagnostics`] renders them. Used before running and
+/// by `check`; stderr keeps them off the stdout JSON channel.
 pub(super) fn eprint_warnings(program: &Program) {
-    let text = render_warnings_text(program);
+    let text =
+        crate::check::render_diagnostics(program, &program.warnings, super::bare_errors());
     if !text.is_empty() {
         eprint!("{}", text);
     }
@@ -950,7 +890,6 @@ pub(super) fn handle_check(
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
-    use crate::typecheck::globals;
     let mut env = make_env(include_dirs);
     // A check, not a run: the script may be written for a host whose natives
     // this process does not register. The interface package it imports
@@ -962,36 +901,22 @@ pub(super) fn handle_check(
     // emitter's IR can be CI-validated the same way source is. Everything below
     // is unchanged: the lowering gate is the point of `check` either way.
     let pid = load_or_die(&mut env, json, ir, source, source_input);
-    // A call or read of a name nothing defines compiles (it is resolved, or
-    // fails, when the line runs), so the compile alone cannot answer "will
-    // this run?". Report each one.
-    let unresolved = env
-        .get_program(pid)
-        .map(|p| globals::unresolved_globals(p, |n| env.native_signatures(n)));
-    if let (Some(diags), Some(p)) = (unresolved, env.get_program_mut(pid)) {
-        p.warnings.extend(diags);
-    }
+    // The check itself (`crate::check`) is the library's: the findings of the
+    // compile, and whether the program lowers. `petal run` asks the same
+    // question the same way before it starts.
+    let report = env.check_program(pid);
     let program = env.get_program(pid);
-    // `check` answers "will this run?", so it must lower to bytecode as
-    // well as compile: a program can compile cleanly and still fail to
-    // lower, and `check` is what CI and editors call. Use the same flags
-    // a run would, so `check` and `run` agree on what lowers.
-    if let Some(program) = program
-        && let Err(e) = crate::backend::bytecode::lower_with_flags(
-            program,
-            crate::policy::RunPolicy::from_env().opts,
-        )
-    {
+    if let (Some(e), Some(program)) = (&report.lower_error, program) {
         // Warnings are about the source, not the lowering, so report
         // them even though the program can't run — a sweep over a
         // corpus must not score a broken file as warning-free.
         if !json {
             eprint_warnings(program);
         }
-        die_with(json, &e, "lower", warnings_json(program));
+        die_with(json, e, "lower", warnings_json(program));
     }
-    let warning_count = program.map_or(0, |p| p.warnings.len());
-    let error_count = program.map_or(0, |p| p.warnings.iter().filter(|d| d.is_error()).count());
+    let warning_count = report.diagnostics.len();
+    let error_count = report.error_count();
     // A checker error is a line that fails whenever it runs, so the program
     // does not pass `check` — unless `--lenient` asks only "does it compile?".
     let failed = error_count > 0 && !lenient;
@@ -1016,12 +941,8 @@ pub(super) fn handle_check(
         if is_empty {
             eprintln!("warning: empty program");
         }
-        if error_count > 0 {
-            eprintln!(
-                "{} error{} found by check",
-                error_count,
-                if error_count == 1 { "" } else { "s" }
-            );
+        if let Some(summary) = report.summary() {
+            eprintln!("{summary}");
         }
         // Otherwise silent on success, like most linters — but for one line
         // saying which host interfaces the program's packages require, since
@@ -2046,6 +1967,69 @@ fn load_or_die(
             Err(e) => die_error(json, &e, serde_json::Value::Null, source),
         }
     }
+}
+
+/// [`load_or_die`] for a command that is about to *run* the program: check,
+/// link, and only then hand it back. The check is `petal check`'s
+/// ([`Env::check_program`]) — its findings are printed to stderr the same
+/// way, and an error among them, or a program that does not lower, ends the
+/// command before the first line runs, whether or not the line at fault
+/// would have been reached. So a script `petal check` rejects does not
+/// start, and one that starts is one `petal check` passes.
+///
+/// The load itself does not link, so that a program with both problems is
+/// told about its own errors before it is told this host cannot run it.
+pub(super) fn load_checked_or_die(
+    env: &mut Env,
+    json: bool,
+    ir: bool,
+    source: &str,
+    input: &SourceInput,
+) -> ProgramId {
+    // JSON IR is linked as it is loaded: its links are read off its calls.
+    let was_check_only = env.is_check_only();
+    env.set_check_only(!ir);
+    let pid = load_or_die(env, json, ir, source, input);
+    env.set_check_only(was_check_only);
+
+    let report = env.check_program(pid);
+    if let Some(program) = env.get_program(pid) {
+        // Stderr even in --json mode, so JSON consumers of stdout are
+        // unaffected.
+        eprint_warnings(program);
+        if let Some(e) = &report.lower_error {
+            die(json, e, "lower");
+        }
+        if !report.passed() {
+            if json {
+                let errors: Vec<_> = report
+                    .errors()
+                    .map(|d| {
+                        let file = program.source_map.file_name_for_span(&d.span);
+                        (d.clone(), file.map(str::to_string))
+                    })
+                    .collect();
+                die_error(
+                    json,
+                    &crate::error::LoadError::from_attributed_diagnostics(
+                        crate::error::Phase::Check,
+                        &errors,
+                    ),
+                    serde_json::Value::Null,
+                    source,
+                );
+            }
+            // The findings are already printed, each with its line.
+            if let Some(summary) = report.summary() {
+                eprintln!("{summary}; the program was not run");
+            }
+            process::exit(1);
+        }
+    }
+    if let Err(e) = env.link(pid) {
+        die_error(json, &e, serde_json::Value::Null, source);
+    }
+    pid
 }
 
 /// Compile `pid`'s program into a runnable stack, exiting on failure.

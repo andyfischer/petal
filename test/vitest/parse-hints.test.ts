@@ -7,7 +7,7 @@ import { runPetalError } from "./helpers";
 describe("word operators", () => {
   it("`and` at statement level, where it reaches the compiler", () => {
     const err = runPetalError("let a = true\nlet c = a and a\nprint(c)");
-    expect(err).toContain("Undefined variable: and");
+    expect(err).toContain("undefined variable `and`");
     expect(err).toContain("`&&`");
   });
 

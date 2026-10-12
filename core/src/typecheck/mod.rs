@@ -185,6 +185,13 @@ struct Checker<'a> {
     namespace_callee: Option<(SourceSpan, String)>,
     /// This module's own `native fn` declarations.
     own_natives: crate::native_decl::NativeDecls,
+    /// The top-level `fn`s of this module that take a native's name, with
+    /// the offset of the first declaration of each. Such a `fn` is not
+    /// hoisted: above its declaration the name still means the native
+    /// (`let native_max = max` followed by `fn max(r)`), and which of the two
+    /// a use up there reaches is the compiler's to say, not this pass's. See
+    /// [`Checker::above_shadowing_fn`].
+    shadowing_fns: HashMap<String, u32>,
 }
 
 /// What one module's own top-level `fn` declarations say, keyed by
@@ -318,7 +325,17 @@ fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
         callee: opts.callee,
         namespace_callee: None,
         own_natives: crate::native_decl::NativeDecls::collect(stmts),
+        shadowing_fns: HashMap::new(),
     };
+    for stmt in stmts {
+        if let StmtKind::FnDecl { name, class: None, .. } = &stmt.kind
+            && checker.native_decl(name).is_some()
+        {
+            let at = stmt.span.start.offset;
+            let first = checker.shadowing_fns.entry(name.clone()).or_insert(at);
+            *first = (*first).min(at);
+        }
+    }
     checker.bind_enum_names(stmts);
     for stmt in stmts {
         checker.check_stmt(stmt);
@@ -535,6 +552,9 @@ impl<'a> Checker<'a> {
     /// forward), and an un-shadowed module function, whose overloads are one
     /// candidate per declared arity.
     fn fn_candidates(&self, expr: &Expr) -> Vec<FnSignature> {
+        if self.above_shadowing_fn(expr) {
+            return Vec::new();
+        }
         match &expr.kind {
             ExprKind::Lambda { params, .. } => vec![FnSignature {
                 params: params
@@ -596,6 +616,20 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// Whether `expr` is a bare name used above this module's `fn` of that
+    /// name, where the `fn` takes the name from a native. The `fn` is not in
+    /// effect yet up there, so its signature says nothing about the use — and
+    /// neither does the native's, for a use the compiler holds back with the
+    /// declaration. Nothing is known, and nothing is checked.
+    fn above_shadowing_fn(&self, expr: &Expr) -> bool {
+        let ExprKind::Ident(name) = &expr.kind else {
+            return false;
+        };
+        self.shadowing_fns
+            .get(name)
+            .is_some_and(|&declared_at| expr.span.start.offset < declared_at)
+    }
+
     /// What `name` is declared as by a `native fn` this module can see: its
     /// own, an earlier module's (the compiler's accumulated set), or the
     /// bundled `core` package's.
@@ -649,6 +683,9 @@ impl<'a> Checker<'a> {
     /// not statically known, which is what leaves the runtime check as the
     /// only one.
     fn param_name_candidates(&self, expr: &Expr) -> Vec<Vec<String>> {
+        if self.above_shadowing_fn(expr) {
+            return Vec::new();
+        }
         match &expr.kind {
             ExprKind::Lambda { params, .. } => {
                 vec![params.iter().map(|p| p.name.clone()).collect()]
@@ -2064,6 +2101,7 @@ impl<'a> Checker<'a> {
         let native = match &function.kind {
             ExprKind::Ident(f)
                 if candidates.is_empty()
+                    && !self.above_shadowing_fn(function)
                     && self.lookup(f).is_none()
                     && !matches!(self.resolve_callee(function), Callee::Value | Callee::Fns(_)) =>
             {

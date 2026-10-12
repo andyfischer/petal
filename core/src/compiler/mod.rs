@@ -951,11 +951,43 @@ impl Compiler {
             .map(str::to_string)
             .collect();
         let module_key = module.name.clone().unwrap_or_default();
+        // Whether `std` (the core prelude) declares a function `name`. A
+        // binding of the same name from anywhere else does not replace the
+        // prelude's set, it joins it (docs/function-overloading.md, "Across
+        // modules"): the arities only the prelude has stay callable.
+        let std_declares = |name: &str| {
+            self.module_fns
+                .get(crate::env::STD_MODULE)
+                .is_some_and(|fns| fns.signatures.keys().any(|(n, _)| n == name))
+        };
         let resolve_callee = |ns: Option<&str>, name: &str| {
             use crate::typecheck::Callee;
             let fns_of = |m: &str| self.module_fns.get(m).map_or(Callee::Unknown, Callee::Fns);
+            // One module's tables speak for a bare name only when its set is
+            // the whole of what the name calls. A set that joined a
+            // lower-precedence one is answered by the compilation-wide
+            // tables, which hold every arity of both.
+            let alone = |home: &str| {
+                if home != crate::env::STD_MODULE && std_declares(name) {
+                    Callee::Unknown
+                } else {
+                    fns_of(home)
+                }
+            };
             let tid = match ns {
-                None if own_fns.contains(name) => return fns_of(&module_key),
+                None if own_fns.contains(name) => {
+                    // This module's declaration is not in scope yet, so the
+                    // scope answers with what it lands on: a function set of
+                    // another module's, which it joins.
+                    let joins_an_import = self.scope_lookup(name).is_some_and(|tid| {
+                        !self.native_terms.contains_key(&tid) && self.overload_view(tid).is_some()
+                    });
+                    return if joins_an_import {
+                        Callee::Unknown
+                    } else {
+                        alone(&module_key)
+                    };
+                }
                 None => self.scope_lookup(name),
                 Some(ns) => self
                     .module_aliases
@@ -966,7 +998,8 @@ impl Compiler {
                 return Callee::Unknown;
             };
             if let Some(home) = self.fn_homes.get(&tid) {
-                fns_of(home)
+                // A qualified call is that module's export and nothing else.
+                if ns.is_some() { fns_of(home) } else { alone(home) }
             } else if self.native_terms.contains_key(&tid) {
                 Callee::Native
             } else {

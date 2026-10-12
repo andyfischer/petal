@@ -281,6 +281,45 @@ pub(crate) struct Slot<T> {
 pub(crate) struct Slab<T> {
     slots: Vec<Slot<T>>,
     free: Vec<u32>,
+    /// An index over [`Slot::permanent`]: bit `i % 64` of word `i / 64` is set
+    /// iff slot `i` is permanent. The sweep and the budget walk read a word
+    /// here before touching its 64 slots and skip the permanent ones without
+    /// loading them, which is what makes a collection's cost independent of
+    /// how much frozen data the heap holds. May be shorter than
+    /// `slots.len() / 64`: a missing word reads as zero.
+    permanent_bits: Vec<u64>,
+    /// How many slots are permanent (the number of set bits above).
+    permanent_count: usize,
+}
+
+/// Call `f(index, slot)` for every slot that is not permanent, in index order,
+/// skipping the permanent ones a word of `permanent_bits` at a time.
+macro_rules! for_each_unfrozen_slot {
+    ($chunks:expr, $bits:expr, |$i:ident, $slot:ident| $body:block) => {
+        for (word, chunk) in $chunks.enumerate() {
+            let frozen = $bits.get(word).copied().unwrap_or(0);
+            if frozen == 0 {
+                for (offset, $slot) in chunk.into_iter().enumerate() {
+                    let $i = word * 64 + offset;
+                    $body
+                }
+            } else if frozen != u64::MAX {
+                let mut chunk = chunk.into_iter();
+                let mut next = 0usize;
+                let mut rest = !frozen;
+                while rest != 0 {
+                    let offset = rest.trailing_zeros() as usize;
+                    rest &= rest - 1;
+                    // `nth` consumes up to and including the slot at `offset`;
+                    // past the end of a short last chunk it yields nothing.
+                    let Some($slot) = chunk.nth(offset - next) else { break };
+                    next = offset + 1;
+                    let $i = word * 64 + offset;
+                    $body
+                }
+            }
+        }
+    };
 }
 
 impl<T> Slab<T> {
@@ -288,6 +327,8 @@ impl<T> Slab<T> {
         Slab {
             slots: Vec::new(),
             free: Vec::new(),
+            permanent_bits: Vec::new(),
+            permanent_count: 0,
         }
     }
 
@@ -376,9 +417,31 @@ impl<T> Slab<T> {
     /// Freezing, pass 2: clear the visited flag and, when `permanent`, make
     /// the object permanent.
     fn finish_freeze(&mut self, id: RawId, permanent: bool) {
-        let slot = &mut self.slots[id.index as usize];
+        let index = id.index as usize;
+        let slot = &mut self.slots[index];
         slot.gc_mark = false;
-        slot.permanent |= permanent;
+        if permanent && !slot.permanent {
+            slot.permanent = true;
+            let word = index / 64;
+            if self.permanent_bits.len() <= word {
+                self.permanent_bits.resize(word + 1, 0);
+            }
+            self.permanent_bits[word] |= 1u64 << (index % 64);
+            self.permanent_count += 1;
+        }
+    }
+
+    /// How many slots hold permanent objects. O(1).
+    pub(crate) fn permanent_count(&self) -> usize {
+        self.permanent_count
+    }
+
+    /// `f` on every slot that is not permanent (live or free), without
+    /// loading the permanent ones.
+    fn for_each_unfrozen(&self, mut f: impl FnMut(&Slot<T>)) {
+        for_each_unfrozen_slot!(self.slots.chunks(64), self.permanent_bits, |_i, slot| {
+            f(slot);
+        });
     }
 
     /// The payload `id` names, or `None` if it has been collected. For holders
@@ -450,9 +513,14 @@ impl<T> Slab<T> {
     /// fresh empty value (`*v = Vec::new()`) instead.
     pub(crate) fn sweep_with(&mut self, mut on_reclaim: impl FnMut(RawId, &mut T)) {
         self.free.clear();
-        for (i, slot) in self.slots.iter_mut().enumerate() {
+        let free = &mut self.free;
+        // Permanent slots are skipped unread: they are live, never marked
+        // (`mark` and `visit_for_freeze` both leave their mark bit clear) and
+        // never free, so there is nothing to reset, reclaim or list.
+        for_each_unfrozen_slot!(self.slots.chunks_mut(64), self.permanent_bits, |i, slot| {
+            debug_assert!(!slot.permanent, "permanent slot {i} missing from the index");
             if slot.alive {
-                if slot.gc_mark || slot.permanent {
+                if slot.gc_mark {
                     slot.gc_mark = false;
                     continue;
                 }
@@ -466,9 +534,9 @@ impl<T> Slab<T> {
             // Dead now or from an earlier sweep and never reused: free, unless
             // its generations are exhausted.
             if slot.high_water != u32::MAX {
-                self.free.push(i as u32);
+                free.push(i as u32);
             }
-        }
+        });
     }
 
     /// Reclaim every slot, keeping the generation history — the difference
@@ -480,6 +548,8 @@ impl<T> Slab<T> {
             // Clearing reclaims frozen objects too: the store is going away.
             slot.permanent = false;
         }
+        self.permanent_bits.clear();
+        self.permanent_count = 0;
         self.sweep_with(on_reclaim);
     }
 
@@ -669,8 +739,8 @@ impl FrozenCounts {
 /// charged separately, as [`SLOT_WALK_COST`].)
 const SLOT_TRACE_COST: u64 = 64;
 
-/// What walking one slot costs the sweep, live, free or permanent, in the
-/// same currency. Much less than tracing a live object — and it must stay
+/// What walking one slot costs the sweep, live or free, in the same currency
+/// (permanent slots are skipped, not walked). Much less than tracing a live object — and it must stay
 /// well under `SLOT_TRACE_COST / GC_HEAP_GROWTH`, or the budget grows with
 /// the slots its own garbage occupies (see `collection_cost`).
 const SLOT_WALK_COST: u64 = 8;
@@ -834,9 +904,11 @@ impl Heap {
 
     /// Estimated cost of running one collection right now: the live payload
     /// this heap would have to trace plus [`SLOT_TRACE_COST`] per live object
-    /// (permanent objects are neither traced nor swept, so they count for
-    /// nothing), plus [`SLOT_WALK_COST`] for every slot the sweep walks. O(slots)
-    /// — only called at the end of a sweep, which is already paying that walk.
+    /// plus [`SLOT_WALK_COST`] for every slot the sweep walks. Permanent
+    /// objects are neither traced nor walked (the sweep skips them through
+    /// the slab's bit index), so they count for nothing. O(slots that are not
+    /// permanent) — only called at the end of a sweep, which is already
+    /// paying that walk.
     ///
     /// Charging the full trace cost for *every* slot, live or free (as this
     /// once did), fed back on itself: a bigger budget lets more garbage pile
@@ -845,11 +917,16 @@ impl Heap {
     /// without bound.
     fn collection_cost(&self) -> u64 {
         fn traced<T>(slab: &Slab<T>, bytes: impl Fn(&T) -> u64) -> u64 {
-            slab.slots
-                .iter()
-                .filter(|s| s.alive && !s.permanent)
-                .map(|s| bytes(&s.data) + SLOT_TRACE_COST)
-                .sum()
+            let mut cost = 0;
+            slab.for_each_unfrozen(|s| {
+                if s.alive {
+                    cost += bytes(&s.data) + SLOT_TRACE_COST;
+                }
+            });
+            cost
+        }
+        fn walked<T>(slab: &Slab<T>) -> u64 {
+            (slab.slots.len() - slab.permanent_count()) as u64
         }
         let traced_cost = traced(&self.strings, |d| d.text.len() as u64)
             + traced(&self.lists, |d| value_slice_bytes(d.len()))
@@ -858,13 +935,13 @@ impl Heap {
             + traced(&self.maps, |d| map_entries_bytes(&d.entries))
             + traced(&self.elements, |_| 0)
             + traced(&self.cells, |_| 0);
-        let slots = (self.strings.slots.len()
-            + self.lists.slots.len()
-            + self.f64_arrays.slots.len()
-            + self.vec3s.slots.len()
-            + self.maps.slots.len()
-            + self.elements.slots.len()
-            + self.cells.slots.len()) as u64;
+        let slots = walked(&self.strings)
+            + walked(&self.lists)
+            + walked(&self.f64_arrays)
+            + walked(&self.vec3s)
+            + walked(&self.maps)
+            + walked(&self.elements)
+            + walked(&self.cells);
         traced_cost + SLOT_WALK_COST * slots
     }
 
@@ -1825,15 +1902,49 @@ impl Heap {
             }
         }
         let ok = error.is_none();
+        // What the newly frozen objects would have cost the next collection,
+        // as `collection_cost` prices them.
+        let mut released: u64 = 0;
         for o in &visited {
-            match *o {
-                Obj::S(id) => self.strings.finish_freeze(id, ok),
-                Obj::L(id) => self.lists.finish_freeze(id, ok),
-                Obj::F(id) => self.f64_arrays.finish_freeze(id, ok),
-                Obj::V(id) => self.vec3s.finish_freeze(id, ok),
-                Obj::M(id) => self.maps.finish_freeze(id, ok),
-                Obj::E(id) => self.elements.finish_freeze(id, ok),
-            }
+            let bytes = match *o {
+                Obj::S(id) => {
+                    self.strings.finish_freeze(id, ok);
+                    self.strings.get(id).text.len() as u64
+                }
+                Obj::L(id) => {
+                    self.lists.finish_freeze(id, ok);
+                    value_slice_bytes(self.lists.get(id).len())
+                }
+                Obj::F(id) => {
+                    self.f64_arrays.finish_freeze(id, ok);
+                    (self.f64_arrays.get(id).len() * std::mem::size_of::<f64>()) as u64
+                }
+                Obj::V(id) => {
+                    self.vec3s.finish_freeze(id, ok);
+                    VEC3_BYTES as u64
+                }
+                Obj::M(id) => {
+                    self.maps.finish_freeze(id, ok);
+                    map_entries_bytes(&self.maps.get(id).entries)
+                }
+                Obj::E(id) => {
+                    self.elements.finish_freeze(id, ok);
+                    0
+                }
+            };
+            released += bytes + SLOT_TRACE_COST + SLOT_WALK_COST;
+        }
+        if ok && released > 0 {
+            // The budget in force was sized by the last sweep, when these
+            // objects (if they existed) still had to be traced. Left alone it
+            // would let that much garbage pile up once more before the next
+            // collection: one long pause, and slabs grown to hold it that
+            // every later sweep then walks. Take the frozen objects' share
+            // out now. Objects allocated since that sweep were never in the
+            // budget, so this can undershoot; the floor bounds that, and the
+            // next sweep sets the exact figure.
+            self.gc_budget = GC_MIN_BUDGET_BYTES
+                .max(self.gc_budget.saturating_sub(GC_HEAP_GROWTH * released));
         }
         match error {
             Some(what) => Err(format!("freeze: the value holds {what}, which cannot be frozen")),
@@ -1844,10 +1955,10 @@ impl Heap {
     /// How many frozen objects this heap holds, per kind. A diagnostic: frozen
     /// objects are never reclaimed, so a count that keeps rising means a
     /// script is freezing values it builds repeatedly (per frame, per
-    /// reload) and leaking each one. O(slots).
+    /// reload) and leaking each one. O(1).
     pub fn frozen_counts(&self) -> FrozenCounts {
         fn count<T>(slab: &Slab<T>) -> usize {
-            slab.slots.iter().filter(|s| s.alive && s.permanent).count()
+            slab.permanent_count()
         }
         FrozenCounts {
             strings: count(&self.strings),
@@ -1869,7 +1980,12 @@ impl Heap {
             Value::Vec3(id) => self.vec3s.is_permanent(id.raw()),
             Value::Map(id) => self.maps.is_permanent(id.raw()),
             Value::Element(id) => self.elements.is_permanent(id.raw()),
-            Value::EnumVariant { data, .. } => self.lists.is_permanent(data.raw()),
+            // Both halves: every payload-free variant shares one payload
+            // list, so that list being permanent says nothing about this
+            // variant's tag.
+            Value::EnumVariant { tag, data } => {
+                self.strings.is_permanent(tag.raw()) && self.lists.is_permanent(data.raw())
+            }
             _ => false,
         }
     }
@@ -2898,6 +3014,159 @@ mod tests {
             "frozen data must not raise the collection budget: {} vs {plain_budget}",
             frozen.gc_budget
         );
+    }
+
+    /// The sweep skips permanent slots through the slab's bit index instead
+    /// of reading them. With frozen and unfrozen objects interleaved across
+    /// several 64-slot words (all-frozen, mixed, none, and a short last
+    /// word), it must still free exactly the unmarked unfrozen ones, keep
+    /// the marked ones, clear their marks, and rebuild the free list in
+    /// index order without a permanent slot on it.
+    #[test]
+    fn the_sweep_skips_frozen_slots_and_still_frees_the_rest() {
+        let mut heap = Heap::new();
+        let ids: Vec<ListId> = (0..200).map(|i| heap.alloc_list(vec![Value::Int(i)])).collect();
+        // 0..64 all frozen; 64..128 every third; 128..192 none; 192..200 two.
+        let is_frozen = |i: usize| i < 64 || (i < 128 && i % 3 == 0) || i == 193 || i == 199;
+        let is_kept = |i: usize| i % 5 == 0;
+        for (i, id) in ids.iter().enumerate() {
+            if is_frozen(i) {
+                assert_eq!(heap.freeze(Value::List(*id)), Ok(1));
+            }
+        }
+        let frozen_total = (0..200).filter(|&i| is_frozen(i)).count();
+        assert_eq!(heap.frozen_counts().lists, frozen_total);
+        assert_eq!(heap.lists.permanent_bits[0], u64::MAX);
+
+        for round in 0..3 {
+            for (i, id) in ids.iter().enumerate() {
+                if is_kept(i) {
+                    heap.mark_value(Value::List(*id));
+                }
+            }
+            heap.sweep();
+            let mut expect_free = Vec::new();
+            for (i, id) in ids.iter().enumerate() {
+                let live = is_frozen(i) || is_kept(i);
+                assert_eq!(heap.lists.is_live(id.raw()), live, "round {round}, slot {i}");
+                assert!(!heap.lists.slots[i].gc_mark, "round {round}: mark left on slot {i}");
+                assert_eq!(heap.lists.slots[i].permanent, is_frozen(i));
+                if live {
+                    assert_eq!(heap.get_list(*id), &[Value::Int(i as i64)]);
+                } else {
+                    expect_free.push(i as u32);
+                }
+            }
+            assert_eq!(heap.lists.free, expect_free, "round {round}");
+            assert_eq!(heap.frozen_counts().lists, frozen_total);
+        }
+
+        // New allocations reuse the freed slots and never a permanent one.
+        let free_before = heap.lists.free.len();
+        for _ in 0..free_before {
+            let id = heap.alloc_list(vec![]);
+            assert!(!is_frozen(id.index() as usize) && !is_kept(id.index() as usize));
+            assert!(!heap.is_frozen(Value::List(id)));
+        }
+        assert_eq!(heap.lists.slot_count(), 200);
+
+        // A fork carries the index with the bits it summarizes.
+        let mut child = heap.fork();
+        assert_eq!(child.lists.permanent_bits, heap.lists.permanent_bits);
+        child.sweep();
+        assert_eq!(child.lists.live_count(), frozen_total);
+    }
+
+    /// What a collection costs does not depend on how much frozen data the
+    /// heap holds: the budget walk charges nothing for it, and freezing the
+    /// last unfrozen object in a slab leaves that slab's walk empty.
+    #[test]
+    fn frozen_data_adds_nothing_to_the_collection_cost() {
+        let mut heap = Heap::new();
+        let rows: Vec<Value> = (0..1000)
+            .map(|i| {
+                let name = heap.alloc_string(format!("row {i}"));
+                let mut e = RecordMap::default();
+                e.insert("name".to_string(), Value::String(name));
+                Value::Map(heap.alloc_map(e))
+            })
+            .collect();
+        let table = heap.alloc_list(rows);
+        assert!(heap.collection_cost() > 1000 * SLOT_TRACE_COST);
+        assert_eq!(heap.freeze(Value::List(table)), Ok(2001));
+        assert_eq!(heap.collection_cost(), 0);
+        let mut visited = 0;
+        heap.maps.for_each_unfrozen(|_| visited += 1);
+        heap.strings.for_each_unfrozen(|_| visited += 1);
+        assert_eq!(visited, 0, "the walk must not load a permanent slot");
+
+        // One unfrozen object beside it is all the next collection pays for.
+        let loose = heap.alloc_list(vec![]);
+        assert_eq!(heap.collection_cost(), SLOT_TRACE_COST + SLOT_WALK_COST);
+        heap.mark_value(Value::List(loose));
+        heap.mark_value(Value::List(table));
+        heap.sweep();
+        assert!(heap.lists.is_live(loose.raw()) && heap.lists.is_live(table.raw()));
+        assert_eq!(heap.frozen_counts().total(), 2001);
+    }
+
+    /// Freezing takes the frozen objects' share out of the budget the last
+    /// sweep set. Otherwise a table built, collected and then frozen leaves
+    /// the collector waiting for a table's worth of garbage before it runs
+    /// again: the long pause freezing was meant to remove, once more, and
+    /// slabs grown to hold that garbage.
+    #[test]
+    fn freezing_lowers_the_budget_the_frozen_data_had_raised() {
+        let mut heap = Heap::new();
+        let rows: Vec<Value> = (0..50_000)
+            .map(|i| Value::List(heap.alloc_list(vec![Value::Int(i), Value::Int(i + 1)])))
+            .collect();
+        let table = heap.alloc_list(rows);
+        let loose = heap.alloc_list(vec![Value::Int(0); 1000]);
+        heap.mark_value(Value::List(table));
+        heap.mark_value(Value::List(loose));
+        heap.sweep();
+        let rooted_budget = heap.gc_budget;
+        assert!(rooted_budget > 4 * GC_MIN_BUDGET_BYTES, "{rooted_budget}");
+
+        heap.freeze(Value::List(table)).unwrap();
+        let after_freeze = heap.gc_budget;
+        heap.mark_value(Value::List(loose));
+        heap.sweep();
+        assert_eq!(
+            after_freeze, heap.gc_budget,
+            "freezing data the last sweep traced leaves the budget the next sweep would set"
+        );
+        assert_eq!(after_freeze, GC_MIN_BUDGET_BYTES);
+
+        // A failed freeze changes nothing, and neither does a repeated one.
+        let cell = heap.alloc_cell(Value::Int(1));
+        let bad = heap.alloc_list(vec![Value::List(loose), Value::Cell(cell)]);
+        heap.gc_budget = 10 * GC_MIN_BUDGET_BYTES;
+        assert!(heap.freeze(Value::List(bad)).is_err());
+        assert_eq!(heap.freeze(Value::List(table)), Ok(0));
+        assert_eq!(heap.gc_budget, 10 * GC_MIN_BUDGET_BYTES);
+    }
+
+    /// Every payload-free variant shares the heap's one empty payload list.
+    /// Once some frozen value holds such a variant that list is permanent,
+    /// but another variant with the same (empty) payload is not thereby
+    /// frozen: its tag is not.
+    #[test]
+    fn a_variant_is_frozen_only_when_its_tag_is_too() {
+        let mut heap = Heap::new();
+        let park = heap.alloc_string("Kind.park".to_string());
+        let data = heap.alloc_payload(&[]);
+        let held = Value::EnumVariant { tag: park, data };
+        let holder = heap.alloc_list(vec![held]);
+        heap.freeze(Value::List(holder)).unwrap();
+        assert!(heap.is_frozen(held));
+
+        let lake = heap.alloc_string("Kind.lake".to_string());
+        let other = Value::EnumVariant { tag: lake, data: heap.alloc_payload(&[]) };
+        assert!(!heap.is_frozen(other), "sharing the empty payload is not being frozen");
+        assert_eq!(heap.freeze(other), Ok(1), "only the tag was left to freeze");
+        assert!(heap.is_frozen(other));
     }
 
     /// Freezing a value that holds a closure fails and freezes nothing, and

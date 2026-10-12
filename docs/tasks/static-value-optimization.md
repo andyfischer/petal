@@ -143,34 +143,54 @@ What shipped (`fd1b18d` and the documentation commit after it):
   `heap::tests::a_fork_carries_the_frozen_bit` and
   `frozen_heap::fork_and_restore_carry_the_frozen_set`.
 
+A review pass the same day added three things (heap.rs, with tests):
+
+- **The sweep no longer reads frozen slots.** Each slab keeps one bit per
+  slot beside the slot's own flag (`Slab::permanent_bits`); the sweep and
+  `collection_cost` read a 64-slot word of it and skip the frozen slots
+  unread. This is what makes the pause independent of the frozen table; it
+  did not need the "frozen generation that can release objects" under Later.
+- **`freeze` lowers the budget in force** by the frozen objects' share. A
+  table built, collected and then frozen used to leave the collector waiting
+  for a table's worth of garbage before its next run (one long pause, and
+  slabs grown to hold that garbage, walked by every later sweep).
+- **`frozen(variant)` checks the tag as well as the payload.** Every
+  payload-free variant shares one payload list, so after any frozen value
+  held one, `frozen` answered true for all of them.
+
 Measured (one machine, under load from other builds; `docs/dev/performance.md`
 has the tables):
 
 | | Before | After, rooted | After, frozen |
 |---|---|---|---|
-| Pause per collection, 100,000 records, 2,000,000 short-lived records allocated (`tools/bench-gc-pause.ts`) | 30.0 ms (3 collections, 90 ms) | 17.3 ms (5 collections, 87 ms) | 2.6 ms (44 collections, 114 ms) |
-| The same with 10,000 records | 9.5 ms (7 collections, 66 ms) | 1.3 ms (42 collections, 54 ms) | 0.19 ms (351 collections, 68 ms) |
-| One collection, 100,000 records, nothing to free (`cargo run --release --example gc_pause`) | — | 2.47 ms | 0.37 ms |
+| Pause per collection, 100,000 records, 2,000,000 short-lived records allocated (`tools/bench-gc-pause.ts`) | 30.0 ms (3 collections, 90 ms) | 13.5 ms (5 collections, 68 ms) | 0.24 ms (385 collections, 93 ms) |
+| The same with 10,000 records | 9.5 ms (7 collections, 66 ms) | 1.10 ms (42 collections, 46 ms) | 0.11 ms (385 collections, 42 ms) |
+| One collection, 100,000 records, nothing to free (`cargo run --release --example gc_pause`) | — | 2.13 ms | 0.009 ms |
+| The same with 400,000 records | — | 9.21 ms | 0.034 ms |
 
-The baseline below (10.0 ms and 1.06 ms) came from a scratch script that is
-gone; the recreated benchmark has three heap objects a record and a heavier
-allocation phase, so its "before" is 30 ms and 9.5 ms. The rooted column
-moved without freezing because of the `collection_cost` change.
+The "Before" column is the implementer's run at `42142fd`, taken under
+heavier load than the other two; the plan's own baseline below (10.0 ms and
+1.06 ms) came from a scratch script that is gone, and the recreated benchmark
+has three heap objects a record and a heavier allocation phase. The rooted
+column moved without freezing because of the `collection_cost` change.
 
-Two things the numbers say that the "done when" did not expect:
+Against the "done when":
 
-- **The frozen pause still grows with the table**, at about a seventh of the
-  rooted rate (0.37 ms against 2.47 ms for 100,000 records): the sweep and
-  `collection_cost` still walk every frozen slot. Making it flat needs frozen
-  objects kept where the sweep does not look, which is the "frozen generation
-  that can release objects" under Later.
-- **Total collection time does not fall** (114 ms frozen against 87 ms
-  rooted): it is dominated by freeing garbage, and the smaller budget means
-  more collections, each paying the slot walk. Freezing shortens pauses; it
-  does not buy throughput. `SLOT_WALK_COST` (8) is on the low side of what
-  the walk measures against a trace (about 15 on the same scale); raising it
-  would halve the collection count and double the pause. Left as Cheesecake
-  tuned it.
+- **The frozen pause no longer scales with the table.** One collection with
+  nothing to free costs 9 µs with 100,000 frozen records (a scan of the bit
+  index, 1/240 of the rooted cost). In the script benchmark the frozen runs
+  collect on the same schedule at both sizes. The remaining 0.11 ms against
+  0.24 ms there is not frozen data: building each row's name leaves a dead
+  temporary string, so 100,000 *free* string slots sit between the frozen
+  ones and the sweep walks free slots. With the name a literal both sizes
+  measure about 0.12 ms.
+- **Total collection time is about the same frozen or not**: it is what
+  freeing the garbage costs. Freezing shortens pauses; it does not buy
+  throughput. `SLOT_WALK_COST` is left at 8, as Cheesecake tuned it.
+- **Left for later, on evidence:** a sweep that does not walk free slots (it
+  rebuilds the free list from them on every collection). It is independent
+  of freezing and changes slot reuse order, which `inherit_generations`
+  relies on.
 
 Not done: Cheesecake's 344-test suite on a re-vendored tree (item 5, in
 their repository). For that re-vendor: the local modification drops out

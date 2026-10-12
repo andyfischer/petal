@@ -272,24 +272,29 @@ the more garbage is allowed to pile up before the next one. A big rooted table
 therefore makes every pause longer twice over.
 
 `freeze(v)` ([Builtins.md](../Builtins.md#frozen-data)) moves a value into a
-frozen generation: the marker stops at it, the sweep keeps it, and
-`collection_cost` does not count it, so the budget goes back to what the rest
-of the program needs.
+frozen generation, and a collection then does no work for it at all:
+
+- the marker stops at a frozen object;
+- the sweep does not read a frozen slot. Each slab keeps one bit per slot
+  (`Slab::permanent_bits`) and the sweep reads a 64-slot word of it before
+  touching the slots, skipping the frozen ones;
+- `collection_cost` skips them the same way, so the budget goes back to what
+  the rest of the program needs;
+- `freeze` itself takes the frozen objects' share out of the budget in force,
+  so a table that was built, collected and then frozen does not leave the
+  collector waiting for a table's worth of garbage before it runs again.
 
 **One collection, nothing to free** (`cd core && cargo run --release --example
 gc_pause`; the table is the only root, three heap objects a record):
 
 | Records | Rooted | Frozen |
 |---|---|---|
-| 10,000 | 0.20 ms | 0.03 ms |
-| 100,000 | 2.47 ms | 0.37 ms |
-| 400,000 | 10.4 ms | 3.0 ms |
+| 10,000 | 0.49 ms | 0.002 ms |
+| 100,000 | 2.13 ms | 0.009 ms |
+| 400,000 | 9.21 ms | 0.034 ms |
 
-Freezing removes the mark, which is about six sevenths of the cost up to
-100,000 records. What is left is the sweep and `collection_cost` each walking
-the frozen slots, so the frozen figure still grows with the table: a frozen
-object is skipped, not moved somewhere the sweep does not look. (At 400,000
-records the slabs no longer fit in cache and the walk costs more per slot.)
+What is left of the frozen figure is the scan of the bit index, one word for
+64 slots: about 1/240 of the rooted cost at every size.
 
 **Under allocation** (`./tools/bench-gc-pause.ts`, which runs
 `test/benchmarks/micro/gc_rooted_table.ptl`: the same table in a top-level
@@ -298,28 +303,37 @@ are subtracted):
 
 | Records | Table | Collections | GC total | Pause per collection |
 |---|---|---|---|---|
-| 10,000 | rooted | 42 | 54 ms | 1.3 ms |
-| 10,000 | frozen | 351 | 68 ms | 0.19 ms |
-| 100,000 | rooted | 5 | 87 ms | 17.3 ms |
-| 100,000 | frozen | 44 | 114 ms | 2.6 ms |
+| 10,000 | rooted | 42 | 46 ms | 1.10 ms |
+| 10,000 | frozen | 385 | 42 ms | 0.11 ms |
+| 100,000 | rooted | 5 | 68 ms | 13.5 ms |
+| 100,000 | frozen | 385 | 93 ms | 0.24 ms |
 
-The pause with 100,000 records drops from 17.3 ms to 2.6 ms. The total does
-not drop, and here it rises by about a quarter: almost all of the total is
-freeing the 4,000,000 garbage objects, which costs the same either way, and
-the frozen run pays the slot walk 44 times where the rooted run paid the mark
-5 times. Freezing trades a few long pauses for many short ones; it is for
-frame-paced programs, not for throughput.
+The pause with 100,000 records drops from 13.5 ms to 0.24 ms, and the frozen
+runs collect on the same schedule at both sizes (385 collections: the budget
+is the floor, as it would be with no table at all).
+
+The frozen pause is not quite the same at the two sizes, and the difference
+is not the frozen data. Building each row's name (`"row " ++ str(i)`) leaves
+one dead temporary string per row, so the string slab ends up with 100,000
+free slots between the frozen ones, and the sweep walks free slots on every
+collection (it rebuilds the free list from them). With the name a literal
+the 100,000-record frozen run measures 0.12 ms a collection, the same as
+10,000. Nothing in this benchmark allocates strings afterwards; a program
+that does reuses those slots. Total collection time is about what the
+garbage costs to free either way: freezing shortens pauses and does not buy
+throughput.
 
 Before the frozen generation landed, the same rooted runs measured 9.5 ms a
 collection (7 collections) with 10,000 records and 30 ms (3 collections) with
-100,000. The difference on the rooted rows above is the budget, not freezing:
-`collection_cost` used to charge the full trace cost for every slot, free
-ones included, so the garbage a large budget let pile up raised the next
-budget. It now charges live, unfrozen objects plus a small per-slot walk cost
-(`SLOT_WALK_COST`). `heap::tests::steady_garbage_keeps_a_steady_heap` holds
-that a steady allocator reaches a steady slot count. The eight
-`test/benchmarks/*.ptl` programs are unchanged within noise (`spreadsheet.ptl`
-runs 9 collections where it ran 6, for 1.1 ms against 1.0 ms).
+100,000 (measured earlier, under different load). Part of the difference on the
+rooted rows above is the budget, not freezing: `collection_cost` used to
+charge the full trace cost for every slot, free ones included, so the garbage
+a large budget let pile up raised the next budget. It now charges live,
+unfrozen objects plus a small per-slot walk cost (`SLOT_WALK_COST`).
+`heap::tests::steady_garbage_keeps_a_steady_heap` holds that a steady
+allocator reaches a steady slot count. Of the eight `test/benchmarks/*.ptl`
+programs, three collect at all: `spreadsheet.ptl` 9 times for 1.1 ms,
+`audio_synth.ptl` 621 times for 3.1 ms, `particles.ptl` 4 times for 0.3 ms.
 
 All figures are from one machine under load from other builds; read them as
 ratios.

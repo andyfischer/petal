@@ -1356,9 +1356,10 @@ The limits are part of the contract:
 - **A hot reload keeps frozen values**, like the rest of the heap. A table
   that is rebuilt after a reload and frozen again leaves the old one
   allocated.
-- **Freezing does not make collections free.** The collector still walks past
-  a frozen value's slots when it sweeps, at roughly a seventh of the cost of
-  visiting them.
+- **Freezing removes the value from a collection's work, not the rest of the
+  heap.** A collection afterwards costs what the unfrozen data and the garbage
+  cost. Freeze a table as soon as it is built: until then it is ordinary data
+  and every collection during the build visits it.
 
 A forked execution (and a snapshot restored from one) carries the frozen
 values it was taken with.

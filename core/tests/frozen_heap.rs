@@ -62,6 +62,21 @@ fn freezing_is_transitive() {
     );
 }
 
+/// `frozen` on an enum variant asks about the variant, not about the payload
+/// list every payload-free variant shares: freezing a table that holds
+/// `Kind.park` must not make `Kind.lake` read as frozen.
+#[test]
+fn a_variant_is_frozen_only_if_it_was_frozen() {
+    expect_both(
+        "enum Kind\n  park,\n  lake,\n  tower(h),\nend\n\
+         let t = freeze([Kind.park, Kind.tower(3)])\n\
+         print(frozen(t[0]), frozen(t[1]), frozen(Kind.lake), frozen(Kind.tower(3)))\n\
+         let l = freeze(Kind.lake)\n\
+         print(frozen(l), l == Kind.lake)\n",
+        "true true false false\ntrue true",
+    );
+}
+
 /// The escape analysis plans `append` / `drop_last` / a field update on a fresh
 /// local in place. On a frozen value each must copy instead: the frozen
 /// value is unchanged and the result is a new, unfrozen value.

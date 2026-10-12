@@ -93,8 +93,9 @@ way, for code written against an earlier checkout.
 - A frozen heap generation for data that lives as long as the program:
   `freeze(value)` makes a value and everything it holds permanent, so the
   collector neither traces nor frees it, and `frozen(value)` asks. With a
-  rooted table of 100,000 records the pause per collection goes from 17 ms to
-  2.6 ms. Freezing is one-way (a frozen value is never freed), a value holding
+  rooted table of 100,000 records the pause per collection goes from 13.5 ms
+  to 0.24 ms, and a collection with nothing to free from 2.1 ms to 0.009 ms:
+  the sweep skips frozen slots through a bit index instead of reading them. Freezing is one-way (a frozen value is never freed), a value holding
   a function or a `var` cell is refused, and an update of a frozen value
   copies. See [docs/Builtins.md](docs/Builtins.md#frozen-data).
 - The collector's budget counts live objects plus a small cost per slot, where

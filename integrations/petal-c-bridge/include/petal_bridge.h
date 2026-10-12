@@ -856,6 +856,27 @@ pb_status pb_vm_get_state(pb_vm* vm, const char* name, const pb_value** out);
  * next run. */
 pb_status pb_vm_set_memo(pb_vm* vm, bool on);
 bool pb_vm_memo(pb_vm* vm);
+/* The static-value cache (on by default, or as PETAL_POLICY says): a
+ * top-level value that depends on no dynamic data (a table of literals, one
+ * built from other such tables by functions that read nothing else, a
+ * `const`) is built by the first run after a load or a reload and kept for
+ * the runs after it. Output is the same either way. Setting it takes effect
+ * at the next run, which lowers the program again. pb_vm_static_cache says
+ * whether runs keep values right now. */
+pb_status pb_vm_set_static_cache(pb_vm* vm, bool on);
+bool pb_vm_static_cache(pb_vm* vm);
+/* Drop every kept static value; the next run builds them again. A reload
+ * does this itself. For a host that changed something a native it
+ * registered PB_FX_CONST answers from, which the cache cannot see. */
+pb_status pb_vm_clear_static_values(pb_vm* vm);
+/* What the cache holds, as a JSON object: "enabled", "slots", "filled",
+ * "runs", "skips", "skipped_instructions", "clears" (counters since the
+ * program was loaded), "rejected" (every value that could not be kept, as
+ * {"name", "at", "const", "holds"}; such a value is built on every run) and
+ * "warnings" (the rejections in words; only those no earlier call handed
+ * out since the last load or reload, so log them after a frame and each is
+ * said once). Valid until the next call to this function. */
+const char* pb_vm_static_values_json(pb_vm* vm);
 /* The VM profiler (off by default): instructions per opcode and per function,
  * native calls and the time spent in them, collections. Turning it on clears
  * earlier counts; while on, every run pays a per-instruction hook (roughly 2x

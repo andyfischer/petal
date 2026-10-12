@@ -99,6 +99,7 @@ pub struct Vm {
     reload_json: CString,
     source_text: CString,
     profile_report: CString,
+    static_values_json: CString,
     /// The memo counters when profiling was last turned on: the report shows
     /// what the measured runs added.
     profile_memo_start: Option<petal::memo::MemoStats>,
@@ -145,6 +146,7 @@ impl Vm {
             reload_json: CString::default(),
             source_text: CString::default(),
             profile_report: CString::default(),
+            static_values_json: CString::default(),
             profile_memo_start: None,
             package_name: CString::default(),
             interface_report: CString::default(),
@@ -1608,6 +1610,100 @@ pub extern "C" fn pb_vm_set_memo(vm: *mut VmHandle, on: bool) -> Status {
 #[unsafe(no_mangle)]
 pub extern "C" fn pb_vm_memo(vm: *mut VmHandle) -> bool {
     with_vm(vm, false, |vm| Ok(vm.env.policy().memo)).1
+}
+
+/// Turn the static-value cache on or off for this VM's runs (the
+/// [`OptFlags::static_cache`](petal::backend::OptFlags) switch; on by
+/// default, or as `PETAL_POLICY` says). With it on, a top-level value that
+/// depends on no dynamic data is built by the first run after a load or a
+/// reload and kept for the runs after it. Output is the same either way.
+/// Takes effect at the next run, which lowers the program again.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_set_static_cache(vm: *mut VmHandle, on: bool) -> Status {
+    with_vm(vm, (), |vm| {
+        vm.env.set_static_cache(on);
+        Ok(())
+    })
+    .0
+}
+
+/// Whether runs keep static values right now (see
+/// [`pb_vm_set_static_cache`]): the switch is on and nothing that reads
+/// per-instruction results is.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_static_cache(vm: *mut VmHandle) -> bool {
+    with_vm(vm, false, |vm| Ok(vm.env.static_cache_enabled())).1
+}
+
+/// Drop every static value the loaded program's stack keeps; the next run
+/// builds them again. A reload does this itself. This is for a host that
+/// changed something a native it registered `PB_FX_CONST` answers from,
+/// which is the one thing the cache cannot see.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_clear_static_values(vm: *mut VmHandle) -> Status {
+    with_vm(vm, (), |vm| {
+        let stack = vm.loaded()?.stack_id;
+        vm.env.clear_static_values(stack);
+        Ok(())
+    })
+    .0
+}
+
+/// What the static-value cache holds for the loaded program, as JSON:
+///
+/// ```json
+/// {"enabled": true, "slots": 12, "filled": 11, "runs": 4,
+///  "skips": 96, "skipped_instructions": 4810, "clears": 1,
+///  "rejected": [{"name": "ICONS", "at": "ui.ptl:12", "const": true,
+///                "holds": "a function"}],
+///  "warnings": ["const ICONS (ui.ptl:12) holds a function, ..."]}
+/// ```
+///
+/// `rejected` lists every value that could not be kept and is therefore
+/// built on every run; `warnings` is the same in words, and only what was
+/// not handed out by an earlier call since the last load or reload, so a
+/// host can log it after each frame and say each thing once. The counters
+/// are since the stack was created. Valid until the next call.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_static_values_json(vm: *mut VmHandle) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        let stack = vm.loaded()?.stack_id;
+        let warnings = vm.env.take_static_warnings(stack);
+        let values = vm.env.static_values(stack).unwrap_or_default();
+        let filled = values
+            .slots
+            .iter()
+            .filter(|(_, s)| matches!(s, petal::env::StaticSlotState::Filled(_)))
+            .count();
+        let rejected: Vec<serde_json::Value> = values
+            .slots
+            .iter()
+            .filter_map(|(info, state)| match state {
+                petal::env::StaticSlotState::Rejected(what) => Some(serde_json::json!({
+                    "name": info.name,
+                    "at": info.at,
+                    "const": info.is_const,
+                    "holds": what,
+                })),
+                _ => None,
+            })
+            .collect();
+        let text = serde_json::json!({
+            "enabled": vm.env.static_cache_enabled(),
+            "slots": values.slots.len(),
+            "filled": filled,
+            "runs": values.runs,
+            "skips": values.stats.skips,
+            "skipped_instructions": values.stats.skipped_instructions,
+            "clears": values.stats.clears,
+            "rejected": rejected,
+            "warnings": warnings,
+        })
+        .to_string();
+        vm.static_values_json = cstring_lossy(&text);
+        Ok(vm.static_values_json.as_ptr())
+    })
+    .1
 }
 
 /// Turn the VM profiler on or off. Turning it on clears earlier counts.

@@ -705,6 +705,17 @@ public:
     // Call memoization (see pb_vm_set_memo); on by default.
     void set_memo(bool on) { check(pb_vm_set_memo(vm_, on)); }
     bool memo() const { return pb_vm_memo(vm_); }
+    // The static-value cache (see pb_vm_set_static_cache); on by default.
+    void set_static_cache(bool on) { check(pb_vm_set_static_cache(vm_, on)); }
+    bool static_cache() const { return pb_vm_static_cache(vm_); }
+    void clear_static_values() { check(pb_vm_clear_static_values(vm_)); }
+    // Counters, the values that could not be kept, and the warnings not yet
+    // handed out (see pb_vm_static_values_json).
+    std::string static_values_json() {
+        const char* s = pb_vm_static_values_json(vm_);
+        if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
+        return s;
+    }
     // The VM profiler (see pb_vm_set_profiling / pb_vm_profile_report).
     void set_profiling(bool on) { check(pb_vm_set_profiling(vm_, on)); }
     std::string profile_report(size_t top_n = 20) {

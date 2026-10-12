@@ -134,6 +134,35 @@ TEST(memo_switch_keeps_output_and_state) {
     CHECK_EQ(run_out(vm), (std::vector<double>{4, 8, 40}));
 }
 
+TEST(static_cache_switch_keeps_output_and_reports) {
+    petal::Vm vm;
+    vm.load_source(
+        "import io; const ROWS = [[1, 2], [3, 4], [5, 6]]\n"
+        "state n = 0\n"
+        "n += 1\n"
+        "push_output(symbol(\"out\"), ROWS[n % 3][1] + n)\n");
+    CHECK(vm.static_cache());
+    CHECK_EQ(run_out(vm), std::vector<double>{5});
+    CHECK_EQ(run_out(vm), std::vector<double>{8});
+    std::string report = vm.static_values_json();
+    CHECK(report.find("\"enabled\":true") != std::string::npos);
+    // The second run skipped what the first one built.
+    CHECK(report.find("\"skips\":0,") == std::string::npos);
+    CHECK(report.find("\"filled\":0,") == std::string::npos);
+    CHECK(report.find("\"rejected\":[]") != std::string::npos);
+    // Clearing rebuilds the table on the next run; switching the cache off
+    // (and back on) changes nothing a program can see.
+    vm.clear_static_values();
+    CHECK_EQ(run_out(vm), std::vector<double>{5});
+    vm.set_static_cache(false);
+    CHECK(!vm.static_cache());
+    CHECK_EQ(run_out(vm), std::vector<double>{8});
+    CHECK(std::string(vm.static_values_json()).find("\"slots\":0") != std::string::npos);
+    vm.set_static_cache(true);
+    CHECK_EQ(run_out(vm), std::vector<double>{11});
+    CHECK_EQ(run_out(vm), std::vector<double>{8});
+}
+
 TEST(profiler_reports_functions_and_natives) {
     petal::Vm vm;
     vm.load_source(

@@ -129,4 +129,6 @@ mod cell_fuzz;
 #[cfg(test)]
 mod fuzz;
 #[cfg(test)]
+mod static_fuzz;
+#[cfg(test)]
 mod tests;

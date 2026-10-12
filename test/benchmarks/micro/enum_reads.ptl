@@ -1,0 +1,104 @@
+// Micro-benchmark: what a read of enum data costs, against a record field
+// read and an empty loop. Each function runs N iterations of one read, so a
+// call's time over N, less `empty_loop`'s, is the cost of that read.
+//
+//   petal bench --iters 30 test/benchmarks/micro/enum_reads.ptl \
+//     --fn empty_loop --fn record_read --fn local_read --fn path_read \
+//     --fn payload_read --fn all_read --fn all_walk
+//
+// Figures are in docs/dev/performance.md (Enum data reads).
+
+enum K
+  a(code: 1, label: "a"),
+  b(code: 2, label: "b"),
+  c(code: 3, label: "c"),
+  d(code: 4, label: "d"),
+  v(code: 5, label: "v"),
+  w(code: 6, label: "w"),
+  x(code: 7, label: "x"),
+  y(code: 8, label: "y"),
+end
+
+enum Op
+  move(dx, dy),
+  rest,
+end
+
+let N = 200000
+
+// The loop and the accumulator on their own.
+fn empty_loop()
+  var sum = 0
+  for i in range(0, N) do
+    set sum = sum + 1
+  end
+  sum
+end
+
+// A record field read: the figure the enum reads are compared to.
+fn record_read()
+  let r = { code: 5, label: "v" }
+  var sum = 0
+  for i in range(0, N) do
+    set sum = sum + r.code
+  end
+  sum
+end
+
+// `k.code` with the variant in a local.
+fn local_read()
+  let k = K.v
+  var sum = 0
+  for i in range(0, N) do
+    set sum = sum + k.code
+  end
+  sum
+end
+
+// `K.v.code`, written out at the read.
+fn path_read()
+  var sum = 0
+  for i in range(0, N) do
+    set sum = sum + K.v.code
+  end
+  sum
+end
+
+// A payload field read by name.
+fn payload_read()
+  let op = Op.move(3, 4)
+  var sum = 0
+  for i in range(0, N) do
+    set sum = sum + op.dy
+  end
+  sum
+end
+
+// `K.all`, read and dropped.
+fn all_read()
+  var sum = 0
+  for i in range(0, N) do
+    let all = K.all
+    set sum = sum + 1
+  end
+  sum
+end
+
+// `k.code` over every variant: a read site that sees all of them.
+fn all_walk()
+  var sum = 0
+  for i in range(0, N / 8) do
+    for k in K.all do
+      set sum = sum + k.code
+    end
+  end
+  sum
+end
+
+print(empty_loop())
+print(record_read())
+print(local_read())
+print(path_read())
+print(payload_read())
+print(all_read())
+print(all_walk())

@@ -280,8 +280,25 @@ Matching"):
 - `match` on string literals, int literals and variants is entered through a
   hash jump: a 40-arm match went from about 410 ns to about 30 ns.
 
-Cheesecake gets all of it when it next vendors Petal. Nothing in the game
-breaks on the way, since it declares no enum.
+Cheesecake vendored it the same day, and nothing in the game broke, since it
+declared no enum and every `match` it had ended in `when _ ->`. The game then
+adopted it (cheesecake `docs/moses-debrief.md`, section 6): the four parallel
+tables are enums with data, and 96 `if`/`elsif` chains are matches. What that
+found:
+
+- A data read on a written variant is not folded: `Fabric.pier.code` builds
+  the variant and looks its data up by tag, about 70 ns against about 4 ns
+  for a field of a record. The game keeps int tables built from the enums for
+  its tile loops. `Kind.all` likewise builds its list on every read.
+- `let F = config.Fabric` makes `F.rurl` an ordinary field read: the unknown
+  variant is a runtime error, not a compile error, and `petal check` says
+  nothing. Only the enum's own name (or `import ./config: Fabric`) is held to
+  its variants.
+- `3 == Use.road` is false without a warning; a grid of ints compared against
+  variants would fail silently.
+- `prefer-match` converts one-expression chains only, by choice. 55 of the 96
+  chains had statement bodies, `||` alternatives or one `&&` condition (a
+  guard), and were converted by a script.
 
 ### 3.4 Data structures (items 9 and 10)
 

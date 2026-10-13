@@ -801,6 +801,36 @@ let more = append(items, 3)   // more is [1, 2, 3]; items is still [1, 2]
 items = append(items, 3)      // grow an accumulator by rebinding
 ```
 
+**Appending in a loop is linear.** When the binding being rebound is the
+list's only holder, `append` adds to the list where it is instead of copying
+it, so building a list of `n` elements this way costs `n` appends, not
+`n²/2` element copies. That covers a `let` rebound with `=`
+(`xs = append(xs, v)`, `append(@xs, v)`), a `var` or a `state var` written
+with `set` (`set xs = append(xs, v)`, `set xs = append(get xs, v)`), inside a
+function or at the top level, and with reads of the list between the
+appends. 10,000, 20,000 and 40,000 appends take 3.6, 4.0 and 4.9 ms as a
+whole `petal run`, start-up included. There is no need to collect pieces
+some other way and join them at the end.
+
+Giving the list to something else is still free of surprises: `let snap =
+xs` keeps what it read, and the next `append` pays for one copy before
+carrying on in place. Three shapes still copy the whole list on **every**
+append, and are quadratic (35, 127 and 565 ms for the same three sizes):
+
+```petal
+set r.items = append(r.items, v)     // a list held in a record field
+set grid[k] = append(grid[k], v)     // a list held in another list
+set xs = add(xs, v)                  // through a function: fn add(xs, v) return append(xs, v) end
+```
+
+For those, build the list in a `var` of its own and store it once the loop
+is done, or have the helper write the `var` itself (`fn add(v) set xs =
+append(get xs, v) end`, called as a statement). A call inside the appended
+value copies too, `set xs = append(xs, f(x))`, unless it is one of `float`,
+`int`, `min`, `max`, `clamp`, `abs`, `floor`, `len` or `type`; bind
+`let v = f(x)` first. The rules are in the language guide under
+[`var`](language-guide.md#var-a-binding-functions-can-assign).
+
 ### `push(list, value)`
 
 Deprecated alias for [`append`](#appendlist-value). Like `append` it returns a

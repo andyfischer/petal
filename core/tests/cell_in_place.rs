@@ -218,6 +218,80 @@ fn the_cell_accumulator_does_not_copy_per_append() {
     );
 }
 
+/// A trivial builtin in the written value (`float`, `int`, `min`, `max`,
+/// `clamp`, `abs`, `floor`, `len`, `type`) runs no script code and reaches
+/// no cell, so the window from the read to the write stays closed.
+#[test]
+fn a_trivial_builtin_in_the_written_value_does_not_copy_per_write() {
+    for (shape, value) in [
+        ("float", "float(i)"),
+        ("int", "int(i * 0.5)"),
+        ("min", "min(i, 7)"),
+        ("max", "max(i, 7)"),
+        ("clamp", "clamp(i, 2, 9)"),
+        ("abs", "abs(0 - i)"),
+        ("floor", "floor(i * 0.5)"),
+        ("len", "len([i, i])"),
+        ("type", "type(i)"),
+        ("nested", "{at: float(i), size: min(abs(i), 3)}"),
+    ] {
+        assert_copies_at_most(
+            &format!("set xs = append(xs, {value})"),
+            2,
+            &format!(
+                "var xs = []\nfor i in range(0, {N}) do\n  set xs = append(xs, {value})\nend\nprint(len(xs))"
+            ),
+        );
+        assert_copies_at_most(
+            &format!("add(i) appending {value}, {shape}"),
+            2,
+            &format!(
+                "var xs = []\nfn add(i)\n  set xs = append(get xs, {value})\nend\n\
+                 for i in range(0, {N}) do\n  add(i)\nend\nprint(len(xs))"
+            ),
+        );
+        assert_copies_at_most(
+            &format!("set xs[i] = {value}"),
+            2,
+            &format!(
+                "var xs = range(0, {N})\nfn put(i)\n  set xs[i] = {value}\nend\n\
+                 for i in range(0, {N}) do\n  put(i)\nend\nprint(len(xs))"
+            ),
+        );
+    }
+}
+
+/// The same writes are still writes of values: a snapshot keeps what it
+/// took, a failing builtin leaves the cell as it was, and a user function
+/// or a builtin that takes one still closes nothing.
+#[test]
+fn a_trivial_builtin_in_the_written_value_changes_no_result() {
+    assert_prints(
+        "var xs = [1]\nlet snap = xs\nset xs = append(xs, float(len(xs)))\n\
+         let snap2 = xs\nset xs = append(xs, max(len(xs), 9))\nset xs[0] = type(xs[1])\n\
+         print(snap, snap2, xs)",
+        "[1] [1, 1.0] [\"float\", 1.0, 9]",
+    );
+    // `len(xs)` reads the list the append is about to change.
+    assert_prints(
+        "var xs = []\nfor i in range(0, 5) do\n  set xs = append(xs, len(xs) * 2)\nend\nprint(xs)",
+        "[0, 2, 4, 6, 8]",
+    );
+    // A user function of the same name is a call, with a call's rules.
+    assert_prints(
+        "var xs = [1]\nfn float(x)\n  set xs = append(get xs, 7)\n  8\nend\n\
+         fn go()\n  set xs = append(get xs, float(1))\nend\ngo()\nprint(xs)",
+        "[1, 8]",
+    );
+    // The builtin fails between the read and the write: nothing was written.
+    let code = "state var xs = [1, 2]\nstate n = 0\nn = n + 1\n\
+                fn add(v)\n  set xs = append(get xs, float(v))\nend\n\
+                add(n)\nif n == 3 then\n  add(nil)\nend\nprint(xs)";
+    let fast = run_frames(code, RunPolicy::FAST, 5);
+    assert_eq!(fast, run_frames(code, RunPolicy::BASELINE, 5));
+    assert!(fast.0.iter().any(|l| l.contains("Expected float")), "{:?}", fast.0);
+}
+
 #[test]
 fn a_nested_write_copies_the_inner_container_only() {
     if !DUP_STATS_ENABLED {

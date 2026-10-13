@@ -98,7 +98,10 @@
 //!
 //! ## What does not fire
 //! * `set xs = append(xs, f(x))` — the call sits between the read and the
-//!   write. Bind the argument first.
+//!   write. Bind the argument first. The exceptions are the trivial builtins
+//!   ([`is_trivial_call`]: `float`, `int`, `min`, `max`, `clamp`, `abs`,
+//!   `floor`, `len`, `type`), which cannot run script code or reach a cell
+//!   and so may sit in a window like the arithmetic they stand in for.
 //! * The inner containers of a nested write. `set g[i][j] = v` rewrites `g`
 //!   in place and copies row `i`; `set ps[i].x = v` copies one record. The
 //!   bit covers a cell's top-level container only, since an inner one is
@@ -220,7 +223,7 @@ fn window_op(program: &Program, term: &Term) -> bool {
         | TermOp::GetIndexOpt
         | TermOp::SetField(_)
         | TermOp::SetIndex => term.child_blocks.is_empty(),
-        TermOp::BuiltinCall(_) => is_mutating_call(program, term) || is_len_call(program, term),
+        TermOp::BuiltinCall(_) => is_mutating_call(program, term) || is_trivial_call(program, term),
         _ => false,
     }
 }
@@ -244,6 +247,23 @@ fn is_mutating_call(program: &Program, term: &Term) -> bool {
 fn is_len_call(program: &Program, term: &Term) -> bool {
     builtin_name(program, term) == Some("len")
         && term.inputs.len() == 1
+        && term.arg_names.iter().all(Option::is_none)
+}
+
+/// A positional call of one of the trivial builtins (`float`, `int`, `min`,
+/// `max`, `clamp`, `abs`, `floor`, `len`, `type`: the ones the VM runs
+/// inline, [`IntrinsicOp`](super::isa::IntrinsicOp)). Each computes a value
+/// from its arguments and does nothing else: no native runs script code or
+/// reaches a cell, so `set xs = append(xs, float(i))` keeps its window
+/// closed. The list is by name and deliberately short. A builtin that takes
+/// a function (`map`, `sort_by`, …) runs script code and must never be on it.
+fn is_trivial_call(program: &Program, term: &Term) -> bool {
+    let Some(name) = builtin_name(program, term) else {
+        return false;
+    };
+    super::isa::IntrinsicOp::ALL
+        .iter()
+        .any(|op| op.name() == name && term.inputs.len() == op.arity())
         && term.arg_names.iter().all(Option::is_none)
 }
 

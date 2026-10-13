@@ -591,6 +591,30 @@ fn assigning_through_a_qualifier_is_the_same_error_for_check_and_run() {
         assert_eq!((out.as_str(), code), ("", 1), "{cmd}: {err}");
         assert!(err.contains("module 'hud' has no export 'nope'"), "{cmd}: {err}");
     }
+    // …and the call form, which is how a program that qualifies every
+    // cross-module call is written: a private function, a missing one, and
+    // one a facade does not re-export. Each is an error at its own position,
+    // in a line that never runs too.
+    t.write("hud.ptl", "pub let shared = 1\nfn hidden() 1 end\npub fn shown() 2 end\n");
+    t.write("facade.ptl", "pub import ./hud: shown\n");
+    t.write(
+        "call.ptl",
+        "import ./hud\nimport ./facade\nprint(hud.shown(), facade.shown())\n\
+         fn never()\n  hud.hidden()\n  hud.nope(1, 2)\n  facade.hidden()\nend\n",
+    );
+    for cmd in ["check", "run"] {
+        let (out, err, code) = petal_in(&t.root, &[cmd, "call.ptl"]);
+        assert_eq!((out.as_str(), code), ("", 1), "{cmd}: {err}");
+        assert!(err.contains("module 'hud' has no export 'hidden'"), "{cmd}: {err}");
+        assert!(err.contains("module 'hud' has no export 'nope'"), "{cmd}: {err}");
+        assert!(err.contains("module 'facade' has no export 'hidden'"), "{cmd}: {err}");
+        assert!(err.contains("[line 5, column 3]"), "{cmd}: {err}");
+        assert!(err.contains("3 errors found by check"), "{cmd}: {err}");
+    }
+    // The exported ones alone pass.
+    t.write("ok_call.ptl", "import ./hud\nimport ./facade\nprint(hud.shown(), facade.shown())\n");
+    let (out, err, code) = petal_in(&t.root, &["run", "ok_call.ptl"]);
+    assert_eq!((out.as_str(), err.as_str(), code), ("2 2\n", "", 0));
 }
 
 #[test]

@@ -107,7 +107,9 @@ fn strict_check_has_nothing_to_say_about_the_export_spelling() {
 
 #[test]
 fn run_refuses_a_ui_script_at_load_and_says_which_runner_takes_it() {
-    let src = "import ui\nprint(\"ran\")\nui.label(\"x\", 0, 0)";
+    // (`ui.screen_width` is one of its exports; a member it does not export,
+    // such as `ui.label`, is an error for `check` on its own.)
+    let src = "import ui\nprint(\"ran\")\nui.screen_width()";
     // `check` accepts it: the bundled `ui` package declares the natives…
     assert_eq!(petal(&["check", "-e", src]).2, 0);
     // …and `run` refuses it before any line runs, naming what is missing.

@@ -221,10 +221,14 @@ fails at compile time and lists what the module does export:
 Error: module 'ui' has no export 'helper' (exports: button, palette, twice)
 ```
 
-A qualified access (`ui.helper()`) fails when it runs:
+A qualified access, read (`ui.helper`) or called (`ui.helper()`), compiles
+to a line that fails when it runs. `petal check` reports it as an error at
+its position, whether or not the line would ever run, and `petal run`
+does not start a program that has one:
 
 ```
-Error: module 'ui' has no export 'helper' (declarations are private unless marked `pub`)
+error: module 'ui' has no export 'helper' (declarations are private unless marked `pub`)
+ --> [line 4, column 7]
 ```
 
 ### Re-exporting

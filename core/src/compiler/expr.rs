@@ -137,6 +137,14 @@ impl Compiler {
                     // alias is not a method call: the callee resolves
                     // statically in the module's exports.
                     if let Some(func_tid) = self.try_module_member(object, field) {
+                        // A member the module does not export is a deferred
+                        // error term. Give it the callee's position: the term
+                        // this arm returns is the call, so nothing else would,
+                        // and an error with no position is one neither `petal
+                        // check` nor the run's own report can point at.
+                        if matches!(self.terms[func_tid.0 as usize].op, TermOp::Error(_)) {
+                            self.source_map.add(func_tid, function.span);
+                        }
                         let mut inputs: SmallVec<[TermId; 4]> = smallvec![func_tid];
                         for arg in args {
                             inputs.push(self.compile_expr(arg));

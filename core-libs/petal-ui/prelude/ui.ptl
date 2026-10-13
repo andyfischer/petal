@@ -33,7 +33,27 @@ import io
 
 // Drawing that needs no overloads (core-libs/petal-ui/src/draw.rs).
 pub native fn clear(r: num, g: num, b: num)
-pub native fn clip_none()
+
+// `draw_rect` is a native in every shape — flat, mixed and record — so the
+// commonest draw call costs no Petal instructions beyond the call. A colour
+// `c` is a `{r, g, b}` record (a hex literal) or a packed RGB int (`r * 65536 + g * 256 + b`). `a` is
+// the alpha, 0–255.
+pub native fn draw_rect(x: num, y: num, w: num, h: num, r: num, g: num, b: num, a?: num)
+pub native fn draw_rect(x: num, y: num, w: num, h: num, c, a?: num)
+pub native fn draw_rect(rect, c, a?: num)
+
+// Many filled rects in one call: `rects` is five numbers per rect — x, y, w,
+// h, c — as a flat list, a packed array, or a list of `[x, y, w, h, c]`
+// lists. With a `palette` (a list of colours) `c` indexes it; without one `c`
+// is the colour itself (a packed RGB int (`r * 65536 + g * 256 + b`), or a record in the list
+// forms). `dx`, `dy` move the whole batch. See "Retained drawing" below.
+pub native fn draw_rects(rects, palette?, dx?: num, dy?: num)
+
+// Images (draw.rs). `image_load(source)` asks the host to have `source` ready
+// and answers whether it is; `image_size(source)` is its `{w, h}` in pixels,
+// or nil while the host does not know it. `draw_image` is further down.
+pub native fn image_load(source: string)
+pub native fn image_size(source: string)
 
 // Text measurement (draw.rs, text.rs). The style is a record, or a bare size
 // with an optional face name after it — each shape is its own form.
@@ -115,8 +135,7 @@ end
 // names (`= "draw_rect"` binds the host native of that name), so scripts that
 // use the classic signatures keep working when these overloads take the name.
 
-native fn _native_image(source, x, y, w, h, a?, radius?) = "draw_image"
-native fn _native_rect(x: num, y: num, w: num, h: num, r: num, g: num, b: num, a?: num) = "draw_rect"
+native fn _native_image(source, x, y, w, h, a?, radius?, tint?, sx?, sy?, sw?, sh?, slice_l?, slice_t?, slice_r?, slice_b?) = "draw_image"
 native fn _native_rect_rounded(x: num, y: num, w: num, h: num, radius: num, r: num, g: num, b: num, a?: num) = "draw_rect_rounded"
 native fn _native_rect_outline(x: num, y: num, w: num, h: num, r: num, g: num, b: num, a?: num, width?: num) = "draw_rect_outline"
 native fn _native_line(x1: num, y1: num, x2: num, y2: num, r: num, g: num, b: num, a?: num, width?: num) = "draw_line"
@@ -130,7 +149,6 @@ native fn _native_triangle(x1: num, y1: num, x2: num, y2: num, x3: num, y3: num,
 native fn _native_poly(points, r, g, b, a?) = "fill_poly"
 native fn _native_polygon(points, r, g, b, a?) = "fill_polygon"
 native fn _native_fan(cx, cy, points, r, g, b, a?) = "fill_fan"
-native fn _native_polyline(points, r, g, b, a?, width?) = "draw_polyline"
 native fn _native_text(text, x, y, style) = "draw_text"
 native fn _native_text(text, x, y, size, r, g, b, a?) = "draw_text"
 native fn _native_font(name) = "font"
@@ -180,23 +198,64 @@ fn _is_num(v)
   t == "int" || t == "float"
 end
 
-// `radius` rounds the corners — the avatar, the card thumbnail. A host that
-// can't round a bitmap draws the square image rather than nothing.
+// draw_image(source, rect[, a[, radius]]) / draw_image(source, x, y, w, h[, a[,
+// radius]]) — a host-resolved bitmap scaled into the destination. `source` is
+// an asset path or name the host understands. `radius` rounds the corners —
+// the avatar, the card thumbnail. A host that can't round a bitmap draws the
+// square image rather than nothing.
+//
+// In place of `a`, an options record says the rest:
+//
+//   draw_image("ui/atlas.png", r, {src: rect(32, 0, 16, 16), tint: #ffcc00})
+//   draw_image("ui/frame.png", panel, {slice: 6})
+//
+//   a       opacity 0–255 (default 255)
+//   radius  corner radius in px (default 0)
+//   tint    a colour the image's pixels are multiplied by — one white sprite,
+//           recoloured per use (default: none)
+//   src     the part of the image to draw, {x, y, w, h} in the image's own
+//           pixels: one cell of an atlas (default: the whole image)
+//   slice   nine-slice insets in the image's own pixels, one number for all
+//           four edges or {l, t, r, b}: corners are drawn unscaled, edges
+//           stretch one way, the middle both — a small frame image makes a
+//           panel of any size (default: none, the image scales whole)
+//
+// A host that lacks one of these draws the image without it.
 pub fn draw_image(source, x, y, w, h, a = 255, radius = 0)
-  _native_image(source, x, y, w, h, a, radius)
+  if _is_num(a) then
+    _native_image(source, x, y, w, h, a, radius)
+  else
+    _image_opts(source, x, y, w, h, a)
+  end
 end
 pub fn draw_image(source, rect, a = 255, radius = 0)
-  _native_image(source, rect.x, rect.y, rect.w, rect.h, a, radius)
+  if _is_num(a) then
+    _native_image(source, rect.x, rect.y, rect.w, rect.h, a, radius)
+  else
+    _image_opts(source, rect.x, rect.y, rect.w, rect.h, a)
+  end
 end
 
-pub fn draw_rect(x, y, w, h, r, g, b, a = 255)
-  _native_rect(x, y, w, h, r, g, b, a)
-end
-pub fn draw_rect(rect, c, a = 255)
-  _native_rect(rect.x, rect.y, rect.w, rect.h, c.r, c.g, c.b, a)
-end
-pub fn draw_rect(x, y, w, h, c, a = 255)
-  _native_rect(x, y, w, h, c.r, c.g, c.b, a)
+fn _image_opts(source, x, y, w, h, o)
+  let src = o["src"] ?? nil
+  let sl = o["slice"] ?? 0
+  let sx = 0
+  let sy = 0
+  let sw = 0
+  let sh = 0
+  if src != nil then
+    sx = src.x
+    sy = src.y
+    sw = src.w
+    sh = src.h
+  end
+  if _is_num(sl) then
+    _native_image(source, x, y, w, h, o["a"] ?? 255, o["radius"] ?? 0, o["tint"] ?? nil,
+                  sx, sy, sw, sh, sl, sl, sl, sl)
+  else
+    _native_image(source, x, y, w, h, o["a"] ?? 255, o["radius"] ?? 0, o["tint"] ?? nil,
+                  sx, sy, sw, sh, sl["l"] ?? 0, sl["t"] ?? 0, sl["r"] ?? 0, sl["b"] ?? 0)
+  end
 end
 
 pub fn draw_rect_rounded(x, y, w, h, radius, r, g, b, a = 255)
@@ -474,25 +533,26 @@ pub fn fill_fan(cx, cy, points, c, a = 255)
   _native_fan(cx, cy, points, c.r, c.g, c.b, a)
 end
 
-// `(points, c, a, width)` has the same count as the flat `(points, r, g, b)`,
-// so the four-parameter declaration looks at its second argument: a colour
-// record means alpha and width follow, an int means packed r, g, b.
+// `(points, c, a, width)` has the same count as the flat `(points, r, g, b)`.
+// The native tells them apart itself (a colour record second means alpha and
+// width follow), and takes the colour as it is — a `{r, g, b}` record, or with
+// two or three arguments a packed RGB int (`r * 65536 + g * 256 + b`) — so no declaration here tests
+// a type or unpacks a record: each only forwards. They stay Petal functions
+// for the named calls that skip `a` to reach `width`.
+native fn _native_polyline(points, r, g?, b?, a?, width?) = "draw_polyline"
+
 pub fn draw_polyline(points, r, g, b, a = 255, width = 1)
   _native_polyline(points, r, g, b, a, width)
 end
 pub fn draw_polyline(points, c)
-  _native_polyline(points, c.r, c.g, c.b)
+  _native_polyline(points, c)
 end
 pub fn draw_polyline(points, c, a)
-  _native_polyline(points, c.r, c.g, c.b, a)
+  _native_polyline(points, c, a)
 end
 // Also positionally the flat `(points, r, g, b)`.
 pub fn draw_polyline(points, c, a = 255, width = 1)
-  if type(c) == "record" then
-    _native_polyline(points, c.r, c.g, c.b, a, width)
-  else
-    _native_polyline(points, c, a, width)
-  end
+  _native_polyline(points, c, a, width)
 end
 
 // A closed outline: `draw_polyline` with the first point repeated at the end,
@@ -502,13 +562,13 @@ fn _closed(points)
   if len(points) > 1 then append(points, points[0]) else points end
 end
 pub fn draw_polygon_outline(points, r, g, b, a = 255, width = 1)
-  _native_polyline(_closed(points), r, g, b, a, width)
+  draw_polyline(_closed(points), r, g, b, a, width)
 end
 pub fn draw_polygon_outline(points, c)
-  _native_polyline(_closed(points), c.r, c.g, c.b)
+  draw_polyline(_closed(points), c)
 end
 pub fn draw_polygon_outline(points, c, a)
-  _native_polyline(_closed(points), c.r, c.g, c.b, a)
+  draw_polyline(_closed(points), c, a)
 end
 // Also positionally the flat `(points, r, g, b)`.
 pub fn draw_polygon_outline(points, c, a = 255, width = 1)
@@ -559,26 +619,544 @@ end
 // its content to its own rounded shape. A host that can only scissor a
 // rectangle ignores it and clips square.
 
+//
+// The prelude also *knows* the clip in force, which is what lets `interact`
+// (and every widget built on it) ignore the pointer over the part of a rect
+// that is clipped away — a row scrolled half out of its list. `_clip` is nil
+// (no clip) or a chain of `{x, y, w, h, prev, ox, oy, ow, oh, radius, base}`
+// records, innermost first: `x, y, w, h` is the visible area so far, the `o*`
+// fields are the clip as it was asked for. It starts over on every run (see
+// "this run's layer" below for why it is a `state var` reset here rather than
+// a plain `var`).
+
 native fn _native_clip(x, y, w, h, radius?) = "clip"
-native fn _native_clip_push(x, y, w, h, radius?) = "clip_push"
+native fn _native_clip_push(x, y, w, h, radius?, within?) = "clip_push"
 native fn _native_clip_pop() = "clip_pop"
+native fn _native_clip_none() = "clip_none"
+
+state var _clip = nil
+set _clip = nil
 
 pub fn clip(x, y, w, h, radius = 0)
   _native_clip(x, y, w, h, radius)
+  set _clip = {x: x, y: y, w: w, h: h, prev: nil, ox: x, oy: y, ow: w, oh: h, radius: radius, base: true}
 end
 pub fn clip(rect, radius = 0)
-  _native_clip(rect.x, rect.y, rect.w, rect.h, radius)
+  clip(rect.x, rect.y, rect.w, rect.h, radius)
+end
+
+pub fn clip_none()
+  _native_clip_none()
+  set _clip = nil
 end
 
 pub fn clip_push(x, y, w, h, radius = 0)
-  _native_clip_push(x, y, w, h, radius)
+  set _clip = _native_clip_push(x, y, w, h, radius, get _clip)
 end
 pub fn clip_push(rect, radius = 0)
-  _native_clip_push(rect.x, rect.y, rect.w, rect.h, radius)
+  set _clip = _native_clip_push(rect.x, rect.y, rect.w, rect.h, radius, get _clip)
 end
 
 pub fn clip_pop()
   _native_clip_pop()
+  let c = get _clip
+  set _clip = if c == nil then nil else c.prev end
+end
+
+// The visible area the clip in force leaves, as a rect, or nil when nothing
+// is clipped.
+pub fn clip_rect()
+  let c = get _clip
+  if c == nil then nil else rect(c.x, c.y, c.w, c.h) end
+end
+
+// Lift every clip in force (for something drawn over the whole screen from
+// inside a clipped region), and put them back.
+fn _clip_suspend(c)
+  if c != nil then
+    if c.base then
+      _native_clip_none()
+    else
+      _native_clip_pop()
+      _clip_suspend(c.prev)
+    end
+  end
+end
+fn _clip_resume(c)
+  if c != nil then
+    if c.base then
+      _native_clip(c.ox, c.oy, c.ow, c.oh, c.radius)
+    else
+      _clip_resume(c.prev)
+      _native_clip_push(c.ox, c.oy, c.ow, c.oh, c.radius)
+    end
+  end
+end
+
+// ── Layers and hit testing ────────────────────────────────────────────────
+// Immediate mode has no z order: a button drawn early cannot know that a
+// panel drawn later covers it. Layers are how a script says so, once, instead
+// of keeping a list of claimed rectangles and remembering to test it.
+//
+//   ui_layer(n)            everything from here on is on layer n (0 is where
+//                          a frame starts); returns the layer it replaced
+//   with_layer(n, body)    run body() on layer n, then go back
+//   ui_overlay(n, body)    the same, with every clip lifted — for a popup
+//                          opened from inside a scrolled list
+//   ui_modal()             everything below the current layer is inert
+//   interact(r[, id])      {hover, down, pressed, released, click} for the
+//                          rect, registering it
+//   ui_hot(r[, id])        just the hover, registering it
+//   ui_block(r[, id])      register it and nothing else: a panel background
+//   pointer_captured()     whether the UI has the pointer — gate world clicks
+//   ui_target(id, r)       name a rect without making it block anything
+//   ui_target_rect(id)     where `id` was last frame, or nil
+//
+// A layer orders two things. **Drawing**: the host draws a frame's commands
+// lowest layer first, in the order drawn within a layer — so a tooltip drawn
+// in the middle of a frame on a high layer still comes out on top.
+// **The pointer**: a rect is *hot* only if nothing registered on a higher
+// layer is under the pointer, and no higher layer is modal.
+//
+// How the pointer part is resolved. Every `interact` registers its rect
+// (clipped to the clip in force) with the host. "What is above me under the
+// pointer" is answered from two places: the rects registered *last frame*
+// (the whole picture, one frame old), and the rects that have already turned
+// out hot *this frame* (exact, but only what has run so far). So:
+//
+//   - a covered widget is inert from the frame after its cover appears — and
+//     from the same frame, if the cover runs before it;
+//   - `pointer_captured()` called after the UI has drawn is exact on the very
+//     frame a panel opens under the pointer: no click leaks to the world;
+//   - the one gap: a widget on a lower layer that runs *before* a higher one
+//     that first appears this frame sees one frame of `hover`, and a
+//     `pressed` if the press lands on exactly that frame. `click` (released
+//     inside, having been pressed inside) has no such gap, because by the
+//     release the cover is a frame old. Use `click` for anything that must
+//     not fire through a panel; `pressed` when it must fire on the way down.
+//
+// Rects on the *same* layer do not block each other: two overlapping buttons
+// on one layer are both hot, as they always were. Put the one on top on a
+// higher layer.
+//
+// `hovered(r)` and `clicked(r)` are the raw tests — the pointer and the rect,
+// nothing else. Every widget in this file uses the layered ones.
+
+native fn _ui_register(rect, layer, clip, id?, flags?) = "ui_register"
+native fn _ui_mark() = "ui_mark"
+native fn _ui_mute(on) = "ui_mute"
+native fn _ui_probe(rect, layer, clip, floor) = "ui_probe"
+native fn _ui_hot(rect, layer, clip, floor) = "ui_hot"
+native fn _ui_floor() = "ui_floor"
+native fn _ui_target_rect(id) = "ui_target_rect"
+native fn _draw_layer(n: num) = "draw_layer"
+
+// The layers the prelude's own widgets use. An app's panels go in between.
+pub let UI_LAYER_BASE = 0
+pub let UI_LAYER_POPUP = 1000
+pub let UI_LAYER_MODAL = 2000
+pub let UI_LAYER_TOOLTIP = 3000
+
+// This run's layer, and this run's floor: the highest layer that has turned
+// out to have the pointer so far (nil: none yet). Both start over on every
+// run — module scope executes once per run, and resets them — so a frame that
+// errored mid-panel leaves nothing behind.
+//
+// They are `state var`s reset here, not plain `var`s, for the memo's sake: a
+// plain module `var` is a new cell on every run, and a memoized scope that
+// read last run's cell can never be replayed. A `state var` is one cell for
+// the life of the program, so a widget that read "layer 0, no floor" last
+// frame and would read the same now is replayed. The frame gate is not
+// disturbed either: it compares a `state var` at the end of a run with what
+// it held at the start, and a quiet frame ends where it began.
+state var _layer = 0
+state var _floor = nil
+// The highest layer this run has drawn on so far. A rect asks about the
+// run's floor only when it is below this: nothing above it has run yet
+// otherwise, so the floor cannot concern it — and not reading it is what
+// keeps a memoized row from depending on which *other* row has the pointer.
+state var _top = 0
+set _layer = 0
+set _floor = nil
+set _top = 0
+
+// Written, always to the same value, by every function here that *may* write
+// one of the cells above. The memo re-executes a scope on its own, to see
+// whether a changed input changed its output, only if the scope's last run
+// wrote nothing — and such a re-execution applies whatever it writes. A hit
+// test that wrote nothing last frame (not hot) and raises the floor when
+// re-executed (hot now) would leave that floor behind, ahead of the widgets
+// that run before it. A scope that always writes is never re-executed that
+// way: it is simply run again, in order.
+state var _wrote = 0
+
+// Tell the host a run happened. It keeps last frame's registered rects when
+// a frame registers nothing — that is what a frame the gate skipped looks
+// like — so a run that registers nothing (the HUD is hidden) has to say it
+// ran, or the old rects would go on capturing the pointer. Module scope runs
+// once per run, which makes this exactly that.
+//
+// The native is declared an effect, which also keeps this module's scope
+// from being *replayed* by the memo instead of run: the resets above have to
+// happen on every run, and a replayed scope does not re-apply writes to the
+// cells it created itself.
+_ui_mark()
+
+pub fn ui_layer()
+  get _layer
+end
+pub fn ui_layer(n: int)
+  let prev = get _layer
+  set _layer = n
+  if n != prev then
+    if n > (get _top) then set _top = n end
+    _draw_layer(n)
+  end
+  prev
+end
+
+pub fn with_layer(n: int, body)
+  let prev = ui_layer(n)
+  let out = body()
+  ui_layer(prev)
+  out
+end
+
+pub fn ui_overlay(n: int, body)
+  let saved = get _clip
+  _clip_suspend(saved)
+  set _clip = nil
+  let prev = ui_layer(n)
+  let out = body()
+  ui_layer(prev)
+  _clip_resume(saved)
+  set _clip = saved
+  out
+end
+
+fn _raise()
+  let f = get _floor
+  let l = get _layer
+  set _floor = if f == nil || l > f then l else f end
+end
+
+// The run's floor as far as a rect on layer `l` is concerned: nil unless
+// something above `l` has already run this frame.
+fn _run_floor(l)
+  if l < (get _top) then get _floor else nil end
+end
+
+// Register `r` (with its optional id) on the current layer.
+fn _reg(r, id)
+  _ui_register(r, get _layer, get _clip, id)
+end
+
+// Whether `r` is hot, without registering it — for a second question about a
+// rect a widget has already registered.
+fn _over(r)
+  set _wrote = 0
+  let l = get _layer
+  let h = _ui_hot(r, l, get _clip, _run_floor(l))
+  if h then _raise() end
+  h
+end
+
+// Register and ask: what every widget's first pointer question is.
+fn _hot(r, id)
+  set _wrote = 0
+  let l = get _layer
+  _ui_register(r, l, get _clip, id)
+  let h = _ui_hot(r, l, get _clip, _run_floor(l))
+  if h then _raise() end
+  h
+end
+
+// The pointer and one rect:
+//
+//   hover     the pointer is over it, and nothing above has the pointer
+//   down      the left button is held, and it went down inside the rect —
+//             still true when the pointer has slid off
+//   pressed   the left button went down this frame, over it
+//   released  the left button came up this frame, over it
+//   click     released over it, having been pressed inside it
+//
+// `id` (a string or an int) names the rect for `ui_target_rect`, tests and
+// agents. It does not have to be unique, but only the last rect registered
+// under a name is found by it.
+pub fn interact(r, id = nil)
+  set _wrote = 0
+  let l = get _layer
+  _ui_register(r, l, get _clip, id)
+  let s = _ui_probe(r, l, get _clip, _run_floor(l))
+  if s.hover then _raise() end
+  s
+end
+
+pub fn ui_hot(r, id = nil)
+  _hot(r, id)
+end
+
+// A panel's background: it takes the pointer (nothing below is hot through
+// it, and `pointer_captured()` is true over it) and asks nothing.
+pub fn ui_block(r, id = nil)
+  _hot(r, id)
+  nil
+end
+
+// Everything below the current layer is inert — wherever the pointer is —
+// from here to the end of the frame, and for the whole of the next one. Call
+// it every frame the dialog is open, on the dialog's layer.
+pub fn ui_modal()
+  _ui_register(nil, get _layer, nil, nil, 2)
+  _raise()
+  // Whatever runs after this on a lower layer has to see the floor.
+  if (get _layer) >= (get _top) then set _top = (get _layer) + 1 end
+end
+
+// Whether the UI has the pointer: some registered rect is under it, or a
+// layer is modal. Ask it after the UI has drawn and it is exact for this
+// frame; ask it before and it is last frame's answer.
+pub fn pointer_captured()
+  (get _floor) != nil || _ui_floor() != nil
+end
+// ...by something on a layer above `layer`: what a panel asks about the
+// panels over it.
+pub fn pointer_captured(layer: int)
+  let run = get _floor
+  let frame = _ui_floor()
+  (run != nil && run > layer) || (frame != nil && frame > layer)
+end
+
+// Name a rect without making it part of hit testing: a region a tutorial
+// points at, a drop zone a test wants the centre of.
+pub fn ui_target(id, r)
+  _ui_register(r, get _layer, get _clip, id, 0)
+end
+
+// The rect registered under `id` on the last frame — by `interact`, by a
+// widget, or by `ui_target` — or nil if nothing was. One frame old, which is
+// what a highlight drawn over another module's button wants: the button's
+// position, without the two modules agreeing on layout arithmetic.
+pub fn ui_target_rect(id)
+  let r = _ui_target_rect(id)
+  if r == nil then nil else rect(r.x, r.y, r.w, r.h) end
+end
+
+// ── Measuring ─────────────────────────────────────────────────────────────
+// Run a piece of UI without drawing it, to learn how big it is:
+//
+//   fn rows(r)
+//     flow_begin(r, {gap: 4})
+//     for it in items do row(flow_next(22), it) end
+//     flow_end()                      // {w, h}: what the rows took
+//   end
+//   let content = ui_measure(fn() rows(rect(0, 0, list.w, 0)) end)
+//   // ...then scroll by content.h, and call rows(...) again to draw.
+//
+// `ui_measure(body)` returns what `body()` returns. While it runs nothing is
+// drawn, nothing is registered, and nothing is hot — one function is both the
+// measuring pass and the drawing pass, so the two cannot disagree. It is a
+// real run of the body, though: `state` it writes is written.
+//
+// `ui_measuring()` is true inside one, for a widget with something expensive
+// to skip.
+state var _measuring = false
+set _measuring = false
+// The flow-layout cursor (see "Flow layout" below): a chain of records,
+// innermost first, reset on every run. Declared here because `ui_measure`
+// puts it back.
+state var _flow = nil
+set _flow = nil
+
+pub fn ui_measuring()
+  get _measuring
+end
+
+pub fn ui_measure(body)
+  if get _measuring then
+    return body()
+  end
+  // The run's context is put back as it was: nothing the body did to the
+  // layer, the clip or the floor happened, as far as the frame is concerned.
+  let layer = get _layer
+  let floor = get _floor
+  let top = get _top
+  let saved = get _clip
+  let flow = get _flow
+  set _measuring = true
+  _ui_mute(true)
+  // A floor nothing reaches, and a top above everything so that every rect
+  // looks at it: no rect is hot while measuring.
+  set _floor = 1000000000
+  set _top = 1000000000
+  let out = body()
+  _ui_mute(false)
+  set _measuring = false
+  set _layer = layer
+  set _floor = floor
+  set _top = top
+  set _clip = saved
+  set _flow = flow
+  out
+end
+
+// ── Flow layout ───────────────────────────────────────────────────────────
+// A cursor that hands out rects one after another inside a region, so a
+// panel is written without `y = y + 17` at every line:
+//
+//   flow_begin(panel, {pad: 8, gap: 4})
+//   draw_text("Settings", flow_next(20), title)
+//   vol = slider(flow_next(18), vol, 0, 1)
+//   flow_space(6)
+//   if button(flow_next(90, 24), "Apply") then apply() end
+//   let used = flow_end()             // {w, h}, padding included
+//
+// `flow_next(size)` is the next rect along the flow, `size` long and as wide
+// as the region; `flow_next(w, h)` is one of exactly that size. The flow runs
+// downward unless begun with `{axis: "x"}`, in which case `size` is a width
+// and the rect is as tall as the region. Flows nest: a row of buttons is a
+// horizontal flow begun on a rect a vertical one handed out.
+//
+//   flow_begin(flow_next(24), {axis: "x", gap: 6})
+//   ...
+//   flow_end()
+//
+// Nothing here draws or clips. A flow is not stopped at the end of its
+// region: the rects go on past it, and `flow_end()` says how far they went —
+// which, for a region inside a scroll view, is the content height.
+//
+fn _flow_top()
+  let f = get _flow
+  assert(f != nil, "flow_next / flow_space / flow_end called with no flow open; call flow_begin(rect) first")
+  f
+end
+
+// `opts`: {pad, gap, axis} — `pad` insets the region on every side, `gap` is
+// left between consecutive rects, `axis` is "y" (the default) or "x".
+pub fn flow_begin(r, opts = {})
+  let pad = opts["pad"] ?? 0
+  set _flow = {
+    x: r.x + pad, y: r.y + pad, w: r.w - pad * 2, h: r.h - pad * 2,
+    pad: pad, gap: opts["gap"] ?? 0, across: (opts["axis"] ?? "y") == "x",
+    cur: 0, extent: 0, count: 0, prev: get _flow
+  }
+  nil
+end
+
+// Take `main` along the flow and report `cross` as used across it.
+fn _flow_take(f, main, cross)
+  let at = if f.count > 0 then f.cur + f.gap else f.cur end
+  set _flow = {...f, cur: at + main, count: f.count + 1, extent: max(f.extent, cross)}
+  if f.across then
+    rect(f.x + at, f.y, main, cross)
+  else
+    rect(f.x, f.y + at, cross, main)
+  end
+end
+
+pub fn flow_next(size)
+  let f = _flow_top()
+  _flow_take(f, size, if f.across then f.h else f.w end)
+end
+pub fn flow_next(w, h)
+  let f = _flow_top()
+  if f.across then _flow_take(f, w, h) else _flow_take(f, h, w) end
+end
+
+// Leave `n` px before the next rect, on top of the gap.
+pub fn flow_space(n)
+  let f = _flow_top()
+  set _flow = {...f, cur: f.cur + n}
+  nil
+end
+
+// What is left of the region after what has been handed out — for the one
+// part of a panel that takes whatever remains (a list under a toolbar).
+pub fn flow_rest()
+  let f = _flow_top()
+  let at = if f.count > 0 then f.cur + f.gap else f.cur end
+  if f.across then
+    rect(f.x + at, f.y, max(0, f.w - at), f.h)
+  else
+    rect(f.x, f.y + at, f.w, max(0, f.h - at))
+  end
+end
+
+// How much the flow has taken so far, as {w, h}, padding included.
+pub fn flow_used()
+  let f = _flow_top()
+  if f.across then
+    {w: f.cur + f.pad * 2, h: f.extent + f.pad * 2}
+  else
+    {w: f.extent + f.pad * 2, h: f.cur + f.pad * 2}
+  end
+end
+
+// Close the innermost flow; returns `flow_used()` for it.
+pub fn flow_end()
+  let used = flow_used()
+  set _flow = (get _flow).prev
+  used
+end
+
+// ── Retained drawing ──────────────────────────────────────────────────────
+// A frame's commands live one frame. For something that changes rarely and
+// costs a lot to say — a minimap of several hundred rects, a title poster, a
+// halftone screen — say it once:
+//
+//   cached_layer(map_version, minimap_rect, fn()
+//     draw_rects(cells, PALETTE)        // (0, 0) is the layer's top-left
+//   end)
+//
+// The body runs when `key` changes, when the rect's *size* changes, or when
+// the host has lost what it kept; on every other frame the host draws what
+// the body drew last time, at the rect's current position, clipped to its
+// size. `key` is any value, compared by content — a version counter, a
+// record of the inputs.
+//
+// The body draws in the layer's own coordinates, and only draws: it does not
+// run on most frames, so an `interact` or a `state` inside it would come and
+// go. It may call `cached_layer` itself (layers nest). It must not open an
+// offscreen `layer` or use `clip` (the replace form); `clip_push` is fine.
+//
+// Each *call site* is one layer (in a loop, one per iteration), like `state`.
+native fn _cache_begin(id, w, h) = "cache_begin"
+native fn _cache_end(id) = "cache_end"
+native fn _cache_draw(id, x, y) = "cache_draw"
+native fn _cache_valid(id) = "cache_valid"
+
+state var _cache_seq = 0
+fn _cache_new_id()
+  set _cache_seq = (get _cache_seq) + 1
+  get _cache_seq
+end
+
+pub fn cached_layer(key, r, body)
+  state id = _cache_new_id()
+  state seen = nil
+  // Being measured, not drawn: a layer has no size beyond its rect, and what
+  // it recorded now the host would never see.
+  if get _measuring then
+    return nil
+  end
+  set _wrote = 0
+  let w = int(r.w)
+  let h = int(r.h)
+  // The host's epoch — and, by its sign, whether the host still holds this
+  // layer: `e` when it does, `-e - 1` when it has to be recorded again.
+  let v = _cache_valid(id)
+  let epoch = if v < 0 then -v - 1 else v end
+  if v < 0 || seen != [key, w, h, epoch] then
+    let saved = get _clip
+    set _clip = nil
+    _cache_begin(id, w, h)
+    body()
+    _cache_end(id)
+    set _clip = saved
+    seen = [key, w, h, epoch]
+  end
+  _cache_draw(id, int(r.x), int(r.y))
+  nil
 end
 
 // ── Gradients ─────────────────────────────────────────────────────────────
@@ -1856,8 +2434,10 @@ end
 // shared elevation shadow under it.
 pub fn button(r, label, style)
   let t = _palette()
-  let hov = _anim_flag(hovered(r), 16.0)
-  let press = hovered(r) && mouse_down(0)
+  // Registered under `style.id`, or its label: `ui_target_rect("Save")`.
+  let hot = _hot(r, style["id"] ?? label)
+  let hov = _anim_flag(hot, 16.0)
+  let press = hot && mouse_down(0)
   let rad = _get(style, "radius", 0)
   let lift = _get(style, "elevation", 0)
   if lift > 0 && !press then
@@ -1907,7 +2487,7 @@ pub fn button(r, label, style)
   let tx = r.x + (r.w - text_width(label, ts)) / 2
   let ty = r.y + (r.h - size) / 2
   draw_text(label, {x: tx, y: ty}, ts)
-  clicked(r)
+  hot && mouse_pressed(0)
 end
 
 // ── List widget ───────────────────────────────────────────────────────────
@@ -2003,13 +2583,14 @@ pub fn list_update(lst, item_count, visible_rows, r, active)
       key_moved = true
     end
   end
-  if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then
+  let over = _hot(r, nil)
+  if mouse_pressed(0) && over then
     let row = scroll + (mouse_y() - r.y) / _row_h(r, visible_rows)
     if row >= 0 && row < item_count then
       sel = row
     end
   end
-  if hovered(r) then
+  if over then
     scroll = scroll + scroll_y()
   end
   sel = clamp(sel, 0, max(0, item_count - 1))
@@ -2034,7 +2615,7 @@ end
 // paging every other scroll region on screen — gate on focused(fc, id).
 pub fn scroll_update(offset, total_lines, visible_lines, r, active)
   let off = offset
-  if hovered(r) then
+  if _hot(r, nil) then
     off = off + scroll_y()
   end
   if active then
@@ -2409,7 +2990,7 @@ pub fn text_field_update(fc, id, r, buf, style)
   if anchor < 0 || anchor > n then
     anchor = caret
   end
-  let pressed = _get(style, "pointer", true) && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r)
+  let pressed = _get(style, "pointer", true) && _hot(r, id) && mouse_pressed(0)
   if pressed then
     f = focus_set(fc, id)
     let at = text_index_at(text, ts, float(mouse_x() - (r.x + inset) + scroll))
@@ -2725,7 +3306,7 @@ end
 // Any other frame leaves the state alone, so this is safe to call every frame
 // for every row.
 pub fn menu_open_on_right_click(m, r, tag)
-  if mouse_pressed(1) && point_in(mouse_x(), mouse_y(), r) then
+  if mouse_pressed(1) && _over(r) then
     menu_show(m, mouse_x(), mouse_y(), tag)
   else
     m
@@ -2931,27 +3512,39 @@ pub fn context_menu(m, items, style)
     let fg_off = _get(style, "dim", tint(bg, fg_on, 40))
     let outline = _get(style, "outline", t.outline)
     let rad = _get(style, "radius", 0)
-    draw_elevation(r, rad, 2, {color: _get(style, "shadow", #000000)})
-    draw_rect(r, bg)
-    draw_rect_outline(r, outline)
-    let rule = _get(style, "rule", hairline(bg, fg_on))
-    let y = r.y + mm.pad
-    for i in range(0, len(items)) do
-      let it = items[i]
-      let rh = _menu_row_h(it, mm)
-      if it.sep then
-        let sy = y + rh / 2
-        draw_line({x: r.x + 8, y: sy}, {x: r.x + r.w - 8, y: sy}, rule)
-      else
-        let fg = if it.enabled then fg_on else fg_off end
-        if i == hover then
-          draw_rect({x: r.x + 1, y: y, w: r.w - 2, h: rh}, _get(style, "selection", t.selection))
-          fg = fg_on
-        end
-        draw_text(it.label, {x: r.x + 12, y: y + (rh - mm.size) / 2}, _ts(mm.font, mm.size, fg))
+    // On the popup layer, outside every clip, and modal while it is open: the
+    // menu draws over whatever was drawn after it, a menu opened from a row
+    // of a scrolled list is not cut off by the list, and the press that
+    // dismisses it is not also a click on the widget underneath.
+    ui_overlay(max(ui_layer(), UI_LAYER_POPUP), fn()
+      // Not on the frame it closes: the registry is what the *next* frame is
+      // tested against, and by then the menu is gone.
+      if !close then
+        ui_modal()
+        _reg(r, style["id"] ?? nil)
       end
-      y = y + rh
-    end
+      draw_elevation(r, rad, 2, {color: _get(style, "shadow", #000000)})
+      draw_rect(r, bg)
+      draw_rect_outline(r, outline)
+      let rule = _get(style, "rule", hairline(bg, fg_on))
+      let y = r.y + mm.pad
+      for i in range(0, len(items)) do
+        let it = items[i]
+        let rh = _menu_row_h(it, mm)
+        if it.sep then
+          let sy = y + rh / 2
+          draw_line({x: r.x + 8, y: sy}, {x: r.x + r.w - 8, y: sy}, rule)
+        else
+          let fg = if it.enabled then fg_on else fg_off end
+          if i == hover then
+            draw_rect({x: r.x + 1, y: y, w: r.w - 2, h: rh}, _get(style, "selection", t.selection))
+            fg = fg_on
+          end
+          draw_text(it.label, {x: r.x + 12, y: y + (rh - mm.size) / 2}, _ts(mm.font, mm.size, fg))
+        end
+        y = y + rh
+      end
+    end)
 
     let next = if close then menu_close(m) else {open: true, x: m.x, y: m.y, tag: m.tag, hover: hover, at: m.at, px: mx, py: my} end
     let label = if chosen >= 0 then items[chosen].label else "" end
@@ -2997,7 +3590,7 @@ pub fn drag_update(ds, item_id, r)
     d = drag_state()
   end
   // A press inside `r` claims the drag, unless another item already holds it.
-  if !d.dragging && !d.dropped && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then
+  if !d.dragging && !d.dropped && mouse_pressed(0) && _over(r) then
     d = {dragging: true, id: item_id, dx: 0, dy: 0, dropped: false,
       sx: mouse_x(), sy: mouse_y(), at: -1}
   end
@@ -3311,10 +3904,11 @@ end
 pub fn checkbox(r, label, value, style)
   let t = _palette()
   let v = value
-  if clicked(r) then v = !v end
+  let hot = _hot(r, style["id"] ?? label)
+  if hot && mouse_pressed(0) then v = !v end
   let box = _get(style, "box", min(16, r.h))
   let br = rect(r.x, r.y + (r.h - box) / 2, box, box)
-  let hov = _anim_flag(hovered(r), 16.0)
+  let hov = _anim_flag(hot, 16.0)
   let on = _anim_flag(v, 22.0)
   let border = mix(_get(style, "outline", t.outline), _get(style, "focus", t.accent), max(on, hov * 0.5))
   let fillc = mix(_get(style, "bg", t.panel), _get(style, "fill", t.accent), on)
@@ -3348,9 +3942,10 @@ end
 pub fn toggle(r, value, style)
   let t = _palette()
   let v = value
-  if clicked(r) then v = !v end
+  let hot = _hot(r, style["id"] ?? nil)
+  if hot && mouse_pressed(0) then v = !v end
   let on = _anim_flag(v, 18.0)
-  let hov = _anim_flag(hovered(r), 16.0)
+  let hov = _anim_flag(hot, 16.0)
   let th = min(r.h, _get(style, "height", 18))
   let tr = rect(r.x, r.y + (r.h - th) / 2, min(r.w, th * 2), th)
   let track = mix(_get(style, "track", t.overlay), _get(style, "fill", t.accent), on)
@@ -3376,9 +3971,10 @@ pub fn radio_group(r, labels, selected, style)
   let ts = _ts(_face(t, style), size, _get(style, "fg", t.text))
   for i in range(0, len(labels)) do
     let rr = rect(r.x, r.y + i * row_h, r.w, row_h)
-    if clicked(rr) then sel = i end
+    let hot = _hot(rr, labels[i])
+    if hot && mouse_pressed(0) then sel = i end
     let on = _anim_flag(sel == i, 22.0)
-    let hov = _anim_flag(hovered(rr), 16.0)
+    let hov = _anim_flag(hot, 16.0)
     let d = min(14, row_h - 6)
     let cc = {x: r.x + d / 2, y: rr.y + row_h / 2}
     let border = mix(_get(style, "outline", t.outline), _get(style, "focus", t.accent), max(on, hov * 0.5))
@@ -3417,24 +4013,27 @@ end
 
 fn _slider_positional(r, value, lo, hi, style)
   state dragging = false
-  dragging = _slider_drag(r, dragging)
-  _slider_draw(r, value, lo, hi, style, dragging, _anim_flag(dragging || hovered(r), 16.0))
+  let hot = _hot(r, style["id"] ?? nil)
+  dragging = _slider_drag(hot, dragging)
+  _slider_draw(r, value, lo, hi, style, dragging, _anim_flag(dragging || hot, 16.0))
 end
 
 fn _slider_keyed(r, value, lo, hi, style, key)
   state(key) dragging = false
   // The hover/drag ease is state too, so it follows the key the same way.
   state(key) act = -1.0
-  dragging = _slider_drag(r, dragging)
-  let target = if dragging || hovered(r) then 1.0 else 0.0 end
+  let hot = _hot(r, style["id"] ?? nil)
+  dragging = _slider_drag(hot, dragging)
+  let target = if dragging || hot then 1.0 else 0.0 end
   act = if act < 0.0 then target else approach(act, target, 16.0) end
   _slider_draw(r, value, lo, hi, style, dragging, act)
 end
 
-// Whether the slider in `r` is being dragged this frame, given last frame's.
-fn _slider_drag(r, dragging)
+// Whether the slider is being dragged this frame, given last frame's and
+// whether the pointer is over it now.
+fn _slider_drag(hot, dragging)
   let d = dragging
-  if mouse_pressed(0) && hovered(r) then d = true end
+  if mouse_pressed(0) && hot then d = true end
   if !mouse_down(0) then d = false end
   d
 end
@@ -3496,8 +4095,9 @@ pub fn tab_bar(r, labels, active, style)
     let ts = _ts(face, size, fg0)
     let wl = text_width(labels[i], ts) + 24
     let tr = rect(x, r.y, wl, r.h)
-    if clicked(tr) then act = i end
-    let hov = _anim_flag(hovered(tr), 16.0)
+    let hot = _hot(tr, labels[i])
+    if hot && mouse_pressed(0) then act = i end
+    let hov = _anim_flag(hot, 16.0)
     if !is && hov > 0.01 then
       draw_rect(tr, over(on, _get(style, "hover", t.hover), hov * 160.0 / 255.0))
     end
@@ -3522,7 +4122,7 @@ end
 
 pub fn tooltip(anchor, text, style)
   state hover_since = -1.0
-  if hovered(anchor) then
+  if _over(anchor) then
     if hover_since < 0.0 then hover_since = time() end
   else
     hover_since = -1.0
@@ -3545,10 +4145,15 @@ pub fn tooltip(anchor, text, style)
     // alpha is genuine translucency, not a flat tint: it stays an alpha.
     let alpha = int(a * 235.0)
     let tr = rect(x, y, wpx, hpx)
-    draw_elevation(tr, t.radius_sm, 2, {a: int(a * float(elevation(2).a))})
-    draw_rect_rounded(tr, t.radius_sm, _get(style, "bg", t.overlay), alpha)
-    draw_rect_outline(tr, _get(style, "outline", t.outline), alpha)
-    draw_text(text, {x: x + 8, y: y + 5}, {...ts, color: {...fg, a: alpha}})
+    // On the tooltip layer and outside every clip: the tip comes out on top
+    // wherever in the frame it was asked for, and a tip for a row inside a
+    // scrolled list is not cut off by the list.
+    ui_overlay(max(ui_layer(), UI_LAYER_TOOLTIP), fn()
+      draw_elevation(tr, t.radius_sm, 2, {a: int(a * float(elevation(2).a))})
+      draw_rect_rounded(tr, t.radius_sm, _get(style, "bg", t.overlay), alpha)
+      draw_rect_outline(tr, _get(style, "outline", t.outline), alpha)
+      draw_text(text, {x: x + 8, y: y + 5}, {...ts, color: {...fg, a: alpha}})
+    end)
   end
 end
 
@@ -3606,6 +4211,17 @@ pub fn modal_update(m, r)
   end
 end
 
+// A dialog takes the rest of the frame: from its first draw call on, the
+// frame is on the modal layer (so the dialog's own controls, drawn by the app
+// after `modal()` returns, are on it too) and everything below is inert.
+// Idempotent, so the backdrop and the chrome can both call it.
+fn _modal_layer()
+  if ui_layer() < UI_LAYER_MODAL then
+    ui_layer(UI_LAYER_MODAL)
+  end
+  ui_modal()
+end
+
 // The dimming layer between the panel and the dialog.
 pub fn draw_modal_backdrop()
   draw_modal_backdrop({})
@@ -3616,6 +4232,7 @@ end
 // against ahead of time (see `over`). What was wrong was the *number* being a
 // bare 120 with no stated intent — it is 47% dim, written as such.
 pub fn draw_modal_backdrop(style)
+  _modal_layer()
   draw_rect(rect(0, 0, screen_width(), screen_height()),
             _get(style, "shadow", #000000), _get(style, "dim", alpha_pct(47)))
 end
@@ -3627,6 +4244,8 @@ end
 
 pub fn draw_modal(r, title, style)
   let t = _palette()
+  _modal_layer()
+  _reg(r, style["id"] ?? title)
   // Elevation 3 — the top of the scale, because a modal is the frontmost
   // thing on screen. The old offset rectangle read as a second, misaligned
   // dialog behind this one.
@@ -3832,7 +4451,8 @@ pub fn splitter(sp, r, style)
   else
     rect(r.x, r.y + apx - band / 2, r.w, band)
   end
-  if mouse_pressed(0) && hovered(hit) then
+  let hot = _hot(hit, style["id"] ?? nil)
+  if mouse_pressed(0) && hot then
     s = {frac: s.frac, drag: true}
   end
   if !mouse_down(0) then
@@ -3848,7 +4468,7 @@ pub fn splitter(sp, r, style)
       rect(r.x, r.y + apx - band / 2, r.w, band)
     end
   end
-  let active = s.drag || hovered(hit)
+  let active = s.drag || hot
   let lc = if active then _get(style, "active", t.accent) else _get(style, "line", t.outline) end
   let lw = if active then 2 else 1 end
   let a = rect(0, 0, 0, 0)
@@ -3939,7 +4559,7 @@ pub fn table(tb, r, cols, rows_data, style)
   draw_rect(head, _get(style, "head_bg", t.panel))
   for i in range(0, len(cols)) do
     let cr = crects[i]
-    if clicked(cr) then
+    if _hot(cr, cols[i]["label"] ?? nil) && mouse_pressed(0) then
       if nt.sort_col == i then
         nt = {...nt, sort_asc: !nt.sort_asc}
       else
@@ -3969,7 +4589,7 @@ pub fn table(tb, r, cols, rows_data, style)
     let rr = rect(body.x, body.y + vi * row_h, body.w, row_h)
     if idx == lst.selected then
       draw_rect(rr, _get(style, "selection", t.selection))
-    elsif hovered(rr) then
+    elsif _over(rr) then
       draw_rect(rr, t.hover)
     elsif zebra && idx % 2 == 1 then
       draw_rect(rr, over(on, t.hover, 70))

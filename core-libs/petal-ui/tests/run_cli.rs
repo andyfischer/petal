@@ -341,6 +341,70 @@ fn a_bad_scenario_file_exits_two() {
     assert!(stderr.contains("canonical"), "{stderr}");
 }
 
+// ── Named targets ────────────────────────────────────────────────────────
+
+const TARGET_APP: &str = "import ui\nstate n = 0\n\
+                          if button(rect(16, 16, 80, 24), \"Save\") then n = n + 1 end\n";
+
+/// A scenario clicks a widget by name, and `--targets` lists what can be named.
+#[test]
+fn a_scenario_clicks_a_named_target_and_targets_lists_them() {
+    let s = Scratch::new("targets");
+    let app = s.write("app.ptl", TARGET_APP);
+    let scenario = s.write("s.json", r#"{"events": [{"at": 2, "click_target": "Save"}]}"#);
+    let (code, stdout, stderr) = run(&[
+        app.to_str().unwrap(),
+        "--frames",
+        "5",
+        "--targets",
+        "--scenario",
+        scenario.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{stderr}");
+    let records: Vec<serde_json::Value> = stdout
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(records[4]["state"]["n"], 1);
+    let target = &records[0]["targets"][0];
+    assert_eq!(target["id"], "Save");
+    assert_eq!(
+        (&target["x"], &target["y"], &target["w"], &target["h"]),
+        (&serde_json::json!(16.0), &serde_json::json!(16.0), &serde_json::json!(80.0), &serde_json::json!(24.0))
+    );
+}
+
+/// Without the flag a record is what it always was.
+#[test]
+fn records_have_no_targets_field_unless_asked() {
+    let s = Scratch::new("notargets");
+    let app = s.write("app.ptl", TARGET_APP);
+    let (code, stdout, _) = run(&[app.to_str().unwrap(), "--frames", "1"]);
+    assert_eq!(code, 0);
+    let record: serde_json::Value = serde_json::from_str(stdout.lines().next().unwrap()).unwrap();
+    assert!(record.get("targets").is_none());
+}
+
+/// Naming a target the app does not have stops the run on that frame.
+#[test]
+fn a_scenario_that_names_a_missing_target_fails_the_frame() {
+    let s = Scratch::new("missingtarget");
+    let app = s.write("app.ptl", TARGET_APP);
+    let scenario = s.write("s.json", r#"{"events": [{"at": 2, "click_target": "Delete"}]}"#);
+    let (code, stdout, _) = run(&[
+        app.to_str().unwrap(),
+        "--frames",
+        "5",
+        "--scenario",
+        scenario.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 1);
+    let last: serde_json::Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
+    assert_eq!(last["frame"], 2);
+    let error = last["error"].as_str().unwrap();
+    assert!(error.contains("no ui target named \"Delete\""), "{error}");
+}
+
 // ── host_data fixtures ───────────────────────────────────────────────────
 
 #[test]

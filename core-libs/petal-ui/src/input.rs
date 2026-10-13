@@ -261,6 +261,10 @@ pub struct InputState {
     mods: Modifiers,
     drag_press: Option<(i32, i32)>,
     drag_active: bool,
+    /// Where the left button last went down. Unlike `drag_press` it survives
+    /// the release, so the frame that sees the release can still ask where
+    /// the press landed (`interact().click`).
+    last_press: (i32, i32),
 
     // Pending edges (since the last begin_frame).
     pending_keys_pressed: HashSet<String>,
@@ -313,6 +317,7 @@ impl InputState {
                 self.buttons_down.insert(button);
                 self.pending_buttons_pressed.insert(button);
                 if button == buttons::LEFT {
+                    self.last_press = (self.mouse_x, self.mouse_y);
                     self.drag_press = Some((self.mouse_x, self.mouse_y));
                     self.drag_active = false;
                     let count = match self.last_click {
@@ -478,6 +483,17 @@ impl InputState {
     pub fn drag_start(&self) -> Option<(i32, i32)> {
         self.drag_press
     }
+
+    /// Whether `button` is held right now (level state, not a frame edge).
+    pub fn button_down(&self, button: u8) -> bool {
+        self.buttons_down.contains(&button)
+    }
+
+    /// Where the left button last went down — `(0, 0)` before any press.
+    /// Still set after the release, which `drag_start` is not.
+    pub fn last_press(&self) -> (i32, i32) {
+        self.last_press
+    }
 }
 
 // ── Host-side: bind the snapshot into the Env before a run ───────────────
@@ -520,6 +536,12 @@ pub fn bind_input(env: &mut Env, input: &InputState) {
     env.set_binding(s, text);
     // The clipboard is an input too (the prelude's `clipboard_get()`).
     crate::clipboard::bind_clipboard(env, input);
+    // Last frame's registered rects become this frame's hit-test registry,
+    // and the pointer's floor is worked out against them (see `crate::hit`).
+    crate::hit::roll(env, input);
+    // A host that draws no images never drains the `image_load` requests;
+    // keep them from piling up (a script asks again every frame it waits).
+    crate::draw::cap_image_requests(env);
 }
 
 /// Bind the per-frame dt (seconds) + frame_count uniforms.
@@ -684,6 +706,9 @@ pub fn register_input(env: &mut Env) {
     // library. Everything else here reads an input class, emits, or (like
     // `font`) answers from host state.
     register(env, "ui_version", native_ui_version, NativeEffects::CONST);
+    // Layered hit testing and the target registry (`interact`, `ui_layer`,
+    // `pointer_captured`, `ui_target_rect` in the prelude).
+    crate::hit::register_hit(env);
 }
 
 fn binding_int(state: &mut PetalCxt, name: &str) -> i64 {

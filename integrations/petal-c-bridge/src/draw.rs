@@ -60,6 +60,10 @@ pub enum DrawKind {
     Snapshot,
     BlurCanvas,
     Host,
+    Rects,
+    CacheBegin,
+    CacheEnd,
+    CacheDraw,
 }
 
 /// Mirrors `pb_draw_cmd`.
@@ -202,11 +206,26 @@ impl DrawList {
                 h,
                 a,
                 radius,
+                tint,
+                src,
+                slice,
             } => {
                 let mut c = PbDrawCmd::new(DrawKind::Image).rect(*x, *y, *w, *h);
                 (c.text, c.text_len) = self.keep_str(source);
-                c.color = rgba(255, 255, 255, *a);
+                // The tint multiplies the image; white is "as it is".
+                let [tr, tg, tb] = tint.unwrap_or([255, 255, 255]);
+                c.color = rgba(tr, tg, tb, *a);
                 c.radius = *radius as i32;
+                // The source rect, in image pixels: x1 y1 = origin, x2 y2 =
+                // size (0 0 = the whole image).
+                if let Some([sx, sy, sw, sh]) = src {
+                    (c.x1, c.y1, c.x2, c.y2) = (*sx, *sy, *sw, *sh);
+                }
+                // Nine-slice insets, in image pixels: x3 = left, y3 = top,
+                // cx = right, cy = bottom (all 0 = scale the image whole).
+                if let Some([l, t, r, b]) = slice {
+                    (c.x3, c.y3, c.cx, c.cy) = (*l as i32, *t as i32, *r as i32, *b as i32);
+                }
                 c
             }
             D::Clear { r, g, b } => {
@@ -517,6 +536,38 @@ impl DrawList {
                 c.radius = *radius as i32;
                 c
             }
+            // Only a host that asked for it (`pb_vm_set_draw_caps`) is sent
+            // these four; for every other the drain has already lowered them.
+            D::Rects { rects } => {
+                let mut c = PbDrawCmd::new(DrawKind::Rects);
+                let flat: Box<[i32]> = petal_ui::compose::batch_as_ints(rects).into_boxed_slice();
+                c.points = flat.as_ptr();
+                c.point_count = rects.len();
+                self.points.push(flat);
+                c
+            }
+            D::CacheBegin { id, w, h } => {
+                let mut c = PbDrawCmd::new(DrawKind::CacheBegin);
+                c.id = *id;
+                c.w = *w as i32;
+                c.h = *h as i32;
+                c
+            }
+            D::CacheEnd { id } => {
+                let mut c = PbDrawCmd::new(DrawKind::CacheEnd);
+                c.id = *id;
+                c
+            }
+            D::CacheDraw { id, x, y } => {
+                let mut c = PbDrawCmd::new(DrawKind::CacheDraw);
+                c.id = *id;
+                c.x = *x;
+                c.y = *y;
+                c
+            }
+            // Resolved by the drain (it sorts the frame by layer, and drops
+            // what was drawn only to be measured); never sent.
+            D::Layer { .. } | D::Mute { .. } => return,
             D::Host { tag, data } => {
                 let mut c = PbDrawCmd::new(DrawKind::Host);
                 (c.text, c.text_len) = self.keep_str(tag);
@@ -530,5 +581,60 @@ impl DrawList {
             }
         };
         self.cmds.push(c);
+    }
+}
+
+/// Mirrors `pb_ui_target`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct PbUiTarget {
+    pub id: *const c_char,
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    pub layer: i64,
+    pub blocks: u8,
+    pub modal: u8,
+}
+
+impl PbUiTarget {
+    pub fn empty() -> Self {
+        PbUiTarget {
+            id: ptr::null(),
+            x: 0.0,
+            y: 0.0,
+            w: 0.0,
+            h: 0.0,
+            layer: 0,
+            blocks: 0,
+            modal: 0,
+        }
+    }
+}
+
+/// The registry of one frame as handed to C: the structs, and the id strings
+/// they point into.
+#[derive(Default)]
+pub struct TargetList {
+    pub targets: Vec<PbUiTarget>,
+    ids: Vec<CString>,
+}
+
+impl TargetList {
+    pub fn push(&mut self, t: &petal_ui::hit::Target) {
+        let id = cstring_lossy(t.id.as_deref().unwrap_or(""));
+        let p = id.as_ptr();
+        self.ids.push(id);
+        self.targets.push(PbUiTarget {
+            id: p,
+            x: t.x,
+            y: t.y,
+            w: t.w,
+            h: t.h,
+            layer: t.layer,
+            blocks: t.blocks as u8,
+            modal: t.modal as u8,
+        });
     }
 }

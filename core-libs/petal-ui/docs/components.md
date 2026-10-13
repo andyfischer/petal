@@ -16,6 +16,13 @@ frame, widgets draw when called and return their new value. Retained state
 lives in `state` (keyed per call path — two callsites of the same widget never
 share internal state).
 
+This guide explains the widgets and why they are shaped the way they are. For
+the complete list of what `import ui` exports, one line each — including
+layers and hit testing (`ui_layer`, `interact`, `pointer_captured`), named
+targets, retained drawing (`cached_layer`, `draw_rects`), flow layout and
+`ui_measure`, none of which are covered below — see
+[docs/ui-reference.md](../../../docs/ui-reference.md).
+
 ## Conventions
 
 1. **Explicit state records.** Widgets with cross-frame state take and return

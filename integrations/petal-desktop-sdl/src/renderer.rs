@@ -592,6 +592,15 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
         DrawCommand::Image { .. } => {}
         // Host-extension tags this app doesn't define; nothing to draw.
         DrawCommand::Host { .. } => {}
+        // Lowered by the drain for a host that has not asked for them
+        // (`petal_ui::compose::HostCaps`): batches arrive as rects, retained
+        // layers as their content, and layer markers never leave the drain.
+        DrawCommand::Rects { .. }
+        | DrawCommand::Layer { .. }
+        | DrawCommand::Mute { .. }
+        | DrawCommand::CacheBegin { .. }
+        | DrawCommand::CacheEnd { .. }
+        | DrawCommand::CacheDraw { .. } => {}
         // Handled in `render`; unreachable here.
         DrawCommand::CreateCanvas { .. }
         | DrawCommand::SetTarget { .. }

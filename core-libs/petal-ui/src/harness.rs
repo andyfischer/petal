@@ -240,6 +240,29 @@ impl Headless {
     /// Move to (`x`, `y`) and left-click, then run one frame — the frame
     /// that sees the `mouse_pressed` edge. The release edge reaches the
     /// following frame.
+    /// Every rect the script registered on the most recent frame — what
+    /// `interact`, the prelude widgets and `ui_target` declared (see
+    /// [`crate::hit`]).
+    pub fn targets(&mut self) -> Vec<crate::hit::Target> {
+        crate::hit::targets(&mut self.core.env)
+    }
+
+    /// The rect registered under `id` on the most recent frame.
+    pub fn target(&mut self, id: &str) -> Option<crate::hit::Target> {
+        crate::hit::target(&mut self.core.env, id)
+    }
+
+    /// [`click`](Self::click) the middle of the rect registered under `id`:
+    /// a test names what it clicks instead of knowing where it is. An error
+    /// if nothing registered that id on the most recent frame.
+    pub fn click_target(&mut self, id: &str) -> Result<&[DrawCommand], String> {
+        let (x, y) = self
+            .target(id)
+            .map(|t| t.center())
+            .ok_or_else(|| format!("no ui target named '{id}' on the last frame"))?;
+        self.click(x, y)
+    }
+
     pub fn click(&mut self, x: i32, y: i32) -> Result<&[DrawCommand], String> {
         self.mouse_move(x, y);
         self.mouse_down(input::buttons::LEFT);

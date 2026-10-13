@@ -810,7 +810,13 @@ impl TextStyle {
             style.weight = weight as u16;
         }
         style.italic = matches!(fields.get("italic"), Some(Value::Bool(true)));
-        if let Some(spacing) = fields.get("spacing").and_then(num_as_f64) {
+        // `tracking` is the typographer's name for the same thing; `spacing`
+        // wins when a style carries both.
+        if let Some(spacing) = fields
+            .get("spacing")
+            .or_else(|| fields.get("tracking"))
+            .and_then(num_as_f64)
+        {
             style.spacing = spacing;
         }
         Ok(style)

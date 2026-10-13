@@ -91,6 +91,19 @@ fn is_no_spacing(s: &f32) -> bool {
     *s == 0.0
 }
 
+/// One rect of a [`DrawCommand::Rects`] batch.
+#[derive(Serialize, PartialEq, Eq, Debug, Clone, Copy)]
+pub struct BatchRect {
+    pub x: i32,
+    pub y: i32,
+    pub w: u32,
+    pub h: u32,
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+}
+
 #[derive(Serialize, PartialEq, Debug, Clone)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum DrawCommand {
@@ -110,6 +123,21 @@ pub enum DrawCommand {
         /// always meant.
         #[serde(default, skip_serializing_if = "is_zero")]
         radius: u32,
+        /// Multiply the image's pixels by this colour (`[r, g, b]`); `None`
+        /// draws it as it is. The same white sprite, recoloured per use.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tint: Option<[u8; 3]>,
+        /// The part of the image to draw, `[x, y, w, h]` in the image's own
+        /// pixels — one cell of an atlas. `None` is the whole image.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        src: Option<[i32; 4]>,
+        /// Nine-slice insets `[left, top, right, bottom]` in the image's own
+        /// pixels (of `src`, when there is one): the four corners are drawn
+        /// unscaled, the edges stretch along one axis and the middle along
+        /// both, so a small frame image makes a panel of any size. `None`
+        /// scales the image whole.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        slice: Option<[u32; 4]>,
     },
     Clear {
         r: u8,
@@ -496,6 +524,53 @@ pub enum DrawCommand {
         id: u32,
         radius: u32,
     },
+    /// Many filled rects in one command — a baked minimap, a tile grid, a
+    /// heat map: the script makes one call where it made hundreds.
+    ///
+    /// Only a host that asked for it sees this command
+    /// ([`crate::compose::HostCaps::batch_rects`]); for every other host the
+    /// drain lowers it to one [`Rect`](Self::Rect) per entry, in order.
+    Rects {
+        rects: Vec<BatchRect>,
+    },
+    /// Everything from here to the next `Layer` belongs to draw layer `n`
+    /// (0 is where a frame starts). Never reaches a host: the drain sorts the
+    /// frame's commands by layer — stably, lower layers first — and removes
+    /// the markers. See [`crate::compose`].
+    Layer {
+        n: i32,
+    },
+    /// Start recording retained layer `id`, `w`×`h` px. The commands up to
+    /// the matching [`CacheEnd`](Self::CacheEnd) are its content, in the
+    /// layer's own coordinates ((0, 0) is its top-left); they are not drawn
+    /// where they stand. The layer is drawn by [`CacheDraw`](Self::CacheDraw).
+    ///
+    /// Only a host that asked for it sees the three cache commands
+    /// ([`crate::compose::HostCaps::retained_layers`]); for every other host
+    /// the drain keeps the content itself and replaces each `CacheDraw` with
+    /// the content, moved and clipped.
+    CacheBegin {
+        id: u32,
+        w: u32,
+        h: u32,
+    },
+    CacheEnd {
+        id: u32,
+    },
+    /// Draw retained layer `id` with its top-left at (`x`, `y`). The content
+    /// is whatever the most recent `CacheBegin`…`CacheEnd` for `id` recorded —
+    /// on this frame or any earlier one.
+    CacheDraw {
+        id: u32,
+        x: i32,
+        y: i32,
+    },
+    /// Nothing drawn from `on: true` to the matching `on: false` is drawn at
+    /// all: the script ran a piece of UI to *measure* it (`ui_measure`).
+    /// Never reaches a host — the drain drops the span and the markers.
+    Mute {
+        on: bool,
+    },
     /// A host-registered extension command: an unrecognized tag passes
     /// through in order with its raw args (heap-backed; decode them before
     /// mutating the Env). Not included when serializing a command list.
@@ -536,6 +611,85 @@ fn as_i64(v: &Value) -> Result<i64, String> {
             other.type_name()
         )),
     }
+}
+
+/// A colour value as `(r, g, b, a)`: a `{r, g, b, [a]}` record (what a hex
+/// literal is), or a packed `0xRRGGBB` int (opaque). `None` for anything else,
+/// `nil` included.
+pub(crate) fn color_of(v: &Value, heap: &Heap) -> Option<(u8, u8, u8, u8)> {
+    match v {
+        Value::Map(id) => {
+            let map = heap.get_map(*id);
+            let ch = |name: &str| map.get(name).and_then(num_as_i64);
+            Some((
+                ch("r")? as u8,
+                ch("g")? as u8,
+                ch("b")? as u8,
+                ch("a").map_or(255, |a| a as u8),
+            ))
+        }
+        Value::Int(n) => Some(((*n >> 16) as u8, (*n >> 8) as u8, *n as u8, 255)),
+        _ => None,
+    }
+}
+
+/// The colour argument at `index` as the three channel values a draw command
+/// carries: a `{r, g, b}` record, or a packed `0xRRGGBB` int. This is what
+/// lets `draw_rect(x, y, w, h, c)` be one native call rather than a prelude
+/// function unpacking the record first.
+fn color_arg(state: &PetalCxt, index: usize, who: &str) -> Result<[Value; 3], String> {
+    match state.get_value(index)? {
+        Value::Map(id) => {
+            let map = state.heap().get_map(id);
+            let ch = |name: &str| -> Result<Value, String> {
+                match map.get(name) {
+                    Some(v) => num_as_i64(v).map(Value::Int).ok_or_else(|| {
+                        format!(
+                            "{who}() expects a number for colour field '{name}', got {}",
+                            v.type_name()
+                        )
+                    }),
+                    None => Err(format!(
+                        "{who}() expects a colour record with field '{name}'"
+                    )),
+                }
+            };
+            Ok([ch("r")?, ch("g")?, ch("b")?])
+        }
+        Value::Int(n) => Ok([
+            Value::Int((n >> 16) & 0xff),
+            Value::Int((n >> 8) & 0xff),
+            Value::Int(n & 0xff),
+        ]),
+        other => Err(format!(
+            "{who}() expects a colour (a {{r, g, b}} record, or a packed int r * 65536 + g * 256 + b) at arg {index}, got {}",
+            other.type_name()
+        )),
+    }
+}
+
+/// The `{x, y, w, h}` record at `index` as four integer pixel values.
+fn rect_arg(state: &PetalCxt, index: usize, who: &str) -> Result<[Value; 4], String> {
+    let v = state.get_value(index)?;
+    let Value::Map(id) = v else {
+        return Err(format!(
+            "{who}() expects a rect record at arg {index}, got {}",
+            v.type_name()
+        ));
+    };
+    let map = state.heap().get_map(id);
+    let field = |name: &str| -> Result<Value, String> {
+        match map.get(name) {
+            Some(v) => num_as_i64(v).map(Value::Int).ok_or_else(|| {
+                format!(
+                    "{who}() expects a number for rect field '{name}', got {}",
+                    v.type_name()
+                )
+            }),
+            None => Err(format!("{who}() expects a rect with field '{name}'")),
+        }
+    };
+    Ok([field("x")?, field("y")?, field("w")?, field("h")?])
 }
 
 /// Decode a heap list of points — each a `vec2`, a two-element `[x, y]` list
@@ -670,6 +824,26 @@ impl DrawCommand {
                     h: u32_at(4)?,
                     a: opt_u8(5, 255),
                     radius: opt_u32(6, 0),
+                    tint: match data.get(7) {
+                        Some(v) => color_of(v, heap).map(|(r, g, b, _)| [r, g, b]),
+                        None => None,
+                    },
+                    src: {
+                        let at = |i: usize| data.get(i).and_then(num_as_i64).map(|n| n as i32);
+                        match (at(8), at(9), at(10), at(11)) {
+                            (Some(x), Some(y), Some(w), Some(h)) if w > 0 && h > 0 => {
+                                Some([x, y, w, h])
+                            }
+                            _ => None,
+                        }
+                    },
+                    slice: {
+                        let at = |i: usize| {
+                            data.get(i).and_then(num_as_i64).map_or(0, |n| n.max(0) as u32)
+                        };
+                        let s = [at(12), at(13), at(14), at(15)];
+                        if s == [0; 4] { None } else { Some(s) }
+                    },
                 }
             }
             "clear" => DrawCommand::Clear {
@@ -931,6 +1105,48 @@ impl DrawCommand {
                 id: u32_at(0)?,
                 radius: u32_at(1)?,
             },
+            "rects" => DrawCommand::Rects {
+                rects: match arg(0)? {
+                    Value::F64Array(id) => heap
+                        .get_f64_array(*id)
+                        .chunks_exact(5)
+                        .map(|c| {
+                            let argb = c[4] as u32;
+                            BatchRect {
+                                x: c[0] as i32,
+                                y: c[1] as i32,
+                                w: c[2].max(0.0) as u32,
+                                h: c[3].max(0.0) as u32,
+                                r: (argb >> 16) as u8,
+                                g: (argb >> 8) as u8,
+                                b: argb as u8,
+                                a: (argb >> 24) as u8,
+                            }
+                        })
+                        .collect(),
+                    other => {
+                        return Err(format!(
+                            "rects command needs a packed array, got {}",
+                            other.type_name()
+                        ));
+                    }
+                },
+            },
+            "layer" => DrawCommand::Layer { n: i32_at(0)? },
+            "mute" => DrawCommand::Mute {
+                on: matches!(arg(0)?, Value::Bool(true)),
+            },
+            "cache_begin" => DrawCommand::CacheBegin {
+                id: u32_at(0)?,
+                w: u32_at(1)?,
+                h: u32_at(2)?,
+            },
+            "cache_end" => DrawCommand::CacheEnd { id: u32_at(0)? },
+            "cache_draw" => DrawCommand::CacheDraw {
+                id: u32_at(0)?,
+                x: i32_at(1)?,
+                y: i32_at(2)?,
+            },
             _ => DrawCommand::Host { tag, data },
         };
         Ok(cmd)
@@ -945,13 +1161,22 @@ pub fn take_draw_commands(env: &mut Env) -> Vec<DrawCommand> {
     let sym = env.intern_symbol(DRAW_COMMANDS_SYMBOL);
     let values = env.take_output_buffer(sym);
     let mut out = Vec::with_capacity(values.len());
+    let mut kept = Vec::with_capacity(values.len());
     for v in &values {
         match DrawCommand::from_value(v, env.heap()) {
-            Ok(cmd) => out.push(cmd),
+            Ok(cmd) => {
+                out.push(cmd);
+                kept.push(*v);
+            }
             Err(e) => eprintln!("[petal-ui draw] {}", e),
         }
     }
-    out
+    // Layers sorted, retained layers resolved, batches lowered — whatever
+    // this host did not ask to handle itself (see `crate::compose`).
+    crate::compose::compose(env, None, out, kept)
+        .into_iter()
+        .map(|(cmd, _)| cmd)
+        .collect()
 }
 
 /// [`take_draw_commands`], but each command paired with the call chain that drew
@@ -976,6 +1201,8 @@ pub fn take_draw_commands_traced(env: &mut Env) -> Vec<(DrawCommand, EmitSite)> 
     let values = env.take_output_buffer(sym);
     let mut origins = env.take_output_origins(sym);
     let mut out = Vec::with_capacity(values.len());
+    let mut kept = Vec::with_capacity(values.len());
+    let mut sites = Vec::with_capacity(values.len());
     for (i, v) in values.iter().enumerate() {
         match DrawCommand::from_value(v, env.heap()) {
             // Index into `origins` rather than zipping: a command that fails to
@@ -983,12 +1210,22 @@ pub fn take_draw_commands_traced(env: &mut Env) -> Vec<(DrawCommand, EmitSite)> 
             // command's attribution onto the wrong call site.
             Ok(cmd) => {
                 let site = origins.get_mut(i).map(std::mem::take).unwrap_or_default();
-                out.push((cmd, site));
+                out.push(cmd);
+                kept.push(*v);
+                sites.push(site);
             }
             Err(e) => eprintln!("[petal-ui draw] {}", e),
         }
     }
-    out
+    // A command the drain made (a retained layer's content, a lowered batch)
+    // is attributed to the command it came from.
+    crate::compose::compose(env, None, out, kept)
+        .into_iter()
+        .map(|(cmd, from)| {
+            let site = from.and_then(|i| sites.get(i).cloned()).unwrap_or_default();
+            (cmd, site)
+        })
+        .collect()
 }
 
 /// Discard any buffered draw commands (defensive clear at the top of a frame).
@@ -1008,13 +1245,20 @@ pub fn take_draw_commands_for(env: &mut Env, stack_id: StackKey) -> Vec<DrawComm
         None => return Vec::new(),
     };
     let mut out = Vec::with_capacity(values.len());
+    let mut kept = Vec::with_capacity(values.len());
     for v in &values {
         match DrawCommand::from_value(v, heap) {
-            Ok(cmd) => out.push(cmd),
+            Ok(cmd) => {
+                out.push(cmd);
+                kept.push(*v);
+            }
             Err(e) => eprintln!("[petal-ui draw] {}", e),
         }
     }
-    out
+    crate::compose::compose(env, Some(stack_id), out, kept)
+        .into_iter()
+        .map(|(cmd, _)| cmd)
+        .collect()
 }
 
 /// Reset the per-frame offscreen-canvas id counter so `create_canvas` hands
@@ -1049,6 +1293,19 @@ const MEASURES_TEXT: NativeEffects = NativeEffects::probe(InputClasses::BINDINGS
 /// (see [`register_canvas`]).
 pub fn register_draw(env: &mut Env) {
     register(env, "draw_image", native_draw_image, DRAW);
+    // The host answers these from what it has loaded; see `bind_image_sizes`.
+    register(
+        env,
+        "image_size",
+        native_image_size,
+        NativeEffects::probe(InputClasses::BINDINGS),
+    );
+    register(
+        env,
+        "image_load",
+        native_image_load,
+        NativeEffects::probe(InputClasses::BINDINGS).with_emits(),
+    );
     register(env, "clear", native_clear, DRAW);
     register(env, "draw_rect", native_draw_rect, DRAW);
     register(env, "draw_rect_rounded", native_draw_rect_rounded, DRAW);
@@ -1084,6 +1341,8 @@ pub fn register_draw(env: &mut Env) {
     register(env, "clip_none", native_clip_none, DRAW);
     register(env, "clip_push", native_clip_push, DRAW);
     register(env, "clip_pop", native_clip_pop, DRAW);
+    // Draw layers, retained layers and batches (`crate::compose`).
+    crate::compose::register_compose(env);
     register(env, "text_width", native_text_width, MEASURES_TEXT);
     register(env, "text_advance", native_text_advance, MEASURES_TEXT);
     // The other axis, and the fitting that needs both. `text_width` answers
@@ -1136,6 +1395,95 @@ pub fn register_canvas(env: &mut Env) {
     register(env, "blur_canvas", native_blur_canvas, DRAW);
 }
 
+/// Binding holding the sizes of the images the host has ready: a record of
+/// `{w, h}` records keyed by source. What `image_size` and `image_load`
+/// answer from.
+pub const SYM_IMAGE_SIZES: &str = "image_sizes";
+
+/// Output buffer `image_load` pushes the sources a script asked for into.
+pub const IMAGE_REQUESTS_BUFFER: &str = "image_requests";
+
+/// Publish the images the host has ready, with their pixel sizes. Replaces
+/// the previous set; call it when an image finishes loading (the script
+/// re-runs if it asked about one).
+pub fn bind_image_sizes(env: &mut Env, images: &[(&str, u32, u32)]) {
+    let mut record: petal::heap::RecordMap = petal::heap::record_map_with_capacity(images.len());
+    for (source, w, h) in images {
+        let mut size: petal::heap::RecordMap = petal::heap::record_map_with_capacity(2);
+        size.insert("w".to_string(), Value::Int(*w as i64));
+        size.insert("h".to_string(), Value::Int(*h as i64));
+        let id = env.heap_mut().alloc_map(size);
+        record.insert((*source).to_string(), Value::Map(id));
+    }
+    let id = env.heap_mut().alloc_map(record);
+    let sym = env.intern_symbol(SYM_IMAGE_SIZES);
+    env.set_binding(sym, Value::Map(id));
+}
+
+/// Drain the sources scripts asked for with `image_load` since the last
+/// call, each once, in the order first asked.
+pub fn take_image_requests(env: &mut Env) -> Vec<String> {
+    let sym = env.intern_symbol(IMAGE_REQUESTS_BUFFER);
+    let mut out: Vec<String> = Vec::new();
+    for v in env.take_output_buffer(sym) {
+        if let Value::String(id) = v {
+            let s = env.heap().get_string(id).to_string();
+            if !out.contains(&s) {
+                out.push(s);
+            }
+        }
+    }
+    out
+}
+
+/// Requests a host that never calls [`take_image_requests`] may leave
+/// queued before they are dropped.
+const MAX_IMAGE_REQUESTS: usize = 1024;
+
+/// Drop the queued `image_load` requests once nobody is draining them. A
+/// script asks again on every frame it is still waiting, so nothing is lost
+/// to a host that starts draining later. Called by `bind_input`.
+pub(crate) fn cap_image_requests(env: &mut Env) {
+    let sym = env.intern_symbol(IMAGE_REQUESTS_BUFFER);
+    if env.output_buffer(sym).len() > MAX_IMAGE_REQUESTS {
+        env.clear_output_buffer(sym);
+    }
+}
+
+fn image_size_value(state: &mut PetalCxt, source: &str) -> Value {
+    match state.binding_named(SYM_IMAGE_SIZES) {
+        Value::Map(id) => match state.heap().get_map(id).get(source) {
+            Some(v @ Value::Map(_)) => *v,
+            _ => Value::Nil,
+        },
+        _ => Value::Nil,
+    }
+}
+
+/// `image_size(source)` → `{w, h}` in pixels, or `nil` while the host does
+/// not have the image.
+fn native_image_size(state: &mut PetalCxt) -> NativeResult {
+    let source = state.get_string(1)?;
+    let v = image_size_value(state, &source);
+    state.push_value(v);
+    Ok(1)
+}
+
+/// `image_load(source)` → whether the host has the image ready. Asking is
+/// also the request: the source goes into [`IMAGE_REQUESTS_BUFFER`] for the
+/// host to load, so a script can call this every frame until it says yes.
+fn native_image_load(state: &mut PetalCxt) -> NativeResult {
+    let source = state.get_string(1)?;
+    let ready = !matches!(image_size_value(state, &source), Value::Nil);
+    if !ready {
+        let v = Value::String(state.heap_mut().alloc_string(source));
+        let sym = state.intern_symbol(IMAGE_REQUESTS_BUFFER);
+        state.push_output(sym, v);
+    }
+    state.push_bool(ready);
+    Ok(1)
+}
+
 /// Emit a draw command into the `draw_commands` output buffer.
 pub fn emit_draw(state: &mut PetalCxt, tag: &str, data: Vec<Value>) {
     let sym = state.intern_symbol(DRAW_COMMANDS_SYMBOL);
@@ -1167,8 +1515,11 @@ fn native_clear(state: &mut PetalCxt) -> NativeResult {
 }
 
 // `draw_rect(x, y, w, h, r, g, b, [a])` — trailing alpha is optional (opaque).
-/// `draw_image(source, x, y, w, h, [alpha], [radius])` — draw a host-resolved
-/// bitmap, optionally with rounded corners (an avatar, a card thumbnail).
+/// `draw_image(source, x, y, w, h, [alpha], [radius], [tint], [sx, sy, sw,
+/// sh], [slice_l, slice_t, slice_r, slice_b])` — draw a host-resolved bitmap,
+/// optionally with rounded corners (an avatar, a card thumbnail), multiplied
+/// by a tint colour, taken from a sub-rect of the image (an atlas cell), and
+/// nine-sliced. See [`DrawCommand::Image`].
 fn native_draw_image(state: &mut PetalCxt) -> NativeResult {
     let source = state.get_string(1)?;
     let source = Value::String(state.heap_mut().alloc_string(source));
@@ -1178,14 +1529,62 @@ fn native_draw_image(state: &mut PetalCxt) -> NativeResult {
     }
     args.push(Value::Int(opt_int(state, 6, 255)?));
     args.push(Value::Int(opt_int(state, 7, 0)?)); // radius
+    // The extended tail: tint, source rect, nine-slice insets. Nothing is
+    // appended for a plain call, so it emits the 7-arg command it always has.
+    let n = state.arg_count();
+    if n >= 8 {
+        // tint: a colour, or nil for none.
+        args.push(match state.get_value(8)? {
+            Value::Nil => Value::Nil,
+            _ => {
+                let [r, g, b] = color_arg(state, 8, "draw_image")?;
+                let mut c: petal::heap::RecordMap = petal::heap::record_map_with_capacity(3);
+                c.insert("r".to_string(), r);
+                c.insert("g".to_string(), g);
+                c.insert("b".to_string(), b);
+                Value::Map(state.heap_mut().alloc_map(c))
+            }
+        });
+        // sx, sy, sw, sh, then slice l, t, r, b — all optional, 0 when absent.
+        for index in 9..=16 {
+            args.push(Value::Int(opt_int(state, index, 0)?));
+        }
+    }
     emit_draw(state, "image", args);
     state.push_nil();
     Ok(1)
 }
 
+/// `draw_rect` in its three shapes, told apart by the argument count alone:
+///
+/// - `(x, y, w, h, r, g, b, [a])` — flat,
+/// - `(x, y, w, h, c, [a])` — flat coordinates and a colour,
+/// - `(rect, c, [a])` — a rect record and a colour.
+///
+/// A colour is a `{r, g, b}` record or a packed `0xRRGGBB` int. All three are
+/// this one native, so the commonest draw call in any UI costs no Petal
+/// instructions beyond the call itself.
 fn native_draw_rect(state: &mut PetalCxt) -> NativeResult {
-    let mut args = int_args(state, 7)?;
-    args.push(Value::Int(opt_int(state, 8, 255)?)); // a
+    let n = state.arg_count();
+    let args = if n >= 7 {
+        let mut args = int_args(state, 7)?;
+        args.push(Value::Int(opt_int(state, 8, 255)?)); // a
+        args
+    } else if n >= 5 {
+        let mut args = int_args(state, 4)?;
+        args.extend(color_arg(state, 5, "draw_rect")?);
+        args.push(Value::Int(opt_int(state, 6, 255)?));
+        args
+    } else if n >= 2 {
+        let mut args = rect_arg(state, 1, "draw_rect")?.to_vec();
+        args.extend(color_arg(state, 2, "draw_rect")?);
+        args.push(Value::Int(opt_int(state, 3, 255)?));
+        args
+    } else {
+        return Err(format!(
+            "draw_rect() takes (rect, c, [a]), (x, y, w, h, c, [a]) or (x, y, w, h, r, g, b, [a]); got {n} arguments"
+        ));
+    };
     emit_draw(state, "rect", args);
     state.push_nil();
     Ok(1)
@@ -1687,24 +2086,34 @@ fn native_fill_fan(state: &mut PetalCxt) -> NativeResult {
 /// round joins and caps. The point of it being a single command rather than N
 /// `draw_line` calls is translucency: the whole stroke is composited once, so
 /// overlapping segments and joins don't darken where they meet.
+///
+/// The colour may also be one argument — `draw_polyline(points, c, [a],
+/// [width])`, `c` a `{r, g, b}` record or (with at most three arguments) a
+/// packed `0xRRGGBB` int. Four arguments with a number second is the flat
+/// `(points, r, g, b)`.
 fn native_draw_polyline(state: &mut PetalCxt) -> NativeResult {
     let points_value = point_list_arg(state, 1, "draw_polyline", 1)?;
-    let r = state.get_int(2)?;
-    let g = state.get_int(3)?;
-    let b = state.get_int(4)?;
-    let a = opt_int(state, 5, 255)?;
-    let width = opt_int(state, 6, 1)?;
+    let n = state.arg_count();
+    let one_colour = n < 4 || (n == 4 && matches!(state.get_value(2)?, Value::Map(_)));
+    let (rgb, next) = if one_colour {
+        (color_arg(state, 2, "draw_polyline")?, 3)
+    } else {
+        (
+            [
+                Value::Int(state.get_int(2)?),
+                Value::Int(state.get_int(3)?),
+                Value::Int(state.get_int(4)?),
+            ],
+            5,
+        )
+    };
+    let a = opt_int(state, next, 255)?;
+    let width = opt_int(state, next + 1, 1)?;
+    let [r, g, b] = rgb;
     emit_draw(
         state,
         "polyline",
-        vec![
-            points_value,
-            Value::Int(r),
-            Value::Int(g),
-            Value::Int(b),
-            Value::Int(a),
-            Value::Int(width),
-        ],
+        vec![points_value, r, g, b, Value::Int(a), Value::Int(width)],
     );
     state.push_nil();
     Ok(1)
@@ -1722,7 +2131,16 @@ fn native_draw_text(state: &mut PetalCxt) -> NativeResult {
     let styled = state.arg_count() == 4 && matches!(state.get_value(4)?, Value::Map(_));
     let args = match styled {
         true => {
-            let style = TextStyle::from_value(state, &state.get_value(4)?)?;
+            let style_value = state.get_value(4)?;
+            let style = TextStyle::from_value(state, &style_value)?;
+            // `shadow` and `outline` are drawn here, as copies of the run
+            // under it, so every host has them and a script draws a string
+            // once: the shadow first, then the outline ring, then the text.
+            for under in text_decorations(state, &style_value, &style) {
+                let (dx, dy, deco) = under;
+                let args = deco.emit_args(state, text.clone(), x + dx, y + dy);
+                emit_draw(state, "text", args);
+            }
             style.emit_args(state, text, x, y)
         }
         false => {
@@ -1740,6 +2158,88 @@ fn native_draw_text(state: &mut PetalCxt) -> NativeResult {
     emit_draw(state, "text", args);
     state.push_nil();
     Ok(1)
+}
+
+/// The copies of a styled run drawn under it: `(dx, dy, style)` for the
+/// style's `shadow` and `outline`, in draw order.
+///
+/// - `shadow: true`, or `{dx, dy, color, a}` — one copy offset by
+///   (`dx`, `dy`) (default 1, 1), black at alpha 160 unless said otherwise.
+/// - `outline: true`, a colour, or `{color, width, a}` — copies offset to the
+///   eight neighbours at `width` px (default 1), black unless said otherwise.
+///
+/// A decoration's alpha is scaled by the text's own, so a fading label takes
+/// its shadow with it.
+fn text_decorations(
+    state: &PetalCxt,
+    style_value: &Value,
+    style: &TextStyle,
+) -> Vec<(i64, i64, TextStyle)> {
+    let Value::Map(id) = style_value else {
+        return Vec::new();
+    };
+    let heap = state.heap();
+    let fields = heap.get_map(*id);
+    let mut out = Vec::new();
+    let scale = |a: i64| -> u8 { (a.clamp(0, 255) * style.a as i64 / 255) as u8 };
+    // A decoration spec → (the record's fields if it is one, its colour).
+    let spec = |v: &Value| -> Option<(Option<petal::heap::MapId>, (u8, u8, u8))> {
+        match v {
+            Value::Bool(true) => Some((None, (0, 0, 0))),
+            Value::Map(mid) => {
+                let m = heap.get_map(*mid);
+                if m.get("r").is_some() {
+                    // A bare colour record.
+                    color_of(v, heap).map(|(r, g, b, _)| (None, (r, g, b)))
+                } else {
+                    let c = m
+                        .get("color")
+                        .and_then(|c| color_of(c, heap))
+                        .map_or((0, 0, 0), |(r, g, b, _)| (r, g, b));
+                    Some((Some(*mid), c))
+                }
+            }
+            Value::Int(_) => color_of(v, heap).map(|(r, g, b, _)| (None, (r, g, b))),
+            _ => None,
+        }
+    };
+    let field = |mid: Option<petal::heap::MapId>, name: &str, default: i64| -> i64 {
+        mid.and_then(|m| heap.get_map(m).get(name).and_then(num_as_i64))
+            .unwrap_or(default)
+    };
+    if let Some((mid, (r, g, b))) = fields.get("shadow").and_then(&spec) {
+        let deco = TextStyle {
+            r,
+            g,
+            b,
+            a: scale(field(mid, "a", 160)),
+            ..style.clone()
+        };
+        out.push((field(mid, "dx", 1), field(mid, "dy", 1), deco));
+    }
+    if let Some((mid, (r, g, b))) = fields.get("outline").and_then(&spec) {
+        let w = field(mid, "width", 1).max(1);
+        let deco = TextStyle {
+            r,
+            g,
+            b,
+            a: scale(field(mid, "a", 255)),
+            ..style.clone()
+        };
+        for (dx, dy) in [
+            (-w, -w),
+            (0, -w),
+            (w, -w),
+            (-w, 0),
+            (w, 0),
+            (-w, w),
+            (0, w),
+            (w, w),
+        ] {
+            out.push((dx, dy, deco.clone()));
+        }
+    }
+    out
 }
 
 /// `clip(x, y, w, h, [radius])` — *replace* the active clip. `clip_none`
@@ -1762,11 +2262,53 @@ fn native_clip_none(state: &mut PetalCxt) -> NativeResult {
 /// (intersected with it), restored by `clip_pop()`. The composable form: a
 /// widget that clips its own contents no longer has to know, or destroy, the
 /// clip its caller set.
+///
+/// With a sixth argument — the clip already in force, as the prelude tracks
+/// it (`nil` or an `{x, y, w, h, prev}` record) — it returns the new clip in
+/// that shape: the intersection, with `prev` pointing at the one it replaced
+/// (and the clip as asked for in `ox, oy, ow, oh, radius`).
+/// That is how the prelude knows the clip without a native having to keep
+/// one (see `crate::hit`); a plain five-argument call returns `nil` as ever.
 fn native_clip_push(state: &mut PetalCxt) -> NativeResult {
     let mut args = int_args(state, 4)?;
     args.push(Value::Int(opt_int(state, 5, 0)?)); // radius
+    let tracked = state.arg_count() >= 6;
+    let result = if tracked {
+        let prev = state.get_value(6)?;
+        let (mut x0, mut y0) = (state.get_float(1)?, state.get_float(2)?);
+        let (mut x1, mut y1) = (x0 + state.get_float(3)?, y0 + state.get_float(4)?);
+        if let Value::Map(id) = prev {
+            let map = state.heap().get_map(id);
+            let f = |name: &str| map.get(name).and_then(num_as_f64).unwrap_or(0.0);
+            let (px, py, pw, ph) = (f("x"), f("y"), f("w"), f("h"));
+            x0 = x0.max(px);
+            y0 = y0.max(py);
+            x1 = x1.min(px + pw);
+            y1 = y1.min(py + ph);
+        }
+        let mut map: petal::heap::RecordMap = petal::heap::record_map_with_capacity(11);
+        map.insert("x".to_string(), Value::Float(x0));
+        map.insert("y".to_string(), Value::Float(y0));
+        map.insert("w".to_string(), Value::Float((x1 - x0).max(0.0)));
+        map.insert("h".to_string(), Value::Float((y1 - y0).max(0.0)));
+        map.insert("prev".to_string(), prev);
+        // The clip as it was asked for, so the prelude can lift it and put
+        // it back (`ui_overlay`).
+        map.insert("ox".to_string(), args[0]);
+        map.insert("oy".to_string(), args[1]);
+        map.insert("ow".to_string(), args[2]);
+        map.insert("oh".to_string(), args[3]);
+        map.insert("radius".to_string(), args[4]);
+        map.insert("base".to_string(), Value::Bool(false));
+        Some(Value::Map(state.heap_mut().alloc_map(map)))
+    } else {
+        None
+    };
     emit_draw(state, "clip_push", args);
-    state.push_nil();
+    match result {
+        Some(v) => state.push_value(v),
+        None => state.push_nil(),
+    }
     Ok(1)
 }
 
@@ -1910,6 +2452,9 @@ mod tests {
                     h: 40,
                     a: 255,
                     radius: 0,
+                    tint: None,
+                    src: None,
+                    slice: None,
                 },
                 DrawCommand::Image {
                     source: "assets/glow.png".into(),
@@ -1919,6 +2464,9 @@ mod tests {
                     h: 80,
                     a: 128,
                     radius: 0,
+                    tint: None,
+                    src: None,
+                    slice: None,
                 },
             ]
         );

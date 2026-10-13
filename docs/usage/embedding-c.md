@@ -441,7 +441,7 @@ logical pixels from the top-left; colors are sRGB 0–255.
 | `PB_DRAW_CLIP` | `x y w h radius` — replaces the clip |
 | `PB_DRAW_CLIP_NONE` | — |
 | `PB_DRAW_CLIP_PUSH` / `PB_DRAW_CLIP_POP` | push (intersect) / pop |
-| `PB_DRAW_IMAGE` | `text` = asset source, `x y w h`, `color.a`, `radius` |
+| `PB_DRAW_IMAGE` | `text` = asset source, `x y w h`, `color.a`, `radius`; `color.rgb` = tint (white = none); `x1 y1 x2 y2` = source rect (`x2 == 0`: whole image); `x3 y3 cx cy` = nine-slice insets |
 | `PB_DRAW_CREATE_CANVAS` | `id`, `w h` |
 | `PB_DRAW_SET_TARGET` | `id` (0 = framebuffer) |
 | `PB_DRAW_DRAW_CANVAS` | `id`, `x y`, `color.a` = opacity, `w h` (0 = native size) |
@@ -449,8 +449,46 @@ logical pixels from the top-left; colors are sRGB 0–255.
 | `PB_DRAW_BLUR_CANVAS` | `id`, `radius` |
 | `PB_DRAW_HOST` | `text` = tag, `data[data_count]` = decoded args |
 
+| `PB_DRAW_RECTS` | `points` = `point_count` rects, five ints each: `x y w h` and the colour as `r << 24 \| g << 16 \| b << 8 \| a` |
+| `PB_DRAW_CACHE_BEGIN` / `PB_DRAW_CACHE_END` | `id`, `w h` / `id`: the commands between are retained layer `id`'s content, in its own coordinates |
+| `PB_DRAW_CACHE_DRAW` | `id`, `x y`: draw the retained layer there |
+
 A host that cannot do something should degrade it (square corners, one
 gradient stop, skip canvases) rather than drop it; see petal-ui's README.
+
+The last three kinds are sent only to a host that asks:
+
+```cpp
+pb_vm_set_draw_caps(vm.raw(), PB_DRAW_CAP_BATCH_RECTS | PB_DRAW_CAP_RETAINED_LAYERS);
+```
+
+Without that, a `draw_rects` batch arrives as one `PB_DRAW_RECT` per entry
+and a `cached_layer` as its content, moved and clipped, on every frame: the
+script's saving is the same, the host's is not. With it, the host keeps a
+texture per layer id and calls `pb_vm_invalidate_layers` if it loses one. The
+rules are in [ui-host-contract.md](ui-host-contract.md#cache_begin-cache_end-cache_draw-only-with-the-retained-layer-capability).
+
+Draw layers (`ui_layer`) need nothing: `pb_vm_drain_draw` returns the frame
+already sorted.
+
+### Targets: acting on a widget by name
+
+Every rect a script registers for hit testing can carry an id: a `button` its
+label, anything passed to `interact(r, id)` or `ui_target(id, r)`. The host
+reads them after a run:
+
+```cpp
+pb_ui_target t;
+if (pb_vm_ui_target(vm.raw(), "End turn", &t) == 1)
+    click(t.x + t.w / 2, t.y + t.h / 2);
+
+const pb_ui_target* all; size_t n;
+pb_vm_ui_targets(vm.raw(), &all, &n);        // everything registered last run
+```
+
+The rect is in logical pixels and already clipped to what was visible. This
+is what a test harness or an agent tool uses in place of coordinates, and it
+is what a scenario's `{"at": N, "click_target": "End turn"}` resolves against.
 
 ### Input scenarios (replay)
 

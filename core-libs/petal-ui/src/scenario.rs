@@ -46,6 +46,20 @@ pub struct Scenario {
     pub size: Option<(i32, i32)>,
     pub frames: Option<usize>,
     pub events: Vec<TimedEvent>,
+    /// Clicks on named targets (`{"at": N, "click_target": "Save"}`). They
+    /// cannot be turned into events when the file is read — where the target
+    /// is depends on the frame before — so they are kept apart and resolved
+    /// when applied ([`events_at`](Self::events_at)).
+    pub target_clicks: Vec<TargetClick>,
+}
+
+/// A click on the rect a script registered under `id` (`interact(r, id)`, a
+/// button's label, `ui_target(id, r)` — see [`crate::hit`]): a move to its
+/// centre and a press on frame `at`, the release on `at + 1`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TargetClick {
+    pub at: usize,
+    pub id: String,
 }
 
 /// One input event and the frame it is delivered to.
@@ -82,28 +96,76 @@ impl Scenario {
         };
 
         let mut events = Vec::new();
+        let mut target_clicks = Vec::new();
         if let Some(list) = obj.get("events") {
             let list = list
                 .as_array()
                 .ok_or_else(|| "`events` must be an array".to_string())?;
             for (i, entry) in list.iter().enumerate() {
-                parse_event(entry, &mut events).map_err(|e| format!("events[{i}]: {e}"))?;
+                parse_event(entry, &mut events, &mut target_clicks)
+                    .map_err(|e| format!("events[{i}]: {e}"))?;
             }
         }
         events.sort_by_key(|e| e.at);
+        target_clicks.sort_by_key(|c| c.at);
         Ok(Self {
             size,
             frames,
             events,
+            target_clicks,
         })
     }
 
-    /// Feed every event scheduled for `frame` to `ui`, in order. Call this
-    /// before running that frame.
-    pub fn apply(&self, ui: &mut Headless, frame: usize) {
-        for ev in self.events.iter().filter(|e| e.at == frame) {
-            ui.event(ev.event.clone());
+    /// Feed every event scheduled for `frame` to `ui`, in order, and click
+    /// the named targets due on it. Call this before running that frame.
+    /// Returns the ids of targets that were to be clicked on this frame and
+    /// are not registered — a scenario that names a widget the app does not
+    /// have should fail loudly, and the caller decides how.
+    pub fn apply(&self, ui: &mut Headless, frame: usize) -> Vec<String> {
+        let left_down = ui.input.button_down(input::buttons::LEFT);
+        let (events, missing) = self.events_at(frame, left_down, |id| {
+            crate::hit::target(&mut ui.env, id).map(|t| t.center())
+        });
+        for ev in events {
+            ui.event(ev);
         }
+        missing
+    }
+
+    /// The input events for `frame`: the scheduled ones, then, for each
+    /// target click due, a move to the target's centre and a left press — and
+    /// the release of a target click pressed on the frame before. `resolve`
+    /// looks a target up by id (a host passes [`crate::hit::target`]);
+    /// `left_down` is whether the left button is held, so a click whose
+    /// target was never found does not release a press that never happened.
+    /// The second value lists the ids due on this frame that did not resolve.
+    pub fn events_at(
+        &self,
+        frame: usize,
+        left_down: bool,
+        mut resolve: impl FnMut(&str) -> Option<(i32, i32)>,
+    ) -> (Vec<InputEvent>, Vec<String>) {
+        let mut events: Vec<InputEvent> = self
+            .events
+            .iter()
+            .filter(|e| e.at == frame)
+            .map(|e| e.event.clone())
+            .collect();
+        let mut missing = Vec::new();
+        let button = input::buttons::LEFT;
+        if left_down && self.target_clicks.iter().any(|c| c.at + 1 == frame) {
+            events.push(InputEvent::MouseUp { button });
+        }
+        for click in self.target_clicks.iter().filter(|c| c.at == frame) {
+            match resolve(&click.id) {
+                Some((x, y)) => {
+                    events.push(InputEvent::MouseMove { x, y });
+                    events.push(InputEvent::MouseDown { button });
+                }
+                None => missing.push(click.id.clone()),
+            }
+        }
+        (events, missing)
     }
 
     /// A deterministic pseudo-random scenario: clicks inside a `size` window,
@@ -155,13 +217,14 @@ impl Scenario {
             size: Some(size),
             frames: Some(frames),
             events,
+            target_clicks: Vec::new(),
         }
     }
 
     /// Render back to the JSON shape [`from_json_str`](Self::from_json_str)
     /// reads — for writing a generated scenario into a repro bundle.
     pub fn to_json(&self) -> Json {
-        let events: Vec<Json> = self
+        let mut events: Vec<Json> = self
             .events
             .iter()
             .map(|e| {
@@ -189,6 +252,11 @@ impl Scenario {
                 Json::Object(o)
             })
             .collect();
+        events.extend(
+            self.target_clicks
+                .iter()
+                .map(|c| serde_json::json!({"at": c.at, "click_target": c.id})),
+        );
         let mut root = serde_json::Map::new();
         if let Some((w, h)) = self.size {
             root.insert("size".into(), Json::from(vec![w, h]));
@@ -235,7 +303,11 @@ fn push_key(out: &mut Vec<TimedEvent>, at: usize, key: &str) {
     });
 }
 
-fn parse_event(entry: &Json, out: &mut Vec<TimedEvent>) -> Result<(), String> {
+fn parse_event(
+    entry: &Json,
+    out: &mut Vec<TimedEvent>,
+    target_clicks: &mut Vec<TargetClick>,
+) -> Result<(), String> {
     let obj = entry
         .as_object()
         .ok_or_else(|| "event must be an object".to_string())?;
@@ -287,6 +359,13 @@ fn parse_event(entry: &Json, out: &mut Vec<TimedEvent>) -> Result<(), String> {
                 let (x, y) = parse_pair(v, "click")?;
                 push_click(out, at, x as i32, y as i32);
             }
+            "click_target" => target_clicks.push(TargetClick {
+                at,
+                id: v
+                    .as_str()
+                    .ok_or_else(|| "`click_target` must be a target id string".to_string())?
+                    .to_string(),
+            }),
             "scroll" => {
                 let (dx, dy) = parse_pair(v, "scroll")?;
                 out.push(TimedEvent {

@@ -216,6 +216,14 @@ fn sample(param: &str) -> &'static str {
         "style" => "{size: 12}",
         "rect" => "{x: 0, y: 0, w: 4, h: 4}",
         "points" => "[[0, 0], [4, 0], [4, 4]]",
+        // The clip a hit test is asked under, the run's floor, the clip a
+        // push nests in: all "none" when a script has not set one.
+        "clip" | "within" | "floor" => "nil",
+        // One rect, colour 0 — an index into the one-colour palette, or
+        // packed black without one.
+        "rects" => "[0, 0, 4, 4, 0]",
+        "palette" => "[1]",
+        "on" => "true",
         _ => "1",
     }
 }
@@ -228,6 +236,10 @@ fn declared_signatures_agree_with_what_the_natives_read() {
     // These find their last argument (a width, an offset) by counting back
     // from the end, so a call one short reads the size as that too and runs.
     const COUNTS_BACK: &[&str] = &["text_wrap", "text_ellipsize", "text_index_at"];
+    // `draw_rect` is one native in three shapes told apart by the argument
+    // count, so a call one short of a shape is another shape (or a rect
+    // record where a number was), not a missing argument.
+    const SHAPED_BY_COUNT: &[&str] = &["draw_rect"];
     for (name, sigs) in &declared_signatures() {
         let name = name.as_str();
         for sig in sigs {
@@ -241,7 +253,10 @@ fn declared_signatures_agree_with_what_the_natives_read() {
                 let (result, src) = call(count);
                 assert!(result.is_ok(), "`{src}` should run: {result:?}");
             }
-            if sig.required() > 0 && !COUNTS_BACK.contains(&name) {
+            if sig.required() > 0
+                && !COUNTS_BACK.contains(&name)
+                && !SHAPED_BY_COUNT.contains(&name)
+            {
                 let (result, src) = call(sig.required() - 1);
                 let err = result.expect_err(&format!("`{src}` is one argument short"));
                 assert!(err.contains("out of range"), "`{src}`: {err}");

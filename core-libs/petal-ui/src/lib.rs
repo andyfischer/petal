@@ -23,6 +23,14 @@
 //!   `focus_update`) and the focus-aware `text_field` widget + gated
 //!   `list_update` built on it, registered with [`register_prelude`] as the
 //!   package `ui`, which a script reaches with `import ui`.
+//! - [`hit`]: layered hit testing and the target registry — what
+//!   `interact`, `ui_layer`, `ui_modal` and `pointer_captured` in the prelude
+//!   are built on, and what a host reads to click a widget by name.
+//!   [`input::bind_input`] rolls it once a frame; a host does nothing else.
+//! - [`compose`]: what the drain does to a frame before a host sees it —
+//!   draw layers sorted, retained layers (`cached_layer`) and batches
+//!   (`draw_rects`) lowered to the classic vocabulary unless the host asked
+//!   for them with [`compose::set_host_caps`].
 //! - [`tess`]: shared CPU tessellation for the commands a host can't fill in
 //!   one go — currently the soft shadow, whose non-overlapping mesh every
 //!   host needs and none should re-derive.
@@ -58,9 +66,11 @@
 //! sequence.
 
 pub mod clipboard;
+pub mod compose;
 pub mod draw;
 pub mod frame_core;
 pub mod harness;
+pub mod hit;
 pub mod host_data;
 pub mod input;
 pub mod panel_stubs;
@@ -139,7 +149,18 @@ pub const UI_VERSION: i64 = 1;
 ///   [`clipboard`] channel; `text_wrap_rows` (rows with their character
 ///   ranges), `text_row_of` and `text_range_rects`. `text_wrap` no longer
 ///   collapses a run of spaces inside a row.
-pub const PRELUDE_LEVEL: u32 = 8;
+/// - 9 — layers, hit testing, retained drawing (2026-10-13): `ui_layer` /
+///   `with_layer` / `ui_overlay` (a layer orders drawing and the pointer),
+///   `ui_modal`, `interact` / `ui_hot` / `ui_block`, `pointer_captured`, and
+///   the target registry (`ui_target`, `ui_target_rect`, [`hit::targets`]) —
+///   every prelude widget now goes through them and registers itself;
+///   `cached_layer` and `draw_rects` ([`compose`]); `draw_rect` as one native
+///   in every shape, and a packed-int colour there and in `draw_polyline`;
+///   `draw_image` with `tint` / `src` / `slice`, `image_load`, `image_size`;
+///   `shadow` / `outline` / `tracking` on a text style; `flow_begin` …
+///   `flow_end`, `ui_measure`, `clip_rect`. `clip_none` is a prelude function
+///   over the native now (the prelude tracks the clip in force).
+pub const PRELUDE_LEVEL: u32 = 9;
 
 /// Name of the Petal-source prelude module: `import ui`.
 pub const MODULE_NAME: &str = "ui";

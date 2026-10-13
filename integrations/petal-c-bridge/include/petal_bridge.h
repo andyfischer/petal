@@ -495,7 +495,10 @@ int pb_vm_take_mouse_grab(pb_vm* vm);
 /* ─── petal-ui draw commands ──────────────────────────────────────────── */
 
 typedef enum pb_draw_kind {
-    PB_DRAW_IMAGE = 0,        /* text = source; x y w h; color.a; radius */
+    PB_DRAW_IMAGE = 0,        /* text = source; x y w h (destination); color.a = opacity; radius;
+                               * color.rgb = tint, multiplied into the image (255,255,255 = none);
+                               * x1 y1 x2 y2 = source rect x, y, w, h in image pixels (x2 = 0: whole image);
+                               * x3 y3 cx cy = nine-slice insets left, top, right, bottom in image pixels (all 0: none) */
     PB_DRAW_CLEAR,            /* color (a = 255) */
     PB_DRAW_RECT,             /* x y w h; color; radius (0 = square) */
     PB_DRAW_RECT_OUTLINE,     /* x y w h; color; width; radius */
@@ -522,8 +525,23 @@ typedef enum pb_draw_kind {
     PB_DRAW_DRAW_CANVAS,      /* id; x y; color.a = opacity; w h (0 = canvas size) */
     PB_DRAW_SNAPSHOT,         /* id; x y */
     PB_DRAW_BLUR_CANVAS,      /* id; radius (std dev px) */
-    PB_DRAW_HOST              /* text = tag; data[data_count] = raw args (host-registered draw natives) */
+    PB_DRAW_HOST,             /* text = tag; data[data_count] = raw args (host-registered draw natives) */
+    /* The four below are sent only to a host that asked for them with
+     * pb_vm_set_draw_caps; by default the bridge lowers them (a batch to one
+     * RECT per entry, a retained layer to its content moved and clipped). */
+    PB_DRAW_RECTS,            /* points = point_count rects, five int32 each: x, y, w, h, then the colour as
+                               * (r << 24) | (g << 16) | (b << 8) | a. Draw in order. Needs PB_DRAW_CAP_BATCH_RECTS */
+    PB_DRAW_CACHE_BEGIN,      /* id; w h. Start recording retained layer `id`: the commands up to the matching
+                               * CACHE_END are its content, in the layer's own coordinates ((0,0) = its top-left),
+                               * and are not drawn where they stand. Recordings nest. Needs PB_DRAW_CAP_RETAINED_LAYERS */
+    PB_DRAW_CACHE_END,        /* id. End of the recording; replaces whatever `id` held */
+    PB_DRAW_CACHE_DRAW        /* id; x y. Draw retained layer `id` with its top-left at (x, y), clipped to its size.
+                               * The content is from the most recent recording, on this frame or an earlier one */
 } pb_draw_kind;
+
+/* What the host draws itself instead of having the bridge lower it. */
+#define PB_DRAW_CAP_BATCH_RECTS      1u  /* send PB_DRAW_RECTS */
+#define PB_DRAW_CAP_RETAINED_LAYERS  2u  /* send PB_DRAW_CACHE_BEGIN / _END / _DRAW */
 
 typedef struct pb_rgba { uint8_t r, g, b, a; } pb_rgba;
 
@@ -550,8 +568,8 @@ typedef struct pb_draw_cmd {
     uint16_t weight;                 /* TEXT: CSS weight (400 regular, 700 bold) */
     uint8_t italic;                  /* TEXT */
     float spacing;                   /* TEXT: letter spacing px */
-    const int32_t* points;           /* POLY/POLYGON/FAN/POLYLINE: x,y pairs */
-    size_t point_count;              /* number of points (pairs) */
+    const int32_t* points;           /* POLY/POLYGON/FAN/POLYLINE: x,y pairs. RECTS: x,y,w,h,rgba fives */
+    size_t point_count;              /* number of points (pairs), or of rects (fives) */
     const pb_value* data;            /* HOST: decoded args */
     size_t data_count;
 } pb_draw_cmd;
@@ -559,6 +577,41 @@ typedef struct pb_draw_cmd {
 /* Drain and decode the petal-ui draw commands emitted by the last run, in
  * order. Valid until the next run/call/clear. */
 pb_status pb_vm_drain_draw(pb_vm* vm, const pb_draw_cmd** out_cmds, size_t* out_count);
+
+/* Declare which commands this host draws itself (PB_DRAW_CAP_* bits). Call
+ * once after creating the vm; the default, 0, has the bridge lower them.
+ *
+ * With PB_DRAW_CAP_RETAINED_LAYERS the host keeps each layer's content (a
+ * texture, typically) from CACHE_BEGIN/_END and draws it on CACHE_DRAW. It
+ * may free a layer that a frame's commands neither recorded nor drew. If it
+ * loses a layer it is still being asked to draw (a device reset, a CACHE_DRAW
+ * for an id it does not have), it calls pb_vm_invalidate_layers and every
+ * layer is recorded again on the next run. */
+pb_status pb_vm_set_draw_caps(pb_vm* vm, uint32_t caps);
+pb_status pb_vm_invalidate_layers(pb_vm* vm);
+
+/* ─── petal-ui targets ────────────────────────────────────────────────── */
+
+/* One rect a script registered on its last frame: by interact(r, id), by a
+ * prelude widget (a button is registered under its label unless given an
+ * id), or by ui_target(id, r). The rect is in logical pixels and already
+ * clipped to what was visible, so its centre is a point a click lands on. */
+typedef struct pb_ui_target {
+    const char* id;      /* NUL-terminated; "" when the rect was given no id */
+    double x, y, w, h;
+    int64_t layer;
+    uint8_t blocks;      /* 1 = takes the pointer from lower layers */
+    uint8_t modal;       /* 1 = not a rect: its layer is modal (w = h = 0) */
+} pb_ui_target;
+
+/* The rects the most recent run registered, in the order registered. Valid
+ * until the next run/call/clear. */
+pb_status pb_vm_ui_targets(pb_vm* vm, const pb_ui_target** out_targets, size_t* out_count);
+
+/* Look one up by id (the last registered under it). Returns 1 and fills
+ * `out` if found, 0 if not, -1 on a bad argument. `out->id` is valid until
+ * the next run/call/clear. */
+int pb_vm_ui_target(pb_vm* vm, const char* id, pb_ui_target* out);
 
 /* ─── Hot reload ──────────────────────────────────────────────────────── */
 
@@ -740,7 +793,12 @@ const char* pb_scenario_to_json(pb_scenario* s);
 
 /* Feed every event `s` schedules for `frame` into the VM's input state, as the
  * pb_vm_input_* calls would. Call before pb_vm_begin_frame for that frame.
- * `*out_applied` (optional) receives the number of events applied. */
+ * `*out_applied` (optional) receives the number of events applied.
+ *
+ * A {"at": N, "click_target": "id"} entry is resolved here, against the rects
+ * the VM's last run registered (pb_vm_ui_target): a move to the target's
+ * centre and a left press at N, the release at N+1. A target that is not
+ * registered applies nothing; check pb_vm_ui_target first to tell. */
 pb_status pb_vm_apply_scenario(pb_vm* vm, const pb_scenario* s, size_t frame, size_t* out_applied);
 
 /* ─── Source text: reading and editing without running ─────────────────── */

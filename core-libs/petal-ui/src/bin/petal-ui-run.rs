@@ -4,7 +4,7 @@
 //! petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
 //!              [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
 //!              [--out trace.jsonl] [--error-format full|bare] [-I <dir>]
-//!              [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]
+//!              [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats] [--targets]
 //!              [--effect-audit] [--static-audit] [--static-only]
 //! ```
 //!
@@ -34,6 +34,10 @@
 //! effect. `--gate-stats` reports frames run vs skipped on stderr, and
 //! `--memo-stats` the memo's counters.
 //!
+//! `--targets` adds a `targets` list to every record: the rects the script
+//! registered on that frame (`interact(r, id)`, the prelude widgets,
+//! `ui_target`), with their ids — what a scenario's `click_target` can name.
+//!
 //! `--effect-audit` watches what every native does over the run and reports,
 //! on stderr, each one whose behavior differs from its declared effect row
 //! (see `petal::effect_audit`): an under-declared row is a staleness bug
@@ -61,7 +65,7 @@ use petal_ui::scenario::Scenario;
 
 const USAGE: &str = "usage: petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N] \
 [--scenario s.json|monkey:<seed>] [--host-data fixtures.json] \
-[--query-fixtures q.json] [--out trace.jsonl] [--error-format full|bare] [-I <dir>] [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats] [--effect-audit] [--static-audit] [--static-only]";
+[--query-fixtures q.json] [--out trace.jsonl] [--error-format full|bare] [-I <dir>] [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats] [--targets] [--effect-audit] [--static-audit] [--static-only]";
 
 const DEFAULT_FRAMES: usize = 60;
 const DEFAULT_SIZE: (i32, i32) = (800, 600);
@@ -97,6 +101,8 @@ struct Args {
     no_memo: bool,
     /// Report the memo's counters on stderr.
     memo_stats: bool,
+    /// Add each frame's registered ui targets to its record.
+    targets: bool,
     /// Report frames run vs skipped on stderr at the end.
     gate_stats: bool,
     /// Audit every native's observed behavior against its declared row and
@@ -121,6 +127,7 @@ fn parse_args() -> Result<Args, String> {
     let mut gate_stats = false;
     let mut no_memo = false;
     let mut memo_stats = false;
+    let mut targets = false;
     let mut effect_audit = false;
     let mut static_audit = petal::static_audit::StaticAuditMode::Off;
     let mut it = std::env::args().skip(1);
@@ -161,6 +168,7 @@ fn parse_args() -> Result<Args, String> {
             "--gate-stats" => gate_stats = true,
             "--no-memo" => no_memo = true,
             "--memo-stats" => memo_stats = true,
+            "--targets" => targets = true,
             "--effect-audit" => effect_audit = true,
             "--static-audit" => {
                 if static_audit == petal::static_audit::StaticAuditMode::Off {
@@ -202,6 +210,7 @@ fn parse_args() -> Result<Args, String> {
         gate_stats,
         no_memo,
         memo_stats,
+        targets,
         effect_audit,
         static_audit,
     })
@@ -272,10 +281,19 @@ fn run() -> Result<i32, String> {
     let mut failed = false;
     let mut reasons: std::collections::BTreeMap<String, usize> = Default::default();
     for frame in 0..frames {
-        if let Some(s) = &scenario {
-            s.apply(&mut ui, frame);
-        }
-        let outcome = ui.frame().map(|_| ());
+        // A scenario that clicks a target the app did not register is a
+        // failed frame, like a script error: the run stops there with the
+        // reason in the record, rather than driving on having clicked nothing.
+        let missing = match &scenario {
+            Some(s) => s.apply(&mut ui, frame),
+            None => Vec::new(),
+        };
+        let outcome = match missing.first() {
+            Some(id) => Err(format!(
+                "scenario: no ui target named \"{id}\" was registered on the frame before frame {frame}"
+            )),
+            None => ui.frame().map(|_| ()),
+        };
         if args.gate_stats
             && let Some(reason) = &ui.last_run_reason
         {
@@ -303,7 +321,7 @@ fn run() -> Result<i32, String> {
                 (Json::Array(Vec::new()), Json::Null, Json::String(message))
             }
         };
-        let record = serde_json::json!({
+        let mut record = serde_json::json!({
             "frame": frame,
             "commands": commands,
             "state": ui.state(),
@@ -311,6 +329,22 @@ fn run() -> Result<i32, String> {
             "result": result,
             "error": error,
         });
+        if args.targets {
+            // What `interact`, the widgets and `ui_target` registered on this
+            // frame: what a `click_target` on the next frame can name.
+            let targets: Vec<Json> = ui
+                .targets()
+                .into_iter()
+                .filter(|t| !t.modal)
+                .map(|t| {
+                    serde_json::json!({
+                        "id": t.id, "x": t.x, "y": t.y, "w": t.w, "h": t.h,
+                        "layer": t.layer, "blocks": t.blocks,
+                    })
+                })
+                .collect();
+            record["targets"] = Json::Array(targets);
+        }
         writeln!(out, "{record}").map_err(|e| format!("writing trace: {e}"))?;
         if failed {
             break;

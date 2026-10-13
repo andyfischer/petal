@@ -46,10 +46,13 @@ impl PbScenario {
 
     /// One past the frame of the last event (0 when there are none).
     pub fn end_frame(&self) -> usize {
+        // A target click's release lands the frame after its press.
+        let clicks = self.scenario.target_clicks.iter().map(|c| c.at + 2);
         self.scenario
             .events
             .iter()
             .map(|e| e.at + 1)
+            .chain(clicks)
             .max()
             .unwrap_or(0)
     }

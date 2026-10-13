@@ -113,6 +113,27 @@ script, then the host palette, then the built-in dark default. Garden binds
 its full palette, so the widgets look native there with no script-side
 setup.
 
+## Layers, hit testing and retained drawing
+
+Three things the prelude can say that a painter's-order command list cannot,
+each resolved inside this crate so a host that knows nothing about them still
+draws the right picture:
+
+- **Layers** (`ui_layer`, `with_layer`, `ui_overlay`). `take_draw_commands`
+  sorts a frame by layer before handing it over (`src/compose.rs`).
+- **Hit testing** (`interact`, `ui_modal`, `pointer_captured`,
+  `ui_target_rect`). Widgets register their rects; `bind_input` turns one
+  frame's registrations into the registry the next is tested against
+  (`src/hit.rs`). A host reads the same registry to click a widget by id:
+  `hit::targets(env)`, `Headless::click_target("Save")`.
+- **Retained drawing** (`cached_layer`, `draw_rects`). Lowered to the classic
+  vocabulary by default; a host with render targets calls
+  `compose::set_host_caps` and receives `CacheBegin` / `CacheEnd` /
+  `CacheDraw` and `Rects` instead.
+
+The script side is in [docs/ui-reference.md](../../docs/ui-reference.md), the
+host side in [docs/ui-host-contract.md](../../docs/ui-host-contract.md).
+
 ## Running scripts headlessly
 
 ```
@@ -146,6 +167,11 @@ cargo test
 
 `tests/widgets.rs` covers the component library through `harness::Headless`:
 synthetic clicks and keys, then assertions on state and draw commands.
+`tests/hit.rs` covers layers, hit testing, the target registry, `ui_measure`
+and flow layout; `tests/retained.rs` covers `cached_layer`, `draw_rects`, the
+image and text-style additions, in both the lowered form every host gets and
+the form a host that asked for it gets. `tests/reference.rs` fails if an
+export is missing from `docs/ui-reference.md`.
 `tests/prelude.rs` covers the older prelude surface and compatibility
 (shadowing, style records). `harness::Headless` is public, so you can test
 your own panels the same way.

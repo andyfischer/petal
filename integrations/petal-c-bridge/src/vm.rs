@@ -90,6 +90,7 @@ pub struct Vm {
     // values, so moving the values themselves (e.g. as the Vecs grow) is fine.
     views: Vec<ViewArena>,
     draws: Vec<DrawList>,
+    ui_targets: Vec<crate::draw::TargetList>,
     source_files: CStrList,
     changed_files: CStrList,
     output_lines: CStrList,
@@ -139,6 +140,7 @@ impl Vm {
             last_error: None,
             views: Vec::new(),
             draws: Vec::new(),
+            ui_targets: Vec::new(),
             source_files: CStrList::default(),
             changed_files: CStrList::default(),
             output_lines: CStrList::default(),
@@ -183,6 +185,7 @@ impl Vm {
     fn clear_views(&mut self) {
         self.views.clear();
         self.draws.clear();
+        self.ui_targets.clear();
     }
 
     /// Decode `values` into a new arena kept until the next clear.
@@ -532,10 +535,15 @@ impl Vm {
         scenario: &petal_ui::scenario::Scenario,
         frame: usize,
     ) -> usize {
-        let mut n = 0;
-        for ev in scenario.events.iter().filter(|e| e.at == frame) {
-            self.input.event(ev.event.clone());
-            n += 1;
+        // Named-target clicks resolve against what the last run registered.
+        let left_down = self.input.button_down(petal_ui::input::buttons::LEFT);
+        let env = &mut self.env;
+        let (events, _missing) = scenario.events_at(frame, left_down, |id| {
+            petal_ui::hit::target(env, id).map(|t| t.center())
+        });
+        let n = events.len();
+        for ev in events {
+            self.input.event(ev);
         }
         n
     }
@@ -1358,6 +1366,74 @@ pub extern "C" fn pb_vm_drain_draw(
     put(out_cmds, cmds);
     put(out_count, count);
     st
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_set_draw_caps(vm: *mut VmHandle, caps: u32) -> Status {
+    status(vm, |vm| {
+        petal_ui::compose::set_host_caps(
+            &mut vm.env,
+            petal_ui::compose::HostCaps::from_bits(caps as i64),
+        );
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_invalidate_layers(vm: *mut VmHandle) -> Status {
+    status(vm, |vm| {
+        petal_ui::compose::invalidate_caches(&mut vm.env);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_ui_targets(
+    vm: *mut VmHandle,
+    out_targets: *mut *const crate::draw::PbUiTarget,
+    out_count: *mut usize,
+) -> Status {
+    let (st, (targets, count)) = with_vm(vm, (std::ptr::null(), 0), |vm| {
+        let mut list = crate::draw::TargetList::default();
+        for t in petal_ui::hit::targets(&mut vm.env) {
+            list.push(&t);
+        }
+        let out = (list.targets.as_ptr(), list.targets.len());
+        vm.ui_targets.push(list);
+        Ok(out)
+    });
+    put(out_targets, targets);
+    put(out_count, count);
+    st
+}
+
+/// # Safety
+/// `id` must be NULL or a NUL-terminated string; `out` NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_ui_target(
+    vm: *mut VmHandle,
+    id: *const c_char,
+    out: *mut crate::draw::PbUiTarget,
+) -> i32 {
+    let (st, found) = with_vm(vm, None, |vm| {
+        // SAFETY: the caller's contract on `id`.
+        let id = unsafe { arg_str(id, "id") }?;
+        Ok(petal_ui::hit::target(&mut vm.env, id).map(|t| {
+            let mut list = crate::draw::TargetList::default();
+            list.push(&t);
+            let one = list.targets[0];
+            vm.ui_targets.push(list);
+            one
+        }))
+    });
+    match (st, found) {
+        (Status::Ok, Some(t)) => {
+            put(out, t);
+            1
+        }
+        (Status::Ok, None) => 0,
+        _ => -1,
+    }
 }
 
 // ── Hot reload ───────────────────────────────────────────────────────────
@@ -2302,5 +2378,107 @@ pub config let LOOK = {step: 10, fog: 0.5}
             seen.push(out_ints(&mut vm));
         }
         assert_eq!(seen, vec![vec![0, 0], vec![1, 3], vec![0, 3]]);
+    }
+
+    /// One frame of `vm`, as the `pb_draw_cmd`s `pb_vm_drain_draw` hands out.
+    fn drawn(vm: &mut Vm) -> DrawList {
+        vm.input.begin_frame(1.0 / 60.0);
+        petal_ui::input::bind_input(&mut vm.env, &vm.input);
+        vm.run().unwrap();
+        let commands = petal_ui::draw::take_draw_commands(&mut vm.env);
+        let names = Names { symbol: None, handle_class: None };
+        let mut list = DrawList::default();
+        for c in &commands {
+            list.push(c, vm.env.heap(), &names);
+        }
+        list
+    }
+
+    const RETAINED: &str = "import ui\n\
+        cached_layer(1, rect(10, 20, 30, 40), fn()\n\
+          draw_rects([0, 0, 4, 4, 0, 4, 0, 4, 4, 1], [#ff0000, {r: 0, g: 255, b: 0, a: 128}])\n\
+        end)\n\
+        button(rect(100, 100, 80, 20), \"Go\")\n";
+
+    #[test]
+    fn batches_and_retained_layers_are_lowered_by_default() {
+        use crate::draw::DrawKind as K;
+        let mut vm = Vm::new();
+        vm.load(RETAINED, None, "t".into()).unwrap();
+        let list = drawn(&mut vm);
+        let kinds: Vec<u32> = list.cmds.iter().take(4).map(|c| c.kind).collect();
+        assert_eq!(
+            kinds,
+            [K::ClipPush as u32, K::Rect as u32, K::Rect as u32, K::ClipPop as u32]
+        );
+        // The content, moved to where the layer is drawn.
+        assert_eq!((list.cmds[1].x, list.cmds[1].y), (10, 20));
+        assert_eq!((list.cmds[2].x, list.cmds[2].color.a), (14, 128));
+    }
+
+    #[test]
+    fn a_host_that_asks_gets_batches_and_retained_layers_as_commands() {
+        use crate::draw::DrawKind as K;
+        let mut vm = Vm::new();
+        vm.load(RETAINED, None, "t".into()).unwrap();
+        petal_ui::compose::set_host_caps(
+            &mut vm.env,
+            petal_ui::compose::HostCaps::from_bits(3),
+        );
+        let list = drawn(&mut vm);
+        let kinds: Vec<u32> = list.cmds.iter().take(4).map(|c| c.kind).collect();
+        assert_eq!(
+            kinds,
+            [K::CacheBegin as u32, K::Rects as u32, K::CacheEnd as u32, K::CacheDraw as u32]
+        );
+        let (begin, batch, draw) = (&list.cmds[0], &list.cmds[1], &list.cmds[3]);
+        assert_eq!((begin.w, begin.h), (30, 40));
+        assert_eq!((draw.id, draw.x, draw.y), (begin.id, 10, 20));
+        assert_eq!(batch.point_count, 2);
+        // SAFETY: `points` holds `point_count` fives, owned by `list`.
+        let ints = unsafe { std::slice::from_raw_parts(batch.points, 10) };
+        assert_eq!(&ints[..4], [0, 0, 4, 4]);
+        assert_eq!(ints[4] as u32, 0xff0000ff, "r << 24 | g << 16 | b << 8 | a");
+        assert_eq!(ints[9] as u32, 0x00ff0080);
+
+        // The next frame only draws the layer the host kept.
+        let list = drawn(&mut vm);
+        assert_eq!(list.cmds[0].kind, K::CacheDraw as u32);
+    }
+
+    #[test]
+    fn the_target_registry_is_readable_from_the_host() {
+        let mut vm = Vm::new();
+        vm.load(RETAINED, None, "t".into()).unwrap();
+        drawn(&mut vm);
+        let go = petal_ui::hit::target(&mut vm.env, "Go").expect("the button registered");
+        assert_eq!(go.center(), (140, 110));
+        let mut list = crate::draw::TargetList::default();
+        list.push(&go);
+        // SAFETY: the id is a NUL-terminated string owned by `list`.
+        let id = unsafe { std::ffi::CStr::from_ptr(list.targets[0].id) };
+        assert_eq!(id.to_str().unwrap(), "Go");
+        assert_eq!(list.targets[0].blocks, 1);
+    }
+
+    #[test]
+    fn an_image_carries_its_tint_source_rect_and_slice() {
+        let mut vm = Vm::new();
+        vm.load(
+            "import ui\n\
+             draw_image(\"a.png\", rect(1, 2, 30, 40), {tint: #ff8000, src: rect(16, 0, 8, 8), slice: {l: 1, t: 2, r: 3, b: 4}})\n\
+             draw_image(\"a.png\", rect(1, 2, 30, 40))\n",
+            None,
+            "t".into(),
+        )
+        .unwrap();
+        let list = drawn(&mut vm);
+        let c = &list.cmds[0];
+        assert_eq!((c.color.r, c.color.g, c.color.b, c.color.a), (255, 128, 0, 255));
+        assert_eq!((c.x1, c.y1, c.x2, c.y2), (16, 0, 8, 8));
+        assert_eq!((c.x3, c.y3, c.cx, c.cy), (1, 2, 3, 4));
+        let plain = &list.cmds[1];
+        assert_eq!((plain.color.r, plain.color.g, plain.color.b), (255, 255, 255));
+        assert_eq!((plain.x2, plain.x3, plain.cx), (0, 0, 0));
     }
 }

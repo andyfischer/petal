@@ -14,7 +14,7 @@ petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
              [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
              [--query-fixtures q.json] [--out trace.jsonl]
              [--error-format full|bare] [-I <dir>]
-             [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]
+             [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats] [--targets]
              [--effect-audit] [--static-audit] [--static-only]
 ```
 
@@ -37,6 +37,7 @@ Build it with `cd core-libs/petal-ui && cargo build`; the binary lands at
 | `--gate-stats` | off | Report frames run vs skipped, and a histogram of run reasons, on stderr. |
 | `--no-memo` | memoized | Run every user-function call. Like `--no-gate`, it switches one layer off in whichever policy is in effect. By default calls whose inputs are unchanged are replayed from their record ([memo-scopes.md](memo-scopes.md)); the trace is identical either way, which `tests/memo.rs` checks. |
 | `--memo-stats` | off | Report the memo's counters (hits, misses, records, inlined, effectful, re-executions, cutoffs, cold sites, evictions) on stderr. |
+| `--targets` | off | Add a `targets` list to every record: the rects the script registered on that frame, with their ids (see "Clicking a widget by name"). |
 | `--effect-audit` | off | Bracket every native call with activity snapshots and report, on stderr, each native whose observed behavior differs from its declared effect row (`petal::effect_audit`). Exit 3 if a declared native did more than it declared. |
 | `--static-audit` | off | Watch the dynamic inputs (bindings, host data, resources, output, effects, the random stream, `state`, any native not registered constant) on every frame while each top-level term `petal show-static` calls static is evaluated, and report each one touched on stderr with the declaration, the input and the call (`petal::static_audit`). |
 | `--static-only` | off | Evaluate only the static top-level statements, under the same audit. The frames draw nothing; a frame that raises is a failed build. |
@@ -107,6 +108,7 @@ it drives. `--size`/`--frames` on the command line override the file's.
     {"at": 5,  "mouse_move": [640, 400]},
     {"at": 6,  "mouse_down": 0}, {"at": 7, "mouse_up": 0},
     {"at": 9,  "click": [100, 200]},
+    {"at": 12, "click_target": "Save"},
     {"at": 20, "key": "left"},
     {"at": 25, "key_down": "a"}, {"at": 30, "key_up": "a"},
     {"at": 40, "text": "hello"},
@@ -125,6 +127,27 @@ Two spellings are shorthand and expand at parse time, matching what
 
 - `click: [x, y]` → `mouse_move` + `mouse_down` at N, `mouse_up` at N+1.
 - `key: "name"` → `key_down` + `key_up`, both at N.
+
+### Clicking a widget by name
+
+`click_target: "id"` clicks the middle of the rect the script registered
+under `id`: a `button` or `checkbox` by its label, anything passed to
+`interact(r, id)` or `ui_target(id, r)`, a widget given `{id: ...}` in its
+style (see [ui-reference.md](../ui-reference.md#named-targets)). It is the
+same press at N and release at N+1 as `click`, but the position is looked up
+when frame N is about to run, in what frame N-1 registered. So a scenario
+survives a layout change, and a widget has to have been on screen for a frame
+before it can be clicked.
+
+Naming a target that is not there fails the run on that frame: the record
+carries `error: "scenario: no ui target named ..."` and the exit code is 1.
+
+`--targets` prints what can be named, frame by frame:
+
+```
+petal-ui-run app.ptl --frames 2 --targets | tail -1 | jq -c '.targets[]'
+{"id":"Save","x":16,"y":16,"w":80,"h":24,"layer":0,"blocks":true}
+```
 
 ### Monkey scenarios
 

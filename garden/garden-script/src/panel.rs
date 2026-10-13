@@ -565,6 +565,8 @@ impl PanelCmd {
     /// emits.
     fn from_draw(cmd: DrawCommand) -> Option<PanelCmd> {
         Some(match cmd {
+            // Tint, atlas sub-rect and nine-slice are not drawn by this host
+            // yet: the image is drawn whole, which is the documented fallback.
             DrawCommand::Image {
                 source,
                 x,
@@ -573,6 +575,7 @@ impl PanelCmd {
                 h,
                 a,
                 radius,
+                ..
             } => PanelCmd::Image {
                 source,
                 x,
@@ -911,6 +914,16 @@ impl PanelCmd {
             DrawCommand::Snapshot { id, x, y } => PanelCmd::Snapshot { id, x, y },
             DrawCommand::BlurCanvas { id, radius } => PanelCmd::BlurCanvas { id, radius },
             DrawCommand::Host { .. } => return None,
+            // Lowered by the drain for a host that has not asked for them
+            // (`petal_ui::compose::HostCaps`), and this one has not: batches
+            // arrive as rects, retained layers as their content, and a layer
+            // marker never leaves the drain at all.
+            DrawCommand::Rects { .. }
+            | DrawCommand::Layer { .. }
+            | DrawCommand::Mute { .. }
+            | DrawCommand::CacheBegin { .. }
+            | DrawCommand::CacheEnd { .. }
+            | DrawCommand::CacheDraw { .. } => return None,
         })
     }
 }
@@ -5060,7 +5073,8 @@ mod tests {
             "let sel = 3\n\
              let name = \"rows\"\n\
              let mine = draw_rect\n\
-             draw_rect(rect(0, 0, 5, 5), theme.panel)\n",
+             draw_rect(rect(0, 0, 5, 5), theme.panel)\n\
+             draw_rect_rounded(rect(0, 0, 5, 5), 2, theme.panel)\n",
         );
         let mut host = PanelHost::load(f.path()).unwrap();
         host.set_dimensions(10, 10);
@@ -5085,9 +5099,13 @@ mod tests {
         assert!(!obs.keys().any(|k| k.starts_with('_')));
         // Rule 3: callables are dropped whoever bound them — the prelude's
         // unprefixed implicit-import aliases, and the script's own `mine` alias.
-        assert_eq!(raw["draw_rect"], "<function>");
+        // (`draw_rect` itself is a native declared by the prelude now, not a
+        // prelude function, so the rounded form stands in for "a prelude
+        // function bound under an unprefixed name".)
+        assert_eq!(raw["draw_rect_rounded"], "<function>");
         assert_eq!(raw["rect"], "<native>");
-        assert!(!obs.contains_key("draw_rect") && !obs.contains_key("rect"));
+        assert!(!obs.contains_key("draw_rect_rounded") && !obs.contains_key("rect"));
+        assert!(!obs.contains_key("draw_rect"));
         assert!(!obs.contains_key("mine"));
 
         // Rule 4: the prelude's unprefixed, non-callable exports (`theme`, the
@@ -5095,8 +5113,9 @@ mod tests {
         // where they were bound: only in an imported module's file.
         assert!(raw.contains_key("theme") && raw.contains_key("GRAD_RIGHT"));
         // Rule 5: a local of an imported function. The wrapper's default
-        // alpha is bound inside `draw_rect`, which has no `ui::` to catch it.
-        assert!(raw.contains_key("draw_rect.a"));
+        // alpha is bound inside `draw_rect_rounded`, which has no `ui::` to
+        // catch it.
+        assert!(raw.contains_key("draw_rect_rounded.a"));
         let keys: Vec<&String> = obs.keys().collect();
         assert_eq!(keys, ["name", "sel"], "only the script's own bindings");
     }

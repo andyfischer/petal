@@ -1659,6 +1659,107 @@ button({x: 0, y: 0, w: 200, h: 100}, "B")
     CHECK(vm.state("n").integer() > 0);
 }
 
+// ─── petal-ui: batches, retained layers, targets ────────────────────────────
+
+static const char* RETAINED_UI = R"petal(import ui
+cached_layer(1, rect(10, 20, 30, 40), fn()
+  draw_rects([0, 0, 4, 4, 0, 4, 0, 4, 4, 1], [#ff0000, {r: 0, g: 255, b: 0, a: 128}])
+end)
+state n = 0
+if button(rect(100, 100, 80, 20), "Go") then n += 1 end
+)petal";
+
+TEST(ui_batches_and_retained_layers_are_lowered_by_default) {
+    petal::Vm vm;
+    vm.set_dimensions(400, 300);
+    vm.load_source(RETAINED_UI);
+    vm.begin_frame(0.016, 0, 0);
+    vm.run();
+    auto cmds = vm.drain_draw();
+    REQUIRE(cmds.size() > 4);
+    // The layer's content, moved to where it is drawn and clipped to its size.
+    CHECK_EQ(cmds[0].kind, uint32_t(PB_DRAW_CLIP_PUSH));
+    CHECK_EQ(cmds[0].w, 30);
+    CHECK_EQ(cmds[1].kind, uint32_t(PB_DRAW_RECT));
+    CHECK_EQ(cmds[1].x, 10);
+    CHECK_EQ(cmds[1].y, 20);
+    CHECK_EQ(cmds[2].kind, uint32_t(PB_DRAW_RECT));
+    CHECK_EQ(int(cmds[2].color.a), 128);
+    CHECK_EQ(cmds[3].kind, uint32_t(PB_DRAW_CLIP_POP));
+}
+
+TEST(ui_batches_and_retained_layers_reach_a_host_that_asks) {
+    petal::Vm vm;
+    vm.set_dimensions(400, 300);
+    vm.load_source(RETAINED_UI);
+    REQUIRE(pb_vm_set_draw_caps(vm.raw(), PB_DRAW_CAP_BATCH_RECTS | PB_DRAW_CAP_RETAINED_LAYERS) == PB_OK);
+    vm.begin_frame(0.016, 0, 0);
+    vm.run();
+    auto cmds = vm.drain_draw();
+    REQUIRE(cmds.size() > 4);
+    CHECK_EQ(cmds[0].kind, uint32_t(PB_DRAW_CACHE_BEGIN));
+    CHECK_EQ(cmds[0].w, 30);
+    CHECK_EQ(cmds[0].h, 40);
+    const uint32_t id = cmds[0].id;
+    CHECK_EQ(cmds[1].kind, uint32_t(PB_DRAW_RECTS));
+    REQUIRE(cmds[1].point_count == 2);
+    CHECK_EQ(cmds[1].points[5], 4);                       // second rect's x, layer-local
+    CHECK_EQ(uint32_t(cmds[1].points[4]), 0xff0000ffu);   // r << 24 | g << 16 | b << 8 | a
+    CHECK_EQ(uint32_t(cmds[1].points[9]), 0x00ff0080u);
+    CHECK_EQ(cmds[2].kind, uint32_t(PB_DRAW_CACHE_END));
+    CHECK_EQ(cmds[3].kind, uint32_t(PB_DRAW_CACHE_DRAW));
+    CHECK_EQ(cmds[3].id, id);
+    CHECK_EQ(cmds[3].x, 10);
+    CHECK_EQ(cmds[3].y, 20);
+
+    // The next frame draws the layer the host kept, and records nothing.
+    vm.key("z", true);
+    vm.begin_frame(0.016, 1, 0.016);
+    vm.run();
+    auto next = vm.drain_draw();
+    REQUIRE(!next.empty());
+    CHECK_EQ(next[0].kind, uint32_t(PB_DRAW_CACHE_DRAW));
+
+    // Until the host says it lost them.
+    REQUIRE(pb_vm_invalidate_layers(vm.raw()) == PB_OK);
+    vm.begin_frame(0.016, 2, 0.032);
+    vm.run();
+    auto again = vm.drain_draw();
+    REQUIRE(!again.empty());
+    CHECK_EQ(again[0].kind, uint32_t(PB_DRAW_CACHE_BEGIN));
+}
+
+TEST(ui_targets_are_readable_and_clickable_by_id) {
+    petal::Vm vm;
+    vm.set_dimensions(400, 300);
+    vm.load_source(RETAINED_UI);
+    vm.begin_frame(0.016, 0, 0);
+    vm.run();
+
+    pb_ui_target t;
+    REQUIRE(pb_vm_ui_target(vm.raw(), "Go", &t) == 1);
+    CHECK_EQ(std::string(t.id), std::string("Go"));
+    CHECK_EQ(t.x, 100.0);
+    CHECK_EQ(t.w, 80.0);
+    CHECK_EQ(int(t.blocks), 1);
+    CHECK_EQ(pb_vm_ui_target(vm.raw(), "Stop", &t), 0);
+
+    const pb_ui_target* all = nullptr;
+    size_t count = 0;
+    REQUIRE(pb_vm_ui_targets(vm.raw(), &all, &count) == PB_OK);
+    REQUIRE(count == 1);
+    CHECK_EQ(std::string(all[0].id), std::string("Go"));
+
+    // A scenario names the button instead of knowing where it is.
+    petal::Scenario sc = petal::Scenario::from_json(R"({"events": [{"at": 1, "click_target": "Go"}]})");
+    for (size_t f = 1; f < 4; ++f) {
+        vm.apply_scenario(sc, f);
+        vm.begin_frame(0.016, int64_t(f), f * 0.016);
+        vm.run();
+    }
+    CHECK_EQ(vm.state("n").integer(), 1);
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 int main(int argc, char** argv) {

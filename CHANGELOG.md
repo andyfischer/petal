@@ -527,6 +527,43 @@ way, for code written against an earlier checkout.
   `garden` package registered before the load), `petal_ui::raw_declarations()`
   and `script_for(env, source)` for tests that call the raw natives,
   `package_modules()`, `input_source()`, `INTERFACE_PACKAGES`.
+- `ui`: layers and hit testing. `ui_layer(n)` / `with_layer(n, body)` /
+  `ui_overlay(n, body)` put what follows on a layer, which orders both the
+  drawing (the drain sorts a frame by layer) and the pointer; `ui_modal()`
+  makes every lower layer inert; `interact(rect, id?)` returns `{hover, down,
+  pressed, released, click}` and respects layers, modals and the clip in
+  force; `pointer_captured()` says whether the UI has the pointer, exactly,
+  on the frame a panel opens under it. Every prelude widget goes through
+  them. `tooltip` and `context_menu` draw on their own layers and outside
+  every clip, and `modal` makes what is under it inert without the app
+  guarding its own input.
+- `ui`: named targets. A registered rect can carry an id (`interact(r, id)`,
+  `ui_target(id, r)`; `button`, `checkbox`, tabs and radio rows use their
+  label, or `style.id`). `ui_target_rect(id)` reads it back in a script;
+  `petal_ui::hit::targets(env)`, `Headless::click_target(id)`,
+  `pb_vm_ui_target`, a scenario's `{"at": N, "click_target": "id"}` and
+  `petal-ui-run --targets` read it from the host.
+- `ui`: retained drawing. `cached_layer(key, rect, body)` runs its body only
+  when `key` or the rect's size changes; `draw_rects(rects, palette?)` is one
+  command for many rects. Both are lowered to the existing draw commands
+  unless a host asks for them (`petal_ui::compose::set_host_caps`,
+  `pb_vm_set_draw_caps`), in which case it receives `Rects` and `CacheBegin` /
+  `CacheEnd` / `CacheDraw` and can keep a texture.
+- `ui`: `draw_rect` is one native in all three shapes, and `draw_polyline`
+  no longer tests its colour's type in Petal; both accept a packed int colour
+  (`r * 65536 + g * 256 + b`). A `draw_rect(x, y, w, h, c, a)` call costs
+  about half what it did.
+- `ui`: `draw_image(source, rect, {tint, src, slice, a, radius})` for
+  tinting, atlas cells and nine-slice; `image_load(source)` and
+  `image_size(source)`.
+- `ui`: a text style takes `shadow`, `outline` and `tracking`.
+- `ui`: flow layout (`flow_begin`, `flow_next`, `flow_space`, `flow_rest`,
+  `flow_used`, `flow_end`) and `ui_measure(body)`, which runs a piece of UI
+  without drawing or registering it.
+- [docs/ui-reference.md](docs/ui-reference.md) lists every name `import ui`
+  exports, and a test fails when one is missing from it.
+  [docs/ui-host-contract.md](docs/ui-host-contract.md) is what a host does
+  for them.
 
 - Native interfaces: `native fn name(a: int, b?, ...rest) -> type = "host_name"`
   declares a function the host implements — its parameter names, arity,
@@ -842,6 +879,17 @@ package changes below, `petal fix-imports` does the rewriting and
 - The surface syntax moved from braces to keyword-and-`end` blocks.
 - The graph evaluator was removed in favor of the bytecode VM.
 - The top-level `petal -e` shorthand was removed; use `petal run -e`.
+- `ui` widgets are not hot over the part of their rect that a clip hides,
+  under a rect registered on a higher layer, or below a modal layer. A
+  script that tested `hovered(r)` beside a widget to mirror its hover should
+  use `ui_hot(r)`; `hovered` and `clicked` are still the raw tests.
+- petal-ui hosts: `DrawCommand::Image` has three more fields (`tint`, `src`,
+  `slice`) and the enum has six more variants (`Rects`, `Layer`, `Mute`,
+  `CacheBegin`, `CacheEnd`, `CacheDraw`). A host that drains with
+  `take_draw_commands` is never handed the six unless it asks; an exhaustive
+  `match` needs an arm for them all the same. `Scenario` has a
+  `target_clicks` field and `Scenario::apply` returns the target ids it could
+  not find.
 
 ### Known issues
 

@@ -1,0 +1,113 @@
+// Micro-benchmark: what a call of a trivial builtin costs. Each function
+// runs N iterations of one call, so a call's time over N, less
+// `empty_loop`'s, is the cost of that call. `sqrt_call` is the control: a
+// builtin of the same shape that is still a full native call.
+//
+//   petal bench --iters 30 test/benchmarks/micro/intrinsics.ptl \
+//     --fn empty_loop --fn float_call --fn int_call --fn min_call \
+//     --fn max_call --fn clamp_call --fn abs_call --fn floor_call \
+//     --fn len_call --fn type_call --fn sqrt_call
+//
+// The arguments come from parameters, so that no call is a value the static
+// cache keeps across iterations. For a whole run on the same binary with the
+// inline forms off: `petal run --policy fast-intrinsics <file>`.
+//
+// Figures are in docs/dev/performance.md (Inline builtins).
+
+let N = 200000
+
+// The loop and the accumulator on their own.
+fn empty_loop()
+  var sum = 0.0
+  for i in range(0, N) do
+    set sum = sum + 0.5
+  end
+  sum
+end
+
+fn float_call()
+  var sum = 0.0
+  for i in range(0, N) do
+    set sum = sum + float(i)
+  end
+  sum
+end
+
+fn int_call(x)
+  var sum = 0
+  for i in range(0, N) do
+    set sum = sum + int(x)
+  end
+  sum
+end
+
+fn min_call()
+  var sum = 0
+  for i in range(0, N) do
+    set sum = sum + min(i, 100)
+  end
+  sum
+end
+
+fn max_call(x)
+  var sum = 0.0
+  for i in range(0, N) do
+    set sum = sum + max(x, 0.25)
+  end
+  sum
+end
+
+fn clamp_call()
+  var sum = 0
+  for i in range(0, N) do
+    set sum = sum + clamp(i, 10, 1000)
+  end
+  sum
+end
+
+fn abs_call()
+  var sum = 0
+  for i in range(0, N) do
+    set sum = sum + abs(i)
+  end
+  sum
+end
+
+fn floor_call(x)
+  var sum = 0.0
+  for i in range(0, N) do
+    set sum = sum + floor(x)
+  end
+  sum
+end
+
+fn len_call(xs)
+  var sum = 0
+  for i in range(0, N) do
+    set sum = sum + len(xs)
+  end
+  sum
+end
+
+// A test on the answer, as `if type(c) == "record"` is written.
+fn type_call(r)
+  var sum = 0
+  for i in range(0, N) do
+    if type(r) == "record" then
+      set sum = sum + 1
+    end
+  end
+  sum
+end
+
+// Control: still a native call.
+fn sqrt_call(x)
+  var sum = 0.0
+  for i in range(0, N) do
+    set sum = sum + sqrt(x)
+  end
+  sum
+end
+
+print(empty_loop(), float_call(), int_call(2.5), min_call(), max_call(0.5))
+print(clamp_call(), abs_call(), floor_call(2.5), len_call([1, 2, 3]), type_call({ a: 1 }), sqrt_call(2.5))

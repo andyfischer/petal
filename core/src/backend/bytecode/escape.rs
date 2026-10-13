@@ -1480,6 +1480,18 @@ impl<'p> Analysis<'p> {
                     }
                 }
             }
+            // Nor does a copy in the web: `if c then xs = other end` in front
+            // of the loop carries `other` into the merge phi through a copy
+            // in the arm, and the loop would then write into `other`, which
+            // its owner still holds. (An arm that performs no mutation is
+            // passed by condition 5c as "carries the value through"; this is
+            // what says the value it carries is the accumulator's.)
+            if matches!(term.op, TermOp::Copy)
+                && let Some(c) = term.inputs.first()
+                && !web.contains(c)
+            {
+                return false;
+            }
         }
 
         // (3) & (4): all mutations in-region; in-region observers are web

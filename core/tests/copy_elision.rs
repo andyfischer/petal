@@ -525,3 +525,58 @@ fn elided_shapes_still_compute_the_right_answer() {
         assert_eq!(out, expected, "{shape}: wrong values after in-place writes");
     }
 }
+
+/// A name a branch rebinds to *another* value in front of a loop that
+/// writes to it: the loop's accumulator is then that other value, which its
+/// owner still holds, so the write must copy. The escape analysis used to
+/// take the arm for one that "carries the value through" (it performs no
+/// mutation) and write into the other list in place. Found by the
+/// differential fuzzer for static values in function bodies, where the
+/// cache's immutable bit hid the write on one side.
+#[test]
+fn a_branch_that_rebinds_the_accumulator_to_another_value_is_not_in_place() {
+    use petal::policy::RunPolicy;
+    let cases = [
+        // A parameter.
+        (
+            "fn f(p, other)\n  let b = sort([3, 1, 2])\n  if p % 2 == 0 then\n    b = other\n  end\n  \
+             for i in range(0, 3) do\n    b[i] = (b[i] + 17) % 97\n  end\n  b\nend\n\
+             let mine = [1, 2, 3]\nprint(f(2, mine), mine, f(1, mine), mine)",
+            "[18, 19, 20] [1, 2, 3] [18, 19, 20] [1, 2, 3]",
+        ),
+        // A captured top-level table, read again by another function.
+        (
+            "let K = [1, 2, 3]\nfn g()\n  K[0]\nend\n\
+             fn f(p)\n  let b = sort([3, 1, 2])\n  if p % 2 == 0 then\n    b = K\n  end\n  \
+             for i in range(0, 3) do\n    b[i] = (b[i] + 17) % 97\n  end\n  [g(), b[0]]\nend\nprint(f(2), K, f(2), K)",
+            "[1, 18] [1, 2, 3] [1, 18] [1, 2, 3]",
+        ),
+        // At the top level, with a second name on the other value.
+        (
+            "let other = [1, 2, 3]\nlet keep = other\nlet b = sort([3, 1, 2])\nif len(other) == 3 then\n  b = other\nend\n\
+             for i in range(0, 3) do\n  b[i] = (b[i] + 17) % 97\nend\nprint(b, other, keep)",
+            "[18, 19, 20] [1, 2, 3] [1, 2, 3]",
+        ),
+        // Appending instead of writing by index.
+        (
+            "fn f(other)\n  let b = []\n  if len(other) > 0 then\n    b = other\n  end\n  \
+             for i in range(0, 3) do\n    b = append(b, i)\n  end\n  b\nend\n\
+             let mine = [7]\nprint(f(mine), mine)",
+            "[7, 0, 1, 2] [7]",
+        ),
+    ];
+    for (code, expected) in cases {
+        for policy in ["baseline", "fast-static", "fast", "replay"] {
+            let mut env = Env::new();
+            env.set_policy(RunPolicy::parse(policy).unwrap());
+            env.set_echo(false);
+            let pid = env.load_program(code).expect("load");
+            let sid = env.create_stack(pid).expect("stack");
+            for run in 0..2 {
+                env.reset_stack(sid).unwrap();
+                env.run(sid).unwrap_or_else(|e| panic!("{policy}: {e}\n{code}"));
+                assert_eq!(env.take_output().join("\n"), expected, "under {policy}, run {run}\n{code}");
+            }
+        }
+    }
+}

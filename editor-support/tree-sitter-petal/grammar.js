@@ -436,7 +436,10 @@ module.exports = grammar({
       field('arguments', $.argument_list),
     )),
 
-    argument_list: $ => seq('(', commaSep(choice($.named_argument, $._expression)), ')'),
+    // `f(a, ...rest)` — a spread argument (a list: by position; a record: by
+    // parameter name). The real parser admits it only in last place and never
+    // after a named argument; the grammar does not encode either rule.
+    argument_list: $ => seq('(', commaSep(choice($.named_argument, $.spread_element, $._expression)), ')'),
 
     // `f(x, limit: 10)` — a named argument binds to the parameter of that
     // name. The real parser accepts any keyword as the name (`f(end: 1)`),

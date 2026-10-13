@@ -695,6 +695,91 @@ print(greet("Ada", punct: "?"))      // Hello, Ada?
 See [Default parameter values](syntax/function-overloading.md#default-parameter-values)
 for the full rules.
 
+### Calling with a list or record of arguments
+
+`f(...args)` calls `f` with arguments that are data. What `args` holds
+decides how they bind:
+
+- a **list** supplies arguments **by position** — `f(...[1, 2])` is `f(1, 2)`;
+- a **record** supplies arguments **by parameter name** —
+  `f(...{b: 2, a: 1})` is `f(a: 1, b: 2)`.
+
+```petal
+fn toll(id: string, cents: int = 5, note = "none")
+    "{id}: {cents} ({note})"
+end
+
+print(toll(...["bridge", 25]))                // bridge: 25 (none)
+print(toll(...{id: "bridge", note: "peak"}))  // bridge: 5 (peak)
+
+let request = {id: "tunnel", cents: 40}
+print(toll(...request))                       // tunnel: 40 (none)
+```
+
+Positional arguments may come first, and the spread is always the last
+argument: `toll("bridge", ...rest)`. A list then continues the positions and a
+record names the parameters that are left. A named argument cannot be written
+beside a spread — put it in the record (`toll(...{...request, note: "x"})`).
+
+The call is the one that would have been written out, so everything about a
+call holds:
+
+- **Defaults are honoured.** A parameter with a
+  [default](#default-parameter-values) may be left out of the record or off
+  the end of the list.
+- **The errors are the written call's**, and each names what is wrong:
+  a key that is no parameter is `toll() has no parameter named 'sents'`, a
+  required parameter left out is `toll() is missing a value for parameter
+  'id'`, a parameter given by position and again by name is `toll() got
+  multiple values for parameter 'id'`, and a list that is too long is
+  `toll() expects 1-3 arguments, got 4`. A record with an unknown key is an
+  error rather than being ignored: filter it first if the data is loose.
+- **Anything callable takes one**: a `fn`, a lambda or closure held in a
+  variable or a record field, a module's function (`lib.scale(...args)`), an
+  [overloaded](function-overloading.md) function (the list's length, or the
+  record's keys, pick the variant), a class constructor (`Rect(...{w: 3, h:
+  4})`), a method (`r.grow(...{by: 2})` — the receiver is still the first
+  argument), and a builtin, which binds a record against the parameter names
+  its [reference entry](Builtins.md) shows (`clamp(...{value: 15, lo: 0, hi:
+  10})`). The variadic builtins (`print`, `format`) take a list and refuse a
+  record, as they refuse a named argument.
+- Spreading anything but a list or a record is an error (`A spread argument
+  (...) must be a list (arguments by position) or a record (arguments by
+  parameter name), got int`).
+
+Together with [`fn_info`](Builtins.md#fn_infof), which reports a function's
+parameters as data, this makes a table of functions callable from data — a
+command bus, or the tools an agent may call — with each one declared once:
+
+```petal
+fn toll(id: string, cents: int = 5)
+    "toll on {id} is {cents}"
+end
+fn close(id: string)
+    "{id} closed"
+end
+
+let tools = {toll: toll, close: close}
+
+fn call_tool(name, args)
+    let f = tools[name] ?? nil
+    if f == nil then return "no tool named {name}" end
+    // The declaration is the schema: reject a key it does not have.
+    let known = fn_info(f).params.map(fn(p) -> p.name)
+    for key in keys(args) do
+        if !contains(known, key) then return "{name} has no parameter {key}" end
+    end
+    f(...args)
+end
+
+print(call_tool("toll", {id: "bridge", cents: 25}))  // toll on bridge is 25
+print(call_tool("close", {id: "tunnel"}))            // tunnel closed
+print(call_tool("close", {name: "tunnel"}))          // close has no parameter name
+```
+
+`petal check` does not look inside a spread: what the call binds is known only
+when it runs.
+
 ### Recursion
 
 ```petal

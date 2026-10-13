@@ -295,11 +295,14 @@ struct Sites(Vec<Site>);
 
 impl ExprVisitor for Sites {
     fn visit_expr(&mut self, e: &Expr) {
+        // A spread call is left as written: no name can stand beside the
+        // spread (`f(a: 1, ...rest)` is a parse error).
         if let ExprKind::Call {
             function,
             args,
             arg_names,
         } = &e.kind
+            && !crate::ast::is_spread_call(arg_names)
         {
             self.0.push(Site {
                 span: e.span,

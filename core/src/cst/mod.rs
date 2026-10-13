@@ -140,6 +140,9 @@ pub enum SyntaxKind {
     RecordField,
     /// One `name: value` argument of a [`SyntaxKind::ArgList`].
     NamedArg,
+    /// The `...args` argument of a [`SyntaxKind::ArgList`]: the list or
+    /// record that supplies the rest of the call's arguments.
+    SpreadArg,
     /// One `name: type` field of a [`SyntaxKind::ClassDecl`].
     ClassField,
     /// One variant of a [`SyntaxKind::EnumDecl`]: its name and, when it has

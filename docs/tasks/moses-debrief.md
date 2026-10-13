@@ -441,6 +441,17 @@ tool("toll", "Set the toll on a crossing.", fn(id: string, cents: int) ...)
 The same call form would serve the game's command bus, which has six more
 hand-written dispatch chains.
 
+**Done, 13 October 2026.** `f(...args)` is in the language: a list binds by
+position, a record by parameter name, after any positional arguments written
+first (`f(a, ...rest)`). Defaults are honoured, and an unknown key, a missing
+required parameter or one given twice is the written call's error, naming it.
+Functions, closures, overload sets, module members, constructors, methods and
+builtins (by their declared names) take one. It is an ordinary call — same
+frame, same `state` slots per call site, same depth limit — not a nested
+callback. `petal check` does not look inside a spread. See
+[Calling with a list or record of arguments](../language-guide.md#calling-with-a-list-or-record-of-arguments),
+which has the tool table written out with `fn_info`.
+
 ### 3.6 Module state (item 13)
 
 "A `fn` captures module-level `let` / `state` by value when it is defined.

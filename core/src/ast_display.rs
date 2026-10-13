@@ -250,6 +250,10 @@ impl Printer {
                     // naming the slot, like a record field; positional ones are
                     // the bare expression.
                     match arg_names.get(i).and_then(|n| n.as_deref()) {
+                        Some(crate::ast::SPREAD_ARG) => {
+                            self.line(depth + 1, "Spread", None);
+                            self.expr(a, depth + 2);
+                        }
                         Some(name) => {
                             self.line(depth + 1, &format!("Arg {name}:"), None);
                             self.expr(a, depth + 2);

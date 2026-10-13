@@ -1063,6 +1063,10 @@ impl Projector {
                 arg_names.resize(args.len(), None);
                 arg_names.push(Some(name));
                 args.push(self.only_expr(n)?);
+            } else if n.kind() == SyntaxKind::SpreadArg {
+                arg_names.resize(args.len(), None);
+                arg_names.push(Some(crate::ast::SPREAD_ARG.to_string()));
+                args.push(self.only_expr(n)?);
             } else {
                 args.push(self.expr(n)?);
             }
@@ -1488,6 +1492,14 @@ mod tests {
         assert_projects("f(end: 1)\n");
         assert_projects("x |> f(b: 2)\n");
         assert_projects("f(a: {b: 1})\n");
+    }
+
+    #[test]
+    fn projects_spread_arguments() {
+        assert_projects("f(...args)\n");
+        assert_projects("f(1, 2, ...rest)\n");
+        assert_projects("x |> f(...{b: 2})\n");
+        assert_projects("m.f(...[1, 2])\n");
     }
 
     #[test]

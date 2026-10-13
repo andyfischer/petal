@@ -153,6 +153,11 @@ pub fn unresolved_globals<'a>(
                     .iter()
                     .map(|n| n.and_then(|c| program.get_string_constant(c)))
                     .collect();
+                // `max(...args)`: the names are the keys of a record the run
+                // supplies, so there is nothing to hold to the declaration.
+                if names.last() == Some(&Some(crate::ast::SPREAD_ARG)) {
+                    continue;
+                }
                 let sigs: &[NativeSignature] = match native_signatures(name) {
                     Some(sigs) => sigs,
                     None => match declared.get(name) {

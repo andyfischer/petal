@@ -90,6 +90,10 @@ pub enum ExprKind {
         /// The written name of each argument (`f(x, limit: 10)`), parallel to
         /// `args`. Empty means every argument is positional — the common case;
         /// when non-empty it has exactly the length of `args`.
+        ///
+        /// A spread argument (`f(...args)`, always the last one) is recorded
+        /// here too, under the name [`SPREAD_ARG`], which no parameter can
+        /// have: see [`is_spread_call`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         arg_names: Vec<Option<String>>,
     },
@@ -149,6 +153,23 @@ pub enum ExprKind {
         props: Vec<(String, Expr)>,
         children: Vec<JsxChild>,
     },
+}
+
+/// The "name" a spread argument carries in a call's `arg_names`
+/// (`f(a, ...rest)` is `[None, Some("...")]`). Not an identifier, so it can
+/// never be a written argument name; a pass that does not know spread calls
+/// sees a named call it cannot resolve, and leaves it alone.
+///
+/// The value spread decides how the call binds when it runs: a list supplies
+/// further positional arguments, a record supplies arguments by parameter
+/// name. See docs/language-guide.md (Calling with a list or record).
+pub const SPREAD_ARG: &str = "...";
+
+/// Whether a call's `arg_names` say its last argument is a spread
+/// (`f(...args)`). The parser admits a spread only in last place, and never
+/// beside a named argument.
+pub fn is_spread_call(arg_names: &[Option<String>]) -> bool {
+    arg_names.last().is_some_and(|n| n.as_deref() == Some(SPREAD_ARG))
 }
 
 /// A field in a record literal: either a named field or a spread expression.

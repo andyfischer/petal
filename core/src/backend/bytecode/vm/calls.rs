@@ -168,6 +168,11 @@ impl<'a> Vm<'a> {
         call_site: Option<TermId>,
         memoize: bool,
     ) -> Result<(), String> {
+        // `f(...args)`: only a call that names an argument can be one, so the
+        // all-positional call pays one length test for it.
+        if !arg_names.is_empty() && self.is_spread_call(arg_names) {
+            return self.do_spread_call(fi, dst, callable, args, call_site, memoize);
+        }
         match callable {
             Value::Closure(_) | Value::OverloadSet(_) => {
                 // Overload selection is by argument count first; the written
@@ -395,9 +400,18 @@ impl<'a> Vm<'a> {
         if let Value::Handle(h) = recv {
             // A handle class dispatches its methods by name inside one host
             // callback; it has no per-method parameter list to bind against.
-            if !arg_names.is_empty() {
+            let spread;
+            let args = if arg_names.is_empty() {
+                args
+            } else if self.is_spread_call(arg_names) {
+                // Only a list has anything to give a method with no declared
+                // parameter names.
+                spread = spread_positional(self.heap, args)
+                    .ok_or_else(|| crate::native_fn::undeclared_named_args(method_name))??;
+                &spread
+            } else {
                 return Err(crate::native_fn::undeclared_named_args(method_name));
-            }
+            };
             let v = self.call_handle_method(h, method_name, args, call_site)?;
             self.set_call_result(fi, dst, v, call_site);
             return Ok(());
@@ -522,6 +536,33 @@ impl<'a> Vm<'a> {
         site: u64,
         memoize: bool,
     ) -> Result<(), String> {
+        self.push_closure_frame_with(
+            cid,
+            args,
+            CallNames::Constants(arg_names),
+            dst,
+            call_site,
+            site,
+            memoize,
+        )
+    }
+
+    /// [`push_closure_frame`](Self::push_closure_frame), with the argument
+    /// names either as the call instruction carries them or as strings: a
+    /// spread call's names are the keys of a record, which are no constants
+    /// of the program.
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    fn push_closure_frame_with(
+        &mut self,
+        cid: ClosureId,
+        args: &[Value],
+        arg_names: CallNames<'_, '_>,
+        dst: Option<Reg>,
+        call_site: Option<TermId>,
+        site: u64,
+        memoize: bool,
+    ) -> Result<(), String> {
         // Every Petal call, callbacks included, pushes its frame here, so
         // this one check bounds recursion of every shape.
         if self.stack.vm_frames.len() >= super::MAX_CALL_DEPTH {
@@ -540,7 +581,14 @@ impl<'a> Vm<'a> {
         // has any accepts a range of counts; too *few* for the required ones
         // is reported below, by name, when the arguments are bound.
         let optional = func.optional_params as usize;
-        if args.len() != func.params.len() && (optional == 0 || args.len() > func.params.len()) {
+        // A record spread that leaves a required parameter out is told which
+        // one, by the binder below: the count alone would not say.
+        let names_a_few = args.len() < func.params.len()
+            && matches!(arg_names, CallNames::Strings(names) if !names.is_empty());
+        if args.len() != func.params.len()
+            && (optional == 0 || args.len() > func.params.len())
+            && !names_a_few
+        {
             // A method's receiver is a parameter the *call site* supplies:
             // `c.foo()` passes `c` even though the user wrote no arguments.
             // Counting it would report `C.foo() expects 2 arguments, got 1` at
@@ -572,8 +620,15 @@ impl<'a> Vm<'a> {
         let args = if arg_names.is_empty() && optional == 0 {
             args
         } else {
-            let names = arg_name_strs(program, arg_names)?;
-            bound = calls::bind_named_args(fn_name, &func.params, optional, args, &names)?;
+            bound = match arg_names {
+                CallNames::Constants(ids) => {
+                    let names = arg_name_strs(program, ids)?;
+                    calls::bind_named_args(fn_name, &func.params, optional, args, &names)?
+                }
+                CallNames::Strings(names) => {
+                    calls::bind_named_args(fn_name, &func.params, optional, args, names)?
+                }
+            };
             &bound[..]
         };
 
@@ -802,6 +857,9 @@ impl<'a> Vm<'a> {
         if arg_names.is_empty() {
             return Ok(None);
         }
+        if self.is_spread_call(arg_names) {
+            return self.bind_native_spread(nid, args).map(Some);
+        }
         let name = self.native_fns.get_name(nid);
         let sigs = self.native_fns.signatures(nid);
         if sigs.is_empty() {
@@ -830,4 +888,190 @@ fn with_receiver(recv: Value, args: &[Value]) -> SmallVec<[Value; 8]> {
     full.push(recv);
     full.extend_from_slice(args);
     full
+}
+
+/// The written names of a call's arguments, in whichever form the caller has
+/// them (see `Vm::push_closure_frame_with`).
+#[derive(Clone, Copy)]
+enum CallNames<'a, 's> {
+    /// As a call instruction carries them: constants of the program.
+    Constants(&'a ArgNames),
+    /// As strings, parallel to the arguments (`None` = positional) or empty.
+    Strings(&'a [Option<&'s str>]),
+}
+
+impl CallNames<'_, '_> {
+    fn is_empty(&self) -> bool {
+        match self {
+            CallNames::Constants(ids) => ids.is_empty(),
+            CallNames::Strings(names) => names.is_empty(),
+        }
+    }
+}
+
+impl<'a> Vm<'a> {
+    /// Whether a call's argument names say its last argument is a spread
+    /// (`f(...args)`): the compiler names that argument
+    /// [`SPREAD_ARG`](crate::ast::SPREAD_ARG), which no parameter can be
+    /// called.
+    fn is_spread_call(&self, arg_names: &ArgNames) -> bool {
+        match arg_names.last() {
+            Some(Some(cid)) => {
+                self.program.get_string_constant(*cid) == Some(crate::ast::SPREAD_ARG)
+            }
+            _ => false,
+        }
+    }
+
+    /// `callable(a, b, ...spread)`: `args` is the written positional
+    /// arguments followed by the value spread.
+    ///
+    /// - A **list** supplies further positional arguments, and the call is
+    ///   then exactly the call that wrote them out.
+    /// - A **record** supplies arguments by parameter name, bound by the
+    ///   binder a written `f(name: value)` uses: a parameter with a default
+    ///   may be left out, and a key that names no parameter, a parameter also
+    ///   filled by position, or a required one left out is that binder's
+    ///   error.
+    ///
+    /// Anything else is an error. A `Pending` spread is absorbed: the call
+    /// does not happen and its value is that pending, as for a native handed
+    /// one.
+    fn do_spread_call(
+        &mut self,
+        fi: usize,
+        dst: Reg,
+        callable: Value,
+        args: &[Value],
+        call_site: Option<TermId>,
+        memoize: bool,
+    ) -> Result<(), String> {
+        let Some((&spread, lead)) = args.split_last() else {
+            return Err("internal error: a spread call with no arguments".into());
+        };
+        match spread {
+            Value::List(id) => {
+                let mut full: SmallVec<[Value; 8]> = SmallVec::from_slice(lead);
+                full.extend_from_slice(self.heap.get_list(id));
+                self.do_call(
+                    fi,
+                    dst,
+                    callable,
+                    &full,
+                    &ArgNames::new(),
+                    call_site,
+                    memoize,
+                )
+            }
+            Value::Map(id) => {
+                let record = self.heap.get_map(id);
+                let keys: SmallVec<[crate::record::Key; 8]> = record.keys().cloned().collect();
+                let mut full: SmallVec<[Value; 8]> = SmallVec::from_slice(lead);
+                full.extend(record.values().copied());
+                let mut names: SmallVec<[Option<&str>; 8]> =
+                    smallvec::smallvec![None; lead.len()];
+                names.extend(keys.iter().map(|k| Some(k.as_str())));
+                // A record with no fields names nothing: the call is the
+                // positional one.
+                let names: &[Option<&str>] = if keys.is_empty() { &[] } else { &names };
+                match callable {
+                    Value::Closure(_) | Value::OverloadSet(_) => {
+                        let cid = calls::resolve_callable(
+                            self.program,
+                            self.closures,
+                            callable,
+                            full.len(),
+                            names,
+                        )?;
+                        let site = self.site_of(call_site);
+                        self.push_closure_frame_with(
+                            cid,
+                            &full,
+                            CallNames::Strings(names),
+                            Some(dst),
+                            call_site,
+                            site,
+                            memoize,
+                        )
+                    }
+                    Value::NativeFunction(nid) => {
+                        let bound = self.bind_native_spread(nid, args)?;
+                        let v = self.call_native_or_intrinsic(nid, &bound, call_site)?;
+                        self.set_call_result(fi, dst, v, call_site);
+                        Ok(())
+                    }
+                    Value::EnumVariant { .. } if full.is_empty() => {
+                        self.set_call_result(fi, dst, callable, call_site);
+                        Ok(())
+                    }
+                    _ => Err(format!("Cannot call {}", callable.type_name())),
+                }
+            }
+            Value::Pending(_) => {
+                self.set_call_result(fi, dst, spread, call_site);
+                Ok(())
+            }
+            other => Err(not_spreadable(other)),
+        }
+    }
+}
+
+/// What a spread value is not: the refusal every spread call shares.
+fn not_spreadable(v: Value) -> String {
+    format!(
+        "A spread argument (`...`) must be a list (arguments by position) or a record \
+         (arguments by parameter name), got {}",
+        v.type_name()
+    )
+}
+
+/// The positional argument list of a spread call whose spread is a list, an
+/// empty record or a `Pending` (which stays an argument, for the callee's own
+/// pending policy): `args` is the written arguments followed by the value
+/// spread. `None` when the spread is a record with fields, whose names only
+/// the callee can place.
+fn spread_positional(
+    heap: &crate::heap::Heap,
+    args: &[Value],
+) -> Option<Result<SmallVec<[Value; 8]>, String>> {
+    let (&spread, lead) = args.split_last()?;
+    let mut full: SmallVec<[Value; 8]> = SmallVec::from_slice(lead);
+    match spread {
+        Value::List(id) => full.extend_from_slice(heap.get_list(id)),
+        Value::Map(id) if heap.get_map(id).is_empty() => {}
+        Value::Map(_) => return None,
+        Value::Pending(_) => full.push(spread),
+        other => return Some(Err(not_spreadable(other))),
+    }
+    Some(Ok(full))
+}
+
+impl<'a> Vm<'a> {
+    /// The arguments of a spread call to native `nid`, laid out as it takes
+    /// them: `args` is the written arguments followed by the value spread. A
+    /// record binds against the parameter names the native declares
+    /// (`native fn`), with the binder a written `f(name: value)` uses.
+    fn bind_native_spread(
+        &self,
+        nid: NativeFnId,
+        args: &[Value],
+    ) -> Result<SmallVec<[Value; 8]>, String> {
+        if let Some(positional) = spread_positional(self.heap, args) {
+            return positional;
+        }
+        let Some((&Value::Map(id), lead)) = args.split_last() else {
+            return Err("internal error: a spread call with no arguments".into());
+        };
+        let name = self.native_fns.get_name(nid);
+        let sigs = self.native_fns.signatures(nid);
+        if sigs.is_empty() {
+            return Err(crate::native_fn::undeclared_named_args(name));
+        }
+        let record = self.heap.get_map(id);
+        let mut full: SmallVec<[Value; 8]> = SmallVec::from_slice(lead);
+        full.extend(record.values().copied());
+        let mut names: SmallVec<[Option<&str>; 8]> = smallvec::smallvec![None; lead.len()];
+        names.extend(record.keys().map(|k| Some(k.as_str())));
+        crate::native_fn::bind_native_args(name, sigs, &full, &names)
+    }
 }

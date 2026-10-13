@@ -1,0 +1,21 @@
+==================
+A spread argument
+==================
+
+f(...args)
+g(1, ...rest)
+
+---
+
+(source_file
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (spread_element
+        (identifier))))
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (integer)
+      (spread_element
+        (identifier)))))

@@ -34,6 +34,15 @@ way, for code written against an earlier checkout.
   `petal check` and the language server report nothing for a `const` built
   from natives they do not have, and its host reports the error on load. See
   [Constants](docs/language-guide.md#const--a-value-that-must-be-constant).
+- `f(...args)` calls a function with arguments that are data: a list
+  supplies them by position, a record by parameter name, after any positional
+  arguments written first (`f(a, ...rest)`). Defaults are honoured, and an
+  unknown name, a missing required parameter or a parameter given twice is
+  the error the written call would give. Functions, closures, overload sets,
+  module members, constructors, methods and builtins (by their declared
+  parameter names) all take one. With `fn_info`, a table of functions is
+  callable from data with each one declared once. See
+  [Calling with a list or record of arguments](docs/language-guide.md#calling-with-a-list-or-record-of-arguments).
 - `state` slots are keyed by the call path that reaches them, so two calls to
   the same function keep separate state. Loops get per-iteration state, with
   optional explicit keys.

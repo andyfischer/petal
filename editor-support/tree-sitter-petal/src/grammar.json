@@ -2445,6 +2445,10 @@
                     },
                     {
                       "type": "SYMBOL",
+                      "name": "spread_element"
+                    },
+                    {
+                      "type": "SYMBOL",
                       "name": "_expression"
                     }
                   ]
@@ -2464,6 +2468,10 @@
                           {
                             "type": "SYMBOL",
                             "name": "named_argument"
+                          },
+                          {
+                            "type": "SYMBOL",
+                            "name": "spread_element"
                           },
                           {
                             "type": "SYMBOL",

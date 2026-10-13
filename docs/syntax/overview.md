@@ -432,6 +432,20 @@ Builtins take names too. See
 [Named arguments](function-overloading.md#named-arguments), and the
 [Builtins Reference](../Builtins.md) for each builtin's parameter names.
 
+The last argument may be a spread, `f(...args)`, which calls `f` with
+arguments that are data: a list supplies them by position, a record by
+parameter name (defaults honoured; an unknown or missing name is the error the
+written call would give). Any callable takes one, builtins included. See
+[Calling with a list or record of arguments](../language-guide.md#calling-with-a-list-or-record-of-arguments).
+
+```petal
+fn box(w, h = w) "{w}x{h}" end
+
+print(box(...[3, 4]))    // 3x4
+print(box(...{w: 5}))    // 5x5
+print(box(2, ...{h: 9})) // 2x9
+```
+
 ### Collection and access forms
 
 ```petal

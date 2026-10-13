@@ -2815,7 +2815,32 @@ impl Parser {
         self.skip_newlines();
         while !matches!(self.peek(), Token::RParen | Token::Eof) {
             self.expect_element_start("an argument")?;
-            if self.starts_named_arg() {
+            if crate::ast::is_spread_call(&arg_names) {
+                return Err(self.error_at_current(
+                    "An argument after a spread argument: `...args` must be the last argument \
+                     of the call"
+                        .to_string(),
+                ));
+            }
+            if matches!(self.peek(), Token::DotDotDot) {
+                // `f(...args)`: the list or record that supplies the rest of
+                // the arguments. Recorded as the last argument, under the
+                // name no parameter can have (`ast::SPREAD_ARG`).
+                if !arg_names.is_empty() {
+                    return Err(self.error_at_current(
+                        "A spread argument after a named argument: write the named values \
+                         into the record that is spread (`f(...{...args, name: value})`)"
+                            .to_string(),
+                    ));
+                }
+                self.ev_open(SyntaxKind::SpreadArg);
+                self.advance(); // consume '...'
+                let value = self.parse_expr()?;
+                self.ev_close(); // SpreadArg
+                arg_names.resize(args.len(), None);
+                arg_names.push(Some(crate::ast::SPREAD_ARG.to_string()));
+                args.push(value);
+            } else if self.starts_named_arg() {
                 self.ev_open(SyntaxKind::NamedArg);
                 let name = self.expect_field_name()?;
                 self.expect(&Token::Colon)?;

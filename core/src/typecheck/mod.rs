@@ -1603,6 +1603,31 @@ impl<'a> Checker<'a> {
                 arg_names,
                 ..
             } => {
+                // `f(...args)`: what the call binds is decided by the value
+                // spread, when it runs, so there is no argument to hold to a
+                // parameter here and nothing is known of the result.
+                if crate::ast::is_spread_call(arg_names) {
+                    match &function.kind {
+                        // A module's member or an enum's variant: nothing to
+                        // walk. Method syntax: the receiver is a value, the
+                        // method name is not a field of it.
+                        ExprKind::FieldAccess { object, .. } => {
+                            if self.namespace_call(function).is_none()
+                                && self.static_enum(object).is_none()
+                            {
+                                self.check_expr(object);
+                            }
+                        }
+                        _ => {
+                            self.check_expr(function);
+                        }
+                    }
+                    for arg in args {
+                        self.slot = CastSlot::ListElement;
+                        self.check_expr(arg);
+                    }
+                    return Type::Any;
+                }
                 // `recv.name(...)` is method syntax, not a field read followed
                 // by a call: `name` is looked up among the receiver's methods
                 // (and, failing those, the globals), so walking it as a field

@@ -126,6 +126,11 @@ impl Compiler {
                 // all-positional path allocates nothing and behaves exactly as
                 // it did before named arguments existed.
                 let names = self.intern_arg_names(arg_names);
+                // A spread call (`f(...args)`) takes the same paths as any
+                // other: its last argument carries the spread marker as its
+                // name (`ast::SPREAD_ARG`), and what that binds — positions
+                // for a list, parameter names for a record — is the VM's to
+                // decide when the value is in hand (`Vm::do_spread_call`).
                 // Detect method syntax: obj.method(args...)
                 if let ExprKind::FieldAccess { object, field } = &function.kind {
                     // `Color.custom(1, 2, 3)` where `Color` is an enum:

@@ -436,6 +436,47 @@ and 15.0, audio_synth 110.6 and 109.2, particles 11.2 and 11.3,
 match_dispatch 317.8 and 314.6, append 6.1 and 6.4, spreadsheet 205.9 and
 213.3). The machine was running other builds during all of these.
 
+## A state hit
+
+A `state` declaration whose slot already exists is a hit: the `StateInit`
+instruction finds the slot and jumps over the init block. A hit hashes its
+key (declaration id plus call path) four times in a run: the probe and the
+insert of the per-run touched set, the lookup in the state table, and the
+end-of-run sweep that drops untouched slots. Under the standard library's
+SipHash those four were most of the cost. The state table and the touched
+set now use their own hasher (`StateHasher` in `core/src/stack.rs`: one
+multiply per word and a fold at the end), which is the whole change. Keys,
+the touched set, the sweep, memo dependencies and the static audit's state
+watch are as they were.
+
+`cd core && cargo run --release --example rerun_timing --
+../test/benchmarks/micro/state_hit_top.ptl
+../test/benchmarks/micro/state_hit_fn.ptl
+../test/benchmarks/micro/state_hit_none.ptl` runs each file 20,000 times on
+one kept stack. Median microseconds per run, and nanoseconds per hit (200
+hits a run; the control for the top-level file is a two-line program at
+2.0 µs, for the function file it is `state_hit_none.ptl`):
+
+| | Before | After | Per hit before | Per hit after |
+|---|---|---|---|---|
+| 200 top-level `state` | 16.9 µs | 10.9 µs | 74 ns | 44 ns |
+| 200 calls of a function with one `state`, in a loop | 57.0 µs | 44.6 µs | 214 ns | 149 ns |
+| the same calls, no `state` | 14.3 µs | 14.8 µs | | |
+
+"Before" is one run of the benchmark and "after" the middle of three; the
+machine was running other builds. A hit inside a function costs three times
+a top-level one because its key has a path: the path is assembled from the
+frames on every hit, the key is three words longer to hash and compare, and
+it is copied into the touched set.
+
+What was not done: resolving a top-level slot once per program and reading
+it by index. The table is a public map that hosts, `--state-storage`, hot
+reload's state transfer, `restore_state`, a fork and the sweep all read and
+write by key, so an index beside it would have to be kept true through each
+of them, for at most the 44 ns that are left. Moving the key into the touched
+set instead of cloning it (and probing once instead of twice) was tried and
+measured no different.
+
 ## Static values
 
 A host runs the whole script every frame, so every top-level table used to be

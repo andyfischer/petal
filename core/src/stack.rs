@@ -41,6 +41,79 @@ pub struct RuntimeStateKey {
     pub path: SmallVec<[PathPart; 4]>,
 }
 
+/// The hasher of the state table and of the per-run set of touched keys.
+///
+/// A `state` hit hashes its key four times a run (the touched-set probe and
+/// insert, the table lookup, the end-of-run sweep), and under the standard
+/// library's SipHash those four were most of what a hit cost. A key is a
+/// declaration id, itself a compile-time hash, and a short path of callsite
+/// hashes and loop indices: a multiply per word and a fold at the end spread it well,
+/// and nothing here needs SipHash's resistance to chosen keys. The hash has no
+/// per-process seed, so the table's iteration order is the same on every run
+/// of the same program; nothing may depend on that order either way.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StateHasher(u64);
+
+impl StateHasher {
+    /// The multiplier of rustc's FxHasher.
+    const K: u64 = 0xf135_7aea_2e62_a9c5;
+
+    #[inline]
+    fn add(&mut self, word: u64) {
+        self.0 = (self.0.wrapping_add(word)).wrapping_mul(Self::K);
+    }
+}
+
+impl std::hash::Hasher for StateHasher {
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        // Not reached by a `RuntimeStateKey`, whose every field is a word;
+        // here so the hasher is correct for any key.
+        for chunk in bytes.chunks(8) {
+            let mut word = [0u8; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            self.add(u64::from_le_bytes(word));
+        }
+        self.add(bytes.len() as u64);
+    }
+
+    #[inline]
+    fn write_u64(&mut self, n: u64) {
+        self.add(n);
+    }
+
+    #[inline]
+    fn write_usize(&mut self, n: usize) {
+        self.add(n as u64);
+    }
+
+    #[inline]
+    fn write_isize(&mut self, n: isize) {
+        self.add(n as u64);
+    }
+
+    #[inline]
+    fn finish(&self) -> u64 {
+        // A multiply only carries entropy upward, and the table takes its
+        // bucket from the low bits and its control byte from the top seven:
+        // fold the high half down, multiply once more and fold again, so
+        // every input bit reaches both ends (keys that differ only in their
+        // high bits otherwise share half their control bytes).
+        let h = self.0 ^ (self.0 >> 32);
+        let h = h.wrapping_mul(Self::K);
+        h ^ (h >> 29)
+    }
+}
+
+/// Builds a [`StateHasher`].
+pub type StateHashBuilder = std::hash::BuildHasherDefault<StateHasher>;
+
+/// The persistent state of a stack: one value per runtime key.
+pub type StateMap = HashMap<RuntimeStateKey, Value, StateHashBuilder>;
+
+/// A set of runtime state keys.
+pub type StateKeySet = HashSet<RuntimeStateKey, StateHashBuilder>;
+
 /// An open touch capture: a position in the stack's touch journal. Returned by
 /// [`Stack::begin_touch_capture`] and consumed by [`Stack::end_touch_capture`].
 #[derive(Debug)]
@@ -80,7 +153,7 @@ pub struct Stack {
     pub program_id: ProgramId,
     /// The ExecutionContext this stack draws its heap and registries from.
     pub context: ContextKey,
-    pub state: HashMap<RuntimeStateKey, Value>,
+    pub state: StateMap,
     pub status: StackStatus,
     /// Temporary storage for the result of the last popped frame.
     /// Used by synchronous closure calls (map/filter/reduce) to capture return values.
@@ -92,7 +165,7 @@ pub struct Stack {
     /// list, or a top-level `state` declaration that was deleted on hot
     /// reload. Cleared at the start of each top-level `run`. Write through
     /// [`touch_state`](Self::touch_state), which also feeds open captures.
-    pub touched_state_keys: HashSet<RuntimeStateKey>,
+    pub touched_state_keys: StateKeySet,
     /// Every touch made while at least one [`TouchCapture`] is open, in order.
     /// Empty whenever no capture is open, so an ordinary run pays nothing for
     /// it. See [`begin_touch_capture`](Self::begin_touch_capture).
@@ -235,10 +308,10 @@ impl Stack {
             id,
             program_id,
             context,
-            state: HashMap::new(),
+            state: StateMap::default(),
             status: StackStatus::Ready,
             last_pop_result: None,
-            touched_state_keys: HashSet::new(),
+            touched_state_keys: StateKeySet::default(),
             touch_journal: Vec::new(),
             open_touch_captures: 0,
             functions: HashMap::new(),
@@ -486,6 +559,42 @@ mod tests {
             base: StateKey(base),
             path: path.iter().copied().collect(),
         }
+    }
+
+    /// The state hasher spreads the keys a program really produces: one
+    /// declaration under consecutive loop indices, and consecutive declaration
+    /// ids at the top level. A table takes its bucket from the low bits of a
+    /// hash and its control byte from the top seven, so both are checked
+    /// against what a random function would give (about 63% of 4096 buckets
+    /// filled by 4096 keys).
+    #[test]
+    fn the_state_hasher_spreads_consecutive_keys() {
+        use std::hash::BuildHasher;
+        let build = StateHashBuilder::default();
+        let families: [Vec<RuntimeStateKey>; 3] = [
+            (0..4096)
+                .map(|i| key(7, &[PathPart::Index(i), PathPart::Call(0x9e37)]))
+                .collect(),
+            (0..4096).map(|i| key(i, &[])).collect(),
+            (0..4096)
+                .map(|i| key(7, &[PathPart::Key(i << 32)]))
+                .collect(),
+        ];
+        for keys in &families {
+            let hashes: Vec<u64> = keys.iter().map(|k| build.hash_one(k)).collect();
+            let distinct: HashSet<u64> = hashes.iter().copied().collect();
+            assert_eq!(distinct.len(), keys.len(), "two keys share a hash");
+            let low: HashSet<u64> = hashes.iter().map(|h| h & 0xfff).collect();
+            assert!(low.len() > 2300, "low bits fill {} of 4096", low.len());
+            let top: HashSet<u64> = hashes.iter().map(|h| h >> 57).collect();
+            assert_eq!(top.len(), 128, "top seven bits");
+        }
+        // The parts of a path are told apart by kind and by order.
+        let a = build.hash_one(key(1, &[PathPart::Index(3)]));
+        let b = build.hash_one(key(1, &[PathPart::Call(3)]));
+        let c = build.hash_one(key(1, &[PathPart::Index(3), PathPart::Index(4)]));
+        let d = build.hash_one(key(1, &[PathPart::Index(4), PathPart::Index(3)]));
+        assert!(a != b && c != d && a != c);
     }
 
     fn stack() -> Stack {

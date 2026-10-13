@@ -1,0 +1,14 @@
+// The control for state_hit_fn.ptl: the same loop and call with no `state`
+// in the function. (The control for state_hit_top.ptl is any two-line
+// program: what a run costs before it executes anything.)
+
+fn counter(i)
+  let n = i
+  n
+end
+
+var sum = 0
+for i in range(0, 200) do
+  set sum = sum + counter(i)
+end
+sum

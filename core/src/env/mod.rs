@@ -18,7 +18,7 @@ use crate::policy::RunPolicy;
 use crate::effect_audit::EffectAudit;
 use crate::profile::VmProfile;
 use crate::program::{Program, ProgramId, StateKey};
-use crate::stack::{RuntimeStateKey, Stack, StackKey};
+use crate::stack::{RuntimeStateKey, Stack, StackKey, StateMap};
 use crate::stats::{AllocStats, DupStats};
 use crate::symbol::SymbolTable;
 use crate::trace::TraceBuffer;
@@ -1852,7 +1852,7 @@ impl Env {
     /// The same snapshot contract as [`Env::get_state`] applies to every `Value`
     /// in the map: read it before the next run of this stack, and do not retain
     /// it — a later run may mutate a state container's backing store in place.
-    pub fn get_all_state(&self, stack_id: StackKey) -> Option<&HashMap<RuntimeStateKey, Value>> {
+    pub fn get_all_state(&self, stack_id: StackKey) -> Option<&StateMap> {
         self.stacks.get(&stack_id).map(|s| &s.state)
     }
 
@@ -1908,14 +1908,20 @@ impl Env {
     // ── State snapshots ──────────────────────────────────────────
 
     /// Clone all state values. Cheap since Value is Copy.
-    pub fn snapshot_state(&self, stack_id: StackKey) -> Option<HashMap<RuntimeStateKey, Value>> {
+    pub fn snapshot_state(&self, stack_id: StackKey) -> Option<StateMap> {
         self.stacks.get(&stack_id).map(|s| s.state.clone())
     }
 
     /// Restore state from a previous snapshot, replacing all current state.
-    pub fn restore_state(&mut self, stack_id: StackKey, snapshot: HashMap<RuntimeStateKey, Value>) {
+    /// Takes any collection of slots, so a map built by the caller with the
+    /// standard hasher is accepted as well as a [`snapshot_state`](Self::snapshot_state).
+    pub fn restore_state(
+        &mut self,
+        stack_id: StackKey,
+        snapshot: impl IntoIterator<Item = (RuntimeStateKey, Value)>,
+    ) {
         if let Some(stack) = self.stacks.get_mut(&stack_id) {
-            stack.state = snapshot;
+            stack.state = snapshot.into_iter().collect();
             stack.run_deps.force();
         }
     }

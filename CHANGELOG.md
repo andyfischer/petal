@@ -111,6 +111,15 @@ way, for code written against an earlier checkout.
   is then updated in place as before, and a variant a host built or one
   kept in `state` across an edit reads as before. See
   [docs/dev/performance.md](docs/dev/performance.md#enum-data-reads).
+- A `state` declaration that finds its slot costs about 40% less at the top
+  level (74 ns to 44 ns) and 30% less inside a function (214 ns to 149 ns):
+  the state table and the per-run set of touched keys hash with a small
+  multiplicative hasher instead of SipHash. Nothing changes for a program.
+  For an embedder, `Env::snapshot_state` and `get_all_state` now return a
+  `petal::stack::StateMap` (a `HashMap` with that hasher), and
+  `restore_state` takes any collection of `(RuntimeStateKey, Value)`, so a
+  plain `HashMap` still passes. See
+  [docs/dev/performance.md](docs/dev/performance.md#a-state-hit).
 - Escape and last-use analyses turn value-semantic updates into in-place writes
   (loop accumulators, `state`-backed containers, `var` cells).
 - A generational heap with a mark-and-sweep collector paced by bytes allocated.

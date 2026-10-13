@@ -372,6 +372,53 @@ its slot could be resolved once per program and read by index. Do this only
 if it falls out simply; static values remove the 74 constant cells from that
 count anyway.
 
+**Status (2026-10-12): the simple half shipped; the slot index was not built.**
+
+Measured first, with `test/benchmarks/micro/state_hit_top.ptl` (200 top-level
+`state`), `state_hit_fn.ptl` (one `state` in a function called 200 times from
+a loop) and `state_hit_none.ptl` (the control), under
+`core/examples/rerun_timing.rs` (20,000 runs on one kept stack, medians):
+a top-level hit cost 74 ns, which agrees with the 72 ns above, and a hit
+inside a function 214 ns.
+
+Where it went: a hit hashes its `RuntimeStateKey` four times a run (the
+touched set's probe and insert, the table lookup, the end-of-run sweep), all
+with SipHash. The state table and the touched set now use a small
+multiplicative hasher (`StateHasher`, `StateMap`, `StateKeySet` in
+`core/src/stack.rs`). After: 44 ns at the top level, 149 ns in a function.
+No state instruction changed, so `touch_state`, the memo dependency notes,
+per-call-path keys, the sweep, state transfer, `--state-storage`,
+fork/restore and the static audit's state watch are untouched; the full
+`core` test suite passes in debug. The public surface moved slightly:
+`snapshot_state` and `get_all_state` return `StateMap`, and `restore_state`
+takes any iterator of slots so a caller's plain `HashMap` still compiles.
+Figures and method are in `docs/dev/performance.md` (A state hit).
+
+Not built, and why: resolving a top-level slot once per program and reading
+it by index. `Stack::state` is a public map written by key from the sweep,
+`transfer_state`, `state_storage`, `restore_state`, `set_state`, forks and
+hosts; an index beside it has to be invalidated or rebuilt by every one of
+them, and S2 is editing the reload path now. That is not "falls out simply",
+for at most the 44 ns per hit that remain (406 hits on Moses: under 18 µs of
+a 2.71 ms frame, and static values take 74 of those cells away).
+
+Also tried and reverted: moving the key into the touched set at the end of
+`StateInit`/`StateRead` instead of cloning it. No measurable difference.
+
+Open:
+
+- Moses was not re-timed. The expected gain is about 12 µs a frame (0.4%),
+  below what a headless run resolves, and Cheesecake vendors Petal, so it
+  sees nothing until re-vendored.
+- The in-function hit is still 149 ns. What is left is assembling the path
+  from the frames on every hit and copying the key into the touched set; a
+  per-frame cached path hash would be the next thing to try, on evidence.
+- The first figure of each pair is a single run of the benchmark before the
+  change, on a machine running other builds.
+- Other crates in this repository were not rebuilt (disk). None names the
+  map's type or calls `snapshot_state`/`get_all_state` (grep), so none should
+  be affected.
+
 ## S0. The classifier, with no behaviour change
 
 **Status: done 2026-10-12, gate passed (go).** Step 1 was the `CONST` flag and

@@ -40,12 +40,18 @@ and Garden's script and panel hosts. See
 
 | | `unchanged` / `relocated` | `patched` | `recompiled` |
 |---|---|---|---|
-| `state` | kept | kept | kept where the declaration still exists ([State across a reload](#state-across-a-reload)) |
+| `state` | kept | kept, except a slot holding a function | kept where the declaration still exists, except a slot holding a function ([State across a reload](#state-across-a-reload)) |
 | closures, the captured function table | kept | dropped, recaptured by the next run | dropped |
 | memo records | kept | dropped | dropped |
 | static values | kept | kept, except those the edit reaches | kept, except those the edit reaches |
 | frame gate (`run_needed`) | unchanged: no frame is forced | the next frame runs | the next frame runs |
 | bytecode | kept | kept (one operand retargeted, the first time a literal changes) | lowered again: by the reload when it follows static values, else on the next run |
+
+A `state` whose value is a function, or holds one anywhere inside it, is a
+closure of the program as it was. The two outcomes that drop closures drop
+that slot with them (it counts in `state_dropped`), and the next run takes the
+function from the declaration's initializer again. Before this rule the slot
+was kept and calling the function failed.
 
 After any reload the stack is ready to run from the top: `run` may follow
 without a `reset_stack`.

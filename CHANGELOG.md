@@ -595,6 +595,19 @@ way, for code written against an earlier checkout.
 - A config file can hold enum variants: `Mode.dark` and `Shape.circle(2)`, of
   an enum the file declares, read as `StaticValue::Variant`, are written back
   as they were spelled, and cross the C bridge as `{"variant": "Mode.dark"}`.
+- `petal-c-bridge`: `pb_vm_save_state` / `pb_vm_load_state` (and `_file`
+  forms, `vm.save_state()` / `vm.load_state()` in C++) write the whole
+  `state` as a `--state-storage` document and put one back, into the same VM
+  later or another one running the program: save points, undo and forks
+  without a replay. `pb_vm_state_report_json` names what was left out.
+  `Env::restore_state_storage` is the Rust call.
+- `petal-c-bridge`: `pb_vm_call_json` calls a function with JSON arguments,
+  by position (an array) or by parameter name (an object), converting a whole
+  number to a float and a fraction-less float to an int where the parameter's
+  annotation says so and rejecting an argument of the wrong kind;
+  `pb_vm_function_json` returns a function's declared parameters, and
+  `pb_vm_diagnostics_json` the compile's findings as data. In Rust:
+  `Env::call_function_named`, `Env::function_params`.
 - `petal-c-bridge`: a variant built with `enum_("Shape.box", …)` is that
   variant of the script's enum (it matches its patterns and reads its data).
 - IR import validates the `enums` table, each variant construction and
@@ -692,6 +705,15 @@ Breaking changes made during development, newest first. For the import and
 package changes below, `petal fix-imports` does the rewriting and
 [docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
 
+- A `state` that holds a function (directly or inside a record or list) is
+  dropped by a hot reload that recompiles or patches the program, and starts
+  from its initializer again. It used to be kept, and calling the function
+  afterwards failed inside the VM, since its closure belonged to the program
+  that was replaced.
+- A host call that fails (`Env::call_function`, `pb_vm_call`) no longer
+  leaves its frames on the stack, so the stack trace of a later failure does
+  not repeat them; the C bridge also clears the frames of a run that failed
+  before the next call.
 - `petal run` starts with the check `petal check` does and does not run a
   program that fails it. Any check error (an unknown name, an argument count
   no overload takes, a bad named argument, method syntax that needs an import)

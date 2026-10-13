@@ -34,6 +34,7 @@
 #![allow(clippy::missing_safety_doc, clippy::not_unsafe_ptr_arg_deref)]
 
 pub mod builder;
+pub mod call_json;
 pub mod draw;
 pub mod ffi;
 pub mod natives;

@@ -513,7 +513,7 @@ impl Env {
             .state_terms()
             .map(|(k, _)| k)
             .collect();
-        self.clear_closures();
+        let function_state = self.clear_closures_and_state_holding_them(stack_id);
         for (key, stack) in self.stacks.iter_mut() {
             if stack.program_id == program_id && *key != stack_id {
                 // Another stack on the same program: its memo records and its
@@ -531,7 +531,7 @@ impl Env {
             change: summary,
             changed_files,
             state_preserved: result.state_preserved,
-            state_dropped: result.state_dropped,
+            state_dropped: result.state_dropped + function_state,
             fallback: None,
         })
     }

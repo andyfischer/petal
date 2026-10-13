@@ -102,6 +102,11 @@ pub struct Vm {
     profile_report: CString,
     static_values_json: CString,
     diagnostics_text: CString,
+    diagnostics_json: CString,
+    saved_state: CString,
+    /// What the last `save_state` / `load_state` did (`pb_vm_state_report_json`).
+    state_report: CString,
+    function_json: CString,
     /// The memo counters when profiling was last turned on: the report shows
     /// what the measured runs added.
     profile_memo_start: Option<petal::memo::MemoStats>,
@@ -151,6 +156,10 @@ impl Vm {
             profile_report: CString::default(),
             static_values_json: CString::default(),
             diagnostics_text: CString::default(),
+            diagnostics_json: CString::default(),
+            saved_state: CString::default(),
+            state_report: CString::default(),
+            function_json: CString::default(),
             profile_memo_start: None,
             package_name: CString::default(),
             interface_report: CString::default(),
@@ -460,9 +469,14 @@ impl Vm {
         self.env
             .reset_stack(stack)
             .map_err(|e| BridgeError::runtime(e, &name))?;
-        self.env
-            .run(stack)
-            .map_err(|e| BridgeError::runtime(e, &name))?;
+        if let Err(e) = self.env.run(stack) {
+            // A run that fails stops with its frames still pushed. The next
+            // run resets them, but a function called before that (a hook, an
+            // agent tool) would run on top of them and list them in the
+            // trace of its own failure.
+            let _ = self.env.reset_stack(stack);
+            return Err(BridgeError::runtime(e, &name));
+        }
         Ok(())
     }
 
@@ -474,14 +488,196 @@ impl Vm {
         let result = self
             .env
             .call_function_diag(stack, function, &args)
-            .map_err(|e| match e {
-                CallError::FunctionNotFound { .. } => {
-                    BridgeError::new(Status::NotFound, e.to_string())
-                }
-                CallError::StackNotFound => BridgeError::new(Status::NotLoaded, e.to_string()),
-                CallError::Runtime(msg) => BridgeError::runtime(msg, &name),
-            })?;
+            .map_err(|e| Self::call_error(e, &name))?;
         Ok(self.keep_view(&[result]).0)
+    }
+
+    /// Call a top-level function with its arguments given as JSON text: an
+    /// array is positional arguments, an object is arguments by parameter
+    /// name (a parameter with a default may be left out), `None` is none.
+    /// Values are spelled as in a state document ([`save_state`](Self::save_state)),
+    /// and a whole number sent for a `float` parameter, or a fraction-less
+    /// float for an `int` one, becomes what the parameter declares (see
+    /// `call_json.rs` for the whole table). An argument of the wrong kind
+    /// for a declared `int`/`float`/`num`/`string`/`bool`/`list`/`record` is
+    /// `PB_ERR_INVALID_ARG`, and the function does not run.
+    pub fn call_json(&mut self, function: &str, args_json: Option<&str>) -> BResult<*const PbValue> {
+        let l = self.loaded()?;
+        let (stack, name) = (l.stack_id, l.entry_name.clone());
+        let mut args = crate::call_json::parse_args(args_json).map_err(BridgeError::invalid)?;
+        if !self.env.has_function(stack, function) {
+            return Err(Self::call_error(
+                CallError::FunctionNotFound { name: function.to_string() },
+                &name,
+            ));
+        }
+        // An overload set has no one declaration to go by: its arguments
+        // pass as sent.
+        if let Some(params) = self.env.function_params(stack, function) {
+            crate::call_json::coerce(function, &params, &mut args).map_err(BridgeError::invalid)?;
+        }
+        self.clear_views();
+        let mut values = Vec::with_capacity(args.values.len());
+        for (i, json) in args.values.iter().enumerate() {
+            let v = self.env.value_from_storage_json(stack, json).map_err(|e| {
+                let which = match args.names.get(i).and_then(Option::as_deref) {
+                    Some(n) => format!("argument '{n}'"),
+                    None => format!("argument {}", i + 1),
+                };
+                BridgeError::invalid(format!("{function}(): {which}: {e}"))
+            })?;
+            values.push(v);
+        }
+        let names: Vec<Option<&str>> = args.names.iter().map(Option::as_deref).collect();
+        let result = self
+            .env
+            .call_function_named(stack, function, &values, &names)
+            .map_err(|e| Self::call_error(e, &name))?;
+        Ok(self.keep_view(&[result]).0)
+    }
+
+    fn call_error(e: CallError, entry_name: &str) -> BridgeError {
+        match e {
+            CallError::FunctionNotFound { .. } => BridgeError::new(Status::NotFound, e.to_string()),
+            CallError::StackNotFound => BridgeError::new(Status::NotLoaded, e.to_string()),
+            CallError::Runtime(msg) => BridgeError::runtime(msg, entry_name),
+        }
+    }
+
+    /// The declared parameters of a top-level function, as JSON:
+    /// `{"name": "toll", "params": [{"name": "cents", "type": "int",
+    /// "has_default": true, "default_source": "25"}]}`. `"type"` and
+    /// `"default_source"` are `null` where the source has none. `None` when
+    /// the last run defined no such function; `"params": null` for one with
+    /// no single declaration (an overload set).
+    pub fn function_json(&self, function: &str) -> Option<serde_json::Value> {
+        let stack = self.loaded.as_ref()?.stack_id;
+        if !self.env.has_function(stack, function) {
+            return None;
+        }
+        Some(match self.env.function_params(stack, function) {
+            Some(params) => crate::call_json::params_json(function, &params),
+            None => serde_json::json!({ "name": function, "params": null }),
+        })
+    }
+
+    // ── State snapshots ─────────────────────────────────────────────────
+
+    /// Every `state` slot of the program as one JSON document: the format
+    /// `petal run --state-storage` writes (`petal::env` `state_storage`).
+    /// Top-level and module state, and the slots a declaration inside a
+    /// function, a loop or a `state(key)` group owns. [`load_state`](Self::load_state)
+    /// puts it back, into this VM or another one running the same program.
+    ///
+    /// A value that cannot be rebuilt elsewhere — a function, a host handle,
+    /// a pending result, a UI element — is not written; the slot holding it
+    /// is named in [`state_report`](Self::state_report) and starts from its
+    /// initial value after a load.
+    pub fn save_state(&mut self) -> BResult<String> {
+        let l = self.loaded()?;
+        let save = self.env.save_state_storage(l.program_id, l.stack_id);
+        let skipped: Vec<serde_json::Value> = save
+            .skipped
+            .iter()
+            .map(|(name, holds)| serde_json::json!({ "name": name, "holds": holds }))
+            .collect();
+        self.set_state_report(serde_json::json!({
+            "op": "save",
+            "slots": save.saved,
+            "skipped": skipped,
+        }));
+        Ok(save.document.to_string())
+    }
+
+    /// Make the program's state what `document` ([`save_state`](Self::save_state))
+    /// holds. The whole state is replaced: a slot the document does not have
+    /// starts from its initial value on the next run. Slots are matched by
+    /// the ids a hot reload uses, so a document saved before a code edit
+    /// loads after it; state the program no longer declares is left out and
+    /// named in [`state_report`](Self::state_report).
+    ///
+    /// `PB_ERR_INVALID_ARG`, with nothing changed, when the text is not a
+    /// state document this build reads, or none of its slots is declared by
+    /// the loaded program.
+    ///
+    /// The next run sees the loaded state. A function called before that run
+    /// still reads the top-level state its closure captured at the last one.
+    pub fn load_state(&mut self, document: &str) -> BResult<()> {
+        let l = self.loaded()?;
+        let (pid, stack) = (l.program_id, l.stack_id);
+        let json: serde_json::Value = serde_json::from_str(document)
+            .map_err(|e| BridgeError::invalid(format!("cannot load state: it is not valid JSON ({e})")))?;
+        let load = self
+            .env
+            .restore_state_storage(pid, stack, &json)
+            .map_err(|e| BridgeError::invalid(format!("cannot load state: {e}")))?;
+        self.clear_views();
+        self.set_state_report(serde_json::json!({
+            "op": "load",
+            "slots": load.restored,
+            "dropped": load.dropped,
+        }));
+        Ok(())
+    }
+
+    /// [`save_state`](Self::save_state) to a file (`PB_ERR_IO` if it cannot
+    /// be written).
+    pub fn save_state_file(&mut self, path: &Path) -> BResult<()> {
+        let mut text = self.save_state()?;
+        text.push('\n');
+        std::fs::write(path, text).map_err(|e| {
+            BridgeError::new(Status::Io, format!("cannot write {}: {e}", path.display()))
+        })
+    }
+
+    /// [`load_state`](Self::load_state) from a file (`PB_ERR_IO` if it
+    /// cannot be read).
+    pub fn load_state_file(&mut self, path: &Path) -> BResult<()> {
+        let text = std::fs::read_to_string(path).map_err(|e| {
+            BridgeError::new(Status::Io, format!("cannot read {}: {e}", path.display()))
+        })?;
+        self.load_state(&text)
+    }
+
+    fn set_state_report(&mut self, report: serde_json::Value) {
+        self.state_report = cstring_lossy(&report.to_string());
+    }
+
+    /// What the last [`save_state`](Self::save_state) /
+    /// [`load_state`](Self::load_state) did, as JSON: `{"op": "save",
+    /// "slots": 12, "skipped": [{"name": "on_done", "holds": "a function"}]}`
+    /// or `{"op": "load", "slots": 11, "dropped": ["old_name"]}`. Empty
+    /// before the first one.
+    pub fn state_report(&self) -> &str {
+        self.state_report.to_str().unwrap_or("")
+    }
+
+    /// The findings of the loaded program's compile that did not stop it
+    /// (what [`pb_vm_diagnostics_text`] renders), as JSON: `{"errors": 1,
+    /// "warnings": 2, "items": [{"severity": "warning", "message": "...",
+    /// "file": "game.ptl", "line": 3, "column": 5}]}`. `"file"` is `null`
+    /// for a program loaded from a string with no name.
+    pub fn diagnostics_json(&self) -> Option<serde_json::Value> {
+        let program = self.env.get_program(self.loaded.as_ref()?.program_id)?;
+        let items: Vec<serde_json::Value> = program
+            .warnings
+            .iter()
+            .map(|d| {
+                serde_json::json!({
+                    "severity": d.severity.label(),
+                    "message": d.message,
+                    "file": program.source_map.file_name_for_span(&d.span),
+                    "line": d.span.start.line,
+                    "column": d.span.start.column,
+                })
+            })
+            .collect();
+        let errors = program.warnings.iter().filter(|d| d.is_error()).count();
+        Some(serde_json::json!({
+            "errors": errors,
+            "warnings": items.len() - errors,
+            "items": items,
+        }))
     }
 
     /// Start the loaded program over with fresh `state`, without
@@ -1287,6 +1483,53 @@ pub unsafe extern "C" fn pb_vm_call(
     st
 }
 
+/// Call a top-level function with JSON arguments (see [`Vm::call_json`]).
+/// `args_json` may be NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_call_json(
+    vm: *mut VmHandle,
+    function: *const c_char,
+    args_json: *const c_char,
+    out_result: *mut *const PbValue,
+) -> Status {
+    let (st, result) = with_vm(vm, std::ptr::null(), |vm| {
+        let function = unsafe { arg_str(function, "function") }?;
+        let args = if args_json.is_null() {
+            None
+        } else {
+            Some(unsafe { arg_str(args_json, "args_json") }?)
+        };
+        vm.call_json(function, args)
+    });
+    if st == Status::Ok {
+        put(out_result, result);
+    }
+    st
+}
+
+/// A function's declared parameters as JSON (see [`Vm::function_json`]);
+/// NULL (`PB_ERR_NOT_FOUND`) when the last run defined no such function.
+/// Valid until the next call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_function_json(
+    vm: *mut VmHandle,
+    function: *const c_char,
+) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        let function = unsafe { arg_str(function, "function") }?;
+        vm.loaded()?;
+        let json = vm.function_json(function).ok_or_else(|| {
+            BridgeError::new(
+                Status::NotFound,
+                CallError::FunctionNotFound { name: function.to_string() }.to_string(),
+            )
+        })?;
+        vm.function_json = cstring_lossy(&json.to_string());
+        Ok(vm.function_json.as_ptr())
+    })
+    .1
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn pb_vm_has_function(vm: *mut VmHandle, function: *const c_char) -> bool {
     with_vm(vm, false, |vm| {
@@ -1672,6 +1915,61 @@ pub extern "C" fn pb_vm_state_json(vm: *mut VmHandle) -> *const c_char {
     .1
 }
 
+/// The whole state as a document `pb_vm_load_state` reads (see
+/// [`Vm::save_state`]); NULL with no program loaded. Valid until the next
+/// call.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_save_state(vm: *mut VmHandle) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        let text = vm.save_state()?;
+        vm.saved_state = cstring_lossy(&text);
+        Ok(vm.saved_state.as_ptr())
+    })
+    .1
+}
+
+/// Replace the state with a saved document (see [`Vm::load_state`]).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_load_state(vm: *mut VmHandle, document: *const c_char) -> Status {
+    status(vm, |vm| {
+        let document = unsafe { arg_str(document, "document") }?;
+        vm.load_state(document)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_save_state_file(vm: *mut VmHandle, path: *const c_char) -> Status {
+    status(vm, |vm| {
+        let path = unsafe { arg_str(path, "path") }?;
+        vm.save_state_file(Path::new(path))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_load_state_file(vm: *mut VmHandle, path: *const c_char) -> Status {
+    status(vm, |vm| {
+        let path = unsafe { arg_str(path, "path") }?;
+        vm.load_state_file(Path::new(path))
+    })
+}
+
+/// What the last save or load of state did, as JSON (see
+/// [`Vm::state_report`]); "" before the first. Valid until the next save or
+/// load. Unlike the other entry points this one leaves `pb_vm_last_error`
+/// alone, so it can be read after a load that failed.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_state_report_json(vm: *const VmHandle) -> *const c_char {
+    if vm.is_null() {
+        return std::ptr::null();
+    }
+    // SAFETY: as in pb_vm_last_error.
+    let handle = unsafe { &*vm };
+    if handle.busy.get() {
+        return std::ptr::null();
+    }
+    unsafe { &*handle.vm.get() }.state_report.as_ptr()
+}
+
 /// Turn call memoization on or off for this VM's runs (the
 /// [`RunPolicy::memo`](petal::policy::RunPolicy::memo) switch; on by
 /// default, or as `PETAL_POLICY` says). Memo pays off for UI-like programs
@@ -1855,6 +2153,20 @@ pub extern "C" fn pb_vm_diagnostics_text(vm: *mut VmHandle, errors_only: bool) -
         };
         vm.diagnostics_text = cstring_lossy(&text);
         Ok(vm.diagnostics_text.as_ptr())
+    })
+    .1
+}
+
+/// The same findings as [`pb_vm_diagnostics_text`], as JSON (see
+/// [`Vm::diagnostics_json`]); NULL with no program loaded. Valid until the
+/// next call.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_diagnostics_json(vm: *mut VmHandle) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        vm.loaded()?;
+        let json = vm.diagnostics_json().unwrap_or(serde_json::Value::Null);
+        vm.diagnostics_json = cstring_lossy(&json.to_string());
+        Ok(vm.diagnostics_json.as_ptr())
     })
     .1
 }
@@ -2239,6 +2551,308 @@ push_output(symbol(\"out\"), n + len(NAMES[n % 2]) + TILES[n % 2].w + widths[0])
             err.message
         );
         assert!(vm.call("f", &[HostValue::Int(3)]).is_ok());
+    }
+
+    /// A failed host call must not leave its frames under the next one
+    /// (Cheesecake's `agent_call`: every later trace listed the earlier
+    /// failures again).
+    #[test]
+    fn a_failed_call_does_not_show_up_in_a_later_trace() {
+        let mut vm = Vm::new();
+        vm.load(
+            "fn find(id)\n  assert(id > 0, \"no such id\")\n  id\nend\n\
+             fn agent_call(id)\n  find(id) + 1\nend\n\
+             fn other(x)\n  assert(false, \"other failed\")\nend\n",
+            None,
+            "t".into(),
+        )
+        .unwrap();
+        vm.run().unwrap();
+        let first = vm.call("agent_call", &[HostValue::Int(0)]).unwrap_err().message;
+        assert_eq!(first.matches("in find()").count(), 1, "{first}");
+        for _ in 0..3 {
+            let again = vm.call("agent_call", &[HostValue::Int(0)]).unwrap_err().message;
+            assert_eq!(again, first);
+        }
+        // A different failure names only its own calls.
+        let other = vm.call("other", &[HostValue::Int(0)]).unwrap_err().message;
+        assert!(!other.contains("find()") && !other.contains("agent_call"), "{other}");
+        // The JSON entry point is the same call.
+        let err = vm.call_json("agent_call", Some("[0]")).unwrap_err();
+        assert_eq!((err.code, err.message), (Status::Runtime, first));
+        assert!(vm.call_json("agent_call", Some("[2]")).is_ok());
+        // And a frame after all that runs.
+        vm.run().unwrap();
+    }
+
+    /// Nor do the frames of a run that failed: a hook called after a frame
+    /// errored reports its own failure, not the frame's.
+    #[test]
+    fn a_failed_run_does_not_show_up_in_a_later_call_trace() {
+        let mut vm = Vm::new();
+        vm.load(
+            "fn hook(x)\n  assert(x > 0, \"bad x\")\n  x\nend\n\
+             fn frame(n)\n  assert(n < 2, \"frame failed\")\nend\n\
+             state n = 0\nn += 1\nframe(n)\n",
+            None,
+            "t".into(),
+        )
+        .unwrap();
+        vm.run().unwrap();
+        let clean = vm.call("hook", &[HostValue::Int(0)]).unwrap_err().message;
+        let failed = vm.run().unwrap_err().message;
+        assert!(failed.contains("in frame()"), "{failed}");
+        let after = vm.call("hook", &[HostValue::Int(0)]).unwrap_err().message;
+        assert_eq!(after, clean);
+        assert!(vm.call("hook", &[HostValue::Int(1)]).is_ok());
+    }
+
+    fn printed(vm: &mut Vm) -> String {
+        vm.run().unwrap();
+        vm.env.take_output().join("|")
+    }
+
+    /// Every kind of value a `state` can hold and a document can carry.
+    const WORLD: &str = "import io; import vec2
+enum Kind
+  empty,
+  road(lanes),
+  tower(height, owner),
+end
+class Tile
+  kind,
+  at,
+end
+let grown = fn(t) Tile(Kind.tower(t, \"me\"), vec2(t, 0.5)) end
+state tick = 0
+tick += 1
+state grid = {size: {w: 2, h: 1}, cells: [Tile(Kind.empty, vec2(0, 0)), Tile(Kind.road(2), vec2(1, 0))]}
+state var log = [\"start\"]
+state table = freeze({b: [1, 2.5, nil, true], a: {deep: [[1], [2, [3]]]}})
+state where = vec3(1, 2, 3)
+state odd = {far: 1e308 * 10.0, none: nil, tag: symbol(\"north\")}
+state samples = f64_array(2)
+fn bump(key)
+  state count = 0
+  count += tick
+  count
+end
+let counts = map([\"a\", \"b\"], fn(k) bump(k) end)
+if tick % 2 == 0 then
+  grid = {size: grid.size, cells: grid.cells ++ [grown(tick)]}
+  set log = log ++ [\"t{tick}\"]
+end
+print(tick, grid, log, table, frozen(table), where, odd.far, odd.none, odd.tag == symbol(\"north\"), samples, counts)
+";
+
+    #[test]
+    fn state_saved_from_one_vm_loads_into_another() {
+        let mut a = Vm::new();
+        a.load(WORLD, None, "world.ptl".into()).unwrap();
+        for _ in 0..4 {
+            printed(&mut a);
+        }
+        let saved = a.save_state().unwrap();
+        let report: serde_json::Value = serde_json::from_str(a.state_report()).unwrap();
+        assert_eq!(report["op"], "save");
+        assert_eq!(report["skipped"], serde_json::json!([]), "everything in WORLD can be saved");
+        assert_eq!(report["slots"], 8, "seven top-level slots and the one inside `bump`");
+        // Saving is a read: twice gives the same bytes.
+        assert_eq!(a.save_state().unwrap(), saved);
+        let (a5, a6) = (printed(&mut a), printed(&mut a));
+
+        // A second VM running the same program, loaded before its first run,
+        // carries on exactly where the first was.
+        let mut b = Vm::new();
+        b.load(WORLD, None, "world.ptl".into()).unwrap();
+        b.load_state(&saved).unwrap();
+        let report: serde_json::Value = serde_json::from_str(b.state_report()).unwrap();
+        assert_eq!((&report["op"], &report["dropped"]), (&serde_json::json!("load"), &serde_json::json!([])));
+        // The one thing a document does not carry: `frozen(table)`.
+        let unfrozen = |s: &str| s.replacen("} true vec3", "} false vec3", 1);
+        assert!(a5.contains("} true vec3"), "{a5}");
+        assert_eq!(printed(&mut b), unfrozen(&a5));
+        assert_eq!(printed(&mut b), unfrozen(&a6));
+        assert_eq!(b.save_state().unwrap(), a.save_state().unwrap());
+
+        // Undo in place: the first VM goes back to the save point and replays
+        // the same two frames, any number of times, with memoization on or off.
+        for memo in [true, false, true] {
+            let policy = a.env.policy().with_memo(memo);
+            a.env.set_policy(policy);
+            a.load_state(&saved).unwrap();
+            assert_eq!(printed(&mut a), unfrozen(&a5));
+            assert_eq!(printed(&mut a), unfrozen(&a6));
+        }
+    }
+
+    #[test]
+    fn state_survives_a_code_edit_by_the_reload_rules() {
+        let v1 = "state kept = 0\nkept += 1\nstate removed = 100\nremoved += 1\n\
+                  state on_done = fn() 1 end\nprint(kept, removed)\n";
+        let v2 = "state kept = 0\nkept += 1\nstate added = 50\nadded += 1\n\
+                  state on_done = fn() 1 end\nprint(kept, added, on_done())\n";
+        let mut vm = Vm::new();
+        vm.load(v1, None, "main.ptl".into()).unwrap();
+        printed(&mut vm);
+        assert_eq!(printed(&mut vm), "2 102");
+        let saved = vm.save_state().unwrap();
+        // What cannot be stored is named, not written as text.
+        let report: serde_json::Value = serde_json::from_str(vm.state_report()).unwrap();
+        assert_eq!(report["slots"], 2);
+        assert_eq!(report["skipped"], serde_json::json!([{"name": "on_done", "holds": "a function"}]));
+        assert!(!saved.contains("on_done"), "{saved}");
+
+        // A new process, with the edited program.
+        let mut vm = Vm::new();
+        vm.load(v2, None, "main.ptl".into()).unwrap();
+        vm.load_state(&saved).unwrap();
+        let report: serde_json::Value = serde_json::from_str(vm.state_report()).unwrap();
+        assert_eq!(report, serde_json::json!({"op": "load", "slots": 1, "dropped": ["removed"]}));
+        // `kept` carries on; `added` and the function start from their initializers.
+        assert_eq!(printed(&mut vm), "3 51 1");
+        // The next save no longer has the removed slot.
+        assert!(!vm.save_state().unwrap().contains("removed"));
+
+        // The same VM, reloaded in place and then put back to the save point.
+        let mut vm = Vm::new();
+        vm.load(v1, None, "main.ptl".into()).unwrap();
+        printed(&mut vm);
+        printed(&mut vm);
+        printed(&mut vm);
+        vm.reload_with(v2).unwrap();
+        assert_eq!(printed(&mut vm), "4 51 1");
+        vm.load_state(&saved).unwrap();
+        assert_eq!(printed(&mut vm), "3 51 1");
+    }
+
+    #[test]
+    fn an_unusable_state_document_changes_nothing() {
+        let mut vm = Vm::new();
+        assert_eq!(vm.save_state().unwrap_err().code, Status::NotLoaded);
+        assert_eq!(vm.load_state("{}").unwrap_err().code, Status::NotLoaded);
+        vm.load("state n = 0\nn += 1\nprint(n)\n", None, "t".into()).unwrap();
+        assert_eq!(printed(&mut vm), "1");
+        for (doc, why) in [
+            ("{", "not valid JSON"),
+            ("[]", "not a Petal state storage file"),
+            ("{\"format\": \"petal-state\", \"version\": 99, \"slots\": []}", "version 99"),
+            (
+                "{\"format\": \"petal-state\", \"version\": 1, \"slots\": [{\"name\": \"other\", \"value\": 1}]}",
+                "written by a different script",
+            ),
+            (
+                "{\"format\": \"petal-state\", \"version\": 1, \"slots\": [{\"name\": \"n\", \"value\": {\"$petal\": \"what\"}}]}",
+                "unknown value tag",
+            ),
+        ] {
+            let err = vm.load_state(doc).unwrap_err();
+            assert_eq!(err.code, Status::InvalidArg, "{doc}");
+            assert!(err.message.contains(why), "{}", err.message);
+        }
+        assert_eq!(printed(&mut vm), "2");
+        // A hand-written document, by name; and an empty one clears the state.
+        vm.load_state("{\"format\": \"petal-state\", \"version\": 1, \"slots\": [{\"name\": \"n\", \"value\": 40}]}")
+            .unwrap();
+        assert_eq!(printed(&mut vm), "41");
+        vm.load_state("{\"format\": \"petal-state\", \"version\": 1, \"slots\": []}").unwrap();
+        assert_eq!(printed(&mut vm), "1");
+
+        let dir = std::env::temp_dir().join(format!("petal-c-bridge-state-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("save.json");
+        printed(&mut vm);
+        vm.save_state_file(&file).unwrap();
+        printed(&mut vm);
+        vm.load_state_file(&file).unwrap();
+        assert_eq!(printed(&mut vm), "3");
+        assert_eq!(vm.load_state_file(&dir.join("nope.json")).unwrap_err().code, Status::Io);
+        assert_eq!(vm.save_state_file(&dir.join("no/such/dir.json")).unwrap_err().code, Status::Io);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_json_call_binds_by_name_and_follows_the_declared_types() {
+        let mut vm = Vm::new();
+        vm.load(
+            "enum Kind\n  road(lanes),\n  empty,\nend\n\
+             fn toll(id: string, cents: int = 25, rate: float = 0.5, note = \"-\")\n\
+               \"{id} {cents} {type(cents)} {rate} {type(rate)} {note}\"\nend\n\
+             fn lanes(k)\n  match k\n    when Kind.road(n) -> n\n    when _ -> 0\n  end\nend\n\
+             fn over(a)\n  \"one\"\nend\nfn over(a, b)\n  \"two\"\nend\n\
+             fn none()\n  7\nend\n",
+            None,
+            "t".into(),
+        )
+        .unwrap();
+        vm.run().unwrap();
+        fn text(vm: &mut Vm, function: &str, args: Option<&str>) -> String {
+            let p = vm.call_json(function, args).unwrap();
+            let node = unsafe { &*p };
+            if node.kind == crate::view::Kind::Int as u32 {
+                return node.integer.to_string();
+            }
+            unsafe { std::ffi::CStr::from_ptr(node.str_) }.to_str().unwrap().to_string()
+        }
+        // By name: defaults fill what is left out, in any order.
+        assert_eq!(text(&mut vm, "toll", Some(r#"{"id": "a"}"#)), "a 25 int 0.5 float -");
+        assert_eq!(
+            text(&mut vm, "toll", Some(r#"{"note": "n", "rate": 2, "id": "a"}"#)),
+            "a 25 int 2.0 float n"
+        );
+        // By position; a whole float for an int, a whole number for a float.
+        assert_eq!(text(&mut vm, "toll", Some(r#"["b", 40.0, 3]"#)), "b 40 int 3.0 float -");
+        assert_eq!(text(&mut vm, "none", None), "7");
+        assert_eq!(text(&mut vm, "none", Some("{}")), "7");
+        // Values are spelled as in a state document.
+        assert_eq!(
+            text(&mut vm, "lanes", Some(r#"[{"$petal": "enum", "tag": "Kind.road", "data": [3]}]"#)),
+            "3"
+        );
+        // An overload set is resolved by count; nothing is coerced.
+        assert_eq!(text(&mut vm, "over", Some("[1, 2]")), "two");
+
+        let err = |vm: &mut Vm, function: &str, args: &str| vm.call_json(function, Some(args)).unwrap_err();
+        let e = err(&mut vm, "toll", r#"{"id": "a", "cents": "abc"}"#);
+        assert_eq!(e.code, Status::InvalidArg);
+        assert_eq!(e.message, "toll(): parameter 'cents' is declared int, got a string (\"abc\")");
+        assert_eq!(err(&mut vm, "toll", r#"["a", 2.5]"#).code, Status::InvalidArg);
+        assert_eq!(err(&mut vm, "toll", "3").code, Status::InvalidArg);
+        assert_eq!(err(&mut vm, "nope", "[]").code, Status::NotFound);
+        let e = err(&mut vm, "toll", r#"{"cents": 1}"#);
+        assert_eq!(e.code, Status::Runtime);
+        assert!(e.message.contains("missing a value for parameter 'id'"), "{}", e.message);
+        let e = err(&mut vm, "toll", r#"{"id": "a", "bogus": 1}"#);
+        assert!(e.message.contains("no parameter named 'bogus'"), "{}", e.message);
+        let e = err(&mut vm, "lanes", r#"[{"$petal": "what"}]"#);
+        assert_eq!(e.code, Status::InvalidArg);
+        assert!(e.message.contains("lanes(): argument 1"), "{}", e.message);
+
+        let info = vm.function_json("toll").unwrap();
+        assert_eq!(info["name"], "toll");
+        assert_eq!(
+            info["params"][1],
+            serde_json::json!({"name": "cents", "type": "int", "has_default": true, "default_source": "25"})
+        );
+        assert_eq!(info["params"][3]["type"], serde_json::Value::Null);
+        assert_eq!(vm.function_json("over").unwrap()["params"], serde_json::Value::Null);
+        assert!(vm.function_json("nope").is_none());
+    }
+
+    #[test]
+    fn diagnostics_are_available_as_json() {
+        let mut vm = Vm::new();
+        assert!(vm.diagnostics_json().is_none());
+        vm.load("let n: int = \"one\"\nprint(n)\n", None, "main.ptl".into()).unwrap();
+        let json = vm.diagnostics_json().unwrap();
+        assert_eq!((json["errors"].as_u64(), json["warnings"].as_u64()), (Some(0), Some(1)), "{json}");
+        let item = &json["items"][0];
+        assert_eq!(item["severity"], "warning");
+        assert_eq!(item["line"], 1);
+        assert!(item["message"].as_str().unwrap().contains("int"), "{item}");
+        // A clean reload clears them.
+        vm.reload_with("let n: int = 1\nprint(n)\n").unwrap();
+        assert_eq!(vm.diagnostics_json().unwrap()["items"], serde_json::json!([]));
     }
 
     #[test]

@@ -10,6 +10,7 @@ use std::collections::HashSet;
 use crate::env::Env;
 use crate::program::{Program, StateKey};
 use crate::stack::Stack;
+use crate::value::Value;
 
 /// Result of transferring a stack's state onto a new program.
 pub struct TransferStateResult {
@@ -82,10 +83,66 @@ impl Env {
 
         self.insert_program(old_program_id, new_program);
         // Closures reference the old program's function defs.
-        self.clear_closures();
+        let stale = self.clear_closures_and_state_holding_them(stack_id);
 
         let stack = self.stack_mut(stack_id).expect("stack found above");
-        Ok(transfer_stack_state(stack, &new_state_keys))
+        let mut result = transfer_stack_state(stack, &new_state_keys);
+        result.state_dropped += stale;
+        Ok(result)
+    }
+
+    /// [`clear_closures`](Self::clear_closures), first dropping every state
+    /// slot of `stack_id` whose value is or holds a function; returns how
+    /// many.
+    ///
+    /// Such a value holds a closure id, and the table those ids index is
+    /// about to be emptied: called afterwards it would name nothing, or a
+    /// different function. It cannot be carried, so its declaration starts
+    /// from its initializer on the next run — the rule a state document
+    /// follows too (`env::state_storage`).
+    pub(crate) fn clear_closures_and_state_holding_them(
+        &mut self,
+        stack_id: crate::stack::StackKey,
+    ) -> usize {
+        let stale: Vec<crate::stack::RuntimeStateKey> = match self.stack(stack_id) {
+            Some(stack) => {
+                // The default context's, like the closures cleared below.
+                let heap = self.heap();
+                stack
+                    .state
+                    .iter()
+                    .filter(|(_, v)| holds_function(v, heap))
+                    .map(|(k, _)| k.clone())
+                    .collect()
+            }
+            None => Vec::new(),
+        };
+        self.clear_closures();
+        if let Some(stack) = self.stack_mut(stack_id) {
+            for key in &stale {
+                stack.state.remove(key);
+            }
+        }
+        stale.len()
+    }
+}
+
+/// Whether `val` is a function or holds one anywhere inside it.
+fn holds_function(val: &Value, heap: &crate::heap::Heap) -> bool {
+    let any = |vals: &[Value]| vals.iter().any(|v| holds_function(v, heap));
+    match val {
+        Value::Closure(_) | Value::OverloadSet(_) => true,
+        Value::List(id) => any(heap.get_list(*id)),
+        Value::Map(id) => heap.get_map(*id).iter().any(|(_, v)| holds_function(v, heap)),
+        Value::EnumVariant { data, .. } => any(heap.get_list(*data)),
+        Value::Cell(id) => holds_function(&heap.cell_read(*id), heap),
+        Value::Element(id) => {
+            heap.get_map(heap.get_element_props(*id))
+                .iter()
+                .any(|(_, v)| holds_function(v, heap))
+                || any(heap.get_list(heap.get_element_children(*id)))
+        }
+        _ => false,
     }
 }
 
@@ -293,6 +350,30 @@ mod tests {
                 expect_v2,
             );
         }
+    }
+
+    /// A function held in `state` is a closure of the old program. Carried
+    /// over, calling it indexed a closure table that had been cleared (a
+    /// panic); its slot is dropped instead, alone or inside a value.
+    #[test]
+    fn transfer_state_drops_a_slot_that_holds_a_function() {
+        check_transfer_both_opt_levels(
+            "state n = 0\nn += 1\n\
+             state on_done = fn(x) x + 1 end\n\
+             state hooks = {name: \"h\", list: [fn(x) x * 2 end]}\n\
+             state plain = {name: \"p\", list: [1]}\n\
+             print(n, on_done(1), hooks.list[0](2), plain)",
+            &["1 2 4 { name: \"p\", list: [1] }"],
+            "state n = 0\nn += 1\n\
+             state on_done = fn(x) x + 10 end\n\
+             state hooks = {name: \"h\", list: [fn(x) x * 20 end]}\n\
+             state plain = {name: \"q\", list: [2]}\n\
+             print(n, on_done(1), hooks.list[0](2), plain)",
+            2,
+            2,
+            // The functions are the new program's; the plain values carried.
+            &["2 11 40 { name: \"p\", list: [1] }"],
+        );
     }
 
     #[test]

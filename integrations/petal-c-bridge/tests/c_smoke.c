@@ -65,6 +65,31 @@ int main(void) {
     REQUIRE(pb_vm_run(vm) == PB_OK);
     REQUIRE(pb_vm_last_error(vm) == NULL);
 
+    /* A JSON call by parameter name, and a state document put back. */
+    REQUIRE(pb_vm_load_source(vm,
+                              "state n = 0\nn += 1\n"
+                              "fn scale(x: float, by: int = 2)\n  x * by\nend\n",
+                              "state.ptl") == PB_OK);
+    REQUIRE(pb_vm_run(vm) == PB_OK);
+    const pb_value* scaled = NULL;
+    REQUIRE(pb_vm_call_json(vm, "scale", "{\"x\": 3}", &scaled) == PB_OK);
+    REQUIRE(scaled->kind == PB_FLOAT && scaled->number == 6.0);
+    REQUIRE(pb_vm_call_json(vm, "scale", "{\"x\": \"wide\"}", &scaled) == PB_ERR_INVALID_ARG);
+    REQUIRE(strstr(pb_vm_function_json(vm, "scale"), "\"type\":\"float\"") != NULL);
+    const char* saved_view = pb_vm_save_state(vm);
+    REQUIRE(saved_view != NULL);
+    char saved[512];
+    REQUIRE(strlen(saved_view) < sizeof saved);
+    strcpy(saved, saved_view);
+    REQUIRE(pb_vm_run(vm) == PB_OK && pb_vm_run(vm) == PB_OK);
+    const pb_value* n_now = NULL;
+    REQUIRE(pb_vm_get_state(vm, "n", &n_now) == PB_OK && n_now->integer == 3);
+    REQUIRE(pb_vm_load_state(vm, saved) == PB_OK);
+    REQUIRE(strstr(pb_vm_state_report_json(vm), "\"op\":\"load\"") != NULL);
+    REQUIRE(pb_vm_get_state(vm, "n", &n_now) == PB_OK && n_now->integer == 1);
+    REQUIRE(pb_vm_load_state(vm, "{}") == PB_ERR_INVALID_ARG);
+    REQUIRE(strstr(pb_vm_diagnostics_json(vm), "\"items\":[]") != NULL);
+
     pb_vm_destroy(vm);
     printf("c_smoke: ok\n");
     return 0;

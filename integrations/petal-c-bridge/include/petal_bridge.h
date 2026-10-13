@@ -473,6 +473,43 @@ pb_status pb_vm_restart(pb_vm* vm);
  * the next run/call/clear. Also releases previous views. */
 pb_status pb_vm_call(pb_vm* vm, const char* function, const pb_builder* args, const pb_value** out_result);
 
+/* pb_vm_call with the arguments as JSON text, for a host that receives them
+ * that way (a tool call from an agent, a command from a socket).
+ *
+ *   args_json   a JSON array: positional arguments;
+ *               a JSON object: arguments by parameter name, in any order,
+ *               where a parameter with a default may be left out;
+ *               NULL, "" or `null`: no arguments.
+ *
+ * Values are spelled as in a state document (pb_vm_save_state): plain JSON
+ * is itself, with a whole number an int and an object a record, and
+ * {"$petal": ...} objects spell what JSON cannot (an enum variant, a class
+ * instance, a vec2/vec3, a symbol, inf/nan).
+ *
+ * JSON does not tell 3 from 3.0, so the function's declared parameter types
+ * decide (the same data fn_info() returns): for `x: float` a whole number
+ * arrives as a float, and for `n: int` a float with no fraction arrives as an
+ * int. An argument of the wrong kind for a parameter declared int, float,
+ * num, string, bool, list or record is PB_ERR_INVALID_ARG naming the
+ * parameter, and the function is not run. `null` always passes, as nil; a
+ * parameter with another type or none takes what it is sent; nothing inside
+ * a list or record is looked at. An overloaded function is resolved by
+ * argument count and its arguments pass as sent.
+ *
+ * PB_ERR_NOT_FOUND when there is no such function; PB_ERR_RUNTIME when the
+ * arguments do not bind (an unknown name, a required parameter missing) or
+ * the function fails. The result is a view, as from pb_vm_call. */
+pb_status pb_vm_call_json(pb_vm* vm, const char* function, const char* args_json,
+                          const pb_value** out_result);
+/* The declared parameters of a top-level function, as JSON:
+ *   {"name": "toll", "params": [{"name": "cents", "type": "int",
+ *                               "has_default": true, "default_source": "25"}]}
+ * "type" is the annotation as written and "default_source" the default's
+ * source text; each is null where the declaration has none. "params" is null
+ * for an overloaded function. NULL (PB_ERR_NOT_FOUND) when the last run
+ * defined no such function. Valid until the next call to this function. */
+const char* pb_vm_function_json(pb_vm* vm, const char* function);
+
 /* Whether the last run defined a top-level function `function` (so pb_vm_call
  * would find it). Lets a host skip optional hooks without calling them. */
 bool pb_vm_has_function(pb_vm* vm, const char* function);
@@ -913,11 +950,64 @@ const char* pb_source_error(const pb_source* s);
 
 /* ─── State and output tooling ────────────────────────────────────────── */
 
-/* All state variables as a JSON object (debug/tooling, not the hot path).
+/* All state variables as a JSON object (debug/tooling, not the hot path):
+ * keyed by display name and lossy in the values, so it is for reading, not
+ * for putting back; pb_vm_save_state is the form that loads.
  * Valid until the next call to this function. */
 const char* pb_vm_state_json(pb_vm* vm);
 /* A top-level state variable by name, decoded; PB_ERR_NOT_FOUND if absent. */
 pb_status pb_vm_get_state(pb_vm* vm, const char* name, const pb_value** out);
+/* ── State snapshots ──
+ * The whole `state` of the program as one JSON document, and back: a save
+ * point, an undo step, a fork into another VM, a session that outlives the
+ * process. The format is the one `petal run --state-storage` writes
+ * ("format": "petal-state", versioned; docs/CLI.md "State between runs").
+ *
+ * pb_vm_save_state returns the document (NULL with no program loaded; valid
+ * until the next call to it). It holds every slot: top-level and module
+ * state, and the slots a declaration inside a function, a loop or a
+ * state(key) group owns. Call it between runs.
+ *
+ * pb_vm_load_state REPLACES the state with a document's: a slot the document
+ * does not hold starts from its initial value on the next run. The VM must
+ * have a program loaded; it may be the VM that saved, at any later point, or
+ * another VM (or process) that loaded the same program. Slots are matched by
+ * the ids a hot reload uses, so a document saved before a code edit loads
+ * after it by the same rules a reload keeps state: state whose declaration
+ * was renamed or removed is not loaded, and newly declared state starts from
+ * its initializer. PB_ERR_INVALID_ARG, with nothing changed, when the text is
+ * not a state document, is a version this build does not read, or holds
+ * slots of which none belongs to the loaded program.
+ *
+ * What a document does not carry:
+ *   - a value that is or holds a function, a host handle, a pending result
+ *     or a UI element: the whole slot is left out of the save, and after a
+ *     load that state starts from its initial value;
+ *   - whether a value was frozen (freeze()): it comes back equal and
+ *     unfrozen;
+ *   - anything that is not `state`: host bindings, output buffers, input,
+ *     the petal-ui registries, and whatever the host's own natives keep.
+ * Everything else comes back as it was, with its type: ints and floats stay
+ * apart, records keep their field order, enum variants, class instances,
+ * vec2/vec3, f64 arrays, symbols and inf/nan are themselves.
+ *
+ * The next pb_vm_run sees the loaded state. A function called before that
+ * run (pb_vm_call) still reads the top-level state it captured at the last
+ * run, so run a frame after a load before calling into the script.
+ *
+ * pb_vm_state_report_json says what the last save or load did, and is where
+ * a host learns what was left out:
+ *   {"op": "save", "slots": 12, "skipped": [{"name": "on_done", "holds": "a function"}]}
+ *   {"op": "load", "slots": 11, "dropped": ["old_name"]}
+ * "" before the first; valid until the next save or load. It does not touch
+ * pb_vm_last_error. */
+const char* pb_vm_save_state(pb_vm* vm);
+pb_status pb_vm_load_state(pb_vm* vm, const char* document);
+/* The same through a file; PB_ERR_IO when it cannot be written or read. */
+pb_status pb_vm_save_state_file(pb_vm* vm, const char* path);
+pb_status pb_vm_load_state_file(pb_vm* vm, const char* path);
+const char* pb_vm_state_report_json(const pb_vm* vm);
+
 /* Call memoization (on by default, or as the PETAL_POLICY environment
  * variable says): a user-function call whose arguments and recorded reads are
  * what they were last run is replayed instead of run. It pays off for UI-like
@@ -971,6 +1061,14 @@ const char* pb_vm_static_values_json(pb_vm* vm);
  * goes by the natives THIS vm registered PB_FX_CONST, no tool but the host
  * can report it. Valid until the next call to this function. */
 const char* pb_vm_diagnostics_text(pb_vm* vm, bool errors_only);
+/* The same findings as data, for a host with a diagnostics surface of its
+ * own:
+ *   {"errors": 1, "warnings": 2,
+ *    "items": [{"severity": "warning", "message": "...", "file": "game.ptl",
+ *               "line": 3, "column": 5}]}
+ * "file" is null for a program loaded from an unnamed string. NULL with no
+ * program loaded. Valid until the next call to this function. */
+const char* pb_vm_diagnostics_json(pb_vm* vm);
 /* The VM profiler (off by default): instructions per opcode and per function,
  * native calls and the time spent in them, collections. Turning it on clears
  * earlier counts; while on, every run pays a per-instruction hook (roughly 2x

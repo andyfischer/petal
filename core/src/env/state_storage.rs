@@ -202,6 +202,21 @@ impl Env {
         self.load_state_storage_with(program_id, stack_id, document, true)
     }
 
+    /// Build the value a storage document would spell as `json`, in the heap
+    /// `stack_id` runs in: plain JSON is itself (a whole number is an int, an
+    /// object a record), and an object tagged `"$petal"` is the enum variant,
+    /// class instance, vector, symbol or non-finite float the module docs
+    /// list. For a host that receives values as JSON (arguments of a call).
+    pub fn value_from_storage_json(
+        &mut self,
+        stack_id: StackKey,
+        json: &Json,
+    ) -> Result<Value, String> {
+        let ck = self.ctx_for(stack_id).ok_or("Stack not found")?;
+        let ctx = self.contexts.get_mut(&ck).ok_or("Stack not found")?;
+        decode(json, &mut ctx.heap, &mut self.symbols)
+    }
+
     fn load_state_storage_with(
         &mut self,
         program_id: ProgramId,

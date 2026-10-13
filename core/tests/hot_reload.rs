@@ -349,6 +349,43 @@ fn config_used_by_a_closure_and_a_lambda_in_state() {
     .check();
 }
 
+/// A function held in `state` is a closure, and both reloads that clear the
+/// closure table drop its slot: the next run takes the function from its
+/// initializer again. Kept, a call of it named a closure that was gone.
+#[test]
+fn a_function_held_in_state_is_called_after_a_reload() {
+    Case::new(
+        "held, patched",
+        "config let K = 10\n\
+         state held = fn(x) -> x + K\n\
+         state hooks = [{name: \"h\", run: fn(x) -> x * K}]\n\
+         state n = 0\n\
+         n += 1\n\
+         print(n, held(n), hooks[0].run(n))\n",
+        "config let K = 12\n\
+         state held = fn(x) -> x + K\n\
+         state hooks = [{name: \"h\", run: fn(x) -> x * K}]\n\
+         state n = 0\n\
+         n += 1\n\
+         print(n, held(n), hooks[0].run(n))\n",
+        Patched,
+    )
+    .check();
+    Case::new(
+        "held, recompiled",
+        "state held = fn(x) -> x + 1\n\
+         state n = 0\n\
+         n += 1\n\
+         print(n, held(n))\n",
+        "state held = fn(x) -> x * 3\n\
+         state n = 0\n\
+         n += 1\n\
+         print(n, held(n))\n",
+        Recompiled,
+    )
+    .check();
+}
+
 #[test]
 fn config_used_by_a_state_initializer() {
     // The state was initialized from the old value; both reloads keep it.

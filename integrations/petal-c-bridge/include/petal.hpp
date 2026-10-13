@@ -615,6 +615,22 @@ public:
     void restart() { check(pb_vm_restart(vm_)); }
     Value call(const std::string& function) { return call_raw(function, nullptr); }
     Value call(const std::string& function, const BuilderRef& args) { return call_raw(function, args.raw()); }
+    // Call with the arguments as JSON text: an array (by position) or an
+    // object (by parameter name). The function's declared parameter types
+    // settle int against float and reject an argument of the wrong kind
+    // (see pb_vm_call_json).
+    Value call_json(const std::string& function, const std::string& args_json = "") {
+        const pb_value* out = nullptr;
+        check(pb_vm_call_json(vm_, function.c_str(), args_json.c_str(), &out));
+        return Value(out);
+    }
+    // A function's declared parameters as JSON (see pb_vm_function_json);
+    // throws PB_ERR_NOT_FOUND when the last run defined no such function.
+    std::string function_json(const std::string& function) {
+        const char* s = pb_vm_function_json(vm_, function.c_str());
+        if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_FOUND);
+        return s;
+    }
     // Whether the last run defined a top-level function `function`.
     bool has_function(const std::string& function) { return pb_vm_has_function(vm_, function.c_str()); }
     void clear_views() { pb_vm_clear_views(vm_); }
@@ -702,6 +718,24 @@ public:
         if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
         return s;
     }
+    // The whole state as a document load_state() reads: a save point, an
+    // undo step, a fork into another Vm running the same program (see
+    // pb_vm_save_state for what a document carries and what it does not).
+    std::string save_state() {
+        const char* s = pb_vm_save_state(vm_);
+        if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
+        return s;
+    }
+    // Replace the state with a saved document's; the next run() sees it.
+    void load_state(const std::string& document) { check(pb_vm_load_state(vm_, document.c_str())); }
+    void save_state_file(const std::string& path) { check(pb_vm_save_state_file(vm_, path.c_str())); }
+    void load_state_file(const std::string& path) { check(pb_vm_load_state_file(vm_, path.c_str())); }
+    // What the last save or load did, as JSON: the slots a save left out
+    // ("skipped") or a load had no declaration for ("dropped").
+    std::string state_report_json() const {
+        const char* s = pb_vm_state_report_json(vm_);
+        return s ? s : "";
+    }
     // Call memoization (see pb_vm_set_memo); on by default.
     void set_memo(bool on) { check(pb_vm_set_memo(vm_, on)); }
     bool memo() const { return pb_vm_memo(vm_); }
@@ -729,6 +763,12 @@ public:
     // it after a load and after a reload.
     std::string diagnostics_text(bool errors_only = true) {
         const char* s = pb_vm_diagnostics_text(vm_, errors_only);
+        if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
+        return s;
+    }
+    // The same findings as JSON (see pb_vm_diagnostics_json).
+    std::string diagnostics_json() {
+        const char* s = pb_vm_diagnostics_json(vm_);
         if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
         return s;
     }

@@ -781,6 +781,199 @@ TEST(missing_hook_differs_from_failing_hook) {
     CHECK_EQ(failed.phase(), std::string("runtime"));
 }
 
+// A hook that fails must not leave its frames on the stack: each failure's
+// trace lists its own calls, however many came before, and so does the first
+// failure after a frame that errored.
+TEST(a_failed_call_is_not_repeated_in_later_traces) {
+    petal::Vm vm;
+    vm.load_source(
+        "fn find(id)\n  assert(id > 0, \"no such id\")\n  id\nend\n"
+        "fn agent_call(id)\n  find(id) + 1\nend\n"
+        "fn frame(n)\n  assert(n != 3, \"frame failed\")\nend\n"
+        "state n = 0\nn += 1\nframe(n)\n");
+    vm.run();
+    petal::Builder bad;
+    bad.value(0);
+    std::string first = CHECK_THROWS_CODE(vm.call("agent_call", bad), PB_ERR_RUNTIME).what();
+    CHECK_CONTAINS(first, "in find()");
+    for (int i = 0; i < 3; ++i) {
+        std::string again = CHECK_THROWS_CODE(vm.call("agent_call", bad), PB_ERR_RUNTIME).what();
+        CHECK_EQ(again, first);
+    }
+    vm.run();
+    petal::Error frame = CHECK_THROWS_CODE(vm.run(), PB_ERR_RUNTIME);
+    CHECK_CONTAINS(std::string(frame.what()), "in frame()");
+    std::string after = CHECK_THROWS_CODE(vm.call("agent_call", bad), PB_ERR_RUNTIME).what();
+    CHECK_EQ(after, first);
+    petal::Builder good;
+    good.value(4);
+    CHECK_EQ(vm.call("agent_call", good).integer(), 5);
+    vm.run();
+}
+
+// Arguments as JSON: by position or by parameter name, with the function's
+// declared types deciding int against float and rejecting the wrong kind.
+TEST(call_with_json_arguments) {
+    petal::Vm vm;
+    vm.load_source(
+        "enum Kind\n  road(lanes),\n  empty,\nend\n"
+        "fn toll(id: string, cents: int = 25, rate: float = 0.5, note = \"-\")\n"
+        "  \"{id} {cents} {type(cents)} {rate} {type(rate)} {note}\"\n"
+        "end\n"
+        "fn lanes(k)\n  match k\n    when Kind.road(n) -> n\n    when _ -> 0\n  end\nend\n"
+        "fn total(xs)\n  let t = 0\n  for x in xs do t += x end\n  t\nend\n"
+        "fn seven()\n  7\nend\n");
+    vm.run();
+    CHECK_EQ(vm.call_json("toll", R"({"id": "a"})").string(), std::string("a 25 int 0.5 float -"));
+    CHECK_EQ(vm.call_json("toll", R"({"note": "n", "rate": 2, "id": "a"})").string(),
+             std::string("a 25 int 2.0 float n"));
+    CHECK_EQ(vm.call_json("toll", R"(["b", 40.0, 3])").string(), std::string("b 40 int 3.0 float -"));
+    CHECK_EQ(vm.call_json("seven").integer(), 7);
+    CHECK_EQ(vm.call_json("total", "[[1, 2, 3]]").integer(), 6);
+    CHECK_EQ(vm.call_json("lanes", R"([{"$petal": "enum", "tag": "Kind.road", "data": [3]}])").integer(), 3);
+
+    petal::Error kind = CHECK_THROWS_CODE(vm.call_json("toll", R"({"id": "a", "cents": "abc"})"), PB_ERR_INVALID_ARG);
+    CHECK_CONTAINS(std::string(kind.what()), "parameter 'cents' is declared int, got a string");
+    CHECK_THROWS_CODE(vm.call_json("toll", R"(["a", 2.5])"), PB_ERR_INVALID_ARG);
+    CHECK_THROWS_CODE(vm.call_json("toll", "not json"), PB_ERR_INVALID_ARG);
+    CHECK_THROWS_CODE(vm.call_json("nope", "[]"), PB_ERR_NOT_FOUND);
+    petal::Error missing = CHECK_THROWS_CODE(vm.call_json("toll", R"({"cents": 1})"), PB_ERR_RUNTIME);
+    CHECK_CONTAINS(std::string(missing.what()), "missing a value for parameter 'id'");
+    petal::Error unknown = CHECK_THROWS_CODE(vm.call_json("toll", R"({"id": "a", "bogus": 1})"), PB_ERR_RUNTIME);
+    CHECK_CONTAINS(std::string(unknown.what()), "no parameter named 'bogus'");
+
+    std::string info = vm.function_json("toll");
+    CHECK_CONTAINS(info, R"("name":"cents")");
+    CHECK_CONTAINS(info, R"("type":"int")");
+    CHECK_CONTAINS(info, R"("default_source":"25")");
+    CHECK_THROWS_CODE(vm.function_json("nope"), PB_ERR_NOT_FOUND);
+    // The C entry point takes NULL for "no arguments".
+    const pb_value* out = nullptr;
+    CHECK_EQ(pb_vm_call_json(vm.raw(), "seven", nullptr, &out), PB_OK);
+    REQUIRE(out != nullptr);
+    CHECK_EQ(out->integer, int64_t(7));
+}
+
+// ─── State snapshots ────────────────────────────────────────────────────────
+
+static const char* const kWorld =
+    "import io; import vec2\n"
+    "enum Kind\n  empty,\n  road(lanes),\n  tower(height, owner),\nend\n"
+    "class Tile\n  kind,\n  at,\nend\n"
+    "state tick = 0\n"
+    "tick += 1\n"
+    "state grid = {size: {w: 2, h: 1}, cells: [Tile(Kind.empty, vec2(0, 0)), Tile(Kind.road(2), vec2(1, 0))]}\n"
+    "state var log = [\"start\"]\n"
+    "state table = freeze({b: [1, 2.5, nil, true], a: {deep: [[1], [2, [3]]]}})\n"
+    "state where = vec3(1, 2, 3)\n"
+    "state on_done = fn(x) x + 1 end\n"
+    "fn bump(key)\n  state count = 0\n  count += tick\n  count\nend\n"
+    "let counts = map([\"a\", \"b\"], fn(k) bump(k) end)\n"
+    "if tick % 2 == 0 then\n"
+    "  grid = {size: grid.size, cells: grid.cells ++ [Tile(Kind.tower(tick, \"me\"), vec2(tick, 0.5))]}\n"
+    "  set log = log ++ [\"t{tick}\"]\n"
+    "end\n"
+    "print(tick, grid, log, table, where, counts, on_done(tick))\n";
+
+static std::string run_printed(petal::Vm& vm) {
+    vm.run();
+    std::string all;
+    for (const std::string& line : vm.take_output()) all += line + "\n";
+    return all;
+}
+
+TEST(state_round_trips_through_a_document) {
+    petal::Vm a;
+    a.load_source(kWorld, "world.ptl");
+    for (int i = 0; i < 4; ++i) run_printed(a);
+    std::string saved = a.save_state();
+    CHECK_CONTAINS(saved, R"("format":"petal-state")");
+    CHECK_CONTAINS(saved, R"("$petal":"enum")");
+    CHECK_CONTAINS(saved, R"("$petal":"instance")");
+    // The function is named in the report and absent from the document.
+    CHECK_CONTAINS(a.state_report_json(), R"("op":"save")");
+    CHECK_CONTAINS(a.state_report_json(), R"({"holds":"a function","name":"on_done"})");
+    CHECK(saved.find("on_done") == std::string::npos);
+    std::string frame5 = run_printed(a);
+    std::string frame6 = run_printed(a);
+    CHECK_CONTAINS(frame6, "Kind.tower(6, \"me\")");
+
+    // Another VM running the same program carries on from the save point.
+    petal::Vm b;
+    b.load_source(kWorld, "world.ptl");
+    b.load_state(saved);
+    CHECK_CONTAINS(b.state_report_json(), R"("dropped":[])");
+    CHECK_EQ(run_printed(b), frame5);
+    CHECK_EQ(run_printed(b), frame6);
+    CHECK_EQ(b.save_state(), a.save_state());
+
+    // Undo: the VM that saved goes back, as often as it likes.
+    for (int i = 0; i < 2; ++i) {
+        a.load_state(saved);
+        CHECK_EQ(run_printed(a), frame5);
+        CHECK_EQ(run_printed(a), frame6);
+    }
+    CHECK_EQ(a.state("tick").integer(), 6);
+
+    // Through a file.
+    fs::path file = scratch_dir("state_round_trips") / "save.json";
+    a.load_state(saved);
+    a.save_state_file(file.string());
+    run_printed(a);
+    a.load_state_file(file.string());
+    CHECK_EQ(run_printed(a), frame5);
+    CHECK_THROWS_CODE(a.load_state_file((file.parent_path() / "nope.json").string()), PB_ERR_IO);
+}
+
+TEST(state_loads_across_a_code_edit) {
+    const char* v1 = "state kept = 0\nkept += 1\nstate removed = 100\nremoved += 1\nprint(kept, removed)\n";
+    const char* v2 = "state kept = 0\nkept += 1\nstate added = 50\nadded += 1\nprint(kept, added)\n";
+    petal::Vm vm;
+    vm.load_source(v1, "main.ptl");
+    run_printed(vm);
+    CHECK_EQ(run_printed(vm), std::string("2 102\n"));
+    std::string saved = vm.save_state();
+
+    petal::Vm edited;
+    edited.load_source(v2, "main.ptl");
+    edited.load_state(saved);
+    CHECK_CONTAINS(edited.state_report_json(), R"("dropped":["removed"])");
+    CHECK_CONTAINS(edited.state_report_json(), R"("slots":1)");
+    CHECK_EQ(run_printed(edited), std::string("3 51\n"));
+    CHECK(edited.save_state().find("removed") == std::string::npos);
+}
+
+TEST(a_bad_state_document_is_rejected_and_changes_nothing) {
+    petal::Vm vm;
+    CHECK_THROWS_CODE(vm.save_state(), PB_ERR_NOT_LOADED);
+    CHECK_THROWS_CODE(vm.load_state("{}"), PB_ERR_NOT_LOADED);
+    CHECK_EQ(vm.state_report_json(), std::string(""));
+    vm.load_source("state n = 0\nn += 1\nprint(n)\n");
+    CHECK_EQ(run_printed(vm), std::string("1\n"));
+    CHECK_THROWS_CODE(vm.load_state("{"), PB_ERR_INVALID_ARG);
+    CHECK_THROWS_CODE(vm.load_state("[1]"), PB_ERR_INVALID_ARG);
+    petal::Error other = CHECK_THROWS_CODE(
+        vm.load_state(R"({"format": "petal-state", "version": 1, "slots": [{"name": "x", "value": 1}]})"),
+        PB_ERR_INVALID_ARG);
+    CHECK_CONTAINS(std::string(other.what()), "written by a different script");
+    CHECK_EQ(run_printed(vm), std::string("2\n"));
+    // A hand-written document, by name.
+    vm.load_state(R"({"format": "petal-state", "version": 1, "slots": [{"name": "n", "value": 40}]})");
+    CHECK_EQ(run_printed(vm), std::string("41\n"));
+}
+
+TEST(diagnostics_as_json) {
+    petal::Vm vm;
+    CHECK_THROWS_CODE(vm.diagnostics_json(), PB_ERR_NOT_LOADED);
+    vm.load_source("let n: int = \"one\"\nprint(n)\n", "main.ptl");
+    std::string json = vm.diagnostics_json();
+    CHECK_CONTAINS(json, R"("warnings":1)");
+    CHECK_CONTAINS(json, R"("severity":"warning")");
+    CHECK_CONTAINS(json, R"("line":1)");
+    vm.reload_source("let n: int = 1\nprint(n)\n");
+    CHECK_CONTAINS(vm.diagnostics_json(), R"("items":[])");
+}
+
 // ─── petal-ui ───────────────────────────────────────────────────────────────
 
 TEST(ui_draw_follows_mouse) {

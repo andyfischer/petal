@@ -835,10 +835,19 @@ with `PB_ERR_COMPILE`, phase `link`, before any line runs.
   exists and fails is `PB_ERR_RUNTIME` (the bridge matches Petal's typed
   `CallError`, not the message text). `has_function("fn_name")` asks first,
   for optional hooks.
+  A call that fails leaves nothing on the script's stack: the trace of a
+  later failure lists that call's frames only, however many calls failed
+  before it, and the same holds for the first call after a frame that
+  errored.
+- `call_json("fn_name", json)` is the same call with the arguments as JSON
+  text, checked against the function's declaration: see
+  [Calling with JSON arguments](#calling-with-json-arguments).
 - `restart()` starts the loaded program over with empty `state`, without
   recompiling (a fresh stack on the same program).
 - `state("name")` reads a top-level state variable as a view;
-  `state_json()` dumps all state (debug use only).
+  `state_json()` dumps all state for reading (debug use only: it is keyed by
+  display name and lossy). `save_state()` / `load_state()` are the pair that
+  round-trips: see [Saving and loading state](#saving-and-loading-state).
 - `take_output()` returns the lines the script `print`ed. Echo to stdout is
   off by default (`set_echo(true)` turns it on).
 - `set_profiling(true)` / `profile_report(top_n)` (`pb_vm_set_profiling`,
@@ -877,8 +886,146 @@ with `PB_ERR_COMPILE`, phase `link`, before any line runs.
   the program loads and runs, with that binding built on every run as a
   `let` is, and since the check goes by the natives this VM registered
   `PB_FX_CONST`, the host is the only place it can be reported.
+  `diagnostics_json()` (`pb_vm_diagnostics_json`) is the same list as data,
+  warnings included: `{"errors": 0, "warnings": 1, "items": [{"severity":
+  "warning", "message": "...", "file": "game.ptl", "line": 3, "column":
+  5}]}`.
 - `pb_version()` names the bridge, petal-ui contract and prelude level, and
   petal-query protocol version.
+
+## Calling with JSON arguments
+
+A host that takes commands from outside (an agent's tool call, a debug
+console, a socket) has its arguments as JSON. `call_json`
+(`pb_vm_call_json`) calls a top-level function with them directly:
+
+```petal no-check
+fn toll(id: string, cents: int = 25, rate: float = 0.5)
+  ...
+end
+```
+
+```cpp
+vm.call_json("toll", R"({"id": "north", "rate": 2})");   // by parameter name
+vm.call_json("toll", R"(["north", 40, 0.75])");          // by position
+vm.call_json("status");                                  // no arguments
+std::string schema = vm.function_json("toll");           // its parameters
+```
+
+- **An object is a call by name**: each key is a parameter, in any order, and
+  a parameter with a default may be left out. This is the language's own
+  named-argument binding (`toll(id: "north", rate: 2)`), so its errors are the
+  language's: an unknown name, a parameter given twice or a required one
+  missing is `PB_ERR_RUNTIME` naming it. **An array is a call by position.**
+- **The declared types settle what JSON leaves open.** JSON has one number
+  type, and a JavaScript client writes the float `3.0` as `3`. The bridge
+  reads the function's declaration (the data `fn_info()` returns) and
+  converts per argument:
+
+  | Declared | Sent | The function receives |
+  |----------|------|-----------------------|
+  | `float` | a whole number (`3`) | the float `3.0` |
+  | `int` | a float with no fraction (`3.0`, `1e3`) | the int |
+  | `int` | any other float (`3.5`) | nothing: `PB_ERR_INVALID_ARG` |
+  | `int`, `float`, `num` | not a number | nothing: `PB_ERR_INVALID_ARG` |
+  | `string`, `bool`, `list`, `record` | another kind | nothing: `PB_ERR_INVALID_ARG` |
+  | any other type, or none | anything | it as sent |
+
+  The error names the function, the parameter, the declared type and what
+  arrived (`toll(): parameter 'cents' is declared int, got a string
+  ("abc")`), and the function is not run, so a tool does not have to
+  validate its own arguments. `null` always passes, as `nil`. Only the
+  argument itself is looked at, not what a list or record holds, and an
+  overloaded function (resolved by argument count) takes its arguments as
+  sent. Without an annotation nothing is converted: a whole number is an
+  int, as everywhere else JSON enters Petal.
+- **Values are spelled as in a state document** (below): plain JSON is
+  itself, and `{"$petal": "enum", "tag": "Kind.road", "data": [2]}` is how a
+  caller sends what JSON has no spelling for.
+- `function_json("toll")` (`pb_vm_function_json`) returns the parameters a
+  host needs to describe the function to a caller: `{"name": "toll",
+  "params": [{"name": "cents", "type": "int", "has_default": true,
+  "default_source": "25"}, ...]}`. `type` and `default_source` are `null`
+  where the declaration has none; `params` is `null` for an overloaded
+  function.
+
+`call` with a builder is unchanged: a host that builds `pb_builder_int(3)`
+has said what it means, and nothing is converted.
+
+## Saving and loading state
+
+`save_state()` (`pb_vm_save_state`) returns the program's whole `state` as
+one JSON document, and `load_state(document)` (`pb_vm_load_state`) puts it
+back. That is a save point, an undo step, a fork, or a session that outlives
+the process, without replaying anything:
+
+```cpp
+std::string point = vm.save_state();       // between two runs
+...                                        // frames, input, tool calls
+vm.load_state(point);                      // back to the save point
+vm.run();                                  // this frame sees the loaded state
+
+petal::Vm fork;                            // or carry on somewhere else
+fork.load_file("game.ptl");
+fork.load_state(point);
+```
+
+`save_state_file(path)` / `load_state_file(path)` do the same through a
+file. The format is the one `petal run --state-storage` writes
+([CLI.md](CLI.md#state-between-runs)): `"format": "petal-state"`, a version,
+and one entry per slot.
+
+- **Every slot is in it**: top-level and module state, and the slots that a
+  `state` inside a function, a loop or a `state(key)` group owns, one per
+  call path.
+- **Loading replaces the state.** A slot the document does not hold is
+  removed and starts from its initial value on the next run, which is what
+  an undo wants: state that first appeared after the save point is gone
+  again. A document with no slots clears the state.
+- **Values keep their types.** Ints and floats stay apart, records keep
+  their field order, and enum variants, class instances, `vec2`/`vec3`, f64
+  arrays, symbols and `inf`/`nan` come back as themselves (written as
+  objects tagged `"$petal"`).
+- **The program may have changed.** Slots are matched by the ids a hot
+  reload uses, so a document saved before a code edit loads after it under
+  the reload's rules: state whose declaration was renamed or removed is not
+  loaded, and newly declared state starts from its initializer.
+- **A document that cannot be used is `PB_ERR_INVALID_ARG` and changes
+  nothing**: not JSON, not a state document, a version this build does not
+  read, or slots of which none is declared by the loaded program (it was
+  saved by a different script).
+
+What a document does not carry:
+
+| Not saved | What happens |
+|-----------|--------------|
+| A value that is or holds a function, a host handle, a pending result or a UI element | The whole slot is left out. After a load, that `state` starts from its initializer. |
+| Whether a value was frozen (`freeze()`) | It comes back equal and unfrozen. |
+| Anything that is not `state` | Bindings, output buffers, input, petal-ui's registries and whatever your natives keep are the host's to save. |
+
+`state_report_json()` (`pb_vm_state_report_json`) says what the last save or
+load did, and is where the host learns about the first row:
+
+```json
+{"op": "save", "slots": 12, "skipped": [{"name": "on_done", "holds": "a function"}]}
+{"op": "load", "slots": 11, "dropped": ["old_name"]}
+```
+
+Two things to know when loading into a VM that has already run:
+
+- **Run a frame before calling into the script.** A function reads the
+  top-level state its closure captured at the last run, so `call()` between
+  a `load_state()` and the next `run()` still sees the state from before the
+  load.
+- **A handle in state does not survive**, by the first row above. Keep the
+  durable part in `state` (an id, a path) and look the handle up again.
+
+Saving costs a walk of the state and a JSON encode (about what
+`state_json()` costs); it is meant for save points, not for every frame.
+
+A hot reload follows the same rule about functions: a `state` that holds one
+is dropped by a reload that recompiles or patches the program (its closure
+belonged to the old one), and its initializer runs again.
 
 ## Using the C API directly
 

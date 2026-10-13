@@ -177,7 +177,8 @@ way, for code written against an earlier checkout.
   and about a quarter of a frame's allocations where a function builds a
   table per cell, character or pixel. Not kept where a host observes
   (Garden's panels keep their top-level values only), and every reload
-  rebuilds these once each, at their next use. `--policy fast-fnstatic`
+  that changes a value or recompiles rebuilds these once each, at their
+  next use. `--policy fast-fnstatic`
   (`OptFlags::static_in_functions`) turns this part off alone;
   `StaticValues::in_functions` lists what a stack holds;
   `Env::set_static_check(true)` or `PETAL_STATIC_CHECK=1` makes the cache

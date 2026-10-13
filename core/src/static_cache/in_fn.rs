@@ -87,9 +87,11 @@
 //!
 //! # Reloads
 //!
-//! Every reload empties these slots, whatever the edit was: they are not
-//! followed (`env/static_follow.rs`). The next call that reaches the code
-//! builds the value again, once. They are emptied again, with the values
+//! Every reload that patches a literal or recompiles empties these slots,
+//! whatever the edit was: they are not followed (`env/static_follow.rs`).
+//! The next call that reaches the code builds the value again, once. (A
+//! reload that only moves text changes neither the code nor a constant,
+//! and the table is left as it is.) They are emptied again, with the values
 //! a paused drag rebuilds, when it pauses, since one may have been built
 //! from a value the drag left stale.
 //!

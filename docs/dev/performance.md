@@ -632,8 +632,10 @@ What it does not keep, and what it costs:
 - A call of a function declared further down the file (the reference goes
   through a cell), and anything where the lowering observes: **Garden's
   panels keep nothing for function bodies**, only their top-level values.
-- Every reload rebuilds every one of these, once, at its next use: they
-  are not followed, and the reload report counts top-level values only.
+- Every reload that patches a value or recompiles rebuilds every one of
+  these, once, at its next use: they are not followed, and the reload
+  report counts top-level values only. One that only moves text leaves
+  them.
 - A recompile pays for the plan and the pass: 26 ms of 481 on a
   34,000-line game with 1,573 functions (4,381 slots), 8 of 186 on one of
   15,000 lines. A slot costs its entry in the stack's table whether or

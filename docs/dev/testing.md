@@ -239,6 +239,28 @@ and `a_table_two_values_are_built_from_stays_shared` at once. With
 `an_equal_value_holding_another_object_is_not_swapped_for_the_old_one`
 fails.
 
+`core/tests/static_review3.rs` drives one list of steps (frames, reloads,
+`set_config_value`, host calls of a function) through four worlds at once,
+under five policies, each with and without a host observing: the cache on,
+off, on and checking itself, and on with every reload rebuilding
+everything. It holds the cases a review of the four pieces after S2 was
+built from: a value of the call that reaches a function-body constant
+through a closure made per call (the one rule the first tests could not
+reach: make every capture count as invariant in `FnPlan::of` and
+`a_value_of_the_call_reached_through_a_function_is_never_kept` fails), a
+parameter or local named like a kept table, writes through state, cells,
+loop variables and methods, a failed reload between two good ones, two
+stacks and a fork of one program, a host that starts observing after the
+values were built, and 24 ways of editing a table in place under a name
+nothing reads again.
+
+The timing test in `core/tests/hot_reload.rs`
+(`a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile`) takes
+the minimum of 12 rounds for the two edits that cost about a millisecond:
+with three it failed in release whenever the ignored whole-corpus oracle
+ran beside it (`--include-ignored`), one preemption being several times
+the reload.
+
 Plans live in `test/verify-plans/`. A plan's `exclude` list drops directories
 from its corpus roots (the vitest fixtures under `test/vitest`). A plan's `include` list names module search
 directories (relative to each side's root) handed as `-I` to every side of the

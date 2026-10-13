@@ -2255,6 +2255,148 @@ Cheesecake game under its engine.
   `petal-fantasy-nes` (disk), a real Garden session, any Cheesecake game
   under its engine.
 
+### Review of the phase after S2 (2026-10-13)
+
+An independent pass over the four pieces above: a store per value
+(`800ff90`), the cost of a reload (`f03dab6`, `489ea39`), the cache under
+observation (`a14daea`, `0dcd9d2`) and constants inside function bodies
+(`4dbced6`, `e284f9f`), aimed at a kept value that is stale or wrongly
+shared. **No defect was found in the cache.** Two things were wrong around
+it and are fixed; the measurements were run again and agree.
+
+**Attacked**, each attempt against the cache off, against the cache
+checking itself, and against a reload that rebuilds everything, under
+`replay`, `replay-memo`, `fast`, `baseline+memo` and `baseline+static`,
+with a host observing and without (`core/tests/static_review3.rs`, 16
+cases, about 120 programs):
+
+- *Function bodies.* A value of the call reaching a constant through a
+  closure made per call, at one and two removes (`make(k)` returns `user`,
+  which captured `inner`, which captured `k`: two closures of one function
+  share its slots), through `map`, a function handed in, a function in a
+  table or a list, a function another function returns, and a top-level
+  function that captured a value of the frame. A parameter, a local, a
+  loop variable and a default named like a kept table; a default that is
+  written to. A name a branch or loop of the call rebinds. Writes through
+  a loop variable that is an element of a kept list, through `state`,
+  through a `var` written inside another function, through a method that
+  writes its receiver, through enum data. A name rebound below the
+  function that captured it. A host call of the function between frames
+  and straight after a reload. A failed reload between two good ones. A
+  reload that makes a constant depend on the call (a literal replaced by
+  the parameter, the parameter renamed to the table's name, the table made
+  dynamic, a local that shadows it). Two stacks and a fork of one program
+  with a literal patched through each in turn, then a restore.
+- *A store per value.* A kept table inside a rebuilt one, written through
+  every name the program has for it, across four edits and a
+  `set_config_value`. A frame that raises between two values, then edits
+  to the one in front and to the index that raised.
+- *The kept parse and classification.* Read, not only run: an entry of
+  `ParseCache` is found by the whole text and the file id, compared byte
+  for byte, so there is nothing to go stale; `KeptAnalysis` is dropped by
+  the two reload paths that change a program in place and by
+  `get_program_mut`, a recompile starts with none, and every way of
+  changing the native table draws a new revision from the process-wide
+  counter. The failed-reload and two-stack cases above go through both.
+- *Observations.* One function called from three kept segments and from
+  dynamic code between them, through six reloads (a patched table, a
+  patched literal beside a call, an edit inside the function, a
+  recompile) and a `set_config_value`: the locals a host reads are those
+  of the last call, term by term. A host that starts and stops observing
+  while the stack lives. 24 shapes that hand a table nothing reads again
+  to something that may edit it where it is (a callee that writes its
+  parameter, at one and two removes; `append`, `++`, `sort`, `reverse`,
+  `map`, `filter`; through a holder, a second name, a branch, a loop),
+  each with and without a later reader, through a recompile: the table is
+  observed the same under its dead name.
+- *The optimizer fix* (`4dbced6`). Fourteen relatives of the shape it was
+  for (the accumulator rebound to an element of another value, a field,
+  the result of a call; by both arms, a nested branch, a branch as an
+  expression, a `match`, a `for`, a `while`; through a second name;
+  appended to instead of written): the optimizer on prints what
+  `baseline` prints.
+
+**Checked that the new cases bite.** With every capture taken as
+invariant at the closure site (the one rule the first tests could not
+reach, since no program there made one function's closure in two places),
+`a_value_of_the_call_reached_through_a_function_is_never_kept` fails.
+Taking every *top-level* capture as invariant fails nothing, and should
+not: a dynamic one is already `Dynamic` to the classifier, and a static
+one that is written to is the same value every frame and is protected by
+the immutable bit once a kept value holds it.
+
+**Fixed.**
+
+- `core/tests/lsp_tests.rs` had the hover expectations for a store per
+  value sitting uncommitted in the working tree (each step took it for
+  another's), so `main` as committed failed three hover tests. Committed.
+- `a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile` failed
+  in release when the ignored whole-corpus oracle ran beside it
+  (`--include-ignored`): 3.4 ms against 11.5, where alone it is 1.2
+  against 11. Nothing was slower; the minimum of three rounds of a 1 ms
+  reload does not survive a loaded machine. It takes the minimum of 12
+  for the two cheap edits now, and passed three runs beside the oracle.
+- The docs said every reload empties the function-body slots. One that
+  only moves text does not reach the table at all and leaves them, which
+  is right (no code and no constant changed);
+  `a_reload_that_only_moves_text_leaves_function_constants_and_any_other_empties_them`
+  pins both halves, and `in_fn.rs`, `hot-reload.md`, `performance.md` and
+  the changelog say so.
+
+**Measurements run again** (release, load average 7 to 17, so counts and
+not times):
+
+| | Reported | Run again |
+|---|---|---|
+| Corpus, whole cache against none: instructions, allocations | −1.03%, −16.84% | −1.03%, −16.84% (3,671,125 to 3,633,409; 41,411 to 34,437) |
+| Corpus, function slots alone | −0.29%, −7.07% | −0.29%, −7.07% (6,254 slots) |
+| Corpus under observation | −0.65%, −11.04% (2,945 slots) | −0.65%, −11.03% (39,361 to 35,019; the allocation counts move by a few strings between runs) |
+| snake, later frame | 2,754 instructions, 90 allocations | the same |
+| Garden panels under `PanelHost`, sum | 30,573 to 28,555; 2,438 to 1,989 | the same |
+| Moses as written: slots, checks, later frame | 451, 42, 2,641 / 45 / 1 | the same |
+| Moses: frame that builds everything; frame after an edit to one table | 9,217; 2,681 | 9,217; 2,681 (450 kept, 1 rebuilt) |
+| Classification alone, neon | 14.4 ms | 14.8 ms |
+| neon, an edit to `config.ptl`: relocated, patched, recompiled | 0.87, 1.00, 186 ms | 0.86, 1.08, 185 ms |
+| neon, `set_config_value`: file named, searched for | 1.03, 2.72 ms | 1.07, 2.73 ms |
+| The timing test, release, alone | 1.20 to 1.29 ms against 10.5 to 11.3 | 1.17 to 1.32 against 10.7 to 11.7 |
+
+**Tests on the final tree** (all green): core debug, 66 binaries, 2,626
+passed, 16 ignored (before the last two cases were added); core
+**release, whole suite**, 66 binaries, 2,628 passed, which nobody had run;
+`hot_reload` in release with `--include-ignored` (49, the whole-corpus
+reload oracle among them) three times; every fuzzer in the library at
+3,000 seeds in release (`differential_fuzz`, `ir_round_trip_fuzz`, both
+cell fuzzers, `static_cache_fuzz`, `static_fuzz`, `static_fn_fuzz`),
+which closes "the 1,500-seed run predates the last two changes" under
+"Later: Garden"; the sharing generator at 2,000 seeds in release (60 s);
+petal-ui whole suite, debug, 21 binaries, 300 passed; petal-c-bridge 20;
+petal-desktop-sdl 54; garden-script 182; `./tools/test-examples.ts` 33;
+`petal run --static-audit --static-only` over the thirteen Cheesecake
+games that load here, no finding.
+
+**Still open after this review.**
+
+- What the builders left open and this pass did not take: function-body
+  slots are not followed through a reload that patches or recompiles, are
+  not kept under observation, have no cut per value and no
+  `--static-audit` coverage; a recompile under observation executes every
+  kept segment once to write its log again; classification is from
+  nothing on every recompile; the per-term trace turns the cache off.
+- The equality of a kept value that leaves its function, and of an
+  in-place edit inside a function under observation, rests on the
+  immutable bit and the escape analysis. This pass added about sixty
+  programs to the evidence and no proof.
+- The sharing generator's default is still 40 seeds, where a removed rule
+  needs up to 400 to show: 400 would cost about two minutes of a debug
+  run. The unit test beside it catches the same removal at once.
+- `examples/panels/shapes.ptl` raises under `PanelHost` in the Garden
+  measurement, the same with the cache on and off; not looked into.
+- Not run: clippy, `tsc` and vitest (this phase changed no TypeScript),
+  `tools/verify.ts`, `garden-app`'s tests and `petal-fantasy-nes` (disk),
+  a real Garden session, any Cheesecake game under its engine, so the
+  function-body slots of Moses (4,381 of them) have still never executed
+  there.
+
 ## Benchmarks that gate the work
 
 | Benchmark | Baseline |

@@ -148,8 +148,10 @@ one other value reads and that value, and the values one statement binds.
 
 The values the cache keeps inside function bodies
 ([performance.md](dev/performance.md#static-values), "Inside function
-bodies") are not followed: every reload, whatever it changed, empties all
-of them, and each is built again by the next call that reaches it. They
+bodies") are not followed: every reload that changes a value or
+recompiles, whatever it changed, empties all of them, and each is built
+again by the next call that reaches it. (A reload that only moves text, a
+comment or whitespace, changes no code and leaves them.) They
 are not in the report's counts, which are about top-level values. A value
 a drag put off (below) takes them with it when it is finally rebuilt,
 since one may have been built from it meanwhile.

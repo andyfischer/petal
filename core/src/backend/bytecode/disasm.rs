@@ -210,6 +210,14 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
                 arglist(program, args, arg_names)
             )
         }
+        Intrinsic { dst, op, name, args } => {
+            format!(
+                "r{} = intrinsic {} {}",
+                dst,
+                kconst(program, *name),
+                reglist(&args[..op.arity()])
+            )
+        }
         MakeClosure { dst, func, caps } => {
             format!("r{} = closure f{} caps={}", dst, func.0, reglist(caps))
         }

@@ -429,6 +429,23 @@ impl<'a> Vm<'a> {
                 self.give_args(argv);
                 r?;
             }
+            // The general form of an inline builtin is the builtin call it
+            // was lowered from, so whatever the fast loop declined (an error,
+            // a `Pending`, a profiled or audited run) is the native's own.
+            Inst::Intrinsic { dst, op, name, args } => {
+                let argv = self.take_args(fi, &args[..op.arity()]);
+                let r = self.do_builtin_call(
+                    fi,
+                    *dst,
+                    *name,
+                    &argv,
+                    &Default::default(),
+                    false,
+                    origin,
+                );
+                self.give_args(argv);
+                r?;
+            }
             Inst::Return { val } => {
                 let value = val.map(|r| self.reg(fi, r)).unwrap_or(Value::Nil);
                 return Ok(self.deliver_value(value));

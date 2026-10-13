@@ -27,7 +27,7 @@
 
 use super::*;
 
-use super::super::isa::{CellReadMode, CellWriteMode};
+use super::super::isa::{CellReadMode, CellWriteMode, IntrinsicOp};
 use crate::backend::ops;
 use crate::constant_table::ConstantValue;
 use crate::program::TermOp;
@@ -100,6 +100,10 @@ impl<'a> Vm<'a> {
                 true => None,
             },
         };
+        // An inline builtin is computed here only when nothing is watching
+        // native calls: the two audits bracket each one, and take the
+        // general path (the profiler and the trace never reach this loop).
+        let intrinsics = !self.audit.enabled && !self.static_audit.enabled;
         let mut n: u64 = 0;
 
         // Registers are read as `Nil` past the end of the file, like
@@ -170,6 +174,26 @@ impl<'a> Vm<'a> {
                     };
                     let Some(v) = v else {
                         break StraightStop::Slow;
+                    };
+                    put!(dst, v);
+                }
+                // The trivial builtins, for the arguments that need no
+                // native: see `straight_intrinsic`. The conversions are
+                // matched here so `float(i)` is a load, a test and a store.
+                Inst::Intrinsic { dst, op, args, .. } => {
+                    if !intrinsics {
+                        break StraightStop::Slow;
+                    }
+                    let a = get!(args[0]);
+                    let v = match (op, a) {
+                        (IntrinsicOp::Float, Value::Int(i)) => Value::Float(i as f64),
+                        (IntrinsicOp::Float, Value::Float(_)) => a,
+                        (IntrinsicOp::Int, Value::Int(_)) => a,
+                        (IntrinsicOp::Int, Value::Float(f)) => Value::Int(f as i64),
+                        _ => match straight_intrinsic(heap, op, a, get!(args[1]), get!(args[2])) {
+                            Some(v) => v,
+                            None => break StraightStop::Slow,
+                        },
                     };
                     put!(dst, v);
                 }
@@ -556,6 +580,99 @@ fn compare(op: TermOp, a: Value, b: Value, heap: &Heap) -> Option<Value> {
     Some(Value::Bool(r))
 }
 
+// ── Inline builtins ──────────────────────────────────────────────────────
+
+/// What a trivial builtin returns for arguments it needs no native for:
+/// numbers (`Int` and `Float` only), a list, a string or a float array for
+/// `len`, and anything but a `Pending` for `type`. `None` is everything else
+/// — a wrong type, a dual number, a string to convert, an overflow, a
+/// `Pending` — which the general executor runs as the builtin call, so each
+/// arm here has to agree with its native only where it answers. `b` and `c`
+/// are the second and third arguments where the builtin has them.
+///
+/// The natives are `crate::builtins::math::{native_float, native_int,
+/// native_abs, native_floor, native_min, native_max}`,
+/// `creative_coding::native_clamp`, `collections::native_len` and
+/// `io::native_type`; `core/tests/intrinsics.rs` holds the two to each other
+/// over a matrix of values.
+#[inline]
+fn straight_intrinsic(
+    heap: &mut Heap,
+    op: IntrinsicOp,
+    a: Value,
+    b: Value,
+    c: Value,
+) -> Option<Value> {
+    Some(match op {
+        IntrinsicOp::Float => match a {
+            Value::Int(i) => Value::Float(i as f64),
+            Value::Float(_) => a,
+            _ => return None,
+        },
+        IntrinsicOp::Int => match a {
+            Value::Int(_) => a,
+            Value::Float(f) => Value::Int(f as i64),
+            _ => return None,
+        },
+        IntrinsicOp::Abs => match a {
+            Value::Int(i) => Value::Int(i.checked_abs()?),
+            Value::Float(f) => Value::Float(f.abs()),
+            _ => return None,
+        },
+        IntrinsicOp::Floor => match a {
+            Value::Int(_) => a,
+            Value::Float(f) => Value::Float(f.floor()),
+            _ => return None,
+        },
+        // The first argument on a tie and on an unordered (NaN) pair, and the
+        // chosen argument as it was passed: `min(1, 2.0)` is the int 1.
+        IntrinsicOp::Min => match (a, b) {
+            (Value::Int(x), Value::Int(y)) => if x <= y { a } else { b },
+            (Value::Float(x), Value::Float(y)) => if x > y { b } else { a },
+            (Value::Int(_) | Value::Float(_), Value::Int(_) | Value::Float(_)) => {
+                match crate::value::compare_values(&a, &b, heap).ok()? {
+                    std::cmp::Ordering::Greater => b,
+                    _ => a,
+                }
+            }
+            _ => return None,
+        },
+        IntrinsicOp::Max => match (a, b) {
+            (Value::Int(x), Value::Int(y)) => if x >= y { a } else { b },
+            (Value::Float(x), Value::Float(y)) => if x < y { b } else { a },
+            (Value::Int(_) | Value::Float(_), Value::Int(_) | Value::Float(_)) => {
+                match crate::value::compare_values(&a, &b, heap).ok()? {
+                    std::cmp::Ordering::Less => b,
+                    _ => a,
+                }
+            }
+            _ => return None,
+        },
+        // An int only when all three are; one float makes it a float.
+        IntrinsicOp::Clamp => {
+            if let (Value::Int(v), Value::Int(lo), Value::Int(hi)) = (a, b, c) {
+                return Some(Value::Int(v.max(lo).min(hi)));
+            }
+            let num = |v: Value| match v {
+                Value::Float(f) => Some(f),
+                Value::Int(i) => Some(i as f64),
+                _ => None,
+            };
+            Value::Float(num(a)?.max(num(b)?).min(num(c)?))
+        }
+        IntrinsicOp::Len => Value::Int(match a {
+            Value::List(id) => heap.list_len(id),
+            Value::String(id) => heap.string_char_len(id),
+            Value::F64Array(id) => heap.f64_array_len(id),
+            _ => return None,
+        } as i64),
+        IntrinsicOp::Type => match a {
+            Value::Pending(_) => return None,
+            _ => Value::String(crate::builtins::type_name_id(heap, a)),
+        },
+    })
+}
+
 // ── Enums ────────────────────────────────────────────────────────────────
 //
 // What the straight-line loop does for enums, out of line. Each is the hit
@@ -628,5 +745,91 @@ fn straight_enum_builtin(
             _ => None,
         },
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod intrinsic_tests {
+    use super::*;
+
+    /// The inline arms answer for numbers (and `len`, `type`), so the calls
+    /// they stand for are not made; `core/tests/intrinsics.rs` holds the
+    /// answers to the natives'. This is the other half: that they do answer.
+    #[test]
+    fn numbers_are_answered_inline() {
+        let mut heap = Heap::new();
+        let nil = Value::Nil;
+        let mut call = |op, a, b, c| straight_intrinsic(&mut heap, op, a, b, c);
+        let (i, f) = (Value::Int, Value::Float);
+        use IntrinsicOp::*;
+        assert_eq!(call(Float, i(3), nil, nil), Some(f(3.0)));
+        assert_eq!(call(Float, f(2.5), nil, nil), Some(f(2.5)));
+        assert_eq!(call(Int, f(-2.9), nil, nil), Some(i(-2)));
+        assert_eq!(call(Int, f(f64::NAN), nil, nil), Some(i(0)));
+        assert_eq!(call(Int, f(1e19), nil, nil), Some(i(i64::MAX)));
+        assert_eq!(call(Int, i(7), nil, nil), Some(i(7)));
+        assert_eq!(call(Abs, i(-7), nil, nil), Some(i(7)));
+        assert_eq!(call(Abs, f(-0.5), nil, nil), Some(f(0.5)));
+        assert_eq!(call(Floor, i(7), nil, nil), Some(i(7)));
+        assert_eq!(call(Floor, f(-0.5), nil, nil), Some(f(-1.0)));
+        assert_eq!(call(Min, i(1), i(2), nil), Some(i(1)));
+        assert_eq!(call(Min, f(2.0), i(1), nil), Some(i(1)));
+        assert_eq!(call(Min, i(1), f(1.0), nil), Some(i(1)));
+        assert_eq!(call(Max, i(1), f(1.0), nil), Some(i(1)));
+        assert_eq!(call(Max, f(1.5), f(2.5), nil), Some(f(2.5)));
+        // Exact where an int does not fit a float: 2^53 + 1 against 2^53.
+        assert_eq!(call(Max, f(9007199254740992.0), i(9007199254740993), nil), Some(i(9007199254740993)));
+        assert_eq!(call(Min, i(9007199254740993), f(9007199254740992.0), nil), Some(f(9007199254740992.0)));
+        assert_eq!(call(Clamp, i(5), i(0), i(3)), Some(i(3)));
+        assert_eq!(call(Clamp, i(5), f(0.0), i(3)), Some(f(3.0)));
+        assert_eq!(call(Clamp, f(-1.0), f(0.0), f(1.0)), Some(f(0.0)));
+    }
+
+    #[test]
+    fn len_and_type_are_answered_inline() {
+        let mut heap = Heap::new();
+        let list = Value::List(heap.alloc_list(vec![Value::Int(1), Value::Nil]));
+        let text = Value::String(heap.intern_str("h\u{e9}llo"));
+        let nil = Value::Nil;
+        use IntrinsicOp::*;
+        assert_eq!(straight_intrinsic(&mut heap, Len, list, nil, nil), Some(Value::Int(2)));
+        assert_eq!(straight_intrinsic(&mut heap, Len, text, nil, nil), Some(Value::Int(5)));
+        for (v, name) in [(list, "list"), (text, "string"), (nil, "nil"), (Value::Int(1), "int")] {
+            let Some(Value::String(id)) = straight_intrinsic(&mut heap, Type, v, nil, nil) else {
+                panic!("type({name}) was not answered");
+            };
+            assert_eq!(heap.get_string(id), name);
+        }
+    }
+
+    /// What the natives have to see: errors, conversions, overflow, duals
+    /// and `Pending`s.
+    #[test]
+    fn everything_else_is_left_to_the_native() {
+        let mut heap = Heap::new();
+        let text = Value::String(heap.intern_str("12"));
+        let list = Value::List(heap.alloc_list(Vec::new()));
+        let dual = Value::Dual { value: 1.0, derivative: 1.0 };
+        let pending = Value::Pending(crate::value::PendingId(0));
+        let nil = Value::Nil;
+        let one = Value::Int(1);
+        use IntrinsicOp::*;
+        for op in [Float, Int, Abs, Floor] {
+            for v in [text, list, dual, pending, nil, Value::Bool(true)] {
+                assert_eq!(straight_intrinsic(&mut heap, op, v, nil, nil), None, "{op:?}");
+            }
+        }
+        assert_eq!(straight_intrinsic(&mut heap, Abs, Value::Int(i64::MIN), nil, nil), None);
+        for v in [text, list, dual, pending, nil] {
+            for op in [Min, Max, Clamp] {
+                assert_eq!(straight_intrinsic(&mut heap, op, v, one, one), None, "{op:?}");
+                assert_eq!(straight_intrinsic(&mut heap, op, one, v, one), None, "{op:?}");
+            }
+            assert_eq!(straight_intrinsic(&mut heap, Clamp, one, one, v), None);
+        }
+        for v in [nil, one, dual, pending] {
+            assert_eq!(straight_intrinsic(&mut heap, Len, v, nil, nil), None);
+        }
+        assert_eq!(straight_intrinsic(&mut heap, Type, pending, nil, nil), None);
     }
 }

@@ -53,6 +53,70 @@ fn arg_names_empty(v: &ArgNames) -> bool {
     v.is_empty()
 }
 
+/// The builtins an [`Inst::Intrinsic`] stands for: the cheap, pure,
+/// fixed-arity ones a program calls thousands of times a frame, where the
+/// call machinery (argument vector, native context, result stack) costs
+/// several times what the builtin computes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+pub enum IntrinsicOp {
+    Float,
+    Int,
+    Min,
+    Max,
+    Clamp,
+    Abs,
+    Floor,
+    Len,
+    Type,
+}
+
+impl IntrinsicOp {
+    pub const COUNT: usize = 9;
+
+    /// Every intrinsic, in discriminant order.
+    pub const ALL: [IntrinsicOp; IntrinsicOp::COUNT] = [
+        IntrinsicOp::Float,
+        IntrinsicOp::Int,
+        IntrinsicOp::Min,
+        IntrinsicOp::Max,
+        IntrinsicOp::Clamp,
+        IntrinsicOp::Abs,
+        IntrinsicOp::Floor,
+        IntrinsicOp::Len,
+        IntrinsicOp::Type,
+    ];
+
+    /// The builtin's name, as a program writes it.
+    pub const fn name(self) -> &'static str {
+        match self {
+            IntrinsicOp::Float => "float",
+            IntrinsicOp::Int => "int",
+            IntrinsicOp::Min => "min",
+            IntrinsicOp::Max => "max",
+            IntrinsicOp::Clamp => "clamp",
+            IntrinsicOp::Abs => "abs",
+            IntrinsicOp::Floor => "floor",
+            IntrinsicOp::Len => "len",
+            IntrinsicOp::Type => "type",
+        }
+    }
+
+    /// How many arguments the builtin takes. A call with any other count is
+    /// left a `BuiltinCall`, whose native reports the mistake.
+    pub const fn arity(self) -> usize {
+        match self {
+            IntrinsicOp::Float
+            | IntrinsicOp::Int
+            | IntrinsicOp::Abs
+            | IntrinsicOp::Floor
+            | IntrinsicOp::Len
+            | IntrinsicOp::Type => 1,
+            IntrinsicOp::Min | IntrinsicOp::Max => 2,
+            IntrinsicOp::Clamp => 3,
+        }
+    }
+}
+
 /// What a [`CellRead`](Inst::CellRead) is for. Chosen by
 /// `super::cells::analyze`; everything but `Shared` is an optimization that
 /// `OptFlags::in_place_cells` gates.
@@ -363,6 +427,25 @@ pub enum Inst {
         /// empty, so a positional call's JSON row is unchanged.
         #[serde(default, skip_serializing_if = "arg_names_empty")]
         arg_names: ArgNames,
+    },
+    /// `dst = name(args…)` for one of the trivial builtins the VM's
+    /// straight-line loop retires itself ([`IntrinsicOp`]): a positional,
+    /// right-arity [`BuiltinCall`](Inst::BuiltinCall) whose name resolved to
+    /// the core native, rewritten by
+    /// [`BytecodeProgram::select_intrinsics`] once the native table is in
+    /// hand. The fast loop computes the common cases (numbers; a list or a
+    /// string for `len`; anything for `type`) inline. Every other case — an
+    /// error, a `Pending` or dual-number argument, a string to convert, a
+    /// profiled, traced or audited run — is the general executor's, which
+    /// runs it as exactly the builtin call it was (`name` is kept for that),
+    /// so results, errors and profile attribution are the builtin's.
+    ///
+    /// `args` holds `op.arity()` registers; the rest are unused and zero.
+    Intrinsic {
+        dst: Reg,
+        op: IntrinsicOp,
+        name: ConstantId,
+        args: [Reg; 3],
     },
     MakeClosure {
         dst: Reg,
@@ -698,6 +781,7 @@ define_opcodes!(
     Error,
     StaticSkip,
     StaticStore,
+    Intrinsic,
 );
 
 /// Match the single backpatchable branch-target label of a branching op, over
@@ -749,6 +833,7 @@ impl Inst {
             | Inst::Not { dst, .. }
             | Inst::Concat { dst, .. }
             | Inst::BuiltinCall { dst, .. }
+            | Inst::Intrinsic { dst, .. }
             | Inst::MakeClosure { dst, .. }
             | Inst::MakeOverloadSet { dst, .. }
             | Inst::AllocList { dst, .. }
@@ -906,6 +991,11 @@ impl Inst {
             Inst::MethodCall { recv, args, .. } => {
                 f(recv);
                 for a in args {
+                    f(a);
+                }
+            }
+            Inst::Intrinsic { op, args, .. } => {
+                for a in &mut args[..op.arity()] {
                     f(a);
                 }
             }
@@ -1241,6 +1331,62 @@ impl BytecodeProgram {
                 _ => NOT_A_BUILTIN,
             })
             .collect();
+    }
+
+    /// Rewrite the calls of the trivial builtins to [`Inst::Intrinsic`]:
+    /// every positional `BuiltinCall` of the right arity whose name resolved
+    /// (in [`resolve_builtin_names`](Self::resolve_builtin_names), which must
+    /// have run) to the *core* native of an [`IntrinsicOp`]. A host that
+    /// registered a native of its own under one of those names gets its
+    /// native called as before: the name then resolves to an id that is not
+    /// the core builtin's. A call the compiler bound to a user or module
+    /// definition was never a `BuiltinCall` to begin with. Returns how many
+    /// calls were rewritten.
+    ///
+    /// One instruction replaces one instruction, with the same registers, so
+    /// no label, origin or static-slot range moves. It runs after every
+    /// other pass for that reason, and because those passes know the calls
+    /// by name.
+    pub fn select_intrinsics(&mut self, natives: &crate::native_fn::NativeFnTable) -> usize {
+        let mut rewritten = 0;
+        let ids = &self.builtin_ids;
+        for func in std::iter::once(&mut self.root).chain(self.fns.iter_mut()) {
+            for inst in &mut func.code {
+                let Inst::BuiltinCall {
+                    dst,
+                    name,
+                    args,
+                    in_place: false,
+                    arg_names,
+                } = &*inst
+                else {
+                    continue;
+                };
+                if !arg_names.is_empty() {
+                    continue;
+                }
+                let id = match ids.get(name.0 as usize).copied() {
+                    Some(NOT_A_BUILTIN) | None => continue,
+                    Some(id) => id,
+                };
+                let Some(op) = natives.intrinsic_op(crate::native_fn::NativeFnId(id)) else {
+                    continue;
+                };
+                if args.len() != op.arity() {
+                    continue;
+                }
+                let mut regs = [0; 3];
+                regs[..args.len()].copy_from_slice(args);
+                *inst = Inst::Intrinsic {
+                    dst: *dst,
+                    op,
+                    name: *name,
+                    args: regs,
+                };
+                rewritten += 1;
+            }
+        }
+        rewritten
     }
 
     /// The native id a constant names, if it was resolved as a builtin.

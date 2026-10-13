@@ -97,6 +97,14 @@ pub struct OptFlags {
     /// the code that builds one. Off, function code is lowered as it is
     /// without the cache. Ignored where `preserve_observations` is set.
     pub static_in_functions: bool,
+    /// Run calls of the trivial builtins (`float`, `int`, `min`, `max`,
+    /// `clamp`, `abs`, `floor`, `len`, `type`) as [`bytecode::Inst::Intrinsic`],
+    /// which the VM's straight-line loop computes without a native call.
+    /// With it off they stay `BuiltinCall`s, which is the oracle the inline
+    /// forms are held to. It needs the host's native table, so
+    /// [`bytecode::lower_with_flags`] ignores it and an `Env` applies it
+    /// (`Env::ensure_bytecode`).
+    pub intrinsics: bool,
     /// Hold `copy_propagation` back from deleting a dead `Move` whose term is
     /// **named**, so the observation buffer still reports that binding. Set by
     /// `Env` when the observation buffer or the `explain` trace is enabled;
@@ -125,6 +133,7 @@ impl OptFlags {
             in_place_cells: false,
             copy_propagation: false,
             match_dispatch: false,
+            intrinsics: false,
             static_cache: false,
             // Inert without `static_cache`; on, so that switching the cache
             // on over these flags (`baseline+static`) is the whole cache.
@@ -142,6 +151,7 @@ impl OptFlags {
             in_place_cells: true,
             copy_propagation: true,
             match_dispatch: true,
+            intrinsics: true,
             static_cache: true,
             static_in_functions: true,
             preserve_observations: false,
@@ -165,6 +175,7 @@ impl OptFlags {
             in_place_cells: true,
             copy_propagation: true,
             match_dispatch: true,
+            intrinsics: true,
             static_cache: true,
             static_in_functions: true,
             preserve_observations: false,
@@ -187,6 +198,14 @@ impl OptFlags {
     pub const fn with_static_in_functions(self, on: bool) -> OptFlags {
         OptFlags {
             static_in_functions: on,
+            ..self
+        }
+    }
+
+    /// These passes with the inline builtins switched on or off.
+    pub const fn with_intrinsics(self, on: bool) -> OptFlags {
+        OptFlags {
+            intrinsics: on,
             ..self
         }
     }

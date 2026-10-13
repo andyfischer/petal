@@ -85,14 +85,25 @@ impl Env {
     /// [`OptFlags::static_cache`] included: the static-value cache lowers
     /// against the classifier's answer for this `Env`'s natives, which the
     /// free function [`lower_with_flags`](crate::backend::bytecode::lower_with_flags)
-    /// does not have. Builtin names are left unresolved.
+    /// does not have. Builtin names are bound to this `Env`'s natives, once,
+    /// rather than per call, and with [`OptFlags::intrinsics`] the calls of
+    /// the trivial builtins become [`Inst::Intrinsic`](crate::backend::bytecode::Inst::Intrinsic):
+    /// both need the native table too. `show-bytecode` comes here as well,
+    /// so a disassembly is of the code a run executes.
     pub fn lower_with(&self, program: &Program, flags: OptFlags) -> Result<BytecodeProgram, String> {
-        if flags.static_cache {
+        let mut bc = if flags.static_cache {
             let analysis = crate::static_classify::analyze_kept(program, &self.native_fns);
             crate::backend::bytecode::lower_with_statics(program, flags, &analysis, &self.native_fns)
         } else {
             crate::backend::bytecode::lower_with_flags(program, flags)
+        }?;
+        bc.resolve_builtin_names(&program.constants, |name| {
+            self.native_fns.lookup_name(name).map(|id| id.0)
+        });
+        if flags.intrinsics {
+            bc.select_intrinsics(&self.native_fns);
         }
+        Ok(bc)
     }
 
     /// The top-level declarations of `program` that the static-value cache

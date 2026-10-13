@@ -28,26 +28,34 @@ pub(super) fn native_str(state: &mut PetalCxt) -> Result<u32, String> {
 pub(super) fn native_type(state: &mut PetalCxt) -> Result<u32, String> {
     super::require_args(state, 1, "type")?;
     let v = state.get_value(1)?;
+    let name = type_name_id(state.heap_mut(), v);
+    state.push_value(Value::String(name));
+    Ok(1)
+}
+
+/// What `type(v)` answers, as an interned string. Shared with the VM, which
+/// answers `type` without a native call (`Inst::Intrinsic`).
+pub(crate) fn type_name_id(heap: &mut crate::heap::Heap, v: Value) -> crate::heap::StringId {
     // A class instance reports its class rather than the underlying `record`:
     // the class name is the more specific true answer, and it is what a
     // `type(x) == "Rect"` test wants. Untagged records still say "record".
-    let name = match v {
-        Value::Map(id) => state
-            .heap()
-            .map_class_name(id)
-            .unwrap_or_else(|| v.type_name())
-            .to_string(),
+    match v {
+        Value::Map(id) => match heap.map_class(id) {
+            Some(class) => class,
+            None => heap.intern_str(v.type_name()),
+        },
         // A variant reports its enum, as a class instance reports its class.
         Value::EnumVariant { tag, .. } => {
-            crate::program::split_enum_tag(state.heap().get_string(tag))
-                .0
-                .unwrap_or_else(|| v.type_name())
-                .to_string()
+            match crate::program::split_enum_tag(heap.get_string(tag)).0 {
+                Some(name) => {
+                    let name = name.to_string();
+                    heap.alloc_string(name)
+                }
+                None => heap.intern_str(v.type_name()),
+            }
         }
-        _ => v.type_name().to_string(),
-    };
-    state.push_string(name);
-    Ok(1)
+        _ => heap.intern_str(v.type_name()),
+    }
 }
 
 pub(super) fn native_assert(state: &mut PetalCxt) -> Result<u32, String> {

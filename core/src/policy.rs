@@ -127,7 +127,7 @@ impl RunPolicy {
     /// Parse a policy name with optional modifiers: `fast`, `baseline`,
     /// `explain`, `replay`, each optionally followed by any number of
     /// `+gate` / `-gate` / `+memo` / `-memo` / `+opt` / `-opt` / `+static` /
-    /// `-static` / `+fnstatic` / `-fnstatic`.
+    /// `-static` / `+fnstatic` / `-fnstatic` / `+intrinsics` / `-intrinsics`.
     pub fn parse(spec: &str) -> Result<RunPolicy, String> {
         let spec = spec.trim();
         let split = spec.find(['+', '-']).unwrap_or(spec.len());
@@ -156,10 +156,11 @@ impl RunPolicy {
                     .preserving(policy.opts)
                 }
                 "static" => policy.opts.static_cache = on,
+                "intrinsics" => policy.opts.intrinsics = on,
                 "fnstatic" => policy.opts.static_in_functions = on,
                 other => {
                     return Err(format!(
-                        "unknown run policy modifier '{sign}{other}' in '{spec}' (expected gate, memo, opt, static or fnstatic)"
+                        "unknown run policy modifier '{sign}{other}' in '{spec}' (expected gate, memo, opt, static, fnstatic or intrinsics)"
                     ));
                 }
             }
@@ -178,9 +179,16 @@ impl RunPolicy {
         }
         let cache = self.opts.static_cache;
         let in_fns = self.opts.static_in_functions;
+        let inline = self.opts.intrinsics;
         let (base, from) = NAMED
             .iter()
-            .filter(|(_, p)| p.opts.with_static_cache(cache).with_static_in_functions(in_fns) == self.opts)
+            .filter(|(_, p)| {
+                p.opts
+                    .with_static_cache(cache)
+                    .with_static_in_functions(in_fns)
+                    .with_intrinsics(inline)
+                    == self.opts
+            })
             .min_by_key(|(_, p)| {
                 (p.memo != self.memo) as u8
                     + (p.gate != self.gate) as u8
@@ -192,6 +200,7 @@ impl RunPolicy {
             ("gate", self.gate, from.gate),
             ("static", cache, from.opts.static_cache),
             ("fnstatic", in_fns, from.opts.static_in_functions),
+            ("intrinsics", inline, from.opts.intrinsics),
         ] {
             if want != have {
                 name.push(if want { '+' } else { '-' });
@@ -318,6 +327,17 @@ mod tests {
     }
 
     #[test]
+    fn the_intrinsics_modifier_switches_the_inline_builtins() {
+        let without = RunPolicy::parse("fast-intrinsics").unwrap();
+        assert_eq!(without.opts, OptFlags::default_on().with_intrinsics(false));
+        assert_eq!(without.name().as_deref(), Some("fast-intrinsics"));
+        assert_eq!(RunPolicy::parse("fast-intrinsics+intrinsics").unwrap(), RunPolicy::FAST);
+        let with = RunPolicy::parse("baseline+intrinsics").unwrap();
+        assert!(with.opts.intrinsics && !with.opts.copy_propagation);
+        assert_eq!(with.name().as_deref(), Some("baseline+intrinsics"));
+    }
+
+    #[test]
     fn bad_specs_say_what_was_expected() {
         assert!(
             RunPolicy::parse("quick")
@@ -327,7 +347,7 @@ mod tests {
         assert!(
             RunPolicy::parse("fast+speed")
                 .unwrap_err()
-                .contains("gate, memo, opt, static or fnstatic")
+                .contains("gate, memo, opt, static, fnstatic or intrinsics")
         );
     }
 }

@@ -8,7 +8,7 @@
 //! private [`Env`] internals or reproduce the fiddly bytecode opt-flag lowering.
 //! Each call compiles independently and retains nothing.
 
-use crate::backend::bytecode::{disasm, lower_with_flags};
+use crate::backend::bytecode::disasm;
 use crate::env::Env;
 use crate::ir_display::display_program_with;
 use crate::program::ProgramId;
@@ -72,8 +72,11 @@ fn render_ir(source: &str) -> Result<String, String> {
 }
 
 fn render_bytecode(source: &str) -> Result<String, String> {
-    let program = Env::new().compile_program(ProgramId(0), source)?;
-    let bc = lower_with_flags(&program, crate::policy::RunPolicy::from_env().opts)?;
+    let env = Env::new();
+    let program = env.compile_program(ProgramId(0), source)?;
+    // Lowered as the `Env` would to run it: the inline builtins need its
+    // native table.
+    let bc = env.lower_with(&program, crate::policy::RunPolicy::from_env().opts)?;
     Ok(disasm::render_text(&bc, &program))
 }
 

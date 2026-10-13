@@ -586,6 +586,13 @@ pub struct NativeFnTable {
     /// taken for another's.
     revision: u64,
     /// IDs for higher-order builtins that need evaluator intrinsic dispatch.
+    /// The core natives the VM can retire inline, indexed by
+    /// [`IntrinsicOp`](crate::backend::bytecode::isa::IntrinsicOp): the ids
+    /// `register_builtins` gave `float`, `int`, `min`, … . A name a host has
+    /// since registered over resolves to another id and so is not one of
+    /// these (see `BytecodeProgram::select_intrinsics`).
+    pub core_intrinsics:
+        [Option<NativeFnId>; crate::backend::bytecode::isa::IntrinsicOp::COUNT],
     pub intrinsic_map: Option<NativeFnId>,
     pub intrinsic_filter: Option<NativeFnId>,
     pub intrinsic_reduce: Option<NativeFnId>,
@@ -625,6 +632,7 @@ impl NativeFnTable {
         Self {
             entries: Vec::new(),
             by_name: HashMap::new(),
+            core_intrinsics: [None; crate::backend::bytecode::isa::IntrinsicOp::COUNT],
             intrinsic_map: None,
             intrinsic_filter: None,
             intrinsic_reduce: None,
@@ -645,6 +653,18 @@ impl NativeFnTable {
     /// Which state of the table this is (see the field).
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// The inline form of native `id`, if it is one of the core builtins the
+    /// VM retires without a call.
+    pub fn intrinsic_op(
+        &self,
+        id: NativeFnId,
+    ) -> Option<crate::backend::bytecode::isa::IntrinsicOp> {
+        use crate::backend::bytecode::isa::IntrinsicOp;
+        IntrinsicOp::ALL
+            .into_iter()
+            .find(|op| self.core_intrinsics[*op as usize] == Some(id))
     }
 
     /// Index an already-registered native as the built-in implementation of

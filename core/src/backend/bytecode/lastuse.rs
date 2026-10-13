@@ -439,6 +439,16 @@ fn for_each_read(inst: &Inst, program: &Program, mut f: impl FnMut(Reg, bool)) {
                 }
             }
         }
+        // `min` and `max` hand one of their arguments back; the others
+        // measure or convert theirs. (The rewrite to `Intrinsic` runs after
+        // this pass, so this arm is here for a caller that reorders them.)
+        Inst::Intrinsic { op, args, .. } => {
+            use super::isa::IntrinsicOp;
+            let retains = matches!(op, IntrinsicOp::Min | IntrinsicOp::Max);
+            for a in &args[..op.arity()] {
+                f(*a, retains);
+            }
+        }
         Inst::MakeClosure { caps, .. } => {
             for r in caps {
                 f(*r, RETAIN); // captured for later

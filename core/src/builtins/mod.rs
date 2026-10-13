@@ -29,6 +29,7 @@ mod pending;
 mod vec2;
 
 pub(crate) use collections::SortKey;
+pub(crate) use io::type_name_id;
 pub use effects::{
     is_mutating_builtin, is_pure_builtin, looks_mutating, retains_no_reference,
     returns_fresh_container,
@@ -536,6 +537,12 @@ pub fn register_builtins(table: &mut NativeFnTable) {
         NativeEffects::PURE,
     );
     table.intrinsic_enum_all = Some(enum_all_id);
+
+    // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
+    // ids they were just given.
+    for op in crate::backend::bytecode::isa::IntrinsicOp::ALL {
+        table.core_intrinsics[op as usize] = table.lookup_name(op.name());
+    }
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_sort = table.lookup_name("sort");

@@ -158,7 +158,7 @@ Options:
   flag wins when both are set.
 - `--policy <name>` — run under a named run policy: `fast`, `baseline`,
   `explain` or `replay`, optionally followed by modifiers: `+` or `-` and one
-  of `memo`, `gate`, `opt`, `static`, `fnstatic` (`fast-memo`,
+  of `memo`, `gate`, `opt`, `static`, `fnstatic`, `intrinsics` (`fast-memo`,
   `replay-static`). Without the flag (and without `PETAL_POLICY`), `run` uses
   `fast-memo-static`, because a script that runs once has no later run to
   replay a memoized call or reuse a kept value in. Output must be identical

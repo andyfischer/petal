@@ -434,11 +434,9 @@ impl Env {
         }
         let program = self.programs.get(&pid).ok_or("Program not found")?;
         self.lower_count.set(self.lower_count.get() + 1);
+        // Builtin names are bound to native ids there, once, rather than per
+        // call, and the trivial builtins selected as intrinsics.
         let mut bc = self.lower_with(program, flags)?;
-        // Bind builtin names to native ids now, once, rather than per call.
-        bc.resolve_builtin_names(&program.constants, |name| {
-            self.native_fns.lookup_name(name).map(|id| id.0)
-        });
         // The static audit indexes the root code it is about to watch, and in
         // its static-only mode rewrites it (see `crate::static_audit`).
         if self.static_audit.enabled {

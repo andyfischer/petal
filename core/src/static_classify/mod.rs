@@ -645,6 +645,11 @@ struct RootDeps {
     /// everything its value depends on, closed transitively. Terms that
     /// depend on nothing are left out.
     unnamed: HashMap<TermId, Box<[u32]>>,
+    /// A top-level `state` declaration -> what its *initializer* depends
+    /// on, closed transitively. `closed` has the same for every write of
+    /// the cell, which is more: `state n = 0` followed by `n = len(TILES)`
+    /// depends on `TILES` and its initializer on nothing.
+    state_init: HashMap<u32, Box<[u32]>>,
 }
 
 impl StaticAnalysis {
@@ -675,6 +680,17 @@ impl StaticAnalysis {
     ///
     /// This is the set a reload compares to decide whether a kept value is
     /// still good (`crate::static_cache`, "Following the diff").
+    /// What the initializer of the top-level `state` that `root` declares
+    /// can depend on, as sorted indices into
+    /// [`StaticReport::declarations`], closed transitively and without the
+    /// declaration itself. This is what a `state` was seeded from; the
+    /// statements that assign it afterwards are not in it. `None` when
+    /// `root` does not bind a `state`.
+    pub fn state_initializer_dependencies(&self, root: TermId) -> Option<Vec<u32>> {
+        let d = self.roots.owner.get(&root)?;
+        self.roots.state_init.get(d).map(|deps| deps.to_vec())
+    }
+
     pub fn root_dependencies(&self, program: &Program, root: TermId) -> Option<Vec<u32>> {
         if let Some(&d) = self.roots.owner.get(&root) {
             let mut out: Vec<u32> = self.roots.closed.get(d as usize)?.to_vec();
@@ -2833,12 +2849,25 @@ impl<'a> Pass<'a> {
             owner: HashMap::default(),
             closed: vec![Box::default(); decls.len()],
             unnamed: HashMap::default(),
+            state_init: HashMap::default(),
         };
         for (gi, g) in self.groups.iter().enumerate() {
             if at[gi] == u32::MAX {
                 continue;
             }
             roots.closed[at[gi] as usize] = indices(&closed[gi]);
+            if g.kind == DeclKind::State {
+                // The initializer alone: the walk starts at the `StateInit`
+                // term and never reaches the statements that assign the
+                // cell later, since those read it and it does not read them.
+                let mut all: BTreeSet<usize> = BTreeSet::new();
+                for d in self.direct_deps_from(vec![g.canonical], gi, &enum_groups) {
+                    all.insert(d);
+                    all.extend(closed[d].iter().copied());
+                }
+                all.remove(&gi);
+                roots.state_init.insert(at[gi], indices(&all));
+            }
             for t in g.defs.iter().chain(&g.enum_calls).chain(&g.enum_records) {
                 roots.owner.insert(*t, at[gi]);
             }

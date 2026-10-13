@@ -671,7 +671,9 @@ impl<'a> Vm<'a> {
                     for &(slot, r) in slots.iter() {
                         let Some(kept) = self.stack.statics.get(slot) else { continue };
                         if checking && !crate::static_cache::identical(kept, self.reg(fi, r), self.heap) {
-                            self.stack.statics.note_mismatch(&self.bc.statics, slot);
+                            let only_frozen =
+                                crate::static_cache::identical_but_for_frozen(kept, self.reg(fi, r), self.heap);
+                            self.stack.statics.note_mismatch(&self.bc.statics, slot, only_frozen);
                             continue;
                         }
                         self.set(fi, r, kept);

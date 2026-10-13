@@ -266,6 +266,18 @@ impl StaticSlotInfo {
             self.at.as_ref().map(|a| format!(" ({a})")).unwrap_or_default()
         )
     }
+
+    /// The words for the one difference a correct cache has: the kept value
+    /// was frozen by the program and the same value built again is not
+    /// ([`identical_but_for_frozen`]).
+    pub fn frozen_message(&self) -> String {
+        format!(
+            "the value kept for {}{} has been frozen and the same value built again is not: \
+             `freeze` reached the one value every call returns",
+            self.function.as_deref().unwrap_or("a function"),
+            self.at.as_ref().map(|a| format!(" ({a})")).unwrap_or_default()
+        )
+    }
 }
 
 /// What a reload needs to know about one slot.
@@ -677,22 +689,29 @@ impl StaticSlots {
         &self.mismatches
     }
 
-    /// Print each mismatch on stderr, prefixed `static check failure:`, as
-    /// it is found: how a whole test suite is run under the check without
-    /// touching a test.
+    /// Print each mismatch on stderr as it is found: how a whole test suite
+    /// (or a host's game) is run under the check without touching a test.
+    /// A value that was built different is a `static check failure:` line.
+    /// One that differs only in having been frozen is a `static check
+    /// note:` line: a program that freezes what a function returned does
+    /// that to a correct cache, and a host that greps for failures must not
+    /// find it.
     pub(crate) fn set_check_announced(&mut self, on: bool) {
         self.announce_check = on;
     }
 
-    pub(crate) fn note_mismatch(&mut self, layout: &StaticLayout, slot: u32) {
+    /// Record that the value `slot` keeps is not [`identical`] to the one
+    /// just built. `only_frozen`: they are [`identical_but_for_frozen`].
+    pub(crate) fn note_mismatch(&mut self, layout: &StaticLayout, slot: u32, only_frozen: bool) {
         if self.mismatches.contains(&slot) {
             return;
         }
         self.mismatches.push(slot);
         if self.announce_check {
-            match layout.slots.get(slot as usize) {
-                Some(info) => eprintln!("static check failure: {}", info.mismatch_message()),
-                None => eprintln!("static check failure: slot {slot}"),
+            match (layout.slots.get(slot as usize), only_frozen) {
+                (Some(info), false) => eprintln!("static check failure: {}", info.mismatch_message()),
+                (Some(info), true) => eprintln!("static check note: {}", info.frozen_message()),
+                (None, _) => eprintln!("static check failure: slot {slot}"),
             }
         }
     }
@@ -1104,7 +1123,16 @@ impl StaticSlots {
 /// `frozen`. Stricter than `==`. Anything a kept value cannot hold (a
 /// function, a cell, a handle) is never identical to anything.
 pub fn identical(a: Value, b: Value, heap: &Heap) -> bool {
-    same(a, b, heap, false)
+    same(a, b, heap, false, true)
+}
+
+/// [`identical`] but for the answer to `frozen`: the same contents, one of
+/// them (or a part of one) frozen where the other is not. What a kept value
+/// and the same value built again are when the program froze something that
+/// holds the kept one: `freeze` is about the heap object, so it reaches the
+/// one object every call returns. The cache did nothing wrong there.
+pub fn identical_but_for_frozen(a: Value, b: Value, heap: &Heap) -> bool {
+    same(a, b, heap, false, false)
 }
 
 /// Whether the old value `old` of a slot may stand in for `new`, the value
@@ -1115,13 +1143,15 @@ pub fn identical(a: Value, b: Value, heap: &Heap) -> bool {
 /// else holds as well; the old value holds another object there, and
 /// `freeze` through one name would then not reach the other.
 pub fn replaces(old: Value, new: Value, heap: &Heap) -> bool {
-    same(old, new, heap, true)
+    same(old, new, heap, true, true)
 }
 
 /// [`identical`]; with `private`, also [`replaces`]: no container of `b`
 /// that is a different object from its counterpart in `a` is immutable.
-fn same(a: Value, b: Value, heap: &Heap, private: bool) -> bool {
-    let frozen = |x: Value, y: Value| heap.is_frozen(x) == heap.is_frozen(y);
+/// Without `frozen_too`, two values that differ only in what is frozen are
+/// the same ([`identical_but_for_frozen`]).
+fn same(a: Value, b: Value, heap: &Heap, private: bool, frozen_too: bool) -> bool {
+    let frozen = |x: Value, y: Value| !frozen_too || heap.is_frozen(x) == heap.is_frozen(y);
     let own = |y: Value| !private || !heap.is_immutable(y);
     match (a, b) {
         (Value::Nil, Value::Nil) => true,
@@ -1152,7 +1182,7 @@ fn same(a: Value, b: Value, heap: &Heap, private: bool) -> bool {
             frozen(a, b)
                 && own(b)
                 && xs.len() == ys.len()
-                && xs.iter().zip(ys).all(|(p, q)| same(*p, *q, heap, private))
+                && xs.iter().zip(ys).all(|(p, q)| same(*p, *q, heap, private, frozen_too))
         }
         (Value::F64Array(x), Value::F64Array(y)) => {
             if x == y {
@@ -1176,11 +1206,11 @@ fn same(a: Value, b: Value, heap: &Heap, private: bool) -> bool {
                 && xs
                     .iter()
                     .zip(ys.iter())
-                    .all(|((k, p), (l, q))| k == l && same(*p, *q, heap, private))
+                    .all(|((k, p), (l, q))| k == l && same(*p, *q, heap, private, frozen_too))
         }
         (Value::EnumVariant { tag: at, data: ad }, Value::EnumVariant { tag: bt, data: bd }) => {
             (at == bt || heap.get_string(at) == heap.get_string(bt))
-                && same(Value::List(ad), Value::List(bd), heap, private)
+                && same(Value::List(ad), Value::List(bd), heap, private, frozen_too)
         }
         (Value::Element(x), Value::Element(y)) => {
             x == y
@@ -1190,12 +1220,14 @@ fn same(a: Value, b: Value, heap: &Heap, private: bool) -> bool {
                         Value::Map(heap.get_element_props(y)),
                         heap,
                         private,
+                        frozen_too,
                     )
                     && same(
                         Value::List(heap.get_element_children(x)),
                         Value::List(heap.get_element_children(y)),
                         heap,
                         private,
+                        frozen_too,
                     ))
         }
         _ => false,
@@ -1623,7 +1655,10 @@ fn follow(
                 .then(|| program.get_term(d.term).state_key)
                 .flatten()
                 .map(|key| {
-                    let mut deps = analysis.root_dependencies(program, d.term).unwrap_or_default();
+                    // What it was seeded from: its initializer's reads, not
+                    // those of the statements that assign it afterwards (a
+                    // counter set from a table on every run is not stale).
+                    let mut deps = analysis.state_initializer_dependencies(d.term).unwrap_or_default();
                     deps.retain(|x| *x != i as u32);
                     (key, deps.into())
                 }),

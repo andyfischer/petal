@@ -3,7 +3,10 @@
 //! (`Env::set_static_check`), and prints each one that was built different
 //! on a later call on stderr. That line is all a whole test suite run under
 //! the variable has to show for a wrong value, since none of its tests reads
-//! `StaticValues::mismatches`.
+//! `StaticValues::mismatches`. A value that differs only in having been
+//! frozen is a `static check note:`, not a failure: a host that runs its
+//! games under the variable and greps for failures must not find one in a
+//! game that freezes what its functions return.
 //!
 //! Shells out to the built `petal` binary, so the variable is set for a
 //! child process and not for this one.
@@ -36,14 +39,16 @@ fn stderr_of(source: &str, check: bool) -> String {
 }
 
 #[test]
-fn the_environment_variable_prints_each_value_that_was_built_different() {
+fn the_environment_variable_prints_each_value_that_differs() {
     let found = stderr_of(FROZEN_KEPT_VALUE, true);
-    let lines: Vec<&str> = found.lines().filter(|l| l.starts_with("static check failure:")).collect();
+    let lines: Vec<&str> = found.lines().filter(|l| l.starts_with("static check")).collect();
     assert_eq!(
         lines,
-        ["static check failure: a value kept for mk (line 2) was built different on a later call"],
-        "once per value, however many calls and runs found it\n{found}"
+        ["static check note: the value kept for mk (line 2) has been frozen and the same value built again is not: \
+          `freeze` reached the one value every call returns"],
+        "once per value, however many calls and runs found it; a note, since the contents are the same\n{found}"
     );
-    assert!(!stderr_of(HONEST, true).contains("static check failure"), "a value that is the same every call");
-    assert!(!stderr_of(FROZEN_KEPT_VALUE, false).contains("static check failure"), "off unless asked for");
+    assert!(!found.contains("static check failure"), "freezing a kept value is not a failure\n{found}");
+    assert!(!stderr_of(HONEST, true).contains("static check"), "a value that is the same every call");
+    assert!(!stderr_of(FROZEN_KEPT_VALUE, false).contains("static check"), "off unless asked for");
 }

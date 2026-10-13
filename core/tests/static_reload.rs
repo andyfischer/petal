@@ -583,8 +583,12 @@ state sum = total(TILES)
 state plain = len(OTHER)
 state n = 0
 n = n + 1
-print(n, grid, sum, plain, TILES, OTHER)
+state width = 0
+width = total(TILES)
+print(n, grid, sum, plain, width, TILES, OTHER)
 ";
+    // (`width` is assigned from the table on every run and seeded from
+    // nothing: it is never stale, and never named.)
     let seeds = |report: &ReloadReport| -> Vec<(String, Option<String>)> {
         let s = report.statics.as_ref().expect("followed");
         s.stale_seeds.iter().map(|x| (x.name.clone(), x.read.clone())).collect()

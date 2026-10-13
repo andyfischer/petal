@@ -136,6 +136,8 @@ fn lower(
 #[cfg(test)]
 mod cell_fuzz;
 #[cfg(test)]
+mod enum_all_fuzz;
+#[cfg(test)]
 mod fuzz;
 #[cfg(test)]
 mod static_fn_fuzz;

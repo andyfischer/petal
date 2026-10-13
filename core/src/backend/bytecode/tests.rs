@@ -1531,6 +1531,46 @@ fn inplace_does_not_fire_on_two_spines_live_at_once() {
     );
 }
 
+#[test]
+fn inplace_does_not_fire_past_a_reference_taken_inside_the_guard() {
+    // `enum_all_fuzz` seed 148 (minimized; no enum is needed). `let s = v`
+    // stands inside the arm, in front of the loop that rewrites `v`. The
+    // arm is part of the region, so the copy is a web carrier, and the loop
+    // phi reading the same value is not counted as a second reader: nothing
+    // asked whether `s` is read after the loop. It printed the grown list.
+    // The same reference taken in front of the `if` was always refused.
+    let shapes = [
+        // In an arm, read after the loop.
+        "let v = [1, 2, 3]\nif len(v) == 3 then\n  let s = v\n  for k in range(0, 2) do\n    v = append(v, 9)\n  end\n  print(s)\nend\nprint(v)",
+        // Observed rather than printed whole: still after the rewrite.
+        "let v = [1, 2, 3]\nif len(v) == 3 then\n  let s = v\n  for k in range(0, 2) do\n    v[k] = 7\n  end\n  print(s[0], len(s))\nend\nprint(v)",
+        // In the body of an enclosing loop, in front of the inner one.
+        "let v = [1, 2, 3]\nfor k in range(0, 2) do\n  let s = v\n  for j in range(0, 2) do\n    v = append(v, 9)\n  end\n  print(s)\nend\nprint(v)",
+        // In a function, the arm of a `match`, and a `while`.
+        "fn f(a)\n  let v = [1, 2, 3]\n  if a % 2 == 0 then\n    let s = v\n    for k in range(0, 2) do\n      v = append(v, 9)\n    end\n    print(s)\n  end\n  v\nend\nprint(f(2), f(3))",
+        "let v = {n: 1, m: 2}\nmatch 3\n  when 3 ->\n    let s = v\n    for j in range(0, 2) do\n      v.n = j + 5\n    end\n    print(s)\n  when _ -> print(0)\nend\nprint(v)",
+        "let v = [1, 2, 3]\nif len(v) == 3 then\n  let s = v\n  let w = 2\n  while w > 0 do\n    w = w - 1\n    v = append(v, w)\n  end\n  print(s)\nend\nprint(v)",
+        // The reference is rewritten after the loop instead of read.
+        "let v = [1, 2, 3]\nif len(v) == 3 then\n  let s = v\n  for k in range(0, 2) do\n    v = append(v, 9)\n  end\n  s = append(s, 0)\n  print(s)\nend\nprint(v)",
+        // Held in a container, and through a second name.
+        "let v = [1, 2, 3]\nif len(v) == 3 then\n  let s = v\n  let t = s\n  for k in range(0, 2) do\n    v = append(v, 9)\n  end\n  print(t)\nend\nprint(v)",
+    ];
+    for code in shapes {
+        assert_inplace_parity(code);
+        assert_eq!(inplace_count(code), 0, "a reference read after the loop must not fire:\n{code}");
+    }
+    // What must keep firing: the reference is only observed, and before the
+    // loop starts; or there is no reference at all.
+    let fine = [
+        "let v = [1, 2, 3]\nif len(v) == 3 then\n  let s = v\n  print(len(s), s[0])\n  for k in range(0, 2) do\n    v = append(v, 9)\n  end\nend\nprint(v)",
+        "let v = [1, 2, 3]\nfor k in range(0, 2) do\n  print(len(v))\n  for j in range(0, 2) do\n    v = append(v, 9)\n  end\nend\nprint(v)",
+    ];
+    for code in fine {
+        assert_inplace_parity(code);
+        assert!(inplace_count(code) > 0, "an observation in front of the loop must not stop it:\n{code}");
+    }
+}
+
 /// A differential sweep over guard shapes: every mutation loop wrapped in an
 /// `if`/`match`, every way a branch can leak the container, and the `state`
 /// variants run four times each. The fuzzer generates statement `if`s but never

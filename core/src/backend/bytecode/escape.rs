@@ -1391,13 +1391,34 @@ impl<'p> Analysis<'p> {
             })
             .map(|(_, &p)| p)
             .collect();
+
+        // "Into the accumulator" means on into the spine: a user whose value
+        // some backbone term or back edge reads in turn. Being in the web is
+        // not enough. Inside a guard or an enclosing loop the region reaches
+        // back before the loop, so `let s = xs` written there is a web
+        // carrier like any other copy, yet it is the same retained reference
+        // (`if c then let s = xs; for … do xs = append(xs, i) end; print(s)
+        // end` printed the grown list). And the linearity check below cannot
+        // see it, because it does not count the loop phi reading the same
+        // value as a competing reader. So a web user that feeds nothing on
+        // the spine is held to what a user outside the web is: it may
+        // observe, before the id is rewritten.
+        let spine: HashSet<TermId> = {
+            let mut seeds: Vec<TermId> = backbone.terms.iter().copied().collect();
+            for p in &backbone.phis {
+                seeds.extend(self.phi_srcs.get(p).into_iter().flatten().copied());
+            }
+            self.backward_carrier_closure(&seeds)
+        };
         for &t in &backbone.terms {
             if exempt.contains(&t) {
                 continue;
             }
             let mutated_at = self.first_mutation_index_after(t);
             for &u in self.users.get(&t).into_iter().flatten() {
-                if web.contains(&u) || anchor.is_some_and(|k| self.writes_state_key(u, k)) {
+                if (web.contains(&u) && spine.contains(&u))
+                    || anchor.is_some_and(|k| self.writes_state_key(u, k))
+                {
                     continue;
                 }
                 if !self.observes_before_mutation(u, t, mutated_at) {

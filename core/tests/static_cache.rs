@@ -49,7 +49,27 @@ fn run_frame(w: &mut World) -> String {
     };
     let out = w.env.take_output().join("\n");
     let state = serde_json::Value::Object(w.env.get_state_json(w.pid, w.sid));
-    format!("{out}\n=> {result}\nstate {state}")
+    format!("{out}\n=> {result}\nstate {state}{}", observed(w))
+}
+
+/// What a host that observes reads after a frame, in both of the ways one
+/// can: the map by qualified name (as `Env::get_observations_json` orders
+/// it), and the buffer itself term by term. Nothing when observation is
+/// off.
+fn observed(w: &World) -> String {
+    if !w.env.observations().enabled {
+        return String::new();
+    }
+    let by_name = serde_json::Value::Object(w.env.get_observations_json(w.pid, w.sid));
+    let heap = w.env.heap_for(w.sid).unwrap();
+    let mut by_term: Vec<(u32, String)> = w
+        .env
+        .observations()
+        .iter()
+        .map(|(t, v)| (t.0, petal::value::value_to_json(&v, heap).to_string()))
+        .collect();
+    by_term.sort();
+    format!("\nobserved {by_name}\nterms {by_term:?}")
 }
 
 /// The policies the cache is held against: each pair differs in the cache
@@ -70,14 +90,26 @@ fn pairs() -> Vec<(RunPolicy, RunPolicy)> {
 /// default policy, and how many runs the cache skipped there.
 fn same_on_and_off(src: &str, frames: usize) -> (Vec<String>, u64) {
     let mut first = None;
-    for (on, off) in pairs() {
-        let (mut a, mut b) = (world(src, on), world(src, off));
+    // Each pair again with observations on: a frame that skips a segment
+    // must report every named value the frame that ran it reports.
+    for (observe, (on, off)) in [false, true].into_iter().flat_map(|o| pairs().into_iter().map(move |p| (o, p))) {
+        let watch = |e: &mut Env| {
+            if observe {
+                e.observations_mut().enable()
+            }
+        };
+        let (mut a, mut b) = (world_with(src, on, watch), world_with(src, off, watch));
         let mut out = Vec::new();
         for i in 0..frames {
             let (fa, fb) = (frame(&mut a), frame(&mut b));
-            assert_eq!(fa, fb, "frame {i} differs with the cache on ({:?})\n{src}", on.name());
+            assert_eq!(
+                fa, fb,
+                "frame {i} differs with the cache on ({:?}, observations {observe})\n{src}",
+                on.name()
+            );
             out.push(fa);
         }
+        assert!(a.env.static_cache_enabled(), "the cache is on (observations {observe})");
         let skips = a.env.static_values(a.sid).map_or(0, |v| v.stats.skips);
         assert_eq!(
             b.env.static_values(b.sid).map_or(0, |v| v.slots.len()),
@@ -378,7 +410,9 @@ fn the_cache_is_off_where_it_cannot_help_or_must_not_interfere() {
     assert_eq!(lowered(&|e| e.set_policy(RunPolicy::EXPLAIN)), (false, false, 0));
     assert_eq!(lowered(&|e| e.set_policy(RunPolicy::parse("fast-static").unwrap())), (false, false, 0));
     assert_eq!(lowered(&|e| e.set_static_cache(false)), (false, false, 0));
-    assert_eq!(lowered(&|e| e.observations_mut().enable()), (false, false, 0), "observations are preserved");
+    // Observations do not turn it off: a skipped segment reports what it
+    // observed when it ran (`a_skipped_segment_reports_what_it_observed`).
+    assert_eq!(lowered(&|e| e.observations_mut().enable()), (true, true, 1), "observations are preserved");
     assert_eq!(lowered(&|e| e.trace_mut().enable()), (false, false, 0), "the per-term trace is preserved");
     assert_eq!(
         lowered(&|e| e.set_static_audit(petal::static_audit::StaticAuditMode::Watch)),
@@ -1172,6 +1206,8 @@ fn a_table_does_not_outlive_the_lowering_it_was_filled_under() {
     ];
     for (what, step) in steps {
         step(&mut a.env);
+        // What a host observes is part of a frame here.
+        b.env.observations_mut().enabled = a.env.observations().enabled;
         for i in 0..2 {
             assert_eq!(frame(&mut a), frame(&mut b), "{what}: frame {i}");
         }

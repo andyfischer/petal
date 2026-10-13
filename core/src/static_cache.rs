@@ -149,10 +149,49 @@
 //! reload, and one that is rebuilt is never swapped for the old one, because
 //! the segment has already published the new.
 //!
+//! # Observations
+//!
+//! A host that reads the last value bound to every named term
+//! ([`crate::observe`]: Garden's panels, `--observe`) must read the same
+//! thing from a frame that skipped a segment as from one that ran it. So
+//! where the lowering preserves observations ([`StaticLayout::observes`]) a
+//! segment that executes writes down what was observed while it did, in the
+//! functions it called too, one value per term (the buffer is last write
+//! wins, and nothing else runs inside a segment, so the last value of each
+//! term is all a reader can ever see of it). The `StaticStore` keeps that
+//! log with the stack, and a `StaticSkip` that is taken records it again,
+//! where the segment stood. This is what a memoized scope does with
+//! `Dep::Observed`.
+//!
+//! The log is part of what a skip needs: a segment counts as built only
+//! when it has one ([`StaticSlots::keep_log`]). A reload that leaves the
+//! lowering in place (moved text, a patched literal) hands on the log of a
+//! segment the edit did not reach, which is asked of every statement in
+//! the segment and not only of the ones whose values are stored
+//! ([`RunFollow`]): `let K10 = K9` is in the code for its name alone, has
+//! no slot, and its segment's log names its value. A reload that
+//! recompiles hands on none, since a log names terms of the old program.
+//! A segment left with its values and no log executes once more, on the
+//! next frame, to write it again, and its `StaticStore` puts the kept
+//! values back in the registers (and the kept record of an enum back in
+//! the enum table): the values, and what holds them, are as kept as they
+//! are with observations off. A log entry that named the value built in
+//! place of a kept one names the kept one. A segment whose rebuild a drag
+//! put off keeps its log with its old values.
+//!
+//! One thing is not kept that would be without observations: a statement
+//! that edits in place a container another statement built (`apply_runs`).
+//! The optimizer edits in place where the program can no longer reach the
+//! old value, but the buffer still names it, and shows the edit.
+//!
+//! The values a log holds are roots for the collector. They are the ones
+//! the observation buffer would hold until the next run anyway; with the
+//! cache on they are held for as long as the segment is kept.
+//!
 //! The cache is off under the `baseline` and `explain` policies, for
-//! run-once `petal run`, whenever observations or the per-term trace are
-//! preserved (a skipped run records nothing for them), and under the static
-//! audit.
+//! run-once `petal run`, whenever the per-term trace is preserved (a
+//! skipped run records nothing for it, and what it would have recorded is
+//! every instruction, not one value per name), and under the static audit.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
@@ -254,6 +293,23 @@ pub struct FollowInfo {
     pub decls: Vec<FollowDecl>,
     /// One per slot of the layout.
     pub slots: Vec<SlotFollow>,
+    /// One per run of the layout: what a segment's observation log depends
+    /// on. Empty where the lowering does not observe.
+    pub runs: Vec<RunFollow>,
+}
+
+/// What a reload needs to know about one segment to say whether what it
+/// observed still holds (the module docs, "Observations"). This is wider
+/// than what its slots depend on: a segment also holds the statements
+/// nothing reads (`let K10 = K9`, kept in the code for its name alone),
+/// and the log names their values too.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RunFollow {
+    /// Every declaration a statement of the segment depends on, as sorted
+    /// indices into [`FollowInfo::decls`]. `None` when that is not known.
+    pub deps: Option<Box<[u32]>>,
+    /// The terms the segment's instructions belong to: where it is written.
+    pub origins: Vec<TermId>,
 }
 
 /// One `StaticSkip`: a segment of static instructions that builds some
@@ -296,6 +352,16 @@ pub struct StaticLayout {
     pub runs: Vec<StaticRun>,
     /// Slot -> the runs that feed it (the inverse of [`StaticRun::feeds`]).
     feeders: Vec<Vec<u32>>,
+    /// Run -> the segments it is the group of, in code order. Empty for a
+    /// segment.
+    members: Vec<Vec<u32>>,
+    /// The lowering preserves observations: a segment keeps a log of what
+    /// was observed while it executed, and a skip records it again (see the
+    /// module docs, "Observations").
+    pub observes: bool,
+    /// Per run, the terms of its instructions, on the way to
+    /// [`FollowInfo::runs`].
+    run_origins: Vec<Vec<TermId>>,
     /// Runs of candidate instructions the pass found, skippable or not.
     pub candidate_runs: usize,
     /// Root instructions before the pass added its own.
@@ -319,6 +385,12 @@ impl StaticLayout {
     /// The segment whose `StaticStore` fills `slot`.
     pub fn segment_of(&self, slot: u32) -> Option<&StaticRun> {
         self.feeders(slot).iter().filter_map(|r| self.runs.get(*r as usize)).find(|r| !r.is_group())
+    }
+
+    /// The segments of the group `run`, in code order; empty when `run` is
+    /// a segment itself.
+    pub fn segments_under(&self, run: u32) -> &[u32] {
+        self.members.get(run as usize).map(|m| &m[..]).unwrap_or(&[])
     }
 
     /// The checks a frame makes when every value is kept: one per stretch
@@ -366,6 +438,12 @@ pub struct StaticStats {
     /// Rebuilt values that turned out identical to the one the slot held
     /// before the reload, which was kept instead.
     pub reused: u64,
+    /// Observations recorded again for skipped segments (see the module
+    /// docs, "Observations").
+    pub replayed: u64,
+    /// Segments executed with every value kept, only to write down what
+    /// they observe: once each after a reload that recompiled.
+    pub relogged: u64,
 }
 
 /// How a slow rebuild is put off while a value is being dragged (see
@@ -435,8 +513,20 @@ pub struct StaticSlots {
     /// the lowering in place.
     build_ns: Vec<u64>,
     building: Option<(u32, Instant)>,
+    /// The lowering preserves observations ([`StaticLayout::observes`]).
+    observes: bool,
+    /// Per run, what was observed while the segment last executed: the last
+    /// value of each term. `None` for a segment that has not completed since
+    /// the table was made, and for a group. Empty when `observes` is off.
+    logs: Vec<Option<ObservationLog>>,
+    /// What the segment in progress has observed so far.
+    log: Vec<(TermId, Value)>,
     pub stats: StaticStats,
 }
+
+/// What one segment observed: the last value of each named term bound while
+/// it executed, in the order of those last bindings.
+pub type ObservationLog = Arc<[(TermId, Value)]>;
 
 impl StaticSlots {
     /// Make the table the one for `layout` at constant revision `revision`:
@@ -468,6 +558,23 @@ impl StaticSlots {
         self.building = None;
         self.build_ns.clear();
         self.build_ns.resize(layout.runs.len(), 0);
+        // Where observations are preserved a segment is not built until its
+        // log is written: one more thing pending for it, and for its group.
+        self.observes = layout.observes;
+        self.logs.clear();
+        self.log.clear();
+        if self.observes {
+            self.logs.resize(layout.runs.len(), None);
+            for (i, run) in layout.runs.iter().enumerate() {
+                if run.is_group() {
+                    continue;
+                }
+                self.pending[i] += 1;
+                if let Some(g) = run.group {
+                    self.pending[g as usize] += 1;
+                }
+            }
+        }
     }
 
     /// Drop every value. The next run rebuilds them.
@@ -484,6 +591,9 @@ impl StaticSlots {
         self.deferred.clear();
         self.redo.clear();
         self.building = None;
+        self.observes = false;
+        self.logs.clear();
+        self.log.clear();
         // `build_ns` stays: `install` asks for it when the same lowering is
         // filled again, and `reset` drops it for any other.
     }
@@ -498,18 +608,28 @@ impl StaticSlots {
     /// `seeds` says slot by slot: what a reload that follows the diff leaves
     /// (see the module docs). `timings` are the per-run build times of the
     /// table this one replaces, kept when it was for the same lowering.
+    /// `logs` are that table's observation logs, likewise, with for each
+    /// run whether what it observed still holds.
     pub(crate) fn install(
         &mut self,
         layout: &StaticLayout,
         revision: u64,
         seeds: &[Seed],
         timings: Option<Vec<u64>>,
+        logs: Option<(Vec<Option<ObservationLog>>, &[bool])>,
     ) {
         let last_live_edit = self.last_live_edit;
         self.reset(layout, revision);
         self.last_live_edit = last_live_edit;
         if let Some(t) = timings.filter(|t| t.len() == layout.runs.len()) {
             self.build_ns = t;
+        }
+        if let Some((logs, holds)) = logs.filter(|(l, _)| self.observes && l.len() == layout.runs.len()) {
+            for (i, log) in logs.into_iter().enumerate() {
+                if let (Some(&true), Some(log)) = (holds.get(i), log) {
+                    self.set_log(layout, i as u32, log);
+                }
+            }
         }
         for (i, seed) in seeds.iter().enumerate().take(self.slots.len()) {
             match *seed {
@@ -534,6 +654,89 @@ impl StaticSlots {
                 }
             }
         }
+    }
+
+    /// The per-run observation logs, for the table that replaces this one.
+    pub(crate) fn logs(&self) -> Vec<Option<ObservationLog>> {
+        self.logs.clone()
+    }
+
+    /// Whether segments keep a log of what they observe.
+    #[inline]
+    pub(crate) fn observes(&self) -> bool {
+        self.observes
+    }
+
+    /// A named term was bound to `value`. Written down while a segment is
+    /// executing, for the skips that will stand in for it.
+    #[inline]
+    pub(crate) fn note_observation(&mut self, term: TermId, value: Value) {
+        if self.observes && self.building.is_some() {
+            self.log.push((term, value));
+        }
+    }
+
+    /// What `run` observed the last time it executed to its store.
+    #[inline]
+    pub(crate) fn log_of(&self, run: u32) -> Option<&ObservationLog> {
+        self.logs.get(run as usize)?.as_ref()
+    }
+
+    /// Whether the segment `run` has its values but not its log: it was
+    /// kept through a reload that recompiled.
+    pub(crate) fn lacks_log(&self, run: u32) -> bool {
+        self.observes && matches!(self.logs.get(run as usize), Some(None))
+    }
+
+    /// Whether every slot of a `StaticStore` holds a value.
+    pub(crate) fn all_filled(&self, slots: &[(u32, Reg)]) -> bool {
+        slots.iter().all(|(s, _)| matches!(self.slots.get(*s as usize), Some(Slot::Filled(_))))
+    }
+
+    /// In the log of the segment in progress, make every entry that names
+    /// `from` name `to`: the store put `to` in the register in place of the
+    /// value the segment built. A heap value is the same object wherever it
+    /// is named; a number is only the slot's own where one of `origins`
+    /// (the terms that write the slot's register) bound it.
+    pub(crate) fn rename_logged(&mut self, from: Value, to: Value, origins: &[TermId]) {
+        let scalar =
+            matches!(from, Value::Nil | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::Symbol(_));
+        for (term, value) in &mut self.log {
+            if *value == from && (!scalar || origins.contains(term)) {
+                *value = to;
+            }
+        }
+    }
+
+    /// The segment `run` reached its store and its values are kept: keep
+    /// what it observed, the last value of each term.
+    pub(crate) fn keep_log(&mut self, layout: &StaticLayout, run: u32) {
+        if !self.observes {
+            return;
+        }
+        let mut seen: HashSet<TermId> = HashSet::with_capacity(self.log.len());
+        let mut last: Vec<(TermId, Value)> =
+            self.log.drain(..).rev().filter(|(t, _)| seen.insert(*t)).collect();
+        last.reverse();
+        self.set_log(layout, run, last.into());
+    }
+
+    fn set_log(&mut self, layout: &StaticLayout, run: u32, log: ObservationLog) {
+        let Some(entry) = self.logs.get_mut(run as usize) else { return };
+        if entry.replace(log).is_some() {
+            return;
+        }
+        let group = layout.runs.get(run as usize).and_then(|r| r.group);
+        for r in [Some(run), group].into_iter().flatten() {
+            if let Some(p) = self.pending.get_mut(r as usize) {
+                *p = p.saturating_sub(1);
+            }
+        }
+    }
+
+    /// The segment in progress is not kept: neither is what it observed.
+    pub(crate) fn drop_log(&mut self) {
+        self.log.clear();
     }
 
     /// The per-run build times, for the table that replaces this one.
@@ -624,16 +827,18 @@ impl StaticSlots {
     #[inline]
     pub(crate) fn begin_build(&mut self, run: u32) {
         self.building = Some((run, Instant::now()));
+        // A segment that raised left its half-written log behind.
+        self.log.clear();
     }
 
-    /// The run in progress reached its `StaticStore`.
+    /// The run in progress reached its `StaticStore`: which one it was.
     #[inline]
-    pub(crate) fn end_build(&mut self) {
-        if let Some((run, since)) = self.building.take()
-            && let Some(ns) = self.build_ns.get_mut(run as usize)
-        {
+    pub(crate) fn end_build(&mut self) -> Option<u32> {
+        let (run, since) = self.building.take()?;
+        if let Some(ns) = self.build_ns.get_mut(run as usize) {
             *ns = since.elapsed().as_nanos().min(u64::MAX as u128) as u64;
         }
+        Some(run)
     }
 
     /// How many slots the table has, and how many hold a value.
@@ -736,6 +941,17 @@ impl StaticSlots {
             }
         }
         for v in self.prior.iter().flatten() {
+            mark(*v);
+        }
+        // What a skip records again, and what the segment in progress has
+        // observed: a value bound inside a function the segment called is
+        // held by nothing else.
+        for log in self.logs.iter().flatten() {
+            for (_, v) in log.iter() {
+                mark(*v);
+            }
+        }
+        for (_, v) in &self.log {
             mark(*v);
         }
     }
@@ -1215,14 +1431,18 @@ fn cut(
 /// the module docs for the rules. Runs after every other pass: it reads
 /// registers and labels as they finally are, and nothing after it moves
 /// code.
+///
+/// `observes`: the lowering preserves observations, so a skipped segment
+/// must report what it observed (the module docs, "Observations").
 pub fn apply(
     bc: &mut BytecodeProgram,
     program: &Program,
     analysis: &StaticAnalysis,
     natives: &NativeFnTable,
     plan: &StaticPlan,
+    observes: bool,
 ) {
-    let slots = apply_runs(bc, program, analysis, natives, plan);
+    let slots = apply_runs(bc, program, analysis, natives, plan, observes);
     follow(&mut bc.statics, slots, program, analysis);
 }
 
@@ -1313,7 +1533,24 @@ fn follow(
             slot.key = None;
         }
     }
-    layout.follow = Arc::new(FollowInfo { decls, slots });
+    // What each segment's observation log depends on: every statement in
+    // it, stored or not.
+    let runs: Vec<RunFollow> = std::mem::take(&mut layout.run_origins)
+        .into_iter()
+        .map(|origins| {
+            let mut deps: Option<BTreeSet<u32>> = Some(BTreeSet::new());
+            for &t in &origins {
+                let of = crate::static_audit::root_statement(program, &parents, t)
+                    .and_then(|root| analysis.root_dependencies(program, root));
+                match (of, deps.as_mut()) {
+                    (Some(of), Some(all)) => all.extend(of),
+                    _ => deps = None,
+                }
+            }
+            RunFollow { deps: deps.map(|d| d.into_iter().collect()), origins }
+        })
+        .collect();
+    layout.follow = Arc::new(FollowInfo { decls, slots, runs });
 }
 
 /// Keys for the slots that hold a value with no declaration of its own
@@ -1470,10 +1707,12 @@ fn apply_runs(
     analysis: &StaticAnalysis,
     natives: &NativeFnTable,
     plan: &StaticPlan,
+    observes: bool,
 ) -> Vec<SlotFollow> {
     let mut written_by: Vec<SlotFollow> = Vec::new();
     let mut layout = StaticLayout {
         id: NEXT_LAYOUT_ID.fetch_add(1, Ordering::Relaxed),
+        observes,
         ..Default::default()
     };
     let n = bc.root.code.len();
@@ -1520,6 +1759,49 @@ fn apply_runs(
         let own_dynamic = origin(ip).is_some_and(|t| class(t) == TermClass::Dynamic);
         if own_dynamic || !skippable_inst(&bc.root.code[ip], program, natives) {
             demoted.insert(s);
+        }
+    }
+    // Under observation, an instruction that edits a container in place is
+    // only left out with the statement that built the container. The
+    // optimizer writes in place where the program can no longer reach the
+    // old value, but the observation buffer still names it: `let BASE =
+    // [..]` that is rebuilt on every run, then `let cur = drop_last(BASE)`
+    // in place, shows the shortened list under both names. A frame that
+    // skipped the second statement would show the whole list under `BASE`.
+    if observes {
+        for ip in 0..n {
+            let Some(s) = stmt[ip] else { continue };
+            let container = match &bc.root.code[ip] {
+                Inst::SetFieldInPlace { obj, .. } | Inst::SetIndexInPlace { obj, .. } => Some(*obj),
+                Inst::BuiltinCall { args, in_place: true, .. } => args.first().copied(),
+                _ => None,
+            };
+            let Some(container) = container else { continue };
+            // The registers the container may have come through unchanged.
+            let mut carried: Vec<Reg> = vec![container];
+            let mut at = 0;
+            while at < carried.len() {
+                let r = carried[at];
+                at += 1;
+                for inst in &bc.root.code {
+                    let from = match inst {
+                        Inst::Move { dst, src } if *dst == r => Some(*src),
+                        Inst::MatchArm { subject, term, arm, .. }
+                            if bc.match_binds.get(&(*term, *arm)).is_some_and(|b| b.iter().any(|(_, x)| *x == r)) =>
+                        {
+                            Some(*subject)
+                        }
+                        _ => None,
+                    };
+                    if let Some(from) = from.filter(|f| !carried.contains(f)) {
+                        carried.push(from);
+                    }
+                }
+            }
+            let foreign = (0..n).any(|w| stmt[w] != Some(s) && writes[w].iter().any(|r| carried.contains(r)));
+            if foreign {
+                demoted.insert(s);
+            }
         }
     }
 
@@ -1835,10 +2117,22 @@ fn apply_runs(
         }
         layout.runs[seg.index as usize].reads = from.into_iter().collect();
     }
+    if observes {
+        layout.run_origins = vec![Vec::new(); layout.runs.len()];
+        for seg in &segments {
+            let mut seen: HashSet<TermId> = HashSet::new();
+            layout.run_origins[seg.index as usize] =
+                (seg.start..seg.end).filter_map(origin).filter(|t| seen.insert(*t)).collect();
+        }
+    }
     layout.feeders = vec![Vec::new(); layout.slots.len()];
+    layout.members = vec![Vec::new(); layout.runs.len()];
     for (i, run) in layout.runs.iter().enumerate() {
         for &s in &run.feeds {
             layout.feeders[s as usize].push(i as u32);
+        }
+        if let Some(g) = run.group {
+            layout.members[g as usize].push(i as u32);
         }
     }
     if layout.runs.is_empty() {

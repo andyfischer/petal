@@ -515,12 +515,13 @@ impl Env {
         let mut flags = self.policy.opts;
         flags.preserve_observations |= self.observations.enabled || self.trace.enabled;
         flags.preserve_trace |= self.trace.enabled;
-        // A run the static cache skips records nothing, so it is off whenever
-        // something reads what instructions recorded: observations, the
-        // trace, the static audit (which watches static code run and, in its
-        // static-only mode, rewrites the root code itself).
+        // A run the static cache skips records nothing for the trace, and
+        // the static audit watches static code run (in its static-only mode
+        // it rewrites the root code itself): the cache is off under either.
+        // Observations it reports itself, from what each segment observed
+        // when it last executed (`crate::static_cache`, "Observations").
         let audited = self.static_audit.enabled && !self.static_audit.keeps_static_values();
-        if flags.preserve_observations || flags.preserve_trace || audited {
+        if flags.preserve_trace || audited {
             flags.static_cache = false;
         }
         flags

@@ -112,8 +112,9 @@ impl Env {
     }
 
     /// Whether runs keep static values right now: the policy asks for it
-    /// and nothing that reads per-instruction results (observations, the
-    /// trace, the static audit) is on.
+    /// and nothing that reads per-instruction results (the trace, the
+    /// static audit) is on. Observations do not turn it off: a skipped
+    /// segment reports what it observed when it last ran.
     pub fn static_cache_enabled(&self) -> bool {
         self.effective_opt_flags().static_cache
     }

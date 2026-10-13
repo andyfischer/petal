@@ -203,6 +203,12 @@ pub(super) struct Followed {
     /// Per slot: how long the runs that rebuild it took last time.
     build: Vec<Duration>,
     timings: Vec<u64>,
+    /// Per run: what the segment observed when it last executed (see
+    /// `static_cache`, "Observations"). Empty when the table was stale.
+    logs: Vec<Option<crate::static_cache::ObservationLog>>,
+    /// Per run: the edit reached something a statement of the segment
+    /// depends on, so what the segment observed may no longer hold.
+    log_dirty: Vec<bool>,
     /// Per declaration of the old program: the edit changed it.
     changed: Vec<bool>,
     /// Why nothing may be kept.
@@ -453,6 +459,19 @@ impl Env {
             dirty,
             build,
             timings: table.timings(),
+            logs: if current { table.logs() } else { Vec::new() },
+            log_dirty: follow
+                .runs
+                .iter()
+                .map(|run| {
+                    cleared.is_some()
+                        || (!spans.is_empty()
+                            && (written_inside(program, &run.origins, &spans)
+                                || run.deps.as_deref().is_none_or(|deps| {
+                                    any_changed && deps.iter().any(|d| changed.get(*d as usize) != Some(&false))
+                                })))
+                })
+                .collect(),
             changed,
             cleared,
             files: file_table(program),
@@ -524,6 +543,9 @@ impl Env {
 
         let mut report = StaticReload { cleared: cleared.clone(), ..Default::default() };
         let mut seeds: Vec<Seed> = Vec::with_capacity(layout.slots.len());
+        // Slots given a literal's new value without a run: what their
+        // segment observed is the old one.
+        let mut given: HashSet<usize> = HashSet::new();
         for (i, info) in follow.slots.iter().enumerate().take(layout.slots.len()) {
             let before = if same_lowering {
                 Some(i)
@@ -564,6 +586,7 @@ impl Env {
                     if clean {
                         Seed::Kept(v)
                     } else if let Some(now) = literal {
+                        given.insert(i);
                         Seed::Kept(now)
                     } else if cleared.is_none()
                         && same_lowering
@@ -652,11 +675,37 @@ impl Env {
                 }
             }
         }
+        // What a segment observed is what it would observe now when the
+        // lowering (and so every term) is the one it ran under, it keeps
+        // every value it stored and read, and the edit reached nothing any
+        // of its statements depends on. A segment whose rebuild is put off
+        // keeps its log as it keeps its values: both are the old ones.
+        let holds: Vec<bool> = layout
+            .runs
+            .iter()
+            .enumerate()
+            .map(|(r, run)| {
+                let at = |s: &u32| (seeds.get(*s as usize).copied(), given.contains(&(*s as usize)));
+                if run.is_group() || !same_lowering {
+                    false
+                } else if run.stores.iter().all(|s| matches!(at(s), (Some(Seed::Deferred(_)), false))) {
+                    true
+                } else {
+                    old.log_dirty.get(r) == Some(&false)
+                        && run
+                            .stores
+                            .iter()
+                            .chain(&run.reads)
+                            .all(|s| matches!(at(s), (Some(Seed::Kept(_) | Seed::Deferred(_)), false)))
+                }
+            })
+            .collect();
         stack.statics.install(
             layout,
             program.constants.revision(),
             &seeds,
             same_lowering.then_some(old.timings),
+            same_lowering.then_some((old.logs, &holds[..])),
         );
         stack.statics.set_redo(
             seeds

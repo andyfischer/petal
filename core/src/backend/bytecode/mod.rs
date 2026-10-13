@@ -116,7 +116,8 @@ fn lower(
     // The static-value cache wraps runs of the code as it finally is: it
     // adds two instructions per run and moves or removes none.
     if let (Some((analysis, natives)), Some(plan)) = (statics, &plan) {
-        crate::static_cache::apply(&mut bc, program, analysis, natives, plan);
+        // A segment that is skipped must still report what it observes.
+        crate::static_cache::apply(&mut bc, program, analysis, natives, plan, flags.preserve_observations);
         if std::env::var("PETAL_OPT_STATS").is_ok() {
             eprint!("{}", crate::static_cache::describe(&bc.statics));
         }

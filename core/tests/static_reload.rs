@@ -50,7 +50,25 @@ fn run_frame(w: &mut World) -> String {
     };
     let out = w.env.take_output().join("\n");
     let state = serde_json::Value::Object(w.env.get_state_json(w.pid, w.sid));
-    format!("{out}\n=> {result}\nstate {state}")
+    format!("{out}\n=> {result}\nstate {state}{}", observed(w))
+}
+
+/// What a host that observes reads after a frame: the map by qualified
+/// name, and the buffer term by term. Nothing when observation is off.
+fn observed(w: &World) -> String {
+    if !w.env.observations().enabled {
+        return String::new();
+    }
+    let by_name = serde_json::Value::Object(w.env.get_observations_json(w.pid, w.sid));
+    let heap = w.env.heap_for(w.sid).unwrap();
+    let mut by_term: Vec<(u32, String)> = w
+        .env
+        .observations()
+        .iter()
+        .map(|(t, v)| (t.0, petal::value::value_to_json(&v, heap).to_string()))
+        .collect();
+    by_term.sort();
+    format!("\nobserved {by_name}\nterms {by_term:?}")
 }
 
 /// A stack's table as text: one line per slot, with the value it holds.
@@ -110,14 +128,34 @@ fn policies() -> Vec<RunPolicy> {
 /// reload under the default policy.
 fn follow_modules(old: &str, new: &str, old_modules: Modules, new_modules: Modules) -> ReloadReport {
     let mut first = None;
-    for policy in policies() {
-        let what = policy.name().unwrap_or_default();
+    // Every policy twice: as it is, and with observations on, where a
+    // third stack runs without the cache at all. What a host observes after
+    // each frame is then part of what is compared, and following the diff
+    // must agree both with rebuilding everything and with keeping nothing.
+    for (observe, policy) in [false, true].into_iter().flat_map(|o| policies().into_iter().map(move |p| (o, p))) {
+        let what = format!("{}{}", policy.name().unwrap_or_default(), if observe { ", observed" } else { "" });
         let mut a = world(old, old_modules, policy, true);
         let mut b = world(old, old_modules, policy, false);
-        for _ in 0..2 {
-            assert_eq!(frame(&mut a), frame(&mut b), "[{what}] before the edit");
+        let mut off = observe.then(|| world(old, old_modules, policy.with_static_cache(false), true));
+        if observe {
+            for w in [&mut a, &mut b].into_iter().chain(off.as_mut()) {
+                w.env.observations_mut().enable();
+            }
         }
-        for w in [&mut a, &mut b] {
+        // `a` against the reload that rebuilds everything, and against no
+        // cache at all.
+        let same = |a: &mut World, b: &mut World, off: &mut Option<World>, reset: bool, step: &str| {
+            let run = |w: &mut World| if reset { frame(w) } else { run_frame(w) };
+            let fa = run(a);
+            assert_eq!(fa, run(b), "[{what}] {step}\n{new}");
+            if let Some(off) = off.as_mut() {
+                assert_eq!(fa, run(off), "[{what}] {step}, against the cache off\n{new}");
+            }
+        };
+        for _ in 0..2 {
+            same(&mut a, &mut b, &mut off, true, "before the edit");
+        }
+        for w in [&mut a, &mut b].into_iter().chain(off.as_mut()) {
             for (name, source) in new_modules {
                 w.env.register_module(name, source);
             }
@@ -127,13 +165,18 @@ fn follow_modules(old: &str, new: &str, old_modules: Modules, new_modules: Modul
             .reload_program(a.sid, new, None)
             .unwrap_or_else(|e| panic!("[{what}] reload: {e}"));
         let plain = b.env.reload_program(b.sid, new, None).unwrap();
+        if let Some(off) = off.as_mut() {
+            let none = off.env.reload_program(off.sid, new, None).unwrap();
+            assert_eq!(report.outcome, none.outcome, "[{what}] outcome, against the cache off");
+            assert!(a.env.static_cache_enabled() && !off.env.static_cache_enabled(), "[{what}]");
+        }
         assert_eq!(report.outcome, plain.outcome, "[{what}] outcome");
         assert_report_counts(&a, &report, &format!("[{what}]\n{new}"));
         assert!(plain.statics.is_none(), "[{what}] the oracle follows nothing");
-        assert_eq!(run_frame(&mut a), run_frame(&mut b), "[{what}] the run after the reload\n{new}");
+        same(&mut a, &mut b, &mut off, false, "the run after the reload");
         assert_same_tables(&a, &b, &format!("[{what}] the tables after the reload\n{new}"));
         for i in 0..2 {
-            assert_eq!(frame(&mut a), frame(&mut b), "[{what}] frame {i} after the reload");
+            same(&mut a, &mut b, &mut off, true, &format!("frame {i} after the reload"));
             assert_same_tables(&a, &b, &format!("[{what}] the tables, frame {i}"));
         }
         first.get_or_insert(report);

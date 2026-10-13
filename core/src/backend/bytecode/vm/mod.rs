@@ -359,6 +359,7 @@ impl<'a> Vm<'a> {
                         let result = self.reg(frame_idx, dst);
                         self.observations.record(term, result);
                         self.memo_note_observation(term, result);
+                        self.stack.statics.note_observation(term, result);
                     }
                 }
                 sr

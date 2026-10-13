@@ -639,13 +639,27 @@ impl<'a> Vm<'a> {
                     let stats = &mut self.stack.statics.stats;
                     stats.skips += 1;
                     stats.skipped_instructions += saved;
+                    // What the skipped segments would have observed, where
+                    // they stood.
+                    if self.observations.enabled {
+                        self.static_replay_observations(*run);
+                    }
                     self.stack.vm_frames[fi].ip = *after as usize;
                 } else {
                     self.stack.statics.begin_build(*run);
                 }
             }
             Inst::StaticStore { slots } => {
-                self.stack.statics.end_build();
+                let run = self.stack.statics.end_build();
+                // Where observations are preserved: what the segment built,
+                // to tell below which of it the store replaced.
+                let observes = self.stack.statics.observes();
+                let built: SmallVec<[Value; 4]> = if observes {
+                    slots.iter().map(|&(_, r)| self.reg(fi, r)).collect()
+                } else {
+                    SmallVec::new()
+                };
+                let mut kept = false;
                 if self.stack.statics.wants(slots) {
                     // A value rebuilt after a reload that is the value the
                     // slot held before it: keep the old one, in the register
@@ -681,6 +695,7 @@ impl<'a> Vm<'a> {
                     match bad {
                         Some((slot, what)) => self.stack.statics.reject(slots, slot, what),
                         None => {
+                            kept = true;
                             for &(slot, r) in slots.iter() {
                                 // A slot that kept its value through a
                                 // reload while the run was executed for
@@ -695,6 +710,58 @@ impl<'a> Vm<'a> {
                                 self.stack.statics.fill(&self.bc.statics, slot, v);
                             }
                         }
+                    }
+                } else if observes
+                    && run.is_some_and(|run| self.stack.statics.lacks_log(run))
+                    && self.stack.statics.all_filled(slots)
+                {
+                    // Every value was kept through a reload that recompiled,
+                    // and the segment executed only to write down what it
+                    // observes. The kept values are the ones everything
+                    // reads, now and on every later run; what was built
+                    // here is dropped. An enum's data was published by the
+                    // segment: the kept record is published over it.
+                    kept = true;
+                    self.stack.statics.stats.relogged += 1;
+                    for &(slot, r) in slots.iter() {
+                        let Some(old) = self.stack.statics.get(slot) else { continue };
+                        self.set(fi, r, old);
+                        let tag = self.bc.statics.follow.slots.get(slot as usize).and_then(|s| s.enum_tag.as_deref());
+                        if let (Some(tag), Value::Map(record)) = (tag, old) {
+                            let tag = self.heap.intern_str(tag);
+                            self.stack.enums.publish(self.heap, tag, record);
+                        }
+                    }
+                }
+                if observes {
+                    match run {
+                        Some(run) if kept => {
+                            // An entry that names a value the store replaced
+                            // (by the kept one, or by the identical old one)
+                            // names what the register holds.
+                            let mut renamed = false;
+                            for (&(slot, r), &was) in slots.iter().zip(&built) {
+                                let now = self.reg(fi, r);
+                                if now != was {
+                                    let origins = self
+                                        .bc
+                                        .statics
+                                        .follow
+                                        .slots
+                                        .get(slot as usize)
+                                        .map_or(&[][..], |s| &s.origins[..]);
+                                    self.stack.statics.rename_logged(was, now, origins);
+                                    renamed = true;
+                                }
+                            }
+                            self.stack.statics.keep_log(&self.bc.statics, run);
+                            // The buffer of this very frame too: it then
+                            // holds what every later frame's skip records.
+                            if renamed && self.observations.enabled {
+                                self.static_replay_observations(run);
+                            }
+                        }
+                        _ => self.stack.statics.drop_log(),
                     }
                 }
             }

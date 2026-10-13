@@ -742,10 +742,18 @@ fn differential_fuzz() {
 /// Run `code` `runs` times on one stack, the way a host runs it every frame:
 /// each run's rendered value and prints, or its error. Also how many runs of
 /// static instructions the cache skipped.
-fn run_frames(code: &str, policy: RunPolicy, runs: usize) -> (Vec<Result<(String, Vec<String>), String>>, u64) {
+fn run_frames(
+    code: &str,
+    policy: RunPolicy,
+    runs: usize,
+    observe: bool,
+) -> (Vec<Result<(String, Vec<String>), String>>, u64) {
     let mut env = Env::new();
     env.set_policy(policy);
     env.set_echo(false);
+    if observe {
+        env.observations_mut().enable();
+    }
     let mut out = Vec::with_capacity(runs);
     let Ok(pid) = env.load_program(code) else {
         return (vec![Err("does not compile".to_string())], 0);
@@ -756,7 +764,19 @@ fn run_frames(code: &str, policy: RunPolicy, runs: usize) -> (Vec<Result<(String
         let result = env
             .run(sid)
             .map(|v| value::value_to_display_string(&v, env.heap()));
-        let prints = env.take_output();
+        let mut prints = env.take_output();
+        if observe {
+            // What a host reads from the buffer after the run: by name, and
+            // term by term.
+            let by_name = serde_json::Value::Object(env.get_observations_json(pid, sid));
+            let mut by_term: Vec<(u32, String)> = env
+                .observations()
+                .iter()
+                .map(|(t, v)| (t.0, value::value_to_json(&v, env.heap()).to_string()))
+                .collect();
+            by_term.sort();
+            prints.push(format!("observed {by_name} {by_term:?}"));
+        }
         out.push(result.map(|v| (v, prints)));
     }
     let skips = env.static_values(sid).map_or(0, |v| v.stats.skips);
@@ -774,16 +794,20 @@ fn assert_cache_parity(seed: u64, code: &str) -> u64 {
     let mut skipped = 0;
     for (i, name) in ["replay", "replay-memo", "baseline"].iter().enumerate() {
         let base = RunPolicy::parse(name).unwrap();
-        let (on, skips) = run_frames(code, base.with_static_cache(true), 3);
-        let (off, _) = run_frames(code, base.with_static_cache(false), 3);
-        assert_eq!(
-            on, off,
-            "static-cache divergence at seed {seed} under {name}: three runs with the \
-             cache on vs off disagree — reproduce with Gen::new({seed}).program()\
-             \n--- program ---\n{code}"
-        );
-        if i == 0 {
-            skipped = skips;
+        // Again with observations on: what a host reads from the buffer
+        // after each run is then compared too.
+        for observe in [false, true] {
+            let (on, skips) = run_frames(code, base.with_static_cache(true), 3, observe);
+            let (off, _) = run_frames(code, base.with_static_cache(false), 3, observe);
+            assert_eq!(
+                on, off,
+                "static-cache divergence at seed {seed} under {name} (observations {observe}): three \
+                 runs with the cache on vs off disagree — reproduce with Gen::new({seed}).program()\
+                 \n--- program ---\n{code}"
+            );
+            if i == 0 && !observe {
+                skipped = skips;
+            }
         }
     }
     skipped

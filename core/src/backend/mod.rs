@@ -85,8 +85,11 @@ pub struct OptFlags {
     /// has (the natives decide what is constant), so
     /// [`bytecode::lower_with_flags`] ignores it and
     /// [`bytecode::lower_with_statics`] honours it. An `Env` also drops it
-    /// whenever observations or the per-term trace are preserved, and under
-    /// the static audit: a skipped run records nothing for them to read.
+    /// whenever the per-term trace is preserved, and under the static
+    /// audit: a skipped run records nothing for them to read. With
+    /// `preserve_observations` it stays on, and a skipped segment reports
+    /// what it observed when it last ran (`crate::static_cache`,
+    /// "Observations").
     pub static_cache: bool,
     /// Hold `copy_propagation` back from deleting a dead `Move` whose term is
     /// **named**, so the observation buffer still reports that binding. Set by

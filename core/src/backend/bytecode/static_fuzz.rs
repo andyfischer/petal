@@ -606,9 +606,31 @@ struct Driven {
 }
 
 fn drive(texts: &[String; 3], policy: RunPolicy) -> Driven {
+    drive_observed(texts, policy, false)
+}
+
+/// What a host that observes reads after a run: the map by qualified name,
+/// and the buffer term by term.
+fn observed(env: &Env, pid: crate::program::ProgramId, sid: crate::stack::StackKey) -> String {
+    let by_name = serde_json::Value::Object(env.get_observations_json(pid, sid));
+    let mut by_term: Vec<(u32, String)> = env
+        .observations()
+        .iter()
+        .map(|(t, v)| (t.0, crate::value::value_to_json(&v, env.heap()).to_string()))
+        .collect();
+    by_term.sort();
+    format!("observed {by_name} {by_term:?}")
+}
+
+/// [`drive`], with observations on when `observe`: what a host reads from
+/// the buffer after each run is then part of the transcript.
+fn drive_observed(texts: &[String; 3], policy: RunPolicy, observe: bool) -> Driven {
     let mut env = Env::new();
     env.set_policy(policy);
     env.set_echo(false);
+    if observe {
+        env.observations_mut().enable();
+    }
     let mut out = Driven {
         transcript: Vec::new(),
         skips: 0,
@@ -640,6 +662,9 @@ fn drive(texts: &[String; 3], policy: RunPolicy) -> Driven {
                 out.errors += 1;
                 out.transcript.push(format!("error {e}"));
             }
+        }
+        if observe {
+            out.transcript.push(observed(env, pid, sid));
         }
     };
     for _ in 0..3 {
@@ -684,11 +709,15 @@ const POLICIES: [&str; 4] = ["replay", "replay-memo", "fast", "baseline"];
 fn assert_parity(seed: u64) -> Driven {
     let texts = versions(seed);
     let mut first = None;
-    for name in POLICIES {
+    // Each policy again with observations on: a run that skips a segment,
+    // before and after each reload, must leave the buffer a host reads as
+    // the run that executed it does.
+    for (observe, name) in [false, true].into_iter().flat_map(|o| POLICIES.map(|n| (o, n))) {
         let base = RunPolicy::parse(name).unwrap();
-        let on = drive(&texts, base.with_static_cache(true));
-        let off = drive(&texts, base.with_static_cache(false));
+        let on = drive_observed(&texts, base.with_static_cache(true), observe);
+        let off = drive_observed(&texts, base.with_static_cache(false), observe);
         assert_eq!(off.slots, 0, "the cache is off");
+        let name = if observe { format!("{name}, observed") } else { name.to_string() };
         if on.transcript != off.transcript {
             let at = on
                 .transcript

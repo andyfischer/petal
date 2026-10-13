@@ -44,6 +44,23 @@ impl<'a> Vm<'a> {
         }
     }
 
+    /// Record again what the skipped static run `run` observed the last time
+    /// it executed (see `crate::static_cache`, "Observations"): a segment's
+    /// own log, or for a group those of its segments in order.
+    pub(super) fn static_replay_observations(&mut self, run: u32) {
+        let members = self.bc.statics.segments_under(run);
+        let own = [run];
+        let mut replayed = 0u64;
+        for &segment in if members.is_empty() { &own[..] } else { members } {
+            let Some(log) = self.stack.statics.log_of(segment) else { continue };
+            for &(term, value) in log.iter() {
+                self.observations.record(term, value);
+            }
+            replayed += log.len() as u64;
+        }
+        self.stack.statics.stats.replayed += replayed;
+    }
+
     /// A field of an enum variant was read. One entry covers a run of reads:
     /// the dependency is on the stack's whole enum-data table.
     #[inline]
@@ -855,6 +872,9 @@ impl<'a> Vm<'a> {
                 Dep::Observed { term, value } => {
                     if self.observations.enabled {
                         self.observations.record(*term, *value);
+                        // A static segment that is executing writes down
+                        // what a replayed scope reports, like the rest.
+                        self.stack.statics.note_observation(*term, *value);
                     }
                 }
                 _ => {}

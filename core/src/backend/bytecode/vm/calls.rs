@@ -77,6 +77,7 @@ impl<'a> Vm<'a> {
                 if self.is_observable(call_site) {
                     self.observations.record(call_site, value);
                     self.memo_note_observation(call_site, value);
+                    self.stack.statics.note_observation(call_site, value);
                 }
             }
         }
@@ -507,6 +508,7 @@ impl<'a> Vm<'a> {
         if self.observations.enabled && self.is_observable(call_site) {
             self.observations.record(call_site, value);
             self.memo_note_observation(call_site, value);
+            self.stack.statics.note_observation(call_site, value);
         }
     }
 
@@ -630,6 +632,7 @@ impl<'a> Vm<'a> {
                 {
                     self.observations.record(call_site, value);
                     self.memo_note_observation(call_site, value);
+                    self.stack.statics.note_observation(call_site, value);
                 }
                 return Ok(());
             }

@@ -173,7 +173,8 @@ way, for code written against an earlier checkout.
   build took 4 ms or more waits for a 150 ms pause before it is rebuilt
   (`Env::set_static_debounce`, `Env::flush_static_rebuilds`); the dragged
   value itself never waits. `Env::set_static_follow(false)` is the old
-  behaviour. A reload that follows static values lowers the new program
+  behaviour. From C: `pb_vm_set_static_debounce`,
+  `pb_vm_flush_static_rebuilds`, `pb_vm_set_static_follow`. A reload that follows static values lowers the new program
   itself, which the next frame used to do. On Moses the frame after a
   reload runs 2,675 instructions where it ran 8,353 (2,567 for 35,292 with
   its constant tables as `const`); the recompile is the same half second.

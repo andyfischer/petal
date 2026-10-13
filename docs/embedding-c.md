@@ -603,6 +603,14 @@ vm.reload();                                // PB_RELOAD_UNCHANGED: nothing to d
   literal given `0.5`, a list of another length, a field that is not there.
 - Like a reload, a successful call ends the lifetime of the last run's views,
   and the program's functions are callable again after the next `run()`.
+- A static value built from the dragged literal is rebuilt on each tick,
+  unless its last build took 4 ms or more: then it keeps its value from the
+  second tick on and is rebuilt when the drag pauses for 150 ms. Call
+  `flush_static_rebuilds()` (`pb_vm_flush_static_rebuilds`) on release to
+  rebuild at once, and `set_static_debounce(threshold_ms, quiet_ms)`
+  (`pb_vm_set_static_debounce`; a negative threshold turns it off) to change
+  the two times. The value being dragged never waits. See
+  [hot-reload.md](hot-reload.md#a-slow-table-under-a-drag).
 
 ## Editing source: a script as a config file
 

@@ -1641,9 +1641,9 @@ pub extern "C" fn pb_vm_static_cache(vm: *mut VmHandle) -> bool {
 }
 
 /// Drop every static value the loaded program's stack keeps; the next run
-/// builds them again. A reload does this itself. This is for a host that
-/// changed something a native it registered `PB_FX_CONST` answers from,
-/// which is the one thing the cache cannot see.
+/// builds them again. A reload drops only the ones the edit reaches. This is
+/// for a host that changed something a native it registered `PB_FX_CONST`
+/// answers from, which is the one thing the cache cannot see.
 #[unsafe(no_mangle)]
 pub extern "C" fn pb_vm_clear_static_values(vm: *mut VmHandle) -> Status {
     with_vm(vm, (), |vm| {
@@ -1652,6 +1652,54 @@ pub extern "C" fn pb_vm_clear_static_values(vm: *mut VmHandle) -> Status {
         Ok(())
     })
     .0
+}
+
+/// Whether a reload keeps the static values the edit cannot have changed
+/// (`true`, the default) or rebuilds every one (`Env::set_static_follow`).
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_set_static_follow(vm: *mut VmHandle, on: bool) -> Status {
+    with_vm(vm, (), |vm| {
+        vm.env.set_static_follow(on);
+        Ok(())
+    })
+    .0
+}
+
+/// How a slow static rebuild waits while `pb_vm_set_config` is driven
+/// continuously (`Env::set_static_debounce`): a value whose last build took
+/// at least `threshold_ms` keeps its old value for every tick after the
+/// first of a drag, and is rebuilt by the first run that starts `quiet_ms`
+/// after the last tick. A negative `threshold_ms` rebuilds on every tick.
+/// The default is 4 and 150.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_set_static_debounce(
+    vm: *mut VmHandle,
+    threshold_ms: f64,
+    quiet_ms: f64,
+) -> Status {
+    with_vm(vm, (), |vm| {
+        let ms = |v: f64| std::time::Duration::from_secs_f64(v.max(0.0) / 1000.0);
+        vm.env.set_static_debounce((threshold_ms >= 0.0).then(|| {
+            petal::static_cache::StaticDebounce {
+                threshold: ms(threshold_ms),
+                quiet: ms(quiet_ms),
+            }
+        }));
+        Ok(())
+    })
+    .0
+}
+
+/// Rebuild on the next run what a drag put off, without waiting for it to
+/// pause (`Env::flush_static_rebuilds`): for a host that knows the drag
+/// ended. Returns how many values were waiting; -1 with no program loaded.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_flush_static_rebuilds(vm: *mut VmHandle) -> i32 {
+    with_vm(vm, -1, |vm| {
+        let stack = vm.loaded()?.stack_id;
+        Ok(vm.env.flush_static_rebuilds(stack) as i32)
+    })
+    .1
 }
 
 /// What the static-value cache holds for the loaded program, as JSON:

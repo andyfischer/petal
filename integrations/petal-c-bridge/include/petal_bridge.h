@@ -878,9 +878,25 @@ bool pb_vm_memo(pb_vm* vm);
 pb_status pb_vm_set_static_cache(pb_vm* vm, bool on);
 bool pb_vm_static_cache(pb_vm* vm);
 /* Drop every kept static value; the next run builds them again. A reload
- * does this itself. For a host that changed something a native it
- * registered PB_FX_CONST answers from, which the cache cannot see. */
+ * drops only the ones the edit reaches. For a host that changed something a
+ * native it registered PB_FX_CONST answers from, which the cache cannot
+ * see. */
 pb_status pb_vm_clear_static_values(pb_vm* vm);
+/* Whether a reload keeps the static values the edit cannot have changed
+ * (true, the default) or rebuilds every one. "statics" in
+ * pb_vm_last_reload_json says what a reload kept. */
+pb_status pb_vm_set_static_follow(pb_vm* vm, bool on);
+/* A slow rebuild under a drag. While pb_vm_set_config is called
+ * continuously, a static value whose last build took at least threshold_ms
+ * keeps its old value for every tick after the first, and is rebuilt by the
+ * first run that starts quiet_ms after the last tick, by the next reload,
+ * or by pb_vm_flush_static_rebuilds. The value
+ * being dragged never waits. Defaults: 4 and 150. A negative threshold_ms
+ * rebuilds on every tick. */
+pb_status pb_vm_set_static_debounce(pb_vm* vm, double threshold_ms, double quiet_ms);
+/* The drag ended: rebuild what it put off on the next run. Returns how many
+ * values were waiting, -1 with no program loaded. */
+int pb_vm_flush_static_rebuilds(pb_vm* vm);
 /* What the cache holds, as a JSON object: "enabled", "slots", "filled",
  * "runs", "skips", "skipped_instructions", "clears" (counters since the
  * program was loaded), "rejected" (every value that could not be kept, as

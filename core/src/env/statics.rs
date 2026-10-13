@@ -120,9 +120,10 @@ impl Env {
     }
 
     /// Drop every static value `stack_id` holds; its next run builds them
-    /// again. A reload does this itself. For a host that changed something
-    /// a native registered `CONST` answers from, which is the one thing the
-    /// cache cannot see.
+    /// again. A reload drops only the ones the edit reaches
+    /// ([`set_static_follow`](Self::set_static_follow)). For a host that
+    /// changed something a native registered `CONST` answers from, which is
+    /// the one thing the cache cannot see.
     pub fn clear_static_values(&mut self, stack_id: StackKey) {
         if let Some(stack) = self.stacks.get_mut(&stack_id) {
             stack.statics.clear();

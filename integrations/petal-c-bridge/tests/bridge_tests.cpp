@@ -134,6 +134,41 @@ TEST(memo_switch_keeps_output_and_state) {
     CHECK_EQ(run_out(vm), (std::vector<double>{4, 8, 40}));
 }
 
+TEST(static_rebuilds_wait_for_a_drag_and_can_be_flushed) {
+    petal::Vm vm;
+    vm.load_source(
+        "import io; let ROWS = [[1, 2], [3, 4], [5, 6]]\n"
+        "state n = 0\n"
+        "n += 1\n"
+        "push_output(symbol(\"out\"), ROWS[n % 1][1] * 100 + n)\n");
+    // Every build counts as slow, and no pause is long enough.
+    vm.set_static_debounce(0, 60000);
+    CHECK_EQ(run_out(vm), std::vector<double>{201});
+    // The first tick of a drag rebuilds at once.
+    CHECK(vm.set_config("ROWS[0][1]", "{\"int\": 3}"));
+    CHECK(vm.last_reload_json().find("\"rebuilt_names\":[\"ROWS\"]") != std::string::npos);
+    CHECK_EQ(run_out(vm), std::vector<double>{302});
+    // The second waits: the table keeps the value of the tick before.
+    CHECK(vm.set_config("ROWS[0][1]", "{\"int\": 4}"));
+    CHECK(vm.last_reload_json().find("\"deferred\":[\"ROWS\"]") != std::string::npos);
+    CHECK_EQ(run_out(vm), std::vector<double>{303});
+    // The host knows the drag ended.
+    CHECK_EQ(vm.flush_static_rebuilds(), 1);
+    CHECK_EQ(vm.flush_static_rebuilds(), 0);
+    CHECK_EQ(run_out(vm), std::vector<double>{404});
+    // Off: every tick rebuilds. And a reload that follows nothing reports
+    // nothing about constants.
+    vm.set_static_debounce(-1, 0);
+    CHECK(vm.set_config("ROWS[0][1]", "{\"int\": 5}"));
+    CHECK(vm.set_config("ROWS[0][1]", "{\"int\": 6}"));
+    CHECK(vm.last_reload_json().find("\"deferred\":[]") != std::string::npos);
+    CHECK_EQ(run_out(vm), std::vector<double>{605});
+    vm.set_static_follow(false);
+    CHECK(vm.set_config("ROWS[0][1]", "{\"int\": 7}"));
+    CHECK(vm.last_reload_json().find("\"statics\"") == std::string::npos);
+    CHECK_EQ(run_out(vm), std::vector<double>{706});
+}
+
 TEST(static_cache_switch_keeps_output_and_reports) {
     petal::Vm vm;
     vm.load_source(

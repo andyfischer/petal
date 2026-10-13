@@ -1477,7 +1477,9 @@ Oracles at the final code (debug unless said): core `cargo test
 `core-libs/petal-ui` 20 binaries, 297 passed; `integrations/petal-c-bridge`
 20 and `make test-c-bridge` 4 of 4; `integrations/petal-desktop-sdl` 54;
 `./tools/test-examples.ts` 33; vitest 1,570 in 75 files; `garden-script`
-type-checks (`cargo check`, into `core/target`).
+type-checks (`cargo check`, into `core/target`). The C++ bridge test
+drives a drag through `pb_vm_set_static_debounce` and
+`pb_vm_flush_static_rebuilds`.
 
 **Open after S2.**
 
@@ -1507,11 +1509,11 @@ type-checks (`cargo check`, into `core/target`).
   under its own engine.
 - **Cheesecake follow-ups** (read-only here): re-vendor Petal and the
   bridge; the engine can then print `statics` from
-  `pb_vm_last_reload_json` after a reload and call
-  `pb_vm_set_config` during a drag as it does now. A C entry point for
-  `set_static_debounce` / `flush_static_rebuilds` / `set_static_follow`
-  does not exist yet. worlds-fair's vendored copy and the WASM builds
-  likewise.
+  `pb_vm_last_reload_json` after a reload, keep calling `pb_vm_set_config`
+  during a drag as it does now, and call `pb_vm_flush_static_rebuilds` when
+  the drag ends (`pb_vm_set_static_debounce` and `pb_vm_set_static_follow`
+  are the other two switches). worlds-fair's vendored copy and the WASM
+  builds likewise.
 
 **Ships.**
 

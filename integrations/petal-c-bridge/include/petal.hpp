@@ -709,6 +709,13 @@ public:
     void set_static_cache(bool on) { check(pb_vm_set_static_cache(vm_, on)); }
     bool static_cache() const { return pb_vm_static_cache(vm_); }
     void clear_static_values() { check(pb_vm_clear_static_values(vm_)); }
+    // What a reload does with static values (see pb_vm_set_static_follow,
+    // pb_vm_set_static_debounce, pb_vm_flush_static_rebuilds).
+    void set_static_follow(bool on) { check(pb_vm_set_static_follow(vm_, on)); }
+    void set_static_debounce(double threshold_ms, double quiet_ms) {
+        check(pb_vm_set_static_debounce(vm_, threshold_ms, quiet_ms));
+    }
+    int flush_static_rebuilds() { return pb_vm_flush_static_rebuilds(vm_); }
     // Counters, the values that could not be kept, and the warnings not yet
     // handed out (see pb_vm_static_values_json).
     std::string static_values_json() {

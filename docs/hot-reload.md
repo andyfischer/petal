@@ -247,7 +247,9 @@ statements with a slow one waits with it.
 `Env::set_static_debounce(Some(StaticDebounce { threshold, quiet }))` sets
 the two durations, `None` rebuilds on every tick, and
 `Env::flush_static_rebuilds(stack)` rebuilds at once (for a host that knows
-the mouse button went up).
+the mouse button went up). From C: `pb_vm_set_static_debounce(vm,
+threshold_ms, quiet_ms)` (a negative threshold turns it off),
+`pb_vm_flush_static_rebuilds(vm)` and `pb_vm_set_static_follow(vm, on)`.
 
 ## How a value is patched
 

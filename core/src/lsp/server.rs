@@ -291,7 +291,7 @@ impl Server {
         if let Some(def) = doc.analysis.definition_in_scope(&ident, p.position) {
             // A top-level declaration also says what the static-value
             // classifier makes of it.
-            let value = match doc.analysis.static_note(def) {
+            let value = match self.documents.static_note(&p.text_document.uri, def) {
                 Some(note) => format!("{}\n// {note}", describe(def)),
                 None => describe(def),
             };

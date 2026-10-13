@@ -34,14 +34,11 @@ pub struct Analysis {
     pub imports: Vec<ImportedModule>,
     /// What the static-value classifier says of each top-level declaration
     /// of the document (see [`crate::static_classify`]); hover shows it.
-    pub static_notes: Vec<StaticNote>,
+    /// Worked out by the first hover that asks, not when the document
+    /// changes: it costs a classification and a lowering on top of the
+    /// compile (see [`DocumentStore::static_note`]).
+    static_notes: std::sync::OnceLock<Vec<StaticNote>>,
 }
-
-/// The largest program (in terms) hover lowers to see which static
-/// declarations are kept. A panel is a few thousand terms; a program past
-/// this is lowered in hundreds of milliseconds, which a keystroke should not
-/// pay for a word in a hover.
-const KEPT_HOVER_TERM_LIMIT: usize = 40_000;
 
 /// The static-value class of one top-level declaration, as hover words it.
 #[derive(Debug, Clone)]
@@ -192,20 +189,20 @@ impl Analysis {
             definitions: Vec::new(),
             symbols: Vec::new(),
             imports: Vec::new(),
-            static_notes: Vec::new(),
+            static_notes: std::sync::OnceLock::new(),
         }
     }
 
-    /// The static-value class of the declaration `def`, when `def` is a
-    /// top-level declaration of the document: the classifier's entry of that
-    /// name written inside `def`'s statement.
-    pub fn static_note(&self, def: &Definition) -> Option<&str> {
+    /// The static-value class of the declaration `def` among `notes`, when
+    /// `def` is a top-level declaration of the document: the classifier's
+    /// entry of that name written inside `def`'s statement.
+    fn note_for<'n>(notes: &'n [StaticNote], def: &Definition) -> Option<&'n str> {
         let inside = |n: &StaticNote| {
             let at = (n.line, n.column);
             (def.span.start.line, def.span.start.column) <= at
                 && at <= (def.span.end.line, def.span.end.column)
         };
-        self.static_notes
+        notes
             .iter()
             .find(|n| n.name == def.name && inside(n))
             .map(|n| n.text.as_str())
@@ -291,6 +288,31 @@ impl DocumentStore {
         analyze_at(text, uri_to_path(uri).as_deref(), &others)
     }
 
+    /// The static-value class of the declaration `def` of the document at
+    /// `uri`, as hover words it (`static, kept between runs`, `dynamic:
+    /// <reason>`, …); `None` when `def` is not one of its top-level
+    /// declarations or the document does not compile.
+    ///
+    /// The first call after the document changes compiles it once more,
+    /// classifies it and lowers it (to see which static declarations the
+    /// cache gives a slot); the answer is kept until the next change.
+    /// Measured in release: 48 ms for a small panel, 130 ms for a
+    /// 1,200-line one, about 0.6 s for a 27,000-line game. That is why it is
+    /// not part of the analysis every keystroke pays for.
+    pub fn static_note(&self, uri: &str, def: &Definition) -> Option<&str> {
+        let doc = self.docs.get(uri)?;
+        let notes = doc.analysis.static_notes.get_or_init(|| {
+            let others: Vec<(std::path::PathBuf, &str)> = self
+                .docs
+                .values()
+                .filter(|d| d.uri != uri)
+                .filter_map(|d| Some((uri_to_path(&d.uri)?, d.text.as_str())))
+                .collect();
+            compute_static_notes(&doc.text, uri_to_path(uri).as_deref(), &others)
+        });
+        Analysis::note_for(notes, def)
+    }
+
     pub fn close(&mut self, uri: &str) {
         self.docs.remove(uri);
     }
@@ -341,22 +363,11 @@ pub fn analyze_at(
         env.override_file_source(file, text);
     }
     let mut imports = Vec::new();
-    let mut notes = Vec::new();
     let diagnostics = match env.load_program_diag(source, path) {
         Ok(pid) => env
             .get_program(pid)
             .map(|p| {
                 imports = imported_modules(p);
-                let analysis = env.static_analysis(p);
-                // Which of them get a slot costs a lowering, which is a few
-                // milliseconds for a panel and most of a second for the
-                // largest programs; those do without.
-                let kept = if p.terms.len() <= KEPT_HOVER_TERM_LIMIT {
-                    env.kept_declarations(p, &analysis)
-                } else {
-                    Default::default()
-                };
-                notes = static_notes(&analysis.report, &kept);
                 p.warnings
                     .iter()
                     .map(|w| {
@@ -430,8 +441,34 @@ pub fn analyze_at(
         definitions,
         symbols,
         imports,
-        static_notes: notes,
+        static_notes: std::sync::OnceLock::new(),
     }
+}
+
+/// Compile `source` as [`analyze_at`] does and word the classifier's answer
+/// for each of its top-level declarations. Empty when it does not compile.
+fn compute_static_notes(
+    source: &str,
+    path: Option<&std::path::Path>,
+    open: &[(std::path::PathBuf, &str)],
+) -> Vec<StaticNote> {
+    if source.trim().is_empty() {
+        return Vec::new();
+    }
+    let mut env = crate::env::Env::new();
+    env.set_check_only(true);
+    for (file, text) in open {
+        env.override_file_source(file, text);
+    }
+    let Ok(pid) = env.load_program_diag(source, path) else {
+        return Vec::new();
+    };
+    let Some(program) = env.get_program(pid) else {
+        return Vec::new();
+    };
+    let analysis = env.static_analysis(program);
+    let kept = env.kept_declarations(program, &analysis);
+    static_notes(&analysis.report, &kept)
 }
 
 /// Parse `source` for its declarations, forgiving the line being typed: a

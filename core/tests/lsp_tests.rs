@@ -1255,6 +1255,32 @@ fn hover_says_a_static_declaration_is_static() {
     assert_eq!(text, "```petal\n(variable) LIMIT\n// static, kept between runs\n```");
 }
 
+/// The classification behind the hover is worked out by the first hover
+/// that asks, not on every change of the document, and kept until the next
+/// change.
+#[test]
+fn hover_classifies_lazily_and_once_per_change() {
+    let uri = "file:///lazy.ptl";
+    let text = |limit: u32| format!("let ROWS = [[1, 2], [3, {limit}]]\nstate n = 0\nn = n + 1\nprint(ROWS[n % 2])\n");
+    let said = |resp: Value| resp["result"]["contents"]["value"].as_str().unwrap().to_string();
+    let mut server = Server::new();
+    init(&mut server);
+    let before = petal::static_classify::analyses_run();
+    open(&mut server, uri, &text(4));
+    change(&mut server, uri, 2, &text(5));
+    assert_eq!(petal::static_classify::analyses_run(), before, "a change classifies nothing");
+    assert!(said(hover(&mut server, uri, 0, 5)).ends_with("// static, kept between runs\n```"));
+    let n = said(hover(&mut server, uri, 1, 6));
+    assert!(n.contains("// dynamic"), "{n}");
+    assert_eq!(petal::static_classify::analyses_run(), before + 1, "two hovers, one classification");
+    // An edit that makes the table dynamic is seen by the next hover.
+    change(&mut server, uri, 3, &text(6).replace("[3, 6]", "[3, n0]").replace("let ROWS", "state n0 = 0\nlet ROWS"));
+    assert_eq!(petal::static_classify::analyses_run(), before + 1);
+    let now = said(hover(&mut server, uri, 1, 5));
+    assert!(now.contains("// dynamic"), "{now}");
+    assert_eq!(petal::static_classify::analyses_run(), before + 2);
+}
+
 /// A static declaration the cache gives a slot says so; one that is
 /// written to and one only static code reads do not.
 #[test]

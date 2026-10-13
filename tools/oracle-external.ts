@@ -31,10 +31,15 @@
 //
 // Usage:
 //   ./tools/oracle-external.ts [--wf <dir>] [--frames N] [--seed N]
+//                              [--runner <petal-ui-run>] [--wf-bin <wf-ui>]
 //
 // Prerequisites:
 //   cd core-libs/petal-ui && cargo build --release
 //   cd ~/worlds-fair/ui && cargo build --release -p wf-ui-garden
+//
+// `--runner` and `--wf-bin` name the two binaries when they were built
+// somewhere else (`CARGO_TARGET_DIR` on another disk), which is also how to
+// build worlds-fair's without writing into its checkout.
 //
 // Exits non-zero if any fragment's frames differ, if any ran vacuously, or if
 // the audit found a native doing more than it declared.
@@ -55,8 +60,8 @@ const flag = (name: string, fallback: string) => {
 const wfRoot = resolve(flag('--wf', join(process.env.HOME ?? '', 'worlds-fair')));
 const frames = Number(flag('--frames', '45'));
 const seed = flag('--seed', '1');
-const runner = join(root, 'core-libs/petal-ui/target/release/petal-ui-run');
-const wfBin = join(wfRoot, 'ui/target/release/wf-ui');
+const runner = resolve(flag('--runner', join(root, 'core-libs/petal-ui/target/release/petal-ui-run')));
+const wfBin = resolve(flag('--wf-bin', join(wfRoot, 'ui/target/release/wf-ui')));
 const ptl = join(wfRoot, 'ui/ptl');
 
 for (const [what, path] of [
@@ -82,6 +87,13 @@ const LIBS = [
   'lib/widgets.ptl',
   'lib/parts.ptl',
 ];
+// worlds-fair vendors a Petal from before a script had to import the
+// interfaces its host natives live in, so its sources (and the bundle
+// `wf-ui-core` makes of them) name none, and today's `petal-ui-run` refuses
+// the bundle as written: `unknown function \`query\``. These are the three
+// the corpus uses; `garden` is the one `petal fix-imports` cannot find for
+// itself. Drop this once worlds-fair has re-vendored and migrated.
+const IMPORTS = 'import garden\nimport ui\nimport color\n';
 // Every fragment with a distinct bundle. The eleven parts all share
 // dev/solo.ptl and differ only in which fragment the registry reports, so one
 // entry covers them.
@@ -163,9 +175,9 @@ let failures = 0;
 /** Over-declared facets seen across every fragment: rows the corpus never fully exercised. */
 const over = new Map<string, Set<string>>();
 for (const [name, entry] of FRAGMENTS) {
-  const source = [...LIBS, entry]
-    .map((f) => `// ==== ${f} ====\n${readFileSync(join(ptl, f), 'utf8')}\n`)
-    .join('');
+  const source =
+    IMPORTS +
+    [...LIBS, entry].map((f) => `// ==== ${f} ====\n${readFileSync(join(ptl, f), 'utf8')}\n`).join('');
   writeFileSync(join(work, `${name}.ptl`), source);
 
   const base = drive(name, 'baseline');

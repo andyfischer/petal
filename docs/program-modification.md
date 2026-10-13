@@ -253,7 +253,13 @@ The fork is also a **checkpoint**. `Env::restore_execution(live, fork)` is
 its inverse: the live stack's context becomes a fresh copy of the fork's and
 its state and frames come back, reshaped onto whatever program is loaded now
 (the same rules as `transfer_state`, so a checkpoint taken before a hot
-reload restores into the edited program). `petal-sdl` forks after every
+reload restores into the edited program). A context is restored whole, so
+another stack bound to the same context loses what its last run derived
+(static values, memo records, captured functions; its next run rebuilds
+them), and any `state` of its own that holds a list or record made after the
+checkpoint is no longer valid. A stack that is rewound should share its
+context with no other.
+`petal-sdl` forks after every
 frame and keeps ten seconds of them (`integrations/petal-desktop-sdl/src/timeline.rs`):
 freeze, scrub, and resume from an earlier frame; and when the source is
 edited while frozen, re-run every recorded frame after the cursor through

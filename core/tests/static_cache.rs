@@ -851,3 +851,417 @@ fn the_example_corpus_prints_the_same_with_the_cache_on_and_off() {
     assert!(kept >= 10 && skips > 0, "{kept} scripts keep a static value, {skips} runs skipped");
     eprintln!("{ran} of {} scripts ran; {kept} keep a static value; {skips} runs skipped", files.len());
 }
+
+// --- review: more ways to reach a kept value, or to need a skipped run -------
+
+/// Every route found for writing through to a value the stack keeps, in one
+/// place: a parameter written by a user function (flat, nested, through a
+/// record), a loop variable, a match binding, a captured table, a `var`
+/// cell, `state`, the callback of a higher-order builtin, f64 arrays, enum
+/// payloads, `K.all` and the constant data of a variant. Each prints the
+/// kept value after the write.
+#[test]
+fn no_route_writes_through_to_a_kept_value() {
+    let cases = [
+        // User functions that write their parameter, at three depths.
+        "let TABLE = [[1, 2], [3, 4], [5, 6]]\nlet REC = {a: [1, 2], b: {c: [3, 4]}, d: \"x\"}\n\
+         fn bump(xs, v)\n  xs[0] = v\n  push(xs, v)\nend\n\
+         fn deep(r, v)\n  r.b.c[0] = v\n  r.a = push(r.a, v)\n  r\nend\n\
+         fn inner_edit(t, v)\n  let row = t[1]\n  row[0] = v\n  let t2 = t\n  t2[2] = row\n  t2\nend\n\
+         print(n, bump(TABLE, n), TABLE)\nprint(deep(REC, n), REC)\nprint(inner_edit(TABLE, n), TABLE)\n",
+        // A loop variable and a match binding are elements of the kept table.
+        "let TABLE = [[1, 2], [3, 4], [5, 6]]\n\
+         for row in TABLE do\n  row[0] = row[0] + n\n  let r2 = push(row, n)\n  print(row, r2)\nend\n\
+         match TABLE\n  when [a, b, c] -> print(push(a, n), drop_last(b), TABLE)\n  when _ -> print(\"no\")\nend\nprint(TABLE)\n",
+        // A closure that captured it, a cell, state, and builtin callbacks.
+        "let TABLE = [[1, 2], [3, 4], [5, 6]]\nlet REC = {a: [1, 2], b: {c: [3, 4]}}\n\
+         let f = fn(v) push(TABLE, v) end\nprint(f(n), TABLE)\n\
+         var cell = REC\nset cell.a = [n]\nset cell.b.c[1] = n\nprint(get cell, REC)\n\
+         state held = TABLE\nheld[0] = [n]\nheld = push(held, n)\nprint(len(held), TABLE)\n\
+         let m = map(TABLE, fn(r) push(r, n) end)\nlet s = sort_by(TABLE, fn(r) -> 0 - r[0])\nprint(m, s, reverse(TABLE), TABLE)\n",
+        // Tables built from each other share their rows.
+        "let A = [[1], [2], [3]]\nlet B = map(A, fn(r) -> [r, r])\nlet C = {a: A, b: B, n: len(B)}\n\
+         fn poke(x, v)\n  x[0][0] = v\n  x\nend\nprint(n, poke(A, n), poke(B[0], n), A, B)\n\
+         var c = C\nset c.a[0][0] = n\nset c.b = push(get c.b, n)\nprint(get c, C)\n\
+         state st = C\nst.a[1] = [n]\nst.b[0][0] = [n]\nprint(st.a, C)\n\
+         let cl = fn() -> C\nlet cc = cl()\ncc.a = n\nprint(cc, C)\n\
+         let big = for i in range(0, 3) do A end\nlet big2 = for b in big do push(b, n) end\nprint(big2, A)\n",
+        // f64 arrays, whose only writes are in place when they can be.
+        "fn mk(k)\n  let a = f64_array(4)\n  for i in range(0, 4) do\n    a = set_at(a, i, i * k)\n  end\n  a\nend\n\
+         let ARR = mk(2)\nlet PAIR = [mk(1), mk(3)]\nfn fill(a, v)\n  set_at(a, 0, v)\nend\nfn sw(a)\n  swap(a, 0, 3)\nend\n\
+         print(n, fill(ARR, n), sw(ARR), ARR)\nlet p0 = PAIR[0]\nlet q = set_at(p0, 1, n)\nlet q2 = swap(PAIR[1], 1, 2)\nprint(q, q2, PAIR)\n",
+        // Enum payloads, `K.all`, and the data of a variant.
+        "enum Shape\n  circle(r),\n  rect(w, h),\n  none\nend\n\
+         enum Kind\n  road(code: 1, cost: [10, 20], tags: {a: [1]}),\n  park(code: 2, cost: [5, 6], tags: {a: [2]}),\nend\n\
+         let SHAPES = [Shape.circle([1, 2]), Shape.rect([3], [4]), Shape.none]\n\
+         fn grow(s, v)\n  match s\n    when Shape.circle(r) -> Shape.circle(push(r, v))\n    when Shape.rect(w, h) -> Shape.rect(push(w, v), drop_last(h))\n    when Shape.none -> Shape.none\n  end\nend\n\
+         for s in SHAPES do\n  print(n, grow(s, n), s)\nend\n\
+         match SHAPES[0]\n  when Shape.circle(r) -> print(push(r, n), drop_last(r), r)\n  when _ -> print(\"x\")\nend\nprint(SHAPES)\n\
+         let ks = push(Kind.all, n)\nprint(ks, Kind.all)\n\
+         for k in Kind.all do\n  let c = k.cost\n  c[0] = n\n  let t = k.tags\n  t.a = push(t.a, n)\n  t.b = n\n  print(k, c, t, k.cost, k.tags)\nend\n\
+         let kk = Kind.from(\"park\")\nprint(kk.cost, drop_last(kk.cost), kk.cost)\n",
+    ];
+    for body in cases {
+        let src = format!("{COUNTER}{body}");
+        let (frames, skips) = same_on_and_off(&src, 5);
+        assert!(!frames[4].contains("=> error"), "the case runs: {}", frames[4]);
+        assert!(skips > 0, "something was kept:\n{src}");
+    }
+}
+
+/// A kept table directly in front of each construct dynamic code can open
+/// with: nothing of the construct's own setup may be taken for part of the
+/// run before it.
+#[test]
+fn a_run_ends_where_the_dynamic_statement_after_it_begins() {
+    let src = format!(
+        "{COUNTER}let xs = [n, n + 1, n + 2]\n\
+         let T1 = [[1, 2], [3, 4]]\nfor x in xs do print(\"fe\", x, T1) end\n\
+         let T2 = [[1, 2], [3, 5]]\nfor i in range(n, n + 2) do print(\"fr\", i, T2) end\n\
+         let T3 = [[1, 2], [3, 6]]\nwhile len(xs) < 5 do\n  xs = push(xs, len(T3))\nend\n\
+         let T4 = [[1, 2], [3, 7]]\nif n % 2 == 0 then print(\"even\", T4) else print(\"odd\", T4) end\n\
+         let T5 = [[1, 2], [3, 8]]\nmatch n % 3\n  when 0 -> print(\"zero\", T5)\n  when 1 -> print(\"one\", T5)\n  when _ -> print(\"many\", T5)\nend\n\
+         let T6 = [[1, 2], [3, 9]]\nlet a = n > 2 && T6\n\
+         let T7 = [[1, 2], [3, 10]]\nlet b = n > 2 || T7\n\
+         let T8 = [[1, 2], [3, 11]]\nlet c = (if n > 3 then nil else n end) ?? T8\nprint(a, b, c, xs)\n\
+         let T9 = [[1, 2], [3, 12]]\nlet sq = for x in xs do [x, T9[0]] end\n\
+         let T10 = [[1, 2], [3, 13]]\nlet w = for x in xs do\n  if x % 2 == 0 then continue end\n  [x, T10]\nend\n\
+         let T11 = [[1, 2], [3, 14]]\nvar v = n\nset v = get v + len(T11)\n\
+         let T12 = [[1, 2], [3, 15]]\nstate s2 = T12\n\
+         let T13 = [[1, 2], [3, 16]]\nfn f(q) [q, T13] end\n\
+         let T14 = [[1, 2], [3, 17]]\nprint(sq, w, get v, s2, f(n), T14)\n"
+    );
+    let (frames, skips) = same_on_and_off(&src, 7);
+    assert!(!frames[6].contains("=> error"), "{}", frames[6]);
+    assert!(skips > 0);
+}
+
+/// A frame that raises part of the way down has stored the runs above the
+/// error and none below it. The frames after it, raising or not, are the
+/// frames of the cache-off program.
+#[test]
+fn a_frame_that_raises_part_way_leaves_a_table_the_next_frame_can_use() {
+    let src = format!(
+        "{COUNTER}let XS = [[1], [2], [3]]\nlet YS = for x in XS do [x[0] * 2, [x]] end\nprint(\"before\", n)\n\
+         let PICK = if n > 2 then XS[0] else XS[1] end\nlet Z = YS[5 - 5]\nlet W = [Z, YS]\n\
+         if n % 3 == 1 then\n  let BOOM = XS[9]\nend\nprint(n, W, PICK)\n\
+         let Q = [[W], [W]]\nassert(n % 5 != 0)\nlet LATE = [[Q], [XS]]\nprint(Q[n % 2], LATE)\n"
+    );
+    let (frames, skips) = same_on_and_off(&src, 9);
+    assert!(frames[0].contains("=> error") && !frames[1].contains("=> error"), "{frames:?}");
+    assert!(frames[4].contains("=> error") && frames[4].contains("ssert"), "{}", frames[4]);
+    assert!(!frames[7].contains("=> error"), "{}", frames[7]);
+    assert!(skips > 0);
+}
+
+/// Live tuning: `set_config_value` patches a literal in place. Every value
+/// built from it is rebuilt by the next run, on every stack of the program,
+/// whether the literal is in the declaration itself or in a function the
+/// declaration calls.
+#[test]
+fn a_value_set_directly_rebuilds_what_was_built_from_it() {
+    use petal::static_value::StaticValue;
+    let src = format!(
+        "config let GAP = 4\nconfig let STYLE = {{pad: 2, names: [\"a\", \"b\"]}}\n\
+         fn cell(i)\n  {{at: i * GAP, pad: STYLE.pad}}\nend\n\
+         let GRID = for i in range(0, 3) do cell(i) end\nlet LABELS = map(STYLE.names, fn(s) -> s ++ \"!\")\n\
+         {COUNTER}print(n, GRID, LABELS)\n"
+    );
+    for (on, off) in pairs() {
+        let (mut a, mut b) = (world(&src, on), world(&src, off));
+        let other = a.env.create_stack(a.pid).unwrap();
+        a.env.run(other).unwrap();
+        a.env.take_output_for(other);
+        for _ in 0..2 {
+            assert_eq!(frame(&mut a), frame(&mut b));
+        }
+        let edits = [
+            ("GAP", StaticValue::int(10)),
+            ("STYLE.pad", StaticValue::int(7)),
+            ("STYLE.names[1]", StaticValue::str("z")),
+        ];
+        for (path, value) in &edits {
+            for w in [&mut a, &mut b] {
+                w.env.set_config_value(w.sid, None, path, value).unwrap();
+            }
+            let (fa, fb) = (run_frame(&mut a), run_frame(&mut b));
+            assert_eq!(fa, fb, "{path}: the run after the value was set ({:?})", on.name());
+            assert_eq!(frame(&mut a), frame(&mut b), "{path}: the frame after that");
+        }
+        let last = frame(&mut a);
+        assert_eq!(last, frame(&mut b));
+        assert!(
+            last.contains("{ at: 20, pad: 7 }") && last.contains("\"z!\"") || last.contains("at: 20, pad: 7") && last.contains("z!"),
+            "{last}"
+        );
+        // The stack the values were not set through sees them too.
+        a.env.reset_stack(other).unwrap();
+        a.env.run(other).unwrap();
+        let seen = a.env.take_output_for(other).join("\n");
+        assert!(seen.contains("at: 20, pad: 7") && seen.contains("z!"), "{seen}");
+    }
+}
+
+/// A literal inside the body of a function a kept value was built with is
+/// patched in place like any other; the kept value goes with it.
+#[test]
+fn a_literal_edit_inside_a_function_a_kept_value_calls_rebuilds_it() {
+    let old = format!(
+        "fn row(i)\n  {{id: i, w: i * 10, tag: \"r\"}}\nend\nfn rows(n)\n  for i in range(0, n) do row(i) end\nend\n\
+         let ROWS = rows(3)\nlet WIDE = map(ROWS, fn(r) -> r.w + 1)\n{COUNTER}print(n, ROWS, WIDE)\n"
+    );
+    let new = old.replace("i * 10", "i * 25").replace("\"r\"", "\"q\"");
+    for (on, off) in pairs() {
+        let (mut a, mut b) = (world(&old, on), world(&old, off));
+        for _ in 0..2 {
+            assert_eq!(frame(&mut a), frame(&mut b));
+        }
+        for w in [&mut a, &mut b] {
+            let report = w.env.reload_program(w.sid, &new, None).unwrap();
+            assert_eq!(report.outcome, petal::env::ReloadOutcome::Patched);
+        }
+        let (fa, fb) = (run_frame(&mut a), run_frame(&mut b));
+        assert_eq!(fa, fb);
+        assert!(fa.contains("w: 50") && fa.contains("51") && fa.contains("\"q\""), "{fa}");
+        // And back, which is a second patch of the same slots.
+        for w in [&mut a, &mut b] {
+            w.env.reload_program(w.sid, &old, None).unwrap();
+        }
+        let (fa, fb) = (run_frame(&mut a), run_frame(&mut b));
+        assert_eq!(fa, fb);
+        assert!(fa.contains("w: 20") && fa.contains("\"r\""), "{fa}");
+        assert_eq!(frame(&mut a), frame(&mut b));
+    }
+}
+
+/// What `state` took from a kept value outlives the table that kept it: a
+/// reload empties the table, the collector runs many times over, and the
+/// cell still reads what it read. The rebuilt value is a new object, and
+/// the old one is released when nothing else holds it.
+#[test]
+fn state_that_holds_part_of_a_kept_value_survives_the_table_being_emptied() {
+    let old = format!(
+        "let WORDS = [[\"alpha\", [1, 2]], [\"beta\", [3, 4]], [\"gamma\", [5, 6]]]\nlet BY = for w in WORDS do {{word: w[0], pair: w}} end\n\
+         {COUNTER}state first = BY[0]\nstate picked = []\npicked = push(picked, WORDS[n % 3])\nif len(picked) > 4 then picked = [] end\n\
+         let junk = for i in range(0, 20000) do [i, \"x{{i}}\", {{k: i}}] end\nprint(n, len(junk), first, picked, BY[n % 3])\n"
+    );
+    let new = old.replace("\"beta\", [3, 4]", "\"beta\", [3, 4, 9]").replace("word: w[0]", "word: w[0] ++ \"?\"");
+    let (mut a, mut b) = (world(&old, RunPolicy::REPLAY), world(&old, RunPolicy::REPLAY.with_static_cache(false)));
+    let before = a.env.heap().collections();
+    for i in 0..4 {
+        assert_eq!(frame(&mut a), frame(&mut b), "frame {i}");
+    }
+    let StaticSlotState::Filled(old_by) = a
+        .env
+        .static_values(a.sid)
+        .unwrap()
+        .slots
+        .iter()
+        .find(|(i, _)| i.name.as_deref() == Some("BY"))
+        .unwrap()
+        .1
+        .clone()
+    else {
+        panic!("BY is kept")
+    };
+    for w in [&mut a, &mut b] {
+        w.env.reload_program(w.sid, &new, None).unwrap();
+    }
+    assert_eq!(run_frame(&mut a), run_frame(&mut b), "the run after the reload");
+    for i in 0..6 {
+        assert_eq!(frame(&mut a), frame(&mut b), "frame {i} after the reload");
+    }
+    a.env.clear_static_values(a.sid);
+    for i in 0..4 {
+        assert_eq!(frame(&mut a), frame(&mut b), "frame {i} after the table was emptied by hand");
+    }
+    assert!(a.env.heap().collections() > before + 1, "the frames collected");
+    let values = a.env.static_values(a.sid).unwrap();
+    let StaticSlotState::Filled(new_by) =
+        values.slots.iter().find(|(i, _)| i.name.as_deref() == Some("BY")).unwrap().1.clone()
+    else {
+        panic!("BY is kept again")
+    };
+    assert_ne!(old_by, new_by, "a rebuilt value is a new object");
+    assert_eq!(values.stats.clears, 2);
+}
+
+/// A host calling a script function between frames runs it against the
+/// values the last frame left, kept ones included, and cannot change them.
+#[test]
+fn a_host_call_between_frames_cannot_change_a_kept_value() {
+    let src = format!(
+        "let TABLE = [[1, 2], [3, 4]]\nfn poke(v)\n  let t = TABLE\n  t[0] = v\n  let row = TABLE[1]\n  row[0] = v\n  [push(TABLE, v), t, row]\nend\n\
+         fn edit(xs, v)\n  xs[0][0] = v\n  xs\nend\n{COUNTER}print(n, TABLE, edit(TABLE, n))\n"
+    );
+    for (on, off) in pairs() {
+        let (mut a, mut b) = (world(&src, on), world(&src, off));
+        for i in 0..4 {
+            assert_eq!(frame(&mut a), frame(&mut b), "frame {i}");
+            let call = |w: &mut World| {
+                let v = w.env.call_function(w.sid, "poke", &[Value::Int(90 + i)]).unwrap();
+                petal::value::value_to_display_string(&v, w.env.heap())
+            };
+            let (ca, cb) = (call(&mut a), call(&mut b));
+            assert_eq!(ca, cb);
+            assert!(ca.starts_with("[[[1, 2], [3, 4], 9"), "{ca}");
+        }
+    }
+}
+
+/// Switching what the lowering preserves between frames (observations, the
+/// audit, the optimizer, memoization) re-lowers the program. A table filled
+/// under one lowering is never read by another.
+#[test]
+fn a_table_does_not_outlive_the_lowering_it_was_filled_under() {
+    let src = format!(
+        "let PAD = 2\nlet T = [[1, PAD], [3, PAD * 2]]\nlet U = for r in T do [r, r[1] + 1] end\n{COUNTER}print(n, T, U)\n"
+    );
+    let mut a = world(&src, RunPolicy::REPLAY);
+    let mut b = world(&src, RunPolicy::BASELINE);
+    let steps: [(&str, &dyn Fn(&mut Env)); 10] = [
+        ("as loaded", &|_| {}),
+        ("observations on", &|e| e.observations_mut().enable()),
+        ("observations off", &|e| e.observations_mut().disable()),
+        ("baseline+static", &|e| e.set_policy(RunPolicy::parse("baseline+static").unwrap())),
+        ("fast", &|e| e.set_policy(RunPolicy::FAST)),
+        ("audit on", &|e| e.set_static_audit(petal::static_audit::StaticAuditMode::Watch)),
+        ("audit off", &|e| e.set_static_audit(petal::static_audit::StaticAuditMode::Off)),
+        ("replay-memo", &|e| e.set_policy(RunPolicy::parse("replay-memo").unwrap())),
+        ("cache off", &|e| e.set_static_cache(false)),
+        ("cache on", &|e| e.set_static_cache(true)),
+    ];
+    for (what, step) in steps {
+        step(&mut a.env);
+        for i in 0..2 {
+            assert_eq!(frame(&mut a), frame(&mut b), "{what}: frame {i}");
+        }
+        let values = a.env.static_values(a.sid).unwrap();
+        if a.env.static_cache_enabled() {
+            assert_eq!(values.slots.iter().filter(|(_, s)| matches!(s, StaticSlotState::Filled(_))).count(), values.slots.len(), "{what}");
+        } else {
+            assert!(values.slots.is_empty(), "{what}: no slots with the cache off");
+        }
+    }
+    // Under each of them a reload was still a reload.
+    let new = src.replace("let PAD = 2", "let PAD = 5");
+    for w in [&mut a, &mut b] {
+        w.env.reload_program(w.sid, &new, None).unwrap();
+    }
+    let (fa, fb) = (run_frame(&mut a), run_frame(&mut b));
+    assert_eq!(fa, fb);
+    assert!(fa.contains("[[1, 5], [3, 10]]"), "{fa}");
+}
+
+/// A fork and its parent each reload, restore and run on their own; a
+/// speculative run fills nothing the real stack then reads.
+#[test]
+fn forks_reloads_and_speculative_runs_do_not_share_a_table() {
+    let old = format!("let T = [[1, 2], [3, 4]]\nlet U = map(T, fn(r) -> [r[1], r])\n{COUNTER}print(n, T, U)\n");
+    let new = old.replace("[3, 4]", "[3, 44]");
+    for (on, off) in pairs() {
+        let (mut a, mut b) = (world(&old, on), world(&old, off));
+        let drive = |w: &mut World| {
+            let mut log = Vec::new();
+            // A speculative run before anything is kept, and one after.
+            log.push(format!("{:?}", w.env.run_speculative(w.sid).is_ok()));
+            log.push(frame(w));
+            log.push(format!("{:?}", w.env.run_speculative(w.sid).is_ok()));
+            log.push(frame(w));
+            let fork = w.env.fork_execution(w.sid).unwrap();
+            w.env.reload_program(w.sid, &new, None).unwrap();
+            log.push(run_frame(w));
+            // The fork is a stack of the same program, which has just changed.
+            w.env.reset_stack(fork).unwrap();
+            w.env.run(fork).unwrap();
+            log.push(w.env.take_output_for(fork).join("|"));
+            log.push(frame(w));
+            // Back to the snapshot: the old state, the program as it is now.
+            w.env.restore_execution(w.sid, fork).unwrap();
+            log.push(run_frame(w));
+            log.push(frame(w));
+            log
+        };
+        let (la, lb) = (drive(&mut a), drive(&mut b));
+        assert_eq!(la, lb, "{:?}", on.name());
+        assert!(la[4].starts_with("3 [[1, 2], [3, 44]] [[2, [1, 2]], [44, [3, 44]]]"), "{}", la[4]);
+        assert!(la[5].contains("[3, 44]"), "the fork runs the new program: {}", la[5]);
+    }
+}
+
+/// `freeze` and `frozen` are about the heap object, not the value, so they
+/// can tell a kept table from one rebuilt every run: it is frozen once and
+/// stays frozen, where the rebuilt one is a new unfrozen table each run.
+/// A constant string and a payload-free variant already behave this way
+/// without the cache. Pinned so the difference is a known one.
+#[test]
+fn freezing_a_kept_value_freezes_it_once() {
+    let src = format!("{COUNTER}let T = [[1, 2], [3, 4]]\nlet s = \"abc\"\nprint(n, frozen(T), frozen(s))\nfreeze(T)\nfreeze(s)\nprint(frozen(T), T)\n");
+    let run = |policy: RunPolicy| {
+        let mut w = world(&src, policy);
+        (0..3).map(|_| frame(&mut w).lines().take(2).collect::<Vec<_>>().join(" / ")).collect::<Vec<_>>()
+    };
+    let off = run(RunPolicy::REPLAY.with_static_cache(false));
+    let on = run(RunPolicy::REPLAY);
+    assert_eq!(off[0], on[0]);
+    assert_eq!(off[2], "3 false true / true [[1, 2], [3, 4]]", "rebuilt, and the string is the constant");
+    assert_eq!(on[2], "3 true true / true [[1, 2], [3, 4]]", "kept");
+}
+
+/// `restore_execution` replaces the whole context of the stack it restores,
+/// heap included. Another stack bound to the same context then holds ids
+/// the restored heap may never have had: what it kept after the snapshot
+/// was taken must go, or its next run loads objects that are not there.
+#[test]
+fn a_restore_empties_the_table_of_every_stack_on_the_restored_context() {
+    let src = format!("let T = [[1, 2], [3, 4]]\nlet U = map(T, fn(r) -> {{r: r, s: \"k{{r[0]}}\"}})\n{COUNTER}print(n, T, U)\n");
+    let drive = |policy: RunPolicy| {
+        let mut w = world(&src, policy);
+        let other = w.env.create_stack(w.pid).unwrap();
+        let mut log = vec![frame(&mut w)];
+        // The snapshot is taken before the second stack has run at all.
+        let snapshot = w.env.fork_execution(w.sid).unwrap();
+        for _ in 0..3 {
+            w.env.reset_stack(other).unwrap();
+            w.env.run(other).unwrap();
+        }
+        log.push(w.env.take_output_for(other).join("|"));
+        w.env.restore_execution(w.sid, snapshot).unwrap();
+        log.push(run_frame(&mut w));
+        // Allocate over whatever the second stack's ids now name.
+        for _ in 0..3 {
+            log.push(frame(&mut w));
+            w.env.reset_stack(other).unwrap();
+            w.env.run(other).unwrap();
+            let seen = w.env.take_output_for(other);
+            log.push(seen.last().map(|l| l.split_once(' ').unwrap().1.to_string()).unwrap_or_default());
+        }
+        log
+    };
+    for (on, off) in pairs() {
+        assert_eq!(drive(on), drive(off), "{:?}", on.name());
+    }
+}
+
+/// One table read by many later runs: past the cap on how many slots a run
+/// may feed, the table gets a slot of its own instead. Frames that stop
+/// half way down leave some of those runs stored and the rest not.
+#[test]
+fn a_table_that_feeds_more_runs_than_the_cap_is_still_served_right() {
+    let mut src = format!("{COUNTER}let BASE = [[1, 2], [3, 4]]\nlet MID = [BASE, [5]]\n");
+    for i in 0..75 {
+        src.push_str(&format!("let T{i} = [BASE[{}], [{i}], MID[1]]\n", i % 2));
+        if i % 3 == 0 {
+            src.push_str(&format!("let d{i} = n + {i}\n"));
+        } else {
+            src.push_str(&format!("print(T{i}[n % 3])\n"));
+        }
+        if i == 40 {
+            src.push_str("assert(n % 3 != 1)\n");
+        }
+    }
+    src.push_str("print(n, T3, T74)\nlet TAIL = for i in range(0, 3) do [i, MID] end\nprint(TAIL[n % 3])\n");
+    let (frames, skips) = same_on_and_off(&src, 6);
+    assert!(frames[0].contains("=> error") && !frames[1].contains("=> error"), "{}", frames[0]);
+    assert!(skips > 50, "{skips}");
+}

@@ -100,6 +100,22 @@ impl Env {
             .unwrap_or_default();
         crate::transfer_state::transfer_stack_state(&mut stack, &keys);
         self.stacks.insert(dst, stack);
+        // The context was replaced whole, and any other stack bound to it
+        // still holds ids into the heap that is gone. Its `state` cannot be
+        // helped (a snapshot is of one stack), but everything a run rebuilds
+        // can: without this, a static value kept after the snapshot was
+        // taken is loaded by the next run from a slot that now names
+        // nothing, or something else.
+        for (key, other) in self.stacks.iter_mut() {
+            if other.context == dst_ck && *key != dst {
+                other.statics.clear();
+                other.memo.clear();
+                other.enums.clear();
+                other.functions.clear();
+                other.methods.clear();
+                other.run_deps.force();
+            }
+        }
         Ok(())
     }
 

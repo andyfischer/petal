@@ -140,7 +140,9 @@ way, for code written against an earlier checkout.
   observations or the trace are on (so not yet in Garden panels), and for
   `petal run`, which runs a script once. `--policy fast-static` (or
   `Env::set_static_cache(false)`) turns it off; `Env::static_values` lists
-  what a stack holds. See
+  what a stack holds. The one thing a program can tell is `frozen`: a kept
+  table passed to `freeze` is frozen once and stays frozen, where the table
+  rebuilt on every run was a new unfrozen one each time. See
   [docs/dev/performance.md](docs/dev/performance.md#static-values).
 - An enum's constant data is a static value where its expressions are
   static: the per-variant records are published by the first run after a

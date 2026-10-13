@@ -533,6 +533,15 @@ Tables that are written to are never kept (`let by_sec = [0, 0, 0]` followed
 by `by_sec[i] = v`), and a table sitting alone between two function
 declarations with a single allocation is too small to be worth a check.
 
+**What a program can tell.** The cache is held to printing, returning,
+raising and storing exactly what the same program does with it off, and one
+builtin is outside that: `frozen` answers about the heap object, not the
+value. A kept table passed to `freeze` is frozen once and is still frozen at
+the top of the next run; rebuilt on every run it was a new unfrozen table
+each time (and a leak of one table per run). A constant string and a
+payload-free variant have always behaved the kept way. The test is
+`freezing_a_kept_value_freezes_it_once` in `core/tests/static_cache.rs`.
+
 ## Where the remaining headroom is
 
 Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from

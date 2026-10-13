@@ -1350,6 +1350,14 @@ The limits are part of the contract:
   `freeze` on a value rebuilt every frame leaks every one of them, so a
   top-level `let table = freeze(build())` in a script that runs once per
   frame is a leak. `state` initializers run once.
+- **A top-level table that depends on no dynamic data is the exception to
+  that**, where the host keeps static values between runs (it does by
+  default; see [performance.md](dev/performance.md#static-values)): `let
+  table = [...]` followed by `freeze(table)` freezes the one table the stack
+  keeps, once, and `frozen(table)` is then true from the top of every later
+  run. `let table = freeze(build())` is still rebuilt and frozen on every
+  run, because a call of `freeze` is never static. With static values off
+  both forms leak a table per run.
 - **A value holding a function or a `var` cell cannot be frozen.** The call
   is an error (`freeze: the value holds a function, which cannot be frozen`)
   and nothing is frozen.

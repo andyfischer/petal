@@ -378,16 +378,21 @@ included, without touching the disk:
 cd core && cargo run --release --example reload_timing -- game.ptl config.ptl
 ```
 
-On `games/neon` (14 files, 10,346 lines, 62,733 terms; release build, Apple
-silicon, minimum of 9):
+On `games/neon` (35 files with the packages it imports, 15,211 lines, 77,853
+terms; release build, Apple silicon, minimum of 9, 12 October 2026):
 
 | Edit to `config.ptl` | Outcome | Time |
 |---|---|---|
-| a comment added | relocated | 0.75 ms |
-| one number changed | patched | 0.79 ms |
-| a statement added | recompiled | 110 ms |
-| `set_config_value`, file named | patched | 1.3 ms |
-| `set_config_value`, file searched for | patched | 2.9 ms |
+| a comment added | relocated | 1.3 ms |
+| one number changed | patched | 1.5 ms |
+| a statement added | recompiled | 183 ms |
+| `set_config_value`, file named | patched | 1.4 ms |
+| `set_config_value`, file searched for | patched | 3.1 ms |
+
+Of the 183 ms, 24 are the static-value cache's (159 ms under
+`PETAL_POLICY=fast-static`: the classification that lowering then does), and
+of the patched 1.5 ms, 0.1. The example compiles without linking, since it
+runs nothing, so a game whose package requires a host interface loads in it.
 
 `set_config_value` costs more than a reload of the same edit because it also
 makes the edit: it parses the file's text to find the literal and rewrite it

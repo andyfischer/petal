@@ -53,6 +53,9 @@ fn main() {
 
     let mut env = Env::new();
     env.set_echo(false);
+    // Nothing is run, so the program is compiled without linking: a game
+    // whose package requires a host interface this binary lacks still loads.
+    env.set_check_only(true);
     let t = Instant::now();
     let pid = env
         .load_program_diag(&entry_source, Some(&entry))

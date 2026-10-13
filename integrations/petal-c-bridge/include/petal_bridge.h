@@ -637,8 +637,20 @@ int pb_vm_last_reload_kind(pb_vm* vm);
  *       "edit": "changed",          //   added | removed | changed
  *       "line": 40}],
  *    "reason": "...",               // change == "full": why
- *    "fallback": "..."}             // the edit looked incremental and was
+ *    "fallback": "...",             // the edit looked incremental and was
  *                                   // recompiled anyway: why
+ *    "statics": {                   // absent when the program does not run with
+ *                                   // the static-value cache, or has not run
+ *      "kept": 41,                  //   static values the edit could not have
+ *                                   //   changed: still held
+ *      "rebuilt": 3,                //   static values the next run builds
+ *      "rebuilt_names": ["TILES"],  //   the declarations among them
+ *      "deferred": ["GRID"],        //   changed by a pb_vm_set_config, slow to
+ *                                   //   build: rebuilt when the drag pauses
+ *      "stale_seeds": [             //   state that kept its value although its
+ *        {"name": "grid",           //   initializer read something that changed
+ *         "read": "TILES"}],        //   (null: its own declaration changed)
+ *      "cleared": null}}            //   why everything was rebuilt, if it was
  *
  * Valid until the next call to this function. */
 const char* pb_vm_last_reload_json(pb_vm* vm);

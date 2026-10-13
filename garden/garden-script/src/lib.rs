@@ -311,9 +311,11 @@ impl ScriptHost {
         // A compile error does not disturb the running program, and an edit
         // that only moves text or changes values is taken up without a
         // recompile.
-        self.env
+        let report = self
+            .env
             .reload_program(self.stack_id, &source, None)
             .map_err(|e| e.to_string())?;
+        print_static_report(&report);
 
         let new_layout = self.run_and_extract()?;
         let changed = new_layout != self.layout;
@@ -361,9 +363,11 @@ impl ScriptHost {
         // all reflect the change immediately (and the generated source is
         // validated by actually running it). Watch the transient file from now
         // on so the next poll sees no spurious change.
-        self.env
+        let report = self
+            .env
             .reload_program(self.stack_id, &new_source, None)
             .map_err(|e| e.to_string())?;
+        print_static_report(&report);
         self.layout = self.run_and_extract()?;
 
         self.path = target.clone();
@@ -540,6 +544,25 @@ pub fn transient_path(path: &Path) -> PathBuf {
     }
     let stem = name.strip_suffix(".ptl").unwrap_or(name);
     path.with_file_name(format!("{stem}.transient.ptl"))
+}
+
+/// Print what a reload did to the script's constants, and the `state` that
+/// kept a value its initializer would no longer give
+/// (`petal::env::ReloadReport::static_lines`): one line each on stderr, and
+/// nothing when the edit reached no constant. Shared by the config script
+/// and the panels.
+///
+/// ```text
+/// [hot-reload] constants: 2 rebuilt (TILES, WIDTHS), 41 kept
+/// [hot-reload] stale seed: state grid was initialized from TILES, which changed; it keeps its value
+/// ```
+///
+/// A panel records observations, which keeps Petal's static-value cache off
+/// for it, so a panel reload has nothing to say yet.
+pub(crate) fn print_static_report(report: &petal::env::ReloadReport) {
+    for line in report.static_lines() {
+        eprintln!("[hot-reload] {line}");
+    }
 }
 
 #[cfg(test)]

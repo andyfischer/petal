@@ -43,6 +43,7 @@ pub fn check_hot_reload(
             ReloadOutcome::Unchanged | ReloadOutcome::Relocated => false,
             ReloadOutcome::Patched => {
                 eprintln!("[hot-reload] values updated in place");
+                print_static_report(&report);
                 true
             }
             ReloadOutcome::Recompiled => {
@@ -50,6 +51,7 @@ pub fn check_hot_reload(
                     "[hot-reload] preserved: {}, dropped: {}",
                     report.state_preserved, report.state_dropped
                 );
+                print_static_report(&report);
                 // What `petal check` would say about the edit. Printed, not
                 // enforced: a half-typed line must not stop the frame loop.
                 eprint!("{}", env.diagnostics_text(program_id));
@@ -60,6 +62,21 @@ pub fn check_hot_reload(
             eprintln!("[hot-reload] compile error: {}", e);
             false
         }
+    }
+}
+
+/// What the reload did to the program's constants, and the `state` that
+/// kept a value its initializer would no longer give
+/// ([`ReloadReport::static_lines`]): one line each, nothing when the edit
+/// reached no constant.
+///
+/// ```text
+/// [hot-reload] constants: 2 rebuilt (TILES, WIDTHS), 41 kept
+/// [hot-reload] stale seed: state grid was initialized from TILES, which changed; it keeps its value
+/// ```
+fn print_static_report(report: &petal::env::ReloadReport) {
+    for line in report.static_lines() {
+        eprintln!("[hot-reload] {line}");
     }
 }
 

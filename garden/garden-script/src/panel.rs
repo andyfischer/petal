@@ -1783,10 +1783,12 @@ impl PanelHost {
         // sibling module still resolves it after a hot reload. Only the work
         // the edit calls for is done (`Env::reload_program`).
         let path = self.path.clone();
-        self.core
+        let report = self
+            .core
             .env
             .reload_program(self.core.stack_id(), &source, Some(&path))
             .map_err(|e| e.to_string())?;
+        crate::print_static_report(&report);
         self.imports = self.watch_imports();
         Ok(true)
     }
@@ -1816,10 +1818,12 @@ impl PanelHost {
     /// later disk [`poll_reload`](Self::poll_reload) of an identical save is a
     /// harmless re-transfer, and a divergent on-disk edit still reloads.
     pub fn reload_source(&mut self, source: &str) -> Result<(), String> {
-        self.core
+        let report = self
+            .core
             .env
             .reload_program(self.core.stack_id(), source, None)
             .map_err(|e| e.to_string())?;
+        crate::print_static_report(&report);
         Ok(())
     }
 

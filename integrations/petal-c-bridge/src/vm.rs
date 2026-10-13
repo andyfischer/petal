@@ -1509,6 +1509,11 @@ fn reload_report_json(report: &ReloadReport) -> serde_json::Value {
     if let Some(why) = &report.fallback {
         out["fallback"] = json!(why);
     }
+    // What became of the static values, and the stale seeds: present when
+    // the program runs with the static-value cache.
+    if let Some(statics) = &report.statics {
+        out["statics"] = statics.to_json();
+    }
     out
 }
 
@@ -1970,6 +1975,44 @@ mod tests {
         // The old program still runs, with its state.
         vm.run().unwrap();
         assert_eq!(out_ints(&mut vm), vec![2]);
+    }
+
+    /// `pb_vm_last_reload_json` says what the reload did to the constants,
+    /// and which `state` kept a value its initializer no longer gives.
+    #[test]
+    fn the_reload_report_names_constants_and_stale_seeds() {
+        let src = "import io
+let TILES = [{w: 2}, {w: 3}]
+let NAMES = [\"ab\", \"c\"]
+state widths = map(TILES, fn(t) t.w end)
+state n = 0
+n += 1
+push_output(symbol(\"out\"), n + len(NAMES[n % 2]) + TILES[n % 2].w + widths[0])
+";
+        let mut vm = Vm::new();
+        vm.load(src, None, "main.ptl".into()).unwrap();
+        vm.run().unwrap();
+        assert_eq!(out_ints(&mut vm), vec![1 + 1 + 3 + 2]);
+
+        // A table edited by shape: it is rebuilt, the other one is kept,
+        // and the state seeded from it is stale.
+        vm.reload_with(&src.replace("{w: 3}]", "{w: 3}, {w: 4}]")).unwrap();
+        let json = reload_report_json(vm.last_reload().unwrap());
+        assert_eq!(json["outcome"], "recompiled");
+        let statics = &json["statics"];
+        assert_eq!(statics["rebuilt_names"], serde_json::json!(["TILES"]), "{statics}");
+        assert!(statics["kept"].as_u64().unwrap() >= 1, "{statics}");
+        assert_eq!(statics["stale_seeds"][0]["name"], "widths");
+        assert_eq!(statics["stale_seeds"][0]["read"], "TILES");
+        assert_eq!(statics["cleared"], serde_json::Value::Null);
+        vm.run().unwrap();
+        assert_eq!(out_ints(&mut vm), vec![2 + 2 + 2 + 2]);
+
+        // With the cache off there is nothing to report.
+        vm.env.set_static_cache(false);
+        vm.run().unwrap();
+        vm.reload_with(src).unwrap();
+        assert!(reload_report_json(vm.last_reload().unwrap()).get("statics").is_none());
     }
 
     #[test]

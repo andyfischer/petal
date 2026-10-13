@@ -16,8 +16,16 @@ a `const` that is not constant, the stale-seed report named states it
 should not, and `PETAL_STATIC_CHECK` called a frozen kept value a failure.
 Not done there: the map's source tables stay in `state` (the half-reload
 risk is real and the stale-seed report does not name the cells), and `T`,
-`F` and `USE` stay (they still pay). worlds-fair and the WASM builds are
-not re-vendored. Of the "Later" items
+`F` and `USE` stay (they still pay). **The adoption was reviewed the same
+day** on Cheesecake `fd51d84` ("Review of the adoption" in Results): the
+vendored tree is this repository's at `4269f9f`, the three constant natives
+were read again, and every figure above was taken again and is the same. It
+found one more half-reload, fixed in the game (Cheesecake `fa36156`: the
+skin in force was a `state` cache over the constant `SKINS`, and the run is
+46,469,822 instructions with it a constant), two it left, and one thing
+here that is not fixed: a constant handed to `append` is rebuilt on every
+run, and only `petal show-static` says so (follow-up 11). worlds-fair and
+the WASM builds are not re-vendored. Of the "Later" items
 the first two, Garden and constants inside function bodies, are done (13
 October 2026), and so are in-repo follow-ups 5 to 8; the rest (per-input-class
 slots, keeping slow intermediates, a frozen generation that can release
@@ -250,7 +258,11 @@ against 2.7 µs without.
 
 **Follow-up in Cheesecake.** After re-vendoring, Moses can drop `T`, `F`,
 `USE` and `F_PEOPLE` in favour of reading the variant's data directly, and
-re-measure.
+re-measure. **Done 2026-10-13, in part, on the measurement:** `F_PEOPLE` is
+gone (Cheesecake `52b80e2`; four readers, none in a loop). `T`, `F` and
+`USE` stay: a table read is one instruction and `Fabric.x.code` two, and
+all 220 reads written through the enum cost the 460-frame autoplay run 0.5
+to 0.7% ("Cheesecake: the adoption" in Results).
 
 ## A2. Frozen heap generation
 
@@ -698,11 +710,17 @@ prototype of the static run: it is the same code with the dynamic statements
 jumped over, and the corpus test that compares its values with the whole
 program's is the differential S1 can keep.
 
-**Cheesecake follow-ups (not done; that repository is read-only here).**
-Pass `PB_FX_CONST` for the natives that qualify and re-vendor the bridge;
+**Cheesecake follow-ups.** **Done 2026-10-13** ("Cheesecake: the adoption"
+in Results): `hash01`, `hex_color` and `sweep_hits` are `PB_FX_CONST`, the
+bridge is re-vendored at `4269f9f`, all 13 games ran in the engine under
+`PETAL_STATIC_AUDIT=watch` and `PETAL_STATIC_CHECK=1` with no finding, and
+60 of the 76 cells the lint offers in Moses are `const` (the 16 of `map.ptl`
+are kept in `state` on purpose). What these asked for, as written: pass
+`PB_FX_CONST` for the natives that qualify and re-vendor the bridge;
 then run `--static-audit` in the engine, since that is the first time a
 Cheesecake `CONST` row is exercised. After S1, rewrite the 74 constant
-`state` cells as `let` or `const`. worlds-fair's `wf-ui-ffi` likewise.
+`state` cells as `let` or `const`. Not done: worlds-fair's `wf-ui-ffi`
+likewise.
 
 Step 2, the classifier (`core/src/static_classify/`, `Env::static_report` /
 `Env::static_analysis`, `petal show-static [--json] [--all]`; no behaviour
@@ -1004,7 +1022,8 @@ the policy to `-static` (`memo::env_tests`, `cell_in_place.rs`, `enums.rs`).
 Open:
 
 - **Moses has still not run under its host**, so the gate's "83.1k to about
-  79k instructions per frame" is unverified; the layout count above (4,887
+  79k instructions per frame" is unverified (it ran there on 13 October
+  2026: 77.5k, "Cheesecake: the adoption" in Results); the layout count above (4,887
   root instructions) is in line with the hand simulation's 4.0k.
 - Not run here: the Garden workspace and `petal-fantasy-nes` (no target
   directory on this disk, and none could be created); Garden panels have the
@@ -1022,7 +1041,7 @@ Open:
   (`pb_vm_set_static_cache`, `pb_vm_clear_static_values`); a C host has it
   on with the default policy. Cheesecake follow-ups are unchanged from S0:
   pass `PB_FX_CONST`, re-vendor, run `--static-audit` in the engine, then
-  rewrite the 74 cells.
+  rewrite the 74 cells (all done 2026-10-13, see S0).
 
 **Ships.**
 
@@ -1072,10 +1091,16 @@ must not regress.
 (Moses still does not run under this repository's binary, so the "83.1k to
 about 79k" figure is checked on the static part of its frame, not on a whole
 frame under the engine). **Measured under the engine on 13 October 2026**,
-once Cheesecake had re-vendored `518c008`: 83.1k to 77.6k instructions a
-frame, the game as written; the record-allocation figure is still not
-measured there. See the gate table below and "Cheesecake, under its engine"
-in Results.
+once Cheesecake had re-vendored: 83.1k to 77.6k instructions a frame with
+the game as written (Petal `518c008`), and 77.5k once it had adopted `const`
+(Petal `4269f9f`, 60 tables rewritten); the record literals its script code
+builds are down 61.9% over the run (516,335 to 196,762), counted by the
+`AllocMap` and `AllocMapSpread` instructions the engine's profile now
+prints, against the same binary with the cache off. Both figures were taken
+again by the review of the adoption and are exact. So the gate passes on the
+engine's own numbers, and the substitute is no longer what it rests on. See
+the gate table below and "Cheesecake, under its engine" and "Cheesecake: the
+adoption" in Results.
 
 What shipped after the two halves landed:
 
@@ -1137,8 +1162,8 @@ What shipped after the two halves landed:
 | Gate item | Result |
 |---|---|
 | All oracles green | Yes, at `858a252`; list below |
-| Moses: 83.1k to about 79k instructions per frame (−4.1k) | −5,391 on the static part of a frame, as written (8,065 to 2,674). **Under the engine, 13 October 2026:** 83,119 to 77,573 (−5,546, −6.7%), the 600-frame total divided by 600 as the baseline was; the same binary with the cache off (under `PETAL_STATIC_AUDIT=watch`) runs 83,079, so the cache is −5,506 of it |
-| Moses: record allocations down about 40% | −480 records per frame (482 to 2 in the static part); the share of a whole frame's records is not known here. Not measured under the engine either: its `--vm-profile` counts no allocations. Collections over the run went from 14 to 10 or 11 (18 with the cache off under the audit) |
+| Moses: 83.1k to about 79k instructions per frame (−4.1k) | −5,391 on the static part of a frame, as written (8,065 to 2,674). **Under the engine, 13 October 2026:** 83,119 to 77,573 (−5,546, −6.7%), the 600-frame total divided by 600 as the baseline was; the same binary with the cache off (under `PETAL_STATIC_AUDIT=watch`) runs 83,079, so the cache is −5,506 of it. **After the adoption** (Petal `4269f9f`, three `PB_FX_CONST` natives, 60 tables as `const`, `F_PEOPLE` dropped): 77,511 (46,506,542 over the run, −5,608, −6.7%); the natives moved nothing, the rewrite −62 a frame; and 77,450 (46,469,822) at Cheesecake `fa36156`, once the review had made the skin palettes a constant |
+| Moses: record allocations down about 40% | −480 records per frame (482 to 2 in the static part); the share of a whole frame's records is not known here. **Under the engine, 13 October 2026** (its `--vm-profile` counts allocating instructions since Cheesecake `b618c58`): record literals built by script code 516,335 to 196,762 over the 540 profiled frames (956 to 364 a frame, −61.9%), list literals and comprehensions 454,507 to 42,242 (−90.7%). "Before" is the same binary with the cache off, the pre-plan engine being gone, and records built inside natives are not counted. Collections over the run went from 14 to 10 or 11 (18 with the cache off under the audit) |
 | `test/benchmarks/*` under `petal run` must not regress | No regression; instruction counts exact and unchanged |
 
 Moses, `static_frame`, release, 30 frames on one stack, 0 audit findings and
@@ -1208,7 +1233,9 @@ neither touches this work.
   that qualify, run `--static-audit` there, then `petal lint --fix
   --rules-include=state-as-constant games/moses`, and take the headless
   profile of "Benchmarks that gate the work". Until the engine has the cache
-  on, do not apply the rewrite: see the 25.8k row. worlds-fair's `wf-ui-ffi`
+  on, do not apply the rewrite: see the 25.8k row. **Done 2026-10-13**
+  ("Cheesecake: the adoption" in Results; the 25.8k row is 98.2k a frame
+  under the engine with the cache off). worlds-fair's `wf-ui-ffi`
   and the petal-lang.org WASM build likewise know neither `const` nor the
   cache until re-vendored.
 - Not run: the release-profile core suite (so the known release-only
@@ -1336,10 +1363,12 @@ the pass at 85 ms on Moses in release, against 0.55 s for the check.
   never offered. A host-side lint would need the host's `Env`.
 - A `const` whose build raises is static and passes the check; the error is
   the run's, on every run, as for a `let`.
-- Cheesecake follow-ups (not done, read-only here): re-vendor Petal, then
+- Cheesecake follow-ups (**done 2026-10-13**, "Cheesecake: the adoption" in
+  Results; they found that the bridge could not show the engine a `const`
+  that is not constant, fixed in `6a102e1`): re-vendor Petal, then
   `petal lint --fix --rules-include=state-as-constant games/moses`; the
   natives that should be `PB_FX_CONST` decide whether a `const` built from
-  them is accepted by the engine. worlds-fair's vendored copy and the
+  them is accepted by the engine. Not done: worlds-fair's vendored copy and the
   petal-lang.org and hotlaps WASM builds do not know `const` until they are
   re-vendored.
 
@@ -1414,9 +1443,15 @@ note has it.
 
 **Status: done 2026-10-12; gate passed** (no stale value in any differential;
 the time on Moses is measured and is small, see the gate table; that time
-is of the static-only build in this repository, and it is **still not
-measured under the Cheesecake engine**, which runs the re-vendored Petal
-since 13 October 2026 but has had no reload timed in it). The rule,
+is of the static-only build in this repository. **Measured under the
+Cheesecake engine on 13 October 2026**, in the adoption and again in its
+review: a structural edit of the running game is 522 to 550 ms with 529 or
+530 of its 530 values kept, a value edit 13 to 18 ms with the edited table
+and what is built from it rebuilt and nothing else, and the rebuilt table is
+what the game then answers with. There is no "before" for those times (the
+pre-plan engine binary is gone), and the frame after a reload does not
+isolate the constants there, because the game declares its procedural
+assets again after any reload). The rule,
 the module and the tests are described in
 [docs/hot-reload.md](../hot-reload.md#static-values-across-a-reload) and in
 the header of `core/src/env/static_follow.rs`.
@@ -1480,7 +1515,7 @@ What shipped:
 | Gate item | Result |
 |---|---|
 | No stale value in the differential | None. Every reload of `hot_reload.rs` (42 cases, three policies) and of its sweep; 23 cases of `static_reload.rs` under four policies; the 55-app panel corpus through five edits under three policies (275 followed reloads, 11,352 values kept, 1,752 rebuilt); the whole-corpus sweep in release over this repository (403 files: 264 relocated, 128 patched, 218 recompiled) and over the Cheesecake games, worlds-fair, `~/.garden`, the website and `~/tools` (343 files: 160, 9, 154); `static_fuzz` at 3,000 seeds in release |
-| Structural-edit time on Moses against S1 | Unchanged within noise: 542 ms rebuilt, 534 ms followed (reload + lowering + first frame). The frame after the reload is 0.62 ms and 8,353 instructions rebuilt, 0.35 ms and 2,675 followed |
+| Structural-edit time on Moses against S1 | Unchanged within noise: 542 ms rebuilt, 534 ms followed (reload + lowering + first frame). The frame after the reload is 0.62 ms and 8,353 instructions rebuilt, 0.35 ms and 2,675 followed. **Under the Cheesecake engine, 13 October 2026** (the agent's `reload` reply, Moses with 60 tables as `const`, 530 values): 522 to 550 ms for a structural edit with 529 or 530 kept (531.9 and 539.4 ms in the review's two), 13 to 18 ms for a value edit (2 rebuilt: the table and the one sorted from it). No engine figure with follow off, and none from before the plan |
 
 Moses, static-only build (it still does not run under this binary),
 `core/examples/reload_follow.rs`, release, minimum of 7 cycles:
@@ -1547,7 +1582,10 @@ drives a drag through `pb_vm_set_static_debounce` and
 - **Not run**: `tools/verify.ts`, `tsc`, clippy, the release-profile core suite,
   the Garden workspace's tests, `petal-query`, `petal-fantasy-nes`, Moses
   under its own engine.
-- **Cheesecake follow-ups** (read-only here): re-vendor Petal and the
+- **Cheesecake follow-ups** (**done 2026-10-13**: the reload line and the
+  agent's `reload` reply carry `statics`, and the Tuning panel calls the
+  flush when a drag ends; the two switches are not called, the defaults
+  stand): re-vendor Petal and the
   bridge; the engine can then print `statics` from
   `pb_vm_last_reload_json` after a reload, keep calling `pb_vm_set_config`
   during a drag as it does now, and call `pb_vm_flush_static_rebuilds` when
@@ -2513,10 +2551,10 @@ average 4 to 13, and carry that date; the other rows are as measured on the
 
 | Benchmark | Baseline | Now | |
 |---|---|---|---|
-| Moses headless, 600 frames, under the Cheesecake engine | 49,871,337 instructions; 2.71 ms a frame; 14 collections; 406 `StateInit` a frame | **13 October, Cheesecake `03319c2` (Petal `518c008`), no script changed:** 46,543,802 instructions (−3,327,535, −6.7%; 77,573 a frame against 83,119); 2.55 to 2.59 ms a frame with the profile and 2.00 to 2.03 without (5 runs each); 10 or 11 collections; 406 `StateInit` a frame (243,540, unchanged) | The cache is nearly all of it: the same binary under `PETAL_STATIC_AUDIT=watch`, which turns the cache off, runs 49,847,577. `LoadConst` 9,924,893 to 7,647,726. The time is not a same-session comparison: the pre-plan engine measured that day ran 4.24 to 11.60 ms at load average 5 to 21. **Adopted later that day** (three `PB_FX_CONST` natives, 60 tables as `const`): 46,506,542, 77,511 a frame, record literals built by script code −62%: "Cheesecake: the adoption" below |
+| Moses headless, 600 frames, under the Cheesecake engine | 49,871,337 instructions; 2.71 ms a frame; 14 collections; 406 `StateInit` a frame | **13 October, Cheesecake `fa36156` (Petal `4269f9f`), adopted and reviewed** (three `PB_FX_CONST` natives, 60 tables as `const`, `F_PEOPLE` dropped, the skins a constant): **46,469,822 instructions (−3,401,515, −6.8%; 77,450 a frame against 83,119)**; 2.60 to 2.64 ms a frame with the profile (three runs, load average 2 to 4); 11 collections; 353 `StateInit` a frame (211,680); record literals built by script code 196,762 against 516,335 with the cache off (−61.9%). **As the adoption left it, `fd51d84`:** 46,506,542 (−6.7%; 77,511 a frame); 2.60 to 2.74 ms with the profile and 2.02 to 2.13 without (the adoption's and the review's runs); 10 or 11 collections; 212,220 `StateInit`. **Before the adoption, Cheesecake `03319c2` (Petal `518c008`), no script changed:** 46,543,802 instructions (−3,327,535, −6.7%; 77,573 a frame against 83,119); 2.55 to 2.59 ms a frame with the profile and 2.00 to 2.03 without (5 runs each); 10 or 11 collections; 406 `StateInit` a frame (243,540, unchanged) | The cache is nearly all of it: the same binary under `PETAL_STATIC_AUDIT=watch`, which turns the cache off, runs 49,847,577. `LoadConst` 9,924,893 to 7,647,726. The time is not a same-session comparison: the pre-plan engine measured that day ran 4.24 to 11.60 ms at load average 5 to 21, and that binary no longer exists. The adoption itself is −37,260 of the total (58 fewer `StateInit` a frame); the constant natives moved nothing in Moses. With the cache off the adopted scripts run 58,933,077 (98,222 a frame), which is why the rewrite had to wait for the cache. "Cheesecake: the adoption" and "Review of the adoption" below |
 | …the static part of a Moses frame (`static_frame`, the substitute) | 8,065 instructions, 1,230 allocations, 482 records (cache off) | **13 October:** 2,641 instructions, 45 allocations, 1 record; 451 slots in 451 segments, 42 checks a frame; 262 µs to 174 µs (12 October: 2,674, 58, 2; 426 slots in 34 runs) | −5,424 instructions and −1,185 allocations a frame against the −4.1k the proposal estimated by hand; 0 audit findings. The frame that builds everything is 9,217 against 8,284 with the cache off |
 | …the same with the lint's rewrite applied (76 `state` to `const`, scratch copy) | 25,804 instructions, 4,687 allocations (cache off) | 2,566 instructions, 46 allocations; 529 slots | Shows why the rewrite must wait for an engine with the cache on |
-| Example panels in the Cheesecake headless host | snake 2,617 instructions a frame; analytics-dashboard 11,005; network-graph 153,493; settings 31,624 | **13 October, same engine:** snake 2,396 (−8.4%); analytics-dashboard 10,703 (−2.7%); network-graph 152,125 (−0.9%); settings 30,371 (−3.9%) | Totals over 600 frames: 1,570,122 to 1,437,822; 6,603,120 to 6,421,680; 92,093,804 to 91,275,164; 18,952,538 to 18,222,458. Collections 34 to 28, 35 to 32, 100 to 89, 235 to 229. The last two `import garden`, which the engine does not provide; both sides ran against a package of four do-nothing functions, which puts their baselines 3 and 36 instructions a frame under this row's (153,490 and 31,588) |
+| Example panels in the Cheesecake headless host | snake 2,617 instructions a frame; analytics-dashboard 11,005; network-graph 153,493; settings 31,624 | **13 October, same engine:** snake 2,396 (−8.4%); analytics-dashboard 10,703 (−2.7%); network-graph 152,125 (−0.9%); settings 30,371 (−3.9%). **The same on the adopted engine** (Cheesecake `fd51d84`, Petal `4269f9f`, taken by the review): every total and every collection count identical | Totals over 600 frames: 1,570,122 to 1,437,822; 6,603,120 to 6,421,680; 92,093,804 to 91,275,164; 18,952,538 to 18,222,458. Collections 34 to 28, 35 to 32, 100 to 89, 235 to 229. On the adopted engine: 0.16, 0.59, 2.58 to 2.62 and 1.87 to 1.88 ms a frame with the profile (one or two runs each). No panel calls an engine native that became constant, so the adoption could not move them. The last two `import garden`, which the engine does not provide; both sides ran against a package of four do-nothing functions, which puts their baselines 3 and 36 instructions a frame under this row's (153,490 and 31,588) |
 | …the same four under petal-ui's driver, cache off against on (60 monkey frames) | snake 2,992; analytics-dashboard 29,817; network-graph 783,883; settings 36,727 | **13 October:** 2,754 (−8.0%); 29,477 (−1.1%); 782,380 (−0.2%); 35,389 (−3.6%) (12 October: 2,773; 29,513; 782,445; 35,571) | All 55 apps: −1.03% instructions (3,671,125 to 3,633,409), −16.84% allocations (41,411 to 34,437), 2,940 top-level slots and 6,254 in function bodies (12 October: −0.73%, −10.03%, 2,594 slots). The function slots alone: −0.29% and −7.07%. Under observation: −0.65% and −11.03%, 2,945 slots. Garden's 20 panels under `PanelHost`: 30,573 to 28,555 instructions (−6.60%), 2,438 to 1,989 allocations (−18.43%) |
 | Enum reads (A1), ns over the empty loop | local 51.3; `K.v.code` 71.3; `K.all` 227.8 | 3.5; 6.5; 18.7 (record field 1.8, payload 11.3, walk of `all` 16.7) | |
 | 50-variant enum with data, per run (S1) | 9.54 µs before A1, 6.67 µs after it | 2.46 µs (2.00 µs for the enum with no data) | |
@@ -2676,7 +2714,7 @@ were identical in every run (3 to 5 each); times are at load average 2 to 4.
 | Cache off (the audit), scripts as they were | 49,847,577 | 83,079 | 2.89 / — (one run) | 18 | 243,540 | 516,335 |
 | `4269f9f`, no script changed | 46,543,802 | 77,573 | 2.59 to 2.66 / 2.00 to 2.13 | 10 | 243,540 | 196,762 |
 | … and 60 tables as `const`, `F_PEOPLE` dropped | 46,506,542 | 77,511 | 2.60 to 2.74 / 2.02 to 2.03 | 10 or 11 | 212,220 | 196,762 |
-| Cache off, scripts as they are now | 58,964,397 | 98,274 | 3.47 / — (one run) | 24 | — | 800,915 |
+| Cache off, scripts as they are now | 58,933,077 (58,964,397 while `F_PEOPLE` stood) | 98,222 | 3.47 to 3.62 / — (one run each) | 24 | — | 800,915 |
 
 Against the expectation (83.1k to about 79k instructions a frame, record
 allocations down about 40%): **83.1k to 77.5k (−6.7%), and −61.9% of the
@@ -2688,7 +2726,7 @@ natives are not in it), and its "before" is the same binary with the cache
 off, since the pre-plan engine binary is gone. The rewrite itself is worth
 37,260 instructions over the run (58 fewer `StateInit` a frame), and the
 last row is the 25.8k-a-frame warning of the scratch measurement seen under
-the engine: 98.3k a frame with the cache off.
+the engine: 98.2k a frame with the cache off.
 
 **The live-coding check** (Moses under `--headless --agent`, a scratch copy
 of the adopted scripts, no restart at any point):
@@ -2731,6 +2769,153 @@ a table that holds a function is classified dynamic, and the bridge cannot
 return a handle or a pending result from a native). The release core suite,
 the fuzzers, `verify.ts`, vitest and the Garden workspace were not run again
 on `4269f9f`.
+
+### Review of the adoption (13 October 2026)
+
+**Status: done; what the adoption reported holds, one figure was corrected,
+one half-reload it had missed is fixed in the game (Cheesecake `fa36156`),
+and the core suite it had left unrun was run.** An independent
+review of Cheesecake `03319c2..fd51d84`, on the internal disk, in the
+existing Release tree (`ninja` found nothing to build at `fd51d84`).
+
+**Checked, and as reported.**
+
+- **The vendored tree.** `git archive 4269f9f` of the eight vendored paths
+  against Cheesecake's committed tree and against its working tree:
+  `garden/gpp/Cargo.toml` differs (the three `*.workspace = true` lines
+  made concrete), nothing else.
+- **The constant natives.** `hash01` (a splitmix over the bits of its
+  arguments), `hex_color` (`Color::parse_hex` on its string, a record of
+  ints out) and `sweep_hits` (segment against sphere over the two lists it
+  is given, the option check a pure throw) were read line by line with what
+  they call: no clock, input, generator, file, host table or handle in any
+  of them. Across the engine's hundred or so registrations these three are the
+  only `fx::Const`; every other one carries `Effect` or a `Reads*` flag.
+- **The rewrite.** 60 `state` to `const` in 13 files of Moses. None of the
+  60 is assigned, indexed-assigned, `set` or appended to in any module (the
+  hits a grep finds are other modules' own cells of the same name: `WORKS`
+  in `map.ptl`, `NAMES` in `terrain.ptl`, `TONES` in `politics.ptl`); none
+  is `pub` or read as `module.NAME`; none seeds another `state`; none is
+  named by a test, a `--dump-keys` list or a `--set`. Every reader of each
+  was listed by function. Three of them feed a cache held in `state`, which
+  is "Found" below; no value a run computes depends on that. One, `seen` in
+  `dev/core_check.ptl`, is read by nothing at all. Dumped state after the 600-frame run, scripts of `03319c2` against
+  `fd51d84`: 451 keys to 393, the 58 gone are all rewritten cells, no key
+  left has another value.
+- **`F_PEOPLE`.** No reader left in any `.ptl`, test or tool; the one
+  remaining mention is the comment that says where it went.
+- **Every game.** The 13 games with a `game.ptl` and `games/demo/basic.ptl`,
+  headless for 300 frames, as shipped, under `PETAL_STATIC_AUDIT=watch` and
+  under `PETAL_STATIC_CHECK=1`: exit 0 and "0 script errors" 42 times of 42,
+  no audit line, no `static check failure:` line, nine `static check note:`
+  lines (Moses), the dumps byte for byte the same three ways for 12 games
+  and Moonbear's differing in `bake_ms` alone.
+- **`ctest`** on `fd51d84`: 347 of 347 in one run, 1,191 s, load average 2
+  to 3. On `fa36156`, which changes one Moses script: the 70 Moses tests and
+  the 12 of the script host, the agent and the player. `petal check` over the 274 tracked scripts outside `third_party`:
+  the seven documented exceptions and nothing else. The lint offers nothing
+  more in `games/moses`.
+- **The numbers.** The benchmark command, five runs: 46,506,542
+  instructions, 10 collections, 212,220 `StateInit`, 187,079 `AllocMap` +
+  9,683 `AllocMapSpread` (196,762), 42,242 `AllocList`, every run. The
+  scripts of `03319c2` on the same binary: 46,543,802 and 243,540, the
+  same allocation counts; under the audit 49,847,577, 18 collections,
+  506,652 + 9,683 (516,335) and 454,507. Times at load average 2.3: 2.69 to
+  2.71 ms a frame with the profile, 2.07 to 2.13 without (three runs each),
+  a little above the adoption's.
+- **Live coding**, a fresh scratch copy under `--headless --agent`, one
+  process throughout: a title in `history.ptl`'s `RAW` edited, reload 13.5
+  ms, `values`, 528 kept and 2 rebuilt (`moses/history::RAW`,
+  `moses/history::TIMELINE`), and the `history` tool's first 1934 entry
+  carries the new title; `tribo` added to `ALIASES`, 539.4 ms,
+  `recompiled`, 529 kept and 1 rebuilt, and `project tribo` goes from "no
+  such project" to the Triborough Bridge; `util.pct` rewritten, 531.9 ms,
+  530 kept and 0 rebuilt; a label in `map.ptl`'s `LABELS_SRC`, 17.7 ms, 530
+  kept, 0 rebuilt, and the log line `state moses/map::LABELS_SRC keeps its
+  old value: its declaration changed`. The frames after each reload ran 12
+  to 82 ms, a steady one 1.85 ms.
+
+**Corrected.** "Cache off, scripts as they are now" was 58,964,397. That is
+the run at Cheesecake `c92466e`, before `F_PEOPLE` went (taken again here:
+the same). At `fd51d84` it is 58,933,077: with nothing keeping it, the
+comprehension that built `F_PEOPLE` was 58 instructions a frame. The table
+above and Cheesecake's debrief say so now.
+
+**Found.**
+
+- **A constant that feeds a cache held in `state` is rebuilt and the game
+  does not show it.** `widgets.set_skin` kept the merged palette of the look
+  in force in `state var SK` and returned early while the look was the same.
+  Editing the paper of the skin in force (scratch copy, the running game):
+  `values`, 17.1 ms, 529 kept and 1 rebuilt (`moses/widgets::SKINS`), no
+  stale seed, and `SK.paper` was the old colour. It is the map's half-reload
+  in small: the report says rebuilt and the screen does not move. The
+  stale-seed report cannot name it for the same reason: the cell is a
+  `state var`, written inside a function.
+  **Fixed in the game** (Cheesecake `fa36156`): the merged palettes are a
+  constant, `SKIN_PALS`, and the state is the index of the one in force,
+  found again on every `set_skin`. The same edit: 16.2 ms, 529 kept and 3
+  rebuilt (`SKINS`, `SKIN_IDS`, `SKIN_PALS`), no stale seed, and
+  `widgets.skin().paper` is the new colour on the next frame. Dumped state
+  after 600 frames is equal key for key, `SK` and `SK_ID` gone and `SK_IX`
+  new (392 keys); the benchmark is 46,469,822 instructions, 211,680
+  `StateInit`, the allocation counts unchanged, three runs; the three-way
+  run of Moses is clean and the same; 532 constants.
+- **Two more such caches, left.** `projects.defs()` builds the named
+  projects once into `state var DEFS_C`, each spread over its kind's
+  template in the constant `GENERIC`: a template edit reaches the generic
+  works at once and the named ones at a restart, as an edit to the named
+  list itself always did. `panels.bake_overlay` colours a mesh from the
+  constant `RAMPS` and is run again each quarter of game time. Neither is
+  named by the reload report. They are what "report a `state var` whose
+  guarded write reads a changed constant" (not built) would be for, and
+  they say the guard is not always `if X == nil` at the top level: these
+  two are a nil test and a key comparison inside functions.
+- **A constant handed to `append` is built on every run, and nothing a host
+  prints says so.** The first form of the fix was `const SKIN_PALS =
+  append(for id in SKIN_IDS do ... end, PAL)`. `petal check` passed it, the
+  engine's `const` check passed it, the slot of `SKIN_PALS` was filled, and
+  the comprehension ran on every frame: four `AllocMap` and four
+  `AllocMapSpread` a frame in the engine's profile, which is the only way it
+  was seen. In this repository, four frames of a two-skin reduction: 48
+  instructions a steady frame with the cache on against 56 with it off,
+  where `concat([PAL], for ... end)` and the comprehension alone are kept
+  whole. It is the first guard of "What keeps a kept value from changing"
+  doing what it says (a value that reaches the container operand of a
+  mutating builtin gets no slot). What is missing is the word: with the
+  list named, `const T = for ...` then `append(T, PAL)`, `petal show-static`
+  prints "! not kept: T is passed to append, which may update it in place"
+  and neither `petal check`, the `const` check nor the static warnings do;
+  with the comprehension inline nothing prints at all, because the part
+  that is not kept has no declaration. `const` is the plan's guard against
+  a silent fall back to per-frame, and here it does not guard. **Not fixed
+  here** (follow-up 11): it wants a decision between a warning on such a
+  `const` and keeping the value on the strength of the other two guards.
+  The game uses `concat`.
+
+**Run here that the adoption had not.** `core`'s whole debug suite on this
+repository's head (`4269f9f` and two commits of documentation; `cargo test
+--no-fail-fast`): 67 binaries, 2,632 passed, 0 failed, 16 ignored. That is
+the check-note half of `4269f9f` under the whole suite for the first time.
+Still not run on `4269f9f`: the release core suite, the fuzzers at their
+3,000 seeds in release, `verify.ts`, vitest, `petal-ui`'s suite after the
+check-note half, the Garden workspace.
+
+**Not repeated.** The 220-read experiment behind keeping `T`, `F` and `USE`
+(the scratch copy is gone; the reasoning, one instruction against two, was
+read and holds) and the 460-frame autoplay state comparison. Cheesecake
+`b618c58`, which the adoption did not make, is on `main` there and was not
+pushed: the branch was nine commits ahead of `origin/main` and one behind
+when the review began.
+
+**Looked at and left.** `const G = build_grid()` for the map. It would move
+the half-reload one layer down, not remove it: `terrain.ptl`, `sim.ptl`,
+`cam.ptl` and `traffic.ptl` build their own state from the grid behind their
+own guards, so a rebuilt grid would be read by a terrain baked from the old
+one. It would also take the grid out of the frozen generation (`freeze` is
+an effect, so a constant cannot be built with it), where A2 put it to keep
+16,384 tiles out of every collection. The 16 source tables stay in `state`,
+where the module changes together at a restart.
 
 ### The final test pass, 13 October 2026
 
@@ -3030,8 +3215,9 @@ experiment apps 2, `~/tools` 3 (`~/biz/hotlaps` is not on this machine).
 ### Follow-ups
 
 As of 13 October 2026: in this repository 5 to 8 are done, 9 is partly
-done, and of 10 three "Later" items are left, none of which has a profile
-asking for it. What the work of the 13th left open is listed under "Open"
+done, of 10 three "Later" items are left, none of which has a profile
+asking for it, and 11 and 12 are new from the review of Cheesecake's
+adoption and not started. What the work of the 13th left open is listed under "Open"
 in each of its notes and gathered in "Still open after this review"; the
 largest is that a recompile now pays the cache 31 ms of 187 on neon and 102
 of 488 on Moses (classification 14 and 47, constants inside function bodies
@@ -3039,7 +3225,8 @@ of 488 on Moses (classification 14 and 47, constants inside function bodies
 
 Outside this repository, 1 is done:
 
-1. **Cheesecake.** **Done 2026-10-13** ("Cheesecake: the adoption" above):
+1. **Cheesecake.** **Done 2026-10-13** ("Cheesecake: the adoption" above;
+   reviewed the same day, "Review of the adoption"):
    re-vendored at `4269f9f`, `PB_FX_CONST` on its three constant natives
    and every game run under the audit and the check, the headless Moses
    profile, the lint's rewrite (60 of 76 cells; the 16 of `map.ptl` kept in
@@ -3083,6 +3270,26 @@ In this repository:
     2026-10-13**, measured first: "Later: constants inside function
     bodies"), per-input-class slots, keeping slow intermediates, a frozen
     generation that can release objects.
+11. **A `const` that is not kept says nothing** (found by the review of the
+    adoption, 13 October; not started). A value handed to `append` or
+    another builtin that may write in place gets no slot, by design, and is
+    rebuilt on every run. `petal show-static` says "! not kept" when the
+    value has a name; `petal check`, the `const` check and the static
+    warnings do not, and for `const X = append(for ... end, Y)` nothing
+    does. Either warn on a `const` any part of whose build is not skipped,
+    or keep such a value (the second and third guards hold without the
+    first, by S1's own test). `const X = append(for i in range(0, 3) do [i]
+    end, [9])` is the reproduction: 100 frames under the Cheesecake engine
+    run 2,809 instructions and three `AllocList` a frame, and 1,028 and
+    none with `concat(for ... end, [[9]])`.
+12. **The reload report does not name a cache.** A `state var` that a
+    function fills from a constant behind a test of the cell itself (`if
+    get X == nil`, or a remembered key) keeps a value built from the old
+    constant, and the report says only that the constant was rebuilt. Three
+    in Moses (`map.ptl`'s grid, `projects.ptl`'s `DEFS_C`, the overlay
+    bake), and a fourth the review removed. Not started; it needs to tell
+    such a write from one that happens on every run, which is what
+    `4269f9f` had to stop reporting.
 
 ### The cost of a reload (2026-10-13)
 
@@ -3238,7 +3445,9 @@ Open:
   `state` behind an `if X == nil` guard does not (`moses/map.ptl:1472`). The
   stale-seed report does **not** name such a cell (a `state var` set under
   a guard; found in the adoption), so Cheesecake kept those source tables in
-  `state`. The rewrite is manual.
+  `state`. The rewrite is manual. The review of the adoption found the same
+  shape inside functions (a palette cached by `set_skin`, fixed; two more
+  left): follow-up 12.
 - **Another lowering flag doubles the differential-oracle matrix.**
 - **`petal check` and the LSP compile without host natives**, so they may
   report less as static than a host does. They must never report more.

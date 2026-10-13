@@ -387,6 +387,12 @@ way, for code written against an earlier checkout.
   repository) with that commit's date, and the build date. The same is
   `petal::version` for an embedder. A stale binary on the `PATH` gave no sign
   before.
+- `petal run --profile` reports three things by source line: native time by
+  the line that made the call, the native calls of a microsecond or longer
+  (`--profile-slow <us>` moves the threshold), and heap allocations by line
+  and kind. The library has them as `VmProfile::native_sites`,
+  `slow_native_sites` and `alloc_sites`, and `Env::profile_report` prints
+  them for a host.
 - `petal test [<path>...]` finds the test blocks of the files and
   directories given (the current directory by default), runs each on a fresh
   stack after the file's top level, and prints a line per test and a summary;

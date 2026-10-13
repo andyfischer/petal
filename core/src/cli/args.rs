@@ -226,7 +226,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
 }
 
 fn parse_run_args(args: &[String]) -> CliArgs {
-    let usage = "Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--profile] [--effect-audit] [--static-audit] [--static-only] [--seed <n>] [--runs <n>] [--policy <name>] [--state-storage <file>] [--error-format full|bare] <file>";
+    let usage = "Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--profile] [--profile-slow <us>] [--effect-audit] [--static-audit] [--static-only] [--seed <n>] [--runs <n>] [--policy <name>] [--state-storage <file>] [--error-format full|bare] <file>";
     let mut o = RunOpts::default();
     let source = parse_source_args(args, usage, |args, i| {
         match args[*i].as_str() {
@@ -237,6 +237,18 @@ fn parse_run_args(args: &[String]) -> CliArgs {
             "--ir" => o.ir = true,
             "--dup-stats" => o.dup_stats = true,
             "--profile" => o.profile = true,
+            "--profile-slow" => {
+                let text = take(args, i, "Expected a number of microseconds after --profile-slow");
+                let us = text.parse::<f64>().ok().filter(|us| us.is_finite() && *us >= 0.0);
+                o.profile_slow_us = Some(us.unwrap_or_else(|| {
+                    eprintln!(
+                        "Invalid --profile-slow value '{text}': expected a number of \
+                         microseconds (0.5, 1, 250)"
+                    );
+                    process::exit(1)
+                }));
+                o.profile = true;
+            }
             "--effect-audit" => o.effect_audit = true,
             "--static-audit" => {
                 if o.static_audit == crate::static_audit::StaticAuditMode::Off {

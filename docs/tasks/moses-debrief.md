@@ -266,12 +266,31 @@ were not converted; that waits for `cheesecake --test`.
 - Count per-call-site outliers: a "natives over 1 µs a call" list would
   have found the `text_width` cost (the former item 1) at once.
 
+**Done, 13 October 2026** (core; see
+[performance.md](../dev/performance.md#the-measurement-loop)):
+
+- *Frame 0.* The profiler covers whatever runs after it is switched on, so a
+  host that enables it before the load has the boot run (the C bridge has a
+  test of that). Starting at frame 60 was the engine's flag, not Petal's.
+- *Calling line.* The report has **natives by calling line** (`text_width
+  hud.ptl:412 …`), from `VmProfile::native_sites()`.
+- *Outliers.* **Native calls of 1 µs or longer, by calling line**: slow calls
+  of all calls, their time, the longest. `--profile-slow <us>` or
+  `VmProfile::slow_native` moves the threshold.
+- *Allocations.* **Allocations by line**, by kind, exact against the heap's
+  count, with callbacks charged to their own lines.
+
 ### 2.4 The stale CLI
 
 `~/.cargo/bin/petal` on this machine is from 21 September. It rejects
 `import ./x` and still has quadratic `append`. Two reviewers were misled by
 it. `petal --version` should print the commit and build date, and a project
 with a `petal.toml` could state the minimum version.
+
+**Done, 13 October 2026:** `petal --version` prints `petal 0.1.0 (4d1b86b0c1
+2026-10-13, built 2026-10-14)`: the commit (with `-dirty`, or `-vendored`
+from a `VENDORED.md`), its date and the build date, also as `petal::version`.
+A minimum version in `petal.toml` was not added.
 
 ## 3. Language
 
@@ -287,11 +306,6 @@ after an edit)". The result:
   news, the timeline.
 - Editing that data does not hot-reload, because `state` keeps its value.
   Live coding is given up for exactly the content authors edit most.
-**Done, 13 October 2026:** `petal --version` prints `petal 0.1.0 (4d1b86b0c1
-2026-10-13, built 2026-10-14)`: the commit (with `-dirty`, or `-vendored`
-from a `VENDORED.md`), its date and the build date, also as `petal::version`.
-A minimum version in `petal.toml` was not added.
-
 - Tables that stayed `let` are paid for every frame: the agent tool list
   (agent.ptl:393-442, 36 records) is part of the 8% the module top levels
   cost.
@@ -533,6 +547,26 @@ at least twice.
 | Record-wise `lerp` | fifteen fields interpolated by hand (atmosphere.ptl:138) |
 | Computed record keys `{[k]: v}` | the README restates the workaround |
 
+**What shipped, 13 October 2026** (all in [Builtins.md](../Builtins.md),
+tested in `test/ptl/stdlib_helpers.ptl` and `core/tests/stdlib_helpers.rs`):
+
+| Row | Now |
+|---|---|
+| Number formatting | `fixed(x, places)` and `commas(n, places?)` already existed and were not in `Builtins.md`; they, `pad_start`, `pad_end` and `format` are documented now. `{x:.1f}` stays a parse error, which names them: a hole's tokens are the lexer's own, and a spec would have needed a new token and a node every source-rewriting tool reads |
+| `plural`, `list_and` | `plural(n, one, many?)`, `list_and(xs, word?)` (prelude) |
+| `min_by`, `max_by`, `argmin`, `top_k` | `argmin(xs)`, `argmax(xs)`, `top_indices(xs, k)` (natives over numbers); `min_by(xs, key)`, `max_by(xs, key)`, `top_k(xs, k, key?)` (prelude, over those) |
+| `group_by`, `count` | `group_by(xs, key)` over the native `group_by_keys(xs, keys)`, linear; `count(xs, p)` already existed |
+| `fill`, list `repeat` | `fill(n, v)`. `repeat` is still strings only |
+| `interp` | `interp(table, x)`: `[x, y]` knots, bisection, clamped, always a float |
+| `ord`, integer hash, `hash_str` | `ord`, `chr`; `hash_int(a, b?, c?, d?)`, `hash01`, `hash_str(text, salt?)` with the algorithm written down, the same values as the engine's |
+| `flat_map`, multi-generator `for` | `flat_map(xs, f)`. No multi-generator `for` |
+| Priority queue, polyline helpers | not done (held back) |
+| Record-wise `lerp` | `lerp(a, b, t)` on two records, nested records, colors, vectors and number lists inside included; what cannot blend switches at `t = 0.5` |
+| Computed record keys | `{[k]: v}`, among the other fields and under the same override rule; the key must be a string. Parsed as the spread of a one-field record, so nothing downstream changed |
+
+A builtin can now be passed as a callback (`map(xs, len)`), which the keyed
+helpers needed and which failed with `Expected a function, got function`.
+
 Present and unused, which is a documentation problem: `any`, `sum`, `find`,
 `color_lerp`, `r?.field`, `text_wrap`, `text_ellipsize`, `set xs[i] += v`,
 default and named parameters, `assert`. A one-page "before you write a
@@ -555,26 +589,6 @@ text fitting, all of which the prelude has. The reasons are real gaps:
   opens under the pointer. Callers must remember `claim`, `live()` and
   `hovered` separately and do so inconsistently.
   Wanted: `ui_layer(n)`, `ui_modal()`,
-**What shipped, 13 October 2026** (all in [Builtins.md](../Builtins.md),
-tested in `test/ptl/stdlib_helpers.ptl` and `core/tests/stdlib_helpers.rs`):
-
-| Row | Now |
-|---|---|
-| Number formatting | `fixed(x, places)` and `commas(n, places?)` already existed and were not in `Builtins.md`; they, `pad_start`, `pad_end` and `format` are documented now. `{x:.1f}` stays a parse error, which names them: a hole's tokens are the lexer's own, and a spec would have needed a new token and a node every source-rewriting tool reads |
-| `plural`, `list_and` | `plural(n, one, many?)`, `list_and(xs, word?)` (prelude) |
-| `min_by`, `max_by`, `argmin`, `top_k` | `argmin(xs)`, `argmax(xs)`, `top_indices(xs, k)` (natives over numbers); `min_by(xs, key)`, `max_by(xs, key)`, `top_k(xs, k, key?)` (prelude, over those) |
-| `group_by`, `count` | `group_by(xs, key)` over the native `group_by_keys(xs, keys)`, linear; `count(xs, p)` already existed |
-| `fill`, list `repeat` | `fill(n, v)`. `repeat` is still strings only |
-| `interp` | `interp(table, x)`: `[x, y]` knots, bisection, clamped, always a float |
-| `ord`, integer hash, `hash_str` | `ord`, `chr`; `hash_int(a, b?, c?, d?)`, `hash01`, `hash_str(text, salt?)` with the algorithm written down, the same values as the engine's |
-| `flat_map`, multi-generator `for` | `flat_map(xs, f)`. No multi-generator `for` |
-| Priority queue, polyline helpers | not done (held back) |
-| Record-wise `lerp` | `lerp(a, b, t)` on two records, nested records, colors, vectors and number lists inside included; what cannot blend switches at `t = 0.5` |
-| Computed record keys | `{[k]: v}`, among the other fields and under the same override rule; the key must be a string. Parsed as the spread of a one-field record, so nothing downstream changed |
-
-A builtin can now be passed as a callback (`map(xs, len)`), which the keyed
-helpers needed and which failed with `Expected a function, got function`.
-
   `interact(rect) -> {hover, down, click}` that respects layer and clip and
   registers the rectangle, and `pointer_captured()`.
 - **No retained drawing.** A canvas lives one frame. The minimap, a baked

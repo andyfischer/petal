@@ -95,6 +95,9 @@ pub(super) fn handle_run(
         env.enable_emit_trace(true);
     }
     if profile {
+        if let Some(us) = opts.profile_slow_us {
+            env.profile_mut().slow_native = std::time::Duration::from_secs_f64(us / 1e6);
+        }
         env.profile_mut().set_enabled(true);
     }
     // The counters are a runtime switch (off in a release build until asked

@@ -61,6 +61,10 @@ pub struct RunOpts {
     /// Count instructions, builtin calls and collections during the run and
     /// print the histogram to stderr afterwards (see `crate::profile`).
     pub profile: bool,
+    /// `--profile-slow <µs>`: how long a native call must take to be listed
+    /// among the slow ones in the profile (the default is one microsecond).
+    /// Implies `--profile`.
+    pub profile_slow_us: Option<f64>,
     /// Bracket every native call with activity snapshots and print, after
     /// the run, each native whose observed behavior differs from its declared
     /// effect row (see `crate::effect_audit`).

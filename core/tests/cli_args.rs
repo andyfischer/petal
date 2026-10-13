@@ -304,3 +304,41 @@ fn version_prints_the_commit_and_the_build_date() {
     assert!(hash.len() == 10 && hash.bytes().all(|b| b.is_ascii_hexdigit()), "{commit}");
     assert_eq!(petal::version::GIT_DATE.len(), 10);
 }
+
+/// `petal run --profile` reports by source line too: native time by calling
+/// line, the slow native calls, and allocations by line. `--profile-slow`
+/// moves the slow threshold and implies `--profile`.
+#[test]
+fn profile_reports_by_source_line() {
+    let src = "let rows = for i in range(0, 50) do\n  {id: i, name: \"n\" ++ str(i)}\nend\nprint(len(rows))";
+    let (out, err, code) = petal(&["run", "--profile", "-e", src]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(out.trim(), "50");
+    assert!(err.contains("natives by calling line:"), "{err}");
+    let str_line = err
+        .lines()
+        .find(|l| l.trim_start().starts_with("str ") && l.contains(":2 "))
+        .unwrap_or_else(|| panic!("no `str` call site on line 2 in:\n{err}"));
+    assert!(str_line.contains("50 calls"), "{str_line}");
+    assert!(err.contains("allocations by line ("), "{err}");
+    let alloc_line = err
+        .lines()
+        .skip_while(|l| !l.contains("allocations by line"))
+        .find(|l| l.contains(":2 "))
+        .unwrap_or_else(|| panic!("line 2 allocates nothing in:\n{err}"));
+    assert!(alloc_line.contains("map 50"), "{alloc_line}");
+
+    // A threshold nothing reaches lists no slow call; the rest is still there.
+    let (_, err, code) = petal(&["run", "--profile-slow", "60000000", "-e", src]);
+    assert_eq!(code, 0, "{err}");
+    assert!(err.contains("natives by calling line:"), "{err}");
+    assert!(!err.contains("or longer, by calling line"), "{err}");
+    // A threshold of zero lists every timed call.
+    let (_, err, _) = petal(&["run", "--profile-slow", "0", "-e", src]);
+    assert!(err.contains("native calls of 0.0 µs or longer"), "{err}");
+    assert!(err.contains("50 of 50"), "{err}");
+
+    let (_, err, code) = petal(&["run", "--profile-slow", "soon", "-e", src]);
+    assert_ne!(code, 0);
+    assert!(err.contains("Invalid --profile-slow value 'soon'"), "{err}");
+}

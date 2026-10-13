@@ -615,6 +615,15 @@ pub(super) fn make_vm<'a>(
     let trace_emit = ctx.trace_emit;
     // One flag standing for "some per-instruction hook is armed" (see `Vm::hooks`).
     let hooks = trace.enabled || observations.enabled || profile.enabled;
+    // The profiler charges allocations to the line that made them, from the
+    // heap's per-kind counts: they are counted while it is on, and attributed
+    // from the start of this run (`VmProfile::begin_run`).
+    if profile.enabled {
+        if !ctx.heap.alloc_stats().enabled() {
+            ctx.heap.alloc_stats_mut().set_enabled(true);
+        }
+        profile.begin_run();
+    }
     // The stack's enum table is the one for this lowering's layout: a pointer
     // comparison, except on the first dispatch after a load or a reload.
     stack.enums.sync(&bc.enum_layout, &mut ctx.heap);

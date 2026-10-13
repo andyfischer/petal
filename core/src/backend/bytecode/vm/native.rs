@@ -406,8 +406,11 @@ impl<'a> Vm<'a> {
         let count = natives.call(nid, &mut cxt)?;
         let result = cxt.take_result(count);
         if let Some(t) = timed {
+            let elapsed = t.elapsed();
             let caller = self.stack.vm_frames.last().and_then(|f| f.func);
-            self.profile.record_native_time(nid.0, caller, t.elapsed());
+            self.profile.record_native_time(nid.0, caller, elapsed);
+            let at = super::source_line(self.program, origin);
+            self.profile.record_native_site(nid.0, at, elapsed);
         }
         if let Some(before) = before {
             let deps = &self.stack.run_deps;

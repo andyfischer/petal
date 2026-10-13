@@ -1605,7 +1605,7 @@ impl Env {
     ) -> String {
         let bc = self.bytecode.get(&pid).map(|(_, bc)| bc);
         let program = self.programs.get(&pid);
-        self.profile.report_with_functions(
+        self.profile.report_with_lines(
             elapsed,
             |nid| self.native_fn_name(nid),
             |slot| {
@@ -1632,8 +1632,26 @@ impl Env {
                 });
                 Some(format!("{name}{}", at.unwrap_or_default()))
             },
+            |file| self.profile_file_name(pid, file),
             top_n,
         )
+    }
+
+    /// What to print for a [`SourceLine::file`](crate::profile::SourceLine)
+    /// of program `pid`: the file's name without its directories, or
+    /// `<entry>` for source that came with no name. `None` when the program
+    /// has no such file (it was reloaded with fewer).
+    pub fn profile_file_name(&self, pid: ProgramId, file: u16) -> Option<String> {
+        let program = self.programs.get(&pid)?;
+        let Some(source) = program.source_map.file(crate::source_map::FileId(file)) else {
+            // A program compiled with no file table has the entry file only.
+            return (file == 0).then(|| "<entry>".to_string());
+        };
+        let name = source.name.as_str();
+        Some(match name.rsplit('/').next() {
+            Some(base) if !base.is_empty() => base.to_string(),
+            _ => "<entry>".to_string(),
+        })
     }
 
     /// Turn the native effect audit on (or off) for subsequent runs: every

@@ -348,7 +348,19 @@ impl<'a> Vm<'a> {
         } else {
             None
         };
-        match self.exec_inst(frame_idx, inst, origin) {
+        // What the heap has allocated so far, so that what this instruction
+        // allocates (its natives included) is charged to its line.
+        if self.profile.enabled {
+            let now = *self.heap.alloc_stats().by_kind();
+            self.profile.alloc_before(&now);
+        }
+        let executed = self.exec_inst(frame_idx, inst, origin);
+        if self.profile.enabled {
+            let now = *self.heap.alloc_stats().by_kind();
+            let program = self.program;
+            self.profile.alloc_after(&now, || source_line(program, origin));
+        }
+        match executed {
             Ok(sr) => {
                 // Record the retired instruction's result, but only if it stayed
                 // in this frame (a pushed call frame means `dst` isn't written
@@ -532,4 +544,19 @@ impl<'a> Vm<'a> {
         argv.clear();
         self.stack.vm_arg_scratch = argv;
     }
+}
+
+/// The source line `origin` was written on, as the profiler keys a site
+/// (`crate::profile::SourceLine`); line 0 when the term has no position.
+pub(super) fn source_line(
+    program: &crate::program::Program,
+    origin: Option<TermId>,
+) -> crate::profile::SourceLine {
+    origin
+        .and_then(|t| program.source_map.get(t))
+        .map(|span| crate::profile::SourceLine {
+            file: span.file.0,
+            line: span.start.line,
+        })
+        .unwrap_or_default()
 }

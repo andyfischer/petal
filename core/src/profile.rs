@@ -18,12 +18,71 @@
 //! with a sampling profiler (`cargo build --profile profiling`, then `sample`)
 //! to turn a large count into a time attribution.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::time::{Duration, Instant};
 
 use crate::program::FunctionId;
+use crate::stats::AllocKind;
 
 use crate::backend::bytecode::isa::{Inst, Opcode};
+
+/// A line of the program's source, as the profiler keys a call site: the
+/// file's index in the program's source map and the 1-based line. Line 0 is
+/// "no position" (code the compiler generated, a call the host made).
+///
+/// A file and a line rather than a term, so that what was recorded before a
+/// hot reload still reads as the line it was.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SourceLine {
+    pub file: u16,
+    pub line: u32,
+}
+
+/// What the calls of one native from one line cost
+/// ([`VmProfile::native_sites`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NativeSite {
+    /// The native, by `NativeFnId`.
+    pub native: u32,
+    /// The line the calls were written on.
+    pub at: SourceLine,
+    pub calls: u64,
+    /// Wall time inside the native, over all the calls.
+    pub time: Duration,
+    /// The longest single call.
+    pub max: Duration,
+    /// The calls that took at least
+    /// [`slow_native`](VmProfile::slow_native), and the time they took.
+    pub slow_calls: u64,
+    pub slow_time: Duration,
+}
+
+/// The heap objects one line allocated ([`VmProfile::alloc_sites`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AllocSite {
+    pub at: SourceLine,
+    /// Objects created, per [`AllocKind`] (in [`AllocKind::ALL`] order).
+    pub by_kind: [u64; AllocKind::COUNT],
+}
+
+impl AllocSite {
+    pub fn total(&self) -> u64 {
+        self.by_kind.iter().sum()
+    }
+
+    pub fn of(&self, kind: AllocKind) -> u64 {
+        AllocKind::ALL
+            .iter()
+            .position(|k| *k == kind)
+            .map_or(0, |i| self.by_kind[i])
+    }
+}
+
+/// A native call at least this long is a slow one, unless the host says
+/// otherwise ([`VmProfile::slow_native`]): one microsecond, some twenty times
+/// what a call that only computes costs.
+pub const DEFAULT_SLOW_NATIVE: Duration = Duration::from_micros(1);
 
 /// Execution counters for one profiled session. Lives on the
 /// [`Env`](crate::env::Env) and accumulates across every run on it until
@@ -53,6 +112,23 @@ pub struct VmProfile {
     /// [`fn_slot`] — the part of a function's cost that its instruction count
     /// cannot show.
     fn_native_time: Vec<Duration>,
+    /// The same time, by the native and the line that called it: what turns
+    /// "`text_width` took 40 ms" into the one call site that took it.
+    native_sites: HashMap<(u32, SourceLine), NativeSite>,
+    /// A native call at least this long is counted as slow at its site
+    /// ([`NativeSite::slow_calls`]) and listed in the report's outliers.
+    /// Kept by [`reset`](VmProfile::reset); set it before the run.
+    pub slow_native: Duration,
+    /// Heap objects created, by the line whose instruction created them (a
+    /// native's allocations are its calling line's).
+    alloc_sites: HashMap<SourceLine, [u64; AllocKind::COUNT]>,
+    /// Objects created while no instruction was running or between the
+    /// callbacks of a builtin that drives them: the allocations of the run
+    /// that no line can be charged.
+    alloc_elsewhere: [u64; AllocKind::COUNT],
+    /// The heap's allocation counts when they were last attributed; `None`
+    /// at the start of each run (see [`begin_run`](VmProfile::begin_run)).
+    alloc_mark: Option<[u64; AllocKind::COUNT]>,
     /// User-function calls (`Call`/`MethodCall` reaching a Petal function),
     /// i.e. how many VM frames were pushed.
     pub calls: u64,
@@ -81,6 +157,11 @@ impl Default for VmProfile {
             by_function: Vec::new(),
             native_time: Vec::new(),
             fn_native_time: Vec::new(),
+            native_sites: HashMap::new(),
+            slow_native: DEFAULT_SLOW_NATIVE,
+            alloc_sites: HashMap::new(),
+            alloc_elsewhere: [0; AllocKind::COUNT],
+            alloc_mark: None,
             calls: 0,
             collections: 0,
             gc_time: Duration::ZERO,
@@ -144,6 +225,73 @@ impl VmProfile {
             self.fn_native_time.resize(slot + 1, Duration::ZERO);
         }
         self.fn_native_time[slot] += elapsed;
+    }
+
+    /// Record the wall time one call of native `nid` took against the line it
+    /// was called from. Beside [`record_native_time`](Self::record_native_time),
+    /// not instead of it.
+    pub fn record_native_site(&mut self, nid: u32, at: SourceLine, elapsed: Duration) {
+        if !self.enabled {
+            return;
+        }
+        let slow = elapsed >= self.slow_native;
+        let site = self.native_sites.entry((nid, at)).or_insert(NativeSite {
+            native: nid,
+            at,
+            ..NativeSite::default()
+        });
+        site.calls += 1;
+        site.time += elapsed;
+        site.max = site.max.max(elapsed);
+        if slow {
+            site.slow_calls += 1;
+            site.slow_time += elapsed;
+        }
+    }
+
+    /// A run is starting (or a host call): the heap's counts are attributed
+    /// from here, so what the host allocated between two runs — and another
+    /// stack's heap, whose counts are another sequence — is nobody's.
+    #[inline]
+    pub fn begin_run(&mut self) {
+        self.alloc_mark = None;
+    }
+
+    /// An instruction is about to execute, with the heap's allocation counts
+    /// at `now`. Whatever was created since the last attribution was created
+    /// by no instruction of its own — a frame being set up, a builtin between
+    /// two of the callbacks it drives — and is counted as elsewhere.
+    #[inline]
+    pub fn alloc_before(&mut self, now: &[u64; AllocKind::COUNT]) {
+        match &mut self.alloc_mark {
+            Some(mark) if mark == now => {}
+            Some(mark) => {
+                for i in 0..AllocKind::COUNT {
+                    self.alloc_elsewhere[i] += now[i].saturating_sub(mark[i]);
+                }
+                *mark = *now;
+            }
+            None => self.alloc_mark = Some(*now),
+        }
+    }
+
+    /// The instruction finished, with the heap's counts at `now`: what was
+    /// created since [`alloc_before`](Self::alloc_before) — less what the
+    /// instructions it ran inside itself were already charged — is its
+    /// line's. `at` is asked for only when there is something to charge.
+    #[inline]
+    pub fn alloc_after(&mut self, now: &[u64; AllocKind::COUNT], at: impl FnOnce() -> SourceLine) {
+        let Some(mark) = &mut self.alloc_mark else {
+            return;
+        };
+        if mark == now {
+            return;
+        }
+        let site = self.alloc_sites.entry(at()).or_insert([0; AllocKind::COUNT]);
+        for i in 0..AllocKind::COUNT {
+            site[i] += now[i].saturating_sub(mark[i]);
+        }
+        *mark = *now;
     }
 
     /// Record one native/builtin invocation by table index.
@@ -246,12 +394,61 @@ impl VmProfile {
         rows
     }
 
-    /// Clear every counter, leaving `enabled` and the call bench alone.
+    /// Every `(native, calling line)` that was timed, by total time, most
+    /// first.
+    pub fn native_sites(&self) -> Vec<NativeSite> {
+        let mut rows: Vec<NativeSite> = self.native_sites.values().copied().collect();
+        rows.sort_by(|a, b| b.time.cmp(&a.time).then(a.native.cmp(&b.native)).then(a.at.cmp(&b.at)));
+        rows
+    }
+
+    /// The sites with at least one call of [`slow_native`](Self::slow_native)
+    /// or longer, by the time those calls took, most first: the "natives
+    /// over N microseconds a call" list.
+    pub fn slow_native_sites(&self) -> Vec<NativeSite> {
+        let mut rows: Vec<NativeSite> = self
+            .native_sites
+            .values()
+            .filter(|s| s.slow_calls > 0)
+            .copied()
+            .collect();
+        rows.sort_by(|a, b| {
+            b.slow_time.cmp(&a.slow_time).then(a.native.cmp(&b.native)).then(a.at.cmp(&b.at))
+        });
+        rows
+    }
+
+    /// Every line that allocated, by objects created, most first.
+    pub fn alloc_sites(&self) -> Vec<AllocSite> {
+        let mut rows: Vec<AllocSite> = self
+            .alloc_sites
+            .iter()
+            .map(|(at, by_kind)| AllocSite { at: *at, by_kind: *by_kind })
+            .collect();
+        rows.sort_by(|a, b| b.total().cmp(&a.total()).then(a.at.cmp(&b.at)));
+        rows
+    }
+
+    /// Objects created that no line was charged (see `alloc_elsewhere`), per
+    /// [`AllocKind`].
+    pub fn allocs_elsewhere(&self) -> [u64; AllocKind::COUNT] {
+        self.alloc_elsewhere
+    }
+
+    /// Every object created while profiling: the lines' and the rest.
+    pub fn total_allocs(&self) -> u64 {
+        self.alloc_sites.values().flatten().sum::<u64>() + self.alloc_elsewhere.iter().sum::<u64>()
+    }
+
+    /// Clear every counter, leaving `enabled`, the slow-native threshold and
+    /// the call bench alone.
     pub fn reset(&mut self) {
         let enabled = self.enabled;
+        let slow_native = self.slow_native;
         let bench = std::mem::take(&mut self.bench);
         *self = Self::default();
         self.enabled = enabled;
+        self.slow_native = slow_native;
         self.bench = bench;
     }
 
@@ -276,6 +473,21 @@ impl VmProfile {
         elapsed: Option<Duration>,
         native_name: impl Fn(u32) -> String,
         fn_name: impl Fn(usize) -> Option<String>,
+        top_n: usize,
+    ) -> String {
+        self.report_with_lines(elapsed, native_name, fn_name, |_| None, top_n)
+    }
+
+    /// [`report_with_functions`](Self::report_with_functions) plus the
+    /// sections keyed by source line — native time by calling line, the slow
+    /// native calls, allocations by line — with `file_name` resolving a
+    /// [`SourceLine::file`] to what to print for it (`None`: `file#N`).
+    pub fn report_with_lines(
+        &self,
+        elapsed: Option<Duration>,
+        native_name: impl Fn(u32) -> String,
+        fn_name: impl Fn(usize) -> Option<String>,
+        file_name: impl Fn(u16) -> Option<String>,
         top_n: usize,
     ) -> String {
         use fmt::Write as _;
@@ -357,8 +569,113 @@ impl VmProfile {
                 );
             }
         }
+
+        let place = |at: SourceLine| -> String {
+            if at.line == 0 {
+                return "(no line)".to_string();
+            }
+            match file_name(at.file) {
+                Some(file) => format!("{file}:{}", at.line),
+                None => format!("file#{}:{}", at.file, at.line),
+            }
+        };
+
+        let sites = self.native_sites();
+        if !sites.is_empty() {
+            let _ = writeln!(s, "\n  natives by calling line:");
+            for site in sites.iter().take(top_n) {
+                let _ = writeln!(
+                    s,
+                    "    {:<18} {:<26} {:>9.2} ms  {:>10} calls  {:>7.0} ns/call",
+                    native_name(site.native),
+                    place(site.at),
+                    site.time.as_secs_f64() * 1e3,
+                    commas(site.calls),
+                    site.time.as_secs_f64() * 1e9 / site.calls.max(1) as f64
+                );
+            }
+        }
+
+        let slow = self.slow_native_sites();
+        if !slow.is_empty() {
+            let _ = writeln!(
+                s,
+                "\n  native calls of {} or longer, by calling line (slow calls of all, their time, the longest):",
+                micros(self.slow_native)
+            );
+            for site in slow.iter().take(top_n) {
+                let _ = writeln!(
+                    s,
+                    "    {:<18} {:<26} {:>10} of {:<10} {:>9.2} ms  max {}",
+                    native_name(site.native),
+                    place(site.at),
+                    commas(site.slow_calls),
+                    commas(site.calls),
+                    site.slow_time.as_secs_f64() * 1e3,
+                    micros(site.max)
+                );
+            }
+        }
+
+        let allocs = self.alloc_sites();
+        let total_allocs = self.total_allocs();
+        if total_allocs > 0 {
+            let _ = writeln!(
+                s,
+                "\n  allocations by line ({} objects):",
+                commas(total_allocs)
+            );
+            for site in allocs.iter().take(top_n) {
+                let _ = writeln!(
+                    s,
+                    "    {:<26} {:>12}  {:>5.1}%  {}",
+                    place(site.at),
+                    commas(site.total()),
+                    site.total() as f64 * 100.0 / total_allocs as f64,
+                    kinds(&site.by_kind)
+                );
+            }
+            let elsewhere: u64 = self.alloc_elsewhere.iter().sum();
+            if elsewhere > 0 {
+                let _ = writeln!(
+                    s,
+                    "    {:<26} {:>12}  {:>5.1}%  {}",
+                    "(outside any instruction)",
+                    commas(elsewhere),
+                    elsewhere as f64 * 100.0 / total_allocs as f64,
+                    kinds(&self.alloc_elsewhere)
+                );
+            }
+        }
         s
     }
+}
+
+/// `1.0 µs`, `250 µs`, `3.2 ms`: a duration at the scale a native call has.
+fn micros(d: Duration) -> String {
+    let us = d.as_secs_f64() * 1e6;
+    if us >= 1000.0 {
+        format!("{:.1} ms", us / 1e3)
+    } else if us >= 100.0 {
+        format!("{us:.0} µs")
+    } else {
+        format!("{us:.1} µs")
+    }
+}
+
+/// `list 300, map 12`: the kinds a site allocated, most first.
+fn kinds(by_kind: &[u64; AllocKind::COUNT]) -> String {
+    let mut rows: Vec<(&str, u64)> = AllocKind::ALL
+        .iter()
+        .zip(by_kind)
+        .filter(|(_, n)| **n > 0)
+        .map(|(k, n)| (k.label(), *n))
+        .collect();
+    rows.sort_by_key(|&(_, n)| std::cmp::Reverse(n));
+    rows.iter()
+        .map(|(label, n)| format!("{label} {}", commas(*n)))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 // ---------------------------------------------------------------------------
@@ -968,6 +1285,147 @@ mod tests {
         p.set_enabled(true);
         assert!(p.bench.enabled);
         assert_eq!(p.bench.stats().len(), 1);
+    }
+
+    fn line(file: u16, line: u32) -> SourceLine {
+        SourceLine { file, line }
+    }
+
+    #[test]
+    fn native_time_is_kept_by_calling_line() {
+        let mut p = VmProfile::new();
+        p.set_enabled(true);
+        p.record_native_site(3, line(0, 10), Duration::from_nanos(400));
+        p.record_native_site(3, line(0, 10), Duration::from_nanos(600));
+        p.record_native_site(3, line(1, 7), Duration::from_micros(5));
+        p.record_native_site(4, line(0, 10), Duration::from_nanos(100));
+        let sites = p.native_sites();
+        assert_eq!(sites.len(), 3);
+        // By time, most first.
+        assert_eq!((sites[0].native, sites[0].at), (3, line(1, 7)));
+        assert_eq!((sites[1].native, sites[1].at), (3, line(0, 10)));
+        assert_eq!(sites[1].calls, 2);
+        assert_eq!(sites[1].time, Duration::from_nanos(1000));
+        assert_eq!(sites[1].max, Duration::from_nanos(600));
+        assert_eq!(sites[2].native, 4);
+    }
+
+    #[test]
+    fn slow_native_calls_are_counted_against_the_threshold() {
+        let mut p = VmProfile::new();
+        p.set_enabled(true);
+        assert_eq!(p.slow_native, DEFAULT_SLOW_NATIVE);
+        // 1 µs is slow by default; 999 ns is not.
+        p.record_native_site(1, line(0, 2), Duration::from_nanos(999));
+        p.record_native_site(1, line(0, 2), Duration::from_micros(1));
+        p.record_native_site(1, line(0, 2), Duration::from_micros(40));
+        p.record_native_site(2, line(0, 3), Duration::from_nanos(50));
+        let slow = p.slow_native_sites();
+        assert_eq!(slow.len(), 1, "a site with no slow call is not listed");
+        assert_eq!((slow[0].native, slow[0].calls, slow[0].slow_calls), (1, 3, 2));
+        assert_eq!(slow[0].slow_time, Duration::from_micros(41));
+        assert_eq!(slow[0].max, Duration::from_micros(40));
+
+        // The threshold is the host's to set, and a reset keeps it.
+        p.slow_native = Duration::from_micros(10);
+        p.reset();
+        assert_eq!(p.slow_native, Duration::from_micros(10));
+        assert!(p.native_sites().is_empty());
+        p.record_native_site(1, line(0, 2), Duration::from_micros(1));
+        p.record_native_site(1, line(0, 2), Duration::from_micros(40));
+        assert_eq!(p.slow_native_sites()[0].slow_calls, 1);
+    }
+
+    #[test]
+    fn allocations_are_charged_to_the_instruction_that_made_them() {
+        let k = |list: u64, map: u64| {
+            let mut a = [0u64; AllocKind::COUNT];
+            a[1] = list;
+            a[3] = map;
+            a
+        };
+        let mut p = VmProfile::new();
+        p.set_enabled(true);
+        p.begin_run();
+        // An instruction that allocates two lists.
+        p.alloc_before(&k(5, 0));
+        p.alloc_after(&k(7, 0), || line(0, 4));
+        // One that allocates nothing never asks for its line.
+        p.alloc_before(&k(7, 0));
+        p.alloc_after(&k(7, 0), || panic!("no line is needed"));
+        // A builtin driving callbacks: it allocates a map, a callback on
+        // line 9 allocates a list, and it allocates a list at the end.
+        p.alloc_before(&k(7, 0));
+        {
+            p.alloc_before(&k(7, 1)); // the map, made before the callback ran
+            p.alloc_after(&k(8, 1), || line(0, 9));
+        }
+        p.alloc_after(&k(9, 1), || line(0, 6));
+
+        let sites = p.alloc_sites();
+        let at = |l: u32| sites.iter().find(|s| s.at == line(0, l)).copied().unwrap();
+        assert_eq!(at(4).of(AllocKind::List), 2);
+        assert_eq!(at(9).total(), 1);
+        assert_eq!(at(6).of(AllocKind::List), 1, "only what the callbacks were not charged");
+        assert_eq!(p.allocs_elsewhere()[3], 1, "the map made between instructions");
+        assert_eq!(p.total_allocs(), 5, "every object is counted once");
+        // Most objects first.
+        assert_eq!(sites[0].at, line(0, 4));
+    }
+
+    #[test]
+    fn a_new_run_does_not_inherit_the_heaps_earlier_counts() {
+        let mut one = [0u64; AllocKind::COUNT];
+        one[0] = 100;
+        let mut p = VmProfile::new();
+        p.set_enabled(true);
+        p.begin_run();
+        p.alloc_before(&one);
+        one[0] = 101;
+        p.alloc_after(&one, || line(0, 1));
+        // Another stack's heap, whose counts are lower: nothing is charged
+        // for the difference, in either direction.
+        p.begin_run();
+        let mut other = [0u64; AllocKind::COUNT];
+        other[0] = 3;
+        p.alloc_before(&other);
+        other[0] = 5;
+        p.alloc_after(&other, || line(0, 2));
+        assert_eq!(p.total_allocs(), 3);
+        assert_eq!(p.allocs_elsewhere(), [0; AllocKind::COUNT]);
+    }
+
+    #[test]
+    fn the_report_has_the_line_sections() {
+        let mut p = VmProfile::new();
+        p.set_enabled(true);
+        p.record_native(2);
+        p.record_native_time(2, None, Duration::from_micros(30));
+        p.record_native_site(2, line(1, 412), Duration::from_micros(30));
+        p.record_native_site(5, line(0, 0), Duration::from_nanos(80));
+        p.begin_run();
+        let mut a = [0u64; AllocKind::COUNT];
+        p.alloc_before(&a);
+        a[1] = 3;
+        a[3] = 1;
+        p.alloc_after(&a, || line(1, 88));
+        let text = p.report_with_lines(
+            None,
+            |nid| if nid == 2 { "text_width".into() } else { format!("native{nid}") },
+            |_| None,
+            |file| (file == 1).then(|| "hud.ptl".to_string()),
+            10,
+        );
+        assert!(text.contains("natives by calling line:"), "{text}");
+        assert!(text.contains("text_width") && text.contains("hud.ptl:412"), "{text}");
+        assert!(text.contains("(no line)"), "{text}");
+        assert!(text.contains("native calls of 1.0 µs or longer, by calling line"), "{text}");
+        assert!(text.contains("1 of 1"), "{text}");
+        assert!(text.contains("allocations by line (4 objects):"), "{text}");
+        assert!(text.contains("hud.ptl:88") && text.contains("list 3, map 1"), "{text}");
+        // With no way to name a file, the index stands in.
+        let text = p.report_with_functions(None, |n| format!("n{n}"), |_| None, 10);
+        assert!(text.contains("file#1:412"), "{text}");
     }
 
     #[test]

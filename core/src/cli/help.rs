@@ -349,7 +349,15 @@ OPTIONS
 
        --profile
               Count instructions, builtin calls and collections during the
-              run and print the histogram to stderr.
+              run, from its first instruction, and print the report to
+              stderr: the opcode and builtin histograms, instructions per
+              function, native time by native and by calling line, the
+              native calls of a microsecond or longer, and heap allocations
+              by line.
+
+       --profile-slow <us>
+              With --profile (which it implies): list the native calls that
+              took at least this many microseconds, in place of one.
 
        --effect-audit
               Watch what every native does during the run and report, on

@@ -152,6 +152,13 @@ impl Default for AllocStats {
 }
 
 impl AllocStats {
+    /// The count of every kind, in [`AllocKind::ALL`] order: what the
+    /// profiler snapshots around an instruction to charge its line.
+    #[inline]
+    pub fn by_kind(&self) -> &[u64; AllocKind::COUNT] {
+        &self.by_kind
+    }
+
     pub fn new() -> Self {
         Self::default()
     }

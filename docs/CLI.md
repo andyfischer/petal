@@ -312,7 +312,13 @@ Tracing and inspection options:
   the report as the main output, see
   [`pending-report`](#pending-report--report-live-pending-resources).
 - `--profile` — count instructions, builtin calls and collections during the
-  run and print the histogram to stderr.
+  run, from its first instruction, and print the report to stderr: the opcode
+  and builtin histograms, instructions per function, native time by native
+  and **by calling line**, the **native calls of a microsecond or longer** by
+  calling line, and **heap allocations by line**. See
+  [performance.md](dev/performance.md#the-measurement-loop).
+- `--profile-slow <us>` — with `--profile` (which it implies): the threshold
+  of the slow-call list, in microseconds, in place of 1.
 - `--dup-stats` — count copy-on-write duplications and heap allocations
   during the run and print them to stderr afterwards. Works in any build.
 - `--static-audit` — watch the dynamic inputs while each top-level term that

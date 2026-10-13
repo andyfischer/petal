@@ -21,6 +21,38 @@ bounds. Start here: it is exact, it is cheap, and a surprising count (half of
 all instructions being `Move`; 83% of builtin calls being `slice`) points at the
 problem far more directly than a time profile does.
 
+Three more sections say *where*, by source line:
+
+- **Natives by calling line.** The same native time, per `(native, file:line)`
+  of the call. `text_width  hud.ptl:412  38.2 ms  12,000 calls` is a different
+  finding from "`text_width` took 40 ms": it is the one call to fix.
+- **Native calls of 1 µs or longer, by calling line.** For each call site, how
+  many of its calls reached the threshold, the time those took and the
+  longest. A native that only computes costs some tens of nanoseconds, so a
+  site listed here is doing real work per call (measuring text, building a
+  mesh, touching a file) and is worth hoisting out of a loop or caching.
+  `--profile-slow <us>` moves the threshold; an embedder sets
+  `env.profile_mut().slow_native` before turning the profiler on.
+- **Allocations by line.** Heap objects created, per line, by kind (`list
+  4,000, string 4,001, map 2,000`). A native's allocations are its calling
+  line's, and a callback's are the callback's own lines, not the `map` that
+  drove it. The total is exact — it is the heap's own count, which the
+  profiler turns on for the run — and what no line can be charged (a frame
+  being set up, a builtin between two callbacks) is the last row. This is the
+  table that answers "the collector is 10% of the frame: who allocates?", and
+  it shows a quadratic `append` at once: the line allocates a list per pass.
+
+The data behind them is `VmProfile::native_sites()`, `slow_native_sites()` and
+`alloc_sites()` (`petal::profile`), keyed by `SourceLine { file, line }`;
+`Env::profile_file_name(pid, file)` names a file.
+
+**The first run is covered if the profiler is on before it.** The report
+describes everything since `set_enabled(true)`: turn it on before
+`load_program` and the boot run — where a game builds its tables — is in it.
+A host that only switches it on after a warm-up will not see that run; that is
+the host's choice, not the profiler's (`petal run --profile` profiles from the
+first instruction).
+
 **2. Attribute the time.** A count is not a cost. Build with symbols —
 `cd core && cargo build --profile profiling` — and sample the binary:
 

@@ -848,6 +848,25 @@ impl Program {
             .filter_map(|t| t.state_key.map(|k| (k, t.name.as_ref())))
     }
 
+    /// Whether the slot declared under `key` holds a cell rather than a plain
+    /// value: a `state var`, whose `StateInit` init block ends in a `CellNew`
+    /// (see `compiler::stmt`). What a host seeding the slot from outside has
+    /// to know, since every read and `set` of the variable is compiled
+    /// against the cell.
+    pub fn state_slot_is_cell(&self, key: StateKey) -> bool {
+        let init_blocks: SmallVec<[BlockId; 2]> = self
+            .terms
+            .iter()
+            .filter(|t| matches!(t.op, TermOp::StateInit) && t.state_key == Some(key))
+            .filter_map(|t| t.child_blocks.first().copied())
+            .collect();
+        !init_blocks.is_empty()
+            && self
+                .terms
+                .iter()
+                .any(|t| matches!(t.op, TermOp::CellNew) && init_blocks.contains(&t.block_id))
+    }
+
     pub fn get_block(&self, id: BlockId) -> &Block {
         &self.blocks[id.0 as usize]
     }

@@ -88,7 +88,35 @@ impl Env {
         // Allocate the value into the stack's own context heap so a fork's
         // state stays self-consistent (its ids must index its forked heap).
         let ck = self.ctx_for(stack_id).unwrap_or(self.default_context);
-        let val = crate::value::json_to_value(json_val, &mut self.ctx_mut(ck).heap)?;
+        let mut val = crate::value::json_to_value(json_val, &mut self.ctx_mut(ck).heap)?;
+        // A `state var`'s slot holds a cell. `set_state` writes through one
+        // that is already there; a slot seeded before the stack's first run
+        // (a restore) has none yet, and `StateInit` skips a populated slot —
+        // so the bare value would stay, and the first `set` of the variable
+        // would fail on something that is not a cell. Seed the cell.
+        let is_cell = self
+            .programs
+            .get(&program_id)
+            .is_some_and(|p| p.state_slot_is_cell(state_key));
+        if is_cell {
+            let runtime_key = RuntimeStateKey {
+                base: state_key,
+                path: smallvec::SmallVec::new(),
+            };
+            let has_cell = self
+                .stacks
+                .get(&stack_id)
+                .and_then(|s| s.state.get(&runtime_key))
+                .is_some_and(|v| matches!(v, Value::Cell(_)));
+            if !has_cell {
+                val = Value::Cell(self.ctx_mut(ck).heap.alloc_cell(val));
+                // An existing bare value (seeded by an earlier, uncelled
+                // restore) is replaced outright rather than kept beside it.
+                if let Some(stack) = self.stacks.get_mut(&stack_id) {
+                    stack.state.remove(&runtime_key);
+                }
+            }
+        }
         self.set_state(stack_id, state_key, val);
         Ok(())
     }

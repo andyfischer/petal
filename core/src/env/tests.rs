@@ -2722,6 +2722,45 @@ mod pending_render_chunk_m_tests {
         );
     }
 
+    /// A `state var` restored before the stack's first run is still a cell:
+    /// the script's `set` and `get` are compiled against one, and `StateInit`
+    /// skips a populated slot, so the restore has to seed the cell itself.
+    /// (Garden's back/forward restore does exactly this; a module that
+    /// `set`s its own `state var` at module scope failed on the first frame.)
+    #[test]
+    fn a_state_var_restored_before_the_first_frame_is_still_a_cell() {
+        let src = "state var n = 0\nstate var tag = nil\nstate plain = 0\n\
+                   fn bump()\n  set n = get n + 1\nend\n\
+                   set tag = nil\nbump()\nplain = plain + 1\nget n + plain\n";
+        let mut env = Env::new();
+        let pid = env.load_program(src).unwrap();
+
+        // One frame: the stack is reset and the program run again.
+        fn frame(env: &mut Env, stack: StackKey) -> Value {
+            env.reset_stack(stack).unwrap();
+            env.run(stack).unwrap()
+        }
+
+        let a = env.create_stack(pid).unwrap();
+        assert_eq!(frame(&mut env, a), Value::Int(2));
+        assert_eq!(frame(&mut env, a), Value::Int(4));
+        let snapshot = env.get_state_json(pid, a);
+        assert_eq!(snapshot["n"], serde_json::json!(2));
+
+        // Seeded before the first run: the `set`s work and count on from the
+        // restored values.
+        let b = env.create_stack(pid).unwrap();
+        assert_eq!(env.set_state_map_from_json(pid, b, &snapshot), 3);
+        assert_eq!(frame(&mut env, b), Value::Int(6));
+        assert_eq!(frame(&mut env, b), Value::Int(8));
+
+        // Setting it again once it is a cell writes through the same cell.
+        env.set_state_from_json(pid, b, "n", &serde_json::json!(100)).unwrap();
+        assert_eq!(frame(&mut env, b), Value::Int(101 + 5));
+        // And the plain `state` beside it is still a plain value.
+        assert_eq!(env.get_state_json(pid, b)["plain"], serde_json::json!(5));
+    }
+
     /// A restore map carrying an unknown key alongside a known one applies the
     /// known key, silently skips the unknown (no panic, no error), and reports
     /// the count of keys actually applied — the skip-and-continue contract a

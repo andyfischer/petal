@@ -740,6 +740,9 @@ int pb_vm_last_reload_kind(pb_vm* vm);
  *      "stale_seeds": [             //   state that kept its value although its
  *        {"name": "grid",           //   initializer read something that changed
  *         "read": "TILES"}],        //   (null: its own declaration changed)
+ *      "stale_caches": [            //   state filled behind a test (a cache)
+ *        {"name": "paths",          //   from something the edit changed: it
+ *         "read": "ROADS"}],        //   keeps what it built
  *      "cleared": null},            //   why everything was rebuilt, if it was
  *    "new_diagnostics": [           // what the edit introduced (the items of
  *      {"severity": "warning",      // pb_vm_diagnostics_json); empty unless

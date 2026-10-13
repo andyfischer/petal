@@ -43,7 +43,7 @@ Polled, never called back. An *edge* is true on one frame.
 | `mouse_pressed(button)` | Went down this frame. |
 | `mouse_released(button)` | Came up this frame. |
 | `click_count()` | 1, 2, 3… on the frame of a press: a double click is `mouse_pressed(0) && click_count() == 2`. |
-| `drag_active()` | The left button is held and the pointer has moved more than 3 px since the press. |
+| `drag_active()` | The left button is held and the pointer has moved 3 px or more since the press. |
 | `drag_start_x()`, `drag_start_y()` | Where that press landed. |
 | `scroll_x()`, `scroll_y()` | Wheel motion this frame. |
 | `key_down(key)`, `key_pressed(key)`, `key_released(key)` | Level, and the two edges. |
@@ -296,7 +296,7 @@ coordinates and drawn anywhere.
 | `text_wrap_rows(s, style, max_width)` | The lines with their character ranges, for carets and selections. |
 | `text_row_of(rows, at)` | Which wrapped row a character index is on. |
 | `text_range_rects(s, style, a, b, line_h?)` | The rects that cover characters `a..b`: a selection highlight. |
-| `text_ellipsize(text, style, max_width, where?)` | Trimmed to fit with an ellipsis. `where` is `"tail"` or `"head"`. |
+| `text_ellipsize(text, style, max_width, where?)` | Trimmed to fit with an ellipsis. `where` says which part is cut: `"tail"` (the default), `"head"` or `"middle"`. |
 | `text_index_at(text, style, dx)` | The character index at a pixel offset: click to caret. |
 | `ellipsize(s, avail_px, size)`, `ellipsize_tail(s, avail_px, size)` | Trim to a pixel width keeping the start, or the end (a file path). |
 | `truncate_head(s, max_chars)`, `truncate_tail(s, max_chars)` | Trim to a character count. |

@@ -115,7 +115,51 @@ fn takes(forms: &[Arity], count: usize) -> bool {
         .any(|(min, max)| *min <= count && max.is_none_or(|m| count <= m))
 }
 
+/// The names of the functions `stmts` declares at top level, sorted: what
+/// identifies a file as one of the sources below however it is laid out.
+fn declared_fns(stmts: &[Stmt]) -> Vec<String> {
+    let mut names: Vec<String> = stmts
+        .iter()
+        .filter_map(|s| match &s.kind {
+            StmtKind::FnDecl { name, .. } => Some(name.clone()),
+            StmtKind::NativeFn(decl) => Some(decl.name.clone()),
+            _ => None,
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+/// Whether the file is itself the standard prelude or a file of a bundled
+/// package: the place the existing functions are written, which shadows
+/// nothing by declaring them (and a bundled library that replaces a `ui`
+/// function with its own does so as its design). Told by the functions it
+/// declares, so that it still holds for the file after `--fix` or `fmt`.
+fn is_bundled_source(stmts: &[Stmt]) -> bool {
+    static SOURCES: OnceLock<HashSet<Vec<String>>> = OnceLock::new();
+    let mine = declared_fns(stmts);
+    if mine.is_empty() {
+        return false;
+    }
+    SOURCES
+        .get_or_init(|| {
+            let texts = std::iter::once(crate::env::STD_PRELUDE).chain(
+                crate::bundled::BUNDLED_PACKAGES
+                    .iter()
+                    .flat_map(|p| p.sources().map(|(_, text)| text)),
+            );
+            texts
+                .filter_map(|text| crate::rewrite::parse_ast(text).ok())
+                .map(|(_tree, stmts)| declared_fns(&stmts))
+                .collect()
+        })
+        .contains(&mine)
+}
+
 pub(super) fn plan_shadow_reports(stmts: &[Stmt]) -> Vec<Fix> {
+    if is_bundled_source(stmts) {
+        return Vec::new();
+    }
     // The bundled packages this file imports whole.
     let imported: Vec<(&str, &HashMap<String, Vec<Arity>>)> = stmts
         .iter()
@@ -375,6 +419,16 @@ mod tests {
             shadows(&format!("import color: rgb\n{body}")),
             Vec::<String>::new()
         );
+    }
+
+    #[test]
+    fn the_prelude_and_the_bundled_packages_do_not_shadow_themselves() {
+        assert_eq!(shadows(crate::env::STD_PRELUDE), Vec::<String>::new());
+        for package in crate::bundled::BUNDLED_PACKAGES {
+            for (path, source) in package.sources() {
+                assert_eq!(shadows(source), Vec::<String>::new(), "{}/{path}", package.name);
+            }
+        }
     }
 
     #[test]

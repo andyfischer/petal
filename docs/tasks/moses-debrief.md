@@ -202,8 +202,8 @@ remainder (`1 / 2` is 0); the general form is the opt-in rule above.
 
 Warnings reach a host through `ReloadReport::new_diagnostics`: the findings
 a reload's compile has that the program before the edit did not, rendered
-with `Env::render_diagnostics` (docs/embedding-guide.md). The C bridge does
-not hand it out yet.
+with `Env::render_diagnostics` (docs/embedding-guide.md); the C bridge hands
+it out as `pb_vm_new_diagnostics_text`.
 
 A qualified call to a private or missing export is a check error with its
 position (`hud.hidden()`; it had no source position, so the name scan

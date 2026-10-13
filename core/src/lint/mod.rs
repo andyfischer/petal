@@ -939,12 +939,20 @@ mod tests {
                     path.display()
                 );
             }
-            // Linting the fixed text must find nothing: `--fix` is a fixed
-            // point.
+            // Linting the fixed text must find nothing it could fix:
+            // `--fix` is a fixed point. What a rule only reports is still
+            // there, and is the same report.
             let again = lint_source(&outcome.output, &opts).expect("relint");
             assert!(
-                again.findings.is_empty(),
+                again.fixable() == 0,
                 "lint --fix not a fixed point for {}: {:?}",
+                path.display(),
+                again.findings.iter().filter(|f| f.fixable).collect::<Vec<_>>()
+            );
+            assert_eq!(
+                again.findings.len(),
+                outcome.findings.len() - outcome.fixable(),
+                "the unfixed findings of {} changed across --fix: {:?}",
                 path.display(),
                 again.findings
             );

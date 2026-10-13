@@ -792,6 +792,23 @@ with `PB_ERR_COMPILE`, phase `link`, before any line runs.
   says). Memo replays a call whose inputs repeat, which pays off for UI-like
   programs; a game whose inputs change every frame runs a few percent faster
   with it off. Output is the same either way.
+- `set_static_cache(false)` / `static_cache()` (`pb_vm_set_static_cache`,
+  `pb_vm_static_cache`) switch the static-value cache off or on for later
+  runs (on by default, or as `PETAL_POLICY` says). With it on, a top-level
+  value that depends on no dynamic data (a table of literals, one built from
+  such tables by functions that read nothing else, a `const`, an enum's
+  constant data) is built by the first run after a load or a reload and kept
+  for the runs after it. Output is the same either way. A native counts as
+  constant only if it was registered with `PB_FX_CONST`, so a host's natives
+  are dynamic until it says otherwise ([Constant natives](ffi.md)).
+  `clear_static_values()` (`pb_vm_clear_static_values`) drops what is kept,
+  for a host that changed something a `PB_FX_CONST` native answers from.
+  `static_values_json()` (`pb_vm_static_values_json`) returns the counters
+  (`slots`, `filled`, `skips`, `skipped_instructions`, `clears`), the values
+  that could not be kept (`rejected`: one holding a function, a `var` cell,
+  a handle or a pending result is rebuilt on every run), and `warnings`, the
+  same in words and only those no earlier call handed out since the last
+  load or reload: log them after a frame and each is said once.
 - `pb_version()` names the bridge, petal-ui contract and prelude level, and
   petal-query protocol version.
 

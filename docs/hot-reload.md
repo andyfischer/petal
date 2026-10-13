@@ -295,6 +295,11 @@ through the new declaration:
 | Its payload fields renamed, added or removed | recompiled | the payload is positional: it answers the new names as far as it reaches, a field it never had is absent, and a pattern for the new shape does not match it |
 | Its enum renamed or removed | recompiled | keeps the old tag, so it is a variant of an enum that no longer exists |
 
+Static constant data is kept between runs like any other static value
+(`core/src/static_cache.rs`), and every reload, a patched one included,
+drops what was kept: the run after the reload publishes the data again, so
+the table above holds with the cache on and off.
+
 None of these is a crash. The stale value is not rewritten or dropped either:
 `state` is the program's memory, and putting the variant back makes the same
 value whole again. A program that must survive such an edit gives its `match`

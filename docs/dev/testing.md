@@ -150,6 +150,18 @@ The `golden` step needs no such help: `petal-ui-run` runs the default policy,
 cache included, and the hashes in `test/ui-golden/` were taken before the
 cache existed.
 
+The cache has a fuzzer of its own, `core/src/backend/bytecode/static_fuzz.rs`
+(`cargo test --lib static_fuzz`; `PETAL_FUZZ_ITERS=<n>` for a soak, 100 seeds
+by default). Its programs are static tables (`let`, `const`, `config let`,
+constructor-built, enum data) with dynamic declarations between them, every
+route of writing to a value that may be kept, top-level loops, and three
+reloads (literals patched in place, a statement added, back to the first
+text). Each is driven with the cache on and off under `replay`,
+`replay-memo`, `fast` and `baseline`, and the transcripts must be equal. A
+second test holds the generator to its job: programs that compile, keep
+values and are reloaded both ways. `static_cache_fuzz` in `fuzz.rs` runs
+the general generator's programs three times each, cache on against off.
+
 Plans live in `test/verify-plans/`. A plan's `exclude` list drops directories
 from its corpus roots (the vitest fixtures under `test/vitest`). A plan's `include` list names module search
 directories (relative to each side's root) handed as `-I` to every side of the

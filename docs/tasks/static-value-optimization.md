@@ -196,7 +196,8 @@ about 220 ns per variant on every run. This is why Moses keeps derived
 lowering. A literal edit in enum data is a patched reload that recompiles
 nothing, so folded copies at use sites would go stale unless the patcher
 learns about them. Once S1 exists, enum data becomes a static value and this
-is revisited there.
+is revisited there. (Revisited 2026-10-12 and still not done: see "S1, finishing
+and the gate result".)
 
 **Constraints.**
 
@@ -820,8 +821,10 @@ still evaluated every run.
 
 **Status of the cache itself: done 2026-10-12** (the first seven items of
 "Ships", down to "Off under `baseline` and `explain`…"). `const`, the lint
-and the hover are a separate track and have their own note; enum constant
-data as a static value is not started.
+and the hover are a separate track and have their own note. Enum constant
+data, the joins between the two tracks, the items both notes list as open and
+the gate are in "S1, finishing and the gate result" below; where that note
+and an "Open" list here disagree, that note is the later one.
 
 What shipped (`core/src/static_cache.rs` is the module and its header is the
 description):
@@ -985,6 +988,162 @@ Open:
 the hand simulation measured (83.1k → about 79k instructions per frame,
 record allocations down by about 40%). `test/benchmarks/*` under `petal run`
 must not regress.
+
+### S1, finishing and the gate result (2026-10-12)
+
+**Status: done; gate passed, with one figure measured by a substitute**
+(Moses still does not run under this repository's binary, so the "83.1k to
+about 79k" figure is checked on the static part of its frame, not on a whole
+frame under the engine).
+
+What shipped after the two halves landed:
+
+- **`const` and the cache are one thing.** `Env::check_consts` keeps its
+  analysis beside the program (`Program::static_analysis`, stamped with the
+  native table's revision and the term count) and the lowering that follows
+  is served from it: a program with a `const` is classified once per
+  recompile, not twice. A static value that cannot be stored (a function, a
+  `var` cell, a handle, a pending result) is rebuilt every run and now says
+  so: `Env::take_static_warnings(stack)` / `take_all_static_warnings()` hand
+  out one line per value, once per load and once more after a reload;
+  `petal run` and the SDL host print it, and the line says `const` when the
+  declaration was one. The lint's rewritten `const` is cached like its `let`
+  (the Moses numbers below are that rewrite).
+- **Hover** says `// static, kept between runs` for a declaration the cache
+  gives a slot. That costs a lowering, so the note is worked out by the first
+  hover after a change and kept until the next change; a change classifies
+  nothing (`hover_classifies_lazily_and_once_per_change`). The timings in the
+  doc comment of `DocumentStore::static_note` (48 ms, 130 ms, 0.6 s) were
+  taken once and not repeated at the final head.
+- **Enum constant data is a static value** where its expressions are static.
+  The per-variant `__enum_data` publication is a candidate instruction and
+  the record it publishes has a slot; a frame that skips the run leaves the
+  record in the stack's enum table. Both tables are emptied together, and a
+  literal patched inside the data moves the constant revision. Measured
+  (`rerun_timing`, release, 50 variants with three keys): 7.04 µs a run with
+  the cache off, 2.50 µs with it on, 2.04 µs for the same enum without data.
+  That is about 9 ns a variant against about 100.
+- **The literal `Enum.variant.key` fold is not done, on purpose.** A patched
+  reload gives the edited literal's term a constant slot of its own and
+  retargets the one `LoadConst` lowered from that term
+  (`env/reload.rs`, `retarget_constants`). A folded read is a second
+  instruction loading the same constant from somewhere else, usually a
+  function body, and nothing ties it to the term. It could be made correct in
+  two ways: drop the lowering the first time a folded literal is patched,
+  which turns a 0.8 ms value edit of enum data into a relowering (hundreds of
+  milliseconds on Moses), in exactly the case live tuning is for; or teach
+  the patcher a table of folded copies, which breaks "no pass reads a
+  constant's value" for every later pass. The gain is the difference between
+  a path read and a record read, about 5 ns (6.6 against 1.4), only for data
+  that is a single literal, and a top-level `let x = K.v.key` is already kept
+  by the cache. Revisit if a profile shows path reads in a hot loop.
+- **The fuzz target** is `core/src/backend/bytecode/static_fuzz.rs`: static
+  tables (`let`, `const`, `config let`, constructor-built, enum data) between
+  dynamic declarations, every route of writing to a value that may be kept,
+  top-level loops, and three reloads (literals patched, a statement added,
+  back to the first text), cache on against off under `replay`,
+  `replay-memo`, `fast` and `baseline`. With the plan filter, the non-fresh
+  roots and the immutable bit all switched off it fails. A second test holds
+  the generator to programs that compile, keep values and reload both ways.
+- **From the two "Open" lists:** the C bridge has `pb_vm_set_static_cache`,
+  `pb_vm_static_cache`, `pb_vm_clear_static_values` and
+  `pb_vm_static_values_json`; the lint offers a `pub state`;
+  `Env::set_static_only_keeps` and `core/examples/static_frame.rs` measure
+  the static part of a frame for a script whose host is not here.
+
+**Gate.**
+
+| Gate item | Result |
+|---|---|
+| All oracles green | Yes, at `858a252`; list below |
+| Moses: 83.1k to about 79k instructions per frame (−4.1k) | −5,391 on the static part of a frame, as written (8,065 to 2,674); not run under the engine |
+| Moses: record allocations down about 40% | −480 records per frame (482 to 2 in the static part); the share of a whole frame's records is not known here |
+| `test/benchmarks/*` under `petal run` must not regress | No regression; instruction counts exact and unchanged |
+
+Moses, `static_frame`, release, 30 frames on one stack, 0 audit findings and
+no value rejected on either copy:
+
+| | Instructions, static part of a later frame | Allocations | Records | Slots, runs |
+|---|---|---|---|---|
+| As written, cache off | 8,065 | 1,230 | 482 | |
+| As written, cache on | 2,674 (−5,391) | 58 (−1,172) | 2 (−480) | 426, 34 |
+| 74 constant `state` cells as `const` (the lint's `--fix`, scratch copy), cache off | 25,804 | 4,687 | 1,383 | |
+| …cache on | 2,566 (−23,238) | 46 | 1 | 529, 48 |
+
+How to read it. The static-only build skips every dynamic statement, and
+those cost the same with the cache on and off, so the difference between two
+rows of one copy is exactly what the cache removes from every frame of the
+real program. It is 1.3 times the hand simulation's 4.1k because a skipped
+constructor call saves its body, which the layout count (4,887 root
+instructions) does not see. The two copies are not comparable row for row:
+as written, the 74 cells are `state` and their per-frame cost (the 406
+`StateInit` hits of the baseline) is dynamic code, which this build skips.
+What the rewrite shows is the hazard the lint's note describes: a `const`
+table costs 25.8k instructions a frame wherever the cache is off, against a
+`StateInit` hit for the `state` it replaced, and 2.6k with it on. The first
+frame after a load or a reload costs the same either way (8,284 and 35,195
+instructions) plus 68 to 96 for the stores.
+
+Other numbers at the final head (release):
+
+- Panel corpus, 55 apps, 60 monkey frames, `replay`: −0.73% instructions and
+  −10.03% allocations over the sum; snake 2,992 to 2,773 (−7.3%), 144 to 96
+  allocations (−33.6%); memory −29.7% and −44.5%; analytics-dashboard −1.0%
+  and −3.0%; network-graph −0.2% and −12.7%; settings −3.1% and −11.6%.
+  2,594 slots, no value rejected. Snake gained four slots and three
+  allocations over the first note from enum data.
+- A 400-record `let` table as a memo argument: 0 misses (the test in
+  `core/tests/static_cache.rs`).
+- `test/benchmarks/*` under `petal run --seed 1`, cache off there, minimum of
+  15 at load average 6: append 6.8 ms (6.1 as the minimum of 60), arith 12.0,
+  audio_synth 106.5, calls 29.7 (29.1 of 60), life 14.5, particles 10.7 (10.5
+  of 60), spreadsheet 209.6, match_dispatch 316.2. The first S1 note has 6.4,
+  12.0, 108.0, 28.8, 14.4, 10.5, 212.4, 313.4 for the same day. life
+  3,913,944 instructions, spreadsheet 20,449,651 and 9 collections, as
+  before the plan.
+
+Oracles run at `858a252` (debug unless said): core `cargo test
+--no-fail-fast` 62 binaries, 2,505 passed, 0 failed, 16 ignored;
+`core-libs/petal-ui` 19 binaries, 296 passed (the 55-app corpus frame for
+frame, cache on against off, under four policies); `petal-query` 33;
+`integrations/petal-c-bridge` 19 and `make test-c-bridge` 4 of 4;
+`integrations/petal-desktop-sdl` 54; vitest 1,570 in 75 files; `tsc`;
+`./tools/test-examples.ts` 33 (optimizer on and off, cache on and off over
+two runs, golden); `./tools/verify.ts --plan compiler` with the UI driver's
+cache off on one side and on on the other, golden step included: 136
+identical traces, none changed, 145 unsupported, 19 modules; `static_fuzz`
+and `static_cache_fuzz` at 3,000 seeds each in release (and one earlier
+`static_fuzz` soak of 23 minutes), clean. `core/tests/hot_reload.rs` is
+unchanged and passes in debug.
+
+One vitest run made while three builds were going failed two timing-bound
+tests (`string-helpers` 100k appends in 5.5 s against a 3 s bound, and a
+`fix-imports` case that printed nothing); both pass on a quiet machine and
+neither touches this work.
+
+**Open after S1.**
+
+- Moses under its own engine: re-vendor, pass `PB_FX_CONST` for the natives
+  that qualify, run `--static-audit` there, then `petal lint --fix
+  --rules-include=state-as-constant games/moses`, and take the headless
+  profile of "Benchmarks that gate the work". Until the engine has the cache
+  on, do not apply the rewrite: see the 25.8k row. worlds-fair's `wf-ui-ffi`
+  and the petal-lang.org WASM build likewise know neither `const` nor the
+  cache until re-vendored.
+- Not run: the release-profile core suite (so the known release-only
+  `hot_reload` timing failure was not looked at again), clippy, the Garden
+  workspace and `petal-fantasy-nes` (disk). Garden panels record
+  observations, so they have the cache off by construction; Garden prints no
+  static warning because it never has a slot.
+- `petal lint` has no host, so a `state` table built with host natives is
+  never offered. Unchanged.
+- Scalars in a run with tables get slots (neutral), function declarations
+  split runs, and a `StaticStore` that finds its slot filled keeps the old
+  value, which S2's partial dirtying has to revisit. Unchanged from the
+  first note.
+- Disk: `core/target/debug/deps` held 87,665 stale codegen-unit objects of
+  core's own test binaries (about 4 GB); they were deleted when free space
+  fell to 1.6 GB. Garden's artifacts in the same directory were left.
 
 ### S1, the language surface: `const`, the lint, hover
 

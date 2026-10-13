@@ -738,7 +738,11 @@ cost of being wrong.
   `Env::static_values(stack)` lists the values and names any that could not
   be kept (one holding a function, a `var` cell, a handle or a pending
   result is rebuilt every run instead), and `Env::set_static_cache(false)`
-  turns the cache off.
+  turns the cache off. `Env::take_static_warnings(stack)` (or
+  `take_all_static_warnings()`) hands out one line per value that could not
+  be kept, each once per load and once more after a reload: call it after a
+  run and print what it returns, as `petal run` and the SDL host do. The
+  cache prints nothing by itself.
 
 So `CONST` is opt-in and the default is dynamic:
 

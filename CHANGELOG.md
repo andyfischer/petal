@@ -142,6 +142,18 @@ way, for code written against an earlier checkout.
   `Env::set_static_cache(false)`) turns it off; `Env::static_values` lists
   what a stack holds. See
   [docs/dev/performance.md](docs/dev/performance.md#static-values).
+- An enum's constant data is a static value where its expressions are
+  static: the per-variant records are published by the first run after a
+  load or a reload and left in place by the runs after it, where every run
+  used to build and publish them again (about 100 ns a variant; 9 ns now).
+  Data that calls a function reading `state` is published on every run as
+  before.
+- A static value that cannot be kept (one holding a function, a `var` cell,
+  a host handle or a pending result) is built on every run, and the host is
+  told once per load: `Env::take_static_warnings` hands out the lines,
+  `petal run` and the SDL host print them, and a `const` says it was one. A
+  program that declares a `const` is classified once per recompile, for the
+  check and the cache together.
 - The collector's budget counts live objects plus a small cost per slot, where
   it charged the full trace cost for free slots too: a program allocating at a
   steady rate now reaches a steady heap instead of growing its slot count and
@@ -288,13 +300,17 @@ way, for code written against an earlier checkout.
   reported, and `--fix` rewrites it to `const`. The rule compiles its own
   rewrite and keeps only what the compiler accepts as constant. It is the
   first opt-in rule: it runs only with `--rules-include=state-as-constant`,
-  because a cell a host writes by name looks the same to it.
+  because a cell a host writes by name looks the same to it. A `pub state`
+  qualifies (importers cannot write an export) and becomes a `pub const`.
 - `petal show-static` lists a `const` under that keyword and says when one is
   not constant or cannot be verified without its host (`const_check` in
   `--json`). The language server shows a top-level declaration's class on
   hover (`// static`, `// dynamic: <the first reason>`, `// function,
   static-pure`), reports a `const` that is not constant as an error, and
-  lists a `const` as a constant in the outline.
+  lists a `const` as a constant in the outline. A static declaration the
+  static-value cache gives a slot reads `// static, kept between runs`. The
+  class is worked out by the first hover after a change, not on every
+  keystroke.
 - `petal suggest` proposes the type annotations and safe refactors a program
   implies.
 - `petal bench` reports the per-call cost of named functions.
@@ -484,6 +500,12 @@ way, for code written against an earlier checkout.
   Embedders turn it on with `Env::set_static_audit` and read
   `Env::static_audit_report`. See
   [docs/CLI.md](docs/CLI.md#checking-the-answer---static-audit).
+- `petal-c-bridge`: `pb_vm_set_static_cache` / `pb_vm_static_cache` switch
+  the static-value cache, `pb_vm_clear_static_values` drops what it holds
+  (for a host that changed something a `PB_FX_CONST` native answers from),
+  and `pb_vm_static_values_json` returns its counters, the values that could
+  not be kept and the warnings not yet handed out. In C++: `set_static_cache`,
+  `static_cache`, `clear_static_values`, `static_values_json`.
 - `petal-c-bridge`: `pb_vm_reload` takes layout and value edits without
   recompiling, and `pb_vm_last_reload_kind` / `pb_vm_last_reload_json` say
   what a reload did. `pb_vm_set_config` sets one config value in the running

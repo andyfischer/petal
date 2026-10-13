@@ -457,7 +457,7 @@ instructions, median 3.9%, and makes 1.0% to 44.5% fewer allocations, median
 
 | App | Slots | Instructions per frame, off | On | Allocations per frame, off | On |
 |---|---|---|---|---|---|
-| games/snake | 51 | 2,992 | 2,792 (−6.7%) | 144 | 99 (−30.9%) |
+| games/snake | 55 | 2,992 | 2,773 (−7.3%) | 144 | 96 (−33.6%) |
 | games/memory | 86 | 30,490 | 21,447 (−29.7%) | 1,430 | 793 (−44.5%) |
 | productivity/settings | 46 | 36,727 | 35,571 (−3.1%) | 1,914 | 1,691 (−11.6%) |
 | productivity/kanban | 40 | 3,954 | 3,759 (−4.9%) | 184 | 137 (−25.5%) |
@@ -479,12 +479,52 @@ to none.
 
 Costs. A recompile classifies the program (about 85 ms on a 27,000-line
 game, 5 to 8 ms on an example panel) and runs the pass; nothing is classified
-on a literal-only reload. Per frame, one test per skippable run plus one
+on a literal-only reload. A program that declares a `const` is classified
+when it is compiled, for the check, and the lowering that follows is served
+the same answer (`Program::static_analysis`), so that is still once. Per frame, one test per skippable run plus one
 register write per slot. With the cache off the cost is two comparisons per
 dispatch into the VM and one more bit tested in the in-place heap
 operations: the `test/benchmarks/*` scripts under `petal run` time within
 1.2% either way of the same source with both compiled out, and their
 instruction counts are unchanged.
+
+**Enum constant data** is a static value too, where its expressions are
+static. `enum Kind  park(code: 2) end` publishes one record per variant by a
+call the declaration makes on every run; with the cache on that call is part
+of a run like any other, the record it publishes has a slot, and a frame
+that skips the run leaves the record the first run published where it is.
+On `test/benchmarks/micro/enum_decl_data.ptl` (50 variants, three keys each,
+`rerun_timing`, release) a run costs 7.0 µs with the cache off and 2.5 µs
+with it on, against 2.1 µs for the same enum without data: about 9 ns a
+variant, down from about 100, which is loading 50 slots into registers.
+Data that is not static (a function that reads `state`) is published on
+every run as before.
+
+**A script whose host is not here.** A game written for an engine cannot run
+under this repository's binary: its dynamic code calls natives nothing here
+registers. Its static declarations can, since static code calls only
+constant natives. `cd core && cargo run --release --example static_frame --
+game.ptl [frames]` runs the static-only build (`petal run --static-only`:
+every statement that is not static is jumped over) on one stack with the
+cache off and then on, and prints the instructions and allocations of the
+first frame and of a later one. The difference between the two later frames
+is exactly what the cache takes out of every frame of the real program,
+since the dynamic statements cost the same on both sides. It says nothing
+about what the dynamic code then gains from a kept table (a memo hit, less
+to trace in a collection). Moses, 27,000 lines, release, 12 October 2026:
+
+| | Instructions, static part of a frame | Allocations | of them records |
+|---|---|---|---|
+| As written, cache off | 8,065 | 1,230 | 482 |
+| As written, cache on | 2,674 (−5,391) | 58 (−1,172) | 2 (−480) |
+| The 74 constant `state` cells as `const`, cache off | 25,804 | 4,687 | 1,383 |
+| …cache on | 2,566 (−23,238) | 46 | 1 |
+
+The first frame after a load or a reload builds everything and costs the
+same either way (8,284 instructions as written, 35,195 with the 74 cells),
+plus 68 to 96 for the stores. What is left on a later frame is the function
+declarations (a closure is made on every run) and the runs too small to be
+worth a check.
 
 To see what a script would keep without running it: `PETAL_OPT_STATS=1
 PETAL_POLICY=fast petal show-bytecode app.ptl >/dev/null` prints the runs,

@@ -163,7 +163,11 @@ Options:
   carry from one run to the next, and the default policy is then the host's
   `fast`. The first run that fails ends the session. `petal run --runs 2
   --policy replay f.ptl` against `--policy replay-static` is the static-value
-  cache on against off.
+  cache on against off. A static value the cache could not keep (one that
+  holds a function, a `var` cell, a host handle or a pending result) is
+  rebuilt on every run, and `petal run` says which on stderr, once:
+  `warning: const ICONS (app.ptl:12) holds a pending result, which cannot be
+  kept between runs, so it is rebuilt on every run`.
 - `--state-storage <file>` — keep `state` between runs in `<file>`. See
   [State between runs](#state-between-runs).
 
@@ -764,7 +768,7 @@ found 2 problem(s) in 1 file(s); run `petal lint --fix` to fix them
 | `prefer-repeat` | a `for` over `range(n)` / `range(0, n)` whose whole body appends one string literal (or `string` parameter) to an accumulator that starts as a string | `x ++= repeat(s, n)` — the loop copies `x` on every pass |
 | `prefer-compound-assign` | `x = x op e` for an operator with a compound form | `x op= e` |
 | `prefer-pub` | the deprecated `export` modifier, on any declaration or `import` | `export` → `pub` |
-| `state-as-constant` (opt-in) | a plain top-level `state` (no key, not `state var`, not `pub`) that nothing in the program assigns and whose initializer is static | `state` → `const` |
+| `state-as-constant` (opt-in) | a plain top-level `state` (no key, not `state var`; `pub state` included, since importers cannot write an export) that nothing in the program assigns and whose initializer is static | `state` → `const` |
 
 Layout is not a finding: that is `fmt`. A file `--fix` changes is formatted
 afterwards, because a rewritten chain moves code between lines. Every fix is

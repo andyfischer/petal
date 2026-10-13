@@ -1780,6 +1780,13 @@ computes as it runs; that is a compile error. A `let` whose value is itself
 constant (a literal, arithmetic on constants, a list or record of them, or a
 variant such as `let fallback = Use.road`) is fine.
 
+A host that runs the script every frame evaluates a variant's data once per
+load, not once per frame, when the data is [static](#const--a-value-that-must-be-constant)
+(literals, constant `let`s, functions that read nothing else): it is kept
+with the program's other static values and rebuilt after a reload. Data
+that calls a function reading `state` is evaluated at the start of every
+run, as is all of it where static values are not kept.
+
 Data may read other data, in either order of declaration; what is read is
 evaluated first:
 
@@ -2612,8 +2619,10 @@ app.ptl:12:1: state-as-constant: `state TILES` is never assigned and its initial
 $ petal lint --fix --rules-include=state-as-constant app.ptl
 ```
 
-The rule runs only when asked for by name, because the rewrite is a
-judgement and not a respelling. Keep `state` where a host writes the cell by
+A `pub state` qualifies like any other: a module's exports are read-only to
+the modules that import them, so the writes in the declaring file are all
+the writes there are. The rule runs only when asked for by name, because the
+rewrite is a judgement and not a respelling. Keep `state` where a host writes the cell by
 name, where the value is meant to survive a reload, or where the initializer
 is expensive and the script runs somewhere that rebuilds a `const` on every
 run; `// petal-lint-ignore state-as-constant` on the line records that.

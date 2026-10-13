@@ -668,3 +668,34 @@ fn a_scenario_clicks_a_target_by_name() {
     assert_eq!(missing, ["Nope"]);
     assert!(!flag(&ui, "held"));
 }
+
+// ── State restore ─────────────────────────────────────────────────────────
+
+/// A host that restores a saved state map into a fresh program before its
+/// first frame (Garden's back/forward does) gets a working `ui` module: the
+/// module's own per-run cells are restored as cells, and reset as usual.
+#[test]
+fn a_restored_state_map_leaves_the_module_working() {
+    const SRC: &str = "state n = 0\n\
+                       n = n + 1\n\
+                       with_layer(7, fn() ui_block(rect(0, 0, 50, 50)) end)\n\
+                       clip_push(rect(0, 0, 10, 10))";
+    let mut a = ui(SRC);
+    a.mouse_move(5, 5);
+    a.frame().unwrap();
+    a.frame().unwrap();
+    // Saved mid-flight: a floor raised, a clip left pushed, the layer set.
+    let saved = a.state();
+    assert_eq!(saved["ui::_floor"], 7);
+
+    let mut b = ui(SRC);
+    let (program, stack) = (b.program_id(), b.stack_id());
+    b.env.set_state_map_from_json(program, stack, &saved);
+    b.frame().unwrap();
+    assert_eq!(b.state_int("n"), Some(3), "the app's state was restored");
+    // The pointer is at (0, 0) here, off nothing registered last frame: the
+    // restored floor did not survive the run's reset.
+    b.mouse_move(400, 400);
+    b.frame().unwrap();
+    assert_eq!(b.state()["ui::_floor"], serde_json::Value::Null);
+}

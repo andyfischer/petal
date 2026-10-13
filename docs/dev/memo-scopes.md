@@ -147,6 +147,39 @@ clears the table, since records name the old program's functions. Forcing a
 run, setting state from the host, and restoring a snapshot need nothing
 special: the validation reads the live slots.
 
+## Three things a library author runs into
+
+Met while moving petal-ui's widgets onto shared per-run cells (the layer, the
+clip and the pointer's floor in `core-libs/petal-ui/prelude/ui.ptl`). Each is
+the mechanism above doing what it says, with a consequence that is easy to
+miss. `core-libs/petal-ui/tests/hit.rs` has the test that pins the outcome.
+
+**A plain module `var` is a new cell on every run.** A scope that read it
+recorded *that* cell, which is dead by the next run, so the scope never
+validates: every function that touches a module `var` runs every frame. Shared
+per-run context that widgets read belongs in a `state var`, one cell for the
+life of the program, reset by a `set` at module scope. The frame gate is not
+disturbed: it compares a `state var` at the end of a run with what it held at
+the start.
+
+**A child's read does not see its parent's earlier write.** The overlay that
+lets a read after a write validate is per record. A child scope that reads a
+cell an earlier sibling wrote (`clip_push` then `clip_pop`, `ui_layer(n)` then
+a widget, both in one function) is validated against the live cell, which
+still holds the value from before the parent ran. The child fails, and the
+parent runs again each frame; its own children still replay. So the function
+that *sets* a context and the functions that read it should not be the same
+scope: a list that pushes a clip re-runs, its rows do not.
+
+**A speculative re-execution applies its writes.** A child whose record wrote
+nothing is re-executed alone when it fails validation, to see whether the
+parent can stay valid. If this time it writes a cell (it took the other
+branch), the write is real and happens before the siblings that precede it
+have run. petal-ui's hit test was such a child: not hot last frame (no write),
+hot now (raises the floor). A scope that may write should always write
+something, so that it is never re-executed this way; the prelude's `_wrote`
+cell exists for that.
+
 ## Where it is wired
 
 | | |

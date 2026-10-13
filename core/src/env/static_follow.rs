@@ -404,7 +404,12 @@ impl Env {
         let follow = &layout.follow;
         let table = &stack.statics;
         // A table filled under another lowering holds nothing of this one.
-        let current = table.stamp().is_some_and(|(id, _)| id == layout.id);
+        // Nor does one filled under other constants: a literal patched
+        // through another stack of the program (or a fork of this one)
+        // moved the revision and left this table as it was, and only this
+        // stack's next run would have emptied it. Nothing here knows what
+        // that edit reached, so nothing of the table is kept.
+        let current = table.stamp() == Some((layout.id, program.constants.revision()));
 
         let (spans, cleared) = match changed_spans(change) {
             Ok((old, _)) => (old, None),

@@ -64,7 +64,8 @@ fn slots(w: &World) -> Vec<String> {
             let name = info.name.clone().unwrap_or_else(|| "(unnamed)".to_string());
             let held = match state {
                 StaticSlotState::Filled(v) => {
-                    petal::value::value_to_display_string(v, w.env.heap())
+                    // A fork has a heap of its own.
+                    petal::value::value_to_display_string(v, w.env.heap_for(w.sid).unwrap())
                 }
                 other => format!("{other:?}"),
             };
@@ -127,6 +128,7 @@ fn follow_modules(old: &str, new: &str, old_modules: Modules, new_modules: Modul
             .unwrap_or_else(|e| panic!("[{what}] reload: {e}"));
         let plain = b.env.reload_program(b.sid, new, None).unwrap();
         assert_eq!(report.outcome, plain.outcome, "[{what}] outcome");
+        assert_report_counts(&a, &report, &format!("[{what}]\n{new}"));
         assert!(plain.statics.is_none(), "[{what}] the oracle follows nothing");
         assert_eq!(run_frame(&mut a), run_frame(&mut b), "[{what}] the run after the reload\n{new}");
         assert_same_tables(&a, &b, &format!("[{what}] the tables after the reload\n{new}"));
@@ -137,6 +139,28 @@ fn follow_modules(old: &str, new: &str, old_modules: Modules, new_modules: Modul
         first.get_or_insert(report);
     }
     first.unwrap()
+}
+
+/// What the report says against the table the reload left, before
+/// anything runs: `kept` slots hold a value, `rebuilt` ones hold none, and
+/// every name it gives is a slot that is waiting to be built.
+fn assert_report_counts(w: &World, report: &ReloadReport, what: &str) {
+    let Some(s) = &report.statics else { return };
+    let values = w.env.static_values(w.sid).expect("a table");
+    let filled = values.slots.iter().filter(|(_, st)| matches!(st, StaticSlotState::Filled(_))).count();
+    assert_eq!(s.kept + s.deferred.len(), filled, "{what}\n{s:?}");
+    assert_eq!(s.kept + s.deferred.len() + s.rebuilt, values.slots.len(), "{what}\n{s:?}");
+    for name in &s.rebuilt_names {
+        let waiting = values.slots.iter().any(|(info, st)| {
+            let short = name.rsplit("::").next().unwrap();
+            (info.name.as_deref() == Some(name) || info.name.as_deref() == Some(short))
+                && !matches!(st, StaticSlotState::Filled(_))
+        });
+        assert!(waiting, "{name} is named as rebuilt and holds a value: {what}\n{s:?}");
+    }
+    if s.cleared.is_some() {
+        assert_eq!(s.kept, 0, "{what}\n{s:?}");
+    }
 }
 
 fn follow(old: &str, new: &str) -> ReloadReport {
@@ -958,5 +982,780 @@ print(n, SIDES, pal.RAMP, OWN, geo.UNIT)
             assert!(names.contains(e), "{from} -> {to}: {e} not in {names:?}");
         }
         assert!(!names.contains(&"OWN"), "{from} -> {to}: {names:?}");
+    }
+}
+
+// ---------------------------------------------------------------------
+// Review of S2: attacks on the dirtying.
+// ---------------------------------------------------------------------
+
+/// A kept value that holds functions, instances and variants must still
+/// mean the same thing in a program whose functions, classes and enums
+/// were renumbered by a declaration added in front of them.
+#[test]
+fn review_a_kept_value_survives_renumbering() {
+    let old = "\
+let OPS = [fn(x) x * 2 end, fn(x) x + 1 end]
+fn maker(k) fn(x) x - k end end
+let SUB = [maker(5), maker(7)]
+class Box
+  w,
+end
+fn Box.area(b) b.w * 3 end
+enum Kind
+  small(cost: 3),
+  large(cost: 30),
+end
+let BOXES = [Box(1), Box(2)]
+let KINDS = [Kind.small, Kind.large, Kind.small]
+fn named(x) x * 1000 end
+let FNS = [named, named]
+state n = 0
+n = n + 1
+let b = BOXES[n % 2]
+let k = KINDS[n % 3]
+let word = match k
+  when Kind.small -> \"small\"
+  when Kind.large -> \"large\"
+end
+print(n, OPS[0](n), OPS[1](n), SUB[0](n), SUB[1](n), b.area(), k.cost, word, k == Kind.small, FNS[0](n))
+print(BOXES, KINDS)
+";
+    // In front of everything.
+    let pre = "fn extra(y) y - 1000 end\nlet PRE = [fn(q) q + 100 end]\nclass Tin\n  t,\nend\nfn Tin.area(t) 7 end\nenum Fee\n  toll(cost: 50),\n  free(cost: 0),\nend\n";
+    let report = follow(old, &format!("{pre}{old}"));
+    assert_eq!(report.outcome, ReloadOutcome::Recompiled);
+    follow(&format!("{pre}{old}"), old);
+    // In the dynamic part, where a lambda appears.
+    follow(old, &old.replace("let b = BOXES", "let tmp = map([1, 2], fn(z) z * n end)\nlet b = BOXES"));
+    // Each kind alone.
+    follow(old, &format!("fn extra(y) y - 1000 end\n{old}"));
+    follow(old, &format!("class Tin\n  t,\nend\n{old}"));
+    follow(old, &format!("enum Fee\n  toll(cost: 50),\nend\n{old}"));
+    follow(old, &old.replace("fn maker", "let MID = [fn(q) q + 100 end, fn(q) q + 200 end]\nfn maker"));
+    follow(old, &old.replace("fn named", "fn unnamed(x) x * 5 end\nfn named"));
+}
+
+/// Positions are compared between the diff and the program's source map:
+/// they have to agree after an edit that moved everything (a comment
+/// added, a literal that got longer) and in a text with characters wider
+/// than a byte.
+#[test]
+fn review_positions_agree_after_text_moved() {
+    let chain = |steps: &[String]| {
+        for policy in policies() {
+            let mut a = world(&steps[0], &[], policy, true);
+            let mut b = world(&steps[0], &[], policy, false);
+            for (i, step) in steps.iter().enumerate().skip(1) {
+                assert_eq!(frame(&mut a), frame(&mut b), "before step {i}");
+                let ra = a.env.reload_program(a.sid, step, None);
+                let rb = b.env.reload_program(b.sid, step, None);
+                assert_eq!(ra.is_ok(), rb.is_ok(), "step {i}");
+                assert_eq!(run_frame(&mut a), run_frame(&mut b), "after step {i}\n{step}");
+                assert_same_tables(&a, &b, &format!("the tables after step {i}\n{step}"));
+                assert_eq!(frame(&mut a), frame(&mut b), "frame after step {i}\n{step}");
+                assert_same_tables(&a, &b, &format!("the tables, a frame after step {i}\n{step}"));
+            }
+        }
+    };
+    // A comment in front (relocated), then a literal in a function.
+    let c = format!("// a comment that moves every line\n// and another\n{TABLES}");
+    chain(&[TABLES.to_string(), c.clone(), c.replace("t.w * 2", "t.w * 3"), c.replace("t.w * 2", "t.w * 3").replace("w: 5", "w: 6")]);
+    // A literal that gets longer, then one behind it.
+    let l = TABLES.replace("{id: 1, w: 2}", "{id: 100000, w: 2222}");
+    chain(&[TABLES.to_string(), l.clone(), l.replace("\"b\"", "\"bbbbbbbbb\""), l.replace("\"b\"", "\"bbbbbbbbb\"").replace("t.w * 2", "t.w * 7")]);
+    // A string literal patched to a longer one, then the table behind it by shape and value.
+    let s = TABLES.replace("\"a\"", "\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"");
+    chain(&[TABLES.to_string(), s.clone(), s.replace("t.w * 2", "t.w * 9"), s.replace("t.w * 2", "t.w + 9"), s.replace("t.w * 2", "t.w + 8")]);
+    // Wide characters in front of the edit.
+    let u = TABLES.replace("\"a\"", "\"héllo wörld ✓✓✓ 日本語\"");
+    let u = format!("// ünïcödé ✓ 日本語のコメント\n{u}");
+    chain(&[u.clone(), u.replace("t.w * 2", "t.w * 3"), u.replace("t.w * 2", "t.w + 3"), u.replace("w: 5", "w: 6"), u.replace("w: 5", "w: 6").replace("\"c\"", "\"ç\"")]);
+    // Blank lines removed and added between edits.
+    let b = TABLES.replace("let NAMES", "\n\n\nlet NAMES");
+    chain(&[b.clone(), TABLES.replace("t.w * 2", "t.w * 5"), b.replace("w: 3", "w: 33"), TABLES.to_string()]);
+}
+
+/// A reload that does not compile leaves the program alone; the next one
+/// is an edit of the program that is running, not of the text that failed.
+#[test]
+fn review_a_failed_reload_then_one_that_compiles() {
+    for policy in policies() {
+        let mut a = world(TABLES, &[], policy, true);
+        let mut b = world(TABLES, &[], policy, false);
+        assert_eq!(frame(&mut a), frame(&mut b));
+        // The broken text already has the table's edit in it.
+        let broken = TABLES.replace("w: 5}", "w: 500}, {id: 9, w: 9}").replace("print(n, ", "print(n, (");
+        let fixed = TABLES.replace("w: 5}", "w: 500}, {id: 9, w: 9}");
+        for w in [&mut a, &mut b] {
+            assert!(w.env.reload_program(w.sid, &broken, None).is_err());
+        }
+        assert_eq!(frame(&mut a), frame(&mut b), "after the failed reload");
+        assert_same_tables(&a, &b, "after the failed reload");
+        let report = a.env.reload_program(a.sid, &fixed, None).unwrap();
+        b.env.reload_program(b.sid, &fixed, None).unwrap();
+        assert!(rebuilt(&report).contains(&"TILES"), "{:?}", report.statics);
+        assert_eq!(run_frame(&mut a), run_frame(&mut b));
+        assert_same_tables(&a, &b, "after the reload that compiled");
+        // The same with a literal-only difference, and a runtime-only error.
+        let broken = TABLES.replace("w: 5}", "w: 6}").replace("print(n, ", "print(n, (");
+        let fixed = TABLES.replace("w: 5}", "w: 6}");
+        for w in [&mut a, &mut b] {
+            assert!(w.env.reload_program(w.sid, &broken, None).is_err());
+            w.env.reload_program(w.sid, &fixed, None).unwrap();
+        }
+        assert_eq!(run_frame(&mut a), run_frame(&mut b));
+        assert_same_tables(&a, &b, "after the second fix");
+        assert_eq!(frame(&mut a), frame(&mut b));
+    }
+}
+
+/// A value set by `set_config_value` is not what the text says. A reload
+/// after it has to end where rebuilding everything ends.
+#[test]
+fn review_a_reload_after_a_config_value_was_set() {
+    let edits = [
+        DRAG.replace("n = n + 1", "n = n + 2"),
+        DRAG.replace("[1, 2, 3]\n", "[1, 2, 3, 4]\n"),
+        DRAG.replace("config let K = 2", "config let K = 9"),
+        DRAG.replace("i * K", "i + K"),
+        DRAG.replace("[1, 2, 3]\n", "[1, 2, 4]\n"),
+        DRAG.to_string(),
+    ];
+    for policy in policies() {
+        for edit in &edits {
+            let mut a = world(DRAG, &[], policy, true);
+            let mut b = world(DRAG, &[], policy, false);
+            a.env.set_static_debounce(None);
+            b.env.set_static_debounce(None);
+            assert_eq!(frame(&mut a), frame(&mut b));
+            for k in [5, 6, 7] {
+                drag(&mut a, k);
+                drag(&mut b, k);
+                assert_eq!(frame(&mut a), frame(&mut b), "tick {k}");
+                assert_same_tables(&a, &b, "tick");
+            }
+            a.env.reload_program(a.sid, edit, None).unwrap();
+            b.env.reload_program(b.sid, edit, None).unwrap();
+            assert_eq!(run_frame(&mut a), run_frame(&mut b), "{edit}");
+            assert_same_tables(&a, &b, edit);
+            drag(&mut a, 11);
+            drag(&mut b, 11);
+            assert_eq!(frame(&mut a), frame(&mut b), "a tick after\n{edit}");
+            assert_same_tables(&a, &b, edit);
+        }
+    }
+}
+
+/// Names that come to mean something else with no change to the statement
+/// that reads them.
+#[test]
+fn review_names_that_change_meaning() {
+    // Two modules both imported already; the named import switches.
+    let entry = "\
+import a
+import b
+import a: BASE
+let SCALED = map(BASE, fn(x) x * 2 end)
+let BOTH = [a.BASE[0], b.BASE[0]]
+let OWN = [1, 2, 3]
+state n = 0
+n = n + 1
+print(n, SCALED, OWN, BASE, BOTH)
+";
+    let modules = [("a", "pub let BASE = [1, 2, 3]\n"), ("b", "pub let BASE = [7, 8, 9]\n")];
+    let report = follow_modules(entry, &entry.replace("import a: BASE", "import b: BASE"), &modules, &modules);
+    assert_eq!(report.outcome, ReloadOutcome::Recompiled);
+    // A rename, with the reader following it.
+    let old = "\
+let A = [1, 2, 3]
+let B = [4, 5, 6]
+let C = [A[0], B[0]]
+let D = map(A, fn(x) x + B[1] end)
+state n = 0
+n = n + 1
+print(n, A, B, C, D)
+";
+    follow(old, &old.replace("let A = [1, 2, 3]\nlet B = [4, 5, 6]", "let B = [1, 2, 3]\nlet A = [4, 5, 6]"));
+    follow(old, &old.replace("let A = [1, 2, 3]", "let A = [1, 2, 3]\nlet B = [40, 50, 60]").replace("let B = [4, 5, 6]\n", ""));
+    follow(old, &old.replace("let C", "let A = [9, 9, 9]\nlet C"));
+    follow(old, &old.replace("let D", "let B = [9, 9, 9]\nlet D"));
+    // A function declared twice; the later one is edited, removed, added.
+    let twice = "\
+fn f(x) x * 2 end
+let T = [f(1), f(2)]
+fn g(x) f(x) + 1 end
+let U = [g(1), g(2)]
+state n = 0
+n = n + 1
+print(n, T, U, f(n))
+";
+    follow(twice, &twice.replace("state n = 0", "fn f(x) x * 50 end\nstate n = 0"));
+    follow(twice, &twice.replace("fn g(x) f(x) + 1 end", "fn g(x) f(x) + 1 end\nfn f(x) x * 50 end"));
+    follow(twice, &twice.replace("fn f(x) x * 2 end\n", "").replace("let T", "fn f(x) x * 2 end\nlet T"));
+    // A function reached only through a name held in a table.
+    let held = "\
+fn double(x) x * 2 end
+fn triple(x) x * 3 end
+let OPS = {d: double, t: triple}
+let R = [OPS.d(1), OPS.t(1)]
+let LIST = [double, triple]
+let S = map(LIST, fn(f) f(10) end)
+let OWN = [1]
+state n = 0
+n = n + 1
+print(n, R, S, OWN, OPS.d(n), LIST[1](n))
+";
+    let report = follow(held, &held.replace("x * 3", "x * 4"));
+    assert!(!rebuilt(&report).contains(&"OWN"), "{:?}", report.statics);
+    follow(held, &held.replace("x * 3", "x + 4"));
+    follow(held, &held.replace("fn triple(x) x * 3 end", "fn triple(x) x * 3 end\nfn triple(x, y) 0 end"));
+    follow(held, &held.replace("fn double(x) x * 2 end\nfn triple(x) x * 3 end", "fn triple(x) x * 2 end\nfn double(x) x * 3 end"));
+}
+
+/// Methods of one name on several classes, and a class whose declaration
+/// the edit reaches without touching the value that holds its instances.
+#[test]
+fn review_methods_and_classes() {
+    let old = "\
+class Circle
+  r,
+end
+class Square
+  s,
+end
+fn Circle.area(c) c.r * c.r * 3 end
+fn Square.area(q) q.s * q.s end
+fn Square.side(q) q.s end
+fn total(shapes) reduce(shapes, 0, fn(a, s) a + s.area() end) end
+let SHAPE_LIST = [Circle(1), Square(2), Circle(3)]
+let TOTAL = [total(SHAPE_LIST)]
+let SIDES = map([Square(4)], fn(q) q.side() end)
+let OWN = [1, 2, 3]
+state n = 0
+n = n + 1
+print(n, TOTAL, SIDES, OWN, SHAPE_LIST[n % 3].area(), SHAPE_LIST)
+";
+    for (from, to) in [
+        ("q.s * q.s end", "q.s * q.s * 2 end"),
+        ("q.s * q.s end", "q.s * q.s + 1 end"),
+        ("c.r * c.r * 3", "c.r * c.r * 4"),
+        ("fn Square.side(q) q.s end", "fn Square.side(q) q.s + 1 end"),
+        ("fn Square.area(q) q.s * q.s end\n", ""),
+        ("  s,\nend", "  s,\n  t,\nend"),
+        ("fn Square.side(q) q.s end", "fn Square.side(q) q.s end\nfn Circle.side(c) c.r end"),
+    ] {
+        assert!(old.contains(from), "{from}");
+        follow(old, &old.replace(from, to));
+    }
+}
+
+/// Enum edits that do not touch the statement holding the variants.
+#[test]
+fn review_enums() {
+    let old = "\
+enum Kind
+  park(shape: \"area\", cost: 3),
+  road(shape: \"route\", cost: 9),
+end
+enum Mode
+  on,
+  off,
+end
+let ROW = [Kind.park, Kind.road, Kind.park]
+let ALL = Kind.all
+let COUNT = [len(Kind.all), len(Mode.all)]
+let NAMES = map(Kind.all, fn(k) \"{k}\" end)
+let MODES = [Mode.on, Mode.off]
+let OWN = [1, 2, 3]
+state n = 0
+n = n + 1
+print(n, ROW, ALL, COUNT, NAMES, MODES, OWN, ROW[n % 3].cost, ROW[n % 3] == Kind.park, MODES[n % 2] == Mode.on)
+";
+    for (from, to) in [
+        ("  road(shape: \"route\", cost: 9),\n", "  road(shape: \"route\", cost: 9),\n  lake(shape: \"area\", cost: 1),\n"),
+        ("  park(shape: \"area\", cost: 3),\n", "  lake(shape: \"area\", cost: 1),\n  park(shape: \"area\", cost: 3),\n"),
+        ("park(shape: \"area\", cost: 3),\n  road(shape: \"route\", cost: 9),", "road(shape: \"route\", cost: 9),\n  park(shape: \"area\", cost: 3),"),
+        ("  on,\n  off,\n", "  off,\n  on,\n"),
+        ("  on,\n  off,\n", "  on,\n  off,\n  auto,\n"),
+        ("cost: 3", "cost: 4"),
+        ("\"area\"", "\"zone\""),
+        ("enum Mode", "enum Extra\n  x,\n  y,\nend\nenum Mode"),
+        ("enum Kind", "enum Extra\n  x(cost: 77),\n  y(cost: 78),\nend\nenum Kind"),
+    ] {
+        assert!(old.contains(from), "{from}");
+        follow(old, &old.replace(from, to));
+        follow(&old.replace(from, to), old);
+    }
+}
+
+/// Edits in one module of several, twice in a row, with re-registration.
+#[test]
+fn review_modules_twice_in_a_row() {
+    let entry = "\
+import geo
+import pal
+import geo: scale
+let SIDES = [scale(1), geo.scale(2)]
+let DEEP = map(pal.RAMP, fn(r) r * geo.UNIT[0] end)
+let OWN = [[1], [2]]
+state n = 0
+n = n + 1
+print(n, SIDES, pal.RAMP, OWN, geo.UNIT, DEEP, pal.tint(n))
+";
+    let geo = "pub let UNIT = [4, 4]\nfn helper(x) x * 10 end\npub fn scale(x) helper(x) + 1 end\n";
+    let pal = "import geo\nlet HIDDEN = [1, 2]\npub let RAMP = map(geo.UNIT, fn(u) u + HIDDEN[0] end)\npub fn tint(x) x + HIDDEN[1] end\n";
+    let steps: Vec<(String, String, String)> = vec![
+        (entry.into(), geo.replace("x * 10", "x * 11"), pal.into()),
+        (entry.into(), geo.replace("x * 10", "x * 11"), pal.replace("[1, 2]", "[5, 2]")),
+        (entry.into(), geo.replace("x * 10", "x - 11"), pal.replace("[1, 2]", "[5, 2]")),
+        (entry.replace("[[1], [2]]", "[[1], [3]]"), geo.replace("x * 10", "x - 11"), pal.replace("[1, 2]", "[5, 6, 7]")),
+        (entry.into(), format!("// moved\n\n{geo}"), pal.into()),
+        (entry.into(), format!("// moved\n\n{}", geo.replace("[4, 4]", "[4, 5]")), pal.into()),
+        (entry.into(), format!("// moved\n\n{}", geo.replace("[4, 4]", "[4, 5]")), pal.replace("x + HIDDEN[1]", "x * HIDDEN[1]")),
+        (entry.into(), geo.replace("fn helper(x) x * 10 end", "fn helper(x) x * 10 end\nfn helper(x, y) 0 end"), pal.into()),
+        (entry.into(), geo.into(), pal.replace("let HIDDEN = [1, 2]", "let HIDDEN = [1, 2]\nlet UNIT = [0]")),
+        (entry.into(), geo.into(), pal.into()),
+    ];
+    for policy in policies() {
+        let old: [(&str, &str); 2] = [("geo", geo), ("pal", pal)];
+        let mut a = world(entry, &old, policy, true);
+        let mut b = world(entry, &old, policy, false);
+        for (i, (e, g, p)) in steps.iter().enumerate() {
+            assert_eq!(frame(&mut a), frame(&mut b), "before step {i}");
+            for w in [&mut a, &mut b] {
+                w.env.register_module("geo", g);
+                w.env.register_module("pal", p);
+                w.env.reload_program(w.sid, e, None).unwrap_or_else(|err| panic!("step {i}: {err}"));
+            }
+            assert_eq!(run_frame(&mut a), run_frame(&mut b), "after step {i}");
+            assert_same_tables(&a, &b, &format!("the tables after step {i}"));
+            assert_eq!(frame(&mut a), frame(&mut b), "a frame after step {i}");
+            assert_same_tables(&a, &b, &format!("the tables, a frame after step {i}"));
+        }
+    }
+}
+
+/// Run every step of `steps` (entry text and module texts) through a
+/// following world and a rebuilding one.
+fn chain_modules(steps: &[(String, Vec<(&str, String)>)]) {
+    for policy in policies() {
+        let what = policy.name().unwrap_or_default();
+        let first: Vec<(&str, &str)> = steps[0].1.iter().map(|(n, s)| (*n, s.as_str())).collect();
+        let mut a = world(&steps[0].0, &first, policy, true);
+        let mut b = world(&steps[0].0, &first, policy, false);
+        for (i, (entry, modules)) in steps.iter().enumerate().skip(1) {
+            assert_eq!(frame(&mut a), frame(&mut b), "[{what}] before step {i}");
+            let mut ok = (true, true);
+            for (w, ok) in [(&mut a, &mut ok.0), (&mut b, &mut ok.1)] {
+                for (name, source) in modules {
+                    w.env.register_module(name, source);
+                }
+                *ok = match w.env.reload_program(w.sid, entry, None) {
+                    Ok(_) => true,
+                    Err(e) => panic!("[{what}] step {i} does not compile: {e}\n{entry}\n{modules:#?}"),
+                };
+            }
+            assert_eq!(ok.0, ok.1, "[{what}] step {i} compiles for both or neither");
+            assert_eq!(run_frame(&mut a), run_frame(&mut b), "[{what}] after step {i}\n{entry}\n{modules:#?}");
+            assert_same_tables(&a, &b, &format!("[{what}] the tables after step {i}\n{entry}\n{modules:#?}"));
+            assert_eq!(frame(&mut a), frame(&mut b), "[{what}] a frame after step {i}");
+            assert_same_tables(&a, &b, &format!("[{what}] the tables, a frame after step {i}"));
+        }
+    }
+}
+
+/// The module system's tiers: a name that resolves somewhere else after an
+/// edit to a file the reader is not in.
+#[test]
+fn review_resolution_through_modules() {
+    let base = "pub let BASE = [1, 2, 3]\npub fn button(x) x * 2 end\npub fn score(p) p + 1 end\n";
+    let kit = "import base\npub let EXTRA = [5]\npub fn knob(x) x * 3 end\n";
+    let other = "pub let BASE = [7, 8, 9]\npub let SPARE = [0]\n";
+    let facade = "pub import base: BASE\npub import other: SPARE\n";
+    let entry = "\
+import base
+import kit
+import other as o
+import facade as f
+let PRESSED = [button(1), button(2)]
+let SCORES = [score(1), score(2)]
+let VIA = map(f.BASE, fn(x) x * 2 end)
+let CLAMPED = [clamp01(2), clamp01(0 - 1)]
+let OWN = [[1], [2]]
+state n = 0
+n = n + 1
+print(n, PRESSED, SCORES, VIA, CLAMPED, OWN, o.BASE, EXTRA)
+";
+    let m = |b: &str, k: &str, o: &str, f: &str| -> Vec<(&'static str, String)> {
+        vec![("base", b.to_string()), ("kit", k.to_string()), ("other", o.to_string()), ("facade", f.to_string())]
+    };
+    let start = (entry.to_string(), m(base, kit, other, facade));
+    let variants = [
+        // The importer's export shadows the export of what it imports.
+        (entry.to_string(), m(base, &format!("{kit}pub fn button(x) x * 100 end\n"), other, facade)),
+        // A second arity from another module.
+        (entry.to_string(), m(base, &format!("{kit}pub fn score(p, q) p * q end\n"), other, facade)),
+        // A module export over the prelude's.
+        (entry.to_string(), m(base, &format!("{kit}pub fn clamp01(x) x * 1000 end\n"), other, facade)),
+        // The facade passes on another module's name.
+        (entry.to_string(), m(base, kit, other, "pub import other: BASE\npub import other: SPARE\n")),
+        (entry.to_string(), m(base, kit, other, "pub import base\npub import other: SPARE\npub let BASE = [100, 200]\n")),
+        (entry.to_string(), m(base, kit, other, "pub import other\n")),
+        // A selective import over the plain one.
+        (entry.replace("import facade as f\n", "import facade as f\nimport kit: knob\nimport other: SPARE\n"), m(base, kit, other, facade)),
+        (entry.replace("let PRESSED", "fn button(x) 0 - x end\nlet PRESSED"), m(base, kit, other, facade)),
+        // What the module's function calls, privately.
+        (entry.to_string(), m(&base.replace("x * 2", "x * 2 + len(BASE)"), kit, other, facade)),
+        (entry.to_string(), m(&base.replace("[1, 2, 3]", "[1, 2, 4]"), kit, other, facade)),
+        (entry.to_string(), m(&base.replace("p + 1", "p + 2"), kit, other, facade)),
+    ];
+    for v in &variants {
+        chain_modules(&[start.clone(), v.clone(), start.clone()]);
+    }
+    // And all of them one after another.
+    let mut all = vec![start.clone()];
+    all.extend(variants.iter().cloned());
+    all.push(start);
+    chain_modules(&all);
+}
+
+/// A plain `let` or `const` literal that other constants read, however the
+/// compiler chose to read it.
+#[test]
+fn review_a_plain_literal_others_read() {
+    for decl in ["let K = 2", "const K = 2", "config let K = 2"] {
+        let old = format!("\
+{decl}
+let NAME = \"ab\"
+const HALF = 0.5
+let T = [K * 3, K, K + 1]
+let U = map([1, 2, 3], fn(x) x * K end)
+fn f(x) x + K end
+let V = [f(1), f(2)]
+let W = [\"{{NAME}}!\", NAME ++ NAME]
+let X = [HALF * 2.0, HALF]
+let Y = [T[0] + V[0], len(W)]
+let OWN = [[1], [2]]
+state n = 0
+n = n + 1
+print(n, K, T, U, V, W, X, Y, OWN, NAME, HALF)
+");
+        for (from, to) in [
+            (decl, decl.replace("= 2", "= 3")),
+            (decl, decl.replace("= 2", "= 1 + 1")),
+            (decl, decl.replace("= 2", "= 5 - 1")),
+            ("\"ab\"", "\"cd\"".to_string()),
+            ("\"ab\"", "\"a\" ++ \"x\"".to_string()),
+            ("const HALF = 0.5", "const HALF = 0.25".to_string()),
+            ("const HALF = 0.5", "let HALF = 0.75".to_string()),
+        ] {
+            assert!(old.contains(from));
+            let new = old.replace(from, &to);
+            let report = follow(&old, &new);
+            assert!(!rebuilt(&report).contains(&"OWN"), "{from} -> {to}: {:?}", report.statics);
+            follow(&new, &old);
+        }
+    }
+}
+
+/// Values taken apart by a match, and names bound more than once.
+#[test]
+fn review_patterns_and_rebinding() {
+    let old = "\
+let PAIR = [[1, 2], [3, 4]]
+let LEFT = match PAIR
+  when [l, ...rest] -> l
+  when [] -> [0]
+end
+let RIGHT = match {a: PAIR[1], b: [7, 8]}
+  when {a: r, b: [x, y]} -> [r[0], x + y]
+  when _ -> [0]
+end
+let SUMS = [LEFT[0] + RIGHT[0], RIGHT[1]]
+let T = [1, 2]
+let FIRST = [T[0], T[1]]
+let T = [10, 20]
+let SECOND = [T[0], T[1]]
+let OWN = [[1], [2]]
+state n = 0
+n = n + 1
+print(n, PAIR, LEFT, RIGHT, SUMS, FIRST, SECOND, OWN)
+";
+    for (from, to) in [
+        ("[[1, 2], [3, 4]]", "[[1, 2], [3, 5]]"),
+        ("[[1, 2], [3, 4]]", "[[9, 2], [3, 4], [0]]"),
+        ("when [l, ...rest] -> l", "when [l, ...rest] -> rest[0]"),
+        ("b: [7, 8]}", "b: [7, 9]}"),
+        ("when {a: r, b: [x, y]} -> [r[0], x + y]", "when {a: r, b: [x, y]} -> [r[1], x * y]"),
+        ("let T = [1, 2]", "let T = [1, 3]"),
+        ("let T = [10, 20]", "let T = [10, 30]"),
+        ("let T = [10, 20]\n", ""),
+        ("let T = [1, 2]", "let T = [1, 2, 3]"),
+        ("let SECOND", "let T = [100, 200]\nlet SECOND"),
+        // A reader moved across the second binding, and the binding across the reader.
+        ("let FIRST = [T[0], T[1]]\nlet T = [10, 20]\n", "let T = [10, 20]\nlet FIRST = [T[0], T[1]]\n"),
+        ("let T = [10, 20]\nlet SECOND = [T[0], T[1]]\n", "let SECOND = [T[0], T[1]]\nlet T = [10, 20]\n"),
+    ] {
+        assert!(old.contains(from), "{from}");
+        follow(old, &old.replace(from, to));
+        follow(&old.replace(from, to), old);
+    }
+}
+
+/// A drag that puts rebuilds off, with every other kind of reload arriving
+/// in the middle of it. While values wait the two worlds differ, by
+/// design; once the waiting ones are flushed nothing may be left that a
+/// rebuild of everything would not have.
+#[test]
+fn review_a_drag_interrupted_by_every_kind_of_reload() {
+    let src = "\
+config let K = 2
+config let J = 10
+let BIG = map([1, 2, 3, 4], fn(i) i * K end)
+let NEXT = [BIG[0] + J, BIG[1]]
+let LAST = [NEXT[0] * 2, J]
+let SIDE = [J, J + 1]
+let OTHER = [1, 2, 3]
+state n = 0
+n = n + 1
+print(n, K, J, BIG, NEXT, LAST, SIDE, OTHER, [K, J, 5])
+";
+    let every = StaticDebounce { threshold: std::time::Duration::ZERO, quiet: std::time::Duration::from_secs(600) };
+    let mut seed = 0x2545F4914F6CDD1Du64;
+    let mut next = |n: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed % n
+    };
+    let mut waited = 0;
+    for policy in policies() {
+        let what = policy.name().unwrap_or_default();
+        for round in 0..40 {
+            let mut a = world(src, &[], policy, true);
+            let mut b = world(src, &[], policy, false);
+            a.env.set_static_debounce(Some(every));
+            b.env.set_static_debounce(None);
+            assert_eq!(frame(&mut a), frame(&mut b));
+            let mut log = Vec::new();
+            for _ in 0..3 {
+                for _ in 0..(2 + next(6)) {
+                    let op = next(9);
+                    let v = next(50) as i64;
+                    log.push((op, v));
+                    for w in [&mut a, &mut b] {
+                        let text = w.env.program_source(w.pid, None).unwrap().to_string();
+                        match op {
+                            0..=3 => {
+                                let name = if op == 3 { "J" } else { "K" };
+                                let report = w.env.set_config_value(w.sid, None, name, &StaticValue::Int(v)).unwrap();
+                                waited += report.statics.map_or(0, |s| s.deferred.len());
+                            }
+                            4 => {
+                                let new = if text.contains("n + 1 + 0") {
+                                    text.replace("n + 1 + 0", "n + 1")
+                                } else {
+                                    text.replace("n = n + 1", "n = n + 1 + 0")
+                                };
+                                w.env.reload_program(w.sid, &new, None).unwrap();
+                            }
+                            5 => {
+                                // One number of a table nothing else reads.
+                                let at = text.find("let OTHER = [1, ").unwrap() + "let OTHER = [1, ".len();
+                                let end = at + text[at..].find(',').unwrap();
+                                let new = format!("{}{}{}", &text[..at], 100 + v, &text[end..]);
+                                w.env.reload_program(w.sid, &new, None).unwrap();
+                            }
+                            6 => {
+                                assert!(w.env.reload_program(w.sid, &format!("{text}let BROKEN = [\n"), None).is_err());
+                            }
+                            7 => {
+                                let new = match text.strip_prefix("// moved\n") {
+                                    Some(rest) => rest.to_string(),
+                                    None => format!("// moved\n{text}"),
+                                };
+                                w.env.reload_program(w.sid, &new, None).unwrap();
+                            }
+                            _ => {
+                                // The table by shape, with whatever K is.
+                                let new = if text.contains("i * K end") {
+                                    text.replace("i * K end", "i * K + 1 end")
+                                } else {
+                                    text.replace("i * K + 1 end", "i * K end")
+                                };
+                                w.env.reload_program(w.sid, &new, None).unwrap();
+                            }
+                        }
+                        // A frame after every event, as a host draws one.
+                        frame(w);
+                    }
+                }
+                a.env.flush_static_rebuilds(a.sid);
+                assert_eq!(
+                    a.env.program_source(a.pid, None),
+                    b.env.program_source(b.pid, None),
+                    "[{what}] round {round}: {log:?}"
+                );
+                assert_eq!(frame(&mut a), frame(&mut b), "[{what}] round {round}: {log:?}");
+                assert_same_tables(&a, &b, &format!("[{what}] round {round}: {log:?}"));
+                assert_eq!(frame(&mut a), frame(&mut b), "[{what}] round {round}, a frame later: {log:?}");
+            }
+        }
+    }
+    assert!(waited > 200, "the drags put rebuilds off: {waited}");
+}
+
+/// Two stacks on one program, and a fork: the reload is asked of one of
+/// them, and every one of them must run the new program.
+#[test]
+fn review_other_stacks_and_forks_see_the_new_program() {
+    let edits = [
+        TABLES.replace("w: 5}", "w: 6}"),
+        TABLES.replace("w: 5}", "w: 5}, {id: 4, w: 9}"),
+        TABLES.replace("t.w * 2", "t.w * 3"),
+        TABLES.replace("t.w * 2", "t.w + 3"),
+        TABLES.replace("n = n + 1", "n = n + 2"),
+    ];
+    for policy in policies() {
+        for edit in &edits {
+            let mut a = world(TABLES, &[], policy, true);
+            let mut b = world(TABLES, &[], policy, false);
+            let mut out = Vec::new();
+            for w in [&mut a, &mut b] {
+                let second = w.env.create_stack(w.pid).unwrap();
+                let first = w.sid;
+                let mut log = Vec::new();
+                for sid in [first, second, first, second] {
+                    w.sid = sid;
+                    log.push(frame(w));
+                }
+                w.sid = first;
+                let fork = w.env.fork_execution(first).unwrap();
+                w.env.reload_program(first, edit, None).unwrap();
+                for sid in [second, first, fork, second, first] {
+                    w.sid = sid;
+                    log.push(frame(w));
+                    log.push(format!("{:?}", slots(w)));
+                }
+                w.sid = first;
+                out.push(log);
+            }
+            assert_eq!(out[0], out[1], "{edit}");
+        }
+    }
+}
+
+/// One object two constants share, frozen through one of them. A rebuilt
+/// value is only swapped for the old one when `frozen` answers the same for
+/// both, so the share is not broken by the swap.
+#[test]
+fn review_a_shared_element_frozen_through_one_name() {
+    let old = "\
+let A = [[1], [2]]
+let B = A[0]
+let C = [B, A[1]]
+state n = 0
+n = n + 1
+if n >= 2 then freeze(B) end
+print(n, frozen(B), frozen(A[0]), frozen(A), frozen(C), frozen(C[0]), A, B, C)
+";
+    follow(old, &old.replace("[[1], [2]]", "[[1], [3]]"));
+    follow(old, &old.replace("[[1], [2]]", "[[1], [2], [3]]"));
+    follow(old, &old.replace("n = n + 1", "n = n + 2"));
+}
+
+/// Method dispatch and enums span the whole program: a method or a variant
+/// added in a module reaches a constant of a file that does not import it.
+#[test]
+fn review_methods_and_enums_declared_in_other_modules() {
+    let shapes = "pub class Circle\n  r,\nend\npub class Square\n  s,\nend\npub fn Circle.area(c) c.r * c.r * 3 end\n";
+    let extra = "import shapes\npub let NOTHING = [0]\n";
+    let kinds = "pub enum Kind\n  park(cost: 3),\n  road(cost: 9),\nend\n";
+    let entry = "\
+import shapes
+import extra
+import kinds
+let LIST = [Circle(1), Circle(2)]
+let AREAS = map(LIST, fn(s) s.area() end)
+let ROW = [Kind.park, Kind.road]
+let COSTS = map(ROW, fn(k) k.cost end)
+let COUNT = [len(Kind.all)]
+let OWN = [[1], [2]]
+state n = 0
+n = n + 1
+print(n, AREAS, COSTS, COUNT, OWN, NOTHING, LIST[n % 2].area(), ROW[n % 2].cost)
+";
+    let m = |s: &str, e: &str, k: &str| -> Vec<(&'static str, String)> {
+        vec![("shapes", s.to_string()), ("extra", e.to_string()), ("kinds", k.to_string())]
+    };
+    let start = (entry.to_string(), m(shapes, extra, kinds));
+    for v in [
+        m(shapes, &format!("{extra}fn Square.area(q) q.s end\n"), kinds),
+        m(shapes, &format!("{extra}fn Circle.area(c, k) 0 - c.r * k end\n"), kinds),
+        m(&shapes.replace("c.r * c.r * 3", "c.r * c.r * 4"), extra, kinds),
+        m(&shapes.replace("c.r * c.r * 3", "c.r + 4"), extra, kinds),
+        m(&shapes.replace("  r,\n", "  r,\n  tag,\n"), extra, kinds),
+        m(shapes, extra, &kinds.replace("cost: 9", "cost: 10")),
+        m(shapes, extra, &kinds.replace("  road(cost: 9),\n", "  road(cost: 9),\n  lake(cost: 1),\n")),
+        m(shapes, extra, &kinds.replace("  park(cost: 3),\n  road(cost: 9),\n", "  road(cost: 9),\n  park(cost: 3),\n")),
+        m(shapes, &format!("{extra}enum Fee\n  toll(cost: 50),\nend\n"), kinds),
+    ] {
+        chain_modules(&[start.clone(), (entry.to_string(), v), start.clone()]);
+    }
+}
+
+/// A literal patched through one stack leaves the table of every other
+/// stack of the program holding values of the old literal, stamped with
+/// the old constant revision. A reload asked of such a stack before it has
+/// run again has nothing it may keep.
+#[test]
+fn review_a_table_another_stacks_reload_made_stale_is_not_kept() {
+    for policy in policies() {
+        let what = policy.name().unwrap_or_default();
+        for second_edit in ["\"b\"", "n = n + 1", "t.w * 2"] {
+            let mut out = Vec::new();
+            for follow in [true, false] {
+                let mut w = world(TABLES, &[], policy, follow);
+                let first = w.sid;
+                let second = w.env.create_stack(w.pid).unwrap();
+                let mut log = Vec::new();
+                for sid in [first, second] {
+                    w.sid = sid;
+                    log.push(frame(&mut w));
+                }
+                // One literal through the first stack, another edit through
+                // the second with no frame of it in between.
+                let one = TABLES.replace("{id: 2, w: 3}", "{id: 2, w: 40}");
+                w.env.reload_program(first, &one, None).unwrap();
+                let two = match second_edit {
+                    "\"b\"" => one.replace("\"b\"", "\"B\""),
+                    "n = n + 1" => one.replace("n = n + 1", "n = n + 2"),
+                    _ => one.replace("t.w * 2", "t.w * 3"),
+                };
+                w.env.reload_program(second, &two, None).unwrap();
+                for sid in [second, first, second] {
+                    w.sid = sid;
+                    log.push(frame(&mut w));
+                    log.push(format!("{:?}", slots(&w)));
+                }
+                // The same through a fork and `set_config_value`.
+                let mut w = world(DRAG, &[], policy, follow);
+                w.env.set_static_debounce(None);
+                log.push(frame(&mut w));
+                let fork = w.env.fork_execution(w.sid).unwrap();
+                drag(&mut w, 7);
+                let text = w.env.program_source(w.pid, None).unwrap().replace("[1, 2, 3]\n", "[1, 2, 4]\n");
+                w.env.reload_program(fork, &text, None).unwrap();
+                for sid in [fork, w.sid, fork] {
+                    let own = std::mem::replace(&mut w.sid, sid);
+                    log.push(frame(&mut w));
+                    log.push(format!("{:?}", slots(&w)));
+                    w.sid = own;
+                }
+                out.push(log);
+            }
+            assert_eq!(out[0], out[1], "[{what}] {second_edit}");
+        }
     }
 }

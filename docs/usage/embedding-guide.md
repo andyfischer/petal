@@ -458,6 +458,22 @@ if !report.passed() {
 eprint!("{}", env.diagnostics_text(pid));  // the text `petal check` prints
 ```
 
+After a reload, print what the edit introduced rather than everything again.
+`ReloadReport::new_diagnostics` holds the findings of the reload's compile,
+warnings and errors, that the program before the edit did not have (a
+finding is the same one when it says the same thing about the same line of
+text in the same file, wherever that line has moved to):
+
+```rust
+let report = env.reload_program(stack, &source, Some(&entry))?;
+eprint!("{}", env.render_diagnostics(pid, &report.new_diagnostics));
+```
+
+It is empty when the reload did not recompile (`Unchanged`, `Relocated`,
+`Patched`): an edit that only moved text or changed literal values is not
+checked again. `Env::diagnostics(pid)` is the whole list as data, and
+`Env::render_diagnostics(pid, &list)` renders any part of it.
+
 `petal run` refuses to start a program whose report has an error. A host
 that reloads a script while it is being edited should print the diagnostics
 after a load and after a reload that recompiled, and run anyway: a

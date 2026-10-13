@@ -114,6 +114,18 @@ impl Severity {
 }
 
 impl Diagnostic {
+    /// The message with the line numbers it cites left as placeholders
+    /// (`{line}`): the same text however the source around it has moved.
+    /// The message itself when it cites nothing.
+    pub fn stable_message(&self) -> &str {
+        match &self.cited {
+            Some(cited) => &cited.template,
+            None => &self.message,
+        }
+    }
+}
+
+impl Diagnostic {
     /// A warning: advice that does not by itself mean the line will fail.
     pub fn new(span: SourceSpan, message: String) -> Diagnostic {
         Diagnostic {

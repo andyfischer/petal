@@ -1090,6 +1090,33 @@ impl Env {
             .unwrap_or_default()
     }
 
+    /// `diagnostics` rendered as `petal check` prints findings, against
+    /// `pid`'s source: the position line and the caret snippet of each. For
+    /// a subset of the program's findings, such as the ones a reload
+    /// introduced
+    /// ([`ReloadReport::new_diagnostics`](crate::env::ReloadReport::new_diagnostics)).
+    pub fn render_diagnostics(
+        &self,
+        pid: ProgramId,
+        diagnostics: &[crate::diagnostic::Diagnostic],
+    ) -> String {
+        self.programs
+            .get(&pid)
+            .map(|p| crate::check::render_diagnostics(p, diagnostics, false))
+            .unwrap_or_default()
+    }
+
+    /// Every finding of `pid`'s compile, warnings and errors, in the order
+    /// the compile reported them (the list
+    /// [`check_program`](Self::check_program) reports, without lowering).
+    /// Empty for an unknown program.
+    pub fn diagnostics(&self, pid: ProgramId) -> &[crate::diagnostic::Diagnostic] {
+        self.programs
+            .get(&pid)
+            .map(|p| p.warnings.as_slice())
+            .unwrap_or(&[])
+    }
+
     /// [`diagnostics_text`](Self::diagnostics_text) with the warnings left
     /// out: the errors a compile reports and still finishes with, of which a
     /// `const` that is not constant is the one a running host must not miss

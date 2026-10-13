@@ -154,6 +154,15 @@ pub struct ReloadReport {
     /// ([`StaticReload`](super::StaticReload)). `None` when the program does
     /// not run with the static-value cache, or has not run yet.
     pub statics: Option<super::StaticReload>,
+    /// The findings of this reload's compile, warnings and errors, that the
+    /// program before the edit did not have: what the edit introduced
+    /// ([`crate::check::new_diagnostics`]). What a host prints after a
+    /// reload, where printing every finding of a large program again on
+    /// every save would bury the one that matters; render them with
+    /// [`Env::render_diagnostics`]. Empty when the reload did not recompile:
+    /// an edit that only moved text or changed literal values is not
+    /// checked again.
+    pub new_diagnostics: Vec<crate::diagnostic::Diagnostic>,
 }
 
 impl ReloadReport {
@@ -347,12 +356,17 @@ impl Env {
         // reached, read before the program is replaced and the table
         // emptied (`env/static_follow.rs`).
         let followed = self.begin_static_follow(stack_id, &change);
+        let new_diagnostics = match self.programs.get(&program_id) {
+            Some(old) => crate::check::new_diagnostics(old, &program),
+            None => program.warnings.clone(),
+        };
         let result = self.transfer_state(stack_id, program).map_err(|e| {
             crate::error::LoadError::message(crate::error::Phase::Module, e)
         })?;
         let statics = followed.and_then(|f| self.finish_static_follow(stack_id, &change, f, false));
         Ok(ReloadReport {
             statics,
+            new_diagnostics,
             outcome: ReloadOutcome::Recompiled,
             // An edit that classified as incremental and still had to be
             // recompiled says why; one that was never incremental needs no
@@ -433,6 +447,7 @@ impl Env {
                 state_dropped: 0,
                 fallback: None,
                 statics: None,
+                new_diagnostics: Vec::new(),
             });
         }
 
@@ -504,6 +519,7 @@ impl Env {
                 state_dropped: 0,
                 fallback: None,
                 statics: None,
+                new_diagnostics: Vec::new(),
             });
         }
 
@@ -533,6 +549,7 @@ impl Env {
             state_preserved: result.state_preserved,
             state_dropped: result.state_dropped + function_state,
             fallback: None,
+            new_diagnostics: Vec::new(),
         })
     }
 

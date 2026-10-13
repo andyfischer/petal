@@ -118,6 +118,55 @@ pub fn render_diagnostics(program: &Program, diagnostics: &[Diagnostic], bare: b
     out
 }
 
+/// What identifies a finding across an edit: its file, its severity, its
+/// message (with the line numbers it cites left as placeholders), and the
+/// text of the line it points at. Its position is not part of it, since an
+/// edit above moves every line below.
+fn diagnostic_key(program: &Program, d: &Diagnostic) -> (String, bool, String, String) {
+    let file = program
+        .source_map
+        .file(d.span.file)
+        .map(|f| f.name.clone())
+        .unwrap_or_default();
+    let line = program
+        .source_map
+        .source_for_span(&d.span)
+        .unwrap_or(&program.source)
+        .lines()
+        .nth((d.span.start.line as usize).saturating_sub(1))
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    (file, d.is_error(), d.stable_message().to_string(), line)
+}
+
+/// The findings of `new` that `old` did not have: what an edit introduced.
+///
+/// A finding is the same one before and after when it says the same thing
+/// about the same line of text in the same file, wherever that line now is.
+/// So a finding on a line the edit moved is not new, one on a line the edit
+/// wrote or rewrote is, and of several identical findings on identical lines
+/// only as many as were added are reported (the last of them). In the order
+/// `new` lists them.
+pub fn new_diagnostics(old: &Program, new: &Program) -> Vec<Diagnostic> {
+    let mut had: std::collections::HashMap<(String, bool, String, String), usize> =
+        std::collections::HashMap::new();
+    for d in &old.warnings {
+        *had.entry(diagnostic_key(old, d)).or_default() += 1;
+    }
+    new.warnings
+        .iter()
+        .filter(|d| match had.get_mut(&diagnostic_key(new, d)) {
+            Some(n) if *n > 0 => {
+                *n -= 1;
+                false
+            }
+            _ => true,
+        })
+        .cloned()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use crate::env::Env;

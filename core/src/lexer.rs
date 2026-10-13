@@ -354,6 +354,9 @@ pub struct Lexer {
     /// an editor (or a person) that escapes the quotes of a nested string is
     /// writing the same thing as a bare `"`. See [`Lexer::read_string_inner`].
     interp_depth: usize,
+    /// Whether [`Lexer::tokenize`] fills `token_leading_trivia`
+    /// ([`Lexer::without_trivia`] turns it off).
+    keep_trivia: bool,
 }
 
 /// How to write a brace that is not an interpolation hole. Shared by both
@@ -408,7 +411,16 @@ impl Lexer {
             col: 1,
             file,
             interp_depth: 0,
+            keep_trivia: true,
         }
+    }
+
+    /// Leave `token_leading_trivia` empty: for a caller that reads only the
+    /// tokens and their spans (the reload diff), which the trivia never
+    /// change. Recovering the trivia costs about as much as the lexing.
+    pub fn without_trivia(mut self) -> Self {
+        self.keep_trivia = false;
+        self
     }
 
     fn current_mode(&self) -> &LexerMode {
@@ -540,8 +552,10 @@ impl Lexer {
         // Recover the trivia (whitespace/comments) between tokens from the
         // spans, so downstream tooling can reproduce the original source. This
         // does not affect `tokens`, which the parser consumes unchanged.
-        let source: String = self.input.iter().collect();
-        self.token_leading_trivia = crate::trivia::leading_trivia(&source, &self.token_spans);
+        if self.keep_trivia {
+            let source: String = self.input.iter().collect();
+            self.token_leading_trivia = crate::trivia::leading_trivia(&source, &self.token_spans);
+        }
 
         Ok(&self.tokens)
     }

@@ -91,6 +91,10 @@ pub struct Env {
     /// `&self`.
     compile_count: std::cell::Cell<u64>,
     lower_count: std::cell::Cell<u64>,
+    /// The parses of the source texts recent reloads compared, so a reload
+    /// parses only the text that is new ([`crate::source_diff::ParseCache`]).
+    /// A `RefCell` because [`Env::diff_program`] takes `&self`.
+    reload_parses: std::cell::RefCell<crate::source_diff::ParseCache>,
     /// Host-registered foreign-object classes, indexed by `HandleClassId`.
     handle_classes: Vec<HandleClass>,
     /// Manifests that looked like packages and would not load, collected by
@@ -223,6 +227,7 @@ impl Env {
             modules,
             compile_count: std::cell::Cell::new(0),
             lower_count: std::cell::Cell::new(0),
+            reload_parses: Default::default(),
             handle_classes: Vec::new(),
             package_errors: Vec::new(),
             ambient_package_errors,

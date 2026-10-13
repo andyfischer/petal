@@ -165,6 +165,11 @@ impl Parser {
         }
     }
 
+    /// The tokens and their spans, given back when parsing is done.
+    pub fn into_tokens(self) -> (Vec<Token>, Vec<SourceSpan>) {
+        (self.tokens, self.token_spans)
+    }
+
     /// The CST events recorded so far.
     pub fn cst_events(&self) -> &[Event] {
         self.events.events()

@@ -44,7 +44,7 @@ use crate::ast::Literal;
 use crate::backend::bytecode::Inst;
 use crate::constant_table::{ConstantId, ConstantValue};
 use crate::program::{TermId, TermOp};
-use crate::source_diff::{FileDiff, SourceChange, diff_source};
+use crate::source_diff::{FileDiff, SourceChange};
 use crate::source_map::{FileId, SourceSpan};
 
 /// How a reload was carried out.
@@ -215,6 +215,28 @@ struct Patch {
     fn_spans: Vec<(usize, SourceSpan)>,
 }
 
+/// The changed files of a [`ProgramChange`], by file id.
+struct ChangedFiles<'a>(Vec<Option<&'a FileChange>>);
+
+impl<'a> ChangedFiles<'a> {
+    fn new(change: &'a ProgramChange) -> Self {
+        let len = change.files.iter().map(|f| f.file.0 as usize + 1).max().unwrap_or(0);
+        let mut table = vec![None; len];
+        for f in &change.files {
+            table[f.file.0 as usize] = Some(f);
+        }
+        ChangedFiles(table)
+    }
+
+    fn get(&self, file: u16) -> Option<&&'a FileChange> {
+        self.0.get(file as usize).and_then(|f| f.as_ref())
+    }
+
+    fn contains(&self, file: u16) -> bool {
+        self.get(file).is_some()
+    }
+}
+
 impl Env {
     /// Compare every source file `program_id` was compiled from with what
     /// that file holds now. The entry file's current text is
@@ -223,7 +245,10 @@ impl Env {
     /// in-memory registration).
     ///
     /// Read-only: this is the question "what kind of edit was that?", for a
-    /// host that wants to report it or decide for itself.
+    /// host that wants to report it or decide for itself. (It does remember
+    /// the parses of the texts it compared, as every reload does, so that
+    /// the next comparison parses only what is new; see
+    /// [`Env::clear_reload_parses`].)
     pub fn diff_program(&self, program_id: ProgramId, new_entry_source: &str) -> ProgramChange {
         let mut change = ProgramChange {
             files: Vec::new(),
@@ -237,7 +262,14 @@ impl Env {
             if old == new {
                 return;
             }
-            let diff = diff_source(old, &new, FileId(file as u16));
+            // The running text was the new text of the reload before this
+            // one, and its parse is still here.
+            let diff = self.reload_parses.borrow_mut().diff(
+                program_id.0 as u64,
+                old,
+                &new,
+                FileId(file as u16),
+            );
             change.files.push(FileChange {
                 file: FileId(file as u16),
                 name: name.to_string(),
@@ -331,6 +363,21 @@ impl Env {
             state_preserved: result.state_preserved,
             state_dropped: result.state_dropped,
         })
+    }
+
+    /// Drop the parses kept from earlier reloads
+    /// ([`ParseCache`](crate::source_diff::ParseCache)): a few syntax trees
+    /// of the files that were edited, at most two versions of each. Nothing
+    /// depends on them but the time the next reload takes, which then parses
+    /// the running text of each changed file once more.
+    pub fn clear_reload_parses(&mut self) {
+        self.reload_parses.borrow_mut().clear();
+    }
+
+    /// How many source texts are kept parsed for the next reload, and their
+    /// size in bytes.
+    pub fn reload_parses_kept(&self) -> (usize, usize) {
+        self.reload_parses.borrow().size()
     }
 
     /// Apply a change that needs no recompile ([`ProgramChange::is_incremental`]):
@@ -537,7 +584,12 @@ impl Env {
         let files = if new == old {
             Vec::new()
         } else {
-            let diff = diff_source(&old, &new, FileId(index as u16));
+            let diff = self.reload_parses.borrow_mut().diff(
+                program_id.0 as u64,
+                &old,
+                &new,
+                FileId(index as u16),
+            );
             if !diff.change.is_incremental() {
                 return Err(ConfigSetError::NeedsReload(format!(
                     "setting `{path}` changes more than a value (a different type or shape)"
@@ -687,7 +739,8 @@ fn binds_at_top_level(source: &str, name: &str) -> bool {
 /// applied to this program.
 fn plan_patch(program: &Program, change: &ProgramChange) -> Result<Patch, String> {
     let mut patch = Patch::default();
-    let by_file: HashMap<u16, &FileChange> = change.files.iter().map(|f| (f.file.0, f)).collect();
+    // Asked once per term of the program, so a table and not a hash map.
+    let by_file = ChangedFiles::new(change);
     for f in &change.files {
         patch.sources.push((f.file.0 as usize, f.new_source.clone()));
     }
@@ -706,7 +759,7 @@ fn plan_patch(program: &Program, change: &ProgramChange) -> Result<Patch, String
     }
 
     for (tid, span) in program.source_map.iter() {
-        let Some(f) = by_file.get(&span.file.0) else {
+        let Some(f) = by_file.get(span.file.0) else {
             continue;
         };
         if !wanted.is_empty()
@@ -728,7 +781,7 @@ fn plan_patch(program: &Program, change: &ProgramChange) -> Result<Patch, String
 
     for (i, def) in program.functions.iter().enumerate() {
         let Some(span) = def.span else { continue };
-        let Some(f) = by_file.get(&span.file.0) else {
+        let Some(f) = by_file.get(span.file.0) else {
             continue;
         };
         let moved = f.diff.map_span(span).ok_or_else(|| {
@@ -746,14 +799,14 @@ fn plan_patch(program: &Program, change: &ProgramChange) -> Result<Patch, String
         let cites_changed_file = w
             .cited
             .as_ref()
-            .is_some_and(|c| c.spans().any(|s| by_file.contains_key(&s.file.0)));
-        if !by_file.contains_key(&w.span.file.0) && !cites_changed_file {
+            .is_some_and(|c| c.spans().any(|s| by_file.contains(s.file.0)));
+        if !by_file.contains(w.span.file.0) && !cites_changed_file {
             continue;
         }
         // A diagnostic is about the code its span covers. One that covers a
         // changed literal could read differently after the edit, and only the
         // compiler can say how.
-        if let Some(f) = by_file.get(&w.span.file.0)
+        if let Some(f) = by_file.get(w.span.file.0)
             && let SourceChange::Values(values) = &f.diff.change
             && values.iter().any(|v| {
                 w.span.start.offset <= v.old_span.start.offset
@@ -764,7 +817,7 @@ fn plan_patch(program: &Program, change: &ProgramChange) -> Result<Patch, String
         }
         // Spans of a file that did not change stay where they are.
         let moved = w
-            .relocated(|span| match by_file.get(&span.file.0) {
+            .relocated(|span| match by_file.get(span.file.0) {
                 Some(f) => f.diff.map_span(span),
                 None => Some(span),
             })
@@ -777,7 +830,7 @@ fn plan_patch(program: &Program, change: &ProgramChange) -> Result<Patch, String
     // A check that compared the layout of two places must read the same at
     // their new positions, or the edit added or removed a warning.
     for (i, dep) in program.layout_deps.iter().enumerate() {
-        let Some(f) = by_file.get(&dep.prev.file.0) else {
+        let Some(f) = by_file.get(dep.prev.file.0) else {
             continue;
         };
         let moved = (|| {

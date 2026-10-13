@@ -872,8 +872,6 @@ fn a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile() {
         .unwrap();
     }
     src.push_str("print(f0(1) + f149(2))\n");
-    let edited = src.replace("gain: 0.5", "gain: 0.75");
-
     let mut w = world(&src, &[], RunPolicy::FAST);
     let time = |w: &mut World, text: &str| {
         let t = std::time::Instant::now();
@@ -882,10 +880,23 @@ fn a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile() {
         w.env.lower_program(w.pid).unwrap();
         (report.outcome, t.elapsed().as_secs_f64() * 1e3)
     };
-    let best = |w: &mut World, a: &str, b: &str| {
+    // Every round reloads a text no reload has seen, as an edit is: the
+    // parse a reload keeps of the text it ended on serves the next one's
+    // running text and nothing else. (Going back and forth between the same
+    // two texts would parse nothing and measure a reload nobody makes.)
+    let round = std::cell::Cell::new(0usize);
+    let best = |w: &mut World, a: &dyn Fn(usize) -> String, b: &str| {
         let mut best = (ReloadOutcome::Unchanged, f64::MAX);
         for _ in 0..3 {
-            let (outcome, ms) = time(w, a);
+            round.set(round.get() + 1);
+            let text = a(round.get());
+            let parses = petal::source_diff::parses_run();
+            let (outcome, ms) = time(w, &text);
+            assert_eq!(
+                petal::source_diff::parses_run() - parses,
+                1,
+                "a reload parses the new text and only that"
+            );
             if ms < best.1 {
                 best = (outcome, ms);
             }
@@ -893,11 +904,15 @@ fn a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile() {
         }
         best
     };
-    let (outcome, patched) = best(&mut w, &edited, &src);
+    // One reload first: the running text has to be parsed once.
+    time(&mut w, &format!("// first\n{src}"));
+    time(&mut w, &src);
+    let (outcome, patched) =
+        best(&mut w, &|i| src.replace("gain: 0.5", &format!("gain: 0.75{i}")), &src);
     assert_eq!(outcome, Patched);
-    let (outcome, relocated) = best(&mut w, &format!("// c\n{src}"), &src);
+    let (outcome, relocated) = best(&mut w, &|i| format!("// c{i}\n{src}"), &src);
     assert_eq!(outcome, Relocated);
-    let (outcome, recompiled) = best(&mut w, &format!("{src}print(1)\n"), &src);
+    let (outcome, recompiled) = best(&mut w, &|i| format!("{src}print({i})\n"), &src);
     assert_eq!(outcome, Recompiled);
     eprintln!(
         "{} lines: value edit {patched:.3} ms, layout edit {relocated:.3} ms, recompile {recompiled:.3} ms",
@@ -908,6 +923,181 @@ fn a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile() {
         "a value edit ({patched:.3} ms) should be far cheaper than a recompile ({recompiled:.3} ms)"
     );
     assert!(relocated * 5.0 < recompiled);
+}
+
+// ── What a reload parses ─────────────────────────────────────────────────
+//
+// A reload compares the running text of each changed file with its new
+// text. The parse of the running text is kept from the reload that made it
+// the running text (`petal::source_diff::ParseCache`), found again by the
+// text itself, so a reload parses one text per changed file. These count
+// the parses; the timing test above is what the count buys.
+
+/// How many texts the diff parsed while `f` ran.
+fn parses<T>(f: impl FnOnce() -> T) -> (u64, T) {
+    let before = petal::source_diff::parses_run();
+    let out = f();
+    (petal::source_diff::parses_run() - before, out)
+}
+
+#[test]
+fn a_reload_parses_only_the_text_that_is_new() {
+    let old = "config let K = 3\nfn f(x)\n  x + K\nend\nstate n = 0\nn += f(1)\nprint(n)\n";
+    let mut w = world(old, &[], RunPolicy::FAST);
+    // The first reload has no parse of the running text to start from.
+    let (n, report) = parses(|| w.env.reload_program(w.sid, &old.replace("K = 3", "K = 4"), None).unwrap());
+    assert_eq!((n, report.outcome), (2, Patched));
+    // From then on: one text for every kind of edit.
+    let steps: [(String, ReloadOutcome); 5] = [
+        (old.replace("K = 3", "K = 5"), Patched),
+        (format!("// note\n{}", old.replace("K = 3", "K = 5")), Relocated),
+        (old.replace("x + K", "x * K"), Recompiled),
+        (old.replace("x + K", "x * K").replace("K = 3", "K = 9"), Patched),
+        (format!("{old}print(1)\n"), Recompiled),
+    ];
+    for (text, expect) in &steps {
+        let (n, report) = parses(|| w.env.reload_program(w.sid, text, None).unwrap());
+        assert_eq!((n, report.outcome), (1, *expect), "{text}");
+    }
+    // The same text again is no reload at all, and going back to the text
+    // before it finds both parses.
+    let (n, report) = parses(|| w.env.reload_program(w.sid, &steps[4].0, None).unwrap());
+    assert_eq!((n, report.outcome), (0, ReloadOutcome::Unchanged));
+    let (n, report) = parses(|| w.env.reload_program(w.sid, &steps[3].0, None).unwrap());
+    assert_eq!((n, report.outcome), (0, Recompiled));
+    // A value set without a file: the text it makes is parsed, once.
+    let (n, report) = parses(|| w.env.set_config_value(w.sid, None, "K", &StaticValue::int(11)).unwrap());
+    assert_eq!((n, report.outcome), (1, Patched));
+    let (n, report) = parses(|| w.env.reload_program(w.sid, &format!("// saved\n{}", steps[3].0.replace("K = 9", "K = 11")), None).unwrap());
+    assert_eq!((n, report.outcome), (1, Relocated));
+}
+
+#[test]
+fn a_reload_that_fails_does_not_cost_the_next_one_a_parse() {
+    let old = "config let K = 3\nstate n = 0\nn += K\nprint(n)\n";
+    let mut w = world(old, &[], RunPolicy::FAST);
+    w.env.reload_program(w.sid, &old.replace("K = 3", "K = 4"), None).unwrap();
+    // A text that does not parse: tried once, nothing of it kept.
+    let (n, r) = parses(|| w.env.reload_program(w.sid, "config let K = (\n", None));
+    assert!(r.is_err());
+    assert_eq!(n, 1);
+    // A text that parses and does not compile: the program is still the one
+    // before it, and its parse is still here.
+    let (n, r) = parses(|| w.env.reload_program(w.sid, &format!("import no_such_module\n{old}"), None));
+    assert!(r.is_err());
+    assert_eq!(n, 1);
+    assert!(frame(&mut w).starts_with("10\n"));
+    let (n, report) = parses(|| w.env.reload_program(w.sid, &old.replace("K = 3", "K = 5"), None).unwrap());
+    assert_eq!((n, report.outcome), (1, Patched));
+    assert!(frame(&mut w).starts_with("15\n"));
+    // The text that did not compile, once more: it is found, and fails again.
+    let (n, r) = parses(|| w.env.reload_program(w.sid, &format!("import no_such_module\n{old}"), None));
+    assert!(r.is_err());
+    assert!(n <= 1);
+    let (n, report) = parses(|| w.env.reload_program(w.sid, &old.replace("K = 3", "K = 6"), None).unwrap());
+    assert_eq!((n, report.outcome), (1, Patched));
+    assert!(frame(&mut w).starts_with("21\n"));
+}
+
+#[test]
+fn in_a_program_of_several_files_only_the_edited_file_is_parsed() {
+    let cfg = "pub config let SPEED = 3\n";
+    let mover = "import cfg\npub fn step(x)\n  x + cfg.SPEED\nend\n";
+    let entry = "import cfg\nimport mover\nstate x = 0\nx = mover.step(x)\nprint(x)\n";
+    let mut w = world(entry, &[("cfg", cfg), ("mover", mover)], RunPolicy::FAST);
+    assert_eq!(w.env.reload_parses_kept().0, 0, "nothing is parsed for a reload until one happens");
+    let mut reload = |w: &mut World, cfg: &str, mover: &str, entry: &str| {
+        w.env.register_module("cfg", cfg);
+        w.env.register_module("mover", mover);
+        parses(|| w.env.reload_program(w.sid, entry, None).unwrap().outcome)
+    };
+    assert_eq!(reload(&mut w, &cfg.replace('3', "4"), mover, entry), (2, Patched));
+    assert_eq!(reload(&mut w, &cfg.replace('3', "5"), mover, entry), (1, Patched));
+    // Another file: its running text is parsed the first time it is edited.
+    let mover2 = mover.replace("x + cfg.SPEED", "x + cfg.SPEED * 2");
+    assert_eq!(reload(&mut w, &cfg.replace('3', "5"), &mover2, entry), (2, Recompiled));
+    // Two files at once, both edited before: one text each.
+    let mover3 = mover.replace("x + cfg.SPEED", "x + cfg.SPEED * 3");
+    assert_eq!(reload(&mut w, &cfg.replace('3', "6"), &mover3, entry), (2, Patched));
+    // The entry file was never edited and is not kept; each edited file has
+    // the text it was diffed from and the one it was diffed to.
+    assert_eq!(w.env.reload_parses_kept().0, 4);
+    for i in 0..40 {
+        let (n, _) = reload(&mut w, &cfg.replace('3', &format!("1{i}")), mover, &format!("// {i}\n{entry}"));
+        // The first round edits the entry file for the first time and puts
+        // `mover` back to a text that was dropped; after that, one text each
+        // for the two files that change.
+        assert_eq!(n, if i == 0 { 4 } else { 2 }, "round {i}");
+    }
+    let (kept, bytes) = w.env.reload_parses_kept();
+    assert!(kept <= 6, "three files, two texts each, not {kept}");
+    assert!(bytes < 1024);
+    // Dropping them costs the next reload one parse a changed file, and
+    // nothing else.
+    w.env.clear_reload_parses();
+    assert_eq!(w.env.reload_parses_kept(), (0, 0));
+    assert_eq!(reload(&mut w, &cfg.replace('3', "7"), mover, entry), (4, Patched));
+    assert!(frame(&mut w).ends_with('}'));
+}
+
+/// The parses a reload keeps must not change what any reload does: a run of
+/// edits (value, layout, structural, broken, set without a file) through
+/// one `Env` that keeps them and one that is made to forget them before
+/// every step, compared on the report and on the program after each.
+#[test]
+fn reloads_through_kept_parses_equal_reloads_that_parse_everything() {
+    let base = "// knobs\nconfig let K = {gain: 0.5, steps: 4}\nlet T = [1, 2, 3]\nfn f(x)\n  x * K.gain + len(T)\nend\nstate n = 0\nn += f(2)\nprint(n, K.steps)\n";
+    let texts: Vec<String> = vec![
+        base.replace("gain: 0.5", "gain: 0.75"),
+        base.replace("gain: 0.5", "gain: 0.75").replace("// knobs", "// knobs\n\n// more"),
+        base.replace("[1, 2, 3]", "[1, 2, 3, 4]"),
+        "config let K = (\n".to_string(),
+        format!("import no_such_module\n{base}"),
+        base.replace("[1, 2, 3]", "[1, 2, 30, 4]"),
+        base.to_string(),
+        base.replace("gain: 0.5", "gain: 0.75"),
+        base.replace("x * K.gain", "(x * K.gain)"),
+        base.replace("steps: 4", "steps: 4.5"),
+        base.to_string(),
+        format!("{base}fn g()\n  1\nend\n"),
+        format!("{}fn g()\n  1\nend\n", base.replace("steps: 4", "steps: 6")),
+    ];
+    for policy in [RunPolicy::FAST, RunPolicy::REPLAY, RunPolicy::BASELINE] {
+        let mut a = world(base, &[], policy);
+        let mut b = world(base, &[], policy);
+        for (i, text) in texts.iter().enumerate() {
+            let what = format!("{} step {i}", policy.name().unwrap_or_default());
+            b.env.clear_reload_parses();
+            let ra = a.env.reload_program(a.sid, text, None);
+            let rb = b.env.reload_program(b.sid, text, None);
+            match (&ra, &rb) {
+                (Ok(x), Ok(y)) => {
+                    assert_eq!(x.outcome, y.outcome, "[{what}] outcome");
+                    assert_eq!(x.change, y.change, "[{what}] change");
+                    assert_eq!(x.fallback, y.fallback, "[{what}] fallback");
+                    assert_eq!(
+                        (x.state_preserved, x.state_dropped, x.static_lines()),
+                        (y.state_preserved, y.state_dropped, y.static_lines()),
+                        "[{what}] report"
+                    );
+                }
+                (Err(x), Err(y)) => assert_eq!(x.to_string(), y.to_string(), "[{what}] error"),
+                _ => panic!("[{what}] one reload failed and the other did not"),
+            }
+            assert_same_program(&mut a, &mut b, &what);
+            assert_eq!(run_frame(&mut a), run_frame(&mut b), "[{what}] the run after");
+            assert_same_slots(&a, &b, &what);
+            if i % 3 == 1 {
+                b.env.clear_reload_parses();
+                let value = StaticValue::float(0.125 * (i + 1) as f64);
+                let x = a.env.set_config_value(a.sid, None, "K.gain", &value).map(|r| r.outcome);
+                let y = b.env.set_config_value(b.sid, None, "K.gain", &value).map(|r| r.outcome);
+                assert_eq!(x, y, "[{what}] set_config_value");
+                assert_same_program(&mut a, &mut b, &format!("{what}, set"));
+                assert_eq!(frame(&mut a), frame(&mut b), "[{what}] the frame after a set");
+            }
+        }
+    }
 }
 
 // ── A corpus of real programs ────────────────────────────────────────────

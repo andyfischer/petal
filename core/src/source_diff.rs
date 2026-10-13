@@ -265,30 +265,47 @@ impl FileDiff {
 
 /// Compare two versions of one file. `file` is the id stamped on the spans of
 /// both parses (the file's index in the program's file table).
+///
+/// Parses both texts. A caller that diffs against the same text again and
+/// again (a reload, which always starts from what is running) keeps a
+/// [`ParseCache`] and asks it instead.
 pub fn diff_source(old: &str, new: &str, file: FileId) -> FileDiff {
     if old == new {
-        return FileDiff {
+        return FileDiff::identical();
+    }
+    let old_parse = match ParsedSource::new(old, file) {
+        Ok(p) => p,
+        Err(e) => return FileDiff::full(format!("the running source does not parse: {e}")),
+    };
+    let new_parse = match ParsedSource::new(new, file) {
+        Ok(p) => p,
+        Err(e) => return FileDiff::full(format!("the new source does not parse: {e}")),
+    };
+    diff_parsed(&old_parse, &new_parse)
+}
+
+impl FileDiff {
+    fn identical() -> FileDiff {
+        FileDiff {
             change: SourceChange::None,
             text_changed: false,
             reordered: false,
             remap: None,
-        };
+        }
     }
-    let full = |why: String| FileDiff {
-        change: SourceChange::Full(why),
-        text_changed: true,
-        reordered: false,
-        remap: None,
-    };
-    let old_parse = match Parsed::new(old, file) {
-        Ok(p) => p,
-        Err(e) => return full(format!("the running source does not parse: {e}")),
-    };
-    let new_parse = match Parsed::new(new, file) {
-        Ok(p) => p,
-        Err(e) => return full(format!("the new source does not parse: {e}")),
-    };
 
+    fn full(why: String) -> FileDiff {
+        FileDiff {
+            change: SourceChange::Full(why),
+            text_changed: true,
+            reordered: false,
+            remap: None,
+        }
+    }
+}
+
+/// The diff of two parses of texts that are not byte-identical.
+fn diff_parsed(old_parse: &ParsedSource, new_parse: &ParsedSource) -> FileDiff {
     let (change, reordered) = classify(&old_parse.stmts, &new_parse.stmts);
     let values: &[ValueChange] = match &change {
         SourceChange::None => &[],
@@ -306,38 +323,204 @@ pub fn diff_source(old: &str, new: &str, file: FileId) -> FileDiff {
     // is one the AST drops: `export` respelled `pub` (which changes a
     // warning), parentheses added or removed (which moves spans in ways no
     // token pairing describes).
-    match PositionMap::build(&old_parse, &new_parse, values, old, new) {
+    match PositionMap::build(old_parse, new_parse, values) {
         Ok(remap) => FileDiff {
             change,
             text_changed: true,
             reordered: false,
             remap: Some(remap),
         },
-        Err(why) => full(why),
+        Err(why) => FileDiff::full(why),
     }
 }
 
-struct Parsed {
+thread_local! {
+    static PARSES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// How many source texts the diff has lexed and parsed on this thread: what
+/// a test reads to see that a reload parsed only the text that is new.
+pub fn parses_run() -> u64 {
+    PARSES.with(|n| n.get())
+}
+
+/// Everything the diff reads of one version of a file: its statements, its
+/// tokens with their spans, and how its text is laid out in lines. Made from
+/// the text and a file id alone, so it is the same for the same pair.
+struct ParsedSource {
     stmts: Vec<Stmt>,
     tokens: Vec<Token>,
     spans: Vec<SourceSpan>,
+    /// Char offset at which each line of the text starts.
+    line_starts: Vec<u32>,
+    /// Length of the text in chars.
+    chars: u32,
 }
 
-impl Parsed {
+impl ParsedSource {
     /// Lex and parse with the parser's direct AST — the same statements the
     /// CST projection yields (`cst::parse_source_phased` asserts it), without
     /// building the tree.
-    fn new(source: &str, file: FileId) -> Result<Parsed, String> {
-        let mut lexer = Lexer::new_in_file(source, file);
+    fn new(source: &str, file: FileId) -> Result<ParsedSource, String> {
+        PARSES.with(|n| n.set(n.get() + 1));
+        let mut lexer = Lexer::new_in_file(source, file).without_trivia();
         lexer.tokenize()?;
-        let mut parser =
-            crate::parse::Parser::new(lexer.tokens.clone(), lexer.token_spans.clone());
+        let mut parser = crate::parse::Parser::new(
+            std::mem::take(&mut lexer.tokens),
+            std::mem::take(&mut lexer.token_spans),
+        );
         let stmts = parser.parse_program()?;
-        Ok(Parsed {
+        let (tokens, spans) = parser.into_tokens();
+        let mut line_starts = vec![0u32];
+        let mut chars = 0u32;
+        for c in source.chars() {
+            chars += 1;
+            if c == '\n' {
+                line_starts.push(chars);
+            }
+        }
+        Ok(ParsedSource {
             stmts,
-            tokens: lexer.tokens,
-            spans: lexer.token_spans,
+            tokens,
+            spans,
+            line_starts,
+            chars,
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Parses kept between diffs
+// ---------------------------------------------------------------------------
+
+/// The parses of the texts recently diffed, so that a text diffed again is
+/// not parsed again.
+///
+/// A reload compares what a program is running with what its file holds now,
+/// and the next reload starts from the text this one ended on: without this,
+/// every reload parses the running text a second time, which for a literal
+/// edit is most of what the reload costs.
+///
+/// An entry is found by the text itself (and the file id its spans carry),
+/// compared byte for byte. Nothing has to be invalidated: a parse is a
+/// function of those two alone, so whatever the caller did in between (a
+/// reload that failed to compile, a value set without a file, another
+/// program swapped in) an entry is either the parse of the text asked about
+/// or is not found. `owner` only says whose entries make room for whose.
+///
+/// Memory: a file is here only once it has been edited, at most two versions
+/// of it (the one diffed from and the one diffed to, which is what lets a
+/// reload that did not compile be followed by one that parses once), and at
+/// most [`ParseCache::MAX_ENTRIES`] texts of [`ParseCache::MAX_BYTES`] in
+/// all, least recently diffed first out.
+#[derive(Default)]
+pub struct ParseCache {
+    entries: Vec<CachedParse>,
+    clock: u64,
+}
+
+struct CachedParse {
+    owner: u64,
+    file: FileId,
+    text: String,
+    parse: ParsedSource,
+    used: u64,
+}
+
+impl ParseCache {
+    /// The most texts kept, over every owner and file.
+    pub const MAX_ENTRIES: usize = 12;
+    /// The most source text kept, in bytes; the two texts of the latest diff
+    /// stay whatever their size.
+    pub const MAX_BYTES: usize = 2 << 20;
+
+    /// [`diff_source`], parsing only the texts that are not already here.
+    /// `owner` is any number that tells one user of the file id from another
+    /// (a program id): the two texts replace what the same owner kept for
+    /// the same file.
+    pub fn diff(&mut self, owner: u64, old: &str, new: &str, file: FileId) -> FileDiff {
+        if old == new {
+            return FileDiff::identical();
+        }
+        let old_at = match self.parsed(owner, old, file) {
+            Ok(i) => i,
+            Err(e) => return FileDiff::full(format!("the running source does not parse: {e}")),
+        };
+        let new_at = match self.parsed(owner, new, file) {
+            Ok(i) => i,
+            Err(e) => {
+                // The text diffed from is kept: it is still what is running.
+                self.trim(owner, file);
+                return FileDiff::full(format!("the new source does not parse: {e}"));
+            }
+        };
+        let diff = diff_parsed(&self.entries[old_at].parse, &self.entries[new_at].parse);
+        self.trim(owner, file);
+        diff
+    }
+
+    /// Forget everything.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    /// How many texts are kept, and their size in bytes.
+    pub fn size(&self) -> (usize, usize) {
+        (self.entries.len(), self.entries.iter().map(|e| e.text.len()).sum())
+    }
+
+    /// The index of the entry for `text`, parsed now if it was not here.
+    fn parsed(&mut self, owner: u64, text: &str, file: FileId) -> Result<usize, String> {
+        self.clock += 1;
+        let found = self
+            .entries
+            .iter()
+            .position(|e| e.file == file && e.text.len() == text.len() && e.text == text);
+        let at = match found {
+            Some(at) => at,
+            None => {
+                let parse = ParsedSource::new(text, file)?;
+                self.entries.push(CachedParse {
+                    owner,
+                    file,
+                    text: text.to_string(),
+                    parse,
+                    used: 0,
+                });
+                self.entries.len() - 1
+            }
+        };
+        // The entry is this owner's now: the text is what it is diffing.
+        self.entries[at].owner = owner;
+        self.entries[at].used = self.clock;
+        Ok(at)
+    }
+
+    /// Drop what the diff just made (the two entries stamped last) replaces,
+    /// then whatever is over the limits.
+    fn trim(&mut self, owner: u64, file: FileId) {
+        let latest = self.clock - 1;
+        self.entries
+            .retain(|e| e.used >= latest || e.owner != owner || e.file != file);
+        loop {
+            let bytes: usize = self.entries.iter().map(|e| e.text.len()).sum();
+            if self.entries.len() <= Self::MAX_ENTRIES && bytes <= Self::MAX_BYTES {
+                break;
+            }
+            let oldest = self
+                .entries
+                .iter()
+                .enumerate()
+                .filter(|(_, e)| e.used < latest)
+                .min_by_key(|(_, e)| e.used)
+                .map(|(i, _)| i);
+            match oldest {
+                Some(i) => {
+                    self.entries.swap_remove(i);
+                }
+                None => break,
+            }
+        }
     }
 }
 
@@ -1112,12 +1295,10 @@ struct PositionMap {
 }
 
 impl PositionMap {
-    fn build(
-        old: &Parsed,
-        new: &Parsed,
+    fn build<'a>(
+        old: &'a ParsedSource,
+        new: &'a ParsedSource,
         values: &[ValueChange],
-        old_text: &str,
-        new_text: &str,
     ) -> Result<PositionMap, String> {
         // Changed literals, one entry per span (a color's components share
         // one), in source order.
@@ -1126,7 +1307,7 @@ impl PositionMap {
         units.sort_by_key(|(o, _)| o.start.offset);
         units.dedup_by_key(|(o, _)| (o.start.offset, o.end.offset));
 
-        let significant = |p: &Parsed| -> Vec<(Token, SourceSpan)> {
+        let significant = |p: &'a ParsedSource| -> Vec<(&'a Token, SourceSpan)> {
             p.tokens
                 .iter()
                 .zip(&p.spans)
@@ -1135,7 +1316,7 @@ impl PositionMap {
                 // ends on one. (A trailing comma added when a record is
                 // wrapped onto several lines must not count as a difference.)
                 .filter(|(t, _)| !matches!(t, Token::Newline | Token::Eof | Token::Comma))
-                .map(|(t, s)| (t.clone(), *s))
+                .map(|(t, s)| (t, *s))
                 .collect()
         };
         let a = significant(old);
@@ -1190,14 +1371,8 @@ impl PositionMap {
             return Err(differ());
         }
 
-        let mut new_line_starts = vec![0u32];
-        let mut count = 0u32;
-        for c in new_text.chars() {
-            count += 1;
-            if c == '\n' {
-                new_line_starts.push(count);
-            }
-        }
+        let new_line_starts = new.line_starts.clone();
+        let count = new.chars;
         let new_eof = SourcePosition {
             line: new_line_starts.len() as u32,
             column: count - new_line_starts[new_line_starts.len() - 1] + 1,
@@ -1205,7 +1380,7 @@ impl PositionMap {
         };
         Ok(PositionMap {
             pieces,
-            old_len: old_text.chars().count() as u32,
+            old_len: old.chars,
             new_eof,
             new_line_starts,
         })
@@ -1290,6 +1465,84 @@ mod tests {
             SourceChange::Values(v) => v,
             other => panic!("expected a value change, got {other:?}"),
         }
+    }
+
+    /// The cache is a way to skip a parse and nothing else: over a run of
+    /// texts, each diffed against the one before, it answers exactly what
+    /// [`diff_source`] answers, positions included.
+    #[test]
+    fn the_parse_cache_answers_what_diff_source_answers() {
+        let texts = [
+            "config let K = 3\nfn f(x)\n  x + K\nend\n",
+            "config let K = 4\nfn f(x)\n  x + K\nend\n",
+            "// c\nconfig let K = 4\n\nfn f(x)\n  x + K\nend\n",
+            "config let K = (\n",
+            "config let K = 4\nfn f(x)\n  x * K\nend\n",
+            "config let K = 4\nfn f(x)\n  (x * K)\nend\n",
+            "config let K = 3\nfn f(x)\n  x + K\nend\n",
+            "config let K = 3\nfn f(x)\n  x + K\nend\nlet é = \"ü\"\n",
+            "config let K = 5\nfn f(x)\n  x + K\nend\nlet é = \"üü\"\n",
+        ];
+        let mut cache = ParseCache::default();
+        for file in [ENTRY_FILE, FileId(3)] {
+            for i in 0..texts.len() {
+                for j in 0..texts.len() {
+                    let (old, new) = (texts[i], texts[j]);
+                    let cached = cache.diff(7, old, new, file);
+                    let fresh = diff_source(old, new, file);
+                    assert_eq!(format!("{cached:?}"), format!("{fresh:?}"), "{old:?} -> {new:?}");
+                    assert!(
+                        cache.entries.iter().filter(|e| e.file == file).count() <= 2,
+                        "one owner and file keeps two texts"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_parse_cache_parses_a_text_once_and_stays_within_its_limits() {
+        let text = |i: usize| format!("let a = {i}\n");
+        let mut cache = ParseCache::default();
+        let before = parses_run();
+        cache.diff(1, &text(0), &text(1), ENTRY_FILE);
+        assert_eq!(parses_run() - before, 2);
+        // Each diff starts from the text the one before ended on.
+        for i in 1..20 {
+            let before = parses_run();
+            cache.diff(1, &text(i), &text(i + 1), ENTRY_FILE);
+            assert_eq!(parses_run() - before, 1);
+            assert_eq!(cache.size().0, 2);
+        }
+        // A step back to the text before: nothing to parse.
+        let before = parses_run();
+        cache.diff(1, &text(20), &text(19), ENTRY_FILE);
+        assert_eq!(parses_run() - before, 0);
+        // The same text under another file id is another parse: the spans
+        // carry the id.
+        let d = cache.diff(1, &text(20), &text(19), FileId(2));
+        let SourceChange::Values(v) = &d.change else { panic!("{d:?}") };
+        assert_eq!(v[0].old_span.file, FileId(2));
+        // Many owners and files: the count is bounded, and the two texts of
+        // the latest diff are always among them.
+        for owner in 0..40u64 {
+            cache.diff(owner, &text(1), &text(owner as usize + 100), FileId(owner as u16));
+            assert!(cache.size().0 <= ParseCache::MAX_ENTRIES);
+            let before = parses_run();
+            cache.diff(owner, &text(owner as usize + 100), &text(1), FileId(owner as u16));
+            assert_eq!(parses_run() - before, 0);
+        }
+        // Size: texts over the byte limit do not accumulate.
+        let big = |i: usize| format!("let a = {i}\n// {}\n", "x".repeat(ParseCache::MAX_BYTES / 2));
+        for i in 0..4 {
+            cache.diff(99, &big(i), &big(i + 1), ENTRY_FILE);
+            cache.diff(98, &text(i), &text(i + 1), FileId(1));
+        }
+        let (count, bytes) = cache.size();
+        assert!(bytes <= ParseCache::MAX_BYTES + big(0).len() * 2, "{count} texts, {bytes} bytes");
+        assert!(count <= 4);
+        cache.clear();
+        assert_eq!(cache.size(), (0, 0));
     }
 
     #[test]

@@ -93,7 +93,7 @@ impl<'a> Vm<'a> {
                 call_args
             } else {
                 let name = self.native_fns.get_name(nid);
-                let sigs = self.native_fns.signatures(nid);
+                let sigs = self.native_signatures(nid);
                 if sigs.is_empty() {
                     return Err(crate::native_fn::undeclared_named_args(name));
                 }

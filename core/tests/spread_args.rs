@@ -357,3 +357,35 @@ fn a_spread_call_checks_clean_and_reloads() {
     env.run(sid).expect("run");
     assert_eq!(env.take_output(), vec!["a 5 none", "2"]);
 }
+
+/// A host's native binds a record against the names its `native fn`
+/// declaration gives, as a written named call does.
+#[test]
+fn a_host_native_binds_by_its_declared_names() {
+    use petal::native_fn::{NativeEffects, NativeResult, PetalCxt};
+    fn sub(state: &mut PetalCxt) -> NativeResult {
+        let a = state.get_int(1)?;
+        let b = state.get_int(2)?;
+        state.push_int(a - b);
+        Ok(1)
+    }
+    let mut env = Env::new();
+    env.register_native("host_sub", sub, NativeEffects::PURE);
+    let src = "native fn host_sub(a: num, b: num) -> int
+print(host_sub(...{b: 1, a: 10}))
+print(host_sub(...[10, 1]))
+print(host_sub(10, ...{b: 4}))
+let f = host_sub
+print(f(...{a: 3, b: 2}))";
+    let pid = env.load_program(src).expect("load");
+    let sid = env.create_stack(pid).expect("stack");
+    env.run(sid).expect("run");
+    assert_eq!(env.take_output(), vec!["9", "9", "6", "1"]);
+
+    let pid = env
+        .load_program("native fn host_sub(a: num, b: num) -> int\nhost_sub(...{a: 1, c: 2})")
+        .expect("load");
+    let sid = env.create_stack(pid).expect("stack");
+    let e = env.run(sid).expect_err("an unknown name");
+    assert!(e.contains("host_sub() has no parameter named 'c'"), "{e}");
+}

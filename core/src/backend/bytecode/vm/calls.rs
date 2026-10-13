@@ -861,7 +861,7 @@ impl<'a> Vm<'a> {
             return self.bind_native_spread(nid, args).map(Some);
         }
         let name = self.native_fns.get_name(nid);
-        let sigs = self.native_fns.signatures(nid);
+        let sigs = self.native_signatures(nid);
         if sigs.is_empty() {
             return Err(crate::native_fn::undeclared_named_args(name));
         }
@@ -1063,7 +1063,7 @@ impl<'a> Vm<'a> {
             return Err("internal error: a spread call with no arguments".into());
         };
         let name = self.native_fns.get_name(nid);
-        let sigs = self.native_fns.signatures(nid);
+        let sigs = self.native_signatures(nid);
         if sigs.is_empty() {
             return Err(crate::native_fn::undeclared_named_args(name));
         }
@@ -1073,5 +1073,24 @@ impl<'a> Vm<'a> {
         let mut names: SmallVec<[Option<&str>; 8]> = smallvec::smallvec![None; lead.len()];
         names.extend(record.keys().map(|k| Some(k.as_str())));
         crate::native_fn::bind_native_args(name, sigs, &full, &names)
+    }
+}
+
+impl<'a> Vm<'a> {
+    /// The parameter lists native `nid` declares, for binding arguments by
+    /// name when the call runs: the ones the host gave it, or else the ones
+    /// the running program's own `native fn` declaration carries
+    /// (`Program::native_links`). Empty when neither names any.
+    pub(super) fn native_signatures(&self, nid: NativeFnId) -> &[crate::native_fn::NativeSignature] {
+        let sigs = self.native_fns.signatures(nid);
+        if !sigs.is_empty() {
+            return sigs;
+        }
+        let name = self.native_fns.get_name(nid);
+        self.program
+            .native_links
+            .iter()
+            .find(|link| link.host == name)
+            .map_or(&[], |link| &link.signatures)
     }
 }

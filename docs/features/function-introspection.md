@@ -166,12 +166,12 @@ Expressions:
 | `Ident`, `CellGet`, `AtVar` | `name` |
 | `BinaryOp` | `op`, `left`, `right`. `op` is one of `Add Sub Mul Div Mod Eq Ne Lt Le Gt Ge And Or Coalesce Concat` |
 | `UnaryOp` | `op` (`Neg`, `Not`), `operand` |
-| `Call` | `function`, `args`, `arg_names` (empty when every argument is positional) |
+| `Call` | `function`, `args`, `arg_names` (empty when every argument is positional). A spread argument (`f(...args)`) is the last one, under the name `"..."` |
 | `If` | `condition`, `then_body`, `else_body` (a statement list or `nil`) |
 | `For` | `var`, `iter`, `body` (a `for` used as a value) |
 | `Match` | `subject`, `arms` (a list of `{pattern, guard, body}`; `pattern` is in the encoding of `petal show-ast --json`) |
 | `List` | `items` |
-| `Record` | `fields` (a list of `{name, value, spread}`) |
+| `Record` | `fields` (a list of `{name, value, spread}`). A computed key (`{[k]: v}`) is a spread whose value is the call `__record_of(k, v)` |
 | `FieldAccess` | `object`, `field` |
 | `IndexAccess` | `object`, `index` |
 | `OptionalAccess` | `value` |

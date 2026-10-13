@@ -4,8 +4,8 @@ Status: **A1, A2, A3, S0, S1 and S2 are implemented, reviewed and on `main`**
 (12 October 2026); both gates passed. What is not done is everything outside
 this repository: no engine that vendors Petal has been re-vendored, so Moses
 has not run a frame with the cache under its own host and the first row of
-"Benchmarks that gate the work" is still its baseline. The "Later" items are
-not started. See [Results](#results-12-october-2026) for baseline against
+"Benchmarks that gate the work" is still its baseline. Of the "Later" items
+the first, Garden, is done (13 October 2026); the rest are not started. See [Results](#results-12-october-2026) for baseline against
 now, the final test pass and the follow-ups, and the status note under each
 section for the rest.
 
@@ -1803,7 +1803,8 @@ Open:
 Do one of these only when a profile or an author report asks for it.
 
 - **Garden.** Replay named observations for skipped runs, the way memo
-  scopes do with `Dep::Observed`, so panels can use the cache.
+  scopes do with `Dep::Observed`, so panels can use the cache. **Done
+  2026-10-13**: "Later: Garden" below.
 - **Constants inside function bodies.** 279 sites, mostly small. Needs a
   thunk per constant because registers are per call.
 - **Per-input-class slots.** Values that depend only on the viewport, or
@@ -1814,6 +1815,138 @@ Do one of these only when a profile or an author report asks for it.
   several kept values and edits downstream of it are common.
 - **A frozen generation that can release objects**, so static values can
   live in it.
+
+### Later: Garden (2026-10-13)
+
+**Status: done; the cache is on under observation.** Commit `a14daea` and
+the two after it. The description is the "Observations" section of the
+header of `core/src/static_cache.rs`.
+
+What shipped:
+
+- **A log per segment.** Where the lowering preserves observations
+  (`StaticLayout::observes`) a segment that executes writes down every
+  observation made while it does, at the five places the VM records one,
+  the replay of a memoized scope included. Its `StaticStore` keeps the
+  last value of each term (`StaticSlots::keep_log`); a taken `StaticSkip`
+  records the log again where the segment stood, and a group skip those of
+  its segments in order. The buffer is last write wins and nothing else
+  runs inside a segment, so one value per term is exact. The log is one
+  more thing a skip waits for (the per-run pending count), so a segment
+  with values and no log executes. Logged values are GC roots.
+- **Reloads.** A reload that leaves the lowering in place (moved text, a
+  patched literal, `set_config_value`) hands on the log of a segment when
+  every slot it stores and reads is kept and the edit reached nothing any
+  statement in the segment depends on (`RunFollow`, per run, beside the
+  per-slot `SlotFollow`). A segment whose rebuild a drag put off keeps its
+  log with its old values. A recompile hands on none (a log names terms of
+  the old program): each kept segment executes once on the next frame for
+  its log, and the store puts the kept values back in the registers and the
+  kept record of an enum back in the enum table. The reload report is the
+  one given with observations off
+  (`a_recompile_keeps_the_values_and_writes_the_logs_again`).
+- **The per-term trace still turns the cache off** (`explain`, a Garden
+  pane being traced by the Petal IDE). It did not fall out: the trace
+  records every instruction with its inputs, not one value per name.
+- **Garden.** Nothing to switch on: `PanelHost` enables observations, and
+  that no longer disables the cache. A panel reload prints the
+  `[hot-reload] constants: …` and `stale seed` lines (the call was already
+  there and had nothing to say), `PanelHost::last_reload_report` returns
+  them, and a value that cannot be kept is printed once per load
+  (`[petal warning]`), as the SDL host does.
+
+Two things found on the way, both by the differentials:
+
+- **In-place edits.** The optimizer edits a container in place where the
+  program can no longer reach the old value, but the observation buffer
+  holds ids, so it shows the edit under the old name: `let BASE = [..]`,
+  `let cur = drop_last(BASE)` shows the short list as `BASE` with the cache
+  off. `BASE` is rebuilt every run (it reaches a write) while `cur` was
+  kept, so a frame that skipped `cur` showed the whole list. Under
+  observation a statement holding an in-place instruction whose container
+  another statement wrote (back through moves and match bindings) is not
+  skippable. This is the one thing kept without observation and not with
+  it.
+- **A name with no slot.** `let K10 = K9` stays in the code under
+  observation for its name alone, has no slot, and sits in the segment of
+  whatever is stored next. Handing a log on by what the segment's slots
+  depend on served a stale `K10` (`static_fuzz` seed 60). Hence `RunFollow`.
+
+Why equality holds, and what it rests on. The cache-on code is the
+cache-off code plus the skip and store instructions, so the set of
+observed terms is the same. A skipped segment differs from an executed one
+in four ways only: registers (slots), the enum table (slots), observations
+(the log), and in-place edits to containers. The last is exact for a
+container the same statement built (the log names it in its final state)
+and is ruled out otherwise. The other direction, code outside a segment
+editing a kept object in place where the cache off would show the edit,
+is closed at the root level by the existing rule that a register reaching
+an in-place instruction has no slot. Inside functions it rests on the
+escape analysis never editing in place an object the function did not
+allocate; that was not proved from `escape.rs`, only tested: the routes of
+`no_route_writes_through_to_a_kept_value` and 16 dead-name cases
+(`a_container_edited_in_place_is_observed_the_same`) under four policies,
+and both fuzzers. If a case turns up it will be a kept table shown
+unedited under a name the program no longer reads, where the cache off
+shows it edited: a difference in the debug view, not in any value the
+program computes.
+
+Tested (all with observations on, cache on against off, by name and term
+by term):
+
+- Core, debug: `cargo test --no-fail-fast`, 64 binaries, 2,584 passed, 0
+  failed, 16 ignored. `same_on_and_off` (`static_cache.rs`) and
+  `follow_modules` (`static_reload.rs`, now three stacks: followed,
+  rebuilt, no cache) run every case of theirs observed as well;
+  `core/tests/static_observe.rs` is 11 new cases.
+- `static_fuzz` and `static_cache_fuzz`, observed and not, 1,500 seeds each
+  in release.
+- The 55-app corpus (`core-libs/petal-ui/tests/static_cache.rs`,
+  `static_reload.rs`, debug): 45 frames under `replay`, `replay-memo`,
+  `baseline` and `fast`, and the five-edit chain under `replay`, `fast` and
+  `replay-memo` with the third instance.
+- Garden's panels and drawers under `PanelHost` itself, 20 scripts, 12
+  frames (`every_panel_observes_the_same_with_its_static_values_kept`);
+  `cargo test -p garden-script` 182 passed; `cargo check --workspace` in
+  `garden/`.
+- Each part removed in turn fails a test: the replay, the log's GC roots,
+  the in-place rule, the log handed on regardless, the kept value put back
+  in the register, the kept enum record published again, the renaming of a
+  logged value to the kept one.
+
+Measured (instruction and allocation counts, which do not depend on the
+build profile; "off" is what every panel ran before):
+
+- Garden panels under Garden's host, 60 frames, every frame run, no input
+  and no host data: 2.4% to 17.8% fewer instructions a frame, 9.8% to 28.9%
+  fewer allocations; 30,573 to 28,555 instructions (−6.60%) and 2,438 to
+  1,989 allocations (−18.43%) over the 20. plant 1,042 to 918 and 107 to
+  83; sketch 1,206 to 1,110 and 88 to 66; git_panel 2,572 to 2,437 and 211
+  to 179; main_menu 5,546 to 5,411 and 268 to 242. The table is in
+  `docs/dev/performance.md`. The drawers have no data in this run, so a
+  populated pane saves the same absolute amount and a smaller share.
+- The 55-app corpus observed: 4,206,466 to 4,179,089 instructions a frame
+  (−0.65%), 39,359 to 35,015 allocations (−11.04%), 2,945 slots (2,940
+  without observation, where the same run gives −0.74% and −10.51%).
+- Not measured: wall time, the frame after a recompile (it executes every
+  kept segment once, so it costs about a cache-off frame), memory held by
+  the logs.
+
+Open:
+
+- A recompile costs one frame of rebuilding under observation, though the
+  values are kept. Mapping old terms to new ones would avoid it; the
+  reload does not have that mapping.
+- The log holds every local of every function a segment called, for as
+  long as the segment is kept: a function that builds a large scratch
+  table and returns a summary keeps the scratch table alive. Without the
+  cache the buffer held it until the next run.
+- The in-function half of the equality argument is tested, not proved
+  (above).
+- Not run: the petal-ui suite beyond its two static corpus files, clippy,
+  vitest, `tools/verify.ts`, the release-profile core suite as a whole,
+  `garden-app`'s tests and `petal-fantasy-nes` (disk), a real Garden
+  session.
 
 ## Benchmarks that gate the work
 
@@ -2017,7 +2150,9 @@ In this repository:
    of S2.
 7. Time a run that has no slot of its own, for the debounce. **Done
    2026-10-13**, same note: there is no such run any more.
-8. Report stale seeds in Garden panels, where the cache is off.
+8. Report stale seeds in Garden panels, where the cache is off. **Done
+   2026-10-13** ("Later: Garden"): the cache is on there and the report
+   with it.
 9. The classification that lowering does costs 24 ms of a 183 ms recompile
    on neon; it could be served from the previous analysis when the diff
    touches no declaration. **Partly done 2026-10-13** ("The cost of a

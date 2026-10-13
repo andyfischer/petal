@@ -116,8 +116,23 @@ edited. That has always been how `state` behaves; the line makes it
 visible when a table reloads and a cell built from it does not. From C the
 same is under `statics` in `pb_vm_last_reload_json`. The report is absent
 (`None`) when the program does not run with the static-value cache (the
-`baseline` and `explain` policies, a host that records observations such as a
-Garden panel) or has not run yet.
+`baseline` and `explain` policies, a host with the per-term trace on such
+as a Garden panel being traced by the Petal IDE) or has not run yet.
+
+**A host that observes** (`Env::observations_mut().enable()`: every Garden
+panel) keeps the cache and gets the same report. What it reads after a
+frame is the same as with the cache off, because each segment of static
+code keeps what was observed while it last executed, in the functions it
+called too, and a frame that skips the segment records that again. Two
+things differ in cost, neither in what is kept. After a reload that
+recompiles, every kept segment executes once more on the next frame, since
+its observations name terms of the old program; the kept values are put
+back, so nothing that holds one sees a copy. After a reload that patches a
+literal or only moves text, only the segments the edit reached do. And a
+statement that edits in place a container another statement built (`let
+cur = drop_last(BASE)` where nothing reads `BASE` again) runs on every
+frame under observation, because the buffer shows that edit under the
+name `BASE`.
 
 `Env::set_static_follow(false)` goes back to rebuilding every static value
 on every reload. It is what the followed reload is tested against.

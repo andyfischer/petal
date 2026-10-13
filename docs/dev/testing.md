@@ -174,6 +174,22 @@ the panel corpus, and, since `fast` and `replay` follow by default, by
 would notice, make `begin_static_follow` call nothing dirty: ten
 `hot_reload` cases, 18 of the 23 in `static_reload` and `static_fuzz` fail.
 
+The cache stays on while a host observes, so every one of these
+differentials runs a second time with observations on, and what the host
+reads after each frame is part of what is compared: the map
+`Env::get_observations_json` returns, and the buffer itself term by term.
+That is `same_on_and_off` in `core/tests/static_cache.rs`, `follow_modules`
+in `core/tests/static_reload.rs` (with a third stack that has no cache, so
+following the diff is held to both oracles at once), both fuzzers, the two
+corpus tests of `core-libs/petal-ui/tests/static_cache.rs` and
+`static_reload.rs`, and `every_panel_observes_the_same_with_its_static_values_kept`
+in `garden/garden-script/src/panel.rs`, which runs Garden's panels and
+drawers under Garden's own host. `core/tests/static_observe.rs` holds the
+cases that say what the mechanism is; each part of it was removed in turn
+to see a test fail (the replay, the log's GC roots, the in-place rule, the
+log handed on by a reload, the kept value and the kept enum record put
+back after a segment executes again).
+
 Printing cannot tell one table from an equal copy of it, and a followed
 reload must leave the same objects shared as a rebuild of everything does.
 `sharing_is_the_same_as_after_a_rebuild_of_everything` in

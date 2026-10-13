@@ -489,9 +489,9 @@ frame reads, wherever the stretch of static code they stand in makes at
 least one allocation. Each value is built and stored on its own, so a
 reload keeps the values the edit cannot have changed and the next run
 rebuilds the others and nothing else ([hot-reload.md](../hot-reload.md#static-values-across-a-reload)).
-It is off under `baseline` and `explain`,
-whenever observations or the trace are on (Garden panels), and for a plain
-`petal run`.
+It is off under `baseline` and `explain`, whenever the per-term trace is
+on, and for a plain `petal run`. It stays on while observations are on
+(every Garden panel): see "Under observation" below.
 
 Over the panel corpus (`cd core-libs/petal-ui && cargo test --release --test
 static_cache -- --ignored --nocapture measure`: 55 apps, 60 frames of the
@@ -539,6 +539,43 @@ dispatch into the VM and one more bit tested in the in-place heap
 operations: the `test/benchmarks/*` scripts under `petal run` time within
 1.2% either way of the same source with both compiled out, and their
 instruction counts are unchanged.
+
+**Under observation.** A host that reads `Env::get_observations_json`
+after each frame must read the same thing from a frame that skipped a
+segment as from one that ran it. Each segment keeps a log of what was
+observed while it last executed (the last value of each named term, the
+locals of the functions it called included) and a taken skip records the
+log again, as a memoized scope does with `Dep::Observed`. So a skip costs
+one hash insert per logged name where the segment cost one per named
+instruction plus the instructions, and the values in a log are held for as
+long as the segment is kept. Garden's own panels under Garden's host
+(`cd garden && cargo test -p garden-script --lib -- --ignored --nocapture
+measure_static`: every example panel and GPP drawer, 60 frames, every frame
+run, no input and no host data, 13 October 2026) run 2.4% to 17.8% fewer
+instructions a frame and make 9.8% to 28.9% fewer allocations (6.6% and
+18.4% over their sum):
+
+| Panel | Slots | Instructions per frame, off | On | Allocations per frame, off | On |
+|---|---|---|---|---|---|
+| examples/panels/plant | 33 | 1,042 | 918 (−11.9%) | 107 | 83 (−22.8%) |
+| examples/panels/sketch | 17 | 1,206 | 1,110 (−8.0%) | 88 | 66 (−24.9%) |
+| examples/panels/gallery | 14 | 4,911 | 4,767 (−2.9%) | 294 | 257 (−12.6%) |
+| examples/panels/layers | 24 | 1,840 | 1,704 (−7.4%) | 125 | 94 (−25.1%) |
+| gpp-apps/git-viewers/git_panel | 22 | 2,572 | 2,437 (−5.2%) | 211 | 179 (−15.2%) |
+| gpp-apps/garden-diff/garden_diff | 21 | 1,290 | 1,179 (−8.6%) | 99 | 74 (−24.8%) |
+| gpp-apps/sqlite-browser/db_view | 20 | 2,037 | 1,916 (−5.9%) | 186 | 156 (−16.2%) |
+| gpp-apps/main-menu/main_menu | 14 | 5,546 | 5,411 (−2.4%) | 268 | 242 (−9.8%) |
+
+"Off" is what every panel ran before. The drawers have no data here, so
+their frames are small and the share is larger than a populated pane would
+show; the saving itself is the fixed 100 to 150 instructions and 22 to 41
+allocations of the tables. Over the 55-app corpus with observations on
+(`measure_observed` in the same test file as above) the sum is 0.65% fewer instructions and 11.04% fewer allocations, 2,945
+slots.
+What observation costs the cache: a statement that edits in place a
+container another statement built is not skipped, and after a reload that
+recompiles each kept segment executes once more to write its log
+([hot-reload.md](../hot-reload.md#static-values-across-a-reload)).
 
 **Enum constant data** is a static value too, where its expressions are
 static. `enum Kind  park(code: 2) end` publishes one record per variant by a

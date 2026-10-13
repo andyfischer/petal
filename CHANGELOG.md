@@ -144,9 +144,17 @@ way, for code written against an earlier checkout.
   instructions (median 5%) and makes 1% to 46% fewer allocations (median
   19%), and a large `let` table passed to a memoized function no longer
   makes that call miss on every frame. It is part of the `fast` and
-  `replay` policies and off under `baseline` and `explain`, while
-  observations or the trace are on (so not yet in Garden panels), and for
-  `petal run`, which runs a script once. `--policy fast-static` (or
+  `replay` policies and off under `baseline` and `explain`, while the
+  per-term trace is on, and for `petal run`, which runs a script once. It
+  stays on while a host observes (`Env::observations_mut().enable()`, which
+  every Garden panel does): a skipped stretch of static code reports the
+  names it bound when it last ran, the locals of the functions it called
+  included, so `Env::get_observations_json` reads the same with the cache
+  on and off. Garden's panels and GPP drawers run 2% to 18% fewer
+  instructions a frame for it and make 10% to 29% fewer allocations, and a
+  panel reload now prints the `[hot-reload] constants: …` and `stale seed`
+  lines the SDL host prints (`PanelHost::last_reload_report` returns
+  them), and a value that cannot be kept is reported once per load. `--policy fast-static` (or
   `Env::set_static_cache(false)`) turns it off; `Env::static_values` lists
   what a stack holds. The one thing a program can tell is `frozen`: a kept
   table passed to `freeze` is frozen once and stays frozen, where the table

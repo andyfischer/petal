@@ -350,7 +350,7 @@ impl<'a> Vm<'a> {
             frame: self.frame,
             echo: self.echo,
             handle_classes: self.handle_classes,
-            results: Vec::new(),
+            results: SmallVec::new(),
             in_place,
         }
     }

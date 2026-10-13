@@ -921,7 +921,9 @@ pub struct PetalCxt<'a> {
     /// their output stays captured in the buffer instead of leaking to stdout.
     pub(crate) echo: bool,
     pub(crate) handle_classes: &'a [HandleClass],
-    pub(crate) results: Vec<Value>,
+    /// What the native pushed. Inline for the one or two values every
+    /// native but a handful returns, so a call allocates nothing for them.
+    pub(crate) results: SmallVec<[Value; 2]>,
     /// When true, the caller (the bytecode VM, under `OptFlags::in_place_mutation`)
     /// has proven this call's container argument is uniquely owned and
     /// non-escaping, so a mutating builtin (`append`, `drop_last`, `set`, …) may

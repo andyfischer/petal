@@ -128,12 +128,17 @@ describe("stdlib extractor", () => {
     ]);
     expect(byName.get("fill_arc")!.params[2].type).toBe("float");
 
-    for (const name of ["fill_poly", "fill_polygon", "draw_polyline"]) {
+    for (const name of ["fill_poly", "fill_polygon"]) {
       const params = required(name);
       expect(params.length, `${name} lost its point list`).toBe(4);
       expect(params[0].type).toBe("list");
       expect(params.slice(1).map((p) => p.name)).toEqual(["r", "g", "b"]);
     }
+    // `draw_polyline` takes its colour as one value or as three, so only the
+    // points and the first colour argument are required.
+    const polyline = byName.get("draw_polyline")!;
+    expect(polyline.params.map((p: any) => p.name)).toEqual(["points", "r", "g", "b", "a", "width"]);
+    expect(required("draw_polyline").map((p) => p.name)).toEqual(["points", "r"]);
   });
 
   it("documents a full colour triple for every solid-colour drawing call", () => {
@@ -151,7 +156,6 @@ describe("stdlib extractor", () => {
       "fill_fan",
       "fill_triangle",
       "fill_poly",
-      "draw_polyline",
     ]) {
       const names = required(name).map((p) => p.name);
       expect(names.slice(-3), `${name} is missing r/g/b`).toEqual([

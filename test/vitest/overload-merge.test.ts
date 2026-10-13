@@ -79,16 +79,19 @@ describe("overload sets merge across modules", () => {
 // petal-ui skips rather than failing.
 const maybe = existsSync(UI_RUN) ? describe : describe.skip;
 
+// `draw_rect_outline` is a set of Petal overloads in the `ui` prelude.
+// (`draw_rect` itself is a host native since the prelude stopped wrapping
+// it, and a module's own function of that name replaces a native outright.)
 maybe("overload sets merge with a plainly imported package", () => {
-  it("a library module adds an arity to ui's `draw_rect`", () => {
+  it("a library module adds an arity to ui's `draw_rect_outline`", () => {
     // The library's plain `import ui` is the lower-precedence binding, and
-    // the module's 1-argument `draw_rect` joins it. Both the added arity and
+    // the module's 1-argument `draw_rect_outline` joins it. Both the added arity and
     // the package's record form draw.
     const frame = runUiApp("ui_extend_app.ptl");
     expect(frame.error).toBe(null);
     expect(frame.commands).toEqual([
-      { op: "rect", x: 0, y: 0, w: 10, h: 10, r: 9, g: 9, b: 9 },
-      { op: "rect", x: 20, y: 0, w: 10, h: 10, r: 1, g: 2, b: 3 },
+      { op: "rect_outline", x: 0, y: 0, w: 10, h: 10, r: 9, g: 9, b: 9 },
+      { op: "rect_outline", x: 20, y: 0, w: 10, h: 10, r: 1, g: 2, b: 3 },
     ]);
   });
 
@@ -97,10 +100,10 @@ maybe("overload sets merge with a plainly imported package", () => {
     expect(frame.error).toBe(null);
     // x: 1 — the module's own 2-argument variant ran, not the prelude's.
     expect(frame.commands[0]).toEqual({
-      op: "rect", x: 1, y: 0, w: 10, h: 10, r: 1, g: 2, b: 3,
+      op: "rect_outline", x: 1, y: 0, w: 10, h: 10, r: 1, g: 2, b: 3,
     });
     // The prelude's 3-argument alpha form is still callable under the same name.
-    expect(frame.commands[1]).toMatchObject({ op: "rect", x: 40, r: 4, g: 5, b: 6 });
+    expect(frame.commands[1]).toMatchObject({ op: "rect_outline", x: 40, r: 4, g: 5, b: 6 });
     expect(frame.commands[1]).toHaveProperty("a");
   });
 });

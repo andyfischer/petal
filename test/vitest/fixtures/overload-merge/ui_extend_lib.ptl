@@ -1,6 +1,6 @@
 // A library module that adds an arity to a name the `ui` package owns. The
-// module imports `ui` plainly; `ui`'s `draw_rect` overload set takes 2, 3, 7
-// or 8 arguments; this file adds a 1-argument variant — the gap bloom hit
+// module imports `ui` plainly; `ui`'s `draw_rect_outline` overload set takes 2 to 9
+// arguments; this file adds a 1-argument variant — the gap bloom hit
 // (docs/dev/sharing-petal-libraries.md §6) — and every arity stays callable.
 //
 // Inside a variant's own body its name still means *that variant* (the
@@ -8,11 +8,11 @@
 // alias rather than the bare name.
 import ui
 
-pub fn draw_rect(r)
-  ui.draw_rect(r, { r: 9, g: 9, b: 9 })
+pub fn draw_rect_outline(r)
+  ui.draw_rect_outline(r, { r: 9, g: 9, b: 9 })
 end
 
 pub fn paint()
-  draw_rect({ x: 0, y: 0, w: 10, h: 10 })
-  draw_rect({ x: 20, y: 0, w: 10, h: 10 }, { r: 1, g: 2, b: 3 })
+  draw_rect_outline({ x: 0, y: 0, w: 10, h: 10 })
+  draw_rect_outline({ x: 20, y: 0, w: 10, h: 10 }, { r: 1, g: 2, b: 3 })
 end

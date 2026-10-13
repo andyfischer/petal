@@ -146,18 +146,26 @@ describe("check: native arguments and prelude overloads", () => {
   });
 
   it("flags a prelude overload that cannot take its arguments", () => {
-    const msgs = checkWith([], "import ui\ndraw_rect(0, 0, {r: 1}, 4, 1, 2, 3)\ndraw_rect(0, 0, 10, 10, 5)");
-    expect(msgs).toHaveLength(2);
+    const msgs = checkWith([], "import ui\ndraw_rect_outline(0, 0, 10, 10, 5)");
+    expect(msgs).toHaveLength(1);
     expect(msgs[0]).toContain(
-      "argument 3 to `draw_rect`: the 7-8-argument `draw_rect` uses it as a number, found `record`",
-    );
-    expect(msgs[1]).toContain(
-      "argument 5 to `draw_rect`: the 5-6-argument `draw_rect` reads field `r` from it, found `int`",
+      "argument 5 to `draw_rect_outline`: the 5-argument `draw_rect_outline` reads field `r` from it, found `int`",
     );
     // An optional trailing argument is held to its use as well.
-    expect(checkWith([], "import ui\ndraw_rect({x: 0, y: 0, w: 1, h: 1}, {r: 1, g: 2, b: 3}, {r: 1})")[0]).toContain(
-      "argument 3 to `draw_rect`: the 2-3-argument `draw_rect` uses it as a number, found `record`",
+    expect(checkWith([], "import ui\ndraw_rect_outline({x: 0, y: 0, w: 1, h: 1}, {r: 1, g: 2, b: 3}, {r: 1})")[0]).toContain(
+      "argument 3 to `draw_rect_outline`: the 2-4-argument `draw_rect_outline` uses it as a number, found `record`",
     );
+  });
+
+  it("holds a prelude native with several declared shapes to their types", () => {
+    // `draw_rect` is one native declared in three shapes. A number
+    // parameter is checked; the colour is not, since it may be a record or
+    // a packed int.
+    const msgs = checkWith([], "import ui\ndraw_rect(0, 0, {r: 1}, 4, 1, 2, 3)\ndraw_rect(0, 0, 10, 10, 5)\ndraw_rect({x: 0, y: 0, w: 1, h: 1}, {r: 1, g: 2, b: 3}, {r: 1})");
+    expect(msgs).toEqual([
+      "argument 3 to `draw_rect`: expected a number, found `record`",
+      "argument 3 to `draw_rect`: expected a number, found `record`",
+    ]);
   });
 
   it("accepts every shape the prelude really takes", () => {

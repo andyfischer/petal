@@ -40,12 +40,19 @@ pub(super) fn plan_cast_fixes(casts: &[RedundantCast], chars: &[char]) -> Vec<Fi
                 "float" => "a float",
                 _ => "a string",
             };
-            Some(Fix {
-                anchor: edit.head.0,
-                message: format!(
+            let message = if c.promotes {
+                "`float(…)` does nothing here: its argument is a number, and arithmetic \
+                 with the float beside it converts it the same way"
+                    .to_string()
+            } else {
+                format!(
                     "`{}(…)` does nothing here: its argument is already {kind}",
                     c.name
-                ),
+                )
+            };
+            Some(Fix {
+                anchor: edit.head.0,
+                message,
                 splices: vec![
                     Splice {
                         start: edit.head.0,

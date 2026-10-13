@@ -397,6 +397,31 @@ way, for code written against an earlier checkout.
   `prefer-match` turns an `if`/`elsif` chain that compares one subject against
   literals — numbers included, since `when 1` matches what `== 1` does — into
   a `match`.
+- `petal lint` rules from the Moses debrief. `no-redundant-cast` also
+  removes `float(n)` on an int beside a float operand (`float(i) * 0.5`), and
+  a `for` variable over `range` of ints is an `int` to the type checker.
+  `prefer-compound-assign` also folds a field or element written twice (`set
+  xs[i] = get xs[i] + d` to `set xs[i] += d`). New: `prefer-field-set` (`set
+  X = {...get X, f: v}` to `set X.f = v`), `neg-zero-sub` (`0 - x` to `-x`),
+  `prefer-any` (`len(filter(xs, p)) > 0` to `any(xs, p)`), `dead-alias` (a
+  `let` that renames an unchanging local), `shadows-builtin` and
+  `reimplements-builtin` (report only), and `int-division` (opt-in, report
+  only). A rule now fixes only what it can show to be the same program and
+  reports the rest: `--fix` prints what it left and exits 1, and `--json`
+  has a `fixable` field.
+- `petal check` warns about a literal division that drops a remainder (`1 /
+  2` is 0), and reports a qualified call to a member a module does not
+  export (`hud.hidden()`, `hud.nope(1)`) as an error with its position; it
+  used to pass and fail when the line ran. `petal run` refuses such a
+  program, as it does any other check error.
+- A `const` that is constant and is still built on every run, because the
+  list it is built from is handed to `append` (which may write in place), is
+  a compile warning that names the list. `const X = append(for … end, Y)`
+  used to cost a frame the comprehension with no word from any tool.
+- `ReloadReport::new_diagnostics` (with `Env::render_diagnostics` and
+  `Env::diagnostics`): the warnings and errors a reload's compile found that
+  the program before the edit did not have, for a host to print after each
+  reload.
 - `petal lint` rule `state-as-constant`: a plain top-level `state` that
   nothing in the program assigns, and whose initializer is static, is
   reported, and `--fix` rewrites it to `const`. The rule compiles its own
@@ -608,6 +633,9 @@ way, for code written against an earlier checkout.
   `pb_vm_function_json` returns a function's declared parameters, and
   `pb_vm_diagnostics_json` the compile's findings as data. In Rust:
   `Env::call_function_named`, `Env::function_params`.
+- `petal-c-bridge`: `pb_vm_new_diagnostics_text` (`vm.new_diagnostics_text()`)
+  returns the warnings and errors the last reload introduced, and
+  `pb_vm_last_reload_json` lists them as `new_diagnostics`.
 - `petal-c-bridge`: a variant built with `enum_("Shape.box", …)` is that
   variant of the script's enum (it matches its patterns and reads its data).
 - IR import validates the `enums` table, each variant construction and

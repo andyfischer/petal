@@ -90,6 +90,42 @@ pub struct RedundantCast {
     pub arg_is_atomic: bool,
     /// Where the cast sits, which decides what has to replace its parentheses.
     pub slot: CastSlot,
+    /// The cast is not the identity on its argument (an `int`, or a `num`),
+    /// but it is an operand of `+ - * / %` whose other operand is a `float`,
+    /// and that arithmetic converts the argument exactly as `float` would:
+    /// `float(i) * 0.5` is `i * 0.5`.
+    pub promotes: bool,
+}
+
+/// A site the type pass noticed for [`crate::lint`] or `petal check`, beyond
+/// the redundant casts.
+#[derive(Debug, Clone, Copy)]
+pub enum TypeNote {
+    /// `0 - x` or `0.0 - x`: a negation spelled as a subtraction.
+    ZeroSub {
+        /// The whole subtraction.
+        whole: SourceSpan,
+        /// The literal zero.
+        zero: SourceSpan,
+        /// The subtracted operand.
+        operand: SourceSpan,
+        /// The zero is written `0`, not `0.0`.
+        zero_is_int: bool,
+        /// What the pass proved of the operand (`Any` when nothing).
+        operand_ty: Type,
+        operand_is_atomic: bool,
+    },
+    /// `a / b` with both sides proven `int`, so it truncates, in a place
+    /// where the quotient then meets a `float`: an operand of float
+    /// arithmetic, or the argument of `float(...)`.
+    IntDivMeetsFloat {
+        /// The division.
+        div: SourceSpan,
+        /// Both operands are literals (`1 / 2`).
+        literal: bool,
+        /// The literal division leaves a remainder (`1 / 2`, not `4 / 2`).
+        inexact: bool,
+    },
 }
 
 /// The syntactic position of a cast call, as far as removing it is concerned.
@@ -137,6 +173,16 @@ struct Checker<'a> {
     ret_stack: Vec<Option<(Type, String)>>,
     diags: Vec<Diagnostic>,
     casts: Vec<RedundantCast>,
+    /// See [`TypeNote`].
+    notes: Vec<TypeNote>,
+    /// `float(x)` calls of the builtin whose argument is an `int` or a
+    /// `num`: not the identity, but removable beside a `float` operand. Keyed
+    /// by the call's span; the value is the argument's span and whether it is
+    /// atomic. See [`RedundantCast::promotes`].
+    float_of_num: HashMap<SourceSpan, (SourceSpan, bool)>,
+    /// `a / b` expressions whose two operands are both proven `int`; the
+    /// value says whether both are literals and whether a remainder is lost.
+    int_divs: HashMap<SourceSpan, (bool, bool)>,
     /// Method-call sites this pass pinned to one class. See [`MethodDispatch`].
     dispatch: MethodDispatch,
     /// The slot the next expression walked will occupy. Set immediately before
@@ -311,6 +357,9 @@ fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
         ret_stack: Vec::new(),
         diags: Vec::new(),
         casts: Vec::new(),
+        notes: Vec::new(),
+        float_of_num: HashMap::new(),
+        int_divs: HashMap::new(),
         dispatch: MethodDispatch::new(),
         slot: CastSlot::Operand,
         inferences: infer::Inferences::default(),
@@ -343,6 +392,7 @@ fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
     Outcome {
         diags: checker.diags,
         casts: checker.casts,
+        notes: checker.notes,
         dispatch: checker.dispatch,
         inferences: checker.inferences,
     }
@@ -352,6 +402,7 @@ fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
 struct Outcome {
     diags: Vec<Diagnostic>,
     casts: Vec<RedundantCast>,
+    notes: Vec<TypeNote>,
     dispatch: MethodDispatch,
     inferences: infer::Inferences,
 }
@@ -417,13 +468,23 @@ pub fn find_redundant_casts(
     // the return type of a qualified call (`m.len(xs)`). Knowing it would let
     // the rule delete *more* casts, and this rule rewrites source: it stays as
     // conservative as it was before namespaces were resolved at all.
+    find_typed_sites(stmts, fn_signatures, classes).0
+}
+
+/// [`find_redundant_casts`], and the other sites the type pass notes for the
+/// linter ([`TypeNote`]), from one walk.
+pub fn find_typed_sites(
+    stmts: &[Stmt],
+    fn_signatures: &HashMap<(String, usize), FnSignature>,
+    classes: &ClassTable,
+) -> (Vec<RedundantCast>, Vec<TypeNote>) {
     let names = HashMap::new();
     let namespaces = HashMap::new();
-    run(
+    let out = run(
         stmts,
         &CheckContext::new(fn_signatures, &names, classes, &namespaces),
-    )
-    .casts
+    );
+    (out.casts, out.notes)
 }
 
 /// Least-upper-bound used to type a branching expression: identical types keep
@@ -542,6 +603,58 @@ impl<'a> Checker<'a> {
     fn widen_assigned(&mut self, body: &[Stmt]) {
         for name in crate::compiler::assigned_names(body) {
             self.widen(&name, Type::Any);
+        }
+    }
+
+    /// The type of a `for` loop's variable: `int` over a `range(...)` of the
+    /// builtin whose bounds are all plainly ints, when the body never assigns
+    /// the variable; `any` otherwise.
+    fn loop_var_type(&self, var: &str, iter: &Expr, body: &[Stmt]) -> Type {
+        let ExprKind::Call {
+            function,
+            args,
+            arg_names,
+        } = &iter.kind
+        else {
+            return Type::Any;
+        };
+        let ExprKind::Ident(f) = &function.kind else {
+            return Type::Any;
+        };
+        if f != "range"
+            || !arg_names.is_empty()
+            || !(1..=3).contains(&args.len())
+            || self.lookup(f).is_some()
+            || self.fn_signatures.contains_key(&(f.clone(), args.len()))
+            || !args.iter().all(|a| self.plainly_int(a))
+            || crate::compiler::assigned_names(body).iter().any(|n| n == var)
+        {
+            return Type::Any;
+        }
+        Type::Int
+    }
+
+    /// Whether `expr` is an int by its spelling and the bindings in scope
+    /// alone. A second, silent look at an expression [`Checker::check_expr`]
+    /// has already walked, so it reports nothing.
+    fn plainly_int(&self, expr: &Expr) -> bool {
+        match &expr.kind {
+            ExprKind::Literal(Literal::Int(_)) => true,
+            ExprKind::Ident(name) => {
+                self.lookup(name).map(|v| v.effective()) == Some(Type::Int)
+            }
+            ExprKind::UnaryOp {
+                op: UnaryOp::Neg,
+                operand,
+            } => self.plainly_int(operand),
+            ExprKind::BinaryOp { op, left, right } => {
+                matches!(
+                    op,
+                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod
+                ) && self.plainly_int(left)
+                    && self.plainly_int(right)
+            }
+            _ => false,
         }
     }
 
@@ -1174,8 +1287,9 @@ impl<'a> Checker<'a> {
             StmtKind::For { var, iter, body } => {
                 self.check_expr(iter);
                 self.widen_assigned(body);
+                let var_ty = self.loop_var_type(var, iter, body);
                 self.push_scope();
-                self.bind(var.clone(), None, Type::Any);
+                self.bind(var.clone(), None, var_ty);
                 self.check_block_body(body);
                 self.pop_scope();
             }
@@ -1469,6 +1583,7 @@ impl<'a> Checker<'a> {
                 self.tolerant_access = *op == BinOp::Coalesce;
                 let l = self.check_expr(left);
                 let r = self.check_expr(right);
+                self.note_arithmetic(expr, *op, left, right, l, r);
                 binary_type(*op, l, r)
             }
             ExprKind::UnaryOp { op, operand } => {
@@ -1643,8 +1758,9 @@ impl<'a> Checker<'a> {
             ExprKind::For { var, iter, body } => {
                 self.check_expr(iter);
                 self.widen_assigned(body);
+                let var_ty = self.loop_var_type(var, iter, body);
                 self.push_scope();
-                self.bind(var.clone(), None, Type::Any);
+                self.bind(var.clone(), None, var_ty);
                 self.check_block_body(body);
                 self.pop_scope();
                 Type::List
@@ -1789,6 +1905,15 @@ impl<'a> Checker<'a> {
             ("int", Type::Int) => "int",
             ("float", Type::Float) => "float",
             ("str", Type::String) => "str",
+            ("float", Type::Int | Type::Num) => {
+                // Not the identity. Remembered for the arithmetic around it
+                // ([`Checker::note_arithmetic`]), and as the place an integer
+                // division is turned into a float after it has truncated.
+                self.float_of_num
+                    .insert(call.span, (arg.span, is_atomic(&arg.kind)));
+                self.note_int_div(arg);
+                return;
+            }
             _ => return,
         };
         self.casts.push(RedundantCast {
@@ -1797,7 +1922,121 @@ impl<'a> Checker<'a> {
             name,
             arg_is_atomic: is_atomic(&arg.kind),
             slot,
+            promotes: false,
         });
+    }
+
+    /// `div` is an `int / int` whose quotient meets a float here.
+    fn note_int_div(&mut self, div: &Expr) {
+        if let Some(&(literal, inexact)) = self.int_divs.get(&div.span) {
+            self.notes.push(TypeNote::IntDivMeetsFloat {
+                div: div.span,
+                literal,
+                inexact,
+            });
+        }
+    }
+
+    /// What `petal lint` and `petal check` want to know about one arithmetic
+    /// expression, given the types of its operands.
+    fn note_arithmetic(
+        &mut self,
+        expr: &Expr,
+        op: BinOp,
+        left: &Expr,
+        right: &Expr,
+        l: Type,
+        r: Type,
+    ) {
+        if !matches!(
+            op,
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod
+        ) {
+            return;
+        }
+        if op == BinOp::Div && l == Type::Int && r == Type::Int {
+            let (literal, inexact) = match (&left.kind, &right.kind) {
+                (
+                    ExprKind::Literal(Literal::Int(a)),
+                    ExprKind::Literal(Literal::Int(b)),
+                ) => (true, *b != 0 && a % b != 0),
+                _ => (false, false),
+            };
+            self.int_divs.insert(expr.span, (literal, inexact));
+            // Two literals that do not divide evenly: nobody writes `1 / 2`
+            // to mean 0.
+            if inexact
+                && let (
+                    ExprKind::Literal(Literal::Int(a)),
+                    ExprKind::Literal(Literal::Int(b)),
+                ) = (&left.kind, &right.kind)
+                && let Some(q) = a.checked_div(*b)
+            {
+                self.warn(
+                    expr.span,
+                    format!(
+                        "`{a} / {b}` is {q}: `/` on two ints drops the remainder. \
+                         Write `{a}.0 / {b}` for the fraction"
+                    ),
+                );
+            }
+        }
+        // `float(i) * 0.5`: mixed arithmetic converts the int operand to a
+        // float exactly as the cast does, so the cast changes nothing. When
+        // both operands are such casts only the left one is reported: the
+        // right one is then what keeps the arithmetic in floats.
+        let left_cast = self.float_of_num.get(&left.span).copied();
+        let mut left_reported = false;
+        if let Some((arg, atomic)) = left_cast
+            && r == Type::Float
+        {
+            left_reported = true;
+            self.casts.push(RedundantCast {
+                call: left.span,
+                arg,
+                name: "float",
+                arg_is_atomic: atomic,
+                slot: CastSlot::Operand,
+                promotes: true,
+            });
+        }
+        if let Some(&(arg, atomic)) = self.float_of_num.get(&right.span)
+            && l == Type::Float
+            && !left_reported
+            && left_cast.is_none()
+        {
+            self.casts.push(RedundantCast {
+                call: right.span,
+                arg,
+                name: "float",
+                arg_is_atomic: atomic,
+                slot: CastSlot::Operand,
+                promotes: true,
+            });
+        }
+        if l == Type::Float {
+            self.note_int_div(right);
+        }
+        if r == Type::Float {
+            self.note_int_div(left);
+        }
+        if op == BinOp::Sub
+            && let ExprKind::Literal(lit) = &left.kind
+        {
+            let zero_is_int = match lit {
+                Literal::Int(0) => true,
+                Literal::Float(f) if *f == 0.0 => false,
+                _ => return,
+            };
+            self.notes.push(TypeNote::ZeroSub {
+                whole: expr.span,
+                zero: left.span,
+                operand: right.span,
+                zero_is_int,
+                operand_ty: r,
+                operand_is_atomic: is_atomic(&right.kind),
+            });
+        }
     }
 
     /// A callee that is really a qualified module function — `icons.icon` for

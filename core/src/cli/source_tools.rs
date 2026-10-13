@@ -326,7 +326,12 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
             } else {
                 " (disabled)"
             };
-            println!("{:width$}  {}{}", rule.name, rule.summary, on);
+            let fixes = match rule.fixes {
+                crate::lint::Fixes::All => "",
+                crate::lint::Fixes::Provable => " [fixed where provably the same]",
+                crate::lint::Fixes::None => " [report only]",
+            };
+            println!("{:width$}  {}{}{}", rule.name, rule.summary, fixes, on);
         }
         return;
     }
@@ -336,6 +341,7 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
     let mut json_rows: Vec<serde_json::Value> = Vec::new();
     let mut remaining = 0usize;
     let mut fixed = 0usize;
+    let mut fixable = 0usize;
     let mut files_with_findings = 0usize;
 
     for input in &inputs {
@@ -371,9 +377,11 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
                     "column": f.column,
                     "rule": f.rule,
                     "message": f.message,
-                    "fixed": opts.fix,
+                    "fixable": f.fixable,
+                    "fixed": opts.fix && f.fixable,
                 }));
-            } else if !opts.fix {
+            } else if !opts.fix || !f.fixable {
+                // Under `--fix`, what is left to print is what has no fix.
                 println!(
                     "{}:{}:{}: {}: {}",
                     input.name, f.line, f.column, f.rule, f.message
@@ -383,6 +391,12 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
 
         if !opts.fix {
             remaining += outcome.findings.len();
+            fixable += outcome.fixable();
+            continue;
+        }
+        let unfixed = outcome.findings.len() - outcome.fixable();
+        remaining += unfixed;
+        if outcome.fixable() == 0 {
             continue;
         }
         match &input.path {
@@ -398,7 +412,7 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
                 }
             }
         }
-        fixed += outcome.findings.len();
+        fixed += outcome.fixable();
     }
 
     if opts.json {
@@ -406,13 +420,25 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
             "{}",
             serde_json::to_string_pretty(&json_rows).unwrap_or_else(|_| "[]".into())
         );
-    } else if remaining > 0 {
-        eprintln!(
-            "found {remaining} problem(s) in {files_with_findings} file(s); \
-             run `petal lint --fix` to fix them"
-        );
-    } else if fixed > 0 {
-        eprintln!("fixed {fixed} problem(s) in {files_with_findings} file(s)");
+    } else {
+        if fixed > 0 {
+            eprintln!("fixed {fixed} problem(s) in {files_with_findings} file(s)");
+        }
+        if remaining > 0 && opts.fix {
+            eprintln!(
+                "{remaining} problem(s) in {files_with_findings} file(s) have no automatic fix"
+            );
+        } else if remaining > 0 && fixable == remaining {
+            eprintln!(
+                "found {remaining} problem(s) in {files_with_findings} file(s); \
+                 run `petal lint --fix` to fix them"
+            );
+        } else if remaining > 0 {
+            eprintln!(
+                "found {remaining} problem(s) in {files_with_findings} file(s); \
+                 `petal lint --fix` fixes {fixable} of them"
+            );
+        }
     }
     if remaining > 0 || errors > 0 {
         process::exit(1);
@@ -424,7 +450,11 @@ fn summarize(outcome: &crate::lint::LintOutcome) -> String {
     crate::lint::RULES
         .iter()
         .filter_map(|r| {
-            let n = outcome.count(r.name);
+            let n = outcome
+                .findings
+                .iter()
+                .filter(|f| f.rule == r.name && f.fixable)
+                .count();
             (n > 0).then(|| format!("{n} {}", r.name))
         })
         .collect::<Vec<_>>()

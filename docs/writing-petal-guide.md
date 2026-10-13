@@ -1083,6 +1083,24 @@ that type is dropped, an `if`/`elsif` chain over literals becomes a `match`.
 `petal lint --rules` lists them, and `--fix --verify` proves a rewrite against
 the compiled IR before writing it.
 
+The rules also know the spellings that a builtin or an operator already
+covers, and fix them where the rewrite is provably the same program
+([CLI.md](CLI.md#lint--rules-with-fixes) has the table):
+
+| Written | Lint says | Rule |
+|---|---|---|
+| `float(i) * 0.5` (an int beside a float) | `i * 0.5`: the arithmetic converts it | `no-redundant-cast` |
+| `set xs[i] = get xs[i] + d` | `set xs[i] += d` | `prefer-compound-assign` |
+| `set T = {...get T, rev: get T.rev + 1}` | `set T.rev += 1` | `prefer-field-set` |
+| `len(filter(xs, p)) > 0` | `any(xs, p)` | `prefer-any` |
+| `0 - n` | `-n` (`0.0 - x` is reported only: `-0.0` is not `0.0`) | `neg-zero-sub` |
+| `let dd = dist` and then only `dd` | read `dist` | `dead-alias` |
+| `fn sum(xs) …`, `fn gf(r, k, d) if r == nil then d else field(r, k, d) end` | the builtin is already there | `shadows-builtin`, `reimplements-builtin` |
+
+`/` on two ints truncates. You do not need `float()` on every operand to
+guard against it: one float operand makes the arithmetic float, and `petal
+check` warns about a literal `1 / 2`.
+
 One rule is off unless you name it: `petal lint
 --rules-include=state-as-constant` reports a top-level `state` that nothing
 assigns and whose initializer is constant, and with `--fix` rewrites it to

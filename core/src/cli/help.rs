@@ -656,10 +656,15 @@ DESCRIPTION
 
               file:line:column: rule: message
 
-       and exits 1 if there are any. Every rule carries a fix, and --fix
+       and exits 1 if there are any. Most rules carry a fix, and --fix
        applies them in place; a fixed file is then formatted with
        'petal fmt', since a rewrite can move code between lines. Layout is
        not lint's business: an unformatted file with no findings is clean.
+
+       A rule fixes only what it can show to be the same program. A finding
+       it cannot is reported and left, and --fix prints those and still
+       exits 1. 'petal lint --rules' says which rules fix everything, which
+       fix where provable, and which only report.
 
        Each fix is gated: if the file compiled before, it must compile after,
        or nothing is written.
@@ -669,14 +674,43 @@ DESCRIPTION
        prefer-let
               a var that no nested function shares becomes a let
        no-redundant-cast
-              int(n), float(x) or str(s) on a value already of that type
+              int(n), float(x) or str(s) on a value already of that type;
+              and float(n) on an int beside a float operand of + - * / %,
+              which converts n the same way. A cast beside an int operand
+              stays: / on two ints truncates
        prefer-match
               an if/elsif chain testing one value against literals becomes
               a match
        prefer-repeat
               a loop appending one string n times becomes repeat(s, n)
+       prefer-field-set
+              a record assigned a spread of itself with fields changed
+              (set X = a literal of ...get X and f: v) becomes set X.f = v,
+              where the file shows X to hold a plain record (spreading nil
+              gives a record; a field write to nil fails). Otherwise
+              reported
        prefer-compound-assign
-              x = x + e becomes x += e
+              x = x + e becomes x += e; set xs[i] = get xs[i] + d becomes
+              set xs[i] += d
+       neg-zero-sub
+              0 - x becomes -x for a proven int x. 0.0 - x is reported
+              only: it differs from -x in the sign of a zero result
+       prefer-any
+              len(filter(xs, p)) > 0 becomes any(xs, p), and == 0 becomes
+              !any(xs, p), where p is an in-place lambda with no side
+              effect. Otherwise reported: any stops at the first match
+       dead-alias
+              let a = v in a function, where a is only read and the local v
+              does not change afterwards: the let goes and v is read
+       shadows-builtin (report only)
+              a fn that takes the place of a builtin, a prelude function or
+              a function of a package the file imports whole
+       reimplements-builtin (report only)
+              a fn that only forwards its arguments to a builtin
+       int-division (opt-in, report only)
+              a / b on two ints, truncated, then used as a float. Opt-in
+              because a row or column index scaled by a float is the same
+              shape. A literal 1 / 2 is a 'petal check' warning instead
        prefer-pub
               the deprecated export modifier becomes pub
        state-as-constant (opt-in)

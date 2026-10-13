@@ -1,15 +1,21 @@
 //! `petal lint` — rules about *which* code to write, as opposed to how to lay
 //! it out (that is `petal fmt`, [`crate::fmt`]; see docs/dev/linter-plan.md).
 //!
-//! Every rule has a kebab-case name, reports a [`Finding`] per site, and
-//! carries a fix that `--fix` applies. The rules, in the order they run:
+//! Every rule has a kebab-case name and reports a [`Finding`] per site. Most
+//! carry a fix that `--fix` applies; a rule applies it only where it can
+//! show the rewrite to be the same program, and reports the site without one
+//! otherwise ([`Fixes`], [`Finding::fixable`]). The rules, in the order they
+//! run (the list below predates the Moses debrief's rules, which are
+//! described where they are written: [`field_set`], [`typed`],
+//! [`any_filter`], [`dead_alias`], [`builtin_names`]):
 //!
 //! 1. **`prefer-let`** ([`var_to_let`]) — a `var` that no nested function
 //!    mentions is a `let` in disguise: `var` → `let`, `set x` → `x`, `get x`
 //!    → `x`. Keyword splices only, so the program keeps its shape. This runs
 //!    first because it gives the cast rule types to prove.
 //! 2. **`no-redundant-cast`** ([`casts`]) — delete `int(n)` where `n` is
-//!    already an `int` (likewise `float`/`str`). Candidates come from the type
+//!    already an `int` (likewise `float`/`str`), and `float(n)` on an int
+//!    beside a float operand of arithmetic. Candidates come from the type
 //!    checker, which is deliberately conservative — anything it cannot prove
 //!    infers `any` and is left alone — and are applied as two minimal string
 //!    splices per cast, so comments and layout inside the argument survive.
@@ -68,17 +74,28 @@
 
 use std::path::PathBuf;
 
+mod any_filter;
+mod builtin_names;
 mod casts;
 mod compound;
+mod dead_alias;
 mod export_to_pub;
+mod field_set;
 mod repeat;
 mod state_const;
 mod to_match;
+mod typed;
+mod util;
 mod var_to_let;
 
+use any_filter::plan_any_fixes;
+use builtin_names::{plan_reimplement_reports, plan_shadow_reports};
 use casts::plan_cast_fixes;
 use compound::plan_compound_fixes;
+use dead_alias::plan_alias_fixes;
 use export_to_pub::plan_export_fixes;
+use field_set::plan_field_set_fixes;
+use typed::{plan_int_division, plan_neg_zero_fixes};
 use repeat::plan_repeat_fixes;
 use state_const::plan_state_fixes;
 use to_match::{Splice, apply_match_edits, plan_match_fixes};
@@ -97,6 +114,20 @@ pub struct RuleInfo {
     /// The rule runs only when `--rules-include` names it. For a rule whose
     /// fix is a judgement call rather than an equivalent spelling.
     pub opt_in: bool,
+    /// Which of the rule's findings `--fix` rewrites.
+    pub fixes: Fixes,
+}
+
+/// How much of a rule `--fix` applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fixes {
+    /// Every finding.
+    All,
+    /// The findings whose rewrite is provably the same program; the rest are
+    /// reported for the author to decide.
+    Provable,
+    /// None: the rule only reports.
+    None,
 }
 
 pub const PREFER_LET: &str = "prefer-let";
@@ -106,6 +137,13 @@ pub const PREFER_COMPOUND_ASSIGN: &str = "prefer-compound-assign";
 pub const PREFER_REPEAT: &str = "prefer-repeat";
 pub const PREFER_PUB: &str = "prefer-pub";
 pub const STATE_AS_CONSTANT: &str = "state-as-constant";
+pub const PREFER_FIELD_SET: &str = "prefer-field-set";
+pub const NEG_ZERO_SUB: &str = "neg-zero-sub";
+pub const PREFER_ANY: &str = "prefer-any";
+pub const DEAD_ALIAS: &str = "dead-alias";
+pub const SHADOWS_BUILTIN: &str = "shadows-builtin";
+pub const REIMPLEMENTS_BUILTIN: &str = "reimplements-builtin";
+pub const INT_DIVISION: &str = "int-division";
 
 /// Every rule, in the order it runs.
 pub const RULES: &[RuleInfo] = &[
@@ -113,36 +151,86 @@ pub const RULES: &[RuleInfo] = &[
         name: PREFER_LET,
         summary: "a `var` no nested function shares should be a `let`",
         opt_in: false,
+        fixes: Fixes::All,
     },
     RuleInfo {
         name: NO_REDUNDANT_CAST,
-        summary: "`int(n)` / `float(x)` / `str(s)` on a value already of that type",
+        summary: "`int(n)` / `float(x)` / `str(s)` on a value already of that type, or \
+                  `float(n)` beside a float operand that converts `n` anyway",
         opt_in: false,
+        fixes: Fixes::All,
     },
     RuleInfo {
         name: PREFER_MATCH,
         summary: "an if/elsif chain testing one value against literals should be a `match`",
         opt_in: false,
+        fixes: Fixes::All,
     },
     RuleInfo {
         name: PREFER_REPEAT,
         summary: "a loop appending one string `n` times should be `repeat(s, n)`",
         opt_in: false,
+        fixes: Fixes::All,
+    },
+    RuleInfo {
+        name: PREFER_FIELD_SET,
+        summary: "`set X = {...get X, f: v}` should be `set X.f = v`",
+        opt_in: false,
+        fixes: Fixes::Provable,
     },
     RuleInfo {
         name: PREFER_COMPOUND_ASSIGN,
-        summary: "`x = x + e` should be `x += e`",
+        summary: "`x = x + e` should be `x += e` (also `xs[i]` and `r.f`)",
         opt_in: false,
+        fixes: Fixes::All,
+    },
+    RuleInfo {
+        name: NEG_ZERO_SUB,
+        summary: "`0 - x` should be `-x`",
+        opt_in: false,
+        fixes: Fixes::Provable,
+    },
+    RuleInfo {
+        name: PREFER_ANY,
+        summary: "`len(filter(xs, p)) > 0` should be `any(xs, p)`",
+        opt_in: false,
+        fixes: Fixes::Provable,
+    },
+    RuleInfo {
+        name: DEAD_ALIAS,
+        summary: "`let a = v` where `a` is only read and `v` does not change",
+        opt_in: false,
+        fixes: Fixes::Provable,
+    },
+    RuleInfo {
+        name: SHADOWS_BUILTIN,
+        summary: "a `fn` that takes the place of a builtin of the same name",
+        opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: REIMPLEMENTS_BUILTIN,
+        summary: "a `fn` that only forwards its arguments to a builtin",
+        opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: INT_DIVISION,
+        summary: "`a / b` on two ints, truncated, then used as a float",
+        opt_in: true,
+        fixes: Fixes::None,
     },
     RuleInfo {
         name: PREFER_PUB,
         summary: "the deprecated `export` modifier should be `pub`",
         opt_in: false,
+        fixes: Fixes::All,
     },
     RuleInfo {
         name: STATE_AS_CONSTANT,
         summary: "a never-assigned `state` with a constant initializer should be a `const`",
         opt_in: true,
+        fixes: Fixes::All,
     },
 ];
 
@@ -188,10 +276,14 @@ pub struct Finding {
     pub line: usize,
     pub column: usize,
     pub message: String,
+    /// `--fix` rewrites this one. False for a finding the rule reports and
+    /// leaves to the author (see [`Fixes`]).
+    pub fixable: bool,
 }
 
 /// A rule's planned fix for one site, in the coordinates of the text the rule
-/// ran on: where to report it, and the splices that fix it.
+/// ran on: where to report it, and the splices that fix it. No splices means
+/// the site is reported only.
 struct Fix {
     anchor: usize,
     message: String,
@@ -227,11 +319,16 @@ impl LintOutcome {
         self.findings.iter().filter(|f| f.rule == rule).count()
     }
 
-    /// Did a rule that is *expected* to change the IR fire on this file?
+    /// Did a rule that is *expected* to change the IR rewrite this file?
     pub fn has_semantic_rewrite(&self) -> bool {
         self.findings
             .iter()
-            .any(|f| f.rule != PREFER_COMPOUND_ASSIGN && f.rule != PREFER_PUB)
+            .any(|f| f.fixable && f.rule != PREFER_COMPOUND_ASSIGN && f.rule != PREFER_PUB)
+    }
+
+    /// How many findings `--fix` rewrites.
+    pub fn fixable(&self) -> usize {
+        self.findings.iter().filter(|f| f.fixable).count()
     }
 }
 
@@ -266,7 +363,8 @@ impl<'a> Pipeline<'a> {
     }
 
     /// Keep the fixes `rule` is allowed to make, record their findings, and
-    /// apply them. Returns how many were applied.
+    /// apply them. Returns how many were applied (a finding with no splices
+    /// is recorded and not counted).
     fn apply(&mut self, rule: &'static str, fixes: Vec<Fix>) -> usize {
         let mut kept: Vec<Splice> = Vec::new();
         let mut count = 0;
@@ -280,14 +378,26 @@ impl<'a> Pipeline<'a> {
                 if self.ignores.suppresses(rule, line) {
                     continue;
                 }
-                self.findings.push(Finding {
+                let finding = Finding {
                     rule,
                     line: line + 1,
                     column: at - self.line_starts[line] + 1,
                     message: fix.message,
-                });
+                    fixable: !fix.splices.is_empty(),
+                };
+                // A rule that runs in rounds meets its unfixed sites again.
+                if self
+                    .findings
+                    .iter()
+                    .any(|f| f.rule == rule && f.line == finding.line && f.column == finding.column)
+                {
+                    continue;
+                }
+                if finding.fixable {
+                    count += 1;
+                }
+                self.findings.push(finding);
                 kept.extend(fix.splices);
-                count += 1;
             }
         }
         kept.sort_by_key(|s| s.start);
@@ -384,7 +494,7 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     let mut classes = crate::classes::ClassTable::new();
     crate::compiler::collect_enums(&mut classes, &stmts, None);
     let signatures = crate::compiler::collect_fn_signatures(&stmts, &classes);
-    let found = crate::typecheck::find_redundant_casts(&stmts, &signatures, &classes);
+    let (found, _) = crate::typecheck::find_typed_sites(&stmts, &signatures, &classes);
     let casts_removed = p.apply(NO_REDUNDANT_CAST, plan_cast_fixes(&found, &chars));
 
     // The cast splices moved every offset, so each later rule re-parses.
@@ -394,8 +504,45 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     let (chars, stmts) = reparse(&p.text)?;
     let loops_to_repeat = p.apply(PREFER_REPEAT, plan_repeat_fixes(&stmts, &chars));
 
+    // Before the compound rule: `set T = {...get T, n: get T.n + 1}` becomes
+    // `set T.n = get T.n + 1`, which that rule then folds.
+    let (chars, stmts) = reparse(&p.text)?;
+    let mut rewrites = p.apply(PREFER_FIELD_SET, plan_field_set_fixes(&stmts, &chars));
+
     let (chars, stmts) = reparse(&p.text)?;
     let compound_assigns = p.apply(PREFER_COMPOUND_ASSIGN, plan_compound_fixes(&stmts, &chars));
+
+    // The rules that read the type pass again, over the text as it now is.
+    if opts.rules.enabled(NEG_ZERO_SUB) || opts.rules.enabled(INT_DIVISION) {
+        let (chars, stmts) = reparse(&p.text)?;
+        let mut classes = crate::classes::ClassTable::new();
+        crate::compiler::collect_enums(&mut classes, &stmts, None);
+        let signatures = crate::compiler::collect_fn_signatures(&stmts, &classes);
+        let (_, notes) = crate::typecheck::find_typed_sites(&stmts, &signatures, &classes);
+        p.apply(INT_DIVISION, plan_int_division(&notes, &stmts));
+        rewrites += p.apply(NEG_ZERO_SUB, plan_neg_zero_fixes(&notes, &chars));
+    }
+
+    let (chars, stmts) = reparse(&p.text)?;
+    rewrites += p.apply(PREFER_ANY, plan_any_fixes(&stmts, &chars));
+
+    // In rounds: removing one alias can be what makes the next one removable
+    // (`let a = v` then `let b = a`), and lint has to be a fixed point.
+    for _ in 0..MAX_ALIAS_ROUNDS {
+        if !opts.rules.enabled(DEAD_ALIAS) {
+            break;
+        }
+        let (chars, stmts) = reparse(&p.text)?;
+        let applied = p.apply(DEAD_ALIAS, plan_alias_fixes(&stmts, &chars));
+        if applied == 0 {
+            break;
+        }
+        rewrites += applied;
+    }
+
+    let (_, stmts) = reparse(&p.text)?;
+    p.apply(SHADOWS_BUILTIN, plan_shadow_reports(&stmts));
+    p.apply(REIMPLEMENTS_BUILTIN, plan_reimplement_reports(&stmts));
 
     let (chars, stmts) = reparse(&p.text)?;
     let exports_to_pub = p.apply(PREFER_PUB, plan_export_fixes(&stmts, &chars)?);
@@ -439,6 +586,7 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         || loops_to_repeat > 0
         || exports_to_pub > 0
         || states_to_const > 0
+        || rewrites > 0
     {
         // Only meaningful when the original compiles here at all; a file whose
         // imports don't resolve outside its app gets the detection rules alone.
@@ -528,6 +676,10 @@ fn verify_chain_counts(
 /// that is a constant given the ones before it, so the count is the longest
 /// chain of constants built from one another, not the number of them.
 const MAX_STATE_ROUNDS: usize = 64;
+
+/// A bound on the `dead-alias` rounds: the longest chain of aliases of
+/// aliases a file is expected to hold.
+const MAX_ALIAS_ROUNDS: usize = 16;
 
 fn reparse(source: &str) -> Result<(Vec<char>, Vec<crate::ast::Stmt>), String> {
     let (_tree, stmts) = crate::rewrite::parse_ast(source)?;

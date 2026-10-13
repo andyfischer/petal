@@ -264,5 +264,7 @@ fn the_rule_is_opt_in() {
     assert!(both.enabled(STATE_AS_CONSTANT) && both.enabled(petal::lint::PREFER_LET));
     let info = petal::lint::RULES.iter().find(|r| r.name == STATE_AS_CONSTANT).unwrap();
     assert!(info.opt_in);
-    assert_eq!(petal::lint::RULES.iter().filter(|r| r.opt_in).count(), 1);
+    // The other opt-in rule is `int-division`.
+    let opt_in: Vec<&str> = petal::lint::RULES.iter().filter(|r| r.opt_in).map(|r| r.name).collect();
+    assert_eq!(opt_in, vec![petal::lint::INT_DIVISION, STATE_AS_CONSTANT]);
 }

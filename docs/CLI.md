@@ -781,7 +781,11 @@ petal lint --fix --verify <path>             # prove the rewrite before writing 
 petal lint --fix --verify=strict <path>      # demand full IR equality
 ```
 
-Shaped like `deno lint`: each finding names its rule, and each rule has a fix.
+Shaped like `deno lint`: each finding names its rule, and most rules have a
+fix. A rule that cannot show its rewrite to be the same program reports the
+site and leaves it (the "Fix" column says when), and three rules only report.
+`--fix` applies what has a fix, prints what is left, and exits 1 while
+anything is; `--json` gives each finding a `fixable` field.
 
 ```
 $ petal lint app.ptl
@@ -793,10 +797,17 @@ found 2 problem(s) in 1 file(s); run `petal lint --fix` to fix them
 | Rule | Finds | Fix |
 |---|---|---|
 | `prefer-let` | a `var` whose every read and write stays in its function | `var` → `let`, `set x = …` → `x = …`, `get x` → `x` |
-| `no-redundant-cast` | `int(n)` where `n` is provably an `int` (likewise `float`, `str`) | delete the call; parentheses follow the slot (`2 * int(a + 1)` → `2 * (a + 1)`) |
+| `no-redundant-cast` | `int(n)` where `n` is provably an `int` (likewise `float`, `str`); and `float(n)` on a proven `int` or `num` that is an operand of `+ - * / %` whose other operand is a proven `float`, since that arithmetic converts `n` the same way (`float(i) * 0.5`) | delete the call; parentheses follow the slot (`2 * int(a + 1)` → `2 * (a + 1)`). Of `float(a) / float(b)` only the left cast goes, and a cast beside an `int` operand always stays: `/` on two ints truncates |
 | `prefer-match` | an `if`/`elsif` chain testing one subject against string, bool or nil literals | rewrite as a `match` |
 | `prefer-repeat` | a `for` over `range(n)` / `range(0, n)` whose whole body appends one string literal (or `string` parameter) to an accumulator that starts as a string | `x ++= repeat(s, n)` — the loop copies `x` on every pass |
-| `prefer-compound-assign` | `x = x op e` for an operator with a compound form | `x op= e` |
+| `prefer-field-set` | `set X = {...get X, f: v}` (or `X = {...X, f: v}`): the whole record is copied to change a field | `set X.f = v`, one write per field. Applied where the file shows `X` to hold a plain record (declared once, with a record literal, and only ever assigned record literals): spreading `nil` gives a record where a field write to `nil` fails. Several fields are split only when no value calls anything or reads `X`. Otherwise reported |
+| `prefer-compound-assign` | `x = x op e` for an operator with a compound form; also a field or element written twice, `set xs[i] = get xs[i] + d`, `r.n = r.n * 2`, where the place is names, literals and operators only | `x op= e`, `set xs[i] += d` |
+| `neg-zero-sub` | `0 - x` and `0.0 - x` | `-x` where the zero is `0` and `x` is a proven `int`. Otherwise reported: `0.0 - 0.0` is `0.0` and `-0.0` is not (`atan2` and a division tell them apart), and `0.0 - n` makes a float of an int |
+| `prefer-any` | `len(filter(xs, p)) > 0` (also `!= 0`, `>= 1`; and `== 0`, `< 1`, `<= 0` for `!any`) | `any(xs, p)`, which stops at the first match. Applied where `p` is a lambda written in place whose body is one expression with no call but to pure builtins; otherwise reported, since `any` does not call `p` on the rest |
+| `dead-alias` | `let a = v` in a function, where `v` is a parameter or a local of that function that is not written from there on (nor in a loop around the alias, nor by any nested function) and `a` is only read | delete the `let` and read `v` (`get v` for a `var` read from a nested function). Reported only, when the `let` shares its line |
+| `shadows-builtin` | a `fn` with the name of a core builtin, a standard-prelude function, or a function of a bundled package the file imports whole, taking an argument count the existing one takes. Every call in the file reaches the new one | none (callers may be in other files) |
+| `reimplements-builtin` | a `fn` whose whole body calls one builtin with its own parameters in order, or is `if r == nil then d else field(r, k, d) end` (`field` already answers the fallback for `nil`) | none |
+| `int-division` (opt-in) | `a / b` on two proven ints, whose truncated quotient is then an operand of float arithmetic or the argument of `float(...)` | none: either reading can be meant |
 | `prefer-pub` | the deprecated `export` modifier, on any declaration or `import` | `export` → `pub` |
 | `state-as-constant` (opt-in) | a plain top-level `state` (no key, not `state var`; `pub state` included, since importers cannot write an export) that nothing in the program assigns and whose initializer is static | `state` → `const` |
 
@@ -804,6 +815,13 @@ Layout is not a finding: that is `fmt`. A file `--fix` changes is formatted
 afterwards, because a rewritten chain moves code between lines. Every fix is
 compile-gated: if the original compiled, the fixed file must too, or nothing is
 written.
+
+`int-division` is **opt-in** because the shape it finds is usually meant:
+over the fifteen Cheesecake games all seven of its findings were a row or
+column index scaled by a float (`float(k / 2) * 3.0`). What authors cast
+defensively against is a literal fraction, and that is a `petal check`
+warning with no rule to enable: `` `1 / 2` is 0: `/` on two ints drops the
+remainder ``.
 
 `state-as-constant` is **opt-in**: it runs only when `--rules-include` names
 it (`petal lint --rules-include=state-as-constant`, alone or with other
@@ -843,7 +861,8 @@ works with and without `--fix`.
 | `--verify=strict` | The whole rewrite must be IR-equal | Refused: exit 3, file untouched |
 
 Formatting, `prefer-compound-assign` and `prefer-pub` are meant to leave the IR unchanged.
-The cast, `match`, `var`, `repeat` and `state-as-constant` rules change it by design. On such a file the default mode proves
+The cast, `match`, `var`, `repeat`, `prefer-field-set`, `neg-zero-sub`, `prefer-any`, `dead-alias` and
+`state-as-constant` rules change it by design. On such a file the default mode proves
 the part it can, prints the first difference, and says that a run diff is what
 would prove the rest:
 

@@ -71,13 +71,14 @@ fn measure(file: &PathBuf, source: &str, cache: bool, frames: usize) -> (Vec<Fra
         .filter(|(_, s)| matches!(s, petal::env::StaticSlotState::Filled(_)))
         .count();
     let summary = format!(
-        "{} static declarations, {} statements run, {} skipped; {} slots ({} filled), {} runs, {} rejected; {} audit findings",
+        "{} static declarations, {} statements run, {} skipped; {} slots ({} filled), {} checks a frame over {} segments, {} rejected; {} audit findings",
         report.static_declarations,
         report.statements_run,
         report.statements_skipped,
         values.slots.len(),
         filled,
         values.runs,
+        values.segments,
         values.warnings().len(),
         report.findings.len(),
     );

@@ -89,6 +89,15 @@ fn same_on_and_off(src: &str, frames: usize) -> (Vec<String>, u64) {
     first.unwrap()
 }
 
+/// The value the slot of declaration `name` holds, if it holds one.
+fn held(w: &World, name: &str) -> Option<Value> {
+    let values = w.env.static_values(w.sid)?;
+    values.slots.iter().find_map(|(info, state)| match state {
+        StaticSlotState::Filled(v) if info.name.as_deref() == Some(name) => Some(*v),
+        _ => None,
+    })
+}
+
 const COUNTER: &str = "state n = 0\nn = n + 1\n";
 
 #[test]
@@ -204,7 +213,36 @@ fn an_unused_failing_binding_keeps_raising() {
     let src = "let A = [[1], [2]]\nlet BAD = A[9]\nlet B = [[3], [4]]\nprint(A, B)\n";
     let (frames, skips) = same_on_and_off(src, 3);
     assert!(frames.iter().all(|f| f.contains("=> error")), "{frames:?}");
-    assert_eq!(skips, 0, "a run that raised stored nothing");
+    assert_eq!(frames[0], frames[2]);
+    // `A` was stored before the binding raised, and is not built again;
+    // the binding and what follows it are, on every run.
+    assert_eq!(skips, 2, "one value kept, on each of the two later runs");
+}
+
+/// A function declaration ends a stretch (its closure is made on every run,
+/// where it stands), so a table that stands alone between two of them is a
+/// stretch of one allocation. It is kept all the same: one check a frame is
+/// less than the allocation.
+#[test]
+fn a_single_table_between_two_function_declarations_is_kept() {
+    let src = format!(
+        "fn sq(x) x * x end\nlet K = sq(2)\nfn g() K end\nlet T = [K, 1]\nfn h() T[0] end\n\
+         let U = {{k: K}}\nfn i() U.k end\nlet N = K + 1\nfn j() N end\n\
+         {COUNTER}print(n, g(), h(), i(), j(), T, U)\n"
+    );
+    let (frames, _) = same_on_and_off(&src, 3);
+    assert!(frames[2].starts_with("3 4 4 4 5 [4, 1]"), "{}", frames[2]);
+    for policy in ["replay", "baseline+static"] {
+        let mut w = world(&src, RunPolicy::parse(policy).unwrap());
+        frame(&mut w);
+        let (t, u) = (held(&w, "T"), held(&w, "U"));
+        assert!(t.is_some() && u.is_some(), "{policy}: one allocation is enough");
+        // A number alone is not worth a check: loading it costs what the
+        // test costs.
+        assert!(held(&w, "N").is_none(), "{policy}");
+        frame(&mut w);
+        assert_eq!((held(&w, "T"), held(&w, "U")), (t, u), "{policy}: the same objects on the next frame");
+    }
 }
 
 // --- lifetime ---------------------------------------------------------------
@@ -416,8 +454,9 @@ fn lying_pending(cxt: &mut PetalCxt) -> NativeResult {
 }
 
 /// A value that holds a pending result is not kept, however the native that
-/// made it was registered: the run it belongs to executes on every run and
-/// the table says which declaration and why.
+/// made it was registered: the code that builds it executes on every run and
+/// the table says which declaration and why. A value built beside it is
+/// stored on its own and is kept.
 #[test]
 fn a_value_that_cannot_be_kept_is_rejected_and_reported() {
     let src = format!(
@@ -432,14 +471,14 @@ fn a_value_that_cannot_be_kept_is_rejected_and_reported() {
         assert_eq!(frame(&mut on), frame(&mut off), "frame {i}");
     }
     let values = on.env.static_values(on.sid).unwrap();
-    assert_eq!(values.stats.skips, 0, "the run with the pending value never skips");
+    assert_eq!(values.stats.skips, 3, "only `GOOD` is skipped, on each later run");
     assert_eq!(
         values.warnings(),
         ["BAD (line 3) holds a pending result, so it is rebuilt on every run"]
     );
     let good = values.slots.iter().find(|(i, _)| i.name.as_deref() == Some("GOOD")).unwrap();
-    assert_eq!(good.1, StaticSlotState::NotKept, "built by the same run");
-    assert_eq!(values.stats.rejected, 2);
+    assert!(matches!(good.1, StaticSlotState::Filled(_)), "stored on its own: {:?}", good.1);
+    assert_eq!(values.stats.rejected, 1);
 }
 
 /// The guard of last resort: whatever reaches a kept value, an in-place

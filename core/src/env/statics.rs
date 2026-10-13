@@ -15,8 +15,9 @@ pub enum StaticSlotState {
     /// The value could not be kept, because it holds this; the code that
     /// builds it executes on every run.
     Rejected(&'static str),
-    /// Nothing wrong with this value, but the same run builds a rejected
-    /// one, and a run is kept whole or not at all.
+    /// Nothing wrong with this value, but the same store holds a rejected
+    /// one (two values one statement builds together), and a store is kept
+    /// whole or not at all.
     NotKept,
 }
 
@@ -26,8 +27,12 @@ pub enum StaticSlotState {
 pub struct StaticValues {
     /// Each slot: which declaration it is, and what it holds.
     pub slots: Vec<(StaticSlotInfo, StaticSlotState)>,
-    /// How many runs of static instructions the lowering can skip.
+    /// How many checks a frame makes when every value is kept: one per
+    /// stretch of static instructions the lowering can skip.
     pub runs: usize,
+    /// How many segments those stretches are cut into: each builds and
+    /// stores its values alone, so a rebuilt one leaves the rest kept.
+    pub segments: usize,
     /// Counters since the stack was created.
     pub stats: StaticStats,
 }
@@ -193,7 +198,8 @@ impl Env {
             .collect();
         Some(StaticValues {
             slots,
-            runs: layout.runs.len(),
+            runs: layout.checks(),
+            segments: layout.segments(),
             stats: table.stats,
         })
     }

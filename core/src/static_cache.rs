@@ -5,22 +5,26 @@
 //! top-level table is rebuilt every frame. [`crate::static_classify`] says
 //! which top-level terms are *static*: a function of the source text alone.
 //! Under [`OptFlags::static_cache`](crate::backend::OptFlags) the root code is
-//! lowered with two extra instructions around each run of static
-//! instructions, and a stack keeps what those runs computed:
+//! lowered with extra instructions around the static ones, and a stack keeps
+//! what they computed:
 //!
 //! ```text
-//!       static_skip run 0 [r7 = s0, r9 = s1] -> L     ; every slot it feeds filled? load, jump
-//!       ...the run, exactly as it lowers without the cache...
-//!       static_store [s0 = r7, s1 = r9]
+//!       static_skip run 0 [r7 = s0, r9 = s1] -> L     ; the group: every value kept? load, jump
+//!       static_skip run 1 [r7 = s0] -> A              ; one value: kept? load, jump
+//!       ...the instructions that build r7, exactly as they lower without the cache...
+//!       static_store [s0 = r7]
+//!   A:  static_skip run 2 [r9 = s1] -> L
+//!       ...the instructions that build r9...
+//!       static_store [s1 = r9]
 //!   L:  ...
 //! ```
 //!
 //! **No instruction is moved or removed.** With the flag off the code is the
-//! same code without those two instructions, which is the oracle the cache is
+//! same code without those instructions, which is the oracle the cache is
 //! held to (design: `docs/proposals/static-values.md`, section 3; work order:
-//! `docs/tasks/static-value-optimization.md`, S1).
+//! `docs/tasks/static-value-optimization.md`, S1 and "A store per value").
 //!
-//! # What gets a run, and what gets a slot
+//! # Stretches, segments and slots
 //!
 //! The pass works on the lowered root code, after every other pass, because
 //! that is where it can see what it must not break:
@@ -33,33 +37,47 @@
 //!   whole. So is one that reads a register some dynamic instruction writes
 //!   (the classifier says that cannot happen; lowering artifacts are checked
 //!   here rather than trusted).
-//! - A **run** is a maximal stretch of candidate instructions. Lowering can
-//!   put one statement's instruction in the middle of another's (a constant
-//!   materialized where a loop first uses it), so a statement may be several
-//!   runs; a run that control flow enters or leaves anywhere but at its two
-//!   ends is not a run, and the statement that caused it is out.
-//! - A register a run writes gets a **slot** when something that executes on
-//!   every run reads it: dynamic code, a closure capture, a static statement
-//!   that is not skippable (a top-level `assert`), the program's result. A
-//!   register only a *later skippable run* reads gets none: the run that
-//!   wrote it is skipped only when that later run is too, which is what a
-//!   run's **feeds** say (its own slots plus those of the runs that read it).
-//!   So a table that only exists to build another one is built with it and
-//!   then dropped.
-//! - A run that feeds nothing always executes: an unused `let BAD = XS[7]`
-//!   still raises at its line, on every run. So does a run too small to be
-//!   worth a check (fewer than [`MIN_WEIGHT`] allocations).
+//! - A **stretch** is a maximal sequence of candidate instructions. Lowering
+//!   can put one statement's instruction in the middle of another's (a
+//!   constant materialized where a loop first uses it), so a statement may
+//!   be several stretches; one that control flow enters or leaves anywhere
+//!   but at its two ends is not a stretch, and the statement that caused it
+//!   is out. A function declaration ends a stretch: its `MakeClosure` runs
+//!   on every run, where it stands.
+//! - A stretch is cut into **segments**, one behind each value that
+//!   something outside its own segment reads (`cut`). A segment has a
+//!   `StaticSkip` in front and a `StaticStore` behind, so each such value is
+//!   built, stored and rebuilt alone. A cut is never placed inside a
+//!   top-level statement or across a jump, so a loop and its result are one
+//!   segment. A stretch of several segments has one more `StaticSkip` in
+//!   front, the **group**, which is the only check a frame makes when every
+//!   value of the stretch is kept.
+//! - A register gets a **slot** when anything outside the segment that
+//!   writes it reads it: dynamic code, a closure capture, a static statement
+//!   that is not skippable (a top-level `assert`), the program's result,
+//!   and another segment. The last is what keeps sharing intact: `let A =
+//!   [P, 1]` and `let B = [P, 2]` hold one `P`, so when `B` is rebuilt it
+//!   must be handed the `P` that the kept `A` holds, not a new one. A value
+//!   only its own segment reads (the records of a table literal, a list
+//!   mapped into the value that is read) has no slot and is built with it.
+//! - A stretch whose values nothing reads always executes: an unused
+//!   `let BAD = XS[7]` still raises at its line, on every run. So does a
+//!   stretch that allocates nothing ([`MIN_WEIGHT`]): loading two numbers
+//!   costs less than testing for them. What follows the last value of a
+//!   stretch and is read by nothing belongs to the last segment.
 //!
 //! - **Enum constant data.** `enum Kind  park(code: 2) end` publishes one
 //!   record per variant into the stack's enum table, by a call the
 //!   declaration makes on every run. Where the data is static that call is a
 //!   candidate like any other, and the record it publishes gets a slot
-//!   whoever reads it: a frame that skips the run leaves the published
-//!   record where the first run put it. The enum table and this one are
-//!   emptied together, so a kept slot always has its record published.
+//!   whoever reads it, stored by the segment that publishes it: a frame that
+//!   skips the segment leaves the published record where the first run put
+//!   it. The enum table and this one are emptied together, so a kept slot
+//!   always has its record published.
 //!
-//! A run that raises never reaches its `StaticStore`, so nothing of it is
-//! kept and it raises again on the next run, at the same place.
+//! A segment that raises never reaches its `StaticStore`, so its value is
+//! not kept and it raises again on the next run, at the same place. The
+//! values stored in front of it are kept.
 //!
 //! # What keeps a kept value from changing
 //!
@@ -115,12 +133,21 @@
 //!   it, because its last build was slow and the edit is one tick of a drag
 //!   ([`StaticDebounce`]). It is rebuilt when the drag pauses.
 //!
-//! A run executes whenever one slot it feeds is empty, so one rebuilt slot
-//! re-executes its whole run; the other slots of the run keep the values
-//! they were given. An enum's data lives in the stack's enum table as well
-//! as in its slot, and a reload empties that table: a kept record is
-//! published again by the reload, and one that is rebuilt is never swapped
-//! for the old one, because the run has already published the new.
+//! A segment executes whenever a slot it stores is empty, so a rebuilt value
+//! is built alone: the segments around it are skipped, and it reads the
+//! kept values of those it is built from out of their slots. Two things
+//! keep that from being told apart from a rebuild of everything:
+//!
+//! - A value is kept only together with the values its segment read
+//!   ([`StaticRun::reads`]) and with those of the same store. Beside a
+//!   rebuilt one it would hold the object the rebuild replaced.
+//! - A rebuilt value takes the place of an [`identical`] old one only when
+//!   it holds no kept object the old one does not ([`replaces`]).
+//!
+//! An enum's data lives in the stack's enum table as well as in its slot,
+//! and a reload empties that table: a kept record is published again by the
+//! reload, and one that is rebuilt is never swapped for the old one, because
+//! the segment has already published the new.
 //!
 //! The cache is off under the `baseline` and `explain` policies, for
 //! run-once `petal run`, whenever observations or the per-term trace are
@@ -140,14 +167,12 @@ use crate::source_map::FileId;
 use crate::static_classify::{StaticAnalysis, TermClass};
 use crate::value::Value;
 
-/// A run lighter than this is not worth a check per run: rebuilding one
-/// small list costs less than testing for it. Counted in allocations, with a
-/// call or a loop taken to be at least this much.
-pub const MIN_WEIGHT: u32 = 2;
-
-/// A run that would feed more slots than this keeps what later runs read of
-/// it in slots of its own instead, which bounds the layout's size.
-const MAX_FEEDS: usize = 64;
+/// A stretch lighter than this is not worth a check per run. Counted in
+/// allocations, with a call or a loop taken to be two. One is enough: a
+/// kept list costs one instruction a frame and no allocation, where
+/// building it costs at least the allocation. A stretch of weight zero
+/// loads and computes scalars, which a check does not beat.
+pub const MIN_WEIGHT: u32 = 1;
 
 // ---------------------------------------------------------------------------
 // The layout: what one lowering's static instructions refer to
@@ -231,19 +256,34 @@ pub struct FollowInfo {
     pub slots: Vec<SlotFollow>,
 }
 
-/// One skippable run of static instructions.
+/// One `StaticSkip`: a segment of static instructions that builds some
+/// values and stores them, or a group of consecutive segments that a frame
+/// jumps over together when every one of them is built.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StaticRun {
-    /// Every slot that must be filled for the run to be skipped: the ones it
-    /// stores, and those of each later run that reads one of its registers.
+    /// Every slot that must be filled for the skip to be taken: for a
+    /// segment the slots it stores, for a group those of all its segments.
     pub feeds: Vec<u32>,
-    /// The slots its own `StaticStore` fills.
+    /// The slots its own `StaticStore` fills. Empty for a group.
     pub stores: Vec<u32>,
+    /// The slots of other segments whose registers its instructions read:
+    /// the kept values it is built from directly. Empty for a group.
+    pub reads: Vec<u32>,
+    /// The group the segment is inside, when its stretch has more than one
+    /// segment.
+    pub group: Option<u32>,
     /// How many root instructions a skip does not execute. The calls among
     /// them run more: this is a floor on what a skip saves.
     pub instructions: usize,
     /// How many of those allocate a list, record or element directly.
     pub allocations: usize,
+}
+
+impl StaticRun {
+    /// A group of segments: it stores nothing itself.
+    pub fn is_group(&self) -> bool {
+        self.stores.is_empty()
+    }
 }
 
 /// The static-value side of one lowering (see the module docs).
@@ -270,9 +310,26 @@ impl StaticLayout {
         self.slots.is_empty()
     }
 
-    /// The runs that execute while `slot` is empty.
+    /// The runs that execute while `slot` is empty: its segment, and the
+    /// group the segment is in.
     pub fn feeders(&self, slot: u32) -> &[u32] {
         self.feeders.get(slot as usize).map(|v| &v[..]).unwrap_or(&[])
+    }
+
+    /// The segment whose `StaticStore` fills `slot`.
+    pub fn segment_of(&self, slot: u32) -> Option<&StaticRun> {
+        self.feeders(slot).iter().filter_map(|r| self.runs.get(*r as usize)).find(|r| !r.is_group())
+    }
+
+    /// The checks a frame makes when every value is kept: one per stretch
+    /// of static instructions, whether it is a group or a lone segment.
+    pub fn checks(&self) -> usize {
+        self.runs.iter().filter(|r| r.group.is_none()).count()
+    }
+
+    /// How many `StaticSkip`s guard one segment (the rest guard a group).
+    pub fn segments(&self) -> usize {
+        self.runs.iter().filter(|r| !r.is_group()).count()
     }
 }
 
@@ -350,8 +407,9 @@ pub enum Seed {
 }
 
 /// The static values one stack holds: a dense vector of slots indexed by the
-/// lowering's [`StaticLayout`], and per run the number of slots it feeds
-/// that are not filled yet (a `StaticSkip` is a test of that against zero).
+/// lowering's [`StaticLayout`], and per run (a segment or a group) the number
+/// of slots it feeds that are not filled yet (a `StaticSkip` is a test of
+/// that against zero).
 #[derive(Debug, Clone, Default)]
 pub struct StaticSlots {
     /// (layout id, constant-table revision) the contents belong to.
@@ -373,8 +431,8 @@ pub struct StaticSlots {
     redo: Vec<u32>,
     last_live_edit: Option<Instant>,
     /// Per run, how long its last execution took, in nanoseconds; 0 when it
-    /// has not been timed. Kept across a reload that leaves the lowering in
-    /// place.
+    /// has not been timed, and for a group. Kept across a reload that leaves
+    /// the lowering in place.
     build_ns: Vec<u64>,
     building: Option<(u32, Instant)>,
     pub stats: StaticStats,
@@ -483,8 +541,8 @@ impl StaticSlots {
         self.build_ns.clone()
     }
 
-    /// How long the runs that execute while `slot` is empty took the last
-    /// time they ran. A run with no slots of its own is not timed.
+    /// How long the segment that builds `slot` took the last time it ran,
+    /// with everything only it reads. (A group is never timed.)
     pub fn build_time(&self, layout: &StaticLayout, slot: u32) -> Duration {
         let ns: u64 = layout
             .feeders(slot)
@@ -637,9 +695,9 @@ impl StaticSlots {
         any_empty
     }
 
-    /// Fill `slot`. A slot that already holds a value keeps it: the run was
-    /// executed again only because something else it feeds is missing, and
-    /// what it computed is the same value.
+    /// Fill `slot`. A slot that already holds a value keeps it: the segment
+    /// was executed again only because another slot of its store is empty,
+    /// and what it computed is the same value.
     pub(crate) fn fill(&mut self, layout: &StaticLayout, slot: u32, value: Value) {
         let Some(entry) = self.slots.get_mut(slot as usize) else { return };
         if !matches!(entry, Slot::Empty) {
@@ -687,18 +745,36 @@ impl StaticSlots {
 /// the same kinds, numbers bit for bit (so `1` is not `1.0` and `0.0` is
 /// not `-0.0`), strings by content, lists in order, records with the same
 /// class and the same keys in the same order, and the same answer to
-/// `frozen`. Stricter than `==`, which is what lets a reload keep the old
-/// heap value of a rebuilt constant without anything being able to tell.
-/// Anything a kept value cannot hold (a function, a cell, a handle) is
-/// never identical to anything.
+/// `frozen`. Stricter than `==`. Anything a kept value cannot hold (a
+/// function, a cell, a handle) is never identical to anything.
 pub fn identical(a: Value, b: Value, heap: &Heap) -> bool {
+    same(a, b, heap, false)
+}
+
+/// Whether the old value `old` of a slot may stand in for `new`, the value
+/// a rebuild just made, without anything being able to tell: the two are
+/// [`identical`], and wherever they are not the same heap object the new
+/// one is the rebuild's own (not yet immutable). A container of `new` that
+/// is immutable already is a kept value, or part of one, that something
+/// else holds as well; the old value holds another object there, and
+/// `freeze` through one name would then not reach the other.
+pub fn replaces(old: Value, new: Value, heap: &Heap) -> bool {
+    same(old, new, heap, true)
+}
+
+/// [`identical`]; with `private`, also [`replaces`]: no container of `b`
+/// that is a different object from its counterpart in `a` is immutable.
+fn same(a: Value, b: Value, heap: &Heap, private: bool) -> bool {
     let frozen = |x: Value, y: Value| heap.is_frozen(x) == heap.is_frozen(y);
+    let own = |y: Value| !private || !heap.is_immutable(y);
     match (a, b) {
         (Value::Nil, Value::Nil) => true,
         (Value::Bool(x), Value::Bool(y)) => x == y,
         (Value::Int(x), Value::Int(y)) => x == y,
         (Value::Float(x), Value::Float(y)) => x.to_bits() == y.to_bits(),
-        (Value::String(x), Value::String(y)) => x == y || heap.get_string(x) == heap.get_string(y),
+        (Value::String(x), Value::String(y)) => {
+            x == y || (frozen(a, b) && heap.get_string(x) == heap.get_string(y))
+        }
         (Value::Symbol(x), Value::Symbol(y)) => x == y,
         (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => {
             ax.to_bits() == bx.to_bits() && ay.to_bits() == by.to_bits()
@@ -706,7 +782,7 @@ pub fn identical(a: Value, b: Value, heap: &Heap) -> bool {
         (Value::Vec3(x), Value::Vec3(y)) => {
             x == y || {
                 let (p, q) = (heap.get_vec3(x), heap.get_vec3(y));
-                p.iter().zip(&q).all(|(m, n)| m.to_bits() == n.to_bits())
+                frozen(a, b) && p.iter().zip(&q).all(|(m, n)| m.to_bits() == n.to_bits())
             }
         }
         (Value::Dual { value: av, derivative: ad }, Value::Dual { value: bv, derivative: bd }) => {
@@ -718,8 +794,9 @@ pub fn identical(a: Value, b: Value, heap: &Heap) -> bool {
             }
             let (xs, ys) = (heap.get_list(x), heap.get_list(y));
             frozen(a, b)
+                && own(b)
                 && xs.len() == ys.len()
-                && xs.iter().zip(ys).all(|(p, q)| identical(*p, *q, heap))
+                && xs.iter().zip(ys).all(|(p, q)| same(*p, *q, heap, private))
         }
         (Value::F64Array(x), Value::F64Array(y)) => {
             if x == y {
@@ -727,6 +804,7 @@ pub fn identical(a: Value, b: Value, heap: &Heap) -> bool {
             }
             let (xs, ys) = (heap.get_f64_array(x), heap.get_f64_array(y));
             frozen(a, b)
+                && own(b)
                 && xs.len() == ys.len()
                 && xs.iter().zip(ys).all(|(p, q)| p.to_bits() == q.to_bits())
         }
@@ -734,7 +812,7 @@ pub fn identical(a: Value, b: Value, heap: &Heap) -> bool {
             if x == y {
                 return true;
             }
-            if !frozen(a, b) || heap.map_class_name(x) != heap.map_class_name(y) {
+            if !frozen(a, b) || !own(b) || heap.map_class_name(x) != heap.map_class_name(y) {
                 return false;
             }
             let (xs, ys) = (heap.get_map(x), heap.get_map(y));
@@ -742,24 +820,26 @@ pub fn identical(a: Value, b: Value, heap: &Heap) -> bool {
                 && xs
                     .iter()
                     .zip(ys.iter())
-                    .all(|((k, p), (l, q))| k == l && identical(*p, *q, heap))
+                    .all(|((k, p), (l, q))| k == l && same(*p, *q, heap, private))
         }
         (Value::EnumVariant { tag: at, data: ad }, Value::EnumVariant { tag: bt, data: bd }) => {
             (at == bt || heap.get_string(at) == heap.get_string(bt))
-                && identical(Value::List(ad), Value::List(bd), heap)
+                && same(Value::List(ad), Value::List(bd), heap, private)
         }
         (Value::Element(x), Value::Element(y)) => {
             x == y
                 || (heap.get_string(heap.get_element_tag(x)) == heap.get_string(heap.get_element_tag(y))
-                    && identical(
+                    && same(
                         Value::Map(heap.get_element_props(x)),
                         Value::Map(heap.get_element_props(y)),
                         heap,
+                        private,
                     )
-                    && identical(
+                    && same(
                         Value::List(heap.get_element_children(x)),
                         Value::List(heap.get_element_children(y)),
                         heap,
+                        private,
                     ))
         }
         _ => false,
@@ -951,7 +1031,7 @@ fn weight(inst: &Inst) -> u32 {
         | Inst::BuiltinCall { .. }
         | Inst::ForEachInit { .. }
         | Inst::RangeInit { .. }
-        | Inst::WhileInit { .. } => MIN_WEIGHT,
+        | Inst::WhileInit { .. } => 2,
         _ => 0,
     }
 }
@@ -966,19 +1046,168 @@ enum Kind {
     Candidate,
 }
 
-struct Run {
+/// One segment of a stretch of candidate instructions: `start..end` of the
+/// root code, ending behind the last write of the registers it stores.
+struct Segment {
     start: usize,
     end: usize,
-    weight: u32,
-    /// Registers it writes that something executing on every run reads.
+    /// The registers it writes that anything outside it reads.
     own: Vec<Reg>,
-    /// Later skippable runs that read one of its registers.
-    deps: BTreeSet<usize>,
-    skippable: bool,
-    /// Index into [`StaticLayout::runs`], when skippable.
+    /// Index into [`StaticLayout::runs`].
     index: u32,
-    /// First slot of `own`, when skippable.
     first_slot: u32,
+    /// The stretch it is part of, and whether it is its first segment.
+    stretch: usize,
+}
+
+/// A stretch that is kept: its segments (indices into the pass's list),
+/// and the group run in front of them when there is more than one.
+struct Kept {
+    start: usize,
+    end: usize,
+    segments: std::ops::Range<usize>,
+    group: Option<u32>,
+}
+
+/// Cut the stretch `start..end` into segments, one behind each register
+/// that something outside its own segment reads, and return for each
+/// segment its end and those registers. `ext` are the registers something
+/// outside the stretch reads. `None` when no cut is possible or sound, and
+/// the stretch is then one segment that stores `ext`.
+///
+/// A cut is never placed inside a top-level statement, across a jump, or
+/// between two writes of a register that gets a slot; a register's slot is
+/// stored by the segment holding all its writes. A register read across a
+/// cut needs a slot of its own, which may add a cut, so this runs to a fixed
+/// point. The last segment runs to the end of the stretch, so static code
+/// that nothing reads is skipped, and raises, with a value that is read.
+#[allow(clippy::too_many_arguments)]
+fn cut(
+    start: usize,
+    end: usize,
+    ext: &[Reg],
+    code: &[Inst],
+    stmt: &[Option<TermId>],
+    reads: &[Vec<Reg>],
+    writes: &[Vec<Reg>],
+    published: &HashMap<usize, Reg>,
+    storable: &dyn Fn(Reg) -> bool,
+) -> Option<Vec<(usize, Vec<Reg>)>> {
+    let len = end - start;
+    // `no_cut[c - start]`: no boundary between instruction `c - 1` and `c`.
+    let mut no_cut = vec![false; len + 1];
+    let forbid = |no_cut: &mut Vec<bool>, from: usize, to: usize| {
+        for c in from.max(start + 1)..=to.min(end.saturating_sub(1)) {
+            no_cut[c - start] = true;
+        }
+    };
+    // Inside a statement: a loop's setup and its exit, a branch and its
+    // arms, and whatever else lowering put between them.
+    let mut first_of: HashMap<TermId, usize> = HashMap::new();
+    let mut last_of: HashMap<TermId, usize> = HashMap::new();
+    for ip in start..end {
+        let Some(s) = stmt[ip] else { return None };
+        first_of.entry(s).or_insert(ip);
+        last_of.insert(s, ip);
+    }
+    for (s, &f) in &first_of {
+        forbid(&mut no_cut, f + 1, last_of[s]);
+    }
+    // Across a jump: over a forward one, or into the loop of a backward one.
+    for ip in start..end {
+        for to in code[ip].targets() {
+            let to = to as usize;
+            if to > ip {
+                forbid(&mut no_cut, ip + 1, to.saturating_sub(1));
+            } else {
+                forbid(&mut no_cut, to + 1, ip);
+            }
+        }
+    }
+    // Where each register is first and last written. The publication of an
+    // enum's record counts as its last write: the segment that stores the
+    // record is the one that publishes it.
+    let mut first: HashMap<Reg, usize> = HashMap::new();
+    let mut last: HashMap<Reg, usize> = HashMap::new();
+    let mut touched: HashMap<Reg, Vec<usize>> = HashMap::new();
+    for ip in start..end {
+        for &r in &writes[ip] {
+            first.entry(r).or_insert(ip);
+            last.insert(r, ip);
+            touched.entry(r).or_default().push(ip);
+        }
+    }
+    for ip in start..end {
+        if let Some(r) = published.get(&ip)
+            && let Some(l) = last.get_mut(r)
+        {
+            *l = (*l).max(ip);
+        }
+        for r in &reads[ip] {
+            if let Some(at) = touched.get_mut(r) {
+                at.push(ip);
+            }
+        }
+    }
+    let mut slots: BTreeSet<Reg> = ext.iter().copied().collect();
+    let mut seg_of = vec![0usize; len];
+    let mut ends: Vec<usize>;
+    loop {
+        if !slots.iter().all(|r| storable(*r)) {
+            return None;
+        }
+        for r in &slots {
+            forbid(&mut no_cut, first[r] + 1, last[r]);
+        }
+        let mut cuts: BTreeSet<usize> = BTreeSet::new();
+        for r in &slots {
+            let mut c = last[r] + 1;
+            while c < end && no_cut[c - start] {
+                c += 1;
+            }
+            cuts.insert(c);
+        }
+        ends = cuts.into_iter().collect();
+        // What follows the last stored value runs with it.
+        *ends.last_mut()? = end;
+        let mut k = 0;
+        for ip in start..end {
+            while ip >= ends[k] {
+                k += 1;
+            }
+            seg_of[ip - start] = k;
+        }
+        let before = slots.len();
+        for (r, at) in &touched {
+            if !slots.contains(r) && at.iter().any(|ip| seg_of[ip - start] != seg_of[at[0] - start]) {
+                slots.insert(*r);
+            }
+        }
+        if slots.len() == before {
+            break;
+        }
+    }
+    if ends.len() < 2 {
+        return None;
+    }
+    let mut out: Vec<(usize, Vec<Reg>)> = ends.iter().map(|e| (*e, Vec::new())).collect();
+    for r in &slots {
+        // Every write of a stored register is in the segment that stores it.
+        let k = seg_of[last[r] - start];
+        if seg_of[first[r] - start] != k {
+            return None;
+        }
+        out[k].1.push(*r);
+    }
+    // A record is published by the segment that stores it.
+    for ip in start..end {
+        if let Some(r) = published.get(&ip)
+            && !out[seg_of[ip - start]].1.contains(r)
+        {
+            return None;
+        }
+    }
+    out.iter().all(|(_, own)| !own.is_empty()).then_some(out)
 }
 
 /// Wrap the runs of static instructions in `bc`'s root code in
@@ -1093,8 +1322,9 @@ fn follow(
 ///
 /// Such a value is written inside exactly one top-level statement. The key
 /// is that statement's text, the shape the statement compiled to (the
-/// operation, position and name of each of its top-level terms), and where
-/// in that sequence the value's term is. Two programs that give the same
+/// operation, position and name of each of its top-level terms, and the
+/// name of a `var` it initializes), and where in that sequence the value's
+/// term is. Two programs that give the same
 /// key compiled the same text to the same terms, so the term is the same
 /// expression; whether what it refers to is unchanged is the dependency
 /// set's question, as for a declaration. A statement written twice gives
@@ -1168,6 +1398,25 @@ fn unnamed_keys(slots: &mut [SlotFollow], program: &Program) {
             terms.push(i);
         }
     }
+    // What a statement's value is bound to, when the binding has no
+    // position of its own: the cell of `var PARTS = []`. Without it the
+    // statement is the text `[]`, which the next `var` shares.
+    let mut bound: HashMap<usize, Vec<&str>> = HashMap::new();
+    for t in root {
+        if position.contains_key(t) {
+            continue;
+        }
+        let term = program.get_term(*t);
+        let (Some(name), Some(i)) = (term.name.as_deref(), term.inputs.first().and_then(|i| position.get(i)))
+        else {
+            continue;
+        };
+        if let Some(st) = statement_of(placed[*i].file, placed[*i].start)
+            && wanted.contains_key(&st)
+        {
+            bound.entry(st).or_default().push(name);
+        }
+    }
     let mut texts: HashMap<u16, Vec<char>> = HashMap::new();
     let mut prefix: HashMap<usize, String> = HashMap::new();
     for (&st, terms) in &wanted {
@@ -1181,6 +1430,7 @@ fn unnamed_keys(slots: &mut [SlotFollow], program: &Program) {
         let Some(text) = chars.get(start as usize..end as usize) else { continue };
         let mut h = std::collections::hash_map::DefaultHasher::new();
         text.hash(&mut h);
+        bound.get(&st).hash(&mut h);
         terms.len().hash(&mut h);
         for &i in terms {
             let term = program.get_term(placed[i].term);
@@ -1428,75 +1678,51 @@ fn apply_runs(
         }
     }
 
-    // Later runs first: whether a reader is skippable decides whether the
-    // register it reads needs a slot.
-    let mut runs: Vec<Run> = bounds
-        .iter()
-        .map(|&(start, end)| Run {
-            start,
-            end,
-            weight: bc.root.code[start..end].iter().map(weight).sum(),
-            own: Vec::new(),
-            deps: BTreeSet::new(),
-            skippable: false,
-            index: 0,
-            first_slot: 0,
-        })
-        .collect();
-    let mut feed_count: Vec<usize> = vec![0; runs.len()];
-    for k in (0..runs.len()).rev() {
-        let (start, end) = (runs[k].start, runs[k].end);
+    // Which stretches are kept, and where each is cut.
+    let storable = |r: Reg| !tainted.contains(&r) && !in_place.contains(&r);
+    let mut segments: Vec<Segment> = Vec::new();
+    let mut kept: Vec<Kept> = Vec::new();
+    for &(start, end) in &bounds {
+        let stretch = &bc.root.code[start..end];
+        if stretch.iter().map(weight).sum::<u32>() < MIN_WEIGHT {
+            continue;
+        }
         let mut written: Vec<Reg> = (start..end).flat_map(|ip| writes[ip].iter().copied()).collect();
         written.sort_unstable();
         written.dedup();
-        let mut own: Vec<Reg> = Vec::new();
-        let mut all_read: Vec<Reg> = Vec::new();
-        let mut deps: BTreeSet<usize> = BTreeSet::new();
         let records: HashSet<Reg> = (start..end).filter_map(|ip| published.get(&ip).copied()).collect();
-        // A record this run publishes but does not build cannot be kept by
-        // it; the publication then runs every time.
-        let publishes_its_own = records.iter().all(|r| written.binary_search(r).is_ok());
-        for &r in &written {
-            let mut kept = bc.root.result_reg == Some(r) || records.contains(&r);
-            let mut read_outside = kept;
-            let mut read_by: Vec<usize> = Vec::new();
-            for &ip in readers.get(&r).map(|v| &v[..]).unwrap_or(&[]) {
-                if (start..end).contains(&ip) {
-                    continue;
-                }
-                read_outside = true;
-                match run_of[ip] {
-                    Some(j) if j > k && runs[j].skippable => read_by.push(j),
-                    _ => kept = true,
-                }
-            }
-            if kept {
-                // A register with a slot is loaded when this run is
-                // skipped, so a later run that reads it needs nothing more
-                // of this one: it can be rebuilt alone.
-                own.push(r);
-            } else {
-                deps.extend(read_by);
-            }
-            if read_outside {
-                all_read.push(r);
-            }
+        // A record this stretch publishes but does not build cannot be kept
+        // by it; the publication then runs every time.
+        if !records.iter().all(|r| written.binary_search(r).is_ok()) {
+            continue;
         }
-        // Too many slots to feed: keep everything a later run reads instead.
-        let mut feeds = own.len() + deps.iter().map(|&j| feed_count[j]).sum::<usize>();
-        if feeds > MAX_FEEDS {
-            own = all_read;
-            deps.clear();
-            feeds = own.len();
+        // What anything outside the stretch reads: every one of those gets
+        // a slot, whoever the reader is. A later stretch that is rebuilt
+        // while this one is skipped reads the kept value, not a new copy.
+        let ext: Vec<Reg> = written
+            .iter()
+            .copied()
+            .filter(|r| {
+                bc.root.result_reg == Some(*r)
+                    || records.contains(r)
+                    || readers.get(r).is_some_and(|at| at.iter().any(|ip| !(start..end).contains(ip)))
+            })
+            .collect();
+        // A stretch nothing reads always executes: an unused failing
+        // binding raises at its line on every run.
+        if ext.is_empty() {
+            continue;
         }
-        let storable = own.iter().all(|r| !tainted.contains(r) && !in_place.contains(r));
-        let run = &mut runs[k];
-        run.skippable = storable && publishes_its_own && feeds > 0 && run.weight >= MIN_WEIGHT;
-        if run.skippable {
-            feed_count[k] = feeds;
-            run.own = own;
-            run.deps = deps;
+        let parts = cut(start, end, &ext, &bc.root.code, &stmt, &reads, &writes, &published, &storable)
+            .or_else(|| ext.iter().all(|r| storable(*r)).then(|| vec![(end, ext.clone())]));
+        let Some(parts) = parts else { continue };
+        let from = segments.len();
+        let mut at = start;
+        for (to, own) in parts {
+            segments.push(Segment { start: at, end: to, own, index: 0, first_slot: 0, stretch: kept.len() });
+            at = to;
         }
+        kept.push(Kept { start, end, segments: from..segments.len(), group: None });
     }
 
     // Number the runs and the slots in code order.
@@ -1525,72 +1751,89 @@ fn apply_runs(
             None => unattributed.extend(writes[ip].iter().copied()),
         }
     }
-    for run in runs.iter_mut().filter(|r| r.skippable) {
-        run.index = layout.runs.len() as u32;
-        run.first_slot = layout.slots.len() as u32;
-        for r in &run.own {
-            // A root term's register is its flat register, so the term that
-            // names the value is the root term with this register when there
-            // is one, else whatever instruction wrote it.
-            let term = plan
-                .roots
-                .iter()
-                .copied()
-                .find(|t| program.get_term(*t).register.0 == *r && decl_names.contains_key(t))
-                .or_else(|| writer_term.get(r).copied());
-            layout.slots.push(StaticSlotInfo {
-                name: published_name.get(r).cloned().or_else(|| {
-                    term.and_then(|t| {
-                        decl_names
-                            .get(&t)
-                            .map(|s| s.to_string())
-                            .or_else(|| program.get_term(t).name.clone())
-                    })
-                }),
-                at: term.and_then(|t| crate::static_audit::position(program, t)),
-                term,
-                is_const: term.is_some_and(|t| program.get_term(t).is_const),
-            });
-            written_by.push(SlotFollow {
-                key: None,
-                deps: None,
-                origins: if unattributed.contains(r) {
-                    Vec::new()
-                } else {
-                    writer_terms.get(r).cloned().unwrap_or_default()
-                },
-                enum_tag: published_tag.get(r).cloned(),
-                literal: None,
+    let allocations = |code: &[Inst]| {
+        code.iter()
+            .filter(|i| {
+                matches!(
+                    i,
+                    Inst::AllocList { .. }
+                        | Inst::AllocMap { .. }
+                        | Inst::AllocMapSpread { .. }
+                        | Inst::AllocElement { .. }
+                )
+            })
+            .count()
+    };
+    let mut slot_of: HashMap<Reg, u32> = HashMap::new();
+    for stretch in kept.iter_mut() {
+        if stretch.segments.len() > 1 {
+            stretch.group = Some(layout.runs.len() as u32);
+            layout.runs.push(StaticRun {
+                instructions: stretch.end - stretch.start,
+                allocations: allocations(&bc.root.code[stretch.start..stretch.end]),
+                ..Default::default()
             });
         }
-        let stores: Vec<u32> = (0..run.own.len() as u32).map(|i| run.first_slot + i).collect();
-        layout.runs.push(StaticRun {
-            feeds: stores.clone(),
-            stores,
-            instructions: run.end - run.start,
-            allocations: bc.root.code[run.start..run.end]
-                .iter()
-                .filter(|i| {
-                    matches!(
-                        i,
-                        Inst::AllocList { .. }
-                            | Inst::AllocMap { .. }
-                            | Inst::AllocMapSpread { .. }
-                            | Inst::AllocElement { .. }
-                    )
-                })
-                .count(),
-        });
+        for seg in &mut segments[stretch.segments.clone()] {
+            seg.index = layout.runs.len() as u32;
+            seg.first_slot = layout.slots.len() as u32;
+            for r in &seg.own {
+                // A root term's register is its flat register, so the term
+                // that names the value is the root term with this register
+                // when there is one, else whatever instruction wrote it.
+                let term = plan
+                    .roots
+                    .iter()
+                    .copied()
+                    .find(|t| program.get_term(*t).register.0 == *r && decl_names.contains_key(t))
+                    .or_else(|| writer_term.get(r).copied());
+                slot_of.insert(*r, layout.slots.len() as u32);
+                layout.slots.push(StaticSlotInfo {
+                    name: published_name.get(r).cloned().or_else(|| {
+                        term.and_then(|t| {
+                            decl_names
+                                .get(&t)
+                                .map(|s| s.to_string())
+                                .or_else(|| program.get_term(t).name.clone())
+                        })
+                    }),
+                    at: term.and_then(|t| crate::static_audit::position(program, t)),
+                    term,
+                    is_const: term.is_some_and(|t| program.get_term(t).is_const),
+                });
+                written_by.push(SlotFollow {
+                    key: None,
+                    deps: None,
+                    origins: if unattributed.contains(r) {
+                        Vec::new()
+                    } else {
+                        writer_terms.get(r).cloned().unwrap_or_default()
+                    },
+                    enum_tag: published_tag.get(r).cloned(),
+                    literal: None,
+                });
+            }
+            let stores: Vec<u32> = (0..seg.own.len() as u32).map(|i| seg.first_slot + i).collect();
+            if let Some(g) = stretch.group {
+                layout.runs[g as usize].feeds.extend(stores.iter().copied());
+            }
+            layout.runs.push(StaticRun {
+                feeds: stores.clone(),
+                stores,
+                reads: Vec::new(),
+                group: stretch.group,
+                instructions: seg.end - seg.start,
+                allocations: allocations(&bc.root.code[seg.start..seg.end]),
+            });
+        }
     }
-    for k in (0..runs.len()).rev() {
-        if !runs[k].skippable {
-            continue;
+    // The kept values each segment is built from directly.
+    for seg in &segments {
+        let mut from: BTreeSet<u32> = BTreeSet::new();
+        for ip in seg.start..seg.end {
+            from.extend(reads[ip].iter().filter(|r| !seg.own.contains(r)).filter_map(|r| slot_of.get(r)));
         }
-        let mut feeds: BTreeSet<u32> = layout.runs[runs[k].index as usize].feeds.iter().copied().collect();
-        for &j in &runs[k].deps {
-            feeds.extend(layout.runs[runs[j].index as usize].feeds.iter().copied());
-        }
-        layout.runs[runs[k].index as usize].feeds = feeds.into_iter().collect();
+        layout.runs[seg.index as usize].reads = from.into_iter().collect();
     }
     layout.feeders = vec![Vec::new(); layout.slots.len()];
     for (i, run) in layout.runs.iter().enumerate() {
@@ -1603,92 +1846,130 @@ fn apply_runs(
         return written_by;
     }
 
-    // Insert the two instructions per run and move every label.
-    let skip_at: HashMap<usize, usize> = runs
+    // Insert the instructions and move every label. In front of an old
+    // instruction go, in this order: the store of the segment that ends
+    // there, the skip of the group that starts there, the skip of the
+    // segment that starts there.
+    let seg_start: HashMap<usize, usize> = segments.iter().enumerate().map(|(i, s)| (s.start, i)).collect();
+    let seg_end: HashMap<usize, usize> = segments.iter().enumerate().map(|(i, s)| (s.end, i)).collect();
+    let group_start: HashMap<usize, usize> = kept
         .iter()
         .enumerate()
-        .filter(|(_, r)| r.skippable)
-        .map(|(k, r)| (r.start, k))
+        .filter(|(_, k)| k.group.is_some())
+        .map(|(i, k)| (k.start, i))
         .collect();
-    let store_at: HashMap<usize, usize> = runs
-        .iter()
-        .enumerate()
-        .filter(|(_, r)| r.skippable && !r.own.is_empty())
-        .map(|(k, r)| (r.end, k))
-        .collect();
+    let mut seg_at: Vec<Option<usize>> = vec![None; n];
+    for (i, s) in segments.iter().enumerate() {
+        seg_at[s.start..s.end].iter_mut().for_each(|x| *x = Some(i));
+    }
+    let slots_of = |seg: &Segment| -> Vec<(u32, Reg)> {
+        seg.own.iter().enumerate().map(|(i, r)| (seg.first_slot + i as u32, *r)).collect()
+    };
     let old_code = std::mem::take(&mut bc.root.code);
     let old_origins = std::mem::take(&mut bc.root.origins);
     let mut code: Vec<Inst> = Vec::with_capacity(n + 2 * layout.runs.len());
     let mut origins: Vec<Option<TermId>> = Vec::with_capacity(code.capacity());
-    // Where each old instruction lands, and where the instruction put in
-    // front of it does.
+    // Where each old instruction lands, and where what was put in front of
+    // it does.
     let mut new_pos: Vec<usize> = vec![0; n + 1];
-    let mut skip_pos: HashMap<usize, usize> = HashMap::new();
-    let mut store_pos: HashMap<usize, usize> = HashMap::new();
-    let slots_of = |run: &Run| -> Box<[(u32, Reg)]> {
-        run.own
-            .iter()
-            .enumerate()
-            .map(|(i, r)| (run.first_slot + i as u32, *r))
-            .collect()
-    };
+    let mut skip_pos: Vec<usize> = vec![0; segments.len()];
+    let mut store_pos: Vec<usize> = vec![0; segments.len()];
+    let mut group_pos: Vec<usize> = vec![0; kept.len()];
+    // Which old instruction each new one was, for the labels.
+    let mut was: Vec<Option<usize>> = Vec::with_capacity(code.capacity());
     let mut old = old_code.into_iter().zip(old_origins.into_iter().chain(std::iter::repeat(None)));
     for ip in 0..=n {
-        if let Some(&k) = store_at.get(&ip) {
-            store_pos.insert(k, code.len());
-            code.push(Inst::StaticStore { slots: slots_of(&runs[k]) });
+        if let Some(&i) = seg_end.get(&ip) {
+            store_pos[i] = code.len();
+            code.push(Inst::StaticStore { slots: slots_of(&segments[i]).into() });
             origins.push(None);
+            was.push(None);
         }
-        if let Some(&k) = skip_at.get(&ip) {
-            skip_pos.insert(k, code.len());
+        if let Some(&k) = group_start.get(&ip) {
+            // A frame that skips the group loads what anything outside the
+            // stretch reads; the rest is only read by the stretch itself.
+            let stretch = &kept[k];
+            let outside = |r: &Reg| {
+                bc.root.result_reg == Some(*r)
+                    || readers
+                        .get(r)
+                        .is_some_and(|at| at.iter().any(|ip| !(stretch.start..stretch.end).contains(ip)))
+            };
+            let loads: Vec<(u32, Reg)> = segments[stretch.segments.clone()]
+                .iter()
+                .flat_map(slots_of)
+                .filter(|(_, r)| outside(r))
+                .collect();
+            group_pos[k] = code.len();
+            code.push(Inst::StaticSkip { after: 0, run: stretch.group.unwrap_or(0), slots: loads.into() });
+            origins.push(None);
+            was.push(None);
+        }
+        if let Some(&i) = seg_start.get(&ip) {
+            skip_pos[i] = code.len();
             code.push(Inst::StaticSkip {
                 after: 0,
-                run: runs[k].index,
-                slots: slots_of(&runs[k]),
+                run: segments[i].index,
+                slots: slots_of(&segments[i]).into(),
             });
             origins.push(None);
+            was.push(None);
         }
         new_pos[ip] = code.len();
         if let Some((inst, o)) = old.next() {
             code.push(inst);
             origins.push(o);
+            was.push(Some(ip));
         }
     }
-    let retarget = |from_old: Option<usize>, to: usize| -> Label {
-        let from_run = from_old.and_then(|ip| run_of[ip]);
-        // A jump out of a run to its end lands on the store.
-        if let Some(k) = from_run
-            && runs[k].end == to
-            && let Some(&p) = store_pos.get(&k)
-        {
-            return p as Label;
+    // Where control goes that enters segment `i` from outside it.
+    let entry = |i: usize| -> usize {
+        let stretch = &kept[segments[i].stretch];
+        match stretch.group {
+            Some(_) if stretch.segments.start == i => group_pos[segments[i].stretch],
+            _ => skip_pos[i],
         }
-        // A jump to a run's first instruction from outside lands on the skip.
-        if let Some(&k) = skip_at.get(&to)
-            && from_run != Some(k)
-            && let Some(&p) = skip_pos.get(&k)
+    };
+    let retarget = |from: usize, to: usize| -> Label {
+        let from_seg = seg_at.get(from).copied().flatten();
+        // A jump out of a segment to its end lands on the store.
+        if let Some(i) = from_seg
+            && segments[i].end == to
         {
-            return p as Label;
+            return store_pos[i] as Label;
+        }
+        // A jump to a segment's first instruction from outside lands on the
+        // skip.
+        if let Some(&i) = seg_start.get(&to)
+            && from_seg != Some(i)
+        {
+            return entry(i) as Label;
         }
         new_pos[to.min(n)] as Label
     };
-    let mut old_ip = 0usize;
-    for inst in code.iter_mut() {
-        match inst {
-            Inst::StaticSkip { after, run, .. } => {
-                let k = runs.iter().position(|r| r.skippable && r.index == *run).unwrap_or(0);
-                // Past the run and past its store; onto the next run's skip
-                // if one starts right there.
-                *after = match skip_pos.get(&skip_at.get(&runs[k].end).copied().unwrap_or(usize::MAX)) {
-                    Some(&p) => p as Label,
-                    None => new_pos[runs[k].end] as Label,
+    let group_of: HashMap<u32, usize> =
+        kept.iter().enumerate().filter_map(|(k, s)| Some((s.group?, k))).collect();
+    let segment_of: HashMap<u32, usize> = segments.iter().enumerate().map(|(i, s)| (s.index, i)).collect();
+    for (inst, from) in code.iter_mut().zip(&was) {
+        match (inst, from) {
+            (Inst::StaticSkip { after, run, .. }, _) => {
+                *after = if let Some(&k) = group_of.get(run) {
+                    // Past every segment and the last store.
+                    new_pos[kept[k].end] as Label
+                } else {
+                    // Past the segment and its store: onto the next
+                    // segment's skip, or out of the stretch.
+                    let i = segment_of[run];
+                    let stretch = &kept[segments[i].stretch];
+                    if i + 1 < stretch.segments.end {
+                        skip_pos[i + 1] as Label
+                    } else {
+                        new_pos[stretch.end] as Label
+                    }
                 };
             }
-            Inst::StaticStore { .. } => {}
-            other => {
-                other.for_each_target_mut(|to| *to = retarget(Some(old_ip), *to as usize));
-                old_ip += 1;
-            }
+            (other, Some(from)) => other.for_each_target_mut(|to| *to = retarget(*from, *to as usize)),
+            _ => {}
         }
     }
     bc.root.code = code;
@@ -1700,18 +1981,20 @@ fn apply_runs(
 /// A summary of a layout and one line per slot, for `PETAL_OPT_STATS` and
 /// tests.
 pub fn describe(layout: &StaticLayout) -> String {
-    let instructions: usize = layout.runs.iter().map(|r| r.instructions).sum();
-    let allocations: usize = layout.runs.iter().map(|r| r.allocations).sum();
+    let top = || layout.runs.iter().filter(|r| r.group.is_none());
+    let instructions: usize = top().map(|r| r.instructions).sum();
+    let allocations: usize = top().map(|r| r.allocations).sum();
     let mut out = format!(
-        "static cache: {} candidate runs, {} skippable, {} slots; a frame that skips them all \
-         leaves out {} of {} root instructions ({} of them allocations) for {} checks\n",
+        "static cache: {} candidate runs, {} skippable in {} segments, {} slots; a frame that \
+         skips them all leaves out {} of {} root instructions ({} of them allocations) for {} checks\n",
         layout.candidate_runs,
-        layout.runs.len(),
+        layout.checks(),
+        layout.segments(),
         layout.slots.len(),
         instructions,
         layout.root_instructions,
         allocations,
-        layout.runs.len(),
+        layout.checks(),
     );
     for (i, s) in layout.slots.iter().enumerate() {
         out.push_str(&format!(

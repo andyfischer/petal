@@ -28,6 +28,11 @@
 //!    - the new lowering has a slot for a declaration of the same
 //!      module-qualified name, and that slot depends on the same *names*;
 //!    - none of those is changed in the new program.
+//! 4. A slot that passes is still rebuilt when a value its segment read
+//!    (`StaticRun::reads`) or one the same store holds is: it was built
+//!    from that very object, and beside a rebuilt one it would hold the
+//!    object the rebuild replaced. A rebuilt number, boolean or `nil` does
+//!    not count, since it has no identity to share.
 //!
 //! The third condition is what makes this sound without hashing anything:
 //! an edit that changes what a name resolves to (a new import, a shadowing
@@ -48,16 +53,21 @@
 //! # What it does not do
 //!
 //! - A value with no declaration of its own (a table written inside a call)
-//!   has no name to be matched by across a recompile, and is rebuilt by
-//!   every reload that recompiles. A literal-only edit keeps it.
+//!   is matched across a recompile by its statement's text and shape
+//!   (`static_cache::unnamed_keys`); one whose statement is written twice
+//!   has no such key and is rebuilt by every reload that recompiles. A
+//!   literal-only edit keeps it.
 //! - An enum's constant data is kept or rebuilt whole, never compared: the
 //!   run publishes the record it builds, so a kept record is published
 //!   again by the reload and a rebuilt one replaces it.
 //! - Other stacks of the same program start empty, as before.
-//! - A rebuild is put off ([`Env::set_static_debounce`]) run by run, not
-//!   value by value: a cheap value that shares a run with a slow one and
-//!   depends on the dragged literal waits with it. The literal's own slot
-//!   does not wait: it is given the new value directly.
+//! - A rebuild is put off ([`Env::set_static_debounce`]) segment by
+//!   segment, which is value by value for everything something outside its
+//!   own statement reads: a cheap value beside a slow one does not wait
+//!   with it. What waits together is what one store holds: a slow table
+//!   nothing else reads and the value built from it, or the values one
+//!   statement binds. A slot that holds one literal is given the new value
+//!   directly.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -571,7 +581,52 @@ impl Env {
                     }
                 }
             };
-            match seed {
+            seeds.push(seed);
+        }
+        // A value is kept only together with what its segment read and with
+        // what the same store holds. Its segment built it from those very
+        // objects: beside a rebuilt one it would hold the object the rebuild
+        // replaced, where a rebuild of everything leaves one object under
+        // both names (`freeze` through one of them is how a program could
+        // tell). A rebuilt scalar is the exception: it has no identity, and
+        // whether its new value reaches the reader is the dependency set's
+        // question, answered above.
+        let scalar = |v: Value| {
+            matches!(v, Value::Nil | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::Symbol(_))
+        };
+        loop {
+            let mut moved = false;
+            for run in layout.runs.iter().filter(|r| !r.is_group()) {
+                let at = |s: &u32| seeds.get(*s as usize).copied();
+                let beside = run.stores.iter().filter_map(at).any(|s| matches!(s, Seed::Empty | Seed::Rebuild(_)));
+                let from = run.reads.iter().filter_map(at).any(|s| match s {
+                    Seed::Empty => true,
+                    Seed::Rebuild(v) => !scalar(v),
+                    Seed::Kept(_) | Seed::Deferred(_) => false,
+                });
+                if !beside && !from {
+                    continue;
+                }
+                for &s in &run.stores {
+                    let Some(seed) = seeds.get_mut(s as usize) else { continue };
+                    let held = match *seed {
+                        Seed::Kept(v) => v,
+                        // The segment runs for its other values; nothing is
+                        // put off by leaving this one.
+                        Seed::Deferred(v) if beside => v,
+                        _ => continue,
+                    };
+                    let enum_data = follow.slots.get(s as usize).is_some_and(|i| i.enum_tag.is_some());
+                    *seed = if enum_data { Seed::Empty } else { Seed::Rebuild(held) };
+                    moved = true;
+                }
+            }
+            if !moved {
+                break;
+            }
+        }
+        for (seed, info) in seeds.iter().zip(&follow.slots) {
+            match *seed {
                 Seed::Kept(v) => {
                     report.kept += 1;
                     // An enum's data lives in the stack's enum table, which
@@ -596,7 +651,6 @@ impl Env {
                     }
                 }
             }
-            seeds.push(seed);
         }
         stack.statics.install(
             layout,

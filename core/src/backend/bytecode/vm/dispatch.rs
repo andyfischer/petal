@@ -649,19 +649,27 @@ impl<'a> Vm<'a> {
                 if self.stack.statics.wants(slots) {
                     // A value rebuilt after a reload that is the value the
                     // slot held before it: keep the old one, in the register
-                    // too, so nothing that held it holds a stale copy.
+                    // too, so nothing that held it holds a stale copy. A
+                    // store of several values swaps all of them or none:
+                    // one may hold another.
                     if self.stack.statics.has_prior() {
-                        for &(slot, r) in slots.iter() {
-                            if let Some(old) = self.stack.statics.prior(slot)
-                                && crate::static_cache::identical(old, self.reg(fi, r), self.heap)
-                            {
-                                self.set(fi, r, old);
-                                self.stack.statics.stats.reused += 1;
+                        let all = slots.iter().all(|&(slot, r)| {
+                            self.stack.statics.get(slot).is_some()
+                                || self.stack.statics.prior(slot).is_some_and(|old| {
+                                    crate::static_cache::replaces(old, self.reg(fi, r), self.heap)
+                                })
+                        });
+                        if all {
+                            for &(slot, r) in slots.iter() {
+                                if let Some(old) = self.stack.statics.prior(slot) {
+                                    self.set(fi, r, old);
+                                    self.stack.statics.stats.reused += 1;
+                                }
                             }
                         }
                     }
-                    // Check every value before keeping any: a run is kept
-                    // whole or not at all.
+                    // Check every value before keeping any: a segment is
+                    // kept whole or not at all.
                     let mut bad = None;
                     for &(slot, r) in slots.iter() {
                         let v = self.reg(fi, r);

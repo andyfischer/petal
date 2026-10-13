@@ -937,7 +937,8 @@ print(n, len(junk), T[n % 3].parts, WORDS)
     assert!(out.contains("gamma"), "{out}");
     assert!(w.env.heap().collections() > before, "the frame collected");
     assert_eq!(held(&w, "T"), t, "the old heap value, found again after the collections");
-    assert_eq!(w.env.static_values(w.sid).unwrap().stats.reused, 1);
+    // `WORDS` (one list, kept on its own) and `T`.
+    assert_eq!(w.env.static_values(w.sid).unwrap().stats.reused, 2);
     for _ in 0..3 {
         frame(&mut w);
     }
@@ -1757,5 +1758,233 @@ fn review_a_table_another_stacks_reload_made_stale_is_not_kept() {
             }
             assert_eq!(out[0], out[1], "[{what}] {second_edit}");
         }
+    }
+}
+
+// --- a store per value ------------------------------------------------------
+
+const COUNT: &str = "state n = 0\nn = n + 1\n";
+
+/// A value rebuilt beside a kept one it holds takes the kept object, not a
+/// copy made for the occasion: `freeze` through one name reaches the other,
+/// as it does when everything is rebuilt.
+#[test]
+fn a_rebuilt_value_holds_its_kept_neighbour_itself() {
+    let old = format!(
+        "let B = [1, 2]\nlet C = [B, 1]\nlet D = [B, [7]]\n{COUNT}\
+         if n >= 2 then freeze(B) end\n\
+         print(n, frozen(B), frozen(C[0]), frozen(D[0]), frozen(C), B, C, D)\n"
+    );
+    let report = follow(&old, &old.replace("[B, 1]", "[B, 2]"));
+    assert_eq!(rebuilt(&report), ["C"]);
+    let report = follow(&old, &old.replace("[B, [7]]", "[B, [8], 9]"));
+    assert_eq!(rebuilt(&report), ["D"]);
+    // The neighbour itself rebuilt: everything that holds it goes with it.
+    let report = follow(&old, &old.replace("[1, 2]", "[1, 3]"));
+    assert_eq!(rebuilt(&report), ["B", "C", "D"]);
+}
+
+/// A table nothing but other tables read is kept as well, so two values
+/// built from it go on sharing it when one of them is rebuilt; with dynamic
+/// code between them and without.
+#[test]
+fn a_table_two_values_are_built_from_stays_shared() {
+    for between in ["", "print(\"between\")\n"] {
+        let old = format!(
+            "let P = [1, 2]\n{between}let A = [P, 1]\n{between}let B = [P, 2]\n{COUNT}\
+             if n >= 2 then freeze(A[0]) end\n\
+             print(n, frozen(A[0]), frozen(B[0]), frozen(A), A, B)\n"
+        );
+        let report = follow(&old, &old.replace("[P, 2]", "[P, 3]"));
+        assert_eq!(rebuilt(&report), ["B"], "{between:?}");
+        follow(&old, &old.replace("[P, 1]", "[P, [4]]"));
+        follow(&old, &old.replace("[1, 2]", "[1, 2, 3]"));
+        // A third reader appears: the shared table is still the one object.
+        follow(
+            &old,
+            &old.replace("state n", "let E = [P, 5]\nstate n").replace("frozen(A), A", "frozen(E[0]), A"),
+        );
+    }
+    // The table becomes shared by the edit: it was part of `A` alone.
+    let old = format!(
+        "let P = [1, 2]\nlet A = [P, 1]\n{COUNT}if n >= 2 then freeze(A[0]) end\nprint(n, frozen(A[0]), A)\n"
+    );
+    let new = old
+        .replace("state n", "let B = [P, 2]\nstate n")
+        .replace("print(n, frozen(A[0]), A)", "print(n, frozen(A[0]), frozen(B[0]), A, B)");
+    follow(&old, &new);
+    follow(&new, &old);
+}
+
+/// A rebuilt value that equals the old one is not swapped for it when it
+/// holds a kept object the old one does not: here `D` is rebuilt to a new
+/// object, part of it is frozen before `X` is built, and by then the new
+/// `X` and the old one answer `frozen` alike all the way down.
+#[test]
+fn an_equal_value_holding_another_object_is_not_swapped_for_the_old_one() {
+    let old = format!(
+        "fn mk(x) [x, 1] end\nfn mk2(x) [x] end\n{COUNT}\
+         let D = [mk2(5), 0]\n\
+         if n >= 2 then freeze(D[0]) end\n\
+         let X = [mk(D), 0]\n\
+         print(n, frozen(D), frozen(X[0][0]), frozen(D[0]), D, X)\n\
+         if n >= 4 then freeze(D) end\n"
+    );
+    let new = old.replace("[x, 1]", "[x, 2 - 1]").replace("[x] end", "[x + 0] end");
+    let mut out = Vec::new();
+    for on in [true, false] {
+        let mut w = world(&old, &[], policies()[0], on);
+        let mut log = vec![frame(&mut w), frame(&mut w)];
+        w.env.reload_program(w.sid, &new, None).unwrap();
+        for _ in 0..4 {
+            log.push(frame(&mut w));
+        }
+        out.push(log);
+    }
+    assert_eq!(out[0], out[1]);
+    assert!(out[0][5].starts_with("6 true true true"), "{}", out[0][5]);
+}
+
+/// One rebuilt value leaves the others of its stretch alone: the frame
+/// after the reload builds that value and nothing else.
+#[test]
+fn one_rebuilt_value_does_not_rebuild_its_neighbours() {
+    let old = format!(
+        "let A = [[1], [2]]\nlet B = [[3], [4]]\nlet C = [[5], [6]]\nlet D = [A, [0]]\n{COUNT}print(n, A, B, C, D)\n"
+    );
+    let mut w = world(&old, &[], policies()[0], true);
+    frame(&mut w);
+    frame(&mut w);
+    let before = w.env.static_values(w.sid).unwrap();
+    assert_eq!((before.runs, before.segments), (1, 4), "one check a frame, four values stored alone");
+    let report = w.env.reload_program(w.sid, &old.replace("[[3], [4]]", "[[3], [4, 4]]"), None).unwrap();
+    assert_eq!(rebuilt(&report), ["B"]);
+    let a = held(&w, "A");
+    assert!(frame(&mut w).starts_with("3 [[1], [2]] [[3], [4, 4]] [[5], [6]] [[[1], [2]], [0]]"));
+    let after = w.env.static_values(w.sid).unwrap();
+    assert_eq!(after.stats.stored - before.stats.stored, 1, "one value was built");
+    assert_eq!(after.stats.skips - before.stats.skips, 3, "the other three segments were skipped");
+    assert_eq!(held(&w, "A"), a);
+}
+
+/// A dragged value inside an expression does not wait with a slow table
+/// that stands beside it. A table that only exists to build another is
+/// timed either way: with the value it is built for when nothing else reads
+/// it, and on its own when the reader stands in another stretch.
+#[test]
+fn a_dragged_expression_does_not_wait_with_its_slow_neighbour() {
+    for (between, waits, rebuilt_at_once) in [("", "HEAD", "SCALED"), ("print(\"between\")\n", "BIG", "HEAD")] {
+        let src = format!(
+            "config let K = 2\nlet SCALED = [K * 3, [K]]\n\
+             let BIG = map(range(0, 20000), fn(i) i * K + K end)\n{between}\
+             let HEAD = [BIG[1], [BIG[2]]]\n{COUNT}print(n, SCALED, HEAD)\n"
+        );
+        let slow = StaticDebounce {
+            threshold: std::time::Duration::from_micros(300),
+            quiet: std::time::Duration::from_secs(60),
+        };
+        let mut a = world(&src, &[], policies()[0], true);
+        let mut b = world(&src, &[], policies()[0], false);
+        a.env.set_static_debounce(Some(slow));
+        let mut last = None;
+        for k in [3, 4, 5] {
+            frame(&mut a);
+            frame(&mut b);
+            last = drag(&mut a, k).statics;
+            drag(&mut b, k);
+        }
+        let last = last.unwrap();
+        assert_eq!(last.deferred, [waits], "{last:?}");
+        assert!(last.rebuilt_names.contains(&"SCALED".to_string()), "{last:?}");
+        assert!(last.rebuilt_names.contains(&rebuilt_at_once.to_string()), "{last:?}");
+        let during = frame(&mut a);
+        frame(&mut b);
+        assert!(during.contains("[15, [5]]"), "the dragged value at once: {during}");
+        assert!(a.env.flush_static_rebuilds(a.sid) >= 1);
+        assert_eq!(frame(&mut a), frame(&mut b), "after the drag paused");
+        assert_same_tables(&a, &b, "after the drag paused");
+    }
+}
+
+/// Tables that hold one another, frozen through arbitrary names at
+/// arbitrary frames after one of them was edited: which objects are shared is
+/// the same after the reload that follows the edit as after the one that
+/// rebuilds everything, as far as `frozen` can see.
+#[test]
+fn sharing_is_the_same_as_after_a_rebuild_of_everything() {
+    struct Rng(u64);
+    impl Rng {
+        fn below(&mut self, n: u64) -> u64 {
+            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (self.0 >> 33) % n
+        }
+    }
+    let iters: u64 = std::env::var("PETAL_FUZZ_ITERS").ok().and_then(|s| s.parse().ok()).unwrap_or(40);
+    for seed in 0..iters {
+        let mut rng = Rng(seed * 7919 + 1);
+        let count = 3 + rng.below(4) as usize;
+        // One table: its elements are numbers, small lists of its own, and
+        // earlier tables.
+        let table = |rng: &mut Rng, i: usize| -> String {
+            let mut parts = Vec::new();
+            for _ in 0..1 + rng.below(3) {
+                parts.push(match rng.below(4) {
+                    0 => format!("{}", rng.below(5)),
+                    1 => format!("[{}]", rng.below(5)),
+                    _ if i > 0 => format!("V{}", rng.below(i as u64)),
+                    _ => format!("[{}, {}]", rng.below(5), rng.below(5)),
+                });
+            }
+            format!("[{}]", parts.join(", "))
+        };
+        let mut values: Vec<String> = (0..count).map(|i| table(&mut rng, i)).collect();
+        let between: Vec<&str> = (0..count)
+            .map(|_| match rng.below(4) {
+                0 => "print(\"-\")\n",
+                1 => "fn pass(x) x end\n",
+                _ => "",
+            })
+            .collect();
+        // Some tables only other tables read: they have a slot when two
+        // of those are stored apart, and none when one is, which an edit
+        // can change.
+        let named: Vec<usize> = (0..count).filter(|_| rng.below(3) > 0).collect();
+        let named = if named.is_empty() { vec![count - 1] } else { named };
+        let mut tail = String::from(COUNT);
+        for _ in 0..2 + rng.below(3) {
+            // After the reload, which follows the second frame: a table
+            // frozen before it stays frozen when it is kept and is new when
+            // it is rebuilt, which is the difference between any two runs
+            // and not what this is about.
+            let (v, at) = (named[rng.below(named.len() as u64) as usize], 3 + rng.below(3));
+            tail.push_str(&match rng.below(2) {
+                0 => format!("if n >= {at} then freeze(V{v}) end\n"),
+                _ => format!("if n >= {at} then freeze(V{v}[0]) end\n"),
+            });
+        }
+        let shown: Vec<String> = named
+            .iter()
+            .flat_map(|i| [format!("frozen(V{i})"), format!("frozen(V{i}[0])"), format!("V{i}")])
+            .collect();
+        tail.push_str(&format!("print(n, {})\n", shown.join(", ")));
+        let text = |values: &[String]| -> String {
+            let mut out = String::from("fn same(x) x end\n");
+            for (i, v) in values.iter().enumerate() {
+                out.push_str(&format!("let V{i} = {v}\n{}", between[i].replace("pass", &format!("pass{i}"))));
+            }
+            out + &tail
+        };
+        let old = text(&values);
+        // The edit: another table in one place, or the same one written
+        // another way.
+        let i = rng.below(count as u64) as usize;
+        values[i] = match rng.below(3) {
+            0 => format!("same({})", values[i]),
+            1 => format!("[{}, {}]", &values[i][1..values[i].len() - 1], rng.below(5)),
+            _ => table(&mut rng, i),
+        };
+        let new = text(&values);
+        follow(&old, &new);
+        follow(&new, &old);
     }
 }

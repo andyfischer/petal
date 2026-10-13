@@ -550,19 +550,25 @@ pub fn transient_path(path: &Path) -> PathBuf {
 /// kept a value its initializer would no longer give
 /// (`petal::env::ReloadReport::static_lines`): one line each on stderr, and
 /// nothing when the edit reached no constant. Shared by the config script
-/// and the panels.
+/// and the panels. Returns the lines, for a host that shows them elsewhere.
 ///
 /// ```text
 /// [hot-reload] constants: 2 rebuilt (TILES, WIDTHS), 41 kept
 /// [hot-reload] stale seed: state grid was initialized from TILES, which changed; it keeps its value
 /// ```
 ///
-/// A panel records observations, which keeps Petal's static-value cache off
-/// for it, so a panel reload has nothing to say yet.
-pub(crate) fn print_static_report(report: &petal::env::ReloadReport) {
-    for line in report.static_lines() {
+/// A panel records observations, and Petal's static-value cache stays on
+/// under them (a skipped segment reports what it observed when it last
+/// ran), so a panel reload says this like any other. The one panel it says
+/// nothing for is one being traced
+/// ([`PanelHost::set_trace_origins`](crate::panel::PanelHost::set_trace_origins)):
+/// the per-term trace turns the cache off.
+pub(crate) fn print_static_report(report: &petal::env::ReloadReport) -> Vec<String> {
+    let lines = report.static_lines();
+    for line in &lines {
         eprintln!("[hot-reload] {line}");
     }
+    lines
 }
 
 #[cfg(test)]

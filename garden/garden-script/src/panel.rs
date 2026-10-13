@@ -1145,6 +1145,9 @@ pub struct PanelHost {
     /// The commands of the last frame that ran, served again by a frame the
     /// gate skips (see [`frame`](Self::frame)).
     last_cmds: Vec<PanelCmd>,
+    /// What the last reload said about the script's constants and stale
+    /// `state` seeds (see [`last_reload_report`](Self::last_reload_report)).
+    reload_lines: Vec<String>,
 }
 
 impl std::fmt::Debug for PanelHost {
@@ -1191,6 +1194,7 @@ impl PanelHost {
             imports: SourceWatch::default(),
             frame_origins: Vec::new(),
             last_cmds: Vec::new(),
+            reload_lines: Vec::new(),
         };
         host.imports = host.watch_imports();
         Ok(host)
@@ -1253,6 +1257,7 @@ impl PanelHost {
             imports: SourceWatch::default(),
             frame_origins: Vec::new(),
             last_cmds: Vec::new(),
+            reload_lines: Vec::new(),
         })
     }
 
@@ -1680,6 +1685,12 @@ impl PanelHost {
             // The gate: the last run's commands are this frame's.
             return Ok(self.last_cmds.clone());
         }
+        // A top-level value Petal could not keep between frames (it holds a
+        // function, a `var` cell, a handle or a pending result) is rebuilt on
+        // every frame: said once per load, and once more after each reload.
+        for warning in self.core.env.take_static_warnings(self.core.stack_id()) {
+            eprintln!("[petal warning] {}: {warning}", self.path.display());
+        }
 
         // Decode the frame's draw commands. Most map straight onto Garden's
         // render vocabulary via `from_draw`; the `text_view` host-extension
@@ -1788,7 +1799,7 @@ impl PanelHost {
             .env
             .reload_program(self.core.stack_id(), &source, Some(&path))
             .map_err(|e| e.to_string())?;
-        crate::print_static_report(&report);
+        self.reload_lines = crate::print_static_report(&report);
         self.imports = self.watch_imports();
         Ok(true)
     }
@@ -1823,8 +1834,22 @@ impl PanelHost {
             .env
             .reload_program(self.core.stack_id(), source, None)
             .map_err(|e| e.to_string())?;
-        crate::print_static_report(&report);
+        self.reload_lines = crate::print_static_report(&report);
         Ok(())
+    }
+
+    /// What the last successful reload did to the script's constants, and
+    /// the `state` that kept a value its initializer would no longer give:
+    /// the lines it printed to stderr, without the `[hot-reload]` prefix.
+    /// Empty when the edit reached no constant, and for a panel being
+    /// traced, whose constants are rebuilt on every frame.
+    ///
+    /// ```text
+    /// constants: 2 rebuilt (TILES, WIDTHS), 41 kept
+    /// stale seed: state grid was initialized from TILES, which changed; it keeps its value
+    /// ```
+    pub fn last_reload_report(&self) -> &[String] {
+        &self.reload_lines
     }
 
     /// Drain collected script `print` output since the last call.
@@ -5803,6 +5828,203 @@ mod tests {
         assert!(
             after_many < after_first * 100,
             "closures grew from {after_first} to {after_many} over 1000 frames"
+        );
+    }
+}
+
+/// Garden observes every panel, and Petal keeps a panel's static values
+/// while it does (`petal::static_cache`, "Observations"): a frame that
+/// skips the code building a top-level table must still report every name
+/// the frame that ran it reports.
+#[cfg(test)]
+mod static_value_tests {
+    use super::*;
+
+    /// Every example panel and every GPP app's drawer, as Garden ships them.
+    fn garden_panels() -> Vec<PathBuf> {
+        let garden = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+        let mut out = Vec::new();
+        let mut dirs = vec![garden.join("examples/panels")];
+        if let Ok(apps) = fs::read_dir(garden.join("gpp-apps")) {
+            dirs.extend(apps.flatten().map(|d| d.path().join("src")));
+        }
+        for dir in dirs {
+            let Ok(entries) = fs::read_dir(&dir) else { continue };
+            out.extend(entries.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "ptl")));
+        }
+        out.sort();
+        assert!(out.len() >= 12, "the panels were not found: {out:?}");
+        out
+    }
+
+    /// A host for `path` as Garden makes one, with every frame run and
+    /// nothing persisted, and the static-value cache on or off.
+    fn open(path: &Path, cache: bool) -> PanelHost {
+        let mut host = PanelHost::load(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        host.store = None;
+        host.set_frame_gating(false);
+        host.set_dimensions(800, 600);
+        host.core.env.set_echo(false);
+        host.core.env.set_seed(7);
+        // Two hosts must read the same `time()`: frame by frame, from zero.
+        host.use_virtual_clock_from(0.0);
+        host.core.env.set_static_cache(cache);
+        host
+    }
+
+    /// What one frame gave: its commands or its error, what a Garden
+    /// consumer reads of its bindings, and what Petal observed in full.
+    fn frame(host: &mut PanelHost, n: i64) -> String {
+        let drawn = match host.frame(0.016, n) {
+            Ok(cmds) => format!("{cmds:?}"),
+            Err(e) => format!("error {e}"),
+        };
+        let all = host.core.env.get_observations_json(host.core.program_id(), host.core.stack_id());
+        format!(
+            "{drawn}\nobserved {}\nall {}",
+            serde_json::Value::Object(host.observed_json()),
+            serde_json::Value::Object(all)
+        )
+    }
+
+    #[test]
+    fn every_panel_observes_the_same_with_its_static_values_kept() {
+        let (mut keeping, mut drew, mut skips, mut replayed) = (0, 0, 0u64, 0u64);
+        let panels = garden_panels();
+        for path in &panels {
+            let (mut on, mut off) = (open(path, true), open(path, false));
+            for n in 0..12 {
+                let (a, b) = (frame(&mut on, n), frame(&mut off, n));
+                assert!(a == b, "{}: frame {n} differs with static values kept\n on: {a}\noff: {b}", path.display());
+                drew += (n == 11 && !a.starts_with("error") && !a.starts_with("[]")) as usize;
+            }
+            assert!(on.core.env.static_cache_enabled(), "{}: observing leaves the cache on", path.display());
+            assert!(!off.core.env.static_cache_enabled());
+            let values = on.core.env.static_values(on.core.stack_id()).unwrap_or_default();
+            keeping += (!values.slots.is_empty()) as usize;
+            skips += values.stats.skips;
+            replayed += values.stats.replayed;
+        }
+        assert!(drew * 2 >= panels.len(), "only {drew} of {} panels drew anything", panels.len());
+        assert!(keeping * 2 >= panels.len(), "only {keeping} of {} panels keep a static value", panels.len());
+        assert!(skips > 0 && replayed > 0, "{skips} skips, {replayed} observations replayed");
+    }
+
+    const TABLES: &str = "\
+let TILES = [[1, 2], [3, 4]]
+let NAMES = [\"a\", \"b\"]
+state grid = TILES
+state n = 0
+n = n + 1
+let shown = [len(grid), NAMES[n % 2], TILES[0]]
+";
+
+    /// A panel reload says what it did to the script's constants, like the
+    /// SDL host's: it had nothing to say while the cache was off here.
+    #[test]
+    fn a_panel_reload_reports_its_constants_and_stale_seeds() {
+        let mut host = PanelHost::from_source("static-report-test", TABLES).unwrap();
+        host.store = None;
+        host.set_frame_gating(false);
+        host.set_dimensions(100, 100);
+        host.frame(0.016, 0).unwrap();
+        host.frame(0.016, 1).unwrap();
+        assert!(host.last_reload_report().is_empty(), "nothing was reloaded yet");
+        assert_eq!(host.observed_json()["NAMES"], serde_json::json!(["a", "b"]), "from a frame that skipped it");
+
+        host.reload_source(&TABLES.replace("[3, 4]", "[3, 5]")).unwrap();
+        let lines = host.last_reload_report().to_vec();
+        assert!(lines[0].starts_with("constants: 1 rebuilt (TILES), "), "{lines:?}");
+        assert!(lines[0].ends_with(" kept"), "{lines:?}");
+        assert_eq!(
+            lines[1], "stale seed: state grid was initialized from TILES, which changed; it keeps its value",
+            "{lines:?}"
+        );
+        host.frame(0.016, 2).unwrap();
+        let obs = host.observed_json();
+        assert_eq!(obs["TILES"], serde_json::json!([[1, 2], [3, 5]]));
+        assert_eq!(obs["grid"], serde_json::json!([[1, 2], [3, 4]]), "the seed is stale, as reported");
+        assert_eq!(obs["NAMES"], serde_json::json!(["a", "b"]));
+
+        // An edit that reaches no constant says nothing.
+        host.reload_source(&TABLES.replace("[3, 4]", "[3, 5]").replace("n = n + 1", "n = n + 2")).unwrap();
+        assert!(host.last_reload_report().is_empty(), "{:?}", host.last_reload_report());
+        host.frame(0.016, 3).unwrap();
+        assert_eq!(host.observed_json()["NAMES"], serde_json::json!(["a", "b"]));
+
+        // A traced panel has the cache off (the trace records every
+        // instruction), so its reload has nothing to report.
+        host.set_trace_origins(true);
+        host.frame(0.016, 4).unwrap();
+        assert!(!host.core.env.static_cache_enabled());
+        host.reload_source(TABLES).unwrap();
+        assert!(host.last_reload_report().is_empty());
+        host.set_trace_origins(false);
+        host.frame(0.016, 5).unwrap();
+        assert!(host.core.env.static_cache_enabled());
+    }
+
+    /// Instructions and allocations per frame for each panel with its
+    /// static values kept and not, every frame run. Not a test: run it for
+    /// the numbers.
+    ///
+    /// ```sh
+    /// cargo test -p garden-script --release --lib -- --ignored --nocapture measure_static
+    /// ```
+    #[test]
+    #[ignore = "prints a table; run by hand"]
+    fn measure_static_values_per_panel() {
+        let frames = 60u64;
+        println!("| panel | slots | instructions/frame off | on | change | allocations/frame off | on | change |");
+        println!("|---|---|---|---|---|---|---|---|");
+        let pct = |a: u64, b: u64| if a == 0 { 0.0 } else { (b as f64 - a as f64) * 100.0 / a as f64 };
+        let (mut ti, mut tj, mut ta, mut tb) = (0u64, 0u64, 0u64, 0u64);
+        for path in garden_panels() {
+            let run = |cache: bool| {
+                let mut host = open(&path, cache);
+                host.core.env.set_heap_stats(true);
+                let mut ok = true;
+                for n in 0..frames {
+                    ok &= host.frame(0.016, n as i64).is_ok();
+                }
+                let sid = host.core.stack_id();
+                let env = &host.core.env;
+                (
+                    env.instructions_retired(sid).unwrap_or(0),
+                    env.alloc_stats_for(sid).map_or(0, |s| s.total()),
+                    env.static_values(sid).map_or(0, |v| v.slots.len()),
+                    ok,
+                )
+            };
+            let (i_off, a_off, _, ok) = run(false);
+            let (i_on, a_on, slots, _) = run(true);
+            let name = path.strip_prefix(Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap()).unwrap_or(&path);
+            println!(
+                "| {}{} | {slots} | {} | {} | {:+.1}% | {} | {} | {:+.1}% |",
+                name.display(),
+                if ok { "" } else { " (errors)" },
+                i_off / frames,
+                i_on / frames,
+                pct(i_off, i_on),
+                a_off / frames,
+                a_on / frames,
+                pct(a_off, a_on),
+            );
+            if ok {
+                ti += i_off;
+                tj += i_on;
+                ta += a_off;
+                tb += a_on;
+            }
+        }
+        println!(
+            "| all that run | | {} | {} | {:+.2}% | {} | {} | {:+.2}% |",
+            ti / frames,
+            tj / frames,
+            pct(ti, tj),
+            ta / frames,
+            tb / frames,
+            pct(ta, tb)
         );
     }
 }

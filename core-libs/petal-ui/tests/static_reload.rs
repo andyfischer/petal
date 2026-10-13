@@ -7,6 +7,11 @@
 //! scenario through a chain of edits on both, and the two must draw and
 //! store the same thing on every frame and hold the same static values
 //! after each.
+//!
+//! And again with observations on, which is how Garden runs a panel, with
+//! a third instance that has no cache at all: what a host reads from the
+//! observation buffer after each frame must be the same on all three,
+//! through every edit.
 
 use std::path::{Path, PathBuf};
 
@@ -21,6 +26,17 @@ use petal_ui::scenario::Scenario;
 const SIZE: (i32, i32) = (800, 600);
 
 fn open(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64, follow: bool) -> Headless {
+    open_observed(app, includes, policy, seed, follow, false)
+}
+
+fn open_observed(
+    app: &Path,
+    includes: &[PathBuf],
+    policy: RunPolicy,
+    seed: u64,
+    follow: bool,
+    observe: bool,
+) -> Headless {
     let mut ui = Headless::panel_from_file_with_paths(app, SIZE.0, SIZE.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
     ui.env.set_echo(false);
@@ -29,7 +45,24 @@ fn open(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64, follow: 
     ui.env.set_static_follow(follow);
     // A slow machine must not turn a rebuild into a deferred one here.
     ui.env.set_static_debounce(None);
+    if observe {
+        ui.env.observations_mut().enable();
+    }
     ui
+}
+
+/// What a host that observes reads after a frame: by qualified name, and
+/// the buffer term by term. `null` when observation is off.
+fn observed(ui: &Headless) -> serde_json::Value {
+    if !ui.env.observations().enabled {
+        return serde_json::Value::Null;
+    }
+    let by_name = ui.env.get_observations_json(ui.program_id(), ui.stack_id());
+    let heap = ui.env.heap_for(ui.stack_id()).expect("the stack's heap");
+    let mut by_term: Vec<(u32, serde_json::Value)> =
+        ui.env.observations().iter().map(|(t, v)| (t.0, petal::value::value_to_json(&v, heap))).collect();
+    by_term.sort_by_key(|(t, _)| *t);
+    serde_json::json!({ "names": by_name, "terms": by_term })
 }
 
 fn frame(ui: &mut Headless, scenario: &Scenario, at: usize) -> String {
@@ -40,6 +73,7 @@ fn frame(ui: &mut Headless, scenario: &Scenario, at: usize) -> String {
         "state": ui.state(),
         "prints": ui.env.take_output(),
         "error": outcome.err(),
+        "observed": observed(ui),
     })
     .to_string()
 }
@@ -103,10 +137,24 @@ struct Tally {
     rebuilt: usize,
     reloads: usize,
     recompiled: usize,
+    /// Segments executed with their values kept, to write their
+    /// observation log again after a recompile.
+    relogged: usize,
 }
 
 fn chain(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64) -> Tally {
-    let what = format!("{} under {}", app.display(), policy.name().unwrap_or_default());
+    chain_observed(app, includes, policy, seed, false)
+}
+
+/// [`chain`]; with `observe`, observations are on and a third instance
+/// runs the same frames and edits with the cache off.
+fn chain_observed(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64, observe: bool) -> Tally {
+    let what = format!(
+        "{} under {}{}",
+        app.display(),
+        policy.name().unwrap_or_default(),
+        if observe { ", observed" } else { "" }
+    );
     let original = std::fs::read_to_string(app).unwrap();
     // Values only, back, a structural edit, values only on top of it, back.
     let edits = [
@@ -118,14 +166,19 @@ fn chain(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64) -> Tall
     ];
     let per = 8;
     let scenario = Scenario::monkey(seed, per * (edits.len() + 1), SIZE);
-    let mut a = open(app, includes, policy, seed, true);
-    let mut b = open(app, includes, policy, seed, false);
+    let mut a = open_observed(app, includes, policy, seed, true, observe);
+    let mut b = open_observed(app, includes, policy, seed, false, observe);
+    let mut off = observe.then(|| open_observed(app, includes, policy.with_static_cache(false), seed, true, true));
     let mut tally = Tally::default();
     let mut at = 0;
-    let mut frames = |a: &mut Headless, b: &mut Headless, at: &mut usize, step: &str| {
+    let frames = |a: &mut Headless, b: &mut Headless, off: &mut Option<Headless>, at: &mut usize, step: &str| {
         for _ in 0..per {
             let (fa, fb) = (frame(a, &scenario, *at), frame(b, &scenario, *at));
             assert!(fa == fb, "{what}: frame {} ({step}) differs when the reload follows the diff", *at);
+            if let Some(off) = off.as_mut() {
+                let fo = frame(off, &scenario, *at);
+                assert!(fa == fo, "{what}: frame {} ({step}) differs from the cache off", *at);
+            }
             let (sa, sb) = (slots(a), slots(b));
             assert_eq!(sa.len(), sb.len(), "{what}: slot count ({step})");
             for (i, (x, y)) in sa.iter().zip(&sb).enumerate() {
@@ -136,12 +189,17 @@ fn chain(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64) -> Tall
             *at += 1;
         }
     };
-    frames(&mut a, &mut b, &mut at, "before any edit");
+    frames(&mut a, &mut b, &mut off, &mut at, "before any edit");
     for (i, new) in edits.iter().enumerate() {
         let step = format!("edit {i}");
         let (sa, sb) = (a.stack_id(), b.stack_id());
         let ra = a.env.reload_program(sa, new, Some(app));
         let rb = b.env.reload_program(sb, new, Some(app));
+        if let Some(off) = off.as_mut() {
+            let so = off.stack_id();
+            let ro = off.env.reload_program(so, new, Some(app));
+            assert_eq!(ra.is_ok(), ro.is_ok(), "{what}: {step}: the cache off reloaded otherwise");
+        }
         match (ra, rb) {
             (Ok(ra), Ok(rb)) => {
                 assert_eq!(ra.outcome, rb.outcome, "{what}: {step}");
@@ -158,8 +216,9 @@ fn chain(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64) -> Tall
             (Err(_), Err(_)) => {}
             (ra, rb) => panic!("{what}: {step}: one side reloaded and the other did not: {:?} / {:?}", ra.is_ok(), rb.is_ok()),
         }
-        frames(&mut a, &mut b, &mut at, &step);
+        frames(&mut a, &mut b, &mut off, &mut at, &step);
     }
+    tally.relogged = a.env.static_values(a.stack_id()).map_or(0, |v| v.stats.relogged as usize);
     tally
 }
 
@@ -189,4 +248,36 @@ fn a_followed_reload_equals_a_reload_that_rebuilds_everything_across_the_corpus(
     assert!(reloads - recompiled >= results.len(), "only {} were patched in place", reloads - recompiled);
     // The oracle is only worth its time if most values are in fact kept.
     assert!(kept > rebuilt, "{kept} kept against {rebuilt} rebuilt");
+}
+
+/// The same chain with observations on, as Garden runs a panel: following
+/// the diff, rebuilding everything and running with no cache must leave
+/// the same observation buffer after every frame, through every edit.
+#[test]
+fn a_followed_reload_observes_what_the_cache_off_observes_across_the_corpus() {
+    let seed = 3u64;
+    let results = par_corpus(|app, includes| {
+        let mut total = Tally::default();
+        for name in ["replay", "fast", "replay-memo"] {
+            let t = chain_observed(app, includes, RunPolicy::parse(name).unwrap().with_static_cache(true), seed, true);
+            if name == "replay" {
+                total = t;
+            }
+        }
+        total
+    });
+    let kept: usize = results.iter().map(|(_, t)| t.kept).sum();
+    let rebuilt: usize = results.iter().map(|(_, t)| t.rebuilt).sum();
+    let reloads: usize = results.iter().map(|(_, t)| t.reloads).sum();
+    let recompiled: usize = results.iter().map(|(_, t)| t.recompiled).sum();
+    let relogged: usize = results.iter().map(|(_, t)| t.relogged).sum();
+    eprintln!(
+        "{} apps observed, {reloads} followed reloads ({recompiled} recompiled): {kept} slots kept, {rebuilt} rebuilt, \
+         {relogged} kept segments executed once more for their log",
+        results.len()
+    );
+    assert!(reloads >= results.len() * 4, "only {reloads} reloads were followed");
+    assert!(recompiled >= results.len() * 2, "only {recompiled} recompiled");
+    assert!(kept > rebuilt, "{kept} kept against {rebuilt} rebuilt");
+    assert!(relogged > 0, "no kept segment wrote its log again after a recompile");
 }

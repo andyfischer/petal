@@ -297,12 +297,16 @@ fn version_prints_the_commit_and_the_build_date() {
         assert!(line.contains(", built 20"), "{line}");
         assert_eq!(out.lines().count(), 1, "{out}");
     }
-    // This checkout is a git repository, so the commit is a real one.
-    let commit = petal::version::GIT_COMMIT;
-    assert_ne!(commit, "unknown");
-    let hash = commit.trim_end_matches("-dirty");
-    assert!(hash.len() == 10 && hash.bytes().all(|b| b.is_ascii_hexdigit()), "{commit}");
-    assert_eq!(petal::version::GIT_DATE.len(), 10);
+    // In a checkout the commit is a real one. (A source tree with no `.git`,
+    // unpacked from an archive, says `unknown` or what its VENDORED.md names.)
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    if root.join(".git").exists() {
+        let commit = petal::version::GIT_COMMIT;
+        assert_ne!(commit, "unknown");
+        let hash = commit.trim_end_matches("-dirty");
+        assert!(hash.len() == 10 && hash.bytes().all(|b| b.is_ascii_hexdigit()), "{commit}");
+        assert_eq!(petal::version::GIT_DATE.len(), 10);
+    }
 }
 
 /// `petal run --profile` reports by source line too: native time by calling

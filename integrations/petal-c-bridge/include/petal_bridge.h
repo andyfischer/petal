@@ -24,6 +24,7 @@
  *     (pb_vm_changed_sources names the edited files; a value or layout
  *     edit is taken up without recompiling)
  *   pb_vm_set_config                     set one config value now, no file write
+ *   pb_vm_tests_json + pb_vm_test_*      run the script's test blocks, across frames
  *   pb_scenario_* + pb_vm_apply_scenario replay recorded input (headless tests)
  *   pb_source_*                          read and edit source text as a config file
  *
@@ -381,6 +382,30 @@ const pb_value* pb_call_args(const pb_call* call);
 pb_builder* pb_call_result(pb_call* call);
 /* Fail the call with `message` (copied); also return nonzero from the callback. */
 void pb_call_set_error(pb_call* call, const char* message);
+/* Where the script call is written: the file as diagnostics name it, and the
+ * 1-based line and column of the call expression. Each out-pointer is
+ * optional. False (nothing written) when the call has no source position (a
+ * call the host made itself). `*out_file` is valid during the callback. */
+bool pb_call_location(pb_call* call, const char** out_file, uint32_t* out_line, uint32_t* out_column);
+/* Record an expectation of the host's own (an `expect_pixel`, say), as the
+ * script's expect() does: `ok` true counts a check that held; false records a
+ * failure at the position of the script call and the script carries on. The
+ * failure reaches the test's result when a test is running and
+ * pb_vm_take_expect_failures_json otherwise. `check` names what was checked
+ * (NULL = the native's name); `message` is the whole failure in one line.
+ * Do not also fail the call: an expectation is not an error. */
+void pb_call_expect(pb_call* call, bool ok, const char* check, const char* message);
+/* Ask the test this call runs in to stop once the callback returns, so the
+ * host can run frames and then carry on with pb_vm_test_resume: how a
+ * `wait_frames(n)` native is written (see "Tests" below). The call still
+ * returns its result normally. Returns 0, or nonzero when nothing can resume
+ * the call: outside a test begun with pb_vm_test_begin (an ordinary run, a
+ * pb_vm_call), or inside a callback of map/filter/reduce/forEach/sort. The
+ * call's error is then already set to the reason and the script call fails
+ * when the callback returns; return from it without doing the work.
+ * pb_call_can_suspend asks without failing anything. */
+int pb_call_suspend(pb_call* call);
+bool pb_call_can_suspend(pb_call* call);
 
 /* ─── Loading ─────────────────────────────────────────────────────────── */
 
@@ -516,6 +541,100 @@ bool pb_vm_has_function(pb_vm* vm, const char* function);
 
 /* Release all views/draw lists handed out so far (runs do this implicitly). */
 void pb_vm_clear_views(pb_vm* vm);
+
+/* ─── Tests ───────────────────────────────────────────────────────────── */
+/*
+ * A script's `test "title" do ... end` blocks (docs/testing.md), run by the
+ * host with its natives present. A test is a function nothing calls; its
+ * expect() / expect_eq() / expect_near() calls record failures and carry on.
+ *
+ *   pb_vm_run(vm);                                  // functions exist now
+ *   // for each entry of pb_vm_tests_json(vm):
+ *   pb_vm_test_begin(vm, "__test_0");
+ *   for (;;) {
+ *       int step = pb_vm_test_resume(vm, 0);
+ *       if (step == PB_TEST_SUSPENDED) { run_the_frames_it_asked_for(); continue; }
+ *       break;                                      // PB_TEST_FINISHED, or -1
+ *   }
+ *   const char* result = pb_vm_test_result_json(vm);
+ *
+ * A test spans frames by suspending: a host native (wait_frames(n)) notes n
+ * and calls pb_call_suspend; pb_vm_test_resume then returns
+ * PB_TEST_SUSPENDED with the test set aside, the host runs frames as it
+ * always does (pb_vm_begin_frame, pb_vm_run, drain), and the next
+ * pb_vm_test_resume continues on the line after the call. When it resumes,
+ * a `var` or `state var` the test reads with `get` is live; a `let` or plain
+ * `state` it captured is the value from when the test began.
+ *
+ * The test sees the program as the last run left it and its state changes
+ * stay: for isolation, pb_vm_restart + pb_vm_run before each test, or
+ * pb_vm_save_state once and pb_vm_load_state + pb_vm_run before each.
+ * One test at a time per VM. A reload while a test waits ends it with an
+ * error on the next resume.
+ */
+
+/* The loaded program's test blocks, the entry file's and every module's, in
+ * declaration order:
+ *   [{"name": "the door opens", "function": "__test_0", "module": null,
+ *     "file": "game.ptl", "path": "/abs/game.ptl", "line": 12}]
+ * "function" is what pb_vm_test_begin takes; "module" is null for the entry
+ * file (how a runner leaves out a library's tests); "path" is null for a
+ * source with no file. NULL with no program loaded. Valid until the next call
+ * to this function. */
+const char* pb_vm_tests_json(pb_vm* vm);
+
+typedef enum pb_test_step {
+    PB_TEST_FINISHED = 0,     /* the body returned or raised: read pb_vm_test_result_json */
+    PB_TEST_SUSPENDED = 1,    /* a native called pb_call_suspend: run frames, resume again */
+    PB_TEST_OUT_OF_STEPS = 2  /* max_steps instructions ran: resume again, or abort */
+} pb_test_step;
+
+/* Start a test. `function` is a "function" of pb_vm_tests_json (any
+ * top-level function of no parameters works). None of it runs yet.
+ * PB_ERR_NOT_FOUND when the last run defined no such function;
+ * PB_ERR_RUNTIME when a test is already in progress or the program has not
+ * completed a run. */
+pb_status pb_vm_test_begin(pb_vm* vm, const char* function);
+/* Run the test in progress until it finishes, is suspended, or about
+ * `max_steps` instructions have run in this call (0 = no bound; a host with
+ * a time limit resumes in slices and looks at the clock). Returns a
+ * pb_test_step, or -1 (PB_ERR_INVALID_ARG in pb_vm_last_error) when no test
+ * is in progress. Call it between runs, never from a native. Releases
+ * previous views. */
+int pb_vm_test_resume(pb_vm* vm, uint64_t max_steps);
+/* Give up on the test in progress: its result is what it recorded so far,
+ * failed, with `why` (NULL = "aborted by the host") as its error.
+ * PB_ERR_INVALID_ARG when no test is in progress. */
+pb_status pb_vm_test_abort(pb_vm* vm, const char* why);
+/* The "function" of the test in progress, or NULL when there is none. Valid
+ * until the next call to this function. */
+const char* pb_vm_test_in_progress(pb_vm* vm);
+/* The result of the test that last finished or was aborted:
+ *   {"function": "__test_0", "name": "the door opens", "passed": false,
+ *    "checks": 3, "failed": 1, "error": null,
+ *    "failures": [{"check": "expect_eq", "file": "game.ptl", "line": 14,
+ *                  "column": 3, "message": "expected 3, got 4",
+ *                  "actual": "4", "expected": "3"}]}
+ * "name" is the title (null when the function is not a test block); "error"
+ * the runtime error that ended the test, if one did; a failure may also
+ * carry "tolerance" and "note" (the message argument). "failures" holds at
+ * most 1000; "failed" counts all. "" before the first. Valid until the next
+ * test finishes; does not touch pb_vm_last_error. */
+const char* pb_vm_test_result_json(const pb_vm* vm);
+/* Begin and resume in one call, for a test with nothing to wait for (one
+ * that suspends is aborted, with an error saying it needs frames). Returns
+ * the result (as pb_vm_test_result_json), or NULL with no program loaded. A
+ * failing test is not a failing call: read "passed". */
+const char* pb_vm_run_test(pb_vm* vm, const char* function);
+/* The expectations that failed OUTSIDE tests, in the program's ordinary runs
+ * and in functions the host called, since the last take:
+ *   {"checked": 120, "failed": 2, "failures": [...]}
+ * with the failures as in pb_vm_test_result_json. "checked" and "failed"
+ * count since the program was loaded or restarted, not since the last take.
+ * Between takes the log holds 1000 failures and only counts the rest. A
+ * test's failures never land here. NULL with no program loaded. Valid until
+ * the next call to this function. */
+const char* pb_vm_take_expect_failures_json(pb_vm* vm);
 
 /* ─── Output buffers (script → host) ─────────────────────────────────── */
 
@@ -1093,6 +1212,10 @@ const char* pb_vm_new_diagnostics_text(pb_vm* vm, bool errors_only);
  * It may be turned on before pb_vm_load_*, and the report then covers the
  * first run (frame 0: boot). */
 pb_status pb_vm_set_profiling(pb_vm* vm, bool on);
+/* The time from which a native call counts as slow, for the report's "native
+ * calls of N us or longer, by calling line" section (default 1). Kept across
+ * pb_vm_set_profiling. PB_ERR_INVALID_ARG for a negative or non-finite value. */
+pb_status pb_vm_set_profile_slow_native_us(pb_vm* vm, double microseconds);
 /* The profile report (text, top `top_n` rows per section) for the loaded
  * program. NULL if nothing is loaded. Valid until the next call to this function. */
 const char* pb_vm_profile_report(pb_vm* vm, size_t top_n);

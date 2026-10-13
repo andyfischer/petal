@@ -141,9 +141,14 @@ impl HostCallback {
             argc: scratch.args.len(),
             result: std::mem::take(&mut scratch.result),
             error: None,
+            // The call outlives neither `cxt` nor this function; the pointer
+            // is cleared below before the borrow ends.
+            cxt: (cxt as *mut PetalCxt<'_>).cast(),
+            location_file: None,
         };
         // SAFETY: the host's callback with the userdata it registered.
         let rc = unsafe { (self.func)(&mut call, self.userdata) };
+        call.cxt = std::ptr::null_mut();
         let result = call.result.take_result();
         scratch.result = call.result;
         if rc != 0 || call.error.is_some() {
@@ -208,6 +213,123 @@ pub struct PbCall {
     argc: usize,
     result: Builder,
     error: Option<String>,
+    /// The `PetalCxt` of the script call, lifetime erased; non-null only
+    /// while the callback runs.
+    cxt: *mut c_void,
+    /// Keeps the string `pb_call_location` handed out alive for the call.
+    location_file: Option<CString>,
+}
+
+impl PbCall {
+    /// The script call's context, while the callback is running.
+    fn cxt<'c>(&mut self) -> Option<&'c mut PetalCxt<'c>> {
+        // SAFETY: set from a live `&mut PetalCxt` for the duration of the
+        // callback (HostCallback::call) and nulled when it returns; the host
+        // can only reach it through the `pb_call*` it was handed, on the
+        // thread running the callback.
+        unsafe { self.cxt.cast::<PetalCxt<'c>>().as_mut() }
+    }
+}
+
+/// Borrow an optional C string, lossily.
+unsafe fn opt_text(p: *const c_char) -> Option<String> {
+    if p.is_null() {
+        None
+    } else {
+        Some(unsafe { std::ffi::CStr::from_ptr(p) }.to_string_lossy().into_owned())
+    }
+}
+
+/// `pb_call_suspend`: ask the test this call runs in to stop after the call
+/// returns ([`PetalCxt::suspend`]). 0 on success; nonzero when nothing can
+/// resume the call, in which case the call's error is set to the reason (the
+/// callback should return nonzero).
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_call_suspend(call: *mut PbCall) -> i32 {
+    crate::ffi::guard(1, || {
+        let Some(call) = (unsafe { call.as_mut() }) else {
+            return 1;
+        };
+        let Some(cxt) = call.cxt() else { return 1 };
+        match cxt.suspend() {
+            Ok(()) => 0,
+            Err(e) => {
+                call.error = Some(e);
+                1
+            }
+        }
+    })
+}
+
+/// `pb_call_can_suspend`: whether `pb_call_suspend` would succeed here.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_call_can_suspend(call: *mut PbCall) -> bool {
+    crate::ffi::guard(false, || {
+        unsafe { call.as_mut() }
+            .and_then(|c| c.cxt())
+            .is_some_and(|cxt| cxt.can_suspend())
+    })
+}
+
+/// `pb_call_expect`: record an expectation of the host's own, at the
+/// position of the script call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_call_expect(
+    call: *mut PbCall,
+    ok: bool,
+    check: *const c_char,
+    message: *const c_char,
+) {
+    let check = unsafe { opt_text(check) };
+    let message = unsafe { opt_text(message) };
+    crate::ffi::guard((), || {
+        let Some(call) = (unsafe { call.as_mut() }) else {
+            return;
+        };
+        let name = unsafe { std::ffi::CStr::from_ptr(call.name) }
+            .to_string_lossy()
+            .into_owned();
+        let Some(cxt) = call.cxt() else { return };
+        if ok {
+            cxt.pass_expectation();
+        } else {
+            let check = check.unwrap_or(name);
+            let message = message.unwrap_or_else(|| format!("{check} failed"));
+            cxt.fail_expectation(&check, message);
+        }
+    })
+}
+
+/// `pb_call_location`: where the script call is written. False when the call
+/// has no source position.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_call_location(
+    call: *mut PbCall,
+    out_file: *mut *const c_char,
+    out_line: *mut u32,
+    out_column: *mut u32,
+) -> bool {
+    crate::ffi::guard(false, || {
+        let Some(call) = (unsafe { call.as_mut() }) else {
+            return false;
+        };
+        let Some(loc) = call.cxt().and_then(|cxt| cxt.call_location()) else {
+            return false;
+        };
+        let file = call.location_file.insert(crate::ffi::cstring_lossy(&loc.file));
+        unsafe {
+            if !out_file.is_null() {
+                out_file.write(file.as_ptr());
+            }
+            if !out_line.is_null() {
+                out_line.write(loc.line);
+            }
+            if !out_column.is_null() {
+                out_column.write(loc.column);
+            }
+        }
+        true
+    })
 }
 
 #[unsafe(no_mangle)]

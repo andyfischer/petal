@@ -188,8 +188,11 @@ carries its own tests.
 
 ## Running tests from a host
 
-An embedder runs the same blocks with its own natives registered. The pieces
-are on `Env` (Rust):
+An embedder runs the same blocks with its own natives registered. A C or C++
+host has all of this through the bridge (`pb_vm_tests_json`,
+`pb_vm_test_begin` / `_resume` / `_abort`, `pb_vm_test_result_json`,
+`pb_call_suspend`, `pb_call_expect`: [embedding-c.md](embedding-c.md),
+"Running the script's tests"). The pieces are on `Env` (Rust):
 
 ```rust
 // The program's tests: the entry file's and every module's.

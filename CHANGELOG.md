@@ -718,6 +718,16 @@ way, for code written against an earlier checkout.
   `pb_vm_function_json` returns a function's declared parameters, and
   `pb_vm_diagnostics_json` the compile's findings as data. In Rust:
   `Env::call_function_named`, `Env::function_params`.
+- `petal-c-bridge`: a host runs the script's `test` blocks:
+  `pb_vm_tests_json`, `pb_vm_test_begin` / `pb_vm_test_resume` /
+  `pb_vm_test_abort`, `pb_vm_test_result_json`, `pb_vm_run_test`,
+  `pb_vm_test_in_progress`, and `pb_vm_take_expect_failures_json` for
+  expectations that failed outside tests. A native suspends the test it is
+  called from with `pb_call_suspend` (a `wait_frames(n)`), records an
+  expectation of its own with `pb_call_expect`, and learns where it was called
+  with `pb_call_location`. `pb_vm_set_profile_slow_native_us` sets the
+  profile report's slow-call threshold. (`vm.tests_json()`, `vm.test_begin()`,
+  …, `call.suspend()`, `call.expect()`, `call.location()` in C++.)
 - `petal-c-bridge`: `pb_vm_new_diagnostics_text` (`vm.new_diagnostics_text()`)
   returns the warnings and errors the last reload introduced, and
   `pb_vm_last_reload_json` lists them as `new_diagnostics`.

@@ -296,6 +296,28 @@ public:
     Value operator[](size_t i) const noexcept { return arg(i); }
     // Build at most one value here; leave it empty to return nil.
     BuilderRef result() const noexcept { return BuilderRef(pb_call_result(c_)); }
+    // Where the script call is written (see pb_call_location); line 0 when
+    // the call has no source position.
+    struct Location {
+        std::string file;
+        uint32_t line = 0;
+        uint32_t column = 0;
+    };
+    Location location() const {
+        Location loc;
+        const char* file = nullptr;
+        if (pb_call_location(c_, &file, &loc.line, &loc.column) && file) loc.file = file;
+        return loc;
+    }
+    // Record an expectation of the host's own (see pb_call_expect).
+    void expect(bool ok, const std::string& message, const char* check = nullptr) const {
+        pb_call_expect(c_, ok, check, message.c_str());
+    }
+    // Stop the test this call runs in once the native returns (see
+    // pb_call_suspend). False where nothing can resume the call: the script
+    // call then fails with the reason when the native returns, so return.
+    bool suspend() const noexcept { return pb_call_suspend(c_) == 0; }
+    bool can_suspend() const noexcept { return pb_call_can_suspend(c_); }
     pb_call* raw() const noexcept { return c_; }
 
 private:
@@ -635,6 +657,43 @@ public:
     bool has_function(const std::string& function) { return pb_vm_has_function(vm_, function.c_str()); }
     void clear_views() { pb_vm_clear_views(vm_); }
 
+    // ── Tests (see "Tests" in petal_bridge.h) ──
+    // The program's test blocks as JSON.
+    std::string tests_json() {
+        const char* s = pb_vm_tests_json(vm_);
+        if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
+        return s;
+    }
+    void test_begin(const std::string& function) { check(pb_vm_test_begin(vm_, function.c_str())); }
+    // Run the test in progress; max_steps 0 = no bound.
+    pb_test_step test_resume(uint64_t max_steps = 0) {
+        int step = pb_vm_test_resume(vm_, max_steps);
+        if (step < 0) throw Error::from_vm(vm_, PB_ERR_INVALID_ARG);
+        return static_cast<pb_test_step>(step);
+    }
+    void test_abort(const std::string& why) { check(pb_vm_test_abort(vm_, why.c_str())); }
+    // The function of the test in progress, or "" when there is none.
+    std::string test_in_progress() {
+        const char* s = pb_vm_test_in_progress(vm_);
+        return s ? s : "";
+    }
+    std::string test_result_json() const {
+        const char* s = pb_vm_test_result_json(vm_);
+        return s ? s : "";
+    }
+    // Begin and resume in one call; returns the result JSON.
+    std::string run_test(const std::string& function) {
+        const char* s = pb_vm_run_test(vm_, function.c_str());
+        if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
+        return s;
+    }
+    // The expectations that failed outside tests since the last take.
+    std::string take_expect_failures_json() {
+        const char* s = pb_vm_take_expect_failures_json(vm_);
+        if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
+        return s;
+    }
+
     // ── Output ──
     Values drain(const std::string& buffer) {
         pb_values out{nullptr, 0};
@@ -781,6 +840,7 @@ public:
     }
     // The VM profiler (see pb_vm_set_profiling / pb_vm_profile_report).
     void set_profiling(bool on) { check(pb_vm_set_profiling(vm_, on)); }
+    void set_profile_slow_native_us(double us) { check(pb_vm_set_profile_slow_native_us(vm_, us)); }
     std::string profile_report(size_t top_n = 20) {
         const char* s = pb_vm_profile_report(vm_, top_n);
         if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);

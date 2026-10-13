@@ -108,6 +108,10 @@ pub struct Vm {
     /// What the last `save_state` / `load_state` did (`pb_vm_state_report_json`).
     state_report: CString,
     function_json: CString,
+    tests_json: CString,
+    test_result_json: CString,
+    test_in_progress: CString,
+    expect_failures_json: CString,
     /// The memo counters when profiling was last turned on: the report shows
     /// what the measured runs added.
     profile_memo_start: Option<petal::memo::MemoStats>,
@@ -162,6 +166,10 @@ impl Vm {
             saved_state: CString::default(),
             state_report: CString::default(),
             function_json: CString::default(),
+            tests_json: CString::default(),
+            test_result_json: CString::default(),
+            test_in_progress: CString::default(),
+            expect_failures_json: CString::default(),
             profile_memo_start: None,
             package_name: CString::default(),
             interface_report: CString::default(),
@@ -563,6 +571,135 @@ impl Vm {
         })
     }
 
+    // ── Tests ───────────────────────────────────────────────────────────
+
+    /// The loaded program's `test "title" do … end` blocks (the entry
+    /// file's and every module's), as a JSON array in declaration order:
+    /// `[{"name": "the door opens", "function": "__test_0", "module": null,
+    /// "file": "game.ptl", "path": "/…/game.ptl", "line": 12}]`. `"module"`
+    /// is `null` for the entry file; `"function"` is what the `test_*` calls
+    /// take.
+    pub fn tests_json(&self) -> BResult<serde_json::Value> {
+        let l = self.loaded()?;
+        Ok(serde_json::Value::Array(
+            self.env
+                .tests(l.program_id)
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "name": t.name,
+                        "function": t.function,
+                        "module": t.module,
+                        "file": t.file,
+                        "path": t.path.as_ref().map(|p| p.display().to_string()),
+                        "line": t.line,
+                    })
+                })
+                .collect(),
+        ))
+    }
+
+    fn test_result_value(&self, result: &petal::env::TestResult) -> serde_json::Value {
+        let title = self
+            .loaded
+            .as_ref()
+            .and_then(|l| self.env.get_program(l.program_id))
+            .and_then(|p| p.test_of_function(&result.function))
+            .map(|t| t.name.clone());
+        serde_json::json!({
+            "function": result.function,
+            "name": title,
+            "passed": result.passed,
+            "checks": result.checks,
+            "failed": result.failed,
+            "error": result.error,
+            "failures": result.failures,
+        })
+    }
+
+    /// Start the test compiled as `function` (the `"function"` of a
+    /// [`tests_json`](Self::tests_json) entry; any top-level function of no
+    /// parameters works). Nothing of its body runs until
+    /// [`test_resume`](Self::test_resume). The program must have run once
+    /// and no other test may be in progress.
+    pub fn test_begin(&mut self, function: &str) -> BResult<()> {
+        let l = self.loaded()?;
+        let (stack, name) = (l.stack_id, l.entry_name.clone());
+        self.env
+            .test_begin(stack, function)
+            .map_err(|e| Self::call_error(e, &name))
+    }
+
+    /// Run the test in progress until it finishes, a native suspends it
+    /// (`pb_call_suspend`), or about `max_steps` instructions have run
+    /// (0 = no bound). When it finishes, the result is kept for
+    /// [`test_result`](Self::test_result).
+    pub fn test_resume(&mut self, max_steps: u64) -> BResult<petal::env::TestStep> {
+        let stack = self.loaded()?.stack_id;
+        if self.env.test_in_progress(stack).is_none() {
+            return Err(BridgeError::invalid("no test is in progress (pb_vm_test_begin first)"));
+        }
+        self.clear_views();
+        let bound = if max_steps == 0 { u64::MAX } else { max_steps };
+        let step = self.env.test_resume_bounded(stack, bound);
+        if let petal::env::TestStep::Finished(result) = &step {
+            self.test_result_json = cstring_lossy(&self.test_result_value(result).to_string());
+        }
+        Ok(step)
+    }
+
+    /// Give up on the test in progress: what it recorded so far becomes its
+    /// result, failed, with `why` as the error.
+    pub fn test_abort(&mut self, why: &str) -> BResult<()> {
+        let stack = self.loaded()?.stack_id;
+        let result = self
+            .env
+            .test_abort(stack, why)
+            .ok_or_else(|| BridgeError::invalid("no test is in progress"))?;
+        self.test_result_json = cstring_lossy(&self.test_result_value(&result).to_string());
+        Ok(())
+    }
+
+    /// Begin and resume in one call, for a test with nothing to wait for; a
+    /// test that suspends is aborted with an error saying so. The result is
+    /// also what [`test_result`](Self::test_result) returns afterwards.
+    pub fn run_test(&mut self, function: &str) -> BResult<&str> {
+        let stack = self.loaded()?.stack_id;
+        self.clear_views();
+        let result = self.env.run_test(stack, function);
+        self.test_result_json = cstring_lossy(&self.test_result_value(&result).to_string());
+        Ok(self.test_result())
+    }
+
+    /// The result of the test that last finished or was aborted, as JSON:
+    /// `{"function": "__test_0", "name": "the door opens", "passed": false,
+    /// "checks": 3, "failed": 1, "error": null, "failures": [{"check":
+    /// "expect_eq", "file": "game.ptl", "line": 14, "column": 3, "message":
+    /// "expected 3, got 4", "actual": "4", "expected": "3"}]}`. `"error"` is
+    /// the runtime error that ended the test, if one did. Empty before the
+    /// first.
+    pub fn test_result(&self) -> &str {
+        self.test_result_json.to_str().unwrap_or("")
+    }
+
+    /// The function of the test in progress (begun and not finished), if any.
+    pub fn test_in_progress(&self) -> Option<&str> {
+        self.env.test_in_progress(self.loaded.as_ref()?.stack_id)
+    }
+
+    /// Take the expectation failures recorded outside tests (by the
+    /// program's ordinary runs and the host's own calls) since the last
+    /// take: `{"checked": 120, "failed": 2, "failures": [...]}`, the
+    /// failures as in [`test_result`](Self::test_result). `checked` and
+    /// `failed` count since the program was loaded (or restarted); the log
+    /// holds at most 1000 failures between takes and only counts the rest.
+    pub fn take_expect_failures(&mut self) -> BResult<serde_json::Value> {
+        let stack = self.loaded()?.stack_id;
+        let failures = self.env.take_expect_failures(stack);
+        let (checked, failed) = self.env.expect_counts(stack);
+        Ok(serde_json::json!({ "checked": checked, "failed": failed, "failures": failures }))
+    }
+
     // ── State snapshots ─────────────────────────────────────────────────
 
     /// Every `state` slot of the program as one JSON document: the format
@@ -753,6 +890,13 @@ impl Vm {
             self.input.event(ev);
         }
         n
+    }
+}
+
+#[cfg(test)]
+impl Vm {
+    fn into_handle_for_test() -> *mut VmHandle {
+        VmHandle::into_raw(Vm::new())
     }
 }
 
@@ -2232,6 +2376,112 @@ pub extern "C" fn pb_vm_set_profiling(vm: *mut VmHandle, on: bool) -> Status {
     .0
 }
 
+/// The time at or above which a native call counts as slow in the profile
+/// report's "native calls of N µs or longer" section. Kept across
+/// pb_vm_set_profiling.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_set_profile_slow_native_us(vm: *mut VmHandle, microseconds: f64) -> Status {
+    status(vm, |vm| {
+        if !microseconds.is_finite() || microseconds < 0.0 {
+            return Err(BridgeError::invalid("microseconds must be a finite number >= 0"));
+        }
+        vm.env.profile_mut().slow_native = std::time::Duration::from_secs_f64(microseconds / 1e6);
+        Ok(())
+    })
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────
+
+/// See [`Vm::tests_json`]. NULL with no program loaded. Valid until the next
+/// call.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_tests_json(vm: *mut VmHandle) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        vm.tests_json = cstring_lossy(&vm.tests_json()?.to_string());
+        Ok(vm.tests_json.as_ptr())
+    })
+    .1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_test_begin(vm: *mut VmHandle, function: *const c_char) -> Status {
+    status(vm, |vm| {
+        let function = unsafe { arg_str(function, "function") }?;
+        vm.test_begin(function)
+    })
+}
+
+/// Returns a `pb_test_step` (0 finished, 1 suspended, 2 out of steps), or -1
+/// on failure (no test in progress, no program).
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_test_resume(vm: *mut VmHandle, max_steps: u64) -> i32 {
+    with_vm(vm, -1, |vm| {
+        Ok(match vm.test_resume(max_steps)? {
+            petal::env::TestStep::Finished(_) => 0,
+            petal::env::TestStep::Suspended => 1,
+            petal::env::TestStep::OutOfSteps => 2,
+        })
+    })
+    .1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_test_abort(vm: *mut VmHandle, why: *const c_char) -> Status {
+    status(vm, |vm| {
+        let why = if why.is_null() { "aborted by the host" } else { unsafe { arg_str(why, "why") }? };
+        vm.test_abort(why)
+    })
+}
+
+/// The result JSON, or NULL on failure. Valid until the next test finishes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_run_test(vm: *mut VmHandle, function: *const c_char) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        let function = unsafe { arg_str(function, "function") }?;
+        vm.run_test(function)?;
+        Ok(vm.test_result_json.as_ptr())
+    })
+    .1
+}
+
+/// "" before the first finished test. Does not touch `pb_vm_last_error`.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_test_result_json(vm: *const VmHandle) -> *const c_char {
+    // SAFETY: as pb_vm_state_report_json — a read of a buffer no call in
+    // progress can be replacing, since a busy VM is refused.
+    match unsafe { vm.as_ref() } {
+        Some(handle) if !handle.busy.get() => unsafe { &*handle.vm.get() }.test_result_json.as_ptr(),
+        _ => c"".as_ptr(),
+    }
+}
+
+/// The function of the test in progress, or NULL when there is none. Valid
+/// until the next call.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_test_in_progress(vm: *mut VmHandle) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        Ok(match vm.test_in_progress().map(str::to_string) {
+            Some(f) => {
+                vm.test_in_progress = cstring_lossy(&f);
+                vm.test_in_progress.as_ptr()
+            }
+            None => std::ptr::null(),
+        })
+    })
+    .1
+}
+
+/// See [`Vm::take_expect_failures`]. NULL with no program loaded. Valid
+/// until the next call.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_take_expect_failures_json(vm: *mut VmHandle) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        vm.expect_failures_json = cstring_lossy(&vm.take_expect_failures()?.to_string());
+        Ok(vm.expect_failures_json.as_ptr())
+    })
+    .1
+}
+
 /// The profiler's report for the loaded program since profiling was turned on.
 #[unsafe(no_mangle)]
 pub extern "C" fn pb_vm_profile_report(vm: *mut VmHandle, top_n: usize) -> *const c_char {
@@ -3169,5 +3419,190 @@ pub config let LOOK = {step: 10, fog: 0.5}
         let plain = &list.cmds[1];
         assert_eq!((plain.color.r, plain.color.g, plain.color.b), (255, 255, 255));
         assert_eq!((plain.x2, plain.x3, plain.cx), (0, 0, 0));
+    }
+
+    // ── Tests ────────────────────────────────────────────────────────────
+
+    static WAIT: AtomicUsize = AtomicUsize::new(0);
+
+    /// `wait_frames(n)`: note `n`, suspend the test.
+    unsafe extern "C" fn wait_frames(call: *mut natives::PbCall, _ud: *mut c_void) -> i32 {
+        let n = unsafe { &*natives::pb_call_arg(call, 0) }.integer;
+        if natives::pb_call_suspend(call) != 0 {
+            return 1;
+        }
+        WAIT.store(n as usize, Ordering::SeqCst);
+        0
+    }
+
+    /// `expect_small(n)`: a host expectation, with where it was called.
+    unsafe extern "C" fn expect_small(call: *mut natives::PbCall, _ud: *mut c_void) -> i32 {
+        let n = unsafe { &*natives::pb_call_arg(call, 0) }.integer;
+        let (mut file, mut line, mut col) = (std::ptr::null(), 0u32, 0u32);
+        let known = unsafe { natives::pb_call_location(call, &mut file, &mut line, &mut col) };
+        assert!(known && line > 0 && col > 0);
+        let msg = cstring_lossy(&format!("{n} is not small"));
+        unsafe { natives::pb_call_expect(call, n < 10, c"expect_small".as_ptr(), msg.as_ptr()) };
+        0
+    }
+
+    const TESTED: &str = "import io\n\
+        native fn wait_frames(n)\n\
+        native fn expect_small(n)\n\
+        state var ticks = 0\n\
+        set ticks = ticks + 1\n\
+        fn double(x) x * 2 end\n\
+        test \"doubling\" do\n\
+          expect_eq(double(2), 4)\n\
+          expect_eq(double(3), 7, \"three\")\n\
+          expect_small(3)\n\
+          expect_small(30)\n\
+        end\n\
+        test \"three frames pass\" do\n\
+          let before = get ticks\n\
+          wait_frames(3)\n\
+          expect_eq(get ticks, before + 3)\n\
+        end\n\
+        test \"raises\" do\n\
+          expect(true)\n\
+          let xs = [1]\n\
+          print(xs[5])\n\
+        end\n";
+
+    fn tested_vm() -> Vm {
+        let mut vm = Vm::new();
+        for (name, f) in [
+            ("wait_frames", wait_frames as PbNativeFn),
+            ("expect_small", expect_small as PbNativeFn),
+        ] {
+            let cb = HostCallback::new(name, natives::FX_EFFECT, f, std::ptr::null_mut(), None);
+            natives::register_callback(&mut vm.env, cb);
+        }
+        vm.load(TESTED, None, "game.ptl".into()).unwrap();
+        vm.run().unwrap();
+        vm
+    }
+
+    fn json(text: &str) -> serde_json::Value {
+        serde_json::from_str(text).unwrap()
+    }
+
+    #[test]
+    fn the_tests_of_a_program_are_listed_and_run() {
+        let mut vm = tested_vm();
+        let tests = vm.tests_json().unwrap();
+        let names: Vec<&str> =
+            tests.as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
+        assert_eq!(names, ["doubling", "three frames pass", "raises"]);
+        assert_eq!(tests[0]["function"], "__test_0");
+        assert_eq!(tests[0]["module"], serde_json::Value::Null);
+        assert_eq!(tests[0]["line"], 7);
+
+        let r = json(vm.run_test("__test_0").unwrap());
+        assert_eq!(r["name"], "doubling");
+        assert_eq!(r["passed"], false);
+        assert_eq!((r["checks"].as_u64(), r["failed"].as_u64()), (Some(4), Some(2)));
+        assert_eq!(r["error"], serde_json::Value::Null);
+        let f = &r["failures"];
+        assert_eq!(f[0]["check"], "expect_eq");
+        assert_eq!((f[0]["line"].as_u64(), f[0]["expected"].as_str()), (Some(9), Some("7")));
+        assert_eq!(f[0]["note"], "three");
+        // The host's own expectation, at the script call that made it.
+        assert_eq!(f[1]["check"], "expect_small");
+        assert_eq!(f[1]["message"], "30 is not small");
+        assert_eq!(f[1]["line"], 11);
+        assert_eq!(vm.test_result(), r.to_string());
+
+        // A test that raises: the error, and what it checked before it.
+        let r = json(vm.run_test("__test_2").unwrap());
+        assert_eq!(r["passed"], false);
+        assert_eq!(r["checks"], 1);
+        assert!(r["error"].as_str().unwrap().contains("out of"), "{r}");
+        // The frame loop is unharmed.
+        vm.run().unwrap();
+
+        // No such test, and nothing in progress to resume or abort.
+        assert_eq!(vm.test_begin("nope").unwrap_err().code, Status::NotFound);
+        assert_eq!(vm.test_resume(0).unwrap_err().code, Status::InvalidArg);
+        assert_eq!(vm.test_abort("x").unwrap_err().code, Status::InvalidArg);
+    }
+
+    #[test]
+    fn a_test_waits_across_the_hosts_frames() {
+        let mut vm = tested_vm();
+        vm.test_begin("__test_1").unwrap();
+        assert_eq!(vm.test_in_progress(), Some("__test_1"));
+        WAIT.store(0, Ordering::SeqCst);
+        let mut frames = 0;
+        let result = loop {
+            match vm.test_resume(0).unwrap() {
+                petal::env::TestStep::Finished(r) => break r,
+                petal::env::TestStep::Suspended => {
+                    for _ in 0..WAIT.swap(0, Ordering::SeqCst) {
+                        vm.run().unwrap();
+                        frames += 1;
+                    }
+                }
+                petal::env::TestStep::OutOfSteps => unreachable!(),
+            }
+        };
+        assert_eq!(frames, 3);
+        assert!(result.passed, "{result:?}");
+        assert_eq!(result.checks, 1);
+        assert_eq!(vm.test_in_progress(), None);
+
+        // Outside a test the native cannot wait: the call fails with the reason.
+        vm.load(
+            "native fn wait_frames(n)\nwait_frames(1)\n",
+            None,
+            "t".into(),
+        )
+        .unwrap();
+        let err = vm.run().unwrap_err();
+        assert!(err.message.contains("inside a test"), "{}", err.message);
+    }
+
+    #[test]
+    fn a_test_can_be_bounded_and_aborted() {
+        let mut vm = Vm::new();
+        vm.load(
+            "test \"forever\" do\n  var i = 0\n  expect(true)\n  while true do set i = i + 1 end\nend\n",
+            None,
+            "t".into(),
+        )
+        .unwrap();
+        vm.run().unwrap();
+        vm.test_begin("__test_0").unwrap();
+        assert_eq!(vm.test_resume(10_000).unwrap(), petal::env::TestStep::OutOfSteps);
+        assert_eq!(vm.test_resume(10_000).unwrap(), petal::env::TestStep::OutOfSteps);
+        vm.test_abort("took too long").unwrap();
+        let r = json(vm.test_result());
+        assert_eq!(r["error"], "took too long");
+        assert_eq!((r["passed"].as_bool(), r["checks"].as_u64()), (Some(false), Some(1)));
+        vm.run().unwrap();
+    }
+
+    #[test]
+    fn expectations_outside_tests_are_taken_by_the_host() {
+        let mut vm = Vm::new();
+        vm.load("expect_eq(1 + 1, 3)\nexpect(true)\n", None, "t".into()).unwrap();
+        vm.run().unwrap();
+        vm.run().unwrap();
+        let taken = vm.take_expect_failures().unwrap();
+        assert_eq!((taken["checked"].as_u64(), taken["failed"].as_u64()), (Some(4), Some(2)));
+        assert_eq!(taken["failures"].as_array().unwrap().len(), 2);
+        assert_eq!(taken["failures"][0]["line"], 1);
+        let again = vm.take_expect_failures().unwrap();
+        assert_eq!(again["failures"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn the_slow_native_threshold_is_the_hosts_to_set() {
+        let vm = Vm::into_handle_for_test();
+        assert_eq!(pb_vm_set_profile_slow_native_us(vm, 250.0), Status::Ok);
+        assert_eq!(pb_vm_set_profile_slow_native_us(vm, -1.0), Status::InvalidArg);
+        let slow = unsafe { VmHandle::vm_mut(vm) }.unwrap().env.profile_mut().slow_native;
+        assert_eq!(slow, std::time::Duration::from_micros(250));
+        pb_vm_destroy(vm);
     }
 }

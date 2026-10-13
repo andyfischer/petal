@@ -861,6 +861,10 @@ with `PB_ERR_COMPILE`, phase `link`, before any line runs.
   measure boot instead, turn it on before `load_file()`: it may be set on a
   VM with nothing loaded, and the report then covers the first run, where a
   game builds its tables and `state` initializers execute.
+  The report also lists native time by calling line, the native calls that
+  took 1 µs or longer by calling line, and allocations by line;
+  `set_profile_slow_native_us(us)` (`pb_vm_set_profile_slow_native_us`)
+  moves that threshold.
 - `set_memo(false)` / `memo()` (`pb_vm_set_memo`, `pb_vm_memo`) switch call
   memoization off or on for later runs (on by default, or as `PETAL_POLICY`
   says). Memo replays a call whose inputs repeat, which pays off for UI-like
@@ -961,6 +965,76 @@ std::string schema = vm.function_json("toll");           // its parameters
 
 `call` with a builder is unchanged: a host that builds `pb_builder_int(3)`
 has said what it means, and nothing is converted.
+
+## Running the script's tests
+
+A script's `test "title" do … end` blocks ([testing.md](testing.md)) run under
+the host, with its natives present. `petal test` cannot do that for a script
+that calls a host native.
+
+```cpp
+vm.run();                                   // functions exist once the program has run
+std::string tests = vm.tests_json();
+// [{"name": "the door opens", "function": "__test_0", "module": null,
+//   "file": "game.ptl", "path": "/abs/game.ptl", "line": 12}]
+
+vm.test_begin("__test_0");
+for (;;) {
+    pb_test_step step = vm.test_resume();   // or test_resume(max_steps)
+    if (step == PB_TEST_SUSPENDED) { run_frames(wanted); continue; }
+    break;
+}
+std::string result = vm.test_result_json();
+// {"function": "__test_0", "name": "the door opens", "passed": false,
+//  "checks": 3, "failed": 1, "error": null,
+//  "failures": [{"check": "expect_eq", "file": "game.ptl", "line": 14, "column": 3,
+//                "message": "expected 3, got 4", "actual": "4", "expected": "3"}]}
+```
+
+| C | C++ | |
+|---|---|---|
+| `pb_vm_tests_json` | `vm.tests_json()` | The program's tests: the entry file's and every module's (`"module"` is null for the entry file) |
+| `pb_vm_test_begin(vm, function)` | `vm.test_begin(f)` | Start one. The program must have completed a run; one test at a time |
+| `pb_vm_test_resume(vm, max_steps)` | `vm.test_resume(n = 0)` | Run until `PB_TEST_FINISHED`, `PB_TEST_SUSPENDED` or (with a bound) `PB_TEST_OUT_OF_STEPS` |
+| `pb_vm_test_abort(vm, why)` | `vm.test_abort(why)` | Give up on it; the result is what it recorded, with `why` as its error |
+| `pb_vm_test_result_json` | `vm.test_result_json()` | The last finished test's result |
+| `pb_vm_run_test(vm, function)` | `vm.run_test(f)` | Begin and resume in one call; returns the result |
+| `pb_vm_test_in_progress` | `vm.test_in_progress()` | The function of the test begun and not finished |
+| `pb_vm_take_expect_failures_json` | `vm.take_expect_failures_json()` | Expectations that failed outside tests, in ordinary runs and host calls, since the last take |
+
+**A test that spans frames.** Register a native that notes how long to wait
+and suspends the test; `test_resume` then answers `PB_TEST_SUSPENDED`, the
+host runs its frames exactly as it always does, and the next `test_resume`
+carries on from the line after the call:
+
+```cpp
+vm.native("wait_frames", petal::fx::Effect, [&](petal::Call& c) {
+    if (!c.suspend()) return;     // not in a test the host is stepping: the call fails
+    wanted = int(c.arg(0).integer());
+});
+```
+
+`c.suspend()` (`pb_call_suspend`) fails in an ordinary run, in a function
+called with `pb_vm_call`, and inside a callback of
+`map`/`filter`/`reduce`/`forEach`/`sort`. A test run with `pb_vm_run_test`
+has nobody to resume it: if it suspends it is aborted, with an error that
+says it needs frames. After a resume, a `var`
+or `state var` read with `get` is live; a `let` or plain `state` the test
+captured is the value from when it began.
+
+**A host's own expectations.** `c.expect(ok, message, check)`
+(`pb_call_expect`) records a check as the script's `expect` does, at the
+position of the script call, and `c.location()` (`pb_call_location`) gives
+that position (file, line, column) to any native that wants to say where it
+was called from.
+
+**Isolation is the host's.** A test sees the program as the last run left it
+and what it changes stays changed. For a fresh program per test,
+`vm.restart(); vm.run();` before each `test_begin`, or save the state once
+and `load_state` + `run` before each. A test's function is an ordinary entry
+of the function table (`vm.has_function("__test_0")` is true), so a host that
+lists a script's functions should leave out the names that start with
+`__test_`. A reload while a test waits ends that test with an error.
 
 ## Saving and loading state
 

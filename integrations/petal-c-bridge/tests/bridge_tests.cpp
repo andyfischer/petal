@@ -2000,6 +2000,72 @@ TEST(ui_targets_are_readable_and_clickable_by_id) {
     CHECK_EQ(vm.state("n").integer(), 1);
 }
 
+// ─── Tests written in the script ────────────────────────────────────────────
+
+TEST(script_tests_are_listed_run_and_wait_for_frames) {
+    petal::Vm vm;
+    int wanted = 0;
+    vm.native("wait_frames", petal::fx::Effect, [&](petal::Call& c) {
+        if (!c.suspend()) return;
+        wanted = int(c.arg(0).integer());
+    });
+    vm.native("expect_even", petal::fx::Effect, [](petal::Call& c) {
+        auto at = c.location();
+        c.expect(c.arg(0).integer() % 2 == 0, "odd at line " + std::to_string(at.line));
+    });
+    vm.load_source(R"(native fn wait_frames(n)
+native fn expect_even(n)
+state var ticks = 0
+set ticks = ticks + 1
+test "arithmetic" do
+  expect_eq(1 + 1, 2)
+  expect_eq(1 + 1, 3, "sum")
+  expect_even(3)
+end
+test "two frames pass" do
+  let before = get ticks
+  wait_frames(2)
+  expect_eq(get ticks, before + 2)
+end
+)");
+    vm.run();
+    std::string tests = vm.tests_json();
+    CHECK_CONTAINS(tests, R"("name":"arithmetic")");
+    CHECK_CONTAINS(tests, R"("function":"__test_1")");
+
+    std::string r = vm.run_test("__test_0");
+    CHECK_CONTAINS(r, R"("passed":false)");
+    CHECK_CONTAINS(r, R"("checks":3)");
+    CHECK_CONTAINS(r, R"("failed":2)");
+    CHECK_CONTAINS(r, R"("note":"sum")");
+    CHECK_CONTAINS(r, "odd at line 8");
+    CHECK_EQ(vm.test_result_json(), r);
+
+    vm.test_begin("__test_1");
+    CHECK_EQ(vm.test_in_progress(), std::string("__test_1"));
+    int frames = 0;
+    for (;;) {
+        pb_test_step step = vm.test_resume();
+        if (step != PB_TEST_SUSPENDED) {
+            CHECK_EQ(int(step), int(PB_TEST_FINISHED));
+            break;
+        }
+        for (; wanted > 0; --wanted, ++frames) vm.run();
+    }
+    CHECK_EQ(frames, 2);
+    CHECK_CONTAINS(vm.test_result_json(), R"("passed":true)");
+    CHECK_EQ(vm.test_in_progress(), std::string(""));
+
+    // Nothing in progress; and a failure outside a test is the host's to take.
+    CHECK_EQ(pb_vm_test_resume(vm.raw(), 0), -1);
+    CHECK_EQ(pb_vm_test_begin(vm.raw(), "missing"), PB_ERR_NOT_FOUND);
+    vm.load_source("expect(1 > 2, \"never\")\n");
+    vm.run();
+    std::string taken = vm.take_expect_failures_json();
+    CHECK_CONTAINS(taken, R"("failed":1)");
+    CHECK_CONTAINS(taken, "never");
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 int main(int argc, char** argv) {

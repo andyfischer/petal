@@ -98,6 +98,16 @@ way, for code written against an earlier checkout.
 - A `match` on string literals, int literals or enum variants is entered
   through a jump table, so its cost does not grow with the number of arms
   (a 40-arm match in a loop runs about five times faster).
+- Calls of the trivial builtins `float`, `int`, `min`, `max`, `clamp`,
+  `abs`, `floor`, `len` and `type` no longer go through the native call
+  path: the VM computes them inline, for about 1 to 5 ns where a call was
+  50 ns (`float(i)` in a loop of a million went from 66 ms to 19 ms). The
+  results, errors and profile attribution are unchanged, and a user or host
+  function of the same name is still what gets called. One of them inside a
+  written value (`set xs = append(xs, float(i))`) no longer makes the write
+  copy its list. Every other native call is about 7 ns cheaper, having lost
+  an allocation. `--policy fast-intrinsics` runs with the inline forms off.
+  See [Inline builtins](docs/dev/performance.md#inline-builtins).
 - Reading an enum variant's constant data costs about what a record field
   read costs: `k.code` went from 51 ns to 3.5 ns over an empty loop and
   `K.v.code` from 71 ns to 6.6 ns, against 1.7 ns for a record field. Each

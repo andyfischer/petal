@@ -195,7 +195,7 @@ Two consequences:
 ## What the optimizer does
 
 Lowering (`backend::bytecode::lower`) gives every IR term its own register, so
-the raw instruction stream is roughly half register-to-register copies. Five
+the raw instruction stream is roughly half register-to-register copies. Six
 passes then shape it, each individually switchable through
 [`OptFlags`](../../core/src/backend/mod.rs) so any one can be turned off to
 isolate a bug. `OptFlags` is the lowering half of a run's
@@ -209,6 +209,7 @@ frame gating:
 | `cells` | Lets a write through a `var` cell (`set xs[i] = v`, including from a function that did not declare the cell) mutate the cell's container whenever the cell is its only holder, which the heap tracks per cell at run time. See [var.md](../syntax/var.md#writing-a-container-in-place). |
 | `copyprop` | Copy propagation, dead-move elimination, and jump threading. Removes ~25% of the instruction stream. |
 | `match_dispatch` | Enters a run of `match` arms keyed on string literals, int literals or enum variants through a jump table (`MatchSwitch`) instead of testing each arm in turn. See below. |
+| `intrinsics` | Runs calls of the trivial builtins (`float`, `int`, `min`, `max`, `clamp`, `abs`, `floor`, `len`, `type`) as `Intrinsic` instructions, which the straight-line loop computes without a native call. See [Inline builtins](#inline-builtins). |
 
 `copyprop` has two deliberate limitations, both of them "do not delete what
 something is reading".
@@ -261,6 +262,109 @@ each kind of key (release build, this machine, median of 5):
 
 Per match that is about 410 ns down to about 30 ns, and it no longer grows
 with the number of arms.
+
+### Inline builtins
+
+A builtin call gathers its arguments into a vector, builds a `PetalCxt`, runs
+the native, and takes the result off the native's result stack: about 50 ns,
+whatever the native does. For `float(i)` that is fifty times the conversion.
+A game calls these thousands of times a frame (Moses, per play frame: `int`
+1,090, `float` 940, `max` 490, `type` 295, `clamp` 240, `len` 175).
+
+So a positional call of `float`, `int`, `min`, `max`, `clamp`, `abs`, `floor`,
+`len` or `type` with the right number of arguments is lowered to
+`Inst::Intrinsic` (`r3 = intrinsic "float" [r1]` in `show-bytecode`), and
+`run_straight` computes it in place for the arguments that need no native:
+ints and floats for the numeric ones, a list, string or float array for
+`len`, anything but a `Pending` for `type`. Everything else stops the loop at
+the instruction, and the general executor runs it as the builtin call it was
+lowered from: a string to convert (`float("3.5")`), a dual number, a wrong
+type, an overflow (`abs` of the smallest int), a `Pending` to absorb. The
+results, the error text and its source position are therefore the native's.
+`core/tests/intrinsics.rs` holds the inline arms to the natives over a matrix
+of values (`--policy fast-intrinsics` is the same code with the rewrite off).
+
+What it does not change:
+
+- **Which function a name means.** The compiler decides that: a call of a
+  user function, a parameter, a local or an imported function named `float`
+  was never a builtin call. A host native registered over one of the names
+  is called as before, because the rewrite asks the native table whether the
+  name still resolves to the core builtin (`BytecodeProgram::select_intrinsics`,
+  run from `Env::lower_with` after every other pass). The builtin as a value
+  (`let f = float`, `apply(abs, x)`) is a native in a register and is called
+  as one.
+- **What a profile shows.** `--profile`, the trace and observation take the
+  general path for every instruction, so each of these is the builtin call
+  there: `float` has the same count and time in the builtin tables. Only the
+  opcode histogram differs, reading `Intrinsic` where it read `BuiltinCall`.
+  Profiled totals overstate these calls for that reason, as they overstate
+  everything else the fast loop retires. The effect audit and the static
+  audit bracket native calls, so the inline arms stand down while either is
+  on.
+- **Memoization and the frame gate.** All nine are pure, so neither had
+  anything to record for them.
+
+`test/benchmarks/micro/intrinsics.ptl` (the command is in the file), minimum
+of three runs, nanoseconds per call over the empty loop, release build:
+
+| Call | Before | After |
+|---|---|---|
+| `float(i)` | 51.0 | 1.0 |
+| `int(x)` | 49.7 | 0.6 |
+| `min(i, 100)` | 54.6 | 4.6 |
+| `max(x, 0.25)` | 54.9 | 4.9 |
+| `clamp(i, 10, 1000)` | 55.9 | 4.8 |
+| `abs(i)` | 49.7 | 2.2 |
+| `floor(x)` | 50.7 | 2.4 |
+| `len(xs)` | 49.6 | 2.5 |
+| `if type(r) == "record"` | 91.7 | 30.9 |
+| `sqrt(x)` (still a call) | 51.1 | 44.1 |
+
+The constant arguments of `min`, `max` and `clamp` are a `LoadConst` each,
+inside those figures; the `type` row is the call, the load of the string it
+is compared with, the comparison and the branch. The loop from the Moses
+debrief, `for i in range(0, 1000000) do set s = get s + float(i) * 0.5 end`,
+went from 66.4 ms to 18.6 ms as a whole `petal run` (the same loop without
+the `float` is 19.2 ms: `i * 0.5` mixes an int and a float, which costs more
+than converting first).
+
+The `sqrt` row is the second change: a native's results were pushed onto a
+`Vec`, which is an allocation and a free per call for one value. They are
+now a `SmallVec` inline in the `PetalCxt`, which takes about 7 ns off every
+native call that returns something.
+
+Whole-process `petal run --seed 1`, minimum of 40 alternating runs, before
+and after both changes:
+
+| Program | Before | After |
+|---|---|---|
+| `test/benchmarks/append.ptl` | 6.5 ms | 6.1 ms |
+| `test/benchmarks/arith.ptl` | 12.8 ms | 12.9 ms |
+| `test/benchmarks/audio_synth.ptl` | 108.9 ms | 95.8 ms |
+| `test/benchmarks/calls.ptl` | 29.8 ms | 30.3 ms |
+| `test/benchmarks/life.ptl` | 14.7 ms | 14.5 ms |
+| `test/benchmarks/match_dispatch.ptl` | 319.7 ms | 324.9 ms |
+| `test/benchmarks/particles.ptl` | 11.1 ms | 10.8 ms |
+| `test/benchmarks/spreadsheet.ptl` | 213.9 ms | 192.7 ms |
+
+`audio_synth` is `float`, `floor` and `sin` per sample; `spreadsheet` is
+`slice`, `len` and string natives. `match_dispatch` makes two native calls in
+its whole run and no call of these builtins, and `calls` is user calls: the
+1 to 2% they moved is the same instructions laid out differently by the
+compiler around the new code (`match_dispatch` was 317.9 ms before, 320.5 ms
+with the intrinsics alone and 324.4 ms with both changes, minimum of 60).
+The machine was running other builds, which is why these are minimums of 40.
+
+One more thing these builtins now do. A write through a `var` cell stays in
+place only if nothing between the read and the write could run script code
+or reach a cell (`bytecode::cells`, condition 1), which ruled out every call:
+`set xs = append(xs, float(i))` copied the whole list on each append. No
+native can do either of those things, and for the nine above that is now
+taken into account, so a call of one of them may sit in the written value.
+That loop went from quadratic (36, 138 and 647 ms for 10,000, 20,000 and
+40,000 appends) to linear. Any other call in the written value, builtin or
+user, still closes nothing; bind it first.
 
 ## Frozen data and collection pauses
 
@@ -737,7 +841,10 @@ Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from
   code, at the cost of a two-target instruction — which the CFG helpers
   (`branch_target`) currently assume does not exist.
 - **Native calls cost more than their bodies** for cheap builtins: a `PetalCxt`
-  is built per call, and arguments are gathered into a `SmallVec` first.
+  is built per call, and arguments are gathered into a vector first, about
+  44 ns in all. The nine trivial builtins no longer pay it
+  ([Inline builtins](#inline-builtins)); `sqrt`, `sin`, `str`, `slice` and
+  every host native still do.
 - **Records hash their field names.** Map payloads are `heap::RecordMap`
   (`IndexMap<String, Value>` under the Fx hash in `fxhash.rs`; SipHash was
   most of a field read). A field read still hashes a string, and every record

@@ -1,7 +1,7 @@
 # Moses debrief: what a 27,000-line game asks of Petal
 
-Status: suggestions, 11 October 2026. Items 1, 2 and 8 have since been done
-and are marked where they are discussed; nothing else here is implemented.
+Status: suggestions, 11 October 2026. Items 1, 2, 3 and 8 have since been
+done and are marked where they are discussed.
 
 `games/moses` in the Cheesecake repo (*The Power Broker*) is the largest
 Petal program so far: 27,000 lines in 33 modules, written in three days by
@@ -75,6 +75,16 @@ priority 4 in `~/cheesecake/docs/ideas/petal-performance.md` and is still
 open. Compile `float`, `int`, `min`, `max`, `clamp`, `abs`, `floor`, `len`
 and `type` of a known-arity call to opcodes that `run_straight` handles.
 
+**Done, 13 October 2026.** Those nine are `Inst::Intrinsic`, computed in
+`run_straight` for numbers (and lists and strings for `len`, anything for
+`type`); every other argument, and a profiled or audited run, is the builtin
+call it was. Over an empty loop `float(i)` went from 51 ns to 1 ns, `min`,
+`max` and `clamp` from 55 ns to 5 ns, and the loop above from 0.066 s to
+0.019 s. Every remaining native call lost an allocation (51 ns to 44 ns for
+`sqrt`). Figures and what did not change are in
+`docs/dev/performance.md` (Inline builtins). The two related sources of
+calls below are not part of it.
+
 Two related sources of calls:
 
 - **petal-ui's overload wrappers.** `draw_rect#6` (ui.ptl:198) and
@@ -115,6 +125,16 @@ One thing that is fixed and should be said in the docs: `set xs = append(get
 xs, v)` in a loop is linear now (20,000 and 80,000 elements both under
 10 ms). `Builtins.md` still does not say so, and Moses carries code written
 to avoid it.
+
+**Done, 13 October 2026**, with what checking it found. `Builtins.md`
+(`append`) now says which appends are linear: a list a `let`, `var` or
+`state var` holds directly. Three shapes are still quadratic and are listed
+there with their timings: a list in a record field (`set r.items =
+append(r.items, v)`), a list in another list (`set grid[k] = append(grid[k],
+v)`), and an append through a function that takes the list and returns it.
+A fourth was: any call in the appended value, builtin calls included (`set
+xs = append(xs, float(i))`). The nine intrinsics no longer count as such a
+call; every other one still does.
 
 ## 2. Tooling
 

@@ -1248,10 +1248,10 @@ print(shown, double(2), tick(), get v, SCRIPT, BAD)
 #[test]
 fn hover_says_a_static_declaration_is_static() {
     let text = static_hover(STATIC_DOC, 0, 5);
-    assert_eq!(text, "```petal\n(variable) TILES\n// static\n```");
+    // One list, with a function declaration (`double`, hoisted) between it
+    // and what reads it: kept all the same.
+    assert_eq!(text, "```petal\n(variable) TILES\n// static, kept between runs\n```");
     let text = static_hover(STATIC_DOC, 1, 7);
-    // `len(TILES)` is a call, which is worth keeping; the list it measures
-    // is built with it and has no slot of its own.
     assert_eq!(text, "```petal\n(variable) LIMIT\n// static, kept between runs\n```");
 }
 
@@ -1282,7 +1282,8 @@ fn hover_classifies_lazily_and_once_per_change() {
 }
 
 /// A static declaration the cache gives a slot says so; one that is
-/// written to and one only static code reads do not.
+/// written to, and one that is built with the only value that reads it,
+/// do not.
 #[test]
 fn hover_says_whether_a_static_declaration_is_kept() {
     let doc = "\
@@ -1304,14 +1305,26 @@ print(ROWS[frame % 2], NAMES, SMALL, grown, SUM)
     // tables above it.
     assert!(static_hover(doc, 7, 5).ends_with("// static, kept between runs\n```"));
     assert!(static_hover(doc, 2, 5).contains("// static, not kept:"), "written to");
-    assert!(static_hover(doc, 3, 5).ends_with("// static\n```"), "built with what reads it");
+    // Read by `SUM` alone, which is built past a function declaration (the
+    // one in `NAMES`): the two are stored apart, so `SUM` can be rebuilt
+    // without it.
+    assert!(static_hover(doc, 3, 5).ends_with("// static, kept between runs\n```"));
     assert!(static_hover(doc, 4, 5).ends_with("// static, kept between runs\n```"));
+    let doc = "\
+let ONLY_FOR_SUM = [[7], [8]]
+let SUM = [ONLY_FOR_SUM[0][0], [9]]
+state frame = 0
+frame = frame + 1
+print(frame, SUM)
+";
+    assert!(static_hover(doc, 0, 5).ends_with("// static\n```"), "built with what reads it");
+    assert!(static_hover(doc, 1, 5).ends_with("// static, kept between runs\n```"));
 }
 
 #[test]
 fn hover_on_a_use_shows_the_class_of_its_declaration() {
     // `TILES` where it is read on line 5.
-    assert!(static_hover(STATIC_DOC, 4, 13).ends_with("// static\n```"));
+    assert!(static_hover(STATIC_DOC, 4, 13).ends_with("// static, kept between runs\n```"));
 }
 
 #[test]

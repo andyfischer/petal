@@ -776,3 +776,187 @@ print(n, K, SMALL, BIG[n % 5])
     frame(&mut b);
     assert_same_tables(&a, &b, "after the drag paused");
 }
+
+/// One literal, and a kept table for every route the classifier resolves a
+/// dependency through. Editing the literal, by value and by shape, must
+/// reach every one of them; so must editing each function on the way.
+const ROUTES: &str = "\
+config let K = 2
+let BASE = [1, 2, 3]
+fn direct(x) x * K end
+fn defaulted(x, k = K * 10) x + k end
+fn outer(x) inner(x) + 1 end
+fn inner(x) x * K end
+fn pick(x) x end
+fn pick(x, y) x + y * K end
+fn maker() fn(x) x - K end end
+fn count(n) if n <= 0 then K else count(n - 1) + 1 end end
+fn label(x) \"{x}:{K}\" end
+fn choose(x)
+  match x
+    when 1 -> K
+    when v if v > K -> v * 100
+    when _ -> 0
+  end
+end
+class Box
+  w,
+end
+fn Box.area(b) b.w * K end
+enum Kind
+  small(cost: 3),
+  large(cost: 30),
+end
+let A_DIRECT = map(BASE, direct)
+let B_DEFAULT = [defaulted(1), defaulted(2, 3)]
+let C_NESTED = [outer(1), outer(2)]
+let D_OVERLOAD = [pick(1), pick(1, 2)]
+let E_RETURNED = map(BASE, maker())
+let F_RECURSIVE = [count(0), count(3)]
+let G_STRING = map(BASE, label)
+let H_MATCH = map(BASE, choose)
+let I_METHOD = map([Box(1), Box(2)], fn(b) b.area() end)
+let J_LAMBDA = map(BASE, fn(x) map(BASE, fn(y) x * y * K end) end)
+let L_CHAIN = [A_DIRECT[0] + 1, C_NESTED[1] + 1]
+let M_CHAIN = [L_CHAIN[0] * 2, L_CHAIN[1] * 2]
+let N_LOOP = for i in range(0, 3) do i * K end
+let O_IF = if K > 1 then [K, K] else [0] end
+let P_SORTED = sort_by(BASE, fn(x) 0 - x * K end)
+let Q_REDUCED = [reduce(BASE, 0, fn(a, x) a + x * K end), 0]
+let R_ENUM = map([Kind.small, Kind.large], fn(k) k.cost * K end)
+let OWN = [[1, 2], [3]]
+state n = 0
+n = n + 1
+print(n, A_DIRECT, B_DEFAULT, C_NESTED, D_OVERLOAD, E_RETURNED, F_RECURSIVE)
+print(G_STRING, H_MATCH, I_METHOD, J_LAMBDA, L_CHAIN, M_CHAIN)
+print(N_LOOP, O_IF, P_SORTED, Q_REDUCED, R_ENUM, OWN)
+";
+
+#[test]
+fn every_route_from_a_literal_to_a_kept_value_is_followed() {
+    // The program is what it should be: every table has a slot.
+    let mut w = world(ROUTES, &[], policies()[0], true);
+    let first = frame(&mut w);
+    assert!(first.contains("[2, 4, 6]"), "{first}");
+    let tables: Vec<String> = "A_DIRECT B_DEFAULT C_NESTED D_OVERLOAD E_RETURNED F_RECURSIVE G_STRING H_MATCH \
+                               I_METHOD J_LAMBDA L_CHAIN M_CHAIN N_LOOP O_IF P_SORTED Q_REDUCED R_ENUM"
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
+    let kept: Vec<String> = tables.iter().filter(|t| held(&w, t).is_some()).cloned().collect();
+    assert!(kept.len() >= 12, "only these are kept: {kept:?}\n{:#?}", slots(&w));
+
+    // The literal, by value and by shape: every kept table is reached, and
+    // the one that does not read it is not.
+    for new in [ROUTES.replace("config let K = 2", "config let K = 3"), ROUTES.replace("config let K = 2", "let K = 1 + 2")] {
+        let report = follow(ROUTES, &new);
+        let names = rebuilt(&report);
+        for t in &kept {
+            assert!(names.contains(&t.as_str()), "{t} was not rebuilt: {names:?}");
+        }
+        assert!(!names.contains(&"OWN"), "{names:?}");
+    }
+    // Each thing on the way, by value where it has a literal and by shape.
+    for (old, by_value, by_shape) in [
+        ("fn direct(x) x * K end", None, "fn direct(x) x * K + 1 end"),
+        ("k = K * 10", Some("k = K * 11"), "k = K + 10"),
+        ("fn inner(x) x * K end", None, "fn inner(x) x * K * K end"),
+        ("fn pick(x, y) x + y * K end", None, "fn pick(x, y) x - y * K end"),
+        ("fn maker() fn(x) x - K end end", None, "fn maker() fn(x) K - x end end"),
+        ("count(n - 1) + 1", Some("count(n - 1) + 2"), "count(n - 1) * 2"),
+        ("\"{x}:{K}\"", Some("\"{x}/{K}\""), "\"{K}:{x}\""),
+        ("v * 100", Some("v * 101"), "v + 100"),
+        ("when 1 -> K", None, "when 1 -> K + K"),
+        ("fn Box.area(b) b.w * K end", None, "fn Box.area(b) b.w + K end"),
+        ("small(cost: 3)", Some("small(cost: 4)"), "small(cost: 1 + 2)"),
+        ("let BASE = [1, 2, 3]", Some("let BASE = [1, 2, 4]"), "let BASE = [1, 2, 3, 4]"),
+        ("x * y * K", None, "x + y * K"),
+        ("0 - x * K", Some("1 - x * K"), "x * K"),
+    ] {
+        for new in by_value.into_iter().chain([by_shape]) {
+            assert!(ROUTES.contains(old), "{old}");
+            let report = follow(ROUTES, &ROUTES.replace(old, new));
+            assert!(!rebuilt(&report).contains(&"OWN"), "{old} -> {new}: {:?}", report.statics);
+        }
+    }
+    // Things added that change what a name means.
+    follow(ROUTES, &ROUTES.replace("class Box", "class Tin\n  w,\nend\nfn Tin.area(t) 7 end\nclass Box"));
+    follow(ROUTES, &ROUTES.replace("fn maker()", "fn pick(x, y, z) 0 end\nfn maker()"));
+    follow(ROUTES, &ROUTES.replace("let A_DIRECT", "fn range(a, b) [a, b] end\nlet A_DIRECT"));
+    follow(ROUTES, &ROUTES.replace("let A_DIRECT", "enum Fee\n  toll(cost: 5),\nend\nlet A_DIRECT"));
+}
+
+/// The value a rebuilt slot is compared with is a root until the
+/// comparison: a frame that collects many times before it reaches the
+/// declaration still finds it.
+#[test]
+fn a_remembered_value_survives_collections_until_it_is_compared() {
+    let src = "\
+state n = 0
+n = n + 1
+let junk = for i in range(0, 30000 + n) do [i, \"x{i}\", {k: i}] end
+let WORDS = [\"alpha\", \"beta\", \"gamma\"]
+let T = map(WORDS, fn(w) {word: w, parts: [w, w ++ \"!\"]} end)
+print(n, len(junk), T[n % 3].parts, WORDS)
+";
+    let mut w = world(src, &[], policies()[0], true);
+    frame(&mut w);
+    let t = held(&w, "T");
+    assert!(t.is_some(), "{:#?}", slots(&w));
+    let before = w.env.heap().collections();
+    // The same tables written another way: rebuilt, identical, and behind
+    // thirty thousand allocations.
+    let same = src.replace("\"gamma\"]", "\"gam\" ++ \"ma\"]");
+    let report = w.env.reload_program(w.sid, &same, None).unwrap();
+    assert!(rebuilt(&report).contains(&"T"), "{:?}", report.statics);
+    let out = run_frame(&mut w);
+    assert!(out.contains("gamma"), "{out}");
+    assert!(w.env.heap().collections() > before, "the frame collected");
+    assert_eq!(held(&w, "T"), t, "the old heap value, found again after the collections");
+    assert_eq!(w.env.static_values(w.sid).unwrap().stats.reused, 1);
+    for _ in 0..3 {
+        frame(&mut w);
+    }
+    assert_eq!(held(&w, "T"), t);
+    follow(src, &same);
+    follow(src, &src.replace("\"beta\"", "\"BETA\""));
+}
+
+/// A literal inside a module's function that the entry file's constant
+/// calls, and a module constant another module's constant is built from.
+#[test]
+fn an_edit_in_a_module_reaches_the_constants_of_every_file_that_reads_it() {
+    let entry = "\
+import geo
+import pal
+let SIDES = [geo.scale(1), geo.scale(2)]
+let OWN = [[1], [2]]
+state n = 0
+n = n + 1
+print(n, SIDES, pal.RAMP, OWN, geo.UNIT)
+";
+    let old = [
+        ("geo", "pub let UNIT = [4, 4]\npub fn scale(x) x * 10 end\n"),
+        ("pal", "import geo\npub let RAMP = map(geo.UNIT, fn(u) u + 1 end)\n"),
+    ];
+    let edit = |from: &str, to: &str| -> Vec<(&'static str, String)> {
+        old.iter().map(|(n, s)| (*n, s.replace(from, to))).collect()
+    };
+    for (from, to, expect, outcome) in [
+        ("x * 10", "x * 11", vec!["SIDES"], ReloadOutcome::Patched),
+        ("x * 10", "x + 10", vec!["SIDES"], ReloadOutcome::Recompiled),
+        ("[4, 4]", "[4, 5]", vec!["pal::RAMP"], ReloadOutcome::Patched),
+        ("[4, 4]", "[4, 4, 4]", vec!["pal::RAMP"], ReloadOutcome::Recompiled),
+        ("u + 1", "u + 2", vec!["pal::RAMP"], ReloadOutcome::Patched),
+    ] {
+        let new = edit(from, to);
+        let new: Vec<(&str, &str)> = new.iter().map(|(n, s)| (*n, s.as_str())).collect();
+        let report = follow_modules(entry, entry, &old, &new);
+        assert_eq!(report.outcome, outcome, "{from} -> {to}");
+        let names = rebuilt(&report);
+        for e in &expect {
+            assert!(names.contains(e), "{from} -> {to}: {e} not in {names:?}");
+        }
+        assert!(!names.contains(&"OWN"), "{from} -> {to}: {names:?}");
+    }
+}

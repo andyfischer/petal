@@ -822,6 +822,14 @@ with `PB_ERR_COMPILE`, phase `link`, before any line runs.
   a handle or a pending result is rebuilt on every run), and `warnings`, the
   same in words and only those no earlier call handed out since the last
   load or reload: log them after a frame and each is said once.
+- `diagnostics_text()` (`pb_vm_diagnostics_text(vm, errors_only)`) returns
+  what the compile of the loaded program found and did not stop for, as
+  `petal check` prints it (`""` when there is nothing; `errors_only`, the
+  wrapper's default, leaves the warnings out). Print it after a load and
+  after a reload. The error that matters is a `const` that is not constant:
+  the program loads and runs, with that binding built on every run as a
+  `let` is, and since the check goes by the natives this VM registered
+  `PB_FX_CONST`, the host is the only place it can be reported.
 - `pb_version()` names the bridge, petal-ui contract and prelude level, and
   petal-query protocol version.
 

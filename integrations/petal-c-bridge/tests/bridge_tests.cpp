@@ -169,6 +169,24 @@ TEST(static_rebuilds_wait_for_a_drag_and_can_be_flushed) {
     CHECK_EQ(run_out(vm), std::vector<double>{706});
 }
 
+// A `const` built with a native that is not PB_FX_CONST loads and runs as a
+// `let`; diagnostics_text() is where the host hears of it.
+TEST(a_const_that_is_not_constant_is_reported_to_the_host) {
+    for (bool is_const : {false, true}) {
+        petal::Vm vm;
+        vm.native("ticks", is_const ? petal::fx::Const : petal::fx::Pure, [](petal::Call& c) { c.result().value(int64_t(7)); });
+        vm.load_source(
+            "import io\n"
+            "native fn ticks() -> int\n"
+            "const T = ticks()\n"
+            "push_output(symbol(\"out\"), T)\n");
+        CHECK_EQ(run_out(vm), std::vector<double>{7});
+        const std::string errors = vm.diagnostics_text();
+        if (is_const) CHECK_EQ(errors, std::string());
+        else CHECK(errors.find("`T` is declared `const` but is not constant") != std::string::npos);
+    }
+}
+
 TEST(static_cache_switch_keeps_output_and_reports) {
     petal::Vm vm;
     vm.load_source(

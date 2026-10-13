@@ -100,6 +100,7 @@ pub struct Vm {
     source_text: CString,
     profile_report: CString,
     static_values_json: CString,
+    diagnostics_text: CString,
     /// The memo counters when profiling was last turned on: the report shows
     /// what the measured runs added.
     profile_memo_start: Option<petal::memo::MemoStats>,
@@ -147,6 +148,7 @@ impl Vm {
             source_text: CString::default(),
             profile_report: CString::default(),
             static_values_json: CString::default(),
+            diagnostics_text: CString::default(),
             profile_memo_start: None,
             package_name: CString::default(),
             interface_report: CString::default(),
@@ -1759,6 +1761,28 @@ pub extern "C" fn pb_vm_static_values_json(vm: *mut VmHandle) -> *const c_char {
     .1
 }
 
+/// What the compile of the loaded program found and did not stop for,
+/// rendered as `petal check` prints it: "" when there is nothing, NULL with
+/// no program loaded. `errors_only` leaves the warnings out. The finding a
+/// host should always print is a `const` that is not constant: the program
+/// loads and runs, with that binding built on every run as a `let` is. It
+/// is judged against the natives this VM has registered, so only the host
+/// can report it. Valid until the next call.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_diagnostics_text(vm: *mut VmHandle, errors_only: bool) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        let pid = vm.loaded()?.program_id;
+        let text = if errors_only {
+            vm.env.error_diagnostics_text(pid)
+        } else {
+            vm.env.diagnostics_text(pid)
+        };
+        vm.diagnostics_text = cstring_lossy(&text);
+        Ok(vm.diagnostics_text.as_ptr())
+    })
+    .1
+}
+
 /// Turn the VM profiler on or off. Turning it on clears earlier counts.
 #[unsafe(no_mangle)]
 pub extern "C" fn pb_vm_set_profiling(vm: *mut VmHandle, on: bool) -> Status {
@@ -2023,6 +2047,61 @@ mod tests {
         // The old program still runs, with its state.
         vm.run().unwrap();
         assert_eq!(out_ints(&mut vm), vec![2]);
+    }
+
+    /// A `const` built with a native this VM did not register constant
+    /// loads and runs as a `let`; the diagnostics text is where the host
+    /// learns of it, on the load and again on a reload, and it is gone once
+    /// the native is constant or the declaration is a `let`.
+    #[test]
+    fn a_const_that_is_not_constant_is_in_the_diagnostics_text() {
+        use petal::native_fn::NativeEffects;
+        fn ticks(cxt: &mut petal::native_fn::PetalCxt) -> Result<u32, String> {
+            cxt.push_int(7);
+            Ok(1)
+        }
+        fn text(vm: &mut Vm, errors_only: bool) -> String {
+            let pid = vm.loaded().unwrap().program_id;
+            if errors_only {
+                vm.env.error_diagnostics_text(pid)
+            } else {
+                vm.env.diagnostics_text(pid)
+            }
+        }
+        let src = "import io
+native fn ticks() -> int
+const T = ticks()
+let unused = 1
+push_output(symbol(\"out\"), T)
+";
+        let mut vm = Vm::new();
+        vm.env.register_native("ticks", ticks, NativeEffects::PURE);
+        vm.load(src, None, "main.ptl".into()).unwrap();
+        vm.run().unwrap();
+        assert_eq!(out_ints(&mut vm), vec![7]);
+        let errors = text(&mut vm, true);
+        assert!(
+            errors.contains("error: `T` is declared `const` but is not constant"),
+            "{errors}"
+        );
+        assert!(errors.contains("ticks, which is not declared constant"), "{errors}");
+        assert!(!errors.contains("warning:"), "{errors}");
+        assert!(text(&mut vm, false).contains(&errors));
+
+        // Still there after a reload that keeps the `const`...
+        vm.reload_with(&src.replace("let unused = 1", "let unused = 2")).unwrap();
+        assert!(text(&mut vm, true).contains("`T` is declared `const`"));
+        // ...and gone when the declaration stops claiming it.
+        vm.reload_with(&src.replace("const T", "let T")).unwrap();
+        assert_eq!(text(&mut vm, true), "");
+
+        // The same script under a VM that registers the native constant has
+        // nothing to say.
+        let mut vm = Vm::new();
+        vm.env.register_native("ticks", ticks, NativeEffects::CONST);
+        vm.load(src, None, "main.ptl".into()).unwrap();
+        vm.run().unwrap();
+        assert_eq!(text(&mut vm, true), "");
     }
 
     /// `pb_vm_last_reload_json` says what the reload did to the constants,

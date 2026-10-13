@@ -905,6 +905,14 @@ int pb_vm_flush_static_rebuilds(pb_vm* vm);
  * out since the last load or reload, so log them after a frame and each is
  * said once). Valid until the next call to this function. */
 const char* pb_vm_static_values_json(pb_vm* vm);
+/* What the compile of the loaded program found and did not stop for, as
+ * `petal check` prints it ("" = nothing; NULL with no program loaded).
+ * `errors_only` leaves the warnings out. Print it after a load and after a
+ * reload: a `const` that is not constant is such an error, the program runs
+ * with that binding built on every run like a `let`, and because the check
+ * goes by the natives THIS vm registered PB_FX_CONST, no tool but the host
+ * can report it. Valid until the next call to this function. */
+const char* pb_vm_diagnostics_text(pb_vm* vm, bool errors_only);
 /* The VM profiler (off by default): instructions per opcode and per function,
  * native calls and the time spent in them, collections. Turning it on clears
  * earlier counts; while on, every run pays a per-instruction hook (roughly 2x

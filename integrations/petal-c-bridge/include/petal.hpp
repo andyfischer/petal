@@ -723,6 +723,15 @@ public:
         if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
         return s;
     }
+    // The findings of the loaded program's compile that did not stop it, as
+    // `petal check` prints them ("" = none): above all a `const` that is not
+    // constant under this VM's natives (see pb_vm_diagnostics_text). Print
+    // it after a load and after a reload.
+    std::string diagnostics_text(bool errors_only = true) {
+        const char* s = pb_vm_diagnostics_text(vm_, errors_only);
+        if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
+        return s;
+    }
     // The VM profiler (see pb_vm_set_profiling / pb_vm_profile_report).
     void set_profiling(bool on) { check(pb_vm_set_profiling(vm_, on)); }
     std::string profile_report(size_t top_n = 20) {

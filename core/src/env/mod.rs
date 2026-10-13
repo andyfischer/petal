@@ -1091,6 +1091,25 @@ impl Env {
             .unwrap_or_default()
     }
 
+    /// [`diagnostics_text`](Self::diagnostics_text) with the warnings left
+    /// out: the errors a compile reports and still finishes with, of which a
+    /// `const` that is not constant is the one a running host must not miss
+    /// (the binding runs as the `let` it otherwise is, on every frame).
+    pub fn error_diagnostics_text(&self, pid: ProgramId) -> String {
+        self.programs
+            .get(&pid)
+            .map(|p| {
+                let errors: Vec<_> = p
+                    .warnings
+                    .iter()
+                    .filter(|d| d.severity == crate::diagnostic::Severity::Error)
+                    .cloned()
+                    .collect();
+                crate::check::render_diagnostics(p, &errors, false)
+            })
+            .unwrap_or_default()
+    }
+
     /// Link a program that was loaded [check-only](Self::set_check_only):
     /// the host interfaces it requires and the natives it declares must be
     /// this `Env`'s ([`check_requires`](Self::check_requires),

@@ -931,6 +931,11 @@ fn drain_output(env: &mut Env) {
     for line in env.take_output() {
         eprintln!("{}", line);
     }
+    // A static value the stack could not keep is rebuilt on every frame:
+    // said once per load, and once more after each reload.
+    for warning in env.take_all_static_warnings() {
+        eprintln!("[petal warning] {}", warning);
+    }
     // What the script copied this frame (`clipboard_set`) goes to the
     // clipboard attached below, or stays in memory when headless.
     petal_ui::clipboard::flush_clipboard(env);

@@ -151,6 +151,13 @@ impl Env {
             .collect()
     }
 
+    /// [`take_static_warnings`](Self::take_static_warnings) over every
+    /// stack: what a host with one program prints after each frame.
+    pub fn take_all_static_warnings(&mut self) -> Vec<String> {
+        let stacks: Vec<StackKey> = self.stacks.keys().copied().collect();
+        stacks.into_iter().flat_map(|sid| self.take_static_warnings(sid)).collect()
+    }
+
     /// What `stack_id` keeps between runs: one entry per slot of its
     /// program's current lowering, in code order. `None` for an unknown
     /// stack or a program that has not been lowered yet (it has not run).

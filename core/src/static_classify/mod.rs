@@ -648,6 +648,13 @@ impl StaticAnalysis {
             .unwrap_or(TermClass::Dynamic)
     }
 
+    /// The declaration the top-level term `root` binds or belongs to (an
+    /// enum's data records belong to the enum), as an index into
+    /// [`StaticReport::declarations`].
+    pub fn declaration_of(&self, root: TermId) -> Option<u32> {
+        self.roots.owner.get(&root).copied()
+    }
+
     /// Every declaration the value of the top-level term `root` can depend
     /// on, as sorted indices into [`StaticReport::declarations`], closed
     /// transitively. For a term that binds a declaration the declaration

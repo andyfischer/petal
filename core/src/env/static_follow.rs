@@ -50,8 +50,9 @@
 //! - A value with no declaration of its own (a table written inside a call)
 //!   has no name to be matched by across a recompile, and is rebuilt by
 //!   every reload that recompiles. A literal-only edit keeps it.
-//! - An enum's constant data is always rebuilt: the reload empties the
-//!   stack's enum table and only the run can publish into it.
+//! - An enum's constant data is kept or rebuilt whole, never compared: the
+//!   run publishes the record it builds, so a kept record is published
+//!   again by the reload and a rebuilt one replaces it.
 //! - Other stacks of the same program start empty, as before.
 //! - A rebuild is put off ([`Env::set_static_debounce`]) run by run, not
 //!   value by value: a cheap value that shares a run with a slow one and
@@ -59,6 +60,7 @@
 //!   does not wait: it is given the new value directly.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Duration;
 
 use super::reload::ProgramChange;
@@ -66,7 +68,7 @@ use super::*;
 use crate::program::{StateKey, TermId};
 use crate::source_diff::{ConstructEdit, SourceChange};
 use crate::source_map::SourceSpan;
-use crate::static_cache::{FollowInfo, Seed, StaticDebounce, StaticLayout};
+use crate::static_cache::{FollowDecl, FollowInfo, Seed, StaticDebounce, StaticLayout};
 
 /// A `state` cell that kept its value across a reload although something
 /// its initializer read was changed by the edit.
@@ -178,29 +180,21 @@ impl StaticReload {
     }
 }
 
-/// One slot of the table a reload is about to empty.
-struct OldSlot {
-    key: Option<String>,
-    value: Option<Value>,
-    /// The edit reached it, as far as the old program can tell.
-    dirty: bool,
-    /// The names it depends on, sorted; `None` when unknown.
-    deps: Option<Vec<String>>,
-    build: Duration,
-    enum_data: bool,
-}
-
 /// What [`Env::begin_static_follow`] learned from the old program and the
 /// stack's table, before the reload replaced one and emptied the other.
 pub(super) struct Followed {
+    /// The lowering the table was for, and what it said about itself.
     layout: u64,
-    slots: Vec<OldSlot>,
+    follow: Arc<FollowInfo>,
+    /// Per slot: the value held, if any.
+    values: Vec<Option<Value>>,
+    /// Per slot: the edit reached it, as far as the old program can tell.
+    dirty: Vec<bool>,
+    /// Per slot: how long the runs that rebuild it took last time.
+    build: Vec<Duration>,
     timings: Vec<u64>,
-    /// Names of the declarations the edit changed in the old program.
-    changed: HashSet<String>,
-    /// The old program's `state` declarations: name, key, what the
-    /// initializer depends on.
-    states: Vec<(String, StateKey, Vec<String>)>,
+    /// Per declaration of the old program: the edit changed it.
+    changed: Vec<bool>,
     /// Why nothing may be kept.
     cleared: Option<String>,
     /// The file table of the old program: (display name, origin).
@@ -228,6 +222,9 @@ fn changed_decls(program: &Program, follow: &FollowInfo, changed: &[SourceSpan])
         .decls
         .iter()
         .map(|d| {
+            if !files.contains(&d.file.0) {
+                return false;
+            }
             let mut placed = false;
             for t in &d.defs {
                 if let Some(span) = program.source_map.get(*t).filter(|s| s.start.line > 0) {
@@ -237,27 +234,24 @@ fn changed_decls(program: &Program, follow: &FollowInfo, changed: &[SourceSpan])
                     }
                 }
             }
-            !placed && files.contains(&d.file.0)
+            !placed
         })
         .collect()
 }
 
-/// Whether any term in `terms` is written inside `changed`; a slot none of
-/// whose terms has a position is taken to be.
+/// Whether any term in `terms` is written inside `changed`. A term with no
+/// position is taken to be: the layout leaves such a term out when a
+/// declaration, which has one, stands for it.
 fn written_inside(program: &Program, terms: &[TermId], changed: &[SourceSpan]) -> bool {
     if changed.is_empty() {
         return false;
     }
-    let mut placed = false;
-    for t in terms {
-        if let Some(span) = program.source_map.get(*t).filter(|s| s.start.line > 0) {
-            placed = true;
-            if inside(span, changed) {
-                return true;
-            }
+    terms.iter().any(|t| {
+        match program.source_map.get(*t).filter(|s| s.start.line > 0) {
+            Some(span) => inside(span, changed),
+            None => true,
         }
-    }
-    !placed
+    })
 }
 
 /// The spans an edit touched: in the old text, and in the new one. `Err`
@@ -302,11 +296,12 @@ fn file_table(program: &Program) -> Vec<(String, Option<std::path::PathBuf>)> {
         .collect()
 }
 
-fn names_of(follow: &FollowInfo, deps: &[u32]) -> Vec<String> {
-    let mut out: Vec<String> = deps
+/// The names behind a dependency set, sorted.
+fn names_of<'a>(follow: &'a FollowInfo, deps: &[u32]) -> Vec<&'a str> {
+    let mut out: Vec<&str> = deps
         .iter()
         .filter_map(|d| follow.decls.get(*d as usize))
-        .map(|d| d.name.clone())
+        .map(|d| d.name.as_str())
         .collect();
     out.sort_unstable();
     out.dedup();
@@ -406,7 +401,7 @@ impl Env {
         if layout.id == 0 {
             return None;
         }
-        let follow = &*layout.follow;
+        let follow = &layout.follow;
         let table = &stack.statics;
         // A table filled under another lowering holds nothing of this one.
         let current = table.stamp().is_some_and(|(id, _)| id == layout.id);
@@ -416,53 +411,34 @@ impl Env {
             Err(why) => (Vec::new(), Some(why)),
         };
         let changed = changed_decls(program, follow, &spans);
+        let any_changed = changed.contains(&true);
         // A value a drag left stale, and one rebuilt beside it that may
         // have read it, are rebuilt by whatever comes next.
-        let deferred: HashSet<u32> =
-            table.deferred().iter().chain(table.redo()).copied().collect();
-        let slots = layout
-            .slots
-            .iter()
-            .enumerate()
-            .map(|(i, info)| {
-                let i = i as u32;
-                let dirty = cleared.is_some()
-                    || info.enum_data
-                    || deferred.contains(&i)
+        let stale: HashSet<u32> = table.deferred().iter().chain(table.redo()).copied().collect();
+        let n = layout.slots.len();
+        let (mut values, mut dirty, mut build) =
+            (Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n));
+        for (i, info) in follow.slots.iter().enumerate().take(n) {
+            let i = i as u32;
+            dirty.push(
+                cleared.is_some()
+                    || stale.contains(&i)
                     || written_inside(program, &info.origins, &spans)
-                    || info
-                        .deps
-                        .as_deref()
-                        .is_none_or(|deps| deps.iter().any(|d| changed.get(*d as usize) != Some(&false)));
-                OldSlot {
-                    key: info.key.clone(),
-                    value: if current { table.get(i) } else { None },
-                    dirty,
-                    deps: info.deps.as_deref().map(|d| names_of(follow, d)),
-                    build: table.build_time(layout, i),
-                    enum_data: info.enum_data,
-                }
-            })
-            .collect();
+                    || info.deps.as_deref().is_none_or(|deps| {
+                        any_changed && deps.iter().any(|d| changed.get(*d as usize) != Some(&false))
+                    }),
+            );
+            values.push(if current { table.get(i) } else { None });
+            build.push(table.build_time(layout, i));
+        }
         Some(Followed {
             layout: layout.id,
-            slots,
+            follow: follow.clone(),
+            values,
+            dirty,
+            build,
             timings: table.timings(),
-            changed: follow
-                .decls
-                .iter()
-                .zip(&changed)
-                .filter(|(_, c)| **c)
-                .map(|(d, _)| d.name.clone())
-                .collect(),
-            states: follow
-                .decls
-                .iter()
-                .filter_map(|d| {
-                    let (key, deps) = d.state.as_ref()?;
-                    Some((d.name.clone(), *key, names_of(follow, deps)))
-                })
-                .collect(),
+            changed,
             cleared,
             files: file_table(program),
         })
@@ -503,95 +479,104 @@ impl Env {
         if cleared.is_none() && !same_lowering && file_table(program) != old.files {
             cleared = Some("the program's source files changed".to_string());
         }
-        let new_spans = match changed_spans(change) {
-            Ok((_, new)) => new,
-            Err(_) => Vec::new(),
+        // What the edit changed in the new program. A lowering that is still
+        // the old one has the old program's declarations.
+        let changed_new = if same_lowering {
+            Vec::new()
+        } else {
+            let spans = changed_spans(change).map(|(_, new)| new).unwrap_or_default();
+            changed_decls(program, follow, &spans)
         };
-        let changed_new = changed_decls(program, follow, &new_spans);
-        let changed_names: HashSet<&str> = old
-            .changed
-            .iter()
-            .map(String::as_str)
-            .chain(
-                follow
-                    .decls
-                    .iter()
-                    .zip(&changed_new)
-                    .filter(|(_, c)| **c)
-                    .map(|(d, _)| d.name.as_str()),
-            )
-            .collect();
+        let new_spans = if same_lowering {
+            Vec::new()
+        } else {
+            changed_spans(change).map(|(_, new)| new).unwrap_or_default()
+        };
 
         // A drag continues when its last tick was recent; the first tick of
         // one rebuilds at once.
         let continues = debounce.is_some_and(|d| stack.statics.note_live_edit(d.quiet));
-        let by_key: HashMap<&str, usize> = old
-            .slots
-            .iter()
-            .enumerate()
-            .filter_map(|(i, s)| Some((s.key.as_deref()?, i)))
-            .collect();
+        let by_key: HashMap<&str, usize> = if same_lowering {
+            HashMap::new()
+        } else {
+            old.follow
+                .slots
+                .iter()
+                .enumerate()
+                .filter_map(|(i, s)| Some((s.key.as_deref()?, i)))
+                .collect()
+        };
 
         let mut report = StaticReload { cleared: cleared.clone(), ..Default::default() };
         let mut seeds: Vec<Seed> = Vec::with_capacity(layout.slots.len());
-        for (i, info) in layout.slots.iter().enumerate() {
+        for (i, info) in follow.slots.iter().enumerate().take(layout.slots.len()) {
             let before = if same_lowering {
-                old.slots.get(i)
+                Some(i)
             } else {
-                info.key.as_deref().and_then(|k| by_key.get(k)).map(|&j| &old.slots[j])
+                info.key.as_deref().and_then(|k| by_key.get(k)).copied()
             };
-            let seed = match before {
-                Some(OldSlot { value: Some(v), enum_data: false, dirty, deps, build, .. })
-                    if !info.enum_data =>
-                {
+            let held = before.and_then(|j| Some((j, (*old.values.get(j)?)?)));
+            let seed = match held {
+                None => Seed::Empty,
+                Some((j, v)) => {
                     let clean = cleared.is_none()
-                        && !*dirty
+                        && !old.dirty[j]
                         && (same_lowering || {
                             // The new program must agree: the same names,
                             // none of them changed there, and the value not
                             // written inside anything the edit added.
-                            let new_deps = info.deps.as_deref().map(|d| names_of(follow, d));
-                            new_deps.is_some()
-                                && new_deps == *deps
-                                && !info
-                                    .deps
-                                    .as_deref()
-                                    .unwrap_or(&[])
-                                    .iter()
-                                    .any(|d| changed_new.get(*d as usize) != Some(&false))
-                                && !written_inside(program, &info.origins, &new_spans)
+                            match (&info.deps, &old.follow.slots[j].deps) {
+                                (Some(new), Some(was)) => {
+                                    names_of(follow, new) == names_of(&old.follow, was)
+                                        && !new.iter().any(|d| changed_new.get(*d as usize) != Some(&false))
+                                        && !written_inside(program, &info.origins, &new_spans)
+                                }
+                                _ => false,
+                            }
                         });
                     // A slot that holds one literal, and nothing else, holds
                     // what the literal says now: no run has to say so. This
                     // is the dragged value itself, which must not wait with
                     // what is built from it.
-                    let literal = match info.origins[..] {
-                        [t] if cleared.is_none() => match program.get_term(t).op {
+                    let literal = info.literal.filter(|_| cleared.is_none()).and_then(|t| {
+                        match program.get_term(t).op {
                             crate::program::TermOp::Constant(c) => {
                                 Some(crate::backend::ops::constant_to_value(program, heap, c))
                             }
                             _ => None,
-                        },
-                        _ => None,
-                    };
+                        }
+                    });
                     if clean {
-                        Seed::Kept(*v)
+                        Seed::Kept(v)
                     } else if let Some(now) = literal {
                         Seed::Kept(now)
                     } else if cleared.is_none()
                         && same_lowering
                         && continues
-                        && debounce.is_some_and(|d| *build >= d.threshold)
+                        && info.enum_tag.is_none()
+                        && debounce.is_some_and(|d| old.build[j] >= d.threshold)
                     {
-                        Seed::Deferred(*v)
+                        Seed::Deferred(v)
+                    } else if info.enum_tag.is_some() {
+                        // The run publishes the record it builds; a record
+                        // kept in its place would not be the published one.
+                        Seed::Empty
                     } else {
-                        Seed::Rebuild(*v)
+                        Seed::Rebuild(v)
                     }
                 }
-                _ => Seed::Empty,
             };
             match seed {
-                Seed::Kept(_) => report.kept += 1,
+                Seed::Kept(v) => {
+                    report.kept += 1;
+                    // An enum's data lives in the stack's enum table, which
+                    // the reload emptied and only the skipped run would fill.
+                    if let (Some(tag), Value::Map(record)) = (&info.enum_tag, v) {
+                        stack.enums.sync(&bc.enum_layout, heap);
+                        let tag = heap.intern_str(tag);
+                        stack.enums.publish(heap, tag, record);
+                    }
+                }
                 Seed::Deferred(_) => {
                     if let Some(name) = info.declaration() {
                         report.deferred.push(name.to_string());
@@ -627,28 +612,51 @@ impl Env {
         // the edit changed.
         if cleared.is_none() {
             let held: HashSet<StateKey> = stack.state.keys().map(|k| k.base).collect();
-            let old_states: HashMap<&str, &Vec<String>> =
-                old.states.iter().map(|(n, _, d)| (n.as_str(), d)).collect();
-            for d in &follow.decls {
+            // By name, for a program that was recompiled: what each cell
+            // read before, and what the edit changed on either side.
+            let before: HashMap<&str, &FollowDecl> = if same_lowering {
+                HashMap::new()
+            } else {
+                old.follow.decls.iter().filter(|d| d.state.is_some()).map(|d| (d.name.as_str(), d)).collect()
+            };
+            let changed_names: HashSet<&str> = if same_lowering {
+                HashSet::new()
+            } else {
+                let was = old.follow.decls.iter().zip(&old.changed);
+                let now = follow.decls.iter().zip(&changed_new);
+                was.chain(now).filter(|(_, c)| **c).map(|(d, _)| d.name.as_str()).collect()
+            };
+            for (i, d) in follow.decls.iter().enumerate() {
                 let Some((key, deps)) = &d.state else { continue };
                 if !held.contains(key) {
                     continue;
                 }
-                let names = names_of(follow, deps);
-                let read = if changed_names.contains(d.name.as_str()) {
+                let read: Option<Option<String>> = if same_lowering {
+                    if old.changed.get(i) == Some(&true) {
+                        Some(None)
+                    } else {
+                        deps.iter()
+                            .find(|x| old.changed.get(**x as usize) == Some(&true))
+                            .and_then(|x| follow.decls.get(*x as usize))
+                            .map(|x| Some(x.name.clone()))
+                    }
+                } else if changed_names.contains(d.name.as_str()) {
                     Some(None)
-                } else if let Some(hit) = names.iter().find(|n| changed_names.contains(n.as_str())) {
-                    Some(Some(hit.clone()))
                 } else {
-                    // It reads something else now: a name that resolves
-                    // differently, a dependency that appeared.
-                    old_states.get(d.name.as_str()).and_then(|before| {
-                        names
-                            .iter()
-                            .find(|n| !before.contains(n))
-                            .or_else(|| before.iter().find(|n| !names.contains(n)))
-                            .map(|n| Some(n.clone()))
-                    })
+                    let names = names_of(follow, deps);
+                    match names.iter().find(|n| changed_names.contains(**n)) {
+                        Some(hit) => Some(Some(hit.to_string())),
+                        // It reads something else now: a name that resolves
+                        // differently, a dependency that appeared.
+                        None => before.get(d.name.as_str()).and_then(|was| {
+                            let was = names_of(&old.follow, &was.state.as_ref()?.1);
+                            names
+                                .iter()
+                                .find(|n| !was.contains(n))
+                                .or_else(|| was.iter().find(|n| !names.contains(n)))
+                                .map(|n| Some(n.to_string()))
+                        }),
+                    }
                 };
                 if let Some(read) = read {
                     report.stale_seeds.push(StaleSeed { name: d.name.clone(), read });

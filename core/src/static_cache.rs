@@ -104,7 +104,7 @@
 //!
 //! - **kept**: filled with the value it held. Its declaration is not inside
 //!   anything the edit touched, the set of declarations it depends on
-//!   ([`StaticSlotInfo::deps`], from the classifier) has the same names in
+//!   ([`SlotFollow::deps`], from the classifier) has the same names in
 //!   the old and the new program, and none of them is inside anything the
 //!   edit touched either.
 //! - **rebuilt**: empty, with the old value remembered beside it. The run
@@ -117,8 +117,10 @@
 //!
 //! A run executes whenever one slot it feeds is empty, so one rebuilt slot
 //! re-executes its whole run; the other slots of the run keep the values
-//! they were given. An enum's data is always rebuilt: the stack's enum
-//! table is emptied by every reload and only the run can publish into it.
+//! they were given. An enum's data lives in the stack's enum table as well
+//! as in its slot, and a reload empties that table: a kept record is
+//! published again by the reload, and one that is rebuilt is never swapped
+//! for the old one, because the run has already published the new.
 //!
 //! The cache is off under the `baseline` and `explain` policies, for
 //! run-once `petal run`, whenever observations or the per-term trace are
@@ -164,11 +166,18 @@ pub struct StaticSlotInfo {
     /// Declared with `const`: the author asked for it to be constant, so a
     /// value that cannot be kept is worth saying louder.
     pub is_const: bool,
+}
+
+/// What a reload needs to know about one slot.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SlotFollow {
     /// What a reload matches this slot by across two lowerings: the
-    /// module-qualified name of the declaration whose value it is. `None`
-    /// for a value with no declaration of its own (the `[1, 2, 3]` written
-    /// inside a call) and for a name two slots of one lowering share; such a
-    /// slot is rebuilt by every reload that recompiles.
+    /// module-qualified name of the declaration whose value it is; for a
+    /// value with no declaration of its own (the `[1, 2, 3]` written inside
+    /// a call) a key made of its statement's text and shape, which starts
+    /// with a NUL (see `unnamed_keys`). `None` for a key two slots of one
+    /// lowering would share; such a slot is rebuilt by every reload that
+    /// recompiles.
     pub key: Option<String>,
     /// Every declaration the value depends on, the slot's own included, as
     /// sorted indices into [`FollowInfo::decls`]. `None` when that is not
@@ -178,14 +187,22 @@ pub struct StaticSlotInfo {
     /// value is written in the source, for a reload asking whether an edit
     /// was inside it.
     pub origins: Vec<TermId>,
-    /// The slot holds the record an enum variant's constant data publishes.
-    pub enum_data: bool,
+    /// For the record an enum variant's constant data publishes: the
+    /// variant's tag (`Kind.park`).
+    pub enum_tag: Option<String>,
+    /// The one literal whose load is the only thing that writes the slot's
+    /// register, when that is all the slot holds: its value is the
+    /// literal's, whatever a run would say.
+    pub literal: Option<TermId>,
 }
 
-impl StaticSlotInfo {
+impl SlotFollow {
     /// The module-qualified name of the declaration whose value the slot
-    /// holds, when it is one a reload can match by name.
+    /// holds, when it is one.
     pub fn declaration(&self) -> Option<&str> {
+        if self.enum_tag.is_some() {
+            return None;
+        }
         self.key.as_deref().filter(|k| !k.starts_with('\u{0}'))
     }
 }
@@ -204,12 +221,14 @@ pub struct FollowDecl {
 }
 
 /// What a reload needs to know about a lowering to follow an edit through
-/// it: every declaration with where it is written, and what each `state`
-/// initializer reads. The slots' own dependency sets are on
-/// [`StaticSlotInfo`]. In the classifier's report order.
+/// it: every declaration with where it is written and what each `state`
+/// initializer reads (in the classifier's report order), and for each slot
+/// what it is matched by and what it depends on.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FollowInfo {
     pub decls: Vec<FollowDecl>,
+    /// One per slot of the layout.
+    pub slots: Vec<SlotFollow>,
 }
 
 /// One skippable run of static instructions.
@@ -974,14 +993,21 @@ pub fn apply(
     natives: &NativeFnTable,
     plan: &StaticPlan,
 ) {
-    apply_runs(bc, program, analysis, natives, plan);
-    follow(&mut bc.statics, program, analysis);
+    let slots = apply_runs(bc, program, analysis, natives, plan);
+    follow(&mut bc.statics, slots, program, analysis);
 }
 
 /// Record what a reload needs to follow an edit through this lowering: the
 /// program's declarations, and for each slot what it is matched by and what
-/// it depends on (see the module docs, "Following the diff").
-fn follow(layout: &mut StaticLayout, program: &Program, analysis: &StaticAnalysis) {
+/// it depends on (see the module docs, "Following the diff"). `slots` comes
+/// with each slot's writers and enum tag filled in.
+fn follow(
+    layout: &mut StaticLayout,
+    mut slots: Vec<SlotFollow>,
+    program: &Program,
+    analysis: &StaticAnalysis,
+) {
+    slots.resize(layout.slots.len(), SlotFollow::default());
     let decls: Vec<FollowDecl> = analysis
         .report
         .declarations
@@ -1004,7 +1030,7 @@ fn follow(layout: &mut StaticLayout, program: &Program, analysis: &StaticAnalysi
     let canonical: HashMap<TermId, &crate::static_classify::StaticDecl> =
         analysis.report.declarations.iter().map(|d| (d.term, d)).collect();
     let parents = crate::static_audit::block_parents(program);
-    for slot in &mut layout.slots {
+    for (slot, info) in slots.iter_mut().zip(&layout.slots) {
         // Everything any writer of the register depends on. One writer the
         // classifier knows nothing about makes the whole set unknown.
         let mut deps: Option<BTreeSet<u32>> = Some(BTreeSet::new());
@@ -1020,26 +1046,45 @@ fn follow(layout: &mut StaticLayout, program: &Program, analysis: &StaticAnalysi
             }
         }
         slot.deps = deps.map(|d| d.into_iter().collect());
-        slot.key = slot
-            .term
-            .and_then(|t| canonical.get(&t))
-            .filter(|d| d.kind != crate::static_classify::DeclKind::Enum && !slot.enum_data)
-            .map(|d| d.qualified.clone());
+        slot.literal = match slot.origins[..] {
+            [t] if matches!(program.get_term(t).op, TermOp::Constant(_)) => Some(t),
+            _ => None,
+        };
+        // A writer with no position of its own (the record of an enum's
+        // data) that belongs to a declaration is placed by the declaration,
+        // which is in the dependency set; only the writers a reload has to
+        // place itself stay.
+        slot.origins.retain(|t| {
+            program.source_map.get(*t).is_some_and(|s| s.start.line > 0)
+                || crate::static_audit::root_statement(program, &parents, *t)
+                    .and_then(|root| analysis.declaration_of(root))
+                    .is_none()
+        });
+        slot.key = match &slot.enum_tag {
+            // A tag is unique in a program, and no declaration's name
+            // holds a NUL.
+            Some(tag) => Some(format!("\u{0}enum\u{0}{tag}")),
+            None => info
+                .term
+                .and_then(|t| canonical.get(&t))
+                .filter(|d| d.kind != crate::static_classify::DeclKind::Enum)
+                .map(|d| d.qualified.clone()),
+        };
     }
-    unnamed_keys(layout, program);
+    unnamed_keys(&mut slots, program);
     // A key two slots share names neither.
     let mut seen: HashMap<String, usize> = HashMap::new();
-    for slot in &layout.slots {
+    for slot in &slots {
         if let Some(k) = &slot.key {
             *seen.entry(k.clone()).or_default() += 1;
         }
     }
-    for slot in &mut layout.slots {
+    for slot in &mut slots {
         if slot.key.as_ref().is_some_and(|k| seen.get(k).copied().unwrap_or(0) > 1) {
             slot.key = None;
         }
     }
-    layout.follow = Arc::new(FollowInfo { decls });
+    layout.follow = Arc::new(FollowInfo { decls, slots });
 }
 
 /// Keys for the slots that hold a value with no declaration of its own
@@ -1054,9 +1099,9 @@ fn follow(layout: &mut StaticLayout, program: &Program, analysis: &StaticAnalysi
 /// expression; whether what it refers to is unchanged is the dependency
 /// set's question, as for a declaration. A statement written twice gives
 /// its values the same keys, and a key two slots share is dropped.
-fn unnamed_keys(layout: &mut StaticLayout, program: &Program) {
+fn unnamed_keys(slots: &mut [SlotFollow], program: &Program) {
     use std::hash::{Hash, Hasher};
-    if layout.slots.iter().all(|s| s.key.is_some() || s.enum_data) {
+    if slots.iter().all(|s| s.key.is_some()) {
         return;
     }
     let Some(root) = program.block_terms.get(&program.root_block) else { return };
@@ -1100,15 +1145,15 @@ fn unnamed_keys(layout: &mut StaticLayout, program: &Program) {
     let position: HashMap<TermId, usize> =
         placed.iter().enumerate().map(|(i, a)| (a.term, i)).collect();
     let mut wanted: HashMap<usize, Vec<usize>> = HashMap::new();
-    let slot_at = |slot: &StaticSlotInfo| -> Option<(usize, usize)> {
-        if slot.key.is_some() || slot.enum_data {
+    let slot_at = |slot: &SlotFollow| -> Option<(usize, usize)> {
+        if slot.key.is_some() {
             return None;
         }
         let [t] = slot.origins[..] else { return None };
         let i = *position.get(&t)?;
         Some((statement_of(placed[i].file, placed[i].start)?, i))
     };
-    for slot in &layout.slots {
+    for slot in slots.iter() {
         if let Some((st, _)) = slot_at(slot) {
             wanted.entry(st).or_default();
         }
@@ -1152,8 +1197,7 @@ fn unnamed_keys(layout: &mut StaticLayout, program: &Program) {
             .unwrap_or("");
         prefix.insert(st, format!("\u{0}{name}\u{0}{:016x}", h.finish()));
     }
-    let keys: Vec<Option<String>> = layout
-        .slots
+    let keys: Vec<Option<String>> = slots
         .iter()
         .map(|slot| {
             let (st, i) = slot_at(slot)?;
@@ -1161,20 +1205,23 @@ fn unnamed_keys(layout: &mut StaticLayout, program: &Program) {
             Some(format!("{}\u{0}{at}", prefix.get(&st)?))
         })
         .collect();
-    for (slot, key) in layout.slots.iter_mut().zip(keys) {
+    for (slot, key) in slots.iter_mut().zip(keys) {
         if key.is_some() {
             slot.key = key;
         }
     }
 }
 
+/// The runs and slots themselves. Returns, per slot, the terms that write
+/// its register and the enum tag it is the data of.
 fn apply_runs(
     bc: &mut BytecodeProgram,
     program: &Program,
     analysis: &StaticAnalysis,
     natives: &NativeFnTable,
     plan: &StaticPlan,
-) {
+) -> Vec<SlotFollow> {
+    let mut written_by: Vec<SlotFollow> = Vec::new();
     let mut layout = StaticLayout {
         id: NEXT_LAYOUT_ID.fetch_add(1, Ordering::Relaxed),
         ..Default::default()
@@ -1183,7 +1230,7 @@ fn apply_runs(
     layout.root_instructions = n;
     if n == 0 || plan.roots.is_empty() {
         bc.statics = layout;
-        return;
+        return written_by;
     }
     let class = |t: TermId| analysis.term_class(t);
     let origin = |ip: usize| bc.root.origins.get(ip).copied().flatten();
@@ -1309,7 +1356,7 @@ fn apply_runs(
     layout.candidate_runs = bounds.len();
     if bounds.is_empty() {
         bc.statics = layout;
-        return;
+        return written_by;
     }
 
     // Registers that reach the container operand of an in-place instruction,
@@ -1354,6 +1401,7 @@ fn apply_runs(
     // frame can skip at all (nothing reads the call's own result).
     let mut published: HashMap<usize, Reg> = HashMap::new();
     let mut published_name: HashMap<Reg, String> = HashMap::new();
+    let mut published_tag: HashMap<Reg, String> = HashMap::new();
     for (ip, inst) in bc.root.code.iter().enumerate() {
         let Inst::BuiltinCall { name, args, .. } = inst else { continue };
         if program.get_string_constant(*name) != Some(crate::program::ENUM_DATA_BUILTIN) {
@@ -1369,6 +1417,7 @@ fn apply_runs(
             });
         if let Some(tag) = tag {
             published_name.insert(record, format!("enum data of {tag}"));
+            published_tag.insert(record, tag.to_string());
         }
     }
 
@@ -1501,6 +1550,8 @@ fn apply_runs(
                 at: term.and_then(|t| crate::static_audit::position(program, t)),
                 term,
                 is_const: term.is_some_and(|t| program.get_term(t).is_const),
+            });
+            written_by.push(SlotFollow {
                 key: None,
                 deps: None,
                 origins: if unattributed.contains(r) {
@@ -1508,7 +1559,8 @@ fn apply_runs(
                 } else {
                     writer_terms.get(r).cloned().unwrap_or_default()
                 },
-                enum_data: published_name.contains_key(r),
+                enum_tag: published_tag.get(r).cloned(),
+                literal: None,
             });
         }
         let stores: Vec<u32> = (0..run.own.len() as u32).map(|i| run.first_slot + i).collect();
@@ -1548,7 +1600,7 @@ fn apply_runs(
     }
     if layout.runs.is_empty() {
         bc.statics = layout;
-        return;
+        return written_by;
     }
 
     // Insert the two instructions per run and move every label.
@@ -1642,6 +1694,7 @@ fn apply_runs(
     bc.root.code = code;
     bc.root.origins = origins;
     bc.statics = layout;
+    written_by
 }
 
 /// A summary of a layout and one line per slot, for `PETAL_OPT_STATS` and

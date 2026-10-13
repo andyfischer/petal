@@ -379,6 +379,17 @@ print(n, ROW, COSTS, OWN, Kind.all)
 
 #[test]
 fn an_edit_to_an_enum_rebuilds_what_holds_or_reads_its_variants() {
+    // An edit that does not reach the enum keeps its data too: the reload
+    // empties the stack's enum table and publishes the kept records again,
+    // so `k.cost` reads on the frame after it without the run that built
+    // them.
+    let report = follow(KINDS, &KINDS.replace("n = n + 1", "n = n + 1 + n % 2"));
+    let s = report.statics.as_ref().unwrap();
+    assert_eq!(s.rebuilt, 0, "{s:?}");
+    assert!(s.kept >= 5, "two records and three tables: {s:?}");
+    let report = follow(KINDS, &KINDS.replace("[1, 2, 3]", "[1, 2, 4]"));
+    assert_eq!(rebuilt(&report), ["OWN"]);
+    assert_eq!(report.statics.as_ref().unwrap().rebuilt, 1);
     // Its data, patched in place.
     let report = follow(KINDS, &KINDS.replace("cost: 9", "cost: 12"));
     assert_eq!(report.outcome, ReloadOutcome::Patched);

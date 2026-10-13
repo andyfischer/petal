@@ -1,0 +1,151 @@
+// Layers, hit testing and retained drawing — the parts of `ui` a game HUD
+// leans on, in one small app.
+//
+// A "world" (the big grid) with a HUD over it:
+//
+//  - The grid is several hundred rects that change only when the palette
+//    does. `cached_layer` says them once; `draw_rects` says them in one
+//    command. Watch the frame time stay flat as the grid grows.
+//  - The panel on the right is on a layer above the world. Its background
+//    takes the pointer (`ui_block`), so a click on the panel is never also a
+//    click on the world — `pointer_captured()` is the whole test, and it is
+//    right on the very frame the panel opens.
+//  - "Confirm…" opens a dialog. Everything under it goes inert with no guard
+//    in this file: the dialog's layer is modal.
+//  - The panel is laid out by a flow, and measured by running the same
+//    function without drawing it (`ui_measure`), so its height is never a
+//    number someone has to keep in step with its contents.
+//  - The tooltip is asked for in the middle of the frame and still draws on
+//    top, because it is on a higher layer.
+//
+// Run it headlessly, and list what a test could click by name:
+//
+//   cd core-libs/petal-ui && cargo run --bin petal-ui-run -- \
+//       ../../examples/ui/layers/app.ptl --frames 3 --targets
+
+import ui
+
+state palette_ix = 0
+state picked = -1
+state panel_open = true
+state world_clicks = 0
+state md = modal_state()
+state cleared = 0
+
+let t = ui_theme()
+let W = screen_width()
+let H = screen_height()
+
+const COLS = 32
+const ROWS = 20
+const CELL = 14
+const PALETTES = [
+  [#1b2a41, #324a5f, #5c7a8f, #ccc9dc],
+  [#2d1e2f, #5b2a47, #a23e48, #ff8c61],
+  [#12261e, #1f4d3a, #3e8e5a, #c8e087]
+]
+
+// The grid, as one flat run of x, y, w, h, palette index. Built once.
+const CELLS = build_cells()
+fn build_cells()
+  let out = []
+  for row in range(0, ROWS) do
+    for col in range(0, COLS) do
+      let ix = (col * 7 + row * 13 + (col * row) % 5) % 4
+      out = append(out, col * CELL)
+      out = append(out, row * CELL)
+      out = append(out, CELL - 1)
+      out = append(out, CELL - 1)
+      out = append(out, ix)
+    end
+  end
+  out
+end
+
+clear(t.bg.r, t.bg.g, t.bg.b)
+
+// ── The world ─────────────────────────────────────────────────────────────
+let world = rect(24, 24, COLS * CELL, ROWS * CELL)
+
+// Re-recorded only when the palette changes; drawn from what the host kept
+// on every other frame.
+cached_layer(palette_ix, world, fn()
+  draw_rects(CELLS, PALETTES[palette_ix])
+end)
+
+if picked >= 0 then
+  let pc = picked % COLS
+  let pr = picked / COLS
+  draw_rect_outline(rect(world.x + pc * CELL - 1, world.y + pr * CELL - 1, CELL + 1, CELL + 1), t.accent, 255, 2)
+end
+
+// ── The HUD ───────────────────────────────────────────────────────────────
+
+// The panel's contents. Called once to measure and once to draw.
+fn panel_body(r, picked_now, clicks)
+  var next_palette = false
+  var ask = false
+  flow_begin(r, {pad: 12, gap: 8})
+  draw_text("Layers", flow_next(20), {size: 16, color: ui_theme().text, weight: 600,
+                                        shadow: {dy: 1, a: 120}})
+  draw_text("picked: {picked_now}", flow_next(14), {size: 12, color: ui_theme().dim})
+  draw_text("world clicks: {clicks}", flow_next(14), {size: 12, color: ui_theme().dim})
+  flow_space(4)
+  flow_begin(flow_next(26), {axis: "x", gap: 8})
+  if button(flow_next(84, 26), "Palette") then set next_palette = true end
+  if button(flow_next(84, 26), "Confirm…", {id: "confirm"}) then set ask = true end
+  flow_end()
+  {size: flow_end(), next_palette: get next_palette, ask: get ask}
+end
+
+let toggle_r = rect(W - 44, 12, 32, 22)
+if button(toggle_r, if panel_open then "×" else "≡" end, {id: "toggle-panel"}) then
+  panel_open = !panel_open
+end
+// Asked for here, drawn on top of everything below.
+tooltip(toggle_r, if panel_open then "Hide the panel" else "Show the panel" end)
+
+if panel_open then
+  let pw = 216
+  let size = ui_measure(fn() panel_body(rect(0, 0, pw, 0), picked, world_clicks) end).size
+  // Over the right-hand part of the grid, so there are cells under it.
+  let panel = rect(world.x + world.w - pw + 40, 44, pw, size.h)
+  let res = with_layer(10, fn()
+    ui_block(panel, "panel")
+    draw_elevation(panel, 8, 2)
+    draw_rect_rounded(panel, 8, ui_theme().panel)
+    panel_body(panel, picked, world_clicks)
+  end)
+  if res.next_palette then
+    palette_ix = (palette_ix + 1) % len(PALETTES)
+  end
+  if res.ask then
+    md = modal_open(md)
+  end
+end
+
+// The world gets the click only if the UI did not want it. Asked after the
+// HUD has drawn, so it is exact even on the frame the panel appears.
+if mouse_pressed(0) && !pointer_captured() && point_in(mouse_x(), mouse_y(), world) then
+  world_clicks = world_clicks + 1
+  picked = (mouse_y() - world.y) / CELL * COLS + (mouse_x() - world.x) / CELL
+end
+
+// ── The dialog ────────────────────────────────────────────────────────────
+let dlg = modal(md, 320, 150, "Clear the pick?")
+md = dlg.modal
+if dlg.open then
+  flow_begin(dlg.content, {gap: 12})
+  draw_text("Everything under this dialog is inert.", flow_next(16), {size: 13, color: t.dim})
+  flow_begin(flow_next(28), {axis: "x", gap: 8})
+  if button(flow_next(90, 28), "Clear", {id: "clear"}) then
+    picked = -1
+    cleared = cleared + 1
+    md = modal_close(md)
+  end
+  if button(flow_next(90, 28), "Cancel") then
+    md = modal_close(md)
+  end
+  flow_end()
+  flow_end()
+end

@@ -11,6 +11,11 @@ what a host has to do to draw any of this, see
 A test (`core-libs/petal-ui/tests/reference.rs`) fails if a name the package
 exports is missing from this page.
 
+Two apps to read beside it: `garden/examples/panels/gallery.ptl` uses every
+widget, and [`examples/ui/layers`](../examples/ui/layers/) is a HUD over a
+"world" — layers, `pointer_captured`, a modal, `cached_layer` with
+`draw_rects`, flow layout and `ui_measure` in about 150 lines.
+
 ## Conventions
 
 - **Immediate mode.** The whole script runs every frame. A widget is a

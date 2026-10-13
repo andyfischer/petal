@@ -699,3 +699,68 @@ fn a_restored_state_map_leaves_the_module_working() {
     b.frame().unwrap();
     assert_eq!(b.state()["ui::_floor"], serde_json::Value::Null);
 }
+
+// ── The worked example ────────────────────────────────────────────────────
+
+/// `examples/ui/layers` end to end, driven by name: a click on the world
+/// picks a cell, a click on the panel does not, the dialog makes everything
+/// under it inert, and a hidden panel gives the world its clicks back.
+#[test]
+fn the_layers_example_keeps_ui_clicks_from_the_world() {
+    use petal_ui::scenario::Scenario;
+    let app = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/ui/layers/app.ptl");
+    let mut ui = Headless::from_file_with_size(&app, 800, 600)
+        .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
+    let scenario = Scenario::from_json_str(
+        r#"{"events": [
+            {"at": 2,  "click": [100, 100]},
+            {"at": 5,  "click_target": "Palette"},
+            {"at": 8,  "click_target": "panel"},
+            {"at": 11, "click_target": "confirm"},
+            {"at": 14, "click": [100, 100]},
+            {"at": 17, "click_target": "confirm"},
+            {"at": 20, "click_target": "clear"},
+            {"at": 23, "click_target": "toggle-panel"},
+            {"at": 26, "click": [400, 120]}
+        ]}"#,
+    )
+    .unwrap();
+    let state = |ui: &Headless, name: &str| ui.state()[name].clone();
+    for frame in 0..30 {
+        let missing = scenario.apply(&mut ui, frame);
+        assert!(missing.is_empty(), "frame {frame}: no target {missing:?}");
+        ui.frame().unwrap_or_else(|e| panic!("frame {frame}: {e}"));
+        match frame {
+            3 => {
+                assert_eq!(state(&ui, "world_clicks"), 1, "a click on the world");
+                assert_ne!(state(&ui, "picked"), -1);
+            }
+            6 => assert_eq!(state(&ui, "palette_ix"), 1, "the button, by name"),
+            9 => {
+                // The panel lies over the grid: the click was on a cell, too.
+                let panel = ui.target("panel").unwrap().center();
+                assert!(panel.0 < 24 + 32 * 14 && panel.1 < 24 + 20 * 14);
+                assert_eq!(state(&ui, "world_clicks"), 1, "the panel took the click");
+            }
+            12 => assert_eq!(state(&ui, "md")["open"], true),
+            15 => {
+                assert_eq!(state(&ui, "md")["open"], false, "a click outside closes it");
+                assert_eq!(state(&ui, "world_clicks"), 1, "and is not a world click");
+            }
+            21 => {
+                assert_eq!(state(&ui, "cleared"), 1, "the dialog's own button works");
+                assert_eq!(state(&ui, "picked"), -1);
+            }
+            24 => assert_eq!(state(&ui, "panel_open"), false),
+            27 => assert_eq!(state(&ui, "world_clicks"), 2, "where the panel was is world again"),
+            _ => {}
+        }
+    }
+    // The grid is recorded once per palette: one palette change, two bodies.
+    let grid_rects = ui
+        .commands
+        .iter()
+        .filter(|c| matches!(c, DrawCommand::Rect { w: 13, h: 13, .. }))
+        .count();
+    assert_eq!(grid_rects, 640, "the retained grid is drawn every frame");
+}

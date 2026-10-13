@@ -22,8 +22,8 @@ with the text that file holds now, and does only the work the edit calls for:
 | anything else | `recompiled` | the program is recompiled and swapped in with `transfer_state` |
 
 The first three compile nothing and lower nothing. On `games/neon` in the
-Cheesecake engine (14 files, 10,300 lines) a value edit takes 0.8 ms where the
-recompile it replaces took about 300 ms; the numbers are under
+Cheesecake engine (35 files, 15,200 lines) a value edit takes 1.0 ms where the
+recompile it replaces takes 175 ms; the numbers are under
 [What it costs](#what-it-costs).
 
 The contract is the same on every path: **afterwards the program and the stack
@@ -390,20 +390,37 @@ cd core && cargo run --release --example reload_timing -- game.ptl config.ptl
 ```
 
 On `games/neon` (35 files with the packages it imports, 15,211 lines, 77,853
-terms; release build, Apple silicon, minimum of 9, 12 October 2026):
+terms; release build, Apple silicon, the minimum of 9 rounds in each of 5
+to 8 runs, 13 October 2026), and on Moses (65 files, 33,848 lines, 192,534
+terms):
 
-| Edit to `config.ptl` | Outcome | Time |
-|---|---|---|
-| a comment added | relocated | 1.3 ms |
-| one number changed | patched | 1.5 ms |
-| a statement added | recompiled | 183 ms |
-| `set_config_value`, file named | patched | 1.4 ms |
-| `set_config_value`, file searched for | patched | 3.1 ms |
+| Edit to `config.ptl` | Outcome | neon | Moses |
+|---|---|---|---|
+| a comment added | relocated | 0.87 ms | 1.96 ms |
+| one number changed | patched | 1.00 ms | 2.69 ms |
+| a statement added | recompiled | 175 ms | 461 ms |
+| `set_config_value`, file named | patched | 1.03 ms | 4.04 ms |
+| `set_config_value`, file searched for | patched | 2.72 ms | 4.66 ms |
 
-Of the 183 ms, 24 are the static-value cache's (159 ms under
-`PETAL_POLICY=fast-static`: the classification that lowering then does), and
-of the patched 1.5 ms, 0.1. The example compiles without linking, since it
-runs nothing, so a game whose package requires a host interface loads in it.
+The static-value cache is 19 ms of the 175 (156 ms under
+`PETAL_POLICY=fast-static`) and 61 of the 461 (400 ms), and nothing that
+can be measured of a relocated or patched reload. Most of that is the
+classification the lowering reads: 14 ms and 48 ms, which the example prints
+on its own. A program is classified once per recompile, whoever asks (the
+`const` check, the lowering, the audit, `Env::static_report`), and not at
+all by a reload that does not recompile. The example compiles without
+linking, since it runs nothing, so a game whose package requires a host
+interface loads in it.
+
+A reload parses only text it has not seen. The diff needs the syntax tree of
+the running text and of the new one, and the `Env` keeps the parse of the
+text each reload ends on for the next: found again by the text itself, so
+there is nothing to invalidate, held only for files that have been edited,
+two versions of a file at most (so a reload that does not compile costs the
+next one nothing), twelve texts and 2 MiB in all. `Env::clear_reload_parses`
+drops them; the next reload then parses the running text of each changed
+file once more. Before this a value edit parsed the edited file twice, and
+the two edits above took 1.3 and 1.5 ms.
 
 `set_config_value` costs more than a reload of the same edit because it also
 makes the edit: it parses the file's text to find the literal and rewrite it

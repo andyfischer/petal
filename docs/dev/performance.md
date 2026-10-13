@@ -522,11 +522,14 @@ miss every frame. Kept, it is the same object and compares equal at once: a
 400-record `let` table as a memo argument goes from 29 misses in 29 frames
 to none.
 
-Costs. A recompile classifies the program (about 85 ms on a 27,000-line
-game, 5 to 8 ms on an example panel) and runs the pass; nothing is classified
-on a literal-only reload. A program that declares a `const` is classified
-when it is compiled, for the check, and the lowering that follows is served
-the same answer (`Program::static_analysis`), so that is still once. Per
+Costs. A recompile classifies the program (48 ms on a 34,000-line game of
+192,000 terms, 14 ms on one of 78,000, 3 to 5 ms on an example panel;
+`core/examples/reload_timing.rs` prints it) and runs the pass; nothing is
+classified on a reload that only moves positions or changes literals. The
+answer is kept beside the program (`Program::static_analysis`) by whichever
+asks first, the `const` check of a compile or the lowering, and serves the
+other, the audit and `Env::static_report`, so that is once per recompile.
+Per
 frame, one test per stretch of static code plus one register write per slot
 that something outside the stretch reads. The frame that builds everything
 (the first, and the one after a reload that cleared the table) pays two

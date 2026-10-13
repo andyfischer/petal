@@ -2009,7 +2009,7 @@ Outside this repository, none started:
 In this repository:
 
 5. The release-only reload timing test: the value edit parses the edited
-   file twice.
+   file twice. **Done 2026-10-13**: "The cost of a reload" below.
 6. Split static runs at function declarations and store per value, so one
    rebuilt slot does not re-execute its run (the open item of S1 and S2,
    and what would make `frozen` unable to tell a kept neighbour from a
@@ -2020,10 +2020,156 @@ In this repository:
 8. Report stale seeds in Garden panels, where the cache is off.
 9. The classification that lowering does costs 24 ms of a 183 ms recompile
    on neon; it could be served from the previous analysis when the diff
-   touches no declaration.
+   touches no declaration. **Partly done 2026-10-13** ("The cost of a
+   reload" below): it runs once whoever asks and costs 14 ms; it is not
+   served from the previous program's analysis, for the reasons given
+   there.
 10. The "Later" items above, each on evidence: Garden observation replay,
     constants inside function bodies, per-input-class slots, keeping slow
     intermediates, a frozen generation that can release objects.
+
+### The cost of a reload (2026-10-13)
+
+Follow-ups 5 and 9, at `f03dab6` and `489ea39`. Release build, Apple
+silicon, a machine at load average 4 to 20; every figure is the minimum of
+9 rounds in each of 5 to 10 runs of `core/examples/reload_timing.rs`.
+
+**A reload parses only the text that is new (5).** `source_diff` parsed the
+running text and the new text of each changed file. The parse of the text a
+reload ends on is now kept for the next one (`source_diff::ParseCache`, held
+by the `Env`). It is found again by the text itself, so there is nothing to
+invalidate: a module edited, a reload that failed, a reload through another
+stack all ask with the text the program holds, and a hit is that text's
+parse. A file is kept only once it has been edited, two versions of it at
+most (which is what lets a reload that did not compile be followed by one
+that parses once), twelve texts and 2 MiB in all;
+`Env::clear_reload_parses` drops them and `Env::reload_parses_kept` counts
+them. Also: the diff lexes without recovering trivia and does not clone the
+token stream, and `plan_patch` finds a term's file in a table (0.38 to
+0.07 ms on a 78k-term program).
+
+- `a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile` passes
+  in release: 1.20 to 1.29 ms against 10.5 to 11.3 ms over three runs (8.5
+  to 9.5 times; it was 2.78 against 11.8, and asserts 5). The test was not
+  weakened. It was made harder: every round reloads a text no reload has
+  seen, where alternating between two texts would now measure a reload
+  that parses nothing, and it asserts one parse per reload.
+- New cases in `core/tests/hot_reload.rs`:
+  `a_reload_parses_only_the_text_that_is_new`,
+  `a_reload_that_fails_does_not_cost_the_next_one_a_parse`,
+  `in_a_program_of_several_files_only_the_edited_file_is_parsed`, and
+  `reloads_through_kept_parses_equal_reloads_that_parse_everything`.
+
+**A program is classified once, and faster (9).** With the cache on, the
+lowering classified the program, the audit classified it again when one was
+watching, and a tool asking `Env::static_report` a third time; only a
+`const` check kept its answer. `ensure_bytecode` now classifies before it
+lowers and leaves the answer beside the program
+(`Program::static_analysis`), which serves the lowering, the audit,
+`Env::static_report` and `Env::static_analysis` (hover). It is dropped by
+what changes a program in place: a relocating or patching reload, since the
+report's lines and columns move (the classes would hold), and
+`Env::get_program_mut`. A native table's revision now comes from one
+counter for the process, so an answer kept by one `Env` is not served to
+another with different natives (it was a per-table count, and two tables
+with as many registrations had the same one).
+
+**Not done: serving a recompile from the previous program's analysis.**
+Looked at and left, as written on `static_classify::KeptAnalysis`. The
+classes are a fixed point over the whole term graph, reached from above:
+restarting from the previous answer is sound for an edit that makes
+something dynamic and not for one that makes something static again, and
+telling them apart needs every cross-declaration read of the transfer
+function (callee summaries, captures, cells, method dispatch, enum data) as
+an explicit dependency graph, which S2's per-declaration dependency sets
+are not (they are an output of the pass, closed over names). The reason a
+declaration is dynamic is the first one the solver met, so a correct
+restart could still word a reason differently from a classification from
+nothing, and the test below would have to be weakened to pass. And a
+recompile renumbers every term after the edit. That is neither simple nor
+obviously sound, so the pass was made cheaper instead: the fast hasher for
+its id-keyed tables, block lists and native lookups indexed once, no
+transfer for a term already dynamic, marks in place of a hash set per
+dependency walk, a flat list of users.
+
+Classification alone (`reload_timing` prints it now), the previous
+classifier built into today's tree for the comparison:
+
+| Program | Terms | Before | Now |
+|---|---|---|---|
+| `games/neon` | 77,853 | 23.6 to 25.9 ms | 14.4 ms |
+| Moses as written | 192,534 | 69.2 ms | 47.9 ms |
+| Moses with 74 tables as `const` (scratch copy) | 192,460 | 70.7 ms | 48.9 ms |
+| example panels (snake, analytics-dashboard, settings) | 17,465 to 27,399 | not measured | 2.6, 3.5, 4.6 ms |
+
+**The patched-reload row, measured again.** `games/neon`, edits to
+`config.ptl`, 35 files, 15,211 lines, 77,853 terms:
+
+| Edit | Outcome | 12 October | Now | Now, cache off (`fast-static`) |
+|---|---|---|---|---|
+| a comment added | relocated | 1.3 ms | 0.87 ms | 0.89 ms |
+| one number changed | patched | 1.5 ms | 1.00 ms | 0.98 ms |
+| a statement added | recompiled | 183 ms | 175 ms | 156 ms |
+| `set_config_value`, file named | patched | 1.4 ms | 1.03 ms | 1.00 ms |
+| `set_config_value`, file searched for | patched | 3.1 ms | 2.72 ms | 2.66 ms |
+
+Moses as written (65 files with its packages, 33,848 lines, 192,534 terms),
+edits to `config.ptl`: relocated 1.96 ms, patched 2.69 ms, recompiled 461 ms
+(400 ms with the cache off; 483 ms with the previous classifier),
+`set_config_value` 4.04 and 4.66 ms. First load: compile 287 ms, lowering
+324 ms (247 ms with the cache off).
+
+How to read it. The baseline's "about 0.8 ms" was neon at 14 files and
+62,733 terms on a binary that no longer exists; on today's 77,853 terms a
+patched reload is 1.0 ms, with the cache on or off (the 0.02 ms between
+them is inside the noise). What the 1.0 ms is made of was not profiled
+again after the second parse went. `set_config_value` with no file named
+costs 1.7 ms more than with one, as before. The cache costs 19 ms of a
+recompile on neon, 14.4 of them the classification, and 61 ms on Moses, 48
+of them the classification.
+
+The cheaper classifier says what the previous one said: `petal show-static`
+and `show-static --json` from a build with the previous classifier and from
+this one, over 643 `.ptl` files (this repository's `examples/`, `test/`,
+`garden/` and `core/tests`, the Cheesecake games, worlds-fair, `~/.garden`,
+the website, `~/tools`), are byte for byte the same; 21 of the files do not
+compile and print the same error.
+
+Oracles (the tree also held the store-per-value work, uncommitted for the
+first three and committed as `800ff90` for the rest): core `cargo test
+--no-fail-fast`, debug, 63 binaries, 2,572 passed, 0 failed, 16 ignored;
+`hot_reload` in release 48 of 48, the timing test among them;
+`static_fuzz` and `static_cache_fuzz` at 3,000 seeds in release;
+`core-libs/petal-ui` `cargo test`, debug, 297 passed, 0 failed (the panel
+corpus cache on against off, the followed reload against clear-everything,
+the audits); the whole-corpus reload oracle in release over this
+repository, and with `PETAL_RELOAD_NO_RUN=1` over the Cheesecake games,
+worlds-fair, `~/.garden`, the website and `~/tools` (343 files: 160
+relocated, 9 patched, 154 recompiled), each file's kept classification
+compared with one from nothing. Every case of `hot_reload.rs` does the same
+under three policies and once more with a `const` in both versions: before
+the reload, after it, after running, and against the recompiled side
+(declarations, reasons, readers, positions, every term's class, every
+dependency set), and counts the classifications: at most one for a
+recompile, none for a relocated or patched reload.
+
+Open:
+
+- **The classification is still paid in full by every recompile**: 14 ms of
+  175 on neon, 48 of 461 on Moses. Serving it incrementally needs the
+  transfer function's reads recorded as dependencies first.
+- **The rest of what the cache adds to a lowering** is not classification
+  and was not looked at here: about 5 ms on neon and 13 ms of a recompile
+  on Moses (29 ms of its first load), in `lower_with_statics` and the
+  follow step.
+- **A patched or relocated reload drops the kept classification**, so the
+  first hover or `static_report` after one classifies again (once per ask:
+  `Env::static_report` takes `&self` and keeps nothing). The language
+  server keeps its own per document version, as before.
+- **Not run by this step**: `tools/verify.ts`, `./tools/test-examples.ts`,
+  vitest, `tsc`, clippy, the release-profile core suite as a whole, the C
+  bridge and SDL suites, `petal-query`, the Garden workspace,
+  `petal-fantasy-nes`.
 
 ## Risks to watch
 

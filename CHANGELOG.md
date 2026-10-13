@@ -200,8 +200,10 @@ way, for code written against an earlier checkout.
   a host handle or a pending result) is built on every run, and the host is
   told once per load: `Env::take_static_warnings` hands out the lines,
   `petal run` and the SDL host print them, and a `const` says it was one. A
-  program that declares a `const` is classified once per recompile, for the
-  check and the cache together.
+  program is classified once per recompile, for the `const` check, the
+  cache, the audit and `Env::static_report` together, and not at all by a
+  reload that does not recompile (14 ms on a 15,000-line game, 48 ms on a
+  34,000-line one).
 - The collector's budget counts live objects plus a small cost per slot, where
   it charged the full trace cost for free slots too: a program allocating at a
   steady rate now reaches a steady heap instead of growing its slot count and
@@ -215,7 +217,10 @@ way, for code written against an earlier checkout.
   writes the constants into the running program, and anything else recompiles
   and transfers state as before. The result is the same on every path, which
   `core/tests/hot_reload.rs` checks against a full recompile. On a
-  10,000-line game a value edit takes 0.8 ms where the recompile took 300 ms.
+  15,000-line game a value edit takes 1.0 ms where a recompile takes 175 ms.
+  A reload parses only text it has not seen: the parse of the text each
+  reload ends on is kept for the next one (edited files only, two versions
+  of each at most, 2 MiB in all; `Env::clear_reload_parses` drops them).
   `Env::set_config_value` sets one value by binding path without the file
   changing. See [docs/hot-reload.md](docs/hot-reload.md).
 - An enum can be edited while its variants are held in `state`: an edit to

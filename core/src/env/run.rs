@@ -91,6 +91,11 @@ impl Env {
         if let Some(stack) = self.stacks.get_mut(&stack_id) {
             stack.start_run_tracking();
         }
+        // Static values a drag left stale are rebuilt by the first run after
+        // it pauses (`Env::set_static_debounce`).
+        if self.static_rebuilds_due(stack_id) {
+            self.flush_static_rebuilds(stack_id);
+        }
         self.begin_run_deps(stack_id, ck);
         // Each run reports its own bindings: clear at the start, so a name the
         // program no longer reaches can't report a value from a previous run.
@@ -200,6 +205,10 @@ impl Env {
         let Some(ctx) = self.contexts.get(&stack.context) else {
             return Some(crate::run_deps::RunReason::NoRecord);
         };
+        // A drag paused with rebuilds waiting: the run that makes them.
+        if self.static_rebuilds_due(stack_id) {
+            return Some(crate::run_deps::RunReason::Forced);
+        }
         stack
             .run_deps
             .run_needed(&ctx.bindings, &ctx.binding_revisions, &ctx.heap, ctx.resources.revision())

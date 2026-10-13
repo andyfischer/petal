@@ -187,6 +187,10 @@ pub struct ValueChange {
     /// components are separate literals written by one token.
     pub ordinal: u32,
     pub span_count: u32,
+    /// The top-level statement the literal is written in, as its span in the
+    /// old text: what a reload asks to find the declarations the edit is
+    /// inside of (a function, a `let`, a class with its methods).
+    pub construct_span: SourceSpan,
 }
 
 /// What a changed top-level construct is.
@@ -223,6 +227,8 @@ pub struct ConstructChange {
     pub edit: ConstructEdit,
     /// Where it is: in the new text, or in the old text for a removal.
     pub span: SourceSpan,
+    /// Where it was in the old text; `None` for an addition.
+    pub old_span: Option<SourceSpan>,
 }
 
 /// The diff of one file: the classification, plus (for a change that needs no
@@ -232,6 +238,11 @@ pub struct FileDiff {
     pub change: SourceChange,
     /// The two texts are not byte-identical.
     pub text_changed: bool,
+    /// Top-level statements that are in both versions changed their order
+    /// around the ones that were added, removed or changed. The construct
+    /// list does not name them: nothing about them changed but where they
+    /// run, which is all a reader of that list needs to distrust it.
+    pub reordered: bool,
     remap: Option<PositionMap>,
 }
 
@@ -259,12 +270,14 @@ pub fn diff_source(old: &str, new: &str, file: FileId) -> FileDiff {
         return FileDiff {
             change: SourceChange::None,
             text_changed: false,
+            reordered: false,
             remap: None,
         };
     }
     let full = |why: String| FileDiff {
         change: SourceChange::Full(why),
         text_changed: true,
+        reordered: false,
         remap: None,
     };
     let old_parse = match Parsed::new(old, file) {
@@ -276,7 +289,7 @@ pub fn diff_source(old: &str, new: &str, file: FileId) -> FileDiff {
         Err(e) => return full(format!("the new source does not parse: {e}")),
     };
 
-    let change = classify(&old_parse.stmts, &new_parse.stmts);
+    let (change, reordered) = classify(&old_parse.stmts, &new_parse.stmts);
     let values: &[ValueChange] = match &change {
         SourceChange::None => &[],
         SourceChange::Values(v) => v,
@@ -284,6 +297,7 @@ pub fn diff_source(old: &str, new: &str, file: FileId) -> FileDiff {
             return FileDiff {
                 change,
                 text_changed: true,
+                reordered,
                 remap: None,
             };
         }
@@ -296,6 +310,7 @@ pub fn diff_source(old: &str, new: &str, file: FileId) -> FileDiff {
         Ok(remap) => FileDiff {
             change,
             text_changed: true,
+            reordered: false,
             remap: Some(remap),
         },
         Err(why) => full(why),
@@ -330,27 +345,42 @@ impl Parsed {
 // Classification
 // ---------------------------------------------------------------------------
 
-fn classify(old: &[Stmt], new: &[Stmt]) -> SourceChange {
+/// The classification, and whether statements both versions have were
+/// reordered ([`FileDiff::reordered`]).
+fn classify(old: &[Stmt], new: &[Stmt]) -> (SourceChange, bool) {
     if old.len() == new.len() {
         let mut cmp = Cmp::default();
         let mut changed: Vec<ConstructChange> = Vec::new();
+        // Statements whose shape held and whose literals did not: part of
+        // the list too, when it turns out there is one.
+        let mut revalued: Vec<(usize, ConstructChange)> = Vec::new();
+        let mut structural = false;
         for (a, b) in old.iter().zip(new) {
             let mark = cmp.changes.len();
             if !cmp.top_stmt(a, b) {
                 cmp.changes.truncate(mark);
-                changed.push(construct(b, ConstructEdit::Changed));
+                structural = true;
+                changed.push(construct(b, ConstructEdit::Changed, Some(a.span)));
+            } else if cmp.changes.len() > mark {
+                for c in &mut cmp.changes[mark..] {
+                    c.construct_span = a.span;
+                }
+                revalued.push((changed.len(), construct(b, ConstructEdit::Changed, Some(a.span))));
             }
         }
-        if !changed.is_empty() {
-            return SourceChange::Constructs(changed);
+        if structural {
+            for (at, c) in revalued.into_iter().rev() {
+                changed.insert(at, c);
+            }
+            return (SourceChange::Constructs(changed), false);
         }
         if cmp.changes.is_empty() {
-            return SourceChange::None;
+            return (SourceChange::None, false);
         }
         for c in &mut cmp.changes {
             c.span_count = cmp.span_counts[&span_key(c.old_span)];
         }
-        return SourceChange::Values(cmp.changes);
+        return (SourceChange::Values(cmp.changes), false);
     }
 
     // A different number of statements: trim what the two ends share, then
@@ -374,6 +404,11 @@ fn classify(old: &[Stmt], new: &[Stmt]) -> SourceChange {
     let new_mid = &new[head..new.len() - tail];
     let mut out = Vec::new();
     let mut used = vec![false; new_mid.len()];
+    // Whether the statements that pair up do so in the order they are
+    // written in: a pair that lands before the one paired just before it was
+    // moved.
+    let mut reordered = false;
+    let mut last_partner: Option<usize> = None;
     for a in old_mid {
         let key = construct_key(a);
         let partner = key.as_ref().and_then(|k| {
@@ -385,23 +420,30 @@ fn classify(old: &[Stmt], new: &[Stmt]) -> SourceChange {
         match partner {
             Some((j, b)) => {
                 used[j] = true;
+                if last_partner.is_some_and(|l| j < l) {
+                    reordered = true;
+                }
+                last_partner = Some(j);
                 if !same(a, b) {
-                    out.push(construct(b, ConstructEdit::Changed));
+                    out.push(construct(b, ConstructEdit::Changed, Some(a.span)));
                 }
             }
-            None => out.push(construct(a, ConstructEdit::Removed)),
+            None => out.push(construct(a, ConstructEdit::Removed, Some(a.span))),
         }
     }
     for (j, b) in new_mid.iter().enumerate() {
         if !used[j] {
-            out.push(construct(b, ConstructEdit::Added));
+            out.push(construct(b, ConstructEdit::Added, None));
         }
     }
     if out.is_empty() {
         // Statements were only reordered.
-        return SourceChange::Full("top-level statements were reordered".to_string());
+        return (
+            SourceChange::Full("top-level statements were reordered".to_string()),
+            true,
+        );
     }
-    SourceChange::Constructs(out)
+    (SourceChange::Constructs(out), reordered)
 }
 
 fn construct_kind(s: &Stmt) -> (ConstructKind, Option<&str>) {
@@ -440,13 +482,14 @@ fn construct_key(s: &Stmt) -> Option<(ConstructKind, String)> {
     name.map(|n| (kind, n.to_string()))
 }
 
-fn construct(s: &Stmt, edit: ConstructEdit) -> ConstructChange {
+fn construct(s: &Stmt, edit: ConstructEdit, old_span: Option<SourceSpan>) -> ConstructChange {
     let (kind, name) = construct_kind(s);
     ConstructChange {
         kind,
         name: name.map(str::to_string),
         edit,
         span: s.span,
+        old_span,
     }
 }
 
@@ -748,6 +791,8 @@ impl Cmp {
                 new_span,
                 ordinal,
                 span_count: 0,
+                // Filled in by `classify`, which knows the statement.
+                construct_span: old_span,
             });
         }
         true

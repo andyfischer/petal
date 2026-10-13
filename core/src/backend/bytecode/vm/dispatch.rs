@@ -640,10 +640,26 @@ impl<'a> Vm<'a> {
                     stats.skips += 1;
                     stats.skipped_instructions += saved;
                     self.stack.vm_frames[fi].ip = *after as usize;
+                } else {
+                    self.stack.statics.begin_build(*run);
                 }
             }
             Inst::StaticStore { slots } => {
+                self.stack.statics.end_build();
                 if self.stack.statics.wants(slots) {
+                    // A value rebuilt after a reload that is the value the
+                    // slot held before it: keep the old one, in the register
+                    // too, so nothing that held it holds a stale copy.
+                    if self.stack.statics.has_prior() {
+                        for &(slot, r) in slots.iter() {
+                            if let Some(old) = self.stack.statics.prior(slot)
+                                && crate::static_cache::identical(old, self.reg(fi, r), self.heap)
+                            {
+                                self.set(fi, r, old);
+                                self.stack.statics.stats.reused += 1;
+                            }
+                        }
+                    }
                     // Check every value before keeping any: a run is kept
                     // whole or not at all.
                     let mut bad = None;
@@ -658,6 +674,15 @@ impl<'a> Vm<'a> {
                         Some((slot, what)) => self.stack.statics.reject(slots, slot, what),
                         None => {
                             for &(slot, r) in slots.iter() {
+                                // A slot that kept its value through a
+                                // reload while the run was executed for
+                                // another: the kept value is the one the
+                                // rest of this run reads, as every later
+                                // run will.
+                                if let Some(kept) = self.stack.statics.get(slot) {
+                                    self.set(fi, r, kept);
+                                    continue;
+                                }
                                 let v = self.reg(fi, r);
                                 self.stack.statics.fill(&self.bc.statics, slot, v);
                             }

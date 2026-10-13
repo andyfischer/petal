@@ -149,6 +149,20 @@ pub struct ReloadReport {
     /// When the edit was incremental by classification but the program was
     /// recompiled anyway, why.
     pub fallback: Option<String>,
+    /// What became of the stack's static values, and which `state` cells
+    /// kept a value their initializer would no longer give
+    /// ([`StaticReload`](super::StaticReload)). `None` when the program does
+    /// not run with the static-value cache, or has not run yet.
+    pub statics: Option<super::StaticReload>,
+}
+
+impl ReloadReport {
+    /// What a host prints about constants and stale seeds after a reload,
+    /// one line each ([`StaticReload::lines`](super::StaticReload::lines)).
+    /// Empty when there is nothing to say.
+    pub fn static_lines(&self) -> Vec<String> {
+        self.statics.as_ref().map(|s| s.lines()).unwrap_or_default()
+    }
 }
 
 /// Why [`Env::set_config_value`] did not set a value. Nothing was changed.
@@ -297,10 +311,16 @@ impl Env {
         };
         let summary = change.summary();
         let program = self.compile_program_diag(program_id, new_entry_source, origin)?;
+        // What the stack's static values are and which of them the edit
+        // reached, read before the program is replaced and the table
+        // emptied (`env/static_follow.rs`).
+        let followed = self.begin_static_follow(stack_id, &change);
         let result = self.transfer_state(stack_id, program).map_err(|e| {
             crate::error::LoadError::message(crate::error::Phase::Module, e)
         })?;
+        let statics = followed.and_then(|f| self.finish_static_follow(stack_id, &change, f, false));
         Ok(ReloadReport {
+            statics,
             outcome: ReloadOutcome::Recompiled,
             // An edit that classified as incremental and still had to be
             // recompiled says why; one that was never incremental needs no
@@ -326,6 +346,18 @@ impl Env {
         &mut self,
         stack_id: StackKey,
         change: &ProgramChange,
+    ) -> Result<ReloadReport, String> {
+        self.apply_change(stack_id, change, false)
+    }
+
+    /// [`apply_program_change`](Self::apply_program_change); `live` says the
+    /// change is one tick of a value being dragged, which is when a slow
+    /// static rebuild may wait for the drag to pause.
+    fn apply_change(
+        &mut self,
+        stack_id: StackKey,
+        change: &ProgramChange,
+        live: bool,
     ) -> Result<ReloadReport, String> {
         let program_id = self
             .stacks
@@ -353,12 +385,15 @@ impl Env {
                 state_preserved: state_count,
                 state_dropped: 0,
                 fallback: None,
+                statics: None,
             });
         }
 
         let program = self.programs.get(&program_id).ok_or("Program not found")?;
         let patch = plan_patch(program, change)?;
         let patched = !patch.constants.is_empty();
+        // Read against the old positions, which the patch is about to move.
+        let followed = patched.then(|| self.begin_static_follow(stack_id, change)).flatten();
 
         // Nothing below can fail.
         let program = self.programs.get_mut(&program_id).expect("program found above");
@@ -416,6 +451,7 @@ impl Env {
                 state_preserved: state_count,
                 state_dropped: 0,
                 fallback: None,
+                statics: None,
             });
         }
 
@@ -436,7 +472,9 @@ impl Env {
         }
         let stack = self.stacks.get_mut(&stack_id).expect("stack found above");
         let result = crate::transfer_state::transfer_stack_state(stack, &state_keys);
+        let statics = followed.and_then(|f| self.finish_static_follow(stack_id, change, f, live));
         Ok(ReloadReport {
+            statics,
             outcome: ReloadOutcome::Patched,
             change: summary,
             changed_files,
@@ -513,12 +551,13 @@ impl Env {
                 diff,
             }]
         };
-        self.apply_program_change(
+        self.apply_change(
             stack_id,
             &ProgramChange {
                 files,
                 blocker: None,
             },
+            true,
         )
         .map_err(ConfigSetError::NeedsReload)
     }

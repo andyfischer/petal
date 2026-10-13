@@ -32,10 +32,12 @@ mod reload;
 mod run;
 mod state_json;
 mod state_storage;
+mod static_follow;
 mod statics;
 
 pub use reload::{ConfigSetError, FileChange, ProgramChange, ReloadOutcome, ReloadReport};
 pub use state_storage::{StateStorageLoad, StateStorageSave, name_list as state_name_list};
+pub use static_follow::{StaleSeed, StaticReload};
 pub use statics::{StaticSlotState, StaticValues};
 
 pub struct Env {
@@ -69,6 +71,12 @@ pub struct Env {
     next_stack_id: u32,
     /// How runs execute: optimizer passes, memoization, frame gating.
     policy: RunPolicy,
+    /// Whether a reload keeps the static values the edit cannot have
+    /// changed (see [`Env::set_static_follow`]).
+    static_follow: bool,
+    /// How a slow static rebuild is put off during a drag (see
+    /// [`Env::set_static_debounce`]).
+    static_debounce: Option<crate::static_cache::StaticDebounce>,
     /// Lazily-lowered bytecode, cached next to each `Program`. Populated on the
     /// first bytecode run of a program; an entry's presence means lowering
     /// succeeded. The stored `OptFlags` is the flag set the lowering was built
@@ -209,6 +217,8 @@ impl Env {
             next_program_id: 1,
             next_stack_id: 1,
             policy: RunPolicy::from_env(),
+            static_follow: true,
+            static_debounce: Some(crate::static_cache::StaticDebounce::default()),
             bytecode: HashMap::new(),
             modules,
             compile_count: std::cell::Cell::new(0),

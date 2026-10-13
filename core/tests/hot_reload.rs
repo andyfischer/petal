@@ -66,6 +66,41 @@ fn world(entry: &str, modules: &[(&str, &str)], policy: RunPolicy) -> World {
     w
 }
 
+/// A stack's static values as text, one line per slot
+/// (`petal::static_cache`). `Env::reload_program` keeps the ones the edit
+/// cannot have changed; the full side's `transfer_state` empties every one.
+fn slots(w: &World) -> Vec<String> {
+    use petal::env::StaticSlotState;
+    let Some(values) = w.env.static_values(w.sid) else { return Vec::new() };
+    values
+        .slots
+        .iter()
+        .enumerate()
+        .map(|(i, (info, state))| {
+            let name = info.name.clone().unwrap_or_else(|| "(unnamed)".to_string());
+            let held = match state {
+                StaticSlotState::Filled(v) => petal::value::value_to_display_string(v, w.env.heap()),
+                other => format!("{other:?}"),
+            };
+            format!("s{i} {name} = {held}")
+        })
+        .collect()
+}
+
+/// Following the diff must leave what clearing everything leaves: every
+/// slot the full side has filled holds the same value on the incremental
+/// side. (A slot the full side has not filled yet, because its run raised
+/// or returned before the store, says nothing.)
+fn assert_same_slots(a: &World, b: &World, what: &str) {
+    let (sa, sb) = (slots(a), slots(b));
+    assert_eq!(sa.len(), sb.len(), "[{what}] slot count");
+    for (x, y) in sa.iter().zip(&sb) {
+        if !y.ends_with("= Empty") {
+            assert_eq!(x, y, "[{what}] a static value differs\n{sa:#?}\n{sb:#?}");
+        }
+    }
+}
+
 /// Everything about the loaded program a host or tool could read.
 fn assert_same_program(a: &mut World, b: &mut World, what: &str) {
     let text_a = a.env.bytecode_text(a.pid).unwrap();
@@ -169,9 +204,11 @@ impl<'a> Case<'a> {
             // reload took.
             let (fa, fb) = (run_frame(&mut a), run_frame(&mut b));
             assert_eq!(fa, fb, "[{what}] the run straight after the reload");
+            assert_same_slots(&a, &b, &what);
             for i in 0..AFTER {
                 let (fa, fb) = (frame(&mut a), frame(&mut b));
                 assert_eq!(fa, fb, "[{what}] frame {i} after the reload");
+                assert_same_slots(&a, &b, &what);
             }
             assert_same_program(&mut a, &mut b, &format!("{what}, after running"));
         }
@@ -897,6 +934,11 @@ fn flatten(source: &str) -> String {
     source.lines().map(|l| format!("{}\n", l.trim_start())).collect()
 }
 
+/// `source` with a declaration and a statement added at its end.
+fn grow(source: &str) -> String {
+    format!("{}\nlet __swept = [1, 2, 3]\nprint(len(__swept))\n", source.trim_end())
+}
+
 /// `source` with a few of its number literals changed.
 fn retune(source: &str) -> Option<String> {
     use petal::lexer::{Lexer, Token};
@@ -946,6 +988,17 @@ fn sweep_one(path: &std::path::Path, old: &str, new: &str) -> Option<ReloadOutco
     // lowering instead of lowering afresh afterwards.
     a.env.bytecode_text(a.pid).ok()?;
     let what = path.display().to_string();
+    // Run both, so there are static values for the reload to keep or drop.
+    // A script that needs a host raises; what it built before that stays.
+    let runs = std::env::var("PETAL_RELOAD_NO_RUN").is_err();
+    // (Only the tables are compared here: a script that reads the clock
+    // prints differently on the two sides whatever the reload did.)
+    if runs {
+        for _ in 0..2 {
+            frame(&mut a);
+            frame(&mut b);
+        }
+    }
     let full = b.env.compile_program_at(b.pid, new, path);
     let report = a.env.reload_program(a.sid, new, Some(path));
     let (Ok(program), Ok(report)) = (full, &report) else {
@@ -954,6 +1007,16 @@ fn sweep_one(path: &std::path::Path, old: &str, new: &str) -> Option<ReloadOutco
     };
     b.env.transfer_state(b.sid, program).unwrap();
     assert_same_program(&mut a, &mut b, &what);
+    if runs {
+        // The incremental side kept the static values the edit cannot have
+        // changed; the full side rebuilds every one. Same frames, same table.
+        run_frame(&mut a);
+        run_frame(&mut b);
+        assert_same_slots(&a, &b, &what);
+        frame(&mut a);
+        frame(&mut b);
+        assert_same_slots(&a, &b, &what);
+    }
     if report.outcome == Recompiled && std::env::var("PETAL_RELOAD_VERBOSE").is_ok() {
         eprintln!("recompiled {what}: {} ({:?})", report.change.label(), report.fallback);
     }
@@ -977,6 +1040,9 @@ fn sweep(files: &[std::path::PathBuf]) -> [usize; 3] {
         if let Some(new) = retune(&old) {
             count(sweep_one(path, &old, &new));
         }
+        // A structural edit that leaves every declaration as it was: the
+        // reload recompiles, and following the diff keeps the static values.
+        count(sweep_one(path, &old, &grow(&old)));
     }
     seen
 }

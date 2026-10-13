@@ -393,6 +393,12 @@ pub struct StaticDecl {
     /// The term that carries the declaration's value.
     #[serde(skip)]
     pub term: TermId,
+    /// Every term that binds the name, and `term`: where the declaration is
+    /// written, for a reader that has to place it in the source (a reload
+    /// asking which declarations an edit is inside of). An overloaded
+    /// function has one per arity.
+    #[serde(skip)]
+    pub defs: Vec<TermId>,
 }
 
 /// Counts over a report's declarations.
@@ -612,6 +618,23 @@ fn readers_text(d: &StaticDecl) -> String {
 pub struct StaticAnalysis {
     pub report: StaticReport,
     classes: Vec<TermClass>,
+    /// What top-level terms depend on (see [`StaticAnalysis::root_dependencies`]).
+    roots: RootDeps,
+}
+
+/// The dependency sets of top-level terms, as indices into
+/// [`StaticReport::declarations`].
+#[derive(Clone, Default)]
+struct RootDeps {
+    /// A term that binds a declaration (or publishes an enum's data) -> that
+    /// declaration.
+    owner: HashMap<TermId, u32>,
+    /// Per declaration: everything it depends on, closed transitively.
+    closed: Vec<Box<[u32]>>,
+    /// A top-level term that belongs to no declaration and is static data ->
+    /// everything its value depends on, closed transitively. Terms that
+    /// depend on nothing are left out.
+    unnamed: HashMap<TermId, Box<[u32]>>,
 }
 
 impl StaticAnalysis {
@@ -623,6 +646,31 @@ impl StaticAnalysis {
             .get(id.0 as usize)
             .copied()
             .unwrap_or(TermClass::Dynamic)
+    }
+
+    /// Every declaration the value of the top-level term `root` can depend
+    /// on, as sorted indices into [`StaticReport::declarations`], closed
+    /// transitively. For a term that binds a declaration the declaration
+    /// itself is in the set; for any other static term of the root block
+    /// (the `[1, 2, 3]` written inside a call) it is what the expression
+    /// refers to. `None` when the term is not a static term of the root
+    /// block: nothing is known about what it depends on.
+    ///
+    /// This is the set a reload compares to decide whether a kept value is
+    /// still good (`crate::static_cache`, "Following the diff").
+    pub fn root_dependencies(&self, program: &Program, root: TermId) -> Option<Vec<u32>> {
+        if let Some(&d) = self.roots.owner.get(&root) {
+            let mut out: Vec<u32> = self.roots.closed.get(d as usize)?.to_vec();
+            if let Err(at) = out.binary_search(&d) {
+                out.insert(at, d);
+            }
+            return Some(out);
+        }
+        let term = program.terms.get(root.0 as usize)?;
+        if term.block_id != program.root_block || self.term_class(root) != TermClass::Data {
+            return None;
+        }
+        Some(self.roots.unnamed.get(&root).map(|d| d.to_vec()).unwrap_or_default())
     }
 }
 
@@ -684,7 +732,7 @@ pub fn analyze(program: &Program, natives: &NativeFnTable) -> StaticAnalysis {
     ANALYSES.with(|n| n.set(n.get() + 1));
     let mut pass = Pass::new(program, natives);
     pass.solve();
-    let mut report = pass.report();
+    let (mut report, roots) = pass.report();
     // A `const` that is dynamic: is it dynamic under every host, or only
     // because a native is missing here? Ask again with the missing ones
     // taken to be constant. The classes below stay those of the first pass.
@@ -714,7 +762,7 @@ pub fn analyze(program: &Program, natives: &NativeFnTable) -> StaticAnalysis {
             Class::Dynamic(_) => TermClass::Dynamic,
         })
         .collect();
-    StaticAnalysis { report, classes }
+    StaticAnalysis { report, classes, roots }
 }
 
 // ---------------------------------------------------------------------------
@@ -1914,19 +1962,24 @@ impl<'a> Pass<'a> {
     /// name with); those answer with the nearest term that has one: the
     /// first of a child block, else the closest operand.
     fn span(&self, t: TermId) -> Option<&'a crate::source_map::SourceSpan> {
-        if let Some(s) = self.own_span(t) {
-            return Some(s);
+        self.span_term(t).and_then(|t| self.own_span(t))
+    }
+
+    /// The term [`span`](Self::span) reads the position of `t` from.
+    fn span_term(&self, t: TermId) -> Option<TermId> {
+        if self.own_span(t).is_some() {
+            return Some(t);
         }
         let term = self.p.get_term(t);
         for b in self.blocks_of(term) {
-            if let Some(s) = self.block(b).terms.iter().find_map(|c| self.own_span(*c)) {
-                return Some(s);
+            if let Some(c) = self.block(b).terms.iter().find(|c| self.own_span(**c).is_some()) {
+                return Some(*c);
             }
         }
         let mut level: Vec<TermId> = term.inputs.to_vec();
         for _ in 0..4 {
-            if let Some(s) = level.iter().find_map(|i| self.own_span(*i)) {
-                return Some(s);
+            if let Some(i) = level.iter().find(|i| self.own_span(**i).is_some()) {
+                return Some(*i);
             }
             level = level
                 .iter()
@@ -2170,13 +2223,26 @@ impl<'a> Pass<'a> {
 
     /// The declarations a group's terms refer to directly.
     fn direct_deps(&self, gi: usize, enum_groups: &HashMap<&str, usize>) -> BTreeSet<usize> {
-        let p = self.p;
         let g = &self.groups[gi];
+        let mut stack: Vec<TermId> = g.defs.clone();
+        stack.extend(&g.enum_calls);
+        self.direct_deps_from(stack, gi, enum_groups)
+    }
+
+    /// The declarations the terms in `stack`, and everything that is part
+    /// of their own expressions, refer to directly. `gi` is the group the
+    /// terms belong to, which is not a dependency of itself; `usize::MAX`
+    /// for terms that belong to none.
+    fn direct_deps_from(
+        &self,
+        mut stack: Vec<TermId>,
+        gi: usize,
+        enum_groups: &HashMap<&str, usize>,
+    ) -> BTreeSet<usize> {
+        let p = self.p;
         let mut deps: BTreeSet<usize> = BTreeSet::new();
         let mut seen: HashSet<TermId> = HashSet::new();
         let mut seen_fns: HashSet<usize> = HashSet::new();
-        let mut stack: Vec<TermId> = g.defs.clone();
-        stack.extend(&g.enum_calls);
         // A reference to `t` from inside this group: another declaration is a
         // dependency and is not walked into; anything else is part of this
         // one's own expression.
@@ -2493,7 +2559,7 @@ impl<'a> Pass<'a> {
         }
     }
 
-    fn report(&self) -> StaticReport {
+    fn report(&self) -> (StaticReport, RootDeps) {
         let p = self.p;
         let modules = self.module_names();
         let enum_groups: HashMap<&str, usize> = self
@@ -2580,10 +2646,87 @@ impl<'a> Pass<'a> {
                 direct_depends_on: direct[gi].iter().map(|d| names[*d].clone()).collect(),
                 depends_on: closed[gi].iter().map(|d| names[*d].clone()).collect(),
                 term: g.canonical,
+                defs: {
+                    let defs = match g.kind {
+                        // A read or a write of a `state` or a `var` carries
+                        // its name too; only the declaration is where it is
+                        // written.
+                        DeclKind::State => vec![g.canonical],
+                        DeclKind::Var => {
+                            let cells: Vec<TermId> = g
+                                .defs
+                                .iter()
+                                .copied()
+                                .filter(|d| matches!(p.get_term(*d).op, TermOp::CellNew))
+                                .collect();
+                            if cells.is_empty() { g.defs.clone() } else { cells }
+                        }
+                        _ => {
+                            let mut defs = g.defs.clone();
+                            if !defs.contains(&g.canonical) {
+                                defs.push(g.canonical);
+                            }
+                            defs
+                        }
+                    };
+                    // A term with no position of its own stands where the
+                    // term its position is read from does.
+                    defs.into_iter().map(|d| self.span_term(d).unwrap_or(d)).collect()
+                },
             });
         }
         decls.sort_by_key(|d| (d.file_id.0, d.line.unwrap_or(0), d.column.unwrap_or(0)));
-        StaticReport { declarations: decls }
+
+        // The same sets by position in the sorted report, for a reader that
+        // asks about a term (`StaticAnalysis::root_dependencies`).
+        let index_of: HashMap<TermId, u32> =
+            decls.iter().enumerate().map(|(i, d)| (d.term, i as u32)).collect();
+        let at: Vec<u32> = self
+            .groups
+            .iter()
+            .map(|g| index_of.get(&g.canonical).copied().unwrap_or(u32::MAX))
+            .collect();
+        let indices = |set: &BTreeSet<usize>| -> Box<[u32]> {
+            let mut out: Vec<u32> = set.iter().map(|d| at[*d]).filter(|i| *i != u32::MAX).collect();
+            out.sort_unstable();
+            out.dedup();
+            out.into()
+        };
+        let mut roots = RootDeps {
+            owner: HashMap::new(),
+            closed: vec![Box::default(); decls.len()],
+            unnamed: HashMap::new(),
+        };
+        for (gi, g) in self.groups.iter().enumerate() {
+            if at[gi] == u32::MAX {
+                continue;
+            }
+            roots.closed[at[gi] as usize] = indices(&closed[gi]);
+            for t in g.defs.iter().chain(&g.enum_calls).chain(&g.enum_records) {
+                roots.owner.insert(*t, at[gi]);
+            }
+            roots.owner.insert(g.canonical, at[gi]);
+        }
+        for &t in &self.block(p.root_block).terms {
+            if roots.owner.contains_key(&t)
+                || self.group_of.contains_key(&t)
+                || !matches!(self.cls(t), Class::Data | Class::Top)
+                || matches!(p.get_term(t).op, TermOp::Constant(_))
+            {
+                continue;
+            }
+            let own = self.direct_deps_from(vec![t], usize::MAX, &enum_groups);
+            if own.is_empty() {
+                continue;
+            }
+            let mut all: BTreeSet<usize> = BTreeSet::new();
+            for d in own {
+                all.insert(d);
+                all.extend(closed[d].iter().copied());
+            }
+            roots.unnamed.insert(t, indices(&all));
+        }
+        (StaticReport { declarations: decls }, roots)
     }
 }
 

@@ -1,8 +1,13 @@
 # Static value optimization: plan
 
-Status: S0 (the `CONST` flag, the classifier, `show-static`, `--static-audit`)
-is implemented and the go/no-go gate **passed** on 12 October 2026: S1 may
-start. See the status note under each section for the rest.
+Status: **A1, A2, A3, S0, S1 and S2 are implemented, reviewed and on `main`**
+(12 October 2026); both gates passed. What is not done is everything outside
+this repository: no engine that vendors Petal has been re-vendored, so Moses
+has not run a frame with the cache under its own host and the first row of
+"Benchmarks that gate the work" is still its baseline. The "Later" items are
+not started. See [Results](#results-12-october-2026) for baseline against
+now, the final test pass and the follow-ups, and the status note under each
+section for the rest.
 
 Design and evidence: [`docs/proposals/static-values.md`](../proposals/static-values.md).
 This file is the work order. Where the two disagree, the proposal's design
@@ -1716,6 +1721,145 @@ makes `petal run` check a program before running it) plus two test fixes.
   stock-trading). Nineteen scripts outside the repository (worlds-fair's and
   `~/.garden`'s) moved from `identical-trace` to `unsupported` in the verify
   plan, because a script that fails check no longer starts.
+
+## Results (12 October 2026)
+
+Measured at `f3d6e67` with this repository's release build, on a machine at
+load average 5 to 14. Times are minimums unless said; instruction and
+allocation counts are exact.
+
+### Baseline against now
+
+| Benchmark | Baseline | Now | |
+|---|---|---|---|
+| Moses headless, 600 frames, under the Cheesecake engine | 49,871,337 instructions; 2.71 ms a frame; 14 collections; 406 `StateInit` a frame | **not re-measured** | The engine's `third_party/petal` is the pre-plan Petal, and Moses needs the engine's natives. Follow-up 1 |
+| …the static part of a Moses frame (`static_frame`, the substitute) | 8,065 instructions, 1,230 allocations, 482 records (cache off) | 2,674 instructions, 58 allocations, 2 records; 426 slots in 34 runs; 276 µs to 179 µs | −5,391 instructions a frame against the −4.1k the proposal estimated by hand; 0 audit findings |
+| …the same with the lint's rewrite applied (76 `state` to `const`, scratch copy) | 25,804 instructions, 4,687 allocations (cache off) | 2,566 instructions, 46 allocations; 529 slots | Shows why the rewrite must wait for an engine with the cache on |
+| Example panels in the Cheesecake headless host | snake 2,617 instructions a frame; analytics-dashboard 11,005; network-graph 153,493; settings 31,624 | **not re-measured in that host** | Same reason |
+| …the same four under petal-ui's driver, cache off against on (60 monkey frames) | snake 2,992; analytics-dashboard 29,817; network-graph 783,883; settings 36,727 | 2,773 (−7.3%); 29,513 (−1.0%); 782,445 (−0.2%); 35,571 (−3.1%) | All 55 apps: −0.73% instructions, −10.03% allocations, 2,594 slots |
+| Enum reads (A1), ns over the empty loop | local 51.3; `K.v.code` 71.3; `K.all` 227.8 | 3.5; 6.5; 18.7 (record field 1.8, payload 11.3, walk of `all` 16.7) | |
+| 50-variant enum with data, per run (S1) | 9.54 µs before A1, 6.67 µs after it | 2.46 µs (2.00 µs for the enum with no data) | |
+| GC pause with a rooted 100,000-record table (A2) | 10.0 ms a collection in the proposal's script; 13.5 ms in `tools/bench-gc-pause.ts` | frozen 0.20 ms (rooted 15.1 ms in the same run); one collection alone 2.29 ms rooted, 0.009 ms frozen | A static value is not frozen: `freeze` is still the author's call |
+| A `state` hit (A3) | 16.9 µs for 200 top-level; 57.0 µs for 200 in a function | 9.6 to 10.3 µs; 38.6 to 40.3 µs (medians 10.5 to 10.9 and 43.8 to 44.7) | |
+| A 400-record `let` table as a memo argument | 58 misses in 30 frames | 0 misses, 29 hits in 29 frames (29 misses with the cache off) | `a_large_table_as_a_memo_argument_stops_missing` |
+| `petal check` on Moses | 587 ms | 540 ms | No `const` in the game as written, so no classification |
+| Patched reload, `reload_timing` on `games/neon` | about 0.8 ms (when neon was 14 files, 62,733 terms) | 1.5 ms patched, 1.3 ms relocated, 183 ms recompiled (35 files, 77,853 terms) | Not comparable with the baseline: the game grew and no pre-plan binary exists. On today's binary the cache is 0.1 ms of the patched reload (1.4 ms with it off) and 24 ms of the recompile (159 ms off) |
+| Structural edit on Moses, reload + lowering + next frame (S2) | 152.9 + 382.9 + 0.58 ms, rebuilding all 426 | 540.5 + 0 + 0.39 ms, 426 kept; one table changed: 425 kept, 1 rebuilt | The next frame runs 2,675 instructions instead of 8,353 |
+| `test/benchmarks/*` under `petal run --seed 1`, minimum of 15 | A1's same-day pre-plan binary: append 6.1, arith 12.3, audio_synth 110.6, calls 29.8, life 15.0, match_dispatch 317.8, particles 11.2, spreadsheet 205.9 ms | 6.5, 11.9, 105.4, 29.1, 14.2, 312.0, 10.8, 209.2 ms | No regression. life 3,913,944 instructions, spreadsheet 20,449,651 and 9 collections, audio_synth 621 collections, particles 4: unchanged from before the plan |
+
+The table in `docs/dev/performance.md` (append 5.2 ms … spreadsheet 201.4)
+is older than the commit that made `petal run` check a program first, and
+every script is about 1.2 ms above it for that reason, on the pre-plan
+binary as well.
+
+### The final test pass
+
+Everything passes except the one test that failed before the plan.
+
+- **Rust, debug.** `core`: 63 binaries, 2,558 passed, 0 failed, 16 ignored
+  (the oracles below and doc examples). `core-libs/petal-ui`: 20 binaries,
+  297 passed (the panel corpus cache on against off under four policies,
+  the followed reload against clear-everything, the effect, static and
+  classifier audits). `core-libs/petal-query`: 33.
+  `integrations/petal-c-bridge`: 20, and `make test-c-bridge` 4 of 4.
+  `integrations/petal-desktop-sdl`: 54. `garden-script`: 180, and `cargo
+  check --workspace` in `garden/`.
+- **Rust, release.** `core`: 2,557 passed, 1 failed (below). The ignored
+  oracles: copy propagation against its reference; the 4-token small-scope
+  sweep; the whole-corpus reload oracle over this repository and over the
+  Cheesecake games, worlds-fair, `~/.garden`, the website and `~/tools` (343
+  files: 160 relocated, 9 patched, 154 recompiled), each reload compared
+  with a recompile and with the reload that rebuilds every static value;
+  `static_fuzz` and `static_cache_fuzz` at 3,000 seeds each; the other
+  fuzzers at their defaults. `make expensive_lint_tests`: 4 of 4.
+- **The rest.** vitest 1,570 in 75 files; `tsc`; `npm run stdlib:json`
+  leaves no diff; `./tools/test-examples.ts` 33 (optimizer on and off, cache
+  on and off over two runs, golden).
+- **`./tools/verify.ts --plan compiler`**, four ways, each 139 identical
+  traces, 19 modules, 145 unsupported, nothing changed: against the golden
+  hashes; the UI driver with the cache off against on (`fast-static` against
+  the default); the optimizer off against on (`baseline` against the
+  default); and optimizer off with the cache off against on (`baseline`
+  against `baseline+static`).
+- **Audits.** `petal run --effect-audit`, `--static-audit` and
+  `--static-only` over the 48 scripts of `examples/console`,
+  `test/benchmarks` and `test/benchmarks/micro`, each under `fast`,
+  `replay`, `replay-static` and `baseline` and over one and two runs (1,152
+  runs): no under-declared native, no static term that touched a dynamic
+  input, no failed build. `frozen` is reported over-declared (it declares an
+  effect so that nothing caches its answer, and has none), which is
+  informational.
+- **Still failing, as before the plan.**
+  `a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile` in the
+  release profile only: 3.39 ms against 12.41 ms, 3.7 times where it asserts
+  5. It passes in debug.
+- **`./tools/native-effect-audit.ts` exits 1**, as it did before the plan:
+  its one suspect is `queue_on_host`, a native that a test in
+  `integrations/petal-desktop-sdl/src/sound.rs` makes silent on purpose.
+- **Fixed on the way.** `core/examples/reload_timing.rs` loaded its program
+  linked and so refused every Cheesecake game, whose packages now require
+  host interfaces. It compiles without linking, as it never ran anything.
+- **Not run.** `petal-fantasy-nes` (it has no target directory and the disk
+  has 5 GB free); the tests of the Garden workspace beyond `garden-script`;
+  clippy; `tools/oracle-external.ts`; anything under the Cheesecake engine.
+
+### The ecosystem sweep
+
+`petal check` and `petal show-static --json` on 372 `.ptl` files outside
+`examples/` and `test/`: `garden/` 27, `~/cheesecake/games` 232,
+`~/worlds-fair/ui/ptl` 19, `~/.garden` 72, petal-lang.org 17, the two
+experiment apps 2, `~/tools` 3 (`~/biz/hotlaps` is not on this machine).
+
+- **Nothing the plan added breaks a script.** No diagnostic in the sweep
+  names `const`, `freeze`, `frozen` or a static value. No binding,
+  parameter or function is named `const`. Six Cheesecake files bind a local
+  `freeze` or `frozen`, which shadows the builtin as any local does, and
+  all six check clean.
+- **6 files do not compile, all for reasons older than the plan**: five
+  copies of `~/.garden/state/window-*/git.ptl` (a list without the commas
+  required since 8 October) and the website's `snippets/match.ptl` (a bare
+  variant as a pattern, an error since 11 October). S0's sweep counted 21
+  of 744 with `examples/` and `test/` included.
+- **108 files fail `petal check` and compile**: every error is an unknown
+  function or variable that the file's own host provides (2,882 such
+  lines). In `~/cheesecake/games` that is 3 of 232, all `hash11` in
+  `rivet`.
+
+### Follow-ups
+
+Outside this repository, none started:
+
+1. **Cheesecake.** Re-vendor Petal and the bridge. Pass `PB_FX_CONST` for
+   the engine natives that qualify and run `--static-audit` under the
+   engine. Take the headless Moses profile of the first row above. Only then
+   apply `petal lint --fix --rules-include=state-as-constant games/moses`
+   (76 cells), since a `const` table costs 25.8k instructions a frame where
+   the cache is off. Print `statics` from `pb_vm_last_reload_json`, and call
+   `pb_vm_flush_static_rebuilds` when a drag ends. (`rivet` calls a
+   `hash11` that `petal check` cannot find here; whether its engine
+   provides one was not looked at.)
+2. **worlds-fair.** `node tools/vendor-petal.ts`; `wf-ui-ffi` knows neither
+   `const` nor the cache until then.
+3. **petal-lang.org and hotlaps.** Rebuild and re-vendor the WASM build;
+   fix `snippets/match.ptl`.
+4. **`~/.garden`.** The five saved `git.ptl` panels need their commas.
+
+In this repository:
+
+5. The release-only reload timing test: the value edit parses the edited
+   file twice.
+6. Split static runs at function declarations and store per value, so one
+   rebuilt slot does not re-execute its run (the open item of S1 and S2,
+   and what would make `frozen` unable to tell a kept neighbour from a
+   rebuilt one).
+7. Time a run that has no slot of its own, for the debounce.
+8. Report stale seeds in Garden panels, where the cache is off.
+9. The classification that lowering does costs 24 ms of a 183 ms recompile
+   on neon; it could be served from the previous analysis when the diff
+   touches no declaration.
+10. The "Later" items above, each on evidence: Garden observation replay,
+    constants inside function bodies, per-input-class slots, keeping slow
+    intermediates, a frozen generation that can release objects.
 
 ## Risks to watch
 

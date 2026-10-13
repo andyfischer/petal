@@ -42,10 +42,10 @@ true  false  nil
 working.
 
 `as` (in `import ui as u`), `class` (in `class Rect … end`), `config` (in
-`config let x = …`) and `native` (in `native fn sqrt(x: num) -> float`) are
-**contextual**: recognised only in those positions, not globally reserved.
-`class` in particular stays usable as an ordinary identifier and as the JSX
-attribute `<div class="…">`.
+`config let x = …`), `native` (in `native fn sqrt(x: num) -> float`) and
+`test` (in `test "name" do … end`) are **contextual**: recognised only in
+those positions, not globally reserved. `class` in particular stays usable as
+an ordinary identifier and as the JSX attribute `<div class="…">`.
 
 A reserved keyword is still usable as a **member name**, where nothing else
 could be meant: `{when: 3, end: 10}`, `r.when`, and the same names in record
@@ -286,6 +286,20 @@ Named variants, written through the enum (`Shape.unit`, `Shape.circle(2)`).
 Inside a variant's parens a bare identifier is a positional payload field and
 `key: expr` is constant data. An `enum` is top-level only and hoisted, and its
 name is a type. See [Enums](../language-guide.md#enums).
+
+### `test` (test block)
+
+A block `petal test` runs and an ordinary run does not. Top level only; the
+name is a plain string, unique within the file. The body is a function body,
+checked with `expect`, `expect_eq` and `expect_near`, which record a failure
+and carry on. See [Testing](../testing.md).
+
+```petal
+test "addition" do
+    expect_eq(1 + 1, 2)
+    expect_near(0.1 + 0.2, 0.3, 0.000001)
+end
+```
 
 ### `break` / `continue` / `return`
 

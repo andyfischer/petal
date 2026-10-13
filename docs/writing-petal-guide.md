@@ -998,7 +998,7 @@ guess costs a compile round-trip (`unknown function \`flatten\``).
 | **Random** | `random()` (in [0, 1)), `random(hi)`, `random(lo, hi)`, `random_int(lo, hi)` (half-open) |
 | **Noise** (`import noise`) | `noise(x[, y[, z]])`, `noise_seed(n)` |
 | **Vectors, color, JSON** | `import vec2` (`vec2`, `vec3`, `normalize`, `dot`, …), `import color` (`hsv`, `hsl`, `color_lerp`), `import json` (`json_parse`, `json_stringify`) |
-| **Checks** | `assert(cond, msg)`, `assert_eq(actual, expected)` |
+| **Checks** | `assert(cond, msg)`, `assert_eq(actual, expected)` stop the program. `expect(cond, msg)`, `expect_eq(actual, expected)`, `expect_near(actual, expected, tolerance)` record the failure and carry on: use them inside a `test "name" do … end` block, which `petal test` runs and `petal run` does not ([testing.md](testing.md)) |
 
 Three of these are shaped differently than you will expect:
 

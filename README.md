@@ -116,6 +116,7 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 | [Hot Reload](docs/features/hot-reload.md) | What reloading a running program keeps and costs |
 | [Builtins Reference](docs/Builtins.md) | Every built-in function |
 | [CLI Reference](docs/CLI.md) | Every `petal` subcommand and flag |
+| [Testing](docs/testing.md) | Test blocks, expectations and `petal test` |
 | [Module System](docs/module-system.md) | `import` and module resolution |
 | [Packages](docs/packages.md) | `petal.toml`, dependencies, the lockfile and the package commands |
 | [Architecture](docs/dev/Architecture.md) | How the implementation works |

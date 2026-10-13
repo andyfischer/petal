@@ -73,6 +73,7 @@ the whole list.
 |---------|---------|
 | `run` | Execute a program |
 | `check` | Compile without executing |
+| `test` | Run the `test` blocks of files and directories |
 | `bench` | Measure what a call of a named function costs |
 | `lsp` | Serve the language server over stdio |
 | `packages` | Show the project's dependencies and required host interfaces, and the libraries available |
@@ -659,6 +660,54 @@ x = 2'
 
 Each entry's `message` has no position suffix; `file` is the module's display
 name, or `null` for the entry file.
+
+### `test` — Run test blocks
+
+```bash
+petal test                          # every .ptl file under the current directory
+petal test src/sim.ptl tests/       # files and directories
+petal test --filter spawn           # only the tests whose name contains "spawn"
+petal test --list                   # name the tests, run nothing
+petal test --json                   # one JSON document instead of the report
+petal test -e 'test "sum" do expect_eq(1 + 1, 2) end'
+```
+
+Finds the `test "name" do … end` blocks of every `.ptl` file under the given
+paths and runs each one in isolation: the file's top level on a fresh stack,
+then the test's body. A file with no test block is passed over without being
+loaded. Each file is the entry of its own program, with its imports and its
+project's `petal.toml` resolved as `run` resolves them, and only the tests
+written in that file are run.
+
+```console
+$ petal test examples/console
+examples/console/fibonacci.ptl
+  ok    the two definitions agree
+  ok    known values
+examples/console/text_utils.ptl
+  ok    truncate leaves a short string alone
+  ok    truncate cuts a long string and marks the cut
+  ok    shout
+
+5 tests: 5 passed (2 files)
+```
+
+A test is `ok`, `FAIL` (an `expect`, `expect_eq` or `expect_near` did not
+hold; each failure is listed with its file and line and both values) or
+`ERROR` (it raised, or ran past the time limit). The exit status is 1 when a
+test fails or errors, when a file with tests cannot be loaded, checked or
+linked here, or when an expectation at a file's top level fails; otherwise 0.
+
+| Flag | |
+|------|---|
+| `--filter <text>` | Run only the tests whose name contains `<text>` |
+| `--list` | Print the tests that would run and run nothing |
+| `--show-output` | Show what every test printed, not only the failing ones |
+| `--timeout <seconds>` | Stop a test that runs longer (default 60; 0 is no limit) |
+| `--json` | Print a JSON document: `ok`, `summary`, and per file its `tests` with `status` (`passed`, `failed`, `error`), `failures`, `error`, `checks`, `output` and `duration_ms` |
+
+The language, the JSON shape and running tests from a host are described in
+[testing.md](testing.md).
 
 ### `fmt` — Canonical layout
 

@@ -443,6 +443,17 @@ disk, so editing a helper module reloads the scripts that import it. Take a
 fresh watch after each attempt (the new program's imports may differ), even
 a failed one, so a broken save is reported once rather than every frame.
 
+### Running a script's tests
+
+A script's `test "name" do … end` blocks are listed by `Env::tests(pid)` and
+run one at a time with `Env::test_begin(stack, &test.function)` and
+`Env::test_resume(stack)`, with the host's natives present. A native that
+calls `PetalCxt::suspend()` sets the test aside (`TestStep::Suspended`) so the
+host can run frames before resuming it, which is how a test waits for
+something that takes time. Expectations that fail outside a test are read
+with `Env::take_expect_failures(stack)`. The loop, the result types and the
+limits are in [testing.md](testing.md#running-tests-from-a-host).
+
 ### Showing what `petal check` would say
 
 A program that loads can still hold lines that fail whenever they run: a name

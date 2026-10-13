@@ -89,6 +89,14 @@ way, for code written against an earlier checkout.
   import, a plain import, the core builtins and `std`. Two plain imports offering the same
   name are an error only where the name is used bare; qualified access
   always works.
+- `test "name" do … end` declares a test at the top level of any file. The
+  body is a function body that nothing calls in an ordinary run; `petal test`
+  and a host's test runner find the blocks and run them. `test` is a keyword
+  only in that position (the start of a top-level statement, before a
+  string), so existing uses of the name are unaffected. `petal fmt`, `check`,
+  `lint` and the language server read the body as the function it is, and
+  the tree-sitter grammar and the vim syntax know the form. See
+  [docs/testing.md](docs/testing.md).
 
 ### Runtime
 
@@ -303,6 +311,13 @@ way, for code written against an earlier checkout.
 
 ### Builtins and standard library
 
+- `expect(condition, message?)`, `expect_eq(actual, expected, message?)` and
+  `expect_near(actual, expected, tolerance, message?)` check something and,
+  when it does not hold, record the failure (file, line, column, both values)
+  and carry on, where `assert` and `assert_eq` raise. Each returns whether it
+  held. A test reports every failure it recorded; outside a test `petal run`
+  prints them when the run ends and exits 1.
+
 - Collections: `map`, `filter`, `reduce`, `sort`, `sort_by`, `reverse`,
   `enumerate`, `zip`, `slice`, `flat`, `prepend`, `concat`, `last`,
   `drop_last`, and `range(a, b, step)` with negative steps.
@@ -335,6 +350,14 @@ way, for code written against an earlier checkout.
   [docs/petal-to-glsl.md](docs/petal-to-glsl.md).
 
 ### CLI
+
+- `petal test [<path>...]` finds the test blocks of the files and
+  directories given (the current directory by default), runs each on a fresh
+  stack after the file's top level, and prints a line per test and a summary;
+  the exit status is 1 when anything failed. `--filter <text>`, `--list`,
+  `--show-output`, `--timeout <seconds>` (default 60) and `--json`. Each file
+  is the entry of its own program, with its imports and `petal.toml`
+  resolved as for `run`, and only the tests written in that file run.
 
 - `petal check` and `petal run` agree on more scripts. `check` now reports a
   call to a builtin or host native with an argument count its `native fn`
@@ -470,6 +493,20 @@ way, for code written against an earlier checkout.
   and refuses a checksum file that does not hold a hash.
 
 ### Embedding and integrations
+
+- A host runs a program's tests with its own natives present:
+  `Env::tests(program)` lists the blocks (`TestDecl`: name, module, file,
+  line, function), `Env::test_begin(stack, function)` starts one, and
+  `Env::test_resume(stack)` runs it to `TestStep::Finished(TestResult)` or
+  `TestStep::Suspended`. A native suspends the test it is called from with
+  `PetalCxt::suspend()`, which is how a host writes `wait_frames(n)`: the
+  test's frames are set aside, the host runs its ordinary frames on the same
+  stack, and the next `test_resume` carries on from the following line.
+  `test_resume_bounded`, `test_abort` and `run_test` complete the set.
+  `Env::take_expect_failures(stack)` returns what expectations outside tests
+  recorded, and `PetalCxt::fail_expectation`, `pass_expectation` and
+  `call_location` let a native record checks of its own. See
+  [docs/testing.md](docs/testing.md#running-tests-from-a-host).
 
 - `Env::resolve_import(path, importer)` (the canonical name an import
   resolves to), `Env::exports_of(path)`, `Env::importable_paths()`, and

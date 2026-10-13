@@ -7,6 +7,27 @@ binary and asserts on its output. This document covers both and the tooling
 built around them. The commands are listed in [scripts.md](scripts.md#testing);
 the layout of `test/` is in [`test/README.md`](../../test/README.md).
 
+## Tests written in Petal
+
+A test about what a program *evaluates to* can be written in Petal, as
+`test "name" do … end` blocks checked with `expect_eq` and friends
+([docs/testing.md](../testing.md)). `test/ptl/` holds such files, and a few
+examples carry tests beside their code (`examples/console/fibonacci.ptl`,
+`examples/console/text_utils.ptl`,
+`examples/games/physics-playground/physics.ptl`).
+
+```bash
+petal test test/ptl examples/console     # run them directly
+cd core && cargo test --test ptl_tests   # the same files, held by cargo test
+```
+
+`core/tests/ptl_tests.rs` runs them through the runner behind `petal test`
+and also covers the command itself; `core/tests/test_blocks.rs` covers the
+syntax, the expectations and the host API. Reach for a Petal test when the
+case is "this expression has this value". A test of an error message, of the
+IR or of a tool's output stays in Rust or vitest: a Petal test cannot catch
+a runtime error.
+
 ## Integration tests (vitest)
 
 Run from the repo root (`npm test` runs everything once):

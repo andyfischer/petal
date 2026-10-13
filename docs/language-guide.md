@@ -2135,6 +2135,61 @@ assert_eq(total, expected)
 its condition is false. `assert_eq` reports both operand values on failure.
 Both are built-ins — no import needed.
 
+## Tests
+
+A `test` block is code beside the code it tests. `petal run` and a host
+running the file never execute it; `petal test` finds the blocks of a file or
+a directory, runs each one on its own and reports what failed.
+
+```petal
+fn after_hit(lives: int) -> int
+  max(lives - 1, 0)
+end
+
+test "a hit costs one life" do
+  expect_eq(after_hit(3), 2)
+  expect_eq(after_hit(0), 0, "never below zero")
+end
+```
+
+- A test is written at the top level of a file, and its name is a plain
+  string, unique within the file. `test` is a keyword only in that position;
+  anywhere else it is an ordinary name.
+- The body is a function body: it sees the file's top-level declarations,
+  private ones included, and reads a module-level `var` or `state var` with
+  `get`, as every function does.
+- Each test runs in isolation. The file's top level runs first, on a fresh
+  stack, and then the test; nothing one test writes reaches another.
+
+Inside a test, check with an **expectation**. Where `assert` raises and ends
+the run at the first failure, an expectation records the failure, with its
+file, line and both values, and carries on:
+
+| | |
+|---|---|
+| `expect(condition, message?)` | `condition` is neither `false` nor `nil` |
+| `expect_eq(actual, expected, message?)` | the two are `==` |
+| `expect_near(actual, expected, tolerance, message?)` | two numbers differ by at most `tolerance` |
+
+Each answers `true` or `false`, so a test can stop where going on is
+pointless (`if !expect(p != nil) then return end`). An `assert` or a runtime
+error inside a test ends that test and is reported as an error.
+
+```console
+$ petal test lives.ptl
+lives.ptl
+  FAIL  a hit costs one life
+        lives.ptl:6: expected 2, got 1
+        lives.ptl:7: expected 0, got -2 (never below zero)
+
+1 test: 0 passed, 1 failed (1 file)
+```
+
+An expectation also works outside a test: `petal run` prints the ones that
+failed when the run ends and exits 1. [Testing](testing.md) covers `petal
+test`, its JSON output, and how a host runs the same blocks with its own
+natives, including a test that waits for frames.
+
 ## Automatic Differentiation
 
 A dual number carries a derivative along with its value, and arithmetic on it

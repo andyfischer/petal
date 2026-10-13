@@ -817,7 +817,7 @@ xs` keeps what it read, and the next `append` pays for one copy before
 carrying on in place. Three shapes still copy the whole list on **every**
 append, and are quadratic (35, 127 and 565 ms for the same three sizes):
 
-```petal
+```petal ignore
 set r.items = append(r.items, v)     // a list held in a record field
 set grid[k] = append(grid[k], v)     // a list held in another list
 set xs = add(xs, v)                  // through a function: fn add(xs, v) return append(xs, v) end
@@ -1387,6 +1387,49 @@ message shows both values.
 ```petal
 assert_eq(2 + 2, 4)
 assert_eq(sort([3, 1, 2]), [1, 2, 3])
+```
+
+## Expectations
+
+Expectations check something and, when it does not hold, **record** the
+failure and carry on, where an assertion stops the program. They are what a
+[`test` block](testing.md) checks with: every failure of a test is reported,
+each with its file and line. Outside a test, `petal run` prints the recorded
+failures when the run ends and exits 1.
+
+Each one returns `true` when it held and `false` when it did not.
+
+### `expect(condition, message?)`
+
+Records a failure when `condition` is `false` or `nil`. The failure reads
+`message`, or `expected a true value`.
+
+```petal
+expect(len("abc") == 3)
+expect(sqrt(16.0) > 3.9, "sqrt is close")
+```
+
+### `expect_eq(actual, expected, message?)`
+
+Records a failure when the two values are not `==`, as `expected <expected>,
+got <actual>` (with `message` in parentheses after it). Strings are shown
+quoted, so `"1"` and `1` read differently.
+
+```petal
+expect_eq(2 + 2, 4)
+expect_eq(sort([3, 1, 2]), [1, 2, 3], "sorted ascending")
+```
+
+### `expect_near(actual, expected, tolerance, message?)`
+
+Records a failure when two numbers differ by more than `tolerance`, as
+`expected 0.6 within 0.01, got 0.5 (off by 0.1)`. The tolerance is required
+and must not be negative. A value that is not a number, and a NaN, is never
+near anything.
+
+```petal
+expect_near(0.1 + 0.2, 0.3, 0.000001)
+expect_near(sin(pi()), 0.0, 0.000001, "sin of pi")
 ```
 
 ## Automatic Differentiation

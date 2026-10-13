@@ -27,6 +27,7 @@ When you add to the docs, extend the owner and link to it from elsewhere.
 |----------|-------------|
 | [Builtins Reference](Builtins.md) | Every built-in function, with signatures and examples |
 | [CLI Reference](CLI.md) | Every `petal` subcommand and flag, plus the JSON output formats |
+| [Testing](testing.md) | `test "name" do … end` blocks, the recording expectations (`expect`, `expect_eq`, `expect_near`), `petal test`, and running the same tests from a host |
 | [Module System](module-system.md) | `import`, which name wins, how modules are identified and found, and what a host does to offer its own |
 | [Packages](packages.md) | `petal.toml`, dependencies, required host interfaces, `petal.lock`, the cache, `vendor/`, and the package commands |
 | [`ui` Reference](ui-reference.md) | Every input helper, draw call, layout helper and widget in `import ui`, with layers, hit testing, retained drawing and flow layout |

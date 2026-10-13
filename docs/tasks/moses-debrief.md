@@ -230,6 +230,32 @@ Wanted:
 - A way for a host to run the same blocks with its own natives present (the
   engine wants `cheesecake --test`).
 
+**Done, 13 October 2026.** [docs/testing.md](../testing.md) is the reference.
+
+- `expect(cond, msg?)`, `expect_eq(actual, expected, msg?)` and
+  `expect_near(actual, expected, tolerance, msg?)` record the failure (file,
+  line, column, both values, the message) and return whether they held.
+  `assert` and `assert_eq` still raise.
+- `test "name" do … end` at the top level of any file. The block is a
+  function nothing calls in an ordinary run, so check, lint, fmt and the
+  language server read its body with no special cases. `test` stays an
+  ordinary name everywhere else.
+- `petal test [path...]` runs each test on a fresh stack after the file's top
+  level, with `--filter`, `--list`, `--show-output`, `--timeout` and
+  `--json`. Exit status 1 on any failure.
+- For the engine: `Env::tests`, `test_begin`, `test_resume` and
+  `PetalCxt::suspend`. A native such as `wait_frames(n)` suspends the test;
+  the host runs its frames on the same stack and resumes. That replaces the
+  `if frame == N then` staging: a test that spans frames is written top to
+  bottom. A waiting test reads `state var` cells live with `get`; a `let` or
+  plain `state` it captured stays as it was when the test began.
+
+Not done: a way to catch a runtime error inside a test (a test of a failure
+still needs the host), setup and teardown blocks, and a call chain on a
+failure recorded inside a helper (it names the helper's line only). Moses'
+seven `dev/*_check.ptl` files and its `check PATH OP VALUE` command language
+were not converted; that waits for `cheesecake --test`.
+
 ### 2.3 Profiler
 
 - Profile from frame 0 on request. Boot is where Moses spends 1.8 s, and

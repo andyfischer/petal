@@ -945,10 +945,15 @@ fn a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile() {
     // parse a reload keeps of the text it ended on serves the next one's
     // running text and nothing else. (Going back and forth between the same
     // two texts would parse nothing and measure a reload nobody makes.)
+    //
+    // The minimum of several rounds, and of more for the two cheap edits:
+    // one of those is about a millisecond, so a single preemption (the rest
+    // of this binary runs beside it, and with `--include-ignored` so does
+    // the whole-corpus oracle) is several times the thing being measured.
     let round = std::cell::Cell::new(0usize);
-    let best = |w: &mut World, a: &dyn Fn(usize) -> String, b: &str| {
+    let best = |w: &mut World, a: &dyn Fn(usize) -> String, b: &str, rounds: usize| {
         let mut best = (ReloadOutcome::Unchanged, f64::MAX);
-        for _ in 0..3 {
+        for _ in 0..rounds {
             round.set(round.get() + 1);
             let text = a(round.get());
             let parses = petal::source_diff::parses_run();
@@ -969,11 +974,11 @@ fn a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile() {
     time(&mut w, &format!("// first\n{src}"));
     time(&mut w, &src);
     let (outcome, patched) =
-        best(&mut w, &|i| src.replace("gain: 0.5", &format!("gain: 0.75{i}")), &src);
+        best(&mut w, &|i| src.replace("gain: 0.5", &format!("gain: 0.75{i}")), &src, 12);
     assert_eq!(outcome, Patched);
-    let (outcome, relocated) = best(&mut w, &|i| format!("// c{i}\n{src}"), &src);
+    let (outcome, relocated) = best(&mut w, &|i| format!("// c{i}\n{src}"), &src, 12);
     assert_eq!(outcome, Relocated);
-    let (outcome, recompiled) = best(&mut w, &|i| format!("{src}print({i})\n"), &src);
+    let (outcome, recompiled) = best(&mut w, &|i| format!("{src}print({i})\n"), &src, 3);
     assert_eq!(outcome, Recompiled);
     eprintln!(
         "{} lines: value edit {patched:.3} ms, layout edit {relocated:.3} ms, recompile {recompiled:.3} ms",

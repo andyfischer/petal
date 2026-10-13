@@ -21,7 +21,12 @@ const HONEST: &str = "fn mk()\n  [[1, 2], [3, 4]]\nend\nprint(mk(), mk())\n";
 
 fn stderr_of(source: &str, check: bool) -> String {
     let mut cmd = Command::new(PETAL);
-    cmd.args(["run", "--runs", "3", "-e", source]).env_remove("PETAL_STATIC_CHECK").env_remove("PETAL_POLICY").env_remove("PETAL_OPT");
+    cmd.args(["run", "--runs", "3", "-e", source])
+        .env_remove("PETAL_STATIC_CHECK")
+        // The audit turns the cache off, and with it the check.
+        .env_remove("PETAL_STATIC_AUDIT")
+        .env_remove("PETAL_POLICY")
+        .env_remove("PETAL_OPT");
     if check {
         cmd.env("PETAL_STATIC_CHECK", "1");
     }

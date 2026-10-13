@@ -10,7 +10,10 @@ October 2026), and so are in-repo follow-ups 5 to 8; the rest (per-input-class
 slots, keeping slow intermediates, a frozen generation that can release
 objects) are not started, for want of a profile that asks for them. The
 whole test plan passed on `4e5b584` on 13 October with nothing failing, the
-release-only timing test included. See [Results](#results-12-october-2026)
+release-only timing test included; what that pass skipped for want of disk
+ran later the same day and found one miscompile in the in-place optimizer,
+older than the plan and fixed, and nothing in the cache ("What the disk had
+kept back"). See [Results](#results-12-october-2026)
 for baseline against now, the final test pass and the follow-ups, and the
 status note under each section for the rest.
 
@@ -2395,6 +2398,8 @@ games that load here, no finding.
   run. The unit test beside it catches the same removal at once.
 - `examples/panels/shapes.ptl` raises under `PanelHost` in the Garden
   measurement, the same with the cache on and off; not looked into.
+  (**Looked into 2026-10-13**: the test had removed the panel's store.
+  Fixed in the test; "What the disk had kept back".)
 - Not run: clippy, `tsc` and vitest (this phase changed no TypeScript),
   `tools/verify.ts`, `garden-app`'s tests and `petal-fantasy-nes` (disk),
   a real Garden session, any Cheesecake game under its engine, so the
@@ -2576,7 +2581,155 @@ core suite is green for the first time.
   `tools/oracle-external.ts`; any suite as a whole under
   `PETAL_STATIC_CHECK=1` (the three that set it themselves ran); a real
   Garden session; anything under the Cheesecake engine. No wall time was
-  taken for a frame of the panel corpus.
+  taken for a frame of the panel corpus. (All but the last three ran later
+  that day: the next section.)
+
+### What the disk had kept back, 13 October 2026
+
+**Status: run, on `518c008` and the five commits after it, until the
+external disk it ran on went away; two things were lost to that and are
+listed last.** Everything the two passes above list under "Not run" for
+want of disk, built into target directories on an external SSD. One
+miscompile was found and fixed, in the optimizer and older than this plan.
+**Nothing was found in the cache.**
+
+**Found and fixed.**
+
+- **A reference taken inside a guard saw a later in-place rewrite**
+  (`fccbc12`). `let v = [1, 2, 3]`, then inside an `if` (or the body of an
+  enclosing loop) `let s = v`, a loop that appends to `v`, and `print(s)`:
+  it printed the grown list with the optimizer on. The arm is part of the
+  accumulator's region, so the copy `s` was a web carrier, condition 5 of
+  `escape.rs` passed every user of a backbone term that was in the web,
+  and the linearity check does not count the loop phi as a second reader.
+  A web user that feeds nothing on the spine must now observe before the
+  id is rewritten, as a user outside the web must. A binary of 21
+  September has the bug, so it is not from this plan; the static cache is
+  not involved. Counted over 706 `.ptl` files (this repository, the
+  Cheesecake games, worlds-fair, `~/.garden`, the website, `~/tools`):
+  13,357 in-place instructions before the fix and after it, in the same
+  381 files, so no script had the shape and none lost a write. Eight
+  shapes pinned in `inplace_does_not_fire_past_a_reference_taken_inside_the_guard`,
+  with two that must keep firing.
+- **The fuzzer that found it** is new: `bytecode/enum_all_fuzz.rs`, for
+  the `Enum.all` read that copies (A1's `copies_enum_all`), which neither
+  in-place fuzzer reached because neither declares an enum. 96 of 100 of
+  its programs have a copying read; each runs three frames under the
+  baseline, each in-place route alone, and `fast` and `replay` with the
+  cache on, off, checking and observed. Seed 148 was the bug above, with
+  no enum in it. The `Enum.all` path itself: nothing in 11,176 seeds.
+- **`PETAL_STATIC_CHECK=1` over a whole suite could not report anything**
+  (`1fe4ea4`): a mismatch went into `StaticValues::mismatches`, which no
+  test of such a run reads. It prints a `static check failure:` line now
+  (`core/tests/static_check_env.rs`).
+- **`shapes.ptl` raised because the test took the panel's store away**
+  (`0cfc09f`), not for anything in Petal or the script: the corpus test set
+  `host.store = None`, the script counts its runs with `panel_store_set`,
+  and "this panel has no store" compared equal under both hosts. Each host
+  gets an empty store of its own, and a panel that raises fails the test
+  unless it is one of `gpp-test-app`'s two that exist to. With it the
+  Garden measurement is 18 panels that draw: 32,116 to 29,947 instructions
+  a frame (−6.75%) and 2,579 to 2,088 allocations (−19.02%); `shapes`
+  alone 1,542 to 1,391 and 142 to 101, 19 slots. (The 30,573 to 28,555
+  given above is the same run without it.)
+- **`tools/oracle-external.ts` did not run at all** (`e7ee738`):
+  `petal-ui-run` refuses a script that calls a host native without
+  importing its interface, and worlds-fair's sources predate that, so every
+  fragment stopped at "unknown function `query`". The bundle is prefixed
+  with `import garden`, `import ui`, `import color`; `--runner` and
+  `--wf-bin` name binaries built elsewhere.
+
+**Ran.**
+
+- **Garden, the whole workspace** (`cargo test --workspace` in `garden/`,
+  the seven GPP apps are members), debug, the first time against the cache
+  under observation: 36 binaries, 1,444 passed, 0 failed, 1 ignored
+  (`garden-app` 992, `garden-core` 106, `garden-diff` 49, `garden-render`
+  19 and its integration tests, `garden-script` and the other apps the
+  rest).
+- **`petal-fantasy-nes`**: 56 and 2 (the carts) passed.
+- **`PETAL_STATIC_CHECK=1`**, `--no-fail-fast -- --nocapture`. `core`: 66
+  binaries, 2,625 passed, 3 failed, all in `static_in_functions.rs` and by
+  design (two count skips, which the check does not take; one pins what
+  `freeze` can tell, and its one `static check failure: … mk (line 2)` is
+  the only such line in the run). `petal-ui`: 21 binaries, 300 passed, 0
+  failed, no line.
+- **`PETAL_STATIC_AUDIT=watch`**, the same way. `core`: 2,530 passed, 100
+  failed, 11 findings. The audit turns the cache off, so 99 of the 100 are
+  the tests that assert it kept or skipped something (`static_cache` 29,
+  `static_reload` 36, `static_in_functions` 15, `static_observe` 11,
+  `static_review3` 2, `const_decl` 1, `hot_reload` 1, three in the
+  library, and the one that checks the variable is off by default). The
+  hundredth was the new fuzzer's own generator test, broken at that moment
+  by a scoping bug in the generator that was fixed before it was
+  committed. The 11 findings
+  are all printed by `tests/static_audit.rs`, whose natives lie on
+  purpose. `petal-ui`: 295 passed, 5 failed the same way ("no static run
+  was ever skipped"), 0 findings. `docs/dev/scripts.md` said one test fails
+  under the audit; it says this now.
+- **The fuzzers, release**, eight at once on a machine at load average 35
+  to 80, each sized from a 300-seed calibration to nine minutes and
+  finishing in four to seven because the load fell: `differential_fuzz`
+  73,598 seeds (260 s), `static_cache_fuzz` 21,833 (312 s), `cell_fuzz`
+  17,477 (365 s), `state_cell_differential_fuzz` 13,929 (397 s),
+  `enum_all_fuzz` 11,176 (352 s), the sharing generator of
+  `static_reload.rs` 4,501 (333 s), `static_fuzz` 2,946 (346 s),
+  `static_fn_fuzz` 2,551 (328 s). All pass, with the escape fix in. The
+  last two are below the 3,000 they had already been run at.
+- **`tools/oracle-external.ts`**, once it ran: 12 of 12 worlds-fair
+  fragments agree over 45 monkey frames, `baseline` against `fast-memo`,
+  `replay` and `fast` (53 to 363 draw commands a frame, none vacuous), and
+  the effect audit finds no under-declared native. `wf-ui` was built with
+  `CARGO_TARGET_DIR` on the SSD; `git status` in `~/worlds-fair` is clean.
+  It is worlds-fair's own vendored Petal that printed the fixtures; the
+  frames ran on this repository's `petal-ui-run`.
+- **The wasm build**: `wasm-pack build --target web` in
+  `integrations/petal-web-canvas/rust` with its target and `--out-dir` on
+  the SSD succeeds, `wasm-opt` included; `petal_web_canvas_bg.wasm` is
+  3,582,214 bytes (the `pkg/` of 10 October in this repository is
+  3,018,474 and was not touched). Not loaded in a browser, not vendored
+  anywhere.
+- **clippy** (`cargo-clippy` is in the toolchain and not on `PATH` here;
+  run with the toolchain's `bin` in front). `core --all-targets`: 122
+  warning lines, 29 of them on lines written since `281c802`, all fixed
+  (`1fe4ea4`, `d901428`): 11 loops over instruction positions allowed for
+  `static_cache` with the reason (one `ip` indexes several parallel
+  tables), one `too_many_arguments` allowed on `in_fn::stretches`, the
+  rest rewritten. One was a test bug of no consequence: a `.replace()` in
+  `static_in_functions.rs` that replaced a string with itself. `petal-ui`:
+  2 of 15 on plan lines (an unused helper, a `sort_by`), fixed.
+  `petal-query` 6, `petal-c-bridge` 1, `petal-desktop-sdl` 23: none on
+  plan lines. Left alone: 93 warnings in `core` on older lines, and a
+  deny-by-default `approx_constant` in `petal-ui/tests/prelude.rs:2087`
+  that stops `cargo clippy --all-targets` there.
+- **After the fixes**, debug: `core` 66 binaries, 2,631 passed, 0 failed,
+  16 ignored (three more than above: the two tests of the new fuzzer and
+  the regression), then `static_check_env` alone; `petal-ui` 21 binaries,
+  300 passed.
+
+**Lost when the SSD unmounted** (about 06:55; every log was on it, so the
+figures above are as read while it was there):
+
+- The second fuzzer pass, four at a time for a full ten minutes each. It
+  was still building. The pass above stands, at four to seven minutes.
+- The whole `core` suite in the release profile on the fixed tree. The
+  debug suite above is what ran.
+- The Garden workspace a second time, after the escape fix: 1,443 passed
+  and **1 failed**, `ticking_advances_the_script_clock_by_the_supplied_dt`
+  in `garden-app`, `time()` advancing 0.982 where it allows 0.96 ± 0.01.
+  The tolerance is for two frames timed by the wall clock, the machine was
+  at load average 18 with a release build beside it, and the test passed
+  in the first run; the five runs alone that would have settled it are
+  what the disk took. Unconfirmed either way.
+- clippy was not run again after the two `petal-ui` fixes, nor over
+  `core/tests/static_check_env.rs` and the last comment added to the
+  fuzzer.
+- One line was written after the disk went and has not been compiled:
+  `static_check_env.rs` also clears `PETAL_STATIC_AUDIT` for the `petal` it
+  starts, so that it does not join the tests that fail under the audit.
+
+Still not run: clippy over `garden/`; a real Garden session; a browser
+with the new wasm; anything under the Cheesecake engine.
 
 ### The final test pass, 12 October 2026
 
@@ -2673,7 +2826,11 @@ Outside this repository, none started:
    `hash11` that `petal check` cannot find here; whether its engine
    provides one was not looked at.)
 2. **worlds-fair.** `node tools/vendor-petal.ts`; `wf-ui-ffi` knows neither
-   `const` nor the cache until then.
+   `const` nor the cache until then. Its `.ptl` sources import nothing, and
+   today's Petal refuses a host native called without its interface
+   imported: they need `petal fix-imports` and an `import garden` by hand
+   when it re-vendors, and `tools/oracle-external.ts` can then drop the
+   three imports it prefixes.
 3. **petal-lang.org and hotlaps.** Rebuild and re-vendor the WASM build;
    fix `snippets/match.ptl`.
 4. **`~/.garden`.** The five saved `git.ptl` panels need their commas.

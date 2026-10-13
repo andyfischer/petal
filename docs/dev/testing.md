@@ -199,6 +199,27 @@ differential fails, suspect both sides
 (`a_branch_that_rebinds_the_accumulator_to_another_value_is_not_in_place`
 in `core/tests/copy_elision.rs`).
 
+Lists that begin as `Enum.all` have a fuzzer of their own,
+`core/src/backend/bytecode/enum_all_fuzz.rs` (`cargo test --lib
+enum_all_fuzz`, `PETAL_FUZZ_ITERS=<n>`). `Enum.all` is one list per stack
+that no reader may write through, except that a read which starts a
+rebinding variable copies and is then rewritten in place
+(`escape::Analysis::copies_enum_all`); the general fuzzer and the cell
+fuzzer declare no enum and reach neither half. Its programs start lists
+from `K.all`, from a function returning it and from containers holding it,
+in `let`, `var`, `state`, parameters, record fields and nested lists,
+rewrite them inside loops and branches, and keep snapshots across the
+writes. Each runs three frames under the baseline, under each in-place
+route alone, and under `fast` and `replay` with the cache on, off,
+checking and observed; every frame must end by printing the declared
+variants. A second test holds the generator to reaching the copying read
+(96 of 100 programs) and each route. Its first find (seed 148) needed no
+enum: a reference taken inside an `if`, in front of a loop that rewrote
+the list in place, showed the rewritten list
+(`inplace_does_not_fire_past_a_reference_taken_inside_the_guard` in
+`bytecode/tests.rs`). The general fuzzer had passed at 3,000 seeds with
+that bug in place.
+
 A reload keeps the static values the edit cannot have changed
 (`core/src/env/static_follow.rs`). The oracle for that is the reload that
 rebuilds every one, `Env::set_static_follow(false)`, and a slot-by-slot

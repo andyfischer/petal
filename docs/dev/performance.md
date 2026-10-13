@@ -555,13 +555,16 @@ long as the segment is kept. Garden's own panels under Garden's host
 (`cd garden && cargo test -p garden-script --lib -- --ignored --nocapture
 measure_static`: every example panel and GPP drawer, 60 frames, every frame
 run, no input and no host data, 13 October 2026) run 2.4% to 17.8% fewer
-instructions a frame and make 9.8% to 28.9% fewer allocations (6.6% and
-18.4% over their sum):
+instructions a frame and make 9.8% to 28.9% fewer allocations (6.75% and
+19.0% over the sum of the 18 that draw, 32,116 to 29,947 instructions and
+2,579 to 2,088 allocations; the other two are `gpp-test-app`'s scripts that
+raise on purpose):
 
 | Panel | Slots | Instructions per frame, off | On | Allocations per frame, off | On |
 |---|---|---|---|---|---|
 | examples/panels/plant | 33 | 1,042 | 918 (−11.9%) | 107 | 83 (−22.8%) |
 | examples/panels/sketch | 17 | 1,206 | 1,110 (−8.0%) | 88 | 66 (−24.9%) |
+| examples/panels/shapes | 19 | 1,542 | 1,391 (−9.8%) | 142 | 101 (−28.9%) |
 | examples/panels/gallery | 14 | 4,911 | 4,767 (−2.9%) | 294 | 257 (−12.6%) |
 | examples/panels/layers | 24 | 1,840 | 1,704 (−7.4%) | 125 | 94 (−25.1%) |
 | gpp-apps/git-viewers/git_panel | 22 | 2,572 | 2,437 (−5.2%) | 211 | 179 (−15.2%) |

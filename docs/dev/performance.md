@@ -485,28 +485,30 @@ rebuilt every frame. The static-value cache (`core/src/static_cache.rs`;
 values that depend on no dynamic data on the stack and jumps over the code
 that builds them. `petal show-static` says which declarations qualify, and
 why the others do not; the cache keeps those of them that code running every
-frame reads, when the run that builds them makes at least two allocations.
-A reload keeps the values the edit cannot have changed and the next run
-rebuilds the others ([hot-reload.md](../hot-reload.md#static-values-across-a-reload)).
+frame reads, wherever the stretch of static code they stand in makes at
+least one allocation. Each value is built and stored on its own, so a
+reload keeps the values the edit cannot have changed and the next run
+rebuilds the others and nothing else ([hot-reload.md](../hot-reload.md#static-values-across-a-reload)).
 It is off under `baseline` and `explain`,
 whenever observations or the trace are on (Garden panels), and for a plain
 `petal run`.
 
 Over the panel corpus (`cd core-libs/petal-ui && cargo test --release --test
 static_cache -- --ignored --nocapture measure`: 55 apps, 60 frames of the
-monkey scenario, every frame run, release) a frame runs 0.0% to 29.7% fewer
-instructions, median 3.9%, and makes 1.0% to 44.5% fewer allocations, median
-18.1%:
+monkey scenario, every frame run, release, 13 October 2026) a frame runs
+0.0% to 29.7% fewer instructions, median 4.6%, and makes 1.0% to 46.1% fewer
+allocations, median 19.1% (0.74% and 10.51% over the sum of the corpus,
+2,940 slots):
 
 | App | Slots | Instructions per frame, off | On | Allocations per frame, off | On |
 |---|---|---|---|---|---|
-| games/snake | 55 | 2,992 | 2,773 (−7.3%) | 144 | 96 (−33.6%) |
-| games/memory | 86 | 30,490 | 21,447 (−29.7%) | 1,430 | 793 (−44.5%) |
-| productivity/settings | 46 | 36,727 | 35,571 (−3.1%) | 1,914 | 1,691 (−11.6%) |
-| productivity/kanban | 40 | 3,954 | 3,759 (−4.9%) | 184 | 137 (−25.5%) |
-| dashboards/analytics-dashboard | 59 | 29,817 | 29,513 (−1.0%) | 2,386 | 2,315 (−3.0%) |
-| dashboards/network-graph | 71 | 783,883 | 782,445 (−0.2%) | 1,257 | 1,098 (−12.7%) |
-| garden/examples/panels/plant | 30 | 1,066 | 941 (−11.7%) | 82 | 58 (−28.9%) |
+| games/snake | 66 | 2,992 | 2,754 (−8.0%) | 144 | 90 (−37.7%) |
+| games/memory | 96 | 30,490 | 21,422 (−29.7%) | 1,430 | 787 (−45.0%) |
+| productivity/settings | 55 | 36,727 | 35,536 (−3.2%) | 1,914 | 1,676 (−12.4%) |
+| productivity/kanban | 42 | 3,954 | 3,752 (−5.1%) | 184 | 136 (−26.2%) |
+| dashboards/analytics-dashboard | 82 | 29,817 | 29,490 (−1.1%) | 2,386 | 2,301 (−3.6%) |
+| dashboards/network-graph | 102 | 783,883 | 782,403 (−0.2%) | 1,257 | 1,088 (−13.5%) |
+| garden/examples/panels/plant | 33 | 1,066 | 942 (−11.6%) | 82 | 57 (−30.1%) |
 
 The saving is a fixed amount per frame (the tables), so it is a large share
 of a small panel and noise in one that simulates or draws a lot. Every UI app
@@ -524,8 +526,12 @@ Costs. A recompile classifies the program (about 85 ms on a 27,000-line
 game, 5 to 8 ms on an example panel) and runs the pass; nothing is classified
 on a literal-only reload. A program that declares a `const` is classified
 when it is compiled, for the check, and the lowering that follows is served
-the same answer (`Program::static_analysis`), so that is still once. Per frame, one test per skippable run plus one
-register write per slot. With the cache off the cost is two comparisons per
+the same answer (`Program::static_analysis`), so that is still once. Per
+frame, one test per stretch of static code plus one register write per slot
+that something outside the stretch reads. The frame that builds everything
+(the first, and the one after a reload that cleared the table) pays two
+instructions more per stored value, a test in front and the store behind:
+933 on the 8,284 of Moses's static code, where one store per stretch was 68. With the cache off the cost is two comparisons per
 dispatch into the VM and one more bit tested in the in-place heap
 operations: the `test/benchmarks/*` scripts under `petal run` time within
 1.2% either way of the same source with both compiled out, and their
@@ -533,9 +539,9 @@ instruction counts are unchanged.
 
 **Enum constant data** is a static value too, where its expressions are
 static. `enum Kind  park(code: 2) end` publishes one record per variant by a
-call the declaration makes on every run; with the cache on that call is part
-of a run like any other, the record it publishes has a slot, and a frame
-that skips the run leaves the record the first run published where it is.
+call the declaration makes on every run; with the cache on that call is
+static code like any other, the record it publishes has a slot, and a frame
+that skips it leaves the record the first run published where it is.
 On `test/benchmarks/micro/enum_decl_data.ptl` (50 variants, three keys each,
 `rerun_timing`, release) a run costs 7.0 µs with the cache off and 2.5 µs
 with it on, against 2.1 µs for the same enum without data: about 9 ns a
@@ -554,31 +560,36 @@ first frame and of a later one. The difference between the two later frames
 is exactly what the cache takes out of every frame of the real program,
 since the dynamic statements cost the same on both sides. It says nothing
 about what the dynamic code then gains from a kept table (a memo hit, less
-to trace in a collection). Moses, 27,000 lines, release, 12 October 2026:
+to trace in a collection). Moses, 27,000 lines, release, 13 October 2026:
 
 | | Instructions, static part of a frame | Allocations | of them records |
 |---|---|---|---|
 | As written, cache off | 8,065 | 1,230 | 482 |
-| As written, cache on | 2,674 (−5,391) | 58 (−1,172) | 2 (−480) |
+| As written, cache on | 2,641 (−5,424) | 45 (−1,185) | 1 (−481) |
 | The 74 constant `state` cells as `const`, cache off | 25,804 | 4,687 | 1,383 |
-| …cache on | 2,566 (−23,238) | 46 | 1 |
+| …cache on | 2,557 (−23,247) | 40 | 1 |
 
-The first frame after a load builds everything and costs the same either
-way (8,284 instructions as written, 35,195 with the 74 cells), plus 68 to 96
-for the stores. The first frame after a reload builds what the edit reached:
-2,675 instructions after an edit to dynamic code and 2,889 after an edit to
-one table, against 8,353 when every value was rebuilt (2,567 and 2,781
-against 35,292 with the 74 cells; `core/examples/reload_follow.rs`, numbers
-in [hot-reload.md](../hot-reload.md#what-it-costs)). What is left on a later frame is the function
-declarations (a closure is made on every run) and the runs too small to be
-worth a check.
+(451 slots behind 42 checks as written, 548 behind 54 with the 74 cells.)
+The first frame after a load builds everything and costs what it does with
+the cache off (8,284 instructions as written, 35,195 with the 74 cells)
+plus the tests and stores: 933 and 1,135. The first frame after a reload
+builds what the edit reached: 2,642 instructions after an edit to dynamic
+code and 2,681 after an edit to one table, against 9,218 when every value
+is rebuilt (2,558 and 2,600 against 36,331 with the 74 cells;
+`core/examples/reload_follow.rs`, numbers in
+[hot-reload.md](../hot-reload.md#what-it-costs)). What is left on a later
+frame is the function declarations (a closure is made on every run) and the
+stretches that allocate nothing.
 
 To see what a script would keep without running it: `PETAL_OPT_STATS=1
-PETAL_POLICY=fast petal show-bytecode app.ptl >/dev/null` prints the runs,
-the slots by declaration, and the root instructions a frame leaves out.
-Tables that are written to are never kept (`let by_sec = [0, 0, 0]` followed
-by `by_sec[i] = v`), and a table sitting alone between two function
-declarations with a single allocation is too small to be worth a check.
+PETAL_POLICY=fast petal show-bytecode app.ptl >/dev/null` prints the
+stretches and the segments they are cut into, the slots by declaration, and
+the root instructions a frame leaves out. Tables that are written to are
+never kept (`let by_sec = [0, 0, 0]` followed by `by_sec[i] = v`). A
+function declaration ends a stretch, since its closure is made on every
+run where it stands; a table sitting alone between two of them is kept all
+the same, at one check a frame. Numbers standing alone are not: loading
+one costs what the check does.
 
 **What a program can tell.** The cache is held to printing, returning,
 raising and storing exactly what the same program does with it off, and one

@@ -124,9 +124,12 @@ on every reload. It is what the followed reload is tested against.
 
 Two things to know. A reload that follows static values lowers the new
 program itself, so that it can say what was kept; that work was the next
-frame's before, and is the same amount. And the unit of rebuilding is a run
-of static statements, not one declaration: when one value of a run is
-rebuilt the others of that run are evaluated again and discarded.
+frame's before, and is the same amount. And the unit of rebuilding is the
+value: each value that something outside its own statement reads is built
+and stored on its own, so a rebuilt table leaves the tables written around
+it kept and reads the ones it is built from out of where they are kept.
+What is rebuilt together is what cannot be told apart: a table that only
+one other value reads and that value, and the values one statement binds.
 
 Only the stack the reload was asked of keeps anything. Every other stack of
 the program, and a fork, rebuilds all of its static values on its next run;
@@ -134,12 +137,16 @@ a reload asked of one of those before it has run again keeps nothing either,
 because its table was filled under constants another stack's edit has since
 replaced.
 
-One difference can be seen, and only through `frozen`. When a run is
-evaluated again for one of its values, a value built in that run from a kept
-neighbour (`let C = [B, 1]`, with `B` kept) holds the copy of `B` the run
-just made, not the kept one. The two are equal and neither can be written
-to, so nothing else tells them apart; `freeze(B)` freezes the kept one, and
-`frozen(C[0])` then says `false` where a rebuild of everything says `true`.
+Which objects are shared is the same after a followed reload as after one
+that rebuilds everything. A rebuilt value holds the kept values it is built
+from themselves (`let C = [B, 1]`, with `B` kept and `C` rebuilt, holds the
+kept `B`, so `freeze(B)` is seen through `C[0]`), and a value is kept only
+together with the values it was built from: when `B` is rebuilt, `C` is
+too, whatever the edit was. A rebuilt value that comes out as it was gives
+way to the old one only where that puts no second copy of a kept table
+beside the first. What `frozen` can still tell is what it can tell between
+any two runs: a table frozen before the reload stays frozen when it is
+kept, and is a new, unfrozen one when it is rebuilt.
 
 ## What kind of edit is it
 
@@ -254,8 +261,10 @@ except in the waiting tables, which is the point and also an inconsistency;
 `1 waiting for the drag to pause (GRID)`. Cheap values built from a waiting
 one are rebuilt each tick from its old value and once more with it when it
 is finally rebuilt, so nothing built from a replaced value outlives the
-drag. The unit is again the run: a cheap value that shares a run of
-statements with a slow one waits with it.
+drag. Each value waits on its own time: a cheap one written beside a slow
+table (`let SCALED = [K * 3]` above a flood fill) is rebuilt on every tick,
+whether or not the dragged literal stands alone in its declaration. A slow
+table that only one other value reads is timed, and waits, with that value.
 
 `Env::set_static_debounce(Some(StaticDebounce { threshold, quiet }))` sets
 the two durations, `None` rebuilds on every tick, and
@@ -341,15 +350,17 @@ Every case also compares the static values the two sides hold after each
 frame: `reload_program` keeps the ones the edit cannot have changed,
 `transfer_state` empties every one, and a slot the full side has filled must
 hold the same value on the incremental side. `core/tests/static_reload.rs`
-holds the rule itself to 23 more cases against `set_static_follow(false)`: a
+holds the rule itself to 45 more cases against `set_static_follow(false)`: a
 changed import, a shadowing declaration, an added overload, an added method,
 a literal inside a function a constant calls, one literal followed through
 17 routes to a kept table (a default parameter, a returned function,
 recursion, a match guard, a method, enum data, a top-level loop), enums,
 modules, values with no declaration, chains of edits, frames that raise,
-collections, and the drag. `core-libs/petal-ui/tests/static_reload.rs` drives
+collections, the drag, and which objects two values share (tables that
+hold one another, frozen through arbitrary names after an edit to one of
+them). `core-libs/petal-ui/tests/static_reload.rs` drives
 the 55 example panels through five edits each under three policies: 275
-followed reloads, 11,352 values kept and 1,752 rebuilt, every frame and
+followed reloads, 12,768 values kept and 2,250 rebuilt, every frame and
 every table equal to the reload that rebuilds everything.
 
 Two sweeps cover real programs. The default run applies a layout edit, an
@@ -413,30 +424,38 @@ The recompile itself went from about 300 ms to 110 ms in the same work:
 `core/examples/reload_follow.rs` times a reload and the frame after it with
 static values followed and not, on the static part of a program whose host
 is not here (`cargo run --release --example reload_follow -- game.ptl`). On
-Moses (27,000 lines, 426 kept values; release, minimum of 7 cycles, 12
+Moses (27,000 lines, 451 kept values; release, minimum of 7 cycles, 13
 October 2026), with every static value rebuilt and with the diff followed:
 
 | Edit | Outcome | Reload, lowering and first frame, rebuilt | Followed | First frame's instructions, rebuilt | Followed |
 |---|---|---|---|---|---|
-| a function added to the entry file | recompiled | 153.3 + 388.5 + 0.62 ms | 533.4 + 0 + 0.35 ms | 8,353 | 2,675 (426 kept) |
-| one table of a module, by shape | recompiled | 156.6 + 383.9 + 0.59 ms | 544.1 + 0 + 0.38 ms | 8,354 | 2,889 (425 kept, 1 rebuilt) |
-| the same table, one number | patched | 5.97 + 0 + 0.45 ms | 5.99 + 0 + 0.29 ms | 8,352 | 2,887 |
+| a function added to the entry file | recompiled | 151.5 + 303.3 + 0.57 ms | 452.8 + 0 + 0.36 ms | 9,218 | 2,642 (451 kept) |
+| one table of a module, by shape | recompiled | 157.2 + 304.9 + 0.56 ms | 480.6 + 0 + 0.39 ms | 9,219 | 2,681 (450 kept, 1 rebuilt) |
+| the same table, one number | patched | 3.09 + 0 + 0.40 ms | 3.66 + 0 + 0.41 ms | 9,217 | 2,679 |
 
-and with its 74 constant `state` tables rewritten as `const` (529 kept
+and with its 74 constant `state` tables rewritten as `const` (548 kept
 values):
 
 | Edit | Outcome | Rebuilt | Followed | First frame's instructions, rebuilt | Followed |
 |---|---|---|---|---|---|
-| a function added | recompiled | 219.0 + 261.7 + 1.39 ms | 485.0 + 0 + 0.42 ms | 35,292 | 2,567 |
-| one table, by shape | recompiled | 223.5 + 262.1 + 1.42 ms | 486.8 + 0 + 0.42 ms | 35,293 | 2,781 |
-| the same table, one number | patched | 5.91 + 0 + 1.31 ms | 5.84 + 0 + 0.32 ms | 35,291 | 2,779 |
+| a function added | recompiled | 211.6 + 275.7 + 1.62 ms | 493.2 + 0 + 0.47 ms | 36,331 | 2,558 |
+| one table, by shape | recompiled | 216.7 + 276.1 + 1.58 ms | 494.4 + 0 + 0.47 ms | 36,332 | 2,600 |
+| the same table, one number | patched | 3.35 + 0 + 1.31 ms | 3.24 + 0 + 0.30 ms | 36,330 | 2,598 |
 
-Read it plainly: following the diff removes 65% to 93% of the instructions
+Read it plainly: following the diff removes 71% to 93% of the instructions
 of the frame after a reload and about a millisecond of it at most, and a
 recompile of this program is half a second either way. Where it shows is a
-value edit, which is 6 to 7 ms end to end here and loses a sixth of that,
-and a program whose tables are slow to build, which this one is not.
-Deciding what to keep costs under 0.1 ms on 426 values.
+value edit, which is 3.5 to 4.7 ms end to end here and loses up to a
+quarter of that, and a program whose tables are slow to build, which this
+one is not. Deciding what to keep cost 0.02 ms on 426 values when it was
+last timed alone (12 October).
+
+Each value is stored on its own, so an edit to one table costs that table:
+the frame after it runs 39 instructions more than a frame with everything
+kept (2,681 against 2,642; 42 with the 74 tables), where it ran 214 more
+while a rebuilt value took the stretch of statements around it along. The
+price is on the frame that builds everything, which runs two instructions
+more per stored value: 9,218 where it was 8,353.
 
 A program that is not being reloaded runs the same instructions as before:
 `petal bench` reports identical instruction counts, and the benchmark programs

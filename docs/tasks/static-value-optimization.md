@@ -1491,20 +1491,23 @@ drives a drag through `pb_vm_set_static_debounce` and
 - **The unit is the run.** One rebuilt slot re-executes its whole run and
   discards the other values; a deferred rebuild takes its run's cheap
   values with it. Splitting runs is the S1 item about function
-  declarations, still open.
+  declarations, still open. *Done 2026-10-13: "A store per value" below.*
 - **A run with no slot of its own is not timed** (it has no `StaticStore`
   to end at), so the debounce undercounts a table that only exists to build
-  another one in a separate run.
+  another one in a separate run. *Done 2026-10-13, same note.*
 - **Only a lone literal skips the wait.** The dragged value gets its new
   value directly when its slot holds one literal and nothing else. A
   dragged literal inside an expression (`config let K = 2 * 3`) that shares
-  a run with a slow table waits with the table.
+  a run with a slow table waits with the table. *Done 2026-10-13, same
+  note.*
 - **Other stacks of the program start empty**, as under S1.
 - **A wrong `CONST` flag now outlives a reload** that does not reach the
   declaration; `Env::clear_static_values` is the remedy (written into
   `docs/ffi.md`).
 - **`frozen` across a reload**: a kept table stays frozen where a rebuilt
-  one would be new; the same documented difference as between runs.
+  one would be new; the same documented difference as between runs. (The
+  other `frozen` difference, the copy of a kept neighbour that the review
+  below found, is gone since 2026-10-13.)
 - **Garden panels print nothing**: they record observations, so the cache
   is off and `ReloadReport::statics` is `None`. Stale seeds could be
   reported without the cache (they need only the classifier), at the price
@@ -1635,6 +1638,165 @@ stands.
   the Garden workspace's tests, `petal-query`, `petal-fantasy-nes`,
   `make test-c-bridge`, Moses under its own engine. The debounce defaults
   are still untuned against a real drag.
+
+### A store per value (2026-10-13)
+
+**Status: done.** The four items the S1 and S2 notes left open about the
+unit of rebuilding (follow-ups 6 and 7 of "Results"). The header of
+`core/src/static_cache.rs` is the description; commit `800ff90`.
+
+What shipped:
+
+- **Stretches, segments, groups.** A maximal sequence of skippable static
+  instructions is a *stretch* (what S1 called a run). It is cut into
+  *segments*, one behind each value that something outside its own segment
+  reads, and each segment has its own `StaticSkip` in front and
+  `StaticStore` behind. A stretch of several segments has one more
+  `StaticSkip` in front, the *group*, which loads what code outside the
+  stretch reads and jumps over all of it: a frame with everything kept
+  makes one check per stretch, as before. No instruction is moved or
+  removed. A cut is never placed inside a top-level statement, across a
+  jump, or between two writes of a register that has a slot, so a loop and
+  its result, and the values one statement binds, stay one segment; where
+  no cut is sound the stretch is one segment, as under S1.
+- **(1) A rebuilt value is rebuilt alone, and holds its kept neighbours
+  themselves.** A register gets a slot when anything outside its segment
+  reads it, another segment included, so a segment that executes finds the
+  kept values it is built from in their registers (the skips in front of
+  it loaded them). `let C = [B, 1]` rebuilt beside a kept `B` holds that
+  `B`. Two rules in the reload keep the other direction from showing:
+  a value is kept only together with what its segment read
+  (`StaticRun::reads`) and with what the same store holds, so a rebuilt
+  `B` takes `C` with it whatever the edit was (a rebuilt number, boolean,
+  symbol or `nil` does not count: it has no identity); and a rebuilt value
+  that comes out identical gives way to the old one only when it holds no
+  kept object the old one does not (`static_cache::replaces`), with a
+  store of several values swapped whole or not at all. **The `frozen`
+  difference the S2 review wrote down is gone**: which objects are shared
+  is the same after a followed reload as after one that rebuilds
+  everything. `docs/hot-reload.md` says so now, and what remains there is
+  the between-runs difference (a kept table stays frozen, a rebuilt one is
+  new).
+- **(2) Function declarations.** A `MakeClosure` still ends a stretch, and
+  that is the plan's rule, not an oversight: a check that jumped over it
+  would leave the function's register holding last run's closure, which a
+  slot may not hold (a kept value holds no function, because a reload
+  renumbers them and a run captures them again), so the only way to span a
+  declaration is to move it, and nothing moves. What changed is the
+  weight: a stretch is worth a check at one allocation, not two
+  (`MIN_WEIGHT`), since a kept table costs one test where building it costs
+  the allocation and the instructions around it. A table alone between two
+  function declarations is kept
+  (`a_single_table_between_two_function_declarations_is_kept`). A stretch
+  that allocates nothing is still left alone. The cost of a declaration
+  between two tables is one more check a frame: Moses has 42 where it had
+  34, the 8 new ones being stretches that were too light before.
+- **(3) Every build is timed.** Every segment ends in a store, so there is
+  no run without one. A slow table that only one value reads has no slot
+  and is built, timed and put off with that value; one that a value in
+  another stretch reads has a slot and a time of its own.
+- **(4) A dragged literal inside an expression does not wait.** Its value
+  is a segment of its own with its own build time, so `let SCALED = [K *
+  3]` beside a slow table is rebuilt on every tick and only the table
+  waits (`a_dragged_expression_does_not_wait_with_its_slow_neighbour`,
+  both layouts). Nothing was added for this; it follows from (1).
+- **Two side effects, both improvements.** A value built before a
+  statement that raises is now kept (it was stored before the raise), and
+  a value beside one that cannot be kept (a pending result) is kept, where
+  `StaticSlotState::NotKept` used to cover the whole run; `NotKept` is now
+  only two values of one statement. `StaticValues::runs` is the number of
+  checks a frame makes and `StaticValues::segments` is new.
+
+Measured (release, this machine, load average about 7; the "before"
+binaries were built from `f03dab6`):
+
+| | Before | After |
+|---|---|---|
+| Panel corpus, 55 apps, 60 monkey frames, `replay`: slots | 2,594 | 2,940 |
+| …instructions per frame over the sum, cache off to on | −0.73% | −0.74% (27,274 fewer; was 26,663) |
+| …allocations per frame | −10.03% | −10.51% (4,354 fewer; was 4,153) |
+| …median app | −3.9% and −18.1% | −4.6% and −19.1% |
+| snake | 2,773 instructions, 96 allocations | 2,754, 90 |
+| Panel corpus through five edits (275 followed reloads): kept / rebuilt | 11,352 / 1,752 | 12,768 / 2,250 |
+| Moses as written, `static_frame`: slots, checks a frame | 426, 34 | 451 (in 451 segments), 42 |
+| …a later frame's static part | 2,674 instructions, 58 allocations, 2 records | 2,641, 45, 1 |
+| …instructions a frame leaves out | 5,391 | 5,424 |
+| …the frame that builds everything | 8,352 | 9,217 |
+| Moses with the 74 cells as `const`: slots, checks | 529, 48 | 548, 54 |
+| …a later frame | 2,566 instructions, 46 allocations | 2,557, 40 |
+| …the frame that builds everything | 35,291 | 36,330 |
+| Moses, the frame after an edit to one table (`reload_follow`) | 2,889 (214 over a frame with all kept) | 2,681 (39 over) |
+| …the same with the 74 cells | 2,781 (214 over) | 2,600 (42 over) |
+| …kept / rebuilt on that edit | 425 / 1 | 450 / 1 |
+
+How to read it. The per-frame gain is small and comes from (2): stretches
+of one allocation. The point of (1) is the frame after an edit, which on
+Moses now costs the edited table and 39 instructions where it cost 214,
+and a slow neighbour that is no longer rebuilt at all. The price is two
+instructions per stored value on a frame that builds everything, the
+first one and the one after a reload that clears the table: 865 more on
+Moses as written (10% of that frame's static part, about 10 µs), 1,039
+with the 74 cells. Most of Moses's 451 values are numbers that dynamic
+code reads, each now a segment; merging those into a neighbour's segment
+would give the instructions back and put a dragged number back in a slow
+table's store, so it was not done. The corpus rebuilds a larger share of
+its slots than before (15.0% against 13.4%) because the count has 346
+more slots in it and the edit of that test nudges every seventh number;
+each of them is rebuilt alone, where a rebuilt slot used to execute its
+whole run. Reload times are unchanged within noise (452.8 ms followed
+against 454.8 ms rebuilt, reload plus lowering, a function added).
+
+Tests: `core/tests/static_reload.rs` has six more cases (45): a rebuilt
+value holds its kept neighbour, a table two values are built from stays
+shared (with dynamic code between them, without, and when the edit is
+what makes it shared), an equal value holding another object is not
+swapped for the old one, one rebuilt value does not rebuild its
+neighbours, the dragged expression, and
+`sharing_is_the_same_as_after_a_rebuild_of_everything`, a generator of
+tables that hold one another with `freeze` through arbitrary names after
+an edit to one of them (40 seeds by default; 2,000 in release, clean).
+`core/tests/static_cache.rs` has the table between two function
+declarations, and two cases changed what they assert (one value kept
+before a raise; `GOOD` kept beside a pending `BAD`). Checks of the
+checks: without the "kept only with what it read" rule,
+`a_table_two_values_are_built_from_stays_shared` fails and the generator
+fails within 400 seeds; with `replaces` accepting any identical value,
+`an_equal_value_holding_another_object_is_not_swapped_for_the_old_one`
+fails.
+
+Oracles at `800ff90` (debug unless said): core `cargo test
+--no-fail-fast` 63 binaries, 2,573 passed, 0 failed, 16 ignored
+(`hot_reload` with its slot-by-slot comparison, `static_reload`,
+`static_cache`, the audits); `static_fuzz` and `static_cache_fuzz` at
+3,000 seeds each in release; the sharing generator at 2,000 in release;
+`core-libs/petal-ui` `static_cache` (the 55-app corpus frame for frame,
+cache on against off, four policies) and `static_reload` (the corpus
+through five edits, followed against clear-all, three policies);
+`integrations/petal-c-bridge` 20 and `make test-c-bridge` 4 of 4;
+`integrations/petal-desktop-sdl` 54; `./tools/test-examples.ts` 33
+(optimizer on and off, cache on and off, golden). The whole petal-ui suite
+(20 binaries, 297) passed on the code as it was an hour before the commit
+and was not repeated on the final tree; `--static-audit` was run only as
+those suites run it, not over the example directories by hand.
+
+Open:
+
+- **A cold frame costs two instructions per stored value** (above). A
+  segment per number is the simple rule, not the cheapest one.
+- **Function declarations still end a stretch**; see (2). A program that
+  alternates tables and functions pays a check per table.
+- **A group is not timed**, only its segments; `build_time` of a slot is
+  its own segment's. A slow table with no slot is charged to the one value
+  that reads it, which is right for the debounce and means the report
+  names the reader, not the table.
+- **Deciding what to keep was not timed again**; the new rule is a fixed
+  point over the segments, one pass per link of the longest chain of
+  values built from a rebuilt one.
+- **Not run**: the Garden workspace's tests and `petal-fantasy-nes`
+  (disk), `tools/verify.ts`, vitest, clippy, the release-profile core
+  suite as a whole, Moses under its own engine. Garden panels have the
+  cache off by construction.
+- Everything else under "Open after S2" and the "Later" list is as it was.
 
 ## Later, each on evidence
 
@@ -1851,8 +2013,10 @@ In this repository:
 6. Split static runs at function declarations and store per value, so one
    rebuilt slot does not re-execute its run (the open item of S1 and S2,
    and what would make `frozen` unable to tell a kept neighbour from a
-   rebuilt one).
-7. Time a run that has no slot of its own, for the debounce.
+   rebuilt one). **Done 2026-10-13**: "A store per value", after the review
+   of S2.
+7. Time a run that has no slot of its own, for the debounce. **Done
+   2026-10-13**, same note: there is no such run any more.
 8. Report stale seeds in Garden panels, where the cache is off.
 9. The classification that lowering does costs 24 ms of a 183 ms recompile
    on neon; it could be served from the previous analysis when the diff

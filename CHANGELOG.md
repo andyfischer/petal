@@ -141,8 +141,8 @@ way, for code written against an earlier checkout.
   is left alone, a top-level `assert` and an unused binding that raises
   keep doing so on every run, and a kept value that something tries to
   update in place is copied instead. Over the 55 example panels a frame runs 0% to 30% fewer
-  instructions (median 4%) and makes 1% to 45% fewer allocations (median
-  18%), and a large `let` table passed to a memoized function no longer
+  instructions (median 5%) and makes 1% to 46% fewer allocations (median
+  19%), and a large `let` table passed to a memoized function no longer
   makes that call miss on every frame. It is part of the `fast` and
   `replay` policies and off under `baseline` and `explain`, while
   observations or the trace are on (so not yet in Garden panels), and for
@@ -162,7 +162,14 @@ way, for code written against an earlier checkout.
   shadowing declaration, an added overload and an added method rebuild what
   they could affect. A literal inside a function body rebuilds what calls
   the function. A rebuilt value that comes out as it was keeps its old heap
-  value. Everything is rebuilt when the diff cannot say what changed, when
+  value. Each value that something outside its own statement reads is
+  built and stored on its own: a rebuilt table leaves the tables written
+  around it kept, and holds the kept tables it is built from themselves,
+  so which objects two values share is the same as after a rebuild of
+  everything (`freeze` through one name is seen through the other). A value
+  is kept only together with the values it was built from. A table that
+  stands alone between two function declarations is kept too.
+  Everything is rebuilt when the diff cannot say what changed, when
   top-level statements changed order, and when the set of source files
   changed. Only the stack the reload was asked of keeps anything;
   another stack of the program, or a fork, rebuilds on its next run. `ReloadReport::statics` reports constants kept and rebuilt and
@@ -173,12 +180,14 @@ way, for code written against an earlier checkout.
   `set_config_value` is driven continuously, a static value whose last
   build took 4 ms or more waits for a 150 ms pause before it is rebuilt
   (`Env::set_static_debounce`, `Env::flush_static_rebuilds`); the dragged
-  value itself never waits. `Env::set_static_follow(false)` is the old
+  value itself never waits, nor does a cheap value written beside a slow
+  one, and a slow table that only one other value reads is timed with it. `Env::set_static_follow(false)` is the old
   behaviour. From C: `pb_vm_set_static_debounce`,
   `pb_vm_flush_static_rebuilds`, `pb_vm_set_static_follow`. A reload that follows static values lowers the new program
   itself, which the next frame used to do. On Moses the frame after a
-  reload runs 2,675 instructions where it ran 8,353 (2,567 for 35,292 with
-  its constant tables as `const`); the recompile is the same half second.
+  reload runs 2,642 instructions where it ran 8,353, and 2,681 after an
+  edit to one table (2,558 and 2,600 for 35,292 with its constant tables as
+  `const`); the recompile is the same half second.
   See [docs/hot-reload.md](docs/hot-reload.md#static-values-across-a-reload).
 - An enum's constant data is a static value where its expressions are
   static: the per-variant records are published by the first run after a

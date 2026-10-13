@@ -174,6 +174,20 @@ the panel corpus, and, since `fast` and `replay` follow by default, by
 would notice, make `begin_static_follow` call nothing dirty: ten
 `hot_reload` cases, 18 of the 23 in `static_reload` and `static_fuzz` fail.
 
+Printing cannot tell one table from an equal copy of it, and a followed
+reload must leave the same objects shared as a rebuild of everything does.
+`sharing_is_the_same_as_after_a_rebuild_of_everything` in
+`core/tests/static_reload.rs` is the oracle for that: tables that hold one
+another, an edit to one of them, and `freeze` through arbitrary names on
+later frames, with `frozen` printed through every name (40 seeds by
+default, `PETAL_FUZZ_ITERS=<n>` for more). To see that it would notice,
+take the fourth condition out of `finish_static_follow` (the loop that
+rebuilds a value beside a rebuilt one it read): it fails within 400 seeds,
+and `a_table_two_values_are_built_from_stays_shared` at once. With
+`static_cache::replaces` made to accept any identical value,
+`an_equal_value_holding_another_object_is_not_swapped_for_the_old_one`
+fails.
+
 Plans live in `test/verify-plans/`. A plan's `exclude` list drops directories
 from its corpus roots (the vitest fixtures under `test/vitest`). A plan's `include` list names module search
 directories (relative to each side's root) handed as `-I` to every side of the

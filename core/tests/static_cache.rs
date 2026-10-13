@@ -1265,3 +1265,23 @@ fn a_table_that_feeds_more_runs_than_the_cap_is_still_served_right() {
     assert!(frames[0].contains("=> error") && !frames[1].contains("=> error"), "{}", frames[0]);
     assert!(skips > 50, "{skips}");
 }
+
+/// Three more shapes from the review, kept as they were written: tables read
+/// only through a capture, a lambda, a method, a default parameter and a
+/// nested closure; top-level `return`s between runs that depend on each
+/// other; and fresh containers that hold kept rows and are written two
+/// levels down.
+#[test]
+fn captures_early_returns_and_nested_writes_agree_with_the_cache_off() {
+    let cases = [
+        "let SEEN = [[1, 2], [3, 4]]\nlet ONLY_CAPTURED = [[5, 6], [7, 8]]\nlet ONLY_LAMBDA = [[9], [10]]\nlet ONLY_METHOD = [[11], [12]]\nlet ONLY_DEFAULT = [[13], [14]]\nlet ONLY_NESTED = [[15], [16]]\nfn fetch(i) ONLY_CAPTURED[i % 2] end\nlet lam = fn(i) -> ONLY_LAMBDA[i % 2]\nfn Rect.pick(self, i) ONLY_METHOD[i % 2] end\nfn dflt(i, t = ONLY_DEFAULT) t[i % 2] end\nfn outer(i)\n  let inner = fn(j) -> ONLY_NESTED[j % 2]\n  inner(i)\nend\nprint(n, SEEN, fetch(n), lam(n), dflt(n), outer(n))\nlet r = Rect(0, 0, 1, 1)\nprint(r.pick(n))\n",
+        "let A = [[1], [2]]\nlet HIDDEN = [[A], [3]]\nprint(\"top\", n, A)\nif n % 3 == 1 then\n  return n\nend\nlet B = [HIDDEN, [4]]\nprint(B)\nif n % 3 == 2 then return B end\nlet C = map(B, fn(x) -> [x, HIDDEN[1]])\nprint(C)\nC[n % 2]\n",
+        "let ROW = [[5], [6]]\nlet FA = f64_array(3)\nlet REC = {xs: [1, 2], m: {k: [3]}}\nlet grid = []\nfor i in range(0, 3) do\n  grid = push(grid, ROW)\nend\nfor i in range(0, 3) do\n  grid[i][0] = [n + i]\n  grid[i][1][0] = n\nend\nprint(grid, ROW)\nlet web = [ROW, [FA, FA], REC]\nweb[0][0][0] = n\nweb[1][0] = set_at(web[1][0], 0, n)\nweb[2].xs[0] = n\nweb[2].m.k = push(web[2].m.k, n)\nprint(web, ROW, FA, REC)\nlet fresh = {a: REC, b: [REC.xs]}\nfresh.a.xs = push(fresh.a.xs, n)\nfresh.b[0][1] = n\nprint(fresh, REC)\nvar acc = [ROW]\nfor i in range(0, 2) do\n  set acc = push(get acc, ROW[i])\n  set acc[0][i] = n\nend\nprint(get acc, ROW)\nlet T = [[1], [2]]\nlet T2 = push(T, n)\nlet U = [[1], [2]]\nlet U = push(U, n)\nprint(T, T2, U)\n",
+    ];
+    for body in cases {
+        let src = format!("{COUNTER}{body}");
+        let (frames, skips) = same_on_and_off(&src, 7);
+        assert!(!frames[6].contains("=> error"), "the case runs: {}", frames[6]);
+        assert!(skips > 0, "something was kept:\n{src}");
+    }
+}

@@ -1262,6 +1262,73 @@ the pass at 85 ms on Moses in release, against 0.55 s for the check.
   petal-lang.org and hotlaps WASM builds do not know `const` until they are
   re-vendored.
 
+### Review of S1 (2026-10-12)
+
+An independent pass over all of S1 after its commits (`2d93ed1` to
+`bbeac09`), aimed at a stale or wrongly shared kept value. One defect found
+and fixed, one difference found and kept; the gate stands as the finishing
+note has it.
+
+- **Fixed: a restore on a context two stacks share.** `restore_execution`
+  replaces the whole context, heap included. A second stack bound to that
+  context kept the static values of its last run, and its next run loaded
+  ids the restored heap never had (`stale heap id`, a panic; it ran with the
+  cache off). The restore now empties, on every other stack of the context,
+  what a run rebuilds: static values, memo records, enum records, captured
+  functions. That stack's own `state` is beyond help, as before.
+  `a_restore_empties_the_table_of_every_stack_on_the_restored_context`.
+- **Found and kept: `frozen` can tell.** `let T = [...]` then `freeze(T)`
+  freezes the one kept table, so `frozen(T)` is true from the top of the
+  next run, where the table rebuilt every run was new and unfrozen (and
+  leaked one table a run). A constant string and a payload-free variant
+  already behave the kept way with the cache off, so this is the constant
+  pool's behaviour extended to tables, and the better one. Pinned
+  (`freezing_a_kept_value_freezes_it_once`) and written into
+  `docs/Builtins.md`, `docs/dev/performance.md` and the changelog.
+  `let T = freeze(build())` is dynamic and unchanged.
+- **Tried to write through to a kept value**, cache on against off under
+  `replay`, `replay-memo`, `baseline+memo`, `baseline` (and by CLI under
+  nine policies): a user function writing its parameter flat, nested and
+  through a record; an element taken out, a loop variable, a match binding;
+  a capture, a `var` cell, `state` seeded from it and then written; the
+  callbacks of `map` and `sort_by`; tables built from each other; f64 arrays
+  (`set_at`, `swap`) alone and inside a list; enum payloads, `K.all`, variant
+  data, `K.from`; a fresh container holding kept rows and written two levels
+  down; a module's `pub let` and `pub const` written by the importer; a host
+  `call_function` between frames. None got through. The heap has exactly
+  seven mutating entry points and all seven test the bit; nothing outside
+  `heap.rs` takes a mutable payload.
+- **Tried to skip something that was needed.** A kept table directly in
+  front of each construct dynamic code opens with (the three loops, `if`,
+  `match`, `&&`, `||`, `??`, a collecting loop with `continue`, `var`,
+  `state`, `fn`); tables read only through a capture, a lambda, a method, a
+  default parameter, a nested closure; frames that raise or `return` part of
+  the way down, in every third and fifth frame, with later runs depending on
+  earlier ones; 75 runs fed by one table, past the cap on feeds. Same output
+  everywhere.
+- **Tried to keep a value past its time.** `set_config_value` (three paths,
+  two stacks); a literal patched inside a function a kept value calls, and
+  back; a structural reload; a reload with `state` holding part of the old
+  table, then `clear_static_values`, across collections (the rebuilt value
+  is a new object); ten switches of what the lowering preserves between
+  frames; fork, reload of the parent, run of the fork, restore; speculative
+  runs before and after the first store.
+- **Reproduced.** Core `cargo test --no-fail-fast` at the fix: 2,517 passed,
+  0 failed, 16 ignored (debug). The petal-ui corpus differential, 55 apps
+  under four policies: passes. `./tools/test-examples.ts` 33,
+  `integrations/petal-desktop-sdl` 54 (its timeline is the one caller of
+  `restore_execution`), `integrations/petal-c-bridge` 19. `static_fuzz` and `static_cache_fuzz` at
+  4,000 seeds each in release: clean. Moses under `static_frame`: 8,065 to
+  2,674 instructions and 482 to 2 records on a later frame, 426 slots, 34
+  runs, as reported.
+- **Open, none of it new work for S2.** The lowering cache is keyed by the
+  optimizer flags, not by the native table: a native registered again with
+  a different effect row after the program first ran keeps its old
+  classification until the next reload (the documented rule is to register
+  before `load_program`). Moses under its own engine, the release-profile
+  core suite, clippy, the Garden workspace and `petal-fantasy-nes` are still
+  not run.
+
 ## S2. Following the diff
 
 **Ships.**

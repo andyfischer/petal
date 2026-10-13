@@ -1783,7 +1783,8 @@ variant such as `let fallback = Use.road`) is fine.
 A host that runs the script every frame evaluates a variant's data once per
 load, not once per frame, when the data is [static](#const--a-value-that-must-be-constant)
 (literals, constant `let`s, functions that read nothing else): it is kept
-with the program's other static values and rebuilt after a reload. Data
+with the program's other static values and rebuilt after a reload that
+reaches the enum. Data
 that calls a function reading `state` is evaluated at the start of every
 run, as is all of it where static values are not kept.
 

@@ -140,8 +140,7 @@ way, for code written against an earlier checkout.
   over when the value is already held, a value that is written to anywhere
   is left alone, a top-level `assert` and an unused binding that raises
   keep doing so on every run, and a kept value that something tries to
-  update in place is copied instead. A reload of any kind rebuilds every
-  kept value once. Over the 55 example panels a frame runs 0% to 30% fewer
+  update in place is copied instead. Over the 55 example panels a frame runs 0% to 30% fewer
   instructions (median 4%) and makes 1% to 45% fewer allocations (median
   18%), and a large `let` table passed to a memoized function no longer
   makes that call miss on every frame. It is part of the `fast` and
@@ -153,9 +152,36 @@ way, for code written against an earlier checkout.
   table passed to `freeze` is frozen once and stays frozen, where the table
   rebuilt on every run was a new unfrozen one each time. See
   [docs/dev/performance.md](docs/dev/performance.md#static-values).
+- A reload follows the diff through the static values: `reload_program` and
+  `set_config_value` keep the ones the edit cannot have changed and the next
+  run rebuilds the rest, where every reload used to rebuild all of them. A
+  value is kept when it is not written inside a statement the edit changed,
+  nothing it depends on is (a function it calls, a table it is built from,
+  every method of a name it calls, an enum it reads), and after a recompile
+  the same declaration depends on the same names; so a new import, a
+  shadowing declaration, an added overload and an added method rebuild what
+  they could affect. A literal inside a function body rebuilds what calls
+  the function. A rebuilt value that comes out as it was keeps its old heap
+  value. Everything is rebuilt when the diff cannot say what changed, when
+  top-level statements changed order, and when the set of source files
+  changed. `ReloadReport::statics` reports constants kept and rebuilt and
+  **stale seeds**, the `state` cells that kept a value although their
+  initializer read something the edit changed; the SDL host and Garden
+  print it (`constants: 2 rebuilt (TILES, WIDTHS), 41 kept`) and
+  `pb_vm_last_reload_json` carries it under `statics`. While
+  `set_config_value` is driven continuously, a static value whose last
+  build took 4 ms or more waits for a 150 ms pause before it is rebuilt
+  (`Env::set_static_debounce`, `Env::flush_static_rebuilds`); the dragged
+  value itself never waits. `Env::set_static_follow(false)` is the old
+  behaviour. A reload that follows static values lowers the new program
+  itself, which the next frame used to do. On Moses the frame after a
+  reload runs 2,675 instructions where it ran 8,353 (2,567 for 35,292 with
+  its constant tables as `const`); the recompile is the same half second.
+  See [docs/hot-reload.md](docs/hot-reload.md#static-values-across-a-reload).
 - An enum's constant data is a static value where its expressions are
   static: the per-variant records are published by the first run after a
-  load or a reload and left in place by the runs after it, where every run
+  load, or after a reload that reaches the enum, and left in place by the
+  runs after it, where every run
   used to build and publish them again (about 100 ns a variant; 9 ns now).
   Data that calls a function reading `state` is published on every run as
   before.

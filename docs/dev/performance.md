@@ -486,7 +486,9 @@ values that depend on no dynamic data on the stack and jumps over the code
 that builds them. `petal show-static` says which declarations qualify, and
 why the others do not; the cache keeps those of them that code running every
 frame reads, when the run that builds them makes at least two allocations.
-A reload of any kind empties it. It is off under `baseline` and `explain`,
+A reload keeps the values the edit cannot have changed and the next run
+rebuilds the others ([hot-reload.md](../hot-reload.md#static-values-across-a-reload)).
+It is off under `baseline` and `explain`,
 whenever observations or the trace are on (Garden panels), and for a plain
 `petal run`.
 
@@ -561,9 +563,13 @@ to trace in a collection). Moses, 27,000 lines, release, 12 October 2026:
 | The 74 constant `state` cells as `const`, cache off | 25,804 | 4,687 | 1,383 |
 | …cache on | 2,566 (−23,238) | 46 | 1 |
 
-The first frame after a load or a reload builds everything and costs the
-same either way (8,284 instructions as written, 35,195 with the 74 cells),
-plus 68 to 96 for the stores. What is left on a later frame is the function
+The first frame after a load builds everything and costs the same either
+way (8,284 instructions as written, 35,195 with the 74 cells), plus 68 to 96
+for the stores. The first frame after a reload builds what the edit reached:
+2,675 instructions after an edit to dynamic code and 2,889 after an edit to
+one table, against 8,353 when every value was rebuilt (2,567 and 2,781
+against 35,292 with the 74 cells; `core/examples/reload_follow.rs`, numbers
+in [hot-reload.md](../hot-reload.md#what-it-costs)). What is left on a later frame is the function
 declarations (a closure is made on every run) and the runs too small to be
 worth a check.
 

@@ -572,8 +572,11 @@ let report = env.reload_program(stack, &source, Some(&path))?;
 `reload_program` diffs each source file against what the program was compiled
 from and takes the cheapest exact path: a layout edit only moves source
 positions, a value edit is written into the running program, and anything else
-is the recompile below ([hot-reload.md](hot-reload.md)). The recompile, which a
-host can also call directly, is:
+is the recompile below ([hot-reload.md](hot-reload.md)). Either way it keeps
+the static values the edit cannot have changed, and `report.statics` says
+which were rebuilt and which `state` cells kept a value their initializer
+would no longer give; print `report.static_lines()` after a reload, as the
+SDL host does. The recompile, which a host can also call directly, is:
 
 ```rust
 let new_program = env.compile_program_at(pid, &source, &path)?;
@@ -582,8 +585,9 @@ let result = env.transfer_state(stack, new_program)?;  // { state_preserved, sta
 
 `transfer_state` keeps every state value whose declaration id still exists in
 the new program and drops the rest. It clears closures and the cached function
-table (they reference old code and are recaptured on the next run) and
-invalidates cached bytecode. Because the id is a name hash, reordering
+table (they reference old code and are recaptured on the next run), empties
+every static value (called directly it follows nothing: `reload_program` is
+what keeps them) and invalidates cached bytecode. Because the id is a name hash, reordering
 declarations preserves state; renaming a variable, or moving it between
 functions or modules, drops it. See
 [program-modification.md](program-modification.md#state-preserving-hot-reload-transfer_state)
@@ -729,10 +733,12 @@ cost of being wrong.
   liveness, or anything about the program's source — whether or not an
   `InputClasses` bit exists for it. A call with constant arguments is then
   itself a constant, so a top-level table built from such calls is a static
-  value: evaluated once and kept on the stack until the script is reloaded
+  value: evaluated once and kept on the stack until an edit reaches it
   (the static-value cache, `core/src/static_cache.rs`, on under the `fast`
-  and `replay` policies). **A wrong `CONST` is a stale value until the next
-  reload** — there is no revision to bump and no frame on which it is
+  and `replay` policies). **A wrong `CONST` is a stale value until an edit
+  to the declaration or to something it depends on**: a reload keeps the
+  static values the edit cannot have changed, so reloading no longer
+  flushes it. There is no revision to bump and no frame on which it is
   recomputed. `Env::clear_static_values(stack)` drops what a stack holds,
   for a host that knows it changed something such a native answers from;
   `Env::static_values(stack)` lists the values and names any that could not

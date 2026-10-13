@@ -1378,6 +1378,141 @@ note has it.
 
 ## S2. Following the diff
 
+**Status: done 2026-10-12; gate passed** (no stale value in any differential;
+the time on Moses is measured and is small, see the gate table). The rule,
+the module and the tests are described in
+[docs/hot-reload.md](../hot-reload.md#static-values-across-a-reload) and in
+the header of `core/src/env/static_follow.rs`.
+
+What shipped:
+
+- **Where things are written, not `(kind, name)`.** `source_diff` now gives
+  the old-text span of every changed or removed construct, the statement
+  each changed literal is in, and whether paired statements changed order;
+  it also lists value-only statements beside a structural change, which the
+  equal-length path used to leave out. A declaration is *changed* when a
+  term that binds it lies inside a changed span. That one question covers a
+  class with its methods, an overloaded function, an enum and a
+  destructuring `let`, where pairing the diff's names with the classifier's
+  would have needed a rule each (the classifier's `Point.len2` is inside the
+  diff's `class Point`).
+- **The kept test** is the three conditions of the plan, asked on both
+  programs: nothing that writes the slot is inside a changed span, nothing
+  in its dependency set is changed, and after a recompile the slot of the
+  same qualified name has a dependency set with the same names, none
+  changed in the new program either. `StaticAnalysis::root_dependencies`
+  answers for any static top-level term, so an unnamed value has a set too.
+- **Unnamed values have an identity.** 23% of the slots of `examples/` are
+  values with no declaration (a table written inside a call, `len(TILES)`
+  hoisted out of one), and a run executes when any slot it feeds is empty,
+  so leaving them out would have rebuilt most runs on every recompile. They
+  are matched by the text of their statement, the shape it compiled to and
+  their place in it; a key two slots share is dropped.
+- **Clear-all remains** where the diff says nothing usable (`change: full`,
+  an unreadable file), where statements were reordered, where the file
+  table changed (an import added or removed), and under
+  `Env::set_static_follow(false)`, which is the oracle.
+- **Identical rebuilt values keep the old heap value**
+  (`static_cache::identical`, stricter than `==`; the old value goes into
+  the register as well). A slot that kept its value while its run was
+  executed for another is written back into its register too. A slot whose
+  only writer is one literal is given the literal's new value with no run.
+- **Enum data is followed like everything else**: a kept record is published
+  into the stack's enum table again by the reload. Without that a program
+  with enums rebuilt one slot per variant on every reload (Moses: 46).
+- **Runs are less coupled.** A register with a slot of its own no longer
+  makes its run feed the later runs that read it (S1 did, harmlessly, since
+  everything was rebuilt together). A dependent is now rebuilt alone.
+- **The report**: `ReloadReport::statics` (`StaticReload`: kept, rebuilt,
+  rebuilt names, deferred, stale seeds, why everything was cleared),
+  `static_lines()`, `statics` in `pb_vm_last_reload_json`, printed by the
+  SDL host and by Garden's config script and panels. A stale seed is a
+  top-level `state` that holds a value and whose declaration, or something
+  its initializer depends on, is changed.
+- **Debounce**: runs are timed; under `set_config_value` driven closer
+  together than 150 ms a slot whose runs took 4 ms or more keeps its value
+  and is rebuilt by the first frame after the pause (`run_needed` asks for
+  it), by the next reload, or by `Env::flush_static_rebuilds`. Slots rebuilt
+  beside a waiting one are rebuilt again with it, since they may have read
+  it.
+- **A followed reload lowers the new program**, which the next frame used
+  to do: that is how the report can say what was kept.
+
+**Gate.**
+
+| Gate item | Result |
+|---|---|
+| No stale value in the differential | None. Every reload of `hot_reload.rs` (42 cases, three policies) and of its sweep; 23 cases of `static_reload.rs` under four policies; the 55-app panel corpus through five edits under three policies (275 followed reloads, 11,352 values kept, 1,752 rebuilt); the whole-corpus sweep in release over this repository (403 files: 264 relocated, 128 patched, 218 recompiled) and over the Cheesecake games, worlds-fair, `~/.garden`, the website and `~/tools` (343 files: 160, 9, 154); `static_fuzz` at 3,000 seeds in release |
+| Structural-edit time on Moses against S1 | Unchanged within noise: 542 ms rebuilt, 534 ms followed (reload + lowering + first frame). The frame after the reload is 0.62 ms and 8,353 instructions rebuilt, 0.35 ms and 2,675 followed |
+
+Moses, static-only build (it still does not run under this binary),
+`core/examples/reload_follow.rs`, release, minimum of 7 cycles:
+
+| Copy | Edit | Rebuilt: reload + lowering + frame | Followed | Frame's instructions | Followed | Kept / rebuilt |
+|---|---|---|---|---|---|---|
+| as written (426 slots) | a function added | 153.3 + 388.5 + 0.62 ms | 533.4 + 0 + 0.35 ms | 8,353 | 2,675 | 426 / 0 |
+| | one table, by shape | 156.6 + 383.9 + 0.59 ms | 544.1 + 0 + 0.38 ms | 8,354 | 2,889 | 425 / 1 |
+| | the same table, one number (patched) | 5.97 + 0 + 0.45 ms | 5.99 + 0 + 0.29 ms | 8,352 | 2,887 | 425 / 1 |
+| 74 cells as `const` (529 slots) | a function added | 219.0 + 261.7 + 1.39 ms | 485.0 + 0 + 0.42 ms | 35,292 | 2,567 | 529 / 0 |
+| | one table, by shape | 223.5 + 262.1 + 1.42 ms | 486.8 + 0 + 0.42 ms | 35,293 | 2,781 | 528 / 1 |
+| | the same table, one number (patched) | 5.91 + 0 + 1.31 ms | 5.84 + 0 + 0.32 ms | 35,291 | 2,779 | 528 / 1 |
+
+How to read it. A recompile of Moses is half a second and building its
+static values was never more than 1.4 ms of that, so following the diff
+cannot show in a structural edit here; the plan's "not all 2.3 s of them"
+is `state`-held grids, which this does not touch. What it changes is the
+frame after a reload (65% to 93% fewer instructions) and a value edit
+(7.2 ms to 6.2 ms with the 74 tables). Deciding what to keep costs about
+0.02 ms on 426 slots. The classifier's extra pass for unnamed values costs
+4 ms of 358 on Moses (`show-static`), lowering 8 ms of 645.
+
+Checks of the checks: with nothing called dirty, ten `hot_reload` cases, 18
+of the 23 `static_reload` cases and `static_fuzz` fail; with the new-program
+conditions switched off, the shadowing, overload, method and enum cases
+fail; without the rebuild list the drag case fails; without rooting the
+remembered values the collection case panics with `stale heap id`.
+
+Oracles at the final code (debug unless said): core `cargo test
+--no-fail-fast` 63 binaries, 2,542 passed, 0 failed, 16 ignored;
+`core-libs/petal-ui` 20 binaries, 297 passed; `integrations/petal-c-bridge`
+20 and `make test-c-bridge` 4 of 4; `integrations/petal-desktop-sdl` 54;
+`./tools/test-examples.ts` 33; vitest 1,570 in 75 files; `garden-script`
+type-checks (`cargo check`, into `core/target`).
+
+**Open after S2.**
+
+- **The unit is the run.** One rebuilt slot re-executes its whole run and
+  discards the other values; a deferred rebuild takes its run's cheap
+  values with it. Splitting runs is the S1 item about function
+  declarations, still open.
+- **A run with no slot of its own is not timed** (it has no `StaticStore`
+  to end at), so the debounce undercounts a table that only exists to build
+  another one in a separate run.
+- **Only a lone literal skips the wait.** The dragged value gets its new
+  value directly when its slot holds one literal and nothing else. A
+  dragged literal inside an expression (`config let K = 2 * 3`) that shares
+  a run with a slow table waits with the table.
+- **Other stacks of the program start empty**, as under S1.
+- **A wrong `CONST` flag now outlives a reload** that does not reach the
+  declaration; `Env::clear_static_values` is the remedy (written into
+  `docs/ffi.md`).
+- **`frozen` across a reload**: a kept table stays frozen where a rebuilt
+  one would be new; the same documented difference as between runs.
+- **Garden panels print nothing**: they record observations, so the cache
+  is off and `ReloadReport::statics` is `None`. Stale seeds could be
+  reported without the cache (they need only the classifier), at the price
+  of running it on every recompile of every panel; not done.
+- **Not run**: `tools/verify.ts`, `tsc`, clippy, the release-profile core suite,
+  the Garden workspace's tests, `petal-query`, `petal-fantasy-nes`, Moses
+  under its own engine.
+- **Cheesecake follow-ups** (read-only here): re-vendor Petal and the
+  bridge; the engine can then print `statics` from
+  `pb_vm_last_reload_json` after a reload and call
+  `pb_vm_set_config` during a drag as it does now. A C entry point for
+  `set_static_debounce` / `flush_static_rebuilds` / `set_static_follow`
+  does not exist yet. worlds-fair's vendored copy and the WASM builds
+  likewise.
+
 **Ships.**
 
 - On a structural reload, keep a slot only if its declaration is unchanged

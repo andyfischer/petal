@@ -43,8 +43,9 @@ and Garden's script and panel hosts. See
 | `state` | kept | kept | kept where the declaration still exists |
 | closures, the captured function table | kept | dropped, recaptured by the next run | dropped |
 | memo records | kept | dropped | dropped |
+| static values | kept | kept, except those the edit reaches | kept, except those the edit reaches |
 | frame gate (`run_needed`) | unchanged: no frame is forced | the next frame runs | the next frame runs |
-| bytecode | kept | kept (one operand retargeted, the first time a literal changes) | lowered again on the next run |
+| bytecode | kept | kept (one operand retargeted, the first time a literal changes) | lowered again: by the reload when it follows static values, else on the next run |
 
 After any reload the stack is ready to run from the top: `run` may follow
 without a `reset_stack`.
@@ -52,10 +53,80 @@ without a `reset_stack`.
 A `patched` reload drops what a `recompiled` one drops, by running the same
 code (`transfer_stack_state`). A closure captured the old value; a memo record
 of a function whose body loads the constant has an input the record does not
-list; a static value kept from an earlier run (`core/src/static_cache.rs`)
-was built from the old literals, so every one of them is dropped and the
-next run builds them again; a `state` slot that was *initialized* from the old value keeps its value
-under both, because an initializer runs once.
+list; a `state` slot that was *initialized* from the old value keeps its value
+under both, because an initializer runs once. Static values are the
+exception: both kinds of reload put back the ones the edit cannot have
+changed, which is the next section.
+
+## Static values across a reload
+
+A static value is a top-level value that depends on no dynamic data, built
+once and kept between runs ([performance.md](dev/performance.md#static-values)).
+A reload keeps the ones the edit cannot have changed and rebuilds the rest
+on the next run. The rule is asked in terms of where things are written
+(`core/src/env/static_follow.rs`):
+
+1. The diff says which top-level statements of each file changed, appeared
+   or went away, and for a value edit which statement each literal is in.
+2. A declaration is **changed** when it is written inside one of those
+   statements. A literal inside a function body changes the function; a
+   method inside a class changes the class's declarations.
+3. A static value is **kept** when it is not written inside a changed
+   statement, none of the declarations it depends on is changed, and (after
+   a recompile) the new program has a value for a declaration of the same
+   module-qualified name that depends on the same names, none of them
+   changed there either. The dependency set is the classifier's, closed
+   transitively (`petal show-static --json`, `depends_on`): the `let`s,
+   functions and enums a value's expression reaches, every method of a name
+   it calls, every enum whose data a field read may reach.
+
+The comparison of names is what catches an edit that changes what a name
+means without touching the value's own text. A new import, a declaration
+that shadows a builtin or a module's export, an added overload and an added
+method each add a name to the set or change a declaration in it.
+
+A value with no declaration of its own (the `[10, 20, 30]` written inside a
+call) is matched across a recompile by the text of its statement and the
+shape the statement compiled to, and follows the same rule.
+
+Everything is rebuilt, as before this existed, when the diff cannot say what
+changed: the new text was not classifiable (`change: full`), top-level
+statements changed order, a source file could not be read, or the program's
+set of source files changed (an import added or removed).
+
+**A rebuilt value that is the value it was keeps the old heap value.** The
+store compares the two (`static_cache::identical`: the same kinds, numbers
+bit for bit so `1` is not `1.0`, records with the same keys in the same
+order, the same answer to `frozen`), and on a match the slot and the
+register take the old one. An edit to a helper function that leaves a table
+as it was costs the rebuild and changes nothing else.
+
+**The report.** `ReloadReport::statics` says what happened, and
+`ReloadReport::static_lines()` is what the SDL host and Garden print:
+
+```text
+[hot-reload] constants: 2 rebuilt (TILES, WIDTHS), 41 kept
+[hot-reload] stale seed: state grid was initialized from TILES, which changed; it keeps its value
+```
+
+Nothing is printed for a reload that reached no constant and left no stale
+seed. A **stale seed** is a top-level `state` cell that kept its value
+although its initializer reads something the edit changed, or was itself
+edited. That has always been how `state` behaves; the line makes it
+visible when a table reloads and a cell built from it does not. From C the
+same is under `statics` in `pb_vm_last_reload_json`. The report is absent
+(`None`) when the program does not run with the static-value cache (the
+`baseline` and `explain` policies, a host that records observations such as a
+Garden panel) or has not run yet.
+
+`Env::set_static_follow(false)` goes back to rebuilding every static value
+on every reload. It is what the followed reload is tested against.
+
+Two things to know. A reload that follows static values lowers the new
+program itself, so that it can say what was kept; that work was the next
+frame's before, and is the same amount. And the unit of rebuilding is a run
+of static statements, not one declaration: when one value of a run is
+rebuilt the others of that run are evaluated again and discarded.
 
 ## What kind of edit is it
 
@@ -153,6 +224,31 @@ Any top-level `let` of data can be set this way; `config` is not required.
 From C: `pb_vm_set_config(vm, file, path, value_json)` and
 `pb_vm_source_text(vm, file)`.
 
+### A slow table under a drag
+
+Each tick of a drag rebuilds the static values built from the dragged
+literal. When one of them is slow to build (a table derived by a flood fill,
+say), that is a slow frame per tick. So while `set_config_value` is called
+continuously, a static value whose last build took 4 ms or more keeps the
+value it had and is rebuilt once the drag pauses: by the first frame that
+starts 150 ms after the last tick (`run_needed` asks for that frame), or by
+the next reload. The first tick of a drag always rebuilds. The dragged
+value itself never waits: its slot is given the new literal directly.
+
+While a rebuild waits, the program runs with the new literal everywhere
+except in the waiting tables, which is the point and also an inconsistency;
+`ReloadReport::statics.deferred` names them, and the report line reads
+`1 waiting for the drag to pause (GRID)`. Cheap values built from a waiting
+one are rebuilt each tick from its old value and once more with it when it
+is finally rebuilt, so nothing built from a replaced value outlives the
+drag. The unit is again the run: a cheap value that shares a run of
+statements with a slow one waits with it.
+
+`Env::set_static_debounce(Some(StaticDebounce { threshold, quiet }))` sets
+the two durations, `None` rebuilds on every tick, and
+`Env::flush_static_rebuilds(stack)` rebuilds at once (for a host that knows
+the mouse button went up).
+
 ## How a value is patched
 
 A literal compiles to a `Constant` term, lowered to one `LoadConst`
@@ -226,18 +322,37 @@ and removed bindings; type-changing edits; and edits the tree does not show.
 Further tests assert that a value edit compiles nothing and lowers nothing
 (`Env::work_counters`), and time the paths on a generated program.
 
+Every case also compares the static values the two sides hold after each
+frame: `reload_program` keeps the ones the edit cannot have changed,
+`transfer_state` empties every one, and a slot the full side has filled must
+hold the same value on the incremental side. `core/tests/static_reload.rs`
+holds the rule itself to 23 more cases against `set_static_follow(false)`: a
+changed import, a shadowing declaration, an added overload, an added method,
+a literal inside a function a constant calls, one literal followed through
+17 routes to a kept table (a default parameter, a returned function,
+recursion, a match guard, a method, enum data, a top-level loop), enums,
+modules, values with no declaration, chains of edits, frames that raise,
+collections, and the drag. `core-libs/petal-ui/tests/static_reload.rs` drives
+the 55 example panels through five edits each under three policies: 275
+followed reloads, 11,352 values kept and 1,752 rebuilt, every frame and
+every table equal to the reload that rebuilds everything.
+
 Two sweeps cover real programs. The default run applies a layout edit, an
-indentation-flattening edit and a number edit to every console example. The
-ignored one does the same over any tree:
+indentation-flattening edit, a number edit and an added declaration to every
+console example, runs two frames before and after, and compares the static
+values. The ignored one does the same over any tree (set
+`PETAL_RELOAD_NO_RUN=1` for a tree whose scripts do not end):
 
 ```bash
 cd core
 PETAL_RELOAD_CORPUS=/path/to/scripts cargo test --release --test hot_reload -- --ignored
 ```
 
-Over the 427 `.ptl` files of this repository and the Cheesecake games it
-reports 647 edits relocated, 343 patched and 10 recompiled, every one
-identical to the recompile.
+Over the 403 `.ptl` files of this repository it reports 264 edits relocated,
+128 patched and 218 recompiled (the added declaration always recompiles);
+over 343 files of the Cheesecake games, worlds-fair, `~/.garden`, the
+website and `~/tools`, 160, 9 and 154. Every one is identical to the
+recompile and leaves the same static values (12 October 2026).
 
 ## What it costs
 
@@ -275,6 +390,34 @@ The recompile itself went from about 300 ms to 110 ms in the same work:
   (`module::ParseCache`), so a reload re-parses only the files whose text
   changed. Parsing was about half of a compile.
 
+`core/examples/reload_follow.rs` times a reload and the frame after it with
+static values followed and not, on the static part of a program whose host
+is not here (`cargo run --release --example reload_follow -- game.ptl`). On
+Moses (27,000 lines, 426 kept values; release, minimum of 7 cycles, 12
+October 2026), with every static value rebuilt and with the diff followed:
+
+| Edit | Outcome | Reload, lowering and first frame, rebuilt | Followed | First frame's instructions, rebuilt | Followed |
+|---|---|---|---|---|---|
+| a function added to the entry file | recompiled | 153.3 + 388.5 + 0.62 ms | 533.4 + 0 + 0.35 ms | 8,353 | 2,675 (426 kept) |
+| one table of a module, by shape | recompiled | 156.6 + 383.9 + 0.59 ms | 544.1 + 0 + 0.38 ms | 8,354 | 2,889 (425 kept, 1 rebuilt) |
+| the same table, one number | patched | 5.97 + 0 + 0.45 ms | 5.99 + 0 + 0.29 ms | 8,352 | 2,887 |
+
+and with its 74 constant `state` tables rewritten as `const` (529 kept
+values):
+
+| Edit | Outcome | Rebuilt | Followed | First frame's instructions, rebuilt | Followed |
+|---|---|---|---|---|---|
+| a function added | recompiled | 219.0 + 261.7 + 1.39 ms | 485.0 + 0 + 0.42 ms | 35,292 | 2,567 |
+| one table, by shape | recompiled | 223.5 + 262.1 + 1.42 ms | 486.8 + 0 + 0.42 ms | 35,293 | 2,781 |
+| the same table, one number | patched | 5.91 + 0 + 1.31 ms | 5.84 + 0 + 0.32 ms | 35,291 | 2,779 |
+
+Read it plainly: following the diff removes 65% to 93% of the instructions
+of the frame after a reload and about a millisecond of it at most, and a
+recompile of this program is half a second either way. Where it shows is a
+value edit, which is 6 to 7 ms end to end here and loses a sixth of that,
+and a program whose tables are slow to build, which this one is not.
+Deciding what to keep costs under 0.1 ms on 426 values.
+
 A program that is not being reloaded runs the same instructions as before:
 `petal bench` reports identical instruction counts, and the benchmark programs
 time within noise (see [performance.md](dev/performance.md)).
@@ -296,9 +439,12 @@ through the new declaration:
 | Its enum renamed or removed | recompiled | keeps the old tag, so it is a variant of an enum that no longer exists |
 
 Static constant data is kept between runs like any other static value
-(`core/src/static_cache.rs`), and every reload, a patched one included,
-drops what was kept: the run after the reload publishes the data again, so
-the table above holds with the cache on and off.
+(`core/src/static_cache.rs`), and across a reload under the same rule: an
+edit that reaches the enum (its data, its variants, a function its data
+calls) rebuilds its records on the next run, and any other edit leaves them,
+published again by the reload itself. Every static value that holds or reads
+a variant depends on the enum, so it is rebuilt with it. The table above
+holds with the cache on and off.
 
 None of these is a crash. The stale value is not rewritten or dropped either:
 `state` is the program's memory, and putting the variant back makes the same

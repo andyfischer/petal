@@ -561,7 +561,12 @@ if (vm.sources_changed()) {                 // stat() of every source file
   the outcome, the files that changed, each literal that changed with its
   binding path (`{"path": "POST.bloom", "old": 0.2, "new": 0.4}`), or the
   top-level constructs that differ (`{"kind": "fn", "name": "draw", "edit":
-  "changed"}`). The format is in `petal_bridge.h`.
+  "changed"}`). Under `statics` it says what the reload did to the program's
+  static values and names the stale seeds: `{"kept": 41, "rebuilt": 2,
+  "rebuilt_names": ["TILES", "WIDTHS"], "deferred": [], "stale_seeds":
+  [{"name": "grid", "read": "TILES"}], "cleared": null}`
+  ([hot-reload.md](hot-reload.md#static-values-across-a-reload)). The format
+  is in `petal_bridge.h`.
 - `reload_source(text)` does the same with new text for the entry file
   (editors, tests).
 - A new program sees natives registered since the original load.

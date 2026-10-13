@@ -1279,6 +1279,9 @@ TEST(hot_reload_patches_values_and_set_config_writes_no_file) {
     CHECK_EQ(r.kind, PB_RELOAD_PATCHED);
     CHECK_EQ(r.state_dropped, 0u);
     CHECK(vm.last_reload_json().find("\"path\":\"POST.bloom\"") != std::string::npos);
+    // What became of the static values: the edited table is rebuilt.
+    CHECK(vm.last_reload_json().find("\"statics\":{") != std::string::npos);
+    CHECK(vm.last_reload_json().find("\"stale_seeds\":[]") != std::string::npos);
     CHECK_EQ(run_out(vm), std::vector<double>{52});
 
     // A layout edit: nothing but positions.

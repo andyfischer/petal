@@ -162,6 +162,18 @@ second test holds the generator to its job: programs that compile, keep
 values and are reloaded both ways. `static_cache_fuzz` in `fuzz.rs` runs
 the general generator's programs three times each, cache on against off.
 
+A reload keeps the static values the edit cannot have changed
+(`core/src/env/static_follow.rs`). The oracle for that is the reload that
+rebuilds every one, `Env::set_static_follow(false)`, and a slot-by-slot
+comparison of the two tables after each frame (a slot the oracle has not
+filled yet says nothing). It is run by `core/tests/static_reload.rs` (the
+rule's own cases), by every case and both sweeps of `core/tests/hot_reload.rs`
+against `transfer_state`, by `core-libs/petal-ui/tests/static_reload.rs` over
+the panel corpus, and, since `fast` and `replay` follow by default, by
+`static_fuzz`'s three reloads against the cache off. To see that an oracle
+would notice, make `begin_static_follow` call nothing dirty: ten
+`hot_reload` cases, 18 of the 23 in `static_reload` and `static_fuzz` fail.
+
 Plans live in `test/verify-plans/`. A plan's `exclude` list drops directories
 from its corpus roots (the vitest fixtures under `test/vitest`). A plan's `include` list names module search
 directories (relative to each side's root) handed as `-I` to every side of the

@@ -23,7 +23,7 @@ with the text that file holds now, and does only the work the edit calls for:
 
 The first three compile nothing and lower nothing. On `games/neon` in the
 Cheesecake engine (35 files, 15,200 lines) a value edit takes 1.0 ms where the
-recompile it replaces takes 175 ms; the numbers are under
+recompile it replaces takes 187 ms; the numbers are under
 [What it costs](#what-it-costs).
 
 The contract is the same on every path: **afterwards the program and the stack
@@ -416,22 +416,23 @@ cd core && cargo run --release --example reload_timing -- game.ptl config.ptl
 
 On `games/neon` (35 files with the packages it imports, 15,211 lines, 77,853
 terms; release build, Apple silicon, the minimum of 9 rounds in each of 5
-to 8 runs, 13 October 2026), and on Moses (65 files, 33,848 lines, 192,534
-terms):
+runs, 13 October 2026), and on Moses (65 files, 33,848 lines, 192,534
+terms; 3 runs):
 
 | Edit to `config.ptl` | Outcome | neon | Moses |
 |---|---|---|---|
-| a comment added | relocated | 0.87 ms | 1.96 ms |
-| one number changed | patched | 1.00 ms | 2.69 ms |
-| a statement added | recompiled | 175 ms | 461 ms |
-| `set_config_value`, file named | patched | 1.03 ms | 4.04 ms |
-| `set_config_value`, file searched for | patched | 2.72 ms | 4.66 ms |
+| a comment added | relocated | 0.85 ms | 1.88 ms |
+| one number changed | patched | 0.99 ms | 2.75 ms |
+| a statement added | recompiled | 187 ms | 488 ms |
+| `set_config_value`, file named | patched | 1.04 ms | 4.08 ms |
+| `set_config_value`, file searched for | patched | 2.71 ms | 4.61 ms |
 
-The static-value cache is 19 ms of the 175 (156 ms under
-`PETAL_POLICY=fast-static`) and 61 of the 461 (400 ms), and nothing that
-can be measured of a relocated or patched reload. Most of that is the
-classification the lowering reads: 14 ms and 48 ms, which the example prints
-on its own. A program is classified once per recompile, whoever asks (the
+The static-value cache is 31 ms of the 187 (156 ms under
+`PETAL_POLICY=fast-static`) and 102 of the 488 (386 ms), and nothing that
+can be measured of a relocated or patched reload. The largest part is the
+classification the lowering reads: 14 ms and 47 ms, which the example prints
+on its own. The values kept inside function bodies are 12 ms and 33 ms of it
+(175 ms and 455 ms under `fast-fnstatic`, the cache without them). A program is classified once per recompile, whoever asks (the
 `const` check, the lowering, the audit, `Env::static_report`), and not at
 all by a reload that does not recompile. The example compiles without
 linking, since it runs nothing, so a game whose package requires a host

@@ -636,9 +636,10 @@ What it does not keep, and what it costs:
   these, once, at its next use: they are not followed, and the reload
   report counts top-level values only. One that only moves text leaves
   them.
-- A recompile pays for the plan and the pass: 26 ms of 481 on a
-  34,000-line game with 1,573 functions (4,381 slots), 8 of 186 on one of
-  15,000 lines. A slot costs its entry in the stack's table whether or
+- A recompile pays for the plan and the pass: 33 ms of 488 on a
+  34,000-line game with 1,573 functions (4,381 slots), 12 of 187 on one of
+  15,000 lines (`reload_timing` under `fast` against `fast-fnstatic`, the
+  minimum of 9 rounds in each of 3 to 5 runs). A slot costs its entry in the stack's table whether or
   not anything reaches it.
 - `freeze(mk())` freezes the one kept list, and `frozen(mk())` is then
   true on the next call, where each call used to return a new list: the

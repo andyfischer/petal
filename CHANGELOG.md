@@ -251,7 +251,7 @@ way, for code written against an earlier checkout.
   writes the constants into the running program, and anything else recompiles
   and transfers state as before. The result is the same on every path, which
   `core/tests/hot_reload.rs` checks against a full recompile. On a
-  15,000-line game a value edit takes 1.0 ms where a recompile takes 175 ms.
+  15,000-line game a value edit takes 1.0 ms where a recompile takes 187 ms.
   A reload parses only text it has not seen: the parse of the text each
   reload ends on is kept for the next one (edited files only, two versions
   of each at most, 2 MiB in all; `Env::clear_reload_parses` drops them).

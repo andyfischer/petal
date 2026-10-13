@@ -87,6 +87,13 @@ pub(super) fn native_lerp(state: &mut PetalCxt) -> Result<u32, String> {
             state.push_value(Value::List(id));
             return Ok(1);
         }
+        // Two records that are not colors: field by field.
+        (Value::Map(a), Value::Map(b)) => {
+            let t = state.get_float(3)?;
+            let v = lerp_records(state, a, b, t, 0);
+            state.push_value(v);
+            return Ok(1);
+        }
         (
             Value::Vec2(..) | Value::Vec3(_) | Value::Map(_) | Value::List(_),
             _,
@@ -94,7 +101,7 @@ pub(super) fn native_lerp(state: &mut PetalCxt) -> Result<u32, String> {
         | (_, Value::Vec2(..) | Value::Vec3(_) | Value::Map(_) | Value::List(_)) => {
             return Err(
                 "lerp(a, b, t) expects two numbers, two vectors of the same kind, \
-                 two colors {r, g, b} or two lists of numbers"
+                 two colors {r, g, b}, two lists of numbers or two records"
                     .into(),
             );
         }
@@ -105,6 +112,101 @@ pub(super) fn native_lerp(state: &mut PetalCxt) -> Result<u32, String> {
     let t = state.get_float(3)?;
     state.push_float(a + (b - a) * t);
     Ok(1)
+}
+
+/// How deep [`lerp_records`] follows records inside records before it stops
+/// blending and picks a side. Data is a tree, so this is never met in
+/// practice; it bounds the native stack.
+const LERP_DEPTH: usize = 32;
+
+/// `lerp` of two records, field by field: the result has `a`'s fields (and
+/// its class), each blended with the field of the same name in `b` where the
+/// two can be — see [`lerp_field`] — and otherwise taken whole from `a` while
+/// `t < 0.5` and from `b` after. A field `b` does not have keeps `a`'s value.
+fn lerp_records(
+    state: &mut PetalCxt,
+    a: crate::heap::MapId,
+    b: crate::heap::MapId,
+    t: f64,
+    depth: usize,
+) -> Value {
+    let fields: Vec<(crate::record::Key, Value, Option<Value>)> = {
+        let (ra, rb) = (state.heap().get_map(a), state.heap().get_map(b));
+        ra.iter()
+            .map(|(k, v)| (k.clone(), *v, rb.get(k.as_str()).copied()))
+            .collect()
+    };
+    let mut out = crate::heap::RecordMap::with_capacity(fields.len());
+    for (key, x, y) in fields {
+        let v = match y {
+            None => x,
+            Some(y) => match lerp_field(state, x, y, t, depth) {
+                Some(v) => v,
+                None if t < 0.5 => x,
+                None => y,
+            },
+        };
+        out.insert(key, v);
+    }
+    let id = match state.heap().map_class(a) {
+        Some(class) => state.heap_mut().alloc_class_instance(out, class),
+        None => state.heap_mut().alloc_map(out),
+    };
+    Value::Map(id)
+}
+
+/// The blend of two field values, or `None` when they have none (a string, a
+/// bool, values of different kinds): two numbers, two vectors of one kind,
+/// two colors, two records, or two equal-length lists whose elements all
+/// blend.
+fn lerp_field(state: &mut PetalCxt, x: Value, y: Value, t: f64, depth: usize) -> Option<Value> {
+    match (x, y) {
+        (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => {
+            Some(Value::Vec2(ax + (bx - ax) * t, ay + (by - ay) * t))
+        }
+        (Value::Vec3(_), Value::Vec3(_)) => {
+            let (a, b) = (vec3_parts(state, x)?, vec3_parts(state, y)?);
+            let id = state.heap_mut().alloc_vec3([
+                a[0] + (b[0] - a[0]) * t,
+                a[1] + (b[1] - a[1]) * t,
+                a[2] + (b[2] - a[2]) * t,
+            ]);
+            Some(Value::Vec3(id))
+        }
+        (Value::Map(a), Value::Map(b)) => {
+            if super::color::is_color_map(state, a) && super::color::is_color_map(state, b) {
+                Some(super::color::lerp_color_value(state, a, b, t))
+            } else if depth < LERP_DEPTH {
+                Some(lerp_records(state, a, b, t, depth + 1))
+            } else {
+                None
+            }
+        }
+        (Value::List(a), Value::List(b)) => {
+            let pairs: Vec<(Value, Value)> = {
+                let (a, b) = (state.heap().get_list(a), state.heap().get_list(b));
+                if a.len() != b.len() {
+                    return None;
+                }
+                a.iter().copied().zip(b.iter().copied()).collect()
+            };
+            if depth >= LERP_DEPTH {
+                return None;
+            }
+            let mut out = Vec::with_capacity(pairs.len());
+            for (p, q) in pairs {
+                out.push(lerp_field(state, p, q, t, depth + 1)?);
+            }
+            Some(Value::List(state.heap_mut().alloc_list(out)))
+        }
+        _ => match (x, y) {
+            (Value::Int(_) | Value::Float(_), Value::Int(_) | Value::Float(_)) => {
+                let (a, b) = (x.as_f64()?, y.as_f64()?);
+                Some(Value::Float(a + (b - a) * t))
+            }
+            _ => None,
+        },
+    }
 }
 
 pub(super) fn native_map_range(state: &mut PetalCxt) -> Result<u32, String> {

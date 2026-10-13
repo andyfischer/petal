@@ -212,6 +212,7 @@ fn the_natives_that_refuse_names_are_the_variadic_and_internal_ones() {
             "__enum_data",
             "__enum_from",
             "__pending",
+            "__record_of",
             "__reject",
             "__resolve",
             "format",

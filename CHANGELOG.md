@@ -43,6 +43,9 @@ way, for code written against an earlier checkout.
   parameter names) all take one. With `fn_info`, a table of functions is
   callable from data with each one declared once. See
   [Calling with a list or record of arguments](docs/language-guide.md#calling-with-a-list-or-record-of-arguments).
+- Computed record keys: `{[expr]: value}` names a field by a string that is
+  computed, among the other fields and under the same override rule. See
+  [Computed keys](docs/language-guide.md#computed-keys).
 - `state` slots are keyed by the call path that reaches them, so two calls to
   the same function keep separate state. Loops get per-iteration state, with
   optional explicit keys.
@@ -327,6 +330,25 @@ way, for code written against an earlier checkout.
   held. A test reports every failure it recorded; outside a test `petal run`
   prints them when the run ends and exits 1.
 
+- The helpers a large program otherwise writes by hand, each of which the
+  Moses game had two to four copies of: `fill(n, v)`; `argmin`, `argmax` and
+  `top_indices` over a list of numbers, with `min_by`, `max_by` and
+  `top_k(xs, k, key?)` for the element by a key; `group_by(xs, key)` (linear,
+  over the native `group_by_keys`); `flat_map`; `interp(table, x)`, a
+  piecewise-linear table read by bisection; `ord` and `chr`; `plural(n, one,
+  many?)` and `list_and(xs, word?)`; and `lerp` of two records, field by
+  field. `hash_int(a, b?, c?, d?)`, `hash01` and `hash_str(text, salt?)` are
+  stateless hashes with a documented, fixed algorithm (the Cheesecake
+  engine's, value for value).
+- A builtin can be passed where a function is expected: `map(words, upper)`,
+  `sort_by(names, lower)`, `reduce(xs, 0, max)`. It was `Expected a function,
+  got function`.
+- `docs/Builtins.md` now documents the formatting builtins (`fixed`,
+  `commas`, `pad_start`, `pad_end`, `format`) and the Petal prelude (`sum`,
+  `any`, `find`, `take`, …), none of which it listed, and
+  `docs/writing-petal-guide.md` has a one-page "Before you write a helper"
+  index. A format spec in a hole (`"{x:.1f}"`) is still a parse error, which
+  now names `fixed` and `commas`.
 - Collections: `map`, `filter`, `reduce`, `sort`, `sort_by`, `reverse`,
   `enumerate`, `zip`, `slice`, `flat`, `prepend`, `concat`, `last`,
   `drop_last`, and `range(a, b, step)` with negative steps.

@@ -85,6 +85,46 @@ pub fn find(xs, pred)
   nil
 end
 
+// ── Selection by key ───────────────────────────────────────────────────────
+//
+// `key` is called once per element. The native `argmin` / `argmax` /
+// `top_indices` do the selecting, over the list of keys.
+
+// The element whose `key(x)` is smallest (the first of equals), or nil when
+// the list is empty.
+pub fn min_by(xs, key)
+  let i = argmin(map(xs, key))
+  if i == nil then nil else xs[i] end
+end
+
+// The element whose `key(x)` is largest (the first of equals), or nil when
+// the list is empty.
+pub fn max_by(xs, key)
+  let i = argmax(map(xs, key))
+  if i == nil then nil else xs[i] end
+end
+
+// The `k` largest elements, largest first — by `key(x)` when a key is given,
+// by the elements themselves (numbers) when not. Fewer than `k` when the list
+// is shorter. A bounded selection, not a sort of the whole list.
+pub fn top_k(xs, k, key = nil)
+  let scores = if key == nil then xs else map(xs, key) end
+  map(top_indices(scores, k), fn(i) xs[i] end)
+end
+
+// A record of lists: each element goes into the group named by `key(x)`.
+// Groups are in the order their key first appears, each in list order. A key
+// that is not a string is named by its `str()`.
+pub fn group_by(xs, key)
+  group_by_keys(xs, map(xs, key))
+end
+
+// `f` of every element, with the lists it returns joined end to end:
+// `flat(map(xs, f))`.
+pub fn flat_map(xs, f)
+  flat(map(xs, f))
+end
+
 // ── Sublists ───────────────────────────────────────────────────────────────
 
 // The first `n` elements, clamped to the list bounds (never errors).
@@ -122,4 +162,30 @@ end
 // Clamp a number to the 0..1 range — the common `clamp(x, 0, 1)` shorthand.
 pub fn clamp01(x)
   clamp(x, 0, 1)
+end
+
+// ── Text ───────────────────────────────────────────────────────────────────
+
+// A count with its noun: `plural(1, "car")` is "1 car", `plural(3, "car")`
+// is "3 cars", `plural(2, "city", "cities")` is "2 cities". The count is
+// written with thousands separators (`commas`).
+pub fn plural(n, one, many = nil)
+  if n == 1 then
+    "1 {one}"
+  else
+    "{commas(n)} {many ?? one ++ "s"}"
+  end
+end
+
+// A list as prose: "a", "a and b", "a, b and c"; "" for the empty list.
+// `word` replaces "and" (`list_and(xs, "or")`).
+pub fn list_and(xs, word = "and")
+  let n = len(xs)
+  if n == 0 then
+    ""
+  elsif n == 1 then
+    str(xs[0])
+  else
+    join(slice(xs, 0, n - 1), ", ") ++ " {word} " ++ str(xs[n - 1])
+  end
 end

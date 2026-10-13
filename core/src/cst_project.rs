@@ -1104,8 +1104,24 @@ impl Projector {
         let is_spread = direct_tokens(node)
             .iter()
             .any(|t| matches!(t.token(), Some(Token::DotDotDot)));
+        // `[key]: value`: the field opens with a bracket, and holds the key
+        // and the value as its two expressions.
+        let is_computed = matches!(
+            direct_tokens(node).first().and_then(|t| t.token()),
+            Some(Token::LBracket)
+        );
         if is_spread {
             Ok(RecordField::Spread(self.only_expr(node)?))
+        } else if is_computed {
+            let nodes = child_nodes(node);
+            let [key, value] = nodes.as_slice() else {
+                return Err(format!(
+                    "computed record field with {} expression nodes",
+                    nodes.len()
+                ));
+            };
+            let (key, value) = (self.expr(key)?, self.expr(value)?);
+            Ok(crate::ast::computed_record_field(key, value))
         } else {
             let key = self.only_field_name(node)?;
             Ok(RecordField::Named(key, self.only_expr(node)?))
@@ -1492,6 +1508,13 @@ mod tests {
         assert_projects("f(end: 1)\n");
         assert_projects("x |> f(b: 2)\n");
         assert_projects("f(a: {b: 1})\n");
+    }
+
+    #[test]
+    fn projects_computed_record_keys() {
+        assert_projects("let r = {[k]: 1}\n");
+        assert_projects("let r = {a: 1, [k ++ \"x\"]: f(2), ...rest, b: 3}\n");
+        assert_projects("let r = {\n  [keys[0]]: {[k]: 1},\n}\n");
     }
 
     #[test]

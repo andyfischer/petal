@@ -172,6 +172,37 @@ pub fn is_spread_call(arg_names: &[Option<String>]) -> bool {
     arg_names.last().is_some_and(|n| n.as_deref() == Some(SPREAD_ARG))
 }
 
+/// The internal builtin a computed record key is a call of: `{[k]: v}` is
+/// the record `{...__record_of(k, v)}`, a one-field record spread in place.
+pub const RECORD_OF_BUILTIN: &str = "__record_of";
+
+/// The field a computed key is parsed as: `[key]: value` is a spread of the
+/// one-field record `__record_of(key, value)`, so later fields override it
+/// and it overrides earlier ones exactly as a written `name: value` would.
+/// Every later layer therefore sees a form it already has, and there is no
+/// third kind of field. Shared by the parser and the CST projection, so the
+/// two cannot disagree about the spans: the call spans the key through the
+/// value, and its callee carries the key's span.
+pub fn computed_record_field(key: Expr, value: Expr) -> RecordField {
+    let span = SourceSpan {
+        start: key.span.start,
+        end: value.span.end,
+        file: key.span.file,
+    };
+    let function = Expr {
+        kind: ExprKind::Ident(RECORD_OF_BUILTIN.to_string()),
+        span: key.span,
+    };
+    RecordField::Spread(Expr {
+        kind: ExprKind::Call {
+            function: Box::new(function),
+            args: vec![key, value],
+            arg_names: Vec::new(),
+        },
+        span,
+    })
+}
+
 /// A field in a record literal: either a named field or a spread expression.
 #[derive(Debug, Clone, Serialize)]
 pub enum RecordField {

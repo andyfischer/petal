@@ -45,6 +45,15 @@ pub native fn ends_with(string: string, suffix: string) -> bool
 pub native fn trim(string: string) -> string
 pub native fn byte_len(string: string) -> int
 pub native fn byte_slice(string: string, start: num, end?: num) -> string
+pub native fn fill(count: num, value) -> list
+pub native fn argmin(list)
+pub native fn argmax(list)
+pub native fn top_indices(list, k: num) -> list
+pub native fn group_by_keys(list: list, keys: list) -> record
+pub native fn ord(string: string) -> int
+pub native fn chr(code: num) -> string
+// `{[key]: value}` is parsed as a spread of this one-field record.
+pub native fn __record_of(...args)
 
 // Higher-order: these call back into script code, so the VM runs them itself.
 pub native fn map(list, f)

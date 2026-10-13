@@ -480,7 +480,16 @@ module.exports = grammar({
 
     list: $ => seq('[', commaSep($._expression), ']'),
 
-    record: $ => seq('{', commaSep(choice($.record_field, $.spread_element)), '}'),
+    record: $ => seq('{', commaSep(choice($.record_field, $.computed_field, $.spread_element)), '}'),
+
+    // `{[key]: value}` — a field named by a string expression.
+    computed_field: $ => seq(
+      '[',
+      field('key', $._expression),
+      ']',
+      ':',
+      field('value', $._expression),
+    ),
 
     record_field: $ => seq(
       field('key', $.identifier),

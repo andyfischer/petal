@@ -1,0 +1,18 @@
+==================
+A computed record key
+==================
+
+let r = {a: 1, [k]: 2}
+
+---
+
+(source_file
+  (let_declaration
+    (identifier)
+    (record
+      (record_field
+        (identifier)
+        (integer))
+      (computed_field
+        (identifier)
+        (integer)))))

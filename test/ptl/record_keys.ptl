@@ -1,0 +1,64 @@
+// Computed record keys: `{[key]: value}`. docs/language-guide.md (Records).
+// Run with `petal test test/ptl`.
+
+let K = "speed"
+
+test "a computed key names the field by a string that is computed" do
+  expect_eq({[K]: 2}, {speed: 2})
+  expect_eq({[K ++ "_max"]: 3}.speed_max, 3)
+  expect_eq({["a" ++ "b"]: 1}, {ab: 1})
+  expect_eq(keys({[K]: 1, [upper(K)]: 2}), ["speed", "SPEED"])
+end
+
+test "it sits among the other fields, in written order" do
+  let r = {name: "car", [K]: 2, wheels: 4}
+  expect_eq(keys(r), ["name", "speed", "wheels"])
+  expect_eq(r, {name: "car", speed: 2, wheels: 4})
+end
+
+test "later fields override earlier ones, computed or not" do
+  expect_eq({speed: 1, [K]: 5}, {speed: 5})
+  expect_eq({[K]: 5, speed: 1}, {speed: 1})
+  expect_eq({[K]: 1, [K]: 2}, {speed: 2})
+  let base = {speed: 1, name: "a"}
+  expect_eq({...base, [K]: 9}, {speed: 9, name: "a"})
+  expect_eq({[K]: 9, ...base}, {speed: 1, name: "a"})
+end
+
+test "the key and the value are any expressions, evaluated once in order" do
+  var log = []
+  let note = fn(x)
+    set log = append(get log, x)
+    x
+  end
+  let r = {a: note(1), [note("b")]: note(2), c: note(3)}
+  expect_eq(r, {a: 1, b: 2, c: 3})
+  expect_eq(get log, [1, "b", 2, 3])
+end
+
+test "a record is built up by key without set" do
+  let index_by = fn(xs, key)
+    reduce(xs, {}, fn(acc, x) -> {...acc, [key(x)]: x})
+  end
+  let towns = [{id: "ames", pop: 66}, {id: "bend", pop: 99}]
+  let by_id = index_by(towns, fn(t) -> t.id)
+  expect_eq(by_id.bend.pop, 99)
+  expect_eq(keys(by_id), ["ames", "bend"])
+end
+
+test "a computed key nests, and patterns read the result" do
+  let r = {[K]: {[K]: 1}}
+  expect_eq(r.speed.speed, 1)
+  let got = match {[K]: 7}
+    when {speed: s} -> s
+    when _ -> 0
+  end
+  expect_eq(got, 7)
+end
+
+const TABLE = {["north" ++ "_" ++ "east"]: 1, south: 2}
+
+test "a record with a computed key of constants is a const" do
+  expect_eq(TABLE.north_east, 1)
+  expect_eq(TABLE.south, 2)
+end

@@ -303,6 +303,9 @@ impl ExprVisitor for Sites {
             arg_names,
         } = &e.kind
             && !crate::ast::is_spread_call(arg_names)
+            // Nor is the call a computed record key stands for, which is not
+            // written as a call at all (`{[k]: v}`).
+            && !matches!(&function.kind, ExprKind::Ident(n) if n == crate::ast::RECORD_OF_BUILTIN)
         {
             self.0.push(Site {
                 span: e.span,

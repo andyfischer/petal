@@ -988,14 +988,18 @@ guess costs a compile round-trip (`unknown function \`flatten\``).
 | **Build a list** | `range(a, b)` — `a`..`b-1`; `range(a, b, step)` counts by `step`, down when it is negative (`range(5, 0, -1)` is 5..1). `append(xs, v)`, `drop_last(xs)`, `last(xs)` |
 | **Read a list** | `xs[i]`, `slice(xs, start, end)` (end-exclusive, negatives allowed), `contains(xs, v)`, `index_of(xs, v)` (`-1` if absent) |
 | **Reshape** | `reverse(xs)`, `sort(xs)`, `sort_by(xs, fn(x) -> x.key)`, `sort(xs, fn(a, b) -> a - b)`, `flat(xs)` (**`flat`**, not `flatten`; one level), `zip(a, b)`, `enumerate(xs)` |
-| **Higher-order** | `map(xs, f)`, `filter(xs, f)`, `reduce(xs, init, f)`, `forEach(xs, f)` — the list comes **first** |
+| **Higher-order** | `map(xs, f)`, `filter(xs, f)`, `reduce(xs, init, f)`, `forEach(xs, f)` — the list comes **first**. `f` may be a builtin: `map(words, upper)` |
+| **Reduce and select** | `sum`, `product`, `mean`, `minimum`, `maximum`, `any(xs, p)`, `all`, `count`, `find`, `first`, `take(xs, n)`, `drop`, `min_by(xs, key)`, `max_by`, `top_k(xs, k, key)`, `argmin(xs)`, `argmax`, `group_by(xs, key)`, `flat_map(xs, f)`, `fill(n, v)` |
+| **Format** | `fixed(x, places)`, `commas(n)`, `pad_start(v, w)`, `pad_end`, `format("%,.2f", x)`, `plural(n, "car")`, `list_and(xs)` |
 | **Records** | `keys(r)`, `values(r)`, `has_field(r, k)`, `field(r, k, fallback)`, `remove(r, k)` |
-| **Strings** | `++`, `join(xs, sep)`, `split(s, sep)`, `repeat(s, n)`, `trim(s)`, `starts_with(s, p)`, `ends_with(s, p)`, `upper`/`lower`, `pad_start(s, w)`, `char_at(s, i)`, `chars(s)` |
+| **Strings** | `++`, `join(xs, sep)`, `split(s, sep)`, `repeat(s, n)`, `trim(s)`, `starts_with(s, p)`, `ends_with(s, p)`, `upper`/`lower`, `pad_start(s, w)`, `char_at(s, i)`, `chars(s)`, `ord(c)`, `chr(n)` |
 | **Numbers** | `abs`, `min(a, b)`, `max(a, b)` — **two arguments, not a list** — `floor`, `ceil`, `round(x)`, `round(x, places)`, `sqrt`, `pow`, `sign`, `clamp(v, lo, hi)`, `safe_div(a, b)` (`nil` instead of aborting on a zero divisor) |
-| **Interpolate** (`import creative`) | `lerp(a, b, t)` (numbers, vectors, colors, number lists), `map_range(v, a, b, c, d)`, `smoothstep(e0, e1, x)`, `distance(…)`, `mag(…)`, `choose(xs)` |
+| **Interpolate** (`import creative`) | `lerp(a, b, t)` (numbers, vectors, colors, number lists, records field by field), `map_range(v, a, b, c, d)`, `smoothstep(e0, e1, x)`, `distance(…)`, `mag(…)`, `choose(xs)` |
 | **Trig** | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2(y, x)`, `hypot(x, y)`, `pi()`, `radians`, `degrees` |
 | **Convert** | `str(v)`, `int(v)`, `float(v)`, `parse_int(s)`, `parse_float(s)`, `type(v)`. `parse_*` return `nil` on bad text, so `parse_float(s) ?? 0.0` reads user input with a default |
 | **Random** | `random()` (in [0, 1)), `random(hi)`, `random(lo, hi)`, `random_int(lo, hi)` (half-open) |
+| **Stateless hash** | `hash_int(a, b?, c?, d?)` (0 to 2^53 − 1), `hash01(…)` (in [0, 1)), `hash_str(text, salt?)` — the same in every run |
+| **Tables** | `interp(table, x)` — piecewise linear through `[[x, y], …]`, clamped at the ends |
 | **Noise** (`import noise`) | `noise(x[, y[, z]])`, `noise_seed(n)` |
 | **Vectors, color, JSON** | `import vec2` (`vec2`, `vec3`, `normalize`, `dot`, …), `import color` (`hsv`, `hsl`, `color_lerp`), `import json` (`json_parse`, `json_stringify`) |
 | **Checks** | `assert(cond, msg)`, `assert_eq(actual, expected)` stop the program. `expect(cond, msg)`, `expect_eq(actual, expected)`, `expect_near(actual, expected, tolerance)` record the failure and carry on: use them inside a `test "name" do … end` block, which `petal test` runs and `petal run` does not ([testing.md](testing.md)) |
@@ -1003,7 +1007,8 @@ guess costs a compile round-trip (`unknown function \`flatten\``).
 Three of these are shaped differently than you will expect:
 
 - `min` and `max` take exactly **two** arguments. For the extent of a list,
-  `reduce(xs, xs[0], fn(a, b) -> if a < b then a else b end)`.
+  `minimum(xs)` and `maximum(xs)`; for the element with the smallest key,
+  `min_by(xs, key)`.
 - `noise` is centered on **0** and runs roughly −1..1, not 0..1. Terrain and
   heightmap code wants `(noise(x, y) + 1.0) / 2.0`, or `map_range`.
 - Do not hand-roll a sort. `sort_by(rows, fn(r) -> r.score, "desc")` sorts by
@@ -1017,17 +1022,62 @@ Three of these are shaped differently than you will expect:
 
 `petal run --seed 42` pins `random`, `random_int` and `choose`, and
 `noise_seed(n)` pins `noise` from inside the program. When a program must be
-byte-identical under a bare `petal run f.ptl` with no flags, call `noise_seed`
-at the top, or carry your own generator — a small LCG in a `var` is the usual
-answer, and it keeps the sequence in the file where a reader can see it.
+byte-identical under a bare `petal run f.ptl` with no flags, do not write a
+generator: `hash_int(a, b?, c?, d?)` is a stateless hash of its arguments, the
+same in every run and on every machine, so "the i-th pick of n for this seed"
+is one call and needs no `var` to carry.
 
 ```petal
-var rng = 20260830
-fn next_rand(limit: int) -> int
-  set rng = (get rng * 1103515245 + 12345) % 2147483648
-  (get rng / 65536) % limit
+let SEED = 20260830
+fn pick(i: int, limit: int) -> int
+  hash_int(SEED, i) % limit
 end
+print(pick(0, 6), pick(1, 6), pick(2, 6))   // 1 2 1
 ```
+
+`hash01` is the same hash as a float in `[0, 1)`, and `hash_str(text)` hashes
+an id or a name. See [Builtins.md](Builtins.md#hash_inta-b-c-d--hash01a-b-c-d).
+
+### Before you write a helper
+
+Every row here is something a large Petal program wrote for itself, two to
+four times over, while the language already had it. Read the left column
+before you type `fn`. `petal lint` reports a function that reuses one of
+these names (`shadows-builtin`) or only forwards to one
+(`reimplements-builtin`).
+
+| You are about to write | It exists |
+|---|---|
+| a loop that adds up a list, or multiplies it | `sum(xs)`, `product(xs)`, `mean(xs)` |
+| a loop for the smallest or largest of a list | `minimum(xs)`, `maximum(xs)` (`min` / `max` take two numbers) |
+| a "best so far" loop: the element with the lowest cost, the nearest, the richest | `min_by(xs, key)`, `max_by(xs, key)`; the index is `argmin(xs)` / `argmax(xs)` |
+| `sort_by(xs, key, "desc")` and then the first few | `top_k(xs, k, key)` |
+| `len(filter(xs, p)) > 0`, or a loop that sets a flag | `any(xs, p)`, `all(xs, p)`, `count(xs, p)` |
+| a loop that returns the first match | `find(xs, p)` |
+| a record of lists built with `append(field(by, k, []), x)` | `group_by(xs, key)` |
+| `flat(for x in xs do … end)` | `flat_map(xs, f)` |
+| `for i in range(0, n) do 0.0 end`, `fn zeros(n)` | `fill(n, 0.0)` |
+| a `var` and a `set r[k] = v` only to give a record a field whose name is data | `{...r, [k]: v}` |
+| `set xs[i] = get xs[i] + v`, `set r = {...get r, n: get r.n + 1}` | `set xs[i] += v`, `set r.n += 1` (also `-=`, `*=`, `/=`, `%=`, `++=`, `??=`) |
+| `if r == nil then d else field(r, k, d) end`, a `gf(r, k, d)` helper | `r?.k ?? d` (`?.` reads through nil and through a missing field); `field(r, k, d)` when the key is computed; `has_field(r, k)` |
+| a string of digits built a character at a time for `1,234,567` | `commas(n)`, `commas(x, 2)` |
+| `str(round(x, 1))` and a patch for the missing zero | `fixed(x, 1)` — and it goes in a hole: `"{fixed(x, 1)} km"` |
+| right-aligning a column with a loop of spaces | `pad_start(v, width)`, `pad_end(v, width)`, `format("%8.2f", x)` |
+| `if n == 1 then "1 car" else "{n} cars" end` | `plural(n, "car")`, `plural(n, "city", "cities")` |
+| `join(slice(xs, 0, n - 1), ", ") ++ " and " ++ xs[n - 1]` | `list_and(xs)`, `list_and(xs, "or")` |
+| a `curve(table, x)` that walks `[x, y]` pairs | `interp(table, x)` |
+| fifteen fields interpolated one at a time | `lerp(a, b, t)` on the two records (`import creative`) |
+| mixing two colors channel by channel | `lerp(c1, c2, t)` or `color_lerp(c1, c2, t)` (`import color`) |
+| `index_of(ALPHABET, c)` for a character's number | `ord(c)`, and `chr(n)` back |
+| a multiply-and-modulo generator in a `var`, a string hashed with a character table | `hash_int(seed, i)`, `hash01(seed, i)`, `hash_str(text)` |
+| a second parameter list of the same function with fewer arguments | a default: `fn button(label, w = 120)`; a call names what it passes: `button("Save", w: 80)` |
+| a `{name, fn, params}` table and an `if name == …` chain to call the right one | `f(...args)` with a record (by name) or a list (by position), and `fn_info(f).params` for the schema |
+| `fn check(name, ok)` with a counter and a printed "OK" line | `test "name" do … end` with `expect`, `expect_eq`, `expect_near`; `petal test` runs them. `assert` for a condition that must stop the program |
+| breaking a paragraph into lines that fit a width (petal-ui) | `text_wrap(text, style, max_width)` |
+| trimming a label to fit with an ellipsis (petal-ui) | `text_ellipsize(text, style, max_width)` |
+
+The exact signatures are in [Builtins.md](Builtins.md); the two text
+functions are in the [UI reference](ui-reference.md).
 
 ---
 

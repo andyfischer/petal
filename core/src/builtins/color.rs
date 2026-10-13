@@ -127,6 +127,12 @@ pub(super) fn is_color_map(state: &PetalCxt, id: MapId) -> bool {
 /// either side has an alpha `a`, so does the result, with a missing alpha
 /// reading as opaque (255).
 pub(super) fn lerp_color_maps(state: &mut PetalCxt, id1: MapId, id2: MapId, t: f64) {
+    let v = lerp_color_value(state, id1, id2, t);
+    state.push_value(v);
+}
+
+/// [`lerp_color_maps`], handing the blended color back instead of pushing it.
+pub(super) fn lerp_color_value(state: &mut PetalCxt, id1: MapId, id2: MapId, t: f64) -> Value {
     let channel = |state: &PetalCxt, id: MapId, k: &str| {
         state.heap().get_map(id).get(k).and_then(|v| v.as_f64())
     };
@@ -142,5 +148,5 @@ pub(super) fn lerp_color_maps(state: &mut PetalCxt, id1: MapId, id2: MapId, t: f
         map.insert("a".to_string(), mix(a1.unwrap_or(255.0), a2.unwrap_or(255.0)));
     }
     let map_id = state.heap_mut().alloc_map(map);
-    state.push_value(Value::Map(map_id));
+    Value::Map(map_id)
 }

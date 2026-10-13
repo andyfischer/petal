@@ -47,8 +47,10 @@ syntax.
 What reads as language is **global**: it is declared by the `core` package and
 in scope in every file with no import — `print`, `len`, `str`, `type`,
 `range`, the casts, assertions, the collection, string and record functions,
-the higher-order functions, formatting, and the plain math of the
-[Math](#math) section (plus `clamp` and `random_int`).
+the higher-order functions, [formatting](#formatting-numbers-and-text), the
+[reductions and selections](#list-helpers) of the Petal
+prelude, and the plain math of the [Math](#math) section (plus `clamp` and
+`random_int`).
 
 The **domain builtins** live in bundled packages and are in scope only in a
 file that imports the package:
@@ -287,6 +289,71 @@ radians(180.0)     // 3.141592653589793
 degrees(pi())      // 180.0
 ```
 
+### `interp(table, x)`
+
+The piecewise-linear function through a table of `[x, y]` knots (ascending
+`x`), read at `x`: a schedule by year, a response curve, a falloff. Before
+the first knot it is the first `y` and after the last it is the last `y` — it
+clamps and never extrapolates. Always a float.
+
+```petal
+let rate = [[1900, 5], [1950, 10], [2000, 0]]
+interp(rate, 1925)    // 7.5
+interp(rate, 1950)    // 10.0
+interp(rate, 1800)    // 5.0
+interp(rate, 2100)    // 0.0
+```
+
+Two knots at one `x` are a step, which takes the earlier `y` at exactly that
+`x`. A knot may also be a `vec2`. The table is searched by bisection, so a
+long one costs no more than a short one.
+
+### `hash_int(a, b?, c?, d?)` / `hash01(a, b?, c?, d?)`
+
+A stateless hash of one to four numbers. `hash_int` is an int from 0 to
+2^53 − 1; `hash01` is the same hash as a float in `[0, 1)`
+(`hash_int(...) / 2^53`). The result depends only on the arguments: it is the
+same in every run, on every machine, in every module, and `--seed` does not
+touch it. An int and the float of the same value hash alike (`2` and `2.0`).
+
+```petal
+hash_int(3, 7)                       // 8394216175903167
+hash_int(3, 7) % 6                   // 3
+["a", "b", "c"][hash_int(42, 5) % 3] // a
+hash01(3, 7)                         // 0.9319452072168629
+```
+
+Use it for generated content that must be the same every time — placement,
+per-entity jitter, a stable pick — where `random()` would need a generator
+carried in state: `hash_int(seed, i) % n` is pick `i` of `n`, and the result
+is a seed for the next call (`hash_int(hash_int(seed, x), y)`). Both are
+constant functions, so a table built from them is a
+[`const`](language-guide.md#const--a-value-that-must-be-constant).
+
+The algorithm is fixed and will not change. With `mix` one round of SplitMix64
+(`x += 0x9e3779b97f4a7c15; x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9;
+x = (x ^ (x >> 27)) * 0x94d049bb133111eb; x ^ (x >> 31)`, all in wrapping
+64-bit arithmetic): start with `h = 0x243f6a8885a308d3`; for each argument, in
+order, `h = mix(h ^ bits)`, where `bits` is the argument as an IEEE-754
+double (`-0.0` taken as `0.0`); the result is `h >> 11`.
+
+### `hash_str(text, salt?)`
+
+An int from 0 to 2^53 − 1 from a string — an id, a name — and an optional
+number. The same on every machine.
+
+```petal
+hash_str("moses")                  // 4381410558642330
+hash_str("moses", 2)               // 2442254591726810
+hash_int(hash_str("east_side"), 4) // 1917956827534837
+```
+
+The algorithm, with `mix` as above: start with `h = 0x452821e638d01377`; if
+there is a salt, `h = mix(h ^ bits(salt))`; then `h = mix(h ^ n)` for the
+text's length `n` in UTF-8 bytes; then `h = mix(h ^ w)` for each 8-byte
+little-endian word `w` of the text, the last one zero-padded; the result is
+`h >> 11`.
+
 ## Creative Coding Math
 
 `clamp` is global; the rest of this section needs `import creative`.
@@ -314,9 +381,25 @@ xs[clamp(i, 0, len(xs) - 1)]   // a clamped index is still an index
 ### `lerp(a, b, t)`
 
 Linear interpolation. `t=0` returns `a`, `t=1` returns `b`. `a` and `b` may
-also be two `vec2`s or two `vec3`s, two colors, or two equal-length lists of
-numbers, interpolated component-wise. Colors blend like `color_lerp`: per
-channel, alpha included, rounded to int channels.
+also be two `vec2`s or two `vec3`s, two colors, two equal-length lists of
+numbers, or two records, interpolated component-wise. Colors blend like
+`color_lerp`: per channel, alpha included, rounded to int channels.
+
+Two **records** blend field by field, which is how a whole look, pose or
+style is faded from one to another in one call. The result has `a`'s fields
+(and its class). A field blends with the field of the same name in `b` when
+both are numbers, vectors of one kind, colors, records, or equal-length lists
+whose elements blend; anything else (a string, a bool, two different kinds)
+is taken whole from `a` while `t < 0.5` and from `b` after. A field `b` does
+not have keeps `a`'s value.
+
+```petal
+import creative
+let noir   = {sepia: 0.0, grain: 0.8, tint: #202830, id: "noir"}
+let golden = {sepia: 1.0, grain: 0.2, tint: #ffd08a, id: "golden"}
+lerp(noir, golden, 0.25)
+// { sepia: 0.25, grain: 0.65, tint: { r: 88, g: 82, b: 71 }, id: "noir" }
+```
 
 ```petal
 import creative
@@ -1100,6 +1183,58 @@ flat([[1, 2], [3, 4]])       // [1, 2, 3, 4]
 flat([[1, [2]], [3]])         // [1, [2], 3]
 ```
 
+### `fill(count, value)`
+
+A list of `count` copies of `value`; `[]` when `count` is zero or negative.
+The way to start a list of zeros, a row of a grid, or one empty list per
+bucket — in place of `for i in range(0, n) do 0.0 end`.
+
+```petal
+fill(3, 0.0)        // [0.0, 0.0, 0.0]
+fill(2, "ab")       // ["ab", "ab"]
+fill(0, 1)          // []
+```
+
+The copies are values, as everything in Petal is: `fill(3, [])` is three
+empty lists, and writing to one later (`set grid[1] = append(grid[1], x)`)
+leaves the other two alone.
+
+### `argmin(list)` / `argmax(list)`
+
+The **index** of the smallest (largest) number in a list or `f64_array`, the
+first of equals; `nil` when the list is empty. For the element rather than
+the index, and for a key, see [`min_by`](#min_byxs-key--max_byxs-key).
+
+```petal
+argmin([3, 1, 2, 1])     // 1
+argmax([3, 1, 9.5, 2])   // 2
+argmin([])               // nil
+```
+
+### `top_indices(list, k)`
+
+The indices of the `k` largest numbers, largest first, with equals in list
+order. Fewer than `k` when the list is shorter. It keeps `k` candidates as it
+goes and never sorts the whole list. [`top_k`](#top_kxs-k-key) is the form
+that returns the elements.
+
+```petal
+top_indices([5, 1, 9, 9, 3], 3)   // [2, 3, 0]
+top_indices([5, 1, 9], 10)        // [2, 0, 1]
+```
+
+### `group_by_keys(list, keys)`
+
+A record of lists: element `i` of `list` goes into the group named by
+`keys[i]`. Groups are in the order their key first appears, and each keeps
+list order. A key that is not a string is named by its `str()`, since a
+record's keys are strings. [`group_by`](#group_byxs-key) is the form that
+takes a function.
+
+```petal
+group_by_keys(["a", "b", "c"], ["x", "y", "x"])   // { x: ["a", "c"], y: ["b"] }
+```
+
 ### `index_of(collection, needle)`
 
 Position of the first occurrence, or `-1` when absent. On a list this is the
@@ -1217,6 +1352,117 @@ char_slice("Óscar", 1)              // "scar"
 char_slice("Óscar", -3, -1)         // "ca"
 ```
 
+### `ord(string)` / `chr(code)`
+
+`ord` is the Unicode code point of a string's first character; `chr` is the
+one-character string of a code point. Between them, arithmetic on letters
+needs no lookup table.
+
+```petal
+ord("A")             // 65
+chr(97)              // a
+ord("é")             // 233
+chr(ord("a") + 3)    // d
+```
+
+`ord("")` is an error, as is `chr` of a number that is no code point
+(negative, a surrogate, past `0x10FFFF`).
+
+## Formatting Numbers and Text
+
+`str(x)` and a `"{x}"` hole print a float the way it is stored, which is
+correct and not what a table, a price or a label wants (`str(12.3 * 3)` is
+`36.900000000000006`). These are the functions for display. A hole holds any
+expression, so they go straight into it: `"{fixed(x, 1)} km"`,
+`"${commas(total)}"`. (There is no `{x:.1f}` format spec.)
+
+### `fixed(value, places?)`
+
+The number as a string with exactly `places` digits after the point (2 when
+left off), rounded half away from zero like `round`.
+
+```petal
+fixed(12.3456, 2)    // 12.35
+fixed(5, 2)          // 5.00
+fixed(91.25, 1)      // 91.3
+fixed(3.14159)       // 3.14
+fixed(-0.001, 2)     // 0.00
+```
+
+### `commas(value, places?)`
+
+The number with thousands separators. With `places` it is rounded to that
+many decimals first; without, an int prints as an int and a float keeps the
+digits `str` would give it.
+
+```petal
+commas(1234567)        // 1,234,567
+commas(1234.5678, 2)   // 1,234.57
+commas(-9876543)       // -9,876,543
+commas(1234.5, 0)      // 1,235
+```
+
+### `pad_start(value, width, fill?)` / `pad_end(value, width, fill?)`
+
+The value (through `str` if it is not a string) padded to `width` characters
+with `fill` (a space when left off) on the left (`pad_start`, which
+right-aligns) or on the right (`pad_end`). A value already that wide is
+returned whole.
+
+```petal
+pad_start(7, 3, "0")       // 007
+pad_start("ab", 5) ++ "|"  // "   ab|"
+pad_end("ab", 5) ++ "|"    // "ab   |"
+```
+
+### `format(template, args...)`
+
+printf-style templating. Each `%` placeholder takes the next argument:
+
+| Placeholder | Meaning |
+|---|---|
+| `%s` | the value, as `str` would print it |
+| `%d` | the value as a whole number (truncated toward zero) |
+| `%f` | the value as a float; `%.2f` fixes two decimals |
+| `%x` | the value in lowercase hex |
+| `%%` | a literal `%` |
+
+A `,` right after the `%` groups thousands (`%,d`, `%,.2f`). A number sets a
+minimum width, padded on the left, or on the right when written negative
+(`%8.2f`, `%-10s`).
+
+```petal
+format("%s scored %d", "Ada", 97.8)       // Ada scored 97
+format("%,.2f", 1234567.891)              // 1,234,567.89
+format("[%5d] [%-5s]", 42, "ab")          // "[   42] [ab   ]"
+```
+
+The placeholders start with `%` and not `{` because `{` in a string literal
+opens an interpolation hole.
+
+### `plural(n, one, many?)`
+
+A count with its noun: `one` when `n` is 1, `many` otherwise (`one` with an
+`s` when `many` is left off). The count is written with thousands separators.
+
+```petal
+plural(1, "car")                    // 1 car
+plural(3, "car")                    // 3 cars
+plural(2, "city", "cities")         // 2 cities
+plural(12500, "person", "people")   // 12,500 people
+```
+
+### `list_and(xs, word?)`
+
+A list as prose, its elements through `str`: `a`, `a and b`, `a, b and c`.
+`word` replaces `and`. The empty list is `""`.
+
+```petal
+list_and(["tolls", "bonds"])            // tolls and bonds
+list_and(["tolls", "bonds", "fares"])   // tolls, bonds and fares
+list_and([1, 2, 3], "or")               // 1, 2 or 3
+```
+
 ## Higher-Order Functions
 
 ### `map(list, f)`
@@ -1256,11 +1502,15 @@ new list.
 forEach([1, 2, 3], fn(x) -> print(x))
 ```
 
+A builtin may itself be the function: `map(words, upper)`, `map(rows, len)`,
+`sort_by(names, lower)`, `reduce(xs, 0, max)`.
+
 ## List helpers
 
 Written in Petal in the `std` prelude (`core/prelude/std.ptl`), which every
 program imports implicitly, so they are called bare with no import. A
-program's own declaration of one of these names shadows it silently. They
+program's own declaration of one of these names shadows it silently, which
+`petal lint` reports (`shadows-builtin`). They
 are ordinary functions, not natives: they take no method syntax
 (`xs.sum()` is an error; write `sum(xs)` or `xs |> sum()`).
 [`field`](#fieldrec-key-fallback) and
@@ -1337,6 +1587,57 @@ list, so neither is ever an error.
 take([1, 2, 3], 2)   // [1, 2]
 drop([1, 2, 3], 2)   // [3]
 take([1, 2, 3], 9)   // [1, 2, 3]
+```
+
+### `min_by(xs, key)` / `max_by(xs, key)`
+
+The **element** whose `key(x)` is smallest (largest), the first of equals;
+`nil` for the empty list. `key` is called once per element and must return a
+number. This replaces the hand-written "best so far" loop.
+
+```petal
+min_by(["ccc", "a", "bb"], len)                       // a
+max_by([{n: 1, w: 5}, {n: 2, w: 9}], fn(r) -> r.w).n  // 2
+min_by([], len)                                       // nil
+```
+
+For the index instead, take [`argmin`](#argminlist--argmaxlist) of the keys:
+`argmin(map(xs, key))`.
+
+### `top_k(xs, k, key?)`
+
+The `k` largest elements, largest first — by `key(x)` when a key is given, by
+the elements themselves (numbers) when not. Equals stay in list order, and a
+list shorter than `k` gives all of it. A bounded selection: where
+`take(sort_by(xs, key, "desc"), k)` sorts everything, this keeps `k`.
+
+```petal
+top_k([5, 1, 9, 3], 2)                   // [9, 5]
+top_k(["aa", "b", "cccc"], 2, len)       // ["cccc", "aa"]
+```
+
+### `group_by(xs, key)`
+
+A record of lists: each element goes into the group named by `key(x)`. Groups
+are in the order their key first appears, and each keeps list order. A key
+that is not a string is named by its `str()`.
+
+```petal
+group_by([1, 2, 3, 4, 5], fn(x) -> if x % 2 == 0 then "even" else "odd" end)
+// { odd: [1, 3, 5], even: [2, 4] }
+```
+
+It is linear in the list. The hand-written version
+(`set by[k] = append(field(by, k, []), x)`) copies a group each time it grows.
+
+### `flat_map(xs, f)`
+
+`f` of every element, with the lists it returns joined end to end:
+`flat(map(xs, f))`, and what a `for` with two generators would be.
+
+```petal
+flat_map([1, 2, 3], fn(x) -> [x, x * 10])   // [1, 10, 2, 20, 3, 30]
+flat_map(["ab", "c"], chars)                // ["a", "b", "c"]
 ```
 
 ### `clamp01(x)`

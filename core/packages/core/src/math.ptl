@@ -29,6 +29,10 @@ pub native fn asin(x: num)
 pub native fn acos(x: num)
 pub native fn atan(x: num)
 pub native fn hypot(x: num, y: num) -> float
+pub native fn interp(table: list, x: num) -> float
+pub native fn hash_int(a: num, b?: num, c?: num, d?: num) -> int
+pub native fn hash01(a: num, b?: num, c?: num, d?: num) -> float
+pub native fn hash_str(text: string, salt?: num) -> int
 
 // The functions of core/src/builtins/creative_coding.rs that read as plain
 // arithmetic; the rest of that set is the `creative` package.

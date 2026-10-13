@@ -1092,6 +1092,36 @@ Spread and field assignment both produce an updated record — spread names the
 fields it keeps, field assignment names the fields it changes. Use whichever
 reads better at the call site.
 
+### Computed keys
+
+A field written `[expr]: value` takes its name from an expression, which must
+be a string. It sits among the other fields and follows the same rule as they
+do: a later field of the same name overrides an earlier one.
+
+```petal
+let stat = "speed"
+let car = {name: "coupe", [stat]: 120, [stat ++ "_max"]: 180}
+print(car.speed, car.speed_max)        // 120 180
+print({speed: 1, [stat]: 5})           // { speed: 5 }
+```
+
+With a spread it is how a record is built or updated by a name that is data,
+as an expression — where `set r[key] = v` is the statement:
+
+```petal
+fn index_by(xs, key)
+    reduce(xs, {}, fn(acc, x) -> {...acc, [key(x)]: x})
+end
+
+let towns = [{id: "ames", pop: 66}, {id: "bend", pop: 99}]
+print(index_by(towns, fn(t) -> t.id).bend.pop)   // 99
+```
+
+A key that is not a string is an error that says so (`A computed record key
+([key]: value) must be a string, got int — write [str(key)] to use its
+text`). The field is the spread of a one-field record, which is how tools that
+print a syntax tree (`petal show-ast`, `fn_ast`) show it.
+
 ### Ragged records — reading a field that may not be there
 
 Reading a field a record does not carry is a **hard error**. That is deliberate:

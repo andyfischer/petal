@@ -532,7 +532,10 @@ Present and unused, which is a documentation problem: `any`, `sum`, `find`,
 `color_lerp`, `r?.field`, `text_wrap`, `text_ellipsize`, `set xs[i] += v`,
 default and named parameters, `assert`. A one-page "before you write a
 helper" index in `writing-petal-guide.md`, and the lint in 2.1, would
-address it.
+address it. **Done:** the index is
+[Before you write a helper](../writing-petal-guide.md#before-you-write-a-helper),
+and `Builtins.md` has a section for the Petal prelude (`sum`, `any`, `find`,
+…), which it had never listed.
 
 ## 5. petal-ui (item 11)
 
@@ -547,6 +550,26 @@ text fitting, all of which the prelude has. The reasons are real gaps:
   opens under the pointer. Callers must remember `claim`, `live()` and
   `hovered` separately and do so inconsistently.
   Wanted: `ui_layer(n)`, `ui_modal()`,
+**What shipped, 13 October 2026** (all in [Builtins.md](../Builtins.md),
+tested in `test/ptl/stdlib_helpers.ptl` and `core/tests/stdlib_helpers.rs`):
+
+| Row | Now |
+|---|---|
+| Number formatting | `fixed(x, places)` and `commas(n, places?)` already existed and were not in `Builtins.md`; they, `pad_start`, `pad_end` and `format` are documented now. `{x:.1f}` stays a parse error, which names them: a hole's tokens are the lexer's own, and a spec would have needed a new token and a node every source-rewriting tool reads |
+| `plural`, `list_and` | `plural(n, one, many?)`, `list_and(xs, word?)` (prelude) |
+| `min_by`, `max_by`, `argmin`, `top_k` | `argmin(xs)`, `argmax(xs)`, `top_indices(xs, k)` (natives over numbers); `min_by(xs, key)`, `max_by(xs, key)`, `top_k(xs, k, key?)` (prelude, over those) |
+| `group_by`, `count` | `group_by(xs, key)` over the native `group_by_keys(xs, keys)`, linear; `count(xs, p)` already existed |
+| `fill`, list `repeat` | `fill(n, v)`. `repeat` is still strings only |
+| `interp` | `interp(table, x)`: `[x, y]` knots, bisection, clamped, always a float |
+| `ord`, integer hash, `hash_str` | `ord`, `chr`; `hash_int(a, b?, c?, d?)`, `hash01`, `hash_str(text, salt?)` with the algorithm written down, the same values as the engine's |
+| `flat_map`, multi-generator `for` | `flat_map(xs, f)`. No multi-generator `for` |
+| Priority queue, polyline helpers | not done (held back) |
+| Record-wise `lerp` | `lerp(a, b, t)` on two records, nested records, colors, vectors and number lists inside included; what cannot blend switches at `t = 0.5` |
+| Computed record keys | `{[k]: v}`, among the other fields and under the same override rule; the key must be a string. Parsed as the spread of a one-field record, so nothing downstream changed |
+
+A builtin can now be passed as a callback (`map(xs, len)`), which the keyed
+helpers needed and which failed with `Expected a function, got function`.
+
   `interact(rect) -> {hover, down, click}` that respects layer and clip and
   registers the rectangle, and `pointer_captured()`.
 - **No retained drawing.** A canvas lives one frame. The minimap, a baked

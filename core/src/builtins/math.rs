@@ -362,3 +362,154 @@ pub(super) fn native_safe_div(state: &mut PetalCxt) -> Result<u32, String> {
     state.push_value(v);
     Ok(1)
 }
+
+// ── Piecewise-linear tables and stateless hashes ────────────────────────────
+
+/// The `(x, y)` of one knot of an `interp` table: a two-number list or a vec2.
+fn knot(state: &PetalCxt, v: Value, i: usize) -> Result<(f64, f64), String> {
+    let pair = match v {
+        Value::Vec2(x, y) => Some((x, y)),
+        Value::List(id) => match state.heap().get_list(id) {
+            [x, y] => x.as_f64().zip(y.as_f64()),
+            _ => None,
+        },
+        _ => None,
+    };
+    pair.ok_or_else(|| {
+        format!("interp(table, x) expects each entry of the table to be [x, y], got entry {i} that is not")
+    })
+}
+
+/// `interp(table, x)` — the piecewise-linear function through the knots
+/// `[[x0, y0], [x1, y1], …]` (ascending `x`), read at `x`. Before the first
+/// knot it is the first `y`, after the last it is the last `y`: it clamps,
+/// never extrapolates. Two knots at one `x` are a step, which takes the
+/// earlier `y` at exactly that `x`. Always a float.
+pub(super) fn native_interp(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "interp")?;
+    let Value::List(table) = state.get_value(1)? else {
+        return Err("interp(table, x) expects a list of [x, y] entries".into());
+    };
+    let x = state.get_float(2)?;
+    let n = state.heap().get_list(table).len();
+    if n == 0 {
+        return Err("interp(table, x) needs a table with at least one entry".into());
+    }
+    let at = |state: &PetalCxt, i: usize| knot(state, state.heap().get_list(table)[i], i);
+    // The first knot at or past `x`, by bisection: `lo` ends as its index.
+    let (mut lo, mut hi) = (0usize, n);
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if at(state, mid)?.0 < x {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    let y = if lo == 0 {
+        at(state, 0)?.1
+    } else if lo == n {
+        at(state, n - 1)?.1
+    } else {
+        let (x0, y0) = at(state, lo - 1)?;
+        let (x1, y1) = at(state, lo)?;
+        if x1 == x0 { y1 } else { y0 + (y1 - y0) * ((x - x0) / (x1 - x0)) }
+    };
+    state.push_float(y);
+    Ok(1)
+}
+
+/// One round of SplitMix64 (Steele, Lea and Flood, "Fast splittable
+/// pseudorandom number generators", 2014): the finalizer the hashes below are
+/// built from. Fixed constants, wrapping arithmetic, no state.
+pub(crate) fn splitmix64(x: u64) -> u64 {
+    let x = x.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    let x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    let x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    x ^ (x >> 31)
+}
+
+/// A number as hash input: its value as an IEEE-754 double, so `2` and `2.0`
+/// hash alike, with `-0.0` taken as `0.0`.
+fn number_bits(v: Value, who: &str) -> Result<u64, String> {
+    match v.as_f64() {
+        Some(d) => Ok(if d == 0.0 { 0.0f64 } else { d }.to_bits()),
+        None => Err(format!("{who}() expects numbers, got {}", v.type_name())),
+    }
+}
+
+/// The 64-bit hash of a call's one to four number arguments: start from
+/// `0x243f6a8885a308d3` and fold each argument in with
+/// `h = splitmix64(h ^ bits(arg))`.
+fn hash_number_args(state: &PetalCxt, who: &str) -> Result<u64, String> {
+    let argc = state.arg_count();
+    if !(1..=4).contains(&argc) {
+        return Err(format!("{who}() expects 1 to 4 arguments (numbers), got {argc}"));
+    }
+    let mut h = 0x243f_6a88_85a3_08d3u64;
+    for i in 1..=argc {
+        h = splitmix64(h ^ number_bits(state.get_value(i)?, who)?);
+    }
+    Ok(h)
+}
+
+/// `hash_int(a, b?, c?, d?)` — an int in `[0, 2^53)` that depends only on the
+/// arguments: the top 53 bits of [`hash_numbers`]. The same on every machine
+/// and in every run; the result is exact as a float, and is a seed itself.
+pub(super) fn native_hash_int(state: &mut PetalCxt) -> Result<u32, String> {
+    let h = hash_number_args(state, "hash_int")?;
+    state.push_int((h >> 11) as i64);
+    Ok(1)
+}
+
+/// `hash01(a, b?, c?, d?)` — the same hash as a float in `[0, 1)`:
+/// `hash_int(...) / 2^53`.
+pub(super) fn native_hash01(state: &mut PetalCxt) -> Result<u32, String> {
+    let h = hash_number_args(state, "hash01")?;
+    state.push_float((h >> 11) as f64 * (1.0 / 9_007_199_254_740_992.0));
+    Ok(1)
+}
+
+/// The 64-bit hash of a string's UTF-8 bytes and an optional salt: start from
+/// `0x452821e638d01377`, fold in the salt (if any) and then the byte length
+/// with `h = splitmix64(h ^ v)`, then each 8-byte little-endian word of the
+/// text (the last one zero-padded) the same way.
+pub(crate) fn hash_bytes(text: &[u8], salt: Option<f64>) -> u64 {
+    let mut h = 0x4528_21e6_38d0_1377u64;
+    if let Some(s) = salt {
+        h = splitmix64(h ^ if s == 0.0 { 0.0f64 } else { s }.to_bits());
+    }
+    h = splitmix64(h ^ text.len() as u64);
+    for chunk in text.chunks(8) {
+        let mut word = [0u8; 8];
+        word[..chunk.len()].copy_from_slice(chunk);
+        h = splitmix64(h ^ u64::from_le_bytes(word));
+    }
+    h
+}
+
+/// `hash_str(text, salt?)` — an int in `[0, 2^53)` from a string (an id, a
+/// name) and an optional number: the top 53 bits of [`hash_bytes`].
+pub(super) fn native_hash_str(state: &mut PetalCxt) -> Result<u32, String> {
+    let argc = state.arg_count();
+    if !(1..=2).contains(&argc) {
+        return Err(format!(
+            "hash_str() expects 1 or 2 arguments (text, salt), got {argc}"
+        ));
+    }
+    let salt = match if argc == 2 { state.get_value(2)? } else { Value::Nil } {
+        Value::Nil => None,
+        v => Some(f64::from_bits(number_bits(v, "hash_str")?)),
+    };
+    let h = match state.get_value(1)? {
+        Value::String(id) => hash_bytes(state.heap().get_string(id).as_bytes(), salt),
+        other => {
+            return Err(format!(
+                "hash_str() expects a string, got {}",
+                other.type_name()
+            ));
+        }
+    };
+    state.push_int((h >> 11) as i64);
+    Ok(1)
+}

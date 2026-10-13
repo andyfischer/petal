@@ -546,6 +546,36 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("expect_eq", io::native_expect_eq, NativeEffects::EFFECT);
     table.register("expect_near", io::native_expect_near, NativeEffects::EFFECT);
 
+    // The helpers a large program otherwise writes by hand (the Moses
+    // debrief's standard-library list). All arithmetic on their arguments and
+    // nothing else, so CONST. Append-only, like the rest of this block.
+    table.register("fill", collections::native_fill, NativeEffects::CONST);
+    table.register("argmin", collections::native_argmin, NativeEffects::CONST);
+    table.register("argmax", collections::native_argmax, NativeEffects::CONST);
+    table.register(
+        "top_indices",
+        collections::native_top_indices,
+        NativeEffects::CONST,
+    );
+    table.register(
+        "group_by_keys",
+        collections::native_group_by_keys,
+        NativeEffects::CONST,
+    );
+    table.register("ord", collections::native_ord, NativeEffects::CONST);
+    table.register("chr", collections::native_chr, NativeEffects::CONST);
+    table.register("interp", math::native_interp, NativeEffects::CONST);
+    table.register("hash_int", math::native_hash_int, NativeEffects::CONST);
+    table.register("hash01", math::native_hash01, NativeEffects::CONST);
+    table.register("hash_str", math::native_hash_str, NativeEffects::CONST);
+    // `{[key]: value}`: the one-field record a computed key is a spread of.
+    // Emitted by the parser; nothing else calls it.
+    table.register(
+        crate::ast::RECORD_OF_BUILTIN,
+        collections::native_record_of,
+        NativeEffects::CONST,
+    );
+
     // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
     // ids they were just given.
     for op in crate::backend::bytecode::isa::IntrinsicOp::ALL {
@@ -654,9 +684,12 @@ mod effect_tests {
             "Rect.inset",
             "Rect.offset",
             "Rect.right",
+            "__record_of",
             "abs",
             "acos",
             "append",
+            "argmax",
+            "argmin",
             "asin",
             "assert",
             "assert_eq",
@@ -669,6 +702,7 @@ mod effect_tests {
             "char_len",
             "char_slice",
             "chars",
+            "chr",
             "clamp",
             "color_lerp",
             "commas",
@@ -686,12 +720,17 @@ mod effect_tests {
             "enumerate",
             "exp",
             "f64_array",
+            "fill",
             "fixed",
             "flat",
             "float",
             "floor",
             "format",
             "fract",
+            "group_by_keys",
+            "hash01",
+            "hash_int",
+            "hash_str",
             "hsl",
             "hsl_deg",
             "hsv",
@@ -700,6 +739,7 @@ mod effect_tests {
             "includes",
             "index_of",
             "int",
+            "interp",
             "join",
             "json_parse",
             "json_stringify",
@@ -715,6 +755,7 @@ mod effect_tests {
             "max",
             "min",
             "normalize",
+            "ord",
             "pad_end",
             "pad_start",
             "parse_float",
@@ -744,6 +785,7 @@ mod effect_tests {
             "swap",
             "symbol",
             "tan",
+            "top_indices",
             "trim",
             "type",
             "upper",

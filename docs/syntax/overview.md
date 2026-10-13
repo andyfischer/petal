@@ -453,6 +453,7 @@ print(box(2, ...{h: 9})) // 2x9
 xs[0]                  // index (zero-based; negative counts from the end)
 {name: "Alice"}        // record literal
 {...defaults, x: 100}  // record spread (later fields override)
+{[key]: 1, x: 100}     // computed key: the field is named by a string expression
 person.name            // field access
 person?.name           // optional access: nil when the field is absent
 ```

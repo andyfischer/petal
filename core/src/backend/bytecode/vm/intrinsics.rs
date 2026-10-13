@@ -84,6 +84,24 @@ impl<'a> Vm<'a> {
         arg_names: &[Option<&str>],
         site: u64,
     ) -> Result<Value, String> {
+        // A builtin handed over as the callback (`map(xs, len)`,
+        // `sort_by(words, lower)`): there is no frame to push, the native is
+        // the call. A named argument binds against its declaration.
+        if let Value::NativeFunction(nid) = callable {
+            let bound;
+            let args: &[Value] = if arg_names.iter().all(Option::is_none) {
+                call_args
+            } else {
+                let name = self.native_fns.get_name(nid);
+                let sigs = self.native_fns.signatures(nid);
+                if sigs.is_empty() {
+                    return Err(crate::native_fn::undeclared_named_args(name));
+                }
+                bound = crate::native_fn::bind_native_args(name, sigs, call_args, arg_names)?;
+                &bound
+            };
+            return self.call_native_or_intrinsic(nid, args, None);
+        }
         let cid = calls::resolve_callable(
             self.program,
             self.closures,

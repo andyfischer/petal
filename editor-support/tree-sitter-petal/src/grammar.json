@@ -2703,6 +2703,10 @@
                     },
                     {
                       "type": "SYMBOL",
+                      "name": "computed_field"
+                    },
+                    {
+                      "type": "SYMBOL",
                       "name": "spread_element"
                     }
                   ]
@@ -2722,6 +2726,10 @@
                           {
                             "type": "SYMBOL",
                             "name": "record_field"
+                          },
+                          {
+                            "type": "SYMBOL",
+                            "name": "computed_field"
                           },
                           {
                             "type": "SYMBOL",
@@ -2754,6 +2762,39 @@
         {
           "type": "STRING",
           "value": "}"
+        }
+      ]
+    },
+    "computed_field": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "["
+        },
+        {
+          "type": "FIELD",
+          "name": "key",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_expression"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "]"
+        },
+        {
+          "type": "STRING",
+          "value": ":"
+        },
+        {
+          "type": "FIELD",
+          "name": "value",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_expression"
+          }
         }
       ]
     },

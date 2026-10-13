@@ -1405,7 +1405,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 110
+        "line": 212
       },
       "import": "creative"
     },
@@ -1465,7 +1465,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 126
+        "line": 228
       },
       "import": "creative"
     },
@@ -1515,7 +1515,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 165
+        "line": 267
       },
       "import": "creative"
     },
@@ -1549,7 +1549,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 204
+        "line": 306
       }
     },
     {
@@ -1574,7 +1574,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 212
+        "line": 314
       }
     },
     {
@@ -1599,7 +1599,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 239
+        "line": 341
       }
     },
     {
@@ -1640,7 +1640,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 246
+        "line": 348
       },
       "import": "creative"
     },
@@ -1666,7 +1666,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 256
+        "line": 358
       }
     },
     {
@@ -1691,7 +1691,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 263
+        "line": 365
       }
     },
     {
@@ -1716,7 +1716,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 270
+        "line": 372
       }
     },
     {
@@ -1741,7 +1741,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 277
+        "line": 379
       }
     },
     {
@@ -1846,7 +1846,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 284
+        "line": 386
       }
     },
     {
@@ -1871,7 +1871,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 299
+        "line": 401
       },
       "import": "creative"
     },
@@ -2159,7 +2159,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 574
+        "line": 604
       }
     },
     {
@@ -2192,7 +2192,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 574
+        "line": 604
       },
       "aliasOf": "map"
     },
@@ -2234,7 +2234,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 574
+        "line": 604
       },
       "aliasOf": "map"
     },
@@ -2268,7 +2268,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 574
+        "line": 604
       },
       "aliasOf": "map"
     },
@@ -3209,7 +3209,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 574
+        "line": 604
       },
       "aliasOf": "map"
     },
@@ -3980,7 +3980,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 574
+        "line": 604
       },
       "aliasOf": "map"
     },
@@ -4006,7 +4006,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 574
+        "line": 604
       },
       "aliasOf": "map"
     },
@@ -4187,6 +4187,383 @@
       "source": {
         "file": "core/src/builtins/io.rs",
         "line": 182
+      }
+    },
+    {
+      "name": "fill",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "count",
+          "type": "any"
+        },
+        {
+          "name": "value",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "count",
+            "type": "any"
+          },
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 987
+      }
+    },
+    {
+      "name": "argmin",
+      "category": "collections",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 1077
+      }
+    },
+    {
+      "name": "argmax",
+      "category": "collections",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 1083
+      }
+    },
+    {
+      "name": "top_indices",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        },
+        {
+          "name": "k",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          },
+          {
+            "name": "k",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 1090
+      }
+    },
+    {
+      "name": "group_by_keys",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        },
+        {
+          "name": "keys",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          },
+          {
+            "name": "keys",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 1139
+      }
+    },
+    {
+      "name": "ord",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "string",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 1176
+      }
+    },
+    {
+      "name": "chr",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "code",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "code",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 1191
+      }
+    },
+    {
+      "name": "interp",
+      "category": "math",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "table",
+          "type": "any"
+        },
+        {
+          "name": "x",
+          "type": "float"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "table",
+            "type": "any"
+          },
+          {
+            "name": "x",
+            "type": "float"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/math.rs",
+        "line": 388
+      }
+    },
+    {
+      "name": "hash_int",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "a",
+          "type": "any"
+        },
+        {
+          "name": "b",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "c",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "d",
+          "type": "any",
+          "optional": true
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "a",
+            "type": "any"
+          },
+          {
+            "name": "b",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "c",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "d",
+            "type": "any",
+            "optional": true
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/math.rs",
+        "line": 459
+      }
+    },
+    {
+      "name": "hash01",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "a",
+          "type": "any"
+        },
+        {
+          "name": "b",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "c",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "d",
+          "type": "any",
+          "optional": true
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "a",
+            "type": "any"
+          },
+          {
+            "name": "b",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "c",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "d",
+            "type": "any",
+            "optional": true
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/math.rs",
+        "line": 467
+      }
+    },
+    {
+      "name": "hash_str",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [
+        {
+          "name": "text",
+          "type": "any"
+        },
+        {
+          "name": "salt",
+          "type": "any",
+          "optional": true
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "text",
+            "type": "any"
+          },
+          {
+            "name": "salt",
+            "type": "any",
+            "optional": true
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/math.rs",
+        "line": 493
       }
     },
     {
@@ -4546,6 +4923,179 @@
       }
     },
     {
+      "name": "min_by",
+      "category": "std",
+      "group": "prelude",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "key",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "key",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/prelude/std.ptl",
+        "line": 95
+      }
+    },
+    {
+      "name": "max_by",
+      "category": "std",
+      "group": "prelude",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "key",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "key",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/prelude/std.ptl",
+        "line": 102
+      }
+    },
+    {
+      "name": "top_k",
+      "category": "std",
+      "group": "prelude",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "k",
+          "type": "any"
+        },
+        {
+          "name": "key = nil",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "k",
+            "type": "any"
+          },
+          {
+            "name": "key = nil",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/prelude/std.ptl",
+        "line": 110
+      }
+    },
+    {
+      "name": "group_by",
+      "category": "std",
+      "group": "prelude",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "key",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "key",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/prelude/std.ptl",
+        "line": 118
+      }
+    },
+    {
+      "name": "flat_map",
+      "category": "std",
+      "group": "prelude",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "f",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "f",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/prelude/std.ptl",
+        "line": 124
+      }
+    },
+    {
       "name": "take",
       "category": "std",
       "group": "prelude",
@@ -4575,7 +5125,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 91
+        "line": 131
       }
     },
     {
@@ -4608,7 +5158,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 96
+        "line": 136
       }
     },
     {
@@ -4641,7 +5191,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 109
+        "line": 149
       }
     },
     {
@@ -4682,7 +5232,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 116
+        "line": 156
       }
     },
     {
@@ -4707,7 +5257,81 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 123
+        "line": 163
+      }
+    },
+    {
+      "name": "plural",
+      "category": "std",
+      "group": "prelude",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "n",
+          "type": "any"
+        },
+        {
+          "name": "one",
+          "type": "any"
+        },
+        {
+          "name": "many = nil",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "n",
+            "type": "any"
+          },
+          {
+            "name": "one",
+            "type": "any"
+          },
+          {
+            "name": "many = nil",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/prelude/std.ptl",
+        "line": 172
+      }
+    },
+    {
+      "name": "list_and",
+      "category": "std",
+      "group": "prelude",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "word = \"and\"",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "word = \"and\"",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/prelude/std.ptl",
+        "line": 182
       }
     },
     {

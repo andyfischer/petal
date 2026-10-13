@@ -1,0 +1,353 @@
+// The helpers a large program otherwise writes by hand: selection (`argmin`,
+// `min_by`, `top_k`), grouping, `fill`, `interp`, `ord` / `chr`, the stateless
+// hashes, `plural` / `list_and`, and `lerp` of two records. docs/Builtins.md.
+// Run with `petal test test/ptl`.
+
+import creative
+import vec2
+
+// ── fill ───────────────────────────────────────────────────────────────────
+
+test "fill: a list of copies" do
+  expect_eq(fill(3, 0.0), [0.0, 0.0, 0.0])
+  expect_eq(fill(2, "a"), ["a", "a"])
+  expect_eq(fill(0, 1), [])
+  expect_eq(fill(-4, 1), [])
+  expect_eq(len(fill(1000, nil)), 1000)
+end
+
+test "fill: the copies are values, so writing one leaves the others" do
+  var grid = fill(3, [0, 0])
+  set grid[1] = append(grid[1], 9)
+  expect_eq(get grid, [[0, 0], [0, 0, 9], [0, 0]])
+  var cells = fill(3, 0)
+  set cells[2] += 5
+  expect_eq(get cells, [0, 0, 5])
+end
+
+// ── argmin / argmax / top_indices ──────────────────────────────────────────
+
+test "argmin and argmax: the index, the first of equals" do
+  expect_eq(argmin([3, 1, 2, 1]), 1)
+  expect_eq(argmax([3, 1, 9.5, 2, 9.5]), 2)
+  expect_eq(argmin([7]), 0)
+  expect_eq(argmin([2, 1.5, 2]), 1)
+end
+
+test "argmin and argmax: nil for an empty list" do
+  expect_eq(argmin([]), nil)
+  expect_eq(argmax([]), nil)
+end
+
+test "argmin and argmax: an f64_array" do
+  var a = f64_array(4)
+  set a = set_at(a, 2, -3.0)
+  set a = set_at(a, 3, 8.0)
+  expect_eq(argmin(get a), 2)
+  expect_eq(argmax(get a), 3)
+end
+
+test "top_indices: the k largest, largest first, equals in list order" do
+  expect_eq(top_indices([5, 1, 9, 9, 3], 3), [2, 3, 0])
+  expect_eq(top_indices([5, 1, 9], 1), [2])
+  expect_eq(top_indices([5, 1, 9], 0), [])
+  expect_eq(top_indices([5, 1, 9], -2), [])
+  expect_eq(top_indices([5, 1, 9], 10), [2, 0, 1])
+  expect_eq(top_indices([], 3), [])
+  expect_eq(top_indices([1, 1, 1, 1], 2), [0, 1])
+end
+
+test "top_indices agrees with a full sort" do
+  let xs = for i in range(0, 200) do hash_int(i) % 1000 end
+  let by_sort = sort_by(range(0, 200), fn(i) -> 0 - xs[i]) |> take(7)
+  expect_eq(top_indices(xs, 7).map(fn(i) -> xs[i]), by_sort.map(fn(i) -> xs[i]))
+end
+
+// ── min_by / max_by / top_k ────────────────────────────────────────────────
+
+let TOWNS = [
+  {name: "Ames", pop: 66000, state: "IA"},
+  {name: "Bend", pop: 99000, state: "OR"},
+  {name: "Cody", pop: 10000, state: "WY"},
+  {name: "Dyer", pop: 16000, state: "IN"},
+  {name: "Eola", pop: 99000, state: "OR"},
+]
+
+test "min_by and max_by: the element, the first of equals" do
+  expect_eq(min_by(TOWNS, fn(t) -> t.pop).name, "Cody")
+  expect_eq(max_by(TOWNS, fn(t) -> t.pop).name, "Bend")
+  expect_eq(min_by(["ccc", "a", "bb"], len), "a")
+  expect_eq(max_by(["ccc", "a", "bb"], len), "ccc")
+end
+
+test "min_by and max_by: nil for an empty list" do
+  expect_eq(min_by([], fn(t) -> t.pop), nil)
+  expect_eq(max_by([], fn(t) -> t.pop), nil)
+end
+
+test "min_by calls the key once per element" do
+  var calls = 0
+  let key = fn(x)
+    set calls += 1
+    x * x
+  end
+  expect_eq(min_by([3, -1, 2], key), -1)
+  expect_eq(get calls, 3)
+end
+
+test "top_k: by the elements, or by a key" do
+  expect_eq(top_k([5, 1, 9, 3], 2), [9, 5])
+  expect_eq(top_k(TOWNS, 3, fn(t) -> t.pop).map(fn(t) -> t.name), ["Bend", "Eola", "Ames"])
+  expect_eq(top_k(TOWNS, 0, fn(t) -> t.pop), [])
+  expect_eq(len(top_k(TOWNS, 99, fn(t) -> t.pop)), 5)
+  expect_eq(top_k([], 3), [])
+end
+
+// ── group_by / count / flat_map ────────────────────────────────────────────
+
+test "group_by: a record of lists, groups and members in first-seen order" do
+  let by_state = group_by(TOWNS, fn(t) -> t.state)
+  expect_eq(keys(by_state), ["IA", "OR", "WY", "IN"])
+  expect_eq(by_state.OR.map(fn(t) -> t.name), ["Bend", "Eola"])
+  expect_eq(len(by_state.IA), 1)
+  expect_eq(group_by([], fn(t) -> t.state), {})
+end
+
+test "group_by: a key that is not a string is named by str()" do
+  let parity = group_by([1, 2, 3, 4, 5], fn(x) -> x % 2)
+  expect_eq(parity["1"], [1, 3, 5])
+  expect_eq(parity["0"], [2, 4])
+  let truth = group_by([1, 2, 3], fn(x) -> x > 1)
+  expect_eq(truth["true"], [2, 3])
+end
+
+test "group_by_keys: the parallel-list form" do
+  expect_eq(group_by_keys(["a", "b", "c"], ["x", "y", "x"]), {x: ["a", "c"], y: ["b"]})
+  expect_eq(group_by_keys([], []), {})
+end
+
+test "count: how many satisfy the predicate" do
+  expect_eq(count(TOWNS, fn(t) -> t.state == "OR"), 2)
+  expect_eq(count([], fn(t) -> true), 0)
+end
+
+test "flat_map: map, then join the lists" do
+  expect_eq(flat_map([1, 2, 3], fn(x) -> [x, x * 10]), [1, 10, 2, 20, 3, 30])
+  expect_eq(flat_map([1, 2, 3], fn(x) -> if x == 2 then [] else [x] end), [1, 3])
+  expect_eq(flat_map([], fn(x) -> [x]), [])
+  expect_eq(flat_map(["ab", "c"], chars), ["a", "b", "c"])
+end
+
+test "a builtin is a callback like any function" do
+  expect_eq(map(["b", "A"], upper), ["B", "A"])
+  expect_eq(map([[1, 2], [3]], len), [2, 1])
+  expect_eq(map([1, 2], float), [1.0, 2.0])
+  expect_eq(sort_by(["b", "A", "c"], lower), ["A", "b", "c"])
+  expect_eq(reduce([1, 5, 3], 0, max), 5)
+  expect_eq(filter(["", "a", ""], len), ["a"])
+end
+
+// ── interp ─────────────────────────────────────────────────────────────────
+
+let CURVE = [[1900, 5], [1950, 10], [2000, 0]]
+
+test "interp: linear between the knots" do
+  expect_near(interp(CURVE, 1925), 7.5, 0.000001)
+  expect_near(interp(CURVE, 1975), 5.0, 0.000001)
+  expect_near(interp(CURVE, 1910.5), 6.05, 0.000001)
+end
+
+test "interp: the knots themselves, and always a float" do
+  expect_eq(interp(CURVE, 1900), 5.0)
+  expect_eq(interp(CURVE, 1950), 10.0)
+  expect_eq(interp(CURVE, 2000), 0.0)
+  expect_eq(type(interp(CURVE, 1900)), "float")
+end
+
+test "interp: clamps outside the table" do
+  expect_eq(interp(CURVE, 1800), 5.0)
+  expect_eq(interp(CURVE, 2100), 0.0)
+  expect_eq(interp([[0, 3]], -1), 3.0)
+  expect_eq(interp([[0, 3]], 7), 3.0)
+end
+
+test "interp: two knots at one x are a step" do
+  let step = [[0, 1], [10, 1], [10, 5], [20, 5]]
+  expect_eq(interp(step, 9.99), 1.0)
+  expect_eq(interp(step, 10), 1.0)
+  expect_near(interp(step, 10.01), 5.0, 0.000001)
+end
+
+test "interp: vec2 knots" do
+  expect_near(interp([vec2(0, 0), vec2(4, 8)], 1), 2.0, 0.000001)
+end
+
+test "interp agrees with the loop it replaces" do
+  let curve = fn(tbl, x)
+    if x <= tbl[0][0] then return float(tbl[0][1]) end
+    for i in range(1, len(tbl)) do
+      if x <= tbl[i][0] then
+        let k = float(x - tbl[i - 1][0]) / float(tbl[i][0] - tbl[i - 1][0])
+        return tbl[i - 1][1] + (tbl[i][1] - tbl[i - 1][1]) * k
+      end
+    end
+    float(tbl[len(tbl) - 1][1])
+  end
+  for i in range(0, 60) do
+    let x = 1890 + i * 2.5
+    expect_near(interp(CURVE, x), curve(CURVE, x), 0.000001, "at {x}")
+  end
+end
+
+// ── ord / chr ──────────────────────────────────────────────────────────────
+
+test "ord and chr: code points" do
+  expect_eq(ord("A"), 65)
+  expect_eq(ord("abc"), 97)
+  expect_eq(ord("é"), 233)
+  expect_eq(ord("😀"), 128512)
+  expect_eq(chr(97), "a")
+  expect_eq(chr(233), "é")
+  expect_eq(chr(128512), "😀")
+end
+
+test "ord and chr: a round trip, and arithmetic on letters" do
+  for c in chars("Petal é ✓") do
+    expect_eq(chr(ord(c)), c)
+  end
+  expect_eq(chr(ord("a") + 3), "d")
+  expect_eq(ord("z") - ord("a"), 25)
+end
+
+// ── hash_int / hash01 / hash_str ───────────────────────────────────────────
+
+// These values are the contract: the same on every machine, in every run and
+// in every version. (They are also the Cheesecake engine's, which had the
+// functions first.)
+test "hash: the documented values" do
+  expect_eq(hash_int(1), 1956814053452306)
+  expect_eq(hash_int(3, 7), 8394216175903167)
+  expect_eq(hash_str("moses"), 4381410558642330)
+  expect_eq(hash_str("moses", 2), 2442254591726810)
+end
+
+test "hash_int: depends on every argument, and on their order" do
+  expect(hash_int(3, 7) != hash_int(7, 3))
+  expect(hash_int(1) != hash_int(1, 0))
+  expect(hash_int(1, 2, 3) != hash_int(1, 2, 4))
+  expect(hash_int(1, 2, 3, 4) != hash_int(1, 2, 3))
+  expect_eq(hash_int(3, 7), hash_int(3, 7))
+end
+
+test "hash_int: an int and the float of the same value hash alike" do
+  expect_eq(hash_int(3.0, 7.0), hash_int(3, 7))
+  expect_eq(hash_int(0.0), hash_int(0))
+  expect_eq(hash_int(0.0 * -1.0), hash_int(0))
+  expect(hash_int(0.5) != hash_int(0))
+end
+
+test "hash_int: from 0 to 2^53 - 1, and a seed itself" do
+  for i in range(0, 200) do
+    let h = hash_int(i, -3, 0.5)
+    expect(h >= 0 && h < 9007199254740992, "hash_int({i}, ...) = {h}")
+  end
+  expect(hash_int(hash_int(1, 2), 3) != hash_int(1, 2))
+end
+
+test "hash_int: spreads over a small range" do
+  var seen = fill(8, 0)
+  for i in range(0, 800) do
+    set seen[hash_int(42, i) % 8] += 1
+  end
+  for n in get seen do
+    expect(n > 60 && n < 140, "a bucket of {n} out of 800 over 8")
+  end
+end
+
+test "hash01: the same hash as a float in [0, 1)" do
+  expect_eq(hash01(3, 7), float(hash_int(3, 7)) / 9007199254740992.0)
+  for i in range(0, 100) do
+    let u = hash01(i)
+    expect(u >= 0.0 && u < 1.0)
+  end
+end
+
+test "hash_str: depends on the text and the salt" do
+  expect_eq(hash_str("east_tremont"), hash_str("east_tremont"))
+  expect(hash_str("east_tremont") != hash_str("east_tremonu"))
+  expect(hash_str("east_tremont") != hash_str("east_tremont", 5))
+  expect(hash_str("") != hash_str(" "))
+  expect(hash_str("abcdefgh") != hash_str("abcdefgh\0"))
+  expect(hash_str("") >= 0)
+end
+
+// ── plural / list_and ──────────────────────────────────────────────────────
+
+test "plural: the count and its noun" do
+  expect_eq(plural(1, "car"), "1 car")
+  expect_eq(plural(3, "car"), "3 cars")
+  expect_eq(plural(0, "car"), "0 cars")
+  expect_eq(plural(2, "city", "cities"), "2 cities")
+  expect_eq(plural(1, "city", "cities"), "1 city")
+  expect_eq(plural(12500, "person", "people"), "12,500 people")
+  expect_eq(plural(many: "oxen", one: "ox", n: 4), "4 oxen")
+end
+
+test "list_and: a list as prose" do
+  expect_eq(list_and([]), "")
+  expect_eq(list_and(["a"]), "a")
+  expect_eq(list_and(["a", "b"]), "a and b")
+  expect_eq(list_and(["a", "b", "c"]), "a, b and c")
+  expect_eq(list_and(["a", "b", "c", "d"]), "a, b, c and d")
+  expect_eq(list_and([1, 2, 3], "or"), "1, 2 or 3")
+  expect_eq(list_and([1, 2], word: "nor"), "1 nor 2")
+end
+
+// ── fixed / commas (number formatting) ─────────────────────────────────────
+
+test "number formatting is fixed() and commas() in a hole" do
+  let x = 1234.5678
+  expect_eq("{fixed(x, 1)}", "1234.6")
+  expect_eq("{commas(1234567)}", "1,234,567")
+  expect_eq("{commas(x, 2)}", "1,234.57")
+  expect_eq("${commas(-9876.5, 0)}", "$-9,877")
+end
+
+// ── lerp of two records ────────────────────────────────────────────────────
+
+test "lerp: two records, field by field" do
+  let a = {sepia: 0.0, grain: 10, gsize: 2.0}
+  let b = {sepia: 1.0, grain: 20, gsize: 4.0}
+  expect_eq(lerp(a, b, 0.25), {sepia: 0.25, grain: 12.5, gsize: 2.5})
+  expect_eq(lerp(a, b, 0), {sepia: 0.0, grain: 10.0, gsize: 2.0})
+  expect_eq(lerp(a, b, 1), {sepia: 1.0, grain: 20.0, gsize: 4.0})
+end
+
+test "lerp: colors, vectors, lists and records inside a record" do
+  let a = {tint: #000000, at: vec2(0, 0), up: vec3(0, 0, 0), curve: [0, 10], look: {bloom: 0.0}}
+  let b = {tint: #ffffff, at: vec2(4, 8), up: vec3(2, 4, 6), curve: [10, 20], look: {bloom: 1.0}}
+  let m = lerp(a, b, 0.5)
+  expect_eq(m.tint, {r: 128, g: 128, b: 128})
+  expect_eq(m.at, vec2(2, 4))
+  expect_eq(m.up, vec3(1, 2, 3))
+  expect_eq(m.curve, [5.0, 15.0])
+  expect_eq(m.look, {bloom: 0.5})
+end
+
+test "lerp: what cannot blend switches at the midpoint" do
+  let a = {id: "newsreel", on: false, n: 1}
+  let b = {id: "colour", on: true, n: "many"}
+  expect_eq(lerp(a, b, 0.49), {id: "newsreel", on: false, n: 1})
+  expect_eq(lerp(a, b, 0.5), {id: "colour", on: true, n: "many"})
+end
+
+test "lerp: the fields are the first record's" do
+  let m = lerp({a: 0, only_a: "x"}, {a: 10, only_b: "y"}, 0.9)
+  expect_eq(m, {a: 9.0, only_a: "x"})
+end
+
+test "lerp: a color is still a color, and numbers still numbers" do
+  expect_eq(lerp(#000000, #ffffff, 0.5), {r: 128, g: 128, b: 128})
+  expect_eq(lerp(0, 10, 0.3), 3.0)
+  expect_eq(lerp([0.0, 10.0], [1.0, 20.0], 0.5), [0.5, 15.0])
+end

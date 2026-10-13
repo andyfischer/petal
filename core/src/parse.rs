@@ -2297,6 +2297,15 @@ impl Parser {
                 self.advance(); // consume '...'
                 let expr = self.parse_expr()?;
                 fields.push(RecordField::Spread(expr));
+            } else if matches!(self.peek(), Token::LBracket) {
+                // `[key]: value` — a key that is computed. See
+                // `ast::computed_record_field` for what it is parsed as.
+                self.advance(); // consume '['
+                let key = self.parse_expr()?;
+                self.expect(&Token::RBracket)?;
+                self.expect(&Token::Colon)?;
+                let value = self.parse_expr()?;
+                fields.push(crate::ast::computed_record_field(key, value));
             } else {
                 let key = self.expect_field_name()?;
                 self.expect(&Token::Colon)?;
@@ -2638,6 +2647,25 @@ impl Parser {
                 }
                 Token::InterpEnd => {
                     parts.push(String::new());
+                }
+                // `"{x:.1f}"`, `"{n:,}"`: the format spec of other
+                // languages. A hole holds an expression and nothing else, and
+                // the builtins that format a number are calls like any other.
+                // (After a string literal the colon is JSON in a string,
+                // which the message below already answers.)
+                Token::Colon
+                    if exprs.last().is_some_and(|e| {
+                        !matches!(e.kind, ExprKind::Literal(Literal::String(_)))
+                    }) =>
+                {
+                    return Err(self.error_at_current(
+                        "Expected string part in interpolation, got Colon — a `{` in a \
+                         double-quoted string opens an interpolation hole, which holds an \
+                         expression and takes no format spec: for `{x:.1f}` write \
+                         `{fixed(x, 1)}`, for `{n:,}` write `{commas(n)}` (`{commas(x, 2)}` \
+                         for both). Write `\\{` for a literal brace"
+                            .to_string(),
+                    ));
                 }
                 other => {
                     // The hole closed after one expression and something

@@ -974,3 +974,255 @@ pub(super) fn native_trim(state: &mut PetalCxt) -> Result<u32, String> {
         _ => Err("trim() expects a string".into()),
     }
 }
+
+// ── The helpers every large program wrote by hand ───────────────────────────
+//
+// `fill`, `argmin`/`argmax`, `top_indices`, `group_by_keys`, `ord`/`chr`.
+// The versions that take a function (`min_by`, `max_by`, `top_k`,
+// `group_by`) are Petal in the std prelude, over these.
+
+/// `fill(count, value)` — a list of `count` copies of `value`; `[]` when
+/// `count` is zero or negative. The copies are one value, as everywhere in
+/// Petal: writing to one element later never changes another.
+pub(super) fn native_fill(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "fill")?;
+    let n = match state.get_value(1)? {
+        Value::Int(n) => n,
+        other => {
+            return Err(format!(
+                "fill(count, value) expects an int count, got {}",
+                other.type_name()
+            ));
+        }
+    };
+    let n = n.max(0) as usize;
+    // As `repeat`: refuse what no program builds on purpose rather than
+    // abort in the allocator.
+    const LIMIT: usize = 1 << 27;
+    if n > LIMIT {
+        return Err(format!("fill() result would be too large ({n} elements)"));
+    }
+    let v = state.get_value(2)?;
+    state.push_list(vec![v; n]);
+    Ok(1)
+}
+
+/// The numbers of a list or f64_array argument, for the selection builtins.
+/// A `Pending` element is the caller's to absorb: it comes back as `Err(Ok)`.
+fn numbers_of(state: &PetalCxt, index: usize, who: &str) -> Result<Result<Vec<f64>, Value>, String> {
+    match state.get_value(index)? {
+        Value::List(id) => {
+            let items = state.heap().get_list(id);
+            if let Some(p) = leftmost_pending_element(items) {
+                return Ok(Err(p));
+            }
+            let mut out = Vec::with_capacity(items.len());
+            for (i, v) in items.iter().enumerate() {
+                match v.as_f64() {
+                    Some(x) => out.push(x),
+                    None => {
+                        return Err(format!(
+                            "{who}() expects a list of numbers, got {} at index {i}",
+                            v.type_name()
+                        ));
+                    }
+                }
+            }
+            Ok(Ok(out))
+        }
+        Value::F64Array(id) => Ok(Ok(state.heap().get_f64_array(id).to_vec())),
+        other => Err(format!(
+            "{who}() expects a list of numbers, got {}",
+            other.type_name()
+        )),
+    }
+}
+
+/// The index of the extreme of `xs`: the smallest when `want_less`, else the
+/// largest. The first of equals wins, and a NaN is never chosen over a
+/// number. `None` for an empty list.
+fn extreme_index(xs: &[f64], want_less: bool) -> Option<usize> {
+    let mut best: Option<usize> = None;
+    for (i, &x) in xs.iter().enumerate() {
+        best = match best {
+            None => Some(i),
+            Some(b) => {
+                let cur = xs[b];
+                let better = if want_less { x < cur } else { x > cur };
+                if better || (cur.is_nan() && !x.is_nan()) {
+                    Some(i)
+                } else {
+                    Some(b)
+                }
+            }
+        };
+    }
+    best
+}
+
+fn arg_extreme(state: &mut PetalCxt, who: &str, want_less: bool) -> Result<u32, String> {
+    require_args(state, 1, who)?;
+    match numbers_of(state, 1, who)? {
+        Err(pending) => state.push_value(pending),
+        Ok(xs) => match extreme_index(&xs, want_less) {
+            Some(i) => state.push_int(i as i64),
+            None => state.push_nil(),
+        },
+    }
+    Ok(1)
+}
+
+/// `argmin(list)` — the index of the smallest number, the first of equals;
+/// `nil` for an empty list.
+pub(super) fn native_argmin(state: &mut PetalCxt) -> Result<u32, String> {
+    arg_extreme(state, "argmin", true)
+}
+
+/// `argmax(list)` — the index of the largest number, the first of equals;
+/// `nil` for an empty list.
+pub(super) fn native_argmax(state: &mut PetalCxt) -> Result<u32, String> {
+    arg_extreme(state, "argmax", false)
+}
+
+/// `top_indices(list, k)` — the indices of the `k` largest numbers, largest
+/// first, equals in list order. A bounded selection: it keeps `k` candidates
+/// and never sorts the whole list.
+pub(super) fn native_top_indices(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "top_indices")?;
+    let k = match state.get_value(2)? {
+        Value::Int(k) => k.max(0) as usize,
+        other => {
+            return Err(format!(
+                "top_indices(list, k) expects an int k, got {}",
+                other.type_name()
+            ));
+        }
+    };
+    let xs = match numbers_of(state, 1, "top_indices")? {
+        Err(pending) => {
+            state.push_value(pending);
+            return Ok(1);
+        }
+        Ok(xs) => xs,
+    };
+    let k = k.min(xs.len());
+    // `best` is kept ordered: larger first, earlier index first among equals,
+    // NaN after every number.
+    let before = |a: usize, b: usize| -> bool {
+        let (x, y) = (xs[a], xs[b]);
+        match (x.is_nan(), y.is_nan()) {
+            (false, true) => true,
+            (true, false) => false,
+            (true, true) => a < b,
+            (false, false) => x > y || (x == y && a < b),
+        }
+    };
+    let mut best: Vec<usize> = Vec::with_capacity(k + 1);
+    if k > 0 {
+        for i in 0..xs.len() {
+            if best.len() == k && !before(i, best[k - 1]) {
+                continue;
+            }
+            let at = best.partition_point(|&b| before(b, i));
+            best.insert(at, i);
+            best.truncate(k);
+        }
+    }
+    state.push_list(best.into_iter().map(|i| Value::Int(i as i64)).collect());
+    Ok(1)
+}
+
+/// `group_by_keys(list, keys)` — a record of lists: element `i` of `list`
+/// goes into the group named by `keys[i]`. Groups are in the order their key
+/// first appears, and each keeps list order. A key that is not a string is
+/// named by its `str()` (a record's keys are strings).
+pub(super) fn native_group_by_keys(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "group_by_keys")?;
+    let (Value::List(items), Value::List(keys)) = (state.get_value(1)?, state.get_value(2)?)
+    else {
+        return Err("group_by_keys(list, keys) expects two lists".into());
+    };
+    let (items, keys) = (state.heap().get_list(items), state.heap().get_list(keys));
+    if items.len() != keys.len() {
+        return Err(format!(
+            "group_by_keys(list, keys) needs one key per element, got {} elements and {} keys",
+            items.len(),
+            keys.len()
+        ));
+    }
+    if let Some(p) = leftmost_pending_element(keys) {
+        state.push_value(p);
+        return Ok(1);
+    }
+    let mut groups: indexmap::IndexMap<String, Vec<Value>> = indexmap::IndexMap::new();
+    for (item, key) in items.iter().zip(keys) {
+        let name = match key {
+            Value::String(id) => state.heap().get_string(*id).to_string(),
+            other => value::value_to_display_string(other, state.heap()),
+        };
+        groups.entry(name).or_default().push(*item);
+    }
+    let mut record = crate::heap::RecordMap::default();
+    for (name, members) in groups {
+        let list = state.heap_mut().alloc_list(members);
+        record.insert(name, Value::List(list));
+    }
+    let id = state.heap_mut().alloc_map(record);
+    state.push_value(Value::Map(id));
+    Ok(1)
+}
+
+/// `ord(s)` — the Unicode code point of the first character of `s`.
+pub(super) fn native_ord(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "ord")?;
+    match state.get_value(1)? {
+        Value::String(id) => match state.heap().get_string(id).chars().next() {
+            Some(c) => {
+                state.push_int(c as i64);
+                Ok(1)
+            }
+            None => Err("ord() of an empty string".into()),
+        },
+        other => Err(format!("ord() expects a string, got {}", other.type_name())),
+    }
+}
+
+/// `chr(code)` — the one-character string of a Unicode code point.
+pub(super) fn native_chr(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "chr")?;
+    match state.get_value(1)? {
+        Value::Int(n) => match u32::try_from(n).ok().and_then(char::from_u32) {
+            Some(c) => {
+                state.push_string(c.to_string());
+                Ok(1)
+            }
+            None => Err(format!("chr() of {n}, which is not a Unicode code point")),
+        },
+        other => Err(format!("chr() expects an int, got {}", other.type_name())),
+    }
+}
+
+/// `__record_of(key, value)` — the one-field record `{[key]: value}`. What a
+/// computed record key is parsed as a spread of
+/// (`ast::computed_record_field`); nothing else calls it.
+pub(super) fn native_record_of(state: &mut PetalCxt) -> Result<u32, String> {
+    if state.arg_count() != 2 {
+        return Err("internal error: __record_of expects (key, value)".into());
+    }
+    let key = match state.get_value(1)? {
+        Value::String(id) => state.heap().get_string(id).to_string(),
+        other => {
+            return Err(format!(
+                "A computed record key (`[key]: value`) must be a string, got {} — \
+                 write `[str(key)]` to use its text",
+                other.type_name()
+            ));
+        }
+    };
+    let value = state.get_value(2)?;
+    let mut record = crate::heap::RecordMap::with_capacity(1);
+    record.insert(key, value);
+    let id = state.heap_mut().alloc_map(record);
+    state.push_value(Value::Map(id));
+    Ok(1)
+}

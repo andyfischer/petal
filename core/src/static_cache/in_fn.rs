@@ -391,7 +391,7 @@ impl FnPlan {
                     || (!is_phantom(term) && !plain(term))
             })
             .collect();
-        for (t, _) in &term_blocks {
+        for t in term_blocks.keys() {
             if never[t.0 as usize] {
                 continue;
             }
@@ -521,7 +521,8 @@ impl FnPlan {
             if !inv[i] || function[i] == NONE {
                 continue;
             }
-            let heavy = match term.op {
+            let heavy = matches!(
+                term.op,
                 TermOp::AllocList
                 | TermOp::AllocMap { .. }
                 | TermOp::AllocMapSpread { .. }
@@ -535,9 +536,8 @@ impl FnPlan {
                 | TermOp::BuiltinCall(_)
                 | TermOp::ForLoop
                 | TermOp::NumericForLoop
-                | TermOp::WhileLoop => true,
-                _ => false,
-            };
+                | TermOp::WhileLoop
+            );
             if heavy && let Some(w) = worth.get_mut(function[i] as usize) {
                 *w = true;
             }
@@ -556,6 +556,7 @@ struct Stretch {
 
 /// Find the stretches of `f` that may be kept. `mutated` are the terms
 /// whose value reaches the container operand of a write.
+#[allow(clippy::too_many_arguments)] // one caller; the pieces of one lowering
 fn stretches(
     f: &BytecodeFn,
     bc: &BytecodeProgram,

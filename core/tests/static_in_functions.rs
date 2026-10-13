@@ -260,7 +260,7 @@ fn a_closure_made_per_call_keeps_only_what_no_call_gave_it() {
         "fn make(k)\n  fn(x) -> do\n    let own = [k, 1]\n    let shared = [10, 20]\n    own[0] * x + shared[1]\n  end\nend\n\
          {COUNTER}let a = make(n)\nlet b = make(n + 5)\nprint(n, a(2), b(2), a(3))\n"
     );
-    let alt = src.replace("fn(x) -> do\n", "fn(x)\n").replace("  end\nend\n", "  end\nend\n");
+    let alt = src.replace("fn(x) -> do\n", "fn(x)\n");
     for src in [src, alt] {
         // Whichever spelling of a multi-line lambda the language takes.
         if Env::new().load_program(&src).is_err() {

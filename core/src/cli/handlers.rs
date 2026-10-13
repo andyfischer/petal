@@ -2110,10 +2110,8 @@ pub(super) fn load_checked_or_die(
     }
     // A caller that asked for check-only (the static-only build) runs no
     // host native, so the program need not link against this host's.
-    if !was_check_only {
-        if let Err(e) = env.link(pid) {
-            die_error(json, &e, serde_json::Value::Null, source);
-        }
+    if !was_check_only && let Err(e) = env.link(pid) {
+        die_error(json, &e, serde_json::Value::Null, source);
     }
     pid
 }

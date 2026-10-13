@@ -1192,7 +1192,8 @@ fn a_table_does_not_outlive_the_lowering_it_was_filled_under() {
     );
     let mut a = world(&src, RunPolicy::REPLAY);
     let mut b = world(&src, RunPolicy::BASELINE);
-    let steps: [(&str, &dyn Fn(&mut Env)); 10] = [
+    type Step<'a> = (&'a str, &'a dyn Fn(&mut Env));
+    let steps: [Step; 10] = [
         ("as loaded", &|_| {}),
         ("observations on", &|e| e.observations_mut().enable()),
         ("observations off", &|e| e.observations_mut().disable()),

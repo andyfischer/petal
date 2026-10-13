@@ -3306,8 +3306,8 @@ mod tests {
         let mut heap = Heap::new();
         let ids: Vec<ListId> = (0..200).map(|i| heap.alloc_list(vec![Value::Int(i)])).collect();
         // 0..64 all frozen; 64..128 every third; 128..192 none; 192..200 two.
-        let is_frozen = |i: usize| i < 64 || (i < 128 && i % 3 == 0) || i == 193 || i == 199;
-        let is_kept = |i: usize| i % 5 == 0;
+        let is_frozen = |i: usize| i < 64 || (i < 128 && i.is_multiple_of(3)) || i == 193 || i == 199;
+        let is_kept = |i: usize| i.is_multiple_of(5);
         for (i, id) in ids.iter().enumerate() {
             if is_frozen(i) {
                 assert_eq!(heap.freeze(Value::List(*id)), Ok(1));

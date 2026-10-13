@@ -88,7 +88,7 @@ fn drive(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64, frames:
         .filter(|&i| counter.entered[i] > 0)
         .map(|i| (counter.instructions[i], counter.entered[i], counter.allocations[i], places[i].clone()))
         .collect();
-    top.sort_by(|a, b| b.0.cmp(&a.0));
+    top.sort_by_key(|t| std::cmp::Reverse(t.0));
     Row {
         sites: found.sites.len(),
         ran: top.len(),

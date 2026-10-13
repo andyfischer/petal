@@ -25,10 +25,6 @@ use petal_ui::scenario::Scenario;
 
 const SIZE: (i32, i32) = (800, 600);
 
-fn open(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64, follow: bool) -> Headless {
-    open_observed(app, includes, policy, seed, follow, false)
-}
-
 fn open_observed(
     app: &Path,
     includes: &[PathBuf],

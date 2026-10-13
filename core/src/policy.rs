@@ -261,8 +261,9 @@ mod tests {
 
     #[test]
     fn the_static_cache_has_a_modifier_and_follows_the_optimizer() {
-        assert!(RunPolicy::FAST.opts.static_cache && RunPolicy::REPLAY.opts.static_cache);
-        assert!(!RunPolicy::BASELINE.opts.static_cache && !RunPolicy::EXPLAIN.opts.static_cache);
+        // Constants, so held at compile time.
+        const { assert!(RunPolicy::FAST.opts.static_cache && RunPolicy::REPLAY.opts.static_cache) };
+        const { assert!(!RunPolicy::BASELINE.opts.static_cache && !RunPolicy::EXPLAIN.opts.static_cache) };
         let off = RunPolicy::parse("fast-static").unwrap();
         assert_eq!(off, RunPolicy::FAST.with_static_cache(false));
         assert_eq!(off.name().as_deref(), Some("fast-static"));

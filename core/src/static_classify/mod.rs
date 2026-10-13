@@ -1034,10 +1034,10 @@ impl<'a> Pass<'a> {
                     slot.get_or_insert(term.id);
                 }
             }
-            if Self::is_phantom(term) {
-                if let Some(v) = self.block_phantoms.get_mut(term.block_id.0 as usize) {
-                    v.push(term.id);
-                }
+            if Self::is_phantom(term)
+                && let Some(v) = self.block_phantoms.get_mut(term.block_id.0 as usize)
+            {
+                v.push(term.id);
             }
             if let TermOp::MakeClosure(fid) = term.op
                 && let Some(&i) = self.fn_index.get(&fid)

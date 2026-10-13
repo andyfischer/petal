@@ -19,7 +19,7 @@
 //! nothing about what the dynamic code then does with a kept table (a memo
 //! hit on an argument that is the same object, for one).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use petal::env::Env;
 use petal::policy::RunPolicy;
@@ -32,7 +32,7 @@ struct Frame {
     micros: f64,
 }
 
-fn measure(file: &PathBuf, source: &str, cache: bool, frames: usize) -> (Vec<Frame>, String) {
+fn measure(file: &Path, source: &str, cache: bool, frames: usize) -> (Vec<Frame>, String) {
     let mut env = Env::new();
     env.set_echo(false);
     env.set_check_only(true);

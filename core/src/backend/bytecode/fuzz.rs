@@ -739,15 +739,13 @@ fn differential_fuzz() {
 
 // ── The static-value cache ──────────────────────────────────────
 
+/// One run's rendered value and prints, or its error.
+type FrameResult = Result<(String, Vec<String>), String>;
+
 /// Run `code` `runs` times on one stack, the way a host runs it every frame:
 /// each run's rendered value and prints, or its error. Also how many runs of
 /// static instructions the cache skipped.
-fn run_frames(
-    code: &str,
-    policy: RunPolicy,
-    runs: usize,
-    observe: bool,
-) -> (Vec<Result<(String, Vec<String>), String>>, u64) {
+fn run_frames(code: &str, policy: RunPolicy, runs: usize, observe: bool) -> (Vec<FrameResult>, u64) {
     let mut env = Env::new();
     env.set_policy(policy);
     env.set_echo(false);

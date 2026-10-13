@@ -309,6 +309,11 @@ impl<'a> Vm<'a> {
         }
         self.profile.record_inst_in(inst, func.func_id);
         let origin = func.origins.get(ip).copied().flatten();
+        if self.profile.enabled
+            && let Some(sites) = self.profile.sites.as_deref_mut()
+        {
+            sites.step(origin, frame_idx, self.heap.alloc_stats().total());
+        }
         // Gather trace inputs before execution — a `dst` that aliases a source
         // register would clobber it otherwise. The `enabled` check comes first
         // so the disabled hot path pays only one bool test, never `dst()` /

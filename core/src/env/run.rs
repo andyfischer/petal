@@ -542,6 +542,7 @@ fn make_vm<'a>(
     // Likewise the static values: two comparisons unless the lowering or a
     // literal changed under the stack, and then it starts empty.
     stack.statics.sync(&bc.statics, program.constants.revision());
+    stack.statics.set_check(static_audit.check_kept);
     Vm {
         program,
         bc,

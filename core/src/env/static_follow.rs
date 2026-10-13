@@ -552,6 +552,9 @@ impl Env {
             } else {
                 info.key.as_deref().and_then(|k| by_key.get(k)).copied()
             };
+            // A value built inside a function body is rebuilt by every
+            // reload (`static_cache`, the `in_fn` module).
+            let before = before.filter(|_| !layout.in_function(i as u32));
             let held = before.and_then(|j| Some((j, (*old.values.get(j)?)?)));
             let seed = match held {
                 None => Seed::Empty,
@@ -648,7 +651,8 @@ impl Env {
                 break;
             }
         }
-        for (seed, info) in seeds.iter().zip(&follow.slots) {
+        // The report counts top-level values, which are the first slots.
+        for (seed, info) in seeds.iter().zip(&follow.slots).take(layout.root_slots) {
             match *seed {
                 Seed::Kept(v) => {
                     report.kept += 1;

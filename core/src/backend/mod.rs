@@ -91,6 +91,12 @@ pub struct OptFlags {
     /// what it observed when it last ran (`crate::static_cache`,
     /// "Observations").
     pub static_cache: bool,
+    /// With `static_cache`: also keep the values a function body builds
+    /// that depend on nothing of the call (`crate::static_cache`, the
+    /// `in_fn` module). Function code gets the same two instructions around
+    /// the code that builds one. Off, function code is lowered as it is
+    /// without the cache. Ignored where `preserve_observations` is set.
+    pub static_in_functions: bool,
     /// Hold `copy_propagation` back from deleting a dead `Move` whose term is
     /// **named**, so the observation buffer still reports that binding. Set by
     /// `Env` when the observation buffer or the `explain` trace is enabled;
@@ -120,6 +126,9 @@ impl OptFlags {
             copy_propagation: false,
             match_dispatch: false,
             static_cache: false,
+            // Inert without `static_cache`; on, so that switching the cache
+            // on over these flags (`baseline+static`) is the whole cache.
+            static_in_functions: true,
             preserve_observations: false,
             preserve_trace: false,
         }
@@ -134,6 +143,7 @@ impl OptFlags {
             copy_propagation: true,
             match_dispatch: true,
             static_cache: true,
+            static_in_functions: true,
             preserve_observations: false,
             preserve_trace: false,
         }
@@ -156,6 +166,7 @@ impl OptFlags {
             copy_propagation: true,
             match_dispatch: true,
             static_cache: true,
+            static_in_functions: true,
             preserve_observations: false,
             preserve_trace: false,
         }
@@ -167,6 +178,15 @@ impl OptFlags {
         OptFlags {
             preserve_observations: other.preserve_observations,
             preserve_trace: other.preserve_trace,
+            ..self
+        }
+    }
+
+    /// These passes with the values built inside function bodies kept or
+    /// not (it takes `static_cache` as well for any to be).
+    pub const fn with_static_in_functions(self, on: bool) -> OptFlags {
+        OptFlags {
+            static_in_functions: on,
             ..self
         }
     }

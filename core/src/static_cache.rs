@@ -188,6 +188,18 @@
 //! the observation buffer would hold until the next run anyway; with the
 //! cache on they are held for as long as the segment is kept.
 //!
+//! # Inside function bodies
+//!
+//! A function that builds the same value on every call is given a slot
+//! for it too, by the same two instructions in the function's own code:
+//! the [`in_fn`] module, which has its own rules for what "the same value
+//! on every call" takes (the classifier's "static" is not enough inside a
+//! function) and for what it does not keep. Those slots and runs come
+//! behind the top-level ones in the layout ([`StaticLayout::root_slots`],
+//! [`StaticLayout::root_runs`]); everything above is about the top-level
+//! ones, and where the two differ (reloads, observations, timing) that
+//! module says how.
+//!
 //! The cache is off under the `baseline` and `explain` policies, for
 //! run-once `petal run`, whenever the per-term trace is preserved (a
 //! skipped run records nothing for it, and what it would have recorded is
@@ -205,6 +217,9 @@ use crate::program::{BlockId, Program, StateKey, TermId, TermOp};
 use crate::source_map::FileId;
 use crate::static_classify::{StaticAnalysis, TermClass};
 use crate::value::Value;
+
+mod in_fn;
+pub use in_fn::FnPlan;
 
 /// A stretch lighter than this is not worth a check per run. Counted in
 /// allocations, with a call or a loop taken to be two. One is enough: a
@@ -230,6 +245,9 @@ pub struct StaticSlotInfo {
     /// Declared with `const`: the author asked for it to be constant, so a
     /// value that cannot be kept is worth saying louder.
     pub is_const: bool,
+    /// For a value built inside a function body (see [`in_fn`]): the
+    /// function's name. `None` for a top-level value.
+    pub function: Option<String>,
 }
 
 /// What a reload needs to know about one slot.
@@ -366,6 +384,11 @@ pub struct StaticLayout {
     pub candidate_runs: usize,
     /// Root instructions before the pass added its own.
     pub root_instructions: usize,
+    /// How many of `slots` and of `runs` belong to the root code: the
+    /// first ones. The rest are values built inside function bodies
+    /// ([`in_fn`]), one run per kept stretch of a function's code.
+    pub root_slots: usize,
+    pub root_runs: usize,
     /// The program's declarations, for a reload (see "Following the diff").
     pub follow: Arc<FollowInfo>,
 }
@@ -393,15 +416,42 @@ impl StaticLayout {
         self.members.get(run as usize).map(|m| &m[..]).unwrap_or(&[])
     }
 
-    /// The checks a frame makes when every value is kept: one per stretch
-    /// of static instructions, whether it is a group or a lone segment.
+    /// The checks a frame makes in the root code when every value is kept:
+    /// one per stretch of static instructions, whether it is a group or a
+    /// lone segment.
     pub fn checks(&self) -> usize {
-        self.runs.iter().filter(|r| r.group.is_none()).count()
+        self.runs.iter().take(self.root_runs).filter(|r| r.group.is_none()).count()
     }
 
-    /// How many `StaticSkip`s guard one segment (the rest guard a group).
+    /// How many `StaticSkip`s of the root code guard one segment (the rest
+    /// guard a group).
     pub fn segments(&self) -> usize {
-        self.runs.iter().filter(|r| !r.is_group()).count()
+        self.runs.iter().take(self.root_runs).filter(|r| !r.is_group()).count()
+    }
+
+    /// Whether `slot` holds a value built inside a function body.
+    pub fn in_function(&self, slot: u32) -> bool {
+        slot as usize >= self.root_slots
+    }
+
+    /// How many slots hold a value built inside a function body, and how
+    /// many stretches of function code they are stored by.
+    pub fn function_slots(&self) -> (usize, usize) {
+        (self.slots.len() - self.root_slots.min(self.slots.len()), self.runs.len() - self.root_runs.min(self.runs.len()))
+    }
+
+    /// Work out the two inverse tables again, after runs were added.
+    fn index(&mut self) {
+        self.feeders = vec![Vec::new(); self.slots.len()];
+        self.members = vec![Vec::new(); self.runs.len()];
+        for (i, run) in self.runs.iter().enumerate() {
+            for &s in &run.feeds {
+                self.feeders[s as usize].push(i as u32);
+            }
+            if let Some(g) = run.group {
+                self.members[g as usize].push(i as u32);
+            }
+        }
     }
 }
 
@@ -521,6 +571,12 @@ pub struct StaticSlots {
     logs: Vec<Option<ObservationLog>>,
     /// What the segment in progress has observed so far.
     log: Vec<(TermId, Value)>,
+    /// Check the values built inside function bodies instead of trusting
+    /// them (see [`set_check`](Self::set_check)).
+    check: bool,
+    /// Slots whose code built a value that is not the one kept, under
+    /// `check`: each once.
+    mismatches: Vec<u32>,
     pub stats: StaticStats,
 }
 
@@ -572,6 +628,49 @@ impl StaticSlots {
                 self.pending[i] += 1;
                 if let Some(g) = run.group {
                     self.pending[g as usize] += 1;
+                }
+            }
+        }
+    }
+
+    /// Check every value built inside a function body instead of trusting
+    /// it: its skip is never taken, so the code runs on every call, and its
+    /// store compares what it built with what the slot holds. A difference
+    /// is a value that was not invariant; see
+    /// [`mismatches`](Self::mismatches). A program runs the same with this
+    /// on as with the cache off, at the cost of the cache.
+    pub fn set_check(&mut self, on: bool) {
+        self.check = on;
+    }
+
+    #[inline]
+    pub(crate) fn checking(&self) -> bool {
+        self.check
+    }
+
+    /// The slots found, under [`set_check`](Self::set_check), to have been
+    /// built with a value that is not the one they hold. Not cleared by a
+    /// reload.
+    pub fn mismatches(&self) -> &[u32] {
+        &self.mismatches
+    }
+
+    pub(crate) fn note_mismatch(&mut self, slot: u32) {
+        if !self.mismatches.contains(&slot) {
+            self.mismatches.push(slot);
+        }
+    }
+
+    /// Empty every slot of `slots`, which hold values built inside function
+    /// bodies: the next call that reaches each one's code builds it again.
+    pub(crate) fn empty_function_slots(&mut self, layout: &StaticLayout) {
+        for s in layout.root_slots..self.slots.len() {
+            if matches!(self.slots[s], Slot::Filled(_)) {
+                self.slots[s] = Slot::Empty;
+                for &run in layout.feeders(s as u32) {
+                    if let Some(p) = self.pending.get_mut(run as usize) {
+                        *p += 1;
+                    }
                 }
             }
         }
@@ -819,6 +918,11 @@ impl StaticSlots {
                     *p += 1;
                 }
             }
+        }
+        // A value built inside a function since the drag began may have
+        // been built from one of those.
+        if !slots.is_empty() {
+            self.empty_function_slots(layout);
         }
         slots.len()
     }
@@ -1074,6 +1178,9 @@ pub struct StaticPlan {
     /// Root-block terms that are static data and whose value reaches no
     /// write.
     pub roots: HashSet<TermId>,
+    /// Every term, in a function body too, whose value may be the
+    /// container some mutation writes into (`mutated_terms`).
+    pub mutated: HashSet<TermId>,
 }
 
 impl StaticPlan {
@@ -1099,7 +1206,7 @@ impl StaticPlan {
                 }
             }
         }
-        StaticPlan { roots }
+        StaticPlan { roots, mutated }
     }
 
     /// The root registers of those terms. The root block is the first block
@@ -1441,8 +1548,18 @@ pub fn apply(
     natives: &NativeFnTable,
     plan: &StaticPlan,
     observes: bool,
+    in_functions: bool,
 ) {
-    let slots = apply_runs(bc, program, analysis, natives, plan, observes);
+    let mut slots = apply_runs(bc, program, analysis, natives, plan, observes);
+    bc.statics.root_slots = bc.statics.slots.len();
+    bc.statics.root_runs = bc.statics.runs.len();
+    slots.resize(bc.statics.root_slots, SlotFollow::default());
+    // Values built inside function bodies. Not where observations are
+    // preserved: a skipped stretch would have to report the names bound
+    // inside it, per call.
+    if in_functions && !observes {
+        in_fn::apply(bc, program, analysis, natives, plan, &mut slots);
+    }
     follow(&mut bc.statics, slots, program, analysis);
 }
 
@@ -1521,6 +1638,11 @@ fn follow(
         };
     }
     unnamed_keys(&mut slots, program);
+    // A value built inside a function is matched by nothing and depends on
+    // nothing a reload asks about: every reload rebuilds it.
+    for slot in slots.iter_mut().skip(layout.root_slots) {
+        *slot = SlotFollow::default();
+    }
     // A key two slots share names neither.
     let mut seen: HashMap<String, usize> = HashMap::new();
     for slot in &slots {
@@ -2082,6 +2204,7 @@ fn apply_runs(
                     at: term.and_then(|t| crate::static_audit::position(program, t)),
                     term,
                     is_const: term.is_some_and(|t| program.get_term(t).is_const),
+                    function: None,
                 });
                 written_by.push(SlotFollow {
                     key: None,
@@ -2125,16 +2248,7 @@ fn apply_runs(
                 (seg.start..seg.end).filter_map(origin).filter(|t| seen.insert(*t)).collect();
         }
     }
-    layout.feeders = vec![Vec::new(); layout.slots.len()];
-    layout.members = vec![Vec::new(); layout.runs.len()];
-    for (i, run) in layout.runs.iter().enumerate() {
-        for &s in &run.feeds {
-            layout.feeders[s as usize].push(i as u32);
-        }
-        if let Some(g) = run.group {
-            layout.members[g as usize].push(i as u32);
-        }
-    }
+    layout.index();
     if layout.runs.is_empty() {
         bc.statics = layout;
         return written_by;
@@ -2275,7 +2389,7 @@ fn apply_runs(
 /// A summary of a layout and one line per slot, for `PETAL_OPT_STATS` and
 /// tests.
 pub fn describe(layout: &StaticLayout) -> String {
-    let top = || layout.runs.iter().filter(|r| r.group.is_none());
+    let top = || layout.runs.iter().take(layout.root_runs).filter(|r| r.group.is_none());
     let instructions: usize = top().map(|r| r.instructions).sum();
     let allocations: usize = top().map(|r| r.allocations).sum();
     let mut out = format!(
@@ -2284,16 +2398,30 @@ pub fn describe(layout: &StaticLayout) -> String {
         layout.candidate_runs,
         layout.checks(),
         layout.segments(),
-        layout.slots.len(),
+        layout.root_slots,
         instructions,
         layout.root_instructions,
         allocations,
         layout.checks(),
     );
+    let (fn_slots, fn_runs) = layout.function_slots();
+    if fn_slots > 0 {
+        let runs = &layout.runs[layout.root_runs..];
+        out.push_str(&format!(
+            "static cache: {fn_slots} slots for values built inside function bodies, in {fn_runs} stretches \
+             of {} instructions ({} of them allocations)\n",
+            runs.iter().map(|r| r.instructions).sum::<usize>(),
+            runs.iter().map(|r| r.allocations).sum::<usize>(),
+        ));
+    }
     for (i, s) in layout.slots.iter().enumerate() {
         out.push_str(&format!(
             "  s{i}: {}{}\n",
-            s.name.as_deref().unwrap_or("(unnamed)"),
+            match (&s.function, s.name.as_deref()) {
+                (Some(f), _) => format!("(in {f})"),
+                (None, Some(name)) => name.to_string(),
+                (None, None) => "(unnamed)".to_string(),
+            },
             s.at.as_ref().map(|a| format!(" at {a}")).unwrap_or_default()
         ));
     }

@@ -35,12 +35,24 @@ pub struct StaticValues {
     pub segments: usize,
     /// Counters since the stack was created.
     pub stats: StaticStats,
+    /// The values built inside function bodies that the stack keeps, one
+    /// entry per slot: `info.function` names the function and `info.at`
+    /// the line. Empty where the lowering observes.
+    pub in_functions: Vec<(StaticSlotInfo, StaticSlotState)>,
+    /// Under [`Env::set_static_check`]: one line per value built inside a
+    /// function body that came out different from the one kept. Any entry
+    /// is a bug in the cache.
+    pub mismatches: Vec<String>,
 }
 
 /// The words of the warning for a value that could not be kept: `TABLE
 /// (app.ptl:12) holds a function, so it is rebuilt on every run`. A `const`
 /// says so, since its author asked for a constant.
 fn rejection_warning(info: &StaticSlotInfo, what: &str) -> String {
+    if let Some(function) = &info.function {
+        let at = info.at.as_ref().map(|a| format!(" ({a})")).unwrap_or_default();
+        return format!("a constant in {function}{at} holds {what}, so it is rebuilt on every call");
+    }
     let name = info.name.as_deref().unwrap_or("a top-level value");
     let at = info.at.as_ref().map(|a| format!(" ({a})")).unwrap_or_default();
     if info.is_const {
@@ -59,6 +71,7 @@ impl StaticValues {
     pub fn warnings(&self) -> Vec<String> {
         self.slots
             .iter()
+            .chain(&self.in_functions)
             .filter_map(|(info, state)| {
                 let StaticSlotState::Rejected(what) = state else { return None };
                 Some(rejection_warning(info, what))
@@ -98,7 +111,7 @@ impl Env {
     ) -> std::collections::HashSet<crate::program::TermId> {
         let flags = OptFlags::default_on().with_static_cache(true);
         crate::backend::bytecode::lower_with_statics(program, flags, analysis, &self.native_fns)
-            .map(|bc| bc.statics.slots.iter().filter_map(|s| s.term).collect())
+            .map(|bc| bc.statics.slots.iter().take(bc.statics.root_slots).filter_map(|s| s.term).collect())
             .unwrap_or_default()
     }
 
@@ -109,6 +122,18 @@ impl Env {
     /// do not survive that.
     pub fn set_static_cache(&mut self, on: bool) {
         self.policy = self.policy.with_static_cache(on);
+    }
+
+    /// Check the values the cache keeps for function bodies instead of
+    /// trusting them: the code that builds one runs on every call, and what
+    /// it built is compared with what is kept
+    /// ([`StaticValues::mismatches`]). A program runs as it does with the
+    /// cache off for function bodies; top-level values are kept as usual.
+    /// The oracle for `static_cache`'s `in_fn` module: a fuzzer and the
+    /// corpus tests run under it. `PETAL_STATIC_CHECK=1` sets it for every
+    /// `Env`.
+    pub fn set_static_check(&mut self, on: bool) {
+        self.static_audit.check_kept = on;
     }
 
     /// Whether runs keep static values right now: the policy asks for it
@@ -177,7 +202,7 @@ impl Env {
         let table = &stack.statics;
         // A table filled under another lowering is about to be emptied.
         let current = table.len() == layout.slots.len();
-        let slots = layout
+        let mut slots: Vec<(StaticSlotInfo, StaticSlotState)> = layout
             .slots
             .iter()
             .enumerate()
@@ -197,11 +222,26 @@ impl Env {
                 (info.clone(), state)
             })
             .collect();
+        let in_functions = slots.split_off(layout.root_slots.min(slots.len()));
+        let mismatches = table
+            .mismatches()
+            .iter()
+            .filter_map(|s| layout.slots.get(*s as usize))
+            .map(|info| {
+                format!(
+                    "a value kept for {}{} was built different on a later call",
+                    info.function.as_deref().unwrap_or("a function"),
+                    info.at.as_ref().map(|a| format!(" ({a})")).unwrap_or_default()
+                )
+            })
+            .collect();
         Some(StaticValues {
             slots,
             runs: layout.checks(),
             segments: layout.segments(),
             stats: table.stats,
+            in_functions,
+            mismatches,
         })
     }
 }

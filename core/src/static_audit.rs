@@ -269,6 +269,12 @@ pub struct StaticAudit {
     ///
     /// [`Env::set_static_only_keeps`]: crate::env::Env::set_static_only_keeps
     pub(crate) keeps: bool,
+    /// Check the values the cache keeps for function bodies instead of
+    /// trusting them (see [`Env::set_static_check`]). Independent of the
+    /// mode: the cache stays on.
+    ///
+    /// [`Env::set_static_check`]: crate::env::Env::set_static_check
+    pub(crate) check_kept: bool,
 }
 
 impl StaticAudit {
@@ -288,6 +294,7 @@ impl StaticAudit {
             mode,
             announce: self.announce,
             keeps: self.keeps,
+            check_kept: self.check_kept,
             ..Default::default()
         };
     }
@@ -306,6 +313,9 @@ impl StaticAudit {
     /// search the output.
     pub(crate) fn from_env() -> Self {
         let mut audit = StaticAudit::default();
+        // `PETAL_STATIC_CHECK=1`: every `Env` checks the values kept for
+        // function bodies (`Env::set_static_check`).
+        audit.check_kept = matches!(std::env::var("PETAL_STATIC_CHECK").as_deref(), Ok("1"));
         if matches!(std::env::var("PETAL_STATIC_AUDIT").as_deref(), Ok("watch" | "1")) {
             audit.announce = true;
             audit.set_mode(StaticAuditMode::Watch);

@@ -117,7 +117,15 @@ fn lower(
     // adds two instructions per run and moves or removes none.
     if let (Some((analysis, natives)), Some(plan)) = (statics, &plan) {
         // A segment that is skipped must still report what it observes.
-        crate::static_cache::apply(&mut bc, program, analysis, natives, plan, flags.preserve_observations);
+        crate::static_cache::apply(
+            &mut bc,
+            program,
+            analysis,
+            natives,
+            plan,
+            flags.preserve_observations,
+            flags.static_in_functions,
+        );
         if std::env::var("PETAL_OPT_STATS").is_ok() {
             eprint!("{}", crate::static_cache::describe(&bc.statics));
         }
@@ -129,6 +137,8 @@ fn lower(
 mod cell_fuzz;
 #[cfg(test)]
 mod fuzz;
+#[cfg(test)]
+mod static_fn_fuzz;
 #[cfg(test)]
 mod static_fuzz;
 #[cfg(test)]

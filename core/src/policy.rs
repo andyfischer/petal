@@ -23,7 +23,9 @@
 //! `fast-memo` is the gate alone, `baseline+gate` is the gate over unoptimized
 //! code, `replay-opt` is the memo over unoptimized code, `fast-static` is the
 //! default without the static-value cache (`crate::static_cache`; it is on
-//! in `fast` and `replay`, off in `baseline` and `explain`). So a differential is
+//! in `fast` and `replay`, off in `baseline` and `explain`), and
+//! `fast-fnstatic` is the cache for top-level values only, without the values
+//! it keeps for function bodies. So a differential is
 //! one word per side (`petal-ui-run --policy baseline` against
 //! `--policy fast-memo`), not a set of `--no-*` flags plus a comment saying
 //! which combination they spell.
@@ -125,7 +127,7 @@ impl RunPolicy {
     /// Parse a policy name with optional modifiers: `fast`, `baseline`,
     /// `explain`, `replay`, each optionally followed by any number of
     /// `+gate` / `-gate` / `+memo` / `-memo` / `+opt` / `-opt` / `+static` /
-    /// `-static`.
+    /// `-static` / `+fnstatic` / `-fnstatic`.
     pub fn parse(spec: &str) -> Result<RunPolicy, String> {
         let spec = spec.trim();
         let split = spec.find(['+', '-']).unwrap_or(spec.len());
@@ -154,9 +156,10 @@ impl RunPolicy {
                     .preserving(policy.opts)
                 }
                 "static" => policy.opts.static_cache = on,
+                "fnstatic" => policy.opts.static_in_functions = on,
                 other => {
                     return Err(format!(
-                        "unknown run policy modifier '{sign}{other}' in '{spec}' (expected gate, memo, opt or static)"
+                        "unknown run policy modifier '{sign}{other}' in '{spec}' (expected gate, memo, opt, static or fnstatic)"
                     ));
                 }
             }
@@ -174,9 +177,10 @@ impl RunPolicy {
             return Some((*n).to_string());
         }
         let cache = self.opts.static_cache;
+        let in_fns = self.opts.static_in_functions;
         let (base, from) = NAMED
             .iter()
-            .filter(|(_, p)| p.opts.with_static_cache(cache) == self.opts)
+            .filter(|(_, p)| p.opts.with_static_cache(cache).with_static_in_functions(in_fns) == self.opts)
             .min_by_key(|(_, p)| {
                 (p.memo != self.memo) as u8
                     + (p.gate != self.gate) as u8
@@ -187,6 +191,7 @@ impl RunPolicy {
             ("memo", self.memo, from.memo),
             ("gate", self.gate, from.gate),
             ("static", cache, from.opts.static_cache),
+            ("fnstatic", in_fns, from.opts.static_in_functions),
         ] {
             if want != have {
                 name.push(if want { '+' } else { '-' });
@@ -274,6 +279,20 @@ mod tests {
     }
 
     #[test]
+    fn function_constants_have_a_modifier_and_follow_the_static_cache() {
+        // On wherever the cache is, and inert where it is not.
+        for (_, p) in NAMED {
+            assert!(p.opts.static_in_functions);
+        }
+        assert!(RunPolicy::parse("baseline+static").unwrap().opts.static_in_functions);
+        let without = RunPolicy::parse("fast-fnstatic").unwrap();
+        assert!(without.opts.static_cache && !without.opts.static_in_functions);
+        assert_eq!(without, RunPolicy::FAST.with_opts(RunPolicy::FAST.opts.with_static_in_functions(false)));
+        assert_eq!(without.name().as_deref(), Some("fast-fnstatic"));
+        assert_eq!(RunPolicy::parse("fast-fnstatic+fnstatic").unwrap(), RunPolicy::FAST);
+    }
+
+    #[test]
     fn opt_modifiers_keep_the_explain_preservation() {
         let p = RunPolicy::parse("explain-opt").unwrap();
         assert!(!p.opts.copy_propagation);
@@ -307,7 +326,7 @@ mod tests {
         assert!(
             RunPolicy::parse("fast+speed")
                 .unwrap_err()
-                .contains("gate, memo, opt or static")
+                .contains("gate, memo, opt, static or fnstatic")
         );
     }
 }

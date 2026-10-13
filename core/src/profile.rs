@@ -65,6 +65,10 @@ pub struct VmProfile {
     /// on does not take the VM off its fast dispatch loop. Not touched by
     /// [`reset`](VmProfile::reset) / [`set_enabled`](VmProfile::set_enabled).
     pub bench: CallBench,
+    /// A count of what chosen expressions cost, for a survey
+    /// ([`crate::static_survey`]). `None` unless a tool attached one; fed on
+    /// the hooked path while `enabled`. Cleared by [`reset`](VmProfile::reset).
+    pub sites: Option<Box<crate::static_survey::SiteCounter>>,
 }
 
 impl Default for VmProfile {
@@ -81,6 +85,7 @@ impl Default for VmProfile {
             collections: 0,
             gc_time: Duration::ZERO,
             bench: CallBench::default(),
+            sites: None,
         }
     }
 }

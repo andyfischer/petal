@@ -623,6 +623,61 @@ impl<'a> Vm<'a> {
             }
 
             // --- static values (see `crate::static_cache`) ---
+            Inst::StaticSkip { after, run, slots } if self.stack.vm_frames[fi].func.is_some() => {
+                // A value built inside a function body (`static_cache`,
+                // the `in_fn` module): kept by the stack, loaded into this
+                // call's registers. Nothing is timed or logged here, and a
+                // build in progress in the root code is left alone.
+                let statics = &mut self.stack.statics;
+                if statics.ready(*run) && !statics.checking() {
+                    for &(slot, r) in slots.iter() {
+                        if let Some(v) = self.stack.statics.get(slot) {
+                            self.set(fi, r, v);
+                        }
+                    }
+                    let saved = self.bc.statics.runs.get(*run as usize).map_or(0, |r| r.instructions as u64);
+                    let stats = &mut self.stack.statics.stats;
+                    stats.skips += 1;
+                    stats.skipped_instructions += saved;
+                    self.stack.vm_frames[fi].ip = *after as usize;
+                }
+            }
+            Inst::StaticStore { slots } if self.stack.vm_frames[fi].func.is_some() => {
+                if self.stack.statics.wants(slots) {
+                    // Check every value before keeping any.
+                    let mut bad = None;
+                    for &(slot, r) in slots.iter() {
+                        let v = self.reg(fi, r);
+                        if let Err(what) = self.heap.mark_immutable(v) {
+                            bad = Some((slot, what));
+                            break;
+                        }
+                    }
+                    match bad {
+                        Some((slot, what)) => self.stack.statics.reject(slots, slot, what),
+                        None => {
+                            for &(slot, r) in slots.iter() {
+                                let v = self.reg(fi, r);
+                                self.stack.statics.fill(&self.bc.statics, slot, v);
+                            }
+                        }
+                    }
+                } else if self.stack.statics.all_filled(slots) {
+                    // The code ran although the value is kept: a recursive
+                    // call filled the slot while this one was building, or
+                    // the table is being checked. The kept value is the one
+                    // every call reads.
+                    let checking = self.stack.statics.checking();
+                    for &(slot, r) in slots.iter() {
+                        let Some(kept) = self.stack.statics.get(slot) else { continue };
+                        if checking && !crate::static_cache::identical(kept, self.reg(fi, r), self.heap) {
+                            self.stack.statics.note_mismatch(slot);
+                            continue;
+                        }
+                        self.set(fi, r, kept);
+                    }
+                }
+            }
             Inst::StaticSkip { after, run, slots } => {
                 if self.stack.statics.ready(*run) {
                     for &(slot, r) in slots.iter() {

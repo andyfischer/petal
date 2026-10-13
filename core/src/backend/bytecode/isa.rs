@@ -565,7 +565,8 @@ pub enum Inst {
         msg: ConstantId,
     },
 
-    // --- static values (`crate::static_cache`; root code only) ---
+    // --- static values (`crate::static_cache`; root code, and function
+    // code for the values of its `in_fn` module) ---
     /// In front of a run of static instructions. When every slot the run
     /// *feeds* is filled on the running stack (the stack keeps that as one
     /// counter per run, indexed by `run`), each slot in `slots` is loaded

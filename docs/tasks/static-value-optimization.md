@@ -1,15 +1,23 @@
 # Static value optimization: plan
 
 Status: **A1, A2, A3, S0, S1 and S2 are implemented, reviewed and on `main`**
-(12 October 2026); both gates passed. Outside this repository, Cheesecake is
-re-vendored at `518c008` (13 October 2026; its commit `03319c2`) and Moses
-runs under its engine with the cache on: 49,871,337 to 46,543,802
-instructions over the 600-frame headless run with no script changed, all
-347 engine tests passing ("Cheesecake, under its engine" in Results). The
-adoption there is not started (`PB_FX_CONST` on engine natives, the
-`state`-to-`const` rewrite of Moses, dropping its enum-derived tables, the
-reload report's `statics`), and worlds-fair and the WASM builds are not
-re-vendored. Of the "Later" items
+(12 October 2026); both gates passed. **Cheesecake has adopted it** (13
+October 2026, its commits `de6bff3` to `52b80e2` and the docs commit after
+them; "Cheesecake: the adoption" in Results): it vendors `4269f9f`, declares
+three natives `PB_FX_CONST`, prints the reload report's `statics`, and Moses
+has 60 of its 76 constant `state` tables as `const`. Under its engine the
+600-frame Moses run is 49,871,337 to 46,506,542 instructions (83.1k to 77.5k
+a frame, where the plan said about 79k), the record literals script code
+builds are down 62% (the plan said about 40%), and the live-coding check
+passes: a table that sat in `state` follows an edit with no restart, and an
+edit to an unrelated function rebuilds no constant. The adoption found
+three things here, all fixed (`6a102e1`, `4269f9f`): a C host could not see
+a `const` that is not constant, the stale-seed report named states it
+should not, and `PETAL_STATIC_CHECK` called a frozen kept value a failure.
+Not done there: the map's source tables stay in `state` (the half-reload
+risk is real and the stale-seed report does not name the cells), and `T`,
+`F` and `USE` stay (they still pay). worlds-fair and the WASM builds are
+not re-vendored. Of the "Later" items
 the first two, Garden and constants inside function bodies, are done (13
 October 2026), and so are in-repo follow-ups 5 to 8; the rest (per-input-class
 slots, keeping slow intermediates, a frozen generation that can release
@@ -2505,7 +2513,7 @@ average 4 to 13, and carry that date; the other rows are as measured on the
 
 | Benchmark | Baseline | Now | |
 |---|---|---|---|
-| Moses headless, 600 frames, under the Cheesecake engine | 49,871,337 instructions; 2.71 ms a frame; 14 collections; 406 `StateInit` a frame | **13 October, Cheesecake `03319c2` (Petal `518c008`), no script changed:** 46,543,802 instructions (−3,327,535, −6.7%; 77,573 a frame against 83,119); 2.55 to 2.59 ms a frame with the profile and 2.00 to 2.03 without (5 runs each); 10 or 11 collections; 406 `StateInit` a frame (243,540, unchanged) | The cache is nearly all of it: the same binary under `PETAL_STATIC_AUDIT=watch`, which turns the cache off, runs 49,847,577. `LoadConst` 9,924,893 to 7,647,726. The time is not a same-session comparison: the pre-plan engine measured that day ran 4.24 to 11.60 ms at load average 5 to 21. Not adopted yet (no `PB_FX_CONST` native, no `const`): "Cheesecake, under its engine" below |
+| Moses headless, 600 frames, under the Cheesecake engine | 49,871,337 instructions; 2.71 ms a frame; 14 collections; 406 `StateInit` a frame | **13 October, Cheesecake `03319c2` (Petal `518c008`), no script changed:** 46,543,802 instructions (−3,327,535, −6.7%; 77,573 a frame against 83,119); 2.55 to 2.59 ms a frame with the profile and 2.00 to 2.03 without (5 runs each); 10 or 11 collections; 406 `StateInit` a frame (243,540, unchanged) | The cache is nearly all of it: the same binary under `PETAL_STATIC_AUDIT=watch`, which turns the cache off, runs 49,847,577. `LoadConst` 9,924,893 to 7,647,726. The time is not a same-session comparison: the pre-plan engine measured that day ran 4.24 to 11.60 ms at load average 5 to 21. **Adopted later that day** (three `PB_FX_CONST` natives, 60 tables as `const`): 46,506,542, 77,511 a frame, record literals built by script code −62%: "Cheesecake: the adoption" below |
 | …the static part of a Moses frame (`static_frame`, the substitute) | 8,065 instructions, 1,230 allocations, 482 records (cache off) | **13 October:** 2,641 instructions, 45 allocations, 1 record; 451 slots in 451 segments, 42 checks a frame; 262 µs to 174 µs (12 October: 2,674, 58, 2; 426 slots in 34 runs) | −5,424 instructions and −1,185 allocations a frame against the −4.1k the proposal estimated by hand; 0 audit findings. The frame that builds everything is 9,217 against 8,284 with the cache off |
 | …the same with the lint's rewrite applied (76 `state` to `const`, scratch copy) | 25,804 instructions, 4,687 allocations (cache off) | 2,566 instructions, 46 allocations; 529 slots | Shows why the rewrite must wait for an engine with the cache on |
 | Example panels in the Cheesecake headless host | snake 2,617 instructions a frame; analytics-dashboard 11,005; network-graph 153,493; settings 31,624 | **13 October, same engine:** snake 2,396 (−8.4%); analytics-dashboard 10,703 (−2.7%); network-graph 152,125 (−0.9%); settings 30,371 (−3.9%) | Totals over 600 frames: 1,570,122 to 1,437,822; 6,603,120 to 6,421,680; 92,093,804 to 91,275,164; 18,952,538 to 18,222,458. Collections 34 to 28, 35 to 32, 100 to 89, 235 to 229. The last two `import garden`, which the engine does not provide; both sides ran against a package of four do-nothing functions, which puts their baselines 3 and 36 instructions a frame under this row's (153,490 and 31,588) |
@@ -2527,7 +2535,9 @@ binary as well.
 
 ### Cheesecake, under its engine (13 October 2026)
 
-**Status: re-vendored and measured; the adoption is not started.**
+**Status: re-vendored and measured; the adoption was not started when this
+was written, and was done later the same day ("Cheesecake: the adoption",
+below).**
 Cheesecake `03319c2` vendors `518c008` (its tree is blob-for-blob this
 repository's at that commit, apart from `garden/gpp/Cargo.toml`, the one
 recorded local modification). The frozen-generation patch it carried is
@@ -2586,6 +2596,141 @@ timed (S2) and no allocation count taken (S1). The step meant to do them
 stopped before starting, because the external disk its builds were to go on
 was unmounted; the review built nothing for the same reason and ran only
 the existing Release tree.
+
+### Cheesecake: the adoption (13 October 2026)
+
+**Status: done, with two things deliberately left (the map's source tables,
+the int tables) and the reasons measured.** Cheesecake `de6bff3` (re-vendor
+at `baf0328`), `b618c58` (the engine side, committed by the user while it
+was in progress), `d8fcc2a` (re-vendor at `4269f9f`), `558ec98`, `c92466e`
+(Moses), `52b80e2` (`F_PEOPLE`) and its docs commit. Everything ran on the
+internal disk in the existing build trees. Its own account is
+`~/cheesecake/docs/moses-debrief.md`, section 7.
+
+**What was done there.**
+
+- **Re-vendored three times**: at `baf0328`, then at `6a102e1` and `4269f9f`
+  for the fixes below. Each tree is byte for byte `git archive` of the
+  commit apart from `garden/gpp/Cargo.toml`.
+- **Three natives are `fx::Const`**: `hash01`, `hex_color`, `sweep_hits`,
+  the only three that were `fx::Pure`. Each implementation was read: they
+  compute from their arguments and read no host state. Every other engine
+  native carries `Effect` or a `Reads*` flag and was left alone. Moses's
+  instruction count did not move with them (46,543,802 before and after).
+- **The engine reports**: the reload line says `constants kept: N, rebuilt:
+  M (NAMES)`; one line per stale seed (at most twelve); the warnings of
+  `pb_vm_static_values_json` once per load; `pb_vm_flush_static_rebuilds`
+  when a Tuning drag ends; the agent's `reload` reply carries `statics`;
+  and a `const` that is not constant is logged with its reason chain.
+- **Moses**: the lint offered 76 cells; 60 are `const`. `F_PEOPLE` is gone.
+
+**What it found in this repository** (each fixed here with a test and
+re-vendored):
+
+- **A C host could not see a `const` that is not constant** (`6a102e1`).
+  The check adds an error to the program's diagnostics and the program runs
+  on, the binding a `let`. `petal check` and the SDL host print it; the
+  bridge had no way to read it, and the engine is the only place it can be
+  judged (the check goes by the natives registered `PB_FX_CONST`). Under
+  Cheesecake `const X = time()` loaded and ran with no word.
+  `pb_vm_diagnostics_text(vm, errors_only)`.
+- **The stale-seed report named states it should not** (`4269f9f`). It went
+  by every top-level write of the cell: `state n = 0` then `n = step(n)`
+  was a stale seed after any edit to `step`. It goes by the initializer
+  now, as every description of it says.
+- **`PETAL_STATIC_CHECK=1` called a frozen kept value a failure**
+  (`4269f9f`). Moses printed nine such lines: `bank_color`, `tile_far` and
+  `city_box` return lists that end up inside tables the game freezes. With
+  `freeze` taken out of a scratch copy the check printed nothing. It is a
+  `static check note:` line now. "No failure line" is a criterion a host
+  can use again.
+
+**Two claims of the proposal that did not hold under the engine.**
+
+- "The stale-seed report names the cell" for `moses/map.ptl`'s `if G ==
+  nil` guard. It does not: the cells are `state var`, filled by `set` under
+  the guard, and the report follows a `state`'s initializer. An edit to
+  `LABELS_SRC` as a `const` (scratch copy) reported `rebuilt: 1`, 0 stale
+  seeds, and the map did not change. So the 16 source tables of `map.ptl`
+  stay in `state`, with `petal-lint-ignore-file state-as-constant` and the
+  reason. Reporting a `state var` whose guarded write reads a changed
+  constant is not built; it would need the same care about writes that
+  happen on every run as the fix above.
+- "Reading enum data used to be slow, so the derived tables can go" (A1's
+  follow-up). `F.tenement` is one instruction and `Fabric.tenement.code`
+  two. Writing all 220 reads through the enum left the play benchmark at
+  46,501,142 (−5,400) and took the 460-frame autoplay run from 152.50 to
+  152.80 million instructions to 153.58 million (three runs each; +0.5 to
+  0.7%, about 2,000 a frame in `buildings.ptl`). `T`, `F` and `USE` stay.
+  Folding a variant's constant data read to a constant load would close
+  that.
+
+**The S1 gate under the engine.** The command of "Benchmarks that gate the
+work", Release engine, the profile over frames 60 on, per-frame figures the
+total over 600 as the baseline's were. Instruction and allocation counts
+were identical in every run (3 to 5 each); times are at load average 2 to 4.
+
+| | Instructions | A frame | ms a frame, profile on / off | Collections | `StateInit` | Record literals built |
+|---|---|---|---|---|---|---|
+| Petal `42142fd` (the baseline) | 49,871,337 | 83,119 | 2.71 when the plan was written | 14 | 243,540 | not counted |
+| Cache off (the audit), scripts as they were | 49,847,577 | 83,079 | 2.89 / — (one run) | 18 | 243,540 | 516,335 |
+| `4269f9f`, no script changed | 46,543,802 | 77,573 | 2.59 to 2.66 / 2.00 to 2.13 | 10 | 243,540 | 196,762 |
+| … and 60 tables as `const`, `F_PEOPLE` dropped | 46,506,542 | 77,511 | 2.60 to 2.74 / 2.02 to 2.03 | 10 or 11 | 212,220 | 196,762 |
+| Cache off, scripts as they are now | 58,964,397 | 98,274 | 3.47 / — (one run) | 24 | — | 800,915 |
+
+Against the expectation (83.1k to about 79k instructions a frame, record
+allocations down about 40%): **83.1k to 77.5k (−6.7%), and −61.9% of the
+record literals script code builds** (list literals and comprehensions
+−90.7%, 454,507 to 42,242). The allocation figure is new: Cheesecake's
+`--vm-profile` now prints the counts of `AllocMap`, `AllocMapSpread` and
+`AllocList` instructions. It is not heap allocations (records built inside
+natives are not in it), and its "before" is the same binary with the cache
+off, since the pre-plan engine binary is gone. The rewrite itself is worth
+37,260 instructions over the run (58 fewer `StateInit` a frame), and the
+last row is the 25.8k-a-frame warning of the scratch measurement seen under
+the engine: 98.3k a frame with the cache off.
+
+**The live-coding check** (Moses under `--headless --agent`, a scratch copy
+of the adopted scripts, no restart at any point):
+
+| Edit | Reload | Constants | Seen in the game |
+|---|---|---|---|
+| A title in `history.ptl`'s `RAW`, which was `state` (a value) | 13 ms, patched | 528 kept, 2 rebuilt (`RAW`, `TIMELINE`) | the `history` tool returns the new title |
+| The same edit on the scripts before the rewrite | 15 to 45 ms | — | the old title |
+| An alias added to `projects.ptl`'s `ALIASES` (structural) | 550 ms, recompiled | 529 kept, 1 rebuilt | `project tribo` resolves; it was "no such project" |
+| `util.pct` rewritten | 522 ms, recompiled | 530 kept, 0 rebuilt | |
+| A key added to `hud.ptl`'s `POT_SHORT`, three times | 528 to 550 ms | 529 kept, 1 rebuilt | |
+| A label in `map.ptl`'s `LABELS_SRC`, still `state` | 18 ms | 530 kept, 0 rebuilt | the log names it a stale seed |
+
+S2 under the engine: a structural edit is 522 to 550 ms (six edits) with 529
+or 530 of 530 values kept, against the 494 ms `reload_timing` gives the
+recompile alone. The frame after is not a measure of the constants there:
+the game declares its procedural assets again after any reload, and frames
+run 12 to 98 ms for a few frames where a steady one is 1.6 ms.
+
+**Checked.** Every game with a `game.ptl` (13, and `games/demo/basic.ptl`)
+headless for 300 frames, three ways (as shipped, `PETAL_STATIC_AUDIT=watch`,
+`PETAL_STATIC_CHECK=1`), after each step: no script error, no audit
+finding, no check failure (nine notes, Moses), the same dumped state three
+ways (Moonbear's `bake_ms` aside). Moses's dumped state after 600 frames of
+1956 and after 460 frames of autoplay: equal key for key before and after
+the rewrite, minus the 58 cells that are no longer state. Here: `core`
+2,632, `petal-ui` 300 and the bridge's 21 tests pass with the stale-seed
+change (debug); the static suites (`static_cache`, `static_reload`,
+`static_in_functions`, `static_check_env`, the library's `static` tests)
+pass with the check change; `make test-c-bridge` 4 of 4 at `6a102e1`.
+Cheesecake's `ctest` on the final tree: 347 of 347 in one run (20 minutes),
+and 347 of 347 after the first re-vendor; `petal check` over its 274 tracked
+scripts outside `third_party`: the seven documented exceptions and nothing
+else.
+
+**Not done.** No game but Moses was profiled for what the constant natives
+bought. The lint offers nothing in the other twelve games. The engine's
+line for a value that cannot be kept has no test (a script cannot make one:
+a table that holds a function is classified dynamic, and the bridge cannot
+return a handle or a pending result from a native). The release core suite,
+the fuzzers, `verify.ts`, vitest and the Garden workspace were not run again
+on `4269f9f`.
 
 ### The final test pass, 13 October 2026
 
@@ -2892,24 +3037,17 @@ largest is that a recompile now pays the cache 31 ms of 187 on neon and 102
 of 488 on Moses (classification 14 and 47, constants inside function bodies
 12 and 33), against none of a patched or relocated reload.
 
-Outside this repository, only the first part of 1 is done:
+Outside this repository, 1 is done:
 
-1. **Cheesecake.** **Done 2026-10-13: the re-vendor (at `518c008`), the
-   headless Moses profile and the four panels, the engine's test suite, and
-   the audit over every game as far as it goes with no `CONST` native**
-   ("Cheesecake, under its engine" above). **Not done:** `PB_FX_CONST` and
-   the audit of those rows, the lint's rewrite, `statics` and the flush
-   call, dropping Moses's enum-derived tables (A1), and a re-vendor past
-   `fccbc12`. The item as written:
-   Re-vendor Petal and the bridge. Pass `PB_FX_CONST` for
-   the engine natives that qualify and run `--static-audit` under the
-   engine. Take the headless Moses profile of the first row above. Only then
-   apply `petal lint --fix --rules-include=state-as-constant games/moses`
-   (76 cells), since a `const` table costs 25.8k instructions a frame where
-   the cache is off. Print `statics` from `pb_vm_last_reload_json`, and call
-   `pb_vm_flush_static_rebuilds` when a drag ends. (`rivet` calls a
-   `hash11` that `petal check` cannot find here; whether its engine
-   provides one was not looked at.)
+1. **Cheesecake.** **Done 2026-10-13** ("Cheesecake: the adoption" above):
+   re-vendored at `4269f9f`, `PB_FX_CONST` on its three constant natives
+   and every game run under the audit and the check, the headless Moses
+   profile, the lint's rewrite (60 of 76 cells; the 16 of `map.ptl` kept in
+   `state` on purpose), `statics` printed and the flush called, `F_PEOPLE`
+   dropped. **Left:** the map's guard (`const G = build_grid()` is the
+   honest rewrite and was not attempted), and `T` / `F` / `USE`, which
+   still pay. (`rivet`'s `hash11` is one of its shader-only functions, by
+   design.)
 2. **worlds-fair.** `node tools/vendor-petal.ts`; `wf-ui-ffi` knows neither
    `const` nor the cache until then. Its `.ptl` sources import nothing, and
    today's Petal refuses a host native called without its interface
@@ -3098,7 +3236,9 @@ Open:
   `let`.
 - **Half-reload.** A source table reloads while a derived value held in
   `state` behind an `if X == nil` guard does not (`moses/map.ptl:1472`). The
-  stale-seed report names the cell; the rewrite is manual.
+  stale-seed report does **not** name such a cell (a `state var` set under
+  a guard; found in the adoption), so Cheesecake kept those source tables in
+  `state`. The rewrite is manual.
 - **Another lowering flag doubles the differential-oracle matrix.**
 - **`petal check` and the LSP compile without host natives**, so they may
   report less as static than a host does. They must never report more.

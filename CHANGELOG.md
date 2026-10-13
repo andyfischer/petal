@@ -185,6 +185,10 @@ way, for code written against an earlier checkout.
   check these values against what the code builds on every call
   (`StaticValues::mismatches`). `freeze(f())` freezes the one kept value,
   so `frozen(f())` is then true: the same difference as at the top level.
+  Under the environment variable a value built different prints a `static
+  check failure:` line, and one that differs only in having been frozen a
+  `static check note:` line, so a program that freezes what its functions
+  return can be run under the check and read for failures.
   See [docs/dev/performance.md](docs/dev/performance.md#static-values).
 - A reload follows the diff through the static values: `reload_program` and
   `set_config_value` keep the ones the edit cannot have changed and the next
@@ -208,7 +212,8 @@ way, for code written against an earlier checkout.
   changed. Only the stack the reload was asked of keeps anything;
   another stack of the program, or a fork, rebuilds on its next run. `ReloadReport::statics` reports constants kept and rebuilt and
   **stale seeds**, the `state` cells that kept a value although their
-  initializer read something the edit changed; the SDL host and Garden
+  initializer read something the edit changed (the initializer, not the
+  statements that assign the cell afterwards); the SDL host and Garden
   print it (`constants: 2 rebuilt (TILES, WIDTHS), 41 kept`) and
   `pb_vm_last_reload_json` carries it under `statics`. While
   `set_config_value` is driven continuously, a static value whose last
@@ -588,6 +593,12 @@ way, for code written against an earlier checkout.
   Embedders turn it on with `Env::set_static_audit` and read
   `Env::static_audit_report`. See
   [docs/CLI.md](docs/CLI.md#checking-the-answer---static-audit).
+- `petal-c-bridge`: `pb_vm_diagnostics_text(vm, errors_only)`
+  (`diagnostics_text()` in C++) returns what the compile of the loaded
+  program found and did not stop for, as `petal check` prints it. A `const`
+  that is not constant is such an error: the program runs with the binding
+  built on every run, and only the host, which has the natives, can report
+  it.
 - `petal-c-bridge`: `pb_vm_set_static_cache` / `pb_vm_static_cache` switch
   the static-value cache, `pb_vm_clear_static_values` drops what it holds
   (for a host that changed something a `PB_FX_CONST` native answers from),

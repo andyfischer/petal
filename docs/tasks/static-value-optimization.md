@@ -3271,7 +3271,11 @@ In this repository:
     bodies"), per-input-class slots, keeping slow intermediates, a frozen
     generation that can release objects.
 11. **A `const` that is not kept says nothing** (found by the review of the
-    adoption, 13 October; not started). A value handed to `append` or
+    adoption, 13 October). **Done 2026-10-13, as a warning**: the `const`
+    check warns on a `const` any part of whose build gets no slot because a
+    mutation may write into it, naming the part
+    (`static_cache::unkept_part`; `core/tests/const_decl.rs`). The value is
+    still not kept. What follows is the finding as it was. A value handed to `append` or
     another builtin that may write in place gets no slot, by design, and is
     rebuilt on every run. `petal show-static` says "! not kept" when the
     value has a name; `petal check`, the `const` check and the static
@@ -3282,7 +3286,13 @@ In this repository:
     end, [9])` is the reproduction: 100 frames under the Cheesecake engine
     run 2,809 instructions and three `AllocList` a frame, and 1,028 and
     none with `concat(for ... end, [[9]])`.
-12. **The reload report does not name a cache.** A `state var` that a
+12. **The reload report does not name a cache.** **Done 2026-10-13**:
+    `StaticReload::stale_caches` and a `stale cache:` line, from
+    `StaticAnalysis::state_cache_dependencies` (a write of a `state` under
+    an `if` whose condition reads a state written under that same `if`; a
+    cell written on every run is left out). Tests in
+    `core/tests/static_reload.rs`; not run under the engine. What follows
+    is the finding as it was. A `state var` that a
     function fills from a constant behind a test of the cell itself (`if
     get X == nil`, or a remembered key) keeps a value built from the old
     constant, and the report says only that the constant was rebuilt. Three

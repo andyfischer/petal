@@ -52,6 +52,11 @@ different modules; module-system.md does not mention the limit.
 
 ### 3. `check` misses a qualified call to a private or missing export
 
+**Fixed 2026-10-13**: the deferred error of the call form had no source
+position, so the name scan skipped it. `check` now reports it as an error
+at the callee, `run` does not start, and the message carries line and
+column. The text below is the finding as it was.
+
 Severity: medium. A run/check disagreement.
 
 ```petal ignore

@@ -141,7 +141,8 @@ call; every other one still does.
 ### 2.1 Lints (item 4)
 
 `petal lint` has one rule, `prefer-let`. The game's code suggests these, all
-with mechanical fixes:
+with mechanical fixes (**done, 13 October 2026**: what each became, and what
+it found in the games, is under "What shipped" below the table):
 
 | Rule | Count in Moses | Example |
 |---|---|---|
@@ -169,6 +170,46 @@ to a private or missing export is not checked, which is how every
 cross-module call in the game is written; and a plain import of a module
 that exports `log` replaces the builtin (legacy.ptl needs `import core:
 log`).
+
+**What shipped, 13 October 2026.** The rules, in `petal lint` by default
+unless marked (docs/CLI.md has the table). A rule now fixes only what it can
+show to be the same program and reports the rest; `--fix` prints what it
+left. Counts are findings over the fifteen Cheesecake games (245 files) and
+how many of them `--fix` rewrote:
+
+| Rule | Games | Fixed | Notes |
+|---|---|---|---|
+| `no-redundant-cast`, extended: `float(n)` on a proven int beside a proven float operand of `+ - * / %` | 548 | 548 | was 0: the checker did not know a `for` variable over `range` of ints is an int. A cast beside an int operand stays (int `/` int truncates), and of `float(a) / float(b)` one goes |
+| `prefer-compound-assign`, extended to `xs[i]` and `r.f` | 264 | 264 | 102 before |
+| `neg-zero-sub` | 158 | 4 | fixed only for `0 - x` on a proven int. `0.0 - x` is reported and left: `0.0 - 0.0` is `0.0`, `-0.0` is not, and `atan2(0.0 - dx, …)`, the debrief's own example, tells them apart |
+| `prefer-field-set` | 140 | 29 | fixed where the file shows the cell to hold a plain record. `{...nil, f: v}` is a record and `set X.f = v` on nil fails, so a cell that starts as `nil`, a parameter and a loop variable are reported and left: most of the 111 |
+| `prefer-any` | 89 | 68 | fixed where the predicate is an in-place lambda with no call but to pure builtins; `any` stops at the first match |
+| `dead-alias` | 50 | 48 | locals of one function only; a module-level `var` read into a `let` is a snapshot and is never reported |
+| `shadows-builtin` (report only) | 10 | 0 | `find`, `commas`, `log`, `count`, `sort_by`, and `ui`'s `card`, `pill`, `wrap` |
+| `reimplements-builtin` (report only) | 6 | 0 | `gf` five times and `g`: all `field(r, k, d)` |
+| `int-division` (opt-in, report only) | 7 | 0 | all seven are a row or column index scaled by a float (`float(k / 2) * 3.0`), which is why it is opt-in |
+
+All 1,102 fixes were applied to a scratch copy of the games: every file
+compiles, `petal check` prints the same findings as before, and a second
+`petal lint` has nothing left to fix. Over this repository's own corpus (214
+files under `examples`, `test` and `garden`) `--fix` made 1,512 rewrites and
+`tools/verify.ts --plan lint-fix` found 85 files IR-identical, 55 with the
+same run trace, and none changed.
+
+The `elsif` chain rule is `prefer-match`, which existed. The warning for int
+`/` int is a `petal check` warning on a literal division that drops a
+remainder (`1 / 2` is 0); the general form is the opt-in rule above.
+
+Warnings reach a host through `ReloadReport::new_diagnostics`: the findings
+a reload's compile has that the program before the edit did not, rendered
+with `Env::render_diagnostics` (docs/embedding-guide.md). The C bridge does
+not hand it out yet.
+
+A qualified call to a private or missing export is a check error with its
+position (`hud.hidden()`; it had no source position, so the name scan
+skipped it). The plain import that replaces a builtin already had its
+warning by the time this was checked (`` `log` here is the one module 'hud'
+exports, which hides the builtin `log` ``).
 
 ### 2.2 `petal test` (item 5)
 
@@ -512,3 +553,75 @@ in three days with no crash-class fix in the history; determinism held
 across every replay; hot reload stayed usable; `petal check` found real
 bugs when it was run; and three `check` false positives found by the game
 were fixed upstream within the day.
+
+## 8. Is `const` sufficient?
+
+Written 13 October 2026, after `const` and the static-value cache
+(`docs/proposals/static-values.md`, `docs/tasks/static-value-optimization.md`)
+and Cheesecake's adoption of them (its `docs/moses-debrief.md`, section 7).
+
+**Against what 3.1 asked for: yes.**
+
+| Wanted | Have |
+|---|---|
+| Evaluated once | A top-level value that depends on nothing dynamic is built on the first run and skipped after it. Under the engine 529 of Moses' 530 constants are untouched by a typical edit |
+| Re-evaluated when its initializer's source, or a `const` it reads, changes | The reload follows the diff: an edit rebuilds the constants it reaches, through the functions that build them, and the report names them. Editing a table that was parked in `state` now shows on the next frame; before, it needed F5 |
+| Frozen | A kept value is in the frozen generation: a write to it copies |
+| `const` as a promise | A `const` that is not static data is a compile error with the chain of reasons. The host reports it when the reason is one of its natives |
+
+It needs a host that runs with the cache on (Cheesecake does) and that
+declares its pure natives constant (`PB_FX_CONST`). With the cache off a
+`const` is a `let`, built on every run.
+
+**The three gaps Cheesecake found.**
+
+1. **`const X = append(for … end, Y)` was quietly not kept. Fixed, as a
+   diagnostic.** The list handed to `append` gets no slot (a value that may
+   be written in place is never kept), so the comprehension ran on every
+   frame beside a kept `X`. The compile now warns on a `const` any part of
+   whose build is left out for that reason, naming the part (`the value
+   written on line 3 is handed to append`), the `const` itself (`T is passed
+   to append`), or the `let` it is built from, and says to use `concat` or
+   `++`. Keeping such a value instead was not attempted: it rests on the
+   frozen-generation guard alone, where today three guards overlap, and the
+   in-place analyses are told the plan before lowering. None of the fifteen
+   games has such a `const` now.
+2. **A cache in `state` filled from a constant was not named by the reload
+   report. Fixed.** The report has a `stale cache:` line
+   (`StaticReload::stale_caches`) for a `state` that code fills behind a
+   test of the cell itself (`if get X == nil then set X = build() end`) or
+   of a key remembered beside it, at the top level or in a function, when a
+   declaration its cached value is built from was changed by the edit. A
+   cell written on every run is not named, which is the false report
+   `4269f9f` removed. It covers the shapes of Moses' three (`map.ptl`'s
+   grid, `projects.ptl`'s `DEFS_C`, the overlay bake behind a remembered
+   key) in this repository's tests; it has not been run under the engine.
+   What it cannot see: a guard that is not an `if` on a cell (a `match`, a
+   timer compared against game time), and a cache kept in a record field or
+   a list element rather than in a cell of its own.
+3. **`Kind.all` and variant data rebuilt per read: no longer so.** `Kind.all`
+   answers with the one list the stack keeps for the enum, and a variant's
+   data is read from its published record. Measured here over ten million
+   calls of a function that does the read: a record field 62 ns a call, a
+   variant's data 71 ns, `len(Kind.all)` 114 ns. So a data read costs about
+   9 ns more than a field, and `Kind.all` costs one builtin call (about 50
+   ns), not a list. Cheesecake's own figure is two instructions against one,
+   and +0.5 to 0.7% on a run with 220 sites converted. Not changed here. If
+   it matters, `__enum_all` is a candidate for the intrinsic lane the
+   trivial builtins got.
+
+**What remains.**
+
+- The honest fix for a stale cache is to make the cached value a `const`.
+  That is blocked where the build is slow and the cache is off (Moses' map:
+  a one-second build on every frame), and where the value is then written
+  (a grid the game edits). A build-once value that is *not* required to be
+  static, rebuilt when what it reads changes, would cover it: `const` with
+  the report's dependency walk, minus the purity rule. Not designed.
+- A patched reload (a literal changed, no recompile) is not type-checked
+  again, so a warning that depends on a literal's value does not appear
+  until the next recompile.
+- `let F = config.Fabric` still makes `F.rurl` a field read (3.3), and
+  `3 == Use.road` is still false without a word. Both are check gaps, not
+  `const` gaps.
+

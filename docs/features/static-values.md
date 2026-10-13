@@ -135,6 +135,20 @@ The rules:
   ([Declaration order](../language-guide.md#declaration-order-top-level-fns-are-hoisted)).
 - `const` is a keyword, so it cannot name a binding. It can still be a record
   key or a field (`{const: 1}`, `r.const`), like every keyword.
+- **Build it without `append`.** A value that may be written in place is
+  never kept between runs, and `append` may write into the list it is
+  handed. So in `const ALL = append(for id in IDS do … end, EXTRA)` the
+  comprehension runs on every frame although `ALL` is constant, and the
+  compile warns:
+
+  ```
+  warning: `ALL` is declared `const`, but part of what builds it is built
+  again on every run: the value written on line 3 is handed to `append`, …
+  ```
+
+  `concat(for … end, [EXTRA])` and `(for … end) ++ [EXTRA]` build a new list
+  and are kept whole. The same warning names a `const` that is itself handed
+  to `append` at top level (`const U = append(T, x)` warns about `T`).
 
 A `const` built from a host's natives is checked by the host, not by `petal
 check`: see [Host natives](#host-natives-constant-or-not).

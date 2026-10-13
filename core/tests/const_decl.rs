@@ -622,3 +622,104 @@ print(SQUARES[frame % 3], len(ROWS))
     assert!(as_const.0.contains(&"SQUARES".to_string()), "{:?}", as_const.0);
     assert_eq!(as_const.1, ["4 3", "9 3"]);
 }
+
+// ── A `const` that is constant and still built on every run ────────────────
+
+/// The warnings (not the errors) of compiling `src` with no host.
+fn warnings(src: &str) -> Vec<Diagnostic> {
+    diagnostics_in(&mut quiet(), src)
+        .into_iter()
+        .filter(|d| !d.is_error())
+        .collect()
+}
+
+#[test]
+fn a_const_whose_build_is_handed_to_append_is_warned_about() {
+    // The list `append` is handed may be updated in place, so it gets no
+    // slot: `SKINS` is kept and the comprehension runs on every frame all
+    // the same. `petal show-static` could not say so (the list has no name).
+    let src = "\
+const PAL = {paper: 1}
+const IDS = [\"a\", \"b\"]
+const SKINS = append(for id in IDS do {...PAL, id: id} end, PAL)
+print(len(SKINS))
+";
+    let w = warnings(src);
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert_eq!(w[0].span.start.line, 3);
+    assert!(
+        w[0].message.starts_with(
+            "`SKINS` is declared `const`, but part of what builds it is built again on every run: \
+             the value written on line 3 is handed to `append`"
+        ),
+        "{}",
+        w[0].message
+    );
+    assert!(w[0].message.contains("`concat(xs, [v])`"), "{}", w[0].message);
+    // It is a warning: the value is right, and the program runs.
+    assert_eq!(errors(src), Vec::<String>::new());
+    assert_eq!(run(src), vec!["3"]);
+    // The line it cites follows a layout edit (it is a cited line, not text).
+    assert!(w[0].cited.is_some());
+}
+
+#[test]
+fn a_const_that_builds_a_new_list_is_not_warned_about() {
+    for src in [
+        "const IDS = [1, 2]\nconst ALL = concat(for i in IDS do [i] end, [[9]])\nprint(ALL)\n",
+        "const IDS = [1, 2]\nconst ALL = (for i in IDS do i * 2 end) ++ [9]\nprint(ALL)\n",
+        "const IDS = [1, 2]\nconst N = len(IDS)\nconst S = sort(IDS)\nprint(N, S)\n",
+        // An `append` inside a function works on the function's own value.
+        "fn grown(xs) append(xs, 9) end\nconst IDS = [1, 2]\nprint(grown(IDS))\n",
+    ] {
+        let w = warnings(src);
+        assert!(
+            !w.iter().any(|d| d.message.contains("built again on every run")),
+            "{src}: {w:?}"
+        );
+    }
+}
+
+#[test]
+fn a_named_const_handed_to_append_is_the_one_warned_about() {
+    // `T` is what gets no slot; `U`, built from it, is kept and says nothing.
+    let src = "\
+const IDS = [1, 2]
+const T = for i in IDS do [i] end
+const U = append(T, [9])
+print(len(U))
+";
+    let w = warnings(src);
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert_eq!(w[0].span.start.line, 2);
+    assert!(
+        w[0].message.starts_with(
+            "`T` is declared `const` but is built again on every run: T is passed to append, \
+             which may update it in place on line 3"
+        ),
+        "{}",
+        w[0].message
+    );
+}
+
+#[test]
+fn a_const_built_from_a_let_that_is_not_kept_names_the_let() {
+    // A `let` makes no promise, so it gets no warning of its own; the
+    // `const` built from it does.
+    let src = "\
+const IDS = [1, 2]
+let L = for i in IDS do [i] end
+const V = append(L, [9])
+print(len(V))
+";
+    let w = warnings(src);
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert_eq!(w[0].span.start.line, 3);
+    assert!(
+        w[0].message.starts_with(
+            "`V` is declared `const`, but `L`, which it is built from, is built again on every run"
+        ),
+        "{}",
+        w[0].message
+    );
+}

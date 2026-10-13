@@ -1368,6 +1368,69 @@ fn mutated_terms(program: &Program) -> HashSet<TermId> {
     seen
 }
 
+/// A part of a declaration's build that is run again on every run although
+/// the declaration is static data: see [`unkept_part`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnkeptPart {
+    /// The term that gets no slot: the container a mutation may write into.
+    pub term: TermId,
+    /// What may write into it: a builtin's name (`append`), or `None` for an
+    /// indexed or field write.
+    pub writer: Option<String>,
+}
+
+/// The first part of what builds the root term `decl` that is static data
+/// and still gets no slot, because its value may be the container of an
+/// in-place update ([`mutated_terms`], the first guard of "What keeps a kept
+/// value from changing"). `decl` itself counts. The walk follows `decl`'s
+/// operands through the root block and stops at `stop`: the terms of other
+/// declarations, which answer for themselves.
+///
+/// This is what makes `const X = append(for … end, Y)` cost a frame what the
+/// comprehension costs: `X` has a slot and the list `append` is handed has
+/// none. `None` when every part is kept.
+pub fn unkept_part(
+    program: &Program,
+    analysis: &StaticAnalysis,
+    decl: TermId,
+    stop: &HashSet<TermId>,
+) -> Option<UnkeptPart> {
+    let mutated = mutated_terms(program);
+    let root: HashSet<TermId> = program
+        .block_terms
+        .get(&program.root_block)
+        .map(|ts| ts.iter().copied().collect())
+        .unwrap_or_default();
+    let mut work = vec![decl];
+    let mut seen: HashSet<TermId> = HashSet::new();
+    let mut found = None;
+    while let Some(t) = work.pop() {
+        if !seen.insert(t) || !root.contains(&t) {
+            continue;
+        }
+        if mutated.contains(&t) && analysis.term_class(t) == TermClass::Data {
+            // The earliest in the source is the one to name.
+            if found.is_none_or(|f: TermId| t.0 < f.0) {
+                found = Some(t);
+            }
+        }
+        let Some(term) = program.terms.get(t.0 as usize) else { continue };
+        work.extend(term.inputs.iter().copied().filter(|i| !stop.contains(i)));
+    }
+    let term = found?;
+    // What writes into it: the mutation whose container operand it is.
+    let writer = program
+        .terms
+        .iter()
+        .find(|w| is_mutation(program, w) && w.inputs.first() == Some(&term))
+        .and_then(|w| match w.op {
+            TermOp::BuiltinCall(c) => program.get_string_constant(c).map(str::to_string),
+            TermOp::MethodCall { name, .. } => program.get_string_constant(name).map(str::to_string),
+            _ => None,
+        });
+    Some(UnkeptPart { term, writer })
+}
+
 // ---------------------------------------------------------------------------
 // The pass
 // ---------------------------------------------------------------------------

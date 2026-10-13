@@ -1008,12 +1008,154 @@ impl Env {
         }
         let analysis = crate::static_classify::analyze(program, &self.native_fns);
         let report = analysis.report.clone();
+        // A `const` that is static data and is still built again on every
+        // run, in whole or in part: something may write into it in place, so
+        // it gets no slot. A warning, since the value is right either way.
+        let decl_terms: std::collections::HashSet<crate::program::TermId> = report
+            .declarations
+            .iter()
+            .flat_map(|d| d.defs.iter().copied().chain(std::iter::once(d.term)))
+            .collect();
+        let mut unkept: Vec<crate::diagnostic::Diagnostic> = Vec::new();
+        {
+            let analysis = &analysis;
+            for d in &report.declarations {
+                if d.const_check != Some(ConstCheck::Constant) || d.class == DeclClass::Function {
+                    continue;
+                }
+                let mut stop = decl_terms.clone();
+                stop.remove(&d.term);
+                let span = program
+                    .source_map
+                    .get(d.term)
+                    .copied()
+                    .unwrap_or(crate::source_map::ZERO_SPAN);
+                let Some(part) =
+                    crate::static_cache::unkept_part(program, analysis, d.term, &stop)
+                else {
+                    // The classifier's own answer, which follows the same
+                    // aliases; either one leaves the declaration out.
+                    if let Some(m) = &d.mutated_by {
+                        let said = format!(
+                            "`{}` is declared `const` but is built again on every run: {} {}",
+                            d.name, m.subject, m.text
+                        );
+                        const NEVER: &str =
+                            "and a value that may be written in place is never kept.";
+                        unkept.push(match m.span {
+                            Some(at) => crate::diagnostic::Diagnostic::citing(
+                                span,
+                                format!("{said} on line {{line}}, {NEVER}"),
+                                at,
+                            ),
+                            None => crate::diagnostic::Diagnostic::new(
+                                span,
+                                format!("{said}, {NEVER}"),
+                            ),
+                        });
+                    }
+                    continue;
+                };
+                let (why, instead) = match part.writer.as_deref() {
+                    Some(w) => (
+                        format!("is handed to `{w}`, which may update its argument in place"),
+                        match w {
+                            "append" | "push" => {
+                                " Build the new list without writing into the old one: \
+                                 `concat(xs, [v])` or `xs ++ [v]`"
+                            }
+                            _ => "",
+                        },
+                    ),
+                    None => ("is written into (an element or a field is assigned)".to_string(), ""),
+                };
+                const NEVER: &str = "and a value that may be written in place is never kept.";
+                // The classifier's reason names the place of the write by
+                // line: cite it, so the message follows a layout edit.
+                let with_reason = |head: String, m: Option<&crate::static_classify::ReasonStep>| {
+                    let Some(m) = m else {
+                        return crate::diagnostic::Diagnostic::new(
+                            span,
+                            format!("{head}it {why}, {NEVER}{instead}"),
+                        );
+                    };
+                    let advice = if m.text.contains("append") {
+                        " Build the new list without writing into the old one: \
+                         `concat(xs, [v])` or `xs ++ [v]`"
+                    } else {
+                        ""
+                    };
+                    let said = format!("{head}{} {}", m.subject, m.text);
+                    match m.span {
+                        Some(at) => crate::diagnostic::Diagnostic::citing(
+                            span,
+                            format!("{said} on line {{line}}, {NEVER}{advice}"),
+                            at,
+                        ),
+                        None => crate::diagnostic::Diagnostic::new(
+                            span,
+                            format!("{said}, {NEVER}{advice}"),
+                        ),
+                    }
+                };
+                if part.term == d.term {
+                    unkept.push(with_reason(
+                        format!(
+                            "`{}` is declared `const` but is built again on every run: ",
+                            d.name
+                        ),
+                        d.mutated_by.as_ref(),
+                    ));
+                    continue;
+                }
+                // A reference to another declaration: a `const` answers for
+                // itself above; any other is named here.
+                let mut origin = part.term;
+                while let Some(t) = program.terms.get(origin.0 as usize)
+                    && matches!(t.op, crate::program::TermOp::Copy)
+                    && let Some(&from) = t.inputs.first()
+                {
+                    origin = from;
+                }
+                if let Some(other) = report
+                    .declarations
+                    .iter()
+                    .find(|o| o.term == origin || o.defs.contains(&origin))
+                {
+                    if other.const_check.is_some() {
+                        continue;
+                    }
+                    unkept.push(with_reason(
+                        format!(
+                            "`{}` is declared `const`, but `{}`, which it is built from, is \
+                             built again on every run: ",
+                            d.name, other.name
+                        ),
+                        other.mutated_by.as_ref(),
+                    ));
+                    continue;
+                }
+                let template = format!(
+                    "`{}` is declared `const`, but part of what builds it is built again on \
+                     every run: the value written on line {{line}} {why}, {NEVER}{instead}",
+                    d.name
+                );
+                unkept.push(match program.source_map.get(part.term).copied() {
+                    Some(cited) => crate::diagnostic::Diagnostic::citing(span, template, cited),
+                    None => crate::diagnostic::Diagnostic::new(
+                        span,
+                        template.replace(" written on line {line}", " it is given"),
+                    ),
+                });
+            }
+        }
         // The lowering that follows this compile wants the same answer.
         program.static_analysis = Some(crate::static_classify::KeptAnalysis::new(
             program,
             &self.native_fns,
             analysis,
         ));
+        program.warnings.append(&mut unkept);
         for d in &report.declarations {
             if d.const_check != Some(ConstCheck::NotConstant) {
                 continue;

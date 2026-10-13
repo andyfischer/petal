@@ -620,6 +620,84 @@ print(n, grid, sum, plain, width, TILES, OTHER)
     assert_eq!(seeds(&report), []);
 }
 
+/// A cache: a `state var` a function fills behind a test of the cell itself,
+/// or of a key remembered beside it. The stale-seed report could not name
+/// it (its initializer reads nothing), and three of them in one game kept
+/// what they had built from a constant the reload rebuilt.
+#[test]
+fn the_report_names_a_cache_filled_from_a_constant_that_changed() {
+    let old = "\
+const GENERIC = {a: 1, b: 2}
+const RAMPS = [10, 20, 30]
+const OTHER = [1, 2, 3]
+fn build() {...GENERIC, c: 3} end
+state var DEFS = nil
+state var KEY = \"\"
+state var BAKED = nil
+state var G = nil
+state var count = 0
+state var last = 0
+fn defs()
+  if get DEFS == nil then set DEFS = build() end
+  get DEFS
+end
+fn bake(k)
+  if k != get KEY then
+    set KEY = k
+    set BAKED = [RAMPS[0], k]
+  end
+  get BAKED
+end
+fn tick()
+  set count = get count + 1
+  set last = len(OTHER) + get count
+  nil
+end
+if get G == nil then set G = map(RAMPS, fn(r) r * 2 end) end
+tick()
+print(defs(), bake(\"x\"), get G, get count, get last, OTHER)
+";
+    let caches = |report: &ReloadReport| -> Vec<(String, String)> {
+        let s = report.statics.as_ref().expect("followed");
+        s.stale_caches.iter().map(|x| (x.name.clone(), x.read.clone().unwrap_or_default())).collect()
+    };
+    let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
+    // The constant a cached value is built from, through a function.
+    let report = follow(old, &old.replace("{a: 1, b: 2}", "{a: 1, b: 2, d: 4}"));
+    assert_eq!(caches(&report), [pair("DEFS", "GENERIC")]);
+    assert_eq!(
+        report.static_lines().last().map(String::as_str),
+        Some("stale cache: state DEFS is filled from GENERIC, which changed, behind a test; it keeps what it built")
+    );
+    assert!(report.statics.as_ref().unwrap().stale_seeds.is_empty());
+    // By value, without a recompile: the report is the same.
+    let report = follow(old, &old.replace("{a: 1, b: 2}", "{a: 1, b: 5}"));
+    assert_eq!(report.outcome, ReloadOutcome::Patched);
+    assert_eq!(caches(&report), [pair("DEFS", "GENERIC")]);
+    // A constant two caches read: one behind a remembered key in a
+    // function, one behind a nil test at the top level. The key itself is
+    // written from the argument and is not named.
+    let report = follow(old, &old.replace("[10, 20, 30]", "[10, 20, 30, 40]"));
+    assert_eq!(caches(&report), [pair("BAKED", "RAMPS"), pair("G", "RAMPS")]);
+    // The function that builds the cached value.
+    let report = follow(old, &old.replace("c: 3}", "c: 4}"));
+    assert_eq!(caches(&report), [pair("DEFS", "build")]);
+    // A cell written on every run from a constant is assigned again on the
+    // next one: never named.
+    let report = follow(old, &old.replace("const OTHER = [1, 2, 3]", "const OTHER = [1, 2, 3, 4]"));
+    assert_eq!(caches(&report), []);
+    // An edit to the function that holds the guard, which the cached value
+    // does not depend on, and to code nothing cached reads.
+    let report = follow(old, &old.replace("  get DEFS\nend", "  let d = get DEFS\n  d\nend"));
+    assert_eq!(caches(&report), []);
+    let json = report.statics.as_ref().unwrap().to_json();
+    assert_eq!(json["stale_caches"], serde_json::json!([]));
+    // A cache nothing has filled yet holds nothing stale.
+    let unfilled = old.replace("print(defs(), ", "print(");
+    let report = follow(&unfilled, &unfilled.replace("{a: 1, b: 2}", "{a: 1, b: 2, d: 4}"));
+    assert_eq!(caches(&report), []);
+}
+
 const DRAG: &str = "\
 config let K = 2
 let BIG = map([1, 2, 3, 4], fn(i) i * K end)

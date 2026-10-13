@@ -283,6 +283,7 @@ A host prints what happened after each reload. The SDL host and Garden print:
 ```text
 [hot-reload] constants: 2 rebuilt (TILES, WIDTHS), 41 kept
 [hot-reload] stale seed: state grid was initialized from TILES, which changed; it keeps its value
+[hot-reload] stale cache: state DEFS is filled from GENERIC, which changed, behind a test; it keeps what it built
 ```
 
 Nothing is printed for a reload that reached no constant and left no stale
@@ -296,10 +297,25 @@ visible when a table reloads and a `state` built from it does not. If the
 `state` should have followed, it is a constant: see
 [`const`, `let` or `state`](#const-let-or-state).
 
+A **stale cache** (`StaticReload::stale_caches`) is the same thing one step
+removed: a top-level `state` that code fills behind a test of a cell the
+same branch writes. That is the cell itself, as in `if get DEFS == nil then
+set DEFS = build() end`, or a key remembered beside it, as in `if k != get
+KEY then set KEY = k; set BAKED = bake(k) end`; at the top level or inside a
+function. Its initializer reads nothing, so it is never a stale seed, and it
+keeps what it built from the old constant until its test passes again. The
+line names the cell and the first changed declaration its cached value is
+built from (a constant, or a function that builds it), found through the
+functions the written value calls. A cell that is written on every run is
+assigned again on the next one and is not named; neither is a cache that
+holds `nil`. The fix is usually to make the cached value a `const`, which is
+rebuilt when what it reads changes.
+
 From Rust the report is `ReloadReport::statics` (counts, the rebuilt names,
-the stale seeds) and `ReloadReport::static_lines()` gives the lines above.
-From C it is under `statics` in `pb_vm_last_reload_json`
-([embedding-c.md](../usage/embedding-c.md)). The report is absent when the
+the stale seeds, the stale caches) and `ReloadReport::static_lines()` gives
+the lines above. From C it is under `statics` in `pb_vm_last_reload_json`
+(`stale_seeds`, `stale_caches`;
+[embedding-c.md](../usage/embedding-c.md)). The report is absent when the
 program does not run with values kept (the `baseline` and `explain`
 policies, or a host with the per-term trace on, such as a Garden panel being
 traced by the Petal IDE) or has not run yet.

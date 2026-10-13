@@ -418,6 +418,12 @@ way, for code written against an earlier checkout.
   list it is built from is handed to `append` (which may write in place), is
   a compile warning that names the list. `const X = append(for … end, Y)`
   used to cost a frame the comprehension with no word from any tool.
+- The reload report names a stale cache (`StaticReload::stale_caches`, a
+  `stale cache:` line, `stale_caches` in the JSON): a `state` that code
+  fills behind a test of the cell itself or of a key remembered beside it,
+  when a constant or a function its cached value is built from was changed
+  by the edit. The stale-seed line could not name these, since their
+  initializer reads nothing.
 - `ReloadReport::new_diagnostics` (with `Env::render_diagnostics` and
   `Env::diagnostics`): the warnings and errors a reload's compile found that
   the program before the edit did not have, for a host to print after each

@@ -330,6 +330,12 @@ pub struct FollowDecl {
     /// For a top-level `state`: its key, and what its initializer depends
     /// on (indices into [`FollowInfo::decls`], sorted, closed transitively).
     pub state: Option<(StateKey, Box<[u32]>)>,
+    /// For a top-level `state` that code fills behind a test of a cell the
+    /// same branch writes (a cache): what the values written there depend
+    /// on, as `state`'s indices are
+    /// ([`StaticAnalysis::state_cache_dependencies`]). `None` for every
+    /// other declaration.
+    pub cache: Option<Box<[u32]>>,
 }
 
 /// What a reload needs to know about a lowering to follow an edit through
@@ -1724,6 +1730,13 @@ fn follow(
                     let mut deps = analysis.state_initializer_dependencies(d.term).unwrap_or_default();
                     deps.retain(|x| *x != i as u32);
                     (key, deps.into())
+                }),
+            cache: (d.kind == crate::static_classify::DeclKind::State)
+                .then(|| analysis.state_cache_dependencies(d.term))
+                .flatten()
+                .map(|mut deps| {
+                    deps.retain(|x| *x != i as u32);
+                    deps.into()
                 }),
         })
         .collect();

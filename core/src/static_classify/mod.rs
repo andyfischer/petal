@@ -650,6 +650,10 @@ struct RootDeps {
     /// the cell, which is more: `state n = 0` followed by `n = len(TILES)`
     /// depends on `TILES` and its initializer on nothing.
     state_init: HashMap<u32, Box<[u32]>>,
+    /// A top-level `state` declaration that is used as a cache -> what the
+    /// values written into it behind a guard depend on, closed
+    /// transitively. See [`StaticAnalysis::state_cache_dependencies`].
+    state_cache: HashMap<u32, Box<[u32]>>,
 }
 
 impl StaticAnalysis {
@@ -689,6 +693,21 @@ impl StaticAnalysis {
     pub fn state_initializer_dependencies(&self, root: TermId) -> Option<Vec<u32>> {
         let d = self.roots.owner.get(&root)?;
         self.roots.state_init.get(d).map(|deps| deps.to_vec())
+    }
+
+    /// For a top-level `state` that some code fills behind a test of a
+    /// cell the same branch writes — the cell itself (`if get X == nil then
+    /// set X = build() end`) or a remembered key beside it (`if k != get KEY
+    /// then set KEY = k; set X = bake(k) end`) — what the values written
+    /// there can depend on, as sorted indices into
+    /// [`StaticReport::declarations`], closed transitively. Such a cell is a
+    /// cache: it keeps what it was built from until its test passes again,
+    /// so a reload that changes one of these leaves it stale. `None` when
+    /// `root` binds no such `state`: one that is only ever written
+    /// unconditionally is assigned again on the next run.
+    pub fn state_cache_dependencies(&self, root: TermId) -> Option<Vec<u32>> {
+        let d = self.roots.owner.get(&root)?;
+        self.roots.state_cache.get(d).map(|deps| deps.to_vec())
     }
 
     pub fn root_dependencies(&self, program: &Program, root: TermId) -> Option<Vec<u32>> {
@@ -2712,6 +2731,149 @@ impl<'a> Pass<'a> {
         }
     }
 
+    /// The outer term a capture phantom stands for: the matching input of
+    /// the closure site, followed out through enclosing functions. Any other
+    /// term is itself.
+    fn capture_source(&self, mut t: TermId) -> TermId {
+        for _ in 0..32 {
+            let term = self.p.get_term(t);
+            if !Self::is_phantom(term) {
+                break;
+            }
+            let Some(&fi) = self.body_fn.get(&term.block_id) else { break };
+            let f = self.func(fi);
+            let Some(slot) = f.capture_registers.iter().position(|r| *r == term.register) else {
+                break;
+            };
+            let Some(&outer) = self.sites[fi].first().and_then(|s| self.p.get_term(*s).inputs.get(slot))
+            else {
+                break;
+            };
+            t = outer;
+        }
+        t
+    }
+
+    /// The `state` group a write term writes: a `CellWrite` to a `state var`
+    /// (from any function), or a `StateWrite` of a plain `state`.
+    fn written_state(&self, term: &Term) -> Option<usize> {
+        let gi = match term.op {
+            TermOp::CellWrite => {
+                let decl = self.cells.decl_for_site(term.id)?;
+                *self.group_of.get(&decl)?
+            }
+            TermOp::StateWrite => *self.state_groups.get(&term.state_key?.0)?,
+            _ => return None,
+        };
+        (self.groups[gi].kind == DeclKind::State).then_some(gi)
+    }
+
+    /// The `state` groups the expression rooted at `cond` reads.
+    fn states_read(&self, cond: TermId) -> BTreeSet<usize> {
+        let mut out = BTreeSet::new();
+        let mut seen: HashSet<TermId> = HashSet::default();
+        let mut stack = vec![cond];
+        while let Some(t) = stack.pop() {
+            if !seen.insert(t) || seen.len() > 4096 {
+                continue;
+            }
+            let term = self.p.get_term(t);
+            let state = match term.op {
+                TermOp::CellRead => self.cells.decl_for_site(t).and_then(|d| self.group_of.get(&d).copied()),
+                TermOp::StateRead => term.state_key.and_then(|k| self.state_groups.get(&k.0).copied()),
+                _ => self.group_of.get(&self.capture_source(t)).copied(),
+            };
+            if let Some(gi) = state
+                && self.groups[gi].kind == DeclKind::State
+            {
+                out.insert(gi);
+                continue;
+            }
+            stack.extend(term.inputs.iter().copied());
+        }
+        out
+    }
+
+    /// For each `state` that is filled behind a guard (see
+    /// [`StaticAnalysis::state_cache_dependencies`]): the declarations the
+    /// values written there refer to directly.
+    fn guarded_cache_writes(&self) -> HashMap<usize, BTreeSet<usize>> {
+        let p = self.p;
+        // Every write of a state, with the `if`s it is inside of (innermost
+        // first, up to its function body or the top level).
+        let mut writes: Vec<(TermId, usize, Vec<TermId>)> = Vec::new();
+        let mut under: HashMap<TermId, BTreeSet<usize>> = HashMap::default();
+        for term in &p.terms {
+            let Some(gi) = self.written_state(term) else { continue };
+            let mut branches = Vec::new();
+            let mut block = term.block_id;
+            for _ in 0..256 {
+                let Some(parent) = self.parent.get(block.0 as usize).copied().flatten() else {
+                    break;
+                };
+                let pt = p.get_term(parent);
+                match pt.op {
+                    TermOp::Branch => branches.push(parent),
+                    // The initializer's own block: this is the seed.
+                    TermOp::StateInit => {
+                        branches.clear();
+                        break;
+                    }
+                    _ => {}
+                }
+                block = pt.block_id;
+            }
+            for b in &branches {
+                under.entry(*b).or_default().insert(gi);
+            }
+            writes.push((term.id, gi, branches));
+        }
+        let mut conds: HashMap<TermId, BTreeSet<usize>> = HashMap::default();
+        let mut out: HashMap<usize, BTreeSet<usize>> = HashMap::default();
+        for (w, gi, branches) in writes {
+            // Guarded: some enclosing `if` tests a state that is written
+            // under that same `if`.
+            let guarded = branches.iter().any(|b| {
+                let read = conds.entry(*b).or_insert_with(|| {
+                    p.get_term(*b).inputs.first().map(|c| self.states_read(*c)).unwrap_or_default()
+                });
+                under.get(b).is_some_and(|written| read.iter().any(|s| written.contains(s)))
+            });
+            if !guarded {
+                continue;
+            }
+            let Some(&value) = p.get_term(w).inputs.last() else { continue };
+            // What the written value refers to: declarations reached through
+            // its own expression, capture phantoms followed out to what they
+            // capture.
+            let deps = out.entry(gi).or_default();
+            let mut seen: HashSet<TermId> = HashSet::default();
+            let mut stack = vec![value];
+            while let Some(t) = stack.pop() {
+                if !seen.insert(t) || seen.len() > 65536 {
+                    continue;
+                }
+                let source = self.capture_source(t);
+                if let Some(&other) = self.group_of.get(&source) {
+                    if other != gi {
+                        deps.insert(other);
+                    }
+                    continue;
+                }
+                let term = p.get_term(source);
+                let skip_cell = matches!(term.op, TermOp::CellRead | TermOp::CellWrite) as usize;
+                stack.extend(term.inputs.iter().skip(skip_cell).copied());
+                for b in self.blocks_of(term) {
+                    stack.extend(&self.block(b).terms);
+                }
+                if let TermOp::MethodCall { name, .. } = &term.op {
+                    stack.extend(self.dispatch.get(name).map(|v| &v[..]).unwrap_or(&[]));
+                }
+            }
+        }
+        out
+    }
+
     fn report(&self) -> (StaticReport, RootDeps) {
         let p = self.p;
         let modules = self.module_names();
@@ -2850,7 +3012,20 @@ impl<'a> Pass<'a> {
             closed: vec![Box::default(); decls.len()],
             unnamed: HashMap::default(),
             state_init: HashMap::default(),
+            state_cache: HashMap::default(),
         };
+        for (gi, direct) in self.guarded_cache_writes() {
+            if at[gi] == u32::MAX {
+                continue;
+            }
+            let mut all: BTreeSet<usize> = BTreeSet::new();
+            for d in direct {
+                all.insert(d);
+                all.extend(closed[d].iter().copied());
+            }
+            all.remove(&gi);
+            roots.state_cache.insert(at[gi], indices(&all));
+        }
         for (gi, g) in self.groups.iter().enumerate() {
             if at[gi] == u32::MAX {
                 continue;

@@ -158,11 +158,14 @@ decision is made is in
 ```text
 [hot-reload] constants: 2 rebuilt (TILES, WIDTHS), 41 kept
 [hot-reload] stale seed: state grid was initialized from TILES, which changed; it keeps its value
+[hot-reload] stale cache: state DEFS is filled from GENERIC, which changed, behind a test; it keeps what it built
 ```
 
 A **stale seed** is a top-level `state` that kept its value although its
 initializer reads something the edit changed, or was itself edited
-([The reload report](static-values.md#the-reload-report)).
+([The reload report](static-values.md#the-reload-report)). A **stale
+cache** is the same thing one step removed: a top-level `state` that code
+fills behind a test, which keeps what it built from the old constant.
 `Env::set_static_follow(false)` goes back to rebuilding every static value on
 every reload. It is what the followed reload is tested against.
 

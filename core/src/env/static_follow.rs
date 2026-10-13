@@ -108,6 +108,13 @@ pub struct StaticReload {
     /// `state` cells that kept their value although their initializer read
     /// something the edit changed.
     pub stale_seeds: Vec<StaleSeed>,
+    /// `state` cells used as a cache — filled behind a test of the cell
+    /// itself or of a key remembered beside it, at the top level or inside a
+    /// function — that hold a value while something the cached value is
+    /// built from was changed by the edit. `read` is that declaration. The
+    /// cell keeps what it built until its test passes again. A cell that is
+    /// already a stale seed is not listed twice.
+    pub stale_caches: Vec<StaleSeed>,
     /// Why every value was rebuilt, when the reload could not follow the
     /// edit.
     pub cleared: Option<String>,
@@ -116,7 +123,11 @@ pub struct StaticReload {
 impl StaticReload {
     /// Nothing to say: no static value and no stale seed.
     pub fn is_empty(&self) -> bool {
-        self.kept == 0 && self.rebuilt == 0 && self.deferred.is_empty() && self.stale_seeds.is_empty()
+        self.kept == 0
+            && self.rebuilt == 0
+            && self.deferred.is_empty()
+            && self.stale_seeds.is_empty()
+            && self.stale_caches.is_empty()
     }
 
     /// The report as a host prints it, one line per thing worth saying:
@@ -124,6 +135,7 @@ impl StaticReload {
     /// ```text
     /// constants: 3 rebuilt (TILES, GRID, lib::PALETTE), 41 kept
     /// stale seed: state grid was initialized from TILES, which changed; it keeps its value
+    /// stale cache: state DEFS is filled from GENERIC, which changed, behind a test; it keeps what it built
     /// ```
     ///
     /// Empty when the reload changed no constant and left no stale seed.
@@ -170,11 +182,21 @@ impl StaticReload {
         if self.stale_seeds.len() > SHOWN {
             out.push(format!("stale seeds: and {} more", self.stale_seeds.len() - SHOWN));
         }
+        for cache in self.stale_caches.iter().take(SHOWN) {
+            out.push(format!(
+                "stale cache: state {} is filled from {}, which changed, behind a test; it keeps what it built",
+                cache.name,
+                cache.read.as_deref().unwrap_or("code")
+            ));
+        }
+        if self.stale_caches.len() > SHOWN {
+            out.push(format!("stale caches: and {} more", self.stale_caches.len() - SHOWN));
+        }
         out
     }
 
     /// The report as JSON: `{kept, rebuilt, rebuilt_names, deferred,
-    /// stale_seeds: [{name, read}], cleared}`.
+    /// stale_seeds: [{name, read}], stale_caches: [{name, read}], cleared}`.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "kept": self.kept,
@@ -182,6 +204,10 @@ impl StaticReload {
             "rebuilt_names": self.rebuilt_names,
             "deferred": self.deferred,
             "stale_seeds": self.stale_seeds.iter().map(|s| serde_json::json!({
+                "name": s.name,
+                "read": s.read,
+            })).collect::<Vec<_>>(),
+            "stale_caches": self.stale_caches.iter().map(|s| serde_json::json!({
                 "name": s.name,
                 "read": s.read,
             })).collect::<Vec<_>>(),
@@ -772,6 +798,33 @@ impl Env {
                 };
                 if let Some(read) = read {
                     report.stale_seeds.push(StaleSeed { name: d.name.clone(), read });
+                    continue;
+                }
+                // A cache: what the values written into it behind a guard
+                // are built from, against what the edit changed.
+                let Some(cache) = &d.cache else { continue };
+                // A cache that holds nothing yet has nothing stale in it.
+                let empty = stack.state.iter().filter(|(k, _)| k.base == *key).all(|(_, v)| match v {
+                    Value::Cell(id) => matches!(heap.cell_read(*id), Value::Nil),
+                    other => matches!(other, Value::Nil),
+                });
+                if empty {
+                    continue;
+                }
+                let hit = if same_lowering {
+                    cache
+                        .iter()
+                        .find(|x| old.changed.get(**x as usize) == Some(&true))
+                        .and_then(|x| follow.decls.get(*x as usize))
+                        .map(|x| x.name.clone())
+                } else {
+                    names_of(follow, cache)
+                        .into_iter()
+                        .find(|n| changed_names.contains(*n))
+                        .map(str::to_string)
+                };
+                if let Some(hit) = hit {
+                    report.stale_caches.push(StaleSeed { name: d.name.clone(), read: Some(hit) });
                 }
             }
         }

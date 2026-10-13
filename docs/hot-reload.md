@@ -128,6 +128,19 @@ frame's before, and is the same amount. And the unit of rebuilding is a run
 of static statements, not one declaration: when one value of a run is
 rebuilt the others of that run are evaluated again and discarded.
 
+Only the stack the reload was asked of keeps anything. Every other stack of
+the program, and a fork, rebuilds all of its static values on its next run;
+a reload asked of one of those before it has run again keeps nothing either,
+because its table was filled under constants another stack's edit has since
+replaced.
+
+One difference can be seen, and only through `frozen`. When a run is
+evaluated again for one of its values, a value built in that run from a kept
+neighbour (`let C = [B, 1]`, with `B` kept) holds the copy of `B` the run
+just made, not the kept one. The two are equal and neither can be written
+to, so nothing else tells them apart; `freeze(B)` freezes the kept one, and
+`frozen(C[0])` then says `false` where a rebuild of everything says `true`.
+
 ## What kind of edit is it
 
 `petal::source_diff::diff_source(old, new, file)` parses both texts and

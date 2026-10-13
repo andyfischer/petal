@@ -1540,6 +1540,97 @@ added method, and a literal inside a function body that a constant calls.
 **Gate.** Structural-edit time on Moses against S1, and no stale value in
 the differential test.
 
+### Review of S2 and A3 (2026-10-12)
+
+An independent pass over S2 (`694c946` to `2067db1`) and A3 (`24c39af`),
+aimed at a constant that survives a reload it should not. One defect found
+and fixed (`775d08a`), one difference found and written down; the gate
+stands.
+
+- **Fixed: a table another stack's edit had made stale.** A literal patched
+  through one stack moves the constant revision and leaves the table of
+  every other stack of the program (and of a fork) as it was; that stack's
+  next run empties it. `begin_static_follow` asked only whether the table
+  was filled under the current lowering, so a reload asked of such a stack
+  before it ran again took the stale values for current and kept the ones
+  its own edit did not reach. Two stacks, `w: 3` patched to `w: 40` through
+  the first, then any edit through the second: the second stack showed
+  `w: 3` on every later frame. The same through a fork and
+  `set_config_value`. The table now has to carry the program's constant
+  revision too. `review_a_table_another_stacks_reload_made_stale_is_not_kept`.
+- **Found and kept: `frozen` can tell, once more.** The store of a run is at
+  its end, so when a run is evaluated again for one value, a neighbour built
+  from a kept value (`let C = [B, 1]`) holds the run's new copy of `B`, not
+  the kept one. They are equal and neither can be written to; `freeze(B)`
+  then freezes the kept one only, and `frozen(C[0])` says `false` where a
+  rebuild of everything says `true`. Fixing it needs a store per value,
+  which is the open item about splitting runs. Written into
+  `docs/hot-reload.md`. The swap of a rebuilt value for an identical old one
+  does not have this problem: `identical` compares `frozen` at every level,
+  so a frozen old value is never swapped in for an unfrozen new one
+  (`review_a_shared_element_frozen_through_one_name`).
+- **Tried to keep a value past its time**, each against the reload that
+  rebuilds everything, under `replay`, `replay-memo`, `fast` and
+  `baseline+static`, frames and tables compared after the reload and one
+  frame later (16 cases added to `core/tests/static_reload.rs`, all named
+  `review_…`): functions, classes and enums renumbered by declarations added
+  in front of the ones a kept value holds; positions after a comment or a
+  longer literal moved everything, twice in a row, and in text with
+  characters wider than a byte; a reload that does not compile (with the
+  table's edit already in it) and then one that does; a reload after
+  `set_config_value` left the program differing from any file; a named
+  import switched between two modules both already loaded; a name swapped
+  between two declarations, rebound, and a reader moved across the second
+  binding; a function held in a record or a list; methods of one name on
+  two classes, and a method, an arity or a variant added in a module the
+  reader does not import; every tier of the module system's lookup (an
+  importer's export over its import's, a second arity from another module,
+  a module export over `std`'s, a facade that passes on another module's
+  name or declares its own, a selective import over a plain one); plain
+  `let`, `const` and `config let` literals read through every kind of
+  expression; values taken apart by `match`; a drag with rebuilds put off,
+  interrupted at random by structural reloads, value reloads, failed
+  reloads, comment-only reloads and drags of a second value, compared after
+  each flush (40 rounds a policy, 2,467 put-off rebuilds); two stacks and a
+  fork. Only the first item above got through.
+- **The checks have teeth.** With the dependency test removed, 9 of the
+  first 11 review cases fail; with the new-program conditions removed, the
+  name and module-tier cases fail.
+- **The report.** `follow()` now checks every followed reload of the file:
+  `kept` plus `deferred` is the number of slots holding a value straight
+  after the reload, `kept + deferred + rebuilt` is the table, every name
+  under `rebuilt_names` is a slot waiting to be built, and `cleared` means
+  nothing kept. No mismatch.
+- **`identical`.** Read against `==`: kinds, numbers by bits, strings by
+  content, lists in order, records by class name, key order and `frozen`,
+  variants by tag and payload; anything a kept value cannot hold is never
+  identical. A kept value never holds a function (a table of functions gets
+  no slot), which is what makes renumbering harmless.
+- **A3.** The commit changes two hashers and three signatures and no
+  instruction, so every semantic the step lists is the old code's; the 2,558
+  core tests (the `state_call_paths`, `state_lifecycle`, `state_decl_ids`,
+  `hot_reload`, fork and audit suites among them) pass. Nothing iterates the
+  state table or the touched set where order could show, and no crate
+  outside `core` names the map's type (grep). Re-measured on this machine by
+  switching the hasher back in place: 17.4 µs to 10.5–10.8 µs for 200
+  top-level hits, 57.5 µs to 44.4–44.7 µs for 200 in-function hits, control
+  14.6–15.1 µs. That agrees with the status note. The slot index stays
+  unbuilt for the reason given there.
+- **Reproduced at the fix** (debug unless said): core `cargo test
+  --no-fail-fast` 63 binaries, 2,558 passed, 0 failed, 16 ignored; the
+  whole-corpus reload oracle in release over this repository, and over the
+  Cheesecake games, worlds-fair, `~/.garden`, the website and `~/tools`
+  (343 files: 160 relocated, 9 patched, 154 recompiled); `static_fuzz` and
+  `static_cache_fuzz` at 3,000 seeds in release; the petal-ui corpus
+  differentials (`static_reload`, `static_cache`); `petal-c-bridge` 20;
+  `petal-desktop-sdl` 54; `./tools/test-examples.ts` 33; vitest 1,570.
+- **Still open.** Everything under "Open after S2" except what is above.
+  Not run by this pass either: clippy, `tsc`, `tools/verify.ts` (it needs a
+  second build to compare with), the release-profile core suite as a whole,
+  the Garden workspace's tests, `petal-query`, `petal-fantasy-nes`,
+  `make test-c-bridge`, Moses under its own engine. The debounce defaults
+  are still untuned against a real drag.
+
 ## Later, each on evidence
 
 Do one of these only when a profile or an author report asks for it.

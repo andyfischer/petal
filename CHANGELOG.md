@@ -164,7 +164,8 @@ way, for code written against an earlier checkout.
   the function. A rebuilt value that comes out as it was keeps its old heap
   value. Everything is rebuilt when the diff cannot say what changed, when
   top-level statements changed order, and when the set of source files
-  changed. `ReloadReport::statics` reports constants kept and rebuilt and
+  changed. Only the stack the reload was asked of keeps anything;
+  another stack of the program, or a fork, rebuilds on its next run. `ReloadReport::statics` reports constants kept and rebuilt and
   **stale seeds**, the `state` cells that kept a value although their
   initializer read something the edit changed; the SDL host and Garden
   print it (`constants: 2 rebuilt (TILES, WIDTHS), 41 kept`) and

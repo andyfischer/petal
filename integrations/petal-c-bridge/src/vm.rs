@@ -103,6 +103,7 @@ pub struct Vm {
     static_values_json: CString,
     diagnostics_text: CString,
     diagnostics_json: CString,
+    new_diagnostics_text: CString,
     saved_state: CString,
     /// What the last `save_state` / `load_state` did (`pb_vm_state_report_json`).
     state_report: CString,
@@ -157,6 +158,7 @@ impl Vm {
             static_values_json: CString::default(),
             diagnostics_text: CString::default(),
             diagnostics_json: CString::default(),
+            new_diagnostics_text: CString::default(),
             saved_state: CString::default(),
             state_report: CString::default(),
             function_json: CString::default(),
@@ -659,25 +661,34 @@ impl Vm {
     /// for a program loaded from a string with no name.
     pub fn diagnostics_json(&self) -> Option<serde_json::Value> {
         let program = self.env.get_program(self.loaded.as_ref()?.program_id)?;
-        let items: Vec<serde_json::Value> = program
-            .warnings
-            .iter()
-            .map(|d| {
-                serde_json::json!({
-                    "severity": d.severity.label(),
-                    "message": d.message,
-                    "file": program.source_map.file_name_for_span(&d.span),
-                    "line": d.span.start.line,
-                    "column": d.span.start.column,
-                })
-            })
-            .collect();
+        let items = diagnostic_items(program, &program.warnings);
         let errors = program.warnings.iter().filter(|d| d.is_error()).count();
         Some(serde_json::json!({
             "errors": errors,
             "warnings": items.len() - errors,
             "items": items,
         }))
+    }
+
+    /// What the last reload's compile found that the program before the edit
+    /// did not have (`ReloadReport::new_diagnostics`), rendered as `petal
+    /// check` prints findings: what a host prints after a reload, where
+    /// printing every standing warning again on every save would bury the
+    /// one the edit introduced. `errors_only` leaves the warnings out. Empty
+    /// when the edit introduced nothing, when the reload did not recompile
+    /// (a layout or value edit is not checked again), and before the first
+    /// reload.
+    pub fn new_diagnostics_text(&self, errors_only: bool) -> String {
+        let (Some(l), Some(report)) = (&self.loaded, &self.last_reload) else {
+            return String::new();
+        };
+        if errors_only {
+            let errors: Vec<_> =
+                report.new_diagnostics.iter().filter(|d| d.is_error()).cloned().collect();
+            self.env.render_diagnostics(l.program_id, &errors)
+        } else {
+            self.env.render_diagnostics(l.program_id, &report.new_diagnostics)
+        }
     }
 
     /// Start the loaded program over with fresh `state`, without
@@ -1838,6 +1849,25 @@ fn reload_report_json(report: &ReloadReport) -> serde_json::Value {
     out
 }
 
+/// Diagnostics as the items of `pb_vm_diagnostics_json`.
+fn diagnostic_items(
+    program: &petal::program::Program,
+    diagnostics: &[petal::diagnostic::Diagnostic],
+) -> Vec<serde_json::Value> {
+    diagnostics
+        .iter()
+        .map(|d| {
+            serde_json::json!({
+                "severity": d.severity.label(),
+                "message": d.message,
+                "file": program.source_map.file_name_for_span(&d.span),
+                "line": d.span.start.line,
+                "column": d.span.start.column,
+            })
+        })
+        .collect()
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn pb_vm_last_reload_kind(vm: *mut VmHandle) -> i32 {
     with_vm(vm, -1, |vm| {
@@ -1852,7 +1882,14 @@ pub extern "C" fn pb_vm_last_reload_json(vm: *mut VmHandle) -> *const c_char {
         let Some(report) = &vm.last_reload else {
             return Ok(std::ptr::null());
         };
-        vm.reload_json = cstring_lossy(&reload_report_json(report).to_string());
+        let mut json = reload_report_json(report);
+        // What the edit introduced, as the items of pb_vm_diagnostics_json.
+        let program = vm.loaded.as_ref().and_then(|l| vm.env.get_program(l.program_id));
+        json["new_diagnostics"] = match program {
+            Some(p) => diagnostic_items(p, &report.new_diagnostics).into(),
+            None => serde_json::json!([]),
+        };
+        vm.reload_json = cstring_lossy(&json.to_string());
         Ok(vm.reload_json.as_ptr())
     })
     .1
@@ -2167,6 +2204,19 @@ pub extern "C" fn pb_vm_diagnostics_json(vm: *mut VmHandle) -> *const c_char {
         let json = vm.diagnostics_json().unwrap_or(serde_json::Value::Null);
         vm.diagnostics_json = cstring_lossy(&json.to_string());
         Ok(vm.diagnostics_json.as_ptr())
+    })
+    .1
+}
+
+/// What the last reload introduced, as text (see
+/// [`Vm::new_diagnostics_text`]); "" when nothing. Valid until the next
+/// call.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_new_diagnostics_text(vm: *mut VmHandle, errors_only: bool) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        vm.loaded()?;
+        vm.new_diagnostics_text = cstring_lossy(&vm.new_diagnostics_text(errors_only));
+        Ok(vm.new_diagnostics_text.as_ptr())
     })
     .1
 }
@@ -2853,6 +2903,31 @@ print(tick, grid, log, table, frozen(table), where, odd.far, odd.none, odd.tag =
         // A clean reload clears them.
         vm.reload_with("let n: int = 1\nprint(n)\n").unwrap();
         assert_eq!(vm.diagnostics_json().unwrap()["items"], serde_json::json!([]));
+    }
+
+    /// After a reload the host prints what the edit introduced, not every
+    /// standing warning again.
+    #[test]
+    fn a_reload_reports_only_the_findings_the_edit_introduced() {
+        let base = "fn double(x: int) x end\nlet a = double(\"one\")\nlet b = 4\nprint(a, b)\n";
+        let mut vm = Vm::new();
+        vm.load(base, None, "main.ptl".into()).unwrap();
+        assert_eq!(vm.diagnostics_json().unwrap()["warnings"], 1);
+        assert_eq!(vm.new_diagnostics_text(false), "", "before any reload");
+
+        // The edit adds a second mistake, two lines below a new comment.
+        let edited = base.replace("let b = 4", "// moved\nlet b: string = 4");
+        vm.reload_with(&edited).unwrap();
+        assert_eq!(vm.diagnostics_json().unwrap()["warnings"], 2);
+        let new = vm.new_diagnostics_text(false);
+        assert_eq!(new.matches("warning:").count(), 1, "{new}");
+        assert!(new.contains("line 4"), "{new}");
+        assert_eq!(vm.new_diagnostics_text(true), "", "a warning is not an error");
+
+        // An edit that changes a value is not checked again; one that fixes
+        // the mistake introduces nothing.
+        vm.reload_with(&edited.replace("print(a, b)", "print(b, a)")).unwrap();
+        assert_eq!(vm.new_diagnostics_text(false), "");
     }
 
     #[test]

@@ -740,7 +740,11 @@ int pb_vm_last_reload_kind(pb_vm* vm);
  *      "stale_seeds": [             //   state that kept its value although its
  *        {"name": "grid",           //   initializer read something that changed
  *         "read": "TILES"}],        //   (null: its own declaration changed)
- *      "cleared": null}}            //   why everything was rebuilt, if it was
+ *      "cleared": null},            //   why everything was rebuilt, if it was
+ *    "new_diagnostics": [           // what the edit introduced (the items of
+ *      {"severity": "warning",      // pb_vm_diagnostics_json); empty unless
+ *       "message": "...",           // the reload recompiled
+ *       "file": "game.ptl", "line": 3, "column": 5}]}
  *
  * Valid until the next call to this function. */
 const char* pb_vm_last_reload_json(pb_vm* vm);
@@ -1069,6 +1073,16 @@ const char* pb_vm_diagnostics_text(pb_vm* vm, bool errors_only);
  * "file" is null for a program loaded from an unnamed string. NULL with no
  * program loaded. Valid until the next call to this function. */
 const char* pb_vm_diagnostics_json(pb_vm* vm);
+/* What the last reload introduced: the findings of its compile, warnings and
+ * errors, that the program before the edit did not have, as `petal check`
+ * prints them. This is what to print after a reload: a large program's
+ * standing warnings are not repeated on every save, and the one the edit
+ * just wrote is. "" when the edit introduced nothing, when the reload did
+ * not recompile (a layout or value edit is not checked again) and before the
+ * first reload; NULL with no program loaded. pb_vm_last_reload_json carries
+ * the same list as "new_diagnostics". Valid until the next call to this
+ * function. */
+const char* pb_vm_new_diagnostics_text(pb_vm* vm, bool errors_only);
 /* The VM profiler (off by default): instructions per opcode and per function,
  * native calls and the time spent in them, collections. Turning it on clears
  * earlier counts; while on, every run pays a per-instruction hook (roughly 2x

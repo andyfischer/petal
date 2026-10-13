@@ -974,6 +974,32 @@ TEST(diagnostics_as_json) {
     CHECK_CONTAINS(vm.diagnostics_json(), R"("items":[])");
 }
 
+// After a reload a host prints what the edit introduced, and a standing
+// warning is not said again.
+TEST(reload_reports_the_findings_the_edit_introduced) {
+    std::string base = "fn double(x: int) x end\nlet a = double(\"one\")\nlet b = 4\nprint(a, b)\n";
+    petal::Vm vm;
+    vm.load_source(base, "main.ptl");
+    CHECK_CONTAINS(vm.diagnostics_json(), R"("warnings":1)");
+    CHECK_EQ(vm.new_diagnostics_text(), std::string(""));
+
+    std::string edited = base;
+    edited.replace(edited.find("let b = 4"), 9, "// moved\nlet b: string = 4");
+    vm.reload_source(edited);
+    CHECK_CONTAINS(vm.diagnostics_json(), R"("warnings":2)");
+    std::string introduced = vm.new_diagnostics_text();
+    CHECK_CONTAINS(introduced, "warning:");
+    CHECK_CONTAINS(introduced, "line 4");
+    CHECK(introduced.find("line 2") == std::string::npos);
+    CHECK_EQ(vm.new_diagnostics_text(true), std::string(""));
+    CHECK_CONTAINS(vm.last_reload_json(), R"("new_diagnostics":[{"column":)");
+
+    edited.replace(edited.find("print(a, b)"), 11, "print(b, a)");
+    vm.reload_source(edited);
+    CHECK_EQ(vm.new_diagnostics_text(), std::string(""));
+    CHECK_CONTAINS(vm.last_reload_json(), R"("new_diagnostics":[])");
+}
+
 // ─── petal-ui ───────────────────────────────────────────────────────────────
 
 TEST(ui_draw_follows_mouse) {

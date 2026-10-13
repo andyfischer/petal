@@ -542,6 +542,7 @@ if (vm.sources_changed()) {                 // stat() of every source file
     try {
         auto r = vm.reload();               // only the work the edit calls for
         log("reloaded {}: kept {} state slots, dropped {}", edited, r.state_preserved, r.state_dropped);
+        log_error(vm.new_diagnostics_text());   // what the edit introduced, warnings too
     } catch (const petal::Error& e) {
         overlay.show(e);                    // old program keeps running
     }
@@ -886,6 +887,12 @@ with `PB_ERR_COMPILE`, phase `link`, before any line runs.
   the program loads and runs, with that binding built on every run as a
   `let` is, and since the check goes by the natives this VM registered
   `PB_FX_CONST`, the host is the only place it can be reported.
+  After a reload, print `new_diagnostics_text()`
+  (`pb_vm_new_diagnostics_text`) instead: only the findings the edit
+  introduced, warnings included, so a large program's standing warnings are
+  not repeated on every save and the mistake just typed is seen at once. It
+  is empty when the reload did not recompile, and `last_reload_json()` has
+  the same list as `new_diagnostics`.
   `diagnostics_json()` (`pb_vm_diagnostics_json`) is the same list as data,
   warnings included: `{"errors": 0, "warnings": 1, "items": [{"severity":
   "warning", "message": "...", "file": "game.ptl", "line": 3, "column":

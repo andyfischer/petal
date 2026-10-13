@@ -772,6 +772,13 @@ public:
         if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
         return s;
     }
+    // What the last reload introduced, warnings included by default: print
+    // it after reload() (see pb_vm_new_diagnostics_text). "" when nothing.
+    std::string new_diagnostics_text(bool errors_only = false) {
+        const char* s = pb_vm_new_diagnostics_text(vm_, errors_only);
+        if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
+        return s;
+    }
     // The VM profiler (see pb_vm_set_profiling / pb_vm_profile_report).
     void set_profiling(bool on) { check(pb_vm_set_profiling(vm_, on)); }
     std::string profile_report(size_t top_n = 20) {

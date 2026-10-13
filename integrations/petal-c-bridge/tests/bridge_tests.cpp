@@ -237,6 +237,27 @@ TEST(profiler_reports_functions_and_natives) {
     CHECK(vm.profile_report(10).find("spin") == std::string::npos);
 }
 
+// Profiling can be on before anything is loaded, so the report covers the
+// first run: the boot work a later start would miss.
+TEST(profiler_covers_the_first_run_when_turned_on_before_the_load) {
+    petal::Vm vm;
+    vm.set_profiling(true);
+    vm.load_source(
+        "import io; fn boot(n)\n"
+        "  let acc = 0.0\n"
+        "  for i in range(0, n) do acc = acc + sqrt(float(i)) end\n"
+        "  acc\n"
+        "end\n"
+        "state table = boot(200)\n"
+        "push_output(symbol(\"out\"), table)\n");
+    vm.run();
+    std::string first = vm.profile_report(10);
+    CHECK_CONTAINS(first, "boot");
+    // The initializer does not run again, and the counts are cumulative.
+    vm.run();
+    CHECK_CONTAINS(vm.profile_report(10), "boot");
+}
+
 TEST(restart_starts_state_over_without_recompiling) {
     petal::Vm vm;
     CHECK_THROWS_CODE(vm.restart(), PB_ERR_NOT_LOADED);

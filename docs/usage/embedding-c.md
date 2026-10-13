@@ -856,8 +856,11 @@ with `PB_ERR_COMPILE`, phase `link`, before any line runs.
   opcodes, functions (self instructions and the time in the natives they
   call, as `name file:line`), natives by wall time, collections and the memo
   counters, all since profiling was turned on. Profiling roughly doubles
-  script time, so turn it on after warm-up and read the report once
-  ([../dev/performance.md](../dev/performance.md)).
+  script time, so for steady-state numbers turn it on after warm-up and read
+  the report once ([../dev/performance.md](../dev/performance.md)). To
+  measure boot instead, turn it on before `load_file()`: it may be set on a
+  VM with nothing loaded, and the report then covers the first run, where a
+  game builds its tables and `state` initializers execute.
 - `set_memo(false)` / `memo()` (`pb_vm_set_memo`, `pb_vm_memo`) switch call
   memoization off or on for later runs (on by default, or as `PETAL_POLICY`
   says). Memo replays a call whose inputs repeat, which pays off for UI-like

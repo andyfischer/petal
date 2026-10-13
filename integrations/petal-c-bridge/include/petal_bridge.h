@@ -1086,7 +1086,9 @@ const char* pb_vm_new_diagnostics_text(pb_vm* vm, bool errors_only);
 /* The VM profiler (off by default): instructions per opcode and per function,
  * native calls and the time spent in them, collections. Turning it on clears
  * earlier counts; while on, every run pays a per-instruction hook (roughly 2x
- * slower), so profile a representative stretch rather than a whole session. */
+ * slower), so profile a representative stretch rather than a whole session.
+ * It may be turned on before pb_vm_load_*, and the report then covers the
+ * first run (frame 0: boot). */
 pb_status pb_vm_set_profiling(pb_vm* vm, bool on);
 /* The profile report (text, top `top_n` rows per section) for the loaded
  * program. NULL if nothing is loaded. Valid until the next call to this function. */

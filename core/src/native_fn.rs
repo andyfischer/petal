@@ -564,6 +564,11 @@ struct NativeFnEntry {
     signatures: Vec<NativeSignature>,
 }
 
+fn next_revision() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Registry of native functions, mapping IDs to names and function pointers.
 pub struct NativeFnTable {
     entries: Vec<NativeFnEntry>,
@@ -572,9 +577,13 @@ pub struct NativeFnTable {
     /// must not be a scan of the table (which is ~150 entries deep and answers
     /// with a string compare per entry).
     by_name: HashMap<String, NativeFnId>,
-    /// Bumped by every change to the table: a registration, a class, a
+    /// Renewed by every change to the table: a registration, a class, a
     /// class method, a signature. An answer computed from the table (the
-    /// static classification of a program) is stamped with it.
+    /// static classification of a program) is stamped with it. The numbers
+    /// come from one counter for the whole process, so two tables have the
+    /// same revision only when neither has changed since they were the same
+    /// table (or both are empty): an answer stamped by one `Env` is never
+    /// taken for another's.
     revision: u64,
     /// IDs for higher-order builtins that need evaluator intrinsic dispatch.
     pub intrinsic_map: Option<NativeFnId>,
@@ -633,7 +642,7 @@ impl NativeFnTable {
         }
     }
 
-    /// How many times the table changed (see the field).
+    /// Which state of the table this is (see the field).
     pub fn revision(&self) -> u64 {
         self.revision
     }
@@ -641,7 +650,7 @@ impl NativeFnTable {
     /// Index an already-registered native as the built-in implementation of
     /// `class.method`. See [`NativeFnTable::class_methods`].
     pub fn register_class_method(&mut self, class: &str, method: &str, id: NativeFnId) {
-        self.revision += 1;
+        self.revision = next_revision();
         self.class_methods
             .entry(class.to_string())
             .or_default()
@@ -677,7 +686,7 @@ impl NativeFnTable {
     }
 
     fn insert(&mut self, name: &str, func: NativeImpl, effects: NativeEffects) -> NativeFnId {
-        self.revision += 1;
+        self.revision = next_revision();
         let id = NativeFnId(self.entries.len() as u32);
         self.entries.push(NativeFnEntry {
             name: name.to_string(),
@@ -700,7 +709,7 @@ impl NativeFnTable {
     /// applied afterward by id. The row's `pending` field is updated too, so
     /// the two never disagree.
     pub fn set_class(&mut self, id: NativeFnId, class: NativeClass) {
-        self.revision += 1;
+        self.revision = next_revision();
         let entry = &mut self.entries[id.0 as usize];
         entry.class = class;
         entry.effects.pending = class;
@@ -721,7 +730,7 @@ impl NativeFnTable {
     /// a positional argument list, exactly the one the equivalent positional
     /// call would have passed.
     pub fn declare_params(&mut self, id: NativeFnId, spec: &str) -> Result<(), String> {
-        self.revision += 1;
+        self.revision = next_revision();
         let sig = NativeSignature::parse(spec)?;
         self.entries[id.0 as usize].signatures.push(sig);
         Ok(())
@@ -732,7 +741,7 @@ impl NativeFnTable {
     /// ([`Env::declare_natives`](crate::env::Env::declare_natives)), so
     /// applying the same interface twice is harmless.
     pub fn set_signatures(&mut self, id: NativeFnId, signatures: Vec<NativeSignature>) {
-        self.revision += 1;
+        self.revision = next_revision();
         self.entries[id.0 as usize].signatures = signatures;
     }
 

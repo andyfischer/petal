@@ -135,6 +135,26 @@ fn assert_same_program(a: &mut World, b: &mut World, what: &str) {
     assert_eq!(pa.layout_deps, pb.layout_deps, "[{what}] layout the checks read");
 }
 
+/// The classification a consumer is served for the loaded program (the
+/// lowering, the audit, a tool: what was kept beside the program by the
+/// compile or the first lowering, when it still holds) is exactly the one
+/// worked out from nothing for the program as it is now: every
+/// declaration's class, reasons, readers and positions, every term's class,
+/// every dependency set.
+fn assert_analysis_exact(w: &World, what: &str) {
+    let program = w.env.get_program(w.pid).unwrap();
+    let served = w.env.static_analysis(program);
+    let scratch = w.env.static_analysis_from_scratch(program);
+    if served != scratch {
+        assert_eq!(
+            format!("{:#?}", served.report),
+            format!("{:#?}", scratch.report),
+            "[{what}] the kept classification is not the program's"
+        );
+        panic!("[{what}] the kept classification differs in a term's class or a dependency set");
+    }
+}
+
 struct Case<'a> {
     name: &'a str,
     old: &'a str,
@@ -163,18 +183,51 @@ impl<'a> Case<'a> {
     }
 
     fn check(&self) {
-        for policy in [RunPolicy::FAST, RunPolicy::REPLAY, RunPolicy::BASELINE] {
-            let what = format!("{} / {}", self.name, policy.name().unwrap_or_default());
+        // The fourth round gives both versions a `const`, so the compile
+        // itself classifies the program and keeps the answer for the
+        // lowering: the other way a classification comes to be kept.
+        let with_const = |src: &str| format!("{src}\nconst reload_case_const = [1, 2, 3]\n");
+        let (old_const, new_const) = (with_const(self.old), with_const(self.new));
+        for (policy, constant) in [
+            (RunPolicy::FAST, false),
+            (RunPolicy::REPLAY, false),
+            (RunPolicy::BASELINE, false),
+            (RunPolicy::FAST, true),
+        ] {
+            let what = format!(
+                "{} / {}{}",
+                self.name,
+                policy.name().unwrap_or_default(),
+                if constant { " / const" } else { "" }
+            );
+            let (old, new) = if constant {
+                (old_const.as_str(), new_const.as_str())
+            } else {
+                (self.old, self.new)
+            };
 
             // Incremental side.
-            let mut a = world(self.old, self.old_modules, policy);
+            let mut a = world(old, self.old_modules, policy);
+            assert_analysis_exact(&a, &format!("{what}, before"));
             for (name, source) in self.new_modules {
                 a.env.register_module(name, source);
             }
+            let classified = petal::static_classify::analyses_run();
             let report = a
                 .env
-                .reload_program(a.sid, self.new, None)
+                .reload_program(a.sid, new, None)
                 .unwrap_or_else(|e| panic!("[{what}] reload failed: {e}"));
+            // However the reload was carried out, and whoever asked (the
+            // `const` check, the lowering a followed reload does), the
+            // program was classified at most once; a reload that did not
+            // recompile classified nothing.
+            let classified = petal::static_classify::analyses_run() - classified;
+            if report.outcome == ReloadOutcome::Recompiled {
+                assert!(classified <= 1, "[{what}] classified {classified} times");
+            } else {
+                assert_eq!(classified, 0, "[{what}] an incremental reload classified");
+            }
+            assert_analysis_exact(&a, &format!("{what}, reloaded"));
             assert_eq!(
                 report.outcome, self.expect,
                 "[{what}] took the wrong path ({:?}, fallback {:?})",
@@ -182,13 +235,13 @@ impl<'a> Case<'a> {
             );
 
             // Full side.
-            let mut b = world(self.old, self.old_modules, policy);
+            let mut b = world(old, self.old_modules, policy);
             for (name, source) in self.new_modules {
                 b.env.register_module(name, source);
             }
             let program = b
                 .env
-                .compile_program(b.pid, self.new)
+                .compile_program(b.pid, new)
                 .unwrap_or_else(|e| panic!("[{what}] new source: {e}"));
             let transfer = b.env.transfer_state(b.sid, program).unwrap();
             if report.outcome != ReloadOutcome::Relocated && report.outcome != ReloadOutcome::Unchanged {
@@ -211,6 +264,14 @@ impl<'a> Case<'a> {
                 assert_same_slots(&a, &b, &what);
             }
             assert_same_program(&mut a, &mut b, &format!("{what}, after running"));
+            assert_analysis_exact(&a, &format!("{what}, after running"));
+            assert_analysis_exact(&b, &format!("{what}, after running (recompiled)"));
+            // Both sides were served the same classification as well.
+            let (pa, pb) = (a.env.get_program(a.pid).unwrap(), b.env.get_program(b.pid).unwrap());
+            assert!(
+                a.env.static_analysis(pa) == b.env.static_analysis(pb),
+                "[{what}] the reload and the recompile classify the program differently"
+            );
         }
     }
 }
@@ -1006,7 +1067,7 @@ fn in_a_program_of_several_files_only_the_edited_file_is_parsed() {
     let entry = "import cfg\nimport mover\nstate x = 0\nx = mover.step(x)\nprint(x)\n";
     let mut w = world(entry, &[("cfg", cfg), ("mover", mover)], RunPolicy::FAST);
     assert_eq!(w.env.reload_parses_kept().0, 0, "nothing is parsed for a reload until one happens");
-    let mut reload = |w: &mut World, cfg: &str, mover: &str, entry: &str| {
+    let reload = |w: &mut World, cfg: &str, mover: &str, entry: &str| {
         w.env.register_module("cfg", cfg);
         w.env.register_module("mover", mover);
         parses(|| w.env.reload_program(w.sid, entry, None).unwrap().outcome)
@@ -1098,6 +1159,108 @@ fn reloads_through_kept_parses_equal_reloads_that_parse_everything() {
             }
         }
     }
+}
+
+// ── How often a program is classified ────────────────────────────────────
+
+/// The static classification is the most expensive thing a recompile does
+/// besides compiling and lowering. A program is classified once, whoever
+/// asks: the `const` check, the lowering, the audit, a report. A reload that
+/// does not recompile classifies nothing.
+#[test]
+fn a_program_is_classified_once_however_many_ask() {
+    use petal::static_audit::StaticAuditMode;
+    let count = petal::static_classify::analyses_run;
+    let plain = "let T = [[1, 2], [3, 4]]\nconfig let K = 3\nfn f(x)\n  x + K\nend\nstate n = 0\nn += f(1)\nprint(n, T)\n";
+    let constant = plain.replace("let T", "const T");
+    for (src, what) in [(plain, "let"), (constant.as_str(), "const")] {
+        for audit in [false, true] {
+            let what = format!("{what}, audit {audit}");
+            let before = count();
+            let mut env = Env::new();
+            env.set_policy(RunPolicy::FAST);
+            env.set_echo(false);
+            if audit {
+                env.set_static_audit(StaticAuditMode::Watch);
+            }
+            let pid = env.load_program(src).unwrap();
+            let sid = env.create_stack(pid).unwrap();
+            let mut w = World { env, pid, sid };
+            frame(&mut w);
+            frame(&mut w);
+            assert_eq!(count() - before, 1, "[{what}] the first load");
+            // A tool that asks is served the same one.
+            let report = w.env.static_report(w.env.get_program(w.pid).unwrap());
+            assert!(report.get("T").is_some());
+            assert_eq!(count() - before, 1, "[{what}] a report after the load");
+
+            // A recompile: once more, for the check, the lowering, the
+            // followed reload and the audit together.
+            let before = count();
+            let report = w.env.reload_program(w.sid, &src.replace("x + K", "x * K"), None).unwrap();
+            assert_eq!(report.outcome, Recompiled);
+            frame(&mut w);
+            w.env.static_report(w.env.get_program(w.pid).unwrap());
+            assert_eq!(count() - before, 1, "[{what}] a recompile");
+
+            // A value edit and a layout edit: nothing.
+            let before = count();
+            let text = src.replace("x + K", "x * K").replace("K = 3", "K = 4");
+            assert_eq!(w.env.reload_program(w.sid, &text, None).unwrap().outcome, Patched);
+            frame(&mut w);
+            assert_eq!(w.env.reload_program(w.sid, &format!("// c\n{text}"), None).unwrap().outcome, Relocated);
+            frame(&mut w);
+            assert_eq!(count() - before, 0, "[{what}] incremental reloads");
+            // The kept answer named the old lines, so it is gone: a tool
+            // that asks now is told about the text as it is.
+            let program = w.env.get_program(w.pid).unwrap();
+            let report = w.env.static_report(program);
+            assert_eq!(report.get("T").and_then(|d| d.line), Some(2), "[{what}]");
+            assert_analysis_exact(&w, &what);
+        }
+    }
+    // With no cache, no audit and no `const`, nobody asks.
+    let before = count();
+    let mut w = world(plain, &[], RunPolicy::BASELINE);
+    w.env.reload_program(w.sid, &plain.replace("x + K", "x * K"), None).unwrap();
+    frame(&mut w);
+    assert_eq!(count() - before, 0);
+}
+
+/// A classification is an answer about one `Env`'s natives. Kept beside a
+/// program, it is not served to an `Env` whose natives are different, nor
+/// after this one's have changed.
+#[test]
+fn a_kept_classification_is_only_served_for_the_natives_it_was_made_with() {
+    use petal::native_fn::{NativeEffects, NativeResult, PetalCxt};
+    fn two(cxt: &mut PetalCxt) -> NativeResult {
+        cxt.push_value(petal::value::Value::Int(2));
+        Ok(1)
+    }
+    let src = "native fn host_two()\nlet T = [host_two(), 3]\nstate n = 0\nn += 1\nprint(n, T)\n";
+    let class = |env: &Env, pid: ProgramId| {
+        let program = env.get_program(pid).unwrap();
+        (env.static_report(program).get("T").unwrap().class, env.static_analysis(program) == env.static_analysis_from_scratch(program))
+    };
+    let mut a = Env::new();
+    a.set_policy(RunPolicy::FAST);
+    a.set_echo(false);
+    a.register_native("host_two", two, NativeEffects::PURE);
+    let pid = a.load_program(src).unwrap();
+    let sid = a.create_stack(pid).unwrap();
+    a.run(sid).unwrap();
+    assert_eq!(class(&a, pid), (petal::static_classify::DeclClass::Dynamic, true));
+    // Another `Env`, with as many registrations, where the native is constant.
+    let mut b = Env::new();
+    b.set_policy(RunPolicy::FAST);
+    b.set_echo(false);
+    b.register_native("host_two", two, NativeEffects::CONST);
+    let program = a.get_program(pid).unwrap();
+    assert_eq!(b.static_report(program).get("T").unwrap().class, petal::static_classify::DeclClass::Static);
+    assert_eq!(a.static_report(program).get("T").unwrap().class, petal::static_classify::DeclClass::Dynamic);
+    // And this one's natives changing.
+    a.register_native("another", two, NativeEffects::CONST);
+    assert_eq!(class(&a, pid), (petal::static_classify::DeclClass::Dynamic, true));
 }
 
 // ── A corpus of real programs ────────────────────────────────────────────
@@ -1197,6 +1360,7 @@ fn sweep_one(path: &std::path::Path, old: &str, new: &str) -> Option<ReloadOutco
     };
     b.env.transfer_state(b.sid, program).unwrap();
     assert_same_program(&mut a, &mut b, &what);
+    assert_analysis_exact(&a, &what);
     if runs {
         // The incremental side kept the static values the edit cannot have
         // changed; the full side rebuilds every one. Same frames, same table.
@@ -1206,6 +1370,8 @@ fn sweep_one(path: &std::path::Path, old: &str, new: &str) -> Option<ReloadOutco
         frame(&mut a);
         frame(&mut b);
         assert_same_slots(&a, &b, &what);
+        assert_analysis_exact(&a, &format!("{what}, after running"));
+        assert_analysis_exact(&b, &format!("{what}, after running (recompiled)"));
     }
     if report.outcome == Recompiled && std::env::var("PETAL_RELOAD_VERBOSE").is_ok() {
         eprintln!("recompiled {what}: {} ({:?})", report.change.label(), report.fallback);

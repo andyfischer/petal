@@ -425,6 +425,13 @@ impl Env {
         if self.bytecode.get(&pid).map(|(f, _)| *f) == Some(flags) {
             return Ok(());
         }
+        // The lowering and the audit both read the static classification:
+        // work it out once, here, and leave it beside the program for them
+        // and for whoever asks next (`static_classify::analyze_kept`). A
+        // compile that checked a `const` has already left it.
+        if flags.static_cache || self.static_audit.enabled {
+            self.keep_static_analysis(pid);
+        }
         let program = self.programs.get(&pid).ok_or("Program not found")?;
         self.lower_count.set(self.lower_count.get() + 1);
         let mut bc = self.lower_with(program, flags)?;
@@ -440,6 +447,25 @@ impl Env {
         }
         self.bytecode.insert(pid, (flags, bc));
         Ok(())
+    }
+
+    /// Classify `pid`'s program unless the classification kept beside it
+    /// still holds (same natives, same term graph), and keep the answer
+    /// there ([`Program::static_analysis`]).
+    fn keep_static_analysis(&mut self, pid: ProgramId) {
+        let Some(program) = self.programs.get(&pid) else { return };
+        let held = program
+            .static_analysis
+            .as_ref()
+            .is_some_and(|k| k.get(program, &self.native_fns).is_some());
+        if held {
+            return;
+        }
+        let analysis = crate::static_classify::analyze(program, &self.native_fns);
+        let kept = crate::static_classify::KeptAnalysis::new(program, &self.native_fns, analysis);
+        if let Some(program) = self.programs.get_mut(&pid) {
+            program.static_analysis = Some(kept);
+        }
     }
 
     /// How much front-end and lowering work this env has done since it was
@@ -1511,7 +1537,11 @@ impl Env {
     /// Get a mutable reference to a loaded program — for a tool that adds
     /// diagnostics of its own after the compile (`petal check`).
     pub fn get_program_mut(&mut self, id: ProgramId) -> Option<&mut Program> {
-        self.programs.get_mut(&id)
+        let program = self.programs.get_mut(&id)?;
+        // Whatever the caller changes, the classification kept beside the
+        // program was of what it was before.
+        program.static_analysis = None;
+        Some(program)
     }
 
     /// Reset a stack to re-run while keeping state
@@ -1729,13 +1759,30 @@ impl Env {
     ///
     /// `program` should be one this `Env` compiled (or one compiled against
     /// the same natives): a native this `Env` does not register is dynamic.
+    ///
+    /// Served from the classification kept beside the program when the
+    /// compile or the lowering left one that still holds; the classifier
+    /// runs otherwise.
     pub fn static_report(&self, program: &Program) -> crate::static_classify::StaticReport {
-        crate::static_classify::classify(program, &self.native_fns)
+        match crate::static_classify::analyze_kept(program, &self.native_fns) {
+            std::borrow::Cow::Borrowed(kept) => kept.report.clone(),
+            std::borrow::Cow::Owned(analysis) => analysis.report,
+        }
     }
 
     /// [`static_report`](Self::static_report), keeping the class of every
     /// term for a caller that walks the graph.
     pub fn static_analysis(&self, program: &Program) -> crate::static_classify::StaticAnalysis {
+        crate::static_classify::analyze_kept(program, &self.native_fns).into_owned()
+    }
+
+    /// [`static_analysis`](Self::static_analysis) worked out from nothing,
+    /// whatever is kept beside the program: what the kept one is tested
+    /// against.
+    pub fn static_analysis_from_scratch(
+        &self,
+        program: &Program,
+    ) -> crate::static_classify::StaticAnalysis {
         crate::static_classify::analyze(program, &self.native_fns)
     }
 

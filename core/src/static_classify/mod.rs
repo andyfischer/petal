@@ -68,7 +68,13 @@
 //! the graph and the names the compiler wrote into it (builtin, method, field
 //! and enum names), so a literal-only edit cannot change any answer here.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::BTreeSet;
+
+/// The pass's own tables are keyed by term, block and function ids and are
+/// asked several times per term: hashed with the VM's fast hasher, not
+/// SipHash. Nothing reads one in iteration order where the order could show.
+type HashMap<K, V> = std::collections::HashMap<K, V, crate::fxhash::FxBuildHasher>;
+type HashSet<K> = std::collections::HashSet<K, crate::fxhash::FxBuildHasher>;
 
 use serde::Serialize;
 use smallvec::SmallVec;
@@ -332,7 +338,7 @@ pub struct Reader {
 }
 
 /// What the classifier concluded about one top-level declaration.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StaticDecl {
     /// The declared name, unqualified (`TILES`, `Point.len2`).
     pub name: String,
@@ -419,7 +425,7 @@ pub struct StaticSummary {
 
 /// The classifier's answer for a program: one entry per top-level declaration
 /// of every module, in file then source order.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StaticReport {
     pub declarations: Vec<StaticDecl>,
 }
@@ -614,7 +620,11 @@ fn readers_text(d: &StaticDecl) -> String {
 
 /// The whole analysis: the report, plus the class of every term for a caller
 /// that needs to walk the graph (a later stage's lowering).
-#[derive(Clone)]
+///
+/// Two analyses are equal when they say the same of every declaration
+/// (reasons, readers and positions included), of every term, and of what
+/// every top-level term depends on.
+#[derive(Clone, PartialEq)]
 pub struct StaticAnalysis {
     pub report: StaticReport,
     classes: Vec<TermClass>,
@@ -624,7 +634,7 @@ pub struct StaticAnalysis {
 
 /// The dependency sets of top-level terms, as indices into
 /// [`StaticReport::declarations`].
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 struct RootDeps {
     /// A term that binds a declaration (or publishes an enum's data) -> that
     /// declaration.
@@ -694,8 +704,31 @@ pub fn analyses_run() -> u64 {
 /// An analysis kept beside the program it is of
 /// ([`Program::static_analysis`]), with what it was computed from: the
 /// native table's revision (a registration can change what is constant) and
-/// the size of the term graph. A literal patched in place leaves it valid,
-/// since the classification never reads a literal's value.
+/// the size of the term graph.
+///
+/// It is left by the compile's `const` check when there is a `const`, and
+/// otherwise by the first lowering that needs it, so a program is classified
+/// once however many of the check, the lowering, the audit and a tool ask.
+/// It is dropped by whatever changes the program in place: a reload that
+/// moves positions or patches literals (the classes would still hold, since
+/// the classification never reads a literal's value, but the report's lines
+/// and columns would not), and `Env::get_program_mut`. A recompile makes a
+/// new program, which starts with none.
+///
+/// # Why a recompile classifies from nothing
+///
+/// Serving part of the previous program's analysis to the next one was
+/// looked at and not done. The classes are a fixed point over the whole
+/// term graph, reached from above: starting the solver from the previous
+/// answer is sound only for an edit that makes things more dynamic, never
+/// for one that makes something static again, and telling the two apart
+/// needs every cross-declaration read the transfer function makes (callee
+/// summaries, captures, cells, method dispatch, enum data) as an explicit
+/// dependency graph. The reason a term is dynamic is the first one the
+/// solver met, so even a correct restart could word a reason differently
+/// from a classification from nothing. And a recompile renumbers every
+/// term after the edit. The pass was made cheaper instead (about a third
+/// off), and runs once.
 #[derive(Clone)]
 pub struct KeptAnalysis {
     natives: u64,
@@ -792,6 +825,15 @@ struct Group {
     enum_calls: Vec<TermId>,
 }
 
+/// Which terms and functions the current walk has visited: an entry equal
+/// to `walk` is visited.
+#[derive(Default)]
+struct Marks {
+    walk: u32,
+    terms: Vec<u32>,
+    fns: Vec<u32>,
+}
+
 struct Pass<'a> {
     p: &'a Program,
     natives: &'a NativeFnTable,
@@ -814,6 +856,10 @@ struct Pass<'a> {
     phi_srcs: HashMap<TermId, Vec<(TermId, Option<TermId>)>>,
     /// Match term -> its guard blocks.
     guards: HashMap<TermId, Vec<BlockId>>,
+    /// Term id -> index into `block_lists` (`u32::MAX`: the term runs no
+    /// block). Empty when terms are not stored by id.
+    term_blocks: Vec<u32>,
+    block_lists: Vec<SmallVec<[BlockId; 4]>>,
     /// `MakeClosure` term -> the overload sets it is a member of.
     sets_of: HashMap<TermId, Vec<TermId>>,
     /// `Return` terms per function.
@@ -844,6 +890,12 @@ struct Pass<'a> {
     /// The class of what a function returns.
     fn_ret: Vec<Class>,
 
+    /// Builtin name -> the native registered under it, for every name a
+    /// `BuiltinCall` of the program carries.
+    native_of: HashMap<ConstantId, Option<NativeFnId>>,
+    /// Scratch for the walks that build dependency sets.
+    marks: std::cell::RefCell<Marks>,
+
     /// Take a native nothing registered, and a method name nothing defines,
     /// to be constant: the most static any host could make this program.
     /// Only the second look at a failed `const` sets it (see [`analyze`]).
@@ -870,22 +922,26 @@ impl<'a> Pass<'a> {
             parent: vec![None; nblocks],
             block_phantoms: vec![Vec::new(); nblocks],
             sites: vec![Vec::new(); nfns],
-            phi_srcs: HashMap::new(),
-            guards: HashMap::new(),
-            sets_of: HashMap::new(),
+            phi_srcs: HashMap::default(),
+            guards: HashMap::default(),
+            term_blocks: Vec::new(),
+            block_lists: Vec::new(),
+            sets_of: HashMap::default(),
             returns: vec![Vec::new(); nfns],
-            fn_cells: HashMap::new(),
-            root_pos: HashMap::new(),
-            reassigned: HashMap::new(),
-            dispatch: p.dispatch_targets(),
-            class_natives: HashMap::new(),
-            enum_keys: HashMap::new(),
-            declared_enum_keys: HashSet::new(),
+            fn_cells: HashMap::default(),
+            root_pos: HashMap::default(),
+            reassigned: HashMap::default(),
+            dispatch: p.dispatch_targets().into_iter().collect(),
+            class_natives: HashMap::default(),
+            enum_keys: HashMap::default(),
+            declared_enum_keys: HashSet::default(),
             groups: Vec::new(),
-            group_of: HashMap::new(),
-            state_groups: HashMap::new(),
+            group_of: HashMap::default(),
+            state_groups: HashMap::default(),
             fn_dyn: vec![None; nfns],
             fn_ret: vec![Class::Top; nfns],
+            native_of: HashMap::default(),
+            marks: Default::default(),
             assume_missing_const: false,
         };
         pass.index_structure();
@@ -915,7 +971,18 @@ impl<'a> Pass<'a> {
 
     /// Every block a control term runs: its child blocks and, for a match,
     /// its arms' guard and body blocks.
+    /// The blocks a term runs: its child blocks, and for a match its guard
+    /// and arm blocks. Read from the table [`index_structure`](Self::index_structure)
+    /// fills, since the solver asks once per term per round.
     fn blocks_of(&self, term: &Term) -> SmallVec<[BlockId; 4]> {
+        match self.term_blocks.get(term.id.0 as usize) {
+            Some(&u32::MAX) => SmallVec::new(),
+            Some(&at) => self.block_lists[at as usize].clone(),
+            None => self.compute_blocks_of(term),
+        }
+    }
+
+    fn compute_blocks_of(&self, term: &Term) -> SmallVec<[BlockId; 4]> {
         // Nearly every term runs no block at all.
         if term.child_blocks.is_empty() && !matches!(term.op, TermOp::Match) {
             return SmallVec::new();
@@ -945,6 +1012,18 @@ impl<'a> Pass<'a> {
             if !gs.is_empty() {
                 self.guards.insert(*term_id, gs);
             }
+        }
+        // Terms are stored by id, which is what the table is indexed by.
+        if p.terms.iter().enumerate().all(|(i, t)| t.id.0 as usize == i) {
+            let mut table = vec![u32::MAX; p.terms.len()];
+            for term in &p.terms {
+                let blocks = self.compute_blocks_of(term);
+                if !blocks.is_empty() {
+                    table[term.id.0 as usize] = self.block_lists.len() as u32;
+                    self.block_lists.push(blocks);
+                }
+            }
+            self.term_blocks = table;
         }
         for block in &p.blocks {
             self.parent[block.id.0 as usize] = block.parent_term_id;
@@ -1034,6 +1113,15 @@ impl<'a> Pass<'a> {
             }
         }
 
+        for term in &p.terms {
+            if let TermOp::BuiltinCall(c) = term.op
+                && !self.native_of.contains_key(&c)
+            {
+                let found = self.natives.lookup_name(self.string(c));
+                self.native_of.insert(c, found);
+            }
+        }
+
         for def in p.enums.values() {
             for v in &def.variants {
                 self.declared_enum_keys.extend(v.data.iter().cloned());
@@ -1106,7 +1194,7 @@ impl<'a> Pass<'a> {
     fn index_groups(&mut self) {
         let p = self.p;
         let root = self.block(p.root_block);
-        let mut by_key: HashMap<(FileId, String), usize> = HashMap::new();
+        let mut by_key: HashMap<(FileId, String), usize> = HashMap::default();
         // A term's file is its position's. One with no position anywhere
         // near (a merged overload set) belongs to the file being compiled
         // around it: the modules are emitted one after another.
@@ -1193,7 +1281,7 @@ impl<'a> Pass<'a> {
 
         // Enums: declared by a root-block binding phantom that computes
         // nothing; their constant data is published by `__enum_data`.
-        let mut enum_group: HashMap<&str, usize> = HashMap::new();
+        let mut enum_group: HashMap<&str, usize> = HashMap::default();
         for term in &p.terms {
             if term.block_id != p.root_block || !Self::is_phantom(term) {
                 continue;
@@ -1271,6 +1359,11 @@ impl<'a> Pass<'a> {
         let mut changed = false;
         let phantoms = std::mem::take(&mut self.block_phantoms[b.0 as usize]);
         for &t in &phantoms {
+            // Dynamic is final (`set` would not move it), so there is
+            // nothing to compute.
+            if self.class[t.0 as usize].is_dynamic() {
+                continue;
+            }
             let c = self.phantom_class(t);
             changed |= self.set(t, c);
         }
@@ -1280,6 +1373,9 @@ impl<'a> Pass<'a> {
             let term = self.p.get_term(t);
             for child in self.blocks_of(term) {
                 changed |= self.eval_block(child);
+            }
+            if self.class[t.0 as usize].is_dynamic() {
+                continue;
             }
             let c = self.transfer(term);
             changed |= self.set(t, c);
@@ -1644,7 +1740,11 @@ impl<'a> Pass<'a> {
                 if let Some(&a) = inputs.iter().find(|a| self.cls(**a).is_dynamic()) {
                     return Class::Dynamic(Why::Input(a));
                 }
-                match self.natives.lookup_name(name) {
+                let native = match self.native_of.get(name_c) {
+                    Some(found) => *found,
+                    None => self.natives.lookup_name(name),
+                };
+                match native {
                     Some(id) => self.native_call(id, inputs),
                     // What a `CONST` native that takes no callback would be.
                     None if self.assume_missing_const => {
@@ -2032,7 +2132,7 @@ impl<'a> Pass<'a> {
         let mut steps = Vec::new();
         let mut subject = subject.to_string();
         let mut cur = start;
-        let mut seen: HashSet<TermId> = HashSet::new();
+        let mut seen: HashSet<TermId> = HashSet::default();
         // The nearest term on the way down that has a source position, for a
         // link whose own term has none.
         let mut at = start;
@@ -2248,8 +2348,14 @@ impl<'a> Pass<'a> {
     ) -> BTreeSet<usize> {
         let p = self.p;
         let mut deps: BTreeSet<usize> = BTreeSet::new();
-        let mut seen: HashSet<TermId> = HashSet::new();
-        let mut seen_fns: HashSet<usize> = HashSet::new();
+        // "Seen in this walk": a mark per term and per function, kept
+        // between walks and told apart by the walk's number.
+        let mut marks = self.marks.borrow_mut();
+        let Marks { walk, terms: seen, fns: seen_fns } = &mut *marks;
+        *walk += 1;
+        let walk = *walk;
+        seen.resize(p.terms.len(), 0);
+        seen_fns.resize(p.functions.len(), 0);
         // A reference to `t` from inside this group: another declaration is a
         // dependency and is not walked into; anything else is part of this
         // one's own expression.
@@ -2269,8 +2375,10 @@ impl<'a> Pass<'a> {
             }
         };
         while let Some(t) = stack.pop() {
-            if !seen.insert(t) {
-                continue;
+            match seen.get_mut(t.0 as usize) {
+                Some(mark) if *mark == walk => continue,
+                Some(mark) => *mark = walk,
+                None => continue,
             }
             let term = p.get_term(t);
             for &i in &term.inputs {
@@ -2282,8 +2390,9 @@ impl<'a> Pass<'a> {
             match &term.op {
                 TermOp::MakeClosure(fid) => {
                     if let Some(&fi) = self.fn_index.get(fid)
-                        && seen_fns.insert(fi)
+                        && seen_fns[fi] != walk
                     {
+                        seen_fns[fi] = walk;
                         // The body's block tree; its child blocks are reached
                         // through the control terms that own them.
                         stack.extend(&self.block(self.func(fi).body_block).terms);
@@ -2421,15 +2530,35 @@ impl<'a> Pass<'a> {
     /// its value is handed to an operation that may update it in place.
     fn readers(&self, classes: &[DeclClass]) -> Vec<(Vec<Reader>, Option<ReasonStep>)> {
         let p = self.p;
-        let mut users: HashMap<TermId, Vec<TermId>> = HashMap::new();
+        // Who reads each term, in term order: one flat list and where each
+        // term's stretch of it starts.
+        let n = p.terms.len();
+        let mut start = vec![0u32; n + 1];
         for term in &p.terms {
             for &i in &term.inputs {
-                users.entry(i).or_default().push(term.id);
+                start[i.0 as usize + 1] += 1;
             }
         }
+        for i in 0..n {
+            start[i + 1] += start[i];
+        }
+        let mut fill = start.clone();
+        let mut flat = vec![TermId(0); start[n] as usize];
+        for term in &p.terms {
+            for &i in &term.inputs {
+                flat[fill[i.0 as usize] as usize] = term.id;
+                fill[i.0 as usize] += 1;
+            }
+        }
+        drop(fill);
+        let users_of = |t: TermId| -> &[TermId] {
+            &flat[start[t.0 as usize] as usize..start[t.0 as usize + 1] as usize]
+        };
+        // "Seen by the walk for group `gi`" is `seen[t] == gi + 1`.
+        let mut seen = vec![0u32; n];
         // Which declaration's initializer each unnamed root-block term is
         // part of: walk back from every definition through unnamed terms.
-        let mut root_owner: HashMap<TermId, usize> = HashMap::new();
+        let mut root_owner: HashMap<TermId, usize> = HashMap::default();
         for (gi, g) in self.groups.iter().enumerate() {
             let mut stack: Vec<TermId> = g.defs.iter().chain(&g.enum_calls).copied().collect();
             for &c in &g.enum_calls {
@@ -2462,7 +2591,7 @@ impl<'a> Pass<'a> {
                     readers.push(r);
                 }
             };
-            let mut seen: HashSet<TermId> = HashSet::new();
+            let walk = gi as u32 + 1;
             let mut stack: Vec<TermId> = g.defs.clone();
             // Everything that carries the same value under another name: a
             // copy (named or not) or a phi it seeds. The container operand
@@ -2472,7 +2601,7 @@ impl<'a> Pass<'a> {
             let mut aliases: Vec<TermId> = g.defs.clone();
             let mut alias_seen: HashSet<TermId> = g.defs.iter().copied().collect();
             while let Some(t) = aliases.pop() {
-                for &u in users.get(&t).map(|v| &v[..]).unwrap_or(&[]) {
+                for &u in users_of(t) {
                     let user = p.get_term(u);
                     if user.inputs.first() == Some(&t)
                         && let Some(what) = self.mutation_name(user)
@@ -2492,12 +2621,13 @@ impl<'a> Pass<'a> {
                 }
             }
             while let Some(t) = stack.pop() {
-                for &u in users.get(&t).map(|v| &v[..]).unwrap_or(&[]) {
+                for &u in users_of(t) {
                     let user = p.get_term(u);
-                    if !seen.insert(u) {
+                    if seen[u.0 as usize] == walk {
                         continue;
                     }
-                    let line = self.loc(u).map(|l| l.1);
+                    seen[u.0 as usize] = walk;
+                    let line = self.span(u).map(|s| s.start.line);
                     // An unnamed copy is the reference itself; what reads the
                     // declaration is whatever reads the copy.
                     if matches!(user.op, TermOp::Copy) && !self.group_of.contains_key(&u) {
@@ -2700,9 +2830,9 @@ impl<'a> Pass<'a> {
             out.into()
         };
         let mut roots = RootDeps {
-            owner: HashMap::new(),
+            owner: HashMap::default(),
             closed: vec![Box::default(); decls.len()],
-            unnamed: HashMap::new(),
+            unnamed: HashMap::default(),
         };
         for (gi, g) in self.groups.iter().enumerate() {
             if at[gi] == u32::MAX {

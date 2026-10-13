@@ -452,6 +452,11 @@ impl Env {
         }
         // What `fn_info` / `fn_ast` cached was read from the old text.
         program.introspect.clear();
+        // The classification kept beside the program names lines and
+        // columns of the old text. Nothing here needs it again (a patch
+        // lowers nothing); whoever asks next classifies the program as it
+        // is now.
+        program.static_analysis = None;
         for (i, warning) in patch.warnings {
             program.warnings[i] = warning;
         }

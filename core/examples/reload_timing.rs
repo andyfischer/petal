@@ -83,6 +83,18 @@ fn main() {
         lower.as_secs_f64() * 1e3
     );
 
+    // The static classification alone, worked out from nothing: what a
+    // recompile pays once for the static-value cache (and nothing when the
+    // cache, the audit and `const` are all absent).
+    let classify = (0..5)
+        .map(|_| {
+            let t = Instant::now();
+            std::hint::black_box(env.static_analysis_from_scratch(program));
+            t.elapsed().as_secs_f64() * 1e3
+        })
+        .fold(f64::MAX, f64::min);
+    println!("static classification alone: {classify:.2} ms (min of 5)");
+
     // Make `text` the edited file's contents, without writing it.
     let reload = |env: &mut Env, text: &str| -> (ReloadOutcome, f64) {
         if !edits_entry {

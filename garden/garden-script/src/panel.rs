@@ -5857,11 +5857,35 @@ mod static_value_tests {
         out
     }
 
-    /// A host for `path` as Garden makes one, with every frame run and
-    /// nothing persisted, and the static-value cache on or off.
-    fn open(path: &Path, cache: bool) -> PanelHost {
+    /// A [`PanelHost`] with the directory its store is written to, which
+    /// goes when the host does.
+    struct Opened {
+        host: PanelHost,
+        _store: tempfile::TempDir,
+    }
+
+    impl std::ops::Deref for Opened {
+        type Target = PanelHost;
+        fn deref(&self) -> &PanelHost {
+            &self.host
+        }
+    }
+
+    impl std::ops::DerefMut for Opened {
+        fn deref_mut(&mut self) -> &mut PanelHost {
+            &mut self.host
+        }
+    }
+
+    /// A host for `path` as Garden makes one, with every frame run, the
+    /// static-value cache on or off, and a store of its own that starts
+    /// empty: a panel that persists something (`shapes.ptl` counts its
+    /// runs) must find a store, as it does in Garden, and must not find
+    /// what an earlier run of the tests left in the user's.
+    fn open(path: &Path, cache: bool) -> Opened {
         let mut host = PanelHost::load(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        host.store = None;
+        let dir = tempfile::tempdir().unwrap();
+        host.store = Some(crate::panel_store::PanelStore::at_path(dir.path().join("store.json")));
         host.set_frame_gating(false);
         host.set_dimensions(800, 600);
         host.core.env.set_echo(false);
@@ -5869,7 +5893,13 @@ mod static_value_tests {
         // Two hosts must read the same `time()`: frame by frame, from zero.
         host.use_virtual_clock_from(0.0);
         host.core.env.set_static_cache(cache);
-        host
+        Opened { host, _store: dir }
+    }
+
+    /// The scripts of `gpp-test-app` that exist to raise: they put a pane
+    /// into its error card.
+    fn raises_on_purpose(path: &Path) -> bool {
+        path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("runtime_error"))
     }
 
     /// What one frame gave: its commands or its error, what a Garden
@@ -5896,6 +5926,15 @@ mod static_value_tests {
             for n in 0..12 {
                 let (a, b) = (frame(&mut on, n), frame(&mut off, n));
                 assert!(a == b, "{}: frame {n} differs with static values kept\n on: {a}\noff: {b}", path.display());
+                // A panel that raises here and not in Garden is run by a
+                // host that is missing something Garden's has, and compares
+                // one error with another instead of what it draws.
+                assert!(
+                    raises_on_purpose(path) == a.starts_with("error"),
+                    "{}: frame {n} {}\n{a}",
+                    path.display(),
+                    if raises_on_purpose(path) { "did not raise" } else { "raised" }
+                );
                 drew += (n == 11 && !a.starts_with("error") && !a.starts_with("[]")) as usize;
             }
             assert!(on.core.env.static_cache_enabled(), "{}: observing leaves the cache on", path.display());

@@ -527,11 +527,9 @@ impl<'a> Vm<'a> {
         if self.stack.vm_frames.len() >= super::MAX_CALL_DEPTH {
             return Err(super::stack_overflow_message(super::MAX_CALL_DEPTH));
         }
-        let bc = self.bc;
         let program = self.program;
         let fn_id = self.closures.closure(cid).function_id;
 
-        let bcfn = bc.function(fn_id);
         let func = &program.functions[fn_id.0 as usize];
         // An overload variant is named `box#1` internally; every message below
         // names the function as the source wrote it, like `resolve_overload`.
@@ -637,6 +635,58 @@ impl<'a> Vm<'a> {
                 return Ok(());
             }
         }
+        self.enter_closure_frame(cid, fn_id, args, dst, call_site, site, scope);
+        Ok(())
+    }
+
+    /// A host call with some arguments given by name
+    /// (`Env::call_function_named`): [`push_closure_frame`](Self::push_closure_frame)
+    /// for a synchronous call — no destination register, no memo scope — with
+    /// the names as strings, since a host's names are not constants of the
+    /// program. The checks and the binder are the same ones.
+    pub(super) fn push_named_frame(
+        &mut self,
+        cid: ClosureId,
+        args: &[Value],
+        names: &[Option<&str>],
+        site: u64,
+    ) -> Result<(), String> {
+        if self.stack.vm_frames.len() >= super::MAX_CALL_DEPTH {
+            return Err(super::stack_overflow_message(super::MAX_CALL_DEPTH));
+        }
+        let fn_id = self.closures.closure(cid).function_id;
+        let func = &self.program.functions[fn_id.0 as usize];
+        let fn_name = base_fn_name(func.name.as_deref().unwrap_or("<anonymous>"));
+        let optional = func.optional_params as usize;
+        if args.len() > func.params.len() {
+            return Err(format!(
+                "{}() expects {} argument{}, got {}",
+                fn_name,
+                calls::arity_range(func.required_params(), func.params.len()),
+                if func.params.len() == 1 { "" } else { "s" },
+                args.len()
+            ));
+        }
+        let bound = calls::bind_named_args(fn_name, &func.params, optional, args, names)?;
+        self.enter_closure_frame(cid, fn_id, &bound, None, None, site, false);
+        Ok(())
+    }
+
+    /// Push the frame of closure `cid` with `args` already laid out as its
+    /// frame takes them (see `calls::bind_named_args`), and open its memo
+    /// scope when `scope` is set.
+    #[inline(always)]
+    fn enter_closure_frame(
+        &mut self,
+        cid: ClosureId,
+        fn_id: FunctionId,
+        args: &[Value],
+        dst: Option<Reg>,
+        call_site: Option<TermId>,
+        site: u64,
+        scope: bool,
+    ) {
+        let bcfn = self.bc.function(fn_id);
         self.profile.record_call();
         let fi = self.push_frame(Some(fn_id), bcfn.reg_count, dst, call_site, Some(site));
         let frame = &mut self.stack.vm_frames[fi];
@@ -663,7 +713,6 @@ impl<'a> Vm<'a> {
         // Last, so argument binding and the memo bookkeeping stay outside the
         // interval a benched call is timed over.
         self.bench_enter(fn_id, fi);
-        Ok(())
     }
 }
 

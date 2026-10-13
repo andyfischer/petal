@@ -413,6 +413,26 @@ impl Env {
         name: &str,
         args: &[Value],
     ) -> Result<Value, crate::error::CallError> {
+        self.call_function_named(stack_id, name, args, &[])
+    }
+
+    /// [`call_function_diag`](Self::call_function_diag) with some arguments
+    /// given by parameter name, which is how a host calls a function with a
+    /// record of arguments (a JSON object from a tool call, say).
+    ///
+    /// `arg_names` is parallel to `args` — `None` for a positional argument,
+    /// and every positional one before every named one, as in a written call
+    /// `f(1, y: 2)` — or empty when nothing is named. Binding is the
+    /// language's own: a parameter with a default may be left out, and an
+    /// unknown name, a parameter given twice or a required one missing is a
+    /// [`Runtime`](crate::error::CallError::Runtime) error naming it.
+    pub fn call_function_named(
+        &mut self,
+        stack_id: StackKey,
+        name: &str,
+        args: &[Value],
+        arg_names: &[Option<&str>],
+    ) -> Result<Value, crate::error::CallError> {
         use crate::error::CallError;
         let stack = self
             .stacks
@@ -443,6 +463,13 @@ impl Env {
             .get_mut(&ck)
             .ok_or_else(|| CallError::Runtime("Context not found".into()))?;
 
+        // A call that fails stops where it failed, with its frames still
+        // pushed (a run is the same, and the next run's reset clears them).
+        // Nothing resets between two host calls, so they are dropped here:
+        // left in place they would sit under every later call, be listed in
+        // its stack trace, and count against its depth limit.
+        let base_depth = stack.vm_frames.len();
+
         // A host call runs outside any frame's run: nothing it does is
         // recorded into a scope, and nothing is replayed for it.
         let result = make_vm(
@@ -460,11 +487,51 @@ impl Env {
             &mut self.effect_audit,
             &mut self.static_audit,
         )
-        .call_closure_sync(callable, args, host_call_site(name));
+        .call_closure_sync_named(callable, args, arg_names, host_call_site(name));
+        if result.is_err()
+            && let Some(stack) = self.stacks.get_mut(&stack_id)
+        {
+            stack.vm_frames.truncate(base_depth);
+            stack.last_pop_result = None;
+        }
         // The call may have written state the next run reads; the run's
         // dependency record cannot tell, so the next frame must run.
         self.invalidate_run(stack_id);
         result.map_err(CallError::Runtime)
+    }
+
+    /// The parameters of the top-level function [`call_function`](Self::call_function)
+    /// would call, as its source declares them: what a host needs to check or
+    /// convert arguments that arrive loosely typed (JSON). `None` when there
+    /// is no such function, or it has no single declaration to read (an
+    /// overload set, a builtin). A parameter's `ty` is `None` when it has no
+    /// annotation or the program has no source text.
+    pub fn function_params(&self, stack_id: StackKey, name: &str) -> Option<Vec<FunctionParam>> {
+        let stack = self.stacks.get(&stack_id)?;
+        let Value::Closure(cid) = stack.functions.get(name).copied()? else {
+            return None;
+        };
+        let ctx = self.contexts.get(&stack.context)?;
+        let program = self.programs.get(&stack.program_id)?;
+        let fid = ctx.closures.closure(cid).function_id;
+        let def = program.functions.get(fid.0 as usize)?;
+        let meta = program.introspect.meta(program, fid);
+        let required = def.required_params();
+        Some(
+            def.params
+                .iter()
+                .enumerate()
+                .map(|(i, name)| {
+                    let pm = meta.as_ref().and_then(|m| m.params.get(i));
+                    FunctionParam {
+                        name: name.clone(),
+                        ty: pm.and_then(|p| p.ty.clone()),
+                        has_default: i >= required,
+                        default_source: pm.and_then(|p| p.default_source.clone()),
+                    }
+                })
+                .collect(),
+        )
     }
 
     /// Whether [`call_function`](Self::call_function) would find a top-level
@@ -500,6 +567,18 @@ impl Env {
         self.drop_fork(fork);
         result
     }
+}
+
+/// One parameter of a function, as declared (see [`Env::function_params`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionParam {
+    pub name: String,
+    /// The type annotation's name exactly as written (`float`, `Kind`).
+    pub ty: Option<String>,
+    /// Whether a call may leave the parameter out.
+    pub has_default: bool,
+    /// The source text of the default expression.
+    pub default_source: Option<String>,
 }
 
 /// The root path part for a host-invoked function (`Env::call_function`).

@@ -19,6 +19,125 @@ mod call_function_tests {
         (env, sid)
     }
 
+    /// A host call that fails must not leave its frames under the next one:
+    /// each failure's trace lists its own calls and nothing from before.
+    #[test]
+    fn a_failed_host_call_leaves_no_frames_behind() {
+        let source = "fn find(id)\n  assert(id > 0, \"no such id\")\n  id\nend\n\
+                      fn call(id)\n  find(id) + 1\nend\n\
+                      fn agent_call(id)\n  call(id)\nend\n";
+        let (mut env, sid) = run(source);
+        let depth = |env: &Env| env.stacks.get(&sid).unwrap().vm_frames.len();
+        let base = depth(&env);
+        let first = env.call_function(sid, "agent_call", &[Value::Int(0)]).unwrap_err();
+        assert!(first.contains("no such id"), "{first}");
+        assert_eq!(depth(&env), base, "the failed call's frames were dropped");
+        for _ in 0..3 {
+            let again = env.call_function(sid, "agent_call", &[Value::Int(-1)]).unwrap_err();
+            assert_eq!(again, first, "a later failure reads like the first");
+            assert_eq!(again.matches("in find()").count(), first.matches("in find()").count());
+        }
+        assert_eq!(depth(&env), base);
+        // And a call that works still works, after and between failures.
+        assert_eq!(
+            env.call_function(sid, "agent_call", &[Value::Int(4)]).unwrap(),
+            Value::Int(5)
+        );
+        assert_eq!(depth(&env), base);
+    }
+
+    /// A failure inside a callback (a nested synchronous call) is cleaned up
+    /// the same way.
+    #[test]
+    fn a_failed_host_call_through_a_callback_leaves_no_frames_behind() {
+        let source = "fn check(x)\n  assert(x < 2, \"too big\")\n  x\nend\n\
+                      fn all(xs)\n  map(xs, fn(x) check(x) end)\nend\n";
+        let (mut env, sid) = run(source);
+        let base = env.stacks.get(&sid).unwrap().vm_frames.len();
+        let xs = Value::List(env.heap_mut().alloc_list(vec![Value::Int(1), Value::Int(2)]));
+        let first = env.call_function(sid, "all", &[xs]).unwrap_err();
+        let xs = Value::List(env.heap_mut().alloc_list(vec![Value::Int(1), Value::Int(2)]));
+        let second = env.call_function(sid, "all", &[xs]).unwrap_err();
+        assert_eq!(first, second);
+        let stack = env.stacks.get(&sid).unwrap();
+        assert_eq!(stack.vm_frames.len(), base);
+        assert_eq!(stack.sync_depth, 0);
+    }
+
+    /// `call_function_named`: arguments by parameter name, bound as a written
+    /// `f(1, y: 2)` is.
+    #[test]
+    fn calls_a_function_with_named_arguments() {
+        let source = "fn toll(id, cents = 25, note = \"-\")\n  \"{id}:{cents}:{note}\"\nend\n\
+                      fn pair(a, b)\n  a * 10 + b\nend\n";
+        let (mut env, sid) = run(source);
+        let text = |env: &Env, v: Value| match v {
+            Value::String(id) => env.heap().get_string(id).to_string(),
+            other => panic!("expected a string, got {other:?}"),
+        };
+        let note = Value::String(env.heap_mut().alloc_string("n".to_string()));
+        // Every argument named, in an order that is not the parameters'.
+        let v = env
+            .call_function_named(
+                sid,
+                "toll",
+                &[note, Value::Int(7)],
+                &[Some("note"), Some("id")],
+            )
+            .unwrap();
+        assert_eq!(text(&env, v), "7:25:n");
+        // Positional first, then named; a default in the middle left out.
+        let v = env
+            .call_function_named(sid, "toll", &[Value::Int(1), note], &[None, Some("note")])
+            .unwrap();
+        assert_eq!(text(&env, v), "1:25:n");
+        let v = env
+            .call_function_named(sid, "pair", &[Value::Int(2), Value::Int(1)], &[Some("b"), Some("a")])
+            .unwrap();
+        assert_eq!(v, Value::Int(12));
+
+        let err = |env: &mut Env, args: &[Value], names: &[Option<&str>]| {
+            env.call_function_named(sid, "toll", args, names).unwrap_err().to_string()
+        };
+        assert!(
+            err(&mut env, &[Value::Int(1)], &[Some("cents")]).contains("missing a value for parameter 'id'")
+        );
+        assert!(
+            err(&mut env, &[Value::Int(1), Value::Int(2)], &[Some("id"), Some("nope")])
+                .contains("no parameter named 'nope'")
+        );
+        assert!(
+            err(&mut env, &[Value::Int(1), Value::Int(2)], &[None, Some("id")])
+                .contains("multiple values for parameter 'id'")
+        );
+        // The failures left nothing behind.
+        assert!(env.stacks.get(&sid).unwrap().vm_frames.is_empty());
+    }
+
+    #[test]
+    fn function_params_reads_the_declaration() {
+        let source = "fn toll(id: string, cents: int = 25, rate: float = 0.5, extra = nil)\n  id\nend\n\
+                      fn over(a)\n  a\nend\nfn over(a, b)\n  a\nend\n";
+        let (env, sid) = run(source);
+        let params = env.function_params(sid, "toll").unwrap();
+        let summary: Vec<(&str, Option<&str>, bool)> = params
+            .iter()
+            .map(|p| (p.name.as_str(), p.ty.as_deref(), p.has_default))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("id", Some("string"), false),
+                ("cents", Some("int"), true),
+                ("rate", Some("float"), true),
+                ("extra", None, true),
+            ]
+        );
+        assert_eq!(params[1].default_source.as_deref(), Some("25"));
+        assert!(env.function_params(sid, "over").is_none(), "an overload set");
+        assert!(env.function_params(sid, "nope").is_none());
+    }
+
     #[test]
     fn calls_named_function_with_args() {
         let (mut env, sid) = run("fn add(a, b)\n  a + b\nend\n");

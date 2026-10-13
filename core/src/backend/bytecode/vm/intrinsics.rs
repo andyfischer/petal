@@ -26,6 +26,20 @@ impl<'a> Vm<'a> {
         call_args: &[Value],
         site: u64,
     ) -> Result<Value, String> {
+        self.call_closure_sync_named(callable, call_args, &[], site)
+    }
+
+    /// [`call_closure_sync`](Self::call_closure_sync) with some arguments
+    /// given by parameter name: `arg_names` is parallel to `call_args`
+    /// (`None` = positional), or empty. Only a host call names any
+    /// (`Env::call_function_named`).
+    pub(crate) fn call_closure_sync_named(
+        &mut self,
+        callable: Value,
+        call_args: &[Value],
+        arg_names: &[Option<&str>],
+        site: u64,
+    ) -> Result<Value, String> {
         // Unlike an ordinary call, this one nests a step loop on the native
         // stack, so a callback that recurses through `map` would overflow the
         // thread and abort the process long before `MAX_CALL_DEPTH`. Measure
@@ -47,7 +61,7 @@ impl<'a> Vm<'a> {
             ));
         }
         self.stack.sync_depth += 1;
-        let result = self.call_closure_sync_nested(callable, call_args, site);
+        let result = self.call_closure_sync_nested(callable, call_args, arg_names, site);
         self.stack.sync_depth -= 1;
         result
     }
@@ -56,6 +70,7 @@ impl<'a> Vm<'a> {
         &mut self,
         callable: Value,
         call_args: &[Value],
+        arg_names: &[Option<&str>],
         site: u64,
     ) -> Result<Value, String> {
         let cid = calls::resolve_callable(
@@ -63,10 +78,14 @@ impl<'a> Vm<'a> {
             self.closures,
             callable,
             call_args.len(),
-            &[],
+            arg_names,
         )?;
         let target_depth = self.stack.vm_frames.len();
-        self.push_closure_frame(cid, call_args, &Default::default(), None, None, site, false)?;
+        if arg_names.is_empty() {
+            self.push_closure_frame(cid, call_args, &Default::default(), None, None, site, false)?;
+        } else {
+            self.push_named_frame(cid, call_args, arg_names, site)?;
+        }
         self.stack.last_pop_result = None;
 
         loop {

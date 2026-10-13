@@ -175,6 +175,40 @@ impl Env {
         stack_id: StackKey,
         document: &Json,
     ) -> Result<StateStorageLoad, String> {
+        self.load_state_storage_with(program_id, stack_id, document, false)
+    }
+
+    /// Make `stack_id`'s state what a storage document holds, at any point
+    /// between two runs: a snapshot taken with
+    /// [`save_state_storage`](Self::save_state_storage) put back.
+    ///
+    /// Unlike [`load_state_storage`](Self::load_state_storage), which adds the
+    /// document's slots to whatever the stack has, this *replaces* the state
+    /// map: a slot the stack holds and the document does not is removed, so
+    /// its declaration starts from its initial value on the next run — which
+    /// is what the slot was when the snapshot was taken, if it existed only
+    /// later, and the only thing it can be if its value could not be saved.
+    /// A document that cannot be used is an error and changes nothing.
+    ///
+    /// The next run reads the restored state. Functions the host calls before
+    /// that run still see the top-level state their closures captured at the
+    /// last run (see [`call_function`](Self::call_function)).
+    pub fn restore_state_storage(
+        &mut self,
+        program_id: ProgramId,
+        stack_id: StackKey,
+        document: &Json,
+    ) -> Result<StateStorageLoad, String> {
+        self.load_state_storage_with(program_id, stack_id, document, true)
+    }
+
+    fn load_state_storage_with(
+        &mut self,
+        program_id: ProgramId,
+        stack_id: StackKey,
+        document: &Json,
+        replace: bool,
+    ) -> Result<StateStorageLoad, String> {
         let doc = document
             .as_object()
             .ok_or("it is not a Petal state storage file (expected a JSON object)")?;
@@ -302,6 +336,9 @@ impl Env {
 
         let count = restored.len();
         let stack = self.stacks.get_mut(&stack_id).ok_or("Stack not found")?;
+        if replace {
+            stack.state.clear();
+        }
         stack.state.extend(restored);
         // State put in from outside is a change no run recorded.
         stack.run_deps.force();
@@ -595,6 +632,53 @@ mod tests {
         env.run(sid).unwrap();
         let out = env.take_output().join("\n");
         (out, env.save_state_storage(pid, sid))
+    }
+
+    /// `restore_state_storage` puts a snapshot back mid-session: later
+    /// writes are undone, and a slot that did not exist at the snapshot (or
+    /// could not be saved) goes back to its initial value.
+    #[test]
+    fn restore_replaces_the_state_with_the_snapshot() {
+        let source = "state n = 0\nn += 1\n\
+                      state seen = []\nseen = seen ++ [n]\n\
+                      state f = fn(x) x + 100 end\n\
+                      if n > 2 then\n  state late = 0\n  late += 1\n  print(\"late {late}\")\nend\n\
+                      print(\"{n} {seen} {f(n)}\")\n";
+        let mut env = Env::new();
+        let pid = env.load_program(source).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let mut frame = |env: &mut Env| {
+            env.reset_stack(sid).unwrap();
+            env.run(sid).unwrap();
+            env.take_output().join("|")
+        };
+        assert_eq!(frame(&mut env), "1 [1] 101");
+        assert_eq!(frame(&mut env), "2 [1, 2] 102");
+        let snapshot = env.save_state_storage(pid, sid);
+        assert_eq!(snapshot.saved, 2);
+        assert_eq!(snapshot.skipped, [("f".to_string(), "a function".to_string())]);
+        assert_eq!(frame(&mut env), "late 1|3 [1, 2, 3] 103");
+        assert_eq!(frame(&mut env), "late 2|4 [1, 2, 3, 4] 104");
+
+        let load = env.restore_state_storage(pid, sid, &snapshot.document).unwrap();
+        assert_eq!((load.restored, load.dropped.len()), (2, 0));
+        // The same frames again: `late` starts over, since the snapshot was
+        // taken before it existed.
+        assert_eq!(frame(&mut env), "late 1|3 [1, 2, 3] 103");
+        // The same snapshot can be loaded any number of times.
+        env.restore_state_storage(pid, sid, &snapshot.document).unwrap();
+        assert_eq!(frame(&mut env), "late 1|3 [1, 2, 3] 103");
+
+        // A document that is not usable changes nothing.
+        assert!(env.restore_state_storage(pid, sid, &json!({"format": "nope"})).is_err());
+        assert_eq!(frame(&mut env), "late 2|4 [1, 2, 3, 4] 104");
+        // `load_state_storage` adds to what is there; `restore` does not.
+        let only_n = json!({"format": "petal-state", "version": 1,
+                            "slots": [{"name": "n", "value": 10}]});
+        env.load_state_storage(pid, sid, &only_n).unwrap();
+        assert_eq!(frame(&mut env), "late 3|11 [1, 2, 3, 4, 11] 111");
+        env.restore_state_storage(pid, sid, &only_n).unwrap();
+        assert_eq!(frame(&mut env), "late 1|11 [11] 111");
     }
 
     /// Run `source` twice, each in its own env, carrying the state over.

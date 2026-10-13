@@ -37,6 +37,7 @@ mod statics;
 
 pub use reload::{ConfigSetError, FileChange, ProgramChange, ReloadOutcome, ReloadReport};
 pub use state_storage::{StateStorageLoad, StateStorageSave, name_list as state_name_list};
+pub use run::FunctionParam;
 pub use static_follow::{StaleSeed, StaticReload};
 pub use statics::{StaticSlotState, StaticValues};
 

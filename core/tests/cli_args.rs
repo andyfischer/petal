@@ -48,8 +48,9 @@ fn a_mistyped_command_is_an_unknown_command_not_a_missing_file() {
     assert!(err.contains("petal run -e"), "{err}");
     assert!(!err.contains("Error reading file"), "{err}");
 
-    let (_, err, _) = petal(&["test"]);
-    assert!(err.contains("'test' is not a petal command"), "{err}");
+    let (_, err, _) = petal(&["tests"]);
+    assert!(err.contains("'tests' is not a petal command"), "{err}");
+    assert!(err.contains("Did you mean 'petal test'?"), "{err}");
 
     let (_, err, _) = petal(&["chek", "x.ptl"]);
     assert!(err.contains("Did you mean 'petal check'?"), "{err}");

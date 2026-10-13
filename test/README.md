@@ -7,6 +7,7 @@ the refactor verifier — is in [docs/dev/testing.md](../docs/dev/testing.md).
 | Path | What it is | Used by |
 |------|------------|---------|
 | `test/vitest/` | The vitest integration suite (`*.test.ts`) and its `fixtures/` | `npm test` |
+| `test/ptl/` | Tests written in Petal: `test "name" do … end` blocks | `petal test test/ptl`; `cd core && cargo test --test ptl_tests` |
 | `test/<case>/` | Script regression cases: a `main.ptl` plus an `expects` file (below) | `cd core && cargo test --test script_cases` |
 | `test/example-golden/` | Frozen stdout for every `examples/console/*.ptl` | `tools/test-examples.ts`; re-baseline with `tools/gen-example-golden.ts` |
 | `test/ui-golden/` | Hashes of each UI app's 60-frame headless trace | `tools/verify.ts` (`--update-golden` to re-baseline) |

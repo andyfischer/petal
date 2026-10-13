@@ -140,11 +140,7 @@ fn unknown_command_message(word: &str) -> Option<String> {
         "repl" | "eval" | "exec" => {
             Some("petal has no REPL; 'petal run -e <code>' runs a snippet.".to_string())
         }
-        "test" => Some(
-            "petal has no test runner; 'petal check <file>' compiles a file without running \
-             it, and 'petal run <file>' runs it."
-                .to_string(),
-        ),
+        "tests" | "spec" => Some("Did you mean 'petal test'?".to_string()),
         "build" | "compile" => {
             Some("Did you mean 'petal check' (compile without running)?".to_string())
         }
@@ -195,6 +191,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "check" => parse_check_args(&args[1..]),
         "fmt" => parse_fmt_args(&args[1..]),
         "lint" => parse_lint_args(&args[1..]),
+        "test" => parse_test_args(&args[1..]),
         "fix-imports" => parse_fix_imports_args(&args[1..]),
         "suggest" => parse_suggest_args(&args[1..]),
         "apply-change" => parse_apply_change_args(&args[1..]),
@@ -690,6 +687,50 @@ fn parse_lint_args(args: &[String]) -> CliArgs {
     opts.inline = p.inline;
     CliArgs {
         command: Command::Lint(opts),
+        source: SourceInput::Inline(String::new()),
+        include_dirs: Vec::new(),
+    }
+}
+
+/// `test [--filter <text>] [--json] [--list] [--show-output] [--timeout <s>]
+/// [<path>…]` — `.` when no path is given.
+fn parse_test_args(args: &[String]) -> CliArgs {
+    let usage = "Usage: petal test [--filter <text>] [--json] [--list] [--show-output] \
+                 [--timeout <seconds>] [<path>...]  |  petal test -e <code>";
+    let mut opts = super::TestArgs::default();
+    let p = parse_path_args(args, usage, |args, i| {
+        let arg = args[*i].as_str();
+        let value = |i: &mut usize, flag: &str, what: &str| -> String {
+            match arg.split_once('=') {
+                Some((_, v)) => v.to_string(),
+                None => take(args, i, &format!("Expected {what} after {flag}")).to_string(),
+            }
+        };
+        match arg {
+            "--json" => opts.json = true,
+            "--list" => opts.list = true,
+            "--show-output" => opts.show_output = true,
+            other if other == "--filter" || other.starts_with("--filter=") => {
+                opts.filter = Some(value(i, "--filter", "text"));
+            }
+            other if other == "--timeout" || other.starts_with("--timeout=") => {
+                let text = value(i, "--timeout", "a number of seconds");
+                match text.parse::<f64>() {
+                    Ok(s) if s >= 0.0 && s.is_finite() => opts.timeout = Some(s),
+                    _ => {
+                        eprintln!("--timeout takes a number of seconds (0 for none), got '{text}'");
+                        process::exit(1);
+                    }
+                }
+            }
+            _ => return false,
+        }
+        true
+    });
+    opts.paths = p.paths;
+    opts.inline = p.inline;
+    CliArgs {
+        command: Command::Test(opts),
         source: SourceInput::Inline(String::new()),
         include_dirs: Vec::new(),
     }

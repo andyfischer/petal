@@ -678,3 +678,75 @@ pub fn step(wd: record, dt: num, env: record) -> record
   {world: {...wd, x: x, y: y, vx: vx, vy: vy, ang: ang, om: om, order: order, tension: rf},
     contacts: contacts, pts: pts, subs: subs}
 end
+
+// ── Tests ────────────────────────────────────────────────────────────────
+//
+// `petal test examples/games/physics-playground/physics.ptl` runs these; a
+// run of the app never does. Each starts from the module as it loads.
+
+// A stage 800 x 600 with gravity down and nothing grabbed.
+fn test_env(gy: num) -> record
+  {gx: 0.0, gy: gy, bounce: 0.3, fric: 0.5, drag: 0.0, w: 800.0, h: 600.0,
+    grab: -1, tx: 0.0, ty: 0.0}
+end
+
+// `wd` after `frames` steps of 1/60 s.
+fn run_frames(wd: record, frames: int, env: record) -> record
+  let cur = wd
+  for f in range(0, frames) do
+    cur = step(cur, 1.0 / 60.0, env).world
+  end
+  cur
+end
+
+test "norm and seg_dist measure in pixels" do
+  expect_eq(norm(3.0, 4.0), 5.0)
+  // Beside the middle of a segment, then past its end.
+  expect_near(seg_dist(5.0, 3.0, 0.0, 0.0, 10.0, 0.0), 3.0, 0.000001)
+  expect_near(seg_dist(13.0, 4.0, 0.0, 0.0, 10.0, 0.0), 5.0, 0.000001)
+end
+
+test "a body is added at rest with a mass that grows with its area" do
+  let wd = add_ball(add_ball(empty_world(), 100, 100, 14, 0), 200, 100, 28, 1)
+  expect_eq(wd.n, 2)
+  expect_eq(wd.id, [1, 2])
+  expect_eq(wd.m[0], 1.0)
+  expect_eq(wd.m[1], 4.0)
+  expect_eq([wd.vx[1], wd.vy[1]], [0.0, 0.0])
+  expect_eq(index_of_id(wd, 2), 1)
+end
+
+test "a free disc falls and a pinned one stays" do
+  let wd = add_pin(add_ball(empty_world(), 100, 100, 14, 0), 300, 100, 14, 0)
+  let after = run_frames(wd, 30, test_env(900.0))
+  // Half a second of 900 px/s^2 from rest is 112.5 px, less the sub-step error.
+  expect_near(after.y[0] - 100.0, 112.5, 3.0)
+  expect(after.vy[0] > 400.0, "the falling disc has picked up speed")
+  expect_eq([after.x[1], after.y[1]], [300.0, 100.0])
+end
+
+test "a rod keeps its length while its bob swings" do
+  let wd = add_ball(add_pin(empty_world(), 400, 100, 6, 0), 520, 100, 14, 0)
+  let hung = add_link(wd, 0, 1, ROD, 0.0, -1.0)
+  expect_eq(links_on(hung, 1), 1)
+  // A 120 px pendulum is near the bottom of its swing after half a second.
+  let after = run_frames(hung, 30, test_env(900.0))
+  expect(audit(after).stretch < 0.5, "the rod stretched {audit(after).stretch} px")
+  expect(after.y[1] > 180.0, "the bob is at y = {after.y[1]}")
+end
+
+test "a disc dropped on the floor comes to rest on it" do
+  let wd = add_ball(empty_world(), 400, 540, 14, 0)
+  let after = run_frames(wd, 240, test_env(900.0))
+  expect_near(after.y[0], 600.0 - 14.0, 1.0)
+  expect(abs(after.vy[0]) < 5.0, "still moving at {after.vy[0]} px/s")
+end
+
+test "with no gravity and no drag a thrown disc keeps its speed" do
+  let wd = add_body(empty_world(), 100, 300, 14, 0, false, 1.0, 120.0, 0.0)
+  let env = test_env(0.0)
+  let before = energy(wd, env).ke
+  let after = run_frames(wd, 60, env)
+  expect_near(energy(after, env).ke, before, 0.001)
+  expect_near(after.x[0], 220.0, 0.01)
+end

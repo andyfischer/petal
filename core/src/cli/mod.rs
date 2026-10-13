@@ -186,6 +186,9 @@ pub enum Command {
         diff: bool,
     },
     Lint(LintArgs),
+    /// `test` — find the `test "name" do … end` blocks under the given paths
+    /// and run them (`crate::test_runner`).
+    Test(TestArgs),
     /// `fix-imports` — rewrite old-style imports (`crate::fix_imports`).
     /// Rewrites files in place; `--check` only lists the ones that would
     /// change.
@@ -302,6 +305,22 @@ pub struct ApplyChangeArgs {
     pub from: Vec<PathBuf>,
     /// Print the diff and write nothing.
     pub dry_run: bool,
+}
+
+/// Every flag `petal test` accepts.
+#[derive(Default)]
+pub struct TestArgs {
+    pub paths: Vec<String>,
+    pub inline: Option<String>,
+    pub json: bool,
+    /// `--filter <text>`: only the tests whose name contains the text.
+    pub filter: Option<String>,
+    /// `--list`: name the tests and run none.
+    pub list: bool,
+    /// `--show-output`: print what passing tests printed, too.
+    pub show_output: bool,
+    /// `--timeout <seconds>` per test; 0 is no limit. `None` is the default.
+    pub timeout: Option<f64>,
 }
 
 /// Every flag `petal lint` accepts.
@@ -551,6 +570,10 @@ pub fn execute(cli: CliArgs) {
         source_tools::handle_lint(opts, &include_dirs);
         return;
     }
+    if let Command::Test(opts) = &command {
+        handlers::handle_test(opts, &include_dirs);
+        return;
+    }
     if let Command::FixImports {
         paths,
         inline,
@@ -615,6 +638,7 @@ pub fn execute(cli: CliArgs) {
         }
         Command::Fmt { .. }
         | Command::Lint(_)
+        | Command::Test(_)
         | Command::ApplyChange(_)
         | Command::FixImports { .. } => {
             unreachable!("dispatched above")

@@ -200,6 +200,13 @@ pub(super) fn handle_run(
         save_state_storage(&env, json, pid, sid, path);
     }
 
+    // An `expect` that did not hold was recorded and the run carried on:
+    // say so now, and fail the command after the rest of its output.
+    let expect_failures = env.take_expect_failures(sid);
+    for failure in &expect_failures {
+        eprintln!("expectation failed: {failure}");
+    }
+
     // The dump comes before the error report, in both modes and for the same
     // reason: the values are what the run *did*, the error is how it ended.
     // Reading them in that order is reading the program's story forward.
@@ -221,7 +228,7 @@ pub(super) fn handle_run(
             }
         }
     }
-    if static_audit_failed {
+    if static_audit_failed || !expect_failures.is_empty() {
         process::exit(1);
     }
 }
@@ -1544,6 +1551,34 @@ fn source_origin(input: &SourceInput) -> Option<PathBuf> {
 /// docs/module-system.md). A manifest that claims to be a package and then
 /// will not load is a hard error here — the user pointed at it, so a silent
 /// "no such module" later would be the wrong answer.
+/// `petal test`: run the test blocks under the given paths
+/// (`crate::test_runner`), print the report, and exit 1 unless all passed.
+pub(super) fn handle_test(opts: &super::TestArgs, include_dirs: &[PathBuf]) {
+    use crate::test_runner as runner;
+    let run_opts = runner::Options {
+        include_dirs: include_dirs.to_vec(),
+        filter: opts.filter.clone(),
+        timeout: match opts.timeout {
+            Some(s) if s == 0.0 => None,
+            Some(s) => Some(std::time::Duration::from_secs_f64(s)),
+            None => Some(std::time::Duration::from_secs(60)),
+        },
+        list: opts.list,
+    };
+    let files = match opts.inline.as_deref() {
+        Some(code) => vec![runner::run_source("<inline>", None, code, &run_opts)],
+        None => runner::run_paths(&opts.paths, &run_opts),
+    };
+    if opts.json {
+        print_json(&runner::to_json(&files));
+    } else {
+        print!("{}", runner::render(&files, opts.show_output));
+    }
+    if !runner::Summary::of(&files).ok() {
+        process::exit(1);
+    }
+}
+
 pub(super) fn make_env(include_dirs: &[PathBuf]) -> Env {
     let mut env = Env::new();
     for dir in include_dirs {

@@ -1,0 +1,25 @@
+// `x |> f` is `f(x)` and `x |> f(y)` is `f(x, y)`. How it lexes and parses
+// is held by test/vitest/pipe-operator.test.ts; what it evaluates to, here.
+// Run with `petal test test/ptl`.
+
+test "a value pipes into a function" do
+  expect_eq(42 |> str, "42")
+end
+
+test "extra arguments follow the piped one" do
+  expect_eq([1, 2, 3] |> map(fn(x) -> x + 10), [11, 12, 13])
+  expect_eq(10 |> min(20), 10)
+end
+
+test "pipes chain left to right" do
+  let out = [1, 2, 3, 4, 5] |> filter(fn(x) -> x > 2) |> map(fn(x) -> x * 10)
+  expect_eq(out, [30, 40, 50])
+end
+
+test "a pipe binds looser than arithmetic" do
+  expect_eq(1 + 2 |> str, "3")
+end
+
+test "a lambda can be the target" do
+  expect_eq(5 |> fn(x) -> x * 2, 10)
+end

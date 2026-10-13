@@ -18,6 +18,7 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("run", "Execute a program"),
             ("check", "Compile a program without executing it"),
+            ("test", "Run the test blocks of files and directories"),
             ("bench", "Measure what a call of a named function costs"),
             ("lsp", "Serve the language server over stdio"),
         ],
@@ -147,6 +148,7 @@ fn page(name: &str) -> Option<&'static str> {
         "bench" => BENCH,
         "fmt" => FMT,
         "lint" => LINT,
+        "test" => TEST,
         "fix-imports" => FIX_IMPORTS,
         "suggest" => SUGGEST,
         "apply-change" => APPLY_CHANGE,
@@ -638,6 +640,75 @@ OPTIONS
 
 SEE ALSO
        petal help lint
+";
+
+const TEST: &str = "\
+NAME
+       petal-test - Run the test blocks of files and directories
+
+SYNOPSIS
+       petal test [--filter <text>] [--json] [--list] [--show-output]
+                  [--timeout <seconds>] [<path>...]
+       petal test [<options>] -e <code>
+
+DESCRIPTION
+       A test is a block at the top level of a file:
+
+              test \"a hit costs one life\" do
+                expect_eq(after_hit(3), 2)
+              end
+
+       'petal run' never runs it. 'petal test' finds the test blocks of
+       every .ptl file under the given paths (the default is the current
+       directory; a file with no test block is passed over), runs each one,
+       and prints a line per test and a summary. It exits 1 when a test
+       fails, raises or times out, or a file with tests cannot be run, and
+       0 otherwise.
+
+       Each test runs in isolation: the file's top level runs first, on a
+       stack of its own, so its functions and its var and state bindings
+       exist with their initial values, and then the test's body. Nothing
+       one test writes reaches another. A file is run as the entry of its
+       own program, with its imports and its project's petal.toml resolved
+       as 'petal run' resolves them; only the tests written in that file
+       are run, so a test in a module runs once, when the module's own file
+       is reached.
+
+       Inside a test, expect(condition, message?), expect_eq(actual,
+       expected, message?) and expect_near(actual, expected, tolerance,
+       message?) record a failure with its file and line and both values,
+       and the test carries on to its end. assert and assert_eq, and any
+       runtime error, stop the test where they are and are reported as an
+       error. What a test prints is shown when it fails.
+
+       A file whose imports need a host (ui, a game engine's package) cannot
+       be run here and is reported as such; run its tests with that host's
+       test runner.
+
+OPTIONS
+       --filter <text>
+              Run only the tests whose name contains <text>.
+
+       --list
+              Print the tests that would run, and run nothing.
+
+       --show-output
+              Print what every test printed, not only the failing ones.
+
+       --timeout <seconds>
+              Stop a test that runs longer than this and report it as an
+              error. The default is 60; 0 is no limit.
+
+       --json
+              Print one JSON document on stdout instead of the report:
+              a summary, and per file its tests with their status
+              (passed, failed, error), failures (file, line, column,
+              check, message, actual, expected), error, output and
+              duration_ms. The exit status is unchanged.
+
+{COMMON}
+SEE ALSO
+       docs/testing.md
 ";
 
 const LINT: &str = "\
@@ -1564,6 +1635,7 @@ mod tests {
         "check",
         "fmt",
         "lint",
+        "test",
         "fix-imports",
         "ir-equal",
         "explain",

@@ -19,3 +19,20 @@ end
 pub fn shout(s: string) -> string
   s ++ "!"
 end
+
+// Tests live beside the code they test. `petal test examples/console` runs
+// them; `petal run` and a script that imports this module never do.
+test "truncate leaves a short string alone" do
+  expect_eq(truncate("hello", 10), "hello")
+  expect_eq(truncate("hello", 5), "hello")
+end
+
+test "truncate cuts a long string and marks the cut" do
+  expect_eq(truncate("hello world", 5), "hello...")
+  // The private helper is in reach here, though not to an importer.
+  expect_eq(_cut("hello world", 3), "hel")
+end
+
+test "shout" do
+  expect_eq(shout("hi"), "hi!")
+end

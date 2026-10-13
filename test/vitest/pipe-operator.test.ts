@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   showTokensJson,
   showAstJson,
-  runPetal,
 } from "./helpers";
 
 
@@ -33,28 +32,6 @@ describe("pipe operator |>", () => {
     expect(expr.Call.args[1].kind.Literal.Int).toBe(20);
   });
 
-  it("chains multiple pipes", () => {
-    const output = runPetal('[1, 2, 3, 4, 5] |> filter(fn(x) -> x > 2) |> map(fn(x) -> x * 10) |> print');
-    expect(output).toBe("[30, 40, 50]");
-  });
-
-  it("pipes a value into a simple function", () => {
-    const output = runPetal('42 |> str |> print');
-    expect(output).toBe("42");
-  });
-
-  it("pipes into a function with extra args", () => {
-    const output = runPetal('[1, 2, 3] |> map(fn(x) -> x + 10) |> print');
-    expect(output).toBe("[11, 12, 13]");
-  });
-
-  it("has lower precedence than arithmetic", () => {
-    const output = runPetal('1 + 2 |> str |> print');
-    expect(output).toBe("3");
-  });
-
-  it("works with lambda expressions", () => {
-    const output = runPetal('5 |> fn(x) -> x * 2 |> print');
-    expect(output).toBe("10");
-  });
+  // What a pipe evaluates to is tested in Petal: test/ptl/pipe_operator.ptl
+  // (`petal test test/ptl`, run by core/tests/ptl_tests.rs).
 });

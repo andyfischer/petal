@@ -35,3 +35,17 @@ print("=====================")
 for i in range(0, 20) do
   print("fib({i}) = {fib_iterative(i)}")
 end
+
+// `petal test examples/console/fibonacci.ptl` runs these; the prints above
+// are the file's top level, which runs first and is not part of any test.
+test "the two definitions agree" do
+  for i in range(0, 20) do
+    expect_eq(fib_recursive(i), fib_iterative(i), "at n = {i}")
+  end
+end
+
+test "known values" do
+  expect_eq(fib_iterative(10), 55)
+  expect_eq(fib_iterative(50), 12586269025)
+  expect_eq(fib_iterative(-3), 0)
+end

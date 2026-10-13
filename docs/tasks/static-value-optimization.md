@@ -1,10 +1,15 @@
 # Static value optimization: plan
 
 Status: **A1, A2, A3, S0, S1 and S2 are implemented, reviewed and on `main`**
-(12 October 2026); both gates passed. What is not done is everything outside
-this repository: no engine that vendors Petal has been re-vendored, so Moses
-has not run a frame with the cache under its own host and the first row of
-"Benchmarks that gate the work" is still its baseline. Of the "Later" items
+(12 October 2026); both gates passed. Outside this repository, Cheesecake is
+re-vendored at `518c008` (13 October 2026; its commit `03319c2`) and Moses
+runs under its engine with the cache on: 49,871,337 to 46,543,802
+instructions over the 600-frame headless run with no script changed, all
+347 engine tests passing ("Cheesecake, under its engine" in Results). The
+adoption there is not started (`PB_FX_CONST` on engine natives, the
+`state`-to-`const` rewrite of Moses, dropping its enum-derived tables, the
+reload report's `statics`), and worlds-fair and the WASM builds are not
+re-vendored. Of the "Later" items
 the first two, Garden and constants inside function bodies, are done (13
 October 2026), and so are in-repo follow-ups 5 to 8; the rest (per-input-class
 slots, keeping slow intermediates, a frozen generation that can release
@@ -317,7 +322,11 @@ Against the "done when":
   of freezing and changes slot reuse order, which `inherit_generations`
   relies on.
 
-Not done: Cheesecake's 344-test suite on a re-vendored tree (item 5, in
+**Done 2026-10-13** (Cheesecake `03319c2`): item 5. Its suite, 347 tests
+now, passes on the tree re-vendored at `518c008` with the local patch
+removed, `VENDORED.md` updated and `memory.ptl` deleted ("Cheesecake, under
+its engine" in Results). What this note said before that:
+Cheesecake's 344-test suite on a re-vendored tree (item 5, in
 their repository). For that re-vendor: the local modification drops out
 whole, `VENDORED.md` loses its entry, and
 `engine/script/packages/cheesecake/memory.ptl` no longer needs to declare
@@ -1054,7 +1063,11 @@ must not regress.
 **Status: done; gate passed, with one figure measured by a substitute**
 (Moses still does not run under this repository's binary, so the "83.1k to
 about 79k" figure is checked on the static part of its frame, not on a whole
-frame under the engine).
+frame under the engine). **Measured under the engine on 13 October 2026**,
+once Cheesecake had re-vendored `518c008`: 83.1k to 77.6k instructions a
+frame, the game as written; the record-allocation figure is still not
+measured there. See the gate table below and "Cheesecake, under its engine"
+in Results.
 
 What shipped after the two halves landed:
 
@@ -1116,8 +1129,8 @@ What shipped after the two halves landed:
 | Gate item | Result |
 |---|---|
 | All oracles green | Yes, at `858a252`; list below |
-| Moses: 83.1k to about 79k instructions per frame (−4.1k) | −5,391 on the static part of a frame, as written (8,065 to 2,674); not run under the engine |
-| Moses: record allocations down about 40% | −480 records per frame (482 to 2 in the static part); the share of a whole frame's records is not known here |
+| Moses: 83.1k to about 79k instructions per frame (−4.1k) | −5,391 on the static part of a frame, as written (8,065 to 2,674). **Under the engine, 13 October 2026:** 83,119 to 77,573 (−5,546, −6.7%), the 600-frame total divided by 600 as the baseline was; the same binary with the cache off (under `PETAL_STATIC_AUDIT=watch`) runs 83,079, so the cache is −5,506 of it |
+| Moses: record allocations down about 40% | −480 records per frame (482 to 2 in the static part); the share of a whole frame's records is not known here. Not measured under the engine either: its `--vm-profile` counts no allocations. Collections over the run went from 14 to 10 or 11 (18 with the cache off under the audit) |
 | `test/benchmarks/*` under `petal run` must not regress | No regression; instruction counts exact and unchanged |
 
 Moses, `static_frame`, release, 30 frames on one stack, 0 audit findings and
@@ -1392,7 +1405,10 @@ note has it.
 ## S2. Following the diff
 
 **Status: done 2026-10-12; gate passed** (no stale value in any differential;
-the time on Moses is measured and is small, see the gate table). The rule,
+the time on Moses is measured and is small, see the gate table; that time
+is of the static-only build in this repository, and it is **still not
+measured under the Cheesecake engine**, which runs the re-vendored Petal
+since 13 October 2026 but has had no reload timed in it). The rule,
 the module and the tests are described in
 [docs/hot-reload.md](../hot-reload.md#static-values-across-a-reload) and in
 the header of `core/src/env/static_follow.rs`.
@@ -2489,10 +2505,10 @@ average 4 to 13, and carry that date; the other rows are as measured on the
 
 | Benchmark | Baseline | Now | |
 |---|---|---|---|
-| Moses headless, 600 frames, under the Cheesecake engine | 49,871,337 instructions; 2.71 ms a frame; 14 collections; 406 `StateInit` a frame | **not re-measured** | The engine's `third_party/petal` is the pre-plan Petal, and Moses needs the engine's natives. Follow-up 1 |
+| Moses headless, 600 frames, under the Cheesecake engine | 49,871,337 instructions; 2.71 ms a frame; 14 collections; 406 `StateInit` a frame | **13 October, Cheesecake `03319c2` (Petal `518c008`), no script changed:** 46,543,802 instructions (−3,327,535, −6.7%; 77,573 a frame against 83,119); 2.55 to 2.59 ms a frame with the profile and 2.00 to 2.03 without (5 runs each); 10 or 11 collections; 406 `StateInit` a frame (243,540, unchanged) | The cache is nearly all of it: the same binary under `PETAL_STATIC_AUDIT=watch`, which turns the cache off, runs 49,847,577. `LoadConst` 9,924,893 to 7,647,726. The time is not a same-session comparison: the pre-plan engine measured that day ran 4.24 to 11.60 ms at load average 5 to 21. Not adopted yet (no `PB_FX_CONST` native, no `const`): "Cheesecake, under its engine" below |
 | …the static part of a Moses frame (`static_frame`, the substitute) | 8,065 instructions, 1,230 allocations, 482 records (cache off) | **13 October:** 2,641 instructions, 45 allocations, 1 record; 451 slots in 451 segments, 42 checks a frame; 262 µs to 174 µs (12 October: 2,674, 58, 2; 426 slots in 34 runs) | −5,424 instructions and −1,185 allocations a frame against the −4.1k the proposal estimated by hand; 0 audit findings. The frame that builds everything is 9,217 against 8,284 with the cache off |
 | …the same with the lint's rewrite applied (76 `state` to `const`, scratch copy) | 25,804 instructions, 4,687 allocations (cache off) | 2,566 instructions, 46 allocations; 529 slots | Shows why the rewrite must wait for an engine with the cache on |
-| Example panels in the Cheesecake headless host | snake 2,617 instructions a frame; analytics-dashboard 11,005; network-graph 153,493; settings 31,624 | **not re-measured in that host** | Same reason |
+| Example panels in the Cheesecake headless host | snake 2,617 instructions a frame; analytics-dashboard 11,005; network-graph 153,493; settings 31,624 | **13 October, same engine:** snake 2,396 (−8.4%); analytics-dashboard 10,703 (−2.7%); network-graph 152,125 (−0.9%); settings 30,371 (−3.9%) | Totals over 600 frames: 1,570,122 to 1,437,822; 6,603,120 to 6,421,680; 92,093,804 to 91,275,164; 18,952,538 to 18,222,458. Collections 34 to 28, 35 to 32, 100 to 89, 235 to 229. The last two `import garden`, which the engine does not provide; both sides ran against a package of four do-nothing functions, which puts their baselines 3 and 36 instructions a frame under this row's (153,490 and 31,588) |
 | …the same four under petal-ui's driver, cache off against on (60 monkey frames) | snake 2,992; analytics-dashboard 29,817; network-graph 783,883; settings 36,727 | **13 October:** 2,754 (−8.0%); 29,477 (−1.1%); 782,380 (−0.2%); 35,389 (−3.6%) (12 October: 2,773; 29,513; 782,445; 35,571) | All 55 apps: −1.03% instructions (3,671,125 to 3,633,409), −16.84% allocations (41,411 to 34,437), 2,940 top-level slots and 6,254 in function bodies (12 October: −0.73%, −10.03%, 2,594 slots). The function slots alone: −0.29% and −7.07%. Under observation: −0.65% and −11.03%, 2,945 slots. Garden's 20 panels under `PanelHost`: 30,573 to 28,555 instructions (−6.60%), 2,438 to 1,989 allocations (−18.43%) |
 | Enum reads (A1), ns over the empty loop | local 51.3; `K.v.code` 71.3; `K.all` 227.8 | 3.5; 6.5; 18.7 (record field 1.8, payload 11.3, walk of `all` 16.7) | |
 | 50-variant enum with data, per run (S1) | 9.54 µs before A1, 6.67 µs after it | 2.46 µs (2.00 µs for the enum with no data) | |
@@ -2508,6 +2524,68 @@ The table in `docs/dev/performance.md` (append 5.2 ms … spreadsheet 201.4)
 is older than the commit that made `petal run` check a program first, and
 every script is about 1.2 ms above it for that reason, on the pre-plan
 binary as well.
+
+### Cheesecake, under its engine (13 October 2026)
+
+**Status: re-vendored and measured; the adoption is not started.**
+Cheesecake `03319c2` vendors `518c008` (its tree is blob-for-blob this
+repository's at that commit, apart from `garden/gpp/Cargo.toml`, the one
+recorded local modification). The frozen-generation patch it carried is
+gone, and so is `engine/script/packages/cheesecake/memory.ptl`. No engine
+source and no game script changed. It does not have `fccbc12` (the in-place
+miscompile found later that day, older than the plan) or `1fe4ea4`.
+
+How the first two rows of the table above were taken: the Release engine
+(`build/main/engine/app/cheesecake`), the command of "Benchmarks that gate
+the work", 600 frames, the profile covering frames 60 on (540 frames; the
+per-frame figures divide the total by 600, as the baseline did, so
+`StateInit` is 451 for each frame profiled). "Before" is the engine at
+Cheesecake `ee34761` (Petal `42142fd`), measured the same day by the step
+that re-vendored: instruction counts identical over 5 runs of Moses and 3
+of each panel. "After" was taken by the review, at load average 8 to 11:
+identical counts over 6 runs of Moses and 4 of each panel. The pre-plan
+binary was lost with the disk it was saved on, so the review could not
+repeat "before", and no time here is an interleaved comparison.
+
+| | Before | After |
+|---|---|---|
+| Moses: instructions | 49,871,337 | 46,543,802 (cache off, under the audit: 49,847,577) |
+| Moses: `LoadConst`; user calls; native calls | 9,924,893; 2,058,633; 3,276,665 | 7,647,726; 2,021,350; 3,213,575 |
+| Moses: collections | 14 | 10 or 11 (it varies from run to run) |
+| Moses: ms a frame, profile on / off | 4.24 to 11.60 / 2.36 to 6.07 (load average 5 to 21); 2.71 with the profile when the plan was written | 2.55 to 2.59 / 2.00 to 2.03 |
+| snake: ms a frame, profile on / off | 0.18 / 0.15 to 0.17 | 0.16 / 0.14 |
+| analytics-dashboard | 0.61 to 0.62 / 0.48 | 0.58 to 0.59 / 0.46 to 0.47 |
+| network-graph | 2.57 to 2.64 / 1.32 to 1.33 | 2.52 to 2.54 / 1.24 |
+| settings | 2.06 to 2.09 / 1.77 to 1.80 | 1.86 to 1.89 / 1.61 to 1.63 |
+
+Checked on Cheesecake's HEAD with that build:
+
+- `ctest`, 347 tests (the 344 of A2, plus Rivet's): all pass in one run, 20
+  minutes, load average 7 to 9. The two full runs of the re-vendor step, at
+  load average 40 to 76, each failed a different handful of timing budgets.
+- The 13 games with a `game.ptl`, headless for 300 frames with
+  `--dump-state` (and `games/demo/basic.ptl` without the dump), three ways: as
+  shipped, under `PETAL_STATIC_AUDIT=watch` (cache off, every write to a
+  static value reported) and under `PETAL_STATIC_CHECK=1`. No script error,
+  no audit finding, and the dumped state is the same in all three for every
+  game (Moonbear's differs only in `bake_ms`, a wall-clock reading).
+  `PETAL_STATIC_CHECK` at `518c008` does not print a mismatch, so its part
+  of this rests on the state comparison.
+- `petal check` (this repository's debug CLI, built a few commits after
+  `518c008`) over the 274 tracked `.ptl` files outside `third_party`: the 7
+  documented exceptions fail, nothing else.
+
+Not done in Cheesecake, so nothing of it could be reviewed: no native is
+declared `PB_FX_CONST` (`hash01` and `hex_color` are the candidates named;
+neither implementation was read for this), so every value built with an
+engine native is rebuilt each run and no Cheesecake `CONST` row has been
+audited; no `state` cell is rewritten to `const`; `T`, `F`, `USE` and
+`F_PEOPLE` are still in `games/moses/config.ptl`; the engine prints nothing
+of `statics` and calls none of the new bridge functions; no reload was
+timed (S2) and no allocation count taken (S1). The step meant to do them
+stopped before starting, because the external disk its builds were to go on
+was unmounted; the review built nothing for the same reason and ran only
+the existing Release tree.
 
 ### The final test pass, 13 October 2026
 
@@ -2814,9 +2892,16 @@ largest is that a recompile now pays the cache 31 ms of 187 on neon and 102
 of 488 on Moses (classification 14 and 47, constants inside function bodies
 12 and 33), against none of a patched or relocated reload.
 
-Outside this repository, none started:
+Outside this repository, only the first part of 1 is done:
 
-1. **Cheesecake.** Re-vendor Petal and the bridge. Pass `PB_FX_CONST` for
+1. **Cheesecake.** **Done 2026-10-13: the re-vendor (at `518c008`), the
+   headless Moses profile and the four panels, the engine's test suite, and
+   the audit over every game as far as it goes with no `CONST` native**
+   ("Cheesecake, under its engine" above). **Not done:** `PB_FX_CONST` and
+   the audit of those rows, the lint's rewrite, `statics` and the flush
+   call, dropping Moses's enum-derived tables (A1), and a re-vendor past
+   `fccbc12`. The item as written:
+   Re-vendor Petal and the bridge. Pass `PB_FX_CONST` for
    the engine natives that qualify and run `--static-audit` under the
    engine. Take the headless Moses profile of the first row above. Only then
    apply `petal lint --fix --rules-include=state-as-constant games/moses`

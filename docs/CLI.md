@@ -14,6 +14,22 @@ petal help <command>              # the manual page for one command
 petal --version
 ```
 
+`petal --version` (also `petal version`, `-V`) says what the binary is: the
+version, the git commit it was built from with that commit's date, and the
+date it was built.
+
+```
+$ petal --version
+petal 0.1.0 (4d1b86b0c1 2026-10-13, built 2026-10-14)
+```
+
+The commit has `-dirty` after it when the build's tree had uncommitted changes
+to tracked files, and `-vendored` when the sources were a copy inside another
+repository (the commit is then the one its `VENDORED.md` records). If a
+`petal` on your `PATH` rejects syntax the documentation shows, check this line
+first: an old binary gives no other sign. An embedder reads the same from
+`petal::version` (`describe()`, `GIT_COMMIT`, `GIT_DATE`, `BUILD_DATE`).
+
 A first word that is neither a command nor a file is reported as an unknown
 command, with the nearest real one when there is one (`petal chek x.ptl` →
 `Did you mean 'petal check'?`). A word ending in `.ptl`, or naming a file

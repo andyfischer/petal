@@ -287,6 +287,11 @@ after an edit)". The result:
   news, the timeline.
 - Editing that data does not hot-reload, because `state` keeps its value.
   Live coding is given up for exactly the content authors edit most.
+**Done, 13 October 2026:** `petal --version` prints `petal 0.1.0 (4d1b86b0c1
+2026-10-13, built 2026-10-14)`: the commit (with `-dirty`, or `-vendored`
+from a `VENDORED.md`), its date and the build date, also as `petal::version`.
+A minimum version in `petal.toml` was not added.
+
 - Tables that stayed `let` are paid for every frame: the agent tool list
   (agent.ptl:393-442, 36 records) is part of the 8% the module top levels
   cost.

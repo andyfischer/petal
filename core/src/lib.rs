@@ -87,6 +87,7 @@ pub mod trivia;
 pub mod typecheck;
 pub mod types;
 pub mod value;
+pub mod version;
 
 pub use handle::{HandleClass, HandleClassId, HandleVal};
 

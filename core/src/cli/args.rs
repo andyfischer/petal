@@ -178,7 +178,9 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
             }
         },
         "version" | "--version" | "-V" => {
-            println!("petal {}", env!("CARGO_PKG_VERSION"));
+            // The commit and the build date too: a stale binary on the PATH
+            // looks exactly like a current one without them.
+            println!("{}", crate::version::describe());
             process::exit(0);
         }
         "run" => parse_run_args(&args[1..]),

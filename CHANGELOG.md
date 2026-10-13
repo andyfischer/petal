@@ -382,6 +382,11 @@ way, for code written against an earlier checkout.
 
 ### CLI
 
+- `petal --version` says which build it is: the version, the git commit it
+  was built from (marked `-dirty`, or `-vendored` for a copy inside another
+  repository) with that commit's date, and the build date. The same is
+  `petal::version` for an embedder. A stale binary on the `PATH` gave no sign
+  before.
 - `petal test [<path>...]` finds the test blocks of the files and
   directories given (the current directory by default), runs each on a fresh
   stack after the file's top level, and prints a line per test and a summary;

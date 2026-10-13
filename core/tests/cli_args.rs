@@ -283,3 +283,24 @@ fn run_static_audit_and_static_only() {
     assert_ne!(code, 0, "{err}");
     assert!(err.contains("1 failure") && err.contains("BAD (") && err.contains(") raised:"), "{err}");
 }
+
+/// `petal --version` says which build this is: the version, the commit and
+/// its date, and the build date. A stale binary gives no other sign.
+#[test]
+fn version_prints_the_commit_and_the_build_date() {
+    for flag in ["--version", "version", "-V"] {
+        let (out, err, code) = petal(&[flag]);
+        assert_eq!(code, 0, "{err}");
+        let line = out.trim();
+        assert_eq!(line, petal::version::describe(), "{flag}");
+        assert!(line.starts_with("petal 0."), "{line}");
+        assert!(line.contains(", built 20"), "{line}");
+        assert_eq!(out.lines().count(), 1, "{out}");
+    }
+    // This checkout is a git repository, so the commit is a real one.
+    let commit = petal::version::GIT_COMMIT;
+    assert_ne!(commit, "unknown");
+    let hash = commit.trim_end_matches("-dirty");
+    assert!(hash.len() == 10 && hash.bytes().all(|b| b.is_ascii_hexdigit()), "{commit}");
+    assert_eq!(petal::version::GIT_DATE.len(), 10);
+}

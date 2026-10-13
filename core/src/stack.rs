@@ -142,6 +142,31 @@ impl StateTouches {
     }
 }
 
+/// A test in progress on a stack: begun by
+/// [`Env::test_begin`](crate::env::Env::test_begin), driven by
+/// [`Env::test_resume`](crate::env::Env::test_resume). Between two resumes
+/// its activation records are parked here, off the frame stack, so the host
+/// can run the program's ordinary frames on the same stack in the meantime.
+#[derive(Clone)]
+pub struct TestRun {
+    /// The function being run, as the stack's function table names it.
+    pub function: String,
+    /// The test's frames while it is not executing. Values in them are GC
+    /// roots ([`Stack::gc_roots`]).
+    pub(crate) parked: Vec<crate::backend::bytecode::VmFrame>,
+    /// What the test has recorded so far, across its suspensions.
+    pub(crate) failures: Vec<crate::expect::ExpectFailure>,
+    pub(crate) checked: u64,
+    pub(crate) failed: u64,
+    /// `Env`'s lowering count when the test began: the frames index the
+    /// bytecode of that lowering and no other.
+    pub(crate) lowered: u64,
+    /// Set when something the frames point into was replaced under them (a
+    /// reload, a restored snapshot). The next resume ends the test with
+    /// this as its error.
+    pub(crate) invalidated: Option<&'static str>,
+}
+
 /// Unique identifier for a stack within an Env.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StackKey(pub u32);
@@ -255,6 +280,11 @@ pub struct Stack {
     /// stamped with the lowering it was filled under and starts empty under
     /// any other, and it is cleared with `enums` and `memo` on hot reload.
     pub statics: crate::static_cache::StaticSlots,
+    /// The test a host has begun on this stack and not finished
+    /// ([`Env::test_begin`](crate::env::Env::test_begin)), with its frames
+    /// while it is set aside between two
+    /// [`Env::test_resume`](crate::env::Env::test_resume) calls.
+    pub test: Option<TestRun>,
 }
 
 #[derive(Debug, Clone)]
@@ -329,6 +359,7 @@ impl Stack {
             memo: crate::memo::MemoTable::default(),
             insts: 0,
             statics: crate::static_cache::StaticSlots::default(),
+            test: None,
         }
     }
 
@@ -388,6 +419,17 @@ impl Stack {
     ///
     /// This is the single reset point shared by `Env::reset_stack` and
     /// `Env::transfer_state`.
+    /// The closures, bytecode or heap a test in progress points into are
+    /// about to be replaced (`why` says by what): drop its frames, and let
+    /// the next [`Env::test_resume`](crate::env::Env::test_resume) end it
+    /// with that as its error.
+    pub fn invalidate_test(&mut self, why: &'static str) {
+        if let Some(test) = &mut self.test {
+            test.parked.clear();
+            test.invalidated.get_or_insert(why);
+        }
+    }
+
     pub fn reset_execution(&mut self) {
         self.vm_frames.clear();
         self.vm_started = false;
@@ -506,7 +548,8 @@ impl Stack {
     pub fn gc_roots(&self, mut mark: impl FnMut(Value)) {
         // VM frames are GC roots: their register files and any snapshotted
         // for-each cursors hold live values.
-        for frame in &self.vm_frames {
+        let parked = self.test.iter().flat_map(|t| t.parked.iter());
+        for frame in self.vm_frames.iter().chain(parked) {
             for val in &frame.regs {
                 mark(*val);
             }

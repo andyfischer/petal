@@ -47,7 +47,11 @@ pub fn project_in_file(root: &SyntaxNode, file: FileId) -> Result<Vec<Stmt>, Str
             line_starts.push(i as u32 + 1);
         }
     }
-    let mut p = Projector { line_starts, file };
+    let mut p = Projector {
+        line_starts,
+        file,
+        tests: 0,
+    };
     child_nodes(root).iter().map(|n| p.stmt(n)).collect()
 }
 
@@ -55,6 +59,9 @@ struct Projector {
     /// Char offset of each line start, for offset → line/column conversion.
     line_starts: Vec<u32>,
     file: FileId,
+    /// How many test blocks have been projected: the next one's position
+    /// among the file's tests, which names its function.
+    tests: usize,
 }
 
 // ---- Red-tree access helpers ----
@@ -261,7 +268,30 @@ impl Projector {
 
     fn stmt(&mut self, node: &SyntaxNode) -> Result<Stmt, String> {
         let span = self.node_span(node)?;
+        let mut test = None;
         let kind = match node.kind() {
+            SyntaxKind::TestDecl => {
+                // `test "title" do … end`: the title is the node's one direct
+                // string token, and the function is named by position.
+                let title = direct_tokens(node)
+                    .iter()
+                    .find_map(|t| match t.token() {
+                        Some(Token::String(s)) => Some(s.clone()),
+                        _ => None,
+                    })
+                    .ok_or("test block missing its name")?;
+                let body = self.block(node)?;
+                let name = crate::ast::test_fn_name(self.tests);
+                self.tests += 1;
+                test = Some(title);
+                StmtKind::FnDecl {
+                    name,
+                    class: None,
+                    params: Vec::new(),
+                    ret: None,
+                    body,
+                }
+            }
             SyntaxKind::LetStmt => {
                 // `config let x = …` puts *two* ident tokens under the node:
                 // the contextual `config` modifier, then the bound name. A
@@ -505,6 +535,7 @@ impl Projector {
             kind,
             span,
             exported,
+            test,
         })
     }
 
@@ -566,6 +597,7 @@ impl Projector {
             },
             span,
             exported: false,
+            test: None,
         })
     }
 
@@ -1282,6 +1314,7 @@ impl Projector {
                 kind: StmtKind::Expr(expr),
                 span,
                 exported: false,
+                test: None,
             }]
         } else {
             self.block(node)?

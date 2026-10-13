@@ -50,6 +50,7 @@ pub fn transfer_stack_state(
     // The old captured closures point into the caller's now-cleared closures
     // vec; they get recaptured on the next run.
     stack.functions.clear();
+    stack.invalidate_test("the program was reloaded while the test was waiting");
     stack.methods.clear();
     // An enum the new program dropped must not keep answering field reads.
     stack.enums.clear();

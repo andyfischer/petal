@@ -91,6 +91,10 @@ pub struct ExecutionContext {
     /// resolution lazy — done off the recorded ids, not at emit time — is why
     /// the on-cost here is one short id list per emit.
     pub emit_origins: HashMap<SymbolId, Vec<EmitSite>>,
+    /// The expectations (`expect`, `expect_eq`, `expect_near`) evaluated in
+    /// this context: the failures recorded since the host last took them.
+    /// See [`crate::expect`].
+    pub expects: crate::expect::ExpectLog,
 }
 
 /// EmitSite - Where one buffered value was emitted from: the native's own call site,
@@ -136,6 +140,7 @@ impl ExecutionContext {
             absorption_log: Vec::new(),
             trace_emit: false,
             emit_origins: HashMap::new(),
+            expects: Default::default(),
         }
     }
 
@@ -187,6 +192,7 @@ impl ExecutionContext {
             // or the two would be misaligned from the first push.
             trace_emit: self.trace_emit,
             emit_origins: HashMap::new(),
+            expects: Default::default(),
         }
     }
 

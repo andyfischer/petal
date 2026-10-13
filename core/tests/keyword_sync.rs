@@ -193,6 +193,19 @@ fn vim_set() -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for line in read(VIM_SYNTAX).lines() {
         let line = line.trim();
+        // A contextual keyword that is an everyday identifier elsewhere
+        // (`test`) is matched in its one position instead of declared with
+        // `syn keyword`, which would color every use of the name:
+        // `syn match petalKeyword "…\zstest\ze…"`.
+        if let Some(pattern) = line.strip_prefix("syn match   petalKeyword") {
+            if let Some((_, after)) = pattern.split_once("\\zs")
+                && let Some((word, _)) = after.split_once("\\ze")
+                && is_identifier_shaped(word)
+            {
+                out.insert(word.to_string());
+            }
+            continue;
+        }
         let Some(rest) = line
             .strip_prefix("syn keyword ")
             .or_else(|| line.strip_prefix("syntax keyword "))

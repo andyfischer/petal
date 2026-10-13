@@ -735,6 +735,9 @@ pub struct Heap {
     /// the next collection. Recomputed at the end of every sweep from the live
     /// set; see [`should_collect`](Self::should_collect).
     gc_budget: u64,
+    /// The real `gc_budget` while an [`interrupt`](Self::interrupt) holds it
+    /// at zero.
+    held_budget: Option<u64>,
     /// Mark-and-sweep cycles run so far — see [`collections`](Self::collections).
     collections: u64,
     /// Value-duplication statistics. Records every copy-on-write and fork so we
@@ -832,6 +835,7 @@ impl Heap {
             intern_table: HashMap::new(),
             alloc_charge: 0,
             gc_budget: GC_MIN_BUDGET_BYTES,
+            held_budget: None,
             collections: 0,
             gray_closures: Vec::new(),
             gray_overload_sets: Vec::new(),
@@ -1021,6 +1025,27 @@ impl Heap {
     /// after every VM instruction.
     pub fn should_collect(&self) -> bool {
         self.alloc_charge >= self.gc_budget
+    }
+
+    /// Make [`should_collect`](Self::should_collect) answer true until
+    /// [`end_interrupt`](Self::end_interrupt), so the VM hands control back
+    /// to its driver after the instruction in progress. This is how a native
+    /// stops a run from inside it (`PetalCxt::suspend`) without the VM's
+    /// loop testing a second flag on every instruction: the collector's poll
+    /// is the one it already makes. Only a driver that ends the interrupt
+    /// before it collects may let one be raised.
+    pub(crate) fn interrupt(&mut self) {
+        if self.held_budget.is_none() {
+            self.held_budget = Some(self.gc_budget);
+            self.gc_budget = 0;
+        }
+    }
+
+    /// Undo [`interrupt`](Self::interrupt), if one is raised.
+    pub(crate) fn end_interrupt(&mut self) {
+        if let Some(budget) = self.held_budget.take() {
+            self.gc_budget = budget;
+        }
     }
 
     /// Take the closures and overload sets marking has run into so far, leaving

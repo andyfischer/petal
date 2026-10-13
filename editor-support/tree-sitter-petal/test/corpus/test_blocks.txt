@@ -1,0 +1,39 @@
+==================
+Test blocks
+==================
+
+test "a hit costs one life" do
+  expect_eq(after_hit(3), 2)
+end
+
+test "empty" do end
+
+let test = 1
+test(test)
+fn test(x) x end
+
+---
+
+(source_file
+  (test_declaration
+    name: (string (string_content))
+    body: (block
+      (call
+        function: (identifier)
+        arguments: (argument_list
+          (call
+            function: (identifier)
+            arguments: (argument_list (integer)))
+          (integer)))))
+  (test_declaration
+    name: (string (string_content)))
+  (let_declaration
+    name: (identifier)
+    value: (integer))
+  (call
+    function: (identifier)
+    arguments: (argument_list (identifier)))
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list (parameter name: (identifier)))
+    body: (block (identifier))))

@@ -339,6 +339,10 @@ fn gather_from(
 fn declarations(stmts: &[Stmt]) -> BTreeMap<FnKey, &Stmt> {
     let mut out = BTreeMap::new();
     for stmt in stmts {
+        // A test block has no signature to annotate.
+        if stmt.test.is_some() {
+            continue;
+        }
         if let StmtKind::FnDecl { name, params, .. } = &stmt.kind {
             out.insert((name.clone(), params.len()), stmt);
         }

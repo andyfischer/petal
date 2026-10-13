@@ -4411,6 +4411,10 @@
           "named": true
         },
         {
+          "type": "test_declaration",
+          "named": true
+        },
+        {
           "type": "unary_expression",
           "named": true
         },
@@ -4755,6 +4759,32 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "test_declaration",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "block",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "string",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -5378,6 +5408,10 @@
   {
     "type": "string_content",
     "named": true
+  },
+  {
+    "type": "test",
+    "named": false
   },
   {
     "type": "then",

@@ -74,6 +74,9 @@ pub enum SyntaxKind {
     /// declaration: a `ParamList`, an optional `ReturnType` and an optional
     /// `NativeBinding`, with no body.
     NativeFnDecl,
+    /// `test "title" do … end` — a test block: the contextual `test`
+    /// identifier, the title string, `do`, a [`SyntaxKind::Block`] and `end`.
+    TestDecl,
     EnumDecl,
     /// `class Name … end` — a named record type declaration.
     ClassDecl,

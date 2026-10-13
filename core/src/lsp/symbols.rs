@@ -23,6 +23,17 @@ pub fn document_symbols(stmts: &[Stmt], source: &str) -> Vec<DocumentSymbol> {
     let mut out = Vec::new();
     for stmt in stmts {
         match &stmt.kind {
+            // A test block is listed by its title, where the outline's
+            // selection lands.
+            StmtKind::FnDecl { .. } if stmt.test.is_some() => {
+                let title = stmt.test.as_deref().unwrap_or_default();
+                out.push(symbol(
+                    title,
+                    Some("test".to_string()),
+                    SymbolKind::Function,
+                    stmt.span,
+                ));
+            }
             StmtKind::FnDecl { name, params, .. } => {
                 let params: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
                 out.push(symbol(

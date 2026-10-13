@@ -34,12 +34,14 @@ mod state_json;
 mod state_storage;
 mod static_follow;
 mod statics;
+mod testing;
 
 pub use reload::{ConfigSetError, FileChange, ProgramChange, ReloadOutcome, ReloadReport};
 pub use state_storage::{StateStorageLoad, StateStorageSave, name_list as state_name_list};
 pub use run::FunctionParam;
 pub use static_follow::{StaleSeed, StaticReload};
 pub use statics::{StaticSlotState, StaticValues};
+pub use testing::{TestResult, TestStep};
 
 pub struct Env {
     programs: HashMap<ProgramId, Program>,
@@ -2202,6 +2204,13 @@ impl Env {
         let ck = self.default_context;
         let ctx = self.ctx_mut(ck);
         ctx.closures.clear();
+        // A test set aside on a stack of this context holds ids of the
+        // closures just cleared.
+        for stack in self.stacks.values_mut() {
+            if stack.context == ck {
+                stack.invalidate_test("the program was reloaded while the test was waiting");
+            }
+        }
     }
 }
 

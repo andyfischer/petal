@@ -475,6 +475,37 @@ pub struct Stmt {
     /// everywhere else — nested statements and the entry file never export.
     #[serde(skip_serializing_if = "is_false")]
     pub exported: bool,
+    /// `Some(title)` when this statement is a `test "title" do … end` block.
+    /// The block is carried as a [`StmtKind::FnDecl`] of no parameters whose
+    /// name is [`test_fn_name`] of its position among the file's tests, so
+    /// every pass that understands a function understands a test's body; the
+    /// title here is what tells the two apart. Nothing calls the function in
+    /// an ordinary run: a test runner finds it through
+    /// [`Program::tests`](crate::program::Program::tests). Top level only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub test: Option<String>,
+}
+
+/// The contextual keyword that opens a test block (`test "title" do`): a
+/// keyword only at the start of a top-level statement, directly before a
+/// string literal. Anywhere else `test` is an ordinary name.
+pub const TEST_KEYWORD: &str = "test";
+
+/// The prefix of the function a test block is compiled as.
+pub const TEST_FN_PREFIX: &str = "__test_";
+
+/// The name of the function the `index`th test block of a file (counting
+/// from 0, in source order) is compiled as.
+pub fn test_fn_name(index: usize) -> String {
+    format!("{TEST_FN_PREFIX}{index}")
+}
+
+/// Whether `name` (bare, or module-qualified as `module::name`) is the
+/// function of a test block.
+pub fn is_test_fn_name(name: &str) -> bool {
+    let bare = name.rsplit("::").next().unwrap_or(name);
+    bare.strip_prefix(TEST_FN_PREFIX)
+        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
 #[derive(Debug, Clone, Serialize)]

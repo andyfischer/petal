@@ -1411,3 +1411,53 @@ fn a_const_is_a_constant_in_the_outline_and_its_error_is_a_diagnostic() {
         .collect();
     assert_eq!(rows, [("B", "const", 14), ("c", "let", 13)]);
 }
+
+#[test]
+fn a_test_block_is_outlined_by_its_title_and_its_function_is_not_offered() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///tested.ptl";
+    let text = "fn after_hit(lives) lives - 1 end\n\ntest \"a hit costs one life\" do\n  let left = after_hit(3)\n  expect_eq(left, 2)\nend\n";
+    // The body is checked like any function's: nothing to report here.
+    assert!(get_diagnostics(&open(&mut server, uri, text)).is_empty());
+
+    let msgs = server.handle_message(&request(
+        4,
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": uri } }),
+    ));
+    let resp: Value = serde_json::from_str(&msgs[0].to_json()).unwrap();
+    let symbols = resp["result"].as_array().expect("symbols");
+    let summary: Vec<(&str, Option<&str>)> = symbols
+        .iter()
+        .map(|s| (s["name"].as_str().unwrap(), s["detail"].as_str()))
+        .collect();
+    assert_eq!(
+        summary,
+        [("after_hit", Some("fn(lives)")), ("a hit costs one life", Some("test"))]
+    );
+    // The selection is the title, inside the quotes.
+    assert_eq!(symbols[1]["selectionRange"]["start"], json!({"line": 2, "character": 6}));
+    assert_eq!(symbols[1]["range"]["end"]["line"], 5);
+
+    // Completion inside the body offers the file's functions and the test's
+    // locals, and never the block's own function.
+    let typing = "fn after_hit(lives) lives - 1 end\n\ntest \"a hit costs one life\" do\n  let left = after_hit(3)\n  \nend\n";
+    change(&mut server, uri, 2, typing);
+    let resp = completion(&mut server, uri, 4, 2);
+    let labels: Vec<&str> = resp["result"]["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .filter_map(|i| i["label"].as_str())
+        .collect();
+    assert!(labels.contains(&"test"), "{labels:?}");
+    assert!(labels.contains(&"after_hit"), "{labels:?}");
+    assert!(labels.contains(&"left"), "{labels:?}");
+    assert!(!labels.iter().any(|l| l.contains("__test")), "{labels:?}");
+    // A type error inside a test body is a diagnostic like any other.
+    let bad = "fn double(x: int) x * 2 end\ntest \"typed\" do\n  expect_eq(double(\"a\"), 2)\nend\n";
+    let diags = get_diagnostics(&change(&mut server, uri, 3, bad));
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    assert_eq!(diags[0].range.start.line, 2);
+}

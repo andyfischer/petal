@@ -22,6 +22,9 @@ syn match   petalComment "//.*$" contains=petalTodo,@Spell
 " ---- Keywords ----
 syn keyword petalKeyword     import pub export as config native let const var set get state fn enum class return for in while do match when
 syn keyword petalKeyword     break continue
+" `test` opens a test block only before its name: `test "adds" do`. Anywhere
+" else it is an ordinary identifier, so it is matched in that position only.
+syn match   petalKeyword     "^\s*\zstest\ze\s\+\""
 syn keyword petalConditional if then elsif else end
 syn keyword petalBoolean     true false
 syn keyword petalConstant    nil

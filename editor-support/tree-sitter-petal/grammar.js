@@ -68,7 +68,8 @@ module.exports = grammar({
   ],
 
   rules: {
-    source_file: $ => repeat($._statement),
+    // A test block is a statement of the file's top level only.
+    source_file: $ => repeat(choice($._statement, $.test_declaration)),
 
     // ---- Statements ----
 
@@ -286,6 +287,32 @@ module.exports = grammar({
       field('key', $.identifier),
       ':',
       field('value', $._expression),
+    ),
+
+    // `test "name" do … end` — a block `petal test` finds and runs, and an
+    // ordinary run never does (core/src/parse.rs `parse_test_decl`,
+    // docs/testing.md). `test` is a *contextual* keyword: a keyword only at the
+    // start of a top-level statement, directly before a string. Unlike `as` and
+    // `class` it cannot be a plain keyword literal here, because a file that
+    // calls its own `test()` at the top level is ordinary Petal. So the opening
+    // token is `test`, blanks and the name's opening quote together: where a
+    // statement may start it is longer than the identifier `test` and wins,
+    // and it matches nothing else. It is aliased to the anonymous node `test`
+    // so the highlight query can name it; the rest of the name is aliased to
+    // an ordinary `string`. The name takes no `{…}` holes.
+    test_declaration: $ => seq(
+      alias($._test_open, 'test'),
+      field('name', alias($._test_name, $.string)),
+      'do',
+      optional(field('body', $.block)),
+      'end',
+    ),
+
+    _test_open: _ => token(seq('test', /[ \t]+/, '"')),
+
+    _test_name: $ => seq(
+      repeat(choice($.string_content, $.escape_sequence)),
+      '"',
     ),
 
     for_statement: $ => seq(

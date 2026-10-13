@@ -112,6 +112,7 @@ impl Env {
                 other.memo.clear();
                 other.enums.clear();
                 other.functions.clear();
+                other.invalidate_test("a state snapshot was restored while the test was waiting");
                 other.methods.clear();
                 other.run_deps.force();
             }

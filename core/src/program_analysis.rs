@@ -828,6 +828,8 @@ mod tests {
             imports: Default::default(),
             static_analysis: None,
             introspect: Default::default(),
+            tests: Vec::new(),
+            entry_name: String::new(),
         }
     }
 

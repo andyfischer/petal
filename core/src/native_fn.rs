@@ -886,6 +886,16 @@ pub struct PetalCxt<'a> {
     /// only while `trace_emit` is on, and copied onto each value this call
     /// emits. Empty otherwise.
     pub(crate) emit_chain: &'a [crate::program::TermId],
+    /// The owning context's recorded expectations ([`crate::expect`]), where
+    /// `expect` and its kin put a failure and where a native asks to suspend.
+    pub(crate) expects: &'a mut crate::expect::ExpectLog,
+    /// The running program, for turning [`origin`](Self::origin) into a file
+    /// and a line ([`call_location`](Self::call_location)).
+    pub(crate) program: &'a crate::program::Program,
+    /// How many synchronous closure calls (a `map` callback) enclose this
+    /// call. A call inside one cannot suspend: its frames are on the native
+    /// stack.
+    pub(crate) sync_depth: u32,
     pub(crate) bindings: &'a mut HashMap<SymbolId, Value>,
     pub(crate) binding_revisions: &'a HashMap<SymbolId, u64>,
     /// The running stack's dependency record (see [`crate::run_deps`]),
@@ -1307,6 +1317,109 @@ impl<'a> PetalCxt<'a> {
     /// resource this call creates.
     pub fn frame(&self) -> u64 {
         self.frame
+    }
+
+    /// Where this call is written: the file, line and column of the call
+    /// expression. `None` when the call has no source position (a program
+    /// loaded from IR, a call the host made itself).
+    pub fn call_location(&self) -> Option<crate::expect::CallLocation> {
+        let span = self.program.source_map.get(self.origin?)?;
+        if span.start.line == 0 {
+            return None;
+        }
+        let file = match self.program.source_map.file_name_for_span(span) {
+            Some(name) => name.to_string(),
+            None => self.program.entry_name.clone(),
+        };
+        Some(crate::expect::CallLocation {
+            file,
+            line: span.start.line,
+            column: span.start.column,
+        })
+    }
+
+    /// Note an expectation that held (see [`crate::expect`]). A host native
+    /// that checks something of its own calls this or
+    /// [`fail_expectation`](Self::fail_expectation), so a test's count of
+    /// checks includes it.
+    pub fn pass_expectation(&mut self) {
+        self.expects.pass();
+    }
+
+    /// Record an expectation that did not hold, at this call's position, and
+    /// carry on: the failure is reported by whoever reads the log (the test
+    /// runner, [`Env::take_expect_failures`](crate::env::Env::take_expect_failures)),
+    /// not raised. `check` names what was checked (`expect_eq`, or a host's
+    /// own `expect_pixel`), and `message` is the whole failure in one line.
+    pub fn fail_expectation(&mut self, check: &str, message: String) {
+        self.fail_expectation_with(check, message, None, None, None, None);
+    }
+
+    /// [`fail_expectation`](Self::fail_expectation) with the values that
+    /// were compared, already rendered.
+    pub fn fail_expectation_with(
+        &mut self,
+        check: &str,
+        message: String,
+        actual: Option<String>,
+        expected: Option<String>,
+        tolerance: Option<String>,
+        note: Option<String>,
+    ) {
+        let at = self.call_location();
+        let (file, line, column) = match at {
+            Some(at) => (at.file, at.line, at.column),
+            None => (String::new(), 0, 0),
+        };
+        self.expects.fail(crate::expect::ExpectFailure {
+            check: check.to_string(),
+            file,
+            line,
+            column,
+            message,
+            actual,
+            expected,
+            tolerance,
+            note,
+        });
+    }
+
+    /// Whether [`suspend`](Self::suspend) would succeed here.
+    pub fn can_suspend(&self) -> bool {
+        self.expects.suspendable && self.sync_depth == 0
+    }
+
+    /// Ask the test this call runs in to stop after this call returns, so
+    /// the host can do something that takes time — run some of its frames —
+    /// and then carry on from the next instruction with
+    /// [`Env::test_resume`](crate::env::Env::test_resume). This is how a
+    /// host writes `wait_frames(n)`: the native notes `n` where the host's
+    /// loop can see it and calls `suspend`.
+    ///
+    /// The call still returns normally, and what it pushed is its value.
+    /// An error when nothing can resume the call: outside a test driven by
+    /// [`Env::test_resume`](crate::env::Env::test_resume) (an ordinary run,
+    /// `Env::call_function`), or inside a callback of `map`, `filter`,
+    /// `reduce`, `forEach` or `sort`, whose frames cannot be set aside.
+    pub fn suspend(&mut self) -> Result<(), String> {
+        if !self.expects.suspendable {
+            return Err(
+                "this can only wait inside a test that the host is running step by step \
+                 (not in an ordinary run, and not in a function the host called directly)"
+                    .to_string(),
+            );
+        }
+        if self.sync_depth > 0 {
+            return Err(
+                "a test cannot wait inside a callback of map, filter, reduce, forEach or sort; \
+                 use a `for` loop"
+                    .to_string(),
+            );
+        }
+        self.expects.suspend_requested = true;
+        // The VM leaves its loop where it would for a due collection.
+        self.heap.interrupt();
+        Ok(())
     }
 
     /// Consume the state and return the single value a call yields to Petal:

@@ -236,9 +236,11 @@ pub const KEYWORDS: &[&str] = &[
 /// `<div class="…">`. `config` is a modifier the parser reads only in the one
 /// slot immediately before a binding keyword (`config let x = …`), so it too
 /// stays an ordinary name everywhere else. `native` is a keyword only directly
-/// before `fn` (`native fn sqrt(x: num) -> float`). Downstream tooling
+/// before `fn` (`native fn sqrt(x: num) -> float`). `test` opens a test block
+/// only at the start of a statement, directly before a string
+/// (`test "adds" do … end`). Downstream tooling
 /// (highlighting, completion) should still treat these as keywords.
-pub const CONTEXTUAL_KEYWORDS: &[&str] = &["as", "class", "config", "native"];
+pub const CONTEXTUAL_KEYWORDS: &[&str] = &["as", "class", "config", "native", "test"];
 
 /// Map an identifier-shaped word to its keyword token, or `None` if it is an
 /// ordinary identifier.

@@ -10,3 +10,6 @@ pub native fn str(value) -> string
 pub native fn type(value) -> string
 pub native fn assert(condition, message?)
 pub native fn assert_eq(actual, expected)
+pub native fn expect(condition, message?) -> bool
+pub native fn expect_eq(actual, expected, message?) -> bool
+pub native fn expect_near(actual: num, expected: num, tolerance: num, message?) -> bool

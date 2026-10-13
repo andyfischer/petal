@@ -25,6 +25,7 @@ pub mod dot_graph;
 pub mod env;
 pub mod error;
 pub mod execution_context;
+pub mod expect;
 pub mod export_keyword;
 pub mod extract;
 pub mod fix_imports;
@@ -77,6 +78,7 @@ pub mod static_json;
 pub mod static_value;
 pub mod stats;
 pub mod symbol;
+pub mod test_runner;
 #[cfg(test)]
 mod test_corpus;
 pub mod trace;

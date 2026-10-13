@@ -36,6 +36,7 @@
   "as"
   "config"
   "native"
+  "test"
   "let"
   "const"
   "var"

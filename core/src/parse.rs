@@ -38,6 +38,10 @@ impl LetKeyword {
 /// (`native fn name(...)`): a keyword only directly before `fn`.
 pub const NATIVE_KEYWORD: &str = "native";
 
+/// The contextual keyword that opens a test block (`test "title" do … end`):
+/// a keyword only at the start of a statement, directly before a string.
+pub use crate::ast::TEST_KEYWORD;
+
 /// How a token is spelled in a diagnostic: the source text a reader would
 /// recognize (`','`, `']'`, `` `end` ``), never the Rust variant name. Parse
 /// errors used to leak `Debug` output — "Expected RBracket, got Comma" names
@@ -151,6 +155,13 @@ pub struct Parser {
     /// (`fn(x) -> expr`). An `end` found there is the arrow lambda's
     /// block-form habit, and the error says so (see [`Parser::error_hint`]).
     arrow_lambda_end: Option<usize>,
+    /// The titles of the test blocks parsed so far, in source order. A
+    /// block's position here names its function ([`crate::ast::test_fn_name`]),
+    /// and a title written twice is an error.
+    test_titles: Vec<String>,
+    /// True while [`Parser::parse_program`] is about to parse a statement of
+    /// the file's top level — the only place a test block may be written.
+    at_top_level: bool,
 }
 
 impl Parser {
@@ -162,6 +173,8 @@ impl Parser {
             events: EventBuilder::new(),
             pending_optional: false,
             arrow_lambda_end: None,
+            test_titles: Vec::new(),
+            at_top_level: false,
         }
     }
 
@@ -198,6 +211,7 @@ impl Parser {
         self.skip_newlines();
         while !self.is_at_end() {
             let stmt_pos = self.pos;
+            self.at_top_level = true;
             let stmt = self.parse_stmt()?;
             // Imports must come before any other statement: resolution runs
             // strictly ahead of the declaration prescan, and execution order
@@ -524,6 +538,7 @@ impl Parser {
             kind,
             span: self.span_from(start_pos),
             exported: false,
+            test: None,
         }
     }
 
@@ -532,7 +547,21 @@ impl Parser {
     fn parse_stmt(&mut self) -> Result<Stmt, String> {
         self.skip_newlines();
         let start = self.pos;
+        // Whatever this statement is, the statements inside it are nested.
+        let top_level = std::mem::take(&mut self.at_top_level);
         match self.peek().clone() {
+            // `test` is contextual: a keyword only when a string follows it at
+            // the start of a statement, which no expression can be.
+            Token::Ident(ref w) if w == TEST_KEYWORD && self.starts_test_decl() => {
+                if !top_level {
+                    return Err(self.error_at_current(
+                        "a `test` block is only allowed at the top level of a file, not inside \
+                         a function, a loop or another block"
+                            .to_string(),
+                    ));
+                }
+                self.parse_test_decl(start)
+            }
             Token::Let => self.parse_let(start, false, LetKeyword::Let, false),
             Token::Var => self.parse_let(start, false, LetKeyword::Var, false),
             Token::Const => self.parse_let(start, false, LetKeyword::Const, false),
@@ -991,6 +1020,65 @@ impl Parser {
             start,
         );
         stmt.exported = exported;
+        Ok(stmt)
+    }
+
+    /// `test` opens a test block only when a string literal follows it.
+    fn starts_test_decl(&self) -> bool {
+        // An interpolated string is no name for a test, and no expression
+        // either: it is taken for the attempt it is, and refused by name.
+        matches!(
+            self.tokens.get(self.pos + 1),
+            Some(Token::String(_) | Token::InterpStart)
+        )
+    }
+
+    /// `test "title" do … end` — a block a test runner finds and calls, and an
+    /// ordinary run never does. Carried as a function of no parameters (see
+    /// [`Stmt::test`]), so its body is checked and compiled like any other.
+    fn parse_test_decl(&mut self, start: usize) -> Result<Stmt, String> {
+        self.ev_open(SyntaxKind::TestDecl);
+        self.advance(); // consume 'test'
+        let title_pos = self.pos;
+        let Token::String(title) = self.peek().clone() else {
+            return Err(self.error_at_current(
+                "the name of a test is a plain string, with no `{…}` holes".to_string(),
+            ));
+        };
+        self.advance(); // consume the title
+        if !matches!(self.peek(), Token::Do) {
+            return Err(self.error_at_current(format!(
+                "Expected `do` after the name of the test, got {}. A test is written \
+                 `test \"name\" do … end`, and its name is a plain string (no `{{…}}` holes)",
+                token_desc(&self.peek().clone())
+            )));
+        }
+        if title.trim().is_empty() {
+            return Err(self.error_at(title_pos, "a test needs a name".to_string()));
+        }
+        if self.test_titles.contains(&title) {
+            return Err(self.error_at(
+                title_pos,
+                format!("this file already has a test named \"{title}\""),
+            ));
+        }
+        self.advance(); // consume 'do'
+        let body = self.parse_block_until(&[Token::End])?;
+        self.expect_block_end(start, &format!("the test \"{title}\""))?;
+        self.ev_close(); // TestDecl
+        let name = crate::ast::test_fn_name(self.test_titles.len());
+        self.test_titles.push(title.clone());
+        let mut stmt = self.mk_stmt(
+            StmtKind::FnDecl {
+                name,
+                class: None,
+                params: Vec::new(),
+                ret: None,
+                body,
+            },
+            start,
+        );
+        stmt.test = Some(title);
         Ok(stmt)
     }
 

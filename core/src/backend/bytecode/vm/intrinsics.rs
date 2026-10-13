@@ -66,6 +66,17 @@ impl<'a> Vm<'a> {
         result
     }
 
+    /// Push the frame of a call of `callable` with no arguments and return,
+    /// leaving it to the caller to step it: the start of a call the host
+    /// drives in pieces (`Env::test_begin`), where
+    /// [`call_closure_sync`](Self::call_closure_sync) runs one to the end.
+    pub(crate) fn push_host_frame(&mut self, callable: Value, site: u64) -> Result<(), String> {
+        let cid = calls::resolve_callable(self.program, self.closures, callable, 0, &[])?;
+        self.push_closure_frame(cid, &[], &Default::default(), None, None, site, false)?;
+        self.stack.last_pop_result = None;
+        Ok(())
+    }
+
     fn call_closure_sync_nested(
         &mut self,
         callable: Value,

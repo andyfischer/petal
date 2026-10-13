@@ -200,13 +200,19 @@ fn full_stack_trace(program: &Program, frames: &[TraceFrame]) -> Vec<String> {
     let entry_name = crosses_modules.then(|| entry_file_name(program)).flatten();
     call_sites
         .into_iter()
-        .map(|(name, span)| match (span, entry_name) {
-            (Some(span), Some(entry)) if span.file == ENTRY_FILE => format!(
-                "in {}() [{} line {}, column {}]",
-                name, entry, span.start.line, span.start.column
-            ),
-            (Some(span), _) => format!("in {}() {}", name, format_position(program, span)),
-            (None, _) => format!("in {}()", name),
+        .map(|(name, span)| {
+            // A test block is not called by name: `in test "title"`.
+            let call = if name.starts_with("test \"") { "" } else { "()" };
+            match (span, entry_name) {
+                (Some(span), Some(entry)) if span.file == ENTRY_FILE => format!(
+                    "in {}{call} [{} line {}, column {}]",
+                    name, entry, span.start.line, span.start.column
+                ),
+                (Some(span), _) => {
+                    format!("in {}{call} {}", name, format_position(program, span))
+                }
+                (None, _) => format!("in {}{call}", name),
+            }
         })
         .collect()
 }

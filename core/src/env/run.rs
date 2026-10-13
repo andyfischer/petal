@@ -585,7 +585,7 @@ pub struct FunctionParam {
 /// Derived from the name the host asked for, so every host call of one function
 /// lands on the same slots; the `host ` marker (a space cannot appear in an
 /// identifier) keeps it disjoint from every compiled callsite id.
-fn host_call_site(name: &str) -> u64 {
+pub(super) fn host_call_site(name: &str) -> u64 {
     crate::compiler::Compiler::hash_state_name(&format!("host {name}"))
 }
 
@@ -594,7 +594,7 @@ fn host_call_site(name: &str) -> u64 {
 /// stack / context), so the caller splits them out before calling. Both run
 /// paths — [`Env::step_bytecode`] and [`Env::call_function`] — construct an
 /// identical VM this way.
-fn make_vm<'a>(
+pub(super) fn make_vm<'a>(
     program: &'a Program,
     bc: &'a BytecodeProgram,
     stack: &'a mut Stack,
@@ -654,5 +654,6 @@ fn make_vm<'a>(
         memo,
         audit,
         static_audit,
+        expects: &mut ctx.expects,
     }
 }

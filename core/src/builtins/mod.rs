@@ -538,6 +538,14 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     );
     table.intrinsic_enum_all = Some(enum_all_id);
 
+    // Recorded expectations (`crate::expect`): a check that does not hold is
+    // written to the context's log and the run carries on. Effects: the log
+    // is the point, so a call is never folded, kept or replayed.
+    // Append-only, like the rest of this block.
+    table.register("expect", io::native_expect, NativeEffects::EFFECT);
+    table.register("expect_eq", io::native_expect_eq, NativeEffects::EFFECT);
+    table.register("expect_near", io::native_expect_near, NativeEffects::EFFECT);
+
     // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
     // ids they were just given.
     for op in crate::backend::bytecode::isa::IntrinsicOp::ALL {

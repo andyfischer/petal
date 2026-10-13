@@ -609,6 +609,26 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
+/// One `test "title" do … end` block of a program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TestDecl {
+    /// The title as written.
+    pub name: String,
+    /// The module the block is written in (`sim`, `bloom/menu`), or `None`
+    /// for the entry file.
+    pub module: Option<String>,
+    /// The file's display name, as diagnostics spell it (`sim.ptl`,
+    /// `<entry>` for an entry with no path).
+    pub file: String,
+    /// The file's path on disk, when it has one.
+    pub path: Option<std::path::PathBuf>,
+    /// 1-based line of the `test` keyword.
+    pub line: u32,
+    /// The top-level function the block compiles to, as the stack's function
+    /// table names it (`__test_0`, `sim::__test_2`).
+    pub function: String,
+}
+
 /// A compiled program ready for execution.
 #[derive(Serialize, Deserialize)]
 pub struct Program {
@@ -713,6 +733,18 @@ pub struct Program {
     /// program loaded from IR.
     #[serde(skip)]
     pub imports: ImportTable,
+    /// The program's test blocks (`test "title" do … end`), entry file and
+    /// modules alike, in the order their files were loaded and then source
+    /// order. A compile-time table for test runners
+    /// ([`crate::env::Env::tests`]); not part of the serialized IR, and empty
+    /// for a program loaded from it.
+    #[serde(skip)]
+    pub tests: Vec<TestDecl>,
+    /// The entry file's display name, as diagnostics spell it (`game.ptl`;
+    /// `<entry>` for an entry with no path). Empty for a program loaded from
+    /// IR.
+    #[serde(skip)]
+    pub entry_name: String,
     /// The static classification the compile computed for the `const`
     /// check, kept for the lowering that follows it so the classifier runs
     /// once ([`crate::static_classify::KeptAnalysis`]). `None` for a
@@ -823,6 +855,19 @@ pub struct EnumVariantDef {
     /// Constant-data keys, in declaration order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub data: Vec<String>,
+}
+
+impl Program {
+    /// The test block compiled as the function `function`, which may be
+    /// module-qualified (`sim::__test_0`) or bare; a bare name finds the
+    /// entry file's test first.
+    pub fn test_of_function(&self, function: &str) -> Option<&TestDecl> {
+        self.tests.iter().find(|t| t.function == function).or_else(|| {
+            self.tests
+                .iter()
+                .find(|t| t.function.rsplit("::").next() == Some(function))
+        })
+    }
 }
 
 impl Program {

@@ -179,6 +179,10 @@ pub fn find(source: &str, stmts: &[Stmt], extra: &[Vec<Stmt>]) -> Vec<ReturnType
     let chars: Vec<char> = source.chars().collect();
     let mut out = Vec::new();
     for stmt in stmts {
+        // A test block returns to nobody and has nowhere to write a type.
+        if stmt.test.is_some() {
+            continue;
+        }
         let StmtKind::FnDecl {
             name,
             params,

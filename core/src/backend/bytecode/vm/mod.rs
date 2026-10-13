@@ -199,6 +199,9 @@ pub struct Vm<'a> {
     /// input touched while a static top-level term is being evaluated is
     /// recorded — see [`crate::static_audit`].
     pub static_audit: &'a mut crate::static_audit::StaticAudit,
+    /// The owning context's recorded expectations, and the flag a native
+    /// sets to suspend a test ([`crate::expect::ExpectLog`]).
+    pub expects: &'a mut crate::expect::ExpectLog,
 }
 
 impl<'a> Vm<'a> {
@@ -431,6 +434,9 @@ impl<'a> Vm<'a> {
             consumed += 1;
             match self.step_in(depth - 1, func) {
                 StepResult::Continue => {
+                    // Also how a native that asked to suspend the test it
+                    // runs in stops the batch after its own instruction
+                    // (`PetalCxt::suspend` raises `Heap::interrupt`).
                     if self.heap.should_collect() {
                         return (StepResult::Continue, consumed);
                     }
@@ -464,10 +470,15 @@ impl<'a> Vm<'a> {
     /// The display name for a function frame in a stack trace — the source name
     /// with any internal `#arity` overload suffix stripped (matching the graph).
     fn fn_display_name(&self, fid: FunctionId) -> Option<String> {
-        self.program.functions[fid.0 as usize]
-            .name
-            .as_deref()
-            .map(|n| base_fn_name(n).to_string())
+        let name = self.program.functions[fid.0 as usize].name.as_deref()?;
+        // A test block's function is named by position; a trace names the
+        // block as its author did.
+        if crate::ast::is_test_fn_name(name)
+            && let Some(test) = self.program.test_of_function(name)
+        {
+            return Some(format!("test \"{}\"", test.name));
+        }
+        Some(base_fn_name(name).to_string())
     }
 
     // -- register access -----------------------------------------------------

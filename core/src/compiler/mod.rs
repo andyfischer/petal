@@ -806,6 +806,29 @@ impl Compiler {
             enums,
             introspect: Default::default(),
             static_analysis: None,
+            entry_name: entry.display_name.clone(),
+            tests: modules
+                .iter()
+                .flat_map(|m| {
+                    m.stmts.iter().filter_map(move |stmt| {
+                        let title = stmt.test.as_ref()?;
+                        let StmtKind::FnDecl { name, .. } = &stmt.kind else {
+                            return None;
+                        };
+                        Some(crate::program::TestDecl {
+                            name: title.clone(),
+                            module: m.name.clone(),
+                            file: m.display_name.clone(),
+                            path: m.origin.clone(),
+                            line: stmt.span.start.line as u32,
+                            function: match &m.name {
+                                Some(module) => format!("{module}::{name}"),
+                                None => name.clone(),
+                            },
+                        })
+                    })
+                })
+                .collect(),
             native_links,
             method_natives: Some(std::mem::take(&mut self.method_natives)),
             requires: {

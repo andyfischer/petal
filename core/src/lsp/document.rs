@@ -827,12 +827,16 @@ fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Defin
                 .map(|r| format!(" -> {}", r.name))
                 .unwrap_or_default();
             let detail = Some(format!("fn({param_list}){ret_str}"));
-            defs.push(Definition::new(
-                name.clone(),
-                DefinitionKind::Function,
-                stmt.span,
-                detail,
-            ));
+            // A test block's function has a name nobody wrote (`__test_0`):
+            // nothing to complete or to go to. Its body is read as usual.
+            if stmt.test.is_none() {
+                defs.push(Definition::new(
+                    name.clone(),
+                    DefinitionKind::Function,
+                    stmt.span,
+                    detail,
+                ));
+            }
             for p in params {
                 defs.push(param_definition(p, stmt.span, src));
             }
@@ -1098,11 +1102,11 @@ fn is_ident_char(c: char) -> bool {
 // ---------------------------------------------------------------------------
 
 /// The lexer's hard keywords plus the contextual ones (`as`, `class`,
-/// `config`, `native`), which completion should still offer. Checked against
+/// `config`, `native`, `test`), which completion should still offer. Checked against
 /// `petal::lexer::KEYWORDS` by
 /// `core/tests/keyword_sync.rs` — do not edit this list alone.
 pub const KEYWORDS: &[&str] = &[
     "let", "const", "var", "set", "get", "fn", "if", "then", "elsif", "else", "end", "for", "in", "do",
     "while", "match", "when", "return", "break", "continue", "state", "import", "pub", "export",
-    "as", "true", "false", "nil", "enum", "class", "config", "native",
+    "as", "true", "false", "nil", "enum", "class", "config", "native", "test",
 ];

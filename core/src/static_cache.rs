@@ -205,6 +205,12 @@
 //! skipped run records nothing for it, and what it would have recorded is
 //! every instruction, not one value per name), and under the static audit.
 
+// The passes below walk instruction positions: one `ip` indexes the code and
+// the per-instruction tables beside it (statement, reads, writes, origins),
+// and is compared with other positions. Iterating one of the tables instead
+// would hide that they are parallel.
+#![allow(clippy::needless_range_loop)]
+
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -248,6 +254,18 @@ pub struct StaticSlotInfo {
     /// For a value built inside a function body (see [`in_fn`]): the
     /// function's name. `None` for a top-level value.
     pub function: Option<String>,
+}
+
+impl StaticSlotInfo {
+    /// The words for a value built inside a function body that the check
+    /// ([`StaticSlots::set_check`]) found different from the one kept.
+    pub fn mismatch_message(&self) -> String {
+        format!(
+            "a value kept for {}{} was built different on a later call",
+            self.function.as_deref().unwrap_or("a function"),
+            self.at.as_ref().map(|a| format!(" ({a})")).unwrap_or_default()
+        )
+    }
 }
 
 /// What a reload needs to know about one slot.
@@ -574,6 +592,10 @@ pub struct StaticSlots {
     /// Check the values built inside function bodies instead of trusting
     /// them (see [`set_check`](Self::set_check)).
     check: bool,
+    /// Print each mismatch on stderr as it is found: the check was asked
+    /// for by the process environment (`PETAL_STATIC_CHECK=1`), so nobody
+    /// reads [`mismatches`](Self::mismatches).
+    announce_check: bool,
     /// Slots whose code built a value that is not the one kept, under
     /// `check`: each once.
     mismatches: Vec<u32>,
@@ -655,9 +677,23 @@ impl StaticSlots {
         &self.mismatches
     }
 
-    pub(crate) fn note_mismatch(&mut self, slot: u32) {
-        if !self.mismatches.contains(&slot) {
-            self.mismatches.push(slot);
+    /// Print each mismatch on stderr, prefixed `static check failure:`, as
+    /// it is found: how a whole test suite is run under the check without
+    /// touching a test.
+    pub(crate) fn set_check_announced(&mut self, on: bool) {
+        self.announce_check = on;
+    }
+
+    pub(crate) fn note_mismatch(&mut self, layout: &StaticLayout, slot: u32) {
+        if self.mismatches.contains(&slot) {
+            return;
+        }
+        self.mismatches.push(slot);
+        if self.announce_check {
+            match layout.slots.get(slot as usize) {
+                Some(info) => eprintln!("static check failure: {}", info.mismatch_message()),
+                None => eprintln!("static check failure: slot {slot}"),
+            }
         }
     }
 
@@ -1429,7 +1465,7 @@ fn cut(
     let mut first_of: HashMap<TermId, usize> = HashMap::new();
     let mut last_of: HashMap<TermId, usize> = HashMap::new();
     for ip in start..end {
-        let Some(s) = stmt[ip] else { return None };
+        let s = stmt[ip]?;
         first_of.entry(s).or_insert(ip);
         last_of.insert(s, ip);
     }

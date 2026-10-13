@@ -227,13 +227,7 @@ impl Env {
             .mismatches()
             .iter()
             .filter_map(|s| layout.slots.get(*s as usize))
-            .map(|info| {
-                format!(
-                    "a value kept for {}{} was built different on a later call",
-                    info.function.as_deref().unwrap_or("a function"),
-                    info.at.as_ref().map(|a| format!(" ({a})")).unwrap_or_default()
-                )
-            })
+            .map(|info| info.mismatch_message())
             .collect();
         Some(StaticValues {
             slots,

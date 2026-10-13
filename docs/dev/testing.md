@@ -170,7 +170,9 @@ run under it) makes the skip in front of such a value fall through, so the
 code that builds it runs on every call, and makes the store compare what
 it built with what the slot holds; a difference is a value that was not
 the same on every call, and `StaticValues::mismatches` names its function
-and line. So each case is driven with the cache on, off, and on and
+and line (set through the environment variable, each one is also printed
+on stderr as `static check failure: …`, since no test of a suite run that
+way reads the list). So each case is driven with the cache on, off, and on and
 checking, the three transcripts must be equal, and the check must find
 nothing. That is `same_on_and_off` and `same_through_reloads` in
 `core/tests/static_in_functions.rs`,

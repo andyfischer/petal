@@ -275,6 +275,9 @@ pub struct StaticAudit {
     ///
     /// [`Env::set_static_check`]: crate::env::Env::set_static_check
     pub(crate) check_kept: bool,
+    /// The check was asked for by `PETAL_STATIC_CHECK`: print each mismatch
+    /// on stderr as it is found, since no test reads them.
+    pub(crate) announce_check: bool,
 }
 
 impl StaticAudit {
@@ -295,6 +298,7 @@ impl StaticAudit {
             announce: self.announce,
             keeps: self.keeps,
             check_kept: self.check_kept,
+            announce_check: self.announce_check,
             ..Default::default()
         };
     }
@@ -316,6 +320,7 @@ impl StaticAudit {
         // `PETAL_STATIC_CHECK=1`: every `Env` checks the values kept for
         // function bodies (`Env::set_static_check`).
         audit.check_kept = matches!(std::env::var("PETAL_STATIC_CHECK").as_deref(), Ok("1"));
+        audit.announce_check = audit.check_kept;
         if matches!(std::env::var("PETAL_STATIC_AUDIT").as_deref(), Ok("watch" | "1")) {
             audit.announce = true;
             audit.set_mode(StaticAuditMode::Watch);
@@ -676,7 +681,7 @@ fn build_table(
                     .get(ip)
                     .copied()
                     .flatten()
-                    .is_some_and(|t| is_static(t));
+                    .is_some_and(&is_static);
             }
         }
         StaticAuditMode::StaticOnly => slice_to_static(program, bc, &is_static, &mut table)?,
@@ -701,12 +706,12 @@ fn slice_to_static(
     table: &mut Table,
 ) -> Result<(), String> {
     let n = bc.root.code.len();
-    let keep_stmt = |s: Option<TermId>| s.is_some_and(|t| is_static(t));
+    let keep_stmt = |s: Option<TermId>| s.is_some_and(is_static);
 
     let mut starts = vec![false; n + 1];
     starts[n] = true;
-    for ip in 0..n {
-        starts[ip] = ip == 0 || table.stmt[ip - 1] != table.stmt[ip];
+    for (ip, start) in starts.iter_mut().enumerate().take(n) {
+        *start = ip == 0 || table.stmt[ip - 1] != table.stmt[ip];
     }
     for ip in 0..n {
         if !keep_stmt(table.stmt[ip]) {

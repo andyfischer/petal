@@ -543,6 +543,7 @@ fn make_vm<'a>(
     // literal changed under the stack, and then it starts empty.
     stack.statics.sync(&bc.statics, program.constants.revision());
     stack.statics.set_check(static_audit.check_kept);
+    stack.statics.set_check_announced(static_audit.announce_check);
     Vm {
         program,
         bc,

@@ -146,6 +146,14 @@ it kept and reads the ones it is built from out of where they are kept.
 What is rebuilt together is what cannot be told apart: a table that only
 one other value reads and that value, and the values one statement binds.
 
+The values the cache keeps inside function bodies
+([performance.md](dev/performance.md#static-values), "Inside function
+bodies") are not followed: every reload, whatever it changed, empties all
+of them, and each is built again by the next call that reaches it. They
+are not in the report's counts, which are about top-level values. A value
+a drag put off (below) takes them with it when it is finally rebuilt,
+since one may have been built from it meanwhile.
+
 Only the stack the reload was asked of keeps anything. Every other stack of
 the program, and a fork, rebuilds all of its static values on its next run;
 a reload asked of one of those before it has run again keeps nothing either,

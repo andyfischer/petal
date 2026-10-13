@@ -162,6 +162,41 @@ second test holds the generator to its job: programs that compile, keep
 values and are reloaded both ways. `static_cache_fuzz` in `fuzz.rs` runs
 the general generator's programs three times each, cache on against off.
 
+The values the cache keeps inside function bodies
+(`core/src/static_cache/in_fn.rs`) have a third side to every differential:
+the cache **checking itself**. `Env::set_static_check(true)`
+(`PETAL_STATIC_CHECK=1` sets it for every `Env`, so a whole suite can be
+run under it) makes the skip in front of such a value fall through, so the
+code that builds it runs on every call, and makes the store compare what
+it built with what the slot holds; a difference is a value that was not
+the same on every call, and `StaticValues::mismatches` names its function
+and line. So each case is driven with the cache on, off, and on and
+checking, the three transcripts must be equal, and the check must find
+nothing. That is `same_on_and_off` and `same_through_reloads` in
+`core/tests/static_in_functions.rs`,
+`function_constants_change_nothing_across_the_corpus` in
+`core-libs/petal-ui/tests/static_in_functions.rs` (the panel corpus under
+four policies), and a fuzzer, `core/src/backend/bytecode/static_fn_fuzz.rs`
+(`cargo test --lib static_fn_fuzz`, `PETAL_FUZZ_ITERS=<n>`): function bodies
+that mix constants with what looks like one and is a value of the call (a
+parameter, a captured value that changes every run, a loop or pattern
+variable, a name a branch rebinds), every route of writing to a value
+that may be kept, inside the function and by its caller, recursion, early
+returns, closures made per call, and three reloads. To see that these
+would notice, make `FnPlan::of` call a parameter invariant and take
+parameters out of `dirty_entry` in `in_fn::stretches`: half the cases and
+the fuzzer's first seed fail, most of them by the check and not by the
+output. `-fnstatic` on a policy (`replay-fnstatic`) is the cache without
+these values, for telling which half a difference comes from.
+
+That fuzzer's first find was not in the cache: with the optimizer on and
+the cache **off**, a name a branch rebound to another value in front of a
+loop that wrote to it wrote into that other value in place. The cache was
+the side that was right, because a kept value is immutable. When a cache
+differential fails, suspect both sides
+(`a_branch_that_rebinds_the_accumulator_to_another_value_is_not_in_place`
+in `core/tests/copy_elision.rs`).
+
 A reload keeps the static values the edit cannot have changed
 (`core/src/env/static_follow.rs`). The oracle for that is the reload that
 rebuilds every one, `Env::set_static_follow(false)`, and a slot-by-slot

@@ -5,7 +5,8 @@ Status: **A1, A2, A3, S0, S1 and S2 are implemented, reviewed and on `main`**
 this repository: no engine that vendors Petal has been re-vendored, so Moses
 has not run a frame with the cache under its own host and the first row of
 "Benchmarks that gate the work" is still its baseline. Of the "Later" items
-the first, Garden, is done (13 October 2026); the rest are not started. See [Results](#results-12-october-2026) for baseline against
+the first two, Garden and constants inside function bodies, are done (13
+October 2026); the rest are not started. See [Results](#results-12-october-2026) for baseline against
 now, the final test pass and the follow-ups, and the status note under each
 section for the rest.
 
@@ -1806,7 +1807,10 @@ Do one of these only when a profile or an author report asks for it.
   scopes do with `Dep::Observed`, so panels can use the cache. **Done
   2026-10-13**: "Later: Garden" below.
 - **Constants inside function bodies.** 279 sites, mostly small. Needs a
-  thunk per constant because registers are per call.
+  thunk per constant because registers are per call. **Done 2026-10-13**,
+  after measuring: "Later: constants inside function bodies" below. (The
+  279 was a text scan; the classifier finds 5,899 in the panel corpus and
+  7,510 in the Cheesecake games.)
 - **Per-input-class slots.** Values that depend only on the viewport, or
   only on the theme, cached until that class's revision changes. This is the
   rest of `docs/dev/reactive-rendering-plan.md` P2, and it is where UI
@@ -1947,6 +1951,309 @@ Open:
   vitest, `tools/verify.ts`, the release-profile core suite as a whole,
   `garden-app`'s tests and `petal-fantasy-nes` (disk), a real Garden
   session.
+
+### Later: constants inside function bodies (2026-10-13)
+
+**Status: measured, then done.** The description is the header of
+`core/src/static_cache/in_fn.rs`.
+
+#### The measurement that came first
+
+The plan says to do a "Later" item only on evidence, and the survey's count
+(279 sites) was a text scan. So this was measured before anything was
+written, with a tool that is now in the tree:
+
+- `core/src/static_survey.rs` finds, from the classifier's term classes,
+  every **invariant expression** inside a function: static, and reading
+  nothing of the call (no parameter, no loop or pattern variable of a loop
+  that is not itself invariant, no capture of a per-call value, no `state`,
+  no `var`). The classifier alone is not that: it classifies a function
+  body *assuming its parameters are data*, so `[a, 1]` is static to it.
+  Counted are the maximal ones that allocate, call or loop; left out are the
+  ones whose value reaches a write (`let out = []` in front of a loop that
+  appends).
+- A counter on the profiler (`VmProfile::sites`, the hooked dispatch path
+  only) charges every retired instruction and every allocation to the
+  expression it is under, the functions it calls included, and counts how
+  often each is entered. A slot per expression would leave out everything
+  but the first entry, at one load each.
+- `core-libs/petal-ui/tests/static_in_functions.rs`
+  (`measure_constants_inside_functions_on_the_corpus`) runs that over the
+  55-app corpus, 60 monkey frames, `replay`; `core/examples/static_survey.rs`
+  counts from the text for a script whose host is not here.
+
+Panel corpus (release, every frame run, the top-level cache on, nothing
+kept for function bodies):
+
+| | Invariant expressions | of them run | Instructions a frame | a slot each would save | Allocations a frame | a slot each would save |
+|---|---|---|---|---|---|---|
+| all 55 apps | 5,899 | 704 | 3,643,852 | 9,615 (0.26%) | 37,059 | 2,692 (7.26%) |
+| dashboards/server-monitoring | 93 | 14 | 43,032 | 2,087 (4.85%) | 2,759 | 698 (25.29%) |
+| productivity/markdown-editor | 109 | 16 | 73,869 | 1,244 (1.68%) | 911 | 250 (27.42%) |
+| productivity/photo-adjust | 148 | 63 | 321,019 | 4,923 (1.53%) | 4,589 | 1,231 (26.82%) |
+| productivity/spreadsheet | 112 | 16 | 177,972 | 349 (0.20%) | 760 | 116 (15.26%) |
+| ui/bloom-gallery | 176 | 36 | 21,349 | 88 (0.41%) | 666 | 70 (10.56%) |
+| garden panels: gallery, git_panel, db_view, screens-demo | | | | 0.2% to 0.8% | | 5.3% to 7.1% |
+
+(1,047 more whose value reaches a write and 94,455 that allocate and call
+nothing were left out. 83 of every app's expressions are the UI prelude's.)
+
+The rule set for this step was: do not implement if the estimate is under
+about 2% of instructions **and** under about 5% of allocations on every
+program measured. It is under 2% of instructions on all but one
+(server-monitoring, 4.85%) and **at or over 5% of allocations on 11 of the
+55**, over 25% on three. So it was implemented. What those three do: a heat
+map hands `color_lerp` two colour literals per cell, a markdown scanner
+builds its `{kind: "none", ml: 0, close: -1, url: ""}` once per character
+it looks at, and an image generator builds its palette with
+`fc(0.90, 0.93, 0.96)` once per pixel.
+
+The Cheesecake games cannot run here (their dynamic code calls the engine's
+natives), so they have no weights, only counts
+(`static_survey ~/cheesecake/games/*/game.ptl`, read only; a native the
+engine would register counts as dynamic here, so these are floors):
+
+| | Functions | Invariant expressions | terms in them | allocating terms | Kept: slots | stretches | instructions | allocating instructions |
+|---|---|---|---|---|---|---|---|---|
+| moses | 1,573 | 2,078 | 16,662 | 3,336 | 4,381 | 1,666 | 16,322 | 2,758 |
+| moonbear | 909 | 1,380 | 13,203 | 1,903 | 2,011 | 1,028 | 12,478 | 1,809 |
+| solitude | 1,058 | 910 | 5,907 | 924 | 1,100 | 782 | 5,086 | 875 |
+| neon | 831 | 749 | 5,889 | 1,081 | 782 | 527 | 4,145 | 752 |
+| all 13 | 8,330 | 7,510 | 63,730 | 11,011 | 11,217 | 5,858 | 57,972 | 9,652 |
+
+For scale: a Moses frame was 83,119 instructions in the baseline profile.
+If each of its 1,666 stretches ran once a frame the cache would leave out
+14,656 of them and 2,758 allocations; how often they really run needs the
+engine (follow-up 1). The static part of a Moses frame does not reach them
+at all with the cache on: the functions it calls are behind kept values.
+
+#### What shipped
+
+- **`FnPlan`** (`in_fn.rs`): which terms inside functions are invariant.
+  A fixed point from below (nothing is invariant until shown to be). A
+  parameter never is; a capture is when it is a kept top-level value or a
+  function at every place the closure is made, or invariant in the function
+  that makes it; the function's own name is. A loop or pattern variable
+  never is on its own: a loop, branch or match is invariant as a whole when
+  everything under it is, given its own variables, and what is under it is
+  then kept with it or not at all. A name a loop or branch rebinds is
+  invariant behind it when the loop or branch is. `state`, `var`, `return`,
+  `break` and a closure never are. A forward reference to a function
+  declared further down goes through a cell and is left out with them.
+- **The pass** (`in_fn::apply`, after the top-level one, over every
+  function's code as it finally is). An instruction is a candidate when its
+  term is invariant *and* it is clean: every register it reads is written
+  only by candidates (or is an invariant capture, or the function's own
+  name), and nothing else writes what it writes. A maximal sequence of
+  candidates that control enters at its first instruction and leaves at its
+  end, that allocates (or is more than one call), and none of whose stored
+  registers reaches a write (the term-level set of `StaticPlan`, now also
+  `StaticPlan::mutated`, and the register-level in-place check) gets a
+  `StaticSkip` in front and a `StaticStore` behind: **the same two
+  instructions as the top level, and no instruction moved**. What a
+  stretch ends in that builds nothing (the constants of the dynamic code
+  behind it) is trimmed off first.
+- **The slot belongs to the place in the program.** Slots and runs are
+  appended to the lowering's layout behind the top-level ones
+  (`StaticLayout::root_slots`, `root_runs`), so they are in the stack's
+  table, stamped, cleared and collected with it. In a function frame the
+  skip loads into that call's registers and the store marks the value
+  immutable and fills the slot; nothing is timed or logged, and a build in
+  progress in the root code is left alone.
+- **What a function returns for its caller to fill is not kept.** `let a =
+  build()`, then `a[i] = v` in a loop: the escape analysis lets the caller
+  write in place because the list is new. Kept, the first write of every
+  call would copy it, which is the work the slot saved, a second copy held
+  for good, and a copy where `core/tests/copy_elision.rs` requires none.
+  So a function some caller writes to the result of (by name, at the call
+  site: `WrittenResults`) keeps nothing that can come out as its result.
+- **The escape analysis is not told about these values**, unlike the
+  top-level ones. Where a caller writes to a kept value by a route the
+  rule above does not see (through another name for the function, a
+  callee that writes its parameter), the immutable bit makes the write a
+  copy and the next write edits the copy in place. Telling the analysis
+  would turn every such write into a copy.
+- **Reloads.** Not followed: every reload rebuilds every function slot (no
+  key and no dependency set, so `static_follow` finds each dirty, and it
+  is seeded empty outright). A paused drag empties them with what it
+  rebuilds. They are not counted in the reload report, which is about
+  top-level declarations.
+- **Not under observation.** Where the lowering preserves observations
+  (Garden's panels) nothing is kept for function bodies: a skipped stretch
+  would have to report the names bound inside it, per call. The top-level
+  cache there is as it was.
+- **A check, and a switch.** `Env::set_static_check(true)`
+  (`PETAL_STATIC_CHECK=1` for every `Env`) makes every function skip fall
+  through and every store compare what it built with what the slot holds
+  (`static_cache::identical`); a difference is listed in
+  `StaticValues::mismatches`. `OptFlags::static_in_functions` (the
+  `-fnstatic` policy modifier, as in `replay-fnstatic`) switches these
+  slots off alone. `StaticValues::in_functions` lists them;
+  `StaticValues::slots`, `runs` and `segments` are the top level's, as
+  before.
+
+#### What it found: an in-place write into another value
+
+The new fuzzer's seed 245 diverged with the cache **off**: a kept top-level
+table came out edited. The cache was the side that was right. A name a
+branch rebinds to *another* value in front of a loop that writes to it,
+
+```petal
+let b = sort([3, 1, 2])
+if p % 2 == 0 then
+  b = other
+end
+for i in range(0, 3) do
+  b[i] = (b[i] + 17) % 97
+end
+```
+
+wrote into `other` in place, under the optimizer, with or without this
+plan's cache (`fast-static`): `other` could be a parameter, a captured
+table or a top-level `let` with a second name on it, and its owner saw the
+writes. The route-B escape analysis passed the arm as one that "carries
+the value through" because it performs no mutation, and its closed-sources
+rule looked at the web's phis and not at the copy in the arm. The copy is
+checked now (`escape.rs`, condition 2). `core/tests/copy_elision.rs` has
+the four shapes under four policies; the benchmark instruction and
+collection counts are unchanged (life 3,913,944; spreadsheet 20,449,651
+and 9; audio_synth 621; particles 4), so nothing that was in place stopped
+being. With the cache on, a kept `other` had hidden it: the immutable bit
+turned the write into a copy.
+
+#### Measured
+
+Panel corpus, release, 60 monkey frames, `replay`, the cache without
+function slots (`replay-fnstatic`) against the cache with them
+(`measure_what_keeping_them_saves_on_the_corpus`):
+
+| | Function slots | Instructions a frame, without | with | Allocations a frame, without | with |
+|---|---|---|---|---|---|
+| all 55 apps | 6,254 | 3,643,851 | 3,633,409 (−0.29%) | 37,058 | 34,437 (−7.07%) |
+| dashboards/server-monitoring | 99 | 43,032 | 40,595 (−5.66%) | 2,758 | 2,059 (−25.35%) |
+| productivity/markdown-editor | 102 | 73,869 | 72,625 (−1.68%) | 910 | 663 (−27.19%) |
+| productivity/photo-adjust | 153 | 321,018 | 315,744 (−1.64%) | 4,589 | 3,359 (−26.81%) |
+| productivity/spreadsheet | 112 | 177,971 | 177,627 (−0.19%) | 759 | 645 (−15.11%) |
+| productivity/email-client | 167 | 11,700 | 11,570 (−1.11%) | 572 | 536 (−6.31%) |
+| garden/examples/panels/gallery | 89 | 5,204 | 5,182 (−0.41%) | 301 | 280 (−7.09%) |
+
+That is the estimate (−0.26% and −7.26%): the survey run again with the
+slots on finds 75 allocations a frame still under an invariant expression,
+0.22%. The whole cache against no cache on the same run is now −1.03% of
+instructions and −16.84% of allocations over the sum (it was −0.74% and
+−10.51%), median app −5.4% and −25.3% (was −4.6% and −19.1%), 2,940
+top-level slots as before.
+
+What it costs:
+
+- **Nothing is gained in 18 of the 55** (a frame runs no fewer
+  instructions and makes no fewer allocations, in whole numbers), and 9
+  reach 5% of allocations where the estimate said 11. In 12 apps the run
+  as a whole executes a few instructions more (at most +0.02%) or makes a
+  few more string allocations (below): a stretch that runs once pays its
+  skip and its store and is never loaded.
+- **A recompile**: 26 ms of 481 on Moses (455 with `fast-fnstatic`, 396
+  with the cache off) and 8 of 186 on neon, half the plan and half the
+  pass. It was 62 ms before the plan's tables were hashed with the fast
+  hasher, the mutated set was shared with the top-level plan and functions
+  with nothing heavy and invariant were skipped.
+- **Slots**: 89 for an app that only imports the UI prelude, 4,381 for
+  Moses. A slot nothing reaches costs its entry in the table.
+- **String allocations move by a few either way** in some apps (layers
+  179 to 207 over the run, sysmon 137 to 132) with the same number of
+  collections. An interned string is allocated again after a collection
+  that found it unheld, and collections now fall at other instructions;
+  that is the reading, and it was not chased further.
+- **`freeze` can tell**: `freeze(mk())` freezes the one kept list, and
+  `frozen(mk())` is then true where every call used to make a new one. The
+  same difference the top level has, pinned by
+  `freezing_what_a_function_returned_freezes_the_kept_value`.
+
+Not measured: wall time, memory held by the slots, the frame after a
+reload (it builds each constant the frame reaches, once), anything on a
+Cheesecake game under its engine.
+
+#### Tested
+
+- `core/tests/static_in_functions.rs`, 24 cases, each driving the same
+  frames with the cache on, off, and on and checking itself, under five
+  policies, and once more observed: what is kept (a record of literals,
+  constant arguments of a dynamic call, a pure call on constants with what
+  it calls, a constant built from a kept top-level value, a loop over
+  constants) and how much it saves; ten things that look constant and are
+  a value of the call (a parameter, through a local and a pure call, a
+  loop variable in and out of an invariant loop, a pattern variable, a
+  name a branch on a parameter rebinds, an accumulator, `state`, `var`, a
+  default); a closure made per call; a capture of a top-level value that
+  is not static; values written to inside the function; ten routes by
+  which a caller or a callee writes to a kept value; code that raises;
+  recursion, with a function that reaches its own constant while building
+  it; memoized calls; a fork; collections; a literal edited inside a
+  constant, a constant built from an edited top-level value and one that
+  calls an edited function, each through patched and recompiling reloads
+  and against the reload that rebuilds everything; a drag with a deferred
+  slow table; the `freeze` difference; the switch.
+- `core/src/backend/bytecode/static_fn_fuzz.rs`: a generator of function
+  bodies (the header lists what it writes), three texts per seed through
+  three reloads, the three sides under four policies. 3,000 seeds in
+  release, clean, after the escape fix (seed 245 before it).
+- `core-libs/petal-ui/tests/static_in_functions.rs`: the 55-app corpus, 30
+  frames, the three sides under four policies
+  (`function_constants_change_nothing_across_the_corpus`).
+- Checks of the checks, each rule taken out in turn: parameters taken to
+  be invariant fails 12 of the 24 cases and the fuzzer's first seed, and
+  at the term level alone (the register check left in) still fails 2 and
+  seed 12; loop variables taken to be invariant with the register check
+  out fails; a rebound name invariant whatever rebinds it fails; a reload
+  that patches a literal keeping function slots fails three reload cases
+  and the fuzzer. Three removals fail nothing, because another rule
+  covers them: loop variables invariant *with* the register check in (the
+  loop's own instruction taints the register), a reload keeping these
+  slots like any other (with no dependency set every slot is dirty
+  anyway), and a paused drag not emptying them (they are in the redo set
+  already). One could not be tested at all: a capture invariant at *one*
+  of the places a closure is made instead of all, since no program here
+  makes one function's closure in two places.
+- Oracles on the final tree (`e284f9f`; debug unless said): core `cargo
+  test --no-fail-fast`, 65 binaries, 2,612 passed, 0 failed, 16 ignored;
+  every fuzzer in the library at 3,000 seeds in release (the general
+  differential fuzzer and the two cell fuzzers, which is what the escape
+  fix answers to, `static_fuzz`, `static_cache_fuzz`, `static_fn_fuzz`);
+  `core-libs/petal-ui`, the whole suite, 21 binaries, 300 passed;
+  `integrations/petal-c-bridge` 20 and `make test-c-bridge` 4 of 4;
+  `integrations/petal-desktop-sdl` 54; `garden-script` 182;
+  `./tools/test-examples.ts` 33; vitest, 75 files, 1,571 passed;
+  `./tools/verify.ts --plan compiler` with
+  the UI driver under `fast-static` on one side and the default on the
+  other, 139 identical traces, 19 modules, 145 unsupported, nothing
+  changed.
+
+#### Open
+
+- **Garden's panels keep nothing for function bodies** (observation). The
+  top-level log could be extended per stretch; nothing was designed.
+- **Reloads are not followed for these slots.** Every reload costs each
+  constant one rebuild at its next use. S2's rule would need the slot
+  matched across lowerings (a key from the function's text and the term's
+  place in it) and the function's dependency set.
+- **Calls of functions declared further down are not kept**: the forward
+  reference is a cell read, and a cell read is never invariant here. The
+  classifier already knows such a cell is written once.
+- **One stretch is one run**, with every register something outside reads
+  in its store: no cut per value as at the top level, so one value that
+  cannot be kept (a handle) takes the stretch with it.
+- **A function is "written to" by name.** A method named like any method
+  some caller writes to the result of keeps nothing it returns.
+- **The equality rests on the immutable bit** wherever a kept value
+  leaves its function, as it does for top-level values handed to
+  functions. Tested by ten routes and the fuzzer, not proved.
+- **Not run**: the release-profile core suite as a whole and its ignored
+  oracles (the whole-corpus reload oracle, the small-scope sweep, the
+  sharing generator beyond its default seeds), any suite under
+  `PETAL_STATIC_CHECK=1` beyond the three that set it themselves,
+  `--static-audit` by hand, `tsc`, clippy, `garden-app`'s tests and
+  `petal-fantasy-nes` (disk), a real Garden session, any Cheesecake game
+  under its engine.
 
 ## Benchmarks that gate the work
 
@@ -2159,9 +2466,11 @@ In this repository:
    reload" below): it runs once whoever asks and costs 14 ms; it is not
    served from the previous program's analysis, for the reasons given
    there.
-10. The "Later" items above, each on evidence: Garden observation replay,
-    constants inside function bodies, per-input-class slots, keeping slow
-    intermediates, a frozen generation that can release objects.
+10. The "Later" items above, each on evidence: Garden observation replay
+    (**done 2026-10-13**), constants inside function bodies (**done
+    2026-10-13**, measured first: "Later: constants inside function
+    bodies"), per-input-class slots, keeping slow intermediates, a frozen
+    generation that can release objects.
 
 ### The cost of a reload (2026-10-13)
 

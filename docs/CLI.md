@@ -148,7 +148,7 @@ Options:
 - `--policy <name>` — run under a named run policy: `fast`, `baseline` (no
   optimizer, no memoization), `explain` (keeps every traced instruction, no
   memoization) or `replay`, optionally followed by modifiers such as `-memo`,
-  `+gate` or `-static`. Without the flag (and without `PETAL_POLICY`), `run`
+  `+gate`, `-static` or `-fnstatic`. Without the flag (and without `PETAL_POLICY`), `run`
   uses `fast-memo-static`: the script runs once and exits, so a memoized call
   has no later run to be replayed in and a static value kept for the next run
   is kept for nothing, and both would only cost time and memory. A
@@ -163,7 +163,8 @@ Options:
   carry from one run to the next, and the default policy is then the host's
   `fast`. The first run that fails ends the session. `petal run --runs 2
   --policy replay f.ptl` against `--policy replay-static` is the static-value
-  cache on against off. A static value the cache could not keep (one that
+  cache on against off, and against `--policy replay-fnstatic` it is the
+  cache with and without the values it keeps inside function bodies. A static value the cache could not keep (one that
   holds a function, a `var` cell, a host handle or a pending result) is
   rebuilt on every run, and `petal run` says which on stderr, once:
   `warning: const ICONS (app.ptl:12) holds a pending result, which cannot be

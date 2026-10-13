@@ -491,23 +491,26 @@ reload keeps the values the edit cannot have changed and the next run
 rebuilds the others and nothing else ([hot-reload.md](../hot-reload.md#static-values-across-a-reload)).
 It is off under `baseline` and `explain`, whenever the per-term trace is
 on, and for a plain `petal run`. It stays on while observations are on
-(every Garden panel): see "Under observation" below.
+(every Garden panel): see "Under observation" below. It also keeps the
+values a function body builds that depend on nothing of the call: see
+"Inside function bodies" below.
 
 Over the panel corpus (`cd core-libs/petal-ui && cargo test --release --test
 static_cache -- --ignored --nocapture measure`: 55 apps, 60 frames of the
 monkey scenario, every frame run, release, 13 October 2026) a frame runs
-0.0% to 29.7% fewer instructions, median 4.6%, and makes 1.0% to 46.1% fewer
-allocations, median 19.1% (0.74% and 10.51% over the sum of the corpus,
-2,940 slots):
+0.0% to 29.9% fewer instructions, median 5.4%, and makes 1.0% to 48.5% fewer
+allocations, median 25.3% (1.03% and 16.84% over the sum of the corpus;
+2,940 slots for top-level values and 6,254 for values inside function
+bodies):
 
-| App | Slots | Instructions per frame, off | On | Allocations per frame, off | On |
+| App | Top-level slots | Instructions per frame, off | On | Allocations per frame, off | On |
 |---|---|---|---|---|---|
-| games/snake | 66 | 2,992 | 2,754 (−8.0%) | 144 | 90 (−37.7%) |
-| games/memory | 96 | 30,490 | 21,422 (−29.7%) | 1,430 | 787 (−45.0%) |
-| productivity/settings | 55 | 36,727 | 35,536 (−3.2%) | 1,914 | 1,676 (−12.4%) |
-| productivity/kanban | 42 | 3,954 | 3,752 (−5.1%) | 184 | 136 (−26.2%) |
-| dashboards/analytics-dashboard | 82 | 29,817 | 29,490 (−1.1%) | 2,386 | 2,301 (−3.6%) |
-| dashboards/network-graph | 102 | 783,883 | 782,403 (−0.2%) | 1,257 | 1,088 (−13.5%) |
+| games/snake | 66 | 2,992 | 2,754 (−8.0%) | 144 | 90 (−37.8%) |
+| games/memory | 96 | 30,490 | 21,374 (−29.9%) | 1,430 | 775 (−45.8%) |
+| productivity/settings | 55 | 36,727 | 35,389 (−3.6%) | 1,914 | 1,639 (−14.4%) |
+| productivity/kanban | 42 | 3,954 | 3,741 (−5.4%) | 184 | 132 (−28.1%) |
+| dashboards/analytics-dashboard | 82 | 29,817 | 29,477 (−1.1%) | 2,386 | 2,300 (−3.6%) |
+| dashboards/network-graph | 102 | 783,883 | 782,380 (−0.2%) | 1,257 | 1,083 (−13.8%) |
 | garden/examples/panels/plant | 33 | 1,066 | 942 (−11.6%) | 82 | 57 (−30.1%) |
 
 The saving is a fixed amount per frame (the tables), so it is a large share
@@ -577,6 +580,77 @@ container another statement built is not skipped, and after a reload that
 recompiles each kept segment executes once more to write its log
 ([hot-reload.md](../hot-reload.md#static-values-across-a-reload)).
 
+**Inside function bodies.** A function that builds the same value on
+every call builds it once: the `{kind: "none", ml: 0}` a scanner returns for
+"nothing here", the two colour literals a heat map hands `color_lerp` for
+each cell, a palette entry made by `rgb(0.9, 0.93, 0.96)` once per pixel.
+The value has to be *invariant*: static, and reading nothing of the call.
+No parameter (so `[a, 1]` is not, though the classifier, which takes a
+function's parameters to be data, calls it static), no variable of a loop
+or a pattern unless the whole loop or `match` is invariant and kept with
+it, no capture of a value another function builds per call, no `state`
+and no `var`. The function's code gets the same `static_skip` and
+`static_store` around the instructions that build it, and the slot is in
+the stack's table with the top-level ones, so the first call that reaches
+the code fills it and every later call, of any closure of that function at
+any depth of recursion, loads it into its own registers
+(`core/src/static_cache/in_fn.rs` has the rules).
+
+Over the same corpus and scenario, the cache without these slots
+(`replay-fnstatic`) against the cache with them (`cd core-libs/petal-ui &&
+cargo test --release --test static_in_functions -- --ignored --nocapture
+measure_what`, 13 October 2026): 0.29% fewer instructions and 7.07% fewer
+allocations over the sum, and where a function builds a table per element
+of something, a quarter of the frame's allocations:
+
+| App | Function slots | Instructions per frame, without | With | Allocations per frame, without | With |
+|---|---|---|---|---|---|
+| dashboards/server-monitoring | 99 | 43,032 | 40,595 (−5.7%) | 2,758 | 2,059 (−25.4%) |
+| productivity/markdown-editor | 102 | 73,869 | 72,625 (−1.7%) | 910 | 663 (−27.2%) |
+| productivity/photo-adjust | 153 | 321,018 | 315,744 (−1.6%) | 4,589 | 3,359 (−26.8%) |
+| productivity/spreadsheet | 112 | 177,971 | 177,627 (−0.2%) | 759 | 645 (−15.1%) |
+| productivity/email-client | 167 | 11,700 | 11,570 (−1.1%) | 572 | 536 (−6.3%) |
+| garden/examples/panels/gallery | 89 | 5,204 | 5,182 (−0.4%) | 301 | 280 (−7.1%) |
+
+18 of the 55 gain nothing, and 89 of every UI app's slots are the UI
+prelude's. Before any of it was written the same corpus was measured for
+what there was to gain (`measure_constants` in that file:
+`petal::static_survey` finds the invariant expressions and a counter on the
+profiler charges each one its instructions and allocations): 0.26% and
+7.26%. Run again with the slots on it finds 0.22% of allocations left.
+
+What it does not keep, and what it costs:
+
+- A value that is written to (`let out = []` in front of a loop that
+  appends), as at the top level. And **whatever a function returns for its
+  caller to fill**: after `let a = build()`, `a[i] = v` writes in place
+  because the list is new, and a kept one would be copied by the first
+  write of every call. A function some caller writes to the result of (by
+  name) keeps nothing that can come out as its result.
+- A kept value a caller or callee writes to by any other route is copied
+  by that write, as a kept top-level table is: the immutable bit.
+- A call of a function declared further down the file (the reference goes
+  through a cell), and anything where the lowering observes: **Garden's
+  panels keep nothing for function bodies**, only their top-level values.
+- Every reload rebuilds every one of these, once, at its next use: they
+  are not followed, and the reload report counts top-level values only.
+- A recompile pays for the plan and the pass: 26 ms of 481 on a
+  34,000-line game with 1,573 functions (4,381 slots), 8 of 186 on one of
+  15,000 lines. A slot costs its entry in the stack's table whether or
+  not anything reaches it.
+- `freeze(mk())` freezes the one kept list, and `frozen(mk())` is then
+  true on the next call, where each call used to return a new list: the
+  difference described under "What a program can tell" below.
+
+`PETAL_POLICY=fast-fnstatic` (or `OptFlags::static_in_functions`) switches
+these slots off alone. `Env::set_static_check(true)`, or
+`PETAL_STATIC_CHECK=1` for every `Env` in the process, makes the cache
+check them instead of trusting them: the code runs on every call and what
+it built is compared with what is kept (`StaticValues::mismatches`; any
+entry is a bug in the cache). `cargo run --release --example static_survey
+-- game.ptl` counts, without running anything, the invariant expressions of
+a script whose host is not here and the slots it would get.
+
 **Enum constant data** is a static value too, where its expressions are
 static. `enum Kind  park(code: 2) end` publishes one record per variant by a
 call the declaration makes on every run; with the cache on that call is
@@ -623,8 +697,9 @@ stretches that allocate nothing.
 
 To see what a script would keep without running it: `PETAL_OPT_STATS=1
 PETAL_POLICY=fast petal show-bytecode app.ptl >/dev/null` prints the
-stretches and the segments they are cut into, the slots by declaration, and
-the root instructions a frame leaves out. Tables that are written to are
+stretches and the segments they are cut into, the slots by declaration
+(and, as `(in NAME)` with a line, the ones for values inside function
+bodies), and the root instructions a frame leaves out. Tables that are written to are
 never kept (`let by_sec = [0, 0, 0]` followed by `by_sec[i] = v`). A
 function declaration ends a stretch, since its closure is made on every
 run where it stands; a table sitting alone between two of them is kept all
@@ -639,6 +714,10 @@ the top of the next run; rebuilt on every run it was a new unfrozen table
 each time (and a leak of one table per run). A constant string and a
 payload-free variant have always behaved the kept way. The test is
 `freezing_a_kept_value_freezes_it_once` in `core/tests/static_cache.rs`.
+The same holds for a value kept inside a function body, which is one
+object for every call
+(`freezing_what_a_function_returned_freezes_the_kept_value` in
+`core/tests/static_in_functions.rs`).
 
 ## Where the remaining headroom is
 

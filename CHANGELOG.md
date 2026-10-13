@@ -141,8 +141,8 @@ way, for code written against an earlier checkout.
   is left alone, a top-level `assert` and an unused binding that raises
   keep doing so on every run, and a kept value that something tries to
   update in place is copied instead. Over the 55 example panels a frame runs 0% to 30% fewer
-  instructions (median 5%) and makes 1% to 46% fewer allocations (median
-  19%), and a large `let` table passed to a memoized function no longer
+  instructions (median 5%) and makes 1% to 49% fewer allocations (median
+  25%), and a large `let` table passed to a memoized function no longer
   makes that call miss on every frame. It is part of the `fast` and
   `replay` policies and off under `baseline` and `explain`, while the
   per-term trace is on, and for `petal run`, which runs a script once. It
@@ -160,6 +160,31 @@ way, for code written against an earlier checkout.
   table passed to `freeze` is frozen once and stays frozen, where the table
   rebuilt on every run was a new unfrozen one each time. See
   [docs/dev/performance.md](docs/dev/performance.md#static-values).
+- Static values inside function bodies: a value a function builds that
+  depends on nothing of the call (a record or list of literals, constant
+  arguments of a call, a table built from kept top-level values by pure
+  functions and constant builtins, a loop over constants) is built by the
+  first call that reaches it and loaded by every later one, where each
+  call used to build its own. It is the same cache and the same rule as
+  for top-level values, with one more condition: the value may read no
+  parameter, no loop or pattern variable (unless the whole loop or `match`
+  is constant), no capture of a per-call value, no `state` and no `var`.
+  Nothing changes in the source or in what a program does. A value that
+  is written to is left alone, and so is whatever a function returns when
+  a caller writes to it (`let a = build()`, then `a[i] = v`: the caller
+  keeps writing in place). Over the example panels that is 7% fewer
+  allocations on top of the top-level values (0.3% fewer instructions),
+  and about a quarter of a frame's allocations where a function builds a
+  table per cell, character or pixel. Not kept where a host observes
+  (Garden's panels keep their top-level values only), and every reload
+  rebuilds these once each, at their next use. `--policy fast-fnstatic`
+  (`OptFlags::static_in_functions`) turns this part off alone;
+  `StaticValues::in_functions` lists what a stack holds;
+  `Env::set_static_check(true)` or `PETAL_STATIC_CHECK=1` makes the cache
+  check these values against what the code builds on every call
+  (`StaticValues::mismatches`). `freeze(f())` freezes the one kept value,
+  so `frozen(f())` is then true: the same difference as at the top level.
+  See [docs/dev/performance.md](docs/dev/performance.md#static-values).
 - A reload follows the diff through the static values: `reload_program` and
   `set_config_value` keep the ones the edit cannot have changed and the next
   run rebuilds the rest, where every reload used to rebuild all of them. A
@@ -547,7 +572,8 @@ way, for code written against an earlier checkout.
 - `petal run --runs <n>` runs a script n times on one stack, the way a host
   runs it every frame: `state`, memo records and static values carry from
   each run to the next. Run policies take `+static` / `-static`
-  (`--policy fast-static`), and `PETAL_POLICY=fast petal show-bytecode`
+  (`--policy fast-static`) and `+fnstatic` / `-fnstatic` for the values
+  kept inside function bodies alone, and `PETAL_POLICY=fast petal show-bytecode`
   shows the `static_skip` / `static_store` instructions of the static-value
   cache, which a plain `show-bytecode`, like a plain `run`, leaves out.
 - `petal run --static-audit` (and `petal-ui-run --static-audit`) checks the

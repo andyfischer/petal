@@ -466,7 +466,7 @@ Without that, a `draw_rects` batch arrives as one `PB_DRAW_RECT` per entry
 and a `cached_layer` as its content, moved and clipped, on every frame: the
 script's saving is the same, the host's is not. With it, the host keeps a
 texture per layer id and calls `pb_vm_invalidate_layers` if it loses one. The
-rules are in [ui-host-contract.md](ui-host-contract.md#cache_begin-cache_end-cache_draw-only-with-the-retained-layer-capability).
+rules are in [ui-host-contract.md](../ui-host-contract.md#cache_begin-cache_end-cache_draw-only-with-the-retained-layer-capability).
 
 Draw layers (`ui_layer`) need nothing: `pb_vm_drain_draw` returns the frame
 already sorted.
@@ -968,7 +968,7 @@ has said what it means, and nothing is converted.
 
 ## Running the script's tests
 
-A script's `test "title" do … end` blocks ([testing.md](testing.md)) run under
+A script's `test "title" do … end` blocks ([testing.md](../testing.md)) run under
 the host, with its natives present. `petal test` cannot do that for a script
 that calls a host native.
 
@@ -1056,7 +1056,7 @@ fork.load_state(point);
 
 `save_state_file(path)` / `load_state_file(path)` do the same through a
 file. The format is the one `petal run --state-storage` writes
-([CLI.md](CLI.md#state-between-runs)): `"format": "petal-state"`, a version,
+([CLI.md](../CLI.md#state-between-runs)): `"format": "petal-state"`, a version,
 and one entry per slot.
 
 - **Every slot is in it**: top-level and module state, and the slots that a

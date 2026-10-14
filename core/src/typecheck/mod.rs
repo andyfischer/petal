@@ -692,6 +692,20 @@ impl<'a> Checker<'a> {
                     {
                         Vec::new()
                     }
+                    // This module declares the name a `native fn` (under an
+                    // alias, `native fn _opts(o) = "host_opts"`, the name is
+                    // no registered native's, so the set above does not hold
+                    // it) and declares no `fn` of that name over it. The
+                    // declaration is not in scope while the module is checked,
+                    // so the resolver cannot say; the compilation-wide table
+                    // can only hold another module's function of the name,
+                    // private to it or not.
+                    Callee::Unknown
+                        if self.own_natives.get(name).is_some()
+                            && !self.shadowing_fns.contains_key(name) =>
+                    {
+                        Vec::new()
+                    }
                     Callee::Unknown => self.module_signatures(name),
                 },
             },

@@ -535,6 +535,44 @@ fn a_qualified_call_is_held_to_the_module_its_qualifier_names() {
     assert!(err.contains("shares() is missing a value for parameter 'd'"), "{err}");
 }
 
+/// A module's own `native fn` under an alias (`native fn _opts(o) =
+/// "host_opts"`) is what a bare call of that name in the module means. It is
+/// not held to a function of the same name in a module loaded before it,
+/// that module's private one included: found when the `ui` prelude gained a
+/// private `_image_opts` of six parameters and a host package's own
+/// one-parameter `_image_opts` native stopped passing check.
+#[test]
+fn an_aliased_native_is_not_held_to_another_modules_function_of_its_name() {
+    let t = Tree::new("aliased_native");
+    t.write(
+        "a.ptl",
+        "fn _helper(a, b, c)\n  return a + b + c\nend\npub fn fa(x)\n  return _helper(x, 1, 2)\nend\n",
+    );
+    t.write(
+        "b.ptl",
+        "native fn _helper(o) = \"abs\"\npub fn fb(x)\n  return _helper(x)\nend\n",
+    );
+    for main in [
+        "import ./a\nimport ./b\nprint(fa(1), fb(-2))\n",
+        "import ./b\nimport ./a\nprint(fa(1), fb(-2))\n",
+    ] {
+        t.write("main.ptl", main);
+        let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+        assert_eq!((err.as_str(), code), ("", 0));
+        let (out, err, code) = petal_in(&t.root, &["run", "main.ptl"]);
+        assert_eq!((out.as_str(), err.as_str(), code), ("4 2\n", "", 0));
+    }
+
+    // The native's own declaration still speaks for the call.
+    t.write(
+        "b.ptl",
+        "native fn _helper(o) = \"abs\"\npub fn fb(x)\n  return _helper(x, 2)\nend\n",
+    );
+    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("`_helper` expects 1 argument, got 2"), "{err}");
+}
+
 /// `let found = nil`, assigned in a branch or a loop and then passed on, is
 /// the ordinary way to search for something. Check must not go on calling
 /// the name `nil` after the assignment — nor on a line of a loop body above

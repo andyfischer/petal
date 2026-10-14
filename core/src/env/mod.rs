@@ -1627,7 +1627,10 @@ impl Env {
                             let file = file.rsplit('/').next().unwrap_or(file);
                             format!(" {file}:{}", span.start.line)
                         }
-                        None => format!(" line {}", span.start.line),
+                        None => match &self.profile.entry_name {
+                            Some(n) => format!(" {n}:{}", span.start.line),
+                            None => format!(" line {}", span.start.line),
+                        },
                     })
                 });
                 Some(format!("{name}{}", at.unwrap_or_default()))
@@ -1638,19 +1641,27 @@ impl Env {
     }
 
     /// What to print for a [`SourceLine::file`](crate::profile::SourceLine)
-    /// of program `pid`: the file's name without its directories, or
-    /// `<entry>` for source that came with no name. `None` when the program
+    /// of program `pid`: the file's name without its directories, or for
+    /// source that came with no name [`VmProfile::entry_name`], else `<entry>`. `None` when the program
     /// has no such file (it was reloaded with fewer).
     pub fn profile_file_name(&self, pid: ProgramId, file: u16) -> Option<String> {
         let program = self.programs.get(&pid)?;
+        let entry = || {
+            self.profile
+                .entry_name
+                .clone()
+                .unwrap_or_else(|| "<entry>".to_string())
+        };
         let Some(source) = program.source_map.file(crate::source_map::FileId(file)) else {
             // A program compiled with no file table has the entry file only.
-            return (file == 0).then(|| "<entry>".to_string());
+            return (file == 0).then(entry);
         };
         let name = source.name.as_str();
         Some(match name.rsplit('/').next() {
-            Some(base) if !base.is_empty() => base.to_string(),
-            _ => "<entry>".to_string(),
+            Some(base) if !base.is_empty() && base != crate::module::INLINE_ENTRY_NAME => {
+                base.to_string()
+            }
+            _ => entry(),
         })
     }
 

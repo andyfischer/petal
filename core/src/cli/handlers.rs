@@ -99,6 +99,12 @@ pub(super) fn handle_run(
             env.profile_mut().slow_native = std::time::Duration::from_secs_f64(us / 1e6);
         }
         env.profile_mut().set_enabled(true);
+        if let SourceInput::File(path) = source_input {
+            let base = std::path::Path::new(path)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned());
+            env.profile_mut().entry_name = base;
+        }
     }
     // The counters are a runtime switch (off in a release build until asked
     // for), so this has to precede the run.

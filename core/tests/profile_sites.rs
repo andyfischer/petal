@@ -213,6 +213,30 @@ fn the_report_names_files_and_lines() {
     let _: SourceLine = site.at;
 }
 
+/// A one-file program has no file table; its lines are named by the entry
+/// name the host gives (`petal run` gives the file's name), not `<entry>`.
+#[test]
+fn a_single_file_program_is_named_by_its_entry_name() {
+    let mut env = Env::new();
+    env.register_native("slow_measure", slow_measure, NativeEffects::EFFECT);
+    env.profile_mut().set_enabled(true);
+    env.profile_mut().entry_name = Some("prof.ptl".to_string());
+    let pid = env
+        .load_program("native fn slow_measure(n)
+let xs = [1, 2]
+print(slow_measure(len(xs)))")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    let report = env.profile_report(pid, None, 10);
+    assert!(!report.contains("<entry>"), "{report}");
+    assert!(report.contains("prof.ptl:3"), "{report}");
+    assert!(report.contains("prof.ptl:2"), "{report}");
+    // The name survives a reset, as the slow-native threshold does.
+    env.profile_mut().reset();
+    assert_eq!(env.profile().entry_name.as_deref(), Some("prof.ptl"));
+}
+
 /// With the profiler off nothing is kept, and the heap's counters stay as
 /// they were.
 #[test]

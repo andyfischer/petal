@@ -119,6 +119,10 @@ pub struct VmProfile {
     /// ([`NativeSite::slow_calls`]) and listed in the report's outliers.
     /// Kept by [`reset`](VmProfile::reset); set it before the run.
     pub slow_native: Duration,
+    /// The name the report gives the entry file of a program compiled from
+    /// one unnamed source (which otherwise reads `<entry>`), e.g. the file
+    /// name `petal run` was given. Kept by [`reset`](VmProfile::reset).
+    pub entry_name: Option<String>,
     /// Heap objects created, by the line whose instruction created them (a
     /// native's allocations are its calling line's).
     alloc_sites: HashMap<SourceLine, [u64; AllocKind::COUNT]>,
@@ -159,6 +163,7 @@ impl Default for VmProfile {
             fn_native_time: Vec::new(),
             native_sites: HashMap::new(),
             slow_native: DEFAULT_SLOW_NATIVE,
+            entry_name: None,
             alloc_sites: HashMap::new(),
             alloc_elsewhere: [0; AllocKind::COUNT],
             alloc_mark: None,
@@ -440,15 +445,17 @@ impl VmProfile {
         self.alloc_sites.values().flatten().sum::<u64>() + self.alloc_elsewhere.iter().sum::<u64>()
     }
 
-    /// Clear every counter, leaving `enabled`, the slow-native threshold and
-    /// the call bench alone.
+    /// Clear every counter, leaving `enabled`, the slow-native threshold, the
+    /// entry name and the call bench alone.
     pub fn reset(&mut self) {
         let enabled = self.enabled;
         let slow_native = self.slow_native;
+        let entry_name = self.entry_name.take();
         let bench = std::mem::take(&mut self.bench);
         *self = Self::default();
         self.enabled = enabled;
         self.slow_native = slow_native;
+        self.entry_name = entry_name;
         self.bench = bench;
     }
 

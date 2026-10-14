@@ -44,7 +44,11 @@ Three more sections say *where*, by source line:
 
 The data behind them is `VmProfile::native_sites()`, `slow_native_sites()` and
 `alloc_sites()` (`petal::profile`), keyed by `SourceLine { file, line }`;
-`Env::profile_file_name(pid, file)` names a file.
+`Env::profile_file_name(pid, file)` names a file. A program loaded from one
+unnamed source has no file table; its lines read `<entry>:N` unless the host
+sets `VmProfile::entry_name` (`env.profile_mut().entry_name =
+Some("main.ptl".into())`), as `petal run --profile` does with the file it
+was given.
 
 **The first run is covered if the profiler is on before it.** The report
 describes everything since `set_enabled(true)`: turn it on before

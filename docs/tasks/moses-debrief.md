@@ -704,3 +704,31 @@ declares its pure natives constant (`PB_FX_CONST`). With the cache off a
   `3 == Use.road` is still false without a word. Both are check gaps, not
   `const` gaps.
 
+
+## 9. Cheesecake re-vendored (13 October 2026)
+
+Cheesecake vendors this work at 8bc1eb6 (its `third_party/petal/VENDORED.md`
+and `docs/moses-debrief.md`, section 11). What that run found here:
+
+- **Moses, 600 headless frames of 1956, frames 60 on, presented.** 38,369,591
+  instructions and 1.76 to 1.79 ms of script a frame before; 34,875,791 and
+  1.52 to 1.53 ms after, with no script changed. 1,198,821 of the run's
+  2,406,330 native calls are the inline builtins (item 3), and `draw_rect`
+  as a native took 453,060 wrapper calls out (item 11).
+- **`draw_image`'s options cost 82 instructions a call** in the prelude's
+  `_image_opts` (the engine's old `hud_image` read the record in a native).
+  An options record read by the native would remove them.
+- **A check bug** (46dacd3): a module's `native fn _name(o) = "host_name"`
+  was held to another module's private function of the same name. The
+  engine's `_image_opts` met the `ui` prelude's.
+- **`text_ellipsize` against `text_width`** (8bc1eb6): the first compared
+  the unrounded advance, the second rounds. `text_wrap` still compares the
+  unrounded advance.
+- **The C bridge has the test API** (8c26f4d): `pb_vm_tests_json`,
+  `pb_vm_test_begin` / `_resume` / `_abort`, `pb_call_suspend`,
+  `pb_call_expect`, `pb_call_location`, and
+  `pb_vm_set_profile_slow_native_us`. The engine does not call them yet.
+- **The stale-cache line** (section 8) was run under the engine for the
+  first time and names a guard-filled `state var` as designed.
+- All 298 of Cheesecake's scripts pass `petal check` with this build, apart
+  from the eight it lists as failing on purpose.

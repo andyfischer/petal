@@ -1348,7 +1348,12 @@ fn elide(
     max_width: f64,
     mode: Elide,
 ) -> String {
-    if run_width(metrics, style, text) <= max_width {
+    // `text_width` answers in whole pixels, rounding to the nearest. A box a
+    // script sized with it (`w = text_width(label, size)`) must hold that
+    // label, so a run that is over by the fraction the rounding dropped
+    // fits: 99.4 px of text in a 99 px box is not cut.
+    let width = run_width(metrics, style, text);
+    if width <= max_width || width.round() <= max_width {
         return text.to_string();
     }
     let ell = char_width(metrics, style, ELLIPSIS);
@@ -1587,6 +1592,29 @@ mod tests {
         bind_text_metrics(&mut env, 0.7);
         let v = env.run_source(&crate::script_for(&env, plain)).expect("run");
         assert_eq!(as_float(&v), 28.0);
+    }
+
+    /// A label fits the box `text_width` says it needs. `text_width` rounds
+    /// to the nearest pixel; `text_ellipsize` used to hold the unrounded
+    /// advance to the box, and cut a label that was over by the fraction.
+    #[test]
+    fn text_fits_the_width_text_width_reports() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        // 0.47 x 10 px x 7 glyphs = 32.9 px: text_width says 33.
+        // 0.49 x 10 px x 9 glyphs = 44.1 px: text_width says 44.
+        for (ratio, label) in [(0.47, "abcdefg"), (0.49, "abcdefghi")] {
+            bind_text_metrics(&mut env, ratio);
+            let src = format!(
+                "let w = text_width(\"{label}\", 10)\n\
+                 [text_ellipsize(\"{label}\", 10, w), text_ellipsize(\"{label}\", 10, w - 1)]"
+            );
+            let v = env.run_source(&crate::script_for(&env, &src)).expect("run");
+            let Value::List(id) = v else { panic!("a list") };
+            let items = env.heap().get_list(id).to_vec();
+            assert_eq!(as_string(&env, &items[0]), label, "ratio {ratio}");
+            assert!(as_string(&env, &items[1]).ends_with('…'), "ratio {ratio}");
+        }
     }
 
     fn half_width_env() -> Env {

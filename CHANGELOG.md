@@ -718,6 +718,10 @@ way, for code written against an earlier checkout.
   `pb_vm_function_json` returns a function's declared parameters, and
   `pb_vm_diagnostics_json` the compile's findings as data. In Rust:
   `Env::call_function_named`, `Env::function_params`.
+- `ui`: `text_ellipsize` leaves alone a text that `text_width` says fits.
+  `text_width` rounds to the nearest pixel and `text_ellipsize` held the
+  unrounded advance to the box, so a label in a box sized by `text_width`
+  could come back cut.
 - `petal-c-bridge`: a host runs the script's `test` blocks:
   `pb_vm_tests_json`, `pb_vm_test_begin` / `pb_vm_test_resume` /
   `pb_vm_test_abort`, `pb_vm_test_result_json`, `pb_vm_run_test`,

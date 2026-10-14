@@ -12,7 +12,7 @@
 //!   this binary unchanged.
 //! - Apps that need a **different renderer or native set** (e.g. `petal-fps`'s
 //!   software 3D rasterizer) implement their own [`Host`] and reuse everything
-//!   else from this crate — see `docs/building-apps.md`.
+//!   else from this crate — see `docs/usage/building-apps.md`.
 //!
 //! The reusable building blocks ([`input`] SDL translation and gamepad
 //! folding, [`audio`] queued-sample output, [`sfx`] procedural sound-effect

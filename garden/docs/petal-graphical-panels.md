@@ -539,7 +539,7 @@ draw_text("Pick your handle", {x: (screen_width() - w) / 2, y: 40}, TITLE)
 
 A text run that names no face is drawn and measured in the panel's default
 face, which is Garden's monospace role. The full cross-host contract is in
-[docs/text-and-fonts.md](../../docs/text-and-fonts.md).
+[docs/usage/text-and-fonts.md](../../docs/usage/text-and-fonts.md).
 
 ### Rotated text is not supported
 

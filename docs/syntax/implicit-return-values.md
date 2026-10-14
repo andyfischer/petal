@@ -345,7 +345,7 @@ app.ptl:12  fn draw_all
 
 A function whose result some caller uses gets `-> list`. One that is never
 called, or is `pub`, is reported with both options and left for the author.
-See [`petal suggest`](CLI.md#suggest--suggest-safe-refactors-for-a-file).
+See [`petal suggest`](../CLI.md#suggest--suggest-safe-refactors-for-a-file).
 
 ## Where this lives
 

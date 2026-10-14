@@ -84,7 +84,7 @@ file down to the declaration.
 - Cells shared across functions on purpose go at the top level as
   `state var`, read and written with `get` / `set`.
 
-See the [language guide](../../../docs/language-guide.md#state) for the full
+See [Inline state](../../../docs/features/inline-state.md) for the full
 rules.
 
 ### Hot reload

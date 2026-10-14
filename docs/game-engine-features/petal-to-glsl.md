@@ -20,8 +20,8 @@ let g = glsl.glsl_function(duotone, ENV)
 ```
 
 **Experimental.** The library, its result record and the environment record
-may change. It lives in [`core-runtime/glsl`](../core-runtime/glsl/) and is
-built on the [function introspection](function-introspection.md) builtins
+may change. It lives in [`core-runtime/glsl`](../../core-runtime/glsl/) and is
+built on the [function introspection](../features/function-introspection.md) builtins
 `fn_info` and `fn_ast`, which are experimental too.
 
 It reads the function; it never runs it. The function only has to be in the
@@ -42,12 +42,12 @@ construct.
 
 The `glsl` package is bundled in the runtime, so `import glsl` works in the
 `petal` CLI and in every host with nothing registered (see
-[core-runtime](../core-runtime/README.md)). Then:
+[core-runtime](../../core-runtime/README.md)). Then:
 
 | | |
 |---|---|
 | `glsl.to_glsl(f, env?, opts?)` | the GLSL of `f` as one string: the functions it calls, then `f` itself. A refusal comes back as `#error to_glsl: <message> [line L, column C]`, which fails where the shader is compiled |
-| `glsl.glsl_function(f, env?, opts?)` | the same as parts, for a host: `{error, kind, code, common, name, signature, params, param_types, uniforms, uniform_types, taps, taps_in_loop, code_hash}` |
+| `glsl.glsl_function(f, env?, opts?)` | the same as parts, for a host: `{error, kind, code, common, name, signature, params, param_types, uniforms, uniform_names, uniform_types, taps, taps_in_loop, code_hash}` |
 | `glsl.glsl_error_text(err)` | `"message [line L, column C]"` for the `error` of a result |
 
 The result of `glsl_function`:
@@ -62,8 +62,9 @@ The result of `glsl_function`:
 | `signature` | a hook: `void <entry>(inout <Struct> <self>)` |
 | `params`, `param_types` | a hook: `{name: default}` and `{name: glsl type}` for each parameter after the first |
 | `uniforms`, `uniform_types` | `{name: current value}` and `{name: glsl type}` for each captured float, vector or color the code reads |
+| `uniform_names` | the list of those names |
 | `taps`, `taps_in_loop` | how many times the functions named in `env.count` are called, with constant-bound loops multiplied out (`nil` when a loop's bounds are not constant), and whether any call sits in a loop |
-| `code_hash` | the function's [`code_hash`](function-introspection.md#code_hash) |
+| `code_hash` | the function's [`code_hash`](../features/function-introspection.md#code_hash) |
 
 `opts`:
 
@@ -181,7 +182,7 @@ changes whenever such a value does.
 
 A script runs once per frame, so `to_glsl(fn ... end)` is called every frame
 with a new closure. The translation is kept in keyed `state`, under the
-function's [`code_hash`](function-introspection.md#code_hash), the captured
+function's [`code_hash`](../features/function-introspection.md#code_hash), the captured
 values that are written into the text, the environment and the options. A
 frame with a cache hit costs one `fn_info` per function involved and a state
 read; the syntax tree is not fetched.

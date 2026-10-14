@@ -182,7 +182,7 @@ detection work on that identity. Errors from a module name it the same way
 
 A module's top-level declarations are private unless marked `pub`. That
 includes a `native fn` — the declaration of a function the host implements
-([ffi.md](ffi.md#native-interfaces-native-fn)): `pub native fn mouse_x() -> int`
+([usage/ffi.md](usage/ffi.md#native-interfaces-native-fn)): `pub native fn mouse_x() -> int`
 exports `mouse_x` like any other name, which is how a host's interface module
 (petal-ui's `ui`) hands its natives to scripts.
 
@@ -270,7 +270,7 @@ The facade's own imports follow [the usual tiers](#which-name-wins):
   silently — a `pub fn` of its own is what gets exported, and a private
   declaration keeps the name out of the facade's surface;
 - a re-export over a name a lower tier already provides composes with
-  [overload merging](function-overloading.md#sets-merge-across-modules);
+  [overload merging](syntax/function-overloading.md#sets-merge-across-modules);
 - **two `pub import`s offering the same name** follow the plain-import
   rules. Function sets with different parameter counts merge. Otherwise the
   name is ambiguous — which is *not* an error in the facade, where nobody
@@ -333,7 +333,7 @@ set hits = 5     // Error: `hits` is a `var` exported by module `tally`;
 ```
 
 Export a function that does the write instead. Reading an imported `var`
-inside a function still needs [`get`](language-guide.md#get), because it is
+inside a function still needs [`get`](syntax/var.md#reading-a-cell-get), because it is
 still a cell read and the importer sees the owner's writes as they happen:
 
 ```petal ignore
@@ -353,7 +353,7 @@ where it is written.
 
 ### Overloaded functions
 
-The variants of an [overloaded function](function-overloading.md) share one
+The variants of an [overloaded function](syntax/function-overloading.md) share one
 name, so either all of them are `pub` or none. A mixed group is an
 error:
 
@@ -365,7 +365,7 @@ Selectively importing `f` from two modules is a collision like any other.
 Sets declared in different modules do merge by arity where one binding lands
 on another in a lower tier, and where two plain imports offer different
 arities — see [Which name wins](#which-name-wins) and [Sets merge across
-modules](function-overloading.md#sets-merge-across-modules).
+modules](syntax/function-overloading.md#sets-merge-across-modules).
 
 ## Where packages are found
 
@@ -399,18 +399,10 @@ this order, and the first place that has a package of that name wins:
    packages, not loose files: `-I lib` does not make `lib/util.ptl`
    importable as `util`.
 4. **The packages bundled in the `petal` binary**, which every embedding
-   of the runtime carries as well:
-
-   | Package | What it is |
-   | --- | --- |
-   | `core` | the declarations of the global builtins (`import core` binds the qualifier `core`, so `core.len(xs)` reaches a builtin a declaration of yours has shadowed) |
-   | `noise`, `color`, `vec2`, `autodiff`, `json`, `io`, `creative` | the domain builtins: natives every runtime registers, in scope only where the package is imported. See [Builtins](Builtins.md#which-builtins-need-an-import) for which names each one declares |
-   | `ui` | the petal-ui interface — the `native fn` declarations of every petal-ui native and the widget library written over them. `ui/input` is its input, timing and frame half alone |
-   | `bloom` | the component library ([core-runtime/bloom](../core-runtime/bloom)) |
-   | `text_layout` | text placement ([core-runtime/text-layout](../core-runtime/text-layout)) |
-   | `glsl` | Petal to GLSL, experimental ([core-runtime/glsl](../core-runtime/glsl)) |
-
-   A bundled package is Petal source and `native fn` declarations only, so
+   of the runtime carries as well: `core`, the domain builtin packages
+   (`creative`, `vec2`, `noise`, …), `ui`, `bloom`, `text_layout` and `glsl`.
+   [Bundled packages](packages.md#bundled-packages) lists them. A bundled
+   package is Petal source and `native fn` declarations only, so
    `petal check` resolves `import ui` with no host. *Running* a script that
    uses a declared native needs a host that registers it; see
    [Host interface packages](#host-interface-packages). A package of the
@@ -494,7 +486,7 @@ only where the name is used bare.
 
 ### `state` in modules
 
-A [`state`](language-guide.md#state) slot is keyed by where it is declared,
+A [`state`](features/inline-state.md) slot is keyed by where it is declared,
 and the module is part of that key. Two modules declaring `state scroll`
 get two slots, as do two functions declaring `state row`. The entry file's
 keys are unchanged by the module system, so a single-file program's
@@ -540,36 +532,10 @@ name, keep the bare `[line N, column M]`.)
 
 Code written before these rules does not load: it imports sibling files by
 bare name, writes `import m: *`, or uses a host's names and the domain
-builtins with no import at all. `petal fix-imports` rewrites it:
-
-```bash
-petal fix-imports .                 # every .ptl file under the directory, in place
-petal fix-imports --check .         # list what would change, exit 1 if anything would
-petal fix-imports --diff src/       # show the rewrite as a diff
-petal fix-imports -I libs game/     # with the packages under libs/ known
-```
-
-It changes import lines and nothing else:
-
-| Before | After | When |
-|---|---|---|
-| `import level` | `import ./level` | `level.ptl` sits beside the file, and no package is called `level` |
-| `import color` (with `color.ptl` beside the file) | `import ./color` | a package is also called that, and the file takes a name from it the package does not export (or writes `: *`). Left alone when everything it takes is the package's; a note when it takes nothing by name |
-| `import rng` (found through `-I shared`) | `import ../shared/rng` | the same `-I` is passed to `fix-imports` |
-| `import m: *`, `pub import m: *` | `import m`, `pub import m` | always |
-| `import m: a` … `m.b` | `import m: a` + `import m` | the file reaches through `m.`, which a selective import no longer binds |
-| *(nothing)* | `import kit` | the file uses a bare name nothing in it provides, and exactly one available package exports it |
-| *(nothing)* | `import ui`, `import garden`, … | the same, for a host's names. When several packages export the name and all but one are built on that one (bloom's `button` over ui's), the one underneath is imported |
-| *(nothing)* | `import creative`, `import vec2`, … | the same, for a builtin that moved into a package (`lerp`, `vec2`, `noise`, `hsv`, `json_parse`, …) |
-| *(nothing)* | `import vec2` (for `.normalize()`) | the file calls a moved builtin with method syntax and nothing in the program defines a function, method or record field of that name |
-
-A path that already resolves as a package is left alone, so a file written
-for the current rules is unchanged and running the command twice does
-nothing more. "Available" means the packages bundled in the binary, the
-`[dependencies]` of the file's project, and the packages under `-I` and
-`PETAL_PATH`. A name that several unrelated packages export is reported and
-left for you to choose. A file carrying the comment
-`// petal-fix-imports-ignore` on a line of its own gets no import added.
+builtins with no import at all. `petal fix-imports` rewrites the import
+lines of such code and adds the imports it is missing, and changes nothing
+else. [CLI.md](CLI.md#fix-imports--migrate-imports) lists every rewrite, its
+flags, and which packages it knows about.
 
 What it cannot do for you is decide an [ambiguity](#which-name-wins) the
 new bare binding introduced: qualify the use, or pin the name with a
@@ -593,54 +559,26 @@ selective import.
 ## Packages
 
 A `petal.toml` at the root of a directory turns it from "some `.ptl` files"
-into a package with a name:
-
-```toml
-[package]
-name = "bloom"
-version = "0.1.0"
-modules = "src"      # optional: defaults to src/ when it exists, else the manifest's directory
-
-[dependencies]
-text_layout = { path = "../text-layout" }      # the key is the import name
-
-[requires]
-ui = ">=0.1"                                   # a host interface the runner must provide
-```
-
-Every `.ptl` file under the module directory is importable as
-`<name>/<module>`, nested directories included, and the module named after
-the package (`src/bloom.ptl`) is a bare `import bloom`:
-
-```petal ignore
-import bloom
-import bloom/menu
-import bloom/menu: open, close
-```
-
-Inside the package, modules reach each other with a relative import —
-`bloom/menu.ptl` says `import ./motion` — or by the package's own name,
-`import bloom/motion`, which works from anywhere under the package root (its
-examples and tests included). The two are [the same module](#module-identity).
-A relative import cannot leave the package root.
-
-[packages.md](packages.md) is the reference for all of it: the manifest keys,
-the three dependency forms, `[requires]` and what a host provides, and how a
-library is shipped.
+into a package with a name. Every `.ptl` file under its module directory is
+importable as `<name>/<module>`, and the module named after the package is a
+bare `import <name>`. [packages.md](packages.md) is the reference: the
+[manifest](packages.md#the-manifest) and its keys, the dependency forms,
+`[requires]` and what a host provides, and how a library is shipped.
 
 ### The package manager
 
-`petal init`, `add`, `remove`, `install`, `update`, `vendor` and `bundle`
-manage a project's dependencies: they resolve the graph to exactly one
-version of each package, fetch git dependencies into a cache, pin them in
-`petal.lock`, and can copy them into `vendor/` or emit them as one JSON
-bundle for a host with no filesystem. `petal packages` shows the result.
-`petal run` and `petal check` install on demand. See
+`petal init`, `add`, `remove`, `install`, `update`, `vendor`, `bundle` and
+`packages` manage a project's dependencies and `petal.lock`. See
 [packages.md](packages.md#the-package-manager).
 
 ## Embedding
 
-Hosts that embed Petal manage modules through `Env`:
+This section is what a host must do for its scripts' imports to resolve.
+The rest of the host API is in [usage/ffi.md](usage/ffi.md) (Rust),
+[usage/embedding-guide.md](usage/embedding-guide.md) (host patterns) and
+[usage/embedding-c.md](usage/embedding-c.md) (C and C++).
+
+A host manages modules through `Env`:
 
 ```rust
 env.register_module("ui", include_str!("ui.ptl")); // in-memory module: the package name `ui`
@@ -649,17 +587,12 @@ env.add_package("core-runtime/bloom")?;              // a whole petal.toml libra
 env.register_package("bloom", modules)?;           // the same, from in-memory sources; a source named
                                                    // "petal.toml" is the package's manifest
 env.packages();                                    // every registered package
-env.verify_interface(&["ui", "game"])?;            // registered natives == what these packages declare
-env.provides("game", "0.2.0")?;                    // this host provides the interface `game`
-env.provides_package("game")?;                     // the same, at the registered package's manifest version
 env.project_of(&path)?;                            // the package whose petal.toml is nearest above a file
 env.project_dependencies(&path);                   // that manifest's [dependencies], as they resolve
 env.set_install_on_demand(true);                   // fetch a missing git dependency at load (off by default)
 env.set_inline_import_dir(Some(dir));              // where `./x` leads for a program with no path
 env.resolve_import("./level", &path)?;             // the canonical module name an import resolves to
 env.load_program_at(&source, &path)?;              // entry file: `./x` resolves against `path`
-env.reload_program(stack, &source, Some(&path))?;  // hot reload: every source file diffed, the cheapest exact path taken
-env.compile_program_at(pid, &source, &path)?;      // the recompile on its own
 env.module_manifest(pid);                          // every source file: name, origin, content hash
 ```
 
@@ -670,11 +603,29 @@ relative import *between* in-memory modules resolves against the importer's
 registered name — `register_module("bloom/menu", …)` saying
 `import ./motion` finds `bloom/motion`.
 
+`module_manifest` lists every file a program was compiled from, so a host
+can watch all of them and reload when an imported file changes
+([features/hot-reload.md](features/hot-reload.md)). Module functions are
+addressable by qualified name
+(`env.call_function(stack, "ui::button", args)`), and module `state`
+appears in state JSON under `ui::scroll`-style names.
+
+Custom resolvers implement the `ModuleResolver` trait in
+`core/src/module.rs`: `resolve(path, importer)` is handed the path as
+written and the importing module's name and origin, and returns the source
+with the module's canonical name.
+
+The wasm bindings expose `register_module` and `register_package` (a JSON
+object of module name to source); the C bridge has `pb_vm_register_module`,
+`pb_vm_register_package` and `pb_vm_add_package`. A host with no filesystem
+loads a whole project from the output of
+[`petal bundle`](packages.md#bundles).
+
 ### Host interface packages
 
 A host adds no names to a script's scope by itself. A native is reachable
 from a script only through a `native fn` declaration in scope
-([ffi.md](ffi.md#native-interfaces-native-fn)), so a host ships an
+([usage/ffi.md](usage/ffi.md#native-interfaces-native-fn)), so a host ships an
 **interface package** — the declarations of its natives, plus whatever it
 writes in Petal over them — registers it, and its scripts import it:
 
@@ -686,32 +637,11 @@ env.register_package("game", [("game", include_str!("../packages/game/game.ptl")
 //             spawn("ball", {x: 1})
 ```
 
-Register the natives first: registering a package gives the natives already
-registered the parameter names it declares, so `spawn(kind: "ball", …)` binds
-by name. Keep the package in a directory with a `petal.toml` beside the Rust
+Keep the package in a directory with a `petal.toml` beside the Rust
 code. A project whose manifest lists it as a path dependency
 (`game = { path = "../host/packages/game" }`) is then checked by the stock
 CLI and the language server with no flag and no knowledge of the host;
 `petal check -I <that directory>` does the same for a loose script.
-
-**Say what you provide.** A package that needs the host says so in its
-manifest (`[requires] game = ">=0.2"`), and the host announces the interface
-where it registers the natives:
-
-```rust
-env.register_package("game", [
-    ("game", include_str!("../packages/game/game.ptl")),
-    ("petal.toml", include_str!("../packages/game/petal.toml")),
-])?;
-env.provides_package("game")?;       // at the version in that petal.toml
-// or: env.provides("game", "0.2.0")?;
-```
-
-The interface version is the interface package's version.
-`petal_ui::register_all` provides `ui`; a host that registers petal-ui's
-pieces itself calls `petal_ui::provide_interface(env)` once it has registered
-all of them. A host that registers only part of an interface (the input half,
-for `import ui/input`) does not provide it.
 
 | Host | Package | Where it lives |
 | --- | --- | --- |
@@ -727,40 +657,37 @@ Only `ui` is bundled in the `petal` binary. The others are found by the stock
 CLI as path dependencies of the script's project (the example trees in this
 repository carry a `petal.toml` that lists them) or with `-I`.
 
-`Env::verify_interface(packages)` is the host's drift test: every native the
-named packages declare is registered in the `Env`, and every native registered
-beyond the builtins is declared by one of them. It returns an
-`InterfaceMismatch { unregistered, undeclared, problems }`. A name may be a
-package, one module of a package (`ui/input`, for a host that registers only
-that half), or a module registered in memory. Each host in this repository
-asserts it in a test.
+What the host owes the package is described in
+[usage/ffi.md](usage/ffi.md#native-interfaces-native-fn), which is the
+reference for each of these:
 
-Loading a program into an `Env` to run *links* it: every declared native the
-program's code refers to must be registered, or the load fails before any
-line runs, naming the module and the missing natives. A check
-(`env.set_check_only(true)`, `petal check`, the language server) does not
-link. Method-call syntax follows the same rule: `x.name(…)` falls back to the
+- **Register the natives first, the package after.** Registering a package
+  gives the natives already registered the parameter names it declares, so
+  `spawn(kind: "ball", …)` binds by name.
+- **Say what you provide.** A package that needs the host says so in its
+  manifest ([`[requires]`](packages.md#requires)), and the host announces the
+  interface with `env.provides("game", "0.2.0")`, or
+  `env.provides_package("game")` to take the version from the registered
+  package's `petal.toml`. `petal_ui::register_all` provides `ui`; a host that
+  registers petal-ui's pieces itself calls `petal_ui::provide_interface(env)`
+  once it has registered all of them. A host that registers only part of an
+  interface (the input half, for `import ui/input`) does not provide it.
+- **Loading a program to run links it.** Every declared native the program's
+  code refers to must be registered, or the load fails before any line runs,
+  naming the module and the missing natives. A check
+  (`env.set_check_only(true)`, `petal check`, the language server) does not
+  link. A program loaded from serialized IR is linked too, by the natives its
+  calls name.
+- **`Env::verify_interface(packages)` is the drift test**: every native the
+  named packages declare is registered, and every native registered beyond
+  the builtins is declared by one of them. A name may be a package, one
+  module of a package (`ui/input`), or a module registered in memory.
+
+The C bridge has `pb_vm_provides`, `pb_vm_provides_package` and
+`pb_vm_verify_interface`; the wasm bindings have `provides`,
+`provided_interfaces` and `verify_interface`.
+
+Method-call syntax follows the import rule: `x.name(…)` falls back to the
 native `name(x, …)` for a builtin, or for a host native declared (under its
 own name) in the file that writes the call — that file, not some other file
-of the program. A program loaded from serialized IR is linked too, by the
-natives its calls name.
-
-`module_manifest` lists every file a program was compiled from, so a host
-can watch all of them and hot-reload when an imported file changes.
-Reloading is a recompile plus `transfer_state`; state whose key survives is
-preserved. Module functions are addressable by qualified name
-(`env.call_function(stack, "ui::button", args)`), and module `state`
-appears in state JSON under `ui::scroll`-style names.
-
-Custom resolvers implement the `ModuleResolver` trait in
-`core/src/module.rs`: `resolve(path, importer)` is handed the path as
-written and the importing module's name and origin, and returns the source
-with the module's canonical name. The wasm bindings expose `register_module`,
-`register_package` (a JSON object of module name to source) and
-`verify_interface`; the C bridge has `pb_vm_register_module`,
-`pb_vm_register_package`, `pb_vm_add_package`, `pb_vm_verify_interface`,
-`pb_vm_provides` and `pb_vm_provides_package`; the wasm bindings have
-`provides` and `provided_interfaces` too. A host with no filesystem loads a
-whole project from the output of [`petal bundle`](packages.md#bundles). See
-the [Embedding guide](embedding-guide.md) and
-[Embedding from C/C++](embedding-c.md) for the rest of the host API.
+of the program.

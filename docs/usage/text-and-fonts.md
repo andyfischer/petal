@@ -1,7 +1,7 @@
 # Text and fonts
 
 How text reaches the screen in a Petal app, and how a script measures it.
-Companion to the [typography plan](dev/typography-plan.md), which describes
+Companion to the [typography plan](../dev/typography-plan.md), which describes
 where this is heading.
 
 ## The contract
@@ -83,7 +83,7 @@ draw_text(label, {x: x, y: baseline - m.baseline}, style)
 ```
 
 In practice, don't write that either: use
-[`core-runtime/text-layout`](../core-runtime/text-layout/), which is this
+[`core-runtime/text-layout`](../../core-runtime/text-layout/), which is this
 arithmetic plus alignment, wrapping and caret hit-testing.
 
 A host that binds no vertical metrics still answers, with typical UI-sans
@@ -194,7 +194,8 @@ startup):
 ```rust
 use petal_ui::draw::{
     bind_default_font_name, bind_font_metrics, bind_font_variant_metrics,
-    bind_text_advance_table, bind_text_metrics, FontMetrics,
+    bind_text_advance_table, bind_text_metrics, bind_text_vertical_metrics,
+    FontMetrics, VerticalMetrics,
 };
 
 // The default font — what `text_width(s, size)` measures.
@@ -248,7 +249,7 @@ large probe size and divide. Control codes should measure 0.
 
 A table is codepoint-indexed and dense, so it's sized for ASCII/Latin; anything
 past its end uses the uniform fallback ratio. That's a known approximation for
-CJK and emoji (see the [typography plan](dev/typography-plan.md)).
+CJK and emoji (see the [typography plan](../dev/typography-plan.md)).
 
 A host with a real shaper may register its own `text_width` native instead —
 the binding path is the default, not a requirement.
@@ -296,14 +297,18 @@ default font.
 |---|---|---|---|---|
 | petal-sdl | System sans (`ui`) + system mono (`mono`), SDL_ttf size ladder | yes — SDL_ttf synthetic bold/oblique | yes — per-glyph placement | measured per face × variant, both axes |
 | petal-web-canvas | `ui` / `mono` / `serif` CSS stacks | yes — the browser's own faces | yes — `ctx.letterSpacing` where supported | measured per face × variant with `ctx.measureText`, both axes |
-| diagram-canvas / cube-browser | inherits web-canvas | yes | yes | inherits web-canvas |
+| diagram-canvas | inherits web-canvas | yes | yes | inherits web-canvas |
 | Garden panels | **any family installed on the machine**, via `font(name)` / a `font:` string; plus two embedded faces reachable as `mono` (JetBrains Mono) and `ui` (Inter) | real cuts on a system family and on `ui` (Inter Bold is embedded); **synthetic on `mono`**, which has one cut — `weight >= 600` is emboldened by a second offset draw and measures regular | yes — the host places each glyph | measured through cosmic-text, on demand per family × cut; vertical metrics for the two embedded roles |
+| petal-c-bridge | whatever the C or C++ host draws; the bridge rasterizes nothing | carried on each `PB_DRAW_TEXT` command (`font`, `weight`, `italic`) for the host to honor | carried the same way (`spacing`) | the default face only, as the host publishes it: `pb_vm_set_text_metrics`, `pb_vm_set_text_advances`, `pb_vm_set_text_vertical_metrics` ([embedding-c.md](embedding-c.md#petal-ui-input-and-draw-commands)); the built-in defaults until then |
 | petal-fps | 5×7 bitmap font (own command set) | no | no | n/a |
+| petal-fantasy-nes | tile font drawn by its own PPU (`map_text` in the `nes` package) | no | no | n/a |
+| petal-web-html | the browser's own text: it renders an element tree, not petal-ui draw commands | n/a | n/a | n/a |
 | `petal-ui-run` (headless) | none — no renderer | n/a | n/a | the built-in defaults, on both axes, so a trace is stable across machines |
 
 `size` is honored everywhere (per run, including Garden panels).
 
-Every host in the table above publishes vertical metrics except `petal-fps`,
-which has its own command set, and `petal-ui-run`, which has no renderer to
-measure and so stays on the defaults deliberately: a headless trace must not
-depend on the fonts installed on the machine running it.
+Every host in the table above that draws petal-ui text publishes vertical
+metrics, with two exceptions: under petal-c-bridge it is up to the embedding
+host to call `pb_vm_set_text_vertical_metrics`, and `petal-ui-run` has no
+renderer to measure and so stays on the defaults deliberately: a headless
+trace must not depend on the fonts installed on the machine running it.

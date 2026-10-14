@@ -55,6 +55,10 @@ ui = ">=0.1"
 | `version` | Dotted numbers (`0.1.0`). It is what `petal packages` and `petal.lock` show, and what a host announces when the package is its interface. |
 | `modules` | The directory holding the modules, relative to the manifest. |
 
+Any other key under `[package]`, and any table other than the three shown
+here, is ignored, so a manifest can carry metadata this version does not
+read.
+
 Every `.ptl` file under the module directory is importable as
 `<name>/<path>`, nested directories included: `src/widgets/button.ptl` of
 `bloom` is `import bloom/widgets/button`. The module named after the package
@@ -91,8 +95,9 @@ once.
 | `"0.3"` | A registry version. Parsed, but there is no registry: installing or importing one is the error `registries are not supported yet`. |
 
 A `[dependencies.name]` section is accepted in place of an inline table. A
-malformed entry (an unknown key, `git` with neither `tag` nor `rev`, both
-`path` and `git`) is an error naming the line.
+malformed entry (an unknown key, `git` with neither `tag` nor `rev` or with
+both, both `path` and `git`, a name listed twice) is an error naming the
+line.
 
 A manifest that does not parse stops every program under it: `petal run` and
 `petal check` report the manifest's error and exit 1, whether or not the
@@ -174,9 +179,9 @@ The `petal` binary, and every embedding of the runtime, carries these:
 
 | Package | What it is |
 | --- | --- |
-| `core` | The declarations of the global builtins. Always in scope; `import core` only adds the qualifier. |
+| `core` | The declarations of the global builtins. Always in scope; `import core` only adds the qualifier `core`, so `core.len(xs)` reaches a builtin a declaration of yours has shadowed. |
 | `noise`, `color`, `vec2`, `autodiff`, `json`, `io`, `creative` | The domain builtins. Every runtime implements them; a script imports the package to use its names. See [Builtins](Builtins.md#which-builtins-need-an-import). |
-| `ui` | The petal-ui interface and its widget library. Needs a petal-ui host to run. |
+| `ui` | The petal-ui interface: the `native fn` declarations of every petal-ui native, and the widget library written over them. `ui/input` is its input, timing and frame half alone. Needs a petal-ui host to run. |
 | `bloom` | The component library ([core-runtime/bloom](../core-runtime/bloom)). Requires `ui`. |
 | `text_layout` | Text placement ([core-runtime/text-layout](../core-runtime/text-layout)). Requires `ui`. |
 | `glsl` | Petal to GLSL, experimental ([core-runtime/glsl](../core-runtime/glsl)). |
@@ -309,11 +314,12 @@ and are not copied. See [The cache and `vendor/`](#the-cache-and-vendor).
 ### `petal bundle`
 
 ```
-petal bundle <entry> [-o <file>]
+petal bundle <entry> [-o <file> | --output <file>]
 ```
 
 Prints every module of the installed graph, the project's own package
-included, as one JSON document. See [Bundles](#bundles).
+included, as one JSON document, on stdout or into `<file>`. Installs first
+if something is missing. See [Bundles](#bundles).
 
 ### `petal packages`
 
@@ -354,11 +360,10 @@ dependency that is not installed, or a registry version, is listed as
 resolve. A `petal.toml` that will not parse is an error naming the file and
 the line.
 
-`--json` emits an object with `project` (`null` outside a project; otherwise
-`name`, `version`, `root`, `module_dir`, `modules`, `locked`, `requires`,
-`required_interfaces` and `dependencies`, each git dependency with `commit`,
-`tree` and `vendored`), `packages` (the search path), `bundled` and
-`errors`.
+`--json` emits an object with `project` (`null` outside a project),
+`packages` (the search path), `bundled` and `errors`.
+[CLI.md](CLI.md#packages--show-the-project-and-the-libraries-available)
+lists the fields of each.
 
 ## One version of each package
 
@@ -540,40 +545,28 @@ different tags can be ordered.
 
 ## Environment variables
 
-| Variable | Effect |
-| --- | --- |
-| `PETAL_HOME` | Replaces `~/.petal`, the directory holding the cache. |
-| `PETAL_OFFLINE` | `1` forbids fetching and on-demand installs. |
-| `PETAL_PATH` | Directories to search for packages, like `-I`. |
+`PETAL_HOME` moves `~/.petal` (the cache), `PETAL_OFFLINE=1` forbids fetching
+and on-demand installs, and `PETAL_PATH` adds directories to the search
+path. [CLI.md](CLI.md#environment-variables) lists every variable the
+`petal` binary reads.
 
 ## Migrating older code
 
 Code written before this system does not load: sibling files imported by a
 bare name, `import m: *`, and names that used to be in scope with no import
 (a host's natives and widgets, and the builtins that now live in packages).
-`petal fix-imports` rewrites the import lines:
+`petal fix-imports` rewrites the import lines and adds the missing ones:
 
 ```bash
 petal fix-imports --check .     # list what would change
 petal fix-imports .             # rewrite every .ptl file under the directory
 ```
 
-```
-$ petal fix-imports old.ptl
-old.ptl
-  line 1: `import level` -> `import ./level`
-  line 2: `import ease: *` -> `import ease`
-  added `import creative` (for `lerp`)
-  added `import tw` (for `twice`)
-fixed imports in 1 of 1 file(s)
-```
-
 It knows the bundled packages, the `[dependencies]` of the file's project,
-and the packages under `-I` and `PETAL_PATH`. For a host whose interface
-package is not a dependency yet, pass it with `-I`. Running it twice changes
-nothing. [Migrating with `petal
-fix-imports`](module-system.md#migrating-with-petal-fix-imports) lists every
-rewrite and what is left for you to decide.
+and the packages under `-I` and `PETAL_PATH`; for a host whose interface
+package is not a dependency yet, pass it with `-I`.
+[CLI.md](CLI.md#fix-imports--migrate-imports) lists every rewrite and what
+is left for you to decide.
 
 ## Not there yet
 

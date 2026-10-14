@@ -1,7 +1,7 @@
 # Embedding Petal in C and C++
 
 `integrations/petal-c-bridge/` embeds Petal in a C or C++ host: a Rust static
-library that owns the Petal VM (with [petal-ui](../core-libs/petal-ui/) for input and
+library that owns the Petal VM (with [petal-ui](../../core-libs/petal-ui/) for input and
 drawing), a hand-written C ABI over it (`petal_bridge.h`), and a header-only
 C++20 wrapper (`petal.hpp`). It was built for the Cheesecake C++ game engine,
 which scripts its game logic in Petal, and moved here so that changes to the
@@ -76,7 +76,7 @@ as C), the `hello` example, and the crate's Rust unit tests
 (`cargo test --lib`).
 
 A Rust crate can also depend on `petal-c-bridge` directly (it is built as an
-`rlib` too): [`vm::Vm`](../integrations/petal-c-bridge/src/vm.rs) wraps an
+`rlib` too): [`vm::Vm`](../../integrations/petal-c-bridge/src/vm.rs) wraps an
 `Env` + program + stack + input state with the same load / run / reload /
 scenario behavior as the C API, and the `view`, `draw` and `builder` modules
 are the value decoding and draw flattening behind it. That is the path for a
@@ -131,10 +131,13 @@ expected-style variant. An error carries:
 
 - `code()` — a `pb_status` (`PB_ERR_COMPILE`, `PB_ERR_RUNTIME`, `PB_ERR_IO`,
   `PB_ERR_NOT_LOADED`, `PB_ERR_INVALID_ARG`, `PB_ERR_NOT_FOUND`,
-  `PB_ERR_PANIC`, `PB_ERR_REENTRANT`; `PB_ERR_LIMIT` is reserved);
+  `PB_ERR_PANIC`, `PB_ERR_REENTRANT`; `PB_ERR_LIMIT` is reserved, and
+  `PB_ERR_NEEDS_RELOAD` is only ever the `false` that
+  [`set_config`](#setting-a-value-without-writing-the-file) returns);
 - `what()` — the full message, including Petal's source excerpt with a caret;
-- `phase()` — `"lex"`, `"parse"`, `"module"`, `"compile"`, `"lower"` or
-  `"runtime"`;
+- `phase()` — `"lex"`, `"parse"`, `"module"`, `"compile"`, `"lower"`,
+  `"link"` (a declared native or a required interface this VM does not have)
+  or `"runtime"`;
 - `items()` — each diagnostic with `message`, `file`, `line`, `column`
   (1-based), and `file()/line()/column()` for the first.
 
@@ -541,7 +544,7 @@ if (vm.sources_changed()) {                 // stat() of every source file
   ```
 - `reload()` re-reads the entry file and its modules and calls
   `Env::reload_program`, which does only the work the edit calls for
-  ([hot-reload.md](hot-reload.md)):
+  ([../features/hot-reload.md](../features/hot-reload.md)):
 
   | The edit | `r.kind` | What happens |
   |---|---|---|
@@ -550,13 +553,16 @@ if (vm.sources_changed()) {                 // stat() of every source file
   | literal values, each keeping its type | `PB_RELOAD_PATCHED` | the values are written into the running program |
   | anything else | `PB_RELOAD_RECOMPILED` | recompile, then `transfer_state` |
 
-  The first three compile nothing: a value edit in a 10,000-line game takes
-  under a millisecond. Whichever path is taken, the program and its state
-  afterwards are what the full recompile would have left, and a compile error
-  arrives with its structured diagnostics while the old program keeps running.
-  After a recompile, state whose declaration still exists is kept (matched by
-  name path, so reordering is fine; renaming drops it). `state_preserved` also
-  counts the `ui` package's internal state slots.
+  The first three compile nothing, and whichever path is taken, the program
+  and its state afterwards are what the full recompile would have left; what
+  each outcome keeps and what it costs is in
+  [../features/hot-reload.md](../features/hot-reload.md#what-each-outcome-leaves-alone).
+  A compile error arrives with its structured diagnostics while the old
+  program keeps running. `r.kind` is also available afterwards as
+  `last_reload_kind()` (`pb_vm_last_reload_kind`, `-1` in C before the first
+  reload). After a recompile, state whose declaration still exists is kept
+  (matched by name path, so reordering is fine; renaming drops it).
+  `state_preserved` also counts the `ui` package's internal state slots.
 - `last_reload_json()` (`pb_vm_last_reload_json`) describes the last reload:
   the outcome, the files that changed, each literal that changed with its
   binding path (`{"path": "POST.bloom", "old": 0.2, "new": 0.4}`), or the
@@ -565,8 +571,11 @@ if (vm.sources_changed()) {                 // stat() of every source file
   static values and names the stale seeds: `{"kept": 41, "rebuilt": 2,
   "rebuilt_names": ["TILES", "WIDTHS"], "deferred": [], "stale_seeds":
   [{"name": "grid", "read": "TILES"}], "cleared": null}`
-  ([hot-reload.md](hot-reload.md#static-values-across-a-reload)). The format
+  ([../features/hot-reload.md](../features/hot-reload.md#static-values-across-a-reload)). The format
   is in `petal_bridge.h`.
+- `set_static_follow(false)` (`pb_vm_set_static_follow`) makes a reload
+  rebuild every static value instead of keeping the ones the edit cannot have
+  changed, which is the default.
 - `reload_source(text)` does the same with new text for the entry file
   (editors, tests).
 - A new program sees natives registered since the original load.
@@ -592,9 +601,10 @@ vm.reload();                                // PB_RELOAD_UNCHANGED: nothing to d
   names the source file; without it the bridge finds the one file that binds
   the name at its top level.
 - The edit is made to the text the running program holds for that file, the
-  way `pb_source_set_value` would make it (comments and layout kept), and is
-  taken up without recompiling. The program afterwards is exactly what
-  reloading that edited file would give.
+  way `pb_source_set_value` would make it, and is taken up without
+  recompiling
+  ([../features/hot-reload.md](../features/hot-reload.md#setting-a-value-without-writing-the-file)
+  has the rules).
 - `source_text(file)` (`pb_vm_source_text`) returns that text. Writing it on
   release makes the following reload a no-op; reloading without writing it
   abandons the drag and brings the file's own values back.
@@ -604,13 +614,13 @@ vm.reload();                                // PB_RELOAD_UNCHANGED: nothing to d
 - Like a reload, a successful call ends the lifetime of the last run's views,
   and the program's functions are callable again after the next `run()`.
 - A static value built from the dragged literal is rebuilt on each tick,
-  unless its last build took 4 ms or more: then it keeps its value from the
-  second tick on and is rebuilt when the drag pauses for 150 ms. Call
-  `flush_static_rebuilds()` (`pb_vm_flush_static_rebuilds`) on release to
-  rebuild at once, and `set_static_debounce(threshold_ms, quiet_ms)`
-  (`pb_vm_set_static_debounce`; a negative threshold turns it off) to change
-  the two times. The value being dragged never waits. See
-  [hot-reload.md](hot-reload.md#a-slow-table-under-a-drag).
+  unless it is slow to build: then it waits until the drag pauses
+  ([A slow table under a drag](../features/hot-reload.md#a-slow-table-under-a-drag)).
+  Call `flush_static_rebuilds()` (`pb_vm_flush_static_rebuilds`) on release
+  to rebuild at once; it returns how many values were waiting.
+  `set_static_debounce(threshold_ms, quiet_ms)` (`pb_vm_set_static_debounce`)
+  changes the two times from their defaults of 4 and 150, and a negative
+  threshold rebuilds on every tick.
 
 ## Editing source: a script as a config file
 
@@ -651,28 +661,25 @@ write_file("games/neon/config.ptl", src.text());
   alone is the binding's whole right-hand side. A path can only see literals:
   it stops (`PB_ERR_NOT_FOUND`) at a name, a spread or a computed value.
 - **The value edits** — `set_value`, `insert`, `append`, `remove` — take a
-  value as JSON and edit the literal in place
-  ([source-preservation.md](source-preservation.md)):
-  - What already reads as the new value is not touched, so a save that writes
-    back every field, or a whole record, produces no diff beyond what changed.
-    Comments inside a multi-line record or list, alignment and the spelling of
-    the neighbouring values all survive, also when elements are added, removed
-    or reordered.
-  - A changed number or color keeps the old token's habits: `3.50` set to 4.0
-    is written `4.00`, `#F80` set to `#00ff88` is written `#0F8`. Int against
-    float is the value's say: `{"int": 2}` writes `2`, a bare `2` writes `2.0`.
-  - New elements and fields are formatted like their siblings — one line or
-    several, padding, separators, trailing comma, indentation — or like the
-    rest of the file when the container is empty.
+  value as JSON and edit the literal in place. What already reads as the new
+  value is not touched, a changed number or color keeps the old token's
+  spelling habits, and new elements are formatted like their siblings; the
+  guarantees are spelled out in
+  [../features/source-preservation.md](../features/source-preservation.md).
+  What is particular to this API:
+  - Int against float is the value's say: `{"int": 2}` writes `2`, a bare `2`
+    writes `2.0`.
   - `set_value` on a record field that does not exist adds it. `insert` on a
     field that exists sets it. `remove` of a field that is not there succeeds.
+  - `insert(path, json, before)` adds a record field before the sibling
+    `before`, or last without one.
 - `set(path, text)` is the lower-level form: it takes Petal source for exactly
   one expression and replaces exactly the expression the path names with that
   text, for a host that wants to decide the spelling itself. Setting a value
   to the text it already has changes nothing.
-- `bindings_json()` is [`static_bindings`](config-files.md) as JSON (the
+- `bindings_json()` is [`static_bindings`](config-files.md#reading-the-whole-file-including-what-it-cannot-read) as JSON (the
   format is documented at `pb_source_bindings_json` in `petal_bridge.h`).
-  Bindings written `config let` carry `"config": true`: those are the knobs
+  Bindings written [`config let`](../syntax/config-let.md) carry `"config": true`: those are the knobs
   the author declared, and the ones an editor should offer. Values are JSON:
   floats are numbers, strings strings, lists arrays, `nil` is `null`, and the
   rest are tagged — `{"int": 3}`, `{"rec": {"key": value}}` (keys in source
@@ -699,13 +706,16 @@ All of these affect later loads. Nothing is in a script's scope but the core
 builtins: a script names what it uses (`import ui`, `import engine`, and
 `import io` or `import vec2` for those builtins). `bloom`, `text_layout`
 and `glsl` are bundled in the runtime, so `import bloom` needs no
-registration; a package registered here wins over the bundled copy.
+registration; a package registered here wins over the bundled copy. How an
+import is resolved is in [../module-system.md](../module-system.md), and
+manifests, dependencies and the lookup order in
+[../packages.md](../packages.md#where-a-package-name-is-looked-up).
 
 For an engine that ships scripts without a filesystem, `petal bundle <entry>`
 writes a project's installed dependency graph as JSON: each
 `packages[i].modules` object is the name/source list `register_package`
 takes, with the package's `petal.toml` among them
-([packages.md](packages.md#bundles)). Scripts loaded from disk find
+([../packages.md](../packages.md#bundles)). Scripts loaded from disk find
 their project's git dependencies in `vendor/` or the package cache, as
 `petal.lock` pins them; the bridge never fetches, so run `petal install` (or
 check `vendor/` in) before shipping.
@@ -764,8 +774,8 @@ nearest `petal.toml` by walking up from it, and a `[dependencies]` entry there
 (`game = { path = "../engine/packages/game" }`) is importable by its key with
 no call on the VM — the same lookup the stock CLI and the language server do,
 so they check the project's scripts with no flag. A package states the host
-interfaces it needs under `[requires]` (`game = ">=0.2"`), and the VM says
-what it provides:
+interfaces it needs under [`[requires]`](../packages.md#requires)
+(`game = ">=0.2"`), and the VM says what it provides:
 
 ```cpp
 vm.register_package("game", {{"game", game_src},
@@ -799,7 +809,7 @@ with `PB_ERR_COMPILE`, phase `link`, before any line runs.
   call, as `name file:line`), natives by wall time, collections and the memo
   counters, all since profiling was turned on. Profiling roughly doubles
   script time, so turn it on after warm-up and read the report once
-  (docs/dev/performance.md).
+  ([../dev/performance.md](../dev/performance.md)).
 - `set_memo(false)` / `memo()` (`pb_vm_set_memo`, `pb_vm_memo`) switch call
   memoization off or on for later runs (on by default, or as `PETAL_POLICY`
   says). Memo replays a call whose inputs repeat, which pays off for UI-like
@@ -807,13 +817,12 @@ with `PB_ERR_COMPILE`, phase `link`, before any line runs.
   with it off. Output is the same either way.
 - `set_static_cache(false)` / `static_cache()` (`pb_vm_set_static_cache`,
   `pb_vm_static_cache`) switch the static-value cache off or on for later
-  runs (on by default, or as `PETAL_POLICY` says). With it on, a top-level
-  value that depends on no dynamic data (a table of literals, one built from
-  such tables by functions that read nothing else, a `const`, an enum's
-  constant data) is built by the first run after a load or a reload and kept
-  for the runs after it. Output is the same either way. A native counts as
+  runs (on by default, or as `PETAL_POLICY` says). With it on, a
+  [static value](../features/static-values.md) is built by the first run
+  after a load or a reload and kept for the runs after it. Output is the same
+  either way. A native counts as
   constant only if it was registered with `PB_FX_CONST`, so a host's natives
-  are dynamic until it says otherwise ([Constant natives](ffi.md)).
+  are dynamic until it says otherwise ([Constant natives](ffi.md#constant-natives)).
   `clear_static_values()` (`pb_vm_clear_static_values`) drops what is kept,
   for a host that changed something a `PB_FX_CONST` native answers from.
   `static_values_json()` (`pb_vm_static_values_json`) returns the counters

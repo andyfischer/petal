@@ -69,8 +69,8 @@ Three consequences shape every cart:
    timer("enemy")    // 1, 2, 3, ...   this one
    ```
 
-   The rules are in the language guide's
-   [State](../../../../docs/language-guide.md#state) section.
+   The rules are in
+   [Inline state](../../../../docs/features/inline-state.md).
 
 2. **Sprites are cleared every frame; the map and the pattern table are not.**
    A `sprite(...)` call means "draw this now". A `set_tile(...)` or

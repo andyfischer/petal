@@ -3,7 +3,7 @@
 //! It owns a Petal `Env` per `pb_vm`, registers the petal-ui natives and `ui`
 //! prelude, and exposes everything through `include/petal_bridge.h` (plus the
 //! header-only C++ wrapper `include/petal.hpp`). The guide is
-//! `docs/embedding-c.md` at the repository root.
+//! `docs/usage/embedding-c.md` at the repository root.
 //!
 //! - [`vm`]: lifecycle, loading, bindings, running, output buffers, petal-ui
 //!   input/draw, hot reload, state tooling.

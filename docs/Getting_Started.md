@@ -109,9 +109,12 @@ commands.
 ## Editor support
 
 - **LSP:** `petal lsp` speaks the Language Server Protocol over stdio, with
-  diagnostics, hover, go-to-definition and completion. Point your editor's LSP
-  client at it. It finds a file's project (the nearest `petal.toml`) by
+  diagnostics, hover, go-to-definition, completion and a document outline.
+  Point your editor's LSP client at it: the command is `petal lsp`, for
+  `.ptl` files. It finds a file's project (the nearest `petal.toml`) by
   itself, so imports of the project's dependencies resolve with no setup.
+  What it implements and how it works is in
+  [The language server](internals/lsp.md).
 - **Syntax highlighting:** a tree-sitter grammar (Neovim, Helix, Zed, Emacs)
   and a classic Vim syntax file are in
   [`editor-support/`](../editor-support/README.md).
@@ -131,16 +134,35 @@ Read these in order:
 3. **[Language Guide](language-guide.md).** The full reference, for when you
    need the exact rule.
 
+Some topics have a page of their own:
+
+- **[Syntax](syntax/overview.md).** The overview is a compact map of every
+  form. The other pages in [`syntax/`](README.md#syntax) each take one piece
+  that needs more than a paragraph, such as [`var`, `set` and
+  `get`](syntax/var.md), [overloading and named
+  arguments](syntax/function-overloading.md) and [implicit return
+  values](syntax/implicit-return-values.md).
+- **[Features](README.md#features).** The features that reach across the
+  language, the runtime and the tools. Read [Inline
+  State](features/inline-state.md) early: the `state` keyword is how a
+  program that runs every frame remembers anything. [Hot
+  Reload](features/hot-reload.md) explains what happens to a running program
+  when you edit its source.
+
 Keep the [Builtins Reference](Builtins.md) and the [CLI Reference](CLI.md)
-open while you work.
+open while you work. The [documentation index](README.md) lists everything.
 
 ## Building apps
 
 The `petal` CLI runs console programs: `print` output, no window. Graphical
 and interactive programs run inside a host that gives Petal a screen and input,
 such as the SDL desktop runner, a web canvas, or the Garden editor.
-[Building Apps](building-apps.md) explains the options and how to choose one.
-The [examples](../examples/README.md) directory has games, productivity apps and
+[Building Apps](usage/building-apps.md) explains the options and how to choose
+one. The other pages in [`usage/`](README.md#usage) cover the work after that
+choice: embedding Petal in a [Rust](usage/ffi.md) or [C/C++](usage/embedding-c.md)
+program, using a `.ptl` file as [configuration](usage/config-files.md), and
+[drawing text](usage/text-and-fonts.md). The
+[examples](../examples/README.md) directory has games, productivity apps and
 dashboards built that way.
 
 ## Working on Petal itself

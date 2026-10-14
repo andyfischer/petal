@@ -41,7 +41,8 @@ interactive frame, `--scenario s.json|monkey:<seed>` to time a realistic
 session (the [petal-ui-run scenario format](headless-ui-run.md#scenario-files)),
 or `--policy replay` (or `--no-gate`) to measure the script itself.
 `--no-memo` turns off memoized scopes; with both off, a frame costs what it did
-before either layer existed. `--policy baseline` also turns off the optimizer.
+before either layer existed. `--policy baseline` also turns off the optimizer
+(the names are in [Run policies](../internals/run-policies.md)).
 Under a scenario the bench also reports the frames that ran on their own and
 the session's total script time, which is the number to compare.
 
@@ -198,14 +199,14 @@ the raw instruction stream is roughly half register-to-register copies. Five
 passes then shape it, each individually switchable through
 [`OptFlags`](../../core/src/backend/mod.rs) so any one can be turned off to
 isolate a bug. `OptFlags` is the lowering half of a run's
-[`RunPolicy`](../../core/src/policy.rs), which also carries memoization and
+[run policy](../internals/run-policies.md), which also carries memoization and
 frame gating:
 
 | Pass | What it does |
 |---|---|
 | `escape` (route B) | Proves loop-carried accumulators unique, so mutations lower to in-place heap writes instead of clone-and-alloc. |
 | `lastuse` (route A) | The same for straight-line mutation of a freshly allocated, dead-after container. |
-| `cells` | Lets a write through a `var` cell (`set xs[i] = v`, including from a function that did not declare the cell) mutate the cell's container whenever the cell is its only holder, which the heap tracks per cell at run time. See [var.md](../var.md#writing-a-container-in-place). |
+| `cells` | Lets a write through a `var` cell (`set xs[i] = v`, including from a function that did not declare the cell) mutate the cell's container whenever the cell is its only holder, which the heap tracks per cell at run time. See [var.md](../syntax/var.md#writing-a-container-in-place). |
 | `copyprop` | Copy propagation, dead-move elimination, and jump threading. Removes ~25% of the instruction stream. |
 | `match_dispatch` | Enters a run of `match` arms keyed on string literals, int literals or enum variants through a jump table (`MatchSwitch`) instead of testing each arm in turn. See below. |
 
@@ -480,20 +481,14 @@ measured no different.
 ## Static values
 
 A host runs the whole script every frame, so every top-level table used to be
-rebuilt every frame. The static-value cache (`core/src/static_cache.rs`;
-`OptFlags::static_cache`, part of `fast` and `replay`) keeps the top-level
-values that depend on no dynamic data on the stack and jumps over the code
-that builds them. `petal show-static` says which declarations qualify, and
-why the others do not; the cache keeps those of them that code running every
-frame reads, wherever the stretch of static code they stand in makes at
-least one allocation. Each value is built and stored on its own, so a
-reload keeps the values the edit cannot have changed and the next run
-rebuilds the others and nothing else ([hot-reload.md](../hot-reload.md#static-values-across-a-reload)).
-It is off under `baseline` and `explain`, whenever the per-term trace is
-on, and for a plain `petal run`. It stays on while observations are on
-(every Garden panel): see "Under observation" below. It also keeps the
-values a function body builds that depend on nothing of the call: see
-"Inside function bodies" below.
+rebuilt every frame. The static-value cache (`OptFlags::static_cache`, part of
+`fast` and `replay`) keeps the values that depend on no dynamic data on the
+stack and jumps over the code that builds them. What is kept and what a
+reload does to it is in
+[features/static-values.md](../features/static-values.md); the classifier,
+the lowering and the rules for when the cache is on are in
+[internals/static-values.md](../internals/static-values.md). This section
+records what it saves and what it costs.
 
 Over the panel corpus (`cd core-libs/petal-ui && cargo test --release --test
 static_cache -- --ignored --nocapture measure`: 55 apps, 60 frames of the
@@ -543,13 +538,11 @@ operations: the `test/benchmarks/*` scripts under `petal run` time within
 1.2% either way of the same source with both compiled out, and their
 instruction counts are unchanged.
 
-**Under observation.** A host that reads `Env::get_observations_json`
-after each frame must read the same thing from a frame that skipped a
-segment as from one that ran it. Each segment keeps a log of what was
-observed while it last executed (the last value of each named term, the
-locals of the functions it called included) and a taken skip records the
-log again, as a memoized scope does with `Dep::Observed`. So a skip costs
-one hash insert per logged name where the segment cost one per named
+**Under observation.** A host that observes (every Garden panel) keeps the
+cache: each segment keeps a log of what was observed while it last executed
+and a taken skip records the log again
+([internals](../internals/static-values.md#observation-mode)). So a skip
+costs one hash insert per logged name where the segment cost one per named
 instruction plus the instructions, and the values in a log are held for as
 long as the segment is kept. Garden's own panels under Garden's host
 (`cd garden && cargo test -p garden-script --lib -- --ignored --nocapture
@@ -581,23 +574,14 @@ slots.
 What observation costs the cache: a statement that edits in place a
 container another statement built is not skipped, and after a reload that
 recompiles each kept segment executes once more to write its log
-([hot-reload.md](../hot-reload.md#static-values-across-a-reload)).
+([internals](../internals/static-values.md#observation-mode)).
 
 **Inside function bodies.** A function that builds the same value on
 every call builds it once: the `{kind: "none", ml: 0}` a scanner returns for
 "nothing here", the two colour literals a heat map hands `color_lerp` for
 each cell, a palette entry made by `rgb(0.9, 0.93, 0.96)` once per pixel.
-The value has to be *invariant*: static, and reading nothing of the call.
-No parameter (so `[a, 1]` is not, though the classifier, which takes a
-function's parameters to be data, calls it static), no variable of a loop
-or a pattern unless the whole loop or `match` is invariant and kept with
-it, no capture of a value another function builds per call, no `state`
-and no `var`. The function's code gets the same `static_skip` and
-`static_store` around the instructions that build it, and the slot is in
-the stack's table with the top-level ones, so the first call that reaches
-the code fills it and every later call, of any closure of that function at
-any depth of recursion, loads it into its own registers
-(`core/src/static_cache/in_fn.rs` has the rules).
+The value has to read nothing of the call; the rules are in
+[internals](../internals/static-values.md#values-inside-function-bodies).
 
 Over the same corpus and scenario, the cache without these slots
 (`replay-fnstatic`) against the cache with them (`cd core-libs/petal-ui &&
@@ -697,7 +681,7 @@ builds what the edit reached: 2,642 instructions after an edit to dynamic
 code and 2,681 after an edit to one table, against 9,218 when every value
 is rebuilt (2,558 and 2,600 against 36,331 with the 74 cells;
 `core/examples/reload_follow.rs`, numbers in
-[hot-reload.md](../hot-reload.md#what-it-costs)). What is left on a later
+[hot-reload.md](../features/hot-reload.md#what-it-costs)). What is left on a later
 frame is the function declarations (a closure is made on every run) and the
 stretches that allocate nothing.
 
@@ -712,18 +696,15 @@ run where it stands; a table sitting alone between two of them is kept all
 the same, at one check a frame. Numbers standing alone are not: loading
 one costs what the check does.
 
-**What a program can tell.** The cache is held to printing, returning,
-raising and storing exactly what the same program does with it off, and one
-builtin is outside that: `frozen` answers about the heap object, not the
-value. A kept table passed to `freeze` is frozen once and is still frozen at
-the top of the next run; rebuilt on every run it was a new unfrozen table
-each time (and a leak of one table per run). A constant string and a
-payload-free variant have always behaved the kept way. The test is
-`freezing_a_kept_value_freezes_it_once` in `core/tests/static_cache.rs`.
-The same holds for a value kept inside a function body, which is one
-object for every call
-(`freezing_what_a_function_returned_freezes_the_kept_value` in
-`core/tests/static_in_functions.rs`).
+**What a program can tell.** One builtin: `frozen` answers about the heap
+object, not the value, so a kept table passed to `freeze` stays frozen
+([features/static-values.md](../features/static-values.md#built-once-kept-between-runs)).
+Rebuilt on every run it was a new unfrozen table each time, and a leak of
+one table per run. A constant string and a payload-free variant have always
+behaved the kept way. The tests are `freezing_a_kept_value_freezes_it_once`
+in `core/tests/static_cache.rs` and
+`freezing_what_a_function_returned_freezes_the_kept_value` in
+`core/tests/static_in_functions.rs`.
 
 ## Where the remaining headroom is
 

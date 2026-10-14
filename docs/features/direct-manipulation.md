@@ -13,8 +13,15 @@ host states the outcome ("this argument should be 55") and the runtime answers
 with candidate source mutations ([The goal-based protocol](#the-goal-based-protocol)).
 
 This document is the how-to. For the surrounding embedding patterns (output
-buffers, observation, bindings) see [embedding-guide.md](embedding-guide.md); the
-API reference lives in `petal::provenance`.
+buffers, observation, bindings) see [../usage/embedding-guide.md](../usage/embedding-guide.md); the
+API reference lives in `petal::provenance` and `petal::direct_manipulation`.
+
+Two APIs in Petal are stated as goals. The one here is about a value a
+*running* program emitted, and answers with proposals. The other,
+`petal::goal_based_editing`, is about what a source file should say (a
+binding's value, a call), needs no run, and is described in
+[goal-based-editing.md](goal-based-editing.md). They share
+[`StaticValue`](../usage/config-files.md#staticvalue).
 
 ## Contents
 
@@ -211,7 +218,7 @@ pub struct Literal {
 
 Resolution is not number-only: a string, bool, or `nil` written in the call (or
 behind a binding) resolves too, reported through `value` as a
-[`StaticValue`](../core/src/static_value.rs) — the same type goal-based editing
+[`StaticValue`](../usage/config-files.md#staticvalue) — the same type goal-based editing
 renders back into source. `literal` stays the numeric view, carrying the
 spelling data (`is_int`, `negated`) a live drag needs.
 
@@ -289,7 +296,8 @@ The pieces, and where they live:
    `ManipulationGoal { term, arg_index, new_value }` — the term from
    `pick_frame`, the value as a `StaticValue`. The goal describes the
    *outcome*, never the edit; which text changes is the runtime's answer, in
-   the same spirit as `goal_based_editing` for config files. A gesture that
+   the same spirit as [`goal_based_editing`](goal-based-editing.md) for
+   config files. A gesture that
    changes several values at once states them all —
    [a batch](#multi-goal-batches) through `propose_edits_batch`.
 3. **Read the proposals.** Each `EditProposal` is one concrete replacement
@@ -374,13 +382,12 @@ import ui
 
 config let offset = 10
 let x = 20
-draw_circle(x + offset, 110, 60)
+draw_circle(x + offset, 110, 60, 200, 80, 80)
 ```
 
-`config` is a contextual modifier on `let` (usable as an ordinary name
-elsewhere; composes as `pub config let`; rejected on `var` — a mutable
-cell is not a knob). It changes nothing about evaluation. What it changes is
-the *default policy*: when a program declares any config binding,
+`config let` changes nothing about evaluation; its syntax and everything else
+it affects are in [syntax/config-let.md](../syntax/config-let.md). What it
+changes here is the *default policy*: when a program declares any config binding,
 `propose_edits` treats config bindings as `Configurable` and every other
 named binding as `Static` — so a bare drag on the sketch above resolves to
 "set `offset`", one proposal, no dialog. Call-site literals carry no variable
@@ -395,20 +402,29 @@ a Garden-style host needs to render a slider per declared knob.
 
 The protocol is exercisable without writing a host. Both halves ship as CLI
 commands, and the dev MCP server exposes them to agents as `TraceEmits` and
-`ProposeEdit` (see [dev/mcp-server.md](dev/mcp-server.md)).
+`ProposeEdit` (see [../dev/mcp-server.md](../dev/mcp-server.md)).
 
-**Observe** — run a script and dump every emitted value with its attribution:
+**Observe** — run a script and dump every emitted value with its attribution.
+For this `sketch.ptl`:
+
+```petal
+import io
+let offset = 10
+let x = 20
+push_output(symbol("shapes"), x + offset)
+push_output(symbol("shapes"), "label")
+```
 
 ```
 $ petal run --trace-emits sketch.ptl
 
 Channel 'shapes' (2 emits):
-  [0] push_output [line 3] <- 30
+  [0] push_output [line 4] <- 30
       arg 0: computed
       arg 1: computed
-  [1] push_output [line 4] <- "label"
+  [1] push_output [line 5] <- "label"
       arg 0: computed
-      arg 1: literal = "label" (edit line 4)
+      arg 1: literal = "label" (edit line 5)
 ```
 
 `--json` emits the structured report: per channel, each emit's value, the
@@ -416,24 +432,24 @@ resolved call (`term`, `callee`, `span`) and per-argument
 `kind` / `value` / `span` / `editable_span`. The `index` within a channel is
 the emit address `propose-edit` takes.
 
-**Act** — state a goal against one of those emits:
+**Act** — state a goal against one of those emits. The options and the JSON
+output are in the
+[CLI reference](../CLI.md#propose-edit--propose-source-edits-that-change-an-emitted-value):
 
 ```
 $ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42.5 sketch.ptl
 2 proposals:
-  1. set `x` to 32.5 (line 2)
-  2. set `offset` to 22.5 (line 1)
+  1. set `x` to 32.5 (line 3)
+  2. set `offset` to 22.5 (line 2)
 Narrow with --configurable <var> / --static <var>, or apply one by hand.
-
-$ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42.5 \
-    --static x --apply sketch.ptl
-1 proposal:
-  1. set `offset` to 22.5 (line 1)
-Applied.
 ```
 
+`--static x` narrows that to the one proposal for `offset`, and `--apply`
+then writes it.
+
 A multi-goal batch is stated by repeating the `--arg <k> --to <value>` pair —
-each `--to` binds to the `--arg` before it — and reports per goal:
+each `--to` binds to the `--arg` before it — and reports per goal. For a call
+with two computed arguments:
 
 ```
 $ petal propose-edit --channel shapes --emit 0 \
@@ -446,14 +462,13 @@ goal: arg 2 -> 90
     1. set `h` to 45 (line 2)
 ```
 
-`--json` returns the proposals with exact spans (line/column/offset both ends)
-and replacement text for a harness that applies edits itself — one entry per
-goal under `"goals"`, with the original flat keys kept alongside when there is
-exactly one. `--apply` rewrites the file only when policy has narrowed *every*
-goal to exactly one proposal, and refuses otherwise — ambiguity is the
-caller's to resolve, never the tool's to guess through. A script that declares
-its knobs with [`config let`](#config-let-in-source-policy) usually arrives
-narrowed already, no flags needed.
+`--json` returns the proposals with exact spans and replacement text, for a
+harness that applies edits itself. `--apply` rewrites the file only when
+policy has narrowed *every* goal to exactly one proposal, and refuses
+otherwise — ambiguity is the caller's to resolve, never the tool's to guess
+through. A script that declares its knobs with
+[`config let`](#config-let-in-source-policy) usually arrives narrowed
+already, no flags needed.
 
 ## Building a hit test
 
@@ -543,41 +558,41 @@ draw_circle(100, 100, radius, 200, 80, 80)
 swatch(60, 200, 220, 120, 90)
 ```
 
-Hovering the **circle** resolves to line 7:
+Hovering the **circle** resolves to line 9:
 
 ```
 callee:  "draw_circle"
-span:    line 7
-args[0]: Literal,  value 100, is_int   -> edit `100` on line 7
-args[2]: Binding,  value 40            -> edit `40` on line 1 (shared!)
+span:    line 9
+args[0]: Literal,  value 100, is_int   -> edit `100` on line 9
+args[2]: Binding,  value 40            -> edit `40` on line 3 (shared!)
 ```
 
-Note `args[2]`: the pointer is on line 7, but the number to change is on line 1,
+Note `args[2]`: the pointer is on line 9, but the number to change is on line 3,
 and it is a `Binding` — so an editor should either warn, or offer to inline it
 before writing.
 
-Hovering the **swatch** resolves to line 4, not line 8:
+Hovering the **swatch** resolves to line 6, not line 10:
 
 ```
 callee:  "draw_rect"
-span:    line 4      (inside `swatch`)
+span:    line 6      (inside `swatch`)
 args[0]: Computed    (`x` is a parameter — no literal to edit)
-args[2]: Literal, value 46, is_int  -> edit `46` on line 4
+args[2]: Literal, value 46, is_int  -> edit `46` on line 6
 ```
 
 `pick_frame` walked out of the `ui` package but stopped at `swatch`,
 because `swatch` is in the file being edited. And the size argument is directly
 editable while the position isn't — which is exactly right: dragging this swatch
-somewhere else would have to edit the *call* on line 8, and the trace says so by
+somewhere else would have to edit the *call* on line 10, and the trace says so by
 reporting the position as `Computed` at this frame.
 
 ## See also
 
-- [embedding-guide.md](embedding-guide.md) — output buffers, observation, and the
+- [../usage/embedding-guide.md](../usage/embedding-guide.md) — output buffers, observation, and the
   host↔script channels this builds on.
 - `petal::provenance` — the API reference for attribution.
 - `petal::direct_manipulation` — the goal-based proposal API.
 - `petal::goal_based_editing` — declarative, formatting-preserving edits for
   config-shaped files (see [goal-based-editing.md](goal-based-editing.md)).
-- [Garden's petal-ide-mode.md](../garden/docs/petal-ide-mode.md) — a complete host implementation: hover a
+- [Garden's petal-ide-mode.md](../../garden/docs/petal-ide-mode.md) — a complete host implementation: hover a
   shape on the canvas, see the code highlight in the editor beside it.

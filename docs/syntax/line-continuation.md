@@ -1,7 +1,8 @@
 # Line continuation
 
 A statement normally ends at the end of the line. Two things override that, so
-a long expression can be broken across as many lines as it needs.
+a long expression can be broken across as many lines as it needs. (Inside
+`( )`, `[ ]` and `{ }` line breaks are free anyway; see [Commas](commas.md).)
 
 ## An operator at the end of a line
 
@@ -59,5 +60,16 @@ one is already meaningful on its own:
   expression. Break after the `-` (or after the operator before it) instead.
 - `<` — it opens a JSX element.
 
+In a `match`, a line that begins with `|` continues the or-pattern above it
+([Or-patterns](../language-guide.md#or-patterns)).
+
 Blank lines and comment lines between the two halves are fine; the continuation
 rule looks past them.
+
+## What does not continue
+
+- `.` — a field access or method call stays on the line of its receiver.
+  Neither a trailing `.` nor a leading `.x` continues, so break a long chain
+  with `|>` or bind the intermediate value.
+- `=` — the right-hand side of a `let` or an assignment starts on the same
+  line as the `=`.

@@ -380,7 +380,7 @@ fn lazy_init_does_not_overwrite_existing_value_across_runs() {
 }
 
 // ---------------------------------------------------------------------------
-// `state var` — the slot holds a cell (docs/var.md, Cells)
+// `state var` — the slot holds a cell (docs/syntax/var.md, Cells)
 // ---------------------------------------------------------------------------
 
 #[test]

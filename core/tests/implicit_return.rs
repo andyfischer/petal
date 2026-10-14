@@ -11,7 +11,7 @@
 //! the list is built and then thrown away — so it is pinned at three levels:
 //! the `collect` flag on the IR's loop term, the `LoopCollect` instructions in
 //! the bytecode, and the heap's own allocation counter at run time.
-//! See docs/implicit-return-values.md.
+//! See docs/syntax/implicit-return-values.md.
 
 use petal::backend::bytecode::isa::Inst;
 use petal::backend::bytecode::lower::lower_program;

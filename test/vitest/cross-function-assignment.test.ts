@@ -3,7 +3,7 @@
 // compile error at the assignment site: the code reads as a dataflow edge that
 // is not there, and one control-flow step further it did not even lower. The
 // escape hatch for genuine mutation is `var` + `set`.
-// See docs/var.md (Cross-function assignment).
+// See docs/syntax/var.md (Cross-function assignment).
 
 import { describe, it, expect } from "vitest";
 import { checkJson, checkJsonAllowFail } from "./helpers";

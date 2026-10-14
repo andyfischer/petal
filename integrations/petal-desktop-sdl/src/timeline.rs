@@ -564,7 +564,7 @@ fn find_call_site(program: &petal::program::Program, callee: Option<&str>, line:
 
 /// Which command paints the point: the last one covering it, in paint order,
 /// honoring clips and skipping offscreen targets (see the hit-test notes in
-/// docs/direct-manipulation.md).
+/// docs/features/direct-manipulation.md).
 pub fn hit_test(cmds: &[DrawCommand], x: i32, y: i32) -> Option<usize> {
     let mut clip: Option<(i32, i32, i32, i32)> = None;
     let mut saved: Vec<Option<(i32, i32, i32, i32)>> = Vec::new();

@@ -9,7 +9,7 @@
 //! print(score)                           print(score)
 //! ```
 //!
-//! A `let` is a dataflow binding and a `var` is a box (docs/var.md), so this
+//! A `let` is a dataflow binding and a `var` is a box (docs/syntax/var.md), so this
 //! is not a respelling: a function that mentions the binding stops reading
 //! the value captured where it was written and starts reading, and writing,
 //! the one live cell. That is the point of running it — it is the fix for

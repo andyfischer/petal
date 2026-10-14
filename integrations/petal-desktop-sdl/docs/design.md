@@ -9,7 +9,7 @@ For other material:
 - [`../README.md`](../README.md) — building, running, CLI flags, examples
 - [`game-dev-guide.md`](game-dev-guide.md) — the script-side API and common game patterns
 - [`agent-protocol.md`](agent-protocol.md) — the `--agent` / `--headless` command reference
-- [`docs/building-apps.md`](../../../docs/building-apps.md) — how to build your own app on this crate
+- [`docs/usage/building-apps.md`](../../../docs/usage/building-apps.md) — how to build your own app on this crate
 - [`examples/custom-apps/petal-fps/README.md`](../../../examples/custom-apps/petal-fps/README.md) — a Rust + Petal 3D app that implements its own `Host`
 
 ## Layers
@@ -122,7 +122,7 @@ they do nothing else during the run, so they are registered as
 helper that plays a sound is replayed by re-appending its buffered output, so
 the request still arrives. (A native that queued the sound on a host-side list
 instead would be skipped by the replay and would have to declare an `effect`;
-see "Embedder pitfalls" in [`docs/ffi.md`](../../../docs/ffi.md).) Variant
+see "Embedder pitfalls" in [`docs/usage/ffi.md`](../../../docs/usage/ffi.md).) Variant
 rotation happens on the host for the same reason.
 
 After the run, `SoundBoard::end_frame` drains the buffer, renders each request

@@ -45,7 +45,7 @@ See `docs/dev/state-call-paths.md`.
 
 ## 3. Overloading is invisible in the source
 
-**Open.** Petal overloads by arity (see `docs/function-overloading.md`), but
+**Open.** Petal overloads by arity (see `docs/syntax/function-overloading.md`), but
 reading two `fn draw_line(...)` definitions you cannot tell whether the second
 replaces the first or adds an overload. Proposed: explicit syntax such as
 `fn draw_line/3(...)`.

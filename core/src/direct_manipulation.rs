@@ -38,7 +38,7 @@
 //! Proposals carry spans plus replacement text and do **not** touch the file;
 //! applying (and re-running, and re-tracing) is the host's move — with
 //! [`apply_edits`] doing the mechanical splice for hosts that want it. See
-//! `docs/direct-manipulation.md` for the full protocol.
+//! `docs/features/direct-manipulation.md` for the full protocol.
 //!
 //! Two extensions ride on the same shapes: [`propose_edits_batch`] resolves a
 //! *list* of goals consistently (a drag changes x and y in one gesture), and a

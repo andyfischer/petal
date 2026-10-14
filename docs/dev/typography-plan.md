@@ -3,7 +3,7 @@
 Status: **partially shipped.** Font selection, per-font measurement and font
 objects are in `petal-ui` and honored by every host. Flow layout (styled
 spans wrapping into paragraphs) is not started. The user-facing contract is
-[text-and-fonts.md](../text-and-fonts.md); this document keeps the design
+[text-and-fonts.md](../usage/text-and-fonts.md); this document keeps the design
 rationale and tracks what is left.
 
 The goal is best-in-class text for Petal apps: multiple fonts (faces,
@@ -21,13 +21,13 @@ script-side and is identical everywhere.
 | 1a — protocol + hosts | done | Optional `font` / `weight` / `italic` / `spacing` on `DrawCommand::Text`; style records on `draw_text` / `text_width`; SDL, web-canvas and Garden honor them. |
 | 1b — font discovery | done, in a different shape | The plan called for a separate `petal-typography` crate with `FontBook`. Instead `petal-ui` gained a `FontSource` trait a host attaches, `font(name)` returning a font *object* (a style record), the `font_*` decorators, and `fonts()`. Garden draws panels in any installed family. No separate crate exists. |
 | Pixel-budget helpers | done, early | `ellipsize` / `ellipsize_tail` (pixel budget, measured) and `draw_text_center` in `ui.ptl`. They needed no new protocol, so they landed ahead of the `typo` module. Both now delegate to the `text_ellipsize` native and keep their signatures. |
-| Vertical metrics | done | `text_metrics(style)` reports, in px, where a run's ink sits relative to the `y` `draw_text` is given (`baseline`, `descent`, `line_height`, `cap_height`, `x_height`); hosts publish theirs with `bind_text_vertical_metrics` / `FontMetrics::with_vertical`. Phase 0 measured only the horizontal axis, which left every script assuming a run is `size` px tall starting at `y` — see [text-and-fonts.md](../text-and-fonts.md#the-other-axis). |
+| Vertical metrics | done | `text_metrics(style)` reports, in px, where a run's ink sits relative to the `y` `draw_text` is given (`baseline`, `descent`, `line_height`, `cap_height`, `x_height`); hosts publish theirs with `bind_text_vertical_metrics` / `FontMetrics::with_vertical`. Phase 0 measured only the horizontal axis, which left every script assuming a run is `size` px tall starting at `y` — see [text-and-fonts.md](../usage/text-and-fonts.md#the-other-axis). |
 | Fitting natives | done | `text_wrap`, `text_ellipsize`, `text_index_at`: one walk of the advance table each, where a script writes a `text_width` call per character. |
 | 2 — the `typo` module | started, in a different shape | [`core-runtime/text-layout`](../../core-runtime/text-layout/) is the script-side layer, as an ordinary Petal *package* rather than a prelude module: placement on both axes, word wrap, elision, line clamping, caret hit-testing. What remains of the original phase 2 is the rich part — spans, mixed styles in one line, flow layout with a measure/draw split, and a layout cache. |
 | 3 — raster + migration | not started | A software glyph cache for SDL-class hosts; porting the apps that hand-roll flow layout. |
 
 Where each host stands today (faces, weights, spacing, measurement) is the
-"Per-host status" table in [text-and-fonts.md](../text-and-fonts.md#per-host-status).
+"Per-host status" table in [text-and-fonts.md](../usage/text-and-fonts.md#per-host-status).
 
 ---
 

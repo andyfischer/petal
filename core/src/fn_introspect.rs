@@ -17,7 +17,7 @@
 //! pleasant to walk from Petal: every node is a record with a `tag`, its own
 //! fields, and `line` / `column`. Every field of a node is always present
 //! (`nil` when it does not apply), since reading a missing field is an error
-//! in Petal. The shapes are listed in docs/function-introspection.md.
+//! in Petal. The shapes are listed in docs/features/function-introspection.md.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

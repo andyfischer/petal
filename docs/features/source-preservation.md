@@ -6,11 +6,16 @@ the change by hand. This page describes how Petal does that for the literals a
 config-style file is made of: numbers, strings, colors, and the records, lists
 and constructor calls that hold them.
 
-- **Module:** [`core/src/literal_edit.rs`](../core/src/literal_edit.rs)
+- **Module:** [`core/src/literal_edit.rs`](../../core/src/literal_edit.rs)
   (`petal::literal_edit`)
-- **API:** the path goals in [goal-based-editing.md](goal-based-editing.md#path-goals);
-  `pb_source_*` in the C bridge ([embedding-c.md](embedding-c.md#editing-source-a-script-as-a-config-file))
-- **Tests:** [`core/tests/source_preservation.rs`](../core/tests/source_preservation.rs),
+- **API:** the value and path goals in
+  [goal-based-editing.md](goal-based-editing.md#path-goals), which call
+  `literal_edit::set_binding`, `set_path`, `insert_path`, `append_path` and
+  `remove_path`; `pb_source_*` in the C bridge
+  ([../usage/embedding-c.md](../usage/embedding-c.md#editing-source-a-script-as-a-config-file));
+  `Env::set_config_value`, which makes the same edit to the text a running
+  program holds ([hot-reload.md](hot-reload.md#setting-a-value-without-writing-the-file))
+- **Tests:** [`core/tests/source_preservation.rs`](../../core/tests/source_preservation.rs),
   a table of before / edit / after cases plus the properties below
 
 ## What an edit guarantees

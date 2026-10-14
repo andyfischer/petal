@@ -112,12 +112,17 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 |----------|-------------|
 | [Getting Started](docs/Getting_Started.md) | Install the CLI, run your first program, and find what to read next |
 | [Language Guide](docs/language-guide.md) | The full language reference |
+| [Inline State](docs/features/inline-state.md) | The `state` keyword: persistent values declared where they are used |
+| [Hot Reload](docs/features/hot-reload.md) | What reloading a running program keeps and costs |
 | [Builtins Reference](docs/Builtins.md) | Every built-in function |
 | [CLI Reference](docs/CLI.md) | Every `petal` subcommand and flag |
 | [Module System](docs/module-system.md) | `import` and module resolution |
 | [Packages](docs/packages.md) | `petal.toml`, dependencies, the lockfile and the package commands |
 | [Architecture](docs/dev/Architecture.md) | How the implementation works |
 | [Changelog](CHANGELOG.md) | What each release contains |
+
+The [documentation index](docs/README.md) lists everything, grouped into
+syntax, features, usage and internals.
 
 ## Building a full app with Petal
 
@@ -142,7 +147,7 @@ The repo contains:
   | [petal-desktop-sdl](integrations/petal-desktop-sdl/README.md) | SDL2 desktop host with hot reload. See the [game dev guide](integrations/petal-desktop-sdl/docs/game-dev-guide.md) and [agent protocol](integrations/petal-desktop-sdl/docs/agent-protocol.md) |
   | [petal-web-html](integrations/petal-web-html/README.md) | WebAssembly host that loads Petal and renders to HTML / DOM |
   | [petal-web-canvas](integrations/petal-web-canvas/README.md) | WebAssembly host that loads Petal and renders graphics to a canvas |
-  | [petal-c-bridge](integrations/petal-c-bridge/README.md) | C ABI and C++20 wrapper for embedding Petal. See [embedding-c.md](docs/embedding-c.md) |
+  | [petal-c-bridge](integrations/petal-c-bridge/README.md) | C ABI and C++20 wrapper for embedding Petal. See [embedding-c.md](docs/usage/embedding-c.md) |
 
 ### Apps
 

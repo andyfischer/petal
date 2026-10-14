@@ -7,7 +7,7 @@ things a script cannot do fast enough or at all — a PPU-shaped rasterizer and 
 APU-shaped sound chip — both fed from Petal every frame.
 
 It is a Shape B app on the [`petal-sdl`](../../../integrations/petal-desktop-sdl/) integration (see
-[docs/building-apps.md](../../../docs/building-apps.md)): the window, event loop,
+[docs/usage/building-apps.md](../../../docs/usage/building-apps.md)): the window, event loop,
 frame timing, input, hot reload, and the agent/headless/screenshot/record modes
 are all inherited, and only the console itself is new.
 

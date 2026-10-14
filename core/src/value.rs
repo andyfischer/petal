@@ -45,7 +45,7 @@ pub enum Value {
     /// code: every source-level read of a `var` dereferences it (`CellRead`),
     /// so no expression evaluates to a `Cell`. The only way two holders share
     /// one is closure capture, which is lexically visible. See the containment
-    /// invariant in docs/var.md (Containment).
+    /// invariant in docs/syntax/var.md (Containment).
     Cell(CellId),
     /// Dual number for forward-mode automatic differentiation.
     /// Carries a primal value and its derivative (tangent).

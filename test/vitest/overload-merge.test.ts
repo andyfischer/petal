@@ -1,4 +1,4 @@
-// Overload sets merge across module boundaries (docs/function-overloading.md,
+// Overload sets merge across module boundaries (docs/syntax/function-overloading.md,
 // "Across modules").
 //
 // The gap these pin (docs/dev/sharing-petal-libraries.md, "Language-level gaps"
@@ -66,7 +66,7 @@ describe("overload sets merge across modules", () => {
 
   it("a second declaration of the same arity in one file still replaces", () => {
     // Merging is a *cross-module* rule; within one file the later declaration
-    // wins outright, as docs/function-overloading.md has always said.
+    // wins outright, as docs/syntax/function-overloading.md has always said.
     expect(runPetalFile(fixture("app_same_file.ptl"))).toBe("second\n2");
   });
 

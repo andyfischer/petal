@@ -12,7 +12,8 @@ them (see [refactor-verification.md](refactor-verification.md)).
 ```
 petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
              [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
-             [--out trace.jsonl] [--error-format full|bare] [-I <dir>]
+             [--query-fixtures q.json] [--out trace.jsonl]
+             [--error-format full|bare] [-I <dir>]
              [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]
              [--effect-audit] [--static-audit] [--static-only]
 ```
@@ -27,10 +28,11 @@ Build it with `cd core-libs/petal-ui && cargo build`; the binary lands at
 | `--seed N` | unseeded (wall clock) | `Env::set_seed` before the first frame — pins `random`, `random_int`, `choose`, and Perlin noise. |
 | `--scenario` | none | A scenario file (below) or `monkey:<seed>`. |
 | `--host-data` | none | Fixture answers for the `host_data(kind, arg)` native. |
+| `--query-fixtures` | none | Ready answers for the stubbed `query(kind, arg)` native: a JSON array in the `--host-data` shape. A `(kind, arg)` with no entry stays loading. |
 | `--out` | stdout | Where the JSONL trace goes. `-` also means stdout. Safe even for a printing app: `print` does not echo. |
 | `--error-format` | `full` | `bare` strips positions and echoed source lines from runtime errors. |
-| `-I <dir>` | none | A directory to search for packages, repeatable — the CLI's `-I`. For an app that imports a package which is neither bundled nor a dependency in its project's `petal.toml`. |
-| `--policy <name>` | `fast` (or `PETAL_POLICY`) | The [run policy](../../core/src/policy.rs): `fast` (optimizer, memo and gate on), `baseline` (all off — the reference trace), `explain`, or `replay` (memo on, gate off), optionally with modifiers such as `fast-memo` (the gate alone) or `baseline+gate`. Every policy must produce the same trace, so a differential is the same command with two names. |
+| `-I <dir>` (or `--include <dir>`) | none | A directory to search for packages, repeatable — the CLI's `-I`. For an app that imports a package which is neither bundled nor a dependency in its project's `petal.toml`. |
+| `--policy <name>` | `fast` (or `PETAL_POLICY`) | The [run policy](../internals/run-policies.md): `fast`, `baseline` (the reference trace), `explain` or `replay`, optionally with modifiers such as `fast-memo`. Every policy must produce the same trace, so a differential is the same command with two names. |
 | `--no-gate` | gated | Run the script on every frame. By default frames run under the [frame gate](frame-gate.md), as in every real host: a frame whose inputs are what the last run read is skipped, and its record carries the retained `commands` and `state` with empty `prints`. |
 | `--gate-stats` | off | Report frames run vs skipped, and a histogram of run reasons, on stderr. |
 | `--no-memo` | memoized | Run every user-function call. Like `--no-gate`, it switches one layer off in whichever policy is in effect. By default calls whose inputs are unchanged are replayed from their record ([memo-scopes.md](memo-scopes.md)); the trace is identical either way, which `tests/memo.rs` checks. |
@@ -197,7 +199,7 @@ package with them, so a drawer's `import garden` resolves and links:
 |---|---|
 | `palette()` | Garden's fallback palette — the same colors a themeless Garden resolves |
 | `panel_theme()` | `{}` |
-| `query(kind, arg)` | a loading pending value, forever — a headless run exercises the drawer's loading/spinner path |
+| `query(kind, arg)` | a loading pending value, forever — a headless run exercises the drawer's loading/spinner path. `--query-fixtures` supplies ready answers instead |
 | `invalidate`, `emit`, `claim_key`, `navigate`/`navigate_replace`/`navigate_back`/`navigate_forward`, `panel_store_set` | arguments validated, then dropped |
 | `mutate(name, arg)` | a unique handle (1, 2, …); `mutate_result(handle)` answers nil |
 | `nav_arg()`, `panel_store_get(key)` | nil |
@@ -207,8 +209,8 @@ package with them, so a drawer's `import garden` resolves and links:
 Every stub's answer is a pure function of the script's own calls, so traces
 stay byte-identical run to run, and an app that never touches these natives is
 unaffected. A drawer whose whole UI hides behind a ready `query` shows its
-loading state here — deterministic and intended; drive real data through the
-garden integration tests instead.
+loading state here — deterministic and intended; give it its model with
+`--query-fixtures`, or drive real data through the garden integration tests.
 
 ## What runs under it
 

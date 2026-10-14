@@ -1,7 +1,7 @@
 //! AST-based diff of two versions of one source file: what kind of change an
 //! edit is, and where every position of the old text went.
 //!
-//! This is the first half of intelligent hot reload (docs/hot-reload.md). A
+//! This is the first half of intelligent hot reload (docs/features/hot-reload.md). A
 //! host that notices a source file changed asks [`diff_source`] what changed,
 //! and the answer decides how much work the reload is:
 //!

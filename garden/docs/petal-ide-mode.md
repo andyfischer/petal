@@ -242,7 +242,7 @@ records the call chain that reached it as it emits), so any sketch is
 traceable as written, and a panel with no paired editor records nothing.
 Spans and argument values are derived lazily on the mouse move that asks.
 The language-side how-to is
-[docs/direct-manipulation.md](../../docs/direct-manipulation.md).
+[docs/features/direct-manipulation.md](../../docs/features/direct-manipulation.md).
 
 ### Automation
 
@@ -300,7 +300,7 @@ disk until you save.
 
 **What you are saying.** A drag states a goal, "this argument should
 evaluate to 148", and the runtime answers with the edit
-([Petal's `direct_manipulation`](../../docs/direct-manipulation.md)):
+([Petal's `direct_manipulation`](../../docs/features/direct-manipulation.md)):
 
 - **A literal in the call** (`draw_rect(46, 210, …)`) is rewritten in place,
   keeping its spelling: an integer stays an integer.

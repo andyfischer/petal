@@ -78,7 +78,7 @@ over the corpus) brackets every call with activity snapshots and reports
 each native seen doing a facet its row lacks, and on which facet
 (`core/src/effect_audit.rs`). A `Pending` *result* makes the scope effectful
 whatever the row says. See
-[the declarative-effect task](../tasks/declarative-effect-refactoring.md).
+[Declaring native effects honestly](../usage/ffi.md#declaring-native-effects-honestly).
 
 **What is not worth recording.** A scope that recorded nothing and retired
 fewer than `MIN_SCOPE_INSTS` instructions is folded into its parent, whose
@@ -96,7 +96,7 @@ still a fresh container the caller may mutate. In-place mutation
 of a `state` slot inside a scope (`StateWrite.mutated`) makes the scope
 effectful, since the slot already holds the edited object and no comparison
 could tell. The same goes for a `var` cell written in place
-(`set xs[i] = v`, see [var.md](../var.md#writing-a-container-in-place)) by a
+(`set xs[i] = v`, see [var.md](../syntax/var.md#writing-a-container-in-place)) by a
 scope that did not create it: there is no before-value for a replay to
 re-apply. A scope that only *reads* such a cell keeps its record, but the
 value it recorded may be the very container a later write edits, so the record

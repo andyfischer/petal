@@ -383,7 +383,7 @@ impl TypeAnn {
 /// return: its body is compiled with the tail in statement position, and the
 /// type checker does not hold the tail to the declared type. Any other
 /// annotation, or none, leaves the tail as the function's value. See
-/// docs/implicit-return-values.md.
+/// docs/syntax/implicit-return-values.md.
 pub fn declares_nil(ret: Option<&TypeAnn>) -> bool {
     ret.is_some_and(|ann| ann.resolved == Some(crate::types::Type::Nil))
 }
@@ -489,12 +489,12 @@ pub enum StmtKind {
         value: Expr,
         /// Written `var x = …` rather than `let x = …`: a mutable cell, which
         /// is written with `set` and rejects `=`.
-        /// See docs/var.md (Two write keywords).
+        /// See docs/syntax/var.md (Two write keywords).
         #[serde(skip_serializing_if = "is_false")]
         is_var: bool,
         /// Written `config let x = …`: the binding is declared as a tuning
         /// knob. Direct manipulation prefers editing config bindings and
-        /// leaves the rest alone (docs/direct-manipulation.md); hosts may
+        /// leaves the rest alone (docs/features/direct-manipulation.md); hosts may
         /// also render them as sliders. No effect on evaluation.
         #[serde(skip_serializing_if = "is_false")]
         is_config: bool,
@@ -577,7 +577,7 @@ pub enum StmtKind {
     },
     /// `native fn name(a: int, b?) -> type` — the declaration of a function
     /// the *host* implements. No body and no `end`. See [`NativeFnDecl`] and
-    /// docs/ffi.md (Native interfaces).
+    /// docs/usage/ffi.md (Native interfaces).
     NativeFn(NativeFnDecl),
     /// `import m` / `import m as u` / `import m: a, b`. Only allowed before
     /// any other statement in a file (the parser enforces this); consumed by

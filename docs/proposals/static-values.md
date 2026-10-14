@@ -70,7 +70,7 @@ anything depends on it.
   holds scalars only (`core/src/constant_table.rs`).
 - A plain `state X = expr` is the one build-once mechanism, and its
   initializer never re-runs: "a `state` slot that was initialized from the old
-  value keeps its value" (`docs/hot-reload.md:54-56`).
+  value keeps its value" (`docs/features/hot-reload.md:54-56`).
 
 ### What authors do about it
 

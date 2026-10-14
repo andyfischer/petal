@@ -320,7 +320,7 @@ through lists of boxed floats. Wanted: `f64_array` and `i32_array` with
 in-place `push` and `extend`, accepted by host natives as a pointer and a
 length.
 
-**A table of records.** `docs/var.md`: "`set ps[i].x = v` copies one
+**A table of records.** `docs/syntax/var.md`: "`set ps[i].x = v` copies one
 record". So traffic.ptl keeps its road network as 14 parallel
 `state var E_*` lists; adding an edge is 14 appends and reset is 26 lines.
 Wanted: either a columnar `table` type or ownership tracking one level down,

@@ -34,13 +34,13 @@ that cannot be shown for an edit, the edit is recompiled.
 
 The C bridge's `pb_vm_reload` goes through this, as do the SDL host's watcher
 and Garden's script and panel hosts. See
-[embedding-c.md](embedding-c.md#hot-reload) for the C side.
+[../usage/embedding-c.md](../usage/embedding-c.md#hot-reload) for the C side.
 
 ## What each outcome leaves alone
 
 | | `unchanged` / `relocated` | `patched` | `recompiled` |
 |---|---|---|---|
-| `state` | kept | kept | kept where the declaration still exists |
+| `state` | kept | kept | kept where the declaration still exists ([State across a reload](#state-across-a-reload)) |
 | closures, the captured function table | kept | dropped, recaptured by the next run | dropped |
 | memo records | kept | dropped | dropped |
 | static values | kept | kept, except those the edit reaches | kept, except those the edit reaches |
@@ -58,50 +58,95 @@ under both, because an initializer runs once. Static values are the
 exception: both kinds of reload put back the ones the edit cannot have
 changed, which is the next section.
 
+## State across a reload
+
+What `state` is and how a slot is identified is in
+[inline-state.md](inline-state.md); which edits keep a slot, as the author of
+a script sees it, is under
+[State and hot reload](inline-state.md#state-and-hot-reload) there. This
+section is the mechanism.
+
+The primitive is `Env::transfer_state`
+([`core/src/transfer_state.rs`](../../core/src/transfer_state.rs)): reshape a
+running stack onto a freshly compiled `Program`. A `recompiled` reload ends
+in it, and it is the definition of what the other outcomes must be
+equivalent to. A host that compiles for itself calls it directly:
+
+```rust
+let new_program = env.compile_program_at(pid, &source, &path)?;
+let result = env.transfer_state(stack, new_program)?;  // TransferStateResult { state_preserved, state_dropped }
+```
+
+It swaps the program in under the same `ProgramId` (invalidating cached
+bytecode), clears closures and the stack's cached function, method and enum
+tables (they point into old code and are recaptured on the next run), clears
+memo records and static values, drops the state the new program no longer
+declares, and resets execution so the next `run` starts from the new root.
+`reload_program` then puts back the static values the edit cannot have
+changed ([below](#static-values-across-a-reload)); a bare `transfer_state`
+leaves every one to be rebuilt.
+
+State is matched on the declaration only. A slot's key is its declaration
+plus the call path that reached it, and the new program's declarations say
+nothing about paths, so every slot under a surviving declaration is kept:
+
+- a declaration the edit **added** is initialized on the next run;
+- a declaration the edit **removed** loses its slots, counted in
+  `state_dropped`;
+- a declaration that is still there keeps its slots, whatever else changed.
+
+Slots whose call path no longer occurs are not found at transfer time. The
+sweep that ends every run (`Stack::sweep_untouched_state`) drops any slot the
+run did not touch, and that is what removes them. So the two edits that lose
+state are the same event, an identity the edit changed, and both read as a
+removal plus an addition:
+
+- Renaming a `state` variable, or the function or module it sits in, changes
+  the declaration and drops the value at the transfer.
+- Editing the call structure around a callsite (renaming the callee,
+  inserting an earlier call to the same callee, extracting or inlining a
+  helper) moves every slot below it to a new path. The reader sees a freshly
+  initialized slot and the orphan is swept after the next run.
+
+An existing slot keeps its value when its initializer is edited, because an
+initializer runs once. The reload report names such a slot as a
+[stale seed](#static-values-across-a-reload).
+
+### Class instances across a reload
+
+A class instance is an ordinary record carrying an interned class *name*, not
+a pointer into the program that built it. An instance kept in `state` keeps
+the fields it was constructed with, and `type()` keeps reporting its label
+even if the class is gone. Petal does not migrate it: a field the edit adds
+is not invented on an older instance.
+
+Method calls on such a value resolve against the new code:
+
+- **Pinning.** Where the compiler can tell the receiver's class (a constructor
+  call, a `let` bound to one, or a class annotation), the call is bound to
+  `fn Class.method` at compile time.
+- **Stale-label fallback.** Otherwise the call dispatches on the label, but
+  also carries the class its declaration named, which is consulted only when
+  the label names no class in the running program.
+
+See [Classes & Methods](../language-guide.md#when-the-call-is-resolved-at-compile-time)
+and `core/tests/class_live_edit.rs`. Enum variants kept in `state` are under
+[Editing an enum](#editing-an-enum).
+
 ## Static values across a reload
 
-A static value is a top-level value that depends on no dynamic data, built
-once and kept between runs ([performance.md](dev/performance.md#static-values)).
-A reload keeps the ones the edit cannot have changed and rebuilds the rest
-on the next run. The rule is asked in terms of where things are written
-(`core/src/env/static_follow.rs`):
+A static value is a value that depends on no dynamic data (a `const`, a table
+of literals, a table built from one by functions that read nothing else),
+built once and kept between runs. A reload keeps the ones the edit cannot
+have changed and the next run rebuilds the rest: a value is rebuilt when the
+edit touched its own statement, anything it depends on, or what one of the
+names it uses means. The rule, its limits, and what is rebuilt when the diff
+cannot say what changed are in
+[static-values.md](static-values.md#following-edits-on-hot-reload); how the
+decision is made is in
+[internals/static-values.md](../internals/static-values.md#following-the-diff-on-reload).
 
-1. The diff says which top-level statements of each file changed, appeared
-   or went away, and for a value edit which statement each literal is in.
-2. A declaration is **changed** when it is written inside one of those
-   statements. A literal inside a function body changes the function; a
-   method inside a class changes the class's declarations.
-3. A static value is **kept** when it is not written inside a changed
-   statement, none of the declarations it depends on is changed, and (after
-   a recompile) the new program has a value for a declaration of the same
-   module-qualified name that depends on the same names, none of them
-   changed there either. The dependency set is the classifier's, closed
-   transitively (`petal show-static --json`, `depends_on`): the `let`s,
-   functions and enums a value's expression reaches, every method of a name
-   it calls, every enum whose data a field read may reach.
-
-The comparison of names is what catches an edit that changes what a name
-means without touching the value's own text. A new import, a declaration
-that shadows a builtin or a module's export, an added overload and an added
-method each add a name to the set or change a declaration in it.
-
-A value with no declaration of its own (the `[10, 20, 30]` written inside a
-call) is matched across a recompile by the text of its statement and the
-shape the statement compiled to, and follows the same rule.
-
-Everything is rebuilt, as before this existed, when the diff cannot say what
-changed: the new text was not classifiable (`change: full`), top-level
-statements changed order, a source file could not be read, or the program's
-set of source files changed (an import added or removed).
-
-**A rebuilt value that is the value it was keeps the old heap value.** The
-store compares the two (`static_cache::identical`: the same kinds, numbers
-bit for bit so `1` is not `1.0`, records with the same keys in the same
-order, the same answer to `frozen`), and on a match the slot and the
-register take the old one. An edit to a helper function that leaves a table
-as it was costs the rebuild and changes nothing else.
-
-**The report.** `ReloadReport::statics` says what happened, and
+`ReloadReport::statics` says what happened, and
 `ReloadReport::static_lines()` is what the SDL host and Garden print:
 
 ```text
@@ -109,74 +154,17 @@ as it was costs the rebuild and changes nothing else.
 [hot-reload] stale seed: state grid was initialized from TILES, which changed; it keeps its value
 ```
 
-Nothing is printed for a reload that reached no constant and left no stale
-seed. A **stale seed** is a top-level `state` cell that kept its value
-although its initializer reads something the edit changed, or was itself
-edited. That has always been how `state` behaves; the line makes it
-visible when a table reloads and a cell built from it does not. From C the
-same is under `statics` in `pb_vm_last_reload_json`. The report is absent
-(`None`) when the program does not run with the static-value cache (the
-`baseline` and `explain` policies, a host with the per-term trace on such
-as a Garden panel being traced by the Petal IDE) or has not run yet.
-
-**A host that observes** (`Env::observations_mut().enable()`: every Garden
-panel) keeps the cache and gets the same report. What it reads after a
-frame is the same as with the cache off, because each segment of static
-code keeps what was observed while it last executed, in the functions it
-called too, and a frame that skips the segment records that again. Two
-things differ in cost, neither in what is kept. After a reload that
-recompiles, every kept segment executes once more on the next frame, since
-its observations name terms of the old program; the kept values are put
-back, so nothing that holds one sees a copy. After a reload that patches a
-literal or only moves text, only the segments the edit reached do. And a
-statement that edits in place a container another statement built (`let
-cur = drop_last(BASE)` where nothing reads `BASE` again) runs on every
-frame under observation, because the buffer shows that edit under the
-name `BASE`.
-
-`Env::set_static_follow(false)` goes back to rebuilding every static value
-on every reload. It is what the followed reload is tested against.
-
-Two things to know. A reload that follows static values lowers the new
-program itself, so that it can say what was kept; that work was the next
-frame's before, and is the same amount. And the unit of rebuilding is the
-value: each value that something outside its own statement reads is built
-and stored on its own, so a rebuilt table leaves the tables written around
-it kept and reads the ones it is built from out of where they are kept.
-What is rebuilt together is what cannot be told apart: a table that only
-one other value reads and that value, and the values one statement binds.
-
-The values the cache keeps inside function bodies
-([performance.md](dev/performance.md#static-values), "Inside function
-bodies") are not followed: every reload that changes a value or
-recompiles, whatever it changed, empties all of them, and each is built
-again by the next call that reaches it. (A reload that only moves text, a
-comment or whitespace, changes no code and leaves them.) They
-are not in the report's counts, which are about top-level values. A value
-a drag put off (below) takes them with it when it is finally rebuilt,
-since one may have been built from it meanwhile.
-
-Only the stack the reload was asked of keeps anything. Every other stack of
-the program, and a fork, rebuilds all of its static values on its next run;
-a reload asked of one of those before it has run again keeps nothing either,
-because its table was filled under constants another stack's edit has since
-replaced.
-
-Which objects are shared is the same after a followed reload as after one
-that rebuilds everything. A rebuilt value holds the kept values it is built
-from themselves (`let C = [B, 1]`, with `B` kept and `C` rebuilt, holds the
-kept `B`, so `freeze(B)` is seen through `C[0]`), and a value is kept only
-together with the values it was built from: when `B` is rebuilt, `C` is
-too, whatever the edit was. A rebuilt value that comes out as it was gives
-way to the old one only where that puts no second copy of a kept table
-beside the first. What `frozen` can still tell is what it can tell between
-any two runs: a table frozen before the reload stays frozen when it is
-kept, and is a new, unfrozen one when it is rebuilt.
+A **stale seed** is a top-level `state` that kept its value although its
+initializer reads something the edit changed, or was itself edited
+([The reload report](static-values.md#the-reload-report)).
+`Env::set_static_follow(false)` goes back to rebuilding every static value on
+every reload. It is what the followed reload is tested against.
 
 ## What kind of edit is it
 
 `petal::source_diff::diff_source(old, new, file)` parses both texts and
-compares the syntax trees. The result is a `SourceChange`:
+compares the syntax trees. It returns a `FileDiff`, whose `change` is a
+`SourceChange`:
 
 - **`None`**: the trees are the same. The texts are identical, or differ in
   whitespace, comments, blank lines, line wrapping, or a trailing comma.
@@ -185,7 +173,7 @@ compares the syntax trees. The result is a `SourceChange`:
   old and new value and its span in both texts, and for a literal inside a
   top-level `let`, `const` or `config let` its binding path: `SPEED`,
   `POST.effects[2].amount`, `SUN.dir[1]` (a call's arguments count as
-  elements, as in [config files](config-files.md)). A literal in a function
+  elements, as in [config files](../usage/config-files.md)). A literal in a function
   body or a statement is a value change too, with no path.
 - **`Constructs(list)`**: the structure changed. Each entry names a top-level
   construct (`fn draw`, `config let GEN`, `const TILES`, `state score`, an
@@ -247,7 +235,7 @@ sets one value in the running program directly:
 env.set_config_value(stack, None, "POST.effects[2].amount", &StaticValue::float(0.35))?;
 ```
 
-The path is a binding path as in [config files](config-files.md). The second
+The path is a binding path as in [config files](../usage/config-files.md). The second
 argument names the source file holding the binding; `None` finds it, and
 requires that exactly one file binds the name at its top level.
 
@@ -264,7 +252,8 @@ reload, if it needs no recompile. So:
 It returns `ConfigSetError::NeedsReload` when the value has a different type or
 shape from what is written (an integer literal given a float, a list of a
 different length), and changes nothing. Write the file and reload for those.
-Any top-level `let` of data can be set this way; `config` is not required.
+Any top-level `let` of data can be set this way; `config` is not required
+(what [`config let`](../syntax/config-let.md) adds is the sign rule above).
 
 From C: `pb_vm_set_config(vm, file, path, value_json)` and
 `pb_vm_source_text(vm, file)`.
@@ -445,23 +434,23 @@ there is nothing to invalidate, held only for files that have been edited,
 two versions of a file at most (so a reload that does not compile costs the
 next one nothing), twelve texts and 2 MiB in all. `Env::clear_reload_parses`
 drops them; the next reload then parses the running text of each changed
-file once more. Before this a value edit parsed the edited file twice, and
-the two edits above took 1.3 and 1.5 ms.
+file once more.
 
 `set_config_value` costs more than a reload of the same edit because it also
 makes the edit: it parses the file's text to find the literal and rewrite it
 in place. Name the file when the host knows it.
 
-The recompile itself went from about 300 ms to 110 ms in the same work:
+Two things keep the recompile itself down:
 
-- Lowering dropped from 225 ms to 69 ms. Copy propagation was solving its
-  dataflow per instruction over hash maps, which is quadratic in a function's
-  length, and a program's top level is one function. It now solves per basic
-  block over bit sets (`core/src/backend/bytecode/copyprop.rs`); the old
-  solver is kept as the test oracle and produces identical code for every
-  function of every `.ptl` file in the repository.
+- Copy propagation solves its dataflow per basic block over bit sets
+  (`core/src/backend/bytecode/copyprop.rs`). A program's top level is one
+  function, and a solver that works per instruction over hash maps is
+  quadratic in a function's length; that solver is kept as the test oracle
+  and produces identical code for every function of every `.ptl` file in the
+  repository. When the change was made it took lowering from 225 ms to 69 ms
+  on the `games/neon` of that day.
 - The module registry keeps the last parse of each source file
-  (`module::ParseCache`), so a reload re-parses only the files whose text
+  (`module::ParseCache`), so a recompile re-parses only the files whose text
   changed. Parsing was about half of a compile.
 
 `core/examples/reload_follow.rs` times a reload and the frame after it with
@@ -502,7 +491,7 @@ more per stored value: 9,218 where it was 8,353.
 
 A program that is not being reloaded runs the same instructions as before:
 `petal bench` reports identical instruction counts, and the benchmark programs
-time within noise (see [performance.md](dev/performance.md)).
+time within noise (see [performance.md](../dev/performance.md)).
 
 ## Editing an enum
 
@@ -533,6 +522,27 @@ None of these is a crash. The stale value is not rewritten or dropped either:
 value whole again. A program that must survive such an edit gives its `match`
 a `when _ ->` arm and reads data with `?.` or `??`; otherwise the error names
 the value and the line, and the fix is to reset that state.
+
+## Hosts that reload
+
+- **`petal-sdl`** (every SDL host).
+  [`watcher.rs`](../../integrations/petal-desktop-sdl/src/watcher.rs) watches
+  the directory of every source file the program was compiled from
+  (`Env::program_source_paths`), so editing an imported `palette.ptl` reloads
+  its importer. A change calls `reload_program` and prints the outcome and
+  the report's lines. A compile error is printed and the old program keeps
+  running. On by default; `--no-hot-reload` turns it off.
+- **The C bridge.** `pb_vm_reload`, with `pb_vm_last_reload_kind` and
+  `pb_vm_last_reload_json` for what it did
+  ([../usage/embedding-c.md](../usage/embedding-c.md#hot-reload)).
+- **Garden.** Its script host and its panel host both call `reload_program`
+  (`garden/garden-script/src/lib.rs`, `panel.rs`).
+- **The browser editor of `diagram-canvas`** does not hot reload. Its
+  CodeMirror widget
+  ([`editor.ts`](../../examples/custom-apps/diagram-canvas/src/editor.ts))
+  recompiles on a debounce with `petal.load(source)`, which makes a new
+  stack: state resets and the frame count returns to 0. That editor is
+  browser UI only; it is not exposed over the debug protocol or MCP.
 
 ## Limits
 

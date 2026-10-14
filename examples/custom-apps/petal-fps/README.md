@@ -10,7 +10,7 @@ native draw functions. The window, event loop, input, agent/headless/screenshot
 mouselook natives (`key_down`, `mouse_dx`, `grab_mouse`, `dt`, `time`,
 `screen_width`, ...) come from `petal-ui`, the same as every other host.
 (This is the "thin host delta" shape described in
-[docs/building-apps.md](../../../docs/building-apps.md).)
+[docs/usage/building-apps.md](../../../docs/usage/building-apps.md).)
 
 Everything else lives in a `.ptl` script: camera, projection math, level
 geometry, enemies, shooting, and HUD. The script can be edited while the game

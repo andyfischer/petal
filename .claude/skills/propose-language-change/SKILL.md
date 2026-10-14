@@ -121,7 +121,7 @@ change, work through them yourself.
 **Live coding and hot reload**
 - What happens when code using the feature is edited while running? How are
   `state` slots and call paths affected?
-- Does the reloaded program still equal a fresh compile (`docs/hot-reload.md`)?
+- Does the reloaded program still equal a fresh compile (`docs/features/hot-reload.md`)?
 
 **Introspection, debugging and program manipulation**
 - Does provenance, `explain`, slicing, time travel and autodiff still see
@@ -136,7 +136,7 @@ change, work through them yourself.
 - Does it add a special case or remove one? What invariants does it add that
   future work must keep?
 - What does it cost in docs, tests, golden files and the embedding APIs
-  (`docs/ffi.md`, the C bridge)?
+  (`docs/usage/ffi.md`, the C bridge)?
 
 **Domains**
 For each, say whether the change helps, is neutral or gets in the way, with a

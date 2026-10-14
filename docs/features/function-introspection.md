@@ -5,7 +5,7 @@ parameters with their annotations and defaults, its declared return type, what
 it captured, and its syntax tree. Both return plain records and lists.
 
 **Experimental.** The record shapes on this page may change. The builtins were
-added for [`glsl`](petal-to-glsl.md), a library that translates a Petal lambda
+added for [`glsl`](../game-engine-features/petal-to-glsl.md), a library that translates a Petal lambda
 to GLSL; other uses (an editor listing a function's parameters, documentation
 tools, other code generators) are expected, and will shape what the final form
 looks like.
@@ -79,7 +79,7 @@ body, plus the same for every function the closure captures, recursively.
 |---|---|
 | Comments, blank lines, indentation, moving the function in the file | same |
 | Another function added or removed elsewhere | same |
-| A hot reload that does not touch the function | same |
+| A [hot reload](hot-reload.md) that does not touch the function | same |
 | The value of a captured constant (`let TAPS = 3` to `4`) | same: a captured value is data. It is in `captures` |
 | The body, a parameter, an annotation, a default | different |
 | The body of a function it calls | different |
@@ -144,7 +144,7 @@ Statements:
 
 | `tag` | Fields |
 |---|---|
-| `Let` | `name`, `type`, `value`, `is_var`, `is_config` |
+| `Let` | `name`, `type`, `value`, `is_var`, `is_config`, `is_const` |
 | `Assign`, `Set` | `target`, `value`. `target` is `{kind, name, object, field, index}` with `kind` one of `"Name"`, `"Field"`, `"Index"` |
 | `Expr` | `expr` |
 | `For` | `var`, `iter`, `body` |
@@ -155,6 +155,7 @@ Statements:
 | `FnDecl` | `name`, `class`, `params`, `returns`, `body` |
 | `ClassDecl` | `name`, `fields` (a list of `{name, type}`) |
 | `EnumDecl` | `name`, `variants` (a list of `{name, fields, data}`, `data` being the `{key, value}` constant-data entries) |
+| `NativeFn` | `name`, `class`, `params`, `rest`, `ret`, `host` |
 | `Import` | `module`, `alias`, `names`, `star` |
 
 Expressions:
@@ -174,7 +175,7 @@ Expressions:
 | `FieldAccess` | `object`, `field` |
 | `IndexAccess` | `object`, `index` |
 | `OptionalAccess` | `value` |
-| `Block` | `body` |
+| `Block` | `body`. Appears only as a `Match` arm's body, when the arm is not a single expression |
 | `Lambda` | `params`, `body` |
 | `StringInterp` | `parts`, `exprs` |
 | `Element` | `element`, `props` (a list of `{name, value}`), `children` (a list of `{text, expr}`) |

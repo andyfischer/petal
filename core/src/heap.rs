@@ -8,7 +8,7 @@
 //! `f64_array_swap`) allocate and return a *new* id, leaving the input
 //! untouched (value semantics). This is what makes sharing heap objects
 //! between executions safe — see the "Speculative execution" section of
-//! docs/program-modification.md.
+//! docs/features/program-modification.md.
 //!
 //! **One exception: [`CellId`]**, the box behind a `var` binding, which
 //! [`Heap::cell_write`] overwrites in place. It is confined by construction —
@@ -171,7 +171,7 @@ generational_id! {
     /// *containment invariant*: no expression evaluates to a `Value::Cell`, so a
     /// cell id never reaches a collection payload, a host, or user code. Reads
     /// dereference; only closure capture shares one. See
-    /// docs/var.md (Containment).
+    /// docs/syntax/var.md (Containment).
     pub struct CellId;
 }
 

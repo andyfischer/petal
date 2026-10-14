@@ -2451,7 +2451,7 @@ fn prelude_has_no_two_overloads_with_the_same_argument_count() {
 
 /// A variant with defaults takes a range of counts, and a positional call
 /// whose count two ranges cover is an error unless some variant declares
-/// exactly that many parameters (docs/function-overloading.md). The prelude
+/// exactly that many parameters (docs/syntax/function-overloading.md). The prelude
 /// leans on defaults throughout, so it is checked that no count a script can
 /// write positionally is left ambiguous.
 #[test]

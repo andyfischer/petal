@@ -3,7 +3,7 @@
 //!
 //! A variant *value* is its tag (`"Kind.park"`, an interned heap string) and
 //! its payload, and nothing else — that is what lets a variant kept in
-//! `state` outlive the program that built it (docs/hot-reload.md, "Editing an
+//! `state` outlive the program that built it (docs/features/hot-reload.md, "Editing an
 //! enum"), and what a host builds by hand with a tag no enum declares. What
 //! the enum *declares* about the variant is looked up when it is read. This
 //! module makes that lookup integer work:

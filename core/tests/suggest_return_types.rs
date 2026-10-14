@@ -1,7 +1,7 @@
 // `petal suggest`'s return-type kind: an un-annotated function that ends in a
 // loop returns that loop's list implicitly, and whether it should say
 // `-> list` or `-> nil` is read from how it is called
-// (docs/dev/suggestions-plan.md, docs/implicit-return-values.md).
+// (docs/dev/suggestions-plan.md, docs/syntax/implicit-return-values.md).
 //
 // The unit tests in `src/suggest/return_types.rs` cover the analysis. These
 // cover the command: that the kind is selectable, that an applied file is the

@@ -17,7 +17,7 @@ print(glsl.to_glsl(weight))
 // }
 ```
 
-The full description is [docs/petal-to-glsl.md](../../docs/petal-to-glsl.md):
+The full description is [docs/game-engine-features/petal-to-glsl.md](../../docs/game-engine-features/petal-to-glsl.md):
 the subset that translates, the environment record a host passes, how
 captures become uniforms, and what is still open.
 
@@ -30,7 +30,7 @@ captures become uniforms, and what is still open.
 The package is bundled in the runtime, so `import glsl` works with nothing
 installed. It needs no host layer and no natives beyond core Petal: it reads the function
 with the `fn_info` and `fn_ast` builtins
-([docs/function-introspection.md](../../docs/function-introspection.md)) and
+([docs/features/function-introspection.md](../../docs/features/function-introspection.md)) and
 never runs it.
 
 ## Caching

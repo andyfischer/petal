@@ -1,7 +1,7 @@
 //! The cart-facing native set, and the buffered command protocol behind it.
 //!
 //! Natives here never touch the PPU or the APU directly. A native is a bare
-//! `fn` pointer with no host context (see `docs/ffi.md`), so instead every call
+//! `fn` pointer with no host context (see `docs/usage/ffi.md`), so instead every call
 //! *emits* a tagged command into a per-stack output buffer, and the host drains
 //! that buffer after the script has run and applies it to the console state.
 //!

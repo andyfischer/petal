@@ -18,7 +18,7 @@
 //! and helpers that play sounds stay memoizable. A native that instead queued
 //! the sound on a host-side list (cheesecake's design) would be invisible to
 //! the replay and would have to declare an `effect`; see "Embedder pitfalls"
-//! in `docs/ffi.md`. Variant rotation (so repeated `sfx("jump")` calls don't
+//! in `docs/usage/ffi.md`. Variant rotation (so repeated `sfx("jump")` calls don't
 //! sound identical) happens here, on the host, for the same reason: a native
 //! that advanced a counter would have an effect.
 //!

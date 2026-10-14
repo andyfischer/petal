@@ -157,7 +157,7 @@ impl Compiler {
     /// Renaming the callee, or inserting an earlier call to the same callee in
     /// the same function, does change it —
     /// and drops that callsite's subtree of state on reload, the same accepted
-    /// loss as renaming a state variable (docs/program-modification.md).
+    /// loss as renaming a state variable (docs/features/program-modification.md).
     ///
     /// Must be called exactly once per compiled call term: it bumps the ordinal.
     pub(super) fn call_site_for(&mut self, callee: &str) -> u64 {

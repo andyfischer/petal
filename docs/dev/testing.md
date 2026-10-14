@@ -1,9 +1,11 @@
 # Testing
 
-Petal's tests are split between Rust unit tests (`cd core && cargo test`) and
-a vitest integration suite in `test/vitest/` that shells out to the compiled
-`petal` binary and asserts on its output. This document covers the vitest
-suite and the tooling built around it.
+Petal's tests are split between the Rust suite (`cd core && cargo test`: unit
+tests in `core/src/`, integration tests in `core/tests/`) and a vitest
+integration suite in `test/vitest/` that shells out to the compiled `petal`
+binary and asserts on its output. This document covers both and the tooling
+built around them. The commands are listed in [scripts.md](scripts.md#testing);
+the layout of `test/` is in [`test/README.md`](../../test/README.md).
 
 ## Integration tests (vitest)
 
@@ -51,16 +53,45 @@ on. The ones most tests use:
 asserts it exits without error. It is part of the normal vitest run:
 
 ```bash
-cd ts
-npx vitest test/test-samples.test.ts
+npx vitest run test/vitest/test-samples.test.ts
 ```
 
-For a stronger check, `./tools/test-examples.ts` runs each example with the
-optimizer on and off, requires identical output between the two, and requires
-both to match the golden corpus in `test/example-golden/`. Add `--full` to see
+For a stronger check, `./tools/test-examples.ts` (`npm run test-examples`)
+runs each example with the optimizer on and off (`--no-opt`) and requires
+identical output between the two, runs it twice on one stack with the
+static-value cache on and off (`--runs 2` under the `replay` and
+`replay-static` policies) and requires those to agree, and requires the single
+run to match the golden corpus in `test/example-golden/`. Add `--full` to see
 full output instead of an 8-line preview. `./tools/gen-example-golden.ts`
 re-baselines the corpus; run it deliberately, since a golden update asserts
 that behavior was meant to change.
+
+### Documentation snippets
+
+`test/vitest/doc-snippets.test.ts` compiles every ```` ```petal ```` code block
+in the user-facing docs with `petal check --lenient`, and runs the blocks that
+carry `print(...) // expected` comments and compares the output. A block
+tagged ```` ```petal ignore ```` is skipped. Design docs under `docs/dev/` and the
+sketches in `docs/aspirational-ideas/` are not checked.
+
+## Rust tests
+
+`cd core && cargo test` runs the unit tests inside `core/src/` and the
+integration tests in `core/tests/`, one file per area (`hot_reload.rs`,
+`state_call_paths.rs`, `modules.rs`, `static_cache.rs`, ...). The differential
+tests that hold the optimizer to the unoptimized baseline are in
+`core/src/backend/bytecode/tests.rs` and the fuzzers beside it. What the suite
+costs, and the sweeps that are not part of it, are under
+[What the Rust suite costs](#what-the-rust-suite-costs).
+
+`core/tests/script_cases.rs` runs the script regression cases: every
+`test/<case>/` directory with a `main.ptl` and an `expects` file, which gives
+the expected output and ceilings on copies and allocations. The format is in
+[`test/README.md`](../../test/README.md#script-regression-cases).
+
+The UI library has its own suite (`cd core-libs/petal-ui && cargo test`), which
+runs the panel corpus under the headless harness; see
+[headless-ui-run.md](headless-ui-run.md).
 
 ## Proofs and exhaustive checks
 
@@ -346,7 +377,7 @@ The vitest suite is light by comparison: about 30 seconds on two workers
 
 ## The C/C++ bridge
 
-`integrations/petal-c-bridge` (see [embedding-c.md](../embedding-c.md)) is
+`integrations/petal-c-bridge` (see [embedding-c.md](../usage/embedding-c.md)) is
 built against the in-repo `core/`, `core-libs/petal-ui/` and `core-libs/petal-query/` crates, so
 it is the first thing to break when an `Env` or petal-ui API it uses changes
 shape. `make test-c-bridge` configures it with CMake + Ninja under

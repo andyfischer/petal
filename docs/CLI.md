@@ -48,13 +48,24 @@ Every command that compiles a program accepts these:
 - With `-e` or stdin there is no importing file, so `import ./x` means
   `x.ptl` in the current directory.
 
-Environment variables that affect how packages are found:
+### Environment variables
 
 | Variable | Effect |
 |---|---|
 | `PETAL_PATH` | Directories to search for packages, as with `-I` |
 | `PETAL_HOME` | Replaces `~/.petal`, which holds the package cache (`cache/`) |
 | `PETAL_OFFLINE` | `1` forbids fetching git dependencies and on-demand installs |
+| `PETAL_SEED` | Seeds the random-number generator, as `run --seed <n>` does. The flag wins |
+| `PETAL_POLICY` | The run policy, as `run --policy <name>` does, for every command and every embedder. The flag wins. A value that does not parse is reported on stderr and ignored |
+| `PETAL_OPT` | `off`, `none` or `0` is `PETAL_POLICY=baseline` (what `run --no-opt` does). Read only when `PETAL_POLICY` is not set |
+| `PETAL_DEBUG` | Set to anything: per-term execution events on stderr, as `run --trace` |
+| `PETAL_TRACE_PENDING` | `1` is `run --trace-pending` |
+| `PETAL_STATIC_AUDIT` | `watch` (or `1`) starts every `Env` of the process under the [static audit](#checking-the-answer---static-audit) and prints each finding on stderr |
+| `PETAL_STATIC_CHECK` | `1` makes every `Env` check the static values it keeps for function bodies instead of trusting them: each is rebuilt and compared, and a mismatch is printed on stderr as a `static check` line. See [dev/performance.md](dev/performance.md#static-values) |
+| `PETAL_OPT_STATS` | Set to anything: when a program is lowered, print what the copy-propagation pass changed and the static-value cache's layout on stderr |
+
+The options below name the variable that does the same thing; this table is
+the whole list.
 
 ### Commands at a glance
 
@@ -145,18 +156,15 @@ Options:
   and `choose` replay identically. Decimal or `0x`-hex. Without it the seed
   comes from the clock. `PETAL_SEED=<n>` does the same for every command; the
   flag wins when both are set.
-- `--policy <name>` — run under a named run policy: `fast`, `baseline` (no
-  optimizer, no memoization), `explain` (keeps every traced instruction, no
-  memoization) or `replay`, optionally followed by modifiers such as `-memo`,
-  `+gate`, `-static` or `-fnstatic`. Without the flag (and without `PETAL_POLICY`), `run`
-  uses `fast-memo-static`: the script runs once and exits, so a memoized call
-  has no later run to be replayed in and a static value kept for the next run
-  is kept for nothing, and both would only cost time and memory. A
-  host that runs a script every frame defaults to `fast`, memoization
-  and the static-value cache included. Output must be identical under every
-  policy, so
-  a difference is a bug in the layer the two differ by. `PETAL_POLICY=<name>`
-  does the same for every command and embedder; the flag wins.
+- `--policy <name>` — run under a named run policy: `fast`, `baseline`,
+  `explain` or `replay`, optionally followed by modifiers: `+` or `-` and one
+  of `memo`, `gate`, `opt`, `static`, `fnstatic` (`fast-memo`,
+  `replay-static`). Without the flag (and without `PETAL_POLICY`), `run` uses
+  `fast-memo-static`, because a script that runs once has no later run to
+  replay a memoized call or reuse a kept value in. Output must be identical
+  under every policy. `PETAL_POLICY=<name>` does the same for every command
+  and embedder; the flag wins. What each name and modifier switches is in
+  [Run policies](internals/run-policies.md).
 - `--no-opt` — same as `--policy baseline`. `PETAL_OPT=off` does the same.
 - `--runs <n>` — run the script `n` times on one stack, each from the top, the
   way a host runs it every frame: `state`, memo records and static values
@@ -174,7 +182,8 @@ Options:
 
 #### State between runs
 
-A `state` value lasts as long as the host that runs the script keeps it. A
+A `state` value lasts as long as the host that runs the script keeps it
+([features/inline-state.md](features/inline-state.md#how-long-a-slot-lives)). A
 frame-loop host (petal-sdl, Garden) runs the script again every frame and keeps
 its state from frame to frame. `petal run` is one run in one process, so by
 default every invocation starts from the initial values:
@@ -280,7 +289,7 @@ Tracing and inspection options:
   commands) to the call that produced it, and dump the values with their call
   sites and per-argument edit info after the run. This is the observing half of
   [`propose-edit`](#propose-edit--propose-source-edits-that-change-an-emitted-value);
-  see [direct-manipulation.md](direct-manipulation.md).
+  see [features/direct-manipulation.md](features/direct-manipulation.md).
 - `--trace-pending` — record pending absorptions and print the frame pending
   report to stderr after the run. `PETAL_TRACE_PENDING=1` does the same. For
   the report as the main output, see
@@ -289,6 +298,16 @@ Tracing and inspection options:
   run and print the histogram to stderr.
 - `--dup-stats` — count copy-on-write duplications and heap allocations
   during the run and print them to stderr afterwards. Works in any build.
+- `--static-audit` — watch the dynamic inputs while each top-level term that
+  [`show-static`](#show-static--static-declarations) calls static is
+  evaluated, report every one touched on stderr, and exit 1 if there was one.
+  See [Checking the answer](#checking-the-answer---static-audit).
+- `--static-only` — evaluate only the top-level statements that are static,
+  under the same audit. Described in the same section.
+- `--effect-audit` — watch what every native does during the run and report
+  on stderr each one whose behaviour differs from the effect row it declared
+  when it was registered: under-declared (a bug) or over-declared. See
+  [Catching it with the effect audit](usage/ffi.md#catching-it-with-the-effect-audit).
 
 ### `bench` — What a call of a function costs
 
@@ -330,11 +349,11 @@ How to read it:
 
 - **Two measurements.** Everything is measured with the optimizer on (`opt`,
   the `fast` policy a host that runs a script every frame uses; a plain `run`
-  uses `fast-memo`, so its calls are never memoized where these may be) and
+  uses `fast-memo-static`, so its calls are never memoized where these may be) and
   again with it off (`no-opt`); the last
   column is the optimized figure relative to the unoptimized one. Only the
   optimizer differs between the two: memoization and the rest of the
-  [run policy](../core/src/policy.rs) are the same on both sides, which is why
+  [run policy](internals/run-policies.md) are the same on both sides, which is why
   the second policy reads `baseline+memo+gate` rather than `baseline`. The
   rest of the policy follows `PETAL_POLICY` as it does for `run`, except that
   an environment that turns the optimizer off (`PETAL_OPT=off`,
@@ -479,7 +498,7 @@ builtin. The domain builtins (`lerp`, `noise`, `vec2`, `hsv`, `json_parse`, …)
 are behind imports of their own (`import creative`, `import noise`, …; see
 [Builtins](Builtins.md#which-builtins-need-an-import)); an unimported one is
 an error that names the import to add. A script written for a host imports the host's **interface package**,
-whose `native fn` declarations ([ffi.md](ffi.md#native-interfaces-native-fn))
+whose `native fn` declarations ([usage/ffi.md](usage/ffi.md#native-interfaces-native-fn))
 make each native known, with its parameters, whether or not this process
 registers it:
 
@@ -518,7 +537,7 @@ Error: module 'ui/input' needs native fns this host does not register: mouse_x, 
 ```
 
 A UI script runs in a petal-ui runner such as `petal-sdl`
-([building-apps.md](building-apps.md)). A script that uses petal-ui names with
+([usage/building-apps.md](usage/building-apps.md)). A script that uses petal-ui names with
 no `import ui` gets the line from
 [`petal fix-imports`](#fix-imports--migrate-imports).
 
@@ -715,7 +734,17 @@ the project the file is in (the nearest `petal.toml` above it), and the
 packages under `-I` and `PETAL_PATH`. With `-e` or stdin there is no file and
 so no project. A path that already resolves as a package is never
 rewritten, so the command is safe on migrated code and running it twice
-changes nothing more. It prints each file it rewrote with one line per edit.
+changes nothing more. It prints each file it rewrote with one line per edit:
+
+```
+$ petal fix-imports old.ptl
+old.ptl
+  line 1: `import level` -> `import ./level`
+  line 2: `import ease: *` -> `import ease`
+  added `import creative` (for `lerp`)
+  added `import tw` (for `twice`)
+fixed imports in 1 of 1 file(s)
+```
 
 The import lines of every file are rewritten first, and only then is each
 file compiled to look for missing imports, so the order files are given in
@@ -912,7 +941,7 @@ Suggestions **compound** — an applied annotation is evidence for the next pass
 #### Return types
 
 A `for` in tail position collects a list, and that list is the function's
-[implicit return](implicit-return-values.md). An un-annotated function that
+[implicit return](syntax/implicit-return-values.md). An un-annotated function that
 ends in a loop therefore does not say which of two things it is: a mapping
 whose callers want the list, or a side-effect loop that builds one on every
 call for nobody. Declaring it settles that — `-> list` documents the first,
@@ -1006,7 +1035,7 @@ followed too.
 | a builtin that declares its parameter names ([Builtins.md](Builtins.md)) | a native declared with a rest parameter (`...args`), which has no parameter names |
 
 **The rewritten call must be the same call.** It selects the same overload
-variant under the [name-aware rule](function-overloading.md), every argument
+variant under the [name-aware rule](syntax/function-overloading.md), every argument
 fills the parameter it filled before, and the arguments stay in the order they
 were written — so they are evaluated in the same order.
 
@@ -1133,7 +1162,7 @@ been) and 1 when it was refused or failed. On 1 no file has been touched.
 #### `convert-to-var`
 
 Turns a `let` into a `var`, or a `state` into a `state var`: the change from a
-dataflow binding to a [mutable cell](language-guide.md#var-and-set) that a
+dataflow binding to a [mutable cell](syntax/var.md) that a
 function can write. It is the fix for "`score` is bound outside this function".
 
 ```
@@ -1303,7 +1332,8 @@ The exit code is a three-way answer: **0** equivalent, **1** different (the
 first difference is printed), **2** a side failed to compile. Exit 2 means
 "can't tell" and must not be read as "not equal". `--json` mirrors this:
 `{"equal": true}`, `{"equal": false, "diff": {location, what, left, right,
-line, column}}`, or `{"equal": false, "error": "..."}`.
+line, column, position}}` (`position` is `"line:column"` as one string), or
+`{"equal": false, "error": "..."}`.
 
 Two things are deliberately treated as semantic, so a difference in them is
 reported:
@@ -1351,15 +1381,13 @@ go-to-definition, completion, and document symbols (the file's outline: its
 functions, bindings, classes with their fields, and enums with their
 variants). The loop exits on an `exit` notification or at EOF.
 
-Completion, hover and go-to-definition know the members of an enum. After
-`Kind.` — or `town.Kind.` through a module — completion offers the enum's
-variants, `all` and `from`. After a value known to be a variant (`Kind.park.`,
-a `let` initialized from one, a parameter or binding annotated `: Kind`, the
-variable of `for k in Kind.all`) it offers the fields that value answers: its
-payload fields, its constant data and `name`. Hover on `Kind.park` shows the
-variant with its payload fields and data, and go-to-definition lands on the
-variant's own line of the `enum`, in whichever file declares it. Completion
-works while the line being typed does not parse yet.
+Completion, hover and go-to-definition follow imports into other files and
+know the members of an enum (`Kind.` offers its variants, a variant value
+offers its fields and data), and completion works while the line being typed
+does not parse yet. It does not format, rename or offer code actions; use
+`petal fmt`, `petal fix-imports` and `petal apply-change` for those. The
+exact requests, how a document is analyzed and how positions are counted are
+in [The language server](internals/lsp.md).
 
 ### `packages` — Show the project and the libraries available
 
@@ -1367,22 +1395,9 @@ works while the line being typed does not parse yet.
 petal packages [--json] [-I <dir>]... [path]
 ```
 
-A Petal package is a directory with a `petal.toml` manifest:
-
-```toml
-[package]
-name = "marble"
-version = "0.1.0"
-modules = "src"      # optional; defaults to src/, else the manifest's dir
-
-[dependencies]       # the key is the import name
-tween = { path = "../libs/tween" }
-
-[requires]           # host interfaces the runner must provide
-ui = ">=0.1"
-```
-
-See [packages.md](packages.md#the-manifest) for the manifest. This
+A Petal package is a directory with a `petal.toml` manifest, which names the
+package, its `[dependencies]` and the host interfaces it `[requires]`;
+[packages.md](packages.md#the-manifest) describes it. This
 command prints what a script here can reach:
 
 - **the project** — the nearest `petal.toml` at or above `path` (a file or a
@@ -1447,47 +1462,26 @@ petal remove <name>...
 petal install [--locked]
 petal update [<name>...]
 petal vendor
-petal bundle <entry> [-o <file>]
+petal bundle <entry> [-o <file> | --output <file>]
 ```
 
 These work on the project of the working directory (the nearest `petal.toml`
-at or above it). [packages.md](packages.md#the-package-manager) describes
-each command, the lockfile, the cache and `vendor/`; in short:
+at or above it). [packages.md](packages.md#the-package-manager) is the
+reference for each command, the lockfile, the cache and `vendor/`. In short:
 
-- `init` writes a `petal.toml` (`[package] name`, `version = "0.1.0"`). The
-  name is `--name` or the directory's name bent into an identifier.
-- `add` sets a `[dependencies]` entry — `<name>` is the import name — and
-  installs. If the install fails, `petal.toml` is put back. `remove` deletes
-  entries and installs again.
-- `install` resolves the graph to one version of each package (the higher
-  tag wins when two packages ask for one repository; pins that cannot be
-  ordered are an error), fetches git dependencies into `~/.petal/cache`
-  (`PETAL_HOME` moves `~/.petal`), verifies cached and vendored trees against
-  `petal.lock`, and writes `petal.lock`. `--locked` fails instead of changing
-  the lockfile.
-- `update` does the same but resolves the named packages (or all) from their
-  sources again instead of from the lockfile.
-- `vendor` installs and copies each git package into `vendor/<name>`, which
-  every command then uses in preference to the cache.
-- `bundle` prints the graph as JSON in the form `register_package` accepts
-  (`format`, `entry`, `packages`, `requires`), for hosts with no filesystem.
+| Command | What it does |
+|---|---|
+| `init [<dir>] [--name <name>]` | Writes a `petal.toml`. Never overwrites one |
+| `add <name> --path <dir>` \| `--git <url> (--tag <tag> \| --rev <rev>)` | Sets a `[dependencies]` entry (`<name>` is the import name) and installs |
+| `remove <name>...` | Deletes entries and installs again |
+| `install [--locked]` | Resolves the graph, fetches git dependencies, verifies them and writes `petal.lock`. `--locked` fails instead of changing the lockfile |
+| `update [<name>...]` | As `install`, with the named packages (or all) resolved from their sources again |
+| `vendor` | Installs, and copies each git package into `vendor/<name>` |
+| `bundle <entry> [-o <file>]` | Prints the graph as one JSON document for a host with no filesystem ([Bundles](packages.md#bundles)) |
 
-```
-$ petal add tween --git https://example.org/tween --tag v0.3.0
-    Fetching https://example.org/tween
-    Fetching https://example.org/ease
-Added tween to petal.toml
-Locked 2 packages in petal.lock
-    ease 1.1.0  git https://example.org/ease tag v1.1.0 @ 13ba65e49a
-    tween 0.3.0  git https://example.org/tween tag v0.3.0 @ 2e7a2664d1
-```
-
-`check`, `run` and the other compiling commands **install on demand**: the
-first import of a git dependency checks the graph against `petal.lock` and
-runs the install if something is missing or out of date (progress goes to
-stderr). `PETAL_OFFLINE=1` forbids fetching. `petal packages` never fetches;
-it shows the graph as installed, with each git package's locked commit, and
-`"locked"`, `"commit"`, `"tree"` and `"vendored"` in `--json`.
+None of them takes `--json`. `check`, `run` and the other compiling commands
+[install on demand](packages.md#install-on-demand); `PETAL_OFFLINE=1`
+forbids fetching. `petal packages` never fetches.
 
 ### `explain` — Show the value chain that produced a term
 
@@ -1504,17 +1498,17 @@ does `x` have this value?".
 $ petal explain --term total -e 'let a = 2
 let b = 3
 let total = a * b'
-Explain t120 (total):
+Explain t142 (total):
   Provenance chain:
-    => t120 total [line 3, column 13] = 6
-     . t118 - [line 3, column 13] = 2
-     . t119 - [line 3, column 17] = 3
-     . t116 a [line 1, column 9] = 2
-     . t117 b [line 2, column 9] = 3
+    => t142 total [line 3, column 13] = 6
+     . t140 - [line 3, column 13] = 2
+     . t141 - [line 3, column 17] = 3
+     . t138 a [line 1, column 9] = 2
+     . t139 b [line 2, column 9] = 3
 ```
 
 `--term` accepts a variable name (`--term total`), a bare term id
-(`--term 72`), or the `t`-prefixed form (`--term t72`). A name resolves to the
+(`--term 142`), or the `t`-prefixed form (`--term t142`). A name resolves to the
 last term bound to it.
 
 With `--json`, returns
@@ -1547,7 +1541,7 @@ Runs the program with emit tracing, then works backwards: given an emitted
 value, it proposes the source edits that would make argument `<k>` of the call
 that produced it evaluate to `<value>`. This is the writing half of direct
 manipulation: the host says where the user dragged something, and gets back
-the edits that mean it. See [direct-manipulation.md](direct-manipulation.md).
+the edits that mean it. See [features/direct-manipulation.md](features/direct-manipulation.md).
 
 Use `run --trace-emits` first to find the emit's address. For this file:
 
@@ -1715,9 +1709,9 @@ Kind names:
 
 | Category | Examples |
 |----------|---------|
-| Keywords | `"Let"`, `"Var"`, `"Set"`, `"Fn"`, `"If"`, `"Else"`, `"For"`, `"In"`, `"While"`, `"Match"`, `"Return"`, `"Break"`, `"Continue"`, `"State"`, `"Enum"`, `"True"`, `"False"`, `"Nil"` |
-| Operators | `"Plus"`, `"Minus"`, `"Star"`, `"Slash"`, `"Percent"`, `"PlusPlus"`, `"Eq"`, `"Ne"`, `"Lt"`, `"Le"`, `"Gt"`, `"Ge"`, `"And"`, `"Or"`, `"Bang"`, `"Assign"`, `"Pipe"` |
-| Delimiters | `"LParen"`, `"RParen"`, `"LBrace"`, `"RBrace"`, `"LBracket"`, `"RBracket"`, `"Comma"`, `"Dot"`, `"Colon"`, `"Arrow"`, `"DotDot"` |
+| Keywords | `"Let"`, `"Var"`, `"Set"`, `"Fn"`, `"If"`, `"Else"`, `"For"`, `"In"`, `"While"`, `"Match"`, `"Return"`, `"Break"`, `"Continue"`, `"State"`, `"Enum"`, `"Const"`, `"Get"`, `"Import"`, `"Pub"`, `"Export"`, `"End"`, `"Then"`, `"Do"`, `"Elsif"`, `"When"`, `"True"`, `"False"`, `"Nil"` |
+| Operators | `"Plus"`, `"Minus"`, `"Star"`, `"Slash"`, `"Percent"`, `"PlusPlus"`, `"Eq"`, `"Ne"`, `"Lt"`, `"Le"`, `"Gt"`, `"Ge"`, `"And"`, `"Or"`, `"Bang"`, `"Assign"`, `"PlusAssign"` (and `MinusAssign`, `StarAssign`, `SlashAssign`, `PercentAssign`, `ConcatAssign`, `CoalesceAssign`), `"DoubleQuestion"`, `"QuestionDot"`, `"Pipe"`, `"Bar"`, `"At"` |
+| Delimiters | `"LParen"`, `"RParen"`, `"LBrace"`, `"RBrace"`, `"LBracket"`, `"RBracket"`, `"Comma"`, `"Dot"`, `"Colon"`, `"Arrow"`, `"DotDot"`, `"DotDotDot"` |
 | Special | `"Newline"`, `"Eof"` |
 | Value-carrying | `{"kind": "Int", "value": 42, …}`, `{"kind": "Float", "value": 3.14, …}`, `{"kind": "String", "value": "hello", …}`, `{"kind": "Ident", "value": "myVar", …}` |
 
@@ -1763,13 +1757,15 @@ Let m @5:1-8:4
   Match @5:9-8:4
     Ident n @5:15
     Arm 0
-      Literal "zero" @6:13-6:19
+      Expr @6:13-6:19
+        Literal "zero" @6:13-6:19
     Arm k
       Guard
         BinaryOp Gt @7:13-7:18
           Ident k @7:13
           Literal 1 @7:17
-      Literal "big" @7:22-7:27
+      Expr @7:22-7:27
+        Literal "big" @7:22-7:27
 ```
 
 Structural sub-parts that are not themselves nodes get label lines without
@@ -1840,6 +1836,7 @@ Consumers should treat the single key of the `kind` object as the node type
 |---------|-------|
 | `Let` | `{"Let": {"name": string, "ty": TypeAnn (omitted when un-annotated), "value": Expr, "is_var": bool (omitted when false), "is_config": bool (omitted when false), "is_const": bool (omitted when false)}}` — `ty` is the optional declared type annotation; `is_var` is true for `var x = …`; `is_config` for `config let`; `is_const` for `const X = …` |
 | `Assign` | `{"Assign": {"target": AssignTarget, "value": Expr}}` |
+| `Set` | `{"Set": {"target": AssignTarget, "value": Expr}}` — a write to a `var` cell, `set x = …` |
 | `Expr` | `{"Expr": Expr}` |
 | `FnDecl` | `{"FnDecl": {"name": string, "class": string (omitted for ordinary functions), "params": Param[], "ret": TypeAnn (omitted when un-annotated), "body": Stmt[]}}` — `ret` is the optional declared return-type annotation; `class` is set for a method declaration (`fn Rect.center_x(…)` → `class: "Rect"`, `name: "Rect.center_x"`, receiver as `params[0]`) |
 | `EnumDecl` | `{"EnumDecl": {"name": string, "variants": EnumVariant[]}}` |
@@ -1849,7 +1846,9 @@ Consumers should treat the single key of the `kind` object as the node type
 | `Return` | `{"Return": Expr \| null}` |
 | `Break` | `"Break"` |
 | `Continue` | `"Continue"` |
-| `State` | `{"State": {"name": string, "ty": TypeAnn (omitted when un-annotated), "init": Expr, "id": number, "key": Expr (omitted when unkeyed), "is_var": bool (omitted when false)}}` — `ty` is the optional declared type annotation; `key` set when the source uses the `state(expr) name = init` per-iteration form; `is_var` for `state var` |
+| `State` | `{"State": {"name": string, "ty": TypeAnn (omitted when un-annotated), "init": Expr, "key": Expr (omitted when unkeyed), "is_var": bool (omitted when false)}}` — `ty` is the optional declared type annotation; `key` set when the source uses the `state(expr) name = init` per-iteration form; `is_var` for `state var` |
+| `NativeFn` | `{"NativeFn": {"name": string, "class": string (omitted for a plain function), "params": Param[], "rest": string (omitted when there is no `...rest`), "ret": TypeAnn (omitted when un-annotated)}}` — a `native fn` declaration in an interface package |
+| `Import` | `{"Import": {"module": string, "alias": string (omitted when there is no `as`), "names": string[] (omitted for a plain import)}}` — `import json: json_parse` is `{"module": "json", "names": ["json_parse"]}` |
 
 **ExprKind** (expressions):
 
@@ -1857,27 +1856,30 @@ Consumers should treat the single key of the `kind` object as the node type
 |---------|-------|
 | `Literal` | `{"Literal": Literal}` |
 | `Ident` | `{"Ident": string}` |
+| `AtVar` | `{"AtVar": string}` — the `@x` of a [rebind](syntax/rebind-operator.md) |
+| `CellGet` | `{"CellGet": string}` — `get x`, an explicit read of a `var` |
 | `BinaryOp` | `{"BinaryOp": {"op": BinOp, "left": Expr, "right": Expr}}` |
 | `UnaryOp` | `{"UnaryOp": {"op": UnaryOp, "operand": Expr}}` |
-| `Call` | `{"Call": {"function": Expr, "args": Expr[]}}` |
+| `Call` | `{"Call": {"function": Expr, "args": Expr[], "arg_names": (string \| null)[] (omitted when no argument is named)}}` — `arg_names` is parallel to `args`: `f(1, y: 2)` has `[null, "y"]` |
 | `If` | `{"If": {"condition": Expr, "then_body": Stmt[], "else_body": ElseBranch (omitted when there is no else)}}` |
 | `Match` | `{"Match": {"subject": Expr, "arms": MatchArm[]}}` |
 | `List` | `{"List": Expr[]}` |
 | `Record` | `{"Record": RecordField[]}` |
 | `FieldAccess` | `{"FieldAccess": {"object": Expr, "field": string}}` |
 | `IndexAccess` | `{"IndexAccess": {"object": Expr, "index": Expr}}` |
-| `Block` | `{"Block": Stmt[]}` |
+| `For` | `{"For": {"var": string, "iter": Expr, "body": Stmt[]}}` — a `for` in value position, which collects a list |
+| `OptionalAccess` | `{"OptionalAccess": Expr}` — wraps the `FieldAccess` or `IndexAccess` written with `?.` |
 | `Lambda` | `{"Lambda": {"params": Param[], "body": Stmt[]}}` |
 | `StringInterp` | `{"StringInterp": {"parts": string[], "exprs": Expr[]}}` — `parts` has one more element than `exprs` |
 | `Element` | `{"Element": {"tag": string, "props": [string, Expr][], "children": JsxChild[]}}` |
 
-**Param**: `{"name": string, "ty": TypeAnn (omitted when un-annotated), "default": Expr (omitted when the parameter has none)}` — a function/lambda parameter with its optional declared type annotation and its optional [default value](language-guide.md#default-parameter-values). `default` is the expression as written; it is evaluated in the callee on every call that omits the argument, so it is an `Expr`, never a value. In the text output a defaulted parameter shows as `name = …` in the parameter list, with the expression printed as a `Default name` child node ahead of the body.
+**Param**: `{"name": string, "ty": TypeAnn (omitted when un-annotated), "default": Expr (omitted when the parameter has none)}` — a function/lambda parameter with its optional declared type annotation and its optional [default value](syntax/function-overloading.md#default-parameter-values). `default` is the expression as written; it is evaluated in the callee on every call that omits the argument, so it is an `Expr`, never a value. In the text output a defaulted parameter shows as `name = …` in the parameter list, with the expression printed as a `Default name` child node ahead of the body.
 
 **ClassField**: one field of a `ClassDecl`, as `{"name": string, "ty": TypeAnn (omitted when un-annotated)}` — the same optional-annotation shape as a **Param**.
 
 **TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type (omitted when unrecognized)}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (omitted for an unrecognized name, e.g. `{"name": "banana"}`). An absent annotation omits the `ty`/`ret` field entirely. Annotations appear on `Let`, `State`, `Param`, `ClassField`, and `FnDecl.ret`; a class name resolves to a static type too, but only against the compilation's class table, so a `TypeAnn` naming one carries no `resolved` in the AST dump; they are type-checked (warnings only — see [`check`](#check--compile-without-running)) and dropped before codegen, so they never appear in the IR.
 
-**Type**: a string naming the recognized static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Dual"`, `"Handle"`, `"Pending"`. Appears as the `resolved` field of a **TypeAnn**.
+**Type**: a string naming the recognized static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"Num"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"Vec3"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Dual"`, `"Handle"`, `"Pending"`. Appears as the `resolved` field of a **TypeAnn**.
 
 **RecordField**: `{"Named": [string, Expr]}` or `{"Spread": Expr}`.
 
@@ -1885,7 +1887,7 @@ Consumers should treat the single key of the `kind` object as the node type
 
 **Literal**: `"Nil"`, `{"Bool": bool}`, `{"Int": number}`, `{"Float": number}`, `{"String": string}`
 
-**BinOp**: `"Add"`, `"Sub"`, `"Mul"`, `"Div"`, `"Mod"`, `"Eq"`, `"Ne"`, `"Lt"`, `"Le"`, `"Gt"`, `"Ge"`, `"And"`, `"Or"`, `"Concat"`
+**BinOp**: `"Add"`, `"Sub"`, `"Mul"`, `"Div"`, `"Mod"`, `"Eq"`, `"Ne"`, `"Lt"`, `"Le"`, `"Gt"`, `"Ge"`, `"And"`, `"Or"`, `"Coalesce"`, `"Concat"`
 
 **UnaryOp**: `"Neg"`, `"Not"`
 
@@ -1893,7 +1895,7 @@ Consumers should treat the single key of the `kind` object as the node type
 
 **ElseBranch**: `{"Block": Stmt[]}`, `{"ElseIf": Expr}`
 
-**MatchArm**: `{"pattern": Pattern, "guard": Expr (omitted when unguarded), "body": Expr}` — `body` is the arm's expression, or a `Block` of its statements when it has more than one
+**MatchArm**: `{"pattern": Pattern, "guard": Expr (omitted when unguarded), "body": Stmt[]}` — `body` is a statement list, like an `if` branch; its last expression is the arm's value
 
 **Pattern**: `"Wildcard"`, `{"Literal": Literal}`, `{"Variable": string}`, `{"Variant": {"name": string, "fields": Pattern[] (omitted when empty)}}`, `{"List": {"elements": Pattern[], "rest": string (omitted when there is no `...rest`)}}`, `{"Record": [string, Pattern][]}`, `{"Or": Pattern[]}` — the same encoding the IR JSON's `match_arms` uses (see [ir-as-target.md](dev/ir-as-target.md))
 
@@ -1906,7 +1908,7 @@ petal show-ir [--json] [--all] [--user-only] <file.ptl>
 petal show-ir [--json] [--all] [--user-only] -e '<code>'
 ```
 
-Outputs the compiled intermediate representation — the term graph that the evaluator executes. This is the primary command for GUI and tooling integration.
+Outputs the compiled intermediate representation: the term graph the compiler produces, which is then lowered to the bytecode the VM runs ([`show-bytecode`](#show-bytecode--bytecode-lowering)). This is the primary command for GUI and tooling integration.
 
 By default the **text output hides compiler noise**: builtin "phantom" terms
 (one per registered native function, see below) and everything that belongs
@@ -1944,34 +1946,34 @@ print(msg)
   fn0: double params=["x"] body=block1 captures=[]
 
 === Blocks ===
-block0 [root] regs=124
-  t122 r117 = MakeClosure(fn0) [] ; double @1:1
-  t123 r118 = Copy [t122] @4:17
-  t124 r119 = Constant(4) [] @4:24
-  t125 r120 = Call [t123, t124] @4:17
-  t134 r121 = Match [t125] -> block2, block3, block5 ; msg @4:11
+block0 [root] regs=146
+  t144 r139 = MakeClosure(fn0) [] ; double @1:1
+  t145 r140 = Copy [t144] @4:17
+  t146 r141 = Constant(4) [] @4:24
+  t147 r142 = Call [t145, t146] @4:17
+  t156 r143 = Match [t147] -> block2, block3, block5 ; msg @4:11
     arm0: when 0 -> block2
     arm1: when n if block4 -> block3
     arm2: when _ -> block5
-  t135 r122 = Copy [t134] @9:7
-  t136 r123 = BuiltinCall("print") [t135] @9:1
+  t157 r144 = Copy [t156] @9:7
+  t158 r145 = BuiltinCall("print") [t157] @9:1
 
-block2 (parent: t134) regs=1
-  t126 r0 = Constant("zero") [] @5:13
+block2 (parent: t156) regs=1
+  t148 r0 = Constant("zero") [] @5:13
 
-block4 (guard for t134 arm1) regs=4
-  binds: n=t127:r0
-  t128 r1 = Copy [t127] @6:13
-  t129 r2 = Constant(5) [] @6:17
-  t130 r3 = Gt [t128, t129] @6:13
+block4 (guard for t156 arm1) regs=4
+  binds: n=t149:r0
+  t150 r1 = Copy [t149] @6:13
+  t151 r2 = Constant(5) [] @6:17
+  t152 r3 = Gt [t150, t151] @6:13
 
 ...
 
 block1 (body of fn0 double) regs=5
-  params: x=t117:r0  self: double=t118:r1
-  t119 r2 = Copy [t117] @2:3
-  t120 r3 = Constant(2) [] @2:7
-  t121 r4 = Mul [t119, t120] @2:3
+  params: x=t139:r0  self: double=t140:r1
+  t141 r2 = Copy [t139] @2:3
+  t142 r3 = Constant(2) [] @2:7
+  t143 r4 = Mul [t141, t142] @2:3
 ```
 
 Each term line: `t{id} r{register} = {op} [{inputs}] -> {child_blocks} ; {name} @{line}:{col}`
@@ -1991,7 +1993,7 @@ The text form is designed to be read without cross-referencing:
   pattern rendered source-like (`0`, `n`, `_`, `[a, ...rest]`, `{x: xx}`,
   `Shape.circle(r)`, `"a" | "b"`), the guard block if any (`if block4`), and
   the body block. Guard blocks are labeled in their own header:
-  `(guard for t134 arm1)`.
+  `(guard for t156 arm1)`.
 - **Enums** get a section of their own between Constants and Functions when
   the program declares any, one line per enum: each variant with its payload
   fields in parentheses and its data keys in braces
@@ -2002,13 +2004,13 @@ The text form is designed to be read without cross-referencing:
   top-level section, labeled `(body of fn0 double)`.
 - **Block headers name their bindings** — params, captures, the self
   reference, and match-pattern variables — with term id and register
-  (`params: x=t117:r0  self: double=t118:r1`, `binds: n=t127:r0`). A function
-  with [default parameter values](language-guide.md#default-parameter-values)
+  (`params: x=t139:r0  self: double=t140:r1`, `binds: n=t149:r0`). A function
+  with [default parameter values](syntax/function-overloading.md#default-parameter-values)
   adds a `given:` segment — one hidden *was-it-passed* flag per optional
   parameter (`given: b#given=t128:r2`), which the body's first terms branch on
   to decide whether to evaluate the default — and its line in the Functions
   section gains `optional=N`. These
-  binding terms are hidden phantoms, so the header is what ties `Copy [t117]`
+  binding terms are hidden phantoms, so the header is what ties `Copy [t139]`
   to the `x` parameter. A reference to any *other* hidden term is annotated
   inline with its name: `Copy [t162(std::sum)]`.
 - **State ops show their identity**: `StateInit(count, key=0x5dff…)` /
@@ -2136,7 +2138,7 @@ legacy documents that carry it (and no block `terms` arrays) still load.
 | Continue | `"Continue"` | none | none | |
 | Return | `"Return"` | [value] or [] | none | |
 | MakeClosure | `{"MakeClosure": fid}` | [captured_values...] | none | Create closure for FunctionId |
-| MakeOverloadSet | `"MakeOverloadSet"` | [closure0, closure1, ...] | none | Bundle arity-overloaded closures. See [function-overloading.md](function-overloading.md). |
+| MakeOverloadSet | `"MakeOverloadSet"` | [closure0, closure1, ...] | none | Bundle arity-overloaded closures. See [syntax/function-overloading.md](syntax/function-overloading.md). |
 | Call | `"Call"` | [callable, arg0, arg1, ...] | none | |
 | MethodCall | `{"MethodCall": {"name": cid, "hint": cid?}}` | [object, arg0, arg1, ...] | none | Method name as ConstantId; tries record field first, then the receiver's class, then a builtin with `object` prepended. `hint` (omitted when absent) names a class for live-edit dispatch. |
 | BuiltinCall | `{"BuiltinCall": cid}` | [arg0, arg1, ...] | none | Direct builtin call; `cid` is a String constant holding the builtin's name, resolved by name at lower time. |
@@ -2211,19 +2213,19 @@ petal show-bytecode [--json] -e '<code>'
 Displays the bytecode the VM executes: the compiled IR lowered — through the
 same optimization pipeline a `run` uses — to linear, register-based
 instructions. One section per function; the program's top level is the
-implicit root function. See [Architecture.md](dev/Architecture.md) for the
-backend split.
+implicit root function. See [Architecture.md](dev/Architecture.md) for how
+the compiler and the VM divide the work.
 
 For `let xs = map([1, 2, 3], fn(x) x * 2 end)`:
 
 ```
-fn <root>  (122 regs, 0 loop slots)
-     0  r116 = const 1
-     1  r117 = const 2
-     2  r118 = const 3
-     3  r119 = list [r116, r117, r118]
-     4  r120 = closure f0 caps=[]
-     5  r121 = builtin "map" [r119, r120]
+fn <root>  (144 regs, 0 loop slots)
+     0  r138 = const 1
+     1  r139 = const 2
+     2  r140 = const 3
+     3  r141 = list [r138, r139, r140]
+     4  r142 = closure f0 caps=[]
+     5  r143 = builtin "map" [r141, r142]
 
 fn f0  (4 regs, 0 loop slots)
   params:   r0
@@ -2238,6 +2240,12 @@ Text-form conventions (see
 Constant-table operands are resolved inline (`const 1`, `builtin "map"`).
 Jump targets (`jump -> 5`) are instruction indexes within the same function —
 the left-hand column.
+
+Like `run`, `show-bytecode` shows what a script that runs once executes. A
+host that runs a script every frame also keeps its static values between
+runs (the `fast` policy's static-value cache), which adds a `static_skip`
+in front of each run of static instructions and a `static_store` behind it.
+Name the policy to see them: `PETAL_POLICY=fast petal show-bytecode f.ptl`.
 
 #### Bytecode JSON Encoding
 
@@ -2273,8 +2281,8 @@ as a term's `op` in the [IR JSON](#program-json-schema)):
 ```json
 {
   "ip": 5,
-  "inst": { "BuiltinCall": { "dst": 121, "name": 3, "args": [119, 120], "in_place": false } },
-  "text": "r121 = builtin \"map\" [r119, r120]"
+  "inst": { "BuiltinCall": { "dst": 143, "name": 3, "args": [141, 142], "in_place": false } },
+  "text": "r143 = builtin \"map\" [r141, r142]"
 }
 ```
 
@@ -2294,24 +2302,6 @@ Operand encoding:
 
 The full instruction set is documented in `core/src/backend/bytecode/isa.rs`.
 
-## Dataflow query commands
-
-`graph` and `show-graph` query the compiled dataflow graph without running the
-program. `graph` takes `--term <name|id>` with the same resolution rules as
-`explain`.
-
-`graph` stops at (or, forward, crosses) every `var` cell. See
-[Cells and the frontier](#cells-and-the-frontier): it does not promise an
-unqualified "minimal" answer on a program that uses `var`, and it says so in
-its output.
-
-
-Like `run`, `show-bytecode` shows what a script that runs once executes. A
-host that runs a script every frame also keeps its static values between
-runs (the `fast` policy's static-value cache), which adds a `static_skip`
-in front of each run of static instructions and a `static_store` behind it.
-Name the policy to see them: `PETAL_POLICY=fast petal show-bytecode f.ptl`.
-
 ### `show-static` — Static declarations
 
 ```
@@ -2321,11 +2311,15 @@ petal show-static [--json] [--all] -e '<code>'
 
 Reports, for every top-level declaration, whether its value is **static**:
 whether its initializer can only ever produce one value for this source text.
-It compiles the program and never runs it, and nothing about how a program
-runs depends on the answer today. This is the classifier of
-[the static-values proposal](proposals/static-values.md): a later release
-builds static values once and keeps them between runs, and this command is how
-to see, ahead of that, what would be kept and what would not.
+It compiles the program and never runs it. This is the classification the
+static-value cache works from: a host that runs a script every frame (the
+`fast` and `replay` [policies](#run--execute-a-program)) builds a static
+value on the first run and keeps it for the next ones, and this command shows
+what is kept and what is not. See
+[Static values](features/static-values.md) for what is static and how it is
+kept, and
+[features/hot-reload.md](features/hot-reload.md#static-values-across-a-reload)
+for what a reload does to the values it holds.
 
 ```petal
 config let SCALE = 2
@@ -2360,12 +2354,13 @@ Each declaration is one of three classes.
 
 - **static** — data that depends on nothing dynamic. A literal, a list or
   record of static parts, an operator on static operands, another static
-  declaration, a `config let`, a call of a constant builtin, or a call of a
+  declaration (a `config let` included, when its own initializer is static
+  and it is never reassigned), a call of a constant builtin, or a call of a
   static-pure function with static arguments. The line says who reads it:
   *dynamic code* (an operand of a dynamic term, a closure capture, or a
   free-standing top-level statement such as an `assert`, all of which run on
   every run), only other static declarations, or nothing. Only a static
-  declaration that dynamic code reads would be kept; one that only feeds
+  declaration that dynamic code reads is kept; one that only feeds
   other static declarations is built and dropped.
 - **function** — a function value. It is **static-pure** when its body reads
   no `state`, no `var` but its own, and no dynamic native, prints nothing, and
@@ -2406,7 +2401,7 @@ to something that may update a container in place (`let MORE = append(BASE,
 is what is built from it, but the declaration itself would not be kept.
 
 **Host natives.** A native is static only if its host registered it as a
-constant function ([ffi.md](ffi.md#constant-natives)). This command knows the
+constant function ([usage/ffi.md](usage/ffi.md#constant-natives)). This command knows the
 natives the `petal` CLI registers and no host's, so a `native fn` of a host
 (`screen_width`, `text_width`, a game engine's) is dynamic here and its line
 reads `a native that is not registered here`. A host asking the same question
@@ -2445,16 +2440,15 @@ static audit: 14 static declarations, 310 native calls under static terms, 1 fai
 ```
 
 A failure is a bug in the classifier or, far more often, a native registered
-`CONST` that is not one ([ffi.md](ffi.md#constant-natives)). A clean run is
+`CONST` that is not one ([usage/ffi.md](usage/ffi.md#constant-natives)). A clean run is
 evidence for the calls the run made, not a proof.
 
 `--static-only` evaluates **only** the top-level statements that are static
 and skips every other one, under the same audit. Static code may call only
 constant natives, so the script does not need its host: this builds the
 constant tables of a game or a panel from the plain CLI, prints nothing the
-script would have printed, and fails if the build raises. It is a preview of
-what a later release does once per source text. `--observe` shows the values
-it built.
+script would have printed, and fails if the build raises. `--observe` shows
+the values it built.
 
 What the audit cannot see: a read of a `var`, or of a value some other
 statement updates in place, moves no counter. And a call the memo replays is
@@ -2506,6 +2500,17 @@ under their module-qualified names (`ui::button`). `--json` emits:
 | `initializer_static` | Plain `state` only: whether the initializer is static (a `state` holding what is really a constant) |
 | `depends_on`, `direct_depends_on` | Every declaration the value can depend on, by qualified name, closed transitively, and the direct ones. A method call depends on every method of that name |
 
+## Dataflow query commands
+
+`graph` and `show-graph` query the compiled dataflow graph without running the
+program. `graph` takes `--term <name|id>` with the same resolution rules as
+`explain`.
+
+`graph` stops at (or, forward, crosses) every `var` cell. See
+[Cells and the frontier](#cells-and-the-frontier): it does not promise an
+unqualified "minimal" answer on a program that uses `var`, and it says so in
+its output.
+
 ### `graph` — One query, one result shape
 
 ```
@@ -2536,19 +2541,19 @@ connecting them:
 ```
 $ petal graph --term total -e 'let a = 2
 let total = a * 3'
-Provenance of t119 (total):
+Provenance of t141 (total):
   op: Mul
-  inputs: [117, 118]
+  inputs: [139, 140]
 
 Ancestors (3):
-  t117: Copy
-  t118: Constant(ConstantId(1))
-  t116: Constant(ConstantId(0)) a
+  t139: Copy
+  t140: Constant(ConstantId(1))
+  t138: Constant(ConstantId(0)) a
 
 Edges (3):
-  t117 -> t119
-  t118 -> t119
-  t116 -> t117
+  t139 -> t141
+  t140 -> t141
+  t138 -> t139
 ```
 
 `kind` is always `"dataflow"` here: a backward walk answers a *must* question,
@@ -2579,7 +2584,7 @@ small would silently compute a different value; too big only loses precision.
 ### Cells and the frontier
 
 A `var` binds a mutable heap cell (see
-[`var` and `set`](language-guide.md#var-and-set)). The cell operand of a
+[`var` and `set`](syntax/var.md)). The cell operand of a
 `CellRead`, a `CellWrite` or a closure capture is an *identity* edge — it names
 which box, not which value — so a backward walk never crosses one. Every stop
 is reported as a **frontier** entry naming the var, its declaration, and the
@@ -2596,13 +2601,13 @@ only way to reach one is a name lexically bound to its declaration. The
 exception is a `state var`, whose slot the host can also write through
 `set_state`; that case is printed rather than glossed.
 
-The `show-*` commands never run the program, so they always give this static
+`graph` never runs the program, so it always gives this static
 answer (`"resolution": "not_traced"`). `explain` does run it, and so resolves
 the boundary to the exact write and continues the chain through it.
 
 `--term x` on a `var` resolves to the *last* `CellWrite` on that name, since
 name lookup is last-wins. `explain` from the write shows that write's own
-chain, and `show-dependents` from it shows every read the write may reach.
+chain, and `graph --direction forward` from it shows every read the write may reach.
 Pass an explicit `--term tNN` to start somewhere else.
 
 ### `show-graph` — Graphviz DOT export
@@ -2621,29 +2626,23 @@ white) so the output stays readable on mid-sized programs.
 
 ## Builtin Phantom Terms
 
-Every **compiled** program starts with one phantom term per registered
-built-in function (`t0`, `t1`, …) in the root block. These are `Copy` terms
-with no inputs; their `name` field holds the builtin name. The IDs follow
-the registration order in `core/src/builtins/mod.rs`.
+Every compiled program starts with one phantom term per registered native
+function (`t0`, `t1`, …) in the root block: a `Copy` with no inputs whose
+`name` is the native's name. They exist for name resolution and for using a
+builtin as a value, they are not listed in any block's `terms` array, and
+they do not execute. User terms are numbered after them, so the first user
+term's id is the number of natives registered, and it moves when a host
+registers natives of its own.
 
-The phantoms exist for name resolution and for using a builtin as a
-first-class *value*; a direct call like `print(x)` compiles to a
-`BuiltinCall` naming the builtin via a string constant instead. The runtime
-seeds native function values into phantom registers **by name** when the
-root frame is pushed — so an imported IR document (schema 0.2) needs no
-phantoms at all unless it wants a builtin as a value, and never depends on
-registration order. See [docs/dev/ir-as-target.md](dev/ir-as-target.md).
+In `show-ir --json` output (and `show-ir --all` text) everything before the
+first non-phantom term is a phantom; the default text output and the
+`--user-only` JSON view hide them.
 
-User-defined terms are numbered after the phantom terms (the first user
-term's ID is the number of registered builtins). Phantom terms are **not
-listed** in any block's `terms` array — they don't execute.
-
-Host embeddings (petal-sdl, petal-web, petal-diagram-canvas) register
-additional natives before compiling programs. Those natives add more
-phantom terms, so the starting ID of user code shifts accordingly. In
-`show-ir --json` output (and `show-ir --all` text), everything before the
-first non-phantom term is host-provided; the default text output and the
-`--user-only` JSON view hide phantoms entirely.
+[dev/Architecture.md](dev/Architecture.md#native-functions) says how natives
+are registered and numbered, and
+[dev/ir-as-target.md](dev/ir-as-target.md#binding-phantoms-and-builtins) what
+an imported IR document needs of them (nothing, unless it wants a builtin as
+a value).
 
 ## Traversing the IR
 
@@ -2664,19 +2663,19 @@ Each term's `inputs` array contains TermIds. Look up the referenced term to find
 
 ```javascript
 function getInputTerms(program, term) {
-  return term.inputs.map(id => program.terms.find(t => t.id === id));
+  return (term.inputs ?? []).map(id => program.terms[id]); // omitted when empty
 }
 ```
 
 ### Building the block tree
 
-Blocks form a tree rooted at `root_block`. A block's parent is the term that created it (`parent_term_id`). Function body blocks have `parent_term_id: null` — connect them via `FunctionDef.body_block` and the `MakeClosure` term.
+Blocks form a tree rooted at `root_block`. A block's parent is the term that created it (`parent_term_id`). The root block and function body blocks have no `parent_term_id` (the field is omitted) — connect function bodies via `FunctionDef.body_block` and the `MakeClosure` term.
 
 ```javascript
 function getChildBlocks(program, blockId) {
   return program.blocks.filter(b => {
-    if (b.parent_term_id === null) return false;
-    const parentTerm = program.terms.find(t => t.id === b.parent_term_id);
+    if (b.parent_term_id == null) return false;
+    const parentTerm = program.terms[b.parent_term_id];
     return parentTerm.block_id === blockId;
   });
 }

@@ -82,7 +82,7 @@ pub struct RunOpts {
     pub observe: bool,
     /// Trace every buffered emit back to its call site and dump the values
     /// with their resolved source attribution after the run — the
-    /// observation half of direct manipulation (docs/direct-manipulation.md).
+    /// observation half of direct manipulation (docs/features/direct-manipulation.md).
     pub trace_emits: bool,
     /// Seed the run's PRNG (`--seed N`), so `random()` replays. Overrides
     /// `PETAL_SEED`; without either, the seed comes from the clock.

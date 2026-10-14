@@ -288,7 +288,7 @@ it fires on both originals and on nothing else in the example corpus.
 ## 11. Return types for loop tails
 
 A `for` in tail position collects a list, and a function's tail is its
-implicit return ([implicit-return-values.md](../implicit-return-values.md)).
+implicit return ([implicit-return-values.md](../syntax/implicit-return-values.md)).
 So an un-annotated function that ends in a loop is one of two different
 things, and the source does not say which:
 

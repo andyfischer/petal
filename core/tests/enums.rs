@@ -1302,7 +1302,7 @@ fn a_variant_too_long_to_intern_is_found_by_its_text() {
 
 #[test]
 fn a_variant_kept_in_state_follows_every_edit_of_its_enum() {
-    // docs/hot-reload.md, "Editing an enum", row by row. The kept value is a
+    // docs/features/hot-reload.md, "Editing an enum", row by row. The kept value is a
     // tag and a payload; the slot it is found at is the running program's.
     let v1 = "\
 enum Kind

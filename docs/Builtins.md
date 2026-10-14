@@ -8,7 +8,7 @@ program, and the domain sets a file imports ([which is which](#which-builtins-ne
 [petal-ui README](../core-libs/petal-ui/README.md).
 
 **The parameter names in this reference are real.** Every builtin with a
-fixed parameter list takes [named arguments](language-guide.md#named-arguments)
+fixed parameter list takes [named arguments](syntax/function-overloading.md#named-arguments)
 under the names its heading shows, in any order after the positional ones:
 
 ```petal
@@ -39,7 +39,7 @@ A wrong name is an error when the line runs (`clamp() has no parameter named
 Each builtin's signature is written once, as a `native fn` declaration in a
 package compiled into the binary (`core/packages/`): parameter names, which
 are optional, the argument types the checker holds a call to, and the result
-type. See [ffi.md](ffi.md#native-interfaces-native-fn) for the declaration
+type. See [usage/ffi.md](usage/ffi.md#native-interfaces-native-fn) for the declaration
 syntax.
 
 ### Which builtins need an import
@@ -616,7 +616,7 @@ int("42")    // 42
 
 Converts to a float. Accepts numbers and numeric strings (surrounding
 whitespace is ignored). A string that isn't a number is an error — use
-[`parse_float`](#parse_floats--parse_ints) when the input might be bad.
+[`parse_float`](#parse_floatstring--parse_intstring) when the input might be bad.
 
 ```petal
 float(42)      // 42.0
@@ -713,6 +713,67 @@ print(type(Color.custom(1, 2, 3)))    // Color
 print(type(Rect(0, 0, 1, 1)))         // Rect
 ```
 
+## Formatting
+
+`str(x)` prints a float in full (`str(12.3 * 3)` is `"36.900000000000006"`).
+These produce text for a table, a price or a label.
+
+### `fixed(value, places?)`
+
+The number as a string with exactly `places` digits after the decimal point
+(2 when omitted; clamped to 0..17). Rounds half away from zero, as
+[`round`](#roundx--roundx-places) does.
+
+```petal
+fixed(12.3456, 2)   // "12.35"
+fixed(5)            // "5.00"
+```
+
+### `commas(value, places?)`
+
+The number with a `,` every three digits of its integer part. With `places`
+it is rounded to that many decimals first; without, an int prints as an int
+and a float as `str` prints it.
+
+```petal
+commas(1234567)        // "1,234,567"
+commas(1234.5678, 2)   // "1,234.57"
+```
+
+### `pad_start(value, width, fill?)` / `pad_end(value, width, fill?)`
+
+Pads to `width` characters with `fill` (a space when omitted), on the left
+or on the right. A value that is not a string is rendered as `str` does
+first. A value already `width` long or longer is returned as it is.
+
+```petal
+pad_start(7, 3, "0")   // "007"
+pad_end("ab", 5)       // "ab   "
+```
+
+### `format(template, args...)`
+
+printf-style templating. Each `%` placeholder takes the next argument:
+
+| Placeholder | Meaning |
+|---|---|
+| `%s` | the value, as `str` renders it |
+| `%d` | the value as a whole number (truncated) |
+| `%f` | the value as a float; `%.2f` fixes two decimals |
+| `%x` | the value in lowercase hex |
+| `%%` | a literal `%` |
+
+A `,` straight after the `%` groups thousands (`%,d`, `%,.2f`). A number
+sets a minimum field width, padded on the left, or on the right when it is
+written negative (`%8.2f`, `%-10s`). The placeholders are `%` and not `{}`
+because `{` starts an interpolation inside a string literal. `format` is
+variadic and takes no named arguments.
+
+```petal
+print(format("%s has %,d points (%.1f%%)", "Ana", 12345, 99.5))   // Ana has 12,345 points (99.5%)
+print(format("%-6s|%6.2f|%x", "ab", 3.14159, 255))                // ab    |  3.14|ff
+```
+
 ## Collections
 
 ### `len(collection)`
@@ -744,6 +805,25 @@ items = append(items, 3)      // grow an accumulator by rebinding
 
 Deprecated alias for [`append`](#appendlist-value). Like `append` it returns a
 new list; `push(items, 3)` on its own does nothing.
+
+### `prepend(list, value)`
+
+Returns a **new** list with `value` in front. The mirror of `append`.
+
+```petal
+prepend([2, 3], 1)   // [1, 2, 3]
+```
+
+### `concat(a, b)`
+
+Joins two lists, or two strings, into a new one. `append(xs, ys)` adds `ys`
+as a single element; `concat` splices its elements in.
+
+```petal
+concat([1, 2], [3, 4])   // [1, 2, 3, 4]
+append([1, 2], [3, 4])   // [1, 2, [3, 4]]
+concat("ab", "cd")       // "abcd"
+```
 
 ### `pop(list)`
 
@@ -799,10 +879,10 @@ Returns a list of all values from a record.
 values({a: 1, b: 2})   // [1, 2]
 ```
 
-### `field(record, key, fallback)`
+### `field(rec, key, fallback)`
 
-Reads `record[key]`, or `fallback` when the key is absent or nil. Same as
-`record[key] ?? fallback`. A bare `record.missing` is still an error — see
+Reads `rec[key]`, or `fallback` when the key is absent or nil. Same as
+`rec[key] ?? fallback`. A bare `record.missing` is still an error — see
 [Ragged records](language-guide.md#ragged-records--reading-a-field-that-may-not-be-there).
 
 ```petal
@@ -810,7 +890,7 @@ field({a: 1}, "a", 7)    // 1
 field({a: 1}, "zz", 7)   // 7
 ```
 
-### `has_field(record, key)`
+### `has_field(rec, key)`
 
 Whether the record has `key` at all, even when its value is nil (which `??`
 cannot tell apart from an absent key).
@@ -863,7 +943,9 @@ sort(rows, fn(a, b) -> a.score < b.score)     // lowest score first
 ### `sort_by(list, key, descending?)`
 
 Sorts by a key read off each element; `key(element)` is called once per
-element and must return a number or a string (any other key is an error).
+element and must return a number or a string (any other key is an error, and
+`petal check` reports it ahead of time when it can see what the key function
+returns).
 `descending` is `true` or `"desc"` for descending order, and `false`,
 `"asc"`, or omitted for ascending. The sort is stable in both directions, so
 chained calls sort by several keys — least significant first.
@@ -895,7 +977,7 @@ join([1, 2, 3], "-")          // "1-2-3"
 ### `split(string, separator)`
 
 Splits a string into a list by the given separator. To split into characters,
-use [`chars`](#charss).
+use [`chars`](#charsstring).
 
 ```petal
 split("a,b,c", ",")     // ["a", "b", "c"]
@@ -1144,59 +1226,113 @@ new list.
 forEach([1, 2, 3], fn(x) -> print(x))
 ```
 
+## List helpers
+
+Written in Petal in the `std` prelude (`core/prelude/std.ptl`), which every
+program imports implicitly, so they are called bare with no import. A
+program's own declaration of one of these names shadows it silently. They
+are ordinary functions, not natives: they take no method syntax
+(`xs.sum()` is an error; write `sum(xs)` or `xs |> sum()`).
+[`field`](#fieldrec-key-fallback) and
+[`has_field`](#has_fieldrec-key) are prelude functions too.
+
+### `first(xs)`
+
+The first element, or `nil` when the list is empty. The complement of
+[`last`](#lastlist).
+
+```petal
+first([3, 4])   // 3
+first([])       // nil
+```
+
+### `is_empty(xs)`
+
+Whether a list or string has no elements: `len(xs) == 0`.
+
+### `sum(xs)` / `product(xs)`
+
+The sum (0 for an empty list) or the product (1 for an empty list) of a list
+of numbers.
+
+```petal
+sum([1, 2, 3])       // 6
+product([2, 3, 4])   // 24
+```
+
+### `mean(xs)`
+
+The arithmetic mean as a float, or `nil` for an empty list.
+
+```petal
+mean([1, 2, 3, 6])   // 3.0
+```
+
+### `minimum(xs)` / `maximum(xs)`
+
+The smallest or largest element, or `nil` for an empty list. Works on any
+elements `<` compares. ([`min`](#mina-b) and [`max`](#maxa-b) take two
+numbers.)
+
+```petal
+minimum([3, 1, 2])   // 1
+maximum([3, 1, 2])   // 3
+```
+
+### `count(xs, pred)` / `any(xs, pred)` / `all(xs, pred)`
+
+How many elements satisfy `pred`, whether at least one does (`false` for an
+empty list), and whether every one does (`true` for an empty list).
+
+```petal
+count([1, 2, 3, 4], fn(x) x > 2 end)   // 2
+any([1, 2, 3], fn(x) x > 2 end)        // true
+all([1, 2, 3], fn(x) x > 2 end)        // false
+```
+
+### `find(xs, pred)`
+
+The first element that satisfies `pred`, or `nil` when none does.
+
+```petal
+find([1, 2, 3], fn(x) x > 1 end)   // 2
+```
+
+### `take(xs, n)` / `drop(xs, n)`
+
+The first `n` elements, and everything after them. `n` is clamped to the
+list, so neither is ever an error.
+
+```petal
+take([1, 2, 3], 2)   // [1, 2]
+drop([1, 2, 3], 2)   // [3]
+take([1, 2, 3], 9)   // [1, 2, 3]
+```
+
+### `clamp01(x)`
+
+`clamp(x, 0, 1)`.
+
 ## Function Introspection (experimental)
 
-Two builtins that let a program look at a function value: its parameters,
-annotations, defaults, captures and syntax tree, as plain records and lists.
-They exist so a library written in Petal can read code — the first one is
-[`glsl`](petal-to-glsl.md), which turns a lambda into GLSL. **Experimental:**
-the shape of what they return may change. The full description, including
-every node of the tree, is in [Function Introspection](function-introspection.md).
+Two builtins let a program read a function value as plain records and lists.
+They are global, and their result shapes may still change.
+[Function Introspection](features/function-introspection.md) is the full
+description: every field, `code_hash`, the nodes of the tree, and the limits.
 
 ### `fn_info(f)`
 
-A record describing the function `f` (a lambda or a named `fn`). Cheap enough
-to call every frame.
-
-```petal
-let GAIN = 1.5
-let grade = fn(c: vec3, amount = 0.5) -> c * GAIN * amount
-let info = fn_info(grade)
-print(info.params[0].name, info.params[0].type)     // c vec3
-print(info.params[1].default, info.params[1].default_source)   // 0.5 0.5
-print(info.captures[0].name, info.captures[0].value)   // GAIN 1.5
-print(len(info.code_hash))   // 16
-```
-
-| Field | |
-|---|---|
-| `name` | the declared name, `nil` for a lambda |
-| `file`, `line`, `column` | where the function is written (`file` is `nil` for the entry file when it has no name) |
-| `params` | a list of `{name, type, has_default, default, default_source}`. `type` is the annotation as written (`"vec3"`, `"Fx"`) or `nil`. `default` is the default's value when it is a literal, a color, or a `vec2`/`vec3` of numbers, else `nil`; `default_source` is its text |
-| `returns` | the declared return type's name, or `nil` (a lambda cannot declare one) |
-| `captures` | a list of `{name, value}`: each outer binding the body reads, with the value the closure holds now |
-| `code_hash` | 16 hex digits: a hash of the function's code and of the code of every function it captures. Comments, layout and captured *values* do not change it, and it is the same after a hot reload that leaves the function alone, so it can key a cache |
-
-Returns `nil` for a builtin and for an overloaded name (several functions
-under one name). A class constructor has a `name` and `params` and `nil` for
-everything that needs source.
+A record describing the function `f` (a lambda or a named `fn`): `name`,
+`file`, `line`, `column`, `params`, `returns`, `captures` and `code_hash`.
+`nil` for a builtin and for an overloaded name. See
+[`fn_info`](features/function-introspection.md#fn_infof).
 
 ### `fn_ast(f)`
 
-The function's syntax tree: `{tag, name, params, returns, body, line, column,
-file}`, where `body` is a list of statement nodes. Every node is a record with
-a `tag` (`"Let"`, `"BinaryOp"`, `"Call"`, ...), its own fields, and `line` /
-`column`. Larger than `fn_info`; call it when a cached result is missing.
-Returns `nil` when there is no source to read (a builtin, an overloaded name,
-a class constructor, a program loaded from IR).
-
-```petal
-let double = fn(x: float) -> x * 2.0
-let tree = fn_ast(double)
-let tail = tree.body[0].expr
-print(tree.tag, tree.params[0].type)   // Lambda float
-print(tail.tag, tail.op, tail.left.name, tail.right.value)   // BinaryOp Mul x 2.0
-```
+The function's syntax tree as nested records, each with a `tag`. `nil` when
+there is no source to read (a builtin, an overloaded name, a class
+constructor, a program loaded from IR). See
+[`fn_ast`](features/function-introspection.md#fn_astf).
 
 ## Assertions
 
@@ -1227,11 +1363,14 @@ assert_eq(sort([3, 1, 2]), [1, 2, 3])
 
 Needs `import autodiff`.
 
-These functions support forward-mode automatic differentiation with dual numbers.
+The constructor and accessors for dual numbers (forward-mode automatic
+differentiation). How a derivative moves through arithmetic and through the
+other builtins, with worked examples, is in
+[features/differentiation.md](features/differentiation.md).
 
 ### `dual(value, derivative)`
 
-Creates a dual number with the given primal value and derivative.
+Creates a dual number from two plain numbers.
 
 ```petal
 import autodiff
@@ -1240,7 +1379,7 @@ let x = dual(3.0, 1.0)   // value = 3.0, derivative = 1.0
 
 ### `value_of(x)`
 
-Extracts the primal value from a dual number. Returns a float for regular numbers.
+The value part of a dual number, as a float. A plain number comes back as a float.
 
 ```petal
 import autodiff
@@ -1250,7 +1389,7 @@ value_of(42)                // 42.0
 
 ### `deriv_of(x)`
 
-Extracts the derivative from a dual number. Returns `0.0` for regular numbers.
+The derivative part of a dual number, as a float. `0.0` for a plain number.
 
 ```petal
 import autodiff
@@ -1383,6 +1522,82 @@ print(frozen(xs))     // false
 freeze(xs)
 print(frozen(xs))     // true
 print(frozen(42))     // false
+```
+
+## Host I/O
+
+Needs `import io`. These are the script's side of the channels a host reads
+and writes; [usage/embedding-guide.md](usage/embedding-guide.md) describes
+the host's side.
+
+### `symbol(name)`
+
+The symbol called `name`: an interned name that identifies an output buffer
+or a host binding. Two calls with the same name give the same symbol, and
+`type` of one is `"symbol"`.
+
+### `push_output(buffer, value)`
+
+Appends `value` to the output buffer the symbol `buffer` names, for the host
+to drain after the run. Returns `nil`.
+
+```petal
+import io
+push_output(symbol("shapes"), {kind: "dot", x: 10, y: 20})
+```
+
+### `binding(symbol)`
+
+The value the host has bound to the symbol (a uniform the host sets before a
+run), or `nil` when nothing is bound.
+
+## Pending Values
+
+A host can hand a script a value that has not arrived yet: an image still
+loading, a query in flight. Such a value is *pending*. `??` falls through a
+pending value as it does through `nil`. These inspect one; all are global.
+
+### `is_pending(value)` / `is_ready(value)`
+
+`is_pending` is true when the value is pending at all, loading or errored.
+`is_ready` is its negation: true for any usable value.
+
+```petal
+is_pending(1)   // false
+is_ready(1)     // true
+```
+
+### `is_loading(value)` / `is_error(value)`
+
+True when the value is pending and, respectively, still loading or failed.
+Both are false for a value that is not pending.
+
+### `error_of(value)`
+
+The error a failed pending value holds, or `nil` for anything else.
+
+### `or_else(value, fallback)`
+
+`fallback` when `value` is pending (loading or errored), otherwise `value`.
+Both arguments are evaluated before the call; `value ?? fallback` evaluates
+its right side only when needed.
+
+### `resource_key(value)`
+
+The cache key of a pending value's resource as an int, or `nil` for a value
+that is not pending. Two pending values for the same resource have the same
+key.
+
+## Host Handles
+
+### `is_valid(handle)`
+
+Whether the value is a [host handle](game-engine-features/handles.md) whose
+object the host still considers alive. Never an error: `nil`, a value that is not a handle
+and a stale handle are all `false`.
+
+```petal
+is_valid(nil)   // false
 ```
 
 ## Built-in Classes

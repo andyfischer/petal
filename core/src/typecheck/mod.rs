@@ -868,7 +868,7 @@ impl<'a> Checker<'a> {
     /// Report that no candidate accepts `got` arguments. `expected` is every
     /// count that would have worked, each spelled by
     /// [`FnSignature::arity_range`] — Petal overloads by arity
-    /// (docs/function-overloading.md), so a call is wrong only when it matches
+    /// (docs/syntax/function-overloading.md), so a call is wrong only when it matches
     /// *none* of them, and then it fails whenever it runs: an error, not a
     /// warning.
     fn warn_arity(&mut self, span: SourceSpan, what: &str, expected: &[String], got: usize) {
@@ -1015,7 +1015,7 @@ impl<'a> Checker<'a> {
                 // A `var` is a cell, and `set` reaches it from inside functions,
                 // closures and conditionals that this linear walk cannot
                 // correlate with the declaration
-                // (docs/var.md, Cells). So the initializer
+                // (docs/syntax/var.md, Cells). So the initializer
                 // says nothing about what a later *read* observes, and trusting
                 // it produces warnings on correct code — the one outcome this
                 // pass is built to avoid. Only a written annotation constrains a
@@ -1232,7 +1232,7 @@ impl<'a> Checker<'a> {
                 // from anywhere — so the initializer describes at most the first
                 // read. Only a written annotation constrains a state name, and
                 // it earns that by constraining every write to it, exactly as a
-                // `var` cell does (docs/var.md, Cells).
+                // `var` cell does (docs/syntax/var.md, Cells).
                 self.bind(name.clone(), declared, Type::Any);
                 // …but the initializer still says which class the slot was
                 // meant to hold, and that is the only thing that can answer a
@@ -2758,7 +2758,7 @@ mod tests {
     }
 
     // ── `var` cells: writes are checked, reads are not trusted ──────────────
-    // docs/var.md (Cells).
+    // docs/syntax/var.md (Cells).
     #[test]
     fn set_conflicting_with_declared_var_type_warns() {
         let w = warns("var n: int = 0\nset n = \"hello\"");

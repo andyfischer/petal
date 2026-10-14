@@ -165,7 +165,7 @@ impl<'a> Vm<'a> {
     }
 
     /// `fn_ast(f)` — the function's syntax tree as records and lists (the
-    /// shapes are in docs/function-introspection.md). `nil` when there is no
+    /// shapes are in docs/features/function-introspection.md). `nil` when there is no
     /// source for it: a builtin, an overload set, a class constructor, a
     /// program loaded from IR.
     pub(super) fn builtin_fn_ast(&mut self, args: &[Value]) -> Result<Value, String> {

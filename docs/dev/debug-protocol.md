@@ -49,7 +49,37 @@ ignored, so additions stay backwards-compatible.
 | `input` | `keys_down?: string[]`, `mouse?: MouseInput`, `mouse_delta?: {dx, dy}`, `text?: string` | Inject input for the next stepped frame. `text` is delivered to `text_input()`; `mouse_delta` to `mouse_dx()`/`mouse_dy()`. |
 | `screenshot` | — | Return the current frame as a PNG data URL. |
 | `pending_report` | — | Every live pending resource, with state, age, and origin. Replies in `pending`. |
-| `draw_stats` | — | Optional per-frame draw statistics. A host that does not implement it replies with an error. |
+| `draw_stats` | — | Optional per-frame draw statistics, in `stats`. A host that does not implement it replies with an error. |
+
+petal-sdl also keeps a history of recent frames (600 by default; `--history
+<n>` sets it, `--no-timeline` turns it off) and takes these commands, which
+the diagram canvas does not implement. Each replies with the timeline status
+in `timeline`. What the timeline records and what freeze, rewind and replay do
+is in [time-travel.md](../features/time-travel.md#the-petal-sdl-timeline).
+
+```json
+{ "cmd": "timeline" }
+{ "cmd": "freeze" }
+{ "cmd": "unfreeze" }
+{ "cmd": "scrub", "to": -1 }
+{ "cmd": "rewind", "frames": 60 }
+{ "cmd": "replay" }
+{ "cmd": "track", "x": 320, "y": 200 }
+{ "cmd": "trail" }
+{ "cmd": "screenshot", "overlay": true }
+```
+
+| Command | Fields | Notes |
+|---------|--------|-------|
+| `timeline` | — | Report the recorded history: frame count, cursor, tracked call. |
+| `freeze` | — | Stop at the latest recorded frame and pause the live loop. |
+| `unfreeze` | — | Resume from the cursor: the live execution becomes that frame's snapshot and later frames are discarded. |
+| `scrub` | `to: int` | Move the cursor to a recorded frame, freezing first. Negative indexes count from the end (`-1` is the latest frame). |
+| `rewind` | `frames: int` | Restore the execution from that many frames ago and continue from there, without freezing. |
+| `replay` | — | Re-simulate every recorded frame after the cursor (all of history when not frozen) through the program loaded now, with the recorded input. A hot reload while frozen does this automatically. Replies with the count in `replayed`. |
+| `track` | `x: int`, `y: int` | Follow the `draw_*` call that painted the shape at that point on the frame on screen. Replies with the resolved call in `site`. |
+| `trail` | — | Where the tracked call drew on every recorded frame, in `trail`. |
+| `screenshot` | `overlay?: bool` | With `overlay`, or while frozen, the picture is what the window shows: the recorded frame plus the timeline's trail and scrub bar. |
 
 ### `state` keys and the call path
 
@@ -114,6 +144,11 @@ command. On failure the engine returns `{ ok: false, error: <message> }`.
 | `output` | string[] | `step`, `capture_draw_commands`, when stdout was captured |
 | `screenshot` | string (data URL) | `screenshot` |
 | `pending` | PendingEntry[] | `pending_report` |
+| `stats` | object | `draw_stats` |
+| `timeline` | object | every timeline command (petal-sdl) |
+| `site` | object | `track` |
+| `trail` | array | `trail` |
+| `replayed` | int | `replay` |
 
 ## PendingEntry
 
@@ -169,3 +204,4 @@ offscreen canvases, images, ...) is the `DrawCommand` enum in
 | Headless mode | `--headless` starts paused | N/A, always has a canvas |
 | Screenshot | Software rasterizer; also `--screenshot out.png --frames N` one-shot | `canvas.toDataURL()` |
 | `input.text`, `input.mouse_delta` | Supported | Not wired (keys and mouse only) |
+| `draw_stats`, timeline commands | Supported | Not implemented |

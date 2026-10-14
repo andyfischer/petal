@@ -1,6 +1,6 @@
 # petal-c-bridge: builds the Rust staticlib with cargo and exposes it as the
 # CMake target `petal::bridge` (static library + include dir + system libs).
-# Guide: docs/embedding-c.md at the repository root.
+# Guide: docs/usage/embedding-c.md at the repository root.
 #
 # Works both as a subdirectory of a host's build
 # (add_subdirectory(path/to/petal/integrations/petal-c-bridge)) and standalone:

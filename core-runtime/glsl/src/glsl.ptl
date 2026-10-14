@@ -16,7 +16,7 @@
 // The result is cached under the function's `code_hash`, so a script that
 // calls this every frame translates once, and again only after an edit that
 // changes the function (or a function it calls). See
-// docs/petal-to-glsl.md for the mapping, the environment record and the
+// docs/game-engine-features/petal-to-glsl.md for the mapping, the environment record and the
 // limits.
 
 pub let VERSION = 1
@@ -1171,7 +1171,7 @@ end
 //
 // `env` describes the shader side: {structs, functions, self, result,
 // uniforms, count, entry}. `opts`: {name, inline_captures}. Both are
-// documented in docs/petal-to-glsl.md.
+// documented in docs/game-engine-features/petal-to-glsl.md.
 //
 // The translation is cached in keyed state per (code hash, structural
 // captures, environment, options), so calling this every frame is cheap: a

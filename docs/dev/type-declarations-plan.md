@@ -236,7 +236,8 @@ fully typed: its fields are `num`, the edge accessors return `num`, and
 ### Docs and examples
 
 `language-guide.md` (Type Annotations), `CLI.md` (`check`), `Builtins.md`
-(casts), `goals.md` ("Types as a projection"), `examples/console/typed.ptl`
+(casts), `goals.md` ("Types as a projection"; that file has since been
+replaced by the [README](../../README.md#goals)), `examples/console/typed.ptl`
 with its golden.
 
 ---
@@ -272,7 +273,7 @@ believes about a type is by construction what the checker believes. See
 cd core && cargo test --lib typecheck::        # checker unit tests
 cargo test --test type_annotations             # the annotation grammar
 cargo test --test static_dispatch              # dispatch pinning and its guards
-cd ts && npx vitest run test/type-annotations.test.ts test/type-warnings.test.ts
+cd .. && npx vitest run test/vitest/type-annotations.test.ts test/vitest/type-warnings.test.ts
 cd editor-support/tree-sitter-petal && npx tree-sitter generate && npx tree-sitter test
 
 B=core/target/debug/petal

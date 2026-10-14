@@ -2,7 +2,7 @@
 //! running it.
 //!
 //! This is the bridge's window onto Petal as a **configuration format** (see
-//! `docs/config-files.md` and `docs/program-modification.md`): a host that
+//! `docs/usage/config-files.md` and `docs/features/program-modification.md`): a host that
 //! shows a script's settings — an editor panel of sliders, say — reads them
 //! with [`pb_source_bindings_json`], and writes them back by path
 //! (`POST.effects[2].amount`): [`pb_source_set_value`], [`pb_source_insert`],

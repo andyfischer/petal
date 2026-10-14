@@ -380,7 +380,7 @@ JetBrains Mono's. Text cannot be rotated;
 13 px face is 7.8, which `text_width` rounds to 8 and which drifts a full
 column by column 30. `let CW = text_advance("m", style)`. See
 [Text size and measurement](../garden/docs/petal-graphical-panels.md#text-size-and-measurement)
-and [docs/text-and-fonts.md](../docs/text-and-fonts.md).
+and [docs/usage/text-and-fonts.md](../docs/usage/text-and-fonts.md).
 
 ### Alpha
 

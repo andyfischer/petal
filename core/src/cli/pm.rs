@@ -502,5 +502,5 @@ OPTIONS
               Write the document to <file> instead of stdout.
 
 SEE ALSO
-       petal help vendor, docs/packages.md, docs/embedding-guide.md
+       petal help vendor, docs/packages.md, docs/usage/embedding-guide.md
 ";

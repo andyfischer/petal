@@ -271,7 +271,7 @@ pub struct Compiler {
     // They keep `is_outer_function_binding` honest after the name has been
     // rebound locally — without them only the first assignment in a branch
     // would be diagnosed, since every later lookup finds the phi.
-    // See docs/var.md (Cross-function assignment).
+    // See docs/syntax/var.md (Cross-function assignment).
     cross_fn_terms: HashSet<TermId>,
 
     // Per-block local-shadow log: block → (name → the binding that was live in
@@ -281,7 +281,7 @@ pub struct Compiler {
     // flow is carrying. From that point on the name is block-local: rebinds
     // stop sharing the carry slot and stop updating `block_rebinds`, and
     // `wire_phi_outs` carries the *frozen* pre-shadow value out instead of the
-    // shadowed local's final value. See docs/var.md (Lexical shadowing).
+    // shadowed local's final value. See docs/syntax/var.md (Lexical shadowing).
     block_shadowed: HashMap<BlockId, HashMap<String, Option<TermId>>>,
 
     // Map from a state variable's StateKey back to its `StateInit` term. Used
@@ -955,7 +955,7 @@ impl Compiler {
         let module_key = module.name.clone().unwrap_or_default();
         // Whether `std` (the core prelude) declares a function `name`. A
         // binding of the same name from anywhere else does not replace the
-        // prelude's set, it joins it (docs/function-overloading.md, "Across
+        // prelude's set, it joins it (docs/syntax/function-overloading.md, "Across
         // modules"): the arities only the prelude has stay callable.
         let std_declares = |name: &str| {
             self.module_fns

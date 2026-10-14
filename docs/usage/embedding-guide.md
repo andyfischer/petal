@@ -11,7 +11,7 @@ globals**.
 - **Where embedding fits among the app-building paths:**
   [Building Apps](building-apps.md).
 - **Persisting settings back to a script file:**
-  [goal-based-editing.md](goal-based-editing.md).
+  [../features/goal-based-editing.md](../features/goal-based-editing.md).
 
 This guide is task-oriented: it shows the *patterns* you compose from those
 primitives. The running example is Garden (`garden/garden-script` in this repo), a text
@@ -119,28 +119,27 @@ env.register_package("myhost", [("myhost", include_str!("../packages/myhost/myho
 
 The declarations carry the parameter names (so arguments can be passed by
 name), optional parameters and types; registering the package after the
-natives applies them. Keep the package in a directory with a `petal.toml`:
-a project that lists it under `[dependencies]`
-(`myhost = { path = "…/packages/myhost" }`) is checked by the stock CLI and
-the language server with no flag, and `petal check -I packages script.ptl`
-does the same for a loose script. Announce the interface with
-`env.provides_package("myhost")` (register the `petal.toml` with the package)
-or `env.provides("myhost", "0.1.0")`, so a package whose manifest says
-`[requires] myhost = ">=0.1"` loads here and fails cleanly elsewhere. Assert `env.verify_interface(&["myhost"])` in a test: it fails when a
-native is registered without a declaration or declared without being
-registered. A host puts no names in a script's scope by itself — a script
-for a petal-ui host says `import ui`, and one for your host says
-`import myhost` — and the details are in
-[module-system.md](module-system.md#host-interface-packages) and
-[ffi.md](ffi.md#native-interfaces-native-fn).
+natives applies them, and the native itself does not change. Three more steps
+make the interface checkable:
 
+- Keep the package in a directory with a `petal.toml`, so the stock
+  `petal check` and the language server can read it with no knowledge of the
+  host.
+- Announce it with `env.provides_package("myhost")` (or
+  `env.provides("myhost", "0.1.0")`), so a package that `[requires]` it loads
+  here and fails cleanly elsewhere.
+- Assert `env.verify_interface(&["myhost"])` in a test: it fails when a
+  native is registered without a declaration or declared without being
+  registered.
+
+The rules for all of this are in
+[ffi.md](ffi.md#native-interfaces-native-fn) (`native fn`, linking,
+providing and verifying) and
+[../module-system.md](../module-system.md#host-interface-packages) (where
+interface packages live and how scripts find them).
 `env.declare_native_params(id, "x, y, w, h, color, alpha?")` declares names
 against a native's id directly, for a host that builds its natives at run
-time.
-
-The native does not change: named arguments are put in positional order before
-it runs. `?` marks a trailing optional parameter. See
-[Native functions](ffi.md#native-functions).
+time ([Native functions](ffi.md#native-functions)).
 
 `NativeClass::Strict` (the default `pending` policy) is for pure natives
 (`sqrt(pending)` → `pending`). `Effectful` is for emitters (`print`,
@@ -270,7 +269,7 @@ want `Value`s rather than JSON.
 
 `petal run --observe` is the same facility from the command line — the fastest
 way to see what keys a given script will produce. See
-[CLI.md](CLI.md#run--execute-a-program).
+[../CLI.md](../CLI.md#run--execute-a-program).
 
 ---
 
@@ -278,11 +277,9 @@ way to see what keys a given script will produce. See
 
 Observation reads *values*. **Provenance** answers a different question, the one
 a direct-manipulation editor asks: given something a script emitted — a drawn
-shape, a log line, a row — *which code produced it?*
-
-The runtime already knows. The bytecode lowerer stamps every instruction with
-the IR term it was lowered from, and the VM hands that term to each native it
-calls. So an emitting native can record its own call site as it pushes:
+shape, a log line, a row — *which code produced it?* With emit tracing on,
+every value pushed into an output buffer records the chain of call sites that
+led to it, and the host drains those beside the values:
 
 ```rust
 env.enable_emit_trace(true);                // off by default; enable before the run
@@ -290,51 +287,17 @@ env.run(stack_id)?;
 
 let sym = env.intern_symbol("draw_commands");
 let values = env.take_output_buffer(sym);
-let sites  = env.take_output_origins(sym);  // one per value, index-aligned
+let sites  = env.take_output_origins(sym);  // one EmitSite per value, index-aligned
 ```
 
-Each `EmitSite` holds a **call chain**: the native's own call site, then the
-return address of each enclosing call, innermost first. Resolve it with
-`petal::provenance`:
-
-```rust
-let program = env.get_program(program_id).unwrap();
-let term = provenance::pick_frame(program, &sites[i].chain, source_map::ENTRY_FILE)?;
-let site = provenance::CallSite::resolve(program, term)?;
-
-site.span;              // where the call is written
-site.callee;            // "draw_circle"
-site.args[0].literal;   // the argument's value, if it is a literal
-site.args[0].kind;      // Literal | Binding | Computed
-site.args[0].editable_span(program);  // the text a rewrite must replace
-```
-
-### Things to get right
-
-- **Enable before the run**, like observation — recording happens at the emit.
-- **A chain, not a site.** Most vocabularies wrap their natives in library
-  functions (every `draw_*` in `petal-ui` is a Petal fn), so the innermost call
-  site is library code. `pick_frame` walks out to the innermost frame in the file
-  you are showing; that is the line a person means.
-- **Drain origins with values.** They are index-aligned. Taking only the values
-  leaves the origins behind to be misattributed to the next run's emits.
-- **Resolve against the program that ran.** Term ids are indices, so an id
-  recorded before a recompile would resolve happily against unrelated code.
-  `CallSite::resolve` rejects an out-of-range id rather than guessing — treat
-  `None` as "stale, discard", not as an error.
-- **Resolution is lazy on purpose.** Recording is one short id list per emit;
-  everything else — spans, argument classification, literal values — is computed
-  from the ids when something asks. A 60fps host that traces every shape but
-  queries one per mouse move pays for exactly that.
-
-Recording an id the VM already computed costs a push, and a run with tracing
-off pays nothing at all.
-
-Garden's Petal IDE is built on this: hover a shape on the canvas and the
-`draw_*` call that drew it highlights in the editor beside it.
-
-Full how-to — picking the right frame, classifying arguments for rewriting, and
-building a hit test — in [direct-manipulation.md](direct-manipulation.md).
+`petal::provenance` resolves a site to the call as written: its span, its
+callee, and each argument with the text a rewrite must replace.
+[../features/direct-manipulation.md](../features/direct-manipulation.md) is
+the full treatment: picking the right frame of the chain, classifying
+arguments, building a hit test, the rules that keep attribution correct
+across reloads, and the cost. Garden's Petal IDE is built on it: hover a shape
+on the canvas and the `draw_*` call that drew it highlights in the editor
+beside it.
 
 ---
 
@@ -346,7 +309,7 @@ The mirror image. Bind per-run uniforms before `env.run`:
 
 ```rust
 let dt = env.intern_symbol("dt");
-env.set_binding(dt, Value::Float(frame_dt));   // script reads binding("dt") or dt()
+env.set_binding(dt, Value::Float(frame_dt));   // script reads binding(symbol("dt")), or the ui package's dt()
 ```
 
 Use bindings for scalars/lists the script reads this frame (time, screen size,
@@ -387,30 +350,29 @@ A host with no filesystem does not have to list the sources by hand:
 `petal bundle <entry>` emits a project's whole installed dependency graph as
 one JSON document whose `packages[i].modules` is exactly what
 `register_package` takes, manifests included (see
-[packages.md](packages.md#bundles)). Register each package, then
+[../packages.md](../packages.md#bundles)). Register each package, then
 load `entry.source` at `entry.path`.
 
-A host never fetches a dependency by itself. A project's `git` dependencies
-are found through its `petal.lock` in `vendor/` or the cache
-(`~/.petal/cache`); if they are not installed the load fails with an error
-naming `petal install`. `env.set_install_on_demand(true)` makes the load run
-the install (shelling out to `git`), as the `petal` CLI does.
+A host never fetches a dependency by itself: a project's `git` dependencies
+must already be installed (in `vendor/` or the cache), or the load fails with
+an error naming `petal install`. `env.set_install_on_demand(true)` makes the
+load run the install, as the `petal` CLI does
+([Install on demand](../packages.md#install-on-demand)).
 
 Either way the library's modules answer to `import bloom/menu`, its internal
 relative imports (`import ./motion`) keep working, and `env.packages()` lists
 what a host can tell the user is available. A host registration is the first
-place a package name is looked up — ahead of the importing file's own
-package and its `[dependencies]`, the search path, and the packages bundled
-in the binary — so a host can also replace a bundled package with its own
-copy.
+place a package name is looked up, so a host can also replace a bundled
+package with its own copy
+([lookup order](../packages.md#where-a-package-name-is-looked-up)).
 `env.add_module_path(dir)` offers any package it finds in `dir` or one level
 under it (packages only: a loose `.ptl` file is imported relatively, never
 through a search directory); that discovery is best-effort, and a manifest
 that would not load is collected into `env.package_errors()` rather than
 returned. Every failure is a `LoadError` naming the `petal.toml`. See
-[packages.md](packages.md) for the manifest format and
-[module-system.md](module-system.md#where-packages-are-found) for the lookup
-rules.
+[../packages.md](../packages.md) for the manifest format and
+[../module-system.md](../module-system.md#embedding) for the rest of the
+module API on `Env`.
 
 ### Allocating stable per-run ids
 
@@ -471,8 +433,10 @@ if watch.changed() {
 comment edit moves source positions, an edit of literal values writes them
 into the running program, and anything else recompiles into the same program
 id and moves live state across with `transfer_state`. The result is the same
-on every path. [hot-reload.md](hot-reload.md) has the rules, and
-`Env::set_config_value` for changing a value without writing the file.
+on every path. [../features/hot-reload.md](../features/hot-reload.md) has the rules, and
+`Env::set_config_value` for changing a value without writing the file;
+[ffi.md](ffi.md#hot-reload) lists what the report carries. After a reload,
+print `report.static_lines()` and the program's diagnostics (below).
 
 The watch covers the entry file and every imported module that came from
 disk, so editing a helper module reloads the scripts that import it. Take a
@@ -507,5 +471,5 @@ Once you can observe that a script called `color_scheme("dark")`, you often want
 a menu action to *rewrite* that call. That is goal-based editing: declare "there
 is a call `color_scheme("light")`" and the engine updates the existing call in
 place or appends one, preserving comments and layout. See
-[goal-based-editing.md](goal-based-editing.md); Garden's `save_setting` /
+[../features/goal-based-editing.md](../features/goal-based-editing.md); Garden's `save_setting` /
 `save_layout` are worked examples.

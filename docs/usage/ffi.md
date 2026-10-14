@@ -4,7 +4,8 @@ How a host application talks to the Petal runtime: the API on `Env`, native
 functions, the value model, the host channels, and retained state. For
 task-oriented patterns built on these primitives, see
 [embedding-guide.md](embedding-guide.md); to embed from C or C++ rather than
-Rust, see [embedding-c.md](embedding-c.md).
+Rust, see [embedding-c.md](embedding-c.md). Whether to embed at all, or to
+build on a host that already exists, is in [building-apps.md](building-apps.md).
 
 The design is Lua-inspired. Native functions are registered by name against a
 stack-style calling convention (`core/src/native_fn.rs`). Everything crosses
@@ -48,9 +49,12 @@ Entry points, all on `Env` (`core/src/env/`):
 | Id allocation | `reset_counter`, `next_counter` |
 | State tooling | `get_state_json`, `set_state_from_json`, `snapshot_state`, `restore_state`, `diff_state` |
 | Observation | `observations_mut().enable()`, `get_observations_json` — the last value bound to every named term (see [embedding-guide.md](embedding-guide.md#reading-arbitrary-named-values-observation)) |
-| Emit tracing | `enable_emit_trace`, `take_output_origins` (see [direct-manipulation.md](direct-manipulation.md)) |
-| Speculation | `fork_execution`, `run_speculative`, `drop_fork` |
-| Hot reload | `reload_program`, `set_config_value`, `diff_program`, `module_manifest`, `program_source_paths`, `watch_program_sources` (→ `source_watch::SourceWatch`), `transfer_state` |
+| Emit tracing | `enable_emit_trace`, `take_output_origins` (see [../features/direct-manipulation.md](../features/direct-manipulation.md)) |
+| Speculation and rewind | `fork_execution`, `run_speculative`, `restore_execution`, `drop_fork` (see [../features/time-travel.md](../features/time-travel.md#what-the-runtime-provides)) |
+| Hot reload | `reload_program`, `set_config_value`, `program_source`, `override_file_source`, `diff_program`, `module_manifest`, `program_source_paths`, `watch_program_sources` (→ `source_watch::SourceWatch`), `transfer_state` (see [Hot reload](#hot-reload)) |
+| Static values | `static_values`, `clear_static_values`, `set_static_cache`, `set_static_follow`, `set_static_debounce`, `flush_static_rebuilds`, `take_static_warnings`, `take_all_static_warnings`, `native_constness` (see [Constant natives](#constant-natives)) |
+| Diagnostics | `check_program`, `diagnostics_text`, `error_diagnostics_text` (see [embedding-guide.md](embedding-guide.md#showing-what-petal-check-would-say)) |
+| Reactive layers | `set_policy`, `run_needed`, `note_host_data_changed`, `set_effect_audit`, `effect_audit_report`, `set_static_audit`, `static_audit_report` (see [Embedder pitfalls](#embedder-pitfalls)) |
 
 `run_bounded` returns `RunOutcome::Done | Yielded`, so a 60fps host can slice a
 long computation across frames. `call_function(stack, "name", args)` calls a
@@ -92,7 +96,8 @@ pub type NativeResult = Result<u32, String>;             // Ok(count of pushed r
 
 A native is a plain, non-capturing `fn` pointer. `Env::register_native`
 appends it to the native table (the id is the table index) and **must be
-called before `load_program`**. Registering makes the native *exist*; it does
+called before the load that compiles a call to it** (a reload that recompiles
+sees natives registered since the first load). Registering makes the native *exist*; it does
 not put its name in scope. A script reaches it through a `native fn`
 declaration ([below](#native-interfaces-native-fn)) — in practice, by
 importing the interface package the host registers beside it — and from there
@@ -141,7 +146,7 @@ parameter left out, and an optional one skipped to reach a later one
 (`spawn() is missing a value for parameter 'x'`).
 
 An optional parameter is the native counterpart of a Petal `fn`'s
-[default value](language-guide.md#default-parameter-values), minus the
+[default value](../syntax/function-overloading.md#default-parameter-values), minus the
 expression: the native itself supplies whatever a missing argument means. Too
 many arguments reads as it does for a `fn` with defaults
 (`spawn() expects 3-4 arguments, got 5`).
@@ -241,9 +246,9 @@ the host registers a native called `x`. The core builtins are the one set in
 scope everywhere, because the bundled `core` package declares them and is
 imported implicitly; the domain builtins (`lerp`, `vec2`, `noise`, …) follow
 the general rule and are in scope where their package is imported
-([Builtins](Builtins.md#which-builtins-need-an-import)). So a host ships
+([Builtins](../Builtins.md#which-builtins-need-an-import)). So a host ships
 its declarations as an **interface package**, registers it, and its scripts
-import it ([module-system.md](module-system.md#host-interface-packages)).
+import it ([../module-system.md](../module-system.md#host-interface-packages)).
 
 **What a declaration is used for.**
 
@@ -307,7 +312,7 @@ parameters. (`Env::link_program(&program)` runs the check by hand, and
 
 **Providing an interface.** A package states the host interfaces it needs in
 its manifest (`[requires] myhost = ">=0.2"`,
-[packages.md](packages.md#requires)); the host
+[../packages.md](../packages.md#requires)); the host
 announces what it provides where it registers the natives —
 `env.provides("myhost", "0.2.0")`, or `env.provides_package("myhost")` to take
 the version from the interface package's own `petal.toml` (registered with the
@@ -369,9 +374,9 @@ env.register_native("save_file", native_save_file, NativeEffects::EFFECT);
 `PURE` plus one claim: the native is a *constant function* — the same
 arguments give the same result for the life of the program, it reads no
 dynamic input of any kind, and it does nothing but return. Petal uses it to
-decide which top-level tables are *static values*
-([proposal](proposals/static-values.md)), computed once and kept until the
-source changes. `PURE` does not imply it, and a native without it is always
+decide which values are *static values*
+([features/static-values.md](../features/static-values.md)), computed once
+and kept until the source changes. `PURE` does not imply it, and a native without it is always
 treated as dynamic. Read [Constant natives](#constant-natives) before
 declaring one.
 
@@ -418,8 +423,8 @@ specially by the VM because they call back into closures; ordinary natives
 
 ## Values and the heap
 
-`Value` (`core/src/value.rs`) is a `Copy` enum; anything bigger than a machine
-word lives in the `Heap` behind a typed u32 id:
+`Value` (`core/src/value.rs`) is a `Copy` enum of 24 bytes; anything bigger
+lives in the `Heap` behind a typed id (a slot index plus a generation):
 
 ```
 Nil, Bool, Int(i64), Float(f64), Vec2(f64, f64), Dual { value, derivative },
@@ -441,9 +446,9 @@ Notes for embedders:
 - `Vec3` is heap-allocated (three f64s would widen every `Value`): build one
   with `heap.vec3_value(x, y, z)` and read it with `heap.get_vec3(id)` →
   `[f64; 3]`. It is immutable, so the id behaves as a value. See
-  [dev/vec3.md](dev/vec3.md).
+  [../dev/vec3.md](../dev/vec3.md).
 - `Cell` is the box behind a `var`; it never reaches host code, because every
-  read dereferences it (see [var.md](var.md#containment)).
+  read dereferences it (see [../syntax/var.md](../syntax/var.md#containment)).
 - `Pending` is an unresolved resource (loading or errored). Ordinary operations
   absorb it and return it.
 - The heap (`core/src/heap.rs`) is mark-and-sweep, triggered by allocation
@@ -495,7 +500,13 @@ Nothing detects a stale integer id; safety is the host table's discipline.
 For retained, host-owned objects (a game entity, an actor, a file), use a
 **handle**: `Value::Handle(HandleVal { class, slot, serial })`. The host owns
 the object; the handle is an opaque address into the host's own storage,
-typically a slot map with generation counters.
+typically a slot map with generation counters. A script calls methods on it,
+which go to the class's `call_method`, and a handle whose object is gone is
+rejected as stale.
+[game-engine-features/handles.md](../game-engine-features/handles.md) is the
+full treatment: the model, what a script can do with a handle, where one can
+be kept (`state`, state JSON, `const`, hot reload, memoized scopes), effect
+rows, the C bridge and a worked example.
 
 ```rust
 use petal::{HandleClass, HandleClassId, HandleVal};
@@ -514,41 +525,38 @@ let h: Value = env.make_handle(actor_class, slot, serial);
 let h: HandleVal = cxt.get_handle(1, actor_class)?;
 ```
 
-- `register_handle_class` may be called at any time; unlike natives, handle
-  classes are not referenced by compiled programs.
-- Handles compare and hash by identity and are GC leaf values.
-- `obj.method(args)` on a handle receiver goes to the class's `call_method`,
-  which wins over any same-named native; stale handles are rejected before
-  dispatch.
-- The `is_valid(v)` builtin lets scripts guard against host-side object churn.
-  It returns false for nil, non-handles and stale handles, never an error.
-
 ## Retained state
 
-Scripts keep state across runs with the `state` keyword:
+Scripts keep state across runs with the `state` keyword
+([../features/inline-state.md](../features/inline-state.md) is the script
+side: declaring, keying, lifetime and reset):
 
 ```petal
 state score = 0            // top level: one slot, initialized on first run only
 state(item.id) hp = 100    // explicit key: one slot per entity, wherever it is reached from
 ```
 
+What a host needs to know about it:
+
 - Storage is `Stack::state`, a map on the stack that survives `reset_stack` +
   `run`. One map per stack.
 - A runtime key is `RuntimeStateKey { base, path }`. `base` is the
   **declaration id**: a hash of the declaration's full name path (module
   qualifier, enclosing function chain, variable name: `"score"`,
-  `"ui::scroll"`, `"ui::draw/row"`). Declaration order does not matter.
-- `path` is the chain of callsites and loop iterations that reached the
-  declaration, so each callsite, recursion depth and caller iteration gets its
-  own slot ([one slot per call path](language-guide.md#one-slot-per-call-path)).
-  A top-level declaration runs on the empty path: one declaration, one slot.
-  `state(key)` keys by the value and ignores the path.
+  `"ui::scroll"`, `"ui::draw/row"`), so declaration order does not matter.
+  `path` is the chain of callsites and loop iterations that reached the
+  declaration ([one slot per call path](../features/inline-state.md#one-slot-per-call-path));
+  it is empty for a top-level declaration, and `state(key)` keys by the value
+  and ignores it. The design is in
+  [../dev/state-call-paths.md](../dev/state-call-paths.md).
 - After each run, `sweep_untouched_state` drops keys the run did not touch, so
   state for deleted code, removed list items, or paths an edit no longer
   produces does not leak.
-- `get_state_json` / `set_state_from_json` serialize state for tooling.
-  `Env::get_state`/`set_state` and the JSON setters address **top-level slots
-  only**; a pathed slot has no name to address it by and renders in
+- `get_state_json` / `set_state_from_json` serialize state for tooling, and
+  `snapshot_state` / `restore_state` / `diff_state` copy and compare the whole
+  map ([time-travel.md](../features/time-travel.md#what-the-runtime-provides)
+  has when to use a snapshot and when a fork). `Env::get_state`/`set_state` and the JSON setters address **top-level
+  slots only**; a pathed slot has no name to address it by and renders in
   `get_state_json` under its path (`[3]/row/hovered`).
 
 **Host-invoked functions get a root path of their own.** `Env::call_function`
@@ -559,10 +567,7 @@ both, put it in a top-level `state var` and read it with `get`.
 
 ## Hot reload
 
-`Env::module_manifest(pid)` lists every source file a program was compiled
-from (name, filesystem origin, content hash). petal-sdl's file watcher watches
-those directories, so editing an imported module reloads its importer. On
-change:
+One call brings a running program up to date with its source:
 
 ```rust
 let report = env.reload_program(stack, &source, Some(&path))?;
@@ -570,13 +575,32 @@ let report = env.reload_program(stack, &source, Some(&path))?;
 ```
 
 `reload_program` diffs each source file against what the program was compiled
-from and takes the cheapest exact path: a layout edit only moves source
-positions, a value edit is written into the running program, and anything else
-is the recompile below ([hot-reload.md](hot-reload.md)). Either way it keeps
-the static values the edit cannot have changed, and `report.statics` says
-which were rebuilt and which `state` cells kept a value their initializer
-would no longer give; print `report.static_lines()` after a reload, as the
-SDL host does. The recompile, which a host can also call directly, is:
+from and does only the work the edit calls for; whichever path it takes, the
+program and its state afterwards are what a full recompile would have left.
+What each outcome means, keeps and costs is in
+[../features/hot-reload.md](../features/hot-reload.md). On the host side:
+
+- **Knowing when to call it.** `watch_program_sources` (polling) or
+  `program_source_paths` (for OS notifications) cover the entry file and
+  every imported module that came from disk, as described under
+  [The embedding lifecycle](#the-embedding-lifecycle); the loop is in
+  [embedding-guide.md](embedding-guide.md#hot-reload). `module_manifest(pid)`
+  lists every source of a program, in-memory ones included (name, origin,
+  content hash).
+- **Errors.** A failed reload returns a `LoadError` and leaves the old
+  program running.
+- **The report.** `ReloadReport` carries `outcome`, `change`,
+  `changed_files`, `state_preserved`, `state_dropped`, `fallback` and
+  `statics`: which static values were rebuilt, and which `state` cells kept a
+  value their initializer would no longer give. Print
+  `report.static_lines()` after a reload, as the SDL host does.
+- **A value without a file write.** `set_config_value(stack, file, path,
+  &value)` sets one literal of a top-level binding in the running program (a
+  slider drag), and `program_source(pid, file)` returns the edited text to
+  save when the drag ends
+  ([Setting a value without writing the file](../features/hot-reload.md#setting-a-value-without-writing-the-file)).
+
+The recompile is also available on its own:
 
 ```rust
 let new_program = env.compile_program_at(pid, &source, &path)?;
@@ -590,7 +614,7 @@ every static value (called directly it follows nothing: `reload_program` is
 what keeps them) and invalidates cached bytecode. Because the id is a name hash, reordering
 declarations preserves state; renaming a variable, or moving it between
 functions or modules, drops it. See
-[program-modification.md](program-modification.md#state-preserving-hot-reload-transfer_state)
+[../features/program-modification.md](../features/program-modification.md#state-preserving-hot-reload-transfer_state)
 for the call-structure caveats.
 
 ## Immutability and the in-place gate
@@ -617,8 +641,8 @@ Petal values are immutable **by construction**, not by runtime check:
 
 ### Declaring native effects honestly
 
-The frame gate ([frame-gate.md](dev/frame-gate.md)) skips a whole run whose
-inputs did not move; memoized scopes ([memo-scopes.md](dev/memo-scopes.md))
+The frame gate ([frame-gate.md](../dev/frame-gate.md)) skips a whole run whose
+inputs did not move; memoized scopes ([memo-scopes.md](../dev/memo-scopes.md))
 skip a single user-function call whose arguments and reads did not move, and
 **replay** it instead. Both decide from the native's `NativeEffects` row and
 nothing else, so the row has to describe what the native does *to the host*,
@@ -732,23 +756,27 @@ cost of being wrong.
   viewport, random stream, theme, font provider, host or game state, handle
   liveness, or anything about the program's source — whether or not an
   `InputClasses` bit exists for it. A call with constant arguments is then
-  itself a constant, so a top-level table built from such calls is a static
-  value: evaluated once and kept on the stack until an edit reaches it
-  (the static-value cache, `core/src/static_cache.rs`, on under the `fast`
-  and `replay` policies). **A wrong `CONST` is a stale value until an edit
-  to the declaration or to something it depends on**: a reload keeps the
-  static values the edit cannot have changed, so reloading no longer
-  flushes it. There is no revision to bump and no frame on which it is
-  recomputed. `Env::clear_static_values(stack)` drops what a stack holds,
-  for a host that knows it changed something such a native answers from;
-  `Env::static_values(stack)` lists the values and names any that could not
-  be kept (one holding a function, a `var` cell, a handle or a pending
-  result is rebuilt every run instead), and `Env::set_static_cache(false)`
-  turns the cache off. `Env::take_static_warnings(stack)` (or
-  `take_all_static_warnings()`) hands out one line per value that could not
-  be kept, each once per load and once more after a reload: call it after a
-  run and print what it returns, as `petal run` and the SDL host do. The
-  cache prints nothing by itself.
+  itself a constant, so a table built from such calls is a
+  [static value](../features/static-values.md): evaluated once and kept on
+  the stack until an edit reaches it. **A wrong `CONST` is a stale value
+  until an edit to the declaration or to something it depends on**: a reload
+  keeps the static values the edit cannot have changed, so reloading does
+  not flush it. There is no revision to bump and no frame on which it is
+  recomputed.
+
+The calls a host has for the values a stack keeps:
+
+- `Env::clear_static_values(stack)` drops what a stack holds, for a host
+  that knows it changed something such a native answers from.
+- `Env::static_values(stack)` lists the values and names any that could not
+  be kept. A value holding a function, a `var` cell, a handle or a pending
+  result is rebuilt every run instead
+  ([Values that cannot be kept](../features/static-values.md#values-that-cannot-be-kept)).
+- `Env::take_static_warnings(stack)` (or `take_all_static_warnings()`) hands
+  out one line per value that could not be kept, each once per load and once
+  more after a reload. Call it after a run and print what it returns, as
+  `petal run` and the SDL host do. The cache prints nothing by itself.
+- `Env::set_static_cache(false)` turns the cache off.
 
 So `CONST` is opt-in and the default is dynamic:
 
@@ -801,7 +829,7 @@ existed has no constant natives until it opts in.
 and `petal-ui-run --static-audit` watch every dynamic input while a static
 top-level term is being evaluated and name the native that touched one
 (`core/src/static_audit.rs`; see
-[CLI.md](CLI.md#checking-the-answer---static-audit)). An embedder runs it
+[../CLI.md](../CLI.md#checking-the-answer---static-audit)). An embedder runs it
 over its own natives:
 
 ```rust
@@ -866,30 +894,43 @@ check the host saw every call" catches the next one.
 
 ## Existing embedders
 
-- **petal-sdl** (`integrations/petal-desktop-sdl/`) — the reference native
-  embedder. Per frame: translate SDL events into `petal_ui::InputState`, bind
-  the input snapshot and frame info, `reset_stack` + `run`, drain
-  `draw_commands`, rasterize. Hot reload via `module_manifest` +
-  `transfer_state`. Its JSON protocol (pause/step/state/screenshot over
-  stdin/stdout) drives the same contract headlessly for agents and tests.
+Each of these is the place to read one part of the API in use.
+[building-apps.md](building-apps.md) describes how they layer, and the
+top-level [README](../../README.md#building-a-full-app-with-petal) lists every
+integration and app.
+
 - **petal-ui** (`core-libs/petal-ui/`) — the reusable layer: the input vocabulary
   (`InputEvent`, `InputState`), the `DrawCommand` enum (with a
   `Host { tag, data }` pass-through so embedder-specific natives keep their
   place in the command stream), the `ui` interface package (scripts write
   `import ui`), and a `Headless` harness that mirrors the frame contract
   for tests.
+- **petal-sdl** (`integrations/petal-desktop-sdl/`) — the reference native
+  embedder. Per frame: translate SDL events into `petal_ui::InputState`, bind
+  the input snapshot and frame info, ask `run_needed`, `reset_stack` + `run`,
+  drain `draw_commands`, rasterize. Hot reload is an OS file watcher over
+  `program_source_paths` that calls `reload_program` (`src/watcher.rs`). Its
+  JSON protocol (pause/step/state/screenshot over stdin/stdout) drives the
+  same contract headlessly for agents and tests. Its `Host` trait is the seam
+  the `petal-fps` and `petal-fantasy-nes` example hosts build on.
 - **petal-c-bridge** (`integrations/petal-c-bridge/`) — the C ABI and C++
   wrapper ([embedding-c.md](embedding-c.md)). One `Env` + program + stack per
   `pb_vm`; every C callback and emitter is a `register_native_boxed` closure
-  owning its userdata; hot reload via `compile_program_diag` +
-  `transfer_state` + `watch_program_sources`; values cross as decoded
-  `pb_value` trees rather than JSON.
-- **petal-web-html** (`integrations/petal-web-html/`) and **diagram-canvas**
-  (`examples/custom-apps/diagram-canvas/`) — wasm-bindgen
-  `PetalRuntime` structs owning an `Env`, with the same channels marshalled as
-  JSON strings across the wasm boundary. petal-web-html returns a retained
-  element tree instead of draw commands; diagram-canvas exposes
-  `run_speculative` for isolated what-if frames.
+  owning its userdata; hot reload via `watch_program_sources` +
+  `reload_program`; values cross as decoded `pb_value` trees rather than
+  JSON.
+- **petal-web-canvas** (`integrations/petal-web-canvas/rust/`) and
+  **petal-web-html** (`core/src/wasm.rs`, built with the `wasm` feature) —
+  wasm-bindgen `PetalRuntime` structs owning an `Env`, with the same channels
+  marshalled as JSON strings across the wasm boundary. petal-web-canvas
+  returns petal-ui draw commands and exposes `run_speculative` for isolated
+  what-if frames (the `diagram-canvas` example app uses it); petal-web-html
+  returns a retained element tree instead of draw commands.
+- **Garden** (`garden/garden-script/`) — a config host and a panel host over
+  petal-ui: output buffers read back as layout and theme
+  ([embedding-guide.md](embedding-guide.md#observing-function-calls)), a
+  system font source, emit tracing for its editor, and goal-based writes back
+  to the user's script.
 
 ## Current limitations
 
@@ -897,8 +938,9 @@ check the host saw every call" catches the next one.
    closure (`register_native_boxed`), but the effect audit and the memo see
    only what it does through `PetalCxt`; its row has to declare what the
    captures read and whether it mutates them.
-2. **Natives must be registered before `load_program`**, so the native set
-   cannot grow while a program is loaded. Handle classes can.
+2. **A native must be registered before the load that refers to it.** A
+   program already loaded reaches a native registered later only after a
+   reload that recompiles. Handle classes can be added at any time.
 3. **Natives cannot call Petal closures.** Host-driven callbacks must be
    inverted into data (command buffers) or go through `Env::call_function`
    between runs.

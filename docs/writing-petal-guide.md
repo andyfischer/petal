@@ -15,13 +15,9 @@ rather than repeating them.
 
 ## 1. Setup, and the loop you will actually use
 
-Install a prebuilt binary:
-
-```bash
-curl -fsSL https://petal-lang.org/install.sh | sh    # installs to ~/.petal/bin
-```
-
-Or build from source in this repo:
+[Getting Started](Getting_Started.md#install) has the one-line install of the
+prebuilt `petal` binary. In a checkout of this repository you can build it
+instead:
 
 ```bash
 make build                       # binary at core/target/debug/petal
@@ -88,7 +84,7 @@ Things to notice, because each is a rule you will meet again:
 - **The last expression is the return value.** `Task.label` has no `return`.
   An explicit `return expr` exists for early exit; a bare `return` returns
   `nil`. A function declared `-> nil` is the exception: it has no implicit
-  return ([Implicit Return Values](implicit-return-values.md)).
+  return ([Implicit Return Values](syntax/implicit-return-values.md)).
 - **`{}` inside a string interpolates**, like a JS template literal but with the
   plain double quote: `"[{mark}] {t.title}"`.
 - **Type annotations are optional and advisory.** `title: string` and
@@ -195,7 +191,8 @@ prints. The error names the chain (`TILES calls tile`, `tile calls print`),
 so a debugging `print` left in a constructor is caught instead of quietly
 turning a table into per-frame work. It is top level only, never assigned,
 and holds data, not functions. Scalars (`let NODE_W = 140`) gain nothing from
-it; use it where the value is a table or is computed.
+it; use it where the value is a table or is computed. The full rule is in
+[`const`](language-guide.md#const--a-value-that-must-be-constant).
 
 **Do not park a constant table in `state`** to avoid rebuilding it. A `state`
 cell keeps its first value across hot reloads, so the table stops following
@@ -238,7 +235,10 @@ cell's current value.
 ```
 
 Prefer `let`. Every `var` is a place the dataflow story goes dark, and
-`petal graph` loses precision there.
+`petal graph` loses precision there. [`var`: mutable cells](syntax/var.md) has
+the complete rules for [`var` and `set`](syntax/var.md#declaring-and-writing-a-cell)
+and [`get`](syntax/var.md#reading-a-cell-get), and explains how cells work
+underneath.
 A `var` only earns its keep when a nested `fn` or lambda reads or writes it.
 An accumulator that stays in one function is a `let` rebind, even across
 loops and branches:
@@ -263,13 +263,19 @@ into a `var` (or a `state` into a `state var`), puts `set` on every write and
 
 `state` declares a slot that is initialized once and keeps its value across
 subsequent runs of the program and across hot reloads. This is what makes a
-script that re-runs every frame able to remember anything.
+script that re-runs every frame able to remember anything. This section is
+the short version; [Inline state](features/inline-state.md) is the reference.
 
 ```petal
 state hits = 0
 hits += 1
 print(hits)    // 1 on the first run, 2 on the second, ...
 ```
+
+A host that runs the script every frame keeps the slots between runs. `petal
+run` is a single run, so it prints `1` every time and warns that the script
+declares state; `petal run --state-storage hits.json app.ptl` keeps the slots
+in a file between invocations.
 
 The rule that surprises people: **which slot you get depends on the call path**
 — the chain of callsites and loop iterations that reached the declaration. Same
@@ -296,10 +302,12 @@ Consequences worth memorizing:
   React's un-keyed-list cost when the list reorders.
 - When identity matters more than position, key it: `state(id) hp = 100` ignores
   the call path entirely and gives one slot per key value.
-- A keyed slot outlives whatever owned the key. Deleting entity 7 from your
-  list does not free `state(7)`; the slot sits unused (a small leak, not a
-  bug), and a new entity that reuses id 7 inherits its old value. Use ids that
-  are never reused when that matters.
+- A slot that a run does not reach is dropped when that run ends. A `state`
+  behind an `if` that was not taken, or a `state(7)` for an entity that is no
+  longer in the list, starts from its initializer the next time it is reached.
+  To keep a value through runs that do not use it, declare it at the top
+  level, outside any condition
+  ([How long a slot lives](features/inline-state.md#how-long-a-slot-lives)).
 
 ```petal
 state var total = 0                          // one cell for the whole program
@@ -310,14 +318,11 @@ fn accumulate(v)
 end
 ```
 
-*Every* function reads a module-level `var` with `get` — plain helpers called
-from the top level (`new_game()`, `build_level(get level)`) as much as
-callbacks. Only module scope itself reads the cell bare. `petal check` reports
-a bare read inside a function, so this is a compile-time slip, not a silent
-one.
+*Every* function reads a module-level `var` with `get`, plain helpers called
+from the top level as much as callbacks. Only module scope itself reads the
+cell bare, and a bare read inside a function is a compile error.
 
 ```petal
-
 fn health(id, damage)
   state(id) hp = 100                         // one cell per entity id
   hp -= damage
@@ -470,30 +475,24 @@ A plain `state` does not work for the second shape. `state` persists, but it
 is written with `=`, and `=` from inside a function is the error from
 [§3](#3-bindings-let-var-state) whether the name is a `let` or a `state`. A
 `state` that only module scope writes can stay a `state`; one that a function
-must write becomes `state var`. (A function may still *read* a plain `state`,
-but it reads the value captured where the function is written, and `petal
-check` warns when that is a run behind.)
+must write becomes `state var`
+([Reading and writing from other functions](features/inline-state.md#reading-and-writing-from-other-functions)).
 
 **The writes are in place.** `set xs[i] = v`, `set r.f = v` and `set xs =
 append(xs, v)` edit the cell's own container whenever the cell is its only
 holder, from any function, so moving a loop body into a helper does not turn
-each write into a copy of the list. Nothing about values changes: `let snap =
-get xs` still keeps what it read, and the write after it pays for one copy.
-Three things make a write copy when it need not:
-
-- Reading a writing helper's result. A `set` is an expression, so `fn put(i, v)
-  set xs[i] = v end` returns the list. Call such helpers as statements.
-- A call inside the written value: `set xs = append(xs, f(x))`. Bind
-  `let v = f(x)` first.
-- Nesting. `set grid[r][c] = v` rewrites `grid` in place but copies row `r`,
-  and `set ps[i].x = v` copies one record. For data a hot loop writes, keep
-  parallel flat lists.
+each write into a copy of the list. Three habits keep it that way: call a
+writing helper as a statement instead of reading its result, bind
+`let v = f(x)` before `set xs = append(xs, v)`, and keep data that a hot loop
+writes in parallel flat lists, because a nested write (`set grid[r][c] = v`)
+copies the inner row. The reasons are in
+[Writing a container in place](syntax/var.md#writing-a-container-in-place).
 
 `examples/games/physics-playground` is the worked example of both shapes:
 `physics.ptl`'s `step` solves contacts with closures over its local arrays, and
 `app.ptl` carries out its edits (load a scene, undo, pin, delete) with
 functions over `state var`s. The rules behind this are in
-[`var`: mutable cells](var.md).
+[`var`: mutable cells](syntax/var.md).
 
 The classic newcomer bug is dropping the result of a pure call. The compiler
 lints it:
@@ -563,7 +562,8 @@ JSON or a brace-bearing format string fails with
 print("\{\"a\": 1}")     // {"a": 1}
 ```
 
-(For real JSON, `json_stringify` / `json_parse` exist — see §9.)
+(For real JSON, `import json` gives you `json_stringify` and `json_parse`; see
+[§9](#9-the-builtins-you-will-actually-use).)
 
 **`nil` compares with `==` and `!=`**, and every other value is `!= nil`. So
 `panel_store_get(k) == nil` and `if x != nil then … end` both work; `??` is the
@@ -595,8 +595,9 @@ the usual line parsing — between them most table and board rendering is a
 one-liner.
 
 **The operator set is small, and the boolean ones are symbols.** There is no
-`not` / `and` / `or` — those parse as identifiers and produce a confusing
-`Expected ',' between arguments`.
+`not` / `and` / `or`. Those parse as identifiers, and the error says which
+symbol to write: ``Expected ',' between arguments — Petal spells logical not
+as `!` ``.
 
 | | |
 |---|---|
@@ -664,11 +665,12 @@ end
 
 `petal suggest` points these out, and tells `-> nil` from `-> list` by whether
 any caller uses the result. Every position that does and does not capture a
-loop is listed in [Implicit Return Values](implicit-return-values.md).
+loop is listed in [Implicit Return Values](syntax/implicit-return-values.md).
 
-`while` is statement-only — no collecting form. A `for … end` also cannot be
-piped where it stands (`for x in xs do x end |> len()` is a parse error); bind
-it first, then pipe the name.
+`while` is statement-only — no collecting form. A `for … end` that starts a
+statement cannot be piped where it stands (a line `for x in xs do x end |>
+len()` is a parse error, `Unexpected token: '|>'`); in value position it can
+(`let n = for x in xs do x end |> len()`).
 
 One thing to keep straight: a collecting loop cannot thread an accumulator — its
 value is the list of its iterations, not a running total. When you want to carry
@@ -859,18 +861,15 @@ positional ones. Reach for it when a call is a row of same-typed literals —
 `pill(8, 4, 120, 24, "Save")` does not — and for class constructors with more
 than two or three fields. Names bind to the callee's parameter slots directly;
 no record is built, so it costs nothing a positional call doesn't beyond the
-name lookup. The names are the callee's own — your `fn`s, lambdas, methods,
+name lookup. The names are the callee's own: your `fn`s, lambdas, methods,
 constructors and imported functions use the names they declare, and **builtins
 use the names in the [Builtins Reference](Builtins.md)**
-(`clamp(v, lo: 0, hi: 1)`, `map_range(value: t, in_lo: 0, in_hi: 1, out_lo: a,
-out_hi: b)`, `xs.slice(start: 1, end: 3)`). The `ui` package's draw calls name
-every shape they take, and the names pick the shape:
-`draw_rect_outline(x: 0, y: 0, w: 10, h: 4, c: red, width: 2)`,
-`draw_circle(center: p, radius: 6, c: red)` — see the
+(`clamp(v, lo: 0, hi: 1)`, `xs.slice(start: 1, end: 3)`). The `ui` package's
+draw calls take several shapes, and the names pick the shape:
+`draw_circle(center: p, radius: 6, c: red)`; see the
 [signature table](../core-libs/petal-ui/docs/components.md#draw-primitives--fills-and-strokes).
-Only the variadic builtins, `print` and `format`, take no names. Every parameter without a default still needs a
-value, and a wrong name is an error `petal check` catches. See
-[Named Arguments](language-guide.md#named-arguments).
+A wrong name is an error `petal check` catches. The binding rules and the
+errors are in [Named Arguments](syntax/function-overloading.md#named-arguments).
 
 **Parameters can have defaults**: `fn button(label, w = 120, h = 24, on = false)`,
 called as `button("Save")` or `button("Save", on: true)`. Use one where most
@@ -880,7 +879,7 @@ The default is an *expression that runs on every call that omits the argument*
 time and `fn stamp(at = time())` reads the clock each time, and it may use the
 parameters before it (`fn box(w, h = w)`). Defaulted parameters go last;
 passing `nil` is passing a value, not asking for the default. See
-[Default Parameter Values](language-guide.md#default-parameter-values).
+[Default Parameter Values](syntax/function-overloading.md#default-parameter-values).
 
 **Method syntax reaches builtins, not your own functions.** `value.name(args)`
 falls back to a **builtin** with the receiver as the first argument, which is
@@ -895,18 +894,21 @@ cost nothing at runtime and are worth adding on public function signatures, on
 and on parameters you want method calls pinned on. Use `num` for a slot that
 takes an int or a float — that is most arithmetic.
 
-The vocabulary is closed, and every name is a **single bare word**: `int`,
-`float`, `num` (int *or* float), `bool`, `string` (alias `str`), `list`,
-`record`, `function`, `nil`, `enum`, `vec2`, `vec3`, `element`, `any` — plus the name of
-any class or enum. (`k: Kind` is a variant of the enum `Kind`: passing another enum's variant warns, and so does reading a field no `Kind` has.) There are no parameterized types: `list<int>` and record shapes are
-not expressible, so `list` and `record` are opaque and their elements are never
-checked. An unknown name warns (`unknown type name \`banana\``) rather than
-failing. An `int` satisfies a `float` slot; the reverse needs an explicit
-`int(x)`.
+The vocabulary is closed, and every name is a **single bare word**. The ones
+you will write are `int`, `float`, `num` (int *or* float), `bool`, `string`
+(alias `str`), `list`, `record`, `function`, `nil`, `vec2`, `vec3` and `any`,
+plus the name of any class or enum; [Type Annotations](language-guide.md#type-annotations)
+lists the rest. (`k: Kind` is a variant of the enum `Kind`: passing another
+enum's variant warns, and so does reading a field no `Kind` has.) There are no
+parameterized types: `list<int>` and record shapes are not expressible, so
+`list` and `record` are opaque and their elements are never checked. An
+unknown name warns (`unknown type name \`banana\``) rather than failing. An
+`int` satisfies a `float` slot; the reverse needs an explicit `int(x)`.
 
 **Mark your tuning knobs with `config let`.** It evaluates exactly like a `let`;
 what changes is that the goal-based editing tools and live-editing hosts prefer
-to rewrite *those* bindings and leave the rest of the program alone.
+to rewrite *those* bindings and leave the rest of the program alone
+([`config let`](syntax/config-let.md)).
 
 ```petal
 config let offset = 10
@@ -1043,51 +1045,50 @@ petal check --json app.ptl       # {"ok": true, "warnings": [...]} or a structur
 ```
 
 `check` sorts what it finds into errors and warnings. An **error** is a line
-that fails whenever it runs, and `check` exits 1 on it: a call to, or read of, a
-name nothing defines (it would fail with `Unknown function` or
-`Undefined variable`), a call whose argument count no overload accepts, and a
-named argument no parameter has (a builtin's parameters included).
+that fails whenever it runs, and `check` exits 1 on it: a call to, or read of,
+a name nothing defines, a call whose argument count no overload accepts, a
+named argument no parameter has. `petal run` starts with the same check and
+does not run a program that has one.
 
-**Warnings** are advice, and exit 0 unless you pass `--strict`: mismatched
-annotations, unknown type names, a builtin handed a type it refuses
-(`sqrt("x")`), a call whose argument count picks an overload whose body cannot
-take those arguments, a discarded pure call, a function capturing a module
-`state` that is rebound below it. `--strict` is what you want in CI.
+**Warnings** are advice, and exit 0 unless you pass `--strict`: a mismatched
+annotation, an unknown type name, a discarded pure call, a call to a function
+that could not be hoisted above it. The complete lists are in
+[Errors and warnings](CLI.md#errors-and-warnings).
 
-What counts as defined does not depend on a host: a name is declared in the
-file, bound by an import, or a core builtin. A script for a petal-ui host
-starts with `import ui`; `bloom`, `text_layout` and `glsl` are bundled too,
-and so are the builtin packages (`import creative`, `import vec2`, …). A
-Garden panel adds `import garden` (config scripts: `import garden_config`)
-and petal-desktop-sdl's extras are `import sdl`. Those host packages are not
-bundled: `check` finds them when the nearest `petal.toml` above the script
-lists them under `[dependencies]` (see [packages.md](packages.md)), or ad hoc
-with `-I garden/garden-script/packages` /
-`-I integrations/petal-desktop-sdl/packages`. `petal fix-imports` adds the
-import lines a script is missing.
+A name is defined by a declaration in the file, by an import, or by being a
+core builtin; no host is consulted. So a script for a graphical host starts
+with `import ui`, and it checks clean under the plain CLI even though only that
+host can run it. `petal fix-imports app.ptl` adds the import lines a script is
+missing. [Which names exist](CLI.md#which-names-exist) says where `check`
+finds each host's package.
 
-Every `--json` error carries a `phase` (`lex` / `parse` / `module` / `compile` /
-`lower` / `runtime`) telling you exactly which stage rejected the program, and
-an `errors[]` array with *every* diagnostic rather than only the last.
+With `--json`, every error carries a `phase` naming the stage that rejected
+the program, and an `errors[]` array with *every* diagnostic rather than only
+the last ([Error phases](CLI.md#error-phases)).
 
-### `petal lint` — formatting, mechanically
+### `petal fmt` and `petal lint` — layout and spelling, mechanically
 
 ```bash
-petal lint app.ptl           # report; exit 1 if changes needed
-petal lint --fix app.ptl     # rewrite in place
-petal lint --check app.ptl   # CI mode, silent on success
+petal fmt app.ptl            # rewrite in the canonical layout (whitespace only)
+petal fmt --check app.ptl    # CI mode: write nothing, exit 1 if it would change
+petal lint app.ptl           # report code that has a better spelling; exit 1 if any
+petal lint --fix app.ptl     # apply the fixes in place
 ```
 
-Two passes: 2-space re-indentation (comments, string contents and JSX text are
-preserved byte for byte) and deletion of identity casts like `int(n)` where `n`
-is already an `int`. Add `--verify` to make it prove the rewrite is IR-equal
-before writing anything.
+`fmt` has one layout and no options: 2-space indentation and consistent
+spacing, with strings, comments and hand-made alignment left alone. `lint`
+runs named rules, each with a fix: a `var` that no nested function shares
+becomes a `let`, `x = x + e` becomes `x += e`, a cast of a value already of
+that type is dropped, an `if`/`elsif` chain over literals becomes a `match`.
+`petal lint --rules` lists them, and `--fix --verify` proves a rewrite against
+the compiled IR before writing it.
 
 One rule is off unless you name it: `petal lint
 --rules-include=state-as-constant` reports a top-level `state` that nothing
 assigns and whose initializer is constant, and with `--fix` rewrites it to
 `const`. That is right for a table and wrong for a cell your host writes by
-name; put `// petal-lint-ignore state-as-constant` on such a line.
+name; put `// petal-lint-ignore state-as-constant` on such a line. See
+[`fmt`](CLI.md#fmt--canonical-layout) and [`lint`](CLI.md#lint--rules-with-fixes).
 
 ### `petal suggest` — safe refactors, on request
 
@@ -1097,25 +1098,17 @@ petal suggest --only named-args --apply app.ptl   # name the arguments of long c
 petal suggest --only types --apply app.ptl        # write the implied type annotations
 ```
 
-Suggests changes that make a file say more without making it do anything else.
-Two kinds are rewrites: **type annotations** the program already implies, and **named
-arguments** for calls that pass three or more by position —
-`draw_rect(0, 0, 320, 48, PANEL)` becomes
-`draw_rect(x: 0, y: 0, w: 320, h: 48, c: PANEL)`. Nothing is written without
-`--apply`, and `--apply` proves each change first: an annotation must add no
-type warning, and a named-argument rewrite must compile to the same program
-(the callee is resolved for certain, the same overload variant is selected,
-every argument lands in the same parameter, in the same order). It leaves a
-call alone rather than guess — an unknown callee, a method dispatched at
-runtime, a count two overload shapes share — and it keeps the subject and
-placeholder parameters positional (`clamp(t, lo: 0, hi: 1)`,
-`lerp(a, b, t: 0.5)`).
-
-A third kind, **advice**, is a comment rather than a rewrite: a heuristic
-remark such as "this looks like a hand-written insertion sort — use `sort` or
-`sort_by`". It has no fix attached and `--apply` never acts on it; read it and
-decide.
-See [CLI.md](CLI.md#suggest--suggest-safe-refactors-for-a-file).
+Suggests changes that make a file say more. Three kinds are rewrites: **type
+annotations** the program already implies, **named arguments** for calls that
+pass three or more by position (`draw_rect(0, 0, 320, 48, PANEL)` becomes
+`draw_rect(x: 0, y: 0, w: 320, h: 48, c: PANEL)`), and **return types** for a
+function that ends in a loop (`-> nil` or `-> list`, see
+[§6](#for-in-value-position-builds-a-list)). Nothing is written without
+`--apply`, and `--apply` proves each change first; it leaves a call alone
+rather than guess. The fourth kind, **advice**, is a comment such as "this
+looks like a hand-written insertion sort — use `sort` or `sort_by`". It has no
+fix attached; read it and decide. What counts as evidence and what each proof
+checks are in [CLI.md](CLI.md#suggest--suggest-safe-refactors-for-a-file).
 
 ### `petal apply-change` — refactors that change behaviour
 
@@ -1130,18 +1123,16 @@ refactor that does not: you have decided a binding should be a mutable cell,
 usually because the compiler said "`score` is bound outside this function",
 and the change has to be made at every mention. `convert-to-var` rewrites the
 declaration (`let` → `var`, `state` → `state var`), every `=` write on it
-(→ `set`), and every read inside a nested function (→ `get`); reads in the
-declaring function stay bare. Functions that mention the binding now see the
-live value instead of the one captured where they were written.
+(→ `set`), and every read inside a nested function (→ `get`). Functions that
+mention the binding now see the live value instead of the one captured where
+they were written.
 
 `--target` is a path of enclosing declarations ending in the binding: `/score`
-for a module-level one, `step/vx` for a local of `step`, `row/out[2]` for the
-second `out` in `row`. Get it wrong and the error lists the paths it could
-have meant. For a `pub` binding the change follows it into the files that
-import it (add `--from main.ptl` to say which program to search), and it
-refuses if one of them writes the binding. Nothing is written unless every
-touched file compiles afterwards.
-See [CLI.md](CLI.md#apply-change--refactors-that-change-behaviour).
+for a module-level one, `step/vx` for a local of `step`. Get it wrong and the
+error lists the paths it could have meant. Nothing is written unless every
+touched file compiles afterwards. Target paths, `pub` bindings and the
+refusals are in
+[CLI.md](CLI.md#apply-change--refactors-that-change-behaviour).
 
 ### `petal run --observe` — what was everything set to?
 
@@ -1173,15 +1164,18 @@ from a term, printing every recorded value along the chain:
 $ petal explain --term b -e 'let a = 2
 let b = a * 10
 print(b)'
-Explain t119 (b):
+20
+Explain t141 (b):
   Provenance chain:
-    => t119 b [line 2, column 9] = 20
-     . t117 - [line 2, column 9] = 2
-     . t118 - [line 2, column 13] = 10
-     . t116 a [line 1, column 9] = 2
+    => t141 b [line 2, column 9] = 20
+     . t139 - [line 2, column 9] = 2
+     . t140 - [line 2, column 13] = 10
+     . t138 a [line 1, column 9] = 2
 ```
 
-`--term` takes a variable name, a term id (`72`), or `t72`.
+`--term` takes a variable name, a term id (`72`), or `t72`. The ids are the
+compiler's own numbering and change as the compiler does; the names and
+positions are what to read.
 
 ### Static dataflow queries
 
@@ -1196,7 +1190,8 @@ These do *not* run the program:
 
 All of them stop at a `var` cell and report it as a *frontier* entry naming the
 cell, its declaration and every `set` that could have supplied the value — one
-more reason to prefer `let`.
+more reason to prefer `let`
+([Cells and the frontier](CLI.md#cells-and-the-frontier)).
 
 ### Pipeline dumps
 
@@ -1205,6 +1200,7 @@ petal show-tokens -e 'let x = 1'      # lexer
 petal show-ast    -e 'let x = 1 + 2'  # parser
 petal show-ir     -e 'let x = 1 + 2'  # term graph
 petal show-bytecode f.ptl             # VM lowering
+petal show-static f.ptl               # which top-level declarations are static
 ```
 
 All take `--json`. You mostly need these when a construct isn't parsing the way
@@ -1228,17 +1224,16 @@ seconds.
 
 ### Editors
 
-`petal lsp` speaks LSP over stdio: diagnostics on open/change, hover,
-go-to-definition and completion. Point your editor's LSP client at it.
-Syntax highlighting lives in [`editor-support/`](../editor-support/README.md) —
-a tree-sitter grammar (Neovim, Helix, Zed, Emacs) and a classic-Vim syntax file.
+`petal lsp` is a language server, and
+[`editor-support/`](../editor-support/README.md) has the syntax highlighting.
+[Getting Started](Getting_Started.md#editor-support) says how to set both up.
 
 ### MCP tools, if you use an AI assistant
 
 `tools/petal-mcp.ts` exposes the same capabilities as tools: `TestSnippet`,
 `CheckSnippet`, `ExplainTerm`, `ShowStage` (tokens / AST / IR / bytecode),
-`PendingReport`, `TraceEmits`, `ProposeEdit`. They build the
-binary automatically. See [dev/mcp-server.md](dev/mcp-server.md).
+`PendingReport`, `TraceEmits`, `ProposeEdit`. The server builds the
+binary on first use. See [dev/mcp-server.md](dev/mcp-server.md).
 
 ---
 
@@ -1272,7 +1267,7 @@ tell you the fix in the message. A sample:
 | a line starting with `-` under the line it should continue | ``` a line that starts with `-` is a new statement (a negation), not a continuation of the line above ``` — from `check` |
 | `n + 1` on a line of its own | ``the value of this expression is discarded, so the line has no effect`` — from `check` |
 | `state split = 0`, then `split(text, ",")` | ``` `split` here is the `state split` declared on line 1, which shadows the builtin `split` ``` — from `check` |
-| `red` where `enum Color` declares `red` | ``Undefined variable: red — did you mean Color.red?`` |
+| `red` where `enum Color` declares `red` | ``` undefined variable `red` — did you mean Color.red? ``` — from `check` |
 | `Color.rde` | ``enum `Color` has no variant `rde` — did you mean Color.red?`` — a compile error |
 | a `match` over `Kind` variants with no arm for `Kind.lane` | ``this match does not cover every variant of `Kind`: no arm for `Kind.lane` `` — a compile error |
 | a `match` where no arm matches the value | ``No matching pattern for value: "tin"`` — at run time; add `when _ ->` if that is expected |
@@ -1288,10 +1283,13 @@ tell you the fix in the message. A sample:
 | A compact map of the surface syntax | [Syntax Overview](syntax/overview.md) |
 | Every builtin, with signatures | [Builtins](Builtins.md) |
 | Every CLI flag and JSON schema | [CLI Reference](CLI.md) |
+| `state` in full: call paths, keys, lifetime | [Inline state](features/inline-state.md) |
+| What a hot reload keeps and rebuilds | [Hot Reload](features/hot-reload.md) |
+| How the debugging tools fit together | [Debugging & Agent Visibility](dev/debugging-visibility.md) |
 | Runnable programs to imitate | [`examples/console/`](../examples/README.md) |
 | Multi-file programs | [Module System](module-system.md) |
 | Dependencies, `petal.toml`, the package commands | [Packages](packages.md) |
-| Building an app or a game on Petal | [Building Apps](building-apps.md) |
+| Building an app or a game on Petal | [Building Apps](usage/building-apps.md) |
 | Why the language is shaped this way | [README](../README.md#goals) |
 
 The single most useful next step is to read `examples/console/` end to end —

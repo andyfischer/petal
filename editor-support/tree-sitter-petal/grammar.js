@@ -182,7 +182,7 @@ module.exports = grammar({
 
     // `native fn name(params) -> type = "host_name"` — the declaration of a
     // function the host implements (rust/src/parse.rs `parse_native_fn_decl`,
-    // docs/ffi.md). No body and no `end`. `native` is a *contextual* keyword
+    // docs/usage/ffi.md). No body and no `end`. `native` is a *contextual* keyword
     // in the real lexer (a keyword only directly before `fn`); as with `as`
     // and `class`, a highlighting grammar can treat it as a literal.
     native_function_declaration: $ => prec(2, seq(

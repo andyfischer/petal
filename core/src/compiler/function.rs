@@ -103,7 +103,7 @@ impl Compiler {
     /// - either side is not a known function set (a non-function binding
     ///   shadows wholesale),
     /// - both come from the same module (a second declaration of the same
-    ///   arity replaces the first — docs/function-overloading.md), or
+    ///   arity replaces the first — docs/syntax/function-overloading.md), or
     /// - the incoming set already covers every arity the outgoing one had.
     pub(super) fn merge_overload_binding(
         &mut self,
@@ -364,7 +364,7 @@ impl Compiler {
     /// `tail_value` says the body's last statement is the function's implicit
     /// return value. It is false only for a `fn` declared `-> nil`, whose body
     /// is compiled entirely in statement position and yields nil (see
-    /// docs/implicit-return-values.md). A lambda has no return-type slot, so it
+    /// docs/syntax/implicit-return-values.md). A lambda has no return-type slot, so it
     /// always passes true.
     ///
     /// `span` is where the function is written (the whole declaration or

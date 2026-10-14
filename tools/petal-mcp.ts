@@ -199,7 +199,7 @@ server.registerTool("TraceEmits", {
     "with its attribution: the call that produced it (callee, span, term id) " +
     "and per-argument edit info (kind literal|binding|computed, resolved " +
     "constant value, span, editable span). This is the observation half of " +
-    "direct manipulation (docs/direct-manipulation.md): use it to see what a " +
+    "direct manipulation (docs/features/direct-manipulation.md): use it to see what a " +
     "live script emitted and which source text each value traces to, then " +
     "use ProposeEdit to turn a change request into concrete source edits.",
   inputSchema: {
@@ -210,7 +210,7 @@ server.registerTool("TraceEmits", {
 server.registerTool("ProposeEdit", {
   title: "Propose Goal-Based Source Edit",
   description:
-    "The goal-based direct-manipulation query (docs/direct-manipulation.md). " +
+    "The goal-based direct-manipulation query (docs/features/direct-manipulation.md). " +
     "Runs Petal code with emit tracing, finds the call that produced emit " +
     "number `emit` on `channel`, and returns source-edit proposals that make " +
     "argument `arg` of that call evaluate to `to`. A literal argument yields " +

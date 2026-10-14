@@ -63,17 +63,9 @@ flags (`--scenario`, `--frames`, `--seed`, `--host-data`, `--out`).
 
 ## 3. Scenario files
 
-A scenario is a list of input events keyed by frame:
-
-```json
-{ "size": [1280, 850], "frames": 120,
-  "events": [
-    {"at": 5,  "mouse_move": [640, 400]},
-    {"at": 6,  "mouse_down": 0}, {"at": 7, "mouse_up": 0},
-    {"at": 20, "key": "ArrowLeft"},
-    {"at": 40, "text": "hello"}
-  ] }
-```
+A scenario is a declarative list of input events keyed by frame (`mouse_move`,
+`mouse_down`, `click`, `key`, `text`, `scroll`, ...). The format is in
+[headless-ui-run.md](headless-ui-run.md#scenario-files).
 
 Two sources:
 
@@ -182,7 +174,7 @@ exit if any `changed`. Verdicts: `identical-ir`, `identical-trace`,
 
 ## 6. Replayability
 
-Every run writes a bundle under `.temp/verify-runs/<timestamp>/<file>/`
+Every run writes a bundle under `.temp/verify-runs/<plan>-<timestamp>/<file>/`
 (gitignored):
 
 ```
@@ -205,7 +197,7 @@ PETAL_SEED=2 petal-ui-run examples/games/snake/app.ptl \
 `petal lint --fix --verify` runs `ir-equal` on the file it just rewrote and
 refuses to write on failure. `--verify=ir` (the default) accepts the semantic
 passes that are expected to change the IR; `--verify=strict` demands IR
-equality of the whole rewrite. See `petal lint --help`.
+equality of the whole rewrite. See `petal help lint`.
 
 ## Not built
 

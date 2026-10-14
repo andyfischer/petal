@@ -6,13 +6,21 @@ as "the file should call `set_color_scheme("dracula")`" and the library
 finds the existing call and updates it, or appends one if there is none.
 Comments, blank lines and everything else in the file stay as they were.
 
-- **Module:** [`core/src/goal_based_editing.rs`](../core/src/goal_based_editing.rs)
+- **Module:** [`core/src/goal_based_editing.rs`](../../core/src/goal_based_editing.rs)
   (`petal::goal_based_editing`)
 - **Built on:** the lossless CST splice primitives in
-  [`core/src/rewrite.rs`](../core/src/rewrite.rs), and the style-preserving
-  literal edits in [`core/src/literal_edit.rs`](../core/src/literal_edit.rs)
+  [`core/src/rewrite.rs`](../../core/src/rewrite.rs), and the style-preserving
+  literal edits in [`core/src/literal_edit.rs`](../../core/src/literal_edit.rs)
   ([source-preservation.md](source-preservation.md))
-- **Reading values back out:** [config-files.md](config-files.md)
+- **Reading values back out:** [../usage/config-files.md](../usage/config-files.md)
+- **From C and C++:** the `pb_source_*` functions
+  ([../usage/embedding-c.md](../usage/embedding-c.md#editing-source-a-script-as-a-config-file))
+
+This page is the full description of the Goal API. How an edit keeps the
+file's formatting is in [source-preservation.md](source-preservation.md).
+Goals about a value a running program *emitted* ("this argument should be
+55") are a different API, in
+[direct-manipulation.md](direct-manipulation.md#the-goal-based-protocol).
 
 ---
 
@@ -53,7 +61,9 @@ implements `Display` and `std::error::Error`, so it works with `?` in any
 ### `Goal`
 
 The intent: a call (`should_call`), a binding's value (`should_set_value`), or
-a place inside a binding's literal (the [path goals](#path-goals)).
+a place inside a binding's literal (the [path goals](#path-goals)). `Goal` is
+an enum, and the place to add further intents (ensure an import, remove a
+call) as they are needed.
 
 #### `Goal::should_call(function, params)`
 
@@ -64,7 +74,10 @@ a place inside a binding's literal (the [path goals](#path-goals)).
 
 `function` is any `Into<String>`. `params` is any iterable of values that
 convert into [`StaticValue`](#staticvalue--structured-values); `&str`,
-`String`, `i32`, `i64`, `f64`, `f32` and `bool` all convert automatically:
+`String`, `i32`, `i64`, `f64`, `f32` and `bool` all convert automatically.
+Arguments of different types cannot share one array literal, so pass a
+`Vec<StaticValue>` for those. The whole argument list is replaced: this goal
+does not edit the arguments one by one.
 
 ```rust
 Goal::should_call("set_color_scheme", ["dracula"]);   // set_color_scheme("dracula")
@@ -77,7 +90,7 @@ Goal::should_call("clear", Vec::<StaticValue>::new()); // clear()
 
 > Reading `name` out of the edited source should yield `value`.
 
-This is the write half of [Petal as a configuration format](config-files.md).
+This is the write half of [Petal as a configuration format](../usage/config-files.md).
 
 - If `name` is bound at top level, the **right-hand side of its last binding**
   is edited to read as `value`. The last binding is the one that decides the
@@ -106,10 +119,8 @@ let other = 1                      let other = 1
 Three things to know:
 
 - **Only what differs is rewritten.** A record or list literal is edited in
-  place: unchanged fields and elements keep their text and comments, a changed
-  scalar is one token, and added or removed elements are inserted and removed
-  individually, formatted like their siblings. See
-  [source-preservation.md](source-preservation.md).
+  place, element by element
+  ([source-preservation.md](source-preservation.md#setting-a-composite-value)).
 - **A right-hand side that is not a literal of the new value's shape is
   replaced whole.** A binding that is not a literal today becomes one:
   `let font_size = if wide then 16 else 12 end` collapses to
@@ -169,9 +180,8 @@ let fx = [                               let fx = [
 ]                                        ]
 ```
 
-New text copies the formatting of its siblings (one line or several, padding,
-separators, trailing comma, indentation); a changed number or color keeps the
-spelling habits of the token it replaces. The rules, and what the edits
+New text is formatted like its siblings, and a changed number or color keeps
+the spelling of the token it replaces. The rules, and what the edits
 guarantee, are in [source-preservation.md](source-preservation.md).
 
 A path that names nothing (`POST.effects[7].amount`, a field of a number, a
@@ -188,7 +198,12 @@ its author put it.
 ```rust
 Goal::should_set_value("tether_slack_m", 0.5).after("tether_max_m")
 Goal::should_set_value("tether_slack_m", 0.5).before("tether_max_m")
+Goal::should_set_value("tether_slack_m", 0.5).with_placement(Placement::End)
 ```
+
+`should_call`, `should_set_value` and `should_insert` take a placement. For
+`should_insert` the anchor is a sibling field of the record
+([path goals](#path-goals)).
 
 | `Placement` | |
 |---|---|
@@ -214,11 +229,11 @@ Values are **structured**, not pre-rendered source. The library renders each
 one into a valid Petal literal, so quoting and escaping are handled for you and
 untrusted input can never break out of a string or inject interpolation.
 
-The type lives in [`core/src/static_value.rs`](../core/src/static_value.rs) and
+The type lives in [`core/src/static_value.rs`](../../core/src/static_value.rs) and
 is re-exported from `goal_based_editing`. It is the same type
-[`get_static_value`](config-files.md#reading) returns when reading, so a value
+[`get_static_value`](../usage/config-files.md#reading) returns when reading, so a value
 round-trips: read it, adjust it, write it back. The variant table and rendering
-rules are in [config-files.md](config-files.md#staticvalue).
+rules are in [../usage/config-files.md](../usage/config-files.md#staticvalue).
 
 There is deliberately **no verbatim/raw-source variant**. An escape hatch that
 rendered caller-supplied text unquoted would defeat the point of structured
@@ -227,7 +242,7 @@ if a case is genuinely missing.
 
 ## See also
 
-- [config-files.md](config-files.md) — reading values out of a `.ptl` file, and
+- [../usage/config-files.md](../usage/config-files.md) — reading values out of a `.ptl` file, and
   the round-trip contract.
 - [source-preservation.md](source-preservation.md) — how an edit keeps the
   file's formatting, and the guarantees it makes.

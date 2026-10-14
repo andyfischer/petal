@@ -17,7 +17,8 @@ Keep the immediate-mode authoring model: a script reads top to bottom, polls
 input (`mouse_x()`, `hovered(r)`, `time()`), keeps `state` where it lives, and
 re-runs every frame. Make the runtime incremental underneath it, so that the
 steady-state cost of a frame tracks **what changed**, not **how big the UI
-is**. `goals.md` names whole-script re-runs as the ceiling on how large a
+is**. The goals document of the time (`goals.md`, since replaced by the
+[README](../../README.md#goals)) named whole-script re-runs as the ceiling on how large a
 Petal app can get; the payoff is a 50,000-row table or a full IDE UI.
 
 Non-goal: beating JIT-compiled JavaScript on a from-scratch run. An

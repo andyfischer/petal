@@ -263,7 +263,7 @@ browser opening a file, and the `Ctrl+W` split/only/close commands all keep
 the saved layout in step with the screen.
 
 `ScriptHost::save_layout` rewrites the source rather than regenerating it,
-through Petal's goal-based editing (`../../docs/goal-based-editing.md`): the
+through Petal's goal-based editing (`../../docs/features/goal-based-editing.md`): the
 node becomes a structured call tree and one goal, "there is a top-level call
 `layout(<tree>)`", updates the existing call in place via a lossless CST
 splice. Comments, a `color_theme` call, helper functions, and `state`

@@ -58,11 +58,13 @@ end
   variables, so it is rejected.
 - **Must be a call argument in a statement.** A bare `@a` with no enclosing
   call (such as `let b = @a + 1`) has nothing to rebind and is rejected.
-- **Not inside deferred or conditional positions.** `@` inside a lambda body,
-  a `match` arm, or a `while` condition is an error, so it can never quietly
-  change evaluation order.
+- **Not inside deferred or conditional positions.** `@` inside a `match` arm
+  or a `while` condition is an error, so it can never quietly change
+  evaluation order.
 - **`let` bindings only.** `@` desugars to `x = f(x)`, which is not allowed on
-  a [`var`](overview.md#var-set-and-get). Write `set x = f(x)` instead.
+  a [`var`](var.md#two-write-keywords). Write `set x = f(x)` instead. For
+  the same reason `@` cannot target a name bound outside the current function
+  ([Cross-function assignment](var.md#cross-function-assignment)).
 
 Each case gives an error pointing at the `@`:
 

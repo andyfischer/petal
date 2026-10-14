@@ -5,7 +5,7 @@ How the host is built. To write a cart, read
 covers building, running and the run modes.
 
 The console is a Shape B app on `integrations/petal-desktop-sdl` (see
-[docs/building-apps.md](../../../../docs/building-apps.md)), the same way
+[docs/usage/building-apps.md](../../../../docs/usage/building-apps.md)), the same way
 `examples/custom-apps/petal-fps` is. The window, event pump, frame
 timing, input, hot reload and the agent/headless/screenshot/record modes are
 all inherited from `petal-sdl`. The Rust here adds only the console itself: a

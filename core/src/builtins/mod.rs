@@ -486,7 +486,7 @@ pub fn register_builtins(table: &mut NativeFnTable) {
         NativeEffects::CONST,
     );
 
-    // Function introspection (experimental; docs/function-introspection.md).
+    // Function introspection (experimental; docs/features/function-introspection.md).
     // VM intrinsics: they read the closure table and the program's source.
     // Append-only, like the rest of this block. Pure but not CONST: the
     // result carries source positions, which an edit moves without touching

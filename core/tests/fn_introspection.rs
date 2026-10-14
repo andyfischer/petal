@@ -1,6 +1,6 @@
 //! `fn_info(f)` / `fn_ast(f)` — function introspection (experimental; see
-//! docs/function-introspection.md), and the `glsl` library built on it
-//! (core-runtime/glsl, docs/petal-to-glsl.md).
+//! docs/features/function-introspection.md), and the `glsl` library built on it
+//! (core-runtime/glsl, docs/game-engine-features/petal-to-glsl.md).
 //!
 //! The library half checks the two things the feature promises: the GLSL it
 //! writes for the eleven post effects of the original experiment is the text

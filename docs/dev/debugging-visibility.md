@@ -44,7 +44,10 @@ options.
 | `run --static-audit` / `run --static-only` | The runtime check of `show-static`: every dynamic input touched while a static term was being evaluated, by declaration, input and call. `--static-only` runs just the static top-level statements (no host needed). |
 | `pending-report [--json]` | Every pending (loading) resource still live after a run. |
 | `propose-edit` | Propose source edits that change an emitted value (the writing half of direct manipulation). |
-| `lint [--fix\|--check]` | Formatter and source normalizer. |
+| `fmt [--check] [--diff]` | Rewrite files in the canonical layout (whitespace only). |
+| `lint [--fix [--verify]] [--rules]` | Report code that has a better spelling; `--fix` rewrites it. |
+| `suggest` | Suggest safe refactors for a file. |
+| `bench --fn <name>` | What a call of a named function costs (see [performance.md](performance.md)). |
 | `ir-equal <a> <b>` | Are two files the same program, ignoring layout? |
 
 `./tools/run-petal.ts` rebuilds the binary before running it.
@@ -79,11 +82,14 @@ Incompleteness is a field on the result, not a convention:
   `truncated` when `max_depth` cuts the chain short.
 
 Runtime error messages ("Caused by:") share the same walk and print the
-frontier for the same reason. See [var.md](../var.md) for the argument.
+frontier for the same reason. The command reference is
+[Cells and the frontier](../CLI.md#cells-and-the-frontier) in CLI.md; see
+[var.md](../syntax/var.md) for the argument.
 
 ### 1b. Observation: every named value, right now
 
-`run --observe` answers a different question from everything above. The
+`run --observe` (reference: [CLI.md](../CLI.md#run--execute-a-program))
+answers a different question from everything above. The
 dataflow queries and the trace answer "how did this value come to be", a walk
 backward through a bounded history. Observation answers "what is everything,
 right now": one slot per named IR term, overwritten on every write, dumped
@@ -134,7 +140,7 @@ object).
 
 For an embedder this is the supported way to read a named value out of a
 script without the script cooperating. See
-[embedding-guide.md](../embedding-guide.md#reading-arbitrary-named-values-observation)
+[embedding-guide.md](../usage/embedding-guide.md#reading-arbitrary-named-values-observation)
 for `Env::observations_mut().enable()` and `Env::get_observations_json`.
 
 ## 2. MCP tools
@@ -185,7 +191,7 @@ on macOS.
 The vitest helpers in `test/vitest/helpers.ts` shell out to the compiled binary:
 `runPetal`, `runPetalError`, `showIrJson`, `showAstJson`, `showTokensJson`,
 `explainJson`, `showProvenanceJson`, and the term lookups `userTerms`,
-`termByName`, `termById`, `termsByOp`. See [testing.md](testing.md#helpers-tstesthelpersts).
+`termByName`, `termById`, `termsByOp`. See [testing.md](testing.md#helpers-testvitesthelpersts).
 
 ## 5. In-language observability
 

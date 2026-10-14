@@ -23,8 +23,8 @@ Two APIs cover the round trip:
 
 | Direction | API | Module |
 |---|---|---|
-| **Read** | `get_static_value(source, name)` / `static_values(source)` / `static_bindings(source)` | [`core/src/static_value.rs`](../core/src/static_value.rs) |
-| **Write** | `Goal::should_set_value(name, value)` | [`core/src/goal_based_editing.rs`](../core/src/goal_based_editing.rs) |
+| **Read** | `get_static_value(source, name)` / `static_values(source)` / `static_bindings(source)` | [`core/src/static_value.rs`](../../core/src/static_value.rs) |
+| **Write** | `Goal::should_set_value(name, value)` and the path goals | [`core/src/goal_based_editing.rs`](../../core/src/goal_based_editing.rs) |
 
 Both use the same type, [`StaticValue`](#staticvalue), so a value read out of a
 file can be adjusted and written straight back.
@@ -61,7 +61,8 @@ font_size = 14        // ← this is what get_static_value returns
 ```
 
 Only **top-level** bindings are configuration. A binding inside a function body
-or a loop belongs to that scope and is invisible to the reader.
+or a loop belongs to that scope and is invisible to the reader. `let`,
+`config let`, `const` and their `pub` forms are all bindings.
 
 ### What counts as static
 
@@ -131,6 +132,9 @@ Each `StaticBinding` carries:
 | `value` | `Ok(StaticValue)`, or `Err(reason)` — the same phrase `NotStatic` carries |
 | `text` | the right-hand side **exactly as written** (`None` for a `fn`/`state` declaration) |
 | `comment` | the comment block directly above the binding, `//` markers stripped (`None` if there is none) |
+| `is_config` | written [`config let`](../syntax/config-let.md): the author declared it a tuning knob |
+| `exported` | written with `pub` |
+| `line` | the 1-based line the binding's statement starts on |
 
 Bindings come back in source order, one entry per name, carrying the last
 binding's value, so a host regenerating the file keeps its ordering.
@@ -147,7 +151,7 @@ documentation.
 ## Writing
 
 Use goal-based editing. The full API is in
-[goal-based-editing.md](goal-based-editing.md).
+[../features/goal-based-editing.md](../features/goal-based-editing.md).
 
 ```rust
 use petal::goal_based_editing::{modify_source_with_goals, Goal};
@@ -159,30 +163,18 @@ let updated = modify_source_with_goals(&source, &[
 std::fs::write("config.ptl", updated)?;
 ```
 
-`should_set_value` states an outcome (reading `name` out of the result yields
-`value`) and the library decides how to get there:
-
-- **The name is bound:** the right-hand side of its last top-level binding is
-  edited to read as the value. Only what differs is rewritten: inside a record
-  or list, unchanged fields and elements keep their text and comments, and new
-  ones are formatted like their siblings
-  ([source-preservation.md](source-preservation.md)). The `let`, the name,
-  comments, blank lines and every other statement are untouched.
-- **The name is not bound:** `let name = value` is inserted, at the end of the
-  file or wherever a [placement](goal-based-editing.md#placement) says.
-- **The goal already holds:** nothing is written. The source comes back
-  byte-identical, so a save that rewrites every field only touches the lines
-  that moved, and `let drag = 0.020000` does not become `let drag = 0.02` on a
-  save that changed nothing about it.
-
-A binding that is not a literal of the new value's shape is replaced whole, so
-it collapses to a literal: `let font_size = if wide_screen then 16 else 12 end`
-becomes `let font_size = 14`. See
-[goal-based-editing.md](goal-based-editing.md#goalshould_set_valuename-value).
+[`should_set_value`](../features/goal-based-editing.md#goalshould_set_valuename-value)
+states an outcome: reading `name` out of the result yields `value`. An
+existing binding is edited where it stands, a missing one is inserted (at the
+end, or where a [placement](../features/goal-based-editing.md#placement)
+says), and a goal that already holds writes nothing, so a save that writes
+back every field touches only the lines whose value changed. The edit keeps
+comments, layout and the spelling of unchanged values; those rules are in
+[../features/source-preservation.md](../features/source-preservation.md).
 
 To change one place inside a binding, or to add or remove one element of a
 list or one field of a record, use the
-[path goals](goal-based-editing.md#path-goals):
+[path goals](../features/goal-based-editing.md#path-goals):
 
 ```rust
 Goal::should_set_path("editor.tab_width", 8);
@@ -207,6 +199,7 @@ The value type shared by both directions.
 | `List` | `StaticValue::list(items)` | `[1, 2, 3]` |
 | `Record` | `StaticValue::record(fields)` | `{ tab_width: 4 }` |
 | `Call` | `StaticValue::call(name, args)` | `rgb(255, 0, 0)` |
+| `Variant` | `StaticValue::variant(of, name, args)` | `Mode.light`, `Shape.circle(2)` |
 
 `to_source()` renders one as Petal source. Every variant renders to well-formed
 Petal. Strings are quoted and escaped (including the interpolation opener `{`),
@@ -220,7 +213,8 @@ A color literal (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`) reads as `Color`,
 with channels `0..=255` and `a` present only when the literal spells an alpha
 — not as the `{r, g, b}` record it becomes at run time — so writing it back
 gives a color literal. `to_source()` writes the long lowercase form; an edit
-of an existing literal keeps that literal's case and its short or long form.
+of an existing literal keeps that literal's case and its short or long form
+([source-preservation.md](../features/source-preservation.md#colors)).
 
 A variant renders as it is written: `Mode.light`, or `Shape.circle(2)` with a
 payload.
@@ -251,13 +245,12 @@ assert_eq!(get_static_value(&source, "accent")?, value);   // unchanged
   needs the program to run. If you need computed config, run the file as a
   program (`Env::run_source`) instead.
 - **`state` is not configuration.** Its value only exists while the program
-  runs, and one declaration inside a function can be many live slots at once
-  (one per [call path](language-guide.md#one-slot-per-call-path)). It reads as
+  runs ([inline-state.md](../features/inline-state.md)). It reads as
   `NotStatic`.
 - **Writing flattens what is not a literal.** `should_set_value` on a computed
-  binding replaces the whole right-hand side, so a conditional binding loses
-  its conditional, unless the goal already holds, in which case nothing is
-  written.
+  binding replaces the whole right-hand side:
+  `let font_size = if wide_screen then 16 else 12 end` becomes
+  `let font_size = 14`. A goal that already holds writes nothing.
 - **Exact representability is the host's problem.** A consumer with a
   fixed-point grid or a bounded range rejects and rounds against its own
   arithmetic; Petal reads and writes the number it was given.
@@ -266,8 +259,13 @@ assert_eq!(get_static_value(&source, "accent")?, value);   // unchanged
 
 ## See also
 
-- [goal-based-editing.md](goal-based-editing.md) — the full editing API.
-- [source-preservation.md](source-preservation.md) — how an edit keeps the
+- [../features/goal-based-editing.md](../features/goal-based-editing.md) — the full editing API.
+- [../features/hot-reload.md](../features/hot-reload.md#setting-a-value-without-writing-the-file) —
+  setting a value in a running program with the same binding paths
+  (`Env::set_config_value`).
+- [embedding-c.md](embedding-c.md#editing-source-a-script-as-a-config-file) —
+  the same reading and writing from C and C++ (`pb_source_*`).
+- [../features/source-preservation.md](../features/source-preservation.md) — how an edit keeps the
   file's formatting.
-- [program-modification.md](program-modification.md) — every way a Petal
+- [../features/program-modification.md](../features/program-modification.md) — every way a Petal
   program can be modified programmatically.

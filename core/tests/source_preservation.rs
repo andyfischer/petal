@@ -1,5 +1,5 @@
 //! Style-preserving edits, as a table of before / edit / after cases
-//! (docs/source-preservation.md). Each case is checked three ways: the edit
+//! (docs/features/source-preservation.md). Each case is checked three ways: the edit
 //! gives exactly the expected text, the result still parses, and applying the
 //! same goals again changes nothing unless the goal is an insert (which adds
 //! another element by nature).

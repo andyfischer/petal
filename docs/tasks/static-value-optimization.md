@@ -241,7 +241,7 @@ and the gate result".)
 - Variants built by hosts (`pb_builder_begin_enum`, `PetalCxt::emit`) carry a
   free-form tag with no declared enum. They must keep working.
 - A variant held in `state` across a reload that edits its enum must behave
-  as documented in `docs/hot-reload.md` ("Editing an enum").
+  as documented in `docs/features/hot-reload.md` ("Editing an enum").
 - The three JSON spellings of a variant (headless trace, `--state-storage`,
   static value) stay as they are; the index is not serialized.
 
@@ -863,8 +863,8 @@ Step 1, the `CONST` flag:
 - `native fn` declarations carry no effect information; constness comes only
   from the registration, which is what makes `petal check` and the LSP
   report less, never more.
-- Documented for embedders in `docs/ffi.md` ("Constant natives") and
-  `docs/embedding-c.md`. No behaviour change: nothing reads the flag yet.
+- Documented for embedders in `docs/usage/ffi.md` ("Constant natives") and
+  `docs/usage/embedding-c.md`. No behaviour change: nothing reads the flag yet.
 - Out of scope, for cheesecake: none of its natives is constant until it
   passes `PB_FX_CONST` for the ones that are (and re-vendors the bridge);
   worlds-fair's `wf-ui-ffi` likewise.
@@ -1453,7 +1453,7 @@ pre-plan engine binary is gone), and the frame after a reload does not
 isolate the constants there, because the game declares its procedural
 assets again after any reload). The rule,
 the module and the tests are described in
-[docs/hot-reload.md](../hot-reload.md#static-values-across-a-reload) and in
+[docs/features/hot-reload.md](../features/hot-reload.md#static-values-across-a-reload) and in
 the header of `core/src/env/static_follow.rs`.
 
 What shipped:
@@ -1570,7 +1570,7 @@ drives a drag through `pb_vm_set_static_debounce` and
 - **Other stacks of the program start empty**, as under S1.
 - **A wrong `CONST` flag now outlives a reload** that does not reach the
   declaration; `Env::clear_static_values` is the remedy (written into
-  `docs/ffi.md`).
+  `docs/usage/ffi.md`).
 - **`frozen` across a reload**: a kept table stays frozen where a rebuilt
   one would be new; the same documented difference as between runs. (The
   other `frozen` difference, the copy of a kept neighbour that the review
@@ -1643,7 +1643,7 @@ stands.
   then freezes the kept one only, and `frozen(C[0])` says `false` where a
   rebuild of everything says `true`. Fixing it needs a store per value,
   which is the open item about splitting runs. Written into
-  `docs/hot-reload.md`. The swap of a rebuilt value for an identical old one
+  `docs/features/hot-reload.md`. The swap of a rebuilt value for an identical old one
   does not have this problem: `identical` compares `frozen` at every level,
   so a frozen old value is never swapped in for an unfrozen new one
   (`review_a_shared_element_frozen_through_one_name`).
@@ -1744,7 +1744,7 @@ What shipped:
   store of several values swapped whole or not at all. **The `frozen`
   difference the S2 review wrote down is gone**: which objects are shared
   is the same after a followed reload as after one that rebuilds
-  everything. `docs/hot-reload.md` says so now, and what remains there is
+  everything. `docs/features/hot-reload.md` says so now, and what remains there is
   the between-runs difference (a kept table stays frozen, a rebuilt one is
   new).
 - **(2) Function declarations.** A `MakeClosure` still ends a stretch, and
@@ -2978,7 +2978,7 @@ core suite is green for the first time.
   worlds-fair, 9 on the website, 3 in `~/cheesecake/games`, all `hash11`
   in `rivet`); no diagnostic names `const`, `freeze`, `frozen` or a static
   value. (The 108 of the first sweep counted the 6 with the 102.)
-- **Corrected on the way.** `docs/hot-reload.md` and `CHANGELOG.md` still
+- **Corrected on the way.** `docs/features/hot-reload.md` and `CHANGELOG.md` still
   gave a recompile on neon as 175 ms and on Moses as 461, and the cache's
   share as 19 and 61: the figures from before constants inside function
   bodies. They are 187 and 488 now, the cache 31 and 102 of them.

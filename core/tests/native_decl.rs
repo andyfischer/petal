@@ -1,7 +1,7 @@
 //! `native fn` declarations: the syntax, what a declared name binds to,
 //! overload sets mixing natives with Petal `fn`s, the signatures the checker
 //! reads, and linking — a program loaded to run needs every native it refers
-//! to registered. See docs/ffi.md (Native interfaces).
+//! to registered. See docs/usage/ffi.md (Native interfaces).
 
 use petal::ast::{Stmt, StmtKind};
 use petal::env::Env;

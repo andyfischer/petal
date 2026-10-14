@@ -8,7 +8,7 @@
  * point catches Rust panics (reported as PB_ERR_PANIC) instead of unwinding
  * into the host.
  *
- * Model (see docs/embedding-c.md in the Petal repository for the full guide):
+ * Model (see docs/usage/embedding-c.md in the Petal repository for the full guide):
  *
  *   pb_vm_create                         one Env + one program + one stack
  *   pb_vm_register_native / _emitter     host natives (before the load that uses them)
@@ -293,7 +293,7 @@ pb_status pb_vm_override_file(pb_vm* vm, const char* path, const char* source);
  *   PB_FX_EMITS     pushes into an output buffer. A pb_native_fn callback has no
  *                   way to push, so this is right only for pb_vm_register_emitter
  *                   (which sets it itself); a callback that queues work on the
- *                   host is PB_FX_EFFECT. See docs/ffi.md "Embedder pitfalls".
+ *                   host is PB_FX_EFFECT. See docs/usage/ffi.md "Embedder pitfalls".
  *   PB_FX_EFFECT    does something no replay reproduces (mutates host state…)
  *   PB_FX_READS_*   input classes it reads. PB_FX_READS_HOST_DATA also makes the
  *                   bridge call note_host_read() on every call.
@@ -308,7 +308,7 @@ pb_status pb_vm_override_file(pb_vm* vm, const char* path, const char* source);
  *                   forever. Opt-in: PB_FX_PURE (0) does NOT imply it, and a
  *                   native without it is always re-evaluated. Combined with
  *                   PROBE, EMITS, EFFECT or any READS flag it is ignored.
- *                   When in doubt, leave it off. See docs/ffi.md
+ *                   When in doubt, leave it off. See docs/usage/ffi.md
  *                   "Constant natives". */
 enum {
     PB_FX_PURE = 0,
@@ -590,7 +590,7 @@ typedef struct pb_reload_result {
 
 /* Re-read the entry file from disk and bring the running program up to date
  * with it and with its module files, doing only the work the edit calls for
- * (docs/hot-reload.md):
+ * (docs/features/hot-reload.md):
  *
  *   - nothing changed, or only whitespace / comments / layout: source
  *     positions move; nothing is recompiled and nothing is dropped;
@@ -746,7 +746,7 @@ pb_status pb_vm_apply_scenario(pb_vm* vm, const pb_scenario* s, size_t frame, si
 /* ─── Source text: reading and editing without running ─────────────────── */
 /*
  * A pb_source is Petal source text plus the tools to treat it as a
- * configuration file (docs/config-files.md, docs/source-preservation.md):
+ * configuration file (docs/usage/config-files.md, docs/features/source-preservation.md):
  * read every top-level binding's static value, and change values where they
  * are written, keeping every other character — comments, layout, the author's
  * spelling of the numbers next to it. It is independent of any VM; the host

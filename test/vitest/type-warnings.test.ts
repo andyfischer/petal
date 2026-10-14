@@ -117,7 +117,7 @@ describe("discarded pure-builtin result lint", () => {
   });
 });
 
-// (docs/var.md, Cells): a `var` is a cell, so its
+// (docs/syntax/var.md, Cells): a `var` is a cell, so its
 // *writes* must stay assignable to its declared type — and its *reads* must not
 // be typed from the initializer, because a `set` can retype the cell from inside
 // any function or closure that captured it.
@@ -273,7 +273,7 @@ describe("calls through a function-valued binding", () => {
 
 // `check` is "lex+parse+compile+lower without executing", so a call that can
 // never resolve should not have to wait for the runtime to say so. Petal
-// overloads by arity (docs/function-overloading.md): the call is wrong only
+// overloads by arity (docs/syntax/function-overloading.md): the call is wrong only
 // when *no* declared arity matches.
 describe("statically-known arity errors", () => {
   it("errors on a call no overload can take, which `run` rejects outright", () => {

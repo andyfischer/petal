@@ -5,7 +5,7 @@
 > a reference foreign emitter), but there is **no in-place IR rewrite API** in
 > Rust, the graph-query passes are read-only, and none of this is wired into an
 > agent- or user-facing editing workflow yet. It is documented here, separate
-> from [program-modification.md](../program-modification.md), so the stable
+> from [program-modification.md](../features/program-modification.md), so the stable
 > source-level and live-editing surfaces aren't confused with this early work.
 >
 > For the stable IR *import-format contract* used by external emitters (`run
@@ -86,7 +86,7 @@ emitter following the JSON contract.
 
 | Capability | Read | Write | Where |
 |---|---|---|---|
-| Inspect IR graph | ✅ | — | `show-ir`, `program_analysis.rs`, MCP `ShowIR` |
+| Inspect IR graph | ✅ | — | `show-ir`, `program_analysis.rs`, MCP `ShowStage` |
 | Construct/transform IR as data | — | ✅ (via JSON) | `run --ir`, `Program::from_json`, `calc-to-ir.ts` |
 | Provenance / dependents / slice | ✅ | — | `graph` |
 | In-place IR rewrite API (Rust) | — | ✗ not built | transform by emitting new JSON instead |

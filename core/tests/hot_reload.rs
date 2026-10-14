@@ -1,4 +1,4 @@
-// Differential tests for intelligent hot reload (docs/hot-reload.md).
+// Differential tests for intelligent hot reload (docs/features/hot-reload.md).
 //
 // The contract of `Env::reload_program` is that whichever path it takes, the
 // result is what a full recompile of the new source plus `transfer_state`

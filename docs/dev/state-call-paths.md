@@ -1,8 +1,8 @@
 # Call-path keyed `state`
 
 How `state` slots are identified at runtime, and the design decisions behind
-it. The user-facing description is the "State" section of the
-[Language Guide](../language-guide.md#state); the runtime overview is
+it. The user-facing description is
+[inline-state.md](../features/inline-state.md); the runtime overview is
 [Architecture.md](Architecture.md#keying).
 
 ## 1. The rule
@@ -47,7 +47,7 @@ who asks" — React's `key=` prop, but absolute. Examples in the tree:
 - `garden/examples/panels/plant.ptl` — lineage keying: the same leaf is
   reached one recursion level deeper each growth step; a path component would
   reset it every frame.
-- `petal-fantasy-nes/prelude/nes.ptl` (`btn_repeat`) — two widgets asking
+- `examples/custom-apps/petal-fantasy-nes/prelude/nes.ptl` (`btn_repeat`) — two widgets asking
   about one button share one repeat phase by design.
 - `nes.ptl`'s `_font_rows` — the build varies by argument, so an absolute key
   caches per ink across all callers.
@@ -119,7 +119,7 @@ expression with trivia stripped (`f`, `obj.method`, `m::f`). Stability:
   in the same function: that callsite's id changes and its subtree of state
   drops on reload. This is the same class of event as renaming a state
   variable, already the documented contract
-  ([program-modification.md](../program-modification.md)).
+  ([program-modification.md](../features/program-modification.md)).
 
 A **dynamic callee** (`f(x)` where `f` is a parameter) is keyed by the *text*
 `f`, so two different closures passed to one callsite share the callsite

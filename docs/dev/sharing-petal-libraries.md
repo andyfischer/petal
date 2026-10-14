@@ -156,7 +156,7 @@ A binding that lands on a name a lower tier already put in scope joins its
 set by arity. Merging happens only between function sets the compiler built;
 a `let`, a record or a builtin native still shadows wholesale. The
 higher-precedence side wins a colliding arity, silently. See
-[function-overloading.md](../function-overloading.md).
+[function-overloading.md](../syntax/function-overloading.md).
 
 **Edge one: arity is the only dispatch key, so bloom exports `ts_a`.**
 `draw_text(s, pos, style, alpha)` would be arity 4, and `ui` already defines

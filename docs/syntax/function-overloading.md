@@ -1,10 +1,18 @@
-# Function overloading
+# Function overloading, named arguments and default parameters
+
+Three features decide how a call's arguments reach a function's parameters:
+a name may be declared [more than once](#overloading-by-argument-count) with
+different parameter counts, an argument may be passed
+[by name](#named-arguments), and a parameter may have a
+[default](#default-parameter-values). They interact, so they share this page.
+
+## Overloading by argument count
 
 A top-level `fn` name can be declared more than once with different numbers
 of parameters. Each call picks the variant whose parameter count matches the
 number of arguments. (A variant with
 [default parameter values](#default-parameter-values) accepts a range of
-counts; the rule for that case is below.)
+counts; the rule for that case is [below](#defaults-and-overload-selection).)
 
 ```petal
 fn greet() print("hi") end
@@ -16,10 +24,10 @@ greet("world")    // hi world
 greet("a", "b")   // hi a b
 ```
 
-## The rules
+### The rules
 
 - **Argument count is what matters** (with defaults, the names written too —
-  see [below](#default-parameter-values)). Types play no part:
+  see [below](#defaults-and-overload-selection)). Types play no part:
   `fn f(x: int)` and `fn f(x: string)` have the same count, so the second
   simply replaces the first. Annotations are checked, not dispatched on.
 - **Same count, same function.** Two declarations with the same number of
@@ -49,7 +57,7 @@ greet("a", "b")   // hi a b
 - **The set is one value.** `let k = greet` binds all variants; `k("x")` and
   `map(names, greet)` dispatch the same way a direct call does.
 
-## Variants can call each other
+### Variants can call each other
 
 A common pattern is a short variant that fills in defaults and delegates:
 
@@ -75,9 +83,9 @@ title("Smith")        // Dr. Smith
 title("Mr.", "Jones") // Mr. Jones
 ```
 
-## Methods overload too
+### Methods overload too
 
-A [method](language-guide.md#methods) is a named `fn`, so it overloads by
+A [method](../language-guide.md#methods) is a named `fn`, so it overloads by
 the same rule. The receiver is an ordinary first parameter and counts:
 
 ```petal
@@ -98,21 +106,129 @@ print(Point(1, 2).shifted(5, 6))  // { x: 6, y: 8 }
 ```
 
 Each qualified name is its own set: `Point.shifted`, `Other.shifted` and a
-plain `shifted` never mix. An arity error names the method, counting the
-receiver:
+plain `shifted` never mix. An arity error names the method. `petal check`
+counts the arguments written at the call site:
 
 ```petal ignore
 Point(1, 2).shifted(1, 2, 3)
-// Error: Point.shifted() expects 2 or 3 arguments, got 4
+// error: method `Point.shifted` expects 1 or 2 arguments, got 3
 ```
+
+Where the checker cannot see which class the receiver is, the same mistake is
+a runtime error, and for an overloaded method that one counts the receiver:
+`Point.shifted() expects 2 or 3 arguments, got 4`.
 
 ## Named arguments
 
-[Named arguments](language-guide.md#named-arguments) are bound *after* the
+An argument may be written `name: value`, binding it to the parameter of that
+name rather than to its position:
+
+```petal
+fn scale(value, by, offset)
+    value * by + offset
+end
+
+print(scale(2, by: 10, offset: 1))    // 21
+print(scale(by: 10, offset: 1, value: 2))  // 21
+```
+
+Every positional argument must come before every named one; going back to
+positional is a parse error:
+
+```petal ignore
+scale(value: 2, 10, 1)
+// Error: A positional argument after a named argument: once an argument is
+// named, every later argument must be named too
+```
+
+For a function without defaults every parameter needs a value, so a slot left
+unfilled shows up as the ordinary arity error (`scale() expects 3 arguments,
+got 2`). The two failures that are specific to names are an unknown parameter
+and a slot filled twice:
+
+```petal
+scale(2, 10, nudge: 1)     // error: scale() has no parameter named 'nudge'
+scale(2, value: 3, by: 1)  // error: scale() got multiple values for parameter 'value'
+```
+
+Wherever the callee is known before the program runs — a function or a
+constructor named at the call site, or a binding that holds one — `petal check`
+reports both of these as errors too, whether or not the line ever executes,
+and lists the detail the runtime error has no room for:
+
+```
+error: scale() has no parameter named 'nudge' (parameters: 'value', 'by', 'offset')
+error: scale() got multiple values for parameter 'value' (argument 1 already fills it)
+```
+
+`petal check` exits non-zero on them, so a bad name fails CI without the
+branch ever being taken. The runtime error is still the only report for a
+method call and for a callee this pass cannot see (a function passed in as a
+parameter).
+
+Lambdas take named arguments too, since they have parameter names like any
+other function:
+
+```petal
+let sub = fn(a, b) -> a - b
+print(sub(b: 1, a: 10))  // 9
+```
+
+A method's receiver occupies the first parameter, so `p.shift(dx: 2)` names the
+parameters after it — and naming the receiver's own parameter is the
+double-bind error above (`Point.shift() got multiple values for parameter
+'p'`).
+
+**Builtins take names too**, under the parameter names the
+[Builtins Reference](../Builtins.md) gives them:
+
+```petal
+print(clamp(15, lo: 0, hi: 10))              // 10
+print(pow(exp: 3, base: 2))                  // 8.0
+print([1, 2, 3, 4].slice(start: 1, end: 3))  // [2, 3]
+print(15 |> clamp(lo: 0, hi: 10))            // 10
+```
+
+The names are put in the builtin's own argument order before it runs, so a
+named call does exactly what the positional one does, at the same cost. Method
+syntax and `|>` supply the first parameter, and the names bind against the
+rest. A builtin's parameter list reads like a `fn`'s, with these differences:
+
+- Where a `fn` has [default values](#default-parameter-values), a builtin has
+  **optional trailing parameters** — written `end?` in the reference
+  (`slice(collection, start, end?)`, `round(x, places?)`). A call may leave
+  them off, just as it may leave off a defaulted parameter. Unlike a default,
+  one cannot be skipped to reach a later one — the builtin has no expression
+  to fill the gap with — so `noise(x: 1, z: 2)` is `noise() is missing a
+  value for parameter 'y'`.
+- A builtin that reads its arguments differently by count declares each form
+  (`distance(x1, y1, x2, y2)` and `distance(v1, v2)`), the way a `fn` declares
+  overloads, and the names take part in picking
+  the form. A call no form takes is reported as it is for an overloaded `fn`:
+  `range(start: 1, stop: 5)` is `range() has no variant that accepts 2
+  arguments with some named 'start', 'stop' (variants: range(end),
+  range(start, end, step?))`.
+- A parameter may be named with a keyword, which an argument label is free to
+  be: `range(start: 0, end: 5)`.
+
+The errors are the ones above (`clamp() has no parameter named 'low'`), and
+`petal check` reports them the same way. The variadic builtins, `print` and
+`format`, have no parameter names and refuse one outright:
+`builtin 'print' does not accept named arguments`. So does a host native whose
+embedder declared no names for it (see
+[Native functions](../usage/ffi.md#native-functions)).
+
+A function the standard prelude or a library writes in Petal
+(`sum(xs: [1, 2])`, petal-ui's `draw_rect(x: 0, y: 0, …)`) is an ordinary `fn`
+and takes the names its declaration gives.
+
+### Named arguments and overload selection
+
+Named arguments are bound *after* the
 variant is chosen. The count (positional plus named) picks the variant; the
 names then map onto that variant's parameters. (Names help *choose* the
 variant only when no variant has exactly that many parameters, or the one that
-does lacks the name — see [Default parameter values](#default-parameter-values).)
+does lacks the name — see [Defaults and overload selection](#defaults-and-overload-selection).)
 
 ```petal
 fn box(w) box(w, w) end
@@ -135,8 +251,117 @@ recorded trace, or the function table a host calls through.
 
 ## Default parameter values
 
-A variant whose trailing parameters have
-[defaults](language-guide.md#default-parameter-values) takes a *range* of
+A parameter may be given a default with `= expression`. A call that leaves the
+argument out gets the default instead:
+
+```petal
+fn greet(name, greeting = "Hello", punct = "!")
+    "{greeting}, {name}{punct}"
+end
+
+print(greet("Ada"))                  // Hello, Ada!
+print(greet("Ada", "Hi"))            // Hi, Ada!
+print(greet("Ada", punct: "?"))      // Hello, Ada?
+```
+
+Trailing defaulted parameters can simply be left off, and *any* defaulted
+parameter can be skipped by [naming](#named-arguments) a later one, as
+`punct: "?"` does above. A type annotation goes before the default:
+`fn fade(c, amount: num = 0.5)`.
+
+**The default is an expression, and it is evaluated on every call that omits
+the argument.** It is not computed once when the function is declared, and its
+result is never kept from one call to the next. It runs inside the function,
+as the call starts, so it behaves exactly as if it were the first line of the
+body:
+
+```petal
+fn tagged(item, tags = [])
+    push(tags, item)
+end
+
+print(tagged("a"))   // ["a"]
+print(tagged("b"))   // ["b"]    a fresh list each call — not ["a", "b"]
+```
+
+```petal
+var issued = 0
+fn next_id()
+    set issued = get issued + 1
+    get issued
+end
+
+fn make(label, id = next_id())
+    "{id}: {label}"
+end
+
+print(make("first"))       // 1: first
+print(make("second"))      // 2: second     next_id() ran again
+print(make("third", 99))   // 99: third     an argument was passed — it did not run
+print(make("fourth"))      // 3: fourth
+```
+
+So `fn stamp(at = time())` reads the clock on each call, and
+`fn roll(n = random_int(1, 6))` rolls again each time.
+
+Because it runs in the function, a default can use anything the body could:
+the parameters declared **before** it, and any outer binding the function
+captures.
+
+```petal
+let margin = 4
+
+fn inset(w, h = w, pad = margin * 2)
+    [w - pad, h - pad]
+end
+
+print(inset(20))           // [12, 12]    h defaults to w
+print(inset(20, 10))       // [12, 2]
+print(inset(20, pad: 0))   // [20, 20]
+```
+
+Defaults are evaluated left to right, and only for the parameters the call
+left out. A default cannot read its own parameter or one declared after it —
+that is a compile error, since the later parameter has no value yet:
+
+```petal ignore
+fn span(lo = hi - 10, hi = 100) lo end
+// Error: The default value of parameter 'lo' refers to 'hi', which is declared
+// after it — a default can only use the parameters declared before it
+```
+
+The rules:
+
+- **Defaulted parameters come last.** A parameter without a default cannot
+  follow one that has one (`fn f(a = 1, b)` is a parse error) — a call fills
+  parameters left to right.
+- **Passing `nil` is passing an argument.** `greet("Ada", nil)` binds
+  `greeting` to `nil`; only *omitting* the argument evaluates the default.
+- **A required parameter must be given.** Leaving one out names it:
+  `greet()` is `greet() is missing a value for parameter 'name'`, and too many
+  arguments is `greet() expects 1-3 arguments, got 4`. `petal check` reports
+  both before the program runs.
+- **Lambdas and methods take defaults too**: `fn(x, step = 1) -> x + step`, and
+  `fn Rect.grow(r, by = 1)` (the receiver is always supplied, so it is never
+  the one with a default). A callback that is handed fewer arguments than it
+  declares uses its defaults for the rest: `map(xs, fn(x, scale = 10) -> x * scale)`.
+- **An annotation is checked against the default**: `fn f(n: int = "one")`
+  is a `petal check` warning.
+- **Class fields and enum variant fields do not take defaults.** A constructor
+  still needs every field; write a function with defaults that calls it.
+- **Builtins have optional parameters rather than defaults.** A builtin is
+  not written in Petal, so it has no default *expression*; the reference marks
+  a parameter a call may leave off with `?` (`round(x, places?)`). It can be
+  omitted or [named](#named-arguments) like a defaulted one, but only from the
+  end: it cannot be skipped to reach a later one.
+
+A default is ordinary code in the function, so it costs nothing when the
+argument is passed, and a call that passes every argument positionally to a
+function that has no defaults is exactly as fast as it was.
+
+### Defaults and overload selection
+
+A variant whose trailing parameters have defaults takes a *range* of
 argument counts, and its optional parameters can be skipped by naming later
 ones. Selection therefore asks one question of every variant — **does it
 accept this call?** — and a variant accepts when
@@ -268,7 +493,7 @@ none is; a mixed group is a compile error. Importing `f` from two modules by
 name is still a collision — a selective import is an explicit request, and two
 of them for one name are ambiguous. Two *plain* imports that both export `f`
 are not a collision at the import: see [Which name
-wins](module-system.md#which-name-wins) and the merge rules below.
+wins](../module-system.md#which-name-wins) and the merge rules below.
 
 ### Sets merge across modules
 
@@ -286,8 +511,8 @@ pub fn draw_rect(r)
   ui.draw_rect(r, { r: 9, g: 9, b: 9 })
 end
 
-// every arity is callable here: the one this file added, and the
-// `ui`'s 2, 3, 7 and 8-argument forms
+// every arity is callable here: the one this file added, and every
+// form `ui` declares
 pub fn paint()
   draw_rect({ x: 0, y: 0, w: 10, h: 10 })
   draw_rect({ x: 20, y: 0, w: 10, h: 10 }, { r: 1, g: 2, b: 3 })
@@ -300,7 +525,7 @@ The rules:
   `var`, a record, a builtin native — shadows the whole set as it always did.
 - **An arity both sides define goes to the higher-precedence binding**, and the
   lower one is simply unreachable at that arity. It is not an error. The
-  precedence order is [the tier order](module-system.md#which-name-wins): the
+  precedence order is [the tier order](../module-system.md#which-name-wins): the
   core prelude (`std`) < the file's plain imports
   < its selective imports < its own declarations.
 - **Two plain imports are the same tier**, so neither outranks the other.

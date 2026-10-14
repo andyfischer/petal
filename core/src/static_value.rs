@@ -475,7 +475,7 @@ pub struct StaticBinding {
     /// there is no such comment.
     pub comment: Option<String>,
     /// Written `config let …`: the author declared the binding a tuning knob
-    /// (see docs/direct-manipulation.md). A host showing a file's settings
+    /// (see docs/features/direct-manipulation.md). A host showing a file's settings
     /// can offer exactly these for editing. Always `false` for a bare
     /// `name = …` rebinding, a `fn` and a `state`.
     pub is_config: bool,
@@ -1146,7 +1146,7 @@ mod tests {
 
     #[test]
     fn reads_the_documented_example_config() {
-        // The example file in docs/config-files.md, pinned so the doc can't
+        // The example file in docs/usage/config-files.md, pinned so the doc can't
         // drift away from what the reader actually does.
         let src = "\
 // ~/.garden/config.ptl

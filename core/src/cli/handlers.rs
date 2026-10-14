@@ -402,7 +402,7 @@ fn print_pending_report_text(report: &serde_json::Value) {
 /// each value with its resolved attribution — the frame `pick_frame` chose,
 /// the callee name, the call span, and per-argument edit info. This is the
 /// "observe" half of the direct-manipulation protocol
-/// (docs/direct-manipulation.md); `propose-edit` is the "act" half, and the
+/// (docs/features/direct-manipulation.md); `propose-edit` is the "act" half, and the
 /// `emit` indices in this report are what it addresses.
 fn emit_trace_report(env: &Env, pid: ProgramId) -> serde_json::Value {
     use crate::provenance::{self, CallSite};
@@ -552,7 +552,7 @@ fn print_emit_trace_text(report: &serde_json::Value) {
 /// program with emit tracing, pick the call that produced the addressed emit,
 /// and propose source edits that make each addressed argument evaluate to its
 /// requested value. Several `--arg`/`--to` pairs form a batch resolved
-/// consistently. See docs/direct-manipulation.md for the protocol.
+/// consistently. See docs/features/direct-manipulation.md for the protocol.
 pub(super) fn handle_propose_edit(
     opts: &ProposeEditOpts,
     source: &str,

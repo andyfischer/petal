@@ -4,7 +4,11 @@ This is a user-facing reference for the Petal programming language. It covers al
 types, operators, and features with examples.
 
 For a compact, reference-style map of the whole surface syntax, see
-[Syntax Overview](syntax/overview.md). For built-in functions (math,
+[Syntax Overview](syntax/overview.md). A few topics have their own pages, and
+this guide only summarises them: [`var`, `set` and `get`](syntax/var.md),
+[overloading, named arguments and default parameters](syntax/function-overloading.md),
+[implicit returns and collecting loops](syntax/implicit-return-values.md), and
+the [`state` keyword](features/inline-state.md). For built-in functions (math,
 collections, color, vectors, autodiff, etc.) see [Builtins.md](Builtins.md);
 the everyday ones are in scope everywhere and the domain sets are one
 `import` away ([Modules and imports](#modules-and-imports)). For
@@ -34,7 +38,7 @@ slot, it rebinds the name to a new value, and the compiler can trace exactly
 which earlier value each read came from. That is the default, and it is what
 makes a Petal program readable as a diagram.
 
-Some code genuinely wants a mutable slot instead — most often an accumulator
+Some code genuinely wants a mutable slot instead, most often an accumulator
 written from inside a callback. Declare it `var` and write it with `set`:
 
 ```petal
@@ -45,37 +49,18 @@ end
 print(count)   // 6
 ```
 
-The two write keywords are disjoint in both directions. `=` writes a `let`,
-`set` writes a `var`, and each rejects the other:
-
-```petal ignore
-let a = 1
-var b = 1
-
-a = 2          // fine
-set b = 2      // fine
-
-set a = 2      // error: `a` is not a `var`; use `a = ...`
-b = 2          // error: `b` is a `var`; use `set b = ...` to write it
-```
-
-Keeping the two apart means every write to a cell is visible where it happens.
-
-`set` also takes field and index targets (`set r.a = 1`, `set xs[0] = 1`) and
-the compound forms (`set count += 1`), and never declares a binding — `set` on
-an unknown name is an error, not a declaration.
-
-A `var` binds a *box*, not a value, and that is what makes it useful: a
-function or a closure that mentions the name shares the same box, so a write
-from inside one is visible outside. This is the case `=` cannot express, and
-the compiler says so: an `=` inside a function targeting a name bound outside
-it is an error, because it would create a function-local shadow and leave the
-outer binding alone. Reach for `var`/`set` when you meant the write to land;
-reach for `let` when you meant a new local.
+A `var` is a box that functions and closures share, so a write from inside one
+is visible outside. `=` writes a `let` and `set` writes a `var`; each rejects
+the other. Prefer `let`, and reach for `var` when a write has to land in a
+binding outside the function that makes it. [`var`: mutable cells](syntax/var.md)
+is the full reference.
 
 ### `get`
 
-Reading a cell from inside a function is written `get`:
+Inside a function, reading a `var` declared outside it is written `get x`,
+and the keyword is required there. A function captures a `let` or `state` by
+value where the function is written, while `get` reads the cell's contents
+now. See [Reading a cell](syntax/var.md#reading-a-cell-get).
 
 ```petal
 var hits = 0
@@ -88,266 +73,28 @@ set hits = 3
 print(describe())   // hits so far: 3
 ```
 
-`get` is **required** wherever the read crosses a function boundary from the
-declaration, and optional inside the declaring scope — the loop above writes
-plain `count`, because there both spellings mean the same thing.
-
-The reason is timing. A function captures the ordinary bindings it mentions
-**by value, at the point the function is written**: a `let` or `state` read
-inside a body gives the value the name had on that line. A cell read gives the
-box's contents *now*. Those are different questions, so they are spelled
-differently. Each operation on a cell has its own keyword:
-
-| | |
-|---|---|
-| `var x = …` | declare the box |
-| `set x = …` | write it |
-| `get x` | read it |
-
-`get` binds tighter than `.` and `[]`, so it dereferences first and the rest
-applies to the contents — `get cfg.width` is `(get cfg).width`, which is what a
-cell holding a record wants. It is an error on anything that is not a `var`, so
-`get` appearing in a body always means a cell.
-
-### Capturing a `state` that is written later
-
-A function reading a `let` that is rebound below it sees the earlier binding.
-That is the defined behaviour: the later `let` is a new binding, and the
-function reads the one in scope where it was written. Nothing is reported.
-
-A module-level `state` is different. Writing it with `=` does not create a new
-binding — it writes the persisted slot, and the *next* run of the file
-initialises the name from that slot. So a function above the write reads one
-run behind, every run:
-
-```petal ignore
-state scroll = 0
-
-fn row_y(r)
-  GRID_Y + (r - scroll) * ROW_H   // warning: reads `scroll` one run behind
-end
-
-scroll = scroll + 3
-draw_row(row_y(2))                // uses the previous run's `scroll`
-```
-
-That is a **warning**, not an error — the program compiles and `petal check`
-exits 0. Pass the value in when you want the current one:
-
-```petal ignore
-fn row_y(r, scroll)
-  GRID_Y + (r - scroll) * ROW_H
-end
-```
-
-A `state` that is never written after the function is fine to capture, which
-is the common case. The warning does not apply to `let` (above), to an inline
-callback such as `map(xs, fn(a) … end)` (it runs inside the statement that
-created it), to a `state` declared inside a function (that is a slot per
-[call path](#one-slot-per-call-path), not one shared slot), or to `var` /
-`state var` (a bare outer-cell read is already an error there, and `get` is a
-live read that cannot lag).
-
-The net effect: a bare name inside a function body is always a value that
-cannot change under you, and anything live says `get`.
-
-```petal
-var score = 0
-let doubled = map([1, 2, 3], fn(a)
-  if a > 1 then set score += 10 end
-  a * 2
-end)
-print(doubled, score)   // [2, 4, 6] 20
-```
-
-Each *evaluation* of the declaration makes a new box, so a factory hands out
-independent counters:
-
-```petal
-fn counter()
-  var c = 0
-  let bump = fn()
-    set c = get c + 1
-    get c
-  end
-  bump
-end
-let a = counter()
-let b = counter()
-print(a(), a(), b())   // 1 2 1
-```
-
-Reading a `var` gives you its *contents*, never the box. Storing one in a
-record, passing it to a function, or printing it all move the value as of that
-moment; the only way to share a box is to capture it in a closure, which you
-can see in the source.
-
-```petal
-var x = 1
-let r = { a: x }
-set x = 2
-print(r, x)   // { a: 1 } 2
-```
-
-Prefer `let`. `var` is an escape hatch, and reaching for it costs you the
-provenance queries (`petal graph`) that can
-otherwise answer "what produced this value?".
-
 ### Mutable state shared by several functions
 
-A `var` is how several functions update the same data. `=` cannot do it, since
-a function may not assign a name bound outside itself, and returning a fresh
-copy from every helper stops being practical once the data is a handful of
-lists that a loop writes thousands of times. Put the data in cells: every
-function that can see a cell reads it with `get` and writes it with `set`.
-
-There are two places to put the cells, and the choice is about how long the
-data lives.
-
-**For one call: local `var`s and nested functions.** Declare the cells in the
-function that owns the work, then the helpers as closures over them, then the
-algorithm:
-
-```petal
-fn settle(heights: list, passes: int) -> list
-  var h = heights
-  var moves = 0
-
-  // Move one unit from a to b if a stands at least two higher.
-  let level = fn(a, b)
-    if get h[a] - get h[b] < 2 then return nil end
-    set h[a] = get h[a] - 1
-    set h[b] = get h[b] + 1
-    set moves += 1
-  end
-
-  for pass in range(0, passes) do
-    for i in range(0, len(h) - 1) do
-      level(i, i + 1)
-      level(i + 1, i)
-    end
-  end
-  print("moves:", moves)
-  h
-end
-
-print(settle([6, 0, 0, 2], 8))
-```
-
-`settle` is still a pure function of its arguments. Each call makes its own
-cells, nothing of them outlives it, and what it returns is an ordinary value.
-Its own code reads the cells bare (`len(h)`, and `h` on the last line), so only
-the helpers pay for `get`. Prefer this shape whenever the data belongs to one
-computation: a solver step, a parser, a layout pass.
-
-**For the whole program: a top-level `var` or `state var`, and top-level
-functions.** This is the shape for data that outlives any one call, which in a
-script that re-runs every frame means a [`state var`](#state-var):
-
-```petal
-state var board = [0, 0, 0, 0]
-state var turn = 0
-
-fn mark(i: int)
-  if get board[i] != 0 then return nil end
-  set board[i] = 1 + get turn % 2
-  set turn += 1
-end
-
-mark(2)
-mark(2)       // taken: nothing happens
-mark(0)
-print(board, turn)   // [2, 0, 1, 0] 2
-```
-
-Every function reads these cells with `get`, however plain the function, and
-module scope reads them bare. A top-level `var` without `state` is made afresh
-on each run; `state var` keeps its value across runs. A module can export
-either, and importers can read it but not write it
-([module system](module-system.md#an-exported-var-is-read-only-to-importers)).
-
-A plain `state` cannot stand in for the second shape. It persists, but it is
-still a dataflow binding, so a function that assigns one gets the same error
-as for a `let`:
-
-```petal ignore
-state score = 0
-
-fn award(n)
-  score = score + n   // error: `score` is bound outside this function
-end
-```
-
-Declare it `state var score = 0` and write `set score = get score + n`, or
-keep the `state` and have the function return the new value for module scope
-to assign.
-
-`petal apply-change convert-to-var game.ptl --target /score` makes that
-conversion for you: the declaration becomes a `state var` (a `let` becomes a
-`var`), every `=` on it becomes `set`, and every read inside a function gains
-`get`, in this file and in the files that import the binding. See
-[CLI.md](CLI.md#apply-change--refactors-that-change-behaviour).
-
-**A write into a container happens in place.** `set xs[i] = v`, `set r.f = v`
-and `set xs = append(xs, v)` change the cell's own list or record when the
-cell is its only holder, from any function that can see the cell. A helper
-that writes one element costs one element, not a copy of the list, so a loop
-can be factored into helpers without changing what it costs. Values still
-behave as values. Whatever took the contents earlier keeps what it took, and
-the next write pays for one copy:
-
-```petal
-var xs = [1, 2, 3]
-let snap = xs
-set xs[0] = 99
-print(snap, xs)   // [1, 2, 3] [99, 2, 3]
-```
-
-Three habits keep the writes in place:
-
-- **Call a writing helper as a statement.** A `set` is an expression, so a
-  function that ends on `set xs[i] = v` returns the whole list. Dropped, that
-  costs nothing; `let ys = put(i, v)` hands the list out, and the next write
-  copies it.
-- **Bind a call's result before the write that uses it.** `set xs = append(xs,
-  f(x))` reads `xs`, then runs `f`, which might touch `xs` itself, so it
-  copies. Write `let v = f(x)` and then `set xs = append(xs, v)`.
-- **Keep hot data one level deep.** Only the cell's outermost container is
-  written in place: `set grid[i][j] = v` copies row `i`, and `set ps[i].x = v`
-  copies one record. Parallel flat lists (`xs`, `ys`, `vx`, `vy`) avoid both.
-
-The mechanism is described in
-[Writing a container in place](var.md#writing-a-container-in-place).
-`examples/games/physics-playground` uses both shapes: `physics.ptl` steps its
-solver with closures over local cells, and `app.ptl` edits its `state var`s
-from top-level functions.
+Several functions update the same data by putting it in cells: local `var`s
+closed over by nested helpers when the data lives for one call, or a top-level
+`var` or `state var` when it lives for the whole program. Writes into a cell's
+list or record happen in place. See
+[Mutable state shared by several functions](syntax/var.md#mutable-state-shared-by-several-functions)
+and [Writing a container in place](syntax/var.md#writing-a-container-in-place).
 
 ### `config let` — declaring a tuning knob
 
-A `config` modifier marks a `let` binding as the value a person is *meant* to
-adjust:
+A `config` modifier marks a `let` binding as a value that tools and hosts are
+meant to adjust:
 
 ```petal
-import ui
-
 config let offset = 10
-let x = 20
-draw_circle(x + offset, 40, 12)
 ```
 
-The binding evaluates exactly as a plain `let`; what changes is how tools
-treat it. Goal-based editing ([direct-manipulation.md](direct-manipulation.md)) prefers rewriting
-config bindings and leaves the rest of the program alone — dragging the circle
-above edits `offset`, never `x` — and a live-editing host has an honest place
-to render a slider per knob. `config` is contextual (only special immediately
-before `let`), so it remains usable as an ordinary name, and it composes with
-`pub` as `pub config let`. A mutable `var` cell cannot be `config`.
-
-A live-editing host can change a config value without recompiling the
-program ([hot-reload.md](hot-reload.md)). To make that hold for a drag across
-zero, a negated number written as data in a `config let` (`-0.5`, also inside
-its lists, records and call arguments) is one constant rather than a negation
-of one. The value is the same either way.
+The binding evaluates exactly as a plain `let`; what changes is how editors
+and live-editing hosts treat it. It combines with `pub` and applies only to
+`let`. See [`config let`](syntax/config-let.md) for the rules and for what
+tools do with it.
 
 ### `const` — a value that must be constant
 
@@ -366,67 +113,27 @@ print(COSTS)
 ```
 
 A static value is built from literals, lists and records of static parts,
-operators, other static declarations (`const`, a static `let`, a
-`config let`, an enum's constant data), constant builtins (`len`, `map`,
-`sort`, `sqrt`, …), and calls of **static-pure** functions: functions that
-read no `state`, no `var` but their own, no dynamic native, and print
-nothing. `tile` above is one, so a table built with it is static.
-
-Anything else is an error at compile time, with the chain of reasons down to
-the term that makes the value dynamic:
+operators, other static declarations, constant builtins (`len`, `map`,
+`sort`, `sqrt`, …), and calls of functions that read no `state`, no `var`
+but their own, no dynamic native, and print nothing. Anything else is a
+compile error that gives the chain of reasons down to the term that makes
+the value dynamic:
 
 ```text
 error: `LAB_W` is declared `const` but is not constant
   = LAB_W calls build_label_w at line 12
   = build_label_w calls text_width, which is not declared constant at line 4
- --> [line 12, column 15]
-   |
-12 | const LAB_W = build_label_w(events)
-   |               ^^^^^^^^^^^^^^^^^^^^^
 ```
 
-`petal check` exits non-zero on it and `petal run` does not start. A host
-that reloads a script while it is being edited prints the error and keeps
-running, with the binding behaving as the `let` it otherwise is.
+A `const` is allowed at the top level only, is never assigned, and holds
+data, not a function. `pub const` exports it. A static top-level value is
+built once, kept between runs, and rebuilt when an edit changes the source
+it depends on, which a table parked in `state` never is.
 
-Why write it: a static top-level value is one the runtime can build once and
-keep, and can rebuild when its source changes, which a table parked in
-`state` never does. A plain `let` gets the same treatment when it happens to
-be static, but silently stops getting it the day someone adds a `print` to a
-constructor or reads the screen size in a helper. `const` makes that an
-error instead of a slowdown. `petal show-static file.ptl` lists what is
-static and why the rest is not ([CLI.md](CLI.md#show-static--static-declarations)).
-
-The rules:
-
-- **Top level only.** A `const` inside a function, a loop or a branch is an
-  error: only a top-level declaration is one value for the life of the
-  program. Use `let` there.
-- **Never assigned.** `A = …`, `A[i] = …` and `A.f = …` on a `const` are the
-  same error, with the reason `is assigned again`.
-- **Data, not a function.** `const f = fn(x) -> x` is an error (declare it
-  with `fn`), and so is a list or record that holds a function.
-- **`pub const`** exports it like any binding. `config const` does not exist:
-  a `config let` of literals is already static, and `config` is about who
-  edits the value, not about what it depends on.
-- **Hoisting** is as for `let`: a `const` whose initializer is literals and
-  arithmetic is in place before the file's first statement, so a hoisted
-  function that reads it can be called from above
-  ([Declaration order](#declaration-order-top-level-fns-are-hoisted)).
-- `const` is a keyword, so it cannot name a binding. It can still be a record
-  key or a field (`{const: 1}`, `r.const`), like every keyword.
-
-**Host natives.** A native function counts as constant only when its host
-registered it so ([ffi.md](ffi.md#constant-natives)). `petal check`, `petal
-lint` and the language server run without any host, so for a `const` built
-from a host's natives they cannot say either way: they report nothing, and
-the host reports the error when it loads the script if the value is not
-constant there. A `const` that is dynamic for a reason no host could change
-(it reads `state`, say) is an error everywhere.
-
-A constant that was parked in `state` to avoid rebuilding it is what `const`
-replaces. `petal lint --rules-include=state-as-constant` finds those (below,
-under [State](#state)).
+The full rules, what is kept and when, how a `const` built from a host's
+natives is checked, and the tools (`petal show-static`, the
+`state-as-constant` lint) are in
+[Static values and `const`](features/static-values.md).
 
 ## Types
 
@@ -460,7 +167,7 @@ mismatch is a warning, never an error, and annotations have no effect at runtime
 — with two exceptions, both of which change what is compiled rather than what is
 checked: an annotation that pins a method call's receiver to one
 [class](#classes--methods), and a return type of **`-> nil`**, which turns off
-the function's [implicit return](implicit-return-values.md).
+the function's [implicit return](syntax/implicit-return-values.md).
 Run `petal check <file>` to see the warnings, or `petal check --strict` to make
 them fail the exit code (see [CLI.md](CLI.md#check--compile-without-running)).
 
@@ -525,7 +232,7 @@ end
 
 scale_by(3, 2)        // ok
 scale_by(3.5, 2)      // ok
-scale_by("3", 2)      // warning: string is not assignable to num
+scale_by("3", 2)      // warning: argument 1 to `scale_by`: expected `num`, found `string`
 ```
 
 The name of any [class](#classes--methods) — declared or built in — is a type
@@ -545,7 +252,7 @@ promotion arithmetic already does), but the reverse is not allowed — there is 
 implicit casting. Cross types explicitly with `int()`, `float()`, or `str()`:
 
 ```petal
-let n: int = 3.9          // warning: float is not assignable to int
+let n: int = 3.9          // warning: `n` declared `int` but assigned `float`
 let n: int = int(3.9)     // ok — explicit cast, n is 3
 let x: float = 5          // ok — int promotes to float
 ```
@@ -562,7 +269,7 @@ end
 
 fn pixels(n: int) n end
 fn place(x: num)
-  pixels(x)               // warning: num is not assignable to int
+  pixels(x)               // warning: argument 1 to `pixels`: expected `int`, found `num`
   pixels(int(x))          // ok — explicit cast
 end
 ```
@@ -591,30 +298,32 @@ Re-assigning the binding drops what was known about it — the slot holds a
 different function now. A function that merely *arrives* as an argument
 (`fn apply(f, x) f(x) end`) is unknown, and unknown callables are never checked.
 
-**Argument counts.** A call that no declaration can accept is reported without
-running the program, since Petal [overloads by arity](function-overloading.md)
-and such a call cannot resolve at runtime:
+**Argument counts.** A call that no declaration can accept is an **error**,
+not a warning: Petal [overloads by arity](syntax/function-overloading.md), so
+such a call cannot resolve at runtime. `petal check` reports it without running
+the program and exits non-zero:
 
 ```petal
 fn f(a, b)
   a
 end
-f(1)            // warning: `f` expects 2 arguments, got 1
+f(1)            // error: `f` expects 2 arguments, got 1
 
 class Point
   x: int,
   y: int,
 end
-Point(1)        // warning: `Point` expects 2 arguments, got 1
+Point(1)        // error: `Point` expects 2 arguments, got 1
 ```
 
 Every declared arity counts as a candidate — with `fn f(a)` and `fn f(a, b)`
-both declared, `f(1, 2, 3)` warns `` `f` expects 1 or 2 arguments, got 3 ``.
+both declared, `f(1, 2, 3)` reports `` `f` expects 1 or 2 arguments, got 3 ``.
 Methods are checked the same way, counted as the call site writes them (the
 receiver is not one of them): with `fn Point.shift(p: Point, dx: int)`,
-`p.shift()` warns `` method `Point.shift` expects 1 argument, got 0 ``. Builtins
-take flexible argument counts and declare no signature, so they are never
-checked.
+`p.shift()` reports `` method `Point.shift` expects 1 argument, got 0 ``.
+Builtins are checked against their declared signatures too (`len(1, 2, 3)` is
+`` `len` expects 1 argument, got 3 ``); only the variadic ones, such as
+`print`, take any count.
 
 Inference is deliberately shallow and local (literals and the signatures of
 called functions); anything else infers `any` and so reports nothing. The pass
@@ -779,7 +488,9 @@ they walk to the position, resuming from the previous one, so reading a string
 front to back stays linear.
 
 When you do need the encoded size, for a wire format or a storage limit,
-`byte_len(s)` and `byte_slice(s, start, end)` count UTF-8 bytes.
+`byte_len(s)` and `byte_slice(s, start, end)` count UTF-8 bytes. See
+[String offsets](Builtins.md#string-offsets) for every builtin that takes or
+returns a position.
 
 ## Comparison and Logical Operators
 
@@ -865,16 +576,10 @@ end
 #### For loops as mapping expressions
 
 Used in **value position** a `for` loop evaluates to a **list** built from the
-last expression of each iteration. This turns a loop into a mapping. The rule is
-simply *"the loop's value is used"*; in full, that is when the loop is
-
-- assigned to a name (`let xs = for … end`),
-- `return`ed,
-- passed as an argument (`len(for … end)`, `print(for … end)`),
-- placed as a list element (`[for … end, 9]`),
-- **used as a record field value** (`{rows: for … end}`),
-- interpolated into a string (`"{for … end}"`),
-- or in a **tail position** — see below.
+last expression of each iteration. Value position means the loop's value is
+used: it is bound to a name, `return`ed, passed as an argument, placed in a
+list or record, interpolated, or it is the tail of a function, of an `if`
+branch or `match` arm whose value is used, or of another collecting loop.
 
 ```petal
 let squares = for i in range(1, 6) do
@@ -883,89 +588,19 @@ end
 // squares == [1, 4, 9, 16, 25]
 
 fn doubled(xs)
-    return for x in xs do x * 2 end
+    for x in xs do x * 2 end        // the function's tail: [2, 4, 6] for [1, 2, 3]
 end
 ```
 
-**Tail positions count as value positions.** A loop that ends a construct whose
-own value is used collects just the same — no `return` or intermediate binding
-needed. That covers a function body's **implicit return**, an **`if`/`else`
-branch tail**, a **`match` arm tail**, and the body of an enclosing collecting
-loop:
+A bare `for` statement runs for its side effects and builds no list. Inside a
+collecting loop, `continue` leaves the iteration out and `break` ends
+collection with what was gathered so far. A function that ends in a loop run
+only for its side effects should be declared `-> nil`, which turns off its
+implicit return so the loop builds nothing.
 
-```petal
-fn doubled(xs)
-    for x in xs do x * 2 end        // implicit return: [2, 4, 6] for [1, 2, 3]
-end
-
-fn rows(n)
-    if n > 0 then
-        for i in range(0, n) do i end   // if-branch tail: [0, 1, 2] for n = 3
-    else
-        []
-    end
-end
-
-fn tagged(n)
-    match n
-        when 0 -> []
-        when m -> for i in range(0, m) do i + 100 end   // match-arm tail
-    end
-end
-
-let grouped = {ids: for i in range(0, 3) do i end}      // record field: [0, 1, 2]
-```
-
-A `for` loop only produces a list when its value is actually used ("captured").
-A **bare `for` statement** runs purely for its side effects and allocates no
-list — so existing loops keep their zero-overhead behavior:
-
-```petal
-for i in range(0, 3) do
-    print(i)          // side effects only, no list built
-end
-```
-
-A side-effect loop that happens to end a function is in tail position, so it
-does collect. Declare the function **`-> nil`** when the caller has no use for
-the list: a `-> nil` function has no implicit return, so its tail is an ordinary
-statement and the loop builds nothing.
-
-```petal
-fn draw_all(items) -> nil
-    for it in items do draw(it) end     // side effects only again
-end
-```
-
-`petal suggest` finds these: it reports every un-annotated function that ends
-in a loop and reads its call sites to propose `-> nil` or `-> list`. The full
-set of rules — what is and is not a value position, and everything `-> nil`
-changes — is in [Implicit Return Values](implicit-return-values.md).
-
-Inside a collecting loop:
-
-- `continue` **filters**: that iteration contributes nothing to the list.
-- `break` ends collection; the elements gathered so far are the result.
-
-```petal
-let odds = for i in range(0, 10) do
-    if i % 2 == 0 then continue end
-    i
-end
-// odds == [1, 3, 5, 7, 9]
-```
-
-Loops nest directly — the inner loop is in the outer body's tail position, so it
-collects and each outer iteration contributes a row:
-
-```petal
-let grid = for row in range(0, 3) do
-    for col in range(0, 3) do
-        row * 10 + col
-    end
-end
-// grid == [[0,1,2], [10,11,12], [20,21,22]]
-```
+[Implicit Return Values](syntax/implicit-return-values.md#loops) has the full
+rule: every value position, what a collecting loop gathers, and what `-> nil`
+changes.
 
 `while` loops are statement-only: they have no collecting expression form.
 
@@ -1009,7 +644,7 @@ print(add(2, 3))  // 5
 
 The implicit return reaches into a trailing `if`, `match` or `for`, and a
 function declared `-> nil` has none at all — see
-[Implicit Return Values](implicit-return-values.md) for the whole rule.
+[Implicit Return Values](syntax/implicit-return-values.md) for the whole rule.
 
 Use `return` for early exit:
 
@@ -1025,7 +660,8 @@ end
 ### Named Arguments
 
 An argument may be written `name: value`, binding it to the parameter of that
-name rather than to its position:
+name rather than to its position. Positional arguments come first. Lambdas,
+methods and builtins take names too.
 
 ```petal
 fn scale(value, by, offset)
@@ -1036,105 +672,15 @@ print(scale(2, by: 10, offset: 1))    // 21
 print(scale(by: 10, offset: 1, value: 2))  // 21
 ```
 
-Every positional argument must come before every named one; going back to
-positional is a parse error:
-
-```petal ignore
-scale(value: 2, 10, 1)
-// Error: A positional argument after a named argument: once an argument is
-// named, every later argument must be named too
-```
-
-Overloads are chosen by the *total* number of arguments (positional plus
-named) first — see [Function Overloading](function-overloading.md) — and the
-names then pick out the chosen variant's parameter slots. (The names take part
-in the choice itself only when the count alone does not settle it, which needs
-a variant with [default parameter values](#default-parameter-values).) For a
-function without defaults every parameter needs a value, so a slot left
-unfilled shows up as the ordinary arity error (`scale() expects 3 arguments,
-got 2`). The two failures that are specific to names are an unknown parameter
-and a slot filled twice:
-
-```petal
-scale(2, 10, nudge: 1)     // error: scale() has no parameter named 'nudge'
-scale(2, value: 3, by: 1)  // error: scale() got multiple values for parameter 'value'
-```
-
-Wherever the callee is known before the program runs — a function or a
-constructor named at the call site, or a binding that holds one — `petal check`
-reports both of these as errors too, whether or not the line ever executes,
-and lists the detail the runtime error has no room for:
-
-```
-error: scale() has no parameter named 'nudge' (parameters: 'value', 'by', 'offset')
-error: scale() got multiple values for parameter 'value' (argument 1 already fills it)
-```
-
-`petal check` exits non-zero on them, so a bad name fails CI without the
-branch ever being taken. The runtime error is still the only report for a
-method call and for a callee this pass cannot see (a function passed in as a
-parameter).
-
-Lambdas take named arguments too, since they have parameter names like any
-other function:
-
-```petal
-let sub = fn(a, b) -> a - b
-print(sub(b: 1, a: 10))  // 9
-```
-
-A method's receiver occupies the first parameter, so `p.shift(dx: 2)` names the
-parameters after it — and naming the receiver's own parameter is the
-double-bind error above (`Point.shift() got multiple values for parameter
-'p'`).
-
-**Builtins take names too**, under the parameter names the
-[Builtins Reference](Builtins.md) gives them:
-
-```petal
-print(clamp(15, lo: 0, hi: 10))              // 10
-print(pow(exp: 3, base: 2))                  // 8.0
-print([1, 2, 3, 4].slice(start: 1, end: 3))  // [2, 3]
-print(15 |> clamp(lo: 0, hi: 10))            // 10
-```
-
-The names are put in the builtin's own argument order before it runs, so a
-named call does exactly what the positional one does, at the same cost. Method
-syntax and `|>` supply the first parameter, and the names bind against the
-rest. A builtin's parameter list reads like a `fn`'s, with these differences:
-
-- Where a `fn` has [default values](#default-parameter-values), a builtin has
-  **optional trailing parameters** — written `end?` in the reference
-  (`slice(collection, start, end?)`, `round(x, places?)`). A call may leave
-  them off, just as it may leave off a defaulted parameter. Unlike a default,
-  one cannot be skipped to reach a later one — the builtin has no expression
-  to fill the gap with — so `noise(x: 1, z: 2)` is `noise() is missing a
-  value for parameter 'y'`.
-- A builtin that reads its arguments differently by count declares each form
-  (`distance(x1, y1, x2, y2)` and `distance(v1, v2)`), the way a `fn` declares
-  [overloads](function-overloading.md), and the names take part in picking
-  the form. A call no form takes is reported as it is for an overloaded `fn`:
-  `range(start: 1, stop: 5)` is `range() has no variant that accepts 2
-  arguments with some named 'start', 'stop' (variants: range(end),
-  range(start, end, step?))`.
-- A parameter may be named with a keyword, which an argument label is free to
-  be: `range(start: 0, end: 5)`.
-
-The errors are the ones above (`clamp() has no parameter named 'low'`), and
-`petal check` reports them the same way. The variadic builtins, `print` and
-`format`, have no parameter names and refuse one outright:
-`builtin 'print' does not accept named arguments`. So does a host native whose
-embedder declared no names for it (see
-[Native functions](ffi.md#native-functions)).
-
-A function the standard prelude or a library writes in Petal
-(`sum(xs: [1, 2])`, petal-ui's `draw_rect(x: 0, y: 0, …)`) is an ordinary `fn`
-and takes the names its declaration gives.
+See [Named arguments](syntax/function-overloading.md#named-arguments) for the
+rules, the errors, and how names work on builtins.
 
 ### Default Parameter Values
 
 A parameter may be given a default with `= expression`. A call that leaves the
-argument out gets the default instead:
+argument out gets the default, and a later parameter can be reached by naming
+it. The default is evaluated on every call that omits the argument, never once
+at declaration, and it may use the parameters declared before it.
 
 ```petal
 fn greet(name, greeting = "Hello", punct = "!")
@@ -1146,103 +692,8 @@ print(greet("Ada", "Hi"))            // Hi, Ada!
 print(greet("Ada", punct: "?"))      // Hello, Ada?
 ```
 
-Trailing defaulted parameters can simply be left off, and *any* defaulted
-parameter can be skipped by [naming](#named-arguments) a later one, as
-`punct: "?"` does above. A type annotation goes before the default:
-`fn fade(c, amount: num = 0.5)`.
-
-**The default is an expression, and it is evaluated on every call that omits
-the argument.** It is not computed once when the function is declared, and its
-result is never kept from one call to the next. It runs inside the function,
-as the call starts, so it behaves exactly as if it were the first line of the
-body:
-
-```petal
-fn tagged(item, tags = [])
-    push(tags, item)
-end
-
-print(tagged("a"))   // ["a"]
-print(tagged("b"))   // ["b"]    a fresh list each call — not ["a", "b"]
-```
-
-```petal
-var issued = 0
-fn next_id()
-    set issued = get issued + 1
-    get issued
-end
-
-fn make(label, id = next_id())
-    "{id}: {label}"
-end
-
-print(make("first"))       // 1: first
-print(make("second"))      // 2: second     next_id() ran again
-print(make("third", 99))   // 99: third     an argument was passed — it did not run
-print(make("fourth"))      // 3: fourth
-```
-
-So `fn stamp(at = time())` reads the clock on each call, and
-`fn roll(n = random_int(1, 6))` rolls again each time.
-
-Because it runs in the function, a default can use anything the body could:
-the parameters declared **before** it, and any outer binding the function
-captures.
-
-```petal
-let margin = 4
-
-fn inset(w, h = w, pad = margin * 2)
-    [w - pad, h - pad]
-end
-
-print(inset(20))           // [12, 12]    h defaults to w
-print(inset(20, 10))       // [12, 2]
-print(inset(20, pad: 0))   // [20, 20]
-```
-
-Defaults are evaluated left to right, and only for the parameters the call
-left out. A default cannot read its own parameter or one declared after it —
-that is a compile error, since the later parameter has no value yet:
-
-```petal ignore
-fn span(lo = hi - 10, hi = 100) lo end
-// Error: The default value of parameter 'lo' refers to 'hi', which is declared
-// after it — a default can only use the parameters declared before it
-```
-
-The rules:
-
-- **Defaulted parameters come last.** A parameter without a default cannot
-  follow one that has one (`fn f(a = 1, b)` is a parse error) — a call fills
-  parameters left to right.
-- **Passing `nil` is passing an argument.** `greet("Ada", nil)` binds
-  `greeting` to `nil`; only *omitting* the argument evaluates the default.
-- **A required parameter must be given.** Leaving one out names it:
-  `greet()` is `greet() is missing a value for parameter 'name'`, and too many
-  arguments is `greet() expects 1-3 arguments, got 4`. `petal check` reports
-  both before the program runs.
-- **Lambdas and methods take defaults too**: `fn(x, step = 1) -> x + step`, and
-  `fn Rect.grow(r, by = 1)` (the receiver is always supplied, so it is never
-  the one with a default). A callback that is handed fewer arguments than it
-  declares uses its defaults for the rest: `map(xs, fn(x, scale = 10) -> x * scale)`.
-- **An annotation is checked against the default**: `fn f(n: int = "one")`
-  is a `petal check` warning.
-- **Class fields and enum variant fields do not take defaults.** A constructor
-  still needs every field; write a function with defaults that calls it.
-- **Builtins have optional parameters rather than defaults.** A builtin is
-  not written in Petal, so it has no default *expression*; the reference marks
-  a parameter a call may leave off with `?` (`round(x, places?)`). It can be
-  omitted or [named](#named-arguments) like a defaulted one, but only from the
-  end: it cannot be skipped to reach a later one.
-
-A default is ordinary code in the function, so it costs nothing when the
-argument is passed, and a call that passes every argument positionally to a
-function that has no defaults is exactly as fast as it was. With overloads, a
-variant's defaults widen the calls it accepts — see
-[Function Overloading](function-overloading.md#default-parameter-values) for how
-a variant is then chosen.
+See [Default parameter values](syntax/function-overloading.md#default-parameter-values)
+for the full rules.
 
 ### Recursion
 
@@ -1294,10 +745,16 @@ print(is_even(10))  // true
 The hoist is deliberately conservative, because moving a declaration must never
 change what it captures. A top-level `fn` stays exactly where it is written when
 
-- its body mentions something the file computes at run time (a top-level `let`,
-  `var`, `state`, or an enum variant), or
+- its body mentions something the file computes at run time (a top-level
+  `var` or `state`, or a `let` that is reassigned or whose initializer calls a
+  function or holds one), or
 - a statement above it *reads* a name it shadows — so `let old_max = max` above
   `fn max` still reads the builtin.
+
+A `let` or `const` built only from literals, operators, lists and records of
+them, enum variants and other such bindings does not count for the first rule:
+it is itself in place before the file's first statement, so a function that
+reads it is still hoisted.
 
 The second rule needs the read. A name simply being in scope is not enough: a
 plain import such as `import ui` binds hundreds of bare names in a module, and
@@ -1306,9 +763,9 @@ though `spinner` is also a `ui` export. Only a read that captures the older
 meaning holds a declaration back.
 
 For the one case that leaves — a top-level *call* to a declaration below it that
-was not hoistable — the compiler reports it as "call to `h` before its
-declaration" at compile time, rather than leaving a bare runtime `Cannot call
-nil` at the call site. A reference from *inside* another function body is always
+was not hoistable — the compiler warns "call to `h` before its declaration" at
+compile time, so the runtime `Cannot call nil` at the call site does not
+arrive unexplained. A reference from *inside* another function body is always
 fine: that body runs after the whole file has.
 
 ### Lambdas
@@ -1358,6 +815,12 @@ let add5 = make_adder(5)
 print(add5(10))  // 15
 ```
 
+A captured `let` is captured by value, where the function is written: a
+rebinding of the name further down is not seen by the function. A `var` is
+shared instead, and read inside the function with `get`. See
+[Reading a cell](syntax/var.md#reading-a-cell-get) and
+[Capture lag](syntax/var.md#capture-lag).
+
 ### Pipe Operator
 
 The pipe operator `|>` passes a value as the first argument to a function:
@@ -1395,11 +858,9 @@ append(@nums, 4)   // same as: nums = append(nums, 4)
 print(nums)        // [1, 2, 3, 4]
 ```
 
-`@` binds to the nearest enclosing call, and works on `let` bindings only — it
-desugars to `x = f(x)`, so on a [`var`](#var-and-set) it is an error and you
-write `set nums = append(nums, 4)`. See the
-[Rebind Operator](syntax/rebind-operator.md) doc for nesting, statement-level scope,
-and limits.
+`@` works on `let` bindings only. See the
+[Rebind Operator](syntax/rebind-operator.md) doc for nesting, statement-level
+scope, and limits.
 
 ## Lists
 
@@ -1455,45 +916,26 @@ reduce([1, 2, 3], 0, fn(acc, x) -> acc + x) // 6
 
 ### Sorting
 
-`sort(list)` orders numbers and strings. For anything else — records, a
-descending order, an order of your own — there are two forms, and both return a
-new list.
-
-**`sort_by(list, key, descending?)`** sorts by a key read off each element. Reach
-for this one first:
+`sort(list)` orders numbers and strings. For records, a descending order or an
+order of your own, `sort_by(list, key, descending?)` sorts by a key read off
+each element; reach for it first. `sort(list, compare)` takes a comparator of
+two elements, for an order a single key cannot express. All three return a new
+list, and the sorts are stable.
 
 ```petal
 let rows = [{name: "Ada", score: 3}, {name: "Bo", score: 9}, {name: "Cy", score: 3}]
 
 sort_by(rows, fn(r) -> r.score)           // Ada, Cy, Bo
-sort_by(rows, fn(r) -> r.score, "desc")   // Bo, Ada, Cy   (`true` works too)
-sort_by(rows, fn(r) -> lower(r.name))     // by name, ignoring case
+sort_by(rows, fn(r) -> r.score, "desc")   // Bo, Ada, Cy
+sort(rows, fn(a, b) -> a.score < b.score) // lowest score first
 ```
 
-The key function runs once per element, and must return a **number or a
-string** — any other key is an error (`petal check` reports it ahead of time
-when it can see what the function returns).
-
-`sort_by` is stable: elements with equal keys keep the order they came in. That
-is how to sort by more than one key — sort by the *least* significant key first
-and the most significant last:
-
-```petal
-// By score, highest first; ties broken by name.
-sort_by(sort_by(rows, fn(r) -> r.name), fn(r) -> r.score, "desc")
-```
-
-**`sort(list, compare)`** takes a comparator of two elements, for an order a
-single key cannot express. It may return a number (negative: `a` first;
-positive: `b` first; zero: a tie) or a bool (`true`: `a` first):
-
-```petal
-sort([3, 1, 2], fn(a, b) -> b - a)          // [3, 2, 1]
-sort(rows, fn(a, b) -> a.score < b.score)   // lowest score first
-```
-
-It is stable too. A comparator is called about `n log n` times where a key
-function is called `n` times, so prefer `sort_by` when a key will do.
+A key must be a number or a string, and `petal check` reports any other key
+ahead of time when it can see what the key function returns. A comparator is
+called about `n log n` times where a key function is called `n` times, so
+prefer `sort_by` when a key will do. See
+[`sort_by`](Builtins.md#sort_bylist-key-descending) and
+[`sort`](Builtins.md#sortlist-compare) in the Builtins Reference.
 
 ## Records
 
@@ -1894,7 +1336,7 @@ print(Color.red)
 ```
 
 Editing an enum while the program runs is covered in
-[hot-reload.md](hot-reload.md#editing-an-enum).
+[features/hot-reload.md](features/hot-reload.md#editing-an-enum).
 
 ### The enum's name as a type
 
@@ -2042,10 +1484,11 @@ print(r.shifted(10, 0).center_x())   // 60
 ```
 
 Methods may be declared on your own classes and on the built-in ones alike.
-Like a function, a method becomes callable when its declaration runs, so declare
-it before the top-level code that calls it. Two methods may share a name on one
+A method is a top-level `fn`, so it is
+[hoisted](#declaration-order-top-level-fns-are-hoisted) like one and can be
+called from above its declaration. Two methods may share a name on one
 class only if their arities differ (the same rule as
-[function overloading](function-overloading.md)); the same name on *different*
+[function overloading](syntax/function-overloading.md)); the same name on *different*
 classes is entirely independent.
 
 A method's annotations are read at the call site, exactly like a function's: the
@@ -2597,9 +2040,8 @@ off.
 ## State
 
 The `state` keyword declares a persistent variable: initialized once, then
-keeping its value from one run of the program to the next, and across a
-[hot reload](program-modification.md). It is how a script that re-runs every
-frame remembers anything.
+keeping its value from one run of the program to the next, and across a hot
+reload. It is how a script that re-runs every frame remembers anything.
 
 ```petal
 state hits = 0
@@ -2607,209 +2049,22 @@ hits += 1
 print(hits)   // 1 on the first run, 2 on the second, ...
 ```
 
-A `state` that is never assigned is not state: it is a constant, built once
-and then never updated, including by a hot reload of the line that declares
-it. The lint rule `state-as-constant` reports a plain top-level `state` with
-a static initializer that nothing in the program assigns, and its fix
-rewrites it as a [`const`](#const--a-value-that-must-be-constant), which
-follows its source:
+Each call path that reaches a declaration gets its own slot, so two callsites
+of a helper hold two independent values, and a function called inside a `for`
+holds one per iteration. `state(key) name = …` keys the slot by a value
+instead, and a top-level `state var` is the one cell that every function
+shares.
 
-```text
-$ petal lint --rules-include=state-as-constant app.ptl
-app.ptl:12:1: state-as-constant: `state TILES` is never assigned and its initializer is constant; …
-$ petal lint --fix --rules-include=state-as-constant app.ptl
-```
-
-A `pub state` qualifies like any other: a module's exports are read-only to
-the modules that import them, so the writes in the declaring file are all
-the writes there are. The rule runs only when asked for by name, because the
-rewrite is a judgement and not a respelling. Keep `state` where a host writes the cell by
-name, where the value is meant to survive a reload, or where the initializer
-is expensive and the script runs somewhere that rebuilds a `const` on every
-run; `// petal-lint-ignore state-as-constant` on the line records that.
-
-### One slot per call path
-
-*Which* slot a declaration reads is decided by the declaration **and the path
-that reached it**: the chain of callsites and loop iterations running from the
-top of the program down to this execution. Reached the same way ⇒ the same
-slot. Reached a different way ⇒ a different slot. That is React's `useState`
-rule, with the call path standing in for the component instance.
-
-The consequences are the whole point:
-
-- **Two callsites of a helper hold two independent values.**
-- **Recursion gets one slot per depth** — each recursive call extends the path.
-- **A function called inside a `for` gets one slot per iteration**, so a list's
-  positions key its rows automatically.
-- **Two functions that declare the same state name never collide.** A
-  declaration's identity is its name plus the enclosing module and function
-  chain, so `count` in `fn a` and `count` in `fn b` are different declarations.
-- **Top-level `state` is unaffected.** Module scope runs on the empty path, so a
-  file-level declaration is exactly one slot, as it always was.
-
-```petal
-fn counter()
-    state n = 0
-    n += 1
-    n
-end
-
-fn left()   counter() end
-fn right()  counter() end
-
-print(left(), right())   // 1 1 — two callsites, two slots
-```
-
-Within one run, a path is normally reached only once: reaching the same callsite
-twice takes a loop or a recursive call, and both of those extend the path. So an
-in-function counter counts *runs* (frames), not calls — the program above prints
-`1 1`, then `2 2` on its second run. To count calls within a run, key the slot
-explicitly or share one top-level cell (both below).
-
-```petal
-fn walk(n)
-    state visits = 0
-    visits += 1
-    if n > 0 then walk(n - 1) end
-    visits
-end
-print(walk(3))   // 1 — depths 3, 2, 1, 0 are four slots, each on its first visit
-```
-
-```petal
-fn tick(label)
-    state n = 0
-    n += 1
-    label ++ ":" ++ str(n)
-end
-
-for label in ["a", "b", "c"] do
-    print(tick(label))   // a:1  b:1  c:1, then a:2  b:2  c:2 on the next run
-end
-```
-
-Positional keying is React's un-keyed list behaviour, including its cost:
-reorder the list and the values stay with the *positions*, not the items. When
-it is the item's identity that matters, say so with a key.
-
-### Keyed state — `state(key)`
-
-`state(expr) name = …` keys the slot by the value of `expr` and **ignores the
-call path entirely**. It is absolute: every execution of that declaration with
-the same key value lands on the same slot, no matter which caller, how deep, or
-which loop iteration it arrived from.
-
-```petal
-fn health(id, damage)
-    state(id) hp = 100
-    hp -= damage
-    hp
-end
-print(health("goblin", 10), health("orc", 30), health("goblin", 5))  // 90 70 85
-```
-
-That makes `state(key)` the tool for anything whose identity outlives its
-position: entities in a list that reorders, a tree node reached one level deeper
-each frame, an input's repeat phase that two widgets are meant to share. Keys
-are hashed, one slot per (declaration, key value), and a slot that goes
-untouched for a whole run is reclaimed.
-
-### Sharing on purpose
-
-Because every caller is a different path, a helper cannot be used to launder a
-shared value — funnelling reads and writes through one accessor function that
-holds a single `state` gives each caller its own slot, not a shared one.
-Deliberately shared state is a **top-level `state var`**: module scope is one
-path, so there is exactly one cell, and `get`/`set` keep every live read and
-write visible at the site that does it.
-
-```petal
-state var theme = "dark"
-
-fn ui_theme()      get theme end
-fn theme_set(t)    set theme = t end
-
-theme_set("light")
-print(ui_theme())   // light
-```
-
-The same trap has a quieter form: a **cache** behind an accessor. `state` only
-runs its initializer on a slot's first touch, so wrapping an expensive build in
-a function reads like a memo — but the memo is per path, so a caller inside a
-loop rebuilds it on every iteration and never gets a hit.
-
-```petal
-fn char_table()
-    state var t = build_table()   // once per callsite, once per iteration
-    get t
-end
-
-state var char_table = build_table()   // once for the program — what you meant
-```
-
-Hoist the declaration to the top level when the cache is global, or key it with
-`state(k)` when it varies by some argument (`state(ink) var rows =
-build_rows(ink)` gives one build per ink, shared by every caller).
-
-### Callbacks run at the builtin's callsite
-
-`map`, `filter`, `reduce`, `forEach` and the other higher-order builtins call
-your function from a single place — the builtin's own callsite — so a `state`
-inside the callback has one slot shared by every element of that call:
-
-```petal
-fn seen(x)
-    state n = 0
-    n += 1
-    n
-end
-print(map([10, 20, 30], seen))   // [1, 2, 3] — one shared slot, not three
-```
-
-Use a `for` loop when you want a slot per element, or key it: `state(x) n = 0`.
-
-### `state var`
-
-`state var` combines persistence with a [mutable cell](#var-and-set): the slot
-holds the cell, so the value survives across runs and hot reloads *and* can be
-written with `set` from inside another function or a callback.
-
-```petal
-state var hits = 0
-set hits = hits + 1
-print(hits)
-```
-
-The slot is path-keyed like any other, so a `state var` at the top level is one
-shared cell while a `state var` inside a function is one cell per call path.
-`state(key) var` works too — one cell per key, created on first touch. Reach for
-`state var` only when a plain `state` cannot express the write; a `state` read
-still carries its dataflow edges, and a cell read does not.
-
-The write a plain `state` cannot express is one from inside a function: `=` on
-a `state` declared outside the function is an error, exactly as for a `let`.
-So a `state` that a function has to update becomes a `state var`, written with
-`set` and read there with `get`; see
-[Mutable state shared by several functions](#mutable-state-shared-by-several-functions)
-for the pattern and what it costs.
-
-### State and hot reload
-
-Every part of a slot's identity is derived from names, never from positions in
-the file: the declaration from its name and enclosing module/function chain,
-each callsite from the callee's spelling plus its ordinal among identically
-spelled calls in that function. So editing elsewhere in the file — reordering
-declarations, adding lines, reformatting — preserves state. Renaming a state
-variable, renaming a callee, or inserting an *earlier* call to the same callee
-changes an identity, and that slot (or that callsite's subtree of slots) starts
-fresh. See
-[program-modification.md](program-modification.md#state-preserving-hot-reload-transfer_state).
+The full description is in [Inline state](features/inline-state.md): the
+keying rules, `state(key)`, `state var`, how long a slot lives, why a table
+that never changes belongs in a [`const`](#const--a-value-that-must-be-constant)
+and not in `state`, and what a hot reload keeps.
 
 ## JSX-like Elements
 
-Petal supports a JSX-style element syntax for building tree-shaped data —
-useful for DOM-like UIs in `petal-web` and diagram trees in `petal-diagram-canvas`.
+Petal supports a JSX-style element syntax for building tree-shaped data,
+which a host walks to produce its output: `petal-web-html` renders the tree as
+DOM.
 
 ```petal
 let page = <div class="root">
@@ -2826,8 +2081,7 @@ let page = <div class="root">
 - Self-closing tags use `<Tag />`.
 - `{expr}` embeds a Petal expression as a child.
 
-Elements are runtime values; host embeddings (petal-web's renderer,
-petal-diagram-canvas) walk the tree and produce DOM / canvas output.
+Elements are runtime values of type `element`.
 
 ## Function Overloading
 
@@ -2842,7 +2096,7 @@ fn greet(name)   print("hi", name) end
 fn greet(a, b)   print("hi", a, b) end
 ```
 
-See [function-overloading.md](function-overloading.md) for the full rules.
+See [syntax/function-overloading.md](syntax/function-overloading.md) for the full rules.
 
 ## Modules and imports
 
@@ -2857,26 +2111,18 @@ import creative             // a package: lerp(a, b, t), creative.lerp(a, b, t)
 import ui                   // the petal-ui interface, for a UI script
 ```
 
-- A path that starts with `./` or `../` is a file relative to the importing
-  one. Anything else starts with a **package** name: one bundled with the
-  runtime (`ui`, `bloom`, `creative`, `vec2`, `noise`, `color`, `json`, `io`,
-  `autodiff`, …) or a dependency named in the project's `petal.toml`.
-- A plain `import m` binds every export of `m` bare and binds the qualifier
-  `m`. Two plain imports may export the same name; that is an error only
-  where the name is used bare, and `m.name` always works.
-- A file's own declarations win over imported names, selective imports win
-  over plain ones, and all of them win over the core builtins and `std`.
-- Declarations are private to their file unless marked `pub`.
-- `native fn name(params) -> type` declares a function the host implements;
-  it is how a host's interface package hands its natives to scripts
-  ([ffi.md](ffi.md#native-interfaces-native-fn)).
+A path that starts with `./` or `../` is a file relative to the importing one;
+anything else starts with a package name. Declarations are private to their
+file unless marked `pub`. In scope with no import are the `core` builtins
+(`print`, `len`, `str`, `range`, the casts, collections, strings, records,
+plain math, assertions) and `std`, the part of the standard library written in
+Petal (`sum`, `first`, `mean`, …).
 
-In scope with no import: the `core` builtins (`print`, `len`, `str`, `range`,
-the casts, collections, strings, records, plain math including `clamp` and
-`random`, assertions) and `std`, the part of the standard library written in
-Petal (`sum`, `first`, `mean`, …). The [Module System](module-system.md) has
-the full rules and [Packages](packages.md) covers `petal.toml`, dependencies
-and the package commands.
+The [Module System](module-system.md) has the full rules (which name wins,
+exports, `native fn` interfaces), [Packages](packages.md) covers `petal.toml`,
+dependencies and the package commands, and
+[Which builtins need an import](Builtins.md#which-builtins-need-an-import)
+lists the bundled packages' functions.
 
 ## Assertions
 
@@ -2891,18 +2137,19 @@ Both are built-ins — no import needed.
 
 ## Automatic Differentiation
 
-Petal has built-in support for forward-mode automatic differentiation using dual numbers:
+A dual number carries a derivative along with its value, and arithmetic on it
+computes both (forward-mode automatic differentiation). `dual`, `value_of`
+and `deriv_of` come from the `autodiff` package:
 
 ```petal
 import autodiff
-// Create a dual number: dual(value, derivative)
-let x = dual(3.0, 1.0)  // x = 3, dx/dx = 1
+let x = dual(3.0, 1.0)     // the value 3, seeded as the input
+let y = x * x + 2.0 * x
 
-// Arithmetic propagates derivatives automatically
-let y = x * x + 2.0 * x  // y = x^2 + 2x
-
-print(value_of(y))  // 15.0  (3^2 + 2*3)
-print(deriv_of(y))  // 8.0   (2*3 + 2 = dy/dx at x=3)
+print(value_of(y))  // 15.0
+print(deriv_of(y))  // 8.0
 ```
 
-Math builtins like `sqrt`, `abs`, `floor`, `ceil`, and `round` also support dual numbers.
+Which builtins carry a derivative and which drop it, how to differentiate a
+function of several inputs, and the limits are in
+[features/differentiation.md](features/differentiation.md).

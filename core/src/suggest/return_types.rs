@@ -2,7 +2,7 @@
 //!
 //! A `for` in tail position is a mapping: it collects each iteration's last
 //! expression into a list, and that list is the function's implicit return
-//! (docs/implicit-return-values.md). An un-annotated function that ends in one
+//! (docs/syntax/implicit-return-values.md). An un-annotated function that ends in one
 //! therefore says nothing about which of two things its author meant:
 //!
 //! ```petal

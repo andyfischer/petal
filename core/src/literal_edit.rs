@@ -4,7 +4,7 @@
 //! A config-style file holds its settings as literals: numbers, strings,
 //! colors, and records and lists of them. This module changes such a literal to
 //! a new [`StaticValue`] while keeping everything the author typed that the
-//! change does not force out. The design is in `docs/source-preservation.md`;
+//! change does not force out. The design is in `docs/features/source-preservation.md`;
 //! in short there are two mechanisms, and nothing else:
 //!
 //! 1. **Minimal splices.** The old literal and the new value are walked

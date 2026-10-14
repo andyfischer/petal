@@ -87,6 +87,19 @@ pub fn respace(source: &str, protected: &[bool]) -> Result<String, String> {
     // Per open `(`: is it a `fn` parameter list? After its `)` comes the
     // body, not a call or an index: `fn rx(t, a) [t, a] end`.
     let mut parens: Vec<bool> = Vec::new();
+    // A word after `.` or `?.` is a field name, even a keyword's
+    // (`tot.state`, `r.end`): it ends an operand as a name does, so the `+`
+    // after it subtracts rather than signs. The rules see it as a name.
+    let field_name = Token::Ident(String::new());
+    let as_name = |k: usize| -> &Token {
+        let t = &tokens[k];
+        let after_dot = k > 0 && matches!(tokens[k - 1], Token::Dot | Token::QuestionDot);
+        if after_dot && crate::lexer::keyword_text(t).is_some() {
+            &field_name
+        } else {
+            t
+        }
+    };
 
     // Whatever precedes the first token (a leading comment) is copied as is.
     if let Some(first) = spans.first() {
@@ -176,8 +189,8 @@ pub fn respace(source: &str, protected: &[bool]) -> Result<String, String> {
         }
 
         let rule = gap_rule(GapCtx {
-            prev: i.checked_sub(1).map(|p| &tokens[p]),
-            a: &tokens[i],
+            prev: i.checked_sub(1).map(as_name),
+            a: as_name(i),
             b: next,
             a_opens_hole: opens_hole(i),
             a_closes_params: closes_params,
@@ -448,6 +461,21 @@ mod tests {
         assert_eq!(sp("let r = [1, -2]\n"), "let r = [1, -2]\n");
         // A leading `+` continues the line above.
         assert_eq!(sp("let v = a\n  + b\n"), "let v = a\n  + b\n");
+    }
+
+    #[test]
+    fn a_keyword_as_a_field_name_ends_an_operand() {
+        // `state`, `var`, `fn` after a `.` are field names: the `+` after
+        // them adds (it once printed `tot.state +pots`).
+        assert_eq!(
+            sp("let r = {state: tot.state + pots.state.income}\n"),
+            "let r = {state: tot.state + pots.state.income}\n"
+        );
+        assert_eq!(sp("let r = a.var - b\n"), "let r = a.var - b\n");
+        assert_eq!(sp("let r = a?.fn+b\n"), "let r = a?.fn + b\n");
+        assert_eq!(sp("let r = a.end * -b\n"), "let r = a.end * -b\n");
+        // A keyword that is not a field is still one: `return -x`.
+        assert_eq!(sp("return - x\n"), "return -x\n");
     }
 
     #[test]

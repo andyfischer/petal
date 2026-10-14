@@ -1,7 +1,10 @@
 # Moses debrief: what a 27,000-line game asks of Petal
 
-Status: suggestions, 11 October 2026. Items 1, 2, 3 and 8 have since been
-done and are marked where they are discussed.
+Status, 14 October 2026: items 1 to 6, 8, 11, 12, 14 and 15 are done or
+done in part, and checked end to end under the Cheesecake engine; items 7, 9,
+10 and 13 and section 3.8 were held back by the repository's owner and not
+started. Section 10 has every item's final state with its commits, and the
+fixes the final review made. Written as suggestions on 11 October 2026.
 
 `games/moses` in the Cheesecake repo (*The Power Broker*) is the largest
 Petal program so far: 27,000 lines in 33 modules, written in three days by
@@ -183,7 +186,7 @@ how many of them `--fix` rewrote:
 | `prefer-compound-assign`, extended to `xs[i]` and `r.f` | 264 | 264 | 102 before |
 | `neg-zero-sub` | 158 | 4 | fixed only for `0 - x` on a proven int. `0.0 - x` is reported and left: `0.0 - 0.0` is `0.0`, `-0.0` is not, and `atan2(0.0 - dx, …)`, the debrief's own example, tells them apart |
 | `prefer-field-set` | 140 | 29 | fixed where the file shows the cell to hold a plain record. `{...nil, f: v}` is a record and `set X.f = v` on nil fails, so a cell that starts as `nil`, a parameter and a loop variable are reported and left: most of the 111 |
-| `prefer-any` | 89 | 68 | fixed where the predicate is an in-place lambda with no call but to pure builtins; `any` stops at the first match |
+| `prefer-any` | 89 | 68 | fixed where the predicate is an in-place lambda with no call but to pure builtins. `any` did not in fact stop at the first match until 545b7d8 (14 October): it was `count(xs, p) > 0`, so the fix saved nothing then |
 | `dead-alias` | 50 | 48 | locals of one function only; a module-level `var` read into a `let` is a snapshot and is never reported |
 | `shadows-builtin` (report only) | 10 | 0 | `find`, `commas`, `log`, `count`, `sort_by`, and `ui`'s `card`, `pill`, `wrap` |
 | `reimplements-builtin` (report only) | 6 | 0 | `gf` five times and `g`: all `field(r, k, d)` |
@@ -610,10 +613,19 @@ text fitting, all of which the prelude has. The reasons are real gaps:
 The prelude's existing widgets are documented nowhere a game author looks:
 the engine's API document mentions only `button`.
 
+**Done, 13 October 2026** (d679c87; [ui-reference.md](../ui-reference.md),
+[ui-host-contract.md](../ui-host-contract.md)): layers, `ui_modal`,
+`interact`, `pointer_captured`, named targets, `cached_layer`, `draw_rects`,
+a flow cursor and a measure-only mode, text shadow, outline and tracking, and
+`draw_image` options. Cheesecake keeps retained layers as textures; Moses's
+minimap is one. Its own widget layer stays (Cheesecake's debrief, section 15,
+says why). Final state in section 10.
+
 ## 6. Embedding (item 15)
 
 From the headless-mode debrief (`~/cheesecake/docs/headless-mode-debrief.md`)
-and this pass; all still open:
+and this pass. **All four done, 13 October 2026** (cf948e7, a2b1423,
+9f3183f; see section 10), as they were written here when open:
 
 - `pb_vm_save_state` / `pb_vm_load_state`: the CLI has `--state-storage`;
   the bridge can dump state and cannot load it. Blocks O(1) save points,
@@ -732,3 +744,56 @@ and `docs/moses-debrief.md`, section 11). What that run found here:
   first time and names a guard-filled `state var` as designed.
 - All 298 of Cheesecake's scripts pass `petal check` with this build, apart
   from the eight it lists as failing on purpose.
+
+## 10. Final state (14 October 2026)
+
+Every item, checked under the Cheesecake engine (its `docs/moses-debrief.md`,
+section 16, has the test totals and the game's numbers). Hashes are on the
+rebased main.
+
+| # | Item | State | Commits |
+|---|---|---|---|
+| 1 | `text_width` re-decoding the face | done (11 October) | before this list |
+| 2 | Per-run binding fingerprints | done (11 October) | before this list |
+| 3 | Trivial builtins as VM intrinsics | done; the overload wrappers of 1.3 are natives for `draw_rect` (in all three shapes) and a type-test-free wrapper for `draw_polyline`; the other `draw_*` overloads keep theirs | 2fb58a1, ecb4151, 0e4f7e1, f1d9957, 81076b8; ui d679c87 |
+| 4 | Lints, run by default; warnings to the host | done. Not done: `prefer-match` for statement bodies; a general int `/` int check warning (opt-in lint instead) | de17173, 672c3b7, afc62d0, 815d1da, d689bea, 3df8c51, dcf94b8; 545b7d8 (`any` made to stop early, so `prefer-any` is true) |
+| 5 | `petal test`, `expect`, host-driven tests | done. Not done: catching a runtime error in a test, setup/teardown, a call chain for a failure in a helper | ca790a8, 924980e, fe2212e, 9f3183f; 0b00072 (top-level timeout) |
+| 6 | `const` | done (section 8: sufficient) | 815d1da, d689bea and the static-value work before them |
+| 7 | Checked record shapes | not done: held back by the owner | — |
+| 8 | Enums that can be used | done (12 October) | before this list |
+| 9 | Int-keyed maps and sets, bit operators | not done: held back | — |
+| 10 | Growable numeric arrays, tables of records | not done: held back. The VM side of 1.4 (slot reuse, a nursery) and 1.5 (two-target `Branch`, register coalescing) not started either | — |
+| 11 | petal-ui: layers, hit testing, retained drawing, layout, text styles | done; hosts other than Cheesecake draw image tint, source rect and slice by the lowered form only | d679c87, 9630c5b, 3cb234f, 18cc7c8, 0eb7b4d, 9e66ed0, 9da006e |
+| 12 | `f(...args)` | done; `petal check` does not look inside a spread | 076c191, 98c2006 |
+| 13 | Module state without `get`/`set` | not done: held back | — |
+| 14 | Standard library | done in part: everything in section 4's table but a priority queue, polyline helpers, a multi-generator `for`, list `repeat` and a format spec in interpolation | 94f1d9a, cca914a |
+| 15 | Bridge: save/load state, the failed host call's stack, typed JSON calls, call sites | done; lint findings are not exposed to a host | cf948e7, a2b1423, 97a94d1, cafb7d7, 8ead733, 9f3183f |
+| 2.3 | Profiler from frame 0, by line, outliers, allocations | done | 4dba2c6; ba4420b (a one-file program named by its file) |
+| 2.4 | `petal --version` | done; a minimum version in `petal.toml` not added | 340d9ca, b2e1dd1 |
+| 3.7 | Names (a module named like a builtin, `--set cam.DIST`, `config_overridden`, `config let` metadata) | not done | — |
+| 3.8 | Memoization with a key | not done: held back | — |
+
+**The final review's fixes** (two independent reviewers; all their Petal
+findings were real):
+
+- `any` and `all` were `count(xs, p) > 0` and `count(xs, p) == len(xs)`:
+  they called `p` on every element although `prefer-any`, `CLI.md` and
+  `writing-petal-guide.md` said `any` stops at the first match. They stop now
+  (545b7d8), so a predicate with effects, or one that would raise on a later
+  element, sees the difference (CHANGELOG, "Changed"). Moses' play frame
+  lost 1.6% of its instructions.
+- `petal test --timeout` did not cover the file's top level (0b00072).
+- `petal run --profile` named a one-file program's lines `<entry>:N`
+  (ba4420b; `VmProfile::entry_name`).
+- A frame petal-ui sorts by layer ended with one `clip_push` more than it
+  popped when a `with_layer` was drawn under a clip (9da006e).
+- Found while verifying: `petal fmt` turned `tot.state + x` into `tot.state
+  +x`, a keyword after `.` being taken for a keyword (5a29871).
+
+**Tests at the end:** core 76 suites, 2807 passed, 0 failed, 16 ignored (at 5a29871);
+`make expensive_lint_tests` 4 of 4; petal-ui 24 suites, 360 passed; the C
+bridge 41 and `make test-c-bridge` 4 of 4; vitest 1638 of 1638 (with
+`docs/stdlib.json` regenerated, 7345036); Garden 36 suites, 1444 passed;
+`petal test` over the converted files 71 of 71. The repository has no clippy
+step.
+

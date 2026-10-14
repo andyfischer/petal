@@ -835,6 +835,15 @@ Breaking changes made during development, newest first. For the import and
 package changes below, `petal fix-imports` does the rewriting and
 [docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
 
+- `any(xs, p)` and `all(xs, p)` stop at the element that decides: `p` is no
+  longer called on the elements after it (they were `count(xs, p) > 0` and
+  `count(xs, p) == len(xs)`). A predicate with effects, or one that would
+  raise on a later element, sees the difference.
+- `petal test --timeout` also covers the file's top level, which used to be
+  able to hang the run; `petal run --profile` names a one-file program's lines
+  by its file instead of `<entry>`; a frame petal-ui sorts by layer ends with
+  the clip stack the frame as drawn left.
+
 - A `state` that holds a function (directly or inside a record or list) is
   dropped by a hot reload that recompiles or patches the program, and starts
   from its initializer again. It used to be kept, and calling the function

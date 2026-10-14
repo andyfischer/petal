@@ -131,7 +131,10 @@ The rules a host keeping layers follows:
   script keeps drawing that layer.
 - **Freeing.** A host may free a layer that a frame's command list neither
   recorded nor drew. The script lets go of it under the same condition and
-  will record it again if it comes back.
+  will record it again if it comes back. *Drew* includes drawn by the
+  content of a layer the frame drew: a nested layer's `cache_draw` is inside
+  its parent's recording, which the frame replays without re-running the
+  parent's body, so nothing would record the nested one again.
 - **Losing a layer.** If the host cannot draw a layer it is asked for (a
   device reset, a `cache_draw` for an id it does not hold), it draws nothing
   for that command and calls `petal_ui::compose::invalidate_caches(env)`

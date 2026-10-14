@@ -283,8 +283,7 @@ fn resolve_caches(
     for (cmd, from) in stream {
         match cmd {
             DrawCommand::CacheDraw { id, x, y } => {
-                used.push(id);
-                expand(&mut store, id, x, y, 0, from, &mut out);
+                expand(&mut store, id, x, y, 0, from, &mut out, &mut used);
             }
             other => out.push((other, from)),
         }
@@ -292,6 +291,9 @@ fn resolve_caches(
 
     // A layer this frame neither recorded nor drew is let go: its script-side
     // state was swept by the same absence, so it would be recorded again.
+    // Drawn includes drawn by another layer's content: a nested layer's call
+    // site does not run while the layer around it is replayed, and nothing
+    // would record it again.
     let known = store.get(SYM_CACHE_IDS);
     let known: Vec<u32> = known
         .map(|v| store.items(&v))
@@ -319,7 +321,9 @@ fn resolve_caches(
 }
 
 /// Append retained layer `id`'s content, moved to (`x`, `y`) and clipped to
-/// the layer's size.
+/// the layer's size. Every layer drawn, the ones drawn by its content
+/// included, goes into `used`.
+#[allow(clippy::too_many_arguments)]
 fn expand(
     store: &mut Store,
     id: u32,
@@ -328,7 +332,9 @@ fn expand(
     depth: usize,
     from: Option<usize>,
     out: &mut Vec<Composed>,
+    used: &mut Vec<u32>,
 ) {
+    used.push(id);
     let Some(kept) = store.get(&cache_symbol(id)) else {
         return;
     };
@@ -353,7 +359,7 @@ fn expand(
     for value in &items[2..] {
         match store.decode(value) {
             Some(DrawCommand::CacheDraw { id: inner, x: ix, y: iy }) => {
-                expand(store, inner, x + ix, y + iy, depth + 1, from, out);
+                expand(store, inner, x + ix, y + iy, depth + 1, from, out, used);
             }
             Some(
                 DrawCommand::Layer { .. }

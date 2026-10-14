@@ -305,6 +305,33 @@ fn layers_nest() {
     );
 }
 
+/// A nested layer is drawn by the layer around it, from that layer's kept
+/// content, on the frames the outer body does not run: it must be kept too,
+/// for as long as the outer one is.
+#[test]
+fn a_nested_layer_is_kept_while_the_layer_around_it_is_replayed() {
+    // `frame_count()` makes every frame run (no frame is skipped by the gate
+    // for having read nothing that changed).
+    let mut ui = ui("state runs = 0\n\
+                     var ran = false\n\
+                     let tick = frame_count()\n\
+                     cached_layer(1, rect(100, 100, 50, 50), fn()\n\
+                       draw_rect(0, 0, 50, 50, #000000)\n\
+                       cached_layer(1, rect(10, 10, 20, 20), fn()\n\
+                         set ran = true\n\
+                         draw_rect(1, 1, 2, 2, #ffffff)\n\
+                       end)\n\
+                     end)\n\
+                     if get ran then runs = runs + 1 end");
+    let first = ui.frame().unwrap().to_vec();
+    assert_eq!(first.len(), 6);
+    for _ in 0..4 {
+        ui.key("z").unwrap();
+        assert_eq!(ui.commands, first, "the inner layer is still drawn (frame {})", ui.state_int("tick").unwrap_or(-1));
+    }
+    assert_eq!(ui.state_int("runs"), Some(1));
+}
+
 /// The Moses case: a few hundred rects, said once.
 #[test]
 fn a_cached_batch_is_one_recording_of_one_command() {

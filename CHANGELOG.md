@@ -658,7 +658,10 @@ way, for code written against an earlier checkout.
   command for many rects. Both are lowered to the existing draw commands
   unless a host asks for them (`petal_ui::compose::set_host_caps`,
   `pb_vm_set_draw_caps`), in which case it receives `Rects` and `CacheBegin` /
-  `CacheEnd` / `CacheDraw` and can keep a texture.
+  `CacheEnd` / `CacheDraw` and can keep a texture. A layer drawn only by
+  another layer's kept content (a nested `cached_layer` while its parent is
+  replayed) is kept as long as the parent is; it used to be let go after one
+  frame, and drew nothing from the third.
 - `ui`: `draw_rect` is one native in all three shapes, and `draw_polyline`
   no longer tests its colour's type in Petal; both accept a packed int colour
   (`r * 65536 + g * 256 + b`). A `draw_rect(x, y, w, h, c, a)` call costs

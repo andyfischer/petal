@@ -534,6 +534,8 @@ fn sort_layers(cmds: Vec<Composed>) -> Vec<Composed> {
         }
         segments.last_mut().unwrap().cmds.push((cmd, from));
     }
+    // Where the frame's clip stands when it ends, in the order it was drawn.
+    let frame_end = clip.clone();
     segments.last_mut().unwrap().end = clip;
 
     segments.sort_by_key(|s| s.layer);
@@ -543,21 +545,31 @@ fn sort_layers(cmds: Vec<Composed>) -> Vec<Composed> {
         if seg.cmds.is_empty() {
             continue;
         }
-        if state != seg.start {
-            for _ in 0..state.pushes.len() {
-                out.push((DrawCommand::ClipPop, None));
-            }
-            if state.base != seg.start.base {
-                out.push((seg.start.base.clone().unwrap_or(DrawCommand::ClipNone), None));
-            }
-            for push in &seg.start.pushes {
-                out.push((push.clone(), None));
-            }
-        }
+        move_clip(&mut out, &state, &seg.start);
         out.extend(seg.cmds);
         state = seg.end;
     }
+    // Leave the clip where the unsorted frame left it, so a host that draws
+    // after the frame, or keeps its clip stack across frames, sees the same
+    // stack either way.
+    move_clip(&mut out, &state, &frame_end);
     out
+}
+
+/// The commands that take the clip from `from` to `to`.
+fn move_clip(out: &mut Vec<Composed>, from: &ClipState, to: &ClipState) {
+    if from == to {
+        return;
+    }
+    for _ in 0..from.pushes.len() {
+        out.push((DrawCommand::ClipPop, None));
+    }
+    if from.base != to.base {
+        out.push((to.base.clone().unwrap_or(DrawCommand::ClipNone), None));
+    }
+    for push in &to.pushes {
+        out.push((push.clone(), None));
+    }
 }
 
 // ── Batches ───────────────────────────────────────────────────────────────

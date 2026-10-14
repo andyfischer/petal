@@ -420,8 +420,9 @@ fn a_layer_keeps_the_clip_it_was_drawn_under() {
             other => x(other).to_string(),
         })
         .collect();
-    // Layer 0 in order (2 clipped, 3 not), then layer 10 under its clip.
-    assert_eq!(shape, ["push", "2", "pop", "3", "push", "1"]);
+    // Layer 0 in order (2 clipped, 3 not), then layer 10 under its clip,
+    // and the clip popped again: the frame ends with the stack as it began.
+    assert_eq!(shape, ["push", "2", "pop", "3", "push", "1", "pop"]);
 }
 
 /// `ui_overlay` lifts the clip: a popup opened from inside a scrolled list.

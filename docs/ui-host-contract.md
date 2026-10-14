@@ -153,7 +153,9 @@ consumes both.
   the markers. A run of commands that moves takes its clip with it: where the
   sort puts a run after one that left a different clip in force, the drain
   inserts `clip_pop`s, then `clip` or `clip_none`, then `clip_push`es to
-  re-establish the clip the run was drawn under. Markers inside an offscreen
+  re-establish the clip the run was drawn under. After the last run it does
+  the same to leave the clip where the frame as drawn left it, so a sorted
+  frame ends with the clip stack an unsorted one would. Markers inside an offscreen
   canvas or a retained layer's content are ignored.
 - **`mute on`** … **`mute off`** bracket what a script drew only to measure.
   The drain drops the span.

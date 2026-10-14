@@ -68,13 +68,21 @@ pub fn count(xs, pred)
 end
 
 // True when at least one element satisfies `pred` (false for the empty list).
+// Stops at the first element that does: `pred` is not called on the rest.
 pub fn any(xs, pred)
-  count(xs, pred) > 0
+  for x in xs do
+    if pred(x) then return true end
+  end
+  false
 end
 
 // True when every element satisfies `pred` (vacuously true for the empty list).
+// Stops at the first element that does not: `pred` is not called on the rest.
 pub fn all(xs, pred)
-  count(xs, pred) == len(xs)
+  for x in xs do
+    if !pred(x) then return false end
+  end
+  true
 end
 
 // The first element satisfying `pred`, or nil when none does.

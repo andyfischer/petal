@@ -1562,7 +1562,10 @@ maximum([3, 1, 2])   // 3
 ### `count(xs, pred)` / `any(xs, pred)` / `all(xs, pred)`
 
 How many elements satisfy `pred`, whether at least one does (`false` for an
-empty list), and whether every one does (`true` for an empty list).
+empty list), and whether every one does (`true` for an empty list). `any`
+stops at the first element that satisfies `pred` and `all` at the first that
+does not: `pred` is not called on the elements after it. `count` calls it on
+every element.
 
 ```petal
 count([1, 2, 3, 4], fn(x) x > 2 end)   // 2

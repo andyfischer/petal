@@ -10,7 +10,10 @@
 //! predicate on the elements after the first match. So the fix is applied
 //! only when the predicate is a lambda written in place whose body is a
 //! single expression that cannot have an effect ([`super::util::is_pure`]).
-//! Any other predicate is reported, for the author to decide.
+//! Any other predicate is reported, for the author to decide. A pure body can
+//! still raise (a field of a value that has none), and `any` does not reach
+//! the later elements, so a fixed program can finish where the old one
+//! raised; it never raises where the old one did not.
 //!
 //! Nothing is reported in a file that binds `len`, `filter` or `any` itself.
 

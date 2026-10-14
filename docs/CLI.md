@@ -725,7 +725,7 @@ linked here, or when an expectation at a file's top level fails; otherwise 0.
 | `--filter <text>` | Run only the tests whose name contains `<text>` |
 | `--list` | Print the tests that would run and run nothing |
 | `--show-output` | Show what every test printed, not only the failing ones |
-| `--timeout <seconds>` | Stop a test that runs longer (default 60; 0 is no limit) |
+| `--timeout <seconds>` | Stop a test that runs longer, the file's top level included (default 60; 0 is no limit) |
 | `--json` | Print a JSON document: `ok`, `summary`, and per file its `tests` with `status` (`passed`, `failed`, `error`), `failures`, `error`, `checks`, `output` and `duration_ms` |
 
 The language, the JSON shape and running tests from a host are described in
@@ -874,7 +874,7 @@ found 2 problem(s) in 1 file(s); run `petal lint --fix` to fix them
 | `prefer-field-set` | `set X = {...get X, f: v}` (or `X = {...X, f: v}`): the whole record is copied to change a field | `set X.f = v`, one write per field. Applied where the file shows `X` to hold a plain record (declared once, with a record literal, and only ever assigned record literals): spreading `nil` gives a record where a field write to `nil` fails. Several fields are split only when no value calls anything or reads `X`. Otherwise reported |
 | `prefer-compound-assign` | `x = x op e` for an operator with a compound form; also a field or element written twice, `set xs[i] = get xs[i] + d`, `r.n = r.n * 2`, where the place is names, literals and operators only | `x op= e`, `set xs[i] += d` |
 | `neg-zero-sub` | `0 - x` and `0.0 - x` | `-x` where the zero is `0` and `x` is a proven `int`. Otherwise reported: `0.0 - 0.0` is `0.0` and `-0.0` is not (`atan2` and a division tell them apart), and `0.0 - n` makes a float of an int |
-| `prefer-any` | `len(filter(xs, p)) > 0` (also `!= 0`, `>= 1`; and `== 0`, `< 1`, `<= 0` for `!any`) | `any(xs, p)`, which stops at the first match. Applied where `p` is a lambda written in place whose body is one expression with no call but to pure builtins; otherwise reported, since `any` does not call `p` on the rest |
+| `prefer-any` | `len(filter(xs, p)) > 0` (also `!= 0`, `>= 1`; and `== 0`, `< 1`, `<= 0` for `!any`) | `any(xs, p)`, which stops at the first match. Applied where `p` is a lambda written in place whose body is one expression with no call but to pure builtins; otherwise reported, since `any` does not call `p` on the rest. (A pure body can still raise on a later element, such as `x.v` of an int: the fixed program then finishes where the old one raised, never the reverse.) |
 | `dead-alias` | `let a = v` in a function, where `v` is a parameter or a local of that function that is not written from there on (nor in a loop around the alias, nor by any nested function) and `a` is only read | delete the `let` and read `v` (`get v` for a `var` read from a nested function). Reported only, when the `let` shares its line |
 | `shadows-builtin` | a `fn` with the name of a core builtin, a standard-prelude function, or a function of a bundled package the file imports whole, taking an argument count the existing one takes. Every call in the file reaches the new one | none (callers may be in other files) |
 | `reimplements-builtin` | a `fn` whose whole body calls one builtin with its own parameters in order, or is `if r == nil then d else field(r, k, d) end` (`field` already answers the fallback for `nil`) | none |

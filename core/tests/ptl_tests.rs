@@ -272,6 +272,32 @@ test \"fine\" do expect(true) end
 }
 
 #[test]
+fn a_top_level_that_never_finishes_is_held_to_the_timeout() {
+    let src = "\
+var n = 0
+while true do set n += 1 end
+test \"a\" do expect(true) end
+test \"b\" do expect(true) end
+";
+    let opts = Options {
+        timeout: Some(std::time::Duration::from_millis(100)),
+        ..Options::default()
+    };
+    let started = std::time::Instant::now();
+    let report = runner::run_source("hangs.ptl", None, src, &opts);
+    // The second test is not given the same hang to sit through.
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    let [a, b] = &report.tests[..] else {
+        panic!("two tests");
+    };
+    for t in [a, b] {
+        assert_eq!(t.status, Status::Error);
+        let err = t.error.as_deref().unwrap();
+        assert!(err.contains("timed out after 0.1s in the file's top level"), "{err}");
+    }
+}
+
+#[test]
 fn top_level_expectations_fail_the_file_once_and_petal_run_reports_them() {
     let src = "expect_eq(1 + 1, 3, \"sums\")\nprint(\"ran\")\ntest \"a\" do expect(true) end\ntest \"b\" do expect(true) end\n";
     let report = runner::run_source("top.ptl", None, src, &Options::default());

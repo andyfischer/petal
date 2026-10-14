@@ -17,7 +17,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use crate::env::{Env, TestStep};
+use crate::env::{Env, RunOutcome, TestStep};
 use crate::expect::ExpectFailure;
 use crate::program::ProgramId;
 
@@ -282,6 +282,8 @@ pub fn run_source(file: &str, path: Option<&Path>, source: &str, opts: &Options)
         .cloned()
         .collect();
 
+    // A top level that ran out of time once would do so again for every test.
+    let mut hung: Option<String> = None;
     for (i, test) in tests.iter().enumerate() {
         let mut row = TestReport {
             name: test.name.clone(),
@@ -298,6 +300,12 @@ pub fn run_source(file: &str, path: Option<&Path>, source: &str, opts: &Options)
             continue;
         }
         let started = Instant::now();
+        if let Some(e) = &hung {
+            row.status = Status::Error;
+            row.error = Some(e.clone());
+            report.tests.push(row);
+            continue;
+        }
         let sid = match env.create_stack(pid) {
             Ok(sid) => sid,
             Err(e) => {
@@ -310,16 +318,20 @@ pub fn run_source(file: &str, path: Option<&Path>, source: &str, opts: &Options)
         // The file's top level, which defines what the test calls. What it
         // prints is not the test's output, and what it expects is reported
         // once for the file.
-        let setup = env.run(sid);
+        let setup = run_top_level(&mut env, sid, opts.timeout, started);
         env.take_output_for(sid);
         let top_level = env.take_expect_failures(sid);
         if i == 0 {
             report.top_level = top_level.into_iter().map(rename).collect();
         }
         match setup {
-            Err(e) => {
+            Err((e, timed_out)) => {
                 row.status = Status::Error;
-                row.error = Some(format!("the file failed before the test ran: {e}"));
+                let e = format!("the file failed before the test ran: {e}");
+                if timed_out {
+                    hung = Some(e.clone());
+                }
+                row.error = Some(e);
             }
             Ok(_) => {
                 let result = drive(&mut env, sid, &test.function, opts.timeout, started);
@@ -344,6 +356,35 @@ pub fn run_source(file: &str, path: Option<&Path>, source: &str, opts: &Options)
 
 /// How many instructions a test runs between looks at the clock.
 const SLICE: u64 = 2_000_000;
+
+/// The file's top level, held to the same clock as the test that follows it:
+/// a top level that never finishes is the test's timeout, not a hang.
+fn run_top_level(
+    env: &mut Env,
+    sid: crate::stack::StackKey,
+    timeout: Option<Duration>,
+    started: Instant,
+) -> Result<(), (String, bool)> {
+    loop {
+        match env.run_bounded(sid, SLICE).map_err(|e| (e, false))? {
+            RunOutcome::Done(_) => return Ok(()),
+            RunOutcome::Yielded { .. } => {
+                if let Some(limit) = timeout
+                    && started.elapsed() >= limit
+                {
+                    return Err((
+                        format!(
+                            "timed out after {} in the file's top level (raise the limit \
+                             with --timeout <seconds>)",
+                            seconds(limit)
+                        ),
+                        true,
+                    ));
+                }
+            }
+        }
+    }
+}
 
 fn drive(
     env: &mut Env,

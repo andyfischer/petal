@@ -156,7 +156,10 @@ when no tests were found.
 - `--filter <text>` runs only the tests whose name contains the text.
 - `--list` prints the tests and runs nothing.
 - `--timeout <seconds>` stops a test that runs longer and reports it as an
-  error. The default is 60; 0 is no limit.
+  error. The default is 60; 0 is no limit. The file's top level, which runs
+  before each test, counts toward the test's time: a top level that never
+  finishes is reported as an error for each of the file's tests, after one
+  wait.
 - `--json` prints one document instead of the report:
 
   ```json

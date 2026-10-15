@@ -105,7 +105,7 @@ import ui
 // host reads every field of a projection spec with a default, so an empty record
 // declares a region with no provenance yet — which is exactly true of one that
 // has no text yet either.
-state doc = { error: "", notice: "", base: "", initial_mode: "unified", editable: true, markers_in_text: false, files: [], outline: [], before: { text: "", styles: [] }, after: { text: "", styles: [], projection: {} }, unified: { text: "", styles: [], projection: {} }, pr: { present: false, number: 0, title: "", author: "", base_ref: "", head_ref: "", status: "", url: "", body: "", discussion: "", comments: 0 } }
+state doc = {error: "", notice: "", base: "", initial_mode: "unified", editable: true, markers_in_text: false, files: [], outline: [], before: {text: "", styles: []}, after: {text: "", styles: [], projection: {}}, unified: {text: "", styles: [], projection: {}}, pr: {present: false, number: 0, title: "", author: "", base_ref: "", head_ref: "", status: "", url: "", body: "", discussion: "", comments: 0}}
 state ready = false
 state err = ""
 state mode = "unified"       // "unified" (default) | "split" | "stat" | "commits"
@@ -258,22 +258,22 @@ end
 // non-zero exactly while the user has changed something, and 0 again once an
 // edit is undone. Only the mode's own region counts; a region that isn't
 // declared this frame resolves nothing, which reads as "not dirty".
-fn view_dirty(m)
-  if m == "unified" then
-    len(edit_view_edits(5)) > 0
-  elsif m == "split" then
-    len(edit_view_edits(2)) > 0
-  else
-    false
+//
+// The editable region a mode draws, by id (0: the mode has none).
+fn edit_region(m)
+  match m
+    when "split" -> 2
+    when "unified" -> 5
+    when _ -> 0
   end
 end
-let unsaved = view_dirty(mode)
+let unsaved = edit_region(mode) > 0 && len(edit_view_edits(edit_region(mode))) > 0
 if ready && len(err) == 0 && !stale then
   if probing then
     let pd = query("doc", scope)
     if is_ready(pd) then
       probing = false
-      probes = probes + 1
+      probes += 1
       next_probe = time() + PROBE_SECS
       // The unified stream is the whole change, both sides, in one string, so a
       // byte difference there is a change to the review; `base` catches the base
@@ -373,11 +373,9 @@ let my = mouse_y()
 // A scoped diff has no working tree behind it, so there is nothing for ^S to
 // write and no region declared to collect edits from — it is inert there.
 if mod_ctrl() && key_pressed("s") && editable then
-  let region = 0
-  if mode == "split" then region = 2 end
-  if mode == "unified" then region = 5 end
+  let region = edit_region(mode)
   if region > 0 then
-    mutate("apply", { edits: edit_view_edits(region) })
+    mutate("apply", {edits: edit_view_edits(region)})
     invalidate("doc", scope)
     ready = false
     // The save is itself the reload, so any pending staleness is answered by it.
@@ -448,10 +446,12 @@ if ready && len(err) == 0 then
   // The mode switch: the prelude tab bar, its underline sitting on the header
   // hairline. Its click stands down while a context menu is open, like every
   // other handler here.
-  let mode_idx = 0
-  if mode == "split" then mode_idx = 1 end
-  if mode == "stat" then mode_idx = 2 end
-  if mode == "commits" then mode_idx = 3 end
+  let mode_idx = match mode
+    when "split" -> 1
+    when "stat" -> 2
+    when "commits" -> 3
+    when _ -> 0
+  end
   let picked_tab = tab_bar(tabs_r, TABS, mode_idx, {size: FS})
   if !menu_blocking(menu) && picked_tab != mode_idx then
     mode = TABS[int(picked_tab)]
@@ -464,13 +464,12 @@ if ready && len(err) == 0 then
   if len(doc.files) == 1 then nfiles = "1 file" end
   let ncommits = "{len(commits)} commits"
   if len(commits) == 1 then ncommits = "1 commit" end
-  let hint = "{nfiles}  ·  ^S saves  ·  / searches"
-  if mode == "stat" then hint = "{nfiles}  ·  read-only" end
-  if mode == "commits" then hint = "{ncommits}  ·  click to scope  ·  right-click for more" end
   // A scoped diff cannot be saved, so it must not advertise ^S. Saying what it
   // *is* — one commit's diff — is the useful half anyway.
-  if !editable && mode != "stat" && mode != "commits" then
-    hint = "{nfiles}  ·  read-only (a commit's diff)  ·  / searches"
+  let hint = match mode
+    when "stat" -> "{nfiles}  ·  read-only"
+    when "commits" -> "{ncommits}  ·  click to scope  ·  right-click for more"
+    when _ -> if editable then "{nfiles}  ·  ^S saves  ·  / searches" else "{nfiles}  ·  read-only (a commit's diff)  ·  / searches" end
   end
   if has_pr && doc.pr.comments > 0 then
     hint = "{hint}  ·  {doc.pr.comments} comments"
@@ -515,12 +514,15 @@ else
     let meta = "#{doc.pr.number}  {doc.pr.title}"
     draw_text(meta, {x: PAD, y: content_top}, FS, TEXT)
     // The PR's state as a prelude status pill beside the title: open reads
-    // success, merged reads accent, closed reads danger.
+    // success, merged reads accent, closed reads danger. `gh` spells the state
+    // the way GitHub's API does (`OPEN`), so it is compared lower-cased.
     if len(doc.pr.status) > 0 then
-      let stc = DIM
-      if doc.pr.status == "open" then stc = GREEN end
-      if doc.pr.status == "merged" then stc = ACCENT end
-      if doc.pr.status == "closed" then stc = RED end
+      let stc = match lower(doc.pr.status)
+        when "open" -> GREEN
+        when "merged" -> ACCENT
+        when "closed" -> RED
+        when _ -> DIM
+      end
       pill(PAD + text_width(meta, FS) + 12, content_top - 1, doc.pr.status, stc)
     end
     let sub = "@{doc.pr.author}  ·  {doc.pr.base_ref} ← {doc.pr.head_ref}"
@@ -530,7 +532,7 @@ else
     if !pr_open then tog = "show discussion" end
     let tog_w = text_width(tog, FS) + 16
     let tog_r = rect(w - PAD - tog_w, content_top - 2, tog_w, 21)
-    if button(tog_r, tog, { size: FS }) then pr_open = !pr_open end
+    if button(tog_r, tog, {size: FS}) then pr_open = !pr_open end
     body_offset = 40
     if pr_open then
       // The description + conversation comments in their own selectable /
@@ -568,7 +570,7 @@ else
     let list_rows = len(rows)
     let list_row_h = 20
     let bar_x = PAD + list_w - 10
-    let list_visible = max(1, int(float(body_h) / float(list_row_h)))
+    let list_visible = max(1, int(float(body_h) / list_row_h))
     let max_scroll = max(0, list_rows - list_visible)
     // The rows' hit rect leaves the right 12px to the scrollbar, and its height
     // is a whole number of rows so the prelude list's row math is exact.
@@ -582,7 +584,7 @@ else
     // here rather than from the prelude list's selection delta.
     let pressed_row = -1
     if mouse_pressed(0) && point_in(mx, my, list_rect) && !menu_blocking(menu) then
-      let prow = int(flist.scroll) + int(float(my - body_top) / float(list_row_h))
+      let prow = int(flist.scroll) + int(float(my - body_top) / list_row_h)
       if prow >= 0 && prow < list_rows then pressed_row = prow end
     end
     // The prelude list: click-select plus the hover-scoped wheel (the diff
@@ -610,15 +612,15 @@ else
       end
       if !mouse_down(0) && !mouse_pressed(0) then list_drag = false end
       if grabbing then
-        let thumb_h = max(12, int(float(body_h) * float(list_visible) / float(list_rows)))
+        let thumb_h = max(12, int(float(body_h) * list_visible / list_rows))
         let span = body_h - thumb_h
         if span > 0 then
           let frac = float(my - body_top - (thumb_h / 2)) / float(span)
-          list_scroll = clamp(int(frac * float(max_scroll) + 0.5), 0, max_scroll)
-          flist = { selected: sel, scroll: list_scroll }
+          list_scroll = clamp(int(frac * max_scroll + 0.5), 0, max_scroll)
+          flist = {selected: sel, scroll: list_scroll}
         end
       end
-      draw_scrollbar(rect(PAD, body_top, list_w - 2, body_h), list_rows, list_visible, list_scroll, { width: 8 })
+      draw_scrollbar(rect(PAD, body_top, list_w - 2, body_h), list_rows, list_visible, list_scroll, {width: 8})
       // The track's centre line — the x a test drags the thumb along. Bound
       // rather than drawn inline, so the gesture is addressable by name.
       let list_bar_x = bar_x + 4
@@ -654,7 +656,7 @@ else
     draw_text("COMMITS · newest first", {x: PAD, y: label_y}, FS, DIM)
     let commit_row_h = 40
     let commit_rows = len(commits)
-    let cvisible = max(1, int(float(body_h) / float(commit_row_h)))
+    let cvisible = max(1, int(float(body_h) / commit_row_h))
     // The list reloads (⟳ picks up a new commit); never index it with an offset
     // left over from a longer one.
     if csel >= commit_rows then csel = 0 end
@@ -792,8 +794,8 @@ else
       let total_del = 0
       let maxtotal = 1
       for f in doc.files do
-        total_add = total_add + f.added
-        total_del = total_del + f.removed
+        total_add += f.added
+        total_del += f.removed
         let t = f.added + f.removed
         if t > maxtotal then maxtotal = t end
       end
@@ -806,7 +808,7 @@ else
       draw_text(seg, {x: PAD, y: sum_y}, FS, DIM)
       let sx = PAD + text_width("{seg} ", FS)
       draw_text("+{total_add}", {x: sx, y: sum_y}, FS, GREEN)
-      sx = sx + text_width("+{total_add} ", FS)
+      sx += text_width("+{total_add} ", FS)
       draw_text("-{total_del}", {x: sx, y: sum_y}, FS, RED)
 
       let bar_y = sum_y + 24
@@ -832,7 +834,7 @@ else
       let rows_top = head_bottom + 12
       let avail = h - rows_top - PAD
       let ROW_H = 26
-      let max_rows = max(1, int(float(avail) / float(ROW_H)))
+      let max_rows = max(1, int(float(avail) / ROW_H))
       let show = total_rows
       let truncated = false
       if total_rows > max_rows then
@@ -854,7 +856,7 @@ else
       for i in range(0, show) do
         let f = rows[i]
         let y = rows_top + i * ROW_H
-        let cy = y + int(float(ROW_H) / 2.0)
+        let cy = y + int(ROW_H / 2.0)
         let ty = cy - 8
         let text_x = PAD + 12 + f.depth * INDENT
         // What is left of the name column once this row's indent is spent.
@@ -890,7 +892,7 @@ else
           if tf > 0 then
             let frac = sqrt(float(tf) / float(maxtotal))
             let len_px = int(float(track_w) * frac)
-            let gw = int(float(len_px) * float(f.added) / float(tf))
+            let gw = int(len_px * float(f.added) / float(tf))
             draw_rect(rect(bar_x0, by, gw, 8), GREEN)
             draw_rect(rect(bar_x0 + gw, by, len_px - gw, 8), RED)
           end

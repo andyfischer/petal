@@ -579,6 +579,13 @@ struct GpuCore {
     /// The intermediate frame texture used when `frame_snapshot` — see
     /// [`Renderer::render`].
     frame: Option<FrameTex>,
+    /// Whether a [`prepare_scene`](Self::prepare_scene) has staged uploads
+    /// that no submit has carried to the GPU yet. wgpu holds every
+    /// `write_buffer`/`write_texture` until the next `queue.submit`, so a
+    /// prepare that is never submitted is not dropped: its uploads wait in
+    /// the queue, and the next prepare's are added on top. See
+    /// [`submit`](Self::submit).
+    unsubmitted: bool,
 }
 
 /// An offscreen render target created by a [`Primitive::Canvas`].
@@ -683,6 +690,7 @@ impl GpuCore {
             frame_snapshot: false,
             multipass: false,
             frame: None,
+            unsubmitted: false,
         }
     }
 
@@ -778,11 +786,24 @@ impl GpuCore {
         (px(size.0), px(size.1))
     }
 
+    /// Submit a frame's recorded commands, carrying the uploads the last
+    /// [`prepare_scene`](Self::prepare_scene) staged along with them.
+    fn submit(&mut self, encoder: wgpu::CommandEncoder) {
+        self.queue.submit(Some(encoder.finish()));
+        self.unsubmitted = false;
+    }
+
     /// Stage `scene` for drawing at the current target size: upload quad,
     /// mesh and image instances, shape/upload text runs, allocate the
     /// canvases it creates, and build the step list recording follows.
     /// Shared by present and capture.
     fn prepare_scene(&mut self, scene: &Scene) {
+        // A frame staged and then abandoned left its uploads queued. Hand them
+        // to the GPU now, with nothing to run, rather than let them pile up.
+        if self.unsubmitted {
+            self.queue.submit(std::iter::empty());
+        }
+        self.unsubmitted = true;
         self.ensure_msaa();
         self.filters.begin_frame();
         self.filters.reserve_copy_params(&self.device, &self.queue);
@@ -1462,7 +1483,7 @@ impl GpuCore {
                 depth_or_array_layers: 1,
             },
         );
-        self.queue.submit(Some(encoder.finish()));
+        self.submit(encoder);
         self.text.end_frame();
 
         let slice = readback.slice(..);
@@ -1708,8 +1729,15 @@ impl Renderer {
     /// why that would busy-loop; the frontend retries on its throttled cadence.
     pub fn render(&mut self, scene: &Scene) -> FrameOutcome {
         self.core.scale_factor = self.window.scale_factor();
-        self.core.prepare_scene(scene);
 
+        // The surface first, and the scene only once there is a frame to draw
+        // it into. Preparing uploads the whole scene through the queue, and
+        // the upload waits for a submit, so preparing a frame that is then
+        // skipped kept every skipped frame's scene in memory. A window that
+        // stays occluded (covered, on another Space, its display asleep)
+        // skips a frame on every retry, and a panel that keeps itself awake
+        // retries forever: `garden pr` left out of sight for an hour grew to
+        // 25 GB.
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
             wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
@@ -1732,6 +1760,7 @@ impl Renderer {
                 panic!("wgpu surface validation error")
             }
         };
+        self.core.prepare_scene(scene);
 
         // Through the non-sRGB view (see `configure_for_window`), so the pass
         // writes sRGB-encoded bytes with no transfer function applied.
@@ -1770,7 +1799,7 @@ impl Renderer {
             self.core.record_scene(&mut encoder, &view, None, scene.bg);
         }
 
-        self.core.queue.submit(Some(encoder.finish()));
+        self.core.submit(encoder);
         frame.present();
         self.core.text.end_frame();
         FrameOutcome::Presented
@@ -1872,5 +1901,41 @@ impl HeadlessRenderer {
     /// Glyph-atlas pressure, identical to [`Renderer::text_atlas_stats`].
     pub fn text_atlas_stats(&self) -> AtlasStats {
         self.core.text.atlas_stats()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A prepared frame that is never submitted must not leave its uploads
+    /// queued behind the next one: wgpu keeps staged writes until a submit,
+    /// so before this guard every abandoned frame's scene stayed in memory.
+    #[test]
+    fn an_abandoned_prepare_is_flushed_by_the_next() {
+        let Ok(mut r) = HeadlessRenderer::new((64.0, 32.0), 1.0) else {
+            eprintln!("skipping: no GPU adapter");
+            return;
+        };
+        let scene = Scene {
+            bg: Color::rgb(0.0, 0.0, 0.0),
+            primitives: vec![Primitive::Text {
+                pos: (0.0, 0.0),
+                text: "abc".to_string(),
+                color: Color::rgb(1.0, 1.0, 1.0),
+                clip: Rect::new(0.0, 0.0, 64.0, 32.0),
+                size: 14.0,
+                style: TextStyle::default(),
+            }],
+        };
+        assert!(!r.core.unsubmitted);
+        r.core.prepare_scene(&scene);
+        assert!(r.core.unsubmitted, "a prepare stages uploads");
+        // Abandoned (a skipped present), then prepared again: still exactly
+        // one frame's uploads outstanding, the earlier ones flushed.
+        r.core.prepare_scene(&scene);
+        assert!(r.core.unsubmitted);
+        r.capture(&scene);
+        assert!(!r.core.unsubmitted, "a submitted frame leaves nothing staged");
     }
 }

@@ -38,10 +38,10 @@ const checks = new Checks();
 // A spawned window loads $HOME/.garden/init.ptl; make that a single empty
 // editor so window 2's buffer is deterministically empty.
 await mkdir(join(homeDir, ".garden"), { recursive: true });
-await writeFile(join(homeDir, ".garden", "init.ptl"), "layout(editor())\n");
+await writeFile(join(homeDir, ".garden", "init.ptl"), "import garden_config\n\nlayout(editor())\n");
 // Window 1 is launched with --init on a file with recognizable content.
 await writeFile(scratch, "W1LINE\n");
-await writeFile(init, `layout(editor("${scratch}"))\n`);
+await writeFile(init, `import garden_config\n\nlayout(editor("${scratch}"))\n`);
 
 // --- launch -----------------------------------------------------------------
 await cargoBuild(["garden-app"]);

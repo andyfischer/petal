@@ -41,7 +41,7 @@ const appBin = join(GARDEN_DIR, "target", "debug", "gpp-test-app");
 /** Boot garden headless with gpp-test-app in the requested mode as pane 0. */
 async function launchMode(appMode: string): Promise<LaunchedApp> {
   const init = join(work, `${appMode}.ptl`);
-  await writeFile(init, `layout(process("${appBin}", ["${appMode}"]))\n`);
+  await writeFile(init, `import garden_config\n\nlayout(process("${appBin}", ["${appMode}"]))\n`);
   return launchGarden({
     args: [...mode, "--init", init],
     logPath: join(work, `${appMode}.log`),

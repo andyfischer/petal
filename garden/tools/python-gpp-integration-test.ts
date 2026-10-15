@@ -48,7 +48,7 @@ await cargoBuild(["garden-app"]);
 async function launchPython(label: string, app: string, args: string[] = []): Promise<LaunchedApp> {
   const init = join(work, `${label}.ptl`);
   const argList = [app, ...args].map((a) => `"${a}"`).join(", ");
-  await writeFile(init, `layout(process("python3", [${argList}]))\n`);
+  await writeFile(init, `import garden_config\n\nlayout(process("python3", [${argList}]))\n`);
   return launchGarden({
     args: [...mode, "--init", init],
     logPath: join(work, `${label}.log`),

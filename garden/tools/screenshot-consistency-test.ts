@@ -42,6 +42,8 @@ await writeFile(
 // consistency contract must prevent. Every frame of the chain draws
 // distinct content (count updates immediately), so the settle loop's
 // fixed-point detection sees each propagation step.
+import ui
+
 state count = 0
 state lag = 0
 state shown = 0
@@ -62,7 +64,7 @@ shown = lag
 lag = count
 `,
 );
-await writeFile(init, `layout(panel("${counterPtl}"))\n`);
+await writeFile(init, `import garden_config\n\nlayout(panel("${counterPtl}"))\n`);
 
 // --- launch --------------------------------------------------------------------
 await cargoBuild(["garden-app"]);

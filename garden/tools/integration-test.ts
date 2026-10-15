@@ -37,7 +37,7 @@ const checks = new Checks();
 // --- fixtures ---------------------------------------------------------------
 await writeFile(scratch, "alpha\nbravo\ncharlie\n");
 await writeFile(other, "OTHER ONE\nOTHER TWO\n");
-await writeFile(script, `layout(editor("${scratch}"))\n`);
+await writeFile(script, `import garden_config\n\nlayout(editor("${scratch}"))\n`);
 
 // --- launch -----------------------------------------------------------------
 // The directory-browser checks below drive that GPP client as a subprocess, so

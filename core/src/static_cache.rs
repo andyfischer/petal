@@ -214,7 +214,40 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+
+/// `std::time::Instant::now()` panics on `wasm32-unknown-unknown`, which has
+/// no clock, and `begin_build` reads it on every static build — so without
+/// this every web-canvas script trapped on its first frame. The stand-in
+/// reads every instant as infinitely long ago: a live-edit tick never
+/// continues a drag, so nothing is deferred, and a build is never timed
+/// (`build_ns` stays 0, which already means "not timed").
+#[cfg(target_arch = "wasm32")]
+#[derive(Clone, Copy, Debug)]
+struct Instant;
+
+#[cfg(target_arch = "wasm32")]
+impl Instant {
+    fn now() -> Self {
+        Instant
+    }
+    fn elapsed(&self) -> Duration {
+        Duration::MAX
+    }
+    fn duration_since(&self, _earlier: Instant) -> Duration {
+        Duration::MAX
+    }
+}
+
+/// Nanoseconds since `since`, or 0 where there is no clock.
+fn build_nanos(since: Instant) -> u64 {
+    if cfg!(target_arch = "wasm32") {
+        return 0;
+    }
+    since.elapsed().as_nanos().min(u64::MAX as u128) as u64
+}
 
 use crate::backend::bytecode::isa::{BytecodeProgram, Inst, Label, Reg};
 use crate::native_fn::{NativeConstness, NativeFnTable};
@@ -1001,7 +1034,7 @@ impl StaticSlots {
     pub(crate) fn end_build(&mut self) -> Option<u32> {
         let (run, since) = self.building.take()?;
         if let Some(ns) = self.build_ns.get_mut(run as usize) {
-            *ns = since.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+            *ns = build_nanos(since);
         }
         Some(run)
     }

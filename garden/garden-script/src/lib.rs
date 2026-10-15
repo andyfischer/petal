@@ -87,7 +87,6 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use petal::env::Env;
-use petal::program::ProgramId;
 use petal::stack::StackKey;
 use petal::value::Value;
 
@@ -146,7 +145,6 @@ type FileSig = (SystemTime, u64);
 /// output buffers), not in any global, so a host carries all its own state.
 pub struct ScriptHost {
     env: Env,
-    program_id: ProgramId,
     stack_id: StackKey,
     path: PathBuf,
     /// The permanent config file the host was loaded from (e.g.
@@ -203,7 +201,6 @@ impl ScriptHost {
 
         let mut host = ScriptHost {
             env,
-            program_id,
             stack_id,
             path: path.to_path_buf(),
             config_path: path.to_path_buf(),

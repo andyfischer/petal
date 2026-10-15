@@ -69,12 +69,12 @@ if draw_load(body, ls) then
     let chart = rect(c.x, c.y + 22, c.w, c.h - 40)
     let n = len(d.weeks)
     let maxc = max(1, d.max_week)
-    let bw = float(chart.w) / float(n)
+    let bw = float(chart.w) / n
     for i in range(0, n) do
       let wk = d.weeks[i]
       let bh = int(float(chart.h) * float(wk.count) / float(maxc))
       if wk.count > 0 && bh < 2 then bh = 2 end
-      let bar = rect(chart.x + int(float(i) * bw) + 1, chart.y + chart.h - bh, max(2, int(bw) - 2), bh)
+      let bar = rect(chart.x + int(i * bw) + 1, chart.y + chart.h - bh, max(2, int(bw) - 2), bh)
       let color = mix(T.accent, T.bg, 0.25)
       if hovered(rect(bar.x, chart.y, bar.w, chart.h)) then
         color = T.accent

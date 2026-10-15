@@ -61,7 +61,7 @@ state files_lst = list_state()
 state diff_scroll = 0
 state loaded_key = "@none"
 state loaded_commit = "@none"
-state data = { error: "", body: "", files: [] }
+state data = {error: "", body: "", files: []}
 state prev_file = -1
 state diff_expanded = false
 // The two draggable dividers, as prelude splitters: vertical (left column ↔
@@ -73,7 +73,7 @@ state sp_h = splitter_state(0.52)
 // `log` is fetched once and cached here; `log_ready` stops the poll. Refresh
 // clears `log_ready` (and invalidates the key) to reload. `diff_loading` /
 // `diff_err` track the in-flight state of the selected commit's diff.
-state log = { repo: "", branch: "", worktree_dirty: false, commits: [] }
+state log = {repo: "", branch: "", worktree_dirty: false, commits: []}
 state log_ready = false
 state log_err = ""
 state diff_loading = false
@@ -145,7 +145,7 @@ let total_rows = n_commits + wt
 // stops one pixel short of the divider).
 clear(BG.r, BG.g, BG.b)
 let content_r = rect(PAD, content_top - 10, w - 2 * PAD, ch - content_top + 10)
-let sv = splitter(sp_v, content_r, { min_a: 220, min_b: 340 })
+let sv = splitter(sp_v, content_r, {min_a: 220, min_b: 340})
 sp_v = sv.state
 // The divider sits `left_w` past PAD (the a-side plus the splitter's 4px gap);
 // tests read `left_w` and drag the divider at x = PAD + left_w.
@@ -154,23 +154,23 @@ let div_x = PAD + left_w
 draw_rect(rect(0, 0, div_x, ch), PANEL)
 
 let sh = splitter(sp_h, rect(PAD, content_top, left_w - 10, avail_h),
-  { axis: "y", min_a: int(float(avail_h) * 0.2), min_b: int(float(avail_h) * 0.2) })
+  {axis: "y", min_a: int(float(avail_h) * 0.2), min_b: int(float(avail_h) * 0.2)})
 sp_h = sh.state
 let commits_area = sh.a.h + 4
 let dragging = sp_v.drag || sp_h.drag
 
 // Region rects from the splitter positions.
 let files_label_y = content_top + commits_area + 8
-let commits_rows = max(1, int(float(commits_area - 26) / float(COMMIT_ROW)))
+let commits_rows = max(1, int(float(commits_area - 26) / COMMIT_ROW))
 let commits_rect = rect(PAD, content_top + 24, left_w - 10, commits_rows * COMMIT_ROW)
-let files_rows = max(1, int(float(ch - PAD - files_label_y - 26) / float(FILE_ROW)))
+let files_rows = max(1, int(float(ch - PAD - files_label_y - 26) / FILE_ROW))
 let files_rect = rect(PAD, files_label_y + 24, left_w - 10, files_rows * FILE_ROW)
 
 let right_x = div_x + 14
 let right_w = w - right_x - PAD
 let diff_head_h = 62
 let diff_top = content_top + diff_head_h
-let diff_rows = max(1, int(float(ch - PAD - diff_top) / float(LINE_H)))
+let diff_rows = max(1, int(float(ch - PAD - diff_top) / LINE_H))
 let diff_rect = rect(right_x - 6, diff_top, right_w + 6, ch - PAD - diff_top)
 
 // ── input: refresh button geometry (drawn with the header below) ──────────────
@@ -203,7 +203,7 @@ if mouse_pressed(0) && !dragging && point_in(mouse_x(), mouse_y(), diff_rect) th
   let pf = files_lst.selected
   if len(data.files) > 0 && pf >= 0 && pf < len(data.files) then
     let clines = data.files[pf].lines
-    let row = diff_scroll + int(float(mouse_y() - diff_rect.y) / float(LINE_H))
+    let row = diff_scroll + int(float(mouse_y() - diff_rect.y) / LINE_H)
     if row >= 0 && row < len(clines) then
       if clines[row].kind == "hunk" then diff_expanded = !diff_expanded end
     end
@@ -270,9 +270,9 @@ let diff_lines = 0
 if file_count > 0 then diff_lines = len(data.files[file_selected].lines) end
 diff_scroll = scroll_update(diff_scroll, diff_lines, diff_rows, diff_rect, focused(fc, "diff"))
 if focused(fc, "diff") then
-  if key_pressed("down") || key_pressed("j") then diff_scroll = diff_scroll + 1 end
-  if key_pressed("up") || key_pressed("k") then diff_scroll = diff_scroll - 1 end
-  if key_pressed("space") then diff_scroll = diff_scroll + diff_rows end
+  if key_pressed("down") || key_pressed("j") then diff_scroll += 1 end
+  if key_pressed("up") || key_pressed("k") then diff_scroll -= 1 end
+  if key_pressed("space") then diff_scroll += diff_rows end
   if key_pressed("home") then diff_scroll = 0 end
   if key_pressed("end") then diff_scroll = diff_lines end
 end
@@ -303,7 +303,7 @@ if !log_ready then header_repo = "loading…" end
 draw_text(header_repo, {x: PAD + 20, y: PAD + 2}, FS, TEXT)
 let repo_w = text_width(header_repo, FS)
 if len(git_branch) > 0 then
-  pill(PAD + 30 + repo_w, PAD, git_branch, ACCENT, { size: FS })
+  pill(PAD + 30 + repo_w, PAD, git_branch, ACCENT, {size: FS})
 end
 
 // refresh: a prelude button carrying a drawn reload glyph + the label.
@@ -313,7 +313,7 @@ if refresh_hover then
   rtc = ACCENT
   rhole = HOVER
 end
-if button(refresh_r, "", { bg: BG, hover: HOVER, outline: if refresh_hover then ACCENT else FAINT end }) then
+if button(refresh_r, "", {bg: BG, hover: HOVER, outline: if refresh_hover then ACCENT else FAINT end}) then
   // Re-run git: drop the log + working-tree caches and clear the "loaded"
   // markers so the polls above resume. Immutable commit diffs stay cached.
   invalidate("log", "")
@@ -444,7 +444,7 @@ if total_rows > 0 then
     head_meta = "{c.short}  {c.date}  {c.author}"
   end
 end
-if diff_expanded then head_meta = head_meta ++ "  ·  full context" end
+if diff_expanded then head_meta ++= "  ·  full context" end
 draw_text(ellipsize(head_subject, right_w, FS), {x: right_x, y: content_top}, FS, TEXT)
 draw_text(ellipsize(head_meta, right_w, FS), {x: right_x, y: content_top + 20}, FS, DIM)
 let head_path_w = 56
@@ -493,20 +493,14 @@ else
       let dstyles = []
       for li in range(0, diff_lines) do
         let ln = f.lines[li]
-        let marker = " "
-        let style = ""
-        if ln.kind == "hunk" then
-          marker = "@"
-          style = "hunk"
-        elsif ln.kind == "add" then
-          marker = "+"
-          style = "added"
-        elsif ln.kind == "del" then
-          marker = "-"
-          style = "removed"
+        let look = match ln.kind
+          when "hunk" -> {marker: "@", style: "hunk"}
+          when "add" -> {marker: "+", style: "added"}
+          when "del" -> {marker: "-", style: "removed"}
+          when _ -> {marker: " ", style: ""}
         end
-        dlines = append(dlines, marker ++ " " ++ ln.text)
-        dstyles = append(dstyles, style)
+        dlines = append(dlines, look.marker ++ " " ++ ln.text)
+        dstyles = append(dstyles, look.style)
       end
       text_view(1, diff_rect.x, diff_rect.y, diff_rect.w, diff_rect.h, join(dlines, "\n"))
       text_view_line_styles(1, dstyles)

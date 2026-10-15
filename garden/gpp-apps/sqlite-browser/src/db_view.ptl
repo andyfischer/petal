@@ -48,10 +48,10 @@ state over_scroll = 0
 state sp = splitter_state(0.30)
 
 // data caches (query results, held in `state` so we poll only until ready)
-state cat = { path: "", name: "", tables: [] }
+state cat = {path: "", name: "", tables: []}
 state cat_ready = false
 state cat_err = ""
-state detail = { heading: "", row_count: 0, truncated: false, columns: [], lines: [] }
+state detail = {heading: "", row_count: 0, truncated: false, columns: [], lines: []}
 state loaded_arg = "@none"
 state detail_loading = false
 state detail_err = ""
@@ -103,8 +103,8 @@ fn commafmt(n)
     let c = 0
     while i > 0 do
       out = slice(s, i - 1, i) ++ out
-      c = c + 1
-      i = i - 1
+      c += 1
+      i -= 1
       if c % 3 == 0 && i > 0 then out = "," ++ out end
     end
     out
@@ -139,7 +139,7 @@ end
 // stops one pixel short of the divider).
 clear(BG.r, BG.g, BG.b)
 let content_r = rect(PAD, content_top - 10, w - 2 * PAD, ch - content_top + 10)
-let s = splitter(sp, content_r, { min_a: 190, min_b: 340 })
+let s = splitter(sp, content_r, {min_a: 190, min_b: 340})
 sp = s.state
 // The divider sits `left_w` past PAD (the a-side plus the splitter's 4px gap).
 let left_w = s.a.w + 4
@@ -147,7 +147,7 @@ let div_x = PAD + left_w
 draw_rect(rect(0, 0, div_x, ch), PANEL)
 let dragging = sp.drag
 
-let cat_rows = max(1, int(float(ch - PAD - content_top - 24) / float(ROW_H)))
+let cat_rows = max(1, int(float(ch - PAD - content_top - 24) / ROW_H))
 let cat_rect = rect(PAD, content_top + 24, left_w - 10, cat_rows * ROW_H)
 
 let right_x = div_x + 14
@@ -197,12 +197,12 @@ if ncols > 0 then schema_rows = min(4, max(1, int((ncols + 2) / 3))) end
 let schema_h = 0
 if !is_overview then schema_h = 10 + schema_rows * LINE_H end
 let grid_top = content_top + 26 + schema_h
-let grid_rows = max(1, int(float(ch - PAD - grid_top) / float(LINE_H)))
+let grid_rows = max(1, int(float(ch - PAD - grid_top) / LINE_H))
 let grid_rect = rect(right_x - 6, grid_top, right_w + 6, ch - PAD - grid_top)
 
 // overview scroll region
 let over_rect = rect(right_x - 6, content_top + 60, right_w + 6, ch - PAD - content_top - 60)
-let over_rows = max(1, int(float(over_rect.h) / float(ROW_H)))
+let over_rows = max(1, int(float(over_rect.h) / ROW_H))
 
 // ── input: detail scrolling ───────────────────────────────────────────────────
 // The prelude scroll region handles the hover-scoped wheel + PageUp/PageDown;
@@ -218,15 +218,15 @@ else
 end
 if focused(fc, "detail") then
   if is_overview then
-    if key_pressed("down") || key_pressed("j") then over_scroll = over_scroll + 1 end
-    if key_pressed("up") || key_pressed("k") then over_scroll = over_scroll - 1 end
-    if key_pressed("space") then over_scroll = over_scroll + over_rows end
+    if key_pressed("down") || key_pressed("j") then over_scroll += 1 end
+    if key_pressed("up") || key_pressed("k") then over_scroll -= 1 end
+    if key_pressed("space") then over_scroll += over_rows end
     if key_pressed("home") then over_scroll = 0 end
     if key_pressed("end") then over_scroll = table_count end
   else
-    if key_pressed("down") || key_pressed("j") then detail_scroll = detail_scroll + 1 end
-    if key_pressed("up") || key_pressed("k") then detail_scroll = detail_scroll - 1 end
-    if key_pressed("space") then detail_scroll = detail_scroll + grid_rows end
+    if key_pressed("down") || key_pressed("j") then detail_scroll += 1 end
+    if key_pressed("up") || key_pressed("k") then detail_scroll -= 1 end
+    if key_pressed("space") then detail_scroll += grid_rows end
     if key_pressed("home") then detail_scroll = 0 end
     if key_pressed("end") then detail_scroll = detail_lines end
   end
@@ -255,7 +255,7 @@ if cat_ready && len(cat_err) == 0 then
   let ntab = 0
   let nview = 0
   for i in range(0, table_count) do
-    if tables[i].kind == "view" then nview = nview + 1 else ntab = ntab + 1 end
+    if tables[i].kind == "view" then nview += 1 else ntab += 1 end
   end
   let tw = "tables"
   if ntab == 1 then tw = "table" end
@@ -349,7 +349,7 @@ if is_overview then
     // always visibly nonzero.
     let frac = float(t.rows) / float(max_rows)
     if t.rows > 0 && frac * float(bar_max) < 2.0 then frac = 2.0 / float(max(1, bar_max)) end
-    progress_bar(rect(bar_x, cy - 8, bar_max, 16), frac, { track: TRACK, fill: col, radius: 3 })
+    progress_bar(rect(bar_x, cy - 8, bar_max, 16), frac, {track: TRACK, fill: col, radius: 3})
     // value
     draw_text(commafmt(t.rows), {x: bar_x + bar_max + 8, y: cy - 8}, FS, DIM)
   end
@@ -388,14 +388,14 @@ else
     for ci in range(0, ncols) do
       let c = detail.columns[ci]
       let badge = ""
-      if c.pk then badge = badge ++ " PK" end
-      if c.notnull then badge = badge ++ " NN" end
+      if c.pk then badge ++= " PK" end
+      if c.notnull then badge ++= " NN" end
       let ty = c.type
       if len(ty) == 0 then ty = "?" end
       let chip = "{c.name} {ty}{badge}"
       let cwid = text_width(chip, FS) + 18
       if cursor + cwid > w - PAD && cursor > sx then
-        line_no = line_no + 1
+        line_no += 1
         cursor = sx
       end
       let yy = sy + line_no * LINE_H
@@ -407,7 +407,7 @@ else
           draw_text(badge, {x: after + text_width(ty, FS), y: yy}, FS, ORANGE)
         end
       end
-      cursor = cursor + cwid
+      cursor += cwid
     end
 
     // the data grid (selectable text_view with per-line styles)

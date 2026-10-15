@@ -11,7 +11,7 @@ import ui
 
 // `state` persists across frames; everything else re-runs each frame.
 state t = 0.0
-t = t + dt()
+t += dt()
 
 let w = screen_width()
 let h = screen_height()
@@ -22,8 +22,8 @@ draw_rect_outline(0, 0, w, h, 64, 74, 96)
 // A row of bars that pulse with sin().
 let n = 14
 for i in range(0, n) do
-  let mag = (sin(t * 1.5 + float(i) * 0.5) + 1.0) * 0.5
-  let bw = int(float(w) / float(n))
+  let mag = (sin(t * 1.5 + i * 0.5) + 1.0) * 0.5
+  let bw = int(float(w) / n)
   let bh = int(mag * float(h) * 0.45)
   let bx = i * bw
   draw_rect(x: bx + 2, y: h - bh, w: bw - 4, h: bh, r: 70, g: int(140.0 + mag * 90.0), b: 220)

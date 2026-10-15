@@ -87,7 +87,7 @@ end
 
 // The flat row model: an optional ".." row, then the entries.
 let rows = []
-if has_parent then rows = append(rows, { name: "..", is_dir: true, path: parent_dir }) end
+if has_parent then rows = append(rows, {name: "..", is_dir: true, path: parent_dir}) end
 for e in entries do rows = append(rows, e) end
 let row_count = len(rows)
 
@@ -99,8 +99,8 @@ let content_h = row_count * ROW_H
 
 // ── input: keyboard ──────────────────────────────────────────────────────────
 let key_moved = false
-if key_pressed("j") || key_pressed("down") || key_pressed("space") then selected = selected + 1; key_moved = true end
-if key_pressed("k") || key_pressed("up") then selected = selected - 1; key_moved = true end
+if key_pressed("j") || key_pressed("down") || key_pressed("space") then selected += 1; key_moved = true end
+if key_pressed("k") || key_pressed("up") then selected -= 1; key_moved = true end
 if key_pressed("g") || key_pressed("home") then selected = 0; key_moved = true end
 if key_pressed("G") || key_pressed("end") then selected = row_count - 1; key_moved = true end
 selected = int(clamp(selected, 0, max(0, row_count - 1)))
@@ -135,7 +135,7 @@ if activate >= 0 && activate < row_count && listing_ready then
     go_dir = row.path
   else
     last_action = "open_path"
-    mutate("open_path", { path: row.path })
+    mutate("open_path", {path: row.path})
   end
 end
 
@@ -147,7 +147,7 @@ if len(go_dir) > 0 then
 end
 
 // ── input: scrolling ─────────────────────────────────────────────────────────
-if hovered(content_rect) then scroll_px = scroll_px + scroll_y() * 24 end
+if hovered(content_rect) then scroll_px += scroll_y() * 24 end
 if key_moved && row_count > 0 then
   scroll_px = ensure_visible_px(scroll_px, selected * ROW_H, ROW_H, content_rect.h)
 end
@@ -184,7 +184,7 @@ for i in range(0, row_count) do
     if i == selected then name_c = TEXT end
     let label = row.name
     if row.is_dir then
-      label = label ++ "/"
+      label ++= "/"
       draw_rect(rect(0, ry + 3, 3, ROW_H - 6), BLUE)
     end
     draw_text(ellipsize_tail(label, w - 2 * PAD, FS), {x: PAD, y: ry + 3}, FS, name_c)

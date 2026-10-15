@@ -57,7 +57,7 @@ state scroll_px = 0
 state last_action = ""
 
 // ── data (the query result, cached in `state` so we poll only until ready) ────
-state recents = { projects: [], files: [], prs: [] }
+state recents = {projects: [], files: [], prs: []}
 state recents_ready = false
 state recents_err = ""
 
@@ -145,34 +145,34 @@ let content_rect = {x: col_x, y: content_top, w: col_w, h: h - content_top - HB_
 let cursor = 0
 let row_off = []
 let proj_head = cursor
-cursor = cursor + HEAD_H
+cursor += HEAD_H
 if project_count == 0 then
-  cursor = cursor + HINT_H
+  cursor += HINT_H
 else
-  for i in range(0, project_count) do row_off = append(row_off, cursor); cursor = cursor + ROW_H end
+  for i in range(0, project_count) do row_off = append(row_off, cursor); cursor += ROW_H end
 end
-cursor = cursor + GAP
+cursor += GAP
 let file_head = cursor
-cursor = cursor + HEAD_H
+cursor += HEAD_H
 if file_count == 0 then
-  cursor = cursor + HINT_H
+  cursor += HINT_H
 else
-  for i in range(0, file_count) do row_off = append(row_off, cursor); cursor = cursor + ROW_H end
+  for i in range(0, file_count) do row_off = append(row_off, cursor); cursor += ROW_H end
 end
-cursor = cursor + GAP
+cursor += GAP
 let pr_head = cursor
-cursor = cursor + HEAD_H
+cursor += HEAD_H
 if pr_count == 0 then
-  cursor = cursor + HINT_H
+  cursor += HINT_H
 else
-  for i in range(0, pr_count) do row_off = append(row_off, cursor); cursor = cursor + ROW_H end
+  for i in range(0, pr_count) do row_off = append(row_off, cursor); cursor += ROW_H end
 end
 let content_h = cursor
 
 // ── input: keyboard selection over the flat list ──────────────────────────────
 let key_moved = false
-if key_pressed("down") || key_pressed("j") then selected = selected + 1; key_moved = true end
-if key_pressed("up") || key_pressed("k") then selected = selected - 1; key_moved = true end
+if key_pressed("down") || key_pressed("j") then selected += 1; key_moved = true end
+if key_pressed("up") || key_pressed("k") then selected -= 1; key_moved = true end
 if key_pressed("home") then selected = 0; key_moved = true end
 if key_pressed("end") then selected = row_count - 1; key_moved = true end
 selected = int(clamp(selected, 0, max(0, row_count - 1)))
@@ -201,18 +201,18 @@ if activate >= 0 && activate < row_count then
   match rows[activate]
     when Row.project(idx) ->
       last_action = "open_project"
-      mutate("open_project", { path: projects[idx].path })
+      mutate("open_project", {path: projects[idx].path})
     when Row.file(idx) ->
       last_action = "open_path"
-      mutate("open_path", { path: files[idx].path })
+      mutate("open_path", {path: files[idx].path})
     when Row.pr(idx) ->
       last_action = "open_pr"
-      mutate("open_pr", { number: prs[idx].number })
+      mutate("open_pr", {number: prs[idx].number})
   end
 end
 
 // ── input: scrolling (wheel over the content; keys pull the selection back) ───
-if hovered(content_rect) then scroll_px = scroll_px + scroll_y() * 24 end
+if hovered(content_rect) then scroll_px += scroll_y() * 24 end
 if key_moved && row_count > 0 then
   scroll_px = ensure_visible_px(scroll_px, row_off[selected], ROW_H, content_rect.h)
 end
@@ -230,12 +230,12 @@ draw_text("a place to start", {x: col_x, y: title_y + 32}, T.font_md, T.dim)
 if bloom.button(open_button, open_label,
                 {variant: "primary", icon: "file", size: FS, id: "open_file"}) then
   last_action = "open_file_dialog"
-  mutate("open_file_dialog", { mode: "file" })
+  mutate("open_file_dialog", {mode: "file"})
 end
 if bloom.button(folder_button, folder_label,
                 {icon: "folder", size: FS, id: "open_folder"}) then
   last_action = "open_file_dialog"
-  mutate("open_file_dialog", { mode: "folder" })
+  mutate("open_file_dialog", {mode: "folder"})
 end
 
 if len(recents_err) > 0 then

@@ -3,6 +3,13 @@
 How to find out why a Petal program is slow, what the runtime already does
 about it, and where the remaining headroom is.
 
+**Dates.** A table headed *Before* and *After* records one change: it was
+measured when that change landed, on the code of that day, and is not re-run.
+The standing figures, which say what something costs now, were measured again
+on 16 October 2026, with release builds on an Apple M4 (10 cores) at a load
+average of about 2, unless the figure says otherwise. A figure that was not
+measured again gives the month it is from.
+
 ## The measurement loop
 
 Three tools, in the order you should reach for them.
@@ -16,7 +23,7 @@ wall time; host callbacks included). Counting is a runtime switch, so a release
 binary profiles without a rebuild. Embedders get the same report through
 `Env::profile_report` (C: `pb_vm_set_profiling` / `pb_vm_profile_report`, which
 adds the memo counters for the measured runs); timing every native call has
-overhead of its own (~40 ns a call), so read cheap natives' times as upper
+overhead of its own (~40 ns a call, September 2026), so read cheap natives' times as upper
 bounds. Start here: it is exact, it is cheap, and a surprising count (half of
 all instructions being `Move`; 83% of builtin calls being `slice`) points at the
 problem far more directly than a time profile does.
@@ -98,22 +105,21 @@ when reading it:
   retires exactly the instructions a plain run does — unlike `--profile`,
   which takes the general path for every instruction and so is no use for
   timing.
-- Timing a frame costs two clock reads, about 50 ns together (the report
-  prints the figure measured on the spot). Each call of a benched function
-  pays it, and so does each user function it calls directly, which is timed so
-  the caller's self time can leave it out. On a variant of
+- Timing a frame costs two clock reads, about 40 to 55 ns together (the
+  report prints the figure measured on the spot). Each call of a benched
+  function pays it, and so does each user function it calls directly, which
+  is timed so the caller's self time can leave it out. On
   `test/benchmarks/calls.ptl` (300,000 calls a run of a four-instruction
-  function) benching that function took a run from 55 ms to 67 ms, ~42 ns a
-  call, and its reported 46 ns/call is mostly that. A function that
+  function) benching `mix` takes a run from about 26 ms to 37 ms, ~37 ns a
+  call, and its reported 40 ns a call is mostly that. A function that
   takes microseconds is unaffected; one that takes tens of nanoseconds reads as
   mostly overhead, and should be judged by its instruction count.
 - `ms to lower` in the header is the optimizer's own cost, paid once per
   program and again on each hot reload that recompiles. It is usually well
   under a millisecond, but grows with the program: the physics playground's
-  solver (`physics.ptl`) takes 2.8 ms to lower optimized against 0.18 ms
-  unoptimized, and a 10,000-line game 69 ms. Those were 19 ms and 225 ms
-  while copy propagation solved its dataflow per instruction; see
-  [Lowering cost](#lowering-cost).
+  solver (`physics.ptl`, 752 lines) takes 3.9 ms to lower optimized against
+  0.19 ms unoptimized, and a 16,600-line game 128 ms (figures from
+  `lower_passes`, below). See [Lowering cost](#lowering-cost).
 
 `bench` runs core-host scripts, like `petal run`. For a library used by a
 panel, write a console driver that imports it and calls the function in a
@@ -146,23 +152,36 @@ baseline`, or `--no-opt`) gives the unoptimized baseline for a same-binary A/B.
 ## Lowering cost
 
 Lowering a program to bytecode runs the optimizer passes, and a hot reload
-that recompiles pays for it before the next frame. `examples/reload_timing.rs`
-in `core/` times it on a real program (and each reload path with it):
+that recompiles pays for it before the next frame. `examples/lower_passes.rs`
+in `core/` lowers a real program with no passes, with each pass alone and
+with all of them, without running it; `examples/reload_timing.rs` times each
+reload path, lowering included:
 
 ```bash
+cd core && cargo run --release --example lower_passes -- path/to/game.ptl
 cd core && cargo run --release --example reload_timing -- path/to/game.ptl
 ```
 
-On a 10,346-line game (62,733 terms, 14 files), release build:
+On two Cheesecake games, `neon` (16,585 lines, 81,332 terms, 36 files with
+the packages it imports; minimum of 9) and Moses (35,976 lines, 196,189
+terms, 70 files; minimum of 5), 16 October 2026:
 
-| Lowered with | Time |
-|---|---|
-| no passes | 3.5 ms |
-| escape analysis only (`in_place_mutation`) | 24 ms |
-| last-use rewriting only (`in_place_straight_line`) | 19 ms |
-| the cell plan only (`in_place_cells`) | 8 ms |
-| copy propagation only | 29 ms (was 175 ms) |
-| all passes | 69 ms (was 225 ms) |
+| Lowered with | neon | Moses |
+|---|---|---|
+| no passes | 5.3 ms | 14 ms |
+| escape analysis only (`in_place_mutation`) | 37 ms | 68 ms |
+| last-use rewriting only (`in_place_straight_line`) | 21 ms | 85 ms |
+| the cell plan only (`in_place_cells`) | 13 ms | 38 ms |
+| copy propagation only | 45 ms | 108 ms |
+| match dispatch only | 5.2 ms | 15 ms |
+| intrinsics only | 5.5 ms | 15 ms |
+| all passes, static cache off | 94 ms | 239 ms |
+| all passes (the default) | 128 ms | 299 ms |
+
+The difference between the last two rows is the static-value classification
+and its lowering ([Static values](#static-values)). On 9 October, on a
+10,346-line game of 62,733 terms, copy propagation alone took 29 ms (175 ms
+before the change below) and all passes 69 ms (225 ms before).
 
 A program's top level is a single
 function, tens of thousands of instructions long in a script this size, so a
@@ -195,15 +214,36 @@ writes through):
 ## What a program costs
 
 A Petal program is interpreted: there is no JIT, and every instruction pays a
-dispatch. So the first-order model is **runtime ≈ instructions retired ÷ ~50 M/s**
-(release build, this machine), and the way to make a program faster is to make
-it execute fewer instructions — either by lowering it to fewer, or by writing
-less work into the script.
+dispatch. So the first-order model is **runtime ≈ instructions retired ÷
+~150 M/s** (release build, this machine: about 100 M/s for code heavy in
+calls and natives, up to about 400 M/s for plain number arithmetic), and the way to make a program faster is to make it execute
+fewer instructions — either by lowering it to fewer, or by writing less work
+into the script.
+
+The benchmark programs, as whole `petal run --seed 1` processes, minimum of
+20 alternating runs, 16 October 2026. The rate leaves out the 3.1 ms a
+process takes to start and run an empty file. (`--profile` reports a lower
+rate, about 40 to 55 M/s, because it takes the general path for every
+instruction.)
+
+| Program | Time | Instructions | Rate |
+|---|---|---|---|
+| `test/benchmarks/append.ptl` | 5.7 ms | 240,569 | ~90 M/s |
+| `test/benchmarks/arith.ptl` | 11.5 ms | 3,600,011 | 430 M/s |
+| `test/benchmarks/audio_synth.ptl` | 92.3 ms | 20,397,532 | 230 M/s |
+| `test/benchmarks/calls.ptl` | 28.9 ms | 3,900,012 | 150 M/s |
+| `test/benchmarks/life.ptl` | 14.4 ms | 3,913,951 | 350 M/s |
+| `test/benchmarks/match_dispatch.ptl` | 318.6 ms | 43,000,066 | 140 M/s |
+| `test/benchmarks/particles.ptl` | 10.3 ms | 1,152,917 | 160 M/s |
+| `test/benchmarks/spreadsheet.ptl` | 188.1 ms | 20,449,658 | 110 M/s |
 
 Two consequences:
 
-- **An unoptimized build is ~10× slower.** `cargo build` (dev profile) runs a
-  script-heavy panel at ~19 ms a frame where a release build runs it at ~2.5 ms.
+- **An unoptimized build is ~10× slower.** A `cargo build` (dev profile)
+  `petal` runs `spreadsheet.ptl` in 2.27 s, `calls.ptl` in 307 ms and
+  `audio_synth.ptl` in 751 ms, against 188, 29 and 92 ms for the release
+  build: 8 to 12 times slower once the start-up is taken out (minimum of 5,
+  16 October 2026, the debug runs under load).
   A host that embeds Petal and cares about frame rate should build the `petal`
   dependency optimized even in its own debug builds; Garden's workspace does
   this with a `[profile.dev.package.petal] opt-level = 3` override.
@@ -243,7 +283,7 @@ frame gating:
 | `escape` (route B) | Proves loop-carried accumulators unique, so mutations lower to in-place heap writes instead of clone-and-alloc. |
 | `lastuse` (route A) | The same for straight-line mutation of a freshly allocated, dead-after container. |
 | `cells` | Lets a write through a `var` cell (`set xs[i] = v`, including from a function that did not declare the cell) mutate the cell's container whenever the cell is its only holder, which the heap tracks per cell at run time. See [var.md](../syntax/var.md#writing-a-container-in-place). |
-| `copyprop` | Copy propagation, dead-move elimination, and jump threading. Removes ~25% of the instruction stream. |
+| `copyprop` | Copy propagation, dead-move elimination, and jump threading. Removes about a third of the instruction stream (36% of `neon`'s, 33% of `spreadsheet.ptl`'s, counted by `lower_passes`). |
 | `match_dispatch` | Enters a run of `match` arms keyed on string literals, int literals or enum variants through a jump table (`MatchSwitch`) instead of testing each arm in turn. See below. |
 | `intrinsics` | Runs calls of the trivial builtins (`float`, `int`, `min`, `max`, `clamp`, `abs`, `floor`, `len`, `type`) as `Intrinsic` instructions, which the straight-line loop computes without a native call. See [Inline builtins](#inline-builtins). |
 
@@ -266,7 +306,7 @@ term) and is set whenever the trace buffer is enabled.
 
 Both are part of the bytecode cache key, so switching a facility on re-lowers
 rather than reusing code compiled without the guard. Observation costs about 15%
-on top of its own recording overhead, and the trace guard more, since it saves
+on top of its own recording overhead (August 2026), and the trace guard more, since it saves
 strictly more instructions. Toggle them between runs, never inside one.
 
 
@@ -286,24 +326,27 @@ and never what it finds: first match wins either way. With the optimizer off
 there is no table, which is what the differential tests compare against.
 
 `test/benchmarks/match_dispatch.ptl` runs a 40-arm match a million times on
-each kind of key (release build, this machine, median of 5):
+each kind of key. Each row below is a copy of the file keeping one of its
+three loops; the chain is `--no-opt`, the table the default (whole `petal
+run`, minimum of 7, 16 October 2026; the whole file minimum of 5):
 
 | | chain of tests | jump table |
 |---|---|---|
-| 40 string arms, 1M matches | 0.48 s | 0.10 s |
-| 40 int arms, 1M matches | 0.47 s | 0.09 s |
-| 40 payload-free variant arms, 1M matches | 0.49 s | 0.10 s |
-| the same loop and call with no match | 0.07 s | 0.07 s |
-| `match_dispatch.ptl` (all three) | 1.45 s | 0.30 s |
+| 40 string arms, 1M matches | 0.56 s | 0.11 s |
+| 40 int arms, 1M matches | 0.54 s | 0.10 s |
+| 40 payload-free variant arms, 1M matches | 0.57 s | 0.12 s |
+| the same loop and call with no match | 0.08 s | 0.08 s |
+| `match_dispatch.ptl` (all three) | 1.67 s | 0.32 s |
 
-Per match that is about 410 ns down to about 30 ns, and it no longer grows
-with the number of arms.
+Per match that is about 470 ns down to about 30 ns, and it no longer grows
+with the number of arms. (On 11 October, when the table landed, the figures
+were 0.48, 0.47 and 0.49 s against 0.10, 0.09 and 0.10 s, median of 5.)
 
 ### Inline builtins
 
 A builtin call gathers its arguments into a vector, builds a `PetalCxt`, runs
 the native, and takes the result off the native's result stack: about 50 ns,
-whatever the native does. For `float(i)` that is fifty times the conversion.
+whatever the native does (`sqrt` below). For `float(i)` that is fifty times the conversion.
 A game calls these thousands of times a frame (Moses, per play frame: `int`
 1,090, `float` 940, `max` 490, `type` 295, `clamp` 240, `len` 175).
 
@@ -342,20 +385,22 @@ What it does not change:
   anything to record for them.
 
 `test/benchmarks/micro/intrinsics.ptl` (the command is in the file), minimum
-of three runs, nanoseconds per call over the empty loop, release build:
+of three runs, nanoseconds per call over the empty loop, release build.
+*Before* and *After* are from 13 October; *Now* is 16 October, on a machine
+under load from other builds:
 
-| Call | Before | After |
-|---|---|---|
-| `float(i)` | 51.0 | 1.0 |
-| `int(x)` | 49.7 | 0.6 |
-| `min(i, 100)` | 54.6 | 4.6 |
-| `max(x, 0.25)` | 54.9 | 4.9 |
-| `clamp(i, 10, 1000)` | 55.9 | 4.8 |
-| `abs(i)` | 49.7 | 2.2 |
-| `floor(x)` | 50.7 | 2.4 |
-| `len(xs)` | 49.6 | 2.5 |
-| `if type(r) == "record"` | 91.7 | 30.9 |
-| `sqrt(x)` (still a call) | 51.1 | 44.1 |
+| Call | Before | After | Now |
+|---|---|---|---|
+| `float(i)` | 51.0 | 1.0 | 1.1 |
+| `int(x)` | 49.7 | 0.6 | 0.7 |
+| `min(i, 100)` | 54.6 | 4.6 | 4.9 |
+| `max(x, 0.25)` | 54.9 | 4.9 | 5.4 |
+| `clamp(i, 10, 1000)` | 55.9 | 4.8 | 5.0 |
+| `abs(i)` | 49.7 | 2.2 | 2.8 |
+| `floor(x)` | 50.7 | 2.4 | 2.6 |
+| `len(xs)` | 49.6 | 2.5 | 3.1 |
+| `if type(r) == "record"` | 91.7 | 30.9 | 31.8 |
+| `sqrt(x)` (still a call) | 51.1 | 44.1 | 50.6 |
 
 The constant arguments of `min`, `max` and `clamp` are a `LoadConst` each,
 inside those figures; the `type` row is the call, the load of the string it
@@ -363,7 +408,7 @@ is compared with, the comparison and the branch. The loop from the Moses
 debrief, `for i in range(0, 1000000) do set s = get s + float(i) * 0.5 end`,
 went from 66.4 ms to 18.6 ms as a whole `petal run` (the same loop without
 the `float` is 19.2 ms: `i * 0.5` mixes an int and a float, which costs more
-than converting first).
+than converting first; 22.8 and 25.6 ms on 16 October, under load).
 
 The `sqrt` row is the second change: a native's results were pushed onto a
 `Vec`, which is an allocation and a free per call for one value. They are
@@ -426,30 +471,33 @@ frozen generation, and a collection then does no work for it at all:
   collector waiting for a table's worth of garbage before it runs again.
 
 **One collection, nothing to free** (`cd core && cargo run --release --example
-gc_pause`; the table is the only root, three heap objects a record):
+gc_pause`; the table is the only root, three heap objects a record; median
+of 31, 16 October 2026):
 
 | Records | Rooted | Frozen |
 |---|---|---|
-| 10,000 | 0.49 ms | 0.002 ms |
-| 100,000 | 2.13 ms | 0.009 ms |
-| 400,000 | 9.21 ms | 0.034 ms |
+| 10,000 | 0.18 ms | 0.001 ms |
+| 100,000 | 2.28 ms | 0.009 ms |
+| 400,000 | 10.15 ms | 0.034 ms |
 
 What is left of the frozen figure is the scan of the bit index, one word for
-64 slots: about 1/240 of the rooted cost at every size.
+64 slots: 1/200 to 1/300 of the rooted cost. (The 10,000-record rooted
+collection measured 0.49 ms on 12 October; the others were within 10% of
+these. Both tables were measured under load.)
 
 **Under allocation** (`./tools/bench-gc-pause.ts`, which runs
 `test/benchmarks/micro/gc_rooted_table.ptl`: the same table in a top-level
 `let`, then 2,000,000 short-lived records; the collections the build triggers
-are subtracted):
+are subtracted; median of 5, 16 October 2026):
 
 | Records | Table | Collections | GC total | Pause per collection |
 |---|---|---|---|---|
 | 10,000 | rooted | 42 | 46 ms | 1.10 ms |
-| 10,000 | frozen | 385 | 42 ms | 0.11 ms |
-| 100,000 | rooted | 5 | 68 ms | 13.5 ms |
-| 100,000 | frozen | 385 | 93 ms | 0.24 ms |
+| 10,000 | frozen | 385 | 41 ms | 0.11 ms |
+| 100,000 | rooted | 5 | 67 ms | 13.3 ms |
+| 100,000 | frozen | 385 | 74 ms | 0.19 ms |
 
-The pause with 100,000 records drops from 13.5 ms to 0.24 ms, and the frozen
+The pause with 100,000 records drops from 13.3 ms to 0.19 ms, and the frozen
 runs collect on the same schedule at both sizes (385 collections: the budget
 is the floor, as it would be with no table at all).
 
@@ -474,10 +522,11 @@ unfrozen objects plus a small per-slot walk cost (`SLOT_WALK_COST`).
 `heap::tests::steady_garbage_keeps_a_steady_heap` holds that a steady
 allocator reaches a steady slot count. Of the eight `test/benchmarks/*.ptl`
 programs, three collect at all: `spreadsheet.ptl` 9 times for 1.1 ms,
-`audio_synth.ptl` 621 times for 3.1 ms, `particles.ptl` 4 times for 0.3 ms.
+`audio_synth.ptl` 621 times for 3.1 ms, `particles.ptl` 4 times for 0.3 ms
+(the same on 16 October).
 
-All figures are from one machine under load from other builds; read them as
-ratios.
+All figures are from one machine, some of them under load from other
+builds; read them as ratios.
 
 ## Enum data reads
 
@@ -526,20 +575,21 @@ data, is looked up when a field is read, which is what lets a variant kept in
 
 `petal bench --iters 30 test/benchmarks/micro/enum_reads.ptl --fn …` (the
 command is in the file), minimum of three runs, nanoseconds per read over
-the empty loop, optimizer on:
+the empty loop, optimizer on. *Before* and *After* are from 12 October,
+*Now* from 16 October, under load:
 
-| Read | Before | After |
-|---|---|---|
-| record field `r.code` | 1.7 | 1.8 |
-| `k.code`, `k` in a local | 51.3 | 3.5 |
-| `K.v.code` | 71.3 | 6.6 |
-| payload field `op.dy` | 33.9 | 11.5 |
-| `K.all` (eight variants) | 227.8 | 18.8 |
-| `k.code` for each `k` in `K.all` | 91.4 | 17.3 |
+| Read | Before | After | Now |
+|---|---|---|---|
+| record field `r.code` | 1.7 | 1.8 | 2.2 |
+| `k.code`, `k` in a local | 51.3 | 3.5 | 3.8 |
+| `K.v.code` | 71.3 | 6.6 | 6.0 |
+| payload field `op.dy` | 33.9 | 11.5 | 11.6 |
+| `K.all` (eight variants) | 227.8 | 18.8 | 17.1 |
+| `k.code` for each `k` in `K.all` | 91.4 | 17.3 | 13.7 |
 
 `K.all` allocated a list per read (200,001 allocations for 200,000 reads)
 and now allocates nothing after the first (2). The loop itself is 21 ns an
-iteration on this machine (six instructions), so `K.v.code` in a loop went
+iteration on this machine (six instructions; 22.5 ns on 16 October), so `K.v.code` in a loop went
 from 93 ns to 28 ns. With the optimizer off the figures are within 3 ns of
 these. `K.all` still costs more than a field read because the builtin's
 argument, the enum's name, is a string constant that is interned on every
@@ -556,6 +606,10 @@ three data keys, and the same enum without data, 20,000 times on one stack:
 | 50 variants with data | 9.54 µs | 6.67 µs |
 | 50 variants, no data | 2.04 µs | 2.04 µs |
 | per variant with data | 150 ns | 93 ns |
+
+(12 October. On 16 October, with the static cache off as it did not yet
+exist then, `PETAL_POLICY=fast-static`: 7.6 µs and 2.4 µs median, about
+105 ns a variant, under load.)
 
 A run that publishes what the run before published, value for value, swaps
 the new record into the slot in the straight-line loop: no tag copied, no
@@ -605,7 +659,9 @@ hits a run; the control for the top-level file is a two-line program at
 | the same calls, no `state` | 14.3 µs | 14.8 µs | | |
 
 "Before" is one run of the benchmark and "after" the middle of three; the
-machine was running other builds. A hit inside a function costs three times
+machine was running other builds (12 October). Measured again the same way
+on 16 October, also under load: 11.9 µs, 44.4 µs and 15.7 µs, with the
+control at 2.2 µs, so 49 ns a top-level hit and 144 ns one inside a function. A hit inside a function costs three times
 a top-level one because its key has a path: the path is assembled from the
 frames on every hit, the key is three words longer to hash and compare, and
 it is copied into the touched set.
@@ -631,26 +687,28 @@ the lowering and the rules for when the cache is on are in
 records what it saves and what it costs.
 
 Over the panel corpus (`cd core-libs/petal-ui && cargo test --release --test
-static_cache -- --ignored --nocapture measure`: 55 apps, 60 frames of the
-monkey scenario, every frame run, release, 13 October 2026) a frame runs
-0.0% to 29.9% fewer instructions, median 5.4%, and makes 1.0% to 48.5% fewer
-allocations, median 25.3% (1.03% and 16.84% over the sum of the corpus;
-2,940 slots for top-level values and 6,254 for values inside function
-bodies):
+static_cache -- --ignored --nocapture measure`: 56 apps, 60 frames of the
+monkey scenario, every frame run, release, 16 October 2026) a frame runs
+0.1% to 26.3% fewer instructions, median 5.1%, and makes 0.9% to 45.6% fewer
+allocations, median 22.5% (0.98% and 15.38% over the sum of the corpus;
+3,118 slots for top-level values and 7,044 for values inside function
+bodies). On 13 October, over 55 apps, the figures were 0.0% to 29.9%
+(median 5.4%) and 1.0% to 48.5% (median 25.3%).
 
 | App | Top-level slots | Instructions per frame, off | On | Allocations per frame, off | On |
 |---|---|---|---|---|---|
-| games/snake | 66 | 2,992 | 2,754 (−8.0%) | 144 | 90 (−37.8%) |
-| games/memory | 96 | 30,490 | 21,374 (−29.9%) | 1,430 | 775 (−45.8%) |
-| productivity/settings | 55 | 36,727 | 35,389 (−3.6%) | 1,914 | 1,639 (−14.4%) |
-| productivity/kanban | 42 | 3,954 | 3,741 (−5.4%) | 184 | 132 (−28.1%) |
-| dashboards/analytics-dashboard | 82 | 29,817 | 29,477 (−1.1%) | 2,386 | 2,300 (−3.6%) |
-| dashboards/network-graph | 102 | 783,883 | 782,380 (−0.2%) | 1,257 | 1,083 (−13.8%) |
-| garden/examples/panels/plant | 33 | 1,066 | 942 (−11.6%) | 82 | 57 (−30.1%) |
+| games/snake | 69 | 3,074 | 2,833 (−7.8%) | 152 | 96 (−36.4%) |
+| games/memory | 99 | 33,422 | 24,640 (−26.3%) | 1,541 | 894 (−42.0%) |
+| productivity/settings | 58 | 36,171 | 34,830 (−3.7%) | 1,904 | 1,627 (−14.6%) |
+| productivity/kanban | 45 | 4,031 | 3,815 (−5.4%) | 191 | 139 (−26.9%) |
+| dashboards/analytics-dashboard | 85 | 29,860 | 29,517 (−1.1%) | 2,402 | 2,317 (−3.6%) |
+| dashboards/network-graph | 105 | 655,291 | 653,788 (−0.2%) | 1,145 | 977 (−14.7%) |
+| garden/examples/panels/plant | 36 | 1,156 | 1,030 (−10.9%) | 86 | 62 (−28.2%) |
 
 The saving is a fixed amount per frame (the tables), so it is a large share
 of a small panel and noise in one that simulates or draws a lot. Every UI app
-keeps at least 11 slots, which are the UI prelude's own tables. Where a
+keeps at least 14 slots (11 on 13 October), which are the UI prelude's own
+tables. Where a
 panel's tables are derived from the screen size, the theme or text
 measurement, nothing is kept: those are not static.
 
@@ -660,9 +718,10 @@ miss every frame. Kept, it is the same object and compares equal at once: a
 400-record `let` table as a memo argument goes from 29 misses in 29 frames
 to none.
 
-Costs. A recompile classifies the program (48 ms on a 34,000-line game of
-192,000 terms, 14 ms on one of 78,000, 3 to 5 ms on an example panel;
-`core/examples/reload_timing.rs` prints it) and runs the pass; nothing is
+Costs. A recompile classifies the program (52 to 56 ms on Moses, 36,000
+lines and 196,000 terms, and 16 ms on `neon`, 81,000 terms, on 16 October;
+3 to 5 ms on an example panel in October; `core/examples/reload_timing.rs`
+prints it) and runs the pass; nothing is
 classified on a reload that only moves positions or changes literals. The
 answer is kept beside the program (`Program::static_analysis`) by whichever
 asks first, the `const` check of a compile or the lowering, and serves the
@@ -672,7 +731,8 @@ frame, one test per stretch of static code plus one register write per slot
 that something outside the stretch reads. The frame that builds everything
 (the first, and the one after a reload that cleared the table) pays two
 instructions more per stored value, a test in front and the store behind:
-933 on the 8,284 of Moses's static code, where one store per stretch was 68. With the cache off the cost is two comparisons per
+1,055 on the 17,031 of Moses's static code on 16 October (933 on 8,284 on
+13 October, where one store per stretch was 68). With the cache off the cost is two comparisons per
 dispatch into the VM and one more bit tested in the in-place heap
 operations: the `test/benchmarks/*` scripts under `petal run` time within
 1.2% either way of the same source with both compiled out, and their
@@ -687,30 +747,32 @@ instruction plus the instructions, and the values in a log are held for as
 long as the segment is kept. Garden's own panels under Garden's host
 (`cd garden && cargo test -p garden-script --lib -- --ignored --nocapture
 measure_static`: every example panel and GPP drawer, 60 frames, every frame
-run, no input and no host data, 13 October 2026) run 2.4% to 17.8% fewer
-instructions a frame and make 9.8% to 28.9% fewer allocations (6.75% and
-19.0% over the sum of the 18 that draw, 32,116 to 29,947 instructions and
-2,579 to 2,088 allocations; the other two are `gpp-test-app`'s scripts that
-raise on purpose):
+run, no input and no host data, 16 October 2026) run 2.5% to 15.9% fewer
+instructions a frame and make 9.6% to 31.5% fewer allocations (6.60% and
+18.4% over the sum of the 18 that draw, 33,866 to 31,631 instructions and
+2,686 to 2,192 allocations; the other two are `gpp-test-app`'s scripts that
+raise on purpose). On 13 October the figures were 2.4% to 17.8% and 9.8% to
+28.9%:
 
 | Panel | Slots | Instructions per frame, off | On | Allocations per frame, off | On |
 |---|---|---|---|---|---|
-| examples/panels/plant | 33 | 1,042 | 918 (−11.9%) | 107 | 83 (−22.8%) |
-| examples/panels/sketch | 17 | 1,206 | 1,110 (−8.0%) | 88 | 66 (−24.9%) |
-| examples/panels/shapes | 19 | 1,542 | 1,391 (−9.8%) | 142 | 101 (−28.9%) |
-| examples/panels/gallery | 14 | 4,911 | 4,767 (−2.9%) | 294 | 257 (−12.6%) |
-| examples/panels/layers | 24 | 1,840 | 1,704 (−7.4%) | 125 | 94 (−25.1%) |
-| gpp-apps/git-viewers/git_panel | 22 | 2,572 | 2,437 (−5.2%) | 211 | 179 (−15.2%) |
-| gpp-apps/garden-diff/garden_diff | 21 | 1,290 | 1,179 (−8.6%) | 99 | 74 (−24.8%) |
-| gpp-apps/sqlite-browser/db_view | 20 | 2,037 | 1,916 (−5.9%) | 186 | 156 (−16.2%) |
-| gpp-apps/main-menu/main_menu | 14 | 5,546 | 5,411 (−2.4%) | 268 | 242 (−9.8%) |
+| examples/panels/plant | 36 | 1,133 | 1,006 (−11.3%) | 112 | 87 (−21.9%) |
+| examples/panels/sketch | 20 | 1,268 | 1,167 (−7.9%) | 106 | 84 (−20.4%) |
+| examples/panels/shapes | 20 | 1,632 | 1,477 (−9.5%) | 124 | 85 (−31.5%) |
+| examples/panels/gallery | 17 | 5,108 | 4,962 (−2.9%) | 305 | 267 (−12.4%) |
+| examples/panels/layers | 27 | 1,928 | 1,788 (−7.2%) | 145 | 113 (−21.8%) |
+| gpp-apps/git-viewers/git_panel | 22 | 2,680 | 2,541 (−5.2%) | 218 | 185 (−14.9%) |
+| gpp-apps/garden-diff/garden_diff | 24 | 1,401 | 1,286 (−8.2%) | 104 | 79 (−23.6%) |
+| gpp-apps/sqlite-browser/db_view | 20 | 2,132 | 2,007 (−5.9%) | 192 | 162 (−15.8%) |
+| gpp-apps/main-menu/main_menu | 17 | 5,635 | 5,496 (−2.5%) | 269 | 243 (−9.6%) |
 
 "Off" is what every panel ran before. The drawers have no data here, so
 their frames are small and the share is larger than a populated pane would
-show; the saving itself is the fixed 100 to 150 instructions and 22 to 41
-allocations of the tables. Over the 55-app corpus with observations on
-(`measure_observed` in the same test file as above) the sum is 0.65% fewer instructions and 11.04% fewer allocations, 2,945
-slots.
+show; the saving itself is the fixed 100 to 155 instructions and 21 to 39
+allocations of the tables. Over the 56-app corpus with observations on
+(`measure_observed` in the same test file as above) the sum is 0.61% fewer
+instructions and 10.04% fewer allocations, 3,123 slots (0.65% and 11.04% over
+55 apps on 13 October).
 What observation costs the cache: a statement that edits in place a
 container another statement built is not skipped, and after a reload that
 recompiles each kept segment executes once more to write its log
@@ -726,25 +788,26 @@ The value has to read nothing of the call; the rules are in
 Over the same corpus and scenario, the cache without these slots
 (`replay-fnstatic`) against the cache with them (`cd core-libs/petal-ui &&
 cargo test --release --test static_in_functions -- --ignored --nocapture
-measure_what`, 13 October 2026): 0.29% fewer instructions and 7.07% fewer
-allocations over the sum, and where a function builds a table per element
-of something, a quarter of the frame's allocations:
+measure_what`, 16 October 2026): 0.29% fewer instructions and 6.38% fewer
+allocations over the sum (7.07% on 13 October), and where a function builds
+a table per element of something, a quarter of the frame's allocations:
 
 | App | Function slots | Instructions per frame, without | With | Allocations per frame, without | With |
 |---|---|---|---|---|---|
-| dashboards/server-monitoring | 99 | 43,032 | 40,595 (−5.7%) | 2,758 | 2,059 (−25.4%) |
-| productivity/markdown-editor | 102 | 73,869 | 72,625 (−1.7%) | 910 | 663 (−27.2%) |
-| productivity/photo-adjust | 153 | 321,018 | 315,744 (−1.6%) | 4,589 | 3,359 (−26.8%) |
-| productivity/spreadsheet | 112 | 177,971 | 177,627 (−0.2%) | 759 | 645 (−15.1%) |
-| productivity/email-client | 167 | 11,700 | 11,570 (−1.1%) | 572 | 536 (−6.3%) |
-| garden/examples/panels/gallery | 89 | 5,204 | 5,182 (−0.4%) | 301 | 280 (−7.1%) |
+| dashboards/server-monitoring | 111 | 51,932 | 49,507 (−4.7%) | 3,011 | 2,310 (−23.3%) |
+| productivity/markdown-editor | 114 | 73,954 | 72,710 (−1.7%) | 926 | 709 (−23.4%) |
+| productivity/photo-adjust | 165 | 319,833 | 314,558 (−1.6%) | 4,727 | 3,497 (−26.0%) |
+| productivity/spreadsheet | 124 | 178,021 | 177,676 (−0.2%) | 790 | 675 (−14.5%) |
+| productivity/email-client | 179 | 11,821 | 11,692 (−1.1%) | 597 | 562 (−5.9%) |
+| garden/examples/panels/gallery | 101 | 5,316 | 5,295 (−0.4%) | 307 | 285 (−7.0%) |
 
-18 of the 55 gain nothing, and 89 of every UI app's slots are the UI
-prelude's. Before any of it was written the same corpus was measured for
+14 of the 56 gain nothing, and every UI app has at least 101 slots, most of
+them the UI prelude's (89 on 13 October). Before any of it was written the same corpus was measured for
 what there was to gain (`measure_constants_inside_functions_on_the_corpus` in that file, an ignored test:
 `petal::static_survey` finds the invariant expressions and a counter on the
 profiler charges each one its instructions and allocations): 0.26% and
-7.26%. Run again with the slots on it finds 0.22% of allocations left.
+7.26% (13 October). Run again with the slots on it finds 0.20% of
+allocations left (16 October).
 
 What it does not keep, and what it costs:
 
@@ -763,10 +826,12 @@ What it does not keep, and what it costs:
   these, once, at its next use: they are not followed, and the reload
   report counts top-level values only. One that only moves text leaves
   them.
-- A recompile pays for the plan and the pass: 33 ms of 488 on a
-  34,000-line game with 1,573 functions (4,381 slots), 12 of 187 on one of
-  15,000 lines (`reload_timing` under `fast` against `fast-fnstatic`, the
-  minimum of 9 rounds in each of 3 to 5 runs). A slot costs its entry in the stack's table whether or
+- A recompile pays for the plan and the pass: about 30 ms of 800 on Moses
+  (36,000 lines) and 10 to 14 of 190 on `neon` (16,600 lines)
+  (`reload_timing` under `fast` against `fast-fnstatic`, the minimum of 9
+  rounds in each of 2 runs, 16 October 2026). On 13 October it was 33 ms of
+  488 on Moses, then 34,000 lines with 1,573 functions (4,381 slots), and 12
+  of 187 on `neon`. A slot costs its entry in the stack's table whether or
   not anything reaches it.
 - `freeze(mk())` freezes the one kept list, and `frozen(mk())` is then
   true on the next call, where each call used to return a new list: the
@@ -787,9 +852,10 @@ call the declaration makes on every run; with the cache on that call is
 static code like any other, the record it publishes has a slot, and a frame
 that skips it leaves the record the first run published where it is.
 On `test/benchmarks/micro/enum_decl_data.ptl` (50 variants, three keys each,
-`rerun_timing`, release) a run costs 7.0 µs with the cache off and 2.5 µs
-with it on, against 2.1 µs for the same enum without data: about 9 ns a
-variant, down from about 100, which is loading 50 slots into registers.
+`rerun_timing`, release, median) a run costs 7.6 µs with the cache off and
+2.8 µs with it on, against 2.4 µs for the same enum without data: about 8 ns
+a variant, down from about 100, which is loading 50 slots into registers (16
+October, the cache-off run under load; 7.0, 2.5 and 2.1 µs on 13 October).
 Data that is not static (a function that reads `state`) is published on
 every run as before.
 
@@ -814,6 +880,10 @@ to trace in a collection). Moses, 27,000 lines, release, 13 October 2026:
 | …cache on | 2,557 (−23,247) | 40 | 1 |
 
 (451 slots behind 42 checks as written, 548 behind 54 with the 74 cells.)
+On 16 October Moses as it stands (36,000 lines) gives 15,615 instructions,
+4,572 allocations and 872 records with the cache off, and 2,744 (−12,871),
+54 (−4,518) and 1 (−871) with it on: 546 slots behind 54 checks. Its first
+frame is 17,031 instructions with the cache off and 18,086 with it on.
 The first frame after a load builds everything and costs what it does with
 the cache off (8,284 instructions as written, 35,195 with the 74 cells)
 plus the tests and stores: 933 and 1,135. The first frame after a reload
@@ -864,13 +934,14 @@ Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from
   (a cell the scope did not create) or the frame gate wants a fingerprint of a
   `state var` before its first mutation of the run; before that, every `x[i]`
   through a cell left the loop and re-entered it, which cost a solver written
-  over local `var` lists a quarter of its time. That took ~18% off Cheesecake's `neon` script time. Cutting
+  over local `var` lists a quarter of its time. That took ~18% off Cheesecake's `neon` script time (October 2026). Cutting
   further means retiring fewer instructions (or a JIT), not cheaper dispatch.
-- **`Move` is ~30% of instructions.** What is left are live phi copies
+- **`Move` is ~20% of instructions** (20.1% of `spreadsheet.ptl`'s on 16
+  October; it was ~30%). What is left are live phi copies
   around loops — the copy in and the carry out. Register coalescing (giving a
   phi and its sources one register when their live ranges do not interfere)
   is the pass that would remove them.
-- **`JumpIfPending` is ~7%**, one per branch, and almost never taken. The
+- **`JumpIfPending` is ~9%** (8.7%), one per branch, and almost never taken. The
   dispatch loop now takes a `JumpIfPending` and the `JumpIfFalse` on the same
   register that follows it in one step (both still counted), so the pair costs
   one dispatch; folding the test into the opcode itself would also shrink the
@@ -878,7 +949,7 @@ Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from
   (`branch_target`) currently assume does not exist.
 - **Native calls cost more than their bodies** for cheap builtins: a `PetalCxt`
   is built per call, and arguments are gathered into a vector first, about
-  44 ns in all. The nine trivial builtins no longer pay it
+  45 to 50 ns in all. The nine trivial builtins no longer pay it
   ([Inline builtins](#inline-builtins)); `sqrt`, `sin`, `str`, `slice` and
   every host native still do.
 - **Records hash their field names.** Map payloads are `heap::RecordMap`
@@ -900,21 +971,23 @@ Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from
   within the run that made them. `petal run` therefore leaves memoization off
   unless a policy is named, and a host that keeps it on is bounded: no scope
   past 96 frames deep, and a table of at most 96 MB of records
-  ([memo-scopes.md](memo-scopes.md), "Bounds"). Release build, peak RSS:
+  ([memo-scopes.md](memo-scopes.md), "Bounds"). Release build, peak RSS
+  from `/usr/bin/time -l`, 16 October 2026 (the *before* column is from
+  9 October):
 
   | Program | before, `fast` | `petal run` now | `--policy fast` now |
   |---|---|---|---|
-  | `fib(27)` | 541 MB, 0.45 s | 4.6 MB, 0.04 s | 131 MB, 0.25 s |
-  | `fib(30)` | not measured | 4.7 MB, 0.18 s | 133 MB, 0.96 s |
-  | linear recursion, depth 4,900 | 479 MB, 0.26 s | 7.4 MB, <0.01 s | 7.9 MB, <0.01 s |
-  | linear recursion, depth 10,000 | over the call limit | 10 MB, <0.01 s | 10.6 MB, <0.01 s |
+  | `fib(27)` | 541 MB, 0.45 s | 6.0 MB, 0.05 s | 127 MB, 0.25 s |
+  | `fib(30)` | not measured | 6.0 MB, 0.18 s | 129 MB, 0.87 s |
+  | linear recursion, depth 4,900 | 479 MB, 0.26 s | 8.5 MB, <0.01 s | 9.5 MB, <0.01 s |
+  | linear recursion, depth 10,000 | over the call limit | 11.1 MB, <0.01 s | 11.7 MB, <0.01 s |
 
   `test/vitest/recursion-memory.test.ts` holds `fib(30)` and the depth-10,000
   case under a memory ceiling.
 - **`state` inside a deep recursion is quadratic.** A slot is keyed by its
   call path, so a function that declares `state` and recurses `d` deep keeps
-  `d` keys of up to `d` parts: 480 MB at depth 4,990 (about 1 GB with
-  memoization on). `MAX_STATE_CALL_DEPTH` stops path-keyed state at 5,000
+  `d` keys of up to `d` parts: 463 MB at depth 4,990 (1.0 GB with
+  memoization on; 16 October). `MAX_STATE_CALL_DEPTH` stops path-keyed state at 5,000
   frames for that reason, while calls without it may nest to
   `MAX_CALL_DEPTH` (20,000). Interning paths would fix both this and the size
   of a memo record.

@@ -735,6 +735,12 @@ end
 //     release the cover is a frame old. Use `click` for anything that must
 //     not fire through a panel; `pressed` when it must fire on the way down.
 //
+// A click also belongs to what was pressed: on the release, `click` goes only
+// to a rect that was registered under the press point when the button went
+// down (matched by layer and rect, or by id). A row of a panel that the click
+// itself opened, sitting where the press landed, gets `released` but no
+// `click`.
+//
 // Rects on the *same* layer do not block each other: two overlapping buttons
 // on one layer are both hot, as they always were. Put the one on top on a
 // higher layer.
@@ -745,7 +751,7 @@ end
 native fn _ui_register(rect, layer, clip, id?, flags?) = "ui_register"
 native fn _ui_mark() = "ui_mark"
 native fn _ui_mute(on) = "ui_mute"
-native fn _ui_probe(rect, layer, clip, floor) = "ui_probe"
+native fn _ui_probe(rect, layer, clip, floor, id?) = "ui_probe"
 native fn _ui_hot(rect, layer, clip, floor) = "ui_hot"
 native fn _ui_floor() = "ui_floor"
 native fn _ui_target_rect(id) = "ui_target_rect"
@@ -878,7 +884,8 @@ end
 //             still true when the pointer has slid off
 //   pressed   the left button went down this frame, over it
 //   released  the left button came up this frame, over it
-//   click     released over it, having been pressed inside it
+//   click     released over it, having been pressed inside it while it was
+//             there (a rect that appeared under the press gets no click)
 //
 // `id` (a string or an int) names the rect for `ui_target_rect`, tests and
 // agents. It does not have to be unique, but only the last rect registered
@@ -887,7 +894,7 @@ pub fn interact(r, id = nil)
   set _wrote = 0
   let l = get _layer
   _ui_register(r, l, get _clip, id)
-  let s = _ui_probe(r, l, get _clip, _run_floor(l))
+  let s = _ui_probe(r, l, get _clip, _run_floor(l), id)
   if s.hover then _raise() end
   s
 end

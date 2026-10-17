@@ -102,7 +102,7 @@ dialogs and about clipping. See [Layers and hit testing](#layers-and-hit-testing
 | `down` | The left button is held and went down inside the rect. Stays true if the pointer slides off. |
 | `pressed` | The left button went down this frame, over the rect. |
 | `released` | The left button came up this frame, over the rect. |
-| `click` | Released over the rect, having been pressed inside it. |
+| `click` | Released over the rect, having been pressed inside it while it was there (see [below](#layers-and-hit-testing)). |
 
 ## Layers and hit testing
 
@@ -153,6 +153,17 @@ run so far). So:
   press lands on exactly that frame. `click` has no such gap, because by the
   release the cover is a frame old. Use `click` for anything that must not
   fire through a panel.
+
+**A click belongs to what was pressed.** `click` also needs the rect to have
+been on screen, under the press point, when the button went down. When the
+button goes down the host notes which registered rects the press landed on
+(last frame's, plus anything the press frame itself registered), and on the
+release only those get `click`. They are matched by layer and rect, or by `id`
+if the rect has one, so a button whose rect shifts while it is held keeps its
+click if it has an id. So a click that opens a panel does not also click the
+row of the new panel that appeared where the pointer is, and a widget that
+*appears* between the press and the release gets `released` but not `click`.
+`down` still follows the press point alone.
 
 The clip in force counts: a row scrolled half out of its list is not hot over
 the part that is clipped away.

@@ -35,6 +35,19 @@
 //! released inside, having been pressed inside — does not have that leak,
 //! because by the release the registry knows about the new panel.
 //!
+//! # Who a press belongs to
+//!
+//! `click` also needs the rect to have been *there* when the button went
+//! down. A click that opens a panel would otherwise click whatever row of the
+//! new panel sits under the pointer on the release. So on the frame the left
+//! button goes down, [`roll`] snapshots the targets under the press point
+//! that were open to it ([`SYM_PRESS_TARGETS`]): last frame's registry, plus,
+//! on the next roll, what the press frame itself registered (a widget shown
+//! on hover that a test moved onto and pressed in one frame). A rect is
+//! clicked only if a snapshot row on its layer has its rect or its id. With
+//! no snapshot — nothing was registered yet, or the press and the release
+//! arrived in the same frame — `click` falls back to the press point alone.
+//!
 //! Everything here is a pure function of bindings and arguments, or an emit,
 //! so the frame gate and memoized scopes stay exact: the floor is a binding
 //! (a run that read it re-runs when it moves), registrations are emits (a
@@ -74,6 +87,15 @@ pub const SYM_UI_FLOOR: &str = "ui_floor";
 /// release, unlike `drag_start_x/y`), so a release can be matched to its press.
 pub const SYM_PRESS_X: &str = "press_x";
 pub const SYM_PRESS_Y: &str = "press_y";
+
+/// Binding holding the targets the left button's last press landed on: a list
+/// of registry rows, or `nil` when there is nothing to check against. See
+/// "Who a press belongs to" above.
+pub const SYM_PRESS_TARGETS: &str = "ui_press_targets";
+
+/// Binding: the press frame's own registrations still have to be added to
+/// [`SYM_PRESS_TARGETS`] on the next roll.
+const SYM_PRESS_SETTLE: &str = "ui_press_settle";
 
 /// `flags` bit: the rect blocks the pointer for lower layers.
 pub const FLAG_BLOCKS: i64 = 1;
@@ -225,6 +247,85 @@ pub fn roll(env: &mut Env, input: &InputState) {
     env.set_binding(s, Value::Int(px as i64));
     let s = env.intern_symbol(SYM_PRESS_Y);
     env.set_binding(s, Value::Int(py as i64));
+    roll_press(env, &registry, px as f64, py as f64);
+}
+
+/// Whether the int list bound as `name` holds `button`.
+fn env_list_has(env: &mut Env, name: &str, button: i64) -> bool {
+    let sym = env.intern_symbol(name);
+    match env.binding(sym) {
+        Some(Value::List(id)) => env
+            .heap()
+            .get_list(id)
+            .iter()
+            .any(|v| matches!(v, Value::Int(n) if *n == button)),
+        _ => false,
+    }
+}
+
+/// The rows of `registry` a press at (`px`, `py`) landed on: under the point
+/// and not below its floor.
+fn press_rows(registry: &[Target], px: f64, py: f64) -> Vec<Target> {
+    let floor = floor_of(registry, px, py);
+    registry
+        .iter()
+        .filter(|t| !t.modal && t.contains(px, py) && floor.is_none_or(|f| t.layer >= f))
+        .cloned()
+        .collect()
+}
+
+fn encode_row(env: &mut Env, t: &Target) -> Value {
+    let flags = if t.blocks { FLAG_BLOCKS } else { 0 };
+    let id = match &t.id {
+        Some(s) => Value::String(env.heap_mut().alloc_string(s.clone())),
+        None => Value::Nil,
+    };
+    let row = vec![
+        Value::Float(t.x),
+        Value::Float(t.y),
+        Value::Float(t.w),
+        Value::Float(t.h),
+        Value::Int(t.layer),
+        Value::Int(flags),
+        id,
+    ];
+    Value::List(env.heap_mut().alloc_list(row))
+}
+
+/// Keep [`SYM_PRESS_TARGETS`] up to date: snapshot it on the frame the left
+/// button goes down, and add the press frame's own rows on the roll after.
+/// Reads the button bindings, so it must run after they are bound.
+fn roll_press(env: &mut Env, registry: &[Target], px: f64, py: f64) {
+    let targets_sym = env.intern_symbol(SYM_PRESS_TARGETS);
+    let settle_sym = env.intern_symbol(SYM_PRESS_SETTLE);
+    if env_list_has(env, SYM_BUTTONS_PRESSED, 0) {
+        let same_frame = env_list_has(env, SYM_BUTTONS_RELEASED, 0);
+        if same_frame || registry.is_empty() {
+            env.set_binding(targets_sym, Value::Nil);
+            env.set_binding(settle_sym, Value::Bool(false));
+        } else {
+            let rows: Vec<Value> = press_rows(registry, px, py)
+                .iter()
+                .map(|t| encode_row(env, t))
+                .collect();
+            let list = Value::List(env.heap_mut().alloc_list(rows));
+            env.set_binding(targets_sym, list);
+            env.set_binding(settle_sym, Value::Bool(true));
+        }
+    } else if matches!(env.binding(settle_sym), Some(Value::Bool(true))) {
+        env.set_binding(settle_sym, Value::Bool(false));
+        if let Some(Value::List(id)) = env.binding(targets_sym) {
+            let mut rows = env.heap().get_list(id).to_vec();
+            let have = decode_rows(&rows, env.heap());
+            for t in press_rows(registry, px, py) {
+                if !have.contains(&t) {
+                    rows.push(encode_row(env, &t));
+                }
+            }
+            let list = Value::List(env.heap_mut().alloc_list(rows));
+            env.set_binding(targets_sym, list);
+        }
+    }
 }
 
 /// The registry as the host reads it: every rect the most recent run
@@ -427,7 +528,23 @@ struct Probe {
     click: bool,
 }
 
-/// The shared arguments `(rect, layer, clip, floor)` → the answers.
+/// Whether the press snapshot holds this rect: a row on `layer` with the same
+/// rect (to half a pixel) or, when the rect has one, the same id. No
+/// snapshot: every rect does.
+fn held_at_press(state: &mut PetalCxt, r: &[f64; 4], layer: i64, id: Option<&str>) -> bool {
+    let rows = match state.binding_named(SYM_PRESS_TARGETS) {
+        Value::List(list) => state.heap().get_list(list).to_vec(),
+        _ => return true,
+    };
+    let near = |a: f64, b: f64| (a - b).abs() <= 0.5;
+    decode_rows(&rows, state.heap()).iter().any(|t| {
+        t.layer == layer
+            && ((near(t.x, r[0]) && near(t.y, r[1]) && near(t.w, r[2]) && near(t.h, r[3]))
+                || (id.is_some() && t.id.as_deref() == id))
+    })
+}
+
+/// The shared arguments `(rect, layer, clip, floor, [id])` → the answers.
 fn probe(state: &mut PetalCxt, who: &str) -> Result<Probe, String> {
     let r = intersect(rect_arg(state, 1, who)?, clip_arg(state, 3, who)?);
     let layer = opt_layer(state, 2)?.unwrap_or(0);
@@ -453,17 +570,32 @@ fn probe(state: &mut PetalCxt, who: &str) -> Result<Probe, String> {
     };
     let down = open && press_in && binding_has(state, SYM_BUTTONS_DOWN, 0);
     let released = hover && binding_has(state, SYM_BUTTONS_RELEASED, 0);
+    // A click is the release of a press this rect held: it was there, under
+    // the press point, when the button went down — not a row that appeared
+    // there since (the panel the press opened).
+    let click = released && press_in && {
+        let id = if state.arg_count() >= 5 {
+            match state.get_value(5)? {
+                Value::String(s) => Some(state.heap().get_string(s).to_string()),
+                Value::Int(n) => Some(n.to_string()),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        held_at_press(state, &r, layer, id.as_deref())
+    };
     Ok(Probe {
         hover,
         down,
         pressed,
         released,
-        click: released && press_in,
+        click,
     })
 }
 
-/// `ui_probe(rect, layer, clip, floor)` → `{hover, down, pressed, released,
-/// click}`.
+/// `ui_probe(rect, layer, clip, floor, [id])` → `{hover, down, pressed,
+/// released, click}`.
 fn native_ui_probe(state: &mut PetalCxt) -> NativeResult {
     let p = probe(state, "interact")?;
     let mut map: RecordMap = petal::heap::record_map_with_capacity(5);

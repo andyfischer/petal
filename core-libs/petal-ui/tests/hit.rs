@@ -88,6 +88,52 @@ fn a_release_inside_after_a_press_outside_is_not_a_click() {
     assert_eq!(ui.state_int("clicks"), Some(0));
 }
 
+/// A button that opens a list on its click; the list's first row sits where
+/// the button was pressed, and runs after the button on the same frame.
+const OPENS_A_LIST: &str = "state open = false\n\
+                            state picked = 0\n\
+                            if interact(rect(10, 10, 100, 30), \"open\").click then open = true end\n\
+                            if open then\n\
+                              let hit = with_layer(10, fn() interact(rect(0, 0, 200, 40), \"row\").click end)\n\
+                              if hit then picked = picked + 1 end\n\
+                            end";
+
+/// The click that opens a panel does not also click the row of the new panel
+/// that appeared under the press.
+#[test]
+fn a_rect_that_appears_under_a_press_is_not_clicked_by_its_release() {
+    let mut ui = ui(OPENS_A_LIST);
+    ui.mouse_move(20, 20);
+    ui.frame().unwrap();
+    ui.mouse_down(0);
+    ui.frame().unwrap();
+    ui.mouse_up(0);
+    ui.frame().unwrap();
+    assert!(flag(&ui, "open"));
+    assert_eq!(ui.state_int("picked"), Some(0), "the row was not there at the press");
+    ui.frame().unwrap();
+    ui.click(20, 20).unwrap();
+    ui.frame().unwrap();
+    assert_eq!(ui.state_int("picked"), Some(1), "a press made with the row open clicks it");
+}
+
+/// A widget that shows only under the pointer, moved onto and pressed in one
+/// frame (what `Headless::click` does), registered on the press frame — the
+/// press is still its own.
+#[test]
+fn a_widget_shown_on_the_press_frame_still_takes_the_click() {
+    let mut ui = ui("state clicks = 0\n\
+                     if hovered(rect(0, 0, 100, 100)) then\n\
+                       if interact(rect(10, 10, 50, 20), \"x\").click then clicks = clicks + 1 end\n\
+                     end\n\
+                     ui_block(rect(200, 200, 10, 10))");
+    ui.mouse_move(400, 400);
+    ui.frame().unwrap();
+    ui.click(20, 15).unwrap();
+    ui.frame().unwrap();
+    assert_eq!(ui.state_int("clicks"), Some(1));
+}
+
 // ── Layers ────────────────────────────────────────────────────────────────
 
 /// A button under a panel on a higher layer. `show` turns the panel on.

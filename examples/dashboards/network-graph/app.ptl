@@ -689,7 +689,7 @@ if fres.text != query then
   qsel = 0
 end
 let typing = focused(fc, "search")
-if key_pressed("/") && !was_typing && !blocked then
+if key_pressed("slash") && !was_typing && !blocked then
   fc = focus_set(fc, "search")
 end
 
@@ -837,12 +837,12 @@ if keys_ok then
         i
       end
     end
-    if key_pressed("=") || key_pressed("+") then
+    if key_pressed("equals") then
       cam = zoom_about(cam, canvas, canvas.x + canvas.w / 2, canvas.y + canvas.h / 2, 1.25)
       cam_to = {...cam_to, on: false}
       auto_fit = false
     end
-    if key_pressed("-") then
+    if key_pressed("minus") then
       cam = zoom_about(cam, canvas, canvas.x + canvas.w / 2, canvas.y + canvas.h / 2, 0.8)
       cam_to = {...cam_to, on: false}
       auto_fit = false

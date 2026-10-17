@@ -433,8 +433,8 @@ for t in TOOLS do
     tool = t
   end
 end
-if key_pressed("[") then brush = max(1, brush - 1) end
-if key_pressed("]") then brush = min(48, brush + 1) end
+if key_pressed("leftbracket") then brush = max(1, brush - 1) end
+if key_pressed("rightbracket") then brush = min(48, brush + 1) end
 if key_pressed("g") then grid = !grid end
 
 let want_undo = key_pressed("u") || (key_pressed("z") && mod_cmd() && !mod_shift())

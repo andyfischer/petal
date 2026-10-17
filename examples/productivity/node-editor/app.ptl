@@ -655,10 +655,10 @@ if key_pressed("escape") && !blocked then
   end
 end
 if key_pressed("p") && !mod_cmd() then playing = !playing end
-if key_pressed("=") || key_pressed("+") then
+if key_pressed("equals") then
   cam = zoom_about(cam, canvas, sx: canvas.x + canvas.w / 2, sy: canvas.y + canvas.h / 2, factor: 1.2)
 end
-if key_pressed("-") then
+if key_pressed("minus") then
   cam = zoom_about(cam, canvas, sx: canvas.x + canvas.w / 2, sy: canvas.y + canvas.h / 2, factor: 1.0 / 1.2)
 end
 if key_pressed("0") then cam = {...cam, zoom: 1.0} end

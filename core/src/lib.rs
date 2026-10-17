@@ -35,6 +35,7 @@ pub mod goal_based_editing;
 pub mod handle;
 pub mod heap;
 pub mod inspect;
+pub mod keys;
 pub mod ir_display;
 pub mod ir_equiv;
 pub mod ir_serialize;

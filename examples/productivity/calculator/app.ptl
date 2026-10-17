@@ -457,7 +457,7 @@ if len(typed) > 0 then
     act = "clear"
   end
 end
-if key_pressed("return") || key_pressed("enter") then
+if key_pressed("return") then
   act = "eq"
 end
 if key_pressed("backspace") then

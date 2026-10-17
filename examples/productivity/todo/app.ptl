@@ -474,7 +474,7 @@ if !typing then
     focus = "compose"
     grabbed = true
   end
-  if key_pressed("/") then
+  if key_pressed("slash") then
     focus = "search"
     grabbed = true
   end
@@ -612,8 +612,8 @@ if set_prio >= 0 then
 end
 
 // Due date nudging: "," pulls a task a day earlier, "." pushes it a day later.
-let nudge = if !typing && has_sel && key_pressed(",") then -1
-elsif !typing && has_sel && key_pressed(".") then 1
+let nudge = if !typing && has_sel && key_pressed("comma") then -1
+elsif !typing && has_sel && key_pressed("period") then 1
 else 0
 end
 if nudge != 0 then

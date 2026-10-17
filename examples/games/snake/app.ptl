@@ -157,7 +157,7 @@ if clicked(b_reset) then hit_restart = true end
 if clicked(b_wrap) then hit_wrap = true end
 
 if key_pressed("space") then hit_pause = true end
-if key_pressed("r") || key_pressed("return") || key_pressed("enter") then
+if key_pressed("r") || key_pressed("return") then
   hit_restart = true
 end
 if key_pressed("t") then hit_wrap = true end

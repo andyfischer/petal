@@ -842,7 +842,7 @@ else
     by_key = true
   end
 
-  if key_pressed("/") then focus = "q" end
+  if key_pressed("slash") then focus = "q" end
   if key_pressed("c") then act = "compose" end
   if key_pressed("r") && can_reply then
     focus = "reply"

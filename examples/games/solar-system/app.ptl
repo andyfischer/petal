@@ -256,11 +256,11 @@ if key_pressed("space") then
   mark()
   set playing = !playing
 end
-if key_pressed("=") || key_pressed("+") then
+if key_pressed("equals") then
   mark()
   set speed = min(speed * 2.0, 512.0)
 end
-if key_pressed("-") then
+if key_pressed("minus") then
   mark()
   set speed = max(speed / 2.0, 0.125)
 end
@@ -294,8 +294,8 @@ fn zoom_at(sx: num, sy: num, factor: num)
   set zooms += 1
 end
 
-if key_pressed("]") then zoom_at(sx: vcx, sy: vcy, factor: 1.5) end
-if key_pressed("[") then zoom_at(sx: vcx, sy: vcy, factor: 1.0 / 1.5) end
+if key_pressed("rightbracket") then zoom_at(sx: vcx, sy: vcy, factor: 1.5) end
+if key_pressed("leftbracket") then zoom_at(sx: vcx, sy: vcy, factor: 1.0 / 1.5) end
 if in_view && scroll_y() != 0.0 then
   zoom_at(sx: float(mx), sy: float(my), factor: pow(1.18, -scroll_y()))
 end

@@ -226,6 +226,27 @@ pub fn scancode_to_name(code: Scancode) -> Option<&'static str> {
         Scancode::F10 => "f10",
         Scancode::F11 => "f11",
         Scancode::F12 => "f12",
+        // The keypad has no names of its own (`petal::keys::KEY_NAMES`): each
+        // key is the main-row key it prints, so keypad Enter submits a
+        // `text_field` and fires `key_pressed("return")` like Return does.
+        // The digits ignore Num Lock (SDL reports the same scancode either
+        // way), so they never act as arrows or Home/End here.
+        Scancode::KpEnter => "return",
+        Scancode::Kp0 => "0",
+        Scancode::Kp1 => "1",
+        Scancode::Kp2 => "2",
+        Scancode::Kp3 => "3",
+        Scancode::Kp4 => "4",
+        Scancode::Kp5 => "5",
+        Scancode::Kp6 => "6",
+        Scancode::Kp7 => "7",
+        Scancode::Kp8 => "8",
+        Scancode::Kp9 => "9",
+        Scancode::KpMinus => "minus",
+        Scancode::KpEquals => "equals",
+        Scancode::KpPeriod => "period",
+        Scancode::KpComma => "comma",
+        Scancode::KpDivide => "slash",
         _ => return None,
     })
 }
@@ -577,6 +598,29 @@ fn send(input: &mut InputState, name: &str, down: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keypad_keys_map_to_the_keys_they_print() {
+        assert_eq!(scancode_to_name(Scancode::KpEnter), Some("return"));
+        assert_eq!(scancode_to_name(Scancode::Kp7), Some("7"));
+        assert_eq!(scancode_to_name(Scancode::KpMinus), Some("minus"));
+        assert_eq!(scancode_to_name(Scancode::KpDivide), Some("slash"));
+    }
+
+    #[test]
+    fn every_keypad_key_is_canonical() {
+        use Scancode::*;
+        for code in [
+            KpEnter, Kp0, Kp1, Kp2, Kp3, Kp4, Kp5, Kp6, Kp7, Kp8, Kp9, KpMinus, KpEquals,
+            KpPeriod, KpComma, KpDivide,
+        ] {
+            let name = scancode_to_name(code).expect("keypad key is mapped");
+            assert!(
+                petal_ui::input::is_canonical_key(name),
+                "{code:?} maps to {name:?}, not a canonical key name"
+            );
+        }
+    }
 
     #[test]
     fn every_pad_key_is_canonical() {

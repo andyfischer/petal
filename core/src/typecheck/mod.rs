@@ -2454,6 +2454,19 @@ impl<'a> Checker<'a> {
             {
                 self.check_sort_key_fn(&args[i], i);
             }
+            // `key_pressed("enter")` is always false: the key is `"return"`.
+            // A key name written as a literal is checked against the one
+            // vocabulary every host maps onto (`crate::keys`).
+            if crate::keys::KEY_QUERY_NATIVES.contains(&decl.host.as_str())
+                && let Some(&i) = order.first()
+                && let ExprKind::Literal(Literal::String(key)) = &args[i].kind
+                && !crate::keys::is_canonical_key(key)
+            {
+                self.warn(
+                    args[i].span,
+                    format!("argument {} to `{f}`: {}", i + 1, crate::keys::unknown_key_message(key)),
+                );
+            }
             let slot_types: Vec<Type> = order.iter().map(|&i| arg_types[i]).collect();
             return builtin_types::native_return_type(decl, &slot_types).unwrap_or(Type::Any);
         }
@@ -3713,6 +3726,32 @@ mod tests {
         assert_eq!(w, ["argument 1 to `text_width`: expected a string, found `int`"]);
         // An undeclared name is not a native at all: nothing is assumed.
         assert!(warns("print(key_down(1))").is_empty());
+    }
+
+    /// A key name written as a literal is checked against `crate::keys`:
+    /// `key_pressed("enter")` is always false, the key being `"return"`.
+    #[test]
+    fn literal_key_names_are_checked() {
+        let iface = "native fn key_down(key: string) -> bool\n\
+                     native fn key_pressed(key: string) -> bool\n\
+                     native fn key_released(key: string) -> bool\n";
+        let w = warns(&format!("{iface}print(key_pressed(\"enter\"))"));
+        assert_eq!(
+            w,
+            ["argument 1 to `key_pressed`: `\"enter\"` is not a key name; did you mean `\"return\"`?"]
+        );
+        let w = warns(&format!("{iface}print(key_down(\"Escape\"), key_released(\"xyzzy\"))"));
+        assert_eq!(w.len(), 2, "{w:?}");
+        assert!(w[0].contains("did you mean `\"escape\"`"), "{w:?}");
+        assert!(w[1].contains("always false"), "{w:?}");
+        // Canonical names, and keys that are not literals, are fine.
+        let w = warns(&format!(
+            "{iface}let k = \"enter\"\nprint(key_pressed(\"return\"), key_down(\"a\"), key_down(k))"
+        ));
+        assert!(w.is_empty(), "{w:?}");
+        // A user `fn` of the name is not the native.
+        let w = warns("fn key_pressed(k) k == \"enter\" end\nprint(key_pressed(\"enter\"))");
+        assert!(w.is_empty(), "{w:?}");
     }
 
     /// A named call is checked the same way: the names are bound to the

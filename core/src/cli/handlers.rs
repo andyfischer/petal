@@ -1028,6 +1028,105 @@ pub(super) fn handle_check(
     }
 }
 
+/// The flags of a `petal check` over several files, passed on to each file's
+/// check.
+pub(super) struct CheckFlags {
+    pub json: bool,
+    pub strict: bool,
+    pub lenient: bool,
+    pub ir: bool,
+    pub bare: bool,
+}
+
+/// `petal check a.ptl b.ptl …` — check each file as its own program, the
+/// same as `petal check <file>` one at a time, and fail if any fails.
+///
+/// Each file is checked by a child `petal check` of this same binary: a check
+/// ends the process on the first error it cannot report past (a parse error,
+/// a lowering error), and one file's must not stop the others'.
+///
+/// Text output: a `==> file <==` header before each file that printed
+/// anything, then what its check printed, then a closing line naming the
+/// files that failed. `--json`: one object, `{"ok", "files": [...]}`, each
+/// entry being that file's `check --json` object plus its `"file"`.
+pub(super) fn handle_check_many(flags: &CheckFlags, files: &[&str], include_dirs: &[PathBuf]) {
+    let exe = std::env::current_exe().unwrap_or_else(|e| {
+        eprintln!("Error: cannot find the petal binary to check each file: {e}");
+        process::exit(1);
+    });
+    let mut base: Vec<String> = vec!["check".into()];
+    for (on, flag) in [
+        (flags.json, "--json"),
+        (flags.strict, "--strict"),
+        (flags.lenient, "--lenient"),
+        (flags.ir, "--ir"),
+    ] {
+        if on {
+            base.push(flag.into());
+        }
+    }
+    if flags.bare {
+        base.extend(["--error-format".into(), "bare".into()]);
+    }
+    for dir in include_dirs {
+        base.extend(["-I".into(), dir.display().to_string()]);
+    }
+    let mut worst = 0;
+    let mut failed: Vec<&str> = Vec::new();
+    let mut reports: Vec<serde_json::Value> = Vec::new();
+    for &file in files {
+        let out = process::Command::new(&exe).args(&base).arg(file).output();
+        let out = match out {
+            Ok(out) => out,
+            Err(e) => {
+                eprintln!("Error: could not run the check of '{file}': {e}");
+                process::exit(1);
+            }
+        };
+        let code = out.status.code().unwrap_or(1);
+        if code != 0 {
+            worst = worst.max(code);
+            failed.push(file);
+        }
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if flags.json {
+            let mut obj = serde_json::from_str::<serde_json::Value>(stdout.trim())
+                .ok()
+                .filter(|v| v.is_object())
+                .unwrap_or_else(|| {
+                    serde_json::json!({
+                        "ok": false,
+                        "error": format!("{}{}", stdout, stderr).trim(),
+                    })
+                });
+            obj["file"] = serde_json::json!(file);
+            reports.push(obj);
+            continue;
+        }
+        if stdout.is_empty() && stderr.is_empty() {
+            continue;
+        }
+        eprintln!("==> {file} <==");
+        eprint!("{stderr}");
+        print!("{stdout}");
+    }
+    if flags.json {
+        let obj = serde_json::json!({ "ok": failed.is_empty(), "files": reports });
+        println!("{obj}");
+    } else if !failed.is_empty() {
+        eprintln!(
+            "check failed for {} of {} files: {}",
+            failed.len(),
+            files.len(),
+            failed.join(", ")
+        );
+    }
+    if worst != 0 {
+        process::exit(worst);
+    }
+}
+
 /// `petal ir-equal <a.ptl> <b.ptl>` — the standalone IR comparison, which is
 /// also what the TS verifier's `ir-equal` step shells out to. Exit 0 when the
 /// two compile to the same program, 1 with the first difference when they

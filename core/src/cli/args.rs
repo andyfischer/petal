@@ -788,34 +788,52 @@ fn parse_ir_equal_args(args: &[String]) -> CliArgs {
 
 /// Parse args for `check`: `--json`, `--strict` (exit non-zero when warnings
 /// exist), `--lenient` (exit 0 despite checker errors), and `--ir` (read JSON
-/// IR instead of source, as `run --ir` does).
+/// IR instead of source, as `run --ir` does). Any number of files: the first
+/// is the command's source, the rest go in `more` and are checked the same
+/// way, each as its own program.
 fn parse_check_args(args: &[String]) -> CliArgs {
+    let usage = "Usage: petal check [--json] [--strict | --lenient] [--ir] [--error-format full|bare] <file>...  |  petal check -e <code>";
     let mut json = false;
     let mut strict = false;
     let mut lenient = false;
     let mut ir = false;
     let mut error_format = ErrorFormat::Full;
-    let source = parse_source_args(
-        args,
-        "Usage: petal check [--json] [--strict | --lenient] [--ir] [--error-format full|bare] <file>  |  petal check -e <code>",
-        |args, i| {
-            match args[*i].as_str() {
-                "--json" => json = true,
-                "--strict" => strict = true,
-                "--lenient" => lenient = true,
-                "--ir" => ir = true,
-                "--error-format" => {
-                    error_format = parse_error_format(take(
-                        args,
-                        i,
-                        "Expected 'full' or 'bare' after --error-format",
-                    ))
-                }
-                _ => return false,
+    let mut first_file = false;
+    let mut more: Vec<String> = Vec::new();
+    let source = parse_source_args(args, usage, |args, i| {
+        match args[*i].as_str() {
+            "--json" => json = true,
+            "--strict" => strict = true,
+            "--lenient" => lenient = true,
+            "--ir" => ir = true,
+            "--error-format" => {
+                error_format = parse_error_format(take(
+                    args,
+                    i,
+                    "Expected 'full' or 'bare' after --error-format",
+                ))
             }
-            true
-        },
-    );
+            arg if arg.starts_with('-') && arg != "-" => return false,
+            // The first file is the source, which `parse_source_args` takes.
+            _ if !first_file => {
+                first_file = true;
+                return false;
+            }
+            arg => more.push(arg.to_string()),
+        }
+        true
+    });
+    if !more.is_empty() {
+        if matches!(&source, SourceInput::Inline(_)) {
+            reject_argument(
+                format!("Unexpected argument '{}': -e checks one snippet", more[0]),
+                usage,
+            );
+        }
+        if matches!(&source, SourceInput::File(f) if f == "-") || more.iter().any(|f| f == "-") {
+            reject_argument("'-' (stdin) can only be checked on its own".to_string(), usage);
+        }
+    }
 
     CliArgs {
         command: Command::Check {
@@ -824,6 +842,7 @@ fn parse_check_args(args: &[String]) -> CliArgs {
             lenient,
             ir,
             error_format,
+            more,
         },
         source,
         include_dirs: Vec::new(),

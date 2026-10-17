@@ -272,7 +272,7 @@ end
 // SPACE fires during play and is the one-button verb everywhere else; a left
 // click in the court does the same, so the mouse alone can drive the menus.
 let clicked_court = mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r: court)
-let advance = key_pressed("space") || key_pressed("enter") || clicked_court
+let advance = key_pressed("space") || key_pressed("return") || clicked_court
 if advance && phase != "play" then
   if phase == "title" then
     set phase = "play"

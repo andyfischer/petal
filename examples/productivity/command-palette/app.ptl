@@ -736,7 +736,7 @@ if open && mouse_row >= 0 && selectable(rows, mouse_row) then
 end
 
 // Activation: Return, or a click on a row, or a click outside closes.
-let activate = open && (key_pressed("return") || key_pressed("enter") ||
+let activate = open && (key_pressed("return") ||
   (mouse_pressed(0) && mouse_row >= 0 && selectable(rows, mouse_row)))
 if open && mouse_pressed(0) && !point_in(px: mouse_x(), py: mouse_y(), r: pal) then
   close_palette()

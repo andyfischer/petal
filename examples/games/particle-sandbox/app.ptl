@@ -395,8 +395,8 @@ if key_pressed("t") then streaks = !streaks end
 if key_pressed("c") then set cmode = (cmode + 1) % len(CMODES) end
 if key_pressed("x") then set n = 0 end
 if key_pressed("z") then clear_wells() end
-if key_pressed("[") then radius = max(radius / 1.2, 24.0) end
-if key_pressed("]") then radius = min(radius * 1.2, 220.0) end
+if key_pressed("leftbracket") then radius = max(radius / 1.2, 24.0) end
+if key_pressed("rightbracket") then radius = min(radius * 1.2, 220.0) end
 if in_stage && scroll_y() != 0.0 then
   radius = clamp(radius * pow(1.1, -scroll_y()), lo: 24.0, hi: 220.0)
 end
@@ -406,11 +406,11 @@ if key_pressed("r") then reload = scene end
 if key_pressed("tab") then
   reload = (scene + (if invert then len(SCENES) - 1 else 1 end)) % len(SCENES)
 end
-if key_pressed("=") || key_pressed("+") then
+if key_pressed("equals") then
   count_i = min(count_i + 1, len(COUNTS) - 1)
   reload = scene
 end
-if key_pressed("-") then
+if key_pressed("minus") then
   count_i = max(count_i - 1, 0)
   reload = scene
 end

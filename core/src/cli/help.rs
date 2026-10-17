@@ -363,7 +363,7 @@ OPTIONS
               Watch what every native does during the run and report, on
               stderr, each one whose behavior differs from the effect row it
               declared at registration: under-declared (a bug) or
-              over-declared. See docs/tasks/declarative-effect-refactoring.md.
+              over-declared. See docs/usage/ffi.md#catching-it-with-the-effect-audit.
 
        --static-audit
               Watch the dynamic inputs (host bindings, host data, resources,
@@ -382,15 +382,23 @@ OPTIONS
        --policy <name>
               Run under a named run policy: fast, baseline (no optimizer,
               no memoization), explain, or replay, optionally followed by
-              modifiers such as -memo or +gate. Without the flag, run uses
-              fast-memo: a script that runs once and exits has no later run
-              for a memoized call to be replayed in. Output must be
+              modifiers such as -memo, +gate or -static. Without the flag
+              (and without PETAL_POLICY), run uses fast-memo-static: a script
+              that runs once and exits has no later run for a memoized call
+              to be replayed in or a kept static value to be reused in. With
+              --runs the default is fast. Output must be
               identical under every policy, so a difference is a bug in the
               layer the two policies differ by. PETAL_POLICY=<name> does the
               same for every command and embedder; the flag wins.
 
        --no-opt
               Same as --policy baseline.
+
+       --runs <n>
+              Run the script n times on one stack, each from the top, the way
+              a host runs it every frame: state, memo records and static
+              values carry from one run to the next, and the default policy
+              is fast. The first run that fails ends the session.
 
        --seed <n>
               Seed the PRNG so random() replays. Decimal or 0x-hex.
@@ -426,7 +434,7 @@ NAME
        petal-check - Compile a program without executing it
 
 SYNOPSIS
-       petal check [<options>] <file>
+       petal check [<options>] <file>...
        petal check [<options>] -e <code>
 
 DESCRIPTION
@@ -464,9 +472,28 @@ DESCRIPTION
        'requires' array with --json). It never fails on them: it has no
        host. A run in a host that does not provide one fails at load.
 
+       Given several files, check checks each as its own program, prints
+       each file's findings under a '==> <file> <==' header, and exits
+       non-zero when any file fails, naming those that did. With --json it
+       prints one object with 'ok' and 'files', each entry of 'files' being
+       that file's --json object plus its 'file'.
+
 OPTIONS
        --json
               Emit errors and warnings as structured JSON.
+
+       --strict
+              Exit 1 when there are warnings too.
+
+       --lenient
+              Exit 0 despite checker errors: fail only when the program does
+              not compile or lower.
+
+       --ir   Check <file> as JSON IR ('show-ir --json' output) rather than
+              source. Use '-' to read it from stdin.
+
+       --error-format full|bare
+              As on 'petal run'.
 
        --strict
               Exit non-zero when type-checker warnings exist. Plain 'check'
@@ -1278,10 +1305,11 @@ SYNOPSIS
 DESCRIPTION
        Compiles the program and reports, for every top-level declaration,
        whether its value is static: whether its initializer can only ever
-       produce one value for this source text. Nothing is run, and nothing
-       about how the program runs depends on the answer today; this is the
-       classifier a later release uses to build such values once and keep
-       them between runs.
+       produce one value for this source text. Nothing is run. This is the
+       classification the static-value cache works from: a host that runs a
+       script every frame (the fast and replay policies, and 'petal run
+       --runs') builds a static value on the first run and keeps it for the
+       next ones. See docs/features/static-values.md.
 
        Each declaration is one of:
 

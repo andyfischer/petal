@@ -77,6 +77,19 @@ Polled, never called back. An *edge* is true on one frame.
 its own: keypad Enter is `"return"`, and its digits and `-` `.` `/` `=` are the
 main-row keys.
 
+**Key names.** A key is named for the key, not for what it types: `"a"`–`"z"`,
+`"0"`–`"9"`, `"space"`, `"return"`, `"escape"`, `"tab"`, `"backspace"`,
+`"up"`/`"down"`/`"left"`/`"right"`, `"pageup"`, `"pagedown"`, `"home"`,
+`"end"`, `"delete"`, `"insert"`, `"shift"`, `"ctrl"`, `"alt"`, `"cmd"`,
+`"f1"`–`"f12"`, `"minus"`, `"equals"`, `"comma"`, `"period"`, `"slash"`,
+`"backslash"`, `"semicolon"`, `"quote"`, `"backquote"`, `"leftbracket"`,
+`"rightbracket"` (the list is `petal::keys::KEY_NAMES`). Enter is `"return"`;
+`+` is `"equals"` with `mod_shift()`. Any other name is never down, so
+`petal check` warns about one written as a literal and names the likely key
+(`key_pressed("enter")`: did you mean `"return"`?). The keypad has no names of
+its own: keypad Enter is `"return"`, and its digits and `-` `.` `/` `=` are the
+main-row keys.
+
 ## The pointer and a rect
 
 The raw tests look at the pointer and the rect and nothing else. The layered

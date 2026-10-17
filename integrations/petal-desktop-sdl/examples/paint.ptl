@@ -198,10 +198,10 @@ brush_g = sel.color.g
 brush_b = sel.color.b
 
 // Brush size controls
-if key_pressed("=") then
+if key_pressed("equals") then
   brush_size = min(brush_size + 2, 40)
 end
-if key_pressed("-") then
+if key_pressed("minus") then
   brush_size = max(brush_size - 2, 2)
 end
 

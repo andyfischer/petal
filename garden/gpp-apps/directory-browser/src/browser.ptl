@@ -101,8 +101,10 @@ let content_h = row_count * ROW_H
 let key_moved = false
 if key_pressed("j") || key_pressed("down") || key_pressed("space") then selected += 1; key_moved = true end
 if key_pressed("k") || key_pressed("up") then selected -= 1; key_moved = true end
-if key_pressed("g") || key_pressed("home") then selected = 0; key_moved = true end
-if key_pressed("G") || key_pressed("end") then selected = row_count - 1; key_moved = true end
+// `G` is Shift+g: key names are keys, not the characters they type.
+let shift_g = key_pressed("g") && mod_shift()
+if (key_pressed("g") && !shift_g) || key_pressed("home") then selected = 0; key_moved = true end
+if shift_g || key_pressed("end") then selected = row_count - 1; key_moved = true end
 selected = int(clamp(selected, 0, max(0, row_count - 1)))
 
 // `activate` names the row to act on this frame (-1 = none): Enter/l/Right on
@@ -112,10 +114,10 @@ if key_pressed("return") || key_pressed("l") || key_pressed("right") then activa
 
 // Go up (h/Left/Backspace/-) and home (~) change the directory directly.
 let go_dir = ""
-if (key_pressed("h") || key_pressed("left") || key_pressed("backspace") || key_pressed("-")) && has_parent then
+if (key_pressed("h") || key_pressed("left") || key_pressed("backspace") || key_pressed("minus")) && has_parent then
   go_dir = parent_dir
 end
-if key_pressed("~") && len(home_dir) > 0 then go_dir = home_dir end
+if key_pressed("backquote") && mod_shift() && len(home_dir) > 0 then go_dir = home_dir end
 
 // ── input: mouse (click selects, double-click activates) ─────────────────────
 if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), content_rect) then

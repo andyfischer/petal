@@ -951,10 +951,10 @@ for i in range(0, len(ORDERS)) do
     order_now = ORDERS[i].id
   end
 end
-if key_pressed("]") && len(sel) > 0 then
+if key_pressed("rightbracket") && len(sel) > 0 then
   order_now = if mod_shift() then "front" else "forward" end
 end
-if key_pressed("[") && len(sel) > 0 then
+if key_pressed("leftbracket") && len(sel) > 0 then
   order_now = if mod_shift() then "back" else "backward" end
 end
 if order_now != "" then

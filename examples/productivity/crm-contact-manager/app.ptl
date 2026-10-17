@@ -343,7 +343,7 @@ if mouse_pressed(0) && point_in(px: mx, py: my, r: search_r) then
 end
 
 // `/` jumps to the search box (only when nothing else owns the keyboard).
-if len(focus) == 0 && key_pressed("/") then
+if len(focus) == 0 && key_pressed("slash") then
   focus = "q"
   grabbed = true
 end

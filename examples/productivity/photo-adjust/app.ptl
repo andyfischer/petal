@@ -935,10 +935,10 @@ if key_pressed("0") || (clicked(reset_r)) then
   set pending = ZERO
   preset = 0
 end
-if key_pressed("[") then
+if key_pressed("leftbracket") then
   split = clamp(split - 0.05, lo: 0.0, hi: 1.0)
 end
-if key_pressed("]") then
+if key_pressed("rightbracket") then
   split = clamp(split + 0.05, lo: 0.0, hi: 1.0)
 end
 

@@ -202,7 +202,7 @@ let dts = dt()
 set msg_t = max(0.0, msg_t - dts)
 
 // pan
-let pan_speed = if key_down("lshift") || key_down("rshift") || key_down("shift") then 900.0 else 350.0 end
+let pan_speed = if key_down("shift") then 900.0 else 350.0 end
 if key_down("left")  then cam_x = cam_x - pan_speed * dts end
 if key_down("right") then cam_x = cam_x + pan_speed * dts end
 cam_x = clamp(cam_x, lo: 0.0, hi: float(level.width) - float(SCREEN_W))
@@ -220,8 +220,8 @@ if key_pressed("9") then tool = 9 end
 if key_pressed("g") then grid_snap = !grid_snap; say(if grid_snap then "Grid ON" else "Grid OFF" end) end
 
 // slot switching
-if key_pressed("[") then slot = (slot + len(slot_files) - 1) % len(slot_files) end
-if key_pressed("]") then slot = (slot + 1) % len(slot_files) end
+if key_pressed("leftbracket") then slot = (slot + len(slot_files) - 1) % len(slot_files) end
+if key_pressed("rightbracket") then slot = (slot + 1) % len(slot_files) end
 
 if key_pressed("s") then save_slot(slot) end
 if key_pressed("l") then set level = load_slot(slot); loaded_slot = slot end

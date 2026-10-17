@@ -73,90 +73,13 @@ const MOD_ALT: i64 = 4;
 const MOD_CMD: i64 = 8;
 
 /// Canonical key names. Hosts map their platform's key events onto these
-/// spellings so scripts are portable across embedders.
-pub const KEY_NAMES: &[&str] = &[
-    "a",
-    "b",
-    "c",
-    "d",
-    "e",
-    "f",
-    "g",
-    "h",
-    "i",
-    "j",
-    "k",
-    "l",
-    "m",
-    "n",
-    "o",
-    "p",
-    "q",
-    "r",
-    "s",
-    "t",
-    "u",
-    "v",
-    "w",
-    "x",
-    "y",
-    "z",
-    "0",
-    "1",
-    "2",
-    "3",
-    "4",
-    "5",
-    "6",
-    "7",
-    "8",
-    "9",
-    "return",
-    "escape",
-    "backspace",
-    "tab",
-    "space",
-    "up",
-    "down",
-    "left",
-    "right",
-    "pageup",
-    "pagedown",
-    "home",
-    "end",
-    "delete",
-    "insert",
-    "shift",
-    "ctrl",
-    "alt",
-    "cmd",
-    "f1",
-    "f2",
-    "f3",
-    "f4",
-    "f5",
-    "f6",
-    "f7",
-    "f8",
-    "f9",
-    "f10",
-    "f11",
-    "f12",
-    "minus",
-    "equals",
-    "comma",
-    "period",
-    "slash",
-    "backslash",
-    "semicolon",
-    "quote",
-    "backquote",
-    "leftbracket",
-    "rightbracket",
-];
+/// spellings so scripts are portable across embedders. The list is core's
+/// ([`petal::keys`]), so the compiler can check a key name written as a
+/// literal against the same vocabulary.
+pub use petal::keys::KEY_NAMES;
 
 pub fn is_canonical_key(name: &str) -> bool {
-    KEY_NAMES.contains(&name)
+    petal::keys::is_canonical_key(name)
 }
 
 /// The error for a key name outside [`KEY_NAMES`], listing the vocabulary. Every
@@ -164,8 +87,12 @@ pub fn is_canonical_key(name: &str) -> bool {
 /// debug server) rejects with this message rather than silently driving
 /// nothing.
 pub fn non_canonical_key_error(name: &str) -> String {
+    let hint = match petal::keys::suggest_key(name) {
+        Some(k) => format!(" (did you mean `{k}`?)"),
+        None => String::new(),
+    };
     format!(
-        "`{name}` is not a canonical key name (see petal_ui::input::KEY_NAMES): expected one of {}",
+        "`{name}` is not a canonical key name{hint} (see petal_ui::input::KEY_NAMES): expected one of {}",
         KEY_NAMES.join(", ")
     )
 }

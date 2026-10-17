@@ -316,8 +316,8 @@ if edit == "" then
   if key_pressed("m") then kind = "mkt" end
   if key_pressed("l") then kind = "lmt" end
   if key_pressed("space") then paused = !paused end
-  if key_pressed("-") || key_pressed("[") then speed = max(0, speed - 1) end
-  if key_pressed("=") || key_pressed("]") then speed = min(len(SPEEDS) - 1, speed + 1) end
+  if key_pressed("minus") || key_pressed("leftbracket") then speed = max(0, speed - 1) end
+  if key_pressed("equals") || key_pressed("rightbracket") then speed = min(len(SPEEDS) - 1, speed + 1) end
   if key_pressed("left") then pan += 8 end
   if key_pressed("right") then pan = max(0, pan - 8) end
   if key_pressed("home") || key_pressed("0") then pan = 0 end

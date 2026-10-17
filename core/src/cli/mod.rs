@@ -171,6 +171,9 @@ pub enum Command {
         ir: bool,
         /// How errors are printed (`--error-format full|bare`).
         error_format: ErrorFormat,
+        /// Files after the first: `petal check a.ptl b.ptl` checks each as
+        /// its own program. Empty for one file or `-e`.
+        more: Vec<String>,
     },
     /// `suggest` — suggest safe refactors for a file: type annotations the
     /// program already implies, and named arguments for long positional
@@ -603,6 +606,32 @@ pub fn execute(cli: CliArgs) {
         return;
     }
 
+    // `check` over several files checks each as its own program.
+    if let Command::Check {
+        json,
+        strict,
+        lenient,
+        ir,
+        error_format,
+        more,
+    } = &command
+        && !more.is_empty()
+        && let SourceInput::File(first) = &source_input
+    {
+        let files: Vec<&str> = std::iter::once(first.as_str())
+            .chain(more.iter().map(String::as_str))
+            .collect();
+        let flags = handlers::CheckFlags {
+            json: *json,
+            strict: *strict,
+            lenient: *lenient,
+            ir: *ir,
+            bare: matches!(error_format, ErrorFormat::Bare),
+        };
+        handlers::handle_check_many(&flags, &files, &include_dirs);
+        return;
+    }
+
     let source = read_source(&source_input);
 
     match command {
@@ -628,6 +657,7 @@ pub fn execute(cli: CliArgs) {
             lenient,
             ir,
             error_format,
+            more: _,
         } => {
             set_error_format(error_format);
             handlers::handle_check(

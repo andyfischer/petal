@@ -477,10 +477,10 @@ if !blocked then
     if key_pressed("l") then loop_on = !loop_on end
     if key_pressed("m") then mixer[sel_trk].mute = !mixer[sel_trk].mute end
     if key_pressed("s") then mixer[sel_trk].solo = !mixer[sel_trk].solo end
-    if key_pressed("-") then bpm = max(60, bpm - (if mod_shift() then 10 else 1 end)) end
-    if key_pressed("=") || key_pressed("+") then bpm = min(200, bpm + (if mod_shift() then 10 else 1 end)) end
-    if key_pressed(",") then swing = max(0.0, round(swing - 0.02, 2)) end
-    if key_pressed(".") then swing = min(0.6, round(swing + 0.02, 2)) end
+    if key_pressed("minus") then bpm = max(60, bpm - (if mod_shift() then 10 else 1 end)) end
+    if key_pressed("equals") then bpm = min(200, bpm + (if mod_shift() then 10 else 1 end)) end
+    if key_pressed("comma") then swing = max(0.0, round(swing - 0.02, 2)) end
+    if key_pressed("period") then swing = min(0.6, round(swing + 0.02, 2)) end
 
     let jump = if mod_shift() then 4 else 1 end
     if key_pressed("left") then cur_step = (cur_step - jump + STEPS) % STEPS end

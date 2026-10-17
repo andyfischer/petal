@@ -498,7 +498,7 @@ usual JSON error object, with `"phase": "bench"` for a bad `--fn`.
 ### `check` — Compile without running
 
 ```
-petal check [--json] [--strict | --lenient] [--ir] [--error-format full|bare] <file.ptl>
+petal check [--json] [--strict | --lenient] [--ir] [--error-format full|bare] <file.ptl>...
 petal check [--json] [--strict | --lenient] [--error-format full|bare] -e '<code>'
 ```
 
@@ -506,6 +506,14 @@ Lexes, parses, compiles and lowers the program to bytecode, then stops. Exits 1
 when any of that fails, or when the checker finds an **error**: a line that
 fails whenever it runs (see [Errors and warnings](#errors-and-warnings)).
 Exits 0 otherwise. This is the cheap gate for editors and CI.
+
+Given several files (`petal check a.ptl b.ptl`, or a shell glob), `check`
+checks each as its own program with the same flags, prints each file's
+findings under a `==> <file> <==` header (a file with nothing to say prints
+nothing), and exits non-zero when any file fails, ending with
+`check failed for 1 of 3 files: b.ptl`. With `--json` it prints one object,
+`{"ok": <bool>, "files": [...]}`, each entry that file's `--json` object plus
+its `"file"`. `-` (stdin) and `-e` check one source only.
 
 Options:
 
@@ -651,8 +659,10 @@ $ echo $?
 
 The same channel carries a few warnings that are not about types: a discarded
 pure call (`push(xs, x)` whose result is thrown away), a function that captures
-a module `state` rebound below it, and a call to a declaration further down the
-file that could not be hoisted.
+a module `state` rebound below it, a call to a declaration further down the
+file that could not be hoisted, and a key name written as a literal that is
+not one (`key_pressed("enter")`, which is always false: `did you mean
+"return"?`; the names are in [ui-reference.md](ui-reference.md#input)).
 
 #### Error phases
 

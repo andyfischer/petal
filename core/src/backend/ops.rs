@@ -708,6 +708,24 @@ pub fn cached_field(
     cache.fill(map, program.get_string_constant(field_cid)?)
 }
 
+/// The error for reading a field a plain record does not carry. A record's
+/// fields are not declared, so the read may be a slip (`r.fnt` beside a
+/// `font`) or a field that is legitimately absent — and for the second a
+/// plain read is always an error, even in `r.font != nil`, so the message
+/// names the two forms that are not.
+fn missing_record_field(map: &crate::record::RecordMap, field: &str) -> String {
+    let near = (field.chars().count() >= 3)
+        .then(|| crate::diagnostic::closest(field, map.keys().map(|k| k.as_str()), 2))
+        .flatten();
+    match near {
+        Some(k) => format!("No field '{field}' on record (did you mean '{k}'?)"),
+        None => format!(
+            "No field '{field}' on record (for a field that may be absent, read \
+             `.{field} ?? nil` or test `has_field(rec, \"{field}\")` first)"
+        ),
+    }
+}
+
 /// Field access on records, elements, lists/strings (`.length`), vec2 and vec3.
 ///
 /// `opt` is the absence-tolerant form (`TermOp::GetFieldOpt`, the left side of
@@ -747,7 +765,7 @@ pub fn get_field(
             None => {
                 return Err(match heap.map_class_name(map_id) {
                     Some(class) => format!("No field '{field_name}' on class {class}"),
-                    None => format!("No field '{field_name}' on record"),
+                    None => missing_record_field(heap.get_map(map_id), field_name),
                 });
             }
         },

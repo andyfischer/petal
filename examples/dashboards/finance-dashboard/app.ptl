@@ -819,7 +819,7 @@ end
 // Which slice the pointer or the keyboard is asking to descend into.
 let pick = if mouse_pressed(0) && hot_slice >= 0 then hot_slice
 elsif mouse_pressed(0) && hot_leg >= 0 then hot_leg
-elsif key_pressed("return") || key_pressed("enter") || key_pressed("right") then want_sel
+elsif key_pressed("return") || key_pressed("right") then want_sel
 else -1
 end
 

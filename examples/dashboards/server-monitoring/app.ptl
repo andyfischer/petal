@@ -327,10 +327,10 @@ if key_pressed("space") then
   paused = !paused
   pause_toggles = pause_toggles + 1
 end
-if key_pressed("[") && rate > 0 then
+if key_pressed("leftbracket") && rate > 0 then
   rate = rate - 1
 end
-if key_pressed("]") && rate < len(RATES) - 1 then
+if key_pressed("rightbracket") && rate < len(RATES) - 1 then
   rate = rate + 1
 end
 for mi in range(0, 4) do

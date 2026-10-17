@@ -435,7 +435,7 @@ if key_pressed("space") then
   set paused = !paused
   set wake = true
 end
-if key_pressed("n") || key_pressed("period") || key_pressed(".") then
+if key_pressed("n") || key_pressed("period") then
   set paused = true
   want_step = true
 end
@@ -449,8 +449,8 @@ if key_pressed("v") then show_vec = !show_vec end
 if key_pressed("t") then set show_trail = !show_trail end
 if key_pressed("k") then show_pts = !show_pts end
 if key_pressed("f") then speed_i = (speed_i + 1) % len(SPEEDS) end
-if key_pressed("equals") || key_pressed("=") || key_pressed("]") then size_i = min(len(BALL_SIZES) - 1, size_i + 1) end
-if key_pressed("minus") || key_pressed("-") || key_pressed("[") then size_i = max(0, size_i - 1) end
+if key_pressed("equals") || key_pressed("rightbracket") then size_i = min(len(BALL_SIZES) - 1, size_i + 1) end
+if key_pressed("minus") || key_pressed("leftbracket") then size_i = max(0, size_i - 1) end
 
 // Arrows tip the whole stage; 0 switches gravity off and back on.
 let tipped = -1.0

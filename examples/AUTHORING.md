@@ -308,7 +308,7 @@ pane-local logical pixels with `(0,0)` at the top-left; colors are integer RGB
 The full draw vocabulary — rects, rounded rects and outlines, lines and
 polylines, circles, ellipses, arcs, triangles, convex and concave polygons,
 text, images, clipping, gradients, shadows and offscreen layers — is tabulated
-in [Supported draw surface](../garden/docs/petal-graphical-panels.md#supported-draw-surface).
+in [Supported draw surface](../garden/docs/petal-graphical-panels.md#draw-surface).
 `garden/examples/panels/shapes.ptl` draws every primitive on one screen.
 
 Reach for the right primitive. A translucent brush stroke is one

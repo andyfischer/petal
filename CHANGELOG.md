@@ -257,7 +257,7 @@ way, for code written against an earlier checkout.
   reload runs 2,642 instructions where it ran 8,353, and 2,681 after an
   edit to one table (2,558 and 2,600 for 35,292 with its constant tables as
   `const`); the recompile is the same half second.
-  See [docs/hot-reload.md](docs/hot-reload.md#static-values-across-a-reload).
+  See [docs/features/hot-reload.md](docs/features/hot-reload.md#static-values-across-a-reload).
 - An enum's constant data is a static value where its expressions are
   static: the per-variant records are published by the first run after a
   load, or after a reload that reaches the enum, and left in place by the
@@ -291,7 +291,7 @@ way, for code written against an earlier checkout.
   reload ends on is kept for the next one (edited files only, two versions
   of each at most, 2 MiB in all; `Env::clear_reload_parses` drops them).
   `Env::set_config_value` sets one value by binding path without the file
-  changing. See [docs/hot-reload.md](docs/hot-reload.md).
+  changing. See [docs/features/hot-reload.md](docs/features/hot-reload.md).
 - An enum can be edited while its variants are held in `state`: an edit to
   constant data is patched in place, and a variant whose enum, variant or
   payload has since changed stays a value that is read through the current
@@ -373,12 +373,12 @@ way, for code written against an earlier checkout.
   value (parameter names, annotations, defaults, declared return type,
   captures, and a `code_hash` that survives reloads), and `fn_ast(f)` returns
   its syntax tree as records and lists. See
-  [docs/function-introspection.md](docs/function-introspection.md).
+  [docs/features/function-introspection.md](docs/features/function-introspection.md).
 - `glsl` (experimental), a library in `core-runtime/`: `to_glsl(lambda)`
   translates a Petal function in the pure numeric subset to GLSL, refuses
   anything else with a line and column, and caches by code hash so a script
   that calls it every frame translates once per change. See
-  [docs/petal-to-glsl.md](docs/petal-to-glsl.md).
+  [docs/game-engine-features/petal-to-glsl.md](docs/game-engine-features/petal-to-glsl.md).
 
 ### CLI
 
@@ -704,7 +704,7 @@ way, for code written against an earlier checkout.
   changed number or color keeps its token's spelling habits, and new elements
   are formatted like their siblings. The C bridge exposes them as
   `pb_source_set_value`, `_insert`, `_append` and `_remove`, taking values as
-  JSON. See [docs/source-preservation.md](docs/source-preservation.md).
+  JSON. See [docs/features/source-preservation.md](docs/features/source-preservation.md).
 - A config file can hold enum variants: `Mode.dark` and `Shape.circle(2)`, of
   an enum the file declares, read as `StaticValue::Variant`, are written back
   as they were spelled, and cross the C bridge as `{"variant": "Mode.dark"}`.
@@ -754,7 +754,7 @@ way, for code written against an earlier checkout.
   cache relies on it: a top-level table built by a `CONST` native is kept
   between runs, so a native wrongly declared constant is a stale value
   until the next reload (`Env::clear_static_values` drops them by hand).
-  See "Constant natives" in `docs/ffi.md`.
+  See "Constant natives" in `docs/usage/ffi.md`.
 - `petal show-static` classifies every top-level declaration as static data,
   a function (static-pure or not) or dynamic, with the chain of reasons for a
   dynamic one, whether dynamic code reads a static one, and the declarations

@@ -4,7 +4,7 @@
 // bundle it leaves behind actually reproduces the diff it reported.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "child_process";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 
@@ -221,4 +221,19 @@ describe("verify.ts artifacts", () => {
     expect(plan.resolved.mode).toBe("source");
     expect(plan.resolved.files).toBe(1);
   });
+});
+
+describe("checked-in verify plans", () => {
+  // A missing in-repo root is only a note at run time, so a stale entry (the
+  // old `docs/examples`) would silently shrink every sweep. Out-of-repo roots
+  // (`~/...`) depend on the machine and are not checked.
+  const plansDir = join(repoRoot, "test", "verify-plans");
+  for (const name of readdirSync(plansDir).filter((f) => f.endsWith(".json"))) {
+    it(`${name}: every in-repo corpus and include root exists`, () => {
+      const plan = JSON.parse(readFileSync(join(plansDir, name), "utf-8"));
+      const roots: string[] = [...(plan.corpus ?? []), ...(plan.include ?? [])];
+      const missing = roots.filter((r) => !r.startsWith("~") && !existsSync(join(repoRoot, r)));
+      expect(missing).toEqual([]);
+    });
+  }
 });

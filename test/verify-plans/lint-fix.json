@@ -6,7 +6,6 @@
     "examples",
     "test",
     "garden",
-    "docs/examples",
     "~/.garden",
     "~/worlds-fair/ui/ptl"
   ],

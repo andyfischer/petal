@@ -2,8 +2,8 @@
 // Which registered natives report what they do through `PetalCxt`, and which
 // reach outside their arguments without reporting anything.
 //
-// Every native registers with an effect row (docs/tasks/declarative-effect-
-// refactoring.md), and the reactive layers take the row at its word. What
+// Every native registers with an effect row (docs/dev/native-effects.md),
+// and the reactive layers take the row at its word. What
 // checks a row is the activity counters: the instrumented `PetalCxt` methods
 // below move them by construction, and `note_host_read()` / `note_effect()`
 // are the manual escape hatch for a native that reaches host state by some

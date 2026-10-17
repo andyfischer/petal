@@ -501,6 +501,8 @@ Notes for embedders:
 
 ## The three host channels
 
+The script's side of these channels is [host-io.md](host-io.md).
+
 All host↔script data flows through symbols. `env.intern_symbol(name)` returns
 a `SymbolId`; the host and the script share an id by interning the same name.
 
@@ -885,6 +887,9 @@ calling `note_host_read()` or reading a binding is as invisible here as it is
 to the effect audit, which is why the table above is still the rule.
 
 ### Catching it with the effect audit
+
+The audits, the static scan and the out-of-repo oracle are described for
+contributors in [dev/native-effects.md](../dev/native-effects.md).
 
 The effect audit brackets every native call with activity snapshots and holds
 what each native was observed doing against its row

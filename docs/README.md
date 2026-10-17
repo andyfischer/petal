@@ -60,6 +60,8 @@ goal-based program manipulation.
 | [Program Modification](features/program-modification.md) | The survey of every way to edit a program from code, in source text and in a running program |
 | [Goal-Based Editing](features/goal-based-editing.md) | The Goal API: source edits described as goals |
 | [Source Preservation](features/source-preservation.md) | How an edit of a literal keeps the file's formatting |
+| [Pending Values](features/pending-values.md) | Values a host has not got yet: how they flow through a script, the inspectors, `state` waiting for one, and the pending report |
+| [Provenance](features/provenance.md) | `petal explain` and `petal graph`: why a value is what it is, what it depends on, and what a change would reach |
 | [Direct Manipulation](features/direct-manipulation.md) | Tracing a drawn shape or emitted value back to the call that produced it, then editing that call |
 | [Time Travel](features/time-travel.md) | Forking and replaying an execution, and the petal-sdl timeline: freeze, scrub, rewind, replay through an edit |
 | [Differentiation](features/differentiation.md) | Automatic differentiation with dual numbers: the `autodiff` package |
@@ -75,6 +77,8 @@ Building an application on Petal, from a host program, a tool, or an agent.
 | [FFI / Embedding in Rust](usage/ffi.md) | The Rust embedding API: the lifecycle, native functions, values, handles, host channels |
 | [Embedding Guide](usage/embedding-guide.md) | Patterns for hosts: observing calls, reading named values, feeding inputs |
 | [Embedding from C/C++](usage/embedding-c.md) | The petal-c-bridge C ABI and C++ wrapper |
+| [Embedding in a Web Page](usage/embedding-web.md) | The wasm `PetalRuntime` classes: the canvas and element-tree runtimes, their methods, and the frame loop |
+| [Host I/O from a Script](usage/host-io.md) | `symbol`, `binding` and `push_output`: the script's side of the host channels |
 | [`ui` Host Contract](ui-host-contract.md) | What a host does for `import ui` scripts: the draw commands, layers, the hit-test registry, batches, retained layers, images |
 | [Config Files](usage/config-files.md) | Using a `.ptl` file as an app's configuration: read values without running, write them back |
 | [Text & Fonts](usage/text-and-fonts.md) | Drawing text in UI apps: faces, sizes, metrics, measurement, and what each host supports |
@@ -90,12 +94,13 @@ Runnable programs are in [`examples/`](../examples/README.md).
 
 | Document | Description |
 |----------|-------------|
+| [The Frame Contract](game-engine-features/frame-contract.md) | What an engine does each frame to run a script, in order, and what it can assume in return |
 | [Handles](game-engine-features/handles.md) | Opaque references to objects the engine owns: classes, staleness, method dispatch |
 | [Petal to GLSL](game-engine-features/petal-to-glsl.md) | **Experimental.** The `glsl` library: `to_glsl(lambda)` turns a Petal function into GLSL, cached by the function's code hash |
 
 Related pages that live with their own topic:
 
-- [Embedding from C/C++](usage/embedding-c.md): the frame contract and layering an engine's own C ABI.
+- [Embedding from C/C++](usage/embedding-c.md): the C++ frame loop and layering an engine's own C ABI.
 - [`vec3`](dev/vec3.md): the native 3D vector and why it lives on the heap.
 - [petal-desktop-sdl game dev guide](../integrations/petal-desktop-sdl/docs/game-dev-guide.md): writing a game against the SDL host.
 
@@ -125,6 +130,7 @@ point-in-time status.
 | [Call-path keyed `state`](dev/state-call-paths.md) | The design decisions behind how `state` slots are keyed |
 | [The frame gate](dev/frame-gate.md) | How a host skips a frame whose inputs have not changed |
 | [Memoized scopes](dev/memo-scopes.md) | How a frame that runs replays the calls whose inputs have not changed |
+| [Native effect rows](dev/native-effects.md) | What a native's `NativeEffects` row declares, which layers read it, and the audits that check it |
 | [Performance](dev/performance.md) | Profiling tools, what the optimizer does, where the headroom is |
 | [`vec3`](dev/vec3.md) | Why the 3D vector is a heap value |
 | [Formal verification](dev/formal-verification.md) | Kani proofs and exhaustive small-scope checks of the core semantics |

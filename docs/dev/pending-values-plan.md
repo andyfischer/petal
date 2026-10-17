@@ -5,7 +5,8 @@ different shape than planned.** `Value::Pending`, the strict/non-strict
 semantics, the `state` no-commit rule and the observability surfaces are all
 in. `core-libs/petal-query/` exists as a Provider/Cache library over the Garden Pane
 Protocol rather than the host-fetcher design sketched here. See
-[Status](#status) at the end.
+[Status](#status) at the end. How pending values behave in a script today is
+[features/pending-values.md](../features/pending-values.md).
 
 ## Goal
 

@@ -212,6 +212,9 @@ impl<'a> Vm<'a> {
             Value::EnumVariant { .. } if args.is_empty() => {
                 self.set_call_result(fi, dst, callable, call_site)
             }
+            // Calling a Pending absorbs: nothing runs and the result is the
+            // Pending itself, as for a strict native given a Pending argument.
+            Value::Pending(_) => self.set_call_result(fi, dst, callable, call_site),
             _ => return Err(format!("Cannot call {}", callable.type_name())),
         }
         Ok(())
@@ -461,6 +464,12 @@ impl<'a> Vm<'a> {
                     None => e,
                 }),
             }
+        } else if let Value::Pending(_) = recv {
+            // A method no builtin answers, called on a Pending receiver (a
+            // record still loading whose field would hold the function):
+            // absorb, as the field read `u.handler` and the builtin methods do.
+            self.set_call_result(fi, dst, recv, call_site);
+            Ok(())
         } else {
             // Name the *class* when the receiver has one: "no method 'nope' on
             // type record" is useless next to "on class Rect".
@@ -1001,6 +1010,11 @@ impl<'a> Vm<'a> {
                         Ok(())
                     }
                     Value::EnumVariant { .. } if full.is_empty() => {
+                        self.set_call_result(fi, dst, callable, call_site);
+                        Ok(())
+                    }
+                    // A Pending callee absorbs, as in `do_call`.
+                    Value::Pending(_) => {
                         self.set_call_result(fi, dst, callable, call_site);
                         Ok(())
                     }

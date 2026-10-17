@@ -2063,6 +2063,118 @@ mod pending_control_flow_chunk_f_tests {
     }
 }
 
+/// `&&` / `||` with a Pending left side absorb like an `if` condition: the
+/// right side does not run and the result is that Pending. And calling a
+/// Pending (directly, through a spread, or as a method no builtin answers)
+/// absorbs instead of raising `Cannot call pending`.
+mod pending_short_circuit_and_call_tests {
+    use super::super::*;
+
+    fn expect_pending(v: &Value) -> crate::value::PendingId {
+        match v {
+            Value::Pending(id) => *id,
+            other => panic!("expected a Pending value, got {other:?}"),
+        }
+    }
+
+    fn pending_id(env: &mut Env, key: &str) -> crate::value::PendingId {
+        let v = env.run_source(&format!("__pending(\"{key}\")\n")).unwrap();
+        expect_pending(&v)
+    }
+
+    #[test]
+    fn and_with_pending_left_is_that_pending_and_skips_the_right() {
+        let mut env = Env::new();
+        let id = pending_id(&mut env, "u");
+        let v = env
+            .run_source("fn r() print(\"rhs\") return 1 end\n__pending(\"u\") && r()\n")
+            .unwrap();
+        assert_eq!(expect_pending(&v), id);
+        assert!(env.take_output().is_empty(), "the right side must not run");
+    }
+
+    #[test]
+    fn or_with_pending_left_is_that_pending_and_skips_the_right() {
+        let mut env = Env::new();
+        let id = pending_id(&mut env, "u");
+        let v = env
+            .run_source("fn r() print(\"rhs\") return 1 end\n__pending(\"u\") || r()\n")
+            .unwrap();
+        assert_eq!(expect_pending(&v), id);
+        assert!(env.take_output().is_empty(), "the right side must not run");
+    }
+
+    /// The case that mattered: an `if` guarded by `p.field || x` ran its
+    /// branch while `p` was loading.
+    #[test]
+    fn an_if_on_a_pending_short_circuit_runs_no_branch() {
+        let mut env = Env::new();
+        env.run_source(
+            "let user = __pending(\"user\")\nlet override = false\n\
+             if user.admin || override then print(\"or ran\") else print(\"or else\") end\n\
+             if user.admin && true then print(\"and ran\") else print(\"and else\") end\n\
+             print(is_pending(user.admin == 1 && true))\n",
+        )
+        .unwrap();
+        assert_eq!(env.take_output(), vec!["true".to_string()]);
+    }
+
+    #[test]
+    fn a_pending_right_side_is_the_result() {
+        let mut env = Env::new();
+        let id = pending_id(&mut env, "u");
+        let and = env.run_source("true && __pending(\"u\")\n").unwrap();
+        assert_eq!(expect_pending(&and), id);
+        let or = env.run_source("false || __pending(\"u\")\n").unwrap();
+        assert_eq!(expect_pending(&or), id);
+        // A deciding left side still short-circuits past a Pending right.
+        assert_eq!(env.run_source("false && __pending(\"u\")\n").unwrap(), Value::Bool(false));
+        assert_eq!(env.run_source("true || __pending(\"u\")\n").unwrap(), Value::Bool(true));
+    }
+
+    #[test]
+    fn a_resolved_left_side_short_circuits_normally() {
+        let mut env = Env::new();
+        env.run_source("__resolve(\"t\", true)\n__resolve(\"f\", false)\n").unwrap();
+        assert_eq!(env.run_source("__pending(\"t\") && 5\n").unwrap(), Value::Int(5));
+        assert_eq!(env.run_source("__pending(\"f\") && 5\n").unwrap(), Value::Bool(false));
+        assert_eq!(env.run_source("__pending(\"t\") || 5\n").unwrap(), Value::Bool(true));
+        assert_eq!(env.run_source("__pending(\"f\") || 5\n").unwrap(), Value::Int(5));
+    }
+
+    #[test]
+    fn calling_a_pending_absorbs() {
+        let mut env = Env::new();
+        let id = pending_id(&mut env, "u");
+        for src in [
+            "let u = __pending(\"u\")\nu(1)\n",
+            "let u = __pending(\"u\")\nu(...[1])\n",
+            "let u = __pending(\"u\")\nfn apply(g, x) return g(x) end\napply(u, 1)\n",
+            "let u = __pending(\"u\")\nu.handler(1)\n",
+            "let u = __pending(\"u\")\nu.greet()\n",
+        ] {
+            let v = env.run_source(src).unwrap_or_else(|e| panic!("{src}: {e:?}"));
+            assert_eq!(expect_pending(&v), id, "{src}");
+        }
+    }
+
+    #[test]
+    fn calling_a_pending_evaluates_its_arguments_and_nothing_else() {
+        let mut env = Env::new();
+        env.run_source("let u = __pending(\"u\")\nlet r = u(print(\"arg\"))\nprint(is_pending(r))\n")
+            .unwrap();
+        assert_eq!(env.take_output(), vec!["arg".to_string(), "true".to_string()]);
+    }
+
+    /// Calling something that is neither callable nor Pending still errors.
+    #[test]
+    fn calling_a_number_still_errors() {
+        let mut env = Env::new();
+        let err = env.run_source("let n = 3\nn(1)\n").unwrap_err();
+        assert!(format!("{err:?}").contains("Cannot call"), "{err:?}");
+    }
+}
+
 /// Chunk G — `for` over a Pending iterable and `match` on a Pending subject
 /// both absorb: zero iterations / no arm runs, and the expression evaluates to
 /// that Pending. A wildcard `match` arm does NOT catch a Pending — the absorb

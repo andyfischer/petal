@@ -53,17 +53,30 @@ print(is_pending(user.name))         // true
 | string concatenation, interpolation | the whole string is the pending value |
 | field or index access on it | the pending value |
 | the condition of `if`, the subject of `match` | no branch runs; the expression's value is the pending value |
+| the left side of `&&` or `\|\|` | the right side does not run; the result is the pending value |
 | the condition of `while`, the list of `for` | no iteration runs; a `for` in value position is the pending value |
 | an argument of a user function | the call runs normally, so a helper deep inside can still ask `is_loading(x)` |
 | an argument of a draw call, `print`, `push_output` or another emitting native | the call does nothing and returns `nil` |
 | an argument of any other native | the native is not called; the result is the pending value |
 | a map key or index (`m[k] = v`) | a runtime error, `Cannot use a pending value as a map key / index` |
 | what a `sort` comparator returns | a runtime error |
-| called as a function (`u(1)`) | a runtime error, `Cannot call pending` |
+| called as a function (`u(1)`, `u(...xs)`) or as a method (`u.greet()`) | nothing runs; the result is the pending value |
 
-Two places do not follow the rule today. `&&` and `||` with a pending value
-on the left do not return it: `u && x` is `x`, and `u || x` is a boolean.
-Test with `is_ready(u)` before combining, rather than relying on either.
+So `if user.admin || override then … end` draws nothing while `user` is
+loading, rather than taking the branch. A pending value on the *right* of
+`&&` or `||` is the result when the left side does not decide it
+(`true && u` and `false || u` are pending), and a deciding left side still
+short-circuits past it (`false && u` is `false`). Count arguments, such as
+the `n` of `repeat(s, n)` or `range(n)`, are like any other native argument:
+the result is the pending value.
+
+```petal
+let user = __pending("user")
+let override = false
+if user.admin || override then print("admin panel") end
+print(is_pending(user.admin && true))   // true
+print(is_pending(user.greet()))         // true
+```
 
 ## Lists and records hold pending values element by element
 

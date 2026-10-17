@@ -855,6 +855,14 @@ Breaking changes made during development, newest first. For the import and
 package changes below, `petal fix-imports` does the rewriting and
 [docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
 
+- Pending values: `&&` and `||` with a pending value on the left now evaluate
+  to that pending value without running the right side, as an `if` condition
+  does. Before, a pending left side counted as true, so `u && x` was `x` and
+  `u || x` was `true`, and `if user.admin || override then` ran its branch
+  while `user` was loading. Calling a pending value (`u(x)`, `u(...xs)`, or a
+  method no builtin answers, `u.greet()`) now also evaluates to it instead of
+  raising `Cannot call pending`
+  ([features/pending-values.md](docs/features/pending-values.md)).
 - `petal-ui`: a press outside a focused `text_field` clears its focus (the
   `focus` it returns), unless a higher layer took the press; and
   `interact().click` goes only to a rect that was under the press point when

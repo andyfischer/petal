@@ -1096,9 +1096,16 @@ impl<'p> FnLowerer<'p> {
     /// ```
     /// `&&` runs the rhs when the left is truthy and short-circuits to `false`;
     /// `||` runs the rhs when the left is falsy and short-circuits to `true`.
+    ///
+    /// A Pending left side absorbs, as an `if` condition does: the rhs does
+    /// not run and the result is the Pending itself. Without the
+    /// `JumpIfPending`, a Pending would count as truthy, so `p && x` gave `x`
+    /// and `p || x` gave `true`, and an `if p.admin || … then` ran its branch
+    /// while the data was still loading.
     fn emit_short_circuit(&mut self, term: &Term, is_and: bool) -> Result<(), String> {
         let dst = self.flat(term.id)?;
         let left = self.flat(term.inputs[0])?;
+        let jpend = self.emit_placeholder(Inst::JumpIfPending { cond: left, to: 0 });
         let to_rhs = if is_and {
             self.emit_placeholder(Inst::JumpIfTrue { cond: left, to: 0 })
         } else {
@@ -1110,9 +1117,15 @@ impl<'p> FnLowerer<'p> {
         let rhs_label = self.here();
         self.patch(to_rhs, rhs_label);
         self.emit_arm(term.child_blocks[0], term.id, dst)?;
+        let jrhs = self.emit_placeholder(Inst::Jump { to: 0 });
+
+        let pend_label = self.here();
+        self.patch(jpend, pend_label);
+        self.push(Inst::Move { dst, src: left });
 
         let end_label = self.here();
         self.patch(jend, end_label);
+        self.patch(jrhs, end_label);
         Ok(())
     }
 

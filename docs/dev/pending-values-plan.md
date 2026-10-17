@@ -101,7 +101,8 @@ This table *is* the semantics. Anything not listed as non-strict is strict.
 | Effectful natives (draw commands, `print`, host calls) | **No-op**, logged for visibility. |
 | `state x = <pending>` (the init) | **Does not commit.** See below. |
 | Ordinary write of a Pending into a `state` | Allowed and flagged in the frame report. |
-| Map key, `sort` comparator result, `repeat(n)` count | **Hard runtime error.** These positions corrupt structure silently if absorbed. |
+| Map key, `sort` comparator result | **Hard runtime error.** These positions corrupt structure silently if absorbed. |
+| Count argument of a pure native (`repeat(s, n)`, `range(n)`) | → same Pending, like any strict native. (The plan first listed a `repeat(n)` count as a hard error; no such builtin existed then, and the `repeat(s, n)` added on 2026-10-09 returns the Pending without corrupting anything, so the row was dropped on 2026-10-16.) |
 | **Non-strict meta set** | `is_loading(x)`, `is_pending(x)`, `is_error(x)`, `is_ready(x)`, `error_of(x)` (nil if not errored), `x ?? fallback`, `or_else(x, f)`, `resource_key(x)`. These receive the Pending itself and return real values. |
 
 ### Collections are element-wise

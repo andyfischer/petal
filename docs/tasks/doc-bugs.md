@@ -1,197 +1,231 @@
 # What the docs pass found and did not fix
 
-Status: **open items**, 2026-10-13. Found while reorganising `docs/` and
-writing the new feature and internals pages. The docs were corrected to say
-what the code does; the items here are in code, in files outside `docs/`, or
-were left because they could not be verified. Nothing here has been fixed.
+Status: **all items in sections 1, 2, 4 and 5 fixed**, 2026-10-16. Section 3 is
+done except for the numbers that could not be re-measured, which are now marked
+in the docs as dated or approximate, and the Garden row of
+`usage/text-and-fonts.md`. The list was opened on 2026-10-13, while
+reorganising `docs/` and writing the new feature and internals pages. The docs
+were corrected then to say what the code did. The items here were in code, in
+files outside `docs/`, or could not be verified.
+
+Each item says what was done and the commit. The integration run on 2026-10-16
+passed: core `cargo test` (2,828 passed), petal-ui (369), petal-sdl (69),
+petal-query (33), petal-c-bridge (43), garden-script, garden-app and
+directory-browser (1,180), vitest (1,694 in 75 files), and
+`tools/test-examples.ts` (33 of 33).
 
 ## 1. Probable bugs
 
-Each was reproduced unless marked otherwise. The docs describe the behaviour
-as it is.
-
 ### Language server
 
-1. **A diagnostic from an imported module lands in the importing file.** When
-   the compile succeeds, a warning or error found in an imported module is
-   published on the importing document at the module's line and column, with
-   no file name. Reproduced: an error on line 9 of `lib.ptl` shown at line 8
-   of a 2-line `main.ptl`. The failed-compile path handles this;
-   `petal_diagnostic_to_lsp` in `core/src/lsp/document.rs` does not check
-   `span.file`.
-2. **Positions are code points, not UTF-16.** `positionEncoding` is not
-   negotiated, so columns are off by one for each astral character earlier on
-   the line. Reproduced with `"😀"` before an identifier.
-3. **A script that relies on a host's implicit prelude gets false "unknown
-   function" diagnostics**, because the server compiles each file alone.
-   `~/worlds-fair/ui/ptl/host/garden.ptl` gets 31 and `screens/missions.ptl`
-   gets 78.
+All three were fixed in 239d0c9f. See [internals/lsp.md](../internals/lsp.md),
+"Known gaps", for what is still left.
 
-See [internals/lsp.md](../internals/lsp.md), "Known gaps".
+1. **Fixed: a diagnostic from an imported module lands in the importing file.**
+   When the compile succeeds, a module's diagnostic now goes on the importing
+   document's `import` line for that module. The message is prefixed with the
+   module's file name and has a `relatedInformation` link to the real position.
+   A module reached through another module has no import line in the document,
+   so its diagnostics go on line 0. The failed-compile path places diagnostics
+   the same way, and an unresolved import is reported on its own line.
+2. **Fixed: positions are code points, not UTF-16.** `initialize` now
+   negotiates `positionEncoding`: utf-16 by default, or utf-8 or utf-32 when
+   the client asks for one. Positions coming in and every range going out are
+   converted (`core/src/lsp/position.rs`).
+3. **Fixed: a script that relies on a host's implicit prelude gets false
+   "unknown function" diagnostics.** This is solved with a new `[host]` section
+   in `petal.toml`, which takes `imports` and `prelude` files (see
+   [packages.md](../packages.md)). The section is not yet in worlds-fair.
+   Tried on a scratch copy of worlds-fair, `host/garden.ptl` went from 31
+   diagnostics to 2 (two real bad key names) and `screens/missions.ptl` went
+   from 78 to 0. **Still open:** `petal check` does not read `[host]`, and a
+   relative import inside a prelude file resolves against the document's
+   directory.
 
 ### petal-sdl timeline
 
-4. **`replay` after `set_state` discards the written value.**
-   `integrations/petal-desktop-sdl/docs/agent-protocol.md` (`### replay`) says
-   to call `replay` by hand after `set_state` on a rewound game. Replay always
-   restores from a recorded fork, so `set_state x=100` then `replay` left
-   `x=22`. Either the doc or the behaviour is wrong.
-5. **`state` while frozen reads the live execution, not the cursor frame.** It
-   returned `x=10` with the cursor at frame 2. Neither protocol doc says so.
-6. **Windowed `--agent` mode does not rewind `time()`.** It binds wall-clock
-   time, so only the frame number goes back. The plain windowed loop rewinds
-   its simulated time. The fix would be in `run_agent`.
-7. **Not tested:** what happens to sound requests emitted during an unfrozen
-   `replay`. Replay skips `Host::end_frame`, so they may sit in the buffer
-   until the next live frame.
+All four were fixed in 373d910f. See
+[features/time-travel.md](../features/time-travel.md).
 
-See [features/time-travel.md](../features/time-travel.md).
+4. **Fixed: `replay` after `set_state` discards the written value.** The
+   timeline now records each `set_state` against its frame
+   (`FrameRecord.writes`) and re-applies it on every later replay, including a
+   hot reload's. A write made while frozen replays the frames after the cursor
+   straight away, and the reply gives the count in `replayed`.
+5. **Fixed: `state` while frozen reads the live execution, not the cursor
+   frame.** It now reads the cursor frame's snapshot.
+6. **Fixed: windowed `--agent` mode does not rewind `time()`.** The agent loop
+   now uses a simulated clock (`ClockSource::Sim`). The clock is rewound along
+   with the timeline.
+7. **Tested, and it was a bug: sound requests emitted during an unfrozen
+   `replay`.** They piled up and all played on the next live frame. A replayed
+   frame now discards everything it emits except its draw commands.
 
 ### Differentiation
 
-8. **Builtins that have no derivative rule drop the derivative silently.**
-   `exp`, `log`, `pow`, `atan2`, `hypot`, `clamp`, `fract`, `lerp`,
-   `map_range`, `smoothstep` and `dot` return a plain float with no warning.
-   `vec2(dual, …)` silently stores the value.
-9. **`sign(dual)` is an error while `abs(dual)` works.**
+Both were fixed in 8469a156. See
+[features/differentiation.md](../features/differentiation.md).
 
-See [features/differentiation.md](../features/differentiation.md).
+8. **Fixed: builtins that have no derivative rule drop the derivative
+   silently.** `exp`, `log`, `pow`, `atan2`, `hypot`, `clamp`, `fract`,
+   `lerp`, `map_range` and `smoothstep` now carry the derivative, and so do
+   `radians`, `degrees`, `interp` and the scalar `mag`/`distance`. Any other
+   function now raises an error when given a dual, instead of dropping the
+   derivative. That covers natives too, through `get_float`. `vec2` and `vec3`
+   also refuse a dual component, so `dot` can never see one.
+9. **Fixed: `sign(dual)` is an error while `abs(dual)` works.** `sign(dual)`
+   now returns a dual with derivative 0.
 
 ### Handles
 
-10. **Not verified: `is_valid` under the memo.** It is registered `PURE`, so a
-    recorded scope that only calls `is_valid(h)` could replay a stale `true`
-    after the host destroys the object. One test did not show it, but the
-    scope may not have been recorded.
-11. **Not verified: handle methods and the frame gate.** A handle method marks
-    the enclosing memo scope effectful (`memo_note_effect`) but does not call
-    `run_deps.note_effect()`. Whether a run whose only host interaction is
-    handle methods can be skipped by the gate was not tested.
+Both were confirmed as bugs and fixed in 8469a156. See
+[game-engine-features/handles.md](../game-engine-features/handles.md), "Under
+the frame gate".
 
-See [game-engine-features/handles.md](../game-engine-features/handles.md).
+10. **Fixed: `is_valid` under the memo.** A recorded scope did replay a stale
+    `true`. `is_valid` is now a host-data read.
+11. **Fixed: handle methods and the frame gate.** A run whose only host
+    interaction was handle methods could be skipped. A handle method call now
+    counts as a host-data read. A host that gates frames must call
+    `note_host_data_changed` whenever objects behind its handles change.
 
 ### Other
 
-12. **`config state`, `config fn` and `config pub let` give a poor error.**
-    Only `var` and `const` have dedicated messages; the rest fall through to
-    ``undefined variable `config` ``.
-13. **`tools/calc-to-ir.ts` does not run under plain `node`.** It uses a
-    TypeScript parameter property, which strip-only mode rejects, and it is
-    not executable. `npx tsx` and `node --experimental-transform-types` work.
+12. **Fixed: `config state`, `config fn` and `config pub let` give a poor
+    error.** Each form now has its own message (8469a156).
+13. **Fixed: `tools/calc-to-ir.ts` does not run under plain `node`.** The
+    parameter property is gone and the file is now executable (8469a156).
 
 ## 2. Stale text outside `docs/`
 
 ### `petal help`
 
-- `petal help run` does not list `--runs <n>`, which exists
-  (`core/src/cli/args.rs`) and works.
-- `petal help run` says the default policy is `fast-memo`. The code uses
-  `fast-memo-static` (`core/src/cli/handlers.rs`).
-- `petal help show-static` says nothing depends on the classification yet and
-  that "a later release" will keep static values. The cache has shipped.
-- `petal help run` (`core/src/cli/help.rs`, `--effect-audit`) points at
-  `docs/tasks/declarative-effect-refactoring.md`, which was deleted. The
-  content is in [usage/ffi.md](../usage/ffi.md#catching-it-with-the-effect-audit).
+**Fixed** in 96d50e75 (`core/src/cli/help.rs`):
+
+- `petal help run` now lists `--runs <n>`.
+- It gives the default policy as `fast-memo-static`.
+- It points `--effect-audit` at
+  [usage/ffi.md](../usage/ffi.md#catching-it-with-the-effect-audit).
+- `petal help show-static` describes the cache that has shipped.
 
 ### Comments that cite files that no longer exist
 
-- `core/src/effect_audit.rs:12` and `core-libs/petal-ui/tests/effect_audit.rs:4`:
-  `docs/tasks/declarative-effect-refactoring.md`.
-- `core/src/handle.rs` and `core/tests/handles.rs`:
-  `docs/dev/unreal-ffi-proposal.md`. The same string is in `docs/stdlib.json`,
-  which is generated from the source.
-- `core/src/program.rs:621`: `docs/ir-as-target.md` (now `docs/dev/`).
-- `test/vitest/error-positions.test.ts`: `docs/dev/bytecode-future-ideas.md`.
-- `tools/test-examples.ts` header: `./bin/test-examples.ts`.
+**Fixed** in 8469a156:
+
+- `core/src/effect_audit.rs` and `core-libs/petal-ui/tests/effect_audit.rs`
+  now point at `usage/ffi.md#catching-it-with-the-effect-audit`.
+- `core/src/handle.rs`, `builtins/handle.rs` and `core/tests/handles.rs` now
+  point at `docs/game-engine-features/handles.md`. `docs/stdlib.json` was
+  regenerated.
+- The paths in `core/src/program.rs`, `test/vitest/error-positions.test.ts`
+  (the reference was dropped) and the `tools/test-examples.ts` header are
+  corrected.
 
 ### Comments that disagree with the code
 
-- `core/src/run_deps.rs`, on `hash_content` (about line 439): says a handle is
-  not fingerprintable. The code hashes it.
-- `integrations/petal-c-bridge/include/petal_bridge.h:96`: the `pb_error.phase`
-  comment omits `"link"`, which the bridge returns.
+**Fixed** in 8469a156:
+
+- The `core/src/run_deps.rs` comments on handles are corrected.
+- The `pb_error.phase` comment in `petal_bridge.h` now lists `"link"`.
 
 ### Timeline: "after the cursor" is off by one
 
-`integrations/petal-desktop-sdl/docs/agent-protocol.md` (`replay`), the
-petal-sdl `README.md`, the header of `timeline.rs`, and the `replay` row in
-[dev/debug-protocol.md](../dev/debug-protocol.md) say replay re-simulates the
-frames after the cursor. It restores the fork of the frame before the cursor
-and re-runs the cursor frame too.
+**Fixed** in 373d910f. `agent-protocol.md`, the petal-sdl `README.md`, the
+`timeline.rs` header, the `protocol.rs` comment, and the `replay` row in
+[dev/debug-protocol.md](../dev/debug-protocol.md) now say that replay restores
+the frame before the cursor and re-runs the cursor frame.
 
 ### Other files
 
-- `test/verify-plans/lint-fix.json` lists the corpus root `docs/examples`,
-  which does not exist.
-- `CHANGELOG.md` was not touched by the reorg, so its entries name the old
-  paths. One is a link that no longer resolves:
-  `docs/hot-reload.md#static-values-across-a-reload` (about line 230).
-- `examples/AUTHORING.md:311` links
-  `../garden/docs/petal-graphical-panels.md#supported-draw-surface`, an
-  anchor that does not exist.
+**Fixed** in db198339:
+
+- `test/verify-plans/lint-fix.json` no longer lists `docs/examples`.
+  `test/vitest/verify.test.ts` now checks that every plan's in-repo roots
+  exist.
+- `CHANGELOG.md`: six links to old paths are fixed, including
+  `hot-reload.md#static-values-across-a-reload`.
+- `examples/AUTHORING.md` now links `#draw-surface`.
 
 ## 3. Left in `docs/`, not verified
 
-Measured numbers were kept unless they contradicted the task records.
-
-- [features/hot-reload.md](../features/hot-reload.md): the Moses
-  `set_config_value` figures (4.08 / 4.61 ms; the nearest recorded are 4.04 /
-  4.66), most cells of the `reload_follow` tables, and the 403-file corpus
-  sweep.
-- [dev/performance.md](../dev/performance.md): no figure was re-measured.
-  About line 620 it names a test `measure_constants`; the real name is
-  `measure_constants_inside_functions_on_the_corpus`.
-- [usage/embedding-c.md](../usage/embedding-c.md): "Performance notes" (0.4 ms
-  per frame, about 0.1 s per load, from Cheesecake) and the "Limitations"
-  entry on runtime error positions. Its value table gives only `integer()` =
-  slot for a handle; the serial (`count`) and class name (`str()`) are missing.
+- [features/hot-reload.md](../features/hot-reload.md) **(4f6813c6):** the repo
+  reload sweep was re-run (409 files, 16 October), and the `reload_timing` and
+  `reload_follow` runs were repeated and added as dated notes. The machine was
+  loaded and Moses has grown, so the original tables are kept beside them.
+  **Not re-run:** the 343-file sweep outside the repo, which is now marked as
+  dated.
+- [dev/performance.md](../dev/performance.md) **(0683d98f):** the test name is
+  fixed. No figures were re-measured.
+- [usage/embedding-c.md](../usage/embedding-c.md) **(4f6813c6):** the handle
+  row of the value table is corrected. The slot and serial are in
+  `raw()->integer` and `raw()->count`, `str()` is the class name, and
+  `integer()` returns its fallback. A new `petal-c-bridge` test pins this. The
+  claim about runtime error positions was checked against the code. **Not
+  re-measured:** the Cheesecake performance figures, which are now marked as
+  one past measurement.
 - [game-engine-features/petal-to-glsl.md](../game-engine-features/petal-to-glsl.md):
-  the instruction counts and the caching table.
-- [usage/text-and-fonts.md](../usage/text-and-fonts.md): the Garden row and
-  the SDL "synthetic bold/oblique" claim.
-- [language-guide.md](../language-guide.md): recursion through a callback
-  limited to "a few hundred levels"; the `match` jump table turned off by
-  `--no-opt`; class instances and stale labels across a reload.
-- [features/direct-manipulation.md](../features/direct-manipulation.md): the
-  batch example output cannot be reproduced with plain `petal run`, and the
-  worked example marks `radius` as shared although one call reads it.
-- [writing-petal-guide.md](../writing-petal-guide.md): uses the Garden-only
-  `panel_store_get` as an example in a newcomer guide.
-- [dev/testing.md](../dev/testing.md): the file and test counts.
-- The plan documents under `dev/` were checked for paths, identifiers and
-  links only, not read claim by claim.
+  a passing test confirms the caching table. The instruction counts are still
+  not measured; they were already written as approximate.
+- [usage/text-and-fonts.md](../usage/text-and-fonts.md): the SDL claim of
+  synthetic bold and oblique holds. It now applies to an installed family's
+  upright regular face too (7887bb86). **Still open:** no one has checked the
+  Garden row.
+- [language-guide.md](../language-guide.md) **(66c88d49):** callback recursion
+  was measured at 256 levels in a release build and 29 in debug. The bytecode
+  shows that `--no-opt` turns off the `match` jump table. Stale class labels
+  across a reload are covered by `class_live_edit`.
+- [features/direct-manipulation.md](../features/direct-manipulation.md)
+  **(0683d98f):** the batch example now explains why plain `petal run` cannot
+  produce it, and `radius` is no longer called shared.
+- [writing-petal-guide.md](../writing-petal-guide.md) **(66c88d49):** the
+  example uses the core `last()` instead of `panel_store_get`.
+- [dev/testing.md](../dev/testing.md) **(0683d98f):** the counts are updated
+  to 409 files and 1,361 unit tests. The CPU-second and vitest timings are now
+  marked as approximate.
+- The plan documents under `dev/` are unchanged: they were checked for paths,
+  identifiers and links only.
 
 ## 4. Content still in the wrong file
 
-Each is unique detail that sits outside the file that owns its topic.
+**Fixed** in 4f6813c6, 66c88d49 and 63f9a2af. Each piece moved to the file
+that owns it, and a link was left in its place.
 
-| Where it is | What | Owner it belongs in |
+| Where it was | What | Where it is now |
 |---|---|---|
-| `usage/embedding-guide.md`, "Shipping a Petal library" | `Env::add_module_path` is best-effort; bad manifests are collected in `env.package_errors()` | `module-system.md#embedding` |
-| `module-system.md`, "Embedding" | `Env::project_of`, `project_dependencies`, `resolve_import`, `packages()`, the `ModuleResolver` trait, `petal_ui::provide_interface` | `usage/ffi.md` |
-| `usage/embedding-c.md`, "Modules and packages" | `override_file` semantics; the Rust `Env::override_file_source` is described nowhere | `module-system.md#embedding` |
-| `usage/ffi.md`, "Hot reload" | The `ReloadReport` field list | `features/hot-reload.md` |
-| `features/direct-manipulation.md`, "Tracing live code" | The `--trace-emits --json` field list | `CLI.md` |
-| `dev/debugging-visibility.md` §1a, §1b | Cell-frontier JSON fields; `--observe` naming rules | `CLI.md` |
-| `dev/testing.md`, `dev/refactor-verification.md` §1 | `--seed` and `--error-format bare` | `CLI.md` |
-| `CLI.md`, "Traversing the IR" | JS helpers for reading `show-ir --json` | `dev/ir-as-target.md` |
-| `writing-petal-guide.md` §2, §4 | Hoisting of constant `let`s; the shared-data recipe; flat parallel lists for hot loops | `language-guide.md`, `syntax/var.md` |
-| `features/program-modification.md` | Fork and speculative execution API detail beyond what `features/time-travel.md` took | `usage/ffi.md` |
+| `usage/embedding-guide.md` | `add_module_path` is best-effort; `package_errors()` | `module-system.md#embedding` |
+| `module-system.md` | The project, package and resolver query APIs, `provide_interface` | `usage/ffi.md`, "Modules and packages". `Env` takes no custom resolver; the trait is only used by `module::load_modules`. |
+| `usage/embedding-c.md` | `override_file` semantics, `Env::override_file_source` | `module-system.md#embedding` |
+| `usage/ffi.md` | The `ReloadReport` fields, now including `new_diagnostics` | `features/hot-reload.md`, "The reload report" |
+| `features/direct-manipulation.md` | `--trace-emits --json` fields | `CLI.md` |
+| `dev/debugging-visibility.md` | Frontier JSON fields, `--observe` naming | `CLI.md` |
+| `dev/testing.md`, `dev/refactor-verification.md` | `--seed`, `--error-format bare` | `CLI.md` |
+| `CLI.md` | IR traversal helpers | `dev/ir-as-target.md` |
+| `writing-petal-guide.md` | Hoisting rules | new `syntax/declaration-order.md`. The shared-data recipe and the flat-lists advice were already in `syntax/var.md`, so the guide now summarises them and links there. |
+| `features/program-modification.md` | Fork and speculation API | Nothing to move: it held nothing beyond `time-travel.md`. The `ffi.md` speculation row was extended. |
 
 ## 5. Pages that do not exist yet
 
-- `features/pending-values.md`: pending values from the script side. Only
-  [dev/pending-values-plan.md](../dev/pending-values-plan.md) exists, and
-  `Builtins.md` has signatures alone.
-- `features/provenance.md`: the dataflow tools as a feature (`petal graph`,
-  `petal explain`), now covered only in `CLI.md`.
-- `syntax/declaration-order.md`: hoisting rules are spread over four sections
-  of the language guide.
-- `usage/embedding-web.md`: the wasm hosts' JS-facing `PetalRuntime` API.
-- `game-engine-features/frame-contract.md`: the per-frame contract an engine
-  follows, now inside `usage/embedding-c.md`.
-- A dev page for native effect rows and the audit tools
-  (`tools/native-effect-audit.ts`, `tools/oracle-external.ts`); the design
-  record was deleted.
-- A script-side page for host I/O (`symbol`, `push_output`, `binding`); only
-  the host side is explained.
+**All written** in 66c88d49, 3b949a27, e5d80436 and db81105d, and linked from
+`docs/README.md`:
+
+- `syntax/declaration-order.md`
+- `features/pending-values.md`
+- `features/provenance.md`
+- `usage/embedding-web.md`
+- `game-engine-features/frame-contract.md`
+- `dev/native-effects.md`. The comment in `tools/native-effect-audit.ts` now
+  points here.
+- `usage/host-io.md`
+
+**Still open: three pending-value behaviours differ from
+[dev/pending-values-plan.md](../dev/pending-values-plan.md).** The new page
+describes what the code does. Whether the code or the plan is right has not
+been decided:
+
+- `u && x` returns `x` and `u || x` returns a boolean; neither returns the
+  pending value.
+- Calling a pending value raises `Cannot call pending` instead of absorbing.
+- `repeat` with a pending count absorbs instead of being a hard error.
+
+Links to the new pages from `Builtins.md` and from the explain and graph
+sections of `CLI.md` were not added.

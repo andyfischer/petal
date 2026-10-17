@@ -419,9 +419,14 @@ PETAL_RELOAD_CORPUS=/path/to/scripts cargo test --release --test hot_reload -- -
 Over the 409 `.ptl` files of this repository it reports 274 edits relocated,
 133 patched and 223 recompiled (the added declaration always recompiles),
 every one identical to the recompile and leaving the same static values (16
-October 2026; 403 files and 264, 128 and 218 on 12 October). Over 343 files
-of the Cheesecake games, worlds-fair, `~/.garden`, the website and `~/tools`
-it reported 160, 9 and 154 on 12 October; that sweep was not re-run.
+October 2026; 403 files and 264, 128 and 218 on 12 October). Over 362 files
+outside it (the Cheesecake games, worlds-fair's `ui/ptl`, `~/.garden`, the
+website's snippets, the two `experiment-*` apps and `~/tools`) it reports
+147 relocated, 1 patched and 144 recompiled, every one identical to the
+recompile (release build, 16 October 2026, 99 s). Only the files that compile
+on their own count: one that imports a package of its host is skipped. The
+same sweep gave 160, 9 and 154 over 343 files on 12 October; the scripts have
+changed since.
 
 ## What it costs
 

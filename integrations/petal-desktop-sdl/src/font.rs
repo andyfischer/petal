@@ -9,7 +9,9 @@
 //! size is what keeps `text_width` (advance ratios × the requested size) in
 //! step with the pixels — snapping 13 to a 12px rung drew runs ~8% narrower
 //! than they measured. Only past [`MAX_RUNG_SIZE`] or [`MAX_RUNGS`] does a
-//! request fall back to the nearest loaded rung.
+//! request fall back to the nearest loaded rung. For the same agreement every
+//! rung has kerning off: measurement sums one advance per glyph, so a kerned
+//! pair would draw narrower than `text_width` says.
 //!
 //! Weight and italic are SDL_ttf's *synthetic* styles (emboldening and
 //! shearing the regular outlines), not separately loaded faces — so bold here
@@ -141,6 +143,12 @@ impl<'ttf> FontLadder<'ttf> {
                 // to within a pixel or two per line; full hinting rounds each
                 // glyph's advance at the drawn size and drifts ~3% either way.
                 font.set_hinting(sdl2::ttf::Hinting::Light);
+                // Kerning off, for the same reason: `text_width` (and every
+                // ellipsize, wrap and flow decision built on it) sums one
+                // advance per glyph, with no notion of pairs. A kerned run
+                // drew "AVAVA" in Helvetica ~10% narrower than it measured;
+                // unkerned, the pixels are exactly what the table predicts.
+                font.set_kerning(false);
                 self.rungs.insert(at, (size, font));
                 Some(at)
             }
@@ -276,16 +284,13 @@ const ADVANCE_SAMPLE: usize = 16;
 /// (rounded at this size), so it is off by up to half a pixel per glyph —
 /// which, multiplied back up by a script's size, is the drift between a
 /// measured and a drawn line. Laying out a run of the glyph and dividing
-/// recovers the fractional advance the renderer really uses. Kerning is off
-/// for the sample (a glyph next to itself rarely kerns, but some faces do).
+/// recovers the fractional advance the renderer really uses. Every rung has
+/// kerning off (see [`FontLadder::bake`]), so the sample is unkerned too.
 fn advance_ratio(font: &mut Font, size: u16, c: char) -> Option<f64> {
     font.find_glyph(c)?;
-    let kerning = font.get_kerning();
-    font.set_kerning(false);
     let run: String = std::iter::repeat_n(c, ADVANCE_SAMPLE).collect();
-    let width = font.size_of(&run).ok().map(|(w, _)| w);
-    font.set_kerning(kerning);
-    Some(width? as f64 / (ADVANCE_SAMPLE as f64 * size as f64))
+    let (width, _) = font.size_of(&run).ok()?;
+    Some(width as f64 / (ADVANCE_SAMPLE as f64 * size as f64))
 }
 
 /// The vertical metrics of `font`, baked at `size`, as ratios of the size.

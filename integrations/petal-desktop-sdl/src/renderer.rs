@@ -496,11 +496,10 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
             let font = face.sized_styled(size, weight, italic);
             let color = Color::RGBA(r, g, b, a);
             match spacing == 0.0 {
-                // The common path: one texture for the whole run, so SDL_ttf
-                // keeps whatever kerning the face has.
+                // The common path: one texture for the whole run, laid out
+                // unkerned (every rung is) so it matches `text_width`.
                 true => T::render_text(canvas, font, &text, x, y, color),
-                // Letter-spacing has to place each glyph itself, which means
-                // giving up kerning — the same trade CSS `letter-spacing` makes.
+                // Letter-spacing has to place each glyph itself.
                 false => {
                     let mut pen = x as f32;
                     for ch in text.chars() {
@@ -2143,6 +2142,34 @@ mod tests {
                 fonts.default_face().sizes().contains(&size),
                 "size {size} should have been baked on demand"
             );
+        }
+    }
+
+    /// Pair-heavy runs draw as wide as they measure. `text_width` sums
+    /// per-glyph advances, so while rungs kerned, "AVAVAVAVAVAVAVAV" in
+    /// Helvetica drew 124px at 13 against a 138.5px measurement (and every
+    /// ellipsize/wrap/flow decision built on that width was off with it).
+    #[test]
+    fn kerned_pairs_draw_as_wide_as_they_measure() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
+        let ttf = sdl2::ttf::init().unwrap();
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let ratios = fonts.default_face().ascii_advance_ratios();
+        for text in ["AVAVAVAVAVAVAVAV", "WAVE To Yo LT AV", "VAVAVAVA"] {
+            for size in [13u16, 24, 48, 64] {
+                let measured: f64 = text.chars().map(|c| ratios[c as usize] * size as f64).sum();
+                let mut surface = Surface::new(1400, 100, PixelFormatEnum::RGB888).unwrap();
+                surface.fill_rect(None, Color::RGB(0, 0, 0)).unwrap();
+                let cmd = DrawCommand::plain_text(text, 4, 4, size, 255, 255, 255, 255);
+                let drawn = lit_width(&render_frame(surface, vec![cmd], &mut fonts)) as f64;
+                // Ink sits a little inside the advance box at either end (the
+                // "T"/"L"/"W" side bearings); kerning was off by 10%.
+                let slack = 2.0 + size as f64 * 0.03;
+                assert!(
+                    (drawn - measured).abs() <= slack,
+                    "{text:?} at {size}: drew {drawn}px but measures {measured:.1}px"
+                );
+            }
         }
     }
 

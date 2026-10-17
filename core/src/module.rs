@@ -1204,9 +1204,18 @@ pub fn load_modules(
     // resolve there exactly as they do in a script. Gated decls stay
     // lowest-precedence, so a module's own imports and declarations shadow
     // them. A module a gated module needs does not bind that one: it is
-    // compiled before it.
+    // compiled before it. A gated module the script also imports explicitly
+    // (a `[host]` import the script, or a prelude file joined to it, names)
+    // was walked with the entry's imports, but it binds no gated module, as
+    // the ones walked here do not: binding itself would make it its own
+    // importer, and binding another (`ui` binding `garden` while `garden`
+    // binds `ui`) a cycle.
+    let gated_names: HashSet<&str> = gated_decls.iter().map(|d| d.decl.module.as_str()).collect();
     for m in &mut imported_modules {
         let name = m.name.as_deref();
+        if name.is_some_and(|n| gated_names.contains(n)) {
+            continue;
+        }
         let mut imports: Vec<ResolvedImport> = gated_needs
             .iter()
             .filter(|(_, needs)| !name.is_some_and(|n| needs.contains(n)))
@@ -1702,6 +1711,33 @@ mod tests {
         let sid = env.create_stack(pid).unwrap();
         env.run(sid).unwrap();
         assert_eq!(env.take_output(), ["1"]);
+    }
+
+    /// A script may also import an implicit prelude by name (a `[host]`
+    /// import the script, or a prelude file joined to it, names as well):
+    /// the module is loaded once and is not bound into itself.
+    #[test]
+    fn a_script_may_import_its_implicit_prelude_explicitly() {
+        let mut env = Env::new();
+        env.register_module("dep", "pub fn d()\n  1\nend\n");
+        env.register_module("pre", "import dep\npub fn p()\n  d() + 10\nend\n");
+        env.add_tooling_implicit_imports(&["pre".to_string()]);
+        let pid = env.load_program("import pre\nprint(p())\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(env.take_output(), ["11"]);
+        // Two of them, both named: neither binds the other.
+        env.register_module("pre2", "pub fn q()\n  100\nend\n");
+        env.add_tooling_implicit_imports(&["pre2".to_string()]);
+        for entry in [
+            "import pre\nimport pre2\nprint(p() + q())\n",
+            "import pre2\nimport pre\nprint(p() + q())\n",
+        ] {
+            let pid = env.load_program(entry).unwrap();
+            let sid = env.create_stack(pid).unwrap();
+            env.run(sid).unwrap();
+            assert_eq!(env.take_output(), ["111"], "{entry}");
+        }
     }
 
     /// An implicit prelude is loaded when the script names one of its

@@ -242,7 +242,7 @@ end
 | the last expression is the return value; `return` exits early; `-> nil` turns the implicit return off | [Implicit Return Values](implicit-return-values.md) |
 | several declarations of one name with different parameter counts | [Overloading](function-overloading.md#overloading-by-argument-count) |
 | `name = expr` parameter defaults, evaluated per call | [Default parameter values](function-overloading.md#default-parameter-values) |
-| top-level `fn`s are usable above their declaration | [Declaration order](../language-guide.md#declaration-order-top-level-fns-are-hoisted) |
+| top-level `fn`s are usable above their declaration | [Declaration order](declaration-order.md) |
 | `fn Class.name(receiver, …)` declares a method | [Methods](../language-guide.md#methods) |
 | `native fn name(params) -> type` declares a function the host implements (no body) | [Native interfaces](../usage/ffi.md#native-interfaces-native-fn) |
 

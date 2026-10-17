@@ -39,6 +39,7 @@ When you add to the docs, extend the owner and link to it from elsewhere.
 |----------|-------------|
 | [Syntax Overview](syntax/overview.md) | A compact map of every lexical form, statement, expression and operator |
 | [`var`: mutable cells](syntax/var.md) | How `var`, `set` and `get` work, and where mutation shows up in the dataflow graph |
+| [Declaration Order](syntax/declaration-order.md) | Which top-level declarations can be used above their line, and what a `fn` that reads a computed value does instead |
 | [Function Overloading](syntax/function-overloading.md) | How calls pick between functions and methods with the same name; named arguments and default parameters |
 | [Implicit Return Values](syntax/implicit-return-values.md) | What a function yields without `return`, where a `for` loop collects a list, and how `-> nil` turns both off |
 | [`config let`](syntax/config-let.md) | Marking a binding as a tunable that tools and hosts are meant to edit |

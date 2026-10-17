@@ -736,7 +736,7 @@ call holds:
   error rather than being ignored: filter it first if the data is loose.
 - **Anything callable takes one**: a `fn`, a lambda or closure held in a
   variable or a record field, a module's function (`lib.scale(...args)`), an
-  [overloaded](function-overloading.md) function (the list's length, or the
+  [overloaded](syntax/function-overloading.md) function (the list's length, or the
   record's keys, pick the variant), a class constructor (`Rect(...{w: 3, h:
   4})`), a method (`r.grow(...{by: 2})` — the receiver is still the first
   argument), and a builtin, which binds a record against the parameter names
@@ -806,14 +806,18 @@ Stack trace:
 ```
 
 A function that recurses through a callback (`map(xs, fn(x) -> walk(x))`) has
-a lower limit, a few hundred levels, because each callback level also uses the
-native stack. A tree walk is fine. A recursion as deep as a list is long is
-not, so write that one as a loop.
+a lower limit, because each callback level also uses the native stack. The
+limit is a native-stack budget, not a count, so it varies with the build and
+the shape of the call: a release build stops a one-element `map` recursion at
+256 levels with `Stack overflow: callbacks nested 256 deep`, and a debug build
+at 29 (measured 16 October 2026). A tree walk is fine. A recursion as deep as a list is long is not, so write that one as a
+loop.
 
 ### Declaration order: top-level `fn`s are hoisted
 
 A top-level `fn` is usable **above** where it is written, so declaration order
-inside a file does not matter and mutual recursion works:
+inside a file does not matter and mutual recursion works. Every declaration's
+rule, in one table, is in [Declaration order](syntax/declaration-order.md).
 
 ```petal
 fn is_even(n)

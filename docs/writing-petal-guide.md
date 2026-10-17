@@ -96,22 +96,11 @@ Things to notice, because each is a rule you will meet again:
   parameter is the receiver. There is no `self`.
 - **Commas are required** between list elements, and a trailing comma is fine.
 - **Recursion works, including mutual recursion**, because top-level `fn`s are
-  hoisted — a flood fill or a tree walk needs no forward declaration. A
-  top-level `let` whose value is a compile-time constant (`let NODE_W = 140`,
-  `let GAP = NODE_W / 2`, a list or record of literals) is hoisted with them,
-  so a `fn` reading it can be called from above. Hoisting is about
-  declaration order only and says nothing about how often a value is built.
-  That is decided separately: a top-level value that depends on no dynamic
-  data (`petal show-static` says which do) is built once and kept by a host
-  that runs the script every frame, and rebuilt after a reload; everything
-  else, and everything under `petal run`, is evaluated on every run. The one exception to hoisting: a `fn`
-  whose body reads a top-level `let` that is computed at run time (a layout
-  rect, `let NODE_W = screen_width() / 4`), or a `var`/`state`, cannot be
-  hoisted above it, and calling it earlier fails at run time with
-  `Cannot call nil`. `petal check` warns (`call to fit_all before its
-  declaration … cannot be hoisted`) and `petal check --strict` fails; the fix
-  is to keep helpers that read computed values below them and above their
-  first use.
+  hoisted: a flood fill or a tree walk needs no forward declaration. A
+  top-level `let` of literals (`let NODE_W = 140`) can be read by a hoisted
+  `fn`; a `fn` that reads a value computed at run time cannot be called from
+  above it, and `petal check` warns when one is. The rules are in
+  [Declaration order](syntax/declaration-order.md).
 
 ---
 
@@ -400,99 +389,20 @@ which is what you want.
 That flood fill is the general pattern for mutable data that more than one
 function writes: the data goes in a cell, and every function that can see the
 cell writes it with `set` and reads it with `get`. Where the cell is declared
-decides which functions can see it, and there are two choices.
+decides which functions can see it:
 
-**Data that lives for one call goes in local `var`s, with the helpers nested
-beside them.** Declare the cells, then the helpers, then the algorithm:
+- **Data that lives for one call** goes in local `var`s, with the helpers
+  nested beside them as closures. The function stays a pure function of its
+  arguments, and only the helpers say `get`.
+- **Data that outlives the call** goes in a top-level `var` or, in an app that
+  re-runs every frame, a `state var`, written by top-level functions. A plain
+  `state` will not do: a function cannot write it with `=`.
 
-```petal
-fn relax(xs: list, vs: list, rods: list, passes: int) -> record
-  var x = xs
-  var v = vs
-
-  // Pull a and b together by s, half each.
-  let pull = fn(a, b, s)
-    set x[a] = get x[a] + s * 0.5
-    set x[b] = get x[b] - s * 0.5
-    set v[a] = get v[a] + s
-    set v[b] = get v[b] - s
-  end
-
-  for pass in range(0, passes) do
-    for rod in rods do
-      let stretch = x[rod.b] - x[rod.a] - rod.len   // the owner reads bare
-      if abs(stretch) > 0.001 then pull(rod.a, rod.b, stretch) end
-    end
-  end
-  {x: x, v: v}
-end
-
-print(relax([0.0, 3.0], [0.0, 0.0], [{a: 0, b: 1, len: 2.0}], 1).x)   // [0.5, 2.5]
-```
-
-Start here. `relax` is still a pure function of its arguments: each call makes
-its own cells and returns ordinary values, so the caller, `state`, undo and
-tests see nothing unusual. Inside it only the helpers say `get`; the body that
-declared the cells reads them bare, so the algorithm reads as it would have
-inline. The price is that `pull` cannot be called or tested from outside
-`relax`.
-
-**Data that outlives the call goes in a top-level `var` or `state var`, with
-top-level functions.** An app that re-runs every frame keeps what its actions
-edit in `state var`s:
-
-```petal
-state var items = []
-state var selected = -1
-
-fn add_item(name: string)
-  set items = append(get items, name)
-  set selected = len(get items) - 1
-end
-
-fn remove_selected()
-  if get selected < 0 then return nil end
-  let gone = get selected
-  set items = for i in range(0, len(get items)) do
-    if i == gone then continue end
-    get items[i]
-  end
-  set selected = -1
-end
-
-add_item("ink")
-add_item("paper")
-remove_selected()
-print(items, selected)   // ["ink"] -1
-```
-
-Here every function reads with `get`, and only module scope reads bare. Use
-this shape when the data really is the program's, not as a way to avoid passing
-arguments: these cells hold whatever the last caller left in them, and the
-dataflow tools stop at each one.
-
-A plain `state` does not work for the second shape. `state` persists, but it
-is written with `=`, and `=` from inside a function is the error from
-[§3](#3-bindings-let-var-state) whether the name is a `let` or a `state`. A
-`state` that only module scope writes can stay a `state`; one that a function
-must write becomes `state var`
-([Reading and writing from other functions](features/inline-state.md#reading-and-writing-from-other-functions)).
-
-**The writes are in place.** `set xs[i] = v`, `set r.f = v` and `set xs =
-append(xs, v)` edit the cell's own container whenever the cell is its only
-holder, from any function, so moving a loop body into a helper does not turn
-each write into a copy of the list. Three habits keep it that way: call a
-writing helper as a statement instead of reading its result, bind
-`let v = f(x)` before `set xs = append(xs, v)`, and keep data that a hot loop
-writes in parallel flat lists, because a nested write (`set grid[r][c] = v`)
-copies the inner row. The reasons are in
-[Writing a container in place](syntax/var.md#writing-a-container-in-place).
-
-`examples/games/physics-playground` is the worked example of both shapes:
-`physics.ptl`'s `step` solves contacts with closures over its local arrays, and
-`app.ptl` carries out its edits (load a scene, undo, pin, delete) with
-functions over `state var`s. The rules behind this are in
-[`var`: mutable cells](syntax/var.md).
+Writes into a cell's list or record are in place, so moving a loop body into a
+helper does not turn each write into a copy. Both shapes, the habits that keep
+writes in place (including flat parallel lists for hot loops), and the worked
+example in `examples/games/physics-playground` are in
+[Mutable state shared by several functions](syntax/var.md#mutable-state-shared-by-several-functions).
 
 The classic newcomer bug is dropping the result of a pure call. The compiler
 lints it:
@@ -566,7 +476,7 @@ print("\{\"a\": 1}")     // {"a": 1}
 [§9](#9-the-builtins-you-will-actually-use).)
 
 **`nil` compares with `==` and `!=`**, and every other value is `!= nil`. So
-`panel_store_get(k) == nil` and `if x != nil then … end` both work; `??` is the
+`last(xs) == nil` and `if x != nil then … end` both work; `??` is the
 shorthand for the common "or a default" case, and `?.` for reading a field of
 something that may be nil.
 

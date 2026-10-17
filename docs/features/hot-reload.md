@@ -36,6 +36,25 @@ The C bridge's `pb_vm_reload` goes through this, as do the SDL host's watcher
 and Garden's script and panel hosts. See
 [../usage/embedding-c.md](../usage/embedding-c.md#hot-reload) for the C side.
 
+## The reload report
+
+`reload_program` returns a `ReloadReport` (`core/src/env/reload.rs`):
+
+| Field | What it holds |
+|---|---|
+| `outcome` | `Unchanged`, `Relocated`, `Patched` or `Recompiled`; `outcome.label()` is the lower-case word |
+| `change` | the classification of the edit, a `SourceChange` (`change.label()`) |
+| `changed_files` | the files whose text changed, by display name |
+| `state_preserved`, `state_dropped` | the `state` entries kept and dropped, as `transfer_state` counts them; an incremental reload drops none |
+| `fallback` | why the program was recompiled when the edit was incremental by classification, else `None` |
+| `statics` | what became of the stack's static values and which `state` cells kept a value their initializer would no longer give (`StaticReload`; [below](#static-values-across-a-reload)); `None` when the program does not run with the static-value cache, or has not run yet |
+| `new_diagnostics` | the warnings and errors of this reload's compile that the program before the edit did not have; empty when the reload did not recompile. Render them with `Env::render_diagnostics` |
+
+`report.static_lines()` is the `statics` part as one line each, empty when
+there is nothing to say; print it after a reload, as the SDL host does. A
+failed reload returns a `LoadError` instead and leaves the old program
+running.
+
 ## What each outcome leaves alone
 
 | | `unchanged` / `relocated` | `patched` | `recompiled` |
@@ -397,11 +416,12 @@ cd core
 PETAL_RELOAD_CORPUS=/path/to/scripts cargo test --release --test hot_reload -- --ignored
 ```
 
-Over the 403 `.ptl` files of this repository it reports 264 edits relocated,
-128 patched and 218 recompiled (the added declaration always recompiles);
-over 343 files of the Cheesecake games, worlds-fair, `~/.garden`, the
-website and `~/tools`, 160, 9 and 154. Every one is identical to the
-recompile and leaves the same static values (12 October 2026).
+Over the 409 `.ptl` files of this repository it reports 274 edits relocated,
+133 patched and 223 recompiled (the added declaration always recompiles),
+every one identical to the recompile and leaving the same static values (16
+October 2026; 403 files and 264, 128 and 218 on 12 October). Over 343 files
+of the Cheesecake games, worlds-fair, `~/.garden`, the website and `~/tools`
+it reported 160, 9 and 154 on 12 October; that sweep was not re-run.
 
 ## What it costs
 
@@ -424,6 +444,15 @@ terms; 3 runs):
 | a statement added | recompiled | 187 ms | 488 ms |
 | `set_config_value`, file named | patched | 1.04 ms | 4.08 ms |
 | `set_config_value`, file searched for | patched | 2.71 ms | 4.61 ms |
+
+These are the figures of one quiet session and were not reproduced exactly.
+A re-run on 16 October 2026, on a machine busy with other builds (load
+average about 16) and with Moses grown to 70 files and 35,641 lines, gave for
+Moses 2.1 to 2.6 ms relocated, 3.1 to 3.6 ms patched, 0.85 to 1.05 s
+recompiled and 4.3 to 4.8 / 4.9 to 5.8 ms for `set_config_value` (3 runs), and
+for neon 0.9 to 1.0, 1.1 and 195 ms (2 runs). Read the table as the shape of
+the costs: a relocated or patched reload is a few milliseconds, a recompile
+hundreds.
 
 The static-value cache is 31 ms of the 187 (156 ms under
 `PETAL_POLICY=fast-static`) and 102 of the 488 (386 ms), and nothing that
@@ -482,6 +511,12 @@ values):
 | a function added | recompiled | 211.6 + 275.7 + 1.62 ms | 493.2 + 0 + 0.47 ms | 36,331 | 2,558 |
 | one table, by shape | recompiled | 216.7 + 276.1 + 1.58 ms | 494.4 + 0 + 0.47 ms | 36,332 | 2,600 |
 | the same table, one number | patched | 3.35 + 0 + 1.31 ms | 3.24 + 0 + 0.30 ms | 36,330 | 2,598 |
+
+The instruction counts are exact for Moses as it was that day; the times are
+one session's. Moses has changed since: on 16 October 2026 the same example
+reports 546 kept values and 18,071 instructions for the first frame rebuilt
+against 2,729 followed (85% fewer) for the added function, 2,770 for the
+table reshaped (545 kept, 1 rebuilt).
 
 Read it plainly: following the diff removes 71% to 93% of the instructions
 of the frame after a reload and about a millisecond of it at most, and a

@@ -590,15 +590,40 @@ env.add_module_path(dir);                          // a directory of packages (o
 env.add_package("core-runtime/bloom")?;              // a whole petal.toml library, one call
 env.register_package("bloom", modules)?;           // the same, from in-memory sources; a source named
                                                    // "petal.toml" is the package's manifest
-env.packages();                                    // every registered package
-env.project_of(&path)?;                            // the package whose petal.toml is nearest above a file
-env.project_dependencies(&path);                   // that manifest's [dependencies], as they resolve
 env.set_install_on_demand(true);                   // fetch a missing git dependency at load (off by default)
 env.set_inline_import_dir(Some(dir));              // where `./x` leads for a program with no path
-env.resolve_import("./level", &path)?;             // the canonical module name an import resolves to
+env.override_file_source(&path, &text);            // compile as if the file at `path` held `text`
 env.load_program_at(&source, &path)?;              // entry file: `./x` resolves against `path`
 env.module_manifest(pid);                          // every source file: name, origin, content hash
 ```
+
+The calls that ask what is registered and how an import would resolve
+(`packages`, `project_of`, `project_dependencies`, `resolve_import`) are in
+[usage/ffi.md](usage/ffi.md#modules-and-packages).
+
+`add_module_path(dir)` offers any package it finds in `dir` or one level
+under it. It takes packages only: a loose `.ptl` file is imported
+relatively, never through a search directory. The discovery is best-effort
+and returns nothing: a `petal.toml` that would not load is collected into
+`env.package_errors()` (a `LoadError` naming the manifest) and the other
+packages register anyway. Manifests on `PETAL_PATH` that fail the same way
+are in `env.ambient_package_errors()`, which `petal packages` prints.
+`add_package` and `register_package` return their error instead.
+
+`override_file_source(path, text)` makes every later import that resolves to
+the file at `path` read `text` instead of the disk. The path is
+canonicalised, so any spelling of the same file matches, and the override
+stands for the life of the `Env`: calling it again replaces the text, and
+there is no call that removes it. A reload compiles the override again, so
+edits to the file on disk do not reach the program while it stands. A
+relative import is a file, so a module registered in memory cannot stand in
+for it; this can. Tools use it to prove an edit before writing it
+(`petal apply-change`, the language server's other open documents) and an
+engine to apply a `--set NAME=VALUE` to a `config let` in an imported module.
+The entry file is not an import, so overriding it does nothing to the
+program loaded from it: load or reload the other text in its place. The C
+bridge's `vm.override_file` (`pb_vm_override_file`) is this call
+([usage/embedding-c.md](usage/embedding-c.md#modules-and-packages)).
 
 A program loaded from a string (`load_program(source)`) has no file:
 `import ./x` in it reaches a module registered in memory as `x`, and
@@ -613,11 +638,6 @@ can watch all of them and reload when an imported file changes
 addressable by qualified name
 (`env.call_function(stack, "ui::button", args)`), and module `state`
 appears in state JSON under `ui::scroll`-style names.
-
-Custom resolvers implement the `ModuleResolver` trait in
-`core/src/module.rs`: `resolve(path, importer)` is handed the path as
-written and the importing module's name and origin, and returns the source
-with the module's canonical name.
 
 The wasm bindings expose `register_module` and `register_package` (a JSON
 object of module name to source); the C bridge has `pb_vm_register_module`,
@@ -672,10 +692,11 @@ reference for each of these:
   manifest ([`[requires]`](packages.md#requires)), and the host announces the
   interface with `env.provides("game", "0.2.0")`, or
   `env.provides_package("game")` to take the version from the registered
-  package's `petal.toml`. `petal_ui::register_all` provides `ui`; a host that
-  registers petal-ui's pieces itself calls `petal_ui::provide_interface(env)`
-  once it has registered all of them. A host that registers only part of an
-  interface (the input half, for `import ui/input`) does not provide it.
+  package's `petal.toml`. `petal_ui::register_all` provides `ui`
+  ([usage/ffi.md](usage/ffi.md#modules-and-packages) has the call for a host
+  that registers petal-ui's pieces itself). A host that registers only part
+  of an interface (the input half, for `import ui/input`) does not provide
+  it.
 - **Loading a program to run links it.** Every declared native the program's
   code refers to must be registered, or the load fails before any line runs,
   naming the module and the missing natives. A check

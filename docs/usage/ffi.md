@@ -40,7 +40,7 @@ Entry points, all on `Env` (`core/src/env/`):
 | Native functions | `register_native(name, func, effects) -> NativeFnId`, `register_native_boxed(name, closure, effects) -> NativeFnId`, `native_effects`, `set_native_class`, `declare_natives(source)`, `declare_native_params(id, spec)`, `declare_native_params_by_name(name, spec)`, `set_native_signatures(id, sigs)`, `native_signatures(name)` |
 | Linking | `set_check_only(bool)`, `is_check_only()`, `link_program(&program)` |
 | Handles | `register_handle_class`, `make_handle` |
-| Modules and packages | `register_module`, `add_package`, `register_package`, `add_module_path` (a directory of packages), `set_inline_import_dir`, `set_install_on_demand`, `packages`, `verify_interface` |
+| Modules and packages | `register_module`, `add_package`, `register_package`, `add_module_path` (a directory of packages), `set_inline_import_dir`, `set_install_on_demand`, `override_file_source`, `packages`, `project_of`, `project_dependencies`, `resolve_import`, `package_errors`, `verify_interface` (see [Modules and packages](#modules-and-packages)) |
 | Host interfaces | `provides(name, version)`, `provides_package(name)`, `provided_interfaces`, `check_requires(&program)` |
 | Programs | `load_program`, `load_program_at`, `load_program_diag`, `compile_program`, `compile_program_at`, `compile_program_diag`, `load_program_ir` |
 | Execution | `create_stack`, `run`, `run_bounded`, `reset_stack`, `call_function`, `call_function_diag`, `has_function` |
@@ -50,7 +50,7 @@ Entry points, all on `Env` (`core/src/env/`):
 | State tooling | `get_state_json`, `set_state_from_json`, `snapshot_state`, `restore_state`, `diff_state` |
 | Observation | `observations_mut().enable()`, `get_observations_json` — the last value bound to every named term (see [embedding-guide.md](embedding-guide.md#reading-arbitrary-named-values-observation)) |
 | Emit tracing | `enable_emit_trace`, `take_output_origins` (see [../features/direct-manipulation.md](../features/direct-manipulation.md)) |
-| Speculation and rewind | `fork_execution`, `run_speculative`, `restore_execution`, `drop_fork` (see [../features/time-travel.md](../features/time-travel.md#what-the-runtime-provides)) |
+| Speculation and rewind | `fork_execution`, `run_speculative`, `restore_execution`, `drop_fork`, `diff_state`; to drive a fork by hand, the per-stack `set_binding_for`, `take_output_buffer_for` and `take_output_for` (see [../features/time-travel.md](../features/time-travel.md#what-the-runtime-provides)) |
 | Hot reload | `reload_program`, `set_config_value`, `program_source`, `override_file_source`, `diff_program`, `module_manifest`, `program_source_paths`, `watch_program_sources` (→ `source_watch::SourceWatch`), `transfer_state` (see [Hot reload](#hot-reload)) |
 | Static values | `static_values`, `clear_static_values`, `set_static_cache`, `set_static_follow`, `set_static_debounce`, `flush_static_rebuilds`, `take_static_warnings`, `take_all_static_warnings`, `native_constness` (see [Constant natives](#constant-natives)) |
 | Diagnostics | `check_program`, `diagnostics_text`, `error_diagnostics_text` (see [embedding-guide.md](embedding-guide.md#showing-what-petal-check-would-say)) |
@@ -421,6 +421,46 @@ The compiled-in builtins (`core/src/builtins/`) go through the same table.
 specially by the VM because they call back into closures; ordinary natives
 **cannot call Petal closures**.
 
+## Modules and packages
+
+What a host must register for its scripts' imports to resolve is in
+[../module-system.md](../module-system.md#embedding). These calls ask what
+is there:
+
+```rust
+env.packages();                       // Vec<PackageInfo>: every registered package
+Env::bundled_packages();              // the packages compiled into the binary
+env.project_of(&file)?;               // Option<PackageInfo>: the package whose petal.toml
+                                      // is nearest at or above `file`; Err if it does not load
+env.project_dependencies(&file);      // that manifest's [dependencies] as they resolve:
+                                      // Vec<(import name, Result<PackageInfo, String>)>
+env.resolve_import("./level", &file)?; // the canonical module name `import ./level`,
+                                      // written in `file`, resolves to; Err says why not
+env.resolve_module_file("./level", &file); // the file it resolves to, or None for an
+                                      // in-memory module
+env.package_errors();                 // manifests add_module_path could not load
+```
+
+Each runs the same resolution a load does, so the answers are what the next
+`load_program_at` of that file would see.
+
+**A custom resolver.** `Env` always resolves through its own
+`ModuleRegistry`. A tool that resolves imports some other way (from a
+database, over the network) implements the `ModuleResolver` trait in
+`core/src/module.rs` and calls `petal::module::load_modules(entry_source,
+entry_path, &resolver, gated_imports)` itself. `resolve(path, importer)` is
+handed the path as written and the importing module's name and origin, and
+returns the source with the module's canonical name; an `Err` is the reason
+nothing was found. The trait's other methods (`parse_cache`, `begin_load`,
+`project_error`, `requires_of`) have defaults.
+
+**Providing `ui` piecemeal.** `petal_ui::register_all` registers the input
+and draw natives and the `ui` package and provides the `ui` interface. A host
+that registers those pieces itself calls `petal_ui::provide_interface(env)`
+once it has registered all of them, so a package whose manifest says
+`[requires] ui = ">=…"` (bloom does) loads. A host that registers only the
+input half, for `import ui/input`, does not call it.
+
 ## Values and the heap
 
 `Value` (`core/src/value.rs`) is a `Copy` enum of 24 bytes; anything bigger
@@ -589,10 +629,10 @@ What each outcome means, keeps and costs is in
   content hash).
 - **Errors.** A failed reload returns a `LoadError` and leaves the old
   program running.
-- **The report.** `ReloadReport` carries `outcome`, `change`,
-  `changed_files`, `state_preserved`, `state_dropped`, `fallback` and
-  `statics`: which static values were rebuilt, and which `state` cells kept a
-  value their initializer would no longer give. Print
+- **The report.** `ReloadReport` says which path the reload took, what
+  changed, what state and static values it kept, and what the edit
+  introduced; its fields are listed in
+  [The reload report](../features/hot-reload.md#the-reload-report). Print
   `report.static_lines()` after a reload, as the SDL host does.
 - **A value without a file write.** `set_config_value(stack, file, path,
   &value)` sets one literal of a top-level binding in the running program (a

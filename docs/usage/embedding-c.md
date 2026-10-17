@@ -182,7 +182,7 @@ v[1]["missing"]["deeper"].is_nil();      // true: misses chain safely
 | `{k: v}`, colors, class instances | `PB_MAP` | `[key]`, `num(key)`, `has(key)`, iteration (`key()` on each field); `str()` = class name |
 | `Shape.circle(3)` | `PB_ENUM` | `tag()` = `"Shape.circle"`, payload via `[i]` |
 | `symbol("s")` | `PB_SYMBOL` | `str()` |
-| handles | `PB_HANDLE` | `integer()` = slot |
+| handles | `PB_HANDLE` | `str()` = class name; the raw node has the slot in `raw()->integer` and the serial in `raw()->count` (`integer()` and `size()` return their fallbacks, since a handle is not a number or a container) |
 
 Color literals such as `#ff8800` are records `{r, g, b}` (0–255). A native
 `vec3` decodes as `PB_VEC3`, with its components in `number`, `y` and `z`
@@ -797,13 +797,11 @@ to check a script written for another host) and
 from a string).
 
 `vm.override_file(path, source)` (`pb_vm_override_file`) compiles as if the
-file at `path` held `source`: every later import that resolves to that file
-reads the text given instead of the one on disk. A relative import is a file,
-so a module registered in memory cannot stand in for it; this can. It is how
+file at `path` held `source`, for every later import that resolves to it: how
 an engine applies a `--set NAME=VALUE` to a `config let` in an imported module
-without writing the file. A reload compiles the override again, so edits to
-the file itself do not reach the program while it stands. The entry file is
-not an import: `load_source` / `reload_source` run other text in its place.
+without writing the file. It is `Env::override_file_source`; what it covers,
+how long it stands and why the entry file is not one are in
+[../module-system.md](../module-system.md#embedding).
 
 A script that uses a declared native the VM does not register fails at
 `load_*` with `PB_ERR_COMPILE`, phase `link`, before any line runs.
@@ -1182,7 +1180,8 @@ The host then feeds input (`pb_vm_input_*`), reads draw commands
 
 ## Performance notes
 
-Measured on an M-series Mac, release build, in Cheesecake: a frame that makes
+Measured once on an M-series Mac, release build, in Cheesecake, and not
+re-measured since, so read these as orders of magnitude: a frame that makes
 200 emitter calls, 200 host-callback calls and 2 draw calls, then drains and decodes
 everything, costs about 0.4 ms. Each host-callback native reuses its own
 argument, view and result buffers from call to call, so a call allocates

@@ -365,11 +365,9 @@ what a host can tell the user is available. A host registration is the first
 place a package name is looked up, so a host can also replace a bundled
 package with its own copy
 ([lookup order](../packages.md#where-a-package-name-is-looked-up)).
-`env.add_module_path(dir)` offers any package it finds in `dir` or one level
-under it (packages only: a loose `.ptl` file is imported relatively, never
-through a search directory); that discovery is best-effort, and a manifest
-that would not load is collected into `env.package_errors()` rather than
-returned. Every failure is a `LoadError` naming the `petal.toml`. See
+`env.add_module_path(dir)` registers every package under a directory, and
+reports a bad manifest differently from the two calls above
+([../module-system.md](../module-system.md#embedding)). See
 [../packages.md](../packages.md) for the manifest format and
 [../module-system.md](../module-system.md#embedding) for the rest of the
 module API on `Env`.
@@ -452,7 +450,7 @@ calls `PetalCxt::suspend()` sets the test aside (`TestStep::Suspended`) so the
 host can run frames before resuming it, which is how a test waits for
 something that takes time. Expectations that fail outside a test are read
 with `Env::take_expect_failures(stack)`. The loop, the result types and the
-limits are in [testing.md](testing.md#running-tests-from-a-host).
+limits are in [testing.md](../testing.md#running-tests-from-a-host).
 
 ### Showing what `petal check` would say
 

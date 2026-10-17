@@ -334,7 +334,7 @@ warning in CLI.md's check section (c6400d5a).
 - **Outside this repo.** petal-lang.org's downloadable SDK
   (`public/downloads/petal-web-canvas/`) is the old build until `pnpm
   build:sdk` is run, and the site's examples still match the older vendored
-  WASM. hotlaps is not on this machine and was not swept.
+  WASM.
 - **Corpus entries the driver never compares.** `test/ui-golden/index.json`
   keeps hashes for apps the driver marks unsupported (petal-fantasy-nes, the
   petal-fps examples). About 18 files in `~/worlds-fair/ui/ptl` and

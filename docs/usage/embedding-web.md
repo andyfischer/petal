@@ -22,7 +22,7 @@ integrations/petal-web-html/build-wasm.sh     # wasm-pack build --features wasm 
 
 Both use `wasm-pack build --target web`, so the module is an ES module with a
 default `init()` export to await before constructing a runtime. Projects
-outside this repository (the website, Hotlaps) vendor a built copy and see a
+outside this repository (such as the website) vendor a built copy and see a
 change only when it is rebuilt and vendored again.
 
 ## The lifecycle

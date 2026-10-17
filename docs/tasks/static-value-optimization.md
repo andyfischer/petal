@@ -1273,8 +1273,7 @@ diagnostic with the reason chain.
   have cost the language server everything else it knows about the file.
 - **Keyword.** Hard, not contextual. Swept 745 `.ptl` files (this repo 400,
   `~/worlds-fair/ui/ptl` 19, `~/.garden` 72, petal-lang.org 17, the two
-  experiment apps 2, `~/tools` 3, `~/cheesecake/games` 232; `~/biz/hotlaps`
-  is not on this machine): no binding, parameter, function or field is
+  experiment apps 2, `~/tools` 3, `~/cheesecake/games` 232): no binding, parameter, function or field is
   named `const`. Three files contain the word, all inside string literals of
   GLSL source. It stays a record key and a field name, like every keyword.
 - **Without the host's natives** (`petal check`, lint, the language server).
@@ -1369,7 +1368,7 @@ the pass at 85 ms on Moses in release, against 0.55 s for the check.
   `petal lint --fix --rules-include=state-as-constant games/moses`; the
   natives that should be `PB_FX_CONST` decide whether a `const` built from
   them is accepted by the engine. Not done: worlds-fair's vendored copy and the
-  petal-lang.org and hotlaps WASM builds do not know `const` until they are
+  petal-lang.org WASM build does not know `const` until they are
   re-vendored.
 
 ### Review of S1 (2026-10-12)
@@ -3195,7 +3194,7 @@ Everything passes except the one test that failed before the plan.
 `petal check` and `petal show-static --json` on 372 `.ptl` files outside
 `examples/` and `test/`: `garden/` 27, `~/cheesecake/games` 232,
 `~/worlds-fair/ui/ptl` 19, `~/.garden` 72, petal-lang.org 17, the two
-experiment apps 2, `~/tools` 3 (`~/biz/hotlaps` is not on this machine).
+experiment apps 2, `~/tools` 3.
 
 - **Nothing the plan added breaks a script.** No diagnostic in the sweep
   names `const`, `freeze`, `frozen` or a static value. No binding,
@@ -3241,7 +3240,7 @@ Outside this repository, 1 is done:
    imported: they need `petal fix-imports` and an `import garden` by hand
    when it re-vendors, and `tools/oracle-external.ts` can then drop the
    three imports it prefixes.
-3. **petal-lang.org and hotlaps.** Rebuild and re-vendor the WASM build;
+3. **petal-lang.org.** Rebuild and re-vendor the WASM build;
    fix `snippets/match.ptl`.
 4. **`~/.garden`.** The five saved `git.ptl` panels need their commas.
 

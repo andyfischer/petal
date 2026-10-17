@@ -49,7 +49,7 @@ meets one of these:
 
 Swept read-only: `~/cheesecake/games` (164 scripts), `~/cheesecake/engine` (2),
 `~/worlds-fair/ui/ptl` (19), `~/.garden` (72), `~/biz/petal-lang.org/frontend/public`
-(17), `~/biz/hotlaps` (0), `~/biz/experiment-cube-browser` (1),
+(17), `~/biz/experiment-cube-browser` (1),
 `~/biz/experiment-todo-app` (1), `~/tools` (3, `temp/` and `out/` ignored).
 
 ### Needs a decision
@@ -86,7 +86,7 @@ Swept read-only: `~/cheesecake/games` (164 scripts), `~/cheesecake/engine` (2),
 - `~/cheesecake/engine`: the two preludes hold no string offsets. The C++
   natives (`engine/script/src/natives_*.cpp`) pass no string offset to or from
   a script.
-- `~/biz/petal-lang.org/frontend/public`, `~/biz/experiment-*`, `~/biz/hotlaps`:
+- `~/biz/petal-lang.org/frontend/public`, `~/biz/experiment-*`:
   no string offsets.
 - Vendored copies of the docs (for example
   `~/worlds-fair/vendor/petal/docs/Builtins.md`) still describe byte indexing

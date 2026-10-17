@@ -427,10 +427,9 @@ Channel 'shapes' (2 emits):
       arg 1: literal = "label" (edit line 5)
 ```
 
-`--json` emits the structured report: per channel, each emit's value, the
-resolved call (`term`, `callee`, `span`) and per-argument
-`kind` / `value` / `span` / `editable_span`. The `index` within a channel is
-the emit address `propose-edit` takes.
+`--json` emits the same report as data; its fields are listed under
+[`--trace-emits`](../CLI.md#run--execute-a-program) in the CLI reference. The
+`index` of an emit within its channel is the address `propose-edit` takes.
 
 **Act** — state a goal against one of those emits. The options and the JSON
 output are in the

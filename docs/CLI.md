@@ -164,15 +164,19 @@ Options:
   default) is `Error: <message> [line N, column M]` followed by the source line
   and a caret. `bare` prints only the message, so two sources that differ only
   in layout fail identically (see
-  [refactor verification](dev/refactor-verification.md)). `--json` output is
-  unaffected.
+  [refactor verification](dev/refactor-verification.md)). Type-checker
+  warnings lose their position line and snippet too. A line number quoted
+  inside a message's own prose (`written on line 775`) is part of the
+  message and stays. `--json` output is unaffected.
 - `--ir` — load `<file>` as JSON IR (the output of `show-ir --json`) instead of
   source. Use `-` to read from stdin:
   `petal show-ir --json -e 'print(42)' | petal run --ir -`.
 - `--seed <n>` — seed the random-number generator, so `random`, `random_int`
   and `choose` replay identically. Decimal or `0x`-hex. Without it the seed
-  comes from the clock. `PETAL_SEED=<n>` does the same for every command; the
-  flag wins when both are set.
+  comes from the clock, so even two runs of the same file differ.
+  `PETAL_SEED=<n>` does the same for every command; the flag wins when both
+  are set. An embedder calls `Env::set_seed(n)` once before the first run; the
+  stream then advances across runs, and a fork copies it.
 - `--policy <name>` — run under a named run policy: `fast`, `baseline`,
   `explain` or `replay`, optionally followed by modifiers: `+` or `-` and one
   of `memo`, `gate`, `opt`, `static`, `fnstatic`, `intrinsics` (`fast-memo`,
@@ -280,8 +284,12 @@ Tracing and inspection options:
 - `--observe` — after the run, dump the last value bound to every named
   variable. Names are function-qualified: a `b` inside `fn f` is `f.b`, so it
   does not collide with a top-level `b`. One slot per binding, last write wins,
-  so a loop variable reports its final value. A binding that never executed is
-  absent.
+  so a loop variable reports its final value, and a function's local reports
+  its last call. Nesting composes (`outer.inner.x`), and an anonymous function
+  contributes `fn<id>`. Only function bodies qualify a name: a `let` inside a
+  top-level `if` reads as its bare name. A binding that never executed is
+  absent, not `nil`, so "the `else` arm did not run" and "the `else` arm bound
+  nil" stay different.
 
   ```
   $ petal run --observe -e 'let a = 1
@@ -304,7 +312,14 @@ Tracing and inspection options:
   still exits 1.
 - `--trace-emits` — attribute every buffered emit (`push_output`, draw
   commands) to the call that produced it, and dump the values with their call
-  sites and per-argument edit info after the run. This is the observing half of
+  sites and per-argument edit info after the run. With `--json` the report is
+  `{channels: {<name>: [emit, ...]}}`, each emit
+  `{index, value, term, callee, span, args}` and each argument
+  `{index, kind, value, span, editable_span}`, where `kind` is `literal` (the
+  argument is a literal in the call), `binding` (a name that resolves to a
+  literal elsewhere, which other calls may read) or `computed`, and `value` is
+  the literal's value or `null`. `index` within a channel is the emit address
+  `propose-edit --emit` takes. This is the observing half of
   [`propose-edit`](#propose-edit--propose-source-edits-that-change-an-emitted-value);
   see [features/direct-manipulation.md](features/direct-manipulation.md).
 - `--trace-pending` — record pending absorptions and print the frame pending
@@ -2690,6 +2705,15 @@ Frontier (1):
     possible write: t96 [line 2, column 1]
 ```
 
+In `--json` output each entry is
+`{read_term, decl_term, var, summary, captured, host_writable, resolution,
+writes: [{term_id, line, column}, ...]}`: `captured` when the read is a
+closure capture, `host_writable` for a `state var`, and `resolution`
+`"not_traced"` from `graph`. `explain` resolves the boundary to the exact write
+(matched on the cell, so one declaration that makes several cells, such as a
+`var` in a loop body, does not confuse two of them), lists every recorded write
+in order, and reports `truncated` when `max_depth` cuts the chain short.
+
 The write set is complete because no expression evaluates to a cell, so the
 only way to reach one is a name lexically bound to its declaration. The
 exception is a `state var`, whose slot the host can also write through
@@ -2740,47 +2764,7 @@ a value).
 
 ## Traversing the IR
 
-### Walking a block's terms
-
-Each block carries its TermIds in execution order:
-
-```javascript
-function walkBlock(program, blockId) {
-  const block = program.blocks.find(b => b.id === blockId);
-  return (block.terms ?? []).map(tid => program.terms[tid]); // terms[i].id === i
-}
-```
-
-### Resolving dataflow edges
-
-Each term's `inputs` array contains TermIds. Look up the referenced term to find what value flows in:
-
-```javascript
-function getInputTerms(program, term) {
-  return (term.inputs ?? []).map(id => program.terms[id]); // omitted when empty
-}
-```
-
-### Building the block tree
-
-Blocks form a tree rooted at `root_block`. A block's parent is the term that created it (`parent_term_id`). The root block and function body blocks have no `parent_term_id` (the field is omitted) — connect function bodies via `FunctionDef.body_block` and the `MakeClosure` term.
-
-```javascript
-function getChildBlocks(program, blockId) {
-  return program.blocks.filter(b => {
-    if (b.parent_term_id == null) return false;
-    const parentTerm = program.terms[b.parent_term_id];
-    return parentTerm.block_id === blockId;
-  });
-}
-```
-
-### Constant lookup
-
-TermOp values like `{"Constant": 0}` reference the constants table by index:
-
-```javascript
-function resolveConstant(program, constantId) {
-  return program.constants.values[constantId];
-}
-```
+JavaScript helpers for walking a `show-ir --json` document (a block's terms,
+dataflow inputs, the block tree, constants) are in
+[Reading a document](dev/ir-as-target.md#reading-a-document) in
+dev/ir-as-target.md.

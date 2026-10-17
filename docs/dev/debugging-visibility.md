@@ -63,23 +63,10 @@ value edge (which value), and refuse to cross it.
 Refusing silently would read as "nothing further influenced this", so every
 stop produces a **frontier** record: the var name, its declaration, and the
 complete static set of writes that could have supplied the value.
-Incompleteness is a field on the result, not a convention:
-
-- `graph` (back, one term): `"frontier": [...]` and `"complete": false`. This command
-  never runs the program, so it always gives the static answer
-  (`"resolution": "not_traced"` plus the write sites).
-- `graph` (back, a slice): `"minimal": false`, and the slice widens to include the
-  declaration and every `set` site transitively. Too small computes a
-  *different value*; too big only loses precision.
-- `graph --direction forward`: gains `"kind": "may"` edges from the declaration and from
-  every `set` to every read. This direction was always a "may" question, so
-  over-approximating is the correct answer — but each read reached that way
-  is still listed in `frontier`, with `"complete": false`.
-- `explain`: runs the program, so it resolves the boundary to the exact write
-  (matched on `CellId`, so one declaration that mints several cells, such as a
-  `var` in a loop body, does not confuse two of them) and continues the chain
-  through it. It also lists every recorded write in order, and reports
-  `truncated` when `max_depth` cuts the chain short.
+Incompleteness is a field on the result (`complete`, `minimal`), not a
+convention. What each query reports at a cell, the frontier's JSON fields, and
+how `explain` resolves the boundary by running the program are in
+[Cells and the frontier](../CLI.md#cells-and-the-frontier).
 
 Runtime error messages ("Caused by:") share the same walk and print the
 frontier for the same reason. The command reference is
@@ -110,19 +97,9 @@ Observed values (6):
   total            = 30
 ```
 
-Three rules make the dump readable:
-
-- **Names are function-qualified.** A top-level `sel` and a `sel` inside
-  `fn list_row` are `sel` and `list_row.sel`. Nesting composes
-  (`outer.inner.x`); an anonymous function contributes `fn<id>`. Only
-  function bodies qualify: a `let` inside a top-level `if` reads as its bare
-  name.
-- **Last write wins.** A loop temp reports its final iteration; a
-  repeatedly-called function's local reports its last call. History is the
-  trace buffer's job.
-- **Absent is not null.** A binding whose term never executed is missing from
-  the dump. "The `else` arm didn't run" and "the `else` arm bound nil" stay
-  different facts.
+Names are function-qualified (`list_row.sel`), the last write wins, and a
+binding that never executed is absent rather than `nil`; the full naming rules
+are under `--observe` in [CLI.md](../CLI.md#run--execute-a-program).
 
 Which to reach for:
 

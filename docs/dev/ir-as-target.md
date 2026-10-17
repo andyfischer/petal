@@ -446,6 +446,55 @@ phantom terms in registration order. The loader still accepts all of that:
 
 New emitters should target schema 0.2 and none of the legacy forms.
 
+## Reading a document
+
+A tool that reads `show-ir --json` output walks it with a few lookups:
+
+### Walking a block's terms
+
+Each block carries its TermIds in execution order:
+
+```javascript
+function walkBlock(program, blockId) {
+  const block = program.blocks.find(b => b.id === blockId);
+  return (block.terms ?? []).map(tid => program.terms[tid]); // terms[i].id === i
+}
+```
+
+### Resolving dataflow edges
+
+Each term's `inputs` array contains TermIds. Look up the referenced term to find what value flows in:
+
+```javascript
+function getInputTerms(program, term) {
+  return (term.inputs ?? []).map(id => program.terms[id]); // omitted when empty
+}
+```
+
+### Building the block tree
+
+Blocks form a tree rooted at `root_block`. A block's parent is the term that created it (`parent_term_id`). The root block and function body blocks have no `parent_term_id` (the field is omitted) — connect function bodies via `FunctionDef.body_block` and the `MakeClosure` term.
+
+```javascript
+function getChildBlocks(program, blockId) {
+  return program.blocks.filter(b => {
+    if (b.parent_term_id == null) return false;
+    const parentTerm = program.terms[b.parent_term_id];
+    return parentTerm.block_id === blockId;
+  });
+}
+```
+
+### Constant lookup
+
+TermOp values like `{"Constant": 0}` reference the constants table by index:
+
+```javascript
+function resolveConstant(program, constantId) {
+  return program.constants.values[constantId];
+}
+```
+
 ## Scope
 
 The emit target is a load-and-run contract for *computational structure*, not a

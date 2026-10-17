@@ -127,17 +127,15 @@ checks every small program end to end. See
 Two knobs make a run byte-reproducible, which is what before/after diffing of
 a refactor needs (see [refactor-verification.md](refactor-verification.md)):
 
-- **`petal run --seed <n>`**, or `PETAL_SEED=<n>` for any command and any
-  embedder, fixes the `random` / `random_int` / `choose` stream. Without one,
-  the seed comes from the wall clock and even an old-vs-old diff fails.
-  Embedders call `Env::set_seed(n)` once before the first run; the PRNG then
-  advances naturally across frames and forks.
-- **`petal run --error-format bare`** (also on `check`) prints just the error
-  message, with no `[line N, column M]`, no echoed source line, and no caret,
-  so a re-indenting refactor does not show up as an output diff. Type-checker
-  warnings lose their position line and snippet too. It cannot reach a line
-  number quoted inside a message's prose (`written on line 775`); the verifier
-  treats a warnings-only difference as a note rather than a failure.
+- **`petal run --seed <n>`** (or `PETAL_SEED`, or `Env::set_seed` in an
+  embedder) fixes the `random` / `random_int` / `choose` stream.
+- **`petal run --error-format bare`** (also on `check`) prints the error
+  message without its position, so a re-indenting refactor does not show up
+  as an output diff. The verifier treats a warnings-only difference as a note
+  rather than a failure.
+
+Both flags, with what each leaves alone, are in the
+[CLI reference](../CLI.md#run--execute-a-program).
 
 Covered by `test/vitest/seed.test.ts`, `test/vitest/error-format.test.ts`, and the
 `env::tests::seed_tests` / `cli::tests` Rust unit tests.

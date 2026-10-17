@@ -160,7 +160,12 @@ pub const UI_VERSION: i64 = 1;
 ///   `shadow` / `outline` / `tracking` on a text style; `flow_begin` …
 ///   `flow_end`, `ui_measure`, `clip_rect`. `clip_none` is a prelude function
 ///   over the native now (the prelude tracks the clip in force).
-pub const PRELUDE_LEVEL: u32 = 9;
+/// - 10 — multi-line text (2026-10-16): `text_area` / `text_area_update` /
+///   `draw_text_area` / `text_area_height`. Behavior changes alongside it: a
+///   press outside a focused `text_field` clears its focus, and
+///   `interact().click` goes only to a rect that was under the press when
+///   the button went down.
+pub const PRELUDE_LEVEL: u32 = 10;
 
 /// Name of the Petal-source prelude module: `import ui`.
 pub const MODULE_NAME: &str = "ui";

@@ -156,6 +156,7 @@ so non-ASCII text needs no care; `sel_start == sel_end` means no selection.
 | Input | Does |
 |---|---|
 | click / shift+click / drag | focus and place the caret / extend the selection / select |
+| a press anywhere else | gives the focus up (`res.focus` comes back cleared), unless a higher layer took the press |
 | double click / triple click | select the word / everything |
 | left, right, home, end | move the caret; with shift, extend the selection |
 | alt or ctrl + left/right | by word; cmd + left/right goes to either end |
@@ -197,6 +198,31 @@ for q in text_range_rects(buf, MY_STYLE, res.sel_start, res.sel_end) do
 end
 draw_text(buf, {x: r.x, y: r.y}, MY_STYLE)
 ```
+
+### Text area (multi-line)
+`text_area(fc, id, r, buf, style)` is `text_field` for text with line breaks,
+with the same selection, clipboard, undo and focus rules (the editing keys are
+one shared implementation). It returns `{focus, text, caret, changed, anchor,
+sel_start, sel_end, scroll, overflow, rows, line_h, content_h}` — no
+`submitted`, since Return is a line break.
+
+| Input | Does |
+|---|---|
+| return | inserts a line break |
+| up / down | a row up or down, keeping the column across short rows |
+| cmd + up / down | to the start / end of the text |
+| home / end, cmd + left / right | to the start / end of the row |
+| wheel over the box | scrolls text taller than the box (by rows) |
+
+The text wraps to the box with `text_wrap_rows`; `res.rows` is that wrap and
+`res.scroll` how many pixels it is shifted up. A caret that moves, or a text
+that changes, is scrolled into view; on a quiet frame the wheel is free to
+scroll away from it. A paste keeps its line breaks. Style keys are the
+field's plus `line_gap` (pixels added to the face's line height, default 2).
+Split forms: `text_area_update(fc, id, r, buf, style)` and
+`draw_text_area(r, res, has, style)`. `text_area_height(text, w, min_lines,
+max_lines, style)` sizes a box that grows with its text (3 to 12 rows by
+default).
 
 ### Clipboard
 `clipboard_get()` → the clipboard's text (`""` when it has none);

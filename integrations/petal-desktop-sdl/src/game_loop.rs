@@ -506,12 +506,13 @@ fn handle_timeline_keys(
 }
 
 /// A hot reload landed. Old frames keep their attribution ids; when frozen,
-/// re-simulate everything after the cursor through the edited program so the
-/// future on screen is the one the new code produces.
+/// re-simulate the cursor frame and everything after it (from the frame
+/// before the cursor) through the edited program so the future on screen is
+/// the one the new code produces.
 fn after_reload<H: Host>(timeline: &mut Timeline, env: &mut Env, current: &Loaded, host: &mut H) {
     timeline.on_reload(env, current.program_id);
     if let Some(c) = timeline.cursor {
-        match timeline.replay(env, current.stack_id, c, host) {
+        match timeline.replay(env, current.program_id, current.stack_id, c, host) {
             Ok(n) => eprintln!("[timeline] replayed {} frames through the new code", n),
             Err(e) => eprintln!("[timeline] replay failed: {}", e),
         }
@@ -577,7 +578,10 @@ pub fn run_agent<H: Host>(
     let cmd_rx = protocol::spawn_stdin_reader();
     let mut paused = false;
     let mut last_frame = Instant::now();
-    let start = Instant::now();
+    // The script's `time()`: simulated seconds that live frames advance by
+    // their real dt and steps by 1/60, so a rewind rewinds it too — the same
+    // clock the plain windowed loop keeps.
+    let mut clock = ClockSource::Sim(0.0);
     let mut frame_count: i64 = 0;
     let mut input = InputState::default();
 
@@ -589,8 +593,8 @@ pub fn run_agent<H: Host>(
 
     'game: loop {
         while let Ok(cmd) = cmd_rx.try_recv() {
-            // Share the live loop's real clock so a Step interleaved with the
-            // live frames below never rewinds `time()`.
+            // Share the live loop's clock so a Step interleaved with the live
+            // frames below keeps `time()` monotonic (until a rewind).
             handle_command(
                 cmd,
                 &mut env,
@@ -598,7 +602,7 @@ pub fn run_agent<H: Host>(
                 &mut paused,
                 &mut input,
                 &mut frame_count,
-                ClockSource::Wall(start),
+                &mut clock,
                 host,
                 timeline_on.then_some(&mut timeline),
             );
@@ -619,7 +623,8 @@ pub fn run_agent<H: Host>(
 
             input.begin_frame(dt);
             bind_frame_info(&mut env, dt, frame_count);
-            bind_time(&mut env, start.elapsed().as_secs_f64());
+            let t = clock.tick(frame_count, dt);
+            bind_time(&mut env, t);
             let reloaded = current.reloader.poll(
                 &mut env,
                 current.program_id,
@@ -641,7 +646,6 @@ pub fn run_agent<H: Host>(
             drain_output(&mut env);
             host.end_frame(&mut env);
             if timeline_on {
-                let t = start.elapsed().as_secs_f64();
                 if let Err(e) =
                     timeline.record(&mut env, current.stack_id, frame_count, dt, t, &input)
                 {
@@ -685,6 +689,7 @@ pub fn run_headless<H: Host>(
     let mut paused = true; // Headless starts paused — the agent drives frames.
     let mut input = InputState::default();
     let mut frame_count: i64 = 0;
+    let mut clock = ClockSource::Fixed;
 
     protocol::send_response(&Response {
         frame: Some(0),
@@ -715,7 +720,7 @@ pub fn run_headless<H: Host>(
             &mut paused,
             &mut input,
             &mut frame_count,
-            ClockSource::Fixed,
+            &mut clock,
             host,
             timeline_on.then_some(&mut timeline),
         );
@@ -922,7 +927,7 @@ fn run_committed_frame<H: Host>(
     frame_count: &mut i64,
     host: &mut H,
 ) -> Result<i64, String> {
-    let fc = protocol::run_one_frame(env, stack_id, input, frame_count, ClockSource::Fixed, host)?;
+    let fc = protocol::run_one_frame(env, stack_id, input, frame_count, &mut ClockSource::Fixed, host)?;
     host.end_frame(env);
     Ok(fc)
 }
@@ -956,9 +961,10 @@ fn attach_clipboard(video: &sdl2::VideoSubsystem) {
 }
 
 /// Dispatch one agent-protocol command. Shared by windowed-agent and headless.
-/// `clock` is the session's single `time()` source — the real monotonic clock
-/// in windowed-agent mode (so a `Step` interleaved with the live loop stays
-/// monotonic), a deterministic per-frame clock in headless mode.
+/// `clock` is the session's single `time()` source — simulated seconds shared
+/// with the live loop in windowed-agent mode (so a `Step` interleaved with it
+/// stays monotonic, and a rewind moves it back), a deterministic per-frame
+/// clock in headless mode.
 ///
 /// `step` and the timeline commands are driven here rather than in `protocol`
 /// so that each stepped frame gets the same `Host::end_frame` call a live
@@ -972,7 +978,7 @@ fn handle_command<H: Host>(
     paused: &mut bool,
     input: &mut InputState,
     frame_count: &mut i64,
-    clock: ClockSource,
+    clock: &mut ClockSource,
     host: &mut H,
     timeline: Option<&mut Timeline>,
 ) {
@@ -1014,12 +1020,31 @@ fn handle_command<H: Host>(
         | Command::Replay
         | Command::Track { .. }
         | Command::Trail => match timeline {
-            Some(t) => timeline_command(cmd, t, env, current, paused, frame_count, host),
+            Some(t) => timeline_command(cmd, t, env, current, paused, frame_count, clock, host),
             None => protocol::send_response(&Response::err(
                 "the timeline is off for this session (--no-timeline, or a host without it)"
                     .to_string(),
             )),
         },
+        // With a timeline, `state` while frozen reads the cursor frame, and
+        // `set_state` is filed against the frame on screen so replays keep it.
+        Command::State if timeline.as_deref().is_some_and(Timeline::is_frozen) => {
+            let t = timeline.as_deref().expect("checked");
+            protocol::send_response(&Response {
+                state: t.frozen_state_json(env, current.program_id),
+                ..Response::ok()
+            });
+        }
+        Command::SetState { name, value } if timeline.is_some() => {
+            let t = timeline.expect("checked");
+            match t.set_state(env, current.program_id, current.stack_id, &name, &value, host) {
+                Ok(n) => protocol::send_response(&Response {
+                    replayed: t.is_frozen().then_some(n),
+                    ..Response::ok()
+                }),
+                Err(e) => protocol::send_response(&Response::err(e)),
+            }
+        }
         cmd => protocol::handle_command(
             cmd,
             env,
@@ -1043,6 +1068,7 @@ fn timeline_command<H: Host>(
     current: &Loaded,
     paused: &mut bool,
     frame_count: &mut i64,
+    clock: &mut ClockSource,
     host: &mut H,
 ) {
     let mut resp = Response::ok();
@@ -1054,7 +1080,10 @@ fn timeline_command<H: Host>(
             resp.paused = Some(true);
         }
         Command::Unfreeze => match timeline.unfreeze(env, current.stack_id) {
-            Ok(Some((fc, _))) => *frame_count = fc,
+            Ok(Some((fc, t))) => {
+                *frame_count = fc;
+                clock.rewind_to(t);
+            }
             Ok(None) => {}
             Err(e) => return protocol::send_response(&Response::err(e)),
         },
@@ -1067,19 +1096,23 @@ fn timeline_command<H: Host>(
             timeline.scrub_to(to);
         }
         Command::Rewind { frames } => match timeline.rewind(env, current.stack_id, frames as usize) {
-            Ok(Some((fc, _))) => *frame_count = fc,
+            Ok(Some((fc, t))) => {
+                *frame_count = fc;
+                clock.rewind_to(t);
+            }
             Ok(None) => return protocol::send_response(&Response::err("nothing recorded yet".to_string())),
             Err(e) => return protocol::send_response(&Response::err(e)),
         },
         Command::Replay => {
             let from = timeline.cursor.unwrap_or(1);
-            match timeline.replay(env, current.stack_id, from, host) {
+            match timeline.replay(env, current.program_id, current.stack_id, from, host) {
                 Ok(n) => {
                     resp.replayed = Some(n);
                     // Not frozen: the live execution is now the replayed end.
                     if timeline.cursor.is_none() {
                         if let Some(rec) = timeline.current() {
                             *frame_count = rec.frame_count;
+                            clock.rewind_to(rec.time);
                         }
                     }
                 }
@@ -1122,7 +1155,7 @@ fn step_frames<H: Host>(
     stack_id: StackKey,
     input: &mut InputState,
     frame_count: &mut i64,
-    clock: ClockSource,
+    clock: &mut ClockSource,
     host: &mut H,
     mut timeline: Option<&mut Timeline>,
 ) {
@@ -1131,7 +1164,10 @@ fn step_frames<H: Host>(
     // rewound moment continues from that moment.
     if let Some(t) = timeline.as_deref_mut() {
         match t.unfreeze(env, stack_id) {
-            Ok(Some((fc, _))) => *frame_count = fc,
+            Ok(Some((fc, t))) => {
+                *frame_count = fc;
+                clock.rewind_to(t);
+            }
             Ok(None) => {}
             Err(e) => {
                 protocol::send_response(&Response::err(e));
@@ -1165,4 +1201,105 @@ fn step_frames<H: Host>(
         },
         ..Response::ok()
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestHost;
+    impl Host for TestHost {
+        fn register(&mut self, env: &mut Env) {
+            crate::native_fns::register_all(env);
+        }
+        fn present(
+            &mut self,
+            _canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
+            _env: &mut Env,
+        ) -> Result<(), String> {
+            Err("no window".to_string())
+        }
+        fn render_image(
+            &mut self,
+            _env: &mut Env,
+            _stack: StackKey,
+            _w: u32,
+            _h: u32,
+        ) -> Result<image::RgbImage, String> {
+            Err("no window".to_string())
+        }
+    }
+
+    const SRC: &str = "import ui\nstate var t = 0.0\nstate var n = 0\nset t = time()\nset n = n + 1\n";
+
+    fn session() -> (TestHost, Env, Loaded, Timeline, InputState) {
+        let mut host = TestHost;
+        let mut env = Env::new();
+        host.register(&mut env);
+        env.enable_emit_trace(true);
+        let program_id = env.load_program(SRC).unwrap();
+        let stack_id = env.create_stack(program_id).unwrap();
+        petal_ui::input::bind_dimensions(&mut env, 100, 100);
+        let current = Loaded {
+            program_id,
+            stack_id,
+            path: None,
+            reloader: Reloader::disabled(),
+        };
+        (host, env, current, Timeline::new(600), InputState::default())
+    }
+
+    fn send(
+        cmd: &str,
+        env: &mut Env,
+        current: &Loaded,
+        tl: &mut Timeline,
+        input: &mut InputState,
+        frame: &mut i64,
+        clock: &mut ClockSource,
+        host: &mut TestHost,
+    ) {
+        let mut paused = true;
+        let cmd: Command = serde_json::from_str(cmd).unwrap();
+        handle_command(cmd, env, current, &mut paused, input, frame, clock, host, Some(tl));
+    }
+
+    fn state(env: &Env, current: &Loaded) -> serde_json::Map<String, serde_json::Value> {
+        env.get_state_json(current.program_id, current.stack_id)
+    }
+
+    #[test]
+    fn the_windowed_agent_clock_rewinds_with_the_timeline() {
+        let (mut host, mut env, current, mut tl, mut input) = session();
+        let (mut frame, mut clock) = (0i64, ClockSource::Sim(0.0));
+        let mut go = |cmd: &str, env: &mut Env, tl: &mut Timeline, frame: &mut i64, clock: &mut ClockSource| {
+            send(cmd, env, &current, tl, &mut input, frame, clock, &mut host)
+        };
+        go(r#"{"cmd":"step","n":5}"#, &mut env, &mut tl, &mut frame, &mut clock);
+        assert!((clock.now(frame) - 5.0 / 60.0).abs() < 1e-9);
+        go(r#"{"cmd":"rewind","frames":2}"#, &mut env, &mut tl, &mut frame, &mut clock);
+        assert_eq!(frame, 3);
+        assert!((clock.now(frame) - 3.0 / 60.0).abs() < 1e-9, "time() went back with the frame");
+        go(r#"{"cmd":"step"}"#, &mut env, &mut tl, &mut frame, &mut clock);
+        let t = state(&env, &current)["t"].as_f64().unwrap();
+        assert!((t - 4.0 / 60.0).abs() < 1e-9, "the next frame's time() continues from the rewound one: {t}");
+    }
+
+    #[test]
+    fn frozen_state_and_set_state_go_through_the_timeline() {
+        let (mut host, mut env, current, mut tl, mut input) = session();
+        let (mut frame, mut clock) = (0i64, ClockSource::Fixed);
+        let mut go = |cmd: &str, env: &mut Env, tl: &mut Timeline, frame: &mut i64, clock: &mut ClockSource| {
+            send(cmd, env, &current, tl, &mut input, frame, clock, &mut host)
+        };
+        go(r#"{"cmd":"step","n":5}"#, &mut env, &mut tl, &mut frame, &mut clock);
+        go(r#"{"cmd":"scrub","to":1}"#, &mut env, &mut tl, &mut frame, &mut clock);
+        assert_eq!(tl.frozen_state_json(&env, current.program_id).unwrap()["n"].as_i64(), Some(2));
+        go(r#"{"cmd":"set_state","name":"n","value":100}"#, &mut env, &mut tl, &mut frame, &mut clock);
+        go(r#"{"cmd":"replay"}"#, &mut env, &mut tl, &mut frame, &mut clock);
+        assert_eq!(tl.frozen_state_json(&env, current.program_id).unwrap()["n"].as_i64(), Some(100));
+        go(r#"{"cmd":"unfreeze"}"#, &mut env, &mut tl, &mut frame, &mut clock);
+        go(r#"{"cmd":"step"}"#, &mut env, &mut tl, &mut frame, &mut clock);
+        assert_eq!(state(&env, &current)["n"].as_i64(), Some(101));
+    }
 }

@@ -6,16 +6,24 @@
 //! rest possible:
 //!
 //! - **Freeze and scrub.** Stop the game and step through recorded frames.
-//!   Scrubbing re-presents recorded draw commands; nothing re-runs.
+//!   Scrubbing re-presents recorded draw commands; nothing re-runs. While
+//!   frozen, the agent `state` command reads the cursor frame's fork.
 //! - **Rewind.** Unfreezing at an earlier frame restores that fork into the
 //!   live stack (`Env::restore_execution`) and the game continues from there,
 //!   with the frames after it discarded — the player takes over again.
-//! - **Replay through an edit.** A hot reload while frozen re-simulates every
-//!   recorded frame after the cursor through the *new* program, feeding each
+//! - **Replay through an edit.** A hot reload while frozen restores the fork
+//!   of the frame *before* the cursor and re-simulates the cursor frame and
+//!   every recorded frame after it through the *new* program, feeding each
 //!   frame the input that was recorded for it. The future on screen is now
 //!   the future the edited code produces — Bret Victor's "change the code and
 //!   watch the trajectory move" gesture, built on the language's own fork and
 //!   state-transfer primitives rather than a game-specific replay system.
+//!   A replayed frame's side effects are dropped: everything it emitted into
+//!   an output buffer other than its draw commands (sound requests, ...) and
+//!   everything it printed is discarded, never handed to the host.
+//! - **Writes.** `set_state` through [`Timeline::set_state`] is filed against
+//!   the frame on screen, and every later replay re-applies it right after
+//!   re-running that frame, so a written value survives a replay or an edit.
 //! - **Trails.** Point at a shape and the emit trace attributes it to the
 //!   `draw_*` call that made it. That call site is then found in every recorded
 //!   frame and its positions are drawn as a path: where this thing has been,
@@ -53,6 +61,11 @@ pub struct FrameRecord {
     pub origins: Vec<EmitSite>,
     /// Which program produced this frame (see [`Timeline::generation`]).
     pub generation: u32,
+    /// Top-level `state` writes (`set_state`) made after this frame ran, in
+    /// order, one per name. A replay re-applies them after re-running the
+    /// frame, so a write is part of the recorded history rather than lost to
+    /// the next re-simulation.
+    pub writes: Vec<(String, serde_json::Value)>,
 }
 
 /// The `draw_*` call being followed through time. Term ids are per program,
@@ -159,6 +172,7 @@ impl Timeline {
             commands,
             origins,
             generation: self.generation,
+            writes: Vec::new(),
         });
         while self.frames.len() > self.cap {
             if let Some(old) = self.frames.pop_front() {
@@ -234,13 +248,23 @@ impl Timeline {
 
     // ── Replay ───────────────────────────────────────────────────────────
 
-    /// Re-simulate frames `from..` through the program loaded *now*, feeding
-    /// each the input recorded for it. Their snapshots and draw output are
-    /// replaced. The live execution is left at the last replayed frame; a
-    /// frozen loop restores the cursor on unfreeze anyway.
+    /// Re-simulate frames `from..` through the program loaded *now*, starting
+    /// from the fork of frame `from - 1` and feeding each frame the input
+    /// recorded for it. Called with the cursor, that re-runs the cursor frame
+    /// itself as well as everything after it. Their snapshots and draw output
+    /// are replaced, and each frame's recorded `set_state` writes are applied
+    /// again after it runs. The live execution is left at the last replayed
+    /// frame; a frozen loop restores the cursor on unfreeze anyway.
+    ///
+    /// A replayed frame never reaches `Host::end_frame`: what it printed and
+    /// everything it emitted into an output buffer other than its draw
+    /// commands (`sfx`/`synth` requests, ...) is discarded frame by frame, so
+    /// re-simulating history neither replays its sounds nor leaves them queued
+    /// for the next live frame.
     pub fn replay<H: Host>(
         &mut self,
         env: &mut Env,
+        program_id: ProgramId,
         live: StackKey,
         from: usize,
         host: &mut H,
@@ -270,8 +294,14 @@ impl Timeline {
             // What the frame printed the first time already reached stderr.
             let _ = env.take_output();
             let (commands, origins) = drain_traced(env);
+            discard_emitted(env);
             rec.commands = commands;
             rec.origins = origins;
+            for (name, value) in &rec.writes {
+                if let Err(e) = env.set_state_from_json(program_id, live, name, value) {
+                    eprintln!("[timeline] replay frame {}: set_state {}: {}", rec.frame_count, name, e);
+                }
+            }
             let snapshot = env.fork_execution(live)?;
             env.drop_fork(rec.snapshot);
             rec.snapshot = snapshot;
@@ -279,6 +309,55 @@ impl Timeline {
         }
         self.last_replayed = n - from;
         Ok(n - from)
+    }
+
+    /// The `state` an agent sees: the cursor frame's fork while frozen, `None`
+    /// (read the live execution) otherwise.
+    pub fn frozen_state_json(
+        &self,
+        env: &Env,
+        program_id: ProgramId,
+    ) -> Option<serde_json::Map<String, serde_json::Value>> {
+        let rec = self.frames.get(self.cursor?)?;
+        Some(env.get_state_json(program_id, rec.snapshot))
+    }
+
+    /// `set_state` with history: write a top-level `state` variable at the
+    /// frame on screen and file the write against that frame, so every later
+    /// replay re-applies it after re-running the frame.
+    ///
+    /// - Frozen: the write lands in the cursor frame's fork (what `state` and
+    ///   `unfreeze` read), and the frames after the cursor are replayed from
+    ///   it at once so the recorded future follows. Returns how many frames
+    ///   were replayed.
+    /// - Live: the write lands in the live execution and in the latest
+    ///   frame's fork. Returns 0.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_state<H: Host>(
+        &mut self,
+        env: &mut Env,
+        program_id: ProgramId,
+        live: StackKey,
+        name: &str,
+        value: &serde_json::Value,
+        host: &mut H,
+    ) -> Result<usize, String> {
+        let Some(i) = self.current_index() else {
+            return env.set_state_from_json(program_id, live, name, value).map(|_| 0);
+        };
+        let snapshot = self.frames[i].snapshot;
+        if !self.is_frozen() {
+            env.set_state_from_json(program_id, live, name, value)?;
+        }
+        env.set_state_from_json(program_id, snapshot, name, value)?;
+        let writes = &mut self.frames[i].writes;
+        writes.retain(|(n, _)| n != name);
+        writes.push((name.to_string(), value.clone()));
+        if self.is_frozen() {
+            self.replay(env, program_id, live, i + 1, host)
+        } else {
+            Ok(0)
+        }
     }
 
     /// The program changed under the loop. Old frames keep their old ids;
@@ -528,6 +607,17 @@ impl Timeline {
 
 fn drain_traced(env: &mut Env) -> (Vec<DrawCommand>, Vec<EmitSite>) {
     take_draw_commands_traced(env).into_iter().unzip()
+}
+
+/// Drop every output buffer a replayed frame filled (after its draw commands
+/// were drained): those values are effects the host acts on in
+/// `Host::end_frame` — sound requests, chiefly — and the original run already
+/// had them acted on.
+fn discard_emitted(env: &mut Env) {
+    for sym in env.output_channels() {
+        let _ = env.take_output_buffer(sym);
+        let _ = env.take_output_origins(sym);
+    }
 }
 
 /// Find the call in `program` written at (or nearest below) `line`, with the
@@ -845,7 +935,7 @@ mod tests {
             .unwrap();
         env.transfer_state(live, edited).unwrap();
         tl.on_reload(&env, pid);
-        let replayed = tl.replay(&mut env, live, 1, &mut host).unwrap();
+        let replayed = tl.replay(&mut env, pid, live, 1, &mut host).unwrap();
         assert_eq!(replayed, 4);
         let xs: Vec<i32> = tl.trail(&env, pid).iter().map(|p| p.x).collect();
         assert_eq!(
@@ -861,6 +951,119 @@ mod tests {
         assert_eq!(at.0, 2);
         assert_eq!(n_of(&env, pid, live), 11);
         assert_eq!(tl.len(), 2);
+    }
+
+    /// `n` as recorded in frame `i`'s fork.
+    fn n_at(env: &Env, pid: ProgramId, tl: &Timeline, i: usize) -> i64 {
+        env.get_state_json(pid, tl.get(i).unwrap().snapshot)["n"].as_i64().unwrap()
+    }
+
+    fn setup(src: &str) -> (TestHost, Env, ProgramId, StackKey, Timeline) {
+        let mut host = TestHost;
+        let mut env = Env::new();
+        host.register(&mut env);
+        env.enable_emit_trace(true);
+        let pid = env.load_program(src).unwrap();
+        let live = env.create_stack(pid).unwrap();
+        petal_ui::input::bind_dimensions(&mut env, 100, 100);
+        (host, env, pid, live, Timeline::new(600))
+    }
+
+    #[test]
+    fn state_while_frozen_reads_the_cursor_frame() {
+        let (mut host, mut env, pid, live, mut tl) = setup(FRAME);
+        let mut frame = 0i64;
+        for _ in 0..5 {
+            run_frame(&mut env, live, &mut tl, &mut host, &mut frame);
+        }
+        assert!(tl.frozen_state_json(&env, pid).is_none(), "live: read the live execution");
+        tl.freeze();
+        tl.scrub_to(1);
+        let state = tl.frozen_state_json(&env, pid).unwrap();
+        assert_eq!(state["n"].as_i64(), Some(2));
+        assert_eq!(n_of(&env, pid, live), 5, "the live execution is untouched");
+    }
+
+    #[test]
+    fn set_state_while_frozen_survives_replay_and_an_edit() {
+        let (mut host, mut env, pid, live, mut tl) = setup(FRAME);
+        let mut frame = 0i64;
+        for _ in 0..5 {
+            run_frame(&mut env, live, &mut tl, &mut host, &mut frame);
+        }
+        tl.freeze();
+        tl.scrub_to(2);
+        let v = serde_json::json!(100);
+        let replayed = tl.set_state(&mut env, pid, live, "n", &v, &mut host).unwrap();
+        assert_eq!(replayed, 2, "the frames after the cursor follow the write");
+        assert_eq!(tl.frozen_state_json(&env, pid).unwrap()["n"].as_i64(), Some(100));
+        assert_eq!((n_at(&env, pid, &tl, 3), n_at(&env, pid, &tl, 4)), (101, 102));
+
+        // A replay re-runs the cursor frame from the frame before it; the
+        // write filed against the cursor frame is applied again after it.
+        assert_eq!(tl.replay(&mut env, pid, live, 2, &mut host).unwrap(), 3);
+        assert_eq!(n_at(&env, pid, &tl, 2), 100);
+        assert_eq!(n_at(&env, pid, &tl, 4), 102);
+
+        // So does a replay through an edit (STEP = 10).
+        let edited = env
+            .compile_program_at(pid, EDITED, std::path::Path::new("edited.ptl"))
+            .unwrap();
+        env.transfer_state(live, edited).unwrap();
+        tl.on_reload(&env, pid);
+        tl.replay(&mut env, pid, live, 2, &mut host).unwrap();
+        assert_eq!(
+            (n_at(&env, pid, &tl, 1), n_at(&env, pid, &tl, 2), n_at(&env, pid, &tl, 3), n_at(&env, pid, &tl, 4)),
+            (2, 100, 110, 120)
+        );
+
+        // Resuming continues from the written value.
+        tl.unfreeze(&mut env, live).unwrap();
+        assert_eq!(n_of(&env, pid, live), 100);
+    }
+
+    #[test]
+    fn set_state_while_live_is_kept_by_a_later_replay() {
+        let (mut host, mut env, pid, live, mut tl) = setup(FRAME);
+        let mut frame = 0i64;
+        for _ in 0..3 {
+            run_frame(&mut env, live, &mut tl, &mut host, &mut frame);
+        }
+        let v = serde_json::json!(50);
+        assert_eq!(tl.set_state(&mut env, pid, live, "n", &v, &mut host).unwrap(), 0);
+        assert_eq!(n_of(&env, pid, live), 50);
+        assert_eq!(n_at(&env, pid, &tl, 2), 50, "the latest fork carries the write");
+        run_frame(&mut env, live, &mut tl, &mut host, &mut frame);
+        run_frame(&mut env, live, &mut tl, &mut host, &mut frame);
+        assert_eq!(n_of(&env, pid, live), 52);
+        // Unfrozen replay re-simulates history from the oldest frame.
+        assert_eq!(tl.replay(&mut env, pid, live, 1, &mut host).unwrap(), 4);
+        assert_eq!(n_of(&env, pid, live), 52);
+        assert!(tl.set_state(&mut env, pid, live, "nope", &v, &mut host).is_err());
+    }
+
+    #[test]
+    fn a_replayed_frame_does_not_queue_its_sounds() {
+        let src = "import ui\nnative fn sfx(name, opts?)\nstate var n = 0\nset n = n + 1\nsfx(\"jump\")\ndraw_rect(n, 0, 10, 10, 255, 0, 0)\n";
+        let (mut host, mut env, pid, live, mut tl) = setup(src);
+        let mut frame = 0i64;
+        for _ in 0..5 {
+            run_frame(&mut env, live, &mut tl, &mut host, &mut frame);
+            // What `Host::end_frame` does with the live frame's requests.
+            assert_eq!(crate::sound::take_requests(&mut env).len(), 1);
+        }
+        // Unfrozen: the live execution is left at the replayed end, so
+        // anything a replayed frame emitted would reach the next live frame.
+        assert_eq!(tl.replay(&mut env, pid, live, 1, &mut host).unwrap(), 4);
+        assert!(
+            crate::sound::take_requests(&mut env).is_empty(),
+            "replayed frames' sounds were left queued for the next live frame"
+        );
+        // The draw output is still recorded.
+        assert!(tl.get(4).unwrap().commands.iter().any(|c| matches!(c, DrawCommand::Rect { x: 5, .. })));
+        // The next live frame plays only its own sound.
+        run_frame(&mut env, live, &mut tl, &mut host, &mut frame);
+        assert_eq!(crate::sound::take_requests(&mut env).len(), 1);
     }
 
     #[test]

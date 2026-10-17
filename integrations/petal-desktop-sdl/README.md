@@ -115,10 +115,11 @@ re-simulated through an edit. Nothing in the script opts in.
 | `F7` | Track the shape under the pointer: its `draw_*` call is followed through every recorded frame and drawn as a path |
 
 The part worth trying: freeze, scrub back to just before a jump, press `F7`
-on the player, then **edit a constant in the script and save**. The frames
-after the cursor are replayed through the new code with the input that was
-recorded for them, and the orange future trail shows the new trajectory next
-to the blue past. Change the number again; the future moves again. The rest
+on the player, then **edit a constant in the script and save**. The cursor
+frame and the frames after it are replayed through the new code (starting
+from the frame before the cursor) with the input that was recorded for
+them, and the orange future trail shows the new trajectory next to the blue
+past. Change the number again; the future moves again. The rest
 of the game's state — score, level, everything — is exactly what it was.
 
 The same operations are agent-protocol commands (`freeze`, `scrub`,

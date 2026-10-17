@@ -148,8 +148,8 @@ run the script, so it costs the same however expensive a frame was.
 
 **Resume** continues from the cursor. The live execution is restored from
 the cursor frame's fork, the frames after the cursor are discarded, and the
-frame number and (in a windowed session) `time()` go back to that frame's
-values. Resuming at an earlier frame is a rewind.
+frame number and `time()` go back to that frame's values. Resuming at an
+earlier frame is a rewind.
 
 **Rewind** by a number of frames does the same in one step without freezing.
 
@@ -177,9 +177,14 @@ and the command table shared with other hosts is in
 
 Two things to know when driving it from the protocol:
 
-- `state` reports the live execution, not the frame under the cursor. While
-  frozen that is the latest frame, or the last replayed one. To read state at
-  an earlier frame, `rewind` to it or `unfreeze` at it, then ask.
+- `state` while frozen reports the frame under the cursor, read from its
+  fork. When not frozen it reports the live execution.
+- `set_state` writes at the frame on screen and is kept in the history.
+  Frozen, it writes into the cursor frame's fork and replays the frames
+  after the cursor from it straight away. Live, it writes into the live
+  execution and the latest frame's fork. Either way every later replay,
+  including one a hot reload triggers, applies the write again right after
+  re-running that frame.
 - `step` while frozen resumes from the cursor first and then steps.
 
 A script switch (the example browser launching a script) clears the history.
@@ -225,8 +230,14 @@ already recorded keep what the old code drew.
 
 The `replay` command runs the same pass on request: from the cursor when
 frozen, and over all of the history except its oldest frame when not. A
-replay always starts from a recorded fork, so a value written into the live
-execution with `set_state` is not carried into it.
+replay starts from a recorded fork, and a `set_state` write is filed with the
+frame it was made at, so the replay applies it again after re-running that
+frame and the written value is kept.
+
+A replayed frame does not reach `Host::end_frame`. Its `print` output and
+everything it emitted besides draw commands, such as `sfx` and `synth`
+requests, are discarded frame by frame. A replay therefore plays no sound,
+and leaves none queued for the next live frame.
 
 A replay is as faithful as the recorded inputs are complete. See
 [What is captured and what is not](#what-is-captured-and-what-is-not).
@@ -274,7 +285,10 @@ execution, where a fork copies them:
 
 In `--headless` sessions and with `step`, `dt` is fixed at 1/60 s, and in
 `--headless` sessions `time()` is the frame number divided by 60, so a
-scripted session is reproducible from its commands.
+scripted session is reproducible from its commands. In windowed sessions,
+`--agent` or not, `time()` is simulated seconds: each live frame adds its
+real `dt` (and in `--agent` mode each `step` adds 1/60 s), and a rewind sets
+it back to the restored frame's time.
 
 The `replay` [run policy](../internals/run-policies.md) is a different
 thing with the same word in it: it is about the runtime skipping a call
@@ -303,13 +317,13 @@ It does not hold anything outside it:
   again, so a native with a side effect on the host has that effect again.
   Natives that emit to an output buffer and let the host act on the buffer
   are safe here: `petal-sdl` does not hand a replayed frame's output to
-  `Host::end_frame`, and `print` output from replayed frames is discarded.
+  `Host::end_frame`, and discards it along with the frame's `print`
+  output.
 - **Output.** A fork starts with empty `print` and output buffers. What the
   source had emitted and not yet drained stays with the source.
-- **The wall clock, where the host binds it.** In a windowed `--agent`
-  session `time()` is real elapsed time, and a rewind does not move it back.
-  The frame number does go back. In a plain windowed session `time()` is
-  simulated and rewinds with the frame.
+- **The wall clock, where the host binds it.** `petal-sdl` binds simulated
+  time, so its `time()` rewinds with the frame. A host that binds real
+  elapsed time into `time()` does not rewind it.
 - **History older than the ring.** A frame that has fallen off the end
   cannot be returned to.
 

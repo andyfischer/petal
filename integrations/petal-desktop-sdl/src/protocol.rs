@@ -10,7 +10,6 @@
 use std::io::{self, BufRead};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -84,9 +83,11 @@ pub enum Command {
     /// Restore the execution from `frames` frames ago and continue from
     /// there — a rewind without freezing.
     Rewind { frames: u32 },
-    /// Re-simulate every recorded frame after the cursor (all of history when
-    /// not frozen) through the program loaded now, with the recorded input.
-    /// A hot reload while frozen does this automatically.
+    /// Re-simulate the cursor frame and every recorded frame after it,
+    /// starting from the fork of the frame before the cursor (when not
+    /// frozen: every frame but the oldest, from the oldest), through the
+    /// program loaded now, with the recorded input. A hot reload while frozen
+    /// does this automatically.
     Replay,
     /// Follow the `draw_*` call that painted the shape at `(x, y)` on the
     /// frame on screen. Answers with the resolved call in `site`.
@@ -246,28 +247,47 @@ pub fn send_response(resp: &Response) {
 
 // --- Frame driving ---
 
-/// Which monotonic clock a frame binds into `time()`. A session must use ONE
-/// source for its whole lifetime: mixing them lets `time()` jump backward and
-/// `elapsed()` go negative, breaking the monotonicity scripts rely on.
-#[derive(Clone, Copy)]
+/// Which clock a frame binds into `time()`. A session must use ONE source for
+/// its whole lifetime: mixing them lets `time()` jump backward and
+/// `elapsed()` go negative, breaking the monotonicity scripts rely on. Only a
+/// timeline rewind moves either one back, and then on purpose.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ClockSource {
-    /// The real monotonic clock (`start.elapsed()`). Used by the windowed agent
-    /// loop, whose live frames already advance real time — a `Step` interleaved
-    /// with the live loop must stay on that same clock, so it threads the loop's
-    /// `start: Instant` here.
-    Wall(Instant),
+    /// Simulated seconds. Used by the windowed agent loop: a live frame
+    /// advances it by its real `dt`, a `Step` by the fixed 1/60 s, and a
+    /// timeline rewind sets it back to the restored frame's time — like the
+    /// plain windowed loop's clock.
+    Sim(f64),
     /// Deterministic `frame_count / 60` seconds per frame. Used by the
     /// fully-scripted modes (headless / screenshot / record) that never run the
-    /// real-clock loop, so stepped runs are reproducible.
+    /// real-clock loop, so stepped runs are reproducible. It rewinds with the
+    /// frame number.
     Fixed,
 }
 
 impl ClockSource {
-    /// The `time()` value for the frame just about to run.
+    /// The `time()` value of the frame that ran last (`frame_count`).
     pub fn now(&self, frame_count: i64) -> f64 {
         match self {
-            ClockSource::Wall(start) => start.elapsed().as_secs_f64(),
+            ClockSource::Sim(t) => *t,
             ClockSource::Fixed => frame_count as f64 / 60.0,
+        }
+    }
+
+    /// Advance for a frame about to run as `frame_count` with `dt`, and return
+    /// its `time()`.
+    pub fn tick(&mut self, frame_count: i64, dt: f64) -> f64 {
+        if let ClockSource::Sim(t) = self {
+            *t += dt;
+        }
+        self.now(frame_count)
+    }
+
+    /// Put the clock back to `time` (a timeline rewind). A `Fixed` clock
+    /// already follows the frame number.
+    pub fn rewind_to(&mut self, time: f64) {
+        if let ClockSource::Sim(t) = self {
+            *t = time;
         }
     }
 }
@@ -280,7 +300,7 @@ pub fn run_one_frame<H: Host>(
     stack_id: StackKey,
     input: &mut InputState,
     frame_count: &mut i64,
-    clock: ClockSource,
+    clock: &mut ClockSource,
     host: &mut H,
 ) -> Result<i64, String> {
     clear_draw_commands(env);
@@ -292,10 +312,10 @@ pub fn run_one_frame<H: Host>(
     env.advance_frame(stack_id);
     input.begin_frame(1.0 / 60.0);
     bind_frame_info(env, 1.0 / 60.0, *frame_count);
-    // Bind `time()` from the session's single clock source: the real monotonic
-    // clock when stepping is interleaved with a live real-clock loop (agent
-    // mode), or a deterministic 1/60 s per frame for fully-scripted runs.
-    bind_time(env, clock.now(*frame_count));
+    // Bind `time()` from the session's single clock source: the simulated
+    // clock shared with a live loop (windowed agent mode), or a deterministic
+    // 1/60 s per frame for fully-scripted runs.
+    bind_time(env, clock.tick(*frame_count, 1.0 / 60.0));
     bind_input(env, input);
 
     env.reset_stack(stack_id)?;
@@ -344,7 +364,7 @@ pub fn handle_command<H: Host>(
     paused: &mut bool,
     input: &mut InputState,
     frame_count: &mut i64,
-    clock: ClockSource,
+    clock: &mut ClockSource,
     host: &mut H,
 ) {
     match cmd {

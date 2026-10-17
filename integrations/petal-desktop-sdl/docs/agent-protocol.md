@@ -69,6 +69,13 @@ Advance exactly `n` frames (default 1). While stepping, `dt()` returns a
 fixed 1/60 s so runs are deterministic. Input set by `input` stays down
 across steps.
 
+`time()` is simulated seconds. In `--headless` it is the frame number
+divided by 60. In windowed `--agent` mode one clock is shared by the live
+loop (which advances it by each frame's real `dt`) and `step` (which
+advances it by 1/60 s), and a timeline `rewind`, `unfreeze` or `step` out of
+a frozen moment sets it back to the restored frame's time, as the plain
+windowed loop does.
+
 ```json
 {"cmd": "step"}
 {"cmd": "step", "n": 10}
@@ -94,6 +101,9 @@ Top-level cells appear under their bare name. A `state` declared inside a
 function appears under a pathed key such as `counter#1/count` or
 `[3]/row/hovered`.
 
+While the [timeline](#timeline) is frozen, `state` reports the frame under
+the cursor (its recorded fork), not the live execution.
+
 ### set_state
 
 Set a top-level `state` variable by name. Accepts null, booleans, numbers,
@@ -108,6 +118,27 @@ and strings.
 Pathed keys (state inside functions) cannot be set this way and are rejected
 with `No state variable named '...'`. Anything an agent needs to drive from
 outside belongs in a top-level `state var`.
+
+With the [timeline](#timeline) on, a write is filed against the frame on
+screen and becomes part of the recorded history: every later `replay` (and
+every replay a hot reload triggers) applies it again right after re-running
+that frame, so it is never lost to a re-simulation.
+
+- **Frozen:** the write lands in the cursor frame — what `state` then reads
+  and what `unfreeze` resumes from — and the frames after the cursor are
+  replayed from it at once, so the recorded future and its trail follow the
+  new value. The reply carries the count in `replayed`. The cursor frame's
+  own recorded drawing is not redrawn: the write happens after it ran.
+- **Live:** the write lands in the live execution and in the latest
+  recorded frame.
+
+```json
+{"cmd": "scrub", "to": 2}
+{"cmd": "set_state", "name": "x", "value": 100}
+{"ok": true, "replayed": 2}
+{"cmd": "state"}
+{"ok": true, "state": {"x": 100}}
+```
 
 ### capture_draw_commands
 
@@ -258,12 +289,23 @@ earlier values exactly.
 
 ### replay
 
-Re-simulate every recorded frame after the cursor (all of history when not
-frozen) through the program loaded **now**, feeding each frame the input
-that was recorded for it. Their snapshots and draw output are replaced. A
-hot reload while frozen does this automatically, which is how an edit shows
-its effect on the recorded future; call it by hand after `set_state` on a
-rewound game, or after a reload that landed while unfrozen.
+Restore the fork of the frame **before** the cursor and re-simulate the
+cursor frame and every recorded frame after it through the program loaded
+**now**, feeding each frame the input that was recorded for it. Their
+snapshots and draw output are replaced; frames before the cursor are left as
+they were. When not frozen it re-simulates every frame but the oldest,
+starting from the oldest, and the live game continues from the replayed end.
+A hot reload while frozen does this automatically, which is how an edit
+shows its effect on the recorded future; call it by hand after a reload that
+landed while unfrozen. `set_state` writes are re-applied after the frame
+they were filed against (see [set_state](#set_state)); a write while frozen
+already replays the frames after it, so no `replay` is needed.
+
+A replayed frame's side effects are dropped: its `print` output, its sound
+requests (`sfx`, `synth`) and anything else it emitted besides draw commands
+are discarded and never reach the host, so a replay neither plays the
+recorded frames' sounds again nor leaves them queued for the next live
+frame.
 
 ```json
 {"cmd": "replay"}

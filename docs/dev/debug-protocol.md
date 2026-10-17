@@ -76,10 +76,16 @@ is in [time-travel.md](../features/time-travel.md#the-petal-sdl-timeline).
 | `unfreeze` | — | Resume from the cursor: the live execution becomes that frame's snapshot and later frames are discarded. |
 | `scrub` | `to: int` | Move the cursor to a recorded frame, freezing first. Negative indexes count from the end (`-1` is the latest frame). |
 | `rewind` | `frames: int` | Restore the execution from that many frames ago and continue from there, without freezing. |
-| `replay` | — | Re-simulate every recorded frame after the cursor (all of history when not frozen) through the program loaded now, with the recorded input. A hot reload while frozen does this automatically. Replies with the count in `replayed`. |
+| `replay` | — | Restore the fork of the frame before the cursor and re-simulate the cursor frame and every frame after it (when not frozen: every frame but the oldest) through the program loaded now, with the recorded input. `set_state` writes are re-applied; sound requests and other emitted output are discarded. A hot reload while frozen does this automatically. Replies with the count in `replayed`. |
 | `track` | `x: int`, `y: int` | Follow the `draw_*` call that painted the shape at that point on the frame on screen. Replies with the resolved call in `site`. |
 | `trail` | — | Where the tracked call drew on every recorded frame, in `trail`. |
 | `screenshot` | `overlay?: bool` | With `overlay`, or while frozen, the picture is what the window shows: the recorded frame plus the timeline's trail and scrub bar. |
+
+With the timeline on, two of the shared commands change in petal-sdl: while
+frozen, `state` reads the frame under the cursor rather than the live
+execution, and `set_state` is filed against the frame on screen so that
+every later replay re-applies it (frozen, it also replays the frames after
+the cursor at once and replies with `replayed`).
 
 ### `state` keys and the call path
 
@@ -148,7 +154,7 @@ command. On failure the engine returns `{ ok: false, error: <message> }`.
 | `timeline` | object | every timeline command (petal-sdl) |
 | `site` | object | `track` |
 | `trail` | array | `trail` |
-| `replayed` | int | `replay` |
+| `replayed` | int | `replay`; `set_state` while frozen (petal-sdl) |
 
 ## PendingEntry
 

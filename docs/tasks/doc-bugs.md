@@ -337,6 +337,5 @@ warning in CLI.md's check section (c6400d5a).
   WASM.
 - **Corpus entries the driver never compares.** `test/ui-golden/index.json`
   keeps hashes for apps the driver marks unsupported (petal-fantasy-nes, the
-  petal-fps examples). About 18 files in `~/worlds-fair/ui/ptl` and
-  `~/.garden/petal-ide` became unsupported to the verify driver from
-  d2899126; nobody has looked at why.
+  petal-fps examples). Some files in `~/worlds-fair/ui/ptl` became
+  unsupported to the verify driver from d2899126; nobody has looked at why.

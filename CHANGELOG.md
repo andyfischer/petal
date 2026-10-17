@@ -827,6 +827,12 @@ way, for code written against an earlier checkout.
   `text_wrap_rows(s, style, w)` returns each wrapped row with its character
   range, and `text_range_rects(s, style, a, b)` the rects covering a range.
   Garden and the SDL host connect the system clipboard.
+- `petal-ui` multi-line text: `text_area(fc, id, r, buf, style?)` wraps to
+  its box, takes Return as a line break, moves by row with the arrows and
+  Home/End, keeps line breaks through the clipboard, shares `text_field`'s
+  selection and undo, and scrolls with the wheel when the text overflows.
+  `text_area_update` / `draw_text_area` are its halves and
+  `text_area_height` sizes a box that grows.
 - Headless Garden panels: `POST /tick` puts a panel on a virtual clock, so
   `dt()` and `time()` advance by the ticks sent rather than by wall time (and
   stay virtual across `/panel/reset`); `POST /mouse` takes `"pane": <n>` for
@@ -845,6 +851,11 @@ Breaking changes made during development, newest first. For the import and
 package changes below, `petal fix-imports` does the rewriting and
 [docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
 
+- `petal-ui`: a press outside a focused `text_field` clears its focus (the
+  `focus` it returns), unless a higher layer took the press; and
+  `interact().click` goes only to a rect that was under the press point when
+  the button went down, so a click that opens a panel no longer clicks the
+  panel's row that appears under the pointer.
 - `any(xs, p)` and `all(xs, p)` stop at the element that decides: `p` is no
   longer called on the elements after it (they were `count(xs, p) > 0` and
   `count(xs, p) == len(xs)`). A predicate with effects, or one that would

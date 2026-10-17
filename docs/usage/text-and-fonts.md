@@ -304,7 +304,7 @@ default font.
 | petal-sdl | System sans (`ui`) + system mono (`mono`), plus **any family installed on the machine** by family or PostScript name, found in the system font directories on first use and kept; each face is baked at exactly the sizes drawn (SDL_ttf, one font per size, loaded on first use) | yes — SDL_ttf synthetic bold/oblique, on a family's upright regular cut | yes — per-glyph placement | measured per face × variant, both axes: the roles published up front, installed families through a `FontSource` on demand |
 | petal-web-canvas | `ui` / `mono` / `serif` CSS stacks | yes — the browser's own faces | yes — `ctx.letterSpacing` where supported | measured per face × variant with `ctx.measureText`, both axes |
 | diagram-canvas | inherits web-canvas | yes | yes | inherits web-canvas |
-| Garden panels | **any family installed on the machine**, via `font(name)` / a `font:` string; plus two embedded faces reachable as `mono` (JetBrains Mono) and `ui` (Inter) | real cuts on a system family and on `ui` (Inter Bold is embedded); **synthetic on `mono`**, which has one cut — `weight >= 600` is emboldened by a second offset draw and measures regular | yes — the host places each glyph | measured through cosmic-text, on demand per family × cut; vertical metrics for the two embedded roles |
+| Garden panels | **any family installed on the machine**, via `font(name)` / a `font:` string, matched case-insensitively; plus two embedded faces reachable as `mono` (JetBrains Mono Regular) and `ui` (Inter Regular and Bold). There is no `serif` role: the renderer draws a name that matches nothing in `mono`, and warns once per name on stderr | bold: the real cut where the family has one (an installed family by CSS matching; `ui` snaps to Regular or Bold at 600); **synthetic** where it has not — always on `mono`, and on an installed family with one weight — by a second draw offset sideways, measuring as regular. Italic: the family's italic cut if installed, otherwise cosmic-text's synthetic 14° skew (the embedded faces have no italic) | yes — a spaced run is drawn one glyph at a time, each placed by its measured advance | measured through cosmic-text: `mono`, `ui` and `ui` bold up front, with vertical metrics; an installed family on demand per family × weight × italic, advances only, so its vertical metrics are the built-in defaults |
 | petal-c-bridge | whatever the C or C++ host draws; the bridge rasterizes nothing | carried on each `PB_DRAW_TEXT` command (`font`, `weight`, `italic`) for the host to honor | carried the same way (`spacing`) | the default face only, as the host publishes it: `pb_vm_set_text_metrics`, `pb_vm_set_text_advances`, `pb_vm_set_text_vertical_metrics` ([embedding-c.md](embedding-c.md#petal-ui-input-and-draw-commands)); the built-in defaults until then |
 | petal-fps | 5×7 bitmap font (own command set) | no | no | n/a |
 | petal-fantasy-nes | tile font drawn by its own PPU (`map_text` in the `nes` package) | no | no | n/a |
@@ -314,7 +314,10 @@ default font.
 `size` is honored everywhere (per run, including Garden panels).
 
 Every host in the table above that draws petal-ui text publishes vertical
-metrics, with two exceptions: under petal-c-bridge it is up to the embedding
-host to call `pb_vm_set_text_vertical_metrics`, and `petal-ui-run` has no
-renderer to measure and so stays on the defaults deliberately: a headless
-trace must not depend on the fonts installed on the machine running it.
+metrics, with three exceptions: under petal-c-bridge it is up to the
+embedding host to call `pb_vm_set_text_vertical_metrics`; Garden measures
+only the advances of an installed family, so `text_metrics` for one gives the
+built-in vertical proportions (its embedded `mono` and `ui` are measured);
+and `petal-ui-run` has no renderer to measure and so stays on the defaults
+deliberately: a headless trace must not depend on the fonts installed on the
+machine running it.

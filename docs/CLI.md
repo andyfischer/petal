@@ -309,7 +309,8 @@ Tracing and inspection options:
   The dump is printed even when the run fails, since the values bound before
   the error are the point. With `--json` it is a single object; on a failing
   run it rides on the error object as an `observations` field. A failing run
-  still exits 1.
+  still exits 1. Where observation sits among the other provenance tools is
+  in [features/provenance.md](features/provenance.md#reading-values-without-a-query-observation).
 - `--trace-emits` — attribute every buffered emit (`push_output`, draw
   commands) to the call that produced it, and dump the values with their call
   sites and per-argument edit info after the run. With `--json` the report is
@@ -325,7 +326,8 @@ Tracing and inspection options:
 - `--trace-pending` — record pending absorptions and print the frame pending
   report to stderr after the run. `PETAL_TRACE_PENDING=1` does the same. For
   the report as the main output, see
-  [`pending-report`](#pending-report--report-live-pending-resources).
+  [`pending-report`](#pending-report--report-live-pending-resources); for what
+  is being absorbed, [features/pending-values.md](features/pending-values.md).
 - `--profile` — count instructions, builtin calls and collections during the
   run, from its first instruction, and print the report to stderr: the opcode
   and builtin histograms, instructions per function, native time by native
@@ -345,7 +347,9 @@ Tracing and inspection options:
 - `--effect-audit` — watch what every native does during the run and report
   on stderr each one whose behaviour differs from the effect row it declared
   when it was registered: under-declared (a bug) or over-declared. See
-  [Catching it with the effect audit](usage/ffi.md#catching-it-with-the-effect-audit).
+  [Catching it with the effect audit](usage/ffi.md#catching-it-with-the-effect-audit),
+  and [dev/native-effects.md](dev/native-effects.md) for the rows and
+  the other tools that check them.
 
 ### `bench` — What a call of a function costs
 
@@ -1611,7 +1615,9 @@ petal explain [--json] --term <name|id> -e '<code>'
 
 Runs the program with tracing on, then walks backward from the target term
 and prints every recorded value along the chain of ancestors. It answers "why
-does `x` have this value?".
+does `x` have this value?". [features/provenance.md](features/provenance.md)
+shows how `explain`, [`graph`](#graph--one-query-one-result-shape) and emit
+tracing answer different questions about one value.
 
 ```
 $ petal explain --term total -e 'let a = 2
@@ -1642,7 +1648,9 @@ petal pending-report [--json] -e '<code>'
 
 Runs the program, then reports every resource value that is still pending or
 loading at the end: its state, age in frames, absorption count, and origin
-call site. It answers "why is this region blank?".
+call site. It answers "why is this region blank?"; see
+[features/pending-values.md](features/pending-values.md#why-is-this-region-blank)
+for reading the answer.
 
 Text output is one line per live resource, or `No pending resources.` when
 there are none. With `--json`, it emits the raw report array:
@@ -2623,7 +2631,8 @@ under their module-qualified names (`ui::button`). `--json` emits:
 
 `graph` and `show-graph` query the compiled dataflow graph without running the
 program. `graph` takes `--term <name|id>` with the same resolution rules as
-`explain`.
+`explain`. [features/provenance.md](features/provenance.md#what-depends-on-what-graph)
+is the walkthrough; this section is the reference.
 
 `graph` stops at (or, forward, crosses) every `var` cell. See
 [Cells and the frontier](#cells-and-the-frontier): it does not promise an

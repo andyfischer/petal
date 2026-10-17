@@ -5,7 +5,8 @@ program, and the domain sets a file imports ([which is which](#which-builtins-ne
 (variables, control flow, functions, state, pattern matching), see the
 [Language Guide](language-guide.md). The drawing and input builtins used by
 `petal-ui` apps (`draw_rect`, `mouse_x`, ...) are covered in the
-[petal-ui README](../core-libs/petal-ui/README.md).
+[petal-ui README](../core-libs/petal-ui/README.md); how a browser page runs
+them is in [usage/embedding-web.md](usage/embedding-web.md).
 
 **The parameter names in this reference are real.** Every builtin with a
 fixed parameter list takes [named arguments](syntax/function-overloading.md#named-arguments)
@@ -40,7 +41,10 @@ Each builtin's signature is written once, as a `native fn` declaration in a
 package compiled into the binary (`core/packages/`): parameter names, which
 are optional, the argument types the checker holds a call to, and the result
 type. See [usage/ffi.md](usage/ffi.md#native-interfaces-native-fn) for the declaration
-syntax.
+syntax. What a builtin does besides computing its result (reading the clock,
+drawing, reading host data) is declared in its effect row when it is
+registered; [dev/native-effects.md](dev/native-effects.md) defines the rows
+and how they are checked.
 
 ### Which builtins need an import
 
@@ -913,7 +917,7 @@ append(get xs, v) end`, called as a statement). A call inside the appended
 value copies too, `set xs = append(xs, f(x))`, unless it is one of `float`,
 `int`, `min`, `max`, `clamp`, `abs`, `floor`, `len` or `type`; bind
 `let v = f(x)` first. The rules are in the language guide under
-[`var`](language-guide.md#var-a-binding-functions-can-assign).
+[`var`](language-guide.md#var-and-set).
 
 ### `push(list, value)`
 
@@ -1917,8 +1921,10 @@ print(frozen(42))     // false
 ## Host I/O
 
 Needs `import io`. These are the script's side of the channels a host reads
-and writes; [usage/embedding-guide.md](usage/embedding-guide.md) describes
-the host's side.
+and writes. [usage/host-io.md](usage/host-io.md) covers them from the script,
+with how they behave in a module, and
+[usage/embedding-guide.md](usage/embedding-guide.md) describes the host's
+side.
 
 ### `symbol(name)`
 
@@ -1946,6 +1952,8 @@ run), or `nil` when nothing is bound.
 A host can hand a script a value that has not arrived yet: an image still
 loading, a query in flight. Such a value is *pending*. `??` falls through a
 pending value as it does through `nil`. These inspect one; all are global.
+How a pending value moves through arithmetic, lists, `state` and draw calls
+is in [features/pending-values.md](features/pending-values.md).
 
 ### `is_pending(value)` / `is_ready(value)`
 
@@ -1984,7 +1992,9 @@ key.
 
 Whether the value is a [host handle](game-engine-features/handles.md) whose
 object the host still considers alive. Never an error: `nil`, a value that is not a handle
-and a stale handle are all `false`.
+and a stale handle are all `false`. Why a handle can go stale between two frames
+is in
+[game-engine-features/frame-contract.md](game-engine-features/frame-contract.md#engine-objects).
 
 ```petal
 is_valid(nil)   // false

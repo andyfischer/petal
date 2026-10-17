@@ -1182,20 +1182,19 @@ The host then feeds input (`pb_vm_input_*`), reads draw commands
 ## Performance notes
 
 A frame that makes 200 host-callback calls, 200 emitter calls and 2 draw
-calls, then drains and decodes everything, costs about 0.13 to 0.17 ms
-(minimum 0.127 ms over 2,100 frames). Each host-callback native reuses its
-own argument, view and result buffers from call to call, so a call allocates
-nothing on the bridge side beyond its result. Loading a program that imports
-`ui` takes about 30 ms at best and 50 ms typically, and a reload that
-recompiles it 35 to 80 ms. Nearly all of that is the `ui` package: the same
-script without `import ui` and its two draw calls loads in 0.7 ms and
-recompiles in 0.5 ms.
+calls, then drains and decodes everything, costs about 0.14 ms (median of
+2,100 frames). Each host-callback native reuses its own argument, view and
+result buffers from call to call, so a call allocates nothing on the bridge
+side beyond its result. Loading a program that imports `ui` takes about
+29 ms, and a reload that recompiles it about 34 ms. Nearly all of that is
+the `ui` package: the same script without `import ui` and its two draw calls
+loads in 0.55 ms and recompiles in 0.26 ms (and its frame is 0.08 ms).
 
 Measured 2026-10-16 by `examples/bench_frame.cpp` (CMake target
-`petal_bridge_bench_frame`, the release `libpetal_bridge.a`), two runs, on an
-Apple M4 that was running other builds, so the typical figures are
-pessimistic. An earlier measurement inside Cheesecake gave about 0.4 ms for
-the same frame and about 0.1 s for a load.
+`petal_bridge_bench_frame`, the release `libpetal_bridge.a`), medians of two
+runs that agreed within 2%, on an Apple M4 with a load average of about 2.
+An earlier measurement inside Cheesecake gave about 0.4 ms for the same
+frame and about 0.1 s for a load.
 
 ## Limitations
 

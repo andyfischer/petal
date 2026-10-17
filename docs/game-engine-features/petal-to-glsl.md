@@ -292,10 +292,9 @@ effect.
   a string from Petal code.
 - **Speed in the VM.** Translating the eleven effects takes 67,404 VM
   instructions in total under the `fast` policy (116,367 with the optimizer
-  off), and in a release build about 0.7 ms each under `fast` and 0.43 ms
+  off), and in a release build about 0.57 ms each under `fast` and 0.29 ms
   under `baseline`: fewer instructions, but more time around them. Measured
-  2026-10-16 on an Apple M4 (10 cores) under heavy load (load average 12 to
-  15), three repetitions (one `fast` repetition gave 1.25 ms), each the fastest of 40
+  2026-10-16 on an Apple M4 (load average about 2), as the fastest of 40
   fresh runs of `effects.ptl` with the eleven `glsl_function` calls, minus
-  the fastest of 40 runs of the same file making none. It is paid once per
-  change.
+  the fastest of 40 runs of the same file making none, twice, the two
+  agreeing within 2%. It is paid once per change.

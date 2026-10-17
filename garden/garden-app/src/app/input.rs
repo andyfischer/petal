@@ -1027,8 +1027,8 @@ fn panel_key_text(key: Key, mods: Mods) -> Option<String> {
 
 /// The canonical name a panel script reads a key as (e.g. `key_pressed("down")`).
 /// Named keys (and the space bar) take their spelling from
-/// [`vim::NAMED_KEYS`], the same table `/key` parses; any other character key
-/// uses the character itself. `Ctrl`-chords never reach here.
+/// [`vim::NAMED_KEYS`], the same table `/key` parses; a character key is named
+/// by [`char_key_name`], the key it is typed on. `Ctrl`-chords never reach here.
 fn panel_key_name(key: Key) -> Option<String> {
     if let Key::Ctrl(_) = key {
         return None;
@@ -1037,9 +1037,48 @@ fn panel_key_name(key: Key) -> Option<String> {
         return Some((*name).to_string());
     }
     match key {
-        Key::Char(c) => Some(c.to_string()),
+        Key::Char(c) => Some(char_key_name(c)),
         _ => None,
     }
+}
+
+/// The canonical name (`petal::keys::KEY_NAMES`) of the key a typed character
+/// is on, on a US layout. Key names are keys, not the characters they type:
+/// Shift+g is `"g"` with `mod_shift()`, `?` is `"slash"`, `-` is `"minus"` —
+/// what every other petal-ui host reports, so `key_pressed("G")` or
+/// `key_pressed("?")` (always false elsewhere, and a `petal check` warning)
+/// is not something a Garden panel can come to rely on. A character on no key
+/// in the table (`é`) passes through as itself. The typed character itself is
+/// still `text_input()`'s ([`panel_key_text`]).
+fn char_key_name(c: char) -> String {
+    if c.is_ascii_alphanumeric() {
+        return c.to_ascii_lowercase().to_string();
+    }
+    let name = match c {
+        '-' | '_' => "minus",
+        '=' | '+' => "equals",
+        ',' | '<' => "comma",
+        '.' | '>' => "period",
+        '/' | '?' => "slash",
+        '\\' | '|' => "backslash",
+        ';' | ':' => "semicolon",
+        '\'' | '"' => "quote",
+        '`' | '~' => "backquote",
+        '[' | '{' => "leftbracket",
+        ']' | '}' => "rightbracket",
+        '!' => "1",
+        '@' => "2",
+        '#' => "3",
+        '$' => "4",
+        '%' => "5",
+        '^' => "6",
+        '&' => "7",
+        '*' => "8",
+        '(' => "9",
+        ')' => "0",
+        _ => return c.to_string(),
+    };
+    name.to_string()
 }
 
 /// Copy the selection to the clipboard (a no-op without one; the selection
@@ -1172,11 +1211,11 @@ mod tests {
         );
         assert_eq!(
             classify_panel_key(Key::Char(':'), NONE, true),
-            PanelKey::Forward(":".into())
+            PanelKey::Forward("semicolon".into())
         );
         assert_eq!(
             classify_panel_key(Key::Char('['), CTRL, true),
-            PanelKey::Forward("[".into())
+            PanelKey::Forward("leftbracket".into())
         );
     }
 
@@ -1239,12 +1278,45 @@ mod tests {
     fn panel_key_names_are_canonical() {
         assert_eq!(panel_key_name(Key::PageDown), Some("pagedown".into()));
         assert_eq!(panel_key_name(Key::Escape), Some("escape".into()));
-        assert_eq!(panel_key_name(Key::Char('K')), Some("K".into()));
+        assert_eq!(panel_key_name(Key::Char('K')), Some("k".into()));
         assert_eq!(panel_key_name(Key::Ctrl('d')), None);
         // Return is `"return"`, never `"enter"` — the spelling petal-ui's own
         // widgets (and every other host) read. Getting this wrong is invisible
         // in the suite and deaf in the pane, so pin it.
         assert_eq!(panel_key_name(Key::Enter), Some("return".into()));
+    }
+
+    /// A character key is named by the key it is on, in the canonical
+    /// vocabulary — never by the character, which no other host reports.
+    #[test]
+    fn character_keys_are_named_by_their_key() {
+        for (c, name) in [
+            ('g', "g"),
+            ('G', "g"),
+            ('7', "7"),
+            ('&', "7"),
+            ('?', "slash"),
+            ('/', "slash"),
+            ('-', "minus"),
+            ('~', "backquote"),
+            ('[', "leftbracket"),
+            ('}', "rightbracket"),
+            ('"', "quote"),
+            (':', "semicolon"),
+            ('+', "equals"),
+            ('>', "period"),
+        ] {
+            assert_eq!(panel_key_name(Key::Char(c)).as_deref(), Some(name), "{c:?}");
+        }
+        for c in (' '..='~').filter(|c| *c != ' ') {
+            let name = panel_key_name(Key::Char(c)).unwrap();
+            assert!(
+                garden_script::KEY_NAMES.contains(&name.as_str()),
+                "{c:?} is named {name:?}, not a canonical key name"
+            );
+        }
+        // On no key in the table: passed through rather than dropped.
+        assert_eq!(panel_key_name(Key::Char('é')).as_deref(), Some("é"));
     }
 
     /// The shared key table is spelled in petal-ui's cross-host vocabulary, and

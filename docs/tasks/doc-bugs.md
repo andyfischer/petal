@@ -1,18 +1,38 @@
 # What the docs pass found and did not fix
 
-Status: **all items in sections 1, 2, 4 and 5 fixed**, 2026-10-16. Section 3 is
-done except for the numbers that could not be re-measured, which are now marked
-in the docs as dated or approximate, and the Garden row of
-`usage/text-and-fonts.md`. The list was opened on 2026-10-13, while
-reorganising `docs/` and writing the new feature and internals pages. The docs
-were corrected then to say what the code did. The items here were in code, in
-files outside `docs/`, or could not be verified.
+Status, 2026-10-17: **every item is fixed or settled**, including the three
+pending-value behaviours (section 5) and the follow-ups of the second round
+(section 6). What is left is in [Still open](#still-open): a few figures that
+could not be re-measured and are marked as dated in the docs, and work outside
+this repository. The list was opened on 2026-10-13, while reorganising `docs/`
+and writing the new feature and internals pages. The docs were corrected then
+to say what the code did. The items here were in code, in files outside
+`docs/`, or could not be verified.
 
-Each item says what was done and the commit. The integration run on 2026-10-16
-passed: core `cargo test` (2,828 passed), petal-ui (369), petal-sdl (69),
-petal-query (33), petal-c-bridge (43), garden-script, garden-app and
-directory-browser (1,180), vitest (1,694 in 75 files), and
-`tools/test-examples.ts` (33 of 33).
+Each item says what was done and the commit. The integration run of
+2026-10-17 passed:
+
+| Suite | Result |
+|---|---|
+| core `cargo test` | 2,844 passed, 16 ignored |
+| `make expensive_lint_tests` | 4 of 4 sweeps |
+| petal-ui | 369 passed |
+| petal-sdl | 70 passed |
+| petal-query | 33 passed |
+| petal-c-bridge | 43 (cargo) and 4 of 4 (ctest) |
+| garden-script, garden-app, directory-browser | 1,181 passed |
+| vitest | 1,695 in 75 files |
+| `tools/test-examples.ts` | 33 of 33 |
+| `tools/verify.ts --plan compiler` | 145 identical-trace, 0 changed, golden hashes all match |
+| `petal check` | examples (151 files: no errors, 6 with warnings), garden (27), worlds-fair `ui/ptl` (20), petal-movies `ui` (1) all without errors |
+| petal-movies | builds, 8 of 8 tests |
+| worlds-fair `node ui/tools/check.ts` | green: lint, 44 bundles checked, 130 Rust tests, C ABI smoke test |
+
+The six example warnings are not new: three `log` calls reported as
+discarded (petal-fps and petal-fantasy-nes register an effectful `log` of
+their own, which `petal check` cannot see), and three functions in
+side-scroller and spreadsheet that read a `state` captured at their
+definition.
 
 ## 1. Probable bugs
 
@@ -38,9 +58,14 @@ All three were fixed in 239d0c9f. See [internals/lsp.md](../internals/lsp.md),
    [packages.md](../packages.md)). The section is not yet in worlds-fair.
    Tried on a scratch copy of worlds-fair, `host/garden.ptl` went from 31
    diagnostics to 2 (two real bad key names) and `screens/missions.ptl` went
-   from 78 to 0. **Still open:** `petal check` does not read `[host]`, and a
-   relative import inside a prelude file resolves against the document's
-   directory.
+   from 78 to 0. **Since fixed** (8587dbe8): `petal check` reads `[host]` the
+   way the language server does (shared code in `core/src/project_host.rs`),
+   findings land on the script's own lines, and a relative import inside a
+   prelude file resolves from that file's directory. A host import that only
+   re-exports a name the script uses is now loaded. worlds-fair has its
+   manifest (76f666f), and every file in `ui/ptl` checks clean. A script that
+   also imports one of the `[host]` imports by name failed with an internal
+   error, "module was not compiled before its importer"; fixed in 79ac7e01.
 
 ### petal-sdl timeline
 
@@ -152,24 +177,36 @@ the frame before the cursor and re-runs the cursor frame.
   reload sweep was re-run (409 files, 16 October), and the `reload_timing` and
   `reload_follow` runs were repeated and added as dated notes. The machine was
   loaded and Moses has grown, so the original tables are kept beside them.
-  **Not re-run:** the 343-file sweep outside the repo, which is now marked as
-  dated.
-- [dev/performance.md](../dev/performance.md) **(0683d98f):** the test name is
-  fixed. No figures were re-measured.
+  The sweep outside the repo was re-run too (79bb01e5): 362 files, 147
+  relocated, 1 patched, 144 recompiled, all identical to a full recompile.
+- [dev/performance.md](../dev/performance.md) **(0683d98f, 8b261d91):** the
+  test name is fixed, and the standing figures were measured again on an
+  Apple M4, each dated. A new `core/examples/lower_passes.rs` times each
+  optimizer pass alone. The "~50 M instructions/s" estimate was wrong (it is
+  100 to 400 M/s), and copy propagation removes about a third of
+  instructions, not a quarter. Four figures could not be re-measured and are
+  marked with their month: the profiler's cost per native call, the cost of
+  observation, the speedup on neon, and the pre-change baselines.
 - [usage/embedding-c.md](../usage/embedding-c.md) **(4f6813c6):** the handle
   row of the value table is corrected. The slot and serial are in
   `raw()->integer` and `raw()->count`, `str()` is the class name, and
   `integer()` returns its fallback. A new `petal-c-bridge` test pins this. The
-  claim about runtime error positions was checked against the code. **Not
-  re-measured:** the Cheesecake performance figures, which are now marked as
-  one past measurement.
+  claim about runtime error positions was checked against the code. The
+  performance figures were re-measured (4ecf5613, a82b910d) with a new
+  standalone bench, `integrations/petal-c-bridge/examples/bench_frame.cpp`: a
+  frame of 200 callbacks, 200 emits and 2 draws takes 0.14 ms, and a load
+  that imports `ui` 29 ms.
 - [game-engine-features/petal-to-glsl.md](../game-engine-features/petal-to-glsl.md):
-  a passing test confirms the caching table. The instruction counts are still
-  not measured; they were already written as approximate.
+  a passing test confirms the caching table. The instruction counts were
+  measured (2a0231a6, a82b910d): a cached frame is 414 instructions and a
+  translating one 4,663.
 - [usage/text-and-fonts.md](../usage/text-and-fonts.md): the SDL claim of
   synthetic bold and oblique holds. It now applies to an installed family's
-  upright regular face too (7887bb86). **Still open:** no one has checked the
-  Garden row.
+  upright regular face too (7887bb86). The Garden row was checked against
+  `garden-render` (bfee7f0a) and corrected: synthetic bold also covers an
+  installed family with one weight, italic uses the family's italic cut or a
+  14° skew, there is no `serif` role, and an installed family's vertical
+  metrics are the built-in defaults.
 - [language-guide.md](../language-guide.md) **(66c88d49):** callback recursion
   was measured at 256 levels in a release build and 29 in debug. The bytecode
   shows that `--no-opt` turns off the `match` jump table. Stale class labels
@@ -217,15 +254,89 @@ that owns it, and a link was left in its place.
   points here.
 - `usage/host-io.md`
 
-**Still open: three pending-value behaviours differ from
-[dev/pending-values-plan.md](../dev/pending-values-plan.md).** The new page
-describes what the code does. Whether the code or the plan is right has not
-been decided:
+**Settled: three pending-value behaviours differed from
+[dev/pending-values-plan.md](../dev/pending-values-plan.md).** Each was traced
+to its origin, and none had been decided; they had been left out. Two were
+fixed in the code and one in the plan (d1c6f9e7):
 
-- `u && x` returns `x` and `u || x` returns a boolean; neither returns the
-  pending value.
-- Calling a pending value raises `Cannot call pending` instead of absorbing.
-- `repeat` with a pending count absorbs instead of being a hard error.
+- **`&&` / `||` with a pending left side: the code was wrong, now fixed.**
+  `emit_short_circuit` (`core/src/backend/bytecode/lower.rs`) tested the left
+  side's truthiness, and a pending value counts as truthy, so `u && x` was
+  `x` and `u || x` was `true`. That got around the `if` guard: `if
+  user.admin || override then` ran its branch while `user` was loading.
+  Chunk F (bab930c7) gave `if` and `while` a `JumpIfPending` but never the
+  short-circuit operators, which date from M2a (21b50375). The left side now
+  has the same `JumpIfPending`: the right side does not run and the result is
+  the pending value. A pending right side is the result when the left does
+  not decide it.
+- **Calling a pending value: the code was wrong, now fixed.** `u(x)`,
+  `u(...xs)` and a method no builtin answers (`u.greet()`) raised `Cannot
+  call pending`, while `map(xs, u)`, `u.len()` and `u.handler` absorbed.
+  Chunk C (7f8b81ec) added the pending check on the native path only. All
+  three now evaluate to the pending value, as the plan's table says
+  (`core/src/backend/bytecode/vm/calls.rs`).
+- **`repeat` with a pending count: the plan was out of date, now fixed.** The
+  plan (2026-07-10) listed a `repeat(n)` count as a hard error before any
+  `repeat` builtin existed. `repeat(s, n)` (6906228a, 2026-10-09) is a pure
+  strict native, so a pending count makes the result pending and corrupts
+  nothing. The plan's row now says count arguments (`repeat`, `range`) absorb.
 
-Links to the new pages from `Builtins.md` and from the explain and graph
-sections of `CLI.md` were not added.
+The tests are in `core/src/env/tests.rs`,
+`pending_short_circuit_and_call_tests` (left, right and resolved sides, the
+`if` case, every call route). `features/pending-values.md` lost its "two
+places do not follow the rule" note, and `CHANGELOG.md` lists the change.
+
+The links to the new pages from `Builtins.md` and from `CLI.md` were added in
+8b6f343c, and `syntax/declaration-order.md` is linked from the hoisting
+warning in CLI.md's check section (c6400d5a).
+
+## 6. The second round's follow-ups
+
+- **Measured and drawn text width in petal-sdl (30b1e308).** A kerned string
+  like "AVAVA" drew narrower than `text_width` measured it. The SDL host now
+  loads every font size with kerning off, so the drawn width matches
+  petal-ui's per-character table everywhere (truncation, wrapping and flow
+  use the same sum). Pairs like "AV" draw slightly looser than real
+  typesetting. Test: `kerned_pairs_draw_as_wide_as_they_measure`.
+- **Key names across the ecosystem.** Garden passed typed characters to panel
+  scripts (`"G"`, `"?"`, `"-"`) where every other host reports the key
+  (`"g"` with `mod_shift()`, `"slash"`, `"minus"`); `panel_key_name` now
+  names the key (975145e6). The always-false key names were fixed in
+  worlds-fair (877824f), session-retro in `~/tools` (d9e98ca, 30cbaa3, which
+  also builds it against today's Petal) and the petal-lang.org paint example
+  and key mapping (68a8174a in `~/biz`).
+- **UI golden hashes (6832c6c9).** All 58 stale entries were traced to their
+  commits (state keys renumbered by prelude edits, the `text_ellipsize` fix,
+  handlers that now fire on canonical key names); none is a regression. Six
+  apps gained entries.
+- **worlds-fair's vendored Petal.** `tools/vendor-petal.ts` looked for the
+  old `rust/` layout. It now mirrors upstream's (`core/`, `core-libs/`,
+  `core-runtime/` and Garden's `garden` interface package, which the
+  manifest now takes from the snapshot), and the snapshot was refreshed from
+  three weeks back. Hosts have no implicit imports now, so the two host
+  shims import `ui`, `color` and (Garden) `garden`, and the engine's four
+  seam natives are declared in a small `wf_seam` package that
+  `register_seam` registers. `wf-tuning` handles the new `StaticValue`
+  variants. The commit in worlds-fair is "chore(vendor): re-vendor Petal in
+  its new layout".
+
+## Still open
+
+- **Kerned measurement in petal-ui.** Turning kerning back on in petal-sdl
+  needs a host hook in petal-ui's `FontSource`
+  (`core-libs/petal-ui/src/text.rs`) that returns a whole run's laid-out
+  width, used by `run_width`. Text drawn with letter-spacing can still drift
+  from its measurement by whole-pixel advances.
+- **Figures marked as dated**, which a quiet machine could re-measure: the
+  four in `dev/performance.md` listed above. Recompiling Moses takes about
+  800 ms against 488 ms on 13 October; part of that is growth, the rest was
+  not looked into.
+- **Outside this repo.** petal-lang.org's downloadable SDK
+  (`public/downloads/petal-web-canvas/`) is the old build until `pnpm
+  build:sdk` is run, and the site's examples still match the older vendored
+  WASM. hotlaps is not on this machine and was not swept.
+- **Corpus entries the driver never compares.** `test/ui-golden/index.json`
+  keeps hashes for apps the driver marks unsupported (petal-fantasy-nes, the
+  petal-fps examples). About 18 files in `~/worlds-fair/ui/ptl` and
+  `~/.garden/petal-ide` became unsupported to the verify driver from
+  d2899126; nobody has looked at why.

@@ -404,7 +404,7 @@ pub(crate) fn normalize_lexical(path: &Path) -> Option<PathBuf> {
 /// `target` as a `/`-joined path relative to the directory `base`, without
 /// its `.ptl` suffix: `level`, `ui/hud`, `../shared/rng`. How a loose file is
 /// named. Both paths are expected canonical.
-fn relative_module_name(base: &Path, target: &Path) -> String {
+pub(crate) fn relative_module_name(base: &Path, target: &Path) -> String {
     let target = target.with_extension("");
     let base_parts: Vec<_> = base.components().collect();
     let target_parts: Vec<_> = target.components().collect();
@@ -1341,13 +1341,42 @@ fn scan_gated_module(
     name: &str,
     importer: &Importer,
 ) -> Result<(Vec<String>, HashSet<String>), LoadError> {
-    let resolved = resolver.resolve(name, importer).map_err(|why| {
+    let mut exports = Vec::new();
+    let mut idents = HashSet::new();
+    let mut seen = HashSet::new();
+    scan_gated_into(resolver, name, importer, &mut seen, &mut exports, &mut idents)?;
+    Ok((exports, idents))
+}
+
+/// [`scan_gated_module`]'s walk: the exports of the module at `path` are its
+/// own `pub` declarations and what it re-exports (`pub import ./input`, or
+/// the names of `pub import x: a, b`), since an importer binds those too.
+/// `seen` stops a re-export cycle. An unresolvable re-export is the module
+/// loader's to report when the module is loaded; only the module itself
+/// must resolve.
+fn scan_gated_into(
+    resolver: &dyn ModuleResolver,
+    path: &str,
+    importer: &Importer,
+    seen: &mut HashSet<String>,
+    exports: &mut Vec<String>,
+    idents: &mut HashSet<String>,
+) -> Result<(), LoadError> {
+    let resolved = resolver.resolve(path, importer).map_err(|why| {
         LoadError::message(
             Phase::Module,
-            format!("cannot find implicit prelude module '{name}': {why}"),
+            format!("cannot find implicit prelude module '{path}': {why}"),
         )
     })?;
-    let display = display_name_for(name, &resolved.origin);
+    let display = display_name_for(path, &resolved.origin);
+    let key = match (&resolved.name, &resolved.origin) {
+        (Some(name), _) => name.clone(),
+        (None, ModuleOrigin::File(file)) => file.display().to_string(),
+        (None, ModuleOrigin::Memory) => path.to_string(),
+    };
+    if !seen.insert(key) {
+        return Ok(());
+    }
     // Keyed apart from the load of the same module (`visit`), which stamps
     // its spans with the module's own file id.
     let stmts = parse_module(
@@ -1355,17 +1384,29 @@ fn scan_gated_module(
         ENTRY_FILE,
         Some(&display),
         resolver.parse_cache(),
-        &format!("scan {name}"),
+        &format!("scan {path}"),
     )?;
-    let (_imports, stmts) = split_imports(stmts);
-    let exports = stmts
-        .iter()
-        .filter(|s| s.exported)
-        .filter_map(|s| declared_name(&s.kind).map(str::to_string))
-        .collect();
-    let mut idents = HashSet::new();
-    collect_module_refs(&stmts, &mut idents);
-    Ok((exports, idents))
+    let (imports, stmts) = split_imports(stmts);
+    exports.extend(
+        stmts
+            .iter()
+            .filter(|s| s.exported)
+            .filter_map(|s| declared_name(&s.kind).map(str::to_string)),
+    );
+    collect_module_refs(&stmts, idents);
+    let this = Importer {
+        name: resolved.name.as_deref(),
+        origin: Some(&resolved.origin),
+    };
+    for import in imports.iter().filter(|i| i.decl.exported) {
+        match &import.decl.names {
+            Some(names) => exports.extend(names.iter().cloned()),
+            None => {
+                let _ = scan_gated_into(resolver, &import.decl.module, &this, seen, exports, idents);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The names a module references that could resolve to a *prelude* export: every
@@ -1643,7 +1684,7 @@ mod tests {
     }
 
     /// A tool's implicit prelude (`petal lsp` modelling a host, see
-    /// `lsp/host.rs`) may import a module the script imports too: that
+    /// `project_host.rs`) may import a module the script imports too: that
     /// module is the prelude's dependency, compiled before it and not bound
     /// to it.
     #[test]
@@ -1661,6 +1702,29 @@ mod tests {
         let sid = env.create_stack(pid).unwrap();
         env.run(sid).unwrap();
         assert_eq!(env.take_output(), ["1"]);
+    }
+
+    /// An implicit prelude is loaded when the script names one of its
+    /// exports, and what it re-exports counts (`ui` re-exports `ui/input`'s
+    /// `key_pressed`): a script that names only a re-exported name gets it.
+    #[test]
+    fn an_implicit_preludes_re_exports_open_its_gate() {
+        let mut env = Env::new();
+        env.register_module("pre/inner", "pub fn inner()\n  7\nend\n");
+        env.register_module("pre/some", "pub fn a()\n  1\nend\npub fn b()\n  2\nend\n");
+        env.register_module(
+            "pre",
+            "pub import pre/inner\npub import pre/some: b\npub fn own()\n  0\nend\n",
+        );
+        env.add_tooling_implicit_imports(&["pre".to_string()]);
+        let pid = env.load_program("print(inner())\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(env.take_output(), ["7"]);
+        let pid = env.load_program("print(b())\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(env.take_output(), ["2"]);
     }
 
     /// Like [`run`], but for a program expected to fail to load: returns the

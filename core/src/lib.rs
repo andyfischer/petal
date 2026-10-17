@@ -58,6 +58,7 @@ pub mod parse;
 pub mod profile;
 pub mod program;
 pub mod program_analysis;
+pub mod project_host;
 #[cfg(kani)]
 mod proofs;
 pub mod provenance;

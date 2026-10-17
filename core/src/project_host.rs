@@ -1,6 +1,7 @@
 //! The host a document is written for, as its project describes it.
 //!
-//! The server compiles each file alone, but a host may put names in scope
+//! The language server (`petal lsp`) and `petal check` compile each file
+//! alone, but a host may put names in scope
 //! that the file never imports: a module it binds as an implicit prelude, or
 //! library files it joins ahead of the script into one program. Compiled
 //! alone, such a script calls nothing but unknown functions. The project's
@@ -13,7 +14,7 @@
 //! prelude = ["host/garden.ptl", "lib/theme.ptl", "lib/widgets.ptl"]
 //! ```
 //!
-//! and the server compiles the document the way that host would:
+//! and both compile the document the way that host would:
 //!
 //! - each of `imports` is bound like the core prelude `std` — every export
 //!   bare and weak, under the file's own imports and declarations, and only
@@ -23,9 +24,18 @@
 //!   imports must come first. A document that is itself one of the files
 //!   sees only the files listed before it.
 //!
+//! A relative import in a prelude file (`import ./widgets`) names a file
+//! beside that prelude file, so when the file is joined into a document in
+//! another directory its path is rewritten to reach the same file from the
+//! document's directory ([`HostView::join`]).
+//!
 //! The joined text keeps every line whole, so a position in it maps back to
-//! the line of the file it came from ([`Joined::origin`]) with the same column.
+//! the line of the file it came from ([`Joined::origin`]) with the same column
+//! (but on a rewritten import line). A findings list or a load error of the
+//! joined program is moved back onto the document with
+//! [`Joined::relocate_program`] and [`Joined::relocate_load_error`].
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use crate::source_map::{ENTRY_FILE, SourceSpan};
@@ -47,6 +57,10 @@ pub struct HostView {
     /// What could not be read (a prelude file that does not exist), worded
     /// for a diagnostic.
     pub problems: Vec<String>,
+    /// The document's directory, canonical: what a relative import in a
+    /// prelude file is rewritten against. `None` leaves those imports as
+    /// they are written.
+    pub doc_dir: Option<PathBuf>,
 }
 
 impl HostView {
@@ -68,6 +82,7 @@ impl HostView {
         let doc = crate::module::canonical_path(doc);
         let mut view = HostView {
             imports: scope.imports,
+            doc_dir: doc.parent().map(Path::to_path_buf),
             ..HostView::default()
         };
         for name in scope.prelude {
@@ -105,6 +120,10 @@ impl HostView {
     /// The program the host would compile for `source`: the prelude files
     /// and then the document, with every file's leading import lines moved
     /// to the top. With no prelude files it is `source` itself.
+    ///
+    /// A prelude file's relative imports are rewritten to name the same file
+    /// from the document's directory, since the joined program is compiled
+    /// as the document.
     pub fn join(&self, source: &str) -> Joined {
         if self.prelude.is_empty() {
             return Joined {
@@ -118,8 +137,8 @@ impl HostView {
             .enumerate()
             .map(|(i, f)| (Some(i), f.text.as_str()))
             .chain(std::iter::once((None, source)));
-        let mut hoisted: Vec<(&str, LineOrigin)> = Vec::new();
-        let mut body: Vec<(&str, LineOrigin)> = Vec::new();
+        let mut hoisted: Vec<(Cow<str>, LineOrigin)> = Vec::new();
+        let mut body: Vec<(Cow<str>, LineOrigin)> = Vec::new();
         for (file, text) in pieces {
             let header = header_lines(text);
             for (i, line) in text.split('\n').enumerate() {
@@ -129,16 +148,26 @@ impl HostView {
                     None => LineOrigin::Doc(n),
                 };
                 if header.contains(&i) {
+                    let line = match (file, &self.doc_dir) {
+                        (Some(f), Some(doc_dir)) => {
+                            rebase_import(line, &self.prelude[f].path, doc_dir)
+                        }
+                        _ => Cow::Borrowed(line),
+                    };
                     hoisted.push((line, origin));
-                    body.push(("", origin));
+                    body.push((Cow::Borrowed(""), origin));
                 } else {
-                    body.push((line, origin));
+                    body.push((Cow::Borrowed(line), origin));
                 }
             }
         }
-        let all: Vec<(&str, LineOrigin)> = hoisted.into_iter().chain(body).collect();
+        let all: Vec<(Cow<str>, LineOrigin)> = hoisted.into_iter().chain(body).collect();
         Joined {
-            text: all.iter().map(|(l, _)| *l).collect::<Vec<_>>().join("\n"),
+            text: all
+                .iter()
+                .map(|(l, _)| l.as_ref())
+                .collect::<Vec<_>>()
+                .join("\n"),
             origins: all.into_iter().map(|(_, o)| o).collect(),
         }
     }
@@ -210,6 +239,104 @@ impl Joined {
     }
 }
 
+impl Joined {
+    /// Whether the document was joined with anything (there are prelude
+    /// files), so that positions need moving back.
+    pub fn is_joined(&self) -> bool {
+        !self.origins.is_empty()
+    }
+
+    /// Move the findings of the joined program back onto the document, as
+    /// `petal check` reports them: each one in the document gets its own
+    /// line (every span it cites moves with it), one in a prelude file is
+    /// dropped (checking that file reports it), and one in an imported
+    /// module is kept. The program's entry source becomes `doc_source`, so
+    /// that a report's snippets quote the document.
+    ///
+    /// For a report only: the program's term spans still index the joined
+    /// text, so it must not be run or edited afterwards.
+    pub fn relocate_program(&self, program: &mut crate::program::Program, doc_source: &str) {
+        if !self.is_joined() {
+            return;
+        }
+        let warnings = std::mem::take(&mut program.warnings);
+        program.warnings = warnings
+            .into_iter()
+            .filter_map(|w| {
+                if w.span.file != ENTRY_FILE {
+                    return Some(w);
+                }
+                self.doc_span(w.span)?;
+                w.relocated(|s| self.doc_span(s).or(Some(s)))
+            })
+            .collect();
+        program.source = doc_source.to_string();
+        if let Some(entry) = program.source_map.files.get_mut(ENTRY_FILE.0 as usize) {
+            entry.source = doc_source.to_string();
+        }
+    }
+
+    /// Move a failed compile of the joined program back onto the files it
+    /// came from: an item in the document gets its own line, and one in a
+    /// prelude file is named by that file (as the manifest writes it) with
+    /// its line there.
+    pub fn relocate_load_error(&self, err: &mut crate::error::LoadError, host: &HostView) {
+        if !self.is_joined() {
+            return;
+        }
+        for item in &mut err.items {
+            let (Some(span), None) = (item.span, &item.file) else {
+                continue;
+            };
+            if let Some(doc) = self.doc_span(span) {
+                item.span = Some(doc);
+            } else if let Some((index, local)) = self.prelude_span(span)
+                && let Some(file) = host.prelude.get(index)
+            {
+                item.span = Some(local);
+                item.file = Some(file.name.clone());
+            }
+        }
+    }
+}
+
+/// `line`, an import line of the prelude file at `prelude`, with a relative
+/// module path rewritten to reach the same file from `doc_dir`. Any other
+/// line is returned as it is.
+fn rebase_import<'a>(line: &'a str, prelude: &Path, doc_dir: &Path) -> Cow<'a, str> {
+    let lead = line.len() - line.trim_start().len();
+    let mut at = lead;
+    for kw in ["pub ", "export "] {
+        if line[at..].starts_with(kw) {
+            at += kw.len();
+        }
+    }
+    let Some(rest) = line[at..].strip_prefix("import ") else {
+        return Cow::Borrowed(line);
+    };
+    at += "import ".len() + (rest.len() - rest.trim_start().len());
+    let len = line[at..]
+        .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '/' || c == '.'))
+        .unwrap_or(line.len() - at);
+    let written = &line[at..at + len];
+    if !crate::module::is_relative_import(written) {
+        return Cow::Borrowed(line);
+    }
+    let Some(target) = prelude
+        .parent()
+        .and_then(|dir| crate::module::normalize_lexical(&dir.join(written)))
+    else {
+        return Cow::Borrowed(line);
+    };
+    let name = crate::module::relative_module_name(doc_dir, &target);
+    let rebased = if name.starts_with("../") {
+        name
+    } else {
+        format!("./{name}")
+    };
+    Cow::Owned(format!("{}{}{}", &line[..at], rebased, &line[at + len..]))
+}
+
 /// The 0-based indices of the lines of `text`'s leading import statements:
 /// the run of `import` lines (with the continuation lines of a wrapped name
 /// list) that may be interleaved with comments and blank lines, as
@@ -272,5 +399,29 @@ mod tests {
         let alone = HostView::default().join(doc);
         assert_eq!(alone.text, doc);
         assert_eq!(alone.origin(3), LineOrigin::Doc(3));
+    }
+
+    #[test]
+    fn a_prelude_files_relative_imports_are_rebased_on_the_document() {
+        let prelude = Path::new("/p/lib/more.ptl");
+        let rebase =
+            |line: &str, doc: &str| rebase_import(line, prelude, Path::new(doc)).into_owned();
+        assert_eq!(rebase("import ./util", "/p/screens"), "import ../lib/util");
+        assert_eq!(
+            rebase("pub import ../x/y as z", "/p/screens"),
+            "pub import ../x/y as z"
+        );
+        assert_eq!(rebase("import ../x/y", "/p"), "import ./x/y");
+        assert_eq!(rebase("import ./util", "/p/lib"), "import ./util");
+        assert_eq!(rebase("import ./a: f, g", "/p"), "import ./lib/a: f, g");
+        // Package imports are left alone.
+        assert_eq!(rebase("import color", "/p/screens"), "import color");
+        // The same file joined into a document in another directory.
+        let host = HostView {
+            doc_dir: Some(PathBuf::from("/p/screens")),
+            ..view(&[("/p/lib/more.ptl", "import ./util\nfn f() 1 end")])
+        };
+        let joined = host.join("print(f())");
+        assert_eq!(joined.text.lines().next(), Some("import ../lib/util"));
     }
 }

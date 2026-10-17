@@ -1727,6 +1727,26 @@ fn a_prelude_file_that_cannot_be_read_or_compiled_is_reported() {
 }
 
 #[test]
+fn a_relative_import_in_a_prelude_file_resolves_beside_that_file() {
+    let project = Project::new(
+        "host-relative",
+        &[
+            (
+                "petal.toml",
+                "[package]\nname = \"p\"\n[host]\nprelude = [\"lib/more.ptl\"]\n",
+            ),
+            ("lib/more.ptl", "import ./util\n\nfn twice(x)\n  util_fn(util_fn(x))\nend\n"),
+            ("lib/util.ptl", "pub fn util_fn(x)\n  x * 2\nend\n"),
+        ],
+    );
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = project.uri("screens/menu.ptl");
+    let diags = get_diagnostics(&open(&mut server, &uri, "print(twice(util_fn(1)))\n"));
+    assert!(diags.is_empty(), "{diags:?}");
+}
+
+#[test]
 fn a_broken_script_still_completes_the_hosts_implicit_imports() {
     let project = Project::new(
         "host-broken-doc",

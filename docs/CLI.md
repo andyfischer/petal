@@ -568,6 +568,18 @@ example trees in this repository carry such a manifest (`examples/petal.toml`
 and others), which is why `petal check examples/games/flappy/app.ptl` resolves
 `import garden` by itself.
 
+A script written for a host that puts names in scope without an import (it
+binds its interface as an implicit prelude, or joins library files ahead of
+each script into one program) is checked as that host compiles it when its
+project's `petal.toml` has a [`[host]`](packages.md#host) section, the same
+way `petal lsp` analyzes it: `imports` are bound like the core prelude `std`,
+and the `prelude` files are joined ahead of the script (a script that is one
+of them sees only the files listed before it). Findings keep the script's own
+lines and snippets; one in a prelude file is left to the check of that file,
+and a prelude file that does not compile is named in the error
+(`lib/theme.ptl: … [line 4, column 3]`). A prelude file that cannot be read
+is a `warning:` line. `-e`, stdin and `--ir` read no `[host]`.
+
 When the packages a script loads state `[requires]`, a passing `check` ends
 with one line naming them — `requires host interfaces: ui >=0.1 (bloom)` —
 and `--json` carries a `requires` array of `{interface, version, package}`.
@@ -575,7 +587,8 @@ and `--json` carries a `requires` array of `{interface, version, package}`.
 ([packages.md](packages.md#requires)).
 
 `check` and `run` agree on every script: `run` begins with the same check and
-does not start a program that fails it. The one thing `run` adds is linking.
+does not start a program that fails it (`run` reads no `[host]`: a host
+script runs in its host). The one thing `run` adds is linking.
 `check` never links, so a script that imports `ui` checks clean; `petal run`
 of it stops after the check, before any line runs, because `run` registers the
 core builtins only:

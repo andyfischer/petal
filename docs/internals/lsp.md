@@ -273,9 +273,9 @@ prelude = ["host/garden.ptl", "lib/theme.ptl", "lib/basics.ptl", "lib/layout.ptl
            "lib/widgets.ptl", "lib/parts.ptl"]
 ```
 
-`HostView::for_document` ([`host.rs`](../../core/src/lsp/host.rs)) reads it
-from the nearest `petal.toml` at or above the document, and the server
-compiles the document as that host would:
+`HostView::for_document` ([`project_host.rs`](../../core/src/project_host.rs),
+shared with `petal check`) reads it from the nearest `petal.toml` at or above
+the document, and the server compiles the document as that host would:
 
 - **`imports`** are bound the way the core prelude `std` is, through
   `Env::add_tooling_implicit_imports` (crate-private; hosts themselves have no
@@ -292,13 +292,25 @@ compiles the document as that host would:
   names do. A document that is itself one of the files sees only the files
   listed before it, which is the order rule the host's join imposes.
   An open prelude file's unsaved text is what is joined; one that cannot be
-  read is a warning at the top of the document.
+  read is a warning at the top of the document. A relative import in a
+  prelude file (`import ./util`) names a file beside it, so the join rewrites
+  its path to reach the same file from the document's directory
+  (`import ../lib/util` from `screens/`); the module's identity is its
+  canonical file, so the document importing it too is the same module.
 
-With the section above in a copy of the worlds-fair `ui/ptl` (and `garden` as
-a path dependency), `host/garden.ptl` goes from 31 diagnostics to 2 (both
-real: `key_pressed("]")` is not a key name) and `screens/missions.ptl` from 78
-to 0. Only the server reads `[host]`; `petal check` checks a file as it is
-written.
+The worlds-fair UI carries such a section (`ui/ptl/petal.toml`, with
+`garden` as a path dependency and `color` among the imports): every file
+under `ui/ptl` checks clean, where `host/garden.ptl` had 31 diagnostics and
+`screens/missions.ptl` 78. `petal check` reads `[host]` the same way
+(`handle_check` in `cli/handlers.rs`): it joins with the same `HostView`,
+then `Joined::relocate_program` moves the findings back onto the script's
+lines (dropping the prelude files' own, which their own check reports) and
+`Joined::relocate_load_error` names the prelude file a failed compile is in.
+
+An implicit import is loaded only when the file names one of its exports,
+and its exports include what it re-exports: `ui`'s `pub import ./input` makes
+`key_pressed` one of `ui`'s exports for that test (`scan_gated_module` in
+`module.rs`), so a script that names only input functions still gets `ui`.
 
 **`const` and the static classifier.** Whether a native is constant is the
 host's to say. A `const` built from natives the server does not have is

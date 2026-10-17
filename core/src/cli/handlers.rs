@@ -957,14 +957,43 @@ pub(super) fn handle_check(
     // cannot fail, so there is nothing in it for a check to report.
     env.set_static_cache(false);
     let is_empty = source.trim().is_empty();
+    // A file whose project says what its host puts in scope (`[host]` in
+    // `petal.toml`) is compiled as that host would compile it, the same way
+    // `petal lsp` analyzes it: the host's implicit imports bound, its
+    // prelude files joined ahead. What is found is moved back onto the file.
+    let host = match source_origin(source_input) {
+        Some(path) if !ir => crate::project_host::HostView::for_document(&path, &[]),
+        _ => crate::project_host::HostView::default(),
+    };
+    for problem in &host.problems {
+        eprintln!("warning: {problem}");
+    }
+    host.apply(&mut env);
+    let joined = host.join(source);
     // `--ir` swaps the front end for the IR deserializer, so a third-party
     // emitter's IR can be CI-validated the same way source is. Everything below
     // is unchanged: the lowering gate is the point of `check` either way.
-    let pid = load_or_die(&mut env, json, ir, source, source_input);
+    let pid = if joined.is_joined() {
+        match load_into(&mut env, &joined.text, source_input) {
+            Ok(pid) => pid,
+            Err(mut e) => {
+                joined.relocate_load_error(&mut e, &host);
+                die_error(json, &e, serde_json::Value::Null, source)
+            }
+        }
+    } else {
+        load_or_die(&mut env, json, ir, source, source_input)
+    };
     // The check itself (`crate::check`) is the library's: the findings of the
     // compile, and whether the program lowers. `petal run` asks the same
     // question the same way before it starts.
-    let report = env.check_program(pid);
+    let mut report = env.check_program(pid);
+    if joined.is_joined()
+        && let Some(program) = env.get_program_mut(pid)
+    {
+        joined.relocate_program(program, source);
+        report.diagnostics = program.warnings.clone();
+    }
     let program = env.get_program(pid);
     if let (Some(e), Some(program)) = (&report.lower_error, program) {
         // Warnings are about the source, not the lowering, so report

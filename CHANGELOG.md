@@ -537,7 +537,11 @@ way, for code written against an earlier checkout.
   what its host puts in scope without an import, under `[host]` (`imports`
   bound like a host prelude, `prelude` files joined ahead of each script),
   and the server analyzes its scripts that way
-  ([docs/packages.md](docs/packages.md#host)).
+  ([docs/packages.md](docs/packages.md#host)). `petal check` reads `[host]`
+  the same way, reporting on the script's own lines; a relative import in a
+  prelude file resolves beside that file; and an implicit import whose only
+  named export is a re-exported one (`key_pressed`, re-exported by `ui` from
+  `ui/input`) is now loaded.
 - Per-command help pages (`petal <command> --help`).
 - Prebuilt binaries for macOS (arm64, x86_64) and Linux (x86_64, arm64, static
   musl), installed by `curl -fsSL https://petal-lang.org/install.sh | sh`.

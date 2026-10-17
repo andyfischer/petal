@@ -180,18 +180,17 @@ prelude = [                    # files the host joins ahead of each script, in o
 | Key | Meaning |
 | --- | --- |
 | `imports` | Modules bound in every script the way the core prelude `std` is: every export bare, under the script's own imports and declarations, and loaded only when the script names one of its exports. Each must resolve from the project (bundled, a dependency, or on `PETAL_PATH`). |
-| `prelude` | Files, relative to the manifest, joined ahead of the script as one program. Their top-level names need no `pub`, as in the host's joined program. A file of the list sees only the files listed before it. |
+| `prelude` | Files, relative to the manifest, joined ahead of the script as one program. Their top-level names need no `pub`, as in the host's joined program. A file of the list sees only the files listed before it. A finding in one of them is reported by the check of that file, not of each script. |
 
 Each value is a list of strings (one string is a list of one), and an array
 may run over several lines. Any other key is an error naming the line.
 
-Only `petal lsp` reads it, and only from the project of the file it is
-analyzing, never from a dependency. Nothing that runs a script reads it: the
-host decides what is in scope, and this only describes that. `petal check`
-checks a file as it is written, so it still reports those names; check what
-the host actually compiles instead (a joined bundle, say). A new script
-should import its host's interface (`import ui`) rather than rely on this;
-see [Host interface packages](module-system.md#host-interface-packages).
+`petal lsp` and `petal check` read it, and only from the project of the
+file they are compiling, never from a dependency. Nothing that runs a script
+reads it: the host decides what is in scope, and this only describes that.
+A relative import in a prelude file resolves beside that file, as it would on
+its own. A new script should import its host's interface (`import ui`) rather
+than rely on this; see [Host interface packages](module-system.md#host-interface-packages).
 
 ## Where a package name is looked up
 

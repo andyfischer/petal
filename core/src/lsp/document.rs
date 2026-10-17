@@ -6,7 +6,7 @@ use crate::ast::{Expr, ExprKind, Stmt, StmtKind};
 use crate::diagnostic::Diagnostic as PetalDiagnostic;
 use crate::source_map::SourceSpan;
 
-use crate::lsp::host::{HostView, Joined, LineOrigin};
+use crate::project_host::{HostView, Joined, LineOrigin};
 use crate::lsp::lsp_types;
 use crate::lsp::members::{EnumShape, ValueHint, expr_path};
 
@@ -338,7 +338,7 @@ pub fn analyze(source: &str) -> Analysis {
 ///
 /// The document is compiled as its host would compile it, when its project
 /// says what that host puts in scope (`[host]` in `petal.toml`, see
-/// [`crate::lsp::host`]).
+/// [`crate::project_host`]).
 pub fn analyze_at(
     source: &str,
     path: Option<&std::path::Path>,
@@ -635,7 +635,7 @@ impl<'a> ImportSites<'a> {
         let (source, doc) = (self.source, self.doc);
         self.sites.get_or_insert_with(|| {
             let lines: Vec<&str> = source.split('\n').collect();
-            crate::lsp::host::header_lines(source)
+            crate::project_host::header_lines(source)
                 .into_iter()
                 .filter_map(|row| {
                     let line = lines.get(row)?;

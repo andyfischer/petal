@@ -544,9 +544,9 @@ fn a_cache_hit_fetches_no_syntax_tree_and_is_small() {
         assert_eq!(native_calls(&w, "fn_ast"), ast);
         assert!(native_calls(&w, "fn_info") - info <= 2);
         let per_frame = w.env.profile().total_insts() - insts;
-        // The whole frame, the script's own top level included: about 640
-        // instructions with the optimizer on and 810 with it off, where the
-        // first frame (which translates) runs 4,700 and 7,700.
+        // The whole frame, the script's own top level included: 414
+        // instructions with the optimizer on and 821 with it off, where the
+        // first frame (which translates) runs 4,663 and 7,721 (2026-10-16).
         assert!(per_frame < 1500, "a cached frame ran {per_frame} instructions");
     }
 }

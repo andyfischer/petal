@@ -204,9 +204,12 @@ every frame, with the call memo on and with it off:
 | a reload that edits the helper | 1 |
 | a reload that changes a captured int (a loop bound) | 1 |
 
-A frame with a cache hit ran about 640 VM instructions for that whole script
-(building the environment record included), against about 4,700 for the frame
-that translates.
+A frame with a cache hit runs 414 VM instructions for that whole script
+(building the environment record included), against 4,663 for the frame that
+translates; with the optimizer off (`baseline`) the two are 821 and 7,721.
+These are the VM's own instruction counts (`Env::profile().total_insts()`),
+so they do not depend on the machine; measured 2026-10-16 on the same script
+as the test, under the `fast` and `replay` policies, which agree.
 
 The call memo does not add to this today. It replays the capture walk inside
 the library, but not the call of `glsl_function` itself: to match the call it
@@ -287,7 +290,12 @@ effect.
   given source position would let the library fail at the lambda.
 - **The C bridge** does not expose function values; a host takes the GLSL as
   a string from Petal code.
-- **Speed in the VM** has only been measured roughly. Translating the eleven
-  effects takes about 70,000 VM instructions in total and about half a
-  millisecond each in a release build (macOS, one run of the whole file
-  against the same file translating nothing). It is paid once per change.
+- **Speed in the VM.** Translating the eleven effects takes 67,404 VM
+  instructions in total under the `fast` policy (116,367 with the optimizer
+  off), and in a release build about 0.7 ms each under `fast` and 0.43 ms
+  under `baseline`: fewer instructions, but more time around them. Measured
+  2026-10-16 on an Apple M4 (10 cores) under heavy load (load average 12 to
+  15), three repetitions (one `fast` repetition gave 1.25 ms), each the fastest of 40
+  fresh runs of `effects.ptl` with the eleven `glsl_function` calls, minus
+  the fastest of 40 runs of the same file making none. It is paid once per
+  change.

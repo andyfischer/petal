@@ -1165,21 +1165,66 @@ pub fn load_modules(
     }
     let gated_modules = std::mem::take(&mut walker.out);
 
+    // What each gated module needs, transitively. A gated module may import
+    // a module the entry imports too (a host prelude `ui` imports `color`,
+    // and so may the script): that module was walked with the entry's, but
+    // it is the gated module's dependency.
+    let graph: HashMap<&str, Vec<&str>> = gated_modules
+        .iter()
+        .chain(imported_modules.iter())
+        .filter_map(|m| {
+            let deps = m.imports.iter().map(|i| i.decl.module.as_str()).collect();
+            Some((m.name.as_deref()?, deps))
+        })
+        .collect();
+    let needs = |root: &str| -> HashSet<String> {
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut stack = vec![root];
+        while let Some(name) = stack.pop() {
+            for &dep in graph.get(name).into_iter().flatten() {
+                if seen.insert(dep.to_string()) {
+                    stack.push(dep);
+                }
+            }
+        }
+        seen
+    };
+    let gated_needs: Vec<(ResolvedImport, HashSet<String>)> = gated_decls
+        .iter()
+        .map(|d| (d.clone(), needs(&d.decl.module)))
+        .collect();
+    let tangled = imported_modules.iter().any(|m| {
+        m.name
+            .as_ref()
+            .is_some_and(|n| gated_needs.iter().any(|(_, needs)| needs.contains(n)))
+    });
+
     // The gated prelude binds inside *every* module, not just the entry: a
     // library module is ordinary Petal and expects `has_field`/`sum`/… to
     // resolve there exactly as they do in a script. Gated decls stay
     // lowest-precedence, so a module's own imports and declarations shadow
-    // them.
+    // them. A module a gated module needs does not bind that one: it is
+    // compiled before it.
     for m in &mut imported_modules {
-        let mut imports = gated_decls.clone();
+        let name = m.name.as_deref();
+        let mut imports: Vec<ResolvedImport> = gated_needs
+            .iter()
+            .filter(|(_, needs)| !name.is_some_and(|n| needs.contains(n)))
+            .map(|(decl, _)| decl.clone())
+            .collect();
         imports.extend(std::mem::take(&mut m.imports));
         m.imports = imports;
     }
 
     // Assemble: the prelude runs first, then the imported modules, then the
-    // entry. The entry's import list mirrors that precedence order.
+    // entry. The entry's import list mirrors that precedence order. When a
+    // gated module needs one of the imported modules, that one moves ahead
+    // of it.
     let mut modules = gated_modules;
     modules.extend(imported_modules);
+    if tangled {
+        modules = dependency_order(modules);
+    }
     let mut entry_imports = gated_decls;
     entry_imports.extend(ungated);
     modules.push(LoadedModule {
@@ -1193,6 +1238,45 @@ pub fn load_modules(
         requires: resolver.requires_of(entry_origin),
     });
     Ok(modules)
+}
+
+/// `modules` reordered so that each comes after every module it imports,
+/// keeping the given order wherever it already does.
+fn dependency_order(modules: Vec<LoadedModule>) -> Vec<LoadedModule> {
+    let index: HashMap<&str, usize> = modules
+        .iter()
+        .enumerate()
+        .filter_map(|(i, m)| Some((m.name.as_deref()?, i)))
+        .collect();
+    fn visit(
+        i: usize,
+        modules: &[LoadedModule],
+        index: &HashMap<&str, usize>,
+        visited: &mut [bool],
+        order: &mut Vec<usize>,
+    ) {
+        if visited[i] {
+            return;
+        }
+        visited[i] = true;
+        for import in &modules[i].imports {
+            if let Some(&j) = index.get(import.decl.module.as_str()) {
+                visit(j, modules, index, visited, order);
+            }
+        }
+        order.push(i);
+    }
+    let mut visited = vec![false; modules.len()];
+    let mut order = Vec::with_capacity(modules.len());
+    for i in 0..modules.len() {
+        visit(i, &modules, &index, &mut visited, &mut order);
+    }
+    drop(index);
+    let mut slots: Vec<Option<LoadedModule>> = modules.into_iter().map(Some).collect();
+    order
+        .into_iter()
+        .filter_map(|i| slots[i].take())
+        .collect()
 }
 
 /// A plain import's qualifier is the last segment *as written*. It differs
@@ -1556,6 +1640,27 @@ mod tests {
         let sid = env.create_stack(pid).unwrap();
         env.run(sid).unwrap();
         env.take_output()
+    }
+
+    /// A tool's implicit prelude (`petal lsp` modelling a host, see
+    /// `lsp/host.rs`) may import a module the script imports too: that
+    /// module is the prelude's dependency, compiled before it and not bound
+    /// to it.
+    #[test]
+    fn an_implicit_prelude_may_import_a_module_the_script_imports() {
+        let mut env = Env::new();
+        env.register_module("dep", "pub fn d()\n  1\nend\n");
+        env.register_module("pre", "import dep\npub fn p()\n  d() + 10\nend\n");
+        env.add_tooling_implicit_imports(&["pre".to_string()]);
+        let pid = env.load_program("import dep\nprint(p() + d())\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(env.take_output(), ["12"]);
+        // Not named, it is not loaded.
+        let pid = env.load_program("import dep\nprint(d())\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(env.take_output(), ["1"]);
     }
 
     /// Like [`run`], but for a program expected to fail to load: returns the

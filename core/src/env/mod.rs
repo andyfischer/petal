@@ -358,6 +358,20 @@ impl Env {
         self.check_only = on;
     }
 
+    /// Bind `modules` in every program as a host's implicit prelude: like the
+    /// core prelude `std`, reference-gated, every export bare and at the
+    /// lowest precedence. Hosts have no implicit imports (a script imports
+    /// its host's interface); this is for a tool that models a host which
+    /// once had one, as a project's `petal.toml` `[host] imports` describes
+    /// it (`petal lsp`, see `lsp/host.rs`).
+    pub(crate) fn add_tooling_implicit_imports(&mut self, modules: &[String]) {
+        for module in modules {
+            if !self.modules.base_implicit_imports.contains(module) {
+                self.modules.base_implicit_imports.push(module.clone());
+            }
+        }
+    }
+
     /// Whether this `Env` compiles without linking
     /// ([`set_check_only`](Self::set_check_only)).
     pub fn is_check_only(&self) -> bool {

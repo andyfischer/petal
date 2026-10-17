@@ -10,8 +10,10 @@
 //! (Content-Length framing over stdin/stdout), which is what `petal lsp` runs.
 
 pub mod document;
+pub mod host;
 pub mod lsp_types;
 pub mod members;
+pub mod position;
 pub mod protocol;
 pub mod server;
 pub mod stdio;

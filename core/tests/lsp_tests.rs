@@ -1461,3 +1461,288 @@ fn a_test_block_is_outlined_by_its_title_and_its_function_is_not_offered() {
     assert_eq!(diags.len(), 1, "{diags:?}");
     assert_eq!(diags[0].range.start.line, 2);
 }
+
+// ---------------------------------------------------------------------------
+// Diagnostics found in an imported module
+// ---------------------------------------------------------------------------
+
+/// A module whose ninth line calls a function nothing defines: the compile
+/// succeeds, with an error in the module's diagnostics.
+const LIB_WITH_ERROR: &str =
+    "// lib\n\n\n\n\n\n\npub fn f()\n  nope()\nend\n";
+
+#[test]
+fn a_diagnostic_in_an_imported_module_goes_on_the_import_line_with_its_place() {
+    let project = Project::new(
+        "module-diag",
+        &[
+            ("lib.ptl", LIB_WITH_ERROR),
+            ("via.ptl", "pub import ./lib\n"),
+        ],
+    );
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = project.uri("main.ptl");
+    let diags = get_diagnostics(&open(&mut server, &uri, "// main\nimport ./lib\nprint(f())\n"));
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    let d = &diags[0];
+    assert!(d.message.starts_with("lib.ptl: "), "{d:?}");
+    assert!(d.message.contains("`nope`"), "{d:?}");
+    // On the path of the import that brings the module in, not at the
+    // module's own line (8) in this two-line file.
+    assert_eq!(d.range.start, Position { line: 1, character: 7 });
+    assert_eq!(d.range.end, Position { line: 1, character: 12 });
+    let related = d.related_information.as_ref().expect("related information");
+    assert_eq!(related[0].location.uri, project.uri("lib.ptl"));
+    assert_eq!(related[0].location.range.start.line, 8);
+    assert_eq!(related[0].location.range.start.character, 2);
+
+    // Through another module, there is no line of this file to point at:
+    // the top, still with the module's name and place.
+    let diags = get_diagnostics(&change(&mut server, &uri, 2, "import ./via\nprint(f())\n"));
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    assert_eq!(diags[0].range, Range::default());
+    assert!(diags[0].message.starts_with("lib.ptl: "), "{diags:?}");
+    let related = diags[0].related_information.as_ref().expect("related");
+    assert_eq!(related[0].location.uri, project.uri("lib.ptl"));
+}
+
+#[test]
+fn a_failed_compile_in_an_imported_module_goes_on_the_import_line() {
+    let project = Project::new(
+        "module-fail",
+        &[("lib.ptl", "pub fn f()\n  1 +\nend\n")],
+    );
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = project.uri("main.ptl");
+    let diags = get_diagnostics(&open(&mut server, &uri, "// main\nimport ./lib\nprint(f())\n"));
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    assert!(diags[0].message.starts_with("lib.ptl: "), "{diags:?}");
+    assert_eq!(diags[0].range.start, Position { line: 1, character: 7 });
+    let related = diags[0].related_information.as_ref().expect("related");
+    assert_eq!(related[0].location.uri, project.uri("lib.ptl"));
+    assert_eq!(related[0].location.range.start.line, 2);
+
+    // An import that does not resolve is reported on its own line.
+    let diags = get_diagnostics(&change(&mut server, &uri, 2, "// main\nimport ./nothere\nprint(1)\n"));
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    assert!(diags[0].message.contains("cannot find module './nothere'"), "{diags:?}");
+    assert_eq!(diags[0].range.start.line, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Position encodings
+// ---------------------------------------------------------------------------
+
+fn init_offering(server: &mut Server, encodings: Value) -> Value {
+    let msgs = server.handle_message(&request(
+        0,
+        "initialize",
+        json!({"capabilities": {"general": {"positionEncodings": encodings}}}),
+    ));
+    let v: Value = serde_json::from_str(&msgs[0].to_json()).unwrap();
+    v["result"]["capabilities"]["positionEncoding"].clone()
+}
+
+/// `😀` is one code point, two UTF-16 code units and four UTF-8 bytes, so
+/// `name` after it starts at code point 11, UTF-16 unit 12, byte 14.
+const EMOJI_LINE: &str = "let name = 1\nprint(\"😀\", name, nope)\n";
+
+#[test]
+fn columns_are_utf16_by_default_across_an_astral_character() {
+    let mut server = Server::new();
+    let msgs = server.handle_message(&request(0, "initialize", json!({"capabilities": {}})));
+    let v: Value = serde_json::from_str(&msgs[0].to_json()).unwrap();
+    assert_eq!(v["result"]["capabilities"]["positionEncoding"], "utf-16");
+    let uri = "file:///emoji.ptl";
+    let diags = get_diagnostics(&open(&mut server, uri, EMOJI_LINE));
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    // `nope` is code point 17, UTF-16 unit 18.
+    assert_eq!(diags[0].range.start, Position { line: 1, character: 18 });
+    // Where the client sees `name` is where the server finds it.
+    let resp = hover(&mut server, uri, 1, 12);
+    assert!(resp["result"]["contents"]["value"].as_str().unwrap().contains("name"), "{resp}");
+    let resp = definition(&mut server, uri, 1, 12);
+    assert_eq!(resp["result"]["range"]["start"]["line"], 0, "{resp}");
+    // The emoji's second unit is still the emoji, not `"`.
+    let resp = hover(&mut server, uri, 1, 8);
+    assert!(resp["result"].is_null(), "{resp}");
+}
+
+#[test]
+fn a_client_may_count_in_utf8_or_utf32() {
+    let uri = "file:///emoji.ptl";
+    // Without UTF-16 on offer, the server takes the first it knows.
+    let mut server = Server::new();
+    assert_eq!(init_offering(&mut server, json!(["utf-32", "utf-8"])), "utf-32");
+    let diags = get_diagnostics(&open(&mut server, uri, EMOJI_LINE));
+    assert_eq!(diags[0].range.start, Position { line: 1, character: 17 });
+    let resp = hover(&mut server, uri, 1, 11);
+    assert!(resp["result"]["contents"]["value"].as_str().unwrap().contains("name"), "{resp}");
+
+    let mut server = Server::new();
+    assert_eq!(init_offering(&mut server, json!(["utf-8"])), "utf-8");
+    let diags = get_diagnostics(&open(&mut server, uri, EMOJI_LINE));
+    assert_eq!(diags[0].range.start, Position { line: 1, character: 20 });
+    let resp = hover(&mut server, uri, 1, 14);
+    assert!(resp["result"]["contents"]["value"].as_str().unwrap().contains("name"), "{resp}");
+
+    // Offered alongside others, UTF-16 wins.
+    let mut server = Server::new();
+    assert_eq!(init_offering(&mut server, json!(["utf-8", "utf-16"])), "utf-16");
+}
+
+#[test]
+fn outline_ranges_are_in_the_clients_encoding() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///outline-emoji.ptl";
+    open(&mut server, uri, "let face = \"😀\"\n");
+    let msgs = server.handle_message(&request(
+        4,
+        "textDocument/documentSymbol",
+        json!({"textDocument": {"uri": uri}}),
+    ));
+    let v: Value = serde_json::from_str(&msgs[0].to_json()).unwrap();
+    // The statement ends after the closing quote: code point 14, unit 15.
+    assert_eq!(v["result"][0]["range"]["end"], json!({"line": 0, "character": 15}), "{v}");
+}
+
+// ---------------------------------------------------------------------------
+// A project's [host]: what the host puts in scope
+// ---------------------------------------------------------------------------
+
+/// A project whose host binds the package `kit` as an implicit prelude and
+/// joins two library files ahead of each script. (`kit` stands in for a
+/// host interface such as `ui`, which is slow to compile in a debug build.
+/// Like `ui`, it imports `color`, which a script may import too.)
+const HOST_MANIFEST: &str = "[package]\nname = \"panels\"\n\n[dependencies]\nkit = { path = \"kit\" }\n\n[host]\nimports = [\"kit\"]\nprelude = [\n  \"lib/base.ptl\",\n  \"lib/more.ptl\",\n]\n";
+
+const KIT: &[(&str, &str)] = &[
+    ("kit/petal.toml", "[package]\nname = \"kit\"\n"),
+    (
+        "kit/src/kit.ptl",
+        "import color\n\npub fn rect(x, y, w, h)\n  [x, y, w, h]\nend\n\npub fn draw_rect(r, c)\n  nil\nend\n",
+    ),
+];
+
+#[test]
+fn a_script_sees_what_its_projects_host_puts_in_scope() {
+    let project = Project::new(
+        "host",
+        &[
+            KIT[0],
+            KIT[1],
+            ("petal.toml", HOST_MANIFEST),
+            ("lib/base.ptl", "import color\n\n// not pub: the host joins files\nfn helper(x)\n  x + 1\nend\n"),
+            ("lib/more.ptl", "fn twice(x)\n  helper(helper(x))\nend\n"),
+            ("screens/menu.ptl", "import noise\nlet LIMIT = twice(1)\ndraw_rect(rect(0, 0, 10, 10), #ffffff)\nprint(helper(LIMIT))\n"),
+        ],
+    );
+    let mut server = Server::new();
+    init(&mut server);
+    let menu = project.uri("screens/menu.ptl");
+    let text = std::fs::read_to_string(project.0.join("screens/menu.ptl")).unwrap();
+    let diags = get_diagnostics(&open(&mut server, &menu, &text));
+    assert!(diags.is_empty(), "{diags:?}");
+
+    // A diagnostic of the script is on the script's own line, past the
+    // prelude it was joined with.
+    let broken = format!("{text}nope()\n");
+    let diags = get_diagnostics(&change(&mut server, &menu, 2, &broken));
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    assert_eq!(diags[0].range.start, Position { line: 4, character: 0 });
+    assert!(diags[0].message.contains("`nope`"), "{diags:?}");
+    change(&mut server, &menu, 3, &text);
+
+    // A prelude name hovers with its file and goes to its declaration.
+    let resp = hover(&mut server, &menu, 3, 7);
+    let value = resp["result"]["contents"]["value"].as_str().unwrap();
+    assert!(value.contains("helper fn(x)"), "{value}");
+    assert!(value.contains("lib/base.ptl"), "{value}");
+    let resp = definition(&mut server, &menu, 3, 7);
+    assert_eq!(resp["result"]["uri"], json!(project.uri("lib/base.ptl")), "{resp}");
+    assert_eq!(resp["result"]["range"]["start"]["line"], 3);
+    let resp = completion(&mut server, &menu, 3, 9);
+    assert!(labels(&resp).contains(&"helper".to_string()), "{resp}");
+    // The static note is the script's declaration's, on the script's line.
+    let resp = hover(&mut server, &menu, 1, 4);
+    let value = resp["result"]["contents"]["value"].as_str().unwrap();
+    assert!(value.contains("(variable) LIMIT\n//"), "{value}");
+
+    // A prelude file sees the files before it, and not those after.
+    let more = project.uri("lib/more.ptl");
+    let diags = get_diagnostics(&open(&mut server, &more, "fn twice(x)\n  helper(helper(x))\nend\n"));
+    assert!(diags.is_empty(), "{diags:?}");
+    let base = project.uri("lib/base.ptl");
+    let diags = get_diagnostics(&open(&mut server, &base, "fn helper(x)\n  twice(x)\nend\n"));
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    assert!(diags[0].message.contains("`twice`"), "{diags:?}");
+}
+
+#[test]
+fn without_a_host_section_the_hosts_names_are_unknown() {
+    let project = Project::new(
+        "no-host",
+        &[
+            ("petal.toml", "[package]\nname = \"panels\"\n"),
+            ("lib/base.ptl", "fn helper(x)\n  x + 1\nend\n"),
+        ],
+    );
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = project.uri("menu.ptl");
+    let diags = get_diagnostics(&open(
+        &mut server,
+        &uri,
+        "draw_rect(rect(0, 0, 10, 10), #ffffff)\nprint(helper(1))\n",
+    ));
+    assert_eq!(diags.len(), 3, "{diags:?}");
+}
+
+#[test]
+fn a_prelude_file_that_cannot_be_read_or_compiled_is_reported() {
+    let project = Project::new(
+        "host-broken",
+        &[
+            (
+                "petal.toml",
+                "[package]\nname = \"p\"\n[host]\nprelude = [\"lib/gone.ptl\", \"lib/bad.ptl\"]\n",
+            ),
+            ("lib/bad.ptl", "fn f()\n  1 +\nend\n"),
+        ],
+    );
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = project.uri("menu.ptl");
+    let diags = get_diagnostics(&open(&mut server, &uri, "print(1)\n"));
+    assert_eq!(diags.len(), 2, "{diags:?}");
+    assert!(diags[0].message.contains("cannot read lib/gone.ptl"), "{diags:?}");
+    assert_eq!(diags[0].severity, Some(DiagnosticSeverity::Warning));
+    assert!(diags[1].message.starts_with("lib/bad.ptl (host prelude): "), "{diags:?}");
+    let related = diags[1].related_information.as_ref().expect("related");
+    assert_eq!(related[0].location.uri, project.uri("lib/bad.ptl"));
+    assert_eq!(related[0].location.range.start.line, 2);
+}
+
+#[test]
+fn a_broken_script_still_completes_the_hosts_implicit_imports() {
+    let project = Project::new(
+        "host-broken-doc",
+        &[
+            KIT[0],
+            KIT[1],
+            (
+                "petal.toml",
+                "[package]\nname = \"p\"\n[dependencies]\nkit = { path = \"kit\" }\n[host]\nimports = [\"kit\"]\n",
+            ),
+        ],
+    );
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = project.uri("menu.ptl");
+    open(&mut server, &uri, "let r = rect(0, 0, 1, 1)\nlet x = (\ndraw_r");
+    let resp = completion(&mut server, &uri, 2, 6);
+    assert!(labels(&resp).contains(&"draw_rect".to_string()), "{resp}");
+}

@@ -528,6 +528,16 @@ way, for code written against an earlier checkout.
   severities are sent as the protocol's numbers (they were sent as names).
 - `petal lsp` runs the language server. An MCP server under `tools/` exposes
   the same tooling to coding agents (see `docs/dev/mcp-server.md`).
+- The language server agrees a `positionEncoding` with the client (UTF-16
+  unless the client offers only UTF-8 or UTF-32) and converts columns, so a
+  line with an emoji no longer puts positions one column off. A diagnostic
+  found in an imported module goes on the `import` line that brings it in,
+  named and linked to its place (`relatedInformation`), instead of at the
+  module's line in the importing file. A project's `petal.toml` can describe
+  what its host puts in scope without an import, under `[host]` (`imports`
+  bound like a host prelude, `prelude` files joined ahead of each script),
+  and the server analyzes its scripts that way
+  ([docs/packages.md](docs/packages.md#host)).
 - Per-command help pages (`petal <command> --help`).
 - Prebuilt binaries for macOS (arm64, x86_64) and Linux (x86_64, arm64, static
   musl), installed by `curl -fsSL https://petal-lang.org/install.sh | sh`.

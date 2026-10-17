@@ -100,6 +100,20 @@ pub struct Diagnostic {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// Other places that belong to the diagnostic: for one found in an
+    /// imported module, where in that module it is.
+    #[serde(
+        rename = "relatedInformation",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub related_information: Option<Vec<DiagnosticRelatedInformation>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiagnosticRelatedInformation {
+    pub location: Location,
+    pub message: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +143,10 @@ pub struct InitializeResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerCapabilities {
+    /// The unit `Position.character` counts in, agreed in `initialize`
+    /// (`utf-16`, `utf-8` or `utf-32`; see [`crate::lsp::position`]).
+    #[serde(rename = "positionEncoding", skip_serializing_if = "Option::is_none")]
+    pub position_encoding: Option<String>,
     #[serde(rename = "textDocumentSync", skip_serializing_if = "Option::is_none")]
     pub text_document_sync: Option<TextDocumentSyncOptions>,
     #[serde(rename = "hoverProvider", skip_serializing_if = "Option::is_none")]

@@ -91,6 +91,7 @@ The capabilities `initialize` returns:
 
 ```json
 {
+  "positionEncoding": "utf-16",
   "textDocumentSync": { "openClose": true, "change": 1 },
   "hoverProvider": true,
   "definitionProvider": true,
@@ -100,8 +101,10 @@ The capabilities `initialize` returns:
 ```
 
 `change: 1` is full-document sync: every `didChange` carries the whole text,
-and the server reads the last entry of `contentChanges`. The server does not
-read the client's capabilities.
+and the server reads the last entry of `contentChanges`. The one client
+capability the server reads is `general.positionEncodings`, to agree on how
+columns are counted ([Positions](#positions)); `positionEncoding` is
+`utf-16`, `utf-8` or `utf-32`.
 
 There is no formatting, code action, rename, find-references, signature help,
 workspace symbol or semantic-token support. Formatting, import fixes and
@@ -118,6 +121,8 @@ refactorings exist as commands (`petal fmt`, `petal fix-imports`,
 | `document.rs` | `DocumentStore`, `Document`, `Analysis`; `analyze_at`; definition collection; the text helpers that find the word, qualifier or import path at a position; URI and path conversion; `KEYWORDS` |
 | `members.rs` | enum members: what a dotted path such as `Kind.park` or `k.code` resolves to, and its completions, hover and declaration |
 | `symbols.rs` | the document outline |
+| `host.rs` | `HostView`: what the document's project says its host puts in scope (`[host]` in `petal.toml`), and `Joined`, the document joined with the host's prelude files, with the line each joined line came from |
+| `position.rs` | `PositionEncoding`: negotiating the column unit and converting columns between it and code points |
 | `protocol.rs` | JSON-RPC message types, `Content-Length` framing helpers, error codes |
 | `lsp_types.rs` | the subset of LSP types the server uses, written by hand with serde |
 | `stdio.rs` | `serve`: the read loop `petal lsp` runs |
@@ -155,22 +160,46 @@ definitions) and `symbols::document_symbols` (the outline). This is why
 completion, go-to-definition and the outline keep working in a file that does
 not compile, which is the usual state of a file being typed.
 
-**2. A compile, for diagnostics and imports.** The server makes a fresh `Env`
+**2. A compile, for diagnostics and imports.** `prepare` makes a fresh `Env`
 and calls:
 
 - `Env::set_check_only(true)`, so the compile does not link (next section);
 - `Env::override_file_source(path, text)` for every other open document, so
   an unsaved edit to a module is what its importers see;
-- `Env::load_program_diag(text, path)`, the same front end `petal check` and
-  `petal run` use: parse, module loading, the compiler with the type checker,
-  the name scan for undefined names, and the `const` check.
+- `HostView::apply`, which binds the host's implicit imports when the
+  document's project declares a host
+  ([Imports, projects and hosts](#imports-projects-and-hosts-that-are-not-here));
+
+and then `Env::load_program_diag(text, path)`, the same front end
+`petal check` and `petal run` use: parse, module loading, the compiler with
+the type checker, the name scan for undefined names, and the `const` check.
+`text` is the document, or the document joined with its host's prelude
+files.
 
 If the load succeeds, each entry of `Program::warnings` becomes a diagnostic,
 with severity `Error` or `Warning` as the entry says. If it fails, each item
 of the `LoadError` becomes an `Error` diagnostic, so every error the front
-end found in one pass is shown. An item whose span is in the open file is
-placed at that span. An item with no span, or one in another module, goes to
-line 0, column 0 with the file name at the front of the message.
+end found in one pass is shown. Either way, one whose span is in the open
+file is placed at that span.
+
+One that is in another file has no position in this one, and both paths
+treat it the same way. It is placed on the path of the `import` line that
+brings the module in, with the module's file name at the front of the
+message and its place in the module as `relatedInformation` (an editor
+shows it as a link). A module that comes in through another module has no
+line of its own here, and goes to line 0, column 0. A successful compile
+knows each diagnostic's file from its span (`span.file` in the program's
+source map); a failed one knows only the module's display name
+(`ErrorItem::file`), which is matched against the files the document's import
+lines resolve to. An import that does not resolve (`cannot find module
+'./x'`) goes on its own line, and an item with no span otherwise at the top.
+These rules are `program_diagnostic`, `load_error_diagnostic` and
+`ImportSites` in `document.rs`.
+
+A diagnostic in one of the host's prelude files is not the document's: a
+successful compile leaves it out (the file shows it when it is open), and a
+failed one puts it at the top as `<file> (host prelude): <message>`, with its
+place in the file as related information.
 
 Every diagnostic has `source: "petal"`. The server does not lower the program
 to bytecode and does not run the lint rules, so two things `petal check` and
@@ -179,8 +208,10 @@ and lint findings.
 
 The imports are read off the compiled program by `imported_modules`. If the
 compile failed, the server compiles the file's leading `import` lines alone
-(`import_header` finds them without a parse) so that imported names still
-complete and resolve while the rest of the file is broken.
+(`import_header` finds them without a parse), with an `import` line for each
+of the host's implicit imports, so that imported names still complete and
+resolve while the rest of the file is broken. The host's prelude files are
+read with the tolerant parse, so their names are there either way.
 
 Nothing is cached between analyses. Each open or change parses and compiles
 the document and the modules it imports from scratch, in a new `Env`. A
@@ -225,10 +256,49 @@ cannot find module 'sdl' (imported by game.ptl): there is no package named 'sdl'
 ```
 
 The fix is on the user's side: name the package in the project's
-`petal.toml`, as the trees under `examples/` do. A script that relies on
-names its host puts in scope without an import (a host-registered implicit
-prelude, or a host that joins several files into one program) reports each of
-those names as unknown, because the server compiles the file alone.
+`petal.toml`, as the trees under `examples/` do.
+
+**A host that puts names in scope without an import.** Some hosts run
+scripts that import nothing: the host binds its interface as an implicit
+prelude, or joins library files ahead of each script into one program (the
+worlds-fair UI bundles `host/garden.ptl` and `lib/*.ptl` ahead of each
+screen). Compiled alone, such a script calls nothing but unknown functions.
+Its project can say what the host does, in a `[host]` section of
+`petal.toml` ([packages.md](../packages.md#host)):
+
+```toml
+[host]
+imports = ["ui", "garden"]
+prelude = ["host/garden.ptl", "lib/theme.ptl", "lib/basics.ptl", "lib/layout.ptl",
+           "lib/widgets.ptl", "lib/parts.ptl"]
+```
+
+`HostView::for_document` ([`host.rs`](../../core/src/lsp/host.rs)) reads it
+from the nearest `petal.toml` at or above the document, and the server
+compiles the document as that host would:
+
+- **`imports`** are bound the way the core prelude `std` is, through
+  `Env::add_tooling_implicit_imports` (crate-private; hosts themselves have no
+  implicit imports): every export bare and weak, below the file's own imports
+  and declarations, and loaded only when the file names one of its exports.
+  The module loader orders a module that such a prelude imports (`ui`
+  imports `color`) ahead of it even when the script imports it too.
+- **`prelude`** files are joined ahead of the document as one program
+  (`HostView::join`). Each file's leading import lines move to the top of the
+  joined text, since imports must come first, and every line is kept whole,
+  so `Joined` maps a joined line back to the file and line it came from with
+  the same column. The names they declare need no `pub` and reach hover,
+  go-to-definition (into the prelude file) and completion as a bare import's
+  names do. A document that is itself one of the files sees only the files
+  listed before it, which is the order rule the host's join imposes.
+  An open prelude file's unsaved text is what is joined; one that cannot be
+  read is a warning at the top of the document.
+
+With the section above in a copy of the worlds-fair `ui/ptl` (and `garden` as
+a path dependency), `host/garden.ptl` goes from 31 diagnostics to 2 (both
+real: `key_pressed("]")` is not a key name) and `screens/missions.ptl` from 78
+to 0. Only the server reads `[host]`; `petal check` checks a file as it is
+written.
 
 **`const` and the static classifier.** Whether a native is constant is the
 host's to say. A `const` built from natives the server does not have is
@@ -362,28 +432,34 @@ the name inside it. Nested declarations are not listed.
 
 ## Positions
 
-Three units are in play, and the server uses one of them throughout.
+Inside the server every column counts Unicode code points, which is what the
+lexer's spans count. The client counts in the unit agreed in `initialize`,
+and the server converts at its edge, in [`position.rs`](../../core/src/lsp/position.rs).
 
 | Where | Unit |
 |---|---|
-| An incoming `Position.character` | an index into the line's `char`s: Unicode code points |
+| An incoming `Position.character` | the agreed encoding; `PositionEncoding::to_internal` turns it into code points as the request is read |
 | A `SourceSpan` line and column from the lexer | 1-based, columns in code points |
 | A `SourceSpan` offset | code points from the start of the file |
-| An outgoing `Range` | `span_to_range`: line and column minus one, so code points |
+| A `Range` inside the server (`span_to_range`, the `Analysis`) | line and column minus one, so code points |
+| An outgoing `Range` | the agreed encoding; `range_out` converts each one as the reply is written (diagnostics and their related locations, hover, definition, the outline) |
 | `Content-Length` | bytes |
 
-So everything inside the server counts code points, and nothing converts.
-Lines are split with `str::lines`, which accepts `\n` and `\r\n`.
+**Negotiation.** `PositionEncoding::negotiate` reads the client's
+`general.positionEncodings`. The server answers `utf-16` when the client
+offers it or offers nothing (UTF-16 is the protocol's default, and every
+server must support it), and otherwise the first of `utf-32` and `utf-8` the
+client lists. It says which in the `positionEncoding` capability.
 
-The LSP default is UTF-16 code units, and the server neither converts nor
-negotiates `positionEncoding` in `initialize`. The two agree on every line
-that has no character outside the Basic Multilingual Plane, which covers
-accented letters, box-drawing characters and CJK. They differ by one for each
-astral character (most emoji) to the left of the position on the same line:
-with `"😀"` earlier on a line, a client that sends UTF-16 columns must ask
-one column to the left of where it believes an identifier starts, and
-diagnostic ranges on that line are drawn one column short. See
-[Known gaps](#known-gaps).
+The units agree on an ASCII line, and conversion skips such a line. UTF-16
+differs from code points by one for each character outside the Basic
+Multilingual Plane (most emoji) to the left of the position, and UTF-8 by
+one to three for each non-ASCII character. A position that falls inside a
+character (the second unit of a surrogate pair) is that character's. A
+location in another file is converted with that file's text: the open
+document's, or the file on disk.
+
+Lines are split on `\n`, and a `\r` before it is not part of the line.
 
 The framing is byte-exact. `stdio::read_message` reads `Content-Length`
 bytes and then decodes UTF-8, so a body with multi-byte characters is never
@@ -396,6 +472,8 @@ JSON.
 |---|---|
 | [`core/tests/lsp_tests.rs`](../../core/tests/lsp_tests.rs) | the main suite: a `Server` driven through `handle_message` with JSON built by small helpers (`init`, `open`, `change`, `hover`, `definition`, `completion`). Lifecycle, diagnostics, each request, imports across files written to a temporary directory, enum members, the outline, the static-value hover. |
 | `core/src/lsp/stdio.rs` (unit tests) | the framed loop over in-memory streams: a session end to end, `exit` with input pending, a multi-byte body, a truncated body |
+| `core/src/lsp/position.rs`, `host.rs` (unit tests) | encoding negotiation and column conversion; joining a document with its host's prelude files and mapping lines back |
+| `core/src/package.rs`, `core/src/module.rs` (unit tests) | parsing `[host]`; an implicit prelude that imports a module the script imports too |
 | `core/tests/keyword_sync.rs` | `KEYWORDS` against the lexer |
 | `core/tests/manifest.rs` | a `petal.toml` dependency resolves and completes with no configuration |
 | `core/src/check.rs`, `core/tests/pub_keyword.rs` | the server shows what `petal check` reports |
@@ -443,8 +521,11 @@ To add a request, say `textDocument/references`:
    analysis does not hold, add a field and fill it in `analyze_at`, from the
    tolerant parse when it must survive a file that does not compile. If it is
    expensive, compute it on first use as `static_notes` does.
-5. **Positions.** Convert every span with `span_to_range`, and read the text
-   at a position by indexing the line's `char`s, as the existing helpers do.
+5. **Positions.** Convert the request's position with
+   `self.encoding.to_internal` before using it, convert every span with
+   `span_to_range`, read the text at a position by indexing the line's
+   `char`s, as the existing helpers do, and convert each range in the reply
+   with `range_out` (or `self.encoding.range_out` for the document itself).
 6. **Tests.** Add a helper and cases to `core/tests/lsp_tests.rs`, including
    a file that does not compile and a name that comes through an import.
 7. **Docs.** Add the request to the tables on this page and to the feature
@@ -474,22 +555,28 @@ of diagnostic usually belongs in the compiler, as an entry of
   same messages.
 - **`handle_message` stays free of transport.** The tests and any embedding
   host depend on it.
+- **Columns are code points inside, the client's unit outside.** Convert a
+  request's position once as it is read and each reply's ranges once as they
+  are written ([Positions](#positions)); nothing in between converts.
 - **Nothing is written to stdout except framed messages.** A stray `print`
   in the server corrupts the stream.
 
 ## Known gaps
 
-- **UTF-16.** Positions are code points and `positionEncoding` is not
-  negotiated ([Positions](#positions)).
-- **Diagnostics from an imported module.** When the compile succeeds, a
-  warning or error found in an imported module is published on the importing
-  document at the module's line and column, without the module's name. The
-  path for a failed compile handles this case, and `petal_diagnostic_to_lsp`
-  does not.
+- **A module reached through another module.** A diagnostic in it is placed
+  at the top of the importing document, since no import line of the document
+  names it. A failed compile in one is placed by its display name, which can
+  miss a module of a package whose file is not where its name says
+  (`bloom/menu.ptl` under `src/`); it then goes to the top too.
+- **`[host]` is the server's alone.** `petal check` does not read it, so the
+  two disagree on a script that relies on it. A prelude file is joined as
+  text, so a relative import in one resolves against the document's
+  directory, not the file's.
 - **Importers are not re-analyzed** when a module they import changes.
 - **Completion ignores scope** outside the member and qualifier cases.
-- **No workspace.** The server reads no `rootUri`, no configuration and no
-  client capabilities, and each document is analyzed alone.
+- **No workspace.** The server reads no `rootUri` and no configuration, and
+  of the client's capabilities only `general.positionEncodings`. Each document
+  is analyzed alone, with what its own project's `petal.toml` says.
 
 ## See also
 

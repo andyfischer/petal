@@ -55,9 +55,9 @@ ui = ">=0.1"
 | `version` | Dotted numbers (`0.1.0`). It is what `petal packages` and `petal.lock` show, and what a host announces when the package is its interface. |
 | `modules` | The directory holding the modules, relative to the manifest. |
 
-Any other key under `[package]`, and any table other than the three shown
-here, is ignored, so a manifest can carry metadata this version does not
-read.
+Any other key under `[package]`, and any table other than these three and
+[`[host]`](#host), is ignored, so a manifest can carry metadata this version
+does not read.
 
 Every `.ptl` file under the module directory is importable as
 `<name>/<path>`, nested directories included: `src/widgets/button.ptl` of
@@ -157,6 +157,41 @@ Every runtime provides `core` at the version of the petal crate, so a
 package can ask for a new enough runtime with `core = ">=0.1"`. `petal run`
 provides nothing else; petal-sdl provides `ui` and `sdl`, and Garden provides
 `ui`, `garden` and `garden_config`.
+
+### `[host]`
+
+`[host]` describes what the host a project's scripts run in puts in scope
+that a script does not import itself. A host that binds an interface as an
+implicit prelude, or that joins library files ahead of each script into one
+program, runs scripts that are full of unknown names when compiled alone.
+This section lets a tool that compiles one file at a time see the file as
+the host does.
+
+```toml
+[host]
+imports = ["ui", "garden"]     # modules the host binds without an import
+prelude = [                    # files the host joins ahead of each script, in order
+  "host/garden.ptl",
+  "lib/theme.ptl",
+  "lib/widgets.ptl",
+]
+```
+
+| Key | Meaning |
+| --- | --- |
+| `imports` | Modules bound in every script the way the core prelude `std` is: every export bare, under the script's own imports and declarations, and loaded only when the script names one of its exports. Each must resolve from the project (bundled, a dependency, or on `PETAL_PATH`). |
+| `prelude` | Files, relative to the manifest, joined ahead of the script as one program. Their top-level names need no `pub`, as in the host's joined program. A file of the list sees only the files listed before it. |
+
+Each value is a list of strings (one string is a list of one), and an array
+may run over several lines. Any other key is an error naming the line.
+
+Only `petal lsp` reads it, and only from the project of the file it is
+analyzing, never from a dependency. Nothing that runs a script reads it: the
+host decides what is in scope, and this only describes that. `petal check`
+checks a file as it is written, so it still reports those names; check what
+the host actually compiles instead (a joined bundle, say). A new script
+should import its host's interface (`import ui`) rather than rely on this;
+see [Host interface packages](module-system.md#host-interface-packages).
 
 ## Where a package name is looked up
 

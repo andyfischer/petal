@@ -43,6 +43,10 @@
 //! imported. `[requires]` names host interfaces — what a host announces with
 //! `Env::provides` — and is checked when a program is loaded to run.
 //!
+//! A `[host]` section describes what the host a project's scripts run in puts
+//! in scope without an import ([`HostScope`]); only tools that compile a file
+//! alone read it.
+//!
 //! [`Env`]: crate::env::Env
 
 use std::collections::BTreeMap;
@@ -586,12 +590,49 @@ pub struct Manifest {
     pub modules: Option<String>,
     pub dependencies: Vec<Dependency>,
     pub requires: Vec<Requirement>,
+    /// The manifest's `[host]`: what the host this package's scripts run in
+    /// puts in scope without an import.
+    pub host: HostScope,
 }
 
-/// A manifest value: a quoted string, or an inline table of them.
+/// A manifest's `[host]` section: what the host a project's scripts are
+/// written for puts in scope that a script does not import itself.
+///
+/// ```toml
+/// [host]
+/// imports = ["ui", "garden"]           # bound as a host's implicit prelude
+/// prelude = ["lib/theme.ptl",          # joined ahead of each script, in order
+///            "lib/widgets.ptl"]
+/// ```
+///
+/// Nothing that *runs* a script reads it: the host decides what is in
+/// scope, and this only describes it. A tool that compiles one file alone
+/// (`petal lsp`) reads it to see the file as the host does. It is read from
+/// the project of the file being checked, never from a dependency.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct HostScope {
+    /// Modules every script sees as if the host had imported them: every
+    /// export bound bare and weakly, under the script's own declarations and
+    /// imports, like the core prelude `std`.
+    pub imports: Vec<String>,
+    /// Files, relative to the manifest's directory, that the host joins
+    /// ahead of each script as one program, in this order. One of them sees
+    /// only the files listed before it.
+    pub prelude: Vec<String>,
+}
+
+impl HostScope {
+    pub fn is_empty(&self) -> bool {
+        self.imports.is_empty() && self.prelude.is_empty()
+    }
+}
+
+/// A manifest value: a quoted string, an inline table of them, or an array
+/// of them.
 enum TomlValue {
     Str(String),
     Table(Vec<(String, String)>),
+    Array(Vec<String>),
 }
 
 impl Manifest {
@@ -624,12 +665,32 @@ impl Manifest {
         // key) or a bare version string.
         let mut deps: Vec<(String, usize, Result<Vec<(String, String)>, String>)> = Vec::new();
         let mut requires: Vec<Requirement> = Vec::new();
+        let mut host = HostScope::default();
 
-        for (index, raw) in text.lines().enumerate() {
+        let mut lines = text.lines().enumerate();
+        while let Some((index, raw)) = lines.next() {
             let line_no = index + 1;
             let line = strip_comment(raw).trim();
             if line.is_empty() {
                 continue;
+            }
+            // An array may be written over several lines; gather it whole.
+            let mut joined;
+            let mut line = line;
+            if let Some((_, value)) = line.split_once('=')
+                && value.trim().starts_with('[')
+                && !value.trim().ends_with(']')
+            {
+                joined = line.to_string();
+                for (_, more) in lines.by_ref() {
+                    let more = strip_comment(more).trim();
+                    joined.push(' ');
+                    joined.push_str(more);
+                    if more.ends_with(']') {
+                        break;
+                    }
+                }
+                line = joined.as_str();
             }
             if let Some(header) = line.strip_prefix('[') {
                 let Some(header) = header.strip_suffix(']') else {
@@ -666,15 +727,16 @@ impl Manifest {
                 manifest_error(
                     path,
                     format!(
-                        "line {line_no}: the value of '{key}' must be a quoted string or an \
-                         inline table of them ({{ path = \"…\" }}), found '{}'",
+                        "line {line_no}: the value of '{key}' must be a quoted string, an \
+                         inline table of them ({{ path = \"…\" }}) or an array of them, \
+                         found '{}'",
                         value.trim()
                     ),
                 )
             })?;
             let string_only = |value: TomlValue| match value {
                 TomlValue::Str(s) => Ok(s),
-                TomlValue::Table(_) => Err(manifest_error(
+                TomlValue::Table(_) | TomlValue::Array(_) => Err(manifest_error(
                     path,
                     format!("line {line_no}: the value of '{key}' must be a quoted string"),
                 )),
@@ -702,6 +764,15 @@ impl Manifest {
                         match value {
                             TomlValue::Str(version) => Err(version),
                             TomlValue::Table(pairs) => Ok(pairs),
+                            TomlValue::Array(_) => {
+                                return Err(manifest_error(
+                                    path,
+                                    format!(
+                                        "line {line_no}: dependency '{key}' must be a version \
+                                         string or an inline table"
+                                    ),
+                                ));
+                            }
                         },
                     ));
                 }
@@ -721,6 +792,34 @@ impl Manifest {
                         interface: key.to_string(),
                         version: req,
                     });
+                }
+                "host" => {
+                    let list = match value {
+                        TomlValue::Array(items) => items,
+                        TomlValue::Str(item) => vec![item],
+                        TomlValue::Table(_) => {
+                            return Err(manifest_error(
+                                path,
+                                format!(
+                                    "line {line_no}: [host] {key} is a list of strings \
+                                     ([\"…\", \"…\"])"
+                                ),
+                            ));
+                        }
+                    };
+                    match key {
+                        "imports" => host.imports = list,
+                        "prelude" => host.prelude = list,
+                        other => {
+                            return Err(manifest_error(
+                                path,
+                                format!(
+                                    "line {line_no}: [host] has no key '{other}' — it takes \
+                                     'imports' (modules) and 'prelude' (files)"
+                                ),
+                            ));
+                        }
+                    }
                 }
                 other if other.starts_with("dependencies.") => {
                     let text = string_only(value)?;
@@ -754,6 +853,7 @@ impl Manifest {
             modules,
             dependencies,
             requires,
+            host,
         })
     }
 }
@@ -829,10 +929,22 @@ fn dependency_source(
     }
 }
 
-/// A string, or `{ k = "v", k2 = "v2" }`.
+/// A string, `{ k = "v", k2 = "v2" }`, or `["a", "b"]`.
 fn parse_value(text: &str) -> Option<TomlValue> {
     if let Some(s) = parse_string_value(text) {
         return Some(TomlValue::Str(s));
+    }
+    if let Some(inner) = text.strip_prefix('[').and_then(|t| t.strip_suffix(']')) {
+        let mut items = Vec::new();
+        for part in split_outside_quotes(inner, ',') {
+            let part = part.trim();
+            // A trailing comma leaves an empty last part.
+            if part.is_empty() {
+                continue;
+            }
+            items.push(parse_string_value(part)?);
+        }
+        return Some(TomlValue::Array(items));
     }
     let inner = text.strip_prefix('{')?.strip_suffix('}')?.trim();
     let mut pairs = Vec::new();
@@ -1150,6 +1262,28 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("unterminated section header"), "{err}");
+    }
+
+    #[test]
+    fn a_host_section_lists_imports_and_prelude_files() {
+        let m = manifest(
+            "[package]\nname = \"wf\"\n[host]\nimports = [\"ui\", \"garden\"]  # the host's\n\
+             prelude = [\n  \"lib/theme.ptl\",   # data\n  'lib/basics.ptl',\n]\n",
+        )
+        .unwrap();
+        assert_eq!(m.host.imports, ["ui", "garden"]);
+        assert_eq!(m.host.prelude, ["lib/theme.ptl", "lib/basics.ptl"]);
+        // One string is a list of one; no section is an empty scope.
+        let one = manifest("[package]\nname = \"a\"\n[host]\nimports = \"ui\"\n").unwrap();
+        assert_eq!(one.host.imports, ["ui"]);
+        assert!(manifest("[package]\nname = \"a\"\n").unwrap().host.is_empty());
+        let err = manifest("[package]\nname = \"a\"\n[host]\nprelud = [\"x\"]\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("[host] has no key 'prelud'"), "{err}");
+        // An array is not a value anywhere else.
+        assert!(manifest("[package]\nname = [\"a\"]\n").is_err());
+        assert!(manifest("[package]\nname = \"a\"\n[dependencies]\nx = [\"1\"]\n").is_err());
     }
 
     #[test]

@@ -1475,7 +1475,11 @@ Completion, hover and go-to-definition follow imports into other files and
 know the members of an enum (`Kind.` offers its variants, a variant value
 offers its fields and data), and completion works while the line being typed
 does not parse yet. It does not format, rename or offer code actions; use
-`petal fmt`, `petal fix-imports` and `petal apply-change` for those. The
+`petal fmt`, `petal fix-imports` and `petal apply-change` for those.
+Columns are UTF-16 code units unless the client offers UTF-8 or UTF-32 alone
+(`positionEncoding`). A script written for a host that puts names in scope
+without an import is analyzed as that host compiles it when its project's
+`petal.toml` says so ([`[host]`](packages.md#host)). The
 exact requests, how a document is analyzed and how positions are counted are
 in [The language server](internals/lsp.md).
 

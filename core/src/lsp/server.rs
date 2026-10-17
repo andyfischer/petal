@@ -8,11 +8,16 @@ use crate::lsp::document::{
 };
 use crate::lsp::lsp_types::*;
 use crate::lsp::members::Origin;
+use crate::lsp::position::PositionEncoding;
 use crate::lsp::protocol::*;
 
 pub struct Server {
     initialized: bool,
     documents: DocumentStore,
+    /// The unit the client counts columns in, agreed in `initialize`.
+    /// Positions are converted to code points as a request is read and back
+    /// as a reply is written; see [`crate::lsp::position`].
+    encoding: PositionEncoding,
 }
 
 impl Server {
@@ -20,6 +25,36 @@ impl Server {
         Self {
             initialized: false,
             documents: DocumentStore::new(),
+            encoding: PositionEncoding::default(),
+        }
+    }
+
+    /// The text of the file at `uri`: the open document's, else the file on
+    /// disk. For converting a range in it to the client's encoding.
+    fn text_of(&self, uri: &str) -> Option<String> {
+        if let Some(doc) = self.documents.get(uri) {
+            return Some(doc.text.clone());
+        }
+        std::fs::read_to_string(document::uri_to_path(uri)?).ok()
+    }
+
+    /// A code-point range in the file at `uri`, in the client's encoding.
+    fn range_out(&self, uri: &str, range: Range) -> Range {
+        if self.encoding == PositionEncoding::Utf32 {
+            return range;
+        }
+        match self.text_of(uri) {
+            Some(text) => self.encoding.range_out(&text, range),
+            None => range,
+        }
+    }
+
+    /// A document's outline with its ranges in the client's encoding.
+    fn symbols_out(&self, text: &str, symbols: &mut [DocumentSymbol]) {
+        for symbol in symbols {
+            symbol.range = self.encoding.range_out(text, symbol.range);
+            symbol.selection_range = self.encoding.range_out(text, symbol.selection_range);
+            self.symbols_out(text, &mut symbol.children);
         }
     }
 
@@ -125,10 +160,13 @@ impl Server {
     // Initialize
     // -----------------------------------------------------------------------
 
-    fn handle_initialize(&mut self, id: Value, _params: Value) -> Vec<OutgoingMessage> {
+    fn handle_initialize(&mut self, id: Value, params: Value) -> Vec<OutgoingMessage> {
         self.initialized = true;
+        let capabilities = params.get("capabilities").cloned().unwrap_or(Value::Null);
+        self.encoding = PositionEncoding::negotiate(&capabilities);
         let result = InitializeResult {
             capabilities: ServerCapabilities {
+                position_encoding: Some(self.encoding.name().to_string()),
                 text_document_sync: Some(TextDocumentSyncOptions {
                     open_close: true,
                     change: TEXT_DOCUMENT_SYNC_FULL,
@@ -197,7 +235,17 @@ impl Server {
         let diagnostics = self
             .documents
             .get(uri)
-            .map(|d| d.analysis.diagnostics.clone())
+            .map(|d| {
+                let mut diagnostics = d.analysis.diagnostics.clone();
+                for diagnostic in &mut diagnostics {
+                    diagnostic.range = self.encoding.range_out(&d.text, diagnostic.range);
+                    for related in diagnostic.related_information.iter_mut().flatten() {
+                        related.location.range =
+                            self.range_out(&related.location.uri, related.location.range);
+                    }
+                }
+                diagnostics
+            })
             .unwrap_or_default();
         vec![OutgoingMessage::Notification(RpcNotification::new(
             "textDocument/publishDiagnostics",
@@ -229,8 +277,9 @@ impl Server {
             Some(d) => d,
             None => return vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))],
         };
+        let position = self.encoding.to_internal(&doc.text, p.position);
 
-        let ident = match identifier_at_position(&doc.text, p.position.line, p.position.character) {
+        let ident = match identifier_at_position(&doc.text, position.line, position.character) {
             Some(i) => i,
             None => return vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))],
         };
@@ -250,7 +299,7 @@ impl Server {
             }
         };
         // `Kind.park`, `op.place`: a member of an enum or of a variant value.
-        let member = doc.analysis.member_at(&doc.text, p.position);
+        let member = doc.analysis.member_at(&doc.text, position);
         // (A name the enum does not have is looked up by name below, as
         // any other is.)
         if let Some(value) = member.and_then(|m| m.hover(&ident)) {
@@ -268,7 +317,7 @@ impl Server {
         }
 
         // `m.name`: the module's export, and nothing else by that name.
-        let qualified = qualifier_at_position(&doc.text, p.position.line, p.position.character)
+        let qualified = qualifier_at_position(&doc.text, position.line, position.character)
             .and_then(|q| doc.analysis.qualifier(&q));
         if let Some(module) = qualified {
             let value = match module.export(&ident) {
@@ -288,7 +337,7 @@ impl Server {
             ))];
         }
 
-        if let Some(def) = doc.analysis.definition_in_scope(&ident, p.position) {
+        if let Some(def) = doc.analysis.definition_in_scope(&ident, position) {
             // A top-level declaration also says what the static-value
             // classifier makes of it.
             let value = match self.documents.static_note(&p.text_document.uri, def) {
@@ -300,7 +349,10 @@ impl Server {
                     kind: "markdown".to_string(),
                     value: format!("```petal\n{value}\n```"),
                 },
-                range: Some(document::span_to_range(&def.span)),
+                range: Some(
+                    self.encoding
+                        .range_out(&doc.text, document::span_to_range(&def.span)),
+                ),
             };
             return vec![OutgoingMessage::Response(RpcResponse::ok(
                 id,
@@ -368,8 +420,10 @@ impl Server {
             Some(d) => d,
             None => return vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))],
         };
+        let position = self.encoding.to_internal(&doc.text, p.position);
 
         let located = |uri: String, range: Range| {
+            let range = self.range_out(&uri, range);
             vec![OutgoingMessage::Response(RpcResponse::ok(
                 id.clone(),
                 serde_json::to_value(Location { uri, range }).unwrap(),
@@ -379,7 +433,7 @@ impl Server {
 
         // On an import's path: the file the path names.
         if let Some(path) =
-            document::import_path_at_position(&doc.text, p.position.line, p.position.character)
+            document::import_path_at_position(&doc.text, position.line, position.character)
         {
             return match document::import_target_uri(&path, &p.text_document.uri) {
                 Some(uri) => located(uri, Range::default()),
@@ -387,14 +441,14 @@ impl Server {
             };
         }
 
-        let ident = match identifier_at_position(&doc.text, p.position.line, p.position.character) {
+        let ident = match identifier_at_position(&doc.text, position.line, position.character) {
             Some(i) => i,
             None => return nothing(),
         };
 
         // `Kind.park`, `op.place`: where the enum declares that member.
         // (A name the enum does not have is looked up by name below.)
-        let member = doc.analysis.member_at(&doc.text, p.position);
+        let member = doc.analysis.member_at(&doc.text, position);
         if let Some(found) = member.and_then(|member| member.declaration(&ident)) {
             let range = document::span_to_range(&found.span);
             return match found.origin {
@@ -405,9 +459,8 @@ impl Server {
         }
 
         // `m.name`: the declaration in the module `m` stands for.
-        if let Some(module) =
-            qualifier_at_position(&doc.text, p.position.line, p.position.character)
-                .and_then(|q| doc.analysis.qualifier(&q))
+        if let Some(module) = qualifier_at_position(&doc.text, position.line, position.character)
+            .and_then(|q| doc.analysis.qualifier(&q))
         {
             return match module.export(&ident) {
                 Some(found) => match &found.uri {
@@ -418,7 +471,7 @@ impl Server {
             };
         }
 
-        if let Some(def) = doc.analysis.definition_in_scope(&ident, p.position) {
+        if let Some(def) = doc.analysis.definition_in_scope(&ident, position) {
             return located(
                 p.text_document.uri.clone(),
                 document::span_to_range(&def.span),
@@ -470,12 +523,14 @@ impl Server {
             }
         };
 
+        let position = self.encoding.to_internal(&doc.text, p.position);
+
         // The identifier under the cursor, or — the usual case while typing,
         // with the cursor just past its last character — the one ending there.
-        let prefix = identifier_at_position(&doc.text, p.position.line, p.position.character)
+        let prefix = identifier_at_position(&doc.text, position.line, position.character)
             .or_else(|| {
-                let before = p.position.character.checked_sub(1)?;
-                identifier_at_position(&doc.text, p.position.line, before)
+                let before = position.character.checked_sub(1)?;
+                identifier_at_position(&doc.text, position.line, before)
             })
             .unwrap_or_default();
         let item_for = |def: &Definition, detail: Option<String>| CompletionItem {
@@ -500,7 +555,7 @@ impl Server {
 
         // On an import line: the modules that could be named there.
         if let Some(path) =
-            document::import_path_prefix(&doc.text, p.position.line, p.position.character)
+            document::import_path_prefix(&doc.text, position.line, position.character)
         {
             return respond(
                 document::import_path_completions(&path, &p.text_document.uri)
@@ -516,16 +571,15 @@ impl Server {
 
         // After `Kind.`, or a variant value and a dot: the enum's members,
         // or the fields that value answers — and only those.
-        if let Some(member) = doc.analysis.member_at(&doc.text, p.position) {
+        if let Some(member) = doc.analysis.member_at(&doc.text, position) {
             let mut items = member.completions();
             items.retain(|item| item.label.starts_with(&prefix));
             return respond(items);
         }
 
         // After `m.`: what the module exports, and only that.
-        if let Some(module) =
-            qualifier_at_position(&doc.text, p.position.line, p.position.character)
-                .and_then(|q| doc.analysis.qualifier(&q))
+        if let Some(module) = qualifier_at_position(&doc.text, position.line, position.character)
+            .and_then(|q| doc.analysis.qualifier(&q))
         {
             return respond(
                 module
@@ -633,7 +687,11 @@ impl Server {
         let symbols = self
             .documents
             .get(&p.text_document.uri)
-            .map(|d| d.analysis.symbols.clone())
+            .map(|d| {
+                let mut symbols = d.analysis.symbols.clone();
+                self.symbols_out(&d.text, &mut symbols);
+                symbols
+            })
             .unwrap_or_default();
         vec![OutgoingMessage::Response(RpcResponse::ok(
             id,

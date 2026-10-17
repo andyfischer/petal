@@ -6,6 +6,7 @@ use crate::ast::{Expr, ExprKind, Stmt, StmtKind};
 use crate::diagnostic::Diagnostic as PetalDiagnostic;
 use crate::source_map::SourceSpan;
 
+use crate::lsp::host::{HostView, Joined, LineOrigin};
 use crate::lsp::lsp_types;
 use crate::lsp::members::{EnumShape, ValueHint, expr_path};
 
@@ -334,6 +335,10 @@ pub fn analyze(source: &str) -> Analysis {
 
 /// Analyze `source` as the contents of the file at `path`. `open` is the
 /// text of other files that should be read instead of what is on disk.
+///
+/// The document is compiled as its host would compile it, when its project
+/// says what that host puts in scope (`[host]` in `petal.toml`, see
+/// [`crate::lsp::host`]).
 pub fn analyze_at(
     source: &str,
     path: Option<&std::path::Path>,
@@ -355,86 +360,75 @@ pub fn analyze_at(
         })
         .unwrap_or_default();
 
-    let mut env = crate::env::Env::new();
-    // Diagnostics only: the document may declare natives of a host this
-    // process is not.
-    env.set_check_only(true);
-    for (file, text) in open {
-        env.override_file_source(file, text);
-    }
+    let (mut env, host, joined) = prepare(source, path, open);
+    let mut sites = ImportSites::new(source, path);
     let mut imports = Vec::new();
-    let diagnostics = match env.load_program_diag(source, path) {
-        Ok(pid) => env
-            .get_program(pid)
-            .map(|p| {
+    let mut diagnostics: Vec<lsp_types::Diagnostic> = host
+        .problems
+        .iter()
+        .map(|problem| {
+            top_diagnostic(
+                lsp_types::DiagnosticSeverity::Warning,
+                problem.clone(),
+                None,
+            )
+        })
+        .collect();
+    match env.load_program_diag(&joined.text, path) {
+        Ok(pid) => {
+            if let Some(p) = env.get_program(pid) {
                 imports = imported_modules(p);
-                p.warnings
-                    .iter()
-                    .map(|w| {
-                        let severity = if w.is_error() {
-                            lsp_types::DiagnosticSeverity::Error
-                        } else {
-                            lsp_types::DiagnosticSeverity::Warning
-                        };
-                        petal_diagnostic_to_lsp(w, severity)
-                    })
-                    .collect()
-            })
-            .unwrap_or_default(),
+                for w in &p.warnings {
+                    let severity = if w.is_error() {
+                        lsp_types::DiagnosticSeverity::Error
+                    } else {
+                        lsp_types::DiagnosticSeverity::Warning
+                    };
+                    diagnostics.extend(program_diagnostic(
+                        w, severity, p, &joined, &mut sites, &env,
+                    ));
+                }
+            }
+        }
         // One diagnostic per item: the front end reports every error it found
         // in a single pass, and the editor should show all of them.
-        Err(err) => err
-            .items
-            .iter()
-            .map(|item| {
-                let range = match item.span {
-                    // Only a span in the file we are analyzing can be placed in
-                    // it. A diagnostic carrying another module's name, or one
-                    // with no span at all (an unresolvable import, say), has no
-                    // honest position here, so it goes to the top of the file
-                    // with the file name left in the message.
-                    Some(span)
-                        if item.file.is_none() && span.file == crate::source_map::ENTRY_FILE =>
-                    {
-                        span_to_range(&span)
-                    }
-                    _ => {
-                        let pos = lsp_types::Position {
-                            line: 0,
-                            character: 0,
-                        };
-                        lsp_types::Range {
-                            start: pos,
-                            end: pos,
-                        }
-                    }
-                };
-                let message = match &item.file {
-                    Some(file) => format!("{file}: {}", item.message),
-                    None => item.message.clone(),
-                };
-                lsp_types::Diagnostic {
-                    range,
-                    severity: Some(lsp_types::DiagnosticSeverity::Error),
-                    message,
-                    source: Some("petal".to_string()),
-                }
-            })
-            .collect(),
-    };
+        Err(err) => {
+            for item in &err.items {
+                diagnostics.push(load_error_diagnostic(
+                    item, &joined, &host, &mut sites, &env,
+                ));
+            }
+        }
+    }
 
     // A document that does not compile still imports what it imports: its
     // import lines alone are a program, and compiling that is enough to know
-    // what they bring in.
+    // what they bring in. The host's implicit imports are written out, since
+    // a program of import lines names none of their exports.
     if imports.is_empty() {
-        let header = import_header(source);
+        let mut header = import_header(source);
+        let unwritten: Vec<&String> = host
+            .imports
+            .iter()
+            .filter(|m| !header.lines().any(|l| l.trim() == format!("import {m}")))
+            .collect();
+        for m in &unwritten {
+            header.push_str(&format!("import {m}\n"));
+        }
         if !header.is_empty()
             && let Ok(pid) = env.load_program_diag(&header, path)
             && let Some(p) = env.get_program(pid)
         {
             imports = imported_modules(p);
+            for import in &mut imports {
+                if unwritten.contains(&&import.module) {
+                    import.implicit = true;
+                }
+            }
         }
     }
+    // The host's prelude files declare names the document uses bare.
+    imports.splice(0..0, prelude_modules(&host));
 
     Analysis {
         diagnostics,
@@ -443,6 +437,317 @@ pub fn analyze_at(
         imports,
         static_notes: std::sync::OnceLock::new(),
     }
+}
+
+/// What [`analyze_at`] and the static notes compile with: a check-only
+/// `Env` that reads the open documents over the disk and binds the
+/// document's host's implicit imports, the host itself, and the program
+/// that host would compile for `source`.
+fn prepare(
+    source: &str,
+    path: Option<&std::path::Path>,
+    open: &[(std::path::PathBuf, &str)],
+) -> (crate::env::Env, HostView, Joined) {
+    let host = path
+        .map(|p| HostView::for_document(p, open))
+        .unwrap_or_default();
+    let mut env = crate::env::Env::new();
+    // Diagnostics only: the document may declare natives of a host this
+    // process is not.
+    env.set_check_only(true);
+    for (file, text) in open {
+        env.override_file_source(file, text);
+    }
+    host.apply(&mut env);
+    let joined = host.join(source);
+    (env, host, joined)
+}
+
+/// A diagnostic at the top of the document.
+fn top_diagnostic(
+    severity: lsp_types::DiagnosticSeverity,
+    message: String,
+    related: Option<Vec<lsp_types::DiagnosticRelatedInformation>>,
+) -> lsp_types::Diagnostic {
+    lsp_types::Diagnostic {
+        range: lsp_types::Range::default(),
+        severity: Some(severity),
+        message,
+        source: Some("petal".to_string()),
+        related_information: related,
+    }
+}
+
+/// A place in another file, for a diagnostic's related information.
+fn related_at(
+    path: &std::path::Path,
+    span: &SourceSpan,
+    message: &str,
+) -> lsp_types::DiagnosticRelatedInformation {
+    lsp_types::DiagnosticRelatedInformation {
+        location: lsp_types::Location {
+            uri: path_to_uri(path),
+            range: span_to_range(span),
+        },
+        message: message.to_string(),
+    }
+}
+
+/// One of a compiled program's warnings or errors as a diagnostic of the
+/// document, or `None` when it belongs to one of the host's prelude files
+/// (that file shows it when it is open).
+///
+/// One found in an imported module has no position in the document. It is
+/// placed on the `import` line that brings the module in (at the top of the
+/// file when the module comes in through another one), with the module's
+/// name in front of the message and its place in the module as related
+/// information: the same as a failed compile reports it.
+fn program_diagnostic(
+    w: &PetalDiagnostic,
+    severity: lsp_types::DiagnosticSeverity,
+    program: &crate::program::Program,
+    joined: &Joined,
+    sites: &mut ImportSites,
+    env: &crate::env::Env,
+) -> Option<lsp_types::Diagnostic> {
+    if w.span.file == crate::source_map::ENTRY_FILE {
+        joined.doc_span(w.span)?;
+        // Every span it cites moves with it; one that is not in the document
+        // (a prelude line) is left as it is.
+        let moved = w.relocated(|s| joined.doc_span(s).or(Some(s)))?;
+        return Some(lsp_types::Diagnostic {
+            range: span_to_range(&moved.span),
+            severity: Some(severity),
+            message: moved.message,
+            source: Some("petal".to_string()),
+            related_information: None,
+        });
+    }
+    let file = program.source_map.files.get(w.span.file.0 as usize);
+    let name = file.map(|f| f.name.as_str()).unwrap_or("another module");
+    let origin = file.and_then(|f| f.origin.as_deref());
+    let range = origin
+        .and_then(|o| sites.for_file(o, env))
+        .unwrap_or_default();
+    Some(lsp_types::Diagnostic {
+        range,
+        severity: Some(severity),
+        message: format!("{name}: {}", w.message),
+        source: Some("petal".to_string()),
+        related_information: origin.map(|o| vec![related_at(o, &w.span, &w.message)]),
+    })
+}
+
+/// One item of a failed compile as a diagnostic of the document. Only a span
+/// in the document can be placed in it. One in another module goes on the
+/// `import` line that brings the module in, when that can be told from the
+/// module's name, and otherwise at the top of the file; its message keeps
+/// the file name in front. An unresolvable import goes on its own line.
+fn load_error_diagnostic(
+    item: &crate::error::ErrorItem,
+    joined: &Joined,
+    host: &HostView,
+    sites: &mut ImportSites,
+    env: &crate::env::Env,
+) -> lsp_types::Diagnostic {
+    let error = lsp_types::DiagnosticSeverity::Error;
+    let at = |range: lsp_types::Range, message: String, related| lsp_types::Diagnostic {
+        range,
+        severity: Some(error),
+        message,
+        source: Some("petal".to_string()),
+        related_information: related,
+    };
+    match (item.span, &item.file) {
+        (Some(span), None) => {
+            if let Some(doc) = joined.doc_span(span) {
+                return at(span_to_range(&doc), item.message.clone(), None);
+            }
+            if let Some((index, local)) = joined.prelude_span(span)
+                && let Some(file) = host.prelude.get(index)
+            {
+                return top_diagnostic(
+                    error,
+                    format!("{} (host prelude): {}", file.name, item.message),
+                    Some(vec![related_at(&file.path, &local, &item.message)]),
+                );
+            }
+            top_diagnostic(error, item.message.clone(), None)
+        }
+        (Some(span), Some(name)) => {
+            let message = format!("{name}: {}", item.message);
+            match sites.for_display_name(name, env) {
+                Some((range, path)) => at(
+                    range,
+                    message,
+                    Some(vec![related_at(&path, &span, &item.message)]),
+                ),
+                None => top_diagnostic(error, message, None),
+            }
+        }
+        (None, file) => {
+            let message = match file {
+                Some(name) => format!("{name}: {}", item.message),
+                None => item.message.clone(),
+            };
+            let range = missing_module(&item.message)
+                .and_then(|m| sites.for_written(m, env))
+                .unwrap_or_default();
+            at(range, message, None)
+        }
+    }
+}
+
+/// The module a `cannot find module 'x' …` message names.
+fn missing_module(message: &str) -> Option<&str> {
+    let rest = message.strip_prefix("cannot find module '")?;
+    Some(&rest[..rest.find('\'')?])
+}
+
+/// The `import` lines of a document, with the file each resolves to: where a
+/// diagnostic found in an imported module is placed. Worked out the first
+/// time one is asked for, since most compiles have none.
+struct ImportSites<'a> {
+    source: &'a str,
+    doc: Option<&'a std::path::Path>,
+    sites: Option<Vec<ImportSite>>,
+}
+
+struct ImportSite {
+    /// The path as written (`./lib`, `bloom/menu`).
+    written: String,
+    /// The path on its line.
+    range: lsp_types::Range,
+    /// The file it resolves to, canonical.
+    file: Option<std::path::PathBuf>,
+}
+
+impl<'a> ImportSites<'a> {
+    fn new(source: &'a str, doc: Option<&'a std::path::Path>) -> Self {
+        ImportSites {
+            source,
+            doc,
+            sites: None,
+        }
+    }
+
+    fn all(&mut self, env: &crate::env::Env) -> &[ImportSite] {
+        let (source, doc) = (self.source, self.doc);
+        self.sites.get_or_insert_with(|| {
+            let lines: Vec<&str> = source.split('\n').collect();
+            crate::lsp::host::header_lines(source)
+                .into_iter()
+                .filter_map(|row| {
+                    let line = lines.get(row)?;
+                    let chars: Vec<char> = line.chars().collect();
+                    let mut col = chars.iter().take_while(|c| c.is_whitespace()).count();
+                    let rest: String = chars[col..].iter().collect();
+                    let mut rest = rest.as_str();
+                    for kw in ["pub ", "export "] {
+                        if let Some(r) = rest.strip_prefix(kw) {
+                            col += kw.len();
+                            rest = r;
+                        }
+                    }
+                    let r = rest.strip_prefix("import ")?;
+                    col += "import ".len();
+                    let pad = r.chars().take_while(|c| c.is_whitespace()).count();
+                    col += pad;
+                    let written: String = r
+                        .chars()
+                        .skip(pad)
+                        .take_while(|c| is_ident_char(*c) || *c == '/' || *c == '.')
+                        .collect();
+                    if written.is_empty() {
+                        return None;
+                    }
+                    let start = lsp_types::Position {
+                        line: row as u32,
+                        character: col as u32,
+                    };
+                    let end = lsp_types::Position {
+                        line: row as u32,
+                        character: (col + written.chars().count()) as u32,
+                    };
+                    let file = doc
+                        .and_then(|d| env.resolve_module_file(&written, d))
+                        .map(|f| crate::module::canonical_path(&f));
+                    Some(ImportSite {
+                        written,
+                        range: lsp_types::Range { start, end },
+                        file,
+                    })
+                })
+                .collect()
+        })
+    }
+
+    /// The import line that brings in the file at `path`.
+    fn for_file(
+        &mut self,
+        path: &std::path::Path,
+        env: &crate::env::Env,
+    ) -> Option<lsp_types::Range> {
+        let path = crate::module::canonical_path(path);
+        self.all(env)
+            .iter()
+            .find(|s| s.file.as_deref() == Some(path.as_path()))
+            .map(|s| s.range)
+    }
+
+    /// The import line of the module a load error names by its display name
+    /// (`lib.ptl`, `bloom/menu.ptl`), with the module's file.
+    fn for_display_name(
+        &mut self,
+        name: &str,
+        env: &crate::env::Env,
+    ) -> Option<(lsp_types::Range, std::path::PathBuf)> {
+        let shown = std::path::Path::new(name);
+        self.all(env).iter().find_map(|s| {
+            let file = s.file.as_ref()?;
+            let written = s.written.trim_start_matches("./");
+            let same = file.file_name() == Some(shown.as_os_str())
+                || file.ends_with(shown)
+                || format!("{written}.ptl") == name;
+            same.then(|| (s.range, file.clone()))
+        })
+    }
+
+    /// The import line that writes the module path `module`.
+    fn for_written(&mut self, module: &str, env: &crate::env::Env) -> Option<lsp_types::Range> {
+        self.all(env)
+            .iter()
+            .find(|s| s.written == module || s.written.trim_start_matches("./") == module)
+            .map(|s| s.range)
+    }
+}
+
+/// The host's prelude files as modules the document imports: every
+/// top-level declaration of each is a name the document can use bare.
+fn prelude_modules(host: &HostView) -> Vec<ImportedModule> {
+    host.prelude
+        .iter()
+        .map(|file| {
+            let uri = path_to_uri(&file.path);
+            let defs = parse_tolerant(&file.text)
+                .map(|(stmts, text)| top_level_definitions(&stmts, &text))
+                .unwrap_or_default();
+            ImportedModule {
+                module: file.name.clone(),
+                qualifier: None,
+                names: None,
+                implicit: false,
+                uri: Some(uri.clone()),
+                exports: defs
+                    .into_iter()
+                    .map(|def| ImportedDefinition {
+                        def,
+                        uri: Some(uri.clone()),
+                    })
+                    .collect(),
+            }
+        })
+        .collect()
 }
 
 /// Compile `source` as [`analyze_at`] does and word the classifier's answer
@@ -455,12 +760,8 @@ fn compute_static_notes(
     if source.trim().is_empty() {
         return Vec::new();
     }
-    let mut env = crate::env::Env::new();
-    env.set_check_only(true);
-    for (file, text) in open {
-        env.override_file_source(file, text);
-    }
-    let Ok(pid) = env.load_program_diag(source, path) else {
+    let (mut env, _host, joined) = prepare(source, path, open);
+    let Ok(pid) = env.load_program_diag(&joined.text, path) else {
         return Vec::new();
     };
     let Some(program) = env.get_program(pid) else {
@@ -468,7 +769,17 @@ fn compute_static_notes(
     };
     let analysis = env.static_analysis(program);
     let kept = env.kept_declarations(program, &analysis);
+    // The declarations of the host's prelude files are not the document's.
     static_notes(&analysis.report, &kept)
+        .into_iter()
+        .filter_map(|mut note| match joined.origin(note.line) {
+            LineOrigin::Doc(line) => {
+                note.line = line;
+                Some(note)
+            }
+            LineOrigin::Prelude(..) => None,
+        })
+        .collect()
 }
 
 /// Parse `source` for its declarations, forgiving the line being typed: a
@@ -746,18 +1057,6 @@ pub fn path_to_uri(path: &std::path::Path) -> String {
         }
     }
     out
-}
-
-fn petal_diagnostic_to_lsp(
-    d: &PetalDiagnostic,
-    severity: lsp_types::DiagnosticSeverity,
-) -> lsp_types::Diagnostic {
-    lsp_types::Diagnostic {
-        range: span_to_range(&d.span),
-        severity: Some(severity),
-        message: d.message.clone(),
-        source: Some("petal".to_string()),
-    }
 }
 
 pub fn span_to_range(span: &SourceSpan) -> lsp_types::Range {

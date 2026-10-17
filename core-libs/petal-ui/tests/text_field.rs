@@ -270,7 +270,7 @@ fn the_email_client_search_field_selects_copies_and_undoes() {
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
     let q = |ui: &Headless| ui.state_string("q").unwrap();
     ui.frame().unwrap();
-    ui.key("/").unwrap();
+    ui.key("slash").unwrap();
     ui.text("caf\u{e9} from:m\u{e9}l").unwrap();
     assert_eq!(q(&ui), "caf\u{e9} from:m\u{e9}l");
 

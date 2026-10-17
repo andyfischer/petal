@@ -292,3 +292,55 @@ fn the_email_client_search_field_selects_copies_and_undoes() {
     chord(&mut ui, CMD, "v");
     assert_eq!(q(&ui), "from:m\u{e9}l");
 }
+
+// ── Focus and the pointer ─────────────────────────────────────────────────
+
+/// A focused field with a panel on a higher layer beside it. `panel` turns
+/// the panel on.
+const BLUR: &str = "state fc = focus_state()\n\
+                    state buf = \"abc\"\n\
+                    state has = false\n\
+                    state panel = false\n\
+                    if key_pressed(\"p\") then panel = !panel end\n\
+                    let res = text_field(fc, \"name\", {x: 10, y: 10, w: 200, h: 24}, buf)\n\
+                    fc = res.focus\n\
+                    buf = res.text\n\
+                    if panel then\n\
+                      with_layer(10, fn() ui_block(rect(300, 0, 100, 100)) end)\n\
+                    end\n\
+                    has = focused(fc, \"name\")";
+
+fn has(ui: &Headless) -> bool {
+    matches!(ui.state().get("has"), Some(serde_json::Value::Bool(true)))
+}
+
+#[test]
+fn a_press_outside_the_focused_field_clears_the_focus() {
+    let mut ui = Headless::with_ui(BLUR).unwrap();
+    ui.frame().unwrap();
+    ui.click(50, 20).unwrap();
+    ui.frame().unwrap();
+    assert!(has(&ui), "a click inside focuses");
+    ui.click(100, 200).unwrap();
+    ui.frame().unwrap();
+    assert!(!has(&ui), "a press elsewhere blurs");
+    // Typing after the blur goes nowhere.
+    ui.text("zz").unwrap();
+    assert_eq!(ui.state_string("buf").as_deref(), Some("abc"));
+}
+
+#[test]
+fn a_press_on_a_higher_layer_keeps_the_focus() {
+    let mut ui = Headless::with_ui(BLUR).unwrap();
+    ui.frame().unwrap();
+    ui.key("p").unwrap();
+    ui.frame().unwrap();
+    ui.click(50, 20).unwrap();
+    ui.frame().unwrap();
+    assert!(has(&ui));
+    ui.click(350, 50).unwrap();
+    ui.frame().unwrap();
+    assert!(has(&ui), "the panel took the press, not the page");
+    ui.text("d").unwrap();
+    assert_eq!(ui.state_string("buf").as_deref(), Some("abcd"));
+}

@@ -64,6 +64,19 @@ Polled, never called back. An *edge* is true on one frame.
 | `ui_version()` | The interface version (1). |
 | `host_data(kind, arg)` | Ask the host for data it publishes (host specific). |
 
+**Key names.** A key is named for the key, not for what it types: `"a"`–`"z"`,
+`"0"`–`"9"`, `"space"`, `"return"`, `"escape"`, `"tab"`, `"backspace"`,
+`"up"`/`"down"`/`"left"`/`"right"`, `"pageup"`, `"pagedown"`, `"home"`,
+`"end"`, `"delete"`, `"insert"`, `"shift"`, `"ctrl"`, `"alt"`, `"cmd"`,
+`"f1"`–`"f12"`, `"minus"`, `"equals"`, `"comma"`, `"period"`, `"slash"`,
+`"backslash"`, `"semicolon"`, `"quote"`, `"backquote"`, `"leftbracket"`,
+`"rightbracket"` (the list is `petal::keys::KEY_NAMES`). Enter is `"return"`;
+`+` is `"equals"` with `mod_shift()`. Any other name is never down, so
+`petal check` warns about one written as a literal and names the likely key
+(`key_pressed("enter")`: did you mean `"return"`?). The keypad has no names of
+its own: keypad Enter is `"return"`, and its digits and `-` `.` `/` `=` are the
+main-row keys.
+
 ## The pointer and a rect
 
 The raw tests look at the pointer and the rect and nothing else. The layered
@@ -316,7 +329,7 @@ A **text style** is a record. Every field is optional.
 |---|---|
 | `size` | Pixel size. |
 | `color` | A colour record; its `a` is the run's alpha. |
-| `font` | A face: a family name, a host role (`"ui"`, `"mono"`), or a fallback list. |
+| `font` | A face: an installed family name (`"Georgia"`, any case), a host role (`"ui"`, `"mono"`), or a fallback list (`"Georgia, ui"`). A family the host can't find draws, and measures, in the default face. See [Text and fonts](usage/text-and-fonts.md#per-host-status) for which hosts look families up. |
 | `weight` | 400 regular, 600 semibold, 700 bold. |
 | `italic` | `true` for italic. |
 | `spacing` or `tracking` | Extra pixels between letters. Measured as well as drawn. |
@@ -483,6 +496,12 @@ Every widget takes an optional trailing `style`.
 | `focus_next(fc, ids)`, `focus_prev(fc, ids)`, `focus_update(fc, ids)` | Move through a ring of ids; `focus_update` does Tab and Shift+Tab. |
 | `text_field(fc, id, r, buf, style?)` | A single-line editor with a caret, selection, clipboard and undo. Returns `{focus, text, caret, submitted, changed, …}`. |
 | `text_field_update(fc, id, r, buf, style?)`, `draw_text_field(r, text, has, …)` | The two halves, for a field with its own chrome. |
+
+A press inside a field focuses it. A press anywhere else, while it has the
+focus, clears the focus in the `focus` it returns — unless something on a
+higher layer took the press (a popup opened from the field). So assign
+`res.focus` back every frame, and a click on the rest of the UI gives the
+keyboard back to it without wiring up Escape.
 
 ### Menus, dialogs and drag and drop
 

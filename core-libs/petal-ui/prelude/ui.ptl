@@ -2852,7 +2852,8 @@ end
 //
 // Mouse: a click focuses the field and places the caret, shift+click extends
 // the selection to the click, a drag selects, a double click selects the
-// word and a triple click everything.
+// word and a triple click everything. A press anywhere else gives the focus
+// up (the result's `focus` is cleared), unless a higher layer took it.
 //
 // Keys, while focused (cmd and ctrl are interchangeable for the shortcuts):
 //   left / right / home / end     move the caret; with shift, extend the selection
@@ -2990,7 +2991,15 @@ pub fn text_field_update(fc, id, r, buf, style)
   if anchor < 0 || anchor > n then
     anchor = caret
   end
-  let pressed = _get(style, "pointer", true) && _hot(r, id) && mouse_pressed(0)
+  let pointer = _get(style, "pointer", true)
+  let pressed = pointer && _hot(r, id) && mouse_pressed(0)
+  if !pressed && pointer && mouse_pressed(0) && focused(fc, id) && !pointer_captured(ui_layer()) then
+    // A press somewhere else takes the focus away, as in every desktop
+    // toolkit — unless something on a higher layer (a popup, a menu opened
+    // from this field) took the press.
+    f = focus_clear(fc)
+    dragging = false
+  end
   if pressed then
     f = focus_set(fc, id)
     let at = text_index_at(text, ts, float(mouse_x() - (r.x + inset) + scroll))

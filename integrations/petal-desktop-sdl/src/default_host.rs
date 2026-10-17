@@ -6,7 +6,9 @@
 //! only need 2D drawing + the `ui` prelude use this host unchanged (Shape A);
 //! apps that need a different renderer or native set supply their own `Host`.
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use image::{Rgb, RgbImage};
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -20,7 +22,7 @@ use petal::stack::StackKey;
 
 use petal_ui::draw::{DrawCommand, take_draw_commands, take_draw_commands_for};
 
-use crate::font::{self, FontBook};
+use crate::font::{self, FontBook, SdlFontSource};
 use crate::game_loop::{EscapeAction, Host, ScriptSwitch};
 use crate::native_fns::{self, ExampleEntry, bind_examples, take_pending_launch};
 use crate::renderer;
@@ -36,8 +38,10 @@ const VARIANTS: &[(u16, bool)] = &[(400, false), (700, false), (400, true), (700
 pub struct DefaultHost {
     /// The faces this host can render, each a ladder of baked sizes; `None` if
     /// none could load (headless on a machine with no TTF font — screenshots
-    /// then fail informatively).
-    fonts: Option<FontBook<'static>>,
+    /// then fail informatively). Shared with the [`SdlFontSource`] the text
+    /// natives measure installed families through, so measuring and drawing
+    /// use the same ladders.
+    fonts: Option<Rc<RefCell<FontBook<'static>>>>,
     /// When set, `petal-sdl` was launched with no script: run the example
     /// browser over the `.ptl` files in this directory.
     examples_dir: Option<PathBuf>,
@@ -63,10 +67,20 @@ impl DefaultHost {
         let fonts = match sdl2::ttf::init() {
             Ok(ttf) => {
                 let ttf: &'static Sdl2TtfContext = Box::leak(Box::new(ttf));
-                FontBook::load_system(ttf, font::DEFAULT_LADDER).ok()
+                FontBook::load_system(ttf, font::DEFAULT_LADDER)
+                    .ok()
+                    .map(|book| Rc::new(RefCell::new(book)))
             }
             Err(_) => None,
         };
+        Self::with_fonts(fonts, examples_dir)
+    }
+
+    /// [`new`](Self::new) with the font book already loaded (or absent).
+    fn with_fonts(
+        fonts: Option<Rc<RefCell<FontBook<'static>>>>,
+        examples_dir: Option<PathBuf>,
+    ) -> Self {
         Self {
             fonts,
             examples_dir,
@@ -92,7 +106,13 @@ impl Host for DefaultHost {
     fn on_program_loaded(&mut self, env: &mut Env, path: Option<&str>) {
         // Bind proportional text metrics so `text_width()` matches rendered
         // glyphs (correct centering / right-alignment).
-        if let Some(fonts) = &mut self.fonts {
+        if let Some(fonts) = &self.fonts {
+            // Installed families (`font: "Georgia"`) are measured on demand
+            // through the font source, from the same book the renderer draws
+            // with. It lives in petal-ui's thread-local channel for the life of
+            // the process; the loop runs every frame on this thread.
+            petal_ui::draw::swap_font_provider(Some(Box::new(SdlFontSource::new(fonts.clone()))));
+            let mut fonts = fonts.borrow_mut();
             let ratios = fonts.default_face().ascii_advance_ratios();
             petal_ui::draw::bind_text_advance_table(env, &ratios);
             // …and the other axis. This host blits a run's rendered surface
@@ -169,7 +189,11 @@ impl Host for DefaultHost {
         renderer::render(
             &mut sc,
             commands,
-            self.fonts.as_mut().expect("fonts for windowed present"),
+            &mut self
+                .fonts
+                .as_ref()
+                .expect("fonts for windowed present")
+                .borrow_mut(),
         );
         let surface = sc.into_surface();
 
@@ -193,10 +217,15 @@ impl Host for DefaultHost {
     ) -> Result<RgbImage, String> {
         let fonts = self
             .fonts
-            .as_mut()
+            .as_ref()
             .ok_or_else(|| "screenshot unavailable: no system font could be loaded".to_string())?;
         let commands = take_draw_commands_for(env, stack);
-        Ok(render_commands(&commands, width, height, fonts))
+        Ok(render_commands(
+            &commands,
+            width,
+            height,
+            &mut fonts.borrow_mut(),
+        ))
     }
 
     fn render_commands_image(
@@ -207,9 +236,14 @@ impl Host for DefaultHost {
     ) -> Result<RgbImage, String> {
         let fonts = self
             .fonts
-            .as_mut()
+            .as_ref()
             .ok_or_else(|| "screenshot unavailable: no system font could be loaded".to_string())?;
-        Ok(render_commands(commands, width, height, fonts))
+        Ok(render_commands(
+            commands,
+            width,
+            height,
+            &mut fonts.borrow_mut(),
+        ))
     }
 
     fn draw_commands_json(&mut self, env: &mut Env, stack: StackKey) -> serde_json::Value {
@@ -432,5 +466,101 @@ mod tests {
             (0, 0, 0),
             "background should be the clear color"
         );
+    }
+
+    /// End to end through the script: `text_width` in an installed family
+    /// (named in any case) measures that family, `font(name)` answers with its
+    /// canonical spelling, and the renderer draws the run as wide as it
+    /// measured. Skipped on a machine with none of the candidate families.
+    #[test]
+    fn an_installed_family_measures_and_draws_by_name() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
+        // `DefaultHost::new` leaks its TTF context for the process, which
+        // would stop every other test from initializing SDL_ttf. Own one
+        // here instead and shut it down after everything borrowing it.
+        let ttf = Box::new(sdl2::ttf::init().unwrap());
+        // SAFETY: every borrower — the book, the host and the font source in
+        // petal-ui's channel — is dropped below before `ttf` is.
+        let ttf_ref: &'static Sdl2TtfContext = unsafe { &*(ttf.as_ref() as *const _) };
+        let Ok(book) = FontBook::load_system(ttf_ref, DEFAULT_LADDER) else {
+            return;
+        };
+        let book = Rc::new(RefCell::new(book));
+        let mut host = DefaultHost::with_fonts(Some(book.clone()), None);
+        let families = book.borrow_mut().families();
+        let Some(family) = [
+            "Menlo",
+            "Courier New",
+            "Courier",
+            "DejaVu Sans Mono",
+            "Liberation Mono",
+        ]
+        .into_iter()
+        .find(|f| families.iter().any(|g| g == f)) else {
+            return;
+        };
+        let mut env = Env::new();
+        native_fns::register_all(&mut env);
+        petal_ui::draw::clear_font_cache();
+        host.on_program_loaded(&mut env, None);
+        let lower = family.to_lowercase();
+        let mut run = |src: String| {
+            env.run_source(&format!("import ui\n{src}"))
+                .expect("script runs")
+        };
+        let int = |v: petal::value::Value| match v {
+            petal::value::Value::Int(n) => n as f64,
+            other => panic!("expected an int, got {other:?}"),
+        };
+        let default_w = int(run("text_width(\"illlli\", {size: 20})".to_string()));
+        let family_w = int(run(format!(
+            "text_width(\"illlli\", {{size: 20, font: \"{lower}\"}})"
+        )));
+        assert!(
+            family_w > default_w,
+            "{family} should measure wider: {family_w} vs {default_w}"
+        );
+        let canonical = run(format!("font(\"{lower}\").font == \"{family}\""));
+        assert_eq!(
+            canonical,
+            petal::value::Value::Bool(true),
+            "font() canonicalizes {lower}"
+        );
+        let listed = run("len(fonts()) > 0".to_string());
+        assert_eq!(
+            listed,
+            petal::value::Value::Bool(true),
+            "fonts() lists the installed families"
+        );
+
+        let run = DrawCommand::Text {
+            text: "illlli".to_string(),
+            x: 4,
+            y: 4,
+            size: 20,
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 255,
+            font: Some(lower.clone()),
+            weight: 400,
+            italic: false,
+            spacing: 0.0,
+        };
+        let img = render_commands(&[run], 300, 40, &mut book.borrow_mut());
+        let lit: Vec<u32> = (0..img.width())
+            .filter(|&x| (0..img.height()).any(|y| img.get_pixel(x, y)[0] > 64))
+            .collect();
+        let drawn = (lit.last().unwrap() - lit.first().unwrap() + 1) as f64;
+        assert!(
+            (drawn - family_w).abs() <= family_w * 0.15 + 2.0,
+            "{family} drew {drawn}px but measured {family_w}px"
+        );
+        drop(petal_ui::draw::swap_font_provider(None));
+        petal_ui::draw::clear_font_cache();
+        drop(env);
+        drop(host);
+        drop(book);
+        drop(ttf);
     }
 }

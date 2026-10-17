@@ -30,7 +30,7 @@ The crate is a library (`petal_sdl`) plus a thin binary (`petal-sdl`,
   (SDL event translation and gamepad folding), `audio` (queued sample
   output), `sfx` (sfxr-style synthesis), `sound` (the sound natives, a voice
   mixer, and the `SoundBoard` that drives them), `protocol` (agent JSON), `watcher` (hot reload), `screenshot` (PNG
-  encoding), `font` (size ladder), and `renderer` (SDL canvas primitives).
+  encoding), `font` (per-size ladders and installed-family lookup), and `renderer` (SDL canvas primitives).
 
 The draw functions (`draw_rect`, `draw_text`, offscreen canvases, ...) and
 input functions (`key_down`, `mouse_x`, ...) are not defined here. They come

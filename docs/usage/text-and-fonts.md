@@ -134,9 +134,15 @@ the portable **roles** rather than family names where you can:
 | `serif` | A serif face |
 
 A CSS-style fallback list works too: `{font: "Inter, ui"}` takes the first face
-the host registered. A face the host doesn't offer measures — and draws — with
+the host can draw. A face the host doesn't offer measures — and draws — with
 the default font, so a script asking for something exotic degrades instead of
 breaking, and the same script is portable across embedders.
+
+A **family name** (`{font: "Georgia"}`) draws that installed family on the hosts
+that can find one — petal-sdl and Garden panels look the name up among the
+machine's fonts, case-insensitively, the first time a script asks for it (see
+[Per-host status](#per-host-status)). Put a role after it (`"Georgia, ui"`)
+to say what the fallback should be on a host or machine that hasn't got it.
 
 Matching is family-first, then variant within it, like CSS: asking for bold in
 a family the host has only a regular of gets *that family's* regular, not some
@@ -295,7 +301,7 @@ default font.
 
 | Host | Faces | `weight` / `italic` | `spacing` | Measurement |
 |---|---|---|---|---|
-| petal-sdl | System sans (`ui`) + system mono (`mono`), SDL_ttf size ladder | yes — SDL_ttf synthetic bold/oblique | yes — per-glyph placement | measured per face × variant, both axes |
+| petal-sdl | System sans (`ui`) + system mono (`mono`), plus **any family installed on the machine** by family or PostScript name, found in the system font directories on first use and kept; each face is baked at exactly the sizes drawn (SDL_ttf, one font per size, loaded on first use) | yes — SDL_ttf synthetic bold/oblique, on a family's upright regular cut | yes — per-glyph placement | measured per face × variant, both axes: the roles published up front, installed families through a `FontSource` on demand |
 | petal-web-canvas | `ui` / `mono` / `serif` CSS stacks | yes — the browser's own faces | yes — `ctx.letterSpacing` where supported | measured per face × variant with `ctx.measureText`, both axes |
 | diagram-canvas | inherits web-canvas | yes | yes | inherits web-canvas |
 | Garden panels | **any family installed on the machine**, via `font(name)` / a `font:` string; plus two embedded faces reachable as `mono` (JetBrains Mono) and `ui` (Inter) | real cuts on a system family and on `ui` (Inter Bold is embedded); **synthetic on `mono`**, which has one cut — `weight >= 600` is emboldened by a second offset draw and measures regular | yes — the host places each glyph | measured through cosmic-text, on demand per family × cut; vertical metrics for the two embedded roles |

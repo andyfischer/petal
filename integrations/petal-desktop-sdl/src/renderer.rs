@@ -489,11 +489,11 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
             italic,
             spacing,
         } => {
-            // Face first (a role this host lacks degrades to the default), then
-            // the command's size via the nearest ladder rung, then synthetic
-            // bold/italic on that rung.
+            // Face first (a role or installed family; anything else degrades
+            // to the default), then the rung baked at exactly the command's
+            // size, then synthetic bold/italic on that rung.
             let face = fonts.resolve(font.as_deref());
-            let font = face.nearest_styled(size, weight, italic);
+            let font = face.sized_styled(size, weight, italic);
             let color = Color::RGBA(r, g, b, a);
             match spacing == 0.0 {
                 // The common path: one texture for the whole run, so SDL_ttf
@@ -2104,7 +2104,7 @@ mod tests {
 
         let default = text_run_width(&mut fonts, run(None));
         let mono = text_run_width(&mut fonts, run(Some("mono")));
-        let unknown = text_run_width(&mut fonts, run(Some("Papyrus")));
+        let unknown = text_run_width(&mut fonts, run(Some("No Such Face (petal test)")));
         assert!(
             mono > default,
             "narrow glyphs are wider in a fixed-pitch face: mono {mono}px vs default {default}px"
@@ -2113,5 +2113,52 @@ mod tests {
             unknown, default,
             "a face this host lacks falls back to the default"
         );
+    }
+
+    /// Off-ladder sizes draw at exactly that size, so the run's ink is as wide
+    /// as `text_width` (advance ratios × the asked-for size) says. Snapping 11,
+    /// 13 and 15 to the 10/12/14 rungs drew them 7–10% narrower than measured,
+    /// and whole-pixel glyph advances drifted ~3% even on a rung.
+    #[test]
+    fn off_ladder_sizes_draw_as_wide_as_they_measure() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
+        let ttf = sdl2::ttf::init().unwrap();
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let ratios = fonts.default_face().ascii_advance_ratios();
+        let text = "The quick brown fox jumps over the lazy dog again";
+        for size in [11u16, 13, 15, 17, 22, 37] {
+            let measured: f64 = text.chars().map(|c| ratios[c as usize] * size as f64).sum();
+            let mut surface = Surface::new(1400, 80, PixelFormatEnum::RGB888).unwrap();
+            surface.fill_rect(None, Color::RGB(0, 0, 0)).unwrap();
+            let cmd = DrawCommand::plain_text(text, 4, 4, size, 255, 255, 255, 255);
+            let drawn = lit_width(&render_frame(surface, vec![cmd], &mut fonts)) as f64;
+            // Within a couple of pixels over the whole line: the ink sits a
+            // little inside the advance box at either end. Drawing at the
+            // nearest rung instead was 20+px short at 13.
+            assert!(
+                (drawn - measured).abs() <= 2.0,
+                "size {size}: drew {drawn}px but measures {measured:.1}px"
+            );
+            assert!(
+                fonts.default_face().sizes().contains(&size),
+                "size {size} should have been baked on demand"
+            );
+        }
+    }
+
+    /// A size past the on-demand range draws with the nearest rung rather than
+    /// baking an enormous font, and size 0 draws nothing rather than panicking.
+    #[test]
+    fn out_of_range_sizes_fall_back_to_the_nearest_rung() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
+        let ttf = sdl2::ttf::init().unwrap();
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let before = fonts.default_face().sizes();
+        let huge = crate::font::MAX_RUNG_SIZE + 1;
+        for size in [0u16, huge] {
+            let cmd = DrawCommand::plain_text("x", 0, 0, size, 255, 255, 255, 255);
+            let _ = render_frame(new_black_surface(), vec![cmd], &mut fonts);
+        }
+        assert_eq!(fonts.default_face().sizes(), before);
     }
 }

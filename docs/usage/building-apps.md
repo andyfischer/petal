@@ -98,7 +98,8 @@ announced with `env.provides_package(name)`. `petal-fps` keeps its in
 Web integrations are a Rust WASM crate (built with `wasm-pack`) plus a
 TypeScript host, wired together by Vite. Apps consume them as an npm package —
 in this repo, through an **npm workspace**; an out-of-tree app can depend on
-the integration package the same way.
+the integration package the same way. The `PetalRuntime` API the TypeScript
+hosts drive is in [embedding-web.md](embedding-web.md).
 
 ### How `diagram-canvas` consumes `petal-web-canvas`
 

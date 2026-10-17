@@ -99,7 +99,8 @@ stack. The script's whole top level re-runs every frame (immediate mode);
  recorded input apply_scenario(sc, n)
 ```
 
-The frame contract:
+The frame loop, in C++ (what each step is for, and what holds for every host, is
+[the frame contract](../game-engine-features/frame-contract.md)):
 
 ```cpp
 // as SDL events arrive

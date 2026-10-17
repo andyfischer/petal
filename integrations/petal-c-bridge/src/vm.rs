@@ -2738,6 +2738,24 @@ mod tests {
         assert_eq!(name, b"Actor");
     }
 
+    /// A run that fails is not rolled back: `state` keeps what it wrote before
+    /// the error, and the next run carries on from there
+    /// (docs/game-engine-features/frame-contract.md, "Errors").
+    #[test]
+    fn a_failed_run_keeps_the_state_it_wrote_and_the_next_run_goes_on() {
+        let mut vm = Vm::new();
+        vm.load(
+            "state n = 0\nn += 1\nprint(n)\nif n == 2 then print(1 / 0) end\n",
+            None,
+            "t".into(),
+        )
+        .unwrap();
+        vm.run().unwrap();
+        assert!(vm.run().is_err(), "the second run divides by zero");
+        vm.run().unwrap();
+        assert_eq!(vm.env.take_output(), ["1", "2", "3"]);
+    }
+
     #[test]
     fn reload_compile_errors_are_structured_without_recompiling() {
         let mut vm = Vm::new();

@@ -104,6 +104,10 @@ if(PETAL_BRIDGE_BUILD_TESTS)
   target_link_libraries(petal_bridge_hello PRIVATE petal::bridge)
   add_test(NAME petal_bridge_hello COMMAND petal_bridge_hello)
 
+  # Not a test: the timings behind embedding-c.md's performance notes.
+  add_executable(petal_bridge_bench_frame examples/bench_frame.cpp)
+  target_link_libraries(petal_bridge_bench_frame PRIVATE petal::bridge)
+
   # The crate's own Rust unit tests (error-position parsing, boxed-native
   # ownership, typed reload/call errors, scenarios). Built on first run into
   # the same cargo target dir, so give it time.

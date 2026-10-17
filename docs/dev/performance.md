@@ -741,7 +741,7 @@ of something, a quarter of the frame's allocations:
 
 18 of the 55 gain nothing, and 89 of every UI app's slots are the UI
 prelude's. Before any of it was written the same corpus was measured for
-what there was to gain (`measure_constants` in that file:
+what there was to gain (`measure_constants_inside_functions_on_the_corpus` in that file, an ignored test:
 `petal::static_survey` finds the invariant expressions and a counter on the
 profiler charges each one its instructions and allocations): 0.26% and
 7.26%. Run again with the slots on it finds 0.22% of allocations left.

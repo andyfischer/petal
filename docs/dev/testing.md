@@ -366,13 +366,14 @@ whole corpus.
 
 ### What the Rust suite costs
 
-Four unit tests sweep every `.ptl` file in the repository (about 380) in a
-debug build, and cost far more than the rest of the suite put together. They
+Four unit tests sweep every `.ptl` file in the repository (409 on 16 October
+2026, by `test_corpus::repo_ptl_files`, which skips `node_modules`, `target`
+and dot-directories) in a debug build, and cost far more than the rest of the suite put together. They
 are `#[ignore]`d, so `cargo test` does not run them; `make
 expensive_lint_tests` does, and CI runs it on every push. Run it yourself
 after changing `petal fmt`, a lint rule, the lexer or parser, or the CST:
 
-| Test | CPU-seconds |
+| Test | CPU-seconds (approximate, from one past run) |
 |---|---|
 | `lint::tests::lint_preserves_compilation_over_repo_corpus` | about 500 |
 | `fmt::tests::fmt_is_ir_equal_and_idempotent_over_repo_corpus` | about 150 |
@@ -380,8 +381,8 @@ after changing `petal fmt`, a lint rule, the lexer or parser, or the CST:
 | `cst_project::tests::projected_ast_matches_parser_over_repo_corpus` | about 25 |
 
 Each fans out over the corpus on half the machine's cores;
-`PETAL_TEST_JOBS=<n>` sets the number. The other 1,200 unit tests take a few
-seconds together.
+`PETAL_TEST_JOBS=<n>` sets the number. The other unit tests (1,361 on 16 October 2026,
+`cargo test --lib -- --list`) take a few seconds together.
 
 ```bash
 make expensive_lint_tests                       # the four sweeps
@@ -393,7 +394,8 @@ cargo test --test check_run_agree               # one integration test file
 cargo test --lib fmt_is_ir_equal -- --ignored   # one sweep
 ```
 
-The vitest suite is light by comparison: about 30 seconds on two workers
+The vitest suite (75 files in `test/vitest`) is light by comparison: roughly
+30 seconds on two workers, an older figure that varies with the machine
 (`npx vitest run --maxWorkers=2 --minWorkers=1`).
 
 ## The C/C++ bridge

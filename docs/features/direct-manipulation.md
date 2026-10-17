@@ -448,16 +448,22 @@ Narrow with --configurable <var> / --static <var>, or apply one by hand.
 then writes it.
 
 A multi-goal batch is stated by repeating the `--arg <k> --to <value>` pair —
-each `--to` binds to the `--arg` before it — and reports per goal. For a call
-with two computed arguments:
+each `--to` binds to the `--arg` before it — and reports per goal, one
+`goal: arg <k> -> <value>` block each. A batch needs one call with two
+computed arguments, which bare `petal run` does not have: its only emitter is
+`push_output`, whose one value argument is argument 1. It needs a host whose
+emitting native takes several, such as a `rect(x, y, w, h)` that pushes a draw
+command. For `rect(x + 10, 5, 30, h * 2)` with `let x = 10` on line 1 and
+`let h = 20` on line 2, run under such a host, the batch reads like this
+(the shape of the output, not a captured run):
 
 ```
-$ petal propose-edit --channel shapes --emit 0 \
-    --arg 1 --to 42.5 --arg 2 --to 90 sketch.ptl
-goal: arg 1 -> 42.5
+$ petal propose-edit --channel draw --emit 0 \
+    --arg 0 --to 42.5 --arg 3 --to 90 sketch.ptl
+goal: arg 0 -> 42.5
   1 proposal:
     1. set `x` to 32.5 (line 1)
-goal: arg 2 -> 90
+goal: arg 3 -> 90
   1 proposal:
     1. set `h` to 45 (line 2)
 ```
@@ -564,12 +570,14 @@ Hovering the **circle** resolves to line 9:
 callee:  "draw_circle"
 span:    line 9
 args[0]: Literal,  value 100, is_int   -> edit `100` on line 9
-args[2]: Binding,  value 40            -> edit `40` on line 3 (shared!)
+args[2]: Binding,  value 40            -> edit `40` on line 3
 ```
 
 Note `args[2]`: the pointer is on line 9, but the number to change is on line 3,
-and it is a `Binding` — so an editor should either warn, or offer to inline it
-before writing.
+and it is a `Binding`. Here only this call reads `radius`, so the edit changes
+nothing else; a binding that several calls read would move them all, so an
+editor should check the binding's other readers, and warn or offer to inline
+it before writing when there are any.
 
 Hovering the **swatch** resolves to line 6, not line 10:
 

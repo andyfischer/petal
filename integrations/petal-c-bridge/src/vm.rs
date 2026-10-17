@@ -2717,6 +2717,27 @@ mod tests {
         assert_eq!((node.number, node.y, node.z), (1.5, 2.0, 2.0));
     }
 
+    /// A handle decodes as slot in `integer`, serial in `count` and the class
+    /// name in `str` (docs/usage/embedding-c.md, the value table).
+    #[test]
+    fn a_handle_decodes_slot_serial_and_class_name() {
+        let mut vm = Vm::new();
+        let class = vm.env.register_handle_class(petal::HandleClass {
+            name: "Actor".to_string(),
+            is_valid: Box::new(|_, _| true),
+            describe: Box::new(|slot, serial| format!("Actor({slot}, {serial})")),
+            call_method: Box::new(|_, m| Err(format!("no method {m}"))),
+        });
+        let h = vm.env.make_handle(class, 7, 3);
+        let (p, n) = vm.keep_view(&[h]);
+        assert_eq!(n, 1);
+        let node = unsafe { &*p };
+        assert_eq!(node.kind, crate::view::Kind::Handle as u32);
+        assert_eq!((node.integer, node.count), (7, 3));
+        let name = unsafe { std::slice::from_raw_parts(node.str_ as *const u8, node.str_len) };
+        assert_eq!(name, b"Actor");
+    }
+
     #[test]
     fn reload_compile_errors_are_structured_without_recompiling() {
         let mut vm = Vm::new();

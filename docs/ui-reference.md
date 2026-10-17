@@ -507,12 +507,43 @@ Every widget takes an optional trailing `style`.
 | `focus_next(fc, ids)`, `focus_prev(fc, ids)`, `focus_update(fc, ids)` | Move through a ring of ids; `focus_update` does Tab and Shift+Tab. |
 | `text_field(fc, id, r, buf, style?)` | A single-line editor with a caret, selection, clipboard and undo. Returns `{focus, text, caret, submitted, changed, …}`. |
 | `text_field_update(fc, id, r, buf, style?)`, `draw_text_field(r, text, has, …)` | The two halves, for a field with its own chrome. |
+| `text_area(fc, id, r, buf, style?)` | A multi-line editor: wraps to its width, Return is a line break, the wheel scrolls it. Returns `{focus, text, caret, changed, sel_start, sel_end, scroll, overflow, rows, line_h, content_h, …}`. |
+| `text_area_update(fc, id, r, buf, style?)`, `draw_text_area(r, res, has, style?)` | Its two halves. |
+| `text_area_height(text, w, min_lines?, max_lines?, style?)` | The height that shows `text` in an area `w` wide, between 3 and 12 rows by default: a box that grows as it fills. |
 
 A press inside a field focuses it. A press anywhere else, while it has the
 focus, clears the focus in the `focus` it returns — unless something on a
 higher layer took the press (a popup opened from the field). So assign
 `res.focus` back every frame, and a click on the rest of the UI gives the
 keyboard back to it without wiring up Escape.
+
+`text_area` is `text_field` for text with line breaks, and shares its editing:
+the same selection by click, shift+click, drag, double click (a word) and
+triple click (everything), the same clipboard and undo (a run of typing undoes
+a word at a time), and the same focus rules. What differs:
+
+- The text wraps to the box (`text_wrap_rows`). `res.rows` is that wrap.
+- Return inserts a line break; there is no `submitted`. A paste keeps its
+  line breaks (a CR of a CRLF is dropped).
+- Up and Down move a row, keeping the column across short rows; Cmd+Up and
+  Cmd+Down go to either end of the text. Home, End and Cmd+Left/Right go to
+  the ends of the row.
+- Text taller than the box scrolls: the wheel over the box scrolls it (by
+  rows), and a caret that moves or a text that changes is scrolled into
+  view. A scrollbar shows while it overflows.
+
+Style keys are the field's (`size`, `font`, `text_style`, `inset`, `bg`, `fg`,
+`outline`, `focus`, `caret`, `selection`, `placeholder`, `pointer`) plus
+`line_gap`, the pixels added to the face's line height between rows
+(default 2).
+
+```petal
+state notes = ""
+let h = text_area_height(notes, 320)
+let res = text_area(fc, "notes", rect(20, 80, 320, h), notes)
+fc = res.focus
+notes = res.text
+```
 
 ### Menus, dialogs and drag and drop
 

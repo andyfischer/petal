@@ -77,6 +77,34 @@ pub fn intrinsic_return_type(name: &str, args: &[Type]) -> Option<Option<Type>> 
             [Type::Int | Type::Float] => Some(Type::Float),
             _ => None,
         },
+        // The multi-argument float functions with a derivative rule
+        // (`core/src/builtins/autodiff.rs`, `args_d`): a float for numeric
+        // arguments, a dual when any argument is one.
+        "atan2" | "hypot" | "pow" | "exp" | "log" | "fract" | "radians" | "degrees"
+        | "map_range" | "smoothstep" => {
+            if !args.is_empty() && args.iter().all(|t| matches!(t, Type::Int | Type::Float)) {
+                Some(Type::Float)
+            } else {
+                None
+            }
+        }
+        "interp" => match args {
+            [_, Type::Int | Type::Float] => Some(Type::Float),
+            _ => None,
+        },
+        // `distance` and `mag` of vectors are floats (a vector holds no
+        // duals); of scalars, as above.
+        "distance" | "mag" => {
+            if !args.is_empty()
+                && args
+                    .iter()
+                    .all(|t| matches!(t, Type::Int | Type::Float | Type::Vec2 | Type::Vec3))
+            {
+                Some(Type::Float)
+            } else {
+                None
+            }
+        }
         // The vector natives take a vec2 or a vec3 and hand back the same
         // kind (`core/src/builtins/vec2.rs`).
         "normalize" | "limit" => match args.first() {

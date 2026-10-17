@@ -11,10 +11,10 @@
 // See docs/usage/ffi.md (Native interfaces).
 
 pub native fn lerp(a, b, t: num)
-pub native fn map_range(value: num, in_lo: num, in_hi: num, out_lo: num, out_hi: num) -> float
-pub native fn distance(x1, y1, x2, y2) -> float
+pub native fn map_range(value: num, in_lo: num, in_hi: num, out_lo: num, out_hi: num)
+pub native fn distance(x1, y1, x2, y2)
 pub native fn distance(v1, v2) -> float
-pub native fn mag(x, y, z?) -> float
-pub native fn mag(v) -> float
-pub native fn smoothstep(edge0: num, edge1: num, x: num) -> float
+pub native fn mag(x, y, z?)
+pub native fn mag(v)
+pub native fn smoothstep(edge0: num, edge1: num, x: num)
 pub native fn choose(list)

@@ -119,6 +119,26 @@ fn config_does_not_combine_with_const() {
 }
 
 #[test]
+fn config_before_other_declarations_says_what_config_marks() {
+    // Each used to fall through to "undefined variable `config`".
+    for (src, says) in [
+        ("config state x = 0", "a `state` slot cannot be config"),
+        ("pub config state x = 0", "a `state` slot cannot be config"),
+        ("config fn f() 1 end", "a function cannot be config"),
+        ("pub config fn f() 1 end", "a function cannot be config"),
+        ("config pub let x = 1", "write `pub config let`"),
+        ("config var x = 1", "cannot be config"),
+    ] {
+        let err = quiet().load_program(src).unwrap_err();
+        assert!(err.contains(says), "{src}: {err}");
+        assert!(!err.contains("undefined variable"), "{src}: {err}");
+    }
+    // `config` is still an ordinary name everywhere else.
+    assert_eq!(errors("let config = 2
+print(config + 1)"), Vec::<String>::new());
+}
+
+#[test]
 fn the_formatter_treats_const_like_let() {
     let fmt = |src: &str| petal::fmt::format_source(src).unwrap();
     assert_eq!(fmt("const   A=[1,2]\n"), "const A = [1, 2]\n");

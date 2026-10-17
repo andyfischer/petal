@@ -6,6 +6,7 @@ use crate::native_fn::PetalCxt;
 use crate::numeric::{self, IntArithError};
 use crate::value::{Value, compare_values};
 
+use super::autodiff::{D, arg_d, args_d, push_d};
 use super::require_args;
 
 /// Apply a differentiable unary float function: on a dual number, propagate the
@@ -296,9 +297,11 @@ pub(super) fn native_tan(state: &mut PetalCxt) -> Result<u32, String> {
 
 pub(super) fn native_atan2(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 2, "atan2")?;
-    let y = state.get_float(1)?;
-    let x = state.get_float(2)?;
-    state.push_float(y.atan2(x));
+    let ([y, x], dual) = args_d::<2>(state)?;
+    // d atan2(y, x) = (x dy - y dx) / (x^2 + y^2), and 0 at the origin.
+    let r2 = x.v * x.v + y.v * y.v;
+    let d = if r2 == 0.0 { 0.0 } else { (x.v * y.d - y.v * x.d) / r2 };
+    push_d(state, D { v: y.v.atan2(x.v), d }, dual);
     Ok(1)
 }
 
@@ -320,9 +323,11 @@ pub(super) fn native_atan(state: &mut PetalCxt) -> Result<u32, String> {
 /// `hypot(x, y)`: `sqrt(x*x + y*y)`, without the intermediate overflow.
 pub(super) fn native_hypot(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 2, "hypot")?;
-    let x = state.get_float(1)?;
-    let y = state.get_float(2)?;
-    state.push_float(x.hypot(y));
+    let ([x, y], dual) = args_d::<2>(state)?;
+    // d hypot(x, y) = (x dx + y dy) / hypot(x, y), and 0 at the origin.
+    let h = x.v.hypot(y.v);
+    let d = if h == 0.0 { 0.0 } else { (x.v * x.d + y.v * y.d) / h };
+    push_d(state, D { v: h, d }, dual);
     Ok(1)
 }
 
@@ -390,7 +395,7 @@ pub(super) fn native_interp(state: &mut PetalCxt) -> Result<u32, String> {
     let Value::List(table) = state.get_value(1)? else {
         return Err("interp(table, x) expects a list of [x, y] entries".into());
     };
-    let x = state.get_float(2)?;
+    let (D { v: x, d: dx }, dual) = arg_d(state, 2)?;
     let n = state.heap().get_list(table).len();
     if n == 0 {
         return Err("interp(table, x) needs a table with at least one entry".into());
@@ -406,16 +411,23 @@ pub(super) fn native_interp(state: &mut PetalCxt) -> Result<u32, String> {
             hi = mid;
         }
     }
-    let y = if lo == 0 {
-        at(state, 0)?.1
+    // The value, and the slope of the segment `x` is on (0 past either end
+    // and at a step) for a dual `x`.
+    let (y, slope) = if lo == 0 {
+        (at(state, 0)?.1, 0.0)
     } else if lo == n {
-        at(state, n - 1)?.1
+        (at(state, n - 1)?.1, 0.0)
     } else {
         let (x0, y0) = at(state, lo - 1)?;
         let (x1, y1) = at(state, lo)?;
-        if x1 == x0 { y1 } else { y0 + (y1 - y0) * ((x - x0) / (x1 - x0)) }
+        if x1 == x0 {
+            (y1, 0.0)
+        } else {
+            let slope = (y1 - y0) / (x1 - x0);
+            (y0 + (y1 - y0) * ((x - x0) / (x1 - x0)), slope)
+        }
     };
-    state.push_float(y);
+    push_d(state, D { v: y, d: slope * dx }, dual);
     Ok(1)
 }
 

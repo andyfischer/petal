@@ -160,6 +160,92 @@ describe("forward-mode automatic differentiation", () => {
     });
   });
 
+  describe("multi-argument and creative builtins carry a derivative", () => {
+    // Each case: an expression in `x` (or `t`), checked against a central
+    // difference of the same expression on plain numbers.
+    const cases: [string, number][] = [
+      ["exp(x)", 0.7],
+      ["log(x)", 2.0],
+      ["pow(x, 3)", 1.5],
+      ["pow(2, x)", 1.5],
+      ["pow(x, x)", 1.5],
+      ["atan2(x, 2.0)", 0.5],
+      ["atan2(1.0, x)", 0.5],
+      ["hypot(x, 3.0)", 4.0],
+      ["clamp(x * 2, 0.0, 5.0)", 1.0],
+      ["fract(x * 3)", 0.4],
+      ["lerp(1.0, 3.0, x)", 0.25],
+      ["lerp(x, x * x, 0.5)", 2.0],
+      ["map_range(x, 0.0, 4.0, 10.0, 30.0)", 1.0],
+      ["map_range(2.0, 0.0, x, 0.0, 1.0)", 4.0],
+      ["smoothstep(0.0, 4.0, x)", 1.0],
+      ["radians(x)", 30.0],
+      ["degrees(x)", 0.5],
+      ["mag(x, 2.0)", 1.0],
+      ["distance(0, 0, x, 1.0)", 2.0],
+      ["interp([[0, 0], [4, 8]], x)", 1.0],
+    ];
+    for (const [expr, at] of cases) {
+      it(`${expr} at ${at}`, () => {
+        const code = `import autodiff
+import creative
+fn f(x) ${expr} end
+let h = 0.000001
+let d = deriv_of(f(dual(${at}, 1.0)))
+let fd = (f(${at} + h) - f(${at} - h)) / (2 * h)
+print(type(f(dual(${at}, 1.0))), abs(d - fd) < 0.0001, d)`;
+        expect(runPetal(code)).toMatch(/^dual true /);
+      });
+    }
+
+    it("plain arguments still give a plain float", () => {
+      expect(runPetal(`print(type(exp(1)), type(pow(2, 3)), type(atan2(1, 2)))`)).toBe(
+        "float float float",
+      );
+    });
+
+    it("clamp hands back the bound's derivative outside the range", () => {
+      expect(runPetal(`import autodiff; print(clamp(dual(9.0, 1.0), 0.0, 5.0))`)).toBe(
+        "dual(5.0, 0.0)",
+      );
+    });
+
+    it("sign of a dual is a dual with derivative 0", () => {
+      expect(runPetal(`import autodiff; print(sign(dual(-2.0, 1.0)), sign(dual(0.0, 1.0)))`)).toBe(
+        "dual(-1.0, 0.0) dual(0.0, 0.0)",
+      );
+    });
+
+    it("lerp of lists carries element derivatives", () => {
+      expect(
+        runPetal(`import autodiff; import creative; print(lerp([dual(1.0, 1.0), 2.0], [3.0, 4.0], 0.5))`),
+      ).toBe("[dual(2.0, 0.5), 3.0]");
+    });
+  });
+
+  describe("a builtin with no derivative rule refuses a dual", () => {
+    it("vec2 and vec3 name the problem", () => {
+      expect(runPetalError(`import autodiff; import vec2; vec2(dual(1.0, 1.0), 2.0)`)).toContain(
+        "vec2() cannot hold a dual number (argument 1)",
+      );
+      expect(runPetalError(`import autodiff; import vec2; vec3(1.0, 2.0, dual(1.0, 1.0))`)).toContain(
+        "vec3() cannot hold a dual number (argument 3)",
+      );
+    });
+
+    it("any float-reading native without a rule raises instead of dropping it", () => {
+      const err = runPetalError(`import autodiff; random(dual(1.0, 1.0))`);
+      expect(err).toContain("got dual: this function has no derivative rule");
+      expect(err).toContain("value_of(x)");
+    });
+
+    it("a lerp of vectors refuses a dual t", () => {
+      expect(
+        runPetalError(`import autodiff; import creative; import vec2; lerp(vec2(0, 0), vec2(1, 1), dual(0.5, 1.0))`),
+      ).toContain("got dual");
+    });
+  });
+
   describe("error handling", () => {
     it("dual() requires 2 arguments", () => {
       const err = runPetalError(`import autodiff; dual(1)`);

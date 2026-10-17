@@ -856,6 +856,19 @@ package changes below, `petal fix-imports` does the rewriting and
   `interact().click` goes only to a rect that was under the press point when
   the button went down, so a click that opens a panel no longer clicks the
   panel's row that appears under the pointer.
+- A builtin or host function with no derivative rule raises an error when
+  given a dual number (`Expected float at arg N, got dual: …`) instead of
+  reading its value and dropping the derivative; `vec2` and `vec3` refuse a
+  dual component by name. `exp`, `log`, `pow`, `atan2`, `hypot`, `clamp`,
+  `fract`, `sign`, `radians`, `degrees`, `interp`, `lerp`, `map_range`,
+  `smoothstep` and the scalar `mag`/`distance` gained derivative rules and
+  return a dual for a dual. Pass `value_of(x)` where the value alone was
+  meant.
+- `is_valid` and handle method calls count as host-data reads: a frame-gated
+  host re-runs a run that used them once it calls
+  `Env::note_host_data_changed`, and a memoized scope that called `is_valid`
+  is not replayed across that call. A gating host that lets scripts reach
+  handles must report object changes that way.
 - `any(xs, p)` and `all(xs, p)` stop at the element that decides: `p` is no
   longer called on the elements after it (they were `count(xs, p) > 0` and
   `count(xs, p) == len(xs)`). A predicate with effects, or one that would

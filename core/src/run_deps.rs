@@ -424,8 +424,9 @@ pub fn fingerprint_binding(value: Option<&Value>, heap: &Heap) -> u64 {
     if fp == UNFINGERPRINTABLE { fp - 1 } else { fp }
 }
 
-/// Content fingerprint of a value, or `None` when it has none (a closure, a
-/// handle, a structure past the budget). Equal content fingerprints alike;
+/// Content fingerprint of a value, or `None` when it has none (a closure, an
+/// overload set, a pending value, a structure past the budget). A handle
+/// fingerprints as its (class, slot, serial) triple, not the object it names. Equal content fingerprints alike;
 /// used where a value is about to be edited in place and can no longer be
 /// compared against afterwards.
 pub fn fingerprint_contents(value: &Value, heap: &Heap) -> Option<u64> {
@@ -436,7 +437,9 @@ pub fn fingerprint_contents(value: &Value, heap: &Heap) -> Option<u64> {
 }
 
 /// Hash `v` by content. Returns false when the value is not fingerprintable
-/// (a closure, a handle, or a structure past the budget).
+/// (a closure, an overload set, a pending value, or a structure past the
+/// budget). A handle hashes as its triple: whether the host object behind it
+/// changed is host data, reported through `Env::note_host_data_changed`.
 fn hash_content(
     v: &Value,
     heap: &Heap,

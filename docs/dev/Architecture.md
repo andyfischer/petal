@@ -679,12 +679,19 @@ list of builtins that carry or drop a derivative, is in
   `asin`, `acos`, `atan`, `float`) and `unary_num_preserving` (`abs`,
   `floor`, `ceil`, `round`) take a derivative function and apply the chain
   rule.
-- A native that reads an argument with `PetalCxt::get_float` gets the primal
-  and so drops the derivative. `exp`, `log` and `pow`
-  (`builtins/creative_coding.rs`) are among these.
 - `builtins/autodiff.rs`: the constructor and accessors (`dual`, `value_of`,
   `deriv_of`), declared to scripts by the bundled `autodiff` package
-  (`core/packages/autodiff/`).
+  (`core/packages/autodiff/`), and the helpers the multi-argument rules are
+  written in: `D` (a value and derivative pair with `add`/`sub`/`mul`/`div`/
+  `chain`), `args_d` (read the arguments as `D`s and say whether any was a
+  dual) and `push_d` (push a dual only when one came in). `exp`, `log`,
+  `pow`, `atan2`, `hypot`, `clamp`, `fract`, `sign`, `lerp`, `map_range`,
+  `smoothstep`, `radians`, `degrees`, `interp` and the scalar forms of `mag`
+  and `distance` use them.
+- A native that reads an argument with `PetalCxt::get_float` has no rule, and
+  `get_float` raises on a dual rather than hand back the value alone, so no
+  builtin or host function drops a derivative silently. `vec2` and `vec3`
+  refuse a dual component by name: a vector holds plain floats.
 - `value.rs`: `==` and ordering compare a dual by its primal. `memo.rs` keys
   on both fields, so a memoized call never returns another seed's derivative.
 

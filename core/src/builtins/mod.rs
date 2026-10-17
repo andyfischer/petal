@@ -156,8 +156,8 @@ const INSPECTS_PENDING: NativeEffects =
 /// `CONST` row below was audited by reading the native's body: it touches
 /// its arguments and the heap, and nothing else on `PetalCxt`. The rows left
 /// at `PURE` are pure for the memo's purposes and *not* constant, each for a
-/// reason noted where it is registered: `noise` (the noise seed), `is_valid`
-/// (a handle's liveness), `fn_info`/`fn_ast` (the program's source),
+/// reason noted where it is registered: `noise` (the noise seed),
+/// `fn_info`/`fn_ast` (the program's source),
 /// `__enum_from` (the program's enum table), and the higher-order builtins
 /// (whatever their callback does — see
 /// [`NativeConstness::ConstIfCallbacksAre`](crate::native_fn::NativeConstness)).
@@ -355,9 +355,15 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("remove", collections::native_remove, NativeEffects::CONST);
 
     // --- Handles (append-only to preserve phantom term indices) ---
-    // Pure but not CONST: the same handle answers differently once the host
-    // drops what it names.
-    table.register("is_valid", handle::native_is_valid, NativeEffects::PURE);
+    // A host-data read, not CONST: the same handle answers differently once
+    // the host drops what it names, and only the host can say when that
+    // happened (`Env::note_host_data_changed`). A memoized scope that called
+    // it validates against the host-data revision; the frame gate re-runs.
+    table.register(
+        "is_valid",
+        handle::native_is_valid,
+        NativeEffects::reads(InputClasses::HOST_DATA),
+    );
 
     // --- Test-only pending-resource builtins (append-only) ---
     table.register(
@@ -807,7 +813,6 @@ mod effect_tests {
         register_builtins(&mut table);
         for name in [
             "noise",
-            "is_valid",
             "fn_info",
             "fn_ast",
             crate::program::ENUM_FROM_BUILTIN,
@@ -828,6 +833,8 @@ mod effect_tests {
             "push_output",
             "noise_seed",
             "is_loading",
+            // A handle's liveness is host data (docs/game-engine-features/handles.md).
+            "is_valid",
         ] {
             assert_eq!(
                 table.constness_of_name(name),

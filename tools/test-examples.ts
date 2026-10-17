@@ -7,8 +7,8 @@
 // test/example-golden/. The golden corpus is the absolute-correctness anchor;
 // regenerate it deliberately with tools/gen-example-golden.ts.
 // Usage:
-//   ./bin/test-examples.ts            # differential + golden sweep, 8-line preview
-//   ./bin/test-examples.ts --full     # same, full output
+//   ./tools/test-examples.ts            # differential + golden sweep, 8-line preview
+//   ./tools/test-examples.ts --full     # same, full output
 import { join } from 'node:path';
 
 import {

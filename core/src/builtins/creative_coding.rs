@@ -5,6 +5,7 @@
 use crate::native_fn::PetalCxt;
 use crate::value::Value;
 
+use super::autodiff::{D, args_d, push_d};
 use super::require_args;
 use super::vec2::{push_vec3, vec3_parts};
 
@@ -23,10 +24,14 @@ pub(super) fn native_clamp(state: &mut PetalCxt) -> Result<u32, String> {
         state.push_int(v.max(lo).min(hi));
         return Ok(1);
     }
-    let v = state.get_float(1)?;
-    let lo = state.get_float(2)?;
-    let hi = state.get_float(3)?;
-    state.push_float(v.max(lo).min(hi));
+    let ([v, lo, hi], dual) = args_d::<3>(state)?;
+    // `max(v, lo)` then `min(.., hi)`, choosing whole arguments so a dual
+    // keeps the derivative of the side that won: `v`'s inside the range, a
+    // bound's (usually 0) outside it. A NaN loses to the other side, as in
+    // `f64::max`/`f64::min`.
+    let m = if v.v.is_nan() || v.v < lo.v { lo } else { v };
+    let r = if m.v.is_nan() || hi.v < m.v { hi } else { m };
+    push_d(state, r, dual);
     Ok(1)
 }
 
@@ -75,6 +80,16 @@ pub(super) fn native_lerp(state: &mut PetalCxt) -> Result<u32, String> {
                 .iter()
                 .zip(b)
                 .map(|(x, y)| match (x.as_f64(), y.as_f64()) {
+                    (Some(_), Some(_))
+                        if matches!(x, Value::Dual { .. }) || matches!(y, Value::Dual { .. }) =>
+                    {
+                        let (a, b) = (D { v: x.as_f64().unwrap(), d: x.derivative() }, D {
+                            v: y.as_f64().unwrap(),
+                            d: y.derivative(),
+                        });
+                        let r = lerp_d(a, b, D::konst(t));
+                        Ok(Value::Dual { value: r.v, derivative: r.d })
+                    }
                     (Some(x), Some(y)) => Ok(Value::Float(x + (y - x) * t)),
                     _ => Err(format!(
                         "lerp(a, b, t) on lists needs numbers, got {} and {}",
@@ -107,11 +122,14 @@ pub(super) fn native_lerp(state: &mut PetalCxt) -> Result<u32, String> {
         }
         _ => {}
     }
-    let a = state.get_float(1)?;
-    let b = state.get_float(2)?;
-    let t = state.get_float(3)?;
-    state.push_float(a + (b - a) * t);
+    let ([a, b, t], dual) = args_d::<3>(state)?;
+    push_d(state, lerp_d(a, b, t), dual);
     Ok(1)
+}
+
+/// `a + (b - a) * t` on dual parts.
+fn lerp_d(a: D, b: D, t: D) -> D {
+    a.add(b.sub(a).mul(t))
 }
 
 /// How deep [`lerp_records`] follows records inside records before it stops
@@ -204,6 +222,15 @@ fn lerp_field(state: &mut PetalCxt, x: Value, y: Value, t: f64, depth: usize) ->
                 let (a, b) = (x.as_f64()?, y.as_f64()?);
                 Some(Value::Float(a + (b - a) * t))
             }
+            (
+                Value::Int(_) | Value::Float(_) | Value::Dual { .. },
+                Value::Int(_) | Value::Float(_) | Value::Dual { .. },
+            ) => {
+                let a = D { v: x.as_f64()?, d: x.derivative() };
+                let b = D { v: y.as_f64()?, d: y.derivative() };
+                let r = lerp_d(a, b, D::konst(t));
+                Some(Value::Dual { value: r.v, derivative: r.d })
+            }
             _ => None,
         },
     }
@@ -211,17 +238,13 @@ fn lerp_field(state: &mut PetalCxt, x: Value, y: Value, t: f64, depth: usize) ->
 
 pub(super) fn native_map_range(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 5, "map_range")?;
-    let v = state.get_float(1)?;
-    let in_lo = state.get_float(2)?;
-    let in_hi = state.get_float(3)?;
-    let out_lo = state.get_float(4)?;
-    let out_hi = state.get_float(5)?;
-    let t = if (in_hi - in_lo).abs() < f64::EPSILON {
-        0.0
+    let ([v, in_lo, in_hi, out_lo, out_hi], dual) = args_d::<5>(state)?;
+    let t = if (in_hi.v - in_lo.v).abs() < f64::EPSILON {
+        D::konst(0.0)
     } else {
-        (v - in_lo) / (in_hi - in_lo)
+        v.sub(in_lo).div(in_hi.sub(in_lo))
     };
-    state.push_float(out_lo + (out_hi - out_lo) * t);
+    push_d(state, lerp_d(out_lo, out_hi, t), dual);
     Ok(1)
 }
 
@@ -249,13 +272,9 @@ pub(super) fn native_distance(state: &mut PetalCxt) -> Result<u32, String> {
             }
         }
         4 => {
-            let x1 = state.get_float(1)?;
-            let y1 = state.get_float(2)?;
-            let x2 = state.get_float(3)?;
-            let y2 = state.get_float(4)?;
-            let dx = x2 - x1;
-            let dy = y2 - y1;
-            state.push_float((dx * dx + dy * dy).sqrt());
+            let ([x1, y1, x2, y2], dual) = args_d::<4>(state)?;
+            let (dx, dy) = (x2.sub(x1), y2.sub(y1));
+            push_d(state, dx.mul(dx).add(dy.mul(dy)).sqrt(), dual);
             Ok(1)
         }
         _ => Err(
@@ -280,23 +299,21 @@ pub(super) fn native_mag(state: &mut PetalCxt) -> Result<u32, String> {
                     Ok(1)
                 }
                 _ => {
-                    let x = state.get_float(1)?;
-                    state.push_float(x.abs());
+                    let ([x], dual) = args_d::<1>(state)?;
+                    let sign = if x.v > 0.0 { 1.0 } else if x.v < 0.0 { -1.0 } else { 0.0 };
+                    push_d(state, x.chain(x.v.abs(), sign), dual);
                     Ok(1)
                 }
             }
         }
         2 => {
-            let x = state.get_float(1)?;
-            let y = state.get_float(2)?;
-            state.push_float((x * x + y * y).sqrt());
+            let ([x, y], dual) = args_d::<2>(state)?;
+            push_d(state, x.mul(x).add(y.mul(y)).sqrt(), dual);
             Ok(1)
         }
         3 => {
-            let x = state.get_float(1)?;
-            let y = state.get_float(2)?;
-            let z = state.get_float(3)?;
-            state.push_float((x * x + y * y + z * z).sqrt());
+            let ([x, y, z], dual) = args_d::<3>(state)?;
+            push_d(state, x.mul(x).add(y.mul(y)).add(z.mul(z)).sqrt(), dual);
             Ok(1)
         }
         _ => Err("mag() expects 1-3 arguments".into()),
@@ -305,9 +322,19 @@ pub(super) fn native_mag(state: &mut PetalCxt) -> Result<u32, String> {
 
 pub(super) fn native_pow(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 2, "pow")?;
-    let base = state.get_float(1)?;
-    let exp = state.get_float(2)?;
-    state.push_float(base.powf(exp));
+    let ([base, exp], dual) = args_d::<2>(state)?;
+    let v = base.v.powf(exp.v);
+    // d(a^b) = b a^(b-1) da + a^b ln(a) db. Each term only where its input
+    // moves, so a constant exponent never meets `ln` of a negative base and
+    // a constant base never meets `0 * inf`.
+    let mut d = 0.0;
+    if base.d != 0.0 {
+        d += exp.v * base.v.powf(exp.v - 1.0) * base.d;
+    }
+    if exp.d != 0.0 {
+        d += v * base.v.ln() * exp.d;
+    }
+    push_d(state, D { v, d }, dual);
     Ok(1)
 }
 
@@ -334,52 +361,76 @@ pub(super) fn native_sign(state: &mut PetalCxt) -> Result<u32, String> {
             });
             Ok(1)
         }
+        // A step function: derivative 0, and the result is still a dual.
+        Value::Dual { value, .. } => {
+            let s = if value > 0.0 {
+                1.0
+            } else if value < 0.0 {
+                -1.0
+            } else {
+                0.0
+            };
+            state.push_value(Value::Dual { value: s, derivative: 0.0 });
+            Ok(1)
+        }
         _ => Err("sign() expects a number".into()),
     }
 }
 
 pub(super) fn native_fract(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "fract")?;
-    let f = state.get_float(1)?;
-    state.push_float(f - f.floor());
+    // x - floor(x): slope 1 between the jumps.
+    let ([x], dual) = args_d::<1>(state)?;
+    push_d(state, x.chain(x.v - x.v.floor(), 1.0), dual);
     Ok(1)
 }
 
 pub(super) fn native_smoothstep(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 3, "smoothstep")?;
-    let edge0 = state.get_float(1)?;
-    let edge1 = state.get_float(2)?;
-    let x = state.get_float(3)?;
-    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
-    state.push_float(t * t * (3.0 - 2.0 * t));
+    let ([edge0, edge1, x], dual) = args_d::<3>(state)?;
+    let raw = x.sub(edge0).div(edge1.sub(edge0));
+    // Clamped to [0, 1]: flat (derivative 0) outside it.
+    let t = if raw.v.is_nan() {
+        raw
+    } else if raw.v <= 0.0 {
+        D::konst(0.0)
+    } else if raw.v >= 1.0 {
+        D::konst(1.0)
+    } else {
+        raw
+    };
+    // t^2 (3 - 2t), whose slope is 6 t (1 - t).
+    let r = t.chain(t.v * t.v * (3.0 - 2.0 * t.v), 6.0 * t.v * (1.0 - t.v));
+    push_d(state, r, dual);
     Ok(1)
 }
 
 pub(super) fn native_radians(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "radians")?;
-    let deg = state.get_float(1)?;
-    state.push_float(deg.to_radians());
+    let ([deg], dual) = args_d::<1>(state)?;
+    push_d(state, deg.chain(deg.v.to_radians(), std::f64::consts::PI / 180.0), dual);
     Ok(1)
 }
 
 pub(super) fn native_degrees(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "degrees")?;
-    let rad = state.get_float(1)?;
-    state.push_float(rad.to_degrees());
+    let ([rad], dual) = args_d::<1>(state)?;
+    push_d(state, rad.chain(rad.v.to_degrees(), 180.0 / std::f64::consts::PI), dual);
     Ok(1)
 }
 
 pub(super) fn native_exp(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "exp")?;
-    let x = state.get_float(1)?;
-    state.push_float(x.exp());
+    let ([x], dual) = args_d::<1>(state)?;
+    let e = x.v.exp();
+    push_d(state, x.chain(e, e), dual);
     Ok(1)
 }
 
 pub(super) fn native_log(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "log")?;
-    let x = state.get_float(1)?;
-    state.push_float(x.ln());
+    let ([x], dual) = args_d::<1>(state)?;
+    push_d(state, x.chain(x.v.ln(), 1.0 / x.v), dual);
     Ok(1)
 }
 

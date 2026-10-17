@@ -675,6 +675,18 @@ impl Parser {
                  literals is already constant) or a plain `const`"
                     .to_string(),
             ),
+            Some(Token::State) => Some(
+                "`config` marks a `let` binding; a `state` slot cannot be config. Declare the \
+                 tunable starting value with `config let` and initialise the state from it"
+                    .to_string(),
+            ),
+            Some(Token::Fn) => Some(
+                "`config` marks a `let` binding of literals; a function cannot be config"
+                    .to_string(),
+            ),
+            Some(Token::Pub | Token::Export) => Some(
+                "`pub` comes before `config`: write `pub config let`".to_string(),
+            ),
             _ => None,
         }
     }
@@ -1228,9 +1240,15 @@ impl Parser {
     /// `config` starts a declaration only when the very next token is a
     /// binding keyword — `config` on its own line stays an expression.
     fn starts_config_decl(&self) -> bool {
+        // `let` is the declaration; the rest are mistakes that get a message
+        // of their own from `config_modifier_error` rather than falling
+        // through to "undefined variable `config`".
         matches!(
             self.tokens.get(self.pos + 1),
-            Some(Token::Let | Token::Var | Token::Const)
+            Some(
+                Token::Let | Token::Var | Token::Const | Token::State | Token::Fn | Token::Pub
+                    | Token::Export
+            )
         )
     }
 

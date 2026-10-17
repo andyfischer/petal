@@ -253,6 +253,23 @@ function parseFnBody(body: string): {
       });
     }
   }
+  // The dual-aware readers (`core/src/builtins/autodiff.rs`): a number at
+  // each position, read as a value and derivative pair.
+  //   let ([a, b, c], dual) = args_d::<3>(state)?;   — arguments 1..=3
+  //   let (D { v: x, .. }, dual) = arg_d(state, 2)?;  — argument 2
+  const argsD = /let\s+\(\s*\[([^\]]*)\]\s*,\s*\w+\s*\)\s*=\s*args_d::<\s*\d+\s*>\(\s*state\s*\)/g;
+  for (let m; (m = argsD.exec(body)); ) {
+    m[1].split(",").map((n) => n.trim()).forEach((name, i) => {
+      if (name && name !== "_" && !byIndex.has(i + 1)) byIndex.set(i + 1, { name, type: "float" });
+    });
+  }
+  const argD = /let\s+\(\s*(?:D\s*\{\s*v\s*:\s*(\w+)[^}]*\}|(\w+))\s*,\s*\w+\s*\)\s*=\s*arg_d\(\s*state\s*,\s*(\d+)\s*\)/g;
+  for (let m; (m = argD.exec(body)); ) {
+    const idx = Number(m[3]);
+    const name = m[1] ?? m[2];
+    if (!byIndex.has(idx) && name !== "_") byIndex.set(idx, { name, type: "float" });
+  }
+
   const params = [...byIndex.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([, p]) => p);

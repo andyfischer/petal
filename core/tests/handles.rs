@@ -1,5 +1,5 @@
 // Failing tests for chunk 1 of the handle feature: `Value::Handle`, an opaque
-// foreign-object handle (docs/dev/unreal-ffi-proposal.md §1, §5).
+// foreign-object handle (docs/game-engine-features/handles.md).
 //
 // Scope: minting handles host-side, passing them into scripts via bindings,
 // round-tripping, `type()`, equality, truthiness, and host-side eq/hash.
@@ -220,7 +220,7 @@ fn handle_val_equality_and_hash() {
 
 // ═════════════════════════════════════════════════════════════════
 // CHUNK 2: handle method dispatch + the `is_valid` builtin
-// (docs/dev/unreal-ffi-proposal.md §5).
+// (docs/game-engine-features/handles.md, "Method calls" and "is_valid").
 //
 // Contract under test:
 //  - `h.method(args...)` on a `Value::Handle` dispatches through
@@ -499,4 +499,95 @@ fn ufcs_on_non_handle_receiver_still_works() {
         Ok(Value::Int(8)),
         "UFCS native fallback on non-handle receivers must keep working"
     );
+}
+
+// ── 13. Handles under the memo and the frame gate ────────────────
+// A handle's liveness and whatever its methods read live in the host, where
+// the runtime cannot see them change. A memoized scope must not replay a
+// stale answer, and the frame gate must re-run once the host reports that
+// the objects behind its handles changed (`Env::note_host_data_changed`).
+
+/// An Env set up the way a host frame loop runs it, with the static cache off
+/// (a top-level call with a constant argument would otherwise be a static
+/// value and not run at all), the "Counter" class registered and a handle
+/// bound as `h`.
+fn gated_env(class: HandleClass, source: &str) -> (Env, petal::stack::StackKey) {
+    let mut env = Env::new();
+    env.set_echo(false);
+    env.set_static_cache(false);
+    let class_id = env.register_handle_class(class);
+    let pid = env.load_program(source).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let handle = env.make_handle(class_id, 1, 1);
+    let sym = env.intern_symbol("h");
+    env.set_binding(sym, handle);
+    (env, sid)
+}
+
+/// A function big enough for the memo to record (`MIN_SCOPE_INSTS`) whose
+/// only host interaction is `is_valid(h)`.
+const LIVENESS_SCOPE: &str = "import io
+fn alive_score(h)
+  let acc = 0
+  for k in range(0, 20) do acc = acc + 1 end
+  if is_valid(h) then acc else -1 end
+end
+alive_score(binding(symbol(\"h\")))";
+
+#[test]
+fn a_memoized_scope_that_calls_is_valid_sees_the_host_destroy_the_object() {
+    let state = CounterState::new(0);
+    let (mut env, sid) = gated_env(counter_class(&state), LIVENESS_SCOPE);
+    assert_eq!(env.run(sid), Ok(Value::Int(20)));
+    assert!(env.memo_stats(sid).unwrap().records > 0, "the scope was recorded");
+    // The host destroys the object and says so.
+    *state.alive.borrow_mut() = false;
+    env.note_host_data_changed(sid);
+    env.reset_stack(sid).unwrap();
+    assert_eq!(
+        env.run(sid),
+        Ok(Value::Int(-1)),
+        "the recorded scope must not replay the stale `true`"
+    );
+    // Unchanged host data: the record is good again and replays.
+    let hits = env.memo_stats(sid).unwrap().hits;
+    env.reset_stack(sid).unwrap();
+    assert_eq!(env.run(sid), Ok(Value::Int(-1)));
+    assert!(env.memo_stats(sid).unwrap().hits > hits, "and replays while nothing moves");
+}
+
+#[test]
+fn the_frame_gate_reruns_a_run_that_only_called_is_valid_once_the_host_reports_a_change() {
+    let state = CounterState::new(0);
+    let (mut env, sid) = gated_env(
+        counter_class(&state),
+        "import io\nis_valid(binding(symbol(\"h\")))",
+    );
+    assert_eq!(env.run(sid), Ok(Value::Bool(true)));
+    assert!(!env.run_needed(sid), "nothing moved: the frame can be skipped");
+    *state.alive.borrow_mut() = false;
+    env.note_host_data_changed(sid);
+    assert!(env.run_needed(sid), "the object died: the frame must run");
+    env.reset_stack(sid).unwrap();
+    assert_eq!(env.run(sid), Ok(Value::Bool(false)));
+}
+
+#[test]
+fn the_frame_gate_reruns_a_run_whose_only_host_interaction_is_a_handle_method() {
+    let state = CounterState::new(5);
+    let (mut env, sid) = gated_env(
+        counter_class(&state),
+        "import io\nbinding(symbol(\"h\")).value()",
+    );
+    assert_eq!(env.run(sid), Ok(Value::Int(5)));
+    assert!(!env.run_needed(sid), "nothing moved: the frame can be skipped");
+    // The host object changes behind the handle; the binding does not.
+    *state.cell.borrow_mut() = 9;
+    env.note_host_data_changed(sid);
+    assert!(
+        env.run_needed(sid),
+        "a handle method read host state: a reported change must re-run the frame"
+    );
+    env.reset_stack(sid).unwrap();
+    assert_eq!(env.run(sid), Ok(Value::Int(9)));
 }

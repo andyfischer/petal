@@ -294,7 +294,8 @@ degrees(pi())      // 180.0
 The piecewise-linear function through a table of `[x, y]` knots (ascending
 `x`), read at `x`: a schedule by year, a response curve, a falloff. Before
 the first knot it is the first `y` and after the last it is the last `y` — it
-clamps and never extrapolates. Always a float.
+clamps and never extrapolates. Always a float, or a dual for a dual `x`
+(with the slope of its segment as the derivative).
 
 ```petal
 let rate = [[1900, 5], [1950, 10], [2000, 0]]
@@ -1753,7 +1754,9 @@ Needs `import autodiff`.
 The constructor and accessors for dual numbers (forward-mode automatic
 differentiation). How a derivative moves through arithmetic and through the
 other builtins, with worked examples, is in
-[features/differentiation.md](features/differentiation.md).
+[features/differentiation.md](features/differentiation.md). A builtin that
+has no derivative rule raises an error when it is given a dual, so a
+derivative is never dropped without notice.
 
 ### `dual(value, derivative)`
 

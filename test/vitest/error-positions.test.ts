@@ -68,7 +68,7 @@ let y = x - 1`);
   // (map/filter/reduce/forEach) must be annotated exactly once — at the true
   // failing term — not re-annotated again at the intrinsic's call site as the
   // error unwinds through `call_closure_sync`. Regression for the old
-  // double-annotation quirk (see docs/dev/bytecode-future-ideas.md).
+  // double-annotation quirk.
   it("closure error inside map() is annotated once, at the real failure", () => {
     const err = runPetalError(`fn boom(x)
   x / 0

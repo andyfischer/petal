@@ -9,7 +9,7 @@
 //! it. The counters are still kept (`PetalCxt::binding`, `note_host_read`,
 //! `push_output`, `print`, … each move one), and this audit is where they are
 //! read: the inference the memo used to run on, demoted to the oracle that
-//! checks the rows (`docs/tasks/declarative-effect-refactoring.md`).
+//! checks the rows (`docs/usage/ffi.md#catching-it-with-the-effect-audit`).
 //!
 //! With the audit on, the VM snapshots the activity counters around *every*
 //! native call and accumulates the deltas here, per native.

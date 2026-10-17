@@ -237,6 +237,13 @@ end
 A handle is always truthy, stale or not, so `if target then` does not do this
 job.
 
+Liveness lives in the host, so `is_valid` is a host-data read: registered
+`reads(InputClasses::HOST_DATA)`, and it reports the read at runtime. A host
+that destroys an object calls `Env::note_host_data_changed(stack)`. Until it
+does, a frame-gated or memoized run may keep the earlier answer (see
+[In memoized scopes](#in-memoized-scopes) and
+[Under the frame gate](#under-the-frame-gate)).
+
 ### Comparison and keys
 
 Two handles are equal when their class, slot and serial are all equal. Nothing
@@ -403,6 +410,25 @@ handle method. Petal accounts for this in two ways:
   handle but calls only natives on it, the memo sees an unchanged argument
   when the handle is the same triple. Whether the call is replayed then
   depends on the effect rows of those natives, which is the next section.
+- **`is_valid` is a host-data read.** A function whose only host interaction
+  is `is_valid(h)` can be recorded. Its record holds the host-data revision,
+  so after `Env::note_host_data_changed` the function runs again and sees
+  the object gone. It is replayed only while the host reports no change.
+
+### Under the frame gate
+
+A host that skips frames with `Env::run_needed` re-runs a frame only when
+something the last run read has changed
+([dev/frame-gate.md](../dev/frame-gate.md)). The handle in
+a binding is the same triple every frame while the object behind it moves,
+so the binding alone never says the object changed. A handle method call and
+`is_valid` therefore mark the run as having read host data. Such a run is
+needed again once the host calls `Env::note_host_data_changed(stack)`.
+
+A host that gates frames and lets scripts call handle methods must call
+`note_host_data_changed` whenever an object a script can reach changes or
+dies. For a game engine where objects move every frame, that is every frame.
+A host that does not gate frames needs nothing.
 
 ## Effect rows for natives that use handles
 
@@ -425,9 +451,10 @@ object up.
 `get_handle` itself asks the host whether the object is alive, so a native
 that calls it has read host state even if it does nothing else.
 
-The builtin `is_valid` is registered `PURE` and not `CONST`: the same handle
-answers differently once the host drops the object, so a value computed from
-`is_valid` is never a static value.
+The builtin `is_valid` is registered `reads(InputClasses::HOST_DATA)` and
+calls `note_host_read()`, as the fourth row says. It is not `CONST`: the same
+handle answers differently once the host drops the object, so a value
+computed from `is_valid` is never a static value.
 
 `petal run --effect-audit` and `Env::set_effect_audit` check a row against
 what a native does through `PetalCxt`. They cannot see what a closure does to

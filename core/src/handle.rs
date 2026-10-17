@@ -3,7 +3,7 @@
 //! A `Value::Handle` carries a (class, slot, serial) triple. The class indexes
 //! into the `HandleClass` registry on `Env`; slot/serial address an object in
 //! the host's own storage (typically a slot map with generation counters).
-//! See docs/dev/unreal-ffi-proposal.md.
+//! See docs/game-engine-features/handles.md.
 
 use std::fmt;
 

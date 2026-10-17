@@ -20,8 +20,8 @@
 //   factor := INT | NAME | '(' expr ')' | '-' factor
 //
 // Usage:
-//   tsx tools/calc-to-ir.ts program.calc | petal run --ir -
-//   echo 'print 1 + 2 * 3' | tsx tools/calc-to-ir.ts | petal run --ir -
+//   ./tools/calc-to-ir.ts program.calc | petal run --ir -
+//   echo 'print 1 + 2 * 3' | node tools/calc-to-ir.ts | petal run --ir -
 //
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -91,7 +91,12 @@ function lex(line: string): Tok[] {
 
 class Parser {
   private pos = 0;
-  constructor(private toks: Tok[]) {}
+  // A plain field, not a constructor parameter property: Node's type
+  // stripping runs this file directly and rejects parameter properties.
+  private toks: Tok[];
+  constructor(toks: Tok[]) {
+    this.toks = toks;
+  }
 
   private peek(): Tok {
     return this.toks[this.pos];

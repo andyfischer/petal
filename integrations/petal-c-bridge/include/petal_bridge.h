@@ -94,7 +94,8 @@ typedef struct pb_error_item {
 
 /* The last failure on a VM. `message` is the full human-readable text; the
  * first item's position is mirrored into file/line/column for convenience.
- * `phase` is "lex", "parse", "module", "compile", "lower", "runtime" or "". */
+ * `phase` is "lex", "parse", "module", "compile", "lower", "link" (a declared
+ * native or a required interface this VM does not have), "runtime" or "". */
 typedef struct pb_error {
     pb_status code;
     const char* message;

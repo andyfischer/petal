@@ -638,7 +638,7 @@ pub struct Program {
     #[serde(default = "default_schema")]
     pub schema: String,
     pub id: ProgramId,
-    /// Original source text. Optional for imported IR (see docs/ir-as-target.md).
+    /// Original source text. Optional for imported IR (see docs/dev/ir-as-target.md).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub source: String,
 

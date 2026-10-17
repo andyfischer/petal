@@ -99,7 +99,7 @@
       "id": "handle",
       "title": "Handles",
       "group": "core",
-      "doc": "Handle-related builtins (docs/dev/unreal-ffi-proposal.md §5)."
+      "doc": "Handle-related builtins (docs/game-engine-features/handles.md)."
     },
     {
       "id": "pending",
@@ -288,7 +288,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 59
+        "line": 60
       }
     },
     {
@@ -313,7 +313,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 72
+        "line": 73
       }
     },
     {
@@ -338,7 +338,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 80
+        "line": 81
       }
     },
     {
@@ -363,7 +363,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 85
+        "line": 86
       }
     },
     {
@@ -388,7 +388,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 100
+        "line": 101
       }
     },
     {
@@ -413,7 +413,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 159
+        "line": 160
       }
     },
     {
@@ -453,7 +453,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 186
+        "line": 187
       }
     },
     {
@@ -652,7 +652,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 202
+        "line": 203
       }
     },
     {
@@ -685,7 +685,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 218
+        "line": 219
       }
     },
     {
@@ -720,7 +720,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 246
+        "line": 247
       }
     },
     {
@@ -1167,7 +1167,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 279
+        "line": 280
       }
     },
     {
@@ -1192,7 +1192,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 284
+        "line": 285
       }
     },
     {
@@ -1217,7 +1217,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 289
+        "line": 290
       }
     },
     {
@@ -1250,7 +1250,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 297
+        "line": 298
       }
     },
     {
@@ -1265,7 +1265,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 329
+        "line": 334
       }
     },
     {
@@ -1306,7 +1306,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 11
+        "line": 12
       }
     },
     {
@@ -1347,7 +1347,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 36
+        "line": 41
       },
       "import": "creative"
     },
@@ -1405,7 +1405,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 212
+        "line": 239
       },
       "import": "creative"
     },
@@ -1465,7 +1465,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 228
+        "line": 251
       },
       "import": "creative"
     },
@@ -1515,7 +1515,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 267
+        "line": 286
       },
       "import": "creative"
     },
@@ -1549,7 +1549,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 306
+        "line": 323
       }
     },
     {
@@ -1574,7 +1574,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 314
+        "line": 341
       }
     },
     {
@@ -1599,7 +1599,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 341
+        "line": 380
       }
     },
     {
@@ -1640,7 +1640,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 348
+        "line": 388
       },
       "import": "creative"
     },
@@ -1666,7 +1666,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 358
+        "line": 408
       }
     },
     {
@@ -1691,7 +1691,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 365
+        "line": 415
       }
     },
     {
@@ -1716,7 +1716,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 372
+        "line": 422
       }
     },
     {
@@ -1741,7 +1741,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 379
+        "line": 430
       }
     },
     {
@@ -1846,7 +1846,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 386
+        "line": 437
       }
     },
     {
@@ -1871,7 +1871,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 401
+        "line": 452
       },
       "import": "creative"
     },
@@ -2031,7 +2031,7 @@
       ],
       "source": {
         "file": "core/src/builtins/vec2.rs",
-        "line": 13
+        "line": 28
       },
       "import": "vec2"
     },
@@ -2057,7 +2057,7 @@
       ],
       "source": {
         "file": "core/src/builtins/vec2.rs",
-        "line": 53
+        "line": 70
       },
       "import": "vec2"
     },
@@ -2091,7 +2091,7 @@
       ],
       "source": {
         "file": "core/src/builtins/vec2.rs",
-        "line": 82
+        "line": 99
       },
       "import": "vec2"
     },
@@ -2125,7 +2125,7 @@
       ],
       "source": {
         "file": "core/src/builtins/vec2.rs",
-        "line": 117
+        "line": 134
       },
       "import": "vec2"
     },
@@ -2159,7 +2159,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 604
+        "line": 610
       }
     },
     {
@@ -2192,7 +2192,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 604
+        "line": 610
       },
       "aliasOf": "map"
     },
@@ -2234,7 +2234,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 604
+        "line": 610
       },
       "aliasOf": "map"
     },
@@ -2268,7 +2268,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 604
+        "line": 610
       },
       "aliasOf": "map"
     },
@@ -2722,7 +2722,7 @@
       ],
       "source": {
         "file": "core/src/builtins/handle.rs",
-        "line": 10
+        "line": 15
       }
     },
     {
@@ -2982,7 +2982,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 121
+        "line": 122
       }
     },
     {
@@ -3007,7 +3007,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 142
+        "line": 143
       }
     },
     {
@@ -3209,7 +3209,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 604
+        "line": 610
       },
       "aliasOf": "map"
     },
@@ -3483,7 +3483,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 345
+        "line": 350
       }
     },
     {
@@ -3578,7 +3578,7 @@
       ],
       "source": {
         "file": "core/src/builtins/vec2.rs",
-        "line": 150
+        "line": 167
       },
       "import": "vec2"
     },
@@ -3620,7 +3620,7 @@
       ],
       "source": {
         "file": "core/src/builtins/vec2.rs",
-        "line": 21
+        "line": 37
       },
       "import": "vec2"
     },
@@ -3654,7 +3654,7 @@
       ],
       "source": {
         "file": "core/src/builtins/vec2.rs",
-        "line": 102
+        "line": 119
       },
       "import": "vec2"
     },
@@ -3680,7 +3680,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 305
+        "line": 308
       }
     },
     {
@@ -3705,7 +3705,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 310
+        "line": 313
       }
     },
     {
@@ -3730,7 +3730,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 315
+        "line": 318
       }
     },
     {
@@ -3763,7 +3763,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 321
+        "line": 324
       }
     },
     {
@@ -3980,7 +3980,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 604
+        "line": 610
       },
       "aliasOf": "map"
     },
@@ -4006,7 +4006,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 604
+        "line": 610
       },
       "aliasOf": "map"
     },
@@ -4418,7 +4418,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 388
+        "line": 393
       }
     },
     {
@@ -4473,7 +4473,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 459
+        "line": 471
       }
     },
     {
@@ -4528,7 +4528,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 467
+        "line": 479
       }
     },
     {
@@ -4563,7 +4563,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 493
+        "line": 505
       }
     },
     {
@@ -8300,7 +8300,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 772
+        "line": 699
       }
     },
     {
@@ -8315,7 +8315,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 820
+        "line": 747
       }
     },
     {
@@ -8340,7 +8340,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 787
+        "line": 714
       }
     },
     {
@@ -8355,7 +8355,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 824
+        "line": 751
       }
     },
     {
@@ -8370,7 +8370,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 828
+        "line": 755
       }
     },
     {
@@ -8395,7 +8395,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 832
+        "line": 759
       }
     },
     {
@@ -8420,7 +8420,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 839
+        "line": 766
       }
     },
     {
@@ -8445,7 +8445,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 846
+        "line": 773
       }
     },
     {
@@ -8460,7 +8460,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 853
+        "line": 780
       }
     },
     {
@@ -8475,7 +8475,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 857
+        "line": 784
       }
     },
     {
@@ -8500,7 +8500,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 861
+        "line": 788
       }
     },
     {
@@ -8525,7 +8525,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 868
+        "line": 795
       }
     },
     {
@@ -8550,7 +8550,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 875
+        "line": 802
       }
     },
     {
@@ -8565,7 +8565,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 882
+        "line": 809
       }
     },
     {
@@ -8580,7 +8580,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 886
+        "line": 813
       }
     },
     {
@@ -8595,7 +8595,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 890
+        "line": 817
       }
     },
     {
@@ -8610,7 +8610,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 894
+        "line": 821
       }
     },
     {
@@ -8625,7 +8625,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 898
+        "line": 825
       }
     },
     {
@@ -8640,7 +8640,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 902
+        "line": 829
       }
     },
     {
@@ -8655,7 +8655,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 906
+        "line": 833
       }
     },
     {
@@ -8670,7 +8670,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 910
+        "line": 837
       }
     },
     {
@@ -8685,7 +8685,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 914
+        "line": 841
       }
     },
     {
@@ -8700,7 +8700,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 923
+        "line": 850
       }
     },
     {
@@ -8715,7 +8715,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 930
+        "line": 857
       }
     },
     {
@@ -8730,7 +8730,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 937
+        "line": 864
       }
     },
     {
@@ -8745,7 +8745,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 946
+        "line": 873
       }
     },
     {
@@ -8760,7 +8760,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 952
+        "line": 879
       }
     },
     {
@@ -8775,7 +8775,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 956
+        "line": 883
       }
     },
     {
@@ -8790,7 +8790,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 960
+        "line": 887
       }
     },
     {
@@ -8805,7 +8805,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 964
+        "line": 891
       }
     }
   ]

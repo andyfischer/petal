@@ -97,7 +97,7 @@ See [performance.md](performance.md) for how to read these numbers.
 | `tools/run-example.ts <slug>` | Launch an example panel app (`examples/<category>/<slug>/`) in Garden; extra arguments go to Garden, `--list` shows the examples. Refuses a Garden binary that is behind the checkout. See [examples/AUTHORING.md](../../examples/AUTHORING.md). |
 | `tools/panel-test.sh` | Shell helpers for the headless panel test loop: `panel_start <slug>`, `click`/`move`/`drag`/`scroll` (pane-local coordinates), `key`, `tick`, `obs`, `shot`, `panel_reset`, `panel_stop`. `source` it, or run `tools/panel-test.sh <command> …` one command at a time. Needs `curl` and `jq`. See [examples/AUTHORING.md](../../examples/AUTHORING.md#running-it). |
 | `./install-local.sh` | Install the `petal` binary from this checkout (`cargo install --path core`). |
-| `tools/calc-to-ir.ts` | A reference external emitter: a toy arithmetic language compiled straight to Petal IR JSON, sharing no code with the compiler. `echo 'print 1 + 2 * 3' \| npx tsx tools/calc-to-ir.ts \| petal run --ir -`. See [ir-as-target.md](ir-as-target.md). |
+| `tools/calc-to-ir.ts` | A reference external emitter: a toy arithmetic language compiled straight to Petal IR JSON, sharing no code with the compiler. `echo 'print 1 + 2 * 3' \| ./tools/calc-to-ir.ts \| petal run --ir -`. See [ir-as-target.md](ir-as-target.md). |
 | `npm run stdlib:json` | Extract the standard library into JSON (`tools/extract-stdlib.ts`). |
 | `npm run tsc` | Type-check the vitest suite and the `tools/` scripts (`tsc --noEmit`). `cd tools && npm run tsc` also covers the MCP servers (run `npm install` there once; they need it to run too). |
 

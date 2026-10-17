@@ -10,8 +10,24 @@ use crate::value::Value;
 
 use super::require_args;
 
+/// A vector stores plain floats, so a dual component would lose its
+/// derivative: refuse it by name rather than with `get_float`'s generic error.
+fn refuse_dual_components(state: &PetalCxt, who: &str) -> Result<(), String> {
+    for i in 1..=state.arg_count() {
+        if let Value::Dual { .. } = state.get_value(i)? {
+            return Err(format!(
+                "{who}() cannot hold a dual number (argument {i}): a vector stores plain \
+                 floats, so the derivative would be lost. Keep duals in a list or a record \
+                 and do the vector arithmetic per component, or pass value_of(x)"
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn native_vec2(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 2, "vec2")?;
+    refuse_dual_components(state, "vec2")?;
     let x = state.get_float(1)?;
     let y = state.get_float(2)?;
     state.push_value(Value::Vec2(x, y));
@@ -20,6 +36,7 @@ pub(super) fn native_vec2(state: &mut PetalCxt) -> Result<u32, String> {
 
 pub(super) fn native_vec3(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 3, "vec3")?;
+    refuse_dual_components(state, "vec3")?;
     let x = state.get_float(1)?;
     let y = state.get_float(2)?;
     let z = state.get_float(3)?;

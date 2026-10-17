@@ -445,8 +445,7 @@ impl<'a> Vm<'a> {
     }
 
     /// Dispatch `h.method(args...)` through the handle class registered for
-    /// `h.class`. Mirrors the graph engine's `call_handle_method` (including
-    /// error messages): liveness is checked first, and a stale handle errors
+    /// `h.class`. Liveness is checked first, and a stale handle errors
     /// with the class name and `describe()` output without invoking
     /// `call_method`. The receiver is prepended, so it is cxt arg 1.
     pub(super) fn call_handle_method(
@@ -478,8 +477,12 @@ impl<'a> Vm<'a> {
         full_args.extend_from_slice(args);
         let chain = self.emit_call_chain(origin);
         // A handle method reaches host-owned state the runtime cannot see
-        // into: never replayed.
+        // into: never replayed, and a host-data read for the frame gate, so a
+        // frame whose only host interaction is handle methods re-runs when
+        // the host reports that the objects behind them changed
+        // (`Env::note_host_data_changed`).
         self.memo_note_effect();
+        self.stack.run_deps.note_host_read();
         let mut cxt = self.native_cxt(&full_args, &chain, origin, false);
         let count = (class.call_method)(&mut cxt, method_name)?;
         Ok(cxt.take_result(count))

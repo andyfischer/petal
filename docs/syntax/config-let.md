@@ -56,9 +56,12 @@ Everything after the keyword is an ordinary
 | `pub config let x = 1` | an exported config binding |
 | `config var x = 1` | error: `` `config` marks a `let` binding; a mutable `var` cell cannot be config `` |
 | `config const X = 1` | error: `` `config` marks a `let` binding; write `config let` (a config binding of literals is already constant) or a plain `const` `` |
-| `config state x = 1`, `config fn f() … end`, `config pub let x = 1` | not a declaration. `config` is read as a name here (see below), so the line fails as an expression, usually with ``undefined variable `config` `` |
+| `config state x = 1` | error: `` `config` marks a `let` binding; a `state` slot cannot be config. Declare the tunable starting value with `config let` and initialise the state from it `` |
+| `config fn f() … end` | error: `` `config` marks a `let` binding of literals; a function cannot be config `` |
+| `config pub let x = 1` | error: `` `pub` comes before `config`: write `pub config let` `` |
 
-`pub config var` and `pub config const` give the same two errors.
+`pub config var`, `pub config const`, `pub config state` and `pub config fn`
+give the same errors.
 
 A `config let` inside a function body is accepted and marks the binding the
 same way. The tools that work on a traced run see it (direct manipulation
@@ -71,8 +74,8 @@ first.
 ## `config` is not a reserved word
 
 `config` is a contextual modifier. It is special only when the very next token
-is `let` (or `var` or `const`, to give the errors above). Everywhere else it
-is an ordinary identifier:
+is `let` (or `var`, `const`, `state`, `fn` or `pub`, to give the errors
+above). Everywhere else it is an ordinary identifier:
 
 ```petal
 let config = {width: 80}

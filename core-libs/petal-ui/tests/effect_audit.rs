@@ -1,7 +1,7 @@
 //! The native effect audit over the example corpus: every panel app, driven
 //! by a monkey scenario, with every native call bracketed by activity
 //! snapshots and held against the effect row the native declared. See
-//! `petal::effect_audit` and docs/tasks/declarative-effect-refactoring.md.
+//! `petal::effect_audit` and docs/usage/ffi.md#catching-it-with-the-effect-audit.
 //!
 //! An under-declared native is a staleness bug the memo cannot see (the row
 //! says less than the native does, so a memoized scope replays without

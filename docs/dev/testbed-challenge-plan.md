@@ -4,11 +4,11 @@ The original list of 50 target apps for the Garden panel-app testbed, drawn up
 when the testbed was started (Aug 2026). Each app exercises a different slice
 of the language and host; see the "What it tests" column.
 
-40 of the 50 exist. Thirty-five are panel apps under the category directories
+41 of the 50 exist. Thirty-six are panel apps under the category directories
 described in [examples/README.md](../../examples/README.md) (the first three
 of each of the first five categories, plus Asteroids, Flappy Bird, the memory
 game, the chat client, the tower defense mini-game, the particle sandbox, the physics playground, the calendar, the email
-client, the file browser, the settings screen, the stock trading screen, the command palette, the music sequencer, the node-based editor, the
+client, the file browser, the settings screen, the stock trading screen, the command palette, the music sequencer, the video timeline editor, the node-based editor, the
 Markdown editor, the network graph explorer, the timeline explorer, the
 solar system and the fractal explorer), and five more
 were written as headless console programs under `examples/games/`, which
@@ -16,8 +16,8 @@ stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-`examples/custom-apps/side-scroller` is a thirty-sixth panel app that was not on
-this list. The remaining 10 have not been attempted.
+`examples/custom-apps/side-scroller` is a thirty-seventh panel app that was not on
+this list. The remaining 9 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -61,7 +61,7 @@ this list. The remaining 10 have not been attempted.
 | 34 | **Vector graphics editor** | Selection, handles, transforms, layering | built — `examples/productivity/vector-editor/` |
 | 35 | **Photo adjustment UI** | Sliders, image effects, before/after | built — `examples/productivity/photo-adjust/` |
 | 36 | **Music sequencer** | Timeline/grid interaction, playback state | built — `examples/productivity/music-sequencer/` |
-| 37 | **Video timeline editor** | Scrubbing, tracks, resizing, drag/drop |  |
+| 37 | **Video timeline editor** | Scrubbing, tracks, resizing, drag/drop | built — `examples/productivity/video-timeline/` |
 | 38 | **Node-based editor** | Arbitrary positioning, ports, connections | built — `examples/productivity/node-editor/` |
 | 39 | **Markdown editor + preview** | Text input, parsing, split panes | built — `examples/productivity/markdown-editor/` |
 | 40 | **Presentation editor** | Direct manipulation, layers, editable text |  |

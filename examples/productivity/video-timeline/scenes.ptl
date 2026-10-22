@@ -1,0 +1,341 @@
+// ─────────────────────────────────────────────────────────────────────────
+//  The "footage". A panel has no video decoder, so every clip's picture is
+//  drawn here procedurally from its source time: the same function paints
+//  the program monitor, the bin thumbnails and the filmstrips on the
+//  timeline, so a frame on the timeline is the frame the monitor shows.
+//
+//  draw_footage(scene, r, t, dur, hi)
+//    scene  which shot (the media item's `scene` key)
+//    r      where to draw it; everything is scaled to r
+//    t      source time in seconds (titles: seconds into the clip)
+//    dur    the clip's length in seconds (titles fade out against it)
+//    hi     full detail (monitor) or the cheap cut (thumbnails)
+// ─────────────────────────────────────────────────────────────────────────
+
+import ui
+
+fn sky(r: Rect, top: record, bottom: record, frac: num) -> nil
+  draw_rect_gradient(rect(r.x, r.y, r.w, r.h * frac + 1), top, bottom, pi() / 2)
+end
+
+fn ridge(r: Rect, base: num, amp: num, f1: num, f2: num, shift: num, c: record) -> nil
+  let pts = [[r.x, r.y + r.h]]
+  let n = 24
+  for k in range(0, n + 1) do
+    let u = k / float(n)
+    let y = base + amp * (sin((u + shift) * f1) * 0.6 + sin((u + shift * 1.7) * f2 + 1.3) * 0.4)
+    pts = append(pts, [r.x + u * r.w, r.y + y * r.h])
+  end
+  pts = append(pts, [r.x + r.w, r.y + r.h])
+  fill_polygon(pts, c)
+end
+
+fn boat(x: num, y: num, s: num, c: record, lamp: bool) -> nil
+  fill_polygon([[x - s, y], [x + s, y], [x + s * 0.7, y + s * 0.32], [x - s * 0.8, y + s * 0.32]], c)
+  draw_line(x - s * 0.1, y, x - s * 0.1, y - s * 1.1, c, 255, max(1, s * 0.06))
+  fill_triangle(x - s * 0.05, y - s * 1.05, x - s * 0.05, y - s * 0.15, x + s * 0.55, y - s * 0.2, c)
+  if lamp then
+    draw_circle(x + s * 0.6, y - s * 0.05, max(1.0, s * 0.07), #ffd58a)
+  end
+end
+
+// ── Harbor at dusk ───────────────────────────────────────────────────────
+fn harbor(r: Rect, t: num, hi: bool) -> nil
+  let hz = r.y + r.h * 0.58
+  sky(r, #2a2450, #f2955a, 0.58)
+  let sun_y = hz - r.h * max(0.02, 0.13 - t * 0.006)
+  let sx = r.x + r.w * 0.62
+  draw_circle_gradient({x: sx, y: sun_y}, r.h * 0.22, #ffc988, #f2955a, 150, 0)
+  draw_circle(sx, sun_y, r.h * 0.065, #ffe1a8)
+  ridge(rect(r.x, r.y, r.w, r.h), 0.53, 0.025, 7.0, 13.0, 0.1, #5a3a5c)
+  draw_rect_gradient(rect(r.x, hz, r.w, r.y + r.h - hz), #7a4c6a, #17142c, pi() / 2)
+  // The sun's road on the water: short bars that shimmer and narrow.
+  let bars = if hi then 9 else 5 end
+  for k in range(0, bars) do
+    let y = hz + 2 + k * (r.h * 0.42 / bars)
+    let w = r.w * (0.07 - k * 0.005) * (0.75 + 0.25 * sin(t * 2.3 + k * 1.7))
+    let a = max(40, 200 - k * 18)
+    draw_rect(sx - w / 2 + sin(t * 1.1 + k) * r.w * 0.006, y, w, max(1, r.h * 0.012), #ffc97f, a)
+  end
+  // Two boats crossing at different speeds.
+  boat(r.x + fract(0.18 + t * 0.012) * r.w * 1.2 - r.w * 0.1, hz + r.h * 0.08, r.h * 0.07, #1b1426, hi)
+  boat(r.x + fract(0.72 - t * 0.007) * r.w * 1.2 - r.w * 0.1, hz + r.h * 0.03, r.h * 0.04, #2a1d34, hi)
+  // Quay lights along the far shore.
+  if hi then
+    for k in range(0, 14) do
+      let x = r.x + r.w * (0.04 + k * 0.031)
+      let tw = 0.6 + 0.4 * sin(t * 3.0 + k * 2.1)
+      draw_circle(x, hz - r.h * 0.006, max(1.0, r.h * 0.006), #ffd27a, int(140 + 110 * tw))
+    end
+  end
+  // A pier post in the foreground.
+  draw_rect(r.x + r.w * 0.08, r.y + r.h * 0.7, r.w * 0.018, r.h * 0.3, #120e1c)
+  draw_rect(r.x + r.w * 0.05, r.y + r.h * 0.7, r.w * 0.09, r.h * 0.016, #120e1c)
+end
+
+// ── Lighthouse at night ──────────────────────────────────────────────────
+fn lighthouse(r: Rect, t: num, hi: bool) -> nil
+  sky(r, #070b1c, #1d2c52, 0.66)
+  let hz = r.y + r.h * 0.66
+  let stars = if hi then 34 else 12 end
+  for i in range(0, stars) do
+    let x = r.x + hash01(31, i) * r.w
+    let y = r.y + hash01(37, i) * r.h * 0.55
+    let a = int(90 + 120 * (0.5 + 0.5 * sin(t * (1.0 + hash01(41, i) * 3.0) + i)))
+    draw_rect(x, y, 1, 1, #dfe8ff, a)
+  end
+  draw_rect_gradient(rect(r.x, hz, r.w, r.y + r.h - hz), #12203c, #04070f, pi() / 2)
+  for k in range(0, if hi then 7 else 3 end) do
+    let y = hz + 3 + k * r.h * 0.045
+    let x = r.x + fract(hash01(53, k) + t * 0.02 * (1 + k % 3)) * r.w
+    draw_rect(x, y, r.w * 0.12, 1, #5d7ab3, 70)
+  end
+  // Headland and tower.
+  let lx = r.x + r.w * 0.7
+  let base = r.y + r.h * 0.6
+  fill_polygon([[r.x + r.w * 0.48, r.y + r.h], [r.x + r.w * 0.56, r.y + r.h * 0.7], [r.x + r.w * 0.64, base],
+    [r.x + r.w * 0.8, base - r.h * 0.01], [r.x + r.w * 0.92, r.y + r.h * 0.68], [r.x + r.w, r.y + r.h * 0.7],
+    [r.x + r.w, r.y + r.h]], #05070d)
+  let tw = r.w * 0.035
+  let top = r.y + r.h * 0.3
+  fill_polygon([[lx - tw, base], [lx + tw, base], [lx + tw * 0.7, top], [lx - tw * 0.7, top]], #d9d4c8)
+  for b in range(0, 2) do
+    let y0 = top + (base - top) * (0.25 + b * 0.38)
+    let y1 = y0 + (base - top) * 0.15
+    let f0 = (y0 - top) / (base - top)
+    let f1 = (y1 - top) / (base - top)
+    fill_polygon([[lx - tw * (0.7 + 0.3 * f0), y0], [lx + tw * (0.7 + 0.3 * f0), y0],
+      [lx + tw * (0.7 + 0.3 * f1), y1], [lx - tw * (0.7 + 0.3 * f1), y1]], #b8433a)
+  end
+  draw_rect(lx - tw * 0.9, top - r.h * 0.012, tw * 1.8, r.h * 0.014, #2a2b33)
+  let lamp_y = top - r.h * 0.045
+  draw_rect(lx - tw * 0.55, lamp_y - r.h * 0.02, tw * 1.1, r.h * 0.05, #2a2b33)
+  fill_triangle(lx - tw * 0.8, lamp_y - r.h * 0.02, lx + tw * 0.8, lamp_y - r.h * 0.02, lx, lamp_y - r.h * 0.07, #2a2b33)
+  // The beam sweeps round: wide and bright toward camera, thin away.
+  let a = t * 1.15
+  let c = cos(a)
+  let reach = r.w * 0.95 * c
+  let spread = r.h * (0.02 + 0.07 * max(0.0, sin(a)))
+  let bright = int(40 + 90 * abs(c) * (0.4 + 0.6 * max(0.0, sin(a))))
+  fill_polygon([[lx, lamp_y], [lx + reach, lamp_y - spread], [lx + reach, lamp_y + spread]], #ffe9a8, bright)
+  draw_circle_gradient({x: lx, y: lamp_y}, r.h * 0.12, #fff1c2, #ffe9a8, 200, 0)
+  draw_circle(lx, lamp_y, max(1.5, r.h * 0.016), #fffbe8)
+end
+
+// ── Interview: Mara at the harbourmaster's office ────────────────────────
+fn interview(r: Rect, t: num, hi: bool) -> nil
+  draw_rect_gradient(r, #45302a, #1b1412, 0.3)
+  let blobs = if hi then 11 else 6 end
+  for i in range(0, blobs) do
+    let x = r.x + (hash01(61, i) + sin(t * 0.25 + i) * 0.01) * r.w
+    let y = r.y + hash01(67, i) * r.h * 0.7
+    let rad = r.h * (0.04 + hash01(71, i) * 0.07)
+    let c = if hash01(73, i) > 0.6 then #6fb3b8 else #f2b766 end
+    draw_circle(x, y, rad, c, int(28 + hash01(79, i) * 50))
+  end
+  // A window to the harbour, blurred.
+  draw_rect_rounded(r.x + r.w * 0.66, r.y + r.h * 0.12, r.w * 0.26, r.h * 0.42, r.h * 0.01, #556d84, 90)
+  draw_rect(r.x + r.w * 0.79, r.y + r.h * 0.12, r.w * 0.006, r.h * 0.42, #2a2220, 160)
+  let sway = sin(t * 0.7) * r.w * 0.004
+  let cx = r.x + r.w * 0.4 + sway
+  // Shoulders, neck, head, hair.
+  draw_ellipse(cx, r.y + r.h * 1.02, r.w * 0.2, r.h * 0.3, #2e4c5e)
+  draw_ellipse(cx, r.y + r.h * 1.02, r.w * 0.2, r.h * 0.3, #3b627a, 0)
+  fill_polygon([[cx - r.w * 0.06, r.y + r.h * 0.74], [cx + r.w * 0.06, r.y + r.h * 0.74], [cx, r.y + r.h * 0.86]], #d9c7a8)
+  draw_rect(cx - r.w * 0.032, r.y + r.h * 0.56, r.w * 0.064, r.h * 0.2, #b98063)
+  draw_ellipse(cx + r.w * 0.004, r.y + r.h * 0.4, r.w * 0.088, r.h * 0.23, #2b1b16)
+  draw_ellipse(cx, r.y + r.h * 0.45, r.w * 0.07, r.h * 0.18, #d39a76)
+  draw_ellipse(cx - r.w * 0.05, r.y + r.h * 0.5, r.w * 0.03, r.h * 0.17, #2b1b16)
+  // Key light from the window side.
+  draw_ellipse(cx + r.w * 0.03, r.y + r.h * 0.44, r.w * 0.035, r.h * 0.13, #f0bf98, 110)
+  if hi then
+    let talk = 0.5 + 0.5 * sin(t * 13.0) * (if hash01(5, int(t * 3.0)) > 0.3 then 1.0 else 0.0 end)
+    draw_ellipse(cx - r.w * 0.012, r.y + r.h * 0.37, r.w * 0.007, r.h * 0.008, #3a2018)
+    draw_ellipse(cx + r.w * 0.03, r.y + r.h * 0.37, r.w * 0.007, r.h * 0.008, #3a2018)
+    draw_ellipse(cx + r.w * 0.01, r.y + r.h * 0.535, r.w * 0.014, r.h * (0.004 + 0.012 * talk), #6e2f2a)
+  end
+end
+
+// ── Old town at night ────────────────────────────────────────────────────
+fn city(r: Rect, t: num, hi: bool) -> nil
+  sky(r, #0b1022, #2f2545, 1.0)
+  draw_circle(r.x + r.w * 0.8, r.y + r.h * 0.2, r.h * 0.06, #f3ecd6)
+  draw_circle_gradient({x: r.x + r.w * 0.8, y: r.y + r.h * 0.2}, r.h * 0.2, #f3ecd6, #2f2545, 50, 0)
+  let pan = t * 0.008
+  let n = 13
+  for i in range(-1, n + 1) do
+    let u = (i + fract(pan * n) - 0.0) / float(n)
+    let id = i - int(floor(pan * n))
+    let bw = r.w / float(n) * (0.86 + hash01(11, id) * 0.12)
+    let bh = r.h * (0.3 + hash01(13, id) * 0.42)
+    let bx = r.x + u * r.w
+    let by = r.y + r.h - bh
+    draw_rect(bx, by, bw, bh, if id % 2 == 0 then #141a2e else #1b2238 end)
+    if hash01(17, id) > 0.55 then
+      fill_triangle(bx, by, bx + bw, by, bx + bw / 2, by - r.h * 0.07, if id % 2 == 0 then #141a2e else #1b2238 end)
+    end
+    let cols = if hi then 4 else 2 end
+    let rows = if hi then int(bh / (r.h * 0.07)) else 3 end
+    for wy in range(0, rows) do
+      for wx in range(0, cols) do
+        let lit = hash01(id, wx, wy, int(t * 0.6 + hash01(19, id, wx) * 4.0)) > 0.52
+        if lit then
+          let ww = bw / (cols * 2.0)
+          draw_rect(bx + ww * 0.5 + wx * ww * 2, by + r.h * 0.03 + wy * r.h * 0.07, ww, r.h * 0.035, #ffcf7a, 210)
+        end
+      end
+    end
+  end
+  draw_rect_gradient(rect(r.x, r.y + r.h * 0.82, r.w, r.h * 0.18), #ff9d4d, #ff9d4d, pi() / 2, 0, 70)
+end
+
+// ── Coast road, dusk drive ───────────────────────────────────────────────
+fn road(r: Rect, t: num, hi: bool) -> nil
+  let hz = r.y + r.h * 0.46
+  sky(r, #3f3466, #ff9a62, 0.46)
+  draw_circle(r.x + r.w * 0.5, hz, r.h * 0.07, #ffd7a0)
+  draw_rect_gradient(rect(r.x, hz, r.w * 0.5, r.y + r.h - hz), #3a4a6e, #141a2a, pi() / 2)
+  draw_rect_gradient(rect(r.x + r.w * 0.5, hz, r.w * 0.5, r.y + r.h - hz), #2a2430, #121016, pi() / 2)
+  let cx = r.x + r.w * 0.5
+  let bot = r.y + r.h
+  fill_polygon([[cx - r.w * 0.012, hz], [cx + r.w * 0.012, hz], [cx + r.w * 0.62, bot], [cx - r.w * 0.62, bot]], #2b2a33)
+  let n = if hi then 9 else 5 end
+  for k in range(0, n) do
+    let z = fract(k / float(n) + t * 0.45)
+    let p0 = z * z
+    let p1 = min(1.0, (z + 0.045) * (z + 0.045))
+    let y0 = hz + p0 * (bot - hz)
+    let y1 = hz + p1 * (bot - hz)
+    let w0 = r.w * 0.003 + p0 * r.w * 0.012
+    let w1 = r.w * 0.003 + p1 * r.w * 0.012
+    fill_polygon([[cx - w0, y0], [cx + w0, y0], [cx + w1, y1], [cx - w1, y1]], #f2e1ae, int(120 + 135 * z))
+  end
+  // Posts with lamps passing on the right.
+  for k in range(0, 4) do
+    let z = fract(k / 4.0 + t * 0.3)
+    let p = z * z
+    let x = cx + r.w * (0.03 + p * 0.75)
+    let y = hz + p * (bot - hz)
+    let h = r.h * (0.02 + p * 0.5)
+    draw_line(x, y, x, y - h, #0d0c12, 255, max(1, p * 4))
+    draw_circle(x - p * 6, y - h, max(1.0, p * 5), #ffd892, int(90 + 160 * p))
+  end
+  draw_rect_gradient(rect(r.x, r.y + r.h * 0.9, r.w, r.h * 0.1), #000000, #000000, pi() / 2, 0, 110)
+end
+
+// ── Cliffs from the drone ────────────────────────────────────────────────
+fn cliffs(r: Rect, t: num, hi: bool) -> nil
+  sky(r, #8fb8d4, #efdcc0, 0.5)
+  draw_rect_gradient(rect(r.x, r.y + r.h * 0.5, r.w, r.h * 0.5), #3d7088, #12303e, pi() / 2)
+  let sh = t * 0.02
+  ridge(r, 0.46, 0.05, 5.0, 11.0, sh * 0.4, #8a9eae)
+  ridge(r, 0.55, 0.07, 4.0, 9.0, sh * 0.8 + 0.3, #5d6f72)
+  ridge(r, 0.7, 0.1, 3.0, 7.0, sh * 1.6 + 0.6, #34433e)
+  // Surf along the nearest ridge's foot.
+  for k in range(0, if hi then 10 else 4 end) do
+    let x = r.x + fract(hash01(83, k) + t * 0.03) * r.w
+    draw_rect(x, r.y + r.h * (0.86 + hash01(89, k) * 0.1), r.w * 0.06, max(1, r.h * 0.006), #e9f4f6, 150)
+  end
+  if hi then
+    for g in range(0, 3) do
+      let gx = r.x + fract(hash01(97, g) + t * 0.04) * r.w
+      let gy = r.y + r.h * (0.2 + hash01(101, g) * 0.15) + sin(t * 2.0 + g) * r.h * 0.01
+      let s = r.h * 0.025
+      let flap = sin(t * 9.0 + g * 2.0) * s * 0.4
+      draw_polyline([[gx - s, gy - flap], [gx, gy], [gx + s, gy - flap]], #23303a, 255, 1.5)
+    end
+  end
+  draw_rect_gradient(rect(r.x, r.y, r.w, r.h * 0.3), #ffffff, #ffffff, pi() / 2, 40, 0)
+end
+
+// ── Titles: transparent overlays ─────────────────────────────────────────
+fn fade(t: num, dur: num, inn: num, out: num) -> float
+  clamp(min(t / inn, (dur - t) / out), 0.0, 1.0)
+end
+
+fn ease(x: num) -> float
+  let u = clamp(x, 0.0, 1.0)
+  1.0 - (1.0 - u) * (1.0 - u) * (1.0 - u)
+end
+
+fn centered(s: string, cx: num, y: num, style: record) -> nil
+  draw_text(s, {x: cx - text_width(s, style) / 2, y: y}, style)
+end
+
+fn title_card(r: Rect, t: num, dur: num, big: string, small: string) -> nil
+  let a = fade(t, dur, 1.0, 0.8)
+  let rise = (1.0 - ease(t / 1.2)) * r.h * 0.03
+  let cx = r.x + r.w / 2
+  let big_s = {size: max(5, r.h * 0.11), font: "ui", weight: 700, spacing: r.h * 0.018, color: #f6efe0}
+  let small_s = {size: max(4, r.h * 0.04), font: "ui", spacing: r.h * 0.004, color: #f0d9b0}
+  layer(r, {a: int(255 * a)}, fn()
+    let y = r.h * 0.4 + rise
+    centered(big, r.w / 2, y, big_s)
+    let lw = r.w * 0.22 * ease((t - 0.3) / 1.2)
+    draw_rect(r.w / 2 - lw / 2, y + r.h * 0.17, lw, max(1, r.h * 0.004), #f2b766)
+    centered(small, r.w / 2, y + r.h * 0.2, small_s)
+  end)
+  nil
+end
+
+fn lower_third(r: Rect, t: num, dur: num) -> nil
+  let inn = ease(t / 0.6)
+  let out = ease((dur - t) / 0.5)
+  let k = min(inn, out)
+  let x = r.x + r.w * 0.06 - (1.0 - k) * r.w * 0.3
+  let y = r.y + r.h * 0.72
+  let w = r.w * 0.36
+  let h = r.h * 0.15
+  clip_push(rect(r.x + r.w * 0.06, r.y, r.w, r.h))
+  draw_rect(x, y, w, h, #0f1320, int(205 * k))
+  draw_rect(x, y, max(2, r.w * 0.006), h, #f2b766, int(255 * k))
+  draw_text("Mara Ilves", {x: x + r.w * 0.025, y: y + h * 0.12}, {size: max(4, r.h * 0.05), font: "ui", weight: 700, color: #f6efe0})
+  draw_text("Harbour pilot · 23 years on the water", {x: x + r.w * 0.025, y: y + h * 0.56},
+    {size: max(3, r.h * 0.03), font: "ui", color: #c9cfdb})
+  clip_pop()
+end
+
+// ── Dispatch ─────────────────────────────────────────────────────────────
+pub fn draw_footage(scene: string, r: Rect, t: num, dur: num, hi: bool) -> nil
+  clip_push(r)
+  match scene
+    when "harbor" -> harbor(r, t, hi)
+    when "lighthouse" -> lighthouse(r, t, hi)
+    when "interview" -> interview(r, t, hi)
+    when "city" -> city(r, t, hi)
+    when "road" -> road(r, t, hi)
+    when "cliffs" -> cliffs(r, t, hi)
+    when "title" -> title_card(r, t, dur, "HARBOUR LIGHTS", "A FILM ABOUT THE NIGHT SHIFT ON THE WATER")
+    when "endcard" -> title_card(r, t, dur, "HARBOUR LIGHTS", "IN CINEMAS SPRING 2027")
+    when "lower" -> lower_third(r, t, dur)
+    when _ -> nil
+  end
+  clip_pop()
+end
+
+// Loudness of an audio source at a source frame, 0..1. Drives the waveforms
+// on the timeline and the monitor's meters, so both agree.
+pub fn audio_amp(scene: string, f: num) -> float
+  let fi = int(floor(f))
+  match scene
+    when "vo" ->
+      let phrase = fi / 42
+      if hash01(7, phrase) < 0.2 || fi % 42 > 36 then
+        0.03 + hash01(9, fi) * 0.03
+      else
+        let word = fi / 5
+        let syll = 0.55 + 0.45 * abs(sin(fi * 0.9 + phrase))
+        clamp((0.25 + 0.6 * hash01(3, word)) * syll, 0.0, 1.0)
+      end
+    when "score" ->
+      let beat = fi % 12
+      let kick = exp(-beat / 3.5) * 0.45
+      let build = 0.55 + 0.45 * min(1.0, fi / 600.0)
+      let pad = 0.22 + 0.08 * sin(fi / 30.0) + hash01(23, fi) * 0.12
+      clamp((kick + pad) * build, 0.0, 1.0)
+    when "gulls" ->
+      let cry = if hash01(11, fi / 30) > 0.72 && fi % 30 < 9 then 0.32 * sin((fi % 30) / 9.0 * pi()) else 0.0 end
+      clamp(0.16 + 0.07 * sin(fi / 17.0) + hash01(29, fi) * 0.07 + cry, 0.0, 1.0)
+    when _ -> 0.0
+  end
+end

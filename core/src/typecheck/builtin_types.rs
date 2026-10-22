@@ -13,8 +13,9 @@
 //!    call; the float functions answer a dual for a dual; the vector natives
 //!    answer in the kind they were given.
 //! 2. **Argument slots with no type name** ([`intrinsic_param_slots`]):
-//!    `len` measures a list, a string or an `f64_array`, and there is no type
-//!    that says "one of those".
+//!    `len` measures a list, a string, an `f64_array` or a map, and `keys`,
+//!    `values` and `entries` read a record or a map; there is no type that
+//!    says "one of those".
 //! 3. [`ArgSlot`] itself: how a declared parameter type is held against an
 //!    argument, and worded when it does not fit.
 //!
@@ -133,6 +134,7 @@ pub fn intrinsic_return_type(name: &str, args: &[Type]) -> Option<Option<Type>> 
 pub fn intrinsic_param_slots(name: &str, arity: usize) -> Option<&'static [ArgSlot]> {
     match (name, arity) {
         ("len", 1) => Some(&[ArgSlot::Sized]),
+        ("keys" | "values" | "entries", 1) => Some(&[ArgSlot::Keyed]),
         _ => None,
     }
 }
@@ -178,8 +180,10 @@ pub enum ArgSlot {
     List,
     /// A record, which a class instance is at runtime.
     Record,
-    /// Anything `len` measures: a list, a string, an `f64_array`.
+    /// Anything `len` measures: a list, a string, an `f64_array`, a map.
     Sized,
+    /// Anything with keys: a record (a class instance too) or a map.
+    Keyed,
     /// A callable — the closure a higher-order intrinsic drives.
     Function,
     /// Exactly this declared type (`x: bool`, `v: vec2`), by the rule an
@@ -214,7 +218,10 @@ impl ArgSlot {
             ArgSlot::Str => ty == Type::String,
             ArgSlot::List => ty == Type::List,
             ArgSlot::Record => matches!(ty, Type::Record | Type::Class(_)),
-            ArgSlot::Sized => matches!(ty, Type::List | Type::String | Type::F64Array),
+            ArgSlot::Sized => {
+                matches!(ty, Type::List | Type::String | Type::F64Array | Type::Map)
+            }
+            ArgSlot::Keyed => matches!(ty, Type::Record | Type::Class(_) | Type::Map),
             ArgSlot::Function => ty == Type::Function,
             ArgSlot::Exact(want) => ty.is_assignable_to(&want),
         }
@@ -230,6 +237,7 @@ impl ArgSlot {
             ArgSlot::List => "a list",
             ArgSlot::Record => "a record",
             ArgSlot::Sized => "a list or string",
+            ArgSlot::Keyed => "a record or map",
             ArgSlot::Function => "a function",
         })
     }

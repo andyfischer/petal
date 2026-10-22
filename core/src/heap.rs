@@ -44,6 +44,7 @@ pub fn record_map_with_capacity(n: usize) -> RecordMap {
     RecordMap::with_capacity(n)
 }
 
+use crate::dict::DictEntries;
 use crate::program::{ClosureId, OverloadSetId};
 use crate::stats::{AllocKind, AllocStats, DupKind, DupStats};
 use crate::value::Value;
@@ -142,6 +143,13 @@ generational_id! {
 generational_id! {
     /// Opaque handle to a heap-allocated map.
     pub struct MapId;
+}
+
+generational_id! {
+    /// Opaque handle to a heap-allocated `map` (`Map()`): entries keyed by any
+    /// hashable value, compared by content. See [`crate::dict`]. (A record's id
+    /// is [`MapId`]; the names predate the `map` type.)
+    pub struct DictId;
 }
 
 generational_id! {
@@ -720,6 +728,8 @@ pub struct Heap {
     /// `vec3` components, inline in the slot. See [`Vec3Id`].
     vec3s: Slab<[f64; 3]>,
     maps: Slab<MapObj>,
+    /// `map` values (`Value::Dict`). See [`DictId`].
+    dicts: Slab<DictEntries>,
     elements: Slab<ElementPayload>,
     /// One-value mutable boxes behind `var` bindings. See [`CellId`].
     cells: Slab<CellSlot>,
@@ -778,12 +788,19 @@ pub struct FrozenCounts {
     pub f64_arrays: usize,
     pub vec3s: usize,
     pub maps: usize,
+    pub dicts: usize,
     pub elements: usize,
 }
 
 impl FrozenCounts {
     pub fn total(&self) -> usize {
-        self.strings + self.lists + self.f64_arrays + self.vec3s + self.maps + self.elements
+        self.strings
+            + self.lists
+            + self.f64_arrays
+            + self.vec3s
+            + self.maps
+            + self.dicts
+            + self.elements
     }
 }
 
@@ -830,6 +847,7 @@ impl Heap {
             f64_arrays: Slab::new(),
             vec3s: Slab::new(),
             maps: Slab::new(),
+            dicts: Slab::new(),
             elements: Slab::new(),
             cells: Slab::new(),
             intern_table: HashMap::new(),
@@ -919,8 +937,9 @@ impl Heap {
             .iter()
             .map(|m| value_slice_bytes(m.data.entries.capacity()))
             .sum();
+        let dicts: u64 = self.dicts.slots.iter().map(|d| d.data.payload_bytes()).sum();
         let vec3s = (self.vec3s.slots.len() * VEC3_BYTES) as u64;
-        strings + lists + f64s + maps + vec3s
+        strings + lists + f64s + maps + dicts + vec3s
     }
 
     /// Total bytes of live payload this heap holds — the rough cost of cloning
@@ -956,8 +975,15 @@ impl Heap {
             .filter(|m| m.alive)
             .map(|m| map_entries_bytes(&m.data.entries))
             .sum();
+        let dicts: u64 = self
+            .dicts
+            .slots
+            .iter()
+            .filter(|d| d.alive)
+            .map(|d| d.data.payload_bytes())
+            .sum();
         let vec3s = (self.vec3s.slots.iter().filter(|v| v.alive).count() * VEC3_BYTES) as u64;
-        strings + lists + f64s + maps + vec3s
+        strings + lists + f64s + maps + dicts + vec3s
     }
 
     /// Estimated cost of running one collection right now: the live payload
@@ -991,6 +1017,7 @@ impl Heap {
             + traced(&self.f64_arrays, |d| (d.len() * std::mem::size_of::<f64>()) as u64)
             + traced(&self.vec3s, |_| VEC3_BYTES as u64)
             + traced(&self.maps, |d| map_entries_bytes(&d.entries))
+            + traced(&self.dicts, DictEntries::payload_bytes)
             + traced(&self.elements, |_| 0)
             + traced(&self.cells, |_| 0);
         let slots = walked(&self.strings)
@@ -998,6 +1025,7 @@ impl Heap {
             + walked(&self.f64_arrays)
             + walked(&self.vec3s)
             + walked(&self.maps)
+            + walked(&self.dicts)
             + walked(&self.elements)
             + walked(&self.cells);
         traced_cost + SLOT_WALK_COST * slots
@@ -1125,6 +1153,8 @@ impl Heap {
             entries: RecordMap::default(),
             class: None,
         });
+        self.dicts
+            .inherit_generations(&previous.dicts, DictEntries::default);
         self.elements
             .inherit_generations(&previous.elements, || ElementPayload {
                 tag: StringId::from_raw(placeholder_id),
@@ -1155,6 +1185,7 @@ impl Heap {
             Value::F64Array(id) => self.f64_arrays.is_live(id.raw()),
             Value::Vec3(id) => self.vec3s.is_live(id.raw()),
             Value::Map(id) => self.maps.is_live(id.raw()),
+            Value::Dict(id) => self.dicts.is_live(id.raw()),
             Value::Element(id) => self.elements.is_live(id.raw()),
             Value::Cell(id) => self.cells.is_live(id.raw()),
             Value::EnumVariant { tag, data } => {
@@ -1689,6 +1720,101 @@ impl Heap {
         id
     }
 
+    // --- `map` (Dict) allocation ---
+
+    pub fn alloc_dict(&mut self, entries: DictEntries) -> DictId {
+        self.tick_alloc(AllocKind::Map, entries.payload_bytes());
+        DictId::from_raw(self.dicts.alloc(entries))
+    }
+
+    pub fn get_dict(&self, id: DictId) -> &DictEntries {
+        self.dicts.get(id.raw())
+    }
+
+    /// [`get_dict`](Self::get_dict) for a weak id: `None` once collected.
+    pub fn try_get_dict(&self, id: DictId) -> Option<&DictEntries> {
+        self.dicts.try_get(id.raw())
+    }
+
+    /// Build a map from `(key, value)` pairs, in order; a repeated key keeps
+    /// its first position and its last value. Errors on an unhashable key.
+    pub fn dict_from_pairs(
+        &mut self,
+        pairs: impl IntoIterator<Item = (Value, Value)>,
+    ) -> Result<DictId, String> {
+        let pairs = pairs.into_iter();
+        let mut entries = DictEntries::with_capacity(pairs.size_hint().0);
+        for (k, v) in pairs {
+            let hash = crate::dict::key_hash(k, self)?;
+            let pos = entries.find(hash, &k, self);
+            entries.put(hash, pos, k, v);
+        }
+        Ok(self.alloc_dict(entries))
+    }
+
+    /// The value stored under `key`, or `None` when there is none. Errors on an
+    /// unhashable key (which could not have been stored).
+    pub fn dict_get(&self, id: DictId, key: Value) -> Result<Option<Value>, String> {
+        let hash = crate::dict::key_hash(key, self)?;
+        let d = self.dicts.get(id.raw());
+        Ok(d.find(hash, &key, self).map(|p| d.entry_at(p).1))
+    }
+
+    /// Return a new map equal to `id` with `key` set to `val`. `id` is
+    /// unchanged (value semantics).
+    pub fn dict_set(&mut self, id: DictId, key: Value, val: Value) -> Result<DictId, String> {
+        let hash = crate::dict::key_hash(key, self)?;
+        let pos = self.dicts.get(id.raw()).find(hash, &key, self);
+        let mut entries = self.dicts.get(id.raw()).clone();
+        self.dup_stats.record(DupKind::Map, || entries.payload_bytes());
+        entries.put(hash, pos, key, val);
+        Ok(self.alloc_dict(entries))
+    }
+
+    /// Return a new map equal to `id` without `key`. `id` is unchanged;
+    /// removing an absent key returns an equal new map.
+    pub fn dict_remove(&mut self, id: DictId, key: Value) -> Result<DictId, String> {
+        let hash = crate::dict::key_hash(key, self)?;
+        let pos = self.dicts.get(id.raw()).find(hash, &key, self);
+        let mut entries = self.dicts.get(id.raw()).clone();
+        self.dup_stats.record(DupKind::Map, || entries.payload_bytes());
+        if let Some(p) = pos {
+            entries.remove_at(hash, p);
+        }
+        Ok(self.alloc_dict(entries))
+    }
+
+    /// In-place [`dict_set`](Self::dict_set). See the in-place list methods
+    /// for the soundness contract.
+    pub fn dict_set_in_place(
+        &mut self,
+        id: DictId,
+        key: Value,
+        val: Value,
+    ) -> Result<DictId, String> {
+        debug_assert!(self.dicts.is_live(id.raw()), "in-place set on a dead map");
+        if self.dicts.is_shared(id.raw()) {
+            return self.dict_set(id, key, val);
+        }
+        let hash = crate::dict::key_hash(key, self)?;
+        let pos = self.dicts.get(id.raw()).find(hash, &key, self);
+        self.dicts.get_mut(id.raw()).put(hash, pos, key, val);
+        Ok(id)
+    }
+
+    /// In-place [`dict_remove`](Self::dict_remove).
+    pub fn dict_remove_in_place(&mut self, id: DictId, key: Value) -> Result<DictId, String> {
+        debug_assert!(self.dicts.is_live(id.raw()), "in-place remove on a dead map");
+        if self.dicts.is_shared(id.raw()) {
+            return self.dict_remove(id, key);
+        }
+        let hash = crate::dict::key_hash(key, self)?;
+        if let Some(p) = self.dicts.get(id.raw()).find(hash, &key, self) {
+            self.dicts.get_mut(id.raw()).remove_at(hash, p);
+        }
+        Ok(id)
+    }
+
     // --- Element allocation ---
 
     pub fn alloc_element(&mut self, tag: StringId, props: MapId, children: ListId) -> ElementId {
@@ -1783,7 +1909,10 @@ impl Heap {
         if slot.owned {
             // Only a container can change under its id; a scalar the cell
             // "owns" is simply replaced by the put.
-            if matches!(value, Value::List(_) | Value::F64Array(_) | Value::Map(_)) {
+            if matches!(
+                value,
+                Value::List(_) | Value::F64Array(_) | Value::Map(_) | Value::Dict(_)
+            ) {
                 slot.mutations += 1;
             }
             return value;
@@ -1808,6 +1937,11 @@ impl Heap {
                 self.dup_stats
                     .record(DupKind::Map, || map_entries_bytes(&entries));
                 Value::Map(self.alloc_map_tagged(entries, class))
+            }
+            Value::Dict(d) => {
+                let entries = self.dicts.get(d.raw()).clone();
+                self.dup_stats.record(DupKind::Map, || entries.payload_bytes());
+                Value::Dict(self.alloc_dict(entries))
             }
             other => other,
         }
@@ -1912,6 +2046,7 @@ impl Heap {
             F(RawId),
             V(RawId),
             M(RawId),
+            D(RawId),
             E(RawId),
         }
         let mut visited: Vec<Obj> = Vec::new();
@@ -1948,6 +2083,12 @@ impl Heap {
                         if let Some(class) = m.class {
                             stack.push(Value::String(class));
                         }
+                    }
+                }
+                Value::Dict(id) => {
+                    if self.dicts.visit_for_freeze(id.raw()) {
+                        visited.push(Obj::D(id.raw()));
+                        stack.extend(self.dicts.get(id.raw()).all_values());
                     }
                 }
                 Value::EnumVariant { tag, data } => {
@@ -2006,6 +2147,10 @@ impl Heap {
                     self.maps.finish_freeze(id, ok);
                     map_entries_bytes(&self.maps.get(id).entries)
                 }
+                Obj::D(id) => {
+                    self.dicts.finish_freeze(id, ok);
+                    self.dicts.get(id).payload_bytes()
+                }
                 Obj::E(id) => {
                     self.elements.finish_freeze(id, ok);
                     0
@@ -2045,6 +2190,7 @@ impl Heap {
             f64_arrays: count(&self.f64_arrays),
             vec3s: count(&self.vec3s),
             maps: count(&self.maps),
+            dicts: count(&self.dicts),
             elements: count(&self.elements),
         }
     }
@@ -2058,6 +2204,7 @@ impl Heap {
             Value::F64Array(id) => self.f64_arrays.is_permanent(id.raw()),
             Value::Vec3(id) => self.vec3s.is_permanent(id.raw()),
             Value::Map(id) => self.maps.is_permanent(id.raw()),
+            Value::Dict(id) => self.dicts.is_permanent(id.raw()),
             Value::Element(id) => self.elements.is_permanent(id.raw()),
             // Both halves: every payload-free variant shares one payload
             // list, so that list being permanent says nothing about this
@@ -2094,6 +2241,7 @@ impl Heap {
             L(RawId),
             F(RawId),
             M(RawId),
+            D(RawId),
         }
         // The common stored value is a scalar: nothing to walk.
         if !matches!(
@@ -2101,6 +2249,7 @@ impl Heap {
             Value::List(_)
                 | Value::F64Array(_)
                 | Value::Map(_)
+                | Value::Dict(_)
                 | Value::EnumVariant { .. }
                 | Value::Element(_)
                 | Value::Cell(_)
@@ -2153,6 +2302,21 @@ impl Heap {
                         ));
                     }
                 }
+                Value::Dict(id) => {
+                    if self.dicts.visit_for_immutable(id.raw()) {
+                        visited.push(Obj::D(id.raw()));
+                        stack.extend(self.dicts.get(id.raw()).all_values().filter(|v| {
+                            !matches!(
+                                v,
+                                Value::Nil
+                                    | Value::Bool(_)
+                                    | Value::Int(_)
+                                    | Value::Float(_)
+                                    | Value::String(_)
+                            )
+                        }));
+                    }
+                }
                 Value::EnumVariant { data, .. } => stack.push(Value::List(data)),
                 Value::Element(id) => {
                     let e = *self.elements.get(id.raw());
@@ -2184,6 +2348,7 @@ impl Heap {
                 Obj::L(id) => self.lists.finish_immutable(id, ok),
                 Obj::F(id) => self.f64_arrays.finish_immutable(id, ok),
                 Obj::M(id) => self.maps.finish_immutable(id, ok),
+                Obj::D(id) => self.dicts.finish_immutable(id, ok),
             }
         }
         match error {
@@ -2200,6 +2365,7 @@ impl Heap {
             Value::List(id) => self.lists.is_immutable(id.raw()),
             Value::F64Array(id) => self.f64_arrays.is_immutable(id.raw()),
             Value::Map(id) => self.maps.is_immutable(id.raw()),
+            Value::Dict(id) => self.dicts.is_immutable(id.raw()),
             _ => false,
         }
     }
@@ -2237,6 +2403,7 @@ impl Heap {
                 self.vec3s.mark(id.raw());
             }
             Value::Map(id) => self.mark_map(id),
+            Value::Dict(id) => self.mark_dict(id),
             Value::Element(id) => self.mark_element(id),
             Value::Cell(id) => self.mark_cell(id),
             Value::EnumVariant { tag, data } => {
@@ -2306,6 +2473,17 @@ impl Heap {
         }
     }
 
+    fn mark_dict(&mut self, id: DictId) {
+        if self.dicts.mark(id.raw()) {
+            // Move the table out while recursing, as mark_list does.
+            let entries = std::mem::take(self.dicts.get_mut(id.raw()));
+            for val in entries.all_values() {
+                self.mark_value(val);
+            }
+            *self.dicts.get_mut(id.raw()) = entries;
+        }
+    }
+
     fn mark_element(&mut self, id: ElementId) {
         if self.elements.mark(id.raw()) {
             let e = *self.elements.get(id.raw());
@@ -2365,6 +2543,7 @@ impl Heap {
             v.entries = RecordMap::default();
             v.class = None;
         });
+        self.dicts.sweep_with(|_, v| *v = DictEntries::default());
         self.elements.sweep_with(|_, _| {});
         self.cells.sweep_with(|_, v| *v = CellSlot::default());
 

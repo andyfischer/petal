@@ -582,6 +582,14 @@ pub fn register_builtins(table: &mut NativeFnTable) {
         NativeEffects::CONST,
     );
 
+    // --- Maps (append-only to preserve phantom term indices) ---
+    // `Map(pairs)` is the constructor (named like `Rect`: `map` is taken);
+    // `entries` lists a record's or a map's pairs. The other map operations
+    // are the record and list builtins, overloaded (`len`, `keys`, `values`,
+    // `contains`, `remove`).
+    table.register("Map", collections::native_map_new, NativeEffects::CONST);
+    table.register("entries", collections::native_entries, NativeEffects::CONST);
+
     // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
     // ids they were just given.
     for op in crate::backend::bytecode::isa::IntrinsicOp::ALL {
@@ -683,6 +691,7 @@ mod effect_tests {
             .collect();
         got.sort_unstable();
         let expected = [
+            "Map",
             "Rect",
             "Rect.bottom",
             "Rect.center_x",
@@ -723,6 +732,7 @@ mod effect_tests {
             "drop_last",
             "dual",
             "ends_with",
+            "entries",
             "enumerate",
             "exp",
             "f64_array",

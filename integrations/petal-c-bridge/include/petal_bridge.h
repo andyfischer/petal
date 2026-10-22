@@ -127,13 +127,15 @@ typedef enum pb_kind {
     PB_HANDLE = 10,  /* integer = slot, count = serial, str = handle class name */
     PB_PENDING = 11, /* an unresolved resource */
     PB_OTHER = 12,   /* closure, native fn, element…; str = type name */
-    PB_VEC3 = 13     /* number = x, y = y, z = z */
+    PB_VEC3 = 13,    /* number = x, y = y, z = z */
+    PB_DICT = 14     /* a `map` (Map()): items[count] alternate key, value, so
+                        count is twice the number of entries */
 } pb_kind;
 
 /* A decoded, immutable view of one Petal value. Children are contiguous. */
 typedef struct pb_value {
     uint32_t kind;                 /* pb_kind */
-    uint32_t count;                /* child count (LIST/MAP/ENUM) */
+    uint32_t count;                /* child count (LIST/MAP/ENUM/DICT) */
     const struct pb_value* items;  /* children, or NULL */
     const char* str;               /* see pb_kind; NULL when unused */
     size_t str_len;
@@ -170,7 +172,7 @@ static inline const pb_value* pb_value_get(const pb_value* map, const char* key)
     }
     return NULL;
 }
-/* Child `i` of a LIST/MAP/ENUM, or NULL. */
+/* Child `i` of a LIST/MAP/ENUM/DICT, or NULL. */
 static inline const pb_value* pb_value_at(const pb_value* v, size_t i) {
     return (v && v->items && i < v->count) ? &v->items[i] : NULL;
 }
@@ -205,6 +207,10 @@ void pb_builder_end_list(pb_builder* b);
 void pb_builder_begin_map(pb_builder* b);
 void pb_builder_key(pb_builder* b, const char* key);
 void pb_builder_end_map(pb_builder* b);
+/* A `map` (Map()): keys may be any value. The children alternate key, value;
+ * an odd count, or a key holding NaN, is a misuse. Decodes back as PB_DICT. */
+void pb_builder_begin_dict(pb_builder* b);
+void pb_builder_end_dict(pb_builder* b);
 /* An enum variant `tag(payload...)`; the payload values go between begin/end.
  * Under the tag "Enum.variant", with the payload in declaration order, it is
  * that variant of the script's enum (it equals the script's own and matches

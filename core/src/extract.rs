@@ -26,6 +26,7 @@
 //! let file = heap.opt_field_str(value, "file")?; // Option<&str>, absent or nil -> None
 //! ```
 
+use crate::dict::DictEntries;
 use crate::heap::{Heap, MapId};
 use crate::value::Value;
 
@@ -37,6 +38,16 @@ impl Heap {
         match value {
             Value::Map(id) => Ok(id),
             other => Err(format!("expected a record, got {}", other.type_name())),
+        }
+    }
+
+    /// Require `value` to be a `map` (`Map()`), returning its entries.
+    /// Iterate them with `.iter()`, or look one up with
+    /// [`dict_get`](Heap::dict_get).
+    pub fn as_dict(&self, value: Value) -> Result<&DictEntries, String> {
+        match value {
+            Value::Dict(id) => Ok(self.get_dict(id)),
+            other => Err(format!("expected a map, got {}", other.type_name())),
         }
     }
 

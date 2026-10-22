@@ -36,6 +36,7 @@ pub enum Kind {
     Pending = 11,
     Other = 12,
     Vec3 = 13,
+    Dict = 14,
 }
 
 /// Mirrors `pb_value`.
@@ -213,6 +214,7 @@ impl ViewArena {
                     text = heap.map_class_name(id).map(str::to_string);
                 }
             }
+            Value::Dict(_) => node = PbValue::scalar(Kind::Dict),
             Value::EnumVariant { tag, .. } => {
                 node = PbValue::scalar(Kind::Enum);
                 text = Some(heap.try_get_string(tag).unwrap_or("").to_string());
@@ -285,6 +287,17 @@ impl ViewArena {
                             queue.push((c, *it));
                         }
                         map.len()
+                    }
+                    None => 0,
+                },
+                // Two children per entry, key then value.
+                Value::Dict(id) => match heap.try_get_dict(id) {
+                    Some(dict) => {
+                        for it in dict.all_values() {
+                            let c = self.push_shallow(&it, None, heap, names);
+                            queue.push((c, it));
+                        }
+                        2 * dict.len()
                     }
                     None => 0,
                 },

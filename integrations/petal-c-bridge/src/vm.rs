@@ -2717,6 +2717,42 @@ mod tests {
         assert_eq!((node.number, node.y, node.z), (1.5, 2.0, 2.0));
     }
 
+    /// A `map` crosses in both directions: built with `pb_builder_begin_dict`,
+    /// it is a script `Map` (content-keyed), and it decodes back as `PB_DICT`
+    /// with key and value children alternating.
+    #[test]
+    fn dict_binds_and_decodes_as_alternating_children() {
+        let mut vm = Vm::new();
+        vm.bind(
+            "m",
+            HostValue::Dict(vec![
+                (HostValue::Int(1), HostValue::Str("one".into())),
+                (HostValue::List(vec![HostValue::Int(2)]), HostValue::Bool(true)),
+            ]),
+        );
+        vm.load(
+            "import io; let m = binding(symbol(\"m\"))\n\
+             m[3] = m[[2]]\n\
+             push_output(symbol(\"out\"), m)\n",
+            None,
+            "t".into(),
+        )
+        .unwrap();
+        vm.run().unwrap();
+        let sym = vm.env.intern_symbol("out");
+        let vals = vm.env.take_output_buffer(sym);
+        let mut arena = crate::view::ViewArena::new();
+        let first = arena.decode(&vals, vm.env.heap(), &crate::view::Names::NONE);
+        arena.finish();
+        let node = unsafe { &*arena.node_ptr(first) };
+        assert_eq!(node.kind, crate::view::Kind::Dict as u32);
+        assert_eq!(node.count, 6);
+        let child = |i: usize| unsafe { &*node.items.add(i) };
+        assert_eq!((child(0).kind, child(0).integer), (crate::view::Kind::Int as u32, 1));
+        assert_eq!(child(2).kind, crate::view::Kind::List as u32);
+        assert_eq!((child(4).integer, child(5).kind), (3, crate::view::Kind::Bool as u32));
+    }
+
     /// A handle decodes as slot in `integer`, serial in `count` and the class
     /// name in `str` (docs/usage/embedding-c.md, the value table).
     #[test]

@@ -57,10 +57,13 @@ impl<'a> Vm<'a> {
             // --- loops ---
             Inst::ForEachInit { iter, slot } => {
                 let v = self.reg(fi, *iter);
-                let Value::List(list_id) = v else {
-                    return Err(format!("Cannot iterate over {}", v.type_name()));
+                let elems = match v {
+                    Value::List(list_id) => self.heap.get_list(list_id).to_vec(),
+                    // `for k in m` visits a map's keys in insertion order;
+                    // `m[k]` reads each value.
+                    Value::Dict(dict_id) => self.heap.get_dict(dict_id).keys().collect(),
+                    _ => return Err(format!("Cannot iterate over {}", v.type_name())),
                 };
-                let elems = self.heap.get_list(list_id).to_vec();
                 self.ensure_slot(fi, *slot);
                 self.stack.vm_frames[fi].loops[*slot as usize] = Some(LoopCursor::ForEach {
                     elems,

@@ -28,10 +28,28 @@ pub enum HostValue {
     Symbol(String),
     List(Vec<HostValue>),
     Map(Vec<(String, HostValue)>),
+    /// A `map` (`Map()`): entries keyed by any value, in order.
+    Dict(Vec<(HostValue, HostValue)>),
     Enum(String, Vec<HostValue>),
 }
 
 impl HostValue {
+    /// Whether this tree holds a NaN anywhere — the one host value that
+    /// cannot be a map key (it is not `==` to itself).
+    fn holds_nan(&self) -> bool {
+        match self {
+            HostValue::Float(f) => f.is_nan(),
+            HostValue::Vec2(x, y) => x.is_nan() || y.is_nan(),
+            HostValue::Vec3(x, y, z) => x.is_nan() || y.is_nan() || z.is_nan(),
+            HostValue::List(items) | HostValue::Enum(_, items) => {
+                items.iter().any(HostValue::holds_nan)
+            }
+            HostValue::Map(fields) => fields.iter().any(|(_, v)| v.holds_nan()),
+            HostValue::Dict(entries) => entries.iter().any(|(k, v)| k.holds_nan() || v.holds_nan()),
+            _ => false,
+        }
+    }
+
     /// Collect every symbol name in the tree (for pre-interning).
     fn symbols<'a>(&'a self, out: &mut Vec<&'a str>) {
         match self {
@@ -40,6 +58,10 @@ impl HostValue {
                 items.iter().for_each(|i| i.symbols(out))
             }
             HostValue::Map(fields) => fields.iter().for_each(|(_, v)| v.symbols(out)),
+            HostValue::Dict(entries) => entries.iter().for_each(|(k, v)| {
+                k.symbols(out);
+                v.symbols(out);
+            }),
             _ => {}
         }
     }
@@ -70,6 +92,15 @@ impl HostValue {
                     map.insert(k.as_str(), v);
                 }
                 Value::Map(heap.alloc_map(map))
+            }
+            HostValue::Dict(entries) => {
+                let pairs: Vec<(Value, Value)> = entries
+                    .iter()
+                    .map(|(k, v)| (k.to_value(heap, syms), v.to_value(heap, syms)))
+                    .collect();
+                // `end("dict")` refused a NaN key, the only host key that
+                // cannot be hashed, so this does not fail.
+                heap.dict_from_pairs(pairs).map(Value::Dict).unwrap_or(Value::Nil)
             }
             HostValue::Enum(tag, items) => {
                 let vals: Vec<Value> = items.iter().map(|i| i.to_value(heap, syms)).collect();
@@ -108,6 +139,8 @@ pub fn materialize(
 enum Open {
     List(Vec<HostValue>),
     Map(Vec<(String, HostValue)>, Option<String>),
+    /// Children alternate key, value.
+    Dict(Vec<HostValue>),
     Enum(String, Vec<HostValue>),
 }
 
@@ -140,7 +173,9 @@ impl Builder {
     pub fn push(&mut self, v: HostValue) {
         match self.stack.last_mut() {
             None => self.roots.push(v),
-            Some(Open::List(items)) | Some(Open::Enum(_, items)) => items.push(v),
+            Some(Open::List(items)) | Some(Open::Enum(_, items)) | Some(Open::Dict(items)) => {
+                items.push(v)
+            }
             Some(Open::Map(fields, key)) => match key.take() {
                 Some(k) => fields.push((k, v)),
                 None => self.fail("map field value without a preceding pb_builder_key"),
@@ -174,6 +209,22 @@ impl Builder {
                 return;
             }
             Some(Open::Enum(tag, items)) if what == "enum" => HostValue::Enum(tag, items),
+            Some(Open::Dict(items)) if what == "dict" => {
+                if items.len() % 2 != 0 {
+                    self.fail("dict ended with a key that has no value");
+                    return;
+                }
+                let mut entries = Vec::with_capacity(items.len() / 2);
+                let mut it = items.into_iter();
+                while let (Some(k), Some(v)) = (it.next(), it.next()) {
+                    if k.holds_nan() {
+                        self.fail("NaN cannot be a map key");
+                        return;
+                    }
+                    entries.push((k, v));
+                }
+                HostValue::Dict(entries)
+            }
             Some(other) => {
                 self.stack.push(other);
                 self.fail(&format!(
@@ -383,6 +434,16 @@ pub unsafe extern "C" fn pb_builder_key(b: *mut PbBuilder, key: *const c_char) {
 #[unsafe(no_mangle)]
 pub extern "C" fn pb_builder_end_map(b: *mut PbBuilder) {
     with(b, |b| b.end("map"));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_builder_begin_dict(b: *mut PbBuilder) {
+    with(b, |b| b.begin(Open::Dict(Vec::new())));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_builder_end_dict(b: *mut PbBuilder) {
+    with(b, |b| b.end("dict"));
 }
 
 #[unsafe(no_mangle)]

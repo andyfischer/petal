@@ -469,7 +469,7 @@ lives in the `Heap` behind a typed id (a slot index plus a generation):
 ```
 Nil, Bool, Int(i64), Float(f64), Vec2(f64, f64), Dual { value, derivative },
 String(StringId), List(ListId), F64Array(F64ArrayId), Vec3(Vec3Id), Map(MapId),
-Closure(ClosureId), OverloadSet(..), NativeFunction(NativeFnId),
+Dict(DictId), Closure(ClosureId), OverloadSet(..), NativeFunction(NativeFnId),
 EnumVariant { tag: StringId, data: ListId }, Element(ElementId),
 Symbol(SymbolId), Cell(CellId), Handle(HandleVal), Pending(PendingId)
 ```
@@ -487,6 +487,14 @@ Notes for embedders:
   with `heap.vec3_value(x, y, z)` and read it with `heap.get_vec3(id)` →
   `[f64; 3]`. It is immutable, so the id behaves as a value. See
   [../dev/vec3.md](../dev/vec3.md).
+- `Map` is a **record** (`{a: 1}`, `type()` `"record"`); `Dict` is a **map**
+  (`Map()`, `type()` `"map"`), whose keys are any hashable value compared by
+  content. Build one with `heap.dict_from_pairs(pairs)` (a `Vec<(Value,
+  Value)>`; it fails on an unhashable key: a function, a pending value, NaN),
+  read it with `heap.get_dict(id)` (entries in insertion order: `.iter()`,
+  `.keys()`, `.values()`, `.len()`) or `heap.dict_get(id, key)`, and change
+  it with `heap.dict_set` / `heap.dict_remove`, which return a new id like the
+  other collection ops. `heap.as_dict(value)` is the checked accessor.
 - `Cell` is the box behind a `var`; it never reaches host code, because every
   read dereferences it (see [../syntax/var.md](../syntax/var.md#containment)).
 - `Pending` is an unresolved resource (loading or errored). Ordinary operations

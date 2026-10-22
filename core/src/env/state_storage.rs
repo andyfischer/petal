@@ -426,6 +426,7 @@ fn parse_id(v: &Json) -> Result<u64, String> {
 /// | record, any field order | `{"$petal": "record", "fields": [[name, value], …]}` |
 /// | class instance | `{"$petal": "instance", "class": name, "fields": […]}` |
 /// | enum variant | `{"$petal": "enum", "tag": name, "data": […]}` |
+/// | map (`Map()`) | `{"$petal": "map", "entries": [[key, value], …]}` |
 /// | f64 array | `{"$petal": "f64_array", "values": […]}` |
 /// | `vec2` / `vec3` | `{"$petal": "vec2", "x": …, "y": …}` |
 /// | dual number | `{"$petal": "dual", "value": …, "derivative": …}` |
@@ -469,6 +470,14 @@ fn encode(val: &Value, heap: &Heap, symbols: &SymbolTable) -> Result<Json, Strin
                     None => json!({ TAG: "record", "fields": fields }),
                 }
             }
+        }
+        Value::Dict(id) => {
+            let entries = heap
+                .get_dict(*id)
+                .iter()
+                .map(|(k, v)| Ok(json!([encode(&k, heap, symbols)?, encode(&v, heap, symbols)?])))
+                .collect::<Result<Vec<Json>, String>>()?;
+            json!({ TAG: "map", "entries": entries })
         }
         Value::EnumVariant { tag, data } => json!({
             TAG: "enum",
@@ -595,6 +604,17 @@ fn decode_tagged(
             } else {
                 Value::Map(heap.alloc_map(entries))
             }
+        }
+        "map" => {
+            let mut pairs = Vec::new();
+            for entry in list("entries")? {
+                let (k, v) = match entry.as_array().map(Vec::as_slice) {
+                    Some([k, v]) => (k, v),
+                    _ => return Err(bad()),
+                };
+                pairs.push((decode(k, heap, symbols)?, decode(v, heap, symbols)?));
+            }
+            Value::Dict(heap.dict_from_pairs(pairs)?)
         }
         "enum" => {
             let data = decode_all(list("data")?, heap, symbols)?;

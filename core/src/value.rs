@@ -5,7 +5,7 @@
 use std::fmt;
 
 use crate::handle::HandleVal;
-use crate::heap::{CellId, ElementId, F64ArrayId, ListId, MapId, StringId, Vec3Id};
+use crate::heap::{CellId, DictId, ElementId, F64ArrayId, ListId, MapId, StringId, Vec3Id};
 use crate::native_fn::NativeFnId;
 use crate::program::{ClosureId, OverloadSetId, Program, TermId};
 use crate::resource_table::{ResourceState, ResourceTable};
@@ -31,7 +31,11 @@ pub enum Value {
     List(ListId),
     /// Flat, unboxed contiguous array of f64 values.
     F64Array(F64ArrayId),
+    /// A record (`{a: 1}`): string-keyed fields. `type()` is `"record"`.
     Map(MapId),
+    /// A `map` (`Map()`): entries keyed by any hashable value, compared by
+    /// content, in insertion order. `type()` is `"map"`. See `crate::dict`.
+    Dict(DictId),
     Closure(ClosureId),
     /// Multi-arity function: dispatches to the right closure based on arg count.
     OverloadSet(OverloadSetId),
@@ -110,6 +114,7 @@ impl Value {
             Value::List(_) => "list",
             Value::F64Array(_) => "f64_array",
             Value::Map(_) => "record",
+            Value::Dict(_) => "map",
             Value::Closure(_) => "function",
             Value::OverloadSet(_) => "function",
             Value::NativeFunction(_) => "function",
@@ -163,6 +168,7 @@ impl fmt::Debug for Value {
             Value::List(id) => write!(f, "List({:?})", id),
             Value::F64Array(id) => write!(f, "F64Array({})", id.index()),
             Value::Map(id) => write!(f, "Map({:?})", id),
+            Value::Dict(id) => write!(f, "Dict({:?})", id),
             Value::Closure(id) => write!(f, "Closure({:?})", id),
             Value::OverloadSet(id) => write!(f, "OverloadSet({:?})", id),
             Value::NativeFunction(id) => write!(f, "NativeFunction({:?})", id),
@@ -222,6 +228,24 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
                 .map(|(k, v)| format!("{}: {}", k, value_to_debug_string(v, heap)))
                 .collect();
             format!("{{ {} }}", parts.join(", "))
+        }
+        // As the call that rebuilds it: `Map([[1, "one"], ["k", true]])`.
+        Value::Dict(id) => {
+            let d = heap.get_dict(*id);
+            if d.is_empty() {
+                return "Map()".to_string();
+            }
+            let parts: Vec<String> = d
+                .iter()
+                .map(|(k, v)| {
+                    format!(
+                        "[{}, {}]",
+                        value_to_debug_string(&k, heap),
+                        value_to_debug_string(&v, heap)
+                    )
+                })
+                .collect();
+            format!("Map([{}])", parts.join(", "))
         }
         Value::Element(id) => element_to_display_string(*id, heap),
         // Unreachable under the containment invariant (§6d): a `var` read
@@ -516,6 +540,21 @@ pub fn value_to_json_ctx(
                 .collect();
             serde_json::Value::Object(obj)
         }
+        // Keys are arbitrary values, so not object keys: a tagged list of
+        // `[key, value]` pairs, in order. `json_to_value` reads it back.
+        Value::Dict(id) => {
+            let entries: Vec<serde_json::Value> = heap
+                .get_dict(*id)
+                .iter()
+                .map(|(k, v)| {
+                    serde_json::Value::Array(vec![
+                        value_to_json_ctx(&k, heap, ctx),
+                        value_to_json_ctx(&v, heap, ctx),
+                    ])
+                })
+                .collect();
+            serde_json::json!({ "type": "map", "entries": entries })
+        }
         Value::Dual { value, derivative } => {
             serde_json::json!({ "type": "dual", "value": *value, "derivative": *derivative })
         }
@@ -554,13 +593,21 @@ pub fn value_to_json_ctx(
 
 /// Convert a JSON value to a Petal Value.
 /// Supports null, bool, number (int/float), string, array and object — plus
-/// the tagged vector objects [`value_to_json`] writes (`{"type": "vec2", "x",
-/// "y"}` and `{"type": "vec3", "x", "y", "z"}`), which come back as vectors so
-/// a vector survives a JSON round trip (`json_parse(json_stringify(v))`, a
-/// state dump and restore).
+/// the tagged objects [`value_to_json`] writes for the types JSON has no shape
+/// for: vectors (`{"type": "vec2", "x", "y"}` and `{"type": "vec3", "x", "y",
+/// "z"}`) and maps (`{"type": "map", "entries": [[k, v], ...]}`). Those come
+/// back as what they were, so they survive a JSON round trip
+/// (`json_parse(json_stringify(v))`, a state dump and restore).
 pub fn json_to_value(json: &serde_json::Value, heap: &mut Heap) -> Result<Value, String> {
     if let Some(v) = json_to_vector(json, heap) {
         return Ok(v);
+    }
+    if let Some(pairs) = json_map_entries(json) {
+        let mut kvs = Vec::with_capacity(pairs.len());
+        for pair in pairs {
+            kvs.push((json_to_value(&pair[0], heap)?, json_to_value(&pair[1], heap)?));
+        }
+        return Ok(Value::Dict(heap.dict_from_pairs(kvs)?));
     }
     match json {
         serde_json::Value::Null => Ok(Value::Nil),
@@ -613,6 +660,22 @@ fn json_to_vector(json: &serde_json::Value, heap: &mut Heap) -> Option<Value> {
         }
         _ => None,
     }
+}
+
+/// The `[key, value]` pairs of a tagged map object, if `json` is exactly the
+/// shape [`value_to_json`] writes for a map: `"type": "map"` and an
+/// `"entries"` list of two-element lists, and no other field. Anything looser
+/// stays a record.
+fn json_map_entries(json: &serde_json::Value) -> Option<Vec<&[serde_json::Value]>> {
+    let obj = json.as_object()?;
+    if obj.len() != 2 || obj.get("type")?.as_str()? != "map" {
+        return None;
+    }
+    obj.get("entries")?
+        .as_array()?
+        .iter()
+        .map(|e| e.as_array().filter(|p| p.len() == 2).map(Vec::as_slice))
+        .collect()
 }
 
 /// The numeric view of a value that `==` and `<` compare by: ints, floats, and
@@ -703,6 +766,20 @@ fn hash_into(val: &Value, heap: &Heap, h: &mut impl std::hash::Hasher) {
             }
             sum.hash(h);
         }
+        Value::Dict(id) => {
+            14u8.hash(h);
+            // Map equality ignores insertion order, like a record's.
+            let d = heap.get_dict(*id);
+            d.len().hash(h);
+            let mut sum = 0u64;
+            for (k, v) in d.iter() {
+                let mut eh = std::collections::hash_map::DefaultHasher::new();
+                hash_into(&k, heap, &mut eh);
+                hash_into(&v, heap, &mut eh);
+                sum = sum.wrapping_add(eh.finish());
+            }
+            sum.hash(h);
+        }
         Value::EnumVariant { tag, data } => {
             11u8.hash(h);
             heap.get_string(*tag).hash(h);
@@ -732,7 +809,8 @@ fn hash_into(val: &Value, heap: &Heap, h: &mut impl std::hash::Hasher) {
 /// - numbers compare exactly across Int and Float (no rounding to f64), and a
 ///   dual number compares by its primal value, against anything numeric;
 /// - lists, enum variants and elements compare element-wise; records compare
-///   by class and by key set and values, ignoring key order;
+///   by class and by key set and values, ignoring key order; maps compare by
+///   key set and values, ignoring insertion order;
 /// - functions, symbols, cells, handles and pendings compare by identity.
 pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
     if let (Some(x), Some(y)) = (as_num(a), as_num(b)) {
@@ -771,6 +849,18 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
                 && xs.iter().all(|(k, x)| match ys.get(k) {
                     Some(y) => values_equal(x, y, heap),
                     None => false,
+                })
+        }
+        (Value::Dict(a), Value::Dict(b)) => {
+            if a == b {
+                return true;
+            }
+            let (xs, ys) = (heap.get_dict(*a), heap.get_dict(*b));
+            // Every key of a map is hashable, so looking one up cannot fail.
+            xs.len() == ys.len()
+                && xs.iter().all(|(k, x)| match heap.dict_get(*b, k) {
+                    Ok(Some(y)) => values_equal(&x, &y, heap),
+                    _ => false,
                 })
         }
         (Value::F64Array(a), Value::F64Array(b)) => {

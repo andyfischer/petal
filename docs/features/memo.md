@@ -98,6 +98,21 @@ This covers `x = …`, `x += …`, `set x = …` and writes into the value
 nothing could honour it: the next hit returns what the initializer computed.
 Shadowing the name with a new `let x` is allowed.
 
+For the same reason, the cached value cannot hold a `var` cell. A memo whose
+initializer returns a closure over a local `var` would hand one counter to
+every caller with an equal key, which is shared mutable state under another
+name, so committing it is a runtime error:
+
+```text
+Error: A `memo` value cannot hold a `var` cell (here, through a closure over a
+`var`): ...
+```
+
+A closure over a top-level `state var` is allowed: every caller and every run
+already shares that one cell. A closure over a plain top-level `var` is not,
+because each run makes that cell afresh and a cached closure would keep the
+old one.
+
 ## How long an entry lives
 
 A frame-loop host (petal-sdl, Garden, an embedding engine) keeps entries from

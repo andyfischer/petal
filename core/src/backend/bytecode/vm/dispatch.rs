@@ -592,6 +592,9 @@ impl<'a> Vm<'a> {
                     // would initialize it to.
                     self.memo_note_effect();
                 } else {
+                    if *init && *memo {
+                        self.check_memo_value(val_v)?;
+                    }
                     // A `state var` being created: snapshot its initial
                     // contents so a `set` later this run counts as a change
                     // (see `Stack::finish_run_deps`).

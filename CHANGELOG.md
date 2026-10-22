@@ -68,7 +68,8 @@ way, for code written against an earlier checkout.
   is dropped after a run that does not touch it, left out of host state
   dumps, `--state-storage` and snapshots, and cleared by a reload that
   changes the program. A key that holds a pending value is computed and
-  never cached. `memo` is now a keyword. See
+  never cached, and a value that holds a `var` cell (a closure over a local
+  `var`) is a runtime error. `memo` is now a keyword. See
   [Cached results: `memo`](docs/features/memo.md).
 - Value semantics: lists, records and arrays are immutable values. Appending,
   index assignment and field assignment produce a new value, and the compiler

@@ -990,6 +990,71 @@ pub fn holds_local_cell(
     !locals.is_empty() && scan_for_local_cell(v, heap, closures, locals, &mut budget)
 }
 
+/// The first `var` cell `v` holds (directly, in a container, or through a
+/// closure's captures, to any depth) that `allowed` rejects.
+///
+/// This is the check on a `memo(key)` value (docs/features/memo.md): an entry
+/// is handed to every caller with an equal key, in this run and later ones,
+/// so a value carrying mutable state would share it between them (a closure
+/// over a local `var`), or keep a cell a later run no longer uses (a closure
+/// over a top-level `var`, which each run makes afresh). Unlike
+/// [`holds_local_cell`] there is no budget: it runs only on a miss, over a
+/// value the initializer just produced.
+pub fn find_cell(
+    v: &Value,
+    heap: &Heap,
+    closures: &ClosureTable,
+    allowed: &dyn Fn(CellId) -> bool,
+) -> Option<CellId> {
+    fn walk(
+        v: &Value,
+        heap: &Heap,
+        closures: &ClosureTable,
+        allowed: &dyn Fn(CellId) -> bool,
+        seen: &mut HashSet<ClosureId>,
+    ) -> Option<CellId> {
+        match v {
+            Value::Cell(id) => (!allowed(*id)).then_some(*id),
+            Value::List(id) => heap
+                .get_list(*id)
+                .iter()
+                .find_map(|e| walk(e, heap, closures, allowed, seen)),
+            Value::Map(id) => heap
+                .get_map(*id)
+                .values()
+                .find_map(|e| walk(e, heap, closures, allowed, seen)),
+            Value::Dict(id) => heap
+                .get_dict(*id)
+                .all_values()
+                .find_map(|e| walk(&e, heap, closures, allowed, seen)),
+            Value::EnumVariant { data, .. } => walk(&Value::List(*data), heap, closures, allowed, seen),
+            Value::Element(id) => walk(&Value::Map(heap.get_element_props(*id)), heap, closures, allowed, seen)
+                .or_else(|| walk(&Value::List(heap.get_element_children(*id)), heap, closures, allowed, seen)),
+            Value::Closure(id) => {
+                if !closures.is_closure_live(*id) || !seen.insert(*id) {
+                    return None;
+                }
+                closures
+                    .closure(*id)
+                    .captures
+                    .iter()
+                    .find_map(|c| walk(c, heap, closures, allowed, seen))
+            }
+            Value::OverloadSet(id) => {
+                if !closures.is_set_live(*id) {
+                    return None;
+                }
+                closures
+                    .set(*id)
+                    .iter()
+                    .find_map(|e| walk(&Value::Closure(e.closure_id), heap, closures, allowed, seen))
+            }
+            _ => None,
+        }
+    }
+    walk(v, heap, closures, allowed, &mut HashSet::new())
+}
+
 /// Node budget for one [`holds_local_cell`] scan; past it the scan assumes
 /// the worst.
 const LOCAL_CELL_SCAN_BUDGET: usize = 256;

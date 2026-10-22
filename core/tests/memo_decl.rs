@@ -169,6 +169,30 @@ fn a_key_holding_a_pending_value_is_not_cached() {
     assert_eq!(w.memo_entries(), 0);
 }
 
+/// A cached value is handed to every caller with an equal key, so it must not
+/// carry a `var` cell: a closure over a local `var` would be one counter that
+/// every caller bumps. A closure over a `state var` (one cell for every caller
+/// and every run already) and over plain values is fine.
+#[test]
+fn a_value_holding_a_var_cell_is_refused() {
+    let mut env = Env::new();
+    env.set_echo(false);
+    let src = "fn make()\n  var n = 0\n  fn()\n    set n = (get n) + 1\n    get n\n  end\nend\n\
+               fn counter(k)\n  memo(k) c = make()\n  c\nend\n\
+               print(counter(1)(), counter(1)())\n";
+    let err = env.run_source(src).unwrap_err();
+    assert!(err.contains("cannot hold a `var` cell"), "{err}");
+
+    let src = "state var sel = 0\n\
+               fn handler(k)\n  memo(k) h = fn() set sel = k end\n  h\nend\n\
+               fn adder(k)\n  memo(k) a = fn(x) x + k end\n  a\nend\n\
+               handler(3)()\nprint(get sel, adder(2)(5), adder(2)(1))\n";
+    let mut w = world(src);
+    assert_eq!(w.frame(), ["3 7 3"]);
+    assert_eq!(w.frame(), ["3 7 3"]);
+    assert_eq!(w.memo_entries(), 2);
+}
+
 /// A memoized scope that is replayed never executes the declaration, but the
 /// entry it touched is retained (docs/dev/state-call-paths.md §3.3a), so it
 /// survives the sweep and the scope stays replayable.

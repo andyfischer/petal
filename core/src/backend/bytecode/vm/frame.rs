@@ -348,4 +348,25 @@ impl<'a> Vm<'a> {
         };
         Ok(RuntimeStateKey { base, path })
     }
+
+    /// Refuse a `memo(key)` value that carries a `var` cell, before it is
+    /// committed. An entry is shared by every caller with an equal key and
+    /// kept across runs, so a cell in it (a closure over a local `var`) would
+    /// be mutable state shared between call paths, which `memo` exists to
+    /// rule out — or (a closure over a top-level `var`) a cell a later run no
+    /// longer uses. A `state var`'s cell is the one cell every caller and
+    /// every run already shares, so a closure over one is allowed.
+    pub(super) fn check_memo_value(&self, value: Value) -> Result<(), String> {
+        let state = &self.stack.state;
+        let is_state_cell =
+            |cell: crate::heap::CellId| state.iter().any(|(k, v)| !k.is_memo() && *v == Value::Cell(cell));
+        match crate::memo::find_cell(&value, self.heap, self.closures, &is_state_cell) {
+            None => Ok(()),
+            Some(_) => Err("A `memo` value cannot hold a `var` cell (here, through a closure \
+                 over a `var`): the cached value is shared by every caller with an equal \
+                 key and kept across runs, so the cell would be mutable state they all share. \
+                 Compute it with `let`, or keep shared mutable data in a top-level `state var`"
+                .to_string()),
+        }
+    }
 }

@@ -1,0 +1,252 @@
+// ─────────────────────────────────────────────────────────────────────────
+// data — Campfire's workspace: the people, the channels, the seeded history,
+// the afternoon's scripted chatter and the pools teammates reply from.
+//
+// Everything here is constant data plus pure helpers over it. The app keeps
+// the live message list in `state`; this module only says what the
+// workspace looked like at 2:32 PM on launch week, and what happens next.
+// ─────────────────────────────────────────────────────────────────────────
+
+// The simulated clock starts at 2:32 PM; every message stamps itself with
+// minutes into the day.
+pub let START_MIN = 872
+pub let ME = "jordan"
+
+// ── People ───────────────────────────────────────────────────────────────
+
+const PEOPLE = {
+  jordan: {name: "Jordan Lee", role: "Product engineer", color: #4f6bed, away: false},
+  maya: {name: "Maya Chen", role: "Design lead", color: #d9488f, away: false},
+  theo: {name: "Theo Okafor", role: "Sync engine", color: #2f9e77, away: false},
+  priya: {name: "Priya Natarajan", role: "Product manager", color: #c2711b, away: false},
+  lars: {name: "Lars Becker", role: "Platform", color: #7b5bd6, away: true},
+  ines: {name: "Ines Duarte", role: "Marketing", color: #d4445c, away: false},
+  kenji: {name: "Kenji Watanabe", role: "Support", color: #1f8fb8, away: true},
+}
+
+pub fn person(key: string) -> record
+  field(PEOPLE, key, {name: key, role: "", color: #8a8f9c, away: true})
+end
+
+pub fn first_name(key: string) -> string
+  if key == ME then "You" else split(person(key).name, " ")[0] end
+end
+
+pub fn initials(key: string) -> string
+  let parts = split(person(key).name, " ")
+  let a = char_slice(parts[0], 0, 1)
+  if len(parts) > 1 then a ++ char_slice(parts[len(parts) - 1], 0, 1) else a end
+end
+
+// ── Channels ─────────────────────────────────────────────────────────────
+
+const ALL = ["jordan", "maya", "theo", "priya", "lars", "ines", "kenji"]
+
+pub const CHANNELS = [
+  {id: "general", kind: "channel", name: "general", topic: "Company-wide news, all-hands, and the occasional cake", members: ALL},
+  {id: "launch", kind: "channel", name: "launch-lumen", topic: "Lumen 2.0 ships Thursday · runbook is pinned", members: ALL},
+  {id: "design", kind: "channel", name: "design", topic: "Crits, specs and Figma links", members: ["jordan", "maya", "kenji", "priya"]},
+  {id: "eng", kind: "channel", name: "eng-platform", topic: "CI, infra, on-call · Theo is on call from 6pm", members: ["jordan", "theo", "lars"]},
+  {id: "random", kind: "channel", name: "random", topic: "Sourdough, coffee machines and other emergencies", members: ALL},
+  {id: "dm-maya", kind: "dm", name: "Maya Chen", topic: "Design lead", members: ["jordan", "maya"]},
+  {id: "dm-theo", kind: "dm", name: "Theo Okafor", topic: "Sync engine", members: ["jordan", "theo"]},
+  {id: "dm-priya", kind: "dm", name: "Priya Natarajan", topic: "Product manager", members: ["jordan", "priya"]},
+]
+
+pub fn channel(id: string) -> record
+  find(CHANNELS, fn(c) -> c.id == id) ?? CHANNELS[0]
+end
+
+pub fn channel_index(id: string) -> int
+  let ids = map(CHANNELS, fn(c) -> c.id)
+  max(0, index_of(ids, id))
+end
+
+// The other person in a direct message.
+pub fn dm_peer(c: record) -> string
+  find(c.members, fn(k) -> k != ME) ?? ME
+end
+
+// ── Time ─────────────────────────────────────────────────────────────────
+
+pub fn clock_text(minute: int) -> string
+  let h = (minute / 60) % 24
+  let m = minute % 60
+  let h12 = if h % 12 == 0 then 12 else h % 12 end
+  let ampm = if h < 12 then "AM" else "PM" end
+  "{h12}:{pad_start(str(m), 2, "0")} {ampm}"
+end
+
+// ── Seeded history ───────────────────────────────────────────────────────
+// day 0 is yesterday, day 1 today.
+
+fn m(ch: string, who: string, day: int, at: int, text: string, reacts: list, thread: list) -> record
+  {id: 0, ch: ch, who: who, day: day, at: at, text: text, reacts: reacts, thread: thread, born: -1.0}
+end
+
+fn r(e: string, who: list) -> record
+  {e: e, who: who}
+end
+
+fn t(who: string, at: int, text: string) -> record
+  {who: who, at: at, text: text, born: -1.0}
+end
+
+fn hm(h: int, mi: int) -> int
+  h * 60 + mi
+end
+
+const SEED = [
+  m("general", "priya", 0, hm(15, 0), "Please welcome @kenji to the support team! He's spent four years at Northwind and already knows our docs better than we do 👋", [r("👋", ["maya", "theo", "lars", "ines", "jordan"]), r("🎉", ["maya", "ines"])], []),
+  m("general", "ines", 1, hm(9, 0), "All-hands moved to Friday at 3pm so we can celebrate the launch properly.", [r("🙌", ["theo", "maya"])], []),
+  m("general", "kenji", 1, hm(12, 5), "Lunch order for Thursday: tacos or Thai? React to vote 🌮 / 🍜", [r("🌮", ["theo", "lars", "maya", "ines", "priya"]), r("🍜", ["kenji", "jordan"])], []),
+  m("general", "theo", 1, hm(12, 7), "Tacos. Obviously.", [r("😂", ["lars", "ines"])], []),
+  m("general", "lars", 1, hm(13, 40), "Parking garage level 2 is closed Thursday for resurfacing — level 3 or the street.", [], []),
+
+  m("launch", "priya", 0, hm(16, 2), "Go/no-go is tomorrow at 11. Bring blockers, not status updates 🙏", [], []),
+  m("launch", "theo", 0, hm(16, 5), "Two open P1s on the sync engine. Both have fixes in review.", [], []),
+  m("launch", "lars", 0, hm(16, 7), "I'll pair with Theo on the conflict-resolution one tonight.", [r("💪", ["theo", "priya"])], []),
+  m("launch", "maya", 0, hm(17, 40), "Final marketing screenshots are in the drive — dark mode included this time.", [r("🎉", ["ines", "priya", "jordan"])], []),
+  m("launch", "priya", 1, hm(9, 4), "Morning! Go/no-go moved to 11:30 — legal wants one more pass on the privacy page.", [], []),
+  m("launch", "priya", 1, hm(9, 5), "Agenda: P1 status, docs freeze, comms timeline. That's it.", [], []),
+  m("launch", "theo", 1, hm(9, 31), "Both P1 fixes merged overnight. `sync-engine 2.0.0-rc.4` is on staging and the soak test is running.", [r("🚀", ["priya", "lars", "maya", "jordan"]), r("👀", ["kenji"])],
+    [t("lars", hm(9, 40), "Confirmed on staging, conflict rate is flat."), t("priya", hm(9, 45), "Huge. Thank you both 🙌"), t("jordan", hm(10, 2), "Ran the offline-edit scenario on my laptop — clean.")]),
+  m("launch", "lars", 1, hm(9, 33), "Soak test has been running for 9 hours with zero conflicts logged.", [], []),
+  m("launch", "ines", 1, hm(10, 12), "Blog post draft is ready for review. I kept it under 800 words, promise.", [r("😂", ["theo"])], []),
+  m("launch", "ines", 1, hm(10, 13), "Embargo lifts Thursday 9:00 PT. The press kit goes out to the list at 8:30.", [], []),
+  m("launch", "maya", 1, hm(10, 48), "Pushed the new changelog illustrations. The waveform one is my favourite.", [r("😍", ["ines", "kenji", "jordan"])], []),
+  m("launch", "priya", 1, hm(11, 42), "We're a GO for Thursday 🎉 Thanks everyone — this one was a long road.", [r("🎉", ["theo", "lars", "maya", "ines", "kenji", "jordan"]), r("🙌", ["theo", "maya", "lars"])], []),
+  m("launch", "theo", 1, hm(11, 44), "Ship it.", [], []),
+  m("launch", "kenji", 1, hm(13, 15), "Support macros for 2.0 are drafted. @jordan could you sanity-check the migration FAQ when you get a minute?", [], []),
+  m("launch", "jordan", 1, hm(13, 22), "On it — I'll leave comments inline by end of day.", [r("🙏", ["kenji"])], []),
+  m("launch", "lars", 1, hm(14, 20), "Release branch is cut: `release/2.0`. Cherry-picks only from here on.", [r("✅", ["theo", "priya"])], []),
+  m("launch", "priya", 1, hm(14, 28), "Docs freeze at 5pm today. After that, changes go through me.\nIf you're unsure whether something counts as a change: it does.", [r("👍", ["maya", "theo"])], []),
+
+  m("design", "maya", 1, hm(9, 40), "Moodboard for the onboarding refresh is up — leaning warmer, fewer gradients, more paper.", [r("😍", ["kenji", "priya"])], []),
+  m("design", "kenji", 1, hm(9, 52), "Love the warmer palette. The empty states could use the same treatment.", [], []),
+  m("design", "maya", 1, hm(10, 5), "Agreed. I'll do a pass on empty states this afternoon.", [], []),
+  m("design", "jordan", 1, hm(11, 10), "Can we keep the illustration line weight consistent with the marketing site?", [], []),
+  m("design", "maya", 1, hm(11, 14), "Yes — 1.5px at 1x. I'll write it into the spec.", [r("👍", ["jordan"])], []),
+  m("design", "maya", 1, hm(14, 2), "The new settings page is in Figma. Comments welcome, especially on the danger zone!", [], []),
+
+  m("eng", "lars", 1, hm(8, 58), "CI build times are down 18% since we moved the caches to the new bucket.", [r("🎉", ["theo", "jordan"])], []),
+  m("eng", "theo", 1, hm(9, 20), "Nice. Are we still seeing the flaky `test_presence_reconnect`?", [], []),
+  m("eng", "lars", 1, hm(9, 22), "Once in the last 40 runs. I'll quarantine it if it fires again.", [], []),
+  m("eng", "theo", 1, hm(12, 30), "Postgres 16 upgrade on staging is scheduled for Friday at 7am.", [], []),
+  m("eng", "jordan", 1, hm(12, 41), "I'll watch the migration dashboards Friday morning.", [r("🙏", ["theo"])], []),
+  m("eng", "lars", 1, hm(13, 58), "Reminder: on-call rotation swaps to Theo at 6pm.", [], []),
+
+  m("random", "lars", 1, hm(10, 30), "Someone left a sourdough starter in the office fridge labelled 'Gerald'.", [], []),
+  m("random", "maya", 1, hm(10, 31), "Gerald is mine. Please feed him if he looks sad.", [r("😂", ["lars", "ines", "theo", "kenji", "jordan"])], []),
+  m("random", "ines", 1, hm(11, 50), "The coffee machine on 3 is fixed!!", [r("☕", ["theo", "priya", "maya", "jordan"])], []),
+
+  m("dm-maya", "maya", 1, hm(11, 20), "Thanks for the note on line weights — it saved me a round of revisions.", [], []),
+  m("dm-maya", "jordan", 1, hm(11, 22), "Of course. The new set looks great.", [r("💜", ["maya"])], []),
+  m("dm-theo", "theo", 0, hm(18, 10), "Could you review the rc.4 PR when you get a chance? No rush.", [], []),
+  m("dm-theo", "jordan", 0, hm(18, 30), "On it first thing tomorrow.", [], []),
+  m("dm-priya", "priya", 1, hm(8, 45), "Do you have ten minutes before go/no-go?", [], []),
+  m("dm-priya", "jordan", 1, hm(8, 47), "Yep, grabbing coffee — five minutes.", [], []),
+]
+
+pub fn seed_messages() -> list
+  let out = []
+  for i in range(0, len(SEED)) do
+    out = append(out, {...SEED[i], id: i + 1})
+  end
+  out
+end
+
+// What has been read when the app opens: everything except the newest
+// message in #general and in #design.
+pub fn seed_seen(msgs: list) -> record
+  let seen = {}
+  for c in CHANNELS do
+    let n = count(msgs, fn(x) -> x.ch == c.id)
+    let unread = if c.id == "general" || c.id == "design" then 1 else 0 end
+    seen = {...seen, [c.id]: n - unread}
+  end
+  seen
+end
+
+// ── The afternoon's script ───────────────────────────────────────────────
+// `at` is seconds after 2:32 PM. Each line is announced by its author typing
+// for `typing` seconds first. `thread` names the seeded message (by its text
+// prefix) a thread reply goes under.
+
+fn ev(at: num, ch: string, who: string, typing: num, text: string) -> record
+  {at: at, ch: ch, who: who, typing: typing, text: text, thread: ""}
+end
+
+pub const SCRIPT = [
+  ev(6.0, "launch", "theo", 3.0, "Staging smoke tests passed on `release/2.0` ✅"),
+  ev(17.0, "dm-maya", "maya", 2.5, "Got a sec? I want to walk you through the onboarding flow before I share it wider."),
+  ev(29.0, "design", "kenji", 3.0, "Settings page looks great. Should the danger zone be red, or just set apart with more space?"),
+  ev(42.0, "launch", "priya", 3.5, "@jordan can you confirm the support macros are linked from the migration FAQ?"),
+  {...ev(56.0, "launch", "lars", 2.5, "Soak test crossed 14 hours. Still zero conflicts."), thread: "Both P1 fixes"},
+  ev(71.0, "general", "ines", 2.0, "Cake in the kitchen for Maya's three-year anniversary 🎂"),
+  ev(86.0, "eng", "lars", 3.0, "Quarantined `test_presence_reconnect`; the ticket is ENG-4127."),
+  ev(101.0, "random", "maya", 2.0, "Gerald update: he has doubled in size. Concerned."),
+  ev(122.0, "launch", "theo", 3.5, "Release notes PR is up — would love a second pair of eyes before the freeze."),
+  ev(150.0, "dm-theo", "theo", 2.0, "Thanks for the review yesterday — merged 🙏"),
+]
+
+// ── Replies ──────────────────────────────────────────────────────────────
+// A teammate answering something you wrote picks from the pool its words
+// suggest; `pick` chooses deterministically from the message number.
+
+const POOLS = [
+  {keys: ["thank", "thx", "appreciate"], lines: ["Anytime 🙌", "Of course!", "Happy to help."]},
+  {keys: ["ship", "launch", "release", "thursday"], lines: ["Thursday can't come soon enough 🚀", "Fingers crossed for a very boring launch day.", "We're in good shape. Runbook's pinned if anyone needs it."]},
+  {keys: ["lunch", "coffee", "taco", "cake", "gerald"], lines: ["Count me in ☕", "Tacos. Always tacos 🌮", "I'm already in the kitchen."]},
+  {keys: ["lgtm", "looks good", "great", "nice", "love"], lines: ["Thanks! Merging now.", "Appreciate it 🙏", "That means a lot — thank you."]},
+  {keys: ["bug", "broken", "error", "fail", "flaky"], lines: ["Ugh. Can you drop the logs in a thread? I'll take a look.", "On it — I'll open a ticket and link it here.", "Reproduced it. Fix incoming."]},
+  {keys: ["?"], lines: ["Good question — I think so, but let me double-check and get back to you.", "Yes! I'll confirm in a bit.", "Not yet. I can pick it up after the 3:30.", "I'd say yes, but Priya has the final call."]},
+]
+
+const GENERIC = ["Makes sense to me.", "👍 on it.", "Noted — I'll follow up in a bit.", "Agreed. Let's do it.", "Ha, fair point.", "Sounds good, thanks for flagging."]
+
+pub fn pick(seed: int, salt: int, n: int) -> int
+  hash_int(seed, salt) % max(1, n)
+end
+
+pub fn reply_for(text: string, seed: int, who: string) -> string
+  let low = lower(text)
+  // A message that ends on a question gets an answer, whatever else it says.
+  if ends_with(trim(low), "?") then
+    let qs = last(POOLS).lines
+    return qs[pick(seed, hash_str(who) % 1000, len(qs))]
+  end
+  let pool = find(POOLS, fn(p) -> any(p.keys, fn(k) -> index_of(low, k) >= 0))
+  let lines = if pool != nil then pool.lines else GENERIC end
+  lines[pick(seed, hash_str(who) % 1000, len(lines))]
+end
+
+// Who answers you in a channel: whoever you named, else anyone there but
+// you, preferring whoever spoke last.
+pub fn responder(c: record, text: string, last_other: string, seed: int) -> string
+  if c.kind == "dm" then return dm_peer(c) end
+  let others = filter(c.members, fn(k) -> k != ME)
+  let named = addressed(c, text)
+  if named != "" then return named end
+  if last_other != "" && pick(seed, 3, 3) > 0 then last_other else others[pick(seed, 5, len(others))] end
+end
+
+// The teammate in `c` that `text` names, by @handle or first name; "" for none.
+pub fn addressed(c: record, text: string) -> string
+  let low = lower(text)
+  let named = find(c.members, fn(k) -> k != ME && (index_of(low, "@" ++ k) >= 0 || index_of(low, lower(first_name(k))) >= 0))
+  named ?? ""
+end
+
+// Someone else who will leave a reaction on your message.
+pub fn reactor(c: record, not_who: string, seed: int) -> string
+  let others = filter(c.members, fn(k) -> k != ME && k != not_who)
+  if len(others) == 0 then "" else others[pick(seed, 11, len(others))] end
+end
+
+pub const QUICK = ["👍", "🎉", "👀", "🙌"]
+
+// Whether `text` mentions you.
+pub fn mentions_me(text: string) -> bool
+  index_of(lower(text), "@jordan") >= 0
+end

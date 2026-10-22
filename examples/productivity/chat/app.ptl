@@ -1,0 +1,1255 @@
+// ─────────────────────────────────────────────────────────────────────────
+// Campfire — a team chat client, drawn as a Garden panel.
+//
+// Exercises: a long, variable-height scrolling feed that sticks to the bottom
+// while new messages arrive and stays put while you read history; a
+// multi-line composer with real text editing (the prelude's text area:
+// caret, selection, clipboard, undo, growing from one row to eight);
+// asynchronous teammates driven off a simulated clock (typing indicators,
+// replies, reactions, thread replies, unread and mention badges); threads in
+// a side pane; reactions; per-channel drafts; a context menu.
+//
+// The workspace, the seeded history and the scripted afternoon live in
+// data.ptl. This file is the clock, input and paint.
+//
+// Run:  tools/run-example.ts chat   (or garden --headless --debug-port 0 --init layout.ptl)
+// ─────────────────────────────────────────────────────────────────────────
+
+import text_layout
+import ./data as d
+import ui
+import garden
+
+// ── Palette ──────────────────────────────────────────────────────────────
+// A deep ink sidebar against warm paper: navigation recedes, talk reads.
+
+let SIDE = #191b29
+let SIDE_HOT = #24273a
+let SIDE_RULE = #2a2d41
+let SIDE_TEXT = #d3d5e6
+let SIDE_DIM = #9094ad
+let SIDE_FAINT = #62667f
+
+let PAPER = #ffffff
+let WASH = #f7f7fa
+let INK = #1c1e2a
+let INK_2 = #3f4354
+let MUTED = #6c7083
+let FAINT = #a2a6b4
+let RULE = #e6e7ee
+let RULE_SOFT = #efeff4
+let ACCENT = #5b5fd6
+let ACCENT_HI = #6c70e4
+let ACCENT_SOFT = #eceefd
+let MENTION_BG = #fff6dc
+let MENTION_BAR = #e6a817
+let MENTION_INK = #9a5b00
+let CODE_BG = #f2f1f6
+let CODE_INK = #c3305b
+let RED = #e5484d
+let GREEN = #2fb37a
+let FRESH = #e3e6ff
+let WHITE = #ffffff
+
+// ── Type ─────────────────────────────────────────────────────────────────
+
+fn st(size: num, color: record) -> record
+  {size: size, color: color, font: "ui"}
+end
+
+fn sb(size: num, color: record) -> record
+  {size: size, color: color, font: "ui", weight: 700}
+end
+
+fn caps(color: record) -> record
+  {size: 11, color: color, font: "ui", weight: 700, spacing: 0.9}
+end
+
+const BODY = st(15, INK_2)
+let LINE = 22                 // a body row in the feed
+let LGAP = 3                  // the composer's extra leading
+
+// ── Metrics ──────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+let SIDE_W = 256
+let HEADER_H = 64
+let THREAD_W = 384
+let AV = 36                   // an avatar's side
+let GUTTER = 72               // where message text starts, from the feed's left
+let BAR_W = 5 * 32 + 8        // the hover action bar
+let MAX_ROWS = 8              // the composer grows to this many rows, then scrolls
+
+// ── State ────────────────────────────────────────────────────────────────
+
+state msgs = d.seed_messages()
+state next_id = len(msgs) + 1
+state seen = d.seed_seen(msgs)          // per channel: how many messages have been read
+state ch = "launch"
+state entry_seen = 999                  // where the "new" divider sits in this visit
+state drafts = {}                       // per channel: the unsent composer text
+state focus = "composer"                // "composer", "thread" or ""
+state thread_id = 0                     // the message whose thread is open, 0 for none
+state thread_draft = ""
+
+state clock = 0.0                       // simulated seconds since 2:32 PM
+state queue = initial_queue()           // scheduled teammate activity
+state typing = []                       // {ch, who, thread, until}
+state arrivals = 0                      // messages teammates have posted this session
+state sent_n = 0                        // messages you have posted
+state reacted_n = 0                     // reactions you have toggled
+
+state scrolls = {}                      // per channel: {top, stuck}
+state view_top = 0.0                    // the feed's drawn scroll, easing toward the target
+state snap = true                       // the next frame jumps rather than eases
+state last_fr = {w: 0, h: 0}            // the feed's size last frame
+state t_top = 0.0                       // the thread pane's scroll
+state t_stuck = true
+state refocus = ""                      // a composer to hand the keyboard to next frame
+state hover_id = 0                      // the message showing the action bar
+state menu = menu_state()
+state toast = {msg: "", left: 0.0}
+
+// ── The scheduler ────────────────────────────────────────────────────────
+
+// The scripted afternoon, as typing and posting events on one queue.
+fn initial_queue() -> list
+  let out = []
+  for s in d.SCRIPT do
+    out = append(out, {at: s.at - s.typing, kind: "type", ch: s.ch, who: s.who, thread: 0, until: s.at, prefix: s.thread, text: "", e: "", target: 0})
+    out = append(out, {at: s.at, kind: "post", ch: s.ch, who: s.who, thread: 0, until: 0.0, prefix: s.thread, text: s.text, e: "", target: 0})
+  end
+  out
+end
+
+fn ev_type(at: num, ch: string, who: string, thread: int, until: num) -> record
+  {at: at, kind: "type", ch: ch, who: who, thread: thread, until: until, prefix: "", text: "", e: "", target: 0}
+end
+
+fn ev_post(at: num, ch: string, who: string, thread: int, text: string) -> record
+  {at: at, kind: "post", ch: ch, who: who, thread: thread, until: 0.0, prefix: "", text: text, e: "", target: 0}
+end
+
+fn ev_react(at: num, target: int, who: string, e: string) -> record
+  {at: at, kind: "react", ch: "", who: who, thread: 0, until: 0.0, prefix: "", text: "", e: e, target: target}
+end
+
+// What teammates do after you post: one of them types and answers (in the
+// thread when you wrote in one), and another reacts.
+fn schedule_replies(q: list, c: record, text: string, ms: list, target: int, thread: int, now: num, seed: int) -> list
+  let mine = filter(ms, fn(x) -> x.ch == c.id && x.who != d.ME)
+  let last_other = if len(mine) > 0 then last(mine).who else "" end
+  let parent = if thread != 0 then find(ms, fn(x) -> x.id == thread) else nil end
+  // Whoever you named answers; in a thread, otherwise, whoever started it.
+  let named = d.addressed(c, text)
+  let who = if named != "" then
+    named
+  elsif parent != nil && parent.who != d.ME then
+    parent.who
+  else
+    d.responder(c, text, last_other, seed)
+  end
+  let reply = d.reply_for(text, seed, who)
+  let start = now + 1.2 + d.pick(seed, 13, 10) * 0.12
+  let done = start + min(4.0, 1.4 + char_len(reply) * 0.035)
+  let out = append(q, ev_type(start, c.id, who, thread, done))
+  out = append(out, ev_post(done, c.id, who, thread, reply))
+  let fan = d.reactor(c, who, seed)
+  if thread == 0 && fan != "" then
+    out = append(out, ev_react(now + 0.9 + d.pick(seed, 17, 8) * 0.1, target, fan, d.QUICK[d.pick(seed, 19, len(d.QUICK))]))
+  end
+  out
+end
+
+// ── Message transforms ───────────────────────────────────────────────────
+
+fn toggle_react(ms: list, id: int, e: string, who: string, only_add: bool) -> list
+  for x in ms do
+    if x.id == id then react_one(x, e, who, only_add) else x end
+  end
+end
+
+fn react_one(x: record, e: string, who: string, only_add: bool) -> record
+  let has = find(x.reacts, fn(r) -> r.e == e)
+  let reacts = if has == nil then
+    append(x.reacts, {e: e, who: [who]})
+  else
+    let rs = for r in x.reacts do
+      if r.e != e then
+        r
+      elsif contains(r.who, who) then
+        if only_add then r else {e: e, who: filter(r.who, fn(k) -> k != who)} end
+      else
+        {e: e, who: append(r.who, who)}
+      end
+    end
+    filter(rs, fn(r) -> len(r.who) > 0)
+  end
+  {...x, reacts: reacts}
+end
+
+fn add_thread_reply(ms: list, id: int, reply: record) -> list
+  for x in ms do
+    if x.id == id then {...x, thread: append(x.thread, reply)} else x end
+  end
+end
+
+fn trim_text(s: string) -> string
+  let cs = chars(s)
+  let a = 0
+  let b = len(cs)
+  while a < b && (cs[a] == " " || cs[a] == "\n") do a += 1 end
+  while b > a && (cs[b - 1] == " " || cs[b - 1] == "\n") do b -= 1 end
+  char_slice(s, a, b)
+end
+
+// ── Rich text: `code` and @mentions ──────────────────────────────────────
+
+fn is_word(c: string) -> bool
+  let o = ord(c)
+  (o >= 97 && o <= 122) || (o >= 65 && o <= 90) || (o >= 48 && o <= 57) || c == "_" || c == "-"
+end
+
+// The text as shown (backticks dropped) and the spans that are code or a
+// mention, as character ranges in what is shown.
+fn parse_rich(text: string) -> record
+  let cs = chars(text)
+  let n = len(cs)
+  let out = []
+  let spans = []
+  let in_code = false
+  let code_a = 0
+  let i = 0
+  while i < n do
+    let c = cs[i]
+    if c == "`" then
+      if in_code then
+        spans = append(spans, {a: code_a, b: len(out), kind: "code"})
+      else
+        code_a = len(out)
+      end
+      in_code = !in_code
+      i += 1
+      continue
+    end
+    if c == "@" && !in_code then
+      let j = i + 1
+      while j < n && is_word(cs[j]) do j += 1 end
+      if j > i + 1 then
+        let name = join(slice(cs, i + 1, j), "")
+        let kind = if lower(name) == d.ME then "me" else "mention" end
+        spans = append(spans, {a: len(out), b: len(out) + j - i, kind: kind})
+        for k in range(i, j) do out = append(out, cs[k]) end
+        i = j
+        continue
+      end
+    end
+    out = append(out, c)
+    i += 1
+  end
+  {text: join(out, ""), spans: spans}
+end
+
+fn span_at(spans: list, at: int) -> string
+  let s = find(spans, fn(x) -> at >= x.a && at < x.b)
+  if s == nil then "" else s.kind end
+end
+
+// One wrapped row, cut where the spans start and end.
+fn draw_rich_row(text: string, row: record, spans: list, x: num, y: num, style: record) -> nil
+  let cuts = [row.start, row.end]
+  for s in spans do
+    if s.a > row.start && s.a < row.end then cuts = append(cuts, s.a) end
+    if s.b > row.start && s.b < row.end then cuts = append(cuts, s.b) end
+  end
+  cuts = sort(cuts)
+  let cx = float(x)
+  for k in range(0, len(cuts) - 1) do
+    let a = cuts[k]
+    let b = cuts[k + 1]
+    if b <= a then continue end
+    let seg = char_slice(text, a, b)
+    let w = text_advance(seg, style)
+    let kind = span_at(spans, a)
+    if kind == "code" then
+      // Code sits in a chip with a little air either side of it.
+      cx += 3
+      draw_rect_rounded(cx - 3, y + 1, w + 6, LINE - 2, 4, CODE_BG)
+      draw_text(seg, {x: cx, y: y}, {...style, color: CODE_INK})
+      cx += 3
+    elsif kind == "me" then
+      draw_rect_rounded(cx - 2, y + 1, w + 4, LINE - 2, 4, #fde7a6)
+      draw_text(seg, {x: cx, y: y}, {...style, color: MENTION_INK})
+    elsif kind == "mention" then
+      draw_rect_rounded(cx - 2, y + 1, w + 4, LINE - 2, 4, ACCENT_SOFT)
+      draw_text(seg, {x: cx, y: y}, {...style, color: ACCENT})
+    else
+      draw_text(seg, {x: cx, y: y}, style)
+    end
+    cx += w
+  end
+end
+
+// ── Feed layout ──────────────────────────────────────────────────────────
+// Every message is laid out once per frame into an item with its height, so
+// the scroll range, the hit testing and the paint all read the same numbers.
+
+fn reacts_h(m: record) -> int
+  if len(m.reacts) > 0 then 34 else 0 end
+end
+
+fn thread_h(m: record) -> int
+  if len(m.thread) > 0 then 36 else 0 end
+end
+
+// A message starts a new group unless the same person spoke within five
+// minutes on the same day.
+fn starts_group(prev, m: record) -> bool
+  prev == nil || prev.who != m.who || prev.day != m.day || m.at - prev.at > 5
+end
+
+fn layout_msgs(list: list, w: num, new_at: int, intro_h: int, summaries: bool) -> record
+  let items = []
+  let y = intro_h
+  let prev = nil
+  for i in range(0, len(list)) do
+    let m = list[i]
+    if prev == nil || prev.day != m.day then
+      items = append(items, {kind: "day", y: y, h: 44, m: m, head: false, rich: nil, rows: [], i: i})
+      y += 44
+      prev = nil
+    end
+    if i == new_at then
+      items = append(items, {kind: "new", y: y, h: 16, m: m, head: false, rich: nil, rows: [], i: i})
+      y += 16
+    end
+    let head = starts_group(prev, m)
+    let rich = parse_rich(m.text)
+    let rows = text_wrap_rows(rich.text, BODY, float(w))
+    let extra = reacts_h(m) + (if summaries then thread_h(m) else 0 end)
+    let h = if head then 10 + 24 + len(rows) * LINE + extra + 8 else 2 + len(rows) * LINE + extra + 4 end
+    items = append(items, {kind: "msg", y: y, h: h, m: m, head: head, rich: rich, rows: rows, i: i})
+    y += h
+    prev = m
+  end
+  {items: items, total: y + 14}
+end
+
+// ── Paint helpers ────────────────────────────────────────────────────────
+
+fn hit(r: record, ok: bool) -> bool
+  ok && point_in(mouse_x(), mouse_y(), r)
+end
+
+fn avatar(who: string, x: num, y: num, s: num) -> nil
+  let p = d.person(who)
+  let r = rect(x, y, s, s)
+  draw_rect_rounded(r, int(s * 0.26), p.color)
+  // Small faces carry one initial; two letters at 20 px read as noise.
+  let label = if s < 28 then char_slice(d.initials(who), 0, 1) else d.initials(who) end
+  text_layout.draw_text_line(label, r, sb(if s < 28 then int(s * 0.5) else int(s * 0.38) end, WHITE), "center")
+end
+
+fn presence(cx: num, cy: num, away: bool, ring: record) -> nil
+  draw_circle({x: cx, y: cy}, 5.5, ring)
+  if away then
+    draw_circle_outline({x: cx, y: cy}, 3.4, SIDE_DIM, 255, 1.6)
+  else
+    draw_circle({x: cx, y: cy}, 4, GREEN)
+  end
+end
+
+fn count_badge(right: num, cy: num, n: int, bg: record) -> nil
+  let ts = sb(11, WHITE)
+  let label = if n > 99 then "99+" else str(n) end
+  let w = max(20, text_width(label, ts) + 12)
+  let r = rect(right - w, cy - 9, w, 18)
+  draw_rect_rounded(r, 9, bg)
+  text_layout.draw_text_line(label, r, ts, "center")
+end
+
+// A chip under a message: an emoji and how many people chose it.
+fn chip_w(r: record) -> int
+  text_width(str(len(r.who)), sb(12, INK_2)) + 46
+end
+
+fn chip_rects(m: record, x: num, y: num) -> list
+  let cx = x
+  for r in m.reacts do
+    let w = chip_w(r)
+    let out = rect(cx, y, w, 26)
+    cx += w + 6
+    out
+  end
+end
+
+fn summary_rect(m: record, x: num, y: num) -> Rect
+  rect(x - 6, y, 330, 30)
+end
+
+fn icon_thread(cx: num, cy: num, c: record) -> nil
+  // A speech bubble: a rounded body and a tail.
+  draw_rect_rounded_outline(cx - 8, cy - 7, 16, 12, 4, c, 255, 1.6)
+  draw_polyline([{x: cx - 4, y: cy + 5}, {x: cx - 6, y: cy + 9}, {x: cx, y: cy + 5}], c, 255, 1.6)
+end
+
+fn icon_send(r: record, c: record) -> nil
+  let cx = r.x + r.w / 2.0
+  let cy = r.y + r.h / 2.0
+  fill_polygon([{x: cx - 7, y: cy - 7}, {x: cx + 8, y: cy}, {x: cx - 7, y: cy + 7}, {x: cx - 4, y: cy}], c)
+end
+
+fn icon_close(r: record, c: record) -> nil
+  let cx = r.x + r.w / 2.0
+  let cy = r.y + r.h / 2.0
+  draw_line(cx - 5, cy - 5, cx + 5, cy + 5, c, 255, 1.6)
+  draw_line(cx + 5, cy - 5, cx - 5, cy + 5, c, 255, 1.6)
+end
+
+// The three dots of a typing indicator, each rising in turn.
+fn typing_dots(x: num, cy: num, t: num, c: record) -> nil
+  for i in range(0, 3) do
+    let phase = t * 7.0 - i * 0.9
+    let lift = max(0.0, sin(phase)) * 3.0
+    let a = 120 + int(max(0.0, sin(phase)) * 135.0)
+    draw_circle({x: x + i * 8, y: cy - lift}, 2.6, c, a)
+  end
+end
+
+fn typing_line(names: list) -> string
+  match len(names)
+    when 0 -> ""
+    when 1 -> "{names[0]} is typing"
+    when 2 -> "{names[0]} and {names[1]} are typing"
+    when _ -> "Several people are typing"
+  end
+end
+
+// One message, with its top at y. `hot` paints the hover wash and the
+// continuation's time; `fresh` is 0..1 for a message that just arrived.
+fn draw_msg(it: record, x: num, y: num, w: num, hot: bool, fresh: float, summaries: bool, open: bool) -> nil
+  let m = it.m
+  let mention = m.who != d.ME && d.mentions_me(m.text)
+  let r = rect(x, y, w, it.h)
+  if mention then
+    draw_rect(r, MENTION_BG)
+    draw_rect(x, y, 3, it.h, MENTION_BAR)
+  elsif open then
+    draw_rect(r, ACCENT_SOFT)
+  elsif hot then
+    draw_rect(r, WASH)
+  end
+  if fresh > 0.0 then
+    draw_rect(r, FRESH, int(fresh * 170.0))
+  end
+  let tx = x + GUTTER
+  let by = if it.head then y + 34 else y + 2 end
+  if it.head then
+    avatar(m.who, x + 20, y + 10, AV)
+    let p = d.person(m.who)
+    let name_st = sb(15, INK)
+    draw_text(p.name, {x: tx, y: y + 9}, name_st)
+    let base = text_layout.text_baseline(rect(tx, y + 9, 200, 20), name_st)
+    text_layout.draw_text_baseline(d.clock_text(m.at), tx + text_width(p.name, name_st) + 8, base, st(12, FAINT), "left")
+  elsif hot then
+    let tst = st(11, FAINT)
+    text_layout.draw_text_baseline(char_slice(d.clock_text(m.at), 0, char_len(d.clock_text(m.at)) - 3), x + GUTTER - 10, by + 15, tst, "right")
+  end
+  for i in range(0, len(it.rows)) do
+    draw_rich_row(it.rich.text, it.rows[i], it.rich.spans, tx, by + i * LINE, BODY)
+  end
+  let ry = by + len(it.rows) * LINE + 6
+  if len(m.reacts) > 0 then
+    let rects = chip_rects(m, tx, ry)
+    for k in range(0, len(m.reacts)) do
+      let re = m.reacts[k]
+      let cr = rects[k]
+      let mine = contains(re.who, d.ME)
+      let over = hit(cr, true)
+      let bg = if mine then ACCENT_SOFT elsif over then RULE_SOFT else WASH end
+      draw_rect_rounded(cr, 13, bg)
+      draw_rect_rounded_outline(cr, 13, if mine then tint(PAPER, ACCENT, 55) else RULE end, 255, 1)
+      draw_text(re.e, {x: cr.x + 9, y: cr.y + 4}, st(14, INK))
+      text_layout.draw_text_line(str(len(re.who)), rect(cr.x + 30, cr.y, cr.w - 36, cr.h), sb(12, if mine then ACCENT else INK_2 end), "left")
+    end
+    ry += 34
+  end
+  if summaries && len(m.thread) > 0 then
+    let sr = summary_rect(m, tx, ry)
+    let over = hit(sr, true)
+    if over then
+      draw_rect_rounded(sr, 8, PAPER)
+      draw_rect_rounded_outline(sr, 8, RULE, 255, 1)
+    end
+    let who = []
+    for rp in m.thread do
+      if !contains(who, rp.who) then who = append(who, rp.who) end
+    end
+    let ax = tx
+    for k in range(0, min(3, len(who))) do
+      avatar(who[k], ax, ry + 5, 20)
+      ax += 23
+    end
+    let label = plural(len(m.thread), "reply", "replies")
+    let ls = sb(13, ACCENT)
+    text_layout.draw_text_line(label, rect(ax + 5, ry, 120, 30), ls, "left")
+    let lw = text_width(label, ls)
+    let tail = if over then "View thread" else "Last reply {d.clock_text(last(m.thread).at)}" end
+    text_layout.draw_text_line(tail, rect(ax + 5 + lw + 10, ry, 220, 30), st(12, MUTED), "left")
+  end
+end
+
+fn draw_day(label: string, x: num, y: num, w: num) -> nil
+  let cy = y + 22
+  draw_rect(x + 20, cy, w - 40, 1, RULE)
+  let ts = sb(12, INK_2)
+  let pw = text_width(label, ts) + 28
+  let pr = rect(x + (w - pw) / 2, cy - 13, pw, 26)
+  draw_rect_rounded(pr, 13, PAPER)
+  draw_rect_rounded_outline(pr, 13, RULE, 255, 1)
+  text_layout.draw_text_line(label, pr, ts, "center")
+end
+
+fn draw_new_line(x: num, y: num, w: num) -> nil
+  let cy = y + 8
+  draw_rect(x + 20, cy, w - 40, 1, RED)
+  let ts = sb(11, WHITE)
+  let pw = text_width("NEW", ts) + 14
+  let pr = rect(x + w - 20 - pw, cy - 9, pw, 18)
+  draw_rect_rounded(pr, 5, RED)
+  text_layout.draw_text_line("NEW", pr, ts, "center")
+end
+
+// The composer box: a growing text area over a toolbar with the send button.
+// Returns true when the send button was clicked.
+fn draw_composer(box: record, text_r: record, res: record, has: bool, hint: string, ok: bool, compact: bool) -> bool
+  let ts = {...BODY, color: INK}
+  if has then
+    draw_shadow(box, {radius: 12, blur: 14, dy: 2, color: ACCENT, a: 40})
+  end
+  draw_rect_rounded(box, 12, PAPER)
+  draw_rect_rounded_outline(box, 12, if has then tint(PAPER, ACCENT, 70) else tint(PAPER, INK, 22) end, 255, if has then 1.5 else 1 end)
+  let lh = res.line_h
+  let top = text_r.y - res.scroll
+  clip_push(rect(text_r.x - 2, text_r.y, text_r.w + 4, text_r.h))
+  if has && res.sel_start < res.sel_end then
+    for q in text_range_rects(res.rows, ts, res.sel_start, res.sel_end, lh) do
+      draw_rect(text_r.x + q.x, top + q.y, q.w, q.h, tint(PAPER, ACCENT, 22))
+    end
+  end
+  if char_len(res.text) == 0 then
+    draw_text(hint, {x: text_r.x, y: top + 1}, {...ts, color: FAINT})
+  end
+  for i in range(0, len(res.rows)) do
+    let ry = top + i * lh
+    if ry + lh > text_r.y && ry < text_r.y + text_r.h then
+      draw_text(res.rows[i].text, {x: text_r.x, y: ry + 1}, ts)
+    end
+  end
+  if has then
+    let ci = text_row_of(res.rows, res.caret)
+    let row = res.rows[ci]
+    let cx = text_r.x + text_width(char_slice(row.text, 0, clamp(res.caret - row.start, 0, row.end - row.start)), ts)
+    draw_rect(cx, top + ci * lh + 2, 2, lh - 3, ACCENT)
+  end
+  clip_pop()
+  if res.overflow then
+    let track = float(text_r.h)
+    let th = max(18.0, track * track / float(res.content_h))
+    let ty = text_r.y + (track - th) * float(res.scroll) / float(max(1, res.content_h - text_r.h))
+    draw_rect_rounded(box.x + box.w - 7, ty, 3, th, 2, tint(PAPER, INK, 20))
+  end
+  // The toolbar.
+  let bar_y = box.y + box.h - 38
+  let send_r = rect(box.x + box.w - 46, bar_y + 4, 38, 30)
+  let ready = trim_text(res.text) != ""
+  let over = hit(send_r, ok)
+  let face = if !ready then tint(PAPER, INK, 8) elsif over then ACCENT_HI else ACCENT end
+  draw_rect_rounded(send_r, 8, face)
+  icon_send(send_r, if ready then WHITE else FAINT end)
+  if !compact then
+    let hs = st(12, FAINT)
+    let ks = sb(11, MUTED)
+    let hx = box.x + 14
+    let kr = rect(hx, bar_y + 9, text_width("Return", ks) + 12, 20)
+    draw_rect_rounded(kr, 5, RULE_SOFT)
+    text_layout.draw_text_line("Return", kr, ks, "center")
+    hx = kr.x + kr.w + 6
+    text_layout.draw_text_line("to send", rect(hx, bar_y + 9, 80, 20), hs, "left")
+    hx += text_width("to send", hs) + 14
+    let kr2 = rect(hx, bar_y + 9, text_width("Shift + Return", ks) + 12, 20)
+    draw_rect_rounded(kr2, 5, RULE_SOFT)
+    text_layout.draw_text_line("Shift + Return", kr2, ks, "center")
+    text_layout.draw_text_line("for a new line", rect(kr2.x + kr2.w + 6, bar_y + 9, 120, 20), hs, "left")
+  end
+  ready && over && mouse_pressed(0)
+end
+
+// ═════════════════════════════════════════════════════════════════════════
+// Frame
+// ═════════════════════════════════════════════════════════════════════════
+
+theme_set({panel: PAPER, surface: PAPER, overlay: PAPER, text: INK, muted: MUTED, dim: FAINT,
+  accent: ACCENT, outline: RULE, border: RULE, hover: ACCENT_SOFT, selection: ACCENT_SOFT})
+
+// While a composer has the keyboard its editing chords are its own.
+if focus != "" then
+  for k in ["a", "c", "x", "v", "z", "y"] do claim_key(k, "cmd") end
+  claim_key("z", "cmd+shift")
+  for k in ["left", "right", "up", "down"] do
+    claim_key(k, "cmd")
+    claim_key(k, "cmd+shift")
+  end
+  claim_key("backspace", "cmd")
+end
+
+// ── The clock and the scheduler ──────────────────────────────────────────
+// Time advances by dt(), so under POST /tick the afternoon plays out frame
+// for frame the same every run. A long pause (a slept panel waking) counts
+// as one second, not as a burst of everything that was due.
+
+let step = clamp(dt(), 0.0, 1.0)
+clock += step
+// The afternoon runs fast: a minute of chat time passes every twelve seconds.
+let now_min = d.START_MIN + int(clock / 12.0)
+
+let due = sort_by(filter(queue, fn(e) -> e.at <= clock), fn(e) -> e.at)
+if len(due) > 0 then
+  queue = filter(queue, fn(e) -> e.at > clock)
+  for e in due do
+    match e.kind
+      when "type" ->
+        let tid = e.thread
+        if e.prefix != "" then
+          tid = (find(msgs, fn(x) -> x.ch == e.ch && starts_with(x.text, e.prefix)) ?? {id: 0}).id
+        end
+        typing = filter(typing, fn(t) -> !(t.who == e.who && t.ch == e.ch && t.thread == e.thread))
+        typing = append(typing, {ch: e.ch, who: e.who, thread: tid, until: e.until + 0.5})
+      when "post" ->
+        let tid = e.thread
+        if e.prefix != "" then
+          tid = (find(msgs, fn(x) -> x.ch == e.ch && starts_with(x.text, e.prefix)) ?? {id: 0}).id
+        end
+        if tid != 0 then
+          msgs = add_thread_reply(msgs, tid, {who: e.who, at: now_min, text: e.text, born: clock})
+        else
+          msgs = append(msgs, {id: next_id, ch: e.ch, who: e.who, day: 1, at: now_min, text: e.text, reacts: [], thread: [], born: clock})
+          next_id += 1
+        end
+        typing = filter(typing, fn(t) -> !(t.who == e.who && t.ch == e.ch))
+        arrivals += 1
+      when "react" ->
+        msgs = toggle_react(msgs, e.target, e.e, e.who, true)
+      when _ -> nil
+    end
+  end
+end
+typing = filter(typing, fn(t) -> t.until > clock)
+if toast.left > 0.0 then toast.left = max(0.0, toast.left - step) end
+
+// ── Derived: channels ────────────────────────────────────────────────────
+
+let by_ch = group_by(msgs, fn(x) -> x.ch)
+fn ch_list(groups: record, id: string) -> list
+  field(groups, id, [])
+end
+
+let cur = d.channel(ch)
+let feed_msgs = ch_list(by_ch, ch)
+let n_msgs = len(feed_msgs)
+let thread_open = thread_id != 0 && find(feed_msgs, fn(x) -> x.id == thread_id) != nil
+if !thread_open then thread_id = 0 end
+let parent = if thread_open then find(feed_msgs, fn(x) -> x.id == thread_id) else nil end
+
+// ── Layout ───────────────────────────────────────────────────────────────
+
+let FX = SIDE_W
+let FW = W - SIDE_W - (if thread_open then THREAD_W else 0 end)
+let TX = FX + FW
+
+let ts_in = {...BODY, color: INK}
+let lh = int(text_metrics(ts_in).line_height) + LGAP
+let draft = field(drafts, ch, "")
+
+// The composer grows with what is in it. Its rows are measured from the
+// buffer as it stands, before this frame's keys.
+let c_text_w = FW - 40 - 28 - 6
+let c_rows = clamp(len(text_wrap_rows(draft, ts_in, float(c_text_w))), 1, MAX_ROWS)
+let c_box_h = 12 + c_rows * lh + 6 + 40
+let c_box = rect(FX + 20, H - 28 - c_box_h, FW - 40, c_box_h)
+let c_text_r = rect(c_box.x + 14, c_box.y + 12, c_text_w, c_rows * lh)
+let FR = rect(FX, HEADER_H, FW, c_box.y - 10 - HEADER_H)
+
+let t_text_w = THREAD_W - 32 - 28 - 6
+let t_rows = clamp(len(text_wrap_rows(thread_draft, ts_in, float(t_text_w))), 1, 6)
+let t_box_h = 12 + t_rows * lh + 6 + 40
+let t_box = rect(TX + 16, H - 28 - t_box_h, THREAD_W - 32, t_box_h)
+let t_text_r = rect(t_box.x + 14, t_box.y + 12, t_text_w, t_rows * lh)
+let TR = rect(TX, HEADER_H, THREAD_W, t_box.y - 10 - HEADER_H)
+
+let blocking = menu_blocking(menu)
+let press = mouse_pressed(0) && !blocking
+
+// ── Text entry ───────────────────────────────────────────────────────────
+// Return sends and Shift+Return breaks the line. The text area always takes
+// Return as a line break, so a plain Return sends what was there before the
+// key and throws the break away.
+
+// The composer's caret lives in the text area, one per callsite rather than
+// one per channel. Giving the keyboard up for a frame and taking it back
+// puts the caret at the end of the draft you return to.
+if refocus != "" then
+  focus = refocus
+  refocus = ""
+end
+
+// Typing with nothing focused goes to the composer, as in every chat app.
+if focus == "" && char_len(text_input()) > 0 && !mod_cmd() && !mod_ctrl() then focus = "composer" end
+
+let plain_return = key_pressed("return") && !mod_shift()
+let c_before = draft
+let t_before = thread_draft
+let c_res = text_area_update({id: focus}, "composer", c_text_r, draft,
+  {text_style: ts_in, inset: 0, line_gap: LGAP, pointer: !blocking})
+let t_res = text_area_update(c_res.focus, "thread", t_text_r, thread_draft,
+  {text_style: ts_in, inset: 0, line_gap: LGAP, pointer: !blocking && thread_open})
+let was_focus = focus
+focus = t_res.focus.id
+draft = c_res.text
+thread_draft = t_res.text
+
+let send_main = ""
+let send_thread = ""
+if plain_return && was_focus == "composer" then
+  draft = c_before
+  send_main = trim_text(draft)
+elsif plain_return && was_focus == "thread" then
+  thread_draft = t_before
+  send_thread = trim_text(thread_draft)
+end
+
+// ── Keys ─────────────────────────────────────────────────────────────────
+
+let act = ""        // what to do once the frame has been drawn
+let act_id = 0
+let act_arg = ""
+
+if !blocking then
+  if key_pressed("escape") then
+    if thread_open then
+      act = "close_thread"
+    else
+      act = "mark_read"
+    end
+  end
+  if mod_alt() && (key_pressed("up") || key_pressed("down")) then
+    let i = d.channel_index(ch)
+    let n = len(d.CHANNELS)
+    let j = if key_pressed("up") then (i + n - 1) % n else (i + 1) % n end
+    act = "switch"
+    act_arg = d.CHANNELS[j].id
+  end
+end
+
+// ── Feed layout and scroll ───────────────────────────────────────────────
+
+let intro_h = 132
+let new_at = if entry_seen < n_msgs then entry_seen else -1 end
+let lay = layout_msgs(feed_msgs, FW - GUTTER - 32, new_at, intro_h, true)
+let items = lay.items
+let total = lay.total
+let max_top = float(max(0, total - FR.h))
+
+let sc = field(scrolls, ch, {top: max_top, stuck: true})
+let top = sc.top
+let stuck = sc.stuck
+if hit(FR, !blocking) && scroll_y() != 0 then
+  top += scroll_y() * 44.0
+  stuck = false
+end
+if !blocking && key_pressed("pageup") then
+  top -= float(FR.h) * 0.85
+  stuck = false
+end
+if !blocking && key_pressed("pagedown") then top += float(FR.h) * 0.85 end
+if send_main != "" then stuck = true end
+top = clamp(top, 0.0, max_top)
+if top >= max_top - 2.0 then stuck = true end
+if stuck then top = max_top end
+scrolls = {...scrolls, [ch]: {top: top, stuck: stuck}}
+
+// New content glides into place; a feed that merely changed height (the
+// composer grew a row) stays pinned without a lag.
+if FR.h != last_fr.h || FR.w != last_fr.w then snap = true end
+last_fr = {w: FR.w, h: FR.h}
+view_top = if snap then top else approach(view_top, top, 16.0) end
+snap = false
+if abs(view_top - top) > 0.5 then request_frame() end
+// Content shorter than the feed sits at its foot, the way a conversation
+// starts at the bottom of the window.
+let base_y = if total < FR.h then FR.y + FR.h - total else FR.y - int(view_top) end
+
+// Reading: the feed is read whenever you are at its foot.
+if stuck then seen = {...seen, [ch]: n_msgs} end
+let unseen_here = n_msgs - field(seen, ch, 0)
+
+// Which message the pointer is on. The action bar overhangs the message
+// above, so while the pointer is on the bar its message stays hot.
+let bar_hold = false
+let hot_id = 0
+for it in items do
+  if it.kind != "msg" then continue end
+  let y = base_y + it.y
+  if it.m.id == hover_id then
+    let br = rect(FX + FW - 24 - BAR_W, max(FR.y + 4, y - 18), BAR_W, 36)
+    if hit(br, !blocking) then
+      bar_hold = true
+      hot_id = it.m.id
+    end
+  end
+end
+if !bar_hold then
+  for it in items do
+    if it.kind != "msg" then continue end
+    let y = base_y + it.y
+    if hit(rect(FX, y, FW, it.h), !blocking) && hit(FR, true) then hot_id = it.m.id end
+  end
+end
+hover_id = hot_id
+
+// ═════════════════════════════════════════════════════════════════════════
+// Paint
+// ═════════════════════════════════════════════════════════════════════════
+
+clear(PAPER.r, PAPER.g, PAPER.b)
+
+// ── Feed ─────────────────────────────────────────────────────────────────
+
+clip_push(FR)
+// The beginning of the channel.
+let iy = base_y
+if iy + intro_h > FR.y then
+  if cur.kind == "dm" then
+    let peer = d.dm_peer(cur)
+    avatar(peer, FX + 20, iy + 24, 56)
+    draw_text(d.person(peer).name, {x: FX + 92, y: iy + 26}, sb(20, INK))
+    draw_text(d.person(peer).role, {x: FX + 92, y: iy + 54}, st(14, MUTED))
+    draw_text("This is the start of your direct messages with {d.first_name(peer)}.", {x: FX + 20, y: iy + 96}, st(14, MUTED))
+  else
+    let hr = rect(FX + 20, iy + 24, 48, 48)
+    draw_rect_rounded(hr, 12, ACCENT_SOFT)
+    text_layout.draw_text_line("#", hr, sb(26, ACCENT), "center")
+    draw_text(cur.name, {x: FX + 84, y: iy + 24}, sb(20, INK))
+    draw_text(cur.topic, {x: FX + 84, y: iy + 52}, st(14, MUTED))
+    draw_text("This is the very beginning of #{cur.name}. Everyone in it can see what's posted here.", {x: FX + 20, y: iy + 96}, st(14, MUTED))
+  end
+end
+
+let open_m = nil
+let summary_hit = 0
+let chip_hit = {id: 0, e: ""}
+for it in items do
+  let y = base_y + it.y
+  if y + it.h < FR.y || y > FR.y + FR.h then continue end
+  if it.kind == "day" then
+    let label = if it.m.day == 1 then "Today" else "Yesterday" end
+    draw_day(label, FX, y, FW)
+  elsif it.kind == "new" then
+    draw_new_line(FX, y, FW)
+  else
+    let m = it.m
+    let fresh = if m.born >= 0.0 && m.who != d.ME then clamp(1.0 - (clock - m.born) / 1.6, 0.0, 1.0) else 0.0 end
+    if fresh > 0.0 then request_frame() end
+    let is_hot = m.id == hot_id
+    draw_msg(it, FX, y, FW, is_hot, fresh, true, m.id == thread_id)
+    menu = menu_open_on_right_click(menu, rect(FX, y, FW, it.h), str(m.id))
+    // Clicks on what the message carries.
+    let by = if it.head then y + 34 else y + 2 end
+    let ry = by + len(it.rows) * LINE + 6
+    if len(m.reacts) > 0 then
+      let rects = chip_rects(m, FX + GUTTER, ry)
+      for k in range(0, len(rects)) do
+        if press && hit(rects[k], true) && hit(FR, true) then chip_hit = {id: m.id, e: m.reacts[k].e} end
+      end
+      ry += 34
+    end
+    if len(m.thread) > 0 && press && hit(summary_rect(m, FX + GUTTER, ry), true) && hit(FR, true) then
+      summary_hit = m.id
+    end
+  end
+end
+
+// The action bar over the hot message.
+let bar_pick = ""
+if hot_id != 0 && !blocking then
+  let it = find(items, fn(x) -> x.kind == "msg" && x.m.id == hot_id)
+  let y = base_y + it.y
+  let br = rect(FX + FW - 24 - BAR_W, max(FR.y + 4, y - 18), BAR_W, 36)
+  draw_shadow(br, {radius: 10, blur: 12, dy: 3, color: #1c1e2a, a: 34})
+  draw_rect_rounded(br, 10, PAPER)
+  draw_rect_rounded_outline(br, 10, RULE, 255, 1)
+  for k in range(0, 5) do
+    let cell = rect(br.x + 4 + k * 32, br.y + 2, 32, 32)
+    let over = hit(cell, true)
+    if over then draw_rect_rounded(cell, 7, RULE_SOFT) end
+    if k < 4 then
+      text_layout.draw_text_line(d.QUICK[k], cell, st(16, INK), "center")
+    else
+      icon_thread(cell.x + 16, cell.y + 15, if over then INK else MUTED end)
+    end
+    if over && press then bar_pick = if k < 4 then d.QUICK[k] else "thread" end end
+  end
+end
+clip_pop()
+
+// The fade that content scrolls under, and the way back down.
+draw_scroll_shadow(rect(FX, 0, FW, HEADER_H), min(1.0, float(max(0, FR.y - base_y - intro_h)) / 30.0), {a: 30, height: 8})
+let jump_r = rect(0, 0, 0, 0)
+if !stuck then
+  let label = if unseen_here > 0 then "{plural(unseen_here, "new message", "new messages")}" else "Jump to latest" end
+  let ls = sb(13, WHITE)
+  let pw = text_width(label, ls) + 46
+  jump_r = rect(FX + (FW - pw) / 2, FR.y + FR.h - 46, pw, 34)
+  let over = hit(jump_r, !blocking)
+  draw_shadow(jump_r, {radius: 17, blur: 12, dy: 3, color: #1c1e2a, a: 40})
+  draw_rect_rounded(jump_r, 17, if unseen_here > 0 then (if over then ACCENT_HI else ACCENT end) elsif over then #2e3144 else INK end)
+  // A down arrow drawn as strokes.
+  let ax = jump_r.x + 19
+  let ay = jump_r.y + 17
+  draw_line(ax, ay - 6, ax, ay + 5, WHITE, 255, 1.8)
+  draw_polyline([{x: ax - 4, y: ay + 1}, {x: ax, y: ay + 5}, {x: ax + 4, y: ay + 1}], WHITE, 255, 1.8)
+  text_layout.draw_text_line(label, rect(jump_r.x + 32, jump_r.y, pw - 40, 34), ls, "left")
+  if over && press then act = "jump" end
+end
+
+// ── Header ───────────────────────────────────────────────────────────────
+
+draw_rect(FX, 0, FW, HEADER_H, PAPER)
+draw_rect(FX, HEADER_H - 1, FW, 1, RULE)
+if cur.kind == "dm" then
+  let peer = d.dm_peer(cur)
+  avatar(peer, FX + 20, 16, 32)
+  presence(FX + 50, 46, d.person(peer).away, PAPER)
+  draw_text(cur.name, {x: FX + 64, y: 13}, sb(17, INK))
+  let status = if d.person(peer).away then "Away" else "Active" end
+  draw_text("{status} · {cur.topic}", {x: FX + 64, y: 36}, st(13, MUTED))
+else
+  let ns = sb(17, INK)
+  draw_text("#", {x: FX + 20, y: 12}, sb(17, FAINT))
+  draw_text(cur.name, {x: FX + 36, y: 12}, ns)
+  draw_text(ellipsize(cur.topic, FW - 240, st(13, MUTED)), {x: FX + 20, y: 37}, st(13, MUTED))
+  // The members, as a stack of faces and a count.
+  let mem = cur.members
+  let shown_n = min(4, len(mem))
+  let mx = FX + FW - 20 - 40 - shown_n * 20
+  let mr = rect(mx - 6, 16, shown_n * 20 + 52, 32)
+  let over = hit(mr, !blocking)
+  draw_rect_rounded(mr, 8, if over then WASH else PAPER end)
+  draw_rect_rounded_outline(mr, 8, RULE, 255, 1)
+  for k in range(0, shown_n) do
+    let ax = mx + k * 20
+    draw_rect_rounded(ax - 2, 20, 26, 26, 8, PAPER)
+    avatar(mem[k], ax, 22, 22)
+  end
+  text_layout.draw_text_line(str(len(mem)), rect(mx + shown_n * 20 + 8, 16, 32, 32), sb(13, INK_2), "left")
+end
+
+// ── Composer and the typing line ─────────────────────────────────────────
+
+let hint = if cur.kind == "dm" then "Message {cur.name}" else "Message #{cur.name}" end
+if draw_composer(c_box, c_text_r, {...c_res, text: draft}, focus == "composer", hint, !blocking, FW < 560) then
+  send_main = trim_text(draft)
+end
+if press && hit(c_box, true) && !hit(c_text_r, true) then focus = "composer" end
+
+let here_typing = filter(typing, fn(t) -> t.ch == ch && t.thread == 0 && t.who != d.ME)
+let names = map(here_typing, fn(t) -> d.first_name(t.who))
+if len(names) > 0 then
+  let ty = H - 22
+  typing_dots(FX + 30, ty + 8, clock, MUTED)
+  draw_text(typing_line(names), {x: FX + 56, y: ty}, sb(12, MUTED))
+  request_frame()
+end
+
+// ── Thread pane ──────────────────────────────────────────────────────────
+
+let t_lay = {items: [], total: 0}
+if thread_open then
+  draw_rect(TX, 0, THREAD_W, H, PAPER)
+  draw_rect(TX, 0, 1, H, RULE)
+  draw_text("Thread", {x: TX + 20, y: 13}, sb(17, INK))
+  draw_text("#{cur.name}", {x: TX + 20, y: 37}, st(13, MUTED))
+  let close_r = rect(TX + THREAD_W - 48, 16, 32, 32)
+  let over = hit(close_r, !blocking)
+  if over then draw_rect_rounded(close_r, 8, RULE_SOFT) end
+  icon_close(close_r, if over then INK else MUTED end)
+  if over && press then act = "close_thread" end
+  draw_rect(TX, HEADER_H - 1, THREAD_W, 1, RULE)
+
+  // The parent, then a rule with the count, then the replies.
+  let replies = for rp in parent.thread do
+    {id: -1, ch: ch, who: rp.who, day: 1, at: rp.at, text: rp.text, reacts: [], thread: [], born: rp.born}
+  end
+  let tw = THREAD_W - GUTTER - 24
+  let p_lay = layout_msgs([{...parent, reacts: []}], tw, -1, 0, false)
+  let p_item = find(p_lay.items, fn(x) -> x.kind == "msg")
+  let r_lay = layout_msgs(replies, tw, -1, 0, false)
+  let r_items = filter(r_lay.items, fn(x) -> x.kind == "msg")
+  let head_h = p_item.h + 40
+  let t_total = head_h + sum(map(r_items, fn(x) -> x.h)) + 12
+  let t_max = float(max(0, t_total - TR.h))
+  if hit(TR, !blocking) && scroll_y() != 0 then
+    t_top += scroll_y() * 44.0
+    t_stuck = false
+  end
+  if send_thread != "" then t_stuck = true end
+  t_top = clamp(t_top, 0.0, t_max)
+  if t_top >= t_max - 2.0 then t_stuck = true end
+  if t_stuck then t_top = t_max end
+  let ty0 = TR.y - int(t_top) + 6
+  clip_push(TR)
+  draw_msg({...p_item, head: true}, TX, ty0, THREAD_W, false, 0.0, false, false)
+  let ry = ty0 + p_item.h + 8
+  let rl = if len(replies) == 0 then "No replies yet" else plural(len(replies), "reply", "replies") end
+  let rs = st(12, MUTED)
+  draw_text(rl, {x: TX + 20, y: ry + 4}, rs)
+  draw_rect(TX + 28 + text_width(rl, rs), ry + 12, THREAD_W - 48 - text_width(rl, rs), 1, RULE)
+  let y = ry + 32
+  for it in r_items do
+    let fresh = if it.m.born >= 0.0 && it.m.who != d.ME then clamp(1.0 - (clock - it.m.born) / 1.6, 0.0, 1.0) else 0.0 end
+    if fresh > 0.0 then request_frame() end
+    draw_msg(it, TX, y, THREAD_W, hit(rect(TX, y, THREAD_W, it.h), !blocking) && hit(TR, true), fresh, false, false)
+    y += it.h
+  end
+  clip_pop()
+  t_lay = {items: r_items, total: t_total}
+
+  draw_composer(t_box, t_text_r, {...t_res, text: thread_draft}, focus == "thread", "Reply…", !blocking, true)
+  let send_r = rect(t_box.x + t_box.w - 46, t_box.y + t_box.h - 34, 38, 30)
+  if press && hit(send_r, true) && trim_text(thread_draft) != "" then send_thread = trim_text(thread_draft) end
+  let t_typing = filter(typing, fn(t) -> t.thread == thread_id)
+  if len(t_typing) > 0 then
+    typing_dots(TX + 26, H - 14, clock, MUTED)
+    draw_text(typing_line(map(t_typing, fn(t) -> d.first_name(t.who))), {x: TX + 52, y: H - 22}, sb(12, MUTED))
+    request_frame()
+  end
+end
+
+// ── Sidebar ──────────────────────────────────────────────────────────────
+
+draw_rect(0, 0, SIDE_W, H, SIDE)
+// The workspace.
+draw_rect_gradient_rounded(rect(18, 16, 34, 34), 9, #f08a4b, #d9488f, 0.8)
+text_layout.draw_text_line("F", rect(18, 16, 34, 34), sb(17, WHITE), "center")
+draw_text("Fernwood Labs", {x: 62, y: 15}, sb(16, WHITE))
+draw_circle({x: 67, y: 42}, 4, GREEN)
+draw_text(d.person(d.ME).name, {x: 77, y: 34}, st(12, SIDE_DIM))
+draw_rect(16, 66, SIDE_W - 32, 1, SIDE_RULE)
+
+let unread_total = 0
+let mention_total = 0
+let sy = 84
+let switch_to = ""
+for section in ["channel", "dm"] do
+  draw_text(if section == "channel" then "CHANNELS" else "DIRECT MESSAGES" end, {x: 22, y: sy}, caps(SIDE_FAINT))
+  sy += 24
+  for c in d.CHANNELS do
+    if c.kind != section then continue end
+    let list = ch_list(by_ch, c.id)
+    let read = field(seen, c.id, 0)
+    let fresh_list = filter(slice(list, min(read, len(list)), len(list)), fn(x) -> x.who != d.ME)
+    let unread = len(fresh_list)
+    let pings = if c.kind == "dm" then unread else count(fresh_list, fn(x) -> d.mentions_me(x.text)) end
+    unread_total += unread
+    mention_total += pings
+    let r = rect(10, sy, SIDE_W - 20, 32)
+    let on = c.id == ch
+    let over = hit(r, !blocking)
+    if on then
+      draw_rect_rounded(r, 8, ACCENT)
+    elsif over then
+      draw_rect_rounded(r, 8, SIDE_HOT)
+    end
+    let bright = on || unread > 0
+    let name_st = if on then sb(14, WHITE) elsif unread > 0 then sb(14, WHITE) else st(14, if over then SIDE_TEXT else SIDE_DIM end) end
+    if c.kind == "channel" then
+      text_layout.draw_text_line("#", rect(r.x + 12, r.y, 14, r.h), st(15, if bright then (if on then WHITE else SIDE_TEXT end) else SIDE_FAINT end), "center")
+    else
+      let peer = d.dm_peer(c)
+      avatar(peer, r.x + 10, r.y + 6, 20)
+      presence(r.x + 28, r.y + 25, d.person(peer).away, if on then ACCENT elsif over then SIDE_HOT else SIDE end)
+    end
+    text_layout.draw_text_line(c.name, rect(r.x + 38, r.y, r.w - 80, r.h), name_st, "left")
+    let has_draft = !on && trim_text(field(drafts, c.id, "")) != ""
+    if pings > 0 then
+      count_badge(r.x + r.w - 10, r.y + 16, pings, RED)
+    elsif has_draft then
+      text_layout.draw_text_line("draft", rect(r.x, r.y, r.w - 12, r.h), st(11, SIDE_FAINT), "right")
+    end
+    if over && press then switch_to = c.id end
+    sy += 34
+  end
+  sy += 18
+end
+if switch_to != "" then
+  act = "switch"
+  act_arg = switch_to
+end
+
+// The simulated clock, at the foot.
+draw_rect(16, H - 52, SIDE_W - 32, 1, SIDE_RULE)
+text_layout.draw_text_line("Wed, Oct 21 · {d.clock_text(now_min)}", rect(22, H - 50, SIDE_W - 44, 44), st(12, SIDE_FAINT), "left")
+if len(queue) > 0 then
+  // The afternoon is still unfolding: a slow pulse says the clock is live.
+  draw_circle({x: SIDE_W - 30, y: H - 28}, 3.5, GREEN, 140 + int(sin(clock * 3.0) * 100.0))
+  request_frame()
+end
+
+if toast.left > 0.0 then
+  let ts = st(13, WHITE)
+  let tw2 = text_width(toast.msg, ts) + 32
+  let tr = rect(FX + (FW - tw2) / 2, HEADER_H + 14, tw2, 34)
+  draw_shadow(tr, {radius: 10, blur: 12, dy: 3, color: #1c1e2a, a: 36})
+  draw_rect_rounded(tr, 10, INK, int(min(1.0, toast.left * 3.0) * 255.0))
+  text_layout.draw_text_line(toast.msg, tr, ts, "center")
+  request_frame()
+end
+
+// ── Context menu: the last draw call of the frame ────────────────────────
+
+let menu_m = find(feed_msgs, fn(x) -> str(x.id) == menu.tag)
+let mine = menu_m != nil && menu_m.who == d.ME
+let picked = context_menu(menu, [
+  menu_item("Reply in thread"),
+  menu_item("Add 👍"),
+  menu_item("Copy text"),
+  menu_sep(),
+  menu_item("Delete message", mine),
+], {radius: 8})
+menu = picked.menu
+if picked.index >= 0 && menu_m != nil then
+  match picked.index
+    when 0 ->
+      act = "open_thread"
+      act_id = menu_m.id
+    when 1 ->
+      act = "react"
+      act_id = menu_m.id
+      act_arg = "👍"
+    when 2 ->
+      clipboard_set(menu_m.text)
+      toast = {msg: "Copied to clipboard", left: 1.6}
+    when 4 ->
+      act = "delete"
+      act_id = menu_m.id
+    when _ -> nil
+  end
+end
+
+// ═════════════════════════════════════════════════════════════════════════
+// Apply
+// ═════════════════════════════════════════════════════════════════════════
+
+if chip_hit.id != 0 then
+  act = "react"
+  act_id = chip_hit.id
+  act_arg = chip_hit.e
+end
+if summary_hit != 0 then
+  act = "open_thread"
+  act_id = summary_hit
+end
+if bar_pick != "" then
+  act = if bar_pick == "thread" then "open_thread" else "react" end
+  act_id = hot_id
+  act_arg = bar_pick
+end
+
+if send_main != "" then
+  msgs = append(msgs, {id: next_id, ch: ch, who: d.ME, day: 1, at: now_min, text: send_main, reacts: [], thread: [], born: clock})
+  queue = schedule_replies(queue, cur, send_main, msgs, next_id, 0, clock, next_id * 31 + sent_n)
+  next_id += 1
+  sent_n += 1
+  draft = ""
+  entry_seen = 999
+  seen = {...seen, [ch]: n_msgs + 1}
+  focus = "composer"
+end
+if send_thread != "" && parent != nil then
+  msgs = add_thread_reply(msgs, parent.id, {who: d.ME, at: now_min, text: send_thread, born: clock})
+  queue = schedule_replies(queue, cur, send_thread, msgs, parent.id, parent.id, clock, parent.id * 37 + sent_n)
+  sent_n += 1
+  thread_draft = ""
+  t_stuck = true
+  focus = "thread"
+end
+drafts = {...drafts, [ch]: draft}
+
+match act
+  when "switch" ->
+    if act_arg != ch then
+      ch = act_arg
+      entry_seen = field(seen, ch, 0)
+      thread_id = 0
+      snap = true
+      hover_id = 0
+      scrolls = {...scrolls, [ch]: {top: 0.0, stuck: true}}
+      focus = ""
+      refocus = "composer"
+    end
+  when "react" ->
+    msgs = toggle_react(msgs, act_id, act_arg, d.ME, false)
+    reacted_n += 1
+  when "open_thread" ->
+    thread_id = act_id
+    t_top = 0.0
+    t_stuck = true
+    focus = "thread"
+  when "close_thread" ->
+    thread_id = 0
+    focus = "composer"
+  when "jump" ->
+    scrolls = {...scrolls, [ch]: {top: max_top, stuck: true}}
+  when "mark_read" ->
+    seen = {...seen, [ch]: n_msgs}
+    entry_seen = 999
+    scrolls = {...scrolls, [ch]: {top: max_top, stuck: true}}
+  when "delete" ->
+    // A deleted message that had been read takes its place in the count with it.
+    let at_i = index_of(map(feed_msgs, fn(x) -> x.id), act_id)
+    msgs = filter(msgs, fn(x) -> x.id != act_id)
+    if at_i >= 0 && at_i < field(seen, ch, 0) then seen = {...seen, [ch]: field(seen, ch, 0) - 1} end
+    toast = {msg: "Message deleted", left: 1.6}
+  when _ -> nil
+end
+
+// A click that lands on nothing editable leaves the keyboard where a chat
+// app keeps it: in the composer of the pane that was clicked.
+if press && focus == "" && refocus == "" then
+  focus = if thread_id != 0 && hit(rect(TX, 0, THREAD_W, H), true) then "thread" else "composer" end
+end
+
+// ── What a test can read ─────────────────────────────────────────────────
+
+let obs_channel = ch
+let obs_msgs = len(ch_list(group_by(msgs, fn(x) -> x.ch), ch))
+let obs_total = len(msgs)
+let obs_unread = unread_total
+let obs_mentions = mention_total
+let obs_unseen_here = unseen_here
+let obs_stuck = stuck
+let obs_top = int(top)
+let obs_max_top = int(max_top)
+let obs_typing = map(typing, fn(t) -> "{t.who}@{t.ch}")
+let obs_pending = len(queue)
+let obs_arrivals = arrivals
+let obs_sent = sent_n
+let obs_reacted = reacted_n
+let obs_draft = draft
+let obs_focus = focus
+let obs_thread = thread_id
+let obs_thread_replies = if parent != nil then len((find(msgs, fn(x) -> x.id == parent.id) ?? {thread: []}).thread) else 0 end
+let obs_clock = round(clock, 2)
+let obs_composer_rows = c_rows
+let obs_hover = hover_id

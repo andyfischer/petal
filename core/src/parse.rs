@@ -2756,7 +2756,15 @@ impl Parser {
                 }
                 Token::Ident(attr_name) => {
                     self.ev_open(SyntaxKind::JsxAttr);
+                    let name_at = self.pos;
                     self.advance();
+                    // A bare `<video muted />` is `muted={true}`, as in JSX.
+                    if !matches!(self.peek(), Token::Assign) {
+                        self.ev_close(); // JsxAttr
+                        let value = self.mk_expr(ExprKind::Literal(Literal::Bool(true)), name_at);
+                        props.push((attr_name, value));
+                        continue;
+                    }
                     self.expect(&Token::Assign)?;
                     let value = match self.peek().clone() {
                         Token::String(s) => {

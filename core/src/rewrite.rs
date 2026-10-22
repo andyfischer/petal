@@ -154,6 +154,9 @@ pub fn find_binding_path(stmts: &[Stmt], name: &str, path: &[PathSeg]) -> Option
                     _ => None,
                 })?
             }
+            (PathSeg::Field(key), ExprKind::Element { props, .. }) => {
+                props.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v)?
+            }
             (PathSeg::Index(i), ExprKind::List(items)) => items.get(*i)?,
             (PathSeg::Index(i), ExprKind::Call { args, .. }) => args.get(*i)?,
             _ => return None,

@@ -176,5 +176,20 @@ print(el)`;
       const code = `let x = "mid"\nprint(<p>start {x} end</p>)`;
       expect(runPetal(code)).toBe("<p>start mid end</p>");
     });
+
+    it("keeps the space beside a hole in text over several lines", () => {
+      const code = `let x = "mid"\nlet el = <p>\n  start {x}\n  and <b>bold</b> end\n</p>\nprint(el.children)`;
+      expect(runPetal(code)).toBe('["start ", "mid", "and ", <b>bold</b>, " end"]');
+    });
+
+    it("puts an open tag's attributes on separate lines", () => {
+      const code = `let el = <video\n  src="a.mov"\n  start={0.5}\n/>\nprint(el.props)`;
+      expect(runPetal(code)).toBe('{ src: "a.mov", start: 0.5 }');
+    });
+
+    it("reads a bare attribute as true", () => {
+      const code = `let el = <video muted src="a.mov" loop />\nprint(el.props)`;
+      expect(runPetal(code)).toBe('{ muted: true, src: "a.mov", loop: true }');
+    });
   });
 });

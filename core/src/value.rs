@@ -360,12 +360,15 @@ fn element_to_display_string(id: crate::heap::ElementId, heap: &Heap) -> String 
     let children = heap.get_list(children_id);
 
     let mut s = format!("<{}", tag);
+    // As written in source: a string in quotes, anything else in braces.
     for (k, v) in props {
         s.push(' ');
         s.push_str(k);
-        s.push_str("=\"");
-        s.push_str(&value_to_display_string(v, heap));
-        s.push('"');
+        let shown = value_to_display_string(v, heap);
+        match v {
+            Value::String(_) => s.push_str(&format!("=\"{shown}\"")),
+            _ => s.push_str(&format!("={{{shown}}}")),
+        }
     }
 
     if children.is_empty() {

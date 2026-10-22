@@ -109,6 +109,9 @@ way, for code written against an earlier checkout.
   `lint` and the language server read the body as the function it is, and
   the tree-sitter grammar and the vim syntax know the form. See
   [docs/testing.md](docs/testing.md).
+- JSX-like elements: an open tag can put its attributes on separate lines,
+  and a bare attribute is `true` (`<video muted />`). See
+  [JSX-like Elements](docs/language-guide.md#jsx-like-elements).
 
 ### Runtime
 
@@ -550,6 +553,15 @@ way, for code written against an earlier checkout.
 
 ### Embedding and integrations
 
+- Element literals are static values: `StaticValue::Element { tag, props,
+  children }` reads `<text y={400}>Hi</text>` out of a file without running
+  it, renders back (`<br />` children end a line), and travels as
+  `{"element": …, "props": {…}, "children": […]}` in the JSON form. Goal-based
+  editing steps into attributes with `.name` paths (`items[0].start`), sets,
+  adds and removes them in the written style, and rewrites only the children
+  that changed. See
+  [docs/features/source-preservation.md](docs/features/source-preservation.md#elements).
+
 - A host runs a program's tests with its own natives present:
   `Env::tests(program)` lists the blocks (`TestDecl`: name, module, file,
   line, function), `Env::test_begin(stack, function)` starts one, and
@@ -855,6 +867,12 @@ Breaking changes made during development, newest first. For the import and
 package changes below, `petal fix-imports` does the rewriting and
 [docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
 
+- JSX text over several lines keeps the whitespace beside a `{hole}` or a
+  nested tag, as React does: `<p>⏎  Hi {name}⏎</p>` is `["Hi ", name]`. Before,
+  every line of a multi-line run was trimmed on both sides, so the text read
+  `"Hi"` and ran into the hole. Text on one line is unchanged. Printing an
+  element now shows a non-string attribute in braces (`<t y={1} />`), as it is
+  written, rather than quoted.
 - Pending values: `&&` and `||` with a pending value on the left now evaluate
   to that pending value without running the right side, as an `if` condition
   does. Before, a pending left side counted as true, so `u && x` was `x` and

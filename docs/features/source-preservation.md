@@ -167,6 +167,31 @@ effects: [
 ],
 ```
 
+## Elements
+
+An element literal (`<text y={400}>Hi</text>`) is a static value,
+`StaticValue::Element { tag, props, children }`, with a text child as a `Str`.
+A `.name` path step enters an attribute, which is set, inserted and removed
+like a record field:
+
+- **Set** edits the value inside `{...}` in place, and a quoted string in
+  place when the new value is a string too. When the written form cannot hold
+  the new value (`font="Futura"` becoming a number, a bare `muted` becoming
+  `false`), the attribute is rewritten whole: a string as `name="…"`, `true`
+  as a bare `name`, anything else as `name={…}`.
+- **Insert** puts the new attribute on its own line when the attribute before
+  it has one (attributes one per line), and otherwise after a space.
+- **Remove** deletes the attribute and the whitespace before it, including a
+  line break, so an attribute on its own line takes its line.
+
+Children are not a path step. Setting a whole element with the same tag lines
+the attributes up by name and plans them as above, and rewrites the children
+between `>` and `</tag>` only when they differ: one line of text stays on the
+tag's line, and anything else goes one line per child a step deeper, with each
+`<br />` ending its line. A self-closing element that gains children gets a
+close tag, and one whose children all go closes itself. A new element is laid
+out like its sibling (attributes on the tag's line or one per line).
+
 ## Colors
 
 `#ff2e88` lowers to the record `{r, g, b}` at run time, but in a file it is one

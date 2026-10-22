@@ -531,6 +531,11 @@ impl Lexer {
 
             // Handle newlines (top-level only, not inside interpolation)
             match ch {
+                // Inside an open tag a line break only separates attributes,
+                // so a long tag can put one attribute per line.
+                '\n' | '\r' if *self.current_mode() == LexerMode::JsxTag => {
+                    self.advance_char();
+                }
                 '\n' => {
                     let start = self.current_pos();
                     self.advance_char();
@@ -1312,25 +1317,38 @@ impl Lexer {
     }
 }
 
-/// Collapse JSX whitespace following React-like rules:
-/// - If text contains newlines, trim each line and join non-empty lines with a single space
-/// - If text is a single line, preserve it as-is
+/// Collapse JSX whitespace the way React does:
+/// - Text on a single line is kept as it is.
+/// - Otherwise each line loses the whitespace at its line breaks (the start
+///   of every line but the first, the end of every line but the last), blank
+///   lines are dropped, and the lines that are left join with a single space.
+///
+/// So whitespace that touches a line break goes, and whitespace beside a
+/// `{hole}` or a nested tag on the same line stays: `Hi {name}` keeps its
+/// space even when the text runs over several lines.
 fn collapse_jsx_whitespace(s: &str) -> String {
     if !s.contains('\n') && !s.contains('\r') {
         return s.to_string();
     }
-    let mut result = String::new();
-    for line in s.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
+    let lines: Vec<&str> = s
+        .split('\n')
+        .map(|l| l.strip_suffix('\r').unwrap_or(l))
+        .collect();
+    let last = lines.len() - 1;
+    let mut kept: Vec<&str> = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let mut line = *line;
+        if i > 0 {
+            line = line.trim_start();
         }
-        if !result.is_empty() {
-            result.push(' ');
+        if i < last {
+            line = line.trim_end();
         }
-        result.push_str(trimmed);
+        if !line.is_empty() {
+            kept.push(line);
+        }
     }
-    result
+    kept.join(" ")
 }
 
 #[cfg(test)]
@@ -1647,7 +1665,46 @@ mod tests {
 
     #[test]
     fn collapse_jsx_whitespace_multiline() {
-        assert_eq!(collapse_jsx_whitespace("  hello\n  world  "), "hello world");
+        assert_eq!(
+            collapse_jsx_whitespace("\n  hello\n  world\n"),
+            "hello world"
+        );
+        // Only whitespace at a line break goes: the text's outer edges stay.
+        assert_eq!(
+            collapse_jsx_whitespace("  hello\n  world  "),
+            "  hello world  "
+        );
+    }
+
+    #[test]
+    fn collapse_jsx_whitespace_keeps_space_beside_a_hole() {
+        // `<p>\n  Hi {name}\n</p>`: the text before the hole keeps its space.
+        assert_eq!(collapse_jsx_whitespace("\n  Hi "), "Hi ");
+        // ...and so does text after a nested tag.
+        assert_eq!(collapse_jsx_whitespace(" text\n"), " text");
+        assert_eq!(collapse_jsx_whitespace("\n  \n  "), "");
+        assert_eq!(collapse_jsx_whitespace("a\r\n  b"), "a b");
+    }
+
+    #[test]
+    fn lex_jsx_open_tag_across_lines() {
+        let tokens = tokenize("<div\n  a=\"x\"\n  b={1}\n/>");
+        assert_eq!(
+            tokens,
+            vec![
+                Token::JsxOpenStart,
+                Token::JsxTagName("div".into()),
+                Token::Ident("a".into()),
+                Token::Assign,
+                Token::String("x".into()),
+                Token::Ident("b".into()),
+                Token::Assign,
+                Token::LBrace,
+                Token::Int(1),
+                Token::RBrace,
+                Token::JsxSelfClose,
+            ]
+        );
     }
 
     #[test]

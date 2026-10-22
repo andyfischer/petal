@@ -29,13 +29,19 @@
 //! a time. So a list that gains and loses elements is edited in place, and the
 //! comments inside it survive.
 //!
+//! An element (`<text y={400}>Hi</text>`) is a container too: a `.name` step
+//! enters its attribute `name`, which is set, added and removed like a record
+//! field, and keeps the way it is written (`"text"`, `{value}`, or a bare
+//! name for `true`) when the new value allows. Its children are not a path
+//! step; setting the whole element rewrites the children only if they differ.
+//!
 //! A value with no original to learn from renders through
 //! [`StaticValue::to_source`], exactly as before.
 
 use std::cell::OnceCell;
 use std::ops::Range;
 
-use crate::ast::{AssignTarget, Expr, ExprKind, RecordField, Stmt, StmtKind};
+use crate::ast::{AssignTarget, Expr, ExprKind, JsxChild, RecordField, Stmt, StmtKind};
 use crate::cst::{SyntaxElement, SyntaxKind, SyntaxNode};
 use crate::goal_based_editing::Placement;
 use crate::lexer::Token;
@@ -43,7 +49,9 @@ use crate::rewrite::{
     PathSeg, Splice, apply_splices, edge_significant_token, find_node, parse_ast,
     parse_binding_path, significant_range,
 };
-use crate::static_value::{StaticBinding, StaticValue, bindings_of, color_literal, eval};
+use crate::static_value::{
+    StaticBinding, StaticValue, bindings_of, color_literal, element_child_lines, eval,
+};
 
 /// What went wrong with a path edit, coarsely — enough for a host to pick a
 /// status code.
@@ -123,8 +131,9 @@ fn set_at(
         Err(depth)
             if depth + 1 == segs.len()
                 && matches!(segs[depth], PathSeg::Field(_))
-                && resolve(root, &segs[..depth])
-                    .is_ok_and(|parent| matches!(shape(parent), Shape::Record(_))) =>
+                && resolve(root, &segs[..depth]).is_ok_and(|parent| {
+                    matches!(shape(parent), Shape::Record(_) | Shape::Element(..))
+                }) =>
         {
             return insert_path(source, path, value, &Placement::End);
         }
@@ -132,6 +141,20 @@ fn set_at(
     };
     let bindings = bindings_of(&doc.stmts[..stmt], &doc.chars);
     let mut ops = Vec::new();
+    // An attribute: how it is written decides whether its value can change
+    // in place.
+    if let Some((PathSeg::Field(key), parent_segs)) = segs.split_last()
+        && let Ok(parent) = resolve(root, parent_segs)
+        && let Shape::Element(props) = shape(parent)
+        && let Some(tag) = doc.tag(parent)
+        && let Some(index) = attr_index(props, key)
+    {
+        if eval(target, &bindings).as_ref() != Ok(value) {
+            let attr = (key.as_str(), target, tag.attrs[index].form, index);
+            doc.plan_attr(&bindings, &mut parent_segs.to_vec(), attr, value, &mut ops);
+        }
+        return apply(source, name, &ops);
+    }
     doc.plan(&bindings, target, &mut segs.to_vec(), value, &mut ops);
     apply(source, name, &ops)
 }
@@ -186,9 +209,23 @@ pub fn insert_path(
             };
             (index, Some(key.clone()))
         }
+        (PathSeg::Field(key), Shape::Element(props)) => {
+            if attr_index(props, key).is_some() {
+                return set_path(source, path, value);
+            }
+            let anchor = |anchor: &str, after: usize| {
+                attr_index(props, anchor).map_or(props.len(), |i| i + after)
+            };
+            let index = match placement {
+                Placement::End => props.len(),
+                Placement::After(a) => anchor(a, 1),
+                Placement::Before(a) => anchor(a, 0),
+            };
+            (index, Some(key.clone()))
+        }
         _ => {
             return Err(EditError::invalid(format!(
-                "`{path}`: cannot insert there — an index needs a list (or a call's arguments) and a field needs a record"
+                "`{path}`: cannot insert there — an index needs a list (or a call's arguments) and a field needs a record or an element"
             )));
         }
     };
@@ -251,6 +288,10 @@ pub fn remove_path(source: &str, path: &str) -> Result<String, EditError> {
                 Some(i) => i,
                 None => return Ok(text),
             },
+            (PathSeg::Field(key), Shape::Element(props)) => match attr_index(props, key) {
+                Some(i) => i,
+                None => return Ok(text),
+            },
             _ => return Err(nothing_at(path)),
         };
         let op = Op::Remove {
@@ -285,6 +326,9 @@ enum Shape<'a> {
     /// The positional arguments of a call to a plain name: a constructor like
     /// `vec3(0.3, -1.0, 0.5)`.
     Call(&'a [Expr]),
+    /// An element's attributes. A `.name` step enters an attribute; the
+    /// children are not a path step.
+    Element(&'a [(String, Expr)]),
     /// A scalar, a color literal (one token, whatever it lowers to), or an
     /// expression that is not a literal at all.
     Leaf,
@@ -306,8 +350,14 @@ fn shape(expr: &Expr) -> Shape<'_> {
         {
             Shape::Call(args)
         }
+        ExprKind::Element { props, .. } => Shape::Element(props),
         _ => Shape::Leaf,
     }
+}
+
+/// Index of the attribute `key` — the last one, which is the one a read sees.
+fn attr_index(props: &[(String, Expr)], key: &str) -> Option<usize> {
+    props.iter().rposition(|(k, _)| k == key)
 }
 
 /// Index of the field `key` — the last one, which is the one a read sees.
@@ -325,6 +375,7 @@ fn element(expr: &Expr, index: usize) -> Option<&Expr> {
             RecordField::Spread(_) => None,
         },
         Shape::List(items) | Shape::Call(items) => items.get(index),
+        Shape::Element(props) => props.get(index).map(|(_, value)| value),
         Shape::Leaf => None,
     }
 }
@@ -336,6 +387,7 @@ fn resolve<'a>(root: &'a Expr, segs: &[PathSeg]) -> Result<&'a Expr, usize> {
     for (depth, seg) in segs.iter().enumerate() {
         let index = match (seg, shape(expr)) {
             (PathSeg::Field(key), Shape::Record(fields)) => field_index(fields, key),
+            (PathSeg::Field(key), Shape::Element(props)) => attr_index(props, key),
             (PathSeg::Index(i), Shape::List(_) | Shape::Call(_)) => Some(*i),
             _ => None,
         };
@@ -373,6 +425,19 @@ enum Op {
     },
     /// Remove element `index` of the container at `segs`.
     Remove { segs: Vec<PathSeg>, index: usize },
+    /// Rewrite attribute `index` of the element at `segs` whole, for a value
+    /// its current spelling cannot hold (`font="Futura"` becoming a number,
+    /// a bare `muted` becoming `false`).
+    ReplaceAttr {
+        segs: Vec<PathSeg>,
+        index: usize,
+        value: StaticValue,
+    },
+    /// Rewrite the children of the element at `segs`.
+    ReplaceChildren {
+        segs: Vec<PathSeg>,
+        children: Vec<StaticValue>,
+    },
 }
 
 /// One step of lining an old sequence up with a new one.
@@ -455,6 +520,21 @@ fn likeness(old: &StaticValue, new: &StaticValue) -> u8 {
             }
         }
         (Call { function: f, .. }, Call { function: g, .. }) => (f == g) as u8 * 2,
+        (
+            Element {
+                tag: f, props: a, ..
+            },
+            Element {
+                tag: g, props: b, ..
+            },
+        ) if f == g => {
+            let shared = a.iter().filter(|attr| b.contains(attr)).count();
+            if shared > 0 && shared * 2 >= a.len().min(b.len()) {
+                2
+            } else {
+                1
+            }
+        }
         (Int(_) | Float(_), Int(_) | Float(_)) => 1,
         _ => (std::mem::discriminant(old) == std::mem::discriminant(new)) as u8,
     }
@@ -485,6 +565,40 @@ struct Seq {
     open_end: usize,
     close: usize,
     items: Vec<Item>,
+}
+
+/// How an attribute's value is written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AttrForm {
+    /// `name="text"`
+    Quoted,
+    /// `name={value}`
+    Braced,
+    /// A bare `name`, which is `true`.
+    Bare,
+}
+
+/// One attribute of an element, as char offsets into the source.
+#[derive(Debug, Clone)]
+struct Attr {
+    start: usize,
+    end: usize,
+    form: AttrForm,
+}
+
+/// An element located in the source: its open tag's attributes, how the open
+/// tag ends, and where the children and the close tag are.
+#[derive(Debug, Clone)]
+struct Tag {
+    name: String,
+    /// Just past the tag name in the open tag.
+    name_end: usize,
+    attrs: Vec<Attr>,
+    /// The `>` that ends the open tag, or the `/>` of a self-closing element.
+    open_end: Range<usize>,
+    self_closing: bool,
+    /// Where `</tag>` starts; `None` for a self-closing element.
+    close: Option<usize>,
 }
 
 /// The formatting of one bracketed sequence — what is captured from an
@@ -636,6 +750,437 @@ impl Doc {
         (lined_up && target > used).then(|| format!(":{}", " ".repeat(target - used)))
     }
 
+    /// Whether only indentation comes before `at` on its line.
+    fn starts_line(&self, at: usize) -> bool {
+        self.chars[self.line_start(at)..at]
+            .iter()
+            .all(|&c| is_blank(c))
+    }
+
+    // ── Elements ─────────────────────────────────────────────────────────
+
+    /// The element `expr` is written as, located in the tree.
+    fn tag(&self, expr: &Expr) -> Option<Tag> {
+        let ExprKind::Element { props, .. } = &expr.kind else {
+            return None;
+        };
+        let node = find_node(&self.root, (expr.span.start.offset, expr.span.end.offset))?;
+        if node.kind() != SyntaxKind::ElementExpr {
+            return None;
+        }
+        let (mut name, mut name_end, mut open_end, mut close) = (None, None, None, None);
+        let mut self_closing = false;
+        let mut attrs = Vec::new();
+        for el in node.children() {
+            match el {
+                SyntaxElement::Token(t) if t.is_trivia() => {}
+                SyntaxElement::Token(t) => {
+                    let at = t.offset() as usize;
+                    let end = at + t.text_len() as usize;
+                    match t.token() {
+                        Some(Token::JsxTagName(tag)) if name.is_none() => {
+                            name = Some(tag.clone());
+                            name_end = Some(end);
+                        }
+                        Some(Token::Gt) if open_end.is_none() => open_end = Some(at..end),
+                        Some(Token::JsxSelfClose) if open_end.is_none() => {
+                            open_end = Some(at..end);
+                            self_closing = true;
+                        }
+                        Some(Token::JsxCloseStart) => close = Some(at),
+                        _ => {}
+                    }
+                }
+                SyntaxElement::Node(n) if n.kind() == SyntaxKind::JsxAttr => {
+                    let (start, end) = significant_range(&n)?;
+                    let braced = n
+                        .children()
+                        .into_iter()
+                        .any(|el| matches!(el, SyntaxElement::Node(_)));
+                    let quoted = n.children().into_iter().any(|el| {
+                        matches!(el, SyntaxElement::Token(t) if matches!(t.token(), Some(Token::String(_))))
+                    });
+                    attrs.push(Attr {
+                        start: start as usize,
+                        end: end as usize,
+                        form: if braced {
+                            AttrForm::Braced
+                        } else if quoted {
+                            AttrForm::Quoted
+                        } else {
+                            AttrForm::Bare
+                        },
+                    });
+                }
+                SyntaxElement::Node(_) => {}
+            }
+        }
+        (attrs.len() == props.len()).then_some(())?;
+        Some(Tag {
+            name: name?,
+            name_end: name_end?,
+            attrs,
+            open_end: open_end?,
+            self_closing,
+            close: if self_closing { None } else { Some(close?) },
+        })
+    }
+
+    /// One attribute, `key="text"`, a bare `key` for `true`, or `key={value}`
+    /// with the value rendered like `model`.
+    fn render_attr(
+        &self,
+        key: &str,
+        value: &StaticValue,
+        model: Option<&Expr>,
+        indent: &str,
+    ) -> String {
+        match value {
+            StaticValue::Str(_) | StaticValue::Bool(true) => {
+                crate::static_value::render_attr(key, value, 0)
+            }
+            other => format!("{key}={{{}}}", self.render(other, model, indent)),
+        }
+    }
+
+    /// The step attributes are indented by when `tag` puts each on its own
+    /// line, or `None` when they share the tag's line.
+    fn attr_step(&self, tag: &Tag, start: usize) -> Option<String> {
+        let first = tag.attrs.first()?;
+        if !self.starts_line(first.start) {
+            return None;
+        }
+        let outer = self.line_indent(start);
+        let inner = self.line_indent(first.start);
+        Some(
+            inner
+                .strip_prefix(outer.as_str())
+                .filter(|step| !step.is_empty())
+                .map_or_else(|| self.file_style().step.clone(), str::to_string),
+        )
+    }
+
+    /// An element's children in source, for an element whose tags start on a
+    /// line indented by `indent`: the text between `>` and `</tag>`.
+    fn children_text(&self, children: &[StaticValue], indent: &str) -> String {
+        let lines = element_child_lines(children, 0);
+        let inner = format!("{indent}{}", self.file_style().step);
+        match lines.as_slice() {
+            [only] if !only.starts_with('<') && !only.contains('\n') => only.clone(),
+            _ => {
+                let mut out = String::from("\n");
+                for line in &lines {
+                    out.push_str(&inner);
+                    out.push_str(&line.replace('\n', &format!("\n{inner}")));
+                    out.push('\n');
+                }
+                out.push_str(indent);
+                out
+            }
+        }
+    }
+
+    /// Render an element starting on a line indented by `indent`, laid out
+    /// like `model` (another element) when there is one: its attributes on
+    /// the tag's line or one per line, as the model has them.
+    fn render_element(
+        &self,
+        tag: &str,
+        props: &[(String, StaticValue)],
+        children: &[StaticValue],
+        model: Option<&Expr>,
+        indent: &str,
+    ) -> String {
+        let model_tag = model.and_then(|m| Some((m, self.tag(m)?)));
+        let step = model_tag
+            .as_ref()
+            .and_then(|(m, t)| self.attr_step(t, m.span.start.offset as usize));
+        let attr_model = |key: &str| {
+            let (m, _) = model_tag.as_ref()?;
+            let Shape::Element(model_props) = shape(m) else {
+                return None;
+            };
+            element(m, attr_index(model_props, key)?)
+        };
+        let mut out = format!("<{tag}");
+        match &step {
+            Some(step) if !props.is_empty() => {
+                let inner = format!("{indent}{step}");
+                for (key, value) in props {
+                    out.push('\n');
+                    out.push_str(&inner);
+                    out.push_str(&self.render_attr(key, value, attr_model(key), &inner));
+                }
+                out.push('\n');
+                out.push_str(indent);
+                if children.is_empty() {
+                    out.push_str("/>");
+                    return out;
+                }
+            }
+            _ => {
+                for (key, value) in props {
+                    out.push(' ');
+                    out.push_str(&self.render_attr(key, value, attr_model(key), indent));
+                }
+                if children.is_empty() {
+                    out.push_str(" />");
+                    return out;
+                }
+            }
+        }
+        out.push('>');
+        out.push_str(&self.children_text(children, indent));
+        out.push_str(&format!("</{tag}>"));
+        out
+    }
+
+    /// Splices adding attribute `key` as attribute `index` of `container`,
+    /// laid out like the attribute before it (or after, when it goes first).
+    fn insert_attr(
+        &self,
+        container: &Expr,
+        index: usize,
+        key: &str,
+        what: &What,
+    ) -> Result<Vec<Splice>, EditError> {
+        let tag = self.tag(container).ok_or_else(|| {
+            EditError::invalid("the element there could not be located in the source")
+        })?;
+        if index > tag.attrs.len() {
+            return Err(EditError::invalid("insert index is past the end"));
+        }
+        let near = tag.attrs.get(index.saturating_sub(1));
+        let indent = match near {
+            Some(attr) if self.starts_line(attr.start) => Some(self.line_indent(attr.start)),
+            _ => None,
+        };
+        let text = match what {
+            What::Text(text, _) => text.clone(),
+            What::Value(value) => {
+                let at = indent
+                    .clone()
+                    .unwrap_or_else(|| self.line_indent(container.span.start.offset as usize));
+                self.render_attr(key, value, None, &at)
+            }
+        };
+        let gap = match &indent {
+            Some(indent) => format!("\n{indent}"),
+            None => " ".to_string(),
+        };
+        let at = |at: usize, text: String| Splice {
+            start: at,
+            end: at,
+            text,
+        };
+        Ok(vec![match (index, near) {
+            (0, Some(first)) => at(first.start, format!("{text}{gap}")),
+            (_, Some(prev)) => at(prev.end, format!("{gap}{text}")),
+            (_, None) => at(tag.name_end, format!(" {text}")),
+        }])
+    }
+
+    /// Splices removing attribute `index` of `container`, with the space (or
+    /// the line break) before it.
+    fn remove_attr(&self, container: &Expr, index: usize) -> Result<Vec<Splice>, EditError> {
+        let tag = self.tag(container).ok_or_else(|| {
+            EditError::invalid("the element there could not be located in the source")
+        })?;
+        let attr = tag
+            .attrs
+            .get(index)
+            .ok_or_else(|| EditError::not_found("no attribute at that index"))?;
+        let mut start = attr.start;
+        while start > 0 && matches!(self.chars[start - 1], ' ' | '\t' | '\r' | '\n') {
+            start -= 1;
+        }
+        Ok(vec![Splice {
+            start,
+            end: attr.end,
+            text: String::new(),
+        }])
+    }
+
+    fn replace_attr(
+        &self,
+        container: &Expr,
+        index: usize,
+        value: &StaticValue,
+    ) -> Result<Vec<Splice>, EditError> {
+        let tag = self.tag(container).ok_or_else(|| {
+            EditError::invalid("the element there could not be located in the source")
+        })?;
+        let (Some(attr), ExprKind::Element { props, .. }) = (tag.attrs.get(index), &container.kind)
+        else {
+            return Err(EditError::not_found("no attribute at that index"));
+        };
+        let text = self.render_attr(&props[index].0, value, None, &self.line_indent(attr.start));
+        Ok(vec![Splice {
+            start: attr.start,
+            end: attr.end,
+            text,
+        }])
+    }
+
+    /// Splices making the children of `container` read as `children`. A
+    /// self-closing element gains a close tag, and one left empty closes
+    /// itself.
+    fn replace_children(
+        &self,
+        container: &Expr,
+        children: &[StaticValue],
+    ) -> Result<Vec<Splice>, EditError> {
+        let tag = self.tag(container).ok_or_else(|| {
+            EditError::invalid("the element there could not be located in the source")
+        })?;
+        let indent = self.line_indent(container.span.start.offset as usize);
+        let end = container.span.end.offset as usize;
+        // The open tag's own spacing before its `>` or `/>`: kept when the
+        // delimiter has a line to itself (attributes one per line).
+        let own_line = self.starts_line(tag.open_end.start);
+        let mut before = tag.open_end.start;
+        if !own_line {
+            while before > tag.name_end && is_blank(self.chars[before - 1]) {
+                before -= 1;
+            }
+        }
+        if children.is_empty() {
+            if tag.self_closing {
+                return Ok(Vec::new());
+            }
+            let space = if own_line { "" } else { " " };
+            return Ok(vec![Splice {
+                start: before,
+                end,
+                text: format!("{space}/>"),
+            }]);
+        }
+        let body = self.children_text(children, &indent);
+        Ok(vec![match tag.close {
+            Some(close) => Splice {
+                start: tag.open_end.end,
+                end: close,
+                text: body,
+            },
+            None => Splice {
+                start: before,
+                end,
+                text: format!(">{body}</{}>", tag.name),
+            },
+        }])
+    }
+
+    /// Plan making attribute `key` (now `old`, written in `form`, at `index`)
+    /// of the element at `segs` read as `value`. `{...}` holds anything and a
+    /// quoted string holds a string, so those are edited inside; everything
+    /// else rewrites the attribute.
+    fn plan_attr(
+        &self,
+        bindings: &[StaticBinding],
+        segs: &mut Vec<PathSeg>,
+        (key, old, form, index): (&str, &Expr, AttrForm, usize),
+        value: &StaticValue,
+        ops: &mut Vec<Op>,
+    ) {
+        let in_place = match form {
+            AttrForm::Braced => !matches!(value, StaticValue::Bool(true)),
+            AttrForm::Quoted => matches!(value, StaticValue::Str(_)),
+            AttrForm::Bare => false,
+        };
+        if in_place {
+            segs.push(PathSeg::Field(key.to_string()));
+            self.plan(bindings, old, segs, value, ops);
+            segs.pop();
+        } else {
+            ops.push(Op::ReplaceAttr {
+                segs: segs.clone(),
+                index,
+                value: value.clone(),
+            });
+        }
+    }
+
+    /// [`Doc::plan`] for an element that stays the same tag: attributes are
+    /// lined up by name and planned like record fields, and the children are
+    /// rewritten when they differ.
+    fn plan_element(
+        &self,
+        bindings: &[StaticBinding],
+        old: &Expr,
+        segs: &mut Vec<PathSeg>,
+        new: &StaticValue,
+        ops: &mut Vec<Op>,
+    ) {
+        let (
+            ExprKind::Element {
+                props: old_props,
+                children: old_children,
+                ..
+            },
+            StaticValue::Element {
+                props: new_props,
+                children: new_children,
+                ..
+            },
+        ) = (&old.kind, new)
+        else {
+            return;
+        };
+        let Some(tag) = self.tag(old) else {
+            return ops.push(Op::Replace {
+                segs: segs.clone(),
+                value: new.clone(),
+            });
+        };
+        let mut steps = Vec::new();
+        align(
+            0..old_props.len(),
+            0..new_props.len(),
+            &[&|i, j| old_props[i].0 == new_props[j].0],
+            &mut steps,
+        );
+        let mut pos = 0;
+        for step in steps {
+            match step {
+                Step::Keep(i, j) => {
+                    let (key, value) = &new_props[j];
+                    let old_value = &old_props[i].1;
+                    if eval(old_value, bindings).as_ref() != Ok(value) {
+                        let attr = (key.as_str(), old_value, tag.attrs[i].form, pos);
+                        self.plan_attr(bindings, segs, attr, value, ops);
+                    }
+                    pos += 1;
+                }
+                Step::Insert(j) => {
+                    ops.push(Op::Insert {
+                        segs: segs.clone(),
+                        index: pos,
+                        key: Some(new_props[j].0.clone()),
+                        what: What::Value(new_props[j].1.clone()),
+                    });
+                    pos += 1;
+                }
+                Step::Remove(_) => ops.push(Op::Remove {
+                    segs: segs.clone(),
+                    index: pos,
+                }),
+            }
+        }
+        let old_children: Result<Vec<StaticValue>, String> = old_children
+            .iter()
+            .map(|child| match child {
+                JsxChild::Text(text) => Ok(StaticValue::Str(text.clone())),
+                JsxChild::Expr(expr) => eval(expr, bindings),
+            })
+            .collect();
+        if old_children.as_ref() != Ok(new_children) {
+            ops.push(Op::ReplaceChildren {
+                segs: segs.clone(),
+                children: new_children.to_vec(),
+            });
+        }
+    }
+
     // ── Locating sequences ───────────────────────────────────────────────
 
     /// The bracketed sequence `expr` is written as, if it is one.
@@ -643,7 +1188,7 @@ impl Doc {
         let count = match shape(expr) {
             Shape::Record(fields) => fields.len(),
             Shape::List(items) | Shape::Call(items) => items.len(),
-            Shape::Leaf => return None,
+            Shape::Element(..) | Shape::Leaf => return None,
         };
         let node = find_node(&self.root, (expr.span.start.offset, expr.span.end.offset))?;
         let seq = seq_of_node(&node, &self.chars)?;
@@ -833,6 +1378,14 @@ impl Doc {
                     .map(|m| self.expr_text(m));
                 color_like(value, model.as_deref())
             }
+            StaticValue::Element {
+                tag,
+                props,
+                children,
+            } => {
+                let model = model.filter(|m| matches!(shape(m), Shape::Element(..)));
+                self.render_element(tag, props, children, model, indent)
+            }
             scalar => scalar.to_source(),
         }
     }
@@ -932,6 +1485,16 @@ impl Doc {
                 value: new.clone(),
             })
         };
+        if let (ExprKind::Element { tag, .. }, StaticValue::Element { tag: new_tag, .. }) =
+            (&old.kind, new)
+            && tag == new_tag
+            && unique_attrs(shape(old))
+        {
+            return self.plan_element(bindings, old, segs, new, ops);
+        }
+        if matches!(shape(old), Shape::Element(..)) {
+            return whole(ops);
+        }
         // A container the tree cannot locate (it should not happen) is not
         // edited inside.
         if !matches!(shape(old), Shape::Leaf) && self.seq(old).is_none() {
@@ -1072,6 +1635,9 @@ impl Doc {
         key: Option<&str>,
         what: &What,
     ) -> Result<Vec<Splice>, EditError> {
+        if let (Shape::Element(..), Some(key)) = (shape(container), key) {
+            return self.insert_attr(container, index, key, what);
+        }
         let seq = self.container(container)?;
         let count = seq.items.len();
         if index > count {
@@ -1178,6 +1744,9 @@ impl Doc {
     }
 
     fn remove(&self, container: &Expr, index: usize) -> Result<Vec<Splice>, EditError> {
+        if matches!(shape(container), Shape::Element(..)) {
+            return self.remove_attr(container, index);
+        }
         let seq = self.container(container)?;
         let item = seq
             .items
@@ -1220,6 +1789,17 @@ impl Doc {
         }
         Ok(vec![cut(item.start, end)])
     }
+}
+
+/// No attribute of the element is written twice.
+fn unique_attrs(shape: Shape) -> bool {
+    let Shape::Element(props) = shape else {
+        return false;
+    };
+    props
+        .iter()
+        .enumerate()
+        .all(|(i, (key, _))| props[..i].iter().all(|(other, _)| other != key))
 }
 
 fn unique_keys(fields: &[(String, StaticValue)]) -> bool {
@@ -1394,6 +1974,14 @@ fn apply(source: &str, name: &str, ops: &[Op]) -> Result<String, EditError> {
             }
             Op::Remove { segs, index } => {
                 splices = doc.remove(at(segs)?, *index)?;
+                next += 1;
+            }
+            Op::ReplaceAttr { segs, index, value } => {
+                splices = doc.replace_attr(at(segs)?, *index, value)?;
+                next += 1;
+            }
+            Op::ReplaceChildren { segs, children } => {
+                splices = doc.replace_children(at(segs)?, children)?;
                 next += 1;
             }
         }

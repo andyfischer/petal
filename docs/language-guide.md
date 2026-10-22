@@ -2195,12 +2195,36 @@ let page = <div class="root">
 </div>
 ```
 
-- Attributes are `name={expr}` or `name="literal"`.
-- Text between tags is treated as a string child.
+- Attributes are `name={expr}` or `name="literal"`. A bare `name` is
+  `name={true}`, as in JSX (`<video muted />`).
+- An open tag can put its attributes on separate lines:
+
+  ```petal
+  let clip = <video
+      src="media/beach.mp4"
+      start={0.5}
+      muted
+  />
+  ```
+
+- Text between tags is treated as a string child. Whitespace follows React's
+  rule: text on one line is kept as written; text over several lines loses
+  the whitespace at each line break, drops blank lines, and joins what is
+  left with single spaces. Space beside a `{hole}` or a tag on the same line
+  stays, so `Hello, {name}` keeps its space. A line break in the text
+  is therefore not a child; write `<br />` (or `{"\n"}`) where one should be.
 - Self-closing tags use `<Tag />`.
 - `{expr}` embeds a Petal expression as a child.
 
-Elements are runtime values of type `element`.
+Elements are runtime values of type `element`, with the fields `tag` (a
+string), `props` (a record of the attributes, in order) and `children` (a
+list).
+
+An element literal whose attributes and children are literals is a
+[static value](features/source-preservation.md) too, so a config-style file can hold a
+tree of elements that a host reads without running the program and edits in
+place: a path step `.name` names an attribute (`items[0].start`), set, added
+and removed like a record field.
 
 ## Function Overloading
 

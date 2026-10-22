@@ -29,8 +29,10 @@
 //! # What counts as static
 //!
 //! Literals (int, float, string, bool, `nil`), negation and `not` applied to
-//! them, list and record literals of static elements, and references to a name
-//! bound to a static value **earlier in the file**. A **call** is also static:
+//! them, list and record literals of static elements, element literals
+//! (`<text y={400}>Hi</text>`, [`StaticValue::Element`]) whose attributes and
+//! children are static, and references to a name bound to a static value
+//! **earlier in the file**. A **call** is also static:
 //! it is captured unevaluated as [`StaticValue::Call`], because in a config file
 //! a call is a constructor the host interprets (`rgb(255, 0, 0)`,
 //! `editor("a.rs")`) rather than a computation to run. So is a variant of an
@@ -45,7 +47,9 @@
 
 use std::collections::BTreeMap;
 
-use crate::ast::{AssignTarget, Expr, ExprKind, Literal, RecordField, Stmt, StmtKind, UnaryOp};
+use crate::ast::{
+    AssignTarget, Expr, ExprKind, JsxChild, Literal, RecordField, Stmt, StmtKind, UnaryOp,
+};
 use crate::cst::parse_source;
 use crate::source_map::ENTRY_FILE;
 
@@ -98,6 +102,17 @@ pub enum StaticValue {
         of: String,
         name: String,
         args: Vec<StaticValue>,
+    },
+    /// An element `<tag a="x" b={1}>children</tag>`, the JSX-style syntax a
+    /// host walks as a tree. `props` are its attributes in source order (a
+    /// bare `<video muted />` is `muted: true`); `children` its content, where
+    /// a run of text is a `Str` and a `{hole}` or nested tag is whatever value
+    /// it holds. Renders with each `<br />` ending a line, so text broken into
+    /// lines reads as it will show.
+    Element {
+        tag: String,
+        props: Vec<(String, StaticValue)>,
+        children: Vec<StaticValue>,
     },
 }
 
@@ -209,6 +224,26 @@ impl StaticValue {
         }
     }
 
+    /// An element value: `StaticValue::element("text", [("y", 400)], ["Hi"])`
+    /// renders as `<text y={400}>Hi</text>`.
+    pub fn element<P, K, A, C, B>(tag: impl Into<String>, props: P, children: C) -> StaticValue
+    where
+        P: IntoIterator<Item = (K, A)>,
+        K: Into<String>,
+        A: Into<StaticValue>,
+        C: IntoIterator<Item = B>,
+        B: Into<StaticValue>,
+    {
+        StaticValue::Element {
+            tag: tag.into(),
+            props: props
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
+            children: children.into_iter().map(Into::into).collect(),
+        }
+    }
+
     /// Render this value as Petal source, starting at column 0.
     ///
     /// The inverse of [`get_static_value`] for everything that module can read,
@@ -241,6 +276,24 @@ impl StaticValue {
             StaticValue::Variant { of, name, args } => {
                 render_call_at(&format!("{of}.{name}"), args, depth)
             }
+            StaticValue::Element {
+                tag,
+                props,
+                children,
+            } => {
+                let attrs: String = props
+                    .iter()
+                    .map(|(key, value)| format!(" {}", render_attr(key, value, depth)))
+                    .collect();
+                let open = format!("<{tag}{attrs}");
+                let close = format!("</{tag}>");
+                wrap_children(
+                    &open,
+                    &close,
+                    &element_child_lines(children, depth + 1),
+                    depth,
+                )
+            }
         }
     }
 
@@ -249,7 +302,10 @@ impl StaticValue {
     pub(crate) fn is_composite(&self) -> bool {
         matches!(
             self,
-            StaticValue::List(_) | StaticValue::Record(_) | StaticValue::Call { .. }
+            StaticValue::List(_)
+                | StaticValue::Record(_)
+                | StaticValue::Call { .. }
+                | StaticValue::Element { .. }
         ) || matches!(self, StaticValue::Variant { args, .. } if !args.is_empty())
     }
 }
@@ -297,6 +353,80 @@ pub(crate) fn render_call_at(function: &str, args: &[StaticValue], depth: usize)
 /// Two spaces per `depth` level.
 fn indent(depth: usize) -> String {
     "  ".repeat(depth)
+}
+
+/// One attribute of an element: `key="text"` for a string, a bare `key` for
+/// `true`, and `key={value}` for anything else.
+pub(crate) fn render_attr(key: &str, value: &StaticValue, depth: usize) -> String {
+    match value {
+        StaticValue::Str(s) => format!("{key}={}", render_string_literal(s)),
+        StaticValue::Bool(true) => key.to_string(),
+        other => format!("{key}={{{}}}", other.render(depth)),
+    }
+}
+
+/// Whether `s` can be written as bare text between tags and read back the
+/// same: nothing a tag or a hole starts with, and no whitespace at its edges,
+/// which the line-break collapsing would eat.
+fn is_plain_text(s: &str) -> bool {
+    !s.is_empty() && s.trim() == s && !s.contains(['{', '}', '<', '>', '\n', '\r', '\t'])
+}
+
+/// An element's children as source lines, each at `depth`: text and `{hole}`s
+/// run along one line, a `<br />` ends the line it is on, and any other tag
+/// takes a line of its own. Text that would not read back as written (two runs
+/// side by side, or space at its edges) is written as a `{"string"}` hole.
+pub(crate) fn element_child_lines(children: &[StaticValue], depth: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    let mut after_text = false;
+    for child in children {
+        match child {
+            StaticValue::Str(s) if !after_text && is_plain_text(s) => {
+                line.push_str(s);
+                after_text = true;
+                continue;
+            }
+            StaticValue::Element {
+                tag,
+                props,
+                children,
+            } if tag == "br" && props.is_empty() && children.is_empty() => {
+                line.push_str("<br />");
+                lines.push(std::mem::take(&mut line));
+            }
+            StaticValue::Element { .. } => {
+                if !line.is_empty() {
+                    lines.push(std::mem::take(&mut line));
+                }
+                lines.push(child.render(depth));
+            }
+            other => line.push_str(&format!("{{{}}}", other.render(depth))),
+        }
+        after_text = false;
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+/// An element from its open tag (`<tag attrs`, without the `>`), its close
+/// tag and its child lines: self-closing with no children, on one line when
+/// the children are one line of text, and otherwise one child line per line,
+/// a step deeper than the tags.
+pub(crate) fn wrap_children(open: &str, close: &str, lines: &[String], depth: usize) -> String {
+    match lines {
+        [] => format!("{open} />"),
+        [only] if !only.starts_with('<') && !only.contains('\n') => {
+            format!("{open}>{only}{close}")
+        }
+        _ => {
+            let inner = indent(depth + 1);
+            let body: String = lines.iter().map(|l| format!("{inner}{l}\n")).collect();
+            format!("{open}>\n{body}{}{close}", indent(depth))
+        }
+    }
 }
 
 impl From<&str> for StaticValue {
@@ -834,6 +964,30 @@ fn eval_in(expr: &Expr, scope: &Scope) -> Result<StaticValue, String> {
                 args: out,
             })
         }
+        // An element is a tree of data: static when its attributes and its
+        // children are.
+        ExprKind::Element {
+            tag,
+            props,
+            children,
+        } => {
+            let mut attrs = Vec::with_capacity(props.len());
+            for (key, value) in props {
+                attrs.push((key.clone(), eval_in(value, scope)?));
+            }
+            let mut content = Vec::with_capacity(children.len());
+            for child in children {
+                content.push(match child {
+                    JsxChild::Text(text) => StaticValue::Str(text.clone()),
+                    JsxChild::Expr(expr) => eval_in(expr, scope)?,
+                });
+            }
+            Ok(StaticValue::Element {
+                tag: tag.clone(),
+                props: attrs,
+                children: content,
+            })
+        }
         // `Mode.dark`: a variant of an enum this file declares.
         ExprKind::FieldAccess { object, field } if enum_named(object, scope).is_some() => {
             let (enum_name, def) = enum_named(object, scope).expect("checked");
@@ -895,7 +1049,6 @@ fn describe_expr(kind: &ExprKind) -> &'static str {
         ExprKind::Lambda { .. } => "a lambda",
         ExprKind::FieldAccess { .. } => "a field access",
         ExprKind::IndexAccess { .. } => "an index access",
-        ExprKind::Element { .. } => "an element literal",
         ExprKind::AtVar(_) => "an `@` in-out marker",
         _ => "an expression",
     }
@@ -914,6 +1067,7 @@ fn describe_value(value: &StaticValue) -> &'static str {
         StaticValue::Record(_) => "a record",
         StaticValue::Call { .. } => "a call",
         StaticValue::Variant { .. } => "an enum variant",
+        StaticValue::Element { .. } => "an element",
     }
 }
 

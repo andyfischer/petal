@@ -1412,16 +1412,28 @@ impl Projector {
             Some(expr_node) => self.expr(expr_node)?,
             // `name="value"` — a string literal spanning its token.
             None => {
-                let string_tok = direct_tokens(node)
-                    .into_iter()
+                let tokens = direct_tokens(node);
+                match tokens
+                    .iter()
                     .find(|t| matches!(t.token(), Some(Token::String(_))))
-                    .ok_or("JSX attribute missing its value")?;
-                let Some(Token::String(s)) = string_tok.token().cloned() else {
-                    unreachable!()
-                };
-                Expr {
-                    kind: ExprKind::Literal(Literal::String(s)),
-                    span: self.token_span(&string_tok),
+                {
+                    Some(string_tok) => {
+                        let Some(Token::String(s)) = string_tok.token().cloned() else {
+                            unreachable!()
+                        };
+                        Expr {
+                            kind: ExprKind::Literal(Literal::String(s)),
+                            span: self.token_span(string_tok),
+                        }
+                    }
+                    // A bare `name` is `name={true}`, spanning the name.
+                    None => {
+                        let name_tok = tokens.first().ok_or("JSX attribute missing its name")?;
+                        Expr {
+                            kind: ExprKind::Literal(Literal::Bool(true)),
+                            span: self.token_span(name_tok),
+                        }
+                    }
                 }
             }
         };

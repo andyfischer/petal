@@ -471,8 +471,10 @@ let page = <div class="root">
 ```
 
 Builds a tree-shaped `element` value for a host to render. Attributes are
-`name={expr}` or `name="literal"`; `{expr}` embeds a child expression; text
-between tags is a string child; `<Tag />` self-closes. See
+`name={expr}` or `name="literal"`, a bare `name` is `name={true}`, and an open
+tag may put them on separate lines; `{expr}` embeds a child expression; text
+between tags is a string child (whitespace at line breaks collapses, as in
+React); `<Tag />` self-closes. See
 [JSX-like Elements](../language-guide.md#jsx-like-elements).
 
 ## Types (optional annotations)

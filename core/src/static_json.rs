@@ -12,6 +12,9 @@
 //! {"color": "#ff2e88"}               a color literal
 //! {"variant": "Mode.dark"}           an enum variant; with a payload,
 //! {"variant": "Shape.circle", "args": [...]}
+//! {"element": "text", "props": {...}, "children": [...]}
+//!                                    an element; `props` and `children`
+//!                                    may be left out when empty
 //! ```
 
 use serde::de::{Deserialize, Deserializer, Error, MapAccess, SeqAccess, Visitor};
@@ -41,6 +44,31 @@ fn write_list(items: &[StaticValue], out: &mut String) {
     out.push(']');
 }
 
+fn write_fields(fields: &[(String, StaticValue)], out: &mut String) {
+    out.push('{');
+    let mut seen: Vec<&str> = Vec::new();
+    for (key, field) in fields {
+        // A key written twice keeps its first position (JSON objects
+        // cannot repeat one); the later value is what the program reads.
+        if seen.contains(&key.as_str()) {
+            continue;
+        }
+        if !seen.is_empty() {
+            out.push(',');
+        }
+        seen.push(key);
+        out.push_str(&quoted(key));
+        out.push(':');
+        let last = fields
+            .iter()
+            .rev()
+            .find(|(k, _)| k == key)
+            .map_or(field, |(_, v)| v);
+        write_json(last, out);
+    }
+    out.push('}');
+}
+
 fn write_json(value: &StaticValue, out: &mut String) {
     match value {
         StaticValue::Nil => out.push_str("null"),
@@ -54,28 +82,9 @@ fn write_json(value: &StaticValue, out: &mut String) {
         }
         StaticValue::List(items) => write_list(items, out),
         StaticValue::Record(fields) => {
-            out.push_str("{\"rec\":{");
-            let mut seen: Vec<&str> = Vec::new();
-            for (key, field) in fields {
-                // A key written twice keeps its first position (JSON objects
-                // cannot repeat one); the later value is what the program reads.
-                if seen.contains(&key.as_str()) {
-                    continue;
-                }
-                if !seen.is_empty() {
-                    out.push(',');
-                }
-                seen.push(key);
-                out.push_str(&quoted(key));
-                out.push(':');
-                let last = fields
-                    .iter()
-                    .rev()
-                    .find(|(k, _)| k == key)
-                    .map_or(field, |(_, v)| v);
-                write_json(last, out);
-            }
-            out.push_str("}}");
+            out.push_str("{\"rec\":");
+            write_fields(fields, out);
+            out.push('}');
         }
         StaticValue::Call { function, args } => {
             out.push_str(&format!("{{\"call\":{},\"args\":", quoted(function)));
@@ -88,6 +97,17 @@ fn write_json(value: &StaticValue, out: &mut String) {
                 out.push_str(",\"args\":");
                 write_list(args, out);
             }
+            out.push('}');
+        }
+        StaticValue::Element {
+            tag,
+            props,
+            children,
+        } => {
+            out.push_str(&format!("{{\"element\":{},\"props\":", quoted(tag)));
+            write_fields(props, out);
+            out.push_str(",\"children\":");
+            write_list(children, out);
             out.push('}');
         }
     }
@@ -167,6 +187,8 @@ impl<'de> Deserialize<'de> for Wire {
                 let mut value = None;
                 let (mut function, mut args) = (None::<String>, None::<Vec<Wire>>);
                 let mut variant = None::<String>;
+                let (mut element, mut props, mut children) =
+                    (None::<String>, None::<Fields>, None::<Vec<Wire>>);
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "int" => {
@@ -190,6 +212,9 @@ impl<'de> Deserialize<'de> for Wire {
                         "call" => function = Some(map.next_value()?),
                         "variant" => variant = Some(map.next_value()?),
                         "args" => args = Some(map.next_value()?),
+                        "element" => element = Some(map.next_value()?),
+                        "props" => props = Some(map.next_value()?),
+                        "children" => children = Some(map.next_value()?),
                         other => {
                             return Err(A::Error::custom(format!(
                                 "unknown value tag `{other}` (a record is {{\"rec\": {{...}}}})"
@@ -218,9 +243,18 @@ impl<'de> Deserialize<'de> for Wire {
                     }
                     (None, None) => None,
                 };
-                value.or(called).map(Wire).ok_or_else(|| {
+                let element = element.map(|tag| StaticValue::Element {
+                    tag,
+                    props: props.map(|p| p.0).unwrap_or_default(),
+                    children: children
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|c| c.0)
+                        .collect(),
+                });
+                value.or(called).or(element).map(Wire).ok_or_else(|| {
                     A::Error::custom(
-                        "an object needs one of `int`, `rec`, `call`, `color`, `variant`",
+                        "an object needs one of `int`, `rec`, `call`, `color`, `variant`, `element`",
                     )
                 })
             }

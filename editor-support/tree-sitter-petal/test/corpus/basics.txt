@@ -202,6 +202,28 @@ let v = <div class="a">{item}</div>
       (jsx_closing_element name: (jsx_close_tag)))))
 
 ==================
+JSX attributes over several lines, and a bare attribute
+==================
+
+let v = <video
+  src="a.mov"
+  muted
+  start={0.5}
+/>
+
+---
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (jsx_element
+      (jsx_self_closing_element
+        name: (jsx_open_tag)
+        (jsx_attribute name: (identifier) value: (string (string_content)))
+        (jsx_attribute name: (identifier))
+        (jsx_attribute name: (identifier) value: (jsx_expression (float)))))))
+
+==================
 Import statements
 ==================
 

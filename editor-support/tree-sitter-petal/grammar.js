@@ -640,10 +640,10 @@ module.exports = grammar({
 
     jsx_close_tag: _ => token(seq('</', /[a-zA-Z][a-zA-Z0-9_.-]*/)),
 
+    // A bare `<video muted />` is `muted={true}`, as in JSX.
     jsx_attribute: $ => seq(
       field('name', $.identifier),
-      '=',
-      field('value', choice($.string, $.jsx_expression)),
+      optional(seq('=', field('value', choice($.string, $.jsx_expression)))),
     ),
 
     jsx_expression: $ => seq('{', optional($._expression), '}'),

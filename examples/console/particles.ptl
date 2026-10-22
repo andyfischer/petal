@@ -1,23 +1,41 @@
 // Particle System
-// Simulating several independent objects out of one `state` declaration site.
+// Simulating several independent objects that each remember their own state.
 //
-// Each particle needs its own position and velocity, and a particle is an
-// entity with an id — so the declarations are keyed with `state(id)`. A keyed
-// slot is *absolute*: the same key reaches the same cell no matter which
-// callsite, loop iteration, or frame asked for it, so particle 2 keeps its own
-// trajectory across every frame of the simulation below.
+// Each particle needs its own position and velocity from one frame to the
+// next, and a particle is an entity with an id. A table keyed by that id is a
+// map, and a table the program updates over time lives in a top-level
+// `state var`: one cell for the whole program, read with `get` and written
+// with `set`. The id, not the place the particle happens to be updated from,
+// is what finds its entry, so particle 2 keeps its own trajectory across
+// every frame of the simulation below.
 //
-// Without the key, all four particles would share one set of cells and the
-// "simulation" would be a single particle updated four times per frame.
+// A plain `state` inside `update_particle` would not do here. In-function
+// state is keyed by call path, and each pass of the `for frame` loop below is
+// a different path, so every simulated frame would start the particles over.
+// (In a frame-loop host, where each frame is a fresh run of the program, a
+// call-path `state` per particle would work — but the id would still be the
+// better key if particles could be added, removed, or reordered.)
+//
+// Nothing ever leaves this table, because no particle ever dies. A system
+// that retired particles would `remove` their entries (see `remove` in the
+// builtins reference) so the table does not grow without bound.
+
+state var particles = Map()
 
 fn update_particle(id: num)
-  state(id) x = 0.0
-  state(id) y = 0.0
-  state(id) vx = float(id + 1) * 1.5
-  state(id) vy = float(id + 1) * 0.8
+  // A particle's first update creates its entry; `??` only runs the
+  // initializer when the lookup comes back `nil`.
+  let p = get particles[id] ?? {
+    x: 0.0,
+    y: 0.0,
+    vx: float(id + 1) * 1.5,
+    vy: float(id + 1) * 0.8,
+  }
 
-  x = x + vx
-  y = y + vy
+  let x = p.x + p.vx
+  let y = p.y + p.vy
+  let vx = p.vx
+  let vy = p.vy
 
   // Bounce off boundaries
   if x > 50.0 || x < 0.0 then
@@ -29,6 +47,7 @@ fn update_particle(id: num)
     y = y + vy
   end
 
+  set particles[id] = {x: x, y: y, vx: vx, vy: vy}
   print("  Particle", id, "-> x:", floor(x), "y:", floor(y))
 end
 

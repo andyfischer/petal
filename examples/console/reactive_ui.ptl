@@ -8,11 +8,17 @@
 //   - The app model — one copy, written by event handlers. That is a top-level
 //     `state var`: one cell for the program, read with `get`, written with
 //     `set` from wherever the event lands.
-//   - A widget's own memory — one copy *per widget instance*. That is a `state`
-//     inside the widget function. Giving it a key, `state(id)`, pins the cell
-//     to the instance's identity, so the two buttons below keep independent
-//     click counts out of a single declaration and would keep them across a
-//     reorder of the list they were drawn in. This is React's `key` prop.
+//   - A widget's own memory — one copy *per widget instance*. In a frame-loop
+//     host that can be a plain `state` inside the widget function: it is keyed
+//     by call path, so each callsite of `button` gets its own cell, as each
+//     React component instance gets its own `useState`.
+//
+// This demo keys its button memory by the button's id instead, in a top-level
+// `state var` holding a map, for two reasons. Its "frames" are passes of a
+// `for` loop inside one run, and each pass is a different call path, so a
+// call-path `state` would start every frame over. And an id-keyed entry stays
+// with its button if the buttons are ever reordered, where a call-path cell
+// stays with the position. This is React's `key` prop.
 
 enum Event
   None,
@@ -23,13 +29,16 @@ end
 // The app model: one cell, shared by every function that touches it.
 state var items = ["Buy groceries", "Write code", "Read a book"]
 
-// A widget. `id` names this button instance; the `click_count` cell belongs to
-// that name, not to the `button` function as a whole.
+// Per-button memory, one entry per button id. The set of buttons is fixed, so
+// nothing is ever removed; a UI whose widgets come and go would `remove` the
+// entries of the ones it stopped drawing.
+state var click_counts = Map()
+
+// A widget. `id` names this button instance; its click count is the entry
+// under that name, not something the `button` function holds as a whole.
 fn button(id: string, label: string, clicked: bool) -> record
-  state(id) click_count = 0
-  if clicked then
-    click_count = click_count + 1
-  end
+  let click_count = (get click_counts[id] ?? 0) + (if clicked then 1 else 0 end)
+  set click_counts[id] = click_count
   {
     type: "button",
     label: "{label} ({click_count})",

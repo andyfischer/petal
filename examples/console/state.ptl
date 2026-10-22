@@ -9,14 +9,14 @@
 //   state x       in a function      one cell per call path — per callsite,
 //                                    and per iteration of the loops that led
 //                                    there
-//   state(key) x  anywhere           one cell per key value, ignoring the
-//                                    call path entirely
 //   state var x   anywhere           the cell holds a mutable box, so `set`
 //                                    can write it from another function
 //
 // Rule of thumb: a top-level `state var` when several places must agree on one
-// value, `state(key)` when the value belongs to an entity that has an id, and a
-// plain in-function `state` when it belongs to the use site itself.
+// value — holding a map when there is one value per entity id — and a plain
+// in-function `state` when the value belongs to the use site itself. A result
+// that is a pure function of some key is not state at all: cache it with
+// `memo(key)` (last section).
 
 // ── One cell for the whole program ───────────────────────────────────────
 // Cross-function shared state is a top-level `state var`. Inside a function a
@@ -36,16 +36,18 @@ for i in range(1, 6) do
   print("After adding", i, "-> total:", accumulate(i))
 end
 
-// ── One cell per entity ──────────────────────────────────────────────────
-// `state(key)` keys the cell by the key's *value*, so the same entity reaches
-// the same cell no matter which callsite, loop iteration, or recursion depth
-// asked for it. This is Petal's answer to React's `key` prop, and it is
-// absolute — which is what makes it survive a list being reordered.
+// ── One entry per entity ─────────────────────────────────────────────────
+// When the value belongs to an entity with an id, the shared cell holds a map
+// keyed by that id. The same entity reaches the same entry no matter which
+// callsite, loop iteration, or recursion depth asked for it — which is what
+// lets a count stay with its entity when a list is reordered. Absent keys read
+// as `nil`, so `??` supplies the starting value.
+
+state var hits = Map()
 
 fn hit(id)
-  state(id) count = 0
-  count = count + 1
-  count
+  set hits[id] = (get hits[id] ?? 0) + 1
+  get hits[id]
 end
 
 print("")
@@ -67,7 +69,7 @@ end
 // a second cell, and a widget drawn once per list item gets one cell per item —
 // list keying by position, for free. Within one run a path is normally reached
 // only once, so an in-function counter like `renders` counts runs (frames),
-// not calls; to count calls, key the cell or share a top-level one, as above.
+// not calls; to count calls, share a top-level cell, as above.
 
 fn header(title: string) -> string
   state renders = 0
@@ -88,3 +90,28 @@ let head = header("Todo")
 let foot = footer("v1.0")
 print("  {head}")
 print("  {foot}")
+
+// ── Cached results ───────────────────────────────────────────────────────
+// `memo(key) x = init` runs `init` once per key value and hands every later
+// caller with an equal key the same result, whichever callsite asks. That is
+// only safe because a memo cannot be written: it is a cache of a pure result,
+// not storage, so sharing it is unobservable. Anything the program updates
+// belongs in `state`. (The `print` below is there only to show when the
+// initializer runs; a real memo initializer should not have side effects.)
+
+fn build_label(id: string) -> string
+  print("  (building the label for {id})")
+  "<{upper(id)}>"
+end
+
+fn label(id: string) -> string
+  memo(id) text = build_label(id)
+  text
+end
+
+print("")
+print("Cached results")
+print("==============")
+for id in ["goblin", "orc", "goblin"] do
+  print("  {label(id)}")
+end

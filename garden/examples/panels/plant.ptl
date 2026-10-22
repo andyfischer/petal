@@ -1,4 +1,4 @@
-// ── A procedural plant, grown by recursion + `state` ──────────────────────
+// ── A procedural plant, grown by recursion + `state var` tables ───────────
 //   garden petal-ide examples/panels/plant.ptl
 //
 // A port of a 2008 Flash toy (andyfischer/plant_test).
@@ -35,13 +35,25 @@ let w = screen_width()
 let h = screen_height()
 let gdt = dt() * time_scale                // plant-time elapsed this frame
 
-// Bumping the generation re-keys the whole tree: every `state(id)` slot the
-// old plant held goes untouched for a run and is reclaimed. That is the entire
-// implementation of "Regrow".
-state generation = 0
+// What the plant remembers lives in two tables keyed by id: one record per
+// segment, one per leaf. They are top-level `state var` maps, not `state`
+// inside `grow` and `leaf`, because a segment's identity is its place in the
+// tree, not the call path that reached it — a leaf is reached from a deeper
+// and deeper segment as its branch extends (see Leaves, below).
+//
+// Each frame reads last frame's tables and writes the entries it reaches into
+// fresh ones, which replace the old at the end of the frame. So an entry the
+// frame did not reach (a segment past the MAX_SEGMENTS cap, say) is dropped,
+// and starts fresh if it is reached again. Regrow empties both tables, and the
+// next frame grows a new plant from a new root.
+state var segments = Map()
+state var leaves = Map()
 if key_pressed("r") || mouse_pressed(0) then
-  generation += 1
+  set segments = Map()
+  set leaves = Map()
 end
+var next_segments = Map()
+var next_leaves = Map()
 
 // Two accumulators the recursion writes into. `var` (not `state`) — they are
 // rebuilt from scratch every frame, which is the point.
@@ -53,20 +65,22 @@ var leaf_blades = []
 // leaves were physically handed down to each new segment as the branch
 // extended (`transferLeaves`), so a leaf outlived the segment it hung from.
 // Keying on the lineage says the same thing with no bookkeeping: the growing
-// tip of one branch keeps reaching the same slots, so the leaf just keeps
+// tip of one branch keeps reaching the same entries, so the leaf just keeps
 // aging while the branch it rides on gets longer.
 //
 // (A function must be defined before the line that calls it — hence leaves
 // before branches, even though branches are what call them.)
 
 fn leaf(id, tip, bend)
-  state(id) age = 0.0
-  state(id) length = 0.0
-  state(id) wiggle = random(-1.0, 1.0)
-  state(id) tint = random(0.0, 1.0)
+  // A new leaf's record is built (and its `random`s run) only the frame this
+  // id is first reached; `??` leaves the initializer alone on a hit.
+  let was = get leaves[id] ?? {age: 0.0, length: 0.0, wiggle: random(-1.0, 1.0), tint: random(0.0, 1.0)}
+  let wiggle = was.wiggle
+  let tint = was.tint
 
-  age += gdt
-  length = min(length + gdt * LENGTH_GROW_RATE / 5.0, LEAF_MAX_LENGTH)
+  let age = was.age + gdt
+  let length = min(was.length + gdt * LENGTH_GROW_RATE / 5.0, LEAF_MAX_LENGTH)
+  set next_leaves[id] = {age: age, length: length, wiggle: wiggle, tint: tint}
 
   let ease = 1.0 - 1.0 / (age + 1.0)
   let angle = tip.angle + clamp(wiggle * wiggle_factor + bend, lo: -angle_ceiling, hi: angle_ceiling) * ease
@@ -111,24 +125,29 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
     return nil
   end
 
-  // Everything a segment remembers. `random` runs once, the frame this id is
-  // first reached, so a segment's crookedness is fixed for its whole life.
-  state(id) age = 0.0
-  state(id) length = 0.0
-  state(id) radius = 0.0
-  state(id) wiggle = random(-1.0, 1.0)
-  state(id) children = 0                   // 0 = tip, 1 = one child, 2 = forked
-  state(id) fork_share = random(0.2, 0.8)  // thickness split between the two
-  state(id) leaf_heir = random_int(0, 2)   // which fork keeps the existing leaves
+  // Everything a segment remembers. The `random`s run once, the frame this id
+  // is first reached, so a segment's crookedness is fixed for its whole life.
+  let was = get segments[id] ?? {
+    age: 0.0,
+    length: 0.0,
+    radius: 0.0,
+    wiggle: random(-1.0, 1.0),
+    children: 0,                           // 0 = tip, 1 = one child, 2 = forked
+    fork_share: random(0.2, 0.8),          // thickness split between the two
+    leaf_heir: random_int(0, 2),           // which fork keeps the existing leaves
+  }
+  let wiggle = was.wiggle
+  let fork_share = was.fork_share
+  let leaf_heir = was.leaf_heir
 
-  age += gdt
+  let age = was.age + gdt
 
   // Grow. Length runs to the genome's cap; radius chases the thickness this
   // segment is entitled to (its share of the parent's end thickness) and,
   // like real wood, never shrinks back once laid down.
-  length = min(length + gdt * LENGTH_GROW_RATE, max_segment_length)
+  let length = min(was.length + gdt * LENGTH_GROW_RATE, max_segment_length)
   let radius_ceiling = if depth == 0 then max_segment_radius else ratio * parent_end_radius end
-  radius = max(radius, min(radius + gdt * RADIUS_GROW_RATE, radius_ceiling))
+  let radius = max(was.radius, min(was.radius + gdt * RADIUS_GROW_RATE, radius_ceiling))
   let end_radius = max(radius - taper_per_segment, 0.0)
 
   // A segment eases into its full length and full veer as it ages, so new
@@ -162,13 +181,20 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
   // extending, so a long straight run always ends in a split rather than
   // growing forever. Once decided, it is remembered — this is the only place
   // the shape of the tree is ever chosen.
-  if children == 0 then
-    if dist > min_distance_between_branches then
-      children = 2
-    elsif length >= max_segment_length && radius > minimum_thickness then
-      children = 1
-    end
+  let children = if was.children != 0 then
+    was.children
+  elsif dist > min_distance_between_branches then
+    2
+  elsif length >= max_segment_length && radius > minimum_thickness then
+    1
+  else
+    0
   end
+
+  set next_segments[id] = {
+    age: age, length: length, radius: radius, wiggle: wiggle,
+    children: children, fork_share: fork_share, leaf_heir: leaf_heir,
+  }
 
   let handoff = {x: end_x, y: end_y, lx: end_lx, ly: end_ly, rx: end_rx, ry: end_ry, angle: angle}
 
@@ -201,12 +227,16 @@ let root_x = float(w) * 0.5
 let root_y = float(ground_y)
 let trunk_half = 2.0 * max_segment_radius
 
-grow(id: "r" ++ str(generation), lineage: "L" ++ str(generation), depth: 0,
+grow(id: "r", lineage: "L", depth: 0,
   base: {x: root_x, y: root_y,
     lx: root_x - trunk_half, ly: root_y,
     rx: root_x + trunk_half, ry: root_y,
     angle: 0.0},
   bend: 0.0, ratio: 1.0, parent_end_radius: max_segment_radius, dist_before: 0.0)
+
+// This frame's tables become the ones the next frame reads.
+set segments = get next_segments
+set leaves = get next_leaves
 
 // Leaves last, so a blade is never buried under a branch drawn after it —
 // the same two-pass order the Flash renderer used.

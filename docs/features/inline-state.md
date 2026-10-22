@@ -103,6 +103,16 @@ If `state` is used in a recursive function call, then it creates a tree data str
 
 ## Keyed state: `state(key)`
 
+> **Deprecated.** A keyed slot ignores the call path, so it is a global hidden
+> inside a function, and calling stateful code twice is no longer safe. Each
+> declaration is a compile warning (`[state-key-deprecated]`). Use
+> [`memo(key)`](memo.md) for a pure cache, a top-level `state var` holding a
+> Map for [state shared on purpose](#sharing-on-purpose), or plain `state`,
+> kept per call path, for per-instance state. `petal lint --fix` rewrites a
+> keyed `state` that nothing writes to `memo`. The feature still works; put
+> `// petal-lint-ignore state-key-deprecated` on the line before a
+> declaration to keep it without the warning.
+
 `state(expr) name = …` keys the slot by the value of `expr` and ignores the
 call path. Every execution of that declaration with the same key value lands
 on the same slot, whichever caller, depth or loop iteration it arrived from.
@@ -116,8 +126,8 @@ end
 print(health("goblin", 10), health("orc", 30), health("goblin", 5))  // 90 70 85
 ```
 
-Use `state(key)` for anything whose identity outlives its position: entities
-in a list that reorders, a tree node reached one level deeper each frame, an
+It was meant for anything whose identity outlives its position: entities in
+a list that reorders, a tree node reached one level deeper each frame, an
 input's repeat phase that two widgets are meant to share. There is one slot
 per pair of declaration and key value.
 

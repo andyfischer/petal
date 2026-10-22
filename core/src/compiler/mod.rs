@@ -16,6 +16,7 @@ mod enums;
 pub use enums::collect_enums;
 mod expr;
 mod function;
+pub(crate) mod keyed_state;
 mod match_check;
 mod native;
 mod phi;
@@ -920,6 +921,12 @@ impl Compiler {
             self.errors.push((diag, self.error_file.clone()));
         }
         self.warnings.extend(misplaced_const_decls(&stmts));
+        // `state(key)` is deprecated; a bundled first-party package's own
+        // uses are not this program's author's to change.
+        if !is_bundled_copy(module) {
+            self.warnings
+                .extend(keyed_state::deprecated_keyed_states(&stmts, &module.source));
+        }
 
         if !is_entry {
             self.push_scope(false); // module scope frame

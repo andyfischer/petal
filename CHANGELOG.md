@@ -527,6 +527,9 @@ way, for code written against an earlier checkout.
   first opt-in rule: it runs only with `--rules-include=state-as-constant`,
   because a cell a host writes by name looks the same to it. A `pub state`
   qualifies (importers cannot write an export) and becomes a `pub const`.
+- `petal lint` rule `state-key-deprecated`: every `state(key)`, reported;
+  `--fix` rewrites the ones whose slot nothing writes to `memo(key)`,
+  keeping a rewrite only when it compiles (a `memo` rejects every write).
 - `petal show-static` lists a `const` under that keyword and says when one is
   not constant or cannot be verified without its host (`const_check` in
   `--json`). The language server shows a top-level declaration's class on
@@ -891,6 +894,18 @@ Breaking changes made during development, newest first. For the import and
 package changes below, `petal fix-imports` does the rewriting and
 [docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
 
+- `state(key) name = init` is deprecated. It still works, but each
+  declaration is now a compile warning (`petal check`, `petal run`, the
+  language server, a host's diagnostics) carrying the rule id
+  `[state-key-deprecated]`: a keyed slot ignores the call path, so it is a
+  global hidden inside a function. Use `memo(key)` for a pure cache, a
+  top-level `state var` holding a Map (`set m[k] = v`) for state shared on
+  purpose, or plain `state`, kept per call path, for per-instance state.
+  `petal lint` reports the same sites under that rule, and `--fix` rewrites a
+  keyed `state` whose slot nothing writes (not `state(k) var`, not
+  `pub state(k)`) to `memo(key)`. Silence a site with
+  `// petal-lint-ignore state-key-deprecated`, which the compile warning
+  honours too. Bundled first-party packages are not warned about.
 - JSX text over several lines keeps the whitespace beside a `{hole}` or a
   nested tag, as React does: `<p>⏎  Hi {name}⏎</p>` is `["Hi ", name]`. Before,
   every line of a multi-line run was trimmed on both sides, so the text read

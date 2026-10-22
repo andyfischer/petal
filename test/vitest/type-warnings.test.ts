@@ -225,8 +225,13 @@ describe("`state` annotations and the type checker", () => {
   });
 
   it("checks a keyed state and still walks the key expression", () => {
-    expect(checkJson("state(1) n: int = 0\nprint(n)").warnings).toEqual([]);
-    const out = checkJson("fn g(s: string)\n  s\nend\nstate(g(1)) n: int = 0\nprint(n)");
+    // `state(key)` is deprecated; the directive keeps that warning out of
+    // the type checker's count.
+    const ignore = "// petal-lint-ignore-file state-key-deprecated\n";
+    expect(checkJson(ignore + "state(1) n: int = 0\nprint(n)").warnings).toEqual([]);
+    const out = checkJson(
+      ignore + "fn g(s: string)\n  s\nend\nstate(g(1)) n: int = 0\nprint(n)",
+    );
     expect(out.warnings).toHaveLength(1);
     expect(out.warnings[0].message).toMatch(/argument 1 to `g`/);
   });

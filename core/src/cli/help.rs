@@ -819,6 +819,9 @@ DESCRIPTION
               shape. A literal 1 / 2 is a 'petal check' warning instead
        prefer-pub
               the deprecated export modifier becomes pub
+       state-key-deprecated
+              state(key), which is deprecated (petal check warns too):
+              never written, it becomes memo(key); otherwise reported
        state-as-constant (opt-in)
               a top-level state that nothing assigns and whose initializer
               is static becomes a const. Runs only when --rules-include

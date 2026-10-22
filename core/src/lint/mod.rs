@@ -41,6 +41,10 @@
 //!    is also the one rule whose fix is a judgement call, because a host
 //!    can write a `state` by name where no compiler sees it, so it is
 //!    **opt-in**: it runs only when `--rules-include` names it.
+//! 8. **`state-key-deprecated`** ([`state_key`]) — every `state(key)`, which
+//!    is deprecated; one whose slot nothing writes becomes `memo(key)`. The
+//!    compiler reports the same sites as a warning, and this rule's
+//!    `petal-lint-ignore` silences both.
 //!
 //! Each rule detects over a fresh parse of the previous rule's output, so a
 //! later rule sees what an earlier fix enabled and `lint --fix` is a fixed
@@ -83,6 +87,7 @@ mod export_to_pub;
 mod field_set;
 mod repeat;
 mod state_const;
+mod state_key;
 mod to_match;
 mod typed;
 mod util;
@@ -98,6 +103,7 @@ use field_set::plan_field_set_fixes;
 use typed::{plan_int_division, plan_neg_zero_fixes};
 use repeat::plan_repeat_fixes;
 use state_const::plan_state_fixes;
+use state_key::plan_state_key_fixes;
 use to_match::{Splice, apply_match_edits, plan_match_fixes};
 use var_to_let::plan_var_fixes;
 
@@ -137,6 +143,7 @@ pub const PREFER_COMPOUND_ASSIGN: &str = "prefer-compound-assign";
 pub const PREFER_REPEAT: &str = "prefer-repeat";
 pub const PREFER_PUB: &str = "prefer-pub";
 pub const STATE_AS_CONSTANT: &str = "state-as-constant";
+pub const STATE_KEY_DEPRECATED: &str = crate::compiler::keyed_state::RULE;
 pub const PREFER_FIELD_SET: &str = "prefer-field-set";
 pub const NEG_ZERO_SUB: &str = "neg-zero-sub";
 pub const PREFER_ANY: &str = "prefer-any";
@@ -225,6 +232,12 @@ pub const RULES: &[RuleInfo] = &[
         summary: "the deprecated `export` modifier should be `pub`",
         opt_in: false,
         fixes: Fixes::All,
+    },
+    RuleInfo {
+        name: STATE_KEY_DEPRECATED,
+        summary: "`state(key)` is deprecated; a never-written one should be `memo(key)`",
+        opt_in: false,
+        fixes: Fixes::Provable,
     },
     RuleInfo {
         name: STATE_AS_CONSTANT,
@@ -433,14 +446,16 @@ fn map_back(pos: usize, splices: &[Splice]) -> usize {
 }
 
 /// `// petal-lint-ignore` comments: per 0-based line, the rules silenced there
-/// (an empty list silences every rule).
-struct Ignores {
+/// (an empty list silences every rule). The compiler reads them too, for the
+/// one compile warning that carries a rule id
+/// ([`crate::compiler::keyed_state`]).
+pub(crate) struct Ignores {
     file: Option<Vec<String>>,
     lines: std::collections::HashMap<usize, Vec<String>>,
 }
 
 impl Ignores {
-    fn scan(source: &str) -> Result<Self, String> {
+    pub(crate) fn scan(source: &str) -> Result<Self, String> {
         let mut file = None;
         let mut lines = std::collections::HashMap::new();
         for (line, text, whole_line) in crate::fmt::line_comments(source)? {
@@ -467,7 +482,8 @@ impl Ignores {
         Ok(Ignores { file, lines })
     }
 
-    fn suppresses(&self, rule: &str, line: usize) -> bool {
+    /// Is `rule` silenced on 0-based `line`?
+    pub(crate) fn suppresses(&self, rule: &str, line: usize) -> bool {
         let hit = |rules: &Vec<String>| rules.is_empty() || rules.iter().any(|r| r == rule);
         self.file.as_ref().is_some_and(hit) || self.lines.get(&line).is_some_and(hit)
     }
@@ -546,6 +562,14 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
 
     let (chars, stmts) = reparse(&p.text)?;
     let exports_to_pub = p.apply(PREFER_PUB, plan_export_fixes(&stmts, &chars)?);
+
+    // Each candidate's fix is checked by compiling the rewrite, so the rule
+    // is skipped outright when it is filtered out.
+    if opts.rules.enabled(STATE_KEY_DEPRECATED) {
+        let (chars, stmts) = reparse(&p.text)?;
+        let fixes = plan_state_key_fixes(&p.text, &stmts, &chars, opts);
+        rewrites += p.apply(STATE_KEY_DEPRECATED, fixes);
+    }
 
     // Last, and repeated: making one `state` a `const` can make the next
     // one's initializer static (`state B = sort(A)`), and lint has to be a

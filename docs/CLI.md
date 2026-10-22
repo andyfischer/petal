@@ -923,6 +923,7 @@ found 2 problem(s) in 1 file(s); run `petal lint --fix` to fix them
 | `reimplements-builtin` | a `fn` whose whole body calls one builtin with its own parameters in order, or is `if r == nil then d else field(r, k, d) end` (`field` already answers the fallback for `nil`) | none |
 | `int-division` (opt-in) | `a / b` on two proven ints, whose truncated quotient is then an operand of float arithmetic or the argument of `float(...)` | none: either reading can be meant |
 | `prefer-pub` | the deprecated `export` modifier, on any declaration or `import` | `export` → `pub` |
+| `state-key-deprecated` | every `state(key)` declaration, which is deprecated (the compiler warns about it too, under the same rule id) | `state(k)` → `memo(k)` where the slot is never written: not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Otherwise reported |
 | `state-as-constant` (opt-in) | a plain top-level `state` (no key, not `state var`; `pub state` included, since importers cannot write an export) that nothing in the program assigns and whose initializer is static | `state` → `const` |
 
 Layout is not a finding: that is `fmt`. A file `--fix` changes is formatted
@@ -948,7 +949,21 @@ runs once in every host where a `const` is built once only if the host's run
 keeps static values. Where any of that matters, leave the `state` and put
 `// petal-lint-ignore state-as-constant` on its line.
 
-It is also the one rule that asks the compiler rather than the text: it
+`state-key-deprecated` reports every keyed `state`: its slot is one per key
+value, whichever caller reaches it, so it is a global hidden in a function
+(see [Keyed state](features/inline-state.md#keyed-state-statekey)). A slot
+nothing writes only ever holds what its initializer computed for its key,
+which is a [`memo`](features/memo.md), and `--fix` respells it so. It finds
+"nothing writes" by compiling the rewrite. One difference stays the
+author's to judge: a memo is a cache, recomputed after a reload that changes
+the program or a run that does not reach it, so an initializer that is not a
+pure function of its key (`state(id) tint = random(0.0, 1.0)`) would draw a
+new value. Keep such a slot (in a top-level `state var` Map, or as plain
+`state`) and silence the site with `// petal-lint-ignore state-key-deprecated`.
+The compile warning for the same site (`petal check`, `petal run`, the
+language server) honours that comment as well.
+
+`state-as-constant` also asks the compiler rather than the text: it
 compiles the file, classifies it as [`show-static`](#show-static--static-declarations)
 does, and compiles its own rewrite, keeping only the declarations that are
 accepted as `const`. A `state` built from a host's natives is therefore left
@@ -975,8 +990,8 @@ works with and without `--fix`.
 | `--verify=strict` | The whole rewrite must be IR-equal | Refused: exit 3, file untouched |
 
 Formatting, `prefer-compound-assign` and `prefer-pub` are meant to leave the IR unchanged.
-The cast, `match`, `var`, `repeat`, `prefer-field-set`, `neg-zero-sub`, `prefer-any`, `dead-alias` and
-`state-as-constant` rules change it by design. On such a file the default mode proves
+The cast, `match`, `var`, `repeat`, `prefer-field-set`, `neg-zero-sub`, `prefer-any`, `dead-alias`,
+`state-as-constant` and `state-key-deprecated` rules change it by design. On such a file the default mode proves
 the part it can, prints the first difference, and says that a run diff is what
 would prove the rest:
 

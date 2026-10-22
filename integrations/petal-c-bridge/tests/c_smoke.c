@@ -58,6 +58,23 @@ int main(void) {
     const pb_value* v = pb_value_at(&notes.items[0], 0);
     REQUIRE(v->kind == PB_VEC3 && v->number == 2.0 && v->y == 4.0 && v->z == 6.0);
 
+    /* A map crosses as PB_DICT, key and value children alternating. */
+    pb_builder* mb = pb_builder_new();
+    pb_builder_begin_dict(mb);
+    pb_builder_int(mb, 7);
+    pb_builder_string(mb, "seven", 5);
+    pb_builder_end_dict(mb);
+    REQUIRE(pb_vm_set_value(vm, "m", mb) == PB_OK);
+    pb_builder_free(mb);
+    REQUIRE(pb_vm_load_source(vm, "import io; import host\nlet m = binding(symbol(\"m\"))\nm[[1]] = m[7]\nnote(m)", "map.ptl") == PB_OK);
+    REQUIRE(pb_vm_run(vm) == PB_OK);
+    REQUIRE(pb_vm_drain(vm, "notes", &notes) == PB_OK);
+    REQUIRE(notes.count == 1);
+    const pb_value* d = pb_value_at(&notes.items[0], 0);
+    REQUIRE(d->kind == PB_DICT && d->count == 4);
+    REQUIRE(pb_value_at(d, 0)->kind == PB_INT && pb_value_at(d, 0)->integer == 7);
+    REQUIRE(pb_value_at(d, 2)->kind == PB_LIST && pb_value_at(d, 3)->kind == PB_STRING);
+
     /* A compile error keeps the VM usable and reports a position. */
     REQUIRE(pb_vm_load_source(vm, "let = 3", "bad.ptl") == PB_ERR_COMPILE);
     const pb_error* err = pb_vm_last_error(vm);

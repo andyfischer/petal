@@ -421,7 +421,7 @@ pub struct MethodDispatch {
     /// the program now running. See `core/src/backend/bytecode/vm/calls.rs`.
     pub hints: HashMap<SourceSpan, String>,
     /// Sites whose receiver is known to be a plain value — a number, a
-    /// string, a list, a vector — with the type's name. Such a receiver has
+    /// string, a list, a map, a vector — with the type's name. Such a receiver has
     /// no fields and no class, so only a native in scope can answer the
     /// call: the compiler, which knows the file's scope, reports a call to a
     /// packaged builtin whose import is missing.
@@ -1681,6 +1681,7 @@ impl<'a> Checker<'a> {
                                 | Type::Num
                                 | Type::String
                                 | Type::List
+                                | Type::Map
                                 | Type::Vec2
                                 | Type::Vec3
                                 | Type::F64Array

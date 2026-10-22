@@ -4,11 +4,11 @@ The original list of 50 target apps for the Garden panel-app testbed, drawn up
 when the testbed was started (Aug 2026). Each app exercises a different slice
 of the language and host; see the "What it tests" column.
 
-41 of the 50 exist. Thirty-six are panel apps under the category directories
+42 of the 50 exist. Thirty-seven are panel apps under the category directories
 described in [examples/README.md](../../examples/README.md) (the first three
 of each of the first five categories, plus Asteroids, Flappy Bird, the memory
 game, the chat client, the tower defense mini-game, the particle sandbox, the physics playground, the calendar, the email
-client, the file browser, the settings screen, the stock trading screen, the command palette, the music sequencer, the video timeline editor, the node-based editor, the
+client, the file browser, the settings screen, the stock trading screen, the command palette, the restaurant POS, the music sequencer, the video timeline editor, the node-based editor, the
 Markdown editor, the network graph explorer, the timeline explorer, the
 solar system and the fractal explorer), and five more
 were written as headless console programs under `examples/games/`, which
@@ -16,8 +16,8 @@ stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-`examples/custom-apps/side-scroller` is a thirty-seventh panel app that was not on
-this list. The remaining 9 have not been attempted.
+`examples/custom-apps/side-scroller` is a thirty-eighth panel app that was not on
+this list. The remaining 8 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -49,7 +49,7 @@ this list. The remaining 9 have not been attempted.
 | 23 | **CRM contact manager** | Tables, forms, sorting, filtering | built — `examples/productivity/crm-contact-manager/` |
 | 24 | **Kanban board** | Drag/drop, columns, cards | built — `examples/productivity/kanban/` |
 | 25 | **Spreadsheet mini-clone** | Editable grid, formulas, keyboard navigation | built — `examples/productivity/spreadsheet/` |
-| 26 | **Restaurant POS** | Touch UI, cart/order state, modal flows |  |
+| 26 | **Restaurant POS** | Touch UI, cart/order state, modal flows | built — `examples/productivity/restaurant-pos/` |
 | 27 | **Airline booking UI** | Search forms, results, seat selection |  |
 | 28 | **Hospital patient chart** | Tabs, timelines, dense structured information |  |
 | 29 | **Inventory warehouse UI** | Tables, scanning-style workflows, status |  |

@@ -1,0 +1,227 @@
+// Juniper & Ash: the menu, the floor and the evening already under way.
+//
+// Everything here is data. Prices are integer cents. A modifier group is
+// `{name, pick, req, opts}`: `pick` is "one" (a radio row) or "many" (toggles),
+// `req` says the server cannot add the item until the group has a choice, and
+// each option carries what it adds to the item's price.
+
+// ── Modifier groups ─────────────────────────────────────────────────────────
+
+fn opt(label: string, cents: num = 0) -> record
+  {label: label, cents: cents}
+end
+
+fn group(name: string, pick: string, req: bool, opts: list) -> record
+  {name: name, pick: pick, req: req, opts: opts}
+end
+
+const TEMP = group("Temperature", "one", true,
+  [opt("Rare"), opt("Medium rare"), opt("Medium"), opt("Medium well"), opt("Well done")])
+const SIDE = group("Side", "one", true,
+  [opt("Hand-cut fries"), opt("Garlic mash"), opt("Side salad"), opt("Truffle fries", 300)])
+const STEAK_ADD = group("Sauces & toppings", "many", false,
+  [opt("Peppercorn sauce", 300), opt("Bearnaise", 300), opt("Blue cheese crust", 400), opt("Grilled prawns", 900)])
+const CHEESE = group("Cheese", "one", true, [opt("Aged cheddar"), opt("Swiss"), opt("Smoked gouda"), opt("No cheese")])
+const BURGER_ADD = group("Add-ons", "many", false,
+  [opt("Thick-cut bacon", 300), opt("Fried egg", 200), opt("Avocado", 250), opt("Caramelized onion", 150)])
+const PASTA = group("Pasta", "one", false, [opt("House-made"), opt("Gluten-free", 300)])
+const PASTA_ADD = group("Add protein", "many", false,
+  [opt("Grilled chicken", 700), opt("Garlic shrimp", 900), opt("Extra burrata", 600)])
+const FISH_SIDE = group("Side", "one", true, [opt("Lemon rice"), opt("Charred broccolini"), opt("Side salad")])
+const FLAT_ADD = group("Toppings", "many", false,
+  [opt("Prosciutto", 400), opt("Hot honey", 150), opt("Arugula", 100), opt("Extra mozzarella", 200)])
+const SPIRIT = group("Spirit", "one", true, [opt("Bourbon"), opt("Rye"), opt("Mezcal", 200)])
+const SERVE = group("Serve", "one", true, [opt("Up"), opt("On the rocks")])
+const ICE = group("Ice", "one", false, [opt("Regular ice"), opt("Light ice"), opt("No ice")])
+const MILK = group("Milk", "one", false, [opt("Whole"), opt("Oat", 75), opt("Almond", 75)])
+const SCOOP = group("Flavor", "one", true, [opt("Blood orange"), opt("Raspberry"), opt("Mango")])
+const DRESS = group("Dressing", "one", false, [opt("Lemon vinaigrette"), opt("Green goddess"), opt("On the side")])
+
+// Quick notes: the things a server types forty times a night, one tap each,
+// per kitchen station.
+const NOTES_KITCHEN = ["No onions", "Nut allergy", "Dairy free", "Sauce on side", "Extra crispy", "Rush"]
+const NOTES_PASTRY = ["Birthday candle", "Split in two", "Nut allergy", "Dairy free", "Hold until called", "Rush"]
+const NOTES_BAR = ["Light ice", "No garnish", "Extra cold", "Less sweet", "With dessert", "Rush"]
+
+pub fn quick_notes(station: string) -> list
+  match station
+    when "Bar" -> NOTES_BAR
+    when "Pastry" -> NOTES_PASTRY
+    when _ -> NOTES_KITCHEN
+  end
+end
+
+// ── Categories and items ────────────────────────────────────────────────────
+// `station` is the line in the kitchen the item prints to.
+
+pub const CATS = [
+  {name: "Starters", short: "Starters", tone: #7f9a3f, station: "Cold"},
+  {name: "Mains", short: "Mains", tone: #c4532f, station: "Grill"},
+  {name: "Pasta", short: "Pasta", tone: #d39a26, station: "Saute"},
+  {name: "Sides", short: "Sides", tone: #4f9277, station: "Saute"},
+  {name: "Desserts", short: "Desserts", tone: #a2577f, station: "Pastry"},
+  {name: "Drinks", short: "Drinks", tone: #3a8aa0, station: "Bar"},
+  {name: "Cocktails & Wine", short: "Bar", tone: #5b5fb0, station: "Bar"},
+]
+
+fn item(id: num, cat: num, name: string, cents: num, blurb: string, groups: list = [], tag: string = "") -> record
+  {id: id, cat: cat, name: name, cents: cents, blurb: blurb, groups: groups, tag: tag}
+end
+
+pub const ITEMS = [
+  item(0, 0, "Burrata & Heirloom", 1600, "Heirloom tomato, basil oil, grilled sourdough", [], "Popular"),
+  item(1, 0, "Crispy Calamari", 1500, "Lemon aioli, pickled chili, parsley"),
+  item(2, 0, "Wood-Fired Flatbread", 1400, "San Marzano, fior di latte, basil", [FLAT_ADD]),
+  item(3, 0, "French Onion Soup", 1200, "Gruyere crouton, beef broth, thyme"),
+  item(4, 0, "Charred Octopus", 1900, "Romesco, fingerlings, smoked paprika", [], "86"),
+  item(5, 0, "Yellowfin Crudo", 1800, "Citrus ponzu, radish, serrano"),
+  item(6, 0, "Little Gem Caesar", 1300, "Parmesan, anchovy, sourdough crumb", [DRESS]),
+  item(7, 0, "Marinated Olives", 700, "Castelvetrano, orange zest, rosemary"),
+
+  item(10, 1, "Ribeye 14 oz", 4800, "Dry-aged 28 days, wood-grilled", [TEMP, SIDE, STEAK_ADD], "Chef's pick"),
+  item(11, 1, "Half Roast Chicken", 2800, "Brined, salsa verde, pan jus", [SIDE]),
+  item(12, 1, "Seared Salmon", 3200, "Crisp skin, beurre blanc, dill", [FISH_SIDE]),
+  item(13, 1, "Smash Burger", 2100, "Two patties, house pickles, brioche", [TEMP, CHEESE, BURGER_ADD, SIDE], "Popular"),
+  item(14, 1, "Braised Short Rib", 3600, "Red wine, parsnip puree, gremolata", [SIDE]),
+  item(15, 1, "Mushroom Risotto", 2400, "Wild mushrooms, mascarpone, chive", [PASTA_ADD]),
+
+  item(20, 2, "Cacio e Pepe", 2200, "Tonnarelli, pecorino, black pepper", [PASTA, PASTA_ADD]),
+  item(21, 2, "Rigatoni Bolognese", 2500, "Slow-cooked veal and pork ragu", [PASTA, PASTA_ADD], "Popular"),
+  item(22, 2, "Lobster Linguine", 3800, "Maine lobster, cherry tomato, chili", [PASTA]),
+  item(23, 2, "Gnocchi Pomodoro", 2100, "Potato gnocchi, basil, burrata", [PASTA, PASTA_ADD]),
+  item(24, 2, "Wild Boar Pappardelle", 2700, "Juniper, rosemary, parmigiano", [PASTA]),
+
+  item(30, 3, "Truffle Fries", 900, "Parmesan, truffle oil, herbs"),
+  item(31, 3, "Charred Broccolini", 1000, "Calabrian chili, lemon, almonds"),
+  item(32, 3, "Baked Mac & Cheese", 1100, "Three cheeses, toasted crumb"),
+  item(33, 3, "Garlic Mash", 800, "Yukon gold, brown butter"),
+  item(34, 3, "Side Salad", 700, "Mixed greens, shallot vinaigrette", [DRESS]),
+  item(35, 3, "Grilled Sourdough", 500, "Cultured butter, sea salt"),
+
+  item(40, 4, "Basque Cheesecake", 1200, "Burnt top, macerated berries", [], "Popular"),
+  item(41, 4, "Chocolate Pot de Creme", 1100, "Salted caramel, cocoa nib"),
+  item(42, 4, "Affogato", 900, "Vanilla gelato, double espresso"),
+  item(43, 4, "Seasonal Sorbet", 800, "Two scoops, made in house", [SCOOP]),
+  item(44, 4, "Olive Oil Cake", 1000, "Citrus glaze, creme fraiche"),
+
+  item(50, 5, "Sparkling Water", 600, "750 ml bottle, San Pellegrino"),
+  item(51, 5, "Still Water", 600, "750 ml bottle, Acqua Panna"),
+  item(52, 5, "Fresh Lemonade", 500, "Mint, cane sugar", [ICE]),
+  item(53, 5, "Iced Tea", 400, "Black tea, lemon", [ICE]),
+  item(54, 5, "Espresso", 400, "Double shot"),
+  item(55, 5, "Cappuccino", 500, "Double shot, steamed milk", [MILK]),
+  item(56, 5, "Mexican Coke", 450, "355 ml glass bottle"),
+
+  item(60, 6, "Old Fashioned", 1600, "Demerara, angostura, orange", [SPIRIT]),
+  item(61, 6, "Negroni", 1500, "Gin, Campari, sweet vermouth", [SERVE]),
+  item(62, 6, "Espresso Martini", 1600, "Vodka, coffee liqueur, espresso", [], "Popular"),
+  item(63, 6, "Juniper Spritz", 1400, "Gin, elderflower, prosecco"),
+  item(64, 6, "House Red", 1300, "Montepulciano, glass"),
+  item(65, 6, "House White", 1200, "Verdicchio, glass"),
+  item(66, 6, "Draft IPA", 900, "Local, 16 oz"),
+]
+
+pub fn item_by_id(id: num) -> record
+  find(ITEMS, fn(it) -> it.id == id)
+end
+
+pub fn items_in(cat: num) -> list
+  filter(ITEMS, fn(it) -> it.cat == cat)
+end
+
+// ── The floor ───────────────────────────────────────────────────────────────
+
+pub const TABLES = [
+  {name: "1", seats: 2}, {name: "2", seats: 2}, {name: "3", seats: 4}, {name: "4", seats: 4},
+  {name: "5", seats: 4}, {name: "6", seats: 6}, {name: "7", seats: 4}, {name: "8", seats: 2},
+  {name: "9", seats: 6}, {name: "10", seats: 8},
+]
+
+// ── The evening so far ──────────────────────────────────────────────────────
+// A line is `{id, item, qty, mods, mod_cents, note, sent, sent_at, void}`.
+// `mods` is the chosen option labels in group order; `picks` keeps the option
+// indices per group so the modifier sheet can reopen an unsent line.
+
+pub fn line(id: num, item_id: num, qty: num, picks: list, note: string, sent_at: num) -> record
+  let it = item_by_id(item_id)
+  // Seed lines may leave trailing groups out; they are empty choices.
+  let full = for g in range(0, len(it.groups)) do
+    if g < len(picks) then picks[g] else [] end
+  end
+  let mods = []
+  let cents = 0
+  for g in range(0, len(it.groups)) do
+    let grp = it.groups[g]
+    for k in full[g] do
+      let o = grp.opts[k]
+      // An optional one-of group's first option is the house default; the
+      // check and the kitchen only print a change from it.
+      if !(grp.pick == "one" && !grp.req && k == 0) then
+        mods = append(mods, o.label)
+      end
+      cents += o.cents
+    end
+  end
+  {id: id, item: item_id, qty: qty, picks: full, mods: mods, mod_cents: cents, note: note,
+    sent: sent_at >= 0, sent_at: sent_at, void: ""}
+end
+
+fn empty_table(i: num) -> record
+  {guests: 0, opened: -1, lines: [], split: 1, paid: []}
+end
+
+// `now` is the clock at the start of service, in seconds after midnight.
+pub fn seed_tables(now: num) -> list
+  let t = for i in range(0, len(TABLES)) do empty_table(i) end
+  t[1] = {...t[1], guests: 2, opened: now - 52 * 60, lines: [
+    line(1, 0, 1, [], "", now - 44 * 60),
+    line(2, 10, 1, [[1], [1], [0]], "", now - 44 * 60),
+    line(3, 12, 1, [[2]], "", now - 44 * 60),
+    line(4, 64, 2, [], "", now - 49 * 60),
+  ]}
+  t[3] = {...t[3], guests: 4, opened: now - 21 * 60, lines: [
+    line(5, 61, 1, [[1]], "", now - 18 * 60),
+    line(6, 60, 2, [[1]], "", now - 18 * 60),
+    line(7, 1, 1, [], "", now - 15 * 60),
+    line(8, 2, 1, [[0, 1]], "", now - 15 * 60),
+    line(9, 13, 1, [[2], [0], [0], [1]], "No onions", -1),
+    line(10, 21, 2, [[1]], "", -1),
+    line(11, 11, 1, [[1]], "", -1),
+  ]}
+  t[6] = {...t[6], guests: 3, opened: now - 7 * 60, lines: [
+    line(12, 50, 2, [], "", now - 5 * 60),
+    line(13, 62, 1, [], "", now - 5 * 60),
+    line(14, 5, 1, [], "Nut allergy", -1),
+    line(15, 10, 1, [[1], [3], [0]], "", -1),
+    line(16, 31, 1, [], "", -1),
+  ]}
+  t[8] = {...t[8], guests: 6, opened: now - 84 * 60, split: 3, lines: [
+    line(17, 0, 2, [], "", now - 75 * 60),
+    line(18, 14, 2, [[1]], "", now - 64 * 60),
+    line(19, 22, 1, [[0]], "", now - 64 * 60),
+    line(20, 21, 2, [[0]], "", now - 64 * 60),
+    line(21, 40, 3, [], "", now - 20 * 60),
+    line(22, 64, 4, [], "", now - 80 * 60),
+  ]}
+  t
+end
+
+// Tickets already on the kitchen rail: `{no, table, count, stations, at}`.
+pub fn seed_tickets(now: num) -> list
+  [
+    {no: 1043, table: "7", count: 3, stations: "Bar", at: now - 5 * 60, items: [
+      tk(2, "Sparkling Water"), tk(1, "Espresso Martini")]},
+    {no: 1042, table: "9", count: 3, stations: "Pastry", at: now - 20 * 60, items: [
+      tk(3, "Basque Cheesecake", "", "Candle on one, birthday")]},
+    {no: 1041, table: "4", count: 5, stations: "Bar, Cold", at: now - 15 * 60, items: [
+      tk(1, "Negroni", "On the rocks"), tk(2, "Old Fashioned", "Rye"), tk(1, "Crispy Calamari"),
+      tk(1, "Wood-Fired Flatbread", "Prosciutto, Hot honey")]},
+    {no: 1039, table: "2", count: 3, stations: "Cold, Grill", at: now - 44 * 60, items: [
+      tk(1, "Burrata & Heirloom"), tk(1, "Ribeye 14 oz", "Medium rare, Garlic mash, Peppercorn sauce"),
+      tk(1, "Seared Salmon", "Side salad")]},
+  ]
+end
+
+fn tk(qty: num, name: string, mods: string = "", note: string = "") -> record
+  {qty: qty, name: name, mods: mods, note: note}
+end

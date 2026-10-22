@@ -1,0 +1,304 @@
+// Juniper & Ash: palette, type, money and the touch controls.
+//
+// A warm paper ground under an espresso top bar. One terracotta accent for
+// the action that matters on each surface, a sage green for "done" (sent,
+// paid), and the category hues for nothing but telling the menu apart.
+// Hit targets are 48 px or more: this is a screen people press with a thumb
+// while carrying plates.
+
+import text_layout as tl
+import ui
+
+// ── Palette ─────────────────────────────────────────────────────────────────
+
+pub let PAPER   = #f3eee6        // the floor everything sits on
+pub let CARD    = #fffdf9
+pub let WELL    = #ece5da        // inset fields, stepper wells
+pub let SUNK    = #e6dfd3
+pub let LINE    = #e1d8cb
+pub let RULE    = #ece6dc
+pub let INK     = #2b241f
+pub let SOFT    = #5b5149
+pub let MUTED   = #8c8177
+pub let FAINT   = #b4aa9f
+pub let BAR     = #2a2320        // the top bar
+pub let BAR_UP  = #3a312c
+pub let BAR_INK = #f5eee4
+pub let BAR_MUT = #a99c8f
+pub let ACCENT  = #c4532f        // terracotta
+pub let ACCENT_D = #a8401f
+pub let SAGE    = #4f8a5f
+pub let AMBER   = #c98a1b
+pub let RED     = #c23b33
+pub let WHITE   = #ffffff
+
+// ── Type ────────────────────────────────────────────────────────────────────
+// Interface text in Inter; money in the monospace face so a column of prices
+// lines up on the decimal point; the house name and the table title in a
+// serif, for the menu-card feel.
+
+pub fn ui(size: num, color: record) -> record
+  {size: size, font: "ui", color: color}
+end
+
+pub fn uib(size: num, color: record) -> record
+  {size: size, font: "ui", color: color, weight: 600}
+end
+
+pub fn mono(size: num, color: record) -> record
+  {size: size, font: "mono", color: color}
+end
+
+pub fn serif(size: num, color: record) -> record
+  {size: size, font: "Georgia, ui", color: color}
+end
+
+pub fn caps(color: record, size: num = 10) -> record
+  {size: size, font: "ui", color: color, weight: 600, spacing: 1.2}
+end
+
+pub fn txt(s: string, r: record, style: record, align: string = "left") -> float
+  tl.draw_text_line(s, r, style, align)
+end
+
+pub fn fit(s: string, style: record, w: num) -> string
+  tl.elide(s, style, w)
+end
+
+pub fn with_alpha(c: record, a: num) -> record
+  {r: c.r, g: c.g, b: c.b, a: int(a)}
+end
+
+// ── Money ───────────────────────────────────────────────────────────────────
+// Integer cents throughout; nothing goes through a float on its way to text.
+
+pub fn usd(cents: num) -> string
+  let c = int(cents)
+  let sign = if c < 0 then "-" else "" end
+  let a = abs(c)
+  "{sign}${commas(a / 100)}.{pad_start(str(a % 100), 2, "0")}"
+end
+
+// Round half up to the cent: `num / den` for non-negative integers.
+pub fn div_round(n: num, d: num) -> int
+  (int(n) * 2 + int(d)) / (int(d) * 2)
+end
+
+// ── Frame bookkeeping ───────────────────────────────────────────────────────
+// `_gate` turns the pointer off for a layer (the floor under an open sheet);
+// `_taken` lets one press do one thing, so the tap that opens a sheet does not
+// also land on whatever the sheet draws under the finger.
+
+var _busy = false
+var _gate = true
+var _taken = false
+
+pub fn begin() -> nil
+  set _busy = false
+  set _taken = false
+  set _gate = true
+end
+
+pub fn gate(on: bool) -> nil
+  set _gate = on
+end
+
+pub fn busy() -> bool
+  get _busy
+end
+
+pub fn mark_busy() -> nil
+  set _busy = true
+end
+
+pub fn hot(r: record) -> bool
+  get _gate && hovered(r)
+end
+
+pub fn press(r: record) -> bool
+  if get _gate && !get _taken && mouse_pressed(0) && hovered(r) then
+    set _taken = true
+    true
+  else
+    false
+  end
+end
+
+// A press nobody has claimed yet, anywhere: the click outside a sheet.
+pub fn stray_press() -> bool
+  if !get _taken && mouse_pressed(0) then
+    set _taken = true
+    true
+  else
+    false
+  end
+end
+
+pub fn held(r: record) -> bool
+  get _gate && hovered(r) && mouse_down(0)
+end
+
+// `cur` eased toward `goal`. A frame with no time in it (one the debug server
+// ran for an injected click) lands on the goal, so a capture straight after an
+// input shows the control where it is going.
+pub fn glide(cur: num, goal: num, rate: num) -> float
+  let next = if dt() <= 0.0 then float(goal) else approach(float(cur), float(goal), rate) end
+  if next != float(goal) then
+    set _busy = true
+  end
+  next
+end
+
+// A 0..1 value easing toward `on`, one per callsite (and per loop iteration).
+pub fn ease_flag(on: bool, rate: num = 18.0) -> float
+  let goal = if on then 1.0 else 0.0 end
+  state v = goal
+  v = glide(v, goal, rate)
+  v
+end
+
+// ── Chrome ──────────────────────────────────────────────────────────────────
+
+pub fn surface(r: record, radius: num = 14) -> nil
+  draw_shadow(r, {radius: radius, blur: 18, dy: 4, color: #5a4632, a: 30})
+  draw_rect_rounded(r, radius, CARD)
+  draw_rect_rounded_outline(r, radius, LINE)
+end
+
+pub fn hline(x: num, y: num, w: num, c: record) -> nil
+  draw_rect(x, y, w, 1, c)
+end
+
+pub fn dashed(x0: num, x1: num, y: num, c: record) -> nil
+  let x = float(x0)
+  while x < x1 do
+    draw_rect(x, y, min(5.0, x1 - x), 1, c)
+    x += 9.0
+  end
+end
+
+pub fn check_mark(cx: num, cy: num, s: num, c: record, width: num = 2.2) -> nil
+  draw_polyline([{x: cx - s, y: cy}, {x: cx - s * 0.3, y: cy + s * 0.7}, {x: cx + s, y: cy - s * 0.75}], c, 255, width)
+end
+
+pub fn minus_plus(cx: num, cy: num, s: num, plus: bool, c: record) -> nil
+  draw_line({x: cx - s, y: cy}, {x: cx + s, y: cy}, c, 255, 2.2)
+  if plus then
+    draw_line({x: cx, y: cy - s}, {x: cx, y: cy + s}, c, 255, 2.2)
+  end
+end
+
+// ── Controls ────────────────────────────────────────────────────────────────
+
+// A filled touch button. `tone` is its face; disabled, it goes to a flat well.
+pub fn solid(r: record, label: string, tone: record, enabled: bool = true, o: record = {}) -> bool
+  let h = ease_flag(enabled && hot(r))
+  let down = enabled && held(r)
+  let radius = field(o, "radius", 12)
+  let size = field(o, "size", 16)
+  let face = if !enabled then SUNK
+  else mix(mix(tone, #ffffff, 0.08 * h), #000000, if down then 0.14 else 0.0 end)
+  end
+  if enabled then
+    draw_shadow(r, {radius: radius, blur: 14, dy: 4, color: tone, a: int(55 + 35 * h)})
+  end
+  draw_rect_rounded(r, radius, face)
+  let ink = if enabled then field(o, "ink", WHITE) else FAINT end
+  let sub = field(o, "sub", "")
+  if sub == "" then
+    txt(label, r, uib(size, ink), "center")
+  else
+    let w1 = text_width(label, uib(size, ink))
+    let w2 = text_width(sub, mono(size, ink))
+    let x0 = r.x + (r.w - w1 - w2 - 16) / 2.0
+    txt(label, Rect(x0, r.y, w1, r.h), uib(size, ink))
+    txt(sub, Rect(x0 + w1 + 16, r.y, w2, r.h), mono(size, with_alpha(ink, if enabled then 220 else 255 end)))
+  end
+  enabled && press(r)
+end
+
+// A quiet outlined button.
+pub fn ghost(r: record, label: string, tone: record = SOFT, enabled: bool = true, o: record = {}) -> bool
+  let h = ease_flag(enabled && hot(r))
+  let down = enabled && held(r)
+  let radius = field(o, "radius", 12)
+  let size = field(o, "size", 15)
+  let bg = field(o, "on", CARD)
+  draw_rect_rounded(r, radius, mix(mix(bg, tone, 0.07 * h), tone, if down then 0.14 else 0.0 end))
+  draw_rect_rounded_outline(r, radius, mix(LINE, tone, 0.18 + 0.3 * h))
+  txt(label, r, uib(size, if enabled then tone else FAINT end), "center")
+  enabled && press(r)
+end
+
+// A selectable chip: a choice in a group, a tip, a quick note. `on` fills it
+// with `tone`; `sub` is a second, quieter line (an option's price).
+pub fn chip(r: record, label: string, on: bool, tone: record, o: record = {}) -> bool
+  let enabled = field(o, "enabled", true)
+  let sub = field(o, "sub", "")
+  let radius = field(o, "radius", 12)
+  let size = field(o, "size", 15)
+  let bg = field(o, "bg", CARD)
+  let k = ease_flag(on, 26.0)
+  let h = ease_flag(enabled && hot(r))
+  let face = mix(mix(bg, tone, 0.05 * h), mix(bg, tone, 0.13), k)
+  draw_rect_rounded(r, radius, face)
+  let edge = mix(mix(LINE, tone, 0.25 * h), tone, k)
+  draw_rect_rounded_outline(r, radius, edge, 255, 1.0 + k)
+  let ink = if !enabled then FAINT else mix(INK, mix(tone, #000000, 0.25), k) end
+  // A wide chip leads with its check; a narrow one wears it on the corner.
+  let corner = r.w < 120
+  let lead = if k > 0.02 && !corner then 24 else 0 end
+  if k > 0.02 then
+    let at = if corner then {x: r.x + r.w - 2, y: r.y + 2} else {x: r.x + 18, y: r.y + r.h / 2.0} end
+    if corner then draw_circle(at, 10.0 * k, bg) end
+    draw_circle(at, 8.0 * k, tone)
+    check_mark(at.x, at.y, 4.0 * k, WHITE, 1.8)
+  end
+  let inner = Rect(r.x + 10 + lead, r.y, r.w - 20 - lead, r.h)
+  if sub == "" then
+    txt(fit(label, uib(size, ink), inner.w), inner, uib(size, ink), if lead > 0 then "left" else "center" end)
+  else
+    let top = Rect(inner.x, r.y + r.h / 2.0 - 19, inner.w, 20)
+    let bot = Rect(inner.x, r.y + r.h / 2.0 + 1, inner.w, 18)
+    let al = if lead > 0 then "left" else "center" end
+    txt(fit(label, uib(size, ink), inner.w), top, uib(size, ink), al)
+    txt(sub, bot, mono(12, if enabled then mix(MUTED, tone, 0.6 * k) else FAINT end), al)
+  end
+  enabled && press(r)
+end
+
+// A round − or + key.
+pub fn step_key(r: record, plus: bool, enabled: bool = true, tone: record = INK) -> bool
+  let h = ease_flag(enabled && hot(r))
+  let down = enabled && held(r)
+  draw_rect_rounded(r, int(r.h / 2), mix(mix(WELL, tone, 0.08 * h), tone, if down then 0.16 else 0.0 end))
+  minus_plus(r.x + r.w / 2.0, r.y + r.h / 2.0, min(r.w, r.h) * 0.18, plus, if enabled then tone else FAINT end)
+  enabled && press(r)
+end
+
+// A segmented control with a sliding thumb.
+pub fn segmented(r: record, labels: list, index: num, o: record = {}) -> int
+  let n = max(1, len(labels))
+  let size = field(o, "size", 14)
+  let tone = field(o, "tone", INK)
+  let radius = field(o, "radius", 12)
+  draw_rect_rounded(r, radius, WELL)
+  let inset = 4.0
+  let cell = (r.w - inset * 2.0) / float(n)
+  state pos = float(index)
+  pos = glide(pos, index, 26.0)
+  let thumb = Rect(r.x + inset + pos * cell, r.y + inset, cell, r.h - inset * 2.0)
+  draw_shadow(thumb, {radius: radius - 3, blur: 8, dy: 2, color: #5a4632, a: 40})
+  draw_rect_rounded(thumb, radius - 3, CARD)
+  let chosen = int(index)
+  for i in range(0, n) do
+    let cr = Rect(r.x + inset + float(i) * cell, r.y + inset, cell, r.h - inset * 2.0)
+    if press(cr) then
+      chosen = i
+    end
+    let near = clamp(1.0 - abs(pos - float(i)), lo: 0.0, hi: 1.0)
+    let ink = mix(MUTED, tone, near)
+    txt(labels[i], cr, if near > 0.5 then uib(size, ink) else ui(size, ink) end, "center")
+  end
+  chosen
+end

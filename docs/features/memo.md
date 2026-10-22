@@ -157,6 +157,10 @@ As with `state`, an initializer that produces a
 reads see the pending value for that run, and the initializer runs again on
 the next run until its value arrives.
 
+A value with a pending value anywhere inside it (`[fetch(url)]`) is not
+committed either. The pending value would stay pending in the cached list
+after its resource resolves, and a hit never recomputes it.
+
 A key that is, or contains, a pending value is not cached either: the
 declaration computes its initializer every time and stores nothing. A pending
 value keeps its identity while its resource goes from loading to errored, so

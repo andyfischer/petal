@@ -583,11 +583,15 @@ impl<'a> Vm<'a> {
                 // uninitialized so the init block re-runs next frame until it
                 // resolves. Reads this frame still see the Pending (via `dst`).
                 // Ordinary reassignments (`init = false`) commit any value.
-                // A memo keyed by a pending value is not committed either:
-                // the key cannot tell a loading resource from an errored one.
-                let pending_memo_key =
-                    *memo && explicit.is_some_and(|kv| crate::value::holds_pending(&kv, self.heap));
-                if *init && (matches!(val_v, Value::Pending(_)) || pending_memo_key) {
+                // A memo is not committed while a pending value is in its key
+                // (which cannot tell a loading resource from an errored one)
+                // or anywhere in its value (a list holding one would stay
+                // pending after the resource resolves, and a hit never
+                // recomputes it).
+                let pending_memo = *memo
+                    && (crate::value::holds_pending(&val_v, self.heap)
+                        || explicit.is_some_and(|kv| crate::value::holds_pending(&kv, self.heap)));
+                if *init && (matches!(val_v, Value::Pending(_)) || pending_memo) {
                     // Until it resolves, the scope cannot know what a re-run
                     // would initialize it to.
                     self.memo_note_effect();

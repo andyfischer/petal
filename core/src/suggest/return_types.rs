@@ -455,9 +455,12 @@ impl ExprVisitor for Walker<'_> {
                 self.expr_position = position;
                 self.visit_expr(e);
             }
-            StmtKind::For { var, iter, body } => {
+            StmtKind::For { var, iter, key, body } => {
                 self.evidence.rebound.insert(var.clone());
                 self.visit_expr(iter);
+                if let Some(k) = key {
+                    self.visit_expr(k);
+                }
                 self.walk_loop_body(body, &position);
             }
             StmtKind::Let { name, .. } | StmtKind::State { name, .. } | StmtKind::Memo { name, .. } => {
@@ -552,9 +555,12 @@ impl ExprVisitor for Walker<'_> {
                     self.walk_body(&arm.body, position.clone());
                 }
             }
-            ExprKind::For { var, iter, body } => {
+            ExprKind::For { var, iter, key, body } => {
                 self.evidence.rebound.insert(var.clone());
                 self.visit_expr(iter);
+                if let Some(k) = key {
+                    self.visit_expr(k);
+                }
                 self.walk_loop_body(body, &position);
             }
             ExprKind::Lambda { params, body } => {

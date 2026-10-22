@@ -76,21 +76,20 @@ file down to the declaration.
   ```
 
   Each enemy gets its own health with no manual keying.
-- **A loop keys by position.** A `state` inside a `for` stays with the loop
-  index, so reordering the list moves the values. When a value belongs to a
-  domain object rather than a position, keep it in a top-level `state var`
-  holding a `Map` keyed by the object's id, and remove the entry when the
-  object goes away:
+- **A loop keys by position unless you give it a key.** A `state` inside a
+  `for` stays with the loop index, so reordering the list moves the values.
+  When a value belongs to a domain object rather than a position, key the
+  loop by the object's id. Each enemy's state then follows the enemy, and an
+  enemy that leaves the list takes its state with it:
 
-  ```petal
-  state var hp = Map()                   // enemy id -> hp
-
-  fn enemy_hit(e, damage)
-    set hp[e.id] = (get hp[e.id] ?? 100) - damage
+  ```petal ignore
+  for e in enemies key e.id do
+    draw_enemy(e)          // its `state hp = 100` belongs to e.id
   end
   ```
 
-  The keyed form `state(e.id) hp = 100` is deprecated.
+  Keys must be unique within one run of the loop. The keyed form
+  `state(e.id) hp = 100` is deprecated.
 - Cells shared across functions on purpose go at the top level as
   `state var`, read and written with `get` / `set`.
 

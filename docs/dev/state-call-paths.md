@@ -24,6 +24,10 @@ defines a **path**: an ordered list of parts, one per dynamic step.
   the callsite (§3.1).
 - **Index part** — pushed per loop iteration (`for`/range/`while`), at *every*
   level of the live frame stack, not just the declaring function's.
+- **Key part** — a keyed loop (`for x in xs key k`) puts `Key(hash(k))` where
+  its `Index` part would be, once the key is evaluated at the head of each
+  iteration. Only that one part changes, so the key is relative: it names an
+  item among the iterations of this loop at this call path (§2.2a).
 - The declaration itself contributes its **declaration id** (§3.1).
 
 A slot is `(decl_id, path)`. Two executions reach the same slot iff they
@@ -34,7 +38,8 @@ iterations:
 - Recursion → one slot per depth, like nested React components.
 - A widget function called inside a `for` gets per-iteration slots
   automatically (React's positional list keying), so reordering the list
-  moves the values.
+  moves the values — unless the loop has a `key`, which makes the slots follow
+  the items (React's `key=`, but relative).
 - Same-named `state` in two functions cannot collide: distinct decl ids by
   construction.
 
@@ -63,9 +68,36 @@ uses split three ways:
   itself when their entity goes away.
 - **Per-instance state** where position is a fine identity is plain `state`.
 
-Loops keep positional `Index` path parts. A way for a loop to name a
-domain-specific stable key per iteration is deferred; until then, values that
-must follow an item through a reorder live in a Map.
+Values that must follow an item through a reorder use a keyed loop (§2.2a),
+which is relative and so has none of these problems.
+
+### 2.2a Keyed loops
+
+`for x in xs key k do` (task: [state-loop-keys.md](../tasks/state-loop-keys.md)).
+The decisions:
+
+- **Relative, not absolute.** The key replaces the loop's own path part and
+  nothing else, so the prefix (the callsites above the loop) and the suffix
+  (the calls below it) are as they would be. A function running a keyed loop,
+  called from two places, holds two sets of slots.
+- **Duplicates are an error.** Two iterations with an equal key in one run of
+  the loop would silently share every slot below them. The cursor keeps the
+  run's key hashes and the second one raises `Duplicate loop key …`. A loud
+  error over React's warn-and-misbehave: a duplicate is always a bug in the
+  data or the key expression.
+- **Equality is the Map key hash** (`dict::key_hash`, `value::hash_value`,
+  consistent with `==`), and the same values are refused: functions, cells,
+  pending values, NaN.
+- **`for` only.** A `while` has no item; it stays positional. Higher-order
+  builtins keep sharing their callsite's slot (§3.3); the docs point at `for`.
+- **`path_pop` needs no change.** The key is one part where the index was one
+  part, so the count of loop steps between a declaration and its access is
+  the same.
+- **Lifecycle needs no change.** A removed item is not reached, so its
+  subtree of slots is swept (§3.3a). This is what replaces the hand-written
+  pruning that Map-held per-row state needed.
+- **Hot reload needs no change.** The key is a value, not a source position,
+  so its slots survive edits the way positional slots do (§3.5).
 
 ### 2.3 Top-level `state` / `state var`
 
@@ -149,7 +181,9 @@ struct RuntimeStateKey { base: StateKey /* decl id */, path: SmallVec<[PathPart;
 ```
 
 (`core/src/stack.rs`.) Explicit-key slots are `{base, path: [Key(h)]}`
-(absolute, §2.2); top-level slots have an empty path.
+(absolute, §2.2); top-level slots have an empty path. A keyed loop's `Key`
+part sits mid-path, where the loop's `Index` would be (§2.2a). The two never
+collide: an explicit-key slot's base is its own declaration's id.
 
 Recursion makes paths grow with depth; `SmallVec<[_; 4]>` covers typical UI
 trees without allocating. A rolling per-frame hash would bound the per-call
@@ -161,7 +195,10 @@ copy; it is designed but not built (§4).
   extends the caller's parts into the pooled vector, so a warm pool copies
   without allocating per call.
 - Loop instructions push/bump/pop `Index` parts into the frame's path
-  unconditionally.
+  unconditionally. `LoopKey` (the head of a keyed loop's body) overwrites the
+  innermost one with `Key(h)`; the next iteration's `*Next` overwrites it back
+  with an `Index`, and `LoopPop` pops either. The guards that keep unbalanced
+  IR from rewriting a `Call` part accept both loop shapes.
 - `Vm::state_key` is: explicit key ⇒ `[Key(h)]`; else the frame's own path,
   minus `path_pop` innermost parts. There is no walk of the frame stack; the
   composition happened incrementally at push time.
@@ -240,8 +277,13 @@ and treats the rest of the key as opaque.
 - `get_state_json` renders top-level slots as bare (module-qualified) names.
   Pathed slots render through one renderer for every part shape: the parts
   root-to-leaf, `/`-separated, variable name last (`counter/count`,
-  `[3]/row/hovered`, `k1234…/leaf`). A pathed name always contains a `/`,
-  which no bare name can.
+  `[3]/row/hovered`, `[key=42]/row/hovered`, `k1234…/leaf`). A pathed name
+  always contains a `/`, which no bare name can.
+- A `Key` part renders the value it was hashed from (`[key="a"]`) when the
+  stack has seen it: `LoopKey` records a display string per new hash in
+  `Stack::loop_key_labels`. Display-only, like the `Call` labels; the table
+  is pruned to live slots' hashes once it passes a few thousand entries. A
+  stack loaded from `--state-storage` has no labels until the loop runs.
 - `Call` parts render as the callee's spelling recovered from the term graph.
   These labels are display-only: the `#n` suffix is assigned per identical
   callee spelling in *term* order across the program, not per enclosing

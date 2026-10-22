@@ -643,9 +643,12 @@ impl ExprVisitor for Uses<'_> {
                     self.nested_fn(params, body);
                 }
             }
-            StmtKind::For { var, iter, body } => {
+            StmtKind::For { var, iter, key, body } => {
                 self.visit_expr(iter);
                 if var != self.name {
+                    if let Some(k) = key {
+                        self.visit_expr(k);
+                    }
                     self.block(body);
                 }
             }
@@ -701,9 +704,12 @@ impl ExprVisitor for Uses<'_> {
                     None => {}
                 }
             }
-            ExprKind::For { var, iter, body } => {
+            ExprKind::For { var, iter, key, body } => {
                 self.visit_expr(iter);
                 if var != self.name {
+                    if let Some(k) = key {
+                        self.visit_expr(k);
+                    }
                     self.block(body);
                 }
             }

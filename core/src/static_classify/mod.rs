@@ -1718,6 +1718,9 @@ impl<'a> Pass<'a> {
             }
 
             TermOp::Break | TermOp::Continue => Class::Data,
+            // Yields nil; a dynamic key leaves the iteration's state path
+            // unknown, so pass the key's class through.
+            TermOp::LoopKey => self.all_data(inputs, Why::FunctionOperand),
             TermOp::Return => match inputs.first().map(|i| (i, self.cls(*i))) {
                 Some((&i, Class::Dynamic(_))) => Class::Dynamic(Why::Input(i)),
                 Some((_, Class::Top)) => Class::Top,

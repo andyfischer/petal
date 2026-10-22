@@ -288,12 +288,15 @@ Consequences worth memorizing:
   slot. For genuinely shared state use a **top-level `state var`**, where module
   scope is one path so there is exactly one cell.
 - A `state` inside a `for` gets one slot per iteration — positional keying, with
-  React's un-keyed-list cost when the list reorders. There is no per-loop key
-  yet.
-- When identity matters more than position, keep the values in a top-level
-  `state var` holding a `Map` keyed by id, and remove an entry when its entity
-  goes away. A pure value computed from a key is a `memo(key)`. `state(id)` is
-  deprecated.
+  React's un-keyed-list cost when the list reorders. Give the loop a key,
+  `for t in tasks key t.id do`, and each item's state (in the body and in
+  every function it calls) follows the item instead. The key is relative to
+  the loop, must be unique within one run of it, and a removed item's slots
+  are dropped with no cleanup code.
+- State that is shared on purpose lives in a top-level `state var`, a `Map`
+  keyed by id when there is one value per entity; remove an entry when its
+  entity goes away. A pure value computed from a key is a `memo(key)`.
+  `state(id)` is deprecated.
 - A slot that a run does not reach is dropped when that run ends. A `state`
   behind an `if` that was not taken, or one in a loop iteration for an item that
   is no longer in the list, starts from its initializer the next time it is

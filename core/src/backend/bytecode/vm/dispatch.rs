@@ -69,6 +69,7 @@ impl<'a> Vm<'a> {
                     elems,
                     i: 0,
                     acc: Vec::new(),
+                    keys: Default::default(),
                 });
                 self.push_loop_idx(fi);
             }
@@ -105,6 +106,7 @@ impl<'a> Vm<'a> {
                     end: e,
                     iter: 0,
                     acc: Vec::new(),
+                    keys: Default::default(),
                 });
                 self.push_loop_idx(fi);
             }
@@ -148,6 +150,29 @@ impl<'a> Vm<'a> {
                     _ => return Err("loop_bump_idx: no active while cursor".into()),
                 };
                 self.set_loop_idx_top(fi, it);
+            }
+            Inst::LoopKey { dst, slot, key } => {
+                let kv = self.reg(fi, *key);
+                let h = crate::dict::key_hash(kv, self.heap)
+                    .map_err(|e| e.replace("as a map key", "as a loop key"))?;
+                let fresh = match self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {
+                    Some(Some(cursor)) => cursor.insert_key(h)?,
+                    _ => return Err("loop_key: no active cursor".into()),
+                };
+                let heap = &*self.heap;
+                if !fresh {
+                    return Err(format!(
+                        "Duplicate loop key {}: two items of one `for … key` loop have the \
+                         same key, so they would share their `state`",
+                        crate::value::value_to_debug_string(&kv, heap)
+                    ));
+                }
+                self.stack
+                    .loop_key_labels
+                    .entry(h)
+                    .or_insert_with(|| crate::value::value_to_debug_string(&kv, heap));
+                self.set_loop_key_top(fi, h);
+                self.set(fi, *dst, Value::Nil);
             }
             Inst::LoopPop { slot } => {
                 if let Some(cell) = self.stack.vm_frames[fi].loops.get_mut(*slot as usize) {

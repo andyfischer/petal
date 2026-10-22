@@ -160,12 +160,12 @@ impl Compiler {
                 // ahead of the file's first statement (see `enums.rs`).
             }
 
-            StmtKind::For { var, iter, body } => {
+            StmtKind::For { var, iter, key, body } => {
                 // Statement form: a side-effect loop that allocates nothing,
                 // unless it sits in tail position — an implicit return or the
                 // last statement of a value-position branch — where the
                 // documented value-position rule makes it a mapping.
-                self.compile_for(var, iter, body, stmt_value_used, stmt_span);
+                self.compile_for(var, iter, key.as_deref(), body, stmt_value_used, stmt_span);
             }
 
             StmtKind::While { condition, body } => {
@@ -240,6 +240,7 @@ impl Compiler {
         &mut self,
         var: &str,
         iter: &Expr,
+        key: Option<&Expr>,
         body: &[Stmt],
         collect: bool,
         span: SourceSpan,
@@ -259,7 +260,7 @@ impl Compiler {
         self.terms[for_tid.0 as usize].collect = collect;
         self.blocks[body_block.0 as usize].parent_term_id = Some(for_tid);
 
-        self.compile_loop_body(body_block, body, &phis, Some(var), collect);
+        self.compile_loop_body(body_block, body, &phis, Some(var), key, collect);
         for_tid
     }
 
@@ -294,7 +295,7 @@ impl Compiler {
 
         // `while` has no collecting form, so its body's last statement is never
         // in value position.
-        self.compile_loop_body(body_block, body, &phis, None, false);
+        self.compile_loop_body(body_block, body, &phis, None, None, false);
         while_tid
     }
 

@@ -131,6 +131,17 @@ way, for code written against an earlier checkout.
   `lint` and the language server read the body as the function it is, and
   the tree-sitter grammar and the vim syntax know the form. See
   [docs/testing.md](docs/testing.md).
+- Keyed loops: `for t in tasks key t.id do` keys each iteration's `state`
+  (and the state of everything the body calls) by the key's value instead of
+  by position, so it follows the item through a reorder, an insert ahead of
+  it or a removal before it, and a removed item's slots are dropped like any
+  slot a run does not reach. The key is relative to the loop at its call
+  path, so a function running a keyed loop and called twice still holds two
+  sets of slots. Keys compare as Map keys do, a duplicate within one run of
+  the loop is a runtime error, and `while` has no key. `key` is a keyword only
+  in that position. A memoized row keeps replaying after its list reorders,
+  and a state dump names a keyed slot by its value (`[key=7]/row/open`). See
+  [Keyed loops](docs/features/inline-state.md#keyed-loops).
 - JSX-like elements: an open tag can put its attributes on separate lines
   (and `petal fmt` indents them a step under the `<`), a bare attribute is
   `true` (`<video muted />`), and an attribute name can be a keyword, as a
@@ -910,7 +921,8 @@ package changes below, `petal fix-imports` does the rewriting and
   declaration is now a compile warning (`petal check`, `petal run`, the
   language server, a host's diagnostics) carrying the rule id
   `[state-key-deprecated]`: a keyed slot ignores the call path, so it is a
-  global hidden inside a function. Use `memo(key)` for a pure cache, a
+  global hidden inside a function. Use `memo(key)` for a pure cache, a keyed
+  loop (`for t in tasks key t.id`) for state that must follow an item, a
   top-level `state var` holding a Map (`set m[k] = v`) for state shared on
   purpose, or plain `state`, kept per call path, for per-instance state.
   `petal lint` reports the same sites under that rule, and `--fix` rewrites a

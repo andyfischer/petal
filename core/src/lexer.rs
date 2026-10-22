@@ -241,9 +241,10 @@ pub const KEYWORDS: &[&str] = &[
 /// stays an ordinary name everywhere else. `native` is a keyword only directly
 /// before `fn` (`native fn sqrt(x: num) -> float`). `test` opens a test block
 /// only at the start of a statement, directly before a string
-/// (`test "adds" do … end`). Downstream tooling
+/// (`test "adds" do … end`). `key` is a keyword only directly after a `for`
+/// loop's iterable (`for t in tasks key t.id do`). Downstream tooling
 /// (highlighting, completion) should still treat these as keywords.
-pub const CONTEXTUAL_KEYWORDS: &[&str] = &["as", "class", "config", "native", "test"];
+pub const CONTEXTUAL_KEYWORDS: &[&str] = &["as", "class", "config", "key", "native", "test"];
 
 /// Map an identifier-shaped word to its keyword token, or `None` if it is an
 /// ordinary identifier.

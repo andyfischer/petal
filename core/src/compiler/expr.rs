@@ -363,8 +363,8 @@ impl Compiler {
             // An expression-form `for` whose value is discarded — the arm of a
             // statement-level `match`, the last line of a discarded block —
             // stays a side-effect loop.
-            ExprKind::For { var, iter, body } => {
-                self.compile_for(var, iter, body, value_used, span)
+            ExprKind::For { var, iter, key, body } => {
+                self.compile_for(var, iter, key.as_deref(), body, value_used, span)
             }
 
             ExprKind::List(elements) => {

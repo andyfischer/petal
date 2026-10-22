@@ -149,10 +149,13 @@ impl Walker {
                 // (`fn f() for x in xs do g(x) end end`), but tail position
                 // makes its value the block's value, so each iteration's tail
                 // becomes a list element rather than being thrown away.
-                StmtKind::For { var, iter, body } if tail && for_collects => {
+                StmtKind::For { var, iter, key, body } if tail && for_collects => {
                     self.walk_expr(iter, true);
                     self.push_scope();
                     self.bind(var);
+                    if let Some(k) = key {
+                        self.walk_expr(k, true);
+                    }
                     self.walk_block(body, true);
                     self.pop_scope();
                 }
@@ -210,10 +213,13 @@ impl Walker {
                 self.walk_block(body, true);
                 self.pop_scope();
             }
-            StmtKind::For { var, iter, body } => {
+            StmtKind::For { var, iter, key, body } => {
                 self.walk_expr(iter, true);
                 self.push_scope();
                 self.bind(var);
+                if let Some(k) = key {
+                    self.walk_expr(k, true);
+                }
                 // Statement-form loop: the body runs for side effects and
                 // collects nothing, so its tail value is discarded.
                 self.walk_block(body, false);
@@ -288,10 +294,13 @@ impl Walker {
                     self.walk_block(&arm.body, used);
                 }
             }
-            ExprKind::For { var, iter, body } => {
+            ExprKind::For { var, iter, key, body } => {
                 self.walk_expr(iter, true);
                 self.push_scope();
                 self.bind(var);
+                if let Some(k) = key {
+                    self.walk_expr(k, true);
+                }
                 // Value-form loop: each iteration's tail becomes a list element,
                 // so the body tail is used iff the loop's own value is used.
                 self.walk_block(body, used);

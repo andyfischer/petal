@@ -17,7 +17,8 @@ impl Env {
     ///
     /// A slot reached through a call path keys by that path, rendered
     /// root-to-leaf with `/` between steps and the variable name last:
-    /// `counter/count`, `render/row#1/[3]/hovered`, `k1234…/leaf`. See
+    /// `counter/count`, `render/row#1/[3]/hovered`, `[key=42]/row/hovered`,
+    /// `k1234…/leaf`. See
     /// [`render_state_key`] for the one renderer every part shape goes through.
     /// A pathed name always contains a `/`, which no bare name can, so the two
     /// namespaces cannot collide.
@@ -41,6 +42,11 @@ impl Env {
             frame: ctx.frame(),
         });
         let mut map = serde_json::Map::new();
+        let no_labels = HashMap::new();
+        let key_labels = self
+            .stacks
+            .get(&stack_id)
+            .map_or(&no_labels, |s| &s.loop_key_labels);
         if let Some(state) = self.get_all_state(stack_id) {
             // Callsite labels cost a scan over every term, so pay for them only
             // when a key actually carries a `Call` part — which no top-level-only
@@ -62,7 +68,7 @@ impl Env {
                     .cloned()
                     .unwrap_or_else(|| format!("unknown_{}", key.base.0));
                 map.insert(
-                    render_state_key(&base_name, &key.path, &labels),
+                    render_state_key(&base_name, &key.path, &labels, key_labels),
                     crate::value::value_to_json_ctx(val, heap, pending_ctx.as_ref()),
                 );
             }
@@ -175,7 +181,12 @@ impl Env {
 /// | `[Call(f), Call(f)]` (recursion) | `counter/counter/count` |
 /// | `[Index(3), Call(f)]` (called in a loop) | `[3]/row/hovered` |
 /// | `[Index(0), Index(2)]` (top-level state in nested loops) | `[0]/[2]/xs` |
+/// | `[Key(h), Call(f)]` (called in a `for … key` loop) | `[key=42]/row/hovered` |
 /// | `[Key(h)]` (explicit `state(expr)`) | `k1234…/leaf` |
+///
+/// A `Key` part renders the key value it was hashed from when the stack has
+/// seen it (`key_labels`, from [`crate::stack::Stack::loop_key_labels`]), and
+/// its hash otherwise.
 ///
 /// A `Call` part is a hash, so it renders as the callee's spelling recovered
 /// from the program (`counter`, `#1` and up when one function calls the same
@@ -183,7 +194,12 @@ impl Env {
 /// name it — hand-written IR, or a slot left behind by an edit that removed the
 /// callsite. The label is for reading, not for addressing: nothing resolves a
 /// name back to a slot (see [`Env::set_state_map_from_json`]).
-pub(super) fn render_state_key(base_name: &str, path: &[PathPart], labels: &HashMap<u64, String>) -> String {
+pub(super) fn render_state_key(
+    base_name: &str,
+    path: &[PathPart],
+    labels: &HashMap<u64, String>,
+    key_labels: &HashMap<u64, String>,
+) -> String {
     if path.is_empty() {
         return base_name.to_string();
     }
@@ -195,7 +211,10 @@ pub(super) fn render_state_key(base_name: &str, path: &[PathPart], labels: &Hash
                 None => out.push_str(&format!("c{h}")),
             },
             PathPart::Index(i) => out.push_str(&format!("[{i}]")),
-            PathPart::Key(h) => out.push_str(&format!("k{h}")),
+            PathPart::Key(h) => match key_labels.get(h) {
+                Some(label) => out.push_str(&format!("[key={label}]")),
+                None => out.push_str(&format!("k{h}")),
+            },
             PathPart::Memo(h) => out.push_str(&format!("m{h}")),
         }
         out.push('/');
@@ -279,9 +298,9 @@ mod tests {
 
     #[test]
     fn a_top_level_slot_renders_as_its_bare_name() {
-        assert_eq!(render_state_key("count", &[], &HashMap::new()), "count");
+        assert_eq!(render_state_key("count", &[], &HashMap::new(), &HashMap::new()), "count");
         assert_eq!(
-            render_state_key("ui::theme", &[], &HashMap::new()),
+            render_state_key("ui::theme", &[], &HashMap::new(), &HashMap::new()),
             "ui::theme"
         );
     }
@@ -290,24 +309,33 @@ mod tests {
     fn every_part_shape_goes_through_one_renderer() {
         let labels = labels(&[(7, "counter")]);
         assert_eq!(
-            render_state_key("count", &[PathPart::Call(7)], &labels),
+            render_state_key("count", &[PathPart::Call(7)], &labels, &HashMap::new()),
             "counter/count"
         );
         assert_eq!(
-            render_state_key("count", &[PathPart::Call(7), PathPart::Call(7)], &labels),
+            render_state_key("count", &[PathPart::Call(7), PathPart::Call(7)], &labels, &HashMap::new()),
             "counter/counter/count"
         );
         assert_eq!(
-            render_state_key("hovered", &[PathPart::Index(3), PathPart::Call(7)], &labels),
+            render_state_key("hovered", &[PathPart::Index(3), PathPart::Call(7)], &labels, &HashMap::new()),
             "[3]/counter/hovered"
         );
         assert_eq!(
-            render_state_key("xs", &[PathPart::Index(0), PathPart::Index(2)], &labels),
+            render_state_key("xs", &[PathPart::Index(0), PathPart::Index(2)], &labels, &HashMap::new()),
             "[0]/[2]/xs"
         );
         assert_eq!(
-            render_state_key("leaf", &[PathPart::Key(42)], &labels),
+            render_state_key("leaf", &[PathPart::Key(42)], &labels, &HashMap::new()),
             "k42/leaf"
+        );
+        assert_eq!(
+            render_state_key(
+                "hovered",
+                &[PathPart::Key(42), PathPart::Call(7)],
+                &labels,
+                &HashMap::from([(42, "\"a\"".to_string())])
+            ),
+            "[key=\"a\"]/counter/hovered"
         );
     }
 
@@ -316,7 +344,7 @@ mod tests {
         // Hand-written IR, or a slot whose callsite the last edit deleted: the
         // path still renders, just opaquely.
         assert_eq!(
-            render_state_key("count", &[PathPart::Call(99)], &HashMap::new()),
+            render_state_key("count", &[PathPart::Call(99)], &HashMap::new(), &HashMap::new()),
             "c99/count"
         );
     }
@@ -331,7 +359,7 @@ mod tests {
             vec![PathPart::Index(0)],
             vec![PathPart::Key(2)],
         ] {
-            assert!(render_state_key("count", &path, &HashMap::new()).contains('/'));
+            assert!(render_state_key("count", &path, &HashMap::new(), &HashMap::new()).contains('/'));
         }
     }
 }

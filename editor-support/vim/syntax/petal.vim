@@ -25,6 +25,10 @@ syn keyword petalKeyword     break continue
 " `test` opens a test block only before its name: `test "adds" do`. Anywhere
 " else it is an ordinary identifier, so it is matched in that position only.
 syn match   petalKeyword     "^\s*\zstest\ze\s\+\""
+" `key` is a keyword only in a `for` header, after the iterable:
+" `for t in tasks key t.id do`. Anywhere else it is an ordinary identifier.
+" A lookbehind, because a match starting at `for` would lose to the keyword.
+syn match   petalKeyword     "\(\<for\>.\{-}\<in\>.\{-}\s\)\@<=\zskey\ze\s"
 syn keyword petalConditional if then elsif else end
 syn keyword petalBoolean     true false
 syn keyword petalConstant    nil

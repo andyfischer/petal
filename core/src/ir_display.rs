@@ -687,6 +687,7 @@ fn format_op(program: &Program, term: &Term, state_names: &HashMap<u64, String>)
         TermOp::WhileLoop => "WhileLoop".into(),
         TermOp::Break => "Break".into(),
         TermOp::Continue => "Continue".into(),
+        TermOp::LoopKey => "LoopKey".into(),
         TermOp::Return => "Return".into(),
         TermOp::MakeClosure(fid) => format!("MakeClosure(fn{})", fid.0),
         TermOp::MakeOverloadSet => "MakeOverloadSet".into(),

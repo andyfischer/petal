@@ -253,6 +253,7 @@ emitter should not imitate that.
 | `NumericForLoop` | 2 | 1 | — | non-allocating integer range loop; `inputs=[start, end]` (both Int-valued), `child_blocks=[body]`. Iterates `start..end` (step 1) binding the loop var per iteration without materializing a list. Compiler emits this for `for x in range(a, b)` |
 | `WhileLoop` | 0 | 2 | — | `child_blocks=[cond_block, body_block]` |
 | `Break` `Continue` | 0 | 0 | — | loop control |
+| `LoopKey` | 1 | 0 | — | `for x in xs key k`: `inputs=[key]`. Must sit directly in a `ForLoop`/`NumericForLoop` body block, ahead of the body's own work; replaces the loop's `Index` path part with the key's hash for the rest of the iteration ([State keying](#state-keying)). Yields nil |
 | `Return` | 0 or 1 | 0 | — | `inputs=[value]`, or empty for bare return |
 | `MakeClosure` | = `capture_names.len()` | 0 | `FunctionId` | inputs are captured values, in capture order |
 | `MakeOverloadSet` | ≥1 | 0 | — | inputs are closure terms, one per arity |
@@ -310,6 +311,13 @@ Rules for an emitter:
 - **An explicit `state(expr)` key ignores the path entirely** (and therefore
   `path_pop`): the slot is `state_key` plus the hash of the key value. That
   is the way to say "same entity ⇒ same slot, whoever asks".
+- **A `LoopKey` term keys a loop's iterations by value, relatively.** Each
+  loop iteration contributes one path part, its 0-based index; a `LoopKey`
+  at the head of a `for` body swaps that part for the hash of its input, so
+  the body's `state` follows the item through a reorder. The rest of the
+  path is untouched, and the part is still one part, so `path_pop` counts it
+  like any loop step. An equal key twice in one run of the loop is a runtime
+  error.
 - **`is_memo` makes a keyed `StateInit` a cache entry** (`memo(expr) name`,
   [memo.md](../features/memo.md)). The slot is addressed the same way, but
   under its own kind of key, so it never collides with a `state(expr)` slot,

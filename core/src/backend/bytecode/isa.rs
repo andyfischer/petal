@@ -350,6 +350,15 @@ pub enum Inst {
     LoopBumpIdx {
         slot: LoopSlot,
     },
+    /// `for … key k`: replace the counted loop `slot`'s positional `Index`
+    /// part at the end of the frame path with `Key(hash(key))` for the rest of
+    /// this iteration, and write nil to `dst`. An equal key twice in one run of
+    /// the loop is a runtime error (docs/features/inline-state.md, Keyed loops).
+    LoopKey {
+        dst: Reg,
+        slot: LoopSlot,
+        key: Reg,
+    },
     /// Pop the loop-index context for `slot` on loop exit / break.
     LoopPop {
         slot: LoopSlot,
@@ -757,6 +766,7 @@ define_opcodes!(
     RangeNext,
     WhileInit,
     LoopBumpIdx,
+    LoopKey,
     LoopPop,
     LoopCollect,
     LoopCollectEnd,
@@ -862,6 +872,7 @@ impl Inst {
             | Inst::CellRead { dst, .. }
             | Inst::CellWrite { dst, .. }
             | Inst::LoopCollectEnd { dst, .. }
+            | Inst::LoopKey { dst, .. }
             | Inst::Call { dst, .. }
             | Inst::MethodCall { dst, .. } => Some(*dst),
             // No single-value result.
@@ -958,6 +969,7 @@ impl Inst {
             | Inst::CellNew { init: src, .. }
             | Inst::CellRead { cell: src, .. }
             | Inst::LoopCollect { src, .. }
+            | Inst::LoopKey { key: src, .. }
             | Inst::MatchArm { subject: src, .. }
             | Inst::MatchSwitch { subject: src, .. }
             | Inst::MatchFail { subject: src } => f(src),

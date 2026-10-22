@@ -1298,12 +1298,15 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
-            StmtKind::For { var, iter, body } => {
+            StmtKind::For { var, iter, key, body } => {
                 self.check_expr(iter);
                 self.widen_assigned(body);
                 let var_ty = self.loop_var_type(var, iter, body);
                 self.push_scope();
                 self.bind(var.clone(), None, var_ty);
+                if let Some(k) = key {
+                    self.check_expr(k);
+                }
                 self.check_block_body(body);
                 self.pop_scope();
             }
@@ -1811,12 +1814,15 @@ impl<'a> Checker<'a> {
                 }
                 result.unwrap_or(Type::Any)
             }
-            ExprKind::For { var, iter, body } => {
+            ExprKind::For { var, iter, key, body } => {
                 self.check_expr(iter);
                 self.widen_assigned(body);
                 let var_ty = self.loop_var_type(var, iter, body);
                 self.push_scope();
                 self.bind(var.clone(), None, var_ty);
+                if let Some(k) = key {
+                    self.check_expr(k);
+                }
                 self.check_block_body(body);
                 self.pop_scope();
                 Type::List

@@ -155,9 +155,13 @@ impl Printer {
                     self.line(depth + 1, &head, Some(&f.span));
                 }
             }
-            StmtKind::For { var, iter, body } => {
+            StmtKind::For { var, iter, key, body } => {
                 self.line(depth, &format!("For {var}"), Some(&stmt.span));
                 self.expr(iter, depth + 1);
+                if let Some(k) = key {
+                    self.line(depth + 1, "Key", None);
+                    self.expr(k, depth + 2);
+                }
                 self.stmts(body, depth + 1);
             }
             StmtKind::While { condition, body } => {
@@ -297,9 +301,13 @@ impl Printer {
                     self.match_arm(arm, depth + 1);
                 }
             }
-            ExprKind::For { var, iter, body } => {
+            ExprKind::For { var, iter, key, body } => {
                 self.line(depth, &format!("For {var}"), span);
                 self.expr(iter, depth + 1);
+                if let Some(k) = key {
+                    self.line(depth + 1, "Key", None);
+                    self.expr(k, depth + 2);
+                }
                 self.stmts(body, depth + 1);
             }
             ExprKind::List(items) => {

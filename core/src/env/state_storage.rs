@@ -113,6 +113,12 @@ impl Env {
             None => HashMap::new(),
         };
 
+        let no_labels = HashMap::new();
+        let key_labels = self
+            .stacks
+            .get(&stack_id)
+            .map_or(&no_labels, |s| &s.loop_key_labels);
+
         let mut slots: Vec<(String, u64, Json)> = Vec::new();
         let mut skipped = Vec::new();
         if let Some(state) = self.get_all_state(stack_id) {
@@ -126,7 +132,7 @@ impl Env {
                     .get(&key.base)
                     .cloned()
                     .unwrap_or_else(|| format!("unknown_{}", key.base.0));
-                let name = render_state_key(&base_name, &key.path, &labels);
+                let name = render_state_key(&base_name, &key.path, &labels, key_labels);
                 // A `state var` slot holds its cell; what is stored is the
                 // contents, and the load side makes a new cell for them.
                 let val = match val {

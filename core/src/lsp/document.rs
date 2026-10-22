@@ -1216,7 +1216,7 @@ fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Defin
                 ..Definition::new(name.clone(), DefinitionKind::Enum, stmt.span, detail)
             });
         }
-        StmtKind::For { var, iter, body } => {
+        StmtKind::For { var, iter, body, .. } => {
             // The loop variable is in scope for the loop's own lines.
             defs.push(Definition {
                 hint: expr_path(iter).map(ValueHint::ElementOf),
@@ -1416,11 +1416,11 @@ fn is_ident_char(c: char) -> bool {
 // ---------------------------------------------------------------------------
 
 /// The lexer's hard keywords plus the contextual ones (`as`, `class`,
-/// `config`, `native`, `test`), which completion should still offer. Checked against
+/// `config`, `key`, `native`, `test`), which completion should still offer. Checked against
 /// `petal::lexer::KEYWORDS` by
 /// `core/tests/keyword_sync.rs` — do not edit this list alone.
 pub const KEYWORDS: &[&str] = &[
     "let", "const", "var", "set", "get", "fn", "if", "then", "elsif", "else", "end", "for", "in", "do",
     "while", "match", "when", "return", "break", "continue", "state", "memo", "import", "pub", "export",
-    "as", "true", "false", "nil", "enum", "class", "config", "native", "test",
+    "as", "true", "false", "nil", "enum", "class", "config", "key", "native", "test",
 ];

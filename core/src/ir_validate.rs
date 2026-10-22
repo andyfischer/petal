@@ -496,6 +496,27 @@ impl Program {
                     i
                 ));
             }
+            // A `LoopKey` names the counted loop whose body block holds it:
+            // the lowering finds the loop's cursor that way, so it cannot sit
+            // in a nested block or a `while`, which has no item to key by.
+            if matches!(term.op, TermOp::LoopKey) {
+                let parent = self
+                    .blocks
+                    .get(term.block_id.0 as usize)
+                    .and_then(|b| b.parent_term_id)
+                    .and_then(|p| self.terms.get(p.0 as usize));
+                let in_for_body = parent.is_some_and(|p| {
+                    matches!(p.op, TermOp::ForLoop | TermOp::NumericForLoop)
+                        && p.child_blocks.first() == Some(&term.block_id)
+                });
+                if term.inputs.len() != 1 || !in_for_body {
+                    return Err(format!(
+                        "t{}: LoopKey takes one input (the key) and must sit directly in a \
+                         ForLoop or NumericForLoop body block",
+                        i
+                    ));
+                }
+            }
             // Cell ops have fixed arity: the cell always comes first, so a
             // malformed IR can't turn a `CellWrite` into a read of whatever
             // happens to sit in input 0.

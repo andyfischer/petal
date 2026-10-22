@@ -232,7 +232,14 @@ impl Finder<'_> {
 
     fn plan(&self, block: &[Stmt], i: usize) -> Option<Fix> {
         let stmt = &block[i];
-        let StmtKind::For { var, iter, body } = &stmt.kind else {
+        // A keyed loop's key is part of what it means; leave it alone.
+        let StmtKind::For {
+            var,
+            iter,
+            key: None,
+            body,
+        } = &stmt.kind
+        else {
             return None;
         };
         let [
@@ -375,7 +382,12 @@ fn is_append(s: &Stmt, acc: &str) -> bool {
                 && matches!(&left.kind, ExprKind::Ident(n) if n == acc)
                 && !writes_in_expr(right, acc)
         }
-        StmtKind::For { var, iter, body } => {
+        StmtKind::For {
+            var,
+            iter,
+            key: None,
+            body,
+        } => {
             var != acc
                 && !writes_in_expr(iter, acc)
                 && matches!(body.as_slice(), [only] if is_append(only, acc))

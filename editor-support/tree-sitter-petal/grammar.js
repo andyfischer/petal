@@ -332,6 +332,8 @@ module.exports = grammar({
       field('variable', $.identifier),
       'in',
       field('iterator', $._expression),
+      // `for t in tasks key t.id do`: key each iteration's state by item.
+      optional(seq('key', field('key', $._expression))),
       'do',
       optional(field('body', $.block)),
       'end',

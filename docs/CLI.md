@@ -1997,7 +1997,7 @@ Consumers should treat the single key of the `kind` object as the node type
 | `FnDecl` | `{"FnDecl": {"name": string, "class": string (omitted for ordinary functions), "params": Param[], "ret": TypeAnn (omitted when un-annotated), "body": Stmt[]}}` — `ret` is the optional declared return-type annotation; `class` is set for a method declaration (`fn Rect.center_x(…)` → `class: "Rect"`, `name: "Rect.center_x"`, receiver as `params[0]`) |
 | `EnumDecl` | `{"EnumDecl": {"name": string, "variants": EnumVariant[]}}` |
 | `ClassDecl` | `{"ClassDecl": {"name": string, "fields": ClassField[]}}` — a `class Name … end` declaration; fields are in declaration (and constructor-argument) order |
-| `For` | `{"For": {"var": string, "iter": Expr, "body": Stmt[]}}` |
+| `For` | `{"For": {"var": string, "iter": Expr, "key"?: Expr, "body": Stmt[]}}` — `key` only on a keyed loop (`for x in xs key k do`) |
 | `While` | `{"While": {"condition": Expr, "body": Stmt[]}}` |
 | `Return` | `{"Return": Expr \| null}` |
 | `Break` | `"Break"` |
@@ -2024,7 +2024,7 @@ Consumers should treat the single key of the `kind` object as the node type
 | `Record` | `{"Record": RecordField[]}` |
 | `FieldAccess` | `{"FieldAccess": {"object": Expr, "field": string}}` |
 | `IndexAccess` | `{"IndexAccess": {"object": Expr, "index": Expr}}` |
-| `For` | `{"For": {"var": string, "iter": Expr, "body": Stmt[]}}` — a `for` in value position, which collects a list |
+| `For` | `{"For": {"var": string, "iter": Expr, "key"?: Expr, "body": Stmt[]}}` — a `for` in value position, which collects a list |
 | `OptionalAccess` | `{"OptionalAccess": Expr}` — wraps the `FieldAccess` or `IndexAccess` written with `?.` |
 | `Lambda` | `{"Lambda": {"params": Param[], "body": Stmt[]}}` |
 | `StringInterp` | `{"StringInterp": {"parts": string[], "exprs": Expr[]}}` — `parts` has one more element than `exprs` |

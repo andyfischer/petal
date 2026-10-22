@@ -114,6 +114,10 @@ pub enum ExprKind {
     For {
         var: String,
         iter: Box<Expr>,
+        /// `for x in xs key k do`: the per-iteration state key
+        /// (docs/features/inline-state.md, Keyed loops).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<Box<Expr>>,
         body: Vec<Stmt>,
     },
     List(Vec<Expr>),
@@ -634,6 +638,12 @@ pub enum StmtKind {
     For {
         var: String,
         iter: Expr,
+        /// `for x in xs key k do`: the per-iteration state key, evaluated in
+        /// the body's scope before the body runs. It replaces the loop's
+        /// positional `Index` path part (docs/features/inline-state.md, Keyed
+        /// loops).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<Box<Expr>>,
         body: Vec<Stmt>,
     },
     While {
@@ -848,8 +858,11 @@ pub fn walk_expr<V: ExprVisitor + ?Sized>(v: &mut V, e: &Expr) {
                 }
             }
         }
-        ExprKind::For { iter, body, .. } => {
+        ExprKind::For { iter, key, body, .. } => {
             v.visit_expr(iter);
+            if let Some(k) = key {
+                v.visit_expr(k);
+            }
             for s in body {
                 v.visit_stmt(s);
             }
@@ -930,8 +943,11 @@ pub fn walk_stmt<V: ExprVisitor + ?Sized>(v: &mut V, s: &Stmt) {
             }
         }
         StmtKind::ClassDecl { .. } => {}
-        StmtKind::For { iter, body, .. } => {
+        StmtKind::For { iter, key, body, .. } => {
             v.visit_expr(iter);
+            if let Some(k) = key {
+                v.visit_expr(k);
+            }
             for s in body {
                 v.visit_stmt(s);
             }
@@ -1017,8 +1033,11 @@ pub fn walk_expr_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, e: &mut Expr) {
                 }
             }
         }
-        ExprKind::For { iter, body, .. } => {
+        ExprKind::For { iter, key, body, .. } => {
             v.visit_expr(iter);
+            if let Some(k) = key {
+                v.visit_expr(k);
+            }
             for s in body.iter_mut() {
                 v.visit_stmt(s);
             }
@@ -1099,8 +1118,11 @@ pub fn walk_stmt_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             }
         }
         StmtKind::ClassDecl { .. } => {}
-        StmtKind::For { iter, body, .. } => {
+        StmtKind::For { iter, key, body, .. } => {
             v.visit_expr(iter);
+            if let Some(k) = key {
+                v.visit_expr(k);
+            }
             for s in body.iter_mut() {
                 v.visit_stmt(s);
             }

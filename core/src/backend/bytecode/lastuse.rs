@@ -540,6 +540,7 @@ fn for_each_read(inst: &Inst, program: &Program, mut f: impl FnMut(Reg, bool)) {
         Inst::MatchFail { subject } => f(*subject, PURE),      // formats + raises
         Inst::MatchSwitch { subject, .. } => f(*subject, PURE), // compares, keeps nothing
         Inst::LoopCollect { src, .. } => f(*src, RETAIN),      // appended into the result list
+        Inst::LoopKey { key, .. } => f(*key, PURE),            // hashed, keeps nothing
         Inst::LoadConst { .. }
         | Inst::LoadNil { .. }
         | Inst::LoadBool { .. }

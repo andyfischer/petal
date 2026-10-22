@@ -137,6 +137,12 @@ pub enum TermOp {
     NumericForLoop,
     /// while loop: child_blocks=[cond_block, body_block]
     WhileLoop,
+    /// `for x in xs key k`: inputs=[key]. Always the first non-phi work of a
+    /// `ForLoop`/`NumericForLoop` body block, after the key expression's own
+    /// terms. Replaces the loop's positional `Index` path part with
+    /// `Key(hash(k))` for the rest of the iteration, so the body's `state`
+    /// follows the item rather than its position. Yields nil.
+    LoopKey,
     Break,
     Continue,
     /// Return from function: inputs=[value] or empty for bare return

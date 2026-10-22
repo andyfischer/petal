@@ -39,6 +39,8 @@ type ShapeTable = HashMap<String, Option<Arc<Shape>>>;
 
 /// Break/continue backpatch targets for one active loop during lowering.
 struct LoopCtx {
+    /// The loop's cursor slot, which a `LoopKey` in the body names.
+    slot: LoopSlot,
     /// The loop's body block — the outermost region whose phi carry-outs a
     /// break/continue must run before leaving the loop.
     body_block: BlockId,
@@ -620,6 +622,15 @@ impl<'p> FnLowerer<'p> {
                 TermOp::WhileLoop => self.emit_while(term)?,
                 TermOp::Break => self.emit_break_or_continue(true)?,
                 TermOp::Continue => self.emit_break_or_continue(false)?,
+                TermOp::LoopKey => {
+                    let slot = self.loop_stack.last().ok_or("loop key outside a loop")?.slot;
+                    let inst = Inst::LoopKey {
+                        dst: self.flat(term.id)?,
+                        slot,
+                        key: self.flat(term.inputs[0])?,
+                    };
+                    self.push(inst);
+                }
                 TermOp::Match => self.emit_match(term)?,
                 TermOp::StateInit => self.emit_state_init(term)?,
                 _ => {
@@ -702,6 +713,7 @@ impl<'p> FnLowerer<'p> {
         collect_dst: Option<Reg>,
     ) -> Result<(), String> {
         self.loop_stack.push(LoopCtx {
+            slot,
             body_block,
             continue_jumps: Vec::new(),
             break_jumps: Vec::new(),
@@ -770,6 +782,7 @@ impl<'p> FnLowerer<'p> {
         let jexit = self.emit_placeholder(Inst::JumpIfFalse { cond, to: 0 });
 
         self.loop_stack.push(LoopCtx {
+            slot,
             body_block,
             continue_jumps: Vec::new(),
             break_jumps: Vec::new(),
@@ -1201,6 +1214,9 @@ impl<'p> FnLowerer<'p> {
     fn block_result_reg(&self, block: BlockId) -> Result<Option<Reg>, String> {
         self.block_terms_in_order(block)
             .last()
+            // A keyed loop's `LoopKey` heads its body; when it is all there is,
+            // the body is empty and yields what an unkeyed empty body does.
+            .filter(|&&t| !matches!(self.program.get_term(t).op, TermOp::LoopKey))
             .map(|&t| self.flat(t))
             .transpose()
     }

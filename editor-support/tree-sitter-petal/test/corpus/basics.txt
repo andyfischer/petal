@@ -598,3 +598,21 @@ memo([a, b]) n: int = a * b
     name: (identifier)
     type: (type_annotation type: (type_name (identifier)))
     value: (binary_expression left: (identifier) right: (identifier))))
+
+==================
+Keyed for loop
+==================
+
+for t in tasks key t.id do
+  row(t)
+end
+
+---
+
+(source_file
+  (for_statement
+    variable: (identifier)
+    iterator: (identifier)
+    key: (field_access object: (identifier) field: (identifier))
+    body: (block
+      (call function: (identifier) arguments: (argument_list (identifier))))))

@@ -16,6 +16,11 @@ pub const CLASS_KEYWORD: &str = "class";
 /// highlights it.
 pub const CONFIG_KEYWORD: &str = "config";
 
+/// The contextual `key` clause of a `for` header (`for t in tasks key t.id
+/// do`), only recognized directly after the iterable so it stays usable as an
+/// identifier. Listed in [`crate::lexer::CONTEXTUAL_KEYWORDS`].
+pub const KEY_KEYWORD: &str = "key";
+
 /// The keyword a binding statement is written with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LetKeyword {
@@ -1392,9 +1397,9 @@ impl Parser {
 
     fn parse_for(&mut self, start: usize) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::ForStmt);
-        let (var, iter, body) = self.parse_for_inner()?;
+        let (var, iter, key, body) = self.parse_for_inner()?;
         self.ev_close();
-        Ok(self.mk_stmt(StmtKind::For { var, iter, body }, start))
+        Ok(self.mk_stmt(StmtKind::For { var, iter, key, body }, start))
     }
 
     /// The expression form of `for`, reached only in value position (`x = for …`,
@@ -1404,12 +1409,13 @@ impl Parser {
     fn parse_for_expr(&mut self) -> Result<Expr, String> {
         let start = self.pos;
         self.ev_open(SyntaxKind::ForExpr);
-        let (var, iter, body) = self.parse_for_inner()?;
+        let (var, iter, key, body) = self.parse_for_inner()?;
         self.ev_close();
         Ok(self.mk_expr(
             ExprKind::For {
                 var,
                 iter: Box::new(iter),
+                key,
                 body,
             },
             start,
@@ -1417,18 +1423,28 @@ impl Parser {
     }
 
     /// Shared body of the statement and expression `for` forms: consumes
-    /// `for <var> in <iter> do <body> end` and returns its parts.
-    fn parse_for_inner(&mut self) -> Result<(String, Expr, Vec<Stmt>), String> {
+    /// `for <var> in <iter> [key <expr>] do <body> end` and returns its parts.
+    #[allow(clippy::type_complexity)]
+    fn parse_for_inner(&mut self) -> Result<(String, Expr, Option<Box<Expr>>, Vec<Stmt>), String> {
         let for_pos = self.pos;
         self.advance(); // consume 'for'
         let var = self.expect_ident()?;
         self.expect(&Token::In)?;
         let iter = self.parse_expr()?;
+        let key = if matches!(self.peek(), Token::Ident(w) if w == KEY_KEYWORD) {
+            self.ev_open(SyntaxKind::ForKey);
+            self.advance(); // consume 'key'
+            let k = self.parse_expr()?;
+            self.ev_close();
+            Some(Box::new(k))
+        } else {
+            None
+        };
         self.skip_newlines();
         self.expect(&Token::Do)?;
         let body = self.parse_block_until(&[Token::End])?;
         self.expect_block_end(for_pos, "a `for` loop")?;
-        Ok((var, iter, body))
+        Ok((var, iter, key, body))
     }
 
     /// `while` is statement-only (no expression / collecting form).

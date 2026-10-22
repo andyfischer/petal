@@ -469,8 +469,9 @@ impl Projector {
                 let var = self.only_ident(node)?;
                 let nodes = child_nodes(node);
                 let iter = self.expr(nodes.first().ok_or("for statement missing iterable")?)?;
+                let key = self.for_key(node)?;
                 let body = self.block(node)?;
-                StmtKind::For { var, iter, body }
+                StmtKind::For { var, iter, key, body }
             }
             SyntaxKind::WhileStmt => {
                 let nodes = child_nodes(node);
@@ -749,6 +750,16 @@ impl Projector {
         self.block_stmts(&block)
     }
 
+    /// The key expression of a `for … key k do` header, if it has one.
+    fn for_key(&mut self, node: &SyntaxNode) -> Result<Option<Box<Expr>>, String> {
+        let Some(clause) = child_nodes(node).into_iter().find(|n| n.kind() == SyntaxKind::ForKey) else {
+            return Ok(None);
+        };
+        let nodes = child_nodes(&clause);
+        let k = self.expr(nodes.first().ok_or("for key clause missing its expression")?)?;
+        Ok(Some(Box::new(k)))
+    }
+
     fn block_stmts(&mut self, block: &SyntaxNode) -> Result<Vec<Stmt>, String> {
         child_nodes(block).iter().map(|n| self.stmt(n)).collect()
     }
@@ -919,11 +930,13 @@ impl Projector {
                 let var = self.only_ident(node)?;
                 let nodes = child_nodes(node);
                 let iter = self.expr(nodes.first().ok_or("for expression missing iterable")?)?;
+                let key = self.for_key(node)?;
                 let body = self.block(node)?;
                 Ok(Expr {
                     kind: ExprKind::For {
                         var,
                         iter: Box::new(iter),
+                        key,
                         body,
                     },
                     span: self.node_span(node)?,

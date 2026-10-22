@@ -147,6 +147,7 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         }
         WhileInit { slot } => format!("while_init slot{}", slot),
         LoopBumpIdx { slot } => format!("loop_bump_idx slot{}", slot),
+        LoopKey { dst, slot, key } => format!("r{} = loop_key slot{} <- r{}", dst, slot, key),
         LoopPop { slot } => format!("loop_pop slot{}", slot),
         LoopCollect { slot, src } => format!("loop_collect slot{} <- r{}", slot, src),
         LoopCollectEnd { slot, dst } => format!("r{} = loop_collect_end slot{}", dst, slot),

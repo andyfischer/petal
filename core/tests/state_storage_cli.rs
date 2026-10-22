@@ -145,3 +145,31 @@ fn the_option_is_in_the_help_and_needs_a_value() {
     assert!(err.contains("Expected a file path after --state-storage"), "{err}");
     let _ = std::fs::remove_dir_all(&d);
 }
+
+#[test]
+fn a_keyed_loops_slots_round_trip_through_the_file() {
+    // A `for … key` slot's path holds a `Key` part; it is stored as a hash and
+    // read back into the same slot, so each item keeps its count (and the
+    // saved name shows the key value it came from).
+    let d = dir("loop-keys");
+    std::fs::write(
+        d.join("rows.ptl"),
+        "for id in [\"a\", \"b\"] key id do\n  state hits = 0\n  hits += 1\n  print(id ++ str(hits))\nend\n",
+    )
+    .unwrap();
+    let run = || petal_in(&d, &["run", "--state-storage", "s.json", "rows.ptl"]);
+    assert_eq!(run(), ("a1\nb1\n".to_string(), String::new(), 0));
+    assert_eq!(run(), ("a2\nb2\n".to_string(), String::new(), 0));
+
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(d.join("s.json")).unwrap()).unwrap();
+    let mut names: Vec<&str> = saved["slots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["[key=\"a\"]/hits", "[key=\"b\"]/hits"]);
+    let _ = std::fs::remove_dir_all(&d);
+}

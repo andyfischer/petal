@@ -355,6 +355,7 @@ impl Compiler {
         body: &[Stmt],
         phis: &[(String, TermId)],
         loop_var: Option<&str>,
+        key: Option<&Expr>,
         collects: bool,
     ) {
         self.loop_depth += 1;
@@ -368,6 +369,14 @@ impl Compiler {
 
         let slots = self.emit_body_phi_ins(phis);
         self.carry_slots.push((body_block, slots));
+
+        // `for … key k`: the key is the body's first term, so it is evaluated
+        // per iteration with the loop variable bound, ahead of any `state`
+        // the body declares (docs/dev/state-call-paths.md §2.1).
+        if let Some(k) = key {
+            let k_tid = self.compile_expr(k);
+            self.emit_term(TermOp::LoopKey, smallvec![k_tid], None);
+        }
 
         self.compile_stmts(body, collects);
 
@@ -532,10 +541,13 @@ impl ExprVisitor for AssignedNames<'_> {
             }
             // A nested `fn` opens its own scope; its assignments don't carry out.
             StmtKind::FnDecl { .. } => {}
-            StmtKind::For { var, iter, body } => {
+            StmtKind::For { var, iter, key, body } => {
                 self.visit_expr(iter);
                 self.push_scope();
                 self.bind(var);
+                if let Some(k) = key {
+                    self.visit_expr(k);
+                }
                 for s in body {
                     self.visit_stmt(s);
                 }
@@ -578,10 +590,13 @@ impl ExprVisitor for AssignedNames<'_> {
                     self.pop_scope();
                 }
             }
-            ExprKind::For { var, iter, body } => {
+            ExprKind::For { var, iter, key, body } => {
                 self.visit_expr(iter);
                 self.push_scope();
                 self.bind(var);
+                if let Some(k) = key {
+                    self.visit_expr(k);
+                }
                 for s in body {
                     self.visit_stmt(s);
                 }

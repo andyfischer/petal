@@ -165,10 +165,13 @@ impl ShadowWalker<'_> {
                 self.bind_other(name);
                 self.walk_fn(params, body);
             }
-            StmtKind::For { var, iter, body } => {
+            StmtKind::For { var, iter, key, body } => {
                 self.walk_expr(iter);
                 self.scoped(|w| {
                     w.bind_other(var);
+                    if let Some(k) = key {
+                        w.walk_expr(k);
+                    }
                     body.iter().for_each(|s| w.walk_stmt(s));
                 });
             }
@@ -213,10 +216,13 @@ impl ShadowWalker<'_> {
                     });
                 }
             }
-            ExprKind::For { var, iter, body } => {
+            ExprKind::For { var, iter, key, body } => {
                 self.walk_expr(iter);
                 self.scoped(|w| {
                     w.bind_other(var);
+                    if let Some(k) = key {
+                        w.walk_expr(k);
+                    }
                     body.iter().for_each(|s| w.walk_stmt(s));
                 });
             }

@@ -281,6 +281,7 @@ impl FnPlan {
                 TermOp::Return
                     | TermOp::Break
                     | TermOp::Continue
+                    | TermOp::LoopKey
                     | TermOp::MakeClosure(_)
                     | TermOp::MakeOverloadSet
                     | TermOp::StateInit

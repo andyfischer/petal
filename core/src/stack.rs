@@ -26,8 +26,11 @@ pub enum PathPart {
     /// One loop iteration: the 0-based iteration index, pushed by a `for`/
     /// `while` at every level of the live frame stack.
     Index(usize),
-    /// An explicit `state(expr)` key, hashed. Absolute: a keyed slot's path is
-    /// exactly `[Key(h)]`, ignoring the call path entirely (§2.2).
+    /// A key value, hashed, in one of two places. A `for … key k` iteration
+    /// puts it where its `Index` would be, so the key is relative to the loop
+    /// at that call path (§2.1). An explicit `state(expr)` key (deprecated) is
+    /// absolute: that slot's path is exactly `[Key(h)]`, ignoring the call
+    /// path entirely (§2.2).
     Key(u64),
     /// A `memo(expr)` key, hashed. Absolute like [`PathPart::Key`]; a separate
     /// variant so a cache entry is told apart from state by its key alone —
@@ -46,7 +49,8 @@ impl RuntimeStateKey {
 /// Runtime state key: a declaration id (`base`) plus the call path that reached
 /// it. Top-level state has an empty `path`; an explicit `state(expr)` key has
 /// exactly one `Key` part; everything else carries one `Call` part per enclosing
-/// call and one `Index` part per enclosing loop iteration, outermost first.
+/// call and one part per enclosing loop iteration (an `Index`, or a `Key` for a
+/// `for … key` loop), outermost first.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RuntimeStateKey {
     pub base: StateKey,
@@ -297,7 +301,18 @@ pub struct Stack {
     /// while it is set aside between two
     /// [`Env::test_resume`](crate::env::Env::test_resume) calls.
     pub test: Option<TestRun>,
+    /// The key value each `for … key k` hash was computed from, rendered for
+    /// reading, so a state dump shows `[key=42]` rather than the bare hash
+    /// (docs/dev/state-call-paths.md §3.6). Display-only: a slot is keyed by
+    /// the hash. Written the first time a hash is seen; pruned to the hashes
+    /// live slots still use once it grows past [`LOOP_KEY_LABELS_PRUNE_AT`].
+    pub loop_key_labels: HashMap<u64, String>,
 }
+
+/// How many [`Stack::loop_key_labels`] the sweep lets accumulate before it
+/// drops the ones no surviving slot's path uses. Keys of a loop whose body has
+/// no state never reach a slot, so a lower bound would re-render them every run.
+pub const LOOP_KEY_LABELS_PRUNE_AT: usize = 4096;
 
 #[derive(Debug, Clone)]
 pub enum StackStatus {
@@ -372,6 +387,7 @@ impl Stack {
             insts: 0,
             statics: crate::static_cache::StaticSlots::default(),
             test: None,
+            loop_key_labels: HashMap::new(),
         }
     }
 
@@ -548,6 +564,18 @@ impl Stack {
         let before = self.state.len();
         self.state
             .retain(|key, _| self.touched_state_keys.contains(key));
+        if self.loop_key_labels.len() > LOOP_KEY_LABELS_PRUNE_AT {
+            let live: HashSet<u64> = self
+                .state
+                .keys()
+                .flat_map(|k| k.path.iter())
+                .filter_map(|p| match p {
+                    PathPart::Key(h) => Some(*h),
+                    _ => None,
+                })
+                .collect();
+            self.loop_key_labels.retain(|h, _| live.contains(h));
+        }
         before - self.state.len()
     }
 

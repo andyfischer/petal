@@ -863,14 +863,21 @@ impl Cmp {
                 StmtKind::For {
                     var: x1,
                     iter: i1,
+                    key: k1,
                     body: b1,
                 },
                 StmtKind::For {
                     var: x2,
                     iter: i2,
+                    key: k2,
                     body: b2,
                 },
-            ) => x1 == x2 && self.expr(i1, i2) && self.stmts(b1, b2),
+            ) => {
+                x1 == x2
+                    && self.expr(i1, i2)
+                    && self.opt_expr(k1.as_deref(), k2.as_deref())
+                    && self.stmts(b1, b2)
+            }
             (
                 StmtKind::While {
                     condition: c1,
@@ -1123,14 +1130,21 @@ impl Cmp {
                 ExprKind::For {
                     var: v1,
                     iter: i1,
+                    key: k1,
                     body: b1,
                 },
                 ExprKind::For {
                     var: v2,
                     iter: i2,
+                    key: k2,
                     body: b2,
                 },
-            ) => v1 == v2 && self.expr(i1, i2) && self.stmts(b1, b2),
+            ) => {
+                v1 == v2
+                    && self.expr(i1, i2)
+                    && self.opt_expr(k1.as_deref(), k2.as_deref())
+                    && self.stmts(b1, b2)
+            }
             (ExprKind::List(x), ExprKind::List(y)) => {
                 x.len() == y.len()
                     && x.iter().zip(y).enumerate().all(|(i, (p, q))| {

@@ -55,6 +55,7 @@
   "end"
   "for"
   "in"
+  "key"
   "while"
   "do"
   "match"

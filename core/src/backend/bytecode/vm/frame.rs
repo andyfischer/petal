@@ -123,10 +123,13 @@ impl VmFrame {
 #[derive(Clone)]
 pub enum LoopCursor {
     /// `for x in <list>`: the snapshotted elements and the next index.
+    /// `keys` holds the hashes a `for … key` loop has used so far this run,
+    /// to refuse a duplicate; it stays empty (unallocated) otherwise.
     ForEach {
         elems: Vec<Value>,
         i: usize,
         acc: Vec<Value>,
+        keys: LoopKeys,
     },
     /// `for i in range(a, b)`: the current value, exclusive end, and 0-based
     /// iteration count (the state-key index, which differs from the value when
@@ -136,12 +139,26 @@ pub enum LoopCursor {
         end: i64,
         iter: usize,
         acc: Vec<Value>,
+        keys: LoopKeys,
     },
     /// A `while` loop tracks only its iteration counter (for state keying).
     While { iteration: usize, acc: Vec<Value> },
 }
 
+/// The key hashes a keyed loop has seen in its current run.
+pub type LoopKeys = std::collections::HashSet<u64, crate::fxhash::FxBuildHasher>;
+
 impl LoopCursor {
+    /// Record `h` as this run's key for the current iteration. `Ok(false)`
+    /// when an earlier iteration already used it; an error for a `while`
+    /// cursor, which has no item to key by.
+    pub(super) fn insert_key(&mut self, h: u64) -> Result<bool, String> {
+        match self {
+            LoopCursor::ForEach { keys, .. } | LoopCursor::Range { keys, .. } => Ok(keys.insert(h)),
+            LoopCursor::While { .. } => Err("loop_key: a `while` loop has no item to key".into()),
+        }
+    }
+
     /// This cursor's collection accumulator, whichever cursor shape holds it.
     /// Every variant carries one, so the accessors below never branch on the
     /// loop kind.
@@ -285,20 +302,27 @@ impl<'a> Vm<'a> {
     /// Set the innermost active loop's `Index` part to `idx` (the current
     /// 0-based iteration). The innermost active loop's part is always last:
     /// the frame's `Call` prefix is fixed, and any nested loop pushed after it
-    /// pops its own part at `LoopPop`. Guarded on the part actually being an
-    /// `Index` so unbalanced hand-written IR cannot rewrite a `Call` part and
-    /// silently misroute every slot below it.
+    /// pops its own part at `LoopPop`. Guarded on the part actually being a
+    /// loop part — an `Index`, or the `Key` a keyed loop's previous iteration
+    /// put there — so unbalanced hand-written IR cannot rewrite a `Call` part
+    /// and silently misroute every slot below it. A frame path holds no
+    /// absolute `state(key)` part: that one is built in [`Self::state_key`].
     pub(super) fn set_loop_idx_top(&mut self, fi: usize, idx: usize) {
-        if let Some(last @ PathPart::Index(_)) = self.stack.vm_frames[fi].path.last_mut() {
-            *last = PathPart::Index(idx);
-        }
+        set_loop_part(&mut self.stack.vm_frames[fi].path, PathPart::Index(idx));
     }
 
-    /// Pop the innermost active loop's `Index` part (at `LoopPop`), with the
+    /// Replace the innermost active loop's part with `Key(h)` for the rest of
+    /// this iteration (`for … key k`), with the same guard as
+    /// [`set_loop_idx_top`](Self::set_loop_idx_top).
+    pub(super) fn set_loop_key_top(&mut self, fi: usize, h: u64) {
+        set_loop_part(&mut self.stack.vm_frames[fi].path, PathPart::Key(h));
+    }
+
+    /// Pop the innermost active loop's part (at `LoopPop`), with the
     /// same guard as [`set_loop_idx_top`](Self::set_loop_idx_top).
     pub(super) fn pop_loop_idx(&mut self, fi: usize) {
         let path = &mut self.stack.vm_frames[fi].path;
-        if matches!(path.last(), Some(PathPart::Index(_))) {
+        if matches!(path.last(), Some(PathPart::Index(_) | PathPart::Key(_))) {
             path.pop();
         }
     }
@@ -368,5 +392,14 @@ impl<'a> Vm<'a> {
                  Compute it with `let`, or keep shared mutable data in a top-level `state var`"
                 .to_string()),
         }
+    }
+}
+
+/// Overwrite the last part of `path` with `part` when that part is a loop's
+/// (`Index` or `Key`); see [`Vm::set_loop_idx_top`].
+#[inline(always)]
+pub(super) fn set_loop_part<A: smallvec::Array<Item = PathPart>>(path: &mut SmallVec<A>, part: PathPart) {
+    if let Some(last @ (PathPart::Index(_) | PathPart::Key(_))) = path.last_mut() {
+        *last = part;
     }
 }

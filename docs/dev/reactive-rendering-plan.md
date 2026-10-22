@@ -128,6 +128,11 @@ for t in get(tasks) key t.id do
 end
 ```
 
+The syntax and its state keying have shipped
+([state-loop-keys.md](../tasks/state-loop-keys.md)): a keyed iteration's
+path part is `Key(hash(t.id))`, so its state and its memo scope follow the
+item. What follows is the incremental part, which is still to do.
+
 - **Persistent collections.** Lists and maps gain persistent representations
   (RRB vectors, HAMTs) with structural sharing, so two versions diff in
   O(changes) by skipping shared subtrees by pointer (Jane Street's

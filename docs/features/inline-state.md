@@ -12,6 +12,7 @@ able to preserve that state across a live code modification.
 - [Declaring state](#declaring-state)
 - [State is nested](#state-is-nested)
 - [Interaction with control flow](#interaction-with-control-flow)
+  - [Keyed loops](#keyed-loops)
 - [Deprecated: `state(key)`](#deprecated-statekey)
 - [Sharing on purpose](#sharing-on-purpose)
 - [Callbacks run at the builtin's callsite](#callbacks-run-at-the-builtins-callsite)
@@ -95,15 +96,56 @@ TODO: example.
 ## Interaction with control flow
 
 If `state` is used inside a loop, then it creates a list, one element per iteration.
-For now a loop keys each iteration by its position, like a list index: if the
-list reorders, each value stays with its position rather than its item. When a
-value must follow an item, keep it in a top-level `state var` Map keyed by the
-item's id ([Sharing on purpose](#sharing-on-purpose)).
+A loop keys each iteration by its position, like a list index: if the list
+reorders, each value stays with its position rather than its item. To make a
+value follow its item, give the loop a key ([Keyed loops](#keyed-loops)).
 
 If `state` is used in an `if` block, then the data is only retained on runs where
 that condition is true. If the condition fails then any nested state gets deleted.
 
 If `state` is used in a recursive function call, then it creates a tree data structure.
+
+### Keyed loops
+
+`for x in xs key k do` keys each iteration by the value of `k` instead of by
+its position. The state inside the body, including the state of every
+function the body calls, then follows the item when the list is reordered,
+when an item is inserted ahead of it, or when an item before it is removed:
+
+```petal
+fn row(task)
+    state open = false     // follows task.id, not the row's position
+    if open then task.title ++ " (open)" else task.title end
+end
+
+let tasks = [{id: 7, title: "write"}, {id: 3, title: "test"}]
+for t in tasks key t.id do
+    print(row(t))
+end
+```
+
+The key is evaluated for each iteration, with the loop variable bound,
+before the body runs. It is relative to the loop: it names an item among
+the iterations of *this* loop on *this* call path. Two callers of a function
+that runs a keyed loop still hold separate slots, so stateful code stays safe
+to call twice. That is the difference from the deprecated `state(key)`,
+which is global.
+
+- **A key must be unique within one run of the loop.** Two items with an
+  equal key would share every slot without any sign of it, so this is a
+  runtime error (`Duplicate loop key 3: …`). The same key in the next run
+  of the loop, or in another loop, is fine.
+- **Keys compare like [Map](../language-guide.md#maps) keys**: by content,
+  consistent with `==`. A function, a `var` cell, a pending value and NaN
+  cannot be keys.
+- **A removed item's state is dropped** at the end of the run, the way any
+  slot a run does not reach is ([How long a slot lives](#how-long-a-slot-lives)).
+  No cleanup code is needed.
+- `key` works on `for` over a list, a map's keys or a `range`. A `while` loop
+  has no item to key by and stays positional. `key` is a keyword only in that
+  position, so it is still an ordinary name everywhere else.
+
+A state dump shows a keyed slot under its key value: `[key=7]/row/open`.
 
 ## Deprecated: `state(key)`
 
@@ -117,10 +159,12 @@ these instead:
 - **A pure cache**, a value computed from the key and nothing else:
   [`memo(key)`](memo.md). `petal lint --fix` makes this rewrite for a keyed
   `state` that nothing writes.
-- **State shared on purpose**, or identity that must survive a change of
-  position (an entity in a list that reorders): a top-level `state var`
-  holding a [Map](../language-guide.md#maps) keyed by the id. See
-  [Sharing on purpose](#sharing-on-purpose).
+- **Identity that must survive a change of position** (an entity in a list
+  that reorders): a [keyed loop](#keyed-loops), `for t in tasks key t.id`.
+- **State shared on purpose**, or identity a loop key cannot express (one
+  that survives a change of recursion depth, as in Garden's `plant.ptl`): a
+  top-level `state var` holding a [Map](../language-guide.md#maps) keyed by
+  the id. See [Sharing on purpose](#sharing-on-purpose).
 - **Per-instance state** whose position is a fine identity: plain `state`.
 
 The lint fix cannot tell whether an initializer is pure. A memo entry is
@@ -147,9 +191,10 @@ theme_set("light")
 print(ui_theme())   // light
 ```
 
-A Map in a top-level `state var` is shared state with one value per key. It
-is the replacement for a keyed `state`, and its entries follow an id rather
-than a position:
+A Map in a top-level `state var` is shared state with one value per key, and
+its entries follow an id rather than a position. Per-row state of a list is
+better served by a [keyed loop](#keyed-loops); a Map is for state that is
+meant to be shared, or whose identity no loop expresses:
 
 ```petal
 state var hp = Map()
@@ -200,9 +245,9 @@ end
 print(map([10, 20, 30], seen))   // [1, 2, 3] — one shared slot, not three
 ```
 
-Use a `for` loop when you want a slot per element. When the count belongs to
-the element's value rather than its position, keep it in a top-level
-`state var` Map keyed by that value.
+Use a `for` loop when you want a slot per element, and a
+[keyed loop](#keyed-loops) when the slot belongs to the element's value rather
+than its position. A higher-order builtin has no keyed form.
 
 ## `state var`
 
@@ -268,7 +313,8 @@ before the run and saves it after
 
 **A slot that a run does not touch is dropped when that run ends.** A
 declaration behind an `if` that was not taken, a row whose list item was
-removed, a function that was not called this run: none of them leak, and each
+removed (positional or [keyed](#keyed-loops)), a function that was not called
+this run: none of them leak, and each
 starts from its initializer if it is reached again later.
 
 ```petal

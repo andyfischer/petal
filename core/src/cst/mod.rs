@@ -155,6 +155,9 @@ pub enum SyntaxKind {
     EnumData,
     /// An `elsif …` / `else …` tail of an if-expression.
     ElseBranch,
+    /// The `key <expr>` clause of a `for` header: the contextual `key`
+    /// identifier and the key expression's node.
+    ForKey,
     /// One `name="value"` / `name={expr}` attribute of a JSX element.
     JsxAttr,
 }

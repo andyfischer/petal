@@ -576,6 +576,16 @@ for i in range(0, 5) do
 end
 ```
 
+A `key` clause keys the [`state`](#state) inside each
+iteration by an item's identity instead of its position, so it follows the
+item when the list reorders ([Keyed loops](features/inline-state.md#keyed-loops)):
+
+```petal ignore
+for t in tasks key t.id do
+    task_row(t)
+end
+```
+
 #### For loops as mapping expressions
 
 Used in **value position** a `for` loop evaluates to a **list** built from the
@@ -2270,10 +2280,11 @@ print(hits)   // 1 on the first run, 2 on the second, ...
 
 Each call path that reaches a declaration gets its own slot, so two callsites
 of a helper hold two independent values, and a function called inside a `for`
-holds one per iteration, keyed by its position. A top-level `state var` is
+holds one per iteration, keyed by its position, or by the item with
+`for t in tasks key t.id`. A top-level `state var` is
 the one cell that every function shares; holding a [map](#maps) in it gives
 shared state with one value per key. The keyed form `state(key) name = …` is
-deprecated in favour of that map and of [`memo`](#memo--a-cached-result).
+deprecated in favour of keyed loops, that map and [`memo`](#memo--a-cached-result).
 
 The full description is in [Inline state](features/inline-state.md): the
 keying rules, `state var`, how long a slot lives, why a table

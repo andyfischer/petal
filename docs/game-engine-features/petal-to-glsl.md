@@ -181,14 +181,17 @@ changes whenever such a value does.
 ## Caching
 
 A script runs once per frame, so `to_glsl(fn ... end)` is called every frame
-with a new closure. The translation is kept in keyed `state`, under the
-function's [`code_hash`](../features/function-introspection.md#code_hash), the captured
+with a new closure. The translation is kept in a
+[`memo`](../features/memo.md), under the function's
+[`code_hash`](../features/function-introspection.md#code_hash), the captured
 values that are written into the text, the environment and the options. A
-frame with a cache hit costs one `fn_info` per function involved and a state
-read; the syntax tree is not fetched.
+frame with a cache hit costs one `fn_info` per function involved and a memo
+lookup; the syntax tree is not fetched.
 
-Because the key is the code and not the closure, the cache survives hot
-reloads. Measured by `core/tests/fn_introspection.rs`
+Because the key is the code and not the closure, a new closure each frame
+still hits. A reload that changes the program drops every memo entry
+([Memo and hot reload](../features/memo.md#memo-and-hot-reload)), so it
+translates once more and the frames after it hit again. Measured by `core/tests/fn_introspection.rs`
 (`a_script_that_translates_every_frame_translates_once_per_change`), for a
 lambda with one helper, a captured int and a captured float that changes
 every frame, with the call memo on and with it off:
@@ -198,29 +201,29 @@ every frame, with the call memo on and with it off:
 | the first frame | 1 |
 | the next 11 frames (the captured float moves every frame) | 0 |
 | a reload that adds a comment | 0 |
-| a reload that adds an unrelated function and binding (a full recompile) | 0 |
-| a reload that changes a captured float | 0 (the uniform's value changes) |
+| a reload that adds an unrelated function and binding (a full recompile) | 1 |
+| a reload that changes a captured float | 1 (the same text; the uniform's value changes) |
 | a reload that edits the lambda's body | 1 |
 | a reload that edits the helper | 1 |
 | a reload that changes a captured int (a loop bound) | 1 |
 
-A frame with a cache hit runs 414 VM instructions for that whole script
+A frame with a cache hit runs 426 VM instructions for that whole script
 (building the environment record included), against 4,663 for the frame that
-translates; with the optimizer off (`baseline`) the two are 821 and 7,721.
+translates; with the optimizer off (`baseline`) the two are 833 and 7,721.
 These are the VM's own instruction counts (`Env::profile().total_insts()`),
-so they do not depend on the machine; measured 2026-10-16 on the same script
-as the test, under the `fast` and `replay` policies, which agree.
+so they do not depend on the machine; measured 2026-10-16 (the cache-hit
+counts again on 2026-10-22, after the cache became a `memo`) on the same
+script as the test, under the `fast` and `replay` policies, which agree.
 
 The call memo does not add to this today. It replays the capture walk inside
 the library, but not the call of `glsl_function` itself: to match the call it
 compares the closure's captures, which for a library function are the
 library's other functions, and that comparison runs past the memo's budget.
-The keyed state is what makes the call cheap.
+The `memo` is what makes the call cheap.
 
-Two limits. A reload that only moves code keeps the cached result, so the
-`line` / `column` of a cached *error* can be stale until the function is
-edited. And the cache is per `state`: a host that drops state on reload
-translates again.
+One limit. A reload that only moves code (whitespace, comments) keeps the
+cached result, so the `line` / `column` of a cached *error* can be stale until
+the next edit that changes the program.
 
 ## Errors
 

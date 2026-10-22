@@ -35,10 +35,11 @@ never runs it.
 
 ## Caching
 
-The result is kept in keyed `state` under the function's code hash, so calling
-`to_glsl` every frame translates once, and again only after an edit that
-changes the function, a function it calls, or a captured int. Captured floats
-and vectors are uniforms and never cause a translation.
+The result is kept in a `memo` under the function's code hash, so calling
+`to_glsl` every frame translates once. A hot reload that changes the program
+drops every memo entry, so it translates once more after each such edit.
+Captured floats and vectors are uniforms: a change to one between frames never
+causes a translation.
 
 ## Tests
 

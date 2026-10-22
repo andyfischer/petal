@@ -1173,9 +1173,10 @@ end
 // uniforms, count, entry}. `opts`: {name, inline_captures}. Both are
 // documented in docs/game-engine-features/petal-to-glsl.md.
 //
-// The translation is cached in keyed state per (code hash, structural
-// captures, environment, options), so calling this every frame is cheap: a
-// hit costs one `fn_info` per function involved and a state read.
+// The translation is cached in a `memo` per (code hash, structural captures,
+// environment, options), so calling this every frame is cheap: a hit costs
+// one `fn_info` per function involved and a memo lookup. It is a pure function
+// of that key, so every caller asking for the same shader shares the entry.
 pub fn glsl_function(f, env = {}, opts = {})
   if type(f) != "function" then
     return {..._empty_result("to_glsl expects a function, got a " ++ type(f), nil, nil), uniforms: {}, code_hash: nil}
@@ -1188,7 +1189,7 @@ pub fn glsl_function(f, env = {}, opts = {})
     }
   end
   let live = _live_captures(info, "", opts?.inline_captures ?? false, 0)
-  state([info.code_hash, live.key, env, opts]) cached = _translate(f, info, env, opts)
+  memo([info.code_hash, live.key, env, opts]) cached = _translate(f, info, env, opts)
   let uniforms = {}
   for name in cached.uniform_names do
     let held = live.values?.[name]

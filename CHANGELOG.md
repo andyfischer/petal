@@ -894,6 +894,11 @@ Breaking changes made during development, newest first. For the import and
 package changes below, `petal fix-imports` does the rewriting and
 [docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
 
+- `glsl` caches its translations in a `memo` instead of keyed `state`. A
+  hot reload that changes the program drops memo entries, so a script that
+  calls `to_glsl` every frame now translates once more after each such edit
+  (one translation, then cache hits again), where before only an edit to the
+  function, a helper or a captured int did.
 - `state(key) name = init` is deprecated. It still works, but each
   declaration is now a compile warning (`petal check`, `petal run`, the
   language server, a host's diagnostics) carrying the rule id

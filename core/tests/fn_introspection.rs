@@ -457,8 +457,10 @@ print(str(g.error) ++ " " ++ str(g.taps) ++ " " ++ str(g.uniforms.GAIN) ++ " " +
 
 #[test]
 fn a_script_that_translates_every_frame_translates_once_per_change() {
-    // With the memo on and with it off: the cache is keyed state, so it does
-    // not depend on the call memo.
+    // With the call memo on and with it off: the cache is a `memo`
+    // declaration, so it does not depend on the call memo. A reload that
+    // changes the program drops every `memo` entry, so each one below
+    // translates once more, and the frames after it hit the cache again.
     for policy in [RunPolicy::FAST, RunPolicy::BASELINE] {
         let v1 = cache_script(2, "1.5", "acc * amount", "1.0 / (i + 1.0)", "");
         let mut w = world(&v1, policy);
@@ -485,19 +487,22 @@ fn a_script_that_translates_every_frame_translates_once_per_change() {
         frame(&mut w);
         assert_eq!(translated(&w), 1, "a comment-only edit");
 
-        // An unrelated binding: the program is recompiled, every closure is
-        // new, the function's index moves; its code hash does not.
+        // An unrelated binding: the program is recompiled, which drops the
+        // memo entries, so it translates once again.
         let v3 = cache_script(2, "1.5", "acc * amount", "1.0 / (i + 1.0)", "fn unrelated() 7 end\nlet other = unrelated()");
         assert_eq!(reload(&mut w, &v3), ReloadOutcome::Recompiled);
         frame(&mut w);
-        assert_eq!(translated(&w), 1, "an unrelated edit");
+        frame(&mut w);
+        assert_eq!(translated(&w), 2, "an unrelated edit");
 
-        // A captured float: it is a uniform, so only its value changes.
+        // A captured float: it is a uniform, so the text is the same and only
+        // its value changes; the edit still recompiles, so one more.
         let v4 = cache_script(2, "2.5", "acc * amount", "1.0 / (i + 1.0)", "fn unrelated() 7 end\nlet other = unrelated()");
         reload(&mut w, &v4);
         let out = frame(&mut w).remove(0);
         assert!(out.contains(" 2.5 "), "{out}");
-        assert_eq!(translated(&w), 1, "a captured float changed");
+        frame(&mut w);
+        assert_eq!(translated(&w), 3, "a captured float changed");
 
         // The lambda's body: one translation.
         let v5 = cache_script(2, "2.5", "acc * amount * 0.5", "1.0 / (i + 1.0)", "fn unrelated() 7 end\nlet other = unrelated()");
@@ -505,14 +510,14 @@ fn a_script_that_translates_every_frame_translates_once_per_change() {
         let out = frame(&mut w).remove(0);
         assert!(out.ends_with("fx.color = acc * params.amount * 0.5;"), "{out}");
         frame(&mut w);
-        assert_eq!(translated(&w), 2, "the lambda was edited");
+        assert_eq!(translated(&w), 4, "the lambda was edited");
 
         // A helper it calls: one more.
         let v6 = cache_script(2, "2.5", "acc * amount * 0.5", "1.0 / (i + 2.0)", "fn unrelated() 7 end\nlet other = unrelated()");
         reload(&mut w, &v6);
         frame(&mut w);
         frame(&mut w);
-        assert_eq!(translated(&w), 3, "a helper was edited");
+        assert_eq!(translated(&w), 5, "a helper was edited");
 
         // A captured int is written into the text (a loop bound): one more.
         let v7 = cache_script(3, "2.5", "acc * amount * 0.5", "1.0 / (i + 2.0)", "fn unrelated() 7 end\nlet other = unrelated()");
@@ -520,14 +525,14 @@ fn a_script_that_translates_every_frame_translates_once_per_change() {
         let out = frame(&mut w).remove(0);
         assert!(out.starts_with("nil 3 ") && out.contains("i < 3;"), "{out}");
         frame(&mut w);
-        assert_eq!(translated(&w), 4, "a captured int changed");
+        assert_eq!(translated(&w), 6, "a captured int changed");
     }
 }
 
 #[test]
 fn a_cache_hit_fetches_no_syntax_tree_and_is_small() {
     // What a frame pays once the translation is cached: one `fn_info` per
-    // function involved and a state read. (The call memo does not replay
+    // function involved and a memo lookup. (The call memo does not replay
     // `glsl_function` itself: comparing its captures means comparing the
     // library's own functions, which is past the memo's comparison budget.)
     for policy in [RunPolicy::REPLAY, RunPolicy::BASELINE] {
@@ -544,9 +549,10 @@ fn a_cache_hit_fetches_no_syntax_tree_and_is_small() {
         assert_eq!(native_calls(&w, "fn_ast"), ast);
         assert!(native_calls(&w, "fn_info") - info <= 2);
         let per_frame = w.env.profile().total_insts() - insts;
-        // The whole frame, the script's own top level included: 414
-        // instructions with the optimizer on and 821 with it off, where the
-        // first frame (which translates) runs 4,663 and 7,721 (2026-10-16).
+        // The whole frame, the script's own top level included: 426
+        // instructions with the optimizer on and 833 with it off (2026-10-22),
+        // where the first frame (which translates) runs 4,663 and 7,721
+        // (2026-10-16).
         assert!(per_frame < 1500, "a cached frame ran {per_frame} instructions");
     }
 }

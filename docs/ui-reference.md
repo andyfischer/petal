@@ -467,7 +467,7 @@ Every widget takes an optional trailing `style`.
 | `checkbox(r, label, value, style?)` | The new value. |
 | `toggle(r, value, style?)` | The new value: an animated switch. |
 | `radio_group(r, labels, selected, style?)` | The new selected index. One row per label. |
-| `slider(r, value, lo, hi, style?)` | The new value, a float. `style.key` keys the drag by identity in a reordering list. |
+| `slider(r, value, lo, hi, style?)` | The new value, a float. In a reordering list, key the loop (`for … key item.id`) so the drag follows its item. |
 | `tab_bar(r, labels, active, style?)` | The new active index. |
 | `splitter_state(frac?)`, `splitter(sp, r, style?)` | A draggable divider. Returns `{state, a, b, divider}`: the next state, the two panes, and the divider's rect. |
 

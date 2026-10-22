@@ -4329,57 +4329,17 @@ end
 //
 // The drag lives in widget `state`, keyed per callsite — so in a loop it is
 // keyed by *position*, and a slider whose list reorders mid-drag hands its drag
-// to whichever row now sits in that slot. `style.key` keys it by identity
-// instead: `slider(r, n.gain, 0, 1, {key: n.id})` keeps each node's drag with
-// that node. A key names one slider, so two sliders on the same node want two
-// keys (`{key: [n.id, "gain"]}`). Keys are shared by every caller in the
-// program, like any map key.
+// to whichever row now sits in that slot. Key the loop to keep each row's drag
+// with its row: `for n in nodes key n.id do slider(r, n.gain, 0, 1) end`.
 pub fn slider(r, value, lo, hi)
-  _slider_positional(r, value, lo, hi, {})
+  slider(r, value, lo, hi, {})
 end
 
 pub fn slider(r, value, lo, hi, style)
-  let key = style["key"] ?? nil
-  if key == nil then
-    _slider_positional(r, value, lo, hi, style)
-  else
-    _slider_keyed(r, value, lo, hi, style, key)
-  end
-end
-
-fn _slider_positional(r, value, lo, hi, style)
   state dragging = false
   let hot = _hot(r, style["id"] ?? nil)
   dragging = _slider_drag(hot, dragging)
   _slider_draw(r, value, lo, hi, style, dragging, _anim_flag(dragging || hot, 16.0))
-end
-
-// Keyed sliders' state, `{dragging, act}` by `style.key`, in two module
-// cells: a slider reads its entry from this run's map, else last run's, and
-// writes it into this run's. The swap below starts each run with an empty map,
-// so a key that no slider drew last run is gone, and comes back from its
-// initial values, the way the `state(key)` slots this replaces were dropped.
-//
-// The cost: `set _slider_now[key] = …` writes a cell the slider did not create,
-// in place, so a keyed slider's scope, and every scope around it, is effectful
-// and runs every frame rather than replaying (docs/dev/memo-scopes.md). A
-// positional slider keeps its plain `state` and replays as before; reach for
-// `style.key` only where rows really move.
-state var _slider_now = Map()
-state var _slider_last = Map()
-set _slider_last = _slider_now
-set _slider_now = Map()
-
-fn _slider_keyed(r, value, lo, hi, style, key)
-  // The hover/drag ease follows the key the same way the drag does; -1 means
-  // "no ease yet", so a new slider starts at its target.
-  let was = get _slider_now[key] ?? get _slider_last[key] ?? {dragging: false, act: -1.0}
-  let hot = _hot(r, style["id"] ?? nil)
-  let dragging = _slider_drag(hot, was.dragging)
-  let target = if dragging || hot then 1.0 else 0.0 end
-  let act = if was.act < 0.0 then target else approach(was.act, target, 16.0) end
-  set _slider_now[key] = {dragging: dragging, act: act}
-  _slider_draw(r, value, lo, hi, style, dragging, act)
 end
 
 // Whether the slider is being dragged this frame, given last frame's and

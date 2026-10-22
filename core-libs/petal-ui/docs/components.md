@@ -271,8 +271,8 @@ indeterminate sweep.
 (animated knob); `radio_group(r, labels, selected, style)` → new index (one
 row per label, `style.row_h`); `slider(r, value, lo, hi, style)` → new float
 (press-to-jump, drag keeps tracking outside `r`). In a loop over a list that
-can reorder, pass `style.key` (`{key: item.id}`) so each slider's drag stays
-with its item rather than with its row position.
+can reorder, key the loop (`for item in items key item.id do`) so each
+slider's drag stays with its item rather than with its row position.
 
 ### Tab bar
 `tab_bar(r, labels, active, style)` → new active index; underlined active tab,

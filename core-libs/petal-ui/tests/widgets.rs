@@ -1139,20 +1139,20 @@ fn over_flattens_a_tint_and_is_idempotent() {
 }
 
 /// In a loop, a slider's drag is keyed by position: reorder the list mid-drag
-/// and the drag moves to whichever item now sits in the dragged slot.
-/// `style.key` keys it by identity instead, so the drag stays with its item.
+/// and the drag moves to whichever item now sits in the dragged slot. A keyed
+/// loop keys it by identity instead, so the drag stays with its item.
 #[test]
-fn slider_key_keeps_the_drag_with_its_item_across_a_reorder() {
-    let script = |style: &str| {
+fn a_keyed_loop_keeps_a_sliders_drag_with_its_item_across_a_reorder() {
+    let script = |key: &str| {
         format!(
             "state vals = [0.0, 0.0]\n\
              state va = 0.0\n\
              state vb = 0.0\n\
              let order = if mouse_x() > 100 then [1, 0] else [0, 1] end\n\
-             for i in range(0, 2) do\n\
+             for i in range(0, 2){key} do\n\
                let id = order[i]\n\
                let r = {{x: 0, y: i * 30, w: 120, h: 20}}\n\
-               vals[id] = slider(r, vals[id], 0.0, 1.0, {style})\n\
+               vals[id] = slider(r, vals[id], 0.0, 1.0)\n\
              end\n\
              va = vals[0]\n\
              vb = vals[1]"
@@ -1170,12 +1170,12 @@ fn slider_key_keeps_the_drag_with_its_item_across_a_reorder() {
         ui.frame().unwrap();
     };
 
-    run_headless(&script("{key: id}"), |ui| {
+    run_headless(&script(" key order[i]"), |ui| {
         drag_then_reorder(ui);
         assert_eq!(ui.state_float("va"), Some(1.0), "the keyed drag follows item 0");
         assert_eq!(ui.state_float("vb"), Some(0.0), "item 1 was never pressed");
     });
-    run_headless(&script("{}"), |ui| {
+    run_headless(&script(""), |ui| {
         drag_then_reorder(ui);
         assert_eq!(
             ui.state_float("vb"),
@@ -1185,13 +1185,14 @@ fn slider_key_keeps_the_drag_with_its_item_across_a_reorder() {
     });
 }
 
-/// A keyed slider's drag lives only while some run draws it: a run without
-/// that key drops it, and the slider comes back undragged.
+/// A keyed row's slider drag lives only while some run draws it: a run
+/// without that key drops it, and the slider comes back undragged.
 #[test]
-fn slider_key_is_dropped_by_a_run_that_does_not_draw_it() {
+fn a_keyed_rows_slider_is_dropped_by_a_run_that_does_not_draw_it() {
     let script = "state v = 0.0\n\
-                  if mouse_y() < 40 then\n\
-                    v = slider({x: 0, y: 0, w: 120, h: 20}, v, 0.0, 1.0, {key: \"k\"})\n\
+                  let ids = if mouse_y() < 40 then [\"k\"] else [] end\n\
+                  for id in ids key id do\n\
+                    v = slider({x: 0, y: 0, w: 120, h: 20}, v, 0.0, 1.0)\n\
                   end";
     run_headless(script, |ui| {
         ui.frame().unwrap();

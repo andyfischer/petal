@@ -142,6 +142,12 @@ As with `state`, an initializer that produces a
 reads see the pending value for that run, and the initializer runs again on
 the next run until its value arrives.
 
+A key that is, or contains, a pending value is not cached either: the
+declaration computes its initializer every time and stores nothing. A pending
+value keeps its identity while its resource goes from loading to errored, so
+an entry made while it was loading (`if is_error(u) then … else … end`) would
+otherwise outlive the error.
+
 ## Choosing between `memo`, `const` and `state`
 
 - A value that depends only on the source text: [`const`](static-values.md).

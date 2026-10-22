@@ -702,6 +702,27 @@ pub fn hash_value(val: &Value, heap: &Heap) -> u64 {
     hasher.finish()
 }
 
+/// Whether `val` is or contains (to any depth) a pending value.
+///
+/// A pending value hashes by its id, and one id stays the same while its
+/// resource goes from loading to errored, so a key that holds one does not
+/// pin down what `is_loading` / `is_error` would answer. A `memo(key)` with
+/// such a key is computed and not cached (docs/features/memo.md).
+pub fn holds_pending(val: &Value, heap: &Heap) -> bool {
+    match *val {
+        Value::Pending(_) => true,
+        Value::List(id) => heap.get_list(id).iter().any(|e| holds_pending(e, heap)),
+        Value::Map(id) => heap.get_map(id).values().any(|e| holds_pending(e, heap)),
+        Value::Dict(id) => heap.get_dict(id).all_values().any(|e| holds_pending(&e, heap)),
+        Value::EnumVariant { data, .. } => holds_pending(&Value::List(data), heap),
+        Value::Element(id) => {
+            holds_pending(&Value::Map(heap.get_element_props(id)), heap)
+                || holds_pending(&Value::List(heap.get_element_children(id)), heap)
+        }
+        _ => false,
+    }
+}
+
 fn hash_into(val: &Value, heap: &Heap, h: &mut impl std::hash::Hasher) {
     use std::hash::{Hash, Hasher};
     if let Some(n) = as_num(val) {

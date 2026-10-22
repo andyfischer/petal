@@ -583,7 +583,11 @@ impl<'a> Vm<'a> {
                 // uninitialized so the init block re-runs next frame until it
                 // resolves. Reads this frame still see the Pending (via `dst`).
                 // Ordinary reassignments (`init = false`) commit any value.
-                if *init && matches!(val_v, Value::Pending(_)) {
+                // A memo keyed by a pending value is not committed either:
+                // the key cannot tell a loading resource from an errored one.
+                let pending_memo_key =
+                    *memo && explicit.is_some_and(|kv| crate::value::holds_pending(&kv, self.heap));
+                if *init && (matches!(val_v, Value::Pending(_)) || pending_memo_key) {
                     // Until it resolves, the scope cannot know what a re-run
                     // would initialize it to.
                     self.memo_note_effect();
@@ -636,8 +640,13 @@ impl<'a> Vm<'a> {
                     self.static_audit.state_access(ip, origin);
                 }
                 // Cache hit: load the slot and skip the inline init block; miss:
-                // fall through to compute and commit the init value.
-                if let Some(existing) = self.stack.state.get(&k).copied() {
+                // fall through to compute and commit the init value. A memo
+                // whose key holds a pending value always misses (`StateWrite`
+                // does not commit it): the key's id is the same whether the
+                // resource is still loading or has errored.
+                let uncached =
+                    *memo && explicit.is_some_and(|kv| crate::value::holds_pending(&kv, self.heap));
+                if !uncached && let Some(existing) = self.stack.state.get(&k).copied() {
                     self.memo_note_state_read(&k, Some(existing));
                     self.set(fi, *dst, existing);
                     self.stack.vm_frames[fi].ip = *after as usize;

@@ -154,6 +154,21 @@ fn an_entry_a_run_does_not_reach_is_swept() {
     assert_eq!(w.frame(), ["computing 7", "49"]);
 }
 
+/// A key that holds a pending value is computed and never cached: the pending
+/// value's id stays the same while its resource goes from loading to errored,
+/// so a cached "loading" would outlive the error.
+#[test]
+fn a_key_holding_a_pending_value_is_not_cached() {
+    let src = "fn label(u)\n  memo(u) l = if is_error(u) then \"failed\" else \"loading\" end\n  l\nend\n\
+               fn label2(u)\n  memo([1, {a: u}]) l = if is_error(u) then \"failed\" else \"loading\" end\n  l\nend\n\
+               print(label(__pending(\"e\")), label2(__pending(\"e\")))\n\
+               __reject(\"e\", \"boom\")\n\
+               print(label(__pending(\"e\")), label2(__pending(\"e\")))\n";
+    let mut w = world(src);
+    assert_eq!(w.frame(), ["loading loading", "failed failed"]);
+    assert_eq!(w.memo_entries(), 0);
+}
+
 /// A memoized scope that is replayed never executes the declaration, but the
 /// entry it touched is retained (docs/dev/state-call-paths.md §3.3a), so it
 /// survives the sweep and the scope stays replayable.

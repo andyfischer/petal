@@ -67,7 +67,8 @@ way, for code written against an earlier checkout.
   path. The binding cannot be reassigned. An entry is a cache, not state: it
   is dropped after a run that does not touch it, left out of host state
   dumps, `--state-storage` and snapshots, and cleared by a reload that
-  changes the program. `memo` is now a keyword. See
+  changes the program. A key that holds a pending value is computed and
+  never cached. `memo` is now a keyword. See
   [Cached results: `memo`](docs/features/memo.md).
 - Value semantics: lists, records and arrays are immutable values. Appending,
   index assignment and field assignment produce a new value, and the compiler

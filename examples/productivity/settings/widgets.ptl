@@ -19,10 +19,17 @@ import ui
 var _t = {}
 // Whether any animator is still moving, so the app knows to ask for a frame.
 var _busy = false
+// Every animator's value by key: this frame's, and last frame's. An animator
+// reads this frame's entry, else last frame's, and writes this frame's;
+// `begin` swaps them, so a key nobody asked for last frame is gone.
+state var _anim_now = Map()
+state var _anim_last = Map()
 
 pub fn begin(t: record)
   set _t = t
   set _busy = false
+  set _anim_last = get _anim_now
+  set _anim_now = Map()
 end
 
 pub fn busy() -> bool
@@ -50,11 +57,15 @@ end
 // target, so nothing slides in from zero when a page first appears, and an
 // animator that goes a frame without being asked starts over the same way.
 // "Reduce motion" sets the theme's speed to 0, which makes every one of these
-// a plain assignment.
+// a plain assignment. The value lives in a module map rather than per-call
+// `state` because a row's animators must follow its setting id when a search
+// reorders the page. The cost is the memo's: writing a shared map in place
+// makes `anim` and every scope that calls it effectful, so they run on every
+// frame the panel draws instead of replaying (docs/dev/memo-scopes.md).
 pub fn anim(key: string, target: num, rate: num = 22.0) -> float
   let t = get _t
   let goal = float(target)
-  state(key) v = goal
+  let v = get _anim_now[key] ?? get _anim_last[key] ?? goal
   if t.speed <= 0.0 then
     v = goal
   else
@@ -67,6 +78,7 @@ pub fn anim(key: string, target: num, rate: num = 22.0) -> float
   if v != goal then
     set _busy = true
   end
+  set _anim_now[key] = v
   v
 end
 
@@ -448,7 +460,9 @@ pub fn input(key: string, r: record, buf: string, focus: string, o: record) -> r
   if has then
     // The caret holds steady while you type, blinks once you stop, and after
     // a few seconds comes to rest lit.
-    state(key ++ ":blink") rest = 0.0
+    // Per call path, not per field: only the focused field reaches this, and
+    // if its row moves the caret just restarts lit, which is what typing does.
+    state rest = 0.0
     rest = if res.changed || text_input() != "" then 0.0 else rest + min(dt(), 0.05) end
     if rest > 6.0 || fract(rest * 0.9) < 0.58 then
       let cx = tx + tl.caret_x(res.text, style, res.caret)

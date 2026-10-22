@@ -132,9 +132,11 @@ loops over it.
 - `state var` cells written with `set` from functions (`commit`, `undo_step`,
   `go_section`), including `set vals[id] = v` on a record keyed at run time
   and `set undo[len(get undo) - 1] = …` on a list.
-- `state(key)` for animation: `anim(key, target)` in `widgets.ptl` keeps one
-  eased value per setting id, so a knob's motion follows the setting, not the
-  row position a search happens to give it.
+- A `Map` in a module `state var` for animation: `anim(key, target)` in
+  `widgets.ptl` keeps one eased value per setting id, so a knob's motion
+  follows the setting, not the row position a search happens to give it.
+  `begin` swaps this frame's map for last frame's, which drops the animators
+  nobody asked for.
 - Per-call-path `state` for everything positional: bloom's `probe` inside a
   loop over every setting gives each row its own hover and press.
 - Modules: four files imported by `app.ptl`, a module-level `var` in

@@ -1184,3 +1184,27 @@ fn slider_key_keeps_the_drag_with_its_item_across_a_reorder() {
         );
     });
 }
+
+/// A keyed slider's drag lives only while some run draws it: a run without
+/// that key drops it, and the slider comes back undragged.
+#[test]
+fn slider_key_is_dropped_by_a_run_that_does_not_draw_it() {
+    let script = "state v = 0.0\n\
+                  if mouse_y() < 40 then\n\
+                    v = slider({x: 0, y: 0, w: 120, h: 20}, v, 0.0, 1.0, {key: \"k\"})\n\
+                  end";
+    run_headless(script, |ui| {
+        ui.frame().unwrap();
+        ui.mouse_move(60, 10);
+        ui.mouse_down(0);
+        ui.frame().unwrap();
+        assert_eq!(ui.state_float("v"), Some(0.5));
+        // Still holding the button, leave for one run (the slider is not
+        // drawn), then come back to the right: a kept drag would track to 1.0.
+        ui.mouse_move(60, 100);
+        ui.frame().unwrap();
+        ui.mouse_move(110, 10);
+        ui.frame().unwrap();
+        assert_eq!(ui.state_float("v"), Some(0.5), "the drag was dropped with its key");
+    });
+}

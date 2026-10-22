@@ -88,11 +88,12 @@ to cut it), the live output value, fan-out count, and duplicate/delete.
   spread inside collecting `for` loops; `continue` as the filter.
 - `state` for what persists across frames (patch, selection, camera, clock,
   undo stacks, drag state, menu); `let` for every per-frame derivation.
-- `var`/`set`/`get` exactly once: the evaluator's memo table, which a
-  recursive `ev_node` writes through while walking upstream.
-- **Per-key `state(id)`** for the Scope history — one sample list per node
-  id, keyed by identity rather than call path, so reordering or deleting
-  nodes never mixes traces.
+- `var`/`set`/`get` for the evaluator's memo table, which a recursive
+  `ev_node` writes through while walking upstream.
+- **A `Map` in a top-level `state var`** for the Scope history: one sample
+  list per node id, keyed by identity rather than call path, so reordering
+  nodes never mixes traces. `prune_scopes` drops the list of a deleted node
+  each frame, before drawing.
 - A `match` with `do … end` arms in the evaluator; `elsif` chains for the
   hit-test and the hint bar.
 - Hand-rolled text serialization (`split`/`join`/`parse_float`/`??`) because

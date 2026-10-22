@@ -580,6 +580,13 @@ way, for code written against an earlier checkout.
 
 ### Embedding and integrations
 
+- `petal_ui::input::register_input_module` registers exactly what
+  `ui/input` declares (input, timing, the frame), without the hit-testing
+  natives that `register_input` adds for the `ui` module. A host whose
+  scripts import only `ui/input` (fantasy-nes, petal-fps) uses it, so its
+  `verify_interface(&[.., "ui/input"])` drift test passes again; it had failed
+  since hit testing landed.
+
 - Element literals are static values: `StaticValue::Element { tag, props,
   children }` reads `<text y={400}>Hi</text>` out of a file without running
   it, renders back (`<br />` children end a line), and travels as

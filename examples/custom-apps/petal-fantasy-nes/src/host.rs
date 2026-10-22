@@ -184,7 +184,7 @@ fn scan_carts(dir: &Path) -> Vec<CartEntry> {
 /// Register everything a cart can reach: the natives, and the modules that
 /// declare them.
 fn register_console(env: &mut Env) {
-    petal_ui::input::register_input(env);
+    petal_ui::input::register_input_module(env);
     crate::natives::register_all(env);
 
     // The console's interface: `nes_host` declares every native registered

@@ -58,7 +58,7 @@ mod interface_tests {
     #[test]
     fn the_host_natives_agree_with_their_interface() {
         let mut env = petal::env::Env::new();
-        petal_ui::input::register_input(&mut env);
+        petal_ui::input::register_input_module(&mut env);
         crate::native_fns::register_draw(&mut env);
         petal_ui::register_prelude(&mut env);
         env.register_package(super::FPS_PACKAGE, [(super::FPS_PACKAGE, super::FPS_INTERFACE)])
@@ -74,7 +74,7 @@ impl Host for FpsHost {
         // Input, timing, dimensions, mouselook (relative mouse + grab) — all the
         // standard interactivity — come from petal-ui. Only the 3D draw
         // vocabulary is ours.
-        petal_ui::input::register_input(env);
+        petal_ui::input::register_input_module(env);
         crate::native_fns::register_draw(env);
         // The interface packages that declare them: a script writes
         // `import fps` for the draw natives and `import ui/input` for

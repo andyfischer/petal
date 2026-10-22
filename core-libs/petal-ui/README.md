@@ -56,7 +56,7 @@ input events → bind_frame_info / bind_input → clear_draw_commands
   names exist. A plain import is weak: a script's own `fn button` shadows
   the package's.
   `import ui/input` is the input, timing and frame half alone, for a host
-  that registers only `petal_ui::input::register_input`. The `petal` binary
+  that registers only `petal_ui::input::register_input_module`. The `petal` binary
   bundles the package, so `petal check` resolves `import ui` with no host;
   `petal run` refuses such a script at load, because it registers none of
   these natives. The package's own source imports the builtin packages it

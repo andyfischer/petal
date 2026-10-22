@@ -578,10 +578,24 @@ fn bind_int_list(env: &mut Env, name: &str, items: impl Iterator<Item = i64>) {
 
 // ── Script-side: the standard input natives ──────────────────────────────
 
-/// Register the standard input/timing natives. The host must also call
+/// Register the standard input/timing natives and the hit-testing natives
+/// the `ui` module's widgets are built on. The host must also call
 /// [`bind_input`] / [`bind_frame_info`] / [`bind_dimensions`] each frame —
 /// the natives only read those bindings.
 pub fn register_input(env: &mut Env) {
+    register_input_module(env);
+    // Layered hit testing and the target registry (`interact`, `ui_layer`,
+    // `pointer_captured`, `ui_target_rect` in the prelude). Declared by `ui`,
+    // not `ui/input`, which is why they are not in `register_input_module`.
+    crate::hit::register_hit(env);
+}
+
+/// Register exactly the natives the `ui/input` module declares: input,
+/// timing and the frame, without the hit-testing natives only `ui` uses. For
+/// a host whose scripts write `import ui/input` and never `import ui` (a
+/// console with its own video), so that its natives agree with
+/// `verify_interface(&[.., "ui/input"])`.
+pub fn register_input_module(env: &mut Env) {
     // Every reader is a probe: a pure function of its arguments and one
     // input class, re-evaluated at validation so a memoized scope survives a
     // pointer move that did not change its answer.
@@ -633,9 +647,6 @@ pub fn register_input(env: &mut Env) {
     // library. Everything else here reads an input class, emits, or (like
     // `font`) answers from host state.
     register(env, "ui_version", native_ui_version, NativeEffects::CONST);
-    // Layered hit testing and the target registry (`interact`, `ui_layer`,
-    // `pointer_captured`, `ui_target_rect` in the prelude).
-    crate::hit::register_hit(env);
 }
 
 fn binding_int(state: &mut PetalCxt, name: &str) -> i64 {

@@ -2196,7 +2196,8 @@ let page = <div class="root">
 ```
 
 - Attributes are `name={expr}` or `name="literal"`. A bare `name` is
-  `name={true}`, as in JSX (`<video muted />`).
+  `name={true}`, as in JSX (`<video muted />`). A name can be a keyword, as a
+  record key can (`<video in={2.0} />`).
 - An open tag can put its attributes on separate lines:
 
   ```petal

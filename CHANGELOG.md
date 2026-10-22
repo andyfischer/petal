@@ -109,8 +109,10 @@ way, for code written against an earlier checkout.
   `lint` and the language server read the body as the function it is, and
   the tree-sitter grammar and the vim syntax know the form. See
   [docs/testing.md](docs/testing.md).
-- JSX-like elements: an open tag can put its attributes on separate lines,
-  and a bare attribute is `true` (`<video muted />`). See
+- JSX-like elements: an open tag can put its attributes on separate lines
+  (and `petal fmt` indents them a step under the `<`), a bare attribute is
+  `true` (`<video muted />`), and an attribute name can be a keyword, as a
+  record key can (`<video in={2.0} />`). See
   [JSX-like Elements](docs/language-guide.md#jsx-like-elements).
 
 ### Runtime

@@ -1,0 +1,75 @@
+// Maps: `Map()` / `Map(pairs)`, keyed by any hashable value compared by
+// content. docs/language-guide.md (Maps). Run with `petal test test/ptl`.
+
+test "a map is built empty or from [key, value] pairs" do
+  expect_eq(type(Map()), "map")
+  expect_eq(len(Map()), 0)
+  let m = Map([[1, "one"], ["two", 2]])
+  expect_eq(len(m), 2)
+  expect_eq(m[1], "one")
+  expect_eq(m["two"], 2)
+end
+
+test "keys are compared by content, like ==" do
+  let m = Map()
+  m[2] = "int"
+  m[[1, 2]] = "list"
+  m[{x: 1, y: 2}] = "record"
+  expect_eq(m[2.0], "int")
+  expect_eq(m[[1, 2]], "list")
+  expect_eq(m[{y: 2, x: 1}], "record")
+  expect_eq(m["2"], nil)
+end
+
+test "an absent key reads as nil" do
+  let m = Map([["a", 1]])
+  expect_eq(m["zz"], nil)
+  expect_eq(m["zz"] ?? 0, 0)
+  expect_eq(m?.["zz"], nil)
+end
+
+test "a write rebinds; other holders keep what they had" do
+  let m = Map()
+  let before = m
+  m["k"] = 1
+  m["k"] = 2
+  expect_eq(m, Map([["k", 2]]))
+  expect_eq(before, Map())
+end
+
+test "set writes a map shared through a var" do
+  var counts = Map()
+  let count = fn(word)
+    set counts[word] = (get counts[word] ?? 0) + 1
+  end
+  for w in ["a", "b", "a"] do
+    count(w)
+  end
+  expect_eq(get counts, Map([["a", 2], ["b", 1]]))
+end
+
+test "the record builtins take a map" do
+  let m = Map([[1, "one"], ["k", true]])
+  expect_eq(keys(m), [1, "k"])
+  expect_eq(values(m), ["one", true])
+  expect_eq(entries(m), [[1, "one"], ["k", true]])
+  expect(contains(m, "k"))
+  expect(!contains(m, "one"))
+  expect_eq(remove(m, 1), Map([["k", true]]))
+  expect_eq(Map(entries(m)), m)
+end
+
+test "for visits the keys in insertion order" do
+  let m = Map([["z", 1], ["a", 2]])
+  m["m"] = 3
+  m["z"] = 10
+  expect_eq(for k in m do k end, ["z", "a", "m"])
+  expect_eq(for k in m do m[k] end, [10, 2, 3])
+end
+
+test "equality ignores order; equal maps are one key" do
+  expect_eq(Map([[1, 2], [3, 4]]), Map([[3, 4], [1, 2]]))
+  expect(Map([[1, 2]]) != Map([[1, 3]]))
+  let outer = Map([[Map([[1, 2]]), "inner"]])
+  expect_eq(outer[Map([[1, 2]])], "inner")
+end

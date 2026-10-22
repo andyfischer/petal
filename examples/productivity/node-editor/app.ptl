@@ -309,28 +309,17 @@ fn input_values(nodes: list, links: list, vals: list, n: record) -> list
   end
 end
 
-// ── Scope history: one entry per node id ─────────────────────────────────
-//  Keyed by id, not by draw position, because raising a node reorders the
-//  draw loop and the trace must stay with its node. `prune_scopes` drops the
-//  entry of a scope that has left the patch, once per frame before drawing.
+// ── Scope history: one slot per node ─────────────────────────────────────
+//  The draw loop is keyed by node id, because raising a node reorders it and
+//  the trace must stay with its node. A deleted scope's history goes with it.
 
-state var SCOPES = Map()
-
-fn scope_push(id: num, v: num, playing: bool) -> list
-  let samples = get SCOPES[id] ?? []
+fn scope_push(v: num, playing: bool) -> list
+  state samples = []
   if playing then
     samples = append(samples, v)
     if len(samples) > 160 then samples = slice(samples, start: len(samples) - 160, end: len(samples)) end
-    set SCOPES[id] = samples
   end
   samples
-end
-
-fn prune_scopes(nodes: list)
-  let live = for n in nodes do if n.kind == "scope" then n.id else nil end end
-  for id in keys(get SCOPES) do
-    if !contains(live, id) then set SCOPES = remove(get SCOPES, id) end
-  end
 end
 
 // ── Formatting & small draw helpers ──────────────────────────────────────
@@ -1051,8 +1040,7 @@ fn draw_gauge(r: Rect, v: num, lo: num, hi: num, c: record)
   nil
 end
 
-prune_scopes(nodes)
-for n in nodes do
+for n in nodes key n.id do
   let k = kind_of(n.kind)
   let c = cat_color(k.cat)
   let r = node_rect(n)
@@ -1127,7 +1115,7 @@ for n in nodes do
     let py0 = sy + (HDR_H + float(len(k.ins)) * ROW_H + 4.0) * z
     let pr = rect(sx + 10.0 * z, py0, sw - 20.0 * z, (ph - 4.0) * z)
     if n.kind == "scope" then
-      draw_scope(pr, samples: scope_push(n.id, v, playing), c: c)
+      draw_scope(pr, samples: scope_push(v, playing), c: c)
     elsif n.kind == "gauge" then
       draw_gauge(pr, v, lo: n.params[0], hi: n.params[1], c: c)
       let gs = mono(max(6, int(10.0 * z)), DIM)

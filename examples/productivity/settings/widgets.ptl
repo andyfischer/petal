@@ -19,17 +19,10 @@ import ui
 var _t = {}
 // Whether any animator is still moving, so the app knows to ask for a frame.
 var _busy = false
-// Every animator's value by key: this frame's, and last frame's. An animator
-// reads this frame's entry, else last frame's, and writes this frame's;
-// `begin` swaps them, so a key nobody asked for last frame is gone.
-state var _anim_now = Map()
-state var _anim_last = Map()
 
 pub fn begin(t: record)
   set _t = t
   set _busy = false
-  set _anim_last = get _anim_now
-  set _anim_now = Map()
 end
 
 pub fn busy() -> bool
@@ -53,19 +46,17 @@ end
 
 // ── Motion ─────────────────────────────────────────────────────────────────
 
-// A value easing toward `target`, one animator per `key`. It starts at the
-// target, so nothing slides in from zero when a page first appears, and an
-// animator that goes a frame without being asked starts over the same way.
-// "Reduce motion" sets the theme's speed to 0, which makes every one of these
-// a plain assignment. The value lives in a module map rather than per-call
-// `state` because a row's animators must follow its setting id when a search
-// reorders the page. The cost is the memo's: writing a shared map in place
-// makes `anim` and every scope that calls it effectful, so they run on every
-// frame the panel draws instead of replaying (docs/dev/memo-scopes.md).
-pub fn anim(key: string, target: num, rate: num = 22.0) -> float
+// A value easing toward `target`, one animator per call path: each callsite,
+// in each row of a keyed loop, eases on its own. It starts at the target, so
+// nothing slides in from zero when a page first appears, and an animator that
+// goes a frame without being asked starts over the same way. "Reduce motion"
+// sets the theme's speed to 0, which makes every one of these a plain
+// assignment. The app keys its row loops by setting id, so a row's animators
+// stay with its setting.
+pub fn anim(target: num, rate: num = 22.0) -> float
   let t = get _t
   let goal = float(target)
-  let v = get _anim_now[key] ?? get _anim_last[key] ?? goal
+  state v = goal
   if t.speed <= 0.0 then
     v = goal
   else
@@ -78,7 +69,6 @@ pub fn anim(key: string, target: num, rate: num = 22.0) -> float
   if v != goal then
     set _busy = true
   end
-  set _anim_now[key] = v
   v
 end
 
@@ -102,8 +92,8 @@ pub fn toggle(key: string, r: record, on: bool, enabled: bool) -> bool
   let t = get _t
   let p = bloom.probe(r, enabled)
   let out = if p.click then !on else on end
-  let k = anim(key ++ ":k", flag(out), 26.0)
-  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  let k = anim(flag(out), 26.0)
+  let e = anim(flag(enabled), 16.0)
   let face = mix(mix(t.track, t.text, 0.08 * p.hot), mix(t.accent, t.accent_ink, 0.10 * p.hot), k)
   draw_rect_rounded(r, int(r.h / 2), fade(face, e))
   let inset = 2.0
@@ -125,8 +115,8 @@ pub fn checkbox(key: string, box: record, hit: record, on: bool, enabled: bool) 
   let t = get _t
   let p = bloom.probe(hit, enabled)
   let out = if p.click then !on else on end
-  let k = anim(key ++ ":k", flag(out), 30.0)
-  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  let k = anim(flag(out), 30.0)
+  let e = anim(flag(enabled), 16.0)
   let s = 1.0 - 0.08 * p.active
   let sq = Rect(box.x + box.w * (1.0 - s) / 2.0, box.y + box.h * (1.0 - s) / 2.0, box.w * s, box.h * s)
   let radius = min(5, int(t.radius * 0.6) + 1)
@@ -169,12 +159,12 @@ pub fn segmented(key: string, r: record, labels: list, index: num, enabled: bool
   let t = get _t
   let n = max(1, len(labels))
   let radius = min(int(t.radius), int(r.h / 2))
-  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  let e = anim(flag(enabled), 16.0)
   draw_rect_rounded(r, radius, t.well)
   draw_rect_rounded_outline(r, radius, t.line_soft)
   let inset = 3.0
   let cell = (r.w - inset * 2.0) / float(n)
-  let pos = anim(key ++ ":p", float(index), 24.0)
+  let pos = anim(float(index), 24.0)
   let thumb = Rect(r.x + inset + pos * cell, r.y + inset, cell, r.h - inset * 2.0)
   knob_shadow(thumb, max(0, radius - 2), e)
   draw_rect_rounded(thumb, max(0, radius - 2), mix(t.well, t.raised, 0.35 + 0.65 * e))
@@ -208,8 +198,8 @@ pub fn select(key: string, r: record, options: list, index: num, enabled: bool) 
   if p.click then
     if open then bloom.menu_close() else bloom.menu_open(id) end
   end
-  let e = anim(key ++ ":e", flag(enabled), 16.0)
-  let k = anim(key ++ ":o", flag(open), 24.0)
+  let e = anim(flag(enabled), 16.0)
+  let k = anim(flag(open), 24.0)
   let radius = min(int(t.radius), int(r.h / 2))
   draw_rect_rounded(r, radius, mix(t.well, t.text, 0.04 * p.hot + 0.05 * p.active))
   draw_rect_rounded_outline(r, radius, mix(mix(t.line, t.text, 0.18 * p.hot), t.accent, k))
@@ -245,11 +235,11 @@ pub fn slider(key: string, r: record, value: num, lo: num, hi: num, step: num, e
     let f = clamp((float(mouse_x()) - x0) / span, lo: 0.0, hi: 1.0)
     v = float(lo) + f * range_w
   end
-  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  let e = anim(flag(enabled), 16.0)
   // The knob eases to the snapped value, so a stepped slider clicks into
   // place instead of teleporting between detents.
-  let shown = anim(key ++ ":v", clamp((float(value) - float(lo)) / range_w, lo: 0.0, hi: 1.0), 34.0)
-  let grow = anim(key ++ ":g", if dragging then 1.0 else 0.45 * p.hot end, 26.0)
+  let shown = anim(clamp((float(value) - float(lo)) / range_w, lo: 0.0, hi: 1.0), 34.0)
+  let grow = anim(if dragging then 1.0 else 0.45 * p.hot end, 26.0)
   let cy = r.y + r.h / 2.0
   let th = 4.0
   draw_rect_rounded(Rect(x0, cy - th / 2.0, span, th), 2, fade(t.track, e))
@@ -312,7 +302,7 @@ end
 // the direction it changed.
 pub fn stepper(key: string, r: record, label: string, value: num, can_down: bool, can_up: bool, enabled: bool) -> int
   let t = get _t
-  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  let e = anim(flag(enabled), 16.0)
   let radius = min(int(t.radius), int(r.h / 2))
   draw_rect_rounded(r, radius, t.well)
   draw_rect_rounded_outline(r, radius, t.line)
@@ -327,7 +317,7 @@ pub fn stepper(key: string, r: record, label: string, value: num, can_down: bool
   let mid = Rect(r.x + bw, r.y, r.w - bw * 2.0, r.h)
   draw_line({x: mid.x, y: r.y + 6}, {x: mid.x, y: r.y + r.h - 6}, t.line_soft)
   draw_line({x: mid.x + mid.w, y: r.y + 6}, {x: mid.x + mid.w, y: r.y + r.h - 6}, t.line_soft)
-  let roll = anim(key ++ ":r", float(value), 26.0)
+  let roll = anim(float(value), 26.0)
   let slide = clamp((roll - float(value)) * 9.0, lo: -9.0, hi: 9.0)
   clip_push(mid)
   tl.draw_text_line(label, Rect(mid.x, mid.y - slide, mid.w, mid.h), mono(13, fade(t.text, e)), "center")
@@ -352,7 +342,7 @@ pub fn swatches(key: string, r: record, colors: list, index: num, enabled: bool)
     if p.click then
       chosen = i
     end
-    let k = anim("{key}:{i}", flag(i == index), 26.0)
+    let k = anim(flag(i == index), 26.0)
     let c = colors[i].c
     let rad = 9.0 + 1.5 * p.hot - 1.0 * p.active + 1.0 * k
     if k > 0.02 then
@@ -377,7 +367,7 @@ end
 // One row per option, each with a line of explanation.
 pub fn radios(key: string, r: record, labels: list, notes: list, index: num, enabled: bool) -> int
   let t = get _t
-  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  let e = anim(flag(enabled), 16.0)
   let row_h = r.h / float(max(1, len(labels)))
   let chosen = int(index)
   for i in range(0, len(labels)) do
@@ -386,7 +376,7 @@ pub fn radios(key: string, r: record, labels: list, notes: list, index: num, ena
     if p.click then
       chosen = i
     end
-    let k = anim("{key}:{i}", flag(i == index), 26.0)
+    let k = anim(flag(i == index), 26.0)
     if p.hot + k > 0.01 then
       draw_rect_rounded(Rect(row.x, row.y + 2, row.w, row.h - 4), max(0, int(t.radius) - 2),
         mix(mix(t.card, t.text, 0.035 * p.hot), t.accent, 0.07 * k))
@@ -428,9 +418,9 @@ pub fn input(key: string, r: record, buf: string, focus: string, o: record) -> r
     {text_style: style, inset: inset, scroll: true, pointer: enabled && field(o, "pointer", true)})
   let has = res.focus.id == key
   let p = bloom.probe(r, enabled)
-  let k = anim(key ++ ":f", flag(has), 24.0)
-  let b = anim(key ++ ":b", flag(bad), 20.0)
-  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  let k = anim(flag(has), 24.0)
+  let b = anim(flag(bad), 20.0)
+  let e = anim(flag(enabled), 16.0)
   let radius = min(int(t.radius), int(r.h / 2))
   let edge = mix(mix(mix(t.line, t.text, 0.16 * p.hot), t.accent, k), t.danger, b)
   if k > 0.02 then

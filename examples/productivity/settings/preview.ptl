@@ -117,7 +117,7 @@ fn draw_editor(r: record, t: record, v: record, x: record) -> nil
 
   // Gutter and minimap take their columns first.
   let gutter_w = if v.ed_numbers == 0 then 10.0 else cw * 2.0 + 18.0 end
-  let map_w = wd.anim("pv:map", if v.ed_minimap then v.ed_minimap_w * 0.72 else 0.0 end, 20.0)
+  let map_w = wd.anim(if v.ed_minimap then v.ed_minimap_w * 0.72 else 0.0 end, 20.0)
   let map_left = v.ed_minimap_side == 0
   let text_x = r.x + gutter_w + (if map_left then map_w else 0.0 end)
   let text_w = r.w - gutter_w - map_w - 6.0
@@ -198,7 +198,7 @@ end
 
 // The alert, parked in whichever corner Notifications asks for.
 fn draw_alert(area: record, t: record, v: record, words: record) -> nil
-  let show = wd.anim("pv:alert", if v.nt_on then 1.0 else 0.0 end, 16.0)
+  let show = wd.anim(if v.nt_on then 1.0 else 0.0 end, 16.0)
   if show < 0.01 then
     return nil
   end
@@ -212,9 +212,9 @@ fn draw_alert(area: record, t: record, v: record, words: record) -> nil
   let h = 46.0
   let right = v.nt_position == 0 || v.nt_position == 1
   let top = v.nt_position == 0 || v.nt_position == 3
-  let ax = wd.anim("pv:alert-x", if right then area.x + area.w - w - 10.0 else area.x + 10.0 end, 14.0)
-  let ay = wd.anim("pv:alert-y", if top then area.y + 10.0 else area.y + area.h - h - 10.0 end, 14.0)
-  let quiet = wd.anim("pv:quiet", if v.qt_on then 1.0 else 0.0 end, 16.0)
+  let ax = wd.anim(if right then area.x + area.w - w - 10.0 else area.x + 10.0 end, 14.0)
+  let ay = wd.anim(if top then area.y + 10.0 else area.y + area.h - h - 10.0 end, 14.0)
+  let quiet = wd.anim(if v.qt_on then 1.0 else 0.0 end, 16.0)
   let slide = (1.0 - show) * (if right then 24.0 else -24.0 end)
   let r = Rect(ax + slide, ay, w, h)
   let a = int(255 * show)
@@ -296,7 +296,7 @@ pub fn draw(r: record, t0: record, v: record, x: record) -> nil
   // File tree, on whichever side Appearance puts it.
   let body = Rect(r.x, r.y + bar_h + 1, r.w, r.h - bar_h - st_h - 1)
   let tree_w = 96.0
-  let side = wd.anim("pv:side", if v.ui_sidebar == 0 then 0.0 else 1.0 end, 14.0)
+  let side = wd.anim(if v.ui_sidebar == 0 then 0.0 else 1.0 end, 14.0)
   let tree = Rect(body.x + (body.w - tree_w) * side, body.y, tree_w, body.h)
   let code = Rect(body.x + tree_w * (1.0 - side), body.y, body.w - tree_w, body.h)
   draw_editor(code, t, v, x)

@@ -13,12 +13,16 @@
 //     by call path, so each callsite of `button` gets its own cell, as each
 //     React component instance gets its own `useState`.
 //
+// A frame-loop host that draws widgets from a list would key that loop,
+// `for b in buttons key b.id do`, so each widget's `state` stays with its
+// button when the list reorders. This is React's `key` prop.
+//
 // This demo keys its button memory by the button's id instead, in a top-level
-// `state var` holding a map, for two reasons. Its "frames" are passes of a
-// `for` loop inside one run, and each pass is a different call path, so a
-// call-path `state` would start every frame over. And an id-keyed entry stays
-// with its button if the buttons are ever reordered, where a call-path cell
-// stays with the position. This is React's `key` prop.
+// `state var` holding a map, because its "frames" are passes of a `for` loop
+// inside one run. Each pass is a different call path, so a call-path `state`
+// would start every frame over, and the memory has to be shared across the
+// passes, which no loop key can do: a key names one iteration of one run of
+// a loop.
 
 enum Event
   None,

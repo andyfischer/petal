@@ -50,7 +50,7 @@ field's caret blink for a few seconds and then rest lit.
 | File | What is in it |
 |---|---|
 | `schema.ptl` | The sections, the groups and every setting as one record each, plus the pure helpers over them (defaults, formatting, snapping, validation, search matching) |
-| `widgets.ptl` | The controls: toggle, checkbox, segmented, select, slider, stepper, swatches, radio list, text input, and the keyed animator they share |
+| `widgets.ptl` | The controls: toggle, checkbox, segmented, select, slider, stepper, swatches, radio list, text input, and the animator they share |
 | `preview.ptl` | The editor mock: title bar, file tree, gutter, wrapped and highlighted code, minimap, status bar, the alert |
 | `icons.ptl` | Section and action glyphs as strokes |
 | `app.ptl` | One frame: state, theme, layout pass, keyboard, page, sidebar, preview column, overlays, persistence |
@@ -132,11 +132,10 @@ loops over it.
 - `state var` cells written with `set` from functions (`commit`, `undo_step`,
   `go_section`), including `set vals[id] = v` on a record keyed at run time
   and `set undo[len(get undo) - 1] = …` on a list.
-- A `Map` in a module `state var` for animation: `anim(key, target)` in
-  `widgets.ptl` keeps one eased value per setting id, so a knob's motion
-  follows the setting, not the row position a search happens to give it.
-  `begin` swaps this frame's map for last frame's, which drops the animators
-  nobody asked for.
+- Keyed loops for animation: `anim(target)` in `widgets.ptl` is a plain
+  `state` per call path, and the row loops run `for i in range(…) key
+  SETTINGS[i].id`, so each knob's motion belongs to its setting. An animator
+  nobody asks for in a frame is swept and starts over at its target.
 - Per-call-path `state` for everything positional: bloom's `probe` inside a
   loop over every setting gives each row its own hover and press.
 - Modules: four files imported by `app.ptl`, a module-level `var` in
@@ -198,8 +197,7 @@ $T obs obs_rows                                     # 16: its two child rows fol
   dur(t, 0.22)`), although the docs offer 0 as "freeze the UI". Reduce motion
   passes 0.001.
 - **bloom's `slider`, `segmented` and `select` take no `disabled`,** and its
-  animators are per call path, so they could not be greyed out or keep their
-  motion across a search. That is why the controls are the app's own, built on
+  animators are its own, so they could not be greyed out. That is why the controls are the app's own, built on
   `probe`.
 - **Return on a dropdown opens it a frame late.** bloom's menu reads `return`
   as "choose the highlighted item" on the frame it opens, so opening it from

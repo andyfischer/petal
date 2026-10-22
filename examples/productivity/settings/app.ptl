@@ -338,7 +338,7 @@ let cur_g = -1
 let card_top = 0.0
 let title_at = 0.0
 
-for i in range(0, len(SETTINGS)) do
+for i in range(0, len(SETTINGS)) key SETTINGS[i].id do
   let s = SETTINGS[i]
   let p = if s.parent == "" then -1 else IDX[s.parent] end
   let ok = p < 0 || (live[p] && vals[s.parent] == s.need)
@@ -358,7 +358,7 @@ for i in range(0, len(SETTINGS)) do
   // A folding row eases open and shut with its parent. A search shows it
   // whole, since the query asked for it by name.
   let open = if !on_page then 0.0
-    elsif s.reveal && !searching then wd.anim("fold:" ++ s.id, flag(ok), 20.0)
+    elsif s.reveal && !searching then wd.anim(flag(ok), 20.0)
     else 1.0
     end
   if open < 0.01 then
@@ -560,7 +560,7 @@ if jump_group >= 0 then
   set jump_group = -1
 end
 set scroll = clamp(scroll, 0.0, max_scroll)
-let scroll_now = wd.anim("page-scroll", scroll, 22.0)
+let scroll_now = wd.anim(scroll, 22.0)
 
 // The group the page is showing: the last heading at or above the top edge,
 // or the last group once the page is scrolled to its end.
@@ -598,10 +598,10 @@ end
 
 fn draw_row(s: record, r: record, o: record) -> nil
   let on = o.live
-  let e = wd.anim("row:" ++ s.id, flag(on), 16.0)
+  let e = wd.anim(flag(on), 16.0)
   let hov = o.pointer && point_in(mouse_x(), mouse_y(), r)
-  let hot = wd.anim("hover:" ++ s.id, flag(hov && on), 30.0)
-  let lit = wd.anim("ring:" ++ s.id, flag(o.focused), 30.0)
+  let hot = wd.anim(flag(hov && on), 30.0)
+  let lit = wd.anim(flag(o.focused), 30.0)
   let is_action = s.kind == "action"
   let v = if is_action then nil else get vals[s.id] end
   let changed = !is_action && v != s.def
@@ -798,7 +798,7 @@ let fence = !blocked && !in_view
 if fence then
   bloom.capture("fern:offscreen")
 end
-for i in range(0, len(SETTINGS)) do
+for i in range(0, len(SETTINGS)) key SETTINGS[i].id do
   if row_y[i] < 0.0 then
     continue
   end
@@ -846,7 +846,7 @@ if max_scroll > 0.0 then
   if grab >= 0.0 then
     set scroll = clamp((my - grab - track.y) / max(1.0, track.h - th) * max_scroll, 0.0, max_scroll)
   end
-  let k = wd.anim("scrollbar", flag(over_bar || grab >= 0.0), 20.0)
+  let k = wd.anim(flag(over_bar || grab >= 0.0), 20.0)
   draw_rect_rounded(Rect(thumb.x + 1 - k, thumb.y, 4 + 2 * k, thumb.h), 3, mix(T.track, T.muted, 0.3 + 0.5 * k))
 end
 
@@ -919,7 +919,7 @@ for i in range(0, len(SECTIONS)) do
   if p.click then
     go_section(i)
   end
-  let k = wd.anim("nav:{i}", flag(on), 26.0)
+  let k = wd.anim(flag(on), 26.0)
   if k + p.hot > 0.01 then
     draw_rect_rounded(Rect(r.x, r.y + 1, r.w, r.h - 2), max(0, RADIUS - 2),
       mix(mix(T.rail, T.text, 0.06 * p.hot), T.accent_soft, k))
@@ -944,7 +944,7 @@ for i in range(0, len(SECTIONS)) do
   end
   ny += NAV_H
   // Sub-sections fold open under the current page.
-  let open = wd.anim("subnav:{i}", flag(on), 18.0)
+  let open = wd.anim(flag(on), 18.0)
   if open > 0.01 then
     let subs = filter(range(0, len(GROUPS)), fn(g) -> GROUPS[g].sec == i)
     let sub_h = len(subs) * SUB_H + 6.0
@@ -957,7 +957,7 @@ for i in range(0, len(SECTIONS)) do
       if gp.click then
         set jump_group = g
       end
-      let cur = wd.anim("spy:{g}", flag(spy == g), 24.0)
+      let cur = wd.anim(flag(spy == g), 24.0)
       if cur > 0.01 then
         draw_line({x: r.x + 20, y: gr.y + 5}, {x: r.x + 20, y: gr.y + gr.h - 5}, T.accent, int(255 * cur), 2)
       end
@@ -973,7 +973,7 @@ end
 // Save status, pinned to the bottom of the rail.
 let sy = H - 58
 draw_line({x: 14, y: sy}, {x: SIDE_W - 14, y: sy}, T.line_soft)
-let fresh = wd.anim("saved", flag(since_save < 2.5), 8.0)
+let fresh = wd.anim(flag(since_save < 2.5), 8.0)
 draw_circle({x: 25, y: sy + 21}, 4, mix(T.dim, T.success, 0.35 + 0.65 * fresh))
 tl.draw_text_line(if since_save < 2.5 then "Saved just now" else "All changes saved" end,
   Rect(38, sy + 11, SIDE_W - 50, 20), wd.ts(12, mix(T.muted, T.text, fresh)))

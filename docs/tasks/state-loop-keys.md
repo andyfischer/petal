@@ -1,8 +1,11 @@
 # Stable per-loop keys for `state`
 
-Status, 2026-10-22: **open, not started.** Opened when `state(key)` was
-deprecated ([inline-state.md, Deprecated:
-`state(key)`](../features/inline-state.md#deprecated-statekey)).
+Status, 2026-10-22: **done.** `for x in xs key k do` shipped; the user docs
+are [inline-state.md, Keyed loops](../features/inline-state.md#keyed-loops)
+and the design is [state-call-paths.md §2.2a](../dev/state-call-paths.md#22a-keyed-loops).
+Opened when `state(key)` was deprecated ([inline-state.md, Deprecated:
+`state(key)`](../features/inline-state.md#deprecated-statekey)). The
+"Outcome" section at the end records how each question below was settled.
 
 ## The problem
 
@@ -120,3 +123,40 @@ incremental diffing.
   keyed loop inside a function called from two sites (stays separate),
   memo-scope replay after a reorder, `--state-storage` round-trip of a keyed
   path.
+
+## Outcome
+
+How the questions were settled:
+
+1. **Duplicate keys** are a runtime error, `Duplicate loop key <value>: …`.
+   The loop's cursor keeps the run's key hashes.
+2. **Key equality** is `dict::key_hash`, so a key that Map rejects is
+   rejected the same way ("Cannot use a function as a loop key").
+3. **`while`** stays positional. `key` parses only in a `for` header.
+4. **Higher-order builtins** get no keyed form. The docs point at `for`.
+5. **`path_pop`** needed no change. The key overwrites the `Index` part in
+   place, so the count of loop parts stays the same.
+6. **Display**: `LoopKey` records the key's debug string per hash in
+   `Stack::loop_key_labels`, and slots render as `[key="a"]/row/seen`.
+7. **Hot reload**: a test shows that a keyed slot survives an unrelated edit.
+8. **Lifecycle**: no change. A test shows that a removed item's slots are
+   swept.
+
+The IR does not use a key *block* on the loop term. A `LoopKey` term with
+`inputs=[key]` goes at the head of the body block, after the key
+expression's own terms, and it lowers to `Inst::LoopKey`. This way no pass
+that walks `child_blocks` had to learn about a new block.
+
+Migrations:
+
+- `ui.ptl`: the keyed slider and its two maps are gone, and so is
+  `style.key`. A caller keys its loop instead. `~/tools/petal-movies` still
+  passes `{key: …}`, which is now ignored. Its sliders are not in a loop, so
+  the key only reset a drag when the selected item changed.
+- settings: `anim(target, rate)` is plain `state`, and the two row loops are
+  keyed by setting id.
+- node-editor: `scope_push` is plain `state` under `for n in nodes key n.id`,
+  and `prune_scopes` is gone.
+- `reactive_ui.ptl` **stays on its Map**. Its frames are iterations of one
+  loop in a single run, so the memory has to be shared across iterations,
+  and a key names one iteration. Its comment now says so.

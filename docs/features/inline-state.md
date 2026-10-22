@@ -1,24 +1,15 @@
 # Inline state: the `state` keyword
 
-`state` declares a variable that persists. It is initialized once, and after
-that it keeps its value from one run of the program to the next and across a
-[hot reload](hot-reload.md).
+Petal has a first-class way to declare persistent state, with the `state`
+keyword. Variables declared with `state` are persisted across time.
 
-```petal
-state hits = 0
-hits += 1
-print(hits)   // 1 on the first run, 2 on the second, ...
-```
+This system is an enabler for a lot of Petal's features including [hot reloading](hot-reload.md).
+Since the Petal runtime knows what state is essential to preserve, it's
+able to preserve that state across a live code modification.
 
-Petal hosts run a script again and again: once per frame in a game or a UI,
-once per edit while live coding. `state` is how such a script remembers
-anything. The declaration sits inline, in the code that uses the value, so
-there is no separate store to set up and no handle to pass around: a widget
-function that needs a hover timer declares one where it needs it.
+# Contents
 
-This page is the reference for `state` as a script author sees it. The design
-decisions behind the keying rules are in
-[dev/state-call-paths.md](../dev/state-call-paths.md).
+TODO - Check that this list is still accurate
 
 - [Declaring state](#declaring-state)
 - [One slot per call path](#one-slot-per-call-path)
@@ -35,98 +26,80 @@ decisions behind the keying rules are in
 
 ## Declaring state
 
-```petal
-state score = 0
-state score_typed: int = 0       // an optional type annotation, as on `let`
-state(id) hp = 100               // keyed by a value (see below)
-state var theme = "dark"         // a persistent mutable cell (see below)
-pub state level = 1              // exported from a module
-```
+State vars are declared with an initializer.
 
-The initializer runs only when the slot does not exist yet. On every later run
-the declaration reads the kept value and the initializer is skipped, so an
-expensive initializer costs once:
+In this example, the `ticks` number would start at 0 and increase by 1 every time this script is called:
 
 ```petal
-fn build()
-    print("building")
-    [1, 2, 3]
-end
-
-state table = build()   // prints "building" on the first run only
+state ticks = 0
+ticks += 1
 ```
 
-After the declaration, a `state` name is read and assigned like a
-[`let`](../language-guide.md#variables): `score += 10` rebinds it, and the
-value it holds when the run ends is the value the next run starts with.
+## State is nested
 
-## One slot per call path
+State vars can be declared in nested blocks and inside function calls.
 
-Which slot a declaration reads is decided by the declaration and by the path
-that reached it: the chain of callsites and loop iterations running from the
-top of the program down to this execution. Reached the same way, it is the
-same slot. Reached a different way, it is a different slot. This is the rule
-of React's `useState`, with the call path standing in for the component
-instance.
+One area where newcomers get confused is assuming that a nested state variable
+is shared across the program like a global variable, but it doesn't work like a global. Petal state does
+NOT work the same way as the `static` keyword in the C language.
 
-What follows from it:
+Instead, state variables are created separately for each callsite.
 
-- **Two callsites of a helper hold two independent values.**
-- **Recursion gets one slot per depth**, because each recursive call extends
-  the path.
-- **A declaration inside a `for`, or inside a function called from a `for`,
-  gets one slot per iteration**, so a list's positions key its rows.
-- **Two functions that declare the same state name never collide.** A
-  declaration's identity is its name plus the enclosing module and function
-  chain, so `count` in `fn a` and `count` in `fn b` are different
-  declarations.
-- **A top-level `state` is one slot.** Module scope runs on the empty path.
+For an example let's set up a `stable_random` function. Our function will
+create a random number and store it.
 
-```petal
-fn counter()
-    state n = 0
-    n += 1
-    n
+```
+fn stable_random() 
+  state val = rand_int(100)
+  return val
 end
 
-fn left()   counter() end
-fn right()  counter() end
-
-print(left(), right())   // 1 1 — two callsites, two slots
+print(stable_random())
 ```
 
-Within one run a path is normally reached only once: reaching the same
-callsite twice takes a loop or a recursive call, and both of those extend the
-path. So a counter inside a function counts runs (frames), not calls. The
-program above prints `1 1`, then `2 2` on its second run. To count calls
-within a run, key the slot explicitly or share one top-level cell (both
-below).
+If we run this program, it will pick a random number (let's say `42`), and
+then the same program will print `42` every time.
 
-```petal
-fn walk(n)
-    state visits = 0
-    visits += 1
-    if n > 0 then walk(n - 1) end
-    visits
+In the debugger we could inspect the persisted state for this program and
+see something like:
+
+TODO: example.
+
+Then, let's say we have multiple calls to the same function:
+
+```
+fn stable_random() 
+  state val = rand_int(100)
+  return val
 end
-print(walk(3))   // 1 — depths 3, 2, 1, 0 are four slots, each on its first visit
+
+print("first: ", stable_random())
+print("second: ", stable_random())
+print("third: ", stable_random())
 ```
 
-```petal
-fn row(label)
-    state clicks = 0
-    clicks += 1
-    "{label}: {clicks}"
-end
+Each call will create a *different* random number that's stored separately.
 
-for label in ["a", "b", "c"] do
-    print(row(label))   // a: 1  b: 1  c: 1, then a: 2  b: 2  c: 2 on the next run
-end
+The output might look like:
+
+```
+first: 39
+second: 14
+third: 77
 ```
 
-Keying by position is how React treats a list without keys, and it has the
-same cost: reorder the list and the values stay with the positions, not with
-the items. When the item's identity is what matters, give the slot a key.
+In the debugger, the state might look like:
+
+TODO: example.
+
+## Interaction with control flow
+
+If `state` is used inside a loop, then it creates a list, one element per iteration.
+
+If `state` is used in an `if` block, then the data is only retained on runs where
+that condition is true. If the condition fails then any nested state gets deleted.
+
+If `state` is used in a recursive function call, then it creates a tree data structure.
 
 ## Keyed state: `state(key)`
 

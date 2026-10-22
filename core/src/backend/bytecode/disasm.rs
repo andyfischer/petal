@@ -351,9 +351,11 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             base,
             after,
             key,
+            memo,
         } => format!(
-            "r{} = state_init k{} after@{}{}",
+            "r{} = state_init{} k{} after@{}{}",
             dst,
+            if *memo { " memo" } else { "" },
             base.0,
             after,
             opt_key(key)
@@ -371,10 +373,12 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             init,
             path_pop,
             mutated,
+            memo,
         } => format!(
-            "r{} = state_write{}{} k{}{} = r{}{}",
+            "r{} = state_write{}{}{} k{}{} = r{}{}",
             dst,
             if *init { " init" } else { "" },
+            if *memo { " memo" } else { "" },
             if *mutated { " mutated" } else { "" },
             base.0,
             pop(path_pop),

@@ -409,11 +409,18 @@ pub struct Term {
     /// `Env` does reports when it is not (`Env::check_consts`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_const: bool,
+    /// On a `StateInit`: the declaration is a `memo(key)`, not a `state`.
+    /// The slot is keyed by the key value alone ([`crate::stack::PathPart::Memo`]),
+    /// and it is a cache rather than state: [`Program::state_terms`] leaves it
+    /// out, so state dumps, `--state-storage` and a reload never carry it
+    /// (docs/features/memo.md).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_memo: bool,
 }
 
 impl Term {
     /// A term carrying no optional metadata: `state_key`, `child_blocks`,
-    /// `path_pop`, `call_site`, `arg_names`, `collect`, `is_config` and `is_const` all at their
+    /// `path_pop`, `call_site`, `arg_names`, `collect`, `is_config`, `is_const` and `is_memo` all at their
     /// serialization defaults, and the block links unset. The single place
     /// those defaults are written down, so adding a `Term` field does not mean
     /// hunting down every construction site.
@@ -442,6 +449,7 @@ impl Term {
             collect: false,
             is_config: false,
             is_const: false,
+            is_memo: false,
         }
     }
 }
@@ -887,9 +895,13 @@ impl Program {
     /// variable name)`. The single scan behind both `Env::state_key_names`
     /// (which keeps the named keys) and cross-run state transfer (which keeps
     /// every key) — each caller applies its own filter to this.
+    ///
+    /// A `memo(key)` declaration is not state and is left out: nothing names,
+    /// dumps or carries its entries (see [`Term::is_memo`]).
     pub fn state_terms(&self) -> impl Iterator<Item = (StateKey, Option<&String>)> {
         self.terms
             .iter()
+            .filter(|t| !t.is_memo)
             .filter_map(|t| t.state_key.map(|k| (k, t.name.as_ref())))
     }
 

@@ -553,7 +553,7 @@ impl<'a> Vm<'a> {
                 base,
                 path_pop,
             } => {
-                let key = self.state_key(fi, *base, None, *path_pop)?;
+                let key = self.state_key(fi, *base, None, *path_pop, false)?;
                 self.stack.touch_state(&key);
                 if let Some(ip) = self.static_audit_site() {
                     self.static_audit.state_access(ip, origin);
@@ -570,10 +570,11 @@ impl<'a> Vm<'a> {
                 init,
                 path_pop,
                 mutated,
+                memo,
             } => {
                 let val_v = self.reg(fi, *val);
                 let explicit = key.map(|r| self.reg(fi, r));
-                let k = self.state_key(fi, *base, explicit, *path_pop)?;
+                let k = self.state_key(fi, *base, explicit, *path_pop, *memo)?;
                 self.stack.touch_state(&k);
                 if let Some(ip) = self.static_audit_site() {
                     self.static_audit.state_access(ip, origin);
@@ -624,11 +625,12 @@ impl<'a> Vm<'a> {
                 base,
                 after,
                 key,
+                memo,
             } => {
                 let explicit = key.map(|r| self.reg(fi, r));
                 // A `StateInit` *is* the declaration: it always resolves at the
                 // frame's own path, so nothing to pop.
-                let k = self.state_key(fi, *base, explicit, 0)?;
+                let k = self.state_key(fi, *base, explicit, 0, *memo)?;
                 self.stack.touch_state(&k);
                 if let Some(ip) = self.static_audit_site() {
                     self.static_audit.state_access(ip, origin);

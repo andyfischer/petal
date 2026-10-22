@@ -316,12 +316,17 @@ impl<'a> Vm<'a> {
     /// reassignment nested deeper in loops than its declaration still addresses
     /// the declaration's slot (`Term::path_pop`); it is 0 at the declaration
     /// itself and ignored under an explicit key.
+    ///
+    /// `memo` marks a `memo(expr)` declaration, whose key is just as absolute
+    /// but lands in a [`PathPart::Memo`] part, so the slot reads as a cache
+    /// entry to everything that walks the state table.
     pub(super) fn state_key(
         &self,
         fi: usize,
         base: StateKey,
         explicit: Option<Value>,
         path_pop: u32,
+        memo: bool,
     ) -> Result<RuntimeStateKey, String> {
         // A path-keyed slot costs its path's length; see the constant.
         if explicit.is_none() && fi >= super::MAX_STATE_CALL_DEPTH {
@@ -330,7 +335,8 @@ impl<'a> Vm<'a> {
         let path = match explicit {
             Some(kv) => {
                 let mut v = SmallVec::new();
-                v.push(PathPart::Key(crate::value::hash_value(&kv, self.heap)));
+                let h = crate::value::hash_value(&kv, self.heap);
+                v.push(if memo { PathPart::Memo(h) } else { PathPart::Key(h) });
                 v
             }
             None => {

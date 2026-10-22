@@ -928,7 +928,9 @@ fn top_level_definitions(stmts: &[Stmt], source: &str) -> Vec<Definition> {
     for stmt in stmts {
         let mut defs = Vec::new();
         match &stmt.kind {
-            StmtKind::State { name, .. } | StmtKind::ClassDecl { name, .. } => {
+            StmtKind::State { name, .. }
+            | StmtKind::Memo { name, .. }
+            | StmtKind::ClassDecl { name, .. } => {
                 defs.push(Definition::new(
                     name.clone(),
                     DefinitionKind::Variable,
@@ -1186,6 +1188,19 @@ fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Defin
             });
             collect_definitions_from_expr(init, src, defs);
         }
+        StmtKind::Memo { name, ty, key, init } => {
+            let detail = ty.as_ref().map(|t| format!(": {}", t.name));
+            let hint = match ty {
+                Some(ty) => Some(ValueHint::annotation(&ty.name)),
+                None => expr_path(init).map(ValueHint::Init),
+            };
+            defs.push(Definition {
+                hint,
+                ..Definition::new(name.clone(), DefinitionKind::Variable, stmt.span, detail)
+            });
+            collect_definitions_from_expr(key, src, defs);
+            collect_definitions_from_expr(init, src, defs);
+        }
         StmtKind::EnumDecl { name, variants } => {
             let shape = EnumShape::of(variants, src);
             let detail = Some(
@@ -1406,6 +1421,6 @@ fn is_ident_char(c: char) -> bool {
 /// `core/tests/keyword_sync.rs` — do not edit this list alone.
 pub const KEYWORDS: &[&str] = &[
     "let", "const", "var", "set", "get", "fn", "if", "then", "elsif", "else", "end", "for", "in", "do",
-    "while", "match", "when", "return", "break", "continue", "state", "import", "pub", "export",
+    "while", "match", "when", "return", "break", "continue", "state", "memo", "import", "pub", "export",
     "as", "true", "false", "nil", "enum", "class", "config", "native", "test",
 ];

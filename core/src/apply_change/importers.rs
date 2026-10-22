@@ -260,6 +260,7 @@ fn declares(stmts: &[Stmt], name: &str) -> bool {
     stmts.iter().any(|s| match &s.kind {
         StmtKind::Let { name: n, .. }
         | StmtKind::State { name: n, .. }
+        | StmtKind::Memo { name: n, .. }
         | StmtKind::FnDecl { name: n, .. }
         | StmtKind::EnumDecl { name: n, .. }
         | StmtKind::ClassDecl { name: n, .. } => n == name,

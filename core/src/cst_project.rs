@@ -522,6 +522,28 @@ impl Projector {
                     is_var,
                 }
             }
+            SyntaxKind::MemoStmt => {
+                let name = self.only_ident(node)?;
+                let ty = child_nodes(node)
+                    .iter()
+                    .find(|n| n.kind() == SyntaxKind::TypeAnnotation)
+                    .and_then(|n| self.type_from_annotation_node(n));
+                // The key is required, so there are always exactly two
+                // expression nodes once the annotation is set aside.
+                let nodes: Vec<SyntaxNode> = child_nodes(node)
+                    .into_iter()
+                    .filter(|n| n.kind() != SyntaxKind::TypeAnnotation)
+                    .collect();
+                let [key_node, init_node] = nodes.as_slice() else {
+                    return Err(format!("memo statement with {} expression nodes", nodes.len()));
+                };
+                StmtKind::Memo {
+                    name,
+                    ty,
+                    key: self.expr(key_node)?,
+                    init: self.expr(init_node)?,
+                }
+            }
             SyntaxKind::ImportStmt => self.import_stmt(node)?,
             other => return Err(format!("expected a statement node, got {other:?}")),
         };

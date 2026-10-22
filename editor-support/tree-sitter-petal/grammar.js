@@ -77,6 +77,7 @@ module.exports = grammar({
       $.import_statement,
       $.let_declaration,
       $.state_declaration,
+      $.memo_declaration,
       $.function_declaration,
       $.native_function_declaration,
       $.enum_declaration,
@@ -160,6 +161,17 @@ module.exports = grammar({
       'state',
       optional(seq('(', field('key', $._expression), ')')),
       optional('var'),
+      field('name', $.identifier),
+      optional(field('type', $.type_annotation)),
+      '=',
+      field('value', $._expression),
+    ),
+
+    // `memo(key) name = init`: a content-keyed cache. The key is required and
+    // there is no `var` form.
+    memo_declaration: $ => seq(
+      'memo',
+      '(', field('key', $._expression), ')',
       field('name', $.identifier),
       optional(field('type', $.type_annotation)),
       '=',

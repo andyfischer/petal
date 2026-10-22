@@ -323,7 +323,7 @@ fn target_root(target: &AssignTarget) -> Option<&str> {
 impl ExprVisitor for Uses<'_> {
     fn visit_stmt(&mut self, s: &Stmt) {
         match &s.kind {
-            StmtKind::Let { name, .. } | StmtKind::State { name, .. } => self.rebinds(name),
+            StmtKind::Let { name, .. } | StmtKind::State { name, .. } | StmtKind::Memo { name, .. } => self.rebinds(name),
             StmtKind::For { var, .. } => self.rebinds(var),
             StmtKind::FnDecl {
                 name, params, body, ..

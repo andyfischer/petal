@@ -43,6 +43,7 @@
   "set"
   "get"
   "state"
+  "memo"
   "fn"
   "enum"
   "class"

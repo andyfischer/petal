@@ -723,6 +723,12 @@ pub(crate) fn bindings_of(stmts: &[Stmt], chars: &[char]) -> Vec<StaticBinding> 
                 None,
                 false,
             ),
+            StmtKind::Memo { name, .. } => (
+                name.clone(),
+                Err("a `memo` declaration, whose value only exists at run time".into()),
+                None,
+                false,
+            ),
             StmtKind::EnumDecl { .. } => {
                 if let Some(binding) = enum_binding(stmt) {
                     set_binding(&mut bindings, binding);

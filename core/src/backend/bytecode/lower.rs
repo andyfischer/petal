@@ -377,6 +377,8 @@ impl<'p> FnLowerer<'p> {
                 // including a Pending (see the StateInit no-commit rule).
                 init: false,
                 mutated: self.in_place.allows(ins[0]),
+                // A memo binding cannot be reassigned (the compiler rejects it).
+                memo: false,
             },
 
             TermOp::CellNew => Inst::CellNew {
@@ -944,6 +946,7 @@ impl<'p> FnLowerer<'p> {
             base,
             after: 0,
             key,
+            memo: term.is_memo,
         });
         match term.child_blocks.first() {
             Some(&init_block) => {
@@ -965,6 +968,7 @@ impl<'p> FnLowerer<'p> {
                     // The commit write sits at the declaration: same path.
                     path_pop: 0,
                     mutated: false,
+                    memo: term.is_memo,
                 });
             }
             None => {
@@ -978,6 +982,7 @@ impl<'p> FnLowerer<'p> {
                     init: true,
                     path_pop: 0,
                     mutated: false,
+                    memo: term.is_memo,
                 });
             }
         }

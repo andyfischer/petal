@@ -190,6 +190,7 @@ table and file-tagged spans (see docs/module-system.md):
   "state_key": 1234,               // required for State* ops, else omitted
   "child_blocks": [BlockId, ...],  // omitted when empty
   "path_pop": 1,                   // StateRead/StateWrite only; omitted when 0
+  "is_memo": true,                 // StateInit of a `memo(key)` only; omitted when false
   "call_site": 8765                // call ops only; omitted when absent
 }
 ```
@@ -258,7 +259,7 @@ emitter should not imitate that.
 | `Call` | ≥1 | 0 | — | `inputs=[callable, arg0, ...]`; optional `call_site` ([State keying](#state-keying)) |
 | `MethodCall` | ≥1 | 0 | `{name: ConstantId, hint?: ConstantId}` | `inputs=[object, arg0, ...]`; `hint` (omitted when absent) names a class for live-edit dispatch; optional `call_site` |
 | `BuiltinCall` | ≥0 | 0 | `ConstantId` (builtin name, a String constant) | direct builtin call, resolved by name at lower time; `inputs=[arg0, ...]` — **the way an emitter calls a builtin**; optional `call_site` |
-| `StateInit` | 0 or 1 | 1 | — | `state_key` required; init expression in `child_blocks=[init_block]` (lazy); optional `inputs=[explicit_key]` for `state(expr) name`. `path_pop` is ignored here (the lowering forces 0): a `StateInit` *is* the declaration |
+| `StateInit` | 0 or 1 | 1 | — | `state_key` required; init expression in `child_blocks=[init_block]` (lazy); optional `inputs=[explicit_key]` for `state(expr) name`. With `is_memo: true` it is a `memo(expr) name` declaration: `inputs=[key]` is then required, and no `StateRead`/`StateWrite` may name its `state_key`. `path_pop` is ignored here (the lowering forces 0): a `StateInit` *is* the declaration |
 | `StateRead` | 0 | 0 | — | `state_key` required; optional `path_pop` |
 | `StateWrite` | 1 or 2 | 0 | — | `inputs=[value]` or `[value, explicit_key]`, `state_key` required; optional `path_pop` |
 | `CellNew` | 1 | 0 | — | allocate the cell behind a `var`; `inputs=[init]` |
@@ -309,6 +310,11 @@ Rules for an emitter:
 - **An explicit `state(expr)` key ignores the path entirely** (and therefore
   `path_pop`): the slot is `state_key` plus the hash of the key value. That
   is the way to say "same entity ⇒ same slot, whoever asks".
+- **`is_memo` makes a keyed `StateInit` a cache entry** (`memo(expr) name`,
+  [memo.md](../features/memo.md)). The slot is addressed the same way, but
+  under its own kind of key, so it never collides with a `state(expr)` slot,
+  and a host never sees it as state: dumps, `--state-storage`, snapshots and
+  a reload leave it out. Emit it only for a pure initializer.
 
 ### Block
 
@@ -400,7 +406,9 @@ A program is a valid import iff:
    *runtime* slot, which depends on the call path and is unknowable
    statically. `path_pop` and `call_site` are unvalidated — a wrong value
    misroutes a slot rather than producing an invalid document (see
-   [State keying](#state-keying)).
+   [State keying](#state-keying)). `is_memo` appears only on a `StateInit`
+   with exactly one input, and no `StateRead`/`StateWrite` names a memo's
+   key.
 9. **Registers** (if provided) — every term's register is
    `< register_count` of its block. If any register is omitted, the loader
    assigns the whole file itself — which requires the binding phantoms for

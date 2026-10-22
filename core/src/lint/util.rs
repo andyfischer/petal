@@ -63,6 +63,7 @@ pub(super) fn bound_names(stmts: &[Stmt]) -> HashSet<String> {
             match &s.kind {
                 StmtKind::Let { name, .. }
                 | StmtKind::State { name, .. }
+                | StmtKind::Memo { name, .. }
                 | StmtKind::EnumDecl { name, .. }
                 | StmtKind::ClassDecl { name, .. } => {
                     self.0.insert(name.clone());

@@ -2203,8 +2203,18 @@ impl Env {
     // ── State snapshots ──────────────────────────────────────────
 
     /// Clone all state values. Cheap since Value is Copy.
+    ///
+    /// `memo(key)` cache entries are left out: they are not state, so a
+    /// [`restore_state`](Self::restore_state) of the snapshot drops them and
+    /// the next run recomputes whatever it asks for.
     pub fn snapshot_state(&self, stack_id: StackKey) -> Option<StateMap> {
-        self.stacks.get(&stack_id).map(|s| s.state.clone())
+        self.stacks.get(&stack_id).map(|s| {
+            s.state
+                .iter()
+                .filter(|(k, _)| !k.is_memo())
+                .map(|(k, v)| (k.clone(), *v))
+                .collect()
+        })
     }
 
     /// Restore state from a previous snapshot, replacing all current state.

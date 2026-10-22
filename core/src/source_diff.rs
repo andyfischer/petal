@@ -203,6 +203,8 @@ pub enum ConstructKind {
     Const,
     Var,
     State,
+    /// `memo(key) name = …`.
+    Memo,
     Enum,
     Class,
     Import,
@@ -651,6 +653,7 @@ fn construct_kind(s: &Stmt) -> (ConstructKind, Option<&str>) {
             Some(name),
         ),
         StmtKind::State { name, .. } => (ConstructKind::State, Some(name)),
+        StmtKind::Memo { name, .. } => (ConstructKind::Memo, Some(name)),
         StmtKind::EnumDecl { name, .. } => (ConstructKind::Enum, Some(name)),
         StmtKind::ClassDecl { name, .. } => (ConstructKind::Class, Some(name)),
         StmtKind::Import(decl) => (ConstructKind::Import, Some(&decl.module)),
@@ -902,6 +905,20 @@ impl Cmp {
                     && self.opt_expr(k1.as_ref(), k2.as_ref())
                     && self.expr(i1, i2)
             }
+            (
+                StmtKind::Memo {
+                    name: n1,
+                    ty: t1,
+                    key: k1,
+                    init: i1,
+                },
+                StmtKind::Memo {
+                    name: n2,
+                    ty: t2,
+                    key: k2,
+                    init: i2,
+                },
+            ) => n1 == n2 && t1 == t2 && self.expr(k1, k2) && self.expr(i1, i2),
             (StmtKind::Import(d1), StmtKind::Import(d2)) => {
                 d1.module == d2.module
                     && d1.alias == d2.alias

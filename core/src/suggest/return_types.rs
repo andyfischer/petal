@@ -460,7 +460,7 @@ impl ExprVisitor for Walker<'_> {
                 self.visit_expr(iter);
                 self.walk_loop_body(body, &position);
             }
-            StmtKind::Let { name, .. } | StmtKind::State { name, .. } => {
+            StmtKind::Let { name, .. } | StmtKind::State { name, .. } | StmtKind::Memo { name, .. } => {
                 self.evidence.rebound.insert(name.clone());
                 walk_stmt(self, s);
             }

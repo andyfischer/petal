@@ -83,6 +83,7 @@ pub(crate) fn token_desc(tok: &Token) -> String {
         Token::Break => kw("break"),
         Token::Continue => kw("continue"),
         Token::State => kw("state"),
+        Token::Memo => kw("memo"),
         Token::Enum => kw("enum"),
         Token::End => kw("end"),
         Token::Then => kw("then"),
@@ -587,6 +588,7 @@ impl Parser {
                 Ok(self.mk_stmt(StmtKind::Continue, start))
             }
             Token::State => self.parse_state(start, false),
+            Token::Memo => self.parse_memo(start),
             Token::Enum => self.parse_enum_decl(start, false),
             // `class` is contextual, not a reserved word: it stays usable as an
             // identifier (and, crucially, as the JSX attribute `class="..."`).
@@ -818,6 +820,41 @@ impl Parser {
         );
         stmt.exported = exported;
         Ok(stmt)
+    }
+
+    /// `memo(key) name = init`, optionally `memo(key) name: type = init`. The
+    /// key group is required and there is no `var` form: a memo is a cache of a
+    /// pure result, so it has nothing to say without a key and nothing to write
+    /// afterwards (docs/features/memo.md).
+    fn parse_memo(&mut self, start: usize) -> Result<Stmt, String> {
+        self.ev_open(SyntaxKind::MemoStmt);
+        self.advance(); // consume 'memo'
+
+        if !matches!(self.peek(), Token::LParen) {
+            return Err(self.error_at_current(
+                "`memo` needs a key: write `memo(key) name = ...`. A value built once is a \
+                 `const`; a value kept per callsite is a `state`"
+                    .to_string(),
+            ));
+        }
+        self.advance(); // consume '('
+        let key = self.parse_expr()?;
+        self.expect(&Token::RParen)?;
+
+        if matches!(self.peek(), Token::Var) {
+            return Err(self.error_at_current(
+                "a `memo` is immutable, so there is no `memo var`. Shared data the program \
+                 writes belongs in a top-level `state var`"
+                    .to_string(),
+            ));
+        }
+
+        let name = self.expect_ident()?;
+        let ty = self.parse_type_annotation()?;
+        self.expect_initializer("memo(...)", &name)?;
+        let init = self.parse_expr()?;
+        self.ev_close();
+        Ok(self.mk_stmt(StmtKind::Memo { name, ty, key, init }, start))
     }
 
     /// After the `:` or a `,` of a selective import list, with a newline at the

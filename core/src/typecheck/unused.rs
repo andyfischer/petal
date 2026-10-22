@@ -177,6 +177,13 @@ impl Walker {
                 }
                 self.bind(name);
             }
+            StmtKind::Memo {
+                name, init, key, ..
+            } => {
+                self.walk_expr(key, true);
+                self.walk_expr(init, true);
+                self.bind(name);
+            }
             StmtKind::Assign { target, value } | StmtKind::Set { target, value } => {
                 match target {
                     AssignTarget::Name(_) => {}
@@ -422,6 +429,7 @@ fn is_broken_continuation(prev: &Stmt, next: &Stmt) -> bool {
         }
         StmtKind::Let { value, .. }
         | StmtKind::State { init: value, .. }
+        | StmtKind::Memo { init: value, .. }
         | StmtKind::Assign { value, .. }
         | StmtKind::Set { value, .. }
         | StmtKind::Return(Some(value)) => indented && can_be_continued(value),

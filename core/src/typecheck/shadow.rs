@@ -152,6 +152,13 @@ impl ShadowWalker<'_> {
                 }
                 self.bind_value(name, "state", init, stmt.span);
             }
+            StmtKind::Memo {
+                name, key, init, ..
+            } => {
+                self.walk_expr(key);
+                self.walk_expr(init);
+                self.bind_value(name, "memo", init, stmt.span);
+            }
             StmtKind::FnDecl {
                 name, params, body, ..
             } => {

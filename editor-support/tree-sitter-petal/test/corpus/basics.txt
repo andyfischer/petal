@@ -578,3 +578,23 @@ mk(a: 1)
     function: (identifier)
     arguments: (argument_list
       (named_argument name: (identifier) value: (integer)))))
+
+==================
+Memo declarations
+==================
+
+memo(id) row = build(id)
+memo([a, b]) n: int = a * b
+
+---
+
+(source_file
+  (memo_declaration
+    key: (identifier)
+    name: (identifier)
+    value: (call function: (identifier) arguments: (argument_list (identifier))))
+  (memo_declaration
+    key: (list (identifier) (identifier))
+    name: (identifier)
+    type: (type_annotation type: (type_name (identifier)))
+    value: (binary_expression left: (identifier) right: (identifier))))

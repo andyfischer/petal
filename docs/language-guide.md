@@ -2279,6 +2279,26 @@ keying rules, `state(key)`, `state var`, how long a slot lives, why a table
 that never changes belongs in a [`const`](#const--a-value-that-must-be-constant)
 and not in `state`, and what a hot reload keeps.
 
+### `memo` — a cached result
+
+`memo(key) name = init` caches a pure result by key. The initializer runs only
+when the declaration has no entry for the key's value; otherwise the name is
+bound to the value computed before. Unlike `state`, the entry ignores the call
+path, so every caller that asks for the same key shares it.
+
+```petal
+fn glyph_width(ch)
+    memo(ch) w = len(ch) * 7   // computed once per character
+    w
+end
+print(glyph_width("a") + glyph_width("a"))   // 14
+```
+
+A memo cannot be reassigned, is dropped when a run does not use it, and is a
+cache rather than state: host state dumps and `--state-storage` leave it out,
+and a reload that changes the program clears it. See
+[Cached results: `memo`](features/memo.md).
+
 ## JSX-like Elements
 
 Petal supports a JSX-style element syntax for building tree-shaped data,

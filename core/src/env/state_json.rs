@@ -53,6 +53,10 @@ impl Env {
                 _ => HashMap::new(),
             };
             for (key, val) in state {
+                // A `memo(key)` entry is a cache, not state (docs/features/memo.md).
+                if key.is_memo() {
+                    continue;
+                }
                 let base_name = names
                     .get(&key.base)
                     .cloned()
@@ -192,6 +196,7 @@ pub(super) fn render_state_key(base_name: &str, path: &[PathPart], labels: &Hash
             },
             PathPart::Index(i) => out.push_str(&format!("[{i}]")),
             PathPart::Key(h) => out.push_str(&format!("k{h}")),
+            PathPart::Memo(h) => out.push_str(&format!("m{h}")),
         }
         out.push('/');
     }

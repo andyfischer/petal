@@ -65,15 +65,17 @@ does not do what they want.
 Two functions that each declared `state var t` used to share one cell, with the
 second initializer silently ignored. A cell is now keyed by its declaration and
 call path, so each callsite of a helper gets its own cell, and a top-level
-`state var` read with `get`/`set` is the way to share one. `state(key)` remains
-the tool for a cell whose identity outlives its callsite (a menu cursor, a
-button's repeat phase). The prelude's accessor-wrapper idiom was deleted as a
-result. Rules: `docs/dev/state-call-paths.md`; user-facing description in the
+`state var` read with `get`/`set` is the way to share one. A cell whose
+identity outlives its callsite (a menu cursor, a button's repeat phase) is an
+entry in a top-level `state var` holding a Map, keyed by that identity; the
+prelude used `state(key)` for these until it was deprecated. The prelude's
+accessor-wrapper idiom was deleted as a result. Rules: `docs/dev/state-call-paths.md`; user-facing description in the
 language guide's State section.
 
 One cost worth knowing: a `state` used as a memo inside a function called from
 a loop is now rebuilt per iteration, because each iteration is a new path. Hoist
-such caches to top level, or key them absolutely with `state(arg)`.
+such caches to top level, or make them a `memo(arg)`, which is keyed by
+content and shared by every caller.
 
 ### 2. Shadowing a `state var` with a `let` is an internal error — **still open**
 

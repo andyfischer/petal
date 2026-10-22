@@ -509,10 +509,11 @@ end
 
 // The decoded font, cached per ink color: 64 glyphs is enough string work that
 // rebuilding it every frame would be visible in a profile, and the result
-// never changes.
+// never changes. A `memo`, since it is a pure function of `ink`: every caller
+// asking for the same ink shares one entry.
 fn _font_rows(ink: num) -> list
-  state(ink) var _nes_font_rows = _build_font_rows(ink)
-  _nes_font_rows
+  memo(ink) rows = _build_font_rows(ink)
+  rows
 end
 
 fn _build_font_rows(ink: num) -> list
@@ -884,30 +885,42 @@ end
 // the button goes down, then again every `rate` seconds once it has been held
 // for `delay`. Both are seconds; 0.35 / 0.12 feels like a console menu.
 //
-// The timer lives in keyed module state, one slot per (pad, button), so this
-// is correct called unconditionally every frame and two widgets asking about
-// the same button share one repeat phase (as they should — it is one button).
+// The timers live in one module-level map, one entry per (pad, button), so
+// this is correct called unconditionally every frame and two widgets asking
+// about the same button share one repeat phase (as they should — it is one
+// button). Releasing the button removes its entry. An entry also records the
+// frame that last asked about it, and one that missed a frame reads as absent:
+// a button held through frames where nobody asked starts a fresh hold when
+// asked again, instead of resuming a stale timer and firing twice.
+state var _nes_repeat = Map()
+
 pub fn btn_repeat(name: string, delay: num, rate: num) -> bool
   btn_repeat(0, name, delay, rate)
 end
 
 pub fn btn_repeat(pad: num, name: string, delay: num, rate: num) -> bool
   let key = "{pad}:{name}"
-  state(key) var _nes_repeat_at = -1
-  let fire = false
   if !pad_down(pad, name) then
-    set _nes_repeat_at = -1
-  elsif _nes_repeat_at < 0 then
+    if contains(get _nes_repeat, key) then
+      set _nes_repeat = remove(get _nes_repeat, key)
+    end
+    return false
+  end
+  let e = get _nes_repeat[key]
+  let at = if e != nil && e.seen >= frame_count() - 1 then e.at else -1 end
+  let fire = false
+  if at < 0 then
     // First frame of the hold — fire immediately, then wait out `delay`.
     fire = true
-    set _nes_repeat_at = time() + delay
-  elsif time() >= _nes_repeat_at then
+    at = time() + delay
+  elsif time() >= at then
     fire = true
     // Advance by one period rather than from `now`, so a slow frame does not
     // stretch the repeat; a *very* slow frame resyncs instead of firing in a
     // burst to catch up.
-    set _nes_repeat_at = max(_nes_repeat_at + rate, time())
+    at = max(at + rate, time())
   end
+  set _nes_repeat[key] = {at: at, seen: frame_count()}
   fire
 end
 
@@ -1018,14 +1031,26 @@ pub fn menu_update(id: string, count: num) -> record
   end
 end
 
-// The one slot per menu id holding its cursor, with a single write port. The
-// explicit `state(id)` key is what makes it one slot per menu rather than one
-// module cell, and it is the only way `menu_update` and `menu_index` can be
-// looking at the same cursor.
+// Every menu's cursor, by menu id, behind a single read/write port. One
+// module-level map is what lets `menu_update` and `menu_index` look at the
+// same cursor from different callsites. Each entry records the frame that last
+// touched it, and one that missed a frame reads as 0, so a menu that stops
+// being drawn (its scene ended) starts at the top when it comes back. Such an
+// entry stays in the map until that id is used again; there is one per menu
+// id the cart has ever shown, so nothing needs to clear them.
+state var _nes_menu_sel = Map()
+
 fn _menu_sel(id: string, write: bool, v: num) -> num
-  state(id) var _nes_menu_sel = 0
-  if write then set _nes_menu_sel = v end
-  _nes_menu_sel
+  let e = get _nes_menu_sel[id]
+  let s = if write then
+    v
+  elsif e != nil && e.seen >= frame_count() - 1 then
+    e.sel
+  else
+    0
+  end
+  set _nes_menu_sel[id] = {sel: s, seen: frame_count()}
+  s
 end
 
 // Where a menu's cursor currently sits, without touching it.

@@ -25,21 +25,23 @@ camera, without hoisting them to top level.
 
 A `state` slot is now keyed by its declaration and the call path that reached
 it, so a `state` in a helper gets one cell per callsite (and per loop
-iteration). An explicit key ignores the call path, and the init expression
-only runs on a key miss, so keying on the frame counter gives a once-per-frame
-cache:
+iteration). For a cache every caller shares, use `memo(key)` instead: it
+ignores the call path, and the init expression only runs on a key miss, so
+keying on the frame counter gives a once-per-frame cache (the camera is fixed
+within a frame, so the basis is a function of the frame number):
 
 ```petal
 state frame = 0
 frame = frame + 1
 
 fn project(p)
-  state(frame) cam = camera_basis()   // computed once per frame
+  memo(frame) cam = camera_basis()   // computed once per frame
   ...
 end
 ```
 
-See `docs/dev/state-call-paths.md`.
+See `docs/dev/state-call-paths.md` and `docs/features/memo.md`. (This
+example first used keyed `state(frame)`, which is now deprecated.)
 
 ---
 
@@ -71,9 +73,12 @@ C-style counted loop would avoid it.
 ## 6. Per-iteration state in loops — **Shipped**
 
 An unkeyed `state` inside a loop body, or inside a function called from the
-loop, gets one cell per iteration index. `state(item.id) hp = item.hp` keys by
-a domain identifier instead, so the cell follows the item across reorders and
-removals. See `docs/dev/state-call-paths.md`.
+loop, gets one cell per iteration index. State that must follow an item
+across reorders and removals by a domain identifier lives in a top-level
+`state var` holding a Map keyed by that identifier (`set hp[item.id] = ...`).
+This used to be `state(item.id) hp = item.hp`, which is now deprecated; a
+loop key syntax for per-item state is deferred. See
+`docs/dev/state-call-paths.md`.
 
 ---
 

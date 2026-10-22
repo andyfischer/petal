@@ -55,19 +55,22 @@ Three consequences shape every cart:
 
    A top-level `state` is one cell. A `state` inside a function gets one cell
    per call path, so a helper called from three places holds three
-   independent values. To share one cell across an object's identity instead,
-   key it explicitly: `state(key) var` makes one cell per key, created on
-   first use:
+   independent values. To keep one value per object identity instead, put a
+   Map in a top-level `state var` and key it by that identity:
 
    ```petal
+   state var timers = Map()
+
    fn timer(who)
-     state(who) var t = 0
-     set t = t + 1
-     t
+     set timers[who] = (get timers[who] ?? 0) + 1
+     get timers[who]
    end
    timer("hero")     // 1, 2, 3, ...   independent of
    timer("enemy")    // 1, 2, 3, ...   this one
    ```
+
+   An entry stays until you remove it (`set timers = remove(get timers,
+   who)`), so drop the ones for objects that are gone.
 
    The rules are in
    [Inline state](../../../../docs/features/inline-state.md).
@@ -437,7 +440,8 @@ btn_repeat("down", 0.35, 0.12)   // once on press, then every 0.12s after holdin
 
 `btn_repeat` is the menu/scroll input: the delay and rate are in seconds, and
 the timer lives in console state keyed by (pad, button), so calling it
-unconditionally every frame is correct.
+unconditionally every frame is correct. A button nobody asked about for a
+frame starts a fresh hold when asked again.
 
 The raw natives are `pad_down(pad, button)`, `pad_pressed(...)`,
 `pad_released(...)` — the `btn*` helpers are exactly these with pad 0 defaulted.
@@ -499,7 +503,8 @@ the index picked *this frame* or `-1`, and whether B was pressed. Up/down
 auto-repeat and wrap.
 
 The `id` names the menu, so several can coexist; each keeps its cursor across
-frames and reloads. `menu_index(id)` reads a cursor without moving it, and
+frames and reloads, and goes back to the top after a frame in which it was not
+updated (a scene change, say). `menu_index(id)` reads a cursor without moving it, and
 `menu_update(id, count)` is the input half alone, for a menu you draw yourself.
 
 ## Collision and movement

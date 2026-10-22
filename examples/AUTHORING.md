@@ -29,7 +29,8 @@ reference material lives elsewhere; link to it rather than guessing:
 ```
 examples/<category>/<slug>/
   app.ptl        the app itself (a Garden panel script)
-  layout.ptl     the launcher: layout(panel("app.ptl")), under a
+  layout.ptl     the launcher: `import garden_config`, then
+                 layout(panel("app.ptl")) under a
                  `// headless-size: WxH` comment
   README.md      what it is, what it demonstrates, how to run it, controls
 ```

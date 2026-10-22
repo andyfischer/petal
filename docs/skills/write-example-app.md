@@ -61,8 +61,12 @@ In order:
 
 ```bash
 mkdir -p examples/<category>/<slug> && cd examples/<category>/<slug>
-printf '// headless-size: 1280x850\nlayout(panel("app.ptl"))\n' > layout.ptl   # layout(...) is required
+printf 'import garden_config\n\n// headless-size: 1280x850\nlayout(panel("app.ptl"))\n' > layout.ptl
 ```
+
+Both lines of the launcher are required: `layout(...)` is what Garden runs, and
+`import garden_config` is what defines `layout` and `panel` (without it Garden
+fails with "Unknown function: panel").
 
 `tools/run-example.ts <slug>` finds the example's directory and the Garden
 binary at `garden/target/debug/garden` or `$GARDEN_BIN`, exports

@@ -263,7 +263,8 @@ and `app.ptl` edits its `state var`s from top-level functions.
 
 `set xs[i] = v`, `set r.f = v` and `set xs = append(xs, v)` change the cell's
 own list or record when the cell is its only holder, from any function that
-can see the cell. A loop can be factored into helpers without changing what it
+can see the cell; so do `set m[k] = v` and `set m = remove(m, k)` on a
+[map](../language-guide.md#maps). A loop can be factored into helpers without changing what it
 costs. Values still behave as values: whatever took the contents earlier keeps
 what it took, and the next write pays for one copy.
 

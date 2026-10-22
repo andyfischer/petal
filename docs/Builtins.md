@@ -783,6 +783,7 @@ type(3.14)        // "float"
 type("hello")     // "string"
 type([1, 2])      // "list"
 type({a: 1})      // "record"
+type(Map())       // "map"
 type(true)        // "bool"
 type(nil)         // "nil"
 ```
@@ -866,9 +867,9 @@ print(format("%-6s|%6.2f|%x", "ab", 3.14159, 255))                // ab    |  3.
 
 ### `len(collection)`
 
-Returns the length of a list, string, or `f64_array`. A string's length is its
-number of **characters** (Unicode code points), not bytes; see
-[String offsets](#string-offsets).
+Returns the length of a list, string, `f64_array` or [map](#mappairs) (its
+number of entries). A string's length is its number of **characters**
+(Unicode code points), not bytes; see [String offsets](#string-offsets).
 
 ```petal
 len([1, 2, 3])      // 3
@@ -971,31 +972,66 @@ drop_last([1, 2, 3])   // [1, 2]
 drop_last([])          // []
 ```
 
-### `remove(record, key)`
+### `remove(record, key)` / `remove(map, key)`
 
-Returns a **new** record without `key`. Removing an absent key is not an
-error. Only works on records, not lists.
-
-```petal
-remove({a: 1, b: 2}, "a")   // { b: 2 }
-remove({a: 1}, "missing")   // { a: 1 }
-```
-
-### `keys(record)`
-
-Returns a list of all keys from a record.
+Returns a **new** record or map without `key`. Removing an absent key is not
+an error. Works on records and maps, not lists.
 
 ```petal
-keys({name: "Alice", age: 30})   // ["name", "age"]
+remove({a: 1, b: 2}, "a")             // { b: 2 }
+remove({a: 1}, "missing")             // { a: 1 }
+remove(Map([[1, "a"], [2, "b"]]), 1)  // Map([[2, "b"]])
 ```
 
-### `values(record)`
+### `keys(record)` / `keys(map)`
 
-Returns a list of all values from a record.
+Returns a list of all keys of a record or a map, in insertion order.
+
+```petal
+keys({name: "Alice", age: 30})     // ["name", "age"]
+keys(Map([[[0, 1], "a"], [7, "b"]]))  // [[0, 1], 7]
+```
+
+### `values(record)` / `values(map)`
+
+Returns a list of all values of a record or a map, in insertion order.
 
 ```petal
 values({a: 1, b: 2})   // [1, 2]
 ```
+
+### `entries(record)` / `entries(map)`
+
+Returns the `[key, value]` pairs of a record or a map, in insertion order —
+the list [`Map(pairs)`](#mappairs) builds from, so `Map(entries(m)) == m`.
+
+```petal
+entries({a: 1, b: 2})            // [["a", 1], ["b", 2]]
+entries(Map([[[0, 1], true]]))   // [[[0, 1], true]]
+```
+
+### `Map()` / `Map(pairs)`
+
+A new **map**: a lookup table whose keys can be any value, compared by
+content with the rule `==` uses (`m[[1, 2]]` finds the entry stored under
+another `[1, 2]`; `2` and `2.0` are one key). `Map()` is empty; `Map(pairs)`
+takes a list of `[key, value]` pairs, in order, and a repeated key keeps its
+first place and its last value. Read with `m[k]` (an absent key is `nil`),
+write with `m[k] = v` on a `let` or `set m[k] = v` on a `var`. `len`, `keys`,
+`values`, `entries`, `contains` (by key), `remove` and `for k in m` take a
+map; iteration is in insertion order. A function, a pending value or NaN
+cannot be a key. See [Maps](language-guide.md#maps).
+
+```petal
+let m = Map([["a", 1], [[0, 0], "origin"]])
+m[3] = "three"
+print(m[[0, 0]])   // origin
+print(m["zz"])     // nil
+print(len(m))      // 3
+```
+
+The name is capitalized like a class constructor's (`Rect`) because `map` is
+the higher-order builtin.
 
 ### `field(rec, key, fallback)`
 
@@ -1020,12 +1056,14 @@ has_field({a: 1}, "zz")    // false
 
 ### `contains(collection, needle)`
 
-Checks if a list contains a value or a string contains a substring.
+Checks if a list contains a value, a string contains a substring, or a map
+has the key `needle`.
 
 ```petal
 contains([1, 2, 3], 2)       // true
 contains("hello", "ell")     // true
 contains([1, 2, 3], 5)       // false
+contains(Map([[1, "a"]]), 1) // true
 ```
 
 ### `includes(collection, needle)`

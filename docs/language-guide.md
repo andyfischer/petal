@@ -78,7 +78,9 @@ print(describe())   // hits so far: 3
 Several functions update the same data by putting it in cells: local `var`s
 closed over by nested helpers when the data lives for one call, or a top-level
 `var` or `state var` when it lives for the whole program. Writes into a cell's
-list or record happen in place. See
+list, record or [map](#maps) happen in place. A table that several functions
+look things up in and add to is a `state var` (or `var`) holding a map,
+written with `set m[k] = v`. See
 [Mutable state shared by several functions](syntax/var.md#mutable-state-shared-by-several-functions)
 and [Writing a container in place](syntax/var.md#writing-a-container-in-place).
 
@@ -148,6 +150,7 @@ Petal has the following value types:
 | `nil` | `nil` |
 | `list` | `[1, 2, 3]` |
 | `record` | `{name: "Alice", age: 30}` |
+| `map` | `Map([[1, "one"], [[2, 3], "pair"]])` (keys of any type; see [Maps](#maps)) |
 | `color` | `#ff8800`, `#f80` (desugars to record) |
 | an enum | `Color.red`, `Shape.circle(2)` (a variant of a declared [enum](#enums)) |
 | `vec2` | `vec2(3.0, 4.0)` (see [Vectors](#vectors)) |
@@ -214,7 +217,7 @@ checker stays quiet about them. An annotation is what makes them checkable: it
 types every read *and* constrains every write, wherever the write is.
 
 The type names are the ones `type(value)` reports, written lowercase: `nil`,
-`bool`, `int`, `float`, `string` (alias `str`), `list`, `record`, `function`,
+`bool`, `int`, `float`, `string` (alias `str`), `list`, `record`, `map`, `function`,
 `enum`, `vec2`, `vec3`, `f64_array`, `element`, `symbol`, `dual`, `handle`, `pending` —
 plus two that no value ever reports: `any`, the dynamic escape hatch, and
 `num`, meaning **`int` or `float`**. They are recognized only in type position,
@@ -1206,6 +1209,103 @@ field({a: nil}, "a", 7)         // 7 — nil coalesces
 keys({a: 1, b: 2})     // ["a", "b"]
 values({a: 1, b: 2})   // [1, 2]
 ```
+
+## Maps
+
+A record's keys are field names. A **map** is a lookup table whose keys can be
+any value: numbers, strings, lists, records, other maps, enum variants. Build
+one with `Map()`, or from a list of `[key, value]` pairs with `Map(pairs)`:
+
+```petal
+let ages = Map([["ana", 31], ["bo", 27]])
+let grid = Map()
+grid[[0, 0]] = "start"
+grid[[3, 1]] = "goal"
+print(grid[[3, 1]])     // goal
+print(type(grid))       // map
+```
+
+The constructor is capitalized, like a class's, because `map` is the
+[higher-order builtin](#higher-order-functions).
+
+**Keys are compared by content**, by the same rule as `==`. A list rebuilt
+with the same elements finds the entry stored under the first one, a record
+finds it whatever its field order, and `2` and `2.0` are one key because
+`2 == 2.0`:
+
+```petal
+let m = Map([[2, "two"], [{x: 1, y: 2}, "point"]])
+print(m[2.0])             // two
+print(m[{y: 2, x: 1}])    // point
+```
+
+A key must be something `==` compares by content and that is equal to
+itself, so a function, a pending value and NaN (anywhere inside the key) are
+errors: `Cannot use a function as a map key`.
+
+**Reading an absent key gives `nil`**, without the `?.` or `??` a record
+needs, because asking is how a lookup table is used. `??` supplies a default:
+
+```petal
+let counts = Map()
+print(counts["apple"])           // nil
+print(counts["apple"] ?? 0)      // 0
+```
+
+**Writing** follows the rules of every other Petal value. `m[k] = v` on a
+`let` rebinds the name to an updated map, and anything else holding the old
+one keeps it. A map that several functions share lives in a
+[`var`](#var-and-set) or `state var` and is written with `set`:
+
+```petal
+var counts = Map()
+
+fn count(word)
+    set counts[word] = (get counts[word] ?? 0) + 1
+end
+
+for w in ["a", "b", "a"] do
+    count(w)
+end
+print(get counts)                // Map([["a", 2], ["b", 1]])
+```
+
+These writes happen in place, as they do for a list or record in a cell, so
+building a map of `n` entries costs `n` inserts.
+
+**Order** is insertion order: `keys`, `values`, `entries`, `print` and a
+`for` loop all visit the entries in the order their keys were first added.
+Overwriting a key keeps its place, and removing one keeps the order of the
+rest. `for k in m` visits the keys:
+
+```petal
+let stock = Map([["pear", 4], ["fig", 0]])
+for fruit in stock do
+    print(fruit, stock[fruit])
+end
+```
+
+Two maps are `==` when they hold the same keys with equal values, in any
+order, so a map can itself be a key.
+
+### Map builtins
+
+The record and list builtins take a map:
+
+```petal
+let m = Map([[1, "one"], ["k", true]])
+len(m)             // 2
+keys(m)            // [1, "k"]
+values(m)          // ["one", true]
+entries(m)         // [[1, "one"], ["k", true]] — Map(entries(m)) == m
+contains(m, "k")   // true: membership is by key
+remove(m, 1)       // Map([["k", true]]), a new map
+```
+
+A map prints as the call that rebuilds it (`Map([[1, "one"]])`, or `Map()`
+when empty). It crosses JSON as `{"type": "map", "entries": [[key, value],
+...]}`, which `json_parse` and state restore read back as a map, so a map in
+`state` survives `--state-storage` and a hot reload.
 
 ## Color Literals
 

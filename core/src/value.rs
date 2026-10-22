@@ -1039,6 +1039,18 @@ mod tests {
             all.push(Value::Map(heap.alloc_class_instance(m, class)));
             let data = heap.alloc_list(vec![x]);
             all.push(Value::EnumVariant { tag: key, data });
+            // A map holding `x` as a value, and (unless it is NaN, which no
+            // map may hold as a key) as a key.
+            let one = Value::Int(1);
+            all.push(Value::Dict(heap.dict_from_pairs([(one, x)]).unwrap()));
+            if let Ok(d) = heap.dict_from_pairs([(x, one)]) {
+                all.push(Value::Dict(d));
+            }
+        }
+        // A map's same entries, both insertion orders.
+        for pairs in [[(1, 2.0), (3, 4.0)], [(3, 4.0), (1, 2.0)]] {
+            let pairs = pairs.map(|(k, v)| (Value::Int(k), Value::Float(v)));
+            all.push(Value::Dict(heap.dict_from_pairs(pairs).unwrap()));
         }
         all.push(Value::List(heap.alloc_list(vec![])));
         all.push(Value::List(heap.alloc_list(vec![])));
@@ -1063,6 +1075,7 @@ mod tests {
             Value::Dual { value, .. } => value.is_nan(),
             Value::List(id) => heap.get_list(id).iter().any(|x| contains_nan(x, heap)),
             Value::Map(id) => heap.get_map(id).values().any(|x| contains_nan(x, heap)),
+            Value::Dict(id) => heap.get_dict(id).all_values().any(|x| contains_nan(&x, heap)),
             Value::EnumVariant { data, .. } => contains_nan(&Value::List(data), heap),
             _ => false,
         }

@@ -87,7 +87,7 @@ The main files and directories under `core/src/`, grouped by pipeline stage.
 | `stack.rs` | `Stack`: VM frames plus persistent state |
 | `value.rs` | The `Value` enum |
 | `numeric.rs`, `proofs/` | Pure numeric semantics (checked arithmetic, the Int/Float ordering, the `sort` order, state-key hashing) and their Kani proofs ([formal-verification.md](formal-verification.md)) |
-| `heap.rs`, `record.rs`, `fxhash.rs` | Mark-and-sweep GC for strings, lists, f64 arrays, maps, elements, `Vec3`s and cells. A map slot also carries an optional class tag, which is what makes a record an instance. Records are stored as a shared key list (a `Shape`) plus one value per key |
+| `heap.rs`, `record.rs`, `dict.rs`, `fxhash.rs` | Mark-and-sweep GC for strings, lists, f64 arrays, records, `map`s (`Value::Dict`, keyed by content through `dict.rs`), elements, `Vec3`s and cells. A map slot also carries an optional class tag, which is what makes a record an instance. Records are stored as a shared key list (a `Shape`) plus one value per key |
 | `closure_table.rs` | Runtime closures and overload sets; swept jointly with the heap |
 | `execution_context.rs` | One isolated execution's mutable runtime bundle (heap plus closure/output/host registries) |
 | `env/` | `Env`, which owns programs, stacks, and contexts: `run.rs`, `reload.rs` (hot reload), `fork.rs`, `gc.rs`, `host_io.rs`, `state_json.rs`, `state_storage.rs`, `statics.rs` and `static_follow.rs` (the static-value cache across runs and reloads), `observations_json.rs` |
@@ -286,7 +286,7 @@ was-it-passed flag that the body tests before evaluating the default.
 ### Value
 
 `Value` is a `Copy` 24-byte enum. Heap-allocated values (strings, lists,
-f64 arrays, maps, elements, `Vec3`s, cells) are stored by ID into the `Heap` —
+f64 arrays, records, `map`s, elements, `Vec3`s, cells) are stored by ID into the `Heap` —
 `Value` just carries the ID. `Vec2` and `Dual` are stored inline (unboxed), no
 heap allocation; a `Vec3` is a heap id because three `f64`s would widen every
 `Value` (see [vec3.md](vec3.md)). A static assertion in `value.rs` keeps it at
@@ -316,7 +316,8 @@ pub enum Value {
     String(StringId),
     List(ListId),
     F64Array(F64ArrayId),
-    Map(MapId),
+    Map(MapId),          // a record: `{a: 1}`
+    Dict(DictId),        // a `map`: `Map()`, keyed by content (dict.rs)
     Closure(ClosureId),
     OverloadSet(OverloadSetId),
     NativeFunction(NativeFnId),

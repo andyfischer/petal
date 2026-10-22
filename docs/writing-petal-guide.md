@@ -806,7 +806,7 @@ takes an int or a float — that is most arithmetic.
 
 The vocabulary is closed, and every name is a **single bare word**. The ones
 you will write are `int`, `float`, `num` (int *or* float), `bool`, `string`
-(alias `str`), `list`, `record`, `function`, `nil`, `vec2`, `vec3` and `any`,
+(alias `str`), `list`, `record`, `map`, `function`, `nil`, `vec2`, `vec3` and `any`,
 plus the name of any class or enum; [Type Annotations](language-guide.md#type-annotations)
 lists the rest. (`k: Kind` is a variant of the enum `Kind`: passing another
 enum's variant warns, and so does reading a field no `Kind` has.) There are no

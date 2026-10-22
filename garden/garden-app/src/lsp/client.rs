@@ -427,7 +427,8 @@ mod tests {
         let mut client = LspClient::spawn(&command, &server.args(), None)
             .expect("the petal language server should start");
         assert!(client.capabilities().completion);
-        assert_eq!(client.capabilities().trigger_chars, vec!["."]);
+        // `.` for members, `/` for the path of an import.
+        assert_eq!(client.capabilities().trigger_chars, vec![".", "/"]);
 
         client.notify_did_open(
             "file:///t.ptl",

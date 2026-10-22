@@ -18,6 +18,7 @@ pub mod cst;
 pub mod cst_project;
 pub mod desugar;
 pub mod diagnostic;
+pub mod dict;
 pub mod effect_audit;
 pub mod enum_table;
 pub mod direct_manipulation;

@@ -6,7 +6,7 @@ over the narrowest code to weakest guarantee over the widest:
 | Layer | What it covers | Guarantee | Where |
 |---|---|---|---|
 | **Kani proofs** | The pure numeric kernels every operator and builtin delegates to | Holds for **every** input (bit-precise, 64-bit ints and IEEE floats) | `core/src/numeric.rs`, `core/src/proofs/` |
-| **Exhaustive value laws** | `==`, hashing and ordering over containers (lists, records, class instances, enums) | Holds for every pair and triple in a bounded universe of values | `value::tests` in `core/src/value.rs` |
+| **Exhaustive value laws** | `==`, hashing and ordering over containers (lists, records, class instances, enums, maps) | Holds for every pair and triple in a bounded universe of values | `value::tests` in `core/src/value.rs` |
 | **Small-scope exhaustive programs** | Lexer, parser, compiler, type checker, optimizer and VM end to end | Holds for every program in a bounded space (every token sequence up to length N; every expression up to depth D) | `core/tests/small_scope.rs` |
 
 Each bug fixed along the way also has an end-to-end regression test, a Petal
@@ -57,7 +57,7 @@ extremes against the exact characterization).
 | `num_eq_is_transitive`, `num_lt_is_transitive`, `num_eq_lt_compose` | `==` and `<` on numbers are transitive and compose, across int and float. |
 | `num_total_cmp_is_antisymmetric`, `num_total_cmp_is_transitive` | The `sort` order is a total order (the precondition of `slice::sort_by`, which panics otherwise). |
 | `num_total_cmp_agrees_with_lt` | The `sort` order agrees with `<` wherever `<` is defined. |
-| `num_key_matches_eq` | The hash key of a number agrees with `==` in both directions, so `state(key)` treats `==` keys as one key. |
+| `num_key_matches_eq` | The hash key of a number agrees with `==` in both directions, so `state(key)` and a `Map` treat `==` keys as one key. |
 | `resolve_index_is_exact`, `checked_index_is_exact` | `xs[i]` and `xs[i] = v` address slot `i` (or `len + i` for negative `i`) exactly when it exists, with no truncating `i64 → usize` cast on 32-bit (wasm) targets. A string index `s[i]` goes through the same kernel with `len` as the code-point count. |
 | `clamp_slice_bound_is_exact` | `slice` bounds are the resolved index clamped into `0..=len`, for a list and (in code points) for a string. |
 | `range_nth_is_exact` | Every element of `range(start, end, step)` is computed without wraparound. (The length, `range_len`, is checked exhaustively; see above.) |

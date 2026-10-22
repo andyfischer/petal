@@ -135,6 +135,7 @@ fn holds_function(val: &Value, heap: &crate::heap::Heap) -> bool {
         Value::Closure(_) | Value::OverloadSet(_) => true,
         Value::List(id) => any(heap.get_list(*id)),
         Value::Map(id) => heap.get_map(*id).iter().any(|(_, v)| holds_function(v, heap)),
+        Value::Dict(id) => heap.get_dict(*id).all_values().any(|v| holds_function(&v, heap)),
         Value::EnumVariant { data, .. } => any(heap.get_list(*data)),
         Value::Cell(id) => holds_function(&heap.cell_read(*id), heap),
         Value::Element(id) => {

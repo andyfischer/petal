@@ -134,6 +134,8 @@ public:
     bool is_string() const noexcept { return kind() == PB_STRING; }
     bool is_list() const noexcept { return kind() == PB_LIST; }
     bool is_map() const noexcept { return kind() == PB_MAP; }
+    // A `map` value (Map()): children alternate key, value.
+    bool is_dict() const noexcept { return kind() == PB_DICT; }
     bool is_enum() const noexcept { return kind() == PB_ENUM; }
     bool is_symbol() const noexcept { return kind() == PB_SYMBOL; }
     bool is_handle() const noexcept { return kind() == PB_HANDLE; }
@@ -253,6 +255,8 @@ public:
     BuilderRef& end_list() { pb_builder_end_list(b_); return *this; }
     BuilderRef& begin_map() { pb_builder_begin_map(b_); return *this; }
     BuilderRef& end_map() { pb_builder_end_map(b_); return *this; }
+    BuilderRef& begin_dict() { pb_builder_begin_dict(b_); return *this; }
+    BuilderRef& end_dict() { pb_builder_end_dict(b_); return *this; }
     BuilderRef& begin_enum(const std::string& tag) { pb_builder_begin_enum(b_, tag.c_str()); return *this; }
     BuilderRef& end_enum() { pb_builder_end_enum(b_); return *this; }
     BuilderRef& key(const std::string& k) { pb_builder_key(b_, k.c_str()); return *this; }
@@ -260,6 +264,7 @@ public:
     // Scoped forms: the callback fills the container.
     template <class F> BuilderRef& list(F&& fill) { begin_list(); fill(*this); return end_list(); }
     template <class F> BuilderRef& map(F&& fill) { begin_map(); fill(*this); return end_map(); }
+    template <class F> BuilderRef& dict(F&& fill) { begin_dict(); fill(*this); return end_dict(); }
     template <class F> BuilderRef& enum_(const std::string& tag, F&& fill) {
         begin_enum(tag); fill(*this); return end_enum();
     }

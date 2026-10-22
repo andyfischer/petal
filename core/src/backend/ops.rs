@@ -889,7 +889,7 @@ fn set_field_impl(
 }
 
 /// `obj[idx]` on lists and strings (negative indices count from the end), f64
-/// arrays, and records (string key).
+/// arrays, records (string key) and maps (any hashable key).
 ///
 /// `opt` is the absence-tolerant form — see [`get_field`]. It softens a missing
 /// *record key* and a Nil object only; a list index out of bounds stays an
@@ -941,6 +941,9 @@ pub fn get_index(heap: &mut Heap, obj: Value, idx: Value, opt: bool) -> Result<V
                 None => Err(format!("No key '{}' on record", key)),
             }
         }
+        // A map is a lookup table: an absent key reads as nil, with or
+        // without `?.`/`??`, because asking is the normal way to find out.
+        (Value::Dict(dict_id), key) => Ok(heap.dict_get(dict_id, key)?.unwrap_or(Value::Nil)),
         _ => Err(format!(
             "Cannot index {} with {}",
             obj.type_name(),
@@ -983,6 +986,11 @@ pub fn index_store_keeps(
             .get_map(map_id)
             .get(heap.get_string(key_id))
             .is_some_and(|old| element_unchanged(heap, closures, *old, val)),
+        (Value::Dict(dict_id), key) => heap
+            .dict_get(dict_id, key)
+            .ok()
+            .flatten()
+            .is_some_and(|old| element_unchanged(heap, closures, old, val)),
         _ => false,
     }
 }
@@ -1107,6 +1115,14 @@ fn set_index_impl(
                 heap.map_set(map_id, key, val)
             };
             Ok(Value::Map(new_id))
+        }
+        (Value::Dict(dict_id), key) => {
+            let new_id = if in_place {
+                heap.dict_set_in_place(dict_id, key, val)?
+            } else {
+                heap.dict_set(dict_id, key, val)?
+            };
+            Ok(Value::Dict(new_id))
         }
         _ => Err(format!(
             "Cannot index-assign {} with {}",

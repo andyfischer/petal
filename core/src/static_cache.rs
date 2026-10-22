@@ -1247,6 +1247,19 @@ fn same(a: Value, b: Value, heap: &Heap, private: bool, frozen_too: bool) -> boo
                     .zip(ys.iter())
                     .all(|((k, p), (l, q))| k == l && same(*p, *q, heap, private, frozen_too))
         }
+        (Value::Dict(x), Value::Dict(y)) => {
+            if x == y {
+                return true;
+            }
+            if !frozen(a, b) || !own(b) {
+                return false;
+            }
+            let (xs, ys) = (heap.get_dict(x), heap.get_dict(y));
+            xs.len() == ys.len()
+                && xs.iter().zip(ys.iter()).all(|((k, p), (l, q))| {
+                    same(k, l, heap, private, frozen_too) && same(p, q, heap, private, frozen_too)
+                })
+        }
         (Value::EnumVariant { tag: at, data: ad }, Value::EnumVariant { tag: bt, data: bd }) => {
             (at == bt || heap.get_string(at) == heap.get_string(bt))
                 && same(Value::List(ad), Value::List(bd), heap, private, frozen_too)

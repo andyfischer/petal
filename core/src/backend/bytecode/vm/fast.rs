@@ -664,6 +664,7 @@ fn straight_intrinsic(
             Value::List(id) => heap.list_len(id),
             Value::String(id) => heap.string_char_len(id),
             Value::F64Array(id) => heap.f64_array_len(id),
+            Value::Dict(id) => heap.get_dict(id).len(),
             _ => return None,
         } as i64),
         IntrinsicOp::Type => match a {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runPetal } from "./helpers";
+import { runPetal, runPetalError } from "./helpers";
 
 
 describe("enumerate builtin", () => {
@@ -123,5 +123,30 @@ print(m)`),
 
   it("removing an absent key yields an equivalent map", () => {
     expect(runPetal(`print(remove({a: 1}, "missing"))`)).toBe("{ a: 1 }");
+  });
+});
+
+describe("Map: a map keyed by any hashable value", () => {
+  it("prints as the call that rebuilds it", () => {
+    expect(runPetal(`let m = Map()
+m[1] = "one"
+m[[2, 3]] = true
+print(m, type(m), len(m))`)).toBe(`Map([[1, "one"], [[2, 3], true]]) map 2`);
+  });
+
+  it("finds a key by content, and reads an absent key as nil", () => {
+    expect(runPetal(`let m = Map([[[1, 2], "pair"], [2, "two"]])
+print(m[[1, 2]], m[2.0], m["nope"], m["nope"] ?? "fallback")`)).toBe("pair two nil fallback");
+  });
+
+  it("takes the record builtins and iterates keys in insertion order", () => {
+    expect(runPetal(`let m = Map([["b", 1], ["a", 2]])
+print(keys(m), values(m), entries(m), contains(m, "a"))
+for k in m do print(k) end`)).toBe(`["b", "a"] [1, 2] [["b", 1], ["a", 2]] true\nb\na`);
+  });
+
+  it("rejects a key that cannot be hashed", () => {
+    expect(runPetalError(`let m = Map()
+m[fn(x) -> x] = 1`)).toContain("Cannot use a function as a map key");
   });
 });

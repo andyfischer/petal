@@ -491,6 +491,17 @@ fn hash_content(
                 }
             }
         }
+        // In order, like a record: a reordered map prints differently.
+        Value::Dict(id) => {
+            h.write_u8(17);
+            let d = heap.get_dict(*id);
+            h.write_usize(d.len());
+            for e in d.all_values() {
+                if !hash_content(&e, heap, h, budget) {
+                    return false;
+                }
+            }
+        }
         Value::EnumVariant { tag, data } => {
             h.write_u8(7);
             h.write(heap.get_string(*tag).as_bytes());

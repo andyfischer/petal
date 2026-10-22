@@ -12,8 +12,9 @@ pub native fn len(collection) -> int
 pub native fn push(list, value)
 pub native fn append(list, value)
 pub native fn pop(list)
-pub native fn keys(record: record) -> list
-pub native fn values(record: record) -> list
+pub native fn keys(record) -> list
+pub native fn values(record) -> list
+pub native fn entries(record) -> list
 pub native fn contains(collection, needle) -> bool
 pub native fn sort(list, compare?) -> list
 pub native fn reverse(collection)
@@ -54,6 +55,12 @@ pub native fn ord(string: string) -> int
 pub native fn chr(code: num) -> string
 // `{[key]: value}` is parsed as a spread of this one-field record.
 pub native fn __record_of(...args)
+
+// A map: entries keyed by any hashable value. `Map()` is empty; `Map(pairs)`
+// takes a list of `[key, value]` pairs. Read and write with `m[k]`; `len`,
+// `keys`, `values`, `entries`, `contains` and `remove` take a map too.
+pub native fn Map() -> map
+pub native fn Map(pairs: list) -> map
 
 // Higher-order: these call back into script code, so the VM runs them itself.
 pub native fn map(list, f)

@@ -493,9 +493,12 @@ fn for_each_read(inst: &Inst, program: &Program, mut f: impl FnMut(Reg, bool)) {
             f(*obj, PURE); // clone-semantics container copy
             f(*val, RETAIN);
         }
+        // The index of a store is retained: a map keeps its key (`m[xs] = v`
+        // stores the list `xs`), so a later in-place write to it would change
+        // a key under the map's hash index.
         Inst::SetIndex { obj, idx, val, .. } => {
             f(*obj, PURE);
-            f(*idx, PURE);
+            f(*idx, RETAIN);
             f(*val, RETAIN);
         }
         Inst::SetFieldInPlace { obj, val, .. } => {
@@ -504,7 +507,7 @@ fn for_each_read(inst: &Inst, program: &Program, mut f: impl FnMut(Reg, bool)) {
         }
         Inst::SetIndexInPlace { obj, idx, val, .. } => {
             f(*obj, RETAIN);
-            f(*idx, PURE);
+            f(*idx, RETAIN);
             f(*val, RETAIN);
         }
         Inst::StateWrite { val, key, .. } => {

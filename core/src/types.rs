@@ -37,8 +37,11 @@ pub enum Type {
     Num,
     String,
     List,
-    /// A `Map` value at runtime (`type_name` == "record").
+    /// A `Value::Map` at runtime (`type_name` == "record").
     Record,
+    /// A `map` built by `Map()`: `Value::Dict` at runtime (`type_name` ==
+    /// "map").
+    Map,
     /// Any callable (closure, overload set, or native fn).
     Function,
     Enum,
@@ -86,6 +89,7 @@ impl Type {
             "string" | "str" => Type::String,
             "list" => Type::List,
             "record" => Type::Record,
+            "map" => Type::Map,
             "function" => Type::Function,
             "enum" => Type::Enum,
             "vec2" => Type::Vec2,
@@ -141,6 +145,7 @@ impl Type {
             Type::String => "string",
             Type::List => "list",
             Type::Record => "record",
+            Type::Map => "map",
             Type::Function => "function",
             Type::Enum => "enum",
             Type::Vec2 => "vec2",
@@ -263,6 +268,7 @@ mod tests {
             Type::String,
             Type::List,
             Type::Record,
+            Type::Map,
             Type::Function,
             Type::Enum,
             Type::Vec2,
@@ -321,12 +327,14 @@ mod tests {
         // Names not easily constructed above are still asserted by string:
         assert_eq!(Type::String.name(), "string");
         assert_eq!(Type::List.name(), "list");
-        assert_eq!(Type::Record.name(), "record"); // Map -> "record"
+        assert_eq!(Type::Record.name(), "record"); // Value::Map -> "record"
         assert_eq!(Type::Function.name(), "function"); // callables collapse
         assert_eq!(Type::Enum.name(), "enum");
         assert_eq!(Type::F64Array.name(), "f64_array");
         let mut heap = crate::heap::Heap::new();
         assert_eq!(Type::Vec3.name(), heap.vec3_value(0.0, 0.0, 0.0).type_name());
+        let map = Value::Dict(heap.alloc_dict(Default::default()));
+        assert_eq!(Type::Map.name(), map.type_name());
         assert_eq!(Type::Element.name(), "element");
         assert_eq!(Type::Symbol.name(), "symbol");
         assert_eq!(Type::Handle.name(), "handle");

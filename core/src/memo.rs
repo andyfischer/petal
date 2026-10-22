@@ -884,6 +884,19 @@ impl<'a> ValueEq<'a> {
                         None => false,
                     })
             }
+            // Entry by entry, in order: a scope that iterates the map sees
+            // its order, so two orders are two inputs.
+            (Value::Dict(a), Value::Dict(b)) => {
+                if a == b {
+                    return true;
+                }
+                let (xs, ys) = (heap.get_dict(*a), heap.get_dict(*b));
+                xs.len() == ys.len()
+                    && xs
+                        .iter()
+                        .zip(ys.iter())
+                        .all(|((xk, xv), (yk, yv))| self.eq(&xk, &yk) && self.eq(&xv, &yv))
+            }
             (
                 Value::EnumVariant { tag: at, data: ad },
                 Value::EnumVariant { tag: bt, data: bd },
@@ -1003,6 +1016,10 @@ fn scan_for_local_cell(
             .get_map(*id)
             .values()
             .any(|e| scan_for_local_cell(e, heap, closures, locals, budget)),
+        Value::Dict(id) => heap
+            .get_dict(*id)
+            .all_values()
+            .any(|e| scan_for_local_cell(&e, heap, closures, locals, budget)),
         Value::EnumVariant { data, .. } => {
             scan_for_local_cell(&Value::List(*data), heap, closures, locals, budget)
         }
@@ -1050,7 +1067,7 @@ fn scan_for_local_cell(
 pub fn is_container(v: &Value) -> bool {
     matches!(
         v,
-        Value::List(_) | Value::Map(_) | Value::F64Array(_) | Value::Element(_)
+        Value::List(_) | Value::Map(_) | Value::Dict(_) | Value::F64Array(_) | Value::Element(_)
     )
 }
 

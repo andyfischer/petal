@@ -81,6 +81,10 @@ pub(super) fn native_len(state: &mut PetalCxt) -> Result<u32, String> {
             state.push_int(state.heap().string_char_len(id) as i64);
             Ok(1)
         }
+        Value::Dict(id) => {
+            state.push_int(state.heap().get_dict(id).len() as i64);
+            Ok(1)
+        }
         _ => Err(format!("Cannot get length of {}", v.type_name())),
     }
 }
@@ -314,13 +318,23 @@ pub(super) fn native_drop_last(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
-/// `remove(map, key)` returns a NEW map equal to `map` without `key` (value
-/// semantics). The input map is never mutated; removing an absent key yields an
-/// equivalent new map.
+/// `remove(record, key)` / `remove(map, key)` returns a NEW record or map
+/// without `key` (value semantics). The input is never mutated; removing an
+/// absent key yields an equivalent new one.
 pub(super) fn native_remove(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 2, "remove")?;
     let container = state.get_value(1)?;
     match container {
+        Value::Dict(id) => {
+            let key = state.get_value(2)?;
+            let new_id = if state.in_place() {
+                state.heap_mut().dict_remove_in_place(id, key)?
+            } else {
+                state.heap_mut().dict_remove(id, key)?
+            };
+            state.push_value(Value::Dict(new_id));
+            Ok(1)
+        }
         Value::Map(id) => {
             let key = match state.get_value(2)? {
                 Value::String(sid) => state.heap().get_string(sid).to_string(),
@@ -358,7 +372,12 @@ pub(super) fn native_keys(state: &mut PetalCxt) -> Result<u32, String> {
             state.push_list(keys);
             Ok(1)
         }
-        _ => Err("keys() expects a record".into()),
+        Value::Dict(id) => {
+            let keys: Vec<Value> = state.heap().get_dict(id).keys().collect();
+            state.push_list(keys);
+            Ok(1)
+        }
+        _ => Err("keys() expects a record or a map".into()),
     }
 }
 
@@ -370,8 +389,89 @@ pub(super) fn native_values(state: &mut PetalCxt) -> Result<u32, String> {
             state.push_list(vals);
             Ok(1)
         }
-        _ => Err("values() expects a record".into()),
+        Value::Dict(id) => {
+            let vals: Vec<Value> = state.heap().get_dict(id).values().collect();
+            state.push_list(vals);
+            Ok(1)
+        }
+        _ => Err("values() expects a record or a map".into()),
     }
+}
+
+/// `entries(rec)` / `entries(m)`: the `[key, value]` pairs, in order — the
+/// list `Map(pairs)` is built from, so `Map(entries(m)) == m`.
+pub(super) fn native_entries(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "entries")?;
+    let pairs: Vec<(Value, Value)> = match state.get_value(1)? {
+        Value::Dict(id) => state.heap().get_dict(id).iter().collect(),
+        Value::Map(id) => {
+            let fields: Vec<(String, Value)> = state
+                .heap()
+                .get_map(id)
+                .iter()
+                .map(|(k, v)| (k.to_string(), *v))
+                .collect();
+            fields
+                .into_iter()
+                .map(|(k, v)| (Value::String(state.heap_mut().alloc_string(k)), v))
+                .collect()
+        }
+        other => {
+            return Err(format!(
+                "entries() expects a record or a map, got {}",
+                other.type_name()
+            ));
+        }
+    };
+    let items: Vec<Value> = pairs
+        .into_iter()
+        .map(|(k, v)| Value::List(state.heap_mut().alloc_list(vec![k, v])))
+        .collect();
+    state.push_list(items);
+    Ok(1)
+}
+
+/// `Map()` is an empty map; `Map(pairs)` builds one from a list of
+/// `[key, value]` pairs, in order (a repeated key keeps its first place and
+/// its last value). Named like a class constructor (`Rect`) because `map` is
+/// the higher-order builtin.
+pub(super) fn native_map_new(state: &mut PetalCxt) -> Result<u32, String> {
+    let pairs = match state.arg_count() {
+        0 => Vec::new(),
+        1 => {
+            let Value::List(list) = state.get_value(1)? else {
+                return Err(format!(
+                    "Map() expects a list of [key, value] pairs, got {}",
+                    state.get_value(1)?.type_name()
+                ));
+            };
+            let heap = state.heap();
+            let mut pairs = Vec::with_capacity(heap.list_len(list));
+            for (i, item) in heap.get_list(list).iter().enumerate() {
+                match item {
+                    Value::List(pair) if heap.list_len(*pair) == 2 => {
+                        let p = heap.get_list(*pair);
+                        pairs.push((p[0], p[1]));
+                    }
+                    other => {
+                        let got = match other {
+                            Value::List(l) => format!("a list of {}", heap.list_len(*l)),
+                            _ => other.type_name().to_string(),
+                        };
+                        return Err(format!(
+                            "Map() expects a list of [key, value] pairs; element {i} is not \
+                             a pair (got {got})"
+                        ));
+                    }
+                }
+            }
+            pairs
+        }
+        n => return Err(format!("Map() expects 0 or 1 arguments, got {n}")),
+    };
+    let id = state.heap_mut().dict_from_pairs(pairs)?;
+    state.push_value(Value::Dict(id));
+    Ok(1)
 }
 
 pub(super) fn native_contains(state: &mut PetalCxt) -> Result<u32, String> {
@@ -396,7 +496,13 @@ pub(super) fn native_contains(state: &mut PetalCxt) -> Result<u32, String> {
             }
             _ => Err("contains() on string expects a string".into()),
         },
-        _ => Err("contains() expects a list or string".into()),
+        // Membership of a map is by key, as `for k in m` iterates keys.
+        Value::Dict(id) => {
+            let found = state.heap().dict_get(id, needle)?.is_some();
+            state.push_bool(found);
+            Ok(1)
+        }
+        _ => Err("contains() expects a list, string or map".into()),
     }
 }
 

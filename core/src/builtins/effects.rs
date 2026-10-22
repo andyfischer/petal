@@ -191,6 +191,11 @@ builtin_effects![
     // group list anew; it claims NO_REF only, the conservative half.
     // `{[key]: value}`: a record of its own holding the value argument.
     ("__record_of", FRESH | PURE),
+    // Maps. `Map(pairs)` builds its entry table anew and keeps each pair's
+    // key and value, never a pair list or the outer list; `entries` builds
+    // every pair list anew.
+    ("Map", FRESH | NO_REF | PURE),
+    ("entries", FRESH | NO_REF | PURE),
     ("fill", FRESH | PURE),
     ("argmin", NO_REF | PURE),
     ("argmax", NO_REF | PURE),
@@ -347,9 +352,11 @@ mod tests {
         assert_eq!(
             accepted(returns_fresh_container),
             [
+                "Map",
                 "__record_of",
                 "chars",
                 "concat",
+                "entries",
                 "enumerate",
                 "f64_array",
                 "fill",
@@ -373,6 +380,7 @@ mod tests {
         assert_eq!(
             accepted(retains_no_reference),
             [
+                "Map",
                 "argmax",
                 "argmin",
                 "byte_len",
@@ -386,6 +394,7 @@ mod tests {
                 "concat",
                 "contains",
                 "ends_with",
+                "entries",
                 "enumerate",
                 "fixed",
                 "flat",
@@ -430,6 +439,7 @@ mod tests {
         assert_eq!(
             accepted(is_pure_builtin),
             [
+                "Map",
                 "__record_of",
                 "abs",
                 "acos",
@@ -462,6 +472,7 @@ mod tests {
                 "drop",
                 "drop_last",
                 "ends_with",
+                "entries",
                 "enumerate",
                 "exp",
                 "f64_array",

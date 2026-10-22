@@ -46,6 +46,18 @@ way, for code written against an earlier checkout.
 - Computed record keys: `{[expr]: value}` names a field by a string that is
   computed, among the other fields and under the same override rule. See
   [Computed keys](docs/language-guide.md#computed-keys).
+- A `map` type: `Map()` / `Map(pairs)` builds a lookup table keyed by any
+  value — numbers, strings, lists, records, maps, enum variants — compared by
+  content with the rule `==` uses, so a rebuilt `[1, 2]` finds the entry
+  stored under another, and `2` and `2.0` are one key. `m[k]` reads (`nil`
+  when absent), `m[k] = v` and `set m[k] = v` write (in place, as for a list),
+  and `len`, `keys`, `values`, `contains` (by key), `remove`, the new
+  `entries` and `for k in m` take one, in insertion order. Functions, pending
+  values and NaN are rejected as keys. `type()` and the annotation are
+  `map`; JSON and state storage carry it as a tagged `{"type": "map",
+  "entries": [[k, v], …]}`, read back as a map. The C bridge decodes it as
+  `PB_DICT` and builds one with `pb_builder_begin_dict`. See
+  [Maps](docs/language-guide.md#maps).
 - `state` slots are keyed by the call path that reaches them, so two calls to
   the same function keep separate state. Loops get per-iteration state, with
   optional explicit keys.

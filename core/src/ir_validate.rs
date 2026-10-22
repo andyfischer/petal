@@ -488,6 +488,14 @@ impl Program {
             if is_state && term.state_key.is_none() {
                 return Err(format!("t{}: state op missing state_key", i));
             }
+            // `is_memo` marks a `memo(key)` declaration: a `StateInit` whose one
+            // input is the key the slot is addressed by.
+            if term.is_memo && !(matches!(term.op, TermOp::StateInit) && term.inputs.len() == 1) {
+                return Err(format!(
+                    "t{}: is_memo is only valid on a StateInit with exactly one input (its key)",
+                    i
+                ));
+            }
             // Cell ops have fixed arity: the cell always comes first, so a
             // malformed IR can't turn a `CellWrite` into a read of whatever
             // happens to sit in input 0.
@@ -653,6 +661,26 @@ impl Program {
             {
                 return Err(format!(
                     "t{}: state key {} has no StateInit",
+                    term.id.0, k.0
+                ));
+            }
+        }
+        // A memo entry is read only by its own declaration and never
+        // reassigned, so nothing else may address its key.
+        let memos: HashSet<u64> = self
+            .terms
+            .iter()
+            .filter(|t| t.is_memo)
+            .filter_map(|t| t.state_key.map(|k| k.0))
+            .collect();
+        for term in &self.terms {
+            if matches!(term.op, TermOp::StateRead | TermOp::StateWrite)
+                && let Some(k) = term.state_key
+                && memos.contains(&k.0)
+            {
+                return Err(format!(
+                    "t{}: state key {} belongs to a memo, which cannot be read or written \
+                     outside its StateInit",
                     term.id.0, k.0
                 ));
             }

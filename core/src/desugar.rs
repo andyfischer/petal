@@ -266,6 +266,9 @@ fn lift_stmt(stmt: &mut Stmt, hoisted: &mut Vec<Stmt>) {
                 lift_expr(k, hoisted);
             }
         }
+        // Only the key runs unconditionally: the initializer runs on a miss,
+        // and a write lifted out of it would run on every hit too.
+        StmtKind::Memo { key, .. } => lift_expr(key, hoisted),
         StmtKind::FnDecl { body, .. } => desugar_stmts(body),
         StmtKind::For { iter, body, .. } => {
             // The iterable is evaluated once, before the loop — safe to lift.

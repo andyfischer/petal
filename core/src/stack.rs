@@ -29,6 +29,18 @@ pub enum PathPart {
     /// An explicit `state(expr)` key, hashed. Absolute: a keyed slot's path is
     /// exactly `[Key(h)]`, ignoring the call path entirely (§2.2).
     Key(u64),
+    /// A `memo(expr)` key, hashed. Absolute like [`PathPart::Key`]; a separate
+    /// variant so a cache entry is told apart from state by its key alone —
+    /// state dumps, `--state-storage`, snapshots and a reload all leave it out
+    /// (docs/features/memo.md).
+    Memo(u64),
+}
+
+impl RuntimeStateKey {
+    /// Whether this slot is a `memo(key)` cache entry rather than state.
+    pub fn is_memo(&self) -> bool {
+        matches!(self.path.first(), Some(PathPart::Memo(_)))
+    }
 }
 
 /// Runtime state key: a declaration id (`base`) plus the call path that reached

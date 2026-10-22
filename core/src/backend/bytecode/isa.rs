@@ -580,6 +580,10 @@ pub enum Inst {
         base: StateKey,
         after: Label,
         key: Option<Reg>,
+        /// A `memo(key)` declaration: the key resolves to a
+        /// [`PathPart::Memo`](crate::stack::PathPart::Memo) slot, not a `Key` one.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        memo: bool,
     },
     StateRead {
         dst: Reg,
@@ -611,6 +615,10 @@ pub enum Inst {
         /// that decides whether the run reached a fixed point
         /// ([`crate::run_deps`]) cannot see through an in-place edit.
         mutated: bool,
+        /// The commit write of a `memo(key)` declaration (see
+        /// [`Inst::StateInit`]); `init` is always set with it.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        memo: bool,
     },
 
     // --- match (fat op; reuses the graph engine's match_pattern) ---

@@ -77,6 +77,12 @@ pub fn document_symbols(stmts: &[Stmt], source: &str) -> Vec<DocumentSymbol> {
                 SymbolKind::Variable,
                 stmt.span,
             )),
+            StmtKind::Memo { name, .. } => out.push(symbol(
+                name,
+                Some("memo".to_string()),
+                SymbolKind::Variable,
+                stmt.span,
+            )),
             StmtKind::ClassDecl { name, fields } => {
                 let mut class = symbol(name, None, SymbolKind::Class, stmt.span);
                 class.children = fields

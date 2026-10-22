@@ -499,6 +499,14 @@ fn stmt_json(s: &Stmt) -> J {
                        "key": key.as_ref().map(expr_json), "is_var": is_var}),
             );
         }
+        StmtKind::Memo { name, ty, key, init } => {
+            return node(
+                "Memo",
+                s.span,
+                json!({"name": name, "type": ty_json(ty.as_ref()), "key": expr_json(key),
+                       "init": expr_json(init)}),
+            );
+        }
         StmtKind::NativeFn(decl) => {
             return node(
                 "NativeFn",

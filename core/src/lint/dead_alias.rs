@@ -193,7 +193,7 @@ impl ExprVisitor for Facts {
                 };
                 self.bind(name, b);
             }
-            StmtKind::State { name, .. } => self.bind(name, Binding::Other),
+            StmtKind::State { name, .. } | StmtKind::Memo { name, .. } => self.bind(name, Binding::Other),
             StmtKind::For { var, .. } => self.bind(var, Binding::Other),
             StmtKind::FnDecl {
                 name, params, body, ..
@@ -473,7 +473,7 @@ impl<'a> Reads<'a> {
 impl ExprVisitor for Reads<'_> {
     fn visit_stmt(&mut self, s: &Stmt) {
         match &s.kind {
-            StmtKind::Let { name, .. } | StmtKind::State { name, .. } => self.rebinds(name),
+            StmtKind::Let { name, .. } | StmtKind::State { name, .. } | StmtKind::Memo { name, .. } => self.rebinds(name),
             StmtKind::For { var, .. } => self.rebinds(var),
             StmtKind::FnDecl {
                 name, params, body, ..

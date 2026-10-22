@@ -90,6 +90,7 @@ impl Env {
         if let Some(program) = self.programs.get(&program_id) {
             for term in &program.terms {
                 if matches!(term.op, TermOp::StateInit)
+                    && !term.is_memo
                     && let Some(name) = &term.name
                     && seen.insert(name.as_str())
                 {
@@ -116,6 +117,11 @@ impl Env {
         let mut skipped = Vec::new();
         if let Some(state) = self.get_all_state(stack_id) {
             for (key, val) in state {
+                // A `memo(key)` entry is a cache, not state: the next run
+                // recomputes it.
+                if key.is_memo() {
+                    continue;
+                }
                 let base_name = names
                     .get(&key.base)
                     .cloned()
@@ -259,6 +265,11 @@ impl Env {
         let mut by_name: HashMap<&str, StateKey> = HashMap::new();
         for term in &program.terms {
             let Some(key) = term.state_key else { continue };
+            // A `memo` entry is a cache, never stored, so a document cannot
+            // seed one either.
+            if term.is_memo {
+                continue;
+            }
             declared.insert(key);
             if !matches!(term.op, TermOp::StateInit) {
                 continue;
@@ -384,6 +395,9 @@ fn path_part_json(part: &PathPart) -> Json {
         PathPart::Call(h) => json!({ "call": h.to_string() }),
         PathPart::Index(i) => json!({ "index": i }),
         PathPart::Key(h) => json!({ "key": h.to_string() }),
+        // Not reached: `save_state_storage` leaves cache entries out, and the
+        // loader reads no `memo` step back.
+        PathPart::Memo(h) => json!({ "memo": h.to_string() }),
     }
 }
 

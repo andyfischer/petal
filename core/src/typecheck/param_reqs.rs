@@ -429,6 +429,8 @@ impl Walker<'_> {
                 }
                 let _ = init;
             }
+            // Likewise a memo: the key every time, `init` only on a miss.
+            StmtKind::Memo { key, .. } => self.expr(key),
             StmtKind::FnDecl { .. }
             | StmtKind::EnumDecl { .. }
             | StmtKind::ClassDecl { .. }

@@ -489,6 +489,13 @@ impl ExprVisitor for AssignedNames<'_> {
                 }
                 self.bind(name);
             }
+            StmtKind::Memo {
+                name, key, init, ..
+            } => {
+                self.visit_expr(key);
+                self.visit_expr(init);
+                self.bind(name);
+            }
             // `set` writes a cell, and a cell never needs a phi: the binding
             // holds the cell's *identity*, which no write changes, so there is
             // nothing for a join to reconcile. This is exact rather than

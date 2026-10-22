@@ -189,6 +189,13 @@ impl Printer {
                 }
                 self.expr(init, depth + 1);
             }
+            StmtKind::Memo { name, ty, key, init } => {
+                let head = format!("Memo {name}{}", fmt_ty_suffix(ty));
+                self.line(depth, &head, Some(&stmt.span));
+                self.line(depth + 1, "Key", None);
+                self.expr(key, depth + 2);
+                self.expr(init, depth + 1);
+            }
             StmtKind::Import(decl) => {
                 self.line(depth, &fmt_import(decl), Some(&stmt.span));
             }

@@ -658,6 +658,21 @@ pub enum StmtKind {
         #[serde(skip_serializing_if = "is_false")]
         is_var: bool,
     },
+    /// `memo(key) name = init` — a content-keyed cache entry. The slot is the
+    /// declaration plus a hash of the key's *value*, whatever call path
+    /// reached it, and `init` runs only on a miss. Unlike `state`, the binding
+    /// is immutable and the entry is a cache: never persisted, never carried
+    /// across a reload. See docs/features/memo.md.
+    Memo {
+        name: String,
+        /// Optional `memo(k) x: int = …` annotation.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ty: Option<TypeAnn>,
+        /// The key. Required: without one a memo would be a `const` (one
+        /// value) or a `state` (one value per path).
+        key: Expr,
+        init: Expr,
+    },
     /// `native fn name(a: int, b?) -> type` — the declaration of a function
     /// the *host* implements. No body and no `end`. See [`NativeFnDecl`] and
     /// docs/usage/ffi.md (Native interfaces).
@@ -939,6 +954,10 @@ pub fn walk_stmt<V: ExprVisitor + ?Sized>(v: &mut V, s: &Stmt) {
                 v.visit_expr(k);
             }
         }
+        StmtKind::Memo { key, init, .. } => {
+            v.visit_expr(key);
+            v.visit_expr(init);
+        }
         StmtKind::Import(_) | StmtKind::NativeFn(_) => {}
     }
 }
@@ -1103,6 +1122,10 @@ pub fn walk_stmt_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             if let Some(k) = key {
                 v.visit_expr(k);
             }
+        }
+        StmtKind::Memo { key, init, .. } => {
+            v.visit_expr(key);
+            v.visit_expr(init);
         }
         StmtKind::Import(_) | StmtKind::NativeFn(_) => {}
     }

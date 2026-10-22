@@ -691,6 +691,7 @@ fn format_op(program: &Program, term: &Term, state_names: &HashMap<u64, String>)
         TermOp::MakeClosure(fid) => format!("MakeClosure(fn{})", fid.0),
         TermOp::MakeOverloadSet => "MakeOverloadSet".into(),
         TermOp::Call => "Call".into(),
+        TermOp::StateInit if term.is_memo => format!("StateInit memo{}", state_id(term, state_names)),
         TermOp::StateInit => format!("StateInit{}", state_id(term, state_names)),
         TermOp::StateRead => format!("StateRead{}", state_id(term, state_names)),
         TermOp::StateWrite => format!("StateWrite{}", state_id(term, state_names)),

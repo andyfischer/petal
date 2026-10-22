@@ -86,6 +86,8 @@ pub enum SyntaxKind {
     BreakStmt,
     ContinueStmt,
     StateStmt,
+    /// `memo(key) name = init` — a content-keyed cache declaration.
+    MemoStmt,
     ImportStmt,
 
     // === Expression nodes ===

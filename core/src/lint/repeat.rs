@@ -80,7 +80,7 @@ impl Declared {
 impl ExprVisitor for Declared {
     fn visit_stmt(&mut self, s: &Stmt) {
         match &s.kind {
-            StmtKind::Let { name, .. } | StmtKind::State { name, .. } => self.name(name),
+            StmtKind::Let { name, .. } | StmtKind::State { name, .. } | StmtKind::Memo { name, .. } => self.name(name),
             StmtKind::For { var, .. } => self.name(var),
             StmtKind::FnDecl { name, params, .. } => {
                 self.name(name);
@@ -126,7 +126,7 @@ struct Writes<'a> {
 impl ExprVisitor for Writes<'_> {
     fn visit_stmt(&mut self, s: &Stmt) {
         let hit = match &s.kind {
-            StmtKind::Let { name, .. } | StmtKind::State { name, .. } => name == self.name,
+            StmtKind::Let { name, .. } | StmtKind::State { name, .. } | StmtKind::Memo { name, .. } => name == self.name,
             StmtKind::Assign {
                 target: AssignTarget::Name(name),
                 ..

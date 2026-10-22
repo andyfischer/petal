@@ -28,6 +28,8 @@ pub enum Token {
     Break,
     Continue,
     State,
+    /// `memo` — a content-keyed cache declaration, `memo(key) name = init`.
+    Memo,
     Enum,
     End,
     Then,
@@ -135,6 +137,7 @@ impl Token {
             Token::Break => "Break",
             Token::Continue => "Continue",
             Token::State => "State",
+            Token::Memo => "Memo",
             Token::Enum => "Enum",
             Token::End => "End",
             Token::Then => "Then",
@@ -223,8 +226,8 @@ impl Token {
 /// Keep it in sync with [`keyword_token`] — the unit tests below enforce that.
 pub const KEYWORDS: &[&str] = &[
     "break", "const", "continue", "do", "else", "elsif", "end", "enum", "export", "false", "fn",
-    "for", "get", "if", "import", "in", "let", "match", "nil", "pub", "return", "set", "state",
-    "then", "true", "var", "when", "while",
+    "for", "get", "if", "import", "in", "let", "match", "memo", "nil", "pub", "return", "set",
+    "state", "then", "true", "var", "when", "while",
 ];
 
 /// Words the parser treats as keywords but the lexer emits as `Ident`.
@@ -266,6 +269,7 @@ pub fn keyword_token(text: &str) -> Option<Token> {
         "break" => Token::Break,
         "continue" => Token::Continue,
         "state" => Token::State,
+        "memo" => Token::Memo,
         "enum" => Token::Enum,
         "end" => Token::End,
         "then" => Token::Then,
@@ -307,6 +311,7 @@ pub fn keyword_text(tok: &Token) -> Option<&'static str> {
         Token::Break => "break",
         Token::Continue => "continue",
         Token::State => "state",
+        Token::Memo => "memo",
         Token::Enum => "enum",
         Token::End => "end",
         Token::Then => "then",

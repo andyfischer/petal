@@ -233,6 +233,9 @@ pub enum DeclKind {
     Var,
     #[serde(rename = "state")]
     State,
+    /// `memo(key) name = …`: a cache entry, keyed like `state(key)`.
+    #[serde(rename = "memo")]
+    Memo,
     #[serde(rename = "fn")]
     Function,
     #[serde(rename = "class")]
@@ -249,6 +252,7 @@ impl DeclKind {
             DeclKind::Const => "const",
             DeclKind::Var => "var",
             DeclKind::State => "state",
+            DeclKind::Memo => "memo",
             DeclKind::Function => "fn",
             DeclKind::Class => "class",
             DeclKind::Enum => "enum",
@@ -574,9 +578,9 @@ impl StaticReport {
     }
 }
 
-/// A `state` or `var` declaration whose whole reason is that it is one.
+/// A `state`, `memo` or `var` declaration whose whole reason is that it is one.
 fn self_evident(d: &StaticDecl) -> bool {
-    matches!(d.kind, DeclKind::State | DeclKind::Var)
+    matches!(d.kind, DeclKind::State | DeclKind::Memo | DeclKind::Var)
         && d.class == DeclClass::Dynamic
         && d.reason.len() == 1
 }
@@ -1287,7 +1291,11 @@ impl<'a> Pass<'a> {
                 if let Some(t) = ops.iter().find(|t| matches!(t.op, TermOp::StateInit)) {
                     self.groups[gi].canonical = t.id;
                 }
-                DeclKind::State
+                if ops.iter().any(|t| t.is_memo) {
+                    DeclKind::Memo
+                } else {
+                    DeclKind::State
+                }
             } else if ops.iter().any(|t| matches!(t.op, TermOp::CellNew)) {
                 DeclKind::Var
             } else if ops.iter().any(|t| t.is_const) {
@@ -2245,6 +2253,9 @@ impl<'a> Pass<'a> {
                             "reads enum constant data the classifier cannot find".to_string()
                         }
                         Why::State => match term.op {
+                            TermOp::StateInit if term.is_memo => {
+                                "is a memo, which is cached at run time".to_string()
+                            }
                             TermOp::StateInit => "is state, which changes between runs".to_string(),
                             TermOp::StateWrite => "writes state".to_string(),
                             _ => "reads state".to_string(),

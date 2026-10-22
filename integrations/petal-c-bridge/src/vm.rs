@@ -1963,6 +1963,7 @@ fn reload_report_json(report: &ReloadReport) -> serde_json::Value {
                             ConstructKind::Const => "const",
                             ConstructKind::Var => "var",
                             ConstructKind::State => "state",
+                            ConstructKind::Memo => "memo",
                             ConstructKind::Enum => "enum",
                             ConstructKind::Class => "class",
                             ConstructKind::Import => "import",

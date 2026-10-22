@@ -80,7 +80,8 @@ impl Shapes {
 impl ExprVisitor for Shapes {
     fn visit_stmt(&mut self, s: &Stmt) {
         match &s.kind {
-            StmtKind::Let { name, value, .. } | StmtKind::State { name, init: value, .. } => {
+            StmtKind::Let { name, value, .. } | StmtKind::State { name, init: value, .. }
+            | StmtKind::Memo { name, init: value, .. } => {
                 self.bind(name);
                 if matches!(value.kind, ExprKind::Record(_)) {
                     self.record_decl.insert(name.clone());

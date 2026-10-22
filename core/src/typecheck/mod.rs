@@ -1367,6 +1367,22 @@ impl<'a> Checker<'a> {
                 // stale label after a live edit reshapes the class.
                 self.set_class_hint(name, Some(inferred));
             }
+            StmtKind::Memo { name, ty, key, init } => {
+                if let Some(ann) = ty {
+                    self.check_type_ann(ann, stmt.span);
+                }
+                self.slot = CastSlot::Delimited;
+                self.check_expr(key);
+                self.slot = CastSlot::Delimited;
+                let inferred = self.check_expr(init);
+                let declared = ty.as_ref().and_then(|t| self.resolve_ann(t));
+                self.check_assignment(init.span, name, declared, inferred);
+                // Unlike `state`, a memo's initializer does describe every read:
+                // a hit returns what this same expression produced for the same
+                // key, nothing can write the entry, and a reload drops it. So
+                // the binding is typed like a `let`.
+                self.bind(name.clone(), declared, inferred);
+            }
             StmtKind::Import(_) | StmtKind::NativeFn(_) => {}
         }
     }

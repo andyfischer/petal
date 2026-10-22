@@ -1609,6 +1609,7 @@ impl Compiler {
                 | StmtKind::NativeFn(crate::ast::NativeFnDecl { name, .. })
                 | StmtKind::Let { name, .. }
                 | StmtKind::State { name, .. }
+                | StmtKind::Memo { name, .. }
                 | StmtKind::ClassDecl { name, .. }
                 | StmtKind::EnumDecl { name, .. } => {
                     names.insert(name.clone());
@@ -2352,14 +2353,14 @@ impl Compiler {
     }
 }
 
-/// Names this file binds to a *computed* value at the top level: `let`, `var`
-/// and `state`. A function body that mentions one of these is tied to the
+/// Names this file binds to a *computed* value at the top level: `let`, `var`,
+/// `state` and `memo`. A function body that mentions one of these is tied to the
 /// order the file runs in, and so is a `fn` whose own name is one of them.
 fn top_level_value_names(stmts: &[Stmt]) -> HashSet<String> {
     let mut names = HashSet::new();
     for stmt in stmts {
         match &stmt.kind {
-            StmtKind::Let { name, .. } | StmtKind::State { name, .. } => {
+            StmtKind::Let { name, .. } | StmtKind::State { name, .. } | StmtKind::Memo { name, .. } => {
                 names.insert(name.clone());
             }
             _ => {}
@@ -2583,6 +2584,7 @@ fn hoistable_const_lets(stmts: &[Stmt]) -> HashSet<String> {
         match &stmt.kind {
             StmtKind::Let { name, .. }
             | StmtKind::State { name, .. }
+            | StmtKind::Memo { name, .. }
             | StmtKind::ClassDecl { name, .. }
             | StmtKind::EnumDecl { name, .. } => *decls.entry(name.as_str()).or_default() += 1,
             StmtKind::FnDecl {

@@ -35,6 +35,13 @@ pub fn transfer_stack_state(
     // Match on the base key: a runtime key also carries the call path that
     // reached it, which the new program's declarations say nothing about. Paths
     // that no longer occur are swept by the untouched-key GC after the next run.
+    //
+    // `memo(key)` cache entries are dropped whole, and counted as neither: they
+    // are not state, and whether one is still right depends on everything its
+    // initializer calls, which a transfer cannot tell. The same reasoning as
+    // the static values cleared below; the next run recomputes what it asks
+    // for (docs/features/memo.md).
+    stack.state.retain(|k, _| !k.is_memo());
     let preserved = stack
         .state
         .keys()

@@ -207,7 +207,11 @@ impl Compiler {
                 key,
                 is_var,
             } => {
-                self.compile_state_decl(name, init, key.as_ref(), *is_var, stmt_span);
+                self.compile_state_decl(name, init, key.as_ref(), *is_var, false, stmt_span);
+            }
+
+            StmtKind::Memo { name, ty: _, key, init } => {
+                self.compile_state_decl(name, init, Some(key), false, true, stmt_span);
             }
 
             // Imports are extracted and resolved by the module loader before
@@ -294,7 +298,10 @@ impl Compiler {
         while_tid
     }
 
-    /// `state name = init` / `state(key) name = init`.
+    /// `state name = init` / `state(key) name = init`, and `memo(key) name =
+    /// init` (`is_memo`), which is a keyed `StateInit` flagged as a cache: the
+    /// same lazy init and the same absolute slot, but keyed under
+    /// [`PathPart::Memo`](crate::stack::PathPart::Memo) and bound immutably.
     ///
     /// Lazy initialization: the init expression lives in a child block that is
     /// only entered the first time this declaration is reached on a given call
@@ -308,6 +315,7 @@ impl Compiler {
         init: &Expr,
         key: Option<&Expr>,
         is_var: bool,
+        is_memo: bool,
         span: SourceSpan,
     ) {
         // The declaration id folds in the module, the enclosing functions and a
@@ -326,6 +334,7 @@ impl Compiler {
         }
         let state_tid = self.emit_term(TermOp::StateInit, inputs, Some(self.qualified_name(name)));
         self.terms[state_tid.0 as usize].state_key = Some(state_key_const);
+        self.terms[state_tid.0 as usize].is_memo = is_memo;
         // Remember how deep in loops the declaration sits, so a later
         // reassignment can pop back to its slot (see `Term::path_pop`).
         self.state_decl_depths
@@ -343,8 +352,9 @@ impl Compiler {
             self.error_at(
                 span,
                 format!(
-                    "internal error: `state {name}` hashes to a slot already \
-                     claimed by another declaration; rename the variable"
+                    "internal error: `{} {name}` hashes to a slot already \
+                     claimed by another declaration; rename the variable",
+                    if is_memo { "memo" } else { "state" }
                 ),
             );
         }
@@ -429,6 +439,10 @@ impl Compiler {
         span: SourceSpan,
         is_set: bool,
     ) {
+        // First, so `set x` on a memo is not told to write `x = …` instead.
+        if !self.check_assign_to_memo(target, span) {
+            return;
+        }
         if !self.check_write_keyword(target, span, is_set) {
             return;
         }
@@ -601,6 +615,38 @@ impl Compiler {
                  local shadow and does not modify `{root}`. Use `let` for a new local, \
                  return the value, or — if it really must be mutable — declare it \
                  `var {root} = ...` and write it with `set {root} = ...`"
+            ),
+        );
+        false
+    }
+
+    /// Reject a write to a `memo(key)` binding — `x = …`, `x += …`, `x.f = …`,
+    /// `x[i] = …`. A memo is an immutable cache entry: an ordinary `=` on it
+    /// would read as an update of the cached value, but there is nothing for it
+    /// to update (a later hit returns the initializer's result) and silently
+    /// shadowing it would hide that. A new name says what is meant. Returns
+    /// false when the statement is in error, like the checks above.
+    fn check_assign_to_memo(&mut self, target: &AssignTarget, span: SourceSpan) -> bool {
+        let Some(root) = Self::assign_root_name(target) else {
+            return true;
+        };
+        // Inside a branch or loop body the name resolves to the phi the
+        // enclosing control flow installed; walk back to the declaration.
+        let is_memo = self
+            .scope_lookup(root)
+            .and_then(|tid| self.find_state_init(tid))
+            .is_some_and(|tid| self.terms[tid.0 as usize].is_memo);
+        if !is_memo {
+            return true;
+        }
+        let root = root.to_string();
+        self.error_at(
+            span,
+            format!(
+                "`{root}` is a `memo`, which cannot be reassigned: it is a cached \
+                 result, and a later hit returns its initializer's value. Bind the \
+                 new value to a new name (`let`), or keep data the program writes \
+                 in a top-level `state var`"
             ),
         );
         false

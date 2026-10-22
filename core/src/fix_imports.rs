@@ -632,6 +632,7 @@ fn lost_qualifiers(stmts: &[Stmt]) -> HashSet<String> {
             match &s.kind {
                 StmtKind::Let { name, .. }
                 | StmtKind::State { name, .. }
+                | StmtKind::Memo { name, .. }
                 | StmtKind::ClassDecl { name, .. } => {
                     self.bound.insert(name.clone());
                 }

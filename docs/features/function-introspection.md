@@ -89,7 +89,7 @@ So it can key a cache that survives hot reloads:
 ```petal
 fn describe(f)
   let info = fn_info(f)
-  state(info.code_hash) text = expensive_description(fn_ast(f))
+  memo(info.code_hash) text = expensive_description(fn_ast(f))
   text
 end
 

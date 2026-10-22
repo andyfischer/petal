@@ -206,17 +206,19 @@ fn counter()
     count
 end
 
+state var hp = Map()          // one shared cell holding a map
+
 fn hit(id)
-    state(id) var hp = 100    // keyed by value, and a mutable cell
-    set hp = hp - 10
-    hp
+    set hp[id] = (get hp[id] ?? 100) - 10
+    get hp[id]
 end
 ```
 
 `state` declares a binding that keeps its value from one run of the program
 to the next and across a hot reload. A slot is keyed by the call path that
-reached the declaration, or by an explicit key with `state(key)`; `state var`
-makes the slot a cell. See [Inline state](../features/inline-state.md).
+reached the declaration; `state var` makes the slot a cell, and a top-level
+`state var` holding a map is the way to keep one value per id. The keyed form
+`state(key)` is deprecated. See [Inline state](../features/inline-state.md).
 
 ### `fn` (function declaration)
 
@@ -483,7 +485,7 @@ React); `<Tag />` self-closes. See
 let n: int = 0
 var total: float = 0.0
 state count: int = 0
-state(id) var seen: list = []      // the annotation follows the name, before `=`
+state var seen: list = []          // the annotation follows the name, before `=`
 
 fn scale(v: float, k: float) -> float
     v * k

@@ -951,7 +951,7 @@ keeps static values. Where any of that matters, leave the `state` and put
 
 `state-key-deprecated` reports every keyed `state`: its slot is one per key
 value, whichever caller reaches it, so it is a global hidden in a function
-(see [Keyed state](features/inline-state.md#keyed-state-statekey)). A slot
+(see [Deprecated: `state(key)`](features/inline-state.md#deprecated-statekey)). A slot
 nothing writes only ever holds what its initializer computed for its key,
 which is a [`memo`](features/memo.md), and `--fix` respells it so. It finds
 "nothing writes" by compiling the rewrite. One difference stays the

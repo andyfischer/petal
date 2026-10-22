@@ -54,7 +54,7 @@ goal-based program manipulation.
 
 | Document | Description |
 |----------|-------------|
-| [Inline State](features/inline-state.md) | The `state` keyword: persistent values declared where they are used, one slot per call path, `state(key)`, `state var`, and how long a slot lives |
+| [Inline State](features/inline-state.md) | The `state` keyword: persistent values declared where they are used, one slot per call path, `state var`, sharing through a Map, how long a slot lives, and the deprecated `state(key)` |
 | [Cached results: `memo`](features/memo.md) | `memo(key) name = init`: a pure result cached per key value and shared by every caller; immutable, and a cache rather than state |
 | [Static Values](features/static-values.md) | `const` and values that depend on the source alone: built once, kept between runs, rebuilt when their source changes |
 | [Hot Reload](features/hot-reload.md) | Reloading a running program: what each kind of edit costs, what is kept, setting a value live, and why the result equals a recompile |

@@ -207,7 +207,7 @@ set total = "oops"        // warning: `total` declared `int` but assigned `strin
 
 state count: int = 0
 state var seen: list = []
-state(row.id) hovered: bool = false   // the annotation follows the name
+state var by_id: map = Map()
 ```
 
 A `var` is a heap cell and a `state` is a reactive binding, so their initializers
@@ -518,9 +518,9 @@ but a large integer is never equal to a float it merely rounds to
 its value, ignoring the derivative. NaN is unordered: every comparison with it,
 including `NaN == NaN`, is `false` (and `sort` puts NaNs last).
 
-Values that are `==` are the same key everywhere keys matter — `state(key)`
-included — so `state({id: 1})` finds the same slot each run, and `state(2)` and
-`state(2.0)` share one.
+Values that are `==` are the same key everywhere keys matter — a
+[map](#maps) and `memo(key)` included — so `memo({id: 1})` finds the same entry
+each run, and `m[2]` and `m[2.0]` read one map entry.
 
 ## Control Flow
 
@@ -2270,12 +2270,13 @@ print(hits)   // 1 on the first run, 2 on the second, ...
 
 Each call path that reaches a declaration gets its own slot, so two callsites
 of a helper hold two independent values, and a function called inside a `for`
-holds one per iteration. `state(key) name = …` keys the slot by a value
-instead, and a top-level `state var` is the one cell that every function
-shares.
+holds one per iteration, keyed by its position. A top-level `state var` is
+the one cell that every function shares; holding a [map](#maps) in it gives
+shared state with one value per key. The keyed form `state(key) name = …` is
+deprecated in favour of that map and of [`memo`](#memo--a-cached-result).
 
 The full description is in [Inline state](features/inline-state.md): the
-keying rules, `state(key)`, `state var`, how long a slot lives, why a table
+keying rules, `state var`, how long a slot lives, why a table
 that never changes belongs in a [`const`](#const--a-value-that-must-be-constant)
 and not in `state`, and what a hot reload keeps.
 

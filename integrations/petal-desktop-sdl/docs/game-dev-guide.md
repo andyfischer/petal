@@ -76,11 +76,21 @@ file down to the declaration.
   ```
 
   Each enemy gets its own health with no manual keying.
-- **`state(expr) name = ...` overrides the path.** An explicit key is
-  absolute: every callsite that asks for the same key value reaches the same
-  cell. Use it when a cell belongs to a domain object rather than a position.
-  `state(e.id) hp = 100` follows the enemy when the list is reordered; the
-  unkeyed form stays with the loop index.
+- **A loop keys by position.** A `state` inside a `for` stays with the loop
+  index, so reordering the list moves the values. When a value belongs to a
+  domain object rather than a position, keep it in a top-level `state var`
+  holding a `Map` keyed by the object's id, and remove the entry when the
+  object goes away:
+
+  ```petal
+  state var hp = Map()                   // enemy id -> hp
+
+  fn enemy_hit(e, damage)
+    set hp[e.id] = (get hp[e.id] ?? 100) - damage
+  end
+  ```
+
+  The keyed form `state(e.id) hp = 100` is deprecated.
 - Cells shared across functions on purpose go at the top level as
   `state var`, read and written with `get` / `set`.
 

@@ -38,19 +38,34 @@ iterations:
 - Same-named `state` in two functions cannot collide: distinct decl ids by
   construction.
 
-### 2.2 `state(key)` is absolute
+### 2.2 `state(key)` is absolute, and deprecated
 
 `state(expr) name` keys the slot by `(decl_id, hash(key value))` and ignores
-the call path. It is the escape hatch for "same entity ⇒ same slot, no matter
-who asks" — React's `key=` prop, but absolute. Examples in the tree:
+the call path. It was the escape hatch for "same entity ⇒ same slot, no matter
+who asks" — React's `key=` prop, but absolute. That makes a keyed slot a
+global hidden inside a function: two calls of stateful code that pass the same
+key interfere, which breaks the rule that state is nested per path and that
+stateful code is safe to duplicate. It is therefore deprecated (compile
+warning and lint rule `state-key-deprecated`; the feature still works). Its
+uses split three ways:
 
-- `garden/examples/panels/plant.ptl` — lineage keying: the same leaf is
-  reached one recursion level deeper each growth step; a path component would
-  reset it every frame.
-- `examples/custom-apps/petal-fantasy-nes/prelude/nes.ptl` (`btn_repeat`) — two widgets asking
-  about one button share one repeat phase by design.
-- `nes.ptl`'s `_font_rows` — the build varies by argument, so an absolute key
-  caches per ink across all callers.
+- **A pure cache** (`nes.ptl`'s `_font_rows`, one build per ink for every
+  caller) is a [`memo(key)`](../features/memo.md). Sharing a pure result is
+  unobservable, so an absolute key is acceptable there. `petal lint --fix`
+  makes this rewrite when the slot is never written.
+- **Sharing on purpose** (`nes.ptl`'s `btn_repeat`, where two widgets asking
+  about one button share one repeat phase) and **identity that outlives a
+  position** (`garden/examples/panels/plant.ptl`'s lineage keying, where the
+  same leaf is reached one recursion level deeper each growth step) become a
+  top-level `state var` holding a `Map` keyed by that identity, written with
+  `set m[k] = v`. The sharing is then visible at every `get` and `set`. A map
+  entry is not swept like an untouched slot, so such code removes entries
+  itself when their entity goes away.
+- **Per-instance state** where position is a fine identity is plain `state`.
+
+Loops keep positional `Index` path parts. A way for a loop to name a
+domain-specific stable key per iteration is deferred; until then, values that
+must follow an item through a reorder live in a Map.
 
 ### 2.3 Top-level `state` / `state var`
 

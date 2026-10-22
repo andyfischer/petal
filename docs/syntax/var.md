@@ -353,10 +353,10 @@ slot holds the cell and persistence is automatic. A slot is a declaration plus
 the call path that reached it ([Inline state](../features/inline-state.md)),
 so there is one cell per slot:
 
-- one per explicit key for `state(key) var`,
 - one per callsite/iteration for a `state var` declared inside a function,
 - exactly one for a top-level `state var`, the idiom for shared cross-function
-  state, since module scope is a single call path.
+  state, since module scope is a single call path. Holding a `Map` in it gives
+  one value per key, which replaces the deprecated `state(key) var`.
 
 ## Cross-function assignment
 

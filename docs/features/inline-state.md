@@ -9,11 +9,10 @@ able to preserve that state across a live code modification.
 
 # Contents
 
-TODO - Check that this list is still accurate
-
 - [Declaring state](#declaring-state)
-- [One slot per call path](#one-slot-per-call-path)
-- [Keyed state: `state(key)`](#keyed-state-statekey)
+- [State is nested](#state-is-nested)
+- [Interaction with control flow](#interaction-with-control-flow)
+- [Deprecated: `state(key)`](#deprecated-statekey)
 - [Sharing on purpose](#sharing-on-purpose)
 - [Callbacks run at the builtin's callsite](#callbacks-run-at-the-builtins-callsite)
 - [`state var`](#state-var)
@@ -23,6 +22,7 @@ TODO - Check that this list is still accurate
 - [Pending initializers](#pending-initializers)
 - [State and hot reload](#state-and-hot-reload)
 - [State from the host side](#state-from-the-host-side)
+- [See also](#see-also)
 
 ## Declaring state
 
@@ -95,41 +95,39 @@ TODO: example.
 ## Interaction with control flow
 
 If `state` is used inside a loop, then it creates a list, one element per iteration.
+For now a loop keys each iteration by its position, like a list index: if the
+list reorders, each value stays with its position rather than its item. When a
+value must follow an item, keep it in a top-level `state var` Map keyed by the
+item's id ([Sharing on purpose](#sharing-on-purpose)).
 
 If `state` is used in an `if` block, then the data is only retained on runs where
 that condition is true. If the condition fails then any nested state gets deleted.
 
 If `state` is used in a recursive function call, then it creates a tree data structure.
 
-## Keyed state: `state(key)`
-
-> **Deprecated.** A keyed slot ignores the call path, so it is a global hidden
-> inside a function, and calling stateful code twice is no longer safe. Each
-> declaration is a compile warning (`[state-key-deprecated]`). Use
-> [`memo(key)`](memo.md) for a pure cache, a top-level `state var` holding a
-> Map for [state shared on purpose](#sharing-on-purpose), or plain `state`,
-> kept per call path, for per-instance state. `petal lint --fix` rewrites a
-> keyed `state` that nothing writes to `memo`. The feature still works; put
-> `// petal-lint-ignore state-key-deprecated` on the line before a
-> declaration to keep it without the warning.
+## Deprecated: `state(key)`
 
 `state(expr) name = …` keys the slot by the value of `expr` and ignores the
-call path. Every execution of that declaration with the same key value lands
-on the same slot, whichever caller, depth or loop iteration it arrived from.
+call path, so every caller that passes the same key lands on the same slot.
+That makes it a global hidden inside a function, and calling the code that
+declares it twice is no longer safe. It still works, but it is deprecated:
+each declaration is a compile warning (`[state-key-deprecated]`). Use one of
+these instead:
 
-```petal
-fn health(id, damage)
-    state(id) hp = 100
-    hp -= damage
-    hp
-end
-print(health("goblin", 10), health("orc", 30), health("goblin", 5))  // 90 70 85
-```
+- **A pure cache**, a value computed from the key and nothing else:
+  [`memo(key)`](memo.md). `petal lint --fix` makes this rewrite for a keyed
+  `state` that nothing writes.
+- **State shared on purpose**, or identity that must survive a change of
+  position (an entity in a list that reorders): a top-level `state var`
+  holding a [Map](../language-guide.md#maps) keyed by the id. See
+  [Sharing on purpose](#sharing-on-purpose).
+- **Per-instance state** whose position is a fine identity: plain `state`.
 
-It was meant for anything whose identity outlives its position: entities in
-a list that reorders, a tree node reached one level deeper each frame, an
-input's repeat phase that two widgets are meant to share. There is one slot
-per pair of declaration and key value.
+The lint fix cannot tell whether an initializer is pure. A memo entry is
+recomputed after a reload, so `state(id) tint = random(0.0, 1.0)` rewritten
+as a memo would draw a new tint. Move such a slot to a Map instead. To keep
+a declaration as it is without the warning, put
+`// petal-lint-ignore state-key-deprecated` on the line before it.
 
 ## Sharing on purpose
 
@@ -149,6 +147,24 @@ theme_set("light")
 print(ui_theme())   // light
 ```
 
+A Map in a top-level `state var` is shared state with one value per key. It
+is the replacement for a keyed `state`, and its entries follow an id rather
+than a position:
+
+```petal
+state var hp = Map()
+
+fn health(id, damage)
+    set hp[id] = (get hp[id] ?? 100) - damage
+    get hp[id]
+end
+print(health("goblin", 10), health("orc", 30), health("goblin", 5))  // 90 70 85
+```
+
+A map entry stays until it is removed. It is not dropped when a run does not
+touch it, as a slot is ([How long a slot lives](#how-long-a-slot-lives)), so
+remove an entry when its entity goes away: `set hp = remove(get hp, id)`.
+
 A cache behind an accessor is the same mistake in a quieter form. `state` runs
 its initializer only on a slot's first touch, so wrapping an expensive build
 in a function reads like a memo. But the memo is per path, so a caller inside
@@ -163,8 +179,8 @@ end
 state var char_table = build_table()   // once for the program
 ```
 
-Hoist the declaration to the top level when the cache is global, or key it
-with `state(k)` when it varies by an argument (`state(ink) var rows =
+Hoist the declaration to the top level when the cache is global, or make it a
+[`memo`](memo.md) when it varies by an argument (`memo(ink) rows =
 build_rows(ink)` gives one build per ink, shared by every caller). If the
 value is a function of the source alone, it is not state at all: see
 [State is not a constant](#state-is-not-a-constant).
@@ -184,8 +200,9 @@ end
 print(map([10, 20, 30], seen))   // [1, 2, 3] — one shared slot, not three
 ```
 
-Use a `for` loop when you want a slot per element, or key it:
-`state(x) n = 0`.
+Use a `for` loop when you want a slot per element. When the count belongs to
+the element's value rather than its position, keep it in a top-level
+`state var` Map keyed by that value.
 
 ## `state var`
 
@@ -200,8 +217,9 @@ print(hits)
 ```
 
 The slot is keyed like any other: a `state var` at the top level is one
-shared cell, a `state var` inside a function is one cell per call path, and
-`state(key) var` is one cell per key. Use `state var` only when a plain
+shared cell, and a `state var` inside a function is one cell per call path.
+For one cell's worth of state per key, hold a Map in a top-level `state var`.
+Use `state var` only when a plain
 `state` cannot express the write. A read of a plain `state` carries its
 dataflow edges, and a read of a cell does not
 ([var.md, Provenance](../syntax/var.md#provenance)).
@@ -250,23 +268,26 @@ before the run and saves it after
 
 **A slot that a run does not touch is dropped when that run ends.** A
 declaration behind an `if` that was not taken, a row whose list item was
-removed, a `state(id)` for an entity that no longer exists: none of them leak,
-and each starts from its initializer if it is reached again later.
+removed, a function that was not called this run: none of them leak, and each
+starts from its initializer if it is reached again later.
 
 ```petal
 state frame = 0
 frame += 1
 
-fn health(id, damage)
-    state(id) hp = 100
-    hp -= damage
-    hp
+fn hits()
+    state n = 0
+    n += 1
+    n
 end
 
-// The goblin is hit on odd frames only. Its slot is dropped at the end of
-// each even frame, so this prints 90 every time and never 80.
-if frame % 2 == 1 then print(health("goblin", 10)) end
+// hits() runs on odd frames only. Its slot is dropped at the end of each
+// even frame, so this prints 1 every time and never 2.
+if frame % 2 == 1 then print(hits()) end
 ```
+
+Entries in a Map held by a `state var` are not slots, so they are never
+dropped this way. Remove them yourself when their entity goes away.
 
 To keep a value through runs that do not use it, touch the slot on every run:
 declare it at the top level, outside any condition.

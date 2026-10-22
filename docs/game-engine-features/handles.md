@@ -260,17 +260,21 @@ print(contains([a, b], a), index_of([a, b], b))   // true 1
 Handles have no order: `a < b` is the error `Cannot compare handle and handle`.
 
 A handle hashes by the same three numbers, so it works as a
-[`state(key)`](../features/inline-state.md#keyed-state-statekey) key. This
-gives each entity its own slot of script-side state:
+[map](../language-guide.md#maps) key. A map in a top-level `state var` gives
+each entity its own script-side state:
 
 ```petal ignore
-fn hp(e)
-    state(e) v = 100
-    v -= 10
-    v
+state var hp = Map()
+
+fn hit(e)
+    set hp[e] = (get hp[e] ?? 100) - 10
+    get hp[e]
 end
-print(hp(a), hp(a), hp(b))    // 90 80 90
+print(hit(a), hit(a), hit(b))    // 90 80 90
 ```
+
+An entry stays until it is removed, so drop it when its entity is destroyed:
+`set hp = remove(get hp, e)`.
 
 On the Rust side `HandleVal` is `Copy`, `Eq` and `Hash`, so it is usable as a
 `HashMap` key directly.
@@ -314,7 +318,7 @@ program still runs. `nil` is not a `handle`.
 | `let`, function arguments and results | yes | |
 | inside a list, a record, an enum payload | yes | |
 | `state` | yes, within one process | Kept across runs and hot reloads. |
-| `state(h)` as the key | yes | |
+| a map key | yes | |
 | state inspection JSON (`get_state_json`) | as text | Shown as the string `"handle(0:1#1)"`. |
 | state storage (`save_state_storage`, `petal run --state-storage`) | no | The slot is skipped and reported. |
 | `const` and the static-value cache | no | Rebuilt on every run, with a warning. |

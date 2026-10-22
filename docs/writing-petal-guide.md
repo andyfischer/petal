@@ -288,12 +288,16 @@ Consequences worth memorizing:
   slot. For genuinely shared state use a **top-level `state var`**, where module
   scope is one path so there is exactly one cell.
 - A `state` inside a `for` gets one slot per iteration — positional keying, with
-  React's un-keyed-list cost when the list reorders.
-- When identity matters more than position, key it: `state(id) hp = 100` ignores
-  the call path entirely and gives one slot per key value.
+  React's un-keyed-list cost when the list reorders. There is no per-loop key
+  yet.
+- When identity matters more than position, keep the values in a top-level
+  `state var` holding a `Map` keyed by id, and remove an entry when its entity
+  goes away. A pure value computed from a key is a `memo(key)`. `state(id)` is
+  deprecated.
 - A slot that a run does not reach is dropped when that run ends. A `state`
-  behind an `if` that was not taken, or a `state(7)` for an entity that is no
-  longer in the list, starts from its initializer the next time it is reached.
+  behind an `if` that was not taken, or one in a loop iteration for an item that
+  is no longer in the list, starts from its initializer the next time it is
+  reached.
   To keep a value through runs that do not use it, declare it at the top
   level, outside any condition
   ([How long a slot lives](features/inline-state.md#how-long-a-slot-lives)).
@@ -312,10 +316,11 @@ from the top level as much as callbacks. Only module scope itself reads the
 cell bare, and a bare read inside a function is a compile error.
 
 ```petal
+state var hp = Map()                         // one entry per entity id
+
 fn health(id, damage)
-  state(id) hp = 100                         // one cell per entity id
-  hp -= damage
-  hp
+  set hp[id] = (get hp[id] ?? 100) - damage
+  get hp[id]
 end
 ```
 

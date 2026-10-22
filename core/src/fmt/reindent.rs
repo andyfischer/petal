@@ -11,6 +11,8 @@ use crate::lexer::{Lexer, Token};
 ///
 /// Constructs and their closers: `end` closes fn/enum/class/if/for/while/match,
 /// block lambdas, and `when … do` arms; `)` `]` `}` close their delimiters;
+/// a JSX open tag holds its attributes (written one per line, they indent a
+/// step) until its `>` or `/>`, which realigns with the `<` as a closer does;
 /// `</tag>` closes a JSX element's children. Closers just pop the innermost
 /// entry — lint runs on parseable source, so they always correspond. The one
 /// construct without a closer is the body of a `when … ->` arm, which the next
@@ -192,9 +194,10 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
     // at the `when`'s depth that is not a lambda's (a guard may hold
     // `xs.any(fn(v) -> v == x)`). Cleared there, or at a newline.
     let mut when_header: Option<WhenHeader> = None;
-    // Stack of unterminated JSX opening tags, each recording the delimiter
-    // depth at its `<`: the `>` that ends the tag is the one seen back at that
-    // depth (a `>` inside an `attr={a > b}` brace sits deeper).
+    // Stack of unterminated JSX opening tags, each recording the stack depth
+    // with the tag's own construct pushed: the `>` that ends the tag is the
+    // one seen back at that depth (a `>` inside an `attr={a > b}` brace sits
+    // deeper).
     let mut open_tags: Vec<usize> = Vec::new();
 
     let mut out_lines: Vec<String> = Vec::with_capacity(lines.len());
@@ -208,17 +211,27 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
         }
         let line_tokens = first_ti..ti;
 
-        // A line beginning inside a token that started earlier (multi-line raw
-        // string, JSX text) is content, not layout — copy it verbatim.
-        let starts_inside = spans[..first_ti]
-            .iter()
-            .any(|s| (s.start.offset as usize) < ls && (s.end.offset as usize) > ls);
+        // A line beginning inside a token that started earlier (a multi-line
+        // raw string) is content, not layout — copy it verbatim. JSX text is
+        // the exception: the whitespace at its line breaks is dropped when it
+        // is read, so its lines are laid out like code.
+        let inside =
+            |k: usize| (spans[k].start.offset as usize) < ls && (spans[k].end.offset as usize) > ls;
+        let starts_inside =
+            (0..first_ti).any(|k| inside(k) && !matches!(tokens[k], Token::JsxText(_)));
 
         // Leading-whitespace run.
         let mut ws_end = ls;
         while ws_end < le && chars[ws_end] != '\n' && chars[ws_end].is_whitespace() {
             ws_end += 1;
         }
+        // Text that runs on past this line's indentation: the line starts with
+        // text, not with whatever token follows it.
+        let in_jsx_text = (0..first_ti).any(|k| {
+            inside(k)
+                && (spans[k].end.offset as usize) > ws_end
+                && matches!(tokens[k], Token::JsxText(_))
+        });
         // A token starting within the leading run means that "whitespace" is
         // token content (JSX text beginning at line start) — leave it alone.
         let token_in_leading_ws = line_tokens.clone().any(|k| {
@@ -228,9 +241,9 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
 
         // Trailing trim is safe only when no token spills past the line end
         // (the spill means the tail is inside a multi-line token).
-        let spills_past_end = line_tokens
-            .clone()
-            .any(|k| (spans[k].end.offset as usize) > le + 1);
+        let spills_past_end = line_tokens.clone().any(|k| {
+            (spans[k].end.offset as usize) > le + 1 && !matches!(tokens[k], Token::JsxText(_))
+        });
 
         // Display indent, in columns. A line opening no new construct sits at
         // the innermost open construct's content column. A run of closers at
@@ -252,7 +265,9 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
         }
         let mut dedent = 0usize;
         let mut si = 0usize;
-        while si < sig.len() {
+        // Text runs first on a line that starts inside JSX text, so a `</tag>`
+        // later on it is not a leading closer.
+        while si < sig.len() && !in_jsx_text {
             match tokens[sig[si]] {
                 Token::End if is_label(tokens, sig[si]) => break,
                 Token::End | Token::RParen | Token::RBracket | Token::RBrace => {
@@ -265,6 +280,16 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
                     if si < sig.len() && matches!(tokens[sig[si]], Token::JsxTagName(_)) {
                         si += 1;
                     }
+                }
+                // The `>` or `/>` ending an open tag whose attributes ran
+                // over the lines above.
+                Token::JsxSelfClose => {
+                    dedent += 1;
+                    si += 1;
+                }
+                Token::Gt if si == 0 && open_tags.last() == Some(&stack.len()) => {
+                    dedent += 1;
+                    si += 1;
                 }
                 _ => break,
             }
@@ -435,14 +460,22 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
                 Token::RParen | Token::RBracket | Token::RBrace => {
                     stack.pop();
                 }
-                Token::JsxOpenStart => open_tags.push(stack.len()),
+                Token::JsxOpenStart => {
+                    stack.push(Open::block(content)); // attributes until `>`
+                    open_tags.push(stack.len());
+                }
                 Token::JsxSelfClose => {
                     open_tags.pop();
+                    stack.pop();
                 }
                 Token::Gt => {
                     if open_tags.last() == Some(&stack.len()) {
                         open_tags.pop();
-                        stack.push(Open::block(content)); // children until `</tag>`
+                        // Children until `</tag>`, a step in from the `<`'s
+                        // line wherever the `>` ended up.
+                        if let Some(tag) = stack.pop() {
+                            stack.push(Open::block(tag.content));
+                        }
                     }
                 }
                 Token::JsxCloseStart => {
@@ -671,6 +704,27 @@ mod tests {
         assert_eq!(
             out,
             "let e = <div class=\"x\">\n  <p>hi</p>\n  <br/>\n</div>\n"
+        );
+    }
+
+    #[test]
+    fn jsx_attributes_one_per_line_indent_under_the_tag() {
+        // The attributes a step in; the `>` or `/>` back at the tag's line,
+        // and the children a step in from it.
+        let src = "let items = [\n<text\nstart={0.5}\nbox_lines\n>\nHi<br />\n</text>,\n<video\nsrc=\"a.mov\"\n/>,\n]\n";
+        let want = "let items = [\n  <text\n    start={0.5}\n    box_lines\n  >\n    Hi<br />\n  </text>,\n  <video\n    src=\"a.mov\"\n  />,\n]\n";
+        assert_eq!(reindent(src).unwrap(), want);
+        assert_eq!(reindent(want).unwrap(), want);
+        // A `>` ending the last attribute's line: children still one step in
+        // from the `<`.
+        // Text over several lines is laid out like code: its whitespace at
+        // line breaks is not part of its value.
+        let src = "let t = <p>\n      One\n        two\n      </p>\n";
+        assert_eq!(reindent(src).unwrap(), "let t = <p>\n  One\n  two\n</p>\n");
+        let src = "let t = <text\n    y={1}>\n    Hi\n</text>\n";
+        assert_eq!(
+            reindent(src).unwrap(),
+            "let t = <text\n  y={1}>\n  Hi\n</text>\n"
         );
     }
 

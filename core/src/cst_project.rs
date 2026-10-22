@@ -1406,7 +1406,7 @@ impl Projector {
     }
 
     fn jsx_attr(&mut self, node: &SyntaxNode) -> Result<(String, Expr), String> {
-        let name = self.only_ident(node)?;
+        let name = self.only_field_name(node)?;
         let value = match child_nodes(node).first() {
             // `name={expr}` — the braced expression.
             Some(expr_node) => self.expr(expr_node)?,

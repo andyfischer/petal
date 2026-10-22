@@ -187,6 +187,11 @@ print(el)`;
       expect(runPetal(code)).toBe('{ src: "a.mov", start: 0.5 }');
     });
 
+    it("takes a keyword as an attribute name, as a record key", () => {
+      const code = `let el = <video in={2.0} end={4} />\nprint(el.props)`;
+      expect(runPetal(code)).toBe("{ in: 2.0, end: 4 }");
+    });
+
     it("reads a bare attribute as true", () => {
       const code = `let el = <video muted src="a.mov" loop />\nprint(el.props)`;
       expect(runPetal(code)).toBe('{ muted: true, src: "a.mov", loop: true }');

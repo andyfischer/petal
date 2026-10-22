@@ -2754,7 +2754,18 @@ impl Parser {
                         start,
                     ));
                 }
-                Token::Ident(attr_name) => {
+                // An attribute name is a member name, so a keyword is one too
+                // (`<video in={2.0} />`), as it is a record key.
+                ref tok
+                    if matches!(tok, Token::Ident(_))
+                        || crate::lexer::keyword_text(tok).is_some() =>
+                {
+                    let attr_name = match tok {
+                        Token::Ident(name) => name.clone(),
+                        other => crate::lexer::keyword_text(other)
+                            .unwrap_or_default()
+                            .to_string(),
+                    };
                     self.ev_open(SyntaxKind::JsxAttr);
                     let name_at = self.pos;
                     self.advance();

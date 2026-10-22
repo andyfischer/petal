@@ -49,6 +49,14 @@ way, for code written against an earlier checkout.
 - `state` slots are keyed by the call path that reaches them, so two calls to
   the same function keep separate state. Loops get per-iteration state, with
   optional explicit keys.
+- `memo(key) name = init` caches a pure result per key value: the
+  initializer runs only on a miss, and every caller asking for an equal key
+  (lists and records compare by content) shares the entry, whatever its call
+  path. The binding cannot be reassigned. An entry is a cache, not state: it
+  is dropped after a run that does not touch it, left out of host state
+  dumps, `--state-storage` and snapshots, and cleared by a reload that
+  changes the program. `memo` is now a keyword. See
+  [Cached results: `memo`](docs/features/memo.md).
 - Value semantics: lists, records and arrays are immutable values. Appending,
   index assignment and field assignment produce a new value, and the compiler
   mutates in place where it can prove the old value is dead.

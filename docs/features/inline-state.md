@@ -337,5 +337,7 @@ top-level `state var`.
   [`examples/console/reactive_ui.ptl`](../../examples/console/reactive_ui.ptl):
   runnable examples.
 - [`var`: mutable cells](../syntax/var.md): `var`, `set` and `get`.
+- [Cached results: `memo`](memo.md): a pure value cached by key, shared by
+  every caller.
 - [Call-path keyed `state`](../dev/state-call-paths.md): the design, the
   runtime key, and the measured cost.

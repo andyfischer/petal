@@ -1850,7 +1850,7 @@ Kind names:
 
 | Category | Examples |
 |----------|---------|
-| Keywords | `"Let"`, `"Var"`, `"Set"`, `"Fn"`, `"If"`, `"Else"`, `"For"`, `"In"`, `"While"`, `"Match"`, `"Return"`, `"Break"`, `"Continue"`, `"State"`, `"Enum"`, `"Const"`, `"Get"`, `"Import"`, `"Pub"`, `"Export"`, `"End"`, `"Then"`, `"Do"`, `"Elsif"`, `"When"`, `"True"`, `"False"`, `"Nil"` |
+| Keywords | `"Let"`, `"Var"`, `"Set"`, `"Fn"`, `"If"`, `"Else"`, `"For"`, `"In"`, `"While"`, `"Match"`, `"Return"`, `"Break"`, `"Continue"`, `"State"`, `"Memo"`, `"Enum"`, `"Const"`, `"Get"`, `"Import"`, `"Pub"`, `"Export"`, `"End"`, `"Then"`, `"Do"`, `"Elsif"`, `"When"`, `"True"`, `"False"`, `"Nil"` |
 | Operators | `"Plus"`, `"Minus"`, `"Star"`, `"Slash"`, `"Percent"`, `"PlusPlus"`, `"Eq"`, `"Ne"`, `"Lt"`, `"Le"`, `"Gt"`, `"Ge"`, `"And"`, `"Or"`, `"Bang"`, `"Assign"`, `"PlusAssign"` (and `MinusAssign`, `StarAssign`, `SlashAssign`, `PercentAssign`, `ConcatAssign`, `CoalesceAssign`), `"DoubleQuestion"`, `"QuestionDot"`, `"Pipe"`, `"Bar"`, `"At"` |
 | Delimiters | `"LParen"`, `"RParen"`, `"LBrace"`, `"RBrace"`, `"LBracket"`, `"RBracket"`, `"Comma"`, `"Dot"`, `"Colon"`, `"Arrow"`, `"DotDot"`, `"DotDotDot"` |
 | Special | `"Newline"`, `"Eof"` |
@@ -1911,7 +1911,7 @@ Let m @5:1-8:4
 
 Structural sub-parts that are not themselves nodes get label lines without
 spans: `Then`/`Else` under an `If`, `Arm <pattern>` and `Guard` under a
-`Match`, `Key` under an explicit-key `State`, `Part`/`Prop`/`Text` inside
+`Match`, `Key` under an explicit-key `State` and under every `Memo`, `Part`/`Prop`/`Text` inside
 string interpolations and elements, `Field`/`Spread` inside records. Both
 forms are debug views (see
 [Dump format conventions](#dump-format-conventions)); `--json` is the
@@ -1988,6 +1988,7 @@ Consumers should treat the single key of the `kind` object as the node type
 | `Break` | `"Break"` |
 | `Continue` | `"Continue"` |
 | `State` | `{"State": {"name": string, "ty": TypeAnn (omitted when un-annotated), "init": Expr, "key": Expr (omitted when unkeyed), "is_var": bool (omitted when false)}}` — `ty` is the optional declared type annotation; `key` set when the source uses the `state(expr) name = init` per-iteration form; `is_var` for `state var` |
+| `Memo` | `{"Memo": {"name": string, "ty": TypeAnn (omitted when un-annotated), "key": Expr, "init": Expr}}` — `memo(key) name = init`, a content-keyed cache ([memo.md](features/memo.md)). `key` is required, and there is no `var` form |
 | `NativeFn` | `{"NativeFn": {"name": string, "class": string (omitted for a plain function), "params": Param[], "rest": string (omitted when there is no `...rest`), "ret": TypeAnn (omitted when un-annotated)}}` — a `native fn` declaration in an interface package |
 | `Import` | `{"Import": {"module": string, "alias": string (omitted when there is no `as`), "names": string[] (omitted for a plain import)}}` — `import json: json_parse` is `{"module": "json", "names": ["json_parse"]}` |
 
@@ -2018,7 +2019,7 @@ Consumers should treat the single key of the `kind` object as the node type
 
 **ClassField**: one field of a `ClassDecl`, as `{"name": string, "ty": TypeAnn (omitted when un-annotated)}` — the same optional-annotation shape as a **Param**.
 
-**TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type (omitted when unrecognized)}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (omitted for an unrecognized name, e.g. `{"name": "banana"}`). An absent annotation omits the `ty`/`ret` field entirely. Annotations appear on `Let`, `State`, `Param`, `ClassField`, and `FnDecl.ret`; a class name resolves to a static type too, but only against the compilation's class table, so a `TypeAnn` naming one carries no `resolved` in the AST dump; they are type-checked (warnings only — see [`check`](#check--compile-without-running)) and dropped before codegen, so they never appear in the IR.
+**TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type (omitted when unrecognized)}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (omitted for an unrecognized name, e.g. `{"name": "banana"}`). An absent annotation omits the `ty`/`ret` field entirely. Annotations appear on `Let`, `State`, `Memo`, `Param`, `ClassField`, and `FnDecl.ret`; a class name resolves to a static type too, but only against the compilation's class table, so a `TypeAnn` naming one carries no `resolved` in the AST dump; they are type-checked (warnings only — see [`check`](#check--compile-without-running)) and dropped before codegen, so they never appear in the IR.
 
 **Type**: a string naming the recognized static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"Num"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"Vec3"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Dual"`, `"Handle"`, `"Pending"`. Appears as the `resolved` field of a **TypeAnn**.
 
@@ -2159,6 +2160,8 @@ The text form is designed to be read without cross-referencing:
   write visibly links to its init. The key identifies the *declaration*; which
   slot it lands in also depends on the runtime call path, which no static dump
   can show (see [Dump format conventions](#dump-format-conventions)).
+  A `memo(key)` declaration prints as `StateInit memo(name, key=…)`, and its
+  bytecode as `state_init memo` / `state_write init memo`.
 - **Phi carry-outs** print as a block footer: `phi-out: t126 -> t120 (x)`
   means "when this block's frame pops, copy `t126`'s value into `t120`'s
   register" (the `Phi` term for `x` in the parent block; see `Block.phi_outs`).
@@ -2241,6 +2244,7 @@ absence as the default (the shared rule — see
 | `path_pop` | `number` | Omitted when `0`. On a `StateRead`/`StateWrite`: how many enclosing loop steps the access drops from the live call path to address the slot its declaration owns (a `state` declared outside a loop and reassigned inside one). Always `0` on a `StateInit`, which *is* the declaration. |
 | `call_site` | `number` | Omitted when absent. On a `Call`/`MethodCall`/`BuiltinCall`: the callsite id (a `u64`) the callee's frame pushes onto its call path, which is what gives each callsite of a function its own `state` slots. Derived from the callee's spelling, its ordinal among identically-spelled callees in the enclosing function, and that function's module/name chain — never from term ids or spans, so it survives a hot reload. Hand-written IR may omit it; a call with no id contributes a shared id of `0`, i.e. one slot per declaration as before call-path keying. |
 | `collect` | `boolean` | Omitted when `false`. On a `ForLoop`/`NumericForLoop` term, marks a value-position loop (`x = for …`) that collects each iteration's body result into a list. |
+| `is_memo` | `boolean` | Omitted when `false`. On a `StateInit`: the declaration is a `memo(key)`, not a `state`. The slot is addressed by the key value alone, and it is a cache: never named by state dumps, `--state-storage` or a reload. Valid only on a `StateInit` with exactly one input (the key), and no `StateRead`/`StateWrite` may name its `state_key`. |
 
 Execution order within a block is the block's ordered `terms` array (below).
 The in-memory `entry`/`block_next`/`block_prev` linked list is not serialized;
@@ -2283,7 +2287,7 @@ legacy documents that carry it (and no block `terms` arrays) still load.
 | Call | `"Call"` | [callable, arg0, arg1, ...] | none | |
 | MethodCall | `{"MethodCall": {"name": cid, "hint": cid?}}` | [object, arg0, arg1, ...] | none | Method name as ConstantId; tries record field first, then the receiver's class, then a builtin with `object` prepended. `hint` (omitted when absent) names a class for live-edit dispatch. |
 | BuiltinCall | `{"BuiltinCall": cid}` | [arg0, arg1, ...] | none | Direct builtin call; `cid` is a String constant holding the builtin's name, resolved by name at lower time. |
-| StateInit | `"StateInit"` | [] or [explicit_key] | [init_block] | `state_key` set. Init expression lives in `child_blocks[0]` for lazy evaluation — only entered when the runtime key isn't yet in the persistent state map. Optional `explicit_key` is the value computed for `state(expr) name`. |
+| StateInit | `"StateInit"` | [] or [explicit_key] | [init_block] | `state_key` set. Init expression lives in `child_blocks[0]` for lazy evaluation — only entered when the runtime key isn't yet in the persistent state map. Optional `explicit_key` is the value computed for `state(expr) name`. With `is_memo` set it is a `memo(expr) name` declaration and the key is required. |
 | StateRead | `"StateRead"` | none | none | `state_key` set |
 | StateWrite | `"StateWrite"` | [value] or [value, explicit_key] | none | `state_key` set. Forwards the same `explicit_key` from the matching `StateInit` so the runtime resolves to the same `RuntimeStateKey`. |
 | CellNew | `"CellNew"` | [init] | none | Allocate the cell behind a `var`. The one op that produces a `Value::Cell`. |

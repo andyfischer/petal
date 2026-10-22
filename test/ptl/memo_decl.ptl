@@ -1,0 +1,55 @@
+// `memo(key) name = init`: a result cached per key value, shared by every
+// caller (docs/features/memo.md). Run with `petal test test/ptl`.
+//
+// `calls` counts how often an initializer ran. Each test compares it before
+// and after, so the tests do not depend on running in any order.
+
+var calls = 0
+
+fn counted(n)
+  set calls = get calls + 1
+  n * n
+end
+
+fn square(n)
+  memo(n) sq = counted(n)
+  sq
+end
+
+test "a hit returns the cached value without running the initializer" do
+  let before = get calls
+  expect_eq(square(7), 49)
+  expect_eq(square(7), 49)
+  expect_eq(get calls - before, 1)
+end
+
+test "each key has its own entry" do
+  let before = get calls
+  expect_eq([square(11), square(12), square(11), square(12)], [121, 144, 121, 144])
+  expect_eq(get calls - before, 2)
+end
+
+fn by_content(k)
+  memo(k) v = counted(len(k))
+  v
+end
+
+test "lists and records are keys by content" do
+  let before = get calls
+  by_content([1, {a: 2}])
+  by_content([1, {a: 2}])
+  by_content([1, {a: 3}])
+  expect_eq(get calls - before, 2)
+end
+
+fn twice(n)
+  square(n) + square(n)
+end
+
+test "the call path does not split an entry" do
+  let before = get calls
+  let from_loop = for i in range(3) do square(21) end
+  expect_eq(from_loop, [441, 441, 441])
+  expect_eq(twice(21), 882)
+  expect_eq(get calls - before, 1)
+end

@@ -183,10 +183,6 @@ key home; key space; tick 200 0.016   # obs_playhead 76, monitor ["Harbour at Du
 - **No ripple or roll trims, no slip/slide.** Trims are plain overwrite trims
   that stop at the neighbour; only delete has a ripple form. Clips cannot be
   multi-selected, linked (picture with its sound) or copied.
-- **Named keys `equals`, `minus` and `backslash` cannot be injected by
-  name.** `POST /key {"key":"equals"}` is a 400 ("a canonical key name Garden
-  cannot deliver"); send the character (`"="`, `"-"`, `"\\"`) instead and
-  the script reads it as `key_pressed("equals")`. A real keyboard is fine.
 - **The toast's clock is virtual under test.** Once a test ticks, `time()`
   only moves on ticks, so a toast raised by an injected key stays up until
   ticks age it out. That is the documented contract, but it means a

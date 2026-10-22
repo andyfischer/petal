@@ -1334,4 +1334,19 @@ mod tests {
         }
     }
 
+    /// Every canonical name `/key` accepts comes back to the panel as that same
+    /// name, punctuation included: a test sends `equals` for the key a script
+    /// reads as `key_pressed("equals")`, not the `=` it types.
+    #[test]
+    fn deliverable_key_names_round_trip() {
+        for name in ["minus", "equals", "backslash", "leftbracket", "quote"] {
+            assert!(crate::debug::parse_key(name).is_some(), "{name:?} should route");
+        }
+        for name in garden_script::KEY_NAMES {
+            if let Some(key) = crate::debug::parse_key(name) {
+                assert_eq!(panel_key_name(key).as_deref(), Some(*name), "{name:?}");
+            }
+        }
+    }
+
 }

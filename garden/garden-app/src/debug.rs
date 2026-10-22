@@ -1443,10 +1443,28 @@ fn respond_with(
     stream.flush()
 }
 
+/// The canonical punctuation key names and the unshifted character each key
+/// types on a US layout. A panel script reads `key_pressed("equals")`, so a
+/// driver must be able to send that name too, not only the `=` it types; the
+/// character is delivered and Garden names it back as the same key.
+const PUNCTUATION_KEYS: &[(&str, char)] = &[
+    ("minus", '-'),
+    ("equals", '='),
+    ("comma", ','),
+    ("period", '.'),
+    ("slash", '/'),
+    ("backslash", '\\'),
+    ("semicolon", ';'),
+    ("quote", '\''),
+    ("backquote", '`'),
+    ("leftbracket", '['),
+    ("rightbracket", ']'),
+];
+
 /// Map a debug key name to the toolkit-independent [`Key`] the app core
 /// consumes. Named keys come from [`crate::vim::NAMED_KEYS`] (case-insensitive,
-/// plus the `enter` and `esc` aliases); any other single character maps to
-/// `Key::Char`.
+/// plus the `enter` and `esc` aliases), punctuation key names from
+/// [`PUNCTUATION_KEYS`]; any other single character maps to `Key::Char`.
 pub fn parse_key(name: &str) -> Option<Key> {
     let lower = name.to_ascii_lowercase();
     let canonical = match lower.as_str() {
@@ -1456,6 +1474,9 @@ pub fn parse_key(name: &str) -> Option<Key> {
     };
     if let Some((_, key)) = crate::vim::NAMED_KEYS.iter().find(|(n, _)| *n == canonical) {
         return Some(*key);
+    }
+    if let Some((_, c)) = PUNCTUATION_KEYS.iter().find(|(n, _)| *n == canonical) {
+        return Some(Key::Char(*c));
     }
     let mut chars = name.chars();
     match (chars.next(), chars.next()) {

@@ -12,6 +12,8 @@
 //! default policy (`PETAL_POLICY` overrides it); the report is the minimum and
 //! median time of a run.
 
+#![allow(clippy::disallowed_methods, reason = "examples run natively")]
+
 use std::path::PathBuf;
 use std::time::Instant;
 

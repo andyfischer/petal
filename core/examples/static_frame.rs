@@ -19,6 +19,8 @@
 //! nothing about what the dynamic code then does with a kept table (a memo
 //! hit on an argument that is the same object, for one).
 
+#![allow(clippy::disallowed_methods, reason = "examples run natively")]
+
 use std::path::{Path, PathBuf};
 
 use petal::env::Env;

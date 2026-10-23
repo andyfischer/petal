@@ -1,9 +1,9 @@
 /** PetalCanvas — wraps PetalRuntime for canvas-based frame-loop execution. */
 
 import init, { PetalRuntime } from "../pkg/petal_web_canvas.js";
-import { renderCommands } from "./canvas-renderer.js";
-import { InputTracker } from "./input.js";
-import { bindFontMetrics } from "./text-metrics.js";
+import { renderCommands } from "./canvas-renderer";
+import { InputTracker } from "./input";
+import { bindFontMetrics } from "./text-metrics";
 
 export class PetalCanvas {
   runtime: PetalRuntime | null = null;
@@ -12,6 +12,7 @@ export class PetalCanvas {
   private ctx: CanvasRenderingContext2D | null = null;
   private input = new InputTracker();
   private animId: number | null = null;
+  private resizeObserver: ResizeObserver | null = null;
   frameCount = 0;
   private lastTime = 0;
   private errorEl: HTMLElement | null = null;
@@ -225,8 +226,9 @@ export class PetalCanvas {
     this.input.attach(canvas);
     this.resizeCanvas();
 
-    const ro = new ResizeObserver(() => this.resizeCanvas());
-    ro.observe(canvas.parentElement ?? canvas);
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = new ResizeObserver(() => this.resizeCanvas());
+    this.resizeObserver.observe(canvas.parentElement ?? canvas);
 
     this.lastTime = performance.now();
     this.loop();
@@ -276,12 +278,14 @@ export class PetalCanvas {
     return this.runFrame(dt);
   }
 
-  /** Stop the animation loop. */
+  /** Stop the animation loop and stop watching the canvas for resizes. */
   stop(): void {
     if (this.animId !== null) {
       cancelAnimationFrame(this.animId);
       this.animId = null;
     }
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
   }
 
   private runFrame(dt: number): string {
@@ -334,7 +338,11 @@ export class PetalCanvas {
   }
 
   private showError(msg: string): void {
-    if (!this.errorEl) return;
+    // With nowhere on the page to show it, a broken script would be invisible.
+    if (!this.errorEl) {
+      console.error(`[petal] ${msg}`);
+      return;
+    }
 
     const match = msg.match(/\[line (\d+)(?:, column (\d+))?\]/);
     const line = match ? parseInt(match[1], 10) : null;

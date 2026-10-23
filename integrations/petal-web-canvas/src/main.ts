@@ -1,4 +1,4 @@
-import { PetalCanvas } from "./runtime.js";
+import { PetalCanvas } from "./runtime";
 
 interface Example {
   name: string;

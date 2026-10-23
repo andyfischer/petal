@@ -134,6 +134,7 @@ pub(super) fn handle_run(
     if trace_pending {
         env.enable_pending_trace(sid);
     }
+    #[allow(clippy::disallowed_methods, reason = "the CLI runs natively")]
     let run_started = std::time::Instant::now();
     let mut run_result = env.run(sid);
     // `--runs n`: the remaining runs, on the same stack, each from the top.

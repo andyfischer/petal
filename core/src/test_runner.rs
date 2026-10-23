@@ -299,6 +299,7 @@ pub fn run_source(file: &str, path: Option<&Path>, source: &str, opts: &Options)
             report.tests.push(row);
             continue;
         }
+        #[allow(clippy::disallowed_methods, reason = "`petal test` runs natively; no web host runs tests")]
         let started = Instant::now();
         if let Some(e) = &hung {
             row.status = Status::Error;

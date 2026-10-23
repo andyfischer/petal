@@ -24,6 +24,7 @@ impl Env {
         // Timed only while profiling or a call bench is on; `Instant::now` is
         // a couple of ns against a collection's microseconds, so it is not
         // worth gating twice.
+        #[allow(clippy::disallowed_methods, reason = "only while profiling or benching, which no web host turns on")]
         let started = (self.profile.enabled || self.profile.bench.enabled)
             .then(std::time::Instant::now);
         // Disjoint borrows: stacks (shared) + the one context (mut). Mark all

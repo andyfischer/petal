@@ -67,6 +67,7 @@ pub fn seed_from_env() -> Option<u64> {
 /// makes an embedder (petal-ui's `Headless`, garden) reproducible with no code
 /// change of its own.
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::disallowed_methods, reason = "wasm32 builds take the counter-based version below")]
 pub fn initial_seed() -> u64 {
     if let Some(seed) = seed_from_env() {
         return seed;

@@ -17,6 +17,8 @@
 //! garbage each collection finds. Figures for both are in
 //! docs/dev/performance.md (Frozen data and collection pauses).
 
+#![allow(clippy::disallowed_methods, reason = "examples run natively")]
+
 use std::time::Instant;
 
 use petal::heap::Heap;

@@ -10,7 +10,7 @@ import {
   DEFAULT_ROLE,
   FONT_STACKS,
   REGULAR_WEIGHT,
-} from "./text-metrics.js";
+} from "./text-metrics";
 
 export interface DrawCommand {
   op: string;

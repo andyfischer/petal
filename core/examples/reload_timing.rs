@@ -11,6 +11,8 @@
 //! figures are what a host pays before the next frame can run. Nothing is
 //! executed: the program may need natives this binary does not have.
 
+#![allow(clippy::disallowed_methods, reason = "examples run natively")]
+
 use std::path::PathBuf;
 use std::time::Instant;
 

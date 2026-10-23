@@ -11,6 +11,8 @@
 //! the table in docs/dev/performance.md, "Lowering cost".
 //! Nothing is run.
 
+#![allow(clippy::disallowed_methods, reason = "examples run natively")]
+
 use std::path::PathBuf;
 use std::time::Instant;
 

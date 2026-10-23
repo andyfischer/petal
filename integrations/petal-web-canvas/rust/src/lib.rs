@@ -63,6 +63,9 @@ pub struct PetalRuntime {
 impl PetalRuntime {
     #[wasm_bindgen(constructor)]
     pub fn new() -> PetalRuntime {
+        // A Rust panic reaches the page as a bare `RuntimeError: unreachable`;
+        // this logs its message and location to the console first.
+        console_error_panic_hook::set_once();
         let mut env = Env::new();
         // The standard petal-ui set: input natives, the 2D draw vocabulary,
         // offscreen canvas ops, the `host_data` pull channel, and the `ui`

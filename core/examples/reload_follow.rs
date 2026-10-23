@@ -24,6 +24,8 @@
 //! rebuilt by the frame after the reload, as before) and on. The frame's
 //! instruction count is exact; the times are the minimum over the cycles.
 
+#![allow(clippy::disallowed_methods, reason = "examples run natively")]
+
 use std::path::{Path, PathBuf};
 
 use petal::env::{Env, ReloadOutcome, StaticSlotState};

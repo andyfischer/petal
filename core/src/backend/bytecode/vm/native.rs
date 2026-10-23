@@ -401,6 +401,7 @@ impl<'a> Vm<'a> {
         } else {
             None
         };
+        #[allow(clippy::disallowed_methods, reason = "only while profiling, which no web host turns on")]
         let timed = self.profile.enabled.then(std::time::Instant::now);
         let mut cxt = self.native_cxt(args, &chain, origin, in_place);
         let count = natives.call(nid, &mut cxt)?;

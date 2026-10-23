@@ -982,6 +982,7 @@ impl StaticSlots {
 
     /// A tick of a drag happened now. Returns whether it continues one: the
     /// tick before it was less than `quiet` ago.
+    #[allow(clippy::disallowed_methods, reason = "wasm32 builds read the `Instant` stand-in above")]
     pub(crate) fn note_live_edit(&mut self, quiet: Duration) -> bool {
         let now = Instant::now();
         let continues = self.last_live_edit.is_some_and(|t| now.duration_since(t) < quiet);
@@ -1023,6 +1024,7 @@ impl StaticSlots {
 
     /// A run is about to execute (its `StaticSkip` fell through).
     #[inline]
+    #[allow(clippy::disallowed_methods, reason = "wasm32 builds read the `Instant` stand-in above")]
     pub(crate) fn begin_build(&mut self, run: u32) {
         self.building = Some((run, Instant::now()));
         // A segment that raised left its half-written log behind.

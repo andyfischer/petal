@@ -15,6 +15,8 @@
 // Each case also states which path it expects, so a change that silently
 // stops being incremental (or starts being) fails here.
 
+#![allow(clippy::disallowed_methods, reason = "tests run natively")]
+
 use petal::env::{Env, ReloadOutcome};
 use petal::policy::RunPolicy;
 use petal::program::ProgramId;

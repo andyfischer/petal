@@ -3,6 +3,8 @@
 //! runner behind `petal test` (`petal::test_runner`), and the `petal test`
 //! command itself, run as a process. docs/testing.md.
 
+#![allow(clippy::disallowed_methods, reason = "tests run natively")]
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 

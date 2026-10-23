@@ -8,6 +8,8 @@
 //! would. The whole measurement is then repeated with the optimizer off, and
 //! the report sets the two side by side.
 
+#![allow(clippy::disallowed_methods, reason = "`petal bench` runs natively")]
+
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 

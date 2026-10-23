@@ -591,6 +591,19 @@ way, for code written against an earlier checkout.
 
 ### Embedding and integrations
 
+- The web runtimes (petal-web-canvas, petal-web-html) log a Rust panic's
+  message, location and stack to the console instead of trapping with a bare
+  `RuntimeError: unreachable`. A static build no longer traps on wasm32 (the
+  static cache read `Instant::now`, which has no clock there), and
+  `core/clippy.toml` disallows `Instant::now` and `SystemTime::now`, enforced
+  for the wasm32 build in CI, so a new clock read must be cfg'd or justified.
+- `tools/wasm-smoke.ts` runs scripts through both built wasm pkgs in Node, and
+  CI runs it after the web builds. Each `build-wasm.sh` stamps
+  `pkg/BUILD_INFO` with the commit, a dirty flag and the build time.
+- `PetalCanvas`: `stop()` disconnects the canvas's `ResizeObserver`; an error
+  with no `errorEl` to show it in goes to `console.error` instead of nowhere;
+  the TypeScript imports are extensionless, so Turbopack (Next.js) accepts
+  them as well as Vite and tsc.
 - `petal_ui::input::register_input_module` registers exactly what
   `ui/input` declares (input, timing, the frame), without the hit-testing
   natives that `register_input` adds for the `ui` module. A host whose

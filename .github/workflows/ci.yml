@@ -167,6 +167,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          components: clippy
 
       - name: Install binaryen (provides wasm-opt)
         run: |
@@ -188,6 +189,13 @@ jobs:
             integrations/petal-web-canvas/rust/target
           key: cargo-wasm-${{ runner.os }}-${{ hashFiles('core/Cargo.lock', 'integrations/petal-web-canvas/rust/Cargo.lock') }}
           restore-keys: cargo-wasm-${{ runner.os }}-
+
+      # `Instant::now()` / `SystemTime::now()` panic on wasm32; core/clippy.toml
+      # disallows them, and a native-only read carries an #[allow]. Only that
+      # lint is enforced here.
+      - name: core — std::time lint (wasm32)
+        working-directory: core
+        run: cargo clippy --lib --target wasm32-unknown-unknown --features wasm -- -A clippy::all -A warnings -D clippy::disallowed_methods
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -219,6 +227,11 @@ jobs:
 
       - name: petal-web-canvas — vite build
         run: npm run build --workspace integrations/petal-web-canvas
+
+      # Runs scripts through both built runtimes in Node: a pkg that builds
+      # but traps on every script (a clock read, say) fails here.
+      - name: wasm smoke test
+        run: node tools/wasm-smoke.ts --require canvas,html
 
       - name: petal-diagram-canvas — vite build
         run: npm run build --workspace examples/custom-apps/diagram-canvas

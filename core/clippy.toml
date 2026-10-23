@@ -1,0 +1,9 @@
+# `Instant::now()` and `SystemTime::now()` panic on wasm32-unknown-unknown,
+# which every web host builds for. A clock read that runs on a web path must be
+# cfg'd (see `static_cache.rs`, `builtins::initial_seed`); one that only runs
+# natively (profiling, benches, the CLI) carries an `#[allow]` saying why.
+# CI enforces this lint alone: see the "std::time lint" step in ci.yml.
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "panics on wasm32; cfg it out of web builds, or #[allow] it with the reason it never runs there" },
+    { path = "std::time::SystemTime::now", reason = "panics on wasm32; cfg it out of web builds, or #[allow] it with the reason it never runs there" },
+]

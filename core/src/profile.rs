@@ -955,6 +955,7 @@ impl CallBench {
     }
 
     #[inline(never)]
+    #[allow(clippy::disallowed_methods, reason = "only while a call bench is on, which only `petal bench` turns on")]
     fn enter_measured(&mut self, target: u32, depth: usize, start: CallCounters) {
         // Anything still open at this depth belongs to a frame that is gone.
         self.unwind(depth);
@@ -1062,6 +1063,7 @@ impl CallBench {
     /// by timing a run of empty enter/leave pairs. A benched call's inclusive
     /// time carries roughly half of this for itself plus all of it for every
     /// user function it calls directly.
+    #[allow(clippy::disallowed_methods, reason = "only for `petal bench`, which runs natively")]
     pub fn timer_overhead_ns() -> f64 {
         const ROUNDS: u32 = 20_000;
         let mut b = CallBench::new(&[FunctionId(0)]);

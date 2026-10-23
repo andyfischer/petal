@@ -204,6 +204,7 @@ fn embed_build_info(manifest: &str) {
         .ok()
         .and_then(|s| s.trim().parse::<u64>().ok())
         .or_else(|| {
+            #[allow(clippy::disallowed_methods, reason = "build scripts run on the host, never on wasm32")]
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .ok()

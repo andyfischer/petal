@@ -6,6 +6,8 @@
 //! from the nearest known position) are checked against one reference that
 //! goes through `str::chars`, so the two cannot drift apart.
 
+#![allow(clippy::disallowed_methods, reason = "tests run natively")]
+
 use std::time::{Duration, Instant};
 
 use petal::env::Env;

@@ -23,7 +23,14 @@ integrations/petal-web-html/build-wasm.sh     # wasm-pack build --features wasm 
 Both use `wasm-pack build --target web`, so the module is an ES module with a
 default `init()` export to await before constructing a runtime. Projects
 outside this repository (such as the website) vendor a built copy and see a
-change only when it is rebuilt and vendored again.
+change only when it is rebuilt and vendored again. Each build writes
+`pkg/BUILD_INFO` (`commit=`, `dirty=`, `built=`), so a vendored copy can say
+which Petal it is.
+
+`tools/wasm-smoke.ts` runs scripts through both built pkgs in Node, a few
+frames each; CI runs it after the builds. A Rust panic inside the runtime is
+logged to the console (message, location and stack) before the page sees
+`RuntimeError: unreachable`, and leaves that runtime unusable.
 
 ## The lifecycle
 

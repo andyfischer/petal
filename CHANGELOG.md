@@ -422,6 +422,13 @@ way, for code written against an earlier checkout.
 
 ### CLI
 
+- `petal check` reports arithmetic the type pass proves raises: `+`, `-`,
+  `*`, `/` or `%` on two lists, and `+` on two strings, with the runtime's
+  message (`use ++ to concatenate lists`). `petal lint`'s
+  `prefer-compound-assign` no longer folds such a statement, nor `xs = xs + e`
+  where `xs` is a list and `e` is not proven a number, which is how a
+  concatenation spelled `+` looks; `xs += e` would fail the same way and read
+  as a fix.
 - `petal --version` says which build it is: the version, the git commit it
   was built from (marked `-dirty`, or `-vendored` for a copy inside another
   repository) with that commit's date, and the build date. The same is

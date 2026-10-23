@@ -126,6 +126,21 @@ pub enum TypeNote {
         /// The literal division leaves a remainder (`1 / 2`, not `4 / 2`).
         inexact: bool,
     },
+    /// Arithmetic on operands proven to be two lists (`[1] + [2]`), or `+` on
+    /// two strings: it raises whenever it runs. `petal check` reports it as an
+    /// error; `petal lint` leaves the statement alone rather than tidying it.
+    FailingArithmetic {
+        /// The whole operation.
+        expr: SourceSpan,
+    },
+    /// `xs + e` with one side proven a list and the other not proven a
+    /// number: it adds a scalar to each element, or raises if `e` is a list,
+    /// which is how a mistaken concatenation looks. `petal lint` does not fold
+    /// such a statement into `xs += e`, which would read as approval.
+    ListPlusUnknown {
+        /// The whole operation.
+        expr: SourceSpan,
+    },
 }
 
 /// The syntactic position of a cast call, as far as removing it is concerned.
@@ -2016,6 +2031,38 @@ impl<'a> Checker<'a> {
         ) {
             return;
         }
+        // The runtime's own wording (`backend::ops::arithmetic`), hint included.
+        let fails = match (l, r, op) {
+            (Type::List, Type::List, BinOp::Add) => {
+                Some("Cannot add list and list — use ++ to concatenate lists".to_string())
+            }
+            (Type::List, Type::List, _) => Some(format!(
+                "Cannot {} list and list",
+                match op {
+                    BinOp::Sub => "subtract",
+                    BinOp::Mul => "multiply",
+                    BinOp::Div => "divide",
+                    _ => "take the modulus of",
+                }
+            )),
+            (Type::String, Type::String, BinOp::Add) => Some(
+                "Cannot add string and string — use ++ to concatenate strings, \
+                 or string interpolation: \"{a}{b}\""
+                    .to_string(),
+            ),
+            _ => None,
+        };
+        if let Some(message) = fails {
+            self.error(expr.span, message);
+            self.notes.push(TypeNote::FailingArithmetic { expr: expr.span });
+            return;
+        }
+        let num_like = |t| matches!(t, Type::Int | Type::Float | Type::Num);
+        if op == BinOp::Add
+            && ((l == Type::List && !num_like(r)) || (r == Type::List && !num_like(l)))
+        {
+            self.notes.push(TypeNote::ListPlusUnknown { expr: expr.span });
+        }
         if op == BinOp::Div && l == Type::Int && r == Type::Int {
             let (literal, inexact) = match (&left.kind, &right.kind) {
                 (
@@ -2894,6 +2941,18 @@ mod tests {
             .into_iter()
             .map(|d| d.message)
             .collect()
+    }
+
+    /// Arithmetic proven to raise is reported with the runtime's message.
+    #[test]
+    fn adding_two_lists_or_two_strings_is_reported() {
+        let w = warns("let a = [1]\nlet b = a + [2]\nlet s = \"x\" + \"y\"\nlet d = [1] - [2]");
+        assert_eq!(w.len(), 3, "{w:?}");
+        assert!(w[0].contains("use ++ to concatenate lists"), "{w:?}");
+        assert!(w[1].contains("use ++ to concatenate strings"), "{w:?}");
+        assert!(w[2].contains("Cannot subtract list and list"), "{w:?}");
+        // A list and a number broadcast; a list and an unknown may.
+        assert!(warns("let a = [1]\nlet b = a + 1\nfn f(x) x end\nlet c = a + f(1)").is_empty());
     }
 
     /// A class field that is not declared warns on a plain read — but not when

@@ -20,17 +20,35 @@
 //! set pop[i] = get pop[i] - d      =>   set pop[i] -= d
 //! r.n = r.n * 2                    =>   r.n *= 2
 //! ```
+//!
+//! A statement whose operation the type pass proves raises (`segs = segs +
+//! [s]` on two lists, [`TypeNote::FailingArithmetic`]), or that adds an
+//! unknown to a list (`segs = segs + branch(n)`, [`TypeNote::ListPlusUnknown`],
+//! most likely a concatenation spelled `+`), is left as it is: the compound
+//! form means the same thing, and folding it reads as approval.
 
 use crate::ast::{AssignTarget, BinOp, Expr, ExprKind, ExprVisitor, Stmt, StmtKind, walk_stmt};
+use crate::source_map::SourceSpan;
+use crate::typecheck::TypeNote;
 
 use super::Fix;
 use super::to_match::Splice;
 
 /// Plan every compound fold in `stmts`, one [`Fix`] per statement, in source
-/// order.
-pub(super) fn plan_compound_fixes(stmts: &[Stmt], chars: &[char]) -> Vec<Fix> {
+/// order. `notes` are the type pass's over the same text.
+pub(super) fn plan_compound_fixes(stmts: &[Stmt], chars: &[char], notes: &[TypeNote]) -> Vec<Fix> {
+    let skip = notes
+        .iter()
+        .filter_map(|n| match *n {
+            TypeNote::FailingArithmetic { expr } | TypeNote::ListPlusUnknown { expr } => {
+                Some(expr)
+            }
+            _ => None,
+        })
+        .collect();
     let mut finder = Finder {
         chars,
+        skip,
         fixes: Vec::new(),
     };
     for s in stmts {
@@ -43,17 +61,28 @@ pub(super) fn plan_compound_fixes(stmts: &[Stmt], chars: &[char]) -> Vec<Fix> {
 /// [`plan_compound_fixes`], flattened to splices.
 #[cfg(test)]
 pub(super) fn plan_compound_edits(stmts: &[Stmt], chars: &[char]) -> Vec<Splice> {
-    super::flatten(plan_compound_fixes(stmts, chars))
+    let classes = crate::classes::ClassTable::new();
+    let signatures = crate::compiler::collect_fn_signatures(stmts, &classes);
+    let (_, notes) = crate::typecheck::find_typed_sites(stmts, &signatures, &classes);
+    super::flatten(plan_compound_fixes(stmts, chars, &notes))
 }
 
 struct Finder<'a> {
     chars: &'a [char],
+    /// Operations the type pass proves raise, or suspects are a list
+    /// concatenation spelled `+`.
+    skip: Vec<SourceSpan>,
     fixes: Vec<Fix>,
 }
 
 impl ExprVisitor for Finder<'_> {
     fn visit_stmt(&mut self, s: &Stmt) {
         let planned = match &s.kind {
+            StmtKind::Assign { value, .. } | StmtKind::Set { value, .. }
+                if self.skip.contains(&value.span) =>
+            {
+                None
+            }
             StmtKind::Assign {
                 target: AssignTarget::Name(name),
                 value,
@@ -262,6 +291,13 @@ mod tests {
     }
 
     #[test]
+    fn folds_a_list_plus_a_number() {
+        // Adds to each element: proven well-typed, so it folds.
+        assert_eq!(rewrite("let xs = [0]\nxs = xs + 1\n"), "let xs = [0]\nxs += 1\n");
+        assert_eq!(rewrite("let xs = [0]\nxs = xs ++ [1]\n"), "let xs = [0]\nxs ++= [1]\n");
+    }
+
+    #[test]
     fn folds_set_and_get() {
         let src = "var n = 0\nfn bump() set n = get n + 1 end\nset n = n * 2\n";
         assert_eq!(
@@ -305,6 +341,11 @@ mod tests {
             "let x = 1\nx += 2\n",
             // Not a compound operator.
             "let x = 1\nx = x == 1\n",
+            // Two lists: raises either way; the fix is `++`, not `+=`.
+            "let xs = [0]\nxs = xs + [1]\n",
+            // A list plus something not proven a number: most likely the same.
+            "fn branch(n) [n] end\nlet segs = [0]\nsegs = segs + branch(1)\n",
+            "let s = \"a\"\ns = s + \"b\"\n",
         ] {
             assert_eq!(rewrite(src), src);
         }

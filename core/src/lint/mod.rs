@@ -526,7 +526,12 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     let mut rewrites = p.apply(PREFER_FIELD_SET, plan_field_set_fixes(&stmts, &chars));
 
     let (chars, stmts) = reparse(&p.text)?;
-    let compound_assigns = p.apply(PREFER_COMPOUND_ASSIGN, plan_compound_fixes(&stmts, &chars));
+    let mut classes = crate::classes::ClassTable::new();
+    crate::compiler::collect_enums(&mut classes, &stmts, None);
+    let signatures = crate::compiler::collect_fn_signatures(&stmts, &classes);
+    let (_, notes) = crate::typecheck::find_typed_sites(&stmts, &signatures, &classes);
+    let compound_assigns =
+        p.apply(PREFER_COMPOUND_ASSIGN, plan_compound_fixes(&stmts, &chars, &notes));
 
     // The rules that read the type pass again, over the text as it now is.
     if opts.rules.enabled(NEG_ZERO_SUB) || opts.rules.enabled(INT_DIVISION) {

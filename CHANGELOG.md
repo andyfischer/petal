@@ -606,6 +606,12 @@ way, for code written against an earlier checkout.
   static cache read `Instant::now`, which has no clock there), and
   `core/clippy.toml` disallows `Instant::now` and `SystemTime::now`, enforced
   for the wasm32 build in CI, so a new clock read must be cfg'd or justified.
+- The web wasm builds are smaller. petal-web-canvas now builds with LTO and
+  one codegen unit, 3.94 MB to 3.69 MB with frames no slower, and
+  `build-wasm.sh --size` (either integration) builds at `opt-level = "z"`:
+  2.26 MB, 0.85 MB gzipped, frames about 1.5x slower. `pkg/BUILD_INFO` records
+  which (`profile=speed|size`). See
+  [embedding-web.md](docs/usage/embedding-web.md#building).
 - `tools/wasm-smoke.ts` runs scripts through both built wasm pkgs in Node, and
   CI runs it after the web builds. Each `build-wasm.sh` stamps
   `pkg/BUILD_INFO` with the commit, a dirty flag and the build time.

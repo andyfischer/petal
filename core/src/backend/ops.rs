@@ -276,6 +276,10 @@ fn list_scalar_arith(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result
     let (list_id, scalar, list_on_left) = match (a, b) {
         (Value::List(id), s) if is_scalar(&s) => (id, s, true),
         (s, Value::List(id)) if is_scalar(&s) => (id, s, false),
+        // Same first-mistake as string `+`: point at concatenation.
+        (Value::List(_), Value::List(_)) if matches!(op, TermOp::Add) => {
+            return Err("Cannot add list and list — use ++ to concatenate lists".into());
+        }
         _ => {
             return Err(format!(
                 "Cannot {} {} and {}",

@@ -150,6 +150,8 @@ way, for code written against an earlier checkout.
 
 ### Runtime
 
+- `[1] + [2]` still errors, and the message now says to use `++` to
+  concatenate lists, as the one for two strings does.
 - A bytecode VM is the only execution engine. It has a frame pool, copy
   propagation, record shapes with an inline cache for field reads, and a
   straight-line fast path for the hot instructions.

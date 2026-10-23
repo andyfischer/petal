@@ -3716,4 +3716,12 @@ mod restore_generation_tests {
             assert!(!env.heap().is_live(Value::List(*id)));
         }
     }
+
+    /// `+` on two lists is the JS/Python habit; the error names `++`.
+    #[test]
+    fn adding_two_lists_points_at_concatenation() {
+        let mut env = Env::new();
+        let err = env.run_source("let a = [1]\nlet b = [2]\na + b\n").unwrap_err();
+        assert!(err.to_string().contains("use ++ to concatenate lists"), "{err}");
+    }
 }

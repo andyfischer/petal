@@ -24,8 +24,22 @@ Both use `wasm-pack build --target web`, so the module is an ES module with a
 default `init()` export to await before constructing a runtime. Projects
 outside this repository (such as the website) vendor a built copy and see a
 change only when it is rebuilt and vendored again. Each build writes
-`pkg/BUILD_INFO` (`commit=`, `dirty=`, `built=`), so a vendored copy can say
-which Petal it is.
+`pkg/BUILD_INFO` (`commit=`, `dirty=`, `profile=`, `built=`), so a vendored
+copy can say which Petal it is.
+
+Both builds use LTO. `build-wasm.sh --size` also compiles at
+`opt-level = "z"`, for a page that cares more about the download than about
+frame time. Measured on petal-web-canvas, 2026-10-23, median frame time in
+Node:
+
+| build | raw | gzip | flow_field frame | snake frame |
+|---|---|---|---|---|
+| default | 3.69 MB | 1.29 MB | 6.0 ms | 1.4 ms |
+| `--size` | 2.26 MB | 0.85 MB | 9.3 ms | 2.7 ms |
+
+`opt-level = "s"` falls between them (2.71 MB, 1.00 MB gzip, frames ~1.3x
+slower). The rest of the size is mostly core's own code; the embedded
+library sources (the ui prelude, bloom, glsl, text_layout) are about 300 KB.
 
 `tools/wasm-smoke.ts` runs scripts through both built pkgs in Node, a few
 frames each; CI runs it after the builds. A Rust panic inside the runtime is

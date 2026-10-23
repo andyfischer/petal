@@ -17,6 +17,14 @@ serde_json = "1"
 [lib]
 crate-type = ["cdylib"]
 
+# This crate is its own workspace root, so `core/Cargo.toml`'s profile does not
+# apply here. LTO also merges the two embedded copies of the ui prelude
+# (petal-ui's and the bundled package's). 3.94 MB -> 3.69 MB, frames no slower.
+# `build-wasm.sh --size` additionally builds at opt-level "z".
+[profile.release]
+lto = true
+codegen-units = 1
+
 # Mirrors `core/Cargo.toml` — see the note there. wasm-pack reads this metadata
 # per crate, so the list has to be repeated rather than inherited.
 [package.metadata.wasm-pack.profile.release]

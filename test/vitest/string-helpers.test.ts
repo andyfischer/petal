@@ -90,6 +90,8 @@ print(len(out), starts_with(out, "xxx"))`;
     const start = Date.now();
     expect(runPetal(code)).toBe("100000 true");
     // 4-6 s before long strings stopped being interned; ~0.1 s after (release).
-    expect(Date.now() - start).toBeLessThan(3000);
+    // This runs the debug binary: ~2.6 s on an M4, ~6.3 s on a CI runner, so
+    // the bound only catches the interning regression, which is far slower.
+    expect(Date.now() - start).toBeLessThan(15000);
   });
 });

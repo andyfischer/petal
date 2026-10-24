@@ -5,6 +5,9 @@ Status: M5 of [the v2 plan](direct-manipulation-v2-plan.md), 24 October
 [examples/direct-manipulation-v2/](../../examples/direct-manipulation-v2/), the
 harness is `core-libs/petal-ui/tests/dm_v2_study.rs`, and the machine-readable
 results are in [direct-manipulation-v2-study.json](direct-manipulation-v2-study.json).
+The generated section (§6) was re-run in the final test pass the same day,
+after the post-M5 code review: every outcome, run count and edit is
+unchanged; only the wall times moved, by a few percent.
 
 The question: how complex can a program get while dragging one of its shapes
 still finds the right source edit? The method: a ladder of 27 programs, from
@@ -408,23 +411,23 @@ Build: release. Ladder: 105 goals over 27 examples; 91 succeed (87%), top altern
 | `a05-integer` | snap-next-client | **xfail** (expected: same: with only `x` allowed, screening still drops it as inert) | — | 0 | 2 | 0/0/0/0 | 0 (0) | client | — |
 | `a05-integer` | snap-small | **xfail** (expected: a 4 px drag on a 20 px grid has no exact answer (best effort leaves it where it was)) | `20→21` | 5 | 3 | 2/2/2/1 | 1 (0) | — | 2.00 |
 | `a05-integer` | tile-row | ok | `30→40` | 31 | 6 | 5/4/4/3 | 2 (1) | — | 0.00 |
-| `a05-integer` | int-bar | ok | `30→34` | 21 | 5 | 8/7/7/3 | 3 (2) | — | 0.00 |
-| `a06-shared-literals` | one-key | ok | `8→10` | 31 | 7 | 11/10/10/5 | 3 (2) | — | 0.00 |
-| `a06-shared-literals` | spread | ok | `8→10` | 30 | 7 | 11/10/10/5 | 2 (1) | — | 0.00 |
+| `a05-integer` | int-bar | ok | `30→34` | 21 | 4 | 8/7/7/3 | 3 (2) | — | 0.00 |
+| `a06-shared-literals` | one-key | ok | `8→10` | 31 | 6 | 11/10/10/5 | 3 (2) | — | 0.00 |
+| `a06-shared-literals` | spread | ok | `8→10` | 30 | 6 | 11/10/10/5 | 2 (1) | — | 0.00 |
 | `a06-shared-literals` | spread-client | ok | `8→10` | 4 | 3 | 11/1/1/1 | 1 (1) | client | 0.00 |
 | `a06-shared-literals` | key-size | ok | `5→6` | 29 | 6 | 11/10/10/3 | 2 (1) | — | 0.00 |
-| `a07-hints` | x-in-range | ok | `100→130` | 4 | 2 | 3/1/1/1 | 1 (1) | config, hint | 0.00 |
+| `a07-hints` | x-in-range | ok | `100→130` | 4 | 3 | 3/1/1/1 | 1 (1) | config, hint | 0.00 |
 | `a07-hints` | x-out-of-range | **xfail** (expected: the range stops x at 150: best effort ends 30 px short, not within tolerance) | `100→150` | 4 | 3 | 3/1/1/1 | 1 (0) | config, hint | 30.00 |
 | `a07-hints` | radius-step | ok | `10→16` | 4 | 3 | 4/1/1/1 | 1 (1) | config, hint | 1.00 |
-| `a07-hints` | y-rigid | ok | `0→10` | 4 | 3 | 2/1/1/1 | 1 (1) | — | 0.00 |
+| `a07-hints` | y-rigid | ok | `0→10` | 4 | 2 | 2/1/1/1 | 1 (1) | — | 0.00 |
 | `big-server-monitoring` | header-taller | ok | `76→86` | 4 | 88 | 1/1/1/1 | 1 (1) | — | 0.00 |
 | `big-server-monitoring` | fleet-wider | ok | `316→336` | 12 | 147 | 12/12/12/1 | 1 (1) | — | 0.00 |
-| `big-server-monitoring` | kpi-taller | ok | `104→120` | 33 | 308 | 374/11/11/3 | 1 (1) | — | 0.00 |
-| `big-server-monitoring` | kpi-gap | **xfail** (expected: the tiles split the row equally, so tile 2 moves with tile 1 fixed only if tile 1 widens: the cheapest edit is the gap count `3` in `(right_w - 3 * tile_gap) / 4` (3→0), a count no hint marks rigid) | `3→0` | 62 | 579 | 374/11/11/8 | 3 (3) | — | 0.00 |
+| `big-server-monitoring` | kpi-taller | ok | `104→120` | 33 | 313 | 374/11/11/3 | 1 (1) | — | 0.00 |
+| `big-server-monitoring` | kpi-gap | **xfail** (expected: the tiles split the row equally, so tile 2 moves with tile 1 fixed only if tile 1 widens: the cheapest edit is the gap count `3` in `(right_w - 3 * tile_gap) / 4` (3→0), a count no hint marks rigid) | `3→0` | 62 | 576 | 374/11/11/8 | 3 (3) | — | 0.00 |
 | `big-server-monitoring` | chart-down | ok | `104→114` | 29 | 318 | 11/11/11/4 | 3 (3) | — | 0.00 |
-| `big-server-monitoring` | host-dot | ok | `20.0→26.0` | 34 | 335 | 379/16/16/3 | 2 (2) | — | 0.00 |
-| `big-server-monitoring` | hero-dot | ok | `4.5→6.5` | 9 | 125 | 5/5/5/1 | 1 (1) | — | 0.00 |
-| `l00-literal` | right | ok | `120→150` | 4 | 3 | 1/1/1/1 | 1 (1) | — | 0.00 |
+| `big-server-monitoring` | host-dot | ok | `20.0→26.0` | 34 | 333 | 379/16/16/3 | 2 (2) | — | 0.00 |
+| `big-server-monitoring` | hero-dot | ok | `4.5→6.5` | 9 | 123 | 5/5/5/1 | 1 (1) | — | 0.00 |
+| `l00-literal` | right | ok | `120→150` | 4 | 2 | 1/1/1/1 | 1 (1) | — | 0.00 |
 | `l00-literal` | diagonal | ok | `120→135`, `80→100` | 10 | 3 | 2/2/2/2 | 3 (1) | — | 0.00 |
 | `l00-literal` | radius | ok | `20→32` | 4 | 3 | 1/1/1/1 | 1 (1) | — | 0.00 |
 | `l01-binding` | circle-x | ok | `140→160` | 4 | 2 | 1/1/1/1 | 1 (1) | — | 0.00 |
@@ -434,7 +437,7 @@ Build: release. Ladder: 105 goals over 27 examples; 91 succeed (87%), top altern
 | `l01b-binding-config` | bar-x | ok | `140→160` | 10 | 3 | 2/2/2/2 | 3 (3) | config | 0.00 |
 | `l01b-binding-config` | bar-x-strict | ok | `140→160` | 8 | 3 | 2/2/2/2 | 1 (1) | strict, config | 0.00 |
 | `l01b-binding-config` | circle-y | ok | `90→75` | 4 | 3 | 1/1/1/1 | 1 (1) | config | 0.00 |
-| `l02-helper` | right-circle | ok | `60→90` | 14 | 4 | 4/4/4/2 | 3 (3) | — | 0.00 |
+| `l02-helper` | right-circle | ok | `60→90` | 14 | 3 | 4/4/4/2 | 3 (3) | — | 0.00 |
 | `l02-helper` | left-circle-up | ok | `0→-20` | 11 | 3 | 4/4/4/2 | 2 (2) | — | 0.00 |
 | `l02-helper` | center-dot | ok | `200→225` | 6 | 3 | 2/2/2/1 | 1 (1) | — | 0.00 |
 | `l02-helper` | all-three | ok | `200→225` | 18 | 4 | 6/6/6/3 | 3 (1) | — | 0.00 |
@@ -450,7 +453,7 @@ Build: release. Ladder: 105 goals over 27 examples; 91 succeed (87%), top altern
 | `l04b-orbit-time` | along-orbit | ok | `0.0→0.41` | 42 | 10 | 5/5/5/5 | 3 (3) | — | 0.30 |
 | `l04b-orbit-time` | outward | ok | `90→110` | 40 | 10 | 5/5/5/5 | 3 (3) | — | 0.25 |
 | `l04b-orbit-time` | along-speed-only | ok | `0.8→1.08` | 6 | 4 | 5/1/1/1 | 1 (1) | client | 0.18 |
-| `l05-loop-row` | one | ok | `12→22` | 24 | 5 | 5/4/4/4 | 3 (2) | — | 0.00 |
+| `l05-loop-row` | one | ok | `12→22` | 24 | 4 | 5/4/4/4 | 3 (2) | — | 0.00 |
 | `l05-loop-row` | first | ok | `40→55` | 11 | 3 | 5/4/4/2 | 1 (1) | — | 0.00 |
 | `l05-loop-row` | spread-client | ok | `12→22` | 4 | 3 | 5/1/1/1 | 1 (1) | client | 0.00 |
 | `l05-loop-row` | alone | ok | `12→22` | 28 | 5 | 5/4/4/4 | 3 (3) | — | 0.00 |
@@ -462,17 +465,17 @@ Build: release. Ladder: 105 goals over 27 examples; 91 succeed (87%), top altern
 | `l06-records` | move-second-circle | ok | `200→220` | 21 | 4 | 12/12/12/2 | 2 (2) | — | 0.00 |
 | `l06-records` | grow-circle | ok | `20→30` | 12 | 3 | 10/10/10/1 | 1 (1) | — | 0.00 |
 | `l06-records` | all | ok | `0→10` | 28 | 5 | 12/12/12/4 | 3 (2) | — | 0.00 |
-| `l07-fractal-tree` | rightmost-out | ok | `0.7→0.734` | 38 | 15 | 5/5/5/5 | 3 (3) | — | 0.04 |
+| `l07-fractal-tree` | rightmost-out | ok | `0.7→0.734` | 38 | 16 | 5/5/5/5 | 3 (3) | — | 0.04 |
 | `l07-fractal-tree` | taller | ok | `0.7→0.75` | 32 | 14 | 5/5/5/5 | 3 (3) | — | 0.09 |
 | `l07-fractal-tree` | leaf-xy | **xfail** (expected: `shrink` with the root's `380` ties with the shape-only pairs: reshaping the tree moves the other leaves about as much as translating it does, so nothing in the score prefers the shape) | `0.7→0.724`, `380→392` | 55 | 20 | 6/6/6/6 | 3 (3) | — | 0.45 |
 | `l07-fractal-tree` | leaf-xy-client | ok | `0.7→0.72`, `0.45→0.487` | 30 | 12 | 6/2/2/2 | 3 (1) | client | 0.20 |
 | `l07b-fractal-tree-hints` | rightmost-out | ok | `0.7→0.734` | 49 | 18 | 7/4/4/4 | 3 (3) | config, hint | 0.04 |
 | `l07b-fractal-tree-hints` | taller | ok | `0.7→0.75` | 30 | 14 | 7/4/4/4 | 3 (3) | config, hint | 0.09 |
 | `l07b-fractal-tree-hints` | shrink-clamped | **xfail** (expected: the goal needs shrink > 0.8, past its tunable range, so the engine moves the tree's root (`380`, unhinted) instead) | `380→260` | 54 | 20 | 7/4/4/4 | 3 (1) | — | 0.00 |
-| `l08-flex-row` | widen-first | ok | `8→13` | 27 | 22 | 9/6/6/4 | 3 (1) | — | 0.00 |
-| `l08-flex-row` | last-right | ok | `6→11` | 33 | 21 | 9/6/6/6 | 3 (2) | — | 0.00 |
-| `l08-flex-row` | last-right-client | ok | `6→11` | 29 | 21 | 9/5/5/5 | 3 (1) | — | 0.00 |
-| `l08-flex-row` | label-x | ok | `6→12` | 30 | 16 | 9/6/6/6 | 3 (2) | — | 0.00 |
+| `l08-flex-row` | widen-first | ok | `8→13` | 27 | 20 | 9/6/6/4 | 3 (1) | — | 0.00 |
+| `l08-flex-row` | last-right | ok | `6→11` | 33 | 22 | 9/6/6/6 | 3 (2) | — | 0.00 |
+| `l08-flex-row` | last-right-client | ok | `6→11` | 29 | 20 | 9/5/5/5 | 3 (1) | — | 0.00 |
+| `l08-flex-row` | label-x | ok | `6→12` | 30 | 15 | 9/6/6/6 | 3 (2) | — | 0.00 |
 | `l08-flex-row` | bar-down | ok | `10→20` | 4 | 3 | 1/1/1/1 | 1 (1) | — | 0.00 |
 | `l09-projectile` | land-further | **xfail** (expected: the `20` in the marker's own draw call moves only the marker (no collateral), so it wins; see l09c for the hints that rule it out) | `20→60` | 38 | 10 | 8/8/8/6 | 3 (3) | — | 0.00 |
 | `l09-projectile` | land-further-client | ok | `0.9→0.83` | 6 | 4 | 8/1/1/1 | 1 (1) | client | 0.27 |
@@ -481,7 +484,7 @@ Build: release. Ladder: 105 goals over 27 examples; 91 succeed (87%), top altern
 | `l09b-projectile-pure` | land-further-client | ok | `0.9→0.83` | 6 | 4 | 13/1/1/1 | 1 (1) | client | 0.27 |
 | `l09c-projectile-hints` | land-further | ok | `0.9→0.83` | 22 | 7 | 8/4/4/3 | 3 (3) | — | 0.27 |
 | `l09c-projectile-hints` | higher-arc | ok | `0.0→10.0` | 45 | 12 | 9/4/4/4 | 3 (3) | — | 0.00 |
-| `l09c-projectile-hints` | land-closer | ok | `0.9→0.998` | 41 | 11 | 8/4/4/3 | 3 (3) | — | 0.20 |
+| `l09c-projectile-hints` | land-closer | ok | `0.9→0.998` | 41 | 10 | 8/4/4/3 | 3 (3) | — | 0.20 |
 | `l10-bar-chart` | bar2-up | ok | `22→26` | 39 | 7 | 14/14/14/5 | 3 (3) | — | 0.00 |
 | `l10-bar-chart` | bar2-up-exact | **xfail** (expected: an int data literal moves the bar 4 px per unit, so 10 px is out of reach within ±0.5 px; the exact answer found instead rescales the axis (`10` → 9)) | `10→9` | 34 | 7 | 14/14/14/5 | 3 (3) | — | 0.22 |
 | `l10-bar-chart` | bar2-up-snap | ok | `22→25` | 34 | 7 | 14/14/14/5 | 3 (3) | — | 2.00 |
@@ -506,18 +509,18 @@ Build: release. Ladder: 105 goals over 27 examples; 91 succeed (87%), top altern
 | row | 1600 | 1601 | ok | `2.5→2.506` | 18 | 45 | 5/4/4/4 |  |
 | tree-depth | 2 | 12 | ok | `0.72→0.88` | 33 | 6 | 5/5/5/5 |  |
 | tree-depth | 4 | 48 | ok | `0.72→0.773` | 36 | 10 | 5/5/5/5 |  |
-| tree-depth | 6 | 192 | ok | `0.72→0.756` | 38 | 26 | 5/5/5/5 |  |
-| tree-depth | 8 | 768 | ok | `0.72→0.755` | 39 | 98 | 5/5/5/5 |  |
-| tree-depth | 10 | 3072 | ok | `0.72→0.76` | 32 | 325 | 5/5/5/5 |  |
-| tree-depth | 12 | 12288 | fail | `400→415` | 31 | 1302 | 5/5/5/5 | top alternative edits ["400→415"], expected ⊆ ["spread", "shrink", "trunk"] |
+| tree-depth | 6 | 192 | ok | `0.72→0.756` | 38 | 27 | 5/5/5/5 |  |
+| tree-depth | 8 | 768 | ok | `0.72→0.755` | 39 | 97 | 5/5/5/5 |  |
+| tree-depth | 10 | 3072 | ok | `0.72→0.76` | 32 | 318 | 5/5/5/5 |  |
+| tree-depth | 12 | 12288 | fail | `400→415` | 31 | 1304 | 5/5/5/5 | top alternative edits ["400→415"], expected ⊆ ["spread", "shrink", "trunk"] |
 | sim-steps | 10 | 2 | ok | `0.9→0.79` | 40 | 6 | 8/7/7/5 |  |
 | sim-steps | 100 | 2 | ok | `0.9→0.79` | 40 | 7 | 8/7/7/5 |  |
 | sim-steps | 1000 | 2 | ok | `0.9→0.79` | 40 | 17 | 8/7/7/5 |  |
-| sim-steps | 10000 | 2 | ok | `0.9→0.79` | 40 | 118 | 8/7/7/5 |  |
-| sim-steps | 100000 | 2 | ok | `0.9→0.79` | 39 | 998 | 8/7/7/5 |  |
-| shared-sum | 4 | 2 | ok | `3.5→13.5` | 25 | 4 | 5/4/4/4 |  |
+| sim-steps | 10000 | 2 | ok | `0.9→0.79` | 40 | 117 | 8/7/7/5 |  |
+| sim-steps | 100000 | 2 | ok | `0.9→0.79` | 39 | 1002 | 8/7/7/5 |  |
+| shared-sum | 4 | 2 | ok | `3.5→13.5` | 25 | 5 | 5/4/4/4 |  |
 | shared-sum | 16 | 2 | ok | `6.5→16.5` | 73 | 8 | 17/16/16/16 |  |
-| shared-sum | 64 | 2 | ok | `6.5→16.5` | 130 | 13 | 65/64/64/32 |  |
+| shared-sum | 64 | 2 | ok | `6.5→16.5` | 130 | 12 | 65/64/64/32 |  |
 | shared-sum | 256 | 2 | ok | `6.5→16.5` | 130 | 15 | 257/256/256/32 |  |
 | shared-sum | 1024 | 2 | ok | `6.5→16.5` | 130 | 26 | 1025/1024/256/32 |  |
 | map-items | 10 | 11 | ok | `7.5→9.5` | 13 | 4 | 7/5/5/2 |  |
@@ -528,52 +531,52 @@ Build: release. Ladder: 105 goals over 27 examples; 91 succeed (87%), top altern
 
 Directories: `examples/games`, `examples/productivity`, `examples/dashboards`, `examples/custom-apps`, `examples/ui`, `/Volumes/bureau/petal-dmv2-study/worlds-fair-ui`, `/Volumes/bureau/petal-dmv2-study/petal-images`, `/Volumes/bureau/petal-dmv2-study/cheesecake-games`.
 
-197 entry files, 45 runnable headless. 258 auto goals ("move emit k's x by +10"): top alternative verified on 240 (93%), and the edit re-run within tolerance on 240; median 56.0 runs, 118 ms.
+197 entry files, 45 runnable headless. 258 auto goals ("move emit k's x by +10"): top alternative verified on 240 (93%), and the edit re-run within tolerance on 240; median 56.0 runs, 119 ms.
 
 | Project | Lines | Emits | Goals | Verified | Re-run ok | Median runs | Median ms |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `asteroids/app.ptl` | 612 | 228 | 6 | 6 | 6 | 45.0 | 51 |
-| `breakout/app.ptl` | 681 | 410 | 6 | 6 | 6 | 83.0 | 133 |
+| `asteroids/app.ptl` | 612 | 228 | 6 | 6 | 6 | 45.0 | 52 |
+| `breakout/app.ptl` | 681 | 410 | 6 | 6 | 6 | 83.0 | 134 |
 | `flappy/app.ptl` | 458 | 186 | 6 | 5 | 5 | 32.0 | 27 |
-| `fractal-explorer/app.ptl` | 1427 | 3227 | 6 | 6 | 6 | 52.0 | 2773 |
+| `fractal-explorer/app.ptl` | 1427 | 3227 | 6 | 6 | 6 | 52.0 | 2726 |
 | `hopper/game.ptl` | 203 | 62 | 6 | 6 | 6 | 35.0 | 11 |
-| `memory/app.ptl` | 1002 | 161 | 6 | 6 | 6 | 61.0 | 102 |
-| `particle-sandbox/app.ptl` | 815 | 6213 | 6 | 6 | 6 | 77.0 | 2297 |
+| `memory/app.ptl` | 1002 | 161 | 6 | 6 | 6 | 61.0 | 100 |
+| `particle-sandbox/app.ptl` | 815 | 6213 | 6 | 6 | 6 | 77.0 | 2308 |
 | `physics-playground/app.ptl` | 1925 | 282 | 6 | 6 | 6 | 48.0 | 70 |
-| `pong/app.ptl` | 449 | 100 | 6 | 5 | 5 | 41.0 | 18 |
+| `pong/app.ptl` | 449 | 100 | 6 | 5 | 5 | 41.0 | 17 |
 | `snake/app.ptl` | 433 | 134 | 6 | 6 | 6 | 44.0 | 23 |
-| `solar-system/app.ptl` | 528 | 402 | 6 | 5 | 5 | 123.0 | 175 |
+| `solar-system/app.ptl` | 528 | 402 | 6 | 5 | 5 | 123.0 | 172 |
 | `tower-defense/app.ptl` | 1199 | 386 | 6 | 5 | 5 | 50.0 | 72 |
 | `calculator/app.ptl` | 605 | 116 | 6 | 4 | 4 | 44.0 | 28 |
-| `calendar/app.ptl` | 1554 | 452 | 6 | 6 | 6 | 122.0 | 378 |
-| `chat/app.ptl` | 1221 | 150 | 6 | 6 | 6 | 122.0 | 260 |
+| `calendar/app.ptl` | 1554 | 452 | 6 | 6 | 6 | 122.0 | 387 |
+| `chat/app.ptl` | 1221 | 150 | 6 | 6 | 6 | 122.0 | 259 |
 | `command-palette/app.ptl` | 938 | 102 | 6 | 6 | 6 | 50.0 | 27 |
 | `crm-contact-manager/app.ptl` | 681 | 287 | 6 | 4 | 4 | 33.0 | 42 |
-| `email-client/app.ptl` | 2213 | 244 | 6 | 6 | 6 | 39.0 | 112 |
-| `file-browser/app.ptl` | 2688 | 255 | 6 | 6 | 6 | 126.0 | 289 |
-| `kanban/app.ptl` | 501 | 180 | 6 | 6 | 6 | 121.0 | 150 |
-| `markdown-editor/app.ptl` | 1515 | 309 | 6 | 5 | 5 | 122.0 | 4642 |
-| `music-sequencer/app.ptl` | 1255 | 590 | 6 | 6 | 6 | 40.0 | 103 |
-| `node-editor/app.ptl` | 1369 | 1216 | 6 | 6 | 6 | 88.0 | 420 |
-| `notes/app.ptl` | 1157 | 166 | 6 | 6 | 6 | 56.0 | 93 |
+| `email-client/app.ptl` | 2213 | 244 | 6 | 6 | 6 | 39.0 | 114 |
+| `file-browser/app.ptl` | 2688 | 255 | 6 | 6 | 6 | 126.0 | 293 |
+| `kanban/app.ptl` | 501 | 180 | 6 | 6 | 6 | 121.0 | 151 |
+| `markdown-editor/app.ptl` | 1515 | 309 | 6 | 5 | 5 | 122.0 | 4682 |
+| `music-sequencer/app.ptl` | 1255 | 590 | 6 | 6 | 6 | 40.0 | 104 |
+| `node-editor/app.ptl` | 1369 | 1216 | 6 | 6 | 6 | 88.0 | 409 |
+| `notes/app.ptl` | 1157 | 166 | 6 | 6 | 6 | 56.0 | 94 |
 | `paint/app.ptl` | 681 | 440 | 6 | 5 | 5 | 78.0 | 130 |
-| `photo-adjust/app.ptl` | 826 | 6426 | 6 | 6 | 6 | 63.0 | 620 |
-| `restaurant-pos/app.ptl` | 1814 | 438 | 6 | 6 | 6 | 121.0 | 342 |
-| `settings/app.ptl` | 2032 | 380 | 6 | 4 | 4 | 122.0 | 444 |
-| `spreadsheet/app.ptl` | 1060 | 272 | 6 | 6 | 6 | 96.0 | 254 |
-| `stock-trading/app.ptl` | 1835 | 1014 | 6 | 6 | 6 | 125.0 | 731 |
+| `photo-adjust/app.ptl` | 826 | 6426 | 6 | 6 | 6 | 63.0 | 622 |
+| `restaurant-pos/app.ptl` | 1814 | 438 | 6 | 6 | 6 | 121.0 | 341 |
+| `settings/app.ptl` | 2032 | 380 | 6 | 4 | 4 | 122.0 | 442 |
+| `spreadsheet/app.ptl` | 1060 | 272 | 6 | 6 | 6 | 96.0 | 258 |
+| `stock-trading/app.ptl` | 1835 | 1014 | 6 | 6 | 6 | 125.0 | 762 |
 | `todo/app.ptl` | 923 | 193 | 6 | 6 | 6 | 65.0 | 61 |
-| `vector-editor/app.ptl` | 1368 | 1378 | 6 | 6 | 6 | 40.0 | 131 |
-| `video-timeline/app.ptl` | 1606 | 2161 | 6 | 5 | 5 | 120.0 | 906 |
-| `analytics-dashboard/app.ptl` | 790 | 1476 | 6 | 6 | 6 | 83.0 | 386 |
-| `finance-dashboard/app.ptl` | 918 | 535 | 6 | 5 | 5 | 101.0 | 177 |
-| `network-graph/app.ptl` | 1760 | 790 | 6 | 6 | 6 | 135.0 | 976 |
-| `server-monitoring/app.ptl` | 711 | 1503 | 6 | 6 | 6 | 123.0 | 1002 |
-| `timeline-explorer/app.ptl` | 1743 | 1060 | 6 | 6 | 6 | 153.0 | 753 |
+| `vector-editor/app.ptl` | 1368 | 1378 | 6 | 6 | 6 | 40.0 | 132 |
+| `video-timeline/app.ptl` | 1606 | 2161 | 6 | 5 | 5 | 120.0 | 914 |
+| `analytics-dashboard/app.ptl` | 790 | 1476 | 6 | 6 | 6 | 83.0 | 384 |
+| `finance-dashboard/app.ptl` | 918 | 535 | 6 | 5 | 5 | 101.0 | 179 |
+| `network-graph/app.ptl` | 1760 | 790 | 6 | 6 | 6 | 135.0 | 996 |
+| `server-monitoring/app.ptl` | 711 | 1503 | 6 | 6 | 6 | 123.0 | 1011 |
+| `timeline-explorer/app.ptl` | 1743 | 1060 | 6 | 6 | 6 | 153.0 | 770 |
 | `diagram-canvas/examples/flowchart.ptl` | 95 | 48 | 6 | 6 | 6 | 16.0 | 6 |
 | `diagram-canvas/examples/interactive.ptl` | 111 | 25 | 6 | 2 | 2 | 0.0 | 2 |
 | `diagram-canvas/examples/org-chart.ptl` | 109 | 72 | 6 | 6 | 6 | 23.0 | 8 |
-| `bloom-gallery/app.ptl` | 276 | 77 | 6 | 6 | 6 | 54.0 | 113 |
+| `bloom-gallery/app.ptl` | 276 | 77 | 6 | 6 | 6 | 54.0 | 112 |
 | `layers/app.ptl` | 101 | 40 | 6 | 6 | 6 | 53.0 | 51 |
 
 Goals that did not succeed:
@@ -582,18 +585,18 @@ Goals that did not succeed:
 |---|---|---|---|---:|---:|---|---|---|---|
 | `flappy/app.ptl` | auto3 | **no-proposal** (no alternatives) | — | 25 | 23 | 51/23/23/2 | 0 (0) | — | — |
 | `pong/app.ptl` | auto4 | **no-proposal** (no alternatives) | — | 28 | 14 | 82/22/22/3 | 0 (0) | — | — |
-| `solar-system/app.ptl` | auto1 | **no-proposal** (no alternatives) | — | 126 | 175 | 203/166/166/32 | 0 (0) | — | — |
+| `solar-system/app.ptl` | auto1 | **no-proposal** (no alternatives) | — | 126 | 172 | 203/166/166/32 | 0 (0) | — | — |
 | `tower-defense/app.ptl` | auto3 | **fail** (best effort only, top alternative not verified (error 8.0 τ)) | `24→30` | 129 | 152 | 60/59/59/31 | 1 (0) | — | 4.00 |
-| `calculator/app.ptl` | auto2 | **fail** (best effort only, top alternative not verified (error 4.0 τ)) | `4→2` | 43 | 27 | 19/19/19/6 | 3 (0) | — | 2.00 |
+| `calculator/app.ptl` | auto2 | **fail** (best effort only, top alternative not verified (error 4.0 τ)) | `4→2` | 43 | 26 | 19/19/19/6 | 3 (0) | — | 2.00 |
 | `calculator/app.ptl` | auto3 | **fail** (best effort only, top alternative not verified (error 4.0 τ)) | `4→3` | 44 | 28 | 19/19/19/6 | 2 (0) | — | 2.00 |
 | `crm-contact-manager/app.ptl` | auto2 | **no-proposal** (nothing can move the goals: no editable literal moves the goals (line 213: Zero; line 213: Zero; line 213: Zero; line 38: Zero; line 39: Zer…) | — | 0 | 34 | 0/0/0/0 | 0 (0) | — | — |
 | `crm-contact-manager/app.ptl` | auto3 | **no-proposal** (nothing can move the goals: no editable literal moves the goals (line 213: Zero; line 213: Zero; line 213: Zero; line 38: Zero; line 39: Zer…) | — | 0 | 33 | 0/0/0/0 | 0 (0) | — | — |
-| `markdown-editor/app.ptl` | auto0 | **no-proposal** (nothing can move the goals: no editable literal moves the goals (line 4754: library code (the prelude or a package) is never edited; line 47…) | — | 0 | 405 | 0/0/0/0 | 0 (0) | — | — |
+| `markdown-editor/app.ptl` | auto0 | **no-proposal** (nothing can move the goals: no editable literal moves the goals (line 4754: library code (the prelude or a package) is never edited; line 47…) | — | 0 | 410 | 0/0/0/0 | 0 (0) | — | — |
 | `paint/app.ptl` | auto2 | **no-proposal** (nothing can move the goals: no editable literal moves the goals (line 77: Zero; line 141: structural: a comparison, index, loop bound or key…) | — | 0 | 54 | 0/0/0/0 | 0 (0) | — | — |
-| `settings/app.ptl` | auto0 | **no-proposal** (no alternatives) | — | 120 | 389 | 940/534/256/32 | 0 (0) | — | — |
-| `settings/app.ptl` | auto4 | **no-proposal** (no alternatives) | — | 120 | 401 | 940/534/256/32 | 0 (0) | — | — |
-| `video-timeline/app.ptl` | auto1 | **no-proposal** (no alternatives) | — | 120 | 860 | 481/255/255/32 | 0 (0) | — | — |
-| `finance-dashboard/app.ptl` | auto1 | **fail** (best effort only, top alternative not verified (error 4.0 τ)) | `3→2` | 122 | 222 | 348/179/179/32 | 2 (0) | — | 2.00 |
+| `settings/app.ptl` | auto0 | **no-proposal** (no alternatives) | — | 120 | 397 | 940/534/256/32 | 0 (0) | — | — |
+| `settings/app.ptl` | auto4 | **no-proposal** (no alternatives) | — | 120 | 395 | 940/534/256/32 | 0 (0) | — | — |
+| `video-timeline/app.ptl` | auto1 | **no-proposal** (no alternatives) | — | 120 | 869 | 481/255/255/32 | 0 (0) | — | — |
+| `finance-dashboard/app.ptl` | auto1 | **fail** (best effort only, top alternative not verified (error 4.0 τ)) | `3→2` | 122 | 216 | 348/179/179/32 | 2 (0) | — | 2.00 |
 | `diagram-canvas/examples/interactive.ptl` | auto1 | **no-proposal** (nothing can move the goals: no editable literal moves the goals (line 8: a `state` initializer whose state the checkpoint already holds; lin…) | — | 0 | 2 | 0/0/0/0 | 0 (0) | — | — |
 | `diagram-canvas/examples/interactive.ptl` | auto2 | **no-proposal** (nothing can move the goals: no editable literal moves the goals (line 8: a `state` initializer whose state the checkpoint already holds; lin…) | — | 0 | 2 | 0/0/0/0 | 0 (0) | — | — |
 | `diagram-canvas/examples/interactive.ptl` | auto3 | **no-proposal** (nothing can move the goals: no editable literal moves the goals (line 8: a `state` initializer whose state the checkpoint already holds; lin…) | — | 0 | 2 | 0/0/0/0 | 0 (0) | — | — |
@@ -624,13 +627,15 @@ cargo test --release --test dm_v2_study ladder -- --nocapture
 
 # The whole study: ladder, scaling sweep and external pass, rewriting this
 # file's generated section and the JSON (about 3 min).
-R=$PWD/../../examples; S=/Volumes/bureau/petal-dmv2-study
+R=$(cd ../../examples && pwd -P); S=/Volumes/bureau/petal-dmv2-study
 DM_STUDY_WRITE=1 \
 DM_STUDY_EXTRA=$R/games:$R/productivity:$R/dashboards:$R/custom-apps:$R/ui:$S/worlds-fair-ui:$S/petal-images:$S/cheesecake-games \
   cargo test --release --test dm_v2_study full_study -- --ignored --nocapture
 ```
 
-The external copies are made with `rsync` of the `.ptl` files of
+The external copies are made with `rsync` of the `.ptl` and `petal.toml`
+files (without the manifests, package host requirements are not enforced
+and library modules load as entry files) of
 `~/worlds-fair/ui/ptl`, `~/petal-creative/petal-images` and
 `~/cheesecake/games` into `$S`. Without `DM_STUDY_EXTRA` the external pass is
 skipped.

@@ -157,7 +157,7 @@ pub enum Command {
     /// the cursor lands on the line's first non-blank column.
     Goto(Addr),
     /// `:DragAllow [sel…]` — restrict the next drag-to-edit gestures to these
-    /// literals (`name`, `line:N`, `fn:NAME`, `config`); empty clears.
+    /// literals (`name`, `line:N`, `fn:NAME`, `config` or `knob`); empty clears.
     DragAllow(String),
     /// `:DragDeny [sel…]` — never move these literals; empty clears.
     DragDeny(String),

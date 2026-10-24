@@ -145,7 +145,8 @@ pub fn parse_selector(s: &str) -> Result<ParamSelector, String> {
         return Ok(ParamSelector::Function(name.to_string()));
     }
     Ok(match s {
-        "config" => ParamSelector::ConfigOnly,
+        // Every knob: `config let` and `tunable` literals, one tier.
+        "config" | "knob" => ParamSelector::ConfigOnly,
         "user" => ParamSelector::AllUserCode,
         "lib" => ParamSelector::ReportLibrary,
         "path-deps" => ParamSelector::AllowPathDeps,

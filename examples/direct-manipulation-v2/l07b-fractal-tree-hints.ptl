@@ -3,9 +3,10 @@
 //
 // The same tree, annotated: `spread` is the knob (`config let`), `shrink`
 // is `tunable` within [0.5, 0.8], and the trunk length is `rigid`, so no
-// drag may change it. The drags of l07 now land on the two knobs only, and
-// `tunable` costs less than `config let` (§2.5.2), so `shrink` is tried
-// first where it can do the job alone.
+// drag may change it. The drags of l07 now land on the two knobs only. The
+// two marks are one knob tier (§2.5.2), so neither is preferred for its
+// mark: `shrink` wins where it can do the job alone because it needs the
+// smaller change (to make the tree taller, `spread` would go 0.45 → 0.21).
 //
 // dm-goal rightmost-out: circle#31.0 += 15 | expect=spread,shrink
 // dm-goal taller: circle#16.1 -= 20 | expect=shrink

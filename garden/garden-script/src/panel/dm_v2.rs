@@ -566,7 +566,7 @@ fn candidate(program: &Program, c: &CandidateReport, nx: usize) -> DragCandidate
         span,
         file: file_path(program, p.file),
         value: p.value,
-        config: p.config || matches!(p.hint, Some(petal::dm_v2::Hint::Tunable { .. })),
+        config: p.is_knob(),
         tunable: matches!(p.hint, Some(petal::dm_v2::Hint::Tunable { .. })),
         rigid: matches!(p.hint, Some(petal::dm_v2::Hint::Rigid)),
         eligible: c.eligible.is_ok(),

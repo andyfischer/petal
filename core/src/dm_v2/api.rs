@@ -106,16 +106,17 @@ impl DmGoal {
     }
 }
 
-/// How strongly `config let` and `tunable` are preferred (§2.5.4).
+/// How strongly knobs (`config let` and `tunable`, one tier) are preferred
+/// (§2.5.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Prefer {
-    /// Config and tunable literals cost less, and alternatives made only of
-    /// them are listed first when they verify; the others are still listed.
+    /// Knobs cost less, and alternatives made only of them are listed first
+    /// when they verify; the others are still listed.
     #[default]
     Soft,
     /// v1's rule: once the program declares a `config let` (or a `tunable`
     /// that marks a literal), every other named binding is pinned, and when a
-    /// config or tunable literal can move the goal, only those are used.
+    /// knob can move the goal, only knobs are used.
     ConfigStrict,
 }
 
@@ -186,6 +187,7 @@ pub struct ParamChange {
     pub binding: Option<String>,
     /// The function it is written in, if any.
     pub function: Option<String>,
+    /// A knob ([`Param::is_knob`]): `config let`, `tunable(...)`, or both.
     pub config: bool,
     /// The value as written before and after.
     pub old: f64,
@@ -245,6 +247,7 @@ pub struct Alternative {
     /// Some change feeds back through `state` from earlier frames: the
     /// frozen-state measurement covers one frame only.
     pub stateful: bool,
+    /// Every change is a knob (`config let` or `tunable`, one tier).
     pub config_only: bool,
     /// The edit took another branch or re-initialized state somewhere.
     pub regime_changed: bool,
@@ -586,8 +589,7 @@ impl DmSession {
                     if strict
                         && e.edit.is_ok()
                         && p.binding.is_some()
-                        && !p.config
-                        && !matches!(p.hint, Some(Hint::Tunable { .. }))
+                        && !p.is_knob()
                     {
                         return Eligibility {
                             screen: false,
@@ -691,7 +693,7 @@ impl DmSession {
         self.config = jac
             .params
             .iter()
-            .map(|&i| params[i].config || matches!(params[i].hint, Some(Hint::Tunable { .. })))
+            .map(|&i| params[i].is_knob())
             .collect();
         self.weights = jac.params.iter().map(|&i| param_weight(&params[i], false)).collect();
         self.usable = (0..ncols).map(|c| elig[jac.params[c]].edit.is_ok() && jac.quality[c].usable()).collect();
@@ -1538,7 +1540,7 @@ fn change_of(p: &Param, t: &ParamText, v: f64, (new_text, respelled): (String, b
         file: p.file,
         binding: p.binding.as_ref().map(|b| b.rsplit("::").next().unwrap_or(b).to_string()),
         function: t.function.clone(),
-        config: p.config || matches!(p.hint, Some(Hint::Tunable { .. })),
+        config: p.is_knob(),
         old: p.value,
         new: v,
         old_text: t.text.clone(),

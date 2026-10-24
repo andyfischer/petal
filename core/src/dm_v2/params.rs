@@ -102,6 +102,14 @@ pub struct Param {
 }
 
 impl Param {
+    /// A knob: a literal marked by `config let` (including the literals of a
+    /// config record or list), by `tunable(...)`, or by both. Knobs share one
+    /// preference tier (§2.5.2): the weight, the `config` selector, the
+    /// config-only subsets and `Prefer::ConfigStrict` all ask this.
+    pub fn is_knob(&self) -> bool {
+        self.config || matches!(self.hint, Some(Hint::Tunable { .. }))
+    }
+
     /// The override that makes this literal read `v` (as written, so a
     /// negated literal's constant is set to `-v`). An int literal takes an
     /// int when `v` is whole.
@@ -200,7 +208,7 @@ impl ParamSelector {
                 b == name || b.rsplit("::").next() == Some(name.as_str())
             }),
             ParamSelector::Line(l) => p.file == ENTRY_FILE && p.span.start.line == *l,
-            ParamSelector::ConfigOnly => p.config || matches!(p.hint, Some(Hint::Tunable { .. })),
+            ParamSelector::ConfigOnly => p.is_knob(),
             ParamSelector::Function(name) => p.function.is_some_and(|f| {
                 program
                     .functions

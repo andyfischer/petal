@@ -361,13 +361,14 @@ pub enum DragSelector {
 impl DragSelector {
     /// Parse the selector syntax of `:DragAllow` / `:DragDeny` and the debug
     /// server: `name`, `line:N` (1-based, as the gutter shows it),
-    /// `fn:NAME`, or `config`.
+    /// `fn:NAME`, or `config` (alias `knob`: every `config let` and
+    /// `tunable` number, one tier).
     pub fn parse(s: &str) -> Option<DragSelector> {
         let s = s.trim();
         if s.is_empty() {
             return None;
         }
-        if s == "config" {
+        if s == "config" || s == "knob" {
             return Some(DragSelector::ConfigOnly);
         }
         if let Some(n) = s.strip_prefix("line:") {

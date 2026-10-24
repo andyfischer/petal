@@ -14,6 +14,7 @@
 
 use petal::direct_manipulation::{self as v1, ManipulationGoal, VarPolicy};
 use petal::dm_v2::params::{ParamFilter, ParamSelector};
+use petal::dm_v2::rank::KNOB_WEIGHT;
 use petal::dm_v2::spec::{NoHost, SpecConfig, SpecSession};
 use petal::dm_v2::{
     Alternative, DmError, DmGoal, DmRequest, DmResponse, DmSession, EmitKey, Engine, Observable, Prefer,
@@ -225,7 +226,7 @@ fn config_preferred_softly() {
     assert_eq!(e[0], vec!["10→25"], "{e:?}");
     assert!(resp.alternatives[0].config_only);
     assert!(e.contains(&vec!["50→65".to_string()]), "the call-site literal is still listed: {e:?}");
-    // The weight agrees with the tier: the config literal (0.5) costs less
+    // The weight agrees with the tier: the knob (0.5) costs less
     // than the call-site literal (0.75) for the same share of the drag
     // (§9 M5; under M3's relative edit cost the score alone put `50` first
     // and only the tier kept the config literal on top).
@@ -272,6 +273,38 @@ fn config_strict_counts_tunable_knobs() {
     let mut r = req(vec![DmGoal::to(t.arg(0, 0), 75.0)]);
     r.prefer = Prefer::ConfigStrict;
     assert_eq!(all_edits(&t.propose(&r)), vec![vec!["10→25"]]);
+}
+
+/// One knob tier: a literal marked by `config let`, by `tunable(...)`, or
+/// by both weighs the same (`rank::KNOB_WEIGHT`), so marking a literal twice
+/// changes nothing, and the `config` selector takes all three.
+#[test]
+fn config_and_tunable_are_one_tier() {
+    let mut t = T::new(
+        "config let a = 10\nlet b = tunable(10)\nconfig let c = tunable(10, 0, 100)\nlet d = 10\ndraw(a + b + c + d, 100, 10)\n",
+    );
+    let resp = t.propose(&req(vec![DmGoal::to(t.arg(0, 0), 55.0)]));
+    let w = |name: &str| {
+        resp.candidates
+            .iter()
+            .find(|c| c.param.binding.as_deref().is_some_and(|b| b.ends_with(name)))
+            .unwrap_or_else(|| panic!("no candidate `{name}`"))
+            .weight
+    };
+    assert_eq!(w("a"), KNOB_WEIGHT);
+    assert_eq!(w("b"), KNOB_WEIGHT);
+    assert_eq!(w("c"), KNOB_WEIGHT);
+    assert!(w("d") > KNOB_WEIGHT);
+    // The three knobs tie on weight and share, so the top alternative is a
+    // knob and the plain `let` is not.
+    assert!(resp.alternatives[0].config_only, "{:?}", all_edits(&resp));
+    let mut r = req(vec![DmGoal::to(t.arg(0, 0), 55.0)]);
+    r.filter = allow(vec![ParamSelector::ConfigOnly]);
+    let only = t.propose(&r);
+    assert!(!only.alternatives.is_empty() && only.alternatives.iter().all(|a| a.config_only), "{:?}", all_edits(&only));
+    let mut r = req(vec![DmGoal::to(t.arg(0, 0), 55.0)]);
+    r.filter = ParamFilter { allow: None, deny: vec![ParamSelector::ConfigOnly] };
+    assert_eq!(all_edits(&t.propose(&r))[0], vec!["10→25"], "only `d` is left");
 }
 
 // ── 3. two_goals_one_gesture ─────────────────────────────────────────────

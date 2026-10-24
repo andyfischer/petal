@@ -258,6 +258,18 @@ fn arg_goals_and_selectors() {
         .unwrap()
         .iter()
         .all(|c| c["binding"] != "gap")));
+
+    // `knob` is an alias of `config`: the same knobs, the same answer.
+    let by = |sel: &str| {
+        run_json(&[
+            "propose-edit", "--json", "--channel", "shapes", "--emit", "2", "--native-arg", "1", "--by", "25",
+            "--allow", sel, path.to_str().unwrap(),
+        ])["alternatives"]
+            .clone()
+    };
+    let knob = by("knob");
+    assert_eq!(knob, by("config"));
+    assert!(knob.as_array().unwrap().iter().all(|a| a["config_only"] == true), "{knob:#}");
 }
 
 #[test]

@@ -1539,8 +1539,9 @@ DESCRIPTION
        literal nudged, effects suppressed and random draws replayed, and
        measures how the goal moves. It solves through function calls, loops,
        records and math, verifies every answer by running it, and ranks the
-       alternatives (config and tunable literals first, then by how little
-       else they move). See docs/features/direct-manipulation.md.
+       alternatives (knobs first: config let and tunable literals, one tier;
+       then by how little else they move). See
+       docs/features/direct-manipulation.md.
 
        --v1 selects the legacy engine, which runs the program once with emit
        tracing and inverts the arguments of the call that produced the emit:
@@ -1577,9 +1578,10 @@ GOALS
 FILTERS
        --allow <sel>, --deny <sel>
               (v2) Which literals may move. Selectors: a binding NAME,
-              line:N, fn:NAME, config (config let and tunable), user (all user
-              code); and to lift a default exclusion: state-init, structural,
-              rng, path-deps, lib (screened for the report only). Repeatable.
+              line:N, fn:NAME, config (alias knob: every config let and
+              tunable literal), user (all user code); and to lift a default
+              exclusion: state-init, structural, rng, path-deps, lib
+              (screened for the report only). Repeatable.
               An --allow naming literals is exact.
 
        --configurable <var>, --static <var>
@@ -1589,8 +1591,8 @@ FILTERS
 
        --config-strict
               (v2) v1's rule: once the program has a config let (or a tunable
-              that marks a literal), only config and tunable literals move
-              when they can.
+              that marks a literal), only knobs (config let and tunable
+              literals) move when they can.
 
 OPTIONS
        --alternatives N

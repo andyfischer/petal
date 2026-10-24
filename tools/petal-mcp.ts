@@ -245,7 +245,9 @@ server.registerTool("ProposeEdit", {
     "`explain: true` to see the candidate table), then re-ask with `allow` naming the " +
     "literals you want moved (a binding name, 'line:N', 'fn:NAME', 'config') or `deny` " +
     "for ones to keep — the engine works out the values. In source, `config let` and " +
-    "`tunable(x, min, max)` mark preferred knobs and `rigid(x)` freezes a value.\n\n" +
+    "`tunable(x, min, max)` mark preferred knobs (one tier: either mark, or both, " +
+    "weighs the same; 'config', alias 'knob', selects them all) and `rigid(x)` " +
+    "freezes a value.\n\n" +
     "engine 'v1' (legacy; only when passed) inverts the emitting call's own " +
     "arguments: a literal, a binding, or + - * / arithmetic; it refuses values that " +
     "come out of a function call and takes only arg+to goals. Narrow v1 with " +
@@ -268,9 +270,9 @@ server.registerTool("ProposeEdit", {
     static: z.array(z.string()).optional()
       .describe("Variables that must not be edited (v1); under v2 the same as deny"),
     allow: z.array(z.string()).optional()
-      .describe("v2: only these may move: binding names, 'line:N', 'fn:NAME', 'config', 'user'"),
+      .describe("v2: only these may move: binding names, 'line:N', 'fn:NAME', 'config' (alias 'knob': every config let / tunable literal), 'user'"),
     deny: z.array(z.string()).optional().describe("v2: these may not move (same selectors)"),
-    configStrict: z.boolean().optional().describe("v2: v1's rule that config lets win outright"),
+    configStrict: z.boolean().optional().describe("v2: v1's rule that knobs (config let / tunable) win outright"),
     alternatives: z.number().int().min(1).optional().describe("v2: how many alternatives (default 3)"),
     explain: z.boolean().optional().describe("v2: include the pipeline log and candidate table"),
     tol: z.number().optional().describe("v2: goal tolerance"),

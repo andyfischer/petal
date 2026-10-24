@@ -39,7 +39,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 15.1,
+            "wall_ms": 15.2,
             "why": "",
             "xfail": null
           },
@@ -79,7 +79,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 26.7,
+            "wall_ms": 26.8,
             "why": "",
             "xfail": null
           },
@@ -119,7 +119,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 61.7,
+            "wall_ms": 62.3,
             "why": "",
             "xfail": null
           },
@@ -156,7 +156,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 25.4,
+            "wall_ms": 25.5,
             "why": "",
             "xfail": null
           },
@@ -196,7 +196,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 53.4,
+            "wall_ms": 52.1,
             "why": "",
             "xfail": null
           },
@@ -236,7 +236,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 52.2,
+            "wall_ms": 51.1,
             "why": "",
             "xfail": null
           }
@@ -296,7 +296,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 22.2,
+            "wall_ms": 22.6,
             "why": "",
             "xfail": null
           },
@@ -336,7 +336,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 139.0,
+            "wall_ms": 139.4,
             "why": "",
             "xfail": null
           },
@@ -376,7 +376,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 148.1,
+            "wall_ms": 148.3,
             "why": "",
             "xfail": null
           },
@@ -416,7 +416,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 118.6,
+            "wall_ms": 117.7,
             "why": "",
             "xfail": null
           },
@@ -456,7 +456,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 134.3,
+            "wall_ms": 133.2,
             "why": "",
             "xfail": null
           },
@@ -496,7 +496,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 119.8,
+            "wall_ms": 122.3,
             "why": "",
             "xfail": null
           }
@@ -556,7 +556,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 10.7,
+            "wall_ms": 10.8,
             "why": "",
             "xfail": null
           },
@@ -634,7 +634,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 26.7,
+            "wall_ms": 26.9,
             "why": "",
             "xfail": null
           },
@@ -669,7 +669,7 @@
             "top_edits": [],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 23.4,
+            "wall_ms": 23.3,
             "why": "no alternatives",
             "xfail": null
           },
@@ -710,7 +710,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 44.4,
+            "wall_ms": 43.8,
             "why": "",
             "xfail": null
           },
@@ -749,7 +749,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 23.2,
+            "wall_ms": 22.7,
             "why": "",
             "xfail": null
           }
@@ -809,7 +809,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2824.5,
+            "wall_ms": 2811.5,
             "why": "",
             "xfail": null
           },
@@ -846,7 +846,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 5660.7,
+            "wall_ms": 5666.3,
             "why": "",
             "xfail": null
           },
@@ -886,7 +886,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 2726.2,
+            "wall_ms": 2770.2,
             "why": "",
             "xfail": null
           },
@@ -926,7 +926,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 2715.4,
+            "wall_ms": 2752.1,
             "why": "",
             "xfail": null
           },
@@ -966,7 +966,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 2720.5,
+            "wall_ms": 2745.7,
             "why": "",
             "xfail": null
           },
@@ -1006,7 +1006,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 2719.2,
+            "wall_ms": 2766.1,
             "why": "",
             "xfail": null
           }
@@ -1066,7 +1066,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 3.9,
+            "wall_ms": 4.0,
             "why": "",
             "xfail": null
           },
@@ -1106,7 +1106,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 18.4,
+            "wall_ms": 18.7,
             "why": "",
             "xfail": null
           },
@@ -1143,7 +1143,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 9.0,
+            "wall_ms": 9.5,
             "why": "",
             "xfail": null
           },
@@ -1180,7 +1180,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 8.8,
+            "wall_ms": 8.9,
             "why": "",
             "xfail": null
           },
@@ -1217,7 +1217,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 11.1,
+            "wall_ms": 11.3,
             "why": "",
             "xfail": null
           },
@@ -1254,7 +1254,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 10.7,
+            "wall_ms": 11.1,
             "why": "",
             "xfail": null
           }
@@ -1314,7 +1314,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 23.5,
+            "wall_ms": 23.2,
             "why": "",
             "xfail": null
           },
@@ -1354,7 +1354,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 114.0,
+            "wall_ms": 116.3,
             "why": "",
             "xfail": null
           },
@@ -1393,7 +1393,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 45.4,
+            "wall_ms": 46.0,
             "why": "",
             "xfail": null
           },
@@ -1433,7 +1433,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 121.1,
+            "wall_ms": 123.3,
             "why": "",
             "xfail": null
           },
@@ -1473,7 +1473,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 99.8,
+            "wall_ms": 100.6,
             "why": "",
             "xfail": null
           },
@@ -1513,7 +1513,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 58.0,
+            "wall_ms": 58.9,
             "why": "",
             "xfail": null
           }
@@ -1573,7 +1573,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 434.8,
+            "wall_ms": 437.7,
             "why": "",
             "xfail": null
           },
@@ -1616,7 +1616,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 2200.5,
+            "wall_ms": 2203.7,
             "why": "",
             "xfail": null
           },
@@ -1656,7 +1656,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 2611.4,
+            "wall_ms": 2633.9,
             "why": "",
             "xfail": null
           },
@@ -1699,7 +1699,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 2221.0,
+            "wall_ms": 2189.4,
             "why": "",
             "xfail": null
           },
@@ -1739,7 +1739,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2545.6,
+            "wall_ms": 2540.8,
             "why": "",
             "xfail": null
           },
@@ -1781,7 +1781,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 2308.0,
+            "wall_ms": 2295.6,
             "why": "",
             "xfail": null
           }
@@ -1841,7 +1841,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 19.4,
+            "wall_ms": 19.6,
             "why": "",
             "xfail": null
           },
@@ -1881,7 +1881,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 67.9,
+            "wall_ms": 68.4,
             "why": "",
             "xfail": null
           },
@@ -1921,7 +1921,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 109.9,
+            "wall_ms": 110.6,
             "why": "",
             "xfail": null
           },
@@ -1961,7 +1961,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 69.6,
+            "wall_ms": 69.5,
             "why": "",
             "xfail": null
           },
@@ -2001,7 +2001,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 58.4,
+            "wall_ms": 58.6,
             "why": "",
             "xfail": null
           },
@@ -2041,7 +2041,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 121.6,
+            "wall_ms": 122.1,
             "why": "",
             "xfail": null
           }
@@ -2101,7 +2101,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 6.3,
+            "wall_ms": 6.4,
             "why": "",
             "xfail": null
           },
@@ -2141,7 +2141,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 18.9,
+            "wall_ms": 19.0,
             "why": "",
             "xfail": null
           },
@@ -2180,7 +2180,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 11.8,
+            "wall_ms": 12.1,
             "why": "",
             "xfail": null
           },
@@ -2219,7 +2219,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 18.6,
+            "wall_ms": 32.9,
             "why": "",
             "xfail": null
           },
@@ -2254,7 +2254,7 @@
             "top_edits": [],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 13.6,
+            "wall_ms": 14.3,
             "why": "no alternatives",
             "xfail": null
           },
@@ -2294,7 +2294,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 17.4,
+            "wall_ms": 18.1,
             "why": "",
             "xfail": null
           }
@@ -2354,7 +2354,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 7.8,
+            "wall_ms": 7.9,
             "why": "",
             "xfail": null
           },
@@ -2394,7 +2394,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 21.5,
+            "wall_ms": 22.5,
             "why": "",
             "xfail": null
           },
@@ -2434,7 +2434,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 20.1,
+            "wall_ms": 20.9,
             "why": "",
             "xfail": null
           },
@@ -2474,7 +2474,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 26.8,
+            "wall_ms": 26.7,
             "why": "",
             "xfail": null
           },
@@ -2648,7 +2648,7 @@
             "top_edits": [],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 172.5,
+            "wall_ms": 171.8,
             "why": "no alternatives",
             "xfail": null
           },
@@ -2685,7 +2685,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 180.4,
+            "wall_ms": 182.2,
             "why": "",
             "xfail": null
           },
@@ -2725,7 +2725,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 60.2,
+            "wall_ms": 60.4,
             "why": "",
             "xfail": null
           },
@@ -2765,7 +2765,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 177.0,
+            "wall_ms": 179.6,
             "why": "",
             "xfail": null
           },
@@ -2865,7 +2865,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 15.8,
+            "wall_ms": 16.1,
             "why": "",
             "xfail": null
           },
@@ -2904,7 +2904,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 42.4,
+            "wall_ms": 43.2,
             "why": "",
             "xfail": null
           },
@@ -2943,7 +2943,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 52.6,
+            "wall_ms": 53.5,
             "why": "",
             "xfail": null
           },
@@ -2980,7 +2980,7 @@
             ],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 151.9,
+            "wall_ms": 151.7,
             "why": "best effort only, top alternative not verified (error 8.0 τ)",
             "xfail": null
           },
@@ -3020,7 +3020,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 72.4,
+            "wall_ms": 71.6,
             "why": "",
             "xfail": null
           },
@@ -3060,7 +3060,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 118.7,
+            "wall_ms": 116.4,
             "why": "",
             "xfail": null
           }
@@ -3120,7 +3120,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 8.3,
+            "wall_ms": 8.4,
             "why": "",
             "xfail": null
           },
@@ -3160,7 +3160,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 25.1,
+            "wall_ms": 25.0,
             "why": "",
             "xfail": null
           },
@@ -3200,7 +3200,7 @@
             ],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 26.3,
+            "wall_ms": 26.9,
             "why": "best effort only, top alternative not verified (error 4.0 τ)",
             "xfail": null
           },
@@ -3239,7 +3239,7 @@
             ],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 27.7,
+            "wall_ms": 28.2,
             "why": "best effort only, top alternative not verified (error 4.0 τ)",
             "xfail": null
           },
@@ -3279,7 +3279,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 37.4,
+            "wall_ms": 37.1,
             "why": "",
             "xfail": null
           },
@@ -3319,7 +3319,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 49.4,
+            "wall_ms": 50.5,
             "why": "",
             "xfail": null
           }
@@ -3379,7 +3379,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 47.1,
+            "wall_ms": 47.6,
             "why": "",
             "xfail": null
           },
@@ -3419,7 +3419,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 127.5,
+            "wall_ms": 123.7,
             "why": "",
             "xfail": null
           },
@@ -3458,7 +3458,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 386.7,
+            "wall_ms": 382.2,
             "why": "",
             "xfail": null
           },
@@ -3497,7 +3497,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 387.8,
+            "wall_ms": 378.7,
             "why": "",
             "xfail": null
           },
@@ -3536,7 +3536,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 380.0,
+            "wall_ms": 389.4,
             "why": "",
             "xfail": null
           },
@@ -3575,7 +3575,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 386.7,
+            "wall_ms": 384.3,
             "why": "",
             "xfail": null
           }
@@ -3637,7 +3637,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 259.5,
+            "wall_ms": 256.5,
             "why": "",
             "xfail": null
           },
@@ -3676,7 +3676,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 258.5,
+            "wall_ms": 265.6,
             "why": "",
             "xfail": null
           },
@@ -3713,7 +3713,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 258.4,
+            "wall_ms": 259.2,
             "why": "",
             "xfail": null
           },
@@ -3790,7 +3790,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 265.0,
+            "wall_ms": 266.0,
             "why": "",
             "xfail": null
           },
@@ -3830,7 +3830,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 276.1,
+            "wall_ms": 276.5,
             "why": "",
             "xfail": null
           }
@@ -3929,7 +3929,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 14.8,
+            "wall_ms": 14.7,
             "why": "",
             "xfail": null
           },
@@ -4009,7 +4009,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 28.6,
+            "wall_ms": 28.4,
             "why": "",
             "xfail": null
           },
@@ -4049,7 +4049,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 27.3,
+            "wall_ms": 28.4,
             "why": "",
             "xfail": null
           },
@@ -4089,7 +4089,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 41.7,
+            "wall_ms": 56.0,
             "why": "",
             "xfail": null
           }
@@ -4149,7 +4149,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 16.0,
+            "wall_ms": 15.9,
             "why": "",
             "xfail": null
           },
@@ -4189,7 +4189,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 61.8,
+            "wall_ms": 61.5,
             "why": "",
             "xfail": null
           },
@@ -4224,7 +4224,7 @@
             "top_edits": [],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 34.0,
+            "wall_ms": 33.7,
             "why": "nothing can move the goals: no editable literal moves the goals (line 213: Zero; line 213: Zero; line 213: Zero; line 38: Zero; line 39: Zero; line 40: Zero; line 41: Zero; line 42: structural: a comparison, index, loop bound or key)",
             "xfail": null
           },
@@ -4259,7 +4259,7 @@
             "top_edits": [],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 33.5,
+            "wall_ms": 33.2,
             "why": "nothing can move the goals: no editable literal moves the goals (line 213: Zero; line 213: Zero; line 213: Zero; line 38: Zero; line 39: Zero; line 40: Zero; line 41: Zero; line 42: structural: a comparison, index, loop bound or key)",
             "xfail": null
           },
@@ -4299,7 +4299,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 66.4,
+            "wall_ms": 66.0,
             "why": "",
             "xfail": null
           },
@@ -4339,7 +4339,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 41.7,
+            "wall_ms": 42.0,
             "why": "",
             "xfail": null
           }
@@ -4399,7 +4399,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 24.6,
+            "wall_ms": 24.7,
             "why": "",
             "xfail": null
           },
@@ -4438,7 +4438,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 59.4,
+            "wall_ms": 58.7,
             "why": "",
             "xfail": null
           },
@@ -4477,7 +4477,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 108.5,
+            "wall_ms": 108.3,
             "why": "",
             "xfail": null
           },
@@ -4516,7 +4516,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 113.6,
+            "wall_ms": 112.1,
             "why": "",
             "xfail": null
           },
@@ -4556,7 +4556,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 114.7,
+            "wall_ms": 112.6,
             "why": "",
             "xfail": null
           },
@@ -4596,7 +4596,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 187.8,
+            "wall_ms": 185.1,
             "why": "",
             "xfail": null
           }
@@ -4659,7 +4659,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 295.0,
+            "wall_ms": 294.7,
             "why": "",
             "xfail": null
           },
@@ -4699,7 +4699,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 293.1,
+            "wall_ms": 291.7,
             "why": "",
             "xfail": null
           },
@@ -4739,7 +4739,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 106.1,
+            "wall_ms": 106.7,
             "why": "",
             "xfail": null
           },
@@ -4779,7 +4779,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 287.3,
+            "wall_ms": 288.1,
             "why": "",
             "xfail": null
           },
@@ -4819,7 +4819,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 303.8,
+            "wall_ms": 291.0,
             "why": "",
             "xfail": null
           },
@@ -4859,7 +4859,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 289.8,
+            "wall_ms": 295.1,
             "why": "",
             "xfail": null
           }
@@ -4919,7 +4919,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 18.2,
+            "wall_ms": 17.9,
             "why": "",
             "xfail": null
           },
@@ -4959,7 +4959,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 155.2,
+            "wall_ms": 151.3,
             "why": "",
             "xfail": null
           },
@@ -4999,7 +4999,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 147.5,
+            "wall_ms": 148.9,
             "why": "",
             "xfail": null
           },
@@ -5039,7 +5039,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 151.4,
+            "wall_ms": 155.3,
             "why": "",
             "xfail": null
           },
@@ -5079,7 +5079,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 151.0,
+            "wall_ms": 150.6,
             "why": "",
             "xfail": null
           },
@@ -5119,7 +5119,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 149.6,
+            "wall_ms": 149.1,
             "why": "",
             "xfail": null
           }
@@ -5177,7 +5177,7 @@
             "top_edits": [],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 410.4,
+            "wall_ms": 410.3,
             "why": "nothing can move the goals: no editable literal moves the goals (line 4754: library code (the prelude or a package) is never edited; line 4755: library code (the prelude or a package) is never edited; line 4776: not evaluated by this frame; line 4776: not evaluated by this frame; line 4776: not evaluated by this frame; line 62: Zero; line 63: Zero; line 64: Zero)",
             "xfail": null
           },
@@ -5217,7 +5217,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 4982.9,
+            "wall_ms": 4992.4,
             "why": "",
             "xfail": null
           },
@@ -5256,7 +5256,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 4591.2,
+            "wall_ms": 4598.3,
             "why": "",
             "xfail": null
           },
@@ -5295,7 +5295,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 4681.8,
+            "wall_ms": 4704.4,
             "why": "",
             "xfail": null
           },
@@ -5335,7 +5335,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 4872.8,
+            "wall_ms": 4883.3,
             "why": "",
             "xfail": null
           },
@@ -5374,7 +5374,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 4568.5,
+            "wall_ms": 4605.5,
             "why": "",
             "xfail": null
           }
@@ -5434,7 +5434,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 29.9,
+            "wall_ms": 29.8,
             "why": "",
             "xfail": null
           },
@@ -5473,7 +5473,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 121.2,
+            "wall_ms": 123.2,
             "why": "",
             "xfail": null
           },
@@ -5512,7 +5512,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 72.0,
+            "wall_ms": 76.5,
             "why": "",
             "xfail": null
           },
@@ -5552,7 +5552,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 103.6,
+            "wall_ms": 103.5,
             "why": "",
             "xfail": null
           },
@@ -5591,7 +5591,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 120.9,
+            "wall_ms": 122.9,
             "why": "",
             "xfail": null
           },
@@ -5630,7 +5630,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 94.1,
+            "wall_ms": 95.7,
             "why": "",
             "xfail": null
           }
@@ -5690,7 +5690,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 405.7,
+            "wall_ms": 407.3,
             "why": "",
             "xfail": null
           },
@@ -5727,7 +5727,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 408.6,
+            "wall_ms": 406.4,
             "why": "",
             "xfail": null
           },
@@ -5764,7 +5764,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 409.0,
+            "wall_ms": 407.2,
             "why": "",
             "xfail": null
           },
@@ -5801,7 +5801,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 401.4,
+            "wall_ms": 405.2,
             "why": "",
             "xfail": null
           },
@@ -5841,7 +5841,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 473.4,
+            "wall_ms": 467.7,
             "why": "",
             "xfail": null
           },
@@ -5881,7 +5881,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 532.3,
+            "wall_ms": 537.7,
             "why": "",
             "xfail": null
           }
@@ -5944,7 +5944,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 36.1,
+            "wall_ms": 36.3,
             "why": "",
             "xfail": null
           },
@@ -5981,7 +5981,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 26.2,
+            "wall_ms": 26.8,
             "why": "",
             "xfail": null
           },
@@ -6021,7 +6021,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 79.2,
+            "wall_ms": 78.9,
             "why": "",
             "xfail": null
           },
@@ -6061,7 +6061,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 94.2,
+            "wall_ms": 94.0,
             "why": "",
             "xfail": null
           },
@@ -6101,7 +6101,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 105.1,
+            "wall_ms": 105.4,
             "why": "",
             "xfail": null
           },
@@ -6141,7 +6141,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 146.4,
+            "wall_ms": 144.5,
             "why": "",
             "xfail": null
           }
@@ -6204,7 +6204,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 111.3,
+            "wall_ms": 111.6,
             "why": "",
             "xfail": null
           },
@@ -6244,7 +6244,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 130.2,
+            "wall_ms": 129.7,
             "why": "",
             "xfail": null
           },
@@ -6279,7 +6279,7 @@
             "top_edits": [],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 54.4,
+            "wall_ms": 58.6,
             "why": "nothing can move the goals: no editable literal moves the goals (line 77: Zero; line 141: structural: a comparison, index, loop bound or key; line 145: structural: a comparison, index, loop bound or key; line 91: structural: a comparison, index, loop bound or key; line 91: structural: a comparison, index, loop bound or key; line 406: a `state` initializer whose state the checkpoint already holds; line 406: a `state` initializer whose state the checkpoint already holds; line 408: a `state` initializer whose state the checkpoint already holds)",
             "xfail": null
           },
@@ -6319,7 +6319,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 128.9,
+            "wall_ms": 167.7,
             "why": "",
             "xfail": null
           },
@@ -6359,7 +6359,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 154.7,
+            "wall_ms": 155.1,
             "why": "",
             "xfail": null
           },
@@ -6399,7 +6399,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 132.2,
+            "wall_ms": 133.2,
             "why": "",
             "xfail": null
           }
@@ -6459,7 +6459,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 65.0,
+            "wall_ms": 64.9,
             "why": "",
             "xfail": null
           },
@@ -6499,7 +6499,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 621.9,
+            "wall_ms": 617.3,
             "why": "",
             "xfail": null
           },
@@ -6539,7 +6539,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 390.6,
+            "wall_ms": 390.1,
             "why": "",
             "xfail": null
           },
@@ -6579,7 +6579,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 383.9,
+            "wall_ms": 398.1,
             "why": "",
             "xfail": null
           },
@@ -6619,7 +6619,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 1106.3,
+            "wall_ms": 1122.3,
             "why": "",
             "xfail": null
           },
@@ -6658,7 +6658,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 1117.1,
+            "wall_ms": 1119.1,
             "why": "",
             "xfail": null
           }
@@ -6718,7 +6718,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 30.8,
+            "wall_ms": 30.5,
             "why": "",
             "xfail": null
           },
@@ -6755,7 +6755,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 341.3,
+            "wall_ms": 340.0,
             "why": "",
             "xfail": null
           },
@@ -6795,7 +6795,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 172.8,
+            "wall_ms": 171.5,
             "why": "",
             "xfail": null
           },
@@ -6832,7 +6832,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 338.2,
+            "wall_ms": 340.3,
             "why": "",
             "xfail": null
           },
@@ -6872,7 +6872,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 346.9,
+            "wall_ms": 349.6,
             "why": "",
             "xfail": null
           },
@@ -6912,7 +6912,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 346.9,
+            "wall_ms": 341.7,
             "why": "",
             "xfail": null
           }
@@ -6970,7 +6970,7 @@
             "top_edits": [],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 397.4,
+            "wall_ms": 398.5,
             "why": "no alternatives",
             "xfail": null
           },
@@ -7009,7 +7009,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 431.5,
+            "wall_ms": 453.1,
             "why": "",
             "xfail": null
           },
@@ -7048,7 +7048,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 441.9,
+            "wall_ms": 445.1,
             "why": "",
             "xfail": null
           },
@@ -7088,7 +7088,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 447.2,
+            "wall_ms": 448.2,
             "why": "",
             "xfail": null
           },
@@ -7123,7 +7123,7 @@
             "top_edits": [],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 395.0,
+            "wall_ms": 400.6,
             "why": "no alternatives",
             "xfail": null
           },
@@ -7163,7 +7163,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 442.4,
+            "wall_ms": 448.2,
             "why": "",
             "xfail": null
           }
@@ -7223,7 +7223,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 37.8,
+            "wall_ms": 37.9,
             "why": "",
             "xfail": null
           },
@@ -7263,7 +7263,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 287.4,
+            "wall_ms": 286.7,
             "why": "",
             "xfail": null
           },
@@ -7303,7 +7303,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 220.7,
+            "wall_ms": 222.7,
             "why": "",
             "xfail": null
           },
@@ -7343,7 +7343,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 282.0,
+            "wall_ms": 284.5,
             "why": "",
             "xfail": null
           },
@@ -7383,7 +7383,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 258.4,
+            "wall_ms": 259.8,
             "why": "",
             "xfail": null
           },
@@ -7423,7 +7423,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 240.2,
+            "wall_ms": 239.8,
             "why": "",
             "xfail": null
           }
@@ -7483,7 +7483,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 141.6,
+            "wall_ms": 138.0,
             "why": "",
             "xfail": null
           },
@@ -7523,7 +7523,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 887.7,
+            "wall_ms": 897.1,
             "why": "",
             "xfail": null
           },
@@ -7563,7 +7563,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 917.8,
+            "wall_ms": 898.8,
             "why": "",
             "xfail": null
           },
@@ -7643,7 +7643,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 762.3,
+            "wall_ms": 781.9,
             "why": "",
             "xfail": null
           },
@@ -7683,7 +7683,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 298.5,
+            "wall_ms": 299.0,
             "why": "",
             "xfail": null
           }
@@ -7743,7 +7743,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 13.7,
+            "wall_ms": 14.0,
             "why": "",
             "xfail": null
           },
@@ -7780,7 +7780,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 12.2,
+            "wall_ms": 12.3,
             "why": "",
             "xfail": null
           },
@@ -7820,7 +7820,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 64.9,
+            "wall_ms": 65.8,
             "why": "",
             "xfail": null
           },
@@ -7860,7 +7860,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 65.3,
+            "wall_ms": 66.5,
             "why": "",
             "xfail": null
           },
@@ -7900,7 +7900,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 61.2,
+            "wall_ms": 61.7,
             "why": "",
             "xfail": null
           },
@@ -7940,7 +7940,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 50.3,
+            "wall_ms": 50.9,
             "why": "",
             "xfail": null
           }
@@ -8002,7 +8002,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 126.5,
+            "wall_ms": 126.6,
             "why": "",
             "xfail": null
           },
@@ -8042,7 +8042,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 148.0,
+            "wall_ms": 147.8,
             "why": "",
             "xfail": null
           },
@@ -8082,7 +8082,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 126.9,
+            "wall_ms": 128.6,
             "why": "",
             "xfail": null
           },
@@ -8121,7 +8121,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 131.9,
+            "wall_ms": 133.2,
             "why": "",
             "xfail": null
           },
@@ -8160,7 +8160,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 132.8,
+            "wall_ms": 133.6,
             "why": "",
             "xfail": null
           },
@@ -8197,7 +8197,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 91.1,
+            "wall_ms": 90.7,
             "why": "",
             "xfail": null
           }
@@ -8259,7 +8259,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 141.1,
+            "wall_ms": 141.5,
             "why": "",
             "xfail": null
           },
@@ -8294,7 +8294,7 @@
             "top_edits": [],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 868.6,
+            "wall_ms": 868.5,
             "why": "no alternatives",
             "xfail": null
           },
@@ -8334,7 +8334,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 997.4,
+            "wall_ms": 994.7,
             "why": "",
             "xfail": null
           },
@@ -8374,7 +8374,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 1149.1,
+            "wall_ms": 1132.7,
             "why": "",
             "xfail": null
           },
@@ -8414,7 +8414,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 914.3,
+            "wall_ms": 915.2,
             "why": "",
             "xfail": null
           },
@@ -8454,7 +8454,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 906.2,
+            "wall_ms": 905.6,
             "why": "",
             "xfail": null
           }
@@ -8514,7 +8514,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 62.9,
+            "wall_ms": 76.1,
             "why": "",
             "xfail": null
           },
@@ -8554,7 +8554,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 412.0,
+            "wall_ms": 412.6,
             "why": "",
             "xfail": null
           },
@@ -8594,7 +8594,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 406.3,
+            "wall_ms": 405.6,
             "why": "",
             "xfail": null
           },
@@ -8634,7 +8634,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 366.7,
+            "wall_ms": 360.9,
             "why": "",
             "xfail": null
           },
@@ -8674,7 +8674,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 324.6,
+            "wall_ms": 324.4,
             "why": "",
             "xfail": null
           },
@@ -8714,7 +8714,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 383.8,
+            "wall_ms": 387.8,
             "why": "",
             "xfail": null
           }
@@ -8776,7 +8776,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 49.0,
+            "wall_ms": 49.6,
             "why": "",
             "xfail": null
           },
@@ -8815,7 +8815,7 @@
             ],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 215.6,
+            "wall_ms": 220.2,
             "why": "best effort only, top alternative not verified (error 4.0 τ)",
             "xfail": null
           },
@@ -8895,7 +8895,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 178.9,
+            "wall_ms": 178.4,
             "why": "",
             "xfail": null
           },
@@ -8935,7 +8935,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 230.6,
+            "wall_ms": 232.5,
             "why": "",
             "xfail": null
           },
@@ -8975,7 +8975,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 138.6,
+            "wall_ms": 141.0,
             "why": "",
             "xfail": null
           }
@@ -9038,7 +9038,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 996.4,
+            "wall_ms": 986.3,
             "why": "",
             "xfail": null
           },
@@ -9078,7 +9078,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 1002.9,
+            "wall_ms": 993.9,
             "why": "",
             "xfail": null
           },
@@ -9118,7 +9118,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 1141.1,
+            "wall_ms": 1132.8,
             "why": "",
             "xfail": null
           },
@@ -9158,7 +9158,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 982.6,
+            "wall_ms": 975.1,
             "why": "",
             "xfail": null
           },
@@ -9198,7 +9198,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 991.8,
+            "wall_ms": 1040.5,
             "why": "",
             "xfail": null
           },
@@ -9238,7 +9238,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 403.9,
+            "wall_ms": 411.3,
             "why": "",
             "xfail": null
           }
@@ -9298,7 +9298,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 86.2,
+            "wall_ms": 86.1,
             "why": "",
             "xfail": null
           },
@@ -9339,7 +9339,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 1011.2,
+            "wall_ms": 1008.6,
             "why": "",
             "xfail": null
           },
@@ -9379,7 +9379,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 959.1,
+            "wall_ms": 964.2,
             "why": "",
             "xfail": null
           },
@@ -9419,7 +9419,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 1064.7,
+            "wall_ms": 1071.1,
             "why": "",
             "xfail": null
           },
@@ -9458,7 +9458,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 1062.1,
+            "wall_ms": 1065.7,
             "why": "",
             "xfail": null
           },
@@ -9498,7 +9498,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 541.1,
+            "wall_ms": 535.7,
             "why": "",
             "xfail": null
           }
@@ -9561,7 +9561,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 769.5,
+            "wall_ms": 762.6,
             "why": "",
             "xfail": null
           },
@@ -9601,7 +9601,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 772.1,
+            "wall_ms": 775.2,
             "why": "",
             "xfail": null
           },
@@ -9641,7 +9641,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 775.4,
+            "wall_ms": 843.6,
             "why": "",
             "xfail": null
           },
@@ -9680,7 +9680,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 221.4,
+            "wall_ms": 220.4,
             "why": "",
             "xfail": null
           },
@@ -9720,7 +9720,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 138.2,
+            "wall_ms": 140.8,
             "why": "",
             "xfail": null
           },
@@ -9760,7 +9760,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 386.3,
+            "wall_ms": 383.4,
             "why": "",
             "xfail": null
           }
@@ -9820,7 +9820,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 4.2,
+            "wall_ms": 4.1,
             "why": "",
             "xfail": null
           },
@@ -9894,7 +9894,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 5.8,
+            "wall_ms": 5.9,
             "why": "",
             "xfail": null
           },
@@ -9931,7 +9931,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 5.3,
+            "wall_ms": 5.5,
             "why": "",
             "xfail": null
           },
@@ -9968,7 +9968,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 5.6,
+            "wall_ms": 5.8,
             "why": "",
             "xfail": null
           },
@@ -10007,7 +10007,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 9.3,
+            "wall_ms": 9.5,
             "why": "",
             "xfail": null
           }
@@ -10067,7 +10067,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 3.5,
+            "wall_ms": 3.4,
             "why": "",
             "xfail": null
           },
@@ -10102,7 +10102,7 @@
             "top_edits": [],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 2.5,
+            "wall_ms": 2.6,
             "why": "nothing can move the goals: no editable literal moves the goals (line 8: a `state` initializer whose state the checkpoint already holds; line 8: a `state` initializer whose state the checkpoint already holds; line 9: a `state` initializer whose state the checkpoint already holds; line 9: a `state` initializer whose state the checkpoint already holds; line 10: a `state` initializer whose state the checkpoint already holds; line 10: a `state` initializer whose state the checkpoint already holds; line 11: a `state` initializer whose state the checkpoint already holds; line 11: a `state` initializer whose state the checkpoint already holds)",
             "xfail": null
           },
@@ -10247,7 +10247,7 @@
             "top_edits": [],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 2.3,
+            "wall_ms": 2.4,
             "why": "nothing can move the goals: no editable literal moves the goals (line 8: a `state` initializer whose state the checkpoint already holds; line 8: a `state` initializer whose state the checkpoint already holds; line 9: a `state` initializer whose state the checkpoint already holds; line 9: a `state` initializer whose state the checkpoint already holds; line 10: a `state` initializer whose state the checkpoint already holds; line 10: a `state` initializer whose state the checkpoint already holds; line 11: a `state` initializer whose state the checkpoint already holds; line 11: a `state` initializer whose state the checkpoint already holds)",
             "xfail": null
           }
@@ -10307,7 +10307,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 4.3,
+            "wall_ms": 4.4,
             "why": "",
             "xfail": null
           },
@@ -10344,7 +10344,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 7.7,
+            "wall_ms": 8.0,
             "why": "",
             "xfail": null
           },
@@ -10381,7 +10381,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 7.6,
+            "wall_ms": 7.8,
             "why": "",
             "xfail": null
           },
@@ -10421,7 +10421,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 7.8,
+            "wall_ms": 7.9,
             "why": "",
             "xfail": null
           },
@@ -10458,7 +10458,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 5.6,
+            "wall_ms": 5.7,
             "why": "",
             "xfail": null
           },
@@ -10498,7 +10498,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 9.7,
+            "wall_ms": 9.8,
             "why": "",
             "xfail": null
           }
@@ -10800,7 +10800,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 28.3,
+            "wall_ms": 28.7,
             "why": "",
             "xfail": null
           },
@@ -10837,7 +10837,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 78.8,
+            "wall_ms": 80.0,
             "why": "",
             "xfail": null
           },
@@ -10877,7 +10877,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 135.1,
+            "wall_ms": 138.4,
             "why": "",
             "xfail": null
           },
@@ -10917,7 +10917,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 117.9,
+            "wall_ms": 120.1,
             "why": "",
             "xfail": null
           },
@@ -10957,7 +10957,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 101.2,
+            "wall_ms": 102.9,
             "why": "",
             "xfail": null
           },
@@ -10997,7 +10997,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 112.2,
+            "wall_ms": 115.2,
             "why": "",
             "xfail": null
           }
@@ -11057,7 +11057,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 13.2,
+            "wall_ms": 13.3,
             "why": "",
             "xfail": null
           },
@@ -11096,7 +11096,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 51.5,
+            "wall_ms": 50.8,
             "why": "",
             "xfail": null
           },
@@ -11135,7 +11135,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 51.6,
+            "wall_ms": 50.9,
             "why": "",
             "xfail": null
           },
@@ -11175,7 +11175,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 64.9,
+            "wall_ms": 64.7,
             "why": "",
             "xfail": null
           },
@@ -11215,7 +11215,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 50.6,
+            "wall_ms": 50.2,
             "why": "",
             "xfail": null
           },
@@ -11255,7 +11255,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 50.8,
+            "wall_ms": 51.2,
             "why": "",
             "xfail": null
           }
@@ -14431,7 +14431,7 @@
       "goals": 258,
       "max_runs": 153,
       "median_runs": 56.0,
-      "median_wall_ms": 118.561375,
+      "median_wall_ms": 117.682458,
       "success": 240,
       "success_rate": 0.9302325581395349,
       "top_verified": 240,
@@ -14482,7 +14482,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 5.4,
+            "wall_ms": 5.3,
             "why": "",
             "xfail": null
           },
@@ -14521,7 +14521,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 3.0,
+            "wall_ms": 3.1,
             "why": "",
             "xfail": null
           },
@@ -14558,7 +14558,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.9,
+            "wall_ms": 3.1,
             "why": "",
             "xfail": null
           },
@@ -14600,7 +14600,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 4.6,
+            "wall_ms": 4.7,
             "why": "",
             "xfail": null
           }
@@ -14697,7 +14697,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 3.8,
+            "wall_ms": 3.9,
             "why": "",
             "xfail": null
           },
@@ -14736,7 +14736,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 5.0,
+            "wall_ms": 4.9,
             "why": "",
             "xfail": null
           }
@@ -14798,7 +14798,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 3.1,
+            "wall_ms": 3.8,
             "why": "",
             "xfail": null
           }
@@ -14858,7 +14858,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.7,
+            "wall_ms": 2.8,
             "why": "",
             "xfail": null
           },
@@ -14898,7 +14898,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 4.9,
+            "wall_ms": 5.1,
             "why": "",
             "xfail": null
           },
@@ -14935,7 +14935,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 3.0,
+            "wall_ms": 3.1,
             "why": "",
             "xfail": null
           }
@@ -14995,7 +14995,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.7,
+            "wall_ms": 2.8,
             "why": "",
             "xfail": null
           },
@@ -15032,7 +15032,7 @@
             ],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 3.7,
+            "wall_ms": 3.8,
             "why": "best effort only, top alternative not verified (error 4.0 τ)",
             "xfail": "at the baseline the puck is left of the wall, so `wall`'s column is zero and only `x` is measured; past the flip `x` stops working and the Jacobian is not re-measured for the other literals (best effort stops at the wall)"
           },
@@ -15071,7 +15071,7 @@
             ],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 3.6,
+            "wall_ms": 3.7,
             "why": "best effort only, top alternative not verified (error 4.0 τ)",
             "xfail": "same: the client names `wall`, but its column is still zero at the baseline"
           },
@@ -15108,7 +15108,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.6,
+            "wall_ms": 2.7,
             "why": "",
             "xfail": null
           }
@@ -15168,7 +15168,7 @@
             ],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 3.2,
+            "wall_ms": 3.1,
             "why": "best effort only, top alternative not verified (error 16.0 τ)",
             "xfail": "screening nudges `x` by 0.1% and sees nothing move (the grid is flat there), so `x` is dropped before the Jacobian could escalate its step; `grid` alone cannot reach 140"
           },
@@ -15205,7 +15205,7 @@
             "top_edits": [],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 2.0,
+            "wall_ms": 2.2,
             "why": "nothing can move the goals: no editable literal moves the goals (line 20: Zero; line 21: not among the allowed parameters)",
             "xfail": "same: with only `x` allowed, screening still drops it as inert"
           },
@@ -15281,7 +15281,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 5.6,
+            "wall_ms": 5.5,
             "why": "",
             "xfail": null
           },
@@ -15321,7 +15321,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 4.4,
+            "wall_ms": 4.5,
             "why": "",
             "xfail": null
           }
@@ -15384,7 +15384,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 6.3,
+            "wall_ms": 6.6,
             "why": "",
             "xfail": null
           },
@@ -15423,7 +15423,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 6.4,
+            "wall_ms": 6.7,
             "why": "",
             "xfail": null
           },
@@ -15462,7 +15462,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 3.0,
+            "wall_ms": 3.1,
             "why": "",
             "xfail": null
           },
@@ -15501,7 +15501,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 5.5,
+            "wall_ms": 5.8,
             "why": "",
             "xfail": null
           }
@@ -15564,7 +15564,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.6,
+            "wall_ms": 2.5,
             "why": "",
             "xfail": null
           },
@@ -15604,7 +15604,7 @@
             ],
             "top_verified": false,
             "verified_alternatives": 0,
-            "wall_ms": 2.5,
+            "wall_ms": 2.7,
             "why": "best effort only, top alternative not verified (error 60.0 τ)",
             "xfail": "the range stops x at 150: best effort ends 30 px short, not within tolerance"
           },
@@ -15644,7 +15644,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.5,
+            "wall_ms": 2.7,
             "why": "",
             "xfail": null
           },
@@ -15681,7 +15681,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.5,
+            "wall_ms": 2.7,
             "why": "",
             "xfail": null
           }
@@ -15741,7 +15741,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 88.5,
+            "wall_ms": 89.8,
             "why": "",
             "xfail": null
           },
@@ -15778,7 +15778,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 146.9,
+            "wall_ms": 148.6,
             "why": "",
             "xfail": null
           },
@@ -15815,7 +15815,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 313.3,
+            "wall_ms": 373.3,
             "why": "",
             "xfail": null
           },
@@ -15855,7 +15855,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 576.3,
+            "wall_ms": 580.8,
             "why": "top alternative edits [\"3→0\"], expected ⊆ [\"S3\", \"lit:2\"]",
             "xfail": "the tiles split the row equally, so tile 2 moves with tile 1 fixed only if tile 1 widens: the cheapest edit is the gap count `3` in `(right_w - 3 * tile_gap) / 4` (3→0), a count no hint marks rigid"
           },
@@ -15895,7 +15895,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 318.1,
+            "wall_ms": 323.7,
             "why": "",
             "xfail": null
           },
@@ -15934,7 +15934,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 333.1,
+            "wall_ms": 342.4,
             "why": "",
             "xfail": null
           },
@@ -15971,7 +15971,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 122.8,
+            "wall_ms": 130.4,
             "why": "",
             "xfail": null
           }
@@ -16031,7 +16031,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.4,
+            "wall_ms": 2.6,
             "why": "",
             "xfail": null
           },
@@ -16072,7 +16072,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 3.2,
+            "wall_ms": 3.5,
             "why": "",
             "xfail": null
           },
@@ -16109,7 +16109,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.5,
+            "wall_ms": 2.7,
             "why": "",
             "xfail": null
           }
@@ -16169,7 +16169,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.4,
+            "wall_ms": 2.5,
             "why": "",
             "xfail": null
           },
@@ -16206,7 +16206,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.6,
+            "wall_ms": 2.8,
             "why": "",
             "xfail": null
           },
@@ -16246,7 +16246,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 3.2,
+            "wall_ms": 3.4,
             "why": "",
             "xfail": null
           },
@@ -16285,7 +16285,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 3.0,
+            "wall_ms": 3.2,
             "why": "",
             "xfail": null
           }
@@ -16350,7 +16350,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 3.0,
+            "wall_ms": 3.2,
             "why": "",
             "xfail": null
           },
@@ -16390,7 +16390,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.8,
+            "wall_ms": 3.0,
             "why": "",
             "xfail": null
           },
@@ -16429,7 +16429,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.6,
+            "wall_ms": 2.8,
             "why": "",
             "xfail": null
           }
@@ -16492,7 +16492,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 3.4,
+            "wall_ms": 3.6,
             "why": "",
             "xfail": null
           },
@@ -16531,7 +16531,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 3.4,
+            "wall_ms": 3.7,
             "why": "",
             "xfail": null
           },
@@ -16568,7 +16568,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.8,
+            "wall_ms": 3.0,
             "why": "",
             "xfail": null
           },
@@ -16608,7 +16608,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 4.0,
+            "wall_ms": 4.2,
             "why": "",
             "xfail": null
           }
@@ -16671,7 +16671,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 7.1,
+            "wall_ms": 7.4,
             "why": "",
             "xfail": null
           },
@@ -16711,7 +16711,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 6.1,
+            "wall_ms": 6.3,
             "why": "",
             "xfail": null
           },
@@ -16748,7 +16748,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 5.2,
+            "wall_ms": 5.3,
             "why": "",
             "xfail": null
           },
@@ -16787,7 +16787,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 3.4,
+            "wall_ms": 4.0,
             "why": "",
             "xfail": null
           }
@@ -16850,7 +16850,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 7.3,
+            "wall_ms": 7.5,
             "why": "",
             "xfail": null
           },
@@ -16930,7 +16930,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 7.4,
+            "wall_ms": 7.7,
             "why": "",
             "xfail": null
           },
@@ -16970,7 +16970,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 5.2,
+            "wall_ms": 5.5,
             "why": "",
             "xfail": null
           },
@@ -17009,7 +17009,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.7,
+            "wall_ms": 2.9,
             "why": "",
             "xfail": null
           }
@@ -17072,7 +17072,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 10.2,
+            "wall_ms": 10.9,
             "why": "",
             "xfail": null
           },
@@ -17112,7 +17112,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 9.9,
+            "wall_ms": 10.6,
             "why": "",
             "xfail": null
           },
@@ -17151,7 +17151,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 4.0,
+            "wall_ms": 4.4,
             "why": "",
             "xfail": null
           }
@@ -17214,7 +17214,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 4.4,
+            "wall_ms": 4.6,
             "why": "",
             "xfail": null
           },
@@ -17251,7 +17251,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 3.4,
+            "wall_ms": 3.5,
             "why": "",
             "xfail": null
           },
@@ -17290,7 +17290,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.5,
+            "wall_ms": 2.7,
             "why": "",
             "xfail": null
           },
@@ -17330,7 +17330,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 4.8,
+            "wall_ms": 5.1,
             "why": "",
             "xfail": null
           },
@@ -17367,7 +17367,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.6,
+            "wall_ms": 2.7,
             "why": "",
             "xfail": null
           }
@@ -17427,7 +17427,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.9,
+            "wall_ms": 3.1,
             "why": "",
             "xfail": null
           },
@@ -17467,7 +17467,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 5.0,
+            "wall_ms": 5.2,
             "why": "",
             "xfail": null
           },
@@ -17504,7 +17504,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 3.1,
+            "wall_ms": 3.3,
             "why": "",
             "xfail": null
           }
@@ -17566,7 +17566,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 3.9,
+            "wall_ms": 4.2,
             "why": "",
             "xfail": null
           },
@@ -17605,7 +17605,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 4.0,
+            "wall_ms": 4.5,
             "why": "",
             "xfail": null
           },
@@ -17642,7 +17642,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 3.2,
+            "wall_ms": 3.4,
             "why": "",
             "xfail": null
           },
@@ -17682,7 +17682,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 4.8,
+            "wall_ms": 5.4,
             "why": "",
             "xfail": null
           }
@@ -17745,7 +17745,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 15.7,
+            "wall_ms": 16.0,
             "why": "",
             "xfail": null
           },
@@ -17785,7 +17785,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 13.8,
+            "wall_ms": 14.6,
             "why": "",
             "xfail": null
           },
@@ -17826,7 +17826,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 19.9,
+            "wall_ms": 22.6,
             "why": "top alternative edits [\"0.7→0.724\", \"380→392\"], expected ⊆ [\"spread\", \"shrink\", \"trunk\"]",
             "xfail": "`shrink` with the root's `380` ties with the shape-only pairs: reshaping the tree moves the other leaves about as much as translating it does, so nothing in the score prefers the shape"
           },
@@ -17869,7 +17869,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 12.3,
+            "wall_ms": 13.0,
             "why": "",
             "xfail": null
           }
@@ -17918,8 +17918,8 @@
             "iterations": 2,
             "max_error_tau": 0.07966720344768419,
             "other_alternatives": [
-              "0.7→0.731 (shrink L17), 0.45→0.48 (spread L18)",
-              "200→215 ( L33)"
+              "0.7→0.731 (shrink L18), 0.45→0.48 (spread L19)",
+              "200→215 ( L34)"
             ],
             "regime_changed": false,
             "rerun_error": 0.039833601723842094,
@@ -17935,7 +17935,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 17.9,
+            "wall_ms": 18.8,
             "why": "",
             "xfail": null
           },
@@ -17961,8 +17961,8 @@
             "iterations": 2,
             "max_error_tau": 0.18251287973623675,
             "other_alternatives": [
-              "0.45→0.21 (spread L18)",
-              "0.7→0.735 (shrink L17), 0.45→0.4 (spread L18)"
+              "0.45→0.21 (spread L19)",
+              "0.7→0.735 (shrink L18), 0.45→0.4 (spread L19)"
             ],
             "regime_changed": false,
             "rerun_error": 0.09125643986811838,
@@ -17978,7 +17978,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 13.5,
+            "wall_ms": 13.7,
             "why": "",
             "xfail": null
           },
@@ -18001,8 +18001,8 @@
             "iterations": 1,
             "max_error_tau": 4.263256414560601e-14,
             "other_alternatives": [
-              "0.7→0.8 (shrink L17), 0.45→-0.01436590655126835 (spread L18) [unverified]",
-              "0.7→0.8 (shrink L17), 0.45→0.06556064760938629 (spread L18), 380→396 ( L33) [unverified]"
+              "0.7→0.8 (shrink L18), 0.45→-0.014383253 (spread L19) [unverified]",
+              "0.7→0.8 (shrink L18), 0.45→0.065719405 (spread L19), 380→396 ( L34) [unverified]"
             ],
             "regime_changed": false,
             "rerun_error": 2.1316282072803006e-14,
@@ -18018,7 +18018,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 19.7,
+            "wall_ms": 20.0,
             "why": "top alternative edits [\"380→260\"], expected ⊆ [\"shrink\"]",
             "xfail": "the goal needs shrink > 0.8, past its tunable range, so the engine moves the tree's root (`380`, unhinted) instead"
           }
@@ -18081,7 +18081,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 19.6,
+            "wall_ms": 22.1,
             "why": "",
             "xfail": null
           },
@@ -18121,7 +18121,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 21.6,
+            "wall_ms": 22.8,
             "why": "",
             "xfail": null
           },
@@ -18161,7 +18161,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 20.2,
+            "wall_ms": 21.4,
             "why": "",
             "xfail": null
           },
@@ -18201,7 +18201,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 15.2,
+            "wall_ms": 16.9,
             "why": "",
             "xfail": null
           },
@@ -18238,7 +18238,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.9,
+            "wall_ms": 3.6,
             "why": "",
             "xfail": null
           }
@@ -18301,7 +18301,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 10.1,
+            "wall_ms": 10.5,
             "why": "top alternative edits [\"20→60\"], expected ⊆ [\"v0\", \"angle\"]",
             "xfail": "the `20` in the marker's own draw call moves only the marker (no collateral), so it wins; see l09c for the hints that rule it out"
           },
@@ -18340,7 +18340,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 3.9,
+            "wall_ms": 4.2,
             "why": "",
             "xfail": null
           },
@@ -18380,7 +18380,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 15.4,
+            "wall_ms": 16.8,
             "why": "top alternative edits [\"380→350\"], expected ⊆ [\"v0\", \"angle\"]",
             "xfail": "the physics and drawing constants (`dt_sim`, `ground`) are as editable as the launch and win (moving the ground line raises the whole arc), unless marked `rigid` (l09c)"
           }
@@ -18443,7 +18443,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 11.2,
+            "wall_ms": 19.5,
             "why": "top alternative edits [\"20→60\"], expected ⊆ [\"v0\", \"angle\"]",
             "xfail": "as in l09: the marker's own `20` offset wins"
           },
@@ -18482,7 +18482,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 4.3,
+            "wall_ms": 4.6,
             "why": "",
             "xfail": null
           }
@@ -18545,7 +18545,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 7.3,
+            "wall_ms": 8.0,
             "why": "",
             "xfail": null
           },
@@ -18585,7 +18585,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 11.9,
+            "wall_ms": 12.1,
             "why": "",
             "xfail": null
           },
@@ -18625,7 +18625,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 10.2,
+            "wall_ms": 11.0,
             "why": "",
             "xfail": null
           }
@@ -18688,7 +18688,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 7.2,
+            "wall_ms": 7.3,
             "why": "",
             "xfail": null
           },
@@ -18728,7 +18728,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 6.7,
+            "wall_ms": 16.7,
             "why": "top alternative edits [\"10→9\"], expected ⊆ [\"lit:22\"]",
             "xfail": "an int data literal moves the bar 4 px per unit, so 10 px is out of reach within ±0.5 px; the exact answer found instead rescales the axis (`10` → 9)"
           },
@@ -18768,7 +18768,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 6.8,
+            "wall_ms": 6.9,
             "why": "",
             "xfail": null
           },
@@ -18805,7 +18805,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 5.2,
+            "wall_ms": 5.6,
             "why": "",
             "xfail": null
           },
@@ -18842,7 +18842,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 2.9,
+            "wall_ms": 3.2,
             "why": "",
             "xfail": null
           },
@@ -18882,7 +18882,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 8.0,
+            "wall_ms": 8.5,
             "why": "top alternative edits [\"10→9\"], expected ⊆ [\"lit:48\"]",
             "xfail": "the axis is scaled to the data, so the tallest bar's height relative to it barely moves: 48→50 gains 8 px and 51 rescales the axis. The engine finds the `10` that axis_max rounds to (it rescales every bar)"
           },
@@ -18922,7 +18922,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 7.3,
+            "wall_ms": 7.8,
             "why": "",
             "xfail": null
           }
@@ -18982,7 +18982,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 3.9,
+            "wall_ms": 4.2,
             "why": "",
             "xfail": null
           },
@@ -19022,7 +19022,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 8.0,
+            "wall_ms": 21.4,
             "why": "",
             "xfail": null
           },
@@ -19061,7 +19061,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 7.1,
+            "wall_ms": 13.6,
             "why": "",
             "xfail": null
           },
@@ -19101,7 +19101,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 11.0,
+            "wall_ms": 13.8,
             "why": "",
             "xfail": null
           },
@@ -19141,7 +19141,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 10.9,
+            "wall_ms": 84.2,
             "why": "",
             "xfail": null
           }
@@ -19171,7 +19171,7 @@
       "goals": 105,
       "max_runs": 66,
       "median_runs": 20.0,
-      "median_wall_ms": 4.753083,
+      "median_wall_ms": 4.9175,
       "success": 91,
       "success_rate": 0.8666666666666667,
       "top_verified": 99,
@@ -19182,7 +19182,7 @@
       "goals": 91,
       "max_runs": 60,
       "median_runs": 19.0,
-      "median_wall_ms": 4.578875,
+      "median_wall_ms": 4.703958,
       "success": 91,
       "success_rate": 1.0,
       "top_verified": 91,
@@ -19193,7 +19193,7 @@
     {
       "family": "row",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/row-5.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/row-5.ptl",
         "goals": [
           {
             "aids": [],
@@ -19231,7 +19231,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 2,
-            "wall_ms": 4.2,
+            "wall_ms": 10.0,
             "why": "",
             "xfail": null
           }
@@ -19260,7 +19260,7 @@
     {
       "family": "row",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/row-20.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/row-20.ptl",
         "goals": [
           {
             "aids": [],
@@ -19298,7 +19298,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 4.3,
+            "wall_ms": 4.7,
             "why": "",
             "xfail": null
           }
@@ -19327,7 +19327,7 @@
     {
       "family": "row",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/row-100.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/row-100.ptl",
         "goals": [
           {
             "aids": [],
@@ -19364,7 +19364,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 6.3,
+            "wall_ms": 11.2,
             "why": "",
             "xfail": null
           }
@@ -19393,7 +19393,7 @@
     {
       "family": "row",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/row-400.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/row-400.ptl",
         "goals": [
           {
             "aids": [],
@@ -19430,7 +19430,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 14.0,
+            "wall_ms": 28.1,
             "why": "",
             "xfail": null
           }
@@ -19459,7 +19459,7 @@
     {
       "family": "row",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/row-1600.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/row-1600.ptl",
         "goals": [
           {
             "aids": [],
@@ -19496,7 +19496,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 45.3,
+            "wall_ms": 166.2,
             "why": "",
             "xfail": null
           }
@@ -19525,7 +19525,7 @@
     {
       "family": "tree-depth",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/tree-depth-2.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/tree-depth-2.ptl",
         "goals": [
           {
             "aids": [],
@@ -19563,7 +19563,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 6.0,
+            "wall_ms": 19.1,
             "why": "",
             "xfail": null
           }
@@ -19592,7 +19592,7 @@
     {
       "family": "tree-depth",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/tree-depth-4.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/tree-depth-4.ptl",
         "goals": [
           {
             "aids": [],
@@ -19630,7 +19630,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 9.7,
+            "wall_ms": 29.2,
             "why": "",
             "xfail": null
           }
@@ -19659,7 +19659,7 @@
     {
       "family": "tree-depth",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/tree-depth-6.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/tree-depth-6.ptl",
         "goals": [
           {
             "aids": [],
@@ -19697,7 +19697,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 26.8,
+            "wall_ms": 121.2,
             "why": "",
             "xfail": null
           }
@@ -19726,7 +19726,7 @@
     {
       "family": "tree-depth",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/tree-depth-8.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/tree-depth-8.ptl",
         "goals": [
           {
             "aids": [],
@@ -19764,7 +19764,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 97.3,
+            "wall_ms": 437.5,
             "why": "",
             "xfail": null
           }
@@ -19793,7 +19793,7 @@
     {
       "family": "tree-depth",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/tree-depth-10.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/tree-depth-10.ptl",
         "goals": [
           {
             "aids": [],
@@ -19831,7 +19831,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 318.3,
+            "wall_ms": 821.2,
             "why": "",
             "xfail": null
           }
@@ -19860,7 +19860,7 @@
     {
       "family": "tree-depth",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/tree-depth-12.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/tree-depth-12.ptl",
         "goals": [
           {
             "aids": [],
@@ -19898,7 +19898,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 1304.4,
+            "wall_ms": 2732.6,
             "why": "top alternative edits [\"400→415\"], expected ⊆ [\"spread\", \"shrink\", \"trunk\"]",
             "xfail": null
           }
@@ -19927,7 +19927,7 @@
     {
       "family": "sim-steps",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/sim-steps-10.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/sim-steps-10.ptl",
         "goals": [
           {
             "aids": [],
@@ -19965,7 +19965,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 5.6,
+            "wall_ms": 8.7,
             "why": "",
             "xfail": null
           }
@@ -19994,7 +19994,7 @@
     {
       "family": "sim-steps",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/sim-steps-100.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/sim-steps-100.ptl",
         "goals": [
           {
             "aids": [],
@@ -20032,7 +20032,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 6.7,
+            "wall_ms": 7.1,
             "why": "",
             "xfail": null
           }
@@ -20061,7 +20061,7 @@
     {
       "family": "sim-steps",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/sim-steps-1000.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/sim-steps-1000.ptl",
         "goals": [
           {
             "aids": [],
@@ -20099,7 +20099,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 17.0,
+            "wall_ms": 20.4,
             "why": "",
             "xfail": null
           }
@@ -20128,7 +20128,7 @@
     {
       "family": "sim-steps",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/sim-steps-10000.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/sim-steps-10000.ptl",
         "goals": [
           {
             "aids": [],
@@ -20166,7 +20166,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 117.5,
+            "wall_ms": 162.9,
             "why": "",
             "xfail": null
           }
@@ -20195,7 +20195,7 @@
     {
       "family": "sim-steps",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/sim-steps-100000.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/sim-steps-100000.ptl",
         "goals": [
           {
             "aids": [],
@@ -20233,7 +20233,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 1002.1,
+            "wall_ms": 1123.4,
             "why": "",
             "xfail": null
           }
@@ -20262,7 +20262,7 @@
     {
       "family": "shared-sum",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/shared-sum-4.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/shared-sum-4.ptl",
         "goals": [
           {
             "aids": [],
@@ -20329,7 +20329,7 @@
     {
       "family": "shared-sum",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/shared-sum-16.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/shared-sum-16.ptl",
         "goals": [
           {
             "aids": [],
@@ -20367,7 +20367,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 7.9,
+            "wall_ms": 8.2,
             "why": "",
             "xfail": null
           }
@@ -20396,7 +20396,7 @@
     {
       "family": "shared-sum",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/shared-sum-64.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/shared-sum-64.ptl",
         "goals": [
           {
             "aids": [],
@@ -20434,7 +20434,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 12.5,
+            "wall_ms": 13.1,
             "why": "",
             "xfail": null
           }
@@ -20463,7 +20463,7 @@
     {
       "family": "shared-sum",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/shared-sum-256.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/shared-sum-256.ptl",
         "goals": [
           {
             "aids": [],
@@ -20501,7 +20501,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 14.7,
+            "wall_ms": 15.7,
             "why": "",
             "xfail": null
           }
@@ -20530,7 +20530,7 @@
     {
       "family": "shared-sum",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/shared-sum-1024.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/shared-sum-1024.ptl",
         "goals": [
           {
             "aids": [],
@@ -20568,7 +20568,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 3,
-            "wall_ms": 25.7,
+            "wall_ms": 25.9,
             "why": "",
             "xfail": null
           }
@@ -20597,7 +20597,7 @@
     {
       "family": "map-items",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/map-items-10.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/map-items-10.ptl",
         "goals": [
           {
             "aids": [],
@@ -20634,7 +20634,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 3.6,
+            "wall_ms": 3.7,
             "why": "",
             "xfail": null
           }
@@ -20663,7 +20663,7 @@
     {
       "family": "map-items",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/map-items-100.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/map-items-100.ptl",
         "goals": [
           {
             "aids": [],
@@ -20700,7 +20700,7 @@
             ],
             "top_verified": true,
             "verified_alternatives": 1,
-            "wall_ms": 7.1,
+            "wall_ms": 6.5,
             "why": "",
             "xfail": null
           }
@@ -20729,7 +20729,7 @@
     {
       "family": "map-items",
       "result": {
-        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/79846-table/map-items-1000.ptl",
+        "file": "/var/folders/9_/kqp8nmvj7nvgb4t4djm471980000gn/T/petal-dm-v2-study/85393-table/map-items-1000.ptl",
         "goals": [
           {
             "aids": [],

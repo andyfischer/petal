@@ -3,7 +3,7 @@
 //! are worth solving, and how the verified alternatives are ordered.
 //!
 //! - [`param_weight`]: the cost weight `d_i` of §2.5.2 (lower is preferred):
-//!   `tunable` and `config let` first, then a literal written in the goal's
+//!   knobs (`config let` or `tunable`, one tier) first, then a literal written in the goal's
 //!   own call, then top-level bindings, then function bodies, then other
 //!   files; feedback through `var`, `state` or the clock makes a literal
 //!   costlier.
@@ -14,17 +14,19 @@
 //! - [`collateral_norm`] and [`score`]: §2.5.4. What else moved is measured
 //!   from the verification run, not guessed from the program's shape.
 
-use crate::dm_v2::hints::Hint;
 use crate::dm_v2::jacobian::Jacobian;
 use crate::dm_v2::params::{CodeOrigin, Param};
 use crate::dm_v2::solve::rank;
 
+/// The weight of a knob (§2.5.2): a literal marked by `config let`, by
+/// `tunable(...)`, or by both. One tier, so marking a literal twice changes
+/// nothing and `config let x = tunable(v)` ranks as `config let x = v` does.
+pub const KNOB_WEIGHT: f64 = 0.5;
+
 /// The cost weight `d_i` of a parameter (§2.5.2).
 pub fn param_weight(p: &Param, clock_coupled: bool) -> f64 {
-    let mut d = if matches!(p.hint, Some(Hint::Tunable { .. })) {
-        0.25
-    } else if p.config {
-        0.5
+    let mut d = if p.is_knob() {
+        KNOB_WEIGHT
     } else if p.in_goal_frame {
         0.75
     } else {

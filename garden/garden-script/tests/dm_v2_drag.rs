@@ -288,6 +288,8 @@ fn selectors_parse() {
     assert_eq!(DragSelector::parse("line:3"), Some(DragSelector::Line(2)));
     assert_eq!(DragSelector::parse("fn:slot"), Some(DragSelector::Function("slot".into())));
     assert_eq!(DragSelector::parse("config"), Some(DragSelector::ConfigOnly));
+    assert_eq!(DragSelector::parse("knob"), Some(DragSelector::ConfigOnly));
+    assert_eq!(DragSelector::ConfigOnly.label(), "config");
     assert_eq!(DragSelector::parse("line:0"), None);
     assert_eq!(DragSelector::parse("a b"), None);
     for s in ["gap", "line:3", "fn:slot", "config"] {

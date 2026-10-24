@@ -76,6 +76,9 @@ jobs:
       - name: Install Zig
         if: matrix.builder == 'zigbuild'
         uses: mlugg/setup-zig@v1
+        # Pinned: unpinned, the action resolved a version no mirror served (404).
+        with:
+          version: 0.13.0
 
       - name: Install cargo-zigbuild
         if: matrix.builder == 'zigbuild'

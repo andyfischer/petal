@@ -6,9 +6,11 @@ speculative runner) landed the same day, M2 (discovery, Jacobian, hints) and
 M3 (solver, ranking, public API) on 24 October, and M4 (Garden as M4b;
 CLI, MCP and docs as M4a) the same day, and M5 (examples ladder and
 complexity study, with six ranking and budget revisions) the same day,
-followed by a code review of the whole change set that fixed five bugs.
-See [Status](#9-status) at the end, which each milestone updates when it
-lands.
+followed by a code review of the whole change set that fixed five bugs,
+and a final test pass over every suite, the study and the ecosystem the
+same day. **Final: all milestones done.** v2 is opt-in on the CLI and MCP
+(`--v2` or any v2-only flag) and the default in Garden for drags v1 cannot
+solve exactly. See [Status](#9-status) at the end.
 
 The goals are in [docs/tasks/direct-manipulation-v2.md](../tasks/direct-manipulation-v2.md).
 Where this plan and an older doc disagree (the user page
@@ -1652,6 +1654,7 @@ with a golden test.
 | M4 surfaces | M4a (CLI, MCP, docs) done, 2026-10-24; M4b (Garden) done, 2026-10-24 | M4a: `83cd1469`; M4b: `6da29349`, `1f565eca` | M4b: Garden drag-to-edit on v2 (`garden-script/src/panel/dm_v2.rs`, `garden-app/src/app/manip_v2.rs`); tests `garden-script/tests/dm_v2_drag.rs` (13), `tools/dm-drag-integration-test.ts`. M4a: `cli/dm_v2.rs` (`propose-edit --v2`), `run --trace-emits` keys + native args, MCP `ProposeEdit`/`TraceEmits`, docs; tests `core/tests/cli_propose_edit_v2.rs` (12), `test/vitest/petal-mcp.test.ts` (5); deviations below |
 | M5 examples + study | done, 2026-10-24 | `ccc25ce7` | `examples/direct-manipulation-v2/` (27 examples, 105 goals), harness `core-libs/petal-ui/tests/dm_v2_study.rs`, report [direct-manipulation-v2-study.md](direct-manipulation-v2-study.md) + `.json`; engine revisions in `dm_v2::{rank,api,jacobian,spec}`; deviations below |
 | Code review (post-M5) | done, 2026-10-24 | `0d6dae6e`, `08bc37cd`, `1e6f7913`, `4dea9231` | adversarial review of the whole change set; five bugs fixed, each pinned by `core/tests/dm_v2_review.rs` (7); see "Code review" below |
+| Final test pass | done, 2026-10-24 | `4a8d7145`, `62be2098` (+ this commit) | every suite green, study re-run (unchanged outcomes), effect audits clean, ecosystem checked; see "Final test pass" below |
 
 Deviations from this plan are recorded here as they happen, with the reason.
 
@@ -2244,6 +2247,49 @@ level, which a deeply nested emitted tree could make expensive; screening
 can lose a float/int pair whose probes cancel exactly (`1000.0 + n`: the
 float steps by `+1.0`, the int by `-1`); `rigid` at a place the baseline
 never reached (or with a non-portable answer) passes its argument through.
+
+**Final test pass, 2026-10-24.** The whole test plan, run on `main` after
+the code review:
+
+| Suite | Result |
+|---|---|
+| core `cargo build && cargo test --no-fail-fast` | 3058 passed, 0 failed, 16 ignored (88 test binaries) |
+| `make test` (full vitest, includes every `examples/console/*.ptl`) | 76 files, 1742 passed, 0 failed |
+| petal-ui `cargo test` (includes the study `ladder` and the `effect_audit` corpus test) | 374 passed, 0 failed, 7 ignored |
+| petal-c-bridge `cargo test` / `make test-c-bridge` | 44 passed, 0 failed / 4 of 4 ctest |
+| petal-query `cargo test` | 33 passed, 0 failed |
+| garden `cargo test -p garden-script -p garden-app` | garden-app 998; garden-script lib 138 (1 ignored), bloom 10, dm_v2_drag 13, script_host 19, text_layout 15; 0 failed |
+| garden `tools/dm-drag-integration-test.ts` (headless, debug server) | 15 passed, 0 failed |
+| petal-desktop-sdl `cargo check --all-targets` | clean |
+| study `ladder` (release) | 105 goals, 91 succeed, 14 xfail, 0 unexpected |
+| study `full_study` (release, external copies) | re-run; outcomes, run counts and edits identical to M5, only wall times moved |
+| `tools/native-effect-audit.ts` (static) | 1 finding, petal-desktop-sdl `queue_on_host`: a test-only native in a `#[cfg(test)]` module, pre-existing (`473c89a2`) |
+| `petal-ui-run --effect-audit --frames 3` on all 28 DM v2 example entry files | 0 under-declared, 0 over-declared on each |
+| clippy, CI's enforced wasm32 `disallowed_methods` step | clean (the spec runner's clock read is cfg'd out of wasm) |
+| clippy, host, on the dm_v2 modules | 7 warnings, 4 fixed (`4a8d7145`); the 3 `needless_range_loop` in the linear algebra are left as written. No new warnings in the other touched core files or in Garden's DM files (the ones there predate v2) |
+
+Ecosystem: no `.ptl` in `examples/`, `garden/`, `~/worlds-fair/ui/ptl`,
+`~/petal-creative`, `~/cheesecake/games` or `~/biz/petal-lang.org` calls or
+defines `tunable` or `rigid` (the words occur only in comments), and no
+host registers a native by either name. `petal check` over all 535 `.ptl`
+files of those trees (examples 188, cheesecake 304, worlds-fair 20,
+petal-creative 23) passes on 532; the 3 failures are cheesecake `rivet`
+shaders calling the host's undeclared `hash11`, unrelated to v2.
+
+Deviations in this pass: the study's external copies were made in the
+session scratchpad (`/Volumes/bureau` was not readable), and the generated
+report's paths are rewritten to the documented `/Volumes/bureau` location.
+The study's run instructions (§7) were corrected: the examples path must
+be canonical, and the copies must include `petal.toml`, without which
+package host requirements are not enforced and 8 library modules load as
+entry files (45 runnable becomes 53).
+
+Still open at the end (all recorded above, none a test failure): the
+milestone open issues (`petal-ui-run propose-edit`; §4.5 docs for
+program-modification, time-travel and ffi; re-vendoring the C bridge into
+cheesecake and worlds-fair with `PB_FX_CONTAINED`; making v2 the CLI/MCP
+default, which the study's numbers now support), the study's §3 limits,
+and the code review's left-open list.
 
 ---
 

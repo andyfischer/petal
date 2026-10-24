@@ -81,17 +81,18 @@ print(a == b, a != b, len(a), r[b], contains(a, "cab"), index_of([b], a))`;
     expect(runPetal(code)).toBe("true false 1200 1 true 0");
   });
 
-  it("a 100k-append loop finishes quickly", () => {
+  it("a 30k-append loop finishes quickly", () => {
     const code = `let out = ""
-for i in range(0, 100000) do
+for i in range(0, 30000) do
   out = out ++ "x"
 end
 print(len(out), starts_with(out, "xxx"))`;
     const start = Date.now();
-    expect(runPetal(code)).toBe("100000 true");
-    // 4-6 s before long strings stopped being interned; ~0.1 s after (release).
-    // This runs the debug binary: ~2.6 s on an M4, ~6.3 s on a CI runner, so
-    // the bound only catches the interning regression, which is far slower.
-    expect(Date.now() - start).toBeLessThan(15000);
+    expect(runPetal(code)).toBe("30000 true");
+    // At 100k: 4-6 s before long strings stopped being interned, ~0.1 s after
+    // (release). The debug binary this runs took 6-10+ s at 100k on a CI
+    // runner, so the loop is shorter; both costs are quadratic, so the ~40x
+    // gap between them holds and the bound still catches the regression.
+    expect(Date.now() - start).toBeLessThan(5000);
   });
 });

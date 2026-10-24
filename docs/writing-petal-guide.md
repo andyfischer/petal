@@ -837,7 +837,13 @@ to rewrite *those* bindings and leave the rest of the program alone
 
 ```petal
 config let offset = 10
+config let speed = tunable(4.0, 0, 10)   // a setting with a slider range
 ```
+
+One rule covers both marks: a setting (of any type) is a `config let`; a
+range, or a preference for a number that is not a setting, is `tunable`.
+Wrap a setting's value in `tunable(v, min, max, step)` to give it a range
+hosts and drags both see ([Giving a setting a range](syntax/config-let.md#giving-a-setting-a-range)).
 
 **Split files with `import`; declarations are private until marked `pub`.**
 

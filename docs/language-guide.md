@@ -95,7 +95,8 @@ config let offset = 10
 
 The binding evaluates exactly as a plain `let`; what changes is how editors
 and live-editing hosts treat it. It combines with `pub` and applies only to
-`let`. See [`config let`](syntax/config-let.md) for the rules and for what
+`let`. A setting can hold any data; to give a numeric one a range, wrap the
+value in the `tunable` hint: `config let speed = tunable(4.0, 0, 10)`. See [`config let`](syntax/config-let.md) for the rules and for what
 tools do with it.
 
 ### `const` — a value that must be constant

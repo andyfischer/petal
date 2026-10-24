@@ -282,6 +282,9 @@ shape from what is written (an integer literal given a float, a list of a
 different length), and changes nothing. Write the file and reload for those.
 Any top-level `let` of data can be set this way; `config` is not required
 (what [`config let`](../syntax/config-let.md) adds is the sign rule above).
+In `config let SPEED = tunable(4.0, 0, 10)` the path `SPEED` names the `4.0`
+([Giving a setting a range](../syntax/config-let.md#giving-a-setting-a-range)),
+and the value is not clamped to that range.
 
 From C: `pb_vm_set_config(vm, file, path, value_json)` and
 `pb_vm_source_text(vm, file)`.

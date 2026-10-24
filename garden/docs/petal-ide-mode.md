@@ -373,7 +373,9 @@ debug build.
 - **`:DragAllow NAME …`** restricts every following drag to those numbers,
   exactly; **`:DragDeny NAME …`** rules numbers out. A selector is a binding
   name (`gap`), `line:N` (any number on that line, 1-based), `fn:NAME` (the
-  numbers in that function's body), or `config`. With no argument each
+  numbers in that function's body), or `config` (every number in a
+  `config let`, including the fields of a record or the items of a list
+  it holds, and every `tunable(...)` number). With no argument each
   clears. While either is set, every drag uses the solved engine.
 - Numbers in libraries (the `ui` prelude, packages) never move; nor do the
   ones that feed `random()`, a loop's bounds or a comparison, or that are

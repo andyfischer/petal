@@ -1983,8 +1983,12 @@ ones to prefer and which never to touch. Both return their first argument
 unchanged and do nothing else at run time; the tools read them from the
 program. They are global (no import).
 
-`config let` stays the spelling for a top-level knob. The hints are for
-ranges, for literals inside functions or calls, and for the negative case.
+`config let` stays the spelling for a setting: a top-level binding of any
+type that hosts list and set. The hints are for ranges, for literals inside
+functions or calls, and for the negative case. To give a setting a range,
+combine the two: `config let SPEED = tunable(4.0, 0, 10)`. Hosts then read
+`SPEED` as the setting `4.0` with the range 0..10
+([Giving a setting a range](syntax/config-let.md#giving-a-setting-a-range)).
 
 ### `tunable(value)` / `tunable(value, min, max)` / `tunable(value, min:, max:, step:)`
 
@@ -2006,6 +2010,12 @@ Rules:
 - `value` must be a number literal or a name bound to one. On a computed value
   (`tunable(a + b)`) nothing is marked, and `petal lint` reports
   `dm-hint-not-literal`. Wrap the literal itself: `tunable(a) + b`.
+- `tunable` marks numbers only. On other data (`tunable(true)`,
+  `tunable("title")`, `tunable({x: 140})`) the same lint says what the value
+  is and points to `config let`, which exposes a setting of any type.
+- The range is advice. Direct manipulation keeps a drag inside it; nothing
+  else enforces it, and `set_config_value` / `pb_vm_set_config` do not clamp
+  to it.
 - The bounds must be number literals, and `min` must not be above `max`
   (`dm-hint-bounds`). A computed bound is evaluated and ignored.
 - A bound is never edited itself: changing the range to reach a goal would

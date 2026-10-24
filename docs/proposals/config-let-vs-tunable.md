@@ -1,8 +1,11 @@
 # Proposal: replace `config let` with `tunable`?
 
-Status: proposed, 24 October 2026. This answers the question "Can we get rid
-of the `config` keyword and just use `tunable` instead? This would simplify
-the language surface, and tunable can also customize min/max/step."
+Status: accepted, implemented 24 October 2026 (design E, with the
+conservative defaults for the open questions; see
+[Implementation notes](#implementation-notes-24-october-2026) for what was
+built and where it deviates from the sketch). This answers the question "Can
+we get rid of the `config` keyword and just use `tunable` instead? This would
+simplify the language surface, and tunable can also customize min/max/step."
 
 ## Summary
 
@@ -325,7 +328,7 @@ express. **The old form is the better one here, and E leaves it unchanged.**
 `~/cheesecake/games/rivet/game.ptl:32-40` runs as an extract and prints
 `0.32 216`.
 
-```petal
+```petal ignore
 // before
 pub config let POST = {
   exposure: 1.2, bloom: 0.32, bloom_threshold: 1.0, vignette: 0.28, saturation: 1.12, contrast: 1.04,
@@ -333,7 +336,7 @@ pub config let POST = {
     {effect: "chromatic_aberration", amount: 0.12},
     {effect: "scanlines", amount: 0.16, lines: 216, roll: 0.05},
 ```
-```petal
+```petal ignore
 // after, removal -- proposed: wrap every field you want listed
 pub let POST = {
   exposure: tunable(1.2), bloom: tunable(0.32, 0, 1), ...
@@ -685,6 +688,22 @@ adds to nested terms (`ir_equiv` compares them).
 
 ## Open questions
 
+Decisions taken at implementation (24 October 2026). The owner accepted E
+(question 1). Questions 2 to 4 were not decided, so the implementation takes
+the conservative default for each, and any of them can still be changed:
+
+- **2: kept the two tiers** (0.25 for `tunable`, 0.5 for `config let`; a
+  literal marked both ways takes 0.25). No study re-run was needed, and the
+  DM v2 study ladder passes unchanged.
+- **3: no clamping.** `set_config_value` and `pb_vm_set_config` accept a
+  value outside the declared range; the range is reported (`range`) and the
+  docs say that a host wanting a hard limit clamps. This keeps the soft (UI)
+  and hard (clamp) ranges separate, as Unreal learned to.
+- **4: no new metadata hint.** Choice and doc metadata stay out of scope;
+  `StaticBinding.comment` remains the place for prose.
+
+The questions as they were put:
+
 1. **Owner:** accept E, or prefer removal (A/B) despite the costs listed? The
    strongest argument for removal is above.
 2. **Owner:** merge the DM weights of `config let` (0.5) and `tunable` (0.25)
@@ -703,3 +722,119 @@ adds to nested terms (`ir_equiv` compares them).
    leave room for it.
 5. **Cheesecake maintainer:** whether and when to adopt the `range` field in
    the Tuning screen and the `tunable`-aware `--set` scanner.
+
+## Implementation notes (24 October 2026)
+
+What was built, in the order of the sketch:
+
+1. **Nested `is_config`.** `source_diff::config_data_literals` walks a
+   `config let` initializer's data positions (the same rule as the sign
+   fold, which now uses it), and the compiler marks the term of every literal
+   it finds `is_config` (`Compiler::config_literals`). So the `140` in
+   `config let BOX = {x: 140}` gets weight 0.5, matches `--allow config`,
+   Garden's `:DragAllow config` and `ParamSelector::ConfigOnly`, and is kept
+   by ConfigStrict. Test: `dm_v2_solve::config_record_and_list_literals_are_config`.
+2. **ConfigStrict** fires when any term is `is_config` *or* `read_hints`
+   finds a `Hint::Tunable` mark (`dm_v2/api.rs`). The pin reason now reads
+   "the program declares `config let` or `tunable` knobs". Test:
+   `dm_v2_solve::config_strict_counts_tunable_knobs`.
+3. **`static_bindings`.** `static_value::tunable_args` sorts a `tunable`
+   call's arguments (positional or named `value`/`min`/`max`/`step`, one to
+   four, each once); `config_value_expr` is the value position of a
+   binding. Under `config` only, `value` and `text` are the inner value's and
+   the new `StaticBinding.range: Option<StaticRange>` holds the bounds
+   written as number literals (`None` when no bound is written; a bound that
+   is not a literal is left out). A file's own `fn tunable` does not stop the
+   unwrap. `petal show-static --json` gains the same `range` on a
+   `config let` declaration.
+4. **C bridge.** `pb_source_bindings_json` adds
+   `"range": {"min":…, "max":…, "step":…}` (each key only when written),
+   documented in `petal_bridge.h` and docs/usage/embedding-c.md. Tests:
+   `source::tests::a_tunable_config_reports_its_value_and_range` (cargo) and
+   `a_tunable_config_reports_its_range_and_sets_by_name` (bridge_tests.cpp).
+5. **Path routing.** The unwrap lives where a path starts, so every path
+   reader agrees: `literal_edit` (`set_path` and the other primitives, hence
+   `set_config_value`, `pb_vm_set_config` and `pb_source_set_value`) and
+   `rewrite::find_binding_path` (`pb_source_expr`, `pb_source_set`). `SPEED`
+   sets the 4.0 in `config let SPEED = tunable(4.0, 1, 10)`, live, across
+   zero, and unclamped. Test: `hot_reload::a_tunable_config_is_set_by_name_without_a_recompile`.
+6. **Lints.** `dm-hint-not-literal` on a string, bool, `nil`, colour, list or
+   record says `` `tunable` marks a number; `true` is a bool. To expose a
+   setting of any type, declare it with `config let` ``, in `petal lint` and
+   in the warning DM v2 reads from the IR. The new report-only rule
+   `config-not-data` reads `` a `config let` initializer is read by hosts
+   without running the program; `level.SPAWN` is a field access, which needs
+   evaluating, so hosts see no value `` (the reason phrase is
+   `static_bindings`' own).
+
+Deviations from the sketch:
+
+- **Reload reports changed too.** The sketch said "nothing changes for
+  reload". For the paths to agree, the source diff gives the value inside
+  `config let X = tunable(v, …)` the path `X` (it was `X[0]`), and a bound
+  no path. Editing the number or a bound is still a value patch.
+- **`X[0]` no longer reaches `v`** on a wrapped `config let`. Nothing in the
+  repos used that path (no `config let … tunable(` existed outside docs), and
+  keeping both would have meant two names for one literal. A plain
+  `let X = tunable(…)` keeps `X[0]`.
+- **Every literal is marked, not only numbers**: strings and bools in a
+  config record are `is_config` too (DM only moves numbers, so this shows
+  only in `show-ir --json`). A `tunable`'s bounds under `config let` are
+  marked as well, and stay unmovable as bounds.
+- The proposal's docs list also named docs/writing-petal-guide.md and
+  docs/language-guide.md; both got the one-line rule. The petal-lang.org
+  mirror is not synced here.
+
+## Notes for Cheesecake's maintainer
+
+Nothing in Cheesecake breaks: the change is additive for a host that ignores
+`range`, and no game declares `config let X = tunable(…)` today (`tunable(`
+appears in none of Cheesecake's `.ptl` files). What changes after a
+re-vendor, and what the engine could adopt:
+
+**Re-vendoring.** Follow `third_party/petal/VENDORED.md`, "To update": `git
+-C ~/petal archive <commit> …` into a temp dir, `rsync -a --delete --exclude
+VENDORED.md`, re-apply the `garden/gpp/Cargo.toml` modification, update the
+commit line, then run the listed checks (`cargo test --lib -- builtins::decls
+heap::`, the bridge's `cargo test`, `tools/build.ts test`). Use a commit at or
+after the one implementing this note.
+
+**What a re-vendor changes by itself.**
+
+- The Tuning screen (`engine/editor/src/tuning_panel.cpp`): a binding written
+  `config let X = tunable(4.0, 0, 10)` arrives as a plain float `4.0` with the
+  path `X`, so it draws as one number field. Before, it arrived as
+  `Kind::Call "tunable"`, which `is_leaf` rejects (it is not `vec2`/`vec3`),
+  so it showed as a `tunable(...)` header opening onto three numbers, value,
+  min and max, and editing the second or third rewrote the range.
+- `reloaded_values()` (`natives_scene.cpp:327`): an edit of that value is
+  reported under the path `X` (was `X[0]`); an edit of a bound carries no
+  path.
+- More DM preference for record and list config literals (`POST.bloom` and
+  friends), if the editor uses DM v2's ranking anywhere.
+
+**Adopting `range` in the Tuning screen.** `File::reparse`
+(`engine/editor/src/ptl_source.cpp:402`) reads the JSON keys one by one; add
+`range` beside `config` (three optional doubles on `ptl::Binding`). In
+`draw_value`, for the top-level float or int of a binding with a range, use
+`min`/`max` for the slider's ends (or to clamp what `ui.number` produces) and
+`step` for its quantum instead of `quantum_of`. The range applies to the
+binding's own value only, not to fields of a record. Clamping is the host's
+call: Petal does not clamp in `set_config` or `set_value`.
+
+**The `--set` / `profiles.json` scanner (`engine/script/src/config_overrides.cpp`).**
+Checked against the code: it does not mis-parse `config let X = tunable(…)`.
+`expression_end` balances brackets, so the initializer it finds is the whole
+`tunable(4.0, 0, 10)` (a trailing comment is kept), and `--set X=7` yields
+`config let X = 7`. The override takes effect, but it **drops the wrapper**:
+for that run the knob has no range in the Tuning screen and no `tunable`
+preference for DM. To keep it, when the replaced text starts with `tunable(`
+(after `skip_blank`), replace only the first argument: from just past the
+`(` to the first top-level `,` or the matching `)`, using the same
+string/comment/bracket skipping `expression_end` does. A named first argument
+(`tunable(value: 4.0, …)`) is legal; skipping an identifier followed by `:`
+covers it. Two tests beside the existing overrides tests in
+`tests/script_host_tests.cpp`: `--set X=7` on
+`config let X = tunable(4.0, 0, 10)   // note` gives
+`config let X = tunable(7, 0, 10)   // note`, and on a multi-line call keeps
+the following lines.

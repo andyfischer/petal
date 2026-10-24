@@ -364,6 +364,26 @@ way, for code written against an earlier checkout.
 
 ### Builtins and standard library
 
+- `config let` and `tunable` compose: `config let SPEED = tunable(4.0, 0, 10)`
+  is a setting with a range. `static_bindings` (and `pb_source_bindings_json`,
+  `petal show-static --json`) report the inner value and text plus a new
+  `range` (`min`/`max`/`step`, positional or named, each only when written).
+  The path `SPEED` names the value in `set_config_value` /
+  `pb_vm_set_config`, the path edits and the reload report, so a slider sets
+  it live without a reload, across zero too. The range is advice: nothing
+  clamps to it. A plain `let X = tunable(…)` is unchanged
+  ([Giving a setting a range](docs/syntax/config-let.md#giving-a-setting-a-range),
+  [proposal](docs/proposals/config-let-vs-tunable.md)).
+- Every literal in a `config let` record, list or call is config to direct
+  manipulation (the config weight, the `config` selector of `--allow`,
+  Garden's `:DragAllow config` and `--config-strict`), not only a scalar
+  initializer. `--config-strict` (`Prefer::ConfigStrict`) also takes effect in
+  a program whose only knobs are `tunable` literals.
+- `dm-hint-not-literal` on `tunable(true)`, `tunable("title")` or
+  `tunable({x: 140})` says what the value is and points to `config let`,
+  instead of calling it computed. A new lint, `config-not-data`, reports a
+  `config let` whose initializer needs evaluating (`level.SPAWN`), so hosts
+  see no value.
 - `tunable(value, min?, max?, step?)` and `rigid(value)` are hints for direct
   manipulation: both return `value`; `tunable` marks a literal as a preferred
   target within a range, and `rigid` keeps a literal from moving and stops
@@ -968,6 +988,13 @@ way, for code written against an earlier checkout.
 Breaking changes made during development, newest first. For the import and
 package changes below, `petal fix-imports` does the rewriting and
 [docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
+
+- In `config let X = tunable(v, …)`, the binding path `X` now names `v`
+  rather than the whole `tunable(…)` call, in `static_bindings` (`value`,
+  `text`), the path edits, `pb_source_expr` / `pb_source_set`,
+  `set_config_value` and the reload report's value paths. `X[0]` on such a
+  binding no longer reaches `v`. A plain `let X = tunable(…)` keeps the old
+  addressing.
 
 - `petal propose-edit` defaults to the v2 engine, and so does the dev MCP
   server's `ProposeEdit`. Before, a request using only v1's flags

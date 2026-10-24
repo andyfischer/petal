@@ -17,6 +17,18 @@ the code alone, a host can list a file's config bindings and draw a slider for
 each, and a number dragged from positive to negative is still a cheap value
 change.
 
+`config let` and the builtin [`tunable`](../Builtins.md#direct-manipulation-hints)
+each have one job, and they compose:
+
+- **`config let`** declares a *setting*: a binding that hosts list, set live
+  and override from outside, holding data of any type (a number, a string, a
+  bool, a colour, a record).
+- **`tunable(v, min?, max?, step?)`** marks a *number* that direct
+  manipulation should prefer, with an optional range. It works anywhere a
+  number is written, in a function body as well as at the top level.
+- **`config let X = tunable(v, min, max, step)`** is a setting with a range.
+  See [Giving a setting a range](#giving-a-setting-a-range).
+
 This page is the reference for the modifier as a script author sees it. The
 mechanics on the tool side are owned by other pages, and each section links to
 its owner.
@@ -25,6 +37,7 @@ its owner.
 - [Where it is allowed](#where-it-is-allowed)
 - [`config` is not a reserved word](#config-is-not-a-reserved-word)
 - [What a config binding can hold](#what-a-config-binding-can-hold)
+- [Giving a setting a range](#giving-a-setting-a-range)
 - [What it changes for the program](#what-it-changes-for-the-program)
 - [What it changes for tools](#what-it-changes-for-tools)
 - [Editing one while the program runs](#editing-one-while-the-program-runs)
@@ -104,7 +117,65 @@ those, enum variants, and calls with literal arguments such as
 without running the program
 ([What counts as static](../usage/config-files.md#what-counts-as-static)) and
 the set whose literals can be edited in place. `config let margin = base * 2`
-has no literal of its own for a slider to hold on to.
+has no literal of its own for a slider to hold on to, and `petal lint` says so
+(`config-not-data`):
+
+```
+warning[config-not-data]: a `config let` initializer is read by hosts without
+running the program; `base * 2` is an arithmetic or comparison expression,
+which needs evaluating, so hosts see no value
+```
+
+Every literal in a config binding's data is config, not only a scalar
+initializer: the `140` in `config let BOX = {x: 140, y: 90}` and the `30` in
+`config let XS = [20, 30]` are preferred by direct manipulation and match its
+`config` selector exactly as `config let X = 140` does.
+
+## Giving a setting a range
+
+Wrap the value in `tunable` to give a setting a range:
+
+```petal
+config let SPEED = tunable(4.0, 0, 10)                  // min 0, max 10
+config let GRAV = tunable(-9.8, min: -20, max: 0, step: 0.1)
+print(SPEED, GRAV)   // 4.0 -9.8
+```
+
+The program still runs as if both words were absent: `tunable` is the
+identity. What hosts see is the setting, not the call:
+
+- `static_bindings` reports `SPEED` with the value `4.0`, the text `4.0` and
+  a `range` of `{min: 0, max: 10}`. From C, `pb_source_bindings_json` adds
+  `"range": {"min": 0.0, "max": 10.0}` beside `"config": true`; a bound that
+  is not written is left out. `petal show-static --json` shows the same
+  `range`.
+- The path `SPEED` names the `4.0`, so `set_config_value("SPEED", …)` and
+  `pb_vm_set_config` set it live without a reload, across zero too, and the
+  path edits (`literal_edit`, `pb_source_set_value`) change the number and
+  leave the bounds as written.
+- Editing the number in the file (`tunable(4.0, …)` to `tunable(7.0, …)`) is a
+  value patch on hot reload, as for any config literal. So is editing a
+  bound.
+- Direct manipulation keeps a drag within the range and gives the literal the
+  `tunable` preference.
+
+The range is **advice, not a clamp**. Nothing in Petal enforces it:
+`set_config_value` and `pb_vm_set_config` accept a value outside it, as
+direct manipulation treats it as a box for its search and nothing more. A host
+that wants a hard limit clamps before it sets.
+
+The bounds are numbers written as literals, by position (`min`, `max`, `step`)
+or by name. Only a well-formed call is read this way: one to four arguments,
+each parameter once. Because `config` already says the binding is a knob, the
+call is recognised by its name even when the file declares its own
+`fn tunable`.
+
+A plain `let X = tunable(…)` is not a setting: hosts see a `tunable` call, as
+before, and only direct manipulation reads its range. Use `tunable` on its own
+for a number that is not a setting (a literal in a function body, a call-site
+argument), and `config let` for every setting, wrapped when it needs a range.
+`tunable` marks numbers only: `tunable(true)` or `tunable("title")` gets the
+lint `dm-hint-not-literal`, which points you to `config let`.
 
 Keep a config binding to one declaration and do not assign it again. A
 top-level `margin = 50` after the declaration is legal, but the value a host
@@ -173,10 +244,12 @@ proposal) are in
 
 A host reads a file's top-level bindings without running it, with
 `static_value::static_bindings`. Each binding carries `is_config`, next to its
-value, its text as written, the comment block above it and its line. That is
+value, its text as written, the comment block above it and its line, and a
+`range` when it is declared with one
+([Giving a setting a range](#giving-a-setting-a-range)). That is
 enough to build a settings panel: one control per config binding, labelled
 with the author's comment. From C the same list is `pb_source_bindings_json`,
-where the field is `"config": true`. See
+where the fields are `"config": true` and `"range"`. See
 [Reading the whole file](../usage/config-files.md#reading-the-whole-file-including-what-it-cannot-read)
 and [embedding-c.md](../usage/embedding-c.md#editing-source-a-script-as-a-config-file).
 
@@ -184,10 +257,10 @@ and [embedding-c.md](../usage/embedding-c.md#editing-source-a-script-as-a-config
 
 | Place | How |
 |---|---|
-| `petal show-static` | the declaration's kind reads `config let` (`"kind": "config let"` with `--json`). It is classified by the same rules as a `let`: static when it depends on nothing dynamic and is not assigned again. See [show-static](../CLI.md#show-static--static-declarations). |
+| `petal show-static` | the declaration's kind reads `config let` (`"kind": "config let"` with `--json`, plus `"range"` for `config let X = tunable(v, min, max)`). It is classified by the same rules as a `let`: static when it depends on nothing dynamic and is not assigned again. See [show-static](../CLI.md#show-static--static-declarations). |
 | `petal show-ast` | `Let config SPEED`, or `Let pub config SPEED`; with `--json`, `"is_config": true` on the `Let` (the field is omitted when false). |
 | [`fn_ast`](../features/function-introspection.md) | a `Let` node's `is_config` field. |
-| `petal show-ir --json` | `"is_config": true` on the term that carries the binding's value. This is what direct manipulation reads. |
+| `petal show-ir --json` | `"is_config": true` on the term that carries the binding's value, and on every literal in its data (a record's fields, a list's items, a call's arguments). This is what direct manipulation reads. |
 | Hot reload's source diff | a declaration that changed structurally has the kind `ConstructKind::ConfigLet`. |
 | [`petal apply-change convert-to-var`](../CLI.md#convert-to-var) | refuses a `config let`, since a `var` cannot be config. |
 
@@ -281,6 +354,7 @@ one of them ([direct manipulation](../features/direct-manipulation.md#the-goal-b
 | Can be assigned again | yes | yes, though it should not be | no | yes |
 | Preferred by direct manipulation | no; left alone once the file has any config binding | yes | no | no |
 | `is_config` in `static_bindings` | false | true | false | false (and it has no static value) |
+| A range for hosts | no (`let X = tunable(…)` is a call to them) | `config let X = tunable(v, min, max, step)` | no | no |
 | A literal edited by hot reload | patched | patched, including a sign change | patched | patched in the initializer; the slot keeps its value |
 
 `config` and `const` answer different questions and do not combine. `const` is

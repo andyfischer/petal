@@ -646,6 +646,9 @@ vm.reload();                                // PB_RELOAD_UNCHANGED: nothing to d
   recompiling
   ([../features/hot-reload.md](../features/hot-reload.md#setting-a-value-without-writing-the-file)
   has the rules).
+- For `config let SPEED = tunable(4.0, 0, 10)`, the path `SPEED` sets the
+  `4.0`, live and across zero. The value is not clamped to the declared
+  range: clamp in the host if the setting needs a hard limit.
 - `source_text(file)` (`pb_vm_source_text`) returns that text. Writing it on
   release makes the following reload a no-op; reloading without writing it
   abandons the drag and brings the file's own values back.
@@ -699,7 +702,10 @@ write_file("games/neon/config.ptl", src.text());
 
 - A **path** is a top-level name followed by `.field` steps into record
   literals and `[index]` steps into list literals or call arguments. The name
-  alone is the binding's whole right-hand side. A path can only see literals:
+  alone is the binding's whole right-hand side, with one exception: in
+  `config let SPEED = tunable(4.0, 0, 10)` the name `SPEED` is the value
+  `4.0`, so `set_value("SPEED", "5.5")` writes `tunable(5.5, 0, 10)` and the
+  bounds stay. A path can only see literals:
   it stops (`PB_ERR_NOT_FOUND`) at a name, a spread or a computed value.
 - **The value edits** — `set_value`, `insert`, `append`, `remove` — take a
   value as JSON and edit the literal in place. What already reads as the new
@@ -729,6 +735,14 @@ write_file("games/neon/config.ptl", src.text());
   `"args": [...]` when it carries a payload). A
   color is always `#rrggbb` or `#rrggbbaa` in lowercase there; `expr(path)`
   returns an expression as written (`#F80`, `0.020000`).
+- A binding declared `config let X = tunable(v, min, max, step)` (bounds by
+  position or by name) also carries `"range": {"min": 0.0, "max": 10.0,
+  "step": 0.5}`, each bound left out when it is not written, and its `"value"`
+  and `"text"` are `v`'s. The field is additive: a host that does not know it
+  ignores it. A slider can use it for its ends. It is **not** enforced:
+  `set_value` and `pb_vm_set_config` accept a value outside it, so a host
+  that needs a hard limit clamps
+  ([Giving a setting a range](../syntax/config-let.md#giving-a-setting-a-range)).
 - A failed call returns false (the edits) or `nullopt` and leaves the text as
   it was; `error()` says why. The text is never left unparseable. A `Source`
   is independent of any `Vm`.

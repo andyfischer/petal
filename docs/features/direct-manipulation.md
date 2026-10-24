@@ -163,9 +163,13 @@ draw_circle(x + offset, 110, 60, 200, 80, 80)
 
 Dragging the circle above changes `offset`. `config let` values are
 preferred, but other numbers are still offered further down the list (the
-legacy v1 engine, and `--config-strict`, leave the other `let` bindings
-alone entirely once a script has any `config let`). `config let` doesn't change how the program
-runs. See [syntax/config-let.md](../syntax/config-let.md).
+legacy v1 engine leaves the other `let` bindings alone entirely once a script
+has any `config let`, and `--config-strict` does the same once it has any
+`config let` or `tunable` knob). Every
+literal in a `config let`'s data counts, so the `140` in
+`config let BOX = {x: 140, y: 90}` is preferred and matches the `config`
+selector as a scalar `config let` does. `config let` doesn't change how the
+program runs. See [syntax/config-let.md](../syntax/config-let.md).
 
 For numbers inside functions, or with a range, use `tunable`. To say "never
 move this" use `rigid`:
@@ -181,6 +185,16 @@ print(cos(angle) * radius)
 Both return their value unchanged, so they cost nothing at run time. A
 `rigid(...)` value doesn't pass changes through to anything upstream of it.
 See [Builtins.md](../Builtins.md#direct-manipulation-hints).
+
+The two marks have separate jobs. `config let` declares a setting of any type
+that hosts list and set; `tunable` marks a number for direct manipulation,
+with a range. To give a setting a range, combine them:
+`config let radius = tunable(40, 10, 80)`. Hosts then see the setting `radius`
+with the value `40` and the range 10..80, and a drag keeps within it
+([Giving a setting a range](../syntax/config-let.md#giving-a-setting-a-range)).
+The two preference tiers stay as they were: a `tunable` literal costs 0.25 and
+a `config let` literal 0.5, and one written both ways takes the `tunable`
+tier.
 
 ### Telling Petal which numbers may move
 

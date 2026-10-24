@@ -936,9 +936,10 @@ found 2 problem(s) in 1 file(s); run `petal lint --fix` to fix them
 | `dead-alias` | `let a = v` in a function, where `v` is a parameter or a local of that function that is not written from there on (nor in a loop around the alias, nor by any nested function) and `a` is only read | delete the `let` and read `v` (`get v` for a `var` read from a nested function). Reported only, when the `let` shares its line |
 | `shadows-builtin` | a `fn` with the name of a core builtin, a standard-prelude function, or a function of a bundled package the file imports whole, taking an argument count the existing one takes. Every call in the file reaches the new one | none (callers may be in other files) |
 | `reimplements-builtin` | a `fn` whose whole body calls one builtin with its own parameters in order, or is `if r == nil then d else field(r, k, d) end` (`field` already answers the fallback for `nil`) | none |
-| `dm-hint-not-literal` | `tunable(e)` where `e` is computed (`tunable(a + b)`): the hint marks a literal or a name bound to one, so this marks nothing ([Builtins](Builtins.md#direct-manipulation-hints)) | none: wrap the literal itself (`tunable(a) + b`) |
+| `dm-hint-not-literal` | `tunable(e)` where `e` is computed (`tunable(a + b)`): the hint marks a literal or a name bound to one, so this marks nothing. On a string, bool, record or list the message says so and points to `config let` ([Builtins](Builtins.md#direct-manipulation-hints)) | none: wrap the literal itself (`tunable(a) + b`), or declare a non-number setting with `config let` |
 | `dm-hint-bounds` | a `tunable` bound (`min`, `max`, `step`) that is not a number literal, or a `min` above the `max` | none |
 | `dm-hint-state-init` | `state x = tunable(…)`: a running program keeps its state across a reload, so a drag cannot move a state's initial value | none: declare the start value with `config let` and initialise the state from it |
+| `config-not-data` | `config let X = e` where `e` needs evaluating (`level.SPAWN`, `2 * W`): hosts read a config value without running the program ([config-let.md](syntax/config-let.md#what-a-config-binding-can-hold)), so they see none | none: write the value as data, or make it a plain `let` |
 | `int-division` (opt-in) | `a / b` on two proven ints, whose truncated quotient is then an operand of float arithmetic or the argument of `float(...)` | none: either reading can be meant |
 | `prefer-pub` | the deprecated `export` modifier, on any declaration or `import` | `export` → `pub` |
 | `state-key-deprecated` | every `state(key)` declaration, which is deprecated (the compiler warns about it too, under the same rule id) | `state(k)` → `memo(k)` where the slot is never written: not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Otherwise reported |
@@ -1839,8 +1840,9 @@ Which literals may move (v2):
 - `--configurable <var>` / `--static <var>` — v1's spellings: under v2 (the
   default), `--allow <var>` / `--deny <var>`; under `--v1`, a variable to
   prefer / never edit.
-- `--config-strict` — v1's rule: once the program has a `config let`, only
-  config literals move when they can. Without it, config and `tunable`
+- `--config-strict` — v1's rule: once the program has a `config let` (or a
+  `tunable` that marks a literal), only config and `tunable` literals move
+  when they can. Without it, config and `tunable`
   literals are preferred by cost, and the rest are still offered.
 
 Other options:

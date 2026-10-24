@@ -469,6 +469,12 @@ impl Env {
         // left in place they would sit under every later call, be listed in
         // its stack trace, and count against its depth limit.
         let base_depth = stack.vm_frames.len();
+        // Nor is any synchronous call or builtin callback in flight between
+        // two host calls: one left recorded can only be from a call unwound
+        // past its restore (a panic the C bridge caught), and would make the
+        // function's `state` an error inside a callback it is not in.
+        stack.sync_depth = 0;
+        stack.callback = None;
 
         // A host call runs outside any frame's run: nothing it does is
         // recorded into a scope, and nothing is replayed for it.

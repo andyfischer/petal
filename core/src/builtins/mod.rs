@@ -595,10 +595,13 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // --- Short-circuiting predicate queries (append-only) ---
     // Higher-order like `filter`, so dispatched as VM intrinsics: they call the
     // predicate until one element decides, and their callbacks fall under the
-    // same `state` rule (`vm::native::callback_intrinsic`).
-    let any_id = table.register("any", native_intrinsic_placeholder, NativeEffects::PURE);
-    let all_id = table.register("all", native_intrinsic_placeholder, NativeEffects::PURE);
-    let find_id = table.register("find", native_intrinsic_placeholder, NativeEffects::PURE);
+    // same `state` rule (`vm::native::callback_intrinsic`). Unlike `filter`
+    // they do not absorb a `Pending` list: they answer as for the empty list
+    // (`false`, `true`, nil), as the `for` loops they replaced did.
+    let predicate = NativeEffects::PURE.with_pending(NativeClass::AllowPending);
+    let any_id = table.register("any", native_intrinsic_placeholder, predicate);
+    let all_id = table.register("all", native_intrinsic_placeholder, predicate);
+    let find_id = table.register("find", native_intrinsic_placeholder, predicate);
 
     // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
     // ids they were just given.

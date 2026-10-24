@@ -903,6 +903,51 @@ print(any([1, 2], pick), find([1, 2], pick), all([1, 2], fn(x) !pick(x) end))
 }
 
 #[test]
+fn any_all_and_find_read_a_pending_result_as_if_does() {
+    // A pending result takes neither branch of the `if` the Petal versions
+    // tested it with: the element decides nothing and the walk moves on.
+    let out = run("\
+let p = __pending(\"k\")
+let pr = fn(x) if x == 1 then p else false end end
+let pa = fn(x) if x == 1 then p else true end end
+print(any([1, 2], pr), all([1, 2], pa), find([1, 2], pr) ?? \"nil\")
+print(any([1, 2], fn(x) if x == 1 then p else true end end), find([1, 2], fn(x) if x == 1 then p else true end end))
+");
+    assert_eq!(out, ["false true nil", "true 2"]);
+}
+
+#[test]
+fn any_all_and_find_answer_a_pending_list_as_the_empty_one() {
+    // As `for x in pending` ran no iterations, rather than absorbing it as
+    // `filter` does: they are declared `-> bool`.
+    let out = run("\
+let p = __pending(\"k\")
+print(any(p, fn(x) true end), all(p, fn(x) false end), find(p, fn(x) true end) ?? \"nil\")
+print(is_pending(any(p, fn(x) true end)), any([1], p), all([1], p))
+");
+    assert_eq!(out, ["false true nil", "false false true"]);
+}
+
+#[test]
+fn the_error_names_a_declaration_whose_name_contains_state() {
+    // Reached through a record field, so only the runtime catches it.
+    let err = run_err("\
+fn widget(x)
+  state last_state = x
+  last_state
+end
+let r = {f: widget}
+print(map([1], fn(x) r.f(x) end))
+");
+    assert!(
+        err.starts_with(
+            "`state last_state` cannot be used inside a callback of `map` [line 2, column 3]"
+        ),
+        "{err}"
+    );
+}
+
+#[test]
 fn state_reached_from_a_callback_in_any_form_is_an_error() {
     let cases = [
         // A lambda literal declaring it.

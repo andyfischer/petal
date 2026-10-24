@@ -189,7 +189,9 @@ error: `state n` cannot be used inside a callback of `map`: `map` runs `seen` on
 ```
 
 `check` only reports what it can prove. A callback that arrives through a
-parameter or a `var` is caught when it runs instead:
+parameter or a `var`, or `state` the callback reaches only on some paths
+(under an `if`, a `match` or a loop, or after an early `return`), is caught
+when it runs instead:
 
 ```petal
 fn seen(x)

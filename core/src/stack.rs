@@ -484,6 +484,12 @@ impl Stack {
         self.vm_started = false;
         self.status = StackStatus::Ready;
         self.last_pop_result = None;
+        // No call is in flight once the frames are gone. These are restored
+        // as each call returns, so they are left set only by a run unwound
+        // past them (a panic the C bridge caught), and would otherwise make
+        // every later `state` on this stack an error inside a callback.
+        self.sync_depth = 0;
+        self.callback = None;
     }
 
     /// Reset the touched-keys set. Called at the start of a top-level run

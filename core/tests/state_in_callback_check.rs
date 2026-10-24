@@ -170,10 +170,27 @@ fn nested_lambdas_and_functions_are_followed() {
 }
 
 #[test]
-fn state_in_a_loop_inside_the_callback_is_reported() {
-    one(
-        "print(map([1], fn(x)\n    for i in [1, 2] do\n        state n = 0\n    end\n    x\nend))\n",
-    );
+fn state_the_callback_reaches_only_sometimes_is_not_reported() {
+    // Under a branch, a loop (which may run no iterations) or a
+    // short-circuit, or after a branch that can return: a callback that
+    // never takes that path never fails, so only the runtime can tell.
+    for body in [
+        "    if x > 100 then\n        state n = x\n        n\n    else\n        x\n    end\n",
+        "    for i in [1, 2] do\n        state n = 0\n    end\n    x\n",
+        "    match x\n        when 1 -> seen(x)\n        when _ -> x\n    end\n",
+        "    x > 100 && seen(x)\n",
+        "    if x < 100 then return x end\n    seen(x)\n",
+    ] {
+        none(&format!("{SEEN}fn row(x)\n{body}end\nprint(map([1, 2], row))\n"));
+    }
+    // A function that hands its parameter to a builtin only sometimes.
+    none(&format!(
+        "{SEEN}fn each(xs, f) if len(xs) > 9 then map(xs, f) end end\nprint(each([1], seen))\n"
+    ));
+    // What runs before the branch is still sure.
+    one(&format!(
+        "{SEEN}fn row(x)\n    seen(x)\n    if x < 100 then return x end\n    x\nend\nprint(map([1, 2], row))\n"
+    ));
 }
 
 #[test]
@@ -273,6 +290,10 @@ fn the_method_form_is_not_reported_when_something_else_can_take_the_call() {
     // A record field of the name is called first.
     none(&format!(
         "{SEEN}let box = {{map: fn(f) f(1) end}}\nprint(box.map(seen))\nprint([1].map(seen))\n"
+    ));
+    // Also when it is written by index.
+    none(&format!(
+        "{SEEN}let r = {{a: 1}}\nr[\"map\"] = fn(f) f(1) end\nprint(r.map(seen))\n"
     ));
     // So is a user method.
     none(&format!(

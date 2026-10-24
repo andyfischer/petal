@@ -212,8 +212,19 @@ impl<'a> Vm<'a> {
         });
         let source = program.source_map.source_for_span(&first).unwrap_or(&program.source);
         let before = source.get(..start.offset as usize)?;
-        let keyword = before[..before.rfind('=')?].rfind("state")?;
-        let line_start = before[..keyword].rfind('\n').map_or(0, |i| i + 1);
+        // The keyword is the last `state` token on the line of the `=`: a
+        // whole word, so a name like `last_state` does not match.
+        let eq = before.rfind('=')?;
+        let line_start = before[..eq].rfind('\n').map_or(0, |i| i + 1);
+        let line = &before[line_start..eq];
+        let is_ident = |c: char| c.is_alphanumeric() || c == '_';
+        let keyword = line_start
+            + line
+                .match_indices("state")
+                .map(|(i, _)| i)
+                .filter(|&i| !line[..i].ends_with(is_ident))
+                .filter(|&i| line[i + 5..].starts_with(char::is_whitespace))
+                .last()?;
         let start = crate::source_map::SourcePosition {
             line: 1 + before[..keyword].matches('\n').count() as u32,
             column: 1 + before[line_start..keyword].chars().count() as u32,
@@ -274,7 +285,7 @@ impl<'a> Vm<'a> {
     pub(super) fn builtin_any(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
         let (elements, func) = self.predicate_args("any", args)?;
         for elem in elements {
-            if self.call_closure_sync(func, &[elem], site)?.is_truthy() {
+            if self.predicate_holds(func, elem, site)? == Some(true) {
                 return Ok(Value::Bool(true));
             }
         }
@@ -286,10 +297,7 @@ impl<'a> Vm<'a> {
     pub(super) fn builtin_all(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
         let (elements, func) = self.predicate_args("all", args)?;
         for elem in elements {
-            // `!pred(x)`, as the Petal version tested it: a `Pending` result
-            // stays `Pending` under `!`, which is truthy, so it decides `false`.
-            let held = self.call_closure_sync(func, &[elem], site)?;
-            if crate::backend::ops::not(held).is_truthy() {
+            if self.predicate_holds(func, elem, site)? == Some(false) {
                 return Ok(Value::Bool(false));
             }
         }
@@ -300,20 +308,46 @@ impl<'a> Vm<'a> {
     pub(super) fn builtin_find(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
         let (elements, func) = self.predicate_args("find", args)?;
         for elem in elements {
-            if self.call_closure_sync(func, &[elem], site)?.is_truthy() {
+            if self.predicate_holds(func, elem, site)? == Some(true) {
                 return Ok(elem);
             }
         }
         Ok(Value::Nil)
     }
 
+    /// Whether `pred(elem)` holds, read as `if` reads a condition: `None`
+    /// for a `Pending` result, which takes neither branch, so the element
+    /// decides nothing and the walk moves on (as the Petal versions'
+    /// `if pred(x) then return … end` did).
+    fn predicate_holds(
+        &mut self,
+        pred: Value,
+        elem: Value,
+        site: u64,
+    ) -> Result<Option<bool>, String> {
+        match self.call_closure_sync(pred, &[elem], site)? {
+            Value::Pending(_) => Ok(None),
+            held => Ok(Some(held.is_truthy())),
+        }
+    }
+
     /// The elements and predicate of an `any`/`all`/`find` call. A map is
     /// walked by its keys in insertion order, as `for k in m` walks it.
+    ///
+    /// The three are registered `AllowPending`, so a `Pending` list or
+    /// predicate reaches here: either walks no elements (a `for` over a
+    /// pending list runs no iterations, and a pending predicate's every
+    /// result is pending), and the call returns its empty-list answer rather
+    /// than absorbing, as the Petal versions did.
     fn predicate_args(&self, name: &str, args: &[Value]) -> Result<(Vec<Value>, Value), String> {
         let [list, func] = args else {
             return Err(format!("{name}() expects 2 arguments (list, predicate)"));
         };
+        if matches!(func, Value::Pending(_)) {
+            return Ok((Vec::new(), *func));
+        }
         let elements = match *list {
+            Value::Pending(_) => Vec::new(),
             Value::List(list_id) => self.heap.get_list(list_id).to_vec(),
             Value::Dict(dict_id) => self.heap.get_dict(dict_id).keys().collect(),
             _ => return Err(format!("{name}() expects a list as first argument")),

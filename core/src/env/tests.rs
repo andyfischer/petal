@@ -65,6 +65,31 @@ mod call_function_tests {
         assert!(stack.callback.is_none());
     }
 
+    /// A call unwound past the restore of the callback record (a panic the
+    /// C bridge catches) leaves it set; the next host call or run must not
+    /// take the stack to be inside a callback still.
+    #[test]
+    fn a_callback_left_recorded_is_cleared_by_the_next_call_or_run() {
+        let source = "fn seen(x)\n  state n = 0\n  n += 1\n  n\nend\n";
+        let (mut env, sid) = run(source);
+        let strand = |env: &mut Env| {
+            let stack = env.stacks.get_mut(&sid).unwrap();
+            stack.sync_depth = 1;
+            stack.callback = Some(crate::stack::BuiltinCallback {
+                builtin: "map",
+                call: None,
+                frames: 0,
+            });
+        };
+        strand(&mut env);
+        assert_eq!(env.call_function(sid, "seen", &[Value::Int(0)]).unwrap(), Value::Int(1));
+        strand(&mut env);
+        env.reset_stack(sid).unwrap();
+        let stack = env.stacks.get(&sid).unwrap();
+        assert_eq!(stack.sync_depth, 0);
+        assert!(stack.callback.is_none());
+    }
+
     /// `call_function_named`: arguments by parameter name, bound as a written
     /// `f(1, y: 2)` is.
     #[test]

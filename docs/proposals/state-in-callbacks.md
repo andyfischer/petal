@@ -152,7 +152,10 @@ do it:
 2. Keep them in Petal and mark the bundled prelude's `pred(x)` calls as
    callback calls.
 
-Decided: 1, which needs no new compiler concept.
+Decided: 1, which needs no new compiler concept. The natives keep the Petal
+versions' handling of `Pending`: a pending predicate result decides nothing
+(the `if` took neither branch), and a pending list answers as the empty one
+(`false`, `true`, nil) instead of being absorbed as `filter` absorbs it.
 
 ### Reported by `petal check` (decided)
 
@@ -181,7 +184,9 @@ shows them, all through the existing check path (`core/src/check.rs`).
   at the user's line. The method form `xs.map(f)` is covered when nothing
   else in the program could take the call.
 - **Callbacks that arrive through a parameter or variable** are left to the
-  runtime error. The pass reports only what it can prove, so it has no false
+  runtime error, and so is `state` (or a call reaching it) that the callback
+  runs only on some paths: under an `if`, a `match`, a loop or a
+  short-circuit, or after a branch that can `return`. The pass reports only what it can prove, so it has no false
   positives. One gap found in implementation: `top_k(xs, k, stateful)`,
   whose `key` parameter has a default, is left to the runtime error too.
 - **The message** is one line with the rule id, for example:

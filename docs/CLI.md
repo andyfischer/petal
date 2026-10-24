@@ -642,8 +642,9 @@ An **error** is a line that fails whenever it runs, so `check` exits 1 on it:
   (`` `state n` cannot be used inside a callback of `map` … [state-in-callback] ``).
   It would fail when the callback runs
   ([inline-state.md](features/inline-state.md#state-is-not-allowed-in-callbacks)).
-  A callback passed through a parameter or a `var` is left to that runtime
-  error.
+  A callback passed through a parameter or a `var`, and `state` reached only
+  under an `if`, a `match`, a loop or after an early `return`, are left to
+  that runtime error.
 
 A host native is held to the parameter names and counts its interface
 package declares, like a builtin.

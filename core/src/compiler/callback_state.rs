@@ -19,7 +19,10 @@
 //! `let`, a capture of one, a hoisted forward reference, the function's own
 //! name. A callback that arrives through a parameter or a `var`, or a call
 //! through one, is left to the runtime error: the pass reports only what it
-//! can prove. A function that hands one of its parameters straight to a
+//! can prove. So is anything a function runs only sometimes: `state`, a
+//! call or a hand-off under an `if`, a `match`, a loop or a short-circuit, or
+//! after a branch that can `return`, is not counted as reached. A function
+//! that hands one of its parameters straight to a
 //! callback builtin (`std`'s `count` calls `filter(xs, pred)`) makes that
 //! parameter a callback slot too, so `count(xs, stateful)` is reported at the
 //! user's line.
@@ -120,17 +123,20 @@ struct Pass<'a> {
     body_fn: HashMap<crate::program::BlockId, usize>,
     /// Function → every `MakeClosure` of it.
     closures: Vec<Vec<TermId>>,
-    /// Function → the first `state` it declares in its own body.
+    /// Function → the first `state` it is sure to declare in its own body.
     direct: Vec<Option<TermId>>,
-    /// Function → the functions it calls, where the callee resolves.
+    /// Function → the functions it is sure to call, where the callee resolves.
     calls: Vec<Vec<usize>>,
-    /// Function → its parameters that it hands to a callback builtin, and the
-    /// builtin each reaches.
+    /// Function → its parameters that it is sure to hand to a callback
+    /// builtin, and the builtin each reaches.
     forwards: Vec<HashMap<usize, &'static str>>,
     /// Method names the method form must not be read as a builtin under: a
     /// user method, a built-in class's method, or a record field of the name
     /// can take the call first.
     taken_method_names: HashSet<String>,
+    /// Term → whether the function it is in runs it on every call (see
+    /// `Pass::new`); false at the top level.
+    sure: Vec<bool>,
 }
 
 impl<'a> Pass<'a> {
@@ -170,6 +176,21 @@ impl<'a> Pass<'a> {
             }
         }
 
+        // The terms each function is sure to run once it is called: its
+        // body's own, up to the first that can return early. A term under a
+        // branch, a loop or a short-circuit runs only sometimes, so `state`
+        // there, or a call from there, is left to the runtime error.
+        let mut sure = vec![false; p.terms.len()];
+        for f in &p.functions {
+            for &t in &p.get_block(f.body_block).terms {
+                sure[t.0 as usize] = true;
+                let term = p.get_term(t);
+                if matches!(term.op, TermOp::Return) || returns_within(p, &term.child_blocks) {
+                    break;
+                }
+            }
+        }
+
         let mut closures = vec![Vec::new(); nfns];
         let mut direct: Vec<Option<TermId>> = vec![None; nfns];
         for term in &p.terms {
@@ -179,7 +200,11 @@ impl<'a> Pass<'a> {
                         closures[fi].push(term.id);
                     }
                 }
-                TermOp::StateInit if !term.is_memo && decls.contains_key(&term.id) => {
+                TermOp::StateInit
+                    if !term.is_memo
+                        && sure[term.id.0 as usize]
+                        && decls.contains_key(&term.id) =>
+                {
                     if let Some(fi) = owner[term.block_id.0 as usize] {
                         let first = direct[fi].map(|d| decls[&d].span.start.offset);
                         if first.is_none_or(|o| decls[&term.id].span.start.offset < o) {
@@ -214,6 +239,11 @@ impl<'a> Pass<'a> {
                     })
                     .collect(),
                 TermOp::SetField(c) => vec![*c],
+                // `r["map"] = f` writes the field as `r.map = f` does.
+                TermOp::SetIndex => match term.inputs.get(1).and_then(|&k| constant_of(p, k)) {
+                    Some(c) => vec![c],
+                    None => continue,
+                },
                 _ => continue,
             };
             for c in fields {
@@ -236,9 +266,11 @@ impl<'a> Pass<'a> {
             calls: vec![Vec::new(); nfns],
             forwards: vec![HashMap::new(); nfns],
             taken_method_names,
+            sure,
         };
         for term in &p.terms {
             if let TermOp::Call = term.op
+                && pass.sure[term.id.0 as usize]
                 && let Some(fi) = pass.owner_of(term)
                 && let Some(&callee) = term.inputs.first()
                 && let Some(Val::Fn(g)) = pass.resolve(callee)
@@ -256,6 +288,9 @@ impl<'a> Pass<'a> {
                 let Some(fi) = pass.owner_of(term) else {
                     continue;
                 };
+                if !pass.sure[term.id.0 as usize] {
+                    continue;
+                }
                 for site in pass.sites(term) {
                     if let Some(Val::Param(fj, param)) = pass.resolve(site.arg)
                         && fj == fi
@@ -532,6 +567,30 @@ impl<'a> Pass<'a> {
             ),
         ))
     }
+}
+
+/// Whether a `return` is written anywhere under `blocks` (closures aside:
+/// their bodies are not child blocks).
+fn returns_within(p: &Program, blocks: &[crate::program::BlockId]) -> bool {
+    blocks.iter().any(|&b| {
+        p.get_block(b).terms.iter().any(|&t| {
+            let term = p.get_term(t);
+            matches!(term.op, TermOp::Return) || returns_within(p, &term.child_blocks)
+        })
+    })
+}
+
+/// The constant `t` is, looking through copies.
+fn constant_of(p: &Program, mut t: TermId) -> Option<crate::constant_table::ConstantId> {
+    for _ in 0..64 {
+        let term = p.get_term(t);
+        match term.op {
+            TermOp::Constant(c) => return Some(c),
+            TermOp::Copy if term.inputs.len() == 1 => t = term.inputs[0],
+            _ => return None,
+        }
+    }
+    None
 }
 
 /// The runtime error's help, on one line.

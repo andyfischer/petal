@@ -394,3 +394,69 @@ fn the_drag_to_edit_demo_solves() {
         cmds(&mut host);
     }
 }
+
+/// The drag-mode examples (`examples/panels/dm-v2/`): the main shape of each
+/// solves, verifies, and lands where the drag left it, as the header says.
+#[test]
+fn the_drag_mode_examples_solve() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/panels/dm-v2");
+    type Pick = fn(&[PanelCmd]) -> usize;
+    let last_card: Pick = |c| c.iter().rposition(|c| matches!(c, PanelCmd::Rect { w: 56, .. })).unwrap();
+    let tip: Pick = |c| c.iter().position(|c| matches!(c, PanelCmd::Circle { radius: 7, .. })).unwrap();
+    let rightmost_leaf: Pick = |c| {
+        c.iter()
+            .enumerate()
+            .filter_map(|(i, c)| match c {
+                PanelCmd::Circle { cx, radius: 4, .. } => Some((*cx, i)),
+                _ => None,
+            })
+            .max()
+            .unwrap()
+            .1
+    };
+    let last_button: Pick = |c| c.iter().rposition(|c| matches!(c, PanelCmd::Rect { h: 28, .. })).unwrap();
+    let third_bar: Pick = |c| {
+        c.iter()
+            .enumerate()
+            .filter(|(_, c)| matches!(c, PanelCmd::Rect { w: 36, .. }))
+            .nth(2)
+            .unwrap()
+            .0
+    };
+    let marker: Pick = |c| c.iter().position(|c| matches!(c, PanelCmd::Circle { radius: 7, .. })).unwrap();
+    let cases: [(&str, Pick, (i32, i32)); 6] = [
+        ("01-helper-row.ptl", last_card, (20, 0)),
+        ("02-clock-and-orbit.ptl", tip, (0, 80)),
+        ("03-fractal-tree.ptl", rightmost_leaf, (15, 0)),
+        ("04-flex-row.ptl", last_button, (20, 0)),
+        ("05-projectile.ptl", marker, (40, 0)),
+        ("06-bar-chart.ptl", third_bar, (0, -16)),
+    ];
+    let at = |cmds: &[PanelCmd], i: usize| match &cmds[i] {
+        PanelCmd::Rect { x, y, .. } | PanelCmd::RectOutline { x, y, .. } | PanelCmd::Text { x, y, .. } => (*x, *y),
+        PanelCmd::Circle { cx, cy, .. } => (*cx, *cy),
+        other => panic!("{other:?}"),
+    };
+    for (file, pick, (dx, dy)) in cases {
+        let path = dir.join(file);
+        let source = fs::read_to_string(&path).unwrap();
+        let mut host = PanelHost::load(&path).unwrap();
+        host.set_trace_origins(true);
+        host.set_dm_checkpoint(true);
+        host.set_dimensions(633, 744);
+        host.frame(0.0, 0).unwrap();
+        let before = cmds(&mut host);
+        let index = pick(&before);
+        let outcome = host.propose_drag_edits_v2(index, dx as f64, dy as f64, &DragFilter::default());
+        if let DragOutcomeV2::Alternatives { alternatives, .. } = &outcome {
+            assert!(alternatives[0].verified, "{file}: {outcome:?}");
+        }
+        let rewrites = top(&outcome).to_vec();
+        let (_, after) = apply(&mut host, &source, &rewrites);
+        let (b, a) = (at(&before, index), at(&after, index));
+        assert!(
+            (a.0 - b.0 - dx).abs() <= 1 && (a.1 - b.1 - dy).abs() <= 1,
+            "{file}: command {index} moved from {b:?} to {a:?}, wanted ({dx}, {dy}): {rewrites:#?}"
+        );
+    }
+}

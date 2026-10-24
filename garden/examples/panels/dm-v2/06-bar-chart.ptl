@@ -1,0 +1,55 @@
+// ── Drag mode 6: a bar chart with an auto-scaled axis ────
+//   garden petal-ide examples/panels/dm-v2/06-bar-chart.ptl
+//
+// Bars are `value / axis_max * plot_h` tall, where
+// `axis_max` rounds the largest value up to a multiple of
+// 10 (`ceil`, a step function), spread by `bar_w` and
+// `bar_gap`.
+//
+// What to drag (drag mode on: Cmd+Shift+D):
+// - The TOP of the third bar, up: edits that bar's number
+//   in `data` (a literal inside a list). The data are ints,
+//   so the edit snaps to whole units (4 px each here).
+// - A bar sideways: `bar_gap`, `bar_w` or `left` (the panel
+//   says how many other shapes each moves: `left` moves the
+//   plot and the axes too).
+// - The TALLEST bar, up: barely possible, because the axis
+//   scales to the data; the solver may rescale the axis
+//   instead. Click "never" on its `10` row in the panel and
+//   drag again to see what is left.
+// - The plot BACKGROUND: `left` and `top`.
+
+import ui
+
+let left = 50
+let top = 30
+let plot_w = 300
+let plot_h = 200
+let bar_w = 36
+let bar_gap = 18
+let data = [12, 30, 22, 48, 18]
+
+fn axis_max(values)
+  ceil(reduce(values, 0, fn(m, v) max(m, v) end) / 10.0) * 10
+end
+
+let hi = axis_max(data)
+
+fn bar_rect(i, v)
+  let h = float(v) / hi * plot_h
+  {x: left + bar_gap + i * (bar_w + bar_gap), y: top + plot_h - h, w: bar_w, h: h}
+end
+
+clear(16, 18, 26)
+draw_rect(left, top, plot_w, plot_h, 22, 27, 36)
+for i in range(0, len(data)) do
+  let r = bar_rect(i, data[i])
+  draw_rect(r.x, r.y, r.w, r.h, 91, 141, 239)
+end
+draw_line(left, top + plot_h, left + plot_w, top + plot_h, 128, 144, 160, 255, 1)
+draw_line(left, top, left, top + plot_h, 128, 144, 160, 255, 1)
+for t in range(0, 6) do
+  let y = top + plot_h - float(t) / 5 * plot_h
+  draw_line(left - 4, y, left, y, 128, 144, 160, 255, 1)
+  draw_text(str(t * hi / 5), left - 30, y - 6, 11, 160, 168, 184)
+end

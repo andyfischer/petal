@@ -1,0 +1,66 @@
+// ── Drag mode 5: a projectile with rigid physics ─────────
+//   garden petal-ide examples/panels/dm-v2/05-projectile.ptl
+//
+// 200 Euler steps with `var` in a loop. The landing marker
+// (red) is where the simulation ends. Gravity, the time step,
+// the drawing scale, the ground line and the x origin are
+// wrapped in `rigid(...)`: a drag must change the launch,
+// not the physics.
+//
+// What to drag (drag mode on: Cmd+Shift+D):
+// - The red LANDING marker, right or left: `v0` or `angle`
+//   (the panel ranks both, and both together).
+// - A grey TRAIL dot near the top, upward: a higher arc
+//   (`v0`, `angle`, or launching from higher up).
+// - Click `angle`'s gutter square twice so it reads
+//   `rigid(0.9)`, and drag the marker again: only `v0` (and
+//   the launch height) are left, and the panel shows
+//   `angle` as rigid. Click once more to free it.
+// - `g` is rigid here on purpose: free it (one click: the
+//   cycle is free > tunable > rigid > free) and it joins the
+//   panel, though the landing is a branch (`if y < 0`), so
+//   the solver finds the launch numbers more useful.
+// - `steps` is a loop bound: shown as fixed ("structural").
+
+import ui
+
+let v0 = 42.0
+let angle = 0.9
+let g = rigid(9.8)
+let dt_sim = rigid(0.03)
+let steps = 200
+let scale = rigid(3.0)
+
+fn simulate()
+  var x = 0.0
+  var y = 0.0
+  var vx = v0 * cos(angle)
+  var vy = v0 * sin(angle)
+  var trail = []
+  var landed = false
+  for i in range(0, steps) do
+    if !landed then
+      set x = x + vx * dt_sim
+      set y = y + vy * dt_sim
+      set vy = vy - g * dt_sim
+      if y < 0 then
+        set landed = true
+      end
+    end
+    if i % 20 == 0 then
+      set trail = append(trail, {x: x, y: y})
+    end
+  end
+  {x: x, y: y, trail: trail}
+end
+
+let r = simulate()
+let ground = rigid(380)
+let x_origin = rigid(20)
+
+clear(16, 18, 26)
+draw_line(0, ground, 620, ground, 70, 80, 90, 255, 1)
+for p in r.trail do
+  draw_circle(x_origin + p.x * scale, ground - p.y * scale, 3, 128, 128, 128)
+end
+draw_circle(x_origin + r.x * scale, ground, 7, 224, 64, 64)

@@ -1,0 +1,49 @@
+// ── Drag mode 4: a flex-row layout from text widths ──────
+//   garden petal-ide examples/panels/dm-v2/04-flex-row.ptl
+//
+// A menu bar: each button is as wide as its label
+// (`text_width`) plus `pad` on both sides, laid out left to
+// right with `gap` between, by a recursive `layout_row`.
+//
+// What to drag (drag mode on: Cmd+Shift+D):
+// - The LAST button, right (grab it below its label):
+//   `gap` or `pad` spread the row, `x0` slides it; the
+//   panel lists them with how many other shapes each moves.
+// - A LABEL instead of its button: bigger text also pushes
+//   it right, so `font_size` can win (it moves in whole-pixel
+//   steps of `text_width`). Click "never" on its row in the
+//   panel to rule it out for this session (no source change),
+//   or its state chip twice to make it `rigid(14)`.
+// - The FIRST button, right: `x0` (the row's origin).
+// - Any button, down: `y0` moves every button and label.
+
+import ui
+
+let labels = ["File", "Edit", "View", "Window", "Help"]
+let x0 = 12
+let y0 = 40
+let pad = 8
+let gap = 6
+let font_size = 14
+let height = 28
+
+fn button_w(label)
+  text_width(label, font_size) + pad * 2
+end
+
+fn layout_row(items, x)
+  if len(items) == 0 then
+    []
+  else
+    let w = button_w(items[0])
+    concat([{x: x, w: w, label: items[0]}], layout_row(slice(items, 1), x + w + gap))
+  end
+end
+
+clear(16, 18, 26)
+for b in layout_row(labels, x0) do
+  draw_rect(b.x, y0, b.w, height, 42, 49, 71)
+end
+for b in layout_row(labels, x0) do
+  draw_text(b.label, b.x + pad, y0 + 6, font_size, 232, 236, 248)
+end

@@ -1,0 +1,62 @@
+// ── Drag mode 2: trigonometry, a clock hand and an orbit ─
+//   garden petal-ide examples/panels/dm-v2/02-clock-and-orbit.ptl
+//
+// What to drag (drag mode on: Cmd+Shift+D):
+// - The red TIP of the hand, around the dial: the tip is
+//   `cx + cos(a) * len` with `a` computed from `hours`, so
+//   the solver edits `hours` (it iterates: the goal is
+//   nonlinear in it). Dragging the tip outward along the
+//   hand edits `len` instead. A drag at an angle is a mix:
+//   the panel ranks `hours`, `len` and both together.
+// - The blue MOON: it orbits by `time()`, but the frame you
+//   press on is the one re-run, so the drag is solved at
+//   that instant. It edits `orbit_r` and the planet's
+//   position; `speed` is listed but ranks low (it would only
+//   shift the moon in time). Pause first (toolbar) if you
+//   want it still.
+// - Mark `len` rigid (click its gutter square twice) and
+//   drag the tip outward: the hand cannot grow, so the
+//   whole clock moves (`cx`, `cy`); click the `hours` row's
+//   "only" chip in the panel and drag again: now it turns.
+
+import ui
+
+let cx = 200
+let cy = 200
+let len = 80
+let hours = 2.0
+
+fn hand_angle(h)
+  h / 12 * 2 * pi() - pi() / 2
+end
+
+fn hand_tip(h, length)
+  let a = hand_angle(h)
+  {x: cx + cos(a) * length, y: cy + sin(a) * length}
+end
+
+let tip = hand_tip(hours, len)
+
+// The moon: around a planet at (420, 140).
+let px = 420
+let py = 140
+let orbit_r = 60
+let speed = 0.6
+
+fn moon_at(t)
+  {x: px + cos(t * speed) * orbit_r, y: py + sin(t * speed) * orbit_r}
+end
+
+let moon = moon_at(time())
+
+clear(16, 18, 26)
+draw_circle(cx, cy, 90, 32, 40, 48)
+for k in range(0, 12) do
+  let a = hand_angle(float(k))
+  draw_circle(cx + cos(a) * 82, cy + sin(a) * 82, 2, 120, 130, 150)
+end
+draw_line(cx, cy, tip.x, tip.y, 240, 240, 240, 255, 3)
+draw_circle(tip.x, tip.y, 7, 240, 64, 64)
+
+draw_circle(px, py, 18, 220, 170, 80)
+draw_circle(moon.x, moon.y, 8, 90, 150, 240)

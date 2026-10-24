@@ -1,0 +1,45 @@
+// ── Drag mode 3: a recursive fractal tree ────────────────
+//   garden petal-ide examples/panels/dm-v2/03-fractal-tree.ptl
+//
+// Every leaf is drawn by the same `draw_circle` call, five
+// recursive calls deep. Its position depends on `trunk`,
+// `shrink`, `spread` and the root's (200, 380).
+//
+// What to drag (drag mode on: Cmd+Shift+D):
+// - The rightmost LEAF, sideways. Unhinted, the cheapest
+//   one-number answer is the root's `200`: it slides the
+//   whole tree (the panel says "moves 94 others"). The
+//   panel lists `shrink` + `spread` and `spread` + `trunk`
+//   as alternatives 2 and 3; click one.
+// - Now steer it by mouse: Alt-click the `200` below twice
+//   (free > tunable > rigid) so it reads `rigid(200)`, and
+//   drag the leaf again. The root stays; `spread` (the
+//   knob) and `shrink` open the tree instead.
+// - Click `trunk`'s gutter square twice (`rigid(80.0)`) and
+//   drag a top leaf up: the trunk keeps its length, and
+//   `shrink` (or the root's `380`) does the work.
+//   Edit the hint to `tunable(0.7, 0.5, 0.8)` by hand and a
+//   long drag stops at the bound.
+// - The trunk's LINE: dragging a line moves both ends, so
+//   only the root moves it.
+
+import ui
+
+let trunk = 80.0
+let shrink = 0.7
+config let spread = 0.45
+
+fn branch(x, y, angle, len, depth)
+  let x2 = x + cos(angle) * len
+  let y2 = y - sin(angle) * len
+  draw_line(x, y, x2, y2, 128, 96, 64, 255, 2)
+  if depth == 0 then
+    draw_circle(x2, y2, 4, 64, 192, 64)
+  else
+    branch(x2, y2, angle + spread, len * shrink, depth - 1)
+    branch(x2, y2, angle - spread, len * shrink, depth - 1)
+  end
+end
+
+clear(16, 18, 26)
+branch(200, 380, pi() / 2, trunk, 5)

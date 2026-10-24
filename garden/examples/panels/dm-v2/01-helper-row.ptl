@@ -1,0 +1,44 @@
+// ── Drag mode 1: a row placed by a helper ────────────────
+//   garden petal-ide examples/panels/dm-v2/01-helper-row.ptl
+//
+// Turn on drag mode first: the toolbar's Drag button, or
+// Cmd+Shift+D, or :DragMode. Then plain-drag the cards.
+//
+// What to drag, and what to expect:
+// - The LAST card, sideways. Ambiguous: widening `gap` or
+//   sliding the whole row by `x0` both put it under your
+//   pointer. `gap` is a `config let` knob, so it wins; the
+//   result panel lists `x0` as alternative 2. Click it.
+// - The FIRST card, sideways. Only `x0` moves it (i = 0).
+// - Any card, up or down: `y0`, shared by every card.
+// - Then click `gap`'s gutter square twice (tunable, then
+//   rigid) and drag the last card again: now only `x0` is
+//   left, and the panel shows `gap` as rigid.
+//
+// Nothing below names a card's position: it exists only
+// when `card_x` runs. Petal re-runs the frame with each
+// number nudged and solves for the drag.
+
+import ui
+
+config let gap = 24
+let x0 = 40
+let y0 = 120
+let card_w = 56
+
+fn card_x(i)
+  x0 + i * (card_w + gap)
+end
+
+fn card(i, label)
+  let x = card_x(i)
+  draw_rect(x: x, y: y0, w: card_w, h: 72, r: 70, g: 165, b: 150)
+  draw_text(label, x: x + 8, y: y0 + 8, size: 14, r: 16, g: 20, b: 26)
+end
+
+clear(16, 18, 26)
+let labels = ["A", "B", "C", "D", "E"]
+for i in range(0, len(labels)) do
+  card(i, labels[i])
+end
+draw_text("drag a card (drag mode: Cmd+Shift+D)", x: x0, y: y0 + 90, size: 12, r: 130, g: 145, b: 175)

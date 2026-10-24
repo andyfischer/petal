@@ -336,6 +336,20 @@ impl Compiler {
         let state_tid = self.emit_term(TermOp::StateInit, inputs, Some(self.qualified_name(name)));
         self.terms[state_tid.0 as usize].state_key = Some(state_key_const);
         self.terms[state_tid.0 as usize].is_memo = is_memo;
+        if !is_memo {
+            // The caret goes under the declaration's first line.
+            let span = if init.span.file == span.file && init.span.end.line > span.start.line {
+                SourceSpan {
+                    end: init.span.start,
+                    ..span
+                }
+            } else {
+                span
+            };
+            let text = format!("state {}{name}", if is_var { "var " } else { "" });
+            self.state_decls
+                .insert(state_tid, super::callback_state::StateDecl { span, text });
+        }
         // Remember how deep in loops the declaration sits, so a later
         // reassignment can pop back to its slot (see `Term::path_pop`).
         self.state_decl_depths

@@ -11,6 +11,7 @@
 //! - `state_ids`  — the name-derived declaration and callsite ids that key
 //!                  `state` slots
 
+mod callback_state;
 mod capture_lag;
 mod enums;
 pub use enums::collect_enums;
@@ -290,6 +291,9 @@ pub struct Compiler {
     // been rebound (which replaces its scope binding with a `Copy` term, so a
     // simple scope_lookup chain can no longer reach the StateInit).
     state_inits: HashMap<StateKey, TermId>,
+    /// Every `state` declaration's `StateInit`, with what the IR does not
+    /// keep about it, for the state-in-callback check (`callback_state`).
+    state_decls: HashMap<TermId, callback_state::StateDecl>,
 
     // ── State slot identity (see `state_ids.rs`) ─────────────────────
     //
@@ -532,6 +536,7 @@ impl Compiler {
             imported_vars: HashMap::new(),
             errors: Vec::new(),
             state_inits: HashMap::new(),
+            state_decls: HashMap::new(),
             fn_name_chain: Vec::new(),
             lambda_counts: vec![0],
             loop_depth: 0,
@@ -784,7 +789,8 @@ impl Compiler {
         let inferences = std::mem::take(&mut self.inferences);
         let classes = std::mem::replace(&mut self.classes, crate::classes::ClassTable::new());
         let enums = classes.enums().map(|(name, def)| (name.to_string(), def.clone())).collect();
-        Ok((Program {
+        let state_decls = std::mem::take(&mut self.state_decls);
+        let mut program = Program {
             schema: crate::program::IR_SCHEMA_VERSION.to_string(),
             id: program_id,
             source: entry.source.clone(),
@@ -865,7 +871,13 @@ impl Compiler {
                     })
                     .collect(),
             },
-        }, inferences, classes))
+        };
+        // `state` a builtin's callback is sure to reach fails whenever it
+        // runs; the IR is needed to know what each callback is.
+        let in_callbacks =
+            callback_state::states_in_callbacks(&program, &state_decls, native_fns);
+        program.warnings.extend(in_callbacks);
+        Ok((program, inferences, classes))
     }
 
     /// Opt this compile into collecting `petal suggest` evidence.

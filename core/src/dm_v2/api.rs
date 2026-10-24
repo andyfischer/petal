@@ -43,7 +43,7 @@ use crate::dm_v2::params::{
 };
 use crate::dm_v2::rank::{
     ScoreFacts, ScoreParts, ScoreWeights, ScoredChange, SubsetKind, candidate_subsets, collateral_norm,
-    param_weight, score, strength,
+    collateral_shapes, param_weight, score, strength,
 };
 use crate::dm_v2::solve::{Bound, GoalRow, SolveCtx, SolveOptions, linear_step, max_error};
 use crate::dm_v2::spec::{Overrides, SpecConfig, SpecHost, SpecRun, SpecSession};
@@ -54,6 +54,15 @@ use crate::source_map::{FileId, SourceSpan};
 use crate::stack::StackKey;
 use crate::static_value::StaticValue;
 use crate::value::Value;
+
+/// The most Jacobian columns a request measures (§9 M5, revision 4).
+pub const MAX_MEASURE: usize = 32;
+
+/// Past this many columns to measure, step escalation is cut to one.
+pub const MANY_COLUMNS: usize = 8;
+
+/// The most collateral rows a request reads (§2.3; §9 M5, revision 5).
+pub const COLLATERAL_ROWS: usize = 8192;
 
 // ── the request ────────────────────────────────────────────────────────────
 
@@ -205,6 +214,10 @@ pub struct CollateralItem {
 pub struct Collateral {
     /// `‖Δ other rows‖ / ‖Δ goals‖`.
     pub norm: f64,
+    /// How many other emits moved, each counted by how far it moved
+    /// relative to the goals, at most 1 ([`collateral_shapes`]): what the
+    /// score charges.
+    pub shapes: f64,
     pub items: Vec<CollateralItem>,
 }
 
@@ -588,8 +601,13 @@ impl DmSession {
             ));
         }
 
-        // Screening and the Jacobian (§2.2 stage 4, §2.3).
-        let screen = screen_params(
+        // Screening may use at most 30% of the run budget and screening with
+        // the Jacobian 60%, so the Jacobian and then the solve and its
+        // verification always have runs left (§9 M5, revision 4).
+        let full_budget = self.budget.max_runs;
+        let start = self.budget.used;
+        self.budget.max_runs = start + full_budget.saturating_mul(3) / 10;
+        let mut screen = screen_params(
             spec,
             env,
             host,
@@ -610,9 +628,33 @@ impl DmSession {
                 screen.kept.len()
             ));
         }
+        // At most MAX_MEASURE columns are measured: the cheapest by weight,
+        // then the nearest (§9 M5, revision 4).
+        if screen.kept.len() > MAX_MEASURE {
+            let n = screen.kept.len();
+            screen.kept.sort_by(|&a, &b| {
+                let (pa, pb) = (&self.params[a], &self.params[b]);
+                param_weight(pa, false)
+                    .total_cmp(&param_weight(pb, false))
+                    .then(pa.distance.cmp(&pb.distance))
+                    .then(pa.span.start.offset.cmp(&pb.span.start.offset))
+            });
+            screen.kept.truncate(MAX_MEASURE);
+            self.diag.warnings.push(format!(
+                "{n} literals move the goals; only the {MAX_MEASURE} preferred ones were measured"
+            ));
+        }
+        self.budget.max_runs = start + full_budget.saturating_mul(3) / 5;
         let mut rows = goals.clone();
-        rows.extend(collateral_rows(spec.baseline(), &goals, 512));
-        let fd = FdOptions { allow_respell: req.allow_respell, ..FdOptions::default() };
+        rows.extend(collateral_rows(spec.baseline(), &goals, COLLATERAL_ROWS));
+        // With many columns, a column that does not move at the base step
+        // is escalated once, not three times (§9 M5, revision 4): screening
+        // infers some columns from their group without probing them alone,
+        // and on a large program those cost the budget the solve needs.
+        let mut fd = FdOptions { allow_respell: req.allow_respell, ..FdOptions::default() };
+        if screen.kept.len() > MANY_COLUMNS {
+            fd.max_escalations = fd.max_escalations.min(1);
+        }
         let jac = jacobian(
             spec,
             env,
@@ -627,7 +669,8 @@ impl DmSession {
         );
         self.diag.measured = jac.params.len();
         self.diag.budget_exhausted |= jac.budget_exhausted;
-        self.base_rows = jac.rows.iter().map(|r| spec.baseline().read(r)).collect();
+        self.budget.max_runs = full_budget;
+        self.base_rows = spec.baseline().read_all(&jac.rows);
 
         // Columns.
         let params = &self.params;
@@ -896,6 +939,8 @@ impl DmSession {
             (local, delta)
         };
         let rn = r.iter().map(|x| x * x).sum::<f64>().sqrt();
+        let r1 = drag_norm(&r);
+        let row_keys: Vec<Option<EmitKey>> = self.jac.rows[gr..].iter().map(emit_key_of).collect();
         let mut out: Vec<Prediction> = subsets
             .into_iter()
             .map(|mut s| {
@@ -951,10 +996,15 @@ impl DmSession {
                     .cols
                     .iter()
                     .zip(&values)
-                    .map(|(&c, &v)| ScoredChange { weight: self.weights[c], old: value(c), new: v })
+                    .map(|(&c, &v)| ScoredChange {
+                        weight: self.weights[c],
+                        old: value(c),
+                        new: v,
+                        share: Some(share(&self.jac, c, v - value(c), r1)),
+                    })
                     .collect();
                 let facts = ScoreFacts {
-                    collateral_norm: collateral_norm(&goal_moves, &coll),
+                    collateral_norm: collateral_shapes(&row_keys, &coll, &goal_moves),
                     goals: gr,
                     respelled,
                     verified: err <= 1.0,
@@ -973,10 +1023,23 @@ impl DmSession {
             })
             .collect();
         out.sort_by(|a, b| b.ok.cmp(&a.ok).then(a.score.total_cmp(&b.score)));
-        // A pruned spread that came down to a tuple is that tuple.
+        // A pruned spread that came down to a tuple is that tuple, and a
+        // tuple whose prediction leaves one of its literals where it is is
+        // the smaller tuple (§9 M5, revision 3): `(cy, len)` with `len`
+        // unchanged is `cy` again, and solving it twice spends a verified
+        // slot that a different alternative could have had.
         let mut seen: Vec<Vec<usize>> = Vec::new();
         out.retain(|p| {
-            let mut c = p.cols.clone();
+            let mut c: Vec<usize> = p
+                .cols
+                .iter()
+                .zip(&p.values)
+                .filter(|&(&c, &v)| (v - value(c)).abs() > 1e-9 * value(c).abs().max(1.0))
+                .map(|(&c, _)| c)
+                .collect();
+            if c.is_empty() {
+                c = p.cols.clone();
+            }
             c.sort_unstable();
             if seen.contains(&c) {
                 return false;
@@ -1035,6 +1098,9 @@ impl DmSession {
         let goals = self.goal_rows(targets);
         let gr = self.jac.goal_rows;
         let explain = self.req.explain;
+        let drag = drag_norm(
+            &goals.iter().zip(&self.base_rows[..gr]).map(|(g, v)| g.target - v.unwrap_or(g.target)).collect::<Vec<_>>(),
+        );
         let mut alternatives: Vec<Alternative> = Vec::new();
         if max_error(&goals, &self.base_rows[..gr]) <= 1.0 {
             self.diag.warnings.push("the goals already hold at the baseline: nothing to change".into());
@@ -1049,6 +1115,7 @@ impl DmSession {
             let free = self.req.max_alternatives + 2;
             let mut chosen: Vec<Prediction> = Vec::new();
             let mut n_free = 0;
+            let mut rest: Vec<Prediction> = Vec::new();
             for p in preds {
                 match p.kind {
                     SubsetKind::ConfigOnly | SubsetKind::Client => chosen.push(p),
@@ -1056,7 +1123,30 @@ impl DmSession {
                         n_free += 1;
                         chosen.push(p);
                     }
-                    _ => {}
+                    _ => rest.push(p),
+                }
+            }
+            // With several goals, the single literals whose linear prediction
+            // comes closest among those not chosen yet are solved too, even
+            // when that prediction misses: a curve (an angle) can reach
+            // targets its tangent cannot (§9 M5, revision 3).
+            if gr >= 2 {
+                let miss = |p: &Prediction| -> f64 {
+                    p.goals.iter().zip(&goals).map(|(a, g)| ((a - g.target) / g.tolerance).abs()).fold(0.0, f64::max)
+                };
+                // The closest, and the closest whose column is smooth (a
+                // float literal under trig or a product: the kind whose
+                // straight-line prediction understates what it can reach).
+                for smooth_only in [false, true] {
+                    let pick = (0..rest.len())
+                        .filter(|&k| rest[k].cols.len() == 1 && rest[k].goals.iter().all(|v| v.is_finite()))
+                        .filter(|&k| {
+                            !smooth_only || matches!(self.jac.quality[rest[k].cols[0]], ColumnQuality::Smooth)
+                        })
+                        .min_by(|&a, &b| miss(&rest[a]).total_cmp(&miss(&rest[b])));
+                    if let Some(k) = pick {
+                        chosen.push(rest.swap_remove(k));
+                    }
                 }
             }
             let pid = spec.program();
@@ -1176,11 +1266,17 @@ impl DmSession {
                     .iter()
                     .map(|(i, v, _, _)| {
                         let c = self.jac.col_of(*i).unwrap();
-                        ScoredChange { weight: self.weights[c], old: self.params[*i].value, new: *v }
+                        let old = self.params[*i].value;
+                        ScoredChange {
+                            weight: self.weights[c],
+                            old,
+                            new: *v,
+                            share: Some(share(&self.jac, c, *v - old, drag)),
+                        }
                     })
                     .collect();
                 let facts = ScoreFacts {
-                    collateral_norm: collateral.norm,
+                    collateral_norm: collateral.shapes,
                     goals: gr,
                     respelled: changes.iter().filter(|c| c.respelled).count(),
                     regime_changed,
@@ -1230,6 +1326,16 @@ impl DmSession {
             }
             self.diag.budget_exhausted |= ctx.budget_exhausted;
         }
+        // The count penalty is charged against the leanest verified
+        // alternative, not the goal count (§9 M5, revision 2): when one
+        // literal can do it, a spread over three pays for two extra edits.
+        if let Some(lean) = alternatives.iter().filter(|a| a.verified).map(|a| a.changes.len()).min() {
+            let k = ScoreWeights::default();
+            for a in &mut alternatives {
+                a.score_parts.count = k.kn * a.changes.len().saturating_sub(lean.max(1)) as f64;
+                a.score = a.score_parts.total();
+            }
+        }
         // Rank (§2.5.4): verified first; under the soft config preference,
         // verified config-only alternatives first among those; then score.
         let any_verified = alternatives.iter().any(|a| a.verified);
@@ -1273,6 +1379,24 @@ impl DmSession {
             explain: explain.then(|| ExplainLog { lines: std::mem::take(&mut self.log) }),
         })
     }
+}
+
+/// The size of a drag in output units, `‖target - baseline‖₁` over the goals.
+fn drag_norm(residual: &[f64]) -> f64 {
+    residual.iter().filter(|x| x.is_finite()).map(|x| x.abs()).sum()
+}
+
+/// The share of a drag of size `drag` that moving column `c` by `delta`
+/// carries, by the linearization: `‖J_g[:, c] · delta‖₁ / drag` (§9 M5,
+/// revision 1). In the L1 norm a pair of literals that each move their own
+/// goal (`cx`, `cy`) carries exactly the drag, while a pair where one undoes
+/// the other's side effect (`angle`, then `cx` to correct x) carries more.
+fn share(jac: &Jacobian, c: usize, delta: f64, drag: f64) -> f64 {
+    if drag <= 1e-12 {
+        return 0.0;
+    }
+    let moved: f64 = (0..jac.goal_rows).map(|r| (jac.get(r, c) * delta).abs()).sum();
+    if moved.is_finite() { moved / drag } else { 0.0 }
 }
 
 /// Whether `screen` got to parameter `i` (screening stops at `max_screen`,
@@ -1438,7 +1562,12 @@ fn collateral_items(
         let (channel, callee, line) = info.get(&key).cloned().unwrap_or(("?".into(), None, None));
         items.push(CollateralItem { key, channel, callee, line, max_move: mag });
     }
-    Collateral { norm: collateral_norm(goal_moves, moves), items }
+    let keys: Vec<Option<EmitKey>> = jac.rows[gr..].iter().map(emit_key_of).collect();
+    Collateral {
+        norm: collateral_norm(goal_moves, moves),
+        shapes: collateral_shapes(&keys, moves, goal_moves),
+        items,
+    }
 }
 
 /// "set `gap` to 14 (line 3); moves 4 other emits".

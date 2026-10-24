@@ -1,0 +1,33 @@
+// dm-title: the fractal tree with hints
+// dm-level: L7
+//
+// The same tree, annotated: `spread` is the knob (`config let`), `shrink`
+// is `tunable` within [0.5, 0.8], and the trunk length is `rigid`, so no
+// drag may change it. The drags of l07 now land on the two knobs only, and
+// `tunable` costs less than `config let` (§2.5.2), so `shrink` is tried
+// first where it can do the job alone.
+//
+// dm-goal rightmost-out: circle#31.0 += 15 | expect=spread,shrink
+// dm-goal taller: circle#16.1 -= 20 | expect=shrink
+// dm-goal shrink-clamped: circle#16.1 -= 120 | expect=shrink xfail=the goal needs shrink > 0.8, past its tunable range, so the engine moves the tree's root (`380`, unhinted) instead
+
+import ui
+
+let trunk = rigid(80.0)
+let shrink = tunable(0.7, 0.5, 0.8)
+config let spread = 0.45
+
+fn branch(x, y, angle, len, depth)
+  let x2 = x + cos(angle) * len
+  let y2 = y - sin(angle) * len
+  draw_line(x, y, x2, y2, #806040, 255, 2)
+  if depth == 0 then
+    draw_circle(x2, y2, 3, #40c040)
+  else
+    branch(x2, y2, angle + spread, len * shrink, depth - 1)
+    branch(x2, y2, angle - spread, len * shrink, depth - 1)
+  end
+end
+
+draw_rect(0, 0, 400, 400, #101418)
+branch(200, 380, pi() / 2, trunk, 5)

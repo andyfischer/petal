@@ -1,0 +1,33 @@
+// dm-title: adversarial, one binding shared by many shapes
+// dm-level: A6
+//
+// A keypad of 12 keys whose every coordinate goes through `unit` (8 px):
+// key k is at `ox + col * unit * 6`. Dragging one key moves it through
+// `unit` (every key moves), `ox`/`oy` (every key moves by the same
+// amount) or the key's own offsets — the `6`s and `5`s are written once
+// in the helper, so they are shared too. "Move key 4 right, keep key 0"
+// is a spread: `unit` or the column `6`.
+//
+// dm-goal one-key: rect#5.0 += 12 | expect=ox,unit,lit:6
+// dm-goal spread: rect#5.0 += 12, rect#1.0 += 0 | expect=unit,lit:6
+// dm-goal spread-client: rect#5.0 += 12, rect#1.0 += 0 | allow=var:unit expect=unit
+// dm-goal key-size: rect#3.2 += 8 | expect=lit:5,unit
+
+import ui
+
+let unit = 8
+let ox = 20
+let oy = 20
+
+fn key_rect(i)
+  let col = i % 3
+  let row = i / 3
+  {x: ox + col * unit * 6, y: oy + row * unit * 6, w: unit * 5, h: unit * 5}
+end
+
+draw_rect(0, 0, 400, 300, #101418)
+for i in range(0, 12) do
+  let k = key_rect(i)
+  draw_rect(k.x, k.y, k.w, k.h, #303848)
+  draw_text(str(i), k.x + unit, k.y + unit, 14, #e0e0e0)
+end

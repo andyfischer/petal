@@ -1,0 +1,37 @@
+// dm-title: a petal-ui settings card built from the layout helpers
+// dm-level: L10
+//
+// A card made with the `ui` package's `pad`, `cut_top`, `vstack`, `button`
+// and `progress_bar`: every rectangle is computed by library code (the
+// bundled prelude, never editable), so every edit has to land in this
+// file's few numbers. The widgets are stateful (hover easing) and read the
+// mouse; at the checkpoint nothing is hovered.
+//
+// dm-goal card-right: rect#1.0 += 20 | expect=lit:20
+// The goals address the buttons' outlines (`rect_outline#k`, positional
+// arguments); the button faces are drawn from a rect record.
+// `vstack` divides with ints, so row heights move in whole pixels.
+//
+// dm-goal taller-header: rect_outline#0.1 += 10 | expect=header_h
+// dm-goal more-padding: rect_outline#0.0 += 6, rect#1.0 += 0 | expect=inset
+// dm-goal row-gap: rect_outline#1.1 += 8, rect_outline#0.1 += 0 | expect=row_gap,lit:240
+// dm-goal face-x: rect#3.0.x += 10 | expect=lit:20,inset
+
+import ui
+
+let panel = {x: 20, y: 20, w: 320, h: 240}
+let inset = 12
+let header_h = 28
+let row_gap = 8
+
+let inner = pad(panel, inset)
+let head = cut_top(inner, header_h)
+let rows = vstack(head.rest, 4, row_gap)
+
+draw_rect(0, 0, 400, 300, #0b0d12)
+card(panel)
+draw_text("Settings", head.cut.x, head.cut.y + 6, 16, #e8ecf8)
+button(rows[0], "Sync now")
+button(rows[1], "Sign out")
+progress_bar(rows[2], 0.6)
+draw_text("Storage 60%", rows[3].x, rows[3].y + 4, 12, #a0a8b8)

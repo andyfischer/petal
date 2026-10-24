@@ -1,0 +1,36 @@
+// dm-title: recursion, a fractal tree
+// dm-level: L7
+//
+// `branch` calls itself twice per level, five levels deep: 31 branches and
+// 32 leaves, every one a function of `trunk`, `shrink` and `spread`.
+// Dragging a leaf solves for those through the whole recursion. The root
+// position (`200`, `380`) also moves the leaf, but it moves every other
+// shape just as far, so measured collateral ranks it last.
+//
+// The last leaf is the rightmost; leaf 15/16 are the two in the middle.
+//
+// dm-goal rightmost-out: circle#31.0 += 15 | expect=spread,shrink,trunk
+// dm-goal taller: circle#16.1 -= 20 | expect=trunk,shrink
+// dm-goal leaf-xy: circle#31.0 += 10, circle#31.1 += 10 | expect=spread,shrink,trunk xfail=`shrink` with the root's `380` ties with the shape-only pairs: reshaping the tree moves the other leaves about as much as translating it does, so nothing in the score prefers the shape
+// dm-goal leaf-xy-client: circle#31.0 += 10, circle#31.1 += 10 | allow=var:spread,var:shrink expect=spread,shrink
+
+import ui
+
+let trunk = 80.0
+let shrink = 0.7
+let spread = 0.45
+
+fn branch(x, y, angle, len, depth)
+  let x2 = x + cos(angle) * len
+  let y2 = y - sin(angle) * len
+  draw_line(x, y, x2, y2, #806040, 255, 2)
+  if depth == 0 then
+    draw_circle(x2, y2, 3, #40c040)
+  else
+    branch(x2, y2, angle + spread, len * shrink, depth - 1)
+    branch(x2, y2, angle - spread, len * shrink, depth - 1)
+  end
+end
+
+draw_rect(0, 0, 400, 400, #101418)
+branch(200, 380, pi() / 2, trunk, 5)

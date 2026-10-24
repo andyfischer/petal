@@ -1,0 +1,40 @@
+// dm-title: the projectile without `var`: `reduce` over the steps
+// dm-level: L9
+//
+// The same simulation written as a fold over immutable records. No `var`
+// cell is on the path, so the literals cost less (§2.5.2) and discovery
+// follows plain dataflow; the results should match l09.
+//
+// dm-goal land-further: circle#10.0 += 40 | expect=v0,angle xfail=as in l09: the marker's own `20` offset wins
+// dm-goal land-further-client: circle#10.0 += 40 | allow=var:angle expect=angle
+
+import ui
+
+let v0 = 42.0
+let angle = 0.9
+let g = 9.8
+let dt_sim = 0.03
+let steps = 200
+let scale = 3.0
+
+fn step(s, i)
+  let moved = if s.landed then s else
+    let y = s.y + s.vy * dt_sim
+    {x: s.x + s.vx * dt_sim, y: y, vx: s.vx, vy: s.vy - g * dt_sim, landed: y < 0, trail: s.trail}
+  end
+  if i % 20 == 0 then
+    {x: moved.x, y: moved.y, vx: moved.vx, vy: moved.vy, landed: moved.landed, trail: append(moved.trail, {x: moved.x, y: moved.y})}
+  else
+    moved
+  end
+end
+
+let start = {x: 0.0, y: 0.0, vx: v0 * cos(angle), vy: v0 * sin(angle), landed: false, trail: []}
+let r = reduce(range(0, steps), start, step)
+let ground = 380
+
+draw_rect(0, 0, 800, 400, #101418)
+for p in r.trail do
+  draw_circle(20 + p.x * scale, ground - p.y * scale, 2, #808080)
+end
+draw_circle(20 + r.x * scale, ground, 6, #e04040)

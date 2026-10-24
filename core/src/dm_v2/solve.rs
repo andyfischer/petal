@@ -402,7 +402,7 @@ impl SolveCtx<'_> {
 
     /// Every row of `run`.
     pub fn read_rows(&self, run: &SpecRun) -> Vec<Option<f64>> {
-        self.jac.rows.iter().map(|r| run.read(r)).collect()
+        run.read_all(&self.jac.rows)
     }
 
     pub fn goal_values<'v>(&self, rows: &'v [Option<f64>]) -> &'v [Option<f64>] {

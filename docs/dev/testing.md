@@ -112,7 +112,12 @@ the expected output and ceilings on copies and allocations. The format is in
 
 The UI library has its own suite (`cd core-libs/petal-ui && cargo test`), which
 runs the panel corpus under the headless harness; see
-[headless-ui-run.md](headless-ui-run.md).
+[headless-ui-run.md](headless-ui-run.md). Its `dm_v2_study` test drags every
+goal of `examples/direct-manipulation-v2/` through direct manipulation v2 and
+checks the edit by hot reload. It is slow in a debug build, so run it with
+`--release`. The ignored `full_study` regenerates
+[direct-manipulation-v2-study.md](direct-manipulation-v2-study.md); the
+command is in that file's §7.
 
 ## Proofs and exhaustive checks
 

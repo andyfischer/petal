@@ -4,7 +4,8 @@ Status: design, 23 October 2026, revised after an adversarial review the
 same day ([§10](#10-review-notes) lists what the review changed). M1 (the
 speculative runner) landed the same day, M2 (discovery, Jacobian, hints) and
 M3 (solver, ranking, public API) on 24 October, and M4 (Garden as M4b;
-CLI, MCP and docs as M4a) the same day; M5 is in progress.
+CLI, MCP and docs as M4a) the same day, and M5 (examples ladder and
+complexity study, with six ranking and budget revisions) the same day.
 See [Status](#9-status) at the end, which each milestone updates when it
 lands.
 
@@ -1648,7 +1649,7 @@ with a golden test.
 | M2 discovery + Jacobian + hints | done, 2026-10-24 | `43ee2820` | `dm_v2::{params,hints,jacobian}`, `builtins/hints.rs`, `lint/dm_hints.rs`; tests `core/tests/dm_v2_jacobian.rs` (17), `core-libs/petal-ui/tests/dm_v2_params.rs` (1); deviations below |
 | M3 solver + ranking + API | done, 2026-10-24 | `1c28a217` | `dm_v2::{solve,rank,api}`, `propose_edits_v2`, `DmSession`, `apply_edits_multi`; tests `core/tests/dm_v2_solve.rs` (27); deviations below |
 | M4 surfaces | M4a (CLI, MCP, docs) done, 2026-10-24; M4b (Garden) done, 2026-10-24 | M4a: `83cd1469`; M4b: `6da29349`, `1f565eca` | M4b: Garden drag-to-edit on v2 (`garden-script/src/panel/dm_v2.rs`, `garden-app/src/app/manip_v2.rs`); tests `garden-script/tests/dm_v2_drag.rs` (13), `tools/dm-drag-integration-test.ts`. M4a: `cli/dm_v2.rs` (`propose-edit --v2`), `run --trace-emits` keys + native args, MCP `ProposeEdit`/`TraceEmits`, docs; tests `core/tests/cli_propose_edit_v2.rs` (12), `test/vitest/petal-mcp.test.ts` (5); deviations below |
-| M5 examples + study | not started | | |
+| M5 examples + study | done, 2026-10-24 | (this commit) | `examples/direct-manipulation-v2/` (27 examples, 105 goals), harness `core-libs/petal-ui/tests/dm_v2_study.rs`, report [direct-manipulation-v2-study.md](direct-manipulation-v2-study.md) + `.json`; engine revisions in `dm_v2::{rank,api,jacobian,spec}`; deviations below |
 
 Deviations from this plan are recorded here as they happen, with the reason.
 
@@ -2107,6 +2108,89 @@ Deviations:
     `tools/dm-drag-integration-test.ts`. It checks the moved shape by hovering
     its new position (the trace), since draw commands are integer pixels; the
     unit tests assert the move to ±1 px.
+
+**M5 (examples ladder and complexity study), 2026-10-24.** What landed:
+27 examples in `examples/direct-manipulation-v2/` (L0 to L10, the
+adversarial A1 to A7, and a verbatim copy of `server-monitoring`), with 105
+drag goals in their headers; the harness
+`core-libs/petal-ui/tests/dm_v2_study.rs` (the asserted `ladder` test and the
+ignored `full_study`, which adds a scaling sweep and an external pass over
+every headless-runnable app of the ecosystem and rewrites the report); the
+report [direct-manipulation-v2-study.md](direct-manipulation-v2-study.md)
+with its JSON. Results: on the ladder every goal not marked as an expected
+failure succeeds (91 of 105; the 14 others are written down with their
+cause), the top alternative is verified on 94%, median 20 runs; on 258
+automatic drags over 45 external apps the top alternative is verified on 93%,
+median 56 runs. The bar of acceptance item 3 is met.
+
+Deviations:
+
+1. *The harness is Rust over the API*, not `tools/dm-v2-study.ts` over
+   `propose-edit --json`: it runs while the CLI was being written (M4a), and
+   in-process it can check each top alternative against the source edit
+   itself. Its oracle applies the edit to a copy on disk, hot-reloads it into
+   a copy run to the same checkpoint, and requires the reloaded frame to draw
+   exactly what an override run of the original drew (every command, every
+   number); a restart from scratch is recorded too (it differs exactly for
+   edits that change how `state` evolves). Re-reading the goal by `EmitKey`
+   or by draw-list position in the edited program is wrong (terms are
+   renumbered; shapes before the goal can appear or vanish): seven false
+   misses traced to that, none to the engine.
+2. *Files and format.* The ladder is `l00`–`l10b`, `a01`–`a07` and
+   `big-server-monitoring/` rather than `01`–`19` (all 19 planned programs
+   are there; the README maps them), with hinted variants (`l01b`, `l07b`,
+   `l09c`). Goals are `// dm-goal name: tag#k.arg += n[, …] | expect=… allow=…
+   deny=… tol=… xfail=…`; `expect=` names bindings, `lit:<text>`, `fn:<f>`,
+   `L<n>`.
+3. *Acceptance item 1 is met with expected failures.* The examples carry
+   harder goals than the plan's one per program, to find the limits, and 14
+   of them are marked `xfail=` with the reason (cosmetic offsets, physics
+   constants, counts, an auto-scaled axis, a translate/reshape tie, branch
+   flips, step functions, int-only paths, hint ranges). Every other goal,
+   including all of the plan's intended drags, succeeds; `a02-state` is
+   verified with `stateful` set.
+4. *Report contents.* Per-run cost is reported as milliseconds per run by
+   emit count, not split into fork, statics rebuild and execution (the API
+   does not expose the split). Static metrics are read from the source
+   (lines, functions, loops, `var`, `state`, `config let`, hints) plus emits;
+   max call depth is not reported. The external pass samples 6 drags per app
+   (not 20).
+5. *Six engine revisions* (the study's §4 has the before/after numbers: the
+   ladder went from 82 to 91 successes, external verified from 77% to 93%):
+   1. Edit cost `d_i · (share_i + 0.1 · min(rel_i, 10))` with
+      `share_i = ‖J_i Δ_i‖₁ / ‖r‖₁` (`rank::edit_cost`, `ScoredChange::share`)
+      replaces §2.5.4's `d_i |Δp_i| / s_i`, which preferred large absolute
+      coordinates to the offsets, gaps and angles a drag means.
+   2. The count penalty is charged per edit beyond the leanest *verified*
+      alternative, not beyond the goal count.
+   3. Lean subsets: config-only tuples (`CONFIG_TUPLE_COLUMNS`) before the
+      all-config spread; with several goals, single literals too
+      (`SINGLES_FOR_SEVERAL_GOALS`), and the closest and the closest smooth
+      single always verified; predictions deduplicated by the literals they
+      move. `subsets_verified` is now at most `max_alternatives + 4`.
+   4. Budget shares: screening ≤ 30% of `max_runs`, screening + Jacobian
+      ≤ 60%; at most `MAX_MEASURE` (32) columns, the cheapest by weight then
+      nearest; past `MANY_COLUMNS` (8), one step escalation instead of three.
+      Garden's 96-run open budget is split the same way (its tests pass).
+   5. Collateral rows: `COLLATERAL_ROWS` 8,192 (was 512) and the numeric
+      fields of record arguments; `SpecRun::read_all` indexes emits once.
+   6. The score charges per-shape collateral (`rank::collateral_shapes`,
+      reported as `Collateral::shapes`; `norm` is unchanged), compressed past
+      1 (`rank::compress_collateral`).
+   A seventh, unverifying an alternative whose flow change renumbered the
+   goal call's emits, was tried and reverted (it rejected correct answers).
+   `core/tests/dm_v2_solve.rs`: three tests updated for the new scores and
+   orders (`through_helper_single_goal`, `config_preferred_softly`,
+   `budget`). M3's open issue about the two-literal spread is moot: with the
+   first circle gone it now ranks third, after `20 → 35`, because `30 →
+   37.5` pays for its respelling.
+6. *Limits found and left* (the study's §3): a literal whose column is zero
+   until a branch flips is never re-measured past the flip; screening drops
+   a step function that is flat at its 0.1% probe; on apps with 160+
+   eligible literals per drag, screening's inferred positives can spend the
+   Jacobian's share on zero columns (6 of 258 external drags); geometry held
+   in `state` has nothing to edit at a live checkpoint; 152 of 197 external
+   entry files need another host's natives.
 
 ---
 

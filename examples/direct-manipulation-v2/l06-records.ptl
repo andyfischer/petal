@@ -1,0 +1,36 @@
+// dm-title: a list of shape records, drawn by a dispatcher
+// dm-level: L6
+//
+// The scene is data: a list of records, each drawn by `draw_shape`, with a
+// shared `origin` offset. Dragging a shape edits its own record's field;
+// dragging everything at once edits `origin`.
+//
+// dm-goal move-rect: rect#1.0 += 25 | expect=lit:160
+// dm-goal move-second-circle: circle#1.1 += 20 | expect=lit:200
+// dm-goal grow-circle: circle#0.2 = 30 | expect=lit:20
+// dm-goal all: circle#0.0 += 10, rect#1.0 += 10, circle#1.0 += 10 | expect=lit:0
+
+import ui
+
+let origin = {x: 0, y: 0}
+
+let shapes = [
+  {kind: "circle", x: 80, y: 80, r: 20, color: #e05050},
+  {kind: "rect", x: 160, y: 60, w: 50, h: 40, color: #50a050},
+  {kind: "circle", x: 300, y: 200, r: 12, color: #5050e0},
+]
+
+fn draw_shape(s)
+  let x = origin.x + s.x
+  let y = origin.y + s.y
+  if s.kind == "circle" then
+    draw_circle(x, y, s.r, s.color)
+  else
+    draw_rect(x, y, s.w, s.h, s.color)
+  end
+end
+
+draw_rect(0, 0, 400, 300, #101418)
+for s in shapes do
+  draw_shape(s)
+end

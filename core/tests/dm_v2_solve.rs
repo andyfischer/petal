@@ -187,15 +187,20 @@ fn through_helper_single_goal() {
     assert_eq!(alts[1].changes[0].function.as_deref(), Some("place"));
     // The ranking, pinned: a weight change shows up here.
     let scores: Vec<f64> = alts.iter().map(|a| (a.score * 1000.0).round() / 1000.0).collect();
-    assert_eq!(scores, vec![0.188, 1.175, 2.125]);
+    // §2.5.4 as revised in §9 M5: each does the whole drag alone (share 1),
+    // so the weights (0.75 in the goal's frame, 1.5 in a function body) and
+    // the measured collateral decide.
+    assert_eq!(scores, vec![0.769, 2.338, 2.612]);
     for a in alts {
         assert!(near(t.rerun(a)[1][0], 95.0, 0.5), "{}", a.description);
     }
 
     // With the first circle gone, nothing else moves.
-    // The minimum-norm spread over the helper (`2.0` and `30` together)
-    // now costs less than `20 → 35` (§2.5.4: 0.5 for the second edit, 0.3
-    // for the respelling, no collateral), so it is listed third.
+    // Nothing else moves now, so the weights and the respelling decide
+    // (§2.5.4 as revised in §9 M5): `20 → 35` keeps its spelling, `30 →
+    // 37.5` pays 0.3 for it, and the minimum-norm spread over the helper
+    // (`2.0` and `30` together) pays 0.5 for its second edit and 0.3 for
+    // the respelling.
     let mut t = T::new("fn place(i)\n  20 + i * 30\nend\ndraw(place(2.0), 100, 10)\n");
     let mut r = req(vec![DmGoal::to(t.arg(0, 0), 95.0)]);
     r.allow_respell = true;
@@ -203,11 +208,11 @@ fn through_helper_single_goal() {
     let resp = t.propose(&r);
     assert_eq!(
         all_edits(&resp),
-        vec![vec!["2.0→2.5"], vec!["30→37.5"], vec!["2.0→2.4", "30→31.4"], vec!["20→35"]]
+        vec![vec!["2.0→2.5"], vec!["20→35"], vec!["2.0→2.4", "30→31.4"], vec!["30→37.5"]]
     );
     assert!(resp.alternatives.iter().all(|a| a.verified && a.collateral.items.is_empty()));
     let scores: Vec<f64> = resp.alternatives.iter().map(|a| (a.score * 1000.0).round() / 1000.0).collect();
-    assert_eq!(scores, vec![0.188, 0.675, 1.02, 1.125]);
+    assert_eq!(scores, vec![0.769, 1.612, 1.702, 1.838]);
 }
 
 // ── 2. config_preferred_softly ───────────────────────────────────────────
@@ -220,10 +225,12 @@ fn config_preferred_softly() {
     assert_eq!(e[0], vec!["10→25"], "{e:?}");
     assert!(resp.alternatives[0].config_only);
     assert!(e.contains(&vec!["50→65".to_string()]), "the call-site literal is still listed: {e:?}");
-    // Its score alone would put the call-site literal first: the preference
-    // is the tier, not the weight.
+    // The weight agrees with the tier: the config literal (0.5) costs less
+    // than the call-site literal (0.75) for the same share of the drag
+    // (§9 M5; under M3's relative edit cost the score alone put `50` first
+    // and only the tier kept the config literal on top).
     let lit = resp.alternatives.iter().find(|a| edits(a) == vec!["50→65"]).unwrap();
-    assert!(lit.score < resp.alternatives[0].score);
+    assert!(lit.score > resp.alternatives[0].score);
 
     // v1's rule on request: config only.
     let mut r = req(vec![DmGoal::to(t.arg(0, 0), 75.0)]);
@@ -455,7 +462,9 @@ fn budget() {
     let resp = t.propose(&r);
     assert_eq!(resp.diagnostics.measured, 12, "12 relevant columns");
     assert!(resp.diagnostics.subsets_predicted > 30, "{}", resp.diagnostics.subsets_predicted);
-    assert!(resp.diagnostics.subsets_verified <= r.max_alternatives + 2);
+    // `max_alternatives + 2` free subsets, plus up to two single literals
+    // with several goals (§9 M5, revision 3).
+    assert!(resp.diagnostics.subsets_verified <= r.max_alternatives + 4);
     assert!(resp.alternatives[0].verified);
 }
 

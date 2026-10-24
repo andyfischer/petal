@@ -1,0 +1,36 @@
+// dm-title: adversarial, integer-only paths (round, floor, int division)
+// dm-level: A5
+//
+// Three kinds of quantization:
+// - a marker snapped to a 20 px grid with `round(x / grid) * grid`: a step
+//   function of `x`, flat almost everywhere (the Jacobian escalates its
+//   step to find the next jump);
+// - a 3-column grid of tiles placed with int division `i / cols`;
+// - bars whose height is `v * 160 / hi` with all-int operands, so a bar
+//   moves in whole pixels and only some heights are reachable.
+//
+// dm-goal snap-next: circle#0.0 += 20 | expect=x,grid xfail=screening nudges `x` by 0.1% and sees nothing move (the grid is flat there), so `x` is dropped before the Jacobian could escalate its step; `grid` alone cannot reach 140
+// dm-goal snap-next-client: circle#0.0 += 20 | allow=var:x expect=x xfail=same: with only `x` allowed, screening still drops it as inert
+// dm-goal snap-small: circle#0.0 += 4 | expect=x,grid xfail=a 4 px drag on a 20 px grid has no exact answer (best effort leaves it where it was)
+// dm-goal tile-row: rect#5.1 += 10, rect#2.1 += 0 | expect=pitch_y
+// dm-goal int-bar: rect#9.1 -= 16 | expect=lit:30
+
+import ui
+
+let x = 123.0
+let grid = 20
+let cols = 3
+let pitch_x = 34
+let pitch_y = 30
+let data = [10, 30, 20, 40]
+
+draw_rect(0, 0, 400, 300, #101418)
+draw_circle(round(x / grid) * grid, 40, 6, #f0f040)
+for i in range(0, 7) do
+  draw_rect(20 + (i % cols) * pitch_x, 70 + (i / cols) * pitch_y, 28, 24, #4070a0)
+end
+let hi = 40
+for i in range(0, len(data)) do
+  let h = data[i] * 160 / hi
+  draw_rect(200 + i * 40, 280 - h, 30, h, #a07040)
+end

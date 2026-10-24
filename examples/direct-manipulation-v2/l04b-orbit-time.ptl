@@ -1,0 +1,26 @@
+// dm-title: trig plus the clock, an orbiting planet
+// dm-level: L4
+// dm-frames: 90
+//
+// The planet's angle is `phase + time() * speed`. At the checkpoint
+// (frame 90, time 1.5 s) both `phase` and `speed` move the planet along its
+// orbit, but editing `speed` changes where it will be at every later time:
+// clock coupling (§2.5.2) makes `speed` cost 4× so the drag edits `phase`.
+// Dragging the planet outward edits `orbit_r`.
+//
+// dm-goal along-orbit: circle#1.0 = 197.37, circle#1.1 = 289.96 | expect=phase
+// dm-goal outward: circle#1.0 += 7.25, circle#1.1 += 18.64 | expect=orbit_r
+// dm-goal along-speed-only: circle#1.0 = 197.37, circle#1.1 = 289.96 | allow=var:speed expect=speed
+
+import ui
+
+let cx = 200
+let cy = 200
+let orbit_r = 90
+let speed = 0.8
+let phase = 0.0
+
+let a = phase + time() * speed
+draw_rect(0, 0, 400, 400, #05060d)
+draw_circle(cx, cy, 20, #ffb347)
+draw_circle(cx + cos(a) * orbit_r, cy + sin(a) * orbit_r, 8, #7fb2ff)

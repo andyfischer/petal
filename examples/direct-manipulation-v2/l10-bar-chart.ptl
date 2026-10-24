@@ -1,0 +1,59 @@
+// dm-title: a bar chart with axes, ticks and computed bars
+// dm-level: L10
+//
+// Bars are `value / axis_max * plot_h` tall, where `axis_max` rounds the
+// largest value up to a multiple of 10 (`ceil`, a step function), and the
+// bars are spread across the plot by `bar_w` and `bar_gap`. Dragging a
+// bar's top edits that bar's data value; the data are ints, so the edit
+// snaps to whole units (4 px each here) and the default ±0.5 px tolerance
+// is too tight for most drags: the `snap` goals allow ±2 px, and the
+// `exact` goal shows the int-only limit.
+//
+// (`float(v)`: with ints, `v / hi` is integer division and every bar but
+// the tallest is 0 px tall; a05-integer.ptl keeps that version.)
+//
+// rect#0 is the background, rect#1 the plot area, rect#2..6 the bars.
+//
+// dm-goal bar2-up: rect#4.1 -= 16 | expect=lit:22
+// dm-goal bar2-up-exact: rect#4.1 -= 10 | expect=lit:22 xfail=an int data literal moves the bar 4 px per unit, so 10 px is out of reach within ±0.5 px; the exact answer found instead rescales the axis (`10` → 9)
+// dm-goal bar2-up-snap: rect#4.1 -= 10 | expect=lit:22 tol=2
+// dm-goal wider-bars: rect#2.2 += 6 | expect=bar_w
+// dm-goal plot-right: rect#1.0 += 20 | expect=left
+// dm-goal tallest-up: rect#5.1 -= 20 | expect=lit:48 tol=2 xfail=the axis is scaled to the data, so the tallest bar's height relative to it barely moves: 48→50 gains 8 px and 51 rescales the axis. The engine finds the `10` that axis_max rounds to (it rescales every bar)
+// dm-goal tallest-up-deny: rect#5.1 -= 20 | deny=fn:axis_max expect=top tol=2
+
+import ui
+
+let left = 50
+let top = 30
+let plot_w = 300
+let plot_h = 200
+let bar_w = 36
+let bar_gap = 18
+let data = [12, 30, 22, 48, 18]
+
+fn axis_max(values)
+  ceil(reduce(values, 0, fn(m, v) max(m, v) end) / 10.0) * 10
+end
+
+let hi = axis_max(data)
+
+fn bar_rect(i, v)
+  let h = float(v) / hi * plot_h
+  {x: left + bar_gap + i * (bar_w + bar_gap), y: top + plot_h - h, w: bar_w, h: h}
+end
+
+draw_rect(0, 0, 420, 280, #101418)
+draw_rect(left, top, plot_w, plot_h, #161b24)
+for i in range(0, len(data)) do
+  let r = bar_rect(i, data[i])
+  draw_rect(r.x, r.y, r.w, r.h, #5b8def)
+end
+// Axes and five ticks.
+draw_line(left, top + plot_h, left + plot_w, top + plot_h, #8090a0, 255, 1)
+draw_line(left, top, left, top + plot_h, #8090a0, 255, 1)
+for t in range(0, 6) do
+  let y = top + plot_h - t / 5 * plot_h
+  draw_line(left - 4, y, left, y, #8090a0, 255, 1)
+  draw_text(str(t * hi / 5), left - 30, y - 6, 11, #a0a8b8)
+end

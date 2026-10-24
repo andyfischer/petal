@@ -1,0 +1,27 @@
+// dm-title: `map` and `reduce` with a running sum of widths
+// dm-level: L5
+//
+// Boxes of different widths laid out left to right: each box's x is the
+// sum of the widths before it plus a gap, computed with `reduce` over a
+// list of records. Dragging box 2's right edge is its width literal (`60`
+// in the list); dragging box 3 with box 0 fixed is `gap`, or box 2's own
+// width `30` (the two tie: each moves one other shape as far as the drag).
+//
+// dm-goal widen-box1: rect#2.2 += 20 | expect=lit:60
+// dm-goal box3-gap: rect#4.0 += 15, rect#1.0 += 0 | expect=gap,lit:30
+// dm-goal first: rect#1.0 += 10 | expect=x0
+
+import ui
+
+let x0 = 20
+let gap = 10
+let widths = [40, 60, 30, 80]
+
+let layout = reduce(widths, {x: x0, boxes: []}, fn(acc, w)
+  {x: acc.x + w + gap, boxes: append(acc.boxes, {x: acc.x, w: w})}
+end)
+
+draw_rect(0, 0, 400, 200, #101418)
+for b in layout.boxes do
+  draw_rect(b.x, 80, b.w, 40, #6090d0)
+end

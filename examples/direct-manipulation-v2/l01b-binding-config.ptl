@@ -1,0 +1,19 @@
+// dm-title: the same, with `cx` declared `config let`
+// dm-level: L1
+//
+// `config let` is the strong "tunable" signal: the bar drag now edits `cx`
+// (the default `Soft` preference lists config-only alternatives first when
+// they verify), and with `strict` (v1's rule) nothing else is even tried.
+//
+// dm-goal bar-x: rect#1.0 += 20 | expect=cx
+// dm-goal bar-x-strict: rect#1.0 += 20 | strict expect=cx
+// dm-goal circle-y: circle#0.1 -= 15 | expect=cy
+
+import ui
+
+config let cx = 140
+config let cy = 90
+
+draw_rect(0, 0, 400, 300, #101418)
+draw_circle(cx, cy, 24, #4080e0)
+draw_rect(cx - 30, cy + 40, 60, 8, #4080e0)

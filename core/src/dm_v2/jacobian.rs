@@ -155,6 +155,19 @@ pub fn collateral_rows(baseline: &SpecRun, goals: &[Observable], cap: usize) -> 
                     ObsValue::Num(_) | ObsValue::Int(_) => {
                         rows.push(Observable::EmitArg { key: e.key, arg, path: Vec::new() })
                     }
+                    // A rect or point record (`draw_rect(r, c)`): its
+                    // numeric fields (§9 M5, revision 5).
+                    ObsValue::Record(fields) if fields.len() <= 8 => {
+                        for (name, item) in fields {
+                            if item.as_f64().is_some() {
+                                rows.push(Observable::EmitArg {
+                                    key: e.key,
+                                    arg,
+                                    path: vec![PathStep::Field(name.clone())],
+                                });
+                            }
+                        }
+                    }
                     ObsValue::List(items) if items.len() <= 4 => {
                         for (i, item) in items.iter().enumerate() {
                             if item.as_f64().is_some() {
@@ -203,7 +216,7 @@ impl Sample {
         Sample {
             error: run.error.as_ref().map(|e| e.to_string()),
             fingerprint: run.fingerprint,
-            values: rows.iter().map(|r| run.read(r)).collect(),
+            values: run.read_all(rows),
         }
     }
 

@@ -1,0 +1,55 @@
+// dm-title: an iterated simulation, a projectile after N steps
+// dm-level: L9
+//
+// 200 Euler steps of a projectile under gravity, with `var` accumulators,
+// stopping when it hits the ground (a branch per step). The marker is the
+// landing point; the dots are every 20th step. Dragging the landing point
+// solves for `v0` or `angle` through 200 iterations; the landing x moves in
+// steps of one Euler step (vx · dt ≈ 0.5 px), which the tolerance absorbs.
+// (`petal lint` suggests `let` for the accumulators; they are `var` on
+// purpose, to compare with the fold of l09b.)
+//
+// dm-goal land-further: circle#10.0 += 40 | expect=v0,angle xfail=the `20` in the marker's own draw call moves only the marker (no collateral), so it wins; see l09c for the hints that rule it out
+// dm-goal land-further-client: circle#10.0 += 40 | allow=var:angle expect=angle
+// dm-goal higher-arc: circle#3.1 -= 30, circle#10.0 += 0 | expect=v0,angle tol=1.5 xfail=the physics and drawing constants (`dt_sim`, `ground`) are as editable as the launch and win (moving the ground line raises the whole arc), unless marked `rigid` (l09c)
+
+import ui
+
+let v0 = 42.0
+let angle = 0.9
+let g = 9.8
+let dt_sim = 0.03
+let steps = 200
+let scale = 3.0
+
+fn simulate()
+  var x = 0.0
+  var y = 0.0
+  var vx = v0 * cos(angle)
+  var vy = v0 * sin(angle)
+  var trail = []
+  var landed = false
+  for i in range(0, steps) do
+    if !landed then
+      set x = x + vx * dt_sim
+      set y = y + vy * dt_sim
+      set vy = vy - g * dt_sim
+      if y < 0 then
+        set landed = true
+      end
+    end
+    if i % 20 == 0 then
+      set trail = append(trail, {x: x, y: y})
+    end
+  end
+  {x: x, y: y, trail: trail}
+end
+
+let r = simulate()
+let ground = 380
+
+draw_rect(0, 0, 800, 400, #101418)
+for p in r.trail do
+  draw_circle(20 + p.x * scale, ground - p.y * scale, 2, #808080)
+end
+draw_circle(20 + r.x * scale, ground, 6, #e04040)

@@ -1,0 +1,54 @@
+// dm-title: the projectile with hints: physics and drawing constants `rigid`
+// dm-level: L9
+//
+// l09 with `rigid` on what a drag must not change: gravity, the integration
+// step, the drawing scale, the ground line and the marker's x origin. Only
+// the launch (`v0`, `angle`) and `steps` are left, and `steps` is a loop
+// bound (structural), so the drags of l09 now resolve to the launch. (A
+// higher arc can also come from launching higher: `var y = 0.0` → 10.)
+//
+// dm-goal land-further: circle#10.0 += 40 | expect=v0,angle
+// dm-goal higher-arc: circle#3.1 -= 30, circle#10.0 += 0 | expect=v0,angle,lit:0.0 tol=1.5
+// dm-goal land-closer: circle#10.0 -= 60 | expect=v0,angle
+
+import ui
+
+let v0 = 42.0
+let angle = 0.9
+let g = rigid(9.8)
+let dt_sim = rigid(0.03)
+let steps = 200
+let scale = rigid(3.0)
+
+fn simulate()
+  var x = 0.0
+  var y = 0.0
+  var vx = v0 * cos(angle)
+  var vy = v0 * sin(angle)
+  var trail = []
+  var landed = false
+  for i in range(0, steps) do
+    if !landed then
+      set x = x + vx * dt_sim
+      set y = y + vy * dt_sim
+      set vy = vy - g * dt_sim
+      if y < 0 then
+        set landed = true
+      end
+    end
+    if i % 20 == 0 then
+      set trail = append(trail, {x: x, y: y})
+    end
+  end
+  {x: x, y: y, trail: trail}
+end
+
+let r = simulate()
+let ground = rigid(380)
+let x_origin = rigid(20)
+
+draw_rect(0, 0, 800, 400, #101418)
+for p in r.trail do
+  draw_circle(x_origin + p.x * scale, ground - p.y * scale, 2, #808080)
+end
+draw_circle(x_origin + r.x * scale, ground, 6, #e04040)

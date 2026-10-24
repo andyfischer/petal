@@ -1,0 +1,25 @@
+// dm-title: adversarial, a `var` accumulator in a loop
+// dm-level: A3
+//
+// The layout of l05b written imperatively: `var x` accumulates the widths.
+// Discovery follows the cell's writes (`through_var`), and every literal
+// whose path crosses the cell costs 1.5×; the answers should be the same
+// as l05b's. (`petal lint` suggests `let`, since the cell is never shared
+// with a nested function; the `var` is the point of this example.)
+//
+// dm-goal widen-box1: rect#2.2 += 20 | expect=lit:60
+// dm-goal box3-gap: rect#4.0 += 15, rect#1.0 += 0 | expect=gap,lit:30
+// dm-goal first: rect#1.0 += 10 | expect=x0
+
+import ui
+
+let x0 = 20
+let gap = 10
+let widths = [40, 60, 30, 80]
+
+draw_rect(0, 0, 400, 200, #101418)
+var x = x0
+for w in widths do
+  draw_rect(x, 80, w, 40, #6090d0)
+  set x = x + w + gap
+end

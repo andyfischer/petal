@@ -1,0 +1,18 @@
+// dm-title: adversarial, the same animation on a fresh stack
+// dm-level: A2
+// dm-state: fresh
+//
+// With `StateMode::Fresh` every speculative run starts with no state, so
+// the `state` initializer runs and *does* move the ball. The ball drag can
+// then edit `40` (flagged `stateful`) or `speed`.
+//
+// dm-goal ball: circle#0.0 += 6 | expect=lit:40.0,speed
+
+import ui
+
+state x = 40.0
+let speed = 2.0
+x += speed
+
+draw_rect(0, 0, 400, 200, #101418)
+draw_circle(x, 100, 10, #f0a040)

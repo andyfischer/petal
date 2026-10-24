@@ -1,0 +1,25 @@
+// dm-title: a row of shapes from a `for` loop
+// dm-level: L5
+//
+// Six squares at `x0 + i * (size + gap)`. Dragging square 3 alone is
+// ambiguous (`x0`, `gap` and `size` all move it); "square 3 moves, square 0
+// stays" is `gap` or `size`, and `size` also resizes every square. Dragging
+// the first square is `x0`. The `hinted` goal asks for `gap` only, as a
+// client that knows which knob the drag means would.
+//
+// dm-goal one: rect#1.0 += 0, rect#4.0 += 30 | expect=gap
+// dm-goal first: rect#1.0 += 15 | expect=x0
+// dm-goal spread-client: rect#4.0 += 30 | allow=var:gap expect=gap
+// dm-goal alone: rect#4.0 += 30 | expect=x0,gap,size
+// dm-goal height: rect#3.3 += 10 | expect=size,lit:30
+
+import ui
+
+let x0 = 40
+let gap = 12
+let size = 30
+
+draw_rect(0, 0, 400, 200, #101418)
+for i in range(0, 6) do
+  draw_rect(x0 + i * (size + gap), 100, size, size, #c08040)
+end

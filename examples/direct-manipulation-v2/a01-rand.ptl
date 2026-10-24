@@ -1,0 +1,29 @@
+// dm-title: adversarial, shapes scattered with `random()`
+// dm-level: A1
+//
+// Twelve stars at `cx + (random() - 0.5) * spread`. A speculative run
+// replays every draw by call site, so the stars hold still while one
+// literal is nudged; `random`'s own arguments cannot receive feedback
+// (`no_feedback`), so a star's drag edits the literals around the draw:
+// `cx` (everything moves), `spread` (the scatter widens), or the `4` of
+// its radius. The two `config let`s are the intended knobs.
+//
+// dm-goal star-right: circle#4.0 += 10 | expect=cx,spread
+// dm-goal center-marker: circle#12.0 += 20 | expect=cx
+// dm-goal star-bigger: circle#4.2 += 3 | expect=lit:4
+// dm-goal star-pair: circle#4.0 += 10, circle#12.0 += 0 | expect=spread
+
+import ui
+import creative
+
+config let cx = 200
+config let spread = 160
+let count = 12
+
+draw_rect(0, 0, 400, 300, #05060d)
+for i in range(0, count) do
+  let x = cx + (random() - 0.5) * spread
+  let y = 150 + (random() - 0.5) * 120
+  draw_circle(x, y, 4 + random_int(0, 3), #ffe8a0)
+end
+draw_circle(cx, 150, 10, #ff8040)

@@ -1,0 +1,24 @@
+// dm-title: adversarial, a `state` animation at a live checkpoint
+// dm-level: A2
+// dm-frames: 30
+//
+// The ball's x is `state`: each frame adds `speed`. At the checkpoint
+// (frame 30) the state already holds x, so its initializer `40` moves
+// nothing (§2.1.2) and state is frozen across the speculative runs: the
+// only literal that moves the ball *this frame* is `speed`, and editing it
+// changes the whole animation (`stateful`, ×4 cost). The shadow under the
+// ball is drawn at `x - 4`, a plain offset.
+//
+// dm-goal ball: circle#0.0 += 6 | expect=speed
+// dm-goal ball-y: circle#0.1 += 20 | expect=lit:100
+// dm-goal shadow: rect#1.0 += 5 | expect=lit:4
+
+import ui
+
+state x = 40.0
+let speed = 2.0
+x += speed
+
+draw_rect(0, 0, 400, 200, #101418)
+draw_circle(x, 100, 10, #f0a040)
+draw_rect(x - 4, 115, 20, 3, #303840)

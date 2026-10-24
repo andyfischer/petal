@@ -1,0 +1,15 @@
+// dm-title: a literal written in the draw call
+// dm-level: L0
+//
+// The simplest drag: the circle's position is a literal in the call, so the
+// edit is that literal (what v1 already does).
+//
+// Drag goals (read by core-libs/petal-ui/tests/dm_v2_study.rs):
+// dm-goal right: circle#0.0 += 30 | expect=lit:120
+// dm-goal diagonal: circle#0.0 += 15, circle#0.1 += 20 | expect=lit:120,lit:80
+// dm-goal radius: circle#0.2 = 32 | expect=lit:20
+
+import ui
+
+draw_rect(0, 0, 400, 300, #101418)
+draw_circle(120, 80, 20, #e05050)

@@ -270,6 +270,29 @@ impl SpecRun {
         self.emits.iter().filter(move |e| e.channel == channel)
     }
 
+    /// Read many numbers of the run: [`read`](Self::read) for each, with the
+    /// emits indexed once (a frame with thousands of emits and as many
+    /// collateral rows would otherwise scan the emit list per row).
+    pub fn read_all(&self, rows: &[Observable]) -> Vec<Option<f64>> {
+        if rows.len() < 16 || self.emits.len() < 16 {
+            return rows.iter().map(|r| self.read(r)).collect();
+        }
+        let mut index: std::collections::HashMap<EmitKey, usize> =
+            std::collections::HashMap::with_capacity(self.emits.len());
+        for (i, e) in self.emits.iter().enumerate() {
+            index.entry(e.key).or_insert(i);
+        }
+        rows.iter()
+            .map(|o| match o {
+                Observable::EmitArg { key, arg, path } => {
+                    self.emits[*index.get(key)?].native_args.get(*arg)?.at(path)?.as_f64()
+                }
+                Observable::EmitValue { key, path } => self.emits[*index.get(key)?].value.at(path)?.as_f64(),
+                Observable::Watch { .. } => self.read(o),
+            })
+            .collect()
+    }
+
     /// Read one number of the run.
     pub fn read(&self, o: &Observable) -> Option<f64> {
         match o {

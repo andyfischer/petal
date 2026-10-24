@@ -1,0 +1,47 @@
+// dm-title: a flex-row-like layout from text widths and padding
+// dm-level: L8
+//
+// A menu bar: each button is as wide as its label (`text_width`, an int)
+// plus `pad` on both sides, laid out left to right with `gap` between, by a
+// recursive `layout_row` over the list of labels. Widening one button is
+// `pad` (the label's width cannot be dragged); moving the last button with
+// the first one fixed is `gap` or `pad`. `font_size` only moves things in
+// whole-pixel steps of `text_width` (a step function), so the solver
+// should avoid it.
+//
+// dm-goal widen-first: rect#1.2 += 10 | expect=pad
+// dm-goal last-right: rect#5.0 += 20, rect#1.0 += 0 | expect=gap,pad
+// dm-goal last-right-client: rect#5.0 += 20, rect#1.0 += 0 | deny=var:font_size expect=gap,pad
+// dm-goal label-x: text#2.1 += 12, text#0.1 += 0 | expect=gap,pad
+// dm-goal bar-down: rect#1.1 += 10 | expect=y0
+
+import ui
+
+let labels = ["File", "Edit", "View", "Window", "Help"]
+let x0 = 12
+let y0 = 10
+let pad = 8
+let gap = 6
+let font_size = 14
+let height = 28
+
+fn button_w(label)
+  text_width(label, font_size) + pad * 2
+end
+
+fn layout_row(items, x)
+  if len(items) == 0 then
+    []
+  else
+    let w = button_w(items[0])
+    concat([{x: x, w: w, label: items[0]}], layout_row(slice(items, 1), x + w + gap))
+  end
+end
+
+draw_rect(0, 0, 400, 60, #101418)
+for b in layout_row(labels, x0) do
+  draw_rect(b.x, y0, b.w, height, #2a3147)
+end
+for b in layout_row(labels, x0) do
+  draw_text(b.label, b.x + pad, y0 + 6, font_size, #e8ecf8)
+end

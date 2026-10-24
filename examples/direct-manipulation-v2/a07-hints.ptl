@@ -1,0 +1,22 @@
+// dm-title: hints, `tunable` ranges and steps, `rigid`
+// dm-level: A7
+//
+// `tunable(value, min, max, step)` marks a literal as the knob, with a
+// range the solver projects onto and a step it rounds to; `rigid(value)`
+// says it must never move (and its result is replayed in speculative runs
+// so nothing downstream gets feedback through it).
+//
+// dm-goal x-in-range: circle#0.0 += 30 | expect=lit:100
+// dm-goal x-out-of-range: circle#0.0 += 80 | expect=lit:100 xfail=the range stops x at 150: best effort ends 30 px short, not within tolerance
+// dm-goal radius-step: circle#0.2 += 5 | expect=lit:10 tol=1
+// dm-goal y-rigid: circle#0.1 += 10 | expect=lit:0
+
+import ui
+
+let x = tunable(100, 50, 150)
+let y = rigid(80)
+let r = tunable(10, 4, 20, 2)
+let dy = 0
+
+draw_rect(0, 0, 400, 200, #101418)
+draw_circle(x, y + dy, r, #60d0a0)

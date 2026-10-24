@@ -75,6 +75,30 @@ pub struct ScoredChange {
     pub weight: f64,
     pub old: f64,
     pub new: f64,
+    /// The share of the drag this change carries, `‖J_g[:, i] Δ_i‖₁ / ‖r‖₁`
+    /// (§9 M5, revision 1); `None` charges the relative change instead.
+    pub share: Option<f64>,
+}
+
+/// The weight of the relative change in [`edit_cost`].
+pub const REL_WEIGHT: f64 = 0.1;
+
+/// What one change costs (§2.5.4 as revised in §9 M5, revision 1):
+/// `d_i · (share_i + 0.1 · min(|Δ_i| / max(|p_i|, 1), 10))`. The share is how
+/// much of the drag the literal does, in output units, so every literal
+/// that does the whole drag alone costs its weight `d_i` and the weights and
+/// the measured collateral decide between them; the small relative term
+/// breaks ties against implausible values (2 → 200). Charging the
+/// relative change alone (M3) made a large coordinate (`150` → `130`)
+/// cheaper than the offset or gap a drag means (`0` → `-20`, `8` → `16`),
+/// and a rate or angle (whose change is small in its own units) cheaper
+/// than either.
+pub fn edit_cost(c: &ScoredChange) -> f64 {
+    let rel = (c.new - c.old).abs() / c.old.abs().max(1.0);
+    match c.share {
+        Some(share) => c.weight * (share.min(4.0) + REL_WEIGHT * rel.min(10.0)),
+        None => c.weight * rel,
+    }
 }
 
 /// What the score of one alternative is made of.
@@ -100,6 +124,9 @@ impl ScoreParts {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ScoreFacts {
     pub collateral_norm: f64,
+    /// The edits that are free of the count penalty: the goal count. The
+    /// final ranking charges again against the fewest edits any verified
+    /// alternative needed (§9 M5, revision 2).
     pub goals: usize,
     pub respelled: usize,
     pub regime_changed: bool,
@@ -115,18 +142,65 @@ pub fn score(changes: &[ScoredChange], facts: &ScoreFacts, k: &ScoreWeights) -> 
     let edit = changes
         .iter()
         .filter(|c| c.new != c.old)
-        .map(|c| c.weight * (c.new - c.old).abs() / c.old.abs().max(1.0))
+        .map(edit_cost)
         .sum();
     let moved = changes.iter().filter(|c| c.new != c.old).count();
     ScoreParts {
         edit,
-        collateral: k.kc * facts.collateral_norm,
+        collateral: k.kc * compress_collateral(facts.collateral_norm),
         count: k.kn * moved.saturating_sub(facts.goals) as f64,
         respelled: k.kr * facts.respelled as f64,
         regime: if facts.regime_changed { k.kf } else { 0.0 },
         rng: if facts.rng_order_changed { k.kg } else { 0.0 },
         error: if facts.verified { 0.0 } else { k.ke * facts.max_error.min(1e6) },
     }
+}
+
+/// The collateral term of the score (§9 M5, revision 6), over
+/// [`collateral_shapes`]: linear up to 1 (one other shape moved as far as
+/// the drag), logarithmic beyond, so that once a change moves other shapes,
+/// moving *more* of them costs less than another edit does. Without it, in
+/// a scene where every literal moves everything (a recursive tree), a
+/// spread of three edits that partly cancel each other outranks every
+/// single-literal edit.
+pub fn compress_collateral(norm: f64) -> f64 {
+    if norm <= 1.0 { norm.max(0.0) } else { 1.0 + norm.ln() }
+}
+
+/// How many other shapes moved, each counted by how far it moved relative to
+/// the goals (§9 M5, revision 6): `Σ_e min(1, max_move_e / ‖Δ goals‖)` over
+/// the emits `e` of the collateral rows (`keys[k]` is row `k`'s emit). A
+/// shape that moves as far as the drag counts 1 however many of its numbers
+/// change, so a row of squares that all resize (`size`) counts the squares,
+/// not their widths and heights twice over; a shape that is gone counts 1.
+/// This, not the root-sum-square norm, is what the score charges.
+pub fn collateral_shapes<K: Eq + std::hash::Hash + Copy>(
+    keys: &[Option<K>],
+    moves: &[Option<f64>],
+    goal_moves: &[f64],
+) -> f64 {
+    let g = goal_moves.iter().map(|x| x * x).sum::<f64>().sqrt();
+    // In first-seen order, so the sum (and a tie between two alternatives)
+    // does not depend on hash order.
+    let mut index: std::collections::HashMap<K, usize> = std::collections::HashMap::new();
+    let mut per: Vec<f64> = Vec::new();
+    for (k, m) in keys.iter().zip(moves) {
+        let Some(k) = *k else { continue };
+        let mag = match m {
+            Some(x) if x.is_finite() => x.abs(),
+            Some(_) | None => f64::INFINITY,
+        };
+        if mag <= 1e-9 {
+            continue;
+        }
+        let share = if g <= 1e-12 { 1.0 } else { (mag / g).min(1.0) };
+        let i = *index.entry(k).or_insert_with(|| {
+            per.push(0.0);
+            per.len() - 1
+        });
+        per[i] = per[i].max(share);
+    }
+    per.iter().sum()
 }
 
 /// How much the non-goal rows moved, relative to how much the goals moved:
@@ -169,6 +243,38 @@ pub struct Subset {
 
 /// How many of the strongest columns tuples are drawn from (§2.5.3).
 pub const TOP_COLUMNS: usize = 12;
+
+/// How many of the strongest columns are also tried alone when there are
+/// several goals.
+pub const SINGLES_FOR_SEVERAL_GOALS: usize = 4;
+
+/// How many of the strongest config columns config-only tuples are drawn
+/// from (every config-only subset is verified, so this stays small).
+pub const CONFIG_TUPLE_COLUMNS: usize = 6;
+
+/// Every `m`-subset of `items`, in order.
+fn combinations(items: &[usize], m: usize) -> Vec<Vec<usize>> {
+    let n = items.len();
+    let mut out = Vec::new();
+    if m == 0 || n < m {
+        return out;
+    }
+    let mut idx: Vec<usize> = (0..m).collect();
+    loop {
+        out.push(idx.iter().map(|&i| items[i]).collect());
+        let mut i = m;
+        while i > 0 && idx[i - 1] == n - m + i - 1 {
+            i -= 1;
+        }
+        if i == 0 {
+            return out;
+        }
+        idx[i - 1] += 1;
+        for j in i..m {
+            idx[j] = idx[j - 1] + 1;
+        }
+    }
+}
 
 /// How strongly column `c` moves the goals per unit of cost: `‖J_g[:, c]‖ ·
 /// s_c / d_c`, the goal movement of a relative change of the literal,
@@ -231,8 +337,30 @@ pub fn candidate_subsets(
             }
         }
     }
-    // 2. Config only.
+    // 1b. With several goals, single literals too (§9 M5, revision 3): one
+    // literal can move a point along a curve through both targets (an hour
+    // hand's angle), which no linear prediction from the baseline sees, but
+    // the verified solve can.
+    if (2..=3).contains(&m) {
+        for &c in top.iter().take(SINGLES_FOR_SEVERAL_GOALS) {
+            push(vec![c], SubsetKind::Tuple, &mut out);
+        }
+    }
+    // 2. Config only: tuples of size m among the strongest config columns
+    // (§9 M5, revision 3: a single knob before the spread over all of
+    // them), then every config column together.
     let cfg: Vec<usize> = cols.iter().copied().filter(|&c| config[c] && strength(c) > 0.0).collect();
+    if (1..=3).contains(&m) && cfg.len() > m {
+        let mut strong = cfg.clone();
+        strong.sort_by(|&a, &b| strength(b).total_cmp(&strength(a)).then(a.cmp(&b)));
+        strong.truncate(CONFIG_TUPLE_COLUMNS);
+        for sub in combinations(&strong, m) {
+            let jg: Vec<Vec<f64>> = (0..m).map(|r| sub.iter().map(|&c| jac.get(r, c)).collect()).collect();
+            if rank(&jg) == m {
+                push(sub, SubsetKind::ConfigOnly, &mut out);
+            }
+        }
+    }
     if !cfg.is_empty() {
         push(cfg, SubsetKind::ConfigOnly, &mut out);
     }

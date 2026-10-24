@@ -1,0 +1,28 @@
+// dm-title: adversarial, a branch that flips under the drag
+// dm-level: A4
+//
+// The puck stops at a wall: `px = if x > wall - r then wall - r else x`.
+// A small drag edits `x`. Dragging past the wall flips the branch: beyond
+// it the puck no longer follows `x` (a zero column), and the solver must
+// notice the flip (fingerprint) and move the wall instead, or both.
+// The bar's width switches between two values at `x > 150`: the taken
+// branch's literal (`60`) is what moves it, while `150` is structural.
+//
+// dm-goal small: circle#0.0 += 5 | expect=x
+// dm-goal into-wall: circle#0.0 += 40 | expect=wall xfail=at the baseline the puck is left of the wall, so `wall`'s column is zero and only `x` is measured; past the flip `x` stops working and the Jacobian is not re-measured for the other literals (best effort stops at the wall)
+// dm-goal into-wall-client: circle#0.0 += 40 | allow=var:wall,var:x expect=wall,x xfail=same: the client names `wall`, but its column is still zero at the baseline
+// dm-goal bar-step: rect#2.2 += 30 | expect=lit:60
+
+import ui
+
+let x = 180
+let wall = 230
+let r = 12
+
+let px = if x > wall - r then wall - r else x end
+let bar_w = if x > 150 then 60 else 90 end
+
+draw_rect(0, 0, 400, 200, #101418)
+draw_rect(wall, 40, 6, 120, #808890)
+draw_circle(px, 100, r, #e05050)
+draw_rect(20, 170, bar_w, 8, #50a0e0)

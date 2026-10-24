@@ -1,0 +1,962 @@
+// dm-title: the largest realistic sample: ORBITAL fleet telemetry (copy of examples/dashboards/server-monitoring)
+// dm-level: BIG
+// dm-panel
+// dm-size: 1440x900
+// dm-frames: 5
+//
+// A verbatim copy of the 944-line dashboard (18 hosts, KPI tiles, a
+// streaming chart, a heatmap, an alert feed; `state`, `noise`, the clock),
+// with only this header added. The goals below were picked from its
+// baseline draw list (DM_STUDY_DUMP=1); see the study doc for the
+// auto-generated goals the harness also runs on it.
+//
+// rect#0 is the header bar, rect#3 the fleet card, rect#13/15/17/19 the
+// four KPI tiles, rect#21 the streaming chart's card.
+//
+// dm-goal header-taller: rect#0.3 += 10 | expect=HEAD_H
+// dm-goal fleet-wider: rect#3.2 += 20 | expect=fleet_w
+// dm-goal kpi-taller: rect#13.3 += 16 | expect=tile_h
+// dm-goal kpi-gap: rect#15.0 += 12, rect#13.0 += 0 | expect=S3,lit:2 xfail=the tiles split the row equally, so tile 2 moves with tile 1 fixed only if tile 1 widens: the cheapest edit is the gap count `3` in `(right_w - 3 * tile_gap) / 4` (3→0), a count no hint marks rigid
+// dm-goal chart-down: rect#21.1 += 10
+// dm-goal host-dot: circle#4.0 += 6
+// dm-goal hero-dot: circle#1.2 += 2
+// ─────────────────────────────────────────────────────────────────────────────
+// ORBITAL — live fleet telemetry
+//
+// A Garden panel app: an 18-host server-monitoring console. A simulated metric
+// stream advances on a fixed tick; the fleet column, the four KPI tiles, the
+// main streaming chart, the per-core utilization heatmap and the alert feed all
+// read the same signal. Alerts are raised and resolved by threshold crossings
+// as the stream moves.
+//
+//   Run:  GARDEN_HEADLESS_SIZE=1440x900 garden --headless --debug-port 0 \
+//             --init layout.ptl
+//
+//   Keys: up/down/j/k  select host      1-4  select metric
+//         space  pause / resume         a    acknowledge all alerts
+//         [ / ]  slower / faster stream
+//   Mouse: click a host row, a KPI tile or an alert; hover the chart for a
+//          crosshair readout; wheel over the fleet column or the alert feed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import ui
+import color
+import creative
+import noise
+
+// ── Palette ──────────────────────────────────────────────────────────────────
+// A single blue-black ground with three surfaces above it. The hairline is the
+// only border in the design — cards are separated by tone and space, not boxes.
+let BG       = #0a0d13
+let SURFACE  = #10141c
+let RAISED   = #171d28
+let HOVER    = #1c2331
+let HAIR     = #222a38
+let GRID     = #19202b
+
+let TEXT     = #e7edf6
+let BRIGHT   = #ffffff
+let DIM      = #8892a4
+let FAINT    = #565f72
+
+let OK       = #46d39a
+let WARN     = #f0b344
+let CRIT     = #ff5f6d
+
+let C_CPU    = #5cc8ff
+let C_MEM    = #a78bfa
+let C_NET    = #46d39a
+let C_LAT    = #f0b344
+
+// Spacing scale.
+let S1 = 6
+let S2 = 12
+let S3 = 18
+let S4 = 24
+let S5 = 32
+
+// Type scale. Five sizes only: the host rasterizes one glyph per
+// (character, size) into a fixed atlas, and a dense page spread over many
+// sizes overflows it.
+let T_MICRO = 10
+let T_SMALL = 12
+let T_BODY  = 14
+let T_LEAD  = 20
+let T_HERO  = 28
+
+// ── Text helpers ─────────────────────────────────────────────────────────────
+
+fn tx(s: string, x: num, y: num, size: num, c: record)
+  draw_text(s, pos: {x: x, y: y}, style: {size: size, color: c})
+end
+
+fn tx(s: string, x: num, y: num, size: num, c: record, spacing: num)
+  draw_text(s, pos: {x: x, y: y}, style: {size: size, color: c, spacing: spacing})
+end
+
+fn tx_right(s: string, right_x: num, y: num, size: num, c: record)
+  draw_text(s, pos: {x: right_x - text_width(s, size), y: y}, style: {size: size, color: c})
+end
+
+fn tx_center(s: string, cx: num, y: num, size: num, c: record)
+  draw_text(s, pos: {x: cx - text_width(s, size) / 2.0, y: y}, style: {size: size, color: c})
+end
+
+// Small-caps section label: the one place letter-spacing earns its keep.
+fn label_caps(s: string, x: num, y: num, c: record)
+  draw_text(upper(s), pos: {x: x, y: y}, style: {size: T_MICRO, color: c, spacing: 1.4})
+end
+
+// ── Number formatting ────────────────────────────────────────────────────────
+
+// Fixed-point without a printf. `str(12.3)` gives 12.300000000000001.
+fn dec(x: num, places: num) -> string
+  let mul = 1
+  for i in range(0, places) do
+    mul = mul * 10
+  end
+  let neg = x < 0.0
+  let scaled = int(round(abs(x) * float(mul)))
+  let whole = scaled / mul
+  let fr = scaled % mul
+  let s = str(whole)
+  if places > 0 then
+    let fs = str(fr)
+    while len(fs) < places do
+      fs = "0" ++ fs
+    end
+    s = s ++ "." ++ fs
+  end
+  if neg then "-" ++ s else s end
+end
+
+fn commas(n: num) -> string
+  let s = str(n)
+  let out = ""
+  let c = 0
+  let i = len(s) - 1
+  while i >= 0 do
+    out = slice(s, start: i, end: i + 1) ++ out
+    c = c + 1
+    if c % 3 == 0 && i > 0 then
+      out = "," ++ out
+    end
+    i = i - 1
+  end
+  out
+end
+
+fn pad2(n: num) -> string
+  if n < 10 then "0" ++ str(n) else str(n) end
+end
+
+fn clock(secs: num) -> string
+  let h = secs / 3600
+  let m = (secs % 3600) / 60
+  let s = secs % 60
+  pad2(h) ++ ":" ++ pad2(m) ++ ":" ++ pad2(s)
+end
+
+fn ago(secs: num) -> string
+  if secs < 60 then
+    str(secs) ++ "s ago"
+  elsif secs < 3600 then
+    str(secs / 60) ++ "m " ++ str(secs % 60) ++ "s ago"
+  else
+    str(secs / 3600) ++ "h " ++ str((secs % 3600) / 60) ++ "m ago"
+  end
+end
+
+// ── Metric metadata ──────────────────────────────────────────────────────────
+// Index order is the wire order everywhere: 0 cpu, 1 mem, 2 net, 3 lat.
+
+let M_NAME  = ["cpu", "memory", "network", "p95 latency"]
+let M_SHORT = ["CPU", "MEM", "NET", "P95"]
+let M_UNIT  = ["%", "%", " Mb/s", " ms"]
+let M_MAX   = [100.0, 100.0, 1000.0, 400.0]
+let M_WARN  = [78.0, 82.0, 640.0, 170.0]
+let M_CRIT  = [92.0, 94.0, 860.0, 300.0]
+let M_DEC   = [1, 1, 0, 0]
+let M_COLOR = [C_CPU, C_MEM, C_NET, C_LAT]
+
+fn fmt_metric(m: num, v: num) -> string
+  dec(v, M_DEC[m]) ++ M_UNIT[m]
+end
+
+fn fmt_bare(m: num, v: num) -> string
+  dec(v, M_DEC[m])
+end
+
+// 0 nominal · 1 warning · 2 critical
+fn level_of(m: num, v: num) -> int
+  if v >= M_CRIT[m] then 2
+  elsif v >= M_WARN[m] then 1
+  else 0
+  end
+end
+
+fn level_color(lv: num)
+  if lv == 2 then CRIT elsif lv == 1 then WARN else OK end
+end
+
+fn level_word(lv: num) -> string
+  if lv == 2 then "critical" elsif lv == 1 then "warning" else "nominal" end
+end
+
+// Alerting level *with hysteresis*: a metric climbs a band the moment it
+// crosses, but has to fall a few percent below the line to leave it again.
+// Without this a series sitting on a threshold flaps, and the feed fills with
+// alternating "crossed" / "recovered" rows saying nothing.
+fn level_hyst(m: num, v: num, prev: num)
+  let raw = level_of(m, v)
+  if raw >= prev then
+    raw
+  elsif prev == 2 && v >= M_CRIT[m] * 0.96 then
+    2
+  elsif prev >= 1 && v >= M_WARN[m] * 0.95 then
+    max(1, raw)
+  else
+    raw
+  end
+end
+
+// The same three levels read differently in a log: level 0 arrived there by
+// coming back down, so it is "resolved" rather than "nominal".
+fn sev_word(lv: num) -> string
+  if lv == 2 then "critical" elsif lv == 1 then "warning" else "resolved" end
+end
+
+// ── The fleet ────────────────────────────────────────────────────────────────
+// Plausible seeded inventory. `base`/`amp` set each host's resting level and
+// swing per metric; `hot` adds a slow, occasional surge — that is what pushes a
+// host over a threshold and puts a row in the alert feed.
+
+class Host
+  name: string,
+  role: string,
+  region: string,
+  seed: float,
+  base: list,
+  amp: list,
+  hot: list,
+end
+
+let HOSTS = [
+  Host(name: "atlas-01",   role: "api",      region: "us-east-1",  seed: 1.7,  base: [52.0, 61.0, 380.0, 88.0],  amp: [15.0, 9.0, 120.0, 34.0], hot: [0.0, 0.0, 0.0, 0.0]),
+  Host(name: "atlas-02",   role: "api",      region: "us-east-1",  seed: 3.4,  base: [50.0, 64.0, 410.0, 92.0],  amp: [17.0, 10.0, 140.0, 38.0], hot: [22.0, 0.0, 0.0, 110.0]),
+  Host(name: "atlas-03",   role: "api",      region: "us-east-1",  seed: 5.1,  base: [45.0, 55.0, 330.0, 79.0],  amp: [14.0, 8.0, 110.0, 28.0], hot: [0.0, 0.0, 0.0, 0.0]),
+  Host(name: "vega-01",    role: "api",      region: "eu-west-1",  seed: 6.8,  base: [58.0, 58.0, 415.0, 108.0], amp: [16.0, 11.0, 150.0, 42.0], hot: [0.0, 0.0, 150.0, 0.0]),
+  Host(name: "vega-02",    role: "api",      region: "eu-west-1",  seed: 8.5,  base: [49.0, 60.0, 360.0, 101.0], amp: [15.0, 9.0, 120.0, 36.0], hot: [0.0, 0.0, 0.0, 0.0]),
+  Host(name: "orion-db1",  role: "postgres", region: "us-east-1", seed: 10.2,  base: [61.0, 74.0, 240.0, 63.0],  amp: [13.0, 7.0, 90.0, 22.0],  hot: [16.0, 12.0, 0.0, 0.0]),
+  Host(name: "orion-db2",  role: "replica",  region: "us-east-1", seed: 11.9,  base: [43.0, 71.0, 210.0, 57.0],  amp: [12.0, 8.0, 80.0, 19.0],  hot: [0.0, 0.0, 0.0, 0.0]),
+  Host(name: "orion-db3",  role: "replica",  region: "eu-west-1", seed: 13.6,  base: [39.0, 68.0, 190.0, 61.0],  amp: [11.0, 8.0, 75.0, 21.0],  hot: [0.0, 0.0, 0.0, 0.0]),
+  Host(name: "lyra-01",    role: "worker",   region: "us-west-2", seed: 15.3,  base: [63.0, 52.0, 150.0, 46.0],  amp: [17.0, 12.0, 70.0, 18.0], hot: [16.0, 0.0, 0.0, 0.0]),
+  Host(name: "lyra-02",    role: "worker",   region: "us-west-2", seed: 17.0,  base: [61.0, 49.0, 140.0, 44.0],  amp: [18.0, 11.0, 65.0, 17.0], hot: [0.0, 0.0, 0.0, 0.0]),
+  Host(name: "lyra-03",    role: "worker",   region: "us-west-2", seed: 18.7,  base: [58.0, 47.0, 135.0, 42.0],  amp: [17.0, 10.0, 60.0, 16.0], hot: [0.0, 18.0, 0.0, 0.0]),
+  Host(name: "cygnus-01",  role: "cache",    region: "eu-west-1", seed: 20.4,  base: [35.0, 78.0, 290.0, 22.0],  amp: [10.0, 6.0, 100.0, 9.0],  hot: [0.0, 11.0, 0.0, 0.0]),
+  Host(name: "cygnus-02",  role: "cache",    region: "us-east-1", seed: 22.1,  base: [33.0, 76.0, 275.0, 21.0],  amp: [9.0, 6.0, 95.0, 8.0],    hot: [0.0, 0.0, 0.0, 0.0]),
+  Host(name: "draco-01",   role: "edge",     region: "ap-south-1", seed: 23.8, base: [45.0, 41.0, 560.0, 132.0], amp: [16.0, 9.0, 150.0, 54.0], hot: [0.0, 0.0, 170.0, 120.0]),
+  Host(name: "draco-02",   role: "edge",     region: "ap-south-1", seed: 25.5, base: [41.0, 38.0, 530.0, 124.0], amp: [15.0, 8.0, 145.0, 48.0], hot: [0.0, 0.0, 0.0, 0.0]),
+  Host(name: "helix-01",   role: "ingest",   region: "us-west-2", seed: 27.2,  base: [55.0, 66.0, 470.0, 74.0],  amp: [16.0, 10.0, 150.0, 26.0], hot: [0.0, 0.0, 0.0, 0.0]),
+  Host(name: "helix-02",   role: "ingest",   region: "us-west-2", seed: 28.9,  base: [56.0, 69.0, 495.0, 77.0],  amp: [17.0, 11.0, 155.0, 27.0], hot: [20.0, 0.0, 0.0, 0.0]),
+  Host(name: "nova-01",    role: "gateway",  region: "us-east-1", seed: 30.6,  base: [47.0, 57.0, 600.0, 68.0],  amp: [14.0, 9.0, 140.0, 24.0], hot: [0.0, 0.0, 90.0, 0.0]),
+]
+
+let NHOST = len(HOSTS)
+
+// ── The signal ───────────────────────────────────────────────────────────────
+// The stream is a *pure function* of the tick index rather than a stored
+// buffer: three octaves of Perlin noise per (host, metric), plus an occasional
+// slow surge. So "history" is just sample(h, m, tick - k) — no ring buffers to
+// maintain, and every chart can look as far back as it likes.
+
+noise_seed(20260808)
+
+fn sample(h: record, m: num, i: num)
+  let ph = h.seed * 7.3 + float(m) * 31.7
+  let x = float(i)
+  let slow = noise(x * 0.011 + ph) + 0.5
+  let mid  = noise(x * 0.052 + ph + 40.0) + 0.5
+  let fast = noise(x * 0.190 + ph + 90.0) + 0.5
+  let mix = slow * 0.60 + mid * 0.27 + fast * 0.13
+  let v = h.base[m] + (mix - 0.5) * 1.5 * h.amp[m]
+  if h.hot[m] > 0.0 then
+    let s = noise(x * 0.0075 + ph + 200.0) + 0.5
+    v = v + smoothstep(0.52, 0.86, x: s) * h.hot[m]
+  end
+  clamp(v, lo: 0.0, hi: M_MAX[m])
+end
+
+fn core_load(h: record, core: num, i: num)
+  let cpu = sample(h, m: 0, i: i)
+  let n = noise(float(i) * 0.085 + h.seed * 3.1 + float(core) * 17.3) + 0.5
+  clamp(cpu + (n - 0.5) * 52.0, lo: 0.0, hi: 100.0)
+end
+
+// Worst level across all four metrics — the fleet row's status dot.
+fn host_level(h: record, i: num) -> int
+  let worst = 0
+  for m in range(0, 4) do
+    let lv = level_of(m, sample(h, m, i))
+    if lv > worst then
+      worst = lv
+    end
+  end
+  worst
+end
+
+// ── Persistent state ─────────────────────────────────────────────────────────
+
+state tick = 0            // stream position, one sample == one simulated second
+state acc = 0.0           // dt accumulator
+state paused = false
+state rate = 2            // index into RATES
+state sel_host = 1        // atlas-02 — the host that surges first
+state sel_metric = 0
+state fleet = list_state()
+state alerts_scroll = 0
+state ack_count = 0       // counted key edges, so /state can observe them
+state pause_toggles = 0
+
+let RATES = [0.60, 0.35, 0.20, 0.10]
+let RATE_NAME = ["0.5x", "1x", "2x", "4x"]
+
+// Alert records: {t, sev, host, metric, text, ack}
+// Seeded with a little history so the feed reads as a running log, not an
+// empty box waiting for the first threshold crossing.
+state alerts = [
+  {t: -34,  sev: 1, host: 13, metric: 3, text: "p95 latency crossed the 170 ms warning line", ack: false},
+  {t: -96,  sev: 0, host: 5,  metric: 1, text: "memory recovered — back inside limits", ack: true},
+  {t: -152, sev: 2, host: 5,  metric: 1, text: "memory above the 94% critical threshold", ack: true},
+  {t: -309, sev: 1, host: 8,  metric: 0, text: "cpu crossed the 78% warning line", ack: true},
+]
+
+// Per (host, metric) threshold level as of the last tick, so a crossing fires
+// exactly once instead of every frame it stays over the line.
+state levels = for si in range(0, NHOST) do
+  let row = for m in range(0, 4) do
+    level_of(m, sample(h: HOSTS[si], m: m, i: 0))
+  end
+  row
+end
+
+// ── Input · stream advance ───────────────────────────────────────────────────
+
+let w = screen_width()
+let h = screen_height()
+
+if key_pressed("space") then
+  paused = !paused
+  pause_toggles = pause_toggles + 1
+end
+if key_pressed("leftbracket") && rate > 0 then
+  rate = rate - 1
+end
+if key_pressed("rightbracket") && rate < len(RATES) - 1 then
+  rate = rate + 1
+end
+for mi in range(0, 4) do
+  if key_pressed(str(mi + 1)) then
+    sel_metric = mi
+  end
+end
+if key_pressed("a") then
+  ack_count = ack_count + 1
+  alerts = for al in alerts do
+    {...al, ack: true}
+  end
+end
+
+let step = RATES[rate]
+let advanced = 0
+if !paused then
+  acc = acc + dt()
+  while acc >= step && advanced < 8 do
+    acc = acc - step
+    tick = tick + 1
+    advanced = advanced + 1
+
+    // Re-evaluate every threshold at the new sample.
+    let next_levels = for si in range(0, NHOST) do
+      let row = for m in range(0, 4) do
+        level_hyst(m, v: sample(h: HOSTS[si], m: m, i: tick), prev: levels[si][m])
+      end
+      row
+    end
+
+    for si in range(0, NHOST) do
+      for m in range(0, 4) do
+        let was = levels[si][m]
+        let now = next_levels[si][m]
+        if now != was then
+          let hn = HOSTS[si]
+          let v = sample(h: hn, m: m, i: tick)
+          let msg = ""
+          let sev = now
+          if now == 2 then
+            msg = M_NAME[m] ++ " at " ++ fmt_metric(m, v) ++ " — above the " ++ fmt_metric(m, M_CRIT[m]) ++ " critical threshold"
+          elsif now == 1 && was == 0 then
+            msg = M_NAME[m] ++ " crossed the " ++ fmt_metric(m, M_WARN[m]) ++ " warning line"
+          elsif now == 1 && was == 2 then
+            msg = M_NAME[m] ++ " eased to " ++ fmt_metric(m, v) ++ " — still above warning"
+          else
+            msg = M_NAME[m] ++ " recovered to " ++ fmt_metric(m, v) ++ " — back inside limits"
+          end
+          alerts = flat([[{t: tick, sev: sev, host: si, metric: m, text: msg, ack: false}], alerts])
+        end
+      end
+    end
+
+    levels = next_levels
+    if len(alerts) > 60 then
+      alerts = slice(alerts, start: 0, end: 60)
+    end
+  end
+end
+
+let uptime = clock(tick + 1147)
+
+let open_alerts = 0
+for al in alerts do
+  if !al.ack then open_alerts = open_alerts + 1 end
+end
+
+// ── Layout ───────────────────────────────────────────────────────────────────
+
+let PAD = S4
+let HEAD_H = 76
+
+let fleet_w = 316
+let fleet_x = PAD
+let body_y = HEAD_H + S3
+let body_h = h - body_y - PAD
+
+let right_x = fleet_x + fleet_w + S3 + 2
+let right_w = w - PAD - right_x
+
+let tile_h = 104
+let tile_gap = S3 - 2
+let tile_w = (right_w - 3 * tile_gap) / 4
+
+// The right column is height-driven: tiles and the bottom row take a fixed
+// share and the streaming chart absorbs whatever is left, so the whole page
+// still lands inside the pane when Garden hands us 828px instead of 900.
+let low_h = clamp(body_h * 0.36, lo: 262.0, hi: 306.0)
+let chart_y = body_y + tile_h + S4
+let chart_h = body_h - tile_h - low_h - 2 * S4
+let chart_r = rect(right_x, chart_y, right_w, chart_h)
+
+let low_y = chart_y + chart_h + S4
+let cores_w = right_w - 440 - S3 - 2
+let cores_r = rect(right_x, low_y, cores_w, low_h)
+let alerts_r = rect(right_x + cores_w + S3 + 2, low_y, right_w - cores_w - S3 - 2, low_h)
+
+clear(BG.r, BG.g, BG.b)
+
+// ── Chrome helpers ───────────────────────────────────────────────────────────
+
+fn card(r: record)
+  draw_rect_rounded(r, radius: 10, c: SURFACE)
+  draw_rect_outline(r, c: HAIR, a: 255, width: 1)
+end
+
+fn dashed_h(x0: num, x1: num, y: num, c: record, a: num)
+  let x = x0
+  while x < x1 do
+    let xe = min(x + 5.0, x1)
+    draw_line(x1: x, y1: y, x2: xe, y2: y, r: c.r, g: c.g, b: c.b, a: a, width: 1)
+    x = x + 11.0
+  end
+end
+
+// A tiny sparkline: `n` samples ending at `end_i`, autoscaled to its own range
+// so a flat-but-high series still shows its shape.
+fn sparkline(r: record, hst: record, m: num, end_i: num, n: num, c: record, fill_a: num)
+  let lo = 1000000000.0
+  let hi = -1000000000.0
+  let vals = for k in range(0, n) do
+    let v = sample(h: hst, m: m, i: end_i - (n - 1 - k))
+    if v < lo then lo = v end
+    if v > hi then hi = v end
+    v
+  end
+  if hi - lo < 0.001 then
+    hi = lo + 1.0
+  end
+  let stepx = r.w / float(n - 1)
+  let px = 0.0
+  let py = 0.0
+  for k in range(0, n) do
+    let x = r.x + stepx * float(k)
+    let y = r.y + r.h - (vals[k] - lo) / (hi - lo) * r.h
+    if k > 0 then
+      if fill_a > 0 then
+        fill_poly(points: [[px, py], [x, y], [x, r.y + r.h], [px, r.y + r.h]], r: c.r, g: c.g, b: c.b, a: fill_a)
+      end
+      draw_line(x1: px, y1: py, x2: x, y2: y, r: c.r, g: c.g, b: c.b, a: 235, width: 1.5)
+    end
+    px = x
+    py = y
+  end
+  draw_circle(cx: px, cy: py, radius: 2.0, r: c.r, g: c.g, b: c.b, a: 255)
+end
+
+// ── Header ───────────────────────────────────────────────────────────────────
+
+draw_rect(x: 0, y: 0, w: w, h: HEAD_H, r: SURFACE.r, g: SURFACE.g, b: SURFACE.b)
+draw_line(x1: 0, y1: HEAD_H, x2: w, y2: HEAD_H, r: HAIR.r, g: HAIR.g, b: HAIR.b, a: 255, width: 1)
+
+// Wordmark: a ring with an orbiting dot.
+let mark_x = PAD + 12.0
+let mark_y = 38.0
+draw_circle(cx: mark_x, cy: mark_y, radius: 11.0, r: C_CPU.r, g: C_CPU.g, b: C_CPU.b, a: 34)
+draw_circle(cx: mark_x, cy: mark_y, radius: 4.5, r: C_CPU.r, g: C_CPU.g, b: C_CPU.b, a: 255)
+let orb = time() * 1.1
+draw_circle(cx: mark_x + cos(orb) * 11.0, cy: mark_y + sin(orb) * 11.0, radius: 2.6, r: OK.r, g: OK.g, b: OK.b, a: 255)
+
+tx("ORBITAL", x: mark_x + 24.0, y: 21.0, size: T_LEAD, c: TEXT, spacing: 2.2)
+label_caps("fleet telemetry", x: mark_x + 24.0, y: 45.0, c: FAINT)
+
+draw_line(x1: mark_x + 168.0, y1: 22.0, x2: mark_x + 168.0, y2: 54.0, r: HAIR.r, g: HAIR.g, b: HAIR.b, a: 255, width: 1)
+
+// Cluster identity + counts.
+let warn_hosts = 0
+let crit_hosts = 0
+for hi in range(0, NHOST) do
+  let lv = host_level(HOSTS[hi], tick)
+  if lv == 2 then crit_hosts = crit_hosts + 1 elsif lv == 1 then warn_hosts = warn_hosts + 1 end
+end
+let ok_hosts = NHOST - warn_hosts - crit_hosts
+
+tx("prod-eu-us", x: mark_x + 192.0, y: 22.0, size: T_BODY, c: TEXT)
+label_caps("cluster", x: mark_x + 192.0, y: 45.0, c: FAINT)
+
+let stat_x = mark_x + 320.0
+fn head_stat(label: string, value: string, c: record, x: num, y: num)
+  tx(value, x, y: y - 16.0, size: T_BODY, c: c)
+  label_caps(label, x, y: y + 7.0, c: FAINT)
+end
+head_stat(label: "healthy", value: str(ok_hosts), c: OK, x: stat_x, y: 38.0)
+head_stat(label: "warning", value: str(warn_hosts), c: WARN, x: stat_x + 86.0, y: 38.0)
+head_stat(label: "critical", value: str(crit_hosts), c: CRIT, x: stat_x + 172.0, y: 38.0)
+
+// Aggregate throughput, derived from every host's network sample.
+let cluster_net = 0.0
+for hi in range(0, NHOST) do
+  cluster_net = cluster_net + sample(h: HOSTS[hi], m: 2, i: tick)
+end
+let rps = int(cluster_net * 21.0)
+head_stat(label: "requests / sec", value: commas(rps), c: TEXT, x: stat_x + 268.0, y: 38.0)
+head_stat(label: "stream clock", value: uptime, c: TEXT, x: stat_x + 428.0, y: 38.0)
+head_stat(label: "open alerts", value: str(open_alerts), c: if open_alerts > 0 then WARN else DIM end, x: stat_x + 576.0, y: 38.0)
+
+// Live / paused pill, on the right.
+let pill_w = 96.0
+let pill_r = rect(w - PAD - pill_w, 22.0, pill_w, 32.0)
+let pill_c = if paused then WARN else OK end
+draw_rect_rounded(pill_r, radius: 16, c: pill_c, a: 26)
+let pulse = if paused then 150 else int(150.0 + 100.0 * sin(time() * 3.4)) end
+draw_circle(cx: pill_r.x + 18.0, cy: pill_r.y + 16.0, radius: 4.0, r: pill_c.r, g: pill_c.g, b: pill_c.b, a: pulse)
+tx(if paused then "PAUSED" else "LIVE" end, x: pill_r.x + 30.0, y: pill_r.y + 9.0, size: T_SMALL, c: pill_c, spacing: 1.2)
+
+let rate_r = rect(pill_r.x - 78.0, 22.0, 66.0, 32.0)
+draw_rect_rounded(rate_r, radius: 16, c: RAISED)
+tx_center(RATE_NAME[rate], cx: rate_r.center_x(), y: rate_r.y + 9.0, size: T_SMALL, c: DIM)
+if clicked(rate_r) then
+  rate = (rate + 1) % len(RATES)
+end
+if clicked(pill_r) then
+  paused = !paused
+  pause_toggles = pause_toggles + 1
+end
+
+// ── Fleet column ─────────────────────────────────────────────────────────────
+
+let FOOT_H = 78
+let list_top = body_y + 34
+let list_avail = body_h - 34 - FOOT_H - S3
+let VIS_ROWS = max(4, list_avail / 56)
+let ROW_H = list_avail / VIS_ROWS
+let list_r = rect(fleet_x, list_top, fleet_w, ROW_H * VIS_ROWS)
+let foot_r = rect(fleet_x, body_y + body_h - FOOT_H, fleet_w, FOOT_H)
+
+label_caps("fleet", x: fleet_x + 2, y: body_y + 6, c: DIM)
+tx_right(str(NHOST) ++ " hosts", right_x: fleet_x + fleet_w - 2, y: body_y + 4, size: T_MICRO, c: FAINT)
+
+draw_rect_rounded(rect(list_r.x, list_r.y - 6, list_r.w, list_r.h + 12), radius: 10, c: SURFACE)
+
+let before_sel = fleet.selected
+fleet = list_update(fleet, item_count: NHOST, visible_rows: VIS_ROWS, r: list_r)
+if fleet.selected != before_sel then
+  sel_host = fleet.selected
+end
+if sel_host != fleet.selected then
+  fleet = {selected: sel_host, scroll: ensure_visible(scroll: fleet.scroll, selected: sel_host, visible_rows: VIS_ROWS)}
+end
+
+clip(x: list_r.x, y: list_r.y, w: list_r.w, h: list_r.h)
+for k in range(0, VIS_ROWS) do
+  let idx = fleet.scroll + k
+  if idx < NHOST then
+    let hst = HOSTS[idx]
+    let rr = rect(list_r.x, list_r.y + k * ROW_H, list_r.w, ROW_H)
+    let is_sel = idx == sel_host
+    let lv = host_level(hst, tick)
+    let lc = level_color(lv)
+
+    if is_sel then
+      draw_rect(rr, RAISED)
+      draw_rect(rect(rr.x, rr.y, 3, rr.h), M_COLOR[sel_metric])
+    elsif hovered(rr) then
+      draw_rect(rr, HOVER)
+    end
+    if k > 0 then
+      draw_line(x1: rr.x + 14, y1: rr.y, x2: rr.x + rr.w - 14, y2: rr.y, r: HAIR.r, g: HAIR.g, b: HAIR.b, a: 150, width: 1)
+    end
+
+    // Vertical rhythm inside the row is derived from its height, so the list
+    // can absorb the leftover pixels the pane's height leaves over.
+    let ry = rr.y + float(ROW_H - 40) / 2.0
+
+    // Status dot, haloed when it is not nominal.
+    if lv > 0 then
+      draw_circle(cx: rr.x + 20.0, cy: ry + 12.0, radius: 7.0, r: lc.r, g: lc.g, b: lc.b, a: 40)
+    end
+    draw_circle(cx: rr.x + 20.0, cy: ry + 12.0, radius: 3.5, r: lc.r, g: lc.g, b: lc.b, a: 255)
+
+    let name_c = if is_sel then BRIGHT else TEXT end
+    tx(hst.name, x: rr.x + 34, y: ry, size: T_BODY, c: name_c)
+    tx(hst.role ++ "  ·  " ++ hst.region, x: rr.x + 34, y: ry + 21, size: T_MICRO, c: if is_sel then DIM else FAINT end)
+
+    let v = sample(h: hst, m: sel_metric, i: tick)
+    tx_right(fmt_bare(sel_metric, v), right_x: rr.x + rr.w - 16, y: ry - 2, size: T_BODY, c: if lv > 0 then lc else TEXT end)
+    sparkline(rect(rr.x + rr.w - 100, ry + 22, 84, 14), hst, m: sel_metric, end_i: tick, n: 20,
+      c: if is_sel then M_COLOR[sel_metric] else FAINT end, fill_a: 0)
+  end
+end
+clip_none()
+draw_scrollbar(list_r, count: NHOST, rows: VIS_ROWS, scroll: fleet.scroll)
+
+// Fleet footer: the cluster's own load, as one bar per level band.
+draw_rect_rounded(foot_r, radius: 10, c: SURFACE)
+label_caps("cluster " ++ M_NAME[sel_metric], x: foot_r.x + 14, y: foot_r.y + 12, c: DIM)
+let agg = 0.0
+for hi in range(0, NHOST) do
+  agg = agg + sample(h: HOSTS[hi], m: sel_metric, i: tick)
+end
+let agg_avg = agg / float(NHOST)
+tx(fmt_metric(sel_metric, agg_avg), x: foot_r.x + 14, y: foot_r.y + 26, size: T_LEAD, c: M_COLOR[sel_metric])
+tx_right("avg of " ++ str(NHOST), right_x: foot_r.x + foot_r.w - 14, y: foot_r.y + 12, size: T_MICRO, c: FAINT)
+
+let bar = rect(foot_r.x + 14, foot_r.y + foot_r.h - 20, foot_r.w - 28, 6)
+draw_rect_rounded(bar, radius: 3, c: GRID)
+let frac = clamp(agg_avg / M_MAX[sel_metric], lo: 0.0, hi: 1.0)
+draw_rect_rounded(rect(bar.x, bar.y, bar.w * frac, bar.h), radius: 3, c: M_COLOR[sel_metric])
+draw_rect(rect(bar.x + bar.w * (M_WARN[sel_metric] / M_MAX[sel_metric]), bar.y - 4, 1, bar.h + 8), c: WARN, a: 170)
+draw_rect(rect(bar.x + bar.w * (M_CRIT[sel_metric] / M_MAX[sel_metric]), bar.y - 4, 1, bar.h + 8), c: CRIT, a: 170)
+
+// ── KPI tiles ────────────────────────────────────────────────────────────────
+
+let host = HOSTS[sel_host]
+
+for m in range(0, 4) do
+  let tr = rect(right_x + m * (tile_w + tile_gap), body_y, tile_w, tile_h)
+  let active = m == sel_metric
+  let mc = M_COLOR[m]
+  let v = sample(h: host, m: m, i: tick)
+  let prev = sample(h: host, m: m, i: tick - 20)
+  let lv = level_of(m, v)
+
+  draw_rect_rounded(tr, radius: 10, c: if active then RAISED else SURFACE end)
+  draw_rect_outline(tr, c: if active then mc else HAIR end, a: if active then 120 else 255 end, width: 1)
+  draw_rect_rounded(rect(tr.x + 10, tr.y, tr.w - 20, 3), radius: 2, c: mc, a: if active then 255 else 90 end)
+
+  label_caps(M_SHORT[m] ++ "  " ++ str(m + 1), x: tr.x + 14, y: tr.y + 14, c: if active then DIM else FAINT end)
+
+  let vs = fmt_bare(m, v)
+  tx(vs, x: tr.x + 14, y: tr.y + 28, size: T_HERO, c: if lv > 0 then level_color(lv) else TEXT end)
+  tx(M_UNIT[m], x: tr.x + 16 + text_width(vs, T_HERO), y: tr.y + 46, size: T_SMALL, c: FAINT)
+
+  // Delta against 20 samples ago.
+  let d = v - prev
+  let dpct = if prev > 0.001 then d / prev * 100.0 else 0.0 end
+  let up = d >= 0.0
+  let dc = if abs(dpct) < 1.0 then DIM elsif up then WARN else OK end
+  let dstr = (if up then "+" else "-" end) ++ dec(abs(dpct), 1) ++ "%"
+  tx_right(dstr, right_x: tr.x + tr.w - 14, y: tr.y + 14, size: T_MICRO, c: dc)
+
+  sparkline(rect(tr.x + 14, tr.y + 74, tr.w - 28, 20), hst: host, m: m, end_i: tick, n: 44, c: mc,
+    fill_a: if active then 46 else 24 end)
+
+  if clicked(tr) then
+    sel_metric = m
+  end
+end
+
+// ── Main streaming chart ─────────────────────────────────────────────────────
+
+card(chart_r)
+
+let WINDOW = 96
+let mc = M_COLOR[sel_metric]
+let cur = sample(h: host, m: sel_metric, i: tick)
+let cur_lv = level_of(sel_metric, cur)
+
+tx(host.name, x: chart_r.x + S4, y: chart_r.y + 16, size: T_BODY, c: TEXT)
+label_caps(M_NAME[sel_metric] ++ "  ·  last " ++ str(WINDOW) ++ "s", x: chart_r.x + S4, y: chart_r.y + 37, c: DIM)
+
+// Window statistics, computed once and reused by the axis.
+let lo = 1000000000.0
+let hi = -1000000000.0
+let sum = 0.0
+let series = for k in range(0, WINDOW) do
+  let v = sample(h: host, m: sel_metric, i: tick - (WINDOW - 1 - k))
+  if v < lo then lo = v end
+  if v > hi then hi = v end
+  sum = sum + v
+  v
+end
+let avg = sum / float(WINDOW)
+
+fn stat_cell(label: string, value: string, c: record, x: num, y: num)
+  label_caps(label, x, y, c: FAINT)
+  tx_right(value, right_x: x + 72.0, y: y - 3.0, size: T_SMALL, c: c)
+end
+let sx = chart_r.x + 300.0
+stat_cell(label: "min", value: fmt_bare(sel_metric, lo), c: DIM, x: sx, y: chart_r.y + 40)
+stat_cell(label: "avg", value: fmt_bare(sel_metric, avg), c: DIM, x: sx + 96.0, y: chart_r.y + 40)
+stat_cell(label: "max", value: fmt_bare(sel_metric, hi), c: DIM, x: sx + 192.0, y: chart_r.y + 40)
+
+label_caps("thresholds", x: sx + 320.0, y: chart_r.y + 40, c: FAINT)
+tx(fmt_bare(sel_metric, M_WARN[sel_metric]), x: sx + 400.0, y: chart_r.y + 37, size: T_SMALL, c: WARN)
+tx("/", x: sx + 448.0, y: chart_r.y + 37, size: T_SMALL, c: FAINT)
+tx(fmt_bare(sel_metric, M_CRIT[sel_metric]), x: sx + 462.0, y: chart_r.y + 37, size: T_SMALL, c: CRIT)
+
+let cur_str = fmt_bare(sel_metric, cur)
+let cur_c = if cur_lv > 0 then level_color(cur_lv) else mc end
+let unit_str = M_UNIT[sel_metric]
+let hero_right = chart_r.x + chart_r.w - S4
+tx_right(unit_str, right_x: hero_right, y: chart_r.y + 26, size: T_SMALL, c: FAINT)
+tx_right(cur_str, right_x: hero_right - text_width(unit_str, T_SMALL) - 2, y: chart_r.y + 8, size: T_HERO, c: cur_c)
+// `text_width` takes the same style record `draw_text` does, so a letter-spaced
+// label right-aligns exactly — no manual allowance for the tracking.
+let lw = upper(level_word(cur_lv))
+let lw_style = {size: T_MICRO, color: if cur_lv > 0 then cur_c else FAINT end, spacing: 1.4}
+draw_text(lw, pos: {x: hero_right - text_width(lw, lw_style), y: chart_r.y + 46}, style: lw_style)
+
+// Plot area.
+let plot = rect(chart_r.x + 66, chart_r.y + 72, chart_r.w - 66 - S4 - 4, chart_r.h - 72 - 40)
+
+// The scale reaches up to the warning line *when the series is near it*, so
+// the threshold reads as real headroom — but a quiet host is not squashed into
+// the bottom third of the card to make room for a line it will never touch.
+let head = hi * 1.10
+let vmax = if hi > M_WARN[sel_metric] * 0.80 then
+  min(max(head, M_WARN[sel_metric] * 1.06), M_MAX[sel_metric])
+else
+  min(head, M_MAX[sel_metric])
+end
+let vmin = max(0.0, lo - (vmax - lo) * 0.14)
+
+fn plot_y(p: record, v: num, vmin: num, vmax: num)
+  p.y + p.h - (v - vmin) / (vmax - vmin) * p.h
+end
+
+// Horizontal grid + y labels.
+for g in range(0, 5) do
+  let gv = vmin + (vmax - vmin) * float(g) / 4.0
+  let gy = plot_y(p: plot, v: gv, vmin: vmin, vmax: vmax)
+  draw_line(x1: plot.x, y1: gy, x2: plot.x + plot.w, y2: gy, r: GRID.r, g: GRID.g, b: GRID.b, a: 255, width: 1)
+  tx_right(fmt_bare(sel_metric, gv), right_x: plot.x - 10, y: gy - 6, size: T_MICRO, c: FAINT)
+end
+
+// Vertical grid + time labels.
+let stepx = plot.w / float(WINDOW - 1)
+for g in range(0, 5) do
+  let k = (WINDOW - 1) * g / 4
+  let gx = plot.x + stepx * float(k)
+  draw_line(x1: gx, y1: plot.y, x2: gx, y2: plot.y + plot.h, r: GRID.r, g: GRID.g, b: GRID.b, a: 200, width: 1)
+  let secs = WINDOW - 1 - k
+  let lbl = if secs == 0 then "now" else "-" ++ str(secs) ++ "s" end
+  tx_center(lbl, cx: gx, y: plot.y + plot.h + 12, size: T_MICRO, c: FAINT)
+end
+
+// Threshold lines.
+if M_WARN[sel_metric] > vmin && M_WARN[sel_metric] < vmax then
+  let wy = plot_y(p: plot, v: M_WARN[sel_metric], vmin: vmin, vmax: vmax)
+  dashed_h(plot.x, plot.x + plot.w, y: wy, c: WARN, a: 110)
+  tx("warn", x: plot.x + plot.w - 30, y: wy - 13, size: T_MICRO, c: WARN, spacing: 0)
+end
+if M_CRIT[sel_metric] > vmin && M_CRIT[sel_metric] < vmax then
+  let cy2 = plot_y(p: plot, v: M_CRIT[sel_metric], vmin: vmin, vmax: vmax)
+  dashed_h(plot.x, plot.x + plot.w, y: cy2, c: CRIT, a: 120)
+  tx("crit", x: plot.x + plot.w - 30, y: cy2 - 13, size: T_MICRO, c: CRIT, spacing: 0)
+end
+
+// Area + line. One convex quad per segment gives the fill; the stroke rides on
+// top of it.
+let px = 0.0
+let py = 0.0
+for k in range(0, WINDOW) do
+  let x = plot.x + stepx * float(k)
+  let y = plot_y(p: plot, v: series[k], vmin: vmin, vmax: vmax)
+  if k > 0 then
+    // Two passes make a cheap vertical gradient: a wash all the way down to the
+    // baseline, and a denser band hugging the curve.
+    let base = plot.y + plot.h
+    fill_poly(points: [[px, py], [x, y], [x, base], [px, base]], r: mc.r, g: mc.g, b: mc.b, a: 13)
+    fill_poly(points: [[px, py], [x, y],
+      [x, y + (base - y) * 0.42], [px, py + (base - py) * 0.42]],
+      r: mc.r, g: mc.g, b: mc.b, a: 24)
+    draw_line(x1: px, y1: py, x2: x, y2: y, r: mc.r, g: mc.g, b: mc.b, a: 255, width: 2)
+  end
+  px = x
+  py = y
+end
+
+// The live head of the series.
+draw_circle(cx: px, cy: py, radius: 5.0, r: mc.r, g: mc.g, b: mc.b, a: 60)
+draw_circle(cx: px, cy: py, radius: 2.6, r: BRIGHT.r, g: BRIGHT.g, b: BRIGHT.b, a: 255)
+
+// Hover crosshair.
+let hover_k = -1
+if hovered(plot) then
+  // `clamp` promotes to float, and a float is not a list index.
+  hover_k = int(clamp(round((mouse_x() - plot.x) / stepx), lo: 0.0, hi: float(WINDOW - 1)))
+  let hx = plot.x + stepx * float(hover_k)
+  let hv = series[hover_k]
+  let hy = plot_y(p: plot, v: hv, vmin: vmin, vmax: vmax)
+  draw_line(x1: hx, y1: plot.y, x2: hx, y2: plot.y + plot.h, r: TEXT.r, g: TEXT.g, b: TEXT.b, a: 55, width: 1)
+  draw_circle(cx: hx, cy: hy, radius: 4.5, r: mc.r, g: mc.g, b: mc.b, a: 255)
+  draw_circle(cx: hx, cy: hy, radius: 2.0, r: BG.r, g: BG.g, b: BG.b, a: 255)
+
+  let secs = WINDOW - 1 - hover_k
+  let l1 = fmt_metric(sel_metric, hv)
+  let l2 = if secs == 0 then "now" else str(secs) ++ "s ago" end
+  let bw = max(text_width(l1, T_BODY), text_width(l2, T_MICRO)) + 34.0
+  let bx = clamp(hx + 16.0, lo: plot.x, hi: plot.x + plot.w - bw)
+  let by = clamp(hy - 50.0, lo: plot.y + 4.0, hi: plot.y + plot.h - 54.0)
+  let tipr = rect(bx, by, bw, 50)
+  draw_rect_rounded(tipr, radius: 8, c: RAISED, a: 250)
+  draw_rect_outline(tipr, c: HAIR, a: 255, width: 1)
+  draw_rect_rounded(rect(tipr.x + 8, tipr.y + 10, 2, tipr.h - 20), radius: 1, c: mc)
+  tx(l1, x: tipr.x + 18, y: tipr.y + 10, size: T_BODY, c: mc)
+  tx(l2, x: tipr.x + 18, y: tipr.y + 30, size: T_MICRO, c: FAINT)
+end
+
+// ── Per-core heatmap ─────────────────────────────────────────────────────────
+
+card(cores_r)
+let NCORE = 8
+let grid_x = cores_r.x + S4 + 30.0
+let grid_y = cores_r.y + 48.0
+let grid_w = cores_r.w - (grid_x - cores_r.x) - S4
+let COLS = 36
+let cell_w = grid_w / float(COLS)
+let cell_h = min(19.0, (cores_r.h - 48.0 - 34.0) / float(NCORE) - 3.0)
+
+label_caps("core utilization  ·  " ++ host.name, x: cores_r.x + S4, y: cores_r.y + 18, c: DIM)
+tx_right(str(NCORE) ++ " cores  ·  " ++ str(COLS) ++ "s", right_x: cores_r.x + cores_r.w - S4, y: cores_r.y + 16, size: T_MICRO, c: FAINT)
+
+fn heat(v: num)
+  let t = clamp(v / 100.0, lo: 0.0, hi: 1.0)
+  if t < 0.30 then
+    color_lerp(#121822, #1b4a6b, t: t / 0.30)
+  elsif t < 0.58 then
+    color_lerp(#1b4a6b, #2fa9c4, t: (t - 0.30) / 0.28)
+  elsif t < 0.78 then
+    color_lerp(#2fa9c4, #8fd07a, t: (t - 0.58) / 0.20)
+  elsif t < 0.90 then
+    color_lerp(#8fd07a, #f0b344, t: (t - 0.78) / 0.12)
+  else
+    color_lerp(#f0b344, #ff5f6d, t: (t - 0.90) / 0.10)
+  end
+end
+
+for c in range(0, NCORE) do
+  let cy3 = grid_y + float(c) * (cell_h + 3.0)
+  tx_right("c" ++ str(c), right_x: grid_x - 8.0, y: cy3 + 4.0, size: T_MICRO, c: FAINT)
+  for k in range(0, COLS) do
+    let i = tick - (COLS - 1 - k)
+    let v = core_load(h: host, core: c, i: i)
+    let cx3 = grid_x + float(k) * cell_w
+    draw_rect_rounded(rect(cx3, cy3, cell_w - 2.0, cell_h), radius: 3, c: heat(v))
+  end
+end
+
+// Ramp legend.
+let legend_y = grid_y + float(NCORE) * (cell_h + 3.0) + 12.0
+label_caps("0%", x: grid_x, y: legend_y + 3.0, c: FAINT)
+for k in range(0, 60) do
+  let v = float(k) / 59.0 * 100.0
+  draw_rect(rect(grid_x + 26.0 + float(k) * 4.4, legend_y, 4.4, 8), heat(v))
+end
+label_caps("100%", x: grid_x + 26.0 + 60.0 * 4.4 + 8.0, y: legend_y + 3.0, c: FAINT)
+
+let busiest = 0.0
+for c in range(0, NCORE) do
+  let v = core_load(h: host, core: c, i: tick)
+  if v > busiest then busiest = v end
+end
+tx_right("peak core " ++ dec(busiest, 1) ++ "%", right_x: cores_r.x + cores_r.w - S4, y: legend_y - 1.0, size: T_MICRO,
+  c: if busiest >= 90.0 then CRIT elsif busiest >= 78.0 then WARN else DIM end)
+
+// ── Alert feed ───────────────────────────────────────────────────────────────
+
+card(alerts_r)
+let unacked = open_alerts
+
+label_caps("alerts", x: alerts_r.x + S4, y: alerts_r.y + 18, c: DIM)
+if unacked > 0 then
+  let badge = rect(alerts_r.x + S4 + 54, alerts_r.y + 11, 22 + 8 * float(len(str(unacked))), 18)
+  draw_rect_rounded(badge, radius: 9, c: CRIT, a: 40)
+  tx_center(str(unacked), cx: badge.center_x(), y: badge.y + 3, size: T_MICRO, c: CRIT)
+end
+tx_right("a  ack all", right_x: alerts_r.x + alerts_r.w - S4, y: alerts_r.y + 16, size: T_MICRO, c: FAINT)
+
+let AROW_H = 52
+// Whole rows only: a half-row peeking under the clip reads as a rendering bug
+// rather than as "there is more below", which is what the scrollbar is for.
+let a_vis = max(1, (int(alerts_r.h) - 46) / AROW_H)
+let feed_r = rect(alerts_r.x + 10, alerts_r.y + 38, alerts_r.w - 20, a_vis * AROW_H)
+alerts_scroll = scroll_update(offset: alerts_scroll, total_lines: len(alerts), visible_lines: a_vis, r: feed_r, active: false)
+
+clip(x: feed_r.x, y: feed_r.y, w: feed_r.w, h: feed_r.h)
+for k in range(0, a_vis) do
+  let idx = alerts_scroll + k
+  if idx < len(alerts) then
+    let al = alerts[idx]
+    let ar = rect(feed_r.x, feed_r.y + k * AROW_H, feed_r.w, AROW_H)
+    let sc = level_color(al.sev)
+    let fade = if al.ack then 90 else 255 end
+
+    if hovered(ar) then
+      draw_rect_rounded(ar, radius: 6, c: HOVER)
+    end
+    draw_rect_rounded(rect(ar.x + 4, ar.y + 7, 3, AROW_H - 16), radius: 2, c: sc, a: fade)
+
+    let hn = HOSTS[al.host]
+    tx(hn.name, x: ar.x + 16, y: ar.y + 8, size: T_SMALL, c: if al.ack then DIM else TEXT end)
+    let sev_lbl = upper(sev_word(al.sev))
+    draw_text(sev_lbl, pos: {x: ar.x + 16 + text_width(hn.name, T_SMALL) + 10, y: ar.y + 10},
+      style: {size: T_MICRO, color: sc, spacing: 1.2})
+    tx_right(ago(tick - al.t), right_x: ar.x + ar.w - 10, y: ar.y + 9, size: T_MICRO, c: FAINT)
+    tx(ellipsize(al.text, avail_px: ar.w - 28, size: T_MICRO), x: ar.x + 16, y: ar.y + 27, size: T_MICRO,
+      c: if al.ack then FAINT else DIM end)
+
+    if clicked(ar) then
+      sel_host = al.host
+      sel_metric = al.metric
+      fleet = {selected: al.host, scroll: ensure_visible(scroll: fleet.scroll, selected: al.host, visible_rows: VIS_ROWS)}
+    end
+  end
+end
+clip_none()
+if len(alerts) == 0 then
+  tx_center("no alerts", cx: feed_r.center_x(), y: feed_r.y + feed_r.h / 2 - 8, size: T_SMALL, c: FAINT)
+end
+draw_scrollbar(feed_r, count: len(alerts), rows: a_vis, scroll: alerts_scroll)
+
+// ── Footer hint ──────────────────────────────────────────────────────────────
+let hint = "↑↓ host    1-4 metric    space pause    [ ] rate    a ack"
+tx(hint, x: fleet_x + 2, y: h - 16, size: T_MICRO, c: FAINT, spacing: 0)

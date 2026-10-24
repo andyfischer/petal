@@ -113,9 +113,9 @@ pub enum Prefer {
     /// them are listed first when they verify; the others are still listed.
     #[default]
     Soft,
-    /// v1's rule: once the program declares a `config let`, every other
-    /// named binding is pinned, and when a config literal can move the goal,
-    /// only config literals are used.
+    /// v1's rule: once the program declares a `config let` (or a `tunable`
+    /// that marks a literal), every other named binding is pinned, and when a
+    /// config or tunable literal can move the goal, only those are used.
     ConfigStrict,
 }
 
@@ -561,7 +561,14 @@ impl DmSession {
         // baseline, so the loaded filter takes it out (§9 M3).
         let (elig, strict): (Vec<Eligibility>, bool) = {
             let program = env.get_program(pid).unwrap();
-            let strict = req.prefer == Prefer::ConfigStrict && program.terms.iter().any(|t| t.is_config);
+            // The program declares knobs: a `config let`, or a `tunable`
+            // that marks a literal (a hint-only program has knobs too).
+            let strict = req.prefer == Prefer::ConfigStrict
+                && (program.terms.iter().any(|t| t.is_config)
+                    || read_hints(program, env.native_table())
+                        .marks
+                        .values()
+                        .any(|h| matches!(h, Hint::Tunable { .. })));
             let e = self
                 .params
                 .iter()
@@ -584,7 +591,7 @@ impl DmSession {
                     {
                         return Eligibility {
                             screen: false,
-                            edit: Err("pinned: the program declares `config let` knobs (ConfigStrict)"),
+                            edit: Err("pinned: the program declares `config let` or `tunable` knobs (ConfigStrict)"),
                         };
                     }
                     e

@@ -885,6 +885,51 @@ fn setting_a_value_directly_equals_reloading_the_edited_file() {
     }
 }
 
+/// `config let X = tunable(v, …)`: `X` names `v`, so a drag sets it by the
+/// binding's own name, across zero too, and the range is not enforced. A file
+/// edit of the number inside is a value patch as well.
+#[test]
+fn a_tunable_config_is_set_by_name_without_a_recompile() {
+    let old = "config let SPEED = tunable(4.0, 1, 10)\nconfig let G = tunable(-0.5, min: -2, max: 2)\nstate t = 0\nt += 1\nprint(SPEED, G, t)\n";
+    let mut a = world(old, &[], RunPolicy::FAST);
+    let mut b = world(old, &[], RunPolicy::FAST);
+    let before = a.env.work_counters();
+    let mut text = old.to_string();
+    for (path, value) in [
+        ("SPEED", StaticValue::float(5.5)),
+        ("G", StaticValue::float(0.75)),
+        // Outside the declared range: advice, not a clamp.
+        ("SPEED", StaticValue::float(-20.0)),
+    ] {
+        let report = a.env.set_config_value(a.sid, None, path, &value).unwrap();
+        assert_eq!(report.outcome, ReloadOutcome::Patched, "{path}");
+        text = petal::literal_edit::set_path(&text, path, &value).unwrap();
+        let program = b.env.compile_program(b.pid, &text).unwrap();
+        b.env.transfer_state(b.sid, program).unwrap();
+        assert_same_program(&mut a, &mut b, path);
+        assert_eq!(frame(&mut a), frame(&mut b), "{path}");
+    }
+    assert_eq!(a.env.work_counters(), before);
+    assert_eq!(
+        a.env.program_source(a.pid, None),
+        Some("config let SPEED = tunable(-20.0, 1, 10)\nconfig let G = tunable(0.75, min: -2, max: 2)\nstate t = 0\nt += 1\nprint(SPEED, G, t)\n")
+    );
+    assert!(frame(&mut a).starts_with("-20.0 0.75 "));
+
+    // Editing the number inside the call in the file is a value patch, and
+    // so is a bound.
+    let mut w = world(old, &[], RunPolicy::FAST);
+    frame(&mut w);
+    for edited in [
+        old.replace("tunable(4.0, 1, 10)", "tunable(7.0, 1, 10)"),
+        old.replace("tunable(4.0, 1, 10)", "tunable(7.0, 2, 12)"),
+    ] {
+        let report = w.env.reload_program(w.sid, &edited, None).unwrap();
+        assert_eq!(report.outcome, ReloadOutcome::Patched, "{edited}");
+        assert!(frame(&mut w).starts_with("7.0 -0.5 "));
+    }
+}
+
 #[test]
 fn setting_a_value_that_needs_a_recompile_is_refused_and_changes_nothing() {
     let old = "config let N = 10\nconfig let XS = [1, 2]\nlet plain = 5\nprint(N, XS, plain)\n";

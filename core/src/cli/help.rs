@@ -815,13 +815,18 @@ DESCRIPTION
               a fn that only forwards its arguments to a builtin
        dm-hint-not-literal (report only)
               tunable(e) on a computed e, which marks nothing for direct
-              manipulation
+              manipulation; on a string, bool, record or list it points to
+              config let, which exposes a setting of any type
        dm-hint-bounds (report only)
               a tunable bound (min, max, step) that is not a literal, or a
               min above the max
        dm-hint-state-init (report only)
               state x = tunable(...): a drag cannot move a running state's
               initial value
+       config-not-data (report only)
+              config let X = e where e needs evaluating (level.SPAWN, 2 * W):
+              hosts read config values without running the program, so they
+              see none
        int-division (opt-in, report only)
               a / b on two ints, truncated, then used as a float. Opt-in
               because a row or column index scaled by a float is the same
@@ -1583,8 +1588,9 @@ FILTERS
               never edit.
 
        --config-strict
-              (v2) v1's rule: once the program has a config let, only config
-              literals move when they can.
+              (v2) v1's rule: once the program has a config let (or a tunable
+              that marks a literal), only config and tunable literals move
+              when they can.
 
 OPTIONS
        --alternatives N

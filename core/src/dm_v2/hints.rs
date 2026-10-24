@@ -56,6 +56,35 @@ pub const BOUNDS: &str = "dm-hint-bounds";
 /// The name of the warning that a host replaced a hint builtin.
 pub const DISABLED: &str = "dm-hint-disabled";
 
+/// The message for `tunable(e)` where `e` is data but not a number
+/// (`text` is how it is written, `kind` what it is: "a string"). Shared by
+/// this reader and `petal lint`.
+pub fn not_a_number_message(text: &str, kind: &str) -> String {
+    format!(
+        "`tunable` marks a number; `{text}` is {kind}. To expose a setting of any type, \
+         declare it with `config let`"
+    )
+}
+
+/// What `id` is when it is a constant that is not a number: "a string",
+/// "a bool", "`nil`", with how it reads.
+fn non_number_constant(program: &Program, id: TermId) -> Option<(String, &'static str)> {
+    let mut cur = id;
+    for _ in 0..16 {
+        let t = program.terms.get(cur.0 as usize)?;
+        if let TermOp::Constant(c) = t.op {
+            return match program.constants.get(c) {
+                ConstantValue::String(s) => Some((format!("{s:?}"), "a string")),
+                ConstantValue::Bool(b) => Some((b.to_string(), "a bool")),
+                ConstantValue::Nil => Some(("nil".to_string(), "`nil`")),
+                _ => None,
+            };
+        }
+        cur = provenance::alias_target(program, cur)?;
+    }
+    None
+}
+
 /// Something about the hints that a tool should tell the author.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HintWarning {
@@ -191,10 +220,13 @@ pub fn read_hints(program: &Program, natives: &NativeFnTable) -> Hints {
                         rule: NOT_LITERAL,
                         term: Some(term.id),
                         span: span(term.id),
-                        message: "`tunable` marks a literal or a name bound to one; its \
-                                  argument is computed, so nothing is marked. Wrap the \
-                                  literal itself"
-                            .to_string(),
+                        message: match non_number_constant(program, arg) {
+                            Some((text, kind)) => not_a_number_message(&text, kind),
+                            None => "`tunable` marks a literal or a name bound to one; its \
+                                     argument is computed, so nothing is marked. Wrap the \
+                                     literal itself"
+                                .to_string(),
+                        },
                     }),
                 }
                 if let (Some(lo), Some(hi)) = (min, max)

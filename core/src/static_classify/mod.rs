@@ -395,6 +395,10 @@ pub struct StaticDecl {
     /// claims to be. `None` for every other declaration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub const_check: Option<ConstCheck>,
+    /// For `config let X = tunable(v, min, max, step)`: the bounds written
+    /// (see [`crate::static_value::StaticBinding::range`]). `None` otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range: Option<crate::static_value::StaticRange>,
     /// The declarations this one refers to directly, by qualified name.
     pub direct_depends_on: BTreeSet<String>,
     /// Every declaration this one's value can depend on, by qualified name:
@@ -2922,9 +2926,38 @@ impl<'a> Pass<'a> {
             .collect();
         let names: Vec<String> = (0..n).map(|gi| self.qualified(&modules, gi)).collect();
 
+        // The ranges of `config let X = tunable(…)`, read off each file's
+        // source once, and only for a file that mentions `tunable`.
+        type Ranges = std::collections::HashMap<String, crate::static_value::StaticRange>;
+        let mut ranges: std::collections::HashMap<u16, Ranges> = Default::default();
+        let mut range_of = |file: FileId, name: &str| {
+            ranges
+                .entry(file.0)
+                .or_insert_with(|| {
+                    let source = p
+                        .source_map
+                        .file(file)
+                        .map_or(p.source.as_str(), |f| f.source.as_str());
+                    if !source.contains("tunable") {
+                        return Ranges::new();
+                    }
+                    crate::static_value::static_bindings(source)
+                        .map(|bs| {
+                            bs.into_iter()
+                                .filter_map(|b| Some((b.name, b.range?)))
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                })
+                .get(name)
+                .copied()
+        };
         let mut decls: Vec<StaticDecl> = Vec::with_capacity(n);
         for (gi, (class, static_pure, reason)) in classified.into_iter().enumerate() {
             let g = &self.groups[gi];
+            let range = (g.kind == DeclKind::ConfigLet)
+                .then(|| range_of(g.file, &g.name))
+                .flatten();
             let at = match g.kind {
                 DeclKind::Enum => g.canonical,
                 _ => g.defs.first().copied().unwrap_or(g.canonical),
@@ -2972,6 +3005,7 @@ impl<'a> Pass<'a> {
                 readers: readers[gi].0.clone(),
                 mutated_by: readers[gi].1.clone(),
                 const_check,
+                range,
                 direct_depends_on: direct[gi].iter().map(|d| names[*d].clone()).collect(),
                 depends_on: closed[gi].iter().map(|d| names[*d].clone()).collect(),
                 term: g.canonical,

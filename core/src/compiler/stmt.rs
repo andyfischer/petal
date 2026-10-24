@@ -53,10 +53,16 @@ impl Compiler {
                 // in it compiles to one constant, so a drag across zero
                 // changes a value and not the program's shape (see
                 // `crate::source_diff`, "Signed numbers in config data").
+                // Every literal in that data is config too, not only the
+                // binding's root term (a record's fields, a list's items).
                 if *is_config && !*is_var {
                     let folds = &mut self.config_folds;
-                    crate::source_diff::config_folded_numbers(value, &mut |e| {
-                        folds.insert(e.span);
+                    let literals = &mut self.config_literals;
+                    crate::source_diff::config_data_literals(value, &mut |e| {
+                        if matches!(e.kind, crate::ast::ExprKind::UnaryOp { .. }) {
+                            folds.insert(e.span);
+                        }
+                        literals.insert(e.span);
                     });
                 }
                 let val_tid = self.compile_bound_expr(name, value);

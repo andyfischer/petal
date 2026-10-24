@@ -239,6 +239,41 @@ fn config_preferred_softly() {
     assert_eq!(all_edits(&resp), vec![vec!["10→25"]]);
 }
 
+/// A literal inside a `config let` record or list is config data: it gets
+/// the config weight, matches the `config` selector, and ConfigStrict keeps
+/// it (docs/proposals/config-let-vs-tunable.md, bug 1).
+#[test]
+fn config_record_and_list_literals_are_config() {
+    let mut t = T::new("config let BOX = {x: 140, y: 90}\nconfig let XS = [20, 30]\ndraw(BOX.x + 10, XS[1], 10)\n");
+    let resp = t.propose(&req(vec![DmGoal::to(t.arg(0, 0), 160.0)]));
+    let e = all_edits(&resp);
+    assert_eq!(e[0], vec!["140→150"], "{e:?}");
+    assert!(resp.alternatives[0].config_only);
+    assert!(e.contains(&vec!["10→20".to_string()]), "the call-site literal is still listed: {e:?}");
+    let mut r = req(vec![DmGoal::to(t.arg(0, 0), 160.0)]);
+    r.filter = allow(vec![ParamSelector::ConfigOnly]);
+    assert_eq!(all_edits(&t.propose(&r)), vec![vec!["140→150"]]);
+    let mut r = req(vec![DmGoal::to(t.arg(0, 1), 45.0)]);
+    r.filter = allow(vec![ParamSelector::ConfigOnly]);
+    assert_eq!(all_edits(&t.propose(&r)), vec![vec!["30→45"]]);
+    let mut r = req(vec![DmGoal::to(t.arg(0, 0), 160.0)]);
+    r.prefer = Prefer::ConfigStrict;
+    assert_eq!(all_edits(&t.propose(&r)), vec![vec!["140→150"]]);
+}
+
+/// ConfigStrict in a program whose only knobs are `tunable`s: the other
+/// named bindings are pinned, as they are under a `config let` (bug 2).
+#[test]
+fn config_strict_counts_tunable_knobs() {
+    let mut t = T::new("let a = tunable(10)\nlet b = 50\ndraw(a + b, 100, 10)\n");
+    let soft = all_edits(&t.propose(&req(vec![DmGoal::to(t.arg(0, 0), 75.0)])));
+    assert_eq!(soft[0], vec!["10→25"], "{soft:?}");
+    assert!(soft.contains(&vec!["50→65".to_string()]), "{soft:?}");
+    let mut r = req(vec![DmGoal::to(t.arg(0, 0), 75.0)]);
+    r.prefer = Prefer::ConfigStrict;
+    assert_eq!(all_edits(&t.propose(&r)), vec![vec!["10→25"]]);
+}
+
 // ── 3. two_goals_one_gesture ─────────────────────────────────────────────
 
 #[test]

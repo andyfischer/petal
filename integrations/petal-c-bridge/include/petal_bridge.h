@@ -908,6 +908,10 @@ const char* pb_vm_last_reload_json(pb_vm* vm);
  * drag ends, and the reload that follows has nothing to do. To abandon the
  * drag instead, pb_vm_reload: the file's own values come back.
  *
+ * For `config let SPEED = tunable(4.0, 0, 10)`, `SPEED` sets the 4.0 (see
+ * pb_source_*). The value is not clamped to the declared "range": clamp in
+ * the host if the setting needs a hard limit.
+ *
  * PB_ERR_NEEDS_RELOAD when the value has a different type or shape from the
  * one written (10 to 10.5, a list that grew, a field that is not there):
  * write the file and reload for those. PB_ERR_NOT_FOUND when the path or file
@@ -1003,6 +1007,10 @@ pb_status pb_vm_apply_scenario(pb_vm* vm, const pb_scenario* s, size_t frame, si
  * `[index]` (into a list literal, or the arguments of a call such as
  * `vec3(0.3, -1.0, 0.5)`) steps. The name alone is the binding's whole
  * right-hand side; the last binding of a name is the one read and edited.
+ * One exception: in `config let SPEED = tunable(4.0, 0, 10)` the name is the
+ * value, `4.0` (the `tunable` gives the setting a range, reported as
+ * "range"), so `SPEED` reads and edits that number and the bounds stay as
+ * written.
  */
 typedef struct pb_source pb_source;
 
@@ -1019,9 +1027,17 @@ const char* pb_source_text(const pb_source* s);
  *   [{"name": "POST", "config": true, "exported": true, "line": 77,
  *     "text": "{exposure: 1.45}", "comment": "The night look.",
  *     "value": {"rec": {"exposure": 1.45}}},
+ *    {"name": "SPEED", "config": true, ..., "text": "4.0", "value": 4.0,
+ *     "range": {"min": 0.0, "max": 10.0}},
  *    {"name": "atmosphere", ..., "reason": "a function declaration"}]
  *
  * `config`: written `config let`. `text`: the right-hand side as written.
+ * `range`: present only for `config let X = tunable(v, min, max, step)`
+ * (bounds by position or by name); it holds the bounds written as number
+ * literals, each of "min", "max" and "step" omitted when it is not. `value`
+ * and `text` are then `v`'s. The range is advice for a slider's ends, as it
+ * is to direct manipulation: nothing enforces it (pb_vm_set_config and the
+ * value edits do not clamp), so a host that wants a hard limit clamps.
  * `comment`: the comment block directly above. A binding has either `value`
  * (its static value: literals, lists, records, calls, variants of the file's
  * enums and names bound above) or `reason` (why it has none: arithmetic, a

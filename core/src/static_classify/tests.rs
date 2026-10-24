@@ -1587,3 +1587,24 @@ fn a_compile_error_is_named_in_the_reason() {
     let chain = why(&r, "X");
     assert!(chain.contains("LATE"), "{chain}");
 }
+
+#[test]
+fn a_tunable_config_let_reports_its_range() {
+    let r = report(
+        "config let SPEED = tunable(4.0, min: 0, max: 10)\nconfig let BOX = {x: 140}\nlet R = tunable(2.0, 0, 5)\nprint(SPEED, BOX, R)\n",
+    );
+    let speed = decl(&r, "SPEED");
+    assert_eq!(speed.kind, DeclKind::ConfigLet);
+    assert_eq!(
+        speed.range,
+        Some(crate::static_value::StaticRange { min: Some(0.0), max: Some(10.0), step: None })
+    );
+    // A record's literals are config too, but the declaration is still one
+    // `config let`, with no range.
+    assert_eq!(decl(&r, "BOX").kind, DeclKind::ConfigLet);
+    assert_eq!(decl(&r, "BOX").range, None);
+    // A plain `let` has none.
+    assert_eq!(decl(&r, "R").range, None);
+    let json = r.to_json(false).to_string();
+    assert!(json.contains("\"range\":{\"max\":10.0,\"min\":0.0}"), "{json}");
+}

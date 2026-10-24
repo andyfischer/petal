@@ -132,9 +132,14 @@ pub fn parse_binding_path(path: &str) -> Option<(String, Vec<PathSeg>)> {
 /// and leave the rest of the literal, comments included, exactly as written.
 pub fn find_binding_path(stmts: &[Stmt], name: &str, path: &[PathSeg]) -> Option<SourceSpan> {
     let mut expr = stmts.iter().rev().find_map(|stmt| match &stmt.kind {
+        // `config let X = tunable(v, …)`: `X` names `v`, as it does to
+        // `crate::literal_edit` and `crate::static_value::static_bindings`.
         StmtKind::Let {
-            name: bound, value, ..
-        } if bound == name => Some(value),
+            name: bound,
+            value,
+            is_config,
+            ..
+        } if bound == name => Some(crate::static_value::config_value_expr(value, *is_config)),
         StmtKind::Assign {
             target: AssignTarget::Name(bound),
             value,

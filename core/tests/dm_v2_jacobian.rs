@@ -314,6 +314,17 @@ fn tunable_range_recorded() {
     assert!(matches!(env.take_output_buffer(sym).as_slice(), [Value::Int(9)]));
 }
 
+#[test]
+fn tunable_on_a_non_number_says_so() {
+    let (env, pid, _) = load("let flag = true\nprint(tunable(flag), tunable(\"title\"))\n");
+    let h = read_hints(env.get_program(pid).unwrap(), env.native_table());
+    let messages: Vec<&str> = h.warnings.iter().filter(|w| w.rule == hints::NOT_LITERAL).map(|w| w.message.as_str()).collect();
+    assert_eq!(messages.len(), 2, "{messages:?}");
+    assert!(messages[0].starts_with("`tunable` marks a number; `true` is a bool."), "{}", messages[0]);
+    assert!(messages[1].contains("`\"title\"` is a string"), "{}", messages[1]);
+    assert!(messages.iter().all(|m| m.ends_with("declare it with `config let`")));
+}
+
 // ── 7. screening_cost ────────────────────────────────────────────────────
 
 #[test]

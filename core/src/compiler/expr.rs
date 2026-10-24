@@ -21,11 +21,19 @@ impl Compiler {
             let cid = self.constants.intern(cv);
             let tid = self.emit_term(TermOp::Constant(cid), smallvec![], None);
             self.source_map.add(tid, span);
+            self.terms[tid.0 as usize].is_config |= self.config_literals.contains(&span);
             return tid;
         }
         let tid = self.compile_expr_kind(&expr.kind, span);
         // Record source span for the primary term emitted by this expression
         self.source_map.add(tid, span);
+        // A literal in a `config let`'s data (see `Compiler::config_literals`).
+        if !self.config_literals.is_empty()
+            && self.config_literals.contains(&span)
+            && matches!(expr.kind, ExprKind::Literal(_) | ExprKind::UnaryOp { .. })
+        {
+            self.terms[tid.0 as usize].is_config = true;
+        }
         tid
     }
 

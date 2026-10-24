@@ -98,31 +98,45 @@ pub fn config_data_children(e: &Expr) -> bool {
 /// initializer of a `config let`: the expressions the compiler folds into one
 /// constant each.
 pub fn config_folded_numbers(value: &Expr, out: &mut impl FnMut(&Expr)) {
-    if matches!(value.kind, ExprKind::UnaryOp { .. }) {
-        if signed_number(value).is_some() {
-            out(value);
+    config_data_literals(value, &mut |e| {
+        if matches!(e.kind, ExprKind::UnaryOp { .. }) {
+            out(e);
         }
-        return;
-    }
-    if !config_data_children(value) {
-        return;
-    }
+    });
+}
+
+/// Every literal in a config data position of `value`, the initializer of a
+/// `config let`: a number (negated or not), string, bool or `nil` at the top
+/// level or reached through list elements, record fields and call arguments
+/// ([`config_data_children`]). A negated number is visited once, as the
+/// negation (the unit the compiler folds), not as its operand.
+///
+/// These are the literals the compiler marks `is_config`, so a number nested
+/// in `config let BOX = {x: 140}` is config data to direct manipulation the
+/// same way `config let X = 140` is.
+pub fn config_data_literals(value: &Expr, out: &mut impl FnMut(&Expr)) {
     match &value.kind {
+        ExprKind::Literal(_) => out(value),
+        ExprKind::UnaryOp { .. } => {
+            if signed_number(value).is_some() {
+                out(value);
+            }
+        }
         ExprKind::List(items) => {
             for item in items {
-                config_folded_numbers(item, out);
+                config_data_literals(item, out);
             }
         }
         ExprKind::Record(fields) => {
             for field in fields {
                 if let RecordField::Named(_, v) = field {
-                    config_folded_numbers(v, out);
+                    config_data_literals(v, out);
                 }
             }
         }
         ExprKind::Call { args, .. } => {
             for arg in args {
-                config_folded_numbers(arg, out);
+                config_data_literals(arg, out);
             }
         }
         _ => {}
@@ -721,6 +735,11 @@ struct Cmp {
     config: bool,
     /// In a config data position right now (see [`config_data_children`]).
     config_data: bool,
+    /// The old tree's `tunable(v, …)` call that a `config let` is
+    /// initialized with, by span: its `v` has the binding's own path (as
+    /// `crate::static_value::config_value_expr` addresses it) and its bounds
+    /// have none.
+    config_tunable: Option<SourceSpan>,
 }
 
 impl Cmp {
@@ -778,9 +797,13 @@ impl Cmp {
                 // a `var`.
                 self.config = *c1 && !*var1;
                 self.config_data = self.config;
+                self.config_tunable = (self.config
+                    && crate::static_value::tunable_args(v1).is_some())
+                .then_some(v1.span);
                 self.path = path;
                 let same = self.expr(v1, v2);
                 self.path = None;
+                self.config_tunable = None;
                 (self.config, self.config_data) = saved;
                 same
             }
@@ -1081,9 +1104,17 @@ impl Cmp {
                 if n1 != n2 || a1.len() != a2.len() || !self.expr(f1, f2) {
                     return false;
                 }
+                // `config let X = tunable(v, …)`: `X` is `v`.
+                let tunable_value = (self.config_tunable == Some(a.span))
+                    .then(|| crate::static_value::tunable_args(a).map(|t| t.value.span))
+                    .flatten();
                 a1.iter().zip(a2).enumerate().all(|(i, (x, y))| {
                     self.config_data = in_data;
-                    self.path = path.as_ref().map(|p| format!("{p}[{i}]"));
+                    self.path = match tunable_value {
+                        Some(v) if v == x.span => path.clone(),
+                        Some(_) => None,
+                        None => path.as_ref().map(|p| format!("{p}[{i}]")),
+                    };
                     self.expr(x, y)
                 })
             }
@@ -1647,6 +1678,24 @@ mod tests {
             change("config let x = 2 * -1\n", "config let x = 2 * 1\n"),
             SourceChange::Constructs(_)
         ));
+    }
+
+    #[test]
+    fn a_tunable_config_value_has_the_binding_path() {
+        // `config let X = tunable(v, …)`: `X` is `v` (as hosts address it),
+        // a bound has no path, and a sign flip of either is a value change.
+        let v = values(
+            "config let X = tunable(4.0, -1, 10)\n",
+            "config let X = tunable(-4.0, 1, 10)\n",
+        );
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].path.as_deref(), Some("X"));
+        assert!(v[0].config);
+        assert!(matches!(v[0].new, Literal::Float(f) if f == -4.0));
+        assert_eq!(v[1].path, None);
+        // A plain `let` keeps the call's argument paths.
+        let v = values("let X = tunable(4.0)\n", "let X = tunable(5.0)\n");
+        assert_eq!(v[0].path.as_deref(), Some("X[0]"));
     }
 
     #[test]

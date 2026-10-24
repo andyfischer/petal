@@ -4,7 +4,10 @@
 //!
 //! **`dm-hint-not-literal`**: `tunable(e)` where `e` is computed
 //! (`tunable(a + b)`). The hint marks the literal its argument is, or the
-//! literal a name is bound to, so a computed argument marks nothing. (A name
+//! literal a name is bound to, so a computed argument marks nothing. When `e`
+//! is data but not a number (`tunable(true)`, `tunable("title")`,
+//! `tunable({x: 140})`), the message says so and points to `config let`,
+//! which exposes a setting of any type. (A name
 //! bound to a computed value is caught where the hints are read,
 //! `crate::dm_v2::hints`, which sees bindings.)
 //!
@@ -56,8 +59,9 @@ pub(super) struct HintFindings {
     pub state_init: Vec<Fix>,
 }
 
-pub(super) fn plan_hint_reports(stmts: &[Stmt]) -> HintFindings {
+pub(super) fn plan_hint_reports(stmts: &[Stmt], chars: &[char]) -> HintFindings {
     let mut v = Finder {
+        chars,
         out: HintFindings { not_literal: Vec::new(), bounds: Vec::new(), state_init: Vec::new() },
     };
     if bound_names(stmts).contains("tunable") {
@@ -72,15 +76,42 @@ pub(super) fn plan_hint_reports(stmts: &[Stmt]) -> HintFindings {
     v.out
 }
 
-struct Finder {
+struct Finder<'a> {
+    chars: &'a [char],
     out: HintFindings,
+}
+
+/// What kind of data `e` is, when it is a literal of something other than a
+/// number: `tunable` cannot mark it, and a `config let` is what exposes it.
+fn non_number_kind(e: &Expr) -> Option<&'static str> {
+    if crate::static_value::color_literal(e).is_some() {
+        return Some("a color");
+    }
+    Some(match &e.kind {
+        ExprKind::Literal(Literal::String(_)) => "a string",
+        ExprKind::Literal(Literal::Bool(_)) => "a bool",
+        ExprKind::Literal(Literal::Nil) => "`nil`",
+        ExprKind::List(_) => "a list",
+        ExprKind::Record(_) => "a record",
+        _ => return None,
+    })
+}
+
+/// `text`, shortened to one line of at most 40 characters.
+fn short(text: &str) -> String {
+    let line = text.lines().next().unwrap_or("").trim_end();
+    let mut out: String = line.chars().take(40).collect();
+    if out.chars().count() < text.trim_end().chars().count() {
+        out.push('…');
+    }
+    out
 }
 
 fn report(anchor: &Expr, message: String) -> Fix {
     Fix { anchor: anchor.span.start.offset as usize, message, splices: Vec::new() }
 }
 
-impl ExprVisitor for Finder {
+impl ExprVisitor for Finder<'_> {
     fn visit_stmt(&mut self, s: &Stmt) {
         if let StmtKind::State { init, .. } = &s.kind
             && tunable_call(init).is_some()
@@ -112,13 +143,21 @@ impl ExprVisitor for Finder {
                         let marks = number(a).is_some()
                             || matches!(a.kind, ExprKind::Ident(_) | ExprKind::CellGet(_));
                         if !marks {
-                            self.out.not_literal.push(report(
-                                a,
-                                "`tunable` marks a literal or a name bound to one; this argument \
-                                 is computed, so nothing is marked. Wrap the literal itself, as in \
-                                 `tunable(a) + b`"
+                            let message = match non_number_kind(a) {
+                                Some(kind) => {
+                                    let text: String = self.chars[(a.span.start.offset as usize)
+                                        .min(self.chars.len())
+                                        ..(a.span.end.offset as usize).min(self.chars.len())]
+                                        .iter()
+                                        .collect();
+                                    crate::dm_v2::hints::not_a_number_message(&short(&text), kind)
+                                }
+                                None => "`tunable` marks a literal or a name bound to one; this \
+                                         argument is computed, so nothing is marked. Wrap the \
+                                         literal itself, as in `tunable(a) + b`"
                                     .to_string(),
-                            ));
+                            };
+                            self.out.not_literal.push(report(a, message));
                         }
                     }
                     Some(k @ 1..=3) => match number(a) {

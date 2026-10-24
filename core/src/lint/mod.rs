@@ -82,6 +82,7 @@ mod any_filter;
 mod builtin_names;
 mod casts;
 mod compound;
+mod config_data;
 mod dead_alias;
 mod dm_hints;
 mod export_to_pub;
@@ -98,6 +99,7 @@ use any_filter::plan_any_fixes;
 use builtin_names::{plan_reimplement_reports, plan_shadow_reports};
 use casts::plan_cast_fixes;
 use compound::plan_compound_fixes;
+use config_data::plan_config_data_reports;
 use dead_alias::plan_alias_fixes;
 use dm_hints::plan_hint_reports;
 use export_to_pub::plan_export_fixes;
@@ -156,6 +158,7 @@ pub const INT_DIVISION: &str = "int-division";
 pub const DM_HINT_NOT_LITERAL: &str = crate::dm_v2::hints::NOT_LITERAL;
 pub const DM_HINT_BOUNDS: &str = crate::dm_v2::hints::BOUNDS;
 pub const DM_HINT_STATE_INIT: &str = "dm-hint-state-init";
+pub const CONFIG_NOT_DATA: &str = "config-not-data";
 
 /// Every rule, in the order it runs.
 pub const RULES: &[RuleInfo] = &[
@@ -241,6 +244,12 @@ pub const RULES: &[RuleInfo] = &[
     RuleInfo {
         name: DM_HINT_STATE_INIT,
         summary: "`state x = tunable(…)`: a drag cannot move a running state's initial value",
+        opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: CONFIG_NOT_DATA,
+        summary: "a `config let` whose initializer needs evaluating, so hosts see no value",
         opt_in: false,
         fixes: Fixes::None,
     },
@@ -584,13 +593,14 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         rewrites += applied;
     }
 
-    let (_, stmts) = reparse(&p.text)?;
+    let (chars, stmts) = reparse(&p.text)?;
     p.apply(SHADOWS_BUILTIN, plan_shadow_reports(&stmts));
     p.apply(REIMPLEMENTS_BUILTIN, plan_reimplement_reports(&stmts));
-    let hints = plan_hint_reports(&stmts);
+    let hints = plan_hint_reports(&stmts, &chars);
     p.apply(DM_HINT_NOT_LITERAL, hints.not_literal);
     p.apply(DM_HINT_BOUNDS, hints.bounds);
     p.apply(DM_HINT_STATE_INIT, hints.state_init);
+    p.apply(CONFIG_NOT_DATA, plan_config_data_reports(&stmts, &chars));
 
     let (chars, stmts) = reparse(&p.text)?;
     let exports_to_pub = p.apply(PREFER_PUB, plan_export_fixes(&stmts, &chars)?);
@@ -1047,6 +1057,49 @@ mod tests {
         assert_eq!(map_back(6, &splices), 6);
         assert_eq!(map_back(7, &splices), 11);
         assert_eq!(map_back(8, &splices), 12);
+    }
+
+    #[test]
+    fn tunable_on_data_that_is_not_a_number_points_to_config_let() {
+        let src = "let a = 1.0\nlet b = 2.0\nprint(tunable(true), tunable(\"title\"), tunable({x: 140}), tunable(a + b))\n";
+        let out = lint_source(src, &LintOptions::default()).unwrap();
+        let messages: Vec<&str> = out
+            .findings
+            .iter()
+            .filter(|f| f.rule == DM_HINT_NOT_LITERAL)
+            .map(|f| f.message.as_str())
+            .collect();
+        assert_eq!(messages.len(), 4, "{messages:?}");
+        assert_eq!(
+            messages[0],
+            "`tunable` marks a number; `true` is a bool. To expose a setting of any type, \
+             declare it with `config let`"
+        );
+        assert!(messages[1].contains("`\"title\"` is a string"), "{}", messages[1]);
+        assert!(messages[2].contains("`{x: 140}` is a record"), "{}", messages[2]);
+        assert!(messages[3].contains("is computed"), "{}", messages[3]);
+        assert!(messages[..3].iter().all(|m| !m.contains("computed")));
+    }
+
+    #[test]
+    fn a_config_let_that_needs_evaluating_is_reported() {
+        let src = "let level = {SPAWN: 3}\nconfig let SPAWN = level.SPAWN\nconfig let W = 2 * 8\n\
+                   config let OK = {x: -1, c: rgb(1, 2, 3)}\nconfig let T = tunable(4.0, min: 0)\n\
+                   config let REF = OK\nconfig let BAD = tunable(level.SPAWN, 0, 9)\n\
+                   print(SPAWN, W, OK, T, REF, BAD)\n";
+        let out = lint_source(src, &LintOptions::default()).unwrap();
+        let found: Vec<(usize, &str)> = out
+            .findings
+            .iter()
+            .filter(|f| f.rule == CONFIG_NOT_DATA)
+            .map(|f| (f.line, f.message.as_str()))
+            .collect();
+        assert_eq!(found.iter().map(|f| f.0).collect::<Vec<_>>(), vec![2, 3, 7], "{found:?}");
+        assert_eq!(
+            found[0].1,
+            "a `config let` initializer is read by hosts without running the program; \
+             `level.SPAWN` is a field access, which needs evaluating, so hosts see no value"
+        );
     }
 
     #[test]

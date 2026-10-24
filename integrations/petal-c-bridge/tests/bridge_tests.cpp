@@ -1739,6 +1739,40 @@ TEST(source_reads_bindings_and_edits_by_path) {
     CHECK(!broken.error().empty());
 }
 
+// `config let X = tunable(v, min, max, step)`: hosts see `v` and the range,
+// and the path `X` names `v`, live and in the text.
+TEST(a_tunable_config_reports_its_range_and_sets_by_name) {
+    const std::string text =
+        "config let SPEED = tunable(4.0, 0, 10)   // px per frame\n"
+        "config let GRAV = tunable(-9.8, min: -20, max: 0, step: 0.1)\n"
+        "config let PLAIN = 3\n";
+    petal::Source src(text);
+    const std::optional<std::string> json = src.bindings_json();
+    REQUIRE(json.has_value());
+    CHECK_CONTAINS(*json, "\"name\":\"SPEED\",\"config\":true");
+    CHECK_CONTAINS(*json, "\"text\":\"4.0\",\"value\":4.0,\"range\":{\"min\":0.0,\"max\":10.0}");
+    CHECK_CONTAINS(*json, "\"value\":-9.8,\"range\":{\"min\":-20.0,\"max\":0.0,\"step\":0.1}");
+    CHECK(json->find("\"value\":{\"int\":3},\"range\"") == std::string::npos);
+    CHECK_EQ(src.expr("SPEED").value_or(""), std::string("4.0"));
+    CHECK(src.set_value("SPEED", "5.5"));
+    CHECK(src.set_value("GRAV", "1.5"));
+    CHECK_EQ(src.text(), std::string("config let SPEED = tunable(5.5, 0, 10)   // px per frame\n"
+                                     "config let GRAV = tunable(1.5, min: -20, max: 0, step: 0.1)\n"
+                                     "config let PLAIN = 3\n"));
+
+    // Live: the wrapped value takes a drag, across zero too, with no reload,
+    // and it is not clamped to the range.
+    petal::Vm vm;
+    vm.load_source("import io\nconfig let SPEED = tunable(4.0, 0, 10)\n"
+                   "push_output(symbol(\"out\"), SPEED)\n");
+    CHECK_EQ(run_out(vm), std::vector<double>{4});
+    CHECK(vm.set_config("SPEED", "-2.5"));
+    CHECK_EQ(vm.last_reload_kind(), PB_RELOAD_PATCHED);
+    CHECK_EQ(run_out(vm), std::vector<double>{-2.5});
+    CHECK(vm.set_config("SPEED", "12.0"));
+    CHECK_EQ(run_out(vm), std::vector<double>{12});
+}
+
 TEST(source_edits_values_in_place_keeping_style) {
     const std::string text =
         "// The look.\n"

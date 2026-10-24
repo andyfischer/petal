@@ -240,6 +240,11 @@ pub struct Compiler {
     /// of one value: what lets a running program take the edit without a
     /// recompile (see `crate::source_diff`).
     config_folds: HashSet<SourceSpan>,
+    /// Spans of every literal in the data of a `config let` initializer
+    /// (`crate::source_diff::config_data_literals`): the term each compiles
+    /// to is marked `is_config`, so `140` in `config let BOX = {x: 140}` is
+    /// config data to direct manipulation, as a scalar `config let` is.
+    config_literals: HashSet<SourceSpan>,
     /// Layout the checks compared while compiling (see
     /// [`crate::diagnostic::LayoutDep`]).
     layout_deps: Vec<crate::diagnostic::LayoutDep>,
@@ -532,6 +537,7 @@ impl Compiler {
             fn_cell_scopes: Vec::new(),
             hoisted_decls: HashSet::new(),
             config_folds: HashSet::new(),
+            config_literals: HashSet::new(),
             layout_deps: Vec::new(),
             imported_vars: HashMap::new(),
             errors: Vec::new(),

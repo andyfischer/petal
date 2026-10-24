@@ -50,7 +50,8 @@ use crate::rewrite::{
     parse_binding_path, significant_range,
 };
 use crate::static_value::{
-    StaticBinding, StaticValue, bindings_of, color_literal, element_child_lines, eval,
+    StaticBinding, StaticValue, bindings_of, color_literal, config_value_expr,
+    element_child_lines, eval,
 };
 
 /// What went wrong with a path edit, coarsely — enough for a host to pick a
@@ -653,6 +654,9 @@ impl Doc {
     }
 
     /// The last top-level binding of `name`: its statement index and value.
+    /// The last top-level binding of `name`: its statement index and where
+    /// its value is written. In `config let X = tunable(v, …)` that is `v`
+    /// ([`config_value_expr`]): the path `X` names the setting, not the hint.
     fn binding(&self, name: &str) -> Result<(usize, &Expr), EditError> {
         self.stmts
             .iter()
@@ -660,8 +664,11 @@ impl Doc {
             .rev()
             .find_map(|(i, stmt)| match &stmt.kind {
                 StmtKind::Let {
-                    name: bound, value, ..
-                } if bound == name => Some((i, value)),
+                    name: bound,
+                    value,
+                    is_config,
+                    ..
+                } if bound == name => Some((i, config_value_expr(value, *is_config))),
                 StmtKind::Assign {
                     target: AssignTarget::Name(bound),
                     value,

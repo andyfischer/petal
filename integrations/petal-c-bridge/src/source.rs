@@ -208,6 +208,15 @@ pub fn bindings_json(source: &str) -> Result<String, String> {
             }
             Err(reason) => out.push_str(&format!(",\"reason\":{}", string(reason))),
         }
+        // `config let X = tunable(v, min, max, step)`: the bounds written,
+        // each omitted when it is not.
+        if let Some(range) = &b.range {
+            let bounds: Vec<String> = [("min", range.min), ("max", range.max), ("step", range.step)]
+                .into_iter()
+                .filter_map(|(k, v)| Some(format!("\"{k}\":{}", serde_json::Value::from(v?))))
+                .collect();
+            out.push_str(&format!(",\"range\":{{{}}}", bounds.join(",")));
+        }
         out.push('}');
     }
     out.push(']');
@@ -448,6 +457,29 @@ mod tests {
         let json = bindings_json("let a = 2\nlet b = 2.0\n").unwrap();
         assert!(json.contains("\"value\":{\"int\":2}"), "{json}");
         assert!(json.contains("\"value\":2.0"), "{json}");
+    }
+
+    #[test]
+    fn a_tunable_config_reports_its_value_and_range() {
+        let src = "config let A = tunable(4.0, 0, 10)\nconfig let B = tunable(2, step: 1)\n\
+                   config let C = tunable(0.5)\nlet D = tunable(1.0, 0, 2)\n";
+        let json: serde_json::Value = serde_json::from_str(&bindings_json(src).unwrap()).unwrap();
+        assert_eq!(json[0]["value"], 4.0);
+        assert_eq!(json[0]["text"], "4.0");
+        assert_eq!(json[0]["range"], serde_json::json!({"min": 0.0, "max": 10.0}));
+        assert_eq!(json[1]["value"]["int"], 2);
+        assert_eq!(json[1]["range"], serde_json::json!({"step": 1.0}));
+        // No bound written, no range; a plain `let` is not unwrapped.
+        assert_eq!(json[2]["value"], 0.5);
+        assert!(json[2].get("range").is_none());
+        assert_eq!(json[3]["value"]["call"], "tunable");
+        assert!(json[3].get("range").is_none());
+
+        let mut s = PbSource::new(src);
+        assert_eq!(s.set_value("A", "-1.5"), Status::Ok);
+        assert_eq!(s.set("C", "0.75"), Status::Ok);
+        assert!(s.text.starts_with("config let A = tunable(-1.5, 0, 10)\n"), "{}", s.text);
+        assert!(s.text.contains("config let C = tunable(0.75)\n"), "{}", s.text);
     }
 
     #[test]

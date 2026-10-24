@@ -578,7 +578,7 @@ way, for code written against an earlier checkout.
   back to the code that produced it.
 - `petal propose-edit` and `petal apply-change` rewrite source toward a goal
   while preserving formatting and comments.
-- `petal propose-edit --v2` is direct manipulation v2: it re-runs the program
+- `petal propose-edit` uses direct manipulation v2 by default: it re-runs the program
   speculatively (escaping effects suppressed, `state` frozen, random draws
   replayed by call site, the unmodified program run twice and compared), with
   each candidate literal nudged, and solves for the literals that put an
@@ -591,8 +591,8 @@ way, for code written against an earlier checkout.
   `fn:NAME`, `config`, …); `--explain` prints the candidate table;
   `--apply --pick N` writes the chosen alternative to every file it touches;
   `--json` is a frozen shape. The seed is pinned (`--seed`, default 0) and
-  echoed. Any v2-only flag selects v2; otherwise v1 answers as before (and
-  `--v1` forces it). `petal run --trace-emits` now reports each emit's `key`
+  echoed. The legacy v1 engine answers only with `--v1` (see "Changed").
+  `petal run --trace-emits` now reports each emit's `key`
   and its native's raw arguments, and the dev MCP server's `ProposeEdit` and
   `TraceEmits` take the same options
   ([features/direct-manipulation.md](docs/features/direct-manipulation.md)).
@@ -969,6 +969,21 @@ Breaking changes made during development, newest first. For the import and
 package changes below, `petal fix-imports` does the rewriting and
 [docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
 
+- `petal propose-edit` defaults to the v2 engine, and so does the dev MCP
+  server's `ProposeEdit`. Before, a request using only v1's flags
+  (`--arg … --to`, `--configurable`, `--static`) was answered by v1; it is
+  now answered by v2, whose text output (`engine v2 · seed 0 · …`, ranked
+  alternatives) and `--json` object (`{engine, seed, goals, alternatives,
+  candidates, diagnostics, …}`) differ from v1's (`N proposals:`,
+  `{goals, proposals, …}`). A script that parses v1's output passes `--v1`
+  (MCP: `engine: "v1"`), which keeps it byte for byte; `--v2` is still
+  accepted. Without `--v1`, `--configurable x` / `--static x` mean
+  `--allow x` / `--deny x`, which are stricter (an `--allow` naming literals
+  is exact), and int literals stay ints unless `--allow-respell` is given, so
+  `--to 42.5` on `let x = 20` lands on 43 (unverified) where v1 proposed
+  `32.5`. The examples study
+  ([dev/direct-manipulation-v2-study.md](docs/dev/direct-manipulation-v2-study.md))
+  is the evidence for the switch.
 - `state` in a callback of a higher-order builtin is an error. Declaring
   `state` or `state var` while a callback of `map`, `filter`, `reduce`,
   `forEach`, `sort_by`, `sort` with a comparator, `any`, `all` or `find` is

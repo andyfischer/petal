@@ -7,7 +7,7 @@
 //! harness and the MCP server read it: a new field means adding its key
 //! here, a renamed one is a break. They also cover the `--explain` text,
 //! `--apply --pick` writing the file, the v1 output under `--v1` (unchanged),
-//! the engine selection rules, and the `key` / `native_args` that
+//! the engine selection rules (v2 by default, v1 only with `--v1`), and the `key` / `native_args` that
 //! `run --trace-emits` gained.
 
 use std::collections::BTreeSet;
@@ -286,9 +286,25 @@ fn v1_output_is_unchanged_under_v1() {
         "2 proposals:\n  1. set `x` to 32.5 (line 3)\n  2. set `offset` to 22.5 (line 2)\n\
          Narrow with --configurable <var> / --static <var>, or apply one by hand.\n"
     );
-    // Without an engine flag, v1 forms still get v1 (the default until M5).
-    let (default, _, _) = run(&["propose-edit", "--channel", "shapes", "--emit", "0", "--arg", "1", "--to", "42.5", p]);
-    assert_eq!(default, stdout);
+    // Without an engine flag, v1-shaped requests get v2 (the default since
+    // the study, plan §9). v2 keeps int literals ints unless told otherwise,
+    // so with --allow-respell it reaches v1's answers, verified.
+    let (default, stderr, ok) = run(&[
+        "propose-edit", "--channel", "shapes", "--emit", "0", "--arg", "1", "--to", "42.5", "--allow-respell", p,
+    ]);
+    assert!(ok, "{stderr}");
+    assert!(default.starts_with("engine v2 · seed 0 · "), "{default}");
+    assert!(default.contains("1. [verified] set `x` to 32.5 (line 3)"), "{default}");
+    assert!(default.contains("2. [verified] set `offset` to 22.5 (line 2)"), "{default}");
+    // v1's --static reads as --deny under v2.
+    let r = run_json(&[
+        "propose-edit", "--json", "--channel", "shapes", "--emit", "0", "--arg", "1", "--to", "42", "--static", "x", p,
+    ]);
+    assert_eq!(r["engine"], "v2");
+    let alts = r["alternatives"].as_array().unwrap();
+    assert!(!alts.is_empty(), "{r:#}");
+    assert!(alts.iter().all(|a| a["changes"].as_array().unwrap().iter().all(|c| c["binding"] != "x")), "{r:#}");
+    assert_eq!(alts[0]["changes"][0]["binding"], "offset");
 
     let r = run_json(&["propose-edit", "--v1", "--json", "--channel", "shapes", "--emit", "0", "--arg", "1", "--to", "42.5", p]);
     assert_eq!(keys(&r), set(&["channel", "emit", "goals", "applied", "arg", "goal", "proposals"]));

@@ -3,10 +3,11 @@
 // server so it can be tested without the MCP SDK (test/vitest/petal-mcp.test.ts).
 //
 // Engines (docs/features/direct-manipulation.md, docs/CLI.md):
-// - "v1" inverts the arguments of the emitting call (literal, binding, + - * /).
-// - "v2" re-runs the program speculatively and solves through function calls.
-// With no `engine`, v2 is used whenever a v2-only field is given (the CLI's
-// rule), else v1.
+// - "v2" (the default) re-runs the program speculatively and solves through
+//   function calls.
+// - "v1" (legacy, only when asked for) inverts the arguments of the emitting
+//   call (literal, binding, + - * /).
+// With no `engine` the argv carries no engine flag, and the CLI picks v2.
 
 export type ProposeGoal = {
   channel?: string;

@@ -322,7 +322,7 @@ Tracing and inspection options:
   the literal's value or `null`. `index` within a channel is the emit address
   `propose-edit --emit` takes. For a single run (no `--runs`, no
   `--state-storage`), each emit also carries `key` (the
-  `{chain_hash, path_hash, occurrence}` that `propose-edit --v2` matches
+  `{chain_hash, path_hash, occurrence}` that `propose-edit` (v2) matches
   emits by) and `native_args` (the raw arguments the emitting native was
   handed), taken from a speculative baseline run that changes nothing; the
   text form prints them as `native args: [...]`. This is the observing half of
@@ -1721,56 +1721,32 @@ something, it proposes the source edits that would put it there. This is the
 writing half of direct manipulation. See
 [features/direct-manipulation.md](features/direct-manipulation.md).
 
-Two engines answer it:
+The engine is **v2**. It runs the program again speculatively, with each
+candidate literal nudged, effects suppressed and random draws replayed, and
+measures how the goal moves. It solves through function calls, loops, records
+and math, verifies each answer by running it, and ranks the alternatives. The
+plan is [dev/direct-manipulation-v2-plan.md](dev/direct-manipulation-v2-plan.md).
+`--v2` is accepted and changes nothing.
 
-- **v1** (the default for now, or `--v1`) runs the program once with emit
-  tracing and inverts the arguments of the call that made the emit: a
-  literal, a binding, or `+ - * /` arithmetic. It proposes nothing for a value
-  that comes out of a function call.
-- **v2** (`--v2`, also chosen by any v2-only flag, or by goals on more than
-  one emit) runs the program again speculatively, with each candidate literal
-  nudged, effects suppressed and random draws replayed, and measures how the
-  goal moves. It solves through function calls, loops, records and math,
-  verifies each answer by running it, and ranks the alternatives. The plan
-  is [dev/direct-manipulation-v2-plan.md](dev/direct-manipulation-v2-plan.md).
+**v1** (legacy, `--v1` only) runs the program once with emit tracing and
+inverts the arguments of the call that made the emit: a literal, a binding, or
+`+ - * /` arithmetic. It proposes nothing for a value that comes out of a
+function call, takes only `--arg … --to` goals on one emit, and refuses the
+flags marked (v2) below. Its text and JSON output are unchanged.
 
-v2 becomes the default once the examples study (plan §5, M5) passes.
-
-#### v1
-
-Use `run --trace-emits` first to find the emit's address. For this file:
-
-```petal
-import io
-let x = 10
-let offset = 5
-push_output(symbol("shapes"), x + offset)
-```
-
-```
-$ petal run --trace-emits sketch.ptl
-
-Channel 'shapes' (1 emit):
-  [0] push_output [line 4] <- 15
-      native args: [0, 15]
-      arg 0: computed
-      arg 1: computed
-
-$ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42.5 sketch.ptl
-2 proposals:
-  1. set `x` to 37.5 (line 2)
-  2. set `offset` to 32.5 (line 3)
-Narrow with --configurable <var> / --static <var>, or apply one by hand.
-
-$ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42.5 --static x --apply sketch.ptl
-1 proposal:
-  1. set `offset` to 32.5 (line 3)
-Applied.
-```
+v2 became the default after the examples study (plan §5, M5). Before that, a
+request with only v1-shaped flags (`--arg … --to`, `--configurable`,
+`--static`) got v1; it now gets v2, whose text and `--json` output have a
+different shape (below). A script that parses v1's output must pass `--v1`.
+`--configurable` / `--static` without `--v1` mean `--allow` / `--deny`, which
+are stricter than v1's preferences: an `--allow` naming literals is exact. v2
+keeps an int literal an int unless `--allow-respell` is given, so
+`--to 42.5` on `let x = 20` misses by 0.5 where v1 proposed `32.5`.
 
 #### v2
 
-For this file, where the position comes out of a helper:
+Use `run --trace-emits` first to find the emit's address. For this file,
+where the position comes out of a helper:
 
 ```petal
 import io
@@ -1798,6 +1774,38 @@ goal: shapes[2] native-arg 1 (push_output, line 7): 80 -> 105
 Apply one with --apply --pick N; narrow with --allow/--deny; see why with --explain.
 
 $ petal propose-edit --channel shapes --emit 2 --native-arg 1 --by 25 --allow fn:place --apply sketch.ptl
+```
+
+#### v1 (legacy, `--v1`)
+
+For this file:
+
+```petal
+import io
+let x = 10
+let offset = 5
+push_output(symbol("shapes"), x + offset)
+```
+
+```
+$ petal run --trace-emits sketch.ptl
+
+Channel 'shapes' (1 emit):
+  [0] push_output [line 4] <- 15
+      native args: [0, 15]
+      arg 0: computed
+      arg 1: computed
+
+$ petal propose-edit --v1 --channel shapes --emit 0 --arg 1 --to 42.5 sketch.ptl
+2 proposals:
+  1. set `x` to 37.5 (line 2)
+  2. set `offset` to 32.5 (line 3)
+Narrow with --configurable <var> / --static <var>, or apply one by hand.
+
+$ petal propose-edit --v1 --channel shapes --emit 0 --arg 1 --to 42.5 --static x --apply sketch.ptl
+1 proposal:
+  1. set `offset` to 32.5 (line 3)
+Applied.
 ```
 
 Goals:
@@ -1828,8 +1836,9 @@ Which literals may move (v2):
   a loop bound), `rng` (one that only feeds a random draw), `path-deps`, and
   `lib` (library literals are screened for the report, never edited).
   Repeatable. An `--allow` naming literals is exact: only those move.
-- `--configurable <var>` / `--static <var>` — v1's spellings: under v1, a
-  variable to prefer / never edit; under v2, `--allow <var>` / `--deny <var>`.
+- `--configurable <var>` / `--static <var>` — v1's spellings: under v2 (the
+  default), `--allow <var>` / `--deny <var>`; under `--v1`, a variable to
+  prefer / never edit.
 - `--config-strict` — v1's rule: once the program has a `config let`, only
   config literals move when they can. Without it, config and `tunable`
   literals are preferred by cost, and the rest are still offered.
@@ -1887,7 +1896,7 @@ means the rounded edit was re-run and met the goals. `collateral` lists the
 other emitted numbers the edit moves. Spans carry 1-based line/column and
 character offsets. The EmitKey hashes are 64-bit hex strings.
 
-v1 `--json` is unchanged: one entry per goal under `goals`
+v1 (`--v1`) `--json` is unchanged: one entry per goal under `goals`
 (`{arg, goal, proposals}`), plus the flat `arg`/`goal`/`proposals` keys when
 there is exactly one goal; each proposal is
 `{description, variable, shared, config, span, new_text}`.

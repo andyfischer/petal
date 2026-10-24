@@ -41,12 +41,13 @@ keeps its formatting; only the numbers change.
 
 ## What can be edited
 
-Petal has two engines for working out the edit. The newer one (v2) can
-edit **any number the shape depends on, through any function**, as long as
-the shape moves smoothly when that number changes. The older one (v1) only
-looks at the call that drew the shape.
+Petal can edit **any number the shape depends on, through any function**,
+as long as the shape moves smoothly when that number changes. (This is the
+v2 engine, the default. The legacy v1 engine, still available with `--v1`,
+only looks at the call that drew the shape; see
+[The legacy engine](#the-legacy-engine-v1) below.)
 
-### Through function calls (v2)
+### Through function calls
 
 Take a row of circles placed by a helper:
 
@@ -63,8 +64,8 @@ end
 ```
 
 Drag the third circle 25 pixels to the right. The `x` of that
-`draw_circle` call is `place(2)`, which v1 can't see into. v2 works it out
-by experiment: it runs the program again with each number that could
+`draw_circle` call is `place(2)`, a function call. Petal works it out by
+experiment: it runs the program again with each number that could
 matter nudged a little (`gap` to 30.03, the `20` to 20.02, and so on) and
 watches how far the circle moves. From those measurements it knows that the
 circle moves 2 pixels per unit of `gap` and 1 pixel per unit of the `20`,
@@ -85,33 +86,40 @@ and recursion (the tip of a fractal tree, say). Where the relationship
 isn't a straight line, Petal takes a few steps towards the goal,
 re-checking each time.
 
-### In the call itself (v1 and v2)
+### In the call itself
 
-Both engines handle the simple cases:
+The simple cases:
 
 - **A literal number in the call**, like the `100` above. Petal edits that
   number.
 - **A variable**, like `radius`. Petal edits the variable's definition. If
-  other code also reads that variable, the edit moves those things too. v2
-  measures exactly what else moves and lists it as the alternative's
+  other code also reads that variable, the edit moves those things too.
+  Petal measures exactly what else moves and lists it as the alternative's
   *collateral*.
 - **A calculation**, like `x + offset`. There may be more than one answer:
   you could change `x`, or you could change `offset`. Petal offers both, and
   the editor asks which one you meant.
 
-v1 refuses values that come out of a function call. v2 doesn't, which is
-why it will become the default once the examples study in the
+### The legacy engine (v1)
+
+Before v2, Petal inverted the arithmetic of the drawing call itself: a
+literal, a variable, or `+ - * /`. That engine (v1) refuses values that come
+out of a function call. v2 became the default after the examples study in
+the
 [v2 plan](../dev/direct-manipulation-v2-plan.md#m5-examples-ladder-and-complexity-study)
-passes.
+cleared the bar the plan set for it (94% of ladder goals and 93% of drags
+on real apps verified, at a median of 56 runs). v1 is still there
+with `petal propose-edit --v1` (or `engine: "v1"` over MCP) for tools that
+read its output.
 
 ### What can't receive the change
 
 Some numbers have no useful effect on the shape, or must not be touched.
-v2 leaves these out and says why (`--explain` lists them):
+Petal leaves these out and says why (`--explain` lists them):
 
 - **Random numbers.** A shape scattered with `random()` stays where the
   random draw put it. The draw isn't something you can edit, and the numbers
-  that only feed it (`random_int(0, 10)`) are left alone. While v2 measures,
+  that only feed it (`random_int(0, 10)`) are left alone. While Petal measures,
   every random draw gives the same value it gave before, so the only thing
   that changes between runs is the nudge.
 - **Numbers that only choose what runs**: a loop bound, a comparison, an
@@ -153,10 +161,10 @@ let x = 20
 draw_circle(x + offset, 110, 60, 200, 80, 80)
 ```
 
-Dragging the circle above changes `offset`. With v1, once a script has any
-`config let` bindings, the other `let` bindings are left alone entirely.
-With v2, `config let` values are preferred but other numbers are still
-offered further down the list. `config let` doesn't change how the program
+Dragging the circle above changes `offset`. `config let` values are
+preferred, but other numbers are still offered further down the list (the
+legacy v1 engine, and `--config-strict`, leave the other `let` bindings
+alone entirely once a script has any `config let`). `config let` doesn't change how the program
 runs. See [syntax/config-let.md](../syntax/config-let.md).
 
 For numbers inside functions, or with a range, use `tunable`. To say "never
@@ -187,7 +195,7 @@ can say which numbers a drag may change, and let Petal work out the values:
 
 ## How it stays safe
 
-To measure, v2 runs the program many times: usually a few dozen runs,
+To measure, Petal runs the program many times: usually a few dozen runs,
 at most a couple of hundred. Those runs must not do anything you'd notice,
 and two runs must differ only by the number being nudged:
 
@@ -210,7 +218,7 @@ The live program is never touched. Every run starts from a copy.
 ## Limits
 
 - Only numbers are solved for. A goal that's a string or a bool is passed
-  to v1.
+  to the legacy v1 engine (and comes back unverified).
 - A shape that only exists for some values (behind an `if`) can be solved
   only while it stays on the same side of the `if`. Alternatives that
   change which code runs are marked as such.
@@ -254,36 +262,37 @@ Channel 'shapes' (2 emits):
 different?"
 
 ```
-$ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42.5 sketch.ptl
+$ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42 sketch.ptl
+engine v2 · seed 0 · 11 runs
+goal: shapes[0] arg 1 (push_output, line 4): 30 -> 42
+3 alternatives:
+  1. [verified] set `x` to 32 (line 3); moves nothing else
+       line 3 `x`: 20 -> 32
+       reaches 42 · score 1.06
+  2. [verified] set `offset` to 22 (line 2); moves nothing else
+       line 2 `offset`: 10 -> 22
+       reaches 42 · score 1.12
+  3. [verified] set `offset` to 12 (line 2), set `x` to 30 (line 3); moves nothing else
+  ...
+Apply one with --apply --pick N; narrow with --allow/--deny; see why with --explain.
+```
+
+Add `--deny x` to rule out `x`, which leaves one alternative, and `--apply`
+to write it to the file. `--native-arg 1` addresses the raw second argument
+of `push_output` instead of the user-file call's, and `--by 12` asks for
+the value to go up by 12 rather than naming the target. To change several
+values at once (like x and y for a single drag), repeat the goal. `x` and
+`offset` are int literals, so they stay ints: `--to 42.5` misses by half
+unless you add `--allow-respell`.
+
+`--v1` runs the legacy engine, whose output keeps its old shape:
+
+```
+$ petal propose-edit --v1 --channel shapes --emit 0 --arg 1 --to 42.5 sketch.ptl
 2 proposals:
   1. set `x` to 32.5 (line 3)
   2. set `offset` to 22.5 (line 2)
 Narrow with --configurable <var> / --static <var>, or apply one by hand.
-```
-
-Add `--static x` to rule out `x`, which leaves one proposal, and `--apply`
-to write it to the file. `--apply` only writes when there is exactly one
-choice left. To change several values at once (like x and y for a single
-drag), repeat `--arg <n> --to <value>`.
-
-That's v1. Add `--v2` (or any v2 option, like `--by`, `--native-arg` or
-`--allow`) for the engine that solves through functions. `--native-arg 1`
-addresses the raw second argument of `push_output`, and `--by 12` asks for
-the value to go up by 12:
-
-```
-$ petal propose-edit --channel shapes --emit 0 --native-arg 1 --by 12 sketch.ptl
-engine v2 · seed 0 · 11 runs
-goal: shapes[0] native-arg 1 (push_output, line 4): 30 -> 42
-3 alternatives:
-  1. [verified] set `x` to 32 (line 3); moves nothing else
-       line 3 `x`: 20 -> 32
-       reaches 42 · score 0.6
-  2. [verified] set `offset` to 22 (line 2); moves nothing else
-       line 2 `offset`: 10 -> 22
-       reaches 42 · score 1.2
-  3. [verified] set `offset` to 12 (line 2), set `x` to 30 (line 3); moves nothing else
-  ...
 ```
 
 `--explain` shows every number it considered and why it kept or dropped
@@ -300,7 +309,7 @@ A good workflow:
 
 1. `TraceEmits` to find the shape: its channel, emit index, and the raw
    arguments (`native_args`) of the native that drew it.
-2. `ProposeEdit` with `engine: "v2"`, the goal (`nativeArg: 0, by: 25`, or
+2. `ProposeEdit` (engine v2 is the default) with the goal (`nativeArg: 0, by: 25`, or
    `to`), and `explain: true`. Read the ranked `alternatives` and the
    `candidates` table.
 3. If the top alternative changes the wrong thing, ask again with `allow`

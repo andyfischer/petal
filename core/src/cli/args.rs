@@ -348,13 +348,13 @@ fn parse_bench_args(args: &[String]) -> CliArgs {
 /// then `--to <value>` (or, v2 only, `--by <delta>`). Goals repeat; each binds
 /// to the channel and emit given last before it.
 ///
-/// Two engines answer it. v1 (the default for now, or `--v1`) inverts the
-/// arithmetic of the emitting call's arguments. v2 (`--v2`, or implied by any
-/// v2-only flag) re-runs the program speculatively and solves through
-/// function calls (docs/dev/direct-manipulation-v2-plan.md §4.2); its flags
-/// are parsed by [`super::dm_v2::V2Parser`]. Under v1, `--configurable` /
-/// `--static` name preferred / pinned variables; under v2 they are spelled
-/// `--allow` / `--deny` and take any selector.
+/// Two engines answer it. v2 (the default; `--v2` is accepted and changes
+/// nothing) re-runs the program speculatively and solves through function
+/// calls (docs/dev/direct-manipulation-v2-plan.md §4.2); its flags are parsed
+/// by [`super::dm_v2::V2Parser`]. v1 (legacy, `--v1` only) inverts the
+/// arithmetic of the emitting call's arguments. Under v1, `--configurable` /
+/// `--static` name preferred / pinned variables; under v2 they read as
+/// `--allow` / `--deny`, which take any selector.
 fn parse_propose_edit_args(args: &[String]) -> CliArgs {
     let usage = "Usage: petal propose-edit [--v1|--v2] --channel <name> --emit <n> \
                  ((--arg|--native-arg <k> | --value) [--field <path>] (--to <value> | --by <delta>))+ \
@@ -422,7 +422,8 @@ fn parse_propose_edit_args(args: &[String]) -> CliArgs {
             }
             false
         }
-        None => !v2_only.is_empty() || multi_emit,
+        // v2 is the default engine (docs/dev/direct-manipulation-v2-plan.md §9).
+        None => true,
     };
 
     let first = &v2.goals[0];

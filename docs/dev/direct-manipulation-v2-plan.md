@@ -8,9 +8,10 @@ CLI, MCP and docs as M4a) the same day, and M5 (examples ladder and
 complexity study, with six ranking and budget revisions) the same day,
 followed by a code review of the whole change set that fixed five bugs,
 and a final test pass over every suite, the study and the ecosystem the
-same day. **Final: all milestones done.** v2 is opt-in on the CLI and MCP
-(`--v2` or any v2-only flag) and the default in Garden for drags v1 cannot
-solve exactly. See [Status](#9-status) at the end.
+same day. **Final: all milestones done.** Since 24 October 2026 v2 is the
+default engine on the CLI and MCP (`--v1` / `engine: "v1"` reach the legacy
+engine), and the hint names `tunable` and `rigid` are accepted. See
+[Status](#9-status) at the end.
 
 The goals are in [docs/tasks/direct-manipulation-v2.md](../tasks/direct-manipulation-v2.md).
 Where this plan and an older doc disagree (the user page
@@ -1013,7 +1014,8 @@ embedding guide gets a section in M4.
 ### 4.2 CLI (M4)
 
 `petal propose-edit` gains `--v2`, which becomes the default when M5's study
-passes the bar in §5 (M5); `--v1` keeps the old engine.
+passes the bar in §5 (M5); `--v1` keeps the old engine. (Done 24 October
+2026: v2 is the default, see §9.)
 
 Two binaries carry it, because the core `petal` binary has no draw natives
 (§1.7). The argument parser and JSON rendering live once, in core
@@ -1621,10 +1623,8 @@ with a golden test.
    pattern) is future work. M5's example 15 documents the limit.
 5. **The `LoadConst` hot path.** R1's check must be measured (M1 acceptance
    13).
-6. **Hint names** need the language owner's sign-off
-   ([proposal](../proposals/dm-v2-hints.md), open questions). `rigid` is a
-   natural physics-engine name (§2.6). If the owner prefers to avoid it,
-   the `NativeFnId` check still works under any other spelling.
+6. **Hint names.** Settled 24 October 2026: the owner approved `tunable`
+   and `rigid` ([proposal](../proposals/dm-v2-hints.md), accepted).
 7. **Heap fork and statics per run.** Big programs pay a deep heap copy and
    a full statics rebuild on every run. M5 measures the split, and §2.3.5a
    is the planned fix. A copy-on-write heap is out of scope.
@@ -1655,6 +1655,7 @@ with a golden test.
 | M5 examples + study | done, 2026-10-24 | `ccc25ce7` | `examples/direct-manipulation-v2/` (27 examples, 105 goals), harness `core-libs/petal-ui/tests/dm_v2_study.rs`, report [direct-manipulation-v2-study.md](direct-manipulation-v2-study.md) + `.json`; engine revisions in `dm_v2::{rank,api,jacobian,spec}`; deviations below |
 | Code review (post-M5) | done, 2026-10-24 | `0d6dae6e`, `08bc37cd`, `1e6f7913`, `4dea9231` | adversarial review of the whole change set; five bugs fixed, each pinned by `core/tests/dm_v2_review.rs` (7); see "Code review" below |
 | Final test pass | done, 2026-10-24 | `4a8d7145`, `62be2098` (+ this commit) | every suite green, study re-run (unchanged outcomes), effect audits clean, ecosystem checked; see "Final test pass" below |
+| v2 the default | done, 2026-10-24 | (this commit) | `petal propose-edit` uses v2 unless `--v1` (`cli/args.rs`); MCP `ProposeEdit` defaults to v2 (the argv carries no engine flag); hint names `tunable`/`rigid` accepted; tests `core/tests/cli_propose_edit_v2.rs`, `test/vitest/petal-mcp.test.ts` updated; see "v2 the default" below |
 
 Deviations from this plan are recorded here as they happen, with the reason.
 
@@ -2290,6 +2291,46 @@ program-modification, time-travel and ffi; re-vendoring the C bridge into
 cheesecake and worlds-fair with `PB_FX_CONTAINED`; making v2 the CLI/MCP
 default, which the study's numbers now support), the study's §3 limits,
 and the code review's left-open list.
+
+**v2 the default, 2026-10-24.** The owner decided to make v2 the default
+engine and approved the hint names. What changed:
+
+- `petal propose-edit` answers with v2 unless `--v1` is given (`--v2` is
+  still accepted). `--configurable` / `--static` without `--v1` are read as
+  `--allow` / `--deny`, as the v2 parser already did; under `--v1` they keep
+  v1's meaning, and v2-only flags or goals on several emits are still
+  refused there. No other Rust host parses `propose-edit` (there is no
+  `petal-ui-run propose-edit` yet), and Garden's engine choice is its own.
+- MCP `ProposeEdit` defaults to v2: with no `engine` the argv carries no
+  engine flag and the CLI picks v2; `engine: "v1"` passes `--v1`.
+- `tunable` and `rigid` are accepted ([proposal](../proposals/dm-v2-hints.md)
+  status and open question 1; open issue 6 in §8).
+- Output change for existing users: a v1-shaped request now prints v2's text
+  (`engine v2 · seed 0 · …`, ranked alternatives) and v2's `--json` object
+  instead of `N proposals:` / `{goals, proposals, …}`. Scripts that parse
+  v1's output pass `--v1`, which keeps it byte for byte. Two answers differ
+  for the same request: an `--allow` is exact where `--configurable` was a
+  preference, and int literals stay ints without `--allow-respell` (the old
+  docs example, `--to 42.5` on `let x = 20`, now lands on 43 unverified; v1
+  proposed `32.5`). The CHANGELOG lists this under "Changed".
+- Tests: `cli_propose_edit_v2.rs` `v1_output_is_unchanged_under_v1` now
+  pins the default as v2 (and `--static` as `--deny`); `petal-mcp.test.ts`
+  splits the no-engine case (v2) from `engine: "v1"` (legacy shape).
+- Docs: features/direct-manipulation.md presents v2 as the engine and v1 as
+  legacy; CLI.md, mcp-server.md and `petal help propose-edit` likewise.
+
+| Suite | Result |
+|---|---|
+| core `cargo build && cargo test` | 3058 passed, 0 failed, 16 ignored (88 test binaries) |
+| `npx vitest run` | 76 files, 1743 passed, 0 failed (needs `petal-ui-run` built; without it `verify.test.ts` fails 5) |
+
+Ecosystem: nothing outside this repo runs `petal propose-edit` or reads its
+output. `~/cheesecake/third_party/petal` and `~/worlds-fair/vendor/petal`
+vendor a pre-v2 core (v1 only) and change only when re-vendored.
+`~/biz/petal-lang.org`'s docs are generated by its `scripts/import-docs.ts`
+from petal `44ee71c1` (release 0.1.0, before v2) and describe v1 as the
+only engine, which is right for that release; the next docs import picks
+up this change. `~/petal-creative` and `sample-apps` have no reference.
 
 ---
 

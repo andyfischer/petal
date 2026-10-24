@@ -56,13 +56,21 @@ describe("ProposeEdit (MCP)", () => {
     expect(out.alternatives[0].changes[0].function).toBe("place");
   });
 
-  it("arg + to with no engine keeps the v1 answer and shape", () => {
-    const sketch = `import io
+  const V1_SKETCH = `import io
 let offset = 10
 let x = 20
 push_output(symbol("shapes"), x + offset)
 `;
-    const out = propose({ channel: "shapes", emit: 0, arg: 1, to: "42.5" }, sketch);
+
+  it("arg + to with no engine gets v2", () => {
+    const out = propose({ channel: "shapes", emit: 0, arg: 1, to: 42 }, V1_SKETCH);
+    expect(out.engine).toBe("v2");
+    expect(out.alternatives[0].verified).toBe(true);
+    expect(out.alternatives.map((a: any) => a.changes[0].binding).slice(0, 2)).toEqual(["x", "offset"]);
+  });
+
+  it("engine v1 keeps the legacy answer and shape", () => {
+    const out = propose({ channel: "shapes", emit: 0, engine: "v1", arg: 1, to: "42.5" }, V1_SKETCH);
     expect(out.proposals.map((p: any) => p.variable)).toEqual(["x", "offset"]);
   });
 

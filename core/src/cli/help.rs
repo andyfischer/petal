@@ -1529,18 +1529,19 @@ DESCRIPTION
        something to, propose the source edits that would make it so. This is
        the writing half of direct manipulation.
 
-       Two engines answer. v1 (the default for now, or --v1) runs the
-       program once with emit tracing and inverts the arguments of the call
-       that produced the emit: a literal, a binding, or + - * / arithmetic.
-       It proposes nothing for a value that comes out of a function call.
+       The engine is v2 (the default; --v2 is accepted and changes
+       nothing). It re-runs the program speculatively, with each candidate
+       literal nudged, effects suppressed and random draws replayed, and
+       measures how the goal moves. It solves through function calls, loops,
+       records and math, verifies every answer by running it, and ranks the
+       alternatives (config and tunable literals first, then by how little
+       else they move). See docs/features/direct-manipulation.md.
 
-       v2 (--v2, also chosen by any v2-only flag below) re-runs the program
-       speculatively, with each candidate literal nudged, effects suppressed
-       and random draws replayed, and measures how the goal moves. It solves
-       through function calls, loops, records and math, verifies every
-       answer by running it, and ranks the alternatives (config and tunable
-       literals first, then by how little else they move). See
-       docs/features/direct-manipulation.md.
+       --v1 selects the legacy engine, which runs the program once with emit
+       tracing and inverts the arguments of the call that produced the emit:
+       a literal, a binding, or + - * / arithmetic. It proposes nothing for a
+       value that comes out of a function call, and refuses the flags marked
+       (v2) below. Its text and JSON output keep their old shape.
 
 GOALS
        --channel <name> --emit <n>
@@ -1577,8 +1578,9 @@ FILTERS
               An --allow naming literals is exact.
 
        --configurable <var>, --static <var>
-              v1's spellings. Under v1, a variable to prefer / never edit;
-              under v2 they mean --allow <var> / --deny <var>.
+              v1's spellings. Under v2 (the default) they mean
+              --allow <var> / --deny <var>; under --v1, a variable to prefer /
+              never edit.
 
        --config-strict
               (v2) v1's rule: once the program has a config let, only config

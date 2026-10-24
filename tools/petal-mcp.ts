@@ -233,7 +233,7 @@ server.registerTool("ProposeEdit", {
     "say where an emitted value should be, get the source edits that put it there. " +
     "Nothing is written; applying is the caller's move. Use TraceEmits first to find " +
     "channel / emit / argument indices.\n\n" +
-    "engine 'v2' (chosen automatically when any v2-only field is given) re-runs the " +
+    "engine 'v2' (the default) re-runs the " +
     "program speculatively with each candidate literal nudged (effects suppressed, " +
     "random draws replayed) and solves THROUGH function calls, loops, records and " +
     "math. It returns JSON: `alternatives` (ranked; each has `verified` — re-run and " +
@@ -246,15 +246,16 @@ server.registerTool("ProposeEdit", {
     "literals you want moved (a binding name, 'line:N', 'fn:NAME', 'config') or `deny` " +
     "for ones to keep — the engine works out the values. In source, `config let` and " +
     "`tunable(x, min, max)` mark preferred knobs and `rigid(x)` freezes a value.\n\n" +
-    "engine 'v1' (the default for arg+to goals) inverts the emitting call's own " +
+    "engine 'v1' (legacy; only when passed) inverts the emitting call's own " +
     "arguments: a literal, a binding, or + - * / arithmetic; it refuses values that " +
-    "come out of a function call. Narrow v1 with `configurable` / `static`.",
+    "come out of a function call and takes only arg+to goals. Narrow v1 with " +
+    "`configurable` / `static` (under v2 these mean allow / deny).",
   inputSchema: {
     code: z.string().describe("The Petal source code to run"),
     channel: z.string().describe("Output channel name (e.g. 'draw_commands')"),
     emit: z.number().int().min(0).describe("0-based emit index within the channel"),
     engine: z.enum(["v1", "v2"]).optional()
-      .describe("Which solver; default v2 when a v2-only field is given, else v1"),
+      .describe("Which solver; default v2. 'v1' is the legacy arg+to inverter"),
     ...goalShape,
     goals: z.array(z.object({
       channel: z.string().optional().describe("Defaults to the top-level channel"),

@@ -1,9 +1,10 @@
 # Proposal: `tunable` and `rigid`, direct-manipulation hints
 
-Status: proposed, 23 October 2026; implemented 24 October 2026 (milestone M2
+Status: accepted. Proposed 23 October 2026; implemented 24 October 2026 (milestone M2
 of the plan: the builtins, `core/src/dm_v2/hints.rs`, the three lint rules,
-docs/Builtins.md "Direct-Manipulation Hints"). The names still await the
-owner's sign-off (open question 1). Part of Direct Manipulation v2: see the
+docs/Builtins.md "Direct-Manipulation Hints"); accepted 24 October 2026,
+when the owner approved the names `tunable` and `rigid` (open question 1).
+Part of Direct Manipulation v2: see the
 [plan](../dev/direct-manipulation-v2-plan.md) (§2.6 and milestone M2) and the
 [task](../tasks/direct-manipulation-v2.md).
 
@@ -296,7 +297,8 @@ Tests are M2 acceptance items 5, 6 and 10.
 
 ## Open questions
 
-1. The owner signs off on the names `tunable` and `rigid`.
+1. The owner signs off on the names `tunable` and `rigid`. Settled 24
+   October 2026: both names are approved as proposed.
 2. Should `step` also drive the int-vs-float spelling (`step: 1` means stay
    an int)? Proposed: yes. Settled in M3 (plan §9, M3 deviation 13): the
    step only rounds the value, and the spelling follows the literal, so

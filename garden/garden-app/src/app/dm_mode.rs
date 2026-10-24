@@ -246,8 +246,7 @@ impl App {
             self.dm_panel_open = false;
         }
         self.status_note = Some(if on {
-            "drag mode: drag a shape to edit its code; click an underlined number or a gutter \
-             marker to mark it tunable / rigid (Cmd+Shift+D or :DragMode to leave)"
+            "drag mode: drag a shape to edit its code; click a number to mark it tunable / rigid"
                 .to_string()
         } else {
             "drag mode off: Cmd-drag still edits, plain clicks go to the sketch".to_string()
@@ -668,7 +667,8 @@ impl App {
                 let above = r.y - ch - 6.0;
                 let y = if above >= clip.y { above } else { r.y + r.h + 2.0 };
                 let tag = Rect {
-                    x: r.x.max(clip.x),
+                    // Kept inside the canvas: shifted left near its right edge.
+                    x: r.x.min(clip.x + clip.w - w - 4.0).max(clip.x),
                     y,
                     w,
                     h: ch + 4.0,

@@ -1649,7 +1649,7 @@ with a golden test.
 | M2 discovery + Jacobian + hints | done, 2026-10-24 | `43ee2820` | `dm_v2::{params,hints,jacobian}`, `builtins/hints.rs`, `lint/dm_hints.rs`; tests `core/tests/dm_v2_jacobian.rs` (17), `core-libs/petal-ui/tests/dm_v2_params.rs` (1); deviations below |
 | M3 solver + ranking + API | done, 2026-10-24 | `1c28a217` | `dm_v2::{solve,rank,api}`, `propose_edits_v2`, `DmSession`, `apply_edits_multi`; tests `core/tests/dm_v2_solve.rs` (27); deviations below |
 | M4 surfaces | M4a (CLI, MCP, docs) done, 2026-10-24; M4b (Garden) done, 2026-10-24 | M4a: `83cd1469`; M4b: `6da29349`, `1f565eca` | M4b: Garden drag-to-edit on v2 (`garden-script/src/panel/dm_v2.rs`, `garden-app/src/app/manip_v2.rs`); tests `garden-script/tests/dm_v2_drag.rs` (13), `tools/dm-drag-integration-test.ts`. M4a: `cli/dm_v2.rs` (`propose-edit --v2`), `run --trace-emits` keys + native args, MCP `ProposeEdit`/`TraceEmits`, docs; tests `core/tests/cli_propose_edit_v2.rs` (12), `test/vitest/petal-mcp.test.ts` (5); deviations below |
-| M5 examples + study | done, 2026-10-24 | (this commit) | `examples/direct-manipulation-v2/` (27 examples, 105 goals), harness `core-libs/petal-ui/tests/dm_v2_study.rs`, report [direct-manipulation-v2-study.md](direct-manipulation-v2-study.md) + `.json`; engine revisions in `dm_v2::{rank,api,jacobian,spec}`; deviations below |
+| M5 examples + study | done, 2026-10-24 | `ccc25ce7` | `examples/direct-manipulation-v2/` (27 examples, 105 goals), harness `core-libs/petal-ui/tests/dm_v2_study.rs`, report [direct-manipulation-v2-study.md](direct-manipulation-v2-study.md) + `.json`; engine revisions in `dm_v2::{rank,api,jacobian,spec}`; deviations below |
 
 Deviations from this plan are recorded here as they happen, with the reason.
 

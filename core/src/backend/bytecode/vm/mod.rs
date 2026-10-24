@@ -359,6 +359,14 @@ impl<'a> Vm<'a> {
             let now = *self.heap.alloc_stats().by_kind();
             self.profile.alloc_before(&now);
         }
+        // A watched term passed straight to a call (`f(x)`, a name or a
+        // parameter) has no instruction of its own; note it as the call reads it.
+        if let (Some(spec), Some(call)) = (self.spec.as_deref(), origin)
+            && !spec.watch.is_empty()
+            && matches!(inst, Inst::Call { .. } | Inst::MethodCall { .. } | Inst::BuiltinCall { .. } | Inst::Intrinsic { .. })
+        {
+            self.spec_watch_call_args(frame_idx, call, inst);
+        }
         // A speculative run may load another value in a literal's place
         // (`spec`). Its hooks keep every instruction on this path, so neither
         // the straight-line loop nor `exec_inst` needs to know.
@@ -522,6 +530,36 @@ impl<'a> Vm<'a> {
             return Some(format!("test \"{}\"", test.name));
         }
         Some(base_fn_name(name).to_string())
+    }
+
+    /// Note the watched arguments of the call `inst` (lowered from the call
+    /// term `call`) about to run: a call term's inputs line up with the
+    /// instruction's operands (`Call`: callee then arguments; `MethodCall`:
+    /// receiver then arguments; a builtin: its arguments).
+    #[cold]
+    #[inline(never)]
+    fn spec_watch_call_args(&mut self, frame_idx: usize, call: TermId, inst: &Inst) {
+        let regs: SmallVec<[Reg; 8]> = match inst {
+            Inst::Call { callee, args, .. } => std::iter::once(*callee).chain(args.iter().copied()).collect(),
+            Inst::MethodCall { recv, args, .. } => std::iter::once(*recv).chain(args.iter().copied()).collect(),
+            Inst::BuiltinCall { args, .. } => args.iter().copied().collect(),
+            Inst::Intrinsic { op, args, .. } => args[..op.arity()].iter().copied().collect(),
+            _ => return,
+        };
+        let program = self.program;
+        let Some(term) = program.terms.get(call.0 as usize) else { return };
+        if term.inputs.len() != regs.len() {
+            return;
+        }
+        for (&input, &r) in term.inputs.iter().zip(&regs) {
+            if self.spec.as_deref().is_some_and(|s| s.watch.contains(&input)) {
+                let v = self.reg(frame_idx, r);
+                let heap = &*self.heap;
+                if let Some(spec) = self.spec.as_deref_mut() {
+                    spec.note_watch(input, v, heap);
+                }
+            }
+        }
     }
 
     /// What a speculative run notes after an instruction retires: the branch

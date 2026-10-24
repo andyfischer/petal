@@ -168,3 +168,34 @@ fn default_tolerance_follows_the_finish_target() {
     assert_eq!(late.alternatives[0].changes[0].new_text, up_front.alternatives[0].changes[0].new_text);
     assert_eq!(late.alternatives[0].changes[0].new_text, "1.794118");
 }
+
+/// `propose-edit --v2 --arg k` where argument `k` is a name or a parameter
+/// (`push_output(s, x)`): the argument has no instruction of its own, so
+/// the watched value was never recorded and every such goal failed with
+/// "the baseline run has no number".
+#[test]
+fn arg_goal_on_a_bare_name() {
+    let src = "import io\nlet s = symbol(\"out\")\nlet x = 20\npush_output(s, x)\n\
+               fn emit(v)\n  push_output(s, v)\nend\nfn go(a)\n  let y = a\n  emit(y)\nend\n\
+               go(x + 1)\nfor i in [1, 2] do\n  emit(i * 3)\nend\n";
+    let dir = std::env::temp_dir().join(format!("petal-dm-v2-review-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("bare.ptl");
+    std::fs::write(&path, src).unwrap();
+    for (emit, to, want) in [("0", "30", "30"), ("1", "30", "10"), ("3", "12", "4")] {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_petal"))
+            .args(["propose-edit", "--v2", "--json", "--channel", "out", "--emit", emit, "--arg", "1", "--to", to])
+            .arg(&path)
+            .env_remove("PETAL_SEED")
+            .output()
+            .expect("runs petal");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "emit {emit}: {stdout}\n{}", String::from_utf8_lossy(&out.stderr));
+        let v: serde_json::Value = serde_json::from_str(&stdout).expect("JSON");
+        let top = &v["alternatives"][0];
+        assert_eq!(top["verified"], true, "emit {emit}: {top}");
+        let new: Vec<&str> =
+            top["changes"].as_array().unwrap().iter().map(|c| c["new_text"].as_str().unwrap()).collect();
+        assert!(new.contains(&want), "emit {emit}: {new:?}");
+    }
+}

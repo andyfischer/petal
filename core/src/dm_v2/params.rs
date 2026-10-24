@@ -1165,7 +1165,14 @@ pub fn file_origins(program: &Program) -> Vec<CodeOrigin> {
     if files.is_empty() {
         return vec![CodeOrigin::Entry];
     }
-    let abs = |p: &Path| std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf());
+    // Canonical where the file exists: the loader may record one file by a
+    // resolved path and the entry by the path it was given (macOS's
+    // `/var` → `/private/var`), and the two must compare.
+    let abs = |p: &Path| {
+        p.canonicalize()
+            .or_else(|_| std::path::absolute(p))
+            .unwrap_or_else(|_| p.to_path_buf())
+    };
     let root: Option<PathBuf> = files[0].origin.as_deref().map(|entry| {
         let entry = abs(entry);
         let dir = entry.parent().map(Path::to_path_buf).unwrap_or_default();

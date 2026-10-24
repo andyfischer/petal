@@ -831,6 +831,24 @@ impl DmSession {
         &self.diag.baseline
     }
 
+    /// Give [`finish`](Self::finish) a fresh budget: `max_runs` more runs
+    /// within `max_wall` from now. A drag holds the session open for as long
+    /// as the pointer is down, and that time is the user's, not the
+    /// solver's: without this, a drag held longer than the request's
+    /// `max_wall` would finish with no room to verify anything.
+    pub fn renew_budget(&mut self, max_runs: usize, max_wall: Duration) {
+        self.budget = RunBudget::new(max_runs, max_wall);
+    }
+
+    /// Close the session without solving (a cancelled drag), dropping its
+    /// fork. Dropping a session without this or `finish` leaks the fork's
+    /// heap until the Env is dropped.
+    pub fn cancel(mut self, env: &mut Env) {
+        if let Some(spec) = self.spec.take() {
+            spec.end(env);
+        }
+    }
+
     fn goal_rows(&self, targets: &[f64]) -> Vec<GoalRow> {
         self.req
             .goals

@@ -1656,6 +1656,7 @@ with a golden test.
 | Code review (post-M5) | done, 2026-10-24 | `0d6dae6e`, `08bc37cd`, `1e6f7913`, `4dea9231` | adversarial review of the whole change set; five bugs fixed, each pinned by `core/tests/dm_v2_review.rs` (7); see "Code review" below |
 | Final test pass | done, 2026-10-24 | `4a8d7145`, `62be2098` (+ this commit) | every suite green, study re-run (unchanged outcomes), effect audits clean, ecosystem checked; see "Final test pass" below |
 | v2 the default | done, 2026-10-24 | (this commit) | `petal propose-edit` uses v2 unless `--v1` (`cli/args.rs`); MCP `ProposeEdit` defaults to v2 (the argv carries no engine flag); hint names `tunable`/`rigid` accepted; tests `core/tests/cli_propose_edit_v2.rs`, `test/vitest/petal-mcp.test.ts` updated; see "v2 the default" below |
+| Garden drag mode (M4c) | done, 2026-10-24 | `58144b0d`, `43eea4ff`, `35c7ef95`, `8c9c32cb` (+ this commit) | Petal IDE drag mode (`:DragMode`, toolbar Drag, Cmd+Shift+D): modifier-free drags, the drag result panel (alternatives, candidates with state, session chips), `tunable`/`rigid` toggled by mouse as source rewrites (`garden-app/src/dm_hints.rs`), Garden `:DragEngine auto` = v2 for every shape; examples `garden/examples/panels/dm-v2/` (7); tests `dm_hints` (12), 5 `garden-app` tests, `the_drag_mode_examples_solve`, `garden/tools/dm-mode-integration-test.ts` (36 checks); see "Garden drag mode" below |
 
 Deviations from this plan are recorded here as they happen, with the reason.
 
@@ -2331,6 +2332,41 @@ vendor a pre-v2 core (v1 only) and change only when re-vendored.
 from petal `44ee71c1` (release 0.1.0, before v2) and describe v1 as the
 only engine, which is right for that release; the next docs import picks
 up this change. `~/petal-creative` and `sample-apps` have no reference.
+
+**Garden drag mode (M4c), 2026-10-24.** The first-draft interactive UI for
+§2.7's client disambiguation, beyond M4b's status bar and ex commands
+(`garden/docs/petal-ide-mode.md`, "Drag mode"):
+
+1. *Modifier-free drags.* In drag mode a plain drag on a traced canvas is the
+   drag-to-edit gesture and the sketch's mouse is suspended (its frames see
+   the pointer off the canvas); Cmd-drag is unchanged outside the mode.
+2. *The picker is a panel.* After a drag, a card over the canvas lists the
+   ranked alternatives (click to write one, `:DragPick`'s path) and every
+   candidate with a display state derived from the editor's current text
+   (`free` / `tunable` / `rigid` / `config` / `fixed` with `why_not`), plus
+   the session `:DragAllow` / `:DragDeny` lists as per-candidate `only` /
+   `never` chips. M4b deviation 6's "status bar and commands" picker stays as
+   the keyboard path.
+3. *Hints by mouse are source edits.* Clicking an underlined number, a gutter
+   square or a state chip cycles free → tunable → rigid by wrapping the
+   literal in the real builtins, line-locally and as one undo step
+   (`dm_hints.rs`); a `tunable` with bounds becomes `rigid(x)` (bounds
+   dropped), bounds are never toggled, a multi-line hint call is not
+   recognized. The alternatives on screen were solved without the new hint,
+   so they are greyed until the next drag; the candidates' spans are carried
+   across the rewrite.
+4. *v2 for every Garden drag.* `:DragEngine auto` no longer picks v1 for a
+   position written in the call (M4b deviation 1): v1 has no alternatives or
+   candidate report and ignores the hints (it reads `rigid` as computed), so
+   the panel and the toggles would work on some shapes only. For a literal
+   the linear preview is exact; what is lost is v1's live recompile of other
+   shapes sharing the binding during the drag. Opening a drag measured 30 to
+   55 ms on the examples (debug Garden).
+5. *Bug found on the way:* a drag pressed while the canvas ran older text than
+   the editor (an edit made while paused) spliced the old spans into the new
+   text. The press now recompiles the canvas from the buffer first
+   (`PanelView::source_behind`); this predates drag mode (any Cmd-drag after a
+   paused edit).
 
 ---
 

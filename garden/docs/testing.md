@@ -17,6 +17,7 @@ place to add a test for any new behavior.
 | Editor view | `garden-app/src/editor_view.rs` | cursor/selection geometry, tab stops, scrolling math, scene primitives |
 | Vim | `garden-app/src/vim.rs` | the mode/motion/operator state machine, driven key by key; vim commands over a projected view |
 | Search | `garden-app/src/search.rs` | wraparound matching, whole-word boundaries, substitution, non-ASCII columns |
+| Drag-mode hints | `garden-app/src/dm_hints.rs` | wrapping a literal in `tunable(…)` / `rigid(…)` and unwrapping it: negatives, bounds, line toggles, span mapping |
 | Command line | `garden-app/src/command_line.rs` | ex-command parsing (including `:s` ranges and flags), the `/` and `?` prompts |
 | Window nav | `garden-app/src/window_nav.rs` | spatial pane navigation and the pure layout-tree edits |
 | App core | `garden-app/src/app/tests.rs` | the `App` input/command surface in memory: key routing, ex commands, splits, clipboard, file refresh, `/state` JSON |
@@ -96,6 +97,10 @@ The scripts, and what each proves:
   windows). Spawns a second window with `:windownew` and drives the per-window
   debug addressing (`?window=<n>`, `/windows`) to assert isolation, that
   closing one window leaves the other intact, and that Cmd+Q quits.
+- **`dm-drag-integration-test.ts`** and **`dm-mode-integration-test.ts`**:
+  drag-to-edit in `garden petal-ide`; the second drives drag mode on the
+  `examples/panels/dm-v2/` sketches (plain drags, the result panel, hints
+  marked by mouse) and can save a screenshot per stage (`--shots <dir>`).
 - **`screenshot-consistency-test.ts`**: the debug server's settle-then-capture
   contract, down to the captured PNG's pixels.
 

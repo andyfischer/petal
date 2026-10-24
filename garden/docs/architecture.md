@@ -411,7 +411,10 @@ written in the call, else through `petal::dm_v2`, which re-runs the frame
 speculatively from a pre-frame checkpoint the panel keeps and solves through
 function calls (`garden-script/src/panel/dm_v2.rs` for the session,
 `garden-app/src/app/manip_v2.rs` for the gesture, the alternatives and the
-`:DragAllow` filter). IDE mode also adds a
+`:DragAllow` filter). Drag mode (`app/dm_mode.rs`) makes the drag
+modifier-free, suspends the sketch's mouse, and draws the hover outline and
+the drag result panel as app chrome over the canvas; its hint toggles are
+text rewrites (`dm_hints.rs`, pure). IDE mode also adds a
 toolbar, play/pause (freezes panel ticks, leaves the editor live), and the IR
 inspector (`petal_ide/`). User guide: [petal-ide-mode.md](petal-ide-mode.md).
 

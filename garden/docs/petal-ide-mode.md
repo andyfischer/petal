@@ -76,10 +76,12 @@ the canvas, and appears only for `garden petal-ide`.
   same as `:State`. Lit while on.
 - **Reset**: restart the sketch from scratch, discarding Petal `state` so
   `state x = …` initializers re-run. Unsaved editor edits are kept.
+- **Drag**: [drag mode](#drag-mode) on or off, the same as `:DragMode` and
+  Cmd+Shift+D. Lit while on.
 
-Play, IR, and State are also `/menu` actions (`TogglePlay`, `ToggleIr`,
-`ToggleStateInspector`), so a headless session can drive them (see
-[Automation](#automation)).
+Play, IR, State and Drag are also `/menu` actions (`TogglePlay`, `ToggleIr`,
+`ToggleStateInspector`, `ToggleDragMode`), so a headless session can drive
+them (see [Automation](#automation)).
 
 ## The IR inspector
 
@@ -205,7 +207,9 @@ Move the mouse over a shape on the canvas and the `draw_*` call that drew it
 lights up in the editor. **Cmd-click** (Ctrl-click elsewhere) puts the cursor
 on that call and focuses the editor: go-to-definition with a pixel as the
 symbol. **Cmd-drag** it and the code changes instead
-([Dragging a shape](#dragging-a-shape-to-edit-its-code)).
+([Dragging a shape](#dragging-a-shape-to-edit-its-code)). In
+[drag mode](#drag-mode) (Cmd+Shift+D) a plain drag does it, with the
+alternatives, the numbers behind the shape and their hints on screen.
 
 ```bash
 garden petal-ide examples/panels/direct-manipulation.ptl
@@ -311,19 +315,29 @@ answer, not yours, and it can be any number the shape's position depends on:
   shape moves, solves for the drag, and re-runs the answer to check it lands
   where you let go.
 
-There are two engines behind this, picked per drag:
+**Which engine.** Every drag is solved by the v2 engine (re-running the
+frame, see
+[Petal's direct manipulation v2](../../docs/dev/direct-manipulation-v2-plan.md)),
+including a position written as literals in the call. The older direct
+engine (v1) is kept behind `:DragEngine v1`; `:DragEngine auto` (the
+default) is v2 for every shape it can grab and v1 only for a shape v2
+cannot, of which there are none today. `:DragEngine` alone reports the
+setting.
 
-- **Direct** (v1) is used when every position argument is a literal or a
-  binding written in the call. It is exact and costs nothing, and the edit
-  follows the pointer frame by frame.
-- **Solved** (v2) is used for everything else (a computed position, a value
-  returned by a function, any shape of a loop, the `rect`- and
-  `center`-taking overloads of `draw_rect` / `draw_circle`), and for every
-  drag while `:DragAllow` / `:DragDeny` is set. See
-  [Petal's direct manipulation v2](../../docs/dev/direct-manipulation-v2-plan.md).
-
-`:DragEngine v1`, `:DragEngine v2` and `:DragEngine auto` (the default)
-force the choice; `:DragEngine` alone reports it.
+Why v2 even for literals, where v1 is exact and free: one engine gives one
+kind of answer. A v2 drag ranks alternatives, reports every number behind the
+shape and why it can or cannot move, and honours `tunable` bounds and
+`rigid`; v1 has none of that (it reads `rigid(40)` as "computed" and ignores
+a `tunable` range), so with v1 the result panel and the hints of
+[drag mode](#drag-mode) would work on some shapes and silently not on others.
+For a literal or a binding the v2 preview is just as exact (the measured
+sensitivity is exactly 1), and the edit is written as you pull. What v1 did
+that v2 does not: recompile the whole canvas every frame of the drag, so
+other shapes reading the same binding moved live with it. Under v2 the
+grabbed shape follows the pointer and the rest of the canvas catches up on
+release. The pause before the shape follows (opening the session) measured
+30 to 55 ms on the [drag-mode examples](../examples/panels/dm-v2/) in a
+debug build.
 
 **A solved drag, step by step.**
 
@@ -398,6 +412,100 @@ curl -s 127.0.0.1:$PORT/state | jq '.dm.last.candidates[] | {label, eligible, mo
 
 `tools/dm-drag-integration-test.ts` drives exactly this.
 
+## Drag mode
+
+Direct manipulation without the modifier, plus the first-draft UI around a
+solved drag: what else it could have done, and which numbers it may move.
+
+```bash
+garden petal-ide examples/panels/dm-v2/01-helper-row.ptl   # seven sketches, see the README there
+```
+
+**Turning it on.** The toolbar's **Drag** button, **Cmd+Shift+D**
+(Ctrl+Shift+D), or `:DragMode` (`:DragMode on` / `off`; alone it toggles).
+While it is on:
+
+- **A plain drag on the canvas edits the code**, exactly as a Cmd-drag does
+  outside the mode. A click without a drag jumps to the code that drew the
+  shape.
+- **The sketch's own mouse is suspended**: its frames see the pointer off the
+  canvas, and no press, release, wheel or right click reaches it. Its keys
+  still do. Leave the mode to use an interactive sketch again; Cmd-drag works
+  either way.
+- **Affordances**: a `DRAG MODE` badge on the canvas, an outline around the
+  shape a press would grab with a label naming the call that drew it
+  (`draw_circle · line 9`), and a grab-hand pointer (a closed hand while
+  pulling).
+
+**The result panel.** After a drag in drag mode (and after a Cmd-drag that
+has more than one answer, or none) a card along the bottom of the canvas
+shows the answer:
+
+- **Alternatives**, ranked: the edit, whether it was verified by re-running
+  the edited code, and how many other shapes it moves. The one written is
+  marked `>`. **Click another to write it instead**: the same as
+  `:DragPick N`, rewritten from the text as it was when you pressed, so
+  alternatives never stack.
+- **Numbers behind it**: every literal the drag considered, with its state as
+  a colored chip (`free`, `tunable`, `rigid`, `config` for a `config let`
+  knob, `fixed` for one that cannot move, with the reason: library code, a
+  loop bound, denied), its current value, line, and which axes it moves the
+  shape on. The ones the written alternative changed say `written`.
+- **Session**: the `:DragAllow` / `:DragDeny` selectors in force. Each number's
+  `only` / `never` chips add it to (or take it off) the allow / deny list for
+  the following drags, with no source change; `clear` empties both. A drag
+  everything is ruled out of declines, and the panel says why.
+- `close` dismisses it. Editing the code by hand closes it too (its spans no
+  longer describe the text).
+
+**Marking numbers tunable or rigid.** The hints are the language's own
+builtins (`tunable(40)`, `rigid(40)`, see
+[direct-manipulation.md](../../docs/features/direct-manipulation.md)), written
+into the source by the mouse:
+
+- In drag mode the editor **underlines** the last drag's candidate numbers,
+  and every `tunable(...)` / `rigid(...)` literal, in their state's color
+  (amber free, green tunable, red rigid, blue config, grey fixed; thicker for
+  the number the drag wrote). A **gutter column** marks their lines with a
+  square; a hollow square marks a `let` whose literal value a click would
+  mark.
+- **Click an underlined number** (Alt-click: any number) to cycle it
+  **free → tunable → rigid → free**: `40` → `tunable(40)` → `rigid(40)` →
+  `40`. A click anywhere on `tunable(40)` counts. A `tunable` with bounds
+  (`tunable(0.7, 0.5, 0.8)`) becomes `rigid(0.7)`: `rigid` takes no bounds.
+  The bounds themselves are never toggled.
+- **Click a gutter square** to cycle the whole line: the drag's candidate
+  numbers on it, else the literal value of a `let`, `config let`, `var` or
+  `const` on it. They all go to the state after the first one's.
+- **Click a state chip** in the result panel to cycle that number.
+- `:DragHint` does it at the cursor: `:DragHint` cycles, `:DragHint tunable`
+  (or `rigid`, `free`) sets, `:DragHint line` cycles the line.
+
+Each toggle is one undo step, keeps the rest of the line as written, and
+recompiles the canvas like any edit, so **the next drag's solver reads the
+hint**: a `rigid` number is never moved, a `tunable` one is preferred and kept
+in its range. The result panel's alternatives, solved before the change, are
+greyed (they can no longer be picked) until you drag again.
+
+**Automation.** `/menu ToggleDragMode` and `:DragMode` toggle it; a plain
+`/mouse` drag then edits. `/state`'s `dm` reports `mode`, the `hover` outline,
+the pointer `cursor`, the result panel's cells with their rects and actions
+(`overlay`; click a cell's centre to press it), the editor's `marks` and
+`gutter`, and `editor` (where line and column N are on screen).
+`tools/dm-mode-integration-test.ts` drives all of it.
+
+**Rough edges of this first draft.**
+
+- The result panel is app chrome drawn over the canvas: it can cover shapes
+  near the bottom of a small canvas (close it, or drag what is above it).
+- Candidate underlines exist only for the last drag; before the first drag in
+  a sketch only the hints already written are underlined.
+- A hint written across several lines is not recognized by the mouse toggle.
+- The panel has no keyboard focus of its own: `:DragNext`, `:DragPrev` and
+  `:DragPick N` are the keyboard path.
+- Other shapes sharing a dragged number catch up on release, not live (see
+  "Which engine").
+
 ## Troubleshooting
 
 - **A shape doesn't highlight anything.** Only a panel paired with a live
@@ -415,6 +523,9 @@ curl -s 127.0.0.1:$PORT/state | jq '.dm.last.candidates[] | {label, eligible, mo
   the next alternative, or undo and `:DragAllow` the number you meant (the
   status bar lists the others it could have moved), or make it a
   `config let` knob.
+- **A plain drag on the canvas did nothing, and the sketch ignores my
+  clicks.** Drag mode is on (the badge, the lit Drag button): it suspends the
+  sketch's mouse. Cmd+Shift+D leaves it.
 - **Cmd-drag paused before the shape followed.** That is the solved engine
   measuring the numbers behind the shape (at most 400 ms, once per drag).
 - **The canvas is blank or shows `could not load panel`.** The file must be a

@@ -151,8 +151,15 @@ update the client types from the sample diff.
   (a solved drag is in progress), and `last`, the last solved drag: its ranked
   `alternatives` (description, `verified`, `score`, `moves_others`, rewrites)
   and its `candidates` (every number behind the shape, with `eligible`,
-  `why_not`, `moves`). See
-  [petal-ide-mode.md](petal-ide-mode.md#dragging-a-shape-to-edit-its-code).
+  `why_not`, `moves`, and `state`: `free` / `tunable` / `rigid` / `config` /
+  `fixed`, read from the editor's current text, and `mark`, where its literal
+  is in it). Drag mode (feature `state.dm-mode`) adds `mode`, `panel_open`,
+  `hints_changed`, the pointer `cursor` (`default` / `grab` / `grabbing` /
+  `pointer`), the outlined shape (`hover`), the result panel's cells with
+  their rects and `action` (`overlay`; post a click at a cell's centre to
+  press it), the editor underlines (`marks`) and gutter squares (`gutter`),
+  and `editor`, where to click a line and column. See
+  [petal-ide-mode.md](petal-ide-mode.md#drag-mode).
 - `panes[]`: per pane, `kind` (`editor` / `panel`), file, title, `mode` (vim
   mode), `pending` (mid-command vim state, below), dirty flag, cursor,
   selection (text capped at 10k chars), `scroll_top` / `scroll_sub` /

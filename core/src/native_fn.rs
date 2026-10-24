@@ -165,6 +165,23 @@ pub struct NativeEffects {
     /// sets it alongside a read, an emit or an effect contradicts itself and
     /// is treated as dynamic.
     pub constant: bool,
+    /// The [`effect`](Self::effect) stays inside the execution: it lands in
+    /// the `ExecutionContext` (the print buffer, the noise seed, a counter,
+    /// an output buffer, the resource table) or in the running stack, which
+    /// a forked execution owns a copy of. A speculative run
+    /// (`crate::dm_v2::spec`) calls a contained native as usual, and its
+    /// effect is discarded with the fork. An effect that is **not**
+    /// contained reaches the host (a file, a network request, an editor
+    /// document, a `Cell` the closure captured), and a speculative run
+    /// suppresses the call instead. Meaningless without `effect`. Off by
+    /// default: an embedder's effect is escaping until it says otherwise.
+    pub contained: bool,
+    /// The native's result must not receive feedback from direct
+    /// manipulation: a literal whose only route to a dragged value goes
+    /// through this native's arguments is not offered as a way to move it
+    /// (docs/dev/direct-manipulation-v2-plan.md §2.5). Read by parameter
+    /// discovery; nothing at run time looks at it.
+    pub no_feedback: bool,
 }
 
 impl NativeEffects {
@@ -178,6 +195,8 @@ impl NativeEffects {
         effect: false,
         pending: NativeClass::Strict,
         constant: false,
+        contained: false,
+        no_feedback: false,
     };
 
     /// [`PURE`](Self::PURE), and a constant function besides: same arguments,
@@ -247,6 +266,30 @@ impl NativeEffects {
     /// This row with the given `Pending`-argument policy.
     pub const fn with_pending(self, pending: NativeClass) -> NativeEffects {
         NativeEffects { pending, ..self }
+    }
+
+    /// This row with its effect [`contained`](Self::contained): whatever it
+    /// does lands in the execution context or the stack, so a speculative
+    /// run may call it.
+    pub const fn contained(self) -> NativeEffects {
+        NativeEffects {
+            contained: true,
+            ..self
+        }
+    }
+
+    /// This row marked [`no_feedback`](Self::no_feedback).
+    pub const fn no_feedback(self) -> NativeEffects {
+        NativeEffects {
+            no_feedback: true,
+            ..self
+        }
+    }
+
+    /// Whether a speculative run must not call this native: it has an
+    /// effect that is not [`contained`](Self::contained).
+    pub const fn is_escaping(&self) -> bool {
+        self.effect && !self.contained
     }
 
     /// Whether a call to this native with constant arguments is itself a
@@ -951,6 +994,10 @@ pub struct PetalCxt<'a> {
     /// mutate the backing store in place and reuse its id instead of cloning.
     /// Always false with optimizations off (the clone-and-alloc baseline).
     pub(crate) in_place: bool,
+    /// A speculative run's tap (`crate::backend::bytecode::vm::spec`): where
+    /// random draws come from and where emits are recorded. `None` in every
+    /// other run.
+    pub(crate) spec: Option<&'a mut crate::backend::bytecode::vm::spec::SpecTap>,
 }
 
 impl<'a> PetalCxt<'a> {
@@ -1144,7 +1191,13 @@ impl<'a> PetalCxt<'a> {
     /// Draw the next uniform `f64` in [0, 1), advancing the owning context's
     /// per-run PRNG state. Backs `random`, `random_int`, and `choose`.
     pub fn rng_next_f64(&mut self) -> f64 {
-        crate::builtins::rng_next_f64(self.rng_state)
+        // A speculative run hands out the draw recorded for this place
+        // (docs/dev/direct-manipulation-v2-plan.md §2.1.4).
+        let raw = match self.spec.as_deref_mut() {
+            Some(tap) => tap.next_u64(self.rng_state),
+            None => crate::builtins::rng_next_u64(self.rng_state),
+        };
+        crate::builtins::unit_f64(raw)
     }
 
     /// The owning context's current Perlin-noise seed.
@@ -1187,6 +1240,9 @@ impl<'a> PetalCxt<'a> {
     /// push it always was.
     pub fn push_output(&mut self, sym: SymbolId, value: Value) {
         self.run_deps.note_emit();
+        if let Some(tap) = self.spec.as_deref_mut() {
+            tap.note_emit(sym, value, self.heap);
+        }
         self.output_buffers.entry(sym).or_default().push(value);
         if self.trace_emit {
             // Pad rather than assume alignment: tracing can be switched on

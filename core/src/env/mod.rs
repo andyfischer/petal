@@ -30,6 +30,7 @@ mod host_io;
 mod observations_json;
 mod reload;
 mod run;
+pub(crate) mod spec_run;
 mod state_json;
 mod state_storage;
 mod static_follow;
@@ -117,6 +118,13 @@ pub struct Env {
     /// The host interfaces this `Env` provides, by name; see
     /// [`Env::provides`].
     provided: std::collections::BTreeMap<String, crate::package::Version>,
+    /// The speculative run in progress, if any: the fork it runs and the
+    /// hooks its VM consults (`crate::dm_v2::spec`). Set only for the
+    /// duration of one run.
+    pub(crate) spec: Option<crate::backend::bytecode::vm::spec::ActiveSpec>,
+    /// Handle classes whose methods a speculative run may call; see
+    /// [`Env::mark_handle_class_spec_safe`].
+    pub(crate) spec_safe_handles: std::collections::HashSet<u16>,
 }
 
 /// The interface every `Env` provides: the builtins, at the version of this
@@ -235,6 +243,8 @@ impl Env {
             package_errors: Vec::new(),
             ambient_package_errors,
             check_only: false,
+            spec: None,
+            spec_safe_handles: Default::default(),
             provided: [(
                 CORE_INTERFACE.to_string(),
                 crate::package::Version::parse(env!("CARGO_PKG_VERSION"))
@@ -2034,6 +2044,19 @@ impl Env {
     /// Register a class of host-owned foreign objects, returning its id.
     /// Unlike `register_native`, this may be called at any time — handle
     /// classes are not referenced by compiled programs.
+    /// Say that the methods of handle class `id` are safe to call in a
+    /// speculative run (direct manipulation re-running the script with a
+    /// literal nudged, `crate::dm_v2::spec`): they only read the host
+    /// objects, or change nothing a run can observe. Without this, a
+    /// speculative run that calls a method of the class fails, since the
+    /// runtime cannot tell what a method does to the host.
+    ///
+    /// A side registry rather than a field of [`HandleClass`], so a host
+    /// that builds the struct itself keeps compiling.
+    pub fn mark_handle_class_spec_safe(&mut self, id: HandleClassId) {
+        self.spec_safe_handles.insert(id.0);
+    }
+
     pub fn register_handle_class(&mut self, class: HandleClass) -> HandleClassId {
         let id = HandleClassId(self.handle_classes.len() as u16);
         self.handle_classes.push(class);

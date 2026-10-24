@@ -460,14 +460,25 @@ impl Stack {
             .finish_run(bindings, binding_revisions, heap, rng_state, resources_revision);
     }
 
-    /// Clear all per-run execution state, leaving the stack `Ready` with no
-    /// frames. Persistent `state` and captured `functions` are kept (callers
-    /// that invalidate them, like hot reload, clear them separately). The
-    /// bytecode VM pushes its own root frame on the first step of the next run
-    /// (`vm_started == false` signals it).
+    /// Drop everything a run *derived* — the static values, memo records,
+    /// enum data, captured functions and methods — and make the frame gate's
+    /// next answer "run". `state` is kept. What is dropped is rebuilt by the
+    /// next run, from the program and literals as they are then.
     ///
-    /// This is the single reset point shared by `Env::reset_stack` and
-    /// `Env::transfer_state`.
+    /// For a stack whose heap or literals changed under it: a restore into
+    /// its context, a reload, or a speculative run that overrides a literal
+    /// (docs/dev/direct-manipulation-v2-plan.md R4) — a static value built
+    /// from the old literal would otherwise be loaded as is.
+    pub fn drop_derived(&mut self, why: &'static str) {
+        self.statics.clear();
+        self.memo.clear();
+        self.enums.clear();
+        self.functions.clear();
+        self.invalidate_test(why);
+        self.methods.clear();
+        self.run_deps.force();
+    }
+
     /// The closures, bytecode or heap a test in progress points into are
     /// about to be replaced (`why` says by what): drop its frames, and let
     /// the next [`Env::test_resume`](crate::env::Env::test_resume) end it
@@ -479,6 +490,14 @@ impl Stack {
         }
     }
 
+    /// Clear all per-run execution state, leaving the stack `Ready` with no
+    /// frames. Persistent `state` and captured `functions` are kept (callers
+    /// that invalidate them, like hot reload, clear them separately). The
+    /// bytecode VM pushes its own root frame on the first step of the next run
+    /// (`vm_started == false` signals it).
+    ///
+    /// This is the single reset point shared by `Env::reset_stack` and
+    /// `Env::transfer_state`.
     pub fn reset_execution(&mut self) {
         self.vm_frames.clear();
         self.vm_started = false;

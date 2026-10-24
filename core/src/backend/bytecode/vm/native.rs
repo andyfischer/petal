@@ -29,10 +29,16 @@ impl<'a> Vm<'a> {
     /// file it is showing ([`crate::provenance::pick_frame`]) instead of being
     /// stuck with whichever frame happened to be innermost.
     fn emit_call_chain(&self, origin: Option<TermId>) -> SmallVec<[TermId; 4]> {
-        let mut chain: SmallVec<[TermId; 4]> = SmallVec::new();
         if !self.trace_emit {
-            return chain;
+            return SmallVec::new();
         }
+        self.call_chain(origin)
+    }
+
+    /// The call chain reaching a native, whether or not emit tracing is on:
+    /// a speculative run keys its random draws and its emits by it.
+    fn call_chain(&self, origin: Option<TermId>) -> SmallVec<[TermId; 4]> {
+        let mut chain: SmallVec<[TermId; 4]> = SmallVec::new();
         chain.extend(origin);
         // The innermost frame is last in `vm_frames`, so walk it backwards. The
         // root frame's `call_site` is `None` — nothing called it — which ends
@@ -364,6 +370,9 @@ impl<'a> Vm<'a> {
         chain: &'c [TermId],
         origin: Option<TermId>,
         in_place: bool,
+        // Whether to hand the native a speculative run's tap: false on the
+        // ordinary path, which then never looks at `self.spec`.
+        tap: bool,
     ) -> PetalCxt<'c> {
         PetalCxt {
             args,
@@ -392,6 +401,11 @@ impl<'a> Vm<'a> {
             handle_classes: self.handle_classes,
             results: SmallVec::new(),
             in_place,
+            spec: if tap {
+                self.spec.as_deref_mut().map(|s| &mut s.tap)
+            } else {
+                None
+            },
         }
     }
 
@@ -417,6 +431,11 @@ impl<'a> Vm<'a> {
         if let Some(v) = self.intercept_pending(nid, args, origin) {
             return Ok(v);
         }
+        // A speculative run gates the call by the native's row first
+        // (`vm::spec`, docs/dev/direct-manipulation-v2-plan.md §2.1.3).
+        if self.spec.is_some() {
+            return self.call_native_spec(nid, args, in_place, origin);
+        }
         self.profile.record_native(nid.0);
         let natives = self.native_fns;
         let chain = self.emit_call_chain(origin);
@@ -440,7 +459,7 @@ impl<'a> Vm<'a> {
         };
         #[allow(clippy::disallowed_methods, reason = "only while profiling, which no web host turns on")]
         let timed = self.profile.enabled.then(std::time::Instant::now);
-        let mut cxt = self.native_cxt(args, &chain, origin, in_place);
+        let mut cxt = self.native_cxt(args, &chain, origin, in_place, false);
         let count = natives.call(nid, &mut cxt)?;
         let result = cxt.take_result(count);
         if let Some(t) = timed {
@@ -482,6 +501,95 @@ impl<'a> Vm<'a> {
         Ok(result)
     }
 
+    /// [`call_native_fn`](Self::call_native_fn) in a speculative run: an
+    /// escaping effect is suppressed (`nil`, recorded), a host-data read is
+    /// recorded by the baselines and answered from the record after, and
+    /// every call that goes ahead tells the natives' tap where it is (for
+    /// keying random draws and emits) and what its raw arguments were.
+    #[cold]
+    #[inline(never)]
+    fn call_native_spec(
+        &mut self,
+        nid: NativeFnId,
+        args: &[Value],
+        in_place: bool,
+        origin: Option<TermId>,
+    ) -> Result<Value, String> {
+        let chain = self.call_chain(origin);
+        use super::spec::{CallInfo, Portable, ReplayPhase, SuppressedCall, chain_hash, loop_path_hash};
+        use crate::dm_v2::observe::{ObsBounds, ObsValue};
+        let natives = self.native_fns;
+        let effects = natives.effects(nid);
+        if effects.is_escaping() {
+            let spec = self.spec.as_deref_mut().expect("spec run");
+            spec.suppressed.push(SuppressedCall {
+                native: natives.get_name(nid).to_string(),
+                origin,
+            });
+            return Ok(Value::Nil);
+        }
+        let path_hash = match self.stack.vm_frames.len().checked_sub(1) {
+            Some(top) => loop_path_hash(&self.full_path(top)),
+            None => loop_path_hash(&[]),
+        };
+        let chain_h = chain_hash(&chain);
+        let host_key = if effects.reads.contains(crate::native_fn::InputClasses::HOST_DATA) {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            for a in args {
+                std::hash::Hasher::write_u64(&mut h, crate::value::hash_value(a, self.heap));
+            }
+            Some((nid.0, std::hash::Hasher::finish(&h)))
+        } else {
+            None
+        };
+        let spec = self.spec.as_deref_mut().expect("spec run");
+        if let Some(key) = host_key
+            && spec.host_phase == Some(ReplayPhase::Replay)
+        {
+            match spec.host_table.get(&key) {
+                Some(Some(answer)) => {
+                    let answer = answer.clone();
+                    return Ok(answer.materialize(self.heap));
+                }
+                // Recorded, but not portable: ask again.
+                Some(None) => {}
+                None => {
+                    // A key the baseline never asked for: a perturbed run
+                    // must not start a fetch on the host's side.
+                    spec.new_host_keys += 1;
+                    return Ok(Value::Nil);
+                }
+            }
+        }
+        let capture = spec.capture_args && effects.emits;
+        let heap = &*self.heap;
+        spec.tap.call = Some(CallInfo {
+            chain: chain.clone(),
+            chain_hash: chain_h,
+            path_hash,
+            nid: Some(nid),
+            args: if capture {
+                args.iter().map(|&a| ObsValue::from_value(a, heap, ObsBounds::ARGS)).collect()
+            } else {
+                SmallVec::new()
+            },
+            rng_occ: None,
+            draws: 0,
+        });
+        let mut cxt = self.native_cxt(args, &chain, origin, in_place, true);
+        let called = natives.call(nid, &mut cxt);
+        let result = called.map(|count| cxt.take_result(count));
+        let spec = self.spec.as_deref_mut().expect("spec run");
+        spec.tap.call = None;
+        let result = result?;
+        if let Some(key) = host_key
+            && spec.host_phase == Some(ReplayPhase::Record)
+        {
+            spec.host_table.insert(key, Portable::from_value(result, self.heap));
+        }
+        Ok(result)
+    }
+
     /// Dispatch `h.method(args...)` through the handle class registered for
     /// `h.class`. Liveness is checked first, and a stale handle errors
     /// with the class name and `describe()` output without invoking
@@ -510,6 +618,17 @@ impl<'a> Vm<'a> {
                 (class.describe)(h.slot, h.serial)
             ));
         }
+        // A speculative run may not reach into host objects unless the host
+        // said the class is safe to call (`Env::mark_handle_class_spec_safe`).
+        if let Some(spec) = self.spec.as_deref_mut()
+            && !spec.safe_handles.contains(&h.class.0)
+        {
+            spec.unsafe_hit = Some(class.name.to_string());
+            return Err(format!(
+                "a speculative run cannot call `{}` on a {} handle: the class is not marked safe for speculative runs",
+                method_name, class.name
+            ));
+        }
         let mut full_args: SmallVec<[Value; 8]> = SmallVec::new();
         full_args.push(Value::Handle(h));
         full_args.extend_from_slice(args);
@@ -521,7 +640,7 @@ impl<'a> Vm<'a> {
         // (`Env::note_host_data_changed`).
         self.memo_note_effect();
         self.stack.run_deps.note_host_read();
-        let mut cxt = self.native_cxt(&full_args, &chain, origin, false);
+        let mut cxt = self.native_cxt(&full_args, &chain, origin, false, true);
         let count = (class.call_method)(&mut cxt, method_name)?;
         Ok(cxt.take_result(count))
     }

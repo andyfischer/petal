@@ -220,6 +220,9 @@ impl<'a> Vm<'a> {
             frame.path_inherits = !self.stack.vm_frames.is_empty();
             frame.path.push(PathPart::Call(site));
         }
+        if let (Some(spec), Some(f), Some(cs)) = (self.spec.as_deref_mut(), func, call_site) {
+            spec.note_call(cs, f);
+        }
         frame
     }
 
@@ -250,6 +253,9 @@ impl<'a> Vm<'a> {
         if let Some(site) = site {
             frame.path_inherits = inherits;
             frame.path.push(PathPart::Call(site));
+        }
+        if let (Some(spec), Some(f), Some(cs)) = (self.spec.as_deref_mut(), func, call_site) {
+            spec.note_call(cs, f);
         }
         fi
     }

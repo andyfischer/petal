@@ -51,22 +51,15 @@ pub fn transfer_stack_state(
 
     stack.state.retain(|k, _| new_state_keys.contains(&k.base));
     stack.reset_execution();
-    // A different program (or restored state) invalidates whatever the last
-    // run recorded about its inputs.
-    stack.run_deps.force();
-    // The old captured closures point into the caller's now-cleared closures
-    // vec; they get recaptured on the next run.
-    stack.functions.clear();
-    stack.invalidate_test("the program was reloaded while the test was waiting");
-    stack.methods.clear();
-    // An enum the new program dropped must not keep answering field reads.
-    stack.enums.clear();
-    // Memo records name functions of the old program and closures that were
-    // just cleared; nothing in them survives a different program.
-    stack.memo.clear();
-    // Static values were built by the old program from the old literals;
-    // the next run builds every one of them again (`crate::static_cache`).
-    stack.statics.clear();
+    // Everything the last run derived goes (`Stack::drop_derived`): the
+    // frame gate's verdict (a different program or restored state
+    // invalidates what the last run recorded about its inputs), the captured
+    // closures (they point into the caller's now-cleared closures vec and
+    // are recaptured on the next run), methods, enums (an enum the new
+    // program dropped must not keep answering field reads), memo records
+    // (they name functions of the old program) and static values (built by
+    // the old program from the old literals; `crate::static_cache`).
+    stack.drop_derived("the program was reloaded while the test was waiting");
     // `reset_execution` cleared `vm_started`, so the VM re-pushes its root frame
     // (against the new program's lowering) on the next run.
 

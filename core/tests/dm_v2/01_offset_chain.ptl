@@ -1,0 +1,13 @@
+import io
+// A position through a helper and a chain of arithmetic.
+let s = symbol("draw")
+let margin = 12
+let scale = 1.5
+
+fn place(i)
+  margin + i * 30.0 * scale
+end
+
+for i in range(0, 4) do
+  push_output(s, place(i))
+end

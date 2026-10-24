@@ -102,6 +102,11 @@ inline constexpr uint32_t PendingAllow = PB_FX_PENDING_ALLOW;
 // A constant function of its arguments, reading no host state of any kind.
 // Opt-in and never implied by Pure; a wrong Const is a stale value forever.
 inline constexpr uint32_t Const = PB_FX_CONST;
+// With Effect: the effect stays inside the Petal execution, so direct
+// manipulation's speculative runs may call it. Never for host state.
+inline constexpr uint32_t Contained = PB_FX_CONTAINED;
+// Direct manipulation may not move the result through the arguments.
+inline constexpr uint32_t NoFeedback = PB_FX_NO_FEEDBACK;
 inline constexpr uint32_t ReadsPointer = PB_FX_READS_POINTER;
 inline constexpr uint32_t ReadsKeyboard = PB_FX_READS_KEYBOARD;
 inline constexpr uint32_t ReadsClock = PB_FX_READS_CLOCK;

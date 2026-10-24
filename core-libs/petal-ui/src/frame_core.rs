@@ -360,6 +360,22 @@ impl FrameCore {
         Ok(FrameRun::Ran)
     }
 
+    /// The env and a [`SpecHost`](petal::dm_v2::SpecHost) that installs this
+    /// core's providers (host data, fonts) around a speculative run, exactly
+    /// as [`frame`](Self::frame) installs them around a live one
+    /// (docs/dev/direct-manipulation-v2-plan.md R11). Without it a
+    /// speculative run's `host_data` answers nil and `text_width` measures
+    /// with no font source, and its baseline cannot match the live frame.
+    pub fn spec_parts(&mut self) -> (&mut Env, FrameSpecHost<'_>) {
+        (
+            &mut self.env,
+            FrameSpecHost {
+                provider: &mut self.provider,
+                fonts: &mut self.fonts,
+            },
+        )
+    }
+
     // ── Readout ──────────────────────────────────────────────────────────
 
     /// The memo counters of the app's stack, see [`petal::memo::MemoStats`].
@@ -419,5 +435,22 @@ impl FrameStats {
                 "cold": m.cold,
             },
         })
+    }
+}
+
+/// [`FrameCore::spec_parts`]'s run wrapper: the core's providers, lent for
+/// the duration of each speculative run.
+pub struct FrameSpecHost<'a> {
+    provider: &'a mut Option<DataProvider>,
+    fonts: &'a mut Option<draw::FontProvider>,
+}
+
+impl petal::dm_v2::SpecHost for FrameSpecHost<'_> {
+    fn with_run_env(&mut self, env: &mut Env, f: &mut dyn FnMut(&mut Env)) {
+        let saved = host_data::swap_data_provider(self.provider.take());
+        let saved_fonts = draw::swap_font_provider(self.fonts.take());
+        f(env);
+        *self.fonts = draw::swap_font_provider(saved_fonts);
+        *self.provider = host_data::swap_data_provider(saved);
     }
 }

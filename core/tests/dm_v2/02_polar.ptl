@@ -1,0 +1,12 @@
+import io
+// Points on a circle: trig, a record, a loop.
+let s = symbol("draw")
+let cx = 200.0
+let cy = 150.0
+let radius = 80.0
+let count = 6
+
+for i in range(0, count) do
+  let a = i * 2 * pi() / count
+  push_output(s, {x: cx + cos(a) * radius, y: cy + sin(a) * radius})
+end

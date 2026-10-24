@@ -114,7 +114,10 @@ pub fn register_panel_stubs(env: &mut Env) {
     env.register_native("query", native_query, HOST_READ);
     env.register_native("invalidate", native_invalidate, NativeEffects::EFFECT);
     env.register_native("emit", native_emit, NativeEffects::PURE);
-    env.register_native("mutate", native_mutate, NativeEffects::EFFECT);
+    // Garden's `mutate` advances a counter and emits an event: contained.
+    // `invalidate` and `panel_store_set` reach Garden's caches and store,
+    // so they stay escaping, as there.
+    env.register_native("mutate", native_mutate, NativeEffects::EFFECT.contained());
     env.register_native("mutate_result", native_mutate_result, NativeEffects::PURE);
     env.register_native("claim_key", native_claim_key, NativeEffects::PURE);
     env.register_native("request_frame", native_request_frame, EMITS);

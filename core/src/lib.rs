@@ -22,6 +22,7 @@ pub mod dict;
 pub mod effect_audit;
 pub mod enum_table;
 pub mod direct_manipulation;
+pub mod dm_v2;
 pub mod dot_graph;
 pub mod env;
 pub mod error;

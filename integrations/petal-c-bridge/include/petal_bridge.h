@@ -317,7 +317,16 @@ pb_status pb_vm_override_file(pb_vm* vm, const char* path, const char* source);
  *                   native without it is always re-evaluated. Combined with
  *                   PROBE, EMITS, EFFECT or any READS flag it is ignored.
  *                   When in doubt, leave it off. See docs/usage/ffi.md
- *                   "Constant natives". */
+ *                   "Constant natives".
+ *   PB_FX_CONTAINED with PB_FX_EFFECT: the effect stays inside the Petal
+ *                   execution (it only pushes output or advances a counter
+ *                   through the bridge), so a speculative run (direct
+ *                   manipulation re-running the script with a literal nudged)
+ *                   may call it. Without it, a speculative run never calls an
+ *                   effectful native and answers nil instead. A callback that
+ *                   touches host state must NOT set it.
+ *   PB_FX_NO_FEEDBACK the native's result may not be moved by direct
+ *                   manipulation through its arguments (like `random`). */
 enum {
     PB_FX_PURE = 0,
     PB_FX_PROBE = 1u << 0,
@@ -326,6 +335,8 @@ enum {
     PB_FX_PENDING_EFFECTFUL = 1u << 3, /* a Pending arg makes the call a no-op */
     PB_FX_PENDING_ALLOW = 1u << 4,     /* the native sees Pending args itself */
     PB_FX_CONST = 1u << 5,             /* constant function of its arguments */
+    PB_FX_CONTAINED = 1u << 6,         /* the effect stays in the execution */
+    PB_FX_NO_FEEDBACK = 1u << 7,       /* no direct-manipulation feedback */
     PB_FX_READS_POINTER = 1u << 8,
     PB_FX_READS_KEYBOARD = 1u << 9,
     PB_FX_READS_CLOCK = 1u << 10,

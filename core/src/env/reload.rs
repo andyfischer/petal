@@ -909,6 +909,57 @@ fn plan_patch(program: &Program, change: &ProgramChange) -> Result<Patch, String
     Ok(patch)
 }
 
+impl Env {
+    /// Give each literal term in `terms` a constant slot of its own — the
+    /// value-neutral half of a value-only reload (see the module docs, "Late
+    /// binding") — and return the slot each one now loads from, in order.
+    ///
+    /// Literals are interned, so two `10`s share one constant; a speculative
+    /// run that overrides one of them by constant would move both. After
+    /// this, each term reads a constant no other term reads, and nothing
+    /// about the program's behaviour has changed: the slot holds the value
+    /// the shared constant does. A term that already has a slot keeps it (a
+    /// later reload of it writes that slot). Costs the stacks running the
+    /// program one rebuild of their static values, since the constant table's
+    /// revision moves. Direct manipulation v2 calls it once per candidate
+    /// literal (docs/dev/direct-manipulation-v2-plan.md R3).
+    ///
+    /// Errors, changing nothing, when a term is not a literal.
+    pub fn slot_literals(&mut self, pid: ProgramId, terms: &[TermId]) -> Result<Vec<ConstantId>, String> {
+        let program = self.programs.get_mut(&pid).ok_or("Program not found")?;
+        for &tid in terms {
+            match program.terms.get(tid.0 as usize).map(|t| &t.op) {
+                Some(TermOp::Constant(_)) => {}
+                _ => return Err(format!("term {} is not a literal", tid.0)),
+            }
+        }
+        let mut retarget: Vec<(TermId, ConstantId, ConstantId)> = Vec::new();
+        let mut slots = Vec::with_capacity(terms.len());
+        for &tid in terms {
+            let TermOp::Constant(old) = program.terms[tid.0 as usize].op else {
+                unreachable!("checked above");
+            };
+            if program.constants.is_slot(old) {
+                slots.push(old);
+                continue;
+            }
+            let value = program.constants.get(old).clone();
+            let slot = program.constants.alloc_slot(value);
+            program.terms[tid.0 as usize].op = TermOp::Constant(slot);
+            retarget.push((tid, old, slot));
+            slots.push(slot);
+        }
+        if !retarget.is_empty()
+            && let Some((_, bc)) = self.bytecode.get_mut(&pid)
+            && !retarget_constants(bc, &retarget)
+        {
+            // As in a value-only reload: the next run lowers from scratch.
+            self.bytecode.remove(&pid);
+        }
+        Ok(slots)
+    }
+}
+
 /// Point each listed term's `LoadConst` at its new constant. Returns false
 /// when an instruction lowered from one of the terms is not the `LoadConst`
 /// of the old constant it should be (the caller then discards the lowering).

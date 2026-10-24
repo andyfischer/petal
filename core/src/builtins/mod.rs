@@ -93,7 +93,7 @@ pub fn initial_seed() -> u64 {
 }
 
 /// Advance the caller-owned xorshift64* state and return the next raw u64.
-pub(super) fn rng_next_u64(state: &mut u64) -> u64 {
+pub(crate) fn rng_next_u64(state: &mut u64) -> u64 {
     let mut x = *state;
     if x == 0 {
         x = initial_seed() | 1; // xorshift requires non-zero state
@@ -105,9 +105,9 @@ pub(super) fn rng_next_u64(state: &mut u64) -> u64 {
     x.wrapping_mul(0x2545F4914F6CDD1D)
 }
 
-pub(super) fn rng_next_f64(state: &mut u64) -> f64 {
-    // 53-bit mantissa, uniform in [0, 1)
-    (rng_next_u64(state) >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
+/// Map a raw draw to a uniform `f64` in [0, 1) (53-bit mantissa).
+pub(crate) fn unit_f64(raw: u64) -> f64 {
+    (raw >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
 }
 
 /// Validate that a native function received exactly `n` arguments.
@@ -165,13 +165,21 @@ const INSPECTS_PENDING: NativeEffects =
 /// A new builtin is dynamic until someone reads it and says otherwise; the
 /// `const_builtins_are_exactly` test pins the list so a row cannot change
 /// class silently.
+///
+/// **Contained effects.** Every builtin with an `effect` touches only the
+/// execution context or the running stack (the print buffer, the noise seed,
+/// the resource table, the expectation log, the method and enum tables, the
+/// heap's frozen set), so every one is [`contained`](NativeEffects::contained):
+/// a speculative run (`crate::dm_v2::spec`) calls it and discards what it did
+/// with the fork. `core/tests/dm_v2_spec.rs` fails when a new effect row is
+/// not.
 pub fn register_builtins(table: &mut NativeFnTable) {
     // Order matters — these must be registered in the same order as the old
     // BuiltinTable so that phantom term indices stay consistent.
     table.register(
         "print",
         io::native_print,
-        NativeEffects::EFFECT.with_pending(NativeClass::Effectful),
+        NativeEffects::EFFECT.with_pending(NativeClass::Effectful).contained(),
     );
     table.register("range", collections::native_range, NativeEffects::CONST);
     table.register("len", collections::native_len, NativeEffects::CONST);
@@ -274,7 +282,7 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register(
         "noise_seed",
         noise::native_noise_seed,
-        NativeEffects::EFFECT,
+        NativeEffects::EFFECT.contained(),
     );
 
     // --- Randomness ---
@@ -371,17 +379,17 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register(
         "__pending",
         pending::native_pending,
-        NativeEffects::EFFECT.with_pending(NativeClass::AllowPending),
+        NativeEffects::EFFECT.with_pending(NativeClass::AllowPending).contained(),
     );
     table.register(
         "__resolve",
         pending::native_resolve,
-        NativeEffects::EFFECT.with_pending(NativeClass::AllowPending),
+        NativeEffects::EFFECT.with_pending(NativeClass::AllowPending).contained(),
     );
     table.register(
         "__reject",
         pending::native_reject,
-        NativeEffects::EFFECT.with_pending(NativeClass::AllowPending),
+        NativeEffects::EFFECT.with_pending(NativeClass::AllowPending).contained(),
     );
 
     // --- Pending meta builtins (Chunk D, append-only) ---
@@ -411,7 +419,7 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     let declare_method_id = table.register(
         crate::classes::DECLARE_METHOD_BUILTIN,
         native_intrinsic_placeholder,
-        NativeEffects::EFFECT,
+        NativeEffects::EFFECT.contained(),
     );
     table.intrinsic_declare_method = Some(declare_method_id);
 
@@ -512,7 +520,7 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     let enum_data_id = table.register(
         crate::program::ENUM_DATA_BUILTIN,
         native_intrinsic_placeholder,
-        NativeEffects::EFFECT,
+        NativeEffects::EFFECT.contained(),
     );
     let enum_from_id = table.register(
         crate::program::ENUM_FROM_BUILTIN,
@@ -530,8 +538,8 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // value's contents, so neither may be folded away, replayed from a
     // memoized scope, or (docs/proposals/static-values.md) treated as a
     // constant. Append-only, like the rest of this block.
-    table.register("freeze", collections::native_freeze, NativeEffects::EFFECT);
-    table.register("frozen", collections::native_frozen, NativeEffects::EFFECT);
+    table.register("freeze", collections::native_freeze, NativeEffects::EFFECT.contained());
+    table.register("frozen", collections::native_frozen, NativeEffects::EFFECT.contained());
 
     // `__enum_all` is `Enum.all`: the one list of an enum's payload-free
     // variants the running stack keeps (`EnumTable::all`). A VM intrinsic the
@@ -550,9 +558,9 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // written to the context's log and the run carries on. Effects: the log
     // is the point, so a call is never folded, kept or replayed.
     // Append-only, like the rest of this block.
-    table.register("expect", io::native_expect, NativeEffects::EFFECT);
-    table.register("expect_eq", io::native_expect_eq, NativeEffects::EFFECT);
-    table.register("expect_near", io::native_expect_near, NativeEffects::EFFECT);
+    table.register("expect", io::native_expect, NativeEffects::EFFECT.contained());
+    table.register("expect_eq", io::native_expect_eq, NativeEffects::EFFECT.contained());
+    table.register("expect_near", io::native_expect_near, NativeEffects::EFFECT.contained());
 
     // The helpers a large program otherwise writes by hand (the Moses
     // debrief's standard-library list). All arithmetic on their arguments and

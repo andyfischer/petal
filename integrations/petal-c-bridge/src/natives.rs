@@ -41,6 +41,8 @@ pub const FX_EFFECT: u32 = 1 << 2;
 pub const FX_PENDING_EFFECTFUL: u32 = 1 << 3;
 pub const FX_PENDING_ALLOW: u32 = 1 << 4;
 pub const FX_CONST: u32 = 1 << 5;
+pub const FX_CONTAINED: u32 = 1 << 6;
+pub const FX_NO_FEEDBACK: u32 = 1 << 7;
 pub const FX_READS_SHIFT: u32 = 8;
 pub const FX_READS_HOST_DATA: u32 = 1 << 12;
 
@@ -66,6 +68,8 @@ pub fn effects_from_flags(flags: u32) -> NativeEffects {
         effect: flags & FX_EFFECT != 0,
         pending,
         constant: flags & FX_CONST != 0,
+        contained: flags & FX_CONTAINED != 0,
+        no_feedback: flags & FX_NO_FEEDBACK != 0,
     }
 }
 

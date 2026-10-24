@@ -22,10 +22,12 @@ table's `register`), so there is no undeclared native:
 | `effect` | does something a replay cannot reproduce: prints, reseeds noise, creates or resolves a resource, advances a counter, reaches through a handle, writes host state |
 | `pending: NativeClass` | a `Pending` argument is absorbed (`Strict`, the default), makes the call a no-op (`Effectful`, for emitters), or reaches the native (`AllowPending`, the pending inspectors) |
 | `constant` | a constant function: the same arguments give the same result for the life of the program, reading no dynamic input of any kind. Asked through `is_const()`, which is false for a row that also reads, emits or has an effect |
+| `contained` | with `effect`: the effect stays inside the execution (the print buffer, the noise seed, a counter, an output buffer, the resource table, the stack's method and enum tables), which a fork owns a copy of. A speculative run (direct manipulation v2) calls a contained native and drops what it did with the fork; it **suppresses** an effect that is not contained (answers `nil`). Off by default, so an embedder's effect is escaping until it says otherwise. Every core `effect` row is contained, and `core/tests/dm_v2_spec.rs` fails when a new one is not |
+| `no_feedback` | direct manipulation may not move this native's result through its arguments (`random`). Read by parameter discovery (DM v2 M2) |
 
 The constructors are `PURE`, `CONST`, `EMITS`, `EFFECT`, `probe(classes)`,
 `reads(classes)`, and the builders `with_emits`, `with_effect`,
-`with_pending`. A row is the union over every path through the native: one
+`with_pending`, `contained`, `no_feedback`. A row is the union over every path through the native: one
 that consults the resource table only when handed a `Pending` still declares
 `RESOURCES`. Over-declaring costs a missed replay; under-declaring is the bug.
 
@@ -39,6 +41,7 @@ being `0`.
 | Memoized scopes | the whole row, at every native call inside a recording scope: `effect` (or a `Pending` result) makes the scope effectful; `HOST_DATA` and `RESOURCES` reads become dependencies; other reads are probed if `probe`, else effectful | `memo_note_native`, `core/src/backend/bytecode/vm/memo.rs` |
 | Static values | `is_const()`, through `NativeFnTable::constness`: a call is static only if its native is constant (`map`, `filter`, `reduce` and `sort` are constant when their callbacks are) | `core/src/static_classify/` |
 | Pending values | `pending`, at the native-call boundary, only when an argument is pending | `core/src/backend/bytecode/vm/native.rs` |
+| Speculative runs | `effect` and `contained` (suppress an escaping effect), `emits` (record the raw arguments), `reads(HOST_DATA)` (replay the baseline's answer), `reads(RNG)` (replay the draw by place) | `call_native_spec`, `core/src/backend/bytecode/vm/native.rs`; docs/dev/direct-manipulation-v2-plan.md §2.1.3 |
 
 The frame gate does not read rows. It reads the **activity counters**, which
 the instrumented `PetalCxt` methods move by construction: `binding`,
@@ -143,7 +146,10 @@ beside it.
 
 1. Start from `PURE` and add what the body does. A read of host state the host
    reports changes of is `reads(HOST_DATA)` with `note_host_read()` in the
-   body; a write to host state is `EFFECT` with `note_effect()`.
+   body; a write to host state is `EFFECT` with `note_effect()`. An effect
+   that only touches the execution (a counter, an output buffer, `print`) is
+   `EFFECT.contained()`, so direct manipulation's speculative runs still call
+   it.
 2. `CONST` only for a function of its arguments that reads nothing the host
    can load, swap or seed. When unsure, leave it dynamic.
 3. Run the effect audit over a script that calls it from inside a helper

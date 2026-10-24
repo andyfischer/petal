@@ -53,7 +53,14 @@ impl Env {
             self.static_audit.enter(pid);
         }
 
-        let memo = self.memo_enabled();
+        // The hooks of a speculative run apply to the session's fork only.
+        let spec = match self.spec.as_mut() {
+            Some(active) if active.stack == stack_id => Some(&mut *active.hooks),
+            _ => None,
+        };
+        // A speculative run replays nothing: every call runs, so every
+        // override reaches the code that reads it.
+        let memo = self.policy.memo && !self.trace.enabled && spec.is_none();
         let bc = &self.bytecode.get(&pid).unwrap().1;
         let program = self.programs.get(&pid).ok_or("Program not found")?;
         let stack = self.stacks.get_mut(&stack_id).unwrap();
@@ -73,6 +80,7 @@ impl Env {
             memo,
             &mut self.effect_audit,
             &mut self.static_audit,
+            spec,
         );
         if !vm.stack.vm_started {
             vm.push_root_frame();
@@ -492,6 +500,7 @@ impl Env {
             false,
             &mut self.effect_audit,
             &mut self.static_audit,
+            None,
         )
         .call_closure_sync_named(callable, args, arg_names, host_call_site(name));
         if result.is_err()
@@ -614,13 +623,14 @@ pub(super) fn make_vm<'a>(
     memo: bool,
     audit: &'a mut crate::effect_audit::EffectAudit,
     static_audit: &'a mut crate::static_audit::StaticAudit,
+    spec: Option<&'a mut crate::backend::bytecode::vm::spec::SpecHooks>,
 ) -> Vm<'a> {
     // Read the Copy fields before splitting `ctx`'s fields into disjoint borrows.
     let frame = ctx.frame();
     let trace_pending = ctx.trace_pending;
     let trace_emit = ctx.trace_emit;
     // One flag standing for "some per-instruction hook is armed" (see `Vm::hooks`).
-    let hooks = trace.enabled || observations.enabled || profile.enabled;
+    let hooks = trace.enabled || observations.enabled || profile.enabled || spec.is_some();
     // The profiler charges allocations to the line that made them, from the
     // heap's per-kind counts: they are counted while it is on, and attributed
     // from the start of this run (`VmProfile::begin_run`).
@@ -670,5 +680,6 @@ pub(super) fn make_vm<'a>(
         audit,
         static_audit,
         expects: &mut ctx.expects,
+        spec,
     }
 }

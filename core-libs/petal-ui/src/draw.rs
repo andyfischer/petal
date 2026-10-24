@@ -1387,9 +1387,11 @@ pub fn register_draw(env: &mut Env) {
 /// well as emitting, which no replay reproduces: a scope that opens a layer
 /// is never memoized.
 pub fn register_canvas(env: &mut Env) {
-    register(env, "create_canvas", native_create_canvas, DRAW.with_effect());
-    register(env, "draw_to", native_draw_to, DRAW.with_effect());
-    register(env, "draw_to_screen", native_draw_to_screen, DRAW.with_effect());
+    // Their effect is the context's canvas counters: contained, so a
+    // speculative run (`petal::dm_v2::spec`) draws the layers as a live one.
+    register(env, "create_canvas", native_create_canvas, DRAW.with_effect().contained());
+    register(env, "draw_to", native_draw_to, DRAW.with_effect().contained());
+    register(env, "draw_to_screen", native_draw_to_screen, DRAW.with_effect().contained());
     register(env, "draw_canvas", native_draw_canvas, DRAW);
     register(env, "snapshot_to", native_snapshot_to, DRAW);
     register(env, "blur_canvas", native_blur_canvas, DRAW);

@@ -2855,7 +2855,9 @@ fn register_panel_natives(env: &mut Env) {
     env.register_native("emit", native_emit, EMITS);
     // Garden-only: request an effectful action from the pane's subprocess
     // (`on_mutation`), with the reply host-surfaced as status. See [`native_mutate`].
-    env.register_native("mutate", native_mutate, NativeEffects::EFFECT.with_emits());
+    // A counter and an emit into the panel's event buffer: contained (the
+    // host reads the buffer after a live run; a speculative run's is dropped).
+    env.register_native("mutate", native_mutate, NativeEffects::EFFECT.with_emits().contained());
     // The reading half: what the mutation identified by a handle resolved to.
     env.register_native("mutate_result", native_mutate_result, BINDING);
     // The browser-history navigation API: each raises a typed `NavIntent` into

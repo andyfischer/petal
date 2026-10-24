@@ -184,6 +184,7 @@ impl Env {
             false,
             &mut self.effect_audit,
             &mut self.static_audit,
+            None,
         )
         .push_host_frame(callable, host_call_site(function));
         let stack = self.stacks.get_mut(&stack_id).unwrap();
@@ -362,6 +363,7 @@ impl Env {
             false,
             &mut self.effect_audit,
             &mut self.static_audit,
+            None,
         )
         .run_batch(budget))
     }

@@ -108,13 +108,7 @@ impl Env {
         // nothing, or something else.
         for (key, other) in self.stacks.iter_mut() {
             if other.context == dst_ck && *key != dst {
-                other.statics.clear();
-                other.memo.clear();
-                other.enums.clear();
-                other.functions.clear();
-                other.invalidate_test("a state snapshot was restored while the test was waiting");
-                other.methods.clear();
-                other.run_deps.force();
+                other.drop_derived("a state snapshot was restored while the test was waiting");
             }
         }
         Ok(())

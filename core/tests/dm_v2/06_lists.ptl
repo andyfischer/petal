@@ -1,0 +1,9 @@
+import io
+// Lists, map and reduce.
+let s = symbol("draw")
+let base = [1.0, 2.0, 3.5]
+let k = 2
+
+let scaled = map(base, fn(v) v * k + 0.5 end)
+push_output(s, reduce(scaled, 0, fn(acc, v) acc + v end))
+push_output(s, scaled)

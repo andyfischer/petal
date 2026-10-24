@@ -1,8 +1,8 @@
 # Direct Manipulation v2: plan
 
 Status: design, 23 October 2026, revised after an adversarial review the
-same day ([§10](#10-review-notes) lists what the review changed). Milestones
-M1 to M5 are not started. See [Status](#9-status) at the end, which each
+same day ([§10](#10-review-notes) lists what the review changed). M1 (the
+speculative runner) landed the same day; M2 to M5 are not started. See [Status](#9-status) at the end, which each
 milestone updates when it lands.
 
 The goals are in [docs/tasks/direct-manipulation-v2.md](../tasks/direct-manipulation-v2.md).
@@ -1641,13 +1641,93 @@ with a golden test.
 |---|---|---|---|
 | Design | done, 2026-10-23 | `c9eb67b7` | plan + [hints proposal](../proposals/dm-v2-hints.md) |
 | Design review | done, 2026-10-23 | (this commit) | adversarial review against the code, [§10](#10-review-notes) |
-| M1 speculative runner | not started | | |
+| M1 speculative runner | done, 2026-10-23 | (this commit) | `dm_v2::{spec,observe}`, `vm/spec.rs`, `env/spec_run.rs`; tests `core/tests/dm_v2_spec.rs` (24), `core-libs/petal-ui/tests/dm_v2_spec.rs` (2); deviations below |
 | M2 discovery + Jacobian + hints | not started | | |
 | M3 solver + ranking + API | not started | | |
 | M4 surfaces | not started | | |
 | M5 examples + study | not started | | |
 
 Deviations from this plan are recorded here as they happen, with the reason.
+
+**M1 (speculative runner), 2026-10-23.** What landed: R1 (overrides, gate,
+capture, loaded set; `SpecHooks` in `backend/bytecode/vm/spec.rs`, consulted
+by the hooked path of `Vm::step_in` (`LoadConst` overrides, branch
+fingerprint, watched terms), `call_native_fn`, frame pushes and
+`deliver_value`), R2 (`NativeEffects::contained` / `no_feedback`, every core
+`effect` row contained, petal-ui and garden-script rows classified,
+`Env::mark_handle_class_spec_safe`, `PB_FX_CONTAINED` / `PB_FX_NO_FEEDBACK`
+and `fx::Contained` / `fx::NoFeedback` in the C bridge), R3
+(`Env::slot_literals`), R4 (`Stack::drop_derived`, now also used by
+`restore_execution` and `transfer_stack_state`), R5 (watched terms recorded
+by the hooks as `ObsValue`; the Env's trace, observations, profile and
+static audit are swapped for idle ones around a spec run,
+`Env::run_spec_fork`), R7, R8, R11 (`SpecHost`, `NoHost`, petal-ui
+`FrameCore::spec_parts` → `FrameSpecHost`), R12, R13. The bench numbers for
+acceptance item 13 are at the end of this entry.
+
+Deviations:
+
+1. *`EmitKey` in a loop.* Item 9 says five emits from one call in a `for`
+   loop get occurrences 0 to 4. With the loop path in `path_hash` (§2.1.6),
+   each iteration has its own path and occurrence 0; the five keys differ by
+   `path_hash`. Occurrences 0 to 4 are what a `forEach`/`map` callback gets
+   (no `Index` part). The test checks both. `loop_path_hash` also folds the
+   `Call` parts of the path, so the same loop under two callers is two
+   places.
+2. *Fingerprint.* Instead of separate per-term `StateInit` counts, the
+   fingerprint folds `(function, ip, next ip)` of every conditional
+   instruction: jumps, `ForEachNext`/`RangeNext` (trip counts), match arms
+   and `StateInit`, whose hit jumps past the init block and whose miss falls
+   through. Same information, one mechanism (items 10 and 17).
+3. *`ObsValue`* gained `Variant { tag, data }` (an enum variant, which is
+   what a draw command is); a path step `Field("x"|"y"|"z")` reads a vec
+   list; a dual records its primal. *`RunError`* gained `Unsafe(class)`.
+   *`loaded`* is a `ParamSet` (no new dependency for `FixedBitSet`).
+4. *Baselines and the replay tables.* Both baselines draw from the forked
+   stream and ask the host-data provider; the first's records are what later
+   runs replay, the second records into tables of its own and must agree
+   (§2.1.5). A host-data answer that cannot be carried to another heap (a
+   handle, a closure) is recorded as "ask again" and called through.
+5. *`add_params` takes the host* (`add_params(env, host, params)`): it
+   re-runs the baseline once so the loaded set covers the new parameters,
+   and that run needs the host's providers like any other.
+6. *Garden's `SpecHost`* is deferred to M4 (Garden surfaces): nothing opens
+   a session in Garden before then. The garden-script rows (`row`,
+   `column`, `mutate` contained; `invalidate`, `panel_store_set` escaping)
+   are classified in M1 as planned.
+7. *Effect audit.* The "report an escaping effect seen in spec mode"
+   extension of `effect_audit` is not done: each run already lists what it
+   suppressed (`SpecRun::suppressed`), and `BaselineMismatch` names them.
+8. *Recompile oracle* (item 11) edits entry-file literals only, probes ints
+   by `+1` and floats by `+1e-3` (§2.3.4), and when both strategies fail it
+   compares only that both failed (the messages quote different source
+   text). It leaves one compiled program per run loaded; it is test-only.
+   It runs over the seed set `core/tests/dm_v2/*.ptl` until M5.
+9. *Baseline step budget* is `max_steps` or 10⁹; perturbed runs default to
+   ten times the baseline's steps, at least 10,000.
+10. *Hot path.* A spec run sets `Vm::hooks`, so every instruction takes
+    the hooked path of `Vm::step_in`, which is where the override is
+    applied: neither the straight-line loop (`fast.rs`) nor `exec_inst`
+    (`dispatch.rs`) changed. A first version checked `Vm::spec` in
+    `exec_inst`'s `LoadConst` and at the top of `call_native_fn` and cost
+    the native-heavy `spreadsheet` benchmark 2.5%; the gate now sits before
+    the call chain is built, `call_native_spec` is out of line, and the
+    ordinary path hands natives no tap. The off-path cost left is one
+    `Option` test in `call_native_fn`, `push_frame`/`frame_from_pool` and
+    `deliver_value`, and one in `PetalCxt::rng_next_f64` and `push_output`.
+
+Bench (acceptance item 13), release builds of `d4de0db6` and of this
+commit on the same machine, interleaved. `petal run test/benchmarks/*.ptl`,
+median of 16 runs (wall time, process start included): spreadsheet 192.5 →
+193.6 ms (+0.6%; a second series +0.5%), calls 29.7 → 29.6, life 16.2 →
+15.7, match_dispatch 330.1 → 329.0, audio_synth 95.8 → 95.8. `bench_panel
+<app> 120 1200x800 --wiggle`, p50 frame ms over five runs, memoized /
+`--no-memo`: analytics-dashboard 0.52 / 1.84 → 0.52 / 1.86,
+server-monitoring 1.15 / 4.06 → 1.13 / 4.05, photo-adjust 0.60 / 2.23 →
+0.60 / 2.24, notes 0.22 / 0.48 → 0.21 / 0.48, spreadsheet 0.71 / 0.79 →
+0.73 / 0.80. Everything is within about 1%, at the noise floor of these
+measurements; the native-call-heavy spreadsheet is the one that leans
+positive (≈ +0.5 to +1%).
 
 ---
 

@@ -43,6 +43,7 @@ mod intrinsics;
 mod introspect;
 mod memo;
 mod native;
+pub mod spec;
 
 pub use frame::{FramePath, LoopCursor, VmFrame};
 
@@ -202,6 +203,10 @@ pub struct Vm<'a> {
     /// The owning context's recorded expectations, and the flag a native
     /// sets to suspend a test ([`crate::expect::ExpectLog`]).
     pub expects: &'a mut crate::expect::ExpectLog,
+    /// The hooks of a speculative run ([`spec`]), present only while
+    /// `crate::dm_v2::spec` runs one of its forks. Their presence turns
+    /// [`hooks`](Self::hooks) on, so every instruction takes the general path.
+    pub spec: Option<&'a mut spec::SpecHooks>,
 }
 
 impl<'a> Vm<'a> {
@@ -354,11 +359,26 @@ impl<'a> Vm<'a> {
             let now = *self.heap.alloc_stats().by_kind();
             self.profile.alloc_before(&now);
         }
-        let executed = self.exec_inst(frame_idx, inst, origin);
+        // A speculative run may load another value in a literal's place
+        // (`spec`). Its hooks keep every instruction on this path, so neither
+        // the straight-line loop nor `exec_inst` needs to know.
+        let executed = match (self.spec.as_deref_mut(), inst) {
+            (Some(spec), &Inst::LoadConst { dst, k }) => match spec.load_const(k) {
+                Some(v) => {
+                    self.set(frame_idx, dst, v);
+                    Ok(StepResult::Continue)
+                }
+                None => self.exec_inst(frame_idx, inst, origin),
+            },
+            _ => self.exec_inst(frame_idx, inst, origin),
+        };
         if self.profile.enabled {
             let now = *self.heap.alloc_stats().by_kind();
             let program = self.program;
             self.profile.alloc_after(&now, || source_line(program, origin));
+        }
+        if self.spec.is_some() && executed.is_ok() {
+            self.spec_after_inst(frame_idx, func.func_id, ip, inst, origin);
         }
         match executed {
             Ok(sr) => {
@@ -502,6 +522,49 @@ impl<'a> Vm<'a> {
             return Some(format!("test \"{}\"", test.name));
         }
         Some(base_fn_name(name).to_string())
+    }
+
+    /// What a speculative run notes after an instruction retires: the branch
+    /// it took, for the fingerprint, and the value of a watched term.
+    #[cold]
+    #[inline(never)]
+    fn spec_after_inst(
+        &mut self,
+        frame_idx: usize,
+        func_id: Option<FunctionId>,
+        ip: usize,
+        inst: &Inst,
+        origin: Option<TermId>,
+    ) {
+        let same_frame = self.stack.vm_frames.len() == frame_idx + 1;
+        let branchy = matches!(
+            inst,
+            Inst::JumpIfFalse { .. }
+                | Inst::JumpIfTrue { .. }
+                | Inst::JumpIfPresent { .. }
+                | Inst::JumpIfPending { .. }
+                | Inst::ForEachNext { .. }
+                | Inst::RangeNext { .. }
+                | Inst::MatchArm { .. }
+                | Inst::MatchSwitch { .. }
+                | Inst::StateInit { .. }
+        );
+        if branchy && same_frame {
+            let next = self.stack.vm_frames[frame_idx].ip;
+            if let Some(spec) = self.spec.as_deref_mut() {
+                spec.note_branch(func_id, ip, next);
+            }
+        }
+        if same_frame
+            && let (Some(term), Some(dst)) = (origin, inst.dst())
+            && self.spec.as_deref().is_some_and(|s| s.watch.contains(&term))
+        {
+            let v = self.reg(frame_idx, dst);
+            let heap = &*self.heap;
+            if let Some(spec) = self.spec.as_deref_mut() {
+                spec.note_watch(term, v, heap);
+            }
+        }
     }
 
     // -- register access -----------------------------------------------------

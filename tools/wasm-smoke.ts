@@ -31,7 +31,7 @@ const required = new Set(
 );
 
 // A static build on the first frame: the path that trapped in the
-// 2026-10-15 report (docs/wasm-use-case-feedback-10-15.md).
+// 2026-10-15 report (docs/dev/wasm-use-case-feedback-10-15.md).
 const STATIC_SCRIPT = `
 const table = for i in range(0, 8) do [i, i * i] end
 let total = 0

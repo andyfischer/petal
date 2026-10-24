@@ -1,7 +1,9 @@
 # Direct Manipulation v2: plan
 
-Status: design, 23 October 2026. Milestones M1 to M5 are not started. See
-[Status](#9-status) at the end, which each milestone updates when it lands.
+Status: design, 23 October 2026, revised after an adversarial review the
+same day ([§10](#10-review-notes) lists what the review changed). Milestones
+M1 to M5 are not started. See [Status](#9-status) at the end, which each
+milestone updates when it lands.
 
 The goals are in [docs/tasks/direct-manipulation-v2.md](../tasks/direct-manipulation-v2.md).
 Where this plan and an older doc disagree (the user page
@@ -32,6 +34,7 @@ Contents
 7. [Decisions this plan overrides](#7-decisions-this-plan-overrides)
 8. [Risks and open questions](#8-risks-and-open-questions)
 9. [Status](#9-status)
+10. [Review notes](#10-review-notes)
 
 ---
 
@@ -93,6 +96,13 @@ Line numbers are as of commit `4d59549b`.
   check when disabled (`:93`). The queries are `last_for_term` (`:115`),
   `all_for_term` (`:120`) and `last_for_term_before(term, seq)` (`:130`). There
   is no term filter.
+- The `TraceBuffer` belongs to the **`Env`** (`env/mod.rs:60`), not to a
+  stack or a context. Every stack and every fork writes into the same ring,
+  and Garden's panel trace (`panel.rs:184`, enabled at `:2226`) is this ring.
+  A spec run that leaves tracing on would therefore fill the live trace with
+  speculative events, and because events hold values weakly, a value read
+  back after the run may already be `<collected>`. v2 does not capture
+  through this buffer (R5, revised).
 - Emit attribution: `ExecutionContext::trace_emit` and `emit_origins`
   (`execution_context.rs`, the `emit_origins` field and `EmitSite` struct)
   record one `EmitSite { chain }` per buffered emit, index-aligned with
@@ -131,7 +141,26 @@ Line numbers are as of commit `4d59549b`.
   with `constants.revision()` (`run.rs`, in `make_vm`:
   `stack.statics.sync(&bc.statics, program.constants.revision())`).
 - Two dispatch loops read `LoadConst`: `vm/dispatch.rs:22` and
-  `vm/fast.rs:138`.
+  `vm/fast.rs:138`. No pass folds constants or fuses a constant into another
+  instruction (the only `LoadConst` producer is `lower.rs:349`), so a slot
+  override reaches every use. The Recompile oracle (§2.1.8) keeps this true.
+- `fork_execution` clones the `Stack` whole (`fork.rs:52`), **including** its
+  statics, memo, captured functions and methods. A fork that runs with an
+  override would load a static built from the old value. Hence R4.
+- `ExecutionContext::output_buffers` and `emit_origins` are
+  `std::collections::HashMap` with the default random hasher
+  (`execution_context.rs:9,31,93`). Iterating channels gives a different order
+  in every fork, so everything v2 builds from them iterates channels sorted by
+  `SymbolId`. Petal's own `map` and record values are insertion-ordered with an
+  Fx index (`dict.rs:27-32`, `record.rs`), so script-visible iteration order is
+  deterministic.
+- A value-only reload and `set_config_value` both refuse a change of type:
+  `10` to `10.5` is `NeedsReload` (`env/reload.rs`, `set_config_value` doc).
+  An edit that respells an int literal as a float is therefore a structural
+  reload (state is still transferred by key), not a value-only one.
+- v1's `apply_edits(source, edits)` (`direct_manipulation.rs:334`) takes one
+  source string and ignores `SourceSpan::file`. Edits to an imported file
+  would be spliced into the entry file at the wrong offsets.
 - `docs/features/time-travel.md`, "What is captured and what is not"
   (`:297-333`): a fork does **not** isolate host-side state. A forked run
   calls the same natives again, so a native with a host side effect repeats
@@ -149,6 +178,17 @@ Line numbers are as of commit `4d59549b`.
   resources, `expect`) and effects that reach the host (an embedder's
   `spawn_entity`, file writes, Garden mutations). The row does not
   distinguish the two. v2 needs it to (§3, R2).
+- The core rows with `effect` are `print`, `noise_seed`, `__pending`,
+  `__resolve`, `__reject`, `__declare_method` (writes `stack.methods`), the
+  enum-data intrinsic, `freeze`, `frozen`, `expect`, `expect_eq` and
+  `expect_near` (`builtins/mod.rs:174-555`). All of them touch only the
+  context or the stack. The in-repo hosts also declare effects that a script's
+  output depends on: petal-ui `ui_mark` (`hit.rs:378`), `create_canvas`,
+  `draw_to`, `draw_to_screen` (`draw.rs:1390-1392`), and the `invalidate` and
+  `mutate` stubs; garden-script `row`, `column` (`native_fns.rs:37-38`),
+  `invalidate`, `mutate` and `panel_store`. Suppressing any of these as
+  "escaping" would change what the program draws, so they have to be
+  classified in M1, not in M4's ecosystem sweep.
 - `call_native_fn` (`vm/native.rs:406-487`) is the single leaf every native
   call goes through, so it is the hook point for suppression, replay and arg
   capture.
@@ -165,8 +205,11 @@ Line numbers are as of commit `4d59549b`.
 | `noise` | `builtins/mod.rs:273`, `PURE`, reads `ctx.noise_seed` | copied, deterministic | call through |
 | `noise_seed` | `EFFECT`, writes the ctx | contained in the fork | call through (contained) |
 | `time`, `dt`, `frame_count`, `mouse_*`, keys, `screen_*` | petal-ui `input.rs:606-642`, `probe(CLOCK/POINTER/...)`, read **bindings** | bindings are cloned into the fork, so they are frozen | call through, plus a clock-coupling check (§2.5) |
-| initial seed | `initial_seed()` (`builtins/mod.rs:70`) reads the wall clock unless `PETAL_SEED` is set | not relevant once forked | none |
-| `HOST_DATA` / `RESOURCES` reads (`is_valid`, petal-query, fonts) | various | the same host state is visible to every run in one session | call through, caught by the double baseline (§2.1.5) |
+| initial seed | `initial_seed()` (`builtins/mod.rs:70`) reads the wall clock unless `PETAL_SEED` is set | not relevant once forked, **but** two CLI invocations (`run --trace-emits`, then `propose-edit`) see different random draws, so "emit 7" may name a different shape | the v2 CLI pins the seed (default 0, `--seed`, `PETAL_SEED`) and prints it |
+| `HOST_DATA` / `RESOURCES` reads (`is_valid`, petal-query, fonts) | various | the same host state is visible to every run in one session | `HOST_DATA`: replay by (native, args) from the baseline (§2.1.3); `RESOURCES`: call through, caught by the double baseline (§2.1.5) |
+| petal-ui host providers: `host_data`'s `DataProvider` (`host_data.rs:132`), the font provider behind `text_width` (`text.rs:565`), the clipboard (`clipboard.rs:63`) | thread-locals that the **host installs only around its own `env.run`** | a fork run by anyone else sees no provider: `host_data` answers nil, text measures differently | spec runs execute inside the host's run wrapper (`SpecHost`, R11) |
+| pointer during the drag | bindings (`mouse_*`, `drag_active`, `hovered`) | a checkpoint taken mid-gesture holds the gesture's own pointer state | the checkpoint is the frame **before** mouse-down (§2.1.1) |
+| channel order | `output_buffers` is a `std` `HashMap` | differs per fork | iterate sorted by `SymbolId` |
 | handle methods | `call_handle_method` (`vm/native.rs:489`) | host state, shared | refuse unless the class is marked safe (§2.1.3) |
 | state | `stack.state`, keyed per call path | cloned by the fork | frozen at the pre-frame checkpoint (§2.1.2) |
 | `var` cells | heap | cloned by the fork | deterministic within one run |
@@ -186,6 +229,15 @@ The petal-ui prelude unpacks the overloads (`prelude/ui.ptl:326-340`:
 `draw_circle(center, radius, c)` calls the positional native
 `_native_circle`). So at the native boundary the arguments are uniform
 (`cx, cy, radius, ...`) whichever overload the user wrote.
+
+The draw natives live in the `petal-ui` crate, which the core `petal`
+binary does not link: `make_env` (`cli/handlers.rs:1720`) is `Env::new()`
+plus module paths. `draw_circle` does not exist under `petal propose-edit`
+(v1's documented examples use `push_output` channels). petal-ui scripts run
+headless under `petal-ui-run` (`core-libs/petal-ui/src/bin/petal-ui-run.rs`),
+which already pins the clock, dt, seed, input scenario and host-data fixtures.
+That binary is the right CLI host for DM on UI scripts (§4.2), and core tests
+cannot call `draw_circle` (§5, M3).
 
 ### 1.8 Dataflow analysis: `core/src/program_analysis.rs`
 
@@ -290,15 +342,27 @@ and reused for every run that request needs.
 1. **Checkpoint.** The caller hands in a stack that is *ready to run the frame
    being edited*: its inputs are bound and its state is as it was before the
    frame. Where that stack comes from depends on the host:
-   - CLI and MCP: a fresh stack (`create_stack`) that has never run.
+   - CLI and MCP: a fresh stack (`create_stack`) that has never run, with
+     the RNG seed pinned (§1.6). For petal-ui scripts the host is
+     `petal-ui-run`, and the checkpoint is its headless harness after
+     `--frames N - 1` frames, with the frame's inputs bound.
    - Garden and other live hosts: a pre-run fork that the host takes after
      binding the frame's inputs and before `run` while DM is armed (R6:
      `Env::set_dm_checkpoint(stack, true)` keeps the last pre-run fork). This
-     reuses the `petal-sdl` fork-per-frame pattern.
-   - As an optimization when no checkpoint was kept: if the last run's
+     reuses the `petal-sdl` fork-per-frame pattern. The gesture uses the
+     checkpoint of the frame **before** mouse-down. That frame's pointer
+     bindings show no drag, and the gesture's own pointer state (`mouse_down`,
+     `drag_active`, `hovered` over the dragged shape) must not leak into the
+     runs that measure it. While a gesture is open, the host does not advance
+     the panel's clock.
+   - As an optimization, and the default when it applies: if the last run's
      `run_deps` says it left every `state` slot as it found it, the
      post-frame stack is equal to the pre-frame one for state and can be used
-     directly.
+     directly. R6 then forks per frame only for programs that write state.
+
+   `begin` forks the checkpoint into a stack **the session owns**, so R6
+   refreshing (or dropping) the host's checkpoint during the gesture does not
+   make the session `Stale`.
 2. **Slotting.** The session gives each candidate literal term its own
    constant slot, the value-neutral half of the reload patch (R3). This is
    done once per term per program. It bumps `constants.revision`, which costs
@@ -309,6 +373,11 @@ and reused for every run that request needs.
    in the fork (statics, memo, closures, functions, R4), installs the native
    gate and the overrides, runs under the step budget, collects a `SpecRun`
    and drops the fork. The checkpoint and the live stack are never touched.
+   The run happens inside the host's run wrapper (`SpecHost::with_run_env`,
+   R11), which installs the same thread-local providers (host data, fonts,
+   clipboard) that the host installs around a live frame. The `Env`'s trace,
+   `observations` and profile are switched off for the run and restored after
+   it, so the live trace ring never sees a speculative event.
 
 Runs are sequential (the `Env` is `&mut`). Parallel runs would need `Env`
 clones and are out of scope.
@@ -321,12 +390,24 @@ state, so `state` initializers execute and their literals have an effect.
 This is opt-in, because an edit to a state initializer does not show in the
 running program after a hot reload: reload keeps state
 (`env/reload.rs:30-36`). Parameters that only feed a `StateInit` are marked
-`state_init: true` and excluded by default (§2.5).
+`state_init: true`. They are excluded by default **only when the checkpoint
+already holds that state slot**. On the CLI's fresh stack, state is empty, so
+every run executes the initializer, and editing it is exactly what changes
+the next `petal run`. There those literals are ordinary parameters.
+
+**State-key misses.** State is keyed per call path, including loop index
+parts and `for … key` keys. A perturbation that changes a key (a literal that
+feeds a keyed loop's key, or the trip count of an enclosing loop) makes the
+frozen state miss, and the slot re-initializes. No branch changes, so the
+branch fingerprint alone would not notice. In spec mode the VM counts
+`StateInit` executions per state term and folds the counts into the
+fingerprint (R7), so such a run counts as a regime change.
 
 A run's own `set` writes land in the fork and are discarded with it. Writes
-to state are captured as observables only when a client asks (`Observable::
-State`, a stretch goal). They are what a physics-ish program's next frame
-reads.
+to state are not observables in this plan (an `Observable::State` was a
+stretch goal in the first draft and is cut, §10). They are what a
+physics-ish program's next frame reads, which is the multi-frame problem of
+§8.4.
 
 #### 2.1.3 The native gate (effects suppressed)
 
@@ -338,8 +419,9 @@ calling. The policy, by the native's row:
 | `PURE` / `CONST` / `probe` reads of bindings | call | a function of args and frozen bindings |
 | `emits` | call, and **capture the raw args** first | output stays in the fork's buffers; raw args avoid the int truncation of §1.7 |
 | `reads(RNG)` | replay by call site (§2.1.4) | removes draw-order shift |
-| other `reads` (`HOST_DATA`, `RESOURCES`) | call | host data is fixed for the session; the double baseline catches violations |
-| `effect` and **contained** (new row facet, R2) | call | lands in the fork's ctx and is discarded |
+| `reads(HOST_DATA)` | baseline: call and record the answer by (native, args hash); perturbed runs: replay the recorded answer, and for unseen args answer `Nil` and count `new_host_keys` | a provider may start a fetch for a key it has not seen (petal-query, Garden's panel store). A perturbed page index must not reach the network |
+| `reads(RESOURCES)` | call | resource state is forked with the context; the double baseline catches violations |
+| `effect` and **contained** (new row facet, R2) | call | lands in the fork's ctx or stack and is discarded. Every core row with `effect` is contained by construction (§1.5); a test asserts it |
 | `effect` and not contained (escaping) | **suppress**: return `Nil`, record a `SuppressedCall` | must not touch the host |
 | `tunable` / `rigid` (§2.6) | `rigid`: replay its baseline value; `tunable`: identity | `rigid` is a feedback barrier |
 | handle methods | call if the class is marked spec-safe (R2), else abort the run with `SpecError::Unsafe` | host objects, unknown effects |
@@ -355,16 +437,35 @@ the suppressed natives.
 `RngMode::ReplayByCallSite` is the default. In the baseline run every
 `random`/`random_int`/`choose` call draws from the forked stream as usual
 (so the baseline reproduces the live frame exactly, since the checkpoint
-fork copied `rng_state`). The result is recorded under the key
-`(hash(call chain incl. origin term), occurrence index under that chain)`.
-In perturbed runs the same key returns the recorded value. A key the
+fork copied `rng_state`). The **uniform draw** (the raw `u64` the native took
+from the stream), not the native's result, is recorded under the key
+`(hash(call chain incl. origin term), hash(loop path), occurrence index under
+that chain)`. In perturbed runs the same key hands the native the recorded
+uniform, and the native maps it with its *current* arguments. This is what a
+real re-run does whenever the draw order is unchanged: `random_int(0, w)`
+with a new `w` gives a different value from the same uniform. So collateral
+through RNG arguments is measured honestly, and is not hidden behind a frozen
+result. A key the
 baseline never saw (the perturbation added loop iterations) gets a value
 derived from `hash(key, session_seed)` through the native's own mapping, and
 the run is flagged `new_random_keys > 0`. The effect is that random values
 belong to *where* they are drawn, not *when*, so a perturbation that adds one
 draw does not reshuffle every later shape.
 
-`RngMode::ForkStream` (plain fork behaviour) is kept for comparison tests.
+`RngMode::ForkStream` (plain fork behaviour) is kept for comparison tests,
+and for one more run per proposed alternative. Replay-by-call-site is a model
+that is stable to perturb. The edited program will really draw sequentially.
+So the final verification of each alternative (§2.4.5) also runs once under
+`ForkStream`. When the two runs disagree, the alternative is flagged
+`rng_order_changed` with the first emit that differs ("applying this
+reshuffles the random shapes after line 12"). It stays verified, because the
+goal was met in the stable model, but ranking penalizes it.
+
+The user requirement "rand cannot receive feedback" is kept separate from
+how the RNG is replayed. The draw itself is never a parameter. A literal
+whose only path to the goal goes through an RNG native's arguments is marked
+`through_rng` and is ineligible by default (§2.5.1). Its column is still
+measured, for the candidate report and for collateral.
 
 The same mechanism, keyed the same way, backs `rigid(e)` replay and any
 future "replay this native" policy.
@@ -383,17 +484,27 @@ future "replay this native" policy.
 
 - **Emits**: for every buffered emit, the channel, the `EmitSite` chain, its
   `EmitKey`, the emitted value, and (for emitting natives) the **raw native
-  arguments** converted to `ObsValue`. `EmitKey = { chain_hash, occurrence }`,
-  where `occurrence` counts earlier emits with the same chain in this run. A
-  key is stable across runs whose control flow did not change, which is what
-  lets one shape out of a loop be matched between runs.
-- **Watched terms**: values of chosen `TermId`s, through a term filter on the
-  fork's `TraceBuffer` (R5), each with its trace sequence number. Emits also
-  record the trace sequence at emit time. That maps a v1-style goal ("arg 2
-  of user frame T for emit N") to `last_for_term_before(arg_term, emit_seq)`.
+  arguments** converted to `ObsValue`. `EmitKey = { chain_hash, path_hash,
+  occurrence }`. `path_hash` hashes the loop-index parts of the frame's state
+  path (the `Index` parts `ForEachInit`/`ForEachNext` push), and `occurrence`
+  counts earlier emits with the same chain and path in this run. The path
+  part makes the key of shape 3 in loop B independent of loop A's trip count
+  (the call chain alone has no iteration in it, `vm/native.rs:31-48`). A key
+  is stable across runs whose control flow did not change, which is what
+  lets one shape out of a loop be matched between runs. Callbacks driven by
+  `map`/`each` have no `Index` part, so they fall back to `occurrence`.
+- **Watched terms**: values of chosen `TermId`s, captured by `SpecHooks`
+  itself (R5, revised) and converted to `ObsValue` **at record time**, each
+  with a spec-local sequence number. They are not read from the Env-wide,
+  weakly-holding `TraceBuffer` (§1.3). Emits record the same sequence at emit
+  time. That maps a v1-style goal ("arg 2 of user frame T for emit N") to
+  the last watched value of `arg_term` before `emit_seq`.
 - **Fingerprint**: a hash over the sequence of (instruction index, taken)
-  pairs for every conditional branch, plus loop trip counts (R7). It is
-  computed only in spec mode. Equal fingerprints mean the same path was taken.
+  pairs for every conditional branch, plus loop trip counts, plus per-term
+  `StateInit` counts (§2.1.2) (R7). It is computed only in spec mode. Equal
+  fingerprints mean the same path was taken with the same state hits.
+- Channels are iterated in `SymbolId` order wherever a `SpecRun` is built or
+  compared (§1.4).
 - **Loaded parameters**: the set of slotted constants a `LoadConst` read
   during the run (one bitset write, spec mode only). A parameter that was
   never loaded cannot affect anything.
@@ -405,7 +516,10 @@ future "replay this native" policy.
 
 Each run uses `run_bounded` with `SpecConfig::max_steps` (default: ten times
 the baseline's step count) and a wall-clock cap. A perturbation that makes a
-`while` loop run away fails that run only.
+`while` loop run away fails that run only. The step budget is
+deterministic. The wall-clock cap is not, so a run it stops is reported as
+`error: TimedOut`, distinct from `StepBudget`. Such a run is retried once,
+and it never takes part in the double-baseline comparison.
 
 #### 2.1.8 Correctness oracle
 
@@ -413,7 +527,10 @@ the baseline's step count) and a wall-clock cap. A perturbation that makes a
 the literal into the source text, compile, and run a fresh fork. M1 tests
 check that both strategies give bit-identical observables over the
 examples. This guards the slotting/override path against constant folding or
-caches that bake a value in.
+caches that bake a value in. The two programs are compared by
+`(channel, emit index)` and raw args, not by `EmitKey`, because a recompile
+may renumber terms (a sign change turns `5` into `Neg(5)`), and the chain
+hash is built from `TermId`s.
 
 ### 2.2 (b) Candidate parameter discovery (M2)
 
@@ -432,10 +549,14 @@ from cheapest to most precise.
    - For a callback passed to `map`/`filter`/`reduce`/`sort`/`each`/
      `any`/`all`/`find`, include the callback's body.
    - A dynamic `Call` that does not resolve (a closure from a record field or
-     a list), or a `MethodCall`: include the bodies of every function whose
-     name matches (`fn Class.name` dispatch, as `EdgeKind::DispatchMay` does),
-     else every function in the program. Over-approximating is fine here,
-     because stage 2 prunes.
+     a list), or a `MethodCall`: use the **observed call edges** of the
+     baseline. In spec mode the VM records each `(call term → FunctionId)`
+     pair it executes (R13, one hash-set insert per call), and discovery
+     follows only those. Only if a call term has no observed edge (it never
+     ran) does discovery fall back to `fn Class.name` name matching, as
+     `EdgeKind::DispatchMay` does. The old fallback, "every function in the
+     program", is gone. On a 19-big-sized program it would make the
+     candidate set the whole program.
    - At a cell frontier (`var`) or a `StateRead` of a state written in the
      program, follow the writes' slices (the forward walk's `CellMay` edges).
      Mark the parameters reached this way `through_var` / `through_state`.
@@ -444,14 +565,31 @@ from cheapest to most precise.
      natives declared no-feedback.
 2. **Loaded filter.** Drop every static candidate the baseline run never
    loaded (§2.1.6).
-3. **Empirical screening** (`screen_params`) by adaptive group testing. Take
-   the remaining `n` candidates in groups of up to 16. Perturb every member
-   of a group in one run, each by a distinct, incommensurate relative step
-   (`h_i * (1 + 0.137 * j)`, sign alternating). If no goal row moves (beyond
-   `1e-12` relative), the whole group is irrelevant. Otherwise split it in
-   half and recurse. With `k` relevant out of `n` this costs about
-   `k * log2(16) + n/16` runs. A group whose run errors or flips the
-   fingerprint is split down to singletons.
+3. **Eligibility before screening.** Apply the hard filters of §2.5.1 now,
+   not after the Jacobian. Library literals (the bundled `ui` prelude alone
+   has hundreds), hint-bound literals and structural literals are never
+   perturbed unless the filter asks for them. They are still listed in the
+   candidate report, with their reason and no column. Under an explicit
+   `allow`, only the allowed set is screened.
+4. **Proximity order and cap.** Order the survivors by static distance from
+   the anchors: the number of call, definition and cell edges on the
+   shortest slice path, where literals in the goal's own frame come first.
+   Screen at most `max_screen` (default 256). Truncation is reported
+   (`screened: 256 of 1,930`), so a client can narrow with `Function`/`Line`
+   selectors instead of paying for the whole program.
+5. **Empirical screening** (`screen_params`) by adaptive group testing.
+   Start with all `n` remaining candidates in one group and split in halves
+   (the classic adaptive binary splitting). Perturb every member of a group
+   in one run, each by a distinct, incommensurate relative step
+   (`h_i * (1 + 0.137 * j)`, sign alternating). Int literals take a
+   **type-preserving** step (`±1`, §2.3.4), so a group never errors merely
+   because an index became a float. If no goal row moves (beyond `1e-12`
+   relative), the whole group is irrelevant. Otherwise split it in half and
+   recurse. With `k` relevant out of `n` this costs about
+   `k * log2(n / k) + 1` runs (for `n = 256`, `k = 8`, about 41). A group
+   whose run errors or changes the fingerprint is split as usual. Only a
+   singleton that still errors is recorded `Errored`. Fingerprint-changing
+   singletons are kept, because they are relevant.
 
 Literals are candidates wherever they are written: call-site arguments,
 `let` / `config let` definitions, function bodies, default parameter
@@ -494,22 +632,51 @@ run budget is short.
 | `Step` | both sides differ, or the slope is 0 at `h` but not at `100h` | escalate `h` by ×10 up to `0.1 * max(\|p\|, 1)` and keep the secant; mark it discrete |
 | `Zero` | no movement at any scale | drop |
 | `Errored(msg)` | a perturbed run failed | drop and report (`10 // 4` with a float literal, list index by float) |
-| `Discrete` | int literal whose float-valued probe errored | probe with `±1` instead and keep the integer secant |
+| `Discrete` | int literal (probed type-preserving, §2.3.4) | keep the integer secant (`±1`, escalating to `±2`, `±4`) |
 
 #### 2.3.4 Int literals
 
-The first probe replaces `n` with the float `n ± h`. Where Petal needs an
-int (indexing, `range`, int `/`) that either errors or changes the
-fingerprint, and the column falls back to integer steps (`n ± 1`, then `±2`,
-`±4`). Final values are rounded (§2.4.4).
+Probes are **type-preserving** by default: an int literal `n` is probed
+with `Int(n ± 1)`, escalating to `±2` and `±4` for a `Step`, and its column
+is the integer secant (`Discrete`). A float probe `n ± h` is not safe. Int
+`/` truncates (`numeric.rs:49`), so `10 / 4` is `2` but `10.001 / 4` is
+`2.50025`. The value jumps by `0.5` at any `h`, with no error and no branch,
+and central differences read that as a huge slope or a `Kink`. A float
+probe also changes `type_name`, string formatting, and `==` against ints.
+The float probe is tried only when the client allows respelling
+(`allow_respell`, off by default) **and** the integer secant is non-zero. Its
+column is used only if it agrees with the integer secant within 25%.
+Otherwise the parameter stays integral. Final values are rounded (§2.4.4).
+
+Big integer literals used as pixel coordinates (`draw_circle(100, ...)`) are
+fine with `±1`: the secant is the slope.
 
 #### 2.3.5 Cost
 
-Two baseline runs, plus screening, plus `2k` for central differences, plus
-`1` to `5` verification iterations. A typical sketch (k ≤ 8) needs 20 to 30
-runs.
+Two baseline runs, plus screening (`k * log2(n/k) + 1`), plus `2k` for
+central differences, plus, **per verified alternative**, 1 to 6 LM
+iterations, one rounding run and one `ForkStream` run (§2.1.4). Subset
+selection (§2.5.3) predicts with the Jacobian at zero runs, and only the top
+`max_alternatives + 2` subsets are solved and verified. A typical sketch
+(`n ≤ 64`, `k ≤ 8`, 3 alternatives) needs about 25 + 16 + 3 × 4 ≈ 55 runs.
+`RunBudget` enforces `max_runs` across all of it, so a request that runs out
+returns the best verified alternative so far with `budget_exhausted`.
 
-#### 2.3.6 Optional dual fast path (M2b, low priority)
+#### 2.3.5a Per-run cost on big programs
+
+Each run deep-copies the heap (`fork`) and rebuilds every static value
+(R4). The static values can be most of a dashboard's frame. The planned
+optimization, after M3 and measured in M5: during the baseline, record per
+static slot the set of params `LoadConst` read while building it (the
+loaded bitset, scoped to the `StaticSkip`…`StaticStore` segment), and in a
+run with overrides `O`, clear only the slots whose set meets `O`.
+
+#### 2.3.6 Optional dual fast path (future work, not a milestone)
+
+Review note: this was M2b. It is cut from the milestone plan. It saves at
+most half the column runs, it needs a gate rule for every emitting native,
+and it is not on the critical path to any user goal. The design stays here
+for later.
 
 For one column, override the slot with `Value::Dual(p_i, 1.0)` (R1 allows a
 `Value` override, not only `f64`). Capture the raw native arguments' `deriv`
@@ -566,6 +733,9 @@ rows. Goals that conflict leave a least-squares compromise with
 
 The default `τ` is `0.5` for draw coordinates (the native truncates to whole
 pixels), and `1e-6 * max(|t|, 1)` otherwise. The request can override both.
+Because `get_int` truncates toward zero, a client that wants the drawn pixel
+`P` (not a raw value) sets the raw target to `P + 0.5` (for `P ≥ 0`), so
+`±τ` stays inside the pixel. Garden does this. The CLI's `--to` is raw.
 
 #### 2.4.4 Rounding to nice literals
 
@@ -577,9 +747,21 @@ After a verified solve, for each changed parameter, try in order:
 Try the jointly rounded vector first, in one run. If it fails, round
 parameters one at a time, largest change first. A parameter that has to
 change from int to float spelling is reported (`respelled: true`) and
-penalized in ranking. Rendering uses `literal_edit::float_like` (to be made
-`pub(crate)`) and v1's `render_matching`, keeping a `-` inside the span for
-`negated` literals.
+penalized in ranking. Respelling is only possible under `allow_respell`
+(§2.3.4), and a respelled edit is a structural reload, not a value-only one
+(§1.4). Rendering uses `literal_edit::float_like` (to be made `pub(crate)`)
+and v1's `render_matching`, keeping a `-` inside the span for `negated`
+literals. When a new value's sign differs from the old one's, the result is
+re-parsed with the edit in place. If the text would read `x - -3` or would
+not parse, the replacement is wrapped in parentheses (`x - (-3)`). Operators
+outside the span are never rewritten.
+
+Edits are grouped by `SourceSpan::file`. v1's `apply_edits` handles one
+source string and ignores the file (§1.4), so v2 adds
+`apply_edits_multi(files: &mut [(FileId, String)], edits)`. It splices
+against the text the running program holds for each file
+(`Env::program_source`, which already includes values set live by
+`set_config_value`), not against the disk.
 
 #### 2.4.5 Verified
 
@@ -590,13 +772,32 @@ literal values (parsed back from the new text) hits every goal within `τ`.
 
 #### 2.5.1 Eligibility (hard filters, before solving)
 
+**Never editable, whatever the filter says:**
+- literals in library code: the auto-loaded `std` prelude, bundled packages
+  (`ui` and the rest, `bundled.rs`: embedded in the binary, with no file to
+  write), git- or registry-installed packages (the package cache), and
+  vendored copies (`vendor/`, `third_party/`). "User file" means a
+  `SourceFile` whose `origin` is a path under the entry file's project root
+  (the nearest `petal.toml`, else the entry file's directory) and outside
+  the package cache. A bundled file has no `origin` and is never a user
+  file. `ReportLibrary` (§2.7) can screen these literals for the
+  explanation, and they are never offered as edits.
+- the literal arguments of the hint builtins themselves (`min`, `max`,
+  `step` in `tunable(x, 10, 80)`). Editing a range to make a goal reachable
+  would defeat the hint.
+
 Excluded by default, and included when the client allows them:
-- literals outside the user's files: files that are not the entry file or
-  one of its local imports (prelude, `core-libs`, packages, vendored code);
+- literals in a **path dependency** (a local package the user owns), with
+  `AllowPathDeps`;
 - `rigid(...)` literals;
-- `state_init` parameters (§2.1.2);
-- literals that only reach the goal through a `reads(RNG)` native argument
-  (already cut statically) or a `rigid` barrier;
+- `state_init` parameters whose state slot the checkpoint already holds
+  (§2.1.2);
+- `through_rng` literals: the only path to the goal goes through a
+  `reads(RNG)` native's arguments (§2.1.4), or through a `rigid` barrier;
+- **structural literals**: every consumer is a comparison, a `match`
+  pattern, a list index, a `range`/loop bound, or a state or `memo` key.
+  Editing one changes which code runs, not where a shape is.
+  A literal that also reaches the goal through arithmetic is not structural;
 - int literals in a `Discrete` column with `|Δ| < 0.5` (nothing to round to).
 
 #### 2.5.2 Parameter cost weights `d_i` (lower means preferred)
@@ -615,7 +816,7 @@ Excluded by default, and included when the client allows them:
 
 #### 2.5.3 Alternatives
 
-The solver runs on several subsets and the results are ranked:
+The candidate subsets are:
 1. every single parameter (for one goal) or pair of parameters (for two
    goals) among the top 12 columns by `|J_g| / d_i`, where the subset can
    reach the goals (rank of `J_g[:, S]` = number of goals);
@@ -624,7 +825,13 @@ The solver runs on several subsets and the results are ranked:
 3. the client's allowed set, when it gave one;
 4. the full screened set (minimum-norm spread across everything).
 
-Each is solved and verified. Duplicates (the same edits) collapse.
+For a two-goal drag, item 1 alone is up to 66 pairs, and verifying each
+would cost more runs than the whole budget. So subsets are first solved
+**linearly against the cached Jacobian** (zero runs), and scored with the
+§2.5.4 formula using predicted residuals and predicted collateral
+(`J_c Δp`). Only the best `max_alternatives + 2` predictions, plus items 2
+and 3 when present, go on to the LM-with-verification loop of §2.4.2.
+Duplicates (the same edits) collapse.
 
 #### 2.5.4 Score (lower is better)
 
@@ -633,11 +840,16 @@ score = Σ_i d_i |Δp_i|/s_i                      (how much code meaning moves)
       + κ_c · collateral_norm                   (how much else moved, measured)
       + κ_n · (|S| - #goals)                     (prefer fewer edits)
       + κ_r · respelled_count
+      + κ_f · [regime_changed]                   (final fingerprint ≠ baseline's)
+      + κ_g · [rng_order_changed]                (§2.1.4)
       + κ_e · max_j (residual_j / τ_j)           (0 when verified)
       + ∞ if not verified and a verified alternative exists
 ```
 
-The defaults are `κ_c = 1`, `κ_n = 0.5`, `κ_r = 0.3` and `κ_e = 2`.
+The defaults are `κ_c = 1`, `κ_n = 0.5`, `κ_r = 0.3`, `κ_f = 0.5`,
+`κ_g = 0.5` and `κ_e = 2`. `regime_changed` is reported on the alternative:
+the edit verified, and it also made the program take a different branch or
+re-initialize a state slot somewhere. Collateral shows where.
 `collateral_norm` is measured from the verification run: the RMS movement of
 all non-goal rows, normalized by the goal movement. It is reported with the
 list of moved emits (`CollateralItem { key, channel, callee, line,
@@ -650,7 +862,9 @@ weights are lower, and alternatives built only from them are listed first
 when they verify. The others are still returned, marked `config: false`.
 `propose_edits_v2` with `Prefer::ConfigStrict` reproduces the v1 behaviour.
 
-**Clock and input coupling.** When the baseline read `CLOCK` or `POINTER`
+**Clock and input coupling** (late M3, droppable if the budget is tight:
+it costs extra runs, and the ladder's example 10 is its only consumer).
+When the baseline read `CLOCK` or `POINTER`
 (from the `run_deps` record), recompute the top columns once more with the
 clock binding shifted (`time += 0.37`, `frame_count += 1`) on a fork via
 `set_binding_for`. A column whose value changes by more than 25% relative or
@@ -673,8 +887,15 @@ rigid(x)                         // x's literal never moves; x is a feedback bar
 - **Runtime**: both are the identity on their first argument (duals pass
   through), with a `CONST` row, so static values, memo and the optimizer are
   unaffected. In spec runs, `rigid` replays its baseline value (§2.1.3).
-- **Static meaning**: the IR keeps them as `BuiltinCall("tunable" | "rigid")`.
-  `hints.rs` resolves argument 0 the way `provenance::resolve_arg` does (a
+- **Static meaning**: the IR keeps them as `BuiltinCall(name)`
+  (`program.rs:178`, the name is a string constant resolved to a native by
+  name). `hints.rs` therefore must not match by name alone. An embedder that
+  registers its own native `rigid` (a physics engine's rigid-body
+  constructor is the obvious one) would otherwise have its calls read as
+  hints. `hints.rs` checks that the name resolves to the `NativeFnId` core
+  registered for the hint. If an embedder replaced it, hints are disabled
+  for that name and `DmDiagnostics.warnings` says so. `hints.rs` resolves
+  argument 0 the way `provenance::resolve_arg` does (a
   literal in place, or a binding chain to one). It marks that literal term
   with the hint. `min`/`max`/`step` must be literals, or `lint` warns.
 - **Forms**: at the definition (`let r = tunable(40, 10, 80)`), at the use
@@ -690,7 +911,21 @@ rigid(x)                         // x's literal never moves; x is a feedback bar
   builtin, `builtins/mod.rs:450`), `freeze`/`frozen` (existing builtins),
   `pin`/`pinned`/`hold`/`held`/`anchor`/`locked`/`knob`/`nudge` (in use in
   `.ptl` code). A user function named `tunable` shadows the builtin and is
-  then a plain `Call`, which `hints.rs` ignores. That is non-breaking.
+  then a plain `Call`, which `hints.rs` ignores. That is non-breaking, but
+  such a function now gets the `shadows-builtin` lint
+  (`lint/builtin_names.rs`) when its arity matches, which is a new warning.
+  The review re-ran the grep (2026-10-23): `rigid` appears in the ecosystem
+  only in comments (physics-playground, cheesecake `tides`/`lantern`/
+  `skyrace`) and in Rust (`source_diff.rs`), and `tunable` only in
+  worlds-fair's Rust `wf-tuning` docs. Neither is a `.ptl` identifier.
+  `rigid` remains the most collision-prone of the two in physics-heavy
+  embedders, which is why the `NativeFnId` check above exists.
+- **Bare-statement form** (`tunable(radius, 10, 80)` on its own line) is a
+  discarded statement-level expression. It must not be flagged by any
+  unused-value lint, and the static-value classifier must not drop it. Since
+  the row is `CONST` and nothing is removed from lowered code
+  (`static_cache.rs` "No instruction is moved or removed"), the call stays
+  in the IR, where `hints.rs` reads it.
 - **`config let` stays.** It remains the top-level spelling, readable by
   `static_bindings`. `tunable` adds ranges, function-body and call-site
   scope, and the negative form.
@@ -713,15 +948,19 @@ pub enum ParamSelector {
     Line(u32),                  // any literal on this line of the entry file
     ConfigOnly,                 // config let + tunable only
     Function(String),           // literals inside this function's body
-    AllUserCode,                // lift the user-files-only default
-    IncludeLibrary,             // allow prelude/package literals
+    AllUserCode,                // lift the entry-file-first weighting
+    AllowPathDeps,              // local path-dependency packages the user owns
+    ReportLibrary,              // screen library literals for the report only; never editable (§2.5.1)
     IncludeStateInit,
+    IncludeStructural,          // comparison / index / key literals (§2.5.1)
+    IncludeThroughRng,
 }
 pub struct ParamFilter { pub allow: Option<Vec<ParamSelector>>, pub deny: Vec<ParamSelector> }
 ```
 
 `allow: None` means the defaults of §2.5.1. `allow: Some(..)` is exact: the
-engine uses only those. Asking for alternatives is
+engine uses only those, except that the never-editable classes of §2.5.1
+stay out even when a selector names them, and the response says why. Asking for alternatives is
 `DmRequest::max_alternatives` (default 3). The response always includes the
 **candidate report** (every screened parameter with its column, quality,
 weight and eligibility reason), so a client can show "this drag could move:
@@ -738,15 +977,19 @@ See [§4](#4-surfaces).
 | # | Change | Where | Notes |
 |---|---|---|---|
 | R1 | `SpecHooks` on the VM: `Option<&mut SpecHooks>` built in `make_vm`; holds the const override table (`Vec<Option<Value>>` indexed by `ConstantId`, consulted by `LoadConst` in **both** `vm/dispatch.rs:22` and `vm/fast.rs:138` only when `Some`), the native gate (§2.1.3), the RNG/`rigid` replay table, the emit arg capture, the loaded-param bitset and the branch fingerprint | `backend/bytecode/vm/spec.rs` (new), `vm/mod.rs`, `vm/native.rs`, `env/run.rs` | Off path: one `Option` check on `LoadConst`, which is hot. Measure with `petal bench` and `bench_panel`. If it shows up, select a spec-mode dispatch loop at `make_vm` (the fast loop is skipped under hooks already: `hooks = trace.enabled \|\| ...`) |
-| R2 | Row facets: `NativeEffects::contained: bool` (effect stays in the `ExecutionContext`), `no_feedback: bool`. Constructors `.contained()` and `.no_feedback()`. Mark core's `print`, `noise_seed`, `expect*`, `freeze`/`frozen`, `__pending`/`__resolve`/`__reject` and the counters as contained. Embedder natives with `effect` default to **escaping**. `Env::mark_handle_class_spec_safe(id)` as a side registry, not a new `HandleClass` field, so vendored embedders don't break. C bridge: `PB_FX_CONTAINED`, `PB_FX_NO_FEEDBACK` | `native_fn.rs`, `builtins/mod.rs`, `env/mod.rs`, `integrations/petal-c-bridge` | Adding fields keeps `..NativeEffects::PURE` struct literals compiling. Extend `effect_audit` to report an escaping effect seen in spec mode |
+| R2 | Row facets: `NativeEffects::contained: bool` (effect stays in the `ExecutionContext` or the stack), `no_feedback: bool`. Constructors `.contained()` and `.no_feedback()`. Mark **every** core row with `effect` contained (the full list is in §1.5, including `__declare_method` and the enum-data intrinsic, which the first draft missed: suppressing them breaks every program with methods or enums), with a test that fails when a new core `effect` row is not. Classify the in-repo hosts in M1 as well: petal-ui (`ui_mark`, `create_canvas`/`draw_to`/`draw_to_screen`, the panel stubs) and garden-script (`row`, `column`, `invalidate`, `mutate`, `panel_store`). Out-of-repo embedder natives with `effect` default to **escaping**. `Env::mark_handle_class_spec_safe(id)` as a side registry, not a new `HandleClass` field, so vendored embedders don't break. C bridge: `PB_FX_CONTAINED`, `PB_FX_NO_FEEDBACK` | `native_fn.rs`, `builtins/mod.rs`, `env/mod.rs`, `integrations/petal-c-bridge` | Adding fields keeps `..NativeEffects::PURE` struct literals compiling. Extend `effect_audit` to report an escaping effect seen in spec mode |
 | R3 | `Env::slot_literals(pid, &[TermId]) -> Result<(), String>`: factor the `alloc_slot` + `retarget_constants` part out of the reload patch (`reload.rs:490-510`) as a value-neutral operation | `env/reload.rs` | Must keep `core/tests/hot_reload.rs` green. A later reload of an already-slotted term takes the existing `set_slot` path |
 | R4 | `Stack::drop_derived()`: clear statics, memo, enums, functions and methods, and `run_deps.force()`. Factored from `restore_execution` (`fork.rs:109-119`) and `transfer_stack_state` | `stack.rs`, `env/fork.rs` | The fork in each spec run calls it. Memo is also disabled in spec runs (`memo = false` in `make_vm`) |
-| R5 | `TraceBuffer::set_filter(Option<HashSet<TermId>>)`: when set, `push` records only those terms | `trace.rs` | Used for `Observable::Watch`. Also expose `next_sequence()` |
+| R5 | (revised) Watched-term capture lives in `SpecHooks`, not in the Env-wide `TraceBuffer` (§1.3): a `HashSet<TermId>` of watched terms; at each traced result of a watched term, convert to `ObsValue` (strong, GC-proof) with a spec-local sequence. Spec runs switch the Env's trace, `observations` and profile off and restore them | `vm/spec.rs`, `env/run.rs` | Reuses the trace hook points (`hooks` flag) |
 | R6 | `Env::set_dm_checkpoint(stack, on)` and `Env::dm_checkpoint(stack) -> Option<StackKey>`: keep one pre-run fork, refreshed at each `run` while on | `env/run.rs`, `env/fork.rs` | Garden turns it on in IDE mode. The cost is one heap fork per frame, only while armed |
-| R7 | Branch fingerprint: in spec mode, fold `(ip, taken)` of every conditional jump and each loop's trip count into a `u64` (FxHash) | `vm/dispatch.rs` (spec loop only) | Never on the normal path |
-| R8 | Emit records: when spec capture is on, push `EmitRecord` (channel, chain, key, trace seq, raw args) beside `emit_origins`. `PetalCxt::push_output`/`emit` already know the chain. Raw args are captured in `call_native_fn` before `natives.call` and attached to the emits that call produced | `vm/native.rs`, `native_fn.rs` (`push_output`, `emit` at `:1209`) | Bounded: arg conversion depth 3, lists ≤ 64 |
+| R7 | Branch fingerprint: in spec mode, fold `(ip, taken)` of every conditional jump, each loop's trip count and each `StateInit` execution (§2.1.2) into a `u64` (FxHash) | `vm/dispatch.rs` (spec loop only) | Never on the normal path |
+| R8 | Emit records: when spec capture is on, push `EmitRecord` (channel, chain, key with loop-path hash, spec seq, raw args) beside `emit_origins`. `PetalCxt::push_output`/`emit` already know the chain. Raw args are captured in `call_native_fn` before `natives.call` and attached to the emits that call produced | `vm/native.rs`, `native_fn.rs` (`push_output`, `emit` at `:1209`) | Bounded: arg conversion depth 3, lists ≤ 64 |
 | R9 | `literal_edit::float_like` becomes `pub(crate)` | `literal_edit.rs:1888` | For §2.4.4 |
-| R10 | `tunable`/`rigid` builtins (identity, `CONST`), identity look-through in `provenance::resolve_arg` so v1 keeps working, docs in `Builtins.md`, `stdlib.json` regen, lints `dm-hint-not-literal` / `dm-hint-state-init` / non-literal bounds | `builtins/`, `provenance.rs`, `lint/` | M2. See the proposal |
+| R10 | `tunable`/`rigid` builtins (identity, `CONST`, declared in `core/packages/core` like the other builtins), identity look-through in `provenance::resolve_arg` so v1 keeps working, docs in `Builtins.md`, `stdlib.json` regen, lints `dm-hint-not-literal` / `dm-hint-state-init` / non-literal bounds | `builtins/`, `packages/core`, `provenance.rs`, `lint/` | M2. See the proposal |
+| R11 | `trait SpecHost { fn with_run_env(&mut self, env: &mut Env, f: &mut dyn FnMut(&mut Env)); }`: the host installs its thread-local providers (host data, fonts, clipboard) around a spec run exactly as around a live frame. `NoHost` for plain core. petal-ui's `Headless` and Garden's panel implement it | `dm_v2/spec.rs`, `core-libs/petal-ui/src/harness.rs`, `garden-script/src/panel.rs` | Without it, `host_data` answers nil and `text_width` measures differently in spec runs, and every baseline mismatches |
+| R12 | `HOST_DATA` replay in the gate: record by (native, args hash) in the baseline, replay after; unseen keys give `Nil` and `new_host_keys += 1` | `vm/spec.rs` | Keeps a perturbed key from triggering a host fetch |
+| R13 | Observed call edges: in spec mode, record `(call term, FunctionId)` for every user-function call | `vm/spec.rs`, call paths in `vm/` | Feeds §2.2 for dynamic calls and methods |
+| R14 | `apply_edits_multi` (per-file splice, §2.4.4) and `DmResponse` edits carrying `FileId` + path | `dm_v2/api.rs` | v1 `apply_edits` unchanged |
 
 No change to the language grammar, IR schema or bytecode format.
 
@@ -765,12 +1008,22 @@ embedding guide gets a section in M4.
 `petal propose-edit` gains `--v2`, which becomes the default when M5's study
 passes the bar in §5 (M5); `--v1` keeps the old engine.
 
+Two binaries carry it, because the core `petal` binary has no draw natives
+(§1.7). The argument parser and JSON rendering live once, in core
+(`dm_v2::cli`), and both binaries call them:
+- `petal propose-edit --v2` for scripts that emit through `push_output`/`emit`
+  channels (no petal-ui).
+- `petal-ui-run propose-edit [--frames N] [--size WxH] [--scenario …]
+  [--host-data …]` for petal-ui scripts. It runs the harness to frame
+  `N - 1`, uses that as the checkpoint, and implements `SpecHost` (R11).
+
 ```
-petal propose-edit --v2 --channel draw_commands --emit 7 --native-arg 0 --by 25 sketch.ptl
-petal propose-edit --v2 --channel draw_commands --emit 7 --native-arg 0 --to 148 \
+petal-ui-run propose-edit --channel draw_commands --emit 7 --native-arg 0 --by 25 sketch.ptl
+petal-ui-run propose-edit --channel draw_commands --emit 7 --native-arg 0 --to 148 \
                    --native-arg 1 --to 90 --allow radius --allow line:12 --alternatives 5 --json sketch.ptl
-petal propose-edit --v2 ... --explain           # candidate table, Jacobian columns, iterations
-petal propose-edit --v2 ... --apply [--pick N]  # writes the top (or Nth) verified alternative
+petal propose-edit --v2 --channel shapes --emit 0 --arg 1 --by 10 script.ptl
+... --explain           # candidate table, Jacobian columns, iterations
+... --apply [--pick N]  # writes the top (or Nth) verified alternative (every file it touches)
 ```
 
 - `--arg i` (v1 addressing: argument `i` of the user-file frame) stays and
@@ -779,7 +1032,9 @@ petal propose-edit --v2 ... --apply [--pick N]  # writes the top (or Nth) verifi
 - `--allow`/`--deny` take `name`, `line:N`, `config`, `fn:NAME`, `user`,
   `lib` and `state-init`. The old `--configurable`/`--static` map to
   `allow`-with-preference and `deny`.
-- `--tol`, `--max-runs` and `--seed`.
+- `--tol`, `--max-runs`, `--max-screen`, `--allow-respell` and `--seed`.
+  The seed defaults to `0` (or `PETAL_SEED`) and is echoed in the output,
+  so `run --trace-emits` and `propose-edit` agree on which shape "emit 7" is.
 - `--apply` with `--v2` refuses unless the top alternative is verified and
   either it is the only one or `--pick` was given.
 - `petal run --trace-emits` gains `native_args` per emit (raw values) and the
@@ -801,7 +1056,8 @@ with `explain`, then re-ask with `allow`) goes in
 filter) -> DragOutcomeV2`. It goes beside v1 and becomes the default when
 stable.
 
-- Turn on `set_dm_checkpoint` in IDE mode (R6).
+- Turn on `set_dm_checkpoint` in IDE mode (R6), and use the pre-mouse-down
+  checkpoint (§2.1.1). The panel implements `SpecHost` (R11).
 - `drag_handle` maps to native arg indices (for `draw_circle`, `cx`=0 and
   `cy`=1 at `_native_circle`). The goal is the raw baseline value plus the
   drag delta.
@@ -811,9 +1067,13 @@ stable.
 - During a drag: open the session on mouse-down. Preview on each mouse move
   with one linear solve against the cached Jacobian (no runs) and show the
   predicted literals in a ghost overlay. On mouse-up, run the full verify and
-  round, then apply the top alternative and hot-reload (a value-only
-  reload, so state is kept). Hold Alt to cycle alternatives, and a picker
-  lists the candidates for the allow-list mode the task doc asks for.
+  round, then apply the top alternative and hot-reload. That is a value-only
+  reload unless an int was respelled as a float, which is a structural reload
+  (§1.4). State is kept by key either way. The allow-list mode the task doc
+  asks for is required. The minimum is a picker listing the candidate report
+  and re-asking with `allow`. Holding Alt to cycle alternatives is a stretch.
+- Edits to an imported user file are applied to that file's buffer
+  (`FileId` → path, R14).
 - The v1 rule that refuses all but the last shape of a looping call goes away
   (occurrence-keyed emits).
 
@@ -839,8 +1099,9 @@ green (`cargo test` in `core/`, plus the named suites) and updates
 
 ### M1: speculative runner
 
-Scope: R1 (overrides, gate, capture, loaded set), R2 (facets and core rows,
-handle registry), R3, R4, R5, R7, R8, and `dm_v2/{mod,spec,observe}.rs`.
+Scope: R1 (overrides, gate, capture, loaded set), R2 (facets, core rows,
+in-repo host rows, handle registry), R3, R4, R5 (revised), R7, R8, R11, R12,
+R13, and `dm_v2/{mod,spec,observe}.rs`.
 
 Acceptance (in `core/tests/dm_v2_spec.rs` unless noted):
 1. `override_moves_only_that_literal`: `let a = 10` / `let b = 10` /
@@ -884,11 +1145,36 @@ Acceptance (in `core/tests/dm_v2_spec.rs` unless noted):
     session stays usable.
 13. Bench: `petal bench` and `bench_panel` show no regression beyond noise
     (≤ 1%) with spec mode off. Record the numbers in §9.
+14. `env_trace_untouched`: with the Env trace enabled (as Garden does), 20
+    spec runs add no event to `env.trace()` and leave its `next_sequence`
+    unchanged. Watched values survive a forced GC inside the run.
+15. `core_effect_rows_contained`: every core native whose row has `effect`
+    is `contained`. A program with `fn Point.len` methods and an enum runs
+    identically in spec mode.
+16. `host_data_replayed`: under petal-ui's `Headless` with a counting
+    provider, a baseline asks for `("item", "3")`. A perturbed run asking
+    for `("item", "4")` gets `Nil`, the provider is not called, and
+    `new_host_keys == 1`. Without `SpecHost` the baseline mismatches (the
+    test bites).
+17. `state_key_miss_changes_fingerprint`: `for i in range(n) key i` with
+    `state var s = 0` inside. Overriding `n` from 3 to 4 changes the
+    fingerprint through the new slot's `StateInit`.
+18. `rng_uniform_replay_maps_args`: `random_int(0, w)` with `w` overridden
+    gives the value a real re-run with the same seed gives.
+19. `channel_order_independent`: two channels, compared across 10 forks:
+    `SpecRun` equality never depends on `HashMap` order.
 
 ### M2: discovery, Jacobian, hints
 
 Scope: `dm_v2/{params,hints,jacobian}.rs`, R9, R10, the no-feedback facet
-wired into discovery and the gate, the dual fast path optional (M2b).
+wired into discovery and the gate. (The dual fast path is future work,
+§2.3.6.)
+
+Core tests cannot call `draw_circle` (§1.7). `core/tests/dm_v2_*` register a
+test native `draw(x, y, r)` with `EMITS`, which reads its args with
+`get_int` exactly as petal-ui does. Wherever the tests below say
+`draw_circle`, they mean this native. The petal-ui variants live in
+`core-libs/petal-ui/tests/`.
 
 Acceptance (`core/tests/dm_v2_jacobian.rs`):
 1. `discovers_literal_inside_helper`: `fn place(i) 20 + i * 30 end` (the body on its own line) /
@@ -909,17 +1195,27 @@ Acceptance (`core/tests/dm_v2_jacobian.rs`):
    `min = 10`, `max = 80`. `tunable(a + b)` gets lint
    `dm-hint-not-literal`.
 7. `screening_cost`: a program with 200 irrelevant literals and 3 relevant
-   ones is screened in ≤ 40 runs, and exactly the 3 survive.
+   ones is screened in ≤ 30 runs, and exactly the 3 survive. A program with
+   2,000 literals reached only through an unresolved dynamic call screens
+   only the functions the baseline actually called (R13).
 8. `branch_flip_and_step_quality`: `abs(x)` at 0 gives `Kink`, `round(x) *
    10` gives `Step` with a secant of about 10, `if x > 5` at the threshold
    gives `BranchFlip`, and `xs[i]` with an int `i` gives `Discrete`.
-9. `int_literal_float_probe`: `range(n)` with an int `n` gives a `Discrete`
-   column. `draw(10 / 4)`, where float probing changes semantics, is marked
-   discrete.
+9. `int_literal_type_preserving`: `range(n)` with an int `n` gives a
+   `Discrete` column from `±1` probes. `draw(a / 4)` with `let a = 10` gives
+   the integer secant (`11 / 4 - 10 / 4 = 0`, then `±4` gives 1/4), never the
+   float jump of `0.5 / h`.
 10. Names: `tunable`/`rigid` added to `stdlib.json` and `Builtins.md`. The
     collision grep from the proposal is re-run in the commit message.
-11. (M2b) `dual_matches_fd`: on tests 1 to 3, dual columns equal the
-    central-difference columns within 1e-6.
+11. `library_literals_never_proposed`: a goal reached through the `std`
+    prelude's `lerp` and petal-ui's `draw_circle` overloads (petal-ui test)
+    never produces an edit inside a bundled file, even with
+    `allow: [ReportLibrary, AllUserCode]`.
+12. `structural_and_hint_bounds_excluded`: `if x > 5`'s `5`, `xs[2]`'s `2`
+    and `tunable(r, 10, 80)`'s `10`/`80` are ineligible by default, and are
+    listed in the candidate report with their reason.
+13. `embedder_rigid_is_not_a_hint`: an embedder native registered as
+    `rigid` turns hints off for that name, with a warning.
 
 ### M3: solver, ranking, disambiguation, public API
 
@@ -961,7 +1257,16 @@ Acceptance (`core/tests/dm_v2_solve.rs`):
     alternative editing the angular rate ranks below `mark_x`/radius.
 11. `string_goal_falls_back_to_v1`.
 12. `budget`: a request with `max_runs: 30` never exceeds 30 spec runs and
-    reports `budget_exhausted` when it stops early.
+    reports `budget_exhausted` when it stops early. A two-goal drag with 12
+    relevant columns verifies at most `max_alternatives + 2` subsets.
+13. `multi_file_edit`: a helper in a local `import ./layout` file. The top
+    alternative edits `layout.ptl` at the right offsets, and
+    `apply_edits_multi` leaves the entry file alone.
+14. `rng_reshuffle_flagged`: an edit that adds a `random()` draw before
+    others verifies under replay and is flagged `rng_order_changed`.
+15. `state_init_on_fresh_stack`: on a CLI-style fresh stack, `state var x =
+    100` feeding the goal is an eligible parameter. From a live checkpoint
+    that holds `x`, it is not.
 
 ### M4: surfaces
 
@@ -1020,15 +1325,20 @@ The ladder, from trivial to complex:
 
 The **complexity study** (`tools/dm-v2-study.ts`, run as
 `./tools/dm-v2-study.ts [--json] [--out <file>] [--extra <dir>]`) runs
-`petal propose-edit --v2 --json` per goal and reports, per example and in
-total:
+`petal-ui-run propose-edit --json` per goal for petal-ui examples, and
+`petal propose-edit --v2 --json` for channel-only ones (§4.2). It reports,
+per example and in total:
 - the success rate (top alternative verified, and within `dm-expect`);
 - verified-any rate;
 - runs used;
 - wall time (median of 3);
 - final max error / τ;
-- the candidate count before and after screening;
-- the number of alternatives.
+- the candidate count: static, loaded, eligible, screened (and whether
+  `max_screen` truncated), relevant;
+- the number of alternatives, and how many are flagged `regime_changed` or
+  `rng_order_changed`;
+- per-run cost split into fork, statics rebuild and execution, which decides
+  whether §2.3.5a is worth building.
 
 It also reports, per example, static program metrics: terms, functions,
 max call depth reached, loops, `var` count, `state` count, emits, and
@@ -1038,7 +1348,10 @@ projects. Copy them to `/Volumes/bureau/petal-dmv2-study/`, never into the
 repo: worlds-fair `ui/ptl` screens, petal-creative projects, cheesecake
 games. For each one the harness auto-generates goals ("move emit k's arg 0
 by +10" for 20 sampled emits) with no `dm-expect`, scoring only
-verified-ness and collateral.
+verified-ness and collateral. This part is best-effort. The cheesecake and
+worlds-fair scripts need their embedders' natives, which these headless
+binaries do not have, so only scripts that run under `petal-ui-run` count.
+The rest are listed as "not runnable headless", which is itself a finding.
 
 Acceptance:
 1. All 19 examples run. Examples 01 to 14 and 16 to 17 meet `dm-expect` with
@@ -1084,24 +1397,32 @@ impl SpecSession {
     /// `checkpoint` must be ready to run the frame (inputs bound, pre-frame state).
     /// Slots `params`, runs the baseline twice, checks determinism and,
     /// when `live` is given, the match against the live frame.
-    pub fn begin(env: &mut Env, checkpoint: StackKey, params: &[TermId],
+    /// Forks `checkpoint` into a stack the session owns (§2.1.1).
+    pub fn begin(env: &mut Env, host: &mut dyn SpecHost, checkpoint: StackKey, params: &[TermId],
                  cfg: SpecConfig, live: Option<&LiveObservation>) -> Result<SpecSession, SpecError>;
     pub fn add_params(&mut self, env: &mut Env, params: &[TermId]) -> Result<(), SpecError>;
-    pub fn run(&mut self, env: &mut Env, overrides: &Overrides) -> SpecRun;  // a failed run is data, not Err
+    pub fn run(&mut self, env: &mut Env, host: &mut dyn SpecHost, overrides: &Overrides) -> SpecRun;  // a failed run is data, not Err
+    pub fn run_fork_stream(&mut self, env: &mut Env, host: &mut dyn SpecHost, overrides: &Overrides) -> SpecRun; // §2.1.4
     pub fn baseline(&self) -> &SpecRun;
     pub fn runs_used(&self) -> usize;
     pub fn program(&self) -> ProgramId;
     pub fn end(self, env: &mut Env);       // drops forks; slots stay (value-neutral)
 }
 
+pub trait SpecHost { fn with_run_env(&mut self, env: &mut Env, f: &mut dyn FnMut(&mut Env)); }  // R11
+pub struct NoHost;                         // plain core: calls `f(env)`
+
+pub enum RunError { Runtime(String), StepBudget, TimedOut }
 pub struct SpecRun {
-    pub error: Option<String>,
+    pub error: Option<RunError>,
     pub emits: Vec<EmitRecord>,
     pub watched: Vec<WatchRecord>,         // (term, trace seq, ObsValue)
     pub fingerprint: u64,
     pub loaded: FixedBitSet,               // indexed by the session's param index
     pub suppressed: Vec<SuppressedCall>,   // native name, origin term
     pub new_random_keys: u32,
+    pub new_host_keys: u32,                // §2.1.3, R12
+    pub call_edges: Vec<(TermId, FunctionId)>,  // R13, baseline only
     pub steps: u64,
     pub elapsed: std::time::Duration,
 }
@@ -1109,13 +1430,13 @@ pub struct EmitRecord {
     pub channel: SymbolId,
     pub key: EmitKey,
     pub chain: EmitSite,
-    pub trace_seq: u64,
+    pub seq: u64,                          // spec-local sequence (R5 revised), not the Env trace's
     pub native: Option<NativeFnId>,
     pub native_args: SmallVec<[ObsValue; 8]>,
     pub value: ObsValue,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct EmitKey { pub chain_hash: u64, pub occurrence: u32 }
+pub struct EmitKey { pub chain_hash: u64, pub path_hash: u64, pub occurrence: u32 }
 pub enum ObsValue { Num(f64), Int(i64), Bool(bool), Str(u64 /* hash */), Nil,
                     List(Vec<ObsValue>), Record(Vec<(String, ObsValue)>), Opaque }
 
@@ -1152,19 +1473,24 @@ pub struct Param {
     pub binding: Option<String>, pub config: bool,
     pub hint: Option<Hint>, pub function: Option<FunctionId>,
     pub through_var: bool, pub through_state: bool, pub state_init: bool,
-    pub in_goal_frame: bool, pub user_code: bool,
+    pub through_rng: bool, pub structural: bool, pub hint_bound: bool,
+    pub in_goal_frame: bool,
+    pub origin: CodeOrigin,                          // §2.5.1
+    pub distance: u32,                               // §2.2 proximity order
 }
+pub enum CodeOrigin { Entry, UserFile, PathDep, Library /* never editable */ }
 pub enum Hint { Tunable { min: Option<f64>, max: Option<f64>, step: Option<f64> }, Rigid }
 
 pub fn read_hints(program: &Program) -> HashMap<TermId, Hint>;
 pub fn discover_params(program: &Program, anchors: &[TermId], hints: &HashMap<TermId, Hint>)
     -> Vec<Param>;                                   // static superset, all eligibilities
 pub fn anchors_for(program: &Program, run: &SpecRun, goals: &[Observable]) -> Vec<TermId>;
-pub fn screen_params(session: &mut SpecSession, env: &mut Env, params: &[Param],
-                     goals: &[Observable], budget: &mut RunBudget) -> Vec<usize>;  // indices kept
+pub fn screen_params(session: &mut SpecSession, env: &mut Env, host: &mut dyn SpecHost,
+                     params: &[Param], eligible: &[usize], max_screen: usize,
+                     goals: &[Observable], budget: &mut RunBudget) -> ScreenResult;  // kept, truncated
 
 pub struct FdOptions { pub mode: FdMode /* Central | Forward */, pub rel_step: f64 /* 1e-3 */,
-                       pub max_escalations: u8, pub use_dual: bool }
+                       pub max_escalations: u8, pub allow_respell: bool /* float probes of ints, §2.3.4 */ }
 pub struct Jacobian {
     pub params: Vec<usize>,          // indices into the Param list
     pub rows: Vec<Observable>,       // goal rows first, then collateral
@@ -1194,6 +1520,8 @@ pub struct DmRequest {
     pub prefer: Prefer,                          // Soft (default) | ConfigStrict (v1 behaviour)
     pub max_alternatives: usize,                 // default 3
     pub max_runs: usize,                         // default 200
+    pub max_screen: usize,                       // default 256 (§2.2)
+    pub allow_respell: bool,                     // default false (§2.3.4)
     pub max_wall: std::time::Duration,           // default 5s
     pub spec: SpecConfig,
     pub live: Option<LiveObservation>,
@@ -1206,13 +1534,14 @@ pub struct DmResponse {
     pub explain: Option<ExplainLog>,
 }
 pub struct Alternative {
-    pub edits: Vec<crate::direct_manipulation::SourceEdit>,
+    pub edits: Vec<FileEdit>,                    // SourceEdit + FileId + origin path (R14)
     pub changes: Vec<ParamChange>,               // param, old, new, new_text, respelled
     pub achieved: Vec<f64>,                      // per goal
     pub max_error: f64,                          // max_j |achieved - target| / τ_j
     pub verified: bool,
     pub collateral: Collateral,                  // norm + Vec<CollateralItem>
     pub stateful: bool, pub config_only: bool,
+    pub regime_changed: bool, pub rng_order_changed: bool,
     pub score: f64,
     pub description: String,                     // "set `gap` to 14 (line 3); moves 4 other shapes"
 }
@@ -1220,21 +1549,24 @@ pub struct CandidateReport { pub param: Param, pub eligible: Result<(), &'static
                              pub column: Option<Vec<f64>> /* goal rows */, pub quality: Option<ColumnQuality>,
                              pub weight: f64 }
 
-pub fn propose_edits_v2(env: &mut Env, checkpoint: StackKey, req: &DmRequest)
+pub fn propose_edits_v2(env: &mut Env, host: &mut dyn SpecHost, checkpoint: StackKey, req: &DmRequest)
     -> Result<DmResponse, DmError>;
 
 /// The reusable form for a drag: open once, preview with no runs, verify at the end.
 pub struct DmSession { /* SpecSession + params + Jacobian */ }
 impl DmSession {
-    pub fn open(env: &mut Env, checkpoint: StackKey, req: &DmRequest) -> Result<DmSession, DmError>;
+    pub fn open(env: &mut Env, host: &mut dyn SpecHost, checkpoint: StackKey, req: &DmRequest) -> Result<DmSession, DmError>;
     pub fn preview(&self, targets: &[f64]) -> Vec<ParamChange>;   // linear, zero runs
-    pub fn finish(self, env: &mut Env, targets: &[f64]) -> Result<DmResponse, DmError>;
+    pub fn finish(self, env: &mut Env, host: &mut dyn SpecHost, targets: &[f64]) -> Result<DmResponse, DmError>;
 }
+
+pub fn apply_edits_multi(files: &mut [(FileId, String)], edits: &[FileEdit]) -> Result<(), DmError>;  // R14
 
 pub enum DmError { Spec(SpecError), NoGoals, BadObservable(String), NothingToMove { why: String } }
 ```
 
-`apply_edits` from v1 applies `Alternative::edits`.
+`apply_edits_multi` applies `Alternative::edits` (v1's single-source
+`apply_edits` ignores the file, §1.4).
 
 ### 6.4 M4 and M5 consume
 
@@ -1255,6 +1587,8 @@ with a golden test.
 | Only the last shape of a looping call can be solved | `garden/garden-script/src/panel.rs:2304-2318` | Emits are matched by `EmitKey` occurrence, so any iteration can be solved |
 | A fork calls the same natives, so host side effects repeat | `features/time-travel.md:310-317` | In spec mode, escaping effects are suppressed (R2). Plain forks keep the old behaviour |
 | `effect` is one bit | `native_fn.rs:139-143` | It gains the `contained` and `no_feedback` facets |
+| Edits are spliced into one source string | `direct_manipulation.rs:334` | v2 edits carry their file and are applied per file (R14). v1 keeps its function |
+| "rand cannot receive feedback" was first planned as "replay the random result" (draft §2.1.4) | this plan's first draft | The uniform draw is replayed and the native maps it with its current arguments. Feedback is refused by eligibility (`through_rng`), not by freezing the result, so collateral stays honest |
 
 ---
 
@@ -1264,7 +1598,11 @@ with a golden test.
    worlds-fair scripts suppress natives the script depends on, which then
    shows as `BaselineMismatch`. Mitigation: the error names the natives, and
    the ecosystem sweep in M4 marks the contained ones (the vendored
-   `petal-c-bridge` needs `PB_FX_CONTAINED`, then re-vendoring).
+   `petal-c-bridge` needs `PB_FX_CONTAINED`, then re-vendoring). petal-ui and
+   garden-script are swept in M1, because their own tests depend on it.
+   `register_native_boxed` closures with captured `Cell`s are the usual
+   escaping case. The doc at `env/mod.rs:1890-1900` already warns that
+   forks call the same closure.
 2. **Handles.** Refusing unmarked handle classes may block games
    entirely. M1 decides whether a `reads`-only method list is worth adding.
 3. **Cost on big panels.** 30 runs of an 8 ms frame is 240 ms, fine for
@@ -1277,7 +1615,23 @@ with a golden test.
 5. **The `LoadConst` hot path.** R1's check must be measured (M1 acceptance
    13).
 6. **Hint names** need the language owner's sign-off
-   ([proposal](../proposals/dm-v2-hints.md), open questions).
+   ([proposal](../proposals/dm-v2-hints.md), open questions). `rigid` is a
+   natural physics-engine name (§2.6). If the owner prefers to avoid it,
+   the `NativeFnId` check still works under any other spelling.
+7. **Heap fork and statics per run.** Big programs pay a deep heap copy and
+   a full statics rebuild on every run. M5 measures the split, and §2.3.5a
+   is the planned fix. A copy-on-write heap is out of scope.
+8. **Replay is a model.** Under `ReplayByCallSite` and `HOST_DATA` replay,
+   a verified alternative is verified in a world where random draws and host
+   answers stay put. The `ForkStream` check (§2.1.4) and `new_host_keys`
+   say when the real program will differ. Clients should surface both.
+9. **Wall-clock time in spec runs.** `petal-ui-run` pins the clock, while a
+   live host binds `time` once per frame, and the checkpoint freezes the
+   binding. A native that reads `Instant::now()` directly (none in core or
+   petal-ui today; the `frame_core.rs:161` wall clock feeds the binding) would
+   be caught by the double baseline as `Nondeterministic`, which fails the
+   session instead of degrading. Such natives must declare `reads(CLOCK)` and
+   be replayed like `HOST_DATA`. That is a one-line gate rule if one appears.
 
 ---
 
@@ -1285,7 +1639,8 @@ with a golden test.
 
 | Milestone | State | Commits | Notes |
 |---|---|---|---|
-| Design | done, 2026-10-23 | (this commit) | plan + [hints proposal](../proposals/dm-v2-hints.md) |
+| Design | done, 2026-10-23 | `c9eb67b7` | plan + [hints proposal](../proposals/dm-v2-hints.md) |
+| Design review | done, 2026-10-23 | (this commit) | adversarial review against the code, [§10](#10-review-notes) |
 | M1 speculative runner | not started | | |
 | M2 discovery + Jacobian + hints | not started | | |
 | M3 solver + ranking + API | not started | | |
@@ -1293,3 +1648,82 @@ with a golden test.
 | M5 examples + study | not started | | |
 
 Deviations from this plan are recorded here as they happen, with the reason.
+
+---
+
+## 10. Review notes
+
+An adversarial review on 2026-10-23 checked the first draft against the code
+at `4d59549b`/`c9eb67b7`. The claims about late-bound `LoadConst` (no constant
+folding anywhere, `lower.rs:349` the only producer), the fork, `get_int`
+truncation, the input natives reading bindings and the RNG living in the
+context all held. What changed:
+
+1. **CLI host for UI scripts.** The core `petal` binary has no draw natives
+   (`make_env` = `Env::new()`), so `petal propose-edit --channel
+   draw_commands` on a `draw_circle` sketch cannot work. DM for petal-ui
+   scripts runs under `petal-ui-run propose-edit`, with a shared
+   `dm_v2::cli`. Core tests use a test-registered `draw` native (§1.7,
+   §4.2, M2/M3 preambles, M5).
+2. **Trace isolation.** The `TraceBuffer` is Env-wide and holds values
+   weakly. Watch capture moved into `SpecHooks` as strong `ObsValue`s, and
+   spec runs switch the Env trace off (R5 revised, M1 test 14).
+3. **Host providers.** `host_data`, fonts and clipboard are thread-locals
+   that the host installs only around its own run. Added `SpecHost` (R11).
+   Without it, every petal-ui baseline would mismatch.
+4. **`HOST_DATA` replay** by (native, args), so that perturbed keys cannot
+   start host fetches (R12, M1 test 16).
+5. **Core effect rows.** The draft's "contained" list missed
+   `__declare_method` and the enum-data intrinsic, so suppression would have
+   broken methods and enums. Now all core `effect` rows are contained, with a
+   test. The petal-ui and garden-script rows move from M4 to M1 (R2, M1
+   test 15).
+6. **RNG.** Replay the uniform, not the result, so `random_int(0, w)` still
+   responds to `w`. Feedback refusal moved to eligibility (`through_rng`). A
+   `ForkStream` check flags `rng_order_changed` (§2.1.4, §7).
+7. **Hidden regime changes.** Keyed state can silently re-initialize when a
+   key or trip count moves. `StateInit` counts go into the fingerprint
+   (§2.1.2, R7). `EmitKey` gains a loop-path hash (§2.1.6). Channels are
+   iterated by `SymbolId`, because `output_buffers` is a randomly-seeded
+   `HashMap` (§1.4).
+8. **Checkpoint.** It is the frame before mouse-down, so that the gesture's
+   pointer state is not measured. The session owns its fork, so an R6
+   refresh cannot make it stale. The per-frame fork happens only when the
+   program writes state (§2.1.1).
+9. **Int literals.** Float probes are wrong for ints: int `/` truncates, so
+   `10/4 → 10.001/4` jumps by 0.5 with no error or branch. Probes are
+   type-preserving (`±1`) by default, and float probing needs
+   `allow_respell`. Respelled edits are structural reloads (§2.3.4, §2.4.4,
+   §1.4).
+10. **Library literals are never editable.** These are the prelude, bundled
+    packages (no file to write), the package cache and vendored copies.
+    `IncludeLibrary` became `ReportLibrary` (report only). Path dependencies
+    are opt-in. "User file" is defined by `SourceFile::origin` (§2.5.1, §2.7).
+11. **New default exclusions**: structural literals (comparisons, patterns,
+    indices, loop bounds, keys) and the hint builtins' own bound literals.
+    `state_init` is excluded only when the checkpoint already holds the slot,
+    so it is eligible on the CLI's fresh stack (§2.1.2, §2.5.1).
+12. **Multi-file edits.** v1 `apply_edits` ignores the file, so edits now
+    carry `FileId` and are applied per file against the running program's
+    text (R14, M3 test 13).
+13. **Scaling.** Eligibility runs before screening. Dynamic calls resolve
+    through the baseline's observed call edges (R13) instead of "every
+    function". Candidates are screened in proximity order, capped at
+    `max_screen`. Adaptive splitting starts from a single group. Alternative
+    subsets are pre-ranked with the linear model, and only the top
+    `max_alternatives + 2` are verified. Without that, a two-goal drag would
+    verify 66 pairs. The cost model now counts alternatives (§2.2, §2.3.5,
+    §2.5.3). Partial statics invalidation is planned for big programs
+    (§2.3.5a).
+14. **Hint name safety.** `BuiltinCall` resolves by name, so `hints.rs`
+    checks core's `NativeFnId`, and an embedder native named `rigid` is not
+    taken as a hint. The `shadows-builtin` lint consequence is noted, the
+    grep was re-run, and the bare-statement form is kept (§2.6).
+15. **Smaller fixes.** These cover the sign of rendered negative values, the
+    pixel-centre target for truncating natives (§2.4.3), `TimedOut` versus
+    the step budget (§2.1.7), the Recompile oracle comparing by emit index,
+    not term-hashed keys (§2.1.8), and a pinned, echoed seed on the CLI.
+16. **De-scoped.** The dual fast path (was M2b) is now future work, and
+    `Observable::State` is cut. Clock-coupling detection is late M3 and can
+    be dropped. Alt-cycling in Garden is a stretch, while the allow-list
+    picker stays required. External-project study goals are best-effort.

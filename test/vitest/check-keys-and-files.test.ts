@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { petalCapture } from "./helpers";
-import { mapKey } from "../../integrations/petal-web-canvas/src/input";
+import { mapKey } from "../../integrations/petal-web-canvas/src/keys";
 
 let dir: string;
 let ok: string, warn: string, bad: string;

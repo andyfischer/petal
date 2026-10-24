@@ -1105,6 +1105,14 @@ impl DmSession {
         if targets.len() != self.req.goals.len() || targets.iter().any(|t| !t.is_finite()) {
             return Err(DmError::BadObservable("one finite target per goal is needed".into()));
         }
+        // A default tolerance scales with the target (§2.4.3), which a
+        // session opened for a drag (or a `--by` goal) learns only now.
+        for (i, g) in self.req.goals.iter().enumerate() {
+            if g.tolerance.is_none() {
+                self.taus[i] = default_tolerance(spec.baseline(), &g.observable, targets[i]);
+            }
+        }
+        self.diag.tolerances = self.taus.clone();
         let goals = self.goal_rows(targets);
         let gr = self.jac.goal_rows;
         let explain = self.req.explain;

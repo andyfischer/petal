@@ -149,3 +149,22 @@ fn preview_parenthesizes_negative_values() {
         session.cancel(&mut env);
     }
 }
+
+/// The default tolerance is relative to the target: a goal whose target is
+/// known only at `finish` (a drag, `--by`) gets the same tolerance as one
+/// given up front, not the tolerance of a target of 1.
+#[test]
+fn default_tolerance_follows_the_finish_target() {
+    let src = "import io\nlet s = symbol(\"out\")\npush_output(s, rigid(102) * 1.5)\n";
+    let (mut env, _, sid) = load(src);
+    let k = keys(&mut env, sid);
+    let obs = Observable::EmitValue { key: k[0], path: vec![] };
+    let up_front = propose(&mut env, sid, vec![DmGoal::to(obs.clone(), 183.0)]);
+    let goal = DmGoal::to(obs, f64::NAN);
+    let session =
+        petal::dm_v2::DmSession::open(&mut env, &mut NoHost, sid, &DmRequest::new(vec![goal])).expect("opens");
+    let late = session.finish(&mut env, &mut NoHost, &[183.0]).expect("finishes");
+    assert_eq!(late.diagnostics.tolerances, up_front.diagnostics.tolerances);
+    assert_eq!(late.alternatives[0].changes[0].new_text, up_front.alternatives[0].changes[0].new_text);
+    assert_eq!(late.alternatives[0].changes[0].new_text, "1.794118");
+}

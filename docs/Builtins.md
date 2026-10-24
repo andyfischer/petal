@@ -1545,8 +1545,35 @@ new list.
 forEach([1, 2, 3], fn(x) -> print(x))
 ```
 
+### `any(xs, pred)` / `all(xs, pred)`
+
+Whether at least one element satisfies `pred` (`false` for an empty list),
+and whether every one does (`true` for an empty list). `any` stops at the
+first element that satisfies `pred` and `all` at the first that does not:
+`pred` is not called on the elements after it. A map is walked by its keys.
+
+```petal
+any([1, 2, 3], fn(x) x > 2 end)   // true
+all([1, 2, 3], fn(x) x > 2 end)   // false
+```
+
+### `find(xs, pred)`
+
+The first element that satisfies `pred`, or `nil` when none does. It stops
+there, like `any`.
+
+```petal
+find([1, 2, 3], fn(x) x > 1 end)   // 2
+```
+
 A builtin may itself be the function: `map(words, upper)`, `map(rows, len)`,
 `sort_by(names, lower)`, `reduce(xs, 0, max)`.
+
+A callback of any of these may not declare `state`: it runs once per element
+and has no place in the program to keep a slot at. Reaching a `state` or
+`state var` declaration from one is an error, and `petal check` reports it
+when it can prove it. A loop or `reduce`'s accumulator is the fix
+([State is not allowed in callbacks](features/inline-state.md#state-is-not-allowed-in-callbacks)).
 
 ## List helpers
 
@@ -1555,7 +1582,8 @@ program imports implicitly, so they are called bare with no import. A
 program's own declaration of one of these names shadows it silently, which
 `petal lint` reports (`shadows-builtin`). They
 are ordinary functions, not natives: they take no method syntax
-(`xs.sum()` is an error; write `sum(xs)` or `xs |> sum()`).
+(`xs.sum()` is an error; write `sum(xs)` or `xs |> sum()`). `any`, `all` and
+`find` are natives, under [Higher-Order Functions](#higher-order-functions).
 [`field`](#fieldrec-key-fallback) and
 [`has_field`](#has_fieldrec-key) are prelude functions too.
 
@@ -1602,26 +1630,13 @@ minimum([3, 1, 2])   // 1
 maximum([3, 1, 2])   // 3
 ```
 
-### `count(xs, pred)` / `any(xs, pred)` / `all(xs, pred)`
+### `count(xs, pred)`
 
-How many elements satisfy `pred`, whether at least one does (`false` for an
-empty list), and whether every one does (`true` for an empty list). `any`
-stops at the first element that satisfies `pred` and `all` at the first that
-does not: `pred` is not called on the elements after it. `count` calls it on
-every element.
+How many elements satisfy `pred`. It calls `pred` on every element; see
+[`any` and `all`](#anyxs-pred--allxs-pred) for the forms that stop early.
 
 ```petal
 count([1, 2, 3, 4], fn(x) x > 2 end)   // 2
-any([1, 2, 3], fn(x) x > 2 end)        // true
-all([1, 2, 3], fn(x) x > 2 end)        // false
-```
-
-### `find(xs, pred)`
-
-The first element that satisfies `pred`, or `nil` when none does.
-
-```petal
-find([1, 2, 3], fn(x) x > 1 end)   // 2
 ```
 
 ### `take(xs, n)` / `drop(xs, n)`

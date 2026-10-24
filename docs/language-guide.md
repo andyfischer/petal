@@ -2285,6 +2285,9 @@ holds one per iteration, keyed by its position, or by the item with
 the one cell that every function shares; holding a [map](#maps) in it gives
 shared state with one value per key. The keyed form `state(key) name = …` is
 deprecated in favour of keyed loops, that map and [`memo`](#memo--a-cached-result).
+A callback of a higher-order builtin (`map`, `filter`, `reduce`, …) runs once
+per element and has no place of its own, so declaring `state` in one is an
+error; write the loop instead.
 
 The full description is in [Inline state](features/inline-state.md): the
 keying rules, `state var`, how long a slot lives, why a table

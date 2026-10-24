@@ -15,7 +15,7 @@ able to preserve that state across a live code modification.
   - [Keyed loops](#keyed-loops)
 - [Deprecated: `state(key)`](#deprecated-statekey)
 - [Sharing on purpose](#sharing-on-purpose)
-- [Callbacks run at the builtin's callsite](#callbacks-run-at-the-builtins-callsite)
+- [State is not allowed in callbacks](#state-is-not-allowed-in-callbacks)
 - [`state var`](#state-var)
 - [Reading and writing from other functions](#reading-and-writing-from-other-functions)
 - [How long a slot lives](#how-long-a-slot-lives)
@@ -157,11 +157,16 @@ end
 print(health("goblin", 10), health("orc", 30), health("goblin", 5))  // 90 70 85
 ```
 
-## Callbacks run at the builtin's callsite
+## State is not allowed in callbacks
 
-`map`, `filter`, `reduce`, `forEach` and the other higher-order builtins call
-your function from one place, the builtin's own callsite. A `state` inside
-the callback therefore has one slot shared by every element of that call:
+`map`, `filter`, `reduce`, `forEach`, `sort_by`, `sort` with a comparator,
+`any`, `all` and `find` call your function once per element (or once per
+comparison). A callback of theirs is a step in a computation over a list, not
+a place in the program, so a `state` in it would have no slot of its own.
+Declaring `state` or `state var` while one of these callbacks runs is
+therefore an error. That covers the callback's body, every function it calls,
+and loops inside them. The std helpers built on them (`count`, `min_by`,
+`max_by`, `top_k`, `group_by`, `flat_map`) are covered too.
 
 ```petal
 fn seen(x)
@@ -169,12 +174,108 @@ fn seen(x)
     n += 1
     n
 end
-print(map([10, 20, 30], seen))   // [1, 2, 3] — one shared slot, not three
+print(map([10, 20, 30], seen))
 ```
 
-Use a `for` loop when you want a slot per element, and a
-[keyed loop](#keyed-loops) when the slot belongs to the element's value rather
-than its position. A higher-order builtin has no keyed form.
+`petal check` can prove this one, so the program does not start:
+
+```
+error: `state n` cannot be used inside a callback of `map`: `map` runs `seen` on line 6, once per element. State needs a fixed place in the program, and a callback has none. For a value per element that persists across runs, use a loop: `for x in xs do f(x) end` (add `key …` to follow items). For a value carried from one element to the next, use reduce's accumulator. [state-in-callback]
+ --> [line 2, column 5]
+  |
+2 |     state n = 0
+  |     ^^^^^^^^^^^
+1 error found by check; the program was not run
+```
+
+`check` only reports what it can prove. A callback that arrives through a
+parameter or a `var` is caught when it runs instead:
+
+```petal
+fn seen(x)
+    state n = 0
+    n += 1
+    n
+end
+fn apply_all(xs, f) map(xs, fn(x) f(x) end) end
+print(apply_all([10, 20, 30], seen))
+```
+
+```
+Error: `state n` cannot be used inside a callback of `map` [line 2, column 5]
+  |
+2 |     state n = 0
+  |     ^^^^^^^^^^^
+note: `map` runs the callback here, once per element, at line 6, column 21
+  |
+6 | fn apply_all(xs, f) map(xs, fn(x) f(x) end) end
+  |                     -----------------------
+help: state needs a fixed place in the program, and a callback has none.
+      For a value per element that persists across runs, use a loop:
+          for x in xs do f(x) end   (add `key …` to follow items)
+      For a value carried from one element to the next, use reduce's accumulator.
+```
+
+When the builtin is called from a std helper such as `count`, the note points
+at your call of the helper, not into the prelude.
+
+There are two fixes, depending on what the state was for:
+
+```petal
+fn seen(x)
+    state n = 0
+    n += 1
+    n
+end
+
+// a value per element that persists across runs: a loop
+print(for x in [10, 20, 30] do seen(x) end)   // [1, 1, 1] on the first run
+
+// a value carried from one element to the next: reduce's accumulator
+print(reduce([10, 20, 30], [], fn(acc, x) append(acc, len(acc) + 1) end))   // [1, 2, 3]
+```
+
+A `for` gives each iteration its own slots. Give it a [`key`](#loops) when
+the slots belong to the item rather than its position.
+
+What stays allowed in a callback:
+
+- reading top-level `state`, and `set` on a top-level `state var`: that slot
+  is shared on purpose, and declared where everyone can see it;
+- `memo`, which is keyed by value, not by place;
+- `state` reached through a higher-order function you write, such as
+  petal-ui's `with_layer`, `ui_measure` and `cached_layer` bodies: the
+  `body()` call inside it is a callsite like any other;
+- a function the host calls (`Env::call_function`), which keeps the
+  [host callsite rule](#state-from-the-host-side).
+
+```petal
+state limit = 2
+state var total = 0
+
+fn over(x)
+    set total += x   // a top-level cell, shared on purpose
+    x > limit        // a top-level state read
+end
+print(filter([1, 2, 3, 4], over), get total)   // [3, 4] 10
+
+fn label(x)
+    memo(x) s = "item " ++ str(x)
+    s
+end
+print(map([1, 2], label))   // ["item 1", "item 2"]
+
+fn framed(body) "[" ++ body() ++ "]" end
+fn clicks()
+    state n = 0
+    n += 1
+    str(n)
+end
+print(framed(clicks))   // [1]
+```
+
+The design and its measurements are in
+[proposals/state-in-callbacks.md](../proposals/state-in-callbacks.md).
 
 ## `state var`
 

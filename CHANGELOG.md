@@ -380,6 +380,10 @@ way, for code written against an earlier checkout.
   field. `hash_int(a, b?, c?, d?)`, `hash01` and `hash_str(text, salt?)` are
   stateless hashes with a documented, fixed algorithm (the Cheesecake
   engine's, value for value).
+- `any`, `all` and `find` are natives instead of `std` prelude functions.
+  They still stop at the deciding element and keep their `xs` / `pred`
+  parameter names, and now take method syntax (`xs.any(f)`). A program's own
+  `find` still shadows the builtin.
 - A builtin can be passed where a function is expected: `map(words, upper)`,
   `sort_by(names, lower)`, `reduce(xs, 0, max)`. It was `Expected a function,
   got function`.
@@ -940,6 +944,23 @@ Breaking changes made during development, newest first. For the import and
 package changes below, `petal fix-imports` does the rewriting and
 [docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
 
+- `state` in a callback of a higher-order builtin is an error. Declaring
+  `state` or `state var` while a callback of `map`, `filter`, `reduce`,
+  `forEach`, `sort_by`, `sort` with a comparator, `any`, `all` or `find` is
+  running (in its body, a function it calls, or a loop inside either) now
+  raises `` `state n` cannot be used inside a callback of `map` ``, at the
+  declaration, with a note at the builtin's call and a help line naming the
+  two fixes. Before, every element of the call shared one slot, a hidden
+  accumulator that also carried over between runs. Use a `for` loop (keyed
+  to follow items) for a value per element, and `reduce`'s accumulator for a
+  value carried from one element to the next. Reading top-level `state`,
+  `set` on a top-level `state var`, `memo`, host calls and callbacks that
+  your own higher-order functions call (petal-ui's `with_layer` bodies) are
+  unaffected. `petal check` reports the cases it can prove, under the rule id
+  `[state-in-callback]`, so `petal run` refuses to start them. Nothing in the
+  ecosystem relied on the shared slot; the C-bridge test fixture now uses a
+  `for` loop, which cheesecake and worlds-fair pick up when they re-vendor.
+  See [State is not allowed in callbacks](docs/features/inline-state.md#state-is-not-allowed-in-callbacks).
 - `glsl` caches its translations in a `memo` instead of keyed `state`. A
   hot reload that changes the program drops memo entries, so a script that
   calls `to_glsl` every frame now translates once more after each such edit

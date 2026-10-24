@@ -88,8 +88,9 @@ The decisions:
 - **Equality is the Map key hash** (`dict::key_hash`, `value::hash_value`,
   consistent with `==`), and the same values are refused: functions, cells,
   pending values, NaN.
-- **`for` only.** A `while` has no item; it stays positional. Higher-order
-  builtins keep sharing their callsite's slot (§3.3); the docs point at `for`.
+- **`for` only.** A `while` has no item; it stays positional. A
+  higher-order builtin has no keyed form: `state` in its callback is an error
+  (§3.3), and the error points at `for`.
 - **`path_pop` needs no change.** The key is one part where the index was one
   part, so the count of loop steps between a declaration and its access is
   the same.
@@ -202,11 +203,32 @@ copy; it is designed but not built (§4).
 - `Vm::state_key` is: explicit key ⇒ `[Key(h)]`; else the frame's own path,
   minus `path_pop` innermost parts. There is no walk of the frame stack; the
   composition happened incrementally at push time.
-- **Intrinsic closures get the intrinsic's callsite, not a per-element index.**
-  `map`/`filter`/`reduce`/`sort`/`forEach` thread the `BuiltinCall` term's
-  `call_site` through to the closure, so `map(xs, widget)` gives `widget`'s
-  `state` one slot per `map` callsite, shared across elements. `Index` parts
-  come from `for`/`while` only.
+- **`state` in a higher-order builtin's callback is an error.** A callback
+  of `map`, `filter`, `reduce`, `forEach`, `sort_by`, `sort` with a
+  comparator, `any`, `all` or `find` runs once per element (or comparison)
+  with no path part per element, so its `state` would be one slot shared by
+  every element: a hidden accumulator. Instead, `Vm::call_native_or_intrinsic`
+  sets `Stack::callback` (a `BuiltinCallback`: the builtin's name, its call
+  term and the live frame count) around each driver listed in
+  `callback_intrinsic` (`vm/native.rs`), saving the outer value and
+  restoring it on every return, an error included, so nesting needs no
+  separate depth count. `StateInit`, `StateRead` and non-`memo`
+  `StateWrite` (`vm/dispatch.rs`) fail while it is set, through
+  `Vm::state_in_callback` (`vm/intrinsics.rs`). That builds the error at the
+  declaration, with a note at the builtin's call, or at the user's call into
+  an implicitly imported prelude when the builtin is called from one
+  (`count` → `filter`). `memo` is exempt (keyed by value), and so are
+  top-level `state` reads and `set` on a top-level cell, which reach a
+  callback as captures and cells, not as state instructions. The host path
+  (`Env::call_function`) never sets the record (§2.5), and neither does a
+  callback called by Petal code (petal-ui's `body()` closures): its call is a
+  callsite like any other. Any new native that drives a Petal callback must
+  be listed in `callback_intrinsic`. The drivers still pass the builtin's
+  `call_site` to `call_closure_sync`, which the host path shares, but no
+  `state` is ever keyed under it. `Index` parts come from `for`/`while`
+  only. `petal check` reports the provable cases at compile time
+  (`compiler/callback_state.rs`, rule `state-in-callback`). Decision record:
+  [proposals/state-in-callbacks.md](../proposals/state-in-callbacks.md).
 
 ### 3.3a Sweep and skipped sections
 
@@ -316,5 +338,8 @@ mitigation (§3.2) is not built.
   ones when a single callsite ordinal shifted. Worth revisiting if the
   accepted loss (deleting the first of two `f()` calls hands the survivor the
   first one's state) causes pain in the Garden live-editing workflow.
-- **Per-element keying for intrinsic closures** (§3.3), if `map`-driven
-  widgets ever want it.
+- **Per-element keying for intrinsic closures** (§3.3): resolved on
+  23 October 2026, rejected. `filter` and `sort` call a callback a
+  data-dependent number of times in a data-dependent order, so "per element"
+  is ill-defined, and there is no key form. `state` in such a callback is an
+  error instead ([proposals/state-in-callbacks.md](../proposals/state-in-callbacks.md)).

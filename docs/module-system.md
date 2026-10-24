@@ -445,7 +445,7 @@ Error: import cycle: cyc1 -> cyc2 -> cyc1
 ### The standard prelude
 
 Every program implicitly imports `std`, the part of the standard library
-written in Petal (`sum`, `first`, `count`, `find`, `take`, `mean`,
+written in Petal (`sum`, `first`, `count`, `min_by`, `take`, `mean`,
 `clamp01`, ...). Its names are available bare, with no `import`. They are
 weak bindings: a declaration of your own with the same name shadows them
 silently. `std` is only merged into a program that uses one of its names,

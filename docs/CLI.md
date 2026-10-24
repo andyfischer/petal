@@ -634,7 +634,16 @@ An **error** is a line that fails whenever it runs, so `check` exits 1 on it:
   'low'`);
 - a required parameter left without a value, and a call that more than one
   overload's default parameter values could accept;
-- a named argument to a builtin that declares none (`print(1, sep: 2)`).
+- a named argument to a builtin that declares none (`print(1, sep: 2)`);
+- a `state` declaration that a callback of `map`, `filter`, `reduce`,
+  `forEach`, `sort_by`, `sort`, `any`, `all` or `find` is sure to reach: a
+  lambda or a named function passed to one that declares `state`, itself or
+  through the functions it calls, also through a std helper such as `count`
+  (`` `state n` cannot be used inside a callback of `map` … [state-in-callback] ``).
+  It would fail when the callback runs
+  ([inline-state.md](features/inline-state.md#state-is-not-allowed-in-callbacks)).
+  A callback passed through a parameter or a `var` is left to that runtime
+  error.
 
 A host native is held to the parameter names and counts its interface
 package declares, like a builtin.

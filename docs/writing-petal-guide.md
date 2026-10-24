@@ -297,6 +297,13 @@ Consequences worth memorizing:
   keyed by id when there is one value per entity; remove an entry when its
   entity goes away. A pure value computed from a key is a `memo(key)`.
   `state(id)` is deprecated.
+- A callback of `map`, `filter`, `reduce`, `forEach`, `sort_by`, `sort`,
+  `any`, `all` or `find` may not declare `state`, itself or in anything it
+  calls: it runs once per element, with no place of its own to keep a slot
+  at. It is an error, which `petal check` reports when it can prove it. Use a
+  `for` loop for a value per element, and `reduce`'s accumulator for a value
+  carried from one element to the next
+  ([State is not allowed in callbacks](features/inline-state.md#state-is-not-allowed-in-callbacks)).
 - A slot that a run does not reach is dropped when that run ends. A `state`
   behind an `if` that was not taken, or one in a loop iteration for an item that
   is no longer in the list, starts from its initializer the next time it is

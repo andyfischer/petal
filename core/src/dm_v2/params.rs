@@ -1399,7 +1399,36 @@ pub fn screen_params(
         }
         let run = session.run(env, host, &ov);
         out.runs += 1;
-        let result = probe(&base, &run, goals);
+        let mut result = probe(&base, &run, goals);
+        // Int members step by exactly ±1, so `a + b` cancels under the
+        // alternating signs: a group with two ints that moved nothing is
+        // probed once more with every int stepped +1 (§9 M3).
+        if matches!(result, Probe::Still) && group.iter().filter(|&&i| params[i].is_int).count() >= 2 {
+            if !budget.take() {
+                out.budget_exhausted = true;
+                out.kept.extend(group);
+                out.kept.extend(sibling.into_iter().flatten());
+                for w in work.drain(..) {
+                    match w {
+                        Screen::Known(g) => out.kept.extend(g),
+                        Screen::Test(g, s) => {
+                            out.kept.extend(g);
+                            out.kept.extend(s.into_iter().flatten());
+                        }
+                    }
+                }
+                break;
+            }
+            let mut ov = Overrides::none();
+            for (j, &i) in group.iter().enumerate() {
+                let p = &params[i];
+                let v = if p.is_int { p.override_int(p.value as i64 + 1) } else { screen_override(p, j, 1e-3) };
+                ov = ov.with(p.term, v);
+            }
+            let run = session.run(env, host, &ov);
+            out.runs += 1;
+            result = probe(&base, &run, goals);
+        }
         if matches!(result, Probe::Still) {
             if let Some(s) = sibling {
                 work.push(Screen::Known(s));

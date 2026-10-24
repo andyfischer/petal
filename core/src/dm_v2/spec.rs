@@ -620,6 +620,14 @@ impl SpecSession {
         self.program
     }
 
+    /// Whether the baseline drew random numbers (then a [`ForkStream`]
+    /// run can disagree with the replayed one, §2.1.4).
+    ///
+    /// [`ForkStream`]: RngMode::ForkStream
+    pub fn drew_random(&self) -> bool {
+        !self.rng_table.is_empty()
+    }
+
     /// The session's parameters, in parameter-index order.
     pub fn params(&self) -> &[TermId] {
         &self.params

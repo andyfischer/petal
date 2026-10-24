@@ -298,7 +298,11 @@ Tests are M2 acceptance items 5, 6 and 10.
 
 1. The owner signs off on the names `tunable` and `rigid`.
 2. Should `step` also drive the int-vs-float spelling (`step: 1` means stay
-   an int)? Proposed: yes.
+   an int)? Proposed: yes. Settled in M3 (plan §9, M3 deviation 13): the
+   step only rounds the value, and the spelling follows the literal, so
+   `step: 1` on an int literal keeps it an int, and on a float literal
+   (`tunable(2.0, step: 1)`) keeps a float (`3.0`). Turning a float into an
+   int would change what `/` does.
 3. Should a module-level switch (`rigid_module()`) mark every literal in a
    library file rigid? Proposed: no. Library files are already ineligible by
    default (plan §2.5.1).

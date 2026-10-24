@@ -2,9 +2,10 @@
 
 Status: design, 23 October 2026, revised after an adversarial review the
 same day ([§10](#10-review-notes) lists what the review changed). M1 (the
-speculative runner) landed the same day, M2 (discovery, Jacobian, hints) on
-24 October; M3 to M5 are not started. See [Status](#9-status) at the end, which each
-milestone updates when it lands.
+speculative runner) landed the same day, M2 (discovery, Jacobian, hints) and
+M3 (solver, ranking, public API) on 24 October; M4 and M5 are not started.
+See [Status](#9-status) at the end, which each milestone updates when it
+lands.
 
 The goals are in [docs/tasks/direct-manipulation-v2.md](../tasks/direct-manipulation-v2.md).
 Where this plan and an older doc disagree (the user page
@@ -1644,7 +1645,7 @@ with a golden test.
 | Design review | done, 2026-10-23 | (this commit) | adversarial review against the code, [§10](#10-review-notes) |
 | M1 speculative runner | done, 2026-10-23 | `07e81adf` | `dm_v2::{spec,observe}`, `vm/spec.rs`, `env/spec_run.rs`; tests `core/tests/dm_v2_spec.rs` (24), `core-libs/petal-ui/tests/dm_v2_spec.rs` (2); deviations below |
 | M2 discovery + Jacobian + hints | done, 2026-10-24 | `43ee2820` | `dm_v2::{params,hints,jacobian}`, `builtins/hints.rs`, `lint/dm_hints.rs`; tests `core/tests/dm_v2_jacobian.rs` (17), `core-libs/petal-ui/tests/dm_v2_params.rs` (1); deviations below |
-| M3 solver + ranking + API | not started | | |
+| M3 solver + ranking + API | done, 2026-10-24 | (this commit) | `dm_v2::{solve,rank,api}`, `propose_edits_v2`, `DmSession`, `apply_edits_multi`; tests `core/tests/dm_v2_solve.rs` (27); deviations below |
 | M4 surfaces | not started | | |
 | M5 examples + study | not started | | |
 
@@ -1830,6 +1831,141 @@ Deviations:
 14. *Not yet used.* `Hint::Tunable`'s range and step are recorded for M3's
     projection and rounding; proposal open question 2 (`step: 1` means stay an
     int) is M3's to settle.
+
+**M3 (solver, ranking, disambiguation, public API), 2026-10-24.** What
+landed: `dm_v2::solve` (`solve_dense`, `rank`, `linear_step`, `Bound`,
+`GoalRow`, `SolveCtx::{solve_subset, round_solution}`, `ladder`),
+`dm_v2::rank` (`param_weight`, `ScoreWeights`, `score`, `collateral_norm`,
+`candidate_subsets`, `strength`, `SubsetKind`), `dm_v2::api`
+(`propose_edits_v2`, `DmSession::{open, preview, finish}`, `DmRequest`,
+`DmGoal`, `GoalTarget`, `Prefer`, `DmResponse`, `Alternative`,
+`ParamChange`, `FileEdit`, `Collateral`, `CandidateReport`,
+`DmDiagnostics`, `ExplainLog`, `apply_edits_multi`, `program_files`), R9
+(`literal_edit::float_like` is `pub(crate)`), R14, the v1 fallback for
+non-numeric goals, and `SpecSession::drew_random`. Every M3 acceptance item
+has a test in `core/tests/dm_v2_solve.rs`, which also checks each accepted
+alternative end to end (its edits applied to the text, the edited program
+compiled and run from scratch, the goal met there) and compares v2 with v1
+on v1's cases.
+
+Deviations:
+
+1. *Goals are constraints.* §2.4.1 put the goals in the objective with the
+   collateral and the cost terms beside them. A penalty form lets the
+   collateral term pull the solution off the goal: for one literal that
+   also moves `k` of `n_c` collateral rows as much as the goal, the optimum
+   falls short by a factor `1 / (1 + λ_c k / n_c)`, which for a 100-pixel
+   drag with `k = 4`, `n_c = 20` is 1 pixel, twice `τ`. `linear_step` instead solves `min Σ (d_i Δ_i / s_i)² + ‖J_c Δ‖² /
+   ‖r‖²` subject to `J_g Δ = r` (the KKT system) whenever `J_g` has full
+   row rank, and falls back to the weighted least squares of the goals,
+   regularized by a vanishing multiple of the same objective, when the goals
+   conflict or there are fewer parameters than goals. Collateral is measured
+   relative to the drag (`1/‖r‖²`), which makes the solve's objective the
+   square of the score's `edit` and `collateral` terms.
+2. *Damping is a step length.* With the goals as constraints, `μ` no longer
+   shortens a step, so the loop of §2.4.2 keeps its shape with a step factor
+   instead: a step that does not lower `Σ (w_j r_j / τ_j)²` is retried at a
+   quarter of its length (down to 1/1000), an accepted one doubles it back
+   toward 1. Broyden updates scale `Δp` per parameter by `max(|p|, 1)` so
+   that literals of different size mix. The columns are measured again (one
+   run plus two per column) every third accepted step or after the control
+   flow changed, only for subsets of at most three columns and when the
+   budget has room; larger subsets rely on Broyden.
+3. *`collateral_norm` is a root-sum-square,* `‖Δ other rows‖ / ‖Δ goals‖`,
+   not an RMS: an RMS over every row is diluted by the shapes that did not
+   move, so moving one of a hundred shapes would cost almost nothing. A row
+   that disappeared counts 1.
+4. *Sort tiers.* "Config-only alternatives are listed first when they
+   verify" and "∞ when not verified and a verified alternative exists" are
+   implemented as sort tiers: verified config-only (under `Prefer::Soft`),
+   then verified, then unverified, each by score. `Prefer::ConfigStrict`
+   pins every non-config named binding once the program declares a
+   `config let`, and uses only config and tunable literals when one of them
+   moves the goals.
+5. *Sparse spreads.* The config-only, client and full subsets are pruned
+   before they are predicted: a literal that moves the goals by less than a
+   tenth of the drag is dropped and the rest solved again (keeping the goal
+   rank). A spread that comes down to a tuple is that tuple. Without this
+   the full set proposed edits like `20 → 19.9` beside the edit that did the
+   work. Item 1's second half (the first circle deleted) then lists the
+   two-literal spread `2.0 → 2.4, 30 → 31.4` (score 1.02) between `30 →
+   37.5` (0.675) and `20 → 35` (1.125), as §2.5.4 scores it; the test pins
+   that order with `max_alternatives: 4`.
+6. *Clock coupling.* The criterion of §2.5.4 (a column that changes by more
+   than 25% or flips sign when the clock is shifted) also flags a radius at
+   most phases, since `cos(time() * rate) * radius` changes with the clock
+   too. A column is coupled when it changes that way *and* points along the
+   goal emits' own clock velocity over their rows (`|cos| > 0.95`): a rate
+   moves the shape along its path, a radius across it, a position not with
+   the clock at all. The velocity comes for free from the shifted session's
+   baseline. Detection is static (the program calls a `reads(CLOCK)`
+   native, and `time` or `frame_count` is bound on the checkpoint), not
+   from `run_deps`; pointer coupling is not detected. The strongest four
+   usable columns are checked, costing two runs each plus the shifted
+   session's baselines. Item 10's program binds the radius once (`let rad =
+   11.0`): with the radius written twice, the x-only literal is partly along
+   the motion (`|cos| = |sin(orb)|`), which is a real ambiguity.
+7. *The state rule is per slot through the loaded filter.* A `state`
+   initializer whose slot the checkpoint holds is never evaluated by the
+   baseline, so it fails the loaded filter with the reason "a `state`
+   initializer whose state the checkpoint already holds"; one whose slot is
+   missing (a new key) runs and is eligible. The API passes
+   `checkpoint_has_state: false` to `eligibility` (item 15; M2 open issue).
+8. *Request and response shapes* (§6.3). `DmGoal::target` is a
+   `GoalTarget` (`Num(f64)` or `Value(StaticValue)`), so a string or bool
+   goal can be asked for and answered by v1; `DmGoal::to/value/within` build
+   goals. `DmRequest` gains `max_iters` (default 6). `Alternative` gains
+   `predicted` (the linear prediction), `rng_difference`, `score_parts`,
+   `kind` (the subset it came from), `iterations` and `engine`;
+   `ParamChange` carries `old_text`, `function` and `config`. `DmError`
+   gains `Edit`. `DmSession::runs_used` is new; `finish` takes one target
+   per goal; `preview` rounds to 6 decimals and makes no runs.
+9. *v1 fallback.* A request with a non-numeric goal is answered by
+   `propose_edits_batch` on the call that made each goal's emit (`EmitArg`
+   maps to the native call's argument, `Watch` to the chain call that takes
+   the watched term); `allow`/`deny` variables become v1's
+   `Configurable`/`Static` policy. Its alternatives have `engine: V1` and
+   `verified: false`: a string literal cannot be overridden, so they are not
+   re-run.
+10. *Default tolerance.* "Draw coordinate" is decided from the emit: `0.5`
+    for a raw argument of a native whose emitted value holds only ints (it
+    truncated), else `1e-6 · max(|t|, 1)`.
+11. *Budget.* `max_runs` counts every speculative run of the request
+    (screening, Jacobian, verification steps, rounding, the final run of the
+    rendered text, the sequential-draw check, the clock shift), not the
+    session's baselines. When it runs out before any column is measured, the
+    response has no alternatives and a warning, not `NothingToMove`.
+12. *Screening fix (M2 code).* Int members of a screening group step by
+    exactly `±1` with alternating signs, so `offset + 50` cancelled and the
+    group was dropped as inert. A group with two or more ints that moved
+    nothing is probed once more with every int stepped `+1`.
+13. *Ints and steps.* An int literal without `allow_respell` is projected
+    onto the integers at every step, so the loop is integer-constrained. A
+    `tunable` step projects onto `min + n · step` (or `n · step`), cleaned up
+    to the step's decimals; the spelling follows the literal, which settles
+    proposal open question 2: `step: 1` on an int keeps an int, on a float
+    keeps a float.
+14. *Rounding.* The ladder is: the int (for an int literal), the literal's
+    own decimals, 0 to 6 decimals, 9 decimals, each projected onto the
+    bounds. The nicest entry the linear model keeps within `τ` is picked per
+    parameter and the picks are run jointly; when that misses, parameters are
+    rounded one at a time, largest relative change first, at most four runs
+    each. A best effort (unverified) solve is rounded only within `1e-9`.
+    The text is then parsed back and run once more if its value differs
+    from the last run's.
+15. *Signs.* A negative value for a literal written without a minus is
+    parenthesized when the character before it is `-` or `+` (`100 - 5` →
+    `100 - (-3)`), or when the file does not parse with the bare text.
+16. *Kinks.* The column of a `Kink` holds the central slope; picking the
+    side of the goal's direction (§6.2) is left to the verification loop and
+    Broyden.
+17. *v1 parity.* For v1's cases (a literal in the call, a binding, a
+    `config let`, `+ - *` chains), every v1 proposal is among v2's
+    single-literal alternatives, to the same value or, where v1's is
+    unwieldy (`6.666666666666667`), to the fewest decimals within `τ`
+    (`6.7`); where v1 has a single answer, it is v2's top one; and
+    `ConfigStrict` returns exactly v1's set on a program with a `config
+    let`. v2 also proposes literals v1 misses (the `10` of `10 + w * 2`).
 
 ---
 

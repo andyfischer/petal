@@ -1885,7 +1885,7 @@ fn seq_of_node(node: &SyntaxNode, chars: &[char]) -> Option<Seq> {
 /// trailing zeros (`3.50`, `0.020000`) keeps that many decimals when the new
 /// value fits in them exactly. Otherwise the shortest text that reads back as
 /// `f`, always with a decimal point.
-fn float_like(f: f64, model: &str) -> String {
+pub(crate) fn float_like(f: f64, model: &str) -> String {
     let shortest = format!("{f:?}");
     let digits = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
     let model = model.trim_start_matches('-').trim();

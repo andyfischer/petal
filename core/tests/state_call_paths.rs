@@ -790,25 +790,181 @@ print(widget())
     );
 }
 
-// ── Intrinsic higher-order calls (documented v1 gap) ─────────────
+// ── State in higher-order builtin callbacks ─────────────────────
+
+/// Run `src` once and return the error it fails with.
+fn run_err(src: &str) -> String {
+    let mut env = Env::new();
+    let pid = env.load_program(src).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap_err()
+}
+
+/// A stateful `seen`, then `call` — which runs it from a builtin's callback.
+fn seen_then(call: &str) -> String {
+    format!("fn seen(x)\n  state n = 0\n  n += 1\n  n\nend\n{call}\n")
+}
 
 #[test]
-fn a_closure_run_by_map_shares_one_slot_across_the_elements() {
-    // §2.1 defines `Index` parts as coming from `for`/`while` only, so the
-    // per-element calls `map` makes all carry the *`map` callsite's* part and
-    // nothing per element: one slot, incremented three times. Two `map`
-    // callsites are still two slots. Pinned so a future decision to key
-    // intrinsic iteration per element is a deliberate, visible change.
+fn state_in_a_callback_of_each_builtin_is_an_error() {
+    // A callback runs once per element (or comparison) with no place of its
+    // own, so a slot in it would be one value threaded through every element.
+    for (builtin, call) in [
+        ("map", "map([1, 2, 3], seen)"),
+        ("filter", "filter([1, 2, 3], seen)"),
+        ("reduce", "reduce([1, 2, 3], 0, fn(acc, x) acc + seen(x) end)"),
+        ("forEach", "forEach([1, 2, 3], seen)"),
+        ("sort_by", "sort_by([3, 1, 2], seen)"),
+        ("sort", "sort([3, 1, 2], fn(a, b) seen(a) - seen(b) end)"),
+    ] {
+        let err = run_err(&seen_then(call));
+        assert!(
+            err.starts_with(&format!(
+                "`state n` cannot be used inside a callback of `{builtin}` [line 2, column 3]"
+            )),
+            "{builtin}: {err}"
+        );
+    }
+}
+
+#[test]
+fn the_error_points_at_the_declaration_and_the_builtin_call() {
+    let err = run_err(&seen_then("print(map([10, 20, 30], seen))"));
+    assert!(err.contains("2 |   state n = 0\n  |   ^^^^^^^^^^^"), "{err}");
+    assert!(
+        err.contains(
+            "note: `map` runs the callback here, once per element, at line 6, column 7\n\
+             \x20 |\n\
+             6 | print(map([10, 20, 30], seen))\n\
+             \x20 |       -----------------------"
+        ),
+        "{err}"
+    );
+    assert!(err.contains("help: "), "{err}");
+    assert!(err.contains("for x in xs do f(x) end"), "{err}");
+    assert!(err.contains("reduce's accumulator"), "{err}");
+}
+
+#[test]
+fn a_builtin_called_by_the_prelude_points_at_the_users_call() {
+    // `count` is std's, and calls `filter`: the note names the user's line.
+    let err = run_err(&seen_then("print(count([1, 2, 3], seen))"));
+    assert!(
+        err.contains(
+            "note: `count` runs the callback through `filter` here, once per element, \
+             at line 6, column 7"
+        ),
+        "{err}"
+    );
+    assert!(!err.contains("std.ptl line"), "{err}");
+}
+
+#[test]
+fn state_reached_from_a_callback_in_any_form_is_an_error() {
+    let cases = [
+        // A lambda literal declaring it.
+        "map([1, 2], fn(x)\n  state n = 0\n  n + x\nend)",
+        // Through a helper the callback calls.
+        "fn helper(x)\n  seen(x)\nend\nmap([1, 2], fn(x) helper(x) end)",
+        // In a `for` loop inside the callback: its iterations are still the
+        // callback's.
+        "map([1, 2], fn(x)\n  for y in [x] do seen(y) end\nend)",
+        // A `state var` is caught at its declaration too.
+        "fn tally(x)\n  state var t = 0\n  set t += x\n  get t\nend\nmap([1, 2], tally)",
+        // A nested builtin: the innermost one is named.
+        "map([1, 2], fn(x) filter([x], seen) end)",
+    ];
+    for src in cases {
+        let err = run_err(&seen_then(src));
+        assert!(err.contains("cannot be used inside a callback of"), "{src}\n{err}");
+    }
+    let err = run_err(&seen_then("fn tally(x)\n  state var t = 0\n  get t\nend\nmap([1, 2], tally)"));
+    assert!(err.starts_with("`state var t` cannot be used inside a callback of `map`"), "{err}");
+    let err = run_err(&seen_then("map([1, 2], fn(x) filter([x], seen) end)"));
+    assert!(err.contains("callback of `filter`"), "{err}");
+}
+
+#[test]
+fn a_callback_may_read_top_level_state_and_set_a_top_level_cell() {
+    // These name one slot declared outside the callback, shared on purpose.
     let out = run("\
-fn w(x)
-  state n = 0
-  n += 1
-  n
-end
-print(map([1, 2, 3], w))
-print(map([1, 2, 3], w))
+state base = 10
+state var score = 0
+print(map([1, 2], fn(x) x + base end))
+forEach([1, 2], fn(x) set score += x end)
+print(get score)
 ");
-    assert_eq!(out, ["[1, 2, 3]", "[1, 2, 3]"]);
+    assert_eq!(out, ["[11, 12]", "3"]);
+}
+
+#[test]
+fn a_callback_may_read_its_enclosing_functions_state() {
+    // Captured by value: the slot is the enclosing call's, not the callback's.
+    let out = run("\
+fn widget(xs)
+  state n = 5
+  map(xs, fn(x) x + n end)
+end
+print(widget([1, 2]))
+");
+    assert_eq!(out, ["[6, 7]"]);
+}
+
+#[test]
+fn memo_is_allowed_in_a_callback() {
+    // `memo` is keyed by value, not by place.
+    let out = run("\
+fn square(x)
+  memo(x) sq = x * x
+  sq
+end
+print(map([2, 3, 2], square))
+");
+    assert_eq!(out, ["[4, 9, 4]"]);
+}
+
+#[test]
+fn a_for_loop_gives_a_stateful_function_a_slot_per_element() {
+    // The rewrite the error points at.
+    let out = run_n(&seen_then("print(for x in [10, 20, 30] do seen(x) end)"), 2);
+    assert_eq!(out, ["[1, 1, 1]", "[2, 2, 2]"]);
+}
+
+#[test]
+fn a_host_call_of_a_stateful_function_still_keeps_its_state() {
+    let mut env = Env::new();
+    let pid = env.load_program(&seen_then("")).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.call_function(sid, "seen", &[Value::Int(0)]).unwrap(), Value::Int(1));
+    assert_eq!(env.call_function(sid, "seen", &[Value::Int(0)]).unwrap(), Value::Int(2));
+}
+
+#[test]
+fn a_failed_callback_leaves_no_callback_behind() {
+    // The record is restored on the error path, so a later run on the same
+    // stack is not taken to be inside a callback: `seen` keeps counting.
+    let mut env = Env::new();
+    let pid = env
+        .load_program(&seen_then(
+            "fn check(x)\n  assert(x < 2, \"too big\")\n  x\nend\n\
+             fn checks(xs)\n  map(xs, check)\nend\n\
+             fn counts(xs)\n  sort(xs, fn(a, b) seen(a) - seen(b) end)\nend\n\
+             print(seen(0))",
+        ))
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    let list = |env: &mut Env| Value::List(env.heap_mut().alloc_list(vec![Value::Int(1), Value::Int(2)]));
+    let xs = list(&mut env);
+    let err = env.call_function(sid, "checks", &[xs]).unwrap_err();
+    assert!(err.contains("too big"), "{err}");
+    let xs = list(&mut env);
+    let err = env.call_function(sid, "counts", &[xs]).unwrap_err();
+    assert!(err.contains("callback of `sort`"), "{err}");
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["1", "2"]);
 }
 
 // ── Garbage collection, continued ────────────────────────────────

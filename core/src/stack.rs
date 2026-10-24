@@ -183,6 +183,20 @@ pub struct TestRun {
     pub(crate) invalidated: Option<&'static str>,
 }
 
+/// A callback of a higher-order builtin (`map`, `filter`, …) that is running:
+/// which builtin drives it and where that builtin was called. See
+/// [`Stack::callback`].
+#[derive(Debug, Clone, Copy)]
+pub struct BuiltinCallback {
+    /// The builtin's name as the user writes it (`map`, `sort`).
+    pub builtin: &'static str,
+    /// The builtin's call term, when it has one (a host call has none).
+    pub call: Option<crate::program::TermId>,
+    /// How many VM frames were live when the builtin was called: the one
+    /// below that number is the frame that called it.
+    pub frames: usize,
+}
+
 /// Unique identifier for a stack within an Env.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StackKey(pub u32);
@@ -266,6 +280,12 @@ pub struct Stack {
     /// nests a Rust-level step loop, so unlike an ordinary call it uses native
     /// stack. See `Vm::call_closure_sync`.
     pub sync_depth: u32,
+    /// The innermost higher-order builtin callback running right now, or
+    /// `None` outside every one. A `state` declaration reached while it is
+    /// set is an error: the callback runs once per element with no place of
+    /// its own to keep a slot at. Set and restored around each builtin by
+    /// `Vm::call_native_or_intrinsic`; a host call does not set it.
+    pub callback: Option<BuiltinCallback>,
     /// The native stack address when the outermost synchronous call began, so
     /// nested ones can measure how much native stack they have used.
     pub sync_stack_base: usize,
@@ -380,6 +400,7 @@ impl Stack {
             vm_frame_pool: Vec::new(),
             vm_arg_scratch: Vec::new(),
             sync_depth: 0,
+            callback: None,
             sync_stack_base: 0,
             run_deps: RunDeps::default(),
             cells_at_run_start: Vec::new(),

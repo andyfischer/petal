@@ -464,6 +464,17 @@ impl<'a> Vm<'a> {
     /// graph engine (see [`crate::backend::errors`]). Unannotated when the
     /// instruction has no source origin.
     fn annotate(&self, msg: String, origin: Option<TermId>) -> String {
+        self.annotate_with(msg, origin, &Default::default())
+    }
+
+    /// [`annotate`](Self::annotate) with a related location and help (see
+    /// [`crate::backend::errors::annotate_error_with`]).
+    fn annotate_with(
+        &self,
+        msg: String,
+        origin: Option<TermId>,
+        detail: &crate::backend::errors::ErrorDetail,
+    ) -> String {
         let Some(failing) = origin else {
             return msg;
         };
@@ -476,7 +487,7 @@ impl<'a> Vm<'a> {
                 call_site: f.call_site,
             })
             .collect();
-        crate::backend::errors::annotate_error(self.program, failing, msg, &frames)
+        crate::backend::errors::annotate_error_with(self.program, failing, msg, detail, &frames)
     }
 
     /// The display name for a function frame in a stack trace — the source name

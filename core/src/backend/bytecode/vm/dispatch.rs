@@ -578,6 +578,9 @@ impl<'a> Vm<'a> {
                 base,
                 path_pop,
             } => {
+                if self.stack.callback.is_some() {
+                    return Err(self.state_in_callback(origin));
+                }
                 let key = self.state_key(fi, *base, None, *path_pop, false)?;
                 self.stack.touch_state(&key);
                 if let Some(ip) = self.static_audit_site() {
@@ -597,6 +600,11 @@ impl<'a> Vm<'a> {
                 mutated,
                 memo,
             } => {
+                // `memo` is keyed by value, not by place, so a callback may
+                // use it; `state` it may not (see `state_in_callback`).
+                if self.stack.callback.is_some() && !*memo {
+                    return Err(self.state_in_callback(origin));
+                }
                 let val_v = self.reg(fi, *val);
                 let explicit = key.map(|r| self.reg(fi, r));
                 let k = self.state_key(fi, *base, explicit, *path_pop, *memo)?;
@@ -663,6 +671,9 @@ impl<'a> Vm<'a> {
                 key,
                 memo,
             } => {
+                if self.stack.callback.is_some() && !*memo {
+                    return Err(self.state_in_callback(origin));
+                }
                 let explicit = key.map(|r| self.reg(fi, r));
                 // A `StateInit` *is* the declaration: it always resolves at the
                 // frame's own path, so nothing to pop.

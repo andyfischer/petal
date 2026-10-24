@@ -16,9 +16,11 @@ impl<'a> Vm<'a> {
     /// from any frame depth, including a fresh VM with no root frame.
     ///
     /// `site` is the callsite id the callee's frame path gets. An intrinsic
-    /// passes the id of the `map`/`filter`/… call driving it, so a closure with
-    /// `state` in it keeps one slot per intrinsic call site; the host entry
-    /// point passes an id derived from the function's name
+    /// passes the id of the `map`/`filter`/… call driving it, but runs the
+    /// closure under [`Stack::callback`](crate::stack::Stack::callback), so no
+    /// `state` can be declared in it (see [`Vm::state_in_callback`]). The host
+    /// entry point sets no such record and passes an id derived from the
+    /// function's name, so a host-called function keeps its state there
     /// (docs/dev/state-call-paths.md §2.5).
     pub(crate) fn call_closure_sync(
         &mut self,
@@ -133,6 +135,105 @@ impl<'a> Vm<'a> {
                 }
             }
         }
+    }
+
+    /// The error for a `state` instruction (at `origin`) run while a builtin's
+    /// callback is: the callback runs once per element (or comparison), so it
+    /// has no place of its own to keep a slot at. Shown at the declaration,
+    /// with the builtin's call as the related location — or, when that call
+    /// is inside a prelude helper (`count` calls `filter`), the user's call
+    /// into the prelude. Annotated here, so the step loop passes it through.
+    pub(super) fn state_in_callback(&mut self, origin: Option<TermId>) -> String {
+        let Some(cb) = self.stack.callback else {
+            return "internal error: no builtin callback is running".into();
+        };
+        let at = origin.and_then(|t| self.state_decl_span(t));
+        let decl = at
+            .and_then(|s| {
+                let source = self.program.source_map.source_for_span(&s).unwrap_or(&self.program.source);
+                let text = source.get(s.start.offset as usize..s.end.offset as usize)?;
+                Some(text.split('=').next()?.trim().to_string())
+            })
+            .unwrap_or_else(|| {
+                let name = origin.and_then(|t| self.program.get_term(t).name.as_deref());
+                format!("state {}", name.unwrap_or("")).trim_end().to_string()
+            });
+        let msg = format!("`{decl}` cannot be used inside a callback of `{}`", cb.builtin);
+
+        // `helper` is the prelude function the user called, when there is one.
+        let mut call = cb.call;
+        let mut helper = None;
+        let mut below = cb.frames;
+        while below > 0 && call.is_some_and(|t| self.in_prelude(t)) {
+            below -= 1;
+            let frame = &self.stack.vm_frames[below];
+            call = frame.call_site;
+            helper = frame.func.and_then(|f| self.fn_display_name(f));
+        }
+        let per = if cb.builtin == "sort" { "comparison" } else { "element" };
+        let runs = match helper {
+            Some(helper) => format!("`{helper}` runs the callback through `{}`", cb.builtin),
+            None => format!("`{}` runs the callback", cb.builtin),
+        };
+        let related = call.map(|t| (t, format!("{runs} here, once per {per}")));
+        let help = "state needs a fixed place in the program, and a callback has none.\n\
+             For a value per element that persists across runs, use a loop:\n\
+             \x20   for x in xs do f(x) end   (add `key …` to follow items)\n\
+             For a value carried from one element to the next, use reduce's accumulator."
+            .to_string();
+        let detail = crate::backend::errors::ErrorDetail { at, related, help: Some(help) };
+        self.error_already_annotated = true;
+        self.annotate_with(msg, origin, &detail)
+    }
+
+    /// Where the declaration a `StateInit` term makes is written, from the
+    /// `state` keyword to the end of its initializer. The term has no span of
+    /// its own, so this is found from the initializer's terms and the source
+    /// before them; `None` for any other term.
+    fn state_decl_span(&self, term: TermId) -> Option<crate::source_map::SourceSpan> {
+        let program = self.program;
+        let t = program.get_term(term);
+        if !matches!(t.op, crate::program::TermOp::StateInit) {
+            return None;
+        }
+        let init = *t.child_blocks.first()?;
+        let mut spans = program
+            .terms
+            .iter()
+            .filter(|t| t.block_id == init)
+            .filter_map(|t| program.source_map.get(t.id))
+            .filter(|s| s.start.line > 0);
+        let first = *spans.next()?;
+        let (start, end) = spans.fold((first.start, first.end), |(lo, hi), s| {
+            (
+                if s.start.offset < lo.offset { s.start } else { lo },
+                if s.end.offset > hi.offset { s.end } else { hi },
+            )
+        });
+        let source = program.source_map.source_for_span(&first).unwrap_or(&program.source);
+        let before = source.get(..start.offset as usize)?;
+        let keyword = before[..before.rfind('=')?].rfind("state")?;
+        let line_start = before[..keyword].rfind('\n').map_or(0, |i| i + 1);
+        let start = crate::source_map::SourcePosition {
+            line: 1 + before[..keyword].matches('\n').count() as u32,
+            column: 1 + before[line_start..keyword].chars().count() as u32,
+            offset: keyword as u32,
+        };
+        Some(crate::source_map::SourceSpan { start, end, file: first.file })
+    }
+
+    /// Whether `term` is written in a module the entry file imports without
+    /// saying so (the core prelude, a host's).
+    fn in_prelude(&self, term: TermId) -> bool {
+        let Some(span) = self.program.source_map.get(term) else {
+            return false;
+        };
+        let imports = &self.program.imports;
+        imports
+            .entry
+            .iter()
+            .filter(|i| i.implicit)
+            .any(|i| imports.files.get(&i.module) == Some(&span.file.0))
     }
 
     pub(super) fn builtin_map(&mut self, args: &[Value], site: u64) -> Result<Value, String> {

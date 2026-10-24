@@ -15,6 +15,20 @@ pub struct TraceFrame {
     pub call_site: Option<TermId>,
 }
 
+/// What an error says beyond where it happened: a second place in the source
+/// and advice. See [`annotate_error_with`].
+#[derive(Default)]
+pub struct ErrorDetail {
+    /// Where to show the error, when the failing term has no span of its own
+    /// that says it as well.
+    pub at: Option<SourceSpan>,
+    /// Another term the error is about, shown under the failing one with this
+    /// note.
+    pub related: Option<(TermId, String)>,
+    /// Advice, printed after the snippets as `help: …`; may span lines.
+    pub help: Option<String>,
+}
+
 /// Annotate a raw runtime error `msg` (raised while executing `failing`) with
 /// source position, a caret snippet, provenance, and a stack trace built from
 /// `frames` (in stack order, bottom to top — walked top-first here).
@@ -24,7 +38,22 @@ pub fn annotate_error(
     msg: String,
     frames: &[TraceFrame],
 ) -> String {
-    let span = program.source_map.get(failing);
+    annotate_error_with(program, failing, msg, &ErrorDetail::default(), frames)
+}
+
+/// [`annotate_error`] with a related location and help after the snippet.
+///
+/// The related location is written `line N, column M` rather than in
+/// brackets: the CLI reads an error's position from the last bracketed one
+/// before `Caused by:`, which must stay the failing term's.
+pub fn annotate_error_with(
+    program: &Program,
+    failing: TermId,
+    msg: String,
+    detail: &ErrorDetail,
+    frames: &[TraceFrame],
+) -> String {
+    let span = detail.at.as_ref().or_else(|| program.source_map.get(failing));
     let mut error_msg = match span {
         Some(s) if s.start.line > 0 => {
             format!("{} {}", msg, format_position(program, s))
@@ -46,6 +75,32 @@ pub fn annotate_error(
             error_msg.push('\n');
             error_msg.push_str(&snippet);
         }
+    }
+
+    if let Some((term, note)) = &detail.related
+        && let Some(s) = program.source_map.get(*term).filter(|s| s.start.line > 0)
+    {
+        let file = program
+            .source_map
+            .file_name_for_span(s)
+            .map(|f| format!("{f} "))
+            .unwrap_or_default();
+        error_msg.push_str(&format!(
+            "\nnote: {note}, at {file}line {}, column {}",
+            s.start.line, s.start.column
+        ));
+        let source = program
+            .source_map
+            .source_for_span(s)
+            .unwrap_or(&program.source);
+        if let Some(snippet) = snippet_marked(source, s, '-') {
+            error_msg.push('\n');
+            error_msg.push_str(&snippet);
+        }
+    }
+    if let Some(help) = &detail.help {
+        error_msg.push_str("\nhelp: ");
+        error_msg.push_str(&help.replace('\n', "\n      "));
     }
 
     let provenance = format_provenance(program, failing, 5);
@@ -233,6 +288,11 @@ fn entry_file_name(program: &Program) -> Option<&str> {
 /// Returns `None` if the span is a placeholder or the line is out of range.
 /// ASCII-only and zero-dependency; callers append it to error messages.
 pub fn format_source_snippet(source: &str, span: &SourceSpan) -> Option<String> {
+    snippet_marked(source, span, '^')
+}
+
+/// [`format_source_snippet`], underlining with `mark`.
+fn snippet_marked(source: &str, span: &SourceSpan, mark: char) -> Option<String> {
     if span.start.line == 0 || source.is_empty() {
         return None;
     }
@@ -258,7 +318,7 @@ pub fn format_source_snippet(source: &str, span: &SourceSpan) -> Option<String> 
     } else {
         1
     };
-    let underline: String = std::iter::repeat_n('^', span_len.max(1)).collect();
+    let underline: String = std::iter::repeat_n(mark, span_len.max(1)).collect();
     Some(format!(
         "{} |\n{} | {}\n{} | {}{}",
         blank_gutter, line_num, line, blank_gutter, caret_pad, underline,

@@ -889,7 +889,7 @@ static const char* const kWorld =
     "state where = vec3(1, 2, 3)\n"
     "state on_done = fn(x) x + 1 end\n"
     "fn bump(key)\n  state count = 0\n  count += tick\n  count\nend\n"
-    "let counts = map([\"a\", \"b\"], fn(k) bump(k) end)\n"
+    "let counts = for k in [\"a\", \"b\"] do bump(k) end\n"
     "if tick % 2 == 0 then\n"
     "  grid = {size: grid.size, cells: grid.cells ++ [Tile(Kind.tower(tick, \"me\"), vec2(tick, 0.5))]}\n"
     "  set log = log ++ [\"t{tick}\"]\n"

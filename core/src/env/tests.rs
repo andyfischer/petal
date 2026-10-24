@@ -62,6 +62,7 @@ mod call_function_tests {
         let stack = env.stacks.get(&sid).unwrap();
         assert_eq!(stack.vm_frames.len(), base);
         assert_eq!(stack.sync_depth, 0);
+        assert!(stack.callback.is_none());
     }
 
     /// `call_function_named`: arguments by parameter name, bound as a written

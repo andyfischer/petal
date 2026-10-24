@@ -3013,7 +3013,7 @@ fn bump(key)
   count += tick
   count
 end
-let counts = map([\"a\", \"b\"], fn(k) bump(k) end)
+let counts = for k in [\"a\", \"b\"] do bump(k) end
 if tick % 2 == 0 then
   grid = {size: grid.size, cells: grid.cells ++ [grown(tick)]}
   set log = log ++ [\"t{tick}\"]
@@ -3032,7 +3032,7 @@ print(tick, grid, log, table, frozen(table), where, odd.far, odd.none, odd.tag =
         let report: serde_json::Value = serde_json::from_str(a.state_report()).unwrap();
         assert_eq!(report["op"], "save");
         assert_eq!(report["skipped"], serde_json::json!([]), "everything in WORLD can be saved");
-        assert_eq!(report["slots"], 8, "seven top-level slots and the one inside `bump`");
+        assert_eq!(report["slots"], 9, "seven top-level slots and one inside `bump` per loop iteration");
         // Saving is a read: twice gives the same bytes.
         assert_eq!(a.save_state().unwrap(), saved);
         let (a5, a6) = (printed(&mut a), printed(&mut a));

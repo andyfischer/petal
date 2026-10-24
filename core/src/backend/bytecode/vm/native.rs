@@ -10,6 +10,11 @@ use super::*;
 
 use crate::handle::HandleVal;
 use crate::native_fn::PetalCxt;
+use crate::stack::BuiltinCallback;
+
+/// Runs one higher-order builtin: its arguments, and the call site its
+/// callbacks' frames are pushed with.
+type CallbackDriver<'a> = fn(&mut Vm<'a>, &[Value], u64) -> Result<Value, String>;
 
 impl<'a> Vm<'a> {
     /// The call chain reaching a native: its own call site, then the return
@@ -199,39 +204,33 @@ impl<'a> Vm<'a> {
         // no closure to drive and stays an ordinary native, so a one-argument
         // call must fall through to the leaf below.
         let sort_with_cmp = nf.intrinsic_sort == Some(nid) && args.len() == 2;
+        let callback = self.callback_intrinsic(nid, sort_with_cmp);
         // The intrinsics never reach the shared leaf, so they are counted here;
         // everything else is counted once, in `call_native_fn`.
-        if nf.intrinsic_map == Some(nid)
-            || nf.intrinsic_filter == Some(nid)
-            || nf.intrinsic_reduce == Some(nid)
-            || nf.intrinsic_for_each == Some(nid)
-            || nf.intrinsic_sort_by == Some(nid)
+        if callback.is_some()
             || nf.intrinsic_fn_info == Some(nid)
             || nf.intrinsic_fn_ast == Some(nid)
             || nf.intrinsic_enum_from == Some(nid)
             || nf.intrinsic_enum_all == Some(nid)
-            || sort_with_cmp
         {
             self.profile.record_native(nid.0);
         }
-        // The closures an intrinsic drives are called from *this* call site, so
-        // they all share its path part: `map(xs, widget)` gives `widget`'s
-        // `state` one slot per `map` call site, not one per element.
-        let site = self.site_of(origin);
+        if let Some((builtin, drive)) = callback {
+            // Every callback the builtin drives runs under this record, which
+            // makes a `state` declaration in it an error (see `state_in_callback`).
+            // It is restored on every return, an error included, so a failed
+            // callback leaves nothing behind for the next call or run.
+            let outer = self.stack.callback.replace(BuiltinCallback {
+                builtin,
+                call: origin,
+                frames: self.stack.vm_frames.len(),
+            });
+            let result = drive(self, args, self.site_of(origin));
+            self.stack.callback = outer;
+            return result;
+        }
         if nf.intrinsic_enum_all == Some(nid) {
             self.enum_all(args)
-        } else if nf.intrinsic_sort_by == Some(nid) {
-            self.builtin_sort_by(args, site)
-        } else if sort_with_cmp {
-            self.builtin_sort_cmp(args, site)
-        } else if nf.intrinsic_map == Some(nid) {
-            self.builtin_map(args, site)
-        } else if nf.intrinsic_filter == Some(nid) {
-            self.builtin_filter(args, site)
-        } else if nf.intrinsic_reduce == Some(nid) {
-            self.builtin_reduce(args, site)
-        } else if nf.intrinsic_for_each == Some(nid) {
-            self.builtin_for_each(args, site)
         } else if nf.intrinsic_enum_from == Some(nid) {
             self.enum_from(args)
         } else if nf.intrinsic_fn_info == Some(nid) {
@@ -241,6 +240,38 @@ impl<'a> Vm<'a> {
         } else {
             self.call_native_fn(nid, args, false, origin)
         }
+    }
+
+    /// The higher-order builtin `nid` is, if it is one: the name an error
+    /// shows for it and the driver that runs it. These are the natives that
+    /// call back into Petal, and every one must be listed here, so that its
+    /// callbacks run under [`Stack::callback`].
+    ///
+    /// A driver pushes its callbacks' frames with the builtin's own call site
+    /// as their path part, as every `call_closure_sync` caller must, though
+    /// no `state` can be declared under it.
+    fn callback_intrinsic(
+        &self,
+        nid: NativeFnId,
+        sort_with_cmp: bool,
+    ) -> Option<(&'static str, CallbackDriver<'a>)> {
+        let nf = self.native_fns;
+        let driver: (&'static str, CallbackDriver<'a>) = if nf.intrinsic_map == Some(nid) {
+            ("map", Self::builtin_map)
+        } else if nf.intrinsic_filter == Some(nid) {
+            ("filter", Self::builtin_filter)
+        } else if nf.intrinsic_reduce == Some(nid) {
+            ("reduce", Self::builtin_reduce)
+        } else if nf.intrinsic_for_each == Some(nid) {
+            ("forEach", Self::builtin_for_each)
+        } else if nf.intrinsic_sort_by == Some(nid) {
+            ("sort_by", Self::builtin_sort_by)
+        } else if sort_with_cmp {
+            ("sort", Self::builtin_sort_cmp)
+        } else {
+            return None;
+        };
+        Some(driver)
     }
 
     /// Record `fn Class.method` in the stack's per-run method table.

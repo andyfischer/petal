@@ -1641,7 +1641,7 @@ with a golden test.
 |---|---|---|---|
 | Design | done, 2026-10-23 | `c9eb67b7` | plan + [hints proposal](../proposals/dm-v2-hints.md) |
 | Design review | done, 2026-10-23 | (this commit) | adversarial review against the code, [§10](#10-review-notes) |
-| M1 speculative runner | done, 2026-10-23 | (this commit) | `dm_v2::{spec,observe}`, `vm/spec.rs`, `env/spec_run.rs`; tests `core/tests/dm_v2_spec.rs` (24), `core-libs/petal-ui/tests/dm_v2_spec.rs` (2); deviations below |
+| M1 speculative runner | done, 2026-10-23 | `07e81adf` | `dm_v2::{spec,observe}`, `vm/spec.rs`, `env/spec_run.rs`; tests `core/tests/dm_v2_spec.rs` (24), `core-libs/petal-ui/tests/dm_v2_spec.rs` (2); deviations below |
 | M2 discovery + Jacobian + hints | not started | | |
 | M3 solver + ranking + API | not started | | |
 | M4 surfaces | not started | | |
@@ -1716,8 +1716,8 @@ Deviations:
     `Option` test in `call_native_fn`, `push_frame`/`frame_from_pool` and
     `deliver_value`, and one in `PetalCxt::rng_next_f64` and `push_output`.
 
-Bench (acceptance item 13), release builds of `d4de0db6` and of this
-commit on the same machine, interleaved. `petal run test/benchmarks/*.ptl`,
+Bench (acceptance item 13), release builds of `d4de0db6` and of `07e81adf`
+on the same machine, interleaved. `petal run test/benchmarks/*.ptl`,
 median of 16 runs (wall time, process start included): spreadsheet 192.5 →
 193.6 ms (+0.6%; a second series +0.5%), calls 29.7 → 29.6, life 16.2 →
 15.7, match_dispatch 330.1 → 329.0, audio_synth 95.8 → 95.8. `bench_panel

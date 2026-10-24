@@ -1646,7 +1646,7 @@ with a golden test.
 | M1 speculative runner | done, 2026-10-23 | `07e81adf` | `dm_v2::{spec,observe}`, `vm/spec.rs`, `env/spec_run.rs`; tests `core/tests/dm_v2_spec.rs` (24), `core-libs/petal-ui/tests/dm_v2_spec.rs` (2); deviations below |
 | M2 discovery + Jacobian + hints | done, 2026-10-24 | `43ee2820` | `dm_v2::{params,hints,jacobian}`, `builtins/hints.rs`, `lint/dm_hints.rs`; tests `core/tests/dm_v2_jacobian.rs` (17), `core-libs/petal-ui/tests/dm_v2_params.rs` (1); deviations below |
 | M3 solver + ranking + API | done, 2026-10-24 | `1c28a217` | `dm_v2::{solve,rank,api}`, `propose_edits_v2`, `DmSession`, `apply_edits_multi`; tests `core/tests/dm_v2_solve.rs` (27); deviations below |
-| M4 surfaces | not started | | |
+| M4 surfaces | M4b (Garden) done, 2026-10-24 | M4b: `6da29349`, `1f565eca` | M4b: Garden drag-to-edit on v2 (`garden-script/src/panel/dm_v2.rs`, `garden-app/src/app/manip_v2.rs`); tests `garden-script/tests/dm_v2_drag.rs` (13), `tools/dm-drag-integration-test.ts`; deviations below |
 | M5 examples + study | not started | | |
 
 Deviations from this plan are recorded here as they happen, with the reason.
@@ -1966,6 +1966,83 @@ Deviations:
     (`6.7`); where v1 has a single answer, it is v2's top one; and
     `ConfigStrict` returns exactly v1's set on a program with a `config
     let`. v2 also proposes literals v1 misses (the `10` of `10 + w * 2`).
+
+**M4b (Garden), 2026-10-24.** What landed (commits `6da29349`, `1f565eca`):
+Petal IDE's Cmd-drag solves through function calls with the v2 engine.
+`garden-script`: `PanelHost::{set_dm_checkpoint, pin_dm_checkpoint,
+begin_drag_v2, preview_drag_v2, finish_drag_v2, cancel_drag_v2,
+propose_drag_edits_v2}` in `garden-script/src/panel/dm_v2.rs`, Garden's
+`SpecHost` (R11), `DragFilter`/`DragSelector`, `DragCandidate`,
+`DragAlternative`, `DragOutcomeV2`, `apply_rewrites_to`, and
+`SourceRewrite::file` for edits in imported modules. `garden-app`
+(`app/manip_v2.rs`): engine choice per drag, ranked alternatives
+(`:DragNext`, `:DragPrev`, `:DragPick N`), client disambiguation
+(`:DragAllow` / `:DragDeny` with `name`, `line:N`, `fn:NAME`, `config`),
+`:DragEngine auto|v1|v2`, and `/state`'s `dm` (feature `state.dm-drag`).
+Core: `DmSession::cancel` and `DmSession::renew_budget`. Tests:
+`garden/garden-script/tests/dm_v2_drag.rs` (13, including
+`drag_through_helper_v2` and the shipped `drag-to-edit.ptl` demo), five new
+`garden-app` tests, and `garden/tools/dm-drag-integration-test.ts` (15
+checks over the debug server). Docs: `garden/docs/petal-ide-mode.md`
+(the drag section rewritten), `keybindings.md`, `debug-server.md`,
+`architecture.md`.
+
+Measured on a 300-circle sketch placed through a helper (debug Garden,
+`petal` at opt-level 3): a frame 2.6 ms, the same with the checkpoint armed
+2.3 ms (the fork is within noise); opening the drag 87 ms (31 runs); a
+preview 1.2 ms; the release 6.8 ms.
+
+Deviations:
+
+1. *v1 stays for what it sees exactly.* `:DragEngine auto` (the default)
+   uses v1 when every position argument of the grabbed call is a literal or a
+   binding written in the call (exact, free, and the edit follows the pointer
+   frame by frame), and v2 for everything else, and for every drag while
+   `:DragAllow` / `:DragDeny` is set. §4.4 said v2 "becomes the default when
+   stable"; this is that default for the cases v1 cannot answer.
+2. *R6 is host-side.* No `Env::set_dm_checkpoint`: `PanelHost` forks the stack
+   in `FrameHooks::prepare` (after the frame's inputs are bound, before it
+   runs) for each frame that runs, keeps one, and drops it on a reload. A press
+   pins it (§2.1.1's pre-mouse-down checkpoint), so frames that run before the
+   first move cannot replace it. Without a checkpoint the live stack is used
+   (right for a still sketch).
+3. *A probe run finds the `EmitKey`.* `DmSession::open` needs keyed goals up
+   front, so `begin_drag_v2` first opens a bare `SpecSession` (two baselines)
+   and takes the k-th draw-channel emit whose chain equals the command's
+   recorded origin (k counted among the frame's commands), falling back to
+   the raw command index. A command with no matching emit is refused rather
+   than asserted.
+4. *Both axes are goals.* The axis the drag did not move is held at its
+   baseline, so a solution cannot slide the shape off-axis. Goals are on the
+   drawing native's raw arguments; a record argument is read through
+   `Field("x")` / `Field("y")`, so `draw_rect(rect, c)` and the `center`
+   overloads drag too (v1 refuses them).
+5. *The preview is the editor and a ghost.* While the pointer is down the
+   panel's live binding is held (the session's program keeps running); the
+   editor shows the predicted literals, rewritten each move from the
+   press-time text; the canvas paints only the grabbed shape translated by the
+   pointer offset. The release writes the verified answer and the canvas
+   recompiles. No separate overlay of literals.
+6. *The picker is the status bar and commands.* After a release the status bar
+   names the edit, its rank (`[1 of 3: :DragNext]`) and the other eligible
+   literals that move the shape on the dragged axis (`also movable: x0
+   (:DragAllow)`); the full candidate report is in `/state`. `:DragAllow`
+   is exact and persists across drags until cleared. Holding Alt to cycle
+   (the stretch) was not done.
+7. *Budgets.* Open: 96 runs / 400 ms; release: 48 runs / 400 ms
+   (`renew_budget`, so time the pointer is held is not the solver's);
+   `max_iters` 3; 250 ms per run; 3 alternatives.
+8. *Other files.* An edit in an imported module goes into that file's editor
+   buffer when one is open, else to the file on disk. Cycling alternatives
+   rewrites every touched file from its press-time text.
+9. *`file_origins` canonicalizes paths* (core, `6da29349`): the loader records
+   an imported module by its resolved path and the entry by the path it was
+   given, which on macOS (`/var` → `/private/var`) made a sibling module a
+   path dependency, so it was never edited.
+10. *Acceptance item 3's integration test* is a new file,
+    `tools/dm-drag-integration-test.ts`. It checks the moved shape by hovering
+    its new position (the trace), since draw commands are integer pixels; the
+    unit tests assert the move to ±1 px.
 
 ---
 

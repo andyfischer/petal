@@ -8,7 +8,9 @@
 // You never say which text to change: you say where the shape
 // should be, and Petal answers with the edit. The `config let`
 // bindings below are how this sketch tells it which variables
-// are its tuning knobs — everything else stays pinned.
+// are its tuning knobs: they are moved first. `:DragNext`
+// writes the next-best answer instead, and `:DragAllow x0`
+// says which variable the next drags may move.
 
 import ui
 
@@ -35,22 +37,32 @@ draw_rect(x: edge, y: 130, w: 52, h: 52, r: 130, g: 130, b: 230)
 draw_text("shared knob", x: edge, y: 200, size: 12, r: 130, g: 145, b: 175)
 
 // ── 3. Solved, not looked up ─────────────────────────────
-// There is no number to edit in `x0 + i * spacing` — the last
-// card's position exists only at runtime. Drag it anyway:
-// `x0` is pinned (it isn't a knob), so the runtime inverts the
-// arithmetic and moves `spacing` instead, and the whole row
-// re-spaces around the card you are holding.
-//
-// Drag one of the *earlier* cards and it declines and says
-// why: solving inverts against the values the run recorded,
-// and those are the last iteration's — so the last shape a
-// looping call drew is the one whose numbers are still true.
+// There is no number to edit in `x0 + i * spacing`: a card's
+// position exists only at runtime. Drag any card anyway. Petal
+// re-runs the frame with each number nudged, sees that
+// `spacing` (a knob) and `x0` both move it, and moves
+// `spacing`: the whole row re-spaces around the card you are
+// holding. The status bar lists `x0` as the alternative.
 let x0 = 46
 let row_y = 96
 for i in range(0, 4) do
   draw_rect(x: x0 + i * spacing, y: row_y, w: 44, h: 44, r: 70, g: 165, b: 150)
 end
-draw_text("drag the last card to re-space the row", x: x0, y: 152, size: 12, r: 130, g: 145, b: 175)
+draw_text("drag any card to re-space the row", x: x0, y: 152, size: 12, r: 130, g: 145, b: 175)
+
+// ── 5. Through a function ────────────────────────────────
+// The dots' positions come back from `orbit`, with trig in
+// between. Drag a dot and the numbers inside `orbit` (or the
+// call's arguments) are solved for, then checked by running
+// the edited code once more before anything is written.
+fn orbit(cx, cy, radius, k)
+  let a = k * 0.9
+  {x: cx + radius * cos(a), y: cy + radius * sin(a)}
+end
+for k in range(0, 5) do
+  let p = orbit(440, 300, 60, k)
+  draw_circle(p.x, p.y, 7, 200, 120, 220)
+end
 
 // ── 4. Text is a shape too ───────────────────────────────
 draw_text("cmd-drag me", x: 250, y: 250, size: 18, r: 235, g: 200, b: 120)

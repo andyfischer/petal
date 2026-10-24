@@ -777,6 +777,10 @@ impl App {
                     "editable_span": a.editable_span.map(code_span_json),
                 })).collect::<Vec<_>>(),
             })),
+            // Drag-to-edit: the engine, the client's allow/deny selectors,
+            // whether a v2 drag is in progress, and the last v2 answer (its
+            // ranked alternatives and the candidate report a picker shows).
+            "dm": self.dm_state_json(),
             "lsp": self.lsp_state_json(),
             // Glyph-atlas pressure as of the last frame any renderer in this
             // process prepared, or null if nothing has been drawn yet (a

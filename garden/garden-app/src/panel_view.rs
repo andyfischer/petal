@@ -607,6 +607,15 @@ pub struct PanelView {
     /// direct-manipulation mode. Off for every ordinary panel, which therefore
     /// pays nothing for it.
     trace_origins: bool,
+    /// While a direct-manipulation v2 drag is pulling a shape: its command
+    /// index and the pointer's offset, painted as the shape moved by that much
+    /// (the "ghost") until the release writes the solved edit.
+    drag_ghost: Option<(usize, i32, i32)>,
+    /// Hold the live editor binding: while set, [`reload_from_editor`](Self::reload_from_editor)
+    /// does not recompile. A v2 drag sets it so the program its session
+    /// measured stays the one running while the editor shows previewed
+    /// numbers; releasing it lets the next sync compile the final text.
+    hold_live_source: bool,
     /// [`ClientEvent`]s (and a data-changed flag) collected while a bounded
     /// request wait ([`await_response`](Self::await_response)) drained other
     /// envelopes, handed to the next [`pump_client`](Self::pump_client) so
@@ -737,6 +746,8 @@ impl PanelView {
             cursor: 0,
             nav_events: Vec::new(),
             trace_origins: false,
+            drag_ghost: None,
+            hold_live_source: false,
             pending_events: Vec::new(),
             pending_changed: false,
             screens: Vec::new(),
@@ -1791,6 +1802,9 @@ impl PanelView {
         }
         self.trace_origins = on;
         self.host.set_trace_origins(on);
+        // A traced pane is one a drag can pull, so it keeps the pre-frame
+        // checkpoint a v2 drag re-runs from.
+        self.host.set_dm_checkpoint(on);
     }
 
     /// Whether this pane is tracing (see [`set_trace_origins`](Self::set_trace_origins)).
@@ -1864,6 +1878,73 @@ impl PanelView {
         goals: &[(usize, f64)],
     ) -> garden_script::DragOutcome {
         self.host.propose_drag_edits(cmd_index, goals)
+    }
+
+    // ── Direct manipulation v2 (solved by re-running the frame) ──────────
+
+    /// The shape under (`x`, `y`) as a v2 drag target: its command index, if
+    /// it is a shape with a position (see
+    /// [`PanelHost::begin_drag_v2`](garden_script::PanelHost::begin_drag_v2)).
+    pub fn drag_target_v2_at(&self, pane_rect: Rect, x: f32, y: f32) -> Option<usize> {
+        if !self.trace_origins {
+            return None;
+        }
+        let px = (x - pane_rect.x) as i32;
+        let py = (y - pane_rect.y) as i32;
+        let index = garden_script::hit_test(&self.cmds, px, py)?;
+        self.host.origin_at(index)?;
+        garden_script::v2_draggable(self.cmds.get(index)?).then_some(index)
+    }
+
+    /// The traced call of the command at `index`, for choosing an engine.
+    pub fn trace_of(&self, index: usize) -> Option<DrawTrace> {
+        self.host.trace_origin(self.host.origin_at(index)?)
+    }
+
+    /// A drag was pressed: keep the frame's checkpoint for it.
+    pub fn pin_dm_checkpoint(&mut self) {
+        self.host.pin_dm_checkpoint();
+    }
+
+    /// Open a v2 drag on command `index` (see
+    /// [`PanelHost::begin_drag_v2`](garden_script::PanelHost::begin_drag_v2)),
+    /// holding the live binding until it ends.
+    pub fn begin_drag_v2(
+        &mut self,
+        index: usize,
+        filter: &garden_script::DragFilter,
+    ) -> Result<garden_script::DragStart, garden_script::DragOutcomeV2> {
+        let r = self.host.begin_drag_v2(index, filter);
+        self.hold_live_source = r.is_ok();
+        r
+    }
+
+    /// The open drag's linear answer at this pointer offset (no runs), and the
+    /// ghost moved there.
+    pub fn preview_drag_v2(&mut self, index: usize, dx: f64, dy: f64) -> Vec<garden_script::SourceRewrite> {
+        self.drag_ghost = Some((index, dx.round() as i32, dy.round() as i32));
+        self.host.preview_drag_v2(dx, dy)
+    }
+
+    /// Release the open drag: verify, round and rank. The ghost and the hold
+    /// on the live binding end with it.
+    pub fn finish_drag_v2(&mut self, dx: f64, dy: f64) -> garden_script::DragOutcomeV2 {
+        self.drag_ghost = None;
+        self.hold_live_source = false;
+        self.host.finish_drag_v2(dx, dy)
+    }
+
+    /// Abandon the open drag, if any.
+    pub fn cancel_drag_v2(&mut self) {
+        self.drag_ghost = None;
+        self.hold_live_source = false;
+        self.host.cancel_drag_v2();
+    }
+
+    /// The ghost a v2 drag is painting: command index and offset.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn drag_ghost(&self) -> Option<(usize, i32, i32)> {
+        self.drag_ghost
     }
 
     /// Reconcile the embedded editors with the `text_view(...)` regions (and
@@ -2384,6 +2465,9 @@ impl PanelView {
     /// the error banner. A compile error keeps the last good render and shows the
     /// message. Returns true when it applied a change (redraw wanted).
     pub fn reload_from_editor(&mut self, source: &str, now: Instant) -> bool {
+        if self.hold_live_source {
+            return false;
+        }
         let hash = hash_text(source);
         if self.live_source_hash == Some(hash) {
             return false;
@@ -2543,7 +2627,14 @@ impl PanelView {
         // switches.
         let mut base = PanelClip::square(rect);
         let mut clips: Vec<PanelClip> = vec![base];
-        for cmd in &self.cmds {
+        let ghost = self
+            .drag_ghost
+            .and_then(|(i, dx, dy)| Some((i, self.cmds.get(i)?.translated(dx, dy))));
+        for (cmd_index, cmd) in self.cmds.iter().enumerate() {
+            let cmd = match &ghost {
+                Some((i, moved)) if *i == cmd_index => moved,
+                _ => cmd,
+            };
             let cur_clip = *clips.last().unwrap_or(&base);
             // Panel-local rect → absolute pane pixels, for the clip commands.
             let local = |x: &i32, y: &i32, w: &u32, h: &u32| Rect {

@@ -151,6 +151,40 @@ export interface AppState {
   lsp?: { documents: unknown[]; failures: unknown[]; pending_completions: number; servers: unknown[] };
   text_atlas?: unknown | null;
   trace?: unknown | null;
+  /** Drag-to-edit: the engine (`auto` | `v1` | `v2`), the `:DragAllow` /
+   *  `:DragDeny` selectors, whether a v2 drag is in progress, and the last v2
+   *  answer — its ranked alternatives and the candidate report. */
+  dm?: {
+    engine: string;
+    allow: string[];
+    deny: string[];
+    active: boolean;
+    last: {
+      current: number;
+      alternatives: Array<{
+        description: string;
+        verified: boolean;
+        score: number;
+        moves_others: number;
+        config_only: boolean;
+        stateful: boolean;
+        rewrites: Array<{ span: unknown; new_text: string; file: string | null; variable: string | null; config: boolean }>;
+      }>;
+      candidates: Array<{
+        label: string;
+        selector: string;
+        value: number;
+        config: boolean;
+        eligible: boolean;
+        why_not: string | null;
+        moves: boolean;
+        moves_x: boolean;
+        moves_y: boolean;
+        span: unknown | null;
+        file: string | null;
+      }>;
+    } | null;
+  };
   unresolved_fonts?: unknown[];
   window_cmd_pending?: boolean;
   /** The focused pane (index), and its cursor and selection repeated at the top

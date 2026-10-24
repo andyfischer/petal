@@ -405,8 +405,13 @@ type, `state` preserved, with a compile error keeping the last good render.
 The same pairing runs backwards for direct manipulation: pointing at a shape
 highlights the `draw_*` call that drew it (Petal's runtime attribution,
 `panel_trace.rs` for the hit test), Cmd/Ctrl-click jumps to it, and a
-Cmd/Ctrl-drag proposes source edits through `petal::direct_manipulation`
-that land in the editor buffer as one undo group. IDE mode also adds a
+Cmd/Ctrl-drag proposes source edits that land in the editor buffer as one
+undo group: through `petal::direct_manipulation` (v1) when the position is
+written in the call, else through `petal::dm_v2`, which re-runs the frame
+speculatively from a pre-frame checkpoint the panel keeps and solves through
+function calls (`garden-script/src/panel/dm_v2.rs` for the session,
+`garden-app/src/app/manip_v2.rs` for the gesture, the alternatives and the
+`:DragAllow` filter). IDE mode also adds a
 toolbar, play/pause (freezes panel ticks, leaves the editor live), and the IR
 inspector (`petal_ide/`). User guide: [petal-ide-mode.md](petal-ide-mode.md).
 

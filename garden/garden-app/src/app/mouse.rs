@@ -75,6 +75,23 @@ pub(in crate::app) struct ManipDrag {
     /// Whether the pointer has passed [`DRAG_SLOP`] — i.e. whether this is a
     /// drag at all yet, or still a click that hasn't been released.
     moved: bool,
+    /// Solved by re-running the frame (v2, `super::manip_v2`) rather than by
+    /// static provenance (v1). A v2 drag has no `x_args`/`y_args`: its goals
+    /// are on the drawing native's raw arguments, found by the engine.
+    v2: Option<ManipV2>,
+}
+
+/// The v2 half of a [`ManipDrag`].
+pub(in crate::app) struct ManipV2 {
+    /// The sketch's text at the press: every span the engine answers with
+    /// is in it, and each preview is rewritten from it.
+    s0: String,
+    /// The session is open (the first move past the slop opened it).
+    opened: bool,
+    /// Opening failed; the reason is on the status bar and the drag is inert.
+    failed: bool,
+    /// The pointer offset of the last move.
+    last: (f64, f64),
 }
 
 /// How far the pointer must move before a Cmd-press becomes a drag rather than
@@ -231,13 +248,58 @@ impl App {
         if !panel.traces_origins() || panel.source_drifted() {
             return false;
         }
-        let Some((index, handle)) = panel.drag_target_at(pane.rect, x, y) else {
-            return false;
+        let v1 = panel.drag_target_at(pane.rect, x, y);
+        let v2 = panel.drag_target_v2_at(pane.rect, x, y);
+        // Which engine. v1 is exact and instant for what it can see — a
+        // position written as literals or bindings in the call — and its edit
+        // follows the pointer live. Anything else (a computed position, a value
+        // returned by a function, a loop's non-last shape, the `rect`/`center`
+        // overloads) is v2's, as is every drag while the user has said which
+        // literals may move.
+        let use_v2 = match self.dm_engine {
+            super::manip_v2::DmEngine::V1 => false,
+            super::manip_v2::DmEngine::V2 => v2.is_some(),
+            super::manip_v2::DmEngine::Auto => {
+                v2.is_some()
+                    && (!self.dm_filter.is_default()
+                        || match &v1 {
+                            None => true,
+                            Some((i, h)) => panel.trace_of(*i).is_none_or(|t| {
+                                h.x_args.iter().chain(&h.y_args).any(|(a, _)| {
+                                    t.args
+                                        .get(*a)
+                                        .is_none_or(|ta| ta.source == garden_script::ArgSource::Computed)
+                                })
+                            }),
+                        })
+            }
+        };
+        let (index, handle) = match (use_v2, v1, v2) {
+            (true, _, Some(i)) => (
+                i,
+                garden_script::DragHandle {
+                    x_args: Vec::new(),
+                    y_args: Vec::new(),
+                },
+            ),
+            (false, Some(v1), _) => v1,
+            _ => return false,
         };
         let path = super::panes::resolve_script(panel.origin_script(), script_dir.as_deref());
         let Some(editor) = self.editor_pane_for(&path) else {
             return false;
         };
+        let v2 = use_v2.then(|| ManipV2 {
+            s0: self.panes[editor].view.buffer.text(),
+            opened: false,
+            failed: false,
+            last: (0.0, 0.0),
+        });
+        if v2.is_some() {
+            if let Some(panel) = self.panes[idx].panel.as_mut() {
+                panel.pin_dm_checkpoint();
+            }
+        }
 
         // One undo step for the whole gesture: a drag makes an edit per frame,
         // and undoing a drag means putting the shape back where it was, not
@@ -251,6 +313,7 @@ impl App {
             x_args: handle.x_args,
             y_args: handle.y_args,
             moved: false,
+            v2,
         });
         self.drag = Some(Drag::Manipulate);
         true
@@ -295,6 +358,10 @@ impl App {
             return;
         }
         let (pane, editor, index) = (m.pane, m.editor, m.index);
+        if m.v2.is_some() {
+            self.drag_manipulate_v2(dx, dy);
+            return;
+        }
 
         // Re-resolve against the program running *now*: the previous frame's
         // edit recompiled it, so the call this shape came from has a new term
@@ -347,6 +414,90 @@ impl App {
             // edit; the next move re-resolves.
             garden_script::DragOutcome::Stale => {}
         }
+    }
+
+    /// One move of a v2 drag: open the session on the first, then preview.
+    fn drag_manipulate_v2(&mut self, dx: f64, dy: f64) {
+        let Some(m) = self.manip.as_mut() else {
+            return;
+        };
+        m.moved = true;
+        let (pane, editor, index) = (m.pane, m.editor, m.index);
+        let Some(v2) = m.v2.as_mut() else {
+            return;
+        };
+        if v2.failed {
+            return;
+        }
+        v2.last = (dx, dy);
+        let opened = v2.opened;
+        let s0 = v2.s0.clone();
+        let filter = self.dm_filter.clone();
+        let Some(panel) = self.panes.get_mut(pane).and_then(|p| p.panel.as_mut()) else {
+            return;
+        };
+        if !opened {
+            match panel.begin_drag_v2(index, &filter) {
+                Ok(start) => {
+                    self.log_event(
+                        "mouse",
+                        format!(
+                            "drag-to-edit v2 opened: {} candidates, {} runs",
+                            start.candidates.len(),
+                            start.runs
+                        ),
+                    );
+                }
+                Err(outcome) => {
+                    if let Some(v2) = self.manip.as_mut().and_then(|m| m.v2.as_mut()) {
+                        v2.failed = true;
+                    }
+                    self.status_note = Some(match outcome {
+                        garden_script::DragOutcomeV2::Refused { why, .. } => why,
+                        _ => "this shape's frame could not be re-run".to_string(),
+                    });
+                    self.needs_redraw = true;
+                    return;
+                }
+            }
+            if let Some(v2) = self.manip.as_mut().and_then(|m| m.v2.as_mut()) {
+                v2.opened = true;
+            }
+        }
+        let Some(panel) = self.panes.get_mut(pane).and_then(|p| p.panel.as_mut()) else {
+            return;
+        };
+        let rewrites = panel.preview_drag_v2(index, dx, dy);
+        self.write_preview_v2(editor, &s0, &rewrites);
+        self.needs_redraw = true;
+    }
+
+    /// Release a v2 drag: solve, verify, write the top alternative.
+    fn release_manipulation_v2(&mut self, m: ManipDrag) {
+        let Some(v2) = m.v2 else {
+            return;
+        };
+        let panel = self.panes.get_mut(m.pane).and_then(|p| p.panel.as_mut());
+        if !m.moved || !v2.opened {
+            // A click (never moved), or a drag whose session did not open
+            // (nothing was written): release the pinned checkpoint.
+            if let Some(panel) = panel {
+                panel.cancel_drag_v2();
+            }
+            return;
+        }
+        let Some(panel) = panel else {
+            return;
+        };
+        let (dx, dy) = v2.last;
+        let outcome = panel.finish_drag_v2(dx, dy);
+        self.settle_drag_v2(m.editor, v2.s0, outcome, (dx, dy));
+        self.log_event("mouse", "drag-to-edit v2 released".to_string());
+    }
+
+    /// Whether a v2 drag is in progress.
+    pub(in crate::app) fn manip_is_v2(&self) -> bool {
+        self.manip.as_ref().is_some_and(|m| m.v2.is_some())
     }
 
     /// Splice a gesture's rewrites into an editor pane's buffer.
@@ -755,6 +906,18 @@ impl App {
                 // either shadowing the other.
                 Drag::Manipulate => {
                     if let Some(m) = self.manip.take() {
+                        let (editor, moved, start) = (m.editor, m.moved, m.start);
+                        if m.v2.is_some() {
+                            self.release_manipulation_v2(m);
+                            if let Some(pane) = self.panes.get_mut(editor) {
+                                pane.view.buffer.end_undo_run();
+                            }
+                            if !moved {
+                                self.jump_to_traced_code(start.0, start.1);
+                            }
+                            self.needs_redraw = true;
+                            return;
+                        }
                         if let Some(pane) = self.panes.get_mut(m.editor) {
                             pane.view.buffer.end_undo_run();
                         }

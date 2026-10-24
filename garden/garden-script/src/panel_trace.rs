@@ -285,6 +285,11 @@ pub struct SourceRewrite {
     /// The range to replace, in the editor's 0-based coordinates.
     pub span: CodeSpan,
     pub new_text: String,
+    /// The file the range is in when it is not the sketch itself: an
+    /// imported module (a v2 drag can solve through a helper in another
+    /// file). `None` — the sketch, the paired editor's buffer — for every v1
+    /// rewrite.
+    pub file: Option<std::path::PathBuf>,
     /// The binding this edits, or `None` for a literal written in the call.
     pub variable: Option<String>,
     /// Whether other code reads the edited binding — the edit moves more than
@@ -309,6 +314,299 @@ pub enum DragOutcome {
     /// one frame after an edit (term ids are indices, so the drag's own rewrite
     /// invalidates them); skip the frame rather than reporting anything.
     Stale,
+}
+
+// ── Dragging, v2: goals on the native's raw arguments, solved by re-running ──
+//
+// The v1 path above edits what provenance can see statically: a literal in
+// the call, the `let` behind it, or a `+ - * /` chain over traced values. It
+// refuses anything that flows through a function call. The v2 path
+// (docs/dev/direct-manipulation-v2-plan.md §4.4) states the goal on the raw
+// argument the drawing *native* received and lets Petal's v2 engine find the
+// literals: it re-runs the frame speculatively with each candidate nudged,
+// measures how the shape moves, and solves, through any number of calls. It
+// is [`PanelHost::begin_drag_v2`](crate::PanelHost::begin_drag_v2) (mouse-down
+// side), [`preview_drag_v2`](crate::PanelHost::preview_drag_v2) (every move,
+// no runs) and [`finish_drag_v2`](crate::PanelHost::finish_drag_v2) (release).
+
+/// Which literals a v2 drag may move: the client half of disambiguation.
+/// Empty `allow` means the engine's defaults (every user literal the shape
+/// depends on, `config let` and `tunable` preferred); a non-empty one is exact.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DragFilter {
+    pub allow: Vec<DragSelector>,
+    pub deny: Vec<DragSelector>,
+}
+
+impl DragFilter {
+    /// Whether this is the default filter (no client choice).
+    pub fn is_default(&self) -> bool {
+        self.allow.is_empty() && self.deny.is_empty()
+    }
+}
+
+/// One way to name literals for a [`DragFilter`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum DragSelector {
+    /// A binding by name (`spacing`, or `module.spacing`).
+    Variable(String),
+    /// Any literal on this 0-based line of the sketch's own file.
+    Line(usize),
+    /// Literals in this function's body.
+    Function(String),
+    /// `config let` and `tunable(...)` literals.
+    ConfigOnly,
+}
+
+impl DragSelector {
+    /// Parse the selector syntax of `:DragAllow` / `:DragDeny` and the debug
+    /// server: `name`, `line:N` (1-based, as the gutter shows it),
+    /// `fn:NAME`, or `config`.
+    pub fn parse(s: &str) -> Option<DragSelector> {
+        let s = s.trim();
+        if s.is_empty() {
+            return None;
+        }
+        if s == "config" {
+            return Some(DragSelector::ConfigOnly);
+        }
+        if let Some(n) = s.strip_prefix("line:") {
+            let n: usize = n.trim().parse().ok()?;
+            return (n >= 1).then(|| DragSelector::Line(n - 1));
+        }
+        if let Some(f) = s.strip_prefix("fn:") {
+            let f = f.trim();
+            return (!f.is_empty()).then(|| DragSelector::Function(f.to_string()));
+        }
+        s.chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
+            .then(|| DragSelector::Variable(s.to_string()))
+    }
+
+    /// The selector in the syntax [`parse`](Self::parse) reads.
+    pub fn label(&self) -> String {
+        match self {
+            DragSelector::Variable(v) => v.clone(),
+            DragSelector::Line(l) => format!("line:{}", l + 1),
+            DragSelector::Function(f) => format!("fn:{f}"),
+            DragSelector::ConfigOnly => "config".to_string(),
+        }
+    }
+}
+
+/// One literal the v2 engine found behind the grabbed shape (the candidate
+/// report, §2.7): what a picker lists so the user can say "move this one".
+#[derive(Debug, Clone, PartialEq)]
+pub struct DragCandidate {
+    /// What to call it: the binding's name, else the literal as written.
+    pub label: String,
+    /// The binding it defines, if any.
+    pub variable: Option<String>,
+    /// The function whose body it is written in, if any.
+    pub function: Option<String>,
+    /// The literal's own text range, in the sketch's file; `None` for a
+    /// literal in an imported file.
+    pub span: Option<CodeSpan>,
+    /// Where it is, for display: `None` for the sketch itself.
+    pub file: Option<std::path::PathBuf>,
+    pub value: f64,
+    pub config: bool,
+    /// May the drag move it; `why_not` says why not.
+    pub eligible: bool,
+    pub why_not: Option<String>,
+    /// Its measured effect on the goals, when it was measured: `false` for a
+    /// literal that turned out not to move the shape at all.
+    pub moves: bool,
+    /// Whether it moves the shape horizontally / vertically.
+    pub moves_x: bool,
+    pub moves_y: bool,
+    /// The selector that names exactly this candidate, for re-asking.
+    pub selector: DragSelector,
+}
+
+/// One way to put the shape where the pointer left it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DragAlternative {
+    /// The edits, back to front within each file is the caller's job; spans
+    /// are in the source the drag *started* from.
+    pub rewrites: Vec<SourceRewrite>,
+    /// Re-run with the rendered text and found to hit the goals.
+    pub verified: bool,
+    /// Other shapes this moves, measured by the verification run.
+    pub moves_others: usize,
+    /// Some edited literal feeds back through `state` from earlier frames.
+    pub stateful: bool,
+    /// Every edited literal is a `config let` or `tunable`.
+    pub config_only: bool,
+    /// Lower is better.
+    pub score: f64,
+    /// "set `gap` to 14 (line 3); moves 4 other shapes".
+    pub description: String,
+}
+
+/// What a v2 drag resolved to on release.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DragOutcomeV2 {
+    /// Ranked, best first; the first is verified when any is. `candidates`
+    /// is the report a picker shows.
+    Alternatives {
+        alternatives: Vec<DragAlternative>,
+        candidates: Vec<DragCandidate>,
+    },
+    /// Nothing can move, and why.
+    Refused {
+        why: String,
+        candidates: Vec<DragCandidate>,
+    },
+    /// The session no longer matches the running program (it was reloaded
+    /// under the drag), or no drag is open.
+    Stale,
+}
+
+/// What [`PanelHost::begin_drag_v2`](crate::PanelHost::begin_drag_v2) found.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DragStart {
+    /// The raw native arguments a horizontal / vertical drag moves, as the
+    /// baseline run computed them (unrounded: `100.3`, where the drawn
+    /// command says `100`).
+    pub base_x: Vec<f64>,
+    pub base_y: Vec<f64>,
+    pub candidates: Vec<DragCandidate>,
+    /// Speculative runs opening the session took.
+    pub runs: usize,
+}
+
+/// Where a shape's position lives in the raw arguments of the native that
+/// drew it, per axis: `(argument index, field)`, where `field` is `Some("x")`
+/// when the argument is a record (`draw_rect(rect, color)`) rather than a
+/// number. `None` for a command no position pair describes (polygons, the
+/// batch `draw_rects`, host commands).
+///
+/// Every `draw_*` overload ends in one native whose leading arguments are the
+/// position (`_native_circle(cx, cy, …)`, `_native_text(text, x, y, …)`), so
+/// the native side is uniform where the user-facing overloads are not: this is
+/// why v2 can drag the `rect`- and `center`-taking overloads v1 refuses.
+/// Whether a v2 drag can pull this command: it has a position pair.
+pub fn v2_draggable(cmd: &PanelCmd) -> bool {
+    native_position_args(cmd).is_some()
+}
+
+pub(crate) fn native_position_args(cmd: &PanelCmd) -> Option<(Vec<usize>, Vec<usize>)> {
+    match cmd {
+        PanelCmd::Circle { .. }
+        | PanelCmd::CircleGradient { .. }
+        | PanelCmd::Rect { .. }
+        | PanelCmd::RectGradient { .. }
+        | PanelCmd::RectOutline { .. }
+        | PanelCmd::Ellipse { .. }
+        | PanelCmd::EllipseOutline { .. }
+        | PanelCmd::Arc { .. }
+        | PanelCmd::Fan { .. } => Some((vec![0], vec![1])),
+        PanelCmd::Text { .. } | PanelCmd::Image { .. } => Some((vec![1], vec![2])),
+        PanelCmd::Line { .. } => Some((vec![0, 2], vec![1, 3])),
+        _ => None,
+    }
+}
+
+impl PanelCmd {
+    /// This command moved by (`dx`, `dy`) pixels: the ghost a v2 drag paints
+    /// while the pointer is down, before the solved edit is written.
+    pub fn translated(&self, dx: i32, dy: i32) -> PanelCmd {
+        let mut c = self.clone();
+        match &mut c {
+            PanelCmd::Image { x, y, .. }
+            | PanelCmd::Rect { x, y, .. }
+            | PanelCmd::RectGradient { x, y, .. }
+            | PanelCmd::RectOutline { x, y, .. }
+            | PanelCmd::Text { x, y, .. } => {
+                *x += dx;
+                *y += dy;
+            }
+            PanelCmd::Circle { cx, cy, .. }
+            | PanelCmd::CircleGradient { cx, cy, .. }
+            | PanelCmd::Ellipse { cx, cy, .. }
+            | PanelCmd::EllipseOutline { cx, cy, .. }
+            | PanelCmd::Arc { cx, cy, .. } => {
+                *cx += dx;
+                *cy += dy;
+            }
+            PanelCmd::Fan { cx, cy, points, .. } => {
+                *cx += dx;
+                *cy += dy;
+                for p in points {
+                    p.0 += dx;
+                    p.1 += dy;
+                }
+            }
+            PanelCmd::Line { x1, y1, x2, y2, .. } => {
+                *x1 += dx;
+                *y1 += dy;
+                *x2 += dx;
+                *y2 += dy;
+            }
+            PanelCmd::Triangle {
+                x1,
+                y1,
+                x2,
+                y2,
+                x3,
+                y3,
+                ..
+            } => {
+                for (x, y) in [(x1, y1), (x2, y2), (x3, y3)] {
+                    *x += dx;
+                    *y += dy;
+                }
+            }
+            PanelCmd::Polygon { points, .. } | PanelCmd::Polyline { points, .. } => {
+                for p in points {
+                    p.0 += dx;
+                    p.1 += dy;
+                }
+            }
+            _ => {}
+        }
+        c
+    }
+}
+
+/// Splice `rewrites` (spans in `source`'s 0-based line/char-column
+/// coordinates) into `source`. Rewrites for other files (`file: Some`) are
+/// skipped; overlapping or out-of-range ones are an error, and duplicates
+/// (two goals choosing the same edit) count once.
+pub fn apply_rewrites_to(source: &str, rewrites: &[SourceRewrite]) -> Result<String, String> {
+    // Char offset of the start of each line.
+    let chars: Vec<char> = source.chars().collect();
+    let mut line_starts = vec![0usize];
+    for (i, c) in chars.iter().enumerate() {
+        if *c == '\n' {
+            line_starts.push(i + 1);
+        }
+    }
+    let offset = |line: usize, col: usize| -> Option<usize> {
+        let start = *line_starts.get(line)?;
+        let end = line_starts.get(line + 1).map_or(chars.len(), |n| n - 1);
+        (start + col <= end).then_some(start + col)
+    };
+    let mut spans: Vec<(usize, usize, &str)> = Vec::new();
+    for r in rewrites.iter().filter(|r| r.file.is_none()) {
+        let a = offset(r.span.start_line, r.span.start_col).ok_or("rewrite out of range")?;
+        let b = offset(r.span.end_line, r.span.end_col).ok_or("rewrite out of range")?;
+        if !spans.iter().any(|&(x, y, t)| x == a && y == b && t == r.new_text) {
+            spans.push((a, b, &r.new_text));
+        }
+    }
+    spans.sort_by_key(|&(a, _, _)| std::cmp::Reverse(a));
+    for w in spans.windows(2) {
+        if w[1].1 > w[0].0 {
+            return Err("overlapping rewrites".to_string());
+        }
+    }
+    let mut out = chars;
+    for (a, b, text) in spans {
+        out.splice(a..b, text.chars());
+    }
+    Ok(out.into_iter().collect())
 }
 
 /// The topmost drawn command containing the panel-local point (`x`, `y`), as an

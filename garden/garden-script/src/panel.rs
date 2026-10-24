@@ -37,6 +37,7 @@ use petal::env::Env;
 use petal::heap::Heap;
 use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
 use petal::source_watch::SourceWatch;
+use petal::stack::StackKey;
 use petal::static_value::StaticValue;
 use petal::value::Value;
 use petal_ui::draw::DrawCommand;
@@ -63,6 +64,10 @@ pub use petal_ui::input::{buttons, InputEvent, Modifiers, KEY_NAMES};
 pub use petal_ui::host_data::{DataProvider, HostData as PanelData};
 
 use crate::query::{self, QueryProvider};
+
+mod dm_v2;
+pub use dm_v2::{DRAG_ALTERNATIVES, DRAG_ITERS, FINISH_RUNS, FINISH_WALL, OPEN_RUNS, OPEN_WALL};
+use dm_v2::V2Drag;
 
 thread_local! {
     /// Live text of each `edit_view` region on this thread, keyed by region id,
@@ -1161,6 +1166,25 @@ pub struct PanelHost {
     /// What the last reload said about the script's constants and stale
     /// `state` seeds (see [`last_reload_report`](Self::last_reload_report)).
     reload_lines: Vec<String>,
+    /// Index of each command of the last frame in the raw draw-command list
+    /// it was decoded from (several raw commands decode to nothing), so a v2
+    /// drag can find the speculative baseline's emit for a command. Kept
+    /// only while tracing is on.
+    frame_raw_index: Vec<usize>,
+    /// Keep a pre-run fork of the stack for direct manipulation v2
+    /// ([`set_dm_checkpoint`](Self::set_dm_checkpoint)).
+    dm_checkpoint_on: bool,
+    /// That fork, taken just before the last frame that ran: the frame's
+    /// state *before* it advanced, so a speculative re-run of it draws the
+    /// frame on screen, not the next one.
+    dm_checkpoint: Option<StackKey>,
+    /// The checkpoint a pressed (not yet moved) drag took for itself, so the
+    /// frames that run between the press and the drag's first move cannot
+    /// replace it ([`pin_dm_checkpoint`](Self::pin_dm_checkpoint)).
+    dm_pinned: Option<StackKey>,
+    /// The v2 drag in progress, between [`begin_drag_v2`](Self::begin_drag_v2)
+    /// and [`finish_drag_v2`](Self::finish_drag_v2).
+    dm_drag: Option<V2Drag>,
 }
 
 impl std::fmt::Debug for PanelHost {
@@ -1208,6 +1232,11 @@ impl PanelHost {
             frame_origins: Vec::new(),
             last_cmds: Vec::new(),
             reload_lines: Vec::new(),
+            frame_raw_index: Vec::new(),
+            dm_checkpoint_on: false,
+            dm_checkpoint: None,
+            dm_pinned: None,
+            dm_drag: None,
         };
         host.imports = host.watch_imports();
         Ok(host)
@@ -1271,6 +1300,11 @@ impl PanelHost {
             frame_origins: Vec::new(),
             last_cmds: Vec::new(),
             reload_lines: Vec::new(),
+            frame_raw_index: Vec::new(),
+            dm_checkpoint_on: false,
+            dm_checkpoint: None,
+            dm_pinned: None,
+            dm_drag: None,
         })
     }
 
@@ -1693,6 +1727,9 @@ impl PanelHost {
             store: &mut self.store,
             output: &mut self.output,
             saved: None,
+            checkpoint: self
+                .dm_checkpoint_on
+                .then_some((&mut self.dm_checkpoint, self.core.stack_id())),
         };
         if self.core.frame(dt, frame_count, &mut hooks)? == FrameRun::Skipped {
             // The gate: the last run's commands are this frame's.
@@ -1717,10 +1754,12 @@ impl PanelHost {
         let heap = self.core.env.heap();
         let mut cmds = Vec::with_capacity(raw.len());
         let mut origins = Vec::new();
+        let mut raw_index = Vec::new();
         if self.trace_origins {
             origins.reserve(raw.len());
+            raw_index.reserve(raw.len());
         }
-        for (cmd, origin) in raw {
+        for (raw_i, (cmd, origin)) in raw.into_iter().enumerate() {
             let decoded = match cmd {
                 DrawCommand::Host { tag, data } if tag == "text_view" => {
                     decode_text_view(&data, heap, false)
@@ -1767,10 +1806,12 @@ impl PanelHost {
                 cmds.push(pc);
                 if self.trace_origins {
                     origins.push(crate::panel_trace::DrawOrigin(origin));
+                    raw_index.push(raw_i);
                 }
             }
         }
         self.frame_origins = origins;
+        self.frame_raw_index = raw_index;
         self.last_cmds = cmds.clone();
         Ok(cmds)
     }
@@ -1814,6 +1855,7 @@ impl PanelHost {
             .map_err(|e| e.to_string())?;
         self.reload_lines = crate::print_static_report(&report);
         self.imports = self.watch_imports();
+        self.drop_dm_checkpoint();
         Ok(true)
     }
 
@@ -1848,6 +1890,7 @@ impl PanelHost {
             .reload_program(self.core.stack_id(), source, None)
             .map_err(|e| e.to_string())?;
         self.reload_lines = crate::print_static_report(&report);
+        self.drop_dm_checkpoint();
         Ok(())
     }
 
@@ -2353,6 +2396,7 @@ impl PanelHost {
             out.push(crate::panel_trace::SourceRewrite {
                 span,
                 new_text: p.edit.new_text,
+                file: None,
                 variable: p.variable,
                 shared: p.shared,
                 config: p.config,
@@ -2410,6 +2454,9 @@ struct PanelFrameHooks<'a> {
     output: &'a mut Vec<String>,
     /// What [`enter`](FrameHooks::enter) swapped out, restored by `exit`.
     saved: Option<SavedChannels>,
+    /// Where to keep a pre-run fork of the stack, and the stack, when the
+    /// host keeps a direct-manipulation checkpoint.
+    checkpoint: Option<(&'a mut Option<StackKey>, StackKey)>,
 }
 
 /// The thread-local channel values a panel frame displaced.
@@ -2435,6 +2482,16 @@ impl FrameHooks for PanelFrameHooks<'_> {
         // rather than accumulating a 60-per-second history nobody reads.
         if self.trace_origins {
             env.trace_mut().clear();
+        }
+        // The direct-manipulation checkpoint (plan R6): the stack as it stands
+        // with this frame's inputs bound and before it runs. A speculative
+        // re-run of it draws exactly this frame, where the stack after the run
+        // would draw the next one (an animation a frame further on).
+        if let Some((slot, stack)) = self.checkpoint.as_mut() {
+            if let Some(old) = slot.take() {
+                env.drop_fork(old);
+            }
+            **slot = env.fork_execution(*stack).ok();
         }
         // Discard stale buffered events. (The observation buffer needs no
         // clearing here: `env.run` clears it itself, so it always holds

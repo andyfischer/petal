@@ -156,6 +156,20 @@ pub enum Command {
     /// the last line") — vim's jump-to-line. Clamped to the buffer when run;
     /// the cursor lands on the line's first non-blank column.
     Goto(Addr),
+    /// `:DragAllow [sel…]` — restrict the next drag-to-edit gestures to these
+    /// literals (`name`, `line:N`, `fn:NAME`, `config`); empty clears.
+    DragAllow(String),
+    /// `:DragDeny [sel…]` — never move these literals; empty clears.
+    DragDeny(String),
+    /// `:DragNext` / `:DragPrev` — write the next / previous alternative of the
+    /// last solved drag.
+    DragNext,
+    DragPrev,
+    /// `:DragPick N` — write alternative `N` (1-based) of the last drag.
+    DragPick(usize),
+    /// `:DragEngine [auto|v1|v2]` — which direct-manipulation engine a drag
+    /// uses (empty reports the current one).
+    DragEngine(String),
     /// An empty line (no-op).
     Empty,
     /// Anything unrecognized; carries the raw text for an error message.
@@ -247,6 +261,15 @@ pub fn parse(input: &str) -> Command {
         "Review2" | "ReviewSplit" | "Reviews" => Command::ReviewSplit(arg.to_string()),
         "PR" => Command::Pr(arg.to_string()),
         "State" => Command::ToggleState,
+        "DragAllow" => Command::DragAllow(arg.to_string()),
+        "DragDeny" => Command::DragDeny(arg.to_string()),
+        "DragNext" => Command::DragNext,
+        "DragPrev" => Command::DragPrev,
+        "DragPick" => match arg.parse::<usize>() {
+            Ok(n) if n >= 1 => Command::DragPick(n),
+            _ => Command::Unknown(trimmed.to_string()),
+        },
+        "DragEngine" => Command::DragEngine(arg.to_string()),
         "back" => Command::Back,
         "forward" | "fwd" => Command::Forward,
         "report" => Command::Report(arg.to_string()),
@@ -440,6 +463,13 @@ mod tests {
     #[test]
     fn parses_state_toggle() {
         assert_eq!(parse("State"), Command::ToggleState);
+        assert_eq!(parse("DragAllow gap line:3"), Command::DragAllow("gap line:3".into()));
+        assert_eq!(parse("DragDeny"), Command::DragDeny(String::new()));
+        assert_eq!(parse("DragNext"), Command::DragNext);
+        assert_eq!(parse("DragPrev"), Command::DragPrev);
+        assert_eq!(parse("DragPick 2"), Command::DragPick(2));
+        assert_eq!(parse("DragPick 0"), Command::Unknown("DragPick 0".into()));
+        assert_eq!(parse("DragEngine v2"), Command::DragEngine("v2".into()));
     }
 
     #[test]

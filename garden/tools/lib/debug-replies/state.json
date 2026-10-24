@@ -8,22 +8,29 @@
     "col": 0,
     "line": 0
   },
+  "dm": {
+    "active": false,
+    "allow": [],
+    "deny": [],
+    "engine": "auto",
+    "last": null
+  },
   "file_finder": null,
   "focus": 0,
   "frame": 0,
   "identity": {
     "build": {
-      "build_date": "2026-10-08",
-      "commit": "6b12cb8",
-      "commit_date": "2026-10-07",
+      "build_date": "2026-10-24",
+      "commit": "5d185849",
+      "commit_date": "2026-10-24",
       "dirty": true,
-      "prelude_level": 7,
+      "prelude_level": 10,
       "version": "0.1.0"
     },
     "cwd": "<cwd>",
     "freshness": {
       "changed": 0,
-      "head": "6b12cb8",
+      "head": "5d185849",
       "stale": false,
       "warning": ""
     },
@@ -31,11 +38,11 @@
     "panels": [
       {
         "pane": 1,
-        "path": "<tmp>/.tmp5b1EyE.ptl",
-        "script": "<tmp>/.tmp5b1EyE.ptl"
+        "path": "<tmp>/.tmpLB9bve.ptl",
+        "script": "<tmp>/.tmpLB9bve.ptl"
       }
     ],
-    "pid": 38569,
+    "pid": 12646,
     "port": null
   },
   "lsp": {
@@ -53,7 +60,7 @@
         "line": 0
       },
       "dirty": false,
-      "file": "<tmp>/.tmp9jXUTI.txt",
+      "file": "<tmp>/.tmpvZRDsy.txt",
       "index": 0,
       "kind": "editor",
       "line_count": 3,
@@ -71,7 +78,7 @@
       "scroll_sub": 0,
       "scroll_top": 0,
       "selection": null,
-      "title": "<tmp>/.tmp9jXUTI.txt",
+      "title": "<tmp>/.tmpvZRDsy.txt",
       "trace_highlight": null,
       "visible_lines": 34,
       "wrap": true
@@ -97,7 +104,7 @@
           "frames_skipped": 1,
           "gate": true,
           "last_frame_skipped": true,
-          "last_ms": 37.776583,
+          "last_ms": 19.572542,
           "last_run_reason": null,
           "memo": {
             "cold": 0,
@@ -108,10 +115,10 @@
             "hits": 0,
             "inlined": 0,
             "misses": 0,
-            "records": 2,
+            "records": 1,
             "reexecs": 0
           },
-          "total_ms": 37.776583
+          "total_ms": 19.572542
         },
         "input": {
           "click_count": 0,
@@ -137,10 +144,8 @@
           ],
           "text": ""
         },
-        "script": "<tmp>/.tmp5b1EyE.ptl",
+        "script": "<tmp>/.tmpLB9bve.ptl",
         "values": {
-          "draw_rect.a": 255,
-          "draw_text.a": 255,
           "hits": 0,
           "label": "Save",
           "seen": 0
@@ -161,7 +166,7 @@
       "scroll_sub": 0,
       "scroll_top": 0,
       "selection": null,
-      "title": ".tmp5b1EyE.ptl",
+      "title": ".tmpLB9bve.ptl",
       "trace_highlight": null,
       "visible_lines": 34,
       "wrap": true

@@ -294,68 +294,109 @@ garden petal-ide examples/panels/drag-to-edit.ptl   # a sketch built to be dragg
 
 Press with Cmd held and pull. Nothing is written until you move a few
 pixels, so Cmd-click still jumps. The whole gesture is one undo step. The
-edits go into the buffer, which is what makes the shape follow the pointer:
-the live binding recompiles the canvas on the next frame. Nothing touches
-disk until you save.
+edits go into the buffer, not the file: nothing touches disk until you save.
 
-**What you are saying.** A drag states a goal, "this argument should
-evaluate to 148", and the runtime answers with the edit
-([Petal's `direct_manipulation`](../../docs/features/direct-manipulation.md)):
+**What you are saying.** A drag states a goal, "this shape should be 25px to
+the right", and Petal answers with the edit. Which numbers move is Petal's
+answer, not yours, and it can be any number the shape's position depends on:
 
 - **A literal in the call** (`draw_rect(46, 210, …)`) is rewritten in place,
   keeping its spelling: an integer stays an integer.
 - **A binding** (`let edge = 300 … draw_rect(edge, …)`) is rewritten at its
-  definition, so every shape reading it moves. The status bar says so: `set
-  edge to 325 (line 13) — shared, other shapes read it`.
-- **A computed position** (`x0 + i * spacing`) has no number to edit, so the
-  runtime solves it, inverting the arithmetic against the values the traced
-  run saw, and moves one of the variables that feed it.
+  definition, so every shape reading it moves. The status bar says so.
+- **Anything computed**, through any number of function calls: a helper
+  that returns the position (`draw_circle(place(i), …)`), a record or list
+  built elsewhere, a `map` over a list, a loop counter, trigonometry. Petal
+  re-runs the frame with each candidate number nudged, measures how far the
+  shape moves, solves for the drag, and re-runs the answer to check it lands
+  where you let go.
 
-**Telling it which variables are knobs.** When a position is computed, more
-than one variable could satisfy the goal. Say which one means something with
-`config let`:
+There are two engines behind this, picked per drag:
 
-```petal
-import ui
+- **Direct** (v1) is used when every position argument is a literal or a
+  binding written in the call. It is exact and costs nothing, and the edit
+  follows the pointer frame by frame.
+- **Solved** (v2) is used for everything else (a computed position, a value
+  returned by a function, any shape of a loop, the `rect`- and
+  `center`-taking overloads of `draw_rect` / `draw_circle`), and for every
+  drag while `:DragAllow` / `:DragDeny` is set. See
+  [Petal's direct manipulation v2](../../docs/dev/direct-manipulation-v2-plan.md).
 
-config let spacing = 78
-let x0 = 46
-for i in range(0, 4) do
-  draw_rect(x0 + i * spacing, 96, 44, 44, 70, 165, 150)
-end
-```
+`:DragEngine v1`, `:DragEngine v2` and `:DragEngine auto` (the default)
+force the choice; `:DragEngine` alone reports it.
 
-Declaring any `config let` makes config bindings the preferred targets and
-pins every other named binding. Dragging a card here re-spaces the row
-(`spacing` moves) instead of sliding it. Call-site literals stay editable
-either way.
+**A solved drag, step by step.**
+
+1. *Press.* The canvas keeps the frame on screen as the starting point
+   (its *checkpoint*: the stack before that frame ran, so an animation
+   re-runs to the position you see).
+2. *First move past the slop.* Petal finds the numbers behind the shape and
+   measures each one. This is the one pause in the gesture, capped at 400 ms
+   (`garden_script::OPEN_WALL`); on a 300-shape sketch it takes about
+   90 ms (31 re-runs of a 2.5 ms frame).
+3. *While you pull.* Each move is a linear prediction from those
+   measurements, with no re-runs. The editor shows the predicted numbers
+   (marked `(preview)` in the status bar) and the grabbed shape follows the
+   pointer. The rest of the canvas stays on the program you pressed on until
+   you let go.
+4. *Release.* Petal solves for where you let go, rounds to tidy numbers,
+   re-runs the result to verify it, and ranks the alternatives. The best one
+   is written; the canvas recompiles from it on the next frame.
+
+**Choosing what moves.** A drag can usually be answered several ways
+(widen the gap, or move the origin), so the answer comes ranked:
+
+- **`config let` is the strong hint.** A binding declared `config let` (or a
+  literal wrapped in `tunable(...)`) is preferred over the others, so a sketch
+  that names its knobs gets those moved. Other numbers still move when no
+  knob can do the job.
+- **The status bar names the edit and the alternatives**: `set gap to 36
+  (line 2) — moves 2 other shapes [1 of 3: :DragNext] — also movable: x0
+  (:DragAllow)`.
+- **`:DragNext`, `:DragPrev` and `:DragPick N`** write another alternative
+  in place of the first, from the text as it was when you pressed, so they
+  never stack. They work until you edit the code by hand.
+- **`:DragAllow NAME …`** restricts every following drag to those numbers,
+  exactly; **`:DragDeny NAME …`** rules numbers out. A selector is a binding
+  name (`gap`), `line:N` (any number on that line, 1-based), `fn:NAME` (the
+  numbers in that function's body), or `config`. With no argument each
+  clears. While either is set, every drag uses the solved engine.
+- Numbers in libraries (the `ui` prelude, packages) never move; nor do the
+  ones that feed `random()`, a loop's bounds or a comparison, or that are
+  wrapped in `rigid(...)`.
 
 **When it declines.** A drag that cannot be answered honestly says so in the
-status bar rather than rewriting something nearby:
+status bar rather than rewriting something nearby, and lists what could move
+when anything could: nothing the shape depends on is a number you may edit,
+the frame cannot be re-run without input it depends on, or the shape is not a
+position pair (a polygon).
 
-- **Nothing to move**: every candidate is pinned, or the argument flows
-  through a call with no literal behind it.
-- **One of N shapes drawn by this call, and its position is computed**:
-  solving inverts against the last value each term took, which is the last
-  iteration's, so only the last shape a looping call drew has current
-  numbers. Drag that one, or edit the loop by hand. Non-computed arguments
-  have no such limit.
+**What can be grabbed.** Anything drawn with a position: `draw_rect` (every
+overload), `draw_rect_rounded`, `draw_rect_outline`, `draw_circle`,
+`draw_circle_outline`, `draw_ellipse`, `fill_arc`, `fill_fan`, `draw_text`,
+`draw_image`, and `draw_line` (which moves both endpoints). Polygons,
+triangles and the batch `draw_rects` are not draggable.
 
-**What can be grabbed.** The position arguments of `draw_rect`,
-`draw_rect_rounded`, `draw_rect_outline`, `draw_circle`, `draw_text`,
-`draw_image`, and `draw_line` (which moves both endpoints as one batch of
-goals). The `rect`-taking overloads and polygons are not draggable: one
-argument carries both axes, so there is no pair of numbers to move.
+**Cost.** While a canvas is paired with an editor it keeps the checkpoint:
+one copy of the sketch's heap per frame that runs (a frame the gate skips
+costs nothing). A drag's speculative re-runs never print, never write the
+panel store and never send `emit` events.
 
-**Driving it headlessly** is three debug-server calls:
+**Driving it headlessly** is three debug-server calls, and `/state`'s `dm`
+reports the engine, the selectors and the last solved drag (its ranked
+alternatives and every candidate number, with whether it could move and why
+not):
 
 ```bash
 curl -s -X POST 127.0.0.1:$PORT/mouse -d '{"op":"down","x":735,"y":314,"mods":["cmd"]}'
 curl -s -X POST 127.0.0.1:$PORT/mouse -d '{"op":"move","x":775,"y":339}'
 curl -s -X POST 127.0.0.1:$PORT/mouse -d '{"op":"up"}'
 curl -s 127.0.0.1:$PORT/buffer/0 | sed -n 24p     # the rewritten line
-curl -s 127.0.0.1:$PORT/state | jq .status_note   # what the drag reported
+curl -s 127.0.0.1:$PORT/state | jq '.status_note, .dm.last.alternatives[].description'
+curl -s 127.0.0.1:$PORT/state | jq '.dm.last.candidates[] | {label, eligible, moves, why_not}'
 ```
+
+`tools/dm-drag-integration-test.ts` drives exactly this.
 
 ## Troubleshooting
 
@@ -369,9 +410,13 @@ curl -s 127.0.0.1:$PORT/state | jq .status_note   # what the drag reported
   and a compiling buffer.
 - **Cmd-drag moved nothing, and the status bar said why.** See "When it
   declines" above.
-- **Cmd-drag moved something I did not grab.** The position was a binding
-  other shapes read; the status bar flags the edit as `shared`. Undo, then
-  make the variable a `config let` knob or inline the number.
+- **Cmd-drag moved something I did not grab.** The number it changed is one
+  other shapes read; the status bar says how many moved. Try `:DragNext` for
+  the next alternative, or undo and `:DragAllow` the number you meant (the
+  status bar lists the others it could have moved), or make it a
+  `config let` knob.
+- **Cmd-drag paused before the shape followed.** That is the solved engine
+  measuring the numbers behind the shape (at most 400 ms, once per drag).
 - **The canvas is blank or shows `could not load panel`.** The file must be a
   valid panel script. A brand-new file is seeded; an existing non-panel file
   shows its first compile error in the pane.

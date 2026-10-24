@@ -534,13 +534,26 @@ fn a_drag_solves_a_computed_position_into_the_config_knob() {
     );
 }
 
-/// Solving a computed position inverts against the values the run *recorded*,
-/// and the trace holds the last value each term took — the last iteration's. So
-/// only the last shape a looping call drew can be solved; the others would get
-/// a confident, wrong edit derived from a sibling's loop counter. Saying so is
-/// the point of this test.
+/// Cmd-drag a shape at panel-local `(x, y)` by `(dx, dy)`: press, one move
+/// to the end point, release.
+fn cmd_drag(app: &mut App, canvas: usize, (x, y): (f32, f32), (dx, dy): (f32, f32)) {
+    let rect = app.panes[canvas].rect;
+    let (gx, gy) = (rect.x + x, rect.y + y);
+    let cmd = Mods {
+        cmd: true,
+        ..Default::default()
+    };
+    app.mouse_down(gx, gy, cmd, 1);
+    app.mouse_moved(gx + dx, gy + dy);
+    app.mouse_up();
+}
+
+/// v1 solved a computed position against the values the trace recorded,
+/// which are the last iteration's, so it could only solve the last shape a
+/// looping call drew. v2 re-runs the frame and keys each shape by its
+/// occurrence, so the middle card of a loop is as draggable as the last.
 #[test]
-fn a_looping_call_solves_its_last_shape_and_declines_the_rest() {
+fn a_looping_call_solves_any_of_its_shapes() {
     let source = "config let spacing = 50\n\
                   let x0 = 20\n\
                   clear(10, 10, 10)\n\
@@ -548,35 +561,189 @@ fn a_looping_call_solves_its_last_shape_and_declines_the_rest() {
                   \x20 draw_rect(x0 + i * spacing, 40, 30, 30, 200, 90, 90)\n\
                   end\n";
     let (mut app, editor, canvas, _dir) = traced_pair("petal-ide-drag-loop", source);
-    let rect = app.panes[canvas].rect;
-
-    // The middle card (i = 1, at x = 70): its position is computed, and it is
-    // not the shape whose values the trace still holds.
-    let (gx, gy) = (rect.x + 85.0, rect.y + 55.0);
-    app.mouse_down(
-        gx,
-        gy,
-        Mods {
-            cmd: true,
-            ..Default::default()
-        },
-        1,
-    );
-    app.mouse_moved(gx + 20.0, gy);
-    app.mouse_up();
-
-    assert!(
-        app.status_note
-            .as_deref()
-            .is_some_and(|s| s.contains("only the last one can be solved")),
-        "the refusal names its reason: {:?}",
-        app.status_note
-    );
+    // The middle card (i = 1, at x = 70), dragged 20px right: 20 + 1 * 70.
+    cmd_drag(&mut app, canvas, (85.0, 55.0), (20.0, 0.0));
     assert_eq!(
-        app.panes[editor].view.buffer.text(),
-        format!("{PANEL_IMPORTS}{source}"),
-        "and nothing was rewritten"
+        app.panes[editor].view.buffer.line(0),
+        "import ui; import garden; config let spacing = 70",
+        "{:?}",
+        app.status_note
     );
+    let note = app.status_note.clone().unwrap_or_default();
+    assert!(note.contains("set spacing to 70"), "{note}");
+    assert!(note.contains("moves 1 other shape"), "the third card moves too: {note}");
+}
+
+/// The headline case: the shape's position is returned by a function, which
+/// v1 refuses to look into. The drag solves into the helper's body, the
+/// canvas follows on the next frame, and one undo puts it back.
+#[test]
+fn a_drag_solves_through_a_helper_function() {
+    let source = "fn place(i)\n\
+                  \x20 20 + i * 40\n\
+                  end\n\
+                  clear(0, 0, 0)\n\
+                  for i in range(0, 4) do\n\
+                  \x20 draw_circle(place(i), 50, 10, 200, 90, 90)\n\
+                  end\n";
+    let (mut app, editor, canvas, _dir) = traced_pair("petal-ide-drag-helper", source);
+    let before = app.panes[editor].view.buffer.text();
+    // The second circle (i = 1) sits at x = 60.
+    cmd_drag(&mut app, canvas, (60.0, 50.0), (25.0, 0.0));
+    let after = app.panes[editor].view.buffer.text();
+    assert_ne!(after, before, "the drag wrote an edit: {:?}", app.status_note);
+    assert_ne!(
+        app.panes[editor].view.buffer.line(1),
+        "  20 + i * 40",
+        "the helper's body is what moved"
+    );
+    // The canvas follows: the shape is under the pointer's release point.
+    app.settle_panels();
+    let rect = app.panes[canvas].rect;
+    app.mouse_moved(rect.x + 85.0, rect.y + 50.0);
+    app.settle_panels();
+    assert_eq!(
+        app.panes[editor].view.trace_highlight.map(|(s, _)| s.line),
+        Some(5),
+        "a circle is drawn where the drag left it"
+    );
+    // One gesture, one undo step.
+    app.panes[editor].view.buffer.undo();
+    assert_eq!(app.panes[editor].view.buffer.text(), before);
+}
+
+/// Client disambiguation: `:DragAllow x0` says which variable the drag may
+/// move, and the drag moves that one even though the engine would prefer the
+/// config knob. The alternatives of the default answer can be cycled.
+#[test]
+fn drag_allow_and_alternatives() {
+    let source = "config let gap = 30\n\
+                  let x0 = 40\n\
+                  fn slot(i)\n\
+                  \x20 x0 + i * gap\n\
+                  end\n\
+                  clear(0, 0, 0)\n\
+                  for i in range(0, 3) do\n\
+                  \x20 draw_circle(slot(i), 60, 8, 255, 255, 255)\n\
+                  end\n";
+    let (mut app, editor, canvas, _dir) = traced_pair("petal-ide-drag-allow", source);
+
+    // Unrestricted: the config knob moves (slot(2) = 100 → 112: gap 36).
+    cmd_drag(&mut app, canvas, (100.0, 60.0), (12.0, 0.0));
+    assert_eq!(
+        app.panes[editor].view.buffer.line(0),
+        "import ui; import garden; config let gap = 36",
+        "{:?}",
+        app.status_note
+    );
+    let note = app.status_note.clone().unwrap();
+    assert!(note.contains("also movable: x0"), "the picker names the other knob: {note}");
+    let state = app.dm_state_json();
+    let alternatives = state["last"]["alternatives"].as_array().unwrap().len();
+    assert!(alternatives >= 2, "{state:#}");
+    // The next alternative replaces the first, rather than stacking on it.
+    app.run_command(crate::command_line::Command::DragNext);
+    assert_eq!(app.status_error, None);
+    let second = app.panes[editor].view.buffer.text();
+    assert!(
+        !second.contains("config let gap = 36"),
+        "the second is written from the press-time text, not on top of the first: {second}"
+    );
+    app.run_command(crate::command_line::Command::DragPrev);
+    assert!(app.panes[editor].view.buffer.text().contains("config let gap = 36"));
+    app.run_command(crate::command_line::Command::DragPick(2));
+    assert_eq!(app.panes[editor].view.buffer.text(), second);
+    app.run_command(crate::command_line::Command::DragPick(9));
+    assert!(app.status_error.is_some(), "there is no ninth");
+
+    // Put the sketch back, and restrict the next drag to `x0`.
+    app.status_error = None;
+    app.panes[editor].view.buffer =
+        garden_core::Buffer::from_str(&format!("{PANEL_IMPORTS}{source}"));
+    app.settle_panels();
+    app.run_command(crate::command_line::Command::DragAllow("x0".into()));
+    assert_eq!(app.dm_state_json()["allow"], serde_json::json!(["x0"]));
+    cmd_drag(&mut app, canvas, (100.0, 60.0), (12.0, 0.0));
+    assert_eq!(
+        app.panes[editor].view.buffer.line(1),
+        "let x0 = 52",
+        "{:?}",
+        app.status_note
+    );
+    assert!(
+        app.panes[editor].view.buffer.text().contains("config let gap = 30"),
+        "and only x0"
+    );
+    // A bad selector is an error, and leaves the filter alone.
+    app.run_command(crate::command_line::Command::DragAllow("line:x".into()));
+    assert!(app.status_error.is_some());
+    assert_eq!(app.dm_state_json()["allow"], serde_json::json!(["x0"]));
+    app.run_command(crate::command_line::Command::DragAllow(String::new()));
+    assert_eq!(app.dm_state_json()["allow"], serde_json::json!([]));
+}
+
+/// While the pointer is down a v2 drag previews: the editor shows the
+/// predicted numbers, the canvas paints the grabbed shape under the pointer,
+/// and the live binding holds the program the session measured. The release
+/// writes the verified answer.
+#[test]
+fn a_v2_drag_previews_while_held() {
+    let source = "fn place(i)\n\
+                  \x20 20 + i * 40\n\
+                  end\n\
+                  for i in range(0, 4) do\n\
+                  \x20 draw_circle(place(i), 50, 10, 200, 90, 90)\n\
+                  end\n";
+    let (mut app, editor, canvas, _dir) = traced_pair("petal-ide-drag-preview", source);
+    let rect = app.panes[canvas].rect;
+    let (gx, gy) = (rect.x + 60.0, rect.y + 50.0);
+    let cmd = Mods {
+        cmd: true,
+        ..Default::default()
+    };
+    app.mouse_down(gx, gy, cmd, 1);
+    app.mouse_moved(gx + 10.0, gy);
+    app.mouse_moved(gx + 25.0, gy);
+    assert!(app.manip_is_v2());
+    assert_eq!(app.dm_state_json()["active"], true);
+    let panel = app.panes[canvas].panel.as_ref().unwrap();
+    assert_eq!(panel.drag_ghost(), Some((1, 25, 0)), "the circle follows the pointer");
+    assert!(
+        app.status_note.as_deref().is_some_and(|n| n.contains("(preview)")),
+        "{:?}",
+        app.status_note
+    );
+    let previewed = app.panes[editor].view.buffer.text();
+    assert!(!previewed.contains("20 + i * 40"), "the editor shows the prediction");
+    app.mouse_up();
+    assert!(!app.manip_is_v2());
+    assert_eq!(app.panes[canvas].panel.as_ref().unwrap().drag_ghost(), None);
+    assert!(
+        !app.status_note.as_deref().unwrap_or("").contains("(preview)"),
+        "{:?}",
+        app.status_note
+    );
+}
+
+/// The engine is a setting: `:DragEngine v1` keeps the old behaviour, which
+/// declines a position returned by a function.
+#[test]
+fn drag_engine_v1_keeps_the_old_answer() {
+    let source = "fn place()\n\
+                  \x20 60\n\
+                  end\n\
+                  draw_circle(place(), 50, 10, 200, 90, 90)\n";
+    let (mut app, editor, canvas, _dir) = traced_pair("petal-ide-drag-engine", source);
+    app.run_command(crate::command_line::Command::DragEngine("v1".into()));
+    assert_eq!(app.dm_state_json()["engine"], "v1");
+    let before = app.panes[editor].view.buffer.text();
+    cmd_drag(&mut app, canvas, (60.0, 50.0), (10.0, 0.0));
+    assert_eq!(app.panes[editor].view.buffer.text(), before, "v1 cannot see into place()");
+    app.run_command(crate::command_line::Command::DragEngine("auto".into()));
+    cmd_drag(&mut app, canvas, (60.0, 50.0), (10.0, 0.0));
+    assert_eq!(app.panes[editor].view.buffer.line(1), "  70", "{:?}", app.status_note);
+    app.run_command(crate::command_line::Command::DragEngine("v3".into()));
+    assert!(app.status_error.is_some());
 }
 
 /// A drag on a shape whose position isn't editable says so instead of guessing.

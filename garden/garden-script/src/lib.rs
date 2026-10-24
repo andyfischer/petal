@@ -68,10 +68,13 @@ pub use panel::{
     buttons, mutation_reply, DataProvider, DecorSpec, InputEvent, Modifiers, NavIntent, PanelCmd,
     PanelData, PanelHost, PanelInput, PanelTheme, ProjectionSpec, KEY_NAMES,
 };
+/// The budgets of a v2 drag (see `PanelHost::begin_drag_v2`).
+pub use panel::{DRAG_ALTERNATIVES, DRAG_ITERS, FINISH_RUNS, FINISH_WALL, OPEN_RUNS, OPEN_WALL};
 pub use panel_store::PanelStore;
 pub use panel_trace::{
-    drag_handle, hit_test, ArgSource, CallRef, CodeSpan, DragHandle, DragOutcome, DrawOrigin,
-    DrawTrace, SourceRewrite, TracedArg,
+    apply_rewrites_to, drag_handle, hit_test, ArgSource, CallRef, CodeSpan, DragAlternative,
+    DragCandidate, DragFilter, DragHandle, DragOutcome, DragOutcomeV2, DragSelector, DragStart,
+    DrawOrigin, DrawTrace, SourceRewrite, TracedArg, v2_draggable,
 };
 pub use query::{HostData, QueryProvider, QueryState};
 pub use theme::Theme;

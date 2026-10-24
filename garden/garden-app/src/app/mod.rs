@@ -42,6 +42,7 @@ mod debug_server;
 mod events;
 mod input;
 mod lsp;
+mod manip_v2;
 mod mouse;
 mod panes;
 mod process;
@@ -265,6 +266,13 @@ pub struct App {
     /// that placed it. Held beside [`App::drag`] (which is `Copy`) because a
     /// gesture carries a list of arguments, not just an index.
     manip: Option<mouse::ManipDrag>,
+    /// Which engine drag-to-edit uses (`:DragEngine`).
+    dm_engine: manip_v2::DmEngine,
+    /// Which literals a v2 drag may move (`:DragAllow` / `:DragDeny`): the
+    /// client's half of disambiguating a drag.
+    dm_filter: garden_script::DragFilter,
+    /// The last v2 drag's answer, for `:DragNext` / `:DragPrev` / `:DragPick`.
+    dm_choices: Option<manip_v2::DragChoices>,
 }
 
 /// The traced draw call under the pointer, with the file it belongs to — the
@@ -361,6 +369,9 @@ impl App {
             paused: false,
             trace: None,
             manip: None,
+            dm_engine: manip_v2::DmEngine::default(),
+            dm_filter: garden_script::DragFilter::default(),
+            dm_choices: None,
         };
         app.rebuild_panes();
         app

@@ -146,6 +146,13 @@ update the client types from the sample diff.
 - `file_finder`: the open fuzzy finder's query, selection, and top matches.
 - `trace`: the traced draw call under the pointer on a Petal IDE canvas, or
   `null`. See [petal-ide-mode.md](petal-ide-mode.md#automation-1).
+- `dm`: drag-to-edit (feature `state.dm-drag`): `engine` (`auto` / `v1` /
+  `v2`), the `:DragAllow` / `:DragDeny` selectors (`allow`, `deny`), `active`
+  (a solved drag is in progress), and `last`, the last solved drag: its ranked
+  `alternatives` (description, `verified`, `score`, `moves_others`, rewrites)
+  and its `candidates` (every number behind the shape, with `eligible`,
+  `why_not`, `moves`). See
+  [petal-ide-mode.md](petal-ide-mode.md#dragging-a-shape-to-edit-its-code).
 - `panes[]`: per pane, `kind` (`editor` / `panel`), file, title, `mode` (vim
   mode), `pending` (mid-command vim state, below), dirty flag, cursor,
   selection (text capped at 10k chars), `scroll_top` / `scroll_sub` /

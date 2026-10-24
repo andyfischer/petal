@@ -281,6 +281,12 @@ impl App {
                     .to_string(),
                 );
             }
+            Command::DragAllow(args) => self.set_drag_filter(true, &args),
+            Command::DragDeny(args) => self.set_drag_filter(false, &args),
+            Command::DragNext => self.cycle_drag_alternative(1, None),
+            Command::DragPrev => self.cycle_drag_alternative(-1, None),
+            Command::DragPick(n) => self.cycle_drag_alternative(0, Some(n - 1)),
+            Command::DragEngine(arg) => self.set_drag_engine(&arg),
             Command::Back => return self.nav_focused_panel(garden_script::NavIntent::Back),
             Command::Forward => return self.nav_focused_panel(garden_script::NavIntent::Forward),
             Command::Substitute(sub) => self.substitute(sub),

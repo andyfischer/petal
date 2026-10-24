@@ -288,6 +288,10 @@ pub const HOST_FEATURES: &[&str] = &[
     // until none calls `request_frame()`, so an eased transition is captured
     // at rest.
     "debug.capture-settle-idle",
+    // Direct manipulation v2: a Cmd-drag on a shape placed through function
+    // calls is solved by re-running the frame; `/state`'s `dm` carries the
+    // engine, the `:DragAllow` / `:DragDeny` selectors and the last answer.
+    "state.dm-drag",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a

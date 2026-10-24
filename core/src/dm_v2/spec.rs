@@ -844,7 +844,7 @@ impl SpecSession {
             };
             edits.push((span.start.offset as usize, span.end.offset as usize, text));
         }
-        edits.sort_by(|a, b| b.0.cmp(&a.0));
+        edits.sort_by_key(|e| std::cmp::Reverse(e.0));
         for (start, end, text) in edits {
             if end > source.len() || start > end {
                 return Err("a literal's span is outside its file".into());

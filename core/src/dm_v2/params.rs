@@ -1290,7 +1290,7 @@ enum Probe {
 /// incommensurate, alternating in sign, so that the changes of a group do not
 /// cancel.
 fn screen_step(p: &Param, j: usize, rel: f64) -> f64 {
-    let sign = if j % 2 == 0 { 1.0 } else { -1.0 };
+    let sign = if j.is_multiple_of(2) { 1.0 } else { -1.0 };
     sign * rel * p.value.abs().max(1.0) * (1.0 + 0.137 * j as f64)
 }
 
@@ -1298,7 +1298,7 @@ fn screen_step(p: &Param, j: usize, rel: f64) -> f64 {
 fn screen_override(p: &Param, j: usize, rel: f64) -> OverrideValue {
     if p.is_int {
         let n = p.value as i64;
-        p.override_int(if j % 2 == 0 { n + 1 } else { n - 1 })
+        p.override_int(if j.is_multiple_of(2) { n + 1 } else { n - 1 })
     } else {
         p.override_for(p.value + screen_step(p, j, rel))
     }

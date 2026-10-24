@@ -508,11 +508,13 @@ impl SolveCtx<'_> {
                 run = Some(r);
                 scale = (scale * 2.0).min(1.0);
                 since_measure += 1;
-                if (regime || since_measure >= 3) && k <= 3 && max_error(self.goals, self.goal_values(&rows)) > 1.0 {
-                    if let Some(j) = self.remeasure(cols, &values) {
-                        local = j;
-                        since_measure = 0;
-                    }
+                if (regime || since_measure >= 3)
+                    && k <= 3
+                    && max_error(self.goals, self.goal_values(&rows)) > 1.0
+                    && let Some(j) = self.remeasure(cols, &values)
+                {
+                    local = j;
+                    since_measure = 0;
                 }
             } else {
                 scale /= 4.0;

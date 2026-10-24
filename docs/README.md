@@ -166,6 +166,7 @@ point-in-time status.
 | [Typography](dev/typography-plan.md) | Fonts, measurement and flow layout (partly shipped) |
 | [Direct Manipulation v2](dev/direct-manipulation-v2-plan.md) | Backpropagating a drag through function calls by speculative re-runs: architecture and milestones (design) |
 | [DM hints: `tunable` / `rigid`](proposals/dm-v2-hints.md) | Identity builtins that tell direct manipulation which literals may move (proposed) |
+| [`config let` vs `tunable`](proposals/config-let-vs-tunable.md) | Whether `tunable` can replace the `config` keyword: recommends keeping both, composed, with ranges for host sliders (proposed) |
 | [IR Format Improvements](dev/ir-format-improvements-plan.md) | Audit of the token, AST, IR and bytecode dumps |
 | [Experimental: IR-based Editing](dev/experimental-ir-based-editing.md) | An early, unfinished surface for building a program as IR data |
 | [Testbed Challenge](dev/testbed-challenge-plan.md) | The target list of panel apps for the Garden testbed, and which are built |

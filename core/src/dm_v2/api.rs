@@ -1069,7 +1069,12 @@ impl DmSession {
             .map(|(&c, &v)| {
                 let i = self.jac.params[c];
                 let v = crate::dm_v2::solve::round_to(v, 6);
-                change_of(&self.params[i], &self.texts[i], v, render(&self.params[i], &self.texts[i], v))
+                let (p, t) = (&self.params[i], &self.texts[i]);
+                let (mut text, respelled) = render(p, t, v);
+                if v < 0.0 && !p.negated && needs_parens_by_neighbours(t) {
+                    text = format!("({text})");
+                }
+                change_of(p, t, v, (text, respelled))
             })
             .collect()
     }
@@ -1497,13 +1502,18 @@ fn render(p: &Param, t: &ParamText, v: f64) -> (String, bool) {
 /// follows it (`5.f()` as `-2.f()` is `-(2.f())`, and `5[i]` likewise), or
 /// the file would not parse with it.
 fn needs_parens(env: &Env, pid: crate::program::ProgramId, p: &Param, t: &ParamText, text: &str) -> bool {
-    if matches!(t.prev, Some('-' | '+')) || matches!(t.next, Some('.' | '[')) {
+    if needs_parens_by_neighbours(t) {
         return true;
     }
     let Some(program) = env.get_program(pid) else { return false };
     let Some(file) = program.source_map.files.get(p.file.0 as usize) else { return false };
     let edited = crate::rewrite::splice(&file.source, p.span, text);
     crate::cst::parse_source(&edited, p.file).is_err()
+}
+
+/// The half of [`needs_parens`] that reads only the literal's neighbours.
+fn needs_parens_by_neighbours(t: &ParamText) -> bool {
+    matches!(t.prev, Some('-' | '+')) || matches!(t.next, Some('.' | '['))
 }
 
 fn change_of(p: &Param, t: &ParamText, v: f64, (new_text, respelled): (String, bool)) -> ParamChange {

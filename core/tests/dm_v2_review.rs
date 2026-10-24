@@ -129,3 +129,23 @@ fn reload_after_propose_matches_fresh_run() {
     env.run(sid).unwrap();
     assert_eq!(nums(&mut env, "out"), want, "reloaded:\n{text}");
 }
+
+/// A drag preview writes the same text the finished edit would: a negative
+/// value after `-` or before a method call is parenthesized there too.
+#[test]
+fn preview_parenthesizes_negative_values() {
+    let src = "import io\nimport creative\nlet s = symbol(\"out\")\n\
+               push_output(s, 5.map_range(rigid(0), rigid(10), rigid(100), rigid(200)))\n\
+               push_output(s, rigid(50) - 3)\n";
+    let (mut env, _, sid) = load(src);
+    let k = keys(&mut env, sid);
+    for (emit, target, old, want) in [(0, 80.0, "5", "(-2)"), (1, 60.0, "3", "(-10)")] {
+        let goal = DmGoal::to(Observable::EmitValue { key: k[emit], path: vec![] }, target);
+        let session = petal::dm_v2::DmSession::open(&mut env, &mut NoHost, sid, &DmRequest::new(vec![goal]))
+            .expect("opens");
+        let preview = session.preview(&[target]);
+        let change = preview.iter().find(|c| c.old_text == old).expect("the literal moves");
+        assert_eq!(change.new_text, want);
+        session.cancel(&mut env);
+    }
+}

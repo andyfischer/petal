@@ -188,9 +188,6 @@ describe("stdlib extractor", () => {
       "minimum",
       "maximum",
       "count",
-      "any",
-      "all",
-      "find",
       "take",
       "drop",
       "clamp01",
@@ -201,6 +198,13 @@ describe("stdlib extractor", () => {
       expect(fn!.category).toBe("std");
       expect(fn!.source.file).toBe("core/prelude/std.ptl");
       expect(fn!.source.line).toBeGreaterThan(0);
+    }
+  });
+
+  it("lists the native predicate queries as core builtins", () => {
+    for (const name of ["any", "all", "find"]) {
+      expect(byName.get(name)!.group, name).toBe("core");
+      expect(byName.get(name)!.source.file, name).toBe("core/src/builtins/mod.rs");
     }
   });
 

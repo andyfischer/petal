@@ -266,6 +266,12 @@ impl<'a> Vm<'a> {
             ("forEach", Self::builtin_for_each)
         } else if nf.intrinsic_sort_by == Some(nid) {
             ("sort_by", Self::builtin_sort_by)
+        } else if nf.intrinsic_any == Some(nid) {
+            ("any", Self::builtin_any)
+        } else if nf.intrinsic_all == Some(nid) {
+            ("all", Self::builtin_all)
+        } else if nf.intrinsic_find == Some(nid) {
+            ("find", Self::builtin_find)
         } else if sort_with_cmp {
             ("sort", Self::builtin_sort_cmp)
         } else {

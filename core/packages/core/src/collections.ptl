@@ -69,6 +69,15 @@ pub native fn reduce(list, initial, f)
 pub native fn forEach(list, f)
 pub native fn sort_by(list: list, key: function, descending?) -> list
 
+// True when at least one element satisfies `pred` (false for the empty list).
+// Stops at the first element that does: `pred` is not called on the rest.
+pub native fn any(xs, pred) -> bool
+// True when every element satisfies `pred` (vacuously true for the empty list).
+// Stops at the first element that does not: `pred` is not called on the rest.
+pub native fn all(xs, pred) -> bool
+// The first element satisfying `pred`, or nil when none does.
+pub native fn find(xs, pred)
+
 // Frozen (permanent) heap objects: `freeze` returns its argument, which the
 // collector then neither traces nor frees; `frozen` asks whether a value is.
 // One-way, for data that lives as long as the program. docs/Builtins.md.

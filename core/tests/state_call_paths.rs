@@ -816,6 +816,9 @@ fn state_in_a_callback_of_each_builtin_is_an_error() {
         ("forEach", "forEach([1, 2, 3], seen)"),
         ("sort_by", "sort_by([3, 1, 2], seen)"),
         ("sort", "sort([3, 1, 2], fn(a, b) seen(a) - seen(b) end)"),
+        ("any", "any([1, 2, 3], seen)"),
+        ("all", "all([1, 2, 3], seen)"),
+        ("find", "find([1, 2, 3], seen)"),
     ] {
         let err = run_err(&seen_then(call));
         assert!(
@@ -857,6 +860,46 @@ fn a_builtin_called_by_the_prelude_points_at_the_users_call() {
         "{err}"
     );
     assert!(!err.contains("std.ptl line"), "{err}");
+}
+
+#[test]
+fn a_stateful_predicate_fails_the_same_through_every_std_helper() {
+    // `any`/`all`/`find` are native and `count`/`min_by`/`group_by` call one,
+    // so none of them lets a stateful predicate through. Each error notes the
+    // user's call, not a line in std.ptl.
+    for (call, note) in [
+        ("any([1, 2, 3], seen)", "`any` runs the callback here"),
+        ("all([1, 2, 3], seen)", "`all` runs the callback here"),
+        ("find([1, 2, 3], seen)", "`find` runs the callback here"),
+        ("count([1, 2, 3], seen)", "`count` runs the callback through `filter` here"),
+        ("min_by([1, 2, 3], seen)", "`min_by` runs the callback through `map` here"),
+        ("group_by([1, 2, 3], seen)", "`group_by` runs the callback through `map` here"),
+    ] {
+        let err = run_err(&seen_then(&format!("print({call})")));
+        assert!(err.contains("2 |   state n = 0"), "{call}: {err}");
+        assert!(
+            err.contains(&format!("note: {note}, once per element, at line 6, column 7")),
+            "{call}: {err}"
+        );
+        assert!(!err.contains("std.ptl"), "{call}: {err}");
+    }
+}
+
+#[test]
+fn any_all_and_find_stop_before_a_stateful_element_they_never_reach() {
+    // The predicate is called only up to the deciding element, so `seen` on
+    // the elements after it never runs, and nothing fails.
+    let out = run("\
+fn seen(x)
+  state n = 0
+  n
+end
+fn pick(x)
+  if x == 1 then true else seen(x) end
+end
+print(any([1, 2], pick), find([1, 2], pick), all([1, 2], fn(x) !pick(x) end))
+");
+    assert_eq!(out, vec!["true 1 false"]);
 }
 
 #[test]

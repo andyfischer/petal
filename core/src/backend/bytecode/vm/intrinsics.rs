@@ -268,6 +268,59 @@ impl<'a> Vm<'a> {
         Ok(Value::List(self.heap.alloc_list(results)))
     }
 
+    /// `any(list, pred)`: true at the first element `pred` holds for, false
+    /// when none does (and so for the empty list). `pred` is not called on
+    /// the elements after the deciding one.
+    pub(super) fn builtin_any(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
+        let (elements, func) = self.predicate_args("any", args)?;
+        for elem in elements {
+            if self.call_closure_sync(func, &[elem], site)?.is_truthy() {
+                return Ok(Value::Bool(true));
+            }
+        }
+        Ok(Value::Bool(false))
+    }
+
+    /// `all(list, pred)`: false at the first element `pred` does not hold
+    /// for, true when it holds for every one (vacuously, for the empty list).
+    pub(super) fn builtin_all(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
+        let (elements, func) = self.predicate_args("all", args)?;
+        for elem in elements {
+            // `!pred(x)`, as the Petal version tested it: a `Pending` result
+            // stays `Pending` under `!`, which is truthy, so it decides `false`.
+            let held = self.call_closure_sync(func, &[elem], site)?;
+            if crate::backend::ops::not(held).is_truthy() {
+                return Ok(Value::Bool(false));
+            }
+        }
+        Ok(Value::Bool(true))
+    }
+
+    /// `find(list, pred)`: the first element `pred` holds for, or nil.
+    pub(super) fn builtin_find(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
+        let (elements, func) = self.predicate_args("find", args)?;
+        for elem in elements {
+            if self.call_closure_sync(func, &[elem], site)?.is_truthy() {
+                return Ok(elem);
+            }
+        }
+        Ok(Value::Nil)
+    }
+
+    /// The elements and predicate of an `any`/`all`/`find` call. A map is
+    /// walked by its keys in insertion order, as `for k in m` walks it.
+    fn predicate_args(&self, name: &str, args: &[Value]) -> Result<(Vec<Value>, Value), String> {
+        let [list, func] = args else {
+            return Err(format!("{name}() expects 2 arguments (list, predicate)"));
+        };
+        let elements = match *list {
+            Value::List(list_id) => self.heap.get_list(list_id).to_vec(),
+            Value::Dict(dict_id) => self.heap.get_dict(dict_id).keys().collect(),
+            _ => return Err(format!("{name}() expects a list as first argument")),
+        };
+        Ok((elements, *func))
+    }
+
     pub(super) fn builtin_reduce(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
         let [list, initial, func] = args else {
             return Err("reduce() expects 3 arguments (list, initial, function)".into());

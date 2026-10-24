@@ -274,9 +274,9 @@ pub enum NativeConstness {
     /// A constant function of its arguments ([`NativeEffects::is_const`]).
     Const,
     /// A higher-order builtin the VM drives (`map`, `filter`, `reduce`,
-    /// `sort_by`, and `sort` for its comparator form): the native adds
-    /// nothing dynamic of its own, so the call is constant exactly when
-    /// every function it is handed is one that reads and does nothing
+    /// `sort_by`, `any`, `all`, `find`, and `sort` for its comparator form):
+    /// the native adds nothing dynamic of its own, so the call is constant
+    /// exactly when every function it is handed is one that reads and does nothing
     /// dynamic when called (the proposal's *static-pure*). With no function
     /// argument at all (`sort(xs)`) that condition is vacuous.
     ConstIfCallbacksAre,
@@ -605,6 +605,11 @@ pub struct NativeFnTable {
     /// `sort_by(list, key_fn)` / `sort_by(list, key_fn, descending)` — always an
     /// intrinsic; it calls the key function once per element.
     pub intrinsic_sort_by: Option<NativeFnId>,
+    /// `any(list, pred)` / `all(list, pred)` / `find(list, pred)` — always
+    /// intrinsics; they call the predicate until one element decides.
+    pub intrinsic_any: Option<NativeFnId>,
+    pub intrinsic_all: Option<NativeFnId>,
+    pub intrinsic_find: Option<NativeFnId>,
     /// `__declare_method`, which the VM intercepts instead of calling: it
     /// publishes a user-declared `fn Class.method` into the running stack's
     /// method table, which no native can reach through [`PetalCxt`].
@@ -639,6 +644,9 @@ impl NativeFnTable {
             intrinsic_for_each: None,
             intrinsic_sort: None,
             intrinsic_sort_by: None,
+            intrinsic_any: None,
+            intrinsic_all: None,
+            intrinsic_find: None,
             intrinsic_declare_method: None,
             intrinsic_enum_data: None,
             intrinsic_enum_all: None,
@@ -792,6 +800,9 @@ impl NativeFnTable {
             || id == self.intrinsic_reduce
             || id == self.intrinsic_sort
             || id == self.intrinsic_sort_by
+            || id == self.intrinsic_any
+            || id == self.intrinsic_all
+            || id == self.intrinsic_find
         {
             return NativeConstness::ConstIfCallbacksAre;
         }

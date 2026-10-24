@@ -2159,7 +2159,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 619
+        "line": 631
       }
     },
     {
@@ -2192,7 +2192,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 619
+        "line": 631
       },
       "aliasOf": "map"
     },
@@ -2234,7 +2234,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 619
+        "line": 631
       },
       "aliasOf": "map"
     },
@@ -2268,7 +2268,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 619
+        "line": 631
       },
       "aliasOf": "map"
     },
@@ -3209,7 +3209,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 619
+        "line": 631
       },
       "aliasOf": "map"
     },
@@ -3980,7 +3980,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 619
+        "line": 631
       },
       "aliasOf": "map"
     },
@@ -4006,7 +4006,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 619
+        "line": 631
       },
       "aliasOf": "map"
     },
@@ -4618,6 +4618,108 @@
       }
     },
     {
+      "name": "any",
+      "category": "higher-order",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "pred",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "pred",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/mod.rs",
+        "line": 631
+      },
+      "aliasOf": "map"
+    },
+    {
+      "name": "all",
+      "category": "higher-order",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "pred",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "pred",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/mod.rs",
+        "line": 631
+      },
+      "aliasOf": "map"
+    },
+    {
+      "name": "find",
+      "category": "higher-order",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "pred",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "pred",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/mod.rs",
+        "line": 631
+      },
+      "aliasOf": "map"
+    },
+    {
       "name": "Rect",
       "category": "classes",
       "group": "core",
@@ -4875,105 +4977,6 @@
       }
     },
     {
-      "name": "any",
-      "category": "std",
-      "group": "prelude",
-      "arity": 2,
-      "variadic": false,
-      "params": [
-        {
-          "name": "xs",
-          "type": "any"
-        },
-        {
-          "name": "pred",
-          "type": "any"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "xs",
-            "type": "any"
-          },
-          {
-            "name": "pred",
-            "type": "any"
-          }
-        ]
-      ],
-      "source": {
-        "file": "core/prelude/std.ptl",
-        "line": 72
-      }
-    },
-    {
-      "name": "all",
-      "category": "std",
-      "group": "prelude",
-      "arity": 2,
-      "variadic": false,
-      "params": [
-        {
-          "name": "xs",
-          "type": "any"
-        },
-        {
-          "name": "pred",
-          "type": "any"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "xs",
-            "type": "any"
-          },
-          {
-            "name": "pred",
-            "type": "any"
-          }
-        ]
-      ],
-      "source": {
-        "file": "core/prelude/std.ptl",
-        "line": 81
-      }
-    },
-    {
-      "name": "find",
-      "category": "std",
-      "group": "prelude",
-      "arity": 2,
-      "variadic": false,
-      "params": [
-        {
-          "name": "xs",
-          "type": "any"
-        },
-        {
-          "name": "pred",
-          "type": "any"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "xs",
-            "type": "any"
-          },
-          {
-            "name": "pred",
-            "type": "any"
-          }
-        ]
-      ],
-      "source": {
-        "file": "core/prelude/std.ptl",
-        "line": 89
-      }
-    },
-    {
       "name": "min_by",
       "category": "std",
       "group": "prelude",
@@ -5003,7 +5006,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 103
+        "line": 81
       }
     },
     {
@@ -5036,7 +5039,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 110
+        "line": 88
       }
     },
     {
@@ -5077,7 +5080,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 118
+        "line": 96
       }
     },
     {
@@ -5110,7 +5113,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 126
+        "line": 104
       }
     },
     {
@@ -5143,7 +5146,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 132
+        "line": 110
       }
     },
     {
@@ -5176,7 +5179,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 139
+        "line": 117
       }
     },
     {
@@ -5209,7 +5212,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 144
+        "line": 122
       }
     },
     {
@@ -5242,7 +5245,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 157
+        "line": 135
       }
     },
     {
@@ -5283,7 +5286,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 164
+        "line": 142
       }
     },
     {
@@ -5308,7 +5311,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 171
+        "line": 149
       }
     },
     {
@@ -5349,7 +5352,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 180
+        "line": 158
       }
     },
     {
@@ -5382,7 +5385,7 @@
       ],
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 190
+        "line": 168
       }
     },
     {

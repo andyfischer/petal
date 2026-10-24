@@ -304,7 +304,8 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // dispatched as evaluator intrinsics at runtime. Not CONST as rows —
     // what a call does is what its callback does; `constness` answers
     // `ConstIfCallbacksAre` for `map`/`filter`/`reduce` (and `sort`,
-    // `sort_by`), and `Dynamic` for `forEach`, which exists for effects.
+    // `sort_by`, `any`, `all`, `find`), and `Dynamic` for `forEach`, which
+    // exists for effects.
     let map_id = table.register("map", native_intrinsic_placeholder, NativeEffects::PURE);
     let filter_id =
         table.register("filter", native_intrinsic_placeholder, NativeEffects::PURE);
@@ -591,6 +592,14 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("Map", collections::native_map_new, NativeEffects::CONST);
     table.register("entries", collections::native_entries, NativeEffects::CONST);
 
+    // --- Short-circuiting predicate queries (append-only) ---
+    // Higher-order like `filter`, so dispatched as VM intrinsics: they call the
+    // predicate until one element decides, and their callbacks fall under the
+    // same `state` rule (`vm::native::callback_intrinsic`).
+    let any_id = table.register("any", native_intrinsic_placeholder, NativeEffects::PURE);
+    let all_id = table.register("all", native_intrinsic_placeholder, NativeEffects::PURE);
+    let find_id = table.register("find", native_intrinsic_placeholder, NativeEffects::PURE);
+
     // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
     // ids they were just given.
     for op in crate::backend::bytecode::isa::IntrinsicOp::ALL {
@@ -603,6 +612,9 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.intrinsic_filter = Some(filter_id);
     table.intrinsic_reduce = Some(reduce_id);
     table.intrinsic_for_each = Some(for_each_id);
+    table.intrinsic_any = Some(any_id);
+    table.intrinsic_all = Some(all_id);
+    table.intrinsic_find = Some(find_id);
 
     // Parameter names, for named arguments: read off the builtins' `native fn`
     // declarations in the bundled `core` and domain builtin packages, the
@@ -867,7 +879,7 @@ mod effect_tests {
         use crate::native_fn::NativeConstness;
         let mut table = NativeFnTable::new();
         register_builtins(&mut table);
-        for name in ["map", "filter", "reduce", "sort", "sort_by"] {
+        for name in ["map", "filter", "reduce", "sort", "sort_by", "any", "all", "find"] {
             let id = table.lookup_name(name).unwrap();
             assert!(!table.effects(id).is_const(), "{name}");
             assert_eq!(

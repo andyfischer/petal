@@ -472,10 +472,15 @@ impl App {
                     if let Some(v2) = self.manip.as_mut().and_then(|m| m.v2.as_mut()) {
                         v2.failed = true;
                     }
-                    self.status_note = Some(match outcome {
-                        garden_script::DragOutcomeV2::Refused { why, .. } => why,
-                        _ => "this shape's frame could not be re-run".to_string(),
-                    });
+                    match outcome {
+                        // Declined before anything moved: reported like a
+                        // declined release, so the result panel says why and
+                        // lists what was considered.
+                        refused @ garden_script::DragOutcomeV2::Refused { .. } => {
+                            self.settle_drag_v2(editor, pane, s0, refused, (dx, dy));
+                        }
+                        _ => self.status_note = Some("this shape's frame could not be re-run".to_string()),
+                    }
                     self.needs_redraw = true;
                     return;
                 }

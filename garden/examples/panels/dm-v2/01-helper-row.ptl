@@ -12,8 +12,9 @@
 // - The FIRST card, sideways. Only `x0` moves it (i = 0).
 // - Any card, up or down: `y0`, shared by every card.
 // - Then click `gap`'s gutter square twice (tunable, then
-//   rigid) and drag the last card again: now only `x0` is
-//   left, and the panel shows `gap` as rigid.
+//   rigid) and drag the last card again: `x0` or `card_w`
+//   does it now, and the panel shows `gap` as rigid. Its
+//   "never" chips rule numbers out for the session only.
 //
 // Nothing below names a card's position: it exists only
 // when `card_x` runs. Petal re-runs the frame with each

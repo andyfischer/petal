@@ -74,6 +74,8 @@ pub enum MenuAction {
     TogglePlay,
     /// Petal-IDE: open / close the IR inspector panel (toolbar IR button).
     ToggleIr,
+    /// Petal-IDE: drag mode on / off (toolbar Drag button, `:DragMode`).
+    ToggleDragMode,
     // Go
     /// Open the fuzzy file finder (Cmd+P).
     GoToFile,
@@ -126,6 +128,7 @@ pub const MENU_ACTIONS: &[(&str, Option<&str>)] = &[
     ("ToggleStateInspector", None),
     ("TogglePlay", None),
     ("ToggleIr", None),
+    ("ToggleDragMode", None),
     ("GoToFile", None),
     ("Back", None),
     ("Forward", None),
@@ -186,6 +189,7 @@ impl MenuAction {
             "togglestateinspector" => ToggleStateInspector,
             "toggleplay" => TogglePlay,
             "toggleir" => ToggleIr,
+            "toggledragmode" => ToggleDragMode,
             "gotofile" => GoToFile,
             "back" => Back,
             "forward" => Forward,
@@ -218,6 +222,9 @@ pub enum ToolbarAction {
     ToggleState,
     /// Restart the canvas sketch from scratch (reset its Petal `state`).
     ResetSketch,
+    /// Drag mode on / off (`:DragMode`): plain drags on the canvas edit
+    /// the code.
+    ToggleDragMode,
 }
 
 /// A laid-out toolbar button: where it sits, what it does, its label, and

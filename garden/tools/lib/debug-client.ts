@@ -182,7 +182,40 @@ export interface AppState {
         moves_y: boolean;
         span: unknown | null;
         file: string | null;
+        /** What the UI shows it as: `free` | `tunable` | `rigid` | `config` | `fixed`. */
+        state: string;
+        tunable: boolean;
+        rigid: boolean;
+        /** Its literal in the editor's current text (0-based line, char cols). */
+        mark: { line: number; start: number; end: number } | null;
       }>;
+    } | null;
+    /** Drag mode (`:DragMode`, toolbar Drag, Cmd+Shift+D). */
+    mode: boolean;
+    /** Whether the drag result panel is open over the canvas. */
+    panel_open: boolean;
+    /** A hint was toggled since the last drag (its alternatives are stale). */
+    hints_changed: boolean;
+    /** The pointer shape: `default` | `grab` | `grabbing` | `pointer`. */
+    cursor: string;
+    /** The outlined shape (window coordinates), or null. */
+    hover: { pane: number; index: number; rect: Rect; label: string } | null;
+    /** The result panel's clickable cells; `action` is `close`, `pick:N`,
+     *  `hint:I`, `only:I`, `never:I` or `clear` (I indexes `last.candidates`). */
+    overlay: { card: Rect; cells: Array<{ text: string; action: string | null; rect: Rect }> } | null;
+    /** The editor underlines (0-based line, char cols) and their state. */
+    marks: Array<{ line: number; start: number; end: number; state: string; written: boolean }>;
+    /** Drag mode's gutter markers, or null while the column is off. */
+    gutter: Array<{ line: number; filled: boolean }> | null;
+    /** Where to click the editor's text and gutter by line and column. */
+    editor: {
+      pane: number;
+      text_x: number;
+      text_y: number;
+      line_h: number;
+      col_w: number;
+      gutter_x: number | null;
+      top_line: number;
     } | null;
   };
   unresolved_fonts?: unknown[];

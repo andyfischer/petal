@@ -79,6 +79,10 @@ impl App {
             }
         }
 
+        // Drag mode's badge, hover outline and the drag result panel, over
+        // the canvases (see `dm_mode.rs`).
+        self.build_dm_chrome(&mut prims);
+
         let (w, h) = self.viewport.size;
         self.build_titlebar(w, cell, &mut prims);
         self.build_toolbar(w, cell, &mut prims);
@@ -355,7 +359,7 @@ impl App {
         let btn_h = (self.toolbar_h - 10.0).max(1.0);
         let btn_y = band_y + (self.toolbar_h - btn_h) / 2.0;
         let ir_open = self.ide.as_ref().is_some_and(|i| i.ir_open);
-        let specs: [(ToolbarAction, &'static str, bool); 4] = [
+        let specs: [(ToolbarAction, &'static str, bool); 5] = [
             (
                 ToolbarAction::TogglePlay,
                 if self.paused { "> Play" } else { "|| Pause" },
@@ -364,6 +368,7 @@ impl App {
             (ToolbarAction::ToggleIr, "IR", ir_open),
             (ToolbarAction::ToggleState, "State", self.show_panel_state),
             (ToolbarAction::ResetSketch, "Reset", false),
+            (ToolbarAction::ToggleDragMode, "Drag", self.dm_mode),
         ];
         let mut x = MARGIN;
         let mut out = Vec::new();

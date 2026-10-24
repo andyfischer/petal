@@ -567,6 +567,8 @@ fn candidate(program: &Program, c: &CandidateReport, nx: usize) -> DragCandidate
         file: file_path(program, p.file),
         value: p.value,
         config: p.config || matches!(p.hint, Some(petal::dm_v2::Hint::Tunable { .. })),
+        tunable: matches!(p.hint, Some(petal::dm_v2::Hint::Tunable { .. })),
+        rigid: matches!(p.hint, Some(petal::dm_v2::Hint::Rigid)),
         eligible: c.eligible.is_ok(),
         why_not: c.eligible.err().map(str::to_string),
         moves: c.column.as_ref().is_some_and(|col| col.iter().any(|v| *v != 0.0)),

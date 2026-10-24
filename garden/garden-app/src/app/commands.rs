@@ -287,6 +287,8 @@ impl App {
             Command::DragPrev => self.cycle_drag_alternative(-1, None),
             Command::DragPick(n) => self.cycle_drag_alternative(0, Some(n - 1)),
             Command::DragEngine(arg) => self.set_drag_engine(&arg),
+            Command::DragMode(arg) => self.dm_mode_command(&arg),
+            Command::DragHint(arg) => self.dm_hint_command(&arg),
             Command::Back => return self.nav_focused_panel(garden_script::NavIntent::Back),
             Command::Forward => return self.nav_focused_panel(garden_script::NavIntent::Forward),
             Command::Substitute(sub) => self.substitute(sub),
@@ -388,6 +390,7 @@ impl App {
             MenuAction::ToggleLineNumbers => self.toggle_line_numbers(),
             MenuAction::ToggleStateInspector => self.run_menu_command(Command::ToggleState),
             MenuAction::TogglePlay => self.toggle_play(),
+            MenuAction::ToggleDragMode => self.set_dm_mode(!self.dm_mode),
             MenuAction::ToggleIr => self.toggle_ir_panel(),
             MenuAction::GoToFile => self.open_file_finder(),
             MenuAction::Back => self.run_menu_command(Command::Back),
@@ -431,6 +434,7 @@ impl App {
             ToolbarAction::ToggleIr => self.toggle_ir_panel(),
             ToolbarAction::ToggleState => self.run_menu_command(Command::ToggleState),
             ToolbarAction::ResetSketch => self.reset_sketch(),
+            ToolbarAction::ToggleDragMode => self.set_dm_mode(!self.dm_mode),
         }
     }
 

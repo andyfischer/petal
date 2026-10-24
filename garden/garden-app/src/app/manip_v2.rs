@@ -29,10 +29,12 @@ use super::App;
 /// Which engine a drag-to-edit gesture uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum DmEngine {
-    /// v1 for a shape whose position arguments are literals or bindings in
-    /// the call (instant, exact, and the edit follows the pointer live); v2
-    /// for everything else, and for every drag while `:DragAllow` /
-    /// `:DragDeny` is set.
+    /// v2 for every shape it can grab (anything with a position), v1 only
+    /// for what v2 cannot (none of today's shapes). One engine means one
+    /// answer shape: ranked alternatives, the candidate report and the
+    /// `tunable` / `rigid` hints, none of which v1 has (it reads `rigid` as
+    /// "computed" and ignores `tunable`'s bounds). See petal-ide-mode.md,
+    /// "Which engine".
     #[default]
     Auto,
     V1,
@@ -53,6 +55,19 @@ impl DmEngine {
 pub(crate) struct DragChoices {
     /// The editor pane the sketch is in.
     pub(crate) editor: usize,
+    /// The canvas pane the shape was dragged on (where the result panel sits).
+    pub(crate) pane: usize,
+    /// Each candidate's literal in the editor's *current* text (line, start
+    /// col, end col): its press-time span moved through the written
+    /// alternative and any hint toggles since. `None` outside the sketch.
+    pub(crate) marks: Vec<Option<(usize, usize, usize)>>,
+    /// Which candidates the written alternative edited.
+    pub(crate) written_marks: Vec<bool>,
+    /// A hint was toggled since the drag: the alternatives were solved
+    /// without it, so they are shown but no longer written.
+    pub(crate) hints_changed: bool,
+    /// Why the drag was declined, when it was.
+    pub(crate) refused: Option<String>,
     /// Each touched file's text when the drag was pressed: `None` is the
     /// sketch (the editor's buffer), `Some(path)` an imported module.
     pub(crate) snapshots: Vec<(Option<PathBuf>, String)>,
@@ -180,10 +195,12 @@ impl App {
     pub(in crate::app) fn settle_drag_v2(
         &mut self,
         editor: usize,
+        pane: usize,
         s0: String,
         outcome: DragOutcomeV2,
         (dx, dy): (f64, f64),
     ) {
+        self.dm_gen += 1;
         let axes = (dx.round() != 0.0, dy.round() != 0.0);
         match outcome {
             DragOutcomeV2::Alternatives {
@@ -204,8 +221,14 @@ impl App {
                         }
                     }
                 }
+                let open = self.dm_mode || alternatives.len() > 1;
                 let mut choices = DragChoices {
                     editor,
+                    pane,
+                    marks: Vec::new(),
+                    written_marks: Vec::new(),
+                    hints_changed: false,
+                    refused: None,
                     snapshots,
                     alternatives,
                     candidates,
@@ -215,6 +238,7 @@ impl App {
                 };
                 self.write_choice(&mut choices, 0);
                 self.dm_choices = Some(choices);
+                self.dm_panel_open = open;
             }
             DragOutcomeV2::Refused { why, candidates } => {
                 if let Some(pane) = self.panes.get_mut(editor) {
@@ -222,12 +246,23 @@ impl App {
                 }
                 let others = movable(&candidates, axes);
                 self.status_note = Some(if others.is_empty() {
-                    why
+                    why.clone()
                 } else {
                     format!("{why} — could move: {}", others.join(", "))
                 });
+                let marks = candidates
+                    .iter()
+                    .map(|c| c.span.map(|s| (s.start_line, s.start_col, s.end_col)))
+                    .collect();
+                let written_marks = vec![false; candidates.len()];
+                self.dm_panel_open = true;
                 self.dm_choices = Some(DragChoices {
                     editor,
+                    pane,
+                    marks,
+                    written_marks,
+                    hints_changed: false,
+                    refused: Some(why),
                     written: s0.clone(),
                     snapshots: vec![(None, s0)],
                     alternatives: Vec::new(),
@@ -289,6 +324,38 @@ impl App {
             }
         }
         choices.current = k;
+        // Where each candidate's literal is in the text just written.
+        let sketch: Vec<&SourceRewrite> = alt.rewrites.iter().filter(|r| r.file.is_none()).collect();
+        choices.written_marks = choices
+            .candidates
+            .iter()
+            .map(|c| {
+                c.span.is_some_and(|s| {
+                    sketch
+                        .iter()
+                        .any(|r| r.span.start_line == s.start_line && r.span.start_col == s.start_col)
+                })
+            })
+            .collect();
+        choices.marks = choices
+            .candidates
+            .iter()
+            .map(|c| {
+                let s = c.span?;
+                let edits: Vec<crate::dm_hints::LineEdit> = sketch
+                    .iter()
+                    .filter(|r| r.span.start_line == s.start_line && r.span.end_line == s.start_line)
+                    .map(|r| crate::dm_hints::LineEdit {
+                        start: r.span.start_col,
+                        end: r.span.end_col,
+                        text: r.new_text.clone(),
+                    })
+                    .collect();
+                let (a, b) = crate::dm_hints::map_range((s.start_col, s.end_col), &edits);
+                Some((s.start_line, a, b))
+            })
+            .collect();
+        self.dm_gen += 1;
         let mut note = describe(alt, k, choices.alternatives.len());
         let used: Vec<String> = alt
             .rewrites
@@ -327,6 +394,17 @@ impl App {
             // The code was edited since: the snapshots no longer describe it,
             // so the answer is forgotten rather than written over the edit.
             self.status_error = Some("E: the code changed since the drag".to_string());
+            self.dm_panel_open = false;
+            self.dm_gen += 1;
+            return;
+        }
+        if choices.hints_changed {
+            // The alternatives were solved without the hints marked since;
+            // writing one would also undo those marks (it is written from the
+            // press-time text).
+            self.status_error =
+                Some("E: hints changed since the drag: drag again to re-solve with them".to_string());
+            self.dm_choices = Some(choices);
             return;
         }
         let k = match pick {
@@ -369,6 +447,7 @@ impl App {
         } else {
             self.dm_filter.deny = parsed;
         }
+        self.dm_gen += 1;
         self.status_note = Some(describe_filter(&self.dm_filter));
     }
 
@@ -399,7 +478,7 @@ impl App {
                 "end": {"line": s.end_line, "col": s.end_col},
             })
         };
-        json!({
+        let mut out = json!({
             "engine": self.dm_engine.name(),
             "allow": self.dm_filter.allow.iter().map(DragSelector::label).collect::<Vec<_>>(),
             "deny": self.dm_filter.deny.iter().map(DragSelector::label).collect::<Vec<_>>(),
@@ -421,8 +500,12 @@ impl App {
                         "config": r.config,
                     })).collect::<Vec<_>>(),
                 })).collect::<Vec<_>>(),
-                "candidates": c.candidates.iter().map(|k| json!({
+                "candidates": c.candidates.iter().enumerate().map(|(i, k)| json!({
                     "label": k.label,
+                    "state": self.cand_state(c, i).name(),
+                    "tunable": k.tunable,
+                    "rigid": k.rigid,
+                    "mark": c.marks.get(i).copied().flatten().map(|(l, s, e)| json!({"line": l, "start": s, "end": e})),
                     "selector": k.selector.label(),
                     "value": k.value,
                     "config": k.config,
@@ -435,12 +518,16 @@ impl App {
                     "file": k.file.as_ref().map(|f| f.display().to_string()),
                 })).collect::<Vec<_>>(),
             })),
-        })
+        });
+        if let (Some(o), serde_json::Value::Object(extra)) = (out.as_object_mut(), self.dm_mode_json()) {
+            o.extend(extra);
+        }
+        out
     }
 }
 
 /// The status line for a filter change.
-fn describe_filter(f: &DragFilter) -> String {
+pub(in crate::app) fn describe_filter(f: &DragFilter) -> String {
     if f.is_default() {
         return "drags may move any literal (preferring config)".to_string();
     }

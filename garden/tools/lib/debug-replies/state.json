@@ -11,9 +11,18 @@
   "dm": {
     "active": false,
     "allow": [],
+    "cursor": "default",
     "deny": [],
+    "editor": null,
     "engine": "auto",
-    "last": null
+    "gutter": null,
+    "hints_changed": false,
+    "hover": null,
+    "last": null,
+    "marks": [],
+    "mode": false,
+    "overlay": null,
+    "panel_open": false
   },
   "file_finder": null,
   "focus": 0,
@@ -21,7 +30,7 @@
   "identity": {
     "build": {
       "build_date": "2026-10-24",
-      "commit": "5d185849",
+      "commit": "3716f0fb",
       "commit_date": "2026-10-24",
       "dirty": true,
       "prelude_level": 10,
@@ -30,7 +39,7 @@
     "cwd": "<cwd>",
     "freshness": {
       "changed": 0,
-      "head": "5d185849",
+      "head": "3716f0fb",
       "stale": false,
       "warning": ""
     },
@@ -38,11 +47,11 @@
     "panels": [
       {
         "pane": 1,
-        "path": "<tmp>/.tmpLB9bve.ptl",
-        "script": "<tmp>/.tmpLB9bve.ptl"
+        "path": "<tmp>/.tmpKY8br5.ptl",
+        "script": "<tmp>/.tmpKY8br5.ptl"
       }
     ],
-    "pid": 12646,
+    "pid": 39457,
     "port": null
   },
   "lsp": {
@@ -60,7 +69,7 @@
         "line": 0
       },
       "dirty": false,
-      "file": "<tmp>/.tmpvZRDsy.txt",
+      "file": "<tmp>/.tmpJKPmGM.txt",
       "index": 0,
       "kind": "editor",
       "line_count": 3,
@@ -78,7 +87,7 @@
       "scroll_sub": 0,
       "scroll_top": 0,
       "selection": null,
-      "title": "<tmp>/.tmpvZRDsy.txt",
+      "title": "<tmp>/.tmpJKPmGM.txt",
       "trace_highlight": null,
       "visible_lines": 34,
       "wrap": true
@@ -104,7 +113,7 @@
           "frames_skipped": 1,
           "gate": true,
           "last_frame_skipped": true,
-          "last_ms": 19.572542,
+          "last_ms": 18.106625,
           "last_run_reason": null,
           "memo": {
             "cold": 0,
@@ -118,7 +127,7 @@
             "records": 1,
             "reexecs": 0
           },
-          "total_ms": 19.572542
+          "total_ms": 18.106625
         },
         "input": {
           "click_count": 0,
@@ -144,7 +153,7 @@
           ],
           "text": ""
         },
-        "script": "<tmp>/.tmpLB9bve.ptl",
+        "script": "<tmp>/.tmpKY8br5.ptl",
         "values": {
           "hits": 0,
           "label": "Save",
@@ -166,7 +175,7 @@
       "scroll_sub": 0,
       "scroll_top": 0,
       "selection": null,
-      "title": ".tmpLB9bve.ptl",
+      "title": ".tmpKY8br5.ptl",
       "trace_highlight": null,
       "visible_lines": 34,
       "wrap": true

@@ -759,6 +759,9 @@ fn a_drag_with_nothing_to_move_reports_rather_than_guesses() {
          clear(10, 10, 10)\n\
          draw_rect(40, top, 60, 60, 200, 90, 90)\n",
     );
+    // v1's refusal: `auto` is v2 for every shape now, and v2 may move a
+    // plain `let` (see `a_v2_drag_moves_what_v1_refused`).
+    app.run_command(crate::command_line::Command::DragEngine("v1".into()));
     let rect = app.panes[canvas].rect;
     let (gx, gy) = (rect.x + 70.0, rect.y + 70.0);
     app.mouse_down(
@@ -3612,7 +3615,7 @@ fn ide_toolbar_absent_until_enabled_then_hit_tests() {
         PathBuf::from("/x/ir_view.ptl"),
     );
     let buttons = app.toolbar_buttons();
-    assert_eq!(buttons.len(), 4, "play/pause, IR, state, reset");
+    assert_eq!(buttons.len(), 5, "play/pause, IR, state, reset, drag");
     // A press at each button's center resolves to that button's action.
     for b in &buttons {
         let cx = b.rect.x + b.rect.w / 2.0;
@@ -5142,4 +5145,187 @@ fn the_file_dialog_is_refused_without_a_window() {
         app.status_error.as_deref(),
         Some("open_file_dialog: no native file picker without a window")
     );
+}
+
+// ── Petal-IDE: drag mode, the result panel, hints by mouse ──────────────────
+
+/// `auto` is v2 for every shape: a plain `let` that v1 would only rewrite in
+/// the call it reads is solved like anything else.
+#[test]
+fn a_v2_drag_moves_what_v1_refused() {
+    let (mut app, editor, canvas, _dir) = traced_pair(
+        "petal-ide-drag-auto-v2",
+        "config let unused = 1\n\
+         let top = 40\n\
+         clear(10, 10, 10)\n\
+         draw_rect(40, top, 60, 60, 200, 90, 90)\n",
+    );
+    cmd_drag(&mut app, canvas, (70.0, 70.0), (0.0, 30.0));
+    assert_eq!(app.panes[editor].view.buffer.line(1), "let top = 70", "{:?}", app.status_note);
+    assert!(app.dm_state_json()["last"]["alternatives"][0]["verified"] == true);
+}
+
+/// Drag `(x, y)` on the canvas by `(dx, dy)` with no modifier.
+fn plain_drag(app: &mut App, canvas: usize, (x, y): (f32, f32), (dx, dy): (f32, f32)) {
+    let rect = app.panes[canvas].rect;
+    let (gx, gy) = (rect.x + x, rect.y + y);
+    app.mouse_down(gx, gy, Mods::default(), 1);
+    app.mouse_moved(gx + dx / 2.0, gy + dy / 2.0);
+    app.mouse_moved(gx + dx, gy + dy);
+    app.mouse_up();
+}
+
+const ROW_SKETCH: &str = "// a row of circles\n\
+                          config let gap = 30\n\
+                          let x0 = 40\n\
+                          fn slot(i)\n\
+                          \x20 x0 + i * gap\n\
+                          end\n\
+                          clear(0, 0, 0)\n\
+                          for i in range(0, 3) do\n\
+                          \x20 draw_circle(slot(i), 60, 8, 255, 255, 255)\n\
+                          end\n";
+
+/// Outside drag mode a plain drag is the sketch's; inside it, it edits the
+/// code, and the sketch sees the pointer off its canvas.
+#[test]
+fn drag_mode_turns_a_plain_drag_into_an_edit() {
+    let (mut app, editor, canvas, _dir) = traced_pair("petal-ide-drag-mode", ROW_SKETCH);
+    let before = app.panes[editor].view.buffer.text();
+    plain_drag(&mut app, canvas, (100.0, 60.0), (12.0, 0.0));
+    assert_eq!(app.panes[editor].view.buffer.text(), before, "a plain drag belongs to the sketch");
+
+    app.run_command(crate::command_line::Command::DragMode(String::new()));
+    assert_eq!(app.dm_state_json()["mode"], true);
+    let rect = app.panes[canvas].rect;
+    app.mouse_moved(rect.x + 100.0, rect.y + 60.0);
+    let dm = app.dm_state_json();
+    assert_eq!(dm["cursor"], "grab");
+    assert_eq!(dm["hover"]["index"], 3, "the third circle is outlined: {dm}");
+    app.settle_panels();
+    let input = app.panes[canvas].panel.as_ref().unwrap().input_snapshot();
+    assert_eq!(input.mouse_x, super::dm_mode::OFF_CANVAS, "the sketch's mouse is suspended");
+
+    plain_drag(&mut app, canvas, (100.0, 60.0), (12.0, 0.0));
+    assert_eq!(app.panes[editor].view.buffer.line(1), "config let gap = 36", "{:?}", app.status_note);
+    app.sync_dm_decor();
+    let dm = app.dm_state_json();
+    assert_eq!(dm["panel_open"], true, "the result panel opens after a drag in drag mode");
+    assert!(dm["marks"].as_array().unwrap().iter().any(|m| m["line"] == 1 && m["written"] == true));
+
+    // Cmd+Shift+D leaves the mode, and the panel with it.
+    app.apply_key(
+        Key::Char('d'),
+        Mods {
+            cmd: true,
+            shift: true,
+            ..Default::default()
+        },
+    );
+    assert_eq!(app.dm_state_json()["mode"], false);
+    assert_eq!(app.dm_state_json()["panel_open"], false);
+}
+
+/// Click a cell of the result panel by its action.
+fn click_dm_action(app: &mut App, action: &str) {
+    let dm = app.dm_state_json();
+    let cell = dm["overlay"]["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["action"] == action)
+        .unwrap_or_else(|| panic!("no {action} in {dm}"))
+        .clone();
+    let r = &cell["rect"];
+    let x = r["x"].as_f64().unwrap() + r["w"].as_f64().unwrap() / 2.0;
+    let y = r["y"].as_f64().unwrap() + r["h"].as_f64().unwrap() / 2.0;
+    app.mouse_down(x as f32, y as f32, Mods::default(), 1);
+    app.mouse_up();
+}
+
+/// The result panel writes the alternative clicked, from the press-time text.
+#[test]
+fn the_result_panel_picks_an_alternative() {
+    let (mut app, editor, canvas, _dir) = traced_pair("petal-ide-drag-panel", ROW_SKETCH);
+    app.run_command(crate::command_line::Command::DragMode("on".into()));
+    plain_drag(&mut app, canvas, (100.0, 60.0), (12.0, 0.0));
+    let alts = app.dm_state_json()["last"]["alternatives"].as_array().unwrap().len();
+    assert!(alts >= 2, "{}", app.dm_state_json());
+    click_dm_action(&mut app, "pick:2");
+    assert_eq!(app.dm_state_json()["last"]["current"], 1);
+    assert_ne!(app.panes[editor].view.buffer.line(1), "config let gap = 36");
+    click_dm_action(&mut app, "pick:1");
+    assert_eq!(app.panes[editor].view.buffer.line(1), "config let gap = 36");
+    // The session chips: `never` on x0, shown in /state, then cleared.
+    let i = app.dm_state_json()["last"]["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|c| c["label"] == "x0")
+        .unwrap();
+    click_dm_action(&mut app, &format!("never:{i}"));
+    assert_eq!(app.dm_state_json()["deny"], serde_json::json!(["x0"]));
+    click_dm_action(&mut app, "clear");
+    assert_eq!(app.dm_state_json()["deny"], serde_json::json!([]));
+    click_dm_action(&mut app, "close");
+    assert_eq!(app.dm_state_json()["panel_open"], false);
+}
+
+/// Marking numbers by mouse rewrites the source with the real hints, as one
+/// undo step each, and the next drag's solver honours them.
+#[test]
+fn hints_marked_by_mouse_steer_the_next_drag() {
+    let (mut app, editor, canvas, _dir) = traced_pair("petal-ide-drag-hints", ROW_SKETCH);
+    app.run_command(crate::command_line::Command::DragMode("on".into()));
+    app.settle_panels();
+    // A gutter click on a `let` line marks its literal.
+    let view = &app.panes[editor].view;
+    let rect = app.panes[editor].rect;
+    let cell = app.viewport.cell;
+    let (ox, oy) = view.text_origin(rect, cell.0);
+    let line_y = |l: usize| oy + l as f32 * cell.1 + cell.1 / 2.0;
+    app.mouse_down(ox - cell.0, line_y(1), Mods::default(), 1);
+    app.mouse_up();
+    assert_eq!(app.panes[editor].view.buffer.line(1), "config let gap = tunable(30)");
+    app.mouse_down(ox - cell.0, line_y(1), Mods::default(), 1);
+    app.mouse_up();
+    assert_eq!(app.panes[editor].view.buffer.line(1), "config let gap = rigid(30)");
+    // Alt-click marks any number; a plain click on an underlined (hinted) one too.
+    let col_x = |c: usize| ox + (c as f32 + 0.5) * cell.0;
+    app.mouse_down(col_x(9), line_y(2), Mods { alt: true, ..Default::default() }, 1);
+    app.mouse_up();
+    assert_eq!(app.panes[editor].view.buffer.line(2), "let x0 = tunable(40)");
+    app.sync_dm_decor();
+    app.mouse_down(col_x(18), line_y(2), Mods::default(), 1);
+    app.mouse_up();
+    assert_eq!(app.panes[editor].view.buffer.line(2), "let x0 = rigid(40)");
+    // Each toggle is its own undo step.
+    app.panes[editor].view.undo();
+    assert_eq!(app.panes[editor].view.buffer.line(2), "let x0 = tunable(40)");
+    app.panes[editor].view.redo();
+    app.settle_panels();
+
+    // Both knobs rigid: nothing may move the circle sideways.
+    plain_drag(&mut app, canvas, (100.0, 60.0), (12.0, 0.0));
+    assert_eq!(app.panes[editor].view.buffer.line(1), "config let gap = rigid(30)");
+    assert_eq!(app.panes[editor].view.buffer.line(2), "let x0 = rigid(40)");
+    let dm = app.dm_state_json();
+    assert!(dm["last"]["alternatives"].as_array().unwrap().is_empty(), "{dm}");
+    let states: Vec<_> = dm["last"]["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["label"] == "gap" || c["label"] == "x0")
+        .map(|c| c["state"].clone())
+        .collect();
+    assert_eq!(states, [serde_json::json!("rigid"), serde_json::json!("rigid")]);
+
+    // Free x0 again with :DragHint at the cursor: now the drag moves it.
+    app.focus = editor;
+    app.panes[editor].view.cursor = garden_core::Point::new(2, 16);
+    app.run_command(crate::command_line::Command::DragHint("free".into()));
+    assert_eq!(app.panes[editor].view.buffer.line(2), "let x0 = 40");
+    app.settle_panels();
+    plain_drag(&mut app, canvas, (100.0, 60.0), (12.0, 0.0));
+    assert_eq!(app.panes[editor].view.buffer.line(2), "let x0 = 52", "{:?}", app.status_note);
 }

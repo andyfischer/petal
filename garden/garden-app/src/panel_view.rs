@@ -1896,6 +1896,16 @@ impl PanelView {
         garden_script::v2_draggable(self.cmds.get(index)?).then_some(index)
     }
 
+    /// The panel-local box command `index` covers, moved with a v2 drag's
+    /// ghost while one is painting it: what drag mode outlines.
+    pub fn dm_bounds(&self, index: usize) -> Option<(i32, i32, i32, i32)> {
+        let (x, y, w, h) = garden_script::cmd_bounds(self.cmds.get(index)?)?;
+        Some(match self.drag_ghost {
+            Some((i, dx, dy)) if i == index => (x + dx, y + dy, w, h),
+            _ => (x, y, w, h),
+        })
+    }
+
     /// The traced call of the command at `index`, for choosing an engine.
     pub fn trace_of(&self, index: usize) -> Option<DrawTrace> {
         self.host.trace_origin(self.host.origin_at(index)?)

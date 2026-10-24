@@ -292,6 +292,12 @@ pub const HOST_FEATURES: &[&str] = &[
     // calls is solved by re-running the frame; `/state`'s `dm` carries the
     // engine, the `:DragAllow` / `:DragDeny` selectors and the last answer.
     "state.dm-drag",
+    // Petal IDE's drag mode (`:DragMode`, `/menu ToggleDragMode`): a plain drag
+    // on the canvas edits the code; `/state`'s `dm` adds `mode`, the result
+    // panel's clickable cells (`overlay`), the editor `marks` / `gutter`, the
+    // `hover` outline and the pointer `cursor`; `:DragHint` marks a number
+    // `tunable` / `rigid`.
+    "state.dm-mode",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a

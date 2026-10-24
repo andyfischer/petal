@@ -131,6 +131,17 @@ impl App {
             return KeyOutcome::Handled;
         }
 
+        // `Cmd`/`Ctrl`+`Shift`+`D`: Petal IDE's drag mode, from any pane.
+        if !panel_claimed
+            && (mods.cmd || mods.ctrl)
+            && mods.shift
+            && matches!(key, Key::Char('d' | 'D'))
+            && (self.ide.is_some() || self.has_traced_panel())
+        {
+            self.set_dm_mode(!self.dm_mode);
+            return KeyOutcome::Handled;
+        }
+
         // A pending `Ctrl+W` consumes the next key as a window command (move or
         // cycle focus); any other key cancels the prefix without side effects.
         if std::mem::take(&mut self.window_cmd_pending) {

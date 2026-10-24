@@ -10,6 +10,7 @@ mod app;
 mod clipboard;
 mod command_line;
 mod debug;
+mod dm_hints;
 mod editor_view;
 mod event_log;
 mod file_dialog;

@@ -170,6 +170,11 @@ pub enum Command {
     /// `:DragEngine [auto|v1|v2]` — which direct-manipulation engine a drag
     /// uses (empty reports the current one).
     DragEngine(String),
+    /// `:DragMode [on|off]` — Petal IDE's drag mode (no argument toggles).
+    DragMode(String),
+    /// `:DragHint [free|tunable|rigid|line]` — mark the number under the
+    /// cursor (no argument cycles it), or cycle the cursor's line.
+    DragHint(String),
     /// An empty line (no-op).
     Empty,
     /// Anything unrecognized; carries the raw text for an error message.
@@ -270,6 +275,8 @@ pub fn parse(input: &str) -> Command {
             _ => Command::Unknown(trimmed.to_string()),
         },
         "DragEngine" => Command::DragEngine(arg.to_string()),
+        "DragMode" => Command::DragMode(arg.to_string()),
+        "DragHint" => Command::DragHint(arg.to_string()),
         "back" => Command::Back,
         "forward" | "fwd" => Command::Forward,
         "report" => Command::Report(arg.to_string()),
@@ -470,6 +477,9 @@ mod tests {
         assert_eq!(parse("DragPick 2"), Command::DragPick(2));
         assert_eq!(parse("DragPick 0"), Command::Unknown("DragPick 0".into()));
         assert_eq!(parse("DragEngine v2"), Command::DragEngine("v2".into()));
+        assert_eq!(parse("DragMode"), Command::DragMode(String::new()));
+        assert_eq!(parse("DragMode on"), Command::DragMode("on".into()));
+        assert_eq!(parse("DragHint rigid"), Command::DragHint("rigid".into()));
     }
 
     #[test]

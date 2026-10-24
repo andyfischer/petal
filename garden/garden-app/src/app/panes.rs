@@ -398,6 +398,7 @@ impl App {
         }
 
         changed |= self.sync_trace_highlight();
+        changed |= self.sync_dm_decor();
 
         // Reconcile each paired editor's error line with its panel's current
         // error, so a compile/runtime error highlights the offending source line

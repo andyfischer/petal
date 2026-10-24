@@ -42,6 +42,7 @@ mod debug_server;
 mod events;
 mod input;
 mod lsp;
+mod dm_mode;
 mod manip_v2;
 mod mouse;
 mod panes;
@@ -55,6 +56,7 @@ pub use types::{
     ClickCounter, KeyPhase, MenuAction, Mods, Pane, ToolbarAction, Viewport, MENU_ACTIONS,
 };
 pub(crate) use types::{KeyOutcome, ToolbarButton};
+pub use dm_mode::PointerCursor;
 
 #[cfg(test)]
 mod reply_samples;
@@ -273,6 +275,18 @@ pub struct App {
     dm_filter: garden_script::DragFilter,
     /// The last v2 drag's answer, for `:DragNext` / `:DragPrev` / `:DragPick`.
     dm_choices: Option<manip_v2::DragChoices>,
+    /// **Drag mode** (`:DragMode`, the toolbar's Drag, Cmd+Shift+D): a plain
+    /// drag on a traced canvas edits the code, and the sketch's own mouse
+    /// input is suspended (see `dm_mode.rs`).
+    dm_mode: bool,
+    /// Whether the drag result panel (alternatives and candidates) is shown
+    /// over the canvas.
+    dm_panel_open: bool,
+    /// Bumped on every change to the drag answer or the session filter, so
+    /// the editor decorations know when to rebuild.
+    dm_gen: u64,
+    /// What the editor decorations were last built from.
+    dm_decor_key: u64,
 }
 
 /// The traced draw call under the pointer, with the file it belongs to — the
@@ -372,6 +386,10 @@ impl App {
             dm_engine: manip_v2::DmEngine::default(),
             dm_filter: garden_script::DragFilter::default(),
             dm_choices: None,
+            dm_mode: false,
+            dm_panel_open: false,
+            dm_gen: 0,
+            dm_decor_key: 0,
         };
         app.rebuild_panes();
         app
@@ -461,7 +479,7 @@ impl App {
         // for. Skipping it would not merely disable the highlight — it would
         // strand the last one on screen, pointing confidently at the wrong line.
         if self.paused {
-            if self.sync_trace_highlight() {
+            if self.sync_trace_highlight() | self.sync_dm_decor() {
                 self.needs_redraw = true;
             }
             return (false, false);
@@ -479,6 +497,7 @@ impl App {
         // The current host theme, injected read-only into every panel each frame
         // so a drawer's `panel_theme()` reflects the live scheme (built once).
         let panel_theme = self.theme.to_panel_theme();
+        let dm_mode = self.dm_mode;
         let mut animating = false;
         let mut changed = live_changed;
         let mut redraw = live_changed;
@@ -495,7 +514,13 @@ impl App {
                 changed = true;
             }
             panel.set_theme(panel_theme.clone());
-            panel.set_mouse((mx - pane.rect.x) as i32, (my - pane.rect.y) as i32);
+            // Drag mode suspends the sketch's mouse: the pointer is off its
+            // canvas as far as `mouse_x()` / hover are concerned.
+            if dm_mode && panel.traces_origins() {
+                panel.set_mouse(dm_mode::OFF_CANVAS, dm_mode::OFF_CANVAS);
+            } else {
+                panel.set_mouse((mx - pane.rect.x) as i32, (my - pane.rect.y) as i32);
+            }
             if panel.tick(now, pane.rect, self.viewport.cell) {
                 redraw = true;
                 changed |= panel.last_tick_changed();
@@ -752,7 +777,11 @@ impl App {
             if let Some(panel) = pane.panel.as_mut() {
                 panel.note_activity(now);
                 panel.set_theme(panel_theme);
-                panel.set_mouse((mx - pane.rect.x) as i32, (my - pane.rect.y) as i32);
+                if self.dm_mode && panel.traces_origins() {
+                    panel.set_mouse(dm_mode::OFF_CANVAS, dm_mode::OFF_CANVAS);
+                } else {
+                    panel.set_mouse((mx - pane.rect.x) as i32, (my - pane.rect.y) as i32);
+                }
                 if panel.tick(now, pane.rect, self.viewport.cell) {
                     self.needs_redraw = true;
                 }

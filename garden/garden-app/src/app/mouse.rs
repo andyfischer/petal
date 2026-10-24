@@ -258,21 +258,9 @@ impl App {
         // literals may move.
         let use_v2 = match self.dm_engine {
             super::manip_v2::DmEngine::V1 => false,
-            super::manip_v2::DmEngine::V2 => v2.is_some(),
-            super::manip_v2::DmEngine::Auto => {
-                v2.is_some()
-                    && (!self.dm_filter.is_default()
-                        || match &v1 {
-                            None => true,
-                            Some((i, h)) => panel.trace_of(*i).is_none_or(|t| {
-                                h.x_args.iter().chain(&h.y_args).any(|(a, _)| {
-                                    t.args
-                                        .get(*a)
-                                        .is_none_or(|ta| ta.source == garden_script::ArgSource::Computed)
-                                })
-                            }),
-                        })
-            }
+            // Auto is v2 for everything it can grab; v1 is the fallback for a
+            // shape only v1 sees (see `DmEngine::Auto`).
+            super::manip_v2::DmEngine::V2 | super::manip_v2::DmEngine::Auto => v2.is_some(),
         };
         let (index, handle) = match (use_v2, v1, v2) {
             (true, _, Some(i)) => (
@@ -491,8 +479,14 @@ impl App {
         };
         let (dx, dy) = v2.last;
         let outcome = panel.finish_drag_v2(dx, dy);
-        self.settle_drag_v2(m.editor, v2.s0, outcome, (dx, dy));
+        self.settle_drag_v2(m.editor, m.pane, v2.s0, outcome, (dx, dy));
         self.log_event("mouse", "drag-to-edit v2 released".to_string());
+    }
+
+    /// The drag-to-edit gesture in progress: canvas pane, command index, and
+    /// whether the pointer has moved past the slop yet.
+    pub(in crate::app) fn manip_target(&self) -> Option<(usize, usize, bool)> {
+        self.manip.as_ref().map(|m| (m.pane, m.index, m.moved))
     }
 
     /// Whether a v2 drag is in progress.
@@ -558,6 +552,14 @@ impl App {
         let shift = mods.shift;
         self.mouse = (x, y);
         self.wake_panels();
+
+        // The drag result panel, then drag mode: a plain press on a traced
+        // canvas is a drag-to-edit gesture, and on an underlined number or a
+        // gutter marker it toggles a hint (see `dm_mode.rs`).
+        if self.dm_mouse_down(x, y, mods) {
+            self.needs_redraw = true;
+            return;
+        }
 
         // Cmd/Ctrl-click on a shape: go to the code that drew it. Checked before
         // anything else consumes the press, and it consumes the press itself —
@@ -755,6 +757,9 @@ impl App {
         if !self.panes[idx].is_panel() {
             return;
         }
+        if self.dm_mode && self.panes[idx].panel.as_ref().is_some_and(|p| p.traces_origins()) {
+            return;
+        }
         self.focus = idx;
         self.log_event("mouse", format!("right-click pane {idx} @ {x:.0},{y:.0}"));
         let pane = &mut self.panes[idx];
@@ -830,6 +835,11 @@ impl App {
             // Tick it now (as a press does) so hover is delivered on the frame
             // the move happened — otherwise the first move after launch lands
             // between ticks and is never seen by a `GET /state` right after it.
+            // Drag mode: the sketch's mouse is suspended, but the hover
+            // outline and pointer shape follow the move.
+            None if self.dm_mode || self.dm_panel_open => {
+                self.needs_redraw = true;
+            }
             None if self.divider_drag.is_none() => {
                 if let Some(idx) = self.pane_at(x, y) {
                     if self.panes.get(idx).is_some_and(super::Pane::is_panel) {
@@ -965,6 +975,12 @@ impl App {
         let (x, y) = self.mouse;
         let cell_h = self.viewport.cell.1;
         let idx = self.pane_at(x, y).unwrap_or(self.focus);
+        // Drag mode suspends the sketch's wheel too.
+        if self.dm_mode
+            && self.panes.get(idx).and_then(|p| p.panel.as_ref()).is_some_and(|p| p.traces_origins())
+        {
+            return;
+        }
         // A panel under the pointer gets the wheel as `scroll_y()` input; a normal
         // pane scrolls its text view.
         if self.panes.get(idx).is_some_and(|p| p.is_panel()) {

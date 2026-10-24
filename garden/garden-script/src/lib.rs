@@ -72,7 +72,7 @@ pub use panel::{
 pub use panel::{DRAG_ALTERNATIVES, DRAG_ITERS, FINISH_RUNS, FINISH_WALL, OPEN_RUNS, OPEN_WALL};
 pub use panel_store::PanelStore;
 pub use panel_trace::{
-    apply_rewrites_to, drag_handle, hit_test, ArgSource, CallRef, CodeSpan, DragAlternative,
+    apply_rewrites_to, cmd_bounds, drag_handle, hit_test, ArgSource, CallRef, CodeSpan, DragAlternative,
     DragCandidate, DragFilter, DragHandle, DragOutcome, DragOutcomeV2, DragSelector, DragStart,
     DrawOrigin, DrawTrace, SourceRewrite, TracedArg, v2_draggable,
 };

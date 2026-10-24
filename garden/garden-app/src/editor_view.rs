@@ -327,6 +327,15 @@ pub struct EditorView {
     /// `App::sync_editor_panels` and cleared the moment the pointer leaves a
     /// shape.
     pub trace_highlight: Option<(Point, Point)>,
+    /// Drag mode's underlines: the numbers a drag on the paired canvas could
+    /// move, colored by what they are marked as (see `App::sync_dm_decor`).
+    /// Like [`trace_highlight`](Self::trace_highlight), a view of the canvas,
+    /// never the user's selection.
+    pub dm_underlines: Vec<DmUnderline>,
+    /// Drag mode's gutter column: `Some` reserves it (so the text does not
+    /// jump as markers come and go), with a marker per line that a gutter
+    /// click can toggle.
+    pub dm_gutter: Option<Vec<DmGutterMark>>,
     /// The [`Projection`] this view is an editable *view* of, when its content
     /// was assembled out of other documents rather than read from one file (a
     /// unified diff, say). Every mutation is reported to it (see
@@ -339,6 +348,30 @@ pub struct EditorView {
     /// the view rather than to the change). Drained by the key routing into the
     /// status bar; `None` the rest of the time.
     pub edit_refusal: Option<String>,
+}
+
+/// One drag-mode underline (see [`EditorView::dm_underlines`]): chars
+/// `start..end` of `line`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DmUnderline {
+    pub line: usize,
+    pub start: usize,
+    pub end: usize,
+    pub color: Color,
+    /// Written by the last drag.
+    pub strong: bool,
+    /// What the number is marked as (`free`, `tunable`, …), for `/state`.
+    pub state: &'static str,
+}
+
+/// One drag-mode gutter marker (see [`EditorView::dm_gutter`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DmGutterMark {
+    pub line: usize,
+    pub color: Color,
+    /// Filled for a line with candidates or hints, hollow for a binding
+    /// whose literal a click would mark.
+    pub filled: bool,
 }
 
 /// How a mouse drag extends the selection. The multi-click modes remember the
@@ -402,6 +435,8 @@ impl EditorView {
             show_line_numbers: false,
             error_line: None,
             trace_highlight: None,
+            dm_underlines: Vec::new(),
+            dm_gutter: None,
             projection: None,
             edit_refusal: None,
         }
@@ -1542,7 +1577,7 @@ impl EditorView {
     }
 
     /// Columns taken by the line-number gutter (0 when it is off).
-    fn number_cols(&self) -> usize {
+    pub(crate) fn number_cols(&self) -> usize {
         if !self.show_line_numbers {
             return 0;
         }
@@ -1572,9 +1607,30 @@ impl EditorView {
         }
     }
 
-    /// Total gutter width: line numbers, then diff markers, then the text.
+    /// Total gutter width: line numbers, then diff markers, then drag mode's
+    /// markers, then the text.
     fn gutter_cols(&self) -> usize {
-        self.number_cols() + self.marker_cols()
+        self.number_cols() + self.marker_cols() + self.dm_cols()
+    }
+
+    /// Columns taken by drag mode's marker column.
+    fn dm_cols(&self) -> usize {
+        if self.dm_gutter.is_some() {
+            2
+        } else {
+            0
+        }
+    }
+
+    /// The buffer line whose gutter (left of the text) is at window point
+    /// (`x`, `y`), while drag mode's marker column is on.
+    pub fn dm_gutter_line_at(&self, rect: Rect, cell: (f32, f32), x: f32, y: f32) -> Option<usize> {
+        self.dm_gutter.as_ref()?;
+        let (ox, oy) = self.text_origin(rect, cell.0);
+        if x < rect.x || x >= ox || y < oy || y >= rect.y + rect.h {
+            return None;
+        }
+        Some(self.position_for_click(rect, cell, ox, y).line)
     }
 
     /// The color line `line_idx`'s text is painted in, for chrome that has to
@@ -1589,7 +1645,7 @@ impl EditorView {
     }
 
     /// Top-left of the first visible text cell.
-    fn text_origin(&self, rect: Rect, cell_w: f32) -> (f32, f32) {
+    pub(crate) fn text_origin(&self, rect: Rect, cell_w: f32) -> (f32, f32) {
         (
             rect.x + PAD + self.gutter_cols() as f32 * cell_w,
             rect.y + PAD,
@@ -2018,6 +2074,34 @@ impl EditorView {
                     }
                 }
 
+                // Drag mode's underlines: a bar under each number a drag
+                // could move, in its state's color (thicker for the ones the
+                // last drag wrote).
+                for u in self.dm_underlines.iter().filter(|u| u.line == line_idx) {
+                    let a = u.start.max(s);
+                    let b = u.end.min(e);
+                    if b > a {
+                        let h = if u.strong { 3.0 } else { 2.0 };
+                        push_clipped_quad(
+                            prims,
+                            Rect {
+                                x: cell_x(a),
+                                y: y + cell_h - h,
+                                w: cell_x(b) - cell_x(a),
+                                h,
+                            },
+                            text_clip,
+                            u.color,
+                        );
+                        push_clipped_quad(
+                            prims,
+                            row_span(cell_x(a), cell_x(b)),
+                            text_clip,
+                            Color { a: 0.12, ..u.color },
+                        );
+                    }
+                }
+
                 // Search matches, clipped to this visual row's char span.
                 for (mstart, mlen) in &matches {
                     let a = (*mstart).max(s);
@@ -2081,6 +2165,34 @@ impl EditorView {
                             size: FONT_SIZE,
                             style: TextStyle::default(),
                         });
+                    }
+                }
+
+                // Drag mode's marker: a square in the line's state color
+                // (hollow for a line only a gutter click would act on).
+                if seg_i == 0 {
+                    if let Some(m) = self
+                        .dm_gutter
+                        .as_ref()
+                        .and_then(|g| g.iter().find(|m| m.line == line_idx))
+                    {
+                        let size = (cell_h * 0.5).round();
+                        let gx = rect.x + PAD + (number_w + self.marker_cols() as f32) * cell_w
+                            + (cell_w * 1.5 - size) / 2.0;
+                        let gy = y + (cell_h - size) / 2.0;
+                        let sq = Rect { x: gx, y: gy, w: size, h: size };
+                        if m.filled {
+                            push_clipped_quad(prims, sq, clip, m.color);
+                        } else {
+                            for r in [
+                                Rect { h: 1.5, ..sq },
+                                Rect { y: gy + size - 1.5, h: 1.5, ..sq },
+                                Rect { w: 1.5, ..sq },
+                                Rect { x: gx + size - 1.5, w: 1.5, ..sq },
+                            ] {
+                                push_clipped_quad(prims, r, clip, m.color);
+                            }
+                        }
                     }
                 }
 

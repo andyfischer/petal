@@ -93,6 +93,10 @@
       "arg": null
     },
     {
+      "action": "ToggleDragMode",
+      "arg": null
+    },
+    {
       "action": "GoToFile",
       "arg": null
     },

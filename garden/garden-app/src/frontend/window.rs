@@ -17,7 +17,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy}
 use winit::keyboard::{Key as WinitKey, NamedKey, PhysicalKey};
 use winit::window::{Window, WindowId};
 
-use crate::app::{App, Capture, ClickCounter, KeyPhase, Mods, Raster, Viewport};
+use crate::app::{App, Capture, ClickCounter, KeyPhase, Mods, PointerCursor, Raster, Viewport};
 use crate::clipboard::{SharedClipboard, SystemClipboard};
 use crate::debug::{self, DebugRequest, RequestSink};
 use crate::frontend::menu::MenuBar;
@@ -118,6 +118,8 @@ struct WindowState {
     /// the poll cadence so an occluded window never spins the redraw loop (the
     /// overnight 20 GB leak). `None` once a frame presents successfully.
     retry_surface_at: Option<Instant>,
+    /// The pointer shape last set on the window (drag mode's grab hand).
+    cursor: PointerCursor,
 }
 
 impl WindowState {
@@ -163,6 +165,16 @@ impl WindowState {
     fn sync(&mut self) {
         if self.app.take_redraw() {
             self.window.request_redraw();
+        }
+        let cursor = self.app.pointer_cursor();
+        if cursor != self.cursor {
+            self.cursor = cursor;
+            self.window.set_cursor(match cursor {
+                PointerCursor::Default => winit::window::CursorIcon::Default,
+                PointerCursor::Grab => winit::window::CursorIcon::Grab,
+                PointerCursor::Grabbing => winit::window::CursorIcon::Grabbing,
+                PointerCursor::Pointer => winit::window::CursorIcon::Pointer,
+            });
         }
     }
 }
@@ -263,6 +275,7 @@ impl Handler {
                 clicks: ClickCounter::new(),
                 held_keys: HashMap::new(),
                 retry_surface_at: None,
+                cursor: PointerCursor::Default,
             },
         );
     }

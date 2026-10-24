@@ -410,7 +410,12 @@ pub struct DragCandidate {
     /// Where it is, for display: `None` for the sketch itself.
     pub file: Option<std::path::PathBuf>,
     pub value: f64,
+    /// A `config let` knob or a `tunable(...)` literal: preferred.
     pub config: bool,
+    /// Wrapped in `tunable(...)` (also counted in `config`).
+    pub tunable: bool,
+    /// Wrapped in `rigid(...)`: never moved.
+    pub rigid: bool,
     /// May the drag move it; `why_not` says why not.
     pub eligible: bool,
     pub why_not: Option<String>,
@@ -489,6 +494,47 @@ pub struct DragStart {
 /// Whether a v2 drag can pull this command: it has a position pair.
 pub fn v2_draggable(cmd: &PanelCmd) -> bool {
     native_position_args(cmd).is_some()
+}
+
+/// The axis-aligned box (`x`, `y`, `w`, `h`, panel-local) a drawn command
+/// covers, for outlining what a drag would grab. `None` for a command with
+/// no position pair ([`v2_draggable`] is false for it too). Text uses the
+/// same monospace estimate as the hit test; an arc or fan its full circle.
+pub fn cmd_bounds(cmd: &PanelCmd) -> Option<(i32, i32, i32, i32)> {
+    let around = |cx: i32, cy: i32, rx: i32, ry: i32| Some((cx - rx, cy - ry, 2 * rx, 2 * ry));
+    match cmd {
+        PanelCmd::Rect { x, y, w, h, .. }
+        | PanelCmd::RectGradient { x, y, w, h, .. }
+        | PanelCmd::RectOutline { x, y, w, h, .. }
+        | PanelCmd::Image { x, y, w, h, .. } => Some((*x, *y, *w as i32, *h as i32)),
+        PanelCmd::Circle { cx, cy, radius, .. } | PanelCmd::CircleGradient { cx, cy, radius, .. } => {
+            around(*cx, *cy, *radius, *radius)
+        }
+        PanelCmd::Ellipse { cx, cy, rx, ry, .. } | PanelCmd::EllipseOutline { cx, cy, rx, ry, .. } => {
+            around(*cx, *cy, *rx, *ry)
+        }
+        PanelCmd::Arc { cx, cy, r_out, .. } => {
+            let r = r_out.ceil() as i32;
+            around(*cx, *cy, r, r)
+        }
+        PanelCmd::Fan { cx, cy, points, .. } => {
+            let xs = points.iter().map(|p| p.0).chain([*cx]);
+            let ys = points.iter().map(|p| p.1).chain([*cy]);
+            let (x0, x1) = (xs.clone().min()?, xs.max()?);
+            let (y0, y1) = (ys.clone().min()?, ys.max()?);
+            Some((x0, y0, x1 - x0, y1 - y0))
+        }
+        PanelCmd::Line { x1, y1, x2, y2, width, .. } => {
+            let pad = ((*width).max(1) as i32 + 1) / 2 + 2;
+            let (x0, y0) = ((*x1).min(*x2) - pad, (*y1).min(*y2) - pad);
+            Some((x0, y0, (x1 - x2).abs() + 2 * pad, (y1 - y2).abs() + 2 * pad))
+        }
+        PanelCmd::Text { text, x, y, size, .. } => {
+            let w = (text.chars().count() as f64 * *size as f64 * TEXT_ADVANCE_RATIO) as i32;
+            Some((*x, *y, w, *size as i32))
+        }
+        _ => None,
+    }
 }
 
 pub(crate) fn native_position_args(cmd: &PanelCmd) -> Option<(Vec<usize>, Vec<usize>)> {
@@ -955,6 +1001,16 @@ mod tests {
             a: 255,
             radius: 0,
         }
+    }
+
+    #[test]
+    fn cmd_bounds_boxes_what_a_drag_would_grab() {
+        assert_eq!(cmd_bounds(&rect(10, 20, 30, 40)), Some((10, 20, 30, 40)));
+        assert_eq!(cmd_bounds(&circle(50, 60, 8)), Some((42, 52, 16, 16)));
+        let line = PanelCmd::Line { x1: 10, y1: 10, x2: 40, y2: 0, width: 2, r: 0, g: 0, b: 0, a: 255 };
+        let (x, y, w, h) = cmd_bounds(&line).unwrap();
+        assert!(x < 10 && y < 0 && x + w > 40 && y + h > 10, "padded around both ends");
+        assert_eq!(cmd_bounds(&PanelCmd::ClipNone), None);
     }
 
     fn circle(cx: i32, cy: i32, radius: i32) -> PanelCmd {

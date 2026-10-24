@@ -1,27 +1,27 @@
 # Programming by direct manipulation
 
-Point at something a program drew, and find the code that drew it. Then say
-what it *should* have been, and get back the edit that makes it so.
+"Programming by direct manipulation" is an approach to programming where
+you modify the program by interacting with the program's output, instead
+of working with the source code. This is a concept that has a lot
+of research behind it (TODO add references here), but it hasn't shown
+up much in mainstream languages. Petal aims to provide good support for it.
 
-That is the whole idea, and Petal supports it at the language level: any value a
-script *emits* — a draw command, a log line, a row — can be traced back to the
-call that produced it, and from there to each argument's source span and literal
-value. A host wires that into a pointer and gets an editor where the canvas is
-navigable: hover a shape, the code lights up; and with the argument information,
-drag a shape and the code can be rewritten. The second half is goal-based: the
-host states the outcome ("this argument should be 55") and the runtime answers
-with candidate source mutations ([The goal-based protocol](#the-goal-based-protocol)).
+A very simple example of this could look like:
 
-This document is the how-to. For the surrounding embedding patterns (output
-buffers, observation, bindings) see [../usage/embedding-guide.md](../usage/embedding-guide.md); the
-API reference lives in `petal::provenance` and `petal::direct_manipulation`.
+ 1. A Petal script uses a function call to draw an object to the screen.
+ 2. While the script is running, the user clicks and drags the object.
+ 3. The Petal runtime figures out how to modify the original script to move the object based on the drag.
 
-Two APIs in Petal are stated as goals. The one here is about a value a
-*running* program emitted, and answers with proposals. The other,
-`petal::goal_based_editing`, is about what a source file should say (a
-binding's value, a call), needs no run, and is described in
-[goal-based-editing.md](goal-based-editing.md). They share
-[`StaticValue`](../usage/config-files.md#staticvalue).
+And, this same approach can work in lots of situations, not just with 2D graphics.
+
+In order to make this work, the runtime needs a few things:
+
+ - High introspection and tracing and provenance, so that you can find the sources for certain values or function calls.
+ - Program differentiation (TODO - add link here) which helps backpropogate a numerical value towards a goal.
+ - Frozen state and safe replayability. When using this approach, we often need to safely re-run a program without effects and without modifying state.
+ - Source code rewriting tools that preserve formatting.
+ 
+(everything after here is AI generated)
 
 ## Contents
 
@@ -134,93 +134,6 @@ impl EmitSite {
 
 An empty chain means the runtime had nothing to attribute (or tracing was off).
 That is a legitimate answer, not an error.
-
-## Resolving: from an id to source
-
-```rust
-let call = CallSite::resolve(program, term)?;
-
-call.term;      // the term it resolved
-call.span;      // Option<SourceSpan> — where the call is written
-call.callee;    // Option<String> — "draw_circle", when the callee is nameable
-call.args;      // Vec<ArgSite>, in call order
-```
-
-Spans are Petal's own: **1-based** line and column. Hosts with 0-based editors
-convert once, at the boundary.
-
-`callee` is resolved for a static `BuiltinCall`, for a `MethodCall`, and for a
-dynamic `Call` through a named value (which is what calling an ordinary Petal
-function looks like). Module qualification is stripped, so `ui::draw_circle`
-reports as `draw_circle` — the name the user typed. A closure called in place has
-no name and reports `None`.
-
-The receiver of a method call and the callable of a dynamic call are not
-arguments, so they're skipped: `args[0]` is always the first thing written inside
-the parentheses.
-
-## Picking the right frame
-
-**This is the step that is easy to skip and wrong to skip.**
-
-The innermost call site is usually not the one a person means. In `petal-ui`
-every `draw_*` name is a *Petal function* wrapping a native, so the leaf of the
-chain is a line inside the `ui` package — true, and useless to someone looking at
-their own sketch.
-
-`pick_frame` walks outward to the innermost frame whose span belongs to the file
-you are showing:
-
-```rust
-let term = provenance::pick_frame(program, &site.chain, ENTRY_FILE)?;
-```
-
-This gets both cases right at once:
-
-| The script | What the leaf says | What `pick_frame` says |
-| --- | --- | --- |
-| `draw_circle(120, 110, 60, …)` | a line in the `ui` package | the user's line |
-| a `draw_rect` inside `fn swatch(…)` the user wrote | the `draw_rect` in `swatch` | the same — it's their file |
-
-The second row is the point: it does not blindly walk to the outermost frame. It
-stops at the first frame in the target file, which for a user-defined helper is
-the `draw_*` call inside the helper — where the shape is actually made, and what
-you would edit.
-
-When no frame is in the file, it falls back to the chain's leaf rather than
-returning nothing: an emit from library code with no user frame above it is real
-and shouldn't vanish.
-
-## Arguments, literals, and rewriting
-
-Each `ArgSite` reports not just *where* an argument is, but how safely it can be
-rewritten — which is what a drag-to-edit mode needs before it touches a file.
-
-```rust
-pub struct ArgSite {
-    pub index: usize,                 // 0-based position in the call
-    pub term: TermId,
-    pub span: Option<SourceSpan>,     // where the argument is written in the call
-    pub kind: ArgKind,
-    pub literal: Option<Literal>,
-    pub literal_term: Option<TermId>,
-    pub value: Option<StaticValue>,   // any constant type: string, bool, nil too
-}
-
-pub enum ArgKind { Literal, Binding, Computed }
-
-pub struct Literal {
-    pub value: f64,
-    pub is_int: bool,    // written as an integer — preserve it
-    pub negated: bool,   // `-5`; `value` is already negative
-}
-```
-
-Resolution is not number-only: a string, bool, or `nil` written in the call (or
-behind a binding) resolves too, reported through `value` as a
-[`StaticValue`](../usage/config-files.md#staticvalue) — the same type goal-based editing
-renders back into source. `literal` stays the numeric view, carrying the
-spelling data (`is_int`, `negated`) a live drag needs.
 
 ### The three kinds
 

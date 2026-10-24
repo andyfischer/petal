@@ -5,7 +5,8 @@ same day ([§10](#10-review-notes) lists what the review changed). M1 (the
 speculative runner) landed the same day, M2 (discovery, Jacobian, hints) and
 M3 (solver, ranking, public API) on 24 October, and M4 (Garden as M4b;
 CLI, MCP and docs as M4a) the same day, and M5 (examples ladder and
-complexity study, with six ranking and budget revisions) the same day.
+complexity study, with six ranking and budget revisions) the same day,
+followed by a code review of the whole change set that fixed five bugs.
 See [Status](#9-status) at the end, which each milestone updates when it
 lands.
 
@@ -1650,6 +1651,7 @@ with a golden test.
 | M3 solver + ranking + API | done, 2026-10-24 | `1c28a217` | `dm_v2::{solve,rank,api}`, `propose_edits_v2`, `DmSession`, `apply_edits_multi`; tests `core/tests/dm_v2_solve.rs` (27); deviations below |
 | M4 surfaces | M4a (CLI, MCP, docs) done, 2026-10-24; M4b (Garden) done, 2026-10-24 | M4a: `83cd1469`; M4b: `6da29349`, `1f565eca` | M4b: Garden drag-to-edit on v2 (`garden-script/src/panel/dm_v2.rs`, `garden-app/src/app/manip_v2.rs`); tests `garden-script/tests/dm_v2_drag.rs` (13), `tools/dm-drag-integration-test.ts`. M4a: `cli/dm_v2.rs` (`propose-edit --v2`), `run --trace-emits` keys + native args, MCP `ProposeEdit`/`TraceEmits`, docs; tests `core/tests/cli_propose_edit_v2.rs` (12), `test/vitest/petal-mcp.test.ts` (5); deviations below |
 | M5 examples + study | done, 2026-10-24 | `ccc25ce7` | `examples/direct-manipulation-v2/` (27 examples, 105 goals), harness `core-libs/petal-ui/tests/dm_v2_study.rs`, report [direct-manipulation-v2-study.md](direct-manipulation-v2-study.md) + `.json`; engine revisions in `dm_v2::{rank,api,jacobian,spec}`; deviations below |
+| Code review (post-M5) | done, 2026-10-24 | `0d6dae6e`, `08bc37cd`, `1e6f7913`, `4dea9231` | adversarial review of the whole change set; five bugs fixed, each pinned by `core/tests/dm_v2_review.rs` (7); see "Code review" below |
 
 Deviations from this plan are recorded here as they happen, with the reason.
 
@@ -2019,7 +2021,7 @@ changelog. The `--json` shape is frozen by
    changes nothing). They are merged per channel only when the baseline
    emitted as many values on that channel as the live run, and only for a
    single run without `--state-storage`.
-9. *Found, not fixed (M3 engine):* for a `Watch` goal (`--arg`) or an
+9. *Found, not fixed (M3 engine; fixed by the code review, `0d6dae6e`):* for a `Watch` goal (`--arg`) or an
    `EmitValue` goal (`--value`), `collateral_rows` keeps the goal emit's
    own native-argument row, which carries the same number, so every
    alternative "moves 1 other emit" (the goal itself). Ranking is mostly
@@ -2191,6 +2193,57 @@ Deviations:
    Jacobian's share on zero columns (6 of 258 external drags); geometry held
    in `state` has nothing to edit at a live checkpoint; 152 of 197 external
    entry files need another host's natives.
+
+**Code review (post-M5), 2026-10-24.** An adversarial review of everything
+since `c9eb67b7`: effect leaks, live-state and cache mutation, determinism,
+span splicing, formatting, solver edge cases, v1 parity. Fixed, each with a
+failing test first in `core/tests/dm_v2_review.rs`:
+
+1. *A verified edit that computes something else once written* (`0d6dae6e`).
+   A literal receiving a method call (`5.map_range(...)`) that went negative
+   was written `-2.map_range(...)`, which parses as `-(2.map_range(...))`.
+   `needs_parens` now also wraps a literal followed by `.` or `[`.
+2. *A value or watched goal counted as its own collateral* (`0d6dae6e`; M4a
+   deviation 9). `Jacobian::drop_goal_aliases` drops a collateral row on the
+   goal's emit with the goal's baseline value and the goal's derivative in
+   every column (a real collateral row on the same emit stays).
+3. *Previews without parentheses* (`08bc37cd`). `DmSession::preview`
+   rendered `x - -10` and `-2.f()`; it applies the same neighbour rule now
+   (without the parse check, which needs the Env).
+4. *Default tolerances computed from a NaN target* (`1e6f7913`). A session
+   opened before its targets are known (Garden's drag, the CLI's `--by`) got
+   `1e-6` whatever the target; `finish` recomputes the default tolerances
+   from the real targets (`--by` on 183 now gives `1.794118`, not
+   `1.794117647`).
+5. *`--arg k` on a name or a parameter never readable* (`4dea9231`). The
+   argument's term is a `Copy` copy propagation removed, so no instruction
+   wrote it and every such goal failed with "the baseline run has no
+   number" (`push_output(s, x)`, `emit(v)`). The speculative VM now also
+   notes a call term's watched inputs from the call instruction's operands
+   just before the call runs (`Vm::spec_watch_call_args`, hooked path only).
+
+Checked and found sound: forks are isolated contexts (heap, RNG, outputs);
+the Env trace, observations, profile and static audit are swapped out and
+the effect audit is never fed by the spec gate; memo is off and statics are
+dropped on every fork; `slot_literals` only ever meets `LoadConst` (the only
+lowering of a `Constant` term), and a hot reload of the written edit into
+the same Env after a proposal runs exactly as the edited program from
+scratch (`reload_after_propose_matches_fresh_run`); edits splice by
+character offsets in every surface (core, CLI, Garden's
+`apply_rewrites_to`), including non-ASCII imported modules; prelude and
+package literals are never edited; the CLI rejects `--pick 0`, NaN/inf
+targets and flag-looking selector values.
+
+Left as open issues (not fixed): a best-effort (unverified) alternative
+whose rounding made it worse keeps the unrounded value
+(`1251.5532326870916`); a scientific literal (`1e3`) is respelled
+`2500.0`; every speculative run deep-clones the checkpoint's heap
+(`fork_execution`), which is the dominant cost for a panel with a large
+heap; an emitted value is converted to `ObsValue` up to depth 5 × 256 per
+level, which a deeply nested emitted tree could make expensive; screening
+can lose a float/int pair whose probes cancel exactly (`1000.0 + n`: the
+float steps by `+1.0`, the int by `-1`); `rigid` at a place the baseline
+never reached (or with a non-portable answer) passes its argument through.
 
 ---
 

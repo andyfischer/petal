@@ -749,9 +749,9 @@ function extractCanvas(): {
       addCanvasFn(reg.name, reg.fnName, "drawing", drawFiles);
     }
   }
-  // Input + timing: register_input.
+  // Input + timing: register_input_module (register_input wraps it).
   for (const reg of parseNativeRegistrations(
-    extractBlock(inputSource, /pub fn register_input\s*\(/),
+    extractBlock(inputSource, /pub fn register_input_module\s*\(/),
   )) {
     addCanvasFn(reg.name, reg.fnName, "input", [
       { file: "core-libs/petal-ui/src/input.rs", source: inputSource },

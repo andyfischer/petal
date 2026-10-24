@@ -137,6 +137,50 @@ impl Jacobian {
     pub fn col_of(&self, param: usize) -> Option<usize> {
         self.params.iter().position(|&p| p == param)
     }
+
+    /// Drop the collateral rows that are a goal under another name, given
+    /// every row's baseline value `base`: a goal on an emit's value or on a
+    /// watched term reads the same number as one of that emit's raw native
+    /// arguments (`push_output(s, v)`'s `v`), and that row is the goal, not
+    /// something else the edit moves. A row is dropped when it is on the
+    /// goal's emit, has the goal's baseline value and the goal's derivative
+    /// in every column; `base` is filtered alongside.
+    pub fn drop_goal_aliases(&mut self, base: &mut Vec<Option<f64>>) {
+        let n = self.params.len();
+        let same = |a: f64, b: f64| (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1e-12);
+        let key_of = |o: &Observable| match o {
+            Observable::EmitArg { .. } => None,
+            Observable::EmitValue { key, .. } => Some(*key),
+            Observable::Watch { at, .. } => Some(*at),
+        };
+        let keep: Vec<bool> = (0..self.rows.len())
+            .map(|r| {
+                if r < self.goal_rows {
+                    return true;
+                }
+                let Observable::EmitArg { key, .. } = &self.rows[r] else { return true };
+                !(0..self.goal_rows).any(|g| {
+                    key_of(&self.rows[g]) == Some(*key)
+                        && matches!((base.get(r), base.get(g)), (Some(Some(a)), Some(Some(b))) if same(*a, *b))
+                        && (0..n).all(|c| same(self.get(r, c), self.get(g, c)))
+                })
+            })
+            .collect();
+        if keep.iter().all(|k| *k) {
+            return;
+        }
+        let mut d = Vec::with_capacity(self.d.len());
+        for (r, row) in self.d.chunks(n.max(1)).enumerate().take(self.rows.len()) {
+            if keep[r] {
+                d.extend_from_slice(&row[..n]);
+            }
+        }
+        let mut k = keep.iter();
+        self.rows.retain(|_| *k.next().unwrap());
+        let mut k = keep.iter();
+        base.retain(|_| *k.next().unwrap_or(&true));
+        self.d = d;
+    }
 }
 
 /// The collateral rows of a baseline (§2.3): every numeric raw native

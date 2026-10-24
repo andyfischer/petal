@@ -386,6 +386,8 @@ struct ParamText {
     text: String,
     /// The first non-blank character before it.
     prev: Option<char>,
+    /// The first non-blank character after it.
+    next: Option<char>,
     function: Option<String>,
     path: Option<PathBuf>,
 }
@@ -670,7 +672,10 @@ impl DmSession {
         self.diag.measured = jac.params.len();
         self.diag.budget_exhausted |= jac.budget_exhausted;
         self.budget.max_runs = full_budget;
-        self.base_rows = spec.baseline().read_all(&jac.rows);
+        let mut jac = jac;
+        let mut base_rows = spec.baseline().read_all(&jac.rows);
+        jac.drop_goal_aliases(&mut base_rows);
+        self.base_rows = base_rows;
 
         // Columns.
         let params = &self.params;
@@ -1465,12 +1470,13 @@ fn param_text(program: &Program, p: &Param) -> ParamText {
     let (s, e) = (p.span.start.offset as usize, p.span.end.offset as usize);
     let text: String = src.get(s.min(src.len())..e.min(src.len())).map(|c| c.iter().collect()).unwrap_or_default();
     let prev = src[..s.min(src.len())].iter().rev().find(|c| !c.is_whitespace()).copied();
+    let next = src[e.min(src.len())..].iter().find(|c| !c.is_whitespace()).copied();
     let function = p.function.and_then(|f| program.functions.get(f.0 as usize)).and_then(|d| d.name.clone()).map(|n| {
         let n = crate::program::base_fn_name(&n).to_string();
         n.rsplit("::").next().unwrap_or(&n).to_string()
     });
     let path = file.and_then(|f| f.origin.clone()).filter(|o| !o.to_string_lossy().starts_with('<'));
-    ParamText { text, prev, function, path }
+    ParamText { text, prev, next, function, path }
 }
 
 /// `v` written the way `p` was (§2.4.4): an int stays an int when whole; a
@@ -1487,10 +1493,11 @@ fn render(p: &Param, t: &ParamText, v: f64) -> (String, bool) {
 }
 
 /// Whether a negative replacement for the non-negated literal `p` must be
-/// parenthesized: it would read `x - -3` (or `x + -3`), or the file would
-/// not parse with it.
+/// parenthesized: it would read `x - -3` (or `x + -3`), a postfix operator
+/// follows it (`5.f()` as `-2.f()` is `-(2.f())`, and `5[i]` likewise), or
+/// the file would not parse with it.
 fn needs_parens(env: &Env, pid: crate::program::ProgramId, p: &Param, t: &ParamText, text: &str) -> bool {
-    if matches!(t.prev, Some('-' | '+')) {
+    if matches!(t.prev, Some('-' | '+')) || matches!(t.next, Some('.' | '[')) {
         return true;
     }
     let Some(program) = env.get_program(pid) else { return false };

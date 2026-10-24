@@ -8,10 +8,9 @@ Cheesecake engine (`~/cheesecake`), whose thirteen games were migrated to
 explicit imports and `petal.toml` packages.
 
 The short version: the system does what the docs say almost everywhere, and
-the Cheesecake migration needed no script changes. Seven issues are open,
-listed below with a repro each. Issue 2 (a malformed `petal.toml` was
-silently ignored by `run` and `check`) was fixed on 2026-10-11 and removed;
-the other numbers are kept.
+the Cheesecake migration needed no script changes. Issues 2 and 3 were fixed (2026-10-11, 2026-10-13) and removed; the other
+numbers are kept. Issues 1, 4, 5 and 6 were re-checked on 2026-10-23 and
+still reproduce.
 
 ## Open issues
 
@@ -49,37 +48,6 @@ different modules; module-system.md does not mention the limit.
   `<package>/color`. Every Cheesecake game has one, so none is affected.
 - Knock-on: `petal fix-imports` abandons every import it would add to such a
   file ("adding import … would not compile … left as it was").
-
-### 3. `check` misses a qualified call to a private or missing export
-
-**Fixed 2026-10-13**: the deferred error of the call form had no source
-position, so the name scan skipped it. `check` now reports it as an error
-at the callee, `run` does not start, and the message carries line and
-column. The text below is the finding as it was.
-
-Severity: medium. A run/check disagreement.
-
-```petal ignore
-// hud.ptl
-fn hidden() 1 end
-
-// main.ptl
-import ./hud
-print("before")
-print(hud.hidden())
-```
-
-`check` exits 0. `run` prints `before` and then fails with
-`module 'hud' has no export 'hidden' (declarations are private unless marked
-`pub`)`, with no line, column or snippet. The value form (`hud.nope` with no
-call) *is* caught by `check`, with a location; only the call form slips
-through. The same holds for a name the module does not declare at all, and
-through a facade.
-
-module-system.md does say a qualified access "fails when it runs", but
-`check` has what it needs to flag it, and the runtime error should carry a
-location. Code that qualifies every cross-module call — which is how the
-Cheesecake games are written — gets no static check on those calls today.
 
 ### 4. An `import` nested in a block or function is silently ignored
 
@@ -179,11 +147,6 @@ imports `ui`, and paths that used pre-rename directory names.
 
 Still open:
 
-- module-system.md uses the real package name `bloom` in samples with exports
-  it does not have (`import bloom/menu: open, close`, `bloom.open()`; the
-  real names are `menu_open`, `menu_close`). The fences are `ignore`-tagged,
-  but a reader who pastes them gets "has no export 'open'". A made-up package
-  name would avoid it.
 - `test/vitest/doc-snippets.test.ts` covers only `docs/`, and with
   `check --lenient`. Fences in `examples/**/README.md`, `garden/docs`,
   `core-runtime` and `integrations` are untested, which is how the two stale
@@ -197,59 +160,6 @@ Still open:
   `import preview` "did not give a module" because `preview` is also a
   prelude function. A qualifier outranks a prelude value since 1739d5c, so
   the note is probably obsolete.
-- Broken links unrelated to modules:
-  `docs/tasks/declarative-effect-refactoring.md` does not exist;
-  `docs/README.md:23` links `examples/README.md` where `../examples/README.md`
-  is meant.
 
-## What was verified to work
-
-With the stock CLI, `check` and `run` agreeing:
-
-- **Import forms and qualifiers:** all three forms, `as`, a selective import
-  binding no qualifier, the bare-qualifier error, a module exporting its own
-  name, a local declaration taking the name back.
-- **Lookup tiers:** file over selective over plain over prelude; the
-  hides-a-builtin warning once per name; `core.len`.
-- **Ambiguity:** an error only at bare use, pinning, importer-shadows-imported
-  in either import order, one declaration by two routes, arity merging.
-- **Paths and identity:** `./`, `../`, nesting, the bare-sibling message,
-  cycles including the entry file; one load and one `var` cell for a module
-  reached by two relative paths or by `./x` and `pkg/x`.
-- **Facades:** whole and selective `pub import`, chains, privacy not widened,
-  the re-export cycle.
-- **Classes, vars, overloads:** cross-module methods, the duplicate class
-  error, read-only exported `var` and the `get` rule, mixed `pub` overloads.
-- **Packages:** the `src/` default and `modules =`, path dependencies,
-  `[requires]` (reported by `check`, refused by `run`), `-I`, `PETAL_PATH`,
-  `vendor/`, the bundled packages, and `init` / `add` / `remove` / `install`
-  / `vendor` / `packages` / `bundle`.
-- **`fix-imports`:** every row of the migration table except git
-  dependencies, `--check`, `--diff`, idempotence, the ignore comment.
-- **`fmt`** rewrites `export` to `pub`, as documented.
-
-In this repository: every non-fixture `.ptl` passes `petal check` and
-`fix-imports --check` (the eight that fail are the aspirational-syntax samples
-and the two glsl shader fixtures); the doc snippet test passes 350 of 350;
-the module-related cargo suites (`host_interfaces`, `manifest`, `modules`,
-`native_decl`, `native_fn`, `packages`) and 14 vitest suites pass.
-
-In Cheesecake:
-
-- All 261 scripts pass `petal check` apart from the exceptions its AGENTS.md
-  lists, and `fix-imports --check` wants no changes.
-- All 223 scripts under `games/` and `docs/` run headless for 90 frames with
-  no script error; the full ctest suite passes, 337 of 337.
-- Through the engine: a loose multi-file game with no `petal.toml`, a
-  packaged game with a path dependency and `src/` modules (`pkg/hud` and
-  `./src/hud` are one module), an unmet `[requires]` refused before any line
-  runs, a manifest whose dependency path does not exist (harmless, since the
-  engine registers `cheesecake` in memory — the browser build relies on
-  this), ambiguity errors, and an old-style script migrated with
-  `fix-imports -I engine/script/packages`.
-- Because of issue 3, the 9,037 qualified `module.name` uses in the games
-  were scanned by script against each module's `pub` names: none points at a
-  private or missing name.
-- The one `petal check` warning in the repository was a real bug unrelated to
-  modules: a continuation line starting with `-` in `games/moses/cam.ptl`
-  dropped the drag-pan term (fixed in Cheesecake af3ff22).
+The list of what was verified to work (import forms, lookup tiers, packages,
+the Cheesecake migration) is in `git show b0dfccc7:docs/tasks/module-system-followup.md`.

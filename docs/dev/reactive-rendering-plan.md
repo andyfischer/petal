@@ -129,7 +129,7 @@ end
 ```
 
 The syntax and its state keying have shipped
-([state-loop-keys.md](../tasks/state-loop-keys.md)): a keyed iteration's
+([inline-state.md, Keyed loops](../features/inline-state.md#keyed-loops)): a keyed iteration's
 path part is `Key(hash(t.id))`, so its state and its memo scope follow the
 item. What follows is the incremental part, which is still to do.
 

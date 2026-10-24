@@ -73,7 +73,7 @@ which is relative and so has none of these problems.
 
 ### 2.2a Keyed loops
 
-`for x in xs key k do` (task: [state-loop-keys.md](../tasks/state-loop-keys.md)).
+`for x in xs key k do` (user docs: [inline-state.md, Keyed loops](../features/inline-state.md#keyed-loops)).
 The decisions:
 
 - **Relative, not absolute.** The key replaces the loop's own path part and

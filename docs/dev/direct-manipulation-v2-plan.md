@@ -3,7 +3,8 @@
 Status: design, 23 October 2026, revised after an adversarial review the
 same day ([§10](#10-review-notes) lists what the review changed). M1 (the
 speculative runner) landed the same day, M2 (discovery, Jacobian, hints) and
-M3 (solver, ranking, public API) on 24 October; M4 and M5 are not started.
+M3 (solver, ranking, public API) on 24 October, and M4 (Garden as M4b;
+CLI, MCP and docs as M4a) the same day; M5 is in progress.
 See [Status](#9-status) at the end, which each milestone updates when it
 lands.
 
@@ -1646,7 +1647,7 @@ with a golden test.
 | M1 speculative runner | done, 2026-10-23 | `07e81adf` | `dm_v2::{spec,observe}`, `vm/spec.rs`, `env/spec_run.rs`; tests `core/tests/dm_v2_spec.rs` (24), `core-libs/petal-ui/tests/dm_v2_spec.rs` (2); deviations below |
 | M2 discovery + Jacobian + hints | done, 2026-10-24 | `43ee2820` | `dm_v2::{params,hints,jacobian}`, `builtins/hints.rs`, `lint/dm_hints.rs`; tests `core/tests/dm_v2_jacobian.rs` (17), `core-libs/petal-ui/tests/dm_v2_params.rs` (1); deviations below |
 | M3 solver + ranking + API | done, 2026-10-24 | `1c28a217` | `dm_v2::{solve,rank,api}`, `propose_edits_v2`, `DmSession`, `apply_edits_multi`; tests `core/tests/dm_v2_solve.rs` (27); deviations below |
-| M4 surfaces | M4b (Garden) done, 2026-10-24 | M4b: `6da29349`, `1f565eca` | M4b: Garden drag-to-edit on v2 (`garden-script/src/panel/dm_v2.rs`, `garden-app/src/app/manip_v2.rs`); tests `garden-script/tests/dm_v2_drag.rs` (13), `tools/dm-drag-integration-test.ts`; deviations below |
+| M4 surfaces | M4a (CLI, MCP, docs) done, 2026-10-24; M4b (Garden) done, 2026-10-24 | M4a: `83cd1469`; M4b: `6da29349`, `1f565eca` | M4b: Garden drag-to-edit on v2 (`garden-script/src/panel/dm_v2.rs`, `garden-app/src/app/manip_v2.rs`); tests `garden-script/tests/dm_v2_drag.rs` (13), `tools/dm-drag-integration-test.ts`. M4a: `cli/dm_v2.rs` (`propose-edit --v2`), `run --trace-emits` keys + native args, MCP `ProposeEdit`/`TraceEmits`, docs; tests `core/tests/cli_propose_edit_v2.rs` (12), `test/vitest/petal-mcp.test.ts` (5); deviations below |
 | M5 examples + study | not started | | |
 
 Deviations from this plan are recorded here as they happen, with the reason.
@@ -1966,6 +1967,69 @@ Deviations:
     (`6.7`); where v1 has a single answer, it is v2's top one; and
     `ConfigStrict` returns exactly v1's set on a program with a `config
     let`. v2 also proposes literals v1 misses (the `10` of `10 + w * 2`).
+
+**M4a (CLI, MCP, docs), 2026-10-24.** What landed: `petal propose-edit
+--v2` (§4.2) with `--arg`/`--native-arg`/`--value`, `--field`, `--to`/`--by`,
+`--allow`/`--deny`, `--alternatives`, `--explain`, `--tol`, `--max-runs`,
+`--max-screen`, `--allow-respell`, `--seed`, `--config-strict` and `--apply
+[--pick N]`; `run --trace-emits` reports each emit's `key` and
+`native_args`; the MCP `ProposeEdit` takes the same options and `TraceEmits`
+a seed (§4.3); the CLI reference, the MCP page, the user page
+`features/direct-manipulation.md` (rewritten for v2: what can be edited, what
+cannot receive feedback, the sliding scale, hints, client disambiguation,
+how speculative runs stay safe, limits, the agent workflow) and the
+changelog. The `--json` shape is frozen by
+`core/tests/cli_propose_edit_v2.rs::json_shape_is_frozen` and written out in
+`docs/CLI.md`. Deviations:
+
+1. *Where the shared CLI code lives.* §4.2 put the parser and JSON rendering
+   in `dm_v2::cli`; they are in `petal::cli::dm_v2` (`core/src/cli/dm_v2.rs`,
+   public): `V2Parser::flag` (leaves the index on the last token it
+   consumed, the core CLI's convention, so a host binary can mix in its own
+   flags), `V2Opts`, `propose(env, host, pid, checkpoint, opts, entry_path)
+   -> serde_json::Value`, `print_text`, `baseline_emits`, `parse_selector`.
+   `petal-ui-run propose-edit` (frames, size, scenario, host data, its
+   `SpecHost`) is not in M4a: it is a ~40-line caller of these, left to
+   whoever owns `petal-ui-run` (M5's study needs it).
+2. *Engine selection.* v1 stays the default for v1-shaped requests (`--arg`
+   + `--to` on one emit), as §4.2 says until M5. Any v2-only flag, or goals on
+   more than one emit, selects v2 without `--v2`; `--v1` with a v2-only flag
+   is an error naming the flag. The MCP tool follows the same rule.
+3. *Extra goal forms.* `--value` (an `EmitValue` observable), `--field <path>`
+   (a `PathStep` path) and several emits per request (each goal binds to the
+   `--channel`/`--emit` given last before it) were not in §4.2; they map
+   one-to-one onto §6.1's `Observable`.
+4. *`--configurable`/`--static` under v2* are plain `--allow`/`--deny` of a
+   `Variable` selector (an exact allow), not an "allow with preference":
+   `ParamFilter` has no preference tier, and `config let` / `tunable` already
+   carry the soft preference. `--config-strict` gives v1's rule.
+5. *`--tol`* is one tolerance for every goal, not per goal.
+6. *JSON names.* The MCP result is the CLI's JSON unchanged (snake_case:
+   `max_error`, not §4.3's `maxError`), so there is one shape. `max_error` is
+   in units of each goal's tolerance (as `solve::max_error` computes it);
+   `misses` was added with the same distance in the goal's units, and the
+   text output prints that. EmitKey hashes are 64-bit hex strings (JSON
+   numbers are not exact past 2^53).
+7. *`--apply` under v2* refuses an unverified alternative, including v1
+   fallback ones (a non-numeric goal); the message points at `--v1 --apply`.
+   It checks every target path before writing any file.
+8. *`run --trace-emits`* gets `key`/`native_args` from a separate
+   speculative baseline of the fresh stack, opened before the live run (it
+   changes nothing). They are merged per channel only when the baseline
+   emitted as many values on that channel as the live run, and only for a
+   single run without `--state-storage`.
+9. *Found, not fixed (M3 engine):* for a `Watch` goal (`--arg`) or an
+   `EmitValue` goal (`--value`), `collateral_rows` keeps the goal emit's
+   own native-argument row, which carries the same number, so every
+   alternative "moves 1 other emit" (the goal itself). Ranking is mostly
+   unaffected (all alternatives pay it), but the description misleads.
+   `--native-arg` goals are not affected. The fix belongs in
+   `jacobian::collateral_rows` (drop a row of the goal emit whose baseline
+   value equals the goal's baseline and whose column equals the goal's).
+10. *Docs not in M4a's files:* §4.5's updates to
+   `features/program-modification.md`, `features/time-travel.md` and
+   `usage/ffi.md` were not made (M4a owned the CLI, MCP and user DM pages);
+   `dev/native-effects.md` was updated in M1.
 
 **M4b (Garden), 2026-10-24.** What landed (commits `6da29349`, `1f565eca`):
 Petal IDE's Cmd-drag solves through function calls with the v2 engine.

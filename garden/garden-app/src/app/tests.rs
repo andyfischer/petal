@@ -5329,3 +5329,21 @@ fn hints_marked_by_mouse_steer_the_next_drag() {
     plain_drag(&mut app, canvas, (100.0, 60.0), (12.0, 0.0));
     assert_eq!(app.panes[editor].view.buffer.line(2), "let x0 = 52", "{:?}", app.status_note);
 }
+
+/// A hint toggled while the canvas is paused: the canvas still runs the
+/// older text, so a drag catches it up first rather than splicing the old
+/// spans into the new text (which wrote `100gid(80)`).
+#[test]
+fn a_drag_after_an_edit_while_paused_uses_the_edited_text() {
+    let (mut app, editor, canvas, _dir) = traced_pair("petal-ide-drag-paused-hint", ROW_SKETCH);
+    app.run_command(crate::command_line::Command::DragMode("on".into()));
+    app.toggle_play();
+    assert!(app.paused);
+    app.focus = editor;
+    app.panes[editor].view.cursor = garden_core::Point::new(1, 17);
+    app.run_command(crate::command_line::Command::DragHint("rigid".into()));
+    assert_eq!(app.panes[editor].view.buffer.line(1), "config let gap = rigid(30)");
+    plain_drag(&mut app, canvas, (100.0, 60.0), (12.0, 0.0));
+    assert_eq!(app.panes[editor].view.buffer.line(1), "config let gap = rigid(30)");
+    assert_eq!(app.panes[editor].view.buffer.line(2), "let x0 = 52", "{:?}", app.status_note);
+}

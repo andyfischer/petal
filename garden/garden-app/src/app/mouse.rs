@@ -239,6 +239,11 @@ impl App {
             .as_ref()
             .and_then(|s| s.path().parent().map(|p| p.to_path_buf()));
 
+        // The canvas may be running older text than the editor shows (an edit
+        // made while paused, or one the next tick has not picked up yet, like
+        // a hint just toggled): catch it up first, or the drag's spans would
+        // land on the wrong characters.
+        self.catch_up_panel(idx, script_dir.as_deref());
         let pane = &self.panes[idx];
         let Some(panel) = pane.panel.as_ref() else {
             return false;
@@ -305,6 +310,33 @@ impl App {
         });
         self.drag = Some(Drag::Manipulate);
         true
+    }
+
+    /// Recompile traced panel `idx` from its paired editor's buffer and run
+    /// one frame, when it is behind it (see `PanelView::source_behind`).
+    fn catch_up_panel(&mut self, idx: usize, script_dir: Option<&std::path::Path>) {
+        let Some(panel) = self.panes.get(idx).and_then(|p| p.panel.as_ref()) else {
+            return;
+        };
+        if !panel.traces_origins() {
+            return;
+        }
+        let path = super::panes::resolve_script(panel.origin_script(), script_dir);
+        let Some(editor) = self.editor_pane_for(&path) else {
+            return;
+        };
+        let text = self.panes[editor].view.buffer.text();
+        let now = std::time::Instant::now();
+        let behind = self.panes[idx]
+            .panel
+            .as_ref()
+            .is_some_and(|p| p.source_behind(&text));
+        if behind {
+            if let Some(panel) = self.panes[idx].panel.as_mut() {
+                panel.reload_from_editor(&text, now);
+            }
+            self.tick_panel_at(idx);
+        }
     }
 
     /// The editor pane showing `path` — the pairing rule the live binding, the

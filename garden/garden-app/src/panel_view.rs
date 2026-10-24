@@ -1579,6 +1579,13 @@ impl PanelView {
         self.reload_error.is_some()
     }
 
+    /// Whether the running program was compiled from text other than
+    /// `buffer` (the paired editor's): an edit not yet picked up, say while
+    /// paused. A drag must not map this frame's spans onto that text.
+    pub fn source_behind(&self, buffer: &str) -> bool {
+        self.live_source_hash != Some(hash_text(buffer))
+    }
+
     /// Record the compile error of a panel whose script did not load at all, so
     /// the pane reports it (banner, `status_error`, `/state`) while running the
     /// empty [`PanelHost::stub`] program. Cleared like any other reload error —

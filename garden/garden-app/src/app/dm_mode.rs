@@ -40,7 +40,7 @@ use super::App;
 pub(in crate::app) const OFF_CANVAS: i32 = -100_000;
 
 /// Candidate rows the result panel lists before it says "and N more".
-const MAX_CANDIDATE_ROWS: usize = 8;
+const MAX_CANDIDATE_ROWS: usize = 10;
 
 /// The pointer's shape, for the windowed frontend to show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

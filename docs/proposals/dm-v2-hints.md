@@ -68,7 +68,7 @@ There is no existing way to write cases 1 to 3.
 
 | Call | Returns | Static meaning |
 |---|---|---|
-| `tunable(x)` | `x` | the literal `x` resolves to gets DM weight 0.25 (preferred) |
+| `tunable(x)` | `x` | the literal `x` resolves to gets the DM knob weight 0.25 (preferred; the same tier as `config let` since 24 October 2026) |
 | `tunable(x, min, max)` / `tunable(x, min:, max:, step:)` | `x` | the same, with a box constraint. `step` rounds the final value to a multiple of `step` from `min` (or from 0) |
 | `rigid(x)` | `x` | the literal `x` resolves to is never a DM target. In a speculative run the call returns its baseline value, so feedback cannot pass through it |
 
@@ -103,8 +103,11 @@ There is no existing way to write cases 1 to 3.
 
 ### Interaction with `config let`
 
-A literal under both `config let` and `tunable` gets the lower weight
-(tunable) and the range. `config let` keeps everything it does today
+A literal under both `config let` and `tunable` gets the range. Its weight
+is the knob weight either mark gives alone: the two were separate tiers
+(0.25 for `tunable`, 0.5 for `config let`) until 24 October 2026, when they
+merged ([config-let-vs-tunable.md](config-let-vs-tunable.md), open question
+2). `config let` keeps everything it does today
 (`static_bindings`, sliders, `set_config_value`). The guide recommends:
 **`config let` for top-level knobs, `tunable` for ranges and for literals
 inside functions or calls, and `rigid` to forbid.**

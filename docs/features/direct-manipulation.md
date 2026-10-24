@@ -192,9 +192,11 @@ with a range. To give a setting a range, combine them:
 `config let radius = tunable(40, 10, 80)`. Hosts then see the setting `radius`
 with the value `40` and the range 10..80, and a drag keeps within it
 ([Giving a setting a range](../syntax/config-let.md#giving-a-setting-a-range)).
-The two preference tiers stay as they were: a `tunable` literal costs 0.25 and
-a `config let` literal 0.5, and one written both ways takes the `tunable`
-tier.
+For direct manipulation the two marks are one tier: a `config let` literal, a
+`tunable` literal and one written both ways are all knobs and weigh the same,
+so adding `tunable` to a setting only adds the range. The `config` selector
+(alias `knob`), `--config-strict` and the `[config]` tag on an alternative all
+mean "a knob" in this sense.
 
 ### Telling Petal which numbers may move
 

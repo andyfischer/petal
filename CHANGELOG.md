@@ -604,11 +604,11 @@ way, for code written against an earlier checkout.
   each candidate literal nudged, and solves for the literals that put an
   emitted value at a goal, through function calls, loops, records and math.
   Every alternative is verified by a run of the rounded edit and ranked
-  (`config let` and `tunable` first, then by how little else moves). Goals
+  (knobs first, then by how little else moves). Goals
   are `--arg`, `--native-arg` (the emitting native's raw argument) or
   `--value`, with `--field`, `--to` or `--by`, on one emit or several;
   `--allow`/`--deny` say which literals may move (`name`, `line:N`,
-  `fn:NAME`, `config`, …); `--explain` prints the candidate table;
+  `fn:NAME`, `config` or its alias `knob`, …); `--explain` prints the candidate table;
   `--apply --pick N` writes the chosen alternative to every file it touches;
   `--json` is a frozen shape. The seed is pinned (`--seed`, default 0) and
   echoed. The legacy v1 engine answers only with `--v1` (see "Changed").
@@ -989,6 +989,15 @@ Breaking changes made during development, newest first. For the import and
 package changes below, `petal fix-imports` does the rewriting and
 [docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
 
+- Direct manipulation v2 has one knob tier: a literal marked by `config let`
+  (including the literals of a config record or list), by `tunable(...)`, or
+  by both weighs 0.5. A `tunable` literal used to weigh 0.25, so it is no
+  longer preferred over a `config let` one; `tunable` keeps its bounds. The
+  `config` selector (`--allow`/`--deny`, MCP, Garden's `:DragAllow`) also
+  answers to `knob`, and `--config-strict`, `config_only` and the `[config]`
+  tag mean "a knob"; flags and the JSON shape are unchanged. The DM v2 study
+  is unchanged in every outcome and top edit
+  ([proposal, open question 2](docs/proposals/config-let-vs-tunable.md#open-questions)).
 - In `config let X = tunable(v, …)`, the binding path `X` now names `v`
   rather than the whole `tunable(…)` call, in `static_bindings` (`value`,
   `text`), the path edits, `pb_source_expr` / `pb_source_set`,

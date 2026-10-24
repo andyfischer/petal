@@ -156,8 +156,9 @@ identity. What hosts see is the setting, not the call:
 - Editing the number in the file (`tunable(4.0, …)` to `tunable(7.0, …)`) is a
   value patch on hot reload, as for any config literal. So is editing a
   bound.
-- Direct manipulation keeps a drag within the range and gives the literal the
-  `tunable` preference.
+- Direct manipulation keeps a drag within the range. The preference is the
+  same as without the `tunable`: `config let` and `tunable` are one knob tier,
+  so the wrapper adds the range and nothing else.
 
 The range is **advice, not a clamp**. Nothing in Petal enforces it:
 `set_config_value` and `pb_vm_set_config` accept a value outside it, as

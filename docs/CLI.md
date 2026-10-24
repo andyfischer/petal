@@ -1831,8 +1831,8 @@ Goals:
 Which literals may move (v2):
 
 - `--allow <sel>` / `--deny <sel>` — selectors: a binding name, `line:N`,
-  `fn:NAME` (literals in that function's body), `config` (`config let` and
-  `tunable` literals), `user` (all user code). These lift a default
+  `fn:NAME` (literals in that function's body), `config` (alias `knob`: every
+  `config let` and `tunable` literal, one tier), `user` (all user code). These lift a default
   exclusion: `state-init`, `structural` (a literal that only picks a branch or
   a loop bound), `rng` (one that only feeds a random draw), `path-deps`, and
   `lib` (library literals are screened for the report, never edited).
@@ -1841,9 +1841,9 @@ Which literals may move (v2):
   default), `--allow <var>` / `--deny <var>`; under `--v1`, a variable to
   prefer / never edit.
 - `--config-strict` — v1's rule: once the program has a `config let` (or a
-  `tunable` that marks a literal), only config and `tunable` literals move
-  when they can. Without it, config and `tunable`
-  literals are preferred by cost, and the rest are still offered.
+  `tunable` that marks a literal), only knobs (`config let` and `tunable`
+  literals) move when they can. Without it, knobs are preferred by cost (one
+  weight for both marks, or both together), and the rest are still offered.
 
 Other options:
 
@@ -1891,6 +1891,12 @@ fields are only ever added):
   explain: [line, ...] | null,
   applied: { pick, files } | null }
 ```
+
+`config_only` and a change's `config` mean a knob: a `config let` or
+`tunable` literal, which DM v2 treats as one tier (the text output tags such
+an alternative `[config]`). A candidate's `config` is the `config let` marker
+alone and its `hint` says whether it is `tunable`, so a client can show which
+marker a number carries; its `weight` is the same for either.
 
 `max_error` is in units of each goal's tolerance (at most 1 means the goal
 is met); `misses` is the same distance in the goal's own units. `verified`

@@ -812,8 +812,7 @@ Excluded by default, and included when the client allows them:
 
 | Kind | `d_i` |
 |---|---|
-| `tunable(...)` | 0.25 |
-| `config let` | 0.5 |
+| a knob: `config let` (any literal in its data), `tunable(...)`, or both | 0.5 |
 | literal written in the goal's own user-frame call | 0.75 |
 | `let` binding at top level of the entry file | 1.0 |
 | literal in a user function body or a default parameter, entry file | 1.5 |
@@ -822,14 +821,21 @@ Excluded by default, and included when the client allows them:
 | `through_state` (feedback through state from earlier frames: the frozen-state slope covers one frame only) | ×4, and `stateful: true` on the alternative |
 | clock- or input-coupled (§2.5.4) | ×4 |
 
+The two marks were separate tiers until 24 October 2026 (`tunable` 0.25,
+`config let` 0.5, both together 0.25). They are one tier now
+(`rank::KNOB_WEIGHT`, `Param::is_knob`), so marking a literal twice changes
+nothing; `tunable` keeps its bounds, and only the preference merged. The
+study measured 0.25 and 0.5 for the merged tier and they tied on outcomes;
+0.5 changed no run count (§9, "One knob tier").
+
 #### 2.5.3 Alternatives
 
 The candidate subsets are:
 1. every single parameter (for one goal) or pair of parameters (for two
    goals) among the top 12 columns by `|J_g| / d_i`, where the subset can
    reach the goals (rank of `J_g[:, S]` = number of goals);
-2. a "config-only" subset, if any config or tunable parameter has a nonzero
-   column;
+2. a "config-only" subset, if any knob (`config let` or `tunable`) has a
+   nonzero column;
 3. the client's allowed set, when it gave one;
 4. the full screened set (minimum-norm spread across everything).
 
@@ -865,9 +871,9 @@ max_move }`). This replaces v1's static `shared` flag with what actually
 moved, so a literal that feeds one shape ranks above one that feeds fifty.
 
 **Config preference.** v1 hard-pinned all non-config bindings once any
-`config let` existed. v2 makes this a soft preference: config and tunable
-weights are lower, and alternatives built only from them are listed first
-when they verify. The others are still returned, marked `config: false`.
+`config let` existed. v2 makes this a soft preference: knobs (`config let`
+and `tunable`, one tier) weigh less, and alternatives built only from them
+are listed first when they verify. The others are still returned, marked `config: false`.
 `propose_edits_v2` with `Prefer::ConfigStrict` reproduces the v1 behaviour.
 
 **Clock and input coupling** (late M3, droppable if the budget is tight:
@@ -1657,6 +1663,7 @@ with a golden test.
 | Final test pass | done, 2026-10-24 | `4a8d7145`, `62be2098` (+ this commit) | every suite green, study re-run (unchanged outcomes), effect audits clean, ecosystem checked; see "Final test pass" below |
 | v2 the default | done, 2026-10-24 | (this commit) | `petal propose-edit` uses v2 unless `--v1` (`cli/args.rs`); MCP `ProposeEdit` defaults to v2 (the argv carries no engine flag); hint names `tunable`/`rigid` accepted; tests `core/tests/cli_propose_edit_v2.rs`, `test/vitest/petal-mcp.test.ts` updated; see "v2 the default" below |
 | Garden drag mode (M4c) | done, 2026-10-24 | `58144b0d`, `43eea4ff`, `35c7ef95`, `8c9c32cb` (+ this commit) | Petal IDE drag mode (`:DragMode`, toolbar Drag, Cmd+Shift+D): modifier-free drags, the drag result panel (alternatives, candidates with state, session chips), `tunable`/`rigid` toggled by mouse as source rewrites (`garden-app/src/dm_hints.rs`), Garden `:DragEngine auto` = v2 for every shape; examples `garden/examples/panels/dm-v2/` (7); tests `dm_hints` (12), 5 `garden-app` tests, `the_drag_mode_examples_solve`, `garden/tools/dm-mode-integration-test.ts` (36 checks); see "Garden drag mode" below |
+| One knob tier | done, 2026-10-24 | (this commit) | `config let` and `tunable` share one weight, 0.5 (`rank::KNOB_WEIGHT`, `Param::is_knob`); the `config` selector gains the alias `knob`; study re-run with 0.25 and 0.5 (same outcomes; 0.5 changes no run count); test `dm_v2_solve::config_and_tunable_are_one_tier`; see "One knob tier" below |
 
 Deviations from this plan are recorded here as they happen, with the reason.
 
@@ -2367,6 +2374,46 @@ up this change. `~/petal-creative` and `sample-apps` have no reference.
    text. The press now recompiles the canvas from the buffer first
    (`PanelView::source_behind`); this predates drag mode (any Cmd-drag after a
    paused edit).
+
+**One knob tier, 2026-10-24.** The owner reversed open question 2 of
+[config-let-vs-tunable.md](../proposals/config-let-vs-tunable.md): a literal
+marked by `config let` (including the literals of a config record or list),
+by `tunable(...)`, or by both now weighs the same in §2.5.2, so the ecosystem
+has one notion of a knob. What changed:
+
+1. `Param::is_knob()` is the one test, used by `rank::param_weight`
+   (`KNOB_WEIGHT`), `ParamSelector::ConfigOnly`, the config-only subsets,
+   `Prefer::ConfigStrict`'s pinning, and `ParamChange::config` (hence
+   `Alternative::config_only` and the CLI's `[config]` tag). Most of these
+   already treated the two marks alike; the weight was the only split.
+   `tunable` keeps its bounds as box constraints.
+2. The selector `config` (CLI `--allow`/`--deny`, MCP, Garden
+   `:DragAllow`/`:DragDeny`) gains the alias `knob`. Nothing is renamed:
+   `config`, `--config-strict`, `Prefer::ConfigStrict`, `config_only` and
+   the JSON shape stay, and now mean "a knob". A candidate's `config` field
+   still says whether the literal is a `config let` (with `hint` saying
+   whether it is `tunable`), so Garden's chips still show which marker a
+   number has.
+3. The value was chosen by the study (§7 of the study doc, external copies
+   from a fresh `rsync`):
+
+   | Weights | Ladder ok | Top verified | Median runs | Total runs | External verified (re-run ok) | External runs |
+   |---|---:|---:|---:|---:|---:|---:|
+   | before: `tunable` 0.25, `config let` 0.5 | 91/105 | 99 | 20 | 2,274 | 240/258 (240) | 16,535 |
+   | one tier at 0.25 | 91/105 | 99 | 21 | 2,279 | 240/258 (240) | 16,535 |
+   | one tier at 0.5 | 91/105 | 99 | 20 | 2,274 | 240/258 (240) | 16,535 |
+
+   Both values left every outcome and every top edit as it was. 0.25 cost
+   five more runs on `a01-rand`, whose knobs are both `config let` and so
+   got cheaper (`star-right` 23 → 26, its third alternative now `200→202,
+   160→178` for `200→203, 160→177`; `star-pair` 20 → 22). 0.5 changed no run count anywhere; only the
+   trailing digits of two unverified lower-ranked alternatives of
+   `l07b`'s `shrink-clamped` (an xfail) moved. So the tier is 0.5: the
+   result that does best, and the smaller change (only `tunable` literals
+   move, and the gap to a literal in the goal's own call, 0.75, stays).
+4. No `dm-goal` expectation changed. `l07b` no longer relies on `tunable`
+   being cheaper: `shrink` still wins `taller` and `rightmost-out` on the
+   size of the change (its comment says so now).
 
 ---
 

@@ -1,7 +1,8 @@
 # Proposal: replace `config let` with `tunable`?
 
 Status: accepted, implemented 24 October 2026 (design E, with the
-conservative defaults for the open questions; see
+conservative defaults for open questions 3 and 4; open question 2 was
+reversed the same day and the DM weights merged into one knob tier; see
 [Implementation notes](#implementation-notes-24-october-2026) for what was
 built and where it deviates from the sketch). This answers the question "Can
 we get rid of the `config` keyword and just use `tunable` instead? This would
@@ -252,7 +253,7 @@ is `tunable(v, …)` addresses `v`, so `SPEED` means `SPEED[0]`. Bounds are
 
 **7. DM weights. Open, not decided here.** One option is to merge "config" and
 "tunable" into one 0.25 tier, so that marking something twice changes
-nothing. See open question 2.
+nothing. See open question 2. (Later decided: merged, at 0.5.)
 
 Nothing in the parser, AST, IR shape, bytecode or keyword list changes.
 
@@ -692,9 +693,25 @@ Decisions taken at implementation (24 October 2026). The owner accepted E
 (question 1). Questions 2 to 4 were not decided, so the implementation takes
 the conservative default for each, and any of them can still be changed:
 
-- **2: kept the two tiers** (0.25 for `tunable`, 0.5 for `config let`; a
-  literal marked both ways takes 0.25). No study re-run was needed, and the
-  DM v2 study ladder passes unchanged.
+- **2: merged into one knob tier** (reversed by the owner on 24 October
+  2026; the implementation first kept the two tiers, 0.25 for `tunable` and
+  0.5 for `config let`, with 0.25 for a literal marked both ways). A literal
+  marked by `config let`, by `tunable` or by both now weighs 0.5
+  (`rank::KNOB_WEIGHT`, `Param::is_knob`); `tunable` keeps its bounds. The
+  selector `config` gains the alias `knob`, and `--config-strict`,
+  `config_only` and the `[config]` tag mean "a knob". The DM v2 study was
+  re-run for both candidate values:
+
+  | Weights | Ladder ok | Top verified | Median runs | Total runs | External verified | External runs |
+  |---|---:|---:|---:|---:|---:|---:|
+  | before (0.25 / 0.5) | 91/105 | 99 | 20 | 2,274 | 240/258 | 16,535 |
+  | one tier, 0.25 | 91/105 | 99 | 21 | 2,279 | 240/258 | 16,535 |
+  | one tier, 0.5 | 91/105 | 99 | 20 | 2,274 | 240/258 | 16,535 |
+
+  Neither changed an outcome or a top edit. 0.25 cost five runs on
+  `a01-rand`; 0.5 changed no run count, so it was chosen. `l07b` did not in
+  fact need `tunable` to be cheaper: `shrink` wins on the size of the change.
+  See the DM v2 plan, §9 "One knob tier".
 - **3: no clamping.** `set_config_value` and `pb_vm_set_config` accept a
   value outside the declared range; the range is reported (`range`) and the
   docs say that a host wanting a hard limit clamps. This keeps the soft (UI)
@@ -707,7 +724,7 @@ The questions as they were put:
 1. **Owner:** accept E, or prefer removal (A/B) despite the costs listed? The
    strongest argument for removal is above.
 2. **Owner:** merge the DM weights of `config let` (0.5) and `tunable` (0.25)
-   into one tier? Then `config let x = tunable(v)` without bounds would
+   into one tier? (Answered: yes, at 0.5; see above.) Then `config let x = tunable(v)` without bounds would
    change nothing for DM. The cost is re-running the DM v2 study, whose
    rankings use both tiers (l07b relies on `tunable` being tried first).
 3. **Owner:** should `set_config_value` and `pb_vm_set_config` clamp to a

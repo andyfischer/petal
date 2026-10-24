@@ -360,8 +360,9 @@ debug build.
 **Choosing what moves.** A drag can usually be answered several ways
 (widen the gap, or move the origin), so the answer comes ranked:
 
-- **`config let` is the strong hint.** A binding declared `config let` (or a
-  literal wrapped in `tunable(...)`) is preferred over the others, so a sketch
+- **Knobs are the strong hint.** A binding declared `config let` and a
+  literal wrapped in `tunable(...)` are knobs, one tier: either mark (or both)
+  makes a number preferred over the others by the same amount, so a sketch
   that names its knobs gets those moved. Other numbers still move when no
   knob can do the job.
 - **The status bar names the edit and the alternatives**: `set gap to 36
@@ -373,9 +374,9 @@ debug build.
 - **`:DragAllow NAME …`** restricts every following drag to those numbers,
   exactly; **`:DragDeny NAME …`** rules numbers out. A selector is a binding
   name (`gap`), `line:N` (any number on that line, 1-based), `fn:NAME` (the
-  numbers in that function's body), or `config` (every number in a
-  `config let`, including the fields of a record or the items of a list
-  it holds, and every `tunable(...)` number). With no argument each
+  numbers in that function's body), or `config` (alias `knob`: every
+  knob, meaning every number in a `config let`, including the fields of a
+  record or the items of a list it holds, and every `tunable(...)` number). With no argument each
   clears. While either is set, every drag uses the solved engine.
 - Numbers in libraries (the `ui` prelude, packages) never move; nor do the
   ones that feed `random()`, a loop's bounds or a comparison, or that are
@@ -452,7 +453,8 @@ shows the answer:
   a colored chip (`free`, `tunable`, `rigid`, `config` for a `config let`
   knob, `fixed` for one that cannot move, with the reason: library code, a
   loop bound, denied), its current value, line, and which axes it moves the
-  shape on. The ones the written alternative changed say `written`.
+  shape on. `tunable` and `config` name the marker the number has; the drag
+  weighs them the same. The ones the written alternative changed say `written`.
 - **Session**: the `:DragAllow` / `:DragDeny` selectors in force. Each number's
   `only` / `never` chips add it to (or take it off) the allow / deny list for
   the following drags, with no source change; `clear` empties both. A drag

@@ -4,12 +4,13 @@ Notable changes to the Petal language, the `petal` CLI, the standard libraries
 and the host integrations. Garden has its own releases (`garden-v*` tags) and
 is not tracked here.
 
-Petal has not had a tagged release yet, so everything so far sits under
-"Unreleased". When a release is cut, rename that heading to the version and
-date, and start a new "Unreleased" above it. See
-[docs/dev/release-checklist.md](docs/dev/release-checklist.md).
+Changes not yet released sit under "Unreleased". When a release is cut,
+rename that heading to the version and date, and start a new "Unreleased"
+above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ## Unreleased
+
+## 0.1.0 - 2026-10-23
 
 What the first release contains, written from the git history (January to
 October 2026). The "Changed" section lists the breaking changes made along the

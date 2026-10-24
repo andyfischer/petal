@@ -83,6 +83,7 @@ mod builtin_names;
 mod casts;
 mod compound;
 mod dead_alias;
+mod dm_hints;
 mod export_to_pub;
 mod field_set;
 mod repeat;
@@ -98,6 +99,7 @@ use builtin_names::{plan_reimplement_reports, plan_shadow_reports};
 use casts::plan_cast_fixes;
 use compound::plan_compound_fixes;
 use dead_alias::plan_alias_fixes;
+use dm_hints::plan_hint_reports;
 use export_to_pub::plan_export_fixes;
 use field_set::plan_field_set_fixes;
 use typed::{plan_int_division, plan_neg_zero_fixes};
@@ -151,6 +153,9 @@ pub const DEAD_ALIAS: &str = "dead-alias";
 pub const SHADOWS_BUILTIN: &str = "shadows-builtin";
 pub const REIMPLEMENTS_BUILTIN: &str = "reimplements-builtin";
 pub const INT_DIVISION: &str = "int-division";
+pub const DM_HINT_NOT_LITERAL: &str = crate::dm_v2::hints::NOT_LITERAL;
+pub const DM_HINT_BOUNDS: &str = crate::dm_v2::hints::BOUNDS;
+pub const DM_HINT_STATE_INIT: &str = "dm-hint-state-init";
 
 /// Every rule, in the order it runs.
 pub const RULES: &[RuleInfo] = &[
@@ -218,6 +223,24 @@ pub const RULES: &[RuleInfo] = &[
     RuleInfo {
         name: REIMPLEMENTS_BUILTIN,
         summary: "a `fn` that only forwards its arguments to a builtin",
+        opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: DM_HINT_NOT_LITERAL,
+        summary: "`tunable(e)` on a computed `e` marks nothing for direct manipulation",
+        opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: DM_HINT_BOUNDS,
+        summary: "a `tunable` bound that is not a literal, or a `min` above the `max`",
+        opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: DM_HINT_STATE_INIT,
+        summary: "`state x = tunable(…)`: a drag cannot move a running state's initial value",
         opt_in: false,
         fixes: Fixes::None,
     },
@@ -564,6 +587,10 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     let (_, stmts) = reparse(&p.text)?;
     p.apply(SHADOWS_BUILTIN, plan_shadow_reports(&stmts));
     p.apply(REIMPLEMENTS_BUILTIN, plan_reimplement_reports(&stmts));
+    let hints = plan_hint_reports(&stmts);
+    p.apply(DM_HINT_NOT_LITERAL, hints.not_literal);
+    p.apply(DM_HINT_BOUNDS, hints.bounds);
+    p.apply(DM_HINT_STATE_INIT, hints.state_init);
 
     let (chars, stmts) = reparse(&p.text)?;
     let exports_to_pub = p.apply(PREFER_PUB, plan_export_fixes(&stmts, &chars)?);

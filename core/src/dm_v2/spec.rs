@@ -421,6 +421,7 @@ pub struct SpecSession {
     baseline: SpecRun,
     rng_table: HashMap<RngKey, u64>,
     host_table: HashMap<(u32, u64), Option<Portable>>,
+    rigid_table: HashMap<(u64, u64, u32), Option<Portable>>,
     runs: usize,
 }
 
@@ -449,6 +450,7 @@ impl SpecSession {
             baseline: SpecRun::failed(RunError::Runtime("no baseline yet".into())),
             rng_table: HashMap::new(),
             host_table: HashMap::new(),
+            rigid_table: HashMap::new(),
             runs: 0,
         };
         if let Err(e) = session.slot(env, params) {
@@ -489,9 +491,11 @@ impl SpecSession {
         let first = self.exec(env, host, &Overrides::none(), record, cap);
         let first = Self::baseline_ok(first)?;
         let (rng, hosts) = (std::mem::take(&mut self.rng_table), std::mem::take(&mut self.host_table));
+        let rigid = std::mem::take(&mut self.rigid_table);
         let second = self.exec(env, host, &Overrides::none(), record, cap);
         self.rng_table = rng;
         self.host_table = hosts;
+        self.rigid_table = rigid;
         let second = Self::baseline_ok(second)?;
         if let Some(first_difference) = first.first_difference(&second) {
             return Err(SpecError::Nondeterministic { first_difference });
@@ -670,6 +674,7 @@ impl SpecSession {
         if mode.phase == ReplayPhase::Replay {
             hooks.tap.rng_table = std::mem::take(&mut self.rng_table);
             hooks.host_table = std::mem::take(&mut self.host_table);
+            hooks.rigid_table = std::mem::take(&mut self.rigid_table);
         }
         Ok(hooks)
     }
@@ -722,6 +727,7 @@ impl SpecSession {
         // later runs answer from).
         self.rng_table = std::mem::take(&mut hooks.tap.rng_table);
         self.host_table = std::mem::take(&mut hooks.host_table);
+        self.rigid_table = std::mem::take(&mut hooks.rigid_table);
         let error = if let Some(class) = hooks.unsafe_hit.take() {
             Some(RunError::Unsafe(class))
         } else {

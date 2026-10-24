@@ -543,6 +543,23 @@ impl<'a> Vm<'a> {
             None
         };
         let spec = self.spec.as_deref_mut().expect("spec run");
+        // `rigid(x)` is a feedback barrier: every run after the baseline gets
+        // the baseline's answer at the same place, whatever `x` is now.
+        let rigid_key = if natives.hint_rigid == Some(nid) {
+            let slot = spec.rigid_occ.entry((chain_h, path_hash)).or_insert(0);
+            let occ = *slot;
+            *slot += 1;
+            Some((chain_h, path_hash, occ))
+        } else {
+            None
+        };
+        if let Some(key) = rigid_key
+            && spec.host_phase == Some(ReplayPhase::Replay)
+            && let Some(Some(answer)) = spec.rigid_table.get(&key)
+        {
+            let answer = answer.clone();
+            return Ok(answer.materialize(self.heap));
+        }
         if let Some(key) = host_key
             && spec.host_phase == Some(ReplayPhase::Replay)
         {
@@ -586,6 +603,11 @@ impl<'a> Vm<'a> {
             && spec.host_phase == Some(ReplayPhase::Record)
         {
             spec.host_table.insert(key, Portable::from_value(result, self.heap));
+        }
+        if let Some(key) = rigid_key
+            && spec.host_phase == Some(ReplayPhase::Record)
+        {
+            spec.rigid_table.insert(key, Portable::from_value(result, self.heap));
         }
         Ok(result)
     }

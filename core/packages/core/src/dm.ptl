@@ -1,0 +1,11 @@
+// Package `core` — Direct-manipulation hints (core/src/builtins/hints.rs,
+// docs/proposals/dm-v2-hints.md).
+//
+// Both return their first argument unchanged. Tools read them from the
+// program: `tunable` marks the literal `value` resolves to as a preferred
+// target for a drag, optionally with a range and a step; `rigid` marks it as
+// never moving, and stops feedback from passing through the call.
+// See docs/Builtins.md (Direct-Manipulation Hints).
+
+pub native fn tunable(value, min?: num, max?: num, step?: num)
+pub native fn rigid(value)

@@ -262,13 +262,26 @@ fn resolve_arg(program: &Program, index: usize, arg: TermId) -> ArgSite {
 /// The term an identity op forwards from, or `None` if this op isn't one.
 /// `Phi` is deliberately *not* followed: its value depends on control flow, so
 /// the literal reached through one is not the value this call saw.
+///
+/// The direct-manipulation hint `tunable(x, …)` is the identity on `x`, so it
+/// is followed too, and a drag of `draw(tunable(40))` edits the `40`
+/// (docs/proposals/dm-v2-hints.md). `rigid(x)` is not: it says the literal
+/// must not move, and v1 refusing the computed argument is what that means.
 pub(crate) fn alias_target(program: &Program, id: TermId) -> Option<TermId> {
     let t = program.terms.get(id.0 as usize)?;
     match t.op {
         TermOp::Copy | TermOp::StateInit => t.inputs.first().copied(),
+        TermOp::BuiltinCall(name)
+            if string_constant(program, name).as_deref() == Some(TUNABLE) =>
+        {
+            t.inputs.first().copied()
+        }
         _ => None,
     }
 }
+
+/// The name of the `tunable` hint builtin.
+const TUNABLE: &str = "tunable";
 
 /// The constant `id` denotes — of any type, unwrapping a unary minus on a
 /// number — or `None` when `id` is not a constant. The generic counterpart of
@@ -507,6 +520,25 @@ mod tests {
         let lit = site.args[0].literal.expect("a literal");
         assert_eq!(lit.value, -7.0);
         assert!(lit.negated);
+    }
+
+    /// `tunable(x)` is the identity, so a literal under it is still the
+    /// literal the call saw; `rigid(x)` is a barrier and stays computed.
+    #[test]
+    fn looks_through_tunable_but_not_rigid() {
+        let (env, pid) = compile("let r = tunable(30, 0, 50)\nprint(tunable(4), r, rigid(5))\n");
+        let program = env.get_program(pid).unwrap();
+        let call = program
+            .terms
+            .iter()
+            .find(|t| matches!(t.op, TermOp::BuiltinCall(c) if string_constant(program, c).as_deref() == Some("print")))
+            .expect("the print call");
+        let site = CallSite::resolve(program, call.id).expect("resolves");
+        assert_eq!(site.args[0].kind, ArgKind::Binding);
+        assert_eq!(site.args[0].literal.unwrap().value, 4.0);
+        assert_eq!(site.args[1].kind, ArgKind::Binding);
+        assert_eq!(site.args[1].literal.unwrap().value, 30.0);
+        assert_eq!(site.args[2].kind, ArgKind::Computed);
     }
 
     /// A stale id — one recorded against a program that has since been replaced

@@ -1,6 +1,9 @@
 # Proposal: `tunable` and `rigid`, direct-manipulation hints
 
-Status: proposed, 23 October 2026. Part of Direct Manipulation v2: see the
+Status: proposed, 23 October 2026; implemented 24 October 2026 (milestone M2
+of the plan: the builtins, `core/src/dm_v2/hints.rs`, the three lint rules,
+docs/Builtins.md "Direct-Manipulation Hints"). The names still await the
+owner's sign-off (open question 1). Part of Direct Manipulation v2: see the
 [plan](../dev/direct-manipulation-v2-plan.md) (§2.6 and milestone M2) and the
 [task](../tasks/direct-manipulation-v2.md).
 
@@ -147,7 +150,7 @@ No change. `config let` is still the better spelling here: it is visible to
 ```petal
 // before
 let orb = time() * 1.1
-draw_circle(cx: mark_x + cos(orb) * 11.0, cy: mark_y + sin(orb) * 11.0, radius: 2.6, ...)
+draw_circle(cx: mark_x + cos(orb) * 11.0, cy: mark_y + sin(orb) * 11.0, radius: 2.6, color: ACCENT)
 ```
 ```petal
 // after (proposed)

@@ -30,6 +30,13 @@ pub(crate) fn wall_now() -> Option<std::time::Instant> {
 }
 
 impl Env {
+    /// The natives this Env runs programs against: what direct
+    /// manipulation asks about a call (its effect row, whether `rigid` is
+    /// still the core hint).
+    pub fn native_table(&self) -> &NativeFnTable {
+        &self.native_fns
+    }
+
     /// Fork `from` into a stack ready to run one speculative frame: silent
     /// (`print` does not echo), with everything the last run derived dropped
     /// (R4: a static value built from a literal must not outlive an override

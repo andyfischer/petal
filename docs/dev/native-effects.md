@@ -23,7 +23,7 @@ table's `register`), so there is no undeclared native:
 | `pending: NativeClass` | a `Pending` argument is absorbed (`Strict`, the default), makes the call a no-op (`Effectful`, for emitters), or reaches the native (`AllowPending`, the pending inspectors) |
 | `constant` | a constant function: the same arguments give the same result for the life of the program, reading no dynamic input of any kind. Asked through `is_const()`, which is false for a row that also reads, emits or has an effect |
 | `contained` | with `effect`: the effect stays inside the execution (the print buffer, the noise seed, a counter, an output buffer, the resource table, the stack's method and enum tables), which a fork owns a copy of. A speculative run (direct manipulation v2) calls a contained native and drops what it did with the fork; it **suppresses** an effect that is not contained (answers `nil`). Off by default, so an embedder's effect is escaping until it says otherwise. Every core `effect` row is contained, and `core/tests/dm_v2_spec.rs` fails when a new one is not |
-| `no_feedback` | direct manipulation may not move this native's result through its arguments (`random`). Read by parameter discovery (DM v2 M2) |
+| `no_feedback` | direct manipulation may not move this native's result through its arguments: a literal whose every path to a dragged value goes through such a native's arguments is not offered as an edit (`through_rng`, docs/dev/direct-manipulation-v2-plan.md §2.5.1). The core sets it on `random`, `random_int`, `choose`, `noise`, `hash_int`, `hash01` and `hash_str`; any `reads(RNG)` row is treated the same way. It is the native-side twin of the `rigid` hint. Read by parameter discovery (`core/src/dm_v2/params.rs`); nothing at run time looks at it |
 
 The constructors are `PURE`, `CONST`, `EMITS`, `EFFECT`, `probe(classes)`,
 `reads(classes)`, and the builders `with_emits`, `with_effect`,
@@ -42,6 +42,7 @@ being `0`.
 | Static values | `is_const()`, through `NativeFnTable::constness`: a call is static only if its native is constant (`map`, `filter`, `reduce` and `sort` are constant when their callbacks are) | `core/src/static_classify/` |
 | Pending values | `pending`, at the native-call boundary, only when an argument is pending | `core/src/backend/bytecode/vm/native.rs` |
 | Speculative runs | `effect` and `contained` (suppress an escaping effect), `emits` (record the raw arguments), `reads(HOST_DATA)` (replay the baseline's answer), `reads(RNG)` (replay the draw by place) | `call_native_spec`, `core/src/backend/bytecode/vm/native.rs`; docs/dev/direct-manipulation-v2-plan.md §2.1.3 |
+| Parameter discovery | `no_feedback` and `reads(RNG)` (the arguments are a feedback barrier) | `core/src/dm_v2/params.rs`; plan §2.2 |
 
 The frame gate does not read rows. It reads the **activity counters**, which
 the instrumented `PetalCxt` methods move by construction: `binding`,

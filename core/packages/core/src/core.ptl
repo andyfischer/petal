@@ -6,6 +6,7 @@
 pub import ./basics
 pub import ./classes
 pub import ./collections
+pub import ./dm
 pub import ./format
 pub import ./handle
 pub import ./introspect

@@ -11,11 +11,28 @@
 //!   emitted.
 //! - [`observe`] (M1): what a run records, independent of any heap, and
 //!   [`Observable`](observe::Observable), the address of one number in it.
+//! - [`hints`] (M2): the `tunable` / `rigid` declarations, read from the IR.
+//! - [`params`] (M2): which literals may move a goal (static discovery,
+//!   eligibility, empirical screening).
+//! - [`jacobian`] (M2): finite-difference sensitivities, with each column
+//!   classified (smooth, kink, branch flip, step, discrete).
 //!
-//! v1 (`crate::direct_manipulation`) is unchanged.
+//! v1 (`crate::direct_manipulation`) is unchanged, except that its provenance
+//! looks through `tunable(x)`.
 
+pub mod hints;
+pub mod jacobian;
 pub mod observe;
+pub mod params;
 pub mod spec;
+
+pub use hints::{Hint, HintKind, Hints, read_hints};
+pub use jacobian::{ColumnQuality, FdMode, FdOptions, Jacobian, Side, collateral_rows, jacobian};
+pub use params::{
+    Anchor, CodeOrigin, Discovered, Eligibility, EligibilityContext, Param, ParamFilter,
+    ParamSelector, RunBudget, ScreenResult, anchors_for, discover_params, eligibility,
+    screen_params,
+};
 
 pub use observe::{EmitKey, LiveObservation, ObsValue, Observable, PathStep};
 pub use spec::{

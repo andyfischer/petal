@@ -160,6 +160,7 @@ const CATEGORY_TITLES: Record<string, string> = {
   output: "Output & Symbols",
   handle: "Handles",
   pending: "Async & Query Values",
+  hints: "Direct-Manipulation Hints",
   drawing: "Drawing",
   input: "Input & Timing",
 };

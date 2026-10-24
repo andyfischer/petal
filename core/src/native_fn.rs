@@ -663,6 +663,12 @@ pub struct NativeFnTable {
     pub intrinsic_enum_data: Option<NativeFnId>,
     pub intrinsic_enum_from: Option<NativeFnId>,
     pub intrinsic_enum_all: Option<NativeFnId>,
+    /// The core `tunable` and `rigid` hints (`builtins::hints`), by the ids
+    /// `register_builtins` gave them. A name a host has since registered over
+    /// resolves to another id, and is then not a hint
+    /// (`crate::dm_v2::hints`).
+    pub hint_tunable: Option<NativeFnId>,
+    pub hint_rigid: Option<NativeFnId>,
     /// `fn_info(f)` / `fn_ast(f)` (experimental): they read the closure table
     /// and the program, which no native can reach through [`PetalCxt`]. See
     /// [`crate::fn_introspect`].
@@ -693,6 +699,8 @@ impl NativeFnTable {
             intrinsic_declare_method: None,
             intrinsic_enum_data: None,
             intrinsic_enum_all: None,
+            hint_tunable: None,
+            hint_rigid: None,
             intrinsic_enum_from: None,
             intrinsic_fn_info: None,
             intrinsic_fn_ast: None,

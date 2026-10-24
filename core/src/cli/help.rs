@@ -813,6 +813,15 @@ DESCRIPTION
               a function of a package the file imports whole
        reimplements-builtin (report only)
               a fn that only forwards its arguments to a builtin
+       dm-hint-not-literal (report only)
+              tunable(e) on a computed e, which marks nothing for direct
+              manipulation
+       dm-hint-bounds (report only)
+              a tunable bound (min, max, step) that is not a literal, or a
+              min above the max
+       dm-hint-state-init (report only)
+              state x = tunable(...): a drag cannot move a running state's
+              initial value
        int-division (opt-in, report only)
               a / b on two ints, truncated, then used as a float. Opt-in
               because a row or column index scaled by a float is the same

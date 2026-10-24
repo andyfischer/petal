@@ -18,6 +18,7 @@ mod creative_coding;
 mod effects;
 mod format;
 mod handle;
+mod hints;
 mod io;
 mod json;
 mod math;
@@ -194,7 +195,7 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register(
         "random",
         math::native_random,
-        NativeEffects::reads(InputClasses::RNG),
+        NativeEffects::reads(InputClasses::RNG).no_feedback(),
     );
     table.register("type", io::native_type, NativeEffects::CONST);
     table.register("append", collections::native_append, NativeEffects::CONST);
@@ -278,7 +279,9 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // --- Noise ---
     // Pure but not CONST: it reads the per-run noise seed, which
     // `noise_seed` (or the run's seeding) changes under the same arguments.
-    table.register("noise", noise::native_noise, NativeEffects::PURE);
+    // No feedback: a literal that only moves a drag through `noise` would
+    // move it pseudo-randomly (docs/dev/direct-manipulation-v2-plan.md §2.6).
+    table.register("noise", noise::native_noise, NativeEffects::PURE.no_feedback());
     table.register(
         "noise_seed",
         noise::native_noise_seed,
@@ -289,12 +292,12 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register(
         "random_int",
         creative_coding::native_random_int,
-        NativeEffects::reads(InputClasses::RNG),
+        NativeEffects::reads(InputClasses::RNG).no_feedback(),
     );
     table.register(
         "choose",
         creative_coding::native_choose,
-        NativeEffects::reads(InputClasses::RNG),
+        NativeEffects::reads(InputClasses::RNG).no_feedback(),
     );
 
     // --- Color ---
@@ -581,9 +584,9 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("ord", collections::native_ord, NativeEffects::CONST);
     table.register("chr", collections::native_chr, NativeEffects::CONST);
     table.register("interp", math::native_interp, NativeEffects::CONST);
-    table.register("hash_int", math::native_hash_int, NativeEffects::CONST);
-    table.register("hash01", math::native_hash01, NativeEffects::CONST);
-    table.register("hash_str", math::native_hash_str, NativeEffects::CONST);
+    table.register("hash_int", math::native_hash_int, NativeEffects::CONST.no_feedback());
+    table.register("hash01", math::native_hash01, NativeEffects::CONST.no_feedback());
+    table.register("hash_str", math::native_hash_str, NativeEffects::CONST.no_feedback());
     // `{[key]: value}`: the one-field record a computed key is a spread of.
     // Emitted by the parser; nothing else calls it.
     table.register(
@@ -610,6 +613,15 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     let any_id = table.register("any", native_intrinsic_placeholder, predicate);
     let all_id = table.register("all", native_intrinsic_placeholder, predicate);
     let find_id = table.register("find", native_intrinsic_placeholder, predicate);
+
+    // Direct-manipulation hints (docs/proposals/dm-v2-hints.md): the identity
+    // on their first argument, CONST, so static values, memo and the
+    // classifier treat a call like any constant call. `crate::dm_v2::hints`
+    // reads them from the IR, and only when the name still resolves to these
+    // ids: a host that registers its own `rigid` (a rigid-body constructor)
+    // turns the hint off for that name. Append-only, like the rest.
+    table.hint_tunable = Some(table.register("tunable", hints::native_tunable, NativeEffects::CONST));
+    table.hint_rigid = Some(table.register("rigid", hints::native_rigid, NativeEffects::CONST));
 
     // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
     // ids they were just given.
@@ -695,7 +707,7 @@ mod effect_tests {
         assert!(row("__pending").effect);
         assert_eq!(row("sqrt"), NativeEffects::CONST);
         assert_eq!(row("Rect"), NativeEffects::CONST);
-        assert_eq!(row("noise"), NativeEffects::PURE);
+        assert_eq!(row("noise"), NativeEffects::PURE.no_feedback());
     }
 
     /// Every builtin whose row is `CONST`, pinned by name. A static value
@@ -810,6 +822,7 @@ mod effect_tests {
             "remove",
             "repeat",
             "reverse",
+            "rigid",
             "rotate",
             "round",
             "safe_div",
@@ -827,6 +840,7 @@ mod effect_tests {
             "tan",
             "top_indices",
             "trim",
+            "tunable",
             "type",
             "upper",
             "value_of",
@@ -854,7 +868,9 @@ mod effect_tests {
             "forEach",
         ] {
             let id = table.lookup_name(name).unwrap();
-            assert_eq!(table.effects(id), NativeEffects::PURE, "{name}");
+            // `noise` is also no-feedback, which says nothing about purity.
+            let row = NativeEffects { no_feedback: false, ..table.effects(id) };
+            assert_eq!(row, NativeEffects::PURE, "{name}");
             assert!(!table.effects(id).is_const(), "{name}");
             assert_eq!(table.constness(id), NativeConstness::Dynamic, "{name}");
         }

@@ -289,6 +289,12 @@ pub struct SpecHooks {
     pub(crate) host_phase: Option<ReplayPhase>,
     pub(crate) host_table: HashMap<(u32, u64), Option<Portable>>,
     pub(crate) new_host_keys: u32,
+    /// The baseline's answers of `rigid(x)` by place (chain hash, loop-path
+    /// hash, occurrence), replayed by every later run so that no feedback
+    /// passes through the call (§2.1.3, §2.6). `None`: the answer could not
+    /// be carried over, and the call goes through.
+    pub(crate) rigid_table: HashMap<(u64, u64, u32), Option<Portable>>,
+    pub(crate) rigid_occ: HashMap<(u64, u64), u32>,
     /// Handle classes whose methods a speculative run may call.
     pub(crate) safe_handles: HashSet<u16>,
     /// Set when the run met a handle method it may not call.

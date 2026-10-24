@@ -2,7 +2,8 @@
 
 Status: design, 23 October 2026, revised after an adversarial review the
 same day ([§10](#10-review-notes) lists what the review changed). M1 (the
-speculative runner) landed the same day; M2 to M5 are not started. See [Status](#9-status) at the end, which each
+speculative runner) landed the same day, M2 (discovery, Jacobian, hints) on
+24 October; M3 to M5 are not started. See [Status](#9-status) at the end, which each
 milestone updates when it lands.
 
 The goals are in [docs/tasks/direct-manipulation-v2.md](../tasks/direct-manipulation-v2.md).
@@ -1642,7 +1643,7 @@ with a golden test.
 | Design | done, 2026-10-23 | `c9eb67b7` | plan + [hints proposal](../proposals/dm-v2-hints.md) |
 | Design review | done, 2026-10-23 | (this commit) | adversarial review against the code, [§10](#10-review-notes) |
 | M1 speculative runner | done, 2026-10-23 | `07e81adf` | `dm_v2::{spec,observe}`, `vm/spec.rs`, `env/spec_run.rs`; tests `core/tests/dm_v2_spec.rs` (24), `core-libs/petal-ui/tests/dm_v2_spec.rs` (2); deviations below |
-| M2 discovery + Jacobian + hints | not started | | |
+| M2 discovery + Jacobian + hints | done, 2026-10-24 | (this commit) | `dm_v2::{params,hints,jacobian}`, `builtins/hints.rs`, `lint/dm_hints.rs`; tests `core/tests/dm_v2_jacobian.rs` (17), `core-libs/petal-ui/tests/dm_v2_params.rs` (1); deviations below |
 | M3 solver + ranking + API | not started | | |
 | M4 surfaces | not started | | |
 | M5 examples + study | not started | | |
@@ -1728,6 +1729,107 @@ server-monitoring 1.15 / 4.06 → 1.13 / 4.05, photo-adjust 0.60 / 2.23 →
 0.73 / 0.80. Everything is within about 1%, at the noise floor of these
 measurements; the native-call-heavy spreadsheet is the one that leans
 positive (≈ +0.5 to +1%).
+
+**M2 (discovery, Jacobian, hints), 2026-10-24.** What landed:
+`dm_v2::hints` (`read_hints`, checked against the core's `NativeFnId`s,
+`NativeFnTable::hint_tunable` / `hint_rigid`), `dm_v2::params` (`Param`,
+`CodeOrigin`, `Anchor`, `anchors_for`, `discover_params`, `ParamSelector`,
+`ParamFilter`, `eligibility`, `RunBudget`, `screen_params`), `dm_v2::jacobian`
+(`FdOptions`, `Jacobian`, `ColumnQuality`, `jacobian`, `collateral_rows`), R10
+(the `tunable` / `rigid` builtins in `builtins/hints.rs`, declared in
+`core/packages/core/src/dm.ptl`, CONST; the lints; docs/Builtins.md
+"Direct-Manipulation Hints"; `stdlib.json` regenerated with a `hints`
+category), `rigid` replay in the gate, and the no-feedback facet set on the
+core rows and read by discovery. `Env::native_table()` exposes the natives to
+discovery. R9 (`float_like` → `pub(crate)`) is left to M3, its only user.
+
+Deviations:
+
+1. *Signatures.* `read_hints(program, natives) -> Hints` (marks, bound
+   literals, hint calls, disabled names, warnings) instead of a bare map: the
+   `NativeFnId` check of §2.6 needs the table. `discover_params(program,
+   natives, hints, anchors, call_edges) -> Discovered { params, truncated }`,
+   with `anchors_for` returning `Anchor { term, chain }`: the emit's chain
+   lets the walk leave the anchor's function through the caller that really
+   called it (below). `screen_params` and `jacobian` take the `SpecHost`, as
+   every run needs it. `RunBudget::deadline` is an `Option<Instant>` (wasm has
+   no clock).
+2. *`Param` identity.* `term` is the `Constant` term (what a run overrides);
+   `value` is the value as written, sign included, and `negated` says the
+   constant holds `-value`. `Param::override_for` / `override_int` handle the
+   sign and keep an int an int.
+3. *Item 4 (`rng_cuts_path`).* "Columns of exactly 0" predates the review's
+   revision of §2.1.4: the uniform is replayed and mapped through the
+   native's current arguments, so `random_int(lo, hi)` does move with `lo`.
+   What makes the literals receive no feedback is eligibility: every path is
+   through a no-feedback argument (`through_rng`), so they are excluded before
+   screening and never measured unless the client opts in
+   (`IncludeThroughRng`). The test checks exactly that.
+4. *No-feedback rows.* Set on `random`, `random_int`, `choose`, `noise`, and
+   also `hash_int`, `hash01`, `hash_str` (deterministic pseudo-randomness;
+   moving a seed literal "moves" a shape at random). Any `reads(RNG)` row is
+   treated as no-feedback whatever it says. The scope line says "wired into
+   discovery and the gate": the gate has nothing to do with it (a
+   no-feedback native is called as usual; only `rigid` is replayed), so only
+   discovery reads it.
+5. *v1 looks through `tunable` only.* R10 said identity look-through for both
+   hints in `provenance::alias_target`. For `rigid` that would let v1 edit a
+   literal the author declared rigid, so v1 keeps refusing it as a computed
+   argument (overrides R10 for `rigid`).
+6. *Eligibility moved up from M3.* `ParamSelector`, `ParamFilter` and
+   `eligibility` (§2.5.1, §2.7) are in `params.rs`, because M2 items 11 and 12
+   test them. `Eligibility { screen, edit }` separates "measure it"
+   (`ReportLibrary` screens library literals) from "offer it". Explicit
+   selectors (`Term`, `Span`, `Variable`, `Line`, `Function`) lift the default
+   exclusions (rigid, structural, state-init, through-RNG, path deps) for what
+   they name; the broad ones (`ConfigOnly`, `AllUserCode`) do not, and the
+   `Include*` / `AllowPathDeps` modifiers lift one exclusion each. The state
+   rule uses `EligibilityContext::checkpoint_has_state`, one flag per
+   checkpoint; the per-slot check (M3 item 15) is left to M3.
+7. *The static walk.* A 0-1 BFS over (term, context, how-reached bits).
+   Context-sensitivity: entering a callee through its results at a call
+   records that call, and the callee's parameter maps back to that call's
+   arguments only; in the anchor's own frames it follows the emit's chain;
+   anywhere else, every caller (static, observed, and calls a closure is
+   handed to). A dynamic call with observed edges follows only those, and its
+   callee expression is not walked (that is what keeps 2,000 literals behind
+   `fs[k](…)` down to the one function called). Records are field-insensitive.
+   *Structural* means every path goes through a comparison, an index, a
+   `range` argument, a numeric loop's end, a branch condition, a `match`
+   subject or a loop key. Control dependence (which branch an emit is in) is
+   not followed. Visits are capped at 2·10⁶ (`Discovered::truncated`).
+8. *Distance.* Entering a callee costs 1, leaving it back through the call it
+   was entered by costs −1, leaving through the chain or an unknown caller
+   +1, and cell and state edges +1. So `2` in `draw(place(2))` is at 0 and the
+   literals in `place`'s body at 1. `in_goal_frame` is "written inside the
+   span of the goal's user-frame call" (`pick_frame` on the entry file).
+9. *Span offsets count chars, not bytes* (the `std` prelude is not ASCII).
+   Discovery reads a literal's text by chars. M1's Recompile oracle slices
+   bytes; its seed files are ASCII, so it is unaffected, but M3's
+   `apply_edits_multi` must splice by chars.
+10. *Screening* uses the standard shortcut of adaptive splitting: when the
+    first half of a group that moved does not move, the second half is known
+    to and is split without a run of its own. Item 7's program (203 eligible,
+    3 relevant) screens in 12 runs. A budget that runs out keeps everything
+    not yet screened.
+11. *Column details.* A `Step` found by escalation is taken over one more ×10
+    when that still fits under `0.1 · max(|p|, 1)`, so the secant averages over
+    at least one jump (`round(y) * 10` at `y = 20.3` gives 9.85). A `Kink`
+    column holds the central (average) slope; the one-sided slopes of the first
+    goal row are in the quality. A failed probing run makes the column
+    `Errored` (no one-sided fallback). A `BranchFlip` retries at `h/10` twice
+    and keeps the one-sided slope of the side that stayed.
+12. *Lints* are AST rules in `lint/dm_hints.rs`, report-only:
+    `dm-hint-not-literal`, `dm-hint-bounds` (a bound that is not a literal, and
+    `min > max`, which the proposal called an error; lint has no severities),
+    `dm-hint-state-init`. A name bound to a computed value is reported where
+    the hints are read (`Hints::warnings`), which sees bindings.
+13. *`rigid` replay* keys the baseline's answer by (chain hash, loop-path
+    hash, occurrence), like the random draws, and an answer that cannot be
+    carried to another heap is asked again.
+14. *Not yet used.* `Hint::Tunable`'s range and step are recorded for M3's
+    projection and rounding; proposal open question 2 (`step: 1` means stay an
+    int) is M3's to settle.
 
 ---
 

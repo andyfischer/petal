@@ -108,6 +108,12 @@
       "doc": "Test-only pending-resource builtins: `__pending`, `__resolve`, `__reject`.  These deterministically drive the resource table (no real I/O) so the pending-value semantics can be exercised in tests. Names are `__`-prefixed to read as internal. See docs/dev/pending-values-plan.md (roadmap step 1) — real fetchers arrive with `petal-query`."
     },
     {
+      "id": "hints",
+      "title": "Direct-Manipulation Hints",
+      "group": "core",
+      "doc": "Direct-manipulation hints: `tunable` and `rigid` (docs/proposals/dm-v2-hints.md, docs/dev/direct-manipulation-v2-plan.md §2.6).  Both are the identity on their first argument at run time: a dual number passes through unchanged, and the bounds of `tunable` are evaluated by the call and ignored. What they mean is static: `crate::dm_v2::hints` reads them from the IR to decide which literals a drag may move. In a speculative run the gate (`vm::native::call_native_spec`) replays the baseline's answer of `rigid`, so nothing upstream of it receives feedback through it."
+    },
+    {
       "id": "drawing",
       "title": "Drawing",
       "group": "canvas",
@@ -2159,7 +2165,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 642
+        "line": 654
       }
     },
     {
@@ -2192,7 +2198,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 642
+        "line": 654
       },
       "aliasOf": "map"
     },
@@ -2234,7 +2240,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 642
+        "line": 654
       },
       "aliasOf": "map"
     },
@@ -2268,7 +2274,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 642
+        "line": 654
       },
       "aliasOf": "map"
     },
@@ -3209,7 +3215,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 642
+        "line": 654
       },
       "aliasOf": "map"
     },
@@ -3980,7 +3986,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 642
+        "line": 654
       },
       "aliasOf": "map"
     },
@@ -4006,7 +4012,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 642
+        "line": 654
       },
       "aliasOf": "map"
     },
@@ -4647,7 +4653,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 642
+        "line": 654
       },
       "aliasOf": "map"
     },
@@ -4681,7 +4687,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 642
+        "line": 654
       },
       "aliasOf": "map"
     },
@@ -4715,9 +4721,89 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 642
+        "line": 654
       },
       "aliasOf": "map"
+    },
+    {
+      "name": "tunable",
+      "category": "hints",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [
+        {
+          "name": "value",
+          "type": "any"
+        },
+        {
+          "name": "min",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "max",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "step",
+          "type": "any",
+          "optional": true
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          },
+          {
+            "name": "min",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "max",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "step",
+            "type": "any",
+            "optional": true
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/hints.rs",
+        "line": 16
+      }
+    },
+    {
+      "name": "rigid",
+      "category": "hints",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "value",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/hints.rs",
+        "line": 27
+      }
     },
     {
       "name": "Rect",

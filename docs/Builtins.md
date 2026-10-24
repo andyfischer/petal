@@ -1971,6 +1971,77 @@ print(frozen(xs))     // true
 print(frozen(42))     // false
 ```
 
+## Direct-Manipulation Hints
+
+Direct manipulation moves a number in the source when a shape is dragged or a
+goal is set for an output: the tools re-run the program with literals nudged,
+measure how the output moves, and change the literals that get it where it
+should be, through function calls if need be
+([dev/direct-manipulation-v2-plan.md](dev/direct-manipulation-v2-plan.md)).
+Usually several literals could serve. These two builtins tell the tools which
+ones to prefer and which never to touch. Both return their first argument
+unchanged and do nothing else at run time; the tools read them from the
+program. They are global (no import).
+
+`config let` stays the spelling for a top-level knob. The hints are for
+ranges, for literals inside functions or calls, and for the negative case.
+
+### `tunable(value)` / `tunable(value, min, max)` / `tunable(value, min:, max:, step:)`
+
+Returns `value`. The literal `value` is, or the literal a name in its place is
+bound to, becomes a preferred target for direct manipulation, kept within
+`[min, max]` and to multiples of `step` when those are given. It can go at the
+definition, at a use, or on a line of its own naming a binding:
+
+```petal
+let radius = tunable(40, 10, 80)               // at the definition
+let gap = 12
+tunable(gap, min: 0, max: 40, step: 2)          // a declaration on its own line
+let dx = tunable(-5) + gap                      // at a use: only the -5 is marked
+print(radius, dx)                               // 40 7
+```
+
+Rules:
+
+- `value` must be a number literal or a name bound to one. On a computed value
+  (`tunable(a + b)`) nothing is marked, and `petal lint` reports
+  `dm-hint-not-literal`. Wrap the literal itself: `tunable(a) + b`.
+- The bounds must be number literals, and `min` must not be above `max`
+  (`dm-hint-bounds`). A computed bound is evaluated and ignored.
+- A bound is never edited itself: changing the range to reach a goal would
+  defeat it.
+- On a `state` initializer the hint cannot work, because a running program
+  keeps its state across a reload (`dm-hint-state-init`). Put the start value
+  in a `config let` and initialise the state from it.
+
+### `rigid(value)`
+
+Returns `value`. The literal `value` resolves to is never moved by direct
+manipulation, and nothing upstream of the call receives feedback through it:
+while the tools measure, the call keeps answering what it answered in the
+unmodified run. Use it for a number that has a perfectly good derivative but
+is not a layout knob, such as an animation rate:
+
+```petal
+let t = 2.0
+let angle = t * rigid(1.1)          // the rate stays; dragging moves the radius
+let radius = tunable(11.0, 4, 30)
+print(cos(angle) * radius > -12)    // true
+```
+
+On a computed value (`rigid(a + b)`) it marks no literal and is still a
+barrier: `a` and `b` can still move the output along any other path.
+
+A function of your own named `tunable` or `rigid` takes the place of the
+builtin and is not a hint. A host that registers a native named `rigid` (a
+physics engine's rigid-body constructor) turns the hint off for that name,
+and the tools say so.
+
+Natives can say the same about their own result: an effect row marked
+`no_feedback` ([dev/native-effects.md](dev/native-effects.md)) keeps literals
+that reach an output only through that native from being moved. `random`,
+`random_int`, `choose`, `noise`, `hash_int`, `hash01` and `hash_str` are.
+
 ## Host I/O
 
 Needs `import io`. These are the script's side of the channels a host reads

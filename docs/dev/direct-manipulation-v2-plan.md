@@ -1643,7 +1643,7 @@ with a golden test.
 | Design | done, 2026-10-23 | `c9eb67b7` | plan + [hints proposal](../proposals/dm-v2-hints.md) |
 | Design review | done, 2026-10-23 | (this commit) | adversarial review against the code, [§10](#10-review-notes) |
 | M1 speculative runner | done, 2026-10-23 | `07e81adf` | `dm_v2::{spec,observe}`, `vm/spec.rs`, `env/spec_run.rs`; tests `core/tests/dm_v2_spec.rs` (24), `core-libs/petal-ui/tests/dm_v2_spec.rs` (2); deviations below |
-| M2 discovery + Jacobian + hints | done, 2026-10-24 | (this commit) | `dm_v2::{params,hints,jacobian}`, `builtins/hints.rs`, `lint/dm_hints.rs`; tests `core/tests/dm_v2_jacobian.rs` (17), `core-libs/petal-ui/tests/dm_v2_params.rs` (1); deviations below |
+| M2 discovery + Jacobian + hints | done, 2026-10-24 | `43ee2820` | `dm_v2::{params,hints,jacobian}`, `builtins/hints.rs`, `lint/dm_hints.rs`; tests `core/tests/dm_v2_jacobian.rs` (17), `core-libs/petal-ui/tests/dm_v2_params.rs` (1); deviations below |
 | M3 solver + ranking + API | not started | | |
 | M4 surfaces | not started | | |
 | M5 examples + study | not started | | |

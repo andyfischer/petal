@@ -134,6 +134,13 @@ pub(super) fn handle_run(
     if trace_pending {
         env.enable_pending_trace(sid);
     }
+    // `--trace-emits` also reports each emit's `EmitKey` and the raw native
+    // arguments, from a speculative baseline of the fresh stack (it changes
+    // nothing): what `propose-edit --v2` addresses. Only for a single run with
+    // no stored state, whose emits the baseline reproduces.
+    let spec_emits = (trace_emits && opts.runs.is_none() && opts.state_storage.is_none())
+        .then(|| super::dm_v2::baseline_emits(&mut env, &mut crate::dm_v2::NoHost, sid, seed.unwrap_or(0)))
+        .flatten();
     #[allow(clippy::disallowed_methods, reason = "the CLI runs natively")]
     let run_started = std::time::Instant::now();
     let mut run_result = env.run(sid);
@@ -194,7 +201,10 @@ pub(super) fn handle_run(
     }
 
     if trace_emits {
-        let report = emit_trace_report(&env, pid);
+        let mut report = emit_trace_report(&env, pid);
+        if let Some(spec) = &spec_emits {
+            merge_spec_emits(&mut report, spec);
+        }
         if json {
             print_json(&report);
         } else {
@@ -466,6 +476,27 @@ fn emit_trace_report(env: &Env, pid: ProgramId) -> serde_json::Value {
     serde_json::json!({ "channels": channels })
 }
 
+/// Add `key` and `native_args` from the speculative baseline to each emit of
+/// the `--trace-emits` report, channel by channel, when the baseline emitted
+/// as many values on that channel as the run did (otherwise the indices
+/// might not name the same emits, and the channel is left as it was).
+fn merge_spec_emits(report: &mut serde_json::Value, spec: &[(String, serde_json::Value)]) {
+    let Some(channels) = report.get_mut("channels").and_then(|c| c.as_object_mut()) else {
+        return;
+    };
+    for (name, emits) in channels.iter_mut() {
+        let Some(emits) = emits.as_array_mut() else { continue };
+        let ours: Vec<&serde_json::Value> = spec.iter().filter(|(n, _)| n == name).map(|(_, e)| e).collect();
+        if ours.len() != emits.len() {
+            continue;
+        }
+        for (e, s) in emits.iter_mut().zip(ours) {
+            e["key"] = s["key"].clone();
+            e["native_args"] = s["native_args"].clone();
+        }
+    }
+}
+
 /// One argument of a resolved call, as the report's JSON: where it is written,
 /// how editable it is, and where an edit would land.
 fn arg_site_json(program: &Program, arg: &crate::provenance::ArgSite) -> serde_json::Value {
@@ -542,6 +573,10 @@ fn print_emit_trace_text(report: &serde_json::Value) {
                 .unwrap_or_default();
             let value = e.get("value").map(|v| v.to_string()).unwrap_or_default();
             println!("  [{}] {}{} <- {}", idx, callee, line, value);
+            if let Some(raw) = e.get("native_args").and_then(|v| v.as_array()) {
+                let raw: Vec<String> = raw.iter().map(|v| v.to_string()).collect();
+                println!("      native args: [{}]", raw.join(", "));
+            }
             for a in e
                 .get("args")
                 .and_then(|v| v.as_array())
@@ -581,6 +616,9 @@ pub(super) fn handle_propose_edit(
     };
     use crate::provenance;
 
+    if let Some(v2) = &opts.v2 {
+        return handle_propose_edit_v2(v2, source, source_input, include_dirs);
+    }
     let &ProposeEditOpts {
         json,
         emit,
@@ -589,6 +627,7 @@ pub(super) fn handle_propose_edit(
         ref goals,
         ref configurable,
         ref pinned,
+        v2: _,
     } = opts;
     let mut env = make_env(include_dirs);
     env.enable_emit_trace(true);
@@ -788,6 +827,28 @@ pub(super) fn handle_propose_edit(
         println!("Applied.");
     } else if any_ambiguous {
         println!("Narrow with --configurable <var> / --static <var>, or apply one by hand.");
+    }
+}
+
+/// `petal propose-edit --v2`: direct manipulation v2 on a fresh stack. The
+/// seed is pinned (`--seed`, else `PETAL_SEED`, else 0) and echoed, so the
+/// emit indices agree with `petal run --trace-emits --seed N`.
+fn handle_propose_edit_v2(
+    opts: &super::dm_v2::V2Opts,
+    source: &str,
+    source_input: &SourceInput,
+    include_dirs: &[PathBuf],
+) {
+    let json = opts.json;
+    let mut env = make_env(include_dirs);
+    env.set_seed(super::dm_v2::effective_seed(opts.seed));
+    let pid = load_checked_or_die(&mut env, json, false, source, source_input);
+    let sid = stack_or_die(&mut env, json, pid);
+    let entry = source_origin(source_input);
+    match super::dm_v2::propose(&mut env, &mut crate::dm_v2::NoHost, pid, sid, opts, entry) {
+        Ok(report) if json => print_json(&report),
+        Ok(report) => super::dm_v2::print_text(&report),
+        Err(e) => die(json, &e.message, e.phase),
     }
 }
 

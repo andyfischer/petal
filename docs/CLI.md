@@ -320,7 +320,12 @@ Tracing and inspection options:
   argument is a literal in the call), `binding` (a name that resolves to a
   literal elsewhere, which other calls may read) or `computed`, and `value` is
   the literal's value or `null`. `index` within a channel is the emit address
-  `propose-edit --emit` takes. This is the observing half of
+  `propose-edit --emit` takes. For a single run (no `--runs`, no
+  `--state-storage`), each emit also carries `key` (the
+  `{chain_hash, path_hash, occurrence}` that `propose-edit --v2` matches
+  emits by) and `native_args` (the raw arguments the emitting native was
+  handed), taken from a speculative baseline run that changes nothing; the
+  text form prints them as `native args: [...]`. This is the observing half of
   [`propose-edit`](#propose-edit--propose-source-edits-that-change-an-emitted-value);
   see [features/direct-manipulation.md](features/direct-manipulation.md).
 - `--trace-pending` — record pending absorptions and print the frame pending
@@ -1701,16 +1706,37 @@ there are none. With `--json`, it emits the raw report array:
 ### `propose-edit` — Propose source edits that change an emitted value
 
 ```
-petal propose-edit --channel <name> --emit <n> (--arg <k> --to <value>)...
+petal propose-edit [--v1 | --v2] --channel <name> --emit <n>
+                   ((--arg <k> | --native-arg <k> | --value) [--field <path>]
+                    (--to <value> | --by <delta>))...
+                   [--allow <sel>]... [--deny <sel>]...
                    [--configurable <var>]... [--static <var>]...
-                   [--apply] [--json] <file.ptl>
+                   [--alternatives N] [--explain] [--config-strict]
+                   [--tol T] [--max-runs N] [--max-screen N] [--allow-respell]
+                   [--seed N] [--apply [--pick N]] [--json] <file.ptl>
 ```
 
-Runs the program with emit tracing, then works backwards: given an emitted
-value, it proposes the source edits that would make argument `<k>` of the call
-that produced it evaluate to `<value>`. This is the writing half of direct
-manipulation: the host says where the user dragged something, and gets back
-the edits that mean it. See [features/direct-manipulation.md](features/direct-manipulation.md).
+Works backwards from an emitted value: given where the user dragged
+something, it proposes the source edits that would put it there. This is the
+writing half of direct manipulation. See
+[features/direct-manipulation.md](features/direct-manipulation.md).
+
+Two engines answer it:
+
+- **v1** (the default for now, or `--v1`) runs the program once with emit
+  tracing and inverts the arguments of the call that made the emit: a
+  literal, a binding, or `+ - * /` arithmetic. It proposes nothing for a value
+  that comes out of a function call.
+- **v2** (`--v2`, also chosen by any v2-only flag, or by goals on more than
+  one emit) runs the program again speculatively, with each candidate literal
+  nudged, effects suppressed and random draws replayed, and measures how the
+  goal moves. It solves through function calls, loops, records and math,
+  verifies each answer by running it, and ranks the alternatives. The plan
+  is [dev/direct-manipulation-v2-plan.md](dev/direct-manipulation-v2-plan.md).
+
+v2 becomes the default once the examples study (plan §5, M5) passes.
+
+#### v1
 
 Use `run --trace-emits` first to find the emit's address. For this file:
 
@@ -1724,43 +1750,152 @@ push_output(symbol("shapes"), x + offset)
 ```
 $ petal run --trace-emits sketch.ptl
 
-Channel 'shapes' (1 emits):
-  [0] push_output [line 3] <- 15
+Channel 'shapes' (1 emit):
+  [0] push_output [line 4] <- 15
+      native args: [0, 15]
       arg 0: computed
       arg 1: computed
 
 $ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42.5 sketch.ptl
 2 proposals:
-  1. set `x` to 37.5 (line 1)
-  2. set `offset` to 32.5 (line 2)
+  1. set `x` to 37.5 (line 2)
+  2. set `offset` to 32.5 (line 3)
 Narrow with --configurable <var> / --static <var>, or apply one by hand.
 
 $ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42.5 --static x --apply sketch.ptl
 1 proposal:
-  1. set `offset` to 32.5 (line 2)
+  1. set `offset` to 32.5 (line 3)
 Applied.
 ```
 
-Options:
+#### v2
 
-- `--channel <name>` — the output channel the emit was pushed into. Required.
-- `--emit <n>` — 0-based index of the emit within that channel. Required.
-- `--arg <k> --to <value>` — argument `<k>` (0-based) of the producing call
-  should evaluate to `<value>`, written as source text: `55`, `2.5`, `true`,
-  `hello`. At least one pair is required. Repeat the pair for a multi-goal
-  batch (one gesture changing several arguments); each `--to` binds to the
-  `--arg` before it.
-- `--configurable <var>` — a variable the host prefers to edit. Repeatable.
-- `--static <var>` — a variable that must not be edited. Repeatable.
-- `--apply` — rewrite the file in place, but only when every goal resolves to
-  exactly one proposal.
-- `--json` — emit the proposals as JSON, with exact spans and replacement
-  text: one entry per goal under `goals`, plus the flat `proposals` key when
-  there is exactly one goal.
+For this file, where the position comes out of a helper:
 
-Declaring knobs in the source with `config let` narrows proposals without
+```petal
+import io
+config let gap = 30.0
+fn place(i)
+  return 20 + i * gap
+end
+for i in range(0, 4) do
+  push_output(symbol("shapes"), place(i))
+end
+```
+
+```
+$ petal propose-edit --channel shapes --emit 2 --native-arg 1 --by 25 sketch.ptl
+engine v2 · seed 0 · 32 runs
+goal: shapes[2] native-arg 1 (push_output, line 7): 80 -> 105
+3 alternatives:
+  1. [verified, config] set `gap` to 42.5 (line 2); also moves 2 other emits
+       line 2 `gap`: 30.0 -> 42.5
+       reaches 105 · moves 2 other values (norm 1.5811) · score 1.7895
+  2. [verified] change `20` to 45 in `place` (line 4); also moves 3 other emits
+       line 4 in fn place: 20 -> 45
+       reaches 105 · moves 3 other values (norm 1.7321) · score 3.6071
+  3. ...
+Apply one with --apply --pick N; narrow with --allow/--deny; see why with --explain.
+
+$ petal propose-edit --channel shapes --emit 2 --native-arg 1 --by 25 --allow fn:place --apply sketch.ptl
+```
+
+Goals:
+
+- `--channel <name> --emit <n>` — which emit: the output channel and the
+  0-based index in it (the `index` of `run --trace-emits`). A goal binds to
+  the channel and emit given last before it, so v2 goals can address several
+  emits (a v1 request has one).
+- `--arg <k>` — argument `<k>` (0-based) of the user-file call that made the
+  emit.
+- `--native-arg <k>` (v2) — raw argument `<k>` of the native that made the
+  emit, before any conversion: a draw native truncates its coordinates to
+  ints in the command it emits, and this is the value it was handed.
+- `--value` (v2) — the emitted value itself.
+- `--field <path>` (v2) — a path into the addressed value, dot-separated,
+  numbers indexing lists: `center.0`, `points.2.x`.
+- `--to <value>` — the goal, written as source text: `55`, `2.5`, `true`,
+  `hello`. v2 answers numbers; a non-number goes to v1 (and comes back
+  unverified).
+- `--by <delta>` (v2) — the goal is the baseline value plus `<delta>`.
+
+Which literals may move (v2):
+
+- `--allow <sel>` / `--deny <sel>` — selectors: a binding name, `line:N`,
+  `fn:NAME` (literals in that function's body), `config` (`config let` and
+  `tunable` literals), `user` (all user code). These lift a default
+  exclusion: `state-init`, `structural` (a literal that only picks a branch or
+  a loop bound), `rng` (one that only feeds a random draw), `path-deps`, and
+  `lib` (library literals are screened for the report, never edited).
+  Repeatable. An `--allow` naming literals is exact: only those move.
+- `--configurable <var>` / `--static <var>` — v1's spellings: under v1, a
+  variable to prefer / never edit; under v2, `--allow <var>` / `--deny <var>`.
+- `--config-strict` — v1's rule: once the program has a `config let`, only
+  config literals move when they can. Without it, config and `tunable`
+  literals are preferred by cost, and the rest are still offered.
+
+Other options:
+
+- `--alternatives N` (v2) — up to `N` alternatives (default 3).
+- `--explain` (v2) — add the pipeline log and the candidate table: every
+  literal found, whether it was excluded and why, its measured sensitivity
+  and its cost weight.
+- `--tol T` (v2) — how close is close enough, for every goal. The default is
+  half a pixel for the raw argument of a native that emits ints, else
+  `1e-6 · max(|target|, 1)`.
+- `--max-runs N`, `--max-screen N` (v2) — the speculative-run budget
+  (default 200) and the most literals screened (default 256).
+- `--allow-respell` (v2) — let an int literal become a float (`10` → `10.5`).
+- `--seed N` (v2) — the random seed, default `PETAL_SEED`, else 0. It is
+  echoed. Pass the same `--seed` to `run --trace-emits` so both agree on which
+  emit is which when the script draws random numbers.
+- `--apply` — write the edit. v1: only when every goal resolves to exactly
+  one proposal. v2: the top alternative when it is the only one, else the
+  one `--pick N` names (1-based); it must be verified. Every file it touches
+  is written (an edit can land in an imported file).
+- `--json` — the result as JSON.
+
+v2 `--json` is one object (frozen by `core/tests/cli_propose_edit_v2.rs`;
+fields are only ever added):
+
+```
+{ engine: "v2" | "v1", seed,
+  goals: [{ channel, emit, kind: "arg"|"native_arg"|"value", index, path,
+            key: {chain_hash, path_hash, occurrence}, callee, line,
+            to, by, baseline, target, tolerance }],
+  alternatives: [{ rank, engine, verified, description, kind, score,
+                   score_parts: {edit, collateral, count, respelled, regime, rng, error},
+                   max_error, misses, achieved, predicted, iterations,
+                   config_only, stateful, regime_changed, rng_order_changed, rng_difference,
+                   changes: [{ term, file, path, line, span, binding, function, config,
+                               old, new, old_text, new_text, respelled }],
+                   edits: [{ file, path, span, new_text }],
+                   collateral: { norm, items: [{ channel, callee, line, max_move, key }] } }],
+  candidates: [{ term, file, line, span, value, is_int, binding, function, config,
+                 hint, origin, distance, in_goal_frame,
+                 flags: {through_var, through_state, state_init, through_rng, structural, hint_bound},
+                 loaded, eligible, ineligible_reason, quality, column, weight, clock_coupled }],
+  diagnostics: { runs, wall_ms, suppressed, budget_exhausted, warnings, discovered,
+                 eligible, screened, measured, truncated, subsets_predicted, subsets_verified },
+  explain: [line, ...] | null,
+  applied: { pick, files } | null }
+```
+
+`max_error` is in units of each goal's tolerance (at most 1 means the goal
+is met); `misses` is the same distance in the goal's own units. `verified`
+means the rounded edit was re-run and met the goals. `collateral` lists the
+other emitted numbers the edit moves. Spans carry 1-based line/column and
+character offsets. The EmitKey hashes are 64-bit hex strings.
+
+v1 `--json` is unchanged: one entry per goal under `goals`
+(`{arg, goal, proposals}`), plus the flat `arg`/`goal`/`proposals` keys when
+there is exactly one goal; each proposal is
+`{description, variable, shared, config, span, new_text}`.
+
+Declaring knobs in the source with `config let` narrows v1 proposals without
 flags: config bindings are treated as configurable and every other binding as
-static.
+static. v2 reads `config let`, `tunable(x, min, max, step)` and `rigid(x)`
+(see [Builtins.md](Builtins.md#direct-manipulation-hints)).
 
 ### Dump format conventions
 

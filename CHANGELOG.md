@@ -364,6 +364,12 @@ way, for code written against an earlier checkout.
 
 ### Builtins and standard library
 
+- `tunable(value, min?, max?, step?)` and `rigid(value)` are hints for direct
+  manipulation: both return `value`; `tunable` marks a literal as a preferred
+  target within a range, and `rigid` keeps a literal from moving and stops
+  feedback through the call. Lints `dm-hint-not-literal`, `dm-hint-bounds`
+  and `dm-hint-state-init` report misuse
+  ([Builtins.md](docs/Builtins.md#direct-manipulation-hints)).
 - `expect(condition, message?)`, `expect_eq(actual, expected, message?)` and
   `expect_near(actual, expected, tolerance, message?)` check something and,
   when it does not hold, record the failure (file, line, column, both values)
@@ -572,6 +578,24 @@ way, for code written against an earlier checkout.
   back to the code that produced it.
 - `petal propose-edit` and `petal apply-change` rewrite source toward a goal
   while preserving formatting and comments.
+- `petal propose-edit --v2` is direct manipulation v2: it re-runs the program
+  speculatively (escaping effects suppressed, `state` frozen, random draws
+  replayed by call site, the unmodified program run twice and compared), with
+  each candidate literal nudged, and solves for the literals that put an
+  emitted value at a goal, through function calls, loops, records and math.
+  Every alternative is verified by a run of the rounded edit and ranked
+  (`config let` and `tunable` first, then by how little else moves). Goals
+  are `--arg`, `--native-arg` (the emitting native's raw argument) or
+  `--value`, with `--field`, `--to` or `--by`, on one emit or several;
+  `--allow`/`--deny` say which literals may move (`name`, `line:N`,
+  `fn:NAME`, `config`, …); `--explain` prints the candidate table;
+  `--apply --pick N` writes the chosen alternative to every file it touches;
+  `--json` is a frozen shape. The seed is pinned (`--seed`, default 0) and
+  echoed. Any v2-only flag selects v2; otherwise v1 answers as before (and
+  `--v1` forces it). `petal run --trace-emits` now reports each emit's `key`
+  and its native's raw arguments, and the dev MCP server's `ProposeEdit` and
+  `TraceEmits` take the same options
+  ([features/direct-manipulation.md](docs/features/direct-manipulation.md)).
 - Stage dumps: `show-tokens`, `show-ast`, `show-ir`, `show-bytecode`, each with
   a JSON form. `petal ir-equal` compares two programs' IR.
 - The language server knows enums: completion after `Kind.` offers the

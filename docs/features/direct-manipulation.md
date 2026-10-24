@@ -41,26 +41,109 @@ keeps its formatting; only the numbers change.
 
 ## What can be edited
 
-When you grab something, Petal looks at how each of its values was written:
+Petal has two engines for working out the edit. The newer one (v2) can
+edit **any number the shape depends on, through any function**, as long as
+the shape moves smoothly when that number changes. The older one (v1) only
+looks at the call that drew the shape.
 
-- **A literal number in the call**, like the `100` above. The simple case:
-  Petal edits that number.
+### Through function calls (v2)
+
+Take a row of circles placed by a helper:
+
+```petal
+import ui
+
+config let gap = 30.0
+fn place(i)
+  return 20 + i * gap
+end
+for i in range(0, 4) do
+  draw_circle(place(i), 100, 10, 200, 80, 80)
+end
+```
+
+Drag the third circle 25 pixels to the right. The `x` of that
+`draw_circle` call is `place(2)`, which v1 can't see into. v2 works it out
+by experiment: it runs the program again with each number that could
+matter nudged a little (`gap` to 30.03, the `20` to 20.02, and so on) and
+watches how far the circle moves. From those measurements it knows that the
+circle moves 2 pixels per unit of `gap` and 1 pixel per unit of the `20`,
+and it solves for the values that put the circle where you dropped it.
+It then gives you a ranked list:
+
+1. set `gap` to 42.5 (it's a `config let`, so it's preferred; the other
+   circles spread out too)
+2. change the `20` in `place` to 45 (the whole row moves)
+
+Every alternative is checked by running the edited program before it is
+offered, and it's marked `verified` only if the circle really ends up where
+you dropped it. Values are rounded to nice numbers (`42.5`, not
+`42.4999`) and checked again after rounding.
+
+This works through nested helpers, loops, `map`, records, trigonometry
+and recursion (the tip of a fractal tree, say). Where the relationship
+isn't a straight line, Petal takes a few steps towards the goal,
+re-checking each time.
+
+### In the call itself (v1 and v2)
+
+Both engines handle the simple cases:
+
+- **A literal number in the call**, like the `100` above. Petal edits that
+  number.
 - **A variable**, like `radius`. Petal edits the variable's definition. If
-  other code also reads that variable, the editor can warn you, since the
-  edit will move those things too.
-- **A calculation**, like `x + offset`. Petal can still solve for a new
-  value, but there may be more than one answer: you could change `x`, or
-  you could change `offset`. Petal offers both, and the editor asks which
-  one you meant.
+  other code also reads that variable, the edit moves those things too. v2
+  measures exactly what else moves and lists it as the alternative's
+  *collateral*.
+- **A calculation**, like `x + offset`. There may be more than one answer:
+  you could change `x`, or you could change `offset`. Petal offers both, and
+  the editor asks which one you meant.
 
-Some values can't be edited by dragging, such as a value returned from a
-function call. In that case Petal makes no suggestion instead of guessing,
-and the editor can point you to the code instead.
+v1 refuses values that come out of a function call. v2 doesn't, which is
+why it will become the default once the examples study in the
+[v2 plan](../dev/direct-manipulation-v2-plan.md#m5-examples-ladder-and-complexity-study)
+passes.
 
-## Marking what's tunable with `config let`
+### What can't receive the change
 
-You can tell Petal which variables are meant to be adjusted by declaring
-them with `config let`:
+Some numbers have no useful effect on the shape, or must not be touched.
+v2 leaves these out and says why (`--explain` lists them):
+
+- **Random numbers.** A shape scattered with `random()` stays where the
+  random draw put it. The draw isn't something you can edit, and the numbers
+  that only feed it (`random_int(0, 10)`) are left alone. While v2 measures,
+  every random draw gives the same value it gave before, so the only thing
+  that changes between runs is the nudge.
+- **Numbers that only choose what runs**: a loop bound, a comparison, an
+  index. Changing them doesn't slide the shape, it makes a different shape.
+- **Library code.** Numbers in the standard library and in packages are
+  never edited.
+- **`state` initializers** in a running program. The program keeps its state
+  across a reload, so changing the initial value wouldn't move anything. On a
+  fresh start (the command line) they can be edited.
+- **Anything the client ruled out** (see below).
+
+## Making a program easy to edit
+
+How well this works depends on how the program is written. It's a sliding
+scale, not a yes-or-no:
+
+- **Most editable:** positions computed from `let` and `config let` values
+  through plain functions. Every number has a clear effect.
+- **Less editable:** values that pass through `var` cells, or that build up
+  over a loop (`set total = total + w`). They still work, but they cost a
+  little more, and more of the program moves together.
+- **Least editable:** values fed back from earlier frames through `state`,
+  and values tied to the clock. An orbit at `time() * speed` has two numbers
+  that move the planet right now, the radius and the speed, but changing the
+  speed changes the animation, not the layout. Petal notices numbers that
+  move a shape along its own motion and ranks them low.
+
+### Marking what's tunable
+
+You can tell Petal which numbers are meant to be adjusted.
+
+`config let` marks a top-level knob:
 
 ```petal
 import ui
@@ -70,11 +153,73 @@ let x = 20
 draw_circle(x + offset, 110, 60, 200, 80, 80)
 ```
 
-Once a script has any `config let` bindings, dragging prefers to change
-those and leaves ordinary `let` bindings alone. Dragging the circle above
-changes `offset`, with no question asked. Literal numbers written directly
-in a call can always be edited. `config let` doesn't change how the
-program runs. See [syntax/config-let.md](../syntax/config-let.md) for more.
+Dragging the circle above changes `offset`. With v1, once a script has any
+`config let` bindings, the other `let` bindings are left alone entirely.
+With v2, `config let` values are preferred but other numbers are still
+offered further down the list. `config let` doesn't change how the program
+runs. See [syntax/config-let.md](../syntax/config-let.md).
+
+For numbers inside functions, or with a range, use `tunable`. To say "never
+move this" use `rigid`:
+
+```petal
+let speed = 1.1
+let t = 2.0
+let angle = t * rigid(speed)            // the rate stays put
+let radius = tunable(40, 10, 80)        // preferred, kept within 10..80
+print(cos(angle) * radius)
+```
+
+Both return their value unchanged, so they cost nothing at run time. A
+`rigid(...)` value doesn't pass changes through to anything upstream of it.
+See [Builtins.md](../Builtins.md#direct-manipulation-hints).
+
+### Telling Petal which numbers may move
+
+Sometimes the first answer is the wrong one. The editor (or an AI agent)
+can say which numbers a drag may change, and let Petal work out the values:
+
+- **allow** a set: a variable name, a line (`line:12`), a function's body
+  (`fn:place`), every `config` value. Only those move. With two or more of
+  them and one goal, Petal picks the smallest change that spreads across
+  them.
+- **deny** a set: everything else may move.
+
+## How it stays safe
+
+To measure, v2 runs the program many times: usually a few dozen runs,
+at most a couple of hundred. Those runs must not do anything you'd notice,
+and two runs must differ only by the number being nudged:
+
+- **No side effects.** Anything a function does outside the program (print,
+  write a file, send a message) is skipped during the measuring runs. A
+  host's native function says whether its effect is safe to repeat (see
+  [dev/native-effects.md](../dev/native-effects.md)); anything not marked
+  safe is skipped.
+- **Frozen inputs.** `state` is read but never written, the clock, the mouse
+  and host data give the same values each run, and random numbers are
+  replayed by where they're drawn.
+- **Checked.** Petal runs the unmodified program twice first and compares
+  the results bit for bit. If they differ, something isn't frozen, and Petal
+  says so instead of guessing.
+- **Bounded.** Each run has a step limit and a time limit, so a nudge that
+  makes a loop run away is just a failed experiment.
+
+The live program is never touched. Every run starts from a copy.
+
+## Limits
+
+- Only numbers are solved for. A goal that's a string or a bool is passed
+  to v1.
+- A shape that only exists for some values (behind an `if`) can be solved
+  only while it stays on the same side of the `if`. Alternatives that
+  change which code runs are marked as such.
+- When the goal can't be reached (`sin` never goes above 1), Petal gets as
+  close as it can and marks the alternative unverified, with how far off
+  it is.
+- Integer literals stay integers unless you allow them to become decimals.
+- On the command line, the program is measured on its first run. In an
+  editor, it's measured on the frame you grabbed the shape in.
 
 ## Trying it from the command line
 
@@ -96,9 +241,11 @@ $ petal run --trace-emits sketch.ptl
 
 Channel 'shapes' (2 emits):
   [0] push_output [line 4] <- 30
+      native args: [0, 30]
       arg 0: computed
       arg 1: computed
   [1] push_output [line 5] <- "label"
+      native args: [0, {"str":"90eeeb8b2c329bfe"}]
       arg 0: computed
       arg 1: literal = "label" (edit line 5)
 ```
@@ -117,11 +264,49 @@ Narrow with --configurable <var> / --static <var>, or apply one by hand.
 Add `--static x` to rule out `x`, which leaves one proposal, and `--apply`
 to write it to the file. `--apply` only writes when there is exactly one
 choice left. To change several values at once (like x and y for a single
-drag), repeat `--arg <n> --to <value>`. All options are in the
+drag), repeat `--arg <n> --to <value>`.
+
+That's v1. Add `--v2` (or any v2 option, like `--by`, `--native-arg` or
+`--allow`) for the engine that solves through functions. `--native-arg 1`
+addresses the raw second argument of `push_output`, and `--by 12` asks for
+the value to go up by 12:
+
+```
+$ petal propose-edit --channel shapes --emit 0 --native-arg 1 --by 12 sketch.ptl
+engine v2 · seed 0 · 11 runs
+goal: shapes[0] native-arg 1 (push_output, line 4): 30 -> 42
+3 alternatives:
+  1. [verified] set `x` to 32 (line 3); moves nothing else
+       line 3 `x`: 20 -> 32
+       reaches 42 · score 0.6
+  2. [verified] set `offset` to 22 (line 2); moves nothing else
+       line 2 `offset`: 10 -> 22
+       reaches 42 · score 1.2
+  3. [verified] set `offset` to 12 (line 2), set `x` to 30 (line 3); moves nothing else
+  ...
+```
+
+`--explain` shows every number it considered and why it kept or dropped
+each one; `--allow`/`--deny` say which may move; `--apply --pick N` writes
+the alternative you chose (every file it touches). All options, and the
+`--json` shape, are in the
 [CLI reference](../CLI.md#propose-edit--propose-source-edits-that-change-an-emitted-value).
+
+## For AI agents
 
 The same tools are available to AI agents through the dev MCP server, as
 `TraceEmits` and `ProposeEdit` (see [../dev/mcp-server.md](../dev/mcp-server.md)).
+A good workflow:
+
+1. `TraceEmits` to find the shape: its channel, emit index, and the raw
+   arguments (`native_args`) of the native that drew it.
+2. `ProposeEdit` with `engine: "v2"`, the goal (`nativeArg: 0, by: 25`, or
+   `to`), and `explain: true`. Read the ranked `alternatives` and the
+   `candidates` table.
+3. If the top alternative changes the wrong thing, ask again with `allow`
+   naming the numbers you want moved (`["gap"]`, `["fn:place"]`,
+   `["line:12"]`) or `deny` for the ones to keep. Petal works out the values.
+4. Apply the `edits` of a `verified` alternative.
 
 ## Adding it to your own app
 

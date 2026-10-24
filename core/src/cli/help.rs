@@ -1514,54 +1514,112 @@ NAME
        petal-propose-edit - Propose source edits that change an emitted value
 
 SYNOPSIS
-       petal propose-edit --channel <name> --emit <n>
-                          (--arg <k> --to <value>)...
+       petal propose-edit [--v1 | --v2] --channel <name> --emit <n>
+                          ((--arg <k> | --native-arg <k> | --value)
+                           [--field <path>] (--to <value> | --by <delta>))...
+                          [--allow <sel>]... [--deny <sel>]...
                           [--configurable <var>]... [--static <var>]...
-                          [--apply] [--json] <file>
+                          [--alternatives N] [--explain] [--config-strict]
+                          [--tol T] [--max-runs N] [--max-screen N]
+                          [--allow-respell] [--seed N]
+                          [--apply [--pick N]] [--json] <file>
 
 DESCRIPTION
-       Runs the program with emit tracing, then works backwards: given an
-       emitted value, propose the source edits that would make argument <k>
-       of the call that produced it evaluate to <value>. This is the writing
-       half of direct manipulation — the host says what the user dragged
-       something to, and gets back the edits that mean it.
+       Works backwards from an emitted value: given what the user dragged
+       something to, propose the source edits that would make it so. This is
+       the writing half of direct manipulation.
 
-       Several proposals may come back when several variables feed a value.
-       Narrow them with --configurable and --static, or declare the knobs
-       in-source with 'config let'.
+       Two engines answer. v1 (the default for now, or --v1) runs the
+       program once with emit tracing and inverts the arguments of the call
+       that produced the emit: a literal, a binding, or + - * / arithmetic.
+       It proposes nothing for a value that comes out of a function call.
+
+       v2 (--v2, also chosen by any v2-only flag below) re-runs the program
+       speculatively, with each candidate literal nudged, effects suppressed
+       and random draws replayed, and measures how the goal moves. It solves
+       through function calls, loops, records and math, verifies every
+       answer by running it, and ranks the alternatives (config and tunable
+       literals first, then by how little else they move). See
+       docs/features/direct-manipulation.md.
+
+GOALS
+       --channel <name> --emit <n>
+              Which emit: the output channel (e.g. draw_commands) and the
+              0-based index in it. A goal binds to the channel and emit given
+              last before it, so v2 goals may address several emits.
+
+       --arg <k>
+              Argument <k> (0-based) of the user-file call that made the emit.
+
+       --native-arg <k>
+              (v2) Raw argument <k> of the native that made the emit, before
+              any conversion (a draw native truncates to ints; this does not).
+
+       --value
+              (v2) The emitted value itself.
+
+       --field <path>
+              (v2) A path into the addressed value: center.0, points.2.x.
+
+       --to <value>
+              The goal value, as source-ish text: 55, 2.5, true, hello. A
+              non-number is answered by v1.
+
+       --by <delta>
+              (v2) The goal is the baseline value plus <delta>.
+
+FILTERS
+       --allow <sel>, --deny <sel>
+              (v2) Which literals may move. Selectors: a binding NAME,
+              line:N, fn:NAME, config (config let and tunable), user (all user
+              code); and to lift a default exclusion: state-init, structural,
+              rng, path-deps, lib (screened for the report only). Repeatable.
+              An --allow naming literals is exact.
+
+       --configurable <var>, --static <var>
+              v1's spellings. Under v1, a variable to prefer / never edit;
+              under v2 they mean --allow <var> / --deny <var>.
+
+       --config-strict
+              (v2) v1's rule: once the program has a config let, only config
+              literals move when they can.
 
 OPTIONS
-       --channel <name>
-              The output channel the emit was pushed into, e.g.
-              draw_commands. Required.
+       --alternatives N
+              (v2) Return up to N alternatives (default 3).
 
-       --emit <n>
-              0-based index of the emit within that channel's buffer.
-              Required.
+       --explain
+              (v2) Add the pipeline log and the candidate table: every
+              literal found, why it was excluded, its measured sensitivity.
 
-       --arg <k> --to <value>
-              Argument <k> (0-based) of the producing call should evaluate
-              to <value>, written as source-ish text: 55, 2.5, true, hello.
-              At least one pair is required, and the pair repeats to state a
-              multi-goal batch — one gesture changing several arguments,
-              resolved consistently. Each --to binds to the --arg before it.
+       --tol T
+              (v2) How close is close enough, for every goal (default: half a
+              pixel for a draw native's raw argument, else 1e-6 relative).
 
-       --configurable <var>
-              A variable the host prefers to edit. Repeatable.
+       --max-runs N, --max-screen N
+              (v2) The speculative-run budget (default 200) and how many
+              literals are screened at most (default 256).
 
-       --static <var>
-              A variable that must not be edited. Repeatable.
+       --allow-respell
+              (v2) Let an int literal become a float (10 -> 10.5).
 
-       --apply
-              Rewrite the file in place, but only when every goal resolves
-              to exactly one proposal.
+       --seed N
+              (v2) The random seed (default PETAL_SEED, else 0). It is
+              echoed; pass the same --seed to run --trace-emits so the emit
+              indices agree.
+
+       --apply [--pick N]
+              Write the edit to the file in place. v1: only when every goal
+              resolves to exactly one proposal. v2: the top alternative when it
+              is the only one, else the one --pick names (1-based); it must
+              be verified. Every file it touches is written.
 
        --json
-              Emit the proposals as structured JSON.
+              Emit the result as structured JSON.
 
 {COMMON}
 SEE ALSO
-       petal help run
+       petal help run (--trace-emits)
 ";
 
 const LSP: &str = "\

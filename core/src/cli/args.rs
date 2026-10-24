@@ -341,88 +341,111 @@ fn parse_bench_args(args: &[String]) -> CliArgs {
     }
 }
 
-/// Parse args for `propose-edit`, the goal-based direct-manipulation query:
-/// `--channel <name> --emit <n>` and at least one `--arg <k> --to <value>`
-/// pair are required. The pair repeats to state a multi-goal batch (one
-/// gesture changing several arguments), each `--to` binding to the `--arg`
-/// before it. `--configurable <var>` / `--static <var>` repeat; `--apply`
-/// rewrites the file when every goal resolves to a single proposal.
+/// Parse args for `propose-edit`, the goal-based direct-manipulation query.
+///
+/// Every goal is `--channel <name> --emit <n>`, an address (`--arg <k>`, and
+/// for v2 also `--native-arg <k>` or `--value`, optionally `--field <path>`),
+/// then `--to <value>` (or, v2 only, `--by <delta>`). Goals repeat; each binds
+/// to the channel and emit given last before it.
+///
+/// Two engines answer it. v1 (the default for now, or `--v1`) inverts the
+/// arithmetic of the emitting call's arguments. v2 (`--v2`, or implied by any
+/// v2-only flag) re-runs the program speculatively and solves through
+/// function calls (docs/dev/direct-manipulation-v2-plan.md §4.2); its flags
+/// are parsed by [`super::dm_v2::V2Parser`]. Under v1, `--configurable` /
+/// `--static` name preferred / pinned variables; under v2 they are spelled
+/// `--allow` / `--deny` and take any selector.
 fn parse_propose_edit_args(args: &[String]) -> CliArgs {
-    let usage = "Usage: petal propose-edit --channel <name> --emit <n> (--arg <k> --to <value>)+ \
-                 [--configurable <var>]* [--static <var>]* [--apply] [--json] <file>";
-    let value_after = |flag: &str| format!("Expected a value after {flag}. {usage}");
-    let mut json = false;
-    let mut apply = false;
-    let mut channel: Option<String> = None;
-    let mut emit: Option<usize> = None;
-    let mut goals: Vec<(usize, String)> = Vec::new();
-    let mut pending_arg: Option<usize> = None;
+    let usage = "Usage: petal propose-edit [--v1|--v2] --channel <name> --emit <n> \
+                 ((--arg|--native-arg <k> | --value) [--field <path>] (--to <value> | --by <delta>))+ \
+                 [--allow <sel>]* [--deny <sel>]* [--configurable <var>]* [--static <var>]* \
+                 [--alternatives N] [--explain] [--apply [--pick N]] [--json] <file>";
+    let mut engine: Option<&'static str> = None;
+    let mut parser = super::dm_v2::V2Parser::new();
     let mut configurable: Vec<String> = Vec::new();
     let mut pinned: Vec<String> = Vec::new();
 
     let source = parse_source_args(args, usage, |args, i| {
         match args[*i].as_str() {
-            "--json" => json = true,
-            "--apply" => apply = true,
-            "--channel" => {
-                channel = Some(take(args, i, &value_after("--channel")).to_string());
-            }
-            "--emit" => {
-                emit = take(args, i, &value_after("--emit")).parse().ok();
-                if emit.is_none() {
-                    eprintln!("--emit takes a 0-based index. {usage}");
+            flag @ ("--v1" | "--v2") => {
+                let e = if flag == "--v1" { "v1" } else { "v2" };
+                if engine.is_some_and(|prev| prev != e) {
+                    eprintln!("--v1 and --v2 are exclusive. {usage}");
                     process::exit(1);
                 }
+                engine = Some(e);
+                return true;
             }
-            "--arg" => {
-                if pending_arg.is_some() {
-                    eprintln!("--arg given twice without a --to between them. {usage}");
-                    process::exit(1);
-                }
-                pending_arg = take(args, i, &value_after("--arg")).parse().ok();
-                if pending_arg.is_none() {
-                    eprintln!("--arg takes a 0-based index. {usage}");
-                    process::exit(1);
-                }
-            }
-            "--to" => {
-                let Some(arg_index) = pending_arg.take() else {
-                    eprintln!("--to needs an --arg before it. {usage}");
-                    process::exit(1);
-                };
-                goals.push((arg_index, take(args, i, &value_after("--to")).to_string()));
-            }
+            // v1's spellings; v2 reads them as --allow / --deny.
             "--configurable" => {
-                configurable.push(take(args, i, &value_after("--configurable")).to_string())
+                let v = take(args, i, "Expected a value after --configurable").to_string();
+                parser.opts.allow.push(v.clone());
+                configurable.push(v);
+                return true;
             }
-            "--static" => pinned.push(take(args, i, &value_after("--static")).to_string()),
-            _ => return false,
+            "--static" => {
+                let v = take(args, i, "Expected a value after --static").to_string();
+                parser.opts.deny.push(v.clone());
+                pinned.push(v);
+                return true;
+            }
+            _ => {}
         }
-        true
+        match parser.flag(args, i) {
+            Ok(consumed) => consumed,
+            Err(e) => {
+                eprintln!("{e} {usage}");
+                process::exit(1);
+            }
+        }
     });
 
-    if pending_arg.is_some() {
-        eprintln!("--arg without a matching --to. {usage}");
-        process::exit(1);
-    }
-    let (Some(channel), Some(emit)) = (channel, emit) else {
-        eprintln!("{usage}");
-        process::exit(1);
+    let v2_only = parser.v2_only.clone();
+    let multi_emit = parser.multi_emit;
+    let v2 = match parser.finish() {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("{e}. {usage}");
+            process::exit(1);
+        }
     };
-    if goals.is_empty() {
-        eprintln!("At least one --arg <k> --to <value> pair is required. {usage}");
-        process::exit(1);
+    let use_v2 = match engine {
+        Some("v2") => true,
+        Some(_) => {
+            if let Some(flag) = v2_only.first() {
+                eprintln!("{flag} needs the v2 engine (drop --v1). {usage}");
+                process::exit(1);
+            }
+            if multi_emit {
+                eprintln!("v1 answers goals on one emit only (drop --v1 for several). {usage}");
+                process::exit(1);
+            }
+            false
+        }
+        None => !v2_only.is_empty() || multi_emit,
+    };
+
+    let first = &v2.goals[0];
+    let mut goals: Vec<(usize, String)> = Vec::new();
+    if !use_v2 {
+        for g in &v2.goals {
+            match (&g.addr, &g.value) {
+                (super::dm_v2::GoalAddr::Arg(k), super::dm_v2::GoalValue::To(t)) => goals.push((*k, t.clone())),
+                _ => unreachable!("v2-only goal forms select v2"),
+            }
+        }
     }
 
     CliArgs {
         command: Command::ProposeEdit(ProposeEditOpts {
-            json,
-            channel,
-            emit,
+            json: v2.json,
+            channel: first.channel.clone(),
+            emit: first.emit,
             goals,
             configurable,
             pinned,
-            apply,
+            apply: v2.apply,
+            v2: use_v2.then_some(v2),
         }),
         source,
         include_dirs: Vec::new(),

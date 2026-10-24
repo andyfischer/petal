@@ -7,6 +7,7 @@ import { writeFile, unlink, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
+import { proposeEditArgs, type ProposeInput } from "./petal-mcp-propose.ts";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 const petalBin = join(projectRoot, "core/target/debug/petal");
@@ -196,71 +197,91 @@ server.registerTool("TraceEmits", {
   description:
     "Runs Petal code with emit tracing and returns, per output channel " +
     "(anything pushed with push_output / draw commands), every emitted value " +
-    "with its attribution: the call that produced it (callee, span, term id) " +
-    "and per-argument edit info (kind literal|binding|computed, resolved " +
-    "constant value, span, editable span). This is the observation half of " +
-    "direct manipulation (docs/features/direct-manipulation.md): use it to see what a " +
-    "live script emitted and which source text each value traces to, then " +
-    "use ProposeEdit to turn a change request into concrete source edits.",
+    "with its attribution: the call that produced it (callee, span, term id), " +
+    "per-argument edit info (kind literal|binding|computed, resolved " +
+    "constant value, span, editable span), the emitting native's raw " +
+    "arguments (native_args) and the emit's stable key. This is the " +
+    "observation half of direct manipulation " +
+    "(docs/features/direct-manipulation.md): use it to see what a script " +
+    "emitted and which source text each value traces to, then use " +
+    "ProposeEdit to turn a change request into concrete source edits. Pass " +
+    "the same `seed` to both when the script draws random numbers.",
   inputSchema: {
     code: z.string().describe("The Petal source code to run"),
+    seed: z.number().int().min(0).optional()
+      .describe("Seed the random stream (ProposeEdit's v2 engine defaults to 0)"),
   },
-}, ({ code }) => petalTool(["run", "--trace-emits", "--json"], code));
+}, ({ code, seed }) =>
+  petalTool(["run", "--trace-emits", "--json", ...(seed !== undefined ? ["--seed", String(seed)] : [])], code));
+
+const goalShape = {
+  arg: z.number().int().min(0).optional()
+    .describe("Argument k (0-based) of the user-file call that produced the emit"),
+  nativeArg: z.number().int().min(0).optional()
+    .describe("v2: raw argument k of the native that produced the emit (before any int truncation)"),
+  value: z.boolean().optional().describe("v2: address the emitted value itself"),
+  field: z.string().optional().describe("v2: a path into the addressed value, e.g. 'center.0' or 'x'"),
+  to: z.union([z.string(), z.number()]).optional()
+    .describe("Goal value: 55, 2.5 (v1 also takes true / hello; v2 hands non-numbers to v1)"),
+  by: z.number().optional().describe("v2: goal is the current value plus this delta"),
+};
 
 server.registerTool("ProposeEdit", {
   title: "Propose Goal-Based Source Edit",
   description:
-    "The goal-based direct-manipulation query (docs/features/direct-manipulation.md). " +
-    "Runs Petal code with emit tracing, finds the call that produced emit " +
-    "number `emit` on `channel`, and returns source-edit proposals that make " +
-    "argument `arg` of that call evaluate to `to`. A literal argument yields " +
-    "one direct edit; a computed argument (e.g. `x + offset`) yields one " +
-    "proposal per contributing variable, solved with the values the run " +
-    "actually saw. Narrow multiple proposals by naming variables in " +
-    "`configurable` (prefer editing these) or `static` (never edit these) — " +
-    "or declare knobs in the source itself with `config let x = …`, which " +
-    "makes config bindings the default edit targets and pins the rest. " +
-    "Pass `goals` instead of `arg`/`to` to state a multi-goal batch (one " +
-    "gesture changing several arguments of the same call), resolved so all " +
-    "goals can hold together. Each proposal carries the span " +
-    "(line/column/offset) and replacement text; nothing is written — " +
-    "applying is the caller's move. Use TraceEmits first to find channel / " +
-    "emit / arg indices.",
+    "The goal-based direct-manipulation query (docs/features/direct-manipulation.md): " +
+    "say where an emitted value should be, get the source edits that put it there. " +
+    "Nothing is written; applying is the caller's move. Use TraceEmits first to find " +
+    "channel / emit / argument indices.\n\n" +
+    "engine 'v2' (chosen automatically when any v2-only field is given) re-runs the " +
+    "program speculatively with each candidate literal nudged (effects suppressed, " +
+    "random draws replayed) and solves THROUGH function calls, loops, records and " +
+    "math. It returns JSON: `alternatives` (ranked; each has `verified` — re-run and " +
+    "confirmed —, `description`, `changes` (old_text → new_text per literal, with " +
+    "binding / function / line), `edits` (file + span + new_text), `achieved`, " +
+    "`misses`, `max_error`, `collateral` (other emitted values it moves) and " +
+    "`score`), `candidates` (every literal considered, with why it was excluded and its " +
+    "measured sensitivity `column`) and `diagnostics`. Workflow: ask once (with " +
+    "`explain: true` to see the candidate table), then re-ask with `allow` naming the " +
+    "literals you want moved (a binding name, 'line:N', 'fn:NAME', 'config') or `deny` " +
+    "for ones to keep — the engine works out the values. In source, `config let` and " +
+    "`tunable(x, min, max)` mark preferred knobs and `rigid(x)` freezes a value.\n\n" +
+    "engine 'v1' (the default for arg+to goals) inverts the emitting call's own " +
+    "arguments: a literal, a binding, or + - * / arithmetic; it refuses values that " +
+    "come out of a function call. Narrow v1 with `configurable` / `static`.",
   inputSchema: {
     code: z.string().describe("The Petal source code to run"),
     channel: z.string().describe("Output channel name (e.g. 'draw_commands')"),
     emit: z.number().int().min(0).describe("0-based emit index within the channel"),
-    arg: z.number().int().min(0).optional()
-      .describe("0-based argument position in the emitting call (single-goal form)"),
-    to: z.string().optional()
-      .describe("Goal value as source-ish text: 55, 2.5, true, hello (single-goal form)"),
+    engine: z.enum(["v1", "v2"]).optional()
+      .describe("Which solver; default v2 when a v2-only field is given, else v1"),
+    ...goalShape,
     goals: z.array(z.object({
-      arg: z.number().int().min(0).describe("0-based argument position"),
-      to: z.string().describe("Goal value as source-ish text"),
+      channel: z.string().optional().describe("Defaults to the top-level channel"),
+      emit: z.number().int().min(0).optional().describe("Defaults to the top-level emit (v2 may use several)"),
+      ...goalShape,
     })).optional()
-      .describe("Multi-goal batch: several arguments of the same emit that must change together"),
+      .describe("Several goals changed together (e.g. x and y of one drag)"),
     configurable: z.array(z.string()).optional()
-      .describe("Variables to prefer editing"),
+      .describe("Variables to prefer editing (v1); under v2 the same as allow"),
     static: z.array(z.string()).optional()
-      .describe("Variables that must not be edited"),
+      .describe("Variables that must not be edited (v1); under v2 the same as deny"),
+    allow: z.array(z.string()).optional()
+      .describe("v2: only these may move: binding names, 'line:N', 'fn:NAME', 'config', 'user'"),
+    deny: z.array(z.string()).optional().describe("v2: these may not move (same selectors)"),
+    configStrict: z.boolean().optional().describe("v2: v1's rule that config lets win outright"),
+    alternatives: z.number().int().min(1).optional().describe("v2: how many alternatives (default 3)"),
+    explain: z.boolean().optional().describe("v2: include the pipeline log and candidate table"),
+    tol: z.number().optional().describe("v2: goal tolerance"),
+    maxRuns: z.number().int().min(1).optional().describe("v2: speculative-run budget (default 200)"),
+    seed: z.number().int().min(0).optional().describe("v2: random seed (default 0)"),
   },
-}, async ({ code, channel, emit, arg, to, goals, configurable, static: pinned }) => {
-  const pairs = goals ?? (arg !== undefined && to !== undefined ? [{ arg, to }] : []);
-  if (pairs.length === 0) {
-    return {
-      content: [{ type: "text" as const, text: "Provide either arg+to or a non-empty goals array." }],
-      isError: true,
-    };
+}, async (input) => {
+  const built = proposeEditArgs(input as ProposeInput);
+  if ("error" in built) {
+    return { content: [{ type: "text" as const, text: built.error }], isError: true };
   }
-  const args = [
-    "propose-edit", "--json",
-    "--channel", channel,
-    "--emit", String(emit),
-  ];
-  for (const g of pairs) args.push("--arg", String(g.arg), "--to", g.to);
-  for (const name of configurable ?? []) args.push("--configurable", name);
-  for (const name of pinned ?? []) args.push("--static", name);
-  return petalTool(args, code);
+  return petalTool(built.args, input.code);
 });
 
 server.registerTool("PendingReport", {

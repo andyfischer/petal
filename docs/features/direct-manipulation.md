@@ -318,6 +318,28 @@ the alternative you chose (every file it touches). All options, and the
 `--json` shape, are in the
 [CLI reference](../CLI.md#propose-edit--propose-source-edits-that-change-an-emitted-value).
 
+### Scripts that draw with `ui`
+
+`petal propose-edit` only has the core natives, so a script that does
+`import ui` (a HUD, a Garden panel, the examples in
+`examples/direct-manipulation-v2/`) does not load there. petal-ui ships the
+same command with its natives registered:
+
+```
+$ cd core-libs/petal-ui
+$ cargo run --bin petal-ui-propose-edit -- hud.ptl --trace-emits
+$ cargo run --bin petal-ui-propose-edit -- hud.ptl \
+    --channel draw_commands --emit 2 --native-arg 2 --to 42 --deny bar_h
+```
+
+It runs the app headlessly for `--frames N` frames (default 1; `--size`,
+`--scenario`, `--host-data` and `-I` as in `petal-ui-run`) and drags from
+the frame after the last one. Every draw call is an emit on the channel
+`draw_commands`, in drawing order; `--trace-emits` lists them with their
+raw arguments, so `--native-arg 2` of `draw_text("…", x, y, color)` is its
+`y`. The goal and filter flags, the text report and the `--json` document
+are the core command's.
+
 ## For AI agents
 
 The same tools are available to AI agents through the dev MCP server, as
@@ -349,6 +371,16 @@ are:
 
 After each edit, use the results of the new run. Results from before the
 edit don't apply to the edited program.
+
+A host that registers natives of its own can run the v2 engine on its own
+`Env` without going through a command line:
+`petal::cli::dm_v2::propose_json(env, host, program, checkpoint, &request, entry_path)`
+takes a JSON request with the CLI flags' fields (`{"channel": "shapes",
+"emit": 0, "native_arg": 1, "by": 25, "deny": ["x"]}`, see
+`opts_from_json`), re-runs the checkpoint speculatively with the host's
+natives (a native whose effect escapes the run is not called), and answers
+with the same document as `propose-edit --json`. C and C++ hosts get it as
+`pb_propose_edit` in the C bridge.
 
 The [embedding guide](../usage/embedding-guide.md) covers running scripts
 from a host app, and Garden's

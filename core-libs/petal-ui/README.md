@@ -146,6 +146,13 @@ and state as JSON, and replays deterministic input scenarios. See
 `garden/examples/panels/gallery.ptl` exercises every component and runs both
 headlessly and as a Garden panel.
 
+`petal-ui-propose-edit` is `petal propose-edit` (direct manipulation v2)
+for UI scripts, which the core CLI cannot load: it runs the app headlessly
+for `--frames N` frames and proposes source edits that move a draw call's
+argument (`--channel draw_commands --emit K --native-arg I --to V`;
+`--trace-emits` lists the draw calls). See
+[direct-manipulation.md](../../docs/features/direct-manipulation.md#scripts-that-draw-with-ui).
+
 ## Versioning
 
 - The **interface version** is the `ui` package's version

@@ -20,6 +20,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   the `propose-edit --json` document; `opts_from_json` reads the request and
   `propose_with_natives` loads a script with a host's natives first.
 
+- `petal-ui-propose-edit` (in petal-ui): `petal propose-edit` for scripts
+  that `import ui`, which the core CLI cannot load. It runs the app
+  headlessly for `--frames N` frames and drags from there; draw calls are
+  the `draw_commands` channel, listed by `--trace-emits`
+  ([Scripts that draw with `ui`](docs/features/direct-manipulation.md#scripts-that-draw-with-ui)).
+
 ### Changed
 
 - A `-` directly followed by a number in negation position is now part of the

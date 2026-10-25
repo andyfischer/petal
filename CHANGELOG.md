@@ -10,6 +10,16 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ## Unreleased
 
+### Added
+
+- Direct manipulation for embedders: `petal::cli::dm_v2::propose_json` runs
+  `propose-edit` on a host's own `Env` (its natives registered, its frame
+  as the checkpoint) from a JSON request with the CLI flags' fields
+  (`channel`, `emit`, `native_arg`/`arg`/`value`, `field`, `to`/`by`,
+  `allow`/`deny`, `tol`, `pick`, `apply`, `explain`, …) and answers with
+  the `propose-edit --json` document; `opts_from_json` reads the request and
+  `propose_with_natives` loads a script with a host's natives first.
+
 ### Changed
 
 - A `-` directly followed by a number in negation position is now part of the

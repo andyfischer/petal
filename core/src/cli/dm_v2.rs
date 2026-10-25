@@ -433,6 +433,220 @@ pub fn propose(
     Ok(report(program, opts, seed, &resolved, &baseline, &targets, &response, applied))
 }
 
+// ── embedding: a JSON request, a host's natives ────────────────────────────
+
+/// The keys a JSON request ([`opts_from_json`]) may carry for one goal.
+const GOAL_KEYS: [&str; 8] = ["channel", "emit", "arg", "native_arg", "value", "field", "to", "by"];
+
+/// Read a JSON request into [`V2Opts`], for hosts that drive propose-edit
+/// without a command line (the C bridge's `pb_propose_edit`, a petal-ui
+/// host). The keys are the CLI flags', snake_cased:
+///
+/// ```json
+/// {"channel": "shapes", "emit": 2, "native_arg": 1, "by": 25,
+///  "allow": ["config"], "deny": ["x"], "tol": 0.5, "explain": true}
+/// ```
+///
+/// A goal is `channel`, `emit`, one of `arg` / `native_arg` (a 0-based
+/// index) / `value: true`, an optional `field` (`"center.0"` or
+/// `["center", 0]`), and one of `to` (a number, or any JSON scalar for a
+/// non-numeric goal) / `by` (a number). One goal may sit at the top level;
+/// several go in `goals: [...]`, each inheriting the top-level `channel` and
+/// `emit` it leaves out. The options are `allow` / `deny` (a selector or a
+/// list of them; `pins` is `deny`'s alias), `config_strict`, `alternatives`,
+/// `explain`, `apply`, `pick` (1-based), `tol`, `max_runs`, `max_screen`,
+/// `allow_respell` and `seed`; `json` is accepted and ignored. An unknown key
+/// is an error, so a misspelt option is not silently dropped.
+///
+/// The request is translated into the flag list and read by [`V2Parser`],
+/// so its rules are the CLI's exactly.
+pub fn opts_from_json(req: &Json) -> Result<V2Opts, String> {
+    let obj = req.as_object().ok_or("the request must be a JSON object")?;
+    const OPTION_KEYS: [&str; 15] = [
+        "goals", "allow", "deny", "pins", "config_strict", "alternatives", "explain", "apply", "pick", "tol",
+        "max_runs", "max_screen", "allow_respell", "seed", "json",
+    ];
+    for k in obj.keys() {
+        if !GOAL_KEYS.contains(&k.as_str()) && !OPTION_KEYS.contains(&k.as_str()) {
+            return Err(format!("unknown request key `{k}`"));
+        }
+    }
+    fn scalar(key: &str, v: &Json) -> Result<String, String> {
+        match v {
+            Json::Number(n) => Ok(n.to_string()),
+            Json::String(s) => Ok(s.clone()),
+            Json::Bool(b) => Ok(b.to_string()),
+            Json::Null => Ok("nil".into()),
+            _ => Err(format!("`{key}` takes a number or a string, not {v}")),
+        }
+    }
+    fn flag_on(obj: &serde_json::Map<String, Json>, key: &str) -> Result<bool, String> {
+        match obj.get(key) {
+            None | Some(Json::Null) => Ok(false),
+            Some(Json::Bool(b)) => Ok(*b),
+            Some(v) => Err(format!("`{key}` takes true or false, not {v}")),
+        }
+    }
+    let mut args: Vec<String> = Vec::new();
+    // `nested`: a member of `goals`, whose keys are checked here (the top
+    // level's were checked above, and it also carries the options).
+    let mut push_goal = |g: &serde_json::Map<String, Json>, nested: bool| -> Result<(), String> {
+        for k in g.keys().filter(|_| nested) {
+            if !GOAL_KEYS.contains(&k.as_str()) {
+                return Err(format!("unknown goal key `{k}`"));
+            }
+        }
+        for key in ["channel", "emit"] {
+            if let Some(v) = g.get(key).or_else(|| obj.get(key)) {
+                args.push(format!("--{key}"));
+                args.push(scalar(key, v)?);
+            }
+        }
+        match (g.get("arg"), g.get("native_arg"), flag_on(g, "value")?) {
+            (Some(k), None, false) => args.extend(["--arg".into(), scalar("arg", k)?]),
+            (None, Some(k), false) => args.extend(["--native-arg".into(), scalar("native_arg", k)?]),
+            (None, None, true) => args.push("--value".into()),
+            (None, None, false) => return Err("a goal needs one of `arg`, `native_arg` or `value: true`".into()),
+            _ => return Err("a goal takes only one of `arg`, `native_arg` and `value: true`".into()),
+        }
+        if let Some(f) = g.get("field") {
+            let path = match f {
+                Json::Array(steps) => steps.iter().map(|s| scalar("field", s)).collect::<Result<Vec<_>, _>>()?.join("."),
+                other => scalar("field", other)?,
+            };
+            args.extend(["--field".into(), path]);
+        }
+        match (g.get("to"), g.get("by")) {
+            (Some(v), None) => args.extend(["--to".into(), scalar("to", v)?]),
+            (None, Some(Json::Number(d))) => args.extend(["--by".into(), d.to_string()]),
+            (None, Some(v)) => return Err(format!("`by` takes a number, not {v}")),
+            (None, None) => return Err("a goal needs `to` or `by`".into()),
+            (Some(_), Some(_)) => return Err("a goal takes `to` or `by`, not both".into()),
+        }
+        Ok(())
+    };
+    let top_goal = ["arg", "native_arg", "value", "field", "to", "by"].iter().any(|k| obj.contains_key(*k));
+    if top_goal {
+        push_goal(obj, false)?;
+    }
+    match obj.get("goals") {
+        None | Some(Json::Null) => {}
+        Some(Json::Array(goals)) => {
+            for g in goals {
+                push_goal(g.as_object().ok_or("each of `goals` must be an object")?, true)?;
+            }
+        }
+        Some(v) => return Err(format!("`goals` takes a list of goal objects, not {v}")),
+    }
+    for (key, flag) in [("allow", "--allow"), ("deny", "--deny"), ("pins", "--deny")] {
+        match obj.get(key) {
+            None | Some(Json::Null) => {}
+            Some(Json::Array(xs)) => {
+                for x in xs {
+                    args.extend([flag.to_string(), scalar(key, x)?]);
+                }
+            }
+            Some(v) => args.extend([flag.to_string(), scalar(key, v)?]),
+        }
+    }
+    for (key, flag) in [
+        ("config_strict", "--config-strict"),
+        ("explain", "--explain"),
+        ("apply", "--apply"),
+        ("allow_respell", "--allow-respell"),
+    ] {
+        if flag_on(obj, key)? {
+            args.push(flag.into());
+        }
+    }
+    for (key, flag) in [
+        ("alternatives", "--alternatives"),
+        ("pick", "--pick"),
+        ("tol", "--tol"),
+        ("max_runs", "--max-runs"),
+        ("max_screen", "--max-screen"),
+        ("seed", "--seed"),
+    ] {
+        if let Some(v) = obj.get(key).filter(|v| !v.is_null()) {
+            args.extend([flag.to_string(), scalar(key, v)?]);
+        }
+    }
+    let mut parser = V2Parser::new();
+    let mut i = 0;
+    while i < args.len() {
+        if !parser.flag(&args, &mut i)? {
+            return Err(format!("internal: `{}` is not a propose-edit flag", args[i]));
+        }
+        i += 1;
+    }
+    let mut opts = parser.finish()?;
+    opts.json = true;
+    Ok(opts)
+}
+
+/// The JSON error object the CLI prints for a failed `propose-edit --json`
+/// (`{"error": true, "phase": …, "message": …, …}`).
+pub fn error_json(e: &CliDmError) -> Json {
+    super::error_json_value(&e.message, e.phase)
+}
+
+/// [`propose`] for a JSON request ([`opts_from_json`]), answering in the
+/// CLI's `--json` shape either way: the report, or [`error_json`] (phase
+/// `"request"` when the request itself does not parse). This is the
+/// embedding entry point: a host that already has `env` (its natives
+/// registered, the program loaded and run to `checkpoint`) passes its
+/// [`SpecHost`] and gets the same document `petal propose-edit --json`
+/// prints. Natives whose effects are not contained are not called by the
+/// speculative runs (see [`crate::dm_v2::spec`]).
+pub fn propose_json(
+    env: &mut Env,
+    host: &mut dyn SpecHost,
+    pid: ProgramId,
+    checkpoint: StackKey,
+    request: &Json,
+    entry_path: Option<PathBuf>,
+) -> Json {
+    let opts = match opts_from_json(request) {
+        Ok(o) => o,
+        Err(e) => return error_json(&fail("request", e)),
+    };
+    match propose(env, host, pid, checkpoint, &opts, entry_path) {
+        Ok(report) => report,
+        Err(e) => error_json(&e),
+    }
+}
+
+/// `petal propose-edit --v2` with the host's natives: load `source` (from
+/// `path` when given, so imports and `--apply` resolve against it) in a
+/// fresh `Env` that `register` has first filled with the host's natives and
+/// packages, and run [`propose`] on a fresh stack. What a host binary with
+/// no frame loop of its own needs; one that runs frames before it drags
+/// (petal-ui's `petal-ui-propose-edit`) calls [`propose`] on its own
+/// checkpoint instead.
+pub fn propose_with_natives(
+    source: &str,
+    path: Option<&std::path::Path>,
+    include_dirs: &[PathBuf],
+    opts: &V2Opts,
+    host: &mut dyn SpecHost,
+    register: &mut dyn FnMut(&mut Env),
+) -> Result<Json, CliDmError> {
+    let mut env = Env::new();
+    env.set_echo(false);
+    register(&mut env);
+    for dir in include_dirs {
+        env.add_module_path(dir.clone());
+    }
+    env.set_seed(effective_seed(opts.seed));
+    let pid = match path {
+        Some(p) => env.load_program_at(source, p),
+        None => env.load_program(source),
+    }
+    .map_err(|e| fail("compile", e))?;
+    let sid = env.create_stack(pid).map_err(|e| fail("runtime", e))?;
+    propose(&mut env, host, pid, sid, opts, path.map(|p| p.to_path_buf()))
+}
+
 fn resolve_goals(
     env: &mut Env,
     host: &mut dyn SpecHost,

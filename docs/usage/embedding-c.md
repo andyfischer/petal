@@ -621,6 +621,23 @@ if (vm.sources_changed()) {                 // stat() of every source file
   (editors, tests).
 - A new program sees natives registered since the original load.
 
+### Dragging what the script drew
+
+`propose_edit` (`pb_vm_propose_edit`) asks Petal which source literal to
+change so that something the last frame emitted lands where the user
+dragged it, re-running that frame with this VM's natives (escaping
+`PB_FX_EFFECT` natives are skipped in those runs):
+
+```cpp
+std::string r = vm.propose_edit(R"({"channel": "scene", "emit": 3,
+    "native_arg": 1, "field": "x", "to": 42, "apply": true, "pick": 1})");
+// r: the `petal propose-edit --json` report, or {"error": true, ...}
+if (vm.sources_changed()) vm.reload();
+```
+
+The request fields and the response are in
+[ffi.md](ffi.md#direct-manipulation).
+
 ### Setting a value without writing the file
 
 A slider drag should not write a file every frame. `set_config`

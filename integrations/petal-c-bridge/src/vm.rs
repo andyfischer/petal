@@ -108,6 +108,8 @@ pub struct Vm {
     /// What the last `save_state` / `load_state` did (`pb_vm_state_report_json`).
     state_report: CString,
     function_json: CString,
+    /// The last `pb_vm_propose_edit` response.
+    propose_json: CString,
     tests_json: CString,
     test_result_json: CString,
     test_in_progress: CString,
@@ -166,6 +168,7 @@ impl Vm {
             saved_state: CString::default(),
             state_report: CString::default(),
             function_json: CString::default(),
+            propose_json: CString::default(),
             tests_json: CString::default(),
             test_result_json: CString::default(),
             test_in_progress: CString::default(),
@@ -854,6 +857,40 @@ impl Vm {
         petal_ui::input::bind_input(&mut self.env, &self.input);
         petal_ui::input::bind_frame_info(&mut self.env, dt, frame);
         petal_ui::input::bind_time(&mut self.env, time_seconds);
+    }
+
+    /// Direct manipulation v2 on the loaded program: what
+    /// `pb_vm_propose_edit` does. `request_json` has the fields of the
+    /// `petal propose-edit` flags (see `petal::cli::dm_v2::opts_from_json`);
+    /// the answer is the `propose-edit --json` document, the report or the
+    /// error object (`{"error": true, "phase", "message", …}`).
+    ///
+    /// The checkpoint is the frame after the last run: the stack is reset
+    /// (state as the last run left it, bindings and input as last bound) and
+    /// the speculative runs fork it, calling this VM's natives under their
+    /// declared effects: one whose effect escapes the run (`PB_FX_EFFECT`
+    /// without `PB_FX_CONTAINED`) is not called and answers nil, and a
+    /// literal that reaches a goal only through the arguments of a
+    /// `PB_FX_NO_FEEDBACK` native is not moved. The live stack's state is
+    /// untouched. With `"apply": true` the
+    /// chosen alternative is written to the files it edits; the next
+    /// `sources_changed` / `reload` takes it up.
+    pub fn propose_edit(&mut self, request_json: &str) -> BResult<serde_json::Value> {
+        let l = self.loaded()?;
+        let (pid, stack, entry, name) = (l.program_id, l.stack_id, l.entry_path.clone(), l.entry_name.clone());
+        let request: serde_json::Value = serde_json::from_str(request_json)
+            .map_err(|e| BridgeError::invalid(format!("request_json: {e}")))?;
+        self.env
+            .reset_stack(stack)
+            .map_err(|e| BridgeError::runtime(e, &name))?;
+        Ok(petal::cli::dm_v2::propose_json(
+            &mut self.env,
+            &mut petal::dm_v2::NoHost,
+            pid,
+            stack,
+            &request,
+            entry,
+        ))
     }
 
     /// Replace the error `pb_vm_last_error` reports (`None` clears it).
@@ -1683,6 +1720,42 @@ pub unsafe extern "C" fn pb_vm_function_json(
         Ok(vm.function_json.as_ptr())
     })
     .1
+}
+
+/// Direct manipulation v2 (see [`Vm::propose_edit`]). The response is
+/// always written to `out_response_json` (valid until the next call); the
+/// status is `PB_OK` for a report and the failure's code otherwise, with
+/// the same message and phase in `pb_vm_last_error`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_propose_edit(
+    vm: *mut VmHandle,
+    request_json: *const c_char,
+    out_response_json: *mut *const c_char,
+) -> Status {
+    put(out_response_json, std::ptr::null());
+    status(vm, |vm| {
+        let outcome = unsafe { arg_str(request_json, "request_json") }.and_then(|r| vm.propose_edit(r));
+        let response = match &outcome {
+            Ok(r) => r.clone(),
+            // The bridge's own refusals (no program, not JSON) in the same shape.
+            Err(e) => serde_json::json!({
+                "error": true,
+                "phase": if e.phase.is_empty() { "request" } else { e.phase.as_str() },
+                "message": e.message,
+            }),
+        };
+        vm.propose_json = cstring_lossy(&response.to_string());
+        put(out_response_json, vm.propose_json.as_ptr());
+        outcome?;
+        if response["error"] != serde_json::Value::Bool(true) {
+            return Ok(());
+        }
+        let phase = response["phase"].as_str().unwrap_or("").to_string();
+        let code = if phase == "request" { Status::InvalidArg } else { Status::Runtime };
+        let mut err = BridgeError::new(code, response["message"].as_str().unwrap_or("propose-edit failed"));
+        err.phase = phase;
+        Err(err)
+    })
 }
 
 #[unsafe(no_mangle)]

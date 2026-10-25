@@ -663,6 +663,15 @@ public:
         if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_FOUND);
         return s;
     }
+    // Direct manipulation (see pb_vm_propose_edit): the response JSON, which
+    // is the report or, when the proposal failed, the error object
+    // ({"error": true, ...}); it does not throw for a failed proposal.
+    std::string propose_edit(const std::string& request_json) {
+        const char* s = nullptr;
+        pb_status st = pb_vm_propose_edit(vm_, request_json.c_str(), &s);
+        if (!s) check(st);
+        return s ? s : "";
+    }
     // Whether the last run defined a top-level function `function`.
     bool has_function(const std::string& function) { return pb_vm_has_function(vm_, function.c_str()); }
     void clear_views() { pb_vm_clear_views(vm_); }

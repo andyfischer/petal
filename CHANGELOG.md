@@ -18,13 +18,20 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   (`channel`, `emit`, `native_arg`/`arg`/`value`, `field`, `to`/`by`,
   `allow`/`deny`, `tol`, `pick`, `apply`, `explain`, …) and answers with
   the `propose-edit --json` document; `opts_from_json` reads the request and
-  `propose_with_natives` loads a script with a host's natives first.
+  `propose_with_natives` loads a script with a host's natives first
+  ([Direct manipulation](docs/usage/ffi.md#direct-manipulation)).
 
 - `petal-ui-propose-edit` (in petal-ui): `petal propose-edit` for scripts
   that `import ui`, which the core CLI cannot load. It runs the app
   headlessly for `--frames N` frames and drags from there; draw calls are
   the `draw_commands` channel, listed by `--trace-emits`
   ([Scripts that draw with `ui`](docs/features/direct-manipulation.md#scripts-that-draw-with-ui)).
+
+- C bridge: `pb_vm_propose_edit(vm, request_json, &response_json)` (and
+  `petal::Vm::propose_edit` in C++) runs direct manipulation on the host's
+  VM with its registered natives, from the frame after the last run;
+  `PB_FX_EFFECT` natives without `PB_FX_CONTAINED` are not called by the
+  speculative runs ([Direct manipulation](docs/usage/ffi.md#direct-manipulation)).
 
 ### Changed
 

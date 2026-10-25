@@ -24,6 +24,7 @@
  *     (pb_vm_changed_sources names the edited files; a value or layout
  *     edit is taken up without recompiling)
  *   pb_vm_set_config                     set one config value now, no file write
+ *   pb_vm_propose_edit                   direct manipulation: the edit that moves a drag
  *   pb_vm_tests_json + pb_vm_test_*      run the script's test blocks, across frames
  *   pb_scenario_* + pb_vm_apply_scenario replay recorded input (headless tests)
  *   pb_source_*                          read and edit source text as a config file
@@ -1256,6 +1257,52 @@ const char* pb_vm_profile_report(pb_vm* vm, size_t top_n);
 /* Take the lines the script printed since the last take. Valid until the next
  * call to this function. */
 pb_status pb_vm_take_output(pb_vm* vm, const char* const** out_lines, size_t* out_count);
+
+/* ─── Direct manipulation ─────────────────────────────────────────────── */
+/*
+ * Ask which source edit would move something the script emitted to where the
+ * user dragged it: `petal propose-edit` (docs/features/direct-manipulation.md),
+ * run on this VM with the natives it registered.
+ *
+ * `request_json` has the fields of the CLI flags:
+ *
+ *   {"channel": "scene", "emit": 0,          // the 0-based emit on a buffer
+ *    "native_arg": 1,                        // or "arg": k (the user-file
+ *                                            // call's argument), or "value": true
+ *    "field": "x",                           // optional path: "pos.x", ["pts", 2]
+ *    "to": 42,                               // or "by": 6.5
+ *    "allow": ["config"], "deny": ["speed"], // optional selectors ("pins" = deny)
+ *    "tol": 0.5, "alternatives": 3, "explain": false,
+ *    "apply": false, "pick": 1}              // write alternative `pick` to disk
+ *
+ * Several goals (x and y of one drag) go in "goals": [{...}, {...}], each
+ * inheriting the top-level "channel" and "emit". The other options are
+ * "config_strict", "max_runs", "max_screen", "allow_respell" and "seed"; an
+ * unknown key is PB_ERR_INVALID_ARG.
+ *
+ * The edited frame is the one after the last pb_vm_run: state as that run
+ * left it, bindings and input as last bound. Petal re-runs it many times
+ * with literals nudged, calling this VM's natives under their PB_FX_* flags:
+ * a PB_FX_EFFECT native without PB_FX_CONTAINED is NOT called (it answers
+ * nil), so it is safe to drag a script that spawns or plays sounds; a
+ * literal that reaches the goal only through a PB_FX_NO_FEEDBACK native is
+ * never moved. Callbacks do run, on this thread, inside this call. The live
+ * stack's state is not changed.
+ *
+ * *out_response_json is set in every case but a NULL VM (or a call from
+ * inside one of its natives, PB_ERR_REENTRANT), to the document
+ * `petal propose-edit --json` prints: on PB_OK the report
+ * ("alternatives" ranked best first, each with "verified", "changes",
+ * "edits", "collateral"; "goals"; "candidates"; "applied" when "apply" was
+ * set), otherwise {"error": true, "phase": "request"|"goal"|"apply"|...,
+ * "message": ...}, with the same message and phase in pb_vm_last_error
+ * (PB_ERR_INVALID_ARG for a bad request, PB_ERR_NOT_LOADED with no program,
+ * PB_ERR_RUNTIME for a proposal that failed).
+ * Valid until the next call to this function. After an "apply",
+ * pb_vm_sources_changed + pb_vm_reload take the edit up (for a program
+ * loaded from a file; a source string cannot be applied).
+ */
+pb_status pb_vm_propose_edit(pb_vm* vm, const char* request_json, const char** out_response_json);
 
 #ifdef __cplusplus
 } /* extern "C" */

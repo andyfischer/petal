@@ -623,6 +623,45 @@ TEST(emitters_push_tagged_commands) {
     CHECK(vm.drain("out")[0].is_nil());  // emitters return nil
 }
 
+TEST(propose_edit_drags_through_host_natives) {
+    // Direct manipulation on the host's VM: a drag of what to_screen(px)
+    // emitted finds `px`, applies it, and the reload draws it there. The
+    // escaping native never fires in the speculative runs; the contained one may.
+    fs::path dir = scratch_dir("propose_edit");
+    fs::path file = dir / "scene.ptl";
+    write_file(file,
+               "import io\nnative fn to_screen(x)\nnative fn play_sound()\n"
+               "config let px = 10\nplay_sound()\n"
+               "push_output(symbol(\"out\"), to_screen(px))\n");
+    petal::Vm vm;
+    int sounds = 0, screens = 0;
+    vm.native("to_screen", petal::fx::Pure, [&](petal::Call& c) {
+        ++screens;
+        c.result().value(c[0].number() * 2 + 100);
+    });
+    vm.native("play_sound", petal::fx::Effect, [&](petal::Call&) { ++sounds; });
+    vm.load_file(file.string());
+    CHECK_EQ(run_out(vm), std::vector<double>{120});
+    CHECK_EQ(sounds, 1);
+
+    std::string r = vm.propose_edit(R"({"channel": "out", "emit": 0, "value": true, "to": 150})");
+    CHECK(r.find("\"verified\":true") != std::string::npos);
+    CHECK(r.find("\"new_text\":\"25\"") != std::string::npos);
+    CHECK_EQ(sounds, 1);
+    CHECK(screens > 3);
+
+    r = vm.propose_edit(R"({"channel": "out", "emit": 0, "value": true, "to": 150, "apply": true, "pick": 1})");
+    CHECK(r.find("\"applied\"") != std::string::npos);
+    REQUIRE(vm.sources_changed());
+    vm.reload();
+    CHECK_EQ(run_out(vm), std::vector<double>{150});
+
+    // A failed proposal is the error object, not an exception.
+    r = vm.propose_edit(R"({"channel": "out", "emit": 3, "value": true, "to": 1})");
+    CHECK(r.find("\"error\":true") != std::string::npos);
+    CHECK_EQ(pb_vm_last_error(vm.raw())->code, PB_ERR_RUNTIME);
+}
+
 TEST(many_natives_register) {
     // Each host native is its own boxed Petal native: no fixed pool.
     petal::Vm vm;

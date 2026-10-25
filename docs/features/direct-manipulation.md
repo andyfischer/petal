@@ -380,7 +380,8 @@ takes a JSON request with the CLI flags' fields (`{"channel": "shapes",
 `opts_from_json`), re-runs the checkpoint speculatively with the host's
 natives (a native whose effect escapes the run is not called), and answers
 with the same document as `propose-edit --json`. C and C++ hosts get it as
-`pb_propose_edit` in the C bridge.
+`pb_vm_propose_edit` in the C bridge
+([ffi.md](../usage/ffi.md#direct-manipulation)).
 
 The [embedding guide](../usage/embedding-guide.md) covers running scripts
 from a host app, and Garden's

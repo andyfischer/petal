@@ -439,7 +439,7 @@ pub fn propose(
 const GOAL_KEYS: [&str; 8] = ["channel", "emit", "arg", "native_arg", "value", "field", "to", "by"];
 
 /// Read a JSON request into [`V2Opts`], for hosts that drive propose-edit
-/// without a command line (the C bridge's `pb_propose_edit`, a petal-ui
+/// without a command line (the C bridge's `pb_vm_propose_edit`, a petal-ui
 /// host). The keys are the CLI flags', snake_cased:
 ///
 /// ```json

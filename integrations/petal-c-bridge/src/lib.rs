@@ -44,6 +44,9 @@ pub mod view;
 pub mod vm;
 mod watch;
 
+#[cfg(test)]
+mod propose_tests;
+
 use std::ffi::c_char;
 
 use ffi::Status;

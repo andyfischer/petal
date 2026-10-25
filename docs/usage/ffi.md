@@ -667,6 +667,59 @@ functions or modules, drops it. See
 [../features/program-modification.md](../features/program-modification.md#state-preserving-hot-reload-transfer_state)
 for the call-structure caveats.
 
+## Direct manipulation
+
+A host can let its users drag what a script drew and have Petal propose the
+source edit that puts it there
+([../features/direct-manipulation.md](../features/direct-manipulation.md)),
+with the host's own natives in the loop. From Rust:
+
+```rust
+use petal::cli::dm_v2::propose_json;
+env.reset_stack(stack)?;                 // the checkpoint: the frame after the last run
+let response = propose_json(&mut env, &mut petal::dm_v2::NoHost, pid, stack,
+    &serde_json::json!({"channel": "scene", "emit": 0, "native_arg": 1, "to": 42}),
+    Some(entry_path));                   // where "apply": true writes the entry file
+```
+
+The request has the fields of the `petal propose-edit` flags, snake_cased
+(`opts_from_json` lists them): `channel` and `emit` (the 0-based emit on an
+output buffer), one of `native_arg` / `arg` / `value: true`, an optional
+`field` path, one of `to` / `by`, and the options `allow`, `deny` (alias
+`pins`), `tol`, `alternatives`, `explain`, `apply`, `pick`, `config_strict`,
+`max_runs`, `max_screen`, `allow_respell`, `seed`. Several goals go in
+`goals: [...]`. The response is the `propose-edit --json` document: the
+report, or `{"error": true, "phase", "message", …}`. A host whose natives
+need something installed around each run (a data provider, fonts) passes a
+`SpecHost` instead of `NoHost`; petal-ui's frame core has one
+(`FrameCore::spec_parts`), and `propose_with_natives` covers a host with no
+frame loop: it loads the script into an `Env` its callback filled.
+
+Every speculative run calls natives under their declared
+[effect rows](#declaring-native-effects-honestly): a native whose effect
+escapes the run (`effect` without `contained`, `PB_FX_EFFECT` without
+`PB_FX_CONTAINED`) is not called and answers nil, so a drag never spawns,
+plays or writes anything; a literal that only reaches the goal through a
+`no_feedback` native's arguments is never moved. An under-declared native
+(an effect declared pure) *is* called, dozens of times, which is one more
+reason to run the effect audit.
+
+From C and C++ it is `pb_vm_propose_edit`, on the VM's loaded program,
+with the frame after the last `pb_vm_run` as the checkpoint:
+
+```c
+const char* response = NULL;   /* owned by the VM, valid until the next call */
+pb_status st = pb_vm_propose_edit(vm,
+    "{\"channel\": \"scene\", \"emit\": 0, \"native_arg\": 1, \"to\": 42}", &response);
+/* PB_OK: the report. Otherwise the error object, with the same message and
+ * phase in pb_vm_last_error (PB_ERR_INVALID_ARG for a bad request). */
+```
+
+With `"apply": true` (and `"pick": N` when there are several alternatives)
+the edit is written to disk and `pb_vm_sources_changed` + `pb_vm_reload`
+take it up. The C++ wrapper's `Vm::propose_edit(json)` returns the response
+string either way.
+
 ## Immutability and the in-place gate
 
 Petal values are immutable **by construction**, not by runtime check:

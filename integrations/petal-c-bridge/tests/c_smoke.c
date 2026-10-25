@@ -12,6 +12,23 @@
         }                                                                 \
     } while (0)
 
+/* Host natives for the direct-manipulation check: a pure transform and an
+ * escaping effect, which speculative runs must not call. */
+static int sounds = 0;
+static int to_screen(pb_call* call, void* ud) {
+    (void)ud;
+    const pb_value* x = pb_call_arg(call, 0);
+    double v = x->kind == PB_INT ? (double)x->integer : x->number;
+    pb_builder_float(pb_call_result(call), v * 2.0 + 100.0);
+    return 0;
+}
+static int play_sound(pb_call* call, void* ud) {
+    (void)call;
+    (void)ud;
+    ++sounds;
+    return 0;
+}
+
 int main(void) {
     REQUIRE(pb_abi_check(sizeof(pb_value), sizeof(pb_draw_cmd), sizeof(pb_error)));
 
@@ -106,6 +123,27 @@ int main(void) {
     REQUIRE(pb_vm_get_state(vm, "n", &n_now) == PB_OK && n_now->integer == 1);
     REQUIRE(pb_vm_load_state(vm, "{}") == PB_ERR_INVALID_ARG);
     REQUIRE(strstr(pb_vm_diagnostics_json(vm), "\"items\":[]") != NULL);
+
+    /* Direct manipulation through a host native: which literal moves the
+     * emitted value to 150? Speculative runs call to_screen, not play_sound. */
+    REQUIRE(pb_vm_register_native(vm, "to_screen", to_screen, NULL, NULL, PB_FX_PURE) == PB_OK);
+    REQUIRE(pb_vm_register_native(vm, "play_sound", play_sound, NULL, NULL, PB_FX_EFFECT) == PB_OK);
+    REQUIRE(pb_vm_load_source(vm,
+                              "import io; native fn to_screen(x); native fn play_sound()\n"
+                              "config let px = 10\nplay_sound()\n"
+                              "push_output(symbol(\"scene\"), to_screen(px))\n",
+                              "drag.ptl") == PB_OK);
+    REQUIRE(pb_vm_run(vm) == PB_OK && sounds == 1);
+    const char* response = NULL;
+    REQUIRE(pb_vm_propose_edit(vm, "{\"channel\": \"scene\", \"emit\": 0, \"value\": true, \"to\": 150}",
+                               &response) == PB_OK);
+    REQUIRE(response != NULL && strstr(response, "\"verified\":true") != NULL);
+    REQUIRE(strstr(response, "\"new_text\":\"25\"") != NULL);
+    REQUIRE(sounds == 1);
+    REQUIRE(pb_vm_propose_edit(vm, "{\"channel\": \"nope\", \"emit\": 0, \"value\": true, \"to\": 1}",
+                               &response) == PB_ERR_RUNTIME);
+    REQUIRE(strstr(response, "\"error\":true") != NULL);
+    REQUIRE(strcmp(pb_vm_last_error(vm)->phase, "goal") == 0);
 
     pb_vm_destroy(vm);
     printf("c_smoke: ok\n");

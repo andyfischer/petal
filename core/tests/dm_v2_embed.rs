@@ -1,6 +1,6 @@
 //! Direct manipulation v2 for embedders: the JSON request
 //! (`cli::dm_v2::opts_from_json`), `propose_json` and `propose_with_natives`,
-//! which hosts with natives of their own (the C bridge's `pb_propose_edit`,
+//! which hosts with natives of their own (the C bridge's `pb_vm_propose_edit`,
 //! petal-ui's `petal-ui-propose-edit`) drive instead of the `petal` CLI.
 
 use std::sync::Arc;

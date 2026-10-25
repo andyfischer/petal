@@ -1890,12 +1890,12 @@ fields are only ever added):
                    score_parts: {edit, collateral, count, respelled, regime, rng, error},
                    max_error, misses, achieved, predicted, iterations,
                    config_only, stateful, regime_changed, rng_order_changed, rng_difference,
-                   changes: [{ term, file, path, line, span, binding, function, config,
+                   changes: [{ term, file, path, line, span, binding, function, site, config,
                                old, new, old_text, new_text, respelled }],
                    edits: [{ file, path, span, new_text }],
                    collateral: { norm, items: [{ channel, callee, line, max_move, key,
                                                   emit, arg, path, moved, label }] } }],
-  candidates: [{ term, file, line, span, value, is_int, binding, function, config,
+  candidates: [{ term, file, line, span, value, is_int, binding, function, site, config,
                  hint, origin, distance, focus, in_goal_frame,
                  flags: {through_var, through_state, state_init, through_rng, structural, hint_bound},
                  loaded, eligible, ineligible_reason, quality, column, weight, clock_coupled }],
@@ -1905,6 +1905,15 @@ fields are only ever added):
   explain: [line, ...] | null,
   applied: { pick, files } | null }
 ```
+
+A change's or a candidate's `site` says where in its expression the literal
+is written, or is `null` when it is a binding's whole value or an operand:
+the argument of a call (`thorns(x:)`, by the written argument name, else the
+callee's parameter name, else `push_output(arg 1)`), a record field
+(`spawn(cfg:).speed`) or a list element under the binding that holds it
+(`rows[3].x`). The text output prints it after the line
+(`core/level.ptl:41 rows[3].x: 40 -> 43`), and the candidate table of
+`--explain` shows it too, so rows of level data are told apart.
 
 `config_only` and a change's `config` mean a knob: a `config let` or
 `tunable` literal, which DM v2 treats as one tier (the text output tags such

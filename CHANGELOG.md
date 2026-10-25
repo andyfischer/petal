@@ -41,6 +41,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   data no longer needs a `tunable` marker just to be chosen; `--deny` takes
   them too.
 
+- `propose-edit` names where each literal sits: the call argument
+  (`thorns(x:)`, by parameter name), the record field (`spawn(cfg:).speed`)
+  or the list element under its binding (`rows[3].x`), in the text output
+  (`core/level.ptl:41 rows[3].x: 40 -> 43`, paths now relative to the working
+  directory), the `--explain` candidate table, and a new `site` field on each
+  `--json` change and candidate.
+
 - C bridge: `pb_vm_propose_edit(vm, request_json, &response_json)` (and
   `petal::Vm::propose_edit` in C++) runs direct manipulation on the host's
   VM with its registered natives, from the frame after the last run;

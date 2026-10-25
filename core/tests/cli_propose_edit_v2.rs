@@ -134,8 +134,8 @@ fn json_shape_is_frozen() {
     assert_eq!(
         keys(c),
         set(&[
-            "term", "file", "path", "line", "span", "binding", "function", "config", "old", "new", "old_text",
-            "new_text", "respelled",
+            "term", "file", "path", "line", "span", "binding", "function", "site", "config", "old", "new",
+            "old_text", "new_text", "respelled",
         ])
     );
     assert_eq!(c["binding"], "gap");
@@ -158,7 +158,7 @@ fn json_shape_is_frozen() {
     assert_eq!(
         keys(cand),
         set(&[
-            "term", "file", "line", "span", "value", "is_int", "binding", "function", "config", "hint", "origin",
+            "term", "file", "line", "span", "value", "is_int", "binding", "function", "site", "config", "hint", "origin",
             "distance", "focus", "in_goal_frame", "flags", "loaded", "eligible", "ineligible_reason", "quality", "column",
             "weight", "clock_coupled",
         ])
@@ -528,4 +528,55 @@ fn one_literal_is_selected_by_position_or_term_id() {
         assert!(!ok, "{bad}");
         assert!(stderr.contains(&format!("selector `{bad}`")), "{bad}: {stderr}");
     }
+}
+
+#[test]
+fn a_literal_is_named_by_its_argument_or_field() {
+    let src = "\
+import io
+fn thorns(x, y)
+  push_output(symbol(\"s\"), x * 2 + y)
+end
+fn spawn(cfg)
+  push_output(symbol(\"s\"), cfg.speed)
+end
+let rows = [{x: 1, y: 2}, {x: 30, y: 4}]
+thorns(rows[1].x, 4)
+thorns(5, y: 9)
+spawn({speed: tunable(12)})
+";
+    let path = scratch("site", src);
+    let p = path.to_str().unwrap();
+    let sites = |emit: &str| -> Vec<(String, Value)> {
+        let r = run_json(&["propose-edit", "--json", "--alternatives", "5", "--channel", "s", "--emit", emit, "--value", "--by", "2", p]);
+        r["alternatives"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|a| a["changes"].as_array().unwrap().clone())
+            .map(|c| (c["old_text"].as_str().unwrap().to_string(), c["site"].clone()))
+            .collect()
+    };
+    let has = |got: &[(String, Value)], text: &str, site: &str| {
+        assert!(got.iter().any(|(t, s)| t == text && s == site), "no `{text}` at {site}: {got:?}");
+    };
+    // An element of a list of records, under the binding that holds it.
+    has(&sites("0"), "30", "rows[1].x");
+    // A positional argument takes the callee's parameter name.
+    has(&sites("0"), "4", "thorns(y:)");
+    // A named argument its written name.
+    let one = sites("1");
+    has(&one, "5", "thorns(x:)");
+    has(&one, "9", "thorns(y:)");
+    // A field of a record argument, through `tunable(...)`.
+    has(&sites("2"), "12", "spawn(cfg:).speed");
+
+    let (stdout, stderr, ok) = run(&["propose-edit", "--explain", "--channel", "s", "--emit", "1", "--value", "--by", "2", p]);
+    assert!(ok, "{stderr}");
+    assert!(stdout.contains("line 10 thorns(x:): 5 -> "), "{stdout}");
+    assert!(stdout.contains(" thorns(y:) "), "the candidate table names it too: {stdout}");
+
+    // A binding's own literal has no site; the binding names it.
+    let r = helper_json(&[]);
+    assert!(r["alternatives"][0]["changes"][0]["site"].is_null(), "{r:#}");
 }

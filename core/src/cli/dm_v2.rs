@@ -26,7 +26,7 @@ use crate::dm_v2::{
     Hint, ObsValue, Observable, PathStep, Prefer, apply_edits_multi, program_files,
 };
 use crate::env::Env;
-use crate::program::{Program, ProgramId, TermId};
+use crate::program::{Program, ProgramId, TermId, TermOp};
 use crate::source_map::{ENTRY_FILE, SourceSpan};
 use crate::stack::StackKey;
 use crate::static_value::StaticValue;
@@ -947,7 +947,126 @@ fn file_path(program: &Program, file: crate::source_map::FileId) -> Json {
         .unwrap_or(Json::Null)
 }
 
-fn alternative_json(program: &Program, rank: usize, a: &Alternative, targets: &[f64]) -> Json {
+/// Where in its expression each literal sits, for naming it in a report
+/// (C4): which argument of which call, which field of which record, which
+/// element of which list.
+struct Sites {
+    /// Each term's consumer: the first term that has it as an input.
+    parent: Vec<Option<TermId>>,
+}
+
+impl Sites {
+    fn new(program: &Program) -> Sites {
+        let mut parent = vec![None; program.terms.len()];
+        for (i, t) in program.terms.iter().enumerate() {
+            for input in &t.inputs {
+                if let Some(slot) = parent.get_mut(input.0 as usize)
+                    && slot.is_none()
+                {
+                    *slot = Some(TermId(i as u32));
+                }
+            }
+        }
+        Sites { parent }
+    }
+
+    /// The literal `term`'s place, outermost first: `thorns(x:)` for an
+    /// argument (by its written name, else the callee's parameter name, else
+    /// `arg k`), `.speed` for a record field, `[2]` for a list element,
+    /// composed (`spawn(cfg:).speed`, `[1].x`). `None` when the literal is
+    /// none of these (a binding's value, an operand).
+    fn of(&self, program: &Program, term: TermId) -> Option<String> {
+        use crate::program::MapSpreadEntry;
+        let constant = |id| match program.constants.get(id) {
+            crate::constant_table::ConstantValue::String(s) => Some(s.clone()),
+            _ => None,
+        };
+        let mut steps: Vec<String> = Vec::new();
+        let mut cur = term;
+        let mut call = false;
+        for _ in 0..8 {
+            let Some(p) = self.parent.get(cur.0 as usize).copied().flatten() else {
+                break;
+            };
+            let t = &program.terms[p.0 as usize];
+            let Some(at) = t.inputs.iter().position(|i| *i == cur) else {
+                break;
+            };
+            let step = match &t.op {
+                TermOp::AllocMap { fields, .. } => fields.get(at).and_then(|f| constant(*f)).map(|f| format!(".{f}")),
+                TermOp::AllocMapSpread { entries } => entries.iter().find_map(|e| match e {
+                    MapSpreadEntry::Named(f, i) if *i == at => constant(*f).map(|f| format!(".{f}")),
+                    _ => None,
+                }),
+                TermOp::AllocList => Some(format!("[{at}]")),
+                op => {
+                    let Some(offset) = op.arg_offset().filter(|o| at >= *o) else {
+                        break;
+                    };
+                    let k = at - offset;
+                    let callee = crate::provenance::CallSite::resolve(program, p).and_then(|s| s.callee);
+                    // `tunable(x, …)` / `rigid(x)` mark the literal; the place
+                    // is where the marked value goes.
+                    if k == 0 && matches!(callee.as_deref(), Some("tunable" | "rigid")) {
+                        cur = p;
+                        continue;
+                    }
+                    let nargs = t.inputs.len() - offset;
+                    let name = t
+                        .arg_names
+                        .get(k)
+                        .copied()
+                        .flatten()
+                        .and_then(constant)
+                        .or_else(|| param_name(program, callee.as_deref()?, nargs, k));
+                    let callee = callee.unwrap_or_else(|| "call".into());
+                    steps.push(match name {
+                        Some(n) => format!("{callee}({n}:)"),
+                        None => format!("{callee}(arg {k})"),
+                    });
+                    // A call is the outermost place worth naming.
+                    call = true;
+                    break;
+                }
+            };
+            let Some(step) = step else {
+                break;
+            };
+            steps.push(step);
+            cur = p;
+        }
+        if steps.is_empty() {
+            return None;
+        }
+        // The binding the outermost record or list defines: `rows[1].x`.
+        if !call
+            && cur != term
+            && let Some(name) = program.terms.get(cur.0 as usize).and_then(|t| t.name.as_deref())
+        {
+            steps.push(crate::program::base_fn_name(name.rsplit("::").next().unwrap_or(name)).to_string());
+        }
+        steps.reverse();
+        Some(steps.concat())
+    }
+}
+
+/// The name of parameter `k` of the user function `callee` called with
+/// `nargs` arguments (the overload that takes that many).
+fn param_name(program: &Program, callee: &str, nargs: usize, k: usize) -> Option<String> {
+    program
+        .functions
+        .iter()
+        .filter(|f| {
+            f.name.as_deref().is_some_and(|n| {
+                let n = crate::program::base_fn_name(n);
+                n == callee || n.rsplit("::").next() == Some(callee)
+            })
+        })
+        .find(|f| f.params.len() >= nargs && f.params.len() - f.optional_params as usize <= nargs)
+        .and_then(|f| f.params.get(k).cloned())
+}
+
+fn alternative_json(program: &Program, sites: &Sites, rank: usize, a: &Alternative, targets: &[f64]) -> Json {
     let changes: Vec<Json> = a
         .changes
         .iter()
@@ -960,6 +1079,7 @@ fn alternative_json(program: &Program, rank: usize, a: &Alternative, targets: &[
                 "span": span(&c.span),
                 "binding": c.binding,
                 "function": c.function,
+                "site": sites.of(program, c.term),
                 "config": c.config,
                 "old": num(c.old),
                 "new": num(c.new),
@@ -1035,7 +1155,7 @@ fn alternative_json(program: &Program, rank: usize, a: &Alternative, targets: &[
     })
 }
 
-fn candidate_json(program: &Program, c: &CandidateReport) -> Json {
+fn candidate_json(program: &Program, sites: &Sites, c: &CandidateReport) -> Json {
     let p = &c.param;
     let function = p
         .function
@@ -1059,6 +1179,7 @@ fn candidate_json(program: &Program, c: &CandidateReport) -> Json {
         "is_int": p.is_int,
         "binding": p.binding,
         "function": function,
+        "site": sites.of(program, p.term),
         "config": p.config,
         "hint": hint,
         "origin": snake(format!("{:?}", p.origin)),
@@ -1128,6 +1249,7 @@ fn report(
         })
         .collect();
     let d = &response.diagnostics;
+    let sites = Sites::new(program);
     json!({
         "engine": d.engine.map(engine_name).unwrap_or("v2"),
         "seed": seed,
@@ -1136,9 +1258,9 @@ fn report(
             .alternatives
             .iter()
             .enumerate()
-            .map(|(i, a)| alternative_json(program, i + 1, a, targets))
+            .map(|(i, a)| alternative_json(program, &sites, i + 1, a, targets))
             .collect::<Vec<_>>(),
-        "candidates": response.candidates.iter().map(|c| candidate_json(program, c)).collect::<Vec<_>>(),
+        "candidates": response.candidates.iter().map(|c| candidate_json(program, &sites, c)).collect::<Vec<_>>(),
         "diagnostics": {
             "runs": d.runs,
             "wall_ms": d.wall.map(|w| num(w.as_secs_f64() * 1000.0)),
@@ -1178,6 +1300,14 @@ fn fmt_num(v: &Json) -> String {
         }
         None => "?".into(),
     }
+}
+
+/// `path` relative to the working directory when it is under it.
+fn display_path(path: &str) -> String {
+    std::env::current_dir()
+        .ok()
+        .and_then(|cwd| std::path::Path::new(path).strip_prefix(&cwd).ok().map(|p| p.display().to_string()))
+        .unwrap_or_else(|| path.to_string())
 }
 
 /// Print a [`propose`] report for people.
@@ -1268,15 +1398,18 @@ pub fn print_text(r: &Json) {
         }
         println!("  {}. [{}] {}", a["rank"], tags.join(", "), a["description"].as_str().unwrap_or(""));
         for c in a["changes"].as_array().unwrap_or(&empty) {
-            let name = c["binding"]
+            let mut name = c["binding"]
                 .as_str()
                 .map(|b| format!(" `{b}`"))
                 .or_else(|| c["function"].as_str().map(|f| format!(" in fn {f}")))
                 .unwrap_or_default();
+            if let Some(site) = c["site"].as_str() {
+                name.push_str(&format!(" {site}"));
+            }
             let file = c["path"]
                 .as_str()
                 .filter(|_| c["file"].as_u64() != Some(0))
-                .map(|p| format!("{p}:"))
+                .map(|p| format!("{}:", display_path(p)))
                 .unwrap_or_else(|| "line ".into());
             println!(
                 "       {file}{}{name}: {} -> {}",
@@ -1336,11 +1469,14 @@ pub fn print_text(r: &Json) {
             println!();
             println!("candidates ({}):", cands.len());
             for c in &cands {
-                let name = c["binding"]
+                let mut name = c["binding"]
                     .as_str()
                     .map(|b| format!("`{b}`"))
                     .or_else(|| c["function"].as_str().map(|f| format!("fn {f}")))
                     .unwrap_or_else(|| "-".into());
+                if let Some(site) = c["site"].as_str() {
+                    name = if name == "-" { site.to_string() } else { format!("{name} {site}") };
+                }
                 let status = if c["eligible"].as_bool() == Some(true) {
                     match &c["quality"] {
                         Json::Null => "eligible".to_string(),

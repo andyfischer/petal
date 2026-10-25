@@ -1881,7 +1881,8 @@ fields are only ever added):
                    changes: [{ term, file, path, line, span, binding, function, config,
                                old, new, old_text, new_text, respelled }],
                    edits: [{ file, path, span, new_text }],
-                   collateral: { norm, items: [{ channel, callee, line, max_move, key }] } }],
+                   collateral: { norm, items: [{ channel, callee, line, max_move, key,
+                                                  emit, arg, path, moved, label }] } }],
   candidates: [{ term, file, line, span, value, is_int, binding, function, config,
                  hint, origin, distance, in_goal_frame,
                  flags: {through_var, through_state, state_init, through_rng, structural, hint_bound},
@@ -1901,7 +1902,11 @@ marker a number carries; its `weight` is the same for either.
 `max_error` is in units of each goal's tolerance (at most 1 means the goal
 is met); `misses` is the same distance in the goal's own units. `verified`
 means the rounded edit was re-run and met the goals. `collateral` lists the
-other emitted numbers the edit moves. Spans carry 1-based line/column and
+other emits the edit moves, one item per emit; numbers inside containers
+count (a list of records, a record in a record). An item's `emit` is the
+`--emit` index on its channel, `arg` and `path` (a `--field` path) the number
+that moved most, `moved` how many of its numbers moved, and `label` all of
+that for people (`lives[0].2.x +2`); the text output lists the labels. Spans carry 1-based line/column and
 character offsets. The EmitKey hashes are 64-bit hex strings.
 
 v1 (`--v1`) `--json` is unchanged: one entry per goal under `goals`

@@ -36,7 +36,7 @@ use crate::direct_manipulation::{self as v1, ManipulationGoal, SourceEdit, VarPo
 use crate::dm_v2::DmError;
 use crate::dm_v2::hints::{Hint, read_hints};
 use crate::dm_v2::jacobian::{ColumnQuality, FdOptions, Jacobian, collateral_rows, jacobian};
-use crate::dm_v2::observe::{EmitKey, LiveObservation, ObsValue, Observable};
+use crate::dm_v2::observe::{EmitKey, LiveObservation, ObsValue, Observable, PathStep};
 use crate::dm_v2::params::{
     Eligibility, EligibilityContext, Param, ParamFilter, ParamSelector, RunBudget, anchors_for,
     discover_params, eligibility, file_origins, screen_params,
@@ -209,6 +209,56 @@ pub struct CollateralItem {
     pub line: Option<u32>,
     /// The largest movement of any of its numbers (`inf`: it is gone).
     pub max_move: f64,
+    /// Which emit on its channel this is (0-based, baseline order): the
+    /// `--emit` that addresses it.
+    pub emit: usize,
+    /// The number that moved most: the raw native argument and the path
+    /// into it (`lives`' `2.x` is item 2's `x` of a list of records).
+    pub arg: usize,
+    pub path: Vec<PathStep>,
+    /// How many of its numbers moved.
+    pub moved: usize,
+}
+
+impl CollateralItem {
+    /// Where in the emit the largest move is, as a `--field` path
+    /// (`2.x`), with `arg N:` in front unless it is `push_output`'s value.
+    pub fn where_text(&self) -> String {
+        let path: Vec<String> = self
+            .path
+            .iter()
+            .map(|p| match p {
+                PathStep::Index(i) => i.to_string(),
+                PathStep::Field(f) => f.clone(),
+            })
+            .collect();
+        let path = path.join(".");
+        let value_arg = self.callee.as_deref() == Some("push_output") && self.arg == 1;
+        match (value_arg, path.is_empty()) {
+            (true, true) => String::new(),
+            (true, false) => path,
+            (false, true) => format!("arg {}", self.arg),
+            (false, false) => format!("arg {}: {path}", self.arg),
+        }
+    }
+
+    /// `lives[0].2.x`: the channel, which emit on it, and [`Self::where_text`],
+    /// then `+N` when N more of its numbers moved too.
+    pub fn label(&self) -> String {
+        let w = self.where_text();
+        let head = format!("{}[{}]", self.channel, self.emit);
+        let mut s = if w.is_empty() {
+            head
+        } else if w.starts_with("arg ") {
+            format!("{head} {w}")
+        } else {
+            format!("{head}.{w}")
+        };
+        if self.moved > 1 {
+            s.push_str(&format!(" +{}", self.moved - 1));
+        }
+        s
+    }
 }
 
 /// What else an alternative moved, measured by its verification run.
@@ -1546,12 +1596,16 @@ fn change_of(p: &Param, t: &ParamText, v: f64, (new_text, respelled): (String, b
 }
 
 /// What each baseline emit is, for collateral items: channel, native, line.
-fn emit_info(env: &Env, pid: crate::program::ProgramId, base: &SpecRun) -> HashMap<EmitKey, (String, Option<String>, Option<u32>)> {
+fn emit_info(env: &Env, pid: crate::program::ProgramId, base: &SpecRun) -> HashMap<EmitKey, EmitInfo> {
     let program = env.get_program(pid);
     let origins = program.map(file_origins).unwrap_or_default();
+    let mut per_channel: HashMap<crate::symbol::SymbolId, usize> = HashMap::new();
     base.emits
         .iter()
         .map(|e| {
+            let nth = per_channel.entry(e.channel).or_insert(0);
+            let emit = *nth;
+            *nth += 1;
             let channel = env.symbol_name(e.channel).unwrap_or("?").to_string();
             let callee = e.native.map(|id| env.native_table().get_name(id).to_string());
             let line = program.and_then(|program| {
@@ -1561,9 +1615,19 @@ fn emit_info(env: &Env, pid: crate::program::ProgramId, base: &SpecRun) -> HashM
                     user.then_some(span.start.line)
                 })
             });
-            (e.key, (channel, callee, line))
+            (e.key, EmitInfo { channel, callee, line, emit })
         })
         .collect()
+}
+
+/// What [`emit_info`] knows about one baseline emit.
+#[derive(Debug, Clone, Default)]
+struct EmitInfo {
+    channel: String,
+    callee: Option<String>,
+    line: Option<u32>,
+    /// Which emit on its channel.
+    emit: usize,
 }
 
 /// The collateral of a verification run: rows grouped by emit.
@@ -1571,7 +1635,7 @@ fn collateral_items(
     jac: &Jacobian,
     gr: usize,
     moves: &[Option<f64>],
-    info: &HashMap<EmitKey, (String, Option<String>, Option<u32>)>,
+    info: &HashMap<EmitKey, EmitInfo>,
     goal_moves: &[f64],
 ) -> Collateral {
     let mut items: Vec<CollateralItem> = Vec::new();
@@ -1585,12 +1649,22 @@ fn collateral_items(
         }
         let Some(key) = emit_key_of(&jac.rows[gr + k]) else { continue };
         let mag = m.map_or(f64::INFINITY, f64::abs);
+        let (arg, path) = match &jac.rows[gr + k] {
+            Observable::EmitArg { arg, path, .. } => (*arg, path.clone()),
+            _ => (0, Vec::new()),
+        };
         if let Some(it) = items.iter_mut().find(|i| i.key == key) {
-            it.max_move = it.max_move.max(mag);
+            it.moved += 1;
+            if mag > it.max_move {
+                it.max_move = mag;
+                it.arg = arg;
+                it.path = path;
+            }
             continue;
         }
-        let (channel, callee, line) = info.get(&key).cloned().unwrap_or(("?".into(), None, None));
-        items.push(CollateralItem { key, channel, callee, line, max_move: mag });
+        let EmitInfo { channel, callee, line, emit } =
+            info.get(&key).cloned().unwrap_or_else(|| EmitInfo { channel: "?".into(), ..Default::default() });
+        items.push(CollateralItem { key, channel, callee, line, max_move: mag, emit, arg, path, moved: 1 });
     }
     let keys: Vec<Option<EmitKey>> = jac.rows[gr..].iter().map(emit_key_of).collect();
     Collateral {
@@ -1615,10 +1689,17 @@ fn describe(changes: &[ParamChange], coll: &Collateral, verified: bool, achieved
         })
         .collect();
     let mut s = parts.join(", ");
+    let names = || {
+        let mut l: Vec<String> = coll.items.iter().take(3).map(CollateralItem::label).collect();
+        if coll.items.len() > 3 {
+            l.push(format!("+{} more", coll.items.len() - 3));
+        }
+        l.join(", ")
+    };
     match coll.items.len() {
         0 => s.push_str("; moves nothing else"),
-        1 => s.push_str("; also moves 1 other emit"),
-        n => s.push_str(&format!("; also moves {n} other emits")),
+        1 => s.push_str(&format!("; also moves 1 other emit ({})", names())),
+        n => s.push_str(&format!("; also moves {n} other emits ({})", names())),
     }
     if !verified {
         let worst = achieved

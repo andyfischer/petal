@@ -121,7 +121,10 @@ fn json_shape_is_frozen() {
     );
     assert_eq!(keys(&a["collateral"]), set(&["norm", "items"]));
     let item = &a["collateral"]["items"][0];
-    assert_eq!(keys(item), set(&["channel", "callee", "line", "max_move", "key"]));
+    assert_eq!(
+        keys(item),
+        set(&["channel", "callee", "line", "max_move", "key", "emit", "arg", "path", "moved", "label"])
+    );
 
     // The top alternative: the config literal, through the helper.
     assert_eq!(a["rank"], 1);

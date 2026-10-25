@@ -53,6 +53,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   the arm's entry value instead of the nested branch's, so `petal
   propose-edit` failed with "nothing can move the goals" and `petal explain`
   / `petal graph --slice` stopped short of the nested assignment.
+- Direct manipulation v2: collateral now reads numbers inside containers (a
+  list of records, a record inside a record), so an edit that also moves,
+  say, a row of icons emitted as a list is no longer reported as "moves
+  nothing else" and ranked first. Each collateral item names the number that
+  moved most (`lives[0].2.x`), in the description, the text output and new
+  `--json` fields (`emit`, `arg`, `path`, `moved`, `label`)
+  ([CLI](docs/CLI.md#propose-edit--propose-source-edits-that-change-an-emitted-value)).
 
 ## 0.1.0 - 2026-10-23
 

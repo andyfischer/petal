@@ -610,9 +610,11 @@ across a reload use `ParamSelector::Span` or `Variable` (§2.7).
 
 ### 2.3 (c) Sensitivity: the Jacobian (M2)
 
-Rows are the **goal rows** plus the **collateral rows**: every numeric raw
-native argument of every emit in the baseline (capped at 20k rows by
-default, in which case only emits on the goals' channels are kept). Columns
+Rows are the **goal rows** plus the **collateral rows**: every number in
+every raw native argument of every emit in the baseline, read through
+containers (a record's fields, a list's items, a list of records, a record in
+a record, a variant's payload; at most 256 numbers per argument), capped at
+8,192 rows, in which case only emits on the goals' channels are kept. Columns
 are the screened parameters.
 
 #### 2.3.1 Step size
@@ -2414,6 +2416,22 @@ has one notion of a knob. What changed:
 4. No `dm-goal` expectation changed. `l07b` no longer relies on `tunable`
    being cheaper: `shrink` still wins `taller` and `rightmost-out` on the
    size of the change (its comment says so now).
+
+**Canopy study fixes, 2026-10-25.** The Canopy side-scroller study
+(cheesecake `games/canopy/DM-DEBRIEF.md`, 46 attempts) found two solver
+gaps it marked "first":
+
+1. *S1, collateral reads nested values.* Collateral rows stopped at one level
+   (a number, a record of at most 8 numbers, a list of at most 4), so a list
+   of records (the lives icons, every platform of a level) or a record in a
+   record was invisible: a shared `MARGIN` that moved the three lives icons
+   was reported as "moves nothing else" and ranked first (#26, #42).
+   `jacobian::collateral_rows` now walks every container the recorded value
+   kept (`ObsBounds::ARGS`, depth 3), up to `COLLATERAL_LEAVES_PER_ARG`
+   (256) numbers per argument. A `CollateralItem` names the number that moved
+   most (`emit`, `arg`, `path`, `moved`, `label()`: `lives[0].2.x +2`), and
+   the description and the CLI list them. The ladder's outcomes, top edits
+   and run counts are unchanged (its draw arguments were already flat).
 
 ---
 

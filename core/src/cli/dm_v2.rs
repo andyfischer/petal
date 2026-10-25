@@ -950,6 +950,11 @@ fn alternative_json(program: &Program, rank: usize, a: &Alternative, targets: &[
                 "line": c.line,
                 "max_move": num(c.max_move),
                 "key": key_json(&c.key),
+                "emit": c.emit,
+                "arg": c.arg,
+                "path": path_json(&c.path),
+                "moved": c.moved,
+                "label": c.label(),
             })
         })
         .collect();
@@ -1238,7 +1243,17 @@ pub fn print_text(r: &Json) {
             }
         }
         if moved > 0 {
-            facts.push(format!("moves {moved} other value{} (norm {})", if moved == 1 { "" } else { "s" }, fmt_num(&coll["norm"])));
+            let items = coll["items"].as_array().unwrap_or(&empty);
+            let mut names: Vec<String> = items.iter().take(4).filter_map(|c| c["label"].as_str().map(str::to_string)).collect();
+            if items.len() > 4 {
+                names.push(format!("+{} more", items.len() - 4));
+            }
+            facts.push(format!(
+                "moves {moved} other value{} (norm {}): {}",
+                if moved == 1 { "" } else { "s" },
+                fmt_num(&coll["norm"]),
+                names.join(", ")
+            ));
         }
         if !a["score"].is_null() && a["engine"].as_str() != Some("v1") {
             facts.push(format!("score {}", fmt_num(&a["score"])));

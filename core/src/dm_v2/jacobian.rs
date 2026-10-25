@@ -183,51 +183,64 @@ impl Jacobian {
     }
 }
 
-/// The collateral rows of a baseline (§2.3): every numeric raw native
-/// argument of every emit (numbers, and the numbers of a short list such as
-/// a vec2), except the goals. Past `cap` rows, only emits on the goals'
-/// channels are kept, then the list is cut at `cap`.
+/// The most numbers one raw native argument contributes to the collateral
+/// rows: a list of records (a row of icons, every platform of a level) is
+/// read through, but a long buffer does not crowd out the other emits.
+pub const COLLATERAL_LEAVES_PER_ARG: usize = 256;
+
+/// Push a row for every number inside `v` (at `path`), depth first, until
+/// `left` runs out: numbers, the fields of records (maps), the items of lists
+/// (vec2/vec3, `f64_array`) and a variant's payload, at any depth the
+/// recorded value kept.
+fn numeric_leaves(v: &ObsValue, path: &mut Vec<PathStep>, left: &mut usize, out: &mut Vec<Vec<PathStep>>) {
+    if *left == 0 {
+        return;
+    }
+    match v {
+        ObsValue::Num(_) | ObsValue::Int(_) => {
+            *left -= 1;
+            out.push(path.clone());
+        }
+        ObsValue::Record(fields) => {
+            for (name, item) in fields {
+                path.push(PathStep::Field(name.clone()));
+                numeric_leaves(item, path, left, out);
+                path.pop();
+            }
+        }
+        ObsValue::List(items) | ObsValue::Variant { data: items, .. } => {
+            for (i, item) in items.iter().enumerate() {
+                path.push(PathStep::Index(i));
+                numeric_leaves(item, path, left, out);
+                path.pop();
+            }
+        }
+        ObsValue::Bool(_) | ObsValue::Str(_) | ObsValue::Nil | ObsValue::Opaque => {}
+    }
+}
+
+/// The collateral rows of a baseline (§2.3): every number in every raw
+/// native argument of every emit, except the goals. Containers are read
+/// through: a record's fields, a list's items, a list of records, a record
+/// in a record (each argument contributes at most
+/// [`COLLATERAL_LEAVES_PER_ARG`] numbers). Past `cap` rows, only emits on the
+/// goals' channels are kept, then the list is cut at `cap`.
 pub fn collateral_rows(baseline: &SpecRun, goals: &[Observable], cap: usize) -> Vec<Observable> {
     let rows_of = |only: Option<&[crate::symbol::SymbolId]>| {
         let mut rows = Vec::new();
+        let mut leaves = Vec::new();
         for e in &baseline.emits {
             if only.is_some_and(|c| !c.contains(&e.channel)) {
                 continue;
             }
             for (arg, v) in e.native_args.iter().enumerate() {
-                match v {
-                    ObsValue::Num(_) | ObsValue::Int(_) => {
-                        rows.push(Observable::EmitArg { key: e.key, arg, path: Vec::new() })
-                    }
-                    // A rect or point record (`draw_rect(r, c)`): its
-                    // numeric fields (§9 M5, revision 5).
-                    ObsValue::Record(fields) if fields.len() <= 8 => {
-                        for (name, item) in fields {
-                            if item.as_f64().is_some() {
-                                rows.push(Observable::EmitArg {
-                                    key: e.key,
-                                    arg,
-                                    path: vec![PathStep::Field(name.clone())],
-                                });
-                            }
-                        }
-                    }
-                    ObsValue::List(items) if items.len() <= 4 => {
-                        for (i, item) in items.iter().enumerate() {
-                            if item.as_f64().is_some() {
-                                rows.push(Observable::EmitArg {
-                                    key: e.key,
-                                    arg,
-                                    path: vec![PathStep::Index(i)],
-                                });
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+                leaves.clear();
+                let mut left = COLLATERAL_LEAVES_PER_ARG;
+                numeric_leaves(v, &mut Vec::new(), &mut left, &mut leaves);
+                rows.extend(leaves.drain(..).map(|path| Observable::EmitArg { key: e.key, arg, path }));
             }
         }
-        rows.retain(|r| !goals.contains(r));
+    rows.retain(|r| !goals.contains(r));
         rows
     };
     let all = rows_of(None);

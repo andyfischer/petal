@@ -48,6 +48,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   directory), the `--explain` candidate table, and a new `site` field on each
   `--json` change and candidate.
 
+- `propose-edit --apply` without `--pick` applies the only verified
+  alternative when the others are unverified (it needed `--pick` whenever
+  there was more than one), and says which it applied: `Applied alternative
+  2, the only verified one, (set `y` to 23.0 (line 3)) to sketch.ptl.`;
+  `--json`'s `applied` gains `picked_by` and `description`. Several verified
+  alternatives still need `--pick`.
+
 - C bridge: `pb_vm_propose_edit(vm, request_json, &response_json)` (and
   `petal::Vm::propose_edit` in C++) runs direct manipulation on the host's
   VM with its registered natives, from the frame after the last run;

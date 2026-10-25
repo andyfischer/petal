@@ -1632,9 +1632,10 @@ OPTIONS
 
        --apply [--pick N]
               Write the edit to the file in place. v1: only when every goal
-              resolves to exactly one proposal. v2: the top alternative when it
-              is the only one, else the one --pick names (1-based); it must
-              be verified. Every file it touches is written.
+              resolves to exactly one proposal. v2: the one --pick names
+              (1-based); without --pick, the only alternative or the only
+              verified one (it says which it applied), else it refuses. It
+              must be verified. Every file it touches is written.
 
        --json
               Emit the result as structured JSON.

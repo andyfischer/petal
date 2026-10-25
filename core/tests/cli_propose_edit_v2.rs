@@ -580,3 +580,28 @@ spawn({speed: tunable(12)})
     let r = helper_json(&[]);
     assert!(r["alternatives"][0]["changes"][0]["site"].is_null(), "{r:#}");
 }
+
+#[test]
+fn apply_takes_the_only_verified_alternative_without_a_pick() {
+    // `x` reaches 42.5 only as a float, which it may not become; `y` can.
+    // So there are two alternatives, and only one is verified.
+    let src = "import io\nlet x = 20\nlet y = 2.5\npush_output(symbol(\"s\"), x + y)\n";
+    let path = scratch("apply-verified", src);
+    let p = path.to_str().unwrap();
+    let r = run_json(&["propose-edit", "--json", "--channel", "s", "--emit", "0", "--value", "--to", "43", p]);
+    let alts = r["alternatives"].as_array().unwrap();
+    let verified: Vec<_> = alts.iter().filter(|a| a["verified"] == true).collect();
+    assert!(alts.len() > 1 && verified.len() == 1, "{r:#}");
+
+    let (stdout, stderr, ok) =
+        run(&["propose-edit", "--channel", "s", "--emit", "0", "--value", "--to", "43", "--apply", p]);
+    assert!(ok, "{stderr}");
+    let rank = verified[0]["rank"].clone();
+    let line = stdout.lines().last().unwrap();
+    assert!(line.starts_with(&format!("Applied alternative {rank}, the only verified one, (")), "{stdout}");
+    assert!(line.contains(verified[0]["description"].as_str().unwrap()), "{stdout}");
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert_ne!(written, src);
+    let t = run_json(&["run", "--trace-emits", "--json", p]);
+    assert_eq!(t["channels"]["s"][0]["value"], 43.0);
+}

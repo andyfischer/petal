@@ -316,7 +316,8 @@ Narrow with --configurable <var> / --static <var>, or apply one by hand.
 
 `--explain` shows every number it considered and why it kept or dropped
 each one; `--allow`/`--deny` say which may move; `--apply --pick N` writes
-the alternative you chose (every file it touches). All options, and the
+the alternative you chose (every file it touches), and plain `--apply` writes
+the only verified one when there is just one. All options, and the
 `--json` shape, are in the
 [CLI reference](../CLI.md#propose-edit--propose-source-edits-that-change-an-emitted-value).
 

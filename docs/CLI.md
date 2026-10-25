@@ -1873,8 +1873,11 @@ Other options:
   echoed. Pass the same `--seed` to `run --trace-emits` so both agree on which
   emit is which when the script draws random numbers.
 - `--apply` — write the edit. v1: only when every goal resolves to exactly
-  one proposal. v2: the top alternative when it is the only one, else the
-  one `--pick N` names (1-based); it must be verified. Every file it touches
+  one proposal. v2: the one `--pick N` names (1-based); without `--pick`, the
+  only alternative, or the only verified one when the others are unverified
+  (`Applied alternative 2, the only verified one, (set `y` to 23.0 (line
+  3)) to sketch.ptl.`); with several verified ones it refuses. What it
+  writes must be verified. Every file it touches
   is written (an edit can land in an imported file).
 - `--json` — the result as JSON.
 
@@ -1903,7 +1906,7 @@ fields are only ever added):
                  stopped_by: "runs"|"wall"|"converged", max_runs, max_wall_ms, warnings, discovered,
                  eligible, screened, measured, truncated, subsets_predicted, subsets_verified },
   explain: [line, ...] | null,
-  applied: { pick, files } | null }
+  applied: { pick, picked_by: "pick"|"only_verified", description, files } | null }
 ```
 
 A change's or a candidate's `site` says where in its expression the literal

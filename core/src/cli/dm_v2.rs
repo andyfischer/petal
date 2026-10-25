@@ -772,13 +772,21 @@ fn apply(program: &Program, response: &DmResponse, pick: Option<usize>, entry_pa
     if alts.is_empty() {
         return Err(fail("apply", "there is no alternative to apply"));
     }
+    // Without --pick: the only alternative, or the only verified one (the
+    // others could not be written anyway).
+    let verified: Vec<usize> = alts.iter().enumerate().filter(|(_, a)| a.verified).map(|(i, _)| i + 1).collect();
     let rank = match pick {
         Some(n) => n,
         None if alts.len() == 1 => 1,
+        None if verified.len() == 1 => verified[0],
         None => {
             return Err(fail(
                 "apply",
-                format!("{} alternatives; choose one with --pick N (or narrow with --allow/--deny)", alts.len()),
+                format!(
+                    "{} alternatives ({} verified); choose one with --pick N (or narrow with --allow/--deny)",
+                    alts.len(),
+                    verified.len()
+                ),
             ));
         }
     };
@@ -808,7 +816,7 @@ fn apply(program: &Program, response: &DmResponse, pick: Option<usize>, entry_pa
         std::fs::write(&path, text).map_err(|e| fail("apply", format!("writing '{}': {e}", path.display())))?;
         written.push(path.display().to_string());
     }
-    Ok(json!({ "pick": rank, "files": written }))
+    Ok(json!({ "pick": rank, "picked_by": if pick.is_some() { "pick" } else { "only_verified" }, "description": alt.description, "files": written }))
 }
 
 /// Parse a `--to` value as a config file would: int, float, `true`/`false`/
@@ -1503,16 +1511,24 @@ pub fn print_text(r: &Json) {
     match r.get("applied") {
         Some(a) if !a.is_null() => {
             let files: Vec<&str> = a["files"].as_array().unwrap_or(&empty).iter().filter_map(|f| f.as_str()).collect();
-            println!("Applied alternative {} to {}.", a["pick"], files.join(", "));
+            let files: Vec<String> = files.iter().map(|f| display_path(f)).collect();
+            let why = if a["picked_by"] == "only_verified" && alts.len() > 1 { ", the only verified one," } else { "" };
+            println!(
+                "Applied alternative {}{why} ({}) to {}.",
+                a["pick"],
+                a["description"].as_str().unwrap_or("?"),
+                files.join(", ")
+            );
         }
         _ if !alts.iter().any(|a| a["verified"].as_bool() == Some(true)) => {
             if alts.iter().any(|a| a["engine"].as_str() == Some("v1")) {
                 println!("v1 answered (the goal is not a number); apply with --v1 --apply.");
             }
         }
-        _ if alts.len() > 1 => {
+        _ if alts.iter().filter(|a| a["verified"].as_bool() == Some(true)).count() > 1 => {
             println!("Apply one with --apply --pick N; narrow with --allow/--deny; see why with --explain.")
         }
+        _ if alts.len() > 1 => println!("Apply the verified one with --apply."),
         _ => println!("Apply it with --apply."),
     }
 }

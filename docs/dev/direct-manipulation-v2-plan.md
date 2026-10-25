@@ -1072,8 +1072,9 @@ petal propose-edit --v2 --channel shapes --emit 0 --arg 1 --by 10 script.ptl
   the term's consumer chain; the text output prints it after the line.
   The seed defaults to `0` (or `PETAL_SEED`) and is echoed in the output,
   so `run --trace-emits` and `propose-edit` agree on which shape "emit 7" is.
-- `--apply` with `--v2` refuses unless the top alternative is verified and
-  either it is the only one or `--pick` was given.
+- `--apply` with `--v2` writes the alternative `--pick` names (it must be
+  verified); without `--pick`, the only alternative or the only verified
+  one, and it refuses when several are verified.
 - `petal run --trace-emits` gains `native_args` per emit (raw values) and the
   `EmitKey`.
 

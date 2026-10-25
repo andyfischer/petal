@@ -129,8 +129,14 @@ describe("comparison terms", () => {
 
 describe("unary terms", () => {
   it("emits Neg for unary minus", () => {
-    const ir = showIrJson("let x = -5");
+    // `-5` is one negative literal; Neg comes from negating an expression.
+    const ir = showIrJson("let y = 5\nlet x = -y");
     expect(termsByOp(ir, "Neg").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("folds a minus before a number literal into the literal", () => {
+    const ir = showIrJson("let x = -5");
+    expect(termsByOp(ir, "Neg").length).toBe(0);
   });
 
   it("emits Not for !", () => {

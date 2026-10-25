@@ -1059,7 +1059,8 @@ petal propose-edit --v2 --channel shapes --emit 0 --arg 1 --by 10 script.ptl
   maps to `Observable::Watch` (§2.1.6). `--native-arg i` addresses the
   emitting native's raw argument. `--by d` is relative to the baseline value.
 - `--allow`/`--deny` take `name`, `line:N`, `config`, `fn:NAME`, `user`,
-  `lib` and `state-init`. The old `--configurable`/`--static` map to
+  `lib` and `state-init`, and one literal by `at:FILE:LINE:COL` /
+  `at:LINE:COL` (`ParamSelector::At`) or `term:N` (`ParamSelector::Term`). The old `--configurable`/`--static` map to
   `allow`-with-preference and `deny`.
 - `--tol`, `--max-runs`, `--max-wall` (seconds; the 5 s default of
   `DmRequest::max_wall`), `--max-screen`, `--allow-respell` and `--seed`. The

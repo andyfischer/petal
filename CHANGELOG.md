@@ -34,6 +34,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   budget`, and `--json` has `diagnostics.stopped_by` (`"runs"`, `"wall"`,
   `"converged"`) with the `max_runs` and `max_wall_ms` it ran with.
 
+- `propose-edit` selectors for one literal: `--allow at:FILE:LINE:COL`
+  (1-based, any column inside the literal; `FILE` is a path suffix such as
+  `core/level.ptl`, or leave it out for the entry file) and `--allow term:N`
+  (the `term` id the `--json` report gives each candidate and change). Level
+  data no longer needs a `tunable` marker just to be chosen; `--deny` takes
+  them too.
+
 - C bridge: `pb_vm_propose_edit(vm, request_json, &response_json)` (and
   `petal::Vm::propose_edit` in C++) runs direct manipulation on the host's
   VM with its registered natives, from the frame after the last run;

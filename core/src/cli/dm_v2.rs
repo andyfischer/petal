@@ -127,6 +127,9 @@ pub fn effective_seed(flag: Option<u64>) -> u64 {
 /// |---|---|
 /// | `NAME` | the binding `NAME` (base or module-qualified name) |
 /// | `line:N` | literals on line `N` of the entry file |
+/// | `at:FILE:LINE:COL` | the one literal written at that 1-based line and column of `FILE` (a path suffix, e.g. `core/level.ptl`) |
+/// | `at:LINE:COL` | the same in the entry file |
+/// | `term:N` | the literal whose term id is `N` (a candidate's or a change's `term` in `--json`) |
 /// | `fn:NAME` | literals in the body of function `NAME` |
 /// | `config` | `config let` and `tunable` literals |
 /// | `user` | every literal in user code |
@@ -141,6 +144,24 @@ pub fn parse_selector(s: &str) -> Result<ParamSelector, String> {
             .parse()
             .map(ParamSelector::Line)
             .map_err(|_| format!("selector `{s}`: line:N takes a 1-based line number"));
+    }
+    if let Some(rest) = s.strip_prefix("at:") {
+        let bad = || format!("selector `{s}`: at: takes FILE:LINE:COL or LINE:COL (1-based)");
+        let mut parts = rest.rsplitn(3, ':');
+        let column = parts.next().and_then(|c| c.parse::<u32>().ok()).filter(|c| *c > 0).ok_or_else(bad)?;
+        let line = parts.next().and_then(|l| l.parse::<u32>().ok()).filter(|l| *l > 0).ok_or_else(bad)?;
+        let file = match parts.next() {
+            None => None,
+            Some("") => return Err(bad()),
+            Some(f) => Some(f.to_string()),
+        };
+        return Ok(ParamSelector::At { file, line, column });
+    }
+    if let Some(n) = s.strip_prefix("term:") {
+        return n
+            .parse()
+            .map(|n| ParamSelector::Term(TermId(n)))
+            .map_err(|_| format!("selector `{s}`: term:N takes a term id (`term` in --json)"));
     }
     if let Some(name) = s.strip_prefix("fn:") {
         if name.is_empty() {

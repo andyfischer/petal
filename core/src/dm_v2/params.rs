@@ -157,6 +157,10 @@ pub enum ParamSelector {
     Variable(String),
     /// Any literal on this 1-based line of the entry file.
     Line(u32),
+    /// The literal written at this 1-based line and column (anywhere inside
+    /// its text) of `file`: the entry file when `None`, else the file whose
+    /// path ends with it (`core/level.ptl`) or whose display name it is.
+    At { file: Option<String>, line: u32, column: u32 },
     /// `config let` and `tunable` literals.
     ConfigOnly,
     /// Literals in this function's body.
@@ -182,6 +186,7 @@ impl ParamSelector {
                 | ParamSelector::Span(_)
                 | ParamSelector::Variable(_)
                 | ParamSelector::Line(_)
+                | ParamSelector::At { .. }
                 | ParamSelector::ConfigOnly
                 | ParamSelector::Function(_)
                 | ParamSelector::AllUserCode
@@ -197,6 +202,7 @@ impl ParamSelector {
                 | ParamSelector::Span(_)
                 | ParamSelector::Variable(_)
                 | ParamSelector::Line(_)
+                | ParamSelector::At { .. }
                 | ParamSelector::Function(_)
         )
     }
@@ -214,6 +220,17 @@ impl ParamSelector {
                 b == name || b.rsplit("::").next() == Some(name.as_str())
             }),
             ParamSelector::Line(l) => p.file == ENTRY_FILE && p.span.start.line == *l,
+            ParamSelector::At { file, line, column } => {
+                let (s, e) = (p.span.start, p.span.end);
+                let inside = s.line == *line
+                    && s.column <= *column
+                    && (e.line > s.line || *column < e.column.max(s.column + 1));
+                inside
+                    && match file {
+                        None => p.file == ENTRY_FILE,
+                        Some(f) => file_is(program, p.file, f),
+                    }
+            }
             ParamSelector::ConfigOnly => p.is_knob(),
             ParamSelector::Function(name) => p.function.is_some_and(|f| {
                 program
@@ -229,6 +246,28 @@ impl ParamSelector {
             _ => false,
         }
     }
+}
+
+/// Whether `want` names the program's file `id`: its path ends with `want`
+/// (component-wise, so `level.ptl` does not match `sublevel.ptl`; a leading
+/// `./` is ignored), it is the same file on disk, or `want` is its display
+/// name.
+fn file_is(program: &Program, id: FileId, want: &str) -> bool {
+    let Some(f) = program.source_map.files.get(id.0 as usize) else {
+        return false;
+    };
+    if f.name == want {
+        return true;
+    }
+    let Some(origin) = f.origin.as_deref() else {
+        return false;
+    };
+    let want = Path::new(want.strip_prefix("./").unwrap_or(want));
+    origin.ends_with(want)
+        || match (std::fs::canonicalize(origin), std::fs::canonicalize(want)) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => false,
+        }
 }
 
 /// Which parameters may move: `allow: None` is the defaults of §2.5.1;

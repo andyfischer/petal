@@ -1579,10 +1579,15 @@ FILTERS
        --allow <sel>, --deny <sel>
               (v2) Which literals may move. Selectors: a binding NAME,
               line:N, fn:NAME, config (alias knob: every config let and
-              tunable literal), user (all user code); and to lift a default
-              exclusion: state-init, structural, rng, path-deps, lib
-              (screened for the report only). Repeatable.
-              An --allow naming literals is exact.
+              tunable literal), user (all user code); one literal:
+              at:FILE:LINE:COL (1-based, anywhere in its text; FILE is a
+              path suffix such as core/level.ptl, left out for the entry
+              file: at:LINE:COL) or term:N (the term id --json reports for a
+              candidate or a change); and to lift a default exclusion:
+              state-init, structural, rng, path-deps, lib (screened for the
+              report only). Repeatable. An --allow naming literals is exact,
+              and one naming a place (NAME, line:, at:, term:, fn:) also
+              lifts the default exclusions for it.
 
        --configurable <var>, --static <var>
               v1's spellings. Under v2 (the default) they mean

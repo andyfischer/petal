@@ -1832,7 +1832,13 @@ Which literals may move (v2):
 
 - `--allow <sel>` / `--deny <sel>` — selectors: a binding name, `line:N`,
   `fn:NAME` (literals in that function's body), `config` (alias `knob`: every
-  `config let` and `tunable` literal, one tier), `user` (all user code). These lift a default
+  `config let` and `tunable` literal, one tier), `user` (all user code). One
+  literal: `at:FILE:LINE:COL` (1-based, any column inside the literal's text;
+  `FILE` is a path suffix like `core/level.ptl`, or the file's display name)
+  or `at:LINE:COL` in the entry file, and `term:N`, the `term` that `--json`
+  reports for each candidate and change (valid for the same source only).
+  So a number in level data can be chosen without a `tunable` marker:
+  `--allow at:core/level.ptl:41:12`. These lift a default
   exclusion: `state-init`, `structural` (a literal that only picks a branch or
   a loop bound), `rng` (one that only feeds a random draw), `path-deps`, and
   `lib` (library literals are screened for the report, never edited).

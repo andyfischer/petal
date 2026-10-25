@@ -464,3 +464,68 @@ fn max_wall_is_configurable_and_the_report_names_the_budget_that_ended_it() {
     assert!(!ok);
     assert!(stderr.contains("--max-wall takes a positive number of seconds"), "{stderr}");
 }
+
+#[test]
+fn one_literal_is_selected_by_position_or_term_id() {
+    // Level data in an imported file, with no `tunable` marker on any of it.
+    let dir = std::env::temp_dir().join(format!("petal-cli-dm-v2-{}-at", std::process::id()));
+    std::fs::create_dir_all(dir.join("core")).unwrap();
+    std::fs::write(dir.join("core/level.ptl"), "pub let rows = [\n  {x: 10, y: 5},\n  {x: 40, y: 7},\n]\n").unwrap();
+    let main = dir.join("main.ptl");
+    std::fs::write(
+        &main,
+        "import io\nimport ./core/level\nfor r in level.rows do\n  push_output(symbol(\"shapes\"), r.x * 2 + r.y)\nend\n",
+    )
+    .unwrap();
+    let m = main.to_str().unwrap();
+    let goal = ["propose-edit", "--json", "--channel", "shapes", "--emit", "1", "--native-arg", "1", "--by", "6"];
+    let with = |extra: &[&str]| {
+        let mut args = goal.to_vec();
+        args.extend_from_slice(extra);
+        args.push(m);
+        run_json(&args)
+    };
+    let only = |r: &Value| -> Vec<String> {
+        r["alternatives"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["changes"][0]["old_text"].as_str().unwrap().to_string())
+            .collect()
+    };
+    // Both numbers of the second row can take the drag.
+    assert_eq!(only(&with(&[])), ["40", "7"]);
+    // `at:FILE:LINE:COL`, anywhere inside the literal's text (`40` is
+    // columns 7-8 of line 3); a path suffix names the file.
+    assert_eq!(only(&with(&["--allow", "at:core/level.ptl:3:8"])), ["40"]);
+    assert_eq!(only(&with(&["--allow", "at:level.ptl:3:14"])), ["7"]);
+    assert_eq!(only(&with(&["--deny", "at:core/level.ptl:3:7"])), ["7"]);
+    // `term:N`, the `term` the report gives each candidate and change.
+    let r = with(&[]);
+    let seven = r["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["value"] == 7.0)
+        .map(|c| c["term"].as_u64().unwrap())
+        .unwrap();
+    assert_eq!(only(&with(&["--allow", &format!("term:{seven}")])), ["7"]);
+    // A column between literals selects nothing.
+    let (stdout, _, ok) = run(&[&goal[..], &["--allow", "at:core/level.ptl:3:6", m]].concat());
+    assert!(!ok);
+    assert!(stdout.contains("not among the allowed parameters"), "{stdout}");
+
+    // `at:LINE:COL` is the entry file: `20` in `place`, a literal no knob marks.
+    let path = scratch("at-entry", HELPER);
+    let r = run_json(&[
+        "propose-edit", "--json", "--channel", "shapes", "--emit", "2", "--native-arg", "1", "--by", "25", "--allow",
+        "at:4:10", path.to_str().unwrap(),
+    ]);
+    assert_eq!(only(&r), ["20"]);
+
+    for bad in ["at:3", "at:x:3", "at:f.ptl:0:1", "at::3:4", "term:x"] {
+        let (_, stderr, ok) = run(&[&goal[..], &["--allow", bad, m]].concat());
+        assert!(!ok, "{bad}");
+        assert!(stderr.contains(&format!("selector `{bad}`")), "{bad}: {stderr}");
+    }
+}

@@ -205,7 +205,9 @@ Sometimes the first answer is the wrong one. The editor (or an AI agent)
 can say which numbers a drag may change, and let Petal work out the values:
 
 - **allow** a set: a variable name, a line (`line:12`), a function's body
-  (`fn:place`), every `config` value. Only those move. With two or more of
+  (`fn:place`), every `config` value, or one number by where it is written
+  (`at:core/level.ptl:41:12`, line and column) or by the `term` id the
+  `--json` report gives it (`term:123`). Only those move. With two or more of
   them and one goal, Petal picks the smallest change that spreads across
   them.
 - **deny** a set: everything else may move.

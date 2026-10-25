@@ -38,8 +38,8 @@ pub struct ParamMeta {
     pub ty: Option<String>,
     /// The source text of the default expression, if the parameter has one.
     pub default_source: Option<String>,
-    /// The default's value when it is a static expression: a literal, a
-    /// negated number, a color literal, a list or record of those, or a
+    /// The default's value when it is a static expression: a literal
+    /// (negative numbers included), a color literal, a list or record of those, or a
     /// `vec2(...)` / `vec3(...)` of numbers. In the JSON form
     /// [`crate::value::json_to_value`] reads.
     pub default: Option<J>,
@@ -306,10 +306,6 @@ fn static_number(e: &Expr) -> Option<f64> {
     match &e.kind {
         ExprKind::Literal(Literal::Int(n)) => Some(*n as f64),
         ExprKind::Literal(Literal::Float(f)) => Some(*f),
-        ExprKind::UnaryOp {
-            op: crate::ast::UnaryOp::Neg,
-            operand,
-        } => static_number(operand).map(|n| -n),
         _ => None,
     }
 }
@@ -322,14 +318,6 @@ fn static_json(e: &Expr) -> Option<J> {
         ExprKind::Literal(Literal::Int(n)) => Some(json!(n)),
         ExprKind::Literal(Literal::Float(f)) => Some(json!(f)),
         ExprKind::Literal(Literal::String(s)) => Some(json!(s)),
-        ExprKind::UnaryOp {
-            op: crate::ast::UnaryOp::Neg,
-            operand,
-        } => match &operand.kind {
-            ExprKind::Literal(Literal::Int(n)) => Some(json!(-n)),
-            ExprKind::Literal(Literal::Float(f)) => Some(json!(-f)),
-            _ => None,
-        },
         ExprKind::List(items) => items.iter().map(static_json).collect::<Option<Vec<J>>>().map(J::Array),
         ExprKind::Record(fields) => {
             let mut out = Map::new();

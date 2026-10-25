@@ -52,10 +52,6 @@ pub struct Literal {
     /// Whether the source wrote it as an integer. A rewrite should preserve
     /// this: silently turning `10` into `10.0` across a drag churns the diff.
     pub is_int: bool,
-    /// Whether a unary minus was applied on top of the constant (`-5` lowers to
-    /// `Neg(Constant(5))`, so the constant alone reads as `5`). [`value`](Self::value)
-    /// is already negated; this records that the span covers the `-` too.
-    pub negated: bool,
 }
 
 /// How directly an argument traces back to something an editor may rewrite.
@@ -91,7 +87,7 @@ pub struct ArgSite {
     /// between them is what [`span`](Self::span) points at — the call for the
     /// first, the definition for the second. Non-numeric constants (strings,
     /// bools, `nil`) appear in [`value`](Self::value) instead — this field keeps
-    /// the number-specific spelling data (`is_int`, `negated`) a drag needs.
+    /// the number-specific spelling data (`is_int`) a drag needs.
     pub literal: Option<Literal>,
     /// The constant this argument resolves to, for *any* constant type: a
     /// string, bool, or `nil` as well as a number. `Some` exactly when
@@ -225,9 +221,8 @@ fn resolve_arg(program: &Program, index: usize, arg: TermId) -> ArgSite {
         value: None,
     };
 
-    // A constant written right here in the call — a number (including a negated
-    // one, which is two terms deep but still text the user typed at this spot),
-    // a string, a bool, or `nil`.
+    // A constant written right here in the call — a number, a string, a bool,
+    // or `nil`.
     if let Some(value) = constant_at(program, arg) {
         site.kind = ArgKind::Literal;
         site.literal = literal_at(program, arg);
@@ -308,26 +303,12 @@ pub(crate) fn constant_at(program: &Program, id: TermId) -> Option<StaticValue> 
     }
 }
 
-/// The literal `id` denotes, unwrapping a unary minus, or `None`.
+/// The numeric literal `id` denotes, or `None`.
 pub(crate) fn literal_at(program: &Program, id: TermId) -> Option<Literal> {
     let t = program.terms.get(id.0 as usize)?;
     match t.op {
-        TermOp::Constant(c) => number_constant(program, c).map(|(value, is_int)| Literal {
-            value,
-            is_int,
-            negated: false,
-        }),
-        TermOp::Neg => {
-            let inner = t.inputs.first().copied()?;
-            let inner = program.terms.get(inner.0 as usize)?;
-            let TermOp::Constant(c) = inner.op else {
-                return None;
-            };
-            number_constant(program, c).map(|(value, is_int)| Literal {
-                value: -value,
-                is_int,
-                negated: true,
-            })
+        TermOp::Constant(c) => {
+            number_constant(program, c).map(|(value, is_int)| Literal { value, is_int })
         }
         _ => None,
     }
@@ -504,10 +485,9 @@ mod tests {
         assert_eq!(site.args[1].value, Some(StaticValue::Float(2.5)));
     }
 
-    /// A negative literal is two terms deep (`Neg` over `Constant`) but is still
-    /// one number the user typed — it must resolve, already negated.
+    /// A negative literal is one constant, sign included.
     #[test]
-    fn resolves_a_negated_literal() {
+    fn resolves_a_negative_literal() {
         let (env, pid) = compile("print(-7)\n");
         let program = env.get_program(pid).unwrap();
         let call = program
@@ -519,7 +499,7 @@ mod tests {
         let site = CallSite::resolve(program, call.id).expect("resolves");
         let lit = site.args[0].literal.expect("a literal");
         assert_eq!(lit.value, -7.0);
-        assert!(lit.negated);
+        assert_eq!(site.args[0].kind, ArgKind::Literal);
     }
 
     /// `tunable(x)` is the identity, so a literal under it is still the

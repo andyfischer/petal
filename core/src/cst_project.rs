@@ -960,6 +960,12 @@ impl Projector {
         let tokens = direct_tokens(node);
         let first = tokens.first().and_then(|t| t.token().cloned());
         let kind = match first {
+            // A signed number: `-` then the number, one literal.
+            Some(Token::Minus) => match tokens.get(1).and_then(|t| t.token().cloned()) {
+                Some(Token::Int(n)) => ExprKind::Literal(Literal::Int(-n)),
+                Some(Token::Float(f)) => ExprKind::Literal(Literal::Float(-f)),
+                other => return Err(format!("expected number after '-' in literal, got {other:?}")),
+            },
             Some(Token::Int(n)) => ExprKind::Literal(Literal::Int(n)),
             Some(Token::Float(f)) => ExprKind::Literal(Literal::Float(f)),
             Some(Token::String(s)) => ExprKind::Literal(Literal::String(s)),

@@ -385,12 +385,10 @@ pub fn program_files(program: &Program) -> Vec<(FileId, String)> {
 /// What a parameter looks like in the source.
 #[derive(Debug, Clone)]
 struct ParamText {
-    /// The literal as written (sign included when negated).
+    /// The literal as written, sign included.
     text: String,
     /// The first non-blank character before it.
     prev: Option<char>,
-    /// The first non-blank character after it.
-    next: Option<char>,
     function: Option<String>,
     path: Option<PathBuf>,
 }
@@ -1080,7 +1078,7 @@ impl DmSession {
                 let v = crate::dm_v2::solve::round_to(v, 6);
                 let (p, t) = (&self.params[i], &self.texts[i]);
                 let (mut text, respelled) = render(p, t, v);
-                if v < 0.0 && !p.negated && needs_parens_by_neighbours(t) {
+                if v < 0.0 && !t.text.starts_with('-') && needs_parens_by_neighbours(t) {
                     text = format!("({text})");
                 }
                 change_of(p, t, v, (text, respelled))
@@ -1226,7 +1224,7 @@ impl DmSession {
                         continue;
                     }
                     let (mut text, respelled) = render(p, &self.texts[i], v);
-                    if v < 0.0 && !p.negated && needs_parens(ctx.env, pid, p, &self.texts[i], &text) {
+                    if v < 0.0 && !self.texts[i].text.starts_with('-') && needs_parens(ctx.env, pid, p, &self.texts[i], &text) {
                         text = format!("({text})");
                     }
                     let back = text.trim_start_matches('(').trim_end_matches(')').parse::<f64>().unwrap_or(v);
@@ -1492,13 +1490,12 @@ fn param_text(program: &Program, p: &Param) -> ParamText {
     let (s, e) = (p.span.start.offset as usize, p.span.end.offset as usize);
     let text: String = src.get(s.min(src.len())..e.min(src.len())).map(|c| c.iter().collect()).unwrap_or_default();
     let prev = src[..s.min(src.len())].iter().rev().find(|c| !c.is_whitespace()).copied();
-    let next = src[e.min(src.len())..].iter().find(|c| !c.is_whitespace()).copied();
     let function = p.function.and_then(|f| program.functions.get(f.0 as usize)).and_then(|d| d.name.clone()).map(|n| {
         let n = crate::program::base_fn_name(&n).to_string();
         n.rsplit("::").next().unwrap_or(&n).to_string()
     });
     let path = file.and_then(|f| f.origin.clone()).filter(|o| !o.to_string_lossy().starts_with('<'));
-    ParamText { text, prev, next, function, path }
+    ParamText { text, prev, function, path }
 }
 
 /// `v` written the way `p` was (§2.4.4): an int stays an int when whole; a
@@ -1514,10 +1511,9 @@ fn render(p: &Param, t: &ParamText, v: f64) -> (String, bool) {
     (crate::literal_edit::float_like(v, if p.is_int { "" } else { model }), respelled)
 }
 
-/// Whether a negative replacement for the non-negated literal `p` must be
-/// parenthesized: it would read `x - -3` (or `x + -3`), a postfix operator
-/// follows it (`5.f()` as `-2.f()` is `-(2.f())`, and `5[i]` likewise), or
-/// the file would not parse with it.
+/// Whether a negative replacement for the non-negative literal `p` must be
+/// parenthesized: it would read `x - -3` (or `x + -3`), or the file would not
+/// parse with it. A postfix operator needs none: `-2.f()` is `(-2).f()`.
 fn needs_parens(env: &Env, pid: crate::program::ProgramId, p: &Param, t: &ParamText, text: &str) -> bool {
     if needs_parens_by_neighbours(t) {
         return true;
@@ -1530,7 +1526,7 @@ fn needs_parens(env: &Env, pid: crate::program::ProgramId, p: &Param, t: &ParamT
 
 /// The half of [`needs_parens`] that reads only the literal's neighbours.
 fn needs_parens_by_neighbours(t: &ParamText) -> bool {
-    matches!(t.prev, Some('-' | '+')) || matches!(t.next, Some('.' | '['))
+    matches!(t.prev, Some('-' | '+'))
 }
 
 fn change_of(p: &Param, t: &ParamText, v: f64, (new_text, respelled): (String, bool)) -> ParamChange {

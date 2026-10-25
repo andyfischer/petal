@@ -233,13 +233,6 @@ pub struct Compiler {
     // compiled twice. Reset per module — spans are
     // file-local, so two files' spans collide freely.
     hoisted_decls: HashSet<SourceSpan>,
-    /// Spans of the negated number literals (`-3`, `-0.5`) in the data of a
-    /// `config let` initializer, collected as each one is compiled. Such an
-    /// expression compiles to a single constant holding the signed value
-    /// rather than a `Neg` over a constant, so changing its sign is a change
-    /// of one value: what lets a running program take the edit without a
-    /// recompile (see `crate::source_diff`).
-    config_folds: HashSet<SourceSpan>,
     /// Spans of every literal in the data of a `config let` initializer
     /// (`crate::source_diff::config_data_literals`): the term each compiles
     /// to is marked `is_config`, so `140` in `config let BOX = {x: 140}` is
@@ -536,7 +529,6 @@ impl Compiler {
             var_scopes: Vec::new(),
             fn_cell_scopes: Vec::new(),
             hoisted_decls: HashSet::new(),
-            config_folds: HashSet::new(),
             config_literals: HashSet::new(),
             layout_deps: Vec::new(),
             imported_vars: HashMap::new(),

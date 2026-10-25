@@ -2044,6 +2044,11 @@ impl Parser {
     fn parse_unary(&mut self) -> Result<Expr, String> {
         let start = self.pos;
         match self.peek().clone() {
+            // `-3` is one negative literal, not a negation of `3`, so postfix
+            // operators apply to the signed number: `-3.abs()` is `(-3).abs()`.
+            Token::Minus if matches!(self.peek_at(1), Token::Int(_) | Token::Float(_)) => {
+                self.parse_postfix()
+            }
             Token::Minus => {
                 self.ev_open(SyntaxKind::UnaryExpr);
                 self.advance();
@@ -2248,6 +2253,19 @@ impl Parser {
                 self.advance();
                 self.ev_close();
                 Ok(self.mk_expr(ExprKind::Literal(Literal::Float(f)), start))
+            }
+            // A signed number: the `-` belongs to the literal and its span.
+            Token::Minus if matches!(self.peek_at(1), Token::Int(_) | Token::Float(_)) => {
+                self.ev_open(SyntaxKind::LiteralExpr);
+                self.advance();
+                let literal = match self.peek().clone() {
+                    Token::Int(n) => Literal::Int(-n),
+                    Token::Float(f) => Literal::Float(-f),
+                    _ => unreachable!("guarded by the match arm"),
+                };
+                self.advance();
+                self.ev_close();
+                Ok(self.mk_expr(ExprKind::Literal(literal), start))
             }
             Token::InterpStart => self.parse_string_interp(),
             Token::String(s) => {

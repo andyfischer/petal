@@ -711,9 +711,9 @@ pub fn config_value_expr(value: &Expr, is_config: bool) -> &Expr {
 /// call with at least one bound written as a number literal.
 fn config_range(value: &Expr, is_config: bool) -> Option<StaticRange> {
     let args = is_config.then(|| tunable_args(value)).flatten()?;
-    let number = |e: Option<&Expr>| match e.and_then(crate::source_diff::signed_number) {
-        Some(Literal::Int(n)) => Some(n as f64),
-        Some(Literal::Float(f)) => Some(f),
+    let number = |e: Option<&Expr>| match e.map(|e| &e.kind) {
+        Some(ExprKind::Literal(Literal::Int(n))) => Some(*n as f64),
+        Some(ExprKind::Literal(Literal::Float(f))) => Some(*f),
         _ => None,
     };
     let range = StaticRange {
@@ -1022,8 +1022,8 @@ fn eval_in(expr: &Expr, scope: &Scope) -> Result<StaticValue, String> {
             Literal::Float(f) => StaticValue::Float(*f),
             Literal::String(s) => StaticValue::Str(s.clone()),
         }),
-        // Negation and `not` fold into the literal so `-1` reads as Int(-1)
-        // rather than as an unreadable expression.
+        // Negation and `not` fold into the literal so `-(1)` reads as
+        // Int(-1) rather than as an unreadable expression.
         ExprKind::UnaryOp { op, operand } => match (op, eval_in(operand, scope)?) {
             (UnaryOp::Neg, StaticValue::Int(n)) => Ok(StaticValue::Int(-n)),
             (UnaryOp::Neg, StaticValue::Float(f)) => Ok(StaticValue::Float(-f)),

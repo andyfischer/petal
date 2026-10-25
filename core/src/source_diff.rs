@@ -34,20 +34,14 @@
 //! literals in the program's arm metadata, not in constants; a changed pattern
 //! is a construct change.
 //!
-//! # Signed numbers in config data
-//!
-//! `-3` parses as a negation of `3`, so dragging a value across zero changes
-//! the tree's shape. Inside the initializer of a `config let` — the top level,
-//! and through list elements, record fields and call arguments — the compiler
-//! folds a negated number literal into one constant
-//! ([`config_data_children`], [`signed_number`]), and the diff treats it as
-//! one literal the same way, so `-0.5` to `0.5` is a value change there.
+//! `-3` is one literal (the parser folds the sign into the number), so
+//! dragging a value across zero is a value change like any other.
 
 use std::collections::HashMap;
 
 use crate::ast::{
     AssignTarget, ElseBranch, Expr, ExprKind, JsxChild, Literal, MatchArm, Param, Pattern,
-    RecordField, Stmt, StmtKind, UnaryOp,
+    RecordField, Stmt, StmtKind,
 };
 use crate::lexer::{Lexer, Token};
 use crate::source_map::{FileId, SourcePosition, SourceSpan};
@@ -56,60 +50,11 @@ use crate::source_map::{FileId, SourcePosition, SourceSpan};
 // Config data positions (shared with the compiler)
 // ---------------------------------------------------------------------------
 
-/// The value of `e` when it is a number literal or the negation of one —
-/// `3`, `-3`, `0.5`, `-0.5` — with the sign applied.
-///
-/// In a config data position (see [`config_data_children`]) this is the unit
-/// the compiler emits one constant for and the diff compares as one literal.
-pub fn signed_number(e: &Expr) -> Option<Literal> {
-    match &e.kind {
-        ExprKind::Literal(l @ (Literal::Int(_) | Literal::Float(_))) => Some(l.clone()),
-        ExprKind::UnaryOp {
-            op: UnaryOp::Neg,
-            operand,
-        } => match &operand.kind {
-            // `checked_neg` cannot fail for a literal (the lexer only produces
-            // non-negative integers), but a hand-built AST could hold MIN.
-            ExprKind::Literal(Literal::Int(n)) => n.checked_neg().map(Literal::Int),
-            ExprKind::Literal(Literal::Float(f)) => Some(Literal::Float(-*f)),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-/// Whether the direct children of `e` that hold *data* stay in config data
-/// position when `e` is in one: the elements of a list, the named fields of a
-/// record, and the arguments of a call (a config file's constructors:
-/// `rgb(255, 0, 80)`, `vec3(0.3, -1.0, 0.5)`). Everything else — operators,
-/// accesses, blocks, lambdas — ends the data position.
-///
-/// The compiler and the diff both walk a `config let` initializer with this
-/// rule, which is what keeps "the compiler folded this `-3`" and "the diff
-/// treats this `-3` as one literal" the same set of expressions.
-pub fn config_data_children(e: &Expr) -> bool {
-    matches!(
-        e.kind,
-        ExprKind::List(_) | ExprKind::Record(_) | ExprKind::Call { .. }
-    )
-}
-
-/// Every negated number literal in a config data position of `value`, the
-/// initializer of a `config let`: the expressions the compiler folds into one
-/// constant each.
-pub fn config_folded_numbers(value: &Expr, out: &mut impl FnMut(&Expr)) {
-    config_data_literals(value, &mut |e| {
-        if matches!(e.kind, ExprKind::UnaryOp { .. }) {
-            out(e);
-        }
-    });
-}
-
 /// Every literal in a config data position of `value`, the initializer of a
-/// `config let`: a number (negated or not), string, bool or `nil` at the top
-/// level or reached through list elements, record fields and call arguments
-/// ([`config_data_children`]). A negated number is visited once, as the
-/// negation (the unit the compiler folds), not as its operand.
+/// `config let`: a number, string, bool or `nil` at the top level or reached
+/// through list elements, record fields and call arguments (a config file's
+/// constructors: `rgb(255, 0, 80)`, `vec3(0.3, -1.0, 0.5)`). Everything
+/// else — operators, accesses, blocks, lambdas — ends the data position.
 ///
 /// These are the literals the compiler marks `is_config`, so a number nested
 /// in `config let BOX = {x: 140}` is config data to direct manipulation the
@@ -117,11 +62,6 @@ pub fn config_folded_numbers(value: &Expr, out: &mut impl FnMut(&Expr)) {
 pub fn config_data_literals(value: &Expr, out: &mut impl FnMut(&Expr)) {
     match &value.kind {
         ExprKind::Literal(_) => out(value),
-        ExprKind::UnaryOp { .. } => {
-            if signed_number(value).is_some() {
-                out(value);
-            }
-        }
         ExprKind::List(items) => {
             for item in items {
                 config_data_literals(item, out);
@@ -190,8 +130,8 @@ pub struct ValueChange {
     pub config: bool,
     pub old: Literal,
     pub new: Literal,
-    /// The literal's span in the old text (the whole `-3` for a folded
-    /// negative number in config data).
+    /// The literal's span in the old text (the whole `-3` for a negative
+    /// number).
     pub old_span: SourceSpan,
     /// Its span in the new text.
     pub new_span: SourceSpan,
@@ -733,8 +673,6 @@ struct Cmp {
     path: Option<String>,
     /// Inside a `config let` initializer at all (for [`ValueChange::config`]).
     config: bool,
-    /// In a config data position right now (see [`config_data_children`]).
-    config_data: bool,
     /// The old tree's `tunable(v, …)` call that a `config let` is
     /// initialized with, by span: its `v` has the binding's own path (as
     /// `crate::static_value::config_value_expr` addresses it) and its bounds
@@ -791,12 +729,10 @@ impl Cmp {
                 if n1 != n2 || t1 != t2 || var1 != var2 || c1 != c2 || k1 != k2 {
                     return false;
                 }
-                let saved = (self.config, self.config_data);
-                // The compiler folds signed numbers in exactly this case
-                // (`Compiler::compile_let_value`): a `config let` that is not
-                // a `var`.
+                let saved = self.config;
+                // The compiler marks config literals in exactly this case: a
+                // `config let` that is not a `var`.
                 self.config = *c1 && !*var1;
-                self.config_data = self.config;
                 self.config_tunable = (self.config
                     && crate::static_value::tunable_args(v1).is_some())
                 .then_some(v1.span);
@@ -804,7 +740,7 @@ impl Cmp {
                 let same = self.expr(v1, v2);
                 self.path = None;
                 self.config_tunable = None;
-                (self.config, self.config_data) = saved;
+                self.config = saved;
                 same
             }
             (
@@ -1029,19 +965,9 @@ impl Cmp {
     }
 
     fn expr(&mut self, a: &Expr, b: &Expr) -> bool {
-        // Taken here so every child starts outside both contexts unless this
-        // node hands them on (the same shape as the compiler's walk).
-        let in_data = std::mem::take(&mut self.config_data);
+        // Taken here so every child starts without a path unless this node
+        // hands one on.
         let path = self.path.take();
-
-        if in_data
-            && let (Some(x), Some(y)) = (signed_number(a), signed_number(b))
-        {
-            self.path = path;
-            let same = self.literal(&x, &y, a.span, b.span);
-            self.path = None;
-            return same;
-        }
 
         match (&a.kind, &b.kind) {
             (ExprKind::Literal(x), ExprKind::Literal(y)) => {
@@ -1109,7 +1035,6 @@ impl Cmp {
                     .then(|| crate::static_value::tunable_args(a).map(|t| t.value.span))
                     .flatten();
                 a1.iter().zip(a2).enumerate().all(|(i, (x, y))| {
-                    self.config_data = in_data;
                     self.path = match tunable_value {
                         Some(v) if v == x.span => path.clone(),
                         Some(_) => None,
@@ -1179,7 +1104,6 @@ impl Cmp {
             (ExprKind::List(x), ExprKind::List(y)) => {
                 x.len() == y.len()
                     && x.iter().zip(y).enumerate().all(|(i, (p, q))| {
-                        self.config_data = in_data;
                         self.path = path.as_ref().map(|base| format!("{base}[{i}]"));
                         self.expr(p, q)
                     })
@@ -1191,7 +1115,6 @@ impl Cmp {
                             if n1 != n2 {
                                 return false;
                             }
-                            self.config_data = in_data;
                             self.path = path.as_ref().map(|base| format!("{base}.{n1}"));
                             self.expr(e1, e2)
                         }
@@ -1656,7 +1579,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sign_flip_is_a_value_change_only_in_config_data() {
+    fn a_sign_flip_is_a_value_change() {
         let v = values(
             "config let P = {x: -1.5, ys: [2, -3]}\n",
             "config let P = {x: 1.5, ys: [-2, -4]}\n",
@@ -1666,16 +1589,14 @@ mod tests {
         assert!(matches!(v[0].new, Literal::Float(f) if f == 1.5));
         assert!(matches!(v[1].new, Literal::Int(-2)));
         assert!(matches!(v[2].new, Literal::Int(-4)));
-        // A plain `let` keeps the negation as an operator.
+        // `-1` is one literal everywhere, not only in config data.
+        let v = values("let x = -1\n", "let x = 1\n");
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].old_span.end.offset - v[0].old_span.start.offset, 2);
+        assert_eq!(values("fn f(a)\n  a * -2\nend\n", "fn f(a)\n  a * 2\nend\n").len(), 1);
+        // A negation of anything but a number literal stays an operator.
         assert!(matches!(
-            change("let x = -1\n", "let x = 1\n"),
-            SourceChange::Constructs(_)
-        ));
-        // ... but a magnitude change under it is still a value change.
-        assert_eq!(values("let x = -1\n", "let x = -2\n").len(), 1);
-        // An operator ends the data position.
-        assert!(matches!(
-            change("config let x = 2 * -1\n", "config let x = 2 * 1\n"),
+            change("let x = -(1)\n", "let x = 1\n"),
             SourceChange::Constructs(_)
         ));
     }

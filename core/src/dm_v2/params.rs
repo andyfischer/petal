@@ -64,14 +64,12 @@ pub enum CodeOrigin {
 pub struct Param {
     /// The literal's `Constant` term: what a run overrides.
     pub term: TermId,
-    /// What an edit replaces: the literal, including its `-` when negated.
+    /// What an edit replaces: the literal, including its `-` when negative.
     pub span: SourceSpan,
     pub file: FileId,
     /// The value as written, sign included (`-5` for `-5`).
     pub value: f64,
     pub is_int: bool,
-    /// Written with a unary minus: the `Constant` term holds `-value`.
-    pub negated: bool,
     /// The binding the literal defines (`let gap = 10`), if it is one.
     pub binding: Option<String>,
     /// That binding is a `config let`.
@@ -110,21 +108,19 @@ impl Param {
         self.config || matches!(self.hint, Some(Hint::Tunable { .. }))
     }
 
-    /// The override that makes this literal read `v` (as written, so a
-    /// negated literal's constant is set to `-v`). An int literal takes an
-    /// int when `v` is whole.
+    /// The override that makes this literal read `v`. An int literal takes
+    /// an int when `v` is whole.
     pub fn override_for(&self, v: f64) -> OverrideValue {
-        let loaded = if self.negated { -v } else { v };
-        if self.is_int && loaded.fract() == 0.0 && loaded.abs() < 9.0e15 {
-            OverrideValue::Int(loaded as i64)
+        if self.is_int && v.fract() == 0.0 && v.abs() < 9.0e15 {
+            OverrideValue::Int(v as i64)
         } else {
-            OverrideValue::Num(loaded)
+            OverrideValue::Num(v)
         }
     }
 
-    /// The override that makes this literal read the int `n` (as written).
+    /// The override that makes this literal read the int `n`.
     pub fn override_int(&self, n: i64) -> OverrideValue {
-        OverrideValue::Int(if self.negated { -n } else { n })
+        OverrideValue::Int(n)
     }
 }
 
@@ -408,7 +404,6 @@ struct Index<'p> {
     cell_writes: HashMap<TermId, Vec<TermId>>,
     state_terms: HashMap<u64, Vec<TermId>>,
     phi_srcs: HashMap<TermId, Vec<TermId>>,
-    neg_of: HashMap<TermId, TermId>,
 }
 
 impl<'p> Index<'p> {
@@ -433,7 +428,6 @@ impl<'p> Index<'p> {
             cell_writes: HashMap::new(),
             state_terms: HashMap::new(),
             phi_srcs: HashMap::new(),
-            neg_of: HashMap::new(),
         };
         let body_of: HashMap<BlockId, FunctionId> =
             program.functions.iter().map(|f| (f.body_block, f.id)).collect();
@@ -512,13 +506,6 @@ impl<'p> Index<'p> {
                 TermOp::Return => {
                     if let (Some(Some(f)), Some(&v)) = (ix.block_fn.get(&t.block_id), t.inputs.first()) {
                         ix.fn_results.entry(*f).or_default().push(v);
-                    }
-                }
-                TermOp::Neg => {
-                    if let Some(&inner) = t.inputs.first()
-                        && matches!(program.terms.get(inner.0 as usize).map(|x| &x.op), Some(TermOp::Constant(_)))
-                    {
-                        ix.neg_of.insert(inner, t.id);
                     }
                 }
                 TermOp::StateInit | TermOp::StateWrite | TermOp::StateRead => {
@@ -1122,33 +1109,26 @@ fn make_param(
     if !written {
         return None;
     }
-    let neg = ix.neg_of.get(&term).copied();
-    let (span, value) = match neg {
-        Some(n) => (program.source_map.get(n).copied().unwrap_or(own), -raw),
-        None => (own, raw),
-    };
-    // The binding the literal defines: its own name, its minus's, or that of
-    // a hint call it is the value of (`let r = tunable(40)`).
-    let binding_term = neg.unwrap_or(term);
-    let mut named = ix.term(binding_term).filter(|bt| bt.name.is_some());
+    // The binding the literal defines: its own name, or that of a hint call
+    // it is the value of (`let r = tunable(40)`).
+    let mut named = ix.term(term).filter(|bt| bt.name.is_some());
     if named.is_none() {
         named = ix
             .hints
             .calls
             .keys()
             .filter_map(|&call| ix.term(call))
-            .find(|ct| ct.inputs.first() == Some(&binding_term) && ct.name.is_some());
+            .find(|ct| ct.inputs.first() == Some(&term) && ct.name.is_some());
     }
     let binding = named.and_then(|bt| bt.name.clone());
     let config = named.is_some_and(|bt| bt.is_config) || t.is_config;
     use via::*;
     Some(Param {
         term,
-        span,
+        span: own,
         file: own.file,
-        value,
+        value: raw,
         is_int,
-        negated: neg.is_some(),
         binding,
         config,
         hint: ix.hints.get(term).copied(),

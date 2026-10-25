@@ -10,6 +10,18 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ## Unreleased
 
+### Changed
+
+- A `-` directly followed by a number in negation position is now part of the
+  number: `-3` parses as the literal `-3`, not a negation of `3`. Postfix
+  operators therefore apply to the signed number: `-3.abs()` is `(-3).abs()`
+  (`3`), where it used to be `-(3.abs())` (`-3`). Negating anything else is
+  unchanged (`-v.x` is still `-(v.x)`). Every negative literal is now one
+  constant, so a hot reload or `set_config_value` takes a value across zero
+  without a recompile in any `let`, not only in a `config let`
+  ([Negative numbers](docs/features/hot-reload.md#negative-numbers),
+  [Unary minus](docs/syntax/commas.md#unary-minus)).
+
 ## 0.1.0 - 2026-10-23
 
 What the first release contains, written from the git history (January to

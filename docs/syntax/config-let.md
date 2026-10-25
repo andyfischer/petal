@@ -190,24 +190,6 @@ scopes, shadows, exports and hoists as a `let` does. It can be rebound with
 `=`, and it gets no compile-time check: for a guarantee that the value depends
 on nothing dynamic, that is [`const`](../language-guide.md#const--a-value-that-must-be-constant).
 
-One thing differs in the compiled program, and it has no effect on values. A
-negated number literal in a config binding's data is compiled as one constant
-instead of a negation applied to a constant:
-
-```
-$ petal show-ir -e 'config let A = -4
-let B = -4'
-  t138 r138 = Constant(-4) [] ; A @1:16
-  t139 r139 = Constant(4) [] @2:10
-  t140 r140 = Neg [t139] ; B @2:9
-```
-
-This reaches through list elements, record fields and call arguments
-(`config let P = {x: -1.5, dir: [0, -1]}`) and stops at any other
-operator: in `config let W = 2 * -1` the `-1` stays a negation. It exists so
-that changing a sign is a value edit; see
-[Editing one while the program runs](#editing-one-while-the-program-runs).
-
 ## What it changes for tools
 
 ### Direct manipulation edits the config binding
@@ -273,16 +255,13 @@ of a record, an element of a list, an argument of a constructor call) is a
 value change: the new constant is written into the running program, nothing
 is recompiled, and `state` is untouched. Changing a value's type or shape
 (`12` to `12.5`, a list that grows) recompiles. Both are true of a plain `let`
-too. Two things are particular to `config`:
+too, and so is crossing zero: `-0.5` is one literal, so `-0.5` to `0.5` is a
+value change (see
+[Negative numbers](../features/hot-reload.md#negative-numbers)).
 
-- **A sign change is a value change.** `-0.5` to `0.5` in a config binding's
-  data is patched in place, because of the folding described
-  [above](#what-it-changes-for-the-program). In a plain `let` the same edit
-  adds or removes a negation and recompiles. See
-  [Negative numbers in config data](../features/hot-reload.md#negative-numbers-in-config-data).
-- **Adding or removing the word `config` recompiles.** The mark is part of the
-  declaration, so `let` to `config let` is a change of construct, not of
-  value.
+Adding or removing the word `config` recompiles. The mark is part of the
+declaration, so `let` to `config let` is a change of construct, not of
+value.
 
 Values built from a config binding (a table computed from `SPEED`, say) are
 rebuilt after the edit, and a `state` variable whose initializer read the old
@@ -296,8 +275,7 @@ slider needs while it is being dragged: `Env::set_config_value` in Rust,
 edited file would give, and the host writes the file once when the drag ends.
 The same type and shape rule applies: a value that would need a recompile is
 refused (`NeedsReload`) and nothing changes. The call works on any top-level
-`let` of data, config or not. What `config` adds is the sign rule: only a
-config binding can be dragged across zero this way. The owner pages are
+`let` of data, config or not, and across zero for either. The owner pages are
 [Setting a value without writing the file](../features/hot-reload.md#setting-a-value-without-writing-the-file)
 for the rules and
 [embedding-c.md](../usage/embedding-c.md#setting-a-value-without-writing-the-file)

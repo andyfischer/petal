@@ -377,14 +377,17 @@ fn is_short_circuit(op: ast::BinOp) -> bool {
     matches!(op, ast::BinOp::And | ast::BinOp::Or | ast::BinOp::Coalesce)
 }
 
-/// Does the first token of `expr` negate? True for `-x`, and for anything whose
-/// leftmost operand is one: `-c * 4`, `-v.x`, `-f(x) + 1`.
+/// Does the first token of `expr` negate? True for `-x` and a negative number
+/// literal `-1`, and for anything whose leftmost operand is one: `-c * 4`,
+/// `-v.x`, `-f(x) + 1`. (`-0` reads as `0` and is missed.)
 fn starts_with_negation(expr: &Expr) -> bool {
     match &expr.kind {
         ExprKind::UnaryOp {
             op: ast::UnaryOp::Neg,
             ..
         } => true,
+        ExprKind::Literal(ast::Literal::Int(n)) => *n < 0,
+        ExprKind::Literal(ast::Literal::Float(f)) => f.is_sign_negative(),
         ExprKind::BinaryOp { left, .. } => starts_with_negation(left),
         ExprKind::Call { function, .. } => starts_with_negation(function),
         ExprKind::FieldAccess { object, .. } | ExprKind::IndexAccess { object, .. } => {

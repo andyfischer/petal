@@ -389,13 +389,10 @@ pub fn jacobian(
             .0
             .iter()
             .find(|(t, _)| *t == p.term)
-            .map(|(_, v)| {
-                let loaded = match v {
-                    OverrideValue::Num(f) => *f,
-                    OverrideValue::Int(i) => *i as f64,
-                    OverrideValue::Dual(f, _) => *f,
-                };
-                if p.negated { -loaded } else { loaded }
+            .map(|(_, v)| match v {
+                OverrideValue::Num(f) => *f,
+                OverrideValue::Int(i) => *i as f64,
+                OverrideValue::Dual(f, _) => *f,
             })
             .unwrap_or(p.value);
         let col = if base.error.is_some() || !base.readable(goal_rows) {
@@ -476,8 +473,8 @@ fn respell(
     col: &mut Column,
 ) -> Result<(), NoRun> {
     let h = opts.rel_step * cur.abs().max(1.0);
-    let plus = pr.probe(p, OverrideValue::Num(if p.negated { -(cur + h) } else { cur + h }))?;
-    let minus = pr.probe(p, OverrideValue::Num(if p.negated { -(cur - h) } else { cur - h }))?;
+    let plus = pr.probe(p, OverrideValue::Num(cur + h))?;
+    let minus = pr.probe(p, OverrideValue::Num(cur - h))?;
     if !plus.valid(base, goal_rows) || !minus.valid(base, goal_rows) {
         return Ok(());
     }

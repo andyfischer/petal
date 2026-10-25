@@ -109,3 +109,9 @@ print(x-y)              // -1 — identical
 
 Negative literals in patterns work (`when -1 -> …`), as does negation in any
 argument slot: `f(a, -b)`.
+
+A `-` in negation position directly followed by a number is part of that
+number: `-3` is one literal, not a negation of `3`. Postfix operators
+therefore apply to the signed number, so `-3.abs()` is `(-3).abs()`, which
+is `3`. Any other negation binds looser than postfix operators: `-v.x` is
+`-(v.x)`.

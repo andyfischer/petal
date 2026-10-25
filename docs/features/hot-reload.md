@@ -244,15 +244,13 @@ These are construct changes, and recompile:
 - a literal divisor reaching or leaving zero (`w / 2` to `w / 0`): the
   compiler hoists a constant `let` only when it divides by a non-zero literal.
 
-### Negative numbers in config data
+### Negative numbers
 
-`-3` is the negation of `3`, so dragging a value across zero changes the
-tree's shape. Inside the initializer of a `config let` (the value itself, and
-through list elements, record fields and call arguments) the compiler folds a
-negated number literal into one constant, and the diff reads it the same way,
-so `-0.5` to `0.5` is a value change there. Elsewhere `-3` to `3` is a
-construct change, and `-3` to `-4` a value change. An operator ends the data
-position: in `config let W = 2 * -1` the `-1` stays a negation.
+`-3` is one literal, not a negation of `3`: the parser folds a `-` written
+directly before a number into it. So `-0.5` to `0.5` is a value change
+anywhere, and dragging a value across zero never recompiles. A negation of
+anything else stays an operator: `-(3)` to `3`, or `-x` to `x`, is a
+construct change.
 
 ## Setting a value without writing the file
 

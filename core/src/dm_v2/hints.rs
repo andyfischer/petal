@@ -144,16 +144,9 @@ pub fn hint_call(program: &Program, natives: &NativeFnTable, term: TermId) -> Op
     kind_of(natives, name)?.ok()
 }
 
-/// The `Constant` term of the literal `id` denotes (unwrapping a unary
-/// minus), or `None`.
+/// `id` itself when it is a numeric literal's `Constant` term, or `None`.
 pub(crate) fn literal_term(program: &Program, id: TermId) -> Option<TermId> {
-    provenance::literal_at(program, id)?;
-    let t = program.terms.get(id.0 as usize)?;
-    match t.op {
-        TermOp::Constant(_) => Some(id),
-        TermOp::Neg => t.inputs.first().copied(),
-        _ => None,
-    }
+    provenance::literal_at(program, id).map(|_| id)
 }
 
 /// The literal `arg` resolves to: in place, or at the end of its identity

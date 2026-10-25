@@ -95,7 +95,7 @@ Listed loosest to tightest binding (the parser's precedence ladder):
 | concat | `++` | strings and lists |
 | additive | `+` `-` | scalar; also broadcasts a scalar over a list (`[1,2,3] + 10`) |
 | multiplicative | `*` `/` `%` | scalar; `*` and `/` also broadcast a scalar over a list |
-| unary | `-` `!` | negation, logical not |
+| unary | `-` `!` | negation, logical not (`-3` is a literal, not a negation: `-3.abs()` is `(-3).abs()`) |
 | postfix | `f(...)` `x[i]` `a.b` `a?.b` `a?.[i]` | call, index, field access, optional access |
 
 `??` binds tighter than comparison but looser than `++`, so `count ?? 0 > 5`

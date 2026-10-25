@@ -22,7 +22,7 @@
 //! A file that binds the name `tunable` itself (a function, a parameter) is
 //! not using the hint, and is left alone.
 
-use crate::ast::{Expr, ExprKind, ExprVisitor, Literal, Stmt, StmtKind, UnaryOp, walk_expr, walk_stmt};
+use crate::ast::{Expr, ExprKind, ExprVisitor, Literal, Stmt, StmtKind, walk_expr, walk_stmt};
 
 use super::Fix;
 use super::util::bound_names;
@@ -32,7 +32,6 @@ fn number(e: &Expr) -> Option<f64> {
     match &e.kind {
         ExprKind::Literal(Literal::Int(n)) => Some(*n as f64),
         ExprKind::Literal(Literal::Float(f)) => Some(*f),
-        ExprKind::UnaryOp { op: UnaryOp::Neg, operand } => number(operand).map(|v| -v),
         _ => None,
     }
 }

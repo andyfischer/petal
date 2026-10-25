@@ -55,11 +55,10 @@ fn applied(env: &Env, pid: ProgramId, alt: &petal::dm_v2::Alternative) -> String
 }
 
 /// A literal that receives a method call (`5.map_range(...)`) and goes
-/// negative must be written `(-2).map_range(...)`: `-2.map_range(...)`
-/// parses as `-(2.map_range(...))`, so the "verified" edit computed
-/// something else once written.
+/// negative still receives it once written: `-2.map_range(...)` is
+/// `(-2).map_range(...)`, so the verified edit computes what was verified.
 #[test]
-fn negative_method_receiver_is_parenthesized() {
+fn negative_method_receiver_keeps_the_call() {
     let src = "import io\nimport creative\nlet s = symbol(\"out\")\n\
                push_output(s, 5.map_range(rigid(0), rigid(10), rigid(100), rigid(200)))\n";
     let (mut env, pid, sid) = load(src);
@@ -131,7 +130,8 @@ fn reload_after_propose_matches_fresh_run() {
 }
 
 /// A drag preview writes the same text the finished edit would: a negative
-/// value after `-` or before a method call is parenthesized there too.
+/// value after `-` is parenthesized there too. One before a method call is
+/// not: `-2.map_range(…)` is `(-2).map_range(…)`.
 #[test]
 fn preview_parenthesizes_negative_values() {
     let src = "import io\nimport creative\nlet s = symbol(\"out\")\n\
@@ -139,7 +139,7 @@ fn preview_parenthesizes_negative_values() {
                push_output(s, rigid(50) - 3)\n";
     let (mut env, _, sid) = load(src);
     let k = keys(&mut env, sid);
-    for (emit, target, old, want) in [(0, 80.0, "5", "(-2)"), (1, 60.0, "3", "(-10)")] {
+    for (emit, target, old, want) in [(0, 80.0, "5", "-2"), (1, 60.0, "3", "(-10)")] {
         let goal = DmGoal::to(Observable::EmitValue { key: k[emit], path: vec![] }, target);
         let session = petal::dm_v2::DmSession::open(&mut env, &mut NoHost, sid, &DmRequest::new(vec![goal]))
             .expect("opens");

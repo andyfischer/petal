@@ -55,7 +55,7 @@ let info = fn_info(streak)
 - `type` and `returns` are the annotation's name exactly as written. The type
   checker's resolution is not included.
 - `default` is the value of the default when it needs no evaluation: a
-  literal, a negated number, a color literal, a list or record of those, or a
+  literal (negative numbers included), a color literal, a list or record of those, or a
   `vec2(...)` / `vec3(...)` of numbers. Any other default (`b = a * 2`) has
   `has_default: true`, `default: nil`, and its text in `default_source`.
 - `captures` lists the outer bindings the body reads, in order of first use,

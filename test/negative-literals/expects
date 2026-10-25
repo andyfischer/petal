@@ -1,0 +1,9 @@
+# Negative number literals — `-3.abs()` is `(-3).abs()`.
+# Expected console output:
+out: 3
+out: -3
+out: 3
+out: 9
+out: 11
+out: -2.5
+out: -4

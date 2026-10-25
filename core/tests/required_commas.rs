@@ -294,17 +294,50 @@ fn negation_after_a_comma_parses_as_negation() {
         }
         other => panic!("expected call, got {other:?}"),
     }
+    // A `-` before a number is part of the literal.
     match sole_expr("[1, -2]").kind {
         ExprKind::List(elems) => {
             assert_eq!(elems.len(), 2);
-            assert!(matches!(
-                elems[1].kind,
-                ExprKind::UnaryOp {
-                    op: UnaryOp::Neg,
-                    ..
-                }
-            ));
+            assert!(matches!(elems[1].kind, ExprKind::Literal(Literal::Int(-2))));
         }
+        other => panic!("expected list, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_minus_before_a_number_is_part_of_the_literal() {
+    assert!(matches!(sole_expr("-3").kind, ExprKind::Literal(Literal::Int(-3))));
+    assert!(matches!(sole_expr("-0.5").kind, ExprKind::Literal(Literal::Float(f)) if f == -0.5));
+    // The span covers the `-`.
+    let e = sole_expr("-3");
+    assert_eq!(e.span.end.offset - e.span.start.offset, 2);
+    // Postfix operators apply to the signed number: `(-3).abs()`.
+    match sole_expr("-3.abs()").kind {
+        ExprKind::Call { function, .. } => match function.kind {
+            ExprKind::FieldAccess { object, .. } => {
+                assert!(matches!(object.kind, ExprKind::Literal(Literal::Int(-3))))
+            }
+            other => panic!("expected field access, got {other:?}"),
+        },
+        other => panic!("expected call, got {other:?}"),
+    }
+    // A double minus negates the negative literal.
+    match sole_expr("--3").kind {
+        ExprKind::UnaryOp { op: UnaryOp::Neg, operand } => {
+            assert!(matches!(operand.kind, ExprKind::Literal(Literal::Int(-3))))
+        }
+        other => panic!("expected negation, got {other:?}"),
+    }
+    // Anything but a number stays a negation, binding looser than postfix.
+    assert!(matches!(sole_expr("-(3)").kind, ExprKind::UnaryOp { op: UnaryOp::Neg, .. }));
+    assert!(matches!(sole_expr("-v.x").kind, ExprKind::UnaryOp { op: UnaryOp::Neg, .. }));
+    // Between two expressions it is still subtraction.
+    match sole_expr("[x -1]").kind {
+        ExprKind::List(elems) => assert!(matches!(
+            &elems[0].kind,
+            ExprKind::BinaryOp { op: BinOp::Sub, right, .. }
+                if matches!(right.kind, ExprKind::Literal(Literal::Int(1)))
+        )),
         other => panic!("expected list, got {other:?}"),
     }
 }

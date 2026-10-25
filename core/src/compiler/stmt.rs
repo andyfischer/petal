@@ -49,19 +49,12 @@ impl Compiler {
                 if self.hoisted_decls.contains(&stmt_span) {
                     return;
                 }
-                // A `config let` is data a person tunes: a negated number
-                // in it compiles to one constant, so a drag across zero
-                // changes a value and not the program's shape (see
-                // `crate::source_diff`, "Signed numbers in config data").
-                // Every literal in that data is config too, not only the
-                // binding's root term (a record's fields, a list's items).
+                // A `config let` is data a person tunes: every literal in
+                // that data is config, not only the binding's root term (a
+                // record's fields, a list's items).
                 if *is_config && !*is_var {
-                    let folds = &mut self.config_folds;
                     let literals = &mut self.config_literals;
                     crate::source_diff::config_data_literals(value, &mut |e| {
-                        if matches!(e.kind, crate::ast::ExprKind::UnaryOp { .. }) {
-                            folds.insert(e.span);
-                        }
                         literals.insert(e.span);
                     });
                 }

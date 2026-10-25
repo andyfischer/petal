@@ -22,6 +22,15 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   ([Negative numbers](docs/features/hot-reload.md#negative-numbers),
   [Unary minus](docs/syntax/commas.md#unary-minus)).
 
+### Fixed
+
+- A value reassigned in a nested branch (an `elsif` arm, an `if` inside an
+  `if`/`else` arm or a `match` arm, a loop inside an arm) is now visible to
+  the dataflow graph. The program always ran correctly, but the IR joined
+  the arm's entry value instead of the nested branch's, so `petal
+  propose-edit` failed with "nothing can move the goals" and `petal explain`
+  / `petal graph --slice` stopped short of the nested assignment.
+
 ## 0.1.0 - 2026-10-23
 
 What the first release contains, written from the git history (January to

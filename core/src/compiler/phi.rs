@@ -32,9 +32,24 @@ impl Compiler {
     /// scope, selecting between plain scope_bind and the cross-block rebind
     /// log based on whether the prior outer binding lives in this block.
     /// Shared between phi join emission and carry-phi emission.
+    ///
+    /// A name that already has a rebind logged in this block (a seeded
+    /// branch/match-arm entry copy, or an earlier cross-block reassignment)
+    /// must keep that log pointing at the *latest* binding — the join term
+    /// emitted here — or the enclosing conditional's phi-out wires from the
+    /// stale earlier binding. That stale wiring ran correctly (the join shares
+    /// the arm's carry slot register) but hid the nested branch from the term
+    /// graph: an `elsif` arm or an `if` nested in an arm was invisible to
+    /// provenance, slicing and direct manipulation. Mirrors the
+    /// `already_rebound_here` rule in `rebind_name`.
     fn rebind_parent(&mut self, name: String, new_tid: TermId, outer_tid: TermId) {
         let outer_block = self.terms[outer_tid.0 as usize].block_id;
-        if outer_block == self.current_block {
+        let already_rebound_here = self
+            .block_rebinds
+            .get(&self.current_block)
+            .is_some_and(|m| m.contains_key(&name))
+            && !self.is_shadowed_in_current_block(&name);
+        if outer_block == self.current_block && !already_rebound_here {
             self.scope_rebind(name, new_tid);
         } else {
             self.rebind_name_in_current_block(name, new_tid);

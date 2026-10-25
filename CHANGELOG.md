@@ -27,6 +27,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   the `draw_commands` channel, listed by `--trace-emits`
   ([Scripts that draw with `ui`](docs/features/direct-manipulation.md#scripts-that-draw-with-ui)).
 
+- `petal propose-edit --max-wall SECONDS`: the session's wall-clock budget,
+  which was fixed at 5 s (still the default; `max_wall` in a JSON request).
+  The report says which budget ended the session: the text header ends in
+  `stopped: run budget (…)`, `stopped: wall clock (…)` or `converged within
+  budget`, and `--json` has `diagnostics.stopped_by` (`"runs"`, `"wall"`,
+  `"converged"`) with the `max_runs` and `max_wall_ms` it ran with.
+
 - C bridge: `pb_vm_propose_edit(vm, request_json, &response_json)` (and
   `petal::Vm::propose_edit` in C++) runs direct manipulation on the host's
   VM with its registered natives, from the frame after the last run;

@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 use serde_json::{Value as Json, json};
 
-use crate::dm_v2::params::{ParamFilter, ParamSelector};
+use crate::dm_v2::params::{BudgetLimit, ParamFilter, ParamSelector};
 use crate::dm_v2::spec::{SpecConfig, SpecHost, SpecSession};
 use crate::dm_v2::{
     Alternative, CandidateReport, ColumnQuality, DmGoal, DmRequest, DmResponse, DmSession, EmitKey, Engine,
@@ -83,6 +83,9 @@ pub struct V2Opts {
     pub pick: Option<usize>,
     pub tol: Option<f64>,
     pub max_runs: Option<usize>,
+    /// `--max-wall SECONDS`: the session's wall-clock budget
+    /// ([`DmRequest::max_wall`], 5 s by default).
+    pub max_wall: Option<f64>,
     pub max_screen: Option<usize>,
     pub allow_respell: bool,
     /// `--seed`; `None` is `PETAL_SEED`, else 0 ([`effective_seed`]).
@@ -103,6 +106,7 @@ impl Default for V2Opts {
             pick: None,
             tol: None,
             max_runs: None,
+            max_wall: None,
             max_screen: None,
             allow_respell: false,
             seed: None,
@@ -221,6 +225,7 @@ impl V2Parser {
             "--pick",
             "--tol",
             "--max-runs",
+            "--max-wall",
             "--max-screen",
             "--allow-respell",
             "--seed",
@@ -290,6 +295,15 @@ impl V2Parser {
             }
             "--tol" => self.opts.tol = Some(number("--tol", &value(i)?)?.abs()),
             "--max-runs" => self.opts.max_runs = Some(index("--max-runs", &value(i)?)?),
+            "--max-wall" => {
+                let v = value(i)?;
+                self.opts.max_wall = Some(
+                    v.parse::<f64>()
+                        .ok()
+                        .filter(|s| s.is_finite() && *s > 0.0)
+                        .ok_or_else(|| format!("--max-wall takes a positive number of seconds, not `{v}`"))?,
+                );
+            }
             "--max-screen" => self.opts.max_screen = Some(index("--max-screen", &value(i)?)?),
             "--allow-respell" => self.opts.allow_respell = true,
             "--seed" => {
@@ -410,6 +424,9 @@ pub fn propose(
     if let Some(n) = opts.max_screen {
         req.max_screen = n;
     }
+    if let Some(secs) = opts.max_wall {
+        req.max_wall = std::time::Duration::from_secs_f64(secs);
+    }
     req.allow_respell = opts.allow_respell;
     req.explain = opts.explain;
     req.spec = spec_cfg;
@@ -431,7 +448,8 @@ pub fn propose(
 
     let program = env.get_program(pid).ok_or_else(|| fail("goal", "the program is gone"))?;
     let applied = if opts.apply { Some(apply(program, &response, opts.pick, entry_path)?) } else { None };
-    Ok(report(program, opts, seed, &resolved, &baseline, &targets, &response, applied))
+    let budget = (req.max_runs, req.max_wall);
+    Ok(report(program, opts, seed, budget, &resolved, &baseline, &targets, &response, applied))
 }
 
 // ── embedding: a JSON request, a host's natives ────────────────────────────
@@ -455,7 +473,8 @@ const GOAL_KEYS: [&str; 8] = ["channel", "emit", "arg", "native_arg", "value", "
 /// several go in `goals: [...]`, each inheriting the top-level `channel` and
 /// `emit` it leaves out. The options are `allow` / `deny` (a selector or a
 /// list of them; `pins` is `deny`'s alias), `config_strict`, `alternatives`,
-/// `explain`, `apply`, `pick` (1-based), `tol`, `max_runs`, `max_screen`,
+/// `explain`, `apply`, `pick` (1-based), `tol`, `max_runs`, `max_wall`
+/// (seconds), `max_screen`,
 /// `allow_respell` and `seed`; `json` is accepted and ignored. An unknown key
 /// is an error, so a misspelt option is not silently dropped.
 ///
@@ -463,9 +482,9 @@ const GOAL_KEYS: [&str; 8] = ["channel", "emit", "arg", "native_arg", "value", "
 /// so its rules are the CLI's exactly.
 pub fn opts_from_json(req: &Json) -> Result<V2Opts, String> {
     let obj = req.as_object().ok_or("the request must be a JSON object")?;
-    const OPTION_KEYS: [&str; 15] = [
+    const OPTION_KEYS: [&str; 16] = [
         "goals", "allow", "deny", "pins", "config_strict", "alternatives", "explain", "apply", "pick", "tol",
-        "max_runs", "max_screen", "allow_respell", "seed", "json",
+        "max_runs", "max_wall", "max_screen", "allow_respell", "seed", "json",
     ];
     for k in obj.keys() {
         if !GOAL_KEYS.contains(&k.as_str()) && !OPTION_KEYS.contains(&k.as_str()) {
@@ -565,6 +584,7 @@ pub fn opts_from_json(req: &Json) -> Result<V2Opts, String> {
         ("pick", "--pick"),
         ("tol", "--tol"),
         ("max_runs", "--max-runs"),
+        ("max_wall", "--max-wall"),
         ("max_screen", "--max-screen"),
         ("seed", "--seed"),
     ] {
@@ -1047,6 +1067,7 @@ fn report(
     program: &Program,
     opts: &V2Opts,
     seed: u64,
+    (max_runs, max_wall): (usize, std::time::Duration),
     resolved: &[Resolved],
     baseline: &[f64],
     targets: &[f64],
@@ -1102,6 +1123,15 @@ fn report(
             "wall_ms": d.wall.map(|w| num(w.as_secs_f64() * 1000.0)),
             "suppressed": d.suppressed,
             "budget_exhausted": d.budget_exhausted,
+            // Which budget ended the session: `runs`, `wall`, or `converged`
+            // (it finished its work within both).
+            "stopped_by": match d.stopped_by {
+                Some(BudgetLimit::Runs) => "runs",
+                Some(BudgetLimit::Wall) => "wall",
+                None => "converged",
+            },
+            "max_runs": max_runs,
+            "max_wall_ms": num(max_wall.as_secs_f64() * 1000.0),
             "warnings": d.warnings,
             "discovered": d.discovered,
             "eligible": d.eligible,
@@ -1136,8 +1166,18 @@ pub fn print_text(r: &Json) {
     let goals = arr("goals");
     let alts = arr("alternatives");
     let diag = &r["diagnostics"];
+    let v1 = r["engine"].as_str() == Some("v1");
+    let stopped = match diag["stopped_by"].as_str().filter(|_| !v1) {
+        Some("runs") => format!(" · stopped: run budget ({} runs; raise --max-runs)", diag["max_runs"]),
+        Some("wall") => format!(
+            " · stopped: wall clock ({} s; raise --max-wall)",
+            fmt_num(&json!(diag["max_wall_ms"].as_f64().unwrap_or(0.0) / 1000.0))
+        ),
+        Some("converged") => " · converged within budget".to_string(),
+        _ => String::new(),
+    };
     println!(
-        "engine {} · seed {} · {} run{}",
+        "engine {} · seed {} · {} run{}{stopped}",
         r["engine"].as_str().unwrap_or("v2"),
         r["seed"],
         diag["runs"],

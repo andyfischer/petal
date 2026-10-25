@@ -687,7 +687,7 @@ The request has the fields of the `petal propose-edit` flags, snake_cased
 output buffer), one of `native_arg` / `arg` / `value: true`, an optional
 `field` path, one of `to` / `by`, and the options `allow`, `deny` (alias
 `pins`), `tol`, `alternatives`, `explain`, `apply`, `pick`, `config_strict`,
-`max_runs`, `max_screen`, `allow_respell`, `seed`. Several goals go in
+`max_runs`, `max_wall` (seconds), `max_screen`, `allow_respell`, `seed`. Several goals go in
 `goals: [...]`. The response is the `propose-edit --json` document: the
 report, or `{"error": true, "phase", "message", …}`. A host whose natives
 need something installed around each run (a data provider, fonts) passes a

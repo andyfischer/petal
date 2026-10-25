@@ -1713,7 +1713,7 @@ petal propose-edit [--v1 | --v2] --channel <name> --emit <n>
                    [--allow <sel>]... [--deny <sel>]...
                    [--configurable <var>]... [--static <var>]...
                    [--alternatives N] [--explain] [--config-strict]
-                   [--tol T] [--max-runs N] [--max-screen N] [--allow-respell]
+                   [--tol T] [--max-runs N] [--max-wall S] [--max-screen N] [--allow-respell]
                    [--seed N] [--apply [--pick N]] [--json] <file.ptl>
 ```
 
@@ -1856,6 +1856,12 @@ Other options:
   `1e-6 · max(|target|, 1)`.
 - `--max-runs N`, `--max-screen N` (v2) — the speculative-run budget
   (default 200) and the most literals screened (default 256).
+- `--max-wall S` (v2) — the session's wall-clock budget in seconds (default
+  5). Whichever budget runs out first ends the session; the text header says
+  which (`stopped: run budget (200 runs; raise --max-runs)`, `stopped: wall
+  clock (5 s; raise --max-wall)`, or `converged within budget`), and `--json`
+  has it as `diagnostics.stopped_by`: `"runs"`, `"wall"` or `"converged"`,
+  next to the budgets it ran with (`max_runs`, `max_wall_ms`).
 - `--allow-respell` (v2) — let an int literal become a float (`10` → `10.5`).
 - `--seed N` (v2) — the random seed, default `PETAL_SEED`, else 0. It is
   echoed. Pass the same `--seed` to `run --trace-emits` so both agree on which
@@ -1887,7 +1893,8 @@ fields are only ever added):
                  hint, origin, distance, focus, in_goal_frame,
                  flags: {through_var, through_state, state_init, through_rng, structural, hint_bound},
                  loaded, eligible, ineligible_reason, quality, column, weight, clock_coupled }],
-  diagnostics: { runs, wall_ms, suppressed, budget_exhausted, warnings, discovered,
+  diagnostics: { runs, wall_ms, suppressed, budget_exhausted,
+                 stopped_by: "runs"|"wall"|"converged", max_runs, max_wall_ms, warnings, discovered,
                  eligible, screened, measured, truncated, subsets_predicted, subsets_verified },
   explain: [line, ...] | null,
   applied: { pick, files } | null }

@@ -38,7 +38,7 @@ use crate::dm_v2::hints::{Hint, read_hints};
 use crate::dm_v2::jacobian::{ColumnQuality, FdOptions, Jacobian, collateral_rows, jacobian};
 use crate::dm_v2::observe::{EmitKey, LiveObservation, ObsValue, Observable, PathStep};
 use crate::dm_v2::params::{
-    Eligibility, EligibilityContext, Param, ParamFilter, ParamSelector, RunBudget, anchors_for,
+    BudgetLimit, Eligibility, EligibilityContext, Param, ParamFilter, ParamSelector, RunBudget, anchors_for,
     discover_params, eligibility, file_origins, screen_order, screen_params_for,
 };
 use crate::dm_v2::rank::{
@@ -345,6 +345,10 @@ pub struct DmDiagnostics {
     /// Natives a speculative run did not call.
     pub suppressed: Vec<String>,
     pub budget_exhausted: bool,
+    /// Which limit ended the session when [`budget_exhausted`](Self::budget_exhausted):
+    /// the run count or the wall clock (`max_wall`). `None` when it finished
+    /// its work within both.
+    pub stopped_by: Option<BudgetLimit>,
     pub warnings: Vec<String>,
     /// Literals found by discovery, eligible to screen, screened, measured.
     pub discovered: usize,
@@ -767,6 +771,7 @@ impl DmSession {
             let zero = jac.quality.iter().filter(|q| matches!(q, ColumnQuality::Zero)).count();
             let open = MAX_MEASURE.saturating_sub(jac.params.len() - zero);
             if open == 0 || next >= order.len() || jac.budget_exhausted || !self.budget.has_room() {
+                self.budget.note_stop();
                 break;
             }
             let take = open.min(order.len() - next);
@@ -1008,7 +1013,10 @@ impl DmSession {
     /// solver's: without this, a drag held longer than the request's
     /// `max_wall` would finish with no room to verify anything.
     pub fn renew_budget(&mut self, max_runs: usize, max_wall: Duration) {
+        let stopped = self.budget.stopped;
         self.budget = RunBudget::new(max_runs, max_wall);
+        // What stopped the work before the renewal still explains it.
+        self.budget.stopped = stopped;
     }
 
     /// Close the session without solving (a cancelled drag), dropping its
@@ -1318,6 +1326,7 @@ impl DmSession {
             };
             for pred in chosen {
                 if !ctx.budget.has_room() {
+                    ctx.budget.note_stop();
                     ctx.budget_exhausted = true;
                     break;
                 }
@@ -1513,6 +1522,8 @@ impl DmSession {
             _ => None,
         };
         self.diag.engine = Some(Engine::V2);
+        self.diag.stopped_by =
+            self.diag.budget_exhausted.then(|| self.budget.stopped.unwrap_or(BudgetLimit::Runs));
         Ok(DmResponse {
             alternatives,
             candidates: std::mem::take(&mut self.candidates),

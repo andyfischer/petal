@@ -1428,6 +1428,15 @@ pub fn file_origins(program: &Program) -> Vec<CodeOrigin> {
 
 // ── the run budget ──────────────────────────────────────────────────────────
 
+/// Which limit of a [`RunBudget`] stopped a request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BudgetLimit {
+    /// The run count (`max_runs`, or the share of it a phase may spend).
+    Runs,
+    /// The wall clock (`max_wall`).
+    Wall,
+}
+
 /// The runs and the time one request may spend (§2.3.5).
 #[derive(Debug, Clone)]
 pub struct RunBudget {
@@ -1435,6 +1444,9 @@ pub struct RunBudget {
     pub used: usize,
     /// `None` where there is no wall clock (wasm), or for no time limit.
     pub deadline: Option<Instant>,
+    /// The first limit a run was refused by ([`take`](Self::take),
+    /// [`note_stop`](Self::note_stop)); `None` while there is room.
+    pub stopped: Option<BudgetLimit>,
 }
 
 impl RunBudget {
@@ -1444,26 +1456,44 @@ impl RunBudget {
             max_runs,
             used: 0,
             deadline: crate::env::spec_run::wall_now().map(|now| now + wall),
+            stopped: None,
         }
     }
 
     /// No limit but the run count.
     pub fn runs(max_runs: usize) -> RunBudget {
-        RunBudget { max_runs, used: 0, deadline: None }
+        RunBudget { max_runs, used: 0, deadline: None, stopped: None }
     }
 
     /// Whether another run fits.
     pub fn has_room(&self) -> bool {
-        self.used < self.max_runs
-            && match (self.deadline, crate::env::spec_run::wall_now()) {
-                (Some(d), Some(now)) => now < d,
-                _ => true,
-            }
+        self.limit().is_none()
+    }
+
+    /// The limit that leaves no room for another run, if one does: the wall
+    /// clock first (a request that ran out of time is over, whatever its run
+    /// count), then the run count.
+    pub fn limit(&self) -> Option<BudgetLimit> {
+        if let (Some(d), Some(now)) = (self.deadline, crate::env::spec_run::wall_now())
+            && now >= d
+        {
+            return Some(BudgetLimit::Wall);
+        }
+        (self.used >= self.max_runs).then_some(BudgetLimit::Runs)
+    }
+
+    /// Record that work stopped for want of room ([`stopped`](Self::stopped)
+    /// keeps the first limit hit).
+    pub fn note_stop(&mut self) {
+        if self.stopped.is_none() {
+            self.stopped = self.limit();
+        }
     }
 
     /// Take one run, if it fits.
     pub fn take(&mut self) -> bool {
         if !self.has_room() {
+            self.note_stop();
             return false;
         }
         self.used += 1;

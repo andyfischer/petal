@@ -1525,7 +1525,7 @@ SYNOPSIS
                           [--allow <sel>]... [--deny <sel>]...
                           [--configurable <var>]... [--static <var>]...
                           [--alternatives N] [--explain] [--config-strict]
-                          [--tol T] [--max-runs N] [--max-screen N]
+                          [--tol T] [--max-runs N] [--max-wall S] [--max-screen N]
                           [--allow-respell] [--seed N]
                           [--apply [--pick N]] [--json] <file>
 
@@ -1609,6 +1609,13 @@ OPTIONS
        --max-runs N, --max-screen N
               (v2) The speculative-run budget (default 200) and how many
               literals are screened at most (default 256).
+
+       --max-wall SECONDS
+              (v2) The session's wall-clock budget (default 5). The report
+              says which budget ended the session: the header line ends in
+              stopped: run budget, stopped: wall clock, or converged within
+              budget; --json's diagnostics.stopped_by is runs, wall or
+              converged.
 
        --allow-respell
               (v2) Let an int literal become a float (10 -> 10.5).

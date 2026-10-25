@@ -1061,7 +1061,11 @@ petal propose-edit --v2 --channel shapes --emit 0 --arg 1 --by 10 script.ptl
 - `--allow`/`--deny` take `name`, `line:N`, `config`, `fn:NAME`, `user`,
   `lib` and `state-init`. The old `--configurable`/`--static` map to
   `allow`-with-preference and `deny`.
-- `--tol`, `--max-runs`, `--max-screen`, `--allow-respell` and `--seed`.
+- `--tol`, `--max-runs`, `--max-wall` (seconds; the 5 s default of
+  `DmRequest::max_wall`), `--max-screen`, `--allow-respell` and `--seed`. The
+  report names the budget that ended the session (`diagnostics.stopped_by`:
+  `runs`, `wall` or `converged`; `RunBudget::stopped` records the first limit
+  a run was refused by).
   The seed defaults to `0` (or `PETAL_SEED`) and is echoed in the output,
   so `run --trace-emits` and `propose-edit` agree on which shape "emit 7" is.
 - `--apply` with `--v2` refuses unless the top alternative is verified and

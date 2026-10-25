@@ -45,7 +45,7 @@ pub use rank::SubsetKind;
 pub use hints::{Hint, HintKind, Hints, read_hints};
 pub use jacobian::{ColumnQuality, FdMode, FdOptions, Jacobian, Side, collateral_rows, jacobian};
 pub use params::{
-    Anchor, CodeOrigin, Discovered, Eligibility, EligibilityContext, Param, ParamFilter,
+    Anchor, BudgetLimit, CodeOrigin, Discovered, Eligibility, EligibilityContext, Param, ParamFilter,
     ParamSelector, RunBudget, ScreenResult, anchors_for, discover_params, eligibility,
     screen_order, screen_params, screen_params_for,
 };

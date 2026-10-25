@@ -170,8 +170,8 @@ fn json_shape_is_frozen() {
     assert_eq!(
         keys(&r["diagnostics"]),
         set(&[
-            "runs", "wall_ms", "suppressed", "budget_exhausted", "warnings", "discovered", "eligible", "screened",
-            "measured", "truncated", "subsets_predicted", "subsets_verified",
+            "runs", "wall_ms", "suppressed", "budget_exhausted", "stopped_by", "max_runs", "max_wall_ms", "warnings",
+            "discovered", "eligible", "screened", "measured", "truncated", "subsets_predicted", "subsets_verified",
         ])
     );
     assert!(r["diagnostics"]["runs"].as_u64().unwrap() > 0);
@@ -417,4 +417,50 @@ fn trace_emits_reports_keys_and_native_args() {
     assert_ne!(emits[0]["key"], emits[1]["key"]);
     let (text, _, _) = run(&["run", "--trace-emits", path.to_str().unwrap()]);
     assert!(text.contains("      native args: [0, 50.0]"), "{text}");
+}
+
+#[test]
+fn max_wall_is_configurable_and_the_report_names_the_budget_that_ended_it() {
+    // Within both budgets: converged, with the defaults echoed.
+    let r = helper_json(&[]);
+    let d = &r["diagnostics"];
+    assert_eq!(d["stopped_by"], "converged", "{d:#}");
+    assert_eq!(d["budget_exhausted"], false);
+    assert_eq!(d["max_runs"], 200);
+    assert_eq!(d["max_wall_ms"], 5000.0);
+
+    // A run budget too small to measure anything.
+    let r = helper_json(&["--max-runs", "2"]);
+    assert_eq!(r["diagnostics"]["stopped_by"], "runs", "{:#}", r["diagnostics"]);
+
+    // A wall clock that is over before the first run.
+    let r = helper_json(&["--max-wall", "0.000001"]);
+    assert_eq!(r["diagnostics"]["stopped_by"], "wall", "{:#}", r["diagnostics"]);
+    assert_eq!(r["diagnostics"]["max_wall_ms"], 0.001);
+
+    // A longer budget is taken as given.
+    let r = helper_json(&["--max-wall", "30"]);
+    assert_eq!(r["diagnostics"]["max_wall_ms"], 30000.0);
+
+    let path = scratch("max-wall-text", HELPER);
+    let p = path.to_str().unwrap();
+    let text = |extra: &[&str]| {
+        let mut args = vec!["propose-edit", "--channel", "shapes", "--emit", "2", "--native-arg", "1", "--by", "25"];
+        args.extend_from_slice(extra);
+        args.push(p);
+        let (stdout, stderr, ok) = run(&args);
+        assert!(ok, "{stderr}");
+        stdout.lines().next().unwrap_or("").to_string()
+    };
+    assert!(text(&[]).ends_with("· converged within budget"), "{}", text(&[]));
+    let wall = text(&["--max-wall", "0.000001"]);
+    assert!(wall.contains("stopped: wall clock (0 s; raise --max-wall)"), "{wall}");
+    let runs = text(&["--max-runs", "2"]);
+    assert!(runs.contains("stopped: run budget (2 runs; raise --max-runs)"), "{runs}");
+
+    let (_, stderr, ok) = run(&[
+        "propose-edit", "--channel", "shapes", "--emit", "2", "--native-arg", "1", "--by", "25", "--max-wall", "0", p,
+    ]);
+    assert!(!ok);
+    assert!(stderr.contains("--max-wall takes a positive number of seconds"), "{stderr}");
 }

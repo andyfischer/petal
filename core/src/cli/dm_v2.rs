@@ -399,6 +399,7 @@ pub fn propose(
         };
         goal.tolerance = opts.tol;
         req.goals.push(goal);
+        req.holds.push(matches!(g.value, GoalValue::By(d) if d == 0.0));
     }
     req.filter = filter;
     req.prefer = if opts.config_strict { Prefer::ConfigStrict } else { Prefer::Soft };
@@ -1021,6 +1022,7 @@ fn candidate_json(program: &Program, c: &CandidateReport) -> Json {
         "hint": hint,
         "origin": snake(format!("{:?}", p.origin)),
         "distance": p.distance,
+        "focus": p.focus,
         "in_goal_frame": p.in_goal_frame,
         "flags": {
             "through_var": p.through_var,

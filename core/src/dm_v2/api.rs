@@ -39,7 +39,7 @@ use crate::dm_v2::jacobian::{ColumnQuality, FdOptions, Jacobian, collateral_rows
 use crate::dm_v2::observe::{EmitKey, LiveObservation, ObsValue, Observable, PathStep};
 use crate::dm_v2::params::{
     Eligibility, EligibilityContext, Param, ParamFilter, ParamSelector, RunBudget, anchors_for,
-    discover_params, eligibility, file_origins, screen_params,
+    discover_params, eligibility, file_origins, screen_order, screen_params_for,
 };
 use crate::dm_v2::rank::{
     ScoreFacts, ScoreParts, ScoreWeights, ScoredChange, SubsetKind, candidate_subsets, collateral_norm,
@@ -138,6 +138,11 @@ pub struct DmRequest {
     pub spec: SpecConfig,
     pub live: Option<LiveObservation>,
     pub explain: bool,
+    /// Per goal: it holds its value (`--by 0`, a pinned shape) rather than
+    /// asking for a change. Screening resolves what moves the other goals
+    /// first (§2.2 stage 5). Empty (or short): a goal holds when its numeric
+    /// target is its baseline value within its tolerance.
+    pub holds: Vec<bool>,
 }
 
 impl Default for DmRequest {
@@ -155,6 +160,7 @@ impl Default for DmRequest {
             spec: SpecConfig::default(),
             live: None,
             explain: false,
+            holds: Vec::new(),
         }
     }
 }
@@ -666,7 +672,24 @@ impl DmSession {
         let full_budget = self.budget.max_runs;
         let start = self.budget.used;
         self.budget.max_runs = start + full_budget.saturating_mul(3) / 10;
-        let mut screen = screen_params(
+        // A goal whose target is its baseline value (a `--by 0`) holds; the
+        // others ask for the change. Screening resolves what moves those
+        // first (§2.2 stage 5).
+        let mut primary: Vec<bool> = req
+            .goals
+            .iter()
+            .enumerate()
+            .map(|(i, g)| match (req.holds.get(i), &g.target) {
+                (Some(h), _) => !h,
+                // A target not known yet (NaN) asks for a change.
+                (None, GoalTarget::Num(t)) => !((t - self.diag.baseline[i]).abs() <= self.taus[i]),
+                (None, GoalTarget::Value(_)) => true,
+            })
+            .collect();
+        if !primary.iter().any(|p| *p) {
+            primary.iter_mut().for_each(|p| *p = true);
+        }
+        let mut screen = screen_params_for(
             spec,
             env,
             host,
@@ -674,35 +697,48 @@ impl DmSession {
             &eligible,
             req.max_screen,
             &goals,
+            &primary,
             &mut self.budget,
         );
         self.diag.screened = screen.screened;
         self.diag.budget_exhausted |= screen.budget_exhausted;
         if explain {
             self.log.push(format!(
-                "screened {} of {} in {} run(s): {} move the goals",
+                "screened {} of {} in {} run(s): {} move the goals ({} focused, {} only held goals or the flow, {} not screened)",
                 screen.screened,
                 screen.eligible,
                 screen.runs,
-                screen.kept.len()
+                screen.kept.len(),
+                screen.kept.iter().filter(|&&i| self.params[i].focus.is_some()).count(),
+                screen.secondary.len(),
+                screen.unscreened.len(),
             ));
         }
-        // At most MAX_MEASURE columns are measured: the cheapest by weight,
-        // then the nearest (§9 M5, revision 4).
-        if screen.kept.len() > MAX_MEASURE {
-            let n = screen.kept.len();
-            screen.kept.sort_by(|&a, &b| {
-                let (pa, pb) = (&self.params[a], &self.params[b]);
-                param_weight(pa, false)
-                    .total_cmp(&param_weight(pb, false))
-                    .then(pa.distance.cmp(&pb.distance))
-                    .then(pa.span.start.offset.cmp(&pb.span.start.offset))
-            });
-            screen.kept.truncate(MAX_MEASURE);
-            self.diag.warnings.push(format!(
-                "{n} literals move the goals; only the {MAX_MEASURE} preferred ones were measured"
-            ));
-        }
+        // The measuring order (§9 M5, revision 4; Canopy, S2): what screening
+        // showed moves a goal that asks for a change, then what the budget
+        // left unscreened, then what moves only held goals or the flow; in
+        // each, the focused reach first, then the cheapest by weight, then
+        // the nearest. At most MAX_MEASURE columns that move something are
+        // measured: a column that measures zero gives its place to the next.
+        let tier = |i: usize| {
+            if screen.unscreened.contains(&i) {
+                1
+            } else if screen.secondary.contains(&i) {
+                2
+            } else {
+                0
+            }
+        };
+        let mut order = screen.kept.clone();
+        order.sort_by(|&a, &b| {
+            let (pa, pb) = (&self.params[a], &self.params[b]);
+            tier(a)
+                .cmp(&tier(b))
+                .then(pa.focus.is_none().cmp(&pb.focus.is_none()))
+                .then(param_weight(pa, false).total_cmp(&param_weight(pb, false)))
+                .then(screen_order(pa).cmp(&screen_order(pb)))
+        });
+        let moving = order.len();
         self.budget.max_runs = start + full_budget.saturating_mul(3) / 5;
         let mut rows = goals.clone();
         rows.extend(collateral_rows(spec.baseline(), &goals, COLLATERAL_ROWS));
@@ -714,18 +750,48 @@ impl DmSession {
         if screen.kept.len() > MANY_COLUMNS {
             fd.max_escalations = fd.max_escalations.min(1);
         }
-        let jac = jacobian(
+        let mut next = order.len().min(MAX_MEASURE);
+        let mut jac = jacobian(
             spec,
             env,
             host,
             &self.params,
-            &screen.kept,
+            &order[..next],
             rows,
             goals.len(),
             &Overrides::none(),
             &fd,
             &mut self.budget,
         );
+        loop {
+            let zero = jac.quality.iter().filter(|q| matches!(q, ColumnQuality::Zero)).count();
+            let open = MAX_MEASURE.saturating_sub(jac.params.len() - zero);
+            if open == 0 || next >= order.len() || jac.budget_exhausted || !self.budget.has_room() {
+                break;
+            }
+            let take = open.min(order.len() - next);
+            let more = jacobian(
+                spec,
+                env,
+                host,
+                &self.params,
+                &order[next..next + take],
+                jac.rows.clone(),
+                goals.len(),
+                &Overrides::none(),
+                &fd,
+                &mut self.budget,
+            );
+            next += take;
+            jac.append_columns(more);
+        }
+        let measured_moving = jac.quality.iter().filter(|q| !matches!(q, ColumnQuality::Zero)).count();
+        if next < moving {
+            self.diag.warnings.push(format!(
+                "{moving} literals move the goals; only the {measured_moving} preferred ones were measured"
+            ));
+        }
+        screen.kept = order;
         self.diag.measured = jac.params.len();
         self.diag.budget_exhausted |= jac.budget_exhausted;
         self.budget.max_runs = full_budget;

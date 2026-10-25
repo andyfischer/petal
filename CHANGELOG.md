@@ -60,6 +60,15 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   moved most (`lives[0].2.x`), in the description, the text output and new
   `--json` fields (`emit`, `arg`, `path`, `moved`, `label`)
   ([CLI](docs/CLI.md#propose-edit--propose-source-edits-that-change-an-emitted-value)).
+- Direct manipulation v2: on a program with many literals in reach of the
+  goal (a whole level laid out piece after piece), screening no longer spends
+  the run budget before reaching the literal that matters. A field-sensitive
+  reach measures the literals the goal's own fields depend on first, knobs
+  that only other fields read wait, a `--by 0` goal (one that holds its value)
+  no longer makes every literal that moves it look like an answer, and a
+  column that measures zero gives its place to the next candidate. The
+  `--json` candidates gain `focus`
+  ([CLI](docs/CLI.md#propose-edit--propose-source-edits-that-change-an-emitted-value)).
 
 ## 0.1.0 - 2026-10-23
 

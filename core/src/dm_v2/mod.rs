@@ -47,7 +47,7 @@ pub use jacobian::{ColumnQuality, FdMode, FdOptions, Jacobian, Side, collateral_
 pub use params::{
     Anchor, CodeOrigin, Discovered, Eligibility, EligibilityContext, Param, ParamFilter,
     ParamSelector, RunBudget, ScreenResult, anchors_for, discover_params, eligibility,
-    screen_params,
+    screen_order, screen_params, screen_params_for,
 };
 
 pub use observe::{EmitKey, LiveObservation, ObsValue, Observable, PathStep};

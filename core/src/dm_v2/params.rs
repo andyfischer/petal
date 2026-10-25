@@ -17,7 +17,9 @@
 //!    records, per literal, *how* it was reached (only through a hint bound,
 //!    only through a comparison or an index, only through an RNG or other
 //!    no-feedback native, only through a `state` initializer, through a
-//!    `var`, …), and how far it is from the goal.
+//!    `var`, …), and how far it is from the goal. A second, focused walk
+//!    follows only the field or element of each value a goal reads
+//!    ([`Param::focus`]); screening and measuring go by it first.
 //! 2. The loaded filter: what the baseline never loaded cannot matter
 //!    ([`SpecRun::loaded`](super::spec::SpecRun::loaded)).
 //! 3. [`eligibility`], the hard filters of §2.5.1, applied before anything is
@@ -34,11 +36,11 @@ use std::time::Instant;
 
 use crate::constant_table::ConstantValue;
 use crate::dm_v2::hints::{Hint, HintKind, Hints};
-use crate::dm_v2::observe::Observable;
+use crate::dm_v2::observe::{Observable, PathStep};
 use crate::dm_v2::spec::{OverrideValue, Overrides, SpecHost, SpecRun, SpecSession};
 use crate::env::Env;
 use crate::native_fn::{InputClasses, NativeFnTable};
-use crate::program::{BlockId, FunctionId, Program, Term, TermId, TermOp, base_fn_name};
+use crate::program::{BlockId, FunctionId, MapSpreadEntry, Program, Term, TermId, TermOp, base_fn_name};
 use crate::source_map::{ENTRY_FILE, FileId, SourceSpan};
 
 // ── the parameter ───────────────────────────────────────────────────────────
@@ -97,6 +99,11 @@ pub struct Param {
     pub origin: CodeOrigin,
     /// Call, definition and cell edges on the shortest path to a goal.
     pub distance: u32,
+    /// The same distance along the goals' own parts only (the field a goal
+    /// reads, the element it is in), or `None` when only the rest of a value
+    /// the goal reads part of depends on this literal: a field-sensitive
+    /// reach, which screening and measuring go by first (§2.2).
+    pub focus: Option<u32>,
 }
 
 impl Param {
@@ -132,6 +139,9 @@ impl Param {
 pub struct Anchor {
     pub term: TermId,
     pub chain: Vec<TermId>,
+    /// The part of the term's value the goal reads (a `--field` path), for
+    /// the focused walk; empty for the whole value.
+    pub path: Vec<PathStep>,
 }
 
 // ── selectors and eligibility (§2.5.1, §2.7) ────────────────────────────────
@@ -317,27 +327,40 @@ pub fn anchors_for(program: &Program, run: &SpecRun, goals: &[Observable]) -> Ve
     };
     for goal in goals {
         match goal {
-            Observable::EmitArg { key, arg, .. } => {
+            Observable::EmitArg { key, arg, path } => {
                 let Some(emit) = run.emit(key) else { continue };
                 let chain: Vec<TermId> = emit.chain.chain.iter().copied().collect();
                 let Some(&call) = chain.first() else { continue };
                 let Some(t) = program.terms.get(call.0 as usize) else { continue };
                 let offset = t.op.arg_offset().unwrap_or(0);
                 if let Some(&term) = t.inputs.get(offset + arg) {
-                    push(Anchor { term, chain });
+                    push(Anchor { term, chain, path: path.clone() });
                 }
             }
-            Observable::EmitValue { key, .. } => {
+            Observable::EmitValue { key, path } => {
                 let Some(emit) = run.emit(key) else { continue };
                 let chain: Vec<TermId> = emit.chain.chain.iter().copied().collect();
                 let Some(&call) = chain.first() else { continue };
                 let Some(t) = program.terms.get(call.0 as usize) else { continue };
                 let offset = t.op.arg_offset().unwrap_or(0);
-                for &term in t.inputs.iter().skip(offset) {
-                    push(Anchor { term, chain: chain.clone() });
+                // `push_output(channel, v)` emits `v`: the path is into it.
+                // Another native's value is not one of its arguments.
+                let value_arg = match t.op {
+                    TermOp::BuiltinCall(c) => matches!(
+                        program.constants.get(c),
+                        ConstantValue::String(n) if n.as_str() == "push_output"
+                    )
+                    .then_some(offset + 1),
+                    _ => None,
+                };
+                for (k, &term) in t.inputs.iter().enumerate().skip(offset) {
+                    let path = if Some(k) == value_arg { path.clone() } else { Vec::new() };
+                    push(Anchor { term, chain: chain.clone(), path });
                 }
             }
-            Observable::Watch { term, .. } => push(Anchor { term: *term, chain: Vec::new() }),
+            Observable::Watch { term, path, .. } => {
+                push(Anchor { term: *term, chain: Vec::new(), path: path.clone() })
+            }
         }
     }
     out
@@ -722,19 +745,112 @@ pub fn discover_params(
     call_edges: &[(TermId, FunctionId)],
 ) -> Discovered {
     let ix = Index::new(program, natives, hints, call_edges);
+    // The superset walks each anchor term once, whatever part of it a goal
+    // reads; the focused walk follows the goal's path into it.
+    let mut whole: Vec<Anchor> = Vec::new();
+    for a in anchors {
+        let a = Anchor { path: Vec::new(), ..a.clone() };
+        if !whole.contains(&a) {
+            whole.push(a);
+        }
+    }
+    let (reach, truncated) = walk(&ix, &whole, false);
+    let (focus, focus_truncated) = walk(&ix, anchors, true);
+
+    let origins = file_origins(program);
+    let frames = goal_frame_spans(program, anchors);
+    // Char-to-byte tables of the files that are not ASCII.
+    let tables: Vec<Option<Vec<usize>>> = program
+        .source_map
+        .files
+        .iter()
+        .map(|f| {
+            (!f.source.is_ascii()).then(|| {
+                f.source.char_indices().map(|(b, _)| b).chain(std::iter::once(f.source.len())).collect()
+            })
+        })
+        .collect();
+    let mut params: Vec<Param> = reach
+        .into_iter()
+        .filter_map(|(term, r)| {
+            let focus = if focus_truncated { Some(r.distance) } else { focus.get(&term).map(|f| f.distance) };
+            make_param(program, &ix, &origins, &tables, term, r, &frames, focus)
+        })
+        .collect();
+    params.sort_by_key(|p| (p.distance, p.file.0, p.span.start.offset, p.term.0));
+    Discovered { params, truncated }
+}
+
+/// One step of the part of a value the focused walk wants (§2.2): a field of
+/// a record, or an element of a list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum WantStep<'p> {
+    Field(&'p str),
+    Elem,
+}
+
+/// The part of a term's value a goal reads, outermost step first; empty is
+/// the whole value. Longer paths are not followed (the walk then wants the
+/// whole value, which only reaches more).
+type Want<'p> = smallvec::SmallVec<[WantStep<'p>; MAX_WANT]>;
+
+const MAX_WANT: usize = 8;
+
+/// `step` then `rest`, or the whole value when that is too long.
+fn want_in<'p>(step: WantStep<'p>, rest: &Want<'p>) -> Want<'p> {
+    if rest.len() >= MAX_WANT {
+        return Want::new();
+    }
+    let mut w = Want::new();
+    w.push(step);
+    w.extend(rest.iter().copied());
+    w
+}
+
+/// The want past its first step, when that step is `step`.
+fn want_past<'p>(w: &Want<'p>, step: WantStep<'p>) -> Option<Want<'p>> {
+    (w.first() == Some(&step)).then(|| w[1..].iter().copied().collect())
+}
+
+/// The backward walk of [`discover_params`] from `starts`. Unfocused, it is
+/// the static superset of §2.2. Focused, it also carries which part of each
+/// value is wanted, and does not follow the parts that are not: a record
+/// literal's other fields, a list literal's items when a field of the list
+/// is read, the old value of a field a `SetField` replaced. Anything it does
+/// not model wants the whole value, so the focused reach is a subset of the
+/// unfocused one that still holds every literal that can move the goal's
+/// part. Returns the literals reached and whether the walk was cut short.
+fn walk<'p>(ix: &Index<'p>, starts: &'p [Anchor], focused: bool) -> (HashMap<TermId, Reach>, bool) {
+    let program = ix.program;
     let mut reach: HashMap<TermId, Reach> = HashMap::new();
-    let mut seen: HashSet<(TermId, Ctx, u8, u16)> = HashSet::new();
-    let mut queue: VecDeque<(TermId, Ctx, u8, u32, u16)> = VecDeque::new();
+    let mut seen: HashSet<(TermId, Ctx, u8, u16, Want<'p>)> = HashSet::new();
+    let mut queue: VecDeque<(TermId, Ctx, u8, u32, u16, Want<'p>)> = VecDeque::new();
     let mut visits = 0usize;
     let mut truncated = false;
+    let str_of = |c: crate::constant_table::ConstantId| -> Option<&'p str> {
+        match program.constants.get(c) {
+            ConstantValue::String(s) => Some(s.as_str()),
+            _ => None,
+        }
+    };
     // Each anchor walks with its own chain.
-    let chains: Vec<&[TermId]> = anchors.iter().map(|a| a.chain.as_slice()).collect();
-    for (ai, a) in anchors.iter().enumerate() {
+    let chains: Vec<&[TermId]> = starts.iter().map(|a| a.chain.as_slice()).collect();
+    for (ai, a) in starts.iter().enumerate() {
         let ctx = if a.chain.is_empty() { Ctx::Any } else { Ctx::Chain(0) };
-        queue.push_back((a.term, ctx, 0, 0, ai as u16));
+        let mut w = Want::new();
+        if focused && a.path.len() <= MAX_WANT {
+            for step in &a.path {
+                w.push(match step {
+                    PathStep::Index(_) => WantStep::Elem,
+                    PathStep::Field(f) => WantStep::Field(f.as_str()),
+                });
+            }
+        }
+        queue.push_back((a.term, ctx, 0, 0, ai as u16, w));
     }
-    while let Some((id, ctx, mask, dist, ai)) = queue.pop_front() {
-        if !seen.insert((id, ctx, mask, if matches!(ctx, Ctx::Chain(_)) { ai } else { 0 })) {
+    let whole = Want::new;
+    while let Some((id, ctx, mask, dist, ai, want)) = queue.pop_front() {
+        if !seen.insert((id, ctx, mask, if matches!(ctx, Ctx::Chain(_)) { ai } else { 0 }, want.clone())) {
             continue;
         }
         visits += 1;
@@ -744,8 +860,12 @@ pub fn discover_params(
         }
         let Some(t) = ix.term(id) else { continue };
         let chain = chains[ai as usize];
-        let mut next: Vec<(TermId, Ctx, u8, i32)> = Vec::new();
-        let mut go = |to: TermId, c: Ctx, bits: u8, cost: i32| next.push((to, c, mask | bits, cost));
+        let mut next: Vec<(TermId, Ctx, u8, i32, Want<'p>)> = Vec::new();
+        let mut go = |to: TermId, c: Ctx, bits: u8, cost: i32, w: Want<'p>| {
+            next.push((to, c, mask | bits, cost, if focused { w } else { Want::new() }))
+        };
+        // The same part of a value this term passes through.
+        let same = || want.clone();
         use via::*;
         match &t.op {
             TermOp::Constant(_) => {
@@ -776,13 +896,13 @@ pub fn discover_params(
                     match along_chain {
                         Some((call, c)) => {
                             for a in ix.args_for(call, f, k) {
-                                go(a, c, 0, back);
+                                go(a, c, 0, back, same());
                             }
                         }
                         None => {
                             for &call in ix.callers.get(&f).into_iter().flatten() {
                                 for a in ix.args_for(call, f, k) {
-                                    go(a, Ctx::Any, 0, 1);
+                                    go(a, Ctx::Any, 0, 1, same());
                                 }
                             }
                         }
@@ -791,7 +911,7 @@ pub fn discover_params(
                 Some(Phantom::Capture(f, s)) => {
                     for &mc in ix.closures_of.get(f).into_iter().flatten() {
                         if let Some(&outer) = ix.term(mc).and_then(|m| m.inputs.get(*s)) {
-                            go(outer, Ctx::Any, 0, 1);
+                            go(outer, Ctx::Any, 0, 1, same());
                         }
                     }
                 }
@@ -801,15 +921,21 @@ pub fn discover_params(
                         match pt.op {
                             TermOp::NumericForLoop => {
                                 if let Some(&start) = pt.inputs.first() {
-                                    go(start, ctx, 0, 0);
+                                    go(start, ctx, 0, 0, whole());
                                 }
                                 for &end in pt.inputs.iter().skip(1) {
-                                    go(end, ctx, STRUCT, 0);
+                                    go(end, ctx, STRUCT, 0, whole());
+                                }
+                            }
+                            // A `for x in xs` variable is an element of `xs`.
+                            TermOp::ForLoop => {
+                                if let Some(&src) = pt.inputs.first() {
+                                    go(src, ctx, 0, 0, want_in(WantStep::Elem, &want));
                                 }
                             }
                             _ => {
                                 if let Some(&src) = pt.inputs.first() {
-                                    go(src, ctx, 0, 0);
+                                    go(src, ctx, 0, 0, whole());
                                 }
                             }
                         }
@@ -819,7 +945,7 @@ pub fn discover_params(
             TermOp::MakeClosure(f) => {
                 // A function value reached as data: whatever it returns.
                 for &r in ix.fn_results.get(f).into_iter().flatten() {
-                    go(r, Ctx::Any, 0, 1);
+                    go(r, Ctx::Any, 0, 1, whole());
                 }
             }
             TermOp::Call => {
@@ -829,14 +955,14 @@ pub fn discover_params(
                 for f in statics.into_iter().flatten().chain(observed.into_iter().flatten()) {
                     known = true;
                     for &r in ix.fn_results.get(f).into_iter().flatten() {
-                        go(r, Ctx::Entered(id), 0, 1);
+                        go(r, Ctx::Entered(id), 0, 1, same());
                     }
                 }
                 if !known {
                     // Nothing known about the callee: everything it was
                     // handed may matter, the callee expression included.
                     for &i in &t.inputs {
-                        go(i, ctx, 0, 0);
+                        go(i, ctx, 0, 0, whole());
                     }
                 }
             }
@@ -845,7 +971,7 @@ pub fn discover_params(
                 for f in ix.observed.get(&id).into_iter().flatten() {
                     user = true;
                     for &r in ix.fn_results.get(f).into_iter().flatten() {
-                        go(r, Ctx::Entered(id), 0, 1);
+                        go(r, Ctx::Entered(id), 0, 1, same());
                     }
                 }
                 let kind = match program.constants.get(*name) {
@@ -862,11 +988,11 @@ pub fn discover_params(
                 for &i in t.inputs.iter().filter(|_| !user) {
                     let fs = ix.closure_fns(i);
                     if fs.is_empty() {
-                        go(i, ctx, bits, 0);
+                        go(i, ctx, bits, 0, whole());
                     } else {
                         for f in fs {
                             for &r in ix.fn_results.get(&f).into_iter().flatten() {
-                                go(r, Ctx::Entered(id), bits, 1);
+                                go(r, Ctx::Entered(id), bits, 1, whole());
                             }
                         }
                     }
@@ -874,6 +1000,7 @@ pub fn discover_params(
             }
             TermOp::BuiltinCall(name) => {
                 let kind = ix.builtin(id, *name);
+                let shape = str_of(*name).map_or(ListShape::Opaque, list_shape);
                 for (j, &i) in t.inputs.iter().enumerate() {
                     let bits = match kind {
                         BuiltinKind::Tunable if j > 0 => HINT_BOUND,
@@ -883,13 +1010,20 @@ pub fn discover_params(
                     };
                     let fs = ix.closure_fns(i);
                     if fs.is_empty() {
-                        go(i, ctx, bits, 0);
+                        let w = match (shape, j) {
+                            (ListShape::Same, _) | (ListShape::SameFirst | ListShape::Append, 0) => same(),
+                            (ListShape::ElemOfFirst, 0) => want_in(WantStep::Elem, &want),
+                            (ListShape::Append, 1) => want_past(&want, WantStep::Elem).unwrap_or_default(),
+                            _ => whole(),
+                        };
+                        let w = if matches!(kind, BuiltinKind::Tunable | BuiltinKind::Rigid) && j == 0 { same() } else { w };
+                        go(i, ctx, bits, 0, w);
                     } else {
                         // A callback (`map`, `filter`, …): its results, with
                         // its parameters fed by this call's other arguments.
                         for f in fs {
                             for &r in ix.fn_results.get(&f).into_iter().flatten() {
-                                go(r, Ctx::Entered(id), bits, 1);
+                                go(r, Ctx::Entered(id), bits, 1, whole());
                             }
                         }
                     }
@@ -897,94 +1031,171 @@ pub fn discover_params(
             }
             TermOp::Eq | TermOp::Ne | TermOp::Lt | TermOp::Le | TermOp::Gt | TermOp::Ge | TermOp::LoopKey => {
                 for &i in &t.inputs {
-                    go(i, ctx, STRUCT, 0);
+                    go(i, ctx, STRUCT, 0, whole());
                 }
             }
-            TermOp::GetIndex | TermOp::GetIndexOpt | TermOp::SetIndex => {
+            TermOp::GetIndex | TermOp::GetIndexOpt => {
                 for (j, &i) in t.inputs.iter().enumerate() {
-                    go(i, ctx, if j == 1 { STRUCT } else { 0 }, 0);
+                    if j == 0 {
+                        go(i, ctx, 0, 0, want_in(WantStep::Elem, &want));
+                    } else {
+                        go(i, ctx, STRUCT, 0, whole());
+                    }
+                }
+            }
+            TermOp::SetIndex => {
+                for (j, &i) in t.inputs.iter().enumerate() {
+                    let w = match j {
+                        0 => same(),
+                        2 => want_past(&want, WantStep::Elem).unwrap_or_default(),
+                        _ => whole(),
+                    };
+                    go(i, ctx, if j == 1 { STRUCT } else { 0 }, 0, w);
+                }
+            }
+            TermOp::GetField(f) | TermOp::GetFieldOpt(f) => {
+                let w = match str_of(*f) {
+                    Some(name) => want_in(WantStep::Field(name), &want),
+                    None => whole(),
+                };
+                for (j, &i) in t.inputs.iter().enumerate() {
+                    go(i, ctx, 0, 0, if j == 0 { w.clone() } else { whole() });
+                }
+            }
+            TermOp::SetField(f) => {
+                // `{...r, f: v}` read at `f` is `v`; at another field, `r`'s.
+                let name = str_of(*f);
+                let at_f = match (name, want.first()) {
+                    (Some(n), Some(WantStep::Field(w))) => Some(n == *w),
+                    _ => None,
+                };
+                for (j, &i) in t.inputs.iter().enumerate() {
+                    match (j, at_f) {
+                        (0, Some(true)) | (1, Some(false)) => {}
+                        (0, Some(false)) => go(i, ctx, 0, 0, same()),
+                        (1, Some(true)) => go(i, ctx, 0, 0, want[1..].iter().copied().collect()),
+                        _ => go(i, ctx, 0, 0, whole()),
+                    }
+                }
+            }
+            TermOp::AllocMap { fields, class: None } if focused && matches!(want.first(), Some(WantStep::Field(_))) => {
+                let Some(WantStep::Field(w)) = want.first() else { unreachable!() };
+                let rest: Want<'p> = want[1..].iter().copied().collect();
+                for (k, &c) in fields.iter().enumerate() {
+                    if str_of(c) == Some(*w)
+                        && let Some(&i) = t.inputs.get(k)
+                    {
+                        go(i, ctx, 0, 0, rest.clone());
+                    }
+                }
+            }
+            TermOp::AllocMapSpread { entries } if focused && matches!(want.first(), Some(WantStep::Field(_))) => {
+                let Some(WantStep::Field(w)) = want.first() else { unreachable!() };
+                let rest: Want<'p> = want[1..].iter().copied().collect();
+                for e in entries {
+                    match e {
+                        MapSpreadEntry::Spread(k) => {
+                            if let Some(&i) = t.inputs.get(*k) {
+                                go(i, ctx, 0, 0, same());
+                            }
+                        }
+                        MapSpreadEntry::Named(c, k) => {
+                            if str_of(*c) == Some(*w)
+                                && let Some(&i) = t.inputs.get(*k)
+                            {
+                                go(i, ctx, 0, 0, rest.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            TermOp::AllocList if focused && want.first() == Some(&WantStep::Elem) => {
+                let rest: Want<'p> = want[1..].iter().copied().collect();
+                for &i in &t.inputs {
+                    go(i, ctx, 0, 0, rest.clone());
                 }
             }
             TermOp::Branch | TermOp::Match => {
                 for &i in &t.inputs {
-                    go(i, ctx, STRUCT, 0);
+                    go(i, ctx, STRUCT, 0, whole());
                 }
                 for b in &t.child_blocks {
                     if let Some(&last) = ix.block_last.get(b) {
-                        go(last, ctx, 0, 0);
+                        go(last, ctx, 0, 0, same());
                     }
                 }
                 if let Some(arms) = program.match_arms.get(&id) {
                     for arm in arms {
                         if let Some(&last) = ix.block_last.get(&arm.body_block) {
-                            go(last, ctx, 0, 0);
+                            go(last, ctx, 0, 0, same());
                         }
                     }
                 }
             }
             TermOp::And | TermOp::Or | TermOp::Coalesce => {
                 for &i in &t.inputs {
-                    go(i, ctx, 0, 0);
+                    go(i, ctx, 0, 0, same());
                 }
                 for b in &t.child_blocks {
                     if let Some(&last) = ix.block_last.get(b) {
-                        go(last, ctx, 0, 0);
+                        go(last, ctx, 0, 0, same());
                     }
                 }
             }
             TermOp::ForLoop | TermOp::NumericForLoop | TermOp::WhileLoop => {
                 if t.collect {
                     if let Some(&last) = t.child_blocks.last().and_then(|b| ix.block_last.get(b)) {
-                        go(last, ctx, 0, 0);
+                        // The collected list's elements are the body's values.
+                        go(last, ctx, 0, 0, want_past(&want, WantStep::Elem).unwrap_or_default());
                     }
                     // The trip count decides how many items there are.
                     for &i in &t.inputs {
-                        go(i, ctx, STRUCT, 0);
+                        go(i, ctx, STRUCT, 0, whole());
                     }
                     if matches!(t.op, TermOp::WhileLoop)
                         && let Some(&cond) = t.child_blocks.first().and_then(|b| ix.block_last.get(b))
                     {
-                        go(cond, ctx, STRUCT, 0);
+                        go(cond, ctx, STRUCT, 0, whole());
                     }
                 }
             }
             TermOp::Phi => {
                 for &i in &t.inputs {
-                    go(i, ctx, 0, 0);
+                    go(i, ctx, 0, 0, same());
                 }
                 for &s in ix.phi_srcs.get(&id).into_iter().flatten() {
-                    go(s, ctx, 0, 0);
+                    go(s, ctx, 0, 0, same());
                 }
             }
             TermOp::CellRead => {
                 for &i in &t.inputs {
-                    go(i, ctx, VAR, 0);
+                    go(i, ctx, VAR, 0, same());
                 }
             }
             TermOp::CellNew => {
                 for &i in &t.inputs {
-                    go(i, ctx, 0, 0);
+                    go(i, ctx, 0, 0, same());
                 }
                 for &w in ix.cell_writes.get(&id).into_iter().flatten() {
                     if let Some(&v) = ix.term(w).and_then(|wt| wt.inputs.get(1)) {
-                        go(v, ctx, VAR, 1);
+                        go(v, ctx, VAR, 1, same());
                     }
                 }
             }
             TermOp::CellWrite => {
                 if let Some(&v) = t.inputs.get(1) {
-                    go(v, ctx, 0, 0);
+                    go(v, ctx, 0, 0, same());
                 }
             }
             TermOp::StateInit => {
                 if let Some(&init) = t.child_blocks.first().and_then(|b| ix.block_last.get(b)) {
                     // A `state` read is the value earlier frames left, or
                     // (on a slot's first frame) the initializer.
-                    go(init, ctx, STATE_INIT | STATE, 0);
+                    go(init, ctx, STATE_INIT | STATE, 0, same());
                 }
                 for &w in ix.cell_writes.get(&id).into_iter().flatten() {
                     if let Some(&v) = ix.term(w).and_then(|wt| wt.inputs.get(1)) {
-                        go(v, ctx, VAR | STATE, 1);
+                        go(v, ctx, VAR | STATE, 1, same());
                     }
                 }
                 for &s in t.state_key.and_then(|k| ix.state_terms.get(&k.0)).into_iter().flatten() {
@@ -993,7 +1204,7 @@ pub fn discover_params(
                         && matches!(st.op, TermOp::StateWrite)
                         && let Some(&v) = st.inputs.first()
                     {
-                        go(v, ctx, STATE, 1);
+                        go(v, ctx, STATE, 1, same());
                     }
                 }
             }
@@ -1001,10 +1212,10 @@ pub fn discover_params(
                 for &s in t.state_key.and_then(|k| ix.state_terms.get(&k.0)).into_iter().flatten() {
                     if let Some(st) = ix.term(s) {
                         match st.op {
-                            TermOp::StateInit => go(s, ctx, STATE, 1),
+                            TermOp::StateInit => go(s, ctx, STATE, 1, same()),
                             TermOp::StateWrite => {
                                 if let Some(&v) = st.inputs.first() {
-                                    go(v, ctx, STATE, 1);
+                                    go(v, ctx, STATE, 1, same());
                                 }
                             }
                             _ => {}
@@ -1013,16 +1224,21 @@ pub fn discover_params(
                 }
             }
             TermOp::Break | TermOp::Continue | TermOp::Error(_) => {}
-            _ => {
-                // Arithmetic, records, lists, fields, `Return`, `Copy`, …:
-                // every input is a value edge.
+            TermOp::Copy | TermOp::Return => {
                 for &i in &t.inputs {
-                    go(i, ctx, 0, 0);
+                    go(i, ctx, 0, 0, same());
+                }
+            }
+            _ => {
+                // Arithmetic, records, lists, fields, …: every input is a
+                // value edge, wanted whole.
+                for &i in &t.inputs {
+                    go(i, ctx, 0, 0, whole());
                 }
             }
         }
-        for (to, c, m, cost) in next {
-            let item = (to, c, m, (dist as i64 + cost as i64).max(0) as u32, ai);
+        for (to, c, m, cost, w) in next {
+            let item = (to, c, m, (dist as i64 + cost as i64).max(0) as u32, ai, w);
             if cost <= 0 {
                 queue.push_front(item);
             } else {
@@ -1030,26 +1246,32 @@ pub fn discover_params(
             }
         }
     }
+    (reach, truncated)
+}
 
-    let origins = file_origins(program);
-    let frames = goal_frame_spans(program, anchors);
-    // Char-to-byte tables of the files that are not ASCII.
-    let tables: Vec<Option<Vec<usize>>> = program
-        .source_map
-        .files
-        .iter()
-        .map(|f| {
-            (!f.source.is_ascii()).then(|| {
-                f.source.char_indices().map(|(b, _)| b).chain(std::iter::once(f.source.len())).collect()
-            })
-        })
-        .collect();
-    let mut params: Vec<Param> = reach
-        .into_iter()
-        .filter_map(|(term, r)| make_param(program, &ix, &origins, &tables, term, r, &frames))
-        .collect();
-    params.sort_by_key(|p| (p.distance, p.file.0, p.span.start.offset, p.term.0));
-    Discovered { params, truncated }
+/// How a list builtin's result relates to its inputs, for the focused walk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListShape {
+    /// Unknown: every input is wanted whole.
+    Opaque,
+    /// Every input's elements are the result's (`concat`).
+    Same,
+    /// The first input's elements are the result's (`filter`, `sort`, …).
+    SameFirst,
+    /// The result is an element of the first input (`find`, `first`, …).
+    ElemOfFirst,
+    /// `append(xs, x)`: `xs`'s elements and `x`.
+    Append,
+}
+
+fn list_shape(name: &str) -> ListShape {
+    match name {
+        "concat" => ListShape::Same,
+        "filter" | "sort" | "sort_by" | "reverse" | "slice" | "take" | "drop" | "drop_last" => ListShape::SameFirst,
+        "find" | "first" | "last" => ListShape::ElemOfFirst,
+        "append" | "push" | "prepend" => ListShape::Append,
+        _ => ListShape::Opaque,
+    }
 }
 
 /// The spans of the goals' own user-frame calls: the innermost frame of each
@@ -1085,6 +1307,7 @@ fn make_param(
     term: TermId,
     r: Reach,
     goal_frames: &[SourceSpan],
+    focus: Option<u32>,
 ) -> Option<Param> {
     let t = ix.term(term)?;
     let TermOp::Constant(k) = t.op else { return None };
@@ -1144,6 +1367,7 @@ fn make_param(
         }),
         origin: origins.get(own.file.0 as usize).copied().unwrap_or(CodeOrigin::Library),
         distance: r.distance,
+        focus,
     })
 }
 
@@ -1252,11 +1476,18 @@ impl RunBudget {
 /// The result of [`screen_params`].
 #[derive(Debug, Clone, Default)]
 pub struct ScreenResult {
-    /// The parameters that moved a goal (indices into the param list), in
-    /// the order they were screened.
+    /// The parameters that moved a goal (indices into the param list), by
+    /// proximity (distance, then source order).
     pub kept: Vec<usize>,
     /// Kept parameters whose own perturbation changed the control flow.
     pub regime: Vec<usize>,
+    /// Kept parameters that move only the goals that hold their value (a
+    /// `--by 0`), or only the control flow: what an edit may need to undo,
+    /// not what makes it. Screened after the rest (§2.2 stage 5).
+    pub secondary: Vec<usize>,
+    /// Kept parameters the run budget ended before screening: they may
+    /// matter.
+    pub unscreened: Vec<usize>,
     /// Parameters whose own perturbation made the run fail.
     pub errored: Vec<(usize, String)>,
     /// How many were screened, out of how many eligible (§2.2 stage 4).
@@ -1267,11 +1498,27 @@ pub struct ScreenResult {
 }
 
 /// How one probing run of a screening group came out.
-enum Probe {
-    Still,
-    Moved,
-    Regime,
-    Failed(String),
+#[derive(Debug, Clone, Default)]
+struct Probe {
+    failed: Option<String>,
+    /// A goal that asks for a change moved.
+    primary: bool,
+    /// A goal that holds its value moved.
+    hold: bool,
+    /// The control flow changed.
+    regime: bool,
+}
+
+impl Probe {
+    fn still(&self) -> bool {
+        self.failed.is_none() && !self.primary && !self.hold && !self.regime
+    }
+
+    /// It moved only what an edit would have to undo: a held goal, or the
+    /// flow.
+    fn secondary(&self) -> bool {
+        self.failed.is_none() && !self.primary && (self.hold || self.regime)
+    }
 }
 
 /// The relative step of screening member `j` (§2.2 stage 5): distinct,
@@ -1292,27 +1539,35 @@ fn screen_override(p: &Param, j: usize, rel: f64) -> OverrideValue {
     }
 }
 
-/// Whether `run` moved any goal away from `base`.
-fn probe(base: &SpecRun, run: &SpecRun, goals: &[Observable]) -> Probe {
+/// How `run` differs from `base` on `goals`; `primary[g]` says goal `g` asks
+/// for a change (missing: it does).
+fn probe(base: &SpecRun, run: &SpecRun, goals: &[Observable], primary: &[bool]) -> Probe {
     if let Some(e) = &run.error {
-        return Probe::Failed(e.to_string());
+        return Probe { failed: Some(e.to_string()), ..Probe::default() };
     }
-    let mut moved = false;
-    for g in goals {
-        match (base.read(g), run.read(g)) {
-            (Some(a), Some(b)) => {
-                if (a - b).abs() > 1e-12 * a.abs().max(1.0) || a.is_nan() != b.is_nan() {
-                    moved = true;
-                }
+    let mut out = Probe { regime: run.fingerprint != base.fingerprint, ..Probe::default() };
+    for (k, g) in goals.iter().enumerate() {
+        let moved = match (base.read(g), run.read(g)) {
+            (Some(a), Some(b)) => (a - b).abs() > 1e-12 * a.abs().max(1.0) || a.is_nan() != b.is_nan(),
+            (Some(_), None) | (None, Some(_)) => true,
+            (None, None) => false,
+        };
+        if moved {
+            if primary.get(k).copied().unwrap_or(true) {
+                out.primary = true;
+            } else {
+                out.hold = true;
             }
-            (Some(_), None) | (None, Some(_)) => moved = true,
-            (None, None) => {}
         }
     }
-    if run.fingerprint != base.fingerprint {
-        return Probe::Regime;
-    }
-    if moved { Probe::Moved } else { Probe::Still }
+    out
+}
+
+/// The order screening and measuring prefer (§2.2 stage 5): the literals
+/// the goals' own parts depend on (the focused reach, [`Param::focus`]),
+/// nearest first, then the rest, nearest first; then source order.
+pub fn screen_order(p: &Param) -> (bool, u32, u32, u16, u32) {
+    (p.focus.is_none(), p.focus.unwrap_or(p.distance), p.distance, p.file.0, p.span.start.offset)
 }
 
 /// One step of the screening search.
@@ -1324,14 +1579,7 @@ enum Screen {
     Known(Vec<usize>),
 }
 
-/// Empirical screening by adaptive group testing (§2.2 stage 5): perturb a
-/// group together; a group that moves no goal is dropped whole, one that
-/// does is split in halves, and when the first half of a group that moved
-/// moves nothing, the second half is known to without a run of its own.
-/// Members are perturbed by distinct, incommensurate steps of alternating
-/// sign (ints by `±1`, type-preserving), so their effects do not cancel.
-/// `eligible` are indices into `params`, which must already be parameters of
-/// `session`; at most `max_screen` of them, nearest first, are screened.
+/// [`screen_params_for`] with every goal asking for a change.
 #[allow(clippy::too_many_arguments)]
 pub fn screen_params(
     session: &mut SpecSession,
@@ -1343,8 +1591,38 @@ pub fn screen_params(
     goals: &[Observable],
     budget: &mut RunBudget,
 ) -> ScreenResult {
+    screen_params_for(session, env, host, params, eligible, max_screen, goals, &[], budget)
+}
+
+/// Empirical screening by adaptive group testing (§2.2 stage 5): perturb a
+/// group together; a group that moves no goal is dropped whole, one that
+/// does is split in halves, and when the first half of a group that moved
+/// moves nothing, the second half is known to without a run of its own.
+/// Members are perturbed by distinct, incommensurate steps of alternating
+/// sign (ints by `±1`, type-preserving), so their effects do not cancel.
+/// `eligible` are indices into `params`, which must already be parameters of
+/// `session`; at most `max_screen` of them, in [`screen_order`], are
+/// screened, the focused ones as their own first group.
+///
+/// `primary[g]` says goal `g` asks for a change (a goal that holds its value
+/// is not primary; missing entries are). A group that moves only held goals,
+/// or only the control flow, cannot make the edit, so it is set aside and
+/// split only once the groups that move a primary goal are resolved: on a
+/// tight budget those are what gets screened ([`ScreenResult::secondary`]).
+#[allow(clippy::too_many_arguments)]
+pub fn screen_params_for(
+    session: &mut SpecSession,
+    env: &mut Env,
+    host: &mut dyn SpecHost,
+    params: &[Param],
+    eligible: &[usize],
+    max_screen: usize,
+    goals: &[Observable],
+    primary: &[bool],
+    budget: &mut RunBudget,
+) -> ScreenResult {
     let mut order: Vec<usize> = eligible.to_vec();
-    order.sort_by_key(|&i| (params[i].distance, params[i].file.0, params[i].span.start.offset));
+    order.sort_by_key(|&i| screen_order(&params[i]));
     let mut out = ScreenResult {
         eligible: order.len(),
         ..Default::default()
@@ -1352,19 +1630,54 @@ pub fn screen_params(
     order.truncate(max_screen);
     out.screened = order.len();
     let base = session.baseline().clone();
+    // The work stack pops from the end: the focused group goes on top.
     let mut work: Vec<Screen> = Vec::new();
-    if !order.is_empty() {
-        work.push(Screen::Test(order, None));
+    let split_at = order.iter().position(|&i| params[i].focus.is_none()).unwrap_or(order.len());
+    if split_at < order.len() {
+        work.push(Screen::Test(order[split_at..].to_vec(), None));
     }
+    if split_at > 0 {
+        work.push(Screen::Test(order[..split_at].to_vec(), None));
+    }
+    // Groups set aside as secondary, and whether a singleton's own run
+    // changed the flow.
+    let mut deferred: Vec<Screen> = Vec::new();
+    let mut secondary_phase = false;
     let split = |group: Vec<usize>, work: &mut Vec<Screen>| {
         let mid = group.len() / 2;
         work.push(Screen::Test(group[..mid].to_vec(), Some(group[mid..].to_vec())));
     };
-    while let Some(step) = work.pop() {
+    let flush = |out: &mut ScreenResult, w: Screen, unscreened: bool| {
+        let (g, s) = match w {
+            Screen::Known(g) => (g, None),
+            Screen::Test(g, s) => (g, s),
+        };
+        for i in g.into_iter().chain(s.into_iter().flatten()) {
+            out.kept.push(i);
+            if unscreened {
+                out.unscreened.push(i);
+            } else {
+                out.secondary.push(i);
+            }
+        }
+    };
+    loop {
+        let step = match work.pop() {
+            Some(s) => s,
+            None if !deferred.is_empty() => {
+                secondary_phase = true;
+                work.append(&mut deferred);
+                continue;
+            }
+            None => break,
+        };
         let (group, sibling) = match step {
             Screen::Known(group) => {
                 if group.len() == 1 {
                     out.kept.push(group[0]);
+                    if secondary_phase {
+                        out.secondary.push(group[0]);
+                    }
                 } else {
                     split(group, &mut work);
                 }
@@ -1372,59 +1685,46 @@ pub fn screen_params(
             }
             Screen::Test(group, sibling) => (group, sibling),
         };
-        if !budget.take() {
-            out.budget_exhausted = true;
-            // What was not screened is kept: it may matter.
-            out.kept.extend(group);
-            out.kept.extend(sibling.into_iter().flatten());
-            for w in work.drain(..) {
-                match w {
-                    Screen::Known(g) => out.kept.extend(g),
-                    Screen::Test(g, s) => {
-                        out.kept.extend(g);
-                        out.kept.extend(s.into_iter().flatten());
-                    }
-                }
+        // Up to two runs: int members step by exactly ±1, so `a + b` cancels
+        // under the alternating signs: a group with two ints that moved
+        // nothing is probed once more with every int stepped +1 (§9 M3).
+        let mut result: Option<Probe> = None;
+        let ints = group.iter().filter(|&&i| params[i].is_int).count();
+        for attempt in 0..2 {
+            if attempt == 1 && (ints < 2 || !result.as_ref().is_some_and(Probe::still)) {
+                break;
             }
-            break;
-        }
-        let mut ov = Overrides::none();
-        for (j, &i) in group.iter().enumerate() {
-            ov = ov.with(params[i].term, screen_override(&params[i], j, 1e-3));
-        }
-        let run = session.run(env, host, &ov);
-        out.runs += 1;
-        let mut result = probe(&base, &run, goals);
-        // Int members step by exactly ±1, so `a + b` cancels under the
-        // alternating signs: a group with two ints that moved nothing is
-        // probed once more with every int stepped +1 (§9 M3).
-        if matches!(result, Probe::Still) && group.iter().filter(|&&i| params[i].is_int).count() >= 2 {
             if !budget.take() {
-                out.budget_exhausted = true;
-                out.kept.extend(group);
-                out.kept.extend(sibling.into_iter().flatten());
-                for w in work.drain(..) {
-                    match w {
-                        Screen::Known(g) => out.kept.extend(g),
-                        Screen::Test(g, s) => {
-                            out.kept.extend(g);
-                            out.kept.extend(s.into_iter().flatten());
-                        }
-                    }
-                }
+                result = None;
                 break;
             }
             let mut ov = Overrides::none();
             for (j, &i) in group.iter().enumerate() {
                 let p = &params[i];
-                let v = if p.is_int { p.override_int(p.value as i64 + 1) } else { screen_override(p, j, 1e-3) };
+                let v = if attempt == 1 && p.is_int {
+                    p.override_int(p.value as i64 + 1)
+                } else {
+                    screen_override(p, j, 1e-3)
+                };
                 ov = ov.with(p.term, v);
             }
             let run = session.run(env, host, &ov);
             out.runs += 1;
-            result = probe(&base, &run, goals);
+            result = Some(probe(&base, &run, goals, primary));
         }
-        if matches!(result, Probe::Still) {
+        let Some(result) = result else {
+            out.budget_exhausted = true;
+            // What was not screened is kept: it may matter.
+            flush(&mut out, Screen::Test(group, sibling), !secondary_phase);
+            for w in work.drain(..) {
+                flush(&mut out, w, !secondary_phase);
+            }
+            for w in deferred.drain(..) {
+                flush(&mut out, w, false);
+            }
+            break;
+        };
+        if result.still() {
             if let Some(s) = sibling {
                 work.push(Screen::Known(s));
             }
@@ -1433,19 +1733,34 @@ pub fn screen_params(
         if let Some(s) = sibling {
             work.push(Screen::Test(s, None));
         }
+        if !secondary_phase && result.secondary() {
+            // Set aside, resolved once the primary groups are.
+            if group.len() == 1 && result.regime {
+                out.regime.push(group[0]);
+            }
+            deferred.push(Screen::Known(group));
+            continue;
+        }
         if group.len() == 1 {
-            match result {
-                Probe::Failed(e) => out.errored.push((group[0], e)),
-                Probe::Regime => {
+            match result.failed {
+                Some(e) => out.errored.push((group[0], e)),
+                None => {
                     out.kept.push(group[0]);
-                    out.regime.push(group[0]);
+                    if result.regime {
+                        out.regime.push(group[0]);
+                    }
+                    if secondary_phase {
+                        out.secondary.push(group[0]);
+                    }
                 }
-                _ => out.kept.push(group[0]),
             }
             continue;
         }
         split(group, &mut work);
     }
-    out.kept.sort_by_key(|&i| (params[i].distance, params[i].file.0, params[i].span.start.offset));
+    let key = |&i: &usize| (params[i].distance, params[i].file.0, params[i].span.start.offset);
+    out.kept.sort_by_key(key);
+    out.regime.sort_by_key(key);
+    out.regime.dedup();
     out
 }

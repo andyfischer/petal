@@ -1884,7 +1884,7 @@ fields are only ever added):
                    collateral: { norm, items: [{ channel, callee, line, max_move, key,
                                                   emit, arg, path, moved, label }] } }],
   candidates: [{ term, file, line, span, value, is_int, binding, function, config,
-                 hint, origin, distance, in_goal_frame,
+                 hint, origin, distance, focus, in_goal_frame,
                  flags: {through_var, through_state, state_init, through_rng, structural, hint_bound},
                  loaded, eligible, ineligible_reason, quality, column, weight, clock_coupled }],
   diagnostics: { runs, wall_ms, suppressed, budget_exhausted, warnings, discovered,
@@ -1898,6 +1898,13 @@ fields are only ever added):
 an alternative `[config]`). A candidate's `config` is the `config let` marker
 alone and its `hint` says whether it is `tunable`, so a client can show which
 marker a number carries; its `weight` is the same for either.
+
+A candidate's `distance` counts the call, definition and cell edges from
+the goals; `focus` is the same along only the parts of values the goals read
+(the field, the list element), or `null` when only other parts depend on the
+literal. Focused literals are screened and measured first. A `--by 0` goal
+holds its value: what moves only held goals is screened after what moves the
+others.
 
 `max_error` is in units of each goal's tolerance (at most 1 means the goal
 is met); `misses` is the same distance in the goal's own units. `verified`

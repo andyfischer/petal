@@ -582,6 +582,13 @@ from cheapest to most precise.
 4. **Proximity order and cap.** Order the survivors by static distance from
    the anchors: the number of call, definition and cell edges on the
    shortest slice path, where literals in the goal's own frame come first.
+   A second, **focused** walk (§9, Canopy study fixes) follows only the part
+   of each value a goal reads: the field into a record literal, the element
+   into a list literal or a `for` variable's list, through calls, `append`,
+   `concat`, `find`, `filter`, `sort` and the like; anything it does not
+   model wants the whole value. A literal it reaches has
+   `Param::focus = Some(distance)`. The order is the focused literals first
+   (by focused distance), then the rest (`params::screen_order`).
    Screen at most `max_screen` (default 256). Truncation is reported
    (`screened: 256 of 1,930`), so a client can narrow with `Function`/`Line`
    selectors instead of paying for the whole program.
@@ -597,7 +604,12 @@ from cheapest to most precise.
    `k * log2(n / k) + 1` runs (for `n = 256`, `k = 8`, about 41). A group
    whose run errors or changes the fingerprint is split as usual. Only a
    singleton that still errors is recorded `Errored`. Fingerprint-changing
-   singletons are kept, because they are relevant.
+   singletons are kept, because they are relevant. The focused literals are
+   their own first group. A group that moves only goals that hold their
+   value (`DmRequest::holds`, a `--by 0`; or a target equal to the
+   baseline) or only the fingerprint is set aside and split after every
+   group that moves a goal asking for a change (`ScreenResult::secondary`);
+   what the budget leaves untested is `ScreenResult::unscreened`.
 
 Literals are candidates wherever they are written: call-site arguments,
 `let` / `config let` definitions, function bodies, default parameter
@@ -2432,6 +2444,47 @@ gaps it marked "first":
    most (`emit`, `arg`, `path`, `moved`, `label()`: `lives[0].2.x +2`), and
    the description and the CLI list them. The ladder's outcomes, top edits
    and run counts are unchanged (its draw arguments were already flat).
+2. *S2, screening that does not starve the goal's own literal.* With ~130
+   literals in reach of a whole-level harness, screening flagged 50 to 140 as
+   moving the goal, measured the knobs first (the weight sort; all zero in
+   #36) and then went in source order, and the budget ended before the
+   literal that mattered (#7, #12, #16, #19, #33, #36). Three changes:
+   - *Focused reach* (§2.2 stage 4): a field- and element-sensitive second
+     walk. A knob the goal's fields do not read (a decoration's `config let`
+     in the same records) has no focus and waits behind every focused
+     literal, in screening and in measuring.
+   - *Primary goals first* (§2.2 stage 5): groups that move only held goals
+     or only the flow are split last. The CLI marks `--by 0` goals
+     (`DmRequest::holds`); the API also treats a target equal to the
+     baseline as held, unless every goal is (Garden opens a drag that way).
+   - *Measuring order and zero columns*: proven movers of a primary goal,
+     then unscreened, then secondary; in each, focused first, then weight
+     (the one knob tier, 0.5, is unchanged), then `screen_order`. A column
+     that measures `Zero` gives its `MAX_MEASURE` place to the next
+     candidate while the Jacobian's share of the budget lasts
+     (`Jacobian::append_columns`).
+
+   Before and after, on Canopy's harnesses (attempts re-created on the
+   current game, targets moved to stay off the baseline; #16, #19 and #33
+   with the workaround knobs removed, #26 with `coins` on `MARGIN` again):
+
+   | Attempt | Before | After |
+   |---|---|---|
+   | #7 beetle `from_cp` (level.ptl) | 122 runs, wrong literal (the checkpoint offset) | 126 runs, the beetle's own `x0` |
+   | #12 `to_edge` + hold `from_cp` | 120 runs, no alternative | 126 runs, verified (the beetle's `x1`) |
+   | #36 `to_edge` + hold `x0` | 120 runs, no alternative | 126 runs, verified, the intended `8.0 -> 7.0` |
+   | #16 thorns landing, unscoped (segment) | 185 runs, unverified (`RUN`) | 182 runs, verified (the trunk under the thorns) |
+   | #19 same, `--allow fn:the_crown` | 137 runs, verified | 149 runs, same edit, collateral now listed |
+   | #33 two coins on the bot's path | 188 runs, unverified (wall clock) | 187 runs, unverified (wall clock) |
+   | #42 timer `y` | 12 runs, `MARGIN` first ("moves nothing else") | 12 runs, the timer's own `20`; `MARGIN` lists `lives[0].0.x +5` |
+   | #26 coin panel | 10 runs, `MARGIN`, "1 other emit" | 6 runs, `MARGIN`, names the lives and the timer |
+
+   (A run count near 120 to 126 is the request using its screening and
+   Jacobian shares; the failures stopped there.) #33 remains: a run of that
+   harness takes about 25 ms, and the hard-coded 5 s wall budget ends the
+   request. On the ladder no outcome or top edit changed; total runs went
+   from 1,921 to 1,866 (median 25 to 24), and no example got more than one
+   run slower.
 
 ---
 

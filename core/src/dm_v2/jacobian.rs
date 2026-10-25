@@ -138,6 +138,23 @@ impl Jacobian {
         self.params.iter().position(|&p| p == param)
     }
 
+    /// Append the columns of `other`, measured over the same rows.
+    pub fn append_columns(&mut self, other: Jacobian) {
+        debug_assert_eq!(self.rows, other.rows);
+        let (a, b) = (self.params.len(), other.params.len());
+        let mut d = Vec::with_capacity(self.rows.len() * (a + b));
+        for r in 0..self.rows.len() {
+            d.extend_from_slice(&self.d[r * a..(r + 1) * a]);
+            d.extend_from_slice(&other.d[r * b..(r + 1) * b]);
+        }
+        self.d = d;
+        self.params.extend(other.params);
+        self.step.extend(other.step);
+        self.quality.extend(other.quality);
+        self.runs += other.runs;
+        self.budget_exhausted |= other.budget_exhausted;
+    }
+
     /// Drop the collateral rows that are a goal under another name, given
     /// every row's baseline value `base`: a goal on an emit's value or on a
     /// watched term reads the same number as one of that emit's raw native

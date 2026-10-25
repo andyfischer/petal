@@ -159,7 +159,7 @@ fn json_shape_is_frozen() {
         keys(cand),
         set(&[
             "term", "file", "line", "span", "value", "is_int", "binding", "function", "config", "hint", "origin",
-            "distance", "in_goal_frame", "flags", "loaded", "eligible", "ineligible_reason", "quality", "column",
+            "distance", "focus", "in_goal_frame", "flags", "loaded", "eligible", "ineligible_reason", "quality", "column",
             "weight", "clock_coupled",
         ])
     );

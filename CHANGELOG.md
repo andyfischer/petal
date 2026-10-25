@@ -55,6 +55,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `--json`'s `applied` gains `picked_by` and `description`. Several verified
   alternatives still need `--pick`.
 
+- `petal propose-edit --frames N` runs `N` frames for real first (`state`
+  carrying, as `run --runs` does) and solves frame `N + 1` against the state
+  they left, frozen, so a goal can address a value that lives in state or an
+  emit that only appears after a few frames. The report echoes `frames`
+  (`--json`'s new top-level key; `petal-ui-propose-edit` fills it too).
+
 - C bridge: `pb_vm_propose_edit(vm, request_json, &response_json)` (and
   `petal::Vm::propose_edit` in C++) runs direct manipulation on the host's
   VM with its registered natives, from the frame after the last run;

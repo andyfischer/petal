@@ -359,7 +359,7 @@ fn parse_propose_edit_args(args: &[String]) -> CliArgs {
     let usage = "Usage: petal propose-edit [--v1|--v2] --channel <name> --emit <n> \
                  ((--arg|--native-arg <k> | --value) [--field <path>] (--to <value> | --by <delta>))+ \
                  [--allow <sel>]* [--deny <sel>]* [--configurable <var>]* [--static <var>]* \
-                 [--alternatives N] [--explain] [--apply [--pick N]] [--json] <file>";
+                 [--alternatives N] [--explain] [--frames N] [--max-wall S] [--apply [--pick N]] [--json] <file>";
     let mut engine: Option<&'static str> = None;
     let mut parser = super::dm_v2::V2Parser::new();
     let mut configurable: Vec<String> = Vec::new();
@@ -387,6 +387,22 @@ fn parse_propose_edit_args(args: &[String]) -> CliArgs {
                 let v = take(args, i, "Expected a value after --static").to_string();
                 parser.opts.deny.push(v.clone());
                 pinned.push(v);
+                return true;
+            }
+            // Run N frames before the checkpoint (the CLI host does it, in
+            // `handle_propose_edit_v2`).
+            "--frames" => {
+                let v = take(args, i, "Expected a value after --frames").to_string();
+                match v.parse::<usize>() {
+                    Ok(n) => parser.opts.frames = n,
+                    Err(_) => {
+                        eprintln!("--frames takes a frame count, not `{v}`. {usage}");
+                        process::exit(1);
+                    }
+                }
+                if !parser.v2_only.iter().any(|f| f == "--frames") {
+                    parser.v2_only.push("--frames".into());
+                }
                 return true;
             }
             _ => {}

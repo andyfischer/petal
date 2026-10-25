@@ -1714,7 +1714,7 @@ petal propose-edit [--v1 | --v2] --channel <name> --emit <n>
                    [--configurable <var>]... [--static <var>]...
                    [--alternatives N] [--explain] [--config-strict]
                    [--tol T] [--max-runs N] [--max-wall S] [--max-screen N] [--allow-respell]
-                   [--seed N] [--apply [--pick N]] [--json] <file.ptl>
+                   [--seed N] [--frames N] [--apply [--pick N]] [--json] <file.ptl>
 ```
 
 Works backwards from an emitted value: given where the user dragged
@@ -1872,6 +1872,14 @@ Other options:
 - `--seed N` (v2) — the random seed, default `PETAL_SEED`, else 0. It is
   echoed. Pass the same `--seed` to `run --trace-emits` so both agree on which
   emit is which when the script draws random numbers.
+- `--frames N` (v2) — run `N` frames for real first (each from the top with
+  `state` carrying, as `run --runs N` does; the script's prints are not
+  echoed), then solve frame `N + 1` against the state frame `N` left, frozen.
+  A goal can then address a value that lives in state, or an emit that only
+  appears after a few frames; `--emit` indexes frame `N + 1`'s emits. Literals
+  that only initialize `state` are excluded then (the running program has
+  already used them; `--allow state-init` lifts that). The report echoes
+  `frames` (the text header says `after N frames`). Default 0, a fresh stack.
 - `--apply` — write the edit. v1: only when every goal resolves to exactly
   one proposal. v2: the one `--pick N` names (1-based); without `--pick`, the
   only alternative, or the only verified one when the others are unverified
@@ -1885,7 +1893,7 @@ v2 `--json` is one object (frozen by `core/tests/cli_propose_edit_v2.rs`;
 fields are only ever added):
 
 ```
-{ engine: "v2" | "v1", seed,
+{ engine: "v2" | "v1", seed, frames,
   goals: [{ channel, emit, kind: "arg"|"native_arg"|"value", index, path,
             key: {chain_hash, path_hash, occurrence}, callee, line,
             to, by, baseline, target, tolerance }],

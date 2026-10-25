@@ -85,7 +85,7 @@ fn json_shape_is_frozen() {
     let r = helper_json(&["--explain"]);
     assert_eq!(
         keys(&r),
-        set(&["engine", "seed", "goals", "alternatives", "candidates", "diagnostics", "explain", "applied"])
+        set(&["engine", "seed", "frames", "goals", "alternatives", "candidates", "diagnostics", "explain", "applied"])
     );
     assert_eq!(r["engine"], "v2");
     assert_eq!(r["seed"], 0);
@@ -604,4 +604,48 @@ fn apply_takes_the_only_verified_alternative_without_a_pick() {
     assert_ne!(written, src);
     let t = run_json(&["run", "--trace-emits", "--json", p]);
     assert_eq!(t["channels"]["s"][0]["value"], 43.0);
+}
+
+#[test]
+fn frames_run_first_so_a_goal_can_address_a_value_in_state() {
+    // The boss appears from frame 3 on: a fresh stack has no emit to drag.
+    let src = "\
+import io
+state n = 0
+n = n + 1
+config let speed = 3
+print(\"frame\")
+if n > 2 then
+  push_output(symbol(\"boss\"), n * speed + 10)
+end
+";
+    let path = scratch("frames", src);
+    let p = path.to_str().unwrap();
+    let goal = ["--channel", "boss", "--emit", "0", "--value", "--to", "40"];
+    let (stdout, _, ok) = run(&[&["propose-edit", "--json"][..], &goal, &[p]].concat());
+    assert!(!ok);
+    assert!(stdout.contains("channel 'boss' recorded no emits"), "{stdout}");
+
+    // After two frames, frame 3 is the one solved, with `n` frozen at 2 + 1.
+    let r = run_json(&[&["propose-edit", "--json", "--frames", "2"][..], &goal, &[p]].concat());
+    assert_eq!(r["frames"], 2);
+    assert_eq!(r["goals"][0]["baseline"], 19.0, "{r:#}");
+    let top = &r["alternatives"][0];
+    assert_eq!(top["verified"], true, "{r:#}");
+    assert_eq!(top["changes"][0]["binding"], "speed");
+    assert_eq!(top["changes"][0]["new_text"], "10");
+
+    let (stdout, stderr, ok) = run(&[&["propose-edit", "--frames", "2"][..], &goal, &[p]].concat());
+    assert!(ok, "{stderr}");
+    assert!(stdout.starts_with("engine v2 · seed 0 · after 2 frames · "), "{stdout}");
+    assert!(!stdout.contains("frame\n"), "the frames' prints are not echoed: {stdout}");
+
+    // `--apply` writes it; three frames of the edited program reach the goal.
+    let r = run_json(&[&["propose-edit", "--json", "--frames", "2", "--apply", "--pick", "1"][..], &goal, &[p]].concat());
+    assert_eq!(r["applied"]["pick"], 1);
+    assert!(std::fs::read_to_string(&path).unwrap().contains("config let speed = 10"));
+
+    let (_, stderr, ok) = run(&[&["propose-edit", "--v1", "--frames", "2"][..], &goal, &[p]].concat());
+    assert!(!ok);
+    assert!(stderr.contains("--frames needs the v2 engine"), "{stderr}");
 }

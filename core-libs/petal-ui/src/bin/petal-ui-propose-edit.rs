@@ -125,11 +125,13 @@ fn parse_args() -> Result<Args, String> {
 fn run() -> Result<i32, String> {
     let args = parse_args()?;
     // `--trace-emits` needs no goal; everything else does.
-    let opts = if args.trace_emits {
+    let mut opts = if args.trace_emits {
         args.parser.opts.clone()
     } else {
         args.parser.finish()?
     };
+    // Echoed in the report.
+    opts.frames = args.frames;
     let seed = dm_v2::effective_seed(opts.seed);
 
     let mut ui = Headless::panel_from_file_with_paths(&args.app, args.size.0, args.size.1, &args.module_paths)?;

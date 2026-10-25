@@ -844,6 +844,23 @@ fn handle_propose_edit_v2(
     env.set_seed(super::dm_v2::effective_seed(opts.seed));
     let pid = load_checked_or_die(&mut env, json, false, source, source_input);
     let sid = stack_or_die(&mut env, json, pid);
+    // `--frames N`: run N frames for real first, each from the top with
+    // `state` carrying (as `run --runs N` does), so a goal can address a
+    // value that lives in state. The checkpoint is the stack ready to run
+    // frame N + 1, whose speculative runs see the state frozen as frame N
+    // left it. The script's prints are not echoed: stdout is the report.
+    if opts.frames > 0 {
+        env.set_echo(false);
+        for frame in 0..opts.frames {
+            let ran = if frame == 0 { env.run(sid) } else { env.reset_stack(sid).and_then(|()| env.run(sid)) };
+            if let Err(e) = ran {
+                die(json, &format!("frame {} of --frames {}: {e}", frame + 1, opts.frames), "runtime");
+            }
+        }
+        if let Err(e) = env.reset_stack(sid) {
+            die(json, &e, "runtime");
+        }
+    }
     let entry = source_origin(source_input);
     match super::dm_v2::propose(&mut env, &mut crate::dm_v2::NoHost, pid, sid, opts, entry) {
         Ok(report) if json => print_json(&report),

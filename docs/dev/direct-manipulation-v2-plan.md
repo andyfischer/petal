@@ -1067,6 +1067,10 @@ petal propose-edit --v2 --channel shapes --emit 0 --arg 1 --by 10 script.ptl
   report names the budget that ended the session (`diagnostics.stopped_by`:
   `runs`, `wall` or `converged`; `RunBudget::stopped` records the first limit
   a run was refused by).
+- `--frames N` runs `N` real frames (state carrying, `run --runs`'s loop)
+  before the checkpoint, so the core CLI can solve frame `N + 1` against
+  frozen state, as `petal-ui-propose-edit --frames` does for petal-ui
+  scripts; the report echoes `frames`.
 - Each change and candidate names its place in the expression (`site`:
   `thorns(x:)`, `spawn(cfg:).speed`, `rows[3].x`), computed by the CLI from
   the term's consumer chain; the text output prints it after the line.

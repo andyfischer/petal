@@ -90,6 +90,12 @@ pub struct V2Opts {
     pub allow_respell: bool,
     /// `--seed`; `None` is `PETAL_SEED`, else 0 ([`effective_seed`]).
     pub seed: Option<u64>,
+    /// How many frames the host ran (non-speculatively, `state` carrying)
+    /// before the checkpoint: `petal propose-edit --frames N`,
+    /// `petal-ui-propose-edit --frames N`. [`propose`] does not run them;
+    /// it echoes the count in the report, whose goals are those of the
+    /// frame after.
+    pub frames: usize,
 }
 
 impl Default for V2Opts {
@@ -110,6 +116,7 @@ impl Default for V2Opts {
             max_screen: None,
             allow_respell: false,
             seed: None,
+            frames: 0,
         }
     }
 }
@@ -1261,6 +1268,7 @@ fn report(
     json!({
         "engine": d.engine.map(engine_name).unwrap_or("v2"),
         "seed": seed,
+        "frames": opts.frames,
         "goals": goals,
         "alternatives": response
             .alternatives
@@ -1335,8 +1343,12 @@ pub fn print_text(r: &Json) {
         Some("converged") => " · converged within budget".to_string(),
         _ => String::new(),
     };
+    let frames = match r["frames"].as_u64() {
+        Some(n) if n > 0 => format!(" · after {n} frame{}", if n == 1 { "" } else { "s" }),
+        _ => String::new(),
+    };
     println!(
-        "engine {} · seed {} · {} run{}{stopped}",
+        "engine {} · seed {}{frames} · {} run{}{stopped}",
         r["engine"].as_str().unwrap_or("v2"),
         r["seed"],
         diag["runs"],

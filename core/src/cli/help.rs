@@ -1526,7 +1526,7 @@ SYNOPSIS
                           [--configurable <var>]... [--static <var>]...
                           [--alternatives N] [--explain] [--config-strict]
                           [--tol T] [--max-runs N] [--max-wall S] [--max-screen N]
-                          [--allow-respell] [--seed N]
+                          [--allow-respell] [--seed N] [--frames N]
                           [--apply [--pick N]] [--json] <file>
 
 DESCRIPTION
@@ -1624,6 +1624,14 @@ OPTIONS
 
        --allow-respell
               (v2) Let an int literal become a float (10 -> 10.5).
+
+       --frames N
+              (v2) Run N frames first, for real (each from the top with
+              state carrying, as run --runs N does; prints not echoed), and
+              solve frame N + 1 against the state frame N left, frozen. A
+              goal can then address a value that lives in state, or an emit
+              that only appears after a few frames. The emit indices are
+              those of frame N + 1. Default 0: a fresh stack.
 
        --seed N
               (v2) The random seed (default PETAL_SEED, else 0). It is

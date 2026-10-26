@@ -685,7 +685,8 @@ let response = propose_json(&mut env, &mut petal::dm_v2::NoHost, pid, stack,
 The request has the fields of the `petal propose-edit` flags, snake_cased
 (`opts_from_json` lists them): `channel` and `emit` (the 0-based emit on an
 output buffer), one of `native_arg` / `arg` / `value: true`, an optional
-`field` path, one of `to` / `by`, and the options `allow`, `deny` (alias
+`field` path, one of `to` / `by` / `at_most` / `at_least` / `within`
+(`[lo, hi]`; a range goal, which holds anywhere inside its bounds), and the options `allow`, `deny` (alias
 `pins`), `tol`, `alternatives`, `explain`, `apply`, `pick`, `config_strict`,
 `max_runs`, `max_wall` (seconds), `max_screen`, `allow_respell`, `seed`. Several goals go in
 `goals: [...]`. The response is the `propose-edit --json` document: the

@@ -1709,7 +1709,8 @@ there are none. With `--json`, it emits the raw report array:
 ```
 petal propose-edit [--v1 | --v2] --channel <name> --emit <n>
                    ((--arg <k> | --native-arg <k> | --value) [--field <path>]
-                    (--to <value> | --by <delta>))...
+                    (--to <value> | --by <delta> | --at-most <v> | --at-least <v>
+                     | --within <lo>..<hi>))...
                    [--allow <sel>]... [--deny <sel>]...
                    [--configurable <var>]... [--static <var>]...
                    [--alternatives N] [--explain] [--config-strict]
@@ -1827,6 +1828,19 @@ Goals:
   `hello`. v2 answers numbers; a non-number goes to v1 (and comes back
   unverified).
 - `--by <delta>` (v2) — the goal is the baseline value plus `<delta>`.
+- `--at-most <v>`, `--at-least <v>`, `--within <lo>..<hi>` (v2) — a range
+  goal: anywhere up to `v`, from `v` up, or from `lo` to `hi` (inclusive;
+  `--within 0..1280`, `--within -1.5..2`). A goal takes exactly one of
+  `--to`, `--by` and these; for both bounds use `--within`. A range that
+  already holds at the baseline asks for no edit: alone, the report says
+  `the goal already holds at the baseline (coins[0].y = 2.5 ≤ 3)` and
+  proposes nothing; beside other goals, it is left free unless a step would
+  push the value out, and then it is held inside. A range that does not hold
+  is solved to one tolerance inside the bound it is past, and verified by
+  the bound itself: `--tol` is that margin, not slack (`--at-most 3` is not
+  met by `3.0001`). The description says how it went: `…; coins[0].y ≤ 3
+  (was 3.4, now 3)`, or `keeps p[0].y ≤ 3.5 (was 3, now 3.5)` for one that
+  held already.
 
 Which literals may move (v2):
 
@@ -1896,7 +1910,8 @@ fields are only ever added):
 { engine: "v2" | "v1", seed, frames,
   goals: [{ channel, emit, kind: "arg"|"native_arg"|"value", index, path,
             key: {chain_hash, path_hash, occurrence}, callee, line,
-            to, by, baseline, target, tolerance }],
+            to, by, at_most, at_least, within: [lo, hi] | null,
+            baseline, target, tolerance, holds_at_baseline }],
   alternatives: [{ rank, engine, verified, description, kind, score,
                    score_parts: {edit, collateral, count, respelled, regime, rng, error},
                    max_error, misses, achieved, predicted, iterations,
@@ -1970,7 +1985,11 @@ holds its value: what moves only held goals is screened after what moves the
 others.
 
 `max_error` is in units of each goal's tolerance (at most 1 means the goal
-is met); `misses` is the same distance in the goal's own units. `verified`
+is met; a range goal counts 0 inside and `1 + distance / tolerance`
+outside); `misses` is each goal's distance in its own units (a range's: how
+far outside it the value is). A range goal has `target: null` and its bound
+in `at_most`, `at_least` or `within`; `holds_at_baseline` says the baseline
+already meets a goal. `verified`
 means the rounded edit was re-run and met the goals. `collateral` lists the
 other emits the edit moves, one item per emit; numbers inside containers
 count (a list of records, a record in a record). An item's `emit` is the

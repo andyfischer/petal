@@ -289,7 +289,10 @@ pub fn strength(jac: &Jacobian, c: usize, scale: f64, weight: f64) -> f64 {
 /// The candidate subsets of §2.5.3 over the usable columns of `jac`.
 /// `scales[c]` is `max(|p|, 1)` of column `c`'s literal, `config[c]` says it
 /// is a config or tunable parameter; `client` says the request named the
-/// parameters (every usable column is then the client's set).
+/// parameters (every usable column is then the client's set). `active` are
+/// the goal rows that ask for something (every equality, and each range
+/// goal that does not hold at the baseline): tuples have one literal per
+/// active goal, since a range that holds needs none.
 pub fn candidate_subsets(
     jac: &Jacobian,
     weights: &[f64],
@@ -297,8 +300,9 @@ pub fn candidate_subsets(
     usable: &[bool],
     config: &[bool],
     client: bool,
+    active: &[usize],
 ) -> Vec<Subset> {
-    let m = jac.goal_rows;
+    let m = active.len();
     let cols: Vec<usize> = (0..jac.params.len()).filter(|&c| usable[c]).collect();
     let strength = |c: usize| -> f64 { strength(jac, c, scales[c], weights[c]) };
     let mut top: Vec<usize> = cols.iter().copied().filter(|&c| strength(c) > 0.0).collect();
@@ -320,7 +324,7 @@ pub fn candidate_subsets(
         if n >= m {
             loop {
                 let sub: Vec<usize> = idx.iter().map(|&i| top[i]).collect();
-                let jg: Vec<Vec<f64>> = (0..m).map(|r| sub.iter().map(|&c| jac.get(r, c)).collect()).collect();
+                let jg: Vec<Vec<f64>> = active.iter().map(|&r| sub.iter().map(|&c| jac.get(r, c)).collect()).collect();
                 if rank(&jg) == m {
                     push(sub, SubsetKind::Tuple, &mut out);
                 }
@@ -357,7 +361,7 @@ pub fn candidate_subsets(
         strong.sort_by(|&a, &b| strength(b).total_cmp(&strength(a)).then(a.cmp(&b)));
         strong.truncate(CONFIG_TUPLE_COLUMNS);
         for sub in combinations(&strong, m) {
-            let jg: Vec<Vec<f64>> = (0..m).map(|r| sub.iter().map(|&c| jac.get(r, c)).collect()).collect();
+            let jg: Vec<Vec<f64>> = active.iter().map(|&r| sub.iter().map(|&c| jac.get(r, c)).collect()).collect();
             if rank(&jg) == m {
                 push(sub, SubsetKind::ConfigOnly, &mut out);
             }

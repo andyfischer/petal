@@ -345,7 +345,8 @@ fn parse_bench_args(args: &[String]) -> CliArgs {
 ///
 /// Every goal is `--channel <name> --emit <n>`, an address (`--arg <k>`, and
 /// for v2 also `--native-arg <k>` or `--value`, optionally `--field <path>`),
-/// then `--to <value>` (or, v2 only, `--by <delta>`). Goals repeat; each binds
+/// then `--to <value>` (or, v2 only, `--by <delta>`, `--at-most <v>`,
+/// `--at-least <v>` or `--within <lo>..<hi>`). Goals repeat; each binds
 /// to the channel and emit given last before it.
 ///
 /// Two engines answer it. v2 (the default; `--v2` is accepted and changes
@@ -357,7 +358,8 @@ fn parse_bench_args(args: &[String]) -> CliArgs {
 /// `--allow` / `--deny`, which take any selector.
 fn parse_propose_edit_args(args: &[String]) -> CliArgs {
     let usage = "Usage: petal propose-edit [--v1|--v2] --channel <name> --emit <n> \
-                 ((--arg|--native-arg <k> | --value) [--field <path>] (--to <value> | --by <delta>))+ \
+                 ((--arg|--native-arg <k> | --value) [--field <path>] \
+                 (--to <value> | --by <delta> | --at-most <v> | --at-least <v> | --within <lo>..<hi>))+ \
                  [--allow <sel>]* [--deny <sel>]* [--configurable <var>]* [--static <var>]* \
                  [--alternatives N] [--explain] [--frames N] [--max-wall S] [--apply [--pick N]] [--json] <file>";
     let mut engine: Option<&'static str> = None;

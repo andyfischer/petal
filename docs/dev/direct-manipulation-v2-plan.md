@@ -1071,6 +1071,8 @@ petal propose-edit --v2 --channel shapes --emit 0 --arg 1 --by 10 script.ptl
   before the checkpoint, so the core CLI can solve frame `N + 1` against
   frozen state, as `petal-ui-propose-edit --frames` does for petal-ui
   scripts; the report echoes `frames`.
+- `--at-most V`, `--at-least V`, `--within LO..HI` are range goals
+  (`GoalTarget::Range`; §9 "Range goals (C6)").
 - Each change and candidate names its place in the expression (`site`:
   `thorns(x:)`, `spawn(cfg:).speed`, `rows[3].x`), computed by the CLI from
   the term's consumer chain; the text output prints it after the line.
@@ -2523,6 +2525,47 @@ constraint today; what was missing was saying so:
 3. Documented in features/direct-manipulation.md ("Constraints between
    literals") and the writing guide. Parameter-level `tunable` (L3b) and
    linear constraints in the solver (L3c) are not done.
+
+**Range goals (C6), 2026-10-25.** The Canopy study could not state "the
+bot passes within 0.6 of each coin" (#33, #34: an exact 0.2 the kinked
+min-over-frames measure could not reach; #35 faked a band with `--to 0.3
+--tol 0.25`), nor "clearance at least 1" or "inside the screen". Range
+goals are now real goals, not CLI sugar for a midpoint and a tolerance:
+
+- *Request.* `GoalTarget::Range { lo, hi }` (either end open;
+  `DmGoal::at_most`/`at_least`/`between`); CLI `--at-most V`,
+  `--at-least V`, `--within LO..HI`, one of these or `--to`/`--by` per goal;
+  JSON `at_most`, `at_least`, `within: [lo, hi]` (additive keys). A drag's
+  `targets` entry for a range goal is ignored. An empty or non-finite range
+  is refused at `open`.
+- *Solver.* `GoalRow` gains `range: Option<(lo, hi)>` with `holds`, `miss`,
+  `error`, `aim`, `residual`, `active`. A range's error is 0 inside and
+  `1 + miss / τ` outside, so `max_error ≤ 1` still means "holds" and the
+  bound is checked exactly (τ is the margin, not slack). `goal_step` wraps
+  `linear_step` in a small active set: rows that hold are left out (they are
+  not pinned, which a zero residual would do); when the linear step would
+  push one out, it joins, aimed one tolerance inside the bound it would
+  cross, and the step is solved again (at most once per goal). Both the
+  linear predictions and `SolveCtx::step` use it, and the rounding check
+  uses `holds`, so a nice literal deeper inside a range is accepted.
+- *Ranking.* `candidate_subsets` takes the active goal rows: tuples have one
+  literal per goal that asks for something, and the count penalty and the
+  spread pruning count active goals only. Screening treats a range the
+  baseline is inside as held (§2.2 stage 5).
+- *Report.* `DmDiagnostics::holds_at_baseline` (JSON `holds_at_baseline` per
+  goal); a request whose goals all hold proposes nothing and warns `the goal
+  already holds at the baseline (coins[0].y = 3.4 ≤ 5)`. Descriptions add
+  `near[0].0 ≤ 0.6 (was 0.8448, now 0.5978)` per range goal (`keeps …` for
+  one that held already); `misses` is the distance outside the range.
+- *Tests.* `core/tests/dm_v2_ranges.rs` (each kind, already holds,
+  unreachable, an equality with a `--by 0` pin and a range that joins the
+  step, and a distilled #33/#34 harness: three `at_most 0.6` goals on a
+  min-over-frames distance; the coin row's two knobs verify first, the
+  beetle's `x` second), `cli_propose_edit_v2::range_goals_on_the_command_line`,
+  `dm_v2_embed` (JSON keys, `propose_with_natives`).
+
+  Equality-only requests take the same path as before (every row active, one
+  `linear_step`), so the ladder is unchanged.
 
 ---
 

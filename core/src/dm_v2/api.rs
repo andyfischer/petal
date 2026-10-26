@@ -45,7 +45,7 @@ use crate::dm_v2::rank::{
     ScoreFacts, ScoreParts, ScoreWeights, ScoredChange, SubsetKind, candidate_subsets, collateral_norm,
     collateral_shapes, param_weight, score, strength,
 };
-use crate::dm_v2::solve::{Bound, FailedRun, GoalRow, SolveCtx, SolveOptions, linear_step, max_error};
+use crate::dm_v2::solve::{Bound, FailedRun, GoalRow, SolveCtx, SolveOptions, goal_step, max_error};
 use crate::dm_v2::spec::{Overrides, RunError, SpecConfig, SpecHost, SpecRun, SpecSession};
 use crate::env::Env;
 use crate::native_fn::InputClasses;
@@ -73,6 +73,42 @@ pub enum GoalTarget {
     /// A non-numeric value (a string, a bool): no derivative, so the request
     /// is answered by v1.
     Value(StaticValue),
+    /// Anywhere in `[lo, hi]` (an end left out is open): `--at-most`,
+    /// `--at-least`, `--within`. It holds anywhere inside, so one that holds
+    /// at the baseline asks for no edit, and one that does not is solved to
+    /// one tolerance inside the bound it is past ([`GoalRow`]). A drag's
+    /// `targets` entry for it is ignored.
+    Range { lo: Option<f64>, hi: Option<f64> },
+}
+
+impl GoalTarget {
+    /// The range's ends, open ends infinite; `None` for a point target.
+    pub fn bounds(&self) -> Option<(f64, f64)> {
+        match self {
+            GoalTarget::Range { lo, hi } => Some((lo.unwrap_or(f64::NEG_INFINITY), hi.unwrap_or(f64::INFINITY))),
+            _ => None,
+        }
+    }
+
+    /// `≤ 3`, `≥ 1`, `in 0..1280`.
+    pub fn range_text(&self) -> Option<String> {
+        match self {
+            GoalTarget::Range { lo: None, hi: Some(h) } => Some(format!("≤ {}", short(*h))),
+            GoalTarget::Range { lo: Some(l), hi: None } => Some(format!("≥ {}", short(*l))),
+            GoalTarget::Range { lo: Some(l), hi: Some(h) } => Some(format!("in {}..{}", short(*l), short(*h))),
+            _ => None,
+        }
+    }
+}
+
+/// `v` for a sentence: at most 4 decimals, trailing zeros dropped.
+fn short(v: f64) -> String {
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+        return format!("{}", v as i64);
+    }
+    let s = format!("{v:.4}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s == "-0" { "0".into() } else { s.to_string() }
 }
 
 /// One goal: an observable and where it should be (§6.3).
@@ -97,6 +133,33 @@ impl DmGoal {
     /// A non-numeric goal (answered by v1).
     pub fn value(observable: Observable, target: StaticValue) -> DmGoal {
         DmGoal { observable, target: GoalTarget::Value(target), tolerance: None, weight: 1.0 }
+    }
+
+    /// The goal "`observable` at most `hi`".
+    pub fn at_most(observable: Observable, hi: f64) -> DmGoal {
+        DmGoal { observable, target: GoalTarget::Range { lo: None, hi: Some(hi) }, tolerance: None, weight: 1.0 }
+    }
+
+    /// The goal "`observable` at least `lo`".
+    pub fn at_least(observable: Observable, lo: f64) -> DmGoal {
+        DmGoal { observable, target: GoalTarget::Range { lo: Some(lo), hi: None }, tolerance: None, weight: 1.0 }
+    }
+
+    /// The goal "`observable` between `lo` and `hi`" (inclusive).
+    pub fn between(observable: Observable, lo: f64, hi: f64) -> DmGoal {
+        DmGoal { observable, target: GoalTarget::Range { lo: Some(lo), hi: Some(hi) }, tolerance: None, weight: 1.0 }
+    }
+
+    /// The number a default tolerance scales with (§2.4.3): the target, or
+    /// the larger end of a range; `t` is the drag's target for a point goal.
+    fn tolerance_scale(&self, t: f64) -> f64 {
+        match &self.target {
+            GoalTarget::Range { lo, hi } => {
+                lo.iter().chain(hi.iter()).fold(0.0f64, |m, x| m.max(x.abs()))
+            }
+            GoalTarget::Value(_) => 0.0,
+            GoalTarget::Num(_) => t,
+        }
     }
 
     /// The same goal with tolerance `tol`.
@@ -422,6 +485,9 @@ pub struct DmDiagnostics {
     /// The goals' baseline values and tolerances.
     pub baseline: Vec<f64>,
     pub tolerances: Vec<f64>,
+    /// Per goal: it already holds at the baseline (a range the baseline is
+    /// inside, or a point target within tolerance). Filled by `finish`.
+    pub holds_at_baseline: Vec<bool>,
     pub engine: Option<Engine>,
 }
 
@@ -463,7 +529,7 @@ pub fn propose_edits_v2(
         .iter()
         .map(|g| match g.target {
             GoalTarget::Num(t) => t,
-            GoalTarget::Value(_) => f64::NAN,
+            GoalTarget::Value(_) | GoalTarget::Range { .. } => f64::NAN,
         })
         .collect();
     DmSession::open(env, host, checkpoint, req)?.finish(env, host, &targets)
@@ -574,6 +640,21 @@ impl DmSession {
         if req.goals.is_empty() {
             return Err(DmError::NoGoals);
         }
+        for (i, g) in req.goals.iter().enumerate() {
+            if let GoalTarget::Range { lo, hi } = g.target {
+                if lo.is_none() && hi.is_none() {
+                    return Err(DmError::BadObservable(format!("goal {i}: a range needs at least one bound")));
+                }
+                if lo.iter().chain(hi.iter()).any(|x| !x.is_finite()) {
+                    return Err(DmError::BadObservable(format!("goal {i}: a range's bounds must be finite numbers")));
+                }
+                if let (Some(l), Some(h)) = (lo, hi)
+                    && l > h
+                {
+                    return Err(DmError::BadObservable(format!("goal {i}: the range {l}..{h} is empty")));
+                }
+            }
+        }
         let started = crate::env::spec_run::wall_now();
         let mut spec = SpecSession::begin(env, host, checkpoint, &[], req.spec.clone(), req.live.as_ref())?;
         let mut session = DmSession {
@@ -646,9 +727,9 @@ impl DmSession {
             .map(|g| {
                 let t = match g.target {
                     GoalTarget::Num(t) => t,
-                    GoalTarget::Value(_) => 0.0,
+                    _ => 0.0,
                 };
-                g.tolerance.unwrap_or_else(|| default_tolerance(spec.baseline(), &g.observable, t))
+                g.tolerance.unwrap_or_else(|| default_tolerance(spec.baseline(), &g.observable, g.tolerance_scale(t)))
             })
             .collect();
         self.diag.tolerances = self.taus.clone();
@@ -736,14 +817,19 @@ impl DmSession {
         let full_budget = self.budget.max_runs;
         let start = self.budget.used;
         self.budget.max_runs = start + full_budget.saturating_mul(3) / 10;
-        // A goal whose target is its baseline value (a `--by 0`) holds; the
-        // others ask for the change. Screening resolves what moves those
-        // first (§2.2 stage 5).
+        // A goal whose target is its baseline value (a `--by 0`) holds, and
+        // so does a range the baseline is inside; the others ask for the
+        // change. Screening resolves what moves those first (§2.2 stage 5).
         let mut primary: Vec<bool> = req
             .goals
             .iter()
             .enumerate()
             .map(|(i, g)| match (req.holds.get(i), &g.target) {
+                (_, GoalTarget::Range { .. }) => {
+                    let (lo, hi) = g.target.bounds().unwrap();
+                    let v = self.diag.baseline[i];
+                    !(lo <= v && v <= hi)
+                }
                 (Some(h), _) => !h,
                 // A target not known yet (NaN) asks for a change.
                 (None, GoalTarget::Num(t)) => !((t - self.diag.baseline[i]).abs() <= self.taus[i]),
@@ -1094,8 +1180,19 @@ impl DmSession {
             .iter()
             .zip(targets)
             .zip(&self.taus)
-            .map(|((g, &t), &tau)| GoalRow { target: t, tolerance: tau.max(1e-300), weight: g.weight })
+            .map(|((g, &t), &tau)| match g.target.bounds() {
+                Some((lo, hi)) => GoalRow::range(lo, hi, tau.max(1e-300), g.weight),
+                None => GoalRow::eq(t, tau.max(1e-300), g.weight),
+            })
             .collect()
+    }
+
+    /// The goal rows that ask for something at the baseline
+    /// ([`GoalRow::active`]); every row when none does.
+    fn active_rows(&self, goals: &[GoalRow]) -> Vec<usize> {
+        let gr = self.jac.goal_rows;
+        let a: Vec<usize> = (0..gr).filter(|&g| goals[g].active(self.base_rows[g])).collect();
+        if a.is_empty() { (0..gr).collect() } else { a }
     }
 
     fn bounds(&self) -> Vec<Bound> {
@@ -1121,17 +1218,18 @@ impl DmSession {
                 )
             })
         });
-        let subsets = candidate_subsets(&self.jac, &self.weights, &self.scales, &self.usable, &self.config, client);
+        let active = self.active_rows(&goals);
+        let ga = active.len();
+        let subsets =
+            candidate_subsets(&self.jac, &self.weights, &self.scales, &self.usable, &self.config, client, &active);
         let bounds = self.bounds();
-        let r: Vec<f64> =
-            goals.iter().zip(&self.base_rows[..gr]).map(|(g, v)| g.target - v.unwrap_or(g.target)).collect();
-        let wt: Vec<f64> = goals.iter().map(|g| g.weight / g.tolerance).collect();
+        let r: Vec<f64> = goals.iter().zip(&self.base_rows[..gr]).map(|(g, v)| g.residual(*v)).collect();
         let value = |c: usize| self.params[self.jac.params[c]].value;
         let linear = |cols: &[usize]| -> (Vec<Vec<f64>>, Vec<f64>) {
             let local: Vec<Vec<f64>> =
                 (0..self.jac.rows.len()).map(|row| cols.iter().map(|&c| self.jac.get(row, c)).collect()).collect();
             let cost: Vec<f64> = cols.iter().map(|&c| self.weights[c] / self.scales[c]).collect();
-            let delta = linear_step(&local[..gr], &local[gr..], &r, &wt, &cost);
+            let delta = goal_step(&goals, &self.base_rows[..gr], &local[..gr], &local[gr..], &cost);
             (local, delta)
         };
         let rn = r.iter().map(|x| x * x).sum::<f64>().sqrt();
@@ -1145,19 +1243,20 @@ impl DmSession {
                 // real share of the work (§9 M3): a literal moving the goals
                 // by less than a tenth of the drag is left alone, and the
                 // rest solved again.
-                while s.kind != SubsetKind::Tuple && s.cols.len() > gr {
+                while s.kind != SubsetKind::Tuple && s.cols.len() > ga {
                     let keep: Vec<usize> = (0..s.cols.len())
                         .filter(|&k| {
                             let c: f64 = (0..gr).map(|g| (local[g][k] * delta[k]).powi(2)).sum::<f64>().sqrt();
                             c >= 0.1 * rn
                         })
                         .collect();
-                    if keep.len() == s.cols.len() || keep.len() < gr {
+                    if keep.len() == s.cols.len() || keep.len() < ga {
                         break;
                     }
                     let cols: Vec<usize> = keep.iter().map(|&k| s.cols[k]).collect();
-                    let jg: Vec<Vec<f64>> = (0..gr).map(|g| keep.iter().map(|&k| local[g][k]).collect()).collect();
-                    if crate::dm_v2::solve::rank(&jg) < gr {
+                    let jg: Vec<Vec<f64>> =
+                        active.iter().map(|&g| keep.iter().map(|&k| local[g][k]).collect()).collect();
+                    if crate::dm_v2::solve::rank(&jg) < ga {
                         break;
                     }
                     s.cols = cols;
@@ -1201,7 +1300,7 @@ impl DmSession {
                     .collect();
                 let facts = ScoreFacts {
                     collateral_norm: collateral_shapes(&row_keys, &coll, &goal_moves),
-                    goals: gr,
+                    goals: ga,
                     respelled,
                     verified: err <= 1.0,
                     max_error: err,
@@ -1293,26 +1392,55 @@ impl DmSession {
         spec: &mut SpecSession,
         targets: &[f64],
     ) -> Result<DmResponse, DmError> {
-        if targets.len() != self.req.goals.len() || targets.iter().any(|t| !t.is_finite()) {
+        // A range goal has its bounds; every other goal needs a target.
+        if targets.len() != self.req.goals.len()
+            || targets.iter().zip(&self.req.goals).any(|(t, g)| !t.is_finite() && g.target.bounds().is_none())
+        {
             return Err(DmError::BadObservable("one finite target per goal is needed".into()));
         }
         // A default tolerance scales with the target (§2.4.3), which a
         // session opened for a drag (or a `--by` goal) learns only now.
         for (i, g) in self.req.goals.iter().enumerate() {
             if g.tolerance.is_none() {
-                self.taus[i] = default_tolerance(spec.baseline(), &g.observable, targets[i]);
+                self.taus[i] = default_tolerance(spec.baseline(), &g.observable, g.tolerance_scale(targets[i]));
             }
         }
         self.diag.tolerances = self.taus.clone();
         let goals = self.goal_rows(targets);
         let gr = self.jac.goal_rows;
         let explain = self.req.explain;
-        let drag = drag_norm(
-            &goals.iter().zip(&self.base_rows[..gr]).map(|(g, v)| g.target - v.unwrap_or(g.target)).collect::<Vec<_>>(),
-        );
+        let drag = drag_norm(&goals.iter().zip(&self.base_rows[..gr]).map(|(g, v)| g.residual(*v)).collect::<Vec<_>>());
+        let ga = self.active_rows(&goals).len();
+        let pid = spec.program();
+        let emit_info = emit_info(env, pid, spec.baseline());
+        let labels: Vec<String> = self.req.goals.iter().map(|g| goal_label(&g.observable, &emit_info)).collect();
+        self.diag.holds_at_baseline = goals
+            .iter()
+            .zip(&self.base_rows[..gr])
+            .map(|(g, v)| v.is_some_and(|v| g.holds(v)))
+            .collect();
+        // A range that already holds asks for nothing; say so, with the
+        // value that makes it hold.
+        let held: Vec<String> = self
+            .req
+            .goals
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| self.diag.holds_at_baseline[i])
+            .filter_map(|(i, g)| {
+                let text = g.target.range_text()?;
+                Some(format!("{} = {} {text}", labels[i], short(self.diag.baseline[i])))
+            })
+            .collect();
         let mut alternatives: Vec<Alternative> = Vec::new();
         if max_error(&goals, &self.base_rows[..gr]) <= 1.0 {
-            self.diag.warnings.push("the goals already hold at the baseline: nothing to change".into());
+            self.diag.warnings.push(match (gr, held.as_slice()) {
+                (1, [one]) => format!("the goal already holds at the baseline ({one}): nothing to change"),
+                _ if !held.is_empty() => {
+                    format!("the goals already hold at the baseline ({}): nothing to change", held.join(", "))
+                }
+                _ => "the goals already hold at the baseline: nothing to change".into(),
+            });
         } else if !self.usable.iter().any(|b| *b) {
             if !self.diag.budget_exhausted {
                 return Err(DmError::NothingToMove { why: nothing_to_move(&self.candidates) });
@@ -1339,10 +1467,8 @@ impl DmSession {
             // comes closest among those not chosen yet are solved too, even
             // when that prediction misses: a curve (an angle) can reach
             // targets its tangent cannot (§9 M5, revision 3).
-            if gr >= 2 {
-                let miss = |p: &Prediction| -> f64 {
-                    p.goals.iter().zip(&goals).map(|(a, g)| ((a - g.target) / g.tolerance).abs()).fold(0.0, f64::max)
-                };
+            if ga >= 2 {
+                let miss = |p: &Prediction| -> f64 { p.goals.iter().zip(&goals).map(|(a, g)| g.error(*a)).fold(0.0, f64::max) };
                 // The closest, and the closest whose column is smooth (a
                 // float literal under trig or a product: the kind whose
                 // straight-line prediction understates what it can reach).
@@ -1358,8 +1484,6 @@ impl DmSession {
                     }
                 }
             }
-            let pid = spec.program();
-            let emit_info = emit_info(env, pid, spec.baseline());
             let baseline_fp = spec.baseline().fingerprint;
             let drew_random = spec.drew_random();
             let bounds = self.bounds();
@@ -1497,7 +1621,7 @@ impl DmSession {
                     .collect();
                 let facts = ScoreFacts {
                     collateral_norm: collateral.shapes,
-                    goals: gr,
+                    goals: ga,
                     respelled: changes.iter().filter(|c| c.respelled).count(),
                     regime_changed,
                     rng_order_changed,
@@ -1515,7 +1639,22 @@ impl DmSession {
                     .collect();
                 let stateful = rendered.iter().any(|(i, ..)| self.params[*i].through_state);
                 let config_only = changes.iter().all(|c| c.config);
-                let mut description = describe(&changes, &collateral, verified, &achieved, &goals);
+                let ranges: Vec<RangeNote> = self
+                    .req
+                    .goals
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, g)| {
+                        Some(RangeNote {
+                            label: labels[i].clone(),
+                            text: g.target.range_text()?,
+                            was: self.diag.baseline[i],
+                            now: achieved[i],
+                            held: self.diag.holds_at_baseline[i],
+                        })
+                    })
+                    .collect();
+                let mut description = describe(&changes, &collateral, verified, &achieved, &goals, &ranges);
                 if !verified && let Some(r) = rejections.first() {
                     description.push_str(&format!("; rejected beyond it: {}", r.summary()));
                 }
@@ -1835,8 +1974,52 @@ fn collateral_items(
     }
 }
 
+/// A range goal, for the description: `coins[0].8 ≤ 0.6 (was 1.4, now 0.5)`.
+struct RangeNote {
+    label: String,
+    /// `≤ 0.6`.
+    text: String,
+    was: f64,
+    now: f64,
+    /// It held at the baseline already.
+    held: bool,
+}
+
+/// How a goal reads in a sentence: `coins[0]`, `coins[0].8`, `shapes[2]
+/// arg 1` (its channel, which emit on it, and the field).
+fn goal_label(o: &Observable, info: &HashMap<EmitKey, EmitInfo>) -> String {
+    let key = emit_key_of(o);
+    let head = key
+        .and_then(|k| info.get(&k))
+        .map_or_else(|| "goal".to_string(), |e| format!("{}[{}]", e.channel, e.emit));
+    let steps = |path: &[PathStep]| -> String {
+        path.iter()
+            .map(|p| match p {
+                PathStep::Index(i) => format!(".{i}"),
+                PathStep::Field(f) => format!(".{f}"),
+            })
+            .collect()
+    };
+    match o {
+        Observable::EmitValue { path, .. } => format!("{head}{}", steps(path)),
+        Observable::EmitArg { arg, path, .. } => {
+            let value_arg = key.and_then(|k| info.get(&k)).is_some_and(|e| e.callee.as_deref() == Some("push_output"))
+                && *arg == 1;
+            if value_arg { format!("{head}{}", steps(path)) } else { format!("{head} arg {arg}{}", steps(path)) }
+        }
+        Observable::Watch { path, .. } => format!("{head} (watched){}", steps(path)),
+    }
+}
+
 /// "set `gap` to 14 (line 3); moves 4 other emits".
-fn describe(changes: &[ParamChange], coll: &Collateral, verified: bool, achieved: &[f64], goals: &[GoalRow]) -> String {
+fn describe(
+    changes: &[ParamChange],
+    coll: &Collateral,
+    verified: bool,
+    achieved: &[f64],
+    goals: &[GoalRow],
+    ranges: &[RangeNote],
+) -> String {
     let parts: Vec<String> = changes
         .iter()
         .map(|c| {
@@ -1862,12 +2045,12 @@ fn describe(changes: &[ParamChange], coll: &Collateral, verified: bool, achieved
         1 => s.push_str(&format!("; also moves 1 other emit ({})", names())),
         n => s.push_str(&format!("; also moves {n} other emits ({})", names())),
     }
+    for r in ranges {
+        let keeps = if r.held { "keeps " } else { "" };
+        s.push_str(&format!("; {keeps}{} {} (was {}, now {})", r.label, r.text, short(r.was), short(r.now)));
+    }
     if !verified {
-        let worst = achieved
-            .iter()
-            .zip(goals)
-            .map(|(a, g)| (a - g.target).abs())
-            .fold(0.0, f64::max);
+        let worst = achieved.iter().zip(goals).map(|(a, g)| g.miss(*a)).fold(0.0, f64::max);
         s.push_str(&format!("; misses the goal by {worst:.3}"));
     }
     s
@@ -2015,6 +2198,11 @@ fn v1_fallback(env: &Env, spec: &SpecSession, req: &DmRequest) -> Result<DmRespo
                 }
             }
             GoalTarget::Value(v) => v.clone(),
+            GoalTarget::Range { .. } => {
+                return Err(DmError::BadObservable(format!(
+                    "goal {i}: a range goal and a non-numeric goal cannot be asked together"
+                )));
+            }
         };
         goals.push(ManipulationGoal { term, arg_index, new_value });
     }

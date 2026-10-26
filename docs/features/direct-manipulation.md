@@ -347,7 +347,12 @@ Apply one with --apply --pick N; narrow with --allow/--deny; see why with --expl
 Add `--deny x` to rule out `x`, which leaves one alternative, and `--apply`
 to write it to the file. `--native-arg 1` addresses the raw second argument
 of `push_output` instead of the user-file call's, and `--by 12` asks for
-the value to go up by 12 rather than naming the target. To change several
+the value to go up by 12 rather than naming the target. When any value in
+a range will do, say so: `--at-most 3`, `--at-least 1` or `--within 0..1280`
+(a coin "within 0.6 of the bot's path", a panel "inside the screen"). A range
+that already holds asks for no edit, and one that does not is moved just
+inside its bound instead of to an exact number the program may not be able
+to reach. To change several
 values at once (like x and y for a single drag), repeat the goal. `x` and
 `offset` are int literals, so they stay ints: `--to 42.5` misses by half
 unless you add `--allow-respell`.

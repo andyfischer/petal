@@ -25,6 +25,21 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   alternative and `rejected_runs` / `rejections` to `diagnostics`
   ([CLI.md](docs/CLI.md#propose-edit--propose-source-edits-that-change-an-emitted-value)).
 
+- `petal propose-edit` range goals: `--at-most V`, `--at-least V` and
+  `--within LO..HI` beside `--to`/`--by` (one per goal; `at_most`,
+  `at_least` and `within: [lo, hi]` in a JSON request, so petal-ui hosts and
+  `pb_vm_propose_edit` take them too; `DmGoal::at_most`/`at_least`/`between`
+  and `GoalTarget::Range` in the API). A range holds anywhere inside its
+  bounds: one that already holds at the baseline asks for no edit (alone,
+  `the goal already holds at the baseline (coins[0].y = 2.5 ≤ 3)`); one that
+  does not is solved to one tolerance inside the bound it is past and
+  verified against the bound; one that holds but that the step would break
+  joins the step and is kept inside. Descriptions say
+  `coins[0].y ≤ 3 (was 3.4, now 3)`. `--json` goals gain `at_most`,
+  `at_least`, `within` and `holds_at_baseline`; a range goal's `target` is
+  `null` and its `misses` is the distance outside it
+  ([CLI reference](docs/CLI.md#propose-edit--propose-source-edits-that-change-an-emitted-value)).
+
 - Direct manipulation for embedders: `petal::cli::dm_v2::propose_json` runs
   `propose-edit` on a host's own `Env` (its natives registered, its frame
   as the checkpoint) from a JSON request with the CLI flags' fields

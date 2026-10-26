@@ -95,8 +95,8 @@ fn json_shape_is_frozen() {
     assert_eq!(
         keys(g),
         set(&[
-            "channel", "emit", "kind", "index", "path", "key", "callee", "line", "to", "by", "baseline", "target",
-            "tolerance",
+            "channel", "emit", "kind", "index", "path", "key", "callee", "line", "to", "by", "at_most", "at_least",
+            "within", "baseline", "target", "tolerance", "holds_at_baseline",
         ])
     );
     assert_eq!(g["kind"], "native_arg");
@@ -687,4 +687,75 @@ push_output(symbol(\"shapes\"), b.to)
     assert!(ok, "{stderr}");
     assert!(stdout.contains("       rejected: assertion failed at beetle.ptl:3 (x1 >= x0) · "), "{stdout}");
     assert!(stdout.contains(", first at `5.5` -> "), "{stdout}");
+}
+
+/// C6: `--at-most` / `--at-least` / `--within` goals. A range that holds at
+/// the baseline asks for nothing; one that does not is solved to just
+/// inside its bound, and the report and the description say which.
+#[test]
+fn range_goals_on_the_command_line() {
+    let src = "\
+import io
+config let lift = 3.4
+push_output(symbol(\"coins\"), {x: 2.0, y: lift})
+";
+    let path = scratch("ranges", src);
+    let p = path.to_str().unwrap();
+    let goal = |flag: &str, v: &str| -> Vec<String> {
+        ["propose-edit", "--json", "--channel", "coins", "--emit", "0", "--value", "--field", "y", flag, v, p]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    };
+    let json = |args: Vec<String>| run_json(&args.iter().map(String::as_str).collect::<Vec<_>>());
+
+    let r = json(goal("--at-most", "3"));
+    let g = &r["goals"][0];
+    assert_eq!(g["at_most"], 3.0);
+    assert!(g["to"].is_null() && g["by"].is_null() && g["at_least"].is_null() && g["within"].is_null());
+    assert!(g["target"].is_null(), "a range has no point target: {g}");
+    assert_eq!(g["holds_at_baseline"], false);
+    let top = &r["alternatives"][0];
+    assert_eq!(top["verified"], true, "{r:#}");
+    assert!(top["achieved"][0].as_f64().unwrap() <= 3.0, "{top:#}");
+    assert_eq!(top["misses"][0], 0.0);
+    let d = top["description"].as_str().unwrap();
+    assert!(d.contains("coins[0].y ≤ 3 (was 3.4, now"), "{d}");
+
+    let r = json(goal("--at-least", "4"));
+    assert_eq!(r["goals"][0]["at_least"], 4.0);
+    assert!(r["alternatives"][0]["achieved"][0].as_f64().unwrap() >= 4.0, "{r:#}");
+
+    let r = json(goal("--within", "-1..2.5"));
+    assert_eq!(r["goals"][0]["within"], serde_json::json!([-1.0, 2.5]));
+    let y = r["alternatives"][0]["achieved"][0].as_f64().unwrap();
+    assert!((-1.0..=2.5).contains(&y), "{r:#}");
+
+    // Already holds: nothing proposed, and the report says why.
+    let r = json(goal("--at-most", "5"));
+    assert_eq!(r["goals"][0]["holds_at_baseline"], true);
+    assert!(r["alternatives"].as_array().unwrap().is_empty(), "{r:#}");
+    let w = r["diagnostics"]["warnings"].to_string();
+    assert!(w.contains("the goal already holds at the baseline (coins[0].y = 3.4 ≤ 5)"), "{w}");
+    let mut text = goal("--at-most", "5");
+    text.retain(|a| a != "--json");
+    let (stdout, stderr, ok) = run(&text.iter().map(String::as_str).collect::<Vec<_>>());
+    assert!(ok, "{stderr}");
+    assert!(stdout.contains("goal: coins[0] value.y (push_output, line 3): 3.4 -> ≤ 5 (already holds)"), "{stdout}");
+    assert!(stdout.contains("Nothing to change: the goal already holds."), "{stdout}");
+
+    // One kind per goal; both bounds are a band.
+    let base = ["propose-edit", "--channel", "coins", "--emit", "0", "--value", "--field", "y"];
+    let (_, stderr, ok) = run(&[&base[..], &["--at-least", "0", "--at-most", "5", p]].concat());
+    assert!(!ok);
+    assert!(stderr.contains("for both bounds use --within LO..HI"), "{stderr}");
+    let (_, stderr, ok) = run(&[&base[..], &["--within", "5..1", p]].concat());
+    assert!(!ok);
+    assert!(stderr.contains("the low end is above the high end"), "{stderr}");
+    let (_, stderr, ok) = run(&[&base[..], &["--within", "5", p]].concat());
+    assert!(!ok);
+    assert!(stderr.contains("--within takes LO..HI"), "{stderr}");
+    let (_, stderr, ok) = run(&["propose-edit", "--v1", "--channel", "coins", "--emit", "0", "--arg", "1", "--at-most", "1", p]);
+    assert!(!ok);
+    assert!(stderr.contains("--at-most needs the v2 engine"), "{stderr}");
 }

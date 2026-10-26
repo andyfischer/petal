@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use serde_json::{Value as Json, json};
 
 use crate::dm_v2::params::{BudgetLimit, ParamFilter, ParamSelector};
+use crate::dm_v2::solve::GoalRow;
 use crate::dm_v2::spec::{SpecConfig, SpecHost, SpecSession};
 use crate::dm_v2::{
     Alternative, CandidateReport, ColumnQuality, DmGoal, DmRequest, DmResponse, DmSession, EmitKey, Engine,
@@ -51,6 +52,38 @@ pub enum GoalValue {
     To(String),
     /// `--by d`: relative to the baseline value.
     By(f64),
+    /// `--at-most v`: anything up to `v`.
+    AtMost(f64),
+    /// `--at-least v`: anything from `v` up.
+    AtLeast(f64),
+    /// `--within LO..HI`: anything from `LO` to `HI`, inclusive.
+    Within(f64, f64),
+}
+
+impl GoalValue {
+    /// The range a `--at-most` / `--at-least` / `--within` goal asks for.
+    pub fn range(&self) -> Option<(Option<f64>, Option<f64>)> {
+        match *self {
+            GoalValue::AtMost(h) => Some((None, Some(h))),
+            GoalValue::AtLeast(l) => Some((Some(l), None)),
+            GoalValue::Within(l, h) => Some((Some(l), Some(h))),
+            _ => None,
+        }
+    }
+}
+
+/// `LO..HI` (`0..1280`, `-1.5..2`) as two numbers, `LO ≤ HI`.
+pub fn parse_band(v: &str) -> Result<(f64, f64), String> {
+    let bad = || format!("--within takes LO..HI (e.g. 0..1280), not `{v}`");
+    let (lo, hi) = v.split_once("..").ok_or_else(bad)?;
+    let (lo, hi): (f64, f64) = (lo.trim().parse().map_err(|_| bad())?, hi.trim().parse().map_err(|_| bad())?);
+    if !lo.is_finite() || !hi.is_finite() {
+        return Err(bad());
+    }
+    if lo > hi {
+        return Err(format!("--within {v}: the low end is above the high end"));
+    }
+    Ok((lo, hi))
 }
 
 /// One goal of a `propose-edit --v2` invocation.
@@ -245,6 +278,9 @@ impl V2Parser {
             "--value",
             "--field",
             "--by",
+            "--at-most",
+            "--at-least",
+            "--within",
             "--allow",
             "--deny",
             "--config-strict",
@@ -272,7 +308,7 @@ impl V2Parser {
             }
             "--arg" | "--native-arg" | "--value" => {
                 if self.pending.is_some() {
-                    return Err(format!("{flag} given before the previous goal's --to/--by"));
+                    return Err(format!("{flag} given before the previous goal's --to/--by/--at-most/--at-least/--within"));
                 }
                 self.pending = Some(match flag.as_str() {
                     "--arg" => GoalAddr::Arg(index(&flag, &value(i)?)?),
@@ -287,15 +323,40 @@ impl V2Parser {
                 }
                 self.pending_path = parse_path(&value(i)?);
             }
-            "--to" | "--by" => {
+            "--to" | "--by" | "--at-most" | "--at-least" | "--within" => {
                 let Some(addr) = self.pending.take() else {
-                    return Err(format!("{flag} needs an --arg, --native-arg or --value before it"));
+                    // `--at-least 0 --at-most 5` on one address is a band.
+                    let both = matches!(flag.as_str(), "--at-most" | "--at-least")
+                        && self.opts.goals.last().is_some_and(|g| matches!(g.value, GoalValue::AtMost(_) | GoalValue::AtLeast(_)));
+                    if both {
+                        return Err(format!(
+                            "{flag}: a goal takes one of --to, --by, --at-most, --at-least, --within; \
+                             for both bounds use --within LO..HI"
+                        ));
+                    }
+                    return Err(format!(
+                        "{flag} needs an --arg, --native-arg or --value before it \
+                         (a goal takes one of --to, --by, --at-most, --at-least, --within)"
+                    ));
                 };
                 let (Some(channel), Some(emit)) = (self.channel.clone(), self.emit) else {
                     return Err(format!("{flag} needs --channel and --emit before it"));
                 };
                 let v = value(i)?;
-                let value = if flag == "--to" { GoalValue::To(v) } else { GoalValue::By(number("--by", &v)?) };
+                let finite = |f: &str, v: &str| -> Result<f64, String> {
+                    let x = number(f, v)?;
+                    if x.is_finite() { Ok(x) } else { Err(format!("{f} takes a finite number, not `{v}`")) }
+                };
+                let value = match flag.as_str() {
+                    "--to" => GoalValue::To(v),
+                    "--by" => GoalValue::By(number("--by", &v)?),
+                    "--at-most" => GoalValue::AtMost(finite("--at-most", &v)?),
+                    "--at-least" => GoalValue::AtLeast(finite("--at-least", &v)?),
+                    _ => {
+                        let (lo, hi) = parse_band(&v)?;
+                        GoalValue::Within(lo, hi)
+                    }
+                };
                 self.opts.goals.push(GoalSpec {
                     channel,
                     emit,
@@ -364,11 +425,12 @@ impl V2Parser {
     /// Finish: the options, or why they are incomplete.
     pub fn finish(self) -> Result<V2Opts, String> {
         if self.pending.is_some() {
-            return Err("a goal address without a matching --to or --by".into());
+            return Err("a goal address without a matching --to, --by, --at-most, --at-least or --within".into());
         }
         if self.opts.goals.is_empty() {
             return Err("at least one goal is required: --channel <name> --emit <n> \
-                        (--arg|--native-arg <k> | --value) [--field <path>] (--to <v> | --by <d>)"
+                        (--arg|--native-arg <k> | --value) [--field <path>] \
+                        (--to <v> | --by <d> | --at-most <v> | --at-least <v> | --within <lo>..<hi>)"
                 .into());
         }
         for s in self.opts.allow.iter().chain(&self.opts.deny) {
@@ -438,6 +500,9 @@ pub fn propose(
             },
             // The target is set from the baseline when the session finishes.
             GoalValue::By(_) => DmGoal::to(r.observable.clone(), f64::NAN),
+            GoalValue::AtMost(h) => DmGoal::at_most(r.observable.clone(), *h),
+            GoalValue::AtLeast(l) => DmGoal::at_least(r.observable.clone(), *l),
+            GoalValue::Within(l, h) => DmGoal::between(r.observable.clone(), *l, *h),
         };
         goal.tolerance = opts.tol;
         req.goals.push(goal);
@@ -483,7 +548,8 @@ pub fn propose(
 // ── embedding: a JSON request, a host's natives ────────────────────────────
 
 /// The keys a JSON request ([`opts_from_json`]) may carry for one goal.
-const GOAL_KEYS: [&str; 8] = ["channel", "emit", "arg", "native_arg", "value", "field", "to", "by"];
+const GOAL_KEYS: [&str; 11] =
+    ["channel", "emit", "arg", "native_arg", "value", "field", "to", "by", "at_most", "at_least", "within"];
 
 /// Read a JSON request into [`V2Opts`], for hosts that drive propose-edit
 /// without a command line (the C bridge's `pb_vm_propose_edit`, a petal-ui
@@ -497,7 +563,8 @@ const GOAL_KEYS: [&str; 8] = ["channel", "emit", "arg", "native_arg", "value", "
 /// A goal is `channel`, `emit`, one of `arg` / `native_arg` (a 0-based
 /// index) / `value: true`, an optional `field` (`"center.0"` or
 /// `["center", 0]`), and one of `to` (a number, or any JSON scalar for a
-/// non-numeric goal) / `by` (a number). One goal may sit at the top level;
+/// non-numeric goal) / `by` (a number) / `at_most` / `at_least` (a number) /
+/// `within` (`[lo, hi]`, or the CLI's `"lo..hi"`). One goal may sit at the top level;
 /// several go in `goals: [...]`, each inheriting the top-level `channel` and
 /// `emit` it leaves out. The options are `allow` / `deny` (a selector or a
 /// list of them; `pins` is `deny`'s alias), `config_strict`, `alternatives`,
@@ -564,16 +631,37 @@ pub fn opts_from_json(req: &Json) -> Result<V2Opts, String> {
             };
             args.extend(["--field".into(), path]);
         }
-        match (g.get("to"), g.get("by")) {
-            (Some(v), None) => args.extend(["--to".into(), scalar("to", v)?]),
-            (None, Some(Json::Number(d))) => args.extend(["--by".into(), d.to_string()]),
-            (None, Some(v)) => return Err(format!("`by` takes a number, not {v}")),
-            (None, None) => return Err("a goal needs `to` or `by`".into()),
-            (Some(_), Some(_)) => return Err("a goal takes `to` or `by`, not both".into()),
+        let given: Vec<&str> =
+            ["to", "by", "at_most", "at_least", "within"].into_iter().filter(|k| g.get(*k).is_some_and(|v| !v.is_null())).collect();
+        match given.as_slice() {
+            [] => return Err("a goal needs one of `to`, `by`, `at_most`, `at_least` or `within`".into()),
+            [_] => {}
+            [a, b, ..] => {
+                return Err(format!(
+                    "a goal takes one of `to`, `by`, `at_most`, `at_least`, `within`, not both `{a}` and `{b}`"
+                ));
+            }
+        }
+        match given[0] {
+            "to" => args.extend(["--to".into(), scalar("to", &g["to"])?]),
+            key @ ("by" | "at_most" | "at_least") => match &g[key] {
+                Json::Number(d) => args.extend([format!("--{}", key.replace('_', "-")), d.to_string()]),
+                v => return Err(format!("`{key}` takes a number, not {v}")),
+            },
+            _ => {
+                let band = match &g["within"] {
+                    Json::Array(xs) if xs.len() == 2 && xs.iter().all(Json::is_number) => format!("{}..{}", xs[0], xs[1]),
+                    Json::String(s) => s.clone(),
+                    v => return Err(format!("`within` takes [lo, hi], not {v}")),
+                };
+                args.extend(["--within".into(), band]);
+            }
         }
         Ok(())
     };
-    let top_goal = ["arg", "native_arg", "value", "field", "to", "by"].iter().any(|k| obj.contains_key(*k));
+    let top_goal = ["arg", "native_arg", "value", "field", "to", "by", "at_most", "at_least", "within"]
+        .iter()
+        .any(|k| obj.contains_key(*k));
     if top_goal {
         push_goal(obj, false)?;
     }
@@ -1081,7 +1169,7 @@ fn param_name(program: &Program, callee: &str, nargs: usize, k: usize) -> Option
         .and_then(|f| f.params.get(k).cloned())
 }
 
-fn alternative_json(program: &Program, sites: &Sites, rank: usize, a: &Alternative, targets: &[f64]) -> Json {
+fn alternative_json(program: &Program, sites: &Sites, rank: usize, a: &Alternative, goals: &[GoalRow]) -> Json {
     let changes: Vec<Json> = a
         .changes
         .iter()
@@ -1147,14 +1235,15 @@ fn alternative_json(program: &Program, sites: &Sites, rank: usize, a: &Alternati
             "edit": num(p.edit), "collateral": num(p.collateral), "count": num(p.count),
             "respelled": num(p.respelled), "regime": num(p.regime), "rng": num(p.rng), "error": num(p.error),
         },
-        // In units of each goal's tolerance (`max_j |g_j - t_j| / τ_j`);
-        // `misses` is the same in the goals' own units.
+        // In units of each goal's tolerance (`max_j |g_j - t_j| / τ_j`; a
+        // range goal is 0 inside and 1 + distance / τ outside); `misses` is
+        // each goal's distance in its own units (a range's: how far outside).
         "max_error": num(a.max_error),
         "misses": a
             .achieved
             .iter()
-            .zip(targets)
-            .map(|(v, t)| num((v - t).abs()))
+            .zip(goals)
+            .map(|(v, g)| num(g.miss(*v)))
             .collect::<Vec<_>>(),
         "achieved": a.achieved.iter().map(|v| num(*v)).collect::<Vec<_>>(),
         "predicted": a.predicted.iter().map(|v| num(*v)).collect::<Vec<_>>(),
@@ -1287,6 +1376,13 @@ fn report(
             let (to, by) = match &g.value {
                 GoalValue::To(t) => (Some(t.clone()), None),
                 GoalValue::By(d) => (None, Some(num(*d))),
+                _ => (None, None),
+            };
+            let (at_most, at_least, within) = match g.value {
+                GoalValue::AtMost(h) => (Some(num(h)), None, None),
+                GoalValue::AtLeast(l) => (None, Some(num(l)), None),
+                GoalValue::Within(l, h) => (None, None, Some(json!([num(l), num(h)]))),
+                _ => (None, None, None),
             };
             json!({
                 "channel": g.channel,
@@ -1299,14 +1395,35 @@ fn report(
                 "line": r.line,
                 "to": to,
                 "by": by,
+                "at_most": at_most,
+                "at_least": at_least,
+                "within": within,
                 "baseline": baseline.get(i).copied().map(num).unwrap_or(Json::Null),
                 "target": targets.get(i).copied().map(num).unwrap_or(Json::Null),
                 "tolerance": response.diagnostics.tolerances.get(i).copied().map(num).unwrap_or(Json::Null),
+                // The baseline already meets the goal (a range it is inside,
+                // or a target within tolerance); null when v1 answered.
+                "holds_at_baseline": response.diagnostics.holds_at_baseline.get(i).copied(),
             })
         })
         .collect();
     let d = &response.diagnostics;
     let sites = Sites::new(program);
+    // What each goal asks for, as the solver measured it, for `misses`.
+    let rows: Vec<GoalRow> = opts
+        .goals
+        .iter()
+        .enumerate()
+        .map(|(i, g)| {
+            let tol = d.tolerances.get(i).copied().unwrap_or(0.0).max(1e-300);
+            match g.value.range() {
+                Some((lo, hi)) => {
+                    GoalRow::range(lo.unwrap_or(f64::NEG_INFINITY), hi.unwrap_or(f64::INFINITY), tol, 1.0)
+                }
+                None => GoalRow::eq(targets.get(i).copied().unwrap_or(f64::NAN), tol, 1.0),
+            }
+        })
+        .collect();
     json!({
         "engine": d.engine.map(engine_name).unwrap_or("v2"),
         "seed": seed,
@@ -1316,7 +1433,7 @@ fn report(
             .alternatives
             .iter()
             .enumerate()
-            .map(|(i, a)| alternative_json(program, &sites, i + 1, a, targets))
+            .map(|(i, a)| alternative_json(program, &sites, i + 1, a, &rows))
             .collect::<Vec<_>>(),
         "candidates": response.candidates.iter().map(|c| candidate_json(program, &sites, c)).collect::<Vec<_>>(),
         "diagnostics": {
@@ -1418,13 +1535,21 @@ pub fn print_text(r: &Json) {
             (Some(c), None) => format!(" ({c})"),
             _ => String::new(),
         };
-        let target = if g["target"].is_null() {
+        let target = if !g["at_most"].is_null() {
+            format!("≤ {}", fmt_num(&g["at_most"]))
+        } else if !g["at_least"].is_null() {
+            format!("≥ {}", fmt_num(&g["at_least"]))
+        } else if !g["within"].is_null() {
+            format!("in {}..{}", fmt_num(&g["within"][0]), fmt_num(&g["within"][1]))
+        } else if g["target"].is_null() {
             g["to"].as_str().unwrap_or("?").to_string()
         } else {
             fmt_num(&g["target"])
         };
+        let range = !(g["at_most"].is_null() && g["at_least"].is_null() && g["within"].is_null());
+        let holds = if range && g["holds_at_baseline"] == true { " (already holds)" } else { "" };
         println!(
-            "goal: {}[{}] {what}{path}{at}: {} -> {}",
+            "goal: {}[{}] {what}{path}{at}: {} -> {}{holds}",
             g["channel"].as_str().unwrap_or("?"),
             g["emit"],
             fmt_num(&g["baseline"]),
@@ -1439,7 +1564,10 @@ pub fn print_text(r: &Json) {
     for w in diag["warnings"].as_array().unwrap_or(&empty) {
         println!("warning: {}", w.as_str().unwrap_or(""));
     }
-    if alts.is_empty() {
+    let all_hold = !goals.is_empty() && goals.iter().all(|g| g["holds_at_baseline"] == true);
+    if alts.is_empty() && all_hold {
+        println!("Nothing to change: the goal{} already hold{}.", if goals.len() == 1 { "" } else { "s" }, if goals.len() == 1 { "s" } else { "" });
+    } else if alts.is_empty() {
         println!("No alternative meets the goals.");
     } else {
         println!("{} alternative{}:", alts.len(), if alts.len() == 1 { "" } else { "s" });

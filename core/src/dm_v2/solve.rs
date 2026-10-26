@@ -280,35 +280,171 @@ fn decimals_of_f64(v: f64) -> u32 {
 
 /// One goal as the solver sees it: a row of the Jacobian, where it should
 /// be, how close is close enough, and how much it counts against the others.
+///
+/// An *equality* (`range: None`) wants the value at `target`, within
+/// `tolerance`. A *range* (`--at-most`, `--at-least`, `--within`) wants it
+/// inside `[lo, hi]` (an open end is infinite): it holds anywhere inside and
+/// nowhere outside, so `tolerance` is not slack there but the margin a
+/// violated range is solved to, one tolerance inside the bound it crossed
+/// (rounding then cannot push it back out). A range that holds asks the step
+/// for nothing ([`goal_step`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GoalRow {
+    /// The equality's target; for a range, the finite bound (the middle of
+    /// a band): only [`aim`](Self::aim) reads it there.
     pub target: f64,
     pub tolerance: f64,
     pub weight: f64,
+    pub range: Option<(f64, f64)>,
 }
 
-/// `max_j |g_j - t_j| / τ_j`; `inf` when a goal is missing.
+impl GoalRow {
+    /// The equality "at `target`, within `tolerance`".
+    pub fn eq(target: f64, tolerance: f64, weight: f64) -> GoalRow {
+        GoalRow { target, tolerance, weight, range: None }
+    }
+
+    /// The range "inside `[lo, hi]`"; `lo` may be `-inf` and `hi` `inf`.
+    pub fn range(lo: f64, hi: f64, tolerance: f64, weight: f64) -> GoalRow {
+        let target = match (lo.is_finite(), hi.is_finite()) {
+            (true, true) => 0.5 * (lo + hi),
+            (true, false) => lo,
+            _ => hi,
+        };
+        GoalRow { target, tolerance, weight, range: Some((lo, hi)) }
+    }
+
+    /// The goal holds at `v`: within tolerance of an equality's target, or
+    /// inside a range.
+    pub fn holds(&self, v: f64) -> bool {
+        self.error(v) <= 1.0
+    }
+
+    /// How far `v` is from the goal, in the goal's own units: `|v - t|`, or
+    /// how far outside the range it is (0 inside).
+    pub fn miss(&self, v: f64) -> f64 {
+        match self.range {
+            None => (v - self.target).abs(),
+            Some((lo, hi)) => (lo - v).max(v - hi).max(0.0),
+        }
+    }
+
+    /// The error in tolerance units, `≤ 1` when the goal holds:
+    /// `|v - t| / τ` for an equality; for a range 0 inside and
+    /// `1 + miss / τ` outside, so that a value past the bound by any amount
+    /// does not hold.
+    pub fn error(&self, v: f64) -> f64 {
+        if !v.is_finite() {
+            return f64::INFINITY;
+        }
+        match self.range {
+            None => self.miss(v) / self.tolerance,
+            Some(_) => {
+                let m = self.miss(v);
+                if m == 0.0 { 0.0 } else { 1.0 + m / self.tolerance }
+            }
+        }
+    }
+
+    /// Where a step from `v` aims: an equality's target; for a range, `v`
+    /// itself inside it, else the bound `v` is past moved one tolerance
+    /// inside (the middle of a band narrower than two tolerances).
+    pub fn aim(&self, v: f64) -> f64 {
+        let Some((lo, hi)) = self.range else { return self.target };
+        let margin = if lo.is_finite() && hi.is_finite() { self.tolerance.min(0.5 * (hi - lo)) } else { self.tolerance };
+        if v > hi {
+            hi - margin
+        } else if v < lo {
+            lo + margin
+        } else {
+            v
+        }
+    }
+
+    /// What the step should move the goal by from `v` (`aim - v`); 0 for a
+    /// missing value.
+    pub fn residual(&self, v: Option<f64>) -> f64 {
+        match v {
+            Some(v) if v.is_finite() => self.aim(v) - v,
+            _ => 0.0,
+        }
+    }
+
+    /// The row asks a step for something at `v`: an equality always (a
+    /// held one asks to stay), a range only when it does not hold.
+    pub fn active(&self, v: Option<f64>) -> bool {
+        match (self.range, v) {
+            (None, _) => true,
+            (Some(_), Some(v)) => !self.holds(v),
+            (Some(_), None) => false,
+        }
+    }
+}
+
+/// `max_j error_j(g_j)` ([`GoalRow::error`]); `inf` when a goal is missing.
 pub fn max_error(goals: &[GoalRow], values: &[Option<f64>]) -> f64 {
     goals
         .iter()
         .zip(values)
         .map(|(g, v)| match v {
-            Some(v) if v.is_finite() => (v - g.target).abs() / g.tolerance,
+            Some(v) if v.is_finite() => g.error(*v),
             _ => f64::INFINITY,
         })
         .fold(0.0, f64::max)
 }
 
-/// `Σ_j (w_j (g_j - t_j) / τ_j)²`: what a step must make smaller.
+/// `Σ_j (w_j · error_j)²`: what a step must make smaller.
 fn sq_error(goals: &[GoalRow], values: &[Option<f64>]) -> f64 {
     goals
         .iter()
         .zip(values)
         .map(|(g, v)| match v {
-            Some(v) if v.is_finite() => (g.weight * (v - g.target) / g.tolerance).powi(2),
+            Some(v) if v.is_finite() => (g.weight * g.error(*v)).powi(2),
             _ => f64::INFINITY,
         })
         .sum()
+}
+
+/// The goal rows that ask a step for something at `values`
+/// ([`GoalRow::active`]).
+pub fn active_goals(goals: &[GoalRow], values: &[Option<f64>]) -> Vec<bool> {
+    goals.iter().zip(values).map(|(g, v)| g.active(*v)).collect()
+}
+
+/// One step for the goals at `values` ([`linear_step`] over the rows that
+/// ask for something), with the inequalities as an active set: a range
+/// that holds is left out, unless the step would push it out, in which
+/// case it joins, aimed one tolerance inside the bound it would cross, and
+/// the step is solved again (at most once per goal).
+pub fn goal_step(goals: &[GoalRow], values: &[Option<f64>], jg: &[Vec<f64>], jc: &[Vec<f64>], cost: &[f64]) -> Vec<f64> {
+    let k = cost.len();
+    let mut active = active_goals(goals, values);
+    let mut aim: Vec<f64> = goals.iter().zip(values).map(|(g, v)| g.residual(*v)).collect();
+    let mut delta = vec![0.0; k];
+    for _ in 0..=goals.len() {
+        let rows: Vec<usize> = (0..goals.len()).filter(|&g| active[g]).collect();
+        if rows.is_empty() {
+            return vec![0.0; k];
+        }
+        let jga: Vec<Vec<f64>> = rows.iter().map(|&g| jg[g].clone()).collect();
+        let r: Vec<f64> = rows.iter().map(|&g| aim[g]).collect();
+        let wt: Vec<f64> = rows.iter().map(|&g| goals[g].weight / goals[g].tolerance).collect();
+        delta = linear_step(&jga, jc, &r, &wt, cost);
+        let mut joined = false;
+        for g in 0..goals.len() {
+            let (false, Some(v)) = (active[g], values[g]) else { continue };
+            let moved = v + jg[g].iter().zip(&delta).map(|(j, d)| j * d).sum::<f64>();
+            if !goals[g].holds(moved) {
+                active[g] = true;
+                aim[g] = goals[g].aim(moved) - v;
+                joined = true;
+            }
+        }
+        if !joined {
+            break;
+        }
+    }
+    delta
 }
 
 // ── the verification loop ──────────────────────────────────────────────────
@@ -439,21 +575,14 @@ impl SolveCtx<'_> {
         (0..self.jac.rows.len()).map(|r| cols.iter().map(|&c| self.jac.get(r, c)).collect()).collect()
     }
 
-    /// The step for `cols` from `rows` with Jacobian `local`.
+    /// The step for `cols` from `rows` with Jacobian `local` ([`goal_step`]).
     pub fn step(&self, cols: &[usize], rows: &[Option<f64>], local: &[Vec<f64>]) -> Vec<f64> {
         let gr = self.jac.goal_rows;
-        let r: Vec<f64> = self
-            .goals
-            .iter()
-            .zip(&rows[..gr])
-            .map(|(g, v)| g.target - v.unwrap_or(g.target))
-            .collect();
-        let wt: Vec<f64> = self.goals.iter().map(|g| g.weight / g.tolerance).collect();
         let cost: Vec<f64> = cols
             .iter()
             .map(|&c| self.weights[c] / self.base_value(c).abs().max(1.0))
             .collect();
-        linear_step(&local[..gr], &local[gr..], &r, &wt, &cost)
+        goal_step(self.goals, &rows[..gr], &local[..gr], &local[gr..], &cost)
     }
 
     /// `values + Δ` projected onto the bounds.
@@ -659,18 +788,18 @@ impl SolveCtx<'_> {
         // as a clean number too (`3.55`, not `3.5546874999999756`).
         let verified = sol.max_error <= 1.0;
         let goals: &[GoalRow] = self.goals;
+        // In each goal's own units ([`GoalRow::miss`]); a verified solution
+        // must keep every goal holding ([`GoalRow::holds`]: a range inside
+        // its bounds).
         let slack: Vec<f64> = (0..gr)
-            .map(|g| {
-                let (t, tol) = (goals[g].target, goals[g].tolerance);
-                match sol.rows[g] {
-                    _ if verified => tol,
-                    Some(v) if v.is_finite() => (v - t).abs() + tol,
-                    _ => f64::NAN,
-                }
+            .map(|g| match sol.rows[g] {
+                _ if verified => f64::NAN,
+                Some(v) if v.is_finite() => goals[g].miss(v) + goals[g].tolerance,
+                _ => f64::NAN,
             })
             .collect();
         let within = |g: usize, v: Option<f64>| -> bool {
-            v.is_some_and(|v| (v - goals[g].target).abs() <= slack[g])
+            v.is_some_and(|v| if verified { goals[g].holds(v) } else { goals[g].miss(v) <= slack[g] })
         };
         // The linear prediction of the goals with column i moved by `d`.
         let predict_ok =

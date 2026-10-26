@@ -1270,7 +1270,8 @@ pb_status pb_vm_take_output(pb_vm* vm, const char* const** out_lines, size_t* ou
  *    "native_arg": 1,                        // or "arg": k (the user-file
  *                                            // call's argument), or "value": true
  *    "field": "x",                           // optional path: "pos.x", ["pts", 2]
- *    "to": 42,                               // or "by": 6.5
+ *    "to": 42,                               // or "by": 6.5, "at_most": 3,
+ *                                            // "at_least": 1, "within": [0, 1280]
  *    "allow": ["config"], "deny": ["speed"], // optional selectors ("pins" = deny)
  *    "tol": 0.5, "alternatives": 3, "explain": false,
  *    "apply": false, "pick": 1}              // write alternative `pick` to disk

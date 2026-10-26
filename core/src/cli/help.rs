@@ -1521,7 +1521,8 @@ NAME
 SYNOPSIS
        petal propose-edit [--v1 | --v2] --channel <name> --emit <n>
                           ((--arg <k> | --native-arg <k> | --value)
-                           [--field <path>] (--to <value> | --by <delta>))...
+                           [--field <path>] (--to <value> | --by <delta>
+                           | --at-most <v> | --at-least <v> | --within <lo>..<hi>))...
                           [--allow <sel>]... [--deny <sel>]...
                           [--configurable <var>]... [--static <var>]...
                           [--alternatives N] [--explain] [--config-strict]
@@ -1580,6 +1581,15 @@ GOALS
 
        --by <delta>
               (v2) The goal is the baseline value plus <delta>.
+
+       --at-most <v>, --at-least <v>, --within <lo>..<hi>
+              (v2) A range goal: anywhere up to <v>, from <v> up, or from
+              <lo> to <hi> inclusive (--within 0..1280). One of --to, --by
+              and these per goal. A range that already holds at the baseline
+              asks for no edit (alone, the report says the goal already
+              holds); one that does not is solved to one tolerance inside
+              its bound and verified against the bound itself (--tol is that
+              margin).
 
 FILTERS
        --allow <sel>, --deny <sel>

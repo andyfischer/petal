@@ -13,9 +13,12 @@
 //! rung has kerning off: measurement sums one advance per glyph, so a kerned
 //! pair would draw narrower than `text_width` says.
 //!
-//! Weight and italic are SDL_ttf's *synthetic* styles (emboldening and
-//! shearing the regular outlines), not separately loaded faces — so bold here
-//! is a real width change the metrics account for, but not a designer's bold.
+//! Weight and italic draw from the face's own cuts where the font has them —
+//! Helvetica.ttc holds Regular, Bold, Oblique, Light and more, each loaded as
+//! its own ladder the first time a weight or slant picks it, and measured
+//! from that same ladder. Only what no cut covers (bold of a family without
+//! one, italic of an upright-only file) falls back to SDL_ttf's *synthetic*
+//! styles, emboldening or shearing the nearest cut.
 
 use std::collections::{HashMap, HashSet};
 
@@ -72,13 +75,32 @@ const MONO_PATHS: &[&str] = &[
     "C:\\Windows\\Fonts\\consola.ttf",
 ];
 
-/// One face (a file, and a face index inside it for `.ttc` collections) baked
-/// at the sizes asked of it so far, sorted ascending by size.
-pub struct FontLadder<'ttf> {
-    ttf: &'ttf Sdl2TtfContext,
+/// One cut of a face — a file, a face index inside it for `.ttc` collections,
+/// and the weight and slant its designer drew it at.
+#[derive(Clone, Debug, PartialEq)]
+struct CutSpec {
     path: String,
     index: u32,
+    weight: u16,
+    italic: bool,
+}
+
+/// One cut baked at the sizes asked of it so far, sorted ascending by size.
+struct Cut<'ttf> {
+    spec: CutSpec,
+    /// The style the face itself declares (a bold cut is flagged bold).
+    /// SDL_ttf's `get_style` reports it on top of whatever was set, so it is
+    /// part of what a correctly styled rung reads back.
+    native: FontStyle,
     rungs: Vec<(u16, Font<'ttf, 'static>)>,
+}
+
+/// One face — every cut of it this host found (regular, bold, italic, light,
+/// ...) — each baked at the sizes asked of it so far. Cut 0 is the regular
+/// one: it is the one preloaded, and the one synthetic styles fall back to.
+pub struct FontLadder<'ttf> {
+    ttf: &'ttf Sdl2TtfContext,
+    cuts: Vec<Cut<'ttf>>,
 }
 
 impl<'ttf> FontLadder<'ttf> {
@@ -88,54 +110,95 @@ impl<'ttf> FontLadder<'ttf> {
         Self::load_from(ttf, SANS_PATHS, sizes)
     }
 
-    /// Load the ladder from the first path in `paths` that loads.
+    /// Load the ladder from the first path in `paths` that loads, with every
+    /// cut of its family that the file (or collection) holds.
     fn load_from(ttf: &'ttf Sdl2TtfContext, paths: &[&str], sizes: &[u16]) -> Result<Self, String> {
         let path = resolve_font_path(ttf, paths)
             .ok_or_else(|| "No system font found. Install a TTF font.".to_string())?;
-        Self::load_face(ttf, &path, 0, sizes)
+        let mut cuts = file_cuts(&path);
+        if cuts.is_empty() {
+            cuts.push(CutSpec {
+                path: path.clone(),
+                index: 0,
+                weight: petal_ui::draw::REGULAR_WEIGHT,
+                italic: false,
+            });
+        }
+        Self::load_cuts(ttf, cuts, sizes)
     }
 
-    /// Load face `index` of the font file at `path`, preloading `sizes` and
-    /// [`MEASURE_SIZE`]. Errs if the measuring rung will not load.
+    /// Load face `index` of the font file at `path` as a single-cut ladder,
+    /// preloading `sizes` and [`MEASURE_SIZE`]. Every weight and slant is
+    /// synthesized from it. Errs if the measuring rung will not load.
     pub fn load_face(
         ttf: &'ttf Sdl2TtfContext,
         path: &str,
         index: u32,
         sizes: &[u16],
     ) -> Result<Self, String> {
-        let mut ladder = FontLadder {
-            ttf,
+        let cut = CutSpec {
             path: path.to_string(),
             index,
-            rungs: Vec::new(),
+            weight: petal_ui::draw::REGULAR_WEIGHT,
+            italic: false,
         };
-        if ladder.bake(MEASURE_SIZE).is_none() {
+        Self::load_cuts(ttf, vec![cut], sizes)
+    }
+
+    /// A ladder over `cuts`, the first of them the regular cut: that one is
+    /// preloaded at `sizes` and [`MEASURE_SIZE`] (and errs if the measuring
+    /// rung will not load); the rest are baked the first time a weight or
+    /// slant picks them.
+    fn load_cuts(
+        ttf: &'ttf Sdl2TtfContext,
+        cuts: Vec<CutSpec>,
+        sizes: &[u16],
+    ) -> Result<Self, String> {
+        let mut ladder = FontLadder {
+            ttf,
+            cuts: cuts
+                .into_iter()
+                .map(|spec| Cut {
+                    spec,
+                    native: FontStyle::NORMAL,
+                    rungs: Vec::new(),
+                })
+                .collect(),
+        };
+        if ladder.cuts.is_empty() || ladder.bake(0, MEASURE_SIZE).is_none() {
+            let path = ladder.cuts.first().map_or("", |c| c.spec.path.as_str());
             return Err(format!("Could not load a font from {path}."));
         }
         for &size in sizes {
-            ladder.bake(size);
+            ladder.bake(0, size);
         }
         Ok(ladder)
     }
 
-    /// The sizes baked so far, ascending.
-    pub fn sizes(&self) -> Vec<u16> {
-        self.rungs.iter().map(|(size, _)| *size).collect()
+    /// The file the regular cut is drawn from.
+    pub fn path(&self) -> &str {
+        &self.cuts[0].spec.path
     }
 
-    /// The rung baked at `size`, loading it now if this is the first time the
-    /// size is asked for. `None` when the size is out of range, the ladder is
-    /// full, or the file refuses to load at that size.
-    fn bake(&mut self, size: u16) -> Option<usize> {
-        match self.rungs.binary_search_by_key(&size, |(rung, _)| *rung) {
+    /// The sizes of the regular cut baked so far, ascending.
+    pub fn sizes(&self) -> Vec<u16> {
+        self.cuts[0].rungs.iter().map(|(size, _)| *size).collect()
+    }
+
+    /// The rung of cut `cut` baked at `size`, loading it now if this is the
+    /// first time the size is asked for. `None` when the size is out of
+    /// range, the cut is full, or the file refuses to load at that size.
+    fn bake(&mut self, cut: usize, size: u16) -> Option<usize> {
+        let ttf = self.ttf;
+        let cut = &mut self.cuts[cut];
+        match cut.rungs.binary_search_by_key(&size, |(rung, _)| *rung) {
             Ok(at) => Some(at),
             Err(at) => {
-                if size == 0 || size > MAX_RUNG_SIZE || self.rungs.len() >= MAX_RUNGS {
+                if size == 0 || size > MAX_RUNG_SIZE || cut.rungs.len() >= MAX_RUNGS {
                     return None;
                 }
-                let mut font = self
-                    .ttf
-                    .load_font_at_index(&self.path, self.index, size)
+                let mut font = ttf
+                    .load_font_at_index(&cut.spec.path, cut.spec.index, size)
                     .ok()?;
                 // Light hinting snaps outlines vertically only, which lets
                 // SDL_ttf lay a run out at subpixel advances. Those scale
@@ -149,42 +212,69 @@ impl<'ttf> FontLadder<'ttf> {
                 // drew "AVAVA" in Helvetica ~10% narrower than it measured;
                 // unkerned, the pixels are exactly what the table predicts.
                 font.set_kerning(false);
-                self.rungs.insert(at, (size, font));
+                // Fresh, the font has no style set: what it reports is the
+                // face's own.
+                cut.native = font.get_style();
+                cut.rungs.insert(at, (size, font));
                 Some(at)
             }
         }
     }
 
-    /// The rung for `size`: baked at exactly that size when it can be, else the
-    /// nearest one loaded.
-    fn index_for(&mut self, size: u16) -> usize {
-        self.bake(size).unwrap_or_else(|| self.index_nearest(size))
+    /// The rung of `cut` for `size`: baked at exactly that size when it can
+    /// be, else the nearest one loaded.
+    fn index_for(&mut self, cut: usize, size: u16) -> usize {
+        self.bake(cut, size)
+            .unwrap_or_else(|| self.index_nearest(cut, size))
     }
 
-    /// The font baked at `size` (see [`index_for`](Self::index_for)), with
-    /// SDL_ttf's synthetic bold/italic applied for this weight and slant. Takes
+    /// The cut that draws `weight` and `italic`, and the synthetic style still
+    /// needed on top of it (see [`pick_cut`]). A cut whose file will not load
+    /// is dropped on the way, so it is tried once, not every frame.
+    fn cut_for(&mut self, weight: u16, italic: bool) -> (usize, FontStyle) {
+        loop {
+            let specs: Vec<&CutSpec> = self.cuts.iter().map(|c| &c.spec).collect();
+            let (cut, style) = pick_cut(&specs, weight, italic);
+            if cut == 0 || self.bake(cut, MEASURE_SIZE).is_some() {
+                return (cut, style);
+            }
+            self.cuts.remove(cut);
+        }
+    }
+
+    /// The font baked at `size` (see [`index_for`](Self::index_for)) in the
+    /// cut nearest this weight and slant, with SDL_ttf's synthetic bold or
+    /// italic applied for whatever that cut doesn't draw itself. Takes
     /// `&mut self` because a size may be baked on the way, and because the
     /// style is *font* state, not a per-call argument: the rung is restyled on
     /// the way out and stays that way until the next caller sets it, which is
     /// why every text command goes through here.
     pub fn sized_styled(&mut self, size: u16, weight: u16, italic: bool) -> &Font<'ttf, 'static> {
-        let style = synthetic_style(weight, italic);
-        let index = self.index_for(size);
-        let font = &mut self.rungs[index].1;
-        if font.get_style() != style {
+        self.styled_rung(size, weight, italic)
+    }
+
+    /// [`sized_styled`](Self::sized_styled), mutable — what the measuring
+    /// methods need, so they measure exactly the font a draw would use.
+    fn styled_rung(&mut self, size: u16, weight: u16, italic: bool) -> &mut Font<'ttf, 'static> {
+        let (cut, style) = self.cut_for(weight, italic);
+        let index = self.index_for(cut, size);
+        let cut = &mut self.cuts[cut];
+        let font = &mut cut.rungs[index].1;
+        if font.get_style() != style | cut.native {
             font.set_style(style);
         }
         font
     }
 
-    /// The loaded rung closest to `size`. On a tie the smaller rung wins
-    /// (rungs are sorted ascending, so the first minimum is kept).
-    fn index_nearest(&self, size: u16) -> usize {
-        self.rungs
+    /// The loaded rung of `cut` closest to `size`. On a tie the smaller rung
+    /// wins (rungs are sorted ascending, so the first minimum is kept).
+    fn index_nearest(&self, cut: usize, size: u16) -> usize {
+        self.cuts[cut]
+            .rungs
             .iter()
             .enumerate()
             .min_by_key(|(_, (rung, _))| (*rung as i32 - size as i32).abs())
-            .expect("FontLadder is never empty")
+            .expect("a cut in use always has its measuring rung")
             .0
     }
 
@@ -214,30 +304,30 @@ impl<'ttf> FontLadder<'ttf> {
         self.vertical_ratios_styled(petal_ui::draw::REGULAR_WEIGHT, false)
     }
 
-    /// [`vertical_ratios`](Self::vertical_ratios) for one synthetic variant.
-    /// Emboldening does not move the baseline, but it does change the extents
-    /// slightly, and italic shears them — measuring the variant keeps a bold
-    /// label centred on the same line as its regular neighbour.
+    /// [`vertical_ratios`](Self::vertical_ratios) for one weight and slant,
+    /// measured from the cut that draws it. A bold cut's extents differ
+    /// slightly from the regular's, and italic shears them — measuring the
+    /// variant keeps a bold label centred on the same line as its regular
+    /// neighbour.
     pub fn vertical_ratios_styled(
         &mut self,
         weight: u16,
         italic: bool,
     ) -> petal_ui::draw::VerticalMetrics {
-        let font = self.sized_styled(MEASURE_SIZE, weight, italic);
+        let font = self.styled_rung(MEASURE_SIZE, weight, italic);
         measure_vertical(font, MEASURE_SIZE)
     }
 
-    /// [`ascii_advance_ratios`](Self::ascii_advance_ratios) for one synthetic
-    /// variant. Emboldening widens glyphs, so bold text measured with the
-    /// regular table would come out short — this is the table a script's
+    /// [`ascii_advance_ratios`](Self::ascii_advance_ratios) for one weight and
+    /// slant, measured from the cut (and synthetic style) that draws it. Bold
+    /// glyphs are wider, so bold text measured with the regular table would
+    /// come out short — this is the table a script's
     /// `text_width(s, {weight: 700, ...})` needs to agree with the pixels.
     ///
     /// The rung is restyled to measure and left that way (the next draw sets
     /// what it needs), which is why this takes `&mut self`.
     pub fn ascii_advance_ratios_styled(&mut self, weight: u16, italic: bool) -> Vec<f64> {
-        let index = self.index_for(MEASURE_SIZE);
-        let font = &mut self.rungs[index].1;
-        font.set_style(synthetic_style(weight, italic));
+        let font = self.styled_rung(MEASURE_SIZE, weight, italic);
         measure_ascii(font, MEASURE_SIZE)
     }
 
@@ -245,25 +335,43 @@ impl<'ttf> FontLadder<'ttf> {
     /// face has no glyph for it. What `text_width` asks for a non-ASCII
     /// character the advance table doesn't cover.
     pub fn glyph_advance_ratio(&mut self, weight: u16, italic: bool, ch: char) -> Option<f64> {
-        let index = self.index_for(MEASURE_SIZE);
-        let font = &mut self.rungs[index].1;
-        font.set_style(synthetic_style(weight, italic));
+        let font = self.styled_rung(MEASURE_SIZE, weight, italic);
         advance_ratio(font, MEASURE_SIZE, ch)
     }
 }
 
-/// SDL_ttf's synthetic style for a CSS weight and slant. Anything at or above
-/// semibold embolden; lighter-than-regular has no synthetic equivalent, so it
-/// renders regular.
-fn synthetic_style(weight: u16, italic: bool) -> FontStyle {
+/// The cut among `cuts` that draws a CSS `weight` and slant, and the synthetic
+/// style SDL_ttf adds on top for what that cut lacks.
+///
+/// Slant matters most: an italic request takes an italic cut of any weight
+/// before an upright one (whose shear would be synthetic), and an upright
+/// request never takes an italic cut while an upright one exists. Then the
+/// nearest weight wins; on a tie, CSS's rule — lighter for a request at or
+/// under 450, heavier above — so 500 draws regular rather than bold. The
+/// synthetic part is what remains: bold when the request is semibold or
+/// heavier but the cut is not; italic when the cut is upright. Lighter than
+/// the lightest cut has no synthetic equivalent, so it draws that cut.
+fn pick_cut(cuts: &[&CutSpec], weight: u16, italic: bool) -> (usize, FontStyle) {
+    let heavier_wins = weight > 450;
+    let at = cuts
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, cut)| {
+            let distance = (cut.weight as i32 - weight as i32).unsigned_abs();
+            let tie = (cut.weight > weight) != heavier_wins;
+            (cut.italic != italic, distance, tie)
+        })
+        .map_or(0, |(at, _)| at);
     let mut style = FontStyle::NORMAL;
-    if weight >= 600 {
-        style |= FontStyle::BOLD;
+    if let Some(cut) = cuts.get(at) {
+        if weight >= 600 && cut.weight < 600 {
+            style |= FontStyle::BOLD;
+        }
+        if italic && !cut.italic {
+            style |= FontStyle::ITALIC;
+        }
     }
-    if italic {
-        style |= FontStyle::ITALIC;
-    }
-    style
+    (at, style)
 }
 
 /// Per-codepoint advance ratios for ASCII 0–127 of `font`, baked at `size`.
@@ -416,7 +524,7 @@ impl<'ttf> FontBook<'ttf> {
         }
         let ttf = self.ttf;
         let loaded = self.system_families().lookup(&key).and_then(|entry| {
-            FontLadder::load_face(ttf, &entry.path, entry.index, &[])
+            FontLadder::load_cuts(ttf, entry.cuts.clone(), &[])
                 .ok()
                 .map(|ladder| (entry.family.clone(), ladder))
         });
@@ -487,17 +595,19 @@ impl<'ttf> FontBook<'ttf> {
     }
 }
 
-/// Where one installed family's regular face lives.
+/// Where one installed family's cuts live.
 #[derive(Clone, Debug)]
 struct FamilyEntry {
     /// The family as its font file names it — the canonical spelling.
     family: String,
-    path: String,
-    index: u32,
+    /// The face closest to upright regular first, then the family's other
+    /// cuts at its width (see [`family_cuts`]).
+    cuts: Vec<CutSpec>,
 }
 
-/// The installed font families, by lower-cased family and PostScript name,
-/// each pointing at the face closest to upright regular.
+/// The installed font families, by lower-cased family and PostScript name.
+/// A family name reaches all of the family's cuts; a PostScript name reaches
+/// just its own face (every variant synthesized from it).
 #[derive(Default)]
 struct SystemFamilies {
     by_name: HashMap<String, FamilyEntry>,
@@ -511,55 +621,41 @@ impl SystemFamilies {
     fn scan() -> Self {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
-        let faces = db.faces().filter_map(|face| {
-            let path = match &face.source {
-                fontdb::Source::File(path) => path,
-                fontdb::Source::SharedFile(path, _) => path,
-                fontdb::Source::Binary(_) => return None,
-            };
-            let family = face.families.first()?.0.clone();
-            Some(ScannedFace {
-                family,
-                post_script_name: face.post_script_name.clone(),
-                path: path.to_string_lossy().into_owned(),
-                index: face.index,
-                regularity: regularity(face.style, face.weight.0, face.stretch),
-            })
-        });
-        Self::from_faces(faces)
+        Self::from_faces(db.faces().filter_map(ScannedFace::from_info))
     }
 
-    /// Index scanned faces, keeping per family the one closest to regular.
+    /// Index scanned faces: each family by all its cuts, each PostScript name
+    /// by its own face.
     fn from_faces(faces: impl IntoIterator<Item = ScannedFace>) -> Self {
-        let mut best: HashMap<String, ScannedFace> = HashMap::new();
+        let mut families: HashMap<String, Vec<ScannedFace>> = HashMap::new();
         let mut post_script: HashMap<String, ScannedFace> = HashMap::new();
         for face in faces {
-            let key = face.family.to_lowercase();
-            if best
-                .get(&key)
-                .is_none_or(|kept| face.regularity < kept.regularity)
-            {
-                best.insert(key, face.clone());
-            }
             if !face.post_script_name.is_empty() {
-                post_script.insert(face.post_script_name.to_lowercase(), face);
+                post_script.insert(face.post_script_name.to_lowercase(), face.clone());
             }
+            families
+                .entry(face.family.to_lowercase())
+                .or_default()
+                .push(face);
         }
-        let mut names: Vec<String> = best.values().map(|f| f.family.clone()).collect();
+        let mut names: Vec<String> = families.values().map(|f| f[0].family.clone()).collect();
         names.sort_unstable_by_key(|n| n.to_lowercase());
         names.dedup();
-        let entry = |f: &ScannedFace| FamilyEntry {
-            family: f.family.clone(),
-            path: f.path.clone(),
-            index: f.index,
-        };
         let mut by_name: HashMap<String, FamilyEntry> = post_script
             .iter()
-            .map(|(k, f)| (k.clone(), entry(f)))
+            .map(|(k, f)| {
+                let entry = FamilyEntry {
+                    family: f.family.clone(),
+                    cuts: vec![f.cut_spec(petal_ui::draw::REGULAR_WEIGHT, false)],
+                };
+                (k.clone(), entry)
+            })
             .collect();
         // A family name wins over a PostScript name that happens to match it.
-        for (k, f) in &best {
-            by_name.insert(k.clone(), entry(f));
+        for (k, faces) in &families {
+            let cuts = family_cuts(faces);
+            let family = faces[0].family.clone();
+            by_name.insert(k.clone(), FamilyEntry { family, cuts });
         }
         SystemFamilies { by_name, names }
     }
@@ -576,21 +672,94 @@ struct ScannedFace {
     post_script_name: String,
     path: String,
     index: u32,
-    /// Distance from upright regular normal-width; lower is closer.
-    regularity: u32,
+    weight: u16,
+    /// Italic or oblique.
+    italic: bool,
+    stretch: fontdb::Stretch,
 }
 
-/// How far a face is from the upright, regular, normal-width cut a family is
-/// drawn in when a script names it (bold and italic are synthesized from it).
-fn regularity(style: fontdb::Style, weight: u16, stretch: fontdb::Stretch) -> u32 {
-    let slant = match style {
-        fontdb::Style::Normal => 0,
-        _ => 10_000,
+impl ScannedFace {
+    /// The face fontdb found, or `None` for one not backed by a file.
+    fn from_info(face: &fontdb::FaceInfo) -> Option<Self> {
+        let path = match &face.source {
+            fontdb::Source::File(path) => path,
+            fontdb::Source::SharedFile(path, _) => path,
+            fontdb::Source::Binary(_) => return None,
+        };
+        Some(ScannedFace {
+            family: face.families.first()?.0.clone(),
+            post_script_name: face.post_script_name.clone(),
+            path: path.to_string_lossy().into_owned(),
+            index: face.index,
+            weight: face.weight.0,
+            italic: face.style != fontdb::Style::Normal,
+            stretch: face.stretch,
+        })
+    }
+
+    /// Distance from upright regular normal-width; lower is closer.
+    fn regularity(&self) -> u32 {
+        let slant = if self.italic { 10_000 } else { 0 };
+        let width = (self.stretch.to_number() as i32
+            - fontdb::Stretch::Normal.to_number() as i32)
+            .unsigned_abs()
+            * 1_000;
+        slant + width + (self.weight as i32 - 400).unsigned_abs()
+    }
+
+    /// This face as a cut drawing `weight` and `italic`.
+    fn cut_spec(&self, weight: u16, italic: bool) -> CutSpec {
+        CutSpec {
+            path: self.path.clone(),
+            index: self.index,
+            weight,
+            italic,
+        }
+    }
+}
+
+/// The cuts a family draws from, out of all its scanned faces: the one
+/// closest to upright regular normal-width first, then every other face of
+/// that same width, one per weight and slant (the most regular file wins a
+/// duplicate). Condensed or expanded faces are left out — a width change is
+/// not what `weight` asks for. Empty only when `faces` is.
+fn family_cuts(faces: &[ScannedFace]) -> Vec<CutSpec> {
+    let Some(regular) = faces.iter().min_by_key(|f| f.regularity()) else {
+        return Vec::new();
     };
-    let width = (stretch.to_number() as i32 - fontdb::Stretch::Normal.to_number() as i32)
-        .unsigned_abs()
-        * 1_000;
-    slant + width + (weight as i32 - 400).unsigned_abs()
+    let mut rest: Vec<&ScannedFace> = faces
+        .iter()
+        .filter(|f| f.stretch == regular.stretch && !std::ptr::eq(*f, regular))
+        .collect();
+    rest.sort_by_key(|f| (f.weight, f.italic, f.path.clone(), f.index));
+    let mut cuts = vec![regular.cut_spec(regular.weight, regular.italic)];
+    for face in rest {
+        if !cuts
+            .iter()
+            .any(|c| c.weight == face.weight && c.italic == face.italic)
+        {
+            cuts.push(face.cut_spec(face.weight, face.italic));
+        }
+    }
+    cuts
+}
+
+/// The cuts of the family the font file at `path` is mostly about — every
+/// face of the file's most regular face's family (see [`family_cuts`]). A
+/// role's file is read this way, so `ui` on macOS draws Helvetica.ttc's own
+/// Bold and Oblique. Empty when fontdb can't read the file.
+fn file_cuts(path: &str) -> Vec<CutSpec> {
+    let mut db = fontdb::Database::new();
+    if db.load_font_file(path).is_err() {
+        return Vec::new();
+    }
+    let faces: Vec<ScannedFace> = db.faces().filter_map(ScannedFace::from_info).collect();
+    let Some(regular) = faces.iter().min_by_key(|f| f.regularity()) else {
+        return Vec::new();
+    };
+    let family = regular.family.clone();
+    let faces: Vec<ScannedFace> = faces.into_iter().filter(|f| f.family == family).collect();
+    family_cuts(&faces)
 }
 
 /// The [`petal_ui::draw::FontSource`] over a shared [`FontBook`], so
@@ -664,16 +833,14 @@ mod tests {
         weight: u16,
         italic: bool,
     ) -> ScannedFace {
-        let style = match italic {
-            true => fontdb::Style::Italic,
-            false => fontdb::Style::Normal,
-        };
         ScannedFace {
             family: family.to_string(),
             post_script_name: ps.to_string(),
             path: path.to_string(),
             index,
-            regularity: regularity(style, weight, fontdb::Stretch::Normal),
+            weight,
+            italic,
+            stretch: fontdb::Stretch::Normal,
         }
     }
 
@@ -695,12 +862,13 @@ mod tests {
         let acme = families
             .lookup("acme sans")
             .expect("family by lower-cased name");
-        assert_eq!((acme.family.as_str(), acme.index), ("Acme Sans", 0));
+        assert_eq!((acme.family.as_str(), acme.cuts[0].index), ("Acme Sans", 0));
         // A PostScript name reaches its own face; the family is still canonical.
         let bold = families
             .lookup("acmesans-bold")
             .expect("by PostScript name");
-        assert_eq!((bold.family.as_str(), bold.index), ("Acme Sans", 1));
+        assert_eq!((bold.family.as_str(), bold.cuts[0].index), ("Acme Sans", 1));
+        assert_eq!(bold.cuts.len(), 1, "a PostScript name is just its face");
         assert_eq!(
             families.names,
             vec!["Acme Sans".to_string(), "Other".to_string()]
@@ -772,9 +940,9 @@ mod tests {
         assert!(book.misses.contains("no such face"));
         // Roles match as written and are never looked up on disk.
         assert_eq!(book.canonical_name("ui").as_deref(), Some("ui"));
-        let default = book.default_face().path.clone();
-        assert_eq!(book.resolve(Some("No Such Face")).path, default);
-        assert_eq!(book.resolve(None).path, default);
+        let default = book.default_face().path().to_string();
+        assert_eq!(book.resolve(Some("No Such Face")).path(), default);
+        assert_eq!(book.resolve(None).path(), default);
     }
 
     /// The real system scan, end to end: some fixed-pitch family that most
@@ -810,5 +978,101 @@ mod tests {
             family_i > default_i,
             "{family}'s 'i' ({family_i:.3}) should be wider than the default's ({default_i:.3})"
         );
+    }
+
+    fn cut(weight: u16, italic: bool) -> CutSpec {
+        CutSpec {
+            path: format!("/f/{weight}{italic}"),
+            index: 0,
+            weight,
+            italic,
+        }
+    }
+
+    #[test]
+    fn a_weight_draws_from_the_nearest_cut_and_synthesizes_the_rest() {
+        let helvetica = [
+            cut(400, false),
+            cut(300, false),
+            cut(700, false),
+            cut(400, true),
+            cut(700, true),
+        ];
+        let cuts: Vec<&CutSpec> = helvetica.iter().collect();
+        let pick = |weight, italic| {
+            let (at, style) = pick_cut(&cuts, weight, italic);
+            (cuts[at].weight, cuts[at].italic, style)
+        };
+        assert_eq!(pick(400, false), (400, false, FontStyle::NORMAL));
+        assert_eq!(pick(700, false), (700, false, FontStyle::NORMAL));
+        assert_eq!(pick(600, false), (700, false, FontStyle::NORMAL));
+        assert_eq!(pick(900, true), (700, true, FontStyle::NORMAL));
+        assert_eq!(pick(300, false), (300, false, FontStyle::NORMAL));
+        assert_eq!(pick(100, false), (300, false, FontStyle::NORMAL));
+        // 500 sits between regular and bold; CSS takes the lighter.
+        assert_eq!(pick(500, false), (400, false, FontStyle::NORMAL));
+        // An italic light has no italic light cut: the regular italic beats
+        // shearing the upright light.
+        assert_eq!(pick(300, true), (400, true, FontStyle::NORMAL));
+
+        // A regular-only file synthesizes everything from it.
+        let single = [cut(400, false)];
+        let cuts: Vec<&CutSpec> = single.iter().collect();
+        assert_eq!(
+            pick_cut(&cuts, 700, true),
+            (0, FontStyle::BOLD | FontStyle::ITALIC)
+        );
+        assert_eq!(pick_cut(&cuts, 500, false), (0, FontStyle::NORMAL));
+        // A bold-only cut never needs synthetic bold on top.
+        let bold_only = [cut(400, false), cut(700, false)];
+        let cuts: Vec<&CutSpec> = bold_only.iter().collect();
+        assert_eq!(pick_cut(&cuts, 700, true), (1, FontStyle::ITALIC));
+    }
+
+    #[test]
+    fn a_family_keeps_every_cut_at_its_width() {
+        let mut condensed = scanned("Acme", "Acme-CondBold", "/f/acme.ttc", 4, 700, false);
+        condensed.stretch = fontdb::Stretch::Condensed;
+        let families = SystemFamilies::from_faces([
+            scanned("Acme", "Acme-Bold", "/f/acme.ttc", 1, 700, false),
+            scanned("Acme", "Acme-Regular", "/f/acme.ttc", 0, 400, false),
+            scanned("Acme", "Acme-Italic", "/f/acme.ttc", 2, 400, true),
+            scanned("Acme", "Acme-Bold2", "/f/acme2.ttf", 0, 700, false),
+            condensed,
+        ]);
+        let acme = families.lookup("acme").expect("family");
+        let cuts: Vec<(u32, u16, bool)> = acme
+            .cuts
+            .iter()
+            .map(|c| (c.index, c.weight, c.italic))
+            .collect();
+        // Regular first; one bold (no duplicate), no condensed cut.
+        assert_eq!(cuts, vec![(0, 400, false), (2, 400, true), (1, 700, false)]);
+    }
+
+    /// The default role on a machine whose sans file is a collection with a
+    /// real bold (macOS's Helvetica.ttc) draws bold from that cut — no
+    /// synthetic emboldening — and measures it from the same cut.
+    #[test]
+    fn the_default_role_draws_bold_from_a_real_cut_when_the_file_has_one() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
+        let ttf = sdl2::ttf::init().unwrap();
+        let Ok(mut book) = FontBook::load_system(&ttf, &[]) else {
+            return;
+        };
+        let face = book.default_face();
+        let (cut, style) = face.cut_for(700, false);
+        if cut == 0 {
+            return; // a regular-only sans file: bold is synthetic here
+        }
+        assert_eq!(style, FontStyle::NORMAL, "a real bold cut needs no synthetic bold");
+        assert!(face.cuts[cut].spec.weight >= 600);
+        // SDL_ttf reports the cut's own bold as its style; nothing is added.
+        assert_eq!(face.sized_styled(17, 700, false).get_style(), FontStyle::BOLD);
+        let regular = face.ascii_advance_ratios();
+        let bold = face.ascii_advance_ratios_styled(700, false);
+        let m = 'm' as usize;
+        assert!(bold[m] > regular[m], "bold 'm' measures wider than regular");
+        assert_eq!(face.sizes(), vec![MEASURE_SIZE], "other cuts don't grow the regular's");
     }
 }

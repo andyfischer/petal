@@ -2499,6 +2499,31 @@ gaps it marked "first":
    from 1,921 to 1,866 (median 25 to 24), and no example got more than one
    run slower.
 
+**Constraints between literals, 2026-10-25 (L3, the cheap part).** Canopy
+#13, #23 and #29 asked for relations between literals (a patrol's end after
+its start, a positive width). A run that raises an error was already not
+taken (`new_err = ∞`), so an `assert` in the data constructor is such a
+constraint today; what was missing was saying so:
+
+1. `SolveCtx::run_at` records every run that raised an error
+   (`solve::FailedRun`). Each alternative carries the ones its solve,
+   rounding and verification made, grouped by error (`api::Rejection`: the
+   message, the position the VM's annotation gives, the `assert`'s condition
+   read from the source, the count, the literals the first one had moved);
+   `DmDiagnostics` has `rejected_runs` and the request-wide groups. The text
+   output prints `rejected: assertion failed at level.ptl:4 (x1 >= x0) · 3
+   runs, first at ...`, and an unverified alternative's description ends in
+   `rejected beyond it: ...`. Probing (FD) runs that fail stay on the
+   candidate (`ColumnQuality::Errored`).
+2. `round_solution` rounds a solve that stopped short too. Each goal gets a
+   slack: τ when the solve verified (as before), else its miss plus τ, so
+   the ladder (int, written decimals, 0..6 decimals, 9) picks the nicest
+   value no worse than one tolerance, verified by a run. The boundary value
+   `3.5546874999999756` prints as `3.55`.
+3. Documented in features/direct-manipulation.md ("Constraints between
+   literals") and the writing guide. Parameter-level `tunable` (L3b) and
+   linear constraints in the solver (L3c) are not done.
+
 ---
 
 ## 10. Review notes

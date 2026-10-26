@@ -212,6 +212,50 @@ can say which numbers a drag may change, and let Petal work out the values:
   them.
 - **deny** a set: everything else may move.
 
+### Constraints between literals: `assert`
+
+Some numbers only make sense together: a patrol ends after it starts, a
+width is positive, a gap fits inside its wall. Say so with an `assert` where
+the numbers meet, usually the function that builds the data:
+
+```petal
+import io
+
+fn patrol(x0, x1)
+  assert(x1 >= x0, "a patrol ends after it starts")
+  return {from: x0, to: x1}
+end
+
+let beetle = patrol(3.5, 5.5)
+push_output(symbol("enemies"), beetle.to)
+```
+
+Every measuring run executes the assert. A run that fails it is not taken:
+Petal shortens the step and tries again, so it never proposes an inverted
+patrol. Dragging the end to 2.5 stops at the start instead, and the answer
+says what held it back:
+
+```
+$ petal propose-edit --channel enemies --emit 0 --value --to 2.5 --tol 0.01 level.ptl
+engine v2 · seed 0 · 14 runs · converged within budget
+goal: enemies[0] value (push_output, line 9): 5.5 -> 2.5
+1 alternative:
+  1. [unverified] change `5.5` to 3.55 (line 8); moves nothing else; misses the goal by 1.050; rejected beyond it: assertion failed at level.ptl:4 (x1 >= x0): a patrol ends after it starts
+       line 8 patrol(x1:): 5.5 -> 3.55
+       reaches 3.55 · off by 1.05 · score 210.6855
+       rejected: assertion failed at level.ptl:4 (x1 >= x0): a patrol ends after it starts · 3 runs, first at `5.5` -> 2.5 (line 8)
+```
+
+An answer that stops short is still rounded to a clean number (`3.55`, not
+`3.5546874999999756`), as long as that moves it no further from the goal than
+the tolerance. To reach 2.5, move the start too, with two goals or an
+`--allow` naming both numbers.
+
+The assert runs in the program as well, so it also catches a hand edit that
+breaks the rule. Keep it cheap: it runs on every frame. Any other error a
+run raises (a missing field, a division by zero) rejects the step the same
+way, and is reported the same way.
+
 ## How it stays safe
 
 To measure, Petal runs the program many times: usually a few dozen runs,
@@ -245,6 +289,10 @@ The live program is never touched. Every run starts from a copy.
   close as it can and marks the alternative unverified, with how far off
   it is.
 - Integer literals stay integers unless you allow them to become decimals.
+- A rule between two numbers (`x1 >= x0`) is stated with an `assert`, not
+  with a mark on the numbers: Petal respects it by rejecting the runs that
+  break it. There is no range on a function parameter yet (`tunable` marks
+  one literal).
 - On the command line, the program is measured on its first run. In an
   editor, it's measured on the frame you grabbed the shape in.
 

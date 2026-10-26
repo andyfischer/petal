@@ -845,6 +845,12 @@ range, or a preference for a number that is not a setting, is `tunable`.
 Wrap a setting's value in `tunable(v, min, max, step)` to give it a range
 hosts and drags both see ([Giving a setting a range](syntax/config-let.md#giving-a-setting-a-range)).
 
+**State a rule between numbers with `assert`.** A drag never proposes an edit
+that makes the program fail, so `assert(x1 >= x0)` in the function that
+builds a patrol keeps direct manipulation from inverting it, and the report
+names the assert that held it back
+([Constraints between literals](features/direct-manipulation.md#constraints-between-literals-assert)).
+
 **Split files with `import`; declarations are private until marked `pub`.**
 
 ```petal ignore

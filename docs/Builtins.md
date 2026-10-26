@@ -1750,6 +1750,10 @@ assert(x > 0, "x must be positive")
 assert(len(items) == 3)
 ```
 
+Direct manipulation treats a failing assert as a constraint: a proposed
+edit that would fail it is rejected, and the report says which assert did it
+([Constraints between literals](features/direct-manipulation.md#constraints-between-literals-assert)).
+
 ### `assert_eq(actual, expected)`
 
 Fails with `assertion failed: assert_eq: left=<actual> right=<expected>` when

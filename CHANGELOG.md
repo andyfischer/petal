@@ -12,6 +12,11 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- Docs: `assert` is how a program states a constraint between literals for
+  direct manipulation (`assert(x1 >= x0)` keeps a drag from inverting a
+  patrol), with an example
+  ([Constraints between literals](docs/features/direct-manipulation.md#constraints-between-literals-assert)).
+
 - `petal propose-edit` says why a step was rejected: a speculative run that
   raises an error (a failing `assert`, usually) is not taken, and the
   alternative now lists it, `rejected: assertion failed at level.ptl:41

@@ -164,3 +164,42 @@ fn focused_reach_follows_fields_and_elements() {
     let row = focus_of(&mut env, Observable::EmitValue { key: k[2], path: vec![field("x")] });
     assert_eq!(row, vec![(0.5, true), (1.25, true), (2.25, true), (7.5, false), (8.5, false), (9.5, false)]);
 }
+
+/// S6 (#38–#40): three coins on an arc lift together when the arc's `lift`
+/// changes (0.5 → 0.8). A fourth goal that only pins a platform (`--by 0`)
+/// must not hide that answer: tuple sizes and the single literals count only
+/// the goals that move, so the pin does not push the request onto the
+/// least-squares spread.
+#[test]
+fn a_pin_keeps_the_single_literal_answer() {
+    let src = "import io\nlet JUMP_V = 12.0\nlet GRAV = 3.0\nlet lift = 0.5\nlet plat_y = 300\n\
+               fn coin_y(i)\n  plat_y - 20 - lift * (JUMP_V * i - GRAV * i * i)\nend\n\
+               push_output(symbol(\"solid\"), {x: 0, y: plat_y})\n\
+               push_output(symbol(\"solid\"), {x: 200, y: plat_y + 40})\n\
+               for i in range(0, 7) do\n  push_output(symbol(\"coin\"), {x: 40 + i * 30, y: coin_y(i)})\nend\n";
+    for pinned in [false, true] {
+        let (mut env, sid) = load(src);
+        let k = keys(&mut env, sid);
+        let y = |e: usize| Observable::EmitValue { key: k[e], path: vec![field("y")] };
+        // coin[1..=3] are emits 3..=5; arc heights 9, 12, 9.
+        let mut goals = vec![
+            DmGoal::to(y(3), 275.5 - 2.7),
+            DmGoal::to(y(4), 274.0 - 3.6),
+            DmGoal::to(y(5), 275.5 - 2.7),
+        ];
+        let mut holds = vec![false; 3];
+        if pinned {
+            goals.push(DmGoal::to(y(0), 300.0));
+            holds.push(true);
+        }
+        let mut req = DmRequest::new(goals);
+        req.holds = holds;
+        let r = propose(&mut env, sid, &req);
+        let top = r.alternatives.first().unwrap_or_else(|| panic!("an alternative (pinned {pinned}): {:?}", r.diagnostics));
+        assert!(top.verified, "pinned {pinned}: {top:?}");
+        assert_eq!(top.changes.len(), 1, "pinned {pinned}: {}", top.description);
+        assert_eq!(top.changes[0].binding.as_deref(), Some("lift"), "pinned {pinned}: {}", top.description);
+        assert!((top.changes[0].new - 0.8).abs() < 1e-9, "pinned {pinned}: {}", top.description);
+        assert!(r.diagnostics.runs <= 80, "pinned {pinned}: {} runs", r.diagnostics.runs);
+    }
+}

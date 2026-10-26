@@ -1580,7 +1580,10 @@ GOALS
               non-number is answered by v1.
 
        --by <delta>
-              (v2) The goal is the baseline value plus <delta>.
+              (v2) The goal is the baseline value plus <delta>. --by 0 pins
+              the value: the edit must keep it, and the pin does not count
+              toward how many literals an answer may need (three goals and a
+              pin still get the one-literal answers three goals get).
 
        --at-most <v>, --at-least <v>, --within <lo>..<hi>
               (v2) A range goal: anywhere up to <v>, from <v> up, or from

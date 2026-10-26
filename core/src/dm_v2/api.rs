@@ -1188,10 +1188,20 @@ impl DmSession {
     }
 
     /// The goal rows that ask for something at the baseline
-    /// ([`GoalRow::active`]); every row when none does.
+    /// ([`GoalRow::active`]), less the equalities that hold (§9, Canopy S6):
+    /// a goal the request says holds (`--by 0`, a pin), or one already within
+    /// its tolerance of its target, asks the step to stay but needs no
+    /// literal of its own. Every row when none asks.
     fn active_rows(&self, goals: &[GoalRow]) -> Vec<usize> {
         let gr = self.jac.goal_rows;
-        let a: Vec<usize> = (0..gr).filter(|&g| goals[g].active(self.base_rows[g])).collect();
+        let a: Vec<usize> = (0..gr)
+            .filter(|&g| goals[g].active(self.base_rows[g]))
+            .filter(|&g| {
+                let pinned = self.req.holds.get(g).copied().unwrap_or(false);
+                let held = goals[g].range.is_none() && self.base_rows[g].is_some_and(|b| goals[g].holds(b));
+                !(pinned || held)
+            })
+            .collect();
         if a.is_empty() { (0..gr).collect() } else { a }
     }
 

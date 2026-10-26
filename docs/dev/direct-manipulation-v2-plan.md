@@ -2567,6 +2567,26 @@ goals are now real goals, not CLI sugar for a midpoint and a tolerance:
   Equality-only requests take the same path as before (every row active, one
   `linear_step`), so the ladder is unchanged.
 
+**Canopy S6: a pin keeps the lean answers, 2026-10-25.** Three coin goals
+(#38, #39) got the single-literal arc lift (`lift` 0.5 → 0.8); one more goal
+that only pins a platform (`solid[0].y --by 0`, #40) took it away and left a
+least-squares mix of four literals. `rank::candidate_subsets` built tuples
+only for 1 to 3 goal rows and single literals only for 2 to 3, and the pin
+made 4. It now takes the goals that ask for a change: the active rows of
+C6 (`DmSession::active_rows`) less the equalities that hold (a
+`DmRequest::holds` pin, or a target within tolerance of the baseline).
+Tuple size, the rank check and the strength order use those rows only, and
+the single literals (`SINGLES_FOR_SEVERAL_GOALS`, 4) are tried at any count
+of two or more goals. The pins stay goal rows of every solve (the step
+holds them), so a literal that moves a pinned shape fails verification. The
+count penalty's free edits and the spread pruning count the same rows.
+The config-only set and the full spread still take every column that moves
+any goal, pins included. Test `dm_v2_canopy::a_pin_keeps_the_single_literal_answer`.
+On the #40 shape (a scratch program) the pinned request costs 49 runs (30
+before, with the wrong answer); the unpinned one is unchanged at 46. The
+ladder's outcomes and top edits are unchanged (91 succeed, 14 xfail); total
+runs went from 2,206 to 2,197 (measured before C6 landed).
+
 ---
 
 ## 10. Review notes

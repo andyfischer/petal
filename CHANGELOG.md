@@ -122,6 +122,11 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   the arm's entry value instead of the nested branch's, so `petal
   propose-edit` failed with "nothing can move the goals" and `petal explain`
   / `petal graph --slice` stopped short of the nested assignment.
+- Direct manipulation v2: adding a pin (`--by 0`) to a request no longer
+  hides the single-literal or tuple answers it had. With three goals that one
+  literal could do, a fourth goal pinning a platform left only a
+  least-squares mix of several literals; tuple sizes now count only the goals
+  that move, and single literals are tried at any number of goals.
 - Direct manipulation v2: collateral now reads numbers inside containers (a
   list of records, a record inside a record), so an edit that also moves,
   say, a row of icons emitted as a list is no longer reported as "moves

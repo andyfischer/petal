@@ -1982,7 +1982,9 @@ the goals; `focus` is the same along only the parts of values the goals read
 (the field, the list element), or `null` when only other parts depend on the
 literal. Focused literals are screened and measured first. A `--by 0` goal
 holds its value: what moves only held goals is screened after what moves the
-others.
+others, and held goals do not count toward the size of the subsets tried
+(three goals and a pin still get the single literals and three-literal
+tuples that three goals get; the pin is checked by verification).
 
 `max_error` is in units of each goal's tolerance (at most 1 means the goal
 is met; a range goal counts 0 inside and `1 + distance / tolerance`

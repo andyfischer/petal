@@ -9,7 +9,8 @@
 //!   costlier.
 //! - [`candidate_subsets`]: the subsets of §2.5.3: each single parameter (one
 //!   goal) or tuple (several goals) among the strongest columns that can
-//!   reach the goals, the config-only subset, the client's set, and
+//!   reach the goals that move (pins do not count), a few single literals
+//!   with several goals, the config-only subset, the client's set, and
 //!   everything.
 //! - [`collateral_norm`] and [`score`]: §2.5.4. What else moved is measured
 //!   from the verification run, not guessed from the program's shape.
@@ -247,7 +248,7 @@ pub struct Subset {
 pub const TOP_COLUMNS: usize = 12;
 
 /// How many of the strongest columns are also tried alone when there are
-/// several goals.
+/// several goals (at any goal count, pins included).
 pub const SINGLES_FOR_SEVERAL_GOALS: usize = 4;
 
 /// How many of the strongest config columns config-only tuples are drawn
@@ -289,10 +290,16 @@ pub fn strength(jac: &Jacobian, c: usize, scale: f64, weight: f64) -> f64 {
 /// The candidate subsets of §2.5.3 over the usable columns of `jac`.
 /// `scales[c]` is `max(|p|, 1)` of column `c`'s literal, `config[c]` says it
 /// is a config or tunable parameter; `client` says the request named the
-/// parameters (every usable column is then the client's set). `active` are
-/// the goal rows that ask for something (every equality, and each range
-/// goal that does not hold at the baseline): tuples have one literal per
-/// active goal, since a range that holds needs none.
+/// parameters (every usable column is then the client's set).
+///
+/// `active` are the goal rows that ask for something: every equality that
+/// does not hold at the baseline, and each range goal that does not hold (a
+/// range that holds needs no literal). A goal that holds (a `--by 0` pin,
+/// or one already at its target) does not ask (§9, Canopy S6). Tuple sizes,
+/// the rank check and the strength order count only the active rows, so
+/// adding a pin to a request keeps the single-literal and tuple answers it
+/// had; the pins stay goal rows of every solve, and the verification run
+/// judges whether a subset kept them. Empty: every goal row.
 pub fn candidate_subsets(
     jac: &Jacobian,
     weights: &[f64],
@@ -302,11 +309,24 @@ pub fn candidate_subsets(
     client: bool,
     active: &[usize],
 ) -> Vec<Subset> {
-    let m = active.len();
+    let rows: Vec<usize> = if active.is_empty() { (0..jac.goal_rows).collect() } else { active.to_vec() };
+    let m = rows.len();
     let cols: Vec<usize> = (0..jac.params.len()).filter(|&c| usable[c]).collect();
-    let strength = |c: usize| -> f64 { strength(jac, c, scales[c], weights[c]) };
-    let mut top: Vec<usize> = cols.iter().copied().filter(|&c| strength(c) > 0.0).collect();
-    top.sort_by(|&a, &b| strength(b).total_cmp(&strength(a)).then(a.cmp(&b)));
+    // How strongly a column moves the moving goals: a literal that only
+    // moves a pin is no candidate for a tuple.
+    let pull = |c: usize| -> f64 {
+        let n: f64 = rows.iter().map(|&r| jac.get(r, c).powi(2)).sum::<f64>().sqrt();
+        n * scales[c] / weights[c]
+    };
+    let full_rank = |sub: &[usize]| -> bool {
+        let jg: Vec<Vec<f64>> = rows.iter().map(|&r| sub.iter().map(|&c| jac.get(r, c)).collect()).collect();
+        rank(&jg) == m
+    };
+    // Whether a column moves any goal, pins included: the config-only set
+    // and the full spread keep what can hold a pin in place.
+    let moves_any = |c: usize| strength(jac, c, scales[c], weights[c]) > 0.0;
+    let mut top: Vec<usize> = cols.iter().copied().filter(|&c| pull(c) > 0.0).collect();
+    top.sort_by(|&a, &b| pull(b).total_cmp(&pull(a)).then(a.cmp(&b)));
     top.truncate(TOP_COLUMNS);
     let mut out: Vec<Subset> = Vec::new();
     let push = |cols: Vec<usize>, kind: SubsetKind, out: &mut Vec<Subset>| {
@@ -317,37 +337,23 @@ pub fn candidate_subsets(
         }
         out.push(Subset { cols, kind });
     };
-    // 1. Tuples of size m (for up to three goals; beyond that the full set).
+    // 1. Tuples of size m (for up to three moving goals; beyond that the
+    // full set).
     if (1..=3).contains(&m) {
-        let mut idx: Vec<usize> = (0..m).collect();
-        let n = top.len();
-        if n >= m {
-            loop {
-                let sub: Vec<usize> = idx.iter().map(|&i| top[i]).collect();
-                let jg: Vec<Vec<f64>> = active.iter().map(|&r| sub.iter().map(|&c| jac.get(r, c)).collect()).collect();
-                if rank(&jg) == m {
-                    push(sub, SubsetKind::Tuple, &mut out);
-                }
-                // Next combination.
-                let mut i = m;
-                while i > 0 && idx[i - 1] == n - m + i - 1 {
-                    i -= 1;
-                }
-                if i == 0 {
-                    break;
-                }
-                idx[i - 1] += 1;
-                for j in i..m {
-                    idx[j] = idx[j - 1] + 1;
-                }
+        for sub in combinations(&top, m) {
+            if full_rank(&sub) {
+                push(sub, SubsetKind::Tuple, &mut out);
             }
         }
     }
-    // 1b. With several goals, single literals too (§9 M5, revision 3): one
-    // literal can move a point along a curve through both targets (an hour
-    // hand's angle), which no linear prediction from the baseline sees, but
-    // the verified solve can.
-    if (2..=3).contains(&m) {
+    // 1b. With several goals, single literals too (§9 M5, revision 3; §9,
+    // Canopy S6): one literal can move a point along a curve through both
+    // targets (an hour hand's angle), which no linear prediction from the
+    // baseline sees, but the verified solve can; and one literal that does
+    // every moving goal while the pins hold is the answer a pin must not
+    // hide.
+    // At any goal count, at most [`SINGLES_FOR_SEVERAL_GOALS`] of them.
+    if jac.goal_rows >= 2 {
         for &c in top.iter().take(SINGLES_FOR_SEVERAL_GOALS) {
             push(vec![c], SubsetKind::Tuple, &mut out);
         }
@@ -355,14 +361,14 @@ pub fn candidate_subsets(
     // 2. Config only: tuples of size m among the strongest config columns
     // (§9 M5, revision 3: a single knob before the spread over all of
     // them), then every config column together.
-    let cfg: Vec<usize> = cols.iter().copied().filter(|&c| config[c] && strength(c) > 0.0).collect();
+    let cfg: Vec<usize> = cols.iter().copied().filter(|&c| config[c] && moves_any(c)).collect();
     if (1..=3).contains(&m) && cfg.len() > m {
         let mut strong = cfg.clone();
-        strong.sort_by(|&a, &b| strength(b).total_cmp(&strength(a)).then(a.cmp(&b)));
+        strong.retain(|&c| pull(c) > 0.0);
+        strong.sort_by(|&a, &b| pull(b).total_cmp(&pull(a)).then(a.cmp(&b)));
         strong.truncate(CONFIG_TUPLE_COLUMNS);
         for sub in combinations(&strong, m) {
-            let jg: Vec<Vec<f64>> = active.iter().map(|&r| sub.iter().map(|&c| jac.get(r, c)).collect()).collect();
-            if rank(&jg) == m {
+            if full_rank(&sub) {
                 push(sub, SubsetKind::ConfigOnly, &mut out);
             }
         }
@@ -371,7 +377,7 @@ pub fn candidate_subsets(
         push(cfg, SubsetKind::ConfigOnly, &mut out);
     }
     // 3 and 4. The client's set, or everything.
-    let all: Vec<usize> = cols.iter().copied().filter(|&c| strength(c) > 0.0).collect();
+    let all: Vec<usize> = cols.iter().copied().filter(|&c| moves_any(c)).collect();
     push(all, if client { SubsetKind::Client } else { SubsetKind::Full }, &mut out);
     out
 }

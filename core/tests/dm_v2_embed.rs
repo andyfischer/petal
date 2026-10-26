@@ -88,11 +88,22 @@ fn a_request_reads_like_the_flags() {
         [&GoalValue::AtMost(3.0), &GoalValue::AtLeast(-2.5), &GoalValue::Within(0.0, 1280.0), &GoalValue::Within(1.0, 2.0)]
     );
 
+    // Channel weights: an object, or the flag's spelling.
+    let o = opts_from_json(&json!({"channel": "coin", "emit": 0, "value": true, "by": 1, "collateral": {"solid": 10}}))
+        .unwrap();
+    assert_eq!(o.collateral, vec![("solid".to_string(), 10.0)]);
+    let o = opts_from_json(&json!({"channel": "coin", "emit": 0, "value": true, "by": 1, "collateral": "solid=10,coin=0.5"}))
+        .unwrap();
+    assert_eq!(o.collateral, vec![("solid".to_string(), 10.0), ("coin".to_string(), 0.5)]);
+
     for bad in [
         json!({"channel": "a", "emit": 0, "native_arg": 0, "at_most": 1, "to": 2}),
         json!({"channel": "a", "emit": 0, "native_arg": 0, "at_most": "1"}),
         json!({"channel": "a", "emit": 0, "native_arg": 0, "within": [3, 1]}),
         json!({"channel": "a", "emit": 0, "native_arg": 0, "within": [1]}),
+        json!({"channel": "a", "emit": 0, "value": true, "to": 1, "collateral": {"solid": "x"}}),
+        json!({"channel": "a", "emit": 0, "value": true, "to": 1, "collateral": {"solid": -1}}),
+        json!({"channel": "a", "emit": 0, "value": true, "to": 1, "collateral": [1]}),
         json!({"channel": "a", "emit": 0, "native_arg": 0, "to": 1, "alow": ["x"]}),
         json!({"channel": "a", "emit": 0, "to": 1}),
         json!({"channel": "a", "emit": 0, "arg": 0, "value": true, "to": 1}),

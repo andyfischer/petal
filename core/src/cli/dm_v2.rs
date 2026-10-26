@@ -129,6 +129,9 @@ pub struct V2Opts {
     /// it echoes the count in the report, whose goals are those of the
     /// frame after.
     pub frames: usize,
+    /// `--collateral CHANNEL=W[,CHANNEL=W...]` (repeatable): how much what
+    /// moves on each channel counts ([`DmRequest::collateral_weights`]).
+    pub collateral: Vec<(String, f64)>,
 }
 
 impl Default for V2Opts {
@@ -150,6 +153,7 @@ impl Default for V2Opts {
             allow_respell: false,
             seed: None,
             frames: 0,
+            collateral: Vec::new(),
         }
     }
 }
@@ -293,6 +297,7 @@ impl V2Parser {
             "--max-screen",
             "--allow-respell",
             "--seed",
+            "--collateral",
         ];
         match flag.as_str() {
             "--json" => self.opts.json = true,
@@ -395,6 +400,14 @@ impl V2Parser {
             }
             "--max-screen" => self.opts.max_screen = Some(index("--max-screen", &value(i)?)?),
             "--allow-respell" => self.opts.allow_respell = true,
+            "--collateral" => {
+                for (channel, w) in parse_collateral(&value(i)?)? {
+                    match self.opts.collateral.iter_mut().find(|(c, _)| *c == channel) {
+                        Some(slot) => slot.1 = w,
+                        None => self.opts.collateral.push((channel, w)),
+                    }
+                }
+            }
             "--seed" => {
                 let v = value(i)?;
                 self.opts.seed = Some(v.parse().map_err(|_| format!("--seed takes an integer, not `{v}`"))?);
@@ -438,6 +451,23 @@ impl V2Parser {
         }
         Ok(self.opts)
     }
+}
+
+/// `--collateral`'s value: `CHANNEL=W[,CHANNEL=W...]`, each weight a
+/// finite number at least 0.
+pub fn parse_collateral(v: &str) -> Result<Vec<(String, f64)>, String> {
+    let bad = || format!("--collateral takes CHANNEL=WEIGHT[,CHANNEL=WEIGHT...] with weights >= 0, not `{v}`");
+    v.split(',')
+        .map(|part| {
+            let (c, w) = part.split_once('=').ok_or_else(bad)?;
+            let c = c.trim();
+            let w: f64 = w.trim().parse().map_err(|_| bad())?;
+            if c.is_empty() || !w.is_finite() || w < 0.0 {
+                return Err(bad());
+            }
+            Ok((c.to_string(), w))
+        })
+        .collect()
 }
 
 /// A failure of [`propose`]: the message and the `--json` error phase.
@@ -521,6 +551,7 @@ pub fn propose(
         req.max_wall = std::time::Duration::from_secs_f64(secs);
     }
     req.allow_respell = opts.allow_respell;
+    req.collateral_weights = opts.collateral.clone();
     req.explain = opts.explain;
     req.spec = spec_cfg;
     req.spec.capture.watch = resolved.iter().filter_map(|r| r.watch).collect();
@@ -569,17 +600,18 @@ const GOAL_KEYS: [&str; 11] =
 /// `emit` it leaves out. The options are `allow` / `deny` (a selector or a
 /// list of them; `pins` is `deny`'s alias), `config_strict`, `alternatives`,
 /// `explain`, `apply`, `pick` (1-based), `tol`, `max_runs`, `max_wall`
-/// (seconds), `max_screen`,
-/// `allow_respell` and `seed`; `json` is accepted and ignored. An unknown key
+/// (seconds), `max_screen`, `allow_respell`, `seed` and `collateral` (an
+/// object of channel weights, `{"solid": 10, "coin": 1}`, or the flag's
+/// `"solid=10,coin=1"`); `json` is accepted and ignored. An unknown key
 /// is an error, so a misspelt option is not silently dropped.
 ///
 /// The request is translated into the flag list and read by [`V2Parser`],
 /// so its rules are the CLI's exactly.
 pub fn opts_from_json(req: &Json) -> Result<V2Opts, String> {
     let obj = req.as_object().ok_or("the request must be a JSON object")?;
-    const OPTION_KEYS: [&str; 16] = [
+    const OPTION_KEYS: [&str; 17] = [
         "goals", "allow", "deny", "pins", "config_strict", "alternatives", "explain", "apply", "pick", "tol",
-        "max_runs", "max_wall", "max_screen", "allow_respell", "seed", "json",
+        "max_runs", "max_wall", "max_screen", "allow_respell", "seed", "json", "collateral",
     ];
     for k in obj.keys() {
         if !GOAL_KEYS.contains(&k.as_str()) && !OPTION_KEYS.contains(&k.as_str()) {
@@ -707,6 +739,19 @@ pub fn opts_from_json(req: &Json) -> Result<V2Opts, String> {
         if let Some(v) = obj.get(key).filter(|v| !v.is_null()) {
             args.extend([flag.to_string(), scalar(key, v)?]);
         }
+    }
+    match obj.get("collateral") {
+        None | Some(Json::Null) => {}
+        Some(Json::Object(m)) => {
+            for (channel, w) in m {
+                let Json::Number(w) = w else {
+                    return Err(format!("`collateral` weights are numbers, not {w} (channel `{channel}`)"));
+                };
+                args.extend(["--collateral".into(), format!("{channel}={w}")]);
+            }
+        }
+        Some(Json::String(v)) => args.extend(["--collateral".into(), v.clone()]),
+        Some(v) => return Err(format!("`collateral` takes an object of channel weights, not {v}")),
     }
     let mut parser = V2Parser::new();
     let mut i = 0;
@@ -1220,6 +1265,7 @@ fn alternative_json(program: &Program, sites: &Sites, rank: usize, a: &Alternati
                 "path": path_json(&c.path),
                 "moved": c.moved,
                 "label": c.label(),
+                "weight": num(c.weight),
             })
         })
         .collect();
@@ -1428,6 +1474,7 @@ fn report(
         "engine": d.engine.map(engine_name).unwrap_or("v2"),
         "seed": seed,
         "frames": opts.frames,
+        "collateral_weights": opts.collateral.iter().map(|(c, w)| (c.clone(), num(*w))).collect::<serde_json::Map<_, _>>(),
         "goals": goals,
         "alternatives": response
             .alternatives
@@ -1517,6 +1564,10 @@ pub fn print_text(r: &Json) {
         diag["runs"],
         if diag["runs"].as_u64() == Some(1) { "" } else { "s" }
     );
+    if let Some(w) = r["collateral_weights"].as_object().filter(|w| !w.is_empty()) {
+        let w: Vec<String> = w.iter().map(|(c, v)| format!("{c}={}", fmt_num(v))).collect();
+        println!("collateral weights: {} (other channels 1)", w.join(", "));
+    }
     for g in &goals {
         let what = match g["kind"].as_str() {
             Some("arg") => format!("arg {}", g["index"]),

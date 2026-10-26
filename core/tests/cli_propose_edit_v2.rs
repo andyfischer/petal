@@ -85,8 +85,12 @@ fn json_shape_is_frozen() {
     let r = helper_json(&["--explain"]);
     assert_eq!(
         keys(&r),
-        set(&["engine", "seed", "frames", "goals", "alternatives", "candidates", "diagnostics", "explain", "applied"])
+        set(&[
+            "engine", "seed", "frames", "collateral_weights", "goals", "alternatives", "candidates", "diagnostics",
+            "explain", "applied",
+        ])
     );
+    assert_eq!(r["collateral_weights"], serde_json::json!({}));
     assert_eq!(r["engine"], "v2");
     assert_eq!(r["seed"], 0);
     assert!(r["applied"].is_null());
@@ -123,8 +127,9 @@ fn json_shape_is_frozen() {
     let item = &a["collateral"]["items"][0];
     assert_eq!(
         keys(item),
-        set(&["channel", "callee", "line", "max_move", "key", "emit", "arg", "path", "moved", "label"])
+        set(&["channel", "callee", "line", "max_move", "key", "emit", "arg", "path", "moved", "label", "weight"])
     );
+    assert_eq!(item["weight"], 1.0);
 
     // The top alternative: the config literal, through the helper.
     assert_eq!(a["rank"], 1);
@@ -758,4 +763,85 @@ push_output(symbol(\"coins\"), {x: 2.0, y: lift})
     let (_, stderr, ok) = run(&["propose-edit", "--v1", "--channel", "coins", "--emit", "0", "--arg", "1", "--at-most", "1", p]);
     assert!(!ok);
     assert!(stderr.contains("--at-most needs the v2 engine"), "{stderr}");
+}
+
+/// A platform (`solid`) and coins: `plat_y` moves the dragged coin and the
+/// platform under it, `coin_h` the dragged coin and the four others.
+const PLATFORM: &str = "\
+import io
+let plat_y = 300
+let coin_h = 20
+push_output(symbol(\"solid\"), {x: 0, y: plat_y})
+push_output(symbol(\"coin\"), {x: 10, y: plat_y - coin_h})
+for i in range(1, 5) do
+  push_output(symbol(\"coin\"), {x: 40 + i * 30, y: 260 - coin_h})
+end
+";
+
+fn platform_json(extra: &[&str]) -> Value {
+    let path = scratch("platform", PLATFORM);
+    let p = path.to_str().unwrap();
+    let mut args = vec!["propose-edit", "--json", "--channel", "coin", "--emit", "0", "--value", "--field", "y", "--by", "-10"];
+    args.extend_from_slice(extra);
+    args.push(p);
+    run_json(&args)
+}
+
+fn top_binding(r: &Value) -> String {
+    let a = &r["alternatives"][0];
+    assert_eq!(a["verified"], true, "{a:#}");
+    assert_eq!(a["changes"].as_array().map(Vec::len), Some(1), "{a:#}");
+    a["changes"][0]["binding"].as_str().unwrap_or("?").to_string()
+}
+
+/// S3 (Canopy #38-#40): `--collateral solid=10` says platforms matter more
+/// than coins. Moving one platform beats moving four coins by default; with
+/// the weight, the coins' literal wins, and the platform's alternative pays
+/// the weight nearly in full (not `ln 10`).
+#[test]
+fn collateral_weights_change_the_top_alternative() {
+    let plain = platform_json(&[]);
+    assert_eq!(top_binding(&plain), "plat_y");
+    assert_eq!(plain["collateral_weights"], serde_json::json!({}));
+
+    let heavy = platform_json(&["--collateral", "solid=10"]);
+    assert_eq!(top_binding(&heavy), "coin_h");
+    assert_eq!(heavy["collateral_weights"], serde_json::json!({"solid": 10.0}));
+    let plat = heavy["alternatives"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["changes"].as_array().map(Vec::len) == Some(1) && a["changes"][0]["binding"] == "plat_y")
+        .expect("plat_y alone is still listed");
+    let solid = &plat["collateral"]["items"][0];
+    assert_eq!((solid["channel"].as_str(), solid["weight"].as_f64()), (Some("solid"), Some(10.0)));
+    let c = plat["score_parts"]["collateral"].as_f64().unwrap();
+    assert!((c - 10.0).abs() < 1e-6, "one platform at weight 10 costs 1 + 9: {c}");
+
+    // A tenfold weight costs tenfold, and a discount on coins also flips it.
+    let heavier = platform_json(&["--collateral", "solid=100"]);
+    let plat = heavier["alternatives"].as_array().unwrap().iter().find(|a| a["changes"][0]["binding"] == "plat_y").unwrap();
+    assert!((plat["score_parts"]["collateral"].as_f64().unwrap() - 100.0).abs() < 1e-6, "{plat:#}");
+    assert_eq!(top_binding(&platform_json(&["--collateral", "coin=0.1"])), "coin_h");
+
+    // Repeated and comma-separated, the last weight of a channel wins; the
+    // text names the weights.
+    let r = platform_json(&["--collateral", "solid=3,coin=1", "--collateral", "solid=10"]);
+    assert_eq!(r["collateral_weights"], serde_json::json!({"solid": 10.0, "coin": 1.0}));
+    let path = scratch("platform-text", PLATFORM);
+    let (stdout, stderr, ok) = run(&[
+        "propose-edit", "--channel", "coin", "--emit", "0", "--value", "--field", "y", "--by", "-10", "--collateral",
+        "solid=10,nope=2", path.to_str().unwrap(),
+    ]);
+    assert!(ok, "{stderr}");
+    assert!(stdout.contains("collateral weights: nope=2, solid=10 (other channels 1)"), "{stdout}");
+    assert!(stdout.contains("collateral weight for channel `nope`: no emit on it"), "{stdout}");
+
+    for bad in ["solid", "solid=-1", "=2", "solid=x", "solid=inf"] {
+        let (_, stderr, ok) = run(&[
+            "propose-edit", "--channel", "coin", "--emit", "0", "--value", "--by", "1", "--collateral", bad,
+            path.to_str().unwrap(),
+        ]);
+        assert!(!ok && stderr.contains("--collateral takes CHANNEL=WEIGHT"), "{bad}: {stderr}");
+    }
 }

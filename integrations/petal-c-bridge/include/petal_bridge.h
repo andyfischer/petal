@@ -1279,7 +1279,9 @@ pb_status pb_vm_take_output(pb_vm* vm, const char* const** out_lines, size_t* ou
  * Several goals (x and y of one drag) go in "goals": [{...}, {...}], each
  * inheriting the top-level "channel" and "emit". The other options are
  * "config_strict", "max_runs", "max_wall" (seconds), "max_screen",
- * "allow_respell" and "seed"; an unknown key is PB_ERR_INVALID_ARG.
+ * "allow_respell", "seed" and "collateral" (channel weights, e.g.
+ * {"solid": 10, "coin": 1}: what moves on a heavy channel costs more); an
+ * unknown key is PB_ERR_INVALID_ARG.
  *
  * The edited frame is the one after the last pb_vm_run: state as that run
  * left it, bindings and input as last bound. Petal re-runs it many times

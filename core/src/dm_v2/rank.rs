@@ -127,6 +127,9 @@ impl ScoreParts {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ScoreFacts {
     pub collateral_norm: f64,
+    /// What the client's channel weights above 1 add, uncompressed
+    /// ([`weighted_collateral`]).
+    pub collateral_excess: f64,
     /// The edits that are free of the count penalty: the goal count. The
     /// final ranking charges again against the fewest edits any verified
     /// alternative needed (§9 M5, revision 2).
@@ -150,7 +153,7 @@ pub fn score(changes: &[ScoredChange], facts: &ScoreFacts, k: &ScoreWeights) -> 
     let moved = changes.iter().filter(|c| c.new != c.old).count();
     ScoreParts {
         edit,
-        collateral: k.kc * compress_collateral(facts.collateral_norm),
+        collateral: k.kc * (compress_collateral(facts.collateral_norm) + facts.collateral_excess.max(0.0)),
         count: k.kn * moved.saturating_sub(facts.goals) as f64,
         respelled: k.kr * facts.respelled as f64,
         regime: if facts.regime_changed { k.kf } else { 0.0 },
@@ -182,12 +185,39 @@ pub fn collateral_shapes<K: Eq + std::hash::Hash + Copy>(
     moves: &[Option<f64>],
     goal_moves: &[f64],
 ) -> f64 {
+    weighted_collateral(keys, moves, goal_moves, &[]).shapes
+}
+
+/// [`collateral_shapes`] under the client's channel weights (§9, Canopy
+/// S3).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct WeightedCollateral {
+    /// `Σ_e min(w_e, 1) · share_e`: the count the score compresses
+    /// ([`compress_collateral`]).
+    pub shapes: f64,
+    /// `Σ_e max(w_e - 1, 0) · share_e`: what weights above 1 add, charged as
+    /// it is. A shape on a channel of weight 10 that moves as far as the drag
+    /// costs 1 in the compressed count plus 9 here, so weight 100 costs ten
+    /// times what weight 10 does instead of `ln 10` more.
+    pub excess: f64,
+}
+
+/// [`collateral_shapes`] with a weight per collateral row (`weights[k]`,
+/// row `k`'s channel weight; missing rows weigh 1): each emit's share is
+/// split by [`WeightedCollateral`]. A weight below 1 discounts the emit in
+/// the compressed count, 0 leaves it out.
+pub fn weighted_collateral<K: Eq + std::hash::Hash + Copy>(
+    keys: &[Option<K>],
+    moves: &[Option<f64>],
+    goal_moves: &[f64],
+    weights: &[f64],
+) -> WeightedCollateral {
     let g = goal_moves.iter().map(|x| x * x).sum::<f64>().sqrt();
     // In first-seen order, so the sum (and a tie between two alternatives)
     // does not depend on hash order.
     let mut index: std::collections::HashMap<K, usize> = std::collections::HashMap::new();
-    let mut per: Vec<f64> = Vec::new();
-    for (k, m) in keys.iter().zip(moves) {
+    let mut per: Vec<(f64, f64)> = Vec::new();
+    for (row, (k, m)) in keys.iter().zip(moves).enumerate() {
         let Some(k) = *k else { continue };
         let mag = match m {
             Some(x) if x.is_finite() => x.abs(),
@@ -197,13 +227,21 @@ pub fn collateral_shapes<K: Eq + std::hash::Hash + Copy>(
             continue;
         }
         let share = if g <= 1e-12 { 1.0 } else { (mag / g).min(1.0) };
+        let w = weights.get(row).copied().unwrap_or(1.0);
         let i = *index.entry(k).or_insert_with(|| {
-            per.push(0.0);
+            per.push((0.0, 1.0));
             per.len() - 1
         });
-        per[i] = per[i].max(share);
+        per[i].0 = per[i].0.max(share);
+        // Rows of one emit share its channel's weight.
+        per[i].1 = w;
     }
-    per.iter().sum()
+    let mut out = WeightedCollateral::default();
+    for (share, w) in per {
+        out.shapes += w.clamp(0.0, 1.0) * share;
+        out.excess += (w - 1.0).max(0.0) * share;
+    }
+    out
 }
 
 /// How much the non-goal rows moved, relative to how much the goals moved:

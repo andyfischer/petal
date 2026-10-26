@@ -1528,6 +1528,7 @@ SYNOPSIS
                           [--alternatives N] [--explain] [--config-strict]
                           [--tol T] [--max-runs N] [--max-wall S] [--max-screen N]
                           [--allow-respell] [--seed N] [--frames N]
+                          [--collateral CHANNEL=W[,CHANNEL=W...]]...
                           [--apply [--pick N]] [--json] <file>
 
 DESCRIPTION
@@ -1643,6 +1644,16 @@ OPTIONS
 
        --allow-respell
               (v2) Let an int literal become a float (10 -> 10.5).
+
+       --collateral CHANNEL=W[,CHANNEL=W...]
+              (v2) How much what else moves on a channel counts (default 1;
+              repeatable, the last weight for a channel wins). Other emits
+              count by how far they moved relative to the drag, and the sum
+              is compressed above 1; a weight W > 1 adds (W - 1) per emit
+              moved as far as the drag, uncompressed, so solid=10 makes one
+              platform cost 10 and solid=100 makes it cost 100. A weight
+              below 1 discounts the channel; 0 ignores it. The solver also
+              steers away from heavy channels.
 
        --frames N
               (v2) Run N frames first, for real (each from the top with

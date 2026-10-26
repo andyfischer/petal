@@ -1715,7 +1715,8 @@ petal propose-edit [--v1 | --v2] --channel <name> --emit <n>
                    [--configurable <var>]... [--static <var>]...
                    [--alternatives N] [--explain] [--config-strict]
                    [--tol T] [--max-runs N] [--max-wall S] [--max-screen N] [--allow-respell]
-                   [--seed N] [--frames N] [--apply [--pick N]] [--json] <file.ptl>
+                   [--seed N] [--frames N] [--collateral CHANNEL=W[,CHANNEL=W...]]...
+                   [--apply [--pick N]] [--json] <file.ptl>
 ```
 
 Works backwards from an emitted value: given where the user dragged
@@ -1883,6 +1884,22 @@ Other options:
   has it as `diagnostics.stopped_by`: `"runs"`, `"wall"` or `"converged"`,
   next to the budgets it ran with (`max_runs`, `max_wall_ms`).
 - `--allow-respell` (v2) — let an int literal become a float (`10` → `10.5`).
+- `--collateral CHANNEL=W[,CHANNEL=W...]` (v2, repeatable) — how much what
+  moves on a channel counts, so "platforms matter more than coins" is
+  `--collateral solid=10` rather than a `--by 0` pin on every platform. A
+  channel not named weighs 1; the last weight given for a channel wins.
+  The collateral score counts each other emit by its share (how far it moved
+  relative to the drag, at most 1) and compresses the sum above 1
+  logarithmically, so ten coins moving cost little more than five. A weight
+  `W` above 1 adds `(W - 1) × share` on top of that, *uncompressed*: one
+  platform moved as far as the drag costs 10 at weight 10 and 100 at weight
+  100, against about 2.4 for four coins at weight 1. A weight below 1 scales
+  the channel's share down inside the compressed count, and 0 leaves the
+  channel out. The solver's step weighs the channel's rows by `W` too, so it
+  steers away from moving that channel rather than only ranking such edits
+  lower. A named channel with no emit gets a warning. The report echoes
+  `collateral_weights` and each collateral item's `weight`; the text header
+  lists them.
 - `--seed N` (v2) — the random seed, default `PETAL_SEED`, else 0. It is
   echoed. Pass the same `--seed` to `run --trace-emits` so both agree on which
   emit is which when the script draws random numbers.
@@ -1907,7 +1924,7 @@ v2 `--json` is one object (frozen by `core/tests/cli_propose_edit_v2.rs`;
 fields are only ever added):
 
 ```
-{ engine: "v2" | "v1", seed, frames,
+{ engine: "v2" | "v1", seed, frames, collateral_weights: {CHANNEL: W, ...},
   goals: [{ channel, emit, kind: "arg"|"native_arg"|"value", index, path,
             key: {chain_hash, path_hash, occurrence}, callee, line,
             to, by, at_most, at_least, within: [lo, hi] | null,
@@ -1920,7 +1937,7 @@ fields are only ever added):
                                old, new, old_text, new_text, respelled }],
                    edits: [{ file, path, span, new_text }],
                    collateral: { norm, items: [{ channel, callee, line, max_move, key,
-                                                  emit, arg, path, moved, label }] },
+                                                  emit, arg, path, moved, label, weight }] },
                    rejections: [rejection] }],
   candidates: [{ term, file, line, span, value, is_int, binding, function, site, config,
                  hint, origin, distance, focus, in_goal_frame,

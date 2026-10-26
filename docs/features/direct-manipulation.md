@@ -96,7 +96,10 @@ The simple cases:
 - **A variable**, like `radius`. Petal edits the variable's definition. If
   other code also reads that variable, the edit moves those things too.
   Petal measures exactly what else moves and lists it as the alternative's
-  *collateral*.
+  *collateral*. By default every other shape counts the same; when some
+  matter more (platforms more than coins), say so per output channel with
+  `petal propose-edit --collateral solid=10`
+  ([CLI](../CLI.md#propose-edit--propose-source-edits-that-change-an-emitted-value)).
 - **A calculation**, like `x + offset`. There may be more than one answer:
   you could change `x`, or you could change `offset`. Petal offers both, and
   the editor asks which one you meant.

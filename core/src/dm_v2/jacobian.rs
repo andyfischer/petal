@@ -243,6 +243,17 @@ fn numeric_leaves(v: &ObsValue, path: &mut Vec<PathStep>, left: &mut usize, out:
 /// [`COLLATERAL_LEAVES_PER_ARG`] numbers). Past `cap` rows, only emits on the
 /// goals' channels are kept, then the list is cut at `cap`.
 pub fn collateral_rows(baseline: &SpecRun, goals: &[Observable], cap: usize) -> Vec<Observable> {
+    collateral_rows_keeping(baseline, goals, cap, &[])
+}
+
+/// [`collateral_rows`], also keeping the emits on `keep` past `cap` (the
+/// channels a request weighs, §9 Canopy S3), ahead of the goals' channels.
+pub fn collateral_rows_keeping(
+    baseline: &SpecRun,
+    goals: &[Observable],
+    cap: usize,
+    keep: &[crate::symbol::SymbolId],
+) -> Vec<Observable> {
     let rows_of = |only: Option<&[crate::symbol::SymbolId]>| {
         let mut rows = Vec::new();
         let mut leaves = Vec::new();
@@ -273,7 +284,9 @@ pub fn collateral_rows(baseline: &SpecRun, goals: &[Observable], cap: usize) -> 
             Observable::Watch { at, .. } => baseline.emit(at).map(|e| e.channel),
         })
         .collect();
-    let mut kept = rows_of(Some(&channels));
+    let mut kept = if keep.is_empty() { Vec::new() } else { rows_of(Some(keep)) };
+    let rest: Vec<crate::symbol::SymbolId> = channels.into_iter().filter(|c| !keep.contains(c)).collect();
+    kept.extend(rows_of(Some(&rest)));
     kept.truncate(cap);
     kept
 }

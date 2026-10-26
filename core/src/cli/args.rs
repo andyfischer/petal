@@ -361,7 +361,7 @@ fn parse_propose_edit_args(args: &[String]) -> CliArgs {
                  ((--arg|--native-arg <k> | --value) [--field <path>] \
                  (--to <value> | --by <delta> | --at-most <v> | --at-least <v> | --within <lo>..<hi>))+ \
                  [--allow <sel>]* [--deny <sel>]* [--configurable <var>]* [--static <var>]* \
-                 [--alternatives N] [--explain] [--frames N] [--max-wall S] [--apply [--pick N]] [--json] <file>";
+                 [--alternatives N] [--explain] [--frames N] [--max-wall S] [--collateral CHANNEL=W[,...]] [--apply [--pick N]] [--json] <file>";
     let mut engine: Option<&'static str> = None;
     let mut parser = super::dm_v2::V2Parser::new();
     let mut configurable: Vec<String> = Vec::new();

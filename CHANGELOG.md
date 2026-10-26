@@ -55,6 +55,15 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   the `draw_commands` channel, listed by `--trace-emits`
   ([Scripts that draw with `ui`](docs/features/direct-manipulation.md#scripts-that-draw-with-ui)).
 
+- `petal propose-edit --collateral CHANNEL=W[,CHANNEL=W...]` (JSON request
+  `"collateral": {"solid": 10, "coin": 1}`): weigh what else moves per
+  output channel, so "platforms matter more than coins" no longer needs a
+  pin on every platform. A weight above 1 is charged uncompressed (weight 100
+  costs ten times weight 10), below 1 discounts the channel, and the solver
+  steers away from heavy channels. The report echoes `collateral_weights`
+  and each collateral item's `weight`
+  ([CLI](docs/CLI.md#propose-edit--propose-source-edits-that-change-an-emitted-value)).
+
 - `petal propose-edit --max-wall SECONDS`: the session's wall-clock budget,
   which was fixed at 5 s (still the default; `max_wall` in a JSON request).
   The report says which budget ended the session: the text header ends in

@@ -35,7 +35,7 @@ use std::time::Duration;
 use crate::direct_manipulation::{self as v1, ManipulationGoal, SourceEdit, VarPolicy};
 use crate::dm_v2::DmError;
 use crate::dm_v2::hints::{Hint, read_hints};
-use crate::dm_v2::jacobian::{ColumnQuality, FdOptions, Jacobian, collateral_rows, jacobian};
+use crate::dm_v2::jacobian::{ColumnQuality, FdOptions, Jacobian, collateral_rows_keeping, jacobian};
 use crate::dm_v2::observe::{EmitKey, LiveObservation, ObsValue, Observable, PathStep};
 use crate::dm_v2::params::{
     BudgetLimit, Eligibility, EligibilityContext, Param, ParamFilter, ParamSelector, RunBudget, anchors_for,
@@ -43,7 +43,7 @@ use crate::dm_v2::params::{
 };
 use crate::dm_v2::rank::{
     ScoreFacts, ScoreParts, ScoreWeights, ScoredChange, SubsetKind, candidate_subsets, collateral_norm,
-    collateral_shapes, param_weight, score, strength,
+    param_weight, score, strength, weighted_collateral,
 };
 use crate::dm_v2::solve::{Bound, FailedRun, GoalRow, SolveCtx, SolveOptions, goal_step, max_error};
 use crate::dm_v2::spec::{Overrides, RunError, SpecConfig, SpecHost, SpecRun, SpecSession};
@@ -206,6 +206,14 @@ pub struct DmRequest {
     /// first (§2.2 stage 5). Empty (or short): a goal holds when its numeric
     /// target is its baseline value within its tolerance.
     pub holds: Vec<bool>,
+    /// The client's collateral weight per output channel (§9, Canopy S3;
+    /// `--collateral solid=10,coin=1`); a channel not named weighs 1. A
+    /// shape on a channel of weight `W > 1` that moves as far as the drag
+    /// adds `W - 1` to the score on top of its share of the compressed count
+    /// ([`crate::dm_v2::rank::WeightedCollateral`]), and the solver's step
+    /// scales that channel's rows by `W`; a weight below 1 discounts the
+    /// channel, 0 ignores it.
+    pub collateral_weights: Vec<(String, f64)>,
 }
 
 impl Default for DmRequest {
@@ -224,6 +232,7 @@ impl Default for DmRequest {
             live: None,
             explain: false,
             holds: Vec::new(),
+            collateral_weights: Vec::new(),
         }
     }
 }
@@ -287,6 +296,8 @@ pub struct CollateralItem {
     pub path: Vec<PathStep>,
     /// How many of its numbers moved.
     pub moved: usize,
+    /// Its channel's collateral weight ([`DmRequest::collateral_weights`]).
+    pub weight: f64,
 }
 
 impl CollateralItem {
@@ -336,9 +347,14 @@ pub struct Collateral {
     /// `‖Δ other rows‖ / ‖Δ goals‖`.
     pub norm: f64,
     /// How many other emits moved, each counted by how far it moved
-    /// relative to the goals, at most 1 ([`collateral_shapes`]): what the
-    /// score charges.
+    /// relative to the goals, at most 1
+    /// ([`collateral_shapes`](crate::dm_v2::rank::collateral_shapes)): what the
+    /// score charges. Under channel weights, each emit counts `min(w, 1)`
+    /// times its share.
     pub shapes: f64,
+    /// What channel weights above 1 add to the score, uncompressed
+    /// ([`crate::dm_v2::rank::WeightedCollateral::excess`]); 0 without them.
+    pub excess: f64,
     pub items: Vec<CollateralItem>,
 }
 
@@ -596,6 +612,9 @@ pub struct DmSession {
     config: Vec<bool>,
     scales: Vec<f64>,
     base_rows: Vec<Option<f64>>,
+    /// Per collateral row (Jacobian row `goal_rows + k`): its channel's
+    /// weight ([`DmRequest::collateral_weights`]). Empty: all 1.
+    coll_weights: Vec<f64>,
     taus: Vec<f64>,
     budget: RunBudget,
     diag: DmDiagnostics,
@@ -669,6 +688,7 @@ impl DmSession {
             config: Vec::new(),
             scales: Vec::new(),
             base_rows: Vec::new(),
+            coll_weights: Vec::new(),
             taus: Vec::new(),
             budget: RunBudget::new(req.max_runs, req.max_wall),
             diag: DmDiagnostics::default(),
@@ -891,7 +911,10 @@ impl DmSession {
         let moving = order.len();
         self.budget.max_runs = start + full_budget.saturating_mul(3) / 5;
         let mut rows = goals.clone();
-        rows.extend(collateral_rows(spec.baseline(), &goals, COLLATERAL_ROWS));
+        let channel_weights = channel_weights(env, spec.baseline(), &req.collateral_weights, &mut self.diag.warnings);
+        let weighted: Vec<crate::symbol::SymbolId> =
+            channel_weights.iter().filter(|(_, w)| *w != 1.0).map(|(c, _)| *c).collect();
+        rows.extend(collateral_rows_keeping(spec.baseline(), &goals, COLLATERAL_ROWS, &weighted));
         // With many columns, a column that does not move at the base step
         // is escalated once, not three times (§9 M5, revision 4): screening
         // infers some columns from their group without probing them alone,
@@ -950,6 +973,19 @@ impl DmSession {
         let mut base_rows = spec.baseline().read_all(&jac.rows);
         jac.drop_goal_aliases(&mut base_rows);
         self.base_rows = base_rows;
+        self.coll_weights = if channel_weights.iter().all(|(_, w)| *w == 1.0) {
+            Vec::new()
+        } else {
+            jac.rows[jac.goal_rows..]
+                .iter()
+                .map(|r| {
+                    emit_key_of(r)
+                        .and_then(|k| spec.baseline().emit(&k))
+                        .and_then(|e| channel_weights.iter().find(|(c, _)| *c == e.channel))
+                        .map_or(1.0, |(_, w)| *w)
+                })
+                .collect()
+        };
 
         // Columns.
         let params = &self.params;
@@ -1239,7 +1275,8 @@ impl DmSession {
             let local: Vec<Vec<f64>> =
                 (0..self.jac.rows.len()).map(|row| cols.iter().map(|&c| self.jac.get(row, c)).collect()).collect();
             let cost: Vec<f64> = cols.iter().map(|&c| self.weights[c] / self.scales[c]).collect();
-            let delta = goal_step(&goals, &self.base_rows[..gr], &local[..gr], &local[gr..], &cost);
+            let jc = weigh_rows(&local[gr..], &self.coll_weights);
+            let delta = goal_step(&goals, &self.base_rows[..gr], &local[..gr], &jc, &cost);
             (local, delta)
         };
         let rn = r.iter().map(|x| x * x).sum::<f64>().sqrt();
@@ -1308,8 +1345,10 @@ impl DmSession {
                         share: Some(share(&self.jac, c, v - value(c), r1)),
                     })
                     .collect();
+                let wc = weighted_collateral(&row_keys, &coll, &goal_moves, &self.coll_weights);
                 let facts = ScoreFacts {
-                    collateral_norm: collateral_shapes(&row_keys, &coll, &goal_moves),
+                    collateral_norm: wc.shapes,
+                    collateral_excess: wc.excess,
                     goals: ga,
                     respelled,
                     verified: err <= 1.0,
@@ -1511,6 +1550,7 @@ impl DmSession {
                 base_rows: self.base_rows.clone(),
                 goals: &goals,
                 weights: &self.weights,
+                collateral_weights: &self.coll_weights,
                 bounds,
                 budget: &mut self.budget,
                 opts,
@@ -1609,7 +1649,8 @@ impl DmSession {
                         _ => None,
                     })
                     .collect();
-                let collateral = collateral_items(&self.jac, gr, &moves, &emit_info, &goal_moves);
+                let collateral =
+                    collateral_items(&self.jac, gr, &moves, &emit_info, &goal_moves, &self.coll_weights);
                 let changes: Vec<ParamChange> = rendered
                     .iter()
                     .map(|(i, v, text, respelled)| {
@@ -1631,6 +1672,7 @@ impl DmSession {
                     .collect();
                 let facts = ScoreFacts {
                     collateral_norm: collateral.shapes,
+                    collateral_excess: collateral.excess,
                     goals: ga,
                     respelled: changes.iter().filter(|c| c.respelled).count(),
                     regime_changed,
@@ -1764,6 +1806,53 @@ impl DmSession {
             explain: explain.then(|| ExplainLog { lines: std::mem::take(&mut self.log) }),
         })
     }
+}
+
+/// The channels of the baseline a request weighs, with their weights
+/// ([`DmRequest::collateral_weights`]). A named channel with no emit gets a
+/// warning, since its weight can do nothing.
+fn channel_weights(
+    env: &Env,
+    base: &SpecRun,
+    wanted: &[(String, f64)],
+    warnings: &mut Vec<String>,
+) -> Vec<(crate::symbol::SymbolId, f64)> {
+    let mut out: Vec<(crate::symbol::SymbolId, f64)> = Vec::new();
+    for (name, w) in wanted {
+        let mut found = false;
+        for e in &base.emits {
+            if env.symbol_name(e.channel) == Some(name.as_str()) {
+                found = true;
+                match out.iter_mut().find(|(c, _)| *c == e.channel) {
+                    Some(slot) => slot.1 = *w,
+                    None => out.push((e.channel, *w)),
+                }
+                break;
+            }
+        }
+        if !found {
+            warnings.push(format!("collateral weight for channel `{name}`: no emit on it in the baseline"));
+        }
+    }
+    out
+}
+
+/// The collateral rows `jc` with row `k` scaled by `weights[k]` (§9, Canopy
+/// S3): the step's collateral term `‖J_c Δ‖²` then charges a weighted
+/// channel `w²` times as much. Empty weights: `jc` as it is, not copied.
+pub(crate) fn weigh_rows<'a>(jc: &'a [Vec<f64>], weights: &[f64]) -> std::borrow::Cow<'a, [Vec<f64>]> {
+    if weights.is_empty() {
+        return std::borrow::Cow::Borrowed(jc);
+    }
+    std::borrow::Cow::Owned(
+        jc.iter()
+            .enumerate()
+            .map(|(k, row)| {
+                let w = weights.get(k).copied().unwrap_or(1.0);
+                row.iter().map(|x| x * w).collect()
+            })
+            .collect(),
+    )
 }
 
 /// The size of a drag in output units, `‖target - baseline‖₁` over the goals.
@@ -1947,6 +2036,7 @@ fn collateral_items(
     moves: &[Option<f64>],
     info: &HashMap<EmitKey, EmitInfo>,
     goal_moves: &[f64],
+    weights: &[f64],
 ) -> Collateral {
     let mut items: Vec<CollateralItem> = Vec::new();
     for (k, m) in moves.iter().enumerate() {
@@ -1974,14 +2064,12 @@ fn collateral_items(
         }
         let EmitInfo { channel, callee, line, emit } =
             info.get(&key).cloned().unwrap_or_else(|| EmitInfo { channel: "?".into(), ..Default::default() });
-        items.push(CollateralItem { key, channel, callee, line, max_move: mag, emit, arg, path, moved: 1 });
+        let weight = weights.get(k).copied().unwrap_or(1.0);
+        items.push(CollateralItem { key, channel, callee, line, max_move: mag, emit, arg, path, moved: 1, weight });
     }
     let keys: Vec<Option<EmitKey>> = jac.rows[gr..].iter().map(emit_key_of).collect();
-    Collateral {
-        norm: collateral_norm(goal_moves, moves),
-        shapes: collateral_shapes(&keys, moves, goal_moves),
-        items,
-    }
+    let wc = weighted_collateral(&keys, moves, goal_moves, weights);
+    Collateral { norm: collateral_norm(goal_moves, moves), shapes: wc.shapes, excess: wc.excess, items }
 }
 
 /// A range goal, for the description: `coins[0].8 ≤ 0.6 (was 1.4, now 0.5)`.

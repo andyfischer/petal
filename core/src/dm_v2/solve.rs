@@ -477,6 +477,9 @@ pub struct SolveCtx<'a> {
     pub goals: &'a [GoalRow],
     /// Each Jacobian column's cost weight `d_i` (§2.5.2).
     pub weights: &'a [f64],
+    /// Each collateral row's channel weight (`DmRequest::collateral_weights`);
+    /// empty: all 1.
+    pub collateral_weights: &'a [f64],
     pub bounds: Vec<Bound>,
     pub budget: &'a mut RunBudget,
     pub opts: SolveOptions,
@@ -582,7 +585,8 @@ impl SolveCtx<'_> {
             .iter()
             .map(|&c| self.weights[c] / self.base_value(c).abs().max(1.0))
             .collect();
-        goal_step(self.goals, &rows[..gr], &local[..gr], &local[gr..], &cost)
+        let jc = crate::dm_v2::api::weigh_rows(&local[gr..], self.collateral_weights);
+        goal_step(self.goals, &rows[..gr], &local[..gr], &jc, &cost)
     }
 
     /// `values + Δ` projected onto the bounds.

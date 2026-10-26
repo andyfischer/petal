@@ -2587,6 +2587,29 @@ before, with the wrong answer); the unpinned one is unchanged at 46. The
 ladder's outcomes and top edits are unchanged (91 succeed, 14 xfail); total
 runs went from 2,206 to 2,197 (measured before C6 landed).
 
+**Canopy S3: client-weighted collateral, 2026-10-25.** "Lift these coins"
+was answered by raising the platform under them, even once the harness
+emitted platforms on a `solid` channel (#38, #39): one platform moving is
+cheaper than an arc lift that moves four other coins, and pinning the
+platform instead hit S6 (#40). `DmRequest::collateral_weights` (CLI
+`--collateral solid=10,coin=1`, JSON `"collateral": {...}`) gives a weight
+per channel, default 1. `rank::weighted_collateral` splits each emit's share
+(`min(1, max_move / ‖Δ goals‖)`, revision 6) into `min(w, 1) · share`, which
+joins the compressed count as before, and `max(w - 1, 0) · share`
+(`ScoreFacts::collateral_excess`, `Collateral::excess`), which the score adds
+uncompressed. Applying the weight inside the compression alone would have
+flattened it (weight 10 vs 100 is `ln 10` ≈ 2.3 apart); this way a heavy
+channel's cost is linear in its weight, all-1 weights score exactly as
+before, and a weight below 1 still discounts. The step's collateral rows are
+scaled by `w` (`api::weigh_rows`, in `predictions` and `SolveCtx::step`), so
+the solve itself avoids heavy channels: in the two-channel test the mixed
+`plat_y + coin_h` spread disappears at `solid=10`. Past `COLLATERAL_ROWS`,
+weighted channels are kept ahead of the goals' channels
+(`jacobian::collateral_rows_keeping`). A named channel with no emit gets a
+warning. The report echoes `collateral_weights` and each item's `weight`.
+Test `cli_propose_edit_v2::collateral_weights_change_the_top_alternative`
+(`plat_y` wins unweighted, `coin_h` at `solid=10` and at `coin=0.1`).
+
 ---
 
 ## 10. Review notes

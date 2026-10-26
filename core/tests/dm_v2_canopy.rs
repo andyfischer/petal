@@ -169,7 +169,8 @@ fn focused_reach_follows_fields_and_elements() {
 /// changes (0.5 → 0.8). A fourth goal that only pins a platform (`--by 0`)
 /// must not hide that answer: tuple sizes and the single literals count only
 /// the goals that move, so the pin does not push the request onto the
-/// least-squares spread.
+/// least-squares spread. The same holds for an equality already at its
+/// target and for a range goal that already holds.
 #[test]
 fn a_pin_keeps_the_single_literal_answer() {
     let src = "import io\nlet JUMP_V = 12.0\nlet GRAV = 3.0\nlet lift = 0.5\nlet plat_y = 300\n\
@@ -177,7 +178,9 @@ fn a_pin_keeps_the_single_literal_answer() {
                push_output(symbol(\"solid\"), {x: 0, y: plat_y})\n\
                push_output(symbol(\"solid\"), {x: 200, y: plat_y + 40})\n\
                for i in range(0, 7) do\n  push_output(symbol(\"coin\"), {x: 40 + i * 30, y: coin_y(i)})\nend\n";
-    for pinned in [false, true] {
+    // The fourth goal: none, a pin, an equality already at its target (not
+    // flagged as held), and a range goal that already holds (C6).
+    for (pinned, extra) in [("none", 0), ("pin", 1), ("at target", 2), ("range holds", 3)] {
         let (mut env, sid) = load(src);
         let k = keys(&mut env, sid);
         let y = |e: usize| Observable::EmitValue { key: k[e], path: vec![field("y")] };
@@ -188,9 +191,20 @@ fn a_pin_keeps_the_single_literal_answer() {
             DmGoal::to(y(5), 275.5 - 2.7),
         ];
         let mut holds = vec![false; 3];
-        if pinned {
-            goals.push(DmGoal::to(y(0), 300.0));
-            holds.push(true);
+        match extra {
+            1 => {
+                goals.push(DmGoal::to(y(0), 300.0));
+                holds.push(true);
+            }
+            2 => {
+                goals.push(DmGoal::to(y(0), 300.0));
+                holds.push(false);
+            }
+            3 => {
+                goals.push(DmGoal::at_most(y(1), 400.0));
+                holds.push(false);
+            }
+            _ => {}
         }
         let mut req = DmRequest::new(goals);
         req.holds = holds;

@@ -24,6 +24,7 @@ use petal_ui::draw::{DrawCommand, take_draw_commands, take_draw_commands_for};
 
 use crate::font::{self, FontBook, SdlFontSource};
 use crate::game_loop::{EscapeAction, Host, ScriptSwitch};
+use crate::hidpi::{self, Scale};
 use crate::native_fns::{self, ExampleEntry, bind_examples, take_pending_launch};
 use crate::renderer;
 use crate::sound::SoundBoard;
@@ -47,7 +48,7 @@ pub struct DefaultHost {
     examples_dir: Option<PathBuf>,
     /// Persistent software framebuffer (windowed present). Pixels accumulate
     /// across frames unless a `Clear` command wipes them; lazily sized to the
-    /// window's drawable area on first present.
+    /// window's drawable area (in pixels, see [`crate::hidpi`]) on present.
     framebuffer: Option<Surface<'static>>,
     /// Whether the currently-loaded program is the browser (Escape quits from
     /// the browser, but returns to it from a launched example).
@@ -168,19 +169,25 @@ impl Host for DefaultHost {
         true
     }
 
+    fn high_dpi(&self) -> bool {
+        true
+    }
+
     fn present_commands(
         &mut self,
         canvas: &mut Canvas<Window>,
         commands: Vec<DrawCommand>,
     ) -> Result<(), String> {
-        // Lazily create the persistent framebuffer at the drawable size.
+        // The script drew in window points; paint in drawable pixels. The
+        // persistent framebuffer is made lazily at that size, and again when
+        // the size changes (the window moved to a screen of another scale).
+        let scale = Scale::of(canvas);
+        let (w, h) = scale.pixels();
         let surface = match self.framebuffer.take() {
-            Some(s) => s,
-            None => {
-                let (w, h) = canvas.output_size()?;
-                new_framebuffer(w, h)?
-            }
+            Some(s) if s.size() == (w, h) => s,
+            _ => new_framebuffer(w, h)?,
         };
+        let commands = hidpi::scale_commands(commands, scale.factor);
 
         // Render this frame's commands into the persistent surface, then blit
         // the whole surface to the window. Because the surface is software-

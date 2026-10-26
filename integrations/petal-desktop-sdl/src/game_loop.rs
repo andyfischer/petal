@@ -107,6 +107,15 @@ pub trait Host {
     /// anything opened here must be optional to the host's operation.
     fn on_sdl_init(&mut self, _sdl: &sdl2::Sdl) {}
 
+    /// Whether the window should get a full-resolution drawable on a HiDPI
+    /// screen (`allow_highdpi`). Answer `true` only if `present` paints at the
+    /// drawable size with the frame scaled to it (see [`crate::hidpi`]); a
+    /// host that draws in window points into a 2× drawable fills only its
+    /// top-left quarter. Default: `false`, the 1× drawable macOS magnifies.
+    fn high_dpi(&self) -> bool {
+        false
+    }
+
     /// Paint the live frame's draw output (drained from `env`'s default draw
     /// buffer) to the window and present. Windowed modes only.
     fn present(&mut self, canvas: &mut Canvas<Window>, env: &mut Env) -> Result<(), String>;
@@ -283,6 +292,21 @@ impl Reloader {
 
 // --- Windowed interactive mode ---
 
+/// The game window: centered, at the configured size in points, with a
+/// full-resolution drawable when the host paints one.
+fn build_window(
+    video: &sdl2::VideoSubsystem,
+    config: &GameConfig,
+    high_dpi: bool,
+) -> Result<Window, String> {
+    let mut builder = video.window(&config.title, config.width, config.height);
+    builder.position_centered();
+    if high_dpi {
+        builder.allow_highdpi();
+    }
+    builder.build().map_err(|e| e.to_string())
+}
+
 pub fn run_game<H: Host>(
     source_path: Option<&str>,
     config: GameConfig,
@@ -294,11 +318,7 @@ pub fn run_game<H: Host>(
     let video = sdl.video()?;
     attach_clipboard(&video);
 
-    let window = video
-        .window(&config.title, config.width, config.height)
-        .position_centered()
-        .build()
-        .map_err(|e| e.to_string())?;
+    let window = build_window(&video, &config, host.high_dpi())?;
 
     let mut canvas = window
         .into_canvas()
@@ -550,11 +570,7 @@ pub fn run_agent<H: Host>(
     let video = sdl.video()?;
     attach_clipboard(&video);
 
-    let window = video
-        .window(&config.title, config.width, config.height)
-        .position_centered()
-        .build()
-        .map_err(|e| e.to_string())?;
+    let window = build_window(&video, &config, host.high_dpi())?;
 
     let mut canvas = window
         .into_canvas()

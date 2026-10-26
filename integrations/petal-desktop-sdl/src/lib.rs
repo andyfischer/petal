@@ -18,12 +18,14 @@
 //! folding, [`audio`] queued-sample output, [`sfx`] procedural sound-effect
 //! synthesis and [`sound`] its `sfx`/`synth` natives and mixer, [`protocol`] agent JSON,
 //! [`watcher`] hot reload, [`screenshot`] PNG encoding, [`font`] ladder,
-//! [`renderer`] SDL-canvas primitives) are public so hosts can compose them.
+//! [`renderer`] SDL-canvas primitives, [`hidpi`] point-to-pixel scaling) are
+//! public so hosts can compose them.
 
 pub mod audio;
 pub mod default_host;
 pub mod font;
 pub mod game_loop;
+pub mod hidpi;
 pub mod input;
 pub mod native_fns;
 pub mod protocol;

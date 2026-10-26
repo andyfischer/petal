@@ -457,6 +457,139 @@ pub fn translate(mut cmd: DrawCommand, dx: i32, dy: i32) -> DrawCommand {
     cmd
 }
 
+/// `cmd` magnified by `s` about the origin: the frame a script drew in
+/// logical points, as the physical pixels of a HiDPI drawable (`s` = 2 on a
+/// Retina screen). Text keeps its logical size times `s`, so a host bakes
+/// glyphs at the resolution they are shown at rather than upscaling them.
+///
+/// Rects scale by their edges, not their origin and size, so rects that
+/// tiled in points still tile in pixels at a fractional scale. Strokes,
+/// radii and blurs that were at least 1 stay at least 1. `s` = 1 returns the
+/// command unchanged. `Host` commands carry opaque arguments and pass through
+/// as they are.
+pub fn scale(mut cmd: DrawCommand, s: f32) -> DrawCommand {
+    use DrawCommand::*;
+    if s == 1.0 {
+        return cmd;
+    }
+    let p = |v: i32| (v as f32 * s).round() as i32;
+    // A length: never scaled to nothing when it was something.
+    let len = |v: u32| {
+        let n = (v as f32 * s).round() as u32;
+        if v > 0 { n.max(1) } else { 0 }
+    };
+    let ilen = |v: i32| {
+        let n = (v as f32 * s).round() as i32;
+        if v > 0 { n.max(1) } else { n }
+    };
+    // A span's far edge scaled with its near one.
+    let span = |x: &mut i32, w: &mut u32| {
+        let (x0, x1) = (p(*x), ((*x as i64 + *w as i64) as f32 * s).round() as i32);
+        *x = x0;
+        *w = if *w > 0 { (x1 - x0).max(1) as u32 } else { 0 };
+    };
+    match &mut cmd {
+        Image { x, y, w, h, radius, .. }
+        | Rect { x, y, w, h, radius, .. }
+        | RectGradient { x, y, w, h, radius, .. }
+        | Clip { x, y, w, h, radius }
+        | ClipPush { x, y, w, h, radius } => {
+            span(x, w);
+            span(y, h);
+            *radius = len(*radius);
+        }
+        RectOutline { x, y, w, h, width, radius, .. } => {
+            span(x, w);
+            span(y, h);
+            *width = len(*width);
+            *radius = len(*radius);
+        }
+        Shadow { x, y, w, h, radius, blur, spread, dx, dy, .. } => {
+            span(x, w);
+            span(y, h);
+            *radius = len(*radius);
+            *blur = len(*blur);
+            *spread = p(*spread);
+            *dx = p(*dx);
+            *dy = p(*dy);
+        }
+        Text { x, y, size, spacing, .. } => {
+            *x = p(*x);
+            *y = p(*y);
+            *size = ((*size as f32 * s).round() as u16).max(1);
+            *spacing *= s;
+        }
+        Line { x1, y1, x2, y2, width, .. } => {
+            (*x1, *y1, *x2, *y2) = (p(*x1), p(*y1), p(*x2), p(*y2));
+            *width = len(*width);
+        }
+        Triangle { x1, y1, x2, y2, x3, y3, .. } => {
+            (*x1, *y1, *x2, *y2, *x3, *y3) = (p(*x1), p(*y1), p(*x2), p(*y2), p(*x3), p(*y3));
+        }
+        Circle { cx, cy, radius, .. } | CircleGradient { cx, cy, radius, .. } => {
+            (*cx, *cy) = (p(*cx), p(*cy));
+            *radius = ilen(*radius);
+        }
+        Ellipse { cx, cy, rx, ry, .. } => {
+            (*cx, *cy, *rx, *ry) = (p(*cx), p(*cy), ilen(*rx), ilen(*ry));
+        }
+        EllipseOutline { cx, cy, rx, ry, width, .. } => {
+            (*cx, *cy, *rx, *ry) = (p(*cx), p(*cy), ilen(*rx), ilen(*ry));
+            *width = len(*width);
+        }
+        Arc { cx, cy, r_in, r_out, .. } => {
+            (*cx, *cy) = (p(*cx), p(*cy));
+            *r_in *= s;
+            *r_out *= s;
+        }
+        Poly { points, .. } | Polygon { points, .. } => {
+            for pt in points.iter_mut() {
+                *pt = (p(pt.0), p(pt.1));
+            }
+        }
+        Polyline { points, width, .. } => {
+            for pt in points.iter_mut() {
+                *pt = (p(pt.0), p(pt.1));
+            }
+            *width = len(*width);
+        }
+        Fan { cx, cy, points, .. } => {
+            (*cx, *cy) = (p(*cx), p(*cy));
+            for pt in points.iter_mut() {
+                *pt = (p(pt.0), p(pt.1));
+            }
+        }
+        Rects { rects } => {
+            for r in rects.iter_mut() {
+                span(&mut r.x, &mut r.w);
+                span(&mut r.y, &mut r.h);
+            }
+        }
+        CreateCanvas { w, h, .. } | CacheBegin { w, h, .. } => {
+            *w = len(*w);
+            *h = len(*h);
+        }
+        DrawCanvas { x, y, w, h, .. } => {
+            // 0 = the canvas's own size, which is already scaled.
+            span(x, w);
+            span(y, h);
+        }
+        Snapshot { x, y, .. } | CacheDraw { x, y, .. } => {
+            (*x, *y) = (p(*x), p(*y));
+        }
+        BlurCanvas { radius, .. } => *radius = len(*radius),
+        Clear { .. }
+        | ClipNone
+        | ClipPop
+        | SetTarget { .. }
+        | Layer { .. }
+        | Mute { .. }
+        | CacheEnd { .. }
+        | Host { .. } => {}
+    }
+    cmd
+}
+
 // ── Draw layers ───────────────────────────────────────────────────────────
 
 /// The clip in force at some point of a frame, as the commands that made it.

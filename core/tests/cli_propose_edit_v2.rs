@@ -112,7 +112,7 @@ fn json_shape_is_frozen() {
         set(&[
             "rank", "engine", "verified", "description", "kind", "score", "score_parts", "max_error", "misses",
             "achieved", "predicted", "iterations", "config_only", "stateful", "regime_changed",
-            "rng_order_changed", "rng_difference", "changes", "edits", "collateral",
+            "rng_order_changed", "rng_difference", "changes", "edits", "collateral", "rejections",
         ])
     );
     assert_eq!(
@@ -172,6 +172,7 @@ fn json_shape_is_frozen() {
         set(&[
             "runs", "wall_ms", "suppressed", "budget_exhausted", "stopped_by", "max_runs", "max_wall_ms", "warnings",
             "discovered", "eligible", "screened", "measured", "truncated", "subsets_predicted", "subsets_verified",
+            "rejected_runs", "rejections",
         ])
     );
     assert!(r["diagnostics"]["runs"].as_u64().unwrap() > 0);
@@ -648,4 +649,42 @@ end
     let (_, stderr, ok) = run(&[&["propose-edit", "--v1", "--frames", "2"][..], &goal, &[p]].concat());
     assert!(!ok);
     assert!(stderr.contains("--frames needs the v2 engine"), "{stderr}");
+}
+
+/// An `assert` between two literals is a constraint the solve respects; the
+/// report says which assertion rejected the runs that crossed it.
+#[test]
+fn failed_assert_is_reported() {
+    let src = "\
+import io
+fn beetle(x0, x1)
+  assert(x1 >= x0)
+  return {from: x0, to: x1}
+end
+let b = beetle(3.5, 5.5)
+push_output(symbol(\"shapes\"), b.to)
+";
+    let path = scratch("beetle", src);
+    let p = path.to_str().unwrap();
+    let goal = ["--channel", "shapes", "--emit", "0", "--value", "--to", "2.5", "--tol", "0.01"];
+    let r = run_json(&[&["propose-edit", "--json"][..], &goal, &[p]].concat());
+    let a = &r["alternatives"][0];
+    assert_eq!(a["verified"], false, "{r:#}");
+    let rej = &a["rejections"][0];
+    assert_eq!(
+        keys(rej),
+        set(&["summary", "message", "file", "path", "line", "column", "condition", "runs", "tried"])
+    );
+    assert_eq!(rej["summary"], "assertion failed at beetle.ptl:3 (x1 >= x0)");
+    assert_eq!(rej["condition"], "x1 >= x0");
+    assert_eq!(rej["line"], 3);
+    assert_eq!(rej["path"], p);
+    assert_eq!(keys(&rej["tried"][0]), set(&["term", "line", "old_text", "value"]));
+    assert_eq!(rej["tried"][0]["old_text"], "5.5");
+    assert!(r["diagnostics"]["rejected_runs"].as_u64().unwrap() >= rej["runs"].as_u64().unwrap());
+
+    let (stdout, stderr, ok) = run(&[&["propose-edit"][..], &goal, &[p]].concat());
+    assert!(ok, "{stderr}");
+    assert!(stdout.contains("       rejected: assertion failed at beetle.ptl:3 (x1 >= x0) · "), "{stdout}");
+    assert!(stdout.contains(", first at `5.5` -> "), "{stdout}");
 }

@@ -23,7 +23,7 @@
 
 use crate::dm_v2::jacobian::{FdOptions, Jacobian, jacobian};
 use crate::dm_v2::params::{Param, RunBudget};
-use crate::dm_v2::spec::{Overrides, SpecHost, SpecRun, SpecSession};
+use crate::dm_v2::spec::{Overrides, RunError, SpecHost, SpecRun, SpecSession};
 use crate::dm_v2::hints::Hint;
 use crate::env::Env;
 
@@ -345,7 +345,26 @@ pub struct SolveCtx<'a> {
     /// Runs made by this context.
     pub runs: usize,
     pub budget_exhausted: bool,
+    /// Every run of this context that raised an error, in order: the values
+    /// it tried were rejected (an `assert` is how a program states a
+    /// constraint between literals).
+    pub failed: Vec<FailedRun>,
     pub log: Option<&'a mut Vec<String>>,
+}
+
+/// A run that raised an error, and the values it was tried at.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FailedRun {
+    /// Jacobian columns.
+    pub cols: Vec<usize>,
+    /// Each column's value, as written.
+    pub values: Vec<f64>,
+    pub error: RunError,
+}
+
+/// The first line of a (possibly annotated, multi-line) error message.
+pub fn first_line(s: &str) -> &str {
+    s.lines().next().unwrap_or("")
 }
 
 /// A solve of one subset, before rounding.
@@ -397,7 +416,11 @@ impl SolveCtx<'_> {
         }
         let ov = self.overrides(cols, values);
         self.runs += 1;
-        Some(self.session.run(self.env, self.host, &ov))
+        let run = self.session.run(self.env, self.host, &ov);
+        if let Some(error) = &run.error {
+            self.failed.push(FailedRun { cols: cols.to_vec(), values: values.to_vec(), error: error.clone() });
+        }
+        Some(run)
     }
 
     /// Every row of `run`.
@@ -476,11 +499,12 @@ impl SolveCtx<'_> {
             let new_err = if r.ok() { sq_error(self.goals, self.goal_values(&new_rows)) } else { f64::INFINITY };
             self.log(|| {
                 format!(
-                    "  step {iterations}: {:?} → error {:.3e} (was {:.3e}){}",
+                    "  step {iterations}: {:?} → error {:.3e} (was {:.3e}){}{}",
                     next,
                     new_err,
                     err,
-                    if r.fingerprint != fingerprint { ", other branch" } else { "" }
+                    if r.fingerprint != fingerprint { ", other branch" } else { "" },
+                    r.error.as_ref().map(|e| format!(", rejected: {}", first_line(&e.to_string()))).unwrap_or_default()
                 )
             });
             if new_err < err {

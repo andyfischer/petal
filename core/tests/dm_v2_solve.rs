@@ -842,3 +842,42 @@ fn explain_reports_each_stage() {
     }
     assert!(resp.candidates.iter().any(|c| c.column.is_some()));
 }
+
+// ── an `assert` is a constraint between literals ─────────────────────────
+
+/// A patrol whose end may not come before its start (Canopy #13).
+const BEETLE: &str = "fn beetle(x0, x1)\n  assert(x1 >= x0, \"patrol ends before it starts\")\n  \
+    return {from: x0, to: x1}\nend\nlet b = beetle(3.5, 5.5)\npush_output(symbol(\"out\"), b.to)\n";
+
+#[test]
+fn failed_assert_rejects_the_step_and_says_why() {
+    let mut t = T::new(BEETLE);
+    let o = Observable::EmitValue { key: t.keys[0], path: Vec::new() };
+    let resp = t.propose(&req(vec![DmGoal::to(o, 2.5).within(0.01)]));
+    let a = &resp.alternatives[0];
+    assert!(!a.verified, "the assert holds x1 at or above x0: {a:#?}");
+    assert!(a.achieved[0] >= 3.5, "{:?}", a.achieved);
+    let r = a.rejections.first().unwrap_or_else(|| panic!("no rejection on {a:#?}"));
+    assert_eq!(r.message, "assertion failed: patrol ends before it starts");
+    assert_eq!(r.line, Some(2));
+    assert_eq!(r.condition.as_deref(), Some("x1 >= x0"));
+    assert_eq!(r.summary(), "assertion failed at line 2 (x1 >= x0): patrol ends before it starts");
+    assert_eq!(r.file, Some(FileId(0)));
+    assert!(r.runs >= 1);
+    assert!(r.tried.iter().any(|l| l.old_text == "5.5" && l.value < 3.5), "{:?}", r.tried);
+    assert!(a.description.contains("rejected beyond it: assertion failed"), "{}", a.description);
+    let d = &resp.diagnostics;
+    assert!(d.rejected_runs >= r.runs, "{d:#?}");
+    assert_eq!(d.rejections.iter().map(|r| r.runs).sum::<usize>(), d.rejected_runs);
+}
+
+#[test]
+fn a_run_that_holds_rejects_nothing() {
+    let mut t = T::new(BEETLE);
+    let o = Observable::EmitValue { key: t.keys[0], path: Vec::new() };
+    let resp = t.propose(&req(vec![DmGoal::to(o, 7.0)]));
+    let a = &resp.alternatives[0];
+    assert!(a.verified);
+    assert!(a.rejections.is_empty() && resp.diagnostics.rejected_runs == 0, "{resp:#?}");
+}
+

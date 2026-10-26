@@ -37,7 +37,8 @@ pub mod spec;
 
 pub use api::{
     Alternative, CandidateReport, Collateral, CollateralItem, DmDiagnostics, DmGoal, DmRequest, DmResponse,
-    DmSession, Engine, ExplainLog, FileEdit, GoalTarget, ParamChange, Prefer, apply_edits_multi, program_files,
+    DmSession, Engine, ExplainLog, FileEdit, GoalTarget, ParamChange, Prefer, Rejection, TriedLiteral,
+    apply_edits_multi, program_files,
     propose_edits_v2,
 };
 pub use rank::SubsetKind;

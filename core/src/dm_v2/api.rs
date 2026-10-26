@@ -45,8 +45,8 @@ use crate::dm_v2::rank::{
     ScoreFacts, ScoreParts, ScoreWeights, ScoredChange, SubsetKind, candidate_subsets, collateral_norm,
     collateral_shapes, param_weight, score, strength,
 };
-use crate::dm_v2::solve::{Bound, GoalRow, SolveCtx, SolveOptions, linear_step, max_error};
-use crate::dm_v2::spec::{Overrides, SpecConfig, SpecHost, SpecRun, SpecSession};
+use crate::dm_v2::solve::{Bound, FailedRun, GoalRow, SolveCtx, SolveOptions, linear_step, max_error};
+use crate::dm_v2::spec::{Overrides, RunError, SpecConfig, SpecHost, SpecRun, SpecSession};
 use crate::env::Env;
 use crate::native_fn::InputClasses;
 use crate::program::{Program, TermId, TermOp};
@@ -318,6 +318,62 @@ pub struct Alternative {
     pub iterations: usize,
     pub engine: Engine,
     pub description: String,
+    /// Why runs this alternative's solve tried were rejected: each raised an
+    /// error (an `assert` failing is the usual one, and the way a program
+    /// states a constraint between literals). Grouped by error, in order.
+    pub rejections: Vec<Rejection>,
+}
+
+/// Speculative runs rejected because they raised the same error.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Rejection {
+    /// The error's message, without its position (`assertion failed`).
+    pub message: String,
+    /// The file it was raised in, and its display name.
+    pub file: Option<FileId>,
+    pub file_name: Option<String>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+    /// For a failing `assert(...)`: the condition as written (`x1 >= x0`).
+    pub condition: Option<String>,
+    /// How many runs raised it.
+    pub runs: usize,
+    /// The literals the first of those runs had moved, and their values.
+    pub tried: Vec<TriedLiteral>,
+}
+
+/// A literal a rejected run had moved.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TriedLiteral {
+    pub term: TermId,
+    pub line: u32,
+    pub old_text: String,
+    pub value: f64,
+}
+
+impl Rejection {
+    /// `assertion failed at beetle.ptl:3 (x1 >= x0)`, and an assert's
+    /// message after it: `…(x1 >= x0): a patrol ends after it starts`.
+    pub fn summary(&self) -> String {
+        let (head, note) = match self.message.split_once(": ") {
+            Some((h, n)) if h == "assertion failed" => (h, Some(n)),
+            _ => (self.message.as_str(), None),
+        };
+        let mut s = head.to_string();
+        if let Some(line) = self.line {
+            match &self.file_name {
+                Some(f) => s.push_str(&format!(" at {f}:{line}")),
+                None => s.push_str(&format!(" at line {line}")),
+            }
+        }
+        if let Some(c) = &self.condition {
+            s.push_str(&format!(" ({c})"));
+        }
+        if let Some(n) = note {
+            s.push_str(&format!(": {n}"));
+        }
+        s
+    }
 }
 
 /// One discovered literal, and what became of it (§2.7).
@@ -359,6 +415,10 @@ pub struct DmDiagnostics {
     /// Subsets solved linearly, and sent to the verification loop.
     pub subsets_predicted: usize,
     pub subsets_verified: usize,
+    /// Speculative runs of the solve, rounding and verification that raised
+    /// an error (each rejected the values it tried), and why, grouped.
+    pub rejected_runs: usize,
+    pub rejections: Vec<Rejection>,
     /// The goals' baseline values and tolerances.
     pub baseline: Vec<f64>,
     pub tolerances: Vec<f64>,
@@ -1322,6 +1382,7 @@ impl DmSession {
                 opts,
                 runs: 0,
                 budget_exhausted: false,
+                failed: Vec::new(),
                 log: if explain { Some(&mut self.log) } else { None },
             };
             for pred in chosen {
@@ -1335,6 +1396,7 @@ impl DmSession {
                 if let Some(log) = ctx.log.as_deref_mut() {
                     log.push(format!("subset {:?} {names:?}: predicted {:?} → {:?}", pred.kind, pred.values, pred.goals));
                 }
+                let failed_before = ctx.failed.len();
                 let sol = ctx.solve_subset(&pred.cols);
                 let texts: Vec<String> = pred.cols.iter().map(|&c| self.texts[self.jac.params[c]].text.clone()).collect();
                 let rounded = ctx.round_solution(&sol, &texts);
@@ -1378,6 +1440,14 @@ impl DmSession {
                     }
                 };
                 let Some(run) = run else { continue };
+                let rejections = rejections(
+                    ctx.env.get_program(pid),
+                    &ctx.failed[failed_before..],
+                    |c| {
+                        let i = self.jac.params[c];
+                        (self.params[i].term, self.params[i].value, self.params[i].span.start.line, self.texts[i].text.clone())
+                    },
+                );
                 let achieved: Vec<f64> = rows[..gr].iter().map(|v| v.unwrap_or(f64::NAN)).collect();
                 let err = if run.ok() { max_error(&goals, &rows[..gr]) } else { f64::INFINITY };
                 let verified = err <= 1.0;
@@ -1445,7 +1515,10 @@ impl DmSession {
                     .collect();
                 let stateful = rendered.iter().any(|(i, ..)| self.params[*i].through_state);
                 let config_only = changes.iter().all(|c| c.config);
-                let description = describe(&changes, &collateral, verified, &achieved, &goals);
+                let mut description = describe(&changes, &collateral, verified, &achieved, &goals);
+                if !verified && let Some(r) = rejections.first() {
+                    description.push_str(&format!("; rejected beyond it: {}", r.summary()));
+                }
                 if let Some(log) = ctx.log.as_deref_mut() {
                     log.push(format!(
                         "  → {description}: achieved {achieved:?}, error {err:.3}, score {:.3} ({} step(s))",
@@ -1472,7 +1545,18 @@ impl DmSession {
                     iterations: sol.iterations,
                     engine: Engine::V2,
                     description,
+                    rejections,
                 });
+            }
+            self.diag.rejected_runs = ctx.failed.len();
+            self.diag.rejections = rejections(ctx.env.get_program(pid), &ctx.failed, |c| {
+                let i = self.jac.params[c];
+                (self.params[i].term, self.params[i].value, self.params[i].span.start.line, self.texts[i].text.clone())
+            });
+            if let Some(log) = ctx.log.as_deref_mut() {
+                for r in &self.diag.rejections {
+                    log.push(format!("rejected {} run(s): {}", r.runs, r.summary()));
+                }
             }
             self.diag.budget_exhausted |= ctx.budget_exhausted;
         }
@@ -1789,6 +1873,111 @@ fn describe(changes: &[ParamChange], coll: &Collateral, verified: bool, achieved
     s
 }
 
+/// Group `failed` runs by their error (§ L3: an `assert` is a constraint).
+/// `col` gives a Jacobian column's literal: term, baseline value, line, text.
+fn rejections(
+    program: Option<&Program>,
+    failed: &[FailedRun],
+    col: impl Fn(usize) -> (TermId, f64, u32, String),
+) -> Vec<Rejection> {
+    let mut out: Vec<Rejection> = Vec::new();
+    for f in failed {
+        let r = rejection_of(program, &f.error);
+        if let Some(seen) = out
+            .iter_mut()
+            .find(|o| o.message == r.message && o.file == r.file && o.line == r.line && o.column == r.column)
+        {
+            seen.runs += 1;
+            continue;
+        }
+        let tried = f
+            .cols
+            .iter()
+            .zip(&f.values)
+            .filter_map(|(&c, &v)| {
+                let (term, old, line, old_text) = col(c);
+                (v != old).then_some(TriedLiteral { term, line, old_text, value: v })
+            })
+            .collect();
+        out.push(Rejection { runs: 1, tried, ..r });
+    }
+    out
+}
+
+/// What a run's error says, and where: the message, the position tag the VM
+/// appends (`[line N, column M]`, or `[m.ptl line N, column M]` in a module),
+/// and for an `assert(...)` the condition's source text.
+fn rejection_of(program: Option<&Program>, e: &RunError) -> Rejection {
+    let raw = e.to_string();
+    let first = crate::dm_v2::solve::first_line(&raw);
+    let mut r = Rejection {
+        message: first.to_string(),
+        file: None,
+        file_name: None,
+        line: None,
+        column: None,
+        condition: None,
+        runs: 0,
+        tried: Vec::new(),
+    };
+    if !matches!(e, RunError::Runtime(_)) {
+        return r;
+    }
+    let Some(open) = first.rfind(" [").filter(|_| first.ends_with(']')) else { return r };
+    let tag = &first[open + 2..first.len() - 1];
+    let Some(at) = tag.rfind("line ") else { return r };
+    let Some((line, column)) = tag[at + 5..].split_once(", column ") else { return r };
+    let (Ok(line), Ok(column)) = (line.trim().parse::<u32>(), column.trim().parse::<u32>()) else { return r };
+    let module = tag[..at].trim();
+    r.message = first[..open].to_string();
+    r.line = Some(line);
+    r.column = Some(column);
+    let Some(program) = program else { return r };
+    let files = &program.source_map.files;
+    let fid = if module.is_empty() {
+        Some(crate::source_map::ENTRY_FILE)
+    } else {
+        files.iter().position(|f| f.name == module).map(|i| FileId(i as u16))
+    };
+    r.file = fid;
+    let file = fid.and_then(|f| files.get(f.0 as usize));
+    r.file_name = if module.is_empty() {
+        file.and_then(|f| f.origin.as_ref().and_then(|o| o.file_name()).map(|n| n.to_string_lossy().into_owned()))
+            .or_else(|| file.map(|f| f.name.clone()).filter(|n| !n.is_empty() && !n.starts_with('<')))
+    } else {
+        Some(module.to_string())
+    };
+    let source = file.map_or(program.source.as_str(), |f| f.source.as_str());
+    if let Some(text) = source.lines().nth(line.saturating_sub(1) as usize) {
+        let from: String = text.chars().skip(column.saturating_sub(1) as usize).collect();
+        r.condition = assert_condition(&from);
+    }
+    r
+}
+
+/// The condition of the `assert(...)` call `text` starts with: everything
+/// up to the first top-level comma (the message) or the closing paren.
+fn assert_condition(text: &str) -> Option<String> {
+    let rest = text.strip_prefix("assert")?.trim_start().strip_prefix('(')?;
+    let mut depth = 0i32;
+    let mut quote: Option<char> = None;
+    for (i, ch) in rest.char_indices() {
+        match (quote, ch) {
+            (Some(q), c) if c == q => quote = None,
+            (Some(_), _) => {}
+            (None, '"' | '\'') => quote = Some(ch),
+            (None, '(' | '[' | '{') => depth += 1,
+            (None, ')' | ']' | '}') if depth > 0 => depth -= 1,
+            (None, ')' | ',') if depth == 0 => {
+                let c = rest[..i].trim();
+                return (!c.is_empty()).then(|| c.to_string());
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// v1 for a request with a non-numeric goal: each goal is mapped to the
 /// argument of the call that made its emit, and v1's proposals (not re-run)
 /// become the alternatives.
@@ -1869,6 +2058,7 @@ fn v1_fallback(env: &Env, spec: &SpecSession, req: &DmRequest) -> Result<DmRespo
             iterations: 0,
             engine: Engine::V1,
             description: props.iter().map(|p| p.description.clone()).collect::<Vec<_>>().join(", "),
+            rejections: Vec::new(),
         }
     };
     let alternatives: Vec<Alternative> = if per_goal.len() == 1 {

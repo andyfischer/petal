@@ -1905,17 +1905,47 @@ fields are only ever added):
                                old, new, old_text, new_text, respelled }],
                    edits: [{ file, path, span, new_text }],
                    collateral: { norm, items: [{ channel, callee, line, max_move, key,
-                                                  emit, arg, path, moved, label }] } }],
+                                                  emit, arg, path, moved, label }] },
+                   rejections: [rejection] }],
   candidates: [{ term, file, line, span, value, is_int, binding, function, site, config,
                  hint, origin, distance, focus, in_goal_frame,
                  flags: {through_var, through_state, state_init, through_rng, structural, hint_bound},
                  loaded, eligible, ineligible_reason, quality, column, weight, clock_coupled }],
   diagnostics: { runs, wall_ms, suppressed, budget_exhausted,
                  stopped_by: "runs"|"wall"|"converged", max_runs, max_wall_ms, warnings, discovered,
-                 eligible, screened, measured, truncated, subsets_predicted, subsets_verified },
+                 eligible, screened, measured, truncated, subsets_predicted, subsets_verified,
+                 rejected_runs, rejections: [rejection] },
   explain: [line, ...] | null,
   applied: { pick, picked_by: "pick"|"only_verified", description, files } | null }
+
+rejection = { summary, message, file, path, line, column, condition, runs,
+              tried: [{ term, line, old_text, value }] }
 ```
+
+A speculative run that raises an error (a failing `assert`, usually) is not
+taken: the solver shortens its step and tries again. So an `assert` between
+two literals is a constraint DM respects (see
+[features/direct-manipulation.md](features/direct-manipulation.md#constraints-between-literals-assert)).
+An alternative's `rejections` say which errors ruled out the runs its solve
+tried, one entry per error: `summary` for people
+(`assertion failed at level.ptl:41 (x1 >= x0)`, then the assert's message
+if it has one), the `message` without its
+position, where it was raised, the `assert`'s `condition` as written, how many
+`runs` raised it, and the literals the first of them had moved (`tried`). The
+text output prints each under its alternative:
+
+```
+  1. [unverified] change `5.5` to 3.55 (line 6); moves nothing else; misses the goal by 1.050; rejected beyond it: assertion failed at beetle.ptl:3 (x1 >= x0)
+       line 6 beetle(x1:): 5.5 -> 3.55
+       reaches 3.55 · off by 1.05 · score 210.6855
+       rejected: assertion failed at beetle.ptl:3 (x1 >= x0) · 3 runs, first at `5.5` -> 2.5 (line 6)
+```
+
+`diagnostics.rejected_runs` counts every rejected run of the request, and
+`diagnostics.rejections` groups them the same way (the text output prints
+those when no alternative shows one: a subset whose every step failed).
+Probing runs that fail are reported on the candidate instead (`quality` is
+`errored`).
 
 A change's or a candidate's `site` says where in its expression the literal
 is written, or is `null` when it is a binding's whole value or an operand:

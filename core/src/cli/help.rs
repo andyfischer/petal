@@ -1549,6 +1549,12 @@ DESCRIPTION
        value that comes out of a function call, and refuses the flags marked
        (v2) below. Its text and JSON output keep their old shape.
 
+       A speculative run that raises an error is not taken, so an assert
+       between literals (assert(x1 >= x0)) is a constraint v2 respects. The
+       report says which one ruled runs out, under the alternative:
+       rejected: assertion failed at level.ptl:41 (x1 >= x0). --json has it
+       as the alternative's rejections and diagnostics.rejected_runs.
+
 GOALS
        --channel <name> --emit <n>
               Which emit: the output channel (e.g. draw_commands) and the

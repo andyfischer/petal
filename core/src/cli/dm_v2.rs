@@ -23,7 +23,7 @@ use crate::dm_v2::params::{BudgetLimit, ParamFilter, ParamSelector};
 use crate::dm_v2::spec::{SpecConfig, SpecHost, SpecSession};
 use crate::dm_v2::{
     Alternative, CandidateReport, ColumnQuality, DmGoal, DmRequest, DmResponse, DmSession, EmitKey, Engine,
-    Hint, ObsValue, Observable, PathStep, Prefer, apply_edits_multi, program_files,
+    Hint, ObsValue, Observable, PathStep, Prefer, Rejection, apply_edits_multi, program_files,
 };
 use crate::env::Env;
 use crate::program::{Program, ProgramId, TermId, TermOp};
@@ -1167,7 +1167,49 @@ fn alternative_json(program: &Program, sites: &Sites, rank: usize, a: &Alternati
         "changes": changes,
         "edits": edits,
         "collateral": { "norm": num(a.collateral.norm), "items": collateral },
+        "rejections": a.rejections.iter().map(|r| rejection_json(program, r)).collect::<Vec<_>>(),
     })
+}
+
+/// Runs rejected by one error (an `assert` failing, usually).
+fn rejection_json(program: &Program, r: &Rejection) -> Json {
+    json!({
+        "summary": r.summary(),
+        "message": r.message,
+        "file": r.file.map(|f| f.0),
+        "path": r.file.map(|f| file_path(program, f)).unwrap_or(Json::Null),
+        "line": r.line,
+        "column": r.column,
+        "condition": r.condition,
+        "runs": r.runs,
+        "tried": r
+            .tried
+            .iter()
+            .map(|t| json!({ "term": t.term.0, "line": t.line, "old_text": t.old_text, "value": num(t.value) }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// `rejected: assertion failed at beetle.ptl:3 (x1 >= x0) · 3 runs, first at `5.5` -> 2.5 (line 6)`.
+fn rejection_line(r: &Json) -> String {
+    let runs = r["runs"].as_u64().unwrap_or(0);
+    let tried: Vec<String> = r["tried"]
+        .as_array()
+        .map(|t| {
+            t.iter()
+                .map(|t| format!("`{}` -> {} (line {})", t["old_text"].as_str().unwrap_or("?"), fmt_num(&t["value"]), t["line"]))
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut s = format!(
+        "rejected: {} · {runs} run{}",
+        r["summary"].as_str().unwrap_or("?"),
+        if runs == 1 { "" } else { "s" }
+    );
+    if !tried.is_empty() {
+        s.push_str(&format!(", first at {}", tried.join(", ")));
+    }
+    s
 }
 
 fn candidate_json(program: &Program, sites: &Sites, c: &CandidateReport) -> Json {
@@ -1299,6 +1341,10 @@ fn report(
             "truncated": d.truncated,
             "subsets_predicted": d.subsets_predicted,
             "subsets_verified": d.subsets_verified,
+            // Runs that raised an error (a failing `assert`, usually), each
+            // rejecting the values it tried, and why.
+            "rejected_runs": d.rejected_runs,
+            "rejections": d.rejections.iter().map(|r| rejection_json(program, r)).collect::<Vec<_>>(),
         },
         "explain": response.explain.as_ref().map(|e| e.lines.clone()),
         "applied": applied,
@@ -1476,6 +1522,15 @@ pub fn print_text(r: &Json) {
         }
         if !facts.is_empty() {
             println!("       {}", facts.join(" · "));
+        }
+        for rej in a["rejections"].as_array().unwrap_or(&empty) {
+            println!("       {}", rejection_line(rej));
+        }
+    }
+    // Rejections no alternative shows (a subset whose every step failed).
+    if alts.iter().all(|a| a["rejections"].as_array().is_none_or(|r| r.is_empty())) {
+        for rej in diag["rejections"].as_array().unwrap_or(&empty) {
+            println!("{}", rejection_line(rej));
         }
     }
     if let Some(lines) = r["explain"].as_array() {

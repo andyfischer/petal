@@ -12,6 +12,14 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- `petal propose-edit` says why a step was rejected: a speculative run that
+  raises an error (a failing `assert`, usually) is not taken, and the
+  alternative now lists it, `rejected: assertion failed at level.ptl:41
+  (x1 >= x0) · 3 runs, first at ...`; an unverified one's description ends
+  in `rejected beyond it: ...`. `--json` adds `rejections` to each
+  alternative and `rejected_runs` / `rejections` to `diagnostics`
+  ([CLI.md](docs/CLI.md#propose-edit--propose-source-edits-that-change-an-emitted-value)).
+
 - Direct manipulation for embedders: `petal::cli::dm_v2::propose_json` runs
   `propose-edit` on a host's own `Env` (its natives registered, its frame
   as the checkpoint) from a JSON request with the CLI flags' fields

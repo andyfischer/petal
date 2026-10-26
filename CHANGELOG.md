@@ -12,6 +12,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- petal-sdl: `events::ResizeWatch` calls back on each window size change
+  from inside SDL, so a host can paint while macOS holds the main loop for a
+  live resize. It reads raw events, unlike rust-sdl2's
+  `EventSubsystem::add_event_watch`, which frees a dropped file's name that
+  the main loop then reads again.
+
 - Docs: `assert` is how a program states a constraint between literals for
   direct manipulation (`assert(x1 >= x0)` keeps a drag from inverting a
   patrol), with an example
@@ -124,6 +130,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   [Unary minus](docs/syntax/commas.md#unary-minus)).
 
 ### Fixed
+
+- petal-sdl: windows hear about resizes again under sdl2-compat (Homebrew's
+  `sdl2`, on SDL3). `input::suppress_untranslated_events` disabled the SDL3
+  window events that sdl2-compat builds every `SDL_WINDOWEVENT` from, so a
+  resizable window never learned its new size. It is replaced by
+  `events::next_event` / `events::poll_iter`, which skip those ids while
+  polling instead; `poll_sdl_events` uses them.
 
 - A value reassigned in a nested branch (an `elsif` arm, an `if` inside an
   `if`/`else` arm or a `match` arm, a loop inside an arm) is now visible to

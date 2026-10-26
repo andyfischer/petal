@@ -15,7 +15,8 @@
 //!   else from this crate — see `docs/usage/building-apps.md`.
 //!
 //! The reusable building blocks ([`input`] SDL translation and gamepad
-//! folding, [`audio`] queued-sample output, [`sfx`] procedural sound-effect
+//! folding, [`events`] safe polling under sdl2-compat and painting during a
+//! live resize, [`audio`] queued-sample output, [`sfx`] procedural sound-effect
 //! synthesis and [`sound`] its `sfx`/`synth` natives and mixer, [`protocol`] agent JSON,
 //! [`watcher`] hot reload, [`screenshot`] PNG encoding, [`font`] ladder,
 //! [`renderer`] SDL-canvas primitives, [`hidpi`] point-to-pixel scaling) are
@@ -23,6 +24,7 @@
 
 pub mod audio;
 pub mod default_host;
+pub mod events;
 pub mod font;
 pub mod game_loop;
 pub mod hidpi;

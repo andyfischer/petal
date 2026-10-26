@@ -77,6 +77,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- `petal propose-edit` rounds an answer that stops short of the goal (an
+  `assert` in the way, a range, the budget): the value where the solve
+  stopped prints as `3.55`, not `3.5546874999999756`. It takes the nicest
+  value (an int stays an int; the literal's own decimals, a `tunable` step,
+  then the fewest decimals) that a run confirms is no further from the goal
+  than one `--tol`.
+
 - A `-` directly followed by a number in negation position is now part of the
   number: `-3` parses as the literal `-3`, not a negation of `3`. Postfix
   operators therefore apply to the signed number: `-3.abs()` is `(-3).abs()`

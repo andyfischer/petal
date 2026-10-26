@@ -881,3 +881,29 @@ fn a_run_that_holds_rejects_nothing() {
     assert!(a.rejections.is_empty() && resp.diagnostics.rejected_runs == 0, "{resp:#?}");
 }
 
+#[test]
+fn a_solve_that_stops_short_is_rounded() {
+    // The solve stops near the assert's boundary at 3.5546874999999756; the
+    // nicest value no worse by more than τ is printed instead.
+    let mut t = T::new(BEETLE);
+    let o = Observable::EmitValue { key: t.keys[0], path: Vec::new() };
+    let resp = t.propose(&req(vec![DmGoal::to(o.clone(), 2.5).within(0.01)]));
+    let a = &resp.alternatives[0];
+    assert!(!a.verified);
+    assert_eq!(edits(a), vec!["5.5→3.55"], "{a:#?}");
+    assert_eq!(a.achieved, vec![3.55]);
+    // A tighter tolerance never rounds further from the goal than τ.
+    let resp = t.propose(&req(vec![DmGoal::to(o, 2.5).within(1e-6)]));
+    let a = &resp.alternatives[0];
+    let new = &a.changes[0].new_text;
+    assert!(new.len() <= 8 && a.achieved[0] <= 3.5546875 + 1e-6, "{new} {:?}", a.achieved);
+    // An int stays an int, even with respelling allowed.
+    let mut t = T::new(&BEETLE.replace("beetle(3.5, 5.5)", "beetle(3, 5)"));
+    let o = Observable::EmitValue { key: t.keys[0], path: Vec::new() };
+    for respell in [false, true] {
+        let mut r = req(vec![DmGoal::to(o.clone(), 1.0)]);
+        r.allow_respell = respell;
+        let resp = t.propose(&r);
+        assert_eq!(edits(&resp.alternatives[0]), vec!["5→3"], "respell {respell}");
+    }
+}

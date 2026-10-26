@@ -16,7 +16,9 @@
 //!   third step or after the control flow changed.
 //! - [`round_solution`]: nice literals (§2.4.4). An int stays an int, a float
 //!   keeps its decimals style, else the fewest decimals that keep every goal
-//!   within tolerance; jointly first, then one parameter at a time.
+//!   within tolerance; jointly first, then one parameter at a time. A
+//!   solve that stopped short of the goals is rounded too, as far as it
+//!   gets no worse than one tolerance.
 //!
 //! The dense algebra is a small Gaussian elimination with partial pivoting:
 //! `k ≤ 32` unknowns, no new dependency.
@@ -650,29 +652,34 @@ impl SolveCtx<'_> {
                 }
             })
             .collect();
-        // The linear prediction of the goals with column i moved by `d`.
-        let predict_ok = |i: usize, d: f64| -> bool {
-            (0..gr).all(|g| {
-                let Some(v) = sol.rows[g] else { return false };
-                let moved = v + sol.local[g][i] * d;
-                (moved - self.goals[g].target).abs() <= self.goals[g].tolerance
-            })
-        };
+        // How far each goal may end up from its target. A verified solution
+        // keeps every goal within tolerance; one that stopped short (an
+        // `assert` in the way, the budget, a goal out of reach) may get
+        // worse by at most one tolerance, so that where it stopped prints
+        // as a clean number too (`3.55`, not `3.5546874999999756`).
         let verified = sol.max_error <= 1.0;
+        let goals: &[GoalRow] = self.goals;
+        let slack: Vec<f64> = (0..gr)
+            .map(|g| {
+                let (t, tol) = (goals[g].target, goals[g].tolerance);
+                match sol.rows[g] {
+                    _ if verified => tol,
+                    Some(v) if v.is_finite() => (v - t).abs() + tol,
+                    _ => f64::NAN,
+                }
+            })
+            .collect();
+        let within = |g: usize, v: Option<f64>| -> bool {
+            v.is_some_and(|v| (v - goals[g].target).abs() <= slack[g])
+        };
+        // The linear prediction of the goals with column i moved by `d`.
+        let predict_ok =
+            |i: usize, d: f64| -> bool { (0..gr).all(|g| within(g, sol.rows[g].map(|v| v + sol.local[g][i] * d))) };
+        let accept = |run: &SpecRun, rows: &[Option<f64>]| -> bool { run.ok() && (0..gr).all(|g| within(g, rows[g])) };
         let picks: Vec<usize> = ladders
             .iter()
             .enumerate()
-            .map(|(i, l)| {
-                if !verified {
-                    // Best effort: the nicest value within 1e-9 relative of
-                    // the solution, else the solution rounded.
-                    return l
-                        .iter()
-                        .position(|&x| (x - sol.values[i]).abs() <= 1e-9 * sol.values[i].abs().max(1.0))
-                        .unwrap_or(l.len() - 1);
-                }
-                l.iter().position(|&x| predict_ok(i, x - sol.values[i])).unwrap_or(l.len() - 1)
-            })
+            .map(|(i, l)| l.iter().position(|&x| predict_ok(i, x - sol.values[i])).unwrap_or(l.len() - 1))
             .collect();
         let joint: Vec<f64> = picks.iter().zip(&ladders).map(|(&p, l)| l[p]).collect();
         let finish = |values: Vec<f64>, run: Option<SpecRun>, rows: Vec<Option<f64>>, goals: &[GoalRow]| {
@@ -686,14 +693,10 @@ impl SolveCtx<'_> {
             return finish(sol.values.clone(), sol.run.clone(), sol.rows.clone(), self.goals);
         };
         let rows = self.read_rows(&run);
-        let joint_err = if run.ok() { max_error(self.goals, &rows[..gr]) } else { f64::INFINITY };
-        if joint_err <= 1.0 || !verified {
-            if !verified && joint_err > sol.max_error && sol.run.is_some() {
-                // Rounding made a best effort worse: keep what the solve had.
-                return finish(sol.values.clone(), sol.run.clone(), sol.rows.clone(), self.goals);
-            }
+        if accept(&run, &rows) {
             return finish(joint, Some(run), rows, self.goals);
         }
+        let joint_err = if run.ok() { max_error(self.goals, &rows[..gr]) } else { f64::INFINITY };
         self.log(|| format!("  joint rounding {joint:?} missed (error {joint_err:.3}); one at a time"));
         // One at a time, largest change first.
         let mut order: Vec<usize> = (0..cols.len()).collect();
@@ -717,7 +720,7 @@ impl SolveCtx<'_> {
                 test[i] = x;
                 let Some(run) = self.run_at(cols, &test) else { break };
                 let rows = self.read_rows(&run);
-                if run.ok() && max_error(self.goals, &rows[..gr]) <= 1.0 {
+                if accept(&run, &rows) {
                     cur = test;
                     best = (Some(run), rows);
                     break;

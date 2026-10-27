@@ -143,6 +143,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- petal-ui: `FrameCore` no longer panics on `wasm32-unknown-unknown`. It
+  started on the wall clock (`Instant::now()`, which has no clock to read
+  there); a web build now starts virtual and the host sets `time()` each
+  frame. This is what lets Garden's panel host run in the browser
+  (`garden/garden-web`, behind petal-lang.org's direct manipulation gallery).
+
 - petal-sdl: windows hear about resizes again under sdl2-compat (Homebrew's
   `sdl2`, on SDL3). `input::suppress_untranslated_events` disabled the SDL3
   window events that sdl2-compat builds every `SDL_WINDOWEVENT` from, so a

@@ -342,16 +342,16 @@ impl App {
             .iter()
             .map(|c| {
                 let s = c.span?;
-                let edits: Vec<crate::dm_hints::LineEdit> = sketch
+                let edits: Vec<garden_script::dm_hints::LineEdit> = sketch
                     .iter()
                     .filter(|r| r.span.start_line == s.start_line && r.span.end_line == s.start_line)
-                    .map(|r| crate::dm_hints::LineEdit {
+                    .map(|r| garden_script::dm_hints::LineEdit {
                         start: r.span.start_col,
                         end: r.span.end_col,
                         text: r.new_text.clone(),
                     })
                     .collect();
-                let (a, b) = crate::dm_hints::map_range((s.start_col, s.end_col), &edits);
+                let (a, b) = garden_script::dm_hints::map_range((s.start_col, s.end_col), &edits);
                 Some((s.start_line, a, b))
             })
             .collect();

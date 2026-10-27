@@ -30,7 +30,7 @@ use garden_core::Point;
 use garden_render::{Color, Primitive, Rect, TextStyle, FONT_SIZE};
 use garden_script::DragSelector;
 
-use crate::dm_hints::{self, HintState, LineEdit, Literal};
+use garden_script::dm_hints::{self, HintState, LineEdit, Literal};
 use crate::editor_view::{DmGutterMark, DmUnderline};
 
 use super::manip_v2::{describe_filter, DragChoices};

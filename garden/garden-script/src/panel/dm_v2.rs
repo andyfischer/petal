@@ -41,7 +41,7 @@ use petal_ui::frame_core::FrameSpecHost;
 use super::{swap_edit_view_edits, swap_edit_view_texts, PanelData, PanelHost};
 use crate::panel_trace::{
     native_position_args, CodeSpan, DragAlternative, DragCandidate, DragFilter, DragOutcomeV2,
-    DragSelector, DragStart, SourceRewrite,
+    DragProperty, DragSelector, DragStart, SourceRewrite,
 };
 use crate::query::{self, QueryProvider};
 
@@ -58,6 +58,10 @@ pub const FINISH_WALL: Duration = Duration::from_millis(400);
 /// drag lands on a whole pixel, and a linear prediction from a Jacobian
 /// measured a moment ago is usually within it).
 pub const DRAG_ITERS: usize = 3;
+/// Verification steps for a color: a color is usually computed nonlinearly
+/// (a hue wheel, a mix), and a picked color lands far from the one on
+/// screen, where a linear prediction is a poor first guess.
+pub const COLOR_ITERS: usize = 8;
 /// Alternatives a release reports.
 pub const DRAG_ALTERNATIVES: usize = 3;
 /// The cap on one speculative run of the frame.
@@ -66,8 +70,11 @@ const RUN_WALL: Duration = Duration::from_millis(250);
 /// A v2 drag in progress.
 pub(super) struct V2Drag {
     session: DmSession,
-    /// Goals `0..nx` are the horizontal ones, `nx..` the vertical ones.
-    nx: usize,
+    /// Each goal's axis: the index into the deltas a move is given (for a
+    /// position 0 is horizontal and 1 vertical; see [`DragProperty`]).
+    axis: Vec<usize>,
+    /// How many axes the gesture has.
+    n_axes: usize,
     /// Each goal's baseline value.
     base: Vec<f64>,
     /// The entry file's text when the session opened: a release against
@@ -180,18 +187,33 @@ impl PanelHost {
         cmd_index: usize,
         filter: &DragFilter,
     ) -> Result<DragStart, DragOutcomeV2> {
+        self.begin_adjust_v2(cmd_index, DragProperty::Position, filter)
+    }
+
+    /// [`begin_drag_v2`](Self::begin_drag_v2) for any [`DragProperty`] of the
+    /// shape: its position, its size or its color. The gesture's moves and
+    /// release then take one delta per axis of that property
+    /// ([`preview_adjust_v2`](Self::preview_adjust_v2),
+    /// [`finish_adjust_v2`](Self::finish_adjust_v2)).
+    pub fn begin_adjust_v2(
+        &mut self,
+        cmd_index: usize,
+        property: DragProperty,
+        filter: &DragFilter,
+    ) -> Result<DragStart, DragOutcomeV2> {
         self.cancel_open_session();
         let Some(cmd) = self.last_cmds.get(cmd_index).cloned() else {
             self.drop_pinned();
             return Err(DragOutcomeV2::Stale);
         };
-        let Some((xs, ys)) = native_position_args(&cmd) else {
+        let position = native_position_args(&cmd);
+        if property == DragProperty::Position && position.is_none() {
             self.drop_pinned();
             return Err(DragOutcomeV2::Refused {
                 why: "this shape has no position to drag".to_string(),
                 candidates: Vec::new(),
             });
-        };
+        }
         // Which emit of the frame this command was. Several commands can come
         // from one call site (a loop), so it is the k-th emit with this
         // command's chain, k counted among the frame's commands; without
@@ -215,14 +237,31 @@ impl PanelHost {
             // still sketch; an animated one re-runs one frame further on.
             None => (self.core.stack_id(), false),
         };
-        let result = self.open_session(checkpoint, cmd_index, &xs, &ys, origin, occurrence, raw_index, filter);
+        let target = GoalTarget {
+            property,
+            position,
+            origin,
+            occurrence,
+            raw_index,
+        };
+        let result = self.open_session(checkpoint, &target, filter);
         if owned {
             self.core.env.drop_fork(checkpoint);
         }
         let drag = result?;
+        let on_axis = |k: usize| -> Vec<f64> {
+            drag.base
+                .iter()
+                .zip(&drag.axis)
+                .filter(|(_, a)| **a == k)
+                .map(|(b, _)| *b)
+                .collect()
+        };
+        let axes: Vec<Vec<f64>> = (0..drag.n_axes).map(on_axis).collect();
         let start = DragStart {
-            base_x: drag.base[..drag.nx].to_vec(),
-            base_y: drag.base[drag.nx..].to_vec(),
+            base_x: if property == DragProperty::Position { on_axis(0) } else { Vec::new() },
+            base_y: if property == DragProperty::Position { on_axis(1) } else { Vec::new() },
+            axes,
             candidates: drag.candidates.clone(),
             runs: drag.session.runs_used(),
         };
@@ -230,19 +269,12 @@ impl PanelHost {
         Ok(start)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn open_session(
         &mut self,
         checkpoint: StackKey,
-        cmd_index: usize,
-        xs: &[usize],
-        ys: &[usize],
-        origin: Option<crate::panel_trace::DrawOrigin>,
-        occurrence: Option<usize>,
-        raw_index: usize,
+        target: &GoalTarget,
         filter: &DragFilter,
     ) -> Result<V2Drag, DragOutcomeV2> {
-        let _ = cmd_index;
         let pid = self.core.program_id();
         let draw = self
             .core
@@ -257,23 +289,37 @@ impl PanelHost {
             candidates: Vec::new(),
         };
 
-        // The probe: one baseline to learn the emit's key and the raw values
-        // of its position arguments.
-        let (goals, base) = {
+        // The probe: one baseline to learn the emit's key, which native drew
+        // it, and the raw values of the arguments the gesture moves.
+        let (goals, base, axis) = {
             let (env, mut host) = spec_parts!(&mut *self);
             let probe = SpecSession::begin(env, &mut host, checkpoint, &[], spec_cfg.clone(), None)
                 .map_err(|e| refused(format!("could not re-run this frame: {e}")))?;
             let emits: Vec<_> = probe.baseline().channel(draw).collect();
-            let found = match (&origin, occurrence) {
+            let found = match (&target.origin, target.occurrence) {
                 (Some(o), Some(k)) => emits.iter().filter(|e| e.chain == o.0).nth(k).copied(),
                 _ => None,
             }
-            .or_else(|| emits.get(raw_index).copied());
-            let key: Option<EmitKey> = found.map(|e| e.key);
-            let axes = key.and_then(|key| position_observables(probe.baseline(), key, xs, ys));
+            .or_else(|| emits.get(target.raw_index).copied());
+            let native = found
+                .and_then(|e| e.native)
+                .map(|id| env.native_table().get_name(id).to_string());
+            let goals = found.and_then(|e| match (&target.position, target.property) {
+                (Some((xs, ys)), DragProperty::Position) => {
+                    position_observables(probe.baseline(), e.key, xs, ys)
+                }
+                _ => property_observables(probe.baseline(), e.key, native.as_deref()?, target.property),
+            });
+            let found = found.is_some();
             probe.end(env);
-            match axes {
-                Some(a) => a,
+            match goals {
+                Some(g) => g,
+                None if found => {
+                    return Err(refused(format!(
+                        "this shape has no {} to change",
+                        target.property.noun()
+                    )))
+                }
                 None => {
                     return Err(refused(
                         "this shape is not in a re-run of the frame (it depends on input the re-run cannot see)"
@@ -282,6 +328,7 @@ impl PanelHost {
                 }
             }
         };
+        let n_axes = axis.iter().max().map_or(0, |m| m + 1);
         let request = DmRequest {
             goals: goals
                 .into_iter()
@@ -292,7 +339,7 @@ impl PanelHost {
             max_alternatives: DRAG_ALTERNATIVES,
             max_runs: OPEN_RUNS,
             max_wall: OPEN_WALL,
-            max_iters: DRAG_ITERS,
+            max_iters: if target.property == DragProperty::Color { COLOR_ITERS } else { DRAG_ITERS },
             spec: spec_cfg,
             ..DmRequest::default()
         };
@@ -305,30 +352,31 @@ impl PanelHost {
             .unwrap_or_default();
         let (env, mut host) = spec_parts!(&mut *self);
         let session = DmSession::open(env, &mut host, checkpoint, &request).map_err(|e| refused(e.to_string()))?;
-        let nx = xs.len();
         let candidates = {
             let program = self.core.env.get_program(pid).ok_or(DragOutcomeV2::Stale)?;
             session
                 .candidates()
                 .iter()
-                .map(|c| candidate(program, c, nx))
+                .map(|c| candidate(program, c, &axis))
                 .collect()
         };
         Ok(V2Drag {
             session,
-            nx,
+            axis,
+            n_axes,
             base,
             source,
             candidates,
         })
     }
 
-    /// The targets of an open drag moved by (`dx`, `dy`).
-    fn drag_targets(drag: &V2Drag, dx: f64, dy: f64) -> Vec<f64> {
+    /// The targets of an open drag moved by `deltas`, one per axis (a
+    /// missing axis does not move).
+    fn drag_targets(drag: &V2Drag, deltas: &[f64]) -> Vec<f64> {
         drag.base
             .iter()
-            .enumerate()
-            .map(|(i, b)| b + if i < drag.nx { dx } else { dy })
+            .zip(&drag.axis)
+            .map(|(b, a)| b + deltas.get(*a).copied().unwrap_or(0.0))
             .collect()
     }
 
@@ -337,13 +385,20 @@ impl PanelHost {
     /// no runs. Spans are in the source the drag started from. Empty with no
     /// drag open, or when nothing is predicted to move.
     pub fn preview_drag_v2(&self, dx: f64, dy: f64) -> Vec<SourceRewrite> {
+        self.preview_adjust_v2(&[dx, dy])
+    }
+
+    /// [`preview_drag_v2`](Self::preview_drag_v2) for a gesture opened by
+    /// [`begin_adjust_v2`](Self::begin_adjust_v2): `deltas` has one entry per
+    /// axis of its property.
+    pub fn preview_adjust_v2(&self, deltas: &[f64]) -> Vec<SourceRewrite> {
         let Some(drag) = self.dm_drag.as_ref() else {
             return Vec::new();
         };
         let Some(program) = self.core.env.get_program(self.core.program_id()) else {
             return Vec::new();
         };
-        let targets = Self::drag_targets(drag, dx, dy);
+        let targets = Self::drag_targets(drag, deltas);
         drag.session
             .preview(&targets)
             .iter()
@@ -354,6 +409,12 @@ impl PanelHost {
     /// Release the open drag `dx`, `dy` pixels from the press: verify, round
     /// and rank. Closes the drag either way.
     pub fn finish_drag_v2(&mut self, dx: f64, dy: f64) -> DragOutcomeV2 {
+        self.finish_adjust_v2(&[dx, dy])
+    }
+
+    /// [`finish_drag_v2`](Self::finish_drag_v2) for a gesture opened by
+    /// [`begin_adjust_v2`](Self::begin_adjust_v2).
+    pub fn finish_adjust_v2(&mut self, deltas: &[f64]) -> DragOutcomeV2 {
         let Some(mut drag) = self.dm_drag.take() else {
             return DragOutcomeV2::Stale;
         };
@@ -368,7 +429,7 @@ impl PanelHost {
             drag.session.cancel(&mut self.core.env);
             return DragOutcomeV2::Stale;
         }
-        let targets = Self::drag_targets(&drag, dx, dy);
+        let targets = Self::drag_targets(&drag, deltas);
         drag.session.renew_budget(FINISH_RUNS, FINISH_WALL);
         let candidates = drag.candidates;
         let (env, mut host) = spec_parts!(&mut *self);
@@ -461,15 +522,24 @@ impl PanelHost {
     }
 }
 
+/// What a gesture is aimed at: the grabbed command's property and how to find
+/// its emit in a re-run of the frame.
+struct GoalTarget {
+    property: DragProperty,
+    /// The command's position arguments, when it has any.
+    position: Option<(Vec<usize>, Vec<usize>)>,
+    origin: Option<crate::panel_trace::DrawOrigin>,
+    occurrence: Option<usize>,
+    raw_index: usize,
+}
+
+/// A gesture's goals: each observable, its baseline value and its axis.
+type Goals = (Vec<Observable>, Vec<f64>, Vec<usize>);
+
 /// The observables of a command's position arguments, and their baseline
 /// values: x goals first, then y. A number argument is read as it is; a
 /// record argument (`draw_rect(rect, color)`) through its `x` / `y` field.
-fn position_observables(
-    base: &petal::dm_v2::SpecRun,
-    key: EmitKey,
-    xs: &[usize],
-    ys: &[usize],
-) -> Option<(Vec<Observable>, Vec<f64>)> {
+fn position_observables(base: &petal::dm_v2::SpecRun, key: EmitKey, xs: &[usize], ys: &[usize]) -> Option<Goals> {
     let at = |arg: usize, path: Vec<PathStep>| Observable::EmitArg { key, arg, path };
     let mut x_goals = Vec::new();
     let mut y_goals = Vec::new();
@@ -484,10 +554,91 @@ fn position_observables(
             (Some(_), None) => return None,
         };
         let (vx, vy) = (base.read(&ox)?, base.read(&oy)?);
-        x_goals.push((ox, vx));
-        y_goals.push((oy, vy));
+        x_goals.push((ox, vx, 0));
+        y_goals.push((oy, vy, 1));
     }
-    Some(x_goals.into_iter().chain(y_goals).unzip())
+    let mut goals: Goals = Default::default();
+    for (o, v, a) in x_goals.into_iter().chain(y_goals) {
+        goals.0.push(o);
+        goals.1.push(v);
+        goals.2.push(a);
+    }
+    Some(goals)
+}
+
+/// One way a native's raw arguments can carry a property: `(argument, field
+/// path, axis)` per goal, where the path reads into a record argument.
+type Layout = &'static [(usize, &'static [&'static str], usize)];
+
+/// Where a size or a color lives in the raw arguments of the native named
+/// `native`, as the layouts its overloads use, tried in order (the first one
+/// the run's arguments fully answer is the call's).
+///
+/// A size is the shape's extent from its anchor: a circle's radius (one
+/// axis), a rectangle's or an ellipse's width and height, a line's second
+/// endpoint (so "resizing" a line drags its end), a text's font size. A
+/// color is its `r`, `g`, `b` (axes 0, 1, 2).
+fn property_layouts(native: &str, property: DragProperty) -> &'static [Layout] {
+    const fn rgb(r: usize) -> [(usize, &'static [&'static str], usize); 3] {
+        [(r, &[], 0), (r + 1, &[], 1), (r + 2, &[], 2)]
+    }
+    const RGB1: Layout = &rgb(1);
+    const RGB3: Layout = &rgb(3);
+    const RGB4: Layout = &rgb(4);
+    const RGB5: Layout = &rgb(5);
+    const RGB6: Layout = &rgb(6);
+    const WH2: Layout = &[(2, &[], 0), (3, &[], 1)];
+    match property {
+        DragProperty::Position => &[],
+        DragProperty::Size => match native {
+            "draw_circle" | "draw_circle_outline" => &[&[(2, &[], 0)]],
+            // `draw_rect` is a native itself, with a record overload.
+            "draw_rect" => &[WH2, &[(0, &["w"], 0), (0, &["h"], 1)]],
+            "draw_rect_rounded" | "draw_rect_outline" | "draw_rect_rounded_outline" | "draw_ellipse"
+            | "draw_ellipse_outline" | "draw_line" => &[WH2],
+            "draw_image" => &[&[(3, &[], 0), (4, &[], 1)]],
+            "fill_arc" => &[&[(3, &[], 0)]],
+            "draw_text" => &[&[(3, &[], 0)], &[(3, &["size"], 0)]],
+            _ => &[],
+        },
+        DragProperty::Color => match native {
+            "fill_poly" | "fill_polygon" => &[RGB1],
+            "draw_circle" | "draw_circle_outline" | "fill_fan" => &[RGB3],
+            // `(x, y, w, h, r, g, b)`, `(x, y, w, h, color)`, `(rect, color)`.
+            "draw_rect" => &[
+                RGB4,
+                &[(4, &["r"], 0), (4, &["g"], 1), (4, &["b"], 2)],
+                &[(1, &["r"], 0), (1, &["g"], 1), (1, &["b"], 2)],
+            ],
+            "draw_rect_outline" | "draw_line" | "draw_ellipse" | "draw_ellipse_outline" | "draw_text" => &[RGB4],
+            "draw_rect_rounded" | "draw_rect_rounded_outline" => &[RGB5],
+            "fill_arc" | "fill_triangle" => &[RGB6],
+            _ => &[],
+        },
+    }
+}
+
+/// The observables of a command's size or color (see [`property_layouts`])
+/// and their baseline values. `None` when the native has no such property,
+/// or the run did not hand it numbers where any layout says (`draw_text`
+/// with a style record carries no color arguments).
+fn property_observables(
+    base: &petal::dm_v2::SpecRun,
+    key: EmitKey,
+    native: &str,
+    property: DragProperty,
+) -> Option<Goals> {
+    property_layouts(native, property).iter().find_map(|layout| {
+        let mut goals: Goals = Default::default();
+        for &(arg, path, axis) in layout.iter() {
+            let path = path.iter().map(|f| PathStep::Field((*f).into())).collect();
+            let o = Observable::EmitArg { key, arg, path };
+            goals.1.push(base.read(&o)?);
+            goals.0.push(o);
+            goals.2.push(axis);
+        }
+        Some(goals)
+    })
 }
 
 /// A [`DragFilter`] in the engine's terms.
@@ -533,8 +684,8 @@ fn span_text(program: &Program, span: &petal::source_map::SourceSpan) -> String 
         .unwrap_or_default()
 }
 
-/// One engine candidate, for a picker.
-fn candidate(program: &Program, c: &CandidateReport, nx: usize) -> DragCandidate {
+/// One engine candidate, for a picker. `axis` is each goal's axis.
+fn candidate(program: &Program, c: &CandidateReport, axis: &[usize]) -> DragCandidate {
     let p = &c.param;
     let variable = p
         .binding
@@ -572,10 +723,20 @@ fn candidate(program: &Program, c: &CandidateReport, nx: usize) -> DragCandidate
         eligible: c.eligible.is_ok(),
         why_not: c.eligible.err().map(str::to_string),
         moves: c.column.as_ref().is_some_and(|col| col.iter().any(|v| *v != 0.0)),
-        moves_x: c.column.as_ref().is_some_and(|col| col.iter().take(nx).any(|v| *v != 0.0)),
-        moves_y: c.column.as_ref().is_some_and(|col| col.iter().skip(nx).any(|v| *v != 0.0)),
+        moves_x: moves_on(c, axis, 0),
+        moves_y: moves_on(c, axis, 1),
+        moves_axes: (0..axis.iter().max().map_or(0, |m| m + 1))
+            .map(|k| moves_on(c, axis, k))
+            .collect(),
         selector,
     }
+}
+
+/// Whether a candidate's measured column moves any goal on axis `k`.
+fn moves_on(c: &CandidateReport, axis: &[usize], k: usize) -> bool {
+    c.column
+        .as_ref()
+        .is_some_and(|col| col.iter().zip(axis).any(|(v, a)| *a == k && *v != 0.0))
 }
 
 /// One changed literal as a rewrite. `others` is how many other shapes the

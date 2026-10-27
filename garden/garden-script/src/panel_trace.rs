@@ -426,6 +426,9 @@ pub struct DragCandidate {
     /// Whether it moves the shape horizontally / vertically.
     pub moves_x: bool,
     pub moves_y: bool,
+    /// Whether it moves each axis of the gesture's [`DragProperty`] (for a
+    /// position, `[moves_x, moves_y]`; for a color, r, g and b).
+    pub moves_axes: Vec<bool>,
     /// The selector that names exactly this candidate, for re-asking.
     pub selector: DragSelector,
 }
@@ -469,6 +472,32 @@ pub enum DragOutcomeV2 {
     Stale,
 }
 
+/// What a v2 gesture changes about the grabbed shape. A drag moves its
+/// position; the same engine answers "make it this big" and "make it this
+/// color", by stating goals on the arguments that carry those instead (see
+/// [`PanelHost::begin_adjust_v2`](crate::PanelHost::begin_adjust_v2)).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DragProperty {
+    /// Where it is: axes x, y.
+    Position,
+    /// How big it is: a circle's radius (one axis), a rectangle's or an
+    /// ellipse's width and height, a line's second endpoint, a text's size.
+    Size,
+    /// Its fill or stroke color: axes r, g, b.
+    Color,
+}
+
+impl DragProperty {
+    /// What it is called in a message.
+    pub fn noun(self) -> &'static str {
+        match self {
+            DragProperty::Position => "position",
+            DragProperty::Size => "size",
+            DragProperty::Color => "color",
+        }
+    }
+}
+
 /// What [`PanelHost::begin_drag_v2`](crate::PanelHost::begin_drag_v2) found.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DragStart {
@@ -477,6 +506,10 @@ pub struct DragStart {
     /// command says `100`).
     pub base_x: Vec<f64>,
     pub base_y: Vec<f64>,
+    /// The baseline values per axis of the gesture's [`DragProperty`]: for a
+    /// position `[base_x, base_y]`, for a size the extents (`[radius]`,
+    /// `[w, h]`), for a color `[[r], [g], [b]]`.
+    pub axes: Vec<Vec<f64>>,
     pub candidates: Vec<DragCandidate>,
     /// Speculative runs opening the session took.
     pub runs: usize,

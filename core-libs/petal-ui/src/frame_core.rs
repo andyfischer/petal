@@ -41,12 +41,29 @@ use crate::input::{self, InputEvent, InputState};
 #[derive(Debug, Clone, Copy)]
 enum Clock {
     /// Seconds since this instant — the interactive default. Read fresh each
-    /// frame rather than accumulated from `dt`, so it does not drift.
+    /// frame rather than accumulated from `dt`, so it does not drift. Never
+    /// on wasm32, which has no clock.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     Wall(Instant),
     /// An explicit reading that only [`FrameCore::advance_clock`] and
     /// [`FrameCore::set_clock`] move — for a host driving frames (a harness,
     /// `POST /tick`), where `dt` is an instruction rather than a measurement.
     Virtual(f64),
+}
+
+/// The clock a new core starts on: the wall clock where there is one.
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::disallowed_methods, reason = "wasm32 builds take the version below")]
+fn initial_clock() -> Clock {
+    Clock::Wall(Instant::now())
+}
+
+/// `wasm32-unknown-unknown` has no clock (`Instant::now()` panics there), so a
+/// web host starts virtual at zero and places the clock itself each frame with
+/// [`FrameCore::set_clock`] (from `performance.now()`).
+#[cfg(target_arch = "wasm32")]
+fn initial_clock() -> Clock {
+    Clock::Virtual(0.0)
 }
 
 /// Host extension points around [`FrameCore::frame`]. Every method has an
@@ -158,7 +175,7 @@ impl FrameCore {
             input: InputState::new(),
             program_id,
             stack_id,
-            clock: Clock::Wall(Instant::now()),
+            clock: initial_clock(),
             pending_dt: None,
             result: Value::Nil,
             provider: None,

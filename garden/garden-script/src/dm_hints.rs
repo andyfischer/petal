@@ -3,7 +3,8 @@
 //! (`tunable(40)`, `rigid(40)`) and unwrapping it again.
 //!
 //! This is what the mouse toggles in Petal IDE's drag mode (see
-//! docs/petal-ide-mode.md, "Marking numbers tunable or rigid"). Because the
+//! docs/petal-ide-mode.md, "Marking numbers tunable or rigid") and in the
+//! browser build, `garden-web`. Because the
 //! result is ordinary source, the next drag's solver reads the hint the way it
 //! reads one the author typed, and nothing in Garden has to remember it.
 //!
@@ -13,7 +14,7 @@
 
 /// What a literal is marked as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HintState {
+pub enum HintState {
     /// No hint: the solver may move it, at the ordinary cost.
     Free,
     /// `tunable(…)`: preferred, kept within its bounds.
@@ -24,7 +25,7 @@ pub(crate) enum HintState {
 
 impl HintState {
     /// The mouse cycle: free → tunable → rigid → free.
-    pub(crate) fn next(self) -> HintState {
+    pub fn next(self) -> HintState {
         match self {
             HintState::Free => HintState::Tunable,
             HintState::Tunable => HintState::Rigid,
@@ -32,7 +33,7 @@ impl HintState {
         }
     }
 
-    pub(crate) fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             HintState::Free => "free",
             HintState::Tunable => "tunable",
@@ -40,7 +41,7 @@ impl HintState {
         }
     }
 
-    pub(crate) fn parse(s: &str) -> Option<HintState> {
+    pub fn parse(s: &str) -> Option<HintState> {
         match s {
             "free" | "none" => Some(HintState::Free),
             "tunable" => Some(HintState::Tunable),
@@ -62,7 +63,7 @@ impl HintState {
 /// A hint call around a literal: `tunable(` at `start`, its `)` ending at
 /// `end` (exclusive). Columns are chars.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct HintCall {
+pub struct HintCall {
     pub kind: HintState,
     pub start: usize,
     pub end: usize,
@@ -70,7 +71,7 @@ pub(crate) struct HintCall {
 
 /// A numeric literal on a line, its leading unary minus included.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Literal {
+pub struct Literal {
     pub start: usize,
     pub end: usize,
     pub text: String,
@@ -82,19 +83,19 @@ pub(crate) struct Literal {
 }
 
 impl Literal {
-    pub(crate) fn state(&self) -> HintState {
+    pub fn state(&self) -> HintState {
         self.hint.map_or(HintState::Free, |h| h.kind)
     }
 
     /// The columns a click on it may land in: the whole hint call, if any.
-    pub(crate) fn outer(&self) -> (usize, usize) {
+    pub fn outer(&self) -> (usize, usize) {
         self.hint.map_or((self.start, self.end), |h| (h.start, h.end))
     }
 }
 
 /// One replacement on a line: chars `start..end` become `text`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LineEdit {
+pub struct LineEdit {
     pub start: usize,
     pub end: usize,
     pub text: String,
@@ -235,7 +236,7 @@ fn literal_tokens(toks: &[Token]) -> Vec<(usize, usize)> {
 }
 
 /// Every numeric literal on `line`, in order, with its hint call.
-pub(crate) fn literals(line: &str) -> Vec<Literal> {
+pub fn literals(line: &str) -> Vec<Literal> {
     let chars: Vec<char> = line.chars().collect();
     let toks = tokenize(&chars);
     let lits = literal_tokens(&toks);
@@ -321,7 +322,7 @@ pub(crate) fn literals(line: &str) -> Vec<Literal> {
 /// The literal a click at `col` means: one whose text, or whose hint call,
 /// contains the column (a click just past its last char counts too). Bounds
 /// are skipped.
-pub(crate) fn literal_at(line: &str, col: usize) -> Option<Literal> {
+pub fn literal_at(line: &str, col: usize) -> Option<Literal> {
     let lits: Vec<Literal> = literals(line).into_iter().filter(|l| !l.bound).collect();
     let inside = |l: &&Literal| l.start <= col && col < l.end;
     let in_call = |l: &&Literal| {
@@ -338,7 +339,7 @@ pub(crate) fn literal_at(line: &str, col: usize) -> Option<Literal> {
 
 /// The edits that mark `lit` as `to`. Empty when it already is. Changing a
 /// `tunable` with bounds to `rigid` drops the bounds (`rigid` takes none).
-pub(crate) fn mark(lit: &Literal, to: HintState) -> Vec<LineEdit> {
+pub fn mark(lit: &Literal, to: HintState) -> Vec<LineEdit> {
     if lit.state() == to {
         return Vec::new();
     }
@@ -362,8 +363,7 @@ pub(crate) fn mark(lit: &Literal, to: HintState) -> Vec<LineEdit> {
 }
 
 /// `line` with `edits` applied (they must not overlap).
-#[cfg(test)]
-pub(crate) fn apply(line: &str, edits: &[LineEdit]) -> String {
+pub fn apply(line: &str, edits: &[LineEdit]) -> String {
     let mut chars: Vec<char> = line.chars().collect();
     let mut sorted: Vec<&LineEdit> = edits.iter().collect();
     sorted.sort_by_key(|e| std::cmp::Reverse((e.start, e.end)));
@@ -376,8 +376,7 @@ pub(crate) fn apply(line: &str, edits: &[LineEdit]) -> String {
 
 /// Cycle the literal at `col`: its new state and the edits, or `None` when
 /// no literal is there.
-#[cfg(test)]
-pub(crate) fn cycle_at(line: &str, col: usize) -> Option<(Literal, HintState, Vec<LineEdit>)> {
+pub fn cycle_at(line: &str, col: usize) -> Option<(Literal, HintState, Vec<LineEdit>)> {
     let lit = literal_at(line, col)?;
     let to = lit.state().next();
     let edits = mark(&lit, to);
@@ -388,7 +387,7 @@ pub(crate) fn cycle_at(line: &str, col: usize) -> Option<(Literal, HintState, Ve
 /// `candidates` (char column ranges of the drag's candidate numbers on this
 /// line), else the literal initializer of a `let` / `config let` / `var` /
 /// `const` binding. Empty when neither.
-pub(crate) fn line_targets(line: &str, candidates: &[(usize, usize)]) -> Vec<Literal> {
+pub fn line_targets(line: &str, candidates: &[(usize, usize)]) -> Vec<Literal> {
     let lits: Vec<Literal> = literals(line).into_iter().filter(|l| !l.bound).collect();
     let hit: Vec<Literal> = lits
         .iter()
@@ -421,7 +420,7 @@ pub(crate) fn line_targets(line: &str, candidates: &[(usize, usize)]) -> Vec<Lit
 
 /// Cycle a whole line (see [`line_targets`]): every target goes to the state
 /// after the first target's. `None` when the line has nothing to toggle.
-pub(crate) fn cycle_line(line: &str, candidates: &[(usize, usize)]) -> Option<(Vec<Literal>, HintState, Vec<LineEdit>)> {
+pub fn cycle_line(line: &str, candidates: &[(usize, usize)]) -> Option<(Vec<Literal>, HintState, Vec<LineEdit>)> {
     let targets = line_targets(line, candidates);
     let to = targets.first()?.state().next();
     let edits = targets.iter().flat_map(|l| mark(l, to)).collect();
@@ -431,7 +430,7 @@ pub(crate) fn cycle_line(line: &str, candidates: &[(usize, usize)]) -> Option<(V
 /// Where column `col` lands once `edits` (in the line's original columns)
 /// are applied. `start_side`: the column starts a range, so an insertion at
 /// exactly `col` pushes it right; an end column stays left of one.
-pub(crate) fn map_col(col: usize, edits: &[LineEdit], start_side: bool) -> usize {
+pub fn map_col(col: usize, edits: &[LineEdit], start_side: bool) -> usize {
     let mut delta: isize = 0;
     let mut clamp: Option<usize> = None;
     for e in edits {
@@ -452,7 +451,7 @@ pub(crate) fn map_col(col: usize, edits: &[LineEdit], start_side: bool) -> usize
 }
 
 /// A range `start..end` after `edits`.
-pub(crate) fn map_range((start, end): (usize, usize), edits: &[LineEdit]) -> (usize, usize) {
+pub fn map_range((start, end): (usize, usize), edits: &[LineEdit]) -> (usize, usize) {
     let s = map_col(start, edits, true);
     let e = map_col(end, edits, false).max(s);
     (s, e)

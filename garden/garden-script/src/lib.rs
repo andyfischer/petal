@@ -52,6 +52,7 @@
 //! run and retrievable via [`ScriptHost::take_output`].
 
 pub mod bloom;
+pub mod dm_hints;
 mod convert;
 pub mod inspect;
 mod native_fns;
@@ -73,7 +74,7 @@ pub use panel::{DRAG_ALTERNATIVES, DRAG_ITERS, FINISH_RUNS, FINISH_WALL, OPEN_RU
 pub use panel_store::PanelStore;
 pub use panel_trace::{
     apply_rewrites_to, cmd_bounds, drag_handle, hit_test, ArgSource, CallRef, CodeSpan, DragAlternative,
-    DragCandidate, DragFilter, DragHandle, DragOutcome, DragOutcomeV2, DragSelector, DragStart,
+    DragCandidate, DragFilter, DragHandle, DragOutcome, DragOutcomeV2, DragProperty, DragSelector, DragStart,
     DrawOrigin, DrawTrace, SourceRewrite, TracedArg, v2_draggable,
 };
 pub use query::{HostData, QueryProvider, QueryState};

@@ -1453,6 +1453,14 @@ impl PanelHost {
         self.core.advance_clock(dt);
     }
 
+    /// Set the clock to exactly `t` seconds, and let frames publish the `dt`
+    /// they are handed. For a host that owns the clock outright: the browser
+    /// build reads `performance.now()` each frame, since `wasm32` has no wall
+    /// clock of its own.
+    pub fn set_clock(&mut self, t: f64) {
+        self.core.set_clock(t);
+    }
+
     /// Whether `time()` is currently the accumulated virtual clock.
     pub fn is_virtual_clock(&self) -> bool {
         self.core.is_virtual_clock()

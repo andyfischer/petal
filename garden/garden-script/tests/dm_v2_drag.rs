@@ -6,7 +6,8 @@
 use std::fs;
 
 use garden_script::{
-    apply_rewrites_to, DragFilter, DragOutcomeV2, DragSelector, PanelCmd, PanelHost, SourceRewrite,
+    apply_rewrites_to, DragFilter, DragOutcomeV2, DragProperty, DragSelector, PanelCmd, PanelHost,
+    SourceRewrite,
 };
 
 /// A panel on `src` (with the panel imports), traced and checkpointed the
@@ -460,5 +461,97 @@ fn the_drag_mode_examples_solve() {
             (a.0 - b.0 - dx).abs() <= 1 && (a.1 - b.1 - dy).abs() <= 1,
             "{file}: command {index} moved from {b:?} to {a:?}, wanted ({dx}, {dy}): {rewrites:#?}"
         );
+    }
+}
+
+/// The same engine answers "make it this big": a size gesture states its goal
+/// on the native's radius, so a radius computed by a helper is solved into the
+/// helper's literal.
+#[test]
+fn resize_a_circle_through_a_helper() {
+    let src = "fn petal_size(i)\n\
+               \x20 12 + i * 4\n\
+               end\n\
+               clear(0, 0, 0)\n\
+               for i in range(0, 3) do\n\
+               \x20 draw_circle(60 + i * 80, 80, petal_size(i), 240, 120, 150)\n\
+               end\n";
+    let (mut host, source) = traced(src);
+    let start = host
+        .begin_adjust_v2(3, DragProperty::Size, &DragFilter::default())
+        .unwrap();
+    assert_eq!(start.axes, vec![vec![20.0]], "the third circle's radius");
+    assert!(start.base_x.is_empty(), "a size gesture has no position baseline");
+    let outcome = host.finish_adjust_v2(&[10.0]);
+    let rewrites = top(&outcome).to_vec();
+    let (_, after) = apply(&mut host, &source, &rewrites);
+    match &after[3] {
+        PanelCmd::Circle { radius, cx, .. } => {
+            assert!((radius - 30).abs() <= 1, "radius = {radius}");
+            assert_eq!(*cx, 220, "a resize does not move it");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// A rectangle resizes on two axes, width and height, independently.
+#[test]
+fn resize_a_rect_on_both_axes() {
+    let src = "let w = 60\n\
+               let h = 40\n\
+               clear(0, 0, 0)\n\
+               draw_rect(20, 20, w, h, 90, 160, 220)\n";
+    let (mut host, source) = traced(src);
+    let start = host
+        .begin_adjust_v2(1, DragProperty::Size, &DragFilter::default())
+        .unwrap();
+    assert_eq!(start.axes, vec![vec![60.0], vec![40.0]]);
+    let outcome = host.finish_adjust_v2(&[30.0, -10.0]);
+    let (edited, after) = apply(&mut host, &source, &top(&outcome).to_vec());
+    assert!(edited.contains("let w = 90") && edited.contains("let h = 30"), "{edited}");
+    assert!(matches!(after[1], PanelCmd::Rect { w: 90, h: 30, .. }));
+}
+
+/// "Make it this color": the goal is on the native's r, g, b. A color mixed
+/// by a helper is solved into the helper's mix amount rather than into three
+/// unrelated literals, because one number moves all three channels together.
+#[test]
+fn recolor_solves_a_mix() {
+    let src = "fn mix(a, b, t)\n\
+               \x20 a + (b - a) * t\n\
+               end\n\
+               config let warmth = tunable(0.25, 0, 1)\n\
+               clear(0, 0, 0)\n\
+               draw_circle(100, 100, 40, mix(40, 240, warmth), mix(80, 120, warmth), mix(200, 40, warmth))\n";
+    let (mut host, source) = traced(src);
+    let start = host
+        .begin_adjust_v2(1, DragProperty::Color, &DragFilter::default())
+        .unwrap();
+    assert_eq!(start.axes, vec![vec![90.0], vec![90.0], vec![160.0]]);
+    // The color at warmth = 0.75: (190, 110, 80).
+    let outcome = host.finish_adjust_v2(&[100.0, 20.0, -80.0]);
+    let rewrites = top(&outcome).to_vec();
+    assert_eq!(rewrites.len(), 1, "one knob moves: {rewrites:#?}");
+    assert_eq!(rewrites[0].new_text, "0.75");
+    let (_, after) = apply(&mut host, &source, &rewrites);
+    match &after[1] {
+        PanelCmd::Circle { r, g, b, .. } => assert_eq!((*r, *g, *b), (190, 110, 80)),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// A shape with no such property says so instead of guessing.
+#[test]
+fn a_shape_without_the_property_is_refused() {
+    let (mut host, _) = traced("clear(0, 0, 0)\ndraw_text(\"hi\", 10, 10, 14, 255, 255, 255)\n");
+    // Text has a size (its font size) but its color is three plain args too.
+    assert!(host
+        .begin_adjust_v2(1, DragProperty::Color, &DragFilter::default())
+        .is_ok());
+    host.cancel_drag_v2();
+    let (mut host, _) = traced("clear(0, 0, 0)\nfill_triangle(10, 10, 40, 10, 20, 40, 255, 255, 255)\n");
+    match host.begin_adjust_v2(1, DragProperty::Size, &DragFilter::default()) {
+        Err(DragOutcomeV2::Refused { why, .. }) => assert!(why.contains("no size"), "{why}"),
+        other => panic!("{other:?}"),
     }
 }

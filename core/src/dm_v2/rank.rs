@@ -163,7 +163,7 @@ pub fn score(changes: &[ScoredChange], facts: &ScoreFacts, k: &ScoreWeights) -> 
 }
 
 /// The collateral term of the score (§9 M5, revision 6), over
-/// [`collateral_shapes`]: linear up to 1 (one other shape moved as far as
+/// [`weighted_collateral`]: linear up to 1 (one other shape moved as far as
 /// the drag), logarithmic beyond, so that once a change moves other shapes,
 /// moving *more* of them costs less than another edit does. Without it, in
 /// a scene where every literal moves everything (a recursive tree), a
@@ -173,23 +173,8 @@ pub fn compress_collateral(norm: f64) -> f64 {
     if norm <= 1.0 { norm.max(0.0) } else { 1.0 + norm.ln() }
 }
 
-/// How many other shapes moved, each counted by how far it moved relative to
-/// the goals (§9 M5, revision 6): `Σ_e min(1, max_move_e / ‖Δ goals‖)` over
-/// the emits `e` of the collateral rows (`keys[k]` is row `k`'s emit). A
-/// shape that moves as far as the drag counts 1 however many of its numbers
-/// change, so a row of squares that all resize (`size`) counts the squares,
-/// not their widths and heights twice over; a shape that is gone counts 1.
-/// This, not the root-sum-square norm, is what the score charges.
-pub fn collateral_shapes<K: Eq + std::hash::Hash + Copy>(
-    keys: &[Option<K>],
-    moves: &[Option<f64>],
-    goal_moves: &[f64],
-) -> f64 {
-    weighted_collateral(keys, moves, goal_moves, &[]).shapes
-}
-
-/// [`collateral_shapes`] under the client's channel weights (§9, Canopy
-/// S3).
+/// [`weighted_collateral`]'s result: the collateral count under the
+/// client's channel weights (§9, Canopy S3).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct WeightedCollateral {
     /// `Σ_e min(w_e, 1) · share_e`: the count the score compresses
@@ -202,8 +187,16 @@ pub struct WeightedCollateral {
     pub excess: f64,
 }
 
-/// [`collateral_shapes`] with a weight per collateral row (`weights[k]`,
-/// row `k`'s channel weight; missing rows weigh 1): each emit's share is
+/// How many other shapes moved, each counted by how far it moved relative to
+/// the goals (§9 M5, revision 6): `Σ_e min(1, max_move_e / ‖Δ goals‖)` over
+/// the emits `e` of the collateral rows (`keys[k]` is row `k`'s emit). A
+/// shape that moves as far as the drag counts 1 however many of its numbers
+/// change, so a row of squares that all resize (`size`) counts the squares,
+/// not their widths and heights twice over; a shape that is gone counts 1.
+/// This, not the root-sum-square norm, is what the score charges.
+///
+/// With a weight per collateral row (`weights[k]`, row `k`'s channel
+/// weight; missing rows weigh 1), each emit's share is
 /// split by [`WeightedCollateral`]. A weight below 1 discounts the emit in
 /// the compressed count, 0 leaves it out.
 pub fn weighted_collateral<K: Eq + std::hash::Hash + Copy>(

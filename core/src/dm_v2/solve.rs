@@ -454,13 +454,13 @@ pub fn goal_step(goals: &[GoalRow], values: &[Option<f64>], jg: &[Vec<f64>], jc:
 pub struct SolveOptions {
     /// Verification steps per subset (§2.4.2).
     pub max_iters: usize,
-    pub allow_respell: bool,
+    /// Probe and solve settings; `fd.allow_respell` also governs rounding.
     pub fd: FdOptions,
 }
 
 impl Default for SolveOptions {
     fn default() -> Self {
-        SolveOptions { max_iters: 6, allow_respell: false, fd: FdOptions::default() }
+        SolveOptions { max_iters: 6, fd: FdOptions::default() }
     }
 }
 
@@ -483,8 +483,6 @@ pub struct SolveCtx<'a> {
     pub bounds: Vec<Bound>,
     pub budget: &'a mut RunBudget,
     pub opts: SolveOptions,
-    /// Runs made by this context.
-    pub runs: usize,
     pub budget_exhausted: bool,
     /// Every run of this context that raised an error, in order: the values
     /// it tried were rejected (an `assert` is how a program states a
@@ -501,6 +499,24 @@ pub struct FailedRun {
     /// Each column's value, as written.
     pub values: Vec<f64>,
     pub error: RunError,
+}
+
+/// The collateral rows `jc` with row `k` scaled by `weights[k]` (§9, Canopy
+/// S3): the step's collateral term `‖J_c Δ‖²` then charges a weighted
+/// channel `w²` times as much. Empty weights: `jc` as it is, not copied.
+pub fn weigh_rows<'a>(jc: &'a [Vec<f64>], weights: &[f64]) -> std::borrow::Cow<'a, [Vec<f64>]> {
+    if weights.is_empty() {
+        return std::borrow::Cow::Borrowed(jc);
+    }
+    std::borrow::Cow::Owned(
+        jc.iter()
+            .enumerate()
+            .map(|(k, row)| {
+                let w = weights.get(k).copied().unwrap_or(1.0);
+                row.iter().map(|x| x * w).collect()
+            })
+            .collect(),
+    )
 }
 
 /// The first line of a (possibly annotated, multi-line) error message.
@@ -556,7 +572,6 @@ impl SolveCtx<'_> {
             return None;
         }
         let ov = self.overrides(cols, values);
-        self.runs += 1;
         let run = self.session.run(self.env, self.host, &ov);
         if let Some(error) = &run.error {
             self.failed.push(FailedRun { cols: cols.to_vec(), values: values.to_vec(), error: error.clone() });
@@ -573,10 +588,6 @@ impl SolveCtx<'_> {
         &rows[..self.jac.goal_rows]
     }
 
-    /// The baseline Jacobian restricted to `cols`, every row.
-    pub fn local_jacobian(&self, cols: &[usize]) -> Vec<Vec<f64>> {
-        (0..self.jac.rows.len()).map(|r| cols.iter().map(|&c| self.jac.get(r, c)).collect()).collect()
-    }
 
     /// The step for `cols` from `rows` with Jacobian `local` ([`goal_step`]).
     pub fn step(&self, cols: &[usize], rows: &[Option<f64>], local: &[Vec<f64>]) -> Vec<f64> {
@@ -585,7 +596,7 @@ impl SolveCtx<'_> {
             .iter()
             .map(|&c| self.weights[c] / self.base_value(c).abs().max(1.0))
             .collect();
-        let jc = crate::dm_v2::api::weigh_rows(&local[gr..], self.collateral_weights);
+        let jc = weigh_rows(&local[gr..], self.collateral_weights);
         goal_step(self.goals, &rows[..gr], &local[..gr], &jc, &cost)
     }
 
@@ -603,7 +614,7 @@ impl SolveCtx<'_> {
         let k = cols.len();
         let mut values: Vec<f64> = cols.iter().map(|&c| self.base_value(c)).collect();
         let mut rows = self.base_rows.clone();
-        let mut local = self.local_jacobian(cols);
+        let mut local = self.jac.local(cols);
         let mut err = sq_error(self.goals, self.goal_values(&rows));
         let mut fingerprint = self.session.baseline().fingerprint;
         let mut run: Option<SpecRun> = None;
@@ -707,7 +718,6 @@ impl SolveCtx<'_> {
             &self.opts.fd,
             self.budget,
         );
-        self.runs += j.runs;
         if j.budget_exhausted {
             self.budget_exhausted = true;
         }
@@ -761,7 +771,6 @@ pub struct Rounded {
     pub values: Vec<f64>,
     pub run: Option<SpecRun>,
     pub rows: Vec<Option<f64>>,
-    pub max_error: f64,
 }
 
 impl SolveCtx<'_> {
@@ -781,7 +790,7 @@ impl SolveCtx<'_> {
                 if sol.values[i] == p.value {
                     vec![p.value]
                 } else {
-                    ladder(sol.values[i], p, &texts[i], &self.bounds[c], self.opts.allow_respell)
+                    ladder(sol.values[i], p, &texts[i], &self.bounds[c], self.opts.fd.allow_respell)
                 }
             })
             .collect();
@@ -815,19 +824,15 @@ impl SolveCtx<'_> {
             .map(|(i, l)| l.iter().position(|&x| predict_ok(i, x - sol.values[i])).unwrap_or(l.len() - 1))
             .collect();
         let joint: Vec<f64> = picks.iter().zip(&ladders).map(|(&p, l)| l[p]).collect();
-        let finish = |values: Vec<f64>, run: Option<SpecRun>, rows: Vec<Option<f64>>, goals: &[GoalRow]| {
-            let max_error = max_error(goals, &rows[..gr]);
-            Rounded { values, run, rows, max_error }
-        };
         if joint == sol.values {
-            return finish(joint, sol.run.clone(), sol.rows.clone(), self.goals);
+            return Rounded { values: joint, run: sol.run.clone(), rows: sol.rows.clone() };
         }
         let Some(run) = self.run_at(cols, &joint) else {
-            return finish(sol.values.clone(), sol.run.clone(), sol.rows.clone(), self.goals);
+            return Rounded { values: sol.values.clone(), run: sol.run.clone(), rows: sol.rows.clone() };
         };
         let rows = self.read_rows(&run);
         if accept(&run, &rows) {
-            return finish(joint, Some(run), rows, self.goals);
+            return Rounded { values: joint, run: Some(run), rows };
         }
         let joint_err = if run.ok() { max_error(self.goals, &rows[..gr]) } else { f64::INFINITY };
         self.log(|| format!("  joint rounding {joint:?} missed (error {joint_err:.3}); one at a time"));
@@ -860,7 +865,7 @@ impl SolveCtx<'_> {
                 }
             }
         }
-        finish(cur, best.0, best.1, self.goals)
+        Rounded { values: cur, run: best.0, rows: best.1 }
     }
 }
 

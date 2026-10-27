@@ -51,7 +51,7 @@ pub use params::{
     screen_order, screen_params, screen_params_for,
 };
 
-pub use observe::{EmitKey, LiveObservation, ObsValue, Observable, PathStep};
+pub use observe::{EmitKey, LiveObservation, ObsValue, Observable, PathStep, path_text};
 pub use spec::{
     CaptureSpec, NoHost, OverrideStrategy, OverrideValue, Overrides, RngMode, RunError, SpecConfig,
     SpecError, SpecHost, SpecRun, SpecSession, StateMode,

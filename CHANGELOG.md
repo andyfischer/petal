@@ -112,6 +112,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- DM v2 internals: `dm_v2/api.rs` is split into
+  `api/{request,response,literal,report,rejection,v1_bridge}.rs` (public
+  paths unchanged); each `Alternative` carries `misses`, which the CLI no
+  longer re-derives; dead helpers (`rank::collateral_shapes`,
+  `Jacobian::column`) are gone.
+
 - `petal propose-edit` rounds an answer that stops short of the goal (an
   `assert` in the way, a range, the budget): the value where the solve
   stopped prints as `3.55`, not `3.5546874999999756`. It takes the nicest

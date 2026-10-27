@@ -20,7 +20,6 @@ use std::path::PathBuf;
 use serde_json::{Value as Json, json};
 
 use crate::dm_v2::params::{BudgetLimit, ParamFilter, ParamSelector};
-use crate::dm_v2::solve::GoalRow;
 use crate::dm_v2::spec::{SpecConfig, SpecHost, SpecSession};
 use crate::dm_v2::{
     Alternative, CandidateReport, ColumnQuality, DmGoal, DmRequest, DmResponse, DmSession, EmitKey, Engine,
@@ -58,18 +57,6 @@ pub enum GoalValue {
     AtLeast(f64),
     /// `--within LO..HI`: anything from `LO` to `HI`, inclusive.
     Within(f64, f64),
-}
-
-impl GoalValue {
-    /// The range a `--at-most` / `--at-least` / `--within` goal asks for.
-    pub fn range(&self) -> Option<(Option<f64>, Option<f64>)> {
-        match *self {
-            GoalValue::AtMost(h) => Some((None, Some(h))),
-            GoalValue::AtLeast(l) => Some((Some(l), None)),
-            GoalValue::Within(l, h) => Some((Some(l), Some(h))),
-            _ => None,
-        }
-    }
 }
 
 /// `LO..HI` (`0..1280`, `-1.5..2`) as two numbers, `LO ≤ HI`.
@@ -578,9 +565,15 @@ pub fn propose(
 
 // ── embedding: a JSON request, a host's natives ────────────────────────────
 
-/// The keys a JSON request ([`opts_from_json`]) may carry for one goal.
+/// The keys a JSON request ([`opts_from_json`]) may carry for one goal: an
+/// address, then exactly one of [`GOAL_VALUE_KEYS`].
 const GOAL_KEYS: [&str; 11] =
     ["channel", "emit", "arg", "native_arg", "value", "field", "to", "by", "at_most", "at_least", "within"];
+/// The goal keys after `channel`/`emit`: their presence at the top level
+/// makes the request itself one goal.
+const GOAL_BODY_KEYS: &[&str] = GOAL_KEYS.split_at(2).1;
+/// The goal keys that say what the addressed number should become.
+const GOAL_VALUE_KEYS: &[&str] = GOAL_KEYS.split_at(6).1;
 
 /// Read a JSON request into [`V2Opts`], for hosts that drive propose-edit
 /// without a command line (the C bridge's `pb_vm_propose_edit`, a petal-ui
@@ -664,7 +657,7 @@ pub fn opts_from_json(req: &Json) -> Result<V2Opts, String> {
             args.extend(["--field".into(), path]);
         }
         let given: Vec<&str> =
-            ["to", "by", "at_most", "at_least", "within"].into_iter().filter(|k| g.get(*k).is_some_and(|v| !v.is_null())).collect();
+            GOAL_VALUE_KEYS.iter().copied().filter(|k| g.get(*k).is_some_and(|v| !v.is_null())).collect();
         match given.as_slice() {
             [] => return Err("a goal needs one of `to`, `by`, `at_most`, `at_least` or `within`".into()),
             [_] => {}
@@ -691,9 +684,7 @@ pub fn opts_from_json(req: &Json) -> Result<V2Opts, String> {
         }
         Ok(())
     };
-    let top_goal = ["arg", "native_arg", "value", "field", "to", "by", "at_most", "at_least", "within"]
-        .iter()
-        .any(|k| obj.contains_key(*k));
+    let top_goal = GOAL_BODY_KEYS.iter().any(|k| obj.contains_key(*k));
     if top_goal {
         push_goal(obj, false)?;
     }
@@ -1214,7 +1205,7 @@ fn param_name(program: &Program, callee: &str, nargs: usize, k: usize) -> Option
         .and_then(|f| f.params.get(k).cloned())
 }
 
-fn alternative_json(program: &Program, sites: &Sites, rank: usize, a: &Alternative, goals: &[GoalRow]) -> Json {
+fn alternative_json(program: &Program, sites: &Sites, rank: usize, a: &Alternative) -> Json {
     let changes: Vec<Json> = a
         .changes
         .iter()
@@ -1285,12 +1276,7 @@ fn alternative_json(program: &Program, sites: &Sites, rank: usize, a: &Alternati
         // range goal is 0 inside and 1 + distance / τ outside); `misses` is
         // each goal's distance in its own units (a range's: how far outside).
         "max_error": num(a.max_error),
-        "misses": a
-            .achieved
-            .iter()
-            .zip(goals)
-            .map(|(v, g)| num(g.miss(*v)))
-            .collect::<Vec<_>>(),
+        "misses": a.misses.iter().map(|m| num(*m)).collect::<Vec<_>>(),
         "achieved": a.achieved.iter().map(|v| num(*v)).collect::<Vec<_>>(),
         "predicted": a.predicted.iter().map(|v| num(*v)).collect::<Vec<_>>(),
         "iterations": a.iterations,
@@ -1455,21 +1441,6 @@ fn report(
         .collect();
     let d = &response.diagnostics;
     let sites = Sites::new(program);
-    // What each goal asks for, as the solver measured it, for `misses`.
-    let rows: Vec<GoalRow> = opts
-        .goals
-        .iter()
-        .enumerate()
-        .map(|(i, g)| {
-            let tol = d.tolerances.get(i).copied().unwrap_or(0.0).max(1e-300);
-            match g.value.range() {
-                Some((lo, hi)) => {
-                    GoalRow::range(lo.unwrap_or(f64::NEG_INFINITY), hi.unwrap_or(f64::INFINITY), tol, 1.0)
-                }
-                None => GoalRow::eq(targets.get(i).copied().unwrap_or(f64::NAN), tol, 1.0),
-            }
-        })
-        .collect();
     json!({
         "engine": d.engine.map(engine_name).unwrap_or("v2"),
         "seed": seed,
@@ -1480,7 +1451,7 @@ fn report(
             .alternatives
             .iter()
             .enumerate()
-            .map(|(i, a)| alternative_json(program, &sites, i + 1, a, &rows))
+            .map(|(i, a)| alternative_json(program, &sites, i + 1, a))
             .collect::<Vec<_>>(),
         "candidates": response.candidates.iter().map(|c| candidate_json(program, &sites, c)).collect::<Vec<_>>(),
         "diagnostics": {
@@ -1518,14 +1489,7 @@ fn report(
 // ── text ───────────────────────────────────────────────────────────────────
 
 fn fmt_num(v: &Json) -> String {
-    match v.as_f64() {
-        Some(f) if f.fract() == 0.0 && f.abs() < 1e15 => format!("{}", f as i64),
-        Some(f) => {
-            let s = format!("{f:.4}");
-            s.trim_end_matches('0').trim_end_matches('.').to_string()
-        }
-        None => "?".into(),
-    }
+    v.as_f64().map_or_else(|| "?".into(), crate::dm_v2::api::short)
 }
 
 /// `path` relative to the working directory when it is under it.

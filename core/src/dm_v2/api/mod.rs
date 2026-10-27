@@ -29,30 +29,28 @@
 //! the request falls back to v1 (`crate::direct_manipulation`).
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::direct_manipulation::{self as v1, ManipulationGoal, SourceEdit, VarPolicy};
+use crate::direct_manipulation::{self as v1, SourceEdit};
 use crate::dm_v2::DmError;
 use crate::dm_v2::hints::{Hint, read_hints};
-use crate::dm_v2::jacobian::{ColumnQuality, FdOptions, Jacobian, collateral_rows_keeping, jacobian};
-use crate::dm_v2::observe::{EmitKey, LiveObservation, ObsValue, Observable, PathStep};
+use crate::dm_v2::jacobian::{ColumnQuality, Jacobian, collateral_rows_keeping, jacobian};
+use crate::dm_v2::observe::{EmitKey, ObsValue, Observable};
 use crate::dm_v2::params::{
-    BudgetLimit, Eligibility, EligibilityContext, Param, ParamFilter, ParamSelector, RunBudget, anchors_for,
-    discover_params, eligibility, file_origins, screen_order, screen_params_for,
+    BudgetLimit, Eligibility, EligibilityContext, Param, ParamSelector, RunBudget, anchors_for, discover_params,
+    eligibility, screen_order, screen_params_for,
 };
 use crate::dm_v2::rank::{
-    ScoreFacts, ScoreParts, ScoreWeights, ScoredChange, SubsetKind, candidate_subsets, collateral_norm,
-    param_weight, score, strength, weighted_collateral,
+    ScoreFacts, ScoreWeights, ScoredChange, SubsetKind, candidate_subsets, param_weight, score, strength,
+    weighted_collateral,
 };
-use crate::dm_v2::solve::{Bound, FailedRun, GoalRow, SolveCtx, SolveOptions, goal_step, max_error};
-use crate::dm_v2::spec::{Overrides, RunError, SpecConfig, SpecHost, SpecRun, SpecSession};
+use crate::dm_v2::solve::{Bound, GoalRow, SolveCtx, SolveOptions, goal_step, max_error, weigh_rows};
+use crate::dm_v2::spec::{Overrides, SpecHost, SpecRun, SpecSession};
 use crate::env::Env;
 use crate::native_fn::InputClasses;
 use crate::program::{Program, TermId, TermOp};
-use crate::source_map::{FileId, SourceSpan};
+use crate::source_map::FileId;
 use crate::stack::StackKey;
-use crate::static_value::StaticValue;
 use crate::value::Value;
 
 /// The most Jacobian columns a request measures (§9 M5, revision 4).
@@ -64,471 +62,23 @@ pub const MANY_COLUMNS: usize = 8;
 /// The most collateral rows a request reads (§2.3; §9 M5, revision 5).
 pub const COLLATERAL_ROWS: usize = 8192;
 
-// ── the request ────────────────────────────────────────────────────────────
+mod literal;
+mod rejection;
+mod report;
+mod request;
+mod response;
+mod v1_bridge;
 
-/// What a goal wants its observable to be.
-#[derive(Debug, Clone, PartialEq)]
-pub enum GoalTarget {
-    Num(f64),
-    /// A non-numeric value (a string, a bool): no derivative, so the request
-    /// is answered by v1.
-    Value(StaticValue),
-    /// Anywhere in `[lo, hi]` (an end left out is open): `--at-most`,
-    /// `--at-least`, `--within`. It holds anywhere inside, so one that holds
-    /// at the baseline asks for no edit, and one that does not is solved to
-    /// one tolerance inside the bound it is past ([`GoalRow`]). A drag's
-    /// `targets` entry for it is ignored.
-    Range { lo: Option<f64>, hi: Option<f64> },
-}
-
-impl GoalTarget {
-    /// The range's ends, open ends infinite; `None` for a point target.
-    pub fn bounds(&self) -> Option<(f64, f64)> {
-        match self {
-            GoalTarget::Range { lo, hi } => Some((lo.unwrap_or(f64::NEG_INFINITY), hi.unwrap_or(f64::INFINITY))),
-            _ => None,
-        }
-    }
-
-    /// `≤ 3`, `≥ 1`, `in 0..1280`.
-    pub fn range_text(&self) -> Option<String> {
-        match self {
-            GoalTarget::Range { lo: None, hi: Some(h) } => Some(format!("≤ {}", short(*h))),
-            GoalTarget::Range { lo: Some(l), hi: None } => Some(format!("≥ {}", short(*l))),
-            GoalTarget::Range { lo: Some(l), hi: Some(h) } => Some(format!("in {}..{}", short(*l), short(*h))),
-            _ => None,
-        }
-    }
-}
-
-/// `v` for a sentence: at most 4 decimals, trailing zeros dropped.
-fn short(v: f64) -> String {
-    if v.fract() == 0.0 && v.abs() < 1e15 {
-        return format!("{}", v as i64);
-    }
-    let s = format!("{v:.4}");
-    let s = s.trim_end_matches('0').trim_end_matches('.');
-    if s == "-0" { "0".into() } else { s.to_string() }
-}
-
-/// One goal: an observable and where it should be (§6.3).
-#[derive(Debug, Clone, PartialEq)]
-pub struct DmGoal {
-    pub observable: Observable,
-    pub target: GoalTarget,
-    /// How close is close enough; `None` is the default of §2.4.3 (0.5 for a
-    /// raw argument of a native that truncates to ints, else
-    /// `1e-6 · max(|t|, 1)`).
-    pub tolerance: Option<f64>,
-    /// How much this goal counts against the others when they conflict.
-    pub weight: f64,
-}
-
-impl DmGoal {
-    /// The goal "`observable` should be `target`".
-    pub fn to(observable: Observable, target: f64) -> DmGoal {
-        DmGoal { observable, target: GoalTarget::Num(target), tolerance: None, weight: 1.0 }
-    }
-
-    /// A non-numeric goal (answered by v1).
-    pub fn value(observable: Observable, target: StaticValue) -> DmGoal {
-        DmGoal { observable, target: GoalTarget::Value(target), tolerance: None, weight: 1.0 }
-    }
-
-    /// The goal "`observable` at most `hi`".
-    pub fn at_most(observable: Observable, hi: f64) -> DmGoal {
-        DmGoal { observable, target: GoalTarget::Range { lo: None, hi: Some(hi) }, tolerance: None, weight: 1.0 }
-    }
-
-    /// The goal "`observable` at least `lo`".
-    pub fn at_least(observable: Observable, lo: f64) -> DmGoal {
-        DmGoal { observable, target: GoalTarget::Range { lo: Some(lo), hi: None }, tolerance: None, weight: 1.0 }
-    }
-
-    /// The goal "`observable` between `lo` and `hi`" (inclusive).
-    pub fn between(observable: Observable, lo: f64, hi: f64) -> DmGoal {
-        DmGoal { observable, target: GoalTarget::Range { lo: Some(lo), hi: Some(hi) }, tolerance: None, weight: 1.0 }
-    }
-
-    /// The number a default tolerance scales with (§2.4.3): the target, or
-    /// the larger end of a range; `t` is the drag's target for a point goal.
-    fn tolerance_scale(&self, t: f64) -> f64 {
-        match &self.target {
-            GoalTarget::Range { lo, hi } => {
-                lo.iter().chain(hi.iter()).fold(0.0f64, |m, x| m.max(x.abs()))
-            }
-            GoalTarget::Value(_) => 0.0,
-            GoalTarget::Num(_) => t,
-        }
-    }
-
-    /// The same goal with tolerance `tol`.
-    pub fn within(mut self, tol: f64) -> DmGoal {
-        self.tolerance = Some(tol);
-        self
-    }
-}
-
-/// How strongly knobs (`config let` and `tunable`, one tier) are preferred
-/// (§2.5.4).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Prefer {
-    /// Knobs cost less, and alternatives made only of them are listed first
-    /// when they verify; the others are still listed.
-    #[default]
-    Soft,
-    /// v1's rule: once the program declares a `config let` (or a `tunable`
-    /// that marks a literal), every other named binding is pinned, and when a
-    /// knob can move the goal, only knobs are used.
-    ConfigStrict,
-}
-
-/// A request (§6.3).
-#[derive(Debug, Clone)]
-pub struct DmRequest {
-    pub goals: Vec<DmGoal>,
-    pub filter: ParamFilter,
-    pub prefer: Prefer,
-    pub max_alternatives: usize,
-    /// Speculative runs the request may make (the session's two baselines
-    /// and its re-baselines are not counted).
-    pub max_runs: usize,
-    pub max_screen: usize,
-    pub allow_respell: bool,
-    pub max_wall: Duration,
-    /// Verification steps per subset.
-    pub max_iters: usize,
-    pub spec: SpecConfig,
-    pub live: Option<LiveObservation>,
-    pub explain: bool,
-    /// Per goal: it holds its value (`--by 0`, a pinned shape) rather than
-    /// asking for a change. Screening resolves what moves the other goals
-    /// first (§2.2 stage 5). Empty (or short): a goal holds when its numeric
-    /// target is its baseline value within its tolerance.
-    pub holds: Vec<bool>,
-    /// The client's collateral weight per output channel (§9, Canopy S3;
-    /// `--collateral solid=10,coin=1`); a channel not named weighs 1. A
-    /// shape on a channel of weight `W > 1` that moves as far as the drag
-    /// adds `W - 1` to the score on top of its share of the compressed count
-    /// ([`crate::dm_v2::rank::WeightedCollateral`]), and the solver's step
-    /// scales that channel's rows by `W`; a weight below 1 discounts the
-    /// channel, 0 ignores it.
-    pub collateral_weights: Vec<(String, f64)>,
-}
-
-impl Default for DmRequest {
-    fn default() -> Self {
-        DmRequest {
-            goals: Vec::new(),
-            filter: ParamFilter::default(),
-            prefer: Prefer::Soft,
-            max_alternatives: 3,
-            max_runs: 200,
-            max_screen: 256,
-            allow_respell: false,
-            max_wall: Duration::from_secs(5),
-            max_iters: 6,
-            spec: SpecConfig::default(),
-            live: None,
-            explain: false,
-            holds: Vec::new(),
-            collateral_weights: Vec::new(),
-        }
-    }
-}
-
-impl DmRequest {
-    /// A request for `goals` with the defaults.
-    pub fn new(goals: Vec<DmGoal>) -> DmRequest {
-        DmRequest { goals, ..Default::default() }
-    }
-}
-
-// ── the response ───────────────────────────────────────────────────────────
-
-/// One text replacement and the file it is in (R14).
-#[derive(Debug, Clone, PartialEq)]
-pub struct FileEdit {
-    pub file: FileId,
-    /// Where that file came from, when it is on disk.
-    pub path: Option<PathBuf>,
-    pub edit: SourceEdit,
-}
-
-/// One literal changed by an alternative.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ParamChange {
-    pub term: TermId,
-    pub span: SourceSpan,
-    pub file: FileId,
-    /// The binding it defines, if any.
-    pub binding: Option<String>,
-    /// The function it is written in, if any.
-    pub function: Option<String>,
-    /// A knob ([`Param::is_knob`]): `config let`, `tunable(...)`, or both.
-    pub config: bool,
-    /// The value as written before and after.
-    pub old: f64,
-    pub new: f64,
-    pub old_text: String,
-    pub new_text: String,
-    /// An int literal written as a float now (§2.4.4).
-    pub respelled: bool,
-}
-
-/// One other emit an alternative moved.
-#[derive(Debug, Clone, PartialEq)]
-pub struct CollateralItem {
-    pub key: EmitKey,
-    pub channel: String,
-    /// The native that made the emit.
-    pub callee: Option<String>,
-    /// The line of the emit's call in user code (1-based).
-    pub line: Option<u32>,
-    /// The largest movement of any of its numbers (`inf`: it is gone).
-    pub max_move: f64,
-    /// Which emit on its channel this is (0-based, baseline order): the
-    /// `--emit` that addresses it.
-    pub emit: usize,
-    /// The number that moved most: the raw native argument and the path
-    /// into it (`lives`' `2.x` is item 2's `x` of a list of records).
-    pub arg: usize,
-    pub path: Vec<PathStep>,
-    /// How many of its numbers moved.
-    pub moved: usize,
-    /// Its channel's collateral weight ([`DmRequest::collateral_weights`]).
-    pub weight: f64,
-}
-
-impl CollateralItem {
-    /// Where in the emit the largest move is, as a `--field` path
-    /// (`2.x`), with `arg N:` in front unless it is `push_output`'s value.
-    pub fn where_text(&self) -> String {
-        let path: Vec<String> = self
-            .path
-            .iter()
-            .map(|p| match p {
-                PathStep::Index(i) => i.to_string(),
-                PathStep::Field(f) => f.clone(),
-            })
-            .collect();
-        let path = path.join(".");
-        let value_arg = self.callee.as_deref() == Some("push_output") && self.arg == 1;
-        match (value_arg, path.is_empty()) {
-            (true, true) => String::new(),
-            (true, false) => path,
-            (false, true) => format!("arg {}", self.arg),
-            (false, false) => format!("arg {}: {path}", self.arg),
-        }
-    }
-
-    /// `lives[0].2.x`: the channel, which emit on it, and [`Self::where_text`],
-    /// then `+N` when N more of its numbers moved too.
-    pub fn label(&self) -> String {
-        let w = self.where_text();
-        let head = format!("{}[{}]", self.channel, self.emit);
-        let mut s = if w.is_empty() {
-            head
-        } else if w.starts_with("arg ") {
-            format!("{head} {w}")
-        } else {
-            format!("{head}.{w}")
-        };
-        if self.moved > 1 {
-            s.push_str(&format!(" +{}", self.moved - 1));
-        }
-        s
-    }
-}
-
-/// What else an alternative moved, measured by its verification run.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct Collateral {
-    /// `‖Δ other rows‖ / ‖Δ goals‖`.
-    pub norm: f64,
-    /// How many other emits moved, each counted by how far it moved
-    /// relative to the goals, at most 1
-    /// ([`collateral_shapes`](crate::dm_v2::rank::collateral_shapes)): what the
-    /// score charges. Under channel weights, each emit counts `min(w, 1)`
-    /// times its share.
-    pub shapes: f64,
-    /// What channel weights above 1 add to the score, uncompressed
-    /// ([`crate::dm_v2::rank::WeightedCollateral::excess`]); 0 without them.
-    pub excess: f64,
-    pub items: Vec<CollateralItem>,
-}
-
-/// Which engine produced an alternative.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Engine {
-    V2,
-    /// The v1 fallback for non-numeric goals; not re-run.
-    V1,
-}
-
-/// One way to meet the goals (§6.3).
-#[derive(Debug, Clone, PartialEq)]
-pub struct Alternative {
-    pub edits: Vec<FileEdit>,
-    pub changes: Vec<ParamChange>,
-    /// Each goal's value after the edit (from the verification run).
-    pub achieved: Vec<f64>,
-    /// What the linear model predicted for each goal before any run.
-    pub predicted: Vec<f64>,
-    /// `max_j |achieved - target| / τ_j`.
-    pub max_error: f64,
-    pub verified: bool,
-    pub collateral: Collateral,
-    /// Some change feeds back through `state` from earlier frames: the
-    /// frozen-state measurement covers one frame only.
-    pub stateful: bool,
-    /// Every change is a knob (`config let` or `tunable`, one tier).
-    pub config_only: bool,
-    /// The edit took another branch or re-initialized state somewhere.
-    pub regime_changed: bool,
-    /// Under sequential random draws the edited program draws differently.
-    pub rng_order_changed: bool,
-    /// The first difference the sequential-draw run showed.
-    pub rng_difference: Option<String>,
-    pub score: f64,
-    pub score_parts: ScoreParts,
-    pub kind: SubsetKind,
-    /// Verification steps the solve took.
-    pub iterations: usize,
-    pub engine: Engine,
-    pub description: String,
-    /// Why runs this alternative's solve tried were rejected: each raised an
-    /// error (an `assert` failing is the usual one, and the way a program
-    /// states a constraint between literals). Grouped by error, in order.
-    pub rejections: Vec<Rejection>,
-}
-
-/// Speculative runs rejected because they raised the same error.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Rejection {
-    /// The error's message, without its position (`assertion failed`).
-    pub message: String,
-    /// The file it was raised in, and its display name.
-    pub file: Option<FileId>,
-    pub file_name: Option<String>,
-    pub line: Option<u32>,
-    pub column: Option<u32>,
-    /// For a failing `assert(...)`: the condition as written (`x1 >= x0`).
-    pub condition: Option<String>,
-    /// How many runs raised it.
-    pub runs: usize,
-    /// The literals the first of those runs had moved, and their values.
-    pub tried: Vec<TriedLiteral>,
-}
-
-/// A literal a rejected run had moved.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TriedLiteral {
-    pub term: TermId,
-    pub line: u32,
-    pub old_text: String,
-    pub value: f64,
-}
-
-impl Rejection {
-    /// `assertion failed at beetle.ptl:3 (x1 >= x0)`, and an assert's
-    /// message after it: `…(x1 >= x0): a patrol ends after it starts`.
-    pub fn summary(&self) -> String {
-        let (head, note) = match self.message.split_once(": ") {
-            Some((h, n)) if h == "assertion failed" => (h, Some(n)),
-            _ => (self.message.as_str(), None),
-        };
-        let mut s = head.to_string();
-        if let Some(line) = self.line {
-            match &self.file_name {
-                Some(f) => s.push_str(&format!(" at {f}:{line}")),
-                None => s.push_str(&format!(" at line {line}")),
-            }
-        }
-        if let Some(c) = &self.condition {
-            s.push_str(&format!(" ({c})"));
-        }
-        if let Some(n) = note {
-            s.push_str(&format!(": {n}"));
-        }
-        s
-    }
-}
-
-/// One discovered literal, and what became of it (§2.7).
-#[derive(Debug, Clone, PartialEq)]
-pub struct CandidateReport {
-    pub param: Param,
-    /// May it be edited; `Err` says why not.
-    pub eligible: Result<(), &'static str>,
-    /// Its goal-row column, when measured.
-    pub column: Option<Vec<f64>>,
-    pub quality: Option<ColumnQuality>,
-    /// Its cost weight `d_i`.
-    pub weight: f64,
-    pub clock_coupled: bool,
-    /// The baseline evaluated it.
-    pub loaded: bool,
-}
-
-/// What the request cost and anything worth telling the client.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct DmDiagnostics {
-    /// Speculative runs made (baselines not counted).
-    pub runs: usize,
-    pub wall: Option<Duration>,
-    /// Natives a speculative run did not call.
-    pub suppressed: Vec<String>,
-    pub budget_exhausted: bool,
-    /// Which limit ended the session when [`budget_exhausted`](Self::budget_exhausted):
-    /// the run count or the wall clock (`max_wall`). `None` when it finished
-    /// its work within both.
-    pub stopped_by: Option<BudgetLimit>,
-    pub warnings: Vec<String>,
-    /// Literals found by discovery, eligible to screen, screened, measured.
-    pub discovered: usize,
-    pub eligible: usize,
-    pub screened: usize,
-    pub measured: usize,
-    pub truncated: bool,
-    /// Subsets solved linearly, and sent to the verification loop.
-    pub subsets_predicted: usize,
-    pub subsets_verified: usize,
-    /// Speculative runs of the solve, rounding and verification that raised
-    /// an error (each rejected the values it tried), and why, grouped.
-    pub rejected_runs: usize,
-    pub rejections: Vec<Rejection>,
-    /// The goals' baseline values and tolerances.
-    pub baseline: Vec<f64>,
-    pub tolerances: Vec<f64>,
-    /// Per goal: it already holds at the baseline (a range the baseline is
-    /// inside, or a point target within tolerance). Filled by `finish`.
-    pub holds_at_baseline: Vec<bool>,
-    pub engine: Option<Engine>,
-}
-
-/// The `explain` trace: what each stage did.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct ExplainLog {
-    pub lines: Vec<String>,
-}
-
-/// The answer (§6.3).
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct DmResponse {
-    /// Ranked, best first.
-    pub alternatives: Vec<Alternative>,
-    pub candidates: Vec<CandidateReport>,
-    pub diagnostics: DmDiagnostics,
-    pub explain: Option<ExplainLog>,
-}
-
-impl DmResponse {
-    /// The best alternative, if it verified.
-    pub fn best_verified(&self) -> Option<&Alternative> {
-        self.alternatives.first().filter(|a| a.verified)
-    }
-}
+pub(crate) use request::short;
+pub use request::{DmGoal, DmRequest, GoalTarget, Prefer};
+pub use response::{
+    Alternative, CandidateReport, Collateral, CollateralItem, DmDiagnostics, DmResponse, Engine, ExplainLog,
+    FileEdit, ParamChange, Rejection, TriedLiteral,
+};
+use literal::{ParamText, change_of, needs_parens, needs_parens_by_neighbours, param_text, render_in_place};
+use rejection::rejections;
+use report::{RangeNote, collateral_items, describe, emit_info, goal_label, nothing_to_move};
+use v1_bridge::v1_fallback;
 
 // ── entry points ───────────────────────────────────────────────────────────
 
@@ -583,18 +133,6 @@ pub fn program_files(program: &Program) -> Vec<(FileId, String)> {
 }
 
 // ── the session ────────────────────────────────────────────────────────────
-
-/// What a parameter looks like in the source.
-#[derive(Debug, Clone)]
-struct ParamText {
-    /// The literal as written, sign included.
-    text: String,
-    /// The first non-blank character before it.
-    prev: Option<char>,
-    function: Option<String>,
-    path: Option<PathBuf>,
-}
-
 
 /// A drag in progress: the pipeline up to the Jacobian, kept for previews
 /// and the final solve (§6.3).
@@ -741,21 +279,12 @@ impl DmSession {
         suppressed.sort();
         suppressed.dedup();
         self.diag.suppressed = suppressed;
-        self.taus = req
-            .goals
-            .iter()
-            .map(|g| {
-                let t = match g.target {
-                    GoalTarget::Num(t) => t,
-                    _ => 0.0,
-                };
-                g.tolerance.unwrap_or_else(|| default_tolerance(spec.baseline(), &g.observable, g.tolerance_scale(t)))
-            })
-            .collect();
-        self.diag.tolerances = self.taus.clone();
+        let known: Vec<f64> =
+            req.goals.iter().map(|g| if let GoalTarget::Num(t) = g.target { t } else { 0.0 }).collect();
+        self.set_tolerances(spec.baseline(), &known);
 
         // Discovery (§2.2).
-        {
+        let hints = {
             let program = env.get_program(pid).ok_or(DmError::Spec(crate::dm_v2::SpecError::Stale))?;
             let hints = read_hints(program, env.native_table());
             let anchors = anchors_for(program, spec.baseline(), &goals);
@@ -765,7 +294,8 @@ impl DmSession {
             self.diag.warnings.extend(hints.warnings.iter().map(|w| w.message.clone()));
             self.diag.truncated = found.truncated;
             self.params = found.params;
-        }
+            hints
+        };
         self.diag.discovered = self.params.len();
         if self.params.is_empty() {
             return Err(DmError::NothingToMove { why: "no numeric literal in the program feeds the goals".into() });
@@ -787,10 +317,7 @@ impl DmSession {
             // that marks a literal (a hint-only program has knobs too).
             let strict = req.prefer == Prefer::ConfigStrict
                 && (program.terms.iter().any(|t| t.is_config)
-                    || read_hints(program, env.native_table())
-                        .marks
-                        .values()
-                        .any(|h| matches!(h, Hint::Tunable { .. })));
+                    || hints.marks.values().any(|h| matches!(h, Hint::Tunable { .. })));
             let e = self
                 .params
                 .iter()
@@ -840,20 +367,16 @@ impl DmSession {
         // A goal whose target is its baseline value (a `--by 0`) holds, and
         // so does a range the baseline is inside; the others ask for the
         // change. Screening resolves what moves those first (§2.2 stage 5).
-        let mut primary: Vec<bool> = req
-            .goals
+        // A target not known yet (NaN) asks for a change.
+        let known: Vec<f64> =
+            req.goals.iter().map(|g| if let GoalTarget::Num(t) = g.target { t } else { f64::NAN }).collect();
+        let mut primary: Vec<bool> = self
+            .goal_rows(&known)
             .iter()
             .enumerate()
-            .map(|(i, g)| match (req.holds.get(i), &g.target) {
-                (_, GoalTarget::Range { .. }) => {
-                    let (lo, hi) = g.target.bounds().unwrap();
-                    let v = self.diag.baseline[i];
-                    !(lo <= v && v <= hi)
-                }
-                (Some(h), _) => !h,
-                // A target not known yet (NaN) asks for a change.
-                (None, GoalTarget::Num(t)) => !((t - self.diag.baseline[i]).abs() <= self.taus[i]),
-                (None, GoalTarget::Value(_)) => true,
+            .map(|(i, row)| match (req.holds.get(i), row.range) {
+                (Some(&h), None) => !h,
+                _ => !row.holds(self.diag.baseline[i]),
             })
             .collect();
         if !primary.iter().any(|p| *p) {
@@ -919,7 +442,7 @@ impl DmSession {
         // is escalated once, not three times (§9 M5, revision 4): screening
         // infers some columns from their group without probing them alone,
         // and on a large program those cost the budget the solve needs.
-        let mut fd = FdOptions { allow_respell: req.allow_respell, ..FdOptions::default() };
+        let mut fd = req.fd();
         if screen.kept.len() > MANY_COLUMNS {
             fd.max_escalations = fd.max_escalations.min(1);
         }
@@ -1116,7 +639,7 @@ impl DmSession {
             return out;
         };
         let keep: Vec<usize> = top.iter().map(|&c| self.jac.params[c]).collect();
-        let fd = FdOptions { allow_respell: self.req.allow_respell, ..FdOptions::default() };
+        let fd = self.req.fd();
         let j2 = jacobian(
             &mut shifted,
             env,
@@ -1210,6 +733,19 @@ impl DmSession {
         }
     }
 
+    /// Each goal's tolerance: the request's, else the default for its
+    /// target (§2.4.3).
+    fn set_tolerances(&mut self, baseline: &SpecRun, targets: &[f64]) {
+        self.taus = self
+            .req
+            .goals
+            .iter()
+            .zip(targets)
+            .map(|(g, &t)| g.tolerance.unwrap_or_else(|| default_tolerance(baseline, &g.observable, g.tolerance_scale(t))))
+            .collect();
+        self.diag.tolerances = self.taus.clone();
+    }
+
     fn goal_rows(&self, targets: &[f64]) -> Vec<GoalRow> {
         self.req
             .goals
@@ -1272,8 +808,7 @@ impl DmSession {
         let r: Vec<f64> = goals.iter().zip(&self.base_rows[..gr]).map(|(g, v)| g.residual(*v)).collect();
         let value = |c: usize| self.params[self.jac.params[c]].value;
         let linear = |cols: &[usize]| -> (Vec<Vec<f64>>, Vec<f64>) {
-            let local: Vec<Vec<f64>> =
-                (0..self.jac.rows.len()).map(|row| cols.iter().map(|&c| self.jac.get(row, c)).collect()).collect();
+            let local = self.jac.local(cols);
             let cost: Vec<f64> = cols.iter().map(|&c| self.weights[c] / self.scales[c]).collect();
             let jc = weigh_rows(&local[gr..], &self.coll_weights);
             let delta = goal_step(&goals, &self.base_rows[..gr], &local[..gr], &jc, &cost);
@@ -1409,11 +944,7 @@ impl DmSession {
                 let i = self.jac.params[c];
                 let v = crate::dm_v2::solve::round_to(v, 6);
                 let (p, t) = (&self.params[i], &self.texts[i]);
-                let (mut text, respelled) = render(p, t, v);
-                if v < 0.0 && !t.text.starts_with('-') && needs_parens_by_neighbours(t) {
-                    text = format!("({text})");
-                }
-                change_of(p, t, v, (text, respelled))
+                change_of(p, t, v, render_in_place(p, t, v, |_| needs_parens_by_neighbours(t)))
             })
             .collect()
     }
@@ -1434,6 +965,49 @@ impl DmSession {
         result
     }
 
+    /// The predictions worth a verification run (§2.5.3): every knob-only
+    /// and client subset, the best `max_alternatives + 2` of the rest, and,
+    /// with several goals, the closest single literals besides.
+    fn choose_to_verify(&self, preds: Vec<Prediction>, goals: &[GoalRow], ga: usize) -> Vec<Prediction> {
+        let free = self.req.max_alternatives + 2;
+        let mut chosen: Vec<Prediction> = Vec::new();
+        let mut n_free = 0;
+        let mut rest: Vec<Prediction> = Vec::new();
+        for p in preds {
+            match p.kind {
+                SubsetKind::ConfigOnly | SubsetKind::Client => chosen.push(p),
+                _ if n_free < free => {
+                    n_free += 1;
+                    chosen.push(p);
+                }
+                _ => rest.push(p),
+            }
+        }
+        // With several goals, the single literals whose linear prediction
+        // comes closest among those not chosen yet are solved too, even
+        // when that prediction misses: a curve (an angle) can reach
+        // targets its tangent cannot (§9 M5, revision 3).
+        if ga >= 2 {
+            let miss =
+                |p: &Prediction| -> f64 { p.goals.iter().zip(goals).map(|(a, g)| g.error(*a)).fold(0.0, f64::max) };
+            // The closest, and the closest whose column is smooth (a
+            // float literal under trig or a product: the kind whose
+            // straight-line prediction understates what it can reach).
+            for smooth_only in [false, true] {
+                let pick = (0..rest.len())
+                    .filter(|&k| rest[k].cols.len() == 1 && rest[k].goals.iter().all(|v| v.is_finite()))
+                    .filter(|&k| {
+                        !smooth_only || matches!(self.jac.quality[rest[k].cols[0]], ColumnQuality::Smooth)
+                    })
+                    .min_by(|&a, &b| miss(&rest[a]).total_cmp(&miss(&rest[b])));
+                if let Some(k) = pick {
+                    chosen.push(rest.swap_remove(k));
+                }
+            }
+        }
+        chosen
+    }
+
     fn solve_all(
         &mut self,
         env: &mut Env,
@@ -1449,12 +1023,7 @@ impl DmSession {
         }
         // A default tolerance scales with the target (§2.4.3), which a
         // session opened for a drag (or a `--by` goal) learns only now.
-        for (i, g) in self.req.goals.iter().enumerate() {
-            if g.tolerance.is_none() {
-                self.taus[i] = default_tolerance(spec.baseline(), &g.observable, g.tolerance_scale(targets[i]));
-            }
-        }
-        self.diag.tolerances = self.taus.clone();
+        self.set_tolerances(spec.baseline(), targets);
         let goals = self.goal_rows(targets);
         let gr = self.jac.goal_rows;
         let explain = self.req.explain;
@@ -1498,49 +1067,16 @@ impl DmSession {
         } else {
             let preds = self.predictions(targets);
             self.diag.subsets_predicted = preds.len();
-            let free = self.req.max_alternatives + 2;
-            let mut chosen: Vec<Prediction> = Vec::new();
-            let mut n_free = 0;
-            let mut rest: Vec<Prediction> = Vec::new();
-            for p in preds {
-                match p.kind {
-                    SubsetKind::ConfigOnly | SubsetKind::Client => chosen.push(p),
-                    _ if n_free < free => {
-                        n_free += 1;
-                        chosen.push(p);
-                    }
-                    _ => rest.push(p),
-                }
-            }
-            // With several goals, the single literals whose linear prediction
-            // comes closest among those not chosen yet are solved too, even
-            // when that prediction misses: a curve (an angle) can reach
-            // targets its tangent cannot (§9 M5, revision 3).
-            if ga >= 2 {
-                let miss = |p: &Prediction| -> f64 { p.goals.iter().zip(&goals).map(|(a, g)| g.error(*a)).fold(0.0, f64::max) };
-                // The closest, and the closest whose column is smooth (a
-                // float literal under trig or a product: the kind whose
-                // straight-line prediction understates what it can reach).
-                for smooth_only in [false, true] {
-                    let pick = (0..rest.len())
-                        .filter(|&k| rest[k].cols.len() == 1 && rest[k].goals.iter().all(|v| v.is_finite()))
-                        .filter(|&k| {
-                            !smooth_only || matches!(self.jac.quality[rest[k].cols[0]], ColumnQuality::Smooth)
-                        })
-                        .min_by(|&a, &b| miss(&rest[a]).total_cmp(&miss(&rest[b])));
-                    if let Some(k) = pick {
-                        chosen.push(rest.swap_remove(k));
-                    }
-                }
-            }
+            let chosen = self.choose_to_verify(preds, &goals, ga);
             let baseline_fp = spec.baseline().fingerprint;
             let drew_random = spec.drew_random();
             let bounds = self.bounds();
-            let opts = SolveOptions {
-                max_iters: self.req.max_iters,
-                allow_respell: self.req.allow_respell,
-                fd: FdOptions { allow_respell: self.req.allow_respell, ..FdOptions::default() },
+            // A Jacobian column's literal, for reporting the runs it was in.
+            let col_literal = |c: usize| {
+                let i = self.jac.params[c];
+                (self.params[i].term, self.params[i].value, self.params[i].span.start.line, self.texts[i].text.clone())
             };
+            let opts = SolveOptions { max_iters: self.req.max_iters, fd: self.req.fd() };
             let mut ctx = SolveCtx {
                 session: spec,
                 env,
@@ -1554,7 +1090,6 @@ impl DmSession {
                 bounds,
                 budget: &mut self.budget,
                 opts,
-                runs: 0,
                 budget_exhausted: false,
                 failed: Vec::new(),
                 log: if explain { Some(&mut self.log) } else { None },
@@ -1584,10 +1119,8 @@ impl DmSession {
                     if v == p.value {
                         continue;
                     }
-                    let (mut text, respelled) = render(p, &self.texts[i], v);
-                    if v < 0.0 && !self.texts[i].text.starts_with('-') && needs_parens(ctx.env, pid, p, &self.texts[i], &text) {
-                        text = format!("({text})");
-                    }
+                    let t = &self.texts[i];
+                    let (text, respelled) = render_in_place(p, t, v, |text| needs_parens(ctx.env, pid, p, t, text));
                     let back = text.trim_start_matches('(').trim_end_matches(')').parse::<f64>().unwrap_or(v);
                     rendered.push((i, back, text, respelled));
                 }
@@ -1617,10 +1150,7 @@ impl DmSession {
                 let rejections = rejections(
                     ctx.env.get_program(pid),
                     &ctx.failed[failed_before..],
-                    |c| {
-                        let i = self.jac.params[c];
-                        (self.params[i].term, self.params[i].value, self.params[i].span.start.line, self.texts[i].text.clone())
-                    },
+                    &col_literal,
                 );
                 let achieved: Vec<f64> = rows[..gr].iter().map(|v| v.unwrap_or(f64::NAN)).collect();
                 let err = if run.ok() { max_error(&goals, &rows[..gr]) } else { f64::INFINITY };
@@ -1629,7 +1159,6 @@ impl DmSession {
                 // The sequential-draw check (§2.1.4).
                 let (mut rng_order_changed, mut rng_difference) = (false, None);
                 if drew_random && verified && ctx.budget.take() {
-                    ctx.runs += 1;
                     let ov = ctx.overrides(&pred.cols, &values);
                     let fork = ctx.session.run_fork_stream(ctx.env, ctx.host, &ov);
                     if let Some(d) = run.first_difference(&fork) {
@@ -1720,6 +1249,7 @@ impl DmSession {
                 alternatives.push(Alternative {
                     edits,
                     changes,
+                    misses: achieved.iter().zip(&goals).map(|(v, g)| g.miss(*v)).collect(),
                     achieved,
                     predicted: pred.goals.clone(),
                     max_error: err,
@@ -1740,10 +1270,7 @@ impl DmSession {
                 });
             }
             self.diag.rejected_runs = ctx.failed.len();
-            self.diag.rejections = rejections(ctx.env.get_program(pid), &ctx.failed, |c| {
-                let i = self.jac.params[c];
-                (self.params[i].term, self.params[i].value, self.params[i].span.start.line, self.texts[i].text.clone())
-            });
+            self.diag.rejections = rejections(ctx.env.get_program(pid), &ctx.failed, &col_literal);
             if let Some(log) = ctx.log.as_deref_mut() {
                 for r in &self.diag.rejections {
                     log.push(format!("rejected {} run(s): {}", r.runs, r.summary()));
@@ -1751,46 +1278,12 @@ impl DmSession {
             }
             self.diag.budget_exhausted |= ctx.budget_exhausted;
         }
-        // The count penalty is charged against the leanest verified
-        // alternative, not the goal count (§9 M5, revision 2): when one
-        // literal can do it, a spread over three pays for two extra edits.
-        if let Some(lean) = alternatives.iter().filter(|a| a.verified).map(|a| a.changes.len()).min() {
-            let k = ScoreWeights::default();
-            for a in &mut alternatives {
-                a.score_parts.count = k.kn * a.changes.len().saturating_sub(lean.max(1)) as f64;
-                a.score = a.score_parts.total();
-            }
-        }
-        // Rank (§2.5.4): verified first; under the soft config preference,
-        // verified config-only alternatives first among those; then score.
-        let any_verified = alternatives.iter().any(|a| a.verified);
-        let soft = self.req.prefer == Prefer::Soft;
-        alternatives.sort_by(|a, b| {
-            let tier = |x: &Alternative| -> u8 {
-                match (x.verified, soft && x.config_only) {
-                    (true, true) => 0,
-                    (true, false) => 1,
-                    (false, _) if any_verified => 3,
-                    (false, _) => 2,
-                }
-            };
-            tier(a).cmp(&tier(b)).then(a.score.total_cmp(&b.score))
-        });
-        let mut seen: Vec<Vec<(u16, u32, u32, String)>> = Vec::new();
-        alternatives.retain(|a| {
-            let mut key: Vec<(u16, u32, u32, String)> = a
-                .edits
-                .iter()
-                .map(|e| (e.file.0, e.edit.span.start.offset, e.edit.span.end.offset, e.edit.new_text.clone()))
-                .collect();
-            key.sort();
-            if seen.contains(&key) {
-                return false;
-            }
-            seen.push(key);
-            true
-        });
-        alternatives.truncate(self.req.max_alternatives.max(1));
+        rank_alternatives(&mut alternatives, self.req.prefer, self.req.max_alternatives);
+        Ok(self.respond(spec, alternatives))
+    }
+
+    /// The response: `alternatives`, and the diagnostics filled in.
+    fn respond(&mut self, spec: &SpecSession, alternatives: Vec<Alternative>) -> DmResponse {
         self.diag.runs = spec.runs_used();
         self.diag.wall = match (self.started, crate::env::spec_run::wall_now()) {
             (Some(a), Some(b)) => Some(b.duration_since(a)),
@@ -1799,13 +1292,58 @@ impl DmSession {
         self.diag.engine = Some(Engine::V2);
         self.diag.stopped_by =
             self.diag.budget_exhausted.then(|| self.budget.stopped.unwrap_or(BudgetLimit::Runs));
-        Ok(DmResponse {
+        DmResponse {
             alternatives,
             candidates: std::mem::take(&mut self.candidates),
             diagnostics: std::mem::take(&mut self.diag),
-            explain: explain.then(|| ExplainLog { lines: std::mem::take(&mut self.log) }),
-        })
+            explain: self.req.explain.then(|| ExplainLog { lines: std::mem::take(&mut self.log) }),
+        }
     }
+}
+
+/// Charge the count penalty, rank (§2.5.4), drop alternatives that make the
+/// same edits as a better one, and keep the best `max_alternatives`.
+fn rank_alternatives(alternatives: &mut Vec<Alternative>, prefer: Prefer, max_alternatives: usize) {
+    // The count penalty is charged against the leanest verified
+    // alternative, not the goal count (§9 M5, revision 2): when one
+    // literal can do it, a spread over three pays for two extra edits.
+    if let Some(lean) = alternatives.iter().filter(|a| a.verified).map(|a| a.changes.len()).min() {
+        let k = ScoreWeights::default();
+        for a in alternatives.iter_mut() {
+            a.score_parts.count = k.kn * a.changes.len().saturating_sub(lean.max(1)) as f64;
+            a.score = a.score_parts.total();
+        }
+    }
+    // Rank (§2.5.4): verified first; under the soft config preference,
+    // verified config-only alternatives first among those; then score.
+    let any_verified = alternatives.iter().any(|a| a.verified);
+    let soft = prefer == Prefer::Soft;
+    alternatives.sort_by(|a, b| {
+        let tier = |x: &Alternative| -> u8 {
+            match (x.verified, soft && x.config_only) {
+                (true, true) => 0,
+                (true, false) => 1,
+                (false, _) if any_verified => 3,
+                (false, _) => 2,
+            }
+        };
+        tier(a).cmp(&tier(b)).then(a.score.total_cmp(&b.score))
+    });
+    let mut seen: Vec<Vec<(u16, u32, u32, String)>> = Vec::new();
+    alternatives.retain(|a| {
+        let mut key: Vec<(u16, u32, u32, String)> = a
+            .edits
+            .iter()
+            .map(|e| (e.file.0, e.edit.span.start.offset, e.edit.span.end.offset, e.edit.new_text.clone()))
+            .collect();
+        key.sort();
+        if seen.contains(&key) {
+            return false;
+        }
+        seen.push(key);
+        true
+    });
+    alternatives.truncate(max_alternatives.max(1));
 }
 
 /// The channels of the baseline a request weighs, with their weights
@@ -1837,24 +1375,6 @@ fn channel_weights(
     out
 }
 
-/// The collateral rows `jc` with row `k` scaled by `weights[k]` (§9, Canopy
-/// S3): the step's collateral term `‖J_c Δ‖²` then charges a weighted
-/// channel `w²` times as much. Empty weights: `jc` as it is, not copied.
-pub(crate) fn weigh_rows<'a>(jc: &'a [Vec<f64>], weights: &[f64]) -> std::borrow::Cow<'a, [Vec<f64>]> {
-    if weights.is_empty() {
-        return std::borrow::Cow::Borrowed(jc);
-    }
-    std::borrow::Cow::Owned(
-        jc.iter()
-            .enumerate()
-            .map(|(k, row)| {
-                let w = weights.get(k).copied().unwrap_or(1.0);
-                row.iter().map(|x| x * w).collect()
-            })
-            .collect(),
-    )
-}
-
 /// The size of a drag in output units, `‖target - baseline‖₁` over the goals.
 fn drag_norm(residual: &[f64]) -> f64 {
     residual.iter().filter(|x| x.is_finite()).map(|x| x.abs()).sum()
@@ -1877,25 +1397,6 @@ fn share(jac: &Jacobian, c: usize, delta: f64, drag: f64) -> f64 {
 /// nearest first).
 fn i_screened(screen: &crate::dm_v2::params::ScreenResult, eligible: &[usize], i: usize) -> bool {
     screen.screened >= eligible.len() || eligible.iter().position(|&e| e == i).is_some_and(|k| k < screen.screened)
-}
-
-/// Why nothing can move the goals, from the candidate report.
-fn nothing_to_move(candidates: &[CandidateReport]) -> String {
-    let mut reasons: Vec<String> = Vec::new();
-    for c in candidates.iter().take(8) {
-        let why = match (&c.eligible, &c.quality) {
-            (Err(e), _) => (*e).to_string(),
-            (Ok(()), Some(q)) if !q.usable() => format!("{q:?}"),
-            (Ok(()), Some(ColumnQuality::Zero)) | (Ok(()), None) => "does not move the goals".into(),
-            (Ok(()), Some(_)) => "not measured".into(),
-        };
-        reasons.push(format!("line {}: {why}", c.param.span.start.line));
-    }
-    if reasons.is_empty() {
-        "no literal moves the goals".into()
-    } else {
-        format!("no editable literal moves the goals ({})", reasons.join("; "))
-    }
 }
 
 /// The emit key an observable reads.
@@ -1930,433 +1431,4 @@ fn default_tolerance(run: &SpecRun, o: &Observable, target: f64) -> f64 {
         }
     }
     1e-6 * target.abs().max(1.0)
-}
-
-/// The literal's text and surroundings.
-fn param_text(program: &Program, p: &Param) -> ParamText {
-    let file = program.source_map.files.get(p.file.0 as usize);
-    let src: Vec<char> = file.map(|f| f.source.chars().collect()).unwrap_or_default();
-    let (s, e) = (p.span.start.offset as usize, p.span.end.offset as usize);
-    let text: String = src.get(s.min(src.len())..e.min(src.len())).map(|c| c.iter().collect()).unwrap_or_default();
-    let prev = src[..s.min(src.len())].iter().rev().find(|c| !c.is_whitespace()).copied();
-    let function = p.function.and_then(|f| program.functions.get(f.0 as usize)).and_then(|d| d.name.clone()).map(|n| {
-        let n = crate::program::base_fn_name(&n).to_string();
-        n.rsplit("::").next().unwrap_or(&n).to_string()
-    });
-    let path = file.and_then(|f| f.origin.clone()).filter(|o| !o.to_string_lossy().starts_with('<'));
-    ParamText { text, prev, function, path }
-}
-
-/// `v` written the way `p` was (§2.4.4): an int stays an int when whole; a
-/// float keeps its padded decimals (`3.50`), else the shortest spelling with
-/// a decimal point. Returns the text and whether an int became a float.
-fn render(p: &Param, t: &ParamText, v: f64) -> (String, bool) {
-    let respelled = p.is_int && v.fract() != 0.0;
-    let v = if v == 0.0 { 0.0 } else { v };
-    if p.is_int && !respelled {
-        return (format!("{}", v as i64), false);
-    }
-    let model = t.text.trim_start_matches('-');
-    (crate::literal_edit::float_like(v, if p.is_int { "" } else { model }), respelled)
-}
-
-/// Whether a negative replacement for the non-negative literal `p` must be
-/// parenthesized: it would read `x - -3` (or `x + -3`), or the file would not
-/// parse with it. A postfix operator needs none: `-2.f()` is `(-2).f()`.
-fn needs_parens(env: &Env, pid: crate::program::ProgramId, p: &Param, t: &ParamText, text: &str) -> bool {
-    if needs_parens_by_neighbours(t) {
-        return true;
-    }
-    let Some(program) = env.get_program(pid) else { return false };
-    let Some(file) = program.source_map.files.get(p.file.0 as usize) else { return false };
-    let edited = crate::rewrite::splice(&file.source, p.span, text);
-    crate::cst::parse_source(&edited, p.file).is_err()
-}
-
-/// The half of [`needs_parens`] that reads only the literal's neighbours.
-fn needs_parens_by_neighbours(t: &ParamText) -> bool {
-    matches!(t.prev, Some('-' | '+'))
-}
-
-fn change_of(p: &Param, t: &ParamText, v: f64, (new_text, respelled): (String, bool)) -> ParamChange {
-    ParamChange {
-        term: p.term,
-        span: p.span,
-        file: p.file,
-        binding: p.binding.as_ref().map(|b| b.rsplit("::").next().unwrap_or(b).to_string()),
-        function: t.function.clone(),
-        config: p.is_knob(),
-        old: p.value,
-        new: v,
-        old_text: t.text.clone(),
-        new_text,
-        respelled,
-    }
-}
-
-/// What each baseline emit is, for collateral items: channel, native, line.
-fn emit_info(env: &Env, pid: crate::program::ProgramId, base: &SpecRun) -> HashMap<EmitKey, EmitInfo> {
-    let program = env.get_program(pid);
-    let origins = program.map(file_origins).unwrap_or_default();
-    let mut per_channel: HashMap<crate::symbol::SymbolId, usize> = HashMap::new();
-    base.emits
-        .iter()
-        .map(|e| {
-            let nth = per_channel.entry(e.channel).or_insert(0);
-            let emit = *nth;
-            *nth += 1;
-            let channel = env.symbol_name(e.channel).unwrap_or("?").to_string();
-            let callee = e.native.map(|id| env.native_table().get_name(id).to_string());
-            let line = program.and_then(|program| {
-                e.chain.chain.iter().find_map(|t| {
-                    let span = program.source_map.get(*t)?;
-                    let user = origins.get(span.file.0 as usize).is_some_and(|o| *o != crate::dm_v2::CodeOrigin::Library);
-                    user.then_some(span.start.line)
-                })
-            });
-            (e.key, EmitInfo { channel, callee, line, emit })
-        })
-        .collect()
-}
-
-/// What [`emit_info`] knows about one baseline emit.
-#[derive(Debug, Clone, Default)]
-struct EmitInfo {
-    channel: String,
-    callee: Option<String>,
-    line: Option<u32>,
-    /// Which emit on its channel.
-    emit: usize,
-}
-
-/// The collateral of a verification run: rows grouped by emit.
-fn collateral_items(
-    jac: &Jacobian,
-    gr: usize,
-    moves: &[Option<f64>],
-    info: &HashMap<EmitKey, EmitInfo>,
-    goal_moves: &[f64],
-    weights: &[f64],
-) -> Collateral {
-    let mut items: Vec<CollateralItem> = Vec::new();
-    for (k, m) in moves.iter().enumerate() {
-        let moved = match m {
-            Some(x) => x.abs() > 1e-9 * (1.0 + x.abs()) && x.abs() > 1e-9,
-            None => true,
-        };
-        if !moved {
-            continue;
-        }
-        let Some(key) = emit_key_of(&jac.rows[gr + k]) else { continue };
-        let mag = m.map_or(f64::INFINITY, f64::abs);
-        let (arg, path) = match &jac.rows[gr + k] {
-            Observable::EmitArg { arg, path, .. } => (*arg, path.clone()),
-            _ => (0, Vec::new()),
-        };
-        if let Some(it) = items.iter_mut().find(|i| i.key == key) {
-            it.moved += 1;
-            if mag > it.max_move {
-                it.max_move = mag;
-                it.arg = arg;
-                it.path = path;
-            }
-            continue;
-        }
-        let EmitInfo { channel, callee, line, emit } =
-            info.get(&key).cloned().unwrap_or_else(|| EmitInfo { channel: "?".into(), ..Default::default() });
-        let weight = weights.get(k).copied().unwrap_or(1.0);
-        items.push(CollateralItem { key, channel, callee, line, max_move: mag, emit, arg, path, moved: 1, weight });
-    }
-    let keys: Vec<Option<EmitKey>> = jac.rows[gr..].iter().map(emit_key_of).collect();
-    let wc = weighted_collateral(&keys, moves, goal_moves, weights);
-    Collateral { norm: collateral_norm(goal_moves, moves), shapes: wc.shapes, excess: wc.excess, items }
-}
-
-/// A range goal, for the description: `coins[0].8 ≤ 0.6 (was 1.4, now 0.5)`.
-struct RangeNote {
-    label: String,
-    /// `≤ 0.6`.
-    text: String,
-    was: f64,
-    now: f64,
-    /// It held at the baseline already.
-    held: bool,
-}
-
-/// How a goal reads in a sentence: `coins[0]`, `coins[0].8`, `shapes[2]
-/// arg 1` (its channel, which emit on it, and the field).
-fn goal_label(o: &Observable, info: &HashMap<EmitKey, EmitInfo>) -> String {
-    let key = emit_key_of(o);
-    let head = key
-        .and_then(|k| info.get(&k))
-        .map_or_else(|| "goal".to_string(), |e| format!("{}[{}]", e.channel, e.emit));
-    let steps = |path: &[PathStep]| -> String {
-        path.iter()
-            .map(|p| match p {
-                PathStep::Index(i) => format!(".{i}"),
-                PathStep::Field(f) => format!(".{f}"),
-            })
-            .collect()
-    };
-    match o {
-        Observable::EmitValue { path, .. } => format!("{head}{}", steps(path)),
-        Observable::EmitArg { arg, path, .. } => {
-            let value_arg = key.and_then(|k| info.get(&k)).is_some_and(|e| e.callee.as_deref() == Some("push_output"))
-                && *arg == 1;
-            if value_arg { format!("{head}{}", steps(path)) } else { format!("{head} arg {arg}{}", steps(path)) }
-        }
-        Observable::Watch { path, .. } => format!("{head} (watched){}", steps(path)),
-    }
-}
-
-/// "set `gap` to 14 (line 3); moves 4 other emits".
-fn describe(
-    changes: &[ParamChange],
-    coll: &Collateral,
-    verified: bool,
-    achieved: &[f64],
-    goals: &[GoalRow],
-    ranges: &[RangeNote],
-) -> String {
-    let parts: Vec<String> = changes
-        .iter()
-        .map(|c| {
-            let what = match (&c.binding, &c.function) {
-                (Some(b), _) => format!("set `{b}` to {}", c.new_text),
-                (None, Some(f)) => format!("change `{}` to {} in `{f}`", c.old_text, c.new_text),
-                (None, None) => format!("change `{}` to {}", c.old_text, c.new_text),
-            };
-            let line = c.span.start.line;
-            if c.file.0 == 0 { format!("{what} (line {line})") } else { format!("{what} (file {}, line {line})", c.file.0) }
-        })
-        .collect();
-    let mut s = parts.join(", ");
-    let names = || {
-        let mut l: Vec<String> = coll.items.iter().take(3).map(CollateralItem::label).collect();
-        if coll.items.len() > 3 {
-            l.push(format!("+{} more", coll.items.len() - 3));
-        }
-        l.join(", ")
-    };
-    match coll.items.len() {
-        0 => s.push_str("; moves nothing else"),
-        1 => s.push_str(&format!("; also moves 1 other emit ({})", names())),
-        n => s.push_str(&format!("; also moves {n} other emits ({})", names())),
-    }
-    for r in ranges {
-        let keeps = if r.held { "keeps " } else { "" };
-        s.push_str(&format!("; {keeps}{} {} (was {}, now {})", r.label, r.text, short(r.was), short(r.now)));
-    }
-    if !verified {
-        let worst = achieved.iter().zip(goals).map(|(a, g)| g.miss(*a)).fold(0.0, f64::max);
-        s.push_str(&format!("; misses the goal by {worst:.3}"));
-    }
-    s
-}
-
-/// Group `failed` runs by their error (§ L3: an `assert` is a constraint).
-/// `col` gives a Jacobian column's literal: term, baseline value, line, text.
-fn rejections(
-    program: Option<&Program>,
-    failed: &[FailedRun],
-    col: impl Fn(usize) -> (TermId, f64, u32, String),
-) -> Vec<Rejection> {
-    let mut out: Vec<Rejection> = Vec::new();
-    for f in failed {
-        let r = rejection_of(program, &f.error);
-        if let Some(seen) = out
-            .iter_mut()
-            .find(|o| o.message == r.message && o.file == r.file && o.line == r.line && o.column == r.column)
-        {
-            seen.runs += 1;
-            continue;
-        }
-        let tried = f
-            .cols
-            .iter()
-            .zip(&f.values)
-            .filter_map(|(&c, &v)| {
-                let (term, old, line, old_text) = col(c);
-                (v != old).then_some(TriedLiteral { term, line, old_text, value: v })
-            })
-            .collect();
-        out.push(Rejection { runs: 1, tried, ..r });
-    }
-    out
-}
-
-/// What a run's error says, and where: the message, the position tag the VM
-/// appends (`[line N, column M]`, or `[m.ptl line N, column M]` in a module),
-/// and for an `assert(...)` the condition's source text.
-fn rejection_of(program: Option<&Program>, e: &RunError) -> Rejection {
-    let raw = e.to_string();
-    let first = crate::dm_v2::solve::first_line(&raw);
-    let mut r = Rejection {
-        message: first.to_string(),
-        file: None,
-        file_name: None,
-        line: None,
-        column: None,
-        condition: None,
-        runs: 0,
-        tried: Vec::new(),
-    };
-    if !matches!(e, RunError::Runtime(_)) {
-        return r;
-    }
-    let Some(open) = first.rfind(" [").filter(|_| first.ends_with(']')) else { return r };
-    let tag = &first[open + 2..first.len() - 1];
-    let Some(at) = tag.rfind("line ") else { return r };
-    let Some((line, column)) = tag[at + 5..].split_once(", column ") else { return r };
-    let (Ok(line), Ok(column)) = (line.trim().parse::<u32>(), column.trim().parse::<u32>()) else { return r };
-    let module = tag[..at].trim();
-    r.message = first[..open].to_string();
-    r.line = Some(line);
-    r.column = Some(column);
-    let Some(program) = program else { return r };
-    let files = &program.source_map.files;
-    let fid = if module.is_empty() {
-        Some(crate::source_map::ENTRY_FILE)
-    } else {
-        files.iter().position(|f| f.name == module).map(|i| FileId(i as u16))
-    };
-    r.file = fid;
-    let file = fid.and_then(|f| files.get(f.0 as usize));
-    r.file_name = if module.is_empty() {
-        file.and_then(|f| f.origin.as_ref().and_then(|o| o.file_name()).map(|n| n.to_string_lossy().into_owned()))
-            .or_else(|| file.map(|f| f.name.clone()).filter(|n| !n.is_empty() && !n.starts_with('<')))
-    } else {
-        Some(module.to_string())
-    };
-    let source = file.map_or(program.source.as_str(), |f| f.source.as_str());
-    if let Some(text) = source.lines().nth(line.saturating_sub(1) as usize) {
-        let from: String = text.chars().skip(column.saturating_sub(1) as usize).collect();
-        r.condition = assert_condition(&from);
-    }
-    r
-}
-
-/// The condition of the `assert(...)` call `text` starts with: everything
-/// up to the first top-level comma (the message) or the closing paren.
-fn assert_condition(text: &str) -> Option<String> {
-    let rest = text.strip_prefix("assert")?.trim_start().strip_prefix('(')?;
-    let mut depth = 0i32;
-    let mut quote: Option<char> = None;
-    for (i, ch) in rest.char_indices() {
-        match (quote, ch) {
-            (Some(q), c) if c == q => quote = None,
-            (Some(_), _) => {}
-            (None, '"' | '\'') => quote = Some(ch),
-            (None, '(' | '[' | '{') => depth += 1,
-            (None, ')' | ']' | '}') if depth > 0 => depth -= 1,
-            (None, ')' | ',') if depth == 0 => {
-                let c = rest[..i].trim();
-                return (!c.is_empty()).then(|| c.to_string());
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-/// v1 for a request with a non-numeric goal: each goal is mapped to the
-/// argument of the call that made its emit, and v1's proposals (not re-run)
-/// become the alternatives.
-fn v1_fallback(env: &Env, spec: &SpecSession, req: &DmRequest) -> Result<DmResponse, DmError> {
-    let program = env.get_program(spec.program()).ok_or(DmError::Spec(crate::dm_v2::SpecError::Stale))?;
-    let mut goals: Vec<ManipulationGoal> = Vec::new();
-    for (i, g) in req.goals.iter().enumerate() {
-        let bad = || DmError::BadObservable(format!("goal {i}: v1 cannot address {:?}", g.observable));
-        let (term, arg_index) = match &g.observable {
-            Observable::EmitArg { key, arg, path } if path.is_empty() => {
-                let e = spec.baseline().emit(key).ok_or_else(bad)?;
-                (*e.chain.chain.first().ok_or_else(bad)?, *arg)
-            }
-            Observable::Watch { term, at, path } if path.is_empty() => {
-                let e = spec.baseline().emit(at).ok_or_else(bad)?;
-                e.chain
-                    .chain
-                    .iter()
-                    .find_map(|&c| {
-                        let t = program.terms.get(c.0 as usize)?;
-                        let off = t.op.arg_offset()?;
-                        let k = t.inputs.iter().skip(off).position(|x| x == term)?;
-                        Some((c, k))
-                    })
-                    .ok_or_else(bad)?
-            }
-            _ => return Err(bad()),
-        };
-        let new_value = match &g.target {
-            GoalTarget::Num(t) => {
-                if t.fract() == 0.0 {
-                    StaticValue::Int(*t as i64)
-                } else {
-                    StaticValue::Float(*t)
-                }
-            }
-            GoalTarget::Value(v) => v.clone(),
-            GoalTarget::Range { .. } => {
-                return Err(DmError::BadObservable(format!(
-                    "goal {i}: a range goal and a non-numeric goal cannot be asked together"
-                )));
-            }
-        };
-        goals.push(ManipulationGoal { term, arg_index, new_value });
-    }
-    let mut policy: HashMap<String, VarPolicy> = HashMap::new();
-    for s in req.filter.allow.iter().flatten() {
-        if let ParamSelector::Variable(n) = s {
-            policy.insert(n.clone(), VarPolicy::Configurable);
-        }
-    }
-    for s in &req.filter.deny {
-        if let ParamSelector::Variable(n) = s {
-            policy.insert(n.clone(), VarPolicy::Static);
-        }
-    }
-    let per_goal = v1::propose_edits_batch(program, &goals, None, &policy)
-        .map_err(|e| DmError::BadObservable(e.message))?;
-    let origin = |f: FileId| {
-        program.source_map.files.get(f.0 as usize).and_then(|f| f.origin.clone())
-    };
-    let to_alt = |props: Vec<&v1::EditProposal>| -> Alternative {
-        let edits: Vec<FileEdit> = props
-            .iter()
-            .map(|p| FileEdit { file: p.edit.span.file, path: origin(p.edit.span.file), edit: p.edit.clone() })
-            .collect();
-        Alternative {
-            edits,
-            changes: Vec::new(),
-            achieved: Vec::new(),
-            predicted: Vec::new(),
-            max_error: f64::NAN,
-            verified: false,
-            collateral: Collateral::default(),
-            stateful: false,
-            config_only: props.iter().all(|p| p.config),
-            regime_changed: false,
-            rng_order_changed: false,
-            rng_difference: None,
-            score: 0.0,
-            score_parts: ScoreParts::default(),
-            kind: SubsetKind::Tuple,
-            iterations: 0,
-            engine: Engine::V1,
-            description: props.iter().map(|p| p.description.clone()).collect::<Vec<_>>().join(", "),
-            rejections: Vec::new(),
-        }
-    };
-    let alternatives: Vec<Alternative> = if per_goal.len() == 1 {
-        per_goal[0].iter().take(req.max_alternatives.max(1)).map(|p| to_alt(vec![p])).collect()
-    } else {
-        let firsts: Vec<&v1::EditProposal> = per_goal.iter().filter_map(|ps| ps.first()).collect();
-        if firsts.is_empty() { Vec::new() } else { vec![to_alt(firsts)] }
-    };
-    Ok(DmResponse {
-        alternatives,
-        candidates: Vec::new(),
-        diagnostics: DmDiagnostics { engine: Some(Engine::V1), ..Default::default() },
-        explain: None,
-    })
 }

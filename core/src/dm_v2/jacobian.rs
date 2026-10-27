@@ -123,9 +123,9 @@ impl Jacobian {
         self.d[row * self.params.len() + col]
     }
 
-    /// One column, every row.
-    pub fn column(&self, col: usize) -> Vec<f64> {
-        (0..self.rows.len()).map(|r| self.get(r, col)).collect()
+    /// The columns `cols`, every row (rows × cols).
+    pub fn local(&self, cols: &[usize]) -> Vec<Vec<f64>> {
+        (0..self.rows.len()).map(|r| cols.iter().map(|&c| self.get(r, c)).collect()).collect()
     }
 
     /// One column, goal rows only.

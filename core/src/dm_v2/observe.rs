@@ -227,6 +227,18 @@ pub enum PathStep {
     Field(String),
 }
 
+/// A path as `--field` takes it: `2.x`.
+pub fn path_text(path: &[PathStep]) -> String {
+    let steps: Vec<String> = path
+        .iter()
+        .map(|p| match p {
+            PathStep::Index(i) => i.to_string(),
+            PathStep::Field(f) => f.clone(),
+        })
+        .collect();
+    steps.join(".")
+}
+
 /// One number in a run, by where it is (§6.1).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Observable {

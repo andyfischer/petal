@@ -32,6 +32,8 @@ garden-render  wgpu renderer: quads, meshes, images, canvases, text (glyphon)
 garden-script  Petal embedding: layout tree from init.ptl, hot reload, the panel runtime
 garden-app     app core (panes, editor views, vim, input, debug server) plus the
                window / terminal / headless frontends and ~/.garden/state
+garden-web     the panel runtime in the browser (wasm-bindgen over garden-script):
+               a traced, checkpointed PanelHost with v2 gestures, for petal-lang.org
 gpp            Garden Pane Protocol: the JSON-RPC contract for subprocess-backed panes
 gpp-apps/      GPP client binaries, one crate per directory:
   directory-browser  netrw-style directory listing (`garden <dir>`, `:E`, `-`)
@@ -50,7 +52,9 @@ Dependency direction: `garden-app` depends on `garden-core`, `garden-render`,
 `garden-script` also depends on the `petal` and `petal-ui` crates one level
 up in this repo (the language, and the shared input/draw/`ui`-package
 contract every Petal embedder uses). The GPP clients depend only on
-`petal-query`, which builds on `gpp`.
+`petal-query`, which builds on `gpp`. `garden-web` depends only on
+`garden-script` and `petal-ui`, and is its own workspace root (excluded from
+this one) because wasm-pack builds it with its own release profile.
 
 GPP is panel-only: every client pushes a Petal UI script that Garden runs
 in-process, then answers its `query` / `mutate` / `navigate` requests over
@@ -411,10 +415,15 @@ written in the call, else through `petal::dm_v2`, which re-runs the frame
 speculatively from a pre-frame checkpoint the panel keeps and solves through
 function calls (`garden-script/src/panel/dm_v2.rs` for the session,
 `garden-app/src/app/manip_v2.rs` for the gesture, the alternatives and the
-`:DragAllow` filter). Drag mode (`app/dm_mode.rs`) makes the drag
+`:DragAllow` filter). A v2 gesture can target the shape's position, its
+size or its color (`DragProperty`, `PanelHost::begin_adjust_v2`): the goals
+sit on whichever raw arguments of the drawing native carry that property.
+The app drags positions; the browser build (`garden-web`) uses all three.
+Drag mode (`app/dm_mode.rs`) makes the drag
 modifier-free, suspends the sketch's mouse, and draws the hover outline and
 the drag result panel as app chrome over the canvas; its hint toggles are
-text rewrites (`dm_hints.rs`, pure). IDE mode also adds a
+text rewrites (`garden-script/src/dm_hints.rs`, pure, shared with
+`garden-web`). IDE mode also adds a
 toolbar, play/pause (freezes panel ticks, leaves the editor live), and the IR
 inspector (`petal_ide/`). User guide: [petal-ide-mode.md](petal-ide-mode.md).
 

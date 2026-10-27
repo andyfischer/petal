@@ -1,5 +1,8 @@
 [workspace]
 resolver = "2"
+# The browser build is its own workspace root (wasm-pack, its own release
+# profile), like integrations/petal-web-canvas.
+exclude = ["garden-web"]
 members = [
     "garden-core",
     "garden-render",

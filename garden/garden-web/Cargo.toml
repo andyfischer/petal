@@ -1,0 +1,35 @@
+[package]
+name = "garden-web"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Garden's Petal panel host in the browser: live canvas, tracing and direct manipulation v2"
+
+[dependencies]
+garden-script = { path = "../garden-script" }
+petal-ui = { path = "../../core-libs/petal-ui" }
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
+serde_json = "1"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Its own workspace root (excluded from Garden's), so the release profile here
+# is the one wasm-pack uses. Same settings as petal-web-canvas.
+[workspace]
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = [
+    "-O",
+    "--enable-bulk-memory",
+    "--enable-multivalue",
+    "--enable-mutable-globals",
+    "--enable-nontrapping-float-to-int",
+    "--enable-reference-types",
+    "--enable-sign-ext",
+]

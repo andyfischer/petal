@@ -133,13 +133,7 @@ impl Host for DefaultHost {
             // face) stay unregistered and degrade to the default font.
             for (role, face) in fonts.roles() {
                 for (weight, italic) in VARIANTS {
-                    let ratios = face.ascii_advance_ratios_styled(*weight, *italic);
-                    let vertical = face.vertical_ratios_styled(*weight, *italic);
-                    let metrics = petal_ui::draw::FontMetrics::proportional(
-                        ratios,
-                        petal_ui::draw::DEFAULT_TEXT_ADVANCE,
-                    )
-                    .with_vertical(vertical);
+                    let metrics = face.metrics_styled(*weight, *italic);
                     petal_ui::draw::bind_font_variant_metrics(
                         env, role, *weight, *italic, &metrics,
                     );
@@ -222,17 +216,8 @@ impl Host for DefaultHost {
         width: u32,
         height: u32,
     ) -> Result<RgbImage, String> {
-        let fonts = self
-            .fonts
-            .as_ref()
-            .ok_or_else(|| "screenshot unavailable: no system font could be loaded".to_string())?;
         let commands = take_draw_commands_for(env, stack);
-        Ok(render_commands(
-            &commands,
-            width,
-            height,
-            &mut fonts.borrow_mut(),
-        ))
+        self.render_commands_image(&commands, width, height)
     }
 
     fn render_commands_image(
@@ -320,10 +305,7 @@ fn render_commands(
     height: u32,
     fonts: &mut FontBook,
 ) -> RgbImage {
-    let mut surface = Surface::new(width.max(1), height.max(1), PixelFormatEnum::RGB888)
-        .expect("create screenshot surface");
-    let _ = surface.fill_rect(None, Color::RGB(0, 0, 0));
-
+    let surface = new_framebuffer(width, height).expect("create screenshot surface");
     let mut sc = surface
         .into_canvas()
         .expect("screenshot surface into canvas");
@@ -355,7 +337,7 @@ fn surface_to_image(surface: &Surface) -> RgbImage {
 /// Scan a directory for example `.ptl` scripts (excluding the browser itself),
 /// returning display-name/path entries sorted by path.
 fn load_examples(examples_dir: &Path) -> Vec<ExampleEntry> {
-    let mut paths: Vec<PathBuf> = Vec::new();
+    let mut paths: Vec<(PathBuf, String)> = Vec::new();
     if let Ok(dir_entries) = std::fs::read_dir(examples_dir) {
         for entry in dir_entries.flatten() {
             let path = entry.path();
@@ -366,20 +348,15 @@ fn load_examples(examples_dir: &Path) -> Vec<ExampleEntry> {
                     .to_string_lossy()
                     .to_string();
                 if name != "browser" {
-                    paths.push(path);
+                    paths.push((path, name));
                 }
             }
         }
     }
-    paths.sort();
+    paths.sort_by(|a, b| a.0.cmp(&b.0));
     paths
         .into_iter()
-        .map(|path| {
-            let name = path
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
+        .map(|(path, name)| {
             // Capitalize the first letter for display.
             let display_name = {
                 let mut c = name.chars();

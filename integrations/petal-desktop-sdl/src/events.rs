@@ -74,10 +74,14 @@ pub struct ResizeWatch<'a> {
 impl<'a> ResizeWatch<'a> {
     /// Start calling `on_resize`; it stops when the watch is dropped.
     pub fn new(on_resize: impl FnMut() + 'a) -> ResizeWatch<'a> {
-        let mut callback: Box<Box<dyn FnMut() + 'a>> = Box::new(Box::new(on_resize));
-        let data = &mut *callback as *mut Box<dyn FnMut() + 'a> as *mut c_void;
+        let mut watch = ResizeWatch {
+            callback: Box::new(Box::new(on_resize)),
+        };
+        // The pointer is to the outer box's heap slot, so moving `watch` out
+        // below leaves it valid.
+        let data = watch.data();
         unsafe { sys::SDL_AddEventWatch(Some(on_event), data) };
-        ResizeWatch { callback }
+        watch
     }
 
     fn data(&mut self) -> *mut c_void {

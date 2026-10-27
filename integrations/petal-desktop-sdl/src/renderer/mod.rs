@@ -5,11 +5,22 @@ use sdl2::rect::Rect;
 use sdl2::render::{BlendMode, Canvas, RenderTarget};
 use sdl2::surface::Surface;
 use sdl2::ttf::Font;
-use sdl2::video::Window;
 
 use petal_ui::draw::DrawCommand;
 
 use crate::font::FontBook;
+
+mod raster;
+mod surface_fx;
+mod text;
+
+use raster::{
+    PI, TAU, annular_sector, ellipse_ring, fill_circle_gradient, fill_disc_aa, fill_polygon,
+    fill_rect_gradient, fill_rounded_rect, fill_shadow, set_draw_color, stroke_line_aa,
+    stroke_rect_outline, stroke_rounded_rect_outline,
+};
+use surface_fx::{blit_surface_impl, blur_surface, snapshot_surface};
+use text::render_text_impl;
 
 /// Render targets that can also render TTF text. `texture_creator()` is not
 /// part of the generic `Canvas<T>` API — it is defined separately for
@@ -38,33 +49,6 @@ pub trait TextTarget: RenderTarget + Sized {
         w: u32,
         h: u32,
     );
-}
-
-impl TextTarget for Window {
-    fn render_text(
-        canvas: &mut Canvas<Self>,
-        font: &Font,
-        text: &str,
-        x: i32,
-        y: i32,
-        color: Color,
-    ) {
-        let creator = canvas.texture_creator();
-        render_text_impl(canvas, &creator, font, text, x, y, color);
-    }
-
-    fn blit_surface(
-        canvas: &mut Canvas<Self>,
-        src: &Surface,
-        x: i32,
-        y: i32,
-        a: u8,
-        w: u32,
-        h: u32,
-    ) {
-        let creator = canvas.texture_creator();
-        blit_surface_impl(canvas, &creator, src, x, y, a, w, h);
-    }
 }
 
 impl TextTarget for Surface<'_> {
@@ -97,17 +81,54 @@ impl TextTarget for Surface<'_> {
     }
 }
 
+/// Offscreen canvases (PGraphics-style render targets), keyed by id. They are
+/// rebuilt fresh from the command stream every frame, so the per-frame re-run
+/// model needs no extra bookkeeping. Each is a software `Canvas<Surface>` with
+/// an alpha channel so unpainted regions stay transparent and only the drawn
+/// pixels composite onto the destination.
+type Offscreen = HashMap<u32, Canvas<Surface<'static>>>;
+
+/// Evaluate `$body` with `$c` bound to the active render target — `$canvas`
+/// for target `0`, else that offscreen canvas. A macro rather than a function
+/// because the two arms are different `Canvas` types. Evaluates to `None` (and
+/// the command is silently dropped) when the target id is unknown.
+macro_rules! on_target {
+    ($canvas:expr, $offscreen:expr, $target:expr, |$c:ident| $body:expr) => {
+        if $target == 0 {
+            let $c = &mut *$canvas;
+            Some($body)
+        } else if let Some($c) = $offscreen.get_mut(&$target) {
+            Some($body)
+        } else {
+            None
+        }
+    };
+}
+
+/// Take offscreen canvas `id` out of `offscreen`, hand it to `f` as a surface
+/// (the map is lent too, minus `id`, so `f` can reach another canvas as the
+/// source or destination), then put it back as a canvas. An unknown id is a
+/// no-op.
+fn with_offscreen_surface(
+    offscreen: &mut Offscreen,
+    id: u32,
+    f: impl FnOnce(&mut Surface<'static>, &mut Offscreen),
+) {
+    if let Some(c) = offscreen.remove(&id) {
+        let mut surface = c.into_surface();
+        f(&mut surface, offscreen);
+        if let Ok(sc) = surface.into_canvas() {
+            offscreen.insert(id, sc);
+        }
+    }
+}
+
 pub fn render<T: TextTarget>(
     canvas: &mut Canvas<T>,
     commands: Vec<DrawCommand>,
     fonts: &mut FontBook,
 ) {
-    // Offscreen canvases (PGraphics-style render targets), keyed by id. They are
-    // rebuilt fresh from the command stream every frame, so the per-frame re-run
-    // model needs no extra bookkeeping. Each is a software `Canvas<Surface>`
-    // with an alpha channel so unpainted regions stay transparent and only the
-    // drawn pixels composite onto the destination.
-    let mut offscreen: HashMap<u32, Canvas<Surface<'static>>> = HashMap::new();
+    let mut offscreen: Offscreen = HashMap::new();
     // The active render target. `0` is the main framebuffer; any other value is
     // an offscreen canvas id set via `SetTarget` (i.e. `draw_to`).
     let mut target: u32 = 0;
@@ -125,7 +146,7 @@ pub fn render<T: TextTarget>(
         let cmd = match cmd {
             DrawCommand::ClipPush { x, y, w, h, .. } => {
                 saved_clips.push(cur_clip);
-                let want = Rect::new(x, y, w.max(1), h.max(1));
+                let want = clip_rect(x, y, w, h);
                 cur_clip = Some(match cur_clip {
                     // An empty intersection must clip *everything* out, so it
                     // becomes a 1px rect far off the drawable — SDL has no
@@ -142,7 +163,7 @@ pub fn render<T: TextTarget>(
                 clip_cmd(cur_clip)
             }
             DrawCommand::Clip { x, y, w, h, .. } => {
-                cur_clip = Some(Rect::new(x, y, w.max(1), h.max(1)));
+                cur_clip = Some(clip_rect(x, y, w, h));
                 cmd
             }
             DrawCommand::ClipNone => {
@@ -168,71 +189,45 @@ pub fn render<T: TextTarget>(
             DrawCommand::SetTarget { id } => {
                 target = id;
             }
+            // The source canvas is pulled out of the map so the destination
+            // (which may itself be another offscreen canvas) can be borrowed
+            // at the same time, and restored so it can be blitted again.
             DrawCommand::DrawCanvas { id, x, y, a, w, h } => {
-                // Pull the source canvas out so we can borrow the destination
-                // (which may itself be another offscreen canvas) at the same time.
-                if let Some(src_canvas) = offscreen.remove(&id) {
-                    let src_surface = src_canvas.into_surface();
-                    if target == 0 {
-                        T::blit_surface(canvas, &src_surface, x, y, a, w, h);
-                    } else if let Some(dst) = offscreen.get_mut(&target) {
-                        // The destination is itself an offscreen canvas
-                        // (`Canvas<Surface>`), which also implements `TextTarget`.
-                        <Surface as TextTarget>::blit_surface(dst, &src_surface, x, y, a, w, h);
-                    }
-                    // Restore the source canvas so it can be reused/blitted again.
-                    if let Ok(sc) = src_surface.into_canvas() {
-                        offscreen.insert(id, sc);
-                    }
-                }
+                with_offscreen_surface(&mut offscreen, id, |src, offscreen| {
+                    on_target!(canvas, offscreen, target, |dst| {
+                        TextTarget::blit_surface(dst, src, x, y, a, w, h)
+                    });
+                });
             }
             DrawCommand::Snapshot { id, x, y } => {
                 // Read the current target's pixels under the canvas rect into
                 // the canvas — the backdrop a material blurs.
-                let Some(dst_canvas) = offscreen.remove(&id) else {
-                    continue;
-                };
-                let (w, h) = dst_canvas.output_size().unwrap_or((1, 1));
-                let shot = if target == 0 {
-                    snapshot_surface(canvas, x, y, w, h)
-                } else if let Some(src) = offscreen.get_mut(&target) {
-                    snapshot_surface(src, x, y, w, h)
-                } else {
-                    None
-                };
-                let mut dst_surface = dst_canvas.into_surface();
-                if let Some(mut shot) = shot {
-                    let _ = shot.set_blend_mode(BlendMode::None);
-                    let _ = shot.blit(None, &mut dst_surface, None);
-                }
-                if let Ok(sc) = dst_surface.into_canvas() {
-                    offscreen.insert(id, sc);
-                }
+                with_offscreen_surface(&mut offscreen, id, |dst, offscreen| {
+                    let (w, h) = dst.size();
+                    let shot = on_target!(canvas, offscreen, target, |src| {
+                        snapshot_surface(src, x, y, w, h)
+                    });
+                    if let Some(mut shot) = shot.flatten() {
+                        let _ = shot.set_blend_mode(BlendMode::None);
+                        let _ = shot.blit(None, dst, None);
+                    }
+                });
             }
             DrawCommand::BlurCanvas { id, radius } => {
-                if let Some(c) = offscreen.remove(&id) {
-                    let mut surface = c.into_surface();
-                    blur_surface(&mut surface, radius as f32);
-                    if let Ok(sc) = surface.into_canvas() {
-                        offscreen.insert(id, sc);
-                    }
-                }
+                with_offscreen_surface(&mut offscreen, id, |surface, _| {
+                    blur_surface(surface, radius as f32)
+                });
             }
             other => {
-                if target == 0 {
-                    render_one(canvas, other, fonts);
-                } else if let Some(dst) = offscreen.get_mut(&target) {
-                    render_one(dst, other, fonts);
-                }
-                // If the target id is unknown, the command is silently dropped.
+                on_target!(canvas, offscreen, target, |dst| render_one(dst, other, fonts));
             }
         }
     }
 }
 
 /// Render a single primitive draw command onto a target canvas. The canvas ops
-/// (`CreateCanvas`, `SetTarget`, `DrawCanvas`, `Snapshot`, `BlurCanvas`) are
-/// handled by `render` and never reach here.
+/// (`CreateCanvas`, `SetTarget`, `DrawCanvas`, `Snapshot`, `BlurCanvas`) and
+/// the clip stack ops are handled by `render` and never reach here.
 fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &mut FontBook) {
     match cmd {
         DrawCommand::Clear { r, g, b } => {
@@ -323,14 +318,10 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
             set_draw_color(canvas, r, g, b, a);
             fill_polygon(canvas, &[(x1, y1), (x2, y2), (x3, y3)]);
         }
-        DrawCommand::Poly { points, r, g, b, a } => {
-            set_draw_color(canvas, r, g, b, a);
-            fill_polygon(canvas, &points);
-        }
         // The scanline filler is already even-odd, so a concave outline needs
         // no separate path here — `Polygon` differs from `Poly` only in the
         // guarantee it makes to the script.
-        DrawCommand::Polygon { points, r, g, b, a } => {
+        DrawCommand::Poly { points, r, g, b, a } | DrawCommand::Polygon { points, r, g, b, a } => {
             set_draw_color(canvas, r, g, b, a);
             fill_polygon(canvas, &points);
         }
@@ -572,18 +563,11 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
         }
         // The corner radius is dropped: SDL's clip is a scissor rectangle, so
         // a rounded clip degrades to the square one this command has always
-        // meant. `ClipPush`/`ClipPop` are resolved to plain rects by `render`
-        // (which owns the stack) before they ever reach here.
+        // meant.
         DrawCommand::Clip { x, y, w, h, .. } => {
-            canvas.set_clip_rect(Rect::new(x, y, w.max(1), h.max(1)));
+            canvas.set_clip_rect(clip_rect(x, y, w, h));
         }
         DrawCommand::ClipNone => {
-            canvas.set_clip_rect(None);
-        }
-        DrawCommand::ClipPush { x, y, w, h, .. } => {
-            canvas.set_clip_rect(Rect::new(x, y, w.max(1), h.max(1)));
-        }
-        DrawCommand::ClipPop => {
             canvas.set_clip_rect(None);
         }
         // Bitmap loading is host-specific and this integration has not opted
@@ -600,8 +584,11 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
         | DrawCommand::CacheBegin { .. }
         | DrawCommand::CacheEnd { .. }
         | DrawCommand::CacheDraw { .. } => {}
-        // Handled in `render`; unreachable here.
-        DrawCommand::CreateCanvas { .. }
+        // Handled in `render` (the clip stack ops are resolved to plain
+        // `Clip`/`ClipNone` there, which owns the stack); unreachable here.
+        DrawCommand::ClipPush { .. }
+        | DrawCommand::ClipPop
+        | DrawCommand::CreateCanvas { .. }
         | DrawCommand::SetTarget { .. }
         | DrawCommand::DrawCanvas { .. }
         | DrawCommand::Snapshot { .. }
@@ -609,254 +596,10 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
     }
 }
 
-/// Set the draw color, enabling alpha blending only when the primitive is
-/// translucent. Opaque primitives keep `BlendMode::None` so they overwrite —
-/// which also preserves the offscreen-canvas contract (an opaque draw sets the
-/// canvas pixel fully opaque; the later blit composites it).
-fn set_draw_color<T: RenderTarget>(canvas: &mut Canvas<T>, r: u8, g: u8, b: u8, a: u8) {
-    canvas.set_blend_mode(if a < 255 {
-        BlendMode::Blend
-    } else {
-        BlendMode::None
-    });
-    canvas.set_draw_color(Color::RGBA(r, g, b, a));
-}
-
-/// Fill an arbitrary polygon using the even-odd scanline rule.
-/// Handles convex and concave polygons. The draw color must be set by the caller.
-fn fill_polygon<T: RenderTarget>(canvas: &mut Canvas<T>, points: &[(i32, i32)]) {
-    if points.len() < 3 {
-        return;
-    }
-
-    let min_y = points.iter().map(|p| p.1).min().unwrap();
-    let max_y = points.iter().map(|p| p.1).max().unwrap();
-
-    for y in min_y..=max_y {
-        // Collect x-intersections of this scanline with every polygon edge.
-        let mut crossings: Vec<i32> = Vec::new();
-        let n = points.len();
-        for i in 0..n {
-            let (x1, y1) = points[i];
-            let (x2, y2) = points[(i + 1) % n];
-            // Skip horizontal edges; they contribute no crossing.
-            if y1 == y2 {
-                continue;
-            }
-            let (ya, yb, xa, xb) = if y1 < y2 {
-                (y1, y2, x1, x2)
-            } else {
-                (y2, y1, x2, x1)
-            };
-            // Half-open interval [ya, yb) avoids double-counting shared vertices.
-            if y >= ya && y < yb {
-                let t = (y - ya) as f64 / (yb - ya) as f64;
-                let x = xa as f64 + t * (xb - xa) as f64;
-                crossings.push(x.round() as i32);
-            }
-        }
-
-        crossings.sort_unstable();
-        // Fill spans between consecutive intersection pairs.
-        let mut i = 0;
-        while i + 1 < crossings.len() {
-            let x_start = crossings[i];
-            let x_end = crossings[i + 1];
-            let _ = canvas.draw_line((x_start, y), (x_end, y));
-            i += 2;
-        }
-    }
-}
-
-/// Draw an antialiased line of the given stroke `width` as a distance-field
-/// capsule: a pixel's coverage is its distance to the segment against the half-
-/// width. This handles thickness and antialiasing together (round caps), and a
-/// width-1 line reduces to a soft 1px stroke.
-fn stroke_line_aa<T: RenderTarget>(
-    canvas: &mut Canvas<T>,
-    x1: i32,
-    y1: i32,
-    x2: i32,
-    y2: i32,
-    width: u32,
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-) {
-    canvas.set_blend_mode(BlendMode::Blend);
-    let half = width.max(1) as f64 / 2.0;
-    let (ax, ay) = (x1 as f64, y1 as f64);
-    let (bx, by) = (x2 as f64, y2 as f64);
-    let pad = half.ceil() as i32 + 1;
-    let (x0, xe) = (x1.min(x2) - pad, x1.max(x2) + pad);
-    let (y0, ye) = (y1.min(y2) - pad, y1.max(y2) + pad);
-    for py in y0..=ye {
-        for px in x0..=xe {
-            let dist = dist_to_segment(px as f64 + 0.5, py as f64 + 0.5, ax, ay, bx, by);
-            let pa = ((half + 0.5 - dist).clamp(0.0, 1.0) * a as f64).round() as u8;
-            if pa > 0 {
-                canvas.set_draw_color(Color::RGBA(r, g, b, pa));
-                let _ = canvas.draw_point((px, py));
-            }
-        }
-    }
-}
-
-/// Distance from point (`px`, `py`) to the segment (`ax`,`ay`)–(`bx`,`by`).
-fn dist_to_segment(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
-    let (dx, dy) = (bx - ax, by - ay);
-    let len2 = dx * dx + dy * dy;
-    let t = if len2 == 0.0 {
-        0.0
-    } else {
-        ((px - ax) * dx + (py - ay) * dy) / len2
-    };
-    let t = t.clamp(0.0, 1.0);
-    let (cx, cy) = (ax + t * dx, ay + t * dy);
-    ((px - cx).powi(2) + (py - cy).powi(2)).sqrt()
-}
-
-/// Stroke a rectangle outline of the given `width` as four disjoint border
-/// bands (so translucent strokes don't double-blend at the corners). `width` is
-/// clamped so the bands don't overlap.
-fn stroke_rect_outline<T: RenderTarget>(
-    canvas: &mut Canvas<T>,
-    x: i32,
-    y: i32,
-    w: u32,
-    h: u32,
-    width: u32,
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-) {
-    let sw = width.max(1).min(w).min(h);
-    set_draw_color(canvas, r, g, b, a);
-    let swi = sw as i32;
-    let (wi, hi) = (w as i32, h as i32);
-    // Top and bottom span the full width; left/right fill only the gap between
-    // them so no pixel is painted twice.
-    let _ = canvas.fill_rect(Rect::new(x, y, w, sw));
-    let _ = canvas.fill_rect(Rect::new(x, y + hi - swi, w, sw));
-    let mid_h = h.saturating_sub(2 * sw);
-    if mid_h > 0 {
-        let _ = canvas.fill_rect(Rect::new(x, y + swi, sw, mid_h));
-        let _ = canvas.fill_rect(Rect::new(x + wi - swi, y + swi, sw, mid_h));
-    }
-}
-
-/// A full turn and a half turn in radians — the sweeps the conic commands are
-/// split along so every filled piece stays a simple polygon.
-const TAU: f64 = std::f64::consts::TAU;
-const PI: f64 = std::f64::consts::PI;
-
-/// How many segments to approximate a conic of the given size with.
-fn conic_segments(size: f64) -> usize {
-    ((size * 0.7) as usize + 8).clamp(8, 64)
-}
-
-/// Sample an elliptical arc from `a0` to `a1` into a closed point ring — the
-/// outline of a filled ellipse or elliptical wedge.
-fn ellipse_ring(cx: i32, cy: i32, rx: f64, ry: f64, a0: f64, a1: f64) -> Vec<(i32, i32)> {
-    let n = conic_segments(rx.max(ry));
-    (0..=n)
-        .map(|i| {
-            let t = a0 + (a1 - a0) * (i as f64) / (n as f64);
-            (
-                cx + (rx * t.cos()).round() as i32,
-                cy + (ry * t.sin()).round() as i32,
-            )
-        })
-        .collect()
-}
-
-/// The outline of one annular sector — the outer rim swept forward, the inner
-/// rim swept back — which is a *simple* polygon as long as the sweep is at most
-/// half a turn. Used for arcs, rounded-outline corners, and (as two halves) a
-/// hollow ellipse.
-#[allow(clippy::too_many_arguments)]
-fn annular_sector(
-    cx: i32,
-    cy: i32,
-    rx_in: f64,
-    rx_out: f64,
-    ry_in: f64,
-    ry_out: f64,
-    a0: f64,
-    a1: f64,
-) -> Vec<(i32, i32)> {
-    let mut ring = ellipse_ring(cx, cy, rx_out, ry_out, a0, a1);
-    if rx_in <= 0.0 || ry_in <= 0.0 {
-        ring.push((cx, cy));
-    } else {
-        let mut inner = ellipse_ring(cx, cy, rx_in, ry_in, a0, a1);
-        inner.reverse();
-        ring.extend(inner);
-    }
-    ring
-}
-
-/// Stroke a rounded rectangle outline `width` px thick inside the bounds: four
-/// straight bands between the corners, plus a quarter annulus at each corner.
-/// Genuinely hollow (unlike two stacked rounded fills), which is the whole
-/// point of the command.
-#[allow(clippy::too_many_arguments)]
-fn stroke_rounded_rect_outline<T: RenderTarget>(
-    canvas: &mut Canvas<T>,
-    x: i32,
-    y: i32,
-    w: u32,
-    h: u32,
-    radius: u32,
-    width: u32,
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-) {
-    let rad = radius.min(w / 2).min(h / 2) as i32;
-    if rad <= 0 {
-        stroke_rect_outline(canvas, x, y, w, h, width, r, g, b, a);
-        return;
-    }
-    let t = width.max(1).min(w).min(h);
-    let ti = t as i32;
-    let (wi, hi) = (w as i32, h as i32);
-    set_draw_color(canvas, r, g, b, a);
-    let flat_w = (wi - 2 * rad).max(0) as u32;
-    let flat_h = (hi - 2 * rad).max(0) as u32;
-    if flat_w > 0 {
-        let _ = canvas.fill_rect(Rect::new(x + rad, y, flat_w, t));
-        let _ = canvas.fill_rect(Rect::new(x + rad, y + hi - ti, flat_w, t));
-    }
-    if flat_h > 0 {
-        let _ = canvas.fill_rect(Rect::new(x, y + rad, t, flat_h));
-        let _ = canvas.fill_rect(Rect::new(x + wi - ti, y + rad, t, flat_h));
-    }
-    let inner = (rad - ti).max(0) as f64;
-    let corners = [
-        (x + rad, y + rad, PI),
-        (x + wi - rad, y + rad, 1.5 * PI),
-        (x + wi - rad, y + hi - rad, 0.0),
-        (x + rad, y + hi - rad, 0.5 * PI),
-    ];
-    for (ccx, ccy, start) in corners {
-        fill_polygon(
-            canvas,
-            &annular_sector(
-                ccx,
-                ccy,
-                inner,
-                rad as f64,
-                inner,
-                rad as f64,
-                start,
-                start + PI / 2.0,
-            ),
-        );
-    }
+/// The clip rect for a `Clip`/`ClipPush` of `w`×`h` at (`x`, `y`). SDL rects
+/// can't be empty, so a zero side is widened to 1px.
+fn clip_rect(x: i32, y: i32, w: u32, h: u32) -> Rect {
+    Rect::new(x, y, w.max(1), h.max(1))
 }
 
 /// The clip rect that means "nothing is visible": 1px, far outside any
@@ -881,629 +624,6 @@ fn clip_cmd(clip: Option<Rect>) -> DrawCommand {
     }
 }
 
-/// Linear interpolation between two RGBA stops at `t` ∈ [0, 1].
-fn lerp_rgba(c0: [u8; 4], c1: [u8; 4], t: f64) -> Color {
-    let t = t.clamp(0.0, 1.0);
-    let mix = |a: u8, b: u8| (a as f64 + (b as f64 - a as f64) * t).round() as u8;
-    Color::RGBA(
-        mix(c0[0], c1[0]),
-        mix(c0[1], c1[1]),
-        mix(c0[2], c1[2]),
-        mix(c0[3], c1[3]),
-    )
-}
-
-/// How far a rounded rect's edge is inset at `d` px from the near end of the
-/// side — 0 along the straight run, ramping up through the corner arc.
-fn corner_inset(d: f64, span: f64, radius: f64) -> f64 {
-    // Distance into the nearer corner arc, or 0 between them.
-    let into = if d < radius {
-        radius - d
-    } else if d > span - radius {
-        radius - (span - d)
-    } else {
-        return 0.0;
-    };
-    radius - (radius * radius - into * into).max(0.0).sqrt()
-}
-
-/// Fill a (optionally rounded) rect with a linear gradient, one 1px line at a
-/// time along whichever axis the gradient leans toward.
-///
-/// This is the software fallback, not a shader: the color is evaluated once
-/// per line, at the line's midpoint, so a diagonal gradient banks its steps
-/// along the dominant axis. Axis-aligned angles — very nearly all of them in
-/// practice — are exact. The rounded case narrows each line to the rounded
-/// rect's own span at that offset, so the corners are shaped, not clipped.
-#[allow(clippy::too_many_arguments)]
-fn fill_rect_gradient<T: RenderTarget>(
-    canvas: &mut Canvas<T>,
-    x: i32,
-    y: i32,
-    w: u32,
-    h: u32,
-    radius: u32,
-    c0: [u8; 4],
-    c1: [u8; 4],
-    angle: f32,
-) {
-    if w == 0 || h == 0 {
-        return;
-    }
-    canvas.set_blend_mode(BlendMode::Blend);
-    let (wf, hf) = (w as f64, h as f64);
-    let rad = (radius as f64).min(wf * 0.5).min(hf * 0.5);
-    let (dx, dy) = ((angle as f64).cos(), (angle as f64).sin());
-    // The gradient spans the rect's whole extent along the axis, so the
-    // projection is normalized by the projected width of the rect.
-    let extent = dx.abs() * wf + dy.abs() * hf;
-    let t_at = |px: f64, py: f64| {
-        // Offset from the corner the gradient starts at.
-        let ox = if dx >= 0.0 { px } else { wf - px };
-        let oy = if dy >= 0.0 { py } else { hf - py };
-        (ox * dx.abs() + oy * dy.abs()) / extent.max(1.0)
-    };
-    if dy.abs() >= dx.abs() {
-        for row in 0..h as i32 {
-            let inset = corner_inset(row as f64 + 0.5, hf, rad);
-            let line_w = wf - 2.0 * inset;
-            if line_w <= 0.0 {
-                continue;
-            }
-            canvas.set_draw_color(lerp_rgba(c0, c1, t_at(wf * 0.5, row as f64 + 0.5)));
-            let _ = canvas.fill_rect(Rect::new(
-                x + inset.round() as i32,
-                y + row,
-                line_w.round().max(1.0) as u32,
-                1,
-            ));
-        }
-    } else {
-        for col in 0..w as i32 {
-            let inset = corner_inset(col as f64 + 0.5, wf, rad);
-            let line_h = hf - 2.0 * inset;
-            if line_h <= 0.0 {
-                continue;
-            }
-            canvas.set_draw_color(lerp_rgba(c0, c1, t_at(col as f64 + 0.5, hf * 0.5)));
-            let _ = canvas.fill_rect(Rect::new(
-                x + col,
-                y + inset.round() as i32,
-                1,
-                line_h.round().max(1.0) as u32,
-            ));
-        }
-    }
-}
-
-/// Fill a disc with a radial gradient, center color to rim color, per pixel —
-/// the same per-pixel idiom `fill_disc_aa` uses, with the rim antialiased by
-/// disc coverage.
-fn fill_circle_gradient<T: RenderTarget>(
-    canvas: &mut Canvas<T>,
-    cx: i32,
-    cy: i32,
-    radius: i32,
-    c0: [u8; 4],
-    c1: [u8; 4],
-) {
-    if radius <= 0 {
-        return;
-    }
-    canvas.set_blend_mode(BlendMode::Blend);
-    let (fx, fy, fr) = (cx as f64 + 0.5, cy as f64 + 0.5, radius as f64);
-    for py in (cy - radius - 1)..=(cy + radius + 1) {
-        for px in (cx - radius - 1)..=(cx + radius + 1) {
-            let coverage = disc_coverage(px, py, fx, fy, fr);
-            if coverage <= 0.0 {
-                continue;
-            }
-            let d = ((px as f64 + 0.5 - fx).powi(2) + (py as f64 + 0.5 - fy).powi(2)).sqrt();
-            let color = lerp_rgba(c0, c1, d / fr);
-            let a = (color.a as f64 * coverage).round() as u8;
-            if a > 0 {
-                canvas.set_draw_color(Color::RGBA(color.r, color.g, color.b, a));
-                let _ = canvas.draw_point((px, py));
-            }
-        }
-    }
-}
-
-/// Draw a soft shadow per pixel, from the signed distance to the (offset,
-/// spread) rounded rect: full alpha inside, ramping linearly to 0 at `blur`.
-///
-/// That is the same falloff [`petal_ui::tess::shadow_mesh`] tessellates for a
-/// GPU host, evaluated analytically instead — which on a software canvas is
-/// both simpler and exact, and shares the property that matters: every pixel
-/// is written once, so the shadow never double-composites over itself.
-#[allow(clippy::too_many_arguments)]
-fn fill_shadow<T: RenderTarget>(
-    canvas: &mut Canvas<T>,
-    x: i32,
-    y: i32,
-    w: u32,
-    h: u32,
-    radius: u32,
-    blur: u32,
-    spread: i32,
-    dx: i32,
-    dy: i32,
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-) {
-    let sw = w as f64 + 2.0 * spread as f64;
-    let sh = h as f64 + 2.0 * spread as f64;
-    if sw <= 0.0 || sh <= 0.0 || a == 0 {
-        return;
-    }
-    let sx = (x + dx) as f64 - spread as f64;
-    let sy = (y + dy) as f64 - spread as f64;
-    // The spread grows the corners with the shape, as CSS does.
-    let rad = (radius as f64 + spread as f64).clamp(0.0, sw.min(sh) * 0.5);
-    let blur = blur as f64;
-    let (hx, hy) = (sw * 0.5, sh * 0.5);
-    let (mx, my) = (sx + hx, sy + hy);
-
-    canvas.set_blend_mode(BlendMode::Blend);
-    let x0 = (sx - blur - 1.0).floor() as i32;
-    let x1 = (sx + sw + blur + 1.0).ceil() as i32;
-    let y0 = (sy - blur - 1.0).floor() as i32;
-    let y1 = (sy + sh + blur + 1.0).ceil() as i32;
-    for py in y0..=y1 {
-        for px in x0..=x1 {
-            // Signed distance to the rounded rect: positive outside.
-            let qx = (px as f64 + 0.5 - mx).abs() - hx + rad;
-            let qy = (py as f64 + 0.5 - my).abs() - hy + rad;
-            let outside = (qx.max(0.0).powi(2) + qy.max(0.0).powi(2)).sqrt();
-            let d = outside + qx.max(qy).min(0.0) - rad;
-            let falloff = if d <= 0.0 {
-                1.0
-            } else if blur <= 0.0 {
-                0.0
-            } else {
-                (1.0 - d / blur).max(0.0)
-            };
-            let pa = (a as f64 * falloff).round() as u8;
-            if pa > 0 {
-                canvas.set_draw_color(Color::RGBA(r, g, b, pa));
-                let _ = canvas.draw_point((px, py));
-            }
-        }
-    }
-}
-
-/// Coverage of the pixel at (`px`, `py`) by a disc of `radius` centered at
-/// (`cx`, `cy`) — 1 inside, 0 outside, a smooth ramp across the 1px edge band.
-/// This is the antialiasing kernel shared by circles and rounded-rect corners.
-fn disc_coverage(px: i32, py: i32, cx: f64, cy: f64, radius: f64) -> f64 {
-    let dx = px as f64 + 0.5 - cx;
-    let dy = py as f64 + 0.5 - cy;
-    let dist = (dx * dx + dy * dy).sqrt();
-    (radius + 0.5 - dist).clamp(0.0, 1.0)
-}
-
-/// Draw an antialiased filled disc. Edge pixels are drawn with partial alpha
-/// (coverage × the fill alpha), which smooths the outline instead of the
-/// stair-stepped midpoint circle.
-fn fill_disc_aa<T: RenderTarget>(
-    canvas: &mut Canvas<T>,
-    cx: f64,
-    cy: f64,
-    radius: f64,
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-) {
-    if radius <= 0.0 {
-        return;
-    }
-    canvas.set_blend_mode(BlendMode::Blend);
-    let x0 = (cx - radius - 1.0).floor() as i32;
-    let x1 = (cx + radius + 1.0).ceil() as i32;
-    let y0 = (cy - radius - 1.0).floor() as i32;
-    let y1 = (cy + radius + 1.0).ceil() as i32;
-    for py in y0..=y1 {
-        for px in x0..=x1 {
-            let pa = (disc_coverage(px, py, cx, cy, radius) * a as f64).round() as u8;
-            if pa > 0 {
-                canvas.set_draw_color(Color::RGBA(r, g, b, pa));
-                let _ = canvas.draw_point((px, py));
-            }
-        }
-    }
-}
-
-/// Fill a rounded rectangle: fast solid bands for the body (top strip, bottom
-/// strip, full-width middle) plus four antialiased quarter-disc corners. The
-/// bands and corner boxes are disjoint, so nothing is painted twice. `radius`
-/// is clamped to half the smaller side.
-fn fill_rounded_rect<T: RenderTarget>(
-    canvas: &mut Canvas<T>,
-    x: i32,
-    y: i32,
-    w: u32,
-    h: u32,
-    radius: u32,
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-) {
-    let rad = radius.min(w / 2).min(h / 2);
-    if rad == 0 {
-        set_draw_color(canvas, r, g, b, a);
-        let _ = canvas.fill_rect(Rect::new(x, y, w, h));
-        return;
-    }
-    let radi = rad as i32;
-    let (wi, hi) = (w as i32, h as i32);
-
-    // Solid body: the middle band spans the full width; the top/bottom bands
-    // span only between the corner columns.
-    set_draw_color(canvas, r, g, b, a);
-    let _ = canvas.fill_rect(Rect::new(x, y + radi, w, h - 2 * rad));
-    let mid_w = w - 2 * rad;
-    let _ = canvas.fill_rect(Rect::new(x + radi, y, mid_w, rad));
-    let _ = canvas.fill_rect(Rect::new(x + radi, y + hi - radi, mid_w, rad));
-
-    // Antialiased corners: each rad×rad box is a quarter disc about the inner
-    // corner point (`bx`, `by` is the box's top-left).
-    canvas.set_blend_mode(BlendMode::Blend);
-    let radf = rad as f64;
-    let corners = [
-        (x as f64 + radf, y as f64 + radf, x, y),
-        (
-            x as f64 + wi as f64 - radf,
-            y as f64 + radf,
-            x + wi - radi,
-            y,
-        ),
-        (
-            x as f64 + radf,
-            y as f64 + hi as f64 - radf,
-            x,
-            y + hi - radi,
-        ),
-        (
-            x as f64 + wi as f64 - radf,
-            y as f64 + hi as f64 - radf,
-            x + wi - radi,
-            y + hi - radi,
-        ),
-    ];
-    for (ccx, ccy, bx, by) in corners {
-        for py in by..by + radi {
-            for px in bx..bx + radi {
-                let pa = (disc_coverage(px, py, ccx, ccy, radf) * a as f64).round() as u8;
-                if pa > 0 {
-                    canvas.set_draw_color(Color::RGBA(r, g, b, pa));
-                    let _ = canvas.draw_point((px, py));
-                }
-            }
-        }
-    }
-}
-
-/// Shared text-rendering body. Generic over the `Canvas` target `T` and the
-/// `TextureCreator`'s context `C`; the caller supplies a creator matching the
-/// canvas so the produced texture is compatible with `canvas.copy`.
-fn render_text_impl<T, C>(
-    canvas: &mut Canvas<T>,
-    texture_creator: &sdl2::render::TextureCreator<C>,
-    font: &Font,
-    text: &str,
-    x: i32,
-    y: i32,
-    color: Color,
-) where
-    T: RenderTarget,
-{
-    if text.is_empty() {
-        return;
-    }
-    // Render the glyphs fully opaque, then scale coverage by the requested
-    // alpha via the texture's alpha-mod so translucent text composites.
-    let opaque = Color::RGB(color.r, color.g, color.b);
-    let mut surface = match font.render(text).blended(opaque) {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-    correct_coverage(&mut surface, opaque);
-    let mut texture = match texture_creator.create_texture_from_surface(&surface) {
-        Ok(t) => t,
-        Err(_) => return,
-    };
-    if color.a < 255 {
-        texture.set_blend_mode(BlendMode::Blend);
-        texture.set_alpha_mod(color.a);
-    }
-    let query = texture.query();
-    let target = Rect::new(x, y, query.width, query.height);
-    let _ = canvas.copy(&texture, None, Some(target));
-}
-
-/// Number of text-luminance buckets the coverage LUTs are built for. Text
-/// color only picks a curve, so a coarse quantization is invisible.
-const COVERAGE_BUCKETS: usize = 16;
-
-/// Coverage-correction exponent for the brightest text. FreeType coverage is
-/// linear, but SDL blends it in sRGB-encoded space, so light-on-dark edges
-/// come out thin and stair-stepped. Raising coverage to `1/GAMMA` restores the
-/// weight a linear-light blend (and CoreText's correction) would give. 2.0 was
-/// picked by comparing snapshots against CoreText renders of the same strings:
-/// it lands close to native ink weight without reading as bold.
-const LIGHT_TEXT_GAMMA: f32 = 2.0;
-
-/// Exponent for the darkest text. Dark-on-light already reads close to full
-/// weight under the sRGB blend; CoreText is still a touch heavier (its stem
-/// darkening), so it gets only a slight lift.
-const DARK_TEXT_GAMMA: f32 = 1.2;
-
-/// The 256-entry alpha remap for text whose relative luminance falls in
-/// `bucket`. Built once for all buckets and cached.
-fn coverage_lut(bucket: usize) -> &'static [u8; 256] {
-    static LUTS: std::sync::OnceLock<Vec<[u8; 256]>> = std::sync::OnceLock::new();
-    let luts = LUTS.get_or_init(|| {
-        (0..COVERAGE_BUCKETS)
-            .map(|b| {
-                let t = b as f32 / (COVERAGE_BUCKETS - 1) as f32;
-                build_coverage_lut(DARK_TEXT_GAMMA + (LIGHT_TEXT_GAMMA - DARK_TEXT_GAMMA) * t)
-            })
-            .collect()
-    });
-    &luts[bucket.min(COVERAGE_BUCKETS - 1)]
-}
-
-/// `a' = a^(1/gamma)`, rounded, with 0 and 255 fixed so glyph interiors and
-/// empty space are untouched.
-fn build_coverage_lut(gamma: f32) -> [u8; 256] {
-    let mut lut = [0u8; 256];
-    for (i, v) in lut.iter_mut().enumerate() {
-        let c = i as f32 / 255.0;
-        *v = (c.powf(1.0 / gamma) * 255.0).round() as u8;
-    }
-    lut
-}
-
-/// Which coverage LUT suits text drawn in `color`: its relative luminance
-/// (linearized sRGB, Rec. 709 weights) quantized into `COVERAGE_BUCKETS`.
-fn coverage_bucket(color: Color) -> usize {
-    fn lin(c: u8) -> f32 {
-        let c = c as f32 / 255.0;
-        if c <= 0.04045 {
-            c / 12.92
-        } else {
-            ((c + 0.055) / 1.055).powf(2.4)
-        }
-    }
-    let y = 0.2126 * lin(color.r) + 0.7152 * lin(color.g) + 0.0722 * lin(color.b);
-    // Luminance is linear, so take it back toward perceptual lightness (a
-    // square root is close enough), then ramp from the dark curve to the full
-    // light curve between 0.25 and 0.55. UI text is rarely mid-gray, and the
-    // dim grays used for secondary text on dark panels (~#8a93a2, lightness
-    // ~0.53) need nearly the full boost to keep up with the primary text.
-    let t = ((y.sqrt() - 0.25) / 0.3).clamp(0.0, 1.0);
-    (t * (COVERAGE_BUCKETS - 1) as f32).round() as usize
-}
-
-/// Remap the alpha channel of a `blended()` text surface through the coverage
-/// LUT for `color`. Only the alpha byte changes; color channels are the flat
-/// text color SDL_ttf filled in.
-fn correct_coverage(surface: &mut Surface, color: Color) {
-    let lut = coverage_lut(coverage_bucket(color));
-    // blended() yields ARGB8888; anything else is left as-is rather than
-    // guessing where alpha lives.
-    if surface.pixel_format_enum() != PixelFormatEnum::ARGB8888 {
-        return;
-    }
-    let (w, h) = surface.size();
-    let pitch = surface.pitch() as usize;
-    // ARGB8888 is a packed native-endian u32, so alpha is the high byte:
-    // offset 3 on little-endian, 0 on big-endian.
-    let a_off = if cfg!(target_endian = "little") { 3 } else { 0 };
-    surface.with_lock_mut(|px| {
-        for row in 0..h as usize {
-            let start = row * pitch;
-            let line = &mut px[start..start + w as usize * 4];
-            for p in line.chunks_exact_mut(4) {
-                p[a_off] = lut[p[a_off] as usize];
-            }
-        }
-    });
-}
-
-/// Shared offscreen-canvas blit body. Uploads `src` as an alpha-blended texture
-/// and copies it onto `canvas` at (`x`, `y`). Generic over the canvas target and
-/// the texture-creator context so it serves both the window and software paths.
-#[allow(clippy::too_many_arguments)]
-fn blit_surface_impl<T, C>(
-    canvas: &mut Canvas<T>,
-    texture_creator: &sdl2::render::TextureCreator<C>,
-    src: &Surface,
-    x: i32,
-    y: i32,
-    a: u8,
-    w: u32,
-    h: u32,
-) where
-    T: RenderTarget,
-{
-    let mut texture = match texture_creator.create_texture_from_surface(src) {
-        Ok(t) => t,
-        Err(_) => return,
-    };
-    // Composite: transparent regions of the offscreen canvas let the destination
-    // show through, only the painted pixels land. The alpha mod scales the
-    // whole layer's opacity at once — a group of overlapping shapes reads as
-    // one object at `a`, which is what `draw_canvas(c, x, y, a)` promises.
-    texture.set_blend_mode(BlendMode::Blend);
-    texture.set_alpha_mod(a);
-    let (sw, sh) = src.size();
-    let w = if w == 0 { sw } else { w };
-    let h = if h == 0 { sh } else { h };
-    let target = Rect::new(x, y, w.max(1), h.max(1));
-    let _ = canvas.copy(&texture, None, Some(target));
-}
-
-/// Copy the pixels of `canvas` under the `w`×`h` rect at (`x`, `y`) into a
-/// fresh ARGB surface of that size — the `snapshot` primitive. Pixels outside
-/// the target are left transparent.
-fn snapshot_surface<T: RenderTarget>(
-    canvas: &mut Canvas<T>,
-    x: i32,
-    y: i32,
-    w: u32,
-    h: u32,
-) -> Option<Surface<'static>> {
-    let (tw, th) = canvas.output_size().ok()?;
-    let mut out = Surface::new(w.max(1), h.max(1), PixelFormatEnum::ARGB8888).ok()?;
-    let _ = out.fill_rect(None, Color::RGBA(0, 0, 0, 0));
-    let x0 = x.max(0);
-    let y0 = y.max(0);
-    let x1 = (x + w as i32).min(tw as i32);
-    let y1 = (y + h as i32).min(th as i32);
-    if x1 <= x0 || y1 <= y0 {
-        return Some(out);
-    }
-    let region = Rect::new(x0, y0, (x1 - x0) as u32, (y1 - y0) as u32);
-    let mut pixels = canvas
-        .read_pixels(Some(region), PixelFormatEnum::ARGB8888)
-        .ok()?;
-    let pitch = region.width() * 4;
-    let src = Surface::from_data(
-        &mut pixels,
-        region.width(),
-        region.height(),
-        pitch,
-        PixelFormatEnum::ARGB8888,
-    )
-    .ok()?;
-    // A straight copy (no blending): the snapshot *is* the backdrop, opaque
-    // where the target was.
-    let dest = Rect::new(x0 - x, y0 - y, region.width(), region.height());
-    let mut src = src;
-    src.set_blend_mode(BlendMode::None).ok()?;
-    src.blit(None, &mut out, Some(dest)).ok()?;
-    Some(out)
-}
-
-/// Gaussian-blur an ARGB surface in place with standard deviation `sigma`
-/// px, approximated by three box blurs (the classic approximation, within a
-/// few percent of the true kernel). Runs in premultiplied space so translucent
-/// edges do not darken, and clamps at the borders so a backdrop at the edge of
-/// the window smears its edge pixels outward rather than fading to nothing.
-fn blur_surface(surface: &mut Surface, sigma: f32) {
-    if sigma < 0.25 {
-        return;
-    }
-    let (w, h) = surface.size();
-    let (w, h) = (w as usize, h as usize);
-    if w == 0 || h == 0 {
-        return;
-    }
-    // Box widths for three passes approximating a Gaussian of `sigma`
-    // (Kovesi's method, the common integer form).
-    let ideal = ((12.0 * sigma * sigma / 3.0 + 1.0).sqrt()).floor() as usize;
-    let radius = (ideal.max(1) - 1) / 2;
-    if radius == 0 {
-        return;
-    }
-    let pitch = surface.pitch() as usize;
-    surface.with_lock_mut(|bytes| {
-        // Premultiply into a float working buffer.
-        let mut buf: Vec<[f32; 4]> = Vec::with_capacity(w * h);
-        for y in 0..h {
-            for x in 0..w {
-                let i = y * pitch + x * 4;
-                let (b, g, r, a) = (bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]);
-                let a = a as f32 / 255.0;
-                buf.push([r as f32 * a, g as f32 * a, b as f32 * a, a * 255.0]);
-            }
-        }
-        let mut tmp = vec![[0.0f32; 4]; w * h];
-        for _ in 0..3 {
-            box_blur_h(&buf, &mut tmp, w, h, radius);
-            box_blur_v(&tmp, &mut buf, w, h, radius);
-        }
-        // Un-premultiply back into the surface.
-        for y in 0..h {
-            for x in 0..w {
-                let p = buf[y * w + x];
-                let a = p[3] / 255.0;
-                let i = y * pitch + x * 4;
-                let un = |v: f32| {
-                    if a > 0.0001 {
-                        (v / a).round().clamp(0.0, 255.0) as u8
-                    } else {
-                        0
-                    }
-                };
-                bytes[i] = un(p[2]);
-                bytes[i + 1] = un(p[1]);
-                bytes[i + 2] = un(p[0]);
-                bytes[i + 3] = p[3].round().clamp(0.0, 255.0) as u8;
-            }
-        }
-    });
-}
-
-/// One horizontal box-blur pass (`radius` each side, edges clamped) from
-/// `src` into `dst`.
-fn box_blur_h(src: &[[f32; 4]], dst: &mut [[f32; 4]], w: usize, h: usize, radius: usize) {
-    let norm = 1.0 / (2 * radius + 1) as f32;
-    for y in 0..h {
-        let row = &src[y * w..(y + 1) * w];
-        let at = |x: isize| row[x.clamp(0, w as isize - 1) as usize];
-        let mut acc = [0.0f32; 4];
-        for x in -(radius as isize)..=(radius as isize) {
-            let p = at(x);
-            for c in 0..4 {
-                acc[c] += p[c];
-            }
-        }
-        for x in 0..w {
-            let out = &mut dst[y * w + x];
-            for c in 0..4 {
-                out[c] = acc[c] * norm;
-            }
-            let leaving = at(x as isize - radius as isize);
-            let entering = at(x as isize + radius as isize + 1);
-            for c in 0..4 {
-                acc[c] += entering[c] - leaving[c];
-            }
-        }
-    }
-}
-
-/// One vertical box-blur pass, the transpose of [`box_blur_h`].
-fn box_blur_v(src: &[[f32; 4]], dst: &mut [[f32; 4]], w: usize, h: usize, radius: usize) {
-    let norm = 1.0 / (2 * radius + 1) as f32;
-    for x in 0..w {
-        let at = |y: isize| src[y.clamp(0, h as isize - 1) as usize * w + x];
-        let mut acc = [0.0f32; 4];
-        for y in -(radius as isize)..=(radius as isize) {
-            let p = at(y);
-            for c in 0..4 {
-                acc[c] += p[c];
-            }
-        }
-        for y in 0..h {
-            let out = &mut dst[y * w + x];
-            for c in 0..4 {
-                out[c] = acc[c] * norm;
-            }
-            let leaving = at(y as isize - radius as isize);
-            let entering = at(y as isize + radius as isize + 1);
-            for c in 0..4 {
-                acc[c] += entering[c] - leaving[c];
-            }
-        }
-    }
-}
-
 /// SDL_ttf is process-global: `sdl2::ttf::init()` fails with
 /// `AlreadyInitializedError` while another context is alive, and dropping a
 /// context calls `TTF_Quit` under everyone else. Tests that open a TTF context
@@ -1524,55 +644,6 @@ mod tests {
 
     const W: u32 = 64;
     const H: u32 = 64;
-
-    #[test]
-    fn coverage_lut_keeps_endpoints_and_boosts_light_text() {
-        let light = coverage_lut(coverage_bucket(Color::RGB(255, 255, 255)));
-        let dark = coverage_lut(coverage_bucket(Color::RGB(0, 0, 0)));
-        for lut in [light, dark] {
-            assert_eq!(lut[0], 0);
-            assert_eq!(lut[255], 255);
-            assert!(lut.windows(2).all(|w| w[0] <= w[1]), "LUT must be monotonic");
-        }
-        // Partial coverage is lifted, and more for light text than dark.
-        assert!(light[64] > dark[64]);
-        assert!(dark[64] >= 64);
-        assert_eq!(light[64], (0.25f32.powf(1.0 / LIGHT_TEXT_GAMMA) * 255.0).round() as u8);
-    }
-
-    #[test]
-    fn coverage_bucket_ramps_with_text_luminance() {
-        assert_eq!(coverage_bucket(Color::RGB(0, 0, 0)), 0);
-        assert_eq!(coverage_bucket(Color::RGB(30, 30, 30)), 0);
-        assert_eq!(coverage_bucket(Color::RGB(255, 255, 255)), COVERAGE_BUCKETS - 1);
-        // The dim secondary-text gray on dark panels gets (nearly) full boost.
-        assert!(coverage_bucket(Color::RGB(138, 147, 162)) >= COVERAGE_BUCKETS - 3);
-    }
-
-    #[test]
-    fn correct_coverage_remaps_only_alpha() {
-        let mut s = Surface::new(3, 2, PixelFormatEnum::ARGB8888).unwrap();
-        let c = Color::RGB(255, 255, 255);
-        s.with_lock_mut(|px| {
-            for (i, p) in px.chunks_exact_mut(4).enumerate() {
-                p.copy_from_slice(&u32::to_ne_bytes(((i as u32 * 50) << 24) | 0x00ff_ffff));
-            }
-        });
-        correct_coverage(&mut s, c);
-        let lut = coverage_lut(coverage_bucket(c));
-        let pitch = s.pitch() as usize;
-        s.with_lock(|px| {
-            for row in 0..2 {
-                for col in 0..3 {
-                    let at = row * pitch + col * 4;
-                    let v = u32::from_ne_bytes(px[at..at + 4].try_into().unwrap());
-                    let i = (row * 3 + col) as u32;
-                    assert_eq!(v & 0x00ff_ffff, 0x00ff_ffff);
-                    assert_eq!(v >> 24, lut[(i * 50) as usize] as u32);
-                }
-            }
-        });
-    }
 
     /// Build a black, persistent software surface for accumulation tests.
     fn new_black_surface() -> Surface<'static> {

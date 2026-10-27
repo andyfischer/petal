@@ -105,8 +105,6 @@ fn main() {
         height: SCREEN_H as u32 * scale,
         title: String::from("fantasy-nes"),
         hot_reload,
-        agent,
-        headless,
         timeline: false,
         history: 0,
     };

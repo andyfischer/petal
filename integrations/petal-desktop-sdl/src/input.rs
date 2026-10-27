@@ -26,15 +26,10 @@ pub enum PollResult {
 /// report window-level signals (quit / escape) back to the loop. The caller
 /// starts the script frame afterwards with `input.begin_frame(dt)`.
 ///
-/// Keyboard and mouse only. Hosts that want controllers call
-/// [`poll_sdl_events_with_gamepads`] instead, which needs somewhere to keep the
-/// open-device and stick-latch state between frames.
-pub fn poll_sdl_events(event_pump: &mut sdl2::EventPump, input: &mut InputState) -> PollResult {
-    poll_sdl_events_with_gamepads(event_pump, input, &mut Gamepads::disabled())
-}
-
-/// As [`poll_sdl_events`], but also opens/closes game controllers as they are
-/// hot-plugged and folds their buttons and left stick into the same key stream.
+/// Also opens/closes game controllers as they are hot-plugged and folds their
+/// buttons and left stick into the same key stream; `gamepads` keeps the
+/// open-device and stick-latch state between frames ([`Gamepads::disabled`]
+/// for keyboard and mouse only).
 pub fn poll_sdl_events_with_gamepads(
     event_pump: &mut sdl2::EventPump,
     input: &mut InputState,
@@ -60,26 +55,12 @@ pub fn poll_sdl_events_with_gamepads(
                 keymod,
                 repeat: false,
                 ..
-            } => {
-                input.event(InputEvent::Modifiers(mods_from_sdl(keymod)));
-                if let Some(name) = scancode_to_name(sc) {
-                    input.event(InputEvent::KeyDown {
-                        key: name.to_string(),
-                    });
-                }
-            }
+            } => key(input, sc, keymod, true),
             Event::KeyUp {
                 scancode: Some(sc),
                 keymod,
                 ..
-            } => {
-                input.event(InputEvent::Modifiers(mods_from_sdl(keymod)));
-                if let Some(name) = scancode_to_name(sc) {
-                    input.event(InputEvent::KeyUp {
-                        key: name.to_string(),
-                    });
-                }
-            }
+            } => key(input, sc, keymod, false),
             Event::TextInput { text, .. } => {
                 input.event(InputEvent::Text { text });
             }
@@ -118,6 +99,15 @@ pub fn poll_sdl_events_with_gamepads(
         }
     }
     result
+}
+
+/// A keyboard key going down or up: the modifiers the event carries, then the
+/// key under its canonical name (keys without one only update modifiers).
+fn key(input: &mut InputState, sc: Scancode, keymod: Mod, down: bool) {
+    input.event(InputEvent::Modifiers(mods_from_sdl(keymod)));
+    if let Some(name) = scancode_to_name(sc) {
+        send(input, name, down);
+    }
 }
 
 /// Map an SDL scancode to the canonical petal-ui key name.

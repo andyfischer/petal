@@ -104,8 +104,6 @@ fn main() {
         height,
         title,
         hot_reload,
-        agent,
-        headless,
         timeline: false,
         history: 0,
     };

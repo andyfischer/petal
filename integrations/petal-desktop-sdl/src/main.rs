@@ -94,8 +94,6 @@ fn main() {
         height,
         title,
         hot_reload,
-        agent,
-        headless,
         timeline,
         history,
     };

@@ -44,10 +44,6 @@ pub struct GameConfig {
     pub height: u32,
     pub title: String,
     pub hot_reload: bool,
-    #[allow(dead_code)]
-    pub agent: bool,
-    #[allow(dead_code)]
-    pub headless: bool,
     /// Record a timeline of forked executions for rewind / scrub / replay
     /// (see [`crate::timeline`]). Needs a host that can present a command
     /// list ([`Host::present_commands`]).
@@ -63,8 +59,6 @@ impl GameConfig {
             height,
             title: title.into(),
             hot_reload: true,
-            agent: false,
-            headless: false,
             timeline: true,
             history: DEFAULT_HISTORY,
         }
@@ -307,37 +301,61 @@ fn build_window(
     builder.build().map_err(|e| e.to_string())
 }
 
+/// What both windowed modes open before loading a program: SDL (with the
+/// host's `on_sdl_init` hook run and the clipboard attached), a vsync'd canvas
+/// on the game window, the event pump, and the gamepads.
+struct Windowed {
+    sdl: sdl2::Sdl,
+    canvas: Canvas<Window>,
+    event_pump: sdl2::EventPump,
+    gamepads: Gamepads,
+}
+
+impl Windowed {
+    fn open<H: Host>(config: &GameConfig, host: &mut H) -> Result<Self, String> {
+        let sdl = sdl2::init()?;
+        host.on_sdl_init(&sdl);
+        let video = sdl.video()?;
+        attach_clipboard(&video);
+
+        let window = build_window(&video, config, host.high_dpi())?;
+
+        let canvas = window
+            .into_canvas()
+            .accelerated()
+            .present_vsync()
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        let event_pump = sdl.event_pump()?;
+        let gamepads = Gamepads::new(&sdl);
+        Ok(Self {
+            sdl,
+            canvas,
+            event_pump,
+            gamepads,
+        })
+    }
+}
+
 pub fn run_game<H: Host>(
     source_path: Option<&str>,
     config: GameConfig,
     host: &mut H,
 ) -> Result<(), String> {
-    let sdl = sdl2::init()?;
-    host.on_sdl_init(&sdl);
-    let video = sdl.video()?;
-    attach_clipboard(&video);
-
-    let window = build_window(&video, &config, host.high_dpi())?;
-
-    let mut canvas = window
-        .into_canvas()
-        .accelerated()
-        .present_vsync()
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let mut event_pump = sdl.event_pump()?;
-    let mut gamepads = Gamepads::new(&sdl);
+    let Windowed {
+        sdl,
+        mut canvas,
+        mut event_pump,
+        mut gamepads,
+    } = Windowed::open(&config, host)?;
 
     let mut env = Env::new();
     host.register(&mut env);
     let mut current = load_initial(&mut env, source_path, &config, host)?;
 
     let timeline_on = config.timeline && host.supports_timeline();
-    let mut timeline = Timeline::new(config.history);
-    if timeline_on {
-        env.enable_emit_trace(true);
-    }
+    let mut timeline = start_timeline(&mut env, &config, timeline_on);
 
     let mut last_frame = Instant::now();
     // The script's `time()`: simulated seconds, so a rewind rewinds it too.
@@ -352,17 +370,17 @@ pub fn run_game<H: Host>(
             crate::input::PollResult::Escape => match host.on_escape(&mut env) {
                 EscapeAction::Quit => break 'game,
                 EscapeAction::Switch(sw) => {
-                    timeline.clear(&mut env);
                     perform_switch(
                         &mut env,
                         sw,
                         &config,
                         host,
                         &mut current,
+                        &mut timeline,
                         &mut frame_count,
                         &mut last_frame,
+                        &mut sim_time,
                     );
-                    sim_time = 0.0;
                     continue;
                 }
             },
@@ -385,15 +403,7 @@ pub fn run_game<H: Host>(
             );
         }
 
-        let reloaded = current.reloader.poll(
-            &mut env,
-            current.program_id,
-            current.stack_id,
-            current.path.as_deref(),
-        );
-        if reloaded && timeline_on {
-            after_reload(&mut timeline, &mut env, &current, host);
-        }
+        poll_reload(&mut env, &current, timeline_on.then_some(&mut timeline), host);
 
         // Frozen: nothing runs. Present the cursor frame and its overlay.
         if timeline_on && timeline.is_frozen() {
@@ -417,14 +427,7 @@ pub fn run_game<H: Host>(
             && !timeline_on
             && !env.run_needed(current.stack_id);
         if !skip {
-            clear_draw_commands(&mut env);
-            host.prepare_frame(&mut env);
-            env.reset_stack(current.stack_id)?;
-            if let Err(e) = env.run(current.stack_id) {
-                eprintln!("[petal error] {}", e);
-            }
-            drain_output(&mut env);
-            host.end_frame(&mut env);
+            run_live_frame(&mut env, current.stack_id, host)?;
         }
 
         // Honor the script's pointer grab/release requests (pointer lock for
@@ -437,17 +440,17 @@ pub fn run_game<H: Host>(
         }
 
         if let Some(sw) = host.after_frame(&mut env) {
-            timeline.clear(&mut env);
             perform_switch(
                 &mut env,
                 sw,
                 &config,
                 host,
                 &mut current,
+                &mut timeline,
                 &mut frame_count,
                 &mut last_frame,
+                &mut sim_time,
             );
-            sim_time = 0.0;
             continue;
         }
 
@@ -548,11 +551,7 @@ fn present_timeline<H: Host>(
     host: &mut H,
 ) -> Result<(), String> {
     let (w, h) = dimensions(env);
-    let mut cmds = timeline
-        .current()
-        .map(|r| r.commands.clone())
-        .unwrap_or_default();
-    cmds.extend(timeline.overlay(env, current.program_id, w as i32, h as i32));
+    let cmds = timeline.frame_with_overlay(env, current.program_id, w as i32, h as i32);
     host.present_commands(canvas, cmds)
 }
 
@@ -563,31 +562,18 @@ pub fn run_agent<H: Host>(
     config: GameConfig,
     host: &mut H,
 ) -> Result<(), String> {
-    let sdl = sdl2::init()?;
-    host.on_sdl_init(&sdl);
-    let video = sdl.video()?;
-    attach_clipboard(&video);
-
-    let window = build_window(&video, &config, host.high_dpi())?;
-
-    let mut canvas = window
-        .into_canvas()
-        .accelerated()
-        .present_vsync()
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let mut event_pump = sdl.event_pump()?;
-    let mut gamepads = Gamepads::new(&sdl);
+    let Windowed {
+        sdl: _sdl,
+        mut canvas,
+        mut event_pump,
+        mut gamepads,
+    } = Windowed::open(&config, host)?;
 
     let mut env = Env::new();
     host.register(&mut env);
     let current = load_initial(&mut env, source_path, &config, host)?;
     let timeline_on = config.timeline && host.supports_timeline();
-    let mut timeline = Timeline::new(config.history);
-    if timeline_on {
-        env.enable_emit_trace(true);
-    }
+    let mut timeline = start_timeline(&mut env, &config, timeline_on);
 
     let cmd_rx = protocol::spawn_stdin_reader();
     let mut paused = false;
@@ -639,26 +625,10 @@ pub fn run_agent<H: Host>(
             bind_frame_info(&mut env, dt, frame_count);
             let t = clock.tick(frame_count, dt);
             bind_time(&mut env, t);
-            let reloaded = current.reloader.poll(
-                &mut env,
-                current.program_id,
-                current.stack_id,
-                current.path.as_deref(),
-            );
-            if reloaded && timeline_on {
-                after_reload(&mut timeline, &mut env, &current, host);
-            }
-
-            clear_draw_commands(&mut env);
-            host.prepare_frame(&mut env);
+            poll_reload(&mut env, &current, timeline_on.then_some(&mut timeline), host);
             bind_input(&mut env, &input);
 
-            env.reset_stack(current.stack_id)?;
-            if let Err(e) = env.run(current.stack_id) {
-                eprintln!("[petal error] {}", e);
-            }
-            drain_output(&mut env);
-            host.end_frame(&mut env);
+            run_live_frame(&mut env, current.stack_id, host)?;
             if timeline_on {
                 if let Err(e) =
                     timeline.record(&mut env, current.stack_id, frame_count, dt, t, &input)
@@ -694,10 +664,7 @@ pub fn run_headless<H: Host>(
     // Headless has no presenter, so the timeline needs no host support: it
     // only records, rewinds and replays.
     let timeline_on = config.timeline;
-    let mut timeline = Timeline::new(config.history);
-    if timeline_on {
-        env.enable_emit_trace(true);
-    }
+    let mut timeline = start_timeline(&mut env, &config, timeline_on);
 
     let cmd_rx = protocol::spawn_stdin_reader();
     let mut paused = true; // Headless starts paused — the agent drives frames.
@@ -716,15 +683,7 @@ pub fn run_headless<H: Host>(
             Ok(cmd) => cmd,
             Err(_) => break, // stdin closed
         };
-        let reloaded = current.reloader.poll(
-            &mut env,
-            current.program_id,
-            current.stack_id,
-            current.path.as_deref(),
-        );
-        if reloaded && timeline_on {
-            after_reload(&mut timeline, &mut env, &current, host);
-        }
+        poll_reload(&mut env, &current, timeline_on.then_some(&mut timeline), host);
         // Headless is fully scripted (no real-clock loop), so frames step on the
         // deterministic clock for reproducibility.
         handle_command(
@@ -889,18 +848,24 @@ fn load_switch<H: Host>(
     })
 }
 
-/// Perform a browser switch requested by a host hook. On success, swaps in the
-/// new program and resets the frame counter/clock; on failure, logs and keeps
-/// the current program running (a bad launch must not kill the window).
+/// Perform a browser switch requested by a host hook. The timeline is cleared
+/// and the simulated clock restarts either way; on success, swaps in the new
+/// program and resets the frame counter/clock; on failure, logs and keeps the
+/// current program running (a bad launch must not kill the window).
+#[allow(clippy::too_many_arguments)]
 fn perform_switch<H: Host>(
     env: &mut Env,
     switch: ScriptSwitch,
     config: &GameConfig,
     host: &mut H,
     current: &mut Loaded,
+    timeline: &mut Timeline,
     frame_count: &mut i64,
     last_frame: &mut Instant,
+    sim_time: &mut f64,
 ) {
+    timeline.clear(env);
+    *sim_time = 0.0;
     match load_switch(env, switch, config, host) {
         Ok(next) => {
             *current = next;
@@ -909,6 +874,48 @@ fn perform_switch<H: Host>(
         }
         Err(e) => eprintln!("[browser] switch failed: {}", e),
     }
+}
+
+/// A timeline holding `config.history` frames, with the emit trace it reads
+/// turned on when the session records one.
+fn start_timeline(env: &mut Env, config: &GameConfig, on: bool) -> Timeline {
+    if on {
+        env.enable_emit_trace(true);
+    }
+    Timeline::new(config.history)
+}
+
+/// Install a hot reload if one landed, and let a recording timeline follow it.
+fn poll_reload<H: Host>(
+    env: &mut Env,
+    current: &Loaded,
+    timeline: Option<&mut Timeline>,
+    host: &mut H,
+) {
+    let reloaded = current.reloader.poll(
+        env,
+        current.program_id,
+        current.stack_id,
+        current.path.as_deref(),
+    );
+    if let Some(timeline) = timeline.filter(|_| reloaded) {
+        after_reload(timeline, env, current, host);
+    }
+}
+
+/// Run one live (windowed) frame on bindings the caller has already made:
+/// `prepare_frame → env.run → drain print output → end_frame`. A script error
+/// is printed, not returned, so a half-typed edit doesn't close the window.
+fn run_live_frame<H: Host>(env: &mut Env, stack_id: StackKey, host: &mut H) -> Result<(), String> {
+    clear_draw_commands(env);
+    host.prepare_frame(env);
+    env.reset_stack(stack_id)?;
+    if let Err(e) = env.run(stack_id) {
+        eprintln!("[petal error] {}", e);
+    }
+    drain_output(env);
+    host.end_frame(env);
+    Ok(())
 }
 
 /// Capture a speculative frame as an RGB image (screenshot/record). Sets up the
@@ -1002,8 +1009,7 @@ fn handle_command<H: Host>(
         if let Some(t) = timeline.as_deref() {
             if *overlay || t.is_frozen() {
                 let (w, h) = dimensions(env);
-                let mut cmds = t.current().map(|r| r.commands.clone()).unwrap_or_default();
-                cmds.extend(t.overlay(env, current.program_id, w as i32, h as i32));
+                let cmds = t.frame_with_overlay(env, current.program_id, w as i32, h as i32);
                 match host.render_commands_image(&cmds, w, h) {
                     Ok(img) => protocol::send_response(&Response {
                         screenshot: Some(crate::screenshot::to_base64(&img)),
@@ -1093,14 +1099,12 @@ fn timeline_command<H: Host>(
             *paused = true;
             resp.paused = Some(true);
         }
-        Command::Unfreeze => match timeline.unfreeze(env, current.stack_id) {
-            Ok(Some((fc, t))) => {
-                *frame_count = fc;
-                clock.rewind_to(t);
+        Command::Unfreeze => {
+            let restored = timeline.unfreeze(env, current.stack_id);
+            if let Err(e) = restore_clock(restored, frame_count, clock) {
+                return protocol::send_response(&Response::err(e));
             }
-            Ok(None) => {}
-            Err(e) => return protocol::send_response(&Response::err(e)),
-        },
+        }
         Command::Scrub { to } => {
             if !timeline.is_frozen() {
                 timeline.freeze();
@@ -1109,14 +1113,14 @@ fn timeline_command<H: Host>(
             }
             timeline.scrub_to(to);
         }
-        Command::Rewind { frames } => match timeline.rewind(env, current.stack_id, frames as usize) {
-            Ok(Some((fc, t))) => {
-                *frame_count = fc;
-                clock.rewind_to(t);
+        Command::Rewind { frames } => {
+            let restored = timeline.rewind(env, current.stack_id, frames as usize);
+            match restore_clock(restored, frame_count, clock) {
+                Ok(true) => {}
+                Ok(false) => return protocol::send_response(&Response::err("nothing recorded yet".to_string())),
+                Err(e) => return protocol::send_response(&Response::err(e)),
             }
-            Ok(None) => return protocol::send_response(&Response::err("nothing recorded yet".to_string())),
-            Err(e) => return protocol::send_response(&Response::err(e)),
-        },
+        }
         Command::Replay => {
             let from = timeline.cursor.unwrap_or(1);
             match timeline.replay(env, current.program_id, current.stack_id, from, host) {
@@ -1160,6 +1164,21 @@ fn timeline_command<H: Host>(
     protocol::send_response(&resp);
 }
 
+/// Follow a timeline unfreeze or rewind: move the frame counter and `time()`
+/// to the frame it restored. `Ok(false)` when there was nothing to restore.
+fn restore_clock(
+    restored: Result<Option<(i64, f64)>, String>,
+    frame_count: &mut i64,
+    clock: &mut ClockSource,
+) -> Result<bool, String> {
+    let Some((fc, t)) = restored? else {
+        return Ok(false);
+    };
+    *frame_count = fc;
+    clock.rewind_to(t);
+    Ok(true)
+}
+
 /// The agent `step` command: run `n` committed frames, then reply with the
 /// final frame number and everything the script printed across them.
 #[allow(clippy::too_many_arguments)]
@@ -1176,18 +1195,11 @@ fn step_frames<H: Host>(
     let mut last_frame = 0i64;
     // A step while frozen resumes from the cursor first, so stepping out of a
     // rewound moment continues from that moment.
-    if let Some(t) = timeline.as_deref_mut() {
-        match t.unfreeze(env, stack_id) {
-            Ok(Some((fc, t))) => {
-                *frame_count = fc;
-                clock.rewind_to(t);
-            }
-            Ok(None) => {}
-            Err(e) => {
-                protocol::send_response(&Response::err(e));
-                return;
-            }
-        }
+    if let Some(t) = timeline.as_deref_mut()
+        && let Err(e) = restore_clock(t.unfreeze(env, stack_id), frame_count, clock)
+    {
+        protocol::send_response(&Response::err(e));
+        return;
     }
     for _ in 0..n {
         match protocol::run_one_frame(env, stack_id, input, frame_count, clock, host) {

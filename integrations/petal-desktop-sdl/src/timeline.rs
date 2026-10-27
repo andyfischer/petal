@@ -455,6 +455,20 @@ impl Timeline {
 
     // ── Overlay ──────────────────────────────────────────────────────────
 
+    /// The picture the window shows: the current frame's recorded commands
+    /// (the cursor frame while frozen, else the latest) plus the overlay.
+    pub fn frame_with_overlay(
+        &self,
+        env: &Env,
+        program_id: ProgramId,
+        width: i32,
+        height: i32,
+    ) -> Vec<DrawCommand> {
+        let mut cmds = self.current().map(|r| r.commands.clone()).unwrap_or_default();
+        cmds.extend(self.overlay(env, program_id, width, height));
+        cmds
+    }
+
     /// Draw commands the host paints over the frame: the trail, the tracked
     /// shape's outline, and a timeline bar while frozen.
     pub fn overlay(&self, env: &Env, program_id: ProgramId, width: i32, height: i32) -> Vec<DrawCommand> {

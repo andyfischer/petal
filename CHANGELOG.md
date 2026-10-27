@@ -112,6 +112,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- petal-sdl internals: `renderer.rs` is split into
+  `renderer/{raster,text,surface_fx}.rs`; `run_game` and `run_agent` share
+  window setup, reload polling and the frame body. Removed unused public
+  items: `input::poll_sdl_events`, `impl TextTarget for Window`, and
+  `GameConfig::{agent, headless}`.
+
 - DM v2 internals: `dm_v2/api.rs` is split into
   `api/{request,response,literal,report,rejection,v1_bridge}.rs` (public
   paths unchanged); each `Alternative` carries `misses`, which the CLI no

@@ -85,6 +85,18 @@ struct CutSpec {
     italic: bool,
 }
 
+impl CutSpec {
+    /// Face `index` of the file at `path`, as the upright regular cut.
+    fn regular(path: String, index: u32) -> Self {
+        CutSpec {
+            path,
+            index,
+            weight: petal_ui::draw::REGULAR_WEIGHT,
+            italic: false,
+        }
+    }
+}
+
 /// One cut baked at the sizes asked of it so far, sorted ascending by size.
 struct Cut<'ttf> {
     spec: CutSpec,
@@ -117,12 +129,7 @@ impl<'ttf> FontLadder<'ttf> {
             .ok_or_else(|| "No system font found. Install a TTF font.".to_string())?;
         let mut cuts = file_cuts(&path);
         if cuts.is_empty() {
-            cuts.push(CutSpec {
-                path: path.clone(),
-                index: 0,
-                weight: petal_ui::draw::REGULAR_WEIGHT,
-                italic: false,
-            });
+            cuts.push(CutSpec::regular(path, 0));
         }
         Self::load_cuts(ttf, cuts, sizes)
     }
@@ -136,13 +143,7 @@ impl<'ttf> FontLadder<'ttf> {
         index: u32,
         sizes: &[u16],
     ) -> Result<Self, String> {
-        let cut = CutSpec {
-            path: path.to_string(),
-            index,
-            weight: petal_ui::draw::REGULAR_WEIGHT,
-            italic: false,
-        };
-        Self::load_cuts(ttf, vec![cut], sizes)
+        Self::load_cuts(ttf, vec![CutSpec::regular(path.to_string(), index)], sizes)
     }
 
     /// A ladder over `cuts`, the first of them the regular cut: that one is
@@ -331,6 +332,18 @@ impl<'ttf> FontLadder<'ttf> {
         measure_ascii(font, MEASURE_SIZE)
     }
 
+    /// Everything `text_width` and friends know about one weight and slant of
+    /// this face: the advance table from
+    /// [`ascii_advance_ratios_styled`](Self::ascii_advance_ratios_styled) with
+    /// the vertical metrics from
+    /// [`vertical_ratios_styled`](Self::vertical_ratios_styled).
+    pub fn metrics_styled(&mut self, weight: u16, italic: bool) -> petal_ui::draw::FontMetrics {
+        let ratios = self.ascii_advance_ratios_styled(weight, italic);
+        let vertical = self.vertical_ratios_styled(weight, italic);
+        petal_ui::draw::FontMetrics::proportional(ratios, petal_ui::draw::DEFAULT_TEXT_ADVANCE)
+            .with_vertical(vertical)
+    }
+
     /// One glyph's advance ÷ size in this face and variant, or `None` when the
     /// face has no glyph for it. What `text_width` asks for a non-ASCII
     /// character the advance table doesn't cover.
@@ -481,12 +494,7 @@ impl<'ttf> FontBook<'ttf> {
     /// list (`"Inter, mono"`) that is a role or an installed family, or the
     /// default face.
     pub fn resolve(&mut self, spec: Option<&str>) -> &mut FontLadder<'ttf> {
-        let index = spec
-            .and_then(|spec| {
-                spec.split(',')
-                    .find_map(|name| self.face_index(name.trim()))
-            })
-            .unwrap_or(0);
+        let index = spec.and_then(|spec| self.first_face(spec)).unwrap_or(0);
         &mut self.faces[index].1
     }
 
@@ -494,9 +502,13 @@ impl<'ttf> FontBook<'ttf> {
     /// role as written, or a family as the font file spells it — or `None`
     /// when nothing in the list resolves (it would draw in the default face).
     pub fn canonical_name(&mut self, spec: &str) -> Option<String> {
-        spec.split(',')
-            .find_map(|name| self.face_index(name.trim()))
-            .map(|index| self.faces[index].0.clone())
+        self.first_face(spec).map(|index| self.faces[index].0.clone())
+    }
+
+    /// The index of the first face in `spec`'s fallback list this book can
+    /// draw.
+    fn first_face(&mut self, spec: &str) -> Option<usize> {
+        spec.split(',').find_map(|name| self.face_index(name.trim()))
     }
 
     /// The loaded face for one name, loading an installed family on first use.
@@ -789,14 +801,8 @@ impl petal_ui::draw::FontSource for SdlFontSource {
         italic: bool,
     ) -> Option<petal_ui::draw::FontMetrics> {
         let mut book = self.book.borrow_mut();
-        book.canonical_name(family)?;
-        let face = book.resolve(Some(family));
-        let ratios = face.ascii_advance_ratios_styled(weight, italic);
-        let vertical = face.vertical_ratios_styled(weight, italic);
-        Some(
-            petal_ui::draw::FontMetrics::proportional(ratios, petal_ui::draw::DEFAULT_TEXT_ADVANCE)
-                .with_vertical(vertical),
-        )
+        let index = book.first_face(family)?;
+        Some(book.faces[index].1.metrics_styled(weight, italic))
     }
 
     fn families(&mut self) -> Vec<String> {

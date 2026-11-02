@@ -1,6 +1,6 @@
 # Direct Manipulation v2: plan
 
-Status: design, 23 October 2026, revised after an adversarial review the
+Status: **shipped** (re-checked 2 November 2026). Designed 23 October 2026, revised after an adversarial review the
 same day ([§10](#10-review-notes) lists what the review changed). M1 (the
 speculative runner) landed the same day, M2 (discovery, Jacobian, hints) and
 M3 (solver, ranking, public API) on 24 October, and M4 (Garden as M4b;
@@ -1043,7 +1043,9 @@ Two binaries carry it, because the core `petal` binary has no draw natives
 - `petal propose-edit --v2` for scripts that emit through `push_output`/`emit`
   channels (no petal-ui).
 - `petal-ui-run propose-edit [--frames N] [--size WxH] [--scenario …]
-  [--host-data …]` for petal-ui scripts. It runs the harness to frame
+  [--host-data …]` for petal-ui scripts (shipped on 25 October 2026 as its
+  own binary, `petal-ui-propose-edit`, in
+  `core-libs/petal-ui/src/bin/petal-ui-propose-edit.rs`). It runs the harness to frame
   `N - 1`, uses that as the checkpoint, and implements `SpecHost` (R11).
 
 ```
@@ -1649,6 +1651,8 @@ with a golden test.
    forks call the same closure.
 2. **Handles.** Refusing unmarked handle classes may block games
    entirely. M1 decides whether a `reads`-only method list is worth adding.
+   Settled in M1: a host marks a class with `Env::mark_handle_class_spec_safe`
+   (§9).
 3. **Cost on big panels.** 30 runs of an 8 ms frame is 240 ms, fine for
    mouse-up and not for mouse-move. Hence `DmSession::preview` (linear) during
    the drag. The study measures this.
@@ -2329,6 +2333,13 @@ cheesecake and worlds-fair with `PB_FX_CONTAINED`; making v2 the CLI/MCP
 default, which the study's numbers now support), the study's §3 limits,
 and the code review's left-open list.
 
+*Update, 2 November 2026:* v2 is the default (below), the petal-ui binary
+shipped as `petal-ui-propose-edit` (25 October), and the program-modification
+and ffi docs are done. The time-travel note, the C-bridge re-vendors, the
+study's §3 limits, the code review's left-open list, the per-run statics
+invalidation (§2.3.5a) and multi-frame horizons (§8 item 4) are still open;
+[tasks/todo.md](../tasks/todo.md) tracks them.
+
 **v2 the default, 2026-10-24.** The owner decided to make v2 the default
 engine and approved the hint names. What changed:
 
@@ -2336,8 +2347,8 @@ engine and approved the hint names. What changed:
   still accepted). `--configurable` / `--static` without `--v1` are read as
   `--allow` / `--deny`, as the v2 parser already did; under `--v1` they keep
   v1's meaning, and v2-only flags or goals on several emits are still
-  refused there. No other Rust host parses `propose-edit` (there is no
-  `petal-ui-run propose-edit` yet), and Garden's engine choice is its own.
+  refused there. No other Rust host parses `propose-edit` (`petal-ui-propose-edit`
+  followed on 25 October), and Garden's engine choice is its own.
 - MCP `ProposeEdit` defaults to v2: with no `engine` the argv carries no
   engine flag and the CLI picks v2; `engine: "v1"` passes `--v1`.
 - `tunable` and `rigid` are accepted ([proposal](../proposals/dm-v2-hints.md)

@@ -9,8 +9,8 @@ explicit imports and `petal.toml` packages.
 
 The short version: the system does what the docs say almost everywhere, and
 the Cheesecake migration needed no script changes. Issues 2 and 3 were fixed (2026-10-11, 2026-10-13) and removed; the other
-numbers are kept. Issues 1, 4, 5 and 6 were re-checked on 2026-10-23 and
-still reproduce.
+numbers are kept. Every issue below was re-checked against `1064dcd` on 2026-11-02 and
+still reproduces unless it says otherwise.
 
 ## Open issues
 
@@ -82,7 +82,8 @@ fn outer() m.inner(1) end
 outer()
 ```
 
-The error is in `m.ptl`, but the trace reads `in inner() [line 2, column 12]`
+The headline now names the file (`[m.ptl line 2, column 3]`), but the
+frames still read `in inner() [line 2, column 12]`
 / `in outer() [line 3, column 1]`, so line 2 looks like `main.ptl`'s. With a
 module-to-module call in the chain every frame is named, as documented.
 
@@ -118,18 +119,18 @@ says a nested package's files "are not modules of the one around it".
 - A compile error inside an imported module has no source snippet and uses a
   different format (`Error: badsyn.ptl: … [line 2, column 3]`), contrary to
   "Source snippets … all show the right file".
-- The second and later errors of a multi-error report lack the `Error:`
-  prefix.
 - Unsupported forms give generic or misleading parse errors:
   - `import ui.hud` and `import ./level.ptl`: `Unexpected token: '.'`.
   - `import ./thing: v as vv`: `undefined variable 'as'`.
   - `import ./my-mod` parses as `import ./my` followed by the expression
     `-mod`: `cannot find module './my'`, or `undefined variable mod` when
-    `my.ptl` exists.
+    `my.ptl` exists. The quoted form (`import "./my-mod" as my_mod`, since
+    1064dcd) is the supported spelling, but the unquoted one still gives no
+    hint to use it.
   - `set tally.hits = 5`: `` `tally` is not defined `` rather than the
     read-only-`var` message.
-- `petal fmt` does not normalise spacing after keywords in import lines
-  (`import   ./m as q`, `pub   import`).
+- `petal fmt` does not normalise the spacing in `pub   import ./m`
+  (`import   ./m as q` is normalised now).
 - `petal lint --fix` for `prefer-pub` also reformats the whole file.
 - A method call on a value from another module (`mk().normalize()` without
   `import vec2`) passes `check` and fails at run. Documented; `check` cannot
@@ -156,10 +157,6 @@ Still open:
 - `core-runtime/glsl/tests/effects.ptl:4` points at Cheesecake's
   `engine/script/prelude/postfx.ptl`, now
   `engine/script/packages/cheesecake/postfx.ptl`.
-- `examples/productivity/settings/README.md:205` records that
-  `import preview` "did not give a module" because `preview` is also a
-  prelude function. A qualifier outranks a prelude value since 1739d5c, so
-  the note is probably obsolete.
 
 The list of what was verified to work (import forms, lookup tiers, packages,
 the Cheesecake migration) is in `git show b0dfccc7:docs/tasks/module-system-followup.md`.

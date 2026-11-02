@@ -1,4 +1,13 @@
+# Direct manipulation v2: the original brief
 
+Status: **done.** This is the owner's brief, as dictated on 23 October 2026,
+and kept as the statement of goals that
+[dev/direct-manipulation-v2-plan.md](../dev/direct-manipulation-v2-plan.md)
+answers. Every milestone of that plan has shipped, and v2 is the default
+engine. The user-facing page is
+[features/direct-manipulation.md](../features/direct-manipulation.md).
+
+---
 So start by understanding the direct manipulation support that we have today, such as docs slash features slash direct manipulation. But we're gonna implement a big new version change. We're going to call this direct manipulation version 2. The goals of version two are that we were gonna we were gonna rely more heavily on program differentiation to be able to backpropagate changes from a output node into a source term.
 
 And so what this might look like, when I say output, it might be something observable, like a draw circle function call is the observable thing, which we can hook up and enable it to be draggable. And then on a drag event, we need to be able to backpropagate the desired delta upward through the code.

@@ -1,6 +1,9 @@
 # Proposal: static values (build-once constants that follow the source diff)
 
-Status: proposed, 12 October 2026. Stage 0 (the classifier, `petal
+Status: **accepted and shipped** (every planned stage, by 23 October 2026;
+what is left is in
+[tasks/static-value-optimization.md](../tasks/static-value-optimization.md)).
+Proposed 12 October 2026. Stage 0 (the classifier, `petal
 show-static`, the `CONST` flag, `--static-audit`) is implemented and its
 go/no-go gate passed. Stage 1 is implemented (`core/src/static_cache.rs`:
 slots, the skip lowering, the immutable bit), and so is stage 2: a reload
@@ -675,7 +678,9 @@ Decided on 12 October 2026: 1 yes (`const` is in), 2 yes (stage 0 is a
 go/no-go), 7 yes (the enum read path and the frozen generation go first).
 The work order is in
 [`docs/tasks/static-value-optimization.md`](../tasks/static-value-optimization.md).
-Questions 3 to 6 are still open.
+Questions 3 to 6 were left open here; the implementation has since
+answered them (see each one's outcome in
+[internals/static-values.md](../internals/static-values.md)).
 
 1. **Is `const` acceptable?** The request was for automatic detection. This
    proposal keeps detection as the mechanism and adds `const` as an

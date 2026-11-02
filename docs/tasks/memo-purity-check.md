@@ -1,6 +1,9 @@
 # `petal check`: catch `memo` initializers that are not pure
 
-Status, 2026-10-22: **open, not started.** A follow-up from the soundness
+Status, 2026-10-22, re-checked 2026-11-02: **open, not started.** No
+`memo-impure` rule exists, the repro below still prints `20 20` with a
+clean `check`, and `lint --fix` still turns `state(id) t = random(0.0, 1.0)`
+into `memo(id) t = random(0.0, 1.0)`. A follow-up from the soundness
 review of [`memo`](../features/memo.md).
 
 ## The problem

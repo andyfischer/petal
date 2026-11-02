@@ -1,8 +1,11 @@
 # Typography — plan and status
 
 Status: **partially shipped.** Font selection, per-font measurement and font
-objects are in `petal-ui` and honored by every host. Flow layout (styled
-spans wrapping into paragraphs) is not started. The user-facing contract is
+objects are in `petal-ui` and honored by every host. Plain-text layout
+shipped as the `text_layout` package; rich flow layout (styled spans
+wrapping into paragraphs) is not started, and neither is kerned
+measurement (petal-sdl turns kerning off because `FontSource` has no
+whole-run width hook). The user-facing contract is
 [text-and-fonts.md](../usage/text-and-fonts.md); this document keeps the design
 rationale and tracks what is left.
 

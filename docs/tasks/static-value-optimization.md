@@ -1,6 +1,6 @@
 # Static values: what is left
 
-Status, 2026-10-23: **every planned stage has shipped**: A1 (enum read path),
+Status, 2026-10-23 (open items re-checked 2026-11-02): **every planned stage has shipped**: A1 (enum read path),
 A2 (frozen heap), A3 (cheaper `state` hit), S0 (classifier, `show-static`,
 `--static-audit`), S1 (slot cache, `const`, `state-as-constant` lint), S2
 (following the diff across reloads), the store per value, constants inside
@@ -20,7 +20,10 @@ sections that source comments cite) was trimmed on 2026-10-23. Read it with
    1% of instructions.
 2. **Recompiling pays for full classification.** It costs 14 of 187 ms on
    neon and 47 of 488 ms on Moses. An incremental version needs the
-   classifier's reads recorded as an explicit dependency graph. A further
+   classifier's reads recorded as an explicit dependency graph. It was
+   looked at and set aside in favour of a pass about a third cheaper; the
+   reasons are in `core/src/static_classify/mod.rs` ("Why a recompile
+   classifies from nothing"). Reopen it only with a new profile. A further
    5 ms (neon) and 13 ms (Moses) of the cache's lowering overhead has not
    been investigated.
 3. **Ecosystem re-vendors.** Until they re-vendor, worlds-fair (`wf-ui-ffi`,

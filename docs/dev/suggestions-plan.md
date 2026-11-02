@@ -203,7 +203,7 @@ Rules that want to propose rather than enforce:
   several places.
 
 Two of the linter's own unscheduled rules
-([linter-plan.md](linter-plan.md) §6) arguably belong on this channel for the
+([linter-plan.md](linter-plan.md) §7) arguably belong on this channel for the
 same reason: `if c then x else x end → x` is a normalization, but "hoist a
 repeated pure subexpression to a `let`" is a judgement call about naming.
 
@@ -225,7 +225,7 @@ print(f([1]))'
 # to be unchanged for every file that was rewritten.
 ```
 
-## 8. Named arguments
+## 10. Named arguments
 
 The second kind of suggestion: write a long positional call with its
 parameter names. It differs from annotations in what it claims — not "this is
@@ -265,7 +265,7 @@ are in the module docs of `suggest/named_args.rs` and in CLI.md. The second
 group came out of applying the tool to the example corpus: every one of those
 rewrites was provably safe and read worse than the call it replaced.
 
-## 10. Advice: a suggestion with no rewrite
+## 11. Advice: a suggestion with no rewrite
 
 Everything above ends in text to splice, behind a proof that splicing it is
 safe. That is the wrong shape for a finding like "this loop is an insertion
@@ -285,7 +285,7 @@ first rule, `hand-written-sort`, exists because two example apps wrote an
 insertion sort by hand after `sort(list, compare)` and `sort_by` had shipped;
 it fires on both originals and on nothing else in the example corpus.
 
-## 11. Return types for loop tails
+## 12. Return types for loop tails
 
 A `for` in tail position collects a list, and a function's tail is its
 implicit return ([implicit-return-values.md](../syntax/implicit-return-values.md)).

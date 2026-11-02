@@ -8,7 +8,7 @@ in `petal-desktop-sdl` (`load_text_file`, `save_text_file`,
 
 Several of the pain points below have since been fixed in the language.
 Each item is marked **shipped**, **partly shipped**, or **open** as of
-September 2026.
+September 2026, re-checked on 2 November 2026.
 
 ## What worked
 
@@ -50,11 +50,10 @@ as a runtime "field not found". Petal now has classes with typed fields
 and optional type annotations checked by `petal check` (warnings-only,
 `--strict` to fail). Plain record literals are still unchecked.
 
-**`petal check` does not flag unknown names — open.** A call to
-`draw_rect_typo(...)` still passes `petal check` (exit 0) and fails at
-runtime with "Unknown builtin". The checker has no registry of the
-host's native names, so this is the largest remaining gap for a script
-that calls dozens of host functions by name.
+**`petal check` does not flag unknown names — shipped.** A call to
+`draw_rect_typo(...)` used to pass `petal check` and fail at runtime.
+`check` now reports "unknown function `draw_rect_typo`: nothing by that
+name is in scope, and it is not a builtin" (exit 1).
 
 **`state` scoping was unclear — shipped.** `state` is now keyed per call
 path and the rules are documented in the language guide (`state`
@@ -78,9 +77,11 @@ level file still yields a phantom empty tag, so `parse_level` keeps its
 pit of success here.
 
 **Drawing takes integer coordinates only — open.** `draw_rect` and
-friends still take ints, so sub-pixel motion jitters at render time,
-most visibly on slow parallax layers. Accepting floats and rounding on
-the host side would fix the stair-stepping.
+friends accept floats now, but the draw-command format is still `i32`
+(each coordinate is truncated toward zero, not rounded, in
+`core-libs/petal-ui/src/draw.rs`), so
+sub-pixel motion still jitters at render time, most visibly on slow
+parallax layers. Tracked in [docs/tasks/todo.md](../../../docs/tasks/todo.md).
 
 ## Undecided
 
@@ -100,7 +101,7 @@ the host side would fix the stair-stepping.
 Petal got a polished platformer built in roughly the code a Lua version
 would take, and hot reload plus records-as-references is a genuinely
 nice place to live. Of the seven concrete suggestions the experiment
-ended with, five have shipped (imports, error locations, record
-indexing, `format`, documented `state` scoping). The two still open are
-making `petal check` resolve host native names and accepting floats in
+ended with, six have shipped (imports, error locations, record
+indexing, `format`, documented `state` scoping, and `petal check`
+flagging unknown names). The one still open is sub-pixel coordinates in
 the drawing primitives.

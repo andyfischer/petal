@@ -431,8 +431,8 @@ buys nothing when there are zero users, so ship the error directly.
    it endorses state in callbacks: `filter` and `sort` call the callback a
    data-dependent number of times in a data-dependent order (merge-sort
    comparisons), so "per element" is ill-defined for them. There is also no
-   key form. `docs/tasks/state-loop-keys.md` open question 4 can be closed
-   with "no".
+   key form. Keyed loops' open question 4 (state-loop-keys, since removed)
+   can be closed with "no".
 3. **Lint or warning only.** It costs the same to build as the error and
    leaves the rule in place.
 4. **Compile-time error only.** It cannot see callbacks passed through
@@ -595,7 +595,7 @@ in be2609c2, step 6 in 4cf32b48, step 5 with the docs commit.
    - Rewrite `inline-state.md` "Callbacks run at the builtin's callsite" as
      "State is not allowed in callbacks", with the two fixes.
    - Update `state-call-paths.md` §2.2a, §3.3 and §5.
-   - Close `state-loop-keys.md` open question 4.
+   - Close keyed loops' open question 4 (done; that task file was removed).
    - Add a CHANGELOG entry under breaking changes.
 6. **`petal check`.**
    - Add `core/src/compiler/callback_state.rs` next to `keyed_state.rs`, built

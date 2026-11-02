@@ -1,6 +1,7 @@
 # petal-images follow-up: things to fix in Petal
 
-Status: 2026-10-23. Open. These came out of building
+Status: 2026-10-23, re-checked against `1064dcd` on 2026-11-02: every
+item below is still open. These came out of building
 [`petal-creative/petal-images`](../../../petal-creative/petal-images), a layered
 image editor whose documents are `.ptl` scripts of JSX-style elements
 (`<image>`, `<text>`, `<group>`…) edited by the GUI through goal-based literal
@@ -120,25 +121,18 @@ Action:
       attributes only. JS readers would expect `{invert: invert}`, so a clear
       error may be the better choice.
 
-## 7. Installed CLI lags behind the repo (keyed loops)
+## 7. A stale installed CLI is hard to spot
 
-petal-images reported that `for t in tasks key t.id do` fails `petal check`
-with "Expected `do`, got `key`". Keyed loops shipped on 2026-10-22
-([state-loop-keys.md](state-loop-keys.md)). `~/.cargo/bin/petal` was built
-2026-10-22 05:04, before the parser change.
-
-Confirmed stale binary, not a bug: after reinstalling on 2026-10-23, `petal
-check` accepts and runs a keyed loop, and petal-images' editor and examples
-still pass `petal check`.
+petal-images hit a keyed-loop parse error that turned out to be a stale
+`~/.cargo/bin/petal`. `petal --version` now prints the commit and build
+date (`petal 0.1.0 (1064dcd004 2026-11-02, built 2026-11-02)`).
 
 Action:
-- [x] Reinstall the CLI with `./install-local.sh` (`cargo install --path core`) and confirm `petal check` accepts keyed loops.
-- [x] Then switch the petal-images inspector's effect-option loop to a keyed
-      loop (done, along with the effect and mask-option loops), so a number being typed stays on its own row when the options
-      change.
-- [ ] Idea: have `petal --version` print the git commit and build date, and
-      have `petal check` warn when it is older than the `petal.toml`
-      `[requires]`, so a stale binary is easier to spot.
+- [ ] Let `petal.toml` state a minimum Petal version and have `petal check`
+      warn when the binary is older. Today `[requires] petal = ">=9.0"` is
+      read as a host interface named `petal`, and `run` fails with "requires
+      the host interface `petal`". Moses asked for the same
+      ([moses-debrief.md](moses-debrief.md)).
 
 ## 8. JSON encoding is hard to find
 

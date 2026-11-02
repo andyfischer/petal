@@ -1,0 +1,56 @@
+// A game-shaped frame, written the immediate-mode way: the whole world is
+// declared every frame. Sizes come from the host as constants below.
+import vec2
+
+native fn body(id, opts)
+native fn draw_mesh(name, opts)
+
+const N_CITY = 2000
+const N_CRATES = 400
+const N_SHIPS = 300
+
+fn city_block(i)
+  let x = float(i % 50) * 12.0
+  let z = float(i / 50) * 12.0
+  let h = 4.0 + float((i * 7919) % 13)
+  {mesh: "block{i % 8}", pos: vec3(x, h * 0.5, z), scale: vec3(10.0, h, 10.0), color: #8899aa, roughness: 0.8}
+end
+
+fn crate_decl(i)
+  {id: "crate{i}", opts: {shape: "box", size: 1.0, mass: 0.0, static: true, color: #a0703c,
+                          pos: vec3(float(i % 20) * 2.0, 0.5, float(i / 20) * 2.0)}}
+end
+
+const CITY = map(range(0, N_CITY), city_block)
+const CRATES = map(range(0, N_CRATES), crate_decl)
+
+// Static scenery: same arguments every frame.
+fn draw_city(city)
+  for b in city do
+    draw_mesh(b.mesh, {pos: b.pos, scale: b.scale, color: b.color, roughness: b.roughness})
+  end
+  nil
+end
+
+fn declare_crates(cs)
+  for c in cs do body(c.id, c.opts) end
+  nil
+end
+
+// Dynamic: every ship moves every frame.
+fn ship(i, t)
+  let a = t * 0.3 + float(i) * 0.021
+  let p = vec3(cos(a) * 60.0, 12.0 + sin(t + float(i)) * 2.0, sin(a) * 60.0)
+  body(1000 + i, {shape: "box", size: 2.0, mass: 5.0, kinematic: true, color: #ff8800,
+                  roughness: 0.4, metallic: 0.2, pos: p})
+  draw_mesh("ship_hull", {pos: p, rot: a, color: #ff8800, metallic: 0.2, emissive: 0.0})
+  nil
+end
+
+state frame = 0
+frame += 1
+let t = float(frame) / 60.0
+
+draw_city(CITY)
+declare_crates(CRATES)
+for i in range(0, N_SHIPS) do ship(i, t) end

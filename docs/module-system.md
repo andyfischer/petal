@@ -159,6 +159,32 @@ Error: a module path segment must be an identifier ('.' and '..' are only allowe
 start of an import path: `./name`, `../name`)
 ```
 
+#### Quoted paths
+
+A file or directory whose name is not an identifier — `my-lib.ptl`,
+`shared-utils/` — is imported with the path written as a string. It means
+exactly what the same path would written bare, and takes the same `as` and
+selective forms:
+
+```petal ignore
+import "./my-lib" as lib            // my-lib.ptl, bound as `lib`
+import "../shared-utils/rng"        // binds `rng`: the last segment is a name
+import "./sub-dir/deep-mod": n      // selective: no qualifier needed
+```
+
+A quoted path keeps the shape of a bare one: an optional `./` or `../`
+prefix, then non-empty segments, none of them `.` or `..`, with no `\` or
+`:`, and no interpolation. A plain import binds its last segment as the
+qualifier, so when that segment is not a name the import needs an `as`:
+
+```
+Error: `my-lib` is not a name, so `import "./my-lib"` cannot bind it as the module's
+qualifier — write `import "./my-lib" as my_lib`, or import names from it: `import "./my-lib": a, b`
+```
+
+A package name is still always an identifier; only the segments after it, or
+a relative path's, may need quoting.
+
 ### Module identity
 
 A module is identified by *what it is*, not by how an importer spelled it:

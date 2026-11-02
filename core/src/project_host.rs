@@ -315,10 +315,23 @@ fn rebase_import<'a>(line: &'a str, prelude: &Path, doc_dir: &Path) -> Cow<'a, s
         return Cow::Borrowed(line);
     };
     at += "import ".len() + (rest.len() - rest.trim_start().len());
-    let len = line[at..]
-        .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '/' || c == '.'))
-        .unwrap_or(line.len() - at);
-    let written = &line[at..at + len];
+    // A quoted path (`import "./my-lib"`) runs through its closing quote.
+    let quoted = line[at..].starts_with('"');
+    let len = if quoted {
+        match line[at + 1..].find('"') {
+            Some(close) => close + 2,
+            None => return Cow::Borrowed(line),
+        }
+    } else {
+        line[at..]
+            .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '/' || c == '.'))
+            .unwrap_or(line.len() - at)
+    };
+    let written = if quoted {
+        &line[at + 1..at + len - 1]
+    } else {
+        &line[at..at + len]
+    };
     if !crate::module::is_relative_import(written) {
         return Cow::Borrowed(line);
     }
@@ -334,6 +347,7 @@ fn rebase_import<'a>(line: &'a str, prelude: &Path, doc_dir: &Path) -> Cow<'a, s
     } else {
         format!("./{name}")
     };
+    let rebased = crate::ast::import_path_source(&rebased);
     Cow::Owned(format!("{}{}{}", &line[..at], rebased, &line[at + len..]))
 }
 
@@ -416,6 +430,15 @@ mod tests {
         assert_eq!(rebase("import ./a: f, g", "/p"), "import ./lib/a: f, g");
         // Package imports are left alone.
         assert_eq!(rebase("import color", "/p/screens"), "import color");
+        // A quoted path is rebased inside its quotes, and stays quoted only
+        // while it needs to be.
+        assert_eq!(
+            rebase("import \"./my-util\" as u", "/p/screens"),
+            "import \"../lib/my-util\" as u"
+        );
+        assert_eq!(rebase("import \"./util\": f", "/p"), "import ./lib/util: f");
+        assert_eq!(rebase("import \"ui-kit\" as k", "/p/screens"), "import \"ui-kit\" as k");
+
         // The same file joined into a document in another directory.
         let host = HostView {
             doc_dir: Some(PathBuf::from("/p/screens")),

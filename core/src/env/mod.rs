@@ -927,7 +927,7 @@ impl Env {
         importer: Option<&std::path::Path>,
     ) -> Result<(Vec<String>, Vec<String>), crate::error::LoadError> {
         let modules = crate::module::load_modules(
-            &format!("import {path}\n"),
+            &format!("{}\n", crate::ast::plain_import_source(path)),
             importer,
             &self.modules,
             &[],

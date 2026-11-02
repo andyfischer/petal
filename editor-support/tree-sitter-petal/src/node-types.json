@@ -3502,6 +3502,16 @@
     "type": "module_path",
     "named": true,
     "fields": {
+      "quoted": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "string",
+            "named": true
+          }
+        ]
+      },
       "relative": {
         "multiple": false,
         "required": false,
@@ -3514,7 +3524,7 @@
       },
       "segment": {
         "multiple": true,
-        "required": true,
+        "required": false,
         "types": [
           {
             "type": "identifier",

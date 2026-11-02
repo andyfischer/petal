@@ -100,6 +100,7 @@ module.exports = grammar({
     //   import ./level               (a file beside the importing one)
     //   import ../shared/rng         (a file above it)
     //   pub import ./menu            (a re-export)
+    //   import "./my-lib" as lib     (a quoted path, for a non-identifier segment)
     // `as` is contextual in the real parser; here it is a keyword literal,
     // which is safe because a syntax-highlighting grammar never needs `as`
     // as an ordinary identifier. The selective list requires commas between
@@ -122,11 +123,16 @@ module.exports = grammar({
     // more `../` — then one or more identifier segments joined by `/`
     // (core/src/parse.rs `parse_import`). Without a prefix the first segment
     // is a package name. A flat name is the one-segment case, so this node
-    // covers `import ui` too.
-    module_path: $ => seq(
-      optional(field('relative', $.relative_prefix)),
-      field('segment', $.identifier),
-      repeat(seq('/', field('segment', $.identifier))),
+    // covers `import ui` too. A path whose segments are not all identifiers
+    // (`./my-lib`) is written as a quoted string instead, and is the whole
+    // path, prefix included.
+    module_path: $ => choice(
+      field('quoted', $.string),
+      seq(
+        optional(field('relative', $.relative_prefix)),
+        field('segment', $.identifier),
+        repeat(seq('/', field('segment', $.identifier))),
+      ),
     ),
 
     relative_prefix: _ => token(choice('./', /(\.\.\/)+/)),

@@ -785,6 +785,119 @@ pub fn module_local_name(module: &str) -> &str {
     module.rsplit('/').next().unwrap_or(module)
 }
 
+/// Can `name` be written as a bare identifier? A letter or `_`, then letters,
+/// digits and `_`, and not a keyword. This is stricter than the lexer (which
+/// also allows a `?` inside a name), so it never calls something a name that
+/// does not read back as one.
+pub fn is_plain_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first.is_alphabetic() || first == '_')
+        && chars.all(|c| c.is_alphanumeric() || c == '_')
+        && crate::lexer::keyword_token(name).is_none()
+}
+
+/// A name to bind a module under when its last path segment is not one
+/// (`my-lib` → `my_lib`, `3d-kit` → `_3d_kit`): what an `as` should say.
+pub fn suggested_qualifier(segment: &str) -> String {
+    let mut out: String = segment
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .collect();
+    if !out.starts_with(|c: char| c.is_alphabetic() || c == '_') {
+        out.insert(0, '_');
+    }
+    if crate::lexer::keyword_token(&out).is_some() {
+        out.push('_');
+    }
+    out
+}
+
+/// The source of a plain `import` of `module`: the path as
+/// [`import_path_source`] spells it, plus an `as` when its last segment is
+/// not a name (`import "./my-lib" as my_lib`), since a plain import has to
+/// bind a qualifier.
+pub fn plain_import_source(module: &str) -> String {
+    let path = import_path_source(module);
+    let local = module_local_name(module);
+    if is_plain_identifier(local) {
+        format!("import {path}")
+    } else {
+        format!("import {path} as {}", suggested_qualifier(local))
+    }
+}
+
+/// The path of `module` with its relative prefix (`./`, any number of `../`)
+/// removed: the run of segments that must each name a directory or file.
+pub fn import_path_segments(module: &str) -> &str {
+    if let Some(rest) = module.strip_prefix("./") {
+        return rest;
+    }
+    let mut rest = module;
+    while let Some(r) = rest.strip_prefix("../") {
+        rest = r;
+    }
+    rest
+}
+
+/// How an import path is spelled in source: bare (`import ./ui/hud`) when
+/// every segment is a plain identifier, otherwise as a quoted string
+/// (`import "./my-lib" as my_lib`). The inverse of what the parser accepts.
+pub fn import_path_source(module: &str) -> std::borrow::Cow<'_, str> {
+    if import_path_segments(module).split('/').all(is_plain_identifier) {
+        return std::borrow::Cow::Borrowed(module);
+    }
+    let mut out = String::with_capacity(module.len() + 2);
+    out.push('"');
+    for c in module.chars() {
+        if matches!(c, '"' | '\\' | '{') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('"');
+    std::borrow::Cow::Owned(out)
+}
+
+/// Why a quoted import path (`import "…"`) is not a usable module path, if it
+/// is not. A quoted path may hold any character a file name can — that is
+/// what it is for (`"./my-lib"`) — but it keeps the shape of a bare one: an
+/// optional `./` or `../…` prefix, then non-empty segments joined by `/`,
+/// none of them `.` or `..`, and no `\` or `:` (no absolute or Windows-style
+/// locations).
+pub fn quoted_import_path_error(module: &str) -> Option<String> {
+    if module.is_empty() {
+        return Some("an import path may not be empty".to_string());
+    }
+    if module.starts_with('/') {
+        return Some(format!(
+            "import path \"{module}\" is absolute — write a package path or a relative one \
+             (`./name`, `../name`)"
+        ));
+    }
+    let rest = import_path_segments(module);
+    if rest.is_empty() {
+        return Some(format!("import path \"{module}\" names no module"));
+    }
+    for segment in rest.split('/') {
+        if segment.is_empty() {
+            return Some(format!("import path \"{module}\" has an empty segment"));
+        }
+        if segment == "." || segment == ".." {
+            return Some(format!(
+                "import path \"{module}\" may only use '.' and '..' at its start \
+                 (`./name`, `../name`)"
+            ));
+        }
+        if segment.contains(['\\', ':']) {
+            return Some(format!("import path \"{module}\" may not contain '\\' or ':'"));
+        }
+    }
+    None
+}
+
 // ---------------------------------------------------------------------------
 // AST traversal
 //
@@ -1171,5 +1284,47 @@ impl<F: FnMut(&Expr)> ExprVisitor for ForEachExpr<'_, F> {
     fn visit_expr(&mut self, e: &Expr) {
         (self.0)(e);
         walk_expr(self, e);
+    }
+}
+
+#[cfg(test)]
+mod import_path_tests {
+    use super::*;
+
+    #[test]
+    fn an_import_path_is_quoted_only_when_a_segment_is_not_a_name() {
+        for bare in ["ui", "bloom/menu", "./level", "../../shared/rng", "_x/y2"] {
+            assert_eq!(import_path_source(bare), bare);
+        }
+        assert_eq!(import_path_source("./my-lib"), "\"./my-lib\"");
+        assert_eq!(import_path_source("ui-kit/menu"), "\"ui-kit/menu\"");
+        assert_eq!(import_path_source("3d/mesh"), "\"3d/mesh\"");
+        // A keyword cannot be written as a bare segment.
+        assert_eq!(import_path_source("./match"), "\"./match\"");
+        // What the lexer would read as escapes or an interpolation is escaped.
+        assert_eq!(import_path_source("a{b}"), "\"a\\{b}\"");
+    }
+
+    #[test]
+    fn a_plain_import_of_a_hyphenated_module_gets_an_alias() {
+        assert_eq!(plain_import_source("kit/menu"), "import kit/menu");
+        assert_eq!(plain_import_source("./my-lib"), "import \"./my-lib\" as my_lib");
+        assert_eq!(plain_import_source("my-kit/menu"), "import \"my-kit/menu\"");
+        assert_eq!(suggested_qualifier("3d-kit"), "_3d_kit");
+        assert_eq!(suggested_qualifier("match"), "match_");
+    }
+
+    #[test]
+    fn every_spelled_import_path_parses_back_to_itself() {
+        for module in ["ui", "./my-lib", "../a-b/c d", "x{y}", "q\"uote", "./match"] {
+            // `import <path>: a` binds no qualifier, so any path round-trips.
+            let src = format!("import {}: a\n", import_path_source(module));
+            let (_, stmts) = crate::cst::parse_source(&src, crate::source_map::ENTRY_FILE)
+                .unwrap_or_else(|e| panic!("{src}: {e}"));
+            let StmtKind::Import(decl) = &stmts[0].kind else {
+                panic!("{src}: not an import");
+            };
+            assert_eq!(decl.module, module, "{src}");
+        }
     }
 }

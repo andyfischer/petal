@@ -970,3 +970,90 @@ fn import_core_binds_a_qualifier_over_the_builtins() {
     // A single module of it works the same way.
     check_output(&[], "import core/math\nprint(math.floor(2.5))\nprint(floor(2.5))", &["2.0", "2.0"]);
 }
+
+// ── Quoted import paths ──────────────────────────────────────────
+//
+// A path segment that is not an identifier (a hyphenated file or directory
+// name) is written as a quoted string: `import "./my-lib" as lib`.
+
+#[test]
+fn a_quoted_path_imports_hyphenated_files_and_directories() {
+    let tree = TempTree::new("quoted-paths");
+    tree.write("game/my-lib.ptl", "pub fn hi()\n  \"hi\"\nend");
+    tree.write("game/sub-dir/deep-mod.ptl", "pub let n = 7");
+    tree.write("shared-utils/rng.ptl", "pub let seed = \"above\"");
+    let main = tree.write(
+        "game/main.ptl",
+        "import \"./my-lib\" as lib\n\
+         import \"./sub-dir/deep-mod\": n\n\
+         import \"../shared-utils/rng\"\n\
+         print(lib.hi())\nprint(hi())\nprint(n)\nprint(rng.seed)",
+    );
+    assert_eq!(
+        run_file(&mut Env::new(), &main).unwrap(),
+        vec!["hi", "hi", "7", "above"]
+    );
+}
+
+#[test]
+fn a_quoted_path_names_the_same_module_as_its_bare_spelling() {
+    let tree = TempTree::new("quoted-same");
+    tree.write("level.ptl", "print(\"level loaded\")\npub let v = 1");
+    let main = tree.write(
+        "main.ptl",
+        "import ./level\nimport \"./level\" as again\nprint(level.v + again.v)",
+    );
+    // Loaded once: both spellings resolve to one module.
+    assert_eq!(
+        run_file(&mut Env::new(), &main).unwrap(),
+        vec!["level loaded", "2"]
+    );
+}
+
+#[test]
+fn a_quoted_package_path_reaches_a_hyphenated_module_name() {
+    check_output(
+        &[("ui-kit", UI), ("ui-kit/extra-bits", "pub let z = 9")],
+        "import \"ui-kit\" as kit\nimport \"ui-kit/extra-bits\": z\nprint(kit.button(\"q\"))\nprint(z)",
+        &["[q]", "9"],
+    );
+}
+
+#[test]
+fn a_quoted_plain_import_whose_last_segment_is_not_a_name_needs_as() {
+    let err = load_error(&[("ui-kit", UI)], "import \"ui-kit\"\nprint(1)");
+    assert!(err.contains("`ui-kit` is not a name"), "{err}");
+    assert!(err.contains("import \"ui-kit\" as ui_kit"), "{err}");
+    // A quoted path whose last segment is a name binds it as usual.
+    check_output(
+        &[("ui-kit/menu", "pub let m = 3")],
+        "import \"ui-kit/menu\"\nprint(menu.m)",
+        &["3"],
+    );
+}
+
+#[test]
+fn a_quoted_path_keeps_the_shape_of_a_module_path() {
+    for (src, expect) in [
+        ("import \"\" as e", "may not be empty"),
+        ("import \"/abs/lib\" as a", "is absolute"),
+        ("import \"./\" as a", "names no module"),
+        ("import \"a//b\" as a", "empty segment"),
+        ("import \"./a/../b\" as a", "only use '.' and '..' at its start"),
+        ("import \"a/./b\" as a", "only use '.' and '..' at its start"),
+        ("import \"C:\\\\lib\" as a", "may not contain"),
+        ("import \"./{x}\" as a", "may not interpolate"),
+    ] {
+        let err = load_error(&[], &format!("{src}\nprint(1)"));
+        assert!(err.contains(expect), "{src}: {err}");
+    }
+}
+
+#[test]
+fn a_quoted_import_may_be_re_exported() {
+    check_output(
+        &[("ui-kit", UI), ("facade", "pub import \"ui-kit\": button")],
+        "import facade: button\nprint(button(\"r\"))",
+        &["[r]"],
+    );
+}

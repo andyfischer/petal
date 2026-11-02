@@ -903,6 +903,11 @@ impl Parser {
     /// (`import bloom/menu`). The path is the module's identity; the local
     /// name it binds is its last segment, which `as` overrides.
     ///
+    /// The path may instead be a quoted string (`import "./my-lib" as lib`),
+    /// for a file or directory name that is not an identifier. A quoted path
+    /// whose last segment is not a name needs `as` (or a selective list),
+    /// since there is no qualifier to bind it under otherwise.
+    ///
     /// A selective name list may wrap: a line break is allowed after the `:`
     /// and after each `,`, and a trailing comma is allowed. Every other import
     /// form still ends at the newline; `as` is contextual (not a keyword).
@@ -920,37 +925,26 @@ impl Parser {
             self.advance(); // consume 'pub' / 'export'
         }
         self.advance(); // consume 'import'
-        // A relative path starts with `./` (beside the importing file) or
-        // one or more `../` (above it); anything else starts with a package
-        // name. The prefix is kept in the path as written.
+        // A quoted path (`import "./my-lib"`) spells a module whose path is
+        // not a run of identifiers — a hyphenated file or directory name. It
+        // means exactly what the same path written bare would.
+        let path_pos = self.pos;
         let mut module = String::new();
-        if matches!(self.peek(), Token::Dot) {
-            self.advance(); // consume '.'
-            if !matches!(self.peek(), Token::Slash) {
-                return Err(self.error_at_current(
-                    "a relative import is written `./name` or `../name`".to_string(),
-                ));
+        let quoted = matches!(self.peek(), Token::String(_));
+        if let Token::String(path) = self.peek().clone() {
+            self.advance(); // consume the path string
+            if let Some(err) = crate::ast::quoted_import_path_error(&path) {
+                return Err(self.error_at(path_pos, err));
             }
-            self.advance(); // consume '/'
-            module.push_str("./");
+            module = path;
+        } else if matches!(self.peek(), Token::InterpStart) {
+            return Err(self.error_at_current(
+                "an import path is a plain string: it may not interpolate `{…}` \
+                 (write `\\{` for a literal brace)"
+                    .to_string(),
+            ));
         } else {
-            while matches!(self.peek(), Token::DotDot) {
-                self.advance(); // consume '..'
-                if !matches!(self.peek(), Token::Slash) {
-                    return Err(self.error_at_current(
-                        "a relative import is written `./name` or `../name`".to_string(),
-                    ));
-                }
-                self.advance(); // consume '/'
-                module.push_str("../");
-            }
-        }
-        module.push_str(&self.expect_path_segment()?);
-        while matches!(self.peek(), Token::Slash) {
-            self.advance(); // consume '/'
-            let segment = self.expect_path_segment()?;
-            module.push('/');
-            module.push_str(&segment);
+            self.parse_bare_import_path(&mut module)?;
         }
 
         let mut alias = None;
@@ -993,7 +987,61 @@ impl Parser {
             _ => {}
         }
 
+        // A plain import binds the path's last segment as its qualifier, so
+        // that segment has to be a name. `import "./my-lib"` cannot bind
+        // `my-lib`; it needs an `as` (a selective import binds no qualifier).
+        if quoted && alias.is_none() && names.is_none() {
+            let local = crate::ast::module_local_name(&module);
+            if !crate::ast::is_plain_identifier(local) {
+                let suggestion = crate::ast::suggested_qualifier(local);
+                return Err(self.error_at(
+                    path_pos,
+                    format!(
+                        "`{local}` is not a name, so `import \"{module}\"` cannot bind it as \
+                         the module's qualifier — write `import \"{module}\" as {suggestion}`, \
+                         or import names from it: `import \"{module}\": a, b`"
+                    ),
+                ));
+            }
+        }
+
         self.finish_import(start, module, alias, names, star, exported)
+    }
+
+    /// The bare (unquoted) spelling of an import path: a relative prefix —
+    /// `./` (beside the importing file) or one or more `../` (above it) —
+    /// then identifier segments joined by `/`. Anything without a prefix
+    /// starts with a package name. The prefix is kept in the path as written.
+    fn parse_bare_import_path(&mut self, module: &mut String) -> Result<(), String> {
+        if matches!(self.peek(), Token::Dot) {
+            self.advance(); // consume '.'
+            if !matches!(self.peek(), Token::Slash) {
+                return Err(self.error_at_current(
+                    "a relative import is written `./name` or `../name`".to_string(),
+                ));
+            }
+            self.advance(); // consume '/'
+            module.push_str("./");
+        } else {
+            while matches!(self.peek(), Token::DotDot) {
+                self.advance(); // consume '..'
+                if !matches!(self.peek(), Token::Slash) {
+                    return Err(self.error_at_current(
+                        "a relative import is written `./name` or `../name`".to_string(),
+                    ));
+                }
+                self.advance(); // consume '/'
+                module.push_str("../");
+            }
+        }
+        module.push_str(&self.expect_path_segment()?);
+        while matches!(self.peek(), Token::Slash) {
+            self.advance(); // consume '/'
+            let segment = self.expect_path_segment()?;
+            module.push('/');
+            module.push_str(&segment);
+        }
+        Ok(())
     }
 
     /// Close the `ImportStmt` node and build the statement. Shared by the two

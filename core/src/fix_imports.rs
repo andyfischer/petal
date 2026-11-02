@@ -139,7 +139,8 @@ impl ImportFixer {
                 }
             }
             if decl.names.is_some() && lost.contains(qualifier) && restored.insert(qualifier) {
-                let path = new_path.as_deref().unwrap_or(&decl.module);
+                let path =
+                    crate::ast::import_path_source(new_path.as_deref().unwrap_or(&decl.module));
                 let alias = if qualifier == crate::ast::module_local_name(&decl.module) {
                     String::new()
                 } else {
@@ -153,9 +154,10 @@ impl ImportFixer {
                 edits.push((end, end, format!("\nimport {path}{alias}")));
             }
             if let Some(new_path) = new_path {
+                let new_path = crate::ast::import_path_source(&new_path).into_owned();
                 changes.push(format!(
                     "line {line}: `import {}` -> `import {new_path}`",
-                    decl.module
+                    crate::ast::import_path_source(&decl.module)
                 ));
                 edits.push((site.path.0, site.path.1, new_path));
             }
@@ -365,7 +367,10 @@ impl ImportFixer {
         if add.is_empty() {
             return unchanged(notes);
         }
-        let lines: Vec<String> = add.keys().map(|path| format!("import {path}")).collect();
+        let lines: Vec<String> = add
+            .keys()
+            .map(|path| crate::ast::plain_import_source(path))
+            .collect();
         let fixed = insert_import_lines(source, &lines);
         // The additions have to leave a program that still loads — an import
         // of the package a file is itself part of would be a cycle.
@@ -383,7 +388,11 @@ impl ImportFixer {
         let changes = add
             .iter()
             .map(|(path, names)| {
-                format!("added `import {path}` (for {})", some_names(names))
+                format!(
+                    "added `{}` (for {})",
+                    crate::ast::plain_import_source(path),
+                    some_names(names)
+                )
             })
             .collect();
         Fixed {
@@ -435,7 +444,10 @@ impl ImportFixer {
                     Err(e) => {
                         let first = e.to_string().lines().next().unwrap_or_default().to_string();
                         self.unreadable
-                            .push(format!("`import {path}` does not load ({first})"));
+                            .push(format!(
+                                "`import {}` does not load ({first})",
+                                crate::ast::import_path_source(&path)
+                            ));
                         continue;
                     }
                 };
@@ -706,10 +718,22 @@ impl ImportSite {
             i += 1;
         }
         let path_start = i;
-        while i < chars.len()
-            && (chars[i].is_alphanumeric() || matches!(chars[i], '_' | '/' | '.'))
-        {
+        if chars.get(i) == Some(&'"') {
+            // A quoted path (`import "./my-lib"`): through the closing quote.
             i += 1;
+            while i < chars.len() && chars[i] != '"' && chars[i] != '\n' {
+                i += if chars[i] == '\\' { 2 } else { 1 };
+            }
+            if chars.get(i) != Some(&'"') {
+                return None;
+            }
+            i += 1;
+        } else {
+            while i < chars.len()
+                && (chars[i].is_alphanumeric() || matches!(chars[i], '_' | '/' | '.'))
+            {
+                i += 1;
+            }
         }
         let path_end = i;
         if path_end == path_start {
@@ -930,6 +954,38 @@ mod tests {
         assert_eq!(
             lines(&fixer, "import ./tally: hits,\n  n\nprint(tally.n)\n", &main),
             "import ./tally: hits,\n  n\nimport ./tally\nprint(tally.n)\n"
+        );
+    }
+
+    #[test]
+    fn a_quoted_sibling_import_is_rewritten_inside_its_quotes() {
+        let dir = Dir::new("quoted-sibling", &[("my-lib.ptl", "pub let a = 1\n")]);
+        let fixer = ImportFixer::new(&[]);
+        let main = dir.path("main.ptl");
+        assert_eq!(
+            lines(&fixer, "import \"my-lib\" as lib\nimport \"my-lib\": a\nprint(a)\n", &main),
+            "import \"./my-lib\" as lib\nimport \"./my-lib\": a\nprint(a)\n"
+        );
+        // Already relative: nothing to do.
+        let done = "import \"./my-lib\" as lib\nprint(lib.a)\n";
+        assert_eq!(lines(&fixer, done, &main), done);
+    }
+
+    #[test]
+    fn an_added_import_of_a_hyphenated_module_is_quoted_and_named() {
+        let mut env = Env::new();
+        // A package name is always an identifier; a module inside one need not be.
+        env.register_package("kit", [("extra-bits", "pub fn knob(x)\n  x\nend\n")])
+            .unwrap();
+        let mut fixer = ImportFixer::with_env(env, &[]);
+        let fixed = fixer.add_missing_imports("print(knob(1))\n", None);
+        assert_eq!(
+            fixed.source,
+            "import \"kit/extra-bits\" as extra_bits\n\nprint(knob(1))\n"
+        );
+        assert_eq!(
+            fixed.changes,
+            ["added `import \"kit/extra-bits\" as extra_bits` (for `knob`)"]
         );
     }
 

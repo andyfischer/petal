@@ -73,6 +73,8 @@
 
 (module_path segment: (identifier) @module)
 (relative_prefix) @punctuation.special
+; A quoted path (`import "./my-lib"`) names a module too.
+(module_path quoted: (string) @module)
 
 ; ---- Functions ----
 

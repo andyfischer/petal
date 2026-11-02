@@ -235,6 +235,8 @@ import bloom/menu: open, close
 import ./level
 import ../../shared/rng as r
 import ./ui/hud: draw
+import "./my-lib" as lib
+import "ui-kit/menu-bar": open
 
 ---
 
@@ -272,6 +274,12 @@ import ./ui/hud: draw
       relative: (relative_prefix)
       segment: (identifier)
       segment: (identifier))
+    name: (identifier))
+  (import_statement
+    module: (module_path quoted: (string (string_content)))
+    alias: (identifier))
+  (import_statement
+    module: (module_path quoted: (string (string_content)))
     name: (identifier)))
 
 ==================

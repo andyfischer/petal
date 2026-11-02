@@ -275,7 +275,7 @@ fn import_text(decl: &ImportDecl) -> String {
         out.push_str("pub ");
     }
     out.push_str("import ");
-    out.push_str(&decl.module);
+    out.push_str(&crate::ast::import_path_source(&decl.module));
     if let Some(names) = &decl.names {
         out.push_str(": ");
         out.push_str(&names.join(", "));

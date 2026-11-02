@@ -12,6 +12,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- An import path may be a quoted string, so a module whose file or directory
+  name is not an identifier can be imported: `import "./my-lib" as lib`,
+  `import "../shared-utils/rng"`, `import "kit/extra-bits": knob`. A plain
+  import of a path whose last segment is not a name needs an `as`. `petal
+  fmt`, `petal fix-imports`, the LSP and the tree-sitter grammar all handle
+  the quoted form ([Quoted paths](docs/module-system.md#quoted-paths)).
+
 - petal-sdl: `events::ResizeWatch` calls back on each window size change
   from inside SDL, so a host can paint while macOS holds the main loop for a
   live resize. It reads raw events, unlike rust-sdl2's

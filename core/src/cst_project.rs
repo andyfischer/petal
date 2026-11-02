@@ -676,8 +676,8 @@ impl Projector {
     /// and only the identifier leaves are read.
     fn import_stmt(&mut self, node: &SyntaxNode) -> Result<StmtKind, String> {
         let tokens = direct_tokens(node);
-        // The module path comes first: an identifier, then any number of
-        // `/ identifier` pairs. Everything after it is the `as` alias or the
+        // The module path comes first: a quoted string, or an identifier
+        // then any number of `/ identifier` pairs. Everything after it is the `as` alias or the
         // selective list — for which only the identifier leaves matter, so the
         // newlines a wrapped list swallowed need no handling here.
         // `pub import …`: the `pub` token is a direct child of this node,
@@ -687,19 +687,24 @@ impl Projector {
             .any(|t| matches!(t.token(), Some(Token::Pub | Token::Export)));
         let mut i = tokens
             .iter()
-            .position(|t| ident_value(t).is_some())
+            .position(|t| ident_value(t).is_some() || matches!(t.token(), Some(Token::String(_))))
             .ok_or("import missing module name")?;
-        // A relative prefix (`./`, `../../`) sits between `import` and the
-        // first identifier.
         let mut module = String::new();
-        for t in &tokens[..i] {
-            match t.token() {
-                Some(Token::Dot) => module.push_str("./"),
-                Some(Token::DotDot) => module.push_str("../"),
-                _ => {}
+        if let Some(Token::String(path)) = tokens[i].token() {
+            // A quoted path (`import "./my-lib"`) is the whole path.
+            module.push_str(path);
+        } else {
+            // A relative prefix (`./`, `../../`) sits between `import` and
+            // the first identifier.
+            for t in &tokens[..i] {
+                match t.token() {
+                    Some(Token::Dot) => module.push_str("./"),
+                    Some(Token::DotDot) => module.push_str("../"),
+                    _ => {}
+                }
             }
+            module.push_str(&ident_value(&tokens[i]).expect("just matched an identifier"));
         }
-        module.push_str(&ident_value(&tokens[i]).expect("just matched an identifier"));
         while matches!(
             tokens.get(i + 1).and_then(|t| t.token()),
             Some(Token::Slash)
@@ -1773,6 +1778,27 @@ mod tests {
         assert_projects("import ui: button, clicked,\n");
         // A plain `import m` is not continued by the next line.
         assert_projects("import ui\nprint(1)\n");
+    }
+
+    #[test]
+    fn projects_quoted_import_paths() {
+        assert_projects("import \"./my-lib\" as lib\n");
+        assert_projects("import \"ui-kit/menu\"\n");
+        assert_projects("import \"../shared-utils/rng\": seed, roll\n");
+        assert_projects("pub import \"my-kit\": a,\n  b\n");
+        let ast = projected_ast("import \"ui-kit/menu-bar\" as bar\n").expect("parse");
+        let StmtKind::Import(decl) = &ast[0].kind else {
+            panic!("expected import");
+        };
+        assert_eq!(decl.module, "ui-kit/menu-bar");
+        assert_eq!(decl.alias.as_deref(), Some("bar"));
+        // A quoted path whose segments are all names is the bare path.
+        let ast = projected_ast("import \"./ui/hud\"\n").expect("parse");
+        let StmtKind::Import(decl) = &ast[0].kind else {
+            panic!("expected import");
+        };
+        assert_eq!(decl.module, "./ui/hud");
+        assert_eq!(decl.alias.as_deref(), Some("hud"));
     }
 
     #[test]

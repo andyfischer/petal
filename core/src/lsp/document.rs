@@ -410,10 +410,14 @@ pub fn analyze_at(
         let unwritten: Vec<&String> = host
             .imports
             .iter()
-            .filter(|m| !header.lines().any(|l| l.trim() == format!("import {m}")))
+            .filter(|m| {
+                let line = crate::ast::plain_import_source(m);
+                !header.lines().any(|l| l.trim() == line)
+            })
             .collect();
         for m in &unwritten {
-            header.push_str(&format!("import {m}\n"));
+            header.push_str(&crate::ast::plain_import_source(m));
+            header.push('\n');
         }
         if !header.is_empty()
             && let Ok(pid) = env.load_program_diag(&header, path)

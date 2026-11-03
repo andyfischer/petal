@@ -6,46 +6,35 @@ serves the installer, and testing the one-liner on a clean machine.
 the procedure. Garden is released separately, see
 [releasing-garden.md](releasing-garden.md).
 
-Nothing here has been run yet. Steps 4, 6 and 7 are the outward-facing ones (a
-push, a tag, a deploy).
+Steps 4, 6 and 7 are the outward-facing ones (a push, a tag, a deploy).
 
-## Where things stand (checked 2026-10-09)
+## Where things stand (re-checked 2026-11-02)
 
-| Check | Result |
-|-------|--------|
-| `https://petal-lang.org/install.sh` | 404. The file is in the site repo (`frontend/public/install.sh`) but the deployed site predates it. |
-| `https://petal-lang.org/uninstall.sh` | 404, same cause. |
-| `https://petal-lang.org/download/` | 404, same cause. The home page, `/docs/` and `/examples/` return 200. |
-| `github.com/andyfischer/petal/releases/latest/download/petal-<target>.tar.gz` | 404. The repo is public, but its only release is `garden-v0.1.0`, which "latest" resolves to. |
-| `Release Petal` workflow | Never run (0 runs), so the two Linux musl builds are untested. |
-| `CI` workflow on `main` | Failing in the "Run Vitest tests" step, on the last six pushes. |
-| `petal --version` | `petal 0.1.0` |
-| Installer vs. workflow | Match. `dist/install.sh` is byte-identical to the site's copy, and each of the four targets it can ask for is built and named the same by the workflow. Tested locally, see "What was dry-run" below. |
+- **`v0.1.0` is published** as a GitHub release (2026-10-24, tag `v0.1.0`),
+  next to Garden's `garden-v0.1.0`. `core/Cargo.toml` still says `0.1.0`,
+  and `CHANGELOG.md` has its `## 0.1.0 - 2026-10-23` section.
+- **Not re-checked:** whether `https://petal-lang.org/install.sh` now serves
+  the installer (it was a 404 on 2026-10-23, before the release), and whether
+  the one-liner was tested on a clean machine (step 8). The check could not
+  be made from a sandboxed session. Until someone runs step 8, treat the
+  install path as unverified.
 
-## Decisions to make first
+The full state before the first release (site 404s, the workflow never run,
+CI red) is in the git history of this file.
 
-1. **The version number.** DECIDED 2026-10-09: the next `0.x` number. No
-   Petal release exists yet (the repo's only release is `garden-v0.1.0`), so
-   the first one is `v0.1.0`, which `core/Cargo.toml` already says; step 2
-   needs no version bump this time. The reasoning before the decision:
-   `core/Cargo.toml` says `0.1.0`. The todo item is
-   titled "nothing says 1.0", so the choice is between shipping `0.1.0` as it
-   is, a `0.x` that signals more than a first draft, or `1.0.0`. A `1.0.0` is a
-   stability promise that the README's status line contradicts (next item), and
-   the todo list still has open items in the "silent wrong results" class.
-   A pre-release tag such as `v1.0.0-rc.1` is also possible: the workflow
-   publishes it as a pre-release and leaves "latest" alone, so the one-liner
-   keeps installing the last full release.
-2. **The README status line.** It reads "This project is in an early,
-   experimental phase. Large backwards-incompatible changes are still
-   happening. Stability not guaranteed." Keep it, soften it, or replace it,
-   to agree with the version chosen above. The same decision applies to the
-   site's home page copy.
+## Decide for each release
+
+1. **The version number.** `0.x` until the language is stable. A `1.0.0` is a
+   stability promise that the README's status line ("early, experimental
+   phase") contradicts. A pre-release tag such as `v1.0.0-rc.1` publishes as
+   a pre-release and leaves "latest" alone, so the one-liner keeps
+   installing the last full release.
+2. **The README status line** and the site's home page copy: keep them in
+   step with the version.
 3. **Whether to release with CI red.** The release workflow does not run the
    test suite, so a red `main` does not block it mechanically.
 4. **Release notes.** The workflow uses GitHub's generated notes
-   (`generate_release_notes: true`). With no earlier `v*` tag these will list
-   every merged PR. The alternative is to paste the `CHANGELOG.md` section into
+   (`generate_release_notes: true`). Paste the `CHANGELOG.md` section into
    the release after it is published (step 6).
 
 ## 1. Preflight
@@ -298,8 +287,8 @@ curl -fsSL https://petal-lang.org/install.sh | PETAL_VERSION=vX.Y.Z sh
 
 ## 9. Afterwards
 
-- Append `DONE` under item 1 in [../tasks/todo.md](../tasks/todo.md) and
-  remove §1.1 and §1.4 from the bug list.
+- Update the release item in [../tasks/todo.md](../tasks/todo.md) and the
+  "Where things stand" section at the top of this page.
 - The next Garden release needs nothing special: it publishes with
   `make_latest: false`, so it cannot take the "latest" slot back.
 

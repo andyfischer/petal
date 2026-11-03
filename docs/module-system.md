@@ -32,11 +32,19 @@ qualifier. A **selective import** names exactly what it wants and binds
 nothing else, the qualifier included.
 
 Import statements must come before every other statement in the file.
-Putting one later is an error:
+Putting one later is an error, and so is putting one inside a function, a
+block or a test:
 
 ```
 Error: import statements must appear before any other statement
+Error: an `import` is only allowed at the top of a file, before any other statement, not inside a function, a block or a test
 ```
+
+An import also ends at the end of its line (or at a `;`). Whatever follows it
+on the line is an error that names the usual fix: a hyphenated name must be
+quoted (`import "./my-mod" as my_mod`), a path uses `/` and not `.`
+(`import ui/hud`), an import names a module and not a file (no `.ptl`), and a
+selective import cannot rename (`import m: v as w`).
 
 A qualifier is only usable through `.`: writing `hud` on its own
 (`let x = hud`, `print(hud)`) is an error suggesting `hud.<name>` or a
@@ -70,7 +78,7 @@ import ./level     // exports draw
 
 hud.draw()         // fine — qualified access always works
 level.draw()
-draw()             // Error: `draw` is ambiguous: 'hud' and 'level' export it — write
+draw()             // Error: `draw` is ambiguous: './hud' and './level' export it — write
                    //        `hud.draw` or `level.draw`, or pin one with `import ./hud: draw`
 ```
 
@@ -193,9 +201,14 @@ A module is identified by *what it is*, not by how an importer spelled it:
   `bloom/menu`, and plain `bloom` for the module named after its package;
 - a module a host registered in memory is the name it was registered under;
 - any other file (a *loose* file) is its canonical path on disk, and is
-  *named* — in diagnostics, `state` keys, qualified function names and
-  `module_manifest` — by its path from the entry file's directory: `level`,
-  `ui/hud`, `../shared/rng`.
+  *named* (in `state` keys, qualified function names such as
+  `./level::spawn`, and `module_manifest`) by its path from the entry file's
+  directory, written as a relative import would be: `./level`, `./ui/hud`,
+  `../shared/rng`. The `./` keeps a loose file apart from a package: a
+  `color.ptl` beside an `import ui`, which loads the bundled `color`, is the
+  module `./color`, and the package stays `color`. Error messages name the
+  file (`color.ptl`, `ui/hud.ptl`), and the qualifier the file binds is still
+  its last segment (`color.tint()`).
 
 So `import ./motion` inside `bloom` and `import bloom/motion` from outside
 it are **one module**: it loads once, its top-level code runs once, and
@@ -308,7 +321,7 @@ The facade's own imports follow [the usual tiers](#which-name-wins):
   as `facade.name`, and names the two original modules:
 
 ```
-Error: `shared` is ambiguous: 'a' and 'b' export it — write `a.shared` or `b.shared`, or
+Error: `shared` is ambiguous: './a' and './b' export it — write `a.shared` or `b.shared`, or
 pin one with `import ./a: shared`
 ```
 
@@ -358,8 +371,8 @@ the module that declared it:
 
 ```petal ignore
 import ./tally: hits
-set hits = 5     // Error: `hits` is a `var` exported by module `tally`;
-                 //        only `tally` can write it — call a function it exports instead
+set hits = 5     // Error: `hits` is a `var` exported by module `./tally`;
+                 //        only `./tally` can write it — call a function it exports instead
 ```
 
 Export a function that does the write instead. Reading an imported `var`
@@ -528,7 +541,9 @@ variable. The module half of the key is the module's [canonical
 name](#module-identity), so it does not depend on how any importer spelled
 the path — but a loose file's name is its path from the entry file, and
 moving a directory of modules into a package (giving it a `petal.toml`)
-renames them from `level` to `<package>/level`.
+renames them from `./level` to `<package>/level`. (Before 2026-11-03 a loose
+file was named without the `./`, as `level`, so state saved by an older
+build for a loose module does not carry over.)
 
 ## Errors name the file
 
@@ -573,11 +588,14 @@ selective import.
 
 ## Not supported
 
-- Dotted module names (`import lib.geom`) and path strings. Nesting is
-  spelled with `/`, and a file is reached with `./` or `../`.
+- Dotted module names (`import lib.geom`). Nesting is spelled with `/`, and
+  a file is reached with `./` or `../`. A quoted path is only for a name that
+  is not an identifier ([Quoted paths](#quoted-paths)).
+- Renaming a name in a selective import (`import m: v as w`).
 - Absolute paths, and a bare name for a sibling file.
 - A star import (`import m: *`). A plain `import m` binds every export.
-- Imports anywhere but the top of a file, including conditional imports.
+- Imports anywhere but the top of a file, including conditional imports
+  (an error).
 - Reaching a module through a facade's qualifier
   (`bloom.menu.open()`); module names are not values, and a facade passes on
   names, not qualifiers.

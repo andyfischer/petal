@@ -111,7 +111,8 @@ pub fn annotate_error_with(
         }
     }
 
-    let trace = build_stack_trace(program, frames);
+    let failing_file = span.filter(|s| s.start.line > 0).map(|s| s.file);
+    let trace = build_stack_trace(program, frames, failing_file);
     if !trace.is_empty() {
         error_msg.push_str("\nStack trace:");
         for entry in &trace {
@@ -190,8 +191,16 @@ fn format_position(program: &Program, span: &SourceSpan) -> String {
 
 /// Build a stack trace from call `frames` (bottom-to-top), walked top-first.
 /// Only frames with a function name (i.e. function-call frames) are included.
-fn build_stack_trace(program: &Program, frames: &[TraceFrame]) -> Vec<String> {
-    shorten_stack_trace(full_stack_trace(program, frames))
+///
+/// `failing_file` is the file the error itself is in: when it is a module,
+/// the entry-file frames name their file, even if every call was made from
+/// the entry file.
+fn build_stack_trace(
+    program: &Program,
+    frames: &[TraceFrame],
+    failing_file: Option<crate::source_map::FileId>,
+) -> Vec<String> {
+    shorten_stack_trace(full_stack_trace(program, frames, failing_file))
 }
 
 /// The most frames a stack trace prints before eliding the middle.
@@ -231,7 +240,11 @@ fn shorten_stack_trace(trace: Vec<String>) -> Vec<String> {
     out
 }
 
-fn full_stack_trace(program: &Program, frames: &[TraceFrame]) -> Vec<String> {
+fn full_stack_trace(
+    program: &Program,
+    frames: &[TraceFrame],
+    failing_file: Option<crate::source_map::FileId>,
+) -> Vec<String> {
     let call_sites: Vec<(&str, Option<&SourceSpan>)> = frames
         .iter()
         .rev()
@@ -247,11 +260,14 @@ fn full_stack_trace(program: &Program, frames: &[TraceFrame]) -> Vec<String> {
     // An entry-file position is written bare (`[line N, column M]`), which
     // reads fine until a trace crosses into a module: next to
     // `[m.ptl line 6, column 3]`, a bare `[line 3, column 3]` does not say
-    // which file it is in. So once any frame is in a module, the entry-file
-    // frames name their file too.
-    let crosses_modules = call_sites
-        .iter()
-        .any(|(_, span)| span.is_some_and(|s| s.file != ENTRY_FILE));
+    // which file it is in. So once any frame, or the error itself, is in a
+    // module, the entry-file frames name their file too. The error's own
+    // file counts because every frame can be an entry-file call site while
+    // the failure is in a module (`main.ptl` calls `m.inner`, which fails).
+    let crosses_modules = failing_file.is_some_and(|f| f != ENTRY_FILE)
+        || call_sites
+            .iter()
+            .any(|(_, span)| span.is_some_and(|s| s.file != ENTRY_FILE));
     let entry_name = crosses_modules.then(|| entry_file_name(program)).flatten();
     call_sites
         .into_iter()

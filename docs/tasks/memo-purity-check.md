@@ -1,7 +1,19 @@
 # `petal lint`: catch `memo` initializers that are not pure
 
-Status, 2026-10-22: **open, not started.** A follow-up from the soundness
-review of [`memo`](../features/memo.md).
+Status, 2026-11-03: **step 0 done, the check itself open.** A follow-up from
+the soundness review of [`memo`](../features/memo.md).
+
+- **Done (step 0):** the `state-key-deprecated` auto-fix no longer creates
+  impure memos. It rewrites `state(k)` to `memo(k)` only when the
+  initializer is, by its syntax, a pure function of the key: literals, the
+  names the key reads, operators, and list, record, field, index and
+  interpolation forms (`init_is_pure_of_key` in
+  `core/src/compiler/keyed_state.rs`). Any call, `get`, lambda, branch or
+  other name means the site is reported without a fix. Tests:
+  `core/tests/state_key_deprecated.rs`.
+- **Open:** nothing checks a hand-written `memo`. `memo(k) v = k * scale`
+  still prints `20 20` with a clean `check`. The plan is below
+  ([Plan](#plan)).
 
 ## The problem
 
@@ -101,6 +113,72 @@ Suppress with `// petal-lint-ignore memo-impure`.
   `info.code_hash`, which is in the key. This is the case most likely to
   need either the ignore comment or a smarter rule: a value derived from a
   key component.
+
+## Plan
+
+Worked out on 2026-11-03 from `core/src/static_classify/mod.rs` and the memo
+lowering (`compile_state_decl`, `core/src/compiler/stmt.rs`).
+
+**How a memo looks in the IR.** `memo(key) v = init` compiles to one
+`StateInit` term with `is_memo` set. The key's term is one of its inputs,
+and the initializer is compiled into the term's one child block. The
+initializer reads outer names through captures of the enclosing block's
+terms. So "what does the initializer read besides its key" is a question
+about the init block's captures and calls, which is what the classifier
+already walks.
+
+**Why `term_class` cannot be used as is.** The classifier analyses a
+function body under the assumption that *every* parameter is data
+(`static_classify/mod.rs`, the "A parameter … Assumed data" branch near line
+1566), and checks that assumption at each static call. Inside
+`fn scaled(k, scale)`, both `k` and `scale` are data under that assumption,
+so the init block of `memo(k) v = k * scale` already classifies as static.
+The memo question needs a different assumption: only what the key reads is
+data.
+
+**Steps.**
+
+1. **A seeded mode in the classifier.** Add an optional seed to the
+   analysis: a set of terms (the parameters, locals and captures that the
+   key's subgraph reads) that count as data. When a seed is set, a parameter
+   or capture outside it is `Dynamic(Why::OutsideKey(name))` instead of
+   `Data`. Everything else is unchanged: static data, `CONST` natives,
+   static-pure user functions, the region rules for loops and branches, and
+   the `Why` reason chains. The entry point is
+   `analyze_memo_inits(program, natives) -> Vec<MemoFinding>`. It visits each
+   `StateInit` with `is_memo`, collects the seed from the key term's inputs
+   back to the enclosing block, and classifies only that init block. The
+   blocks are small, so the cost is a fraction of a full pass.
+2. **Map reasons to messages.** Use the kinds in [The rule](#the-rule):
+   - `OutsideKey`: add it to the key;
+   - `Native` / `UnregisteredNative`: effectful, recomputed on reload;
+   - `State` / `Var`: a mutable read;
+   - `FunctionArgument` and dynamic callees: unknown, at a lower severity.
+
+   One exception: a nested `memo` read inside an initializer is
+   `Dynamic(State)` today. Treat it as data when its own initializer passes,
+   or it flags caches built from caches.
+3. **Surface it.** Run it next to `Env::check_consts`
+   (`core/src/env/mod.rs`), which already runs the classifier after compile
+   and turns findings into diagnostics. Gate it on
+   `program.terms.iter().any(|t| t.is_memo)`, so programs without a memo pay
+   nothing. Honour `// petal-lint-ignore memo-impure` the way
+   `keyed_state::deprecated_keyed_states` honours its rule.
+4. **Replace the syntactic gate.** Have `lint/state_key.rs` ask the same
+   question of the would-be memo (compile the rewrite, run step 1 on it)
+   instead of `init_is_pure_of_key`. Then `state(text) w = measure(text)`
+   gets its fix back when `measure` is `CONST`. Keep the syntactic gate as a
+   fast path.
+5. **Sweep.** Run it on the in-tree memos listed above and on `examples/`
+   and `garden/`. Expect `glsl.ptl` to need the ignore comment: it reads `f`
+   and `info`, which are tied to its key through `info.code_hash` but are not
+   read by it. A "derived from a key component" rule is possible later. It
+   is not needed for a first version.
+
+Rough size: steps 1–3 are a few hundred lines in `static_classify` plus
+tests, steps 4–5 are small. The risk is false positives through dynamic
+callees. Keep those at the lower severity until the sweep shows the noise
+level.
 
 ## Tests
 

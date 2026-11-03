@@ -206,3 +206,41 @@ end
         vec!["1", "2"]
     );
 }
+
+/// A directory with its own `petal.toml` is a package of its own: its files
+/// are not modules of the package around it (docs/packages.md). Reaching one
+/// through the outer package used to work, and loaded the file a second time
+/// under a second name when it was also imported directly.
+#[test]
+fn a_nested_package_is_not_reachable_through_the_outer_one() {
+    let root = std::env::temp_dir().join("petal-pkg-test-nested");
+    let _ = std::fs::remove_dir_all(&root);
+    let code = root.join("code");
+    std::fs::create_dir_all(code.join("inner")).unwrap();
+    std::fs::write(
+        root.join("petal.toml"),
+        "[package]\nname = \"proj\"\nmodules = \"code\"\n",
+    )
+    .unwrap();
+    std::fs::write(code.join("inner/petal.toml"), "[package]\nname = \"inner\"\n").unwrap();
+    std::fs::write(code.join("inner/inner.ptl"), "pub fn hi() \"hi\" end\n").unwrap();
+    std::fs::write(code.join("helper.ptl"), "pub fn help() \"help\" end\n").unwrap();
+    let main = code.join("main.ptl");
+
+    // The outer package's own modules still load by package path.
+    let mut env = Env::new();
+    let pid = env
+        .load_program_at("import proj/helper\nprint(helper.help())\n", &main)
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["help"]);
+
+    // The nested one does not, and the error says how to depend on it.
+    let mut env = Env::new();
+    let err = env
+        .load_program_at("import proj/inner/inner\nprint(inner.hi())\n", &main)
+        .unwrap_err();
+    assert!(err.contains("is in the package 'inner'"), "{err}");
+    assert!(err.contains("inner = { path = \"code/inner\" }"), "{err}");
+}

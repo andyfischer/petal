@@ -23,6 +23,9 @@ commits, was trimmed on 2026-10-23. Read it with
 sections 2.1 and 2.2, which are there. Cheesecake's half of the debrief is
 `~/cheesecake/docs/moses-debrief.md`.
 
+Re-checked against `1064dcd` on 2026-11-02: everything below is still open
+unless it says otherwise.
+
 ## Held back by the owner (language design)
 
 Each of these needs a proposal (`propose-language-change`) before work starts.
@@ -60,19 +63,26 @@ Each of these needs a proposal (`propose-language-change`) before work starts.
     (compare module-system-followup issue 1);
   - `--set cam.DIST=…` instead of prefixing every `config let` by hand;
   - `config_overridden(NAME)`;
-  - range/choice/doc metadata on `config let`.
+  - choice and doc metadata on `config let` (ranges shipped as
+    `tunable(v, min, max, step)`).
 - **VM:**
   - reuse of swept slots, and a nursery;
   - a two-target `Branch` and register coalescing. `LoadConst`, `Move` and
     `JumpIfPending` are still 35% of the opcode mix.
 - **Appends that are still quadratic:** onto a list in a record field, onto
   a list in another list, and through a function that returns the list.
-- **`petal test`:** catching a runtime error in a test, setup and teardown,
-  and the call chain for a failure inside a helper.
-- **Lints:** `prefer-match` for statement bodies.
+- **`petal test`:** catching a runtime error in a test (there is no
+  `expect_error`), setup and teardown, and the call chain for a failure
+  inside a helper (it prints only the helper's line).
+- **Lints:** `prefer-match` for statement bodies. Declined on purpose so
+  far: `core/src/lint/to_match.rs` leaves statement chains to the author.
 - **Stdlib:** a priority queue, polyline helpers, a multi-generator `for`,
-  list `repeat`, and a format spec in interpolation (`{x:.1f}`).
+  and list `repeat` (`fill(n, v)` covers one element; `repeat` takes only
+  strings). A format spec in interpolation (`{x:.1f}`) is still a parse
+  error, but the error now names the fix (`{fixed(x, 1)}`).
 - **Bridge and check:**
   - lint findings are not exposed to a host;
-  - `petal check` does not look inside a spread;
-  - `petal.toml` cannot set a minimum Petal version.
+  - `petal check` does not look inside a spread (unknown functions inside
+    one are reported now; check whatever Moses meant before closing this);
+  - `petal.toml` cannot set a minimum Petal version (`[requires] petal` is
+    read as a host interface; see images-followup item 7).

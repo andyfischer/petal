@@ -69,7 +69,11 @@ The **manifest name is the package name**, not the directory name: a library
 keeps its name wherever it is unpacked.
 
 A directory below a package that has its own `petal.toml` is a different
-package, and its files are not modules of the one around it. `target/` and
+package, and its files are not modules of the one around it:
+`import proj/inner/x` is an error that says to list the nested package as a
+dependency (`inner = { path = "code/inner" }`) and import it by its own name.
+A relative import (`import ./inner/x`) still reaches the file, as a module of
+the nested package (`inner/x`), never of the outer one. `target/` and
 `node_modules/` are never scanned for modules. A file under the package root
 but outside the module directory (an `examples/` or `tests/` directory beside
 `src/`) is a loose file that can still import the package by name.

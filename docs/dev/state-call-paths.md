@@ -57,7 +57,8 @@ uses split three ways:
 - **A pure cache** (`nes.ptl`'s `_font_rows`, one build per ink for every
   caller) is a [`memo(key)`](../features/memo.md). Sharing a pure result is
   unobservable, so an absolute key is acceptable there. `petal lint --fix`
-  makes this rewrite when the slot is never written.
+  makes this rewrite when the slot is never written and the initializer is
+  plainly a pure function of the key (no calls).
 - **Sharing on purpose** (`nes.ptl`'s `btn_repeat`, where two widgets asking
   about one button share one repeat phase) and **identity that outlives a
   position** (`garden/examples/panels/plant.ptl`'s lineage keying, where the

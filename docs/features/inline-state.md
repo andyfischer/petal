@@ -157,6 +157,32 @@ end
 print(health("goblin", 10), health("orc", 30), health("goblin", 5))  // 90 70 85
 ```
 
+## Deprecated: `state(key)`
+
+`state(key) name = init` keys its slot by the key's value and ignores the
+call path: every caller that reaches the declaration with an equal key lands
+on one slot. That is a global hidden in a function, so the form is
+deprecated. `petal lint` warns about each one, under the rule
+`state-key-deprecated`. Each use is better written as one of three things:
+
+- **A cache of a pure result:** [`memo(key)`](memo.md), but only when the
+  initializer reads nothing except its key. A memo is shared by every
+  caller with an equal key, and it is recomputed after a reload or a run
+  that does not reach it. So `memo(k) v = k * scale` hands the first
+  caller's `scale` to every caller, and `memo(id) tint = random(0.0, 1.0)`
+  draws a new tint after each reload.
+- **Sharing on purpose:** a top-level `state var` holding a Map, as in
+  [Sharing on purpose](#sharing-on-purpose).
+- **One slot per caller:** plain `state`.
+
+`petal lint --fix` makes the `memo` rewrite only when it can see from the
+syntax that the initializer is a pure function of the key: built from
+literals, the names the key reads, operators, and list, record, field and
+index forms. It does not make the rewrite for an initializer that calls
+anything, including a pure helper such as `measure(text)`. Those sites are
+reported without a fix, and the author chooses. Silence a site you keep with
+`// petal-lint-ignore state-key-deprecated`.
+
 ## State is not allowed in callbacks
 
 `map`, `filter`, `reduce`, `forEach`, `sort_by`, `sort` with a comparator,

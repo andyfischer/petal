@@ -1606,5 +1606,5 @@ fn a_tunable_config_let_reports_its_range() {
     // A plain `let` has none.
     assert_eq!(decl(&r, "R").range, None);
     let json = r.to_json(false).to_string();
-    assert!(json.contains("\"range\":{\"max\":10.0,\"min\":0.0}"), "{json}");
+    assert!(json.contains("\"range\":{\"min\":0.0,\"max\":10.0}"), "{json}");
 }

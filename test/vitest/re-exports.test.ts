@@ -43,7 +43,7 @@ describe("re-exports", () => {
 
   it("naming an export the module does not have is an error", () => {
     const err = runFileError("missing_app.ptl");
-    expect(err).toContain("module 'widgets/menu' has no export 'nope'");
+    expect(err).toContain("module './widgets/menu' has no export 'nope'");
     expect(err).toContain("close, open");
   });
 
@@ -51,7 +51,7 @@ describe("re-exports", () => {
     // The facade itself is fine — nothing in it uses `shared` bare. The error
     // belongs to the file that finally does, and names both sources.
     const err = runFileError("collide_app.ptl");
-    expect(err).toContain("`shared` is ambiguous: 'collide_a' and 'collide_b' export it");
+    expect(err).toContain("`shared` is ambiguous: './collide_a' and './collide_b' export it");
     expect(err).toContain("[line 2, column 7]");
   });
 
@@ -64,6 +64,6 @@ describe("re-exports", () => {
     // widgets/theme.ptl's `private_helper` has no `pub`, so no re-export
     // can pick it up.
     const err = runFileError("private_app.ptl");
-    expect(err).toContain("module 'widgets' has no export 'private_helper'");
+    expect(err).toContain("module './widgets' has no export 'private_helper'");
   });
 });

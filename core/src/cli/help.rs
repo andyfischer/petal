@@ -806,7 +806,8 @@ DESCRIPTION
               the deprecated export modifier becomes pub
        state-key-deprecated
               state(key), which is deprecated (the compile check warns too):
-              never written, it becomes memo(key); otherwise reported
+              never written and built from its key alone (no calls), it
+              becomes memo(key); otherwise reported
        state-as-constant (opt-in)
               a top-level state that nothing assigns and whose initializer
               is static becomes a const. Runs only when --rules-include

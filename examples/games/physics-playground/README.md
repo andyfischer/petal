@@ -285,6 +285,6 @@ under the seed.
   was built from `82aee56` and warns that it is 112 source files behind the
   checkout. That build has no default parameter values and no `hypot`, so the
   modules pass every argument explicitly and carry their own `norm`. Both
-  compile cleanly on the current `petal check --strict` too.
+  compile cleanly on the current `petal lint --strict` too.
 - **Fixed chrome.** The sidebar and rail are laid out for the designed pane.
   Nothing is saved between runs, and there is no sound.

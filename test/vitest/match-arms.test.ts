@@ -213,7 +213,7 @@ end
 `);
     // Formatting is stable, and the formatted program still parses.
     expect(petalCapture(["fmt", "-"], r.stdout).stdout).toBe(r.stdout);
-    expect(petalCapture(["check", "-e", r.stdout]).code).toBe(0);
+    expect(petalCapture(["lint", "--single-file", "-e", r.stdout]).code).toBe(0);
   });
 });
 

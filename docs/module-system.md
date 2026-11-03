@@ -98,13 +98,13 @@ Three refinements:
   module and a facade that re-exports it is not an ambiguity.
 - **Function sets with different parameter counts merge.** If `hud` exports
   `score(points)` and `level` exports `score(points, bonus)`, both are
-  callable bare — with a `check` warning on each call through the merged
+  callable bare — with a compile-check warning on each call through the merged
   name, since which module answers depends on how many arguments were
   written. The same parameter count from two unrelated modules is the
   ambiguity error above, at the call.
 
 A plain import that takes a name away from a builtin or a `std` function is
-legal, and worth knowing about: `check` warns once per name per file, at the
+legal, and worth knowing about: the compile check warns once per name per file, at the
 first bare use.
 
 ```
@@ -261,7 +261,7 @@ Error: module 'ui' has no export 'helper' (exports: button, palette, twice)
 ```
 
 A qualified access, read (`ui.helper`) or called (`ui.helper()`), compiles
-to a line that fails when it runs. `petal check` reports it as an error at
+to a line that fails when it runs. `petal lint` reports it as an error at
 its position, whether or not the line would ever run, and `petal run`
 does not start a program that has one:
 
@@ -446,7 +446,7 @@ this order, and the first place that has a package of that name wins:
    (`creative`, `vec2`, `noise`, …), `ui`, `bloom`, `text_layout` and `glsl`.
    [Bundled packages](packages.md#bundled-packages) lists them. A bundled
    package is Petal source and `native fn` declarations only, so
-   `petal check` resolves `import ui` with no host. *Running* a script that
+   `petal lint` resolves `import ui` with no host. *Running* a script that
    uses a declared native needs a host that registers it; see
    [Host interface packages](#host-interface-packages). A package of the
    same name found at an earlier step — a host registration, a
@@ -709,7 +709,7 @@ Keep the package in a directory with a `petal.toml` beside the Rust
 code. A project whose manifest lists it as a path dependency
 (`game = { path = "../host/packages/game" }`) is then checked by the stock
 CLI and the language server with no flag and no knowledge of the host;
-`petal check -I <that directory>` does the same for a loose script.
+`petal lint -I <that directory>` does the same for a loose script.
 
 | Host | Package | Where it lives |
 | --- | --- | --- |
@@ -744,7 +744,7 @@ reference for each of these:
 - **Loading a program to run links it.** Every declared native the program's
   code refers to must be registered, or the load fails before any line runs,
   naming the module and the missing natives. A check
-  (`env.set_check_only(true)`, `petal check`, the language server) does not
+  (`env.set_check_only(true)`, `petal lint`, the language server) does not
   link. A program loaded from serialized IR is linked too, by the natives its
   calls name.
 - **`Env::verify_interface(packages)` is the drift test**: every native the

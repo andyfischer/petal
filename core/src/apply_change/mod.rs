@@ -83,7 +83,7 @@ pub struct ChangeOptions {
 }
 
 impl ChangeOptions {
-    /// An `Env` set up the way `petal check` and `petal suggest` set theirs
+    /// An `Env` set up the way `petal lint` and `petal suggest` set theirs
     /// up, so the gate agrees with them on what compiles.
     fn host_env(&self) -> HostEnv {
         HostEnv::new(&self.include_dirs)
@@ -216,7 +216,7 @@ pub(crate) fn finish(
 }
 
 /// The gate: compile every changed file, and every `--from` entry, as
-/// `petal check` would, with the changed files' new text standing in for
+/// `petal lint` would, with the changed files' new text standing in for
 /// what is on disk. Each must compile.
 ///
 /// One exception, because the commonest reason to run an operation is a file

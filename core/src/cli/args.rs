@@ -141,8 +141,8 @@ fn unknown_command_message(word: &str) -> Option<String> {
             Some("petal has no REPL; 'petal run -e <code>' runs a snippet.".to_string())
         }
         "tests" | "spec" => Some("Did you mean 'petal test'?".to_string()),
-        "build" | "compile" => {
-            Some("Did you mean 'petal check' (compile without running)?".to_string())
+        "build" | "compile" | "vet" => {
+            Some("Did you mean 'petal lint' (compile and check without running)?".to_string())
         }
         "format" => Some("Did you mean 'petal fmt'?".to_string()),
         _ => help::closest_command(word).map(|c| format!("Did you mean 'petal {c}'?")),
@@ -190,7 +190,15 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "init" | "add" | "remove" | "install" | "update" | "vendor" | "bundle" => {
             super::pm::parse(first, &args[1..])
         }
-        "check" => parse_check_args(&args[1..]),
+        "check" => {
+            eprintln!(
+                "'petal check' is now part of 'petal lint', which compiles and checks each \
+                 program before running its rules. Use 'petal lint --single-file <file>' \
+                 for one file, 'petal lint' for the current directory, or \
+                 'petal lint -e <code>'. See 'petal help lint'."
+            );
+            process::exit(1);
+        }
         "fmt" => parse_fmt_args(&args[1..]),
         "lint" => parse_lint_args(&args[1..]),
         "test" => parse_test_args(&args[1..]),
@@ -705,8 +713,9 @@ fn parse_fix_imports_args(args: &[String]) -> CliArgs {
 }
 
 fn parse_lint_args(args: &[String]) -> CliArgs {
-    let usage = "Usage: petal lint [--fix] [--json] [--rules-include=<r,..>] \
-                 [--rules-exclude=<r,..>] [<path>...]  |  petal lint --rules  |  petal lint -e <code>";
+    let usage = "Usage: petal lint [--fix] [--json] [--strict | --lenient] [--rules-include=<r,..>] \
+                 [--rules-exclude=<r,..>] [<path>...]  |  petal lint --single-file [<options>] <file>  |  \
+                 petal lint --rules  |  petal lint -e <code>";
     let mut opts = super::LintArgs::default();
     let p = parse_path_args(args, usage, |args, i| {
         let arg = args[*i].as_str();
@@ -720,6 +729,20 @@ fn parse_lint_args(args: &[String]) -> CliArgs {
             "--fix" => opts.fix = true,
             "--json" => opts.json = true,
             "--rules" => opts.list_rules = true,
+            "--strict" => opts.strict = true,
+            "--lenient" => opts.lenient = true,
+            "--single-file" => opts.single_file = true,
+            "--ir" => {
+                opts.ir = true;
+                opts.single_file = true;
+            }
+            "--error-format" => {
+                opts.error_format = parse_error_format(take(
+                    args,
+                    i,
+                    "Expected 'full' or 'bare' after --error-format",
+                ))
+            }
             "--verify" | "--verify=ir" => opts.verify = Some(crate::lint::VerifyMode::Ir),
             "--verify=strict" => opts.verify = Some(crate::lint::VerifyMode::Strict),
             other if other.starts_with("--verify=") => {
@@ -741,6 +764,31 @@ fn parse_lint_args(args: &[String]) -> CliArgs {
     });
     opts.paths = p.paths;
     opts.inline = p.inline;
+    // stdin is one source with no directory around it to walk.
+    if opts.paths.iter().any(|p| p == "-") {
+        if opts.paths.len() > 1 {
+            reject_argument("'-' (stdin) can only be linted on its own".to_string(), usage);
+        }
+        opts.single_file = true;
+    }
+    if opts.single_file && opts.inline.is_none() && opts.paths.len() != 1 {
+        reject_argument(
+            format!(
+                "--single-file takes one file (or '-' for stdin), got {}",
+                opts.paths.len()
+            ),
+            usage,
+        );
+    }
+    if opts.single_file
+        && let Some(path) = opts.paths.first()
+        && std::path::Path::new(path).is_dir()
+    {
+        reject_argument(format!("--single-file takes a file, and '{path}' is a directory"), usage);
+    }
+    if opts.ir && opts.fix {
+        reject_argument("--ir checks JSON IR, which --fix cannot rewrite".to_string(), usage);
+    }
     CliArgs {
         command: Command::Lint(opts),
         source: SourceInput::Inline(String::new()),
@@ -824,69 +872,6 @@ fn parse_ir_equal_args(args: &[String]) -> CliArgs {
             named_args,
         },
         source: SourceInput::File(paths[0].clone()),
-        include_dirs: Vec::new(),
-    }
-}
-
-/// Parse args for `check`: `--json`, `--strict` (exit non-zero when warnings
-/// exist), `--lenient` (exit 0 despite checker errors), and `--ir` (read JSON
-/// IR instead of source, as `run --ir` does). Any number of files: the first
-/// is the command's source, the rest go in `more` and are checked the same
-/// way, each as its own program.
-fn parse_check_args(args: &[String]) -> CliArgs {
-    let usage = "Usage: petal check [--json] [--strict | --lenient] [--ir] [--error-format full|bare] <file>...  |  petal check -e <code>";
-    let mut json = false;
-    let mut strict = false;
-    let mut lenient = false;
-    let mut ir = false;
-    let mut error_format = ErrorFormat::Full;
-    let mut first_file = false;
-    let mut more: Vec<String> = Vec::new();
-    let source = parse_source_args(args, usage, |args, i| {
-        match args[*i].as_str() {
-            "--json" => json = true,
-            "--strict" => strict = true,
-            "--lenient" => lenient = true,
-            "--ir" => ir = true,
-            "--error-format" => {
-                error_format = parse_error_format(take(
-                    args,
-                    i,
-                    "Expected 'full' or 'bare' after --error-format",
-                ))
-            }
-            arg if arg.starts_with('-') && arg != "-" => return false,
-            // The first file is the source, which `parse_source_args` takes.
-            _ if !first_file => {
-                first_file = true;
-                return false;
-            }
-            arg => more.push(arg.to_string()),
-        }
-        true
-    });
-    if !more.is_empty() {
-        if matches!(&source, SourceInput::Inline(_)) {
-            reject_argument(
-                format!("Unexpected argument '{}': -e checks one snippet", more[0]),
-                usage,
-            );
-        }
-        if matches!(&source, SourceInput::File(f) if f == "-") || more.iter().any(|f| f == "-") {
-            reject_argument("'-' (stdin) can only be checked on its own".to_string(), usage);
-        }
-    }
-
-    CliArgs {
-        command: Command::Check {
-            json,
-            strict,
-            lenient,
-            ir,
-            error_format,
-            more,
-        },
-        source,
         include_dirs: Vec::new(),
     }
 }

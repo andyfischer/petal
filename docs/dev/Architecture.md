@@ -43,7 +43,7 @@ The main files and directories under `core/src/`, grouped by pipeline stage.
 | `native_decl.rs` | `native fn` interface declarations: what a package says about a host native |
 | `compiler/` | AST → IR term graph: `expr.rs`, `stmt.rs`, `function.rs`, `phi.rs` (phi insertion), `state_ids.rs` (state keys and callsite ids), `enums.rs`, `match_check.rs`, `native.rs`, `capture_lag.rs` |
 | `typecheck/` | The warning-only static type checker |
-| `check.rs` | `Env::check_program`: "will this program run?", answered without running it (`petal check`) |
+| `check.rs` | `Env::check_program`: "will this program run?", answered without running it (`petal lint`) |
 | `diagnostic.rs`, `error.rs` | Diagnostics and error types |
 
 **IR**

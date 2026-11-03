@@ -1,4 +1,4 @@
-// The `phase` field of `petal check --json` says which stage of the front end
+// The `phase` field of `petal lint --json` says which stage of the front end
 // rejected the program. It is a typed channel, not a guess made by sniffing the
 // message text — so a module-resolution failure reports "module" and a Compiler
 // diagnostic reports "compile", however their messages happen to be worded.
@@ -18,7 +18,7 @@ const expectPhase = (code: string, phase: string, message: string) => {
   expect(out.phase).toBe(phase);
 };
 
-describe("check --json reports the phase that rejected the program", () => {
+describe("lint --json reports the phase that rejected the program", () => {
   it('reports "lex" for an unterminated string', () => {
     expectPhase(`let s = "abc\nprint(1)`, "lex", "Unterminated string");
   });
@@ -61,5 +61,5 @@ describe("check --json reports the phase that rejected the program", () => {
 
   // No "lower" case yet: bytecode lowering is not reachable from `check`, so
   // there is no program here that can fail in that phase. A later chunk adds
-  // `check --ir`, which is the only way to reach it.
+  // `lint --ir`, which is the only way to reach it.
 });

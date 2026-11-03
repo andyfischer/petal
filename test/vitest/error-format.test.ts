@@ -47,8 +47,8 @@ describe("--error-format bare", () => {
   });
 
   it("works on check", () => {
-    const full = stderrOf(["check", "-e", PARSE_ERR]);
-    const bare = stderrOf(["check", "--error-format", "bare", "-e", PARSE_ERR]);
+    const full = stderrOf(["lint", "--single-file", "-e", PARSE_ERR]);
+    const bare = stderrOf(["lint", "--single-file", "--error-format", "bare", "-e", PARSE_ERR]);
     expect(full.text).toMatch(/\[line 1, column \d+\]/);
     expect(bare.text.trim()).toBe("Unexpected token: '='");
     expect(bare.status).toBe(1);
@@ -65,8 +65,8 @@ const WARNS = "state s = 0\nfn f()\n  s\nend\nprint(f())\ns = 1";
 
 describe("--error-format bare on type-checker warnings", () => {
   it("keeps the message but drops the position line and the caret block", () => {
-    const full = stderrOf(["check", "-e", WARNS]);
-    const bare = stderrOf(["check", "--error-format", "bare", "-e", WARNS]);
+    const full = stderrOf(["lint", "--single-file", "-e", WARNS]);
+    const bare = stderrOf(["lint", "--single-file", "--error-format", "bare", "-e", WARNS]);
 
     expect(full.status).toBe(0);
     expect(bare.status).toBe(0);
@@ -77,7 +77,7 @@ describe("--error-format bare on type-checker warnings", () => {
     expect(bare.text).not.toContain("-->");
     expect(bare.text).not.toContain("^");
     // The whole point: re-indenting the function body must not move the text.
-    const indented = stderrOf(["check", "--error-format", "bare", "-e", WARNS.replace("\n  s\n", "\n      s\n")]);
+    const indented = stderrOf(["lint", "--single-file", "--error-format", "bare", "-e", WARNS.replace("\n  s\n", "\n      s\n")]);
     expect(indented.text).toBe(bare.text);
   });
 });

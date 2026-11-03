@@ -135,7 +135,7 @@ bend this") follows from the name.
 
 ## Before and after
 
-All "before" snippets run today (checked with `petal check` on the files, and
+All "before" snippets run today (checked with `petal lint` on the files, and
 an extract with `petal run`). "After" is proposed.
 
 **1. The common case: top-level knobs.** `examples/games/asteroids/app.ptl:50-57`.
@@ -224,7 +224,7 @@ lint errors above cover misuse.
 
 **Bug-freedom.** Identity at runtime cannot introduce runtime bugs. The risk
 is a silently ignored hint (`tunable(a + b)`), and the lint makes that
-visible. `petal check` can flag non-literal bounds statically. There is no
+visible. `petal lint` can flag non-literal bounds statically. There is no
 action at a distance beyond DM ranking.
 
 **Performance.** One identity native call per use, `CONST`. At top level it

@@ -1,7 +1,7 @@
-// `petal check` reports a call to, or read of, a name that nothing defines.
+// `petal lint` reports a call to, or read of, a name that nothing defines.
 // The compiler lets both through (each becomes a deferred error that fires if
 // the line runs), so before this a misspelled function passed
-// `check --strict` and died on first run. A name is known because the file
+// `lint --strict` and died on first run. A name is known because the file
 // declares it, an import binds it, or it is a core/std builtin — and for no
 // other reason: a host's names come from the interface package the script
 // imports (`import ui`), bundled in the binary or found with `-I`. There is
@@ -11,13 +11,13 @@ import { describe, it, expect } from "vitest";
 import { petalCapture, checkStrict } from "./helpers";
 
 function checkWith(args: string[], code: string) {
-  const r = petalCapture(["check", "--json", ...args, "-e", code]);
+  const r = petalCapture(["lint", "--single-file", "--json", ...args, "-e", code]);
   return JSON.parse(r.stdout).warnings.map((w: any) => w.message) as string[];
 }
 
 describe("check: unknown globals", () => {
   it("fails plain check (no --strict) on a name nothing defines", () => {
-    const r = petalCapture(["check", "-e", "print(nope)"]);
+    const r = petalCapture(["lint", "--single-file", "-e", "print(nope)"]);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("error: undefined variable `nope`");
     // No host profile is involved, so there is nothing to say about one.
@@ -26,7 +26,7 @@ describe("check: unknown globals", () => {
   });
 
   it("reports it as severity error with ok false in --json", () => {
-    const r = petalCapture(["check", "--json", "-e", "frob(1)"]);
+    const r = petalCapture(["lint", "--single-file", "--json", "-e", "frob(1)"]);
     expect(r.code).toBe(1);
     const out = JSON.parse(r.stdout);
     expect(out.ok).toBe(false);
@@ -34,13 +34,13 @@ describe("check: unknown globals", () => {
   });
 
   it("--lenient reports the error but exits 0", () => {
-    const r = petalCapture(["check", "--lenient", "-e", "print(nope)"]);
+    const r = petalCapture(["lint", "--single-file", "--lenient", "-e", "print(nope)"]);
     expect(r.code).toBe(0);
     expect(r.stderr).toContain("error: undefined variable `nope`");
   });
 
   it("leaves a warnings-only program at exit 0", () => {
-    const r = petalCapture(["check", "-e", 'let x: int = "s"']);
+    const r = petalCapture(["lint", "--single-file", "-e", 'let x: int = "s"']);
     expect(r.code).toBe(0);
     expect(r.stderr).toContain("warning: type mismatch");
   });
@@ -96,7 +96,7 @@ print(g(fn(x) -> x + 1))`);
     ]);
     expect(checkWith(garden, "import garden\nprint(palette())")).toEqual([]);
     // With no -I the package is not found: core knows nothing about Garden.
-    const r = petalCapture(["check", "-e", "import garden\nprint(palette())"]);
+    const r = petalCapture(["lint", "--single-file", "-e", "import garden\nprint(palette())"]);
     expect(r.code).not.toBe(0);
     expect(r.stderr).toContain("garden");
   });
@@ -127,7 +127,7 @@ print(g(fn(x) -> x + 1))`);
 
   it("--host and --native are gone", () => {
     for (const flag of [["--host", "ui"], ["--native", "a,b"]]) {
-      const r = petalCapture(["check", ...flag, "-e", "1"]);
+      const r = petalCapture(["lint", "--single-file", ...flag, "-e", "1"]);
       expect(r.code).not.toBe(0);
     }
   });

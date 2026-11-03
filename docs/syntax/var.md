@@ -407,7 +407,7 @@ scroll = scroll + 3
 draw_row(row_y(2))                // uses the previous run's `scroll`
 ```
 
-That is a **warning**, not an error: the program compiles and `petal check`
+That is a **warning**, not an error: the program compiles and `petal lint`
 exits 0. Pass the value in when you want the current one:
 
 ```petal ignore

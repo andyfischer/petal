@@ -96,11 +96,12 @@ describe("petal lint --verify", () => {
     expect(readFileSync(path, "utf-8")).toContain("x += 1");
   });
 
-  test("--verify without --fix leaves the file alone and still exits 1", () => {
+  test("--verify without --fix leaves the file alone and still reports", () => {
     const before = "let x = 1\nx = x + 1\nprint(x)\n";
     const path = file(before);
     const r = petalCapture(["lint", "--verify", path]);
-    expect(r.code).toBe(1);
+    expect(r.code).toBe(0);
+    expect(petalCapture(["lint", "--strict", "--verify", path]).code).toBe(1);
     expect(r.stdout).toContain("prefer-compound-assign");
     expect(readFileSync(path, "utf-8")).toBe(before);
   });

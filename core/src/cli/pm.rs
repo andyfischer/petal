@@ -412,7 +412,7 @@ DESCRIPTION
        the cache. When vendor/ exists, install keeps the packages already in
        it in step with petal.lock.
 
-       'petal check' and 'petal run' install on demand: the first time a
+       'petal lint' and 'petal run' install on demand: the first time a
        program imports a git dependency that is not installed, this command
        runs for its project. Set PETAL_OFFLINE=1 to forbid fetching.
 

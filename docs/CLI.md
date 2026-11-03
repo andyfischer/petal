@@ -31,8 +31,8 @@ first: an old binary gives no other sign. An embedder reads the same from
 `petal::version` (`describe()`, `GIT_COMMIT`, `GIT_DATE`, `BUILD_DATE`).
 
 A first word that is neither a command nor a file is reported as an unknown
-command, with the nearest real one when there is one (`petal chek x.ptl` →
-`Did you mean 'petal check'?`). A word ending in `.ptl`, or naming a file
+command, with the nearest real one when there is one (`petal lintt x.ptl` →
+`Did you mean 'petal lint'?`). A word ending in `.ptl`, or naming a file
 that exists, is always the `petal <file>` shorthand.
 
 A source-taking command takes exactly one source — one file or one `-e` —
@@ -88,7 +88,6 @@ the whole list.
 | Command | Purpose |
 |---------|---------|
 | `run` | Execute a program |
-| `check` | Compile without executing |
 | `test` | Run the `test` blocks of files and directories |
 | `bench` | Measure what a call of a named function costs |
 | `lsp` | Serve the language server over stdio |
@@ -100,7 +99,7 @@ the whole list.
 | `vendor` | Copy the project's git dependencies into `vendor/` |
 | `bundle` | Emit a program's packages as one JSON document |
 | `fmt` | Rewrite files in the canonical layout |
-| `lint` | Report code with a better spelling; `--fix` applies it |
+| `lint` | Check programs without running them, and report code with a better spelling; `--fix` applies it |
 | `fix-imports` | Migrate older code: rewrite its import lines and add the imports it is missing |
 | `suggest` | Suggest safe refactors for a file |
 | `apply-change` | Carry out a refactor that changes behaviour |
@@ -131,7 +130,7 @@ petal <file.ptl>
 
 Checks the program, then runs it. Output goes to stdout. Exits 1 on error.
 
-`run` starts with what [`check`](#check--compile-without-running) does, and
+`run` starts with the compile check [`lint`](#lint--check-programs-without-running-them) does, and
 prints the same findings to stderr. A program with a check **error** is not
 run: no line of it executes, whether or not the line at fault would have been
 reached, and the command exits 1. Warnings are printed and the program runs.
@@ -146,7 +145,7 @@ $ petal run -e 'print(1 + 2)'
 imports a host's interface — `import ui`, or a package that requires it such
 as `bloom` — is refused when it loads, before any line runs, with a message
 naming what this host lacks; run it with that host's runner (petal-sdl,
-`petal-ui-run`, Garden). [`check`](#check--compile-without-running) checks
+`petal-ui-run`, Garden). [`lint`](#lint--check-programs-without-running-them) checks
 such a script without running it.
 
 The nearest `petal.toml` above the file is the script's project: its
@@ -504,45 +503,106 @@ unoptimized figure is zero. `replayed_calls` counts calls the memo replayed
 from a record instead of running; they are in no other figure. Errors are the
 usual JSON error object, with `"phase": "bench"` for a bad `--fn`.
 
-### `check` — Compile without running
+### `lint` — Check programs without running them
 
 ```
-petal check [--json] [--strict | --lenient] [--ir] [--error-format full|bare] <file.ptl>...
-petal check [--json] [--strict | --lenient] [--error-format full|bare] -e '<code>'
+petal lint [<options>] [<path>...]          # walk the paths (default .)
+petal lint --single-file [<options>] <file> # one file, as its own program
+petal lint [<options>] -e '<code>'          # one snippet
+petal lint --ir [--json] <file.json>        # JSON IR: the compile check only
+petal lint --rules                          # list the rules
+
+<options>: [--fix [--verify[=ir|strict]]] [--json] [--strict | --lenient]
+           [--rules-include=<r,...>] [--rules-exclude=<r,...>]
+           [--error-format full|bare] [-I <dir>]...
 ```
 
-Lexes, parses, compiles and lowers the program to bytecode, then stops. Exits 1
-when any of that fails, or when the checker finds an **error**: a line that
-fails whenever it runs (see [Errors and warnings](#errors-and-warnings)).
-Exits 0 otherwise. This is the cheap gate for editors and CI.
+The one command that asks whether code is right without running it. Every
+`.ptl` file under the given paths (dot-directories, `node_modules` and `target`
+skipped) is linted in two stages:
 
-Given several files (`petal check a.ptl b.ptl`, or a shell glob), `check`
-checks each as its own program with the same flags, prints each file's
-findings under a `==> <file> <==` header (a file with nothing to say prints
-nothing), and exits non-zero when any file fails, ending with
-`check failed for 1 of 3 files: b.ptl`. With `--json` it prints one object,
-`{"ok": <bool>, "files": [...]}`, each entry that file's `--json` object plus
-its `"file"`. `-` (stdin) and `-e` check one source only.
+1. **The compile check.** The program is lexed, parsed, compiled, type-checked
+   and lowered to bytecode, exactly as [`run`](#run--execute-a-program) does
+   before it starts, and stops there. An **error** is a line that fails
+   whenever it runs; anything else the compile finds is a **warning** (see
+   [Errors and warnings](#errors-and-warnings)). They print to stderr with a
+   source caret.
+2. **The rules.** Named rules over the file's text, each a spelling with a
+   better one, most with a fix (see [Rules](#rules)). One line per finding on
+   stdout: `file:line:column: rule: message`.
+
+**Exit status.** 1 when any program does not compile or lower, has a check
+error, or a file cannot be read or linted; 0 otherwise. Warnings and rule
+findings are reported and pass, so plain `petal lint` is the cheap gate for
+editors and CI; `--strict` fails on them too. `--fix --verify` that cannot
+prove a rewrite exits 3.
+
+```
+$ petal lint
+==> ./bad.ptl <==
+error: undefined variable `nope`
+ --> [line 2, column 7]
+  |
+2 | print(nope + y)
+  |       ^^^^
+1 error found by check
+./bad.ptl:1:1: prefer-let: `var y` is never shared with a nested function; declare it with `let`
+==> ./main.ptl <==
+warning: type mismatch: `x` declared `int` but assigned `string`
+ --> [level.ptl line 2, column 16]
+  |
+2 |   let x: int = "s"
+  |                ^^^
+found 1 problem(s) in 1 file(s); run `petal lint --fix` to fix them
+check failed for 1 of 2 program(s): ./bad.ptl
+```
+
+**Modules.** A walked file that another walked file imports is a module: it is
+checked as part of the programs that import it — whose report includes what
+is found in it, as `main.ptl`'s report above includes `level.ptl`'s warning —
+and not again on its own. The rules still run over it. A walk heads each
+file's compile-check output `==> <file> <==` (a file with nothing to say
+prints nothing) and ends with a line naming the programs that failed.
+
+**One file.** `--single-file <file>` lints exactly that file as its own
+program, whether or not something imports it: no walk, no headers, and the
+`--json` shape of a single file. `-` (stdin) and `-e` are linted the same way.
+A passing single-file lint also prints which host interfaces the program
+needs (below).
 
 Options:
 
-- `--json` — emit errors and warnings as JSON. When the program compiles:
-  `{"ok": <bool>, "warnings": [...]}`, each entry
-  `{message, severity, line, column, file}` — `severity` is `"warning"` or
-  `"error"`, `ok` is `false` when any entry is an error, and `file` is `null`
-  for the entry file. When it does not compile:
-  `{message, line, column, phase, errors, ...}` — see
-  [Error phases](#error-phases).
-- `--strict` — exit 1 when there are warnings too. Plain `check` exits 0 for a
-  program that only has warnings.
-- `--lenient` — report checker errors but exit 0 unless the program fails to
+- `--json` — print one object. For one file: `{"ok", "warnings", "findings"}`,
+  plus `requires` when the packages state any. Each `warnings` entry is a
+  compile-check finding, `{message, severity, line, column, file}`, where
+  `severity` is `"warning"` or `"error"` and `file` is `null` for the file
+  itself; each `findings` entry is a rule's, `{file, line, column, rule,
+  message, fixable, fixed}`. `ok` is `false` when the program has an error.
+  A program that does not compile or lower is the error object
+  `{error, phase, message, line, column, errors, ...}` (see
+  [Error phases](#error-phases)) with `ok: false` and `findings` added. Over a
+  walk: `{"ok", "files": [...]}`, each entry one file's object plus its
+  `"file"`; a module's entry has `"module": true` and no `warnings`.
+- `--strict` — exit 1 on warnings and rule findings too. After `--fix`, a
+  finding that was fixed no longer counts.
+- `--lenient` — report check errors but exit 0 unless a program fails to
   compile or lower. For a sweep that only asks "does this compile?" over
   scripts written for several hosts.
+- `--single-file` — lint one file as its own program (above).
 - `--ir` — check `<file>` as JSON IR instead of source; `-` reads stdin, as
   with `run --ir`. The IR is validated, then lowered, so a third-party IR
   emitter can be checked without running its output:
-  `emit-my-ir | petal check --json --ir -`. A load failure is reported with
-  `"phase": "parse"`; IR that loads but cannot be lowered gets `"phase": "lower"`.
+  `emit-my-ir | petal lint --json --ir -`. A load failure is reported with
+  `"phase": "parse"`; IR that loads but cannot be lowered gets
+  `"phase": "lower"`. Only the compile check runs: there is no source for the
+  rules. Implies `--single-file`.
+- `--fix` — apply the rules' fixes in place (with `-e`, print the fixed
+  code). See [Rules](#rules).
+- `--verify[=ir|strict]` — prove a rewrite before writing it; see
+  [`--verify`](#--verify--prove-the-rewrite).
+- `--rules-include=<rule>,...` / `--rules-exclude=<rule>,...` — run only these
+  rules, or all but these. An empty list (`--rules-include=`) runs none: the
+  compile check alone.
 - `--error-format full|bare` — as on [`run`](#run--execute-a-program).
 
 #### Which names exist
@@ -557,7 +617,7 @@ whose `native fn` declarations ([usage/ffi.md](usage/ffi.md#native-interfaces-na
 make each native known, with its parameters, whether or not this process
 registers it:
 
-| The script is for | It writes | `check` finds the package |
+| The script is for | It writes | `lint` finds the package |
 | --- | --- | --- |
 | any petal-ui host | `import ui` | bundled in the binary |
 | a host with only petal-ui's input half | `import ui/input` | bundled |
@@ -567,10 +627,10 @@ registers it:
 | petal-desktop-sdl's extras | `import sdl` | a path dependency, or `-I integrations/petal-desktop-sdl/packages` |
 | your own host | `import <its package>` | `<name> = { path = "…" }` under `[dependencies]`, or `-I <the directory holding it>` |
 
-`check` finds the nearest `petal.toml` by walking up from the script, as every
+`lint` finds the nearest `petal.toml` by walking up from the script, as every
 command that compiles does, so inside a project no flag is needed. The
 example trees in this repository carry such a manifest (`examples/petal.toml`
-and others), which is why `petal check examples/games/flappy/app.ptl` resolves
+and others), which is why `petal lint examples/games/flappy/app.ptl` resolves
 `import garden` by itself.
 
 A script written for a host that puts names in scope without an import (it
@@ -585,16 +645,16 @@ and a prelude file that does not compile is named in the error
 (`lib/theme.ptl: … [line 4, column 3]`). A prelude file that cannot be read
 is a `warning:` line. `-e`, stdin and `--ir` read no `[host]`.
 
-When the packages a script loads state `[requires]`, a passing `check` ends
+When the packages a script loads state `[requires]`, a passing single-file `lint` ends
 with one line naming them — `requires host interfaces: ui >=0.1 (bloom)` —
 and `--json` carries a `requires` array of `{interface, version, package}`.
-`check` never fails on them; a run in a host that does not provide one does
+`lint` never fails on them; a run in a host that does not provide one does
 ([packages.md](packages.md#requires)).
 
-`check` and `run` agree on every script: `run` begins with the same check and
+`lint` and `run` agree on every script: `run` begins with the same check and
 does not start a program that fails it (`run` reads no `[host]`: a host
 script runs in its host). The one thing `run` adds is linking.
-`check` never links, so a script that imports `ui` checks clean; `petal run`
+`lint` never links, so a script that imports `ui` checks clean; `petal run`
 of it stops after the check, before any line runs, because `run` registers the
 core builtins only:
 
@@ -617,7 +677,7 @@ findings never stop the program from compiling or running; they print to
 stderr with a source caret, or appear in the `warnings` array with `--json`.
 Each has a severity.
 
-An **error** is a line that fails whenever it runs, so `check` exits 1 on it:
+An **error** is a line that fails whenever it runs, so `lint` exits 1 on it:
 
 - a call to, or read of, a name that nothing defines
   (`unknown function \`frob\``, `undefined variable \`nope\``) — it would
@@ -655,12 +715,12 @@ A host native is held to the parameter names and counts its interface
 package declares, like a builtin.
 
 `petal run` refuses every one of these before the first line runs, whether or
-not the line would have been reached: it prints what `check` prints, then
+not the line would have been reached: it prints what `lint`'s compile check prints, then
 `N errors found by check; the program was not run`, and exits 1. With `--json`
 the error object has `"phase": "check"` and one `errors` entry per finding.
 
 ```
-$ petal check -e 'print(nope)'
+$ petal lint -e 'print(nope)'
 error: undefined variable `nope`
  --> [line 1, column 7]
   |
@@ -672,14 +732,14 @@ $ echo $?
 ```
 
 An unknown-name error on a host's name means the script does not import the
-host's interface package (or `check` was not given the `-I` that finds it).
+host's interface package (or `lint` was not given the `-I` that finds it).
 `run` reports these the same way and does not start the program.
 
 Everything else is a **warning**, and does not change the exit code unless
 `--strict` is set:
 
 ```
-$ petal check -e 'let x: int = "s"'
+$ petal lint -e 'let x: int = "s"'
 warning: type mismatch: `x` declared `int` but assigned `string`
  --> [line 1, column 14]
   |
@@ -708,7 +768,7 @@ the program:
 | `parse` | The tokens are not a valid program — a missing `=`, an unclosed construct, an unexpected token. |
 | `module` | An `import` could not be resolved, or the imports form a cycle. |
 | `compile` | The program parses but is not well-formed — writing a `var` with `=`, assigning to a binding from an outer function, importing a name a module does not export. |
-| `check` | The program compiled, and the check found an error: a line that fails whenever it runs (`run` only; `check` reports these in `warnings` with `"ok": false`). |
+| `check` | The program compiled, and the check found an error: a line that fails whenever it runs (`run` only; `lint` reports these in `warnings` with `"ok": false`). |
 | `lower` | The term graph could not be lowered to bytecode. |
 | `link` | The program needs a host interface or a native this host does not provide (`run` only). |
 | `runtime` | The program compiled and ran, and failed during execution (`run` only). |
@@ -719,9 +779,10 @@ diagnostic. Front-end failures also carry `errors`, one entry per diagnostic;
 the compiler reports every error it finds, not only the last:
 
 ```
-$ petal check --json -e 'var x = 1
+$ petal lint --json -e 'var x = 1
 x = 2'
 {
+  "ok": false,
   "error": true,
   "phase": "compile",
   "message": "`x` is a `var`; use `set x = ...` to write it",
@@ -734,12 +795,135 @@ x = 2'
       "column": 1,
       "file": null
     }
-  ]
+  ],
+  "findings": []
 }
 ```
 
 Each entry's `message` has no position suffix; `file` is the module's display
 name, or `null` for the entry file.
+
+#### Rules
+
+```
+$ petal lint app.ptl
+app.ptl:12:3: prefer-let: `var n` is never shared with a nested function; declare it with `let`
+app.ptl:14:5: prefer-compound-assign: `n = n + …` can be written `n += …`
+found 2 problem(s) in 1 file(s); run `petal lint --fix` to fix them
+```
+
+Shaped like `deno lint`: each finding names its rule, and most rules have a
+fix. A rule that cannot show its rewrite to be the same program reports the
+site and leaves it (the "Fix" column says when), and some rules only report.
+`--fix` applies what has a fix and prints what is left; `--json` gives each
+finding a `fixable` field. `petal lint --rules` lists them.
+
+| Rule | Finds | Fix |
+|---|---|---|
+| `prefer-let` | a `var` whose every read and write stays in its function | `var` → `let`, `set x = …` → `x = …`, `get x` → `x` |
+| `no-redundant-cast` | `int(n)` where `n` is provably an `int` (likewise `float`, `str`); and `float(n)` on a proven `int` or `num` that is an operand of `+ - * / %` whose other operand is a proven `float`, since that arithmetic converts `n` the same way (`float(i) * 0.5`) | delete the call; parentheses follow the slot (`2 * int(a + 1)` → `2 * (a + 1)`). Of `float(a) / float(b)` only the left cast goes, and a cast beside an `int` operand always stays: `/` on two ints truncates |
+| `prefer-match` | an `if`/`elsif` chain testing one subject against string, bool or nil literals | rewrite as a `match` |
+| `prefer-repeat` | a `for` over `range(n)` / `range(0, n)` whose whole body appends one string literal (or `string` parameter) to an accumulator that starts as a string | `x ++= repeat(s, n)` — the loop copies `x` on every pass |
+| `prefer-field-set` | `set X = {...get X, f: v}` (or `X = {...X, f: v}`): the whole record is copied to change a field | `set X.f = v`, one write per field. Applied where the file shows `X` to hold a plain record (declared once, with a record literal, and only ever assigned record literals): spreading `nil` gives a record where a field write to `nil` fails. Several fields are split only when no value calls anything or reads `X`. Otherwise reported |
+| `prefer-compound-assign` | `x = x op e` for an operator with a compound form; also a field or element written twice, `set xs[i] = get xs[i] + d`, `r.n = r.n * 2`, where the place is names, literals and operators only | `x op= e`, `set xs[i] += d` |
+| `neg-zero-sub` | `0 - x` and `0.0 - x` | `-x` where the zero is `0` and `x` is a proven `int`. Otherwise reported: `0.0 - 0.0` is `0.0` and `-0.0` is not (`atan2` and a division tell them apart), and `0.0 - n` makes a float of an int |
+| `prefer-any` | `len(filter(xs, p)) > 0` (also `!= 0`, `>= 1`; and `== 0`, `< 1`, `<= 0` for `!any`) | `any(xs, p)`, which stops at the first match. Applied where `p` is a lambda written in place whose body is one expression with no call but to pure builtins; otherwise reported, since `any` does not call `p` on the rest. (A pure body can still raise on a later element, such as `x.v` of an int: the fixed program then finishes where the old one raised, never the reverse.) |
+| `dead-alias` | `let a = v` in a function, where `v` is a parameter or a local of that function that is not written from there on (nor in a loop around the alias, nor by any nested function) and `a` is only read | delete the `let` and read `v` (`get v` for a `var` read from a nested function). Reported only, when the `let` shares its line |
+| `shadows-builtin` | a `fn` with the name of a core builtin, a standard-prelude function, or a function of a bundled package the file imports whole, taking an argument count the existing one takes. Every call in the file reaches the new one | none (callers may be in other files) |
+| `reimplements-builtin` | a `fn` whose whole body calls one builtin with its own parameters in order, or is `if r == nil then d else field(r, k, d) end` (`field` already answers the fallback for `nil`) | none |
+| `dm-hint-not-literal` | `tunable(e)` where `e` is computed (`tunable(a + b)`): the hint marks a literal or a name bound to one, so this marks nothing. On a string, bool, record or list the message says so and points to `config let` ([Builtins](Builtins.md#direct-manipulation-hints)) | none: wrap the literal itself (`tunable(a) + b`), or declare a non-number setting with `config let` |
+| `dm-hint-bounds` | a `tunable` bound (`min`, `max`, `step`) that is not a number literal, or a `min` above the `max` | none |
+| `dm-hint-state-init` | `state x = tunable(…)`: a running program keeps its state across a reload, so a drag cannot move a state's initial value | none: declare the start value with `config let` and initialise the state from it |
+| `config-not-data` | `config let X = e` where `e` needs evaluating (`level.SPAWN`, `2 * W`): hosts read a config value without running the program ([config-let.md](syntax/config-let.md#what-a-config-binding-can-hold)), so they see none | none: write the value as data, or make it a plain `let` |
+| `int-division` (opt-in) | `a / b` on two proven ints, whose truncated quotient is then an operand of float arithmetic or the argument of `float(...)` | none: either reading can be meant |
+| `prefer-pub` | the deprecated `export` modifier, on any declaration or `import` | `export` → `pub` |
+| `state-key-deprecated` | every `state(key)` declaration, which is deprecated (the compiler warns about it too, under the same rule id) | `state(k)` → `memo(k)` where the slot is never written and the initializer is plainly a pure function of the key (no calls, no `get`, no name the key does not read): not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Otherwise reported |
+| `state-as-constant` (opt-in) | a plain top-level `state` (no key, not `state var`; `pub state` included, since importers cannot write an export) that nothing in the program assigns and whose initializer is static | `state` → `const` |
+
+Layout is not a finding: that is `fmt`. A file `--fix` changes is formatted
+afterwards, because a rewritten chain moves code between lines. Every fix is
+compile-gated: if the original compiled, the fixed file must too, or nothing is
+written.
+
+`int-division` is **opt-in** because the shape it finds is usually meant:
+over the fifteen Cheesecake games all seven of its findings were a row or
+column index scaled by a float (`float(k / 2) * 3.0`). What authors cast
+defensively against is a literal fraction, and that is a compile-check
+warning with no rule to enable: `` `1 / 2` is 0: `/` on two ints drops the
+remainder ``.
+
+`state-as-constant` is **opt-in**: it runs only when `--rules-include` names
+it (`petal lint --rules-include=state-as-constant`, alone or with other
+rules), and `petal lint --rules` marks it so. Every other rule's fix is
+another spelling of the same program; this one is a judgement. A
+never-assigned `state` is a constant as far as the program can tell, but a
+host can write a `state` by name, saved state can be restored into it, its
+value survives a hot reload where a `const` is rebuilt, and its initializer
+runs once in every host where a `const` is built once only if the host's run
+keeps static values. Where any of that matters, leave the `state` and put
+`// petal-lint-ignore state-as-constant` on its line.
+
+`state-key-deprecated` reports every keyed `state`: its slot is one per key
+value, whichever caller reaches it, so it is a global hidden in a function
+(see [Deprecated: `state(key)`](features/inline-state.md#deprecated-statekey)). A slot
+nothing writes only ever holds what its initializer computed for its key,
+which is a [`memo`](features/memo.md) if the initializer is a pure function of
+its key. `--fix` respells it so only when both hold. It finds "nothing
+writes" by compiling the rewrite. It finds "pure" from the initializer's
+syntax: literals, names the key reads, operators, and list, record, field,
+index and interpolation forms. Any call, `get`, lambda, branch or other name
+keeps the site as a report without a fix. A memo is shared by every caller
+with an equal key and recomputed after a reload, so `state(k) v = k * scale`
+or `state(id) tint = random(0.0, 1.0)` would change behaviour as a memo.
+Keep such a slot (in a top-level `state var` Map, or as plain `state`) and
+silence the site with `// petal-lint-ignore state-key-deprecated`.
+The compile warning for the same site (the compile check of `petal lint`,
+`petal run`, the language server) honours that comment as well.
+
+`state-as-constant` also asks the compiler rather than the text: it
+compiles the file, classifies it as [`show-static`](#show-static--static-declarations)
+does, and compiles its own rewrite, keeping only the declarations that are
+accepted as `const`. A `state` built from a host's natives is therefore left
+alone (lint has no host). Converting one `state` can make the next one's
+initializer static (`state SORTED = sort(RAW)`), and the rule repeats until
+nothing changes, so one `--fix` is enough.
+
+Silence a rule with `// petal-lint-ignore <rule> [<rule>…]` on the line before
+the finding or at the end of its line (no names silences every rule), or for a
+whole file with `// petal-lint-ignore-file [<rule>…]`. Text after `--` is a
+reason. A silenced finding's fix is not applied.
+
+#### `--verify` — prove the rewrite
+
+`--verify` compiles the original and the rewritten text and compares their IR
+(the same comparison as [`ir-equal`](#ir-equal--are-two-files-the-same-program)).
+Nothing is written unless the comparison is acceptable; a rewrite that cannot
+be accepted exits **3**, distinct from the plain "problems found" exit 1. It
+works with and without `--fix`.
+
+| Mode | Demands | When a semantic pass fired |
+|---|---|---|
+| `--verify` (= `--verify=ir`, the default) | Formatting and the IR-invisible rules must not change the IR | Allowed: reported as an expected IR change, file still written |
+| `--verify=strict` | The whole rewrite must be IR-equal | Refused: exit 3, file untouched |
+
+Formatting, `prefer-compound-assign` and `prefer-pub` are meant to leave the IR unchanged.
+The cast, `match`, `var`, `repeat`, `prefer-field-set`, `neg-zero-sub`, `prefer-any`, `dead-alias`,
+`state-as-constant` and `state-key-deprecated` rules change it by design. On such a file the default mode proves
+the part it can, prints the first difference, and says that a run diff is what
+would prove the rest:
+
+```
+$ petal lint --fix --verify app.ptl
+verify: app.ptl: rewrite changed IR (1 prefer-match); formatting was proven IR-equal.
+        First difference:
+function `label` body: statement count differs (at 2:6)
+  original: 4
+  rewritten: 2
+verify: run-diff verification needed for the semantic rules
+```
+
+If formatting ever moves the IR, that is a bug: `--verify` reports it as one
+and refuses to write, whatever the mode.
 
 ### `test` — Run test blocks
 
@@ -855,7 +1039,7 @@ else:
 | `import m: a` … `m.b` | adds `import m` | the file reaches through `m.`, which a selective import no longer binds |
 | *(nothing)* | adds `import kit` | a bare name nothing in the file provides is exported by exactly one available package |
 | *(nothing)* | adds `import creative`, `import vec2`, `import noise`, … | the same, for a builtin that now lives in a bundled package (`lerp`, `vec2`, `noise`, `hsv`, `json_parse`, `symbol`, …; [the list](Builtins.md#which-builtins-need-an-import)) |
-| *(nothing)* | adds `import vec2` for `v.normalize()` | a moved builtin called with method syntax (a `check` error on a plain value, otherwise a failure when the line runs): added when nothing in the program defines a function, class method or record field of that name |
+| *(nothing)* | adds `import vec2` for `v.normalize()` | a moved builtin called with method syntax (a compile-check error on a plain value, otherwise a failure when the line runs): added when nothing in the program defines a function, class method or record field of that name |
 | *(nothing)* | adds `import ui` | the same, for a host's names: a script that used petal-ui names with no import gets its `import ui` (and, with the host's package a dependency of the project or on `-I`: `import garden`, `import sdl`, …). When several packages export the name and all but one are built on that one (bloom's `button` over ui's), the one underneath is imported |
 
 "Available" is the packages bundled in the binary, the `[dependencies]` of
@@ -894,141 +1078,6 @@ A file with the comment `// petal-fix-imports-ignore` on a line of its own
 gets no import *added* (its import lines are still rewritten). It is for a
 file whose unknown names are not meant to come from a package — a shader
 written as Petal lambdas, whose `step` is GLSL's and not bloom's.
-
-### `lint` — Rules with fixes
-
-```
-petal lint [<path>...]                       # report findings; exit 1 if any
-petal lint --fix [<path>...]                 # apply every fix in place
-petal lint --json [<path>...]                # findings as JSON
-petal lint --rules                           # list the rules
-petal lint --rules-include=prefer-let ...    # run only these (comma-separated)
-petal lint --rules-exclude=prefer-match ...  # run all but these
-petal lint -e '<code>'                       # report; with --fix, print the fixed code
-
-petal lint --fix --verify <path>             # prove the rewrite before writing it
-petal lint --fix --verify=strict <path>      # demand full IR equality
-```
-
-Shaped like `deno lint`: each finding names its rule, and most rules have a
-fix. A rule that cannot show its rewrite to be the same program reports the
-site and leaves it (the "Fix" column says when), and three rules only report.
-`--fix` applies what has a fix, prints what is left, and exits 1 while
-anything is; `--json` gives each finding a `fixable` field.
-
-```
-$ petal lint app.ptl
-app.ptl:12:3: prefer-let: `var n` is never shared with a nested function; declare it with `let`
-app.ptl:14:5: prefer-compound-assign: `n = n + …` can be written `n += …`
-found 2 problem(s) in 1 file(s); run `petal lint --fix` to fix them
-```
-
-| Rule | Finds | Fix |
-|---|---|---|
-| `prefer-let` | a `var` whose every read and write stays in its function | `var` → `let`, `set x = …` → `x = …`, `get x` → `x` |
-| `no-redundant-cast` | `int(n)` where `n` is provably an `int` (likewise `float`, `str`); and `float(n)` on a proven `int` or `num` that is an operand of `+ - * / %` whose other operand is a proven `float`, since that arithmetic converts `n` the same way (`float(i) * 0.5`) | delete the call; parentheses follow the slot (`2 * int(a + 1)` → `2 * (a + 1)`). Of `float(a) / float(b)` only the left cast goes, and a cast beside an `int` operand always stays: `/` on two ints truncates |
-| `prefer-match` | an `if`/`elsif` chain testing one subject against string, bool or nil literals | rewrite as a `match` |
-| `prefer-repeat` | a `for` over `range(n)` / `range(0, n)` whose whole body appends one string literal (or `string` parameter) to an accumulator that starts as a string | `x ++= repeat(s, n)` — the loop copies `x` on every pass |
-| `prefer-field-set` | `set X = {...get X, f: v}` (or `X = {...X, f: v}`): the whole record is copied to change a field | `set X.f = v`, one write per field. Applied where the file shows `X` to hold a plain record (declared once, with a record literal, and only ever assigned record literals): spreading `nil` gives a record where a field write to `nil` fails. Several fields are split only when no value calls anything or reads `X`. Otherwise reported |
-| `prefer-compound-assign` | `x = x op e` for an operator with a compound form; also a field or element written twice, `set xs[i] = get xs[i] + d`, `r.n = r.n * 2`, where the place is names, literals and operators only | `x op= e`, `set xs[i] += d` |
-| `neg-zero-sub` | `0 - x` and `0.0 - x` | `-x` where the zero is `0` and `x` is a proven `int`. Otherwise reported: `0.0 - 0.0` is `0.0` and `-0.0` is not (`atan2` and a division tell them apart), and `0.0 - n` makes a float of an int |
-| `prefer-any` | `len(filter(xs, p)) > 0` (also `!= 0`, `>= 1`; and `== 0`, `< 1`, `<= 0` for `!any`) | `any(xs, p)`, which stops at the first match. Applied where `p` is a lambda written in place whose body is one expression with no call but to pure builtins; otherwise reported, since `any` does not call `p` on the rest. (A pure body can still raise on a later element, such as `x.v` of an int: the fixed program then finishes where the old one raised, never the reverse.) |
-| `dead-alias` | `let a = v` in a function, where `v` is a parameter or a local of that function that is not written from there on (nor in a loop around the alias, nor by any nested function) and `a` is only read | delete the `let` and read `v` (`get v` for a `var` read from a nested function). Reported only, when the `let` shares its line |
-| `shadows-builtin` | a `fn` with the name of a core builtin, a standard-prelude function, or a function of a bundled package the file imports whole, taking an argument count the existing one takes. Every call in the file reaches the new one | none (callers may be in other files) |
-| `reimplements-builtin` | a `fn` whose whole body calls one builtin with its own parameters in order, or is `if r == nil then d else field(r, k, d) end` (`field` already answers the fallback for `nil`) | none |
-| `dm-hint-not-literal` | `tunable(e)` where `e` is computed (`tunable(a + b)`): the hint marks a literal or a name bound to one, so this marks nothing. On a string, bool, record or list the message says so and points to `config let` ([Builtins](Builtins.md#direct-manipulation-hints)) | none: wrap the literal itself (`tunable(a) + b`), or declare a non-number setting with `config let` |
-| `dm-hint-bounds` | a `tunable` bound (`min`, `max`, `step`) that is not a number literal, or a `min` above the `max` | none |
-| `dm-hint-state-init` | `state x = tunable(…)`: a running program keeps its state across a reload, so a drag cannot move a state's initial value | none: declare the start value with `config let` and initialise the state from it |
-| `config-not-data` | `config let X = e` where `e` needs evaluating (`level.SPAWN`, `2 * W`): hosts read a config value without running the program ([config-let.md](syntax/config-let.md#what-a-config-binding-can-hold)), so they see none | none: write the value as data, or make it a plain `let` |
-| `int-division` (opt-in) | `a / b` on two proven ints, whose truncated quotient is then an operand of float arithmetic or the argument of `float(...)` | none: either reading can be meant |
-| `prefer-pub` | the deprecated `export` modifier, on any declaration or `import` | `export` → `pub` |
-| `state-key-deprecated` | every `state(key)` declaration, which is deprecated (the compiler warns about it too, under the same rule id) | `state(k)` → `memo(k)` where the slot is never written and the initializer is plainly a pure function of the key (no calls, no `get`, no name the key does not read): not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Otherwise reported |
-| `state-as-constant` (opt-in) | a plain top-level `state` (no key, not `state var`; `pub state` included, since importers cannot write an export) that nothing in the program assigns and whose initializer is static | `state` → `const` |
-
-Layout is not a finding: that is `fmt`. A file `--fix` changes is formatted
-afterwards, because a rewritten chain moves code between lines. Every fix is
-compile-gated: if the original compiled, the fixed file must too, or nothing is
-written.
-
-`int-division` is **opt-in** because the shape it finds is usually meant:
-over the fifteen Cheesecake games all seven of its findings were a row or
-column index scaled by a float (`float(k / 2) * 3.0`). What authors cast
-defensively against is a literal fraction, and that is a `petal check`
-warning with no rule to enable: `` `1 / 2` is 0: `/` on two ints drops the
-remainder ``.
-
-`state-as-constant` is **opt-in**: it runs only when `--rules-include` names
-it (`petal lint --rules-include=state-as-constant`, alone or with other
-rules), and `petal lint --rules` marks it so. Every other rule's fix is
-another spelling of the same program; this one is a judgement. A
-never-assigned `state` is a constant as far as the program can tell, but a
-host can write a `state` by name, saved state can be restored into it, its
-value survives a hot reload where a `const` is rebuilt, and its initializer
-runs once in every host where a `const` is built once only if the host's run
-keeps static values. Where any of that matters, leave the `state` and put
-`// petal-lint-ignore state-as-constant` on its line.
-
-`state-key-deprecated` reports every keyed `state`: its slot is one per key
-value, whichever caller reaches it, so it is a global hidden in a function
-(see [Deprecated: `state(key)`](features/inline-state.md#deprecated-statekey)). A slot
-nothing writes only ever holds what its initializer computed for its key,
-which is a [`memo`](features/memo.md) if the initializer is a pure function of
-its key. `--fix` respells it so only when both hold. It finds "nothing
-writes" by compiling the rewrite. It finds "pure" from the initializer's
-syntax: literals, names the key reads, operators, and list, record, field,
-index and interpolation forms. Any call, `get`, lambda, branch or other name
-keeps the site as a report without a fix. A memo is shared by every caller
-with an equal key and recomputed after a reload, so `state(k) v = k * scale`
-or `state(id) tint = random(0.0, 1.0)` would change behaviour as a memo.
-Keep such a slot (in a top-level `state var` Map, or as plain `state`) and
-silence the site with `// petal-lint-ignore state-key-deprecated`.
-The compile warning for the same site (`petal check`, `petal run`, the
-language server) honours that comment as well.
-
-`state-as-constant` also asks the compiler rather than the text: it
-compiles the file, classifies it as [`show-static`](#show-static--static-declarations)
-does, and compiles its own rewrite, keeping only the declarations that are
-accepted as `const`. A `state` built from a host's natives is therefore left
-alone (lint has no host). Converting one `state` can make the next one's
-initializer static (`state SORTED = sort(RAW)`), and the rule repeats until
-nothing changes, so one `--fix` is enough.
-
-Silence a rule with `// petal-lint-ignore <rule> [<rule>…]` on the line before
-the finding or at the end of its line (no names silences every rule), or for a
-whole file with `// petal-lint-ignore-file [<rule>…]`. Text after `--` is a
-reason. A silenced finding's fix is not applied.
-
-#### `--verify` — prove the rewrite
-
-`--verify` compiles the original and the rewritten text and compares their IR
-(the same comparison as [`ir-equal`](#ir-equal--are-two-files-the-same-program)).
-Nothing is written unless the comparison is acceptable; a rewrite that cannot
-be accepted exits **3**, distinct from the plain "problems found" exit 1. It
-works with and without `--fix`.
-
-| Mode | Demands | When a semantic pass fired |
-|---|---|---|
-| `--verify` (= `--verify=ir`, the default) | Formatting and the IR-invisible rules must not change the IR | Allowed: reported as an expected IR change, file still written |
-| `--verify=strict` | The whole rewrite must be IR-equal | Refused: exit 3, file untouched |
-
-Formatting, `prefer-compound-assign` and `prefer-pub` are meant to leave the IR unchanged.
-The cast, `match`, `var`, `repeat`, `prefer-field-set`, `neg-zero-sub`, `prefer-any`, `dead-alias`,
-`state-as-constant` and `state-key-deprecated` rules change it by design. On such a file the default mode proves
-the part it can, prints the first difference, and says that a run diff is what
-would prove the rest:
-
-```
-$ petal lint --fix --verify app.ptl
-verify: app.ptl: rewrite changed IR (1 prefer-match); formatting was proven IR-equal.
-        First difference:
-function `label` body: statement count differs (at 2:6)
-  original: 4
-  rewritten: 2
-verify: run-diff verification needed for the semantic rules
-```
-
-If formatting ever moves the IR, that is a bug: `--verify` reports it as one
-and refuses to write, whatever the mode.
 
 ### `suggest` — Suggest safe refactors for a file
 
@@ -1310,7 +1359,7 @@ petal apply-change                      # list the operations
 ```
 
 Carries out a change the author has decided on, everywhere it has to be made,
-across every file it reaches. [`lint --fix`](#lint--rules-with-fixes) and
+across every file it reaches. [`lint --fix`](#rules) and
 [`suggest --apply`](#suggest--suggest-safe-refactors-for-a-file) are held to
 leaving the program the same; an operation here changes what the program does,
 and that is its purpose. What it promises instead:
@@ -1653,7 +1702,7 @@ reference for each command, the lockfile, the cache and `vendor/`. In short:
 | `vendor` | Installs, and copies each git package into `vendor/<name>` |
 | `bundle <entry> [-o <file>]` | Prints the graph as one JSON document for a host with no filesystem ([Bundles](packages.md#bundles)) |
 
-None of them takes `--json`. `check`, `run` and the other compiling commands
+None of them takes `--json`. `lint`, `run` and the other compiling commands
 [install on demand](packages.md#install-on-demand); `PETAL_OFFLINE=1`
 forbids fetching. `petal packages` never fetches.
 
@@ -2315,7 +2364,7 @@ Consumers should treat the single key of the `kind` object as the node type
 
 **ClassField**: one field of a `ClassDecl`, as `{"name": string, "ty": TypeAnn (omitted when un-annotated)}` — the same optional-annotation shape as a **Param**.
 
-**TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type (omitted when unrecognized)}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (omitted for an unrecognized name, e.g. `{"name": "banana"}`). An absent annotation omits the `ty`/`ret` field entirely. Annotations appear on `Let`, `State`, `Memo`, `Param`, `ClassField`, and `FnDecl.ret`; a class name resolves to a static type too, but only against the compilation's class table, so a `TypeAnn` naming one carries no `resolved` in the AST dump; they are type-checked (warnings only — see [`check`](#check--compile-without-running)) and dropped before codegen, so they never appear in the IR.
+**TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type (omitted when unrecognized)}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (omitted for an unrecognized name, e.g. `{"name": "banana"}`). An absent annotation omits the `ty`/`ret` field entirely. Annotations appear on `Let`, `State`, `Memo`, `Param`, `ClassField`, and `FnDecl.ret`; a class name resolves to a static type too, but only against the compilation's class table, so a `TypeAnn` naming one carries no `resolved` in the AST dump; they are type-checked (warnings only — see [`lint`](#lint--check-programs-without-running-them)) and dropped before codegen, so they never appear in the IR.
 
 **Type**: a string naming the recognized static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"Num"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"Vec3"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Dual"`, `"Handle"`, `"Pending"`. Appears as the `resolved` field of a **TypeAnn**.
 

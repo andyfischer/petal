@@ -139,7 +139,7 @@ command changed.
 ## Known limits
 
 - The Garden binary the app was built against predates `text_advance` and
-  the three-argument `range(a, b, step)`, although `petal check`
+  the three-argument `range(a, b, step)`, although `petal lint`
   accepts both. Highlight runs are measured with `text_width`
   (rounded to whole pixels, so a long label can drift by a pixel or two
   between runs), and the keycap loop counts down with a `while`.

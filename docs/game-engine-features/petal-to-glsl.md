@@ -99,7 +99,7 @@ A call of a name in `functions` is emitted as written, with its arguments
 checked against the signature. Petal's checker does not know these names
 unless something declares them, so the host declares them as `native fn`s in
 a package the script imports; a file of shader lambdas that is only ever
-translated, never run, is checked with `petal check --lenient`, which reports
+translated, never run, is checked with `petal lint --lenient`, which reports
 the unknown names without failing.
 
 ## Hooks and plain functions
@@ -239,7 +239,7 @@ param `amount` needs a default (it is the param's default value) [line 30, colum
 ```
 
 It does not print and does not fail the run, so the caller decides how to show
-it. `petal check` accepts all five of those programs: its inference is
+it. `petal lint` accepts all five of those programs: its inference is
 shallow by design, and the translator does its own.
 
 ## How it compares with the stand-in

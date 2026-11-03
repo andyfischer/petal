@@ -300,7 +300,7 @@ What changes:
 ### 2. Non-numeric settings: where `tunable` does not fit
 
 `~/cheesecake/games/rivet/config.ptl:5-11` runs as an extract and prints
-`title -1.0 false true`. The whole file passes `petal check`.
+`title -1.0 false true`. The whole file passes `petal lint`.
 
 ```petal
 // before
@@ -352,7 +352,7 @@ nested `is_config` makes a drag prefer these literals. Today it does not.
 ### 4. Ranges and DM hints together
 
 `examples/direct-manipulation-v2/l07b-fractal-tree-hints.ptl:16-18` passes
-`petal check`.
+`petal lint`.
 
 ```petal
 // before

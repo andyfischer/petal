@@ -1,4 +1,4 @@
-//! `petal check` cannot see this crate's registrations (the core CLI does not
+//! `petal lint` cannot see this crate's registrations (the core CLI does not
 //! depend on petal-ui). What it reads instead is the `ui` package's
 //! `native fn` declarations (`prelude/ui.ptl`, `prelude/input.ptl`), which
 //! the `petal` binary bundles. These tests hold the declarations to the real

@@ -45,7 +45,7 @@ input events → bind_frame_info / bind_input → clear_draw_commands
   crate registers is declared there — `pub native fn mouse_x() -> int`,
   `native fn _native_rect(x: num, …, a?: num) = "draw_rect"` — which is where
   its parameter names, optional parameters, argument types and result type
-  come from: `petal check` reads the declarations without registering
+  come from: `petal lint` reads the declarations without registering
   anything, and the natives bind named arguments by them
   (`petal_ui::interface()`). A script that imports `ui` loads only into an
   `Env` that registers the natives it refers to; a test holds the declarations
@@ -57,7 +57,7 @@ input events → bind_frame_info / bind_input → clear_draw_commands
   the package's.
   `import ui/input` is the input, timing and frame half alone, for a host
   that registers only `petal_ui::input::register_input_module`. The `petal` binary
-  bundles the package, so `petal check` resolves `import ui` with no host;
+  bundles the package, so `petal lint` resolves `import ui` with no host;
   `petal run` refuses such a script at load, because it registers none of
   these natives. The package's own source imports the builtin packages it
   uses (`color`, `creative`, `io`). It also wraps every draw native in record overloads

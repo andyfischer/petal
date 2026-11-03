@@ -2203,7 +2203,7 @@ fn axis_labels_thin_and_stagger_instead_of_rotating() {
 
 /// The rest of the draw surface — rounded outlines, circle/ellipse outlines,
 /// arcs, triangles, polygons, fans and polylines — had no record overloads, so
-/// `draw_polyline(pts, C_ROCK, 235, 1)` passed `check --strict` and died at
+/// `draw_polyline(pts, C_ROCK, 235, 1)` passed `lint --strict` and died at
 /// runtime with "Expected int at arg 2, got record". Four testbed apps wrote
 /// the same wrappers; the prelude now carries them, shaped like the flat forms.
 #[test]

@@ -123,7 +123,7 @@ for `Env::observations_mut().enable()` and `Env::get_observations_json`.
 ## 2. MCP tools
 
 `petal-tools` (`tools/petal-mcp.ts`) wraps the CLI above for agents:
-`TestSnippet`, `CheckSnippet`, `ExplainTerm`, `ShowStage` (tokens / AST / IR /
+`TestSnippet`, `LintSnippet`, `ExplainTerm`, `ShowStage` (tokens / AST / IR /
 bytecode), `PendingReport`, `TraceEmits`, `ProposeEdit`. The
 tool reference is [mcp-server.md](mcp-server.md).
 
@@ -214,7 +214,7 @@ to one, otherwise `null`. `line`/`column` come from the source map and are
 | Goal | Use |
 |------|-----|
 | Does this snippet compile and run? | `TestSnippet` or `runPetal()` |
-| Validate without running | `petal check` / `CheckSnippet` |
+| Validate without running | `petal lint` / `LintSnippet` |
 | Inspect a compilation stage | `show-tokens` / `show-ast` / `show-ir` / `show-bytecode` |
 | "Why does this variable have this value?" | `petal explain --term <name>` |
 | "What is every variable right now?" (including after an error) | `petal run --observe` |

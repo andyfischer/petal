@@ -52,5 +52,5 @@ which the runtime registers in memory and provides, so a script starts with
 which is what lets the stock CLI check the examples with no flag:
 
 ```bash
-petal check integrations/petal-web-html/examples/menu.ptl
+petal lint integrations/petal-web-html/examples/menu.ptl
 ```

@@ -29,8 +29,8 @@ describe("import forms", () => {
   });
 
   it("a name two plain imports offer is an error at each bare use, not at the import", () => {
-    for (const command of ["run", "check"]) {
-      const r = petalCapture([command, game("ambiguous.ptl")]);
+    for (const command of [["run"], ["lint", "--single-file"]]) {
+      const r = petalCapture([...command, game("ambiguous.ptl")]);
       expect(r.code).not.toBe(0);
       expect(r.stderr).toContain("`draw` is ambiguous: './hud' and './level' export it");
       expect(r.stderr).toContain("write `hud.draw` or `level.draw`");
@@ -46,7 +46,7 @@ describe("import forms", () => {
   });
 
   it("disjoint overload sets from two plain imports merge, with a warning per call", () => {
-    const r = petalCapture(["check", game("merged.ptl")]);
+    const r = petalCapture(["lint", "--single-file", game("merged.ptl")]);
     expect(r.code).toBe(0);
     const warnings = r.stderr.split("\n").filter((l) => l.startsWith("warning:"));
     expect(warnings.length).toBe(2);
@@ -58,7 +58,7 @@ describe("import forms", () => {
   });
 
   it("a plain import that hides a builtin warns once, where the name is used", () => {
-    const r = petalCapture(["check", game("shadow_builtin.ptl")]);
+    const r = petalCapture(["lint", "--single-file", game("shadow_builtin.ptl")]);
     expect(r.code).toBe(0);
     const warnings = r.stderr.split("\n").filter((l) => l.startsWith("warning:"));
     expect(warnings.length).toBe(1);

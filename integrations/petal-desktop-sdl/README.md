@@ -96,7 +96,7 @@ interface, which this runner provides. The runner's own extras (`sfx`,
 interface package in [`packages/sdl/`](packages/sdl/), which the runner
 registers and provides: a script that uses them adds `import sdl`. Plain
 `petal run` provides neither interface and refuses such a script at load;
-`petal check` checks it without running.
+`petal lint` checks it without running.
 
 See [`docs/game-dev-guide.md`](docs/game-dev-guide.md) for the API and common
 patterns, and [`docs/design.md`](docs/design.md) for how the host is built.

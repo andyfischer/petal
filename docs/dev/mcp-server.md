@@ -13,7 +13,7 @@ the client reports the connection closed.
 | Tool | Purpose |
 |------|---------|
 | `TestSnippet({code, trace?})` | Run a snippet; returns stdout, stderr, exit code. Non-fatal type-checker warnings appear on stderr. `trace: true` adds a per-term execution trace. |
-| `CheckSnippet({code})` | Lex+parse+compile without running. Returns `{ok: true, warnings: [...]}` (each warning `{message, line, column, file}`) or a structured error. Cheaper than `TestSnippet` for validating syntax and type annotations. |
+| `LintSnippet({code})` | `petal lint` on a snippet: compile and check without running, then the lint rules. Returns `{ok, warnings: [...], findings: [...]}` (each warning `{message, severity, line, column, file}`, each finding `{rule, message, line, column, fixable}`) or a structured error. Cheaper than `TestSnippet` for validating syntax and type annotations. |
 | `ExplainTerm({code, term})` | Run with tracing, then walk the dataflow graph backward from `term` to answer "why does X have value Y?". |
 | `ShowStage({code, stage, json?, all?})` | Dump one compilation stage: `stage` is `"tokens"`, `"ast"`, `"ir"`, or `"bytecode"`. JSON by default; `json: false` returns the CLI's text form. For `ir` the default is the user-only view: builtin phantom terms, the std prelude, and imported-module internals are filtered out (ids preserved; in JSON `constants.values` becomes an id-keyed object; not loadable by `run --ir`). `all: true` returns the complete Program, which in JSON is the `run --ir` interchange format. |
 | `PendingReport({code})` | Run the code and return the pending report as JSON: every live pending resource with its state, age, origin, and this-frame absorption count. Debugs "why is this region blank". |

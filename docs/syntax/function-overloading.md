@@ -106,7 +106,7 @@ print(Point(1, 2).shifted(5, 6))  // { x: 6, y: 8 }
 ```
 
 Each qualified name is its own set: `Point.shifted`, `Other.shifted` and a
-plain `shifted` never mix. An arity error names the method. `petal check`
+plain `shifted` never mix. An arity error names the method. `petal lint`
 counts the arguments written at the call site:
 
 ```petal ignore
@@ -152,7 +152,7 @@ scale(2, value: 3, by: 1)  // error: scale() got multiple values for parameter '
 ```
 
 Wherever the callee is known before the program runs — a function or a
-constructor named at the call site, or a binding that holds one — `petal check`
+constructor named at the call site, or a binding that holds one — `petal lint`
 reports both of these as errors too, whether or not the line ever executes,
 and lists the detail the runtime error has no room for:
 
@@ -161,7 +161,7 @@ error: scale() has no parameter named 'nudge' (parameters: 'value', 'by', 'offse
 error: scale() got multiple values for parameter 'value' (argument 1 already fills it)
 ```
 
-`petal check` exits non-zero on them, so a bad name fails CI without the
+`petal lint` exits non-zero on them, so a bad name fails CI without the
 branch ever being taken. The runtime error is still the only report for a
 method call and for a callee this pass cannot see (a function passed in as a
 parameter).
@@ -212,7 +212,7 @@ rest. A builtin's parameter list reads like a `fn`'s, with these differences:
   be: `range(start: 0, end: 5)`.
 
 The errors are the ones above (`clamp() has no parameter named 'low'`), and
-`petal check` reports them the same way. The variadic builtins, `print` and
+`petal lint` reports them the same way. The variadic builtins, `print` and
 `format`, have no parameter names and refuse one outright:
 `builtin 'print' does not accept named arguments`. So does a host native whose
 embedder declared no names for it (see
@@ -240,7 +240,7 @@ print(box(h: 2, w: 5))    // [5, 2]
 
 So a name the chosen variant does not declare is caught only after
 selection: `box(depth: 1)` picks the one-parameter `box`, then fails with
-`box() has no parameter named 'depth'`. `petal check` reports it ahead of the
+`box() has no parameter named 'depth'`. `petal lint` reports it ahead of the
 run in the same words, plus the parameters the chosen variant does have
 (`box() has no parameter named 'depth' (parameters: 'w')`).
 
@@ -339,14 +339,14 @@ The rules:
   `greeting` to `nil`; only *omitting* the argument evaluates the default.
 - **A required parameter must be given.** Leaving one out names it:
   `greet()` is `greet() is missing a value for parameter 'name'`, and too many
-  arguments is `greet() expects 1-3 arguments, got 4`. `petal check` reports
+  arguments is `greet() expects 1-3 arguments, got 4`. `petal lint` reports
   both before the program runs.
 - **Lambdas and methods take defaults too**: `fn(x, step = 1) -> x + step`, and
   `fn Rect.grow(r, by = 1)` (the receiver is always supplied, so it is never
   the one with a default). A callback that is handed fewer arguments than it
   declares uses its defaults for the rest: `map(xs, fn(x, scale = 10) -> x * scale)`.
 - **An annotation is checked against the default**: `fn f(n: int = "one")`
-  is a `petal check` warning.
+  is a `petal lint` warning.
 - **Class fields and enum variant fields do not take defaults.** A constructor
   still needs every field; write a function with defaults that calls it.
 - **Builtins have optional parameters rather than defaults.** A builtin is
@@ -423,7 +423,7 @@ pad("x")
 ```
 
 The ambiguity is reported for the call, not the declarations: such a pair is
-still useful for every call that says enough to pick one. `petal check`
+still useful for every call that says enough to pick one. `petal lint`
 reports it before the program runs wherever the callee is known. To avoid it
 altogether, give each variant a distinct number of *required* parameters, or
 fold the variants into one function with defaults.
@@ -481,7 +481,7 @@ written names fit none, the error lists the variants instead:
 `box() has no variant that accepts 2 arguments with one named 'nope'
 (variants: box(w), box(w, h, depth = …))`.
 
-`petal check` reports the same thing as an error before the program runs
+`petal lint` reports the same thing as an error before the program runs
 (`` `add` expects 2 or 3 arguments, got 1 ``) and exits non-zero on it.
 Constructors and methods are checked the same way; for a method the error
 counts the arguments written at the call site, without the receiver.
@@ -529,7 +529,7 @@ The rules:
   core prelude (`std`) < the file's plain imports
   < its selective imports < its own declarations.
 - **Two plain imports are the same tier**, so neither outranks the other.
-  Their sets merge when no arity is defined by both — with a `check` warning
+  Their sets merge when no arity is defined by both — with a compile-check warning
   at each call through the merged name — and a shared arity makes the bare
   name ambiguous, an error where it is called. A module that itself imports
   the other one wins outright instead: its set already merged the other's

@@ -1,4 +1,4 @@
-//! `petal check` and `petal run` agree, and both hold a script to what its
+//! `petal lint` and `petal run` agree, and both hold a script to what its
 //! imports and `native fn` declarations say. Each test here is a case an
 //! independent review of the module system found the two disagreeing on, or
 //! the checker missing. They shell out to the built binary: the point is
@@ -89,7 +89,7 @@ fn a_parent_import_works_whatever_way_the_entry_file_is_named() {
     ] {
         let (out, err, code) = petal_in(dir, &["run", file]);
         assert_eq!((out.as_str(), code), ("hud.draw\n", 0), "run {file}: {err}");
-        let (_, err, code) = petal_in(dir, &["check", file]);
+        let (_, err, code) = petal_in(dir, &["lint", "--single-file", file]);
         assert_eq!(code, 0, "check {file}: {err}");
     }
 }
@@ -129,7 +129,7 @@ fn check_holds_a_native_call_to_the_arity_its_declaration_gives() {
          \x20 let w = clamp(1, 2)\n\
          end\n",
     );
-    let (_, err, code) = petal_in(&t.root, &["check", "n.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "n.ptl"]);
     assert_eq!(code, 1, "{err}");
     for expected in [
         "`k1` expects 1-2 arguments, got 3",
@@ -147,7 +147,7 @@ fn check_holds_a_native_call_to_the_arity_its_declaration_gives() {
 fn check_holds_a_host_native_to_its_interface_package() {
     let t = Tree::new("uiarity");
     t.write("u.ptl", "import ui\nfn f()\n  mouse_x(1, 2, 3)\n  text_width()\n  mouse_x()\nend\n");
-    let (_, err, code) = petal_in(&t.root, &["check", "u.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "u.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("`mouse_x` expects 0 arguments, got 3"), "{err}");
     assert!(err.contains("`text_width` expects"), "{err}");
@@ -163,7 +163,7 @@ fn method_syntax_reaches_a_packaged_builtin_only_in_a_file_that_imports_it() {
     );
     // The importing module has `lerp` in scope; this file does not.
     t.write("main.ptl", "import ./mod\nlet y = 0.0\nprint(half(y))\nprint(y.lerp(10.0, 0.5))\n");
-    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("no method `lerp` on a `float` here"), "{err}");
     assert!(err.contains("add `import creative`"), "{err}");
@@ -194,7 +194,7 @@ fn run_refuses_a_name_nothing_defines_before_the_first_line() {
         "un.ptl",
         "fn never()\n  totally_unknown(1)\n  return nowhere\nend\nprint(\"ran\")\n",
     );
-    let (_, err, code) = petal_in(&t.root, &["check", "un.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "un.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("unknown function `totally_unknown`"), "{err}");
     assert!(err.contains("undefined variable `nowhere`"), "{err}");
@@ -244,7 +244,7 @@ fn run_refuses_whatever_check_rejects() {
     for (i, src) in rejected.iter().enumerate() {
         let name = format!("r{i}.ptl");
         t.write(&name, src);
-        let (_, check_err, code) = petal_in(&t.root, &["check", &name]);
+        let (_, check_err, code) = petal_in(&t.root, &["lint", "--single-file", &name]);
         assert_eq!(code, 1, "check {src}: {check_err}");
         let (out, run_err, code) = petal_in(&t.root, &["run", &name]);
         assert_eq!((out.as_str(), code), ("", 1), "run {src}: {run_err}");
@@ -259,7 +259,7 @@ fn run_refuses_whatever_check_rejects() {
     }
 
     t.write("w.ptl", "let x: int = \"s\"\nprint(\"ran\")\n");
-    let (_, check_err, code) = petal_in(&t.root, &["check", "w.ptl"]);
+    let (_, check_err, code) = petal_in(&t.root, &["lint", "--single-file", "w.ptl"]);
     assert_eq!(code, 0, "{check_err}");
     let (out, run_err, code) = petal_in(&t.root, &["run", "w.ptl"]);
     assert_eq!((out.as_str(), code), ("ran\n", 0));
@@ -286,7 +286,7 @@ fn check_passes_what_runs_when_a_set_joins_a_lower_precedence_one() {
         "let total = sum([1])\nfn count(xs) 999 end\nprint(count([1, 2, 3]))\nprint(count([1, 2, 3], fn(x) x > 1 end))\n",
     );
     for file in ["imported.ptl", "own.ptl"] {
-        let (_, err, code) = petal_in(&t.root, &["check", "--strict", file]);
+        let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "--strict", file]);
         assert_eq!((err.as_str(), code), ("", 0), "check {file}");
         let (out, err, code) = petal_in(&t.root, &["run", file]);
         assert_eq!((out.as_str(), code), ("999\n2\n", 0), "run {file}: {err}");
@@ -296,7 +296,7 @@ fn check_passes_what_runs_when_a_set_joins_a_lower_precedence_one() {
         "neither.ptl",
         "let total = sum([1])\nfn count(xs) 999 end\nprint(count([1], 2, 3))\n",
     );
-    let (_, err, code) = petal_in(&t.root, &["check", "neither.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "neither.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("`count` expects 1 or 2 arguments, got 3"), "{err}");
 }
@@ -310,13 +310,13 @@ fn check_passes_a_native_used_above_the_fn_that_takes_its_name() {
         "alias.ptl",
         "let native_max = max\nfn max(r)\n  native_max(r.a, r.b)\nend\nprint(max({a: 1, b: 2}))\n",
     );
-    let (_, err, code) = petal_in(&t.root, &["check", "--strict", "alias.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "--strict", "alias.ptl"]);
     assert_eq!((err.as_str(), code), ("", 0));
     let (out, err, code) = petal_in(&t.root, &["run", "alias.ptl"]);
     assert_eq!((out.as_str(), code), ("2\n", 0), "{err}");
     // Below the declaration the `fn` speaks for the name, as before.
     t.write("below.ptl", "fn max(r)\n  r.a\nend\nprint(max(1, 2))\n");
-    let (_, err, code) = petal_in(&t.root, &["check", "below.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "below.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("`max` expects 1 argument, got 2"), "{err}");
 }
@@ -333,7 +333,7 @@ fn run_checks_before_it_links() {
     assert!(!err.contains("does not register"), "{err}");
 
     t.write("ok.ptl", "import ui\nprint(1)\n");
-    let (_, err, code) = petal_in(&t.root, &["check", "ok.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "ok.ptl"]);
     assert_eq!(code, 0, "{err}");
     let (out, err, code) = petal_in(&t.root, &["run", "ok.ptl"]);
     assert_eq!((out.as_str(), code), ("", 1), "{err}");
@@ -356,7 +356,7 @@ fn a_call_through_an_import_is_held_to_the_module_it_resolved_to() {
         "main.ptl",
         "import ./hud\nimport ./top\nprint(score(1, 2))\nprint(score(1, 2, 3))\nprint(hud.score(1))\nprint(score(1))\n",
     );
-    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
     assert_eq!(code, 1, "{err}");
     // Held to top's `score` alone, so check says what run says.
     assert!(err.contains("score() is missing a value for parameter 'b'"), "{err}");
@@ -398,7 +398,7 @@ fn a_native_call_in_a_package_is_not_held_to_another_modules_function() {
             "game/main.ptl",
             &format!("{imports}show(build(1))\nshow(universe.body(2))\n"),
         );
-        let (_, err, code) = petal_in(&t.dir("game"), &["check", "main.ptl"]);
+        let (_, err, code) = petal_in(&t.dir("game"), &["lint", "--single-file", "main.ptl"]);
         assert_eq!((err.as_str(), code), ("", 0), "{imports}");
         let (out, err, code) = petal_in(&t.dir("game"), &["run", "main.ptl"]);
         assert_eq!((out.as_str(), code), ("[1, \"built\"]\nuniverse\n", 0), "{imports}{err}");
@@ -410,7 +410,7 @@ fn a_native_call_in_a_package_is_not_held_to_another_modules_function() {
         "game/main.ptl",
         "import ./universe\nimport host\nimport host: body\nshow(body(1))\n",
     );
-    let (_, err, code) = petal_in(&t.dir("game"), &["check", "main.ptl"]);
+    let (_, err, code) = petal_in(&t.dir("game"), &["lint", "--single-file", "main.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("expects 2 arguments, got 1"), "{err}");
 }
@@ -436,12 +436,12 @@ fn a_modules_own_function_takes_the_name_of_an_imported_native() {
          let scroll_x = fn(a) -> a * 2\n\
          print(inside(), outer(), through(fn(a) -> a), scroll_x(4))\n",
     );
-    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
     assert_eq!((err.as_str(), code), ("", 0));
     // The import's native is still held to its declaration where nothing of
     // the module's own is in the way.
     t.write("bad.ptl", "import ./widgets\nimport ui\nfn f()\n  return mouse_dx(1)\nend\n");
-    let (_, err, code) = petal_in(&t.root, &["check", "bad.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "bad.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("`mouse_dx` expects 0 arguments, got 1"), "{err}");
 }
@@ -458,13 +458,13 @@ fn another_modules_function_does_not_take_a_builtin_from_this_one() {
         "fn keys(a, b)\n  return a + b\nend\npub fn sum2()\n  return keys(1, 2)\nend\n",
     );
     t.write("main.ptl", "import ./models\nprint(keys({q: 1}), sum2())\n");
-    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
     assert_eq!((err.as_str(), code), ("", 0));
     let (out, err, code) = petal_in(&t.root, &["run", "main.ptl"]);
     assert_eq!((out.as_str(), code), ("[\"q\"] 3\n", 0), "{err}");
     // The builtin's own arity is still held here, and the function's there.
     t.write("main.ptl", "import ./models\nfn f()\n  return keys()\nend\n");
-    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("`keys` expects 1 argument, got 0"), "{err}");
     t.write(
@@ -472,7 +472,7 @@ fn another_modules_function_does_not_take_a_builtin_from_this_one() {
         "fn keys(a, b)\n  return a + b\nend\npub fn sum2()\n  return keys(1)\nend\n",
     );
     t.write("main.ptl", "import ./models\nprint(keys({q: 1}))\n");
-    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("expects 2 arguments, got 1"), "{err}");
     assert!(err.contains("models.ptl"), "{err}");
@@ -501,7 +501,7 @@ fn a_qualified_call_is_held_to_the_module_its_qualifier_names() {
         "import ./projects\nimport ./people\n\
          print(projects.shares({n: 3}), projects.place(1.0, 2.0), people.count({total: 2}))\n",
     );
-    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
     assert_eq!((err.as_str(), code), ("", 0));
     let (out, err, code) = petal_in(&t.root, &["run", "main.ptl"]);
     assert_eq!((out.as_str(), err.as_str(), code), ("3 3.0 6\n", "", 0));
@@ -510,19 +510,19 @@ fn a_qualified_call_is_held_to_the_module_its_qualifier_names() {
     // the same name plainly imported — and the sibling's through its own.
     t.write("ev.ptl", "pub fn log()\n  return \"ev\"\nend\n");
     t.write("main.ptl", "import ./ev\nimport core\nprint(core.log(1.0), ev.log())\n");
-    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
     assert_eq!((err.as_str(), code), ("", 0));
     let (out, _, code) = petal_in(&t.root, &["run", "main.ptl"]);
     assert_eq!((out.as_str(), code), ("0.0 ev\n", 0));
     t.write("main.ptl", "import ./ev\nimport core: log\nprint(log(1.0), ev.log())\n");
-    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
     assert_eq!((err.as_str(), code), ("", 0));
     let (out, _, code) = petal_in(&t.root, &["run", "main.ptl"]);
     assert_eq!((out.as_str(), code), ("0.0 ev\n", 0));
 
     // Each is still held to its own declaration.
     t.write("main.ptl", "import ./ev\nimport core\nfn f()\n  return [core.log(), ev.log(1)]\nend\n");
-    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("`log` expects 1 argument, got 0"), "{err}");
     assert!(err.contains("`log` expects 0 arguments, got 1"), "{err}");
@@ -530,7 +530,7 @@ fn a_qualified_call_is_held_to_the_module_its_qualifier_names() {
         "main.ptl",
         "import ./projects\nimport ./people\nfn f()\n  return projects.shares()\nend\n",
     );
-    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("shares() is missing a value for parameter 'd'"), "{err}");
 }
@@ -557,7 +557,7 @@ fn an_aliased_native_is_not_held_to_another_modules_function_of_its_name() {
         "import ./b\nimport ./a\nprint(fa(1), fb(-2))\n",
     ] {
         t.write("main.ptl", main);
-        let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+        let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
         assert_eq!((err.as_str(), code), ("", 0));
         let (out, err, code) = petal_in(&t.root, &["run", "main.ptl"]);
         assert_eq!((out.as_str(), err.as_str(), code), ("4 2\n", "", 0));
@@ -568,7 +568,7 @@ fn an_aliased_native_is_not_held_to_another_modules_function_of_its_name() {
         "b.ptl",
         "native fn _helper(o) = \"abs\"\npub fn fb(x)\n  return _helper(x, 2)\nend\n",
     );
-    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("`_helper` expects 1 argument, got 2"), "{err}");
 }
@@ -594,13 +594,15 @@ fn a_reassigned_let_is_not_held_to_the_nil_it_started_as() {
              let xs = [{{id: 1}}, {{id: 2}}]\nprint(find(xs), carried(xs), counted(xs))\n"
         ),
     );
-    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    // Only the compile check is asked about here, not the style rules.
+    let (_, err, code) =
+        petal_in(&t.root, &["lint", "--single-file", "--rules-include=", "main.ptl"]);
     assert_eq!((err.as_str(), code), ("", 0));
     let (out, err, code) = petal_in(&t.root, &["run", "main.ptl"]);
     assert_eq!((out.as_str(), err.as_str(), code), ("2 1 2\n", "", 0));
 
     t.write("main.ptl", &format!("{id}let g = nil\nprint(id_of(g))\n"));
-    let (_, err, _) = petal_in(&t.root, &["check", "main.ptl"]);
+    let (_, err, _) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
     assert!(err.contains("reads field `id` from it, found `nil`"), "{err}");
 }
 
@@ -609,23 +611,23 @@ fn assigning_through_a_qualifier_is_the_same_error_for_check_and_run() {
     let t = Tree::new("assign");
     t.write("hud.ptl", "pub let shared = 1\n");
     t.write("main.ptl", "import ./hud\nhud.shared = 5\nprint(hud.shared)\n");
-    for cmd in ["check", "run"] {
-        let (out, err, code) = petal_in(&t.root, &[cmd, "main.ptl"]);
+    for cmd in ["lint", "run"] {
+        let (out, err, code) = petal_in(&t.root, &argv(cmd, "main.ptl"));
         assert_eq!((out.as_str(), code), ("", 1), "{cmd}: {err}");
         assert!(err.contains("cannot assign through 'hud': it is a module"), "{cmd}: {err}");
     }
     // A qualifier read as a value: the hint spells the import as written.
     t.write("read.ptl", "import ./hud\nprint(hud)\n");
-    for cmd in ["check", "run"] {
-        let (out, err, code) = petal_in(&t.root, &[cmd, "read.ptl"]);
+    for cmd in ["lint", "run"] {
+        let (out, err, code) = petal_in(&t.root, &argv(cmd, "read.ptl"));
         assert_eq!((out.as_str(), code), ("", 1), "{cmd}: {err}");
         assert!(err.contains("'hud' is a module, not a value"), "{cmd}: {err}");
         assert!(err.contains("`import ./hud: <name>`"), "{cmd}: {err}");
     }
     // A member the module does not export.
     t.write("member.ptl", "import ./hud\nfn never()\n  return hud.nope\nend\nprint(1)\n");
-    for cmd in ["check", "run"] {
-        let (out, err, code) = petal_in(&t.root, &[cmd, "member.ptl"]);
+    for cmd in ["lint", "run"] {
+        let (out, err, code) = petal_in(&t.root, &argv(cmd, "member.ptl"));
         assert_eq!((out.as_str(), code), ("", 1), "{cmd}: {err}");
         assert!(err.contains("module './hud' has no export 'nope'"), "{cmd}: {err}");
     }
@@ -640,8 +642,8 @@ fn assigning_through_a_qualifier_is_the_same_error_for_check_and_run() {
         "import ./hud\nimport ./facade\nprint(hud.shown(), facade.shown())\n\
          fn never()\n  hud.hidden()\n  hud.nope(1, 2)\n  facade.hidden()\nend\n",
     );
-    for cmd in ["check", "run"] {
-        let (out, err, code) = petal_in(&t.root, &[cmd, "call.ptl"]);
+    for cmd in ["lint", "run"] {
+        let (out, err, code) = petal_in(&t.root, &argv(cmd, "call.ptl"));
         assert_eq!((out.as_str(), code), ("", 1), "{cmd}: {err}");
         assert!(err.contains("module './hud' has no export 'hidden'"), "{cmd}: {err}");
         assert!(err.contains("module './hud' has no export 'nope'"), "{cmd}: {err}");
@@ -667,7 +669,7 @@ fn serialized_ir_is_linked_before_any_line_runs() {
     assert!(err.contains("this host does not register"), "{err}");
     assert!(err.contains("use a petal-ui runner"), "{err}");
     // A check of the same IR needs no host.
-    let (_, err, code) = petal_in(&t.root, &["check", "--ir", "irs.json"]);
+    let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "--ir", "irs.json"]);
     assert_eq!(code, 0, "{err}");
     // IR that calls only what every Env registers still runs.
     t.write("ok.ptl", "import creative\nprint(lerp(0.0, 10.0, 0.5))\n");
@@ -722,4 +724,13 @@ fn fix_imports_on_inline_code_sees_the_projects_dependencies() {
     let (out, err, code) = petal_in(&t.dir("app"), &["fix-imports", "-e", "print(go())"]);
     assert_eq!(code, 0, "{err}");
     assert!(out.starts_with("import tween\n"), "{out}");
+}
+
+/// The argv that checks (`lint`) or runs `file` as one program.
+fn argv<'a>(cmd: &'a str, file: &'a str) -> Vec<&'a str> {
+    if cmd == "lint" {
+        vec!["lint", "--single-file", file]
+    } else {
+        vec![cmd, file]
+    }
 }

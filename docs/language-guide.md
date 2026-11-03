@@ -172,8 +172,8 @@ mismatch is a warning, never an error, and annotations have no effect at runtime
 checked: an annotation that pins a method call's receiver to one
 [class](#classes--methods), and a return type of **`-> nil`**, which turns off
 the function's [implicit return](syntax/implicit-return-values.md).
-Run `petal check <file>` to see the warnings, or `petal check --strict` to make
-them fail the exit code (see [CLI.md](CLI.md#check--compile-without-running)).
+Run `petal lint <file>` to see the warnings, or `petal lint --strict` to make
+them fail the exit code (see [CLI.md](CLI.md#lint--check-programs-without-running-them)).
 
 ```petal
 let count: int = 0
@@ -304,7 +304,7 @@ different function now. A function that merely *arrives* as an argument
 
 **Argument counts.** A call that no declaration can accept is an **error**,
 not a warning: Petal [overloads by arity](syntax/function-overloading.md), so
-such a call cannot resolve at runtime. `petal check` reports it without running
+such a call cannot resolve at runtime. `petal lint` reports it without running
 the program and exits non-zero:
 
 ```petal
@@ -791,7 +791,7 @@ print(call_tool("close", {id: "tunnel"}))            // tunnel closed
 print(call_tool("close", {name: "tunnel"}))          // close has no parameter name
 ```
 
-`petal check` does not look inside a spread: what the call binds is known only
+`petal lint` does not look inside a spread: what the call binds is known only
 when it runs.
 
 ### Recursion
@@ -1033,7 +1033,7 @@ sort_by(rows, fn(r) -> r.score, "desc")   // Bo, Ada, Cy
 sort(rows, fn(a, b) -> a.score < b.score) // lowest score first
 ```
 
-A key must be a number or a string, and `petal check` reports any other key
+A key must be a number or a string, and `petal lint` reports any other key
 ahead of time when it can see what the key function returns. A comparator is
 called about `n log n` times where a key function is called `n` times, so
 prefer `sort_by` when a key will do. See
@@ -1571,7 +1571,7 @@ Editing an enum while the program runs is covered in
 ### The enum's name as a type
 
 The enum's name is also a type name, for a parameter, a return value, a
-binding or a class field. It means "a variant of this enum", and `petal check`
+binding or a class field. It means "a variant of this enum", and `petal lint`
 holds the slot to it:
 
 ```petal
@@ -2168,7 +2168,7 @@ A payload of bindings and `_` cannot fail, so `when Kind.road(n)` covers
 Only such a match is checked. A match on strings, numbers or lists, or one
 mixing variants with other patterns, is not held to covering anything.
 
-`petal check` also warns about an arm that can never run: one that repeats a
+`petal lint` also warns about an arm that can never run: one that repeats a
 literal or a variant an earlier arm already matched, and any arm after one
 that matches every value.
 

@@ -52,7 +52,7 @@ fn run_err(src: &str) -> String {
     fast
 }
 
-/// The compiler's warnings for `src` — what `petal check` prints as warnings.
+/// The compiler's warnings for `src` — what `petal lint` prints as warnings.
 #[track_caller]
 fn warnings(src: &str) -> Vec<String> {
     let mut env = Env::new();

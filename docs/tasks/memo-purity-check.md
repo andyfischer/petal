@@ -1,4 +1,4 @@
-# `petal check`: catch `memo` initializers that are not pure
+# `petal lint`: catch `memo` initializers that are not pure
 
 Status, 2026-11-03: **step 0 done, the check itself open.** A follow-up from
 the soundness review of [`memo`](../features/memo.md).
@@ -50,7 +50,7 @@ The same blind spot affects the `state-key-deprecated` auto-fix
 
 ## The rule
 
-Warn, in `petal check` and wherever compile warnings surface, when a memo
+Warn, in `petal lint` and wherever compile warnings surface, when a memo
 initializer depends on anything other than:
 
 - the free variables of its key expression (the key is the cache's input, so

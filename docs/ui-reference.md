@@ -72,7 +72,7 @@ Polled, never called back. An *edge* is true on one frame.
 `"backslash"`, `"semicolon"`, `"quote"`, `"backquote"`, `"leftbracket"`,
 `"rightbracket"` (the list is `petal::keys::KEY_NAMES`). Enter is `"return"`;
 `+` is `"equals"` with `mod_shift()`. Any other name is never down, so
-`petal check` warns about one written as a literal and names the likely key
+`petal lint` warns about one written as a literal and names the likely key
 (`key_pressed("enter")`: did you mean `"return"`?). The keypad has no names of
 its own: keypad Enter is `"return"`, and its digits and `-` `.` `/` `=` are the
 main-row keys.

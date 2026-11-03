@@ -581,11 +581,11 @@ function writeRepro(dir: string, kind: Kind, ctx: Ctx, t: Target, seed: number,
  * itself is the real evidence.
  */
 async function checkCompiles(ctx: Ctx, t: Target): Promise<CompileCheck> {
-    // The plan's `include` dirs reach `check` too, not just the UI driver: a
+    // The plan's `include` dirs reach the compile check too, not just the UI driver: a
     // corpus app that imports a shared library (core-runtime) must not be
     // written off as `unsupported` merely because this step forgot its -I.
     const one = (s: Side, p: string) =>
-        exec(s.petal, ['check', '--lenient', '--error-format', 'bare', ...s.includeArgs, p]);
+        exec(s.petal, ['lint', '--single-file', '--lenient', '--rules-include=', '--error-format', 'bare', ...s.includeArgs, p]);
     const [b, a] = await Promise.all([one(ctx.before, t.before), one(ctx.after, t.after)]);
     // Checker findings, and the summary lines that follow them. An `error:`
     // finding (an unknown name, a bad arity) is still a finding about the

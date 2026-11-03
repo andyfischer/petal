@@ -35,11 +35,11 @@ petal hello.ptl                  # `run` is the default command
 The inner loop that works well:
 
 ```bash
-petal check app.ptl    # fast: compiles + type-checks, never runs. Do this first.
+petal lint app.ptl     # fast: compiles + type-checks, never runs. Do this first.
 petal run app.ptl      # then run it
 ```
 
-`check` is much cheaper than `run` and catches syntax errors, misspelled names,
+`lint` is much cheaper than `run` and catches syntax errors, misspelled names,
 arity errors, type mismatches and a few lints. Reach for it after every edit; `run` only when you
 want output. More on the tooling in [§10](#10-the-tooling).
 
@@ -99,7 +99,7 @@ Things to notice, because each is a rule you will meet again:
   hoisted: a flood fill or a tree walk needs no forward declaration. A
   top-level `let` of literals (`let NODE_W = 140`) can be read by a hoisted
   `fn`; a `fn` that reads a value computed at run time cannot be called from
-  above it, and `petal check` warns when one is. The rules are in
+  above it, and `petal lint` warns when one is. The rules are in
   [Declaration order](syntax/declaration-order.md).
 
 ---
@@ -300,7 +300,7 @@ Consequences worth memorizing:
 - A callback of `map`, `filter`, `reduce`, `forEach`, `sort_by`, `sort`,
   `any`, `all` or `find` may not declare `state`, itself or in anything it
   calls: it runs once per element, with no place of its own to keep a slot
-  at. It is an error, which `petal check` reports when it can prove it. Use a
+  at. It is an error, which `petal lint` reports when it can prove it. Use a
   `for` loop for a value per element, and `reduce`'s accumulator for a value
   carried from one element to the next
   ([State is not allowed in callbacks](features/inline-state.md#state-is-not-allowed-in-callbacks)).
@@ -793,7 +793,7 @@ use the names in the [Builtins Reference](Builtins.md)**
 draw calls take several shapes, and the names pick the shape:
 `draw_circle(center: p, radius: 6, c: red)`; see the
 [signature table](../core-libs/petal-ui/docs/components.md#draw-primitives--fills-and-strokes).
-A wrong name is an error `petal check` catches. The binding rules and the
+A wrong name is an error `petal lint` catches. The binding rules and the
 errors are in [Named Arguments](syntax/function-overloading.md#named-arguments).
 
 **Parameters can have defaults**: `fn button(label, w = 120, h = 24, on = false)`,
@@ -879,7 +879,7 @@ next one with it.** This is the guide's one genuine footgun, because getting it
 wrong is silent. Most operators (`+`, `|>`, `&&`, `??`) continue a line from
 either end — but `-` does not, since a leading `-` is a valid unary minus
 starting a fresh statement. So this compiles and returns the wrong number.
-`petal check` warns on the `-` line (and `check --strict` fails on it), but
+`petal lint` warns on the `-` line (and `check --strict` fails on it), but
 `petal run` goes ahead:
 
 ```petal
@@ -912,7 +912,7 @@ wrap the whole expression in parentheses, or check the value with
 ## 9. The builtins you will actually use
 
 Most of these are in scope with no import. The ones that are not say which
-package to import, and `petal check` names the import when you forget it
+package to import, and `petal lint` names the import when you forget it
 (``unknown function `lerp` … add `import creative` ``). This is
 the working set, not the full list; [Builtins.md](Builtins.md) has the rest with
 exact signatures. Reach for this table before you guess a name, because a wrong
@@ -1023,16 +1023,16 @@ functions are in the [UI reference](ui-reference.md).
 Petal's compiler is unusually willing to answer questions about your program.
 Using it beats reading your own code back to yourself.
 
-### `petal check` — your fastest feedback
+### `petal lint` — your fastest feedback
 
 ```bash
-petal check app.ptl              # compile + type-check, don't run. exit 1 on any error
-petal check --strict app.ptl     # warnings fail it too — use in CI
-petal check --json app.ptl       # {"ok": true, "warnings": [...]} or a structured error
+petal lint app.ptl               # compile + type-check, don't run. exit 1 on any error
+petal lint --strict app.ptl      # warnings fail it too — use in CI
+petal lint --json app.ptl        # {"ok": true, "warnings": [...]} or a structured error
 ```
 
-`check` sorts what it finds into errors and warnings. An **error** is a line
-that fails whenever it runs, and `check` exits 1 on it: a call to, or read of,
+`lint`'s compile check sorts what it finds into errors and warnings. An **error** is a line
+that fails whenever it runs, and `lint` exits 1 on it: a call to, or read of,
 a name nothing defines, a call whose argument count no overload accepts, a
 named argument no parameter has. `petal run` starts with the same check and
 does not run a program that has one.
@@ -1046,7 +1046,7 @@ A name is defined by a declaration in the file, by an import, or by being a
 core builtin; no host is consulted. So a script for a graphical host starts
 with `import ui`, and it checks clean under the plain CLI even though only that
 host can run it. `petal fix-imports app.ptl` adds the import lines a script is
-missing. [Which names exist](CLI.md#which-names-exist) says where `check`
+missing. [Which names exist](CLI.md#which-names-exist) says where `lint`
 finds each host's package.
 
 With `--json`, every error carries a `phase` naming the stage that rejected
@@ -1072,7 +1072,7 @@ the compiled IR before writing it.
 
 The rules also know the spellings that a builtin or an operator already
 covers, and fix them where the rewrite is provably the same program
-([CLI.md](CLI.md#lint--rules-with-fixes) has the table):
+([CLI.md](CLI.md#rules) has the table):
 
 | Written | Lint says | Rule |
 |---|---|---|
@@ -1093,7 +1093,7 @@ One rule is off unless you name it: `petal lint
 assigns and whose initializer is constant, and with `--fix` rewrites it to
 `const`. That is right for a table and wrong for a cell your host writes by
 name; put `// petal-lint-ignore state-as-constant` on such a line. See
-[`fmt`](CLI.md#fmt--canonical-layout) and [`lint`](CLI.md#lint--rules-with-fixes).
+[`fmt`](CLI.md#fmt--canonical-layout) and [`lint`](CLI.md#rules).
 
 ### `petal suggest` — safe refactors, on request
 
@@ -1236,7 +1236,7 @@ seconds.
 ### MCP tools, if you use an AI assistant
 
 `tools/petal-mcp.ts` exposes the same capabilities as tools: `TestSnippet`,
-`CheckSnippet`, `ExplainTerm`, `ShowStage` (tokens / AST / IR / bytecode),
+`LintSnippet`, `ExplainTerm`, `ShowStage` (tokens / AST / IR / bytecode),
 `PendingReport`, `TraceEmits`, `ProposeEdit`. The server builds the
 binary on first use. See [dev/mcp-server.md](dev/mcp-server.md).
 
@@ -1246,7 +1246,7 @@ binary on first use. See [dev/mcp-server.md](dev/mcp-server.md).
 
 When a program does the wrong thing:
 
-1. **`petal check --strict f.ptl`** — clear the errors and warnings first. An
+1. **`petal lint --strict f.ptl`** — clear the errors and warnings first. An
    arity error or a type warning is frequently the actual bug, reported before
    you ran anything.
 2. **`petal run --observe f.ptl`** — look at what everything actually held. The
@@ -1268,11 +1268,11 @@ tell you the fix in the message. A sample:
 | `n = n + 1` inside a fn, `n` outside | ``` `n` is bound outside this function; this assignment creates a local shadow ``` |
 | bare `n` inside a fn, `n` is a `var` | ``` write `get n` to read the cell's current value ``` |
 | `el.title` where there is no `title` | ``No field 'title' on record``, plus the source of `el` |
-| `f(1)` where every `f` takes 2 | ``` `f` expects 2 arguments, got 1 ``` — from `check`, before you run |
-| a line starting with `-` under the line it should continue | ``` a line that starts with `-` is a new statement (a negation), not a continuation of the line above ``` — from `check` |
-| `n + 1` on a line of its own | ``the value of this expression is discarded, so the line has no effect`` — from `check` |
-| `state split = 0`, then `split(text, ",")` | ``` `split` here is the `state split` declared on line 1, which shadows the builtin `split` ``` — from `check` |
-| `red` where `enum Color` declares `red` | ``` undefined variable `red` — did you mean Color.red? ``` — from `check` |
+| `f(1)` where every `f` takes 2 | ``` `f` expects 2 arguments, got 1 ``` — from `lint`, before you run |
+| a line starting with `-` under the line it should continue | ``` a line that starts with `-` is a new statement (a negation), not a continuation of the line above ``` — from `lint` |
+| `n + 1` on a line of its own | ``the value of this expression is discarded, so the line has no effect`` — from `lint` |
+| `state split = 0`, then `split(text, ",")` | ``` `split` here is the `state split` declared on line 1, which shadows the builtin `split` ``` — from `lint` |
+| `red` where `enum Color` declares `red` | ``` undefined variable `red` — did you mean Color.red? ``` — from `lint` |
 | `Color.rde` | ``enum `Color` has no variant `rde` — did you mean Color.red?`` — a compile error |
 | a `match` over `Kind` variants with no arm for `Kind.lane` | ``this match does not cover every variant of `Kind`: no arm for `Kind.lane` `` — a compile error |
 | a `match` where no arm matches the value | ``No matching pattern for value: "tin"`` — at run time; add `when _ ->` if that is expected |

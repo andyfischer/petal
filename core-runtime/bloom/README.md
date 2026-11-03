@@ -56,7 +56,7 @@ A host that provides the `ui` interface — one that embeds `petal-ui` (Garden
 panels, `petal-desktop-sdl`, `petal-web-canvas`, the `petal-ui-run` driver, or
 your own embedder calling `petal_ui::register_all`). bloom's manifest says so
 (`[requires] ui = ">=0.1"`), so loading a bloom script anywhere else is a
-load error naming the interface, and `petal check` reports the requirement.
+load error naming the interface, and `petal lint` reports the requirement.
 bloom asks for no natives of its own, no fonts, and no files at runtime. It
 imports one other library, [`text-layout`](../text-layout/), which it places
 every label with.
@@ -68,7 +68,7 @@ so `import bloom` works in the `petal` CLI and in every host that embeds
 Petal.
 
 ```bash
-petal check myapp/app.ptl                 # requires host interfaces: ui >=0.1 (bloom), ui >=0.1 (text_layout)
+petal lint myapp/app.ptl                  # requires host interfaces: ui >=0.1 (bloom), ui >=0.1 (text_layout)
 petal-ui-run myapp/app.ptl --frames 60
 ```
 

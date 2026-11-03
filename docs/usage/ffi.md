@@ -171,7 +171,7 @@ and `native_signatures(name)` reads the declarations back. Declare before
 should declare nothing.
 
 These calls are the low-level form. The usual way to give a host's natives
-their parameter names — and the only way `petal check` learns them, since it
+their parameter names — and the only way `petal lint` learns them, since it
 never sees the host's `Env` — is to *declare* the natives in Petal source, as
 the next section describes, and hand that source to `Env::declare_natives`.
 
@@ -304,7 +304,7 @@ refers to links nothing, so a host may provide part of an interface to
 scripts that use only that part.
 
 A tool that only *checks* a program must not need the natives:
-`Env::set_check_only(true)` compiles without linking. `petal check`, the LSP,
+`Env::set_check_only(true)` compiles without linking. `petal lint`, the LSP,
 `petal suggest`, `petal apply-change` and the static `show-*` tools do this;
 a declared native they do not register is still a known name with known
 parameters. (`Env::link_program(&program)` runs the check by hand, and
@@ -348,7 +348,7 @@ always links. A test (`core/src/builtins/decls.rs`) holds the packages to
 exactly the natives `register_builtins` registers, and every declared form to the argument counts
 the native really takes. petal-ui's natives are declared by its `ui` package
 (`core-libs/petal-ui/prelude/ui.ptl` and `input.ptl`), which is bundled in the
-binary too, so `petal check` reads it with no host.
+binary too, so `petal lint` reads it with no host.
 
 **Every native declares what it does.** The third argument is its
 `NativeEffects` row: what it reads (`InputClasses`: `POINTER`, `KEYBOARD`,
@@ -898,7 +898,7 @@ To ask: `NativeEffects::is_const()` on a row, or, for a registered native,
 `ConstIfCallbacksAre` for the higher-order builtins (`map`, `filter`,
 `reduce`, `sort`, `sort_by`), which are constant exactly when the functions
 they are handed are. A name nothing registered — a `native fn` compiled
-without its host, as under `petal check` and the LSP — is `Dynamic`, so those
+without its host, as under `petal lint` and the LSP — is `Dynamic`, so those
 tools may call less static than a host does and never more. A row that says
 `CONST` and also reads, probes, emits or has an effect contradicts itself and
 is treated as dynamic.

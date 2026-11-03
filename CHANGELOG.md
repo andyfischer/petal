@@ -119,6 +119,21 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- `petal check` is gone: its compile check is now the first stage of
+  `petal lint`, which then runs the lint rules. `petal lint` walks the current
+  directory (or the given paths) by default, checking every program and
+  skipping the check of a module another linted file imports (its findings
+  come through the importer); `--single-file <file>` lints exactly one file
+  as its own program, as `petal check <file>` did. `--strict`, `--lenient`,
+  `--ir` and `--error-format` moved over. Exit status: 1 on a program that
+  does not compile or lower, or has a check error; warnings and rule findings
+  now pass unless `--strict` (rule findings used to fail `lint`). `--json`
+  is one object per file — `{ok, warnings, findings, requires?}` — or
+  `{ok, files: [...]}` over a walk, replacing `lint`'s flat array.
+  `--rules-include=` (empty) runs the compile check alone. The MCP tool
+  `CheckSnippet` is now `LintSnippet`
+  ([`lint`](docs/CLI.md#lint--check-programs-without-running-them)).
+
 - A loose file (one in no package) is the module `./level`, not `level`: its
   name is its path from the entry file written as a relative import. A loose
   file named like a package (`color.ptl` beside `import ui`, which loads the

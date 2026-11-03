@@ -23,7 +23,7 @@ and the size profile have all shipped, and its leftovers are below.
 [memo-purity-check.md](memo-purity-check.md). Nothing checks that a `memo(k)`
 initializer reads only its key. `memo(k) v = k * scale` hands the first
 caller's `scale` to every caller: `scaled(2, 10), scaled(2, 100)` prints
-`20 20`, and `petal check` is clean. The `state-key-deprecated` auto-fix no
+`20 20`, and `petal lint` is clean. The `state-key-deprecated` auto-fix no
 longer makes such memos (fixed 2026-11-03: it rewrites only an initializer
 built from its key alone). The check itself is planned in that file, as a
 seeded mode of the static classifier.

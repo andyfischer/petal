@@ -27,7 +27,7 @@ Petal already had two ways to say something about source, and neither fit.
 
 | Channel | Verdict | Applied |
 |---|---|---|
-| `petal check` | a **warning** — this is wrong | never |
+| `petal lint` | a **warning** — this is wrong | never |
 | `petal lint` | a **normalization** — this is not how we write it | automatically, `--fix` |
 | `petal suggest` | a **proposal** — this might be what you meant | only on request |
 
@@ -64,7 +64,7 @@ For a return type: the body's tail expression, and every explicit `return`.
 Evidence is gathered by the type checker itself, on its ordinary walk, behind
 a `collect_inferences` flag that an ordinary compile leaves off. There is no
 second analysis to keep in step with the first: what `suggest` believes about
-a type is by construction what `check` believes about it.
+a type is by construction what the compile check believes about it.
 
 ### Rejected sources, and why
 

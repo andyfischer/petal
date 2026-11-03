@@ -67,7 +67,7 @@ fn warnings(src: &str) -> Vec<String> {
         .collect()
 }
 
-/// What `petal check` adds on top: names nothing defines, and named arguments
+/// What `petal lint` adds on top: names nothing defines, and named arguments
 /// a native cannot take.
 fn unresolved(src: &str) -> Vec<String> {
     let mut env = Env::new();

@@ -112,7 +112,7 @@ Each of these writes `.ptl` files in place, and each is described in
 | Command | What it rewrites |
 |---|---|
 | [`petal fmt`](../CLI.md#fmt--canonical-layout) | Layout only: the canonical indentation and spacing. |
-| [`petal lint --fix`](../CLI.md#lint--rules-with-fixes) | Code that has a better spelling, by named rule (`prefer-let`, `no-redundant-cast`, `prefer-match`, `prefer-repeat`, `prefer-compound-assign`, `prefer-pub`, and the opt-in `state-as-constant`). A fix is written only if a file that compiled still compiles; `--verify[=ir\|strict]` also compiles both sides and compares their IR, and refuses a rewrite it cannot prove. |
+| [`petal lint --fix`](../CLI.md#rules) | Code that has a better spelling, by named rule (`prefer-let`, `no-redundant-cast`, `prefer-match`, `prefer-repeat`, `prefer-compound-assign`, `prefer-pub`, and the opt-in `state-as-constant`). A fix is written only if a file that compiled still compiles; `--verify[=ir\|strict]` also compiles both sides and compares their IR, and refuses a rewrite it cannot prove. |
 | [`petal suggest --apply`](../CLI.md#suggest--suggest-safe-refactors-for-a-file) | Refactors that are proved not to change behaviour (type annotations, return types, named arguments). |
 | [`petal apply-change`](../CLI.md#apply-change--refactors-that-change-behaviour) | Refactors that do change behaviour, such as `convert-to-var`. |
 | [`petal fix-imports`](../CLI.md#fix-imports--migrate-imports) | Imports, for the current module system. |

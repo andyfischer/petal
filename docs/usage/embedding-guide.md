@@ -123,7 +123,7 @@ natives applies them, and the native itself does not change. Three more steps
 make the interface checkable:
 
 - Keep the package in a directory with a `petal.toml`, so the stock
-  `petal check` and the language server can read it with no knowledge of the
+  `petal lint` and the language server can read it with no knowledge of the
   host.
 - Announce it with `env.provides_package("myhost")` (or
   `env.provides("myhost", "0.1.0")`), so a package that `[requires]` it loads
@@ -452,7 +452,7 @@ something that takes time. Expectations that fail outside a test are read
 with `Env::take_expect_failures(stack)`. The loop, the result types and the
 limits are in [testing.md](../testing.md#running-tests-from-a-host).
 
-### Showing what `petal check` would say
+### Showing what `petal lint` would say
 
 A program that loads can still hold lines that fail whenever they run: a name
 nothing defines, a call with an argument count no overload takes. Every
@@ -464,7 +464,7 @@ let report = env.check_program(pid);       // petal::check::CheckReport
 if !report.passed() {
     // report.errors(), report.lower_error
 }
-eprint!("{}", env.diagnostics_text(pid));  // the text `petal check` prints
+eprint!("{}", env.diagnostics_text(pid));  // the text `petal lint` prints
 ```
 
 After a reload, print what the edit introduced rather than everything again.

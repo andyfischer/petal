@@ -47,7 +47,7 @@ against `screen_width()` / `screen_height()` and the list width is the
 divider's, so it reflows (checked at 1000x700, where the rail's last labels
 tuck under the account footer), but the proportions are tuned for that size.
 
-Check the scripts with `petal check`. `text_layout` is bundled, and the panel
+Check the scripts with `petal lint`. `text_layout` is bundled, and the panel
 natives come from `import garden`, which resolves through
 `examples/petal.toml`:
 
@@ -210,7 +210,7 @@ with a plain `petal run test.ptl`.
   item jump 3 px; the rail asks for the regular style's `y` for both.
 - **A `state` named like a builtin shadows it silently in the panel.** The
   list width was first called `split`, and `split(text, "\n")` then tried to
-  call an int. `petal check --strict` caught it as a capture warning; the
+  call an int. `petal lint --strict` caught it as a capture warning; the
   runtime message would not have pointed there.
 - **Seeded text is ASCII.** Highlighting lowercases a string and then slices
   the original by the same character offsets, which holds as long as `lower`

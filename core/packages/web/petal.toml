@@ -6,7 +6,7 @@
 # `web`. It is not bundled in the `petal` binary: a project lists it as a path
 # dependency (`web = { path = "…/core/packages/web" }`, as
 # integrations/petal-web-html/examples/petal.toml does), or check a loose
-# script with `petal check -I core/packages/web <file>`.
+# script with `petal lint -I core/packages/web <file>`.
 [package]
 name = "web"
 version = "0.1.0"

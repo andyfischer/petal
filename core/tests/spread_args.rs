@@ -341,7 +341,7 @@ print(call_tool(\"open\", {}))";
     );
 }
 
-/// `petal check` has nothing to say about a spread call that runs, and the
+/// `petal lint` has nothing to say about a spread call that runs, and the
 /// call survives a hot reload.
 #[test]
 fn a_spread_call_checks_clean_and_reloads() {

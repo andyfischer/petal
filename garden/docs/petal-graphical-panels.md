@@ -256,7 +256,7 @@ the panel exactly as editing the script does. A panel inside a project (a
 directory with a `petal.toml` above it) can import that project's
 dependencies too.
 
-**Checking a panel without Garden.** `petal check panel.ptl` resolves `ui`,
+**Checking a panel without Garden.** `petal lint panel.ptl` resolves `ui`,
 `bloom` and `text_layout` by itself. `garden` is not bundled in the `petal`
 binary: list it in the project's `petal.toml`
 (`garden = { path = "…/garden/garden-script/packages/garden" }` under

@@ -104,7 +104,7 @@ panel_stop
 
 The app starts with `import ui` and `import garden` (and `import bloom` if it
 uses bloom), plus the builtin packages whose names it calls (`import
-creative`, `import vec2`, `import color`, …); `check` names a missing one and
+creative`, `import vec2`, `import color`, …); `petal lint` names a missing one and
 `petal fix-imports` adds it. `check` finds the `garden` package through
 `examples/petal.toml`, so no flag is needed under `examples/`. `petal lint` is a
 separate pass: it reports spellings that have a better
@@ -142,7 +142,7 @@ Rules that cost the most time when broken:
   frame to get one back.
 - `context_menu(...)` must be the last draw call of the frame;
   `menu_blocking(...)` the first input check.
-- `petal check` does not catch a misspelled global. `status_error` in
+- `petal lint` does not catch a misspelled global. `status_error` in
   `/state` does.
 - Work around language and host limits in Petal and note them in the README.
   Do not patch `core/`, `garden/*/src/`, `core-libs/petal-ui/src/` or any `Cargo.toml`

@@ -133,7 +133,7 @@ petal-images hit a keyed-loop parse error that turned out to be a stale
 date (`petal 0.1.0 (1064dcd004 2026-11-02, built 2026-11-02)`).
 
 Action:
-- [ ] Let `petal.toml` state a minimum Petal version and have `petal check`
+- [ ] Let `petal.toml` state a minimum Petal version and have `petal lint`
       warn when the binary is older. Today `[requires] petal = ">=9.0"` is
       read as a host interface named `petal`, and `run` fails with "requires
       the host interface `petal`". Moses asked for the same

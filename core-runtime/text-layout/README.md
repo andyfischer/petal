@@ -64,7 +64,7 @@ A host that provides the `ui` interface — one that embeds
 `petal-web-canvas`, the `petal-ui-run` driver, or your own embedder calling
 `petal_ui::register_all`. The manifest says so (`[requires] ui = ">=0.1"`),
 so a script that imports `text_layout` is refused at load anywhere else, and
-`petal check` reports the requirement. It asks for no natives of its own, no
+`petal lint` reports the requirement. It asks for no natives of its own, no
 fonts and no files at runtime.
 
 A host that publishes no vertical metrics is not an error: `text_metrics`
@@ -81,7 +81,7 @@ package name is the first segment of an import path, so it has to be
 spellable as an identifier.
 
 ```bash
-petal check myapp/app.ptl                 # requires host interfaces: ui >=0.1 (text_layout)
+petal lint myapp/app.ptl                  # requires host interfaces: ui >=0.1 (text_layout)
 petal-ui-run myapp/app.ptl --frames 60
 ```
 

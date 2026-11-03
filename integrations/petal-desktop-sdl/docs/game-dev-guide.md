@@ -35,9 +35,9 @@ extras — `sfx`, `synth`, `load_text_file`, `save_text_file`, `file_exists`,
 the example browser — come with `import sdl`. The math and color helpers
 that are not plain math are behind imports too: `import creative` (`lerp`,
 `distance`, `map_range`, …), `import vec2`, `import noise`, `import color`
-(`hsv`, …). `petal check` names the import a script is missing.
+(`hsv`, …). `petal lint` names the import a script is missing.
 
-Check a script without the runner with `petal check game.ptl`. `import ui`
+Check a script without the runner with `petal lint game.ptl`. `import ui`
 resolves anywhere; `import sdl` resolves when the script's project lists the
 package (`sdl = { path = "…/integrations/petal-desktop-sdl/packages/sdl" }`
 under `[dependencies]` in the nearest `petal.toml`, as this repository's

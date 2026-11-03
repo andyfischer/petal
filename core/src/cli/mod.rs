@@ -161,24 +161,6 @@ pub enum Command {
     /// `bench` — run a file repeatedly and report what a call of each named
     /// function costs, with the optimizer on and off.
     Bench(BenchOpts),
-    Check {
-        json: bool,
-        /// Exit non-zero when type-checker warnings exist (for CI). Plain
-        /// `check` exits non-zero only for checker errors.
-        strict: bool,
-        /// Exit 0 despite checker errors: only a program that fails to
-        /// compile or lower fails. For tools that ask only "does it
-        /// compile?".
-        lenient: bool,
-        /// Load the input as JSON IR (`show-ir --json` output) instead of
-        /// source, then check it lowers — same flag as `run --ir`.
-        ir: bool,
-        /// How errors are printed (`--error-format full|bare`).
-        error_format: ErrorFormat,
-        /// Files after the first: `petal check a.ptl b.ptl` checks each as
-        /// its own program. Empty for one file or `-e`.
-        more: Vec<String>,
-    },
     /// `suggest` — suggest safe refactors for a file: type annotations the
     /// program already implies, and named arguments for long positional
     /// calls. Report-only unless `--apply`; nothing here ever warns or fails
@@ -348,6 +330,20 @@ pub struct LintArgs {
     /// fixed text and compare their IR (`crate::ir_equiv`). A rewrite that
     /// cannot be accepted is never written; see `handle_lint`.
     pub verify: Option<crate::lint::VerifyMode>,
+    /// `--strict`: fail on warnings and style findings too, not only on
+    /// errors.
+    pub strict: bool,
+    /// `--lenient`: fail only when a program does not compile or lower;
+    /// checker errors are reported and pass.
+    pub lenient: bool,
+    /// `--single-file`: lint exactly one file (or `-`), as its own program,
+    /// with no directory walk and no module skipping.
+    pub single_file: bool,
+    /// `--ir`: the one input is JSON IR (`show-ir --json` output); only the
+    /// compile check runs. Implies `single_file`.
+    pub ir: bool,
+    /// How errors are printed (`--error-format full|bare`).
+    pub error_format: ErrorFormat,
 }
 
 pub enum SourceInput {
@@ -442,12 +438,25 @@ fn die_with(json: bool, err: &str, phase: &str, warnings: serde_json::Value) -> 
             obj["warnings"] = warnings;
         }
         print_json(&obj);
-    } else if bare_errors() {
-        eprintln!("{}", bare_error_text(err));
     } else {
-        eprintln!("Error: {}", err);
+        eprint_error(err);
     }
     process::exit(1);
+}
+
+/// Print an error the way [`die_with`] does without `--json`: `Error: …`, or
+/// the message alone under `--error-format bare`.
+fn eprint_error(err: &str) {
+    eprintln!("{}", error_text(err));
+}
+
+/// The line(s) [`eprint_error`] prints for `err`, without the newline.
+fn error_text(err: &str) -> String {
+    if bare_errors() {
+        bare_error_text(err)
+    } else {
+        format!("Error: {}", err)
+    }
 }
 
 /// Reduce a rendered error to just its message text: drop the `Caused by:` /
@@ -498,31 +507,41 @@ fn die_error(
     warnings: serde_json::Value,
     source: &str,
 ) -> ! {
-    let text = err.to_string();
-    if !json {
-        // Human output gets the same caret block a runtime error and a type
-        // warning get. A parse error used to be the odd one out: a bare
-        // `[line N, column M]` with nothing to look at.
-        //
-        // Only entry-file items can be underlined — a module's own source is
-        // not what was handed to this command, and the span indexes it.
-        let mut rendered = String::new();
-        for (i, item) in err.items.iter().enumerate() {
-            if i > 0 {
-                rendered.push('\n');
-            }
-            rendered.push_str(&item.to_string());
-            if item.file.is_none()
-                && let Some(span) = &item.span
-                && let Some(snippet) = crate::backend::errors::format_source_snippet(source, span)
-            {
-                rendered.push('\n');
-                rendered.push_str(&snippet);
-            }
-        }
-        die_with(json, &rendered, err.phase.as_str(), warnings);
+    if json {
+        print_json(&load_error_json(err, warnings));
+    } else {
+        eprint_error(&render_load_error(err, source));
     }
-    let mut obj = error_json_value(&text, err.phase.as_str());
+    process::exit(1);
+}
+
+/// A front-end failure as human output: each diagnostic, with the same caret
+/// block a runtime error and a type warning get. A parse error used to be the
+/// odd one out: a bare `[line N, column M]` with nothing to look at.
+///
+/// Only entry-file items can be underlined — a module's own source is not
+/// what was handed to the command, and the span indexes it.
+fn render_load_error(err: &crate::error::LoadError, source: &str) -> String {
+    let mut rendered = String::new();
+    for (i, item) in err.items.iter().enumerate() {
+        if i > 0 {
+            rendered.push('\n');
+        }
+        rendered.push_str(&item.to_string());
+        if item.file.is_none()
+            && let Some(span) = &item.span
+            && let Some(snippet) = crate::backend::errors::format_source_snippet(source, span)
+        {
+            rendered.push('\n');
+            rendered.push_str(&snippet);
+        }
+    }
+    rendered
+}
+
+/// A front-end failure as the `--json` error object [`die_error`] prints.
+fn load_error_json(err: &crate::error::LoadError, warnings: serde_json::Value) -> serde_json::Value {
+    let mut obj = error_json_value(&err.to_string(), err.phase.as_str());
     if !warnings.is_null() {
         obj["warnings"] = warnings;
     }
@@ -539,8 +558,7 @@ fn die_error(
             })
             .collect(),
     );
-    print_json(&obj);
-    process::exit(1);
+    obj
 }
 
 /// Print a plain `Error: …` line and exit(1), for commands with no JSON mode.
@@ -610,32 +628,6 @@ pub fn execute(cli: CliArgs) {
         return;
     }
 
-    // `check` over several files checks each as its own program.
-    if let Command::Check {
-        json,
-        strict,
-        lenient,
-        ir,
-        error_format,
-        more,
-    } = &command
-        && !more.is_empty()
-        && let SourceInput::File(first) = &source_input
-    {
-        let files: Vec<&str> = std::iter::once(first.as_str())
-            .chain(more.iter().map(String::as_str))
-            .collect();
-        let flags = handlers::CheckFlags {
-            json: *json,
-            strict: *strict,
-            lenient: *lenient,
-            ir: *ir,
-            bare: matches!(error_format, ErrorFormat::Bare),
-        };
-        handlers::handle_check_many(&flags, &files, &include_dirs);
-        return;
-    }
-
     let source = read_source(&source_input);
 
     match command {
@@ -654,25 +646,6 @@ pub fn execute(cli: CliArgs) {
         }
         Command::Explain { json, term } => {
             handlers::handle_explain(json, &term, &source, &source_input, &include_dirs);
-        }
-        Command::Check {
-            json,
-            strict,
-            lenient,
-            ir,
-            error_format,
-            more: _,
-        } => {
-            set_error_format(error_format);
-            handlers::handle_check(
-                json,
-                strict,
-                lenient,
-                ir,
-                &source,
-                &source_input,
-                &include_dirs,
-            );
         }
         Command::Fmt { .. }
         | Command::Lint(_)

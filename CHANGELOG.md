@@ -12,6 +12,18 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- Record templates (L6 of the retained scene plan): a record literal whose
+  fields are mostly static (`{shape: "box", size: 2.0, pos: p}`) is
+  compiled to a template plus holes, and each record it builds carries a
+  template id naming its static part, stable across frames, reloads and
+  processes. Scripts cannot tell; `Env::set_record_templates(false)` /
+  `PETAL_RECORD_TEMPLATES=0` turns it off. C bridge: `pb_value::tmpl`
+  (`pb_template`), a template's static fields decoded once per VM,
+  `pb_snapshot_update_record` (only the holes compared) and
+  `pb_vm_set_record_templates`. `pb_value` grew by one pointer: rebuild
+  hosts against the new header
+  ([retained-scene-output.md](docs/dev/retained-scene-output.md#l6-binding-time-split-of-option-records-as-built-b4)).
+
 - Dependency classes (L5 of the retained scene plan): every term and
   function of a program gets a mask of what it can depend on (`CLOCK`,
   `INPUT`, `VIEWPORT`, `HOST_DATA`, the new `PHYSICS` and `NET`, `STATE`,

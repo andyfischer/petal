@@ -916,6 +916,19 @@ in `core/tests/static_cache.rs` and
 `freezing_what_a_function_returned_freezes_the_kept_value` in
 `core/tests/static_in_functions.rs`.
 
+**Record templates.** With the cache on, a record literal whose fields
+are mostly static (`{shape: "box", size: 2.0, mass: 5.0, pos: p}`) is
+marked at lowering with its holes (`core/src/record_template.rs`; `show-bytecode`
+prints `template N holes [...]` after the map). The VM keeps the static
+fields of the first record a literal builds and tags every record whose
+static fields are still those with a template naming them; a field that is
+a constant of the program is not compared, so on `scene_frame`'s ships the
+check costs nothing measurable. Nothing a program can do reads the tag. It
+is for hosts: the C bridge decodes a template's static fields once
+([retained-scene-output.md](retained-scene-output.md#l6-binding-time-split-of-option-records-as-built-b4)).
+`Env::set_record_templates(false)` or `PETAL_RECORD_TEMPLATES=0` builds every
+record untagged.
+
 ## Where the remaining headroom is
 
 Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from

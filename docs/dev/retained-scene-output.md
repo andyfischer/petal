@@ -453,3 +453,151 @@ lambda made in a top-level loop whose closure a later call picks by input
 - The static-argument rule inside functions accepts only literals and
   static captures; `FnPlan` (`static_cache/in_fn.rs`) knows more invariant
   terms and could be shared.
+
+## L6: binding-time split of option records (as built, B4)
+
+**The problem.** In `body(1000 + i, {shape: "box", size: 2.0, mass: 5.0,
+kinematic: true, color: #ff8800, roughness: 0.4, metallic: 0.2, pos: p})`
+seven of the eight fields are the same on every call, but nothing said so:
+each record reached the host as eight values to decode (a string copied each
+time), and a keyed declaration compared all eight with last frame's to find
+that only `pos` moved. L4's plans and snapshots made both cheaper per field;
+the compiler knows which fields cannot change and can take them out.
+
+**The mechanism** (`core/src/record_template.rs`).
+
+- **At lowering** (with the static-value cache, after it): a plain record
+  literal (no class, no repeated key) with at least as many static fields as
+  holes gets a `TemplatePlan` on its `Inst::AllocMap`: its holes and a site
+  index. A field is static when its value is a constant, a top-level value
+  the cache may keep (`StaticPlan::roots`), or a term in a function body that
+  is invariant across calls (`FnPlan::invariant`, the expression-level
+  classifier behind `static_in_functions`; `FnPlan` is now computed once in
+  `static_cache::apply` and shared). Where observations are preserved (no
+  `FnPlan`) only constants and top-level values count. `show-bytecode`
+  prints `template N holes [...]` after the map.
+- **At run time** each stack keeps, per site (beside its static slots, so
+  stamped by the lowering and emptied with them, and rooted for the
+  collector), the static fields of the first record the literal built and a
+  `record::Template`: `id`, `holes`, `len`. The record is built exactly as
+  before, from the same registers; if its static fields are the site's, it
+  carries the template (`RecordMap::template`, an `Arc` beside the values).
+  A constant field is not compared (it is the same by construction; a
+  patched literal bumps the constant revision, which empties the sites); a
+  classifier-static field is compared, the same heap object first and then
+  by contents (`static_cache::identical`). One that differs starts the site
+  over under a new id; a site that starts over more than 8 times, or holds
+  a value with no contents to name (a closure, a cell, a handle, a pending
+  value), stops tagging. The kept values are made immutable, as the cache's
+  are, so what an id names cannot change under it.
+- **The id** is a SipHash (fixed keys) of the keys, the hole positions and
+  the static values' exact contents (kind and bits, so `1` is not `1.0`;
+  strings by bytes; lists, records with keys and class, enums, dicts).
+  The same literal with the same static values has the same id on every
+  frame, after a reload that does not change them (including a recompile),
+  in a fresh `Env` and in another process; editing one of them gives a new
+  id. (A symbol is hashed by its id in the VM's table, stable within a
+  process.)
+- **Invisible to scripts.** Equality, printing, field reads, spreads and
+  copies ignore the tag, and every `&mut` method of `RecordMap` drops it,
+  so a record that was written to (`set b.size = 3.0`, or `b.pos`) or
+  rebuilt by a spread is untagged. `Env::set_record_templates(false)` (or
+  `PETAL_RECORD_TEMPLATES=0`) builds every record untagged, the oracle.
+
+**The bridge** (`integrations/petal-c-bridge`). A decoded `PB_MAP` carries
+`pb_value::tmpl`, a `pb_template` (id, field count, hole positions, an
+`is_hole` byte per field); `Value::record_template()` /
+`template_id()` in C++. The view arena decodes a template's static fields
+once into an arena of its own and copies those nodes into each record's
+children (their text and nested children stay in the template's arena), so
+only the holes are decoded. A VM's drains share one template cache
+(`view::TemplateCache`), trimmed only when the views are cleared, so a
+template is decoded once per VM rather than once per drain; a native's
+argument arena keeps its own. `pb_snapshot_update_record(snap, record,
+values, n, changed)` (`Snapshot::update(record, options)`) compares only the
+options bound to holes when the record has the template the snapshot last
+held (it finds the field an option is bound to by its position in the
+record's children). `pb_vm_set_record_templates` switches tagging. The
+`pb_value` struct grew by one pointer (80 → 88 bytes): a host must rebuild
+against the new header (`pb_abi_check` catches a mismatch).
+
+**Measured.** Release, Apple M4, load average 4 to 10 (other builds
+running), median µs per frame over 300 frames of the default world (2,000
+city meshes, 400 crates, 300 ships), worlds identical across every mode on
+every frame.
+
+Through the bridge (`examples/scene_frame.cpp`; `.untagged` is the same
+host with tagging off in the VM; host includes the drain):
+
+| Mode | Script | Drain | Host | Total |
+|---|---:|---:|---:|---:|
+| emit + plan, untagged | 222 to 237 | 387 to 404 | 552 to 576 | 775 to 819 |
+| emit + plan | 224 to 231 | 320 to 335 | 487 to 505 | 716 to 736 |
+| emit + snapshot (diff), untagged | 230 to 233 | 401 to 405 | 576 | 808 to 810 |
+| **emit + templates** (`tmpl`) | 224 to 226 | 325 to 332 | **474 to 479** | **698 to 707** |
+
+- Decoding: the ships' bodies and meshes and the crates are templated
+  (the city's draws read a loop variable in every field, so they are not);
+  the drain falls from about 400 to about 330 µs with no host change.
+- Reading: `tmpl` (the snapshot compares only `pos`; a draw's static
+  options are read once per template) takes the host from about 500 to 477.
+  Callback modes (native arguments decoded per call) were too noisy under
+  this load to separate (`callback.diff` 1,550 to 1,620, `callback.tmpl`
+  1,470 to 1,620).
+
+In the Rust mock (`core/examples/scene_frame`, VM segments), a host that
+reads templates (`emit + memo + VM segments + templates`) goes from 41 to
+37 µs: it reads values off the heap, so it never paid for decoding, and
+only the field compares go. Script time with tagging on and off
+(`TEMPLATES=off`): 192 to 198 µs against 197 to 198, the same; an earlier
+version that compared every static field, constants included, cost about
+5 µs (600 tagged records a frame).
+
+Reproduce:
+
+```sh
+cd core
+CARGO_TARGET_DIR=... cargo run --release --example scene_frame
+TEMPLATES=off MODES="emit + memo + VM segments" cargo run --release --example scene_frame
+cmake -S integrations/petal-c-bridge -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release -DPETAL_CARGO_TARGET_DIR=<target>
+cmake --build <build> --target petal_bridge_scene_frame
+MODES=emit.plan.untagged,emit.plan,emit.diff.untagged,emit.tmpl <build>/petal_bridge_scene_frame
+```
+
+**Checked by** `core/tests/record_templates.rs`: each script run frame by
+frame with tagging on, off, with no static-value cache, with the cache
+checking itself, and with memoization, which must print and emit the same;
+and every pair of records with one id must agree on everything but their
+holes. It covers which literals are tagged and their holes, writes and
+spreads dropping the tag, ids across reloads (text moved, another literal
+changed, a patched `config let`) and a fresh `Env`, `1` against `1.0` and
+nested values, a closure in a static field, and tags through memo replays.
+`record_template::tests` holds a site to its rules (a static field that
+changes starts it over under another id and back again; a site that keeps
+changing gives up; kept values become immutable; off tags nothing). The
+static-value fuzzers (`static_fuzz`, `static_fn_fuzz`) run with tagging on.
+The bridge has `plan::tests::a_templated_record_decodes_as_an_untagged_one_from_one_decode_of_its_template`
+(the views equal, the static text shared), `a_snapshot_compares_only_the_holes_of_the_template_it_holds`,
+and `a_templated_record_carries_its_template_and_a_snapshot_compares_its_holes`
+in `bridge_tests.cpp` (on against off through a VM).
+
+**Left for later:**
+
+- **The record is still allocated whole** each evaluation: the VM copies
+  the static values from registers into a fresh vector. Sharing the
+  template's values copy-on-write (or a record that holds its template and
+  only its holes) would stop the allocation the plan mentions; it touches
+  every reader of `RecordMap`.
+- **Calls do not carry `(template, holes)` separately**: the host receives
+  the record and its tag. For an emitter that is the same information; a
+  native ABI that passed only holes would need the host to hold the
+  template's decoded values first.
+- **Spreads and writes drop the tag.** `{...base, pos: p}` with a static
+  `base`, or a write to a hole, could keep or derive a template.
+- Class instances and literals with fewer static fields than holes are not
+  templated. Inside a top-level loop body only constants and top-level
+  values count as static (`FnPlan` covers function bodies).
+- **Cheesecake adopting it**: once it vendors this bridge, its body entry
+  can use `Snapshot::update(opts, o)` and its draw path can keep what it
+  parsed per `template_id()`. The `pb_value` size change needs its rebuild.
+- The id is 64 bits; a collision could mislead a host that caches by id.

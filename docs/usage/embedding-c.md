@@ -469,6 +469,36 @@ the same order (a state record a native returns on every call) get one
 shape, as a literal's records do, so building one costs its values and a
 script's field reads on it hit the VM's inline cache.
 
+### Record templates: the static part of an options record, decoded once
+
+In `body(i, {shape: "box", size: 2.0, mass: 5.0, color: #f80, pos: p})`
+every field but `pos` is the same on every call. Petal compiles such a
+literal (one whose fields are mostly constants or values that cannot
+change) to a **template** plus **holes**, and every record it makes carries
+the template: `Value::record_template()` (`pb_value::tmpl`, a
+`pb_template`), with an `id` and the hole positions. Records with one id
+have the same keys and, in every field that is not a hole, the same
+contents. The id is a hash of those contents, so it is the same on the next
+frame, after a reload that leaves the literal alone, and in the next run.
+
+The bridge uses it itself: a template's static fields are decoded once per
+VM and copied into each record's view, so a drain decodes only the holes.
+A host can do the same with what it makes of the options:
+
+```cpp
+struct Body { petal::Snapshot snap; /* ... */ };
+auto o = body_opts.bind(opts);
+auto changed = body.snap.update(opts, o);   // same template as last time: compares only the holes
+for (size_t i : changed) apply(body, i, o[i]);
+```
+
+or keep what it parsed from a template's static options by
+`opts.template_id()`, and read only the options bound to holes
+(`tmpl->is_hole[field]`). A script cannot tell a tagged record from an
+untagged one, and any write to a record drops its template.
+`vm.set_record_templates(false)` (`pb_vm_set_record_templates`) builds every
+record untagged: the oracle to hold a host's template reads to.
+
 ### How it works (no globals)
 
 Each host native is one boxed Petal native

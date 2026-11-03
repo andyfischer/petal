@@ -942,7 +942,7 @@ found 2 problem(s) in 1 file(s); run `petal lint --fix` to fix them
 | `config-not-data` | `config let X = e` where `e` needs evaluating (`level.SPAWN`, `2 * W`): hosts read a config value without running the program ([config-let.md](syntax/config-let.md#what-a-config-binding-can-hold)), so they see none | none: write the value as data, or make it a plain `let` |
 | `int-division` (opt-in) | `a / b` on two proven ints, whose truncated quotient is then an operand of float arithmetic or the argument of `float(...)` | none: either reading can be meant |
 | `prefer-pub` | the deprecated `export` modifier, on any declaration or `import` | `export` → `pub` |
-| `state-key-deprecated` | every `state(key)` declaration, which is deprecated (the compiler warns about it too, under the same rule id) | `state(k)` → `memo(k)` where the slot is never written: not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Otherwise reported |
+| `state-key-deprecated` | every `state(key)` declaration, which is deprecated (the compiler warns about it too, under the same rule id) | `state(k)` → `memo(k)` where the slot is never written and the initializer is plainly a pure function of the key (no calls, no `get`, no name the key does not read): not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Otherwise reported |
 | `state-as-constant` (opt-in) | a plain top-level `state` (no key, not `state var`; `pub state` included, since importers cannot write an export) that nothing in the program assigns and whose initializer is static | `state` → `const` |
 
 Layout is not a finding: that is `fmt`. A file `--fix` changes is formatted
@@ -972,13 +972,16 @@ keeps static values. Where any of that matters, leave the `state` and put
 value, whichever caller reaches it, so it is a global hidden in a function
 (see [Deprecated: `state(key)`](features/inline-state.md#deprecated-statekey)). A slot
 nothing writes only ever holds what its initializer computed for its key,
-which is a [`memo`](features/memo.md), and `--fix` respells it so. It finds
-"nothing writes" by compiling the rewrite. One difference stays the
-author's to judge: a memo is a cache, recomputed after a reload that changes
-the program or a run that does not reach it, so an initializer that is not a
-pure function of its key (`state(id) tint = random(0.0, 1.0)`) would draw a
-new value. Keep such a slot (in a top-level `state var` Map, or as plain
-`state`) and silence the site with `// petal-lint-ignore state-key-deprecated`.
+which is a [`memo`](features/memo.md) if the initializer is a pure function of
+its key. `--fix` respells it so only when both hold. It finds "nothing
+writes" by compiling the rewrite. It finds "pure" from the initializer's
+syntax: literals, names the key reads, operators, and list, record, field,
+index and interpolation forms. Any call, `get`, lambda, branch or other name
+keeps the site as a report without a fix. A memo is shared by every caller
+with an equal key and recomputed after a reload, so `state(k) v = k * scale`
+or `state(id) tint = random(0.0, 1.0)` would change behaviour as a memo.
+Keep such a slot (in a top-level `state var` Map, or as plain `state`) and
+silence the site with `// petal-lint-ignore state-key-deprecated`.
 The compile warning for the same site (`petal check`, `petal run`, the
 language server) honours that comment as well.
 

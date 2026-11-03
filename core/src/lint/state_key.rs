@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! fn label_width(text)                  fn label_width(text)
-//!     state(text) w = measure(text)  =>     memo(text) w = measure(text)
+//!     state(text) w = text.length * 8  =>   memo(text) w = text.length * 8
 //!     w                                     w
 //! end                                   end
 //! ```
@@ -10,9 +10,10 @@
 //! Keyed state is one slot per key value whatever call path reaches it: a
 //! global hidden in a function ([`crate::compiler::keyed_state`], which also
 //! reports every site as a compile warning). The rule reports each
-//! declaration, and fixes the ones whose slot nothing writes: such a slot only
-//! ever holds what its initializer computed for that key, which is what a
-//! `memo` is.
+//! declaration, and fixes the ones whose slot nothing writes *and* whose
+//! initializer is plainly a pure function of the key: such a slot only ever
+//! holds what its initializer computed for that key, which is what a `memo`
+//! is.
 //!
 //! "Nothing writes it" is the compiler's own answer, not this rule's: a
 //! `memo` rejects every write to its name (rebind, `+=`, `set`, `@x`, an
@@ -21,12 +22,18 @@
 //! `pub memo`) and a file that does not compile here are reported without a
 //! fix.
 //!
-//! One difference the compiler cannot see: a memo is a cache, dropped by a
-//! reload that changes the program and by a run that does not reach it, and
-//! recomputed when next asked. An initializer that is not a pure function of
-//! its key (`state(id) tint = random(0.0, 1.0)`) would then give a new
-//! value. Keep such a slot as plain `state` or in a `state var` Map, and
-//! silence the site with `// petal-lint-ignore state-key-deprecated`.
+//! Purity is the part the compiler cannot see. A memo is shared by every
+//! caller with an equal key, and it is a cache: dropped by a reload that
+//! changes the program and by a run that does not reach it, and recomputed
+//! when next asked. An initializer that reads anything but its key
+//! (`state(k) v = k * scale`) would hand the first caller's answer to every
+//! caller, and one that is effectful (`state(id) tint = random(0.0, 1.0)`)
+//! would give a new value after each drop. So the fix is offered only when
+//! [`crate::compiler::keyed_state::init_is_pure_of_key`] can tell from the syntax that neither can happen:
+//! no calls, no `get`, no name the key does not read. Every other site is
+//! reported without a fix. Until the full purity check exists
+//! (docs/tasks/memo-purity-check.md), a call such as `measure(text)` is
+//! treated as possibly impure, and the author decides.
 
 use crate::ast::Stmt;
 use crate::compiler::keyed_state::{KeyedState, keyed_states, message};
@@ -50,10 +57,10 @@ pub(super) fn plan_state_key_fixes(
         return Vec::new();
     }
     // The candidates: a plain keyed `state` whose keyword is where the
-    // statement starts.
+    // statement starts, and whose initializer is plainly pure of its key.
     let candidate = |k: &KeyedState| {
         let at = k.span.start.offset as usize;
-        (!k.is_var && !k.exported && keyword_at(chars, at)).then_some(at)
+        (!k.is_var && !k.exported && k.init_pure_of_key && keyword_at(chars, at)).then_some(at)
     };
     let mut fixable: Vec<usize> = found.iter().filter_map(candidate).collect();
     if !fixable.is_empty() {

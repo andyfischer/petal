@@ -150,6 +150,16 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- `petal lint --fix` no longer rewrites a `state(key)` into a `memo` that
+  changes what the program does. A `memo` is shared by every caller with an
+  equal key and recomputed after a reload, so the old fix turned
+  `state(k) v = k * scale` into a value every caller shares, and
+  `state(id) tint = random(0.0, 1.0)` into one redrawn on each reload. The
+  `state-key-deprecated` fix now applies only to an initializer that is
+  plainly built from its key (no calls, no `get`, no other names). Every
+  other site is reported without a fix
+  ([Deprecated: `state(key)`](docs/features/inline-state.md#deprecated-statekey)).
+
 - petal-ui: `FrameCore` no longer panics on `wasm32-unknown-unknown`. It
   started on the wall clock (`Instant::now()`, which has no clock to read
   there); a web build now starts virtual and the host sets `time()` each

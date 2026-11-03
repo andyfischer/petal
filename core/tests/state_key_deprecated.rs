@@ -177,7 +177,7 @@ fn an_imported_module_is_warned_about_where_it_is_written() {
 fn lint_rewrites_a_never_written_keyed_state_to_memo() {
     let src = "\
 fn width(text)
-  state(text) w = len(text) * 8
+  state(text) w = text.length * 8
   w
 end
 print(width(\"hi\"), width(\"hi\"))
@@ -197,6 +197,56 @@ print(width(\"hi\"), width(\"hi\"))
     assert_eq!(again.findings.len(), 0, "{:?}", again.findings);
     assert_eq!(run(src), run(&expected));
     assert_eq!(deprecations(&expected), Vec::<String>::new());
+}
+
+#[test]
+fn an_initializer_that_may_not_be_pure_of_its_key_is_not_rewritten() {
+    // A `memo` shares one value between every caller with an equal key and
+    // recomputes it after a reload, so each of these would change what the
+    // program does: a name outside the key, an effectful native, a cell
+    // read, and a call the rule cannot see into (even a pure one: the full
+    // purity check is docs/tasks/memo-purity-check.md).
+    for (head, init) in [
+        ("fn f(k, scale)", "k * scale"),
+        ("fn f(k, scale)", "random(0.0, 1.0)"),
+        ("var table = [1, 2]\nfn f(k, scale)", "get table"),
+        ("fn f(k, scale)", "len(\"{k}\")"),
+        ("fn f(k, scale)", "[k, fn() k end]"),
+        ("fn f(k, scale)", "if k > 0 then k else scale end"),
+    ] {
+        let src = format!("{head}\n  state(k) v = {init}\n  v\nend\nprint(f(2, 10), f(2, 100))\n");
+        if Env::new().load_program(&src).is_err() {
+            panic!("does not compile: {src}");
+        }
+        let out = lint(&src);
+        assert_eq!(
+            (out.count(STATE_KEY_DEPRECATED), out.fixable()),
+            (1, 0),
+            "{init}: {}",
+            out.output
+        );
+        assert_eq!(out.output, src, "{init}");
+    }
+}
+
+#[test]
+fn an_initializer_built_from_its_key_alone_is_rewritten() {
+    for (key, init) in [
+        ("k", "k * 2 + 1"),
+        ("[a, b]", "{sum: a + b, label: \"{a}-{b}\"}"),
+        ("k", "[k, -k, k.x ?? 0]"),
+        ("k", "nil"),
+    ] {
+        let src = format!("fn f(k, a, b)\n  state({key}) v = {init}\n  v\nend\nprint(f(1, 2, 3))\n");
+        let out = lint(&src);
+        assert_eq!(
+            (out.count(STATE_KEY_DEPRECATED), out.fixable()),
+            (1, 1),
+            "{key} / {init}: {:?}",
+            out.findings
+        );
+        assert!(out.output.contains(&format!("memo({key}) v")), "{}", out.output);
+    }
 }
 
 #[test]

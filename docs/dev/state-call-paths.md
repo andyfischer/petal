@@ -226,7 +226,7 @@ copy; it is designed but not built (§4).
   be listed in `callback_intrinsic`. The drivers still pass the builtin's
   `call_site` to `call_closure_sync`, which the host path shares, but no
   `state` is ever keyed under it. `Index` parts come from `for`/`while`
-  only. `petal check` reports the provable cases at compile time
+  only. `petal lint` reports the provable cases at compile time
   (`compiler/callback_state.rs`, rule `state-in-callback`). Decision record:
   [proposals/state-in-callbacks.md](../proposals/state-in-callbacks.md).
 

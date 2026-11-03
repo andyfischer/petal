@@ -1,7 +1,7 @@
 # Proposal: `state` in higher-order callbacks is an error
 
 Status: implemented, 23 October 2026: the VM rule and its error in 41b0b961,
-the `petal check` pass in 4cf32b48, native `any`/`all`/`find` in be2609c2.
+the `petal lint` pass in 4cf32b48, native `any`/`all`/`find` in be2609c2.
 The user docs are
 [inline-state.md, State is not allowed in callbacks](../features/inline-state.md#state-is-not-allowed-in-callbacks)
 and the runtime design is [state-call-paths.md §3.3](../dev/state-call-paths.md#33-vm).
@@ -9,7 +9,7 @@ Where the implementation differs from the text below, a note says so.
 
 Decided by the language owner, 23 October 2026: `any`/`all`/`find` become
 native and error like `count` (question 1); the provable cases are reported by
-`petal check` (question 2); `run_state` is deferred (question 3). Question 4,
+`petal lint` (question 2); `run_state` is deferred (question 3). Question 4,
 the scope of "callback", is decided: builtins only for this phase. The
 owner's first choice was all callbacks, but the measurement in
 [Scope: all callbacks](#scope-all-callbacks-measured) found that it breaks
@@ -157,9 +157,9 @@ versions' handling of `Pending`: a pending predicate result decides nothing
 (the `if` took neither branch), and a pending list answers as the empty one
 (`false`, `true`, nil) instead of being absorbed as `filter` absorbs it.
 
-### Reported by `petal check` (decided)
+### Reported by `petal lint` (decided)
 
-The runtime error is authoritative. `petal check` also reports the cases that
+The runtime error is authoritative. `petal lint` also reports the cases that
 are provable without running anything:
 
 - a lambda literal passed to a callback builtin whose body declares `state`;
@@ -168,11 +168,11 @@ are provable without running anything:
 
 It is a compiler pass, `core/src/compiler/callback_state.rs`, a sibling of
 `keyed_state.rs`. Its findings go on `Program::warnings` with error severity,
-so `petal check` fails on them, `petal run` refuses to start, and the LSP
+so `petal lint` fails on them, `petal run` refuses to start, and the LSP
 shows them, all through the existing check path (`core/src/check.rs`).
 
 - **Error, not warning:** a provable case fails whenever it runs, the same
-  reasoning `check` already applies to calls to undefined names.
+  reasoning the compile check already applies to calls to undefined names.
 - **A live-reloading host** still prints the error and runs the script
   anyway, as with any check error.
 - **The call graph**: as implemented, the pass reads the compiled IR and
@@ -211,7 +211,7 @@ end
 print(map([10, 20, 30], seen))   // [1, 2, 3]
 ```
 
-After, the same code is an error. `petal check` can prove it, so the program
+After, the same code is an error. `petal lint` can prove it, so the program
 does not start:
 
 ```
@@ -283,7 +283,7 @@ print(count([1, 2, 3], picky))   // 2: one shared slot
 ```
 
 After, with the prototype, `any` still ran and `count` errored at
-`std.ptl:67`. As implemented, `petal check` reports both at the declaration,
+`std.ptl:67`. As implemented, `petal lint` reports both at the declaration,
 citing the user's lines (`` `count` runs, through `filter`, `picky` on line
 7 ``), and at run time both error with the note on the user's line.
 
@@ -437,7 +437,7 @@ buys nothing when there are zero users, so ship the error directly.
    leaves the rule in place.
 4. **Compile-time error only.** It cannot see callbacks passed through
    variables or parameters. It is useful as an addition to the runtime error
-   (see "Reported by `petal check`"), not as a replacement.
+   (see "Reported by `petal lint`"), not as a replacement.
 
 ## Scope: all callbacks (measured)
 
@@ -597,7 +597,7 @@ in be2609c2, step 6 in 4cf32b48, step 5 with the docs commit.
    - Update `state-call-paths.md` §2.2a, §3.3 and §5.
    - Close `state-loop-keys.md` open question 4.
    - Add a CHANGELOG entry under breaking changes.
-6. **`petal check`.**
+6. **`petal lint`.**
    - Add `core/src/compiler/callback_state.rs` next to `keyed_state.rs`, built
      on a call-graph closure of "declares state".
    - Push its errors onto `Program::warnings`.
@@ -615,7 +615,7 @@ A/B over the corpus, and `petal bench` for `state_heavy` and `map_heavy`.
 Decided on 23 October 2026:
 
 1. `any`, `all` and `find` become native and error like `count`.
-2. The provable cases are reported by `petal check`.
+2. The provable cases are reported by `petal lint`.
 3. `run_state` is deferred.
 4. The rule covers the callback builtins only for this phase:
    - `map`, `filter`, `reduce`, `forEach`, `sort_by`, and `sort` with a

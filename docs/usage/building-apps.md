@@ -67,7 +67,7 @@ the integration's own package for its extras (`import sdl` on petal-sdl,
 `import garden` in a Garden panel), bundled libraries such as `import bloom`,
 and the builtin packages (`import creative`, `import vec2`, …). Give the app
 directory a `petal.toml` that lists the integration's interface package as a
-path dependency and the stock `petal check` and the language server check the
+path dependency and the stock `petal lint` and the language server check the
 scripts with no flag ([../packages.md](../packages.md)); `petal run` itself cannot
 run a script that imports a host interface.
 

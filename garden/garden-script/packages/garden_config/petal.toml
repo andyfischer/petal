@@ -5,7 +5,7 @@
 # Garden registers this package in memory (garden-script/src/lib.rs) and
 # provides the interface `garden_config` at this version. The stock CLI finds
 # it as a path dependency of the script's project, or ad hoc with
-# `petal check -I garden/garden-script/packages`.
+# `petal lint -I garden/garden-script/packages`.
 [package]
 name = "garden_config"
 version = "0.1.0"

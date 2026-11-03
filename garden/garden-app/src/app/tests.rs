@@ -4503,7 +4503,7 @@ fn a_region_search_that_misses_says_so() {
 /// A panel script that doesn't compile must announce itself. Before this was
 /// reported, the pane silently degraded to an ordinary editor — `kind` read
 /// `editor`, `panel` was null, `status_error` was clean — so a syntax error, a
-/// bad layout, and a wrong path all looked identical, and only `petal check`
+/// bad layout, and a wrong path all looked identical, and only `petal lint`
 /// told them apart. The pane now stays a *panel* (running an empty stub) and the
 /// compile error is reported through `panel_error`/`status_error`.
 #[test]

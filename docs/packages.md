@@ -23,7 +23,7 @@ import util
 import ./level        // a file beside this one
 ```
 
-Every command that compiles (`run`, `check`, `explain`, the `show-*`
+Every command that compiles (`run`, `lint`, `explain`, the `show-*`
 commands, …) and the language server find the manifest by walking up from
 the file they are given. Inside a project nothing needs a flag.
 
@@ -100,7 +100,7 @@ both, both `path` and `git`, a name listed twice) is an error naming the
 line.
 
 A manifest that does not parse stops every program under it: `petal run` and
-`petal check` report the manifest's error and exit 1, whether or not the
+`petal lint` report the manifest's error and exit 1, whether or not the
 program imports anything. It is never taken for a missing manifest, which
 would drop the package name and `[requires]`.
 
@@ -145,11 +145,11 @@ Error: package 'bloom' requires the host interface `ui` >=0.1, which this host d
 provide — the program cannot run here; run it with a host that provides it
 ```
 
-`petal check` has no host, so it does not fail on requirements. It reports
+`petal lint` has no host, so it does not fail on requirements. It reports
 them: one line on stdout, and a `requires` array with `--json`.
 
 ```
-$ petal check app.ptl
+$ petal lint app.ptl
 requires host interfaces: ui >=0.1 (bloom), ui >=0.1 (text_layout)
 ```
 
@@ -185,7 +185,7 @@ prelude = [                    # files the host joins ahead of each script, in o
 Each value is a list of strings (one string is a list of one), and an array
 may run over several lines. Any other key is an error naming the line.
 
-`petal lsp` and `petal check` read it, and only from the project of the
+`petal lsp` and `petal lint` read it, and only from the project of the
 file they are compiling, never from a dependency. Nothing that runs a script
 reads it: the host decides what is in scope, and this only describes that.
 A relative import in a prelude file resolves beside that file, as it would on
@@ -453,7 +453,7 @@ present, against the locked hash. A mismatch is an error; `petal update
 <name>` re-pins when the change is expected.
 
 The hash is checked by `petal install`, `petal update` and `petal vendor`,
-not on every load: `petal run`, `petal check` and a host read a cached or
+not on every load: `petal run`, `petal lint` and a host read a cached or
 vendored tree as it is on disk. Run `petal install --locked` (in CI, say) to
 confirm that nothing under the cache or `vendor/` has drifted from the lock.
 
@@ -494,7 +494,7 @@ is the way to pin a patched `bloom` for one project.
 
 ## Install on demand
 
-`petal run`, `petal check` and the other commands that compile install on
+`petal run`, `petal lint` and the other commands that compile install on
 demand. The first time a program imports a git dependency, the project's
 graph is compared with `petal.lock`, and if something is missing or the
 manifest has moved past the lockfile, the install runs before the package is

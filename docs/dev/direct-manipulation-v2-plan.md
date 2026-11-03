@@ -2309,7 +2309,7 @@ the code review:
 Ecosystem: no `.ptl` in `examples/`, `garden/`, `~/worlds-fair/ui/ptl`,
 `~/petal-creative`, `~/cheesecake/games` or `~/biz/petal-lang.org` calls or
 defines `tunable` or `rigid` (the words occur only in comments), and no
-host registers a native by either name. `petal check` over all 535 `.ptl`
+host registers a native by either name. `petal lint` over all 535 `.ptl`
 files of those trees (examples 188, cheesecake 304, worlds-fair 20,
 petal-creative 23) passes on 532; the 3 failures are cheesecake `rivet`
 shaders calling the host's undeclared `hash11`, unrelated to v2.

@@ -57,7 +57,7 @@ on. The ones most tests use:
 - `runPetal(code)` / `runPetalError(code)` — run a snippet, return stdout, or
   stderr for an expected failure.
 - `runPetalFile(path)` — run a file; throws if it fails.
-- `checkJson(code)` / `checkStrict(code)` — `petal check --json` / `--strict`.
+- `checkJson(code)` / `checkStrict(code)` — `petal lint --json` / `--strict`.
 - `showIrJson(code)`, `showAstJson(code)`, `showTokensJson(code)`,
   `showBytecodeJson(code)` — parsed `--json` dumps.
 - `graphJson(code, terms, direction?, slice?)`, and the shorthands over it
@@ -90,7 +90,7 @@ that behavior was meant to change.
 ### Documentation snippets
 
 `test/vitest/doc-snippets.test.ts` compiles every ```` ```petal ```` code block
-in the user-facing docs with `petal check --lenient`, and runs the blocks that
+in the user-facing docs with `petal lint --lenient`, and runs the blocks that
 carry `print(...) // expected` comments and compares the output. A block
 tagged ```` ```petal ignore ```` is skipped. Design docs under `docs/dev/` and the
 sketches in `docs/aspirational-ideas/` are not checked.
@@ -134,7 +134,7 @@ a refactor needs (see [refactor-verification.md](refactor-verification.md)):
 
 - **`petal run --seed <n>`** (or `PETAL_SEED`, or `Env::set_seed` in an
   embedder) fixes the `random` / `random_int` / `choose` stream.
-- **`petal run --error-format bare`** (also on `check`) prints the error
+- **`petal run --error-format bare`** (also on `lint`) prints the error
   message without its position, so a re-indenting refactor does not show up
   as an output diff. The verifier treats a warnings-only difference as a note
   rather than a failure.
@@ -342,7 +342,7 @@ the reload.
 Plans live in `test/verify-plans/`. A plan's `exclude` list drops directories
 from its corpus roots (the vitest fixtures under `test/vitest`). A plan's `include` list names module search
 directories (relative to each side's root) handed as `-I` to every side of the
-run — the UI driver, `petal check`, and `petal run` alike — so corpus apps that
+run — the UI driver, `petal lint`, and `petal run` alike — so corpus apps that
 import a shared Petal library (`core-runtime`, which ships the `bloom` package)
 still compile. A step that dropped the `-I` would write such an app off as
 `unsupported` and silently skip its golden hash. The design is in

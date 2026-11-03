@@ -3,7 +3,7 @@
 //!
 //! Neither is a native. Both ride on the two host channels the core runtime
 //! already has, so a host that knows nothing about clipboards still loads the
-//! prelude, and `petal check` has no new name to learn:
+//! prelude, and `petal lint` has no new name to learn:
 //!
 //! - **Read** is a binding, like every other input. [`bind_clipboard`] (called
 //!   by [`crate::input::bind_input`], so every host does it) publishes the

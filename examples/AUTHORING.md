@@ -18,7 +18,7 @@ reference material lives elsewhere; link to it rather than guessing:
   animate by default, in pure Petal):
   [core-runtime/bloom/docs/components.md](../core-runtime/bloom/docs/components.md).
   It is bundled in the runtime, so `import bloom` works in Garden, in
-  `petal check` and in every other host with no setup.
+  `petal lint` and in every other host with no setup.
 - The panel host (draw surface, input, fonts, sleep/wake, persistence):
   [garden/docs/petal-graphical-panels.md](../garden/docs/petal-graphical-panels.md).
 - The debug server (every endpoint):
@@ -42,7 +42,7 @@ Every import is explicit. A panel app typically starts with `import ui` and
 `import garden`, adds `import bloom` or `import text_layout` when it uses
 them, and imports the builtin packages whose names it calls
 (`import creative` for `lerp` and `distance`, `import vec2`, `import color`,
-`import noise`, `import json`). `petal check` names any import that is
+`import noise`, `import json`). `petal lint` names any import that is
 missing, and `petal fix-imports app.ptl` adds them.
 
 [`examples/petal.toml`](petal.toml) makes the whole tree one project and
@@ -161,7 +161,7 @@ the last frame cost.
 
 ### Driving it
 
-`petal check --strict app.ptl` checks the app without
+`petal lint --strict app.ptl` checks the app without
 Garden: `ui`, `bloom` and `text_layout` are bundled in the `petal` binary, and
 the `garden` package the app imports is a dependency in `examples/petal.toml`.
 (An app outside this tree passes `-I garden/garden-script/packages`, or lists
@@ -488,9 +488,9 @@ These are showpieces, not smoke tests. Aim for:
   dataflow, `var`/`set` only where mutation is genuinely needed, functions to
   factor drawing, classes to name record shapes. Every function reads a
   module-level `var` with `get` (`get level`), helpers called from the top
-  level included; only module scope reads it bare. `petal check` flags the
+  level included; only module scope reads it bare. `petal lint` flags the
   slip (see the [writing guide](../docs/writing-petal-guide.md)).
-- No script error at any point in the interaction you exercise. `petal check
+- No script error at any point in the interaction you exercise. `petal lint
   --strict app.ptl` (see [Driving it](#driving-it)) confirms the
   script compiles and has no warnings before you launch anything;
   `status_error` in `/state` reports anything that breaks after.

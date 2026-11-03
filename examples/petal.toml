@@ -5,7 +5,7 @@
 # the host interface packages some of them import — `import garden` (a Garden
 # panel's channels), `import garden_config` (the layout a `layout.ptl`
 # describes), `import sdl` (petal-sdl's file I/O and sound) — with no -I flag:
-# `petal check examples/games/flappy/app.ptl` just works, and so does the
+# `petal lint examples/games/flappy/app.ptl` just works, and so does the
 # language server.
 #
 # A host that registers one of these packages itself (Garden, petal-sdl) uses

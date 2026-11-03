@@ -13,7 +13,7 @@
 
 // ── The native interface ──────────────────────────────────────────────────
 // What a petal-ui host implements in Rust (core-libs/petal-ui/src), declared
-// here so scripts and `petal check` know each native's parameter names, arity
+// here so scripts and `petal lint` know each native's parameter names, arity
 // and types: `native fn name(params) -> type`. A parameter written `name?`
 // may be left off; several declarations of one name are that native's call
 // forms. A host registers the natives (`petal_ui::register_all`); loading a
@@ -182,7 +182,7 @@ native fn _native_font(name) = "font"
 // marked "also positionally" below; its parameter names are the shape it is
 // declared as. Next to one, the shape's shorter counts keep declarations of
 // their own, so each still says in its own body what its parameters must be
-// (`petal check` reads that) rather than deferring to a runtime test.
+// (`petal lint` reads that) rather than deferring to a runtime test.
 //
 // One pair needs a third look. `draw_circle_outline(cx, cy, radius, c,
 // width: 2)` and `draw_ellipse_outline(cx, cy, rx, ry, c, width: 2)` — flat

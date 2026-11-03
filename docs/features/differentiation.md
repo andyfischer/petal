@@ -423,7 +423,7 @@ on a plain number too. They return a dual with derivative `0.0`.
 ## The `dual` type
 
 `dual` is a [type annotation](../language-guide.md#type-annotations) like
-`int` or `float`. Annotations are checked by `petal check` as warnings and
+`int` or `float`. Annotations are checked by `petal lint` as warnings and
 are not enforced when the program runs.
 
 ```petal

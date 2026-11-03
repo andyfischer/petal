@@ -204,7 +204,7 @@ $T obs obs_rows                                     # 16: its two child rows fol
   the same keypress picked item 0 at once.
 - **`import preview` did not give a module.** `preview` is also a prelude
   function, and `preview.draw(…)` failed at run time with `No method 'draw' on
-  type function` after `petal check` passed. The file is imported `as pv`.
+  type function` after `petal lint` passed. The file is imported `as pv`.
 - **Colors cannot be eased channel by channel:** `mix` rounds to whole
   channels, so an exponential approach stalls a few counts short. The palette
   cross-fade is a timed blend between two whole palettes instead.

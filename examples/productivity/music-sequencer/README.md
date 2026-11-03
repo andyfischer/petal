@@ -194,8 +194,8 @@ note.
   a step per `/state` read. The app derives its delta from `time()` instead.
   The first `/tick` after a reset still jumps the clock once (the switch from
   wall time), which is why the recipe above ticks once before pressing play.
-- **Named arguments to builtins passed `check` and failed at run time.**
-  `clamp(v, lo: 0, hi: 1)` is accepted by `petal check --strict`
+- **Named arguments to builtins passed the compile check and failed at run time.**
+  `clamp(v, lo: 0, hi: 1)` is accepted by `petal lint --strict`
   at this checkout, but the Garden binary this was built against is
   older and raised `builtin 'clamp' does not accept named arguments`. Every
   builtin call here is positional.

@@ -122,22 +122,22 @@ Action:
 
 ## 7. Installed CLI lags behind the repo (keyed loops)
 
-petal-images reported that `for t in tasks key t.id do` fails `petal check`
+petal-images reported that `for t in tasks key t.id do` fails `petal lint`
 with "Expected `do`, got `key`". Keyed loops shipped on 2026-10-22
 ([state-loop-keys.md](state-loop-keys.md)). `~/.cargo/bin/petal` was built
 2026-10-22 05:04, before the parser change.
 
 Confirmed stale binary, not a bug: after reinstalling on 2026-10-23, `petal
 check` accepts and runs a keyed loop, and petal-images' editor and examples
-still pass `petal check`.
+still pass `petal lint`.
 
 Action:
-- [x] Reinstall the CLI with `./install-local.sh` (`cargo install --path core`) and confirm `petal check` accepts keyed loops.
+- [x] Reinstall the CLI with `./install-local.sh` (`cargo install --path core`) and confirm `petal lint` accepts keyed loops.
 - [x] Then switch the petal-images inspector's effect-option loop to a keyed
       loop (done, along with the effect and mask-option loops), so a number being typed stays on its own row when the options
       change.
 - [ ] Idea: have `petal --version` print the git commit and build date, and
-      have `petal check` warn when it is older than the `petal.toml`
+      have `petal lint` warn when it is older than the `petal.toml`
       `[requires]`, so a stale binary is easier to spot.
 
 ## 8. JSON encoding is hard to find

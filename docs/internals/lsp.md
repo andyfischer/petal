@@ -171,7 +171,7 @@ and calls:
   ([Imports, projects and hosts](#imports-projects-and-hosts-that-are-not-here));
 
 and then `Env::load_program_diag(text, path)`, the same front end
-`petal check` and `petal run` use: parse, module loading, the compiler with
+`petal lint` and `petal run` use: parse, module loading, the compiler with
 the type checker, the name scan for undefined names, and the `const` check.
 `text` is the document, or the document joined with its host's prelude
 files.
@@ -202,8 +202,8 @@ failed one puts it at the top as `<file> (host prelude): <message>`, with its
 place in the file as related information.
 
 Every diagnostic has `source: "petal"`. The server does not lower the program
-to bytecode and does not run the lint rules, so two things `petal check` and
-`petal lint` report are absent: a program that compiles but fails to lower,
+to bytecode and does not run the lint rules, so two things `petal lint` reports are
+absent: a program that compiles but fails to lower,
 and lint findings.
 
 The imports are read off the compiled program by `imported_modules`. If the
@@ -274,7 +274,7 @@ prelude = ["host/garden.ptl", "lib/theme.ptl", "lib/basics.ptl", "lib/layout.ptl
 ```
 
 `HostView::for_document` ([`project_host.rs`](../../core/src/project_host.rs),
-shared with `petal check`) reads it from the nearest `petal.toml` at or above
+shared with `petal lint`) reads it from the nearest `petal.toml` at or above
 the document, and the server compiles the document as that host would:
 
 - **`imports`** are bound the way the core prelude `std` is, through
@@ -301,7 +301,7 @@ the document, and the server compiles the document as that host would:
 The worlds-fair UI carries such a section (`ui/ptl/petal.toml`, with
 `garden` as a path dependency and `color` among the imports): every file
 under `ui/ptl` checks clean, where `host/garden.ptl` had 31 diagnostics and
-`screens/missions.ptl` 78. `petal check` reads `[host]` the same way
+`screens/missions.ptl` 78. `petal lint` reads `[host]` the same way
 (`handle_check` in `cli/handlers.rs`): it joins with the same `HostView`,
 then `Joined::relocate_program` moves the findings back onto the script's
 lines (dropping the prelude files' own, which their own check reports) and
@@ -488,7 +488,7 @@ JSON.
 | `core/src/package.rs`, `core/src/module.rs` (unit tests) | parsing `[host]`; an implicit prelude that imports a module the script imports too |
 | `core/tests/keyword_sync.rs` | `KEYWORDS` against the lexer |
 | `core/tests/manifest.rs` | a `petal.toml` dependency resolves and completes with no configuration |
-| `core/src/check.rs`, `core/tests/pub_keyword.rs` | the server shows what `petal check` reports |
+| `core/src/check.rs`, `core/tests/pub_keyword.rs` | the server shows what `petal lint` reports |
 
 ```sh
 cd core && cargo test --test lsp_tests
@@ -547,7 +547,7 @@ To add a request, say `textDocument/references`:
 A new notification from the client is the same without a reply. A new kind
 of diagnostic usually belongs in the compiler, as an entry of
 `Program::warnings`: the server then shows it with no change here, and so do
-`petal check` and every host.
+`petal lint` and every host.
 
 ## What not to break
 
@@ -563,7 +563,7 @@ of diagnostic usually belongs in the compiler, as an entry of
   of a module that is open.
 - **The analysis on each change stays cheap.** Anything slow is computed on
   demand and kept until the next change.
-- **Diagnostics are what `petal check` reports.** The same front end, the
+- **Diagnostics are what `petal lint` reports.** The same front end, the
   same messages.
 - **`handle_message` stays free of transport.** The tests and any embedding
   host depend on it.
@@ -580,7 +580,7 @@ of diagnostic usually belongs in the compiler, as an entry of
   names it. A failed compile in one is placed by its display name, which can
   miss a module of a package whose file is not where its name says
   (`bloom/menu.ptl` under `src/`); it then goes to the top too.
-- **`[host]` is the server's alone.** `petal check` does not read it, so the
+- **`[host]` is the server's alone.** `petal lint` does not read it, so the
   two disagree on a script that relies on it. A prelude file is joined as
   text, so a relative import in one resolves against the document's
   directory, not the file's.

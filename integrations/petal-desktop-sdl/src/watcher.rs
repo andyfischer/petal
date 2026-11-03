@@ -52,7 +52,7 @@ pub fn check_hot_reload(
                     report.state_preserved, report.state_dropped
                 );
                 print_static_report(&report);
-                // What `petal check` would say about the edit. Printed, not
+                // What `petal lint` would say about the edit. Printed, not
                 // enforced: a half-typed line must not stop the frame loop.
                 eprint!("{}", env.diagnostics_text(program_id));
                 true

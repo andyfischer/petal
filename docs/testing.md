@@ -62,7 +62,7 @@ end
   ```
 
 - `return` leaves the test early. What the body evaluates to is ignored.
-- `petal fmt`, `petal check`, `petal lint` and the language server treat the
+- `petal fmt`, `petal lint` and the language server treat the
   body as the function body it is: it is indented, type-checked, linted and
   completed like the rest of the file, and the outline lists the test by its
   name.

@@ -1,7 +1,7 @@
 // Typed
 // Optional type annotations on bindings, parameters, and return types.
 // Types are checked at compile time (warnings only) and ignored at runtime —
-// run `petal check typed.ptl` to see any mismatches reported.
+// run `petal lint typed.ptl` to see any mismatches reported.
 
 // Annotated let bindings.
 let count: int = 3

@@ -15,7 +15,7 @@ Conventions used throughout:
 - **Animation is internal.** Every component holds its own animators in
   call-path-keyed `state`. Two callsites never share them; a component inside a
   `for` loop gets one animator per iteration.
-- **Every export is type-annotated**, so `petal check` catches a wrong argument
+- **Every export is type-annotated**, so `petal lint` catches a wrong argument
   at the callsite rather than at the draw call. Note that a rect parameter is
   `record`, not `Rect`, precisely because of the first convention above: both
   spellings are accepted, and `Rect` would reject the plain-record one.

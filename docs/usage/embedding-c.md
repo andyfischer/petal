@@ -821,7 +821,7 @@ spawn("ball", {y: gravity_at(frame: 3)})
 
 Keep the same source in a directory with a `petal.toml`
 (`packages/game/petal.toml`, `packages/game/game.ptl`) and
-`petal check -I packages script.ptl` checks your scripts with the stock CLI.
+`petal lint -I packages script.ptl` checks your scripts with the stock CLI.
 `pb_vm_add_package(vm, "packages/game", …)` registers it from that directory
 instead of from memory. In C: `pb_vm_register_package`,
 `pb_vm_verify_interface`, `pb_vm_set_check_only` (compile without linking,
@@ -919,7 +919,7 @@ with `PB_ERR_COMPILE`, phase `link`, before any line runs.
   load or reload: log them after a frame and each is said once.
 - `diagnostics_text()` (`pb_vm_diagnostics_text(vm, errors_only)`) returns
   what the compile of the loaded program found and did not stop for, as
-  `petal check` prints it (`""` when there is nothing; `errors_only`, the
+  `petal lint` prints it (`""` when there is nothing; `errors_only`, the
   wrapper's default, leaves the warnings out). Print it after a load and
   after a reload. The error that matters is a `const` that is not constant:
   the program loads and runs, with that binding built on every run as a

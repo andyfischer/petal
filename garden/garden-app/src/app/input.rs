@@ -1057,7 +1057,7 @@ fn panel_key_name(key: Key) -> Option<String> {
 /// is on, on a US layout. Key names are keys, not the characters they type:
 /// Shift+g is `"g"` with `mod_shift()`, `?` is `"slash"`, `-` is `"minus"` —
 /// what every other petal-ui host reports, so `key_pressed("G")` or
-/// `key_pressed("?")` (always false elsewhere, and a `petal check` warning)
+/// `key_pressed("?")` (always false elsewhere, and a `petal lint` warning)
 /// is not something a Garden panel can come to rely on. A character on no key
 /// in the table (`é`) passes through as itself. The typed character itself is
 /// still `text_input()`'s ([`panel_key_text`]).

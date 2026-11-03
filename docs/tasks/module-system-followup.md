@@ -15,7 +15,7 @@ still reproduce.
 ## Open issues
 
 Each repro is a handful of files in one empty directory, run with
-`petal check main.ptl` and `petal run main.ptl`.
+`petal lint main.ptl` and `petal run main.ptl`.
 
 ### 1. A loose file named like a bundled package breaks the program
 

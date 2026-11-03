@@ -52,7 +52,7 @@ print(h.name, h.returns, h.params[1].name, h.params[1].type, len(h.captures))
             "nil 6 9 nil",
             "fx Fx false nil nil",
             "amount nil true 0.35 0.35",
-            "tint nil true { b: 108, g: 42, r: 26 } #1a2a6c",
+            "tint nil true { r: 26, g: 42, b: 108 } #1a2a6c",
             "dir vec2 true vec2(1.0, 0.5) vec2(1, 0.5)",
             "late nil true nil amount * 2",
             // in order of first use in the body

@@ -52,12 +52,17 @@ This causes two problems:
   familiar keys.
 
 Action:
-- [ ] Keep insertion order when converting values for hosts: turn on
-      `preserve_order`, or use an ordered map in `value_to_json`.
+- [x] Keep insertion order when converting values for hosts: core turns on
+      serde_json's `preserve_order` (2026-11-03). Records, element `props`,
+      `json_stringify` and `json_parse` all keep the written order.
 - [ ] Add `value_to_static`, which converts a Petal value straight to a
       `StaticValue` with order kept, so hosts that write values back to
       source skip the JSON detour.
-- [ ] Add a test that `props` keeps the order the attributes were written in.
+- [x] Add a test that `props` keeps the order the attributes were written in
+      (`core/tests/json_key_order.rs`).
+
+petal-images can now drop its re-sort against a list of familiar keys, and
+apply effects in the order they are written.
 
 ## 3. `StaticValue::to_source` pads record braces
 

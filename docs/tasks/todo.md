@@ -23,24 +23,23 @@ and the size profile have all shipped, and its leftovers are below.
 [memo-purity-check.md](memo-purity-check.md). Nothing checks that a `memo(k)`
 initializer reads only its key. `memo(k) v = k * scale` hands the first
 caller's `scale` to every caller: `scaled(2, 10), scaled(2, 100)` prints
-`20 20`, and `petal check` is clean. The `state-key-deprecated` auto-fix also
-changes behaviour: `lint --fix` rewrites `state(id) t = random(0.0, 1.0)` to
-`memo(id) t = random(…)`. The fix reuses the static classifier.
+`20 20`, and `petal check` is clean. The `state-key-deprecated` auto-fix no
+longer makes such memos (fixed 2026-11-03: it rewrites only an initializer
+built from its key alone). The check itself is planned in that file, as a
+seeded mode of the static classifier.
 
-## 2. Hosts get records with their keys sorted
+## 2. *(Fixed 2026-11-03)* Hosts got records with their keys sorted
 
-[images-followup.md](images-followup.md) item 2. `value_to_json`
-(`core/src/value.rs`) collects into a `serde_json::Map`, and no crate turns
-on `preserve_order`. So an element's `props` and every record a native
-receives arrive sorted by key: `{x, y, w, h}` arrives as `{h, w, x, y}`. A
-host that writes values back to source reorders the user's file, and effect
-order cannot follow the file. The fix is one feature flag or an ordered
-map, plus a test. A `value_to_static` would let hosts skip JSON.
+Core now turns on serde_json's `preserve_order`, so `value_to_json`,
+element `props`, `json_stringify` and `json_parse` keep the written order
+(`core/tests/json_key_order.rs`). Still open from
+[images-followup.md](images-followup.md) item 2: a `value_to_static` that
+skips JSON.
 
 ## 3. Module system: one hard failure, two silent no-ops
 
-[module-system-followup.md](module-system-followup.md). All three still
-reproduce:
+[module-system-followup.md](module-system-followup.md), which now has a
+fix plan with causes ("Fix plan", 2026-11-03). All three still reproduce:
 
 - **Issue 1:** a loose file named like a bundled package (`color.ptl` beside
   `import ui`) stops the program with "two different sources are both the

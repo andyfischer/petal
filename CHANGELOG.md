@@ -150,6 +150,14 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- Records keep their key order when they cross into JSON. `value_to_json`
+  (what a host reads natives' arguments, element `props` and state dumps
+  through), `json_stringify` and `json_parse` used to sort keys, so
+  `{x, y, w, h}` reached a host as `{h, w, x, y}`, and a host that writes
+  values back to source reordered the user's file. Core now turns on
+  serde_json's `preserve_order`. Output that showed sorted keys now shows
+  them in written order.
+
 - `petal lint --fix` no longer rewrites a `state(key)` into a `memo` that
   changes what the program does. A `memo` is shared by every caller with an
   equal key and recomputed after a reload, so the old fix turned

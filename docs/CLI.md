@@ -836,6 +836,7 @@ finding a `fixable` field. `petal lint --rules` lists them.
 | `dm-hint-state-init` | `state x = tunable(…)`: a running program keeps its state across a reload, so a drag cannot move a state's initial value | none: declare the start value with `config let` and initialise the state from it |
 | `config-not-data` | `config let X = e` where `e` needs evaluating (`level.SPAWN`, `2 * W`): hosts read a config value without running the program ([config-let.md](syntax/config-let.md#what-a-config-binding-can-hold)), so they see none | none: write the value as data, or make it a plain `let` |
 | `int-division` (opt-in) | `a / b` on two proven ints, whose truncated quotient is then an operand of float arithmetic or the argument of `float(...)` | none: either reading can be meant |
+| `never-replays` (opt-in) | a function whose calls are never replayed from the memo table, and why: an effect on every call (`print`, a random draw, a host write), itself or through a function it calls on every call; a read whose answer changes every run (a native declared `ticks`, such as `time`); a top-level plain `var`, a new cell every run. A read of a revisioned class (`PHYSICS`, `NET`) on every call is reported as *rarely* replayed. The same analysis as [`show-static --deps`](#--deps--dependency-classes-and-why-a-helper-never-replays) | none |
 | `prefer-pub` | the deprecated `export` modifier, on any declaration or `import` | `export` → `pub` |
 | `state-key-deprecated` | every `state(key)` declaration, which is deprecated (the compiler warns about it too, under the same rule id) | `state(k)` → `memo(k)` where the slot is never written and the initializer is plainly a pure function of the key (no calls, no `get`, no name the key does not read): not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Otherwise reported |
 | `state-as-constant` (opt-in) | a plain top-level `state` (no key, not `state var`; `pub state` included, since importers cannot write an export) that nothing in the program assigns and whose initializer is static | `state` → `const` |
@@ -851,6 +852,11 @@ column index scaled by a float (`float(k / 2) * 3.0`). What authors cast
 defensively against is a literal fraction, and that is a compile-check
 warning with no rule to enable: `` `1 / 2` is 0: `/` on two ints drops the
 remainder ``.
+
+`never-replays` is **opt-in** (`--rules-include never-replays`): a console
+script that prints from a helper is not wrong, and the rule compiles the
+file. It is for a script a host runs every frame with memoization on, where
+it says which helpers re-run every frame and what to change.
 
 `state-as-constant` is **opt-in**: it runs only when `--rules-include` names
 it (`petal lint --rules-include=state-as-constant`, alone or with other
@@ -2797,6 +2803,7 @@ The full instruction set is documented in `core/src/backend/bytecode/isa.rs`.
 ```
 petal show-static [--json] [--all] <file.ptl>
 petal show-static [--json] [--all] -e '<code>'
+petal show-static --deps [--all] <file.ptl>
 ```
 
 Reports, for every top-level declaration, whether its value is **static**:
@@ -2989,6 +2996,63 @@ under their module-qualified names (`ui::button`). `--json` emits:
 | `mutated_by` | Static data only, present when its value reaches an in-place update |
 | `initializer_static` | Plain `state` only: whether the initializer is static (a `state` holding what is really a constant) |
 | `depends_on`, `direct_depends_on` | Every declaration the value can depend on, by qualified name, closed transitively, and the direct ones. A method call depends on every method of that name |
+
+#### `--deps` — dependency classes and why a helper never replays
+
+```
+petal show-static --deps [--all] <file.ptl>
+```
+
+Prints, for every function of the entry file (`--all`: every module), its
+**dependency classes**: what a call may depend on (`may`) and what it does on
+every call that returns normally (`every call`), by input class (`CLOCK`,
+`INPUT`, `VIEWPORT`, `HOST_DATA`, `PHYSICS`, `NET`, `RNG`, …), by the
+program's own sources of change (`STATE`, `VAR`, `MODULE_VAR`, `ENUM`) and
+by what it does (`EFFECT`, `COMMAND`, `EMIT`, `DECLARE`, `TICKS`); `CONST`
+when there is nothing, and `(constant)` for a function whose calls with
+static arguments are retained once. Then the **never-replays** findings:
+the functions whose own memo record can never validate, and why, down to the
+native. Nothing runs.
+
+```petal
+var log = []
+fn shout(x)
+  print("x {x}")
+end
+fn noisy(x)
+  shout(x)
+  x + 1
+end
+fn roll()
+  random()
+end
+fn logs(x)
+  set log = append(get log, x)
+end
+fn twice(x)
+  x * 2
+end
+```
+
+```
+shout: may EFFECT; every call EFFECT
+noisy: may EFFECT; every call EFFECT
+roll: may RNG | EFFECT; every call RNG | EFFECT
+logs: may MODULE_VAR; every call MODULE_VAR
+twice: may CONST; every call CONST (constant)
+never replays: shout: calls `print` on every call (class EFFECT: an effect a replay cannot reproduce)
+never replays: noisy: calls `shout` on every call, which never replays: shout calls `print` on every call (an effect a replay cannot reproduce)
+never replays: roll: calls `random` on every call (class EFFECT: a draw from the random stream)
+never replays: logs: uses var `log` on every call (class MODULE_VAR): a top-level var is a new cell every run, so the record never validates; a `state var` is one cell for the life of the program
+```
+
+The natives are the CLI's own: a host's natives are unknown here and claim
+nothing. A host asks with its natives registered (`Env::dep_classes_report`,
+`pb_vm_dep_classes_report`), which is where `time` (`CLOCK`, ticking) or a
+physics query (`PHYSICS`) show up. The same findings are the opt-in lint rule
+[`never-replays`](#lint--check-programs-without-running-them). How the classes are worked
+out and what the runtime does with them is in
+[docs/dev/retained-scene-output.md](dev/retained-scene-output.md#l5-dependency-classes-and-effect-kinds-as-built-b3).
 
 ## Dataflow query commands
 

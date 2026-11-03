@@ -839,6 +839,30 @@ petal-c-bridge follows this: only `pb_vm_register_emitter` pushes into a
 buffer, a C callback has no way to, and so `PB_FX_EMITS` on a callback is
 always an over-declaration (use `PB_FX_EFFECT`).
 
+**Saying more than `effect`: declare, command, query.** A host callback that
+writes host state does not have to make every helper above it unreplayable.
+Four kinds of engine native replay differently
+([native-effects.md](../dev/native-effects.md#the-four-kinds-of-engine-native)):
+
+- a **declare** (`body`, `point_light`) is an emitter flagged `DECLARES`
+  (`PB_FX_DECLARE` through `pb_vm_register_emitter_fx`): replayed like an
+  emit, reconciled by the host;
+- an **emit** (`draw_mesh`) is an emitter;
+- a **command** (`apply_impulse`, `sfx`) is a callback flagged `COMMAND`
+  (`PB_FX_COMMAND`) that returns nil and whose consequence the script cannot
+  observe in the same run: a replay calls it again with the same arguments,
+  exactly as running the code would;
+- a **query** (`raycast`, `body_state`) reads `PHYSICS` (`PB_FX_READS_PHYSICS`)
+  and stays valid while the physics revision holds: call
+  `Env::note_class_changed(stack, InputClasses::PHYSICS)`
+  (`pb_vm_note_class_changed`) after every step.
+
+A clock read whose answer changes every frame (`time`, not a fixed `dt`)
+should also say `ticks` (`PB_FX_TICKS`): helpers that call it on every path
+are then not recorded at all. `petal show-static --deps` (or
+`Env::dep_classes_report` / `pb_vm_dep_classes_report`, which know your
+natives) lists every helper that never replays and why.
+
 **The frame gate has the same shape at frame granularity.** On a skipped frame
 no native runs at all. A host whose natives must reach the host every frame
 (declarations reaped when not re-declared, audio pumped from `end_frame`)

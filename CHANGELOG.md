@@ -12,6 +12,29 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- Dependency classes (L5 of the retained scene plan): every term and
+  function of a program gets a mask of what it can depend on (`CLOCK`,
+  `INPUT`, `VIEWPORT`, `HOST_DATA`, the new `PHYSICS` and `NET`, `STATE`,
+  `MODULE_VAR`, …) and of what every call does (`EFFECT`, `COMMAND`,
+  `EMIT`, `DECLARE`, `TICKS`). Memoization uses them at compile time: a
+  helper with an effect on every call, or one that reads a clock on every
+  call outside a recording scope, is not recorded; a call with static
+  arguments is not compared, and a constant one is not checked at all.
+  `petal show-static --deps` and the opt-in lint rule `never-replays` say
+  which helpers never replay and why, down to the native
+  ([retained-scene-output.md](docs/dev/retained-scene-output.md#l5-dependency-classes-and-effect-kinds-as-built-b3)).
+
+- Native rows can say `declares` (a keyed declaration, replayed as an
+  emit), `command` (a one-shot call re-issued when a memoized scope
+  replays) and `ticks` (a read whose answer changes every run), and read the
+  revisioned classes `PHYSICS` and `NET` (`NativeEffects::query`), validated
+  by their own revisions (`Env::note_class_changed`). petal-ui's `time` and
+  `frame_count` tick. C bridge: `PB_FX_DECLARE`, `PB_FX_COMMAND`,
+  `PB_FX_TICKS`, `PB_FX_READS_PHYSICS`, `PB_FX_READS_NET`,
+  `pb_vm_register_emitter_fx`, `pb_vm_note_host_data_changed`,
+  `pb_vm_note_class_changed`, `pb_vm_dep_classes_report`
+  ([native-effects.md](docs/dev/native-effects.md#the-four-kinds-of-engine-native)).
+
 - C bridge: option plans (`pb_plan`, `petal::Plan`) read a native's
   options record by position, checking its field names once per record
   shape; a decoded `PB_MAP` now carries its shape id in `integer`

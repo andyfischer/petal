@@ -1,9 +1,9 @@
 # Reactive rendering
 
-Status (re-checked 2026-11-02, segmented output 2026-11-02): **P0 and P1 are
-shipped. Of P2, the constant class shipped as
-[static values](../internals/static-values.md); per-input-class slots and P3
-are not started.** Hosts
+Status (re-checked 2026-11-02, segmented output and dependency classes
+2026-11-02): **P0 and P1 are shipped. Of P2, the constant class shipped as
+[static values](../internals/static-values.md), and dependency classes, hints
+and effect kinds have shipped; block guards and P3 are not started.** Hosts
 skip frames whose inputs did not change ([frame-gate.md](frame-gate.md)), and
 within a frame that runs, user-function calls whose inputs did not change are
 replayed ([memo-scopes.md](memo-scopes.md)). This file tracks the plan as a
@@ -37,7 +37,7 @@ P0 underlies everything, P2 and P3 make P1 cheaper.
 |---|---|---|---|
 | P0 Gated frames, retained output | whole frame | none | 🟡 gate shipped in every host; segmented output shipped (VM and C bridge); damage rects not started |
 | P1 Memoized scopes | function call (loop body planned) | none | 🟡 function calls shipped; loop bodies, top-level body, hot-reload invalidation open |
-| P2 Dependency classes | block, by input class | none | 🟡 constant class shipped as static values; viewport/theme/input classes open |
+| P2 Dependency classes | block, by input class | none | 🟡 constant class shipped as static values; classes, hints, effect kinds and the `never-replays` lint shipped; block guards open |
 | P3 Keyed collections + hit-test index | collection element | `for … key` | 🟡 `for … key` syntax shipped; persistent collections and the hit-test index not started |
 | P4 Signals | binding | new mental model | 🔭 internal representation only, if ever |
 | P5 Self-adjusting term graph | IR term / block | none | 🔭 research |
@@ -135,6 +135,18 @@ and extended across calls. Three uses:
    statically need no runtime read recording; scopes too small to pay for
    their check are never memoized (today that is the runtime
    `MIN_SCOPE_INSTS` heuristic).
+
+**Shipped (L5 of Cheesecake's retained plan, November 2026):** the pass
+(`core/src/static_classify/dep_classes.rs`): a mask per term and per
+function, with the game classes `PHYSICS` and `NET` beside the UI ones, a
+must-analysis of what every call does, and the first part of use 3: no
+recording for functions with an effect on every path, none for a ticking
+read on every path outside a recording scope, and no argument check (nor,
+for a constant callee, any check) for calls with static arguments. The
+native rows gained `declares`, `command` (re-issued on replay) and `ticks`,
+and revisioned `query` reads. Design, measurements and what is left are in
+[retained-scene-output.md](retained-scene-output.md#l5-dependency-classes-and-effect-kinds-as-built-b3).
+Uses 1 and 2 (hoisting, block guards for the top-level body) are open.
 
 On its own it is coarse — every list row has `pointer` in its mask — so its
 value is making P1's per-scope overhead nearly free. Tune it with P1's slot

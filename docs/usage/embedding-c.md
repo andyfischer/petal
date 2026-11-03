@@ -363,6 +363,25 @@ petal-ui's own `"draw_commands"` buffer is supported: such commands come back
 from `drain_draw()` as `PB_DRAW_HOST` in their place in the draw order (see
 below) — useful for HUD extensions like sprites.
 
+### Declarations, commands and queries
+
+An emitter registered with `pb_vm_register_emitter_fx(vm, name, buffer, tag,
+PB_FX_DECLARE)` is a **declaration** the host reconciles (`body`,
+`point_light`); memoization replays it like any emitter. A callback flagged
+`PB_FX_COMMAND` (it must return nil) is a one-shot **command**: a memoized
+scope that called it re-issues the call when it is replayed. A callback
+flagged `PB_FX_READS_PHYSICS` is a **query**: a scope that called it is valid
+until the host calls `pb_vm_note_class_changed(vm, PB_FX_READS_PHYSICS)`,
+which it does after each physics step, and the bridge notes the read for the
+frame gate. `pb_vm_note_host_data_changed(vm)` is the same for
+`PB_FX_READS_HOST_DATA`. `PB_FX_TICKS` on a clock read whose answer changes
+every frame lets the compiler skip recording the helpers that call it.
+`pb_vm_dep_classes_report(vm, false)` returns, as text, every function's
+dependency classes and the helpers that never replay, with the reason (C++:
+`vm.emitter_fx`, `vm.note_class_changed`, `vm.dep_classes_report`; flags
+`petal::fx::Declare`, `Command`, `Query`, `Ticks`). See
+[native-effects.md](../dev/native-effects.md#the-four-kinds-of-engine-native).
+
 ### Segmented buffers: a static world costs per scope, not per value
 
 A script that declares its whole world every frame mostly declares what it

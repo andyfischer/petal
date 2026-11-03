@@ -31,6 +31,8 @@ half):
 | `state` slots read, initialized, or written | key and value | the slot holds the value that was read (writes seen earlier in the record overlay the live value) |
 | `var` cells read or written, when created outside the scope | cell and value | the cell is live and holds the value that was read |
 | Host data and the resource table consulted | a flag | the host-data / resource revision is what it was |
+| A `query` read of a revisioned class (`PHYSICS`, `NET`) | the class and its revision | that class's revision is what it was (`Env::note_class_changed` bumps it) |
+| A `command` issued | the native and its arguments | — (re-issued on replay, in order with the writes) |
 | Child scopes | path and record serial | the child's own record validates, recursively |
 | Output emitted | the tail of each output buffer since entry; for a segmented buffer, a segment body | — (spliced back on replay; a segmented buffer gets one mark) |
 | Observations recorded | term and value, in order with the children | — (re-recorded on replay) |
@@ -117,6 +119,35 @@ also keeps the cell's mutation count and is invalid once that has moved. A call
 site whose scopes keep ending this way (a solver's `solve_contact`, called
 thousands of times a frame) is counted with the folded ones below and stops
 opening scopes after a few, one probe per run aside.
+
+**Compile-time hints.** The dependency classes
+(`core/src/static_classify/dep_classes.rs`, design and measurements in
+[retained-scene-output.md](retained-scene-output.md#l5-dependency-classes-and-effect-kinds-as-built-b3))
+decide three things when the program is lowered, written into the bytecode
+(`backend/bytecode/memo_hints.rs`):
+
+- A function with an effect on every path (directly, or through a function
+  it calls on every path) never opens a scope: it would be given up as
+  effectful at its close anyway, and its effect lands in the enclosing scope
+  either way.
+- A function that calls a native declared `ticks` (its answer changes every
+  run, like `time`) on every path cannot validate its own record. Its calls
+  open no scope **unless a recording scope encloses the call**: there the
+  record still serves the parent, whose validation may re-execute it to the
+  same output (a `blink()` that reads the clock but answers the same bool
+  most frames). This is the cold-site guard decided from the first frame.
+- A call whose arguments are all static (top-level static data, or in a
+  function a literal of literals and static captures) skips comparing its
+  arguments. If the callee is a **constant** function (it reads nothing
+  dynamic, has no effect or command, and captures only static values) the
+  record holds for the life of the program, so the replay check skips the
+  captures and the dependency walk too, when the record's own entries are
+  only children and observations. That is `draw_city(CITY)` retained once
+  and spliced every frame.
+
+`Env::set_memo_hints(stack, false)` ignores them all: the reference run the
+hinted one is held to (`core/tests/dep_classes.rs`). `static_skips`,
+`static_args` and `commands` (re-issued) are counted in `MemoStats`.
 
 **Cold sites.** Recording is not free, and a record only pays for itself when
 it is replayed. A site whose records keep being thrown away unreplayed —
@@ -217,7 +248,8 @@ scenario with the frame gate off, must produce identical commands, state and
 observations frame for frame with memoization on and off. `core/src/memo.rs`
 has the model's unit tests and end-to-end checks through `Env::run`.
 `petal-ui-run --memo-stats` prints hits, misses, records, inlined, effectful,
-re-executions, cutoffs, cold-site skips and evictions — the first thing to
+re-executions, cutoffs, cold-site skips, evictions, and the compile-time
+hints' static skips, static-argument checks and re-issued commands — the first thing to
 look at when a widget that
 should replay keeps running (an `effectful` count that grows every frame
 means something in it prints or draws randomness).

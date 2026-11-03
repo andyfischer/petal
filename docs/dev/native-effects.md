@@ -16,32 +16,63 @@ table's `register`), so there is no undeclared native:
 
 | Field | Meaning |
 |---|---|
-| `reads: InputClasses` | the external inputs it reads, one bit per class that changes on its own: `POINTER`, `KEYBOARD`, `CLOCK`, `VIEWPORT`, `HOST_DATA`, `RESOURCES`, `RNG`, `BINDINGS` |
+| `reads: InputClasses` | the external inputs it reads, one bit per class that changes on its own: `POINTER`, `KEYBOARD`, `CLOCK`, `VIEWPORT`, `HOST_DATA`, `RESOURCES`, `RNG`, `BINDINGS`, and the two **revisioned** classes `PHYSICS` (a game's physics world, revised per step) and `NET` (replicated state, revised per message). `INPUT` names `POINTER \| KEYBOARD` |
 | `probe` | the result is a pure function of the arguments and `reads`, and calling it again at validation is harmless (`mouse_x`, `hovered`, `time`). This is what lets a memoized scope stay valid when an input moved but the answer did not |
 | `emits` | pushes into an output buffer the host drains after the run, the one kind of output a replay reproduces |
 | `effect` | does something a replay cannot reproduce: prints, reseeds noise, creates or resolves a resource, advances a counter, reaches through a handle, writes host state |
 | `pending: NativeClass` | a `Pending` argument is absorbed (`Strict`, the default), makes the call a no-op (`Effectful`, for emitters), or reaches the native (`AllowPending`, the pending inspectors) |
 | `constant` | a constant function: the same arguments give the same result for the life of the program, reading no dynamic input of any kind. Asked through `is_const()`, which is false for a row that also reads, emits or has an effect |
 | `contained` | with `effect`: the effect stays inside the execution (the print buffer, the noise seed, a counter, an output buffer, the resource table, the stack's method and enum tables), which a fork owns a copy of. A speculative run (direct manipulation v2) calls a contained native and drops what it did with the fork; it **suppresses** an effect that is not contained (answers `nil`). Off by default, so an embedder's effect is escaping until it says otherwise. Every core `effect` row is contained, and `core/tests/dm_v2_spec.rs` fails when a new one is not |
+| `declares` | with `emits`: the push is a keyed, idempotent **declaration** the host reconciles after the run (`body`, `point_light`, `loop_sound`). Replayed like an emit; the host's side is that a declaration no visited scope repeats is reaped |
+| `command` | a one-shot **command** (`apply_impulse`, `sfx`) whose consequence the run cannot observe; it returns nil. A replay **re-issues** it with the recorded arguments, which is what running the code again would do. Not with `effect` |
+| `ticks` | the answer of its read changes on every run (`time`, `frame_count`; not a fixed-step `dt`). A hint for the dependency classes: a helper that calls it on every path is not recorded. A wrong `ticks` costs replays, never correctness |
 | `no_feedback` | direct manipulation may not move this native's result through its arguments: a literal whose every path to a dragged value goes through such a native's arguments is not offered as an edit (`through_rng`, docs/dev/direct-manipulation-v2-plan.md §2.5.1). The core sets it on `random`, `random_int`, `choose`, `noise`, `hash_int`, `hash01` and `hash_str`; any `reads(RNG)` row is treated the same way. It is the native-side twin of the `rigid` hint. Read by parameter discovery (`core/src/dm_v2/params.rs`); nothing at run time looks at it |
 
-The constructors are `PURE`, `CONST`, `EMITS`, `EFFECT`, `probe(classes)`,
-`reads(classes)`, and the builders `with_emits`, `with_effect`,
-`with_pending`, `contained`, `no_feedback`. A row is the union over every path through the native: one
+The constructors are `PURE`, `CONST`, `EMITS`, `DECLARES`, `COMMAND`,
+`EFFECT`, `probe(classes)`, `reads(classes)`, `query(classes)` (the same as
+`reads`, named for a world read such as `query(InputClasses::PHYSICS)`), and
+the builders `with_emits`, `with_declares`, `with_command`, `with_effect`,
+`with_pending`, `contained`, `no_feedback`, `ticks`. A row is the union over every path through the native: one
 that consults the resource table only when handed a `Pending` still declares
 `RESOURCES`. Over-declaring costs a missed replay; under-declaring is the bug.
 
 From C the row is a bit set of `PB_FX_*` flags (`petal_bridge.h`), `PB_FX_PURE`
-being `0`.
+being `0`; the newer bits are `PB_FX_READS_PHYSICS`, `PB_FX_READS_NET`,
+`PB_FX_DECLARE` (on an emitter: `pb_vm_register_emitter_fx`),
+`PB_FX_COMMAND` and `PB_FX_TICKS`. `Env::set_native_effects` replaces the row
+of a registered native.
+
+### The four kinds of engine native
+
+The single `effect` bit lumped together things the runtime can treat
+differently. `NativeEffects::kind()` names what a row amounts to:
+
+| Kind | Row | Examples | Replay rule |
+|---|---|---|---|
+| **declare** | `DECLARES` (`emits` + `declares`) | `body`, `point_light`, `particles`, `loop_sound` | the scope's output is spliced back (or handed over as one segment); the host reaps a declaration no visited scope repeats |
+| **emit** | `EMITS` | `draw_mesh`, `draw_models`, HUD | the same |
+| **command** | `COMMAND` | `apply_impulse`, `sfx`, `burst` | recorded with its arguments and **re-issued** when the scope replays. A command whose arguments a record cannot hold (a closure, a cell, a pending value) or that returns non-nil makes the scope effectful. A scope that issued one is not `pure`, so it is never re-executed speculatively, and a re-execution (a child validated by running it) records a command without issuing it: the parent's replay or run issues it once |
+| **query** | `query(PHYSICS)` (or `NET`) | `raycast`, `body_state`, `contacts` | valid while that class's revision is what the record saw; the host bumps it with `Env::note_class_changed` (`pb_vm_note_class_changed`) after a physics step. A native calls `PetalCxt::note_class_read` for the frame gate (the bridge does it for a flagged callback) |
+
+A `HOST_DATA` read stays what it was: a flag validated by the single
+host-data revision (`Env::note_host_data_changed`, now also
+`pb_vm_note_host_data_changed`). The revisioned classes are host data with
+counters of their own, so a physics step does not invalidate a scope that
+read only host data; the frame gate reports either as `HostDataChanged`.
+
+What is not built: static colliders with their own slower revision (a
+`raycast` against level geometry only, replayable across frames), and the
+type checker checking the kinds (they are runtime rows).
 
 ## Who reads it
 
 | Layer | Reads | Where |
 |---|---|---|
-| Memoized scopes | the whole row, at every native call inside a recording scope: `effect` (or a `Pending` result) makes the scope effectful; `HOST_DATA` and `RESOURCES` reads become dependencies; other reads are probed if `probe`, else effectful | `memo_note_native`, `core/src/backend/bytecode/vm/memo.rs` |
+| Memoized scopes | the whole row, at every native call inside a recording scope: `effect` (or a `Pending` result) makes the scope effectful; a `command` is recorded and re-issued on replay; `HOST_DATA` and `RESOURCES` reads become dependencies, a `PHYSICS` or `NET` read a revision dependency of its class; other reads are probed if `probe`, else effectful | `memo_note_native`, `core/src/backend/bytecode/vm/memo.rs` |
+| Dependency classes | the whole row, at compile time: input classes, `effect`, `RNG` and unvalidated reads (as `EFFECT`), `command`, `emits`/`declares`, `ticks` | `core/src/static_classify/dep_classes.rs` ([retained-scene-output.md](retained-scene-output.md#l5-dependency-classes-and-effect-kinds-as-built-b3)) |
 | Static values | `is_const()`, through `NativeFnTable::constness`: a call is static only if its native is constant (`map`, `filter`, `reduce` and `sort` are constant when their callbacks are) | `core/src/static_classify/` |
 | Pending values | `pending`, at the native-call boundary, only when an argument is pending | `core/src/backend/bytecode/vm/native.rs` |
-| Speculative runs | `effect` and `contained` (suppress an escaping effect), `emits` (record the raw arguments), `reads(HOST_DATA)` (replay the baseline's answer), `reads(RNG)` (replay the draw by place) | `call_native_spec`, `core/src/backend/bytecode/vm/native.rs`; docs/dev/direct-manipulation-v2-plan.md §2.1.3 |
+| Speculative runs | `effect` or `command`, and `contained` (suppress an escaping effect), `emits` (record the raw arguments), `reads(HOST_DATA)` (replay the baseline's answer), `reads(RNG)` (replay the draw by place) | `call_native_spec`, `core/src/backend/bytecode/vm/native.rs`; docs/dev/direct-manipulation-v2-plan.md §2.1.3 |
 | Parameter discovery | `no_feedback` and `reads(RNG)` (the arguments are a feedback barrier) | `core/src/dm_v2/params.rs`; plan §2.2 |
 
 The frame gate does not read rows. It reads the **activity counters**, which
@@ -60,7 +91,8 @@ counters around every native call and accumulates, per native, what it was
 seen doing. The report lists two kinds of finding:
 
 - **under-declared**: a native did something its row does not cover. A bug;
-  the row must grow.
+  the row must grow. A `command` row covers the effect counter, and a
+  `PHYSICS` or `NET` read covers a host read.
 - **over-declared**: a declared facet no audited call exercised. Not a bug,
   since a row is a union over paths the run may not have taken, but worth a
   look when the row was a guess.

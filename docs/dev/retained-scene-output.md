@@ -290,3 +290,158 @@ hand-made view from C.
   bridge (`third_party/petal/VENDORED.md`).
 - A plan's cache is per plan, not per (native, VM); a host that shares one
   plan across threads must lock it.
+
+## L5: dependency classes and effect kinds (as built, B3)
+
+**The problem.** Memoization decides everything at run time. It records
+every scope it opens and finds out on the next frame whether the record was
+worth it; a helper that reads the clock records every frame and validates
+never, until the cold-site guard notices (and a site called once a frame is
+let through every frame). A static call such as `draw_city(CITY)` is checked
+every frame: its arguments compared, its captures compared, its children
+walked. And a host native had one way to say it does something: `effect`,
+which makes every helper above it unreplayable, whether it is a draw, a
+keyed declaration, a one-shot impulse or a raycast.
+
+**The analysis** (`core/src/static_classify/dep_classes.rs`). It runs at the
+end of the static-value classifier (`analyze`, so it is computed once per
+program and kept with it) and reuses what that pass resolved: which user
+function or native each call can reach, captures, phis, cells and blocks.
+Its result is `StaticAnalysis::dep_classes()`.
+
+- A **`Deps` bit set per term**: the native rows' input classes (`POINTER`,
+  `KEYBOARD`, `CLOCK`, `VIEWPORT`, `HOST_DATA`, `RESOURCES`, `RNG`,
+  `BINDINGS`, and new: `PHYSICS`, `NET`; `INPUT` names pointer and keyboard
+  together), the program's own sources (`STATE`, `VAR`, `MODULE_VAR` for a
+  top-level plain `var`, `ENUM` for dynamic enum data, `UNKNOWN` for a call
+  it cannot resolve, `ARG` for a parameter), and what a call does
+  (`EFFECT`, which also covers a random draw and a read nothing validates;
+  `COMMAND`; `EMIT`; `DECLARE`; `TICKS`). `CONST` is the empty set. A term's
+  mask is its own bits, its value inputs' masks, the `CellMay` edges of a
+  `var` (every write reaches every read), phi sources, captures at every
+  place the closure is made, the control terms it runs under, and for a
+  call the summary of every function it can reach: `trace_dependents` run
+  forward from every source at once and carried across calls. A function's
+  `may` set is its body's union without `ARG`. The program is iterated to
+  a fixed point (the lattice is finite and only grows).
+- An **every-call set per function**, a must-analysis: the terms of its body
+  block in order, up to the first control term that can return from inside
+  (a loop body may not run, a branch may not be taken). An `EFFECT` carries
+  through a function called on every path (an effect makes every enclosing
+  scope effectful, so no cutoff saves the caller). `TICKS`, `MODULE_VAR` and
+  the input classes count only directly: a callee's failing record can still
+  be re-executed to the same output and keep its caller valid.
+- **Witnesses**: the first term that gave each bit, with the callee it came
+  through and, for a native, why its row gives it. They are the lint's
+  reasons.
+
+**The native vocabulary** (`NativeEffects`, `core/src/native_fn.rs`;
+[native-effects.md](native-effects.md#the-four-kinds-of-engine-native)). The
+plan's four kinds of engine native are row flags with their replay rules:
+
+| Kind | Row | Replay rule |
+|---|---|---|
+| declare (`body`, `point_light`) | `DECLARES` (`PB_FX_DECLARE` on an emitter) | as an emit: spliced back, or one segment; the host reaps what no visited scope repeats |
+| emit (`draw_mesh`) | `EMITS` | spliced back, or one segment |
+| command (`apply_impulse`, `sfx`) | `COMMAND` (`PB_FX_COMMAND`) | recorded with its arguments (`Dep::Command`) and **re-issued** on replay. Not `pure`, so never re-executed speculatively; inside a re-execution it is recorded and not issued, so the parent's replay or run issues it exactly once. Arguments a record cannot hold, or a non-nil result, make the scope effectful |
+| query (`raycast`, `body_state`) | `query(PHYSICS)` (`PB_FX_READS_PHYSICS`) | `Dep::ClassRead`: valid while that class's revision holds. `Env::note_class_changed` / `pb_vm_note_class_changed` bumps it; each revisioned class has its own counter, so a physics step does not invalidate a `HOST_DATA` read. The frame gate treats a changed class as host data changed |
+
+plus `ticks` (`PB_FX_TICKS`) for a read whose answer changes every run
+(`time`, `frame_count` in petal-ui; not a fixed `dt`). The bridge gained
+`pb_vm_register_emitter_fx`, `pb_vm_note_host_data_changed` (the host-data
+bump C hosts had no way to make; Cheesecake's `body_state` is `Effect`
+because of it), `pb_vm_note_class_changed` and `pb_vm_dep_classes_report`;
+`Env::set_native_effects` replaces a registered row. The effect audit
+accepts a command's effect and a revisioned read's host-read counter.
+
+**What the runtime does with it** (`backend/bytecode/memo_hints.rs` writes
+`BytecodeFn::memo_hint` and `Inst::Call::static_args` after lowering;
+`push_closure_frame` and `memo_try` read them; details in
+[memo-scopes.md](memo-scopes.md#the-mechanism), "Compile-time hints"):
+
+- **Effect on every call**: never opens a scope (it would be given up at its
+  close; its effect lands in the enclosing scope either way).
+- **Ticks on every call**: opens no scope unless a recording scope encloses
+  the call, which keeps the cutoff a parent can get through it (a `blink()`
+  that reads the clock but answers the same bool most frames). This is the
+  compile-time form of the cold-site guard for such scopes.
+- **Static arguments** (top-level static data, or in a function a literal of
+  literals and static captures): the replay check does not compare them.
+  When the callee is also **constant** (its `may` set is only output, and
+  it captures only static values at top-level closure sites) the record
+  holds for the life of the program: captures and dependencies are not
+  checked either (when the record's own entries are only children and
+  observations), so `draw_city(CITY)` is retained once and spliced every
+  frame.
+- `Env::set_memo_hints(stack, false)` ignores all three. A memoized run now
+  lowers against the analysis even with the static-value cache off.
+
+**The lint.** `never-replays` (`petal lint --rules-include never-replays`,
+opt-in, report only; `core/src/lint/never_replays.rs`) and
+`petal show-static --deps` name every function whose own record can never
+validate, and why, down to the native: an effect on every call (through the
+chain of calls on every path), a ticking read, a top-level `var` (a new cell
+every run). A `PHYSICS` or `NET` query on every call is reported as *rarely*
+replayed. A host gets the same with its natives:
+`Env::dep_classes_report` / `Env::replay_findings`,
+`pb_vm_dep_classes_report`.
+
+```
+never replays: bob: reads `now` on every call (class CLOCK), whose answer changes every run; its calls are not recorded unless a caller is
+rarely replays: hit_test: reads `ray` on every call (class PHYSICS): it replays only on runs where the host did not revise PHYSICS
+never replays: noisy: calls `shout` on every call, which never replays: shout calls `print` on every call (an effect a replay cannot reproduce)
+```
+
+**Measured** (`core/examples/dep_classes_frame.rs`, release, Apple M4, 300
+frames, median µs per frame; the two runs' output is compared every frame).
+A static city of 2,000 blocks drawn through `city → district → block`, 300
+ships that read a ticking clock directly, and a HUD that reads the clock for
+a spinner and draws 300 unchanging rows:
+
+| Run | hints ignored | hints | |
+|---|---:|---:|---|
+| static-value cache on (the `fast` policy) | 219 | **175** | the HUD is not recorded, so its rows become scopes of their own and replay (hits 299 → 89,999 over the run); records 923 → 321 |
+| static-value cache off (as under observation) | 1,156 | **1,078** | `CITY` is rebuilt every run; its call still replays by the static-argument rule, where comparing it by content exceeds the comparison budget |
+
+The ships cost the same either way: the cold-site guard already stopped
+recording them after three frames, which is what the hint does from the
+first. Without a scope that would have been recorded and thrown away (the
+HUD), or a static argument rebuilt every run, the hints change little: with
+the cache on, a static argument is the same object every run and compares
+in one step anyway.
+
+**Checked by** `core/tests/dep_classes.rs`: a game-shaped script (a constant
+city, ticking ships, declarations, commands, a `PHYSICS` query, a pure child
+whose command depends on the pointer, a literal argument, a printing helper)
+run frame by frame with memo off, memo on with hints and memo on without,
+which must agree on every draw, declaration, printed line and issued command;
+plus the classes and findings of the script, the every-call rules through
+call chains, branches and early returns, a module `var` against a `state
+var`, a query's revision against general host data, and the gate on a class
+change. Turning off the deferral of commands in a re-execution fails two of
+them (a command issued twice). The bridge has
+`commands_reissue_queries_follow_their_class_and_declares_replay` in
+`bridge_tests.cpp`; `lint_state_const.rs` pins the opt-in rules.
+
+**Left for later:**
+
+- **Guards for top-level code by class** (use 2 of P2, and the plan's
+  "top-level games gain"): the root frame is still not a scope. The per-term
+  masks are there to guard a block (`if frame_dirty & mask == 0 then reuse`);
+  the guard and the dirty set per run are not built.
+- **Hoisting the constant class** (use 1 of P2) beyond what the static-value
+  cache keeps, and per-`state` bits (the mask has one `STATE` bit; the plan's
+  "each `state`" would give a bit per declaration).
+- **Static colliders' own revision**, so a `raycast` against level geometry
+  only stays valid across physics steps.
+- **The kinds in the type checker**: they are runtime rows; nothing checks
+  that a `command` really returns nil or that a `declare` is keyed.
+- **Cheesecake adopting it**: register the scene declarations as
+  `PB_FX_DECLARE` emitters, `apply_impulse`/`sfx` as `PB_FX_COMMAND`,
+  `raycast`/`body_state` as `PB_FX_READS_PHYSICS` with
+  `pb_vm_note_class_changed` after each physics step, `time()` with
+  `PB_FX_TICKS`, and run `pb_vm_dep_classes_report` over the games: a
+  Cheesecake step, after it vendors this Petal.
+- The static-argument rule inside functions accepts only literals and
+  static captures; `FnPlan` (`static_cache/in_fn.rs`) knows more invariant
+  terms and could be shared.

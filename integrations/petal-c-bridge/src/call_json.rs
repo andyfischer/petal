@@ -168,9 +168,10 @@ mod tests {
         assert_eq!(parse_args(Some("null")).unwrap(), JsonArgs::default());
         let a = parse_args(Some("[1, \"x\"]")).unwrap();
         assert_eq!((a.values, a.names), (vec![json!(1), json!("x")], vec![]));
+        // An object's keys keep the order they were written in.
         let a = parse_args(Some("{\"b\": 2, \"a\": [1]}")).unwrap();
-        assert_eq!(a.names, [Some("a".to_string()), Some("b".to_string())]);
-        assert_eq!(a.values, [json!([1]), json!(2)]);
+        assert_eq!(a.names, [Some("b".to_string()), Some("a".to_string())]);
+        assert_eq!(a.values, [json!(2), json!([1])]);
         assert!(parse_args(Some("3")).unwrap_err().contains("got an int"));
         assert!(parse_args(Some("[1,")).unwrap_err().contains("not valid JSON"));
     }

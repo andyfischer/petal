@@ -363,6 +363,49 @@ petal-ui's own `"draw_commands"` buffer is supported: such commands come back
 from `drain_draw()` as `PB_DRAW_HOST` in their place in the draw order (see
 below) — useful for HUD extensions like sprites.
 
+### Segmented buffers: a static world costs per scope, not per value
+
+A script that declares its whole world every frame mostly declares what it
+declared last frame. Petal already skips a helper whose inputs did not
+change and replays what it emitted ([memo scopes](../dev/memo-scopes.md)),
+but a replay appends every value again, so `drain("scene")` hands the host
+the whole world every frame. Put the buffer in **segmented** mode and a
+replayed helper arrives as one entry instead:
+
+```cpp
+vm.set_segmented("scene", true);        // once
+// per frame, after vm.run():
+pb_segments seg = vm.drain_segments("scene");
+for (size_t i = 0; i < seg.defined_count; ++i)   // new segments, children first
+    cache[seg.defined[i].serial] = build(seg.defined[i]);
+for (size_t i = 0; i < seg.count; ++i) {         // this frame, in order
+    const pb_seg_entry& e = seg.entries[i];
+    if (e.segment == 0) apply_fresh(*e.value);   // emitted fresh this frame
+    else splice(cache[e.segment]);               // everything that segment holds
+}
+for (size_t i = 0; i < seg.dropped_count; ++i)   // nothing refers to these now
+    cache.erase(seg.dropped[i]);
+```
+
+A segment is one recording of one helper call: everything it emitted into
+the buffer, with the segments of the helpers it called in their places. Its
+`serial` is unique for the life of the process and its contents never
+change, so a cache keyed by serial is never stale; its `scope` (a hash of the
+call path) stays the same from frame to frame, so a new serial with a known
+scope is that helper's new contents. Each serial is defined once, the first
+time a drain refers to it; `vm.reset_segments("scene")` makes the next drain
+define everything again. Only calls Petal keeps a memo record of become
+segments: top-level code, a helper that prints or draws randomness, and
+calls too small to record stay fresh values. `drain("scene")` still works
+on a segmented buffer and returns it expanded. The C declarations and the
+rules are in `petal_bridge.h` ("Segmented output buffers"); the mechanism is
+[`output_segments`](../../core/src/output_segments.rs) in Petal.
+
+In `core/examples/scene_frame` a host that splices segments this way spends
+4 µs a frame on a static world of 24,000 declarations, against 360 µs for
+the best host that walks every value (see
+[retained-scene-output.md](../dev/retained-scene-output.md)).
+
 ### How it works (no globals)
 
 Each host native is one boxed Petal native

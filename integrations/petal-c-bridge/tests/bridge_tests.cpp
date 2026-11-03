@@ -710,6 +710,72 @@ TEST(native_userdata_outlives_reload) {
     CHECK_EQ(freed, 1);
 }
 
+// A replayed scope reaches the host as one entry naming a segment it was
+// given before (petal_bridge.h, "Segmented output buffers").
+TEST(segmented_buffer_hands_a_replayed_scope_over_as_one_entry) {
+    pb_vm* vm = pb_vm_create();
+    CHECK_EQ(pb_vm_set_segmented(vm, "out", true), PB_OK);
+    CHECK_EQ(pb_vm_load_source(vm,
+                               "import io\n"
+                               "fn wall(n)\n  for i in range(0, n) do push_output(symbol(\"out\"), i) end\n  nil\nend\n"
+                               "wall(100)\npush_output(symbol(\"out\"), \"tail\")\n",
+                               nullptr),
+             PB_OK);
+    CHECK_EQ(pb_vm_run(vm), PB_OK);
+    pb_segments seg;
+    CHECK_EQ(pb_vm_drain_segments(vm, "out", &seg), PB_OK);
+    REQUIRE(seg.count == 2);
+    REQUIRE(seg.defined_count == 1);
+    const uint64_t wall = seg.defined[0].serial;
+    CHECK(wall != 0);
+    CHECK_EQ(seg.entries[0].segment, wall);
+    CHECK(seg.entries[0].value == nullptr);
+    CHECK_EQ(seg.entries[1].segment, (uint64_t)0);
+    CHECK_EQ(std::string(seg.entries[1].value->str), std::string("tail"));
+    REQUIRE(seg.defined[0].count == 100);
+    CHECK_EQ(seg.defined[0].entries[99].value->integer, 99);
+    const uint64_t scope = seg.defined[0].scope;
+
+    // Replayed: the same serial, nothing to define.
+    CHECK_EQ(pb_vm_run(vm), PB_OK);
+    CHECK_EQ(pb_vm_drain_segments(vm, "out", &seg), PB_OK);
+    REQUIRE(seg.count == 2);
+    CHECK_EQ(seg.defined_count, (size_t)0);
+    CHECK_EQ(seg.entries[0].segment, wall);
+
+    // The flat drain still expands it.
+    CHECK_EQ(pb_vm_run(vm), PB_OK);
+    pb_values flat;
+    CHECK_EQ(pb_vm_drain(vm, "out", &flat), PB_OK);
+    CHECK_EQ(flat.count, (size_t)101);
+
+    // A host that lost its cache is given it again.
+    CHECK_EQ(pb_vm_reset_segments(vm, "out"), PB_OK);
+    CHECK_EQ(pb_vm_run(vm), PB_OK);
+    CHECK_EQ(pb_vm_drain_segments(vm, "out", &seg), PB_OK);
+    CHECK_EQ(seg.defined_count, (size_t)1);
+
+    // A reload records the scope again: a new serial, the same scope id,
+    // and the old serial dropped.
+    pb_reload_result r;
+    CHECK_EQ(pb_vm_reload_source(vm,
+                                 "import io\n"
+                                 "fn wall(n)\n  for i in range(0, n) do push_output(symbol(\"out\"), i) end\n  nil\nend\n"
+                                 "fn other() 1 end\n"
+                                 "wall(100)\npush_output(symbol(\"out\"), \"tail\")\n",
+                                 &r),
+             PB_OK);
+    CHECK_EQ(pb_vm_run(vm), PB_OK);
+    CHECK_EQ(pb_vm_drain_segments(vm, "out", &seg), PB_OK);
+    REQUIRE(seg.defined_count == 1);
+    CHECK(seg.defined[0].serial != wall);
+    CHECK_EQ(seg.defined[0].scope, scope);
+    bool dropped = false;
+    for (size_t i = 0; i < seg.dropped_count; ++i) dropped |= seg.dropped[i] == wall;
+    CHECK(dropped);
+    pb_vm_destroy(vm);
+}
+
 TEST(native_takes_named_arguments_once_declared) {
     pb_vm* vm = pb_vm_create();
     auto cb = [](pb_call* call, void*) -> int {

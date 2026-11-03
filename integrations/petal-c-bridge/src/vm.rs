@@ -51,6 +51,58 @@ pub struct PbValues {
     pub count: usize,
 }
 
+/// Mirrors `pb_seg_entry`: a fresh value (`segment` 0) or a segment
+/// reference (its serial).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PbSegEntry {
+    pub segment: u64,
+    pub value: *const PbValue,
+}
+
+/// Mirrors `pb_segment`: one definition.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PbSegment {
+    pub scope: u64,
+    pub serial: u64,
+    pub entries: *const PbSegEntry,
+    pub count: usize,
+}
+
+/// Mirrors `pb_segments`: one drain of a segmented buffer.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PbSegments {
+    pub entries: *const PbSegEntry,
+    pub count: usize,
+    pub defined: *const PbSegment,
+    pub defined_count: usize,
+    pub dropped: *const u64,
+    pub dropped_count: usize,
+}
+
+impl PbSegments {
+    const EMPTY: PbSegments = PbSegments {
+        entries: std::ptr::null(),
+        count: 0,
+        defined: std::ptr::null(),
+        defined_count: 0,
+        dropped: std::ptr::null(),
+        dropped_count: 0,
+    };
+}
+
+/// The arrays behind one `PbSegments`, kept until the views are cleared.
+/// Pointers target the heap buffers, so moving this is fine.
+#[derive(Default)]
+struct SegmentsView {
+    entries: Vec<PbSegEntry>,
+    defined: Vec<PbSegment>,
+    def_entries: Vec<Vec<PbSegEntry>>,
+    dropped: Vec<u64>,
+}
+
 /// Mirrors `pb_reload_result`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -89,6 +141,7 @@ pub struct Vm {
     // invalidation point. C pointers target the heap buffers *inside* these
     // values, so moving the values themselves (e.g. as the Vecs grow) is fine.
     views: Vec<ViewArena>,
+    segment_views: Vec<SegmentsView>,
     draws: Vec<DrawList>,
     ui_targets: Vec<crate::draw::TargetList>,
     source_files: CStrList,
@@ -151,6 +204,7 @@ impl Vm {
             input: InputState::new(),
             last_error: None,
             views: Vec::new(),
+            segment_views: Vec::new(),
             draws: Vec::new(),
             ui_targets: Vec::new(),
             source_files: CStrList::default(),
@@ -206,6 +260,7 @@ impl Vm {
 
     fn clear_views(&mut self) {
         self.views.clear();
+        self.segment_views.clear();
         self.draws.clear();
         self.ui_targets.clear();
     }
@@ -225,6 +280,87 @@ impl Vm {
         let p = arena.node_ptr(first);
         self.views.push(arena);
         (p, values.len())
+    }
+
+    /// Put output buffer `buffer` in segmented mode, or take it out (see
+    /// `petal::output_segments`).
+    pub fn set_segmented(&mut self, buffer: &str, on: bool) {
+        let sym = self.env.intern_symbol(buffer);
+        self.env.set_output_segmented(sym, on);
+    }
+
+    /// Forget which segments of `buffer` the host was given: the next drain
+    /// defines every segment it references again.
+    pub fn reset_segments(&mut self, buffer: &str) {
+        let sym = self.env.intern_symbol(buffer);
+        self.env.reset_output_segments(sym);
+    }
+
+    /// Drain `buffer` as segments, decoded: the frame's entries, the
+    /// definitions the host has not been given (children first), and the
+    /// serials it may forget. Valid until the views are cleared.
+    pub fn drain_segments(&mut self, buffer: &str) -> PbSegments {
+        let sym = self.env.intern_symbol(buffer);
+        let frame = self.env.take_output_segments(sym);
+        // Every fresh value, top level first and then each definition's, is
+        // decoded into one arena; entries point at its roots in that order.
+        use petal::output_segments::SegItem;
+        fn fresh(items: &[SegItem]) -> impl Iterator<Item = Value> + '_ {
+            items.iter().filter_map(|i| match i {
+                SegItem::Value(v) => Some(*v),
+                SegItem::Segment(_) => None,
+            })
+        }
+        let values: Vec<Value> = fresh(&frame.items)
+            .chain(frame.defined.iter().flat_map(|d| fresh(&d.items)))
+            .collect();
+        let (roots, _) = self.keep_view(&values);
+        let mut next = 0usize;
+        let mut entries = |items: &[SegItem]| -> Vec<PbSegEntry> {
+            items
+                .iter()
+                .map(|i| match i {
+                    SegItem::Value(_) => {
+                        // SAFETY: `roots` holds `values.len()` contiguous
+                        // nodes, one per fresh value, in this order.
+                        let value = unsafe { roots.add(next) };
+                        next += 1;
+                        PbSegEntry { segment: 0, value }
+                    }
+                    SegItem::Segment(serial) => PbSegEntry {
+                        segment: *serial,
+                        value: std::ptr::null(),
+                    },
+                })
+                .collect()
+        };
+        let mut view = SegmentsView {
+            entries: entries(&frame.items),
+            ..Default::default()
+        };
+        view.def_entries = frame.defined.iter().map(|d| entries(&d.items)).collect();
+        view.defined = frame
+            .defined
+            .iter()
+            .zip(&view.def_entries)
+            .map(|(d, e)| PbSegment {
+                scope: d.id,
+                serial: d.serial,
+                entries: e.as_ptr(),
+                count: e.len(),
+            })
+            .collect();
+        view.dropped = frame.dropped;
+        let out = PbSegments {
+            entries: view.entries.as_ptr(),
+            count: view.entries.len(),
+            defined: view.defined.as_ptr(),
+            defined_count: view.defined.len(),
+            dropped: view.dropped.as_ptr(),
+            dropped_count: view.dropped.len(),
+        };
+        self.segment_views.push(view);
+        out
     }
 
     /// Materialize host values onto the default heap.
@@ -1797,6 +1933,41 @@ pub unsafe extern "C" fn pb_vm_drain(
         },
     );
     st
+}
+
+/// Put `buffer` in segmented mode, or take it out.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_set_segmented(vm: *mut VmHandle, buffer: *const c_char, on: bool) -> Status {
+    status(vm, |vm| {
+        let buffer = unsafe { arg_str(buffer, "buffer") }?;
+        vm.set_segmented(buffer, on);
+        Ok(())
+    })
+}
+
+/// Drain `buffer` as segments (see [`Vm::drain_segments`]).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_drain_segments(
+    vm: *mut VmHandle,
+    buffer: *const c_char,
+    out: *mut PbSegments,
+) -> Status {
+    let (st, segments) = with_vm(vm, PbSegments::EMPTY, |vm| {
+        let buffer = unsafe { arg_str(buffer, "buffer") }?;
+        Ok(vm.drain_segments(buffer))
+    });
+    put(out, segments);
+    st
+}
+
+/// Forget which of `buffer`'s segments the host was given.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_reset_segments(vm: *mut VmHandle, buffer: *const c_char) -> Status {
+    status(vm, |vm| {
+        let buffer = unsafe { arg_str(buffer, "buffer") }?;
+        vm.reset_segments(buffer);
+        Ok(())
+    })
 }
 
 #[unsafe(no_mangle)]

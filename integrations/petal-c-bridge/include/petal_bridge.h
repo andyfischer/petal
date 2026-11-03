@@ -20,6 +20,7 @@
  *     pb_vm_set_*                        bind host data (bindings)
  *     pb_vm_run                          reset_stack + run the whole program
  *     pb_vm_drain / pb_vm_drain_draw     read what the script emitted
+ *     (pb_vm_drain_segments: a replayed scope as one reference)
  *   pb_vm_sources_changed + pb_vm_reload hot reload, keeping `state`
  *     (pb_vm_changed_sources names the edited files; a value or layout
  *     edit is taken up without recompiling)
@@ -662,6 +663,89 @@ const char* pb_vm_take_expect_failures_json(pb_vm* vm);
  * and decode it. The views stay valid until
  * the next run/call/clear, so several buffers can be drained per frame. */
 pb_status pb_vm_drain(pb_vm* vm, const char* buffer, pb_values* out);
+
+/* ─── Segmented output buffers ───────────────────────────────────────────
+ *
+ * A script that re-declares a whole world every frame (a level, a city, a
+ * panel of widgets) mostly re-declares what it declared last frame. Petal
+ * skips a call whose inputs did not change and replays what it emitted (a
+ * memo scope; docs/dev/memo-scopes.md), but a replay still appends every
+ * value, so a host draining the buffer walks the whole world each frame.
+ *
+ * In segmented mode a replayed scope reaches the host as ONE reference
+ * instead of its values. A host that keeps what it made of each segment (the
+ * draws it decoded, the bodies it created) and splices it back where the
+ * reference appears pays per scope, not per value:
+ *
+ *   pb_vm_set_segmented(vm, "scene", true);       // once, before the runs
+ *   // per frame, after pb_vm_run:
+ *   pb_segments seg;
+ *   pb_vm_drain_segments(vm, "scene", &seg);
+ *   for (i < seg.defined_count)  build(seg.defined[i]);   // children first
+ *   walk(seg.entries, seg.count);                         // this frame, in order
+ *   for (i < seg.dropped_count)  forget(seg.dropped[i]);  // after the walk
+ *
+ * where an entry with segment == 0 is a value emitted fresh this frame and
+ * any other entry stands for everything segment `segment` holds (its own
+ * entries, which may name further segments), in its place. Expanding every
+ * reference gives exactly what pb_vm_drain would have returned.
+ *
+ * A segment is one recording of one scope:
+ *   serial  names the recording: unique for the life of the process, never 0,
+ *           and its contents never change, so a cache keyed by serial is never
+ *           stale. A scope that runs again (its inputs changed) is a new
+ *           serial; the old one is listed in `dropped` once nothing refers to
+ *           it.
+ *   scope   names the scope: a hash of the call path that ran it, the same
+ *           from frame to frame (and run to run) of one program. A new serial
+ *           with a known scope is that scope's new contents, which is how a
+ *           retained renderer can reuse the old segment's buffer range.
+ *
+ * Each serial is defined once, the first time a drain refers to it (directly
+ * or inside another definition). Definitions are only sent to the host that
+ * drains; a host that loses its cache calls pb_vm_reset_segments and the next
+ * drain defines everything it refers to again. A reload that recompiles
+ * drops every segment.
+ *
+ * Only scopes Petal keeps a record of become segments; everything else (code
+ * at the top level, a scope that prints or draws randomness, a call too small
+ * to record) stays fresh values. Memoization must be on (the default policy).
+ * pb_vm_drain still works on a segmented buffer and returns it expanded.
+ *
+ * The value views (pb_seg_entry.value) and the arrays are valid until the next
+ * run/call/clear, like pb_vm_drain's: decode what you keep. */
+
+typedef struct pb_seg_entry {
+    uint64_t segment;        /* 0: a fresh value, at `value`; else a segment's serial */
+    const pb_value* value;   /* the value when segment == 0, else NULL */
+} pb_seg_entry;
+
+typedef struct pb_segment {
+    uint64_t scope;          /* the scope (hash of its call path), stable across frames */
+    uint64_t serial;         /* this recording; what pb_seg_entry.segment names */
+    const pb_seg_entry* entries;
+    size_t count;
+} pb_segment;
+
+typedef struct pb_segments {
+    const pb_seg_entry* entries;   /* this frame's buffer, in order */
+    size_t count;
+    const pb_segment* defined;     /* segments not defined to this host before, children first */
+    size_t defined_count;
+    const uint64_t* dropped;       /* serials nothing refers to any more (sorted) */
+    size_t dropped_count;
+} pb_segments;
+
+/* Put output buffer `buffer` in segmented mode (on), or back to flat (off).
+ * Default: flat. Turning it on again later starts over (everything is
+ * defined again). */
+pb_status pb_vm_set_segmented(pb_vm* vm, const char* buffer, bool on);
+/* Drain a segmented buffer (see above). On a buffer that is not segmented,
+ * every entry is a fresh value. */
+pb_status pb_vm_drain_segments(pb_vm* vm, const char* buffer, pb_segments* out);
+/* Forget which segments of `buffer` this host was given: the next drain
+ * defines every segment it refers to. */
+pb_status pb_vm_reset_segments(pb_vm* vm, const char* buffer);
 
 /* Pointer-grab request made this frame by grab_mouse()/release_mouse():
  * 1 = grab, 0 = release, -1 = none. Drains the request channel. */

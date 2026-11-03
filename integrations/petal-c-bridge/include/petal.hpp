@@ -719,6 +719,19 @@ public:
         check(pb_vm_drain(vm_, buffer.c_str(), &out));
         return Values(out);
     }
+    // Segmented buffers (petal_bridge.h, "Segmented output buffers"): a
+    // replayed scope is one entry naming a segment the host already has.
+    void set_segmented(const std::string& buffer, bool on) {
+        check(pb_vm_set_segmented(vm_, buffer.c_str(), on));
+    }
+    pb_segments drain_segments(const std::string& buffer) {
+        pb_segments out{};
+        check(pb_vm_drain_segments(vm_, buffer.c_str(), &out));
+        return out;
+    }
+    void reset_segments(const std::string& buffer) {
+        check(pb_vm_reset_segments(vm_, buffer.c_str()));
+    }
     std::span<const pb_draw_cmd> drain_draw() {
         const pb_draw_cmd* cmds = nullptr;
         size_t n = 0;

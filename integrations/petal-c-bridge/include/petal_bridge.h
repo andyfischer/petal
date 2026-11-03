@@ -407,7 +407,30 @@ pb_status pb_vm_override_file(pb_vm* vm, const char* path, const char* source);
  *                   effectful native and answers nil instead. A callback that
  *                   touches host state must NOT set it.
  *   PB_FX_NO_FEEDBACK the native's result may not be moved by direct
- *                   manipulation through its arguments (like `random`). */
+ *                   manipulation through its arguments (like `random`).
+ *
+ * The four kinds of engine native (docs/dev/retained-scene-output.md, L5),
+ * and how a memoized scope that called one is replayed:
+ *   declare  PB_FX_DECLARE: a keyed, idempotent declaration the host
+ *            reconciles after the run (body, point_light, loop_sound). Only
+ *            meaningful on an emitter (pb_vm_register_emitter_fx): replayed
+ *            like an emit, and the host reaps what no visited scope repeats.
+ *   emit     PB_FX_EMITS: this frame's output (a draw). Replayed: the scope's
+ *            output is spliced back (or handed over as one segment).
+ *   command  PB_FX_COMMAND: a one-shot call whose consequence the script
+ *            cannot observe in the same run (apply_impulse, sfx). It must
+ *            return nil. A replay RE-ISSUES it, calling the native again with
+ *            the same arguments, which is what running the code again would
+ *            do; a re-execution during validation defers it. Not with
+ *            PB_FX_EFFECT (which makes the scope unreplayable instead).
+ *   query    PB_FX_READS_PHYSICS (or PB_FX_READS_NET): reads the world. A
+ *            scope that called it is valid while that class's revision is
+ *            unchanged; bump it with pb_vm_note_class_changed after each
+ *            physics step. The bridge notes the read for the frame gate.
+ *   PB_FX_TICKS     the answer of this read changes every run (a clock read
+ *                   like `time`, not a fixed `dt`): a helper that calls it
+ *                   on every path is not recorded at all (a hint; a wrong
+ *                   TICKS costs replays, never correctness). */
 enum {
     PB_FX_PURE = 0,
     PB_FX_PROBE = 1u << 0,
@@ -425,7 +448,12 @@ enum {
     PB_FX_READS_HOST_DATA = 1u << 12,
     PB_FX_READS_RESOURCES = 1u << 13,
     PB_FX_READS_RNG = 1u << 14,
-    PB_FX_READS_BINDINGS = 1u << 15
+    PB_FX_READS_BINDINGS = 1u << 15,
+    PB_FX_READS_PHYSICS = 1u << 16, /* the physics world, revised per step */
+    PB_FX_READS_NET = 1u << 17,     /* replicated state, revised per message */
+    PB_FX_DECLARE = 1u << 18,       /* a keyed declaration (with EMITS) */
+    PB_FX_COMMAND = 1u << 19,       /* a one-shot command, re-issued on replay */
+    PB_FX_TICKS = 1u << 20          /* a read whose answer changes every run */
 };
 
 /* A host native. Read arguments with pb_call_arg*, build at most one result
@@ -452,6 +480,31 @@ pb_status pb_vm_register_native(pb_vm* vm, const char* name, pb_native_fn fn, vo
  * Pending-no-op policy. This is the fast path for command streams: no host
  * code runs during the script; drain `buffer` after the run. */
 pb_status pb_vm_register_emitter(pb_vm* vm, const char* name, const char* buffer, const char* tag);
+
+/* pb_vm_register_emitter with extra effect flags on top of PB_FX_EMITS and
+ * the Pending-no-op policy: PB_FX_DECLARE for a declaration the host
+ * reconciles (body, point_light). Other flags are taken as given. */
+pb_status pb_vm_register_emitter_fx(pb_vm* vm, const char* name, const char* buffer, const char* tag,
+                                    uint32_t effects);
+
+/* The host data behind PB_FX_READS_HOST_DATA natives changed: the frame gate
+ * re-runs a script that read it, and a memoized scope that read it is no
+ * longer replayed. Applies to the loaded program's stack. */
+pb_status pb_vm_note_host_data_changed(pb_vm* vm);
+
+/* The host data of the revisioned classes in `reads` changed:
+ * PB_FX_READS_PHYSICS after a physics step, PB_FX_READS_NET after a message
+ * was applied (other bits are ignored). Each class has its own revision, so a
+ * physics step does not invalidate what read only PB_FX_READS_HOST_DATA. */
+pb_status pb_vm_note_class_changed(pb_vm* vm, uint32_t reads);
+
+/* The dependency classes of every function of the loaded program, judged
+ * against this VM's natives, and the `never-replays` findings: which helpers
+ * are never (or rarely) replayed from the memo table, and why, down to the
+ * native ("reads `raycast` on every call (class PHYSICS)"). Text, one line per
+ * function then one per finding; `all_modules` includes imported modules.
+ * NULL if nothing is loaded. Valid until the next call to this function. */
+const char* pb_vm_dep_classes_report(pb_vm* vm, bool all_modules);
 
 /* Declare the parameter names of a registered native (a callback or an
  * emitter), so scripts may call it with named arguments:

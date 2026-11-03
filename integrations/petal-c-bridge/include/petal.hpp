@@ -116,6 +116,15 @@ inline constexpr uint32_t ReadsHostData = PB_FX_READS_HOST_DATA;
 inline constexpr uint32_t ReadsResources = PB_FX_READS_RESOURCES;
 inline constexpr uint32_t ReadsRng = PB_FX_READS_RNG;
 inline constexpr uint32_t ReadsBindings = PB_FX_READS_BINDINGS;
+inline constexpr uint32_t ReadsPhysics = PB_FX_READS_PHYSICS;
+inline constexpr uint32_t ReadsNet = PB_FX_READS_NET;
+// The kinds of engine native (see petal_bridge.h): a declare is an emitter
+// (emitter_fx), a command is re-issued on replay, a query is valid while its
+// class's revision holds (note_class_changed).
+inline constexpr uint32_t Declare = PB_FX_DECLARE;
+inline constexpr uint32_t Command = PB_FX_COMMAND;
+inline constexpr uint32_t Query = PB_FX_READS_PHYSICS;
+inline constexpr uint32_t Ticks = PB_FX_TICKS;
 }  // namespace fx
 
 // ─── Value views ────────────────────────────────────────────────────────────
@@ -720,6 +729,24 @@ public:
     // name(args...) pushes tag(args...) into `buffer`; tag defaults to name.
     void emitter(const std::string& name, const std::string& buffer, const std::string& tag = {}) {
         check(pb_vm_register_emitter(vm_, name.c_str(), buffer.c_str(), tag.empty() ? nullptr : tag.c_str()));
+    }
+    // An emitter with extra effect flags: fx::Declare for a keyed
+    // declaration the host reconciles.
+    void emitter_fx(const std::string& name, const std::string& buffer, uint32_t effects,
+                    const std::string& tag = {}) {
+        check(pb_vm_register_emitter_fx(vm_, name.c_str(), buffer.c_str(), tag.empty() ? nullptr : tag.c_str(),
+                                        effects));
+    }
+    // Revisions for memoized scopes and the frame gate: host data changed, or
+    // a revisioned class (fx::ReadsPhysics after a physics step).
+    void note_host_data_changed() { check(pb_vm_note_host_data_changed(vm_)); }
+    void note_class_changed(uint32_t reads) { check(pb_vm_note_class_changed(vm_, reads)); }
+    // Every function's dependency classes and why the ones that never replay
+    // do not (see pb_vm_dep_classes_report).
+    std::string dep_classes_report(bool all_modules = false) {
+        const char* s = pb_vm_dep_classes_report(vm_, all_modules);
+        if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
+        return s;
     }
     // Parameter names for a registered native, so scripts can call it with
     // named arguments: native_params("spawn", "kind, x, y, speed?").

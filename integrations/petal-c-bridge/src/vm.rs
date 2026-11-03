@@ -153,6 +153,7 @@ pub struct Vm {
     reload_json: CString,
     source_text: CString,
     profile_report: CString,
+    dep_classes_report: CString,
     static_values_json: CString,
     diagnostics_text: CString,
     diagnostics_json: CString,
@@ -215,6 +216,7 @@ impl Vm {
             reload_json: CString::default(),
             source_text: CString::default(),
             profile_report: CString::default(),
+            dep_classes_report: CString::default(),
             static_values_json: CString::default(),
             diagnostics_text: CString::default(),
             diagnostics_json: CString::default(),
@@ -1438,6 +1440,64 @@ pub unsafe extern "C" fn pb_vm_register_emitter(
         natives::register_emitter(&mut vm.env, name, sym, tag);
         Ok(())
     })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_register_emitter_fx(
+    vm: *mut VmHandle,
+    name: *const c_char,
+    buffer: *const c_char,
+    tag: *const c_char,
+    effects: u32,
+) -> Status {
+    status(vm, |vm| {
+        let name = unsafe { arg_str(name, "name") }?;
+        let buffer = unsafe { arg_str(buffer, "buffer") }?;
+        let tag = if tag.is_null() {
+            name
+        } else {
+            unsafe { arg_str(tag, "tag") }?
+        };
+        let sym = vm.env.intern_symbol(buffer);
+        natives::register_emitter_fx(&mut vm.env, name, sym, tag, effects);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_note_host_data_changed(vm: *mut VmHandle) -> Status {
+    status(vm, |vm| {
+        let stack = vm.loaded()?.stack_id;
+        vm.env.note_host_data_changed(stack);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_note_class_changed(vm: *mut VmHandle, reads: u32) -> Status {
+    status(vm, |vm| {
+        let stack = vm.loaded()?.stack_id;
+        vm.env
+            .note_class_changed(stack, natives::classes_from_flags(reads));
+        Ok(())
+    })
+}
+
+/// The dependency classes and `never-replays` findings of the loaded
+/// program, as text.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_dep_classes_report(vm: *mut VmHandle, all_modules: bool) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        let pid = vm.loaded()?.program_id;
+        let program = vm
+            .env
+            .get_program(pid)
+            .ok_or_else(|| BridgeError::invalid("no program loaded"))?;
+        let text = vm.env.dep_classes_report(program, all_modules);
+        vm.dep_classes_report = cstring_lossy(&text);
+        Ok(vm.dep_classes_report.as_ptr())
+    })
+    .1
 }
 
 #[unsafe(no_mangle)]
@@ -2738,7 +2798,8 @@ pub extern "C" fn pb_vm_profile_report(vm: *mut VmHandle, top_n: usize) -> *cons
             let d = |a: u64, b: u64| a.saturating_sub(b);
             text.push_str(&format!(
                 "\n  memo (call memoization, over the measured runs):\n    \
-                 hits {}  misses {}  records {}  inlined {}  effectful {}  cold {}  tiny {}  evicted {}\n",
+                 hits {}  misses {}  records {}  inlined {}  effectful {}  cold {}  tiny {}  evicted {}\n    \
+                 static skips {}  static args {}  commands re-issued {}\n",
                 d(now.hits, was.hits),
                 d(now.misses, was.misses),
                 d(now.records, was.records),
@@ -2747,6 +2808,9 @@ pub extern "C" fn pb_vm_profile_report(vm: *mut VmHandle, top_n: usize) -> *cons
                 d(now.cold, was.cold),
                 d(now.tiny, was.tiny),
                 d(now.evicted, was.evicted),
+                d(now.static_skips, was.static_skips),
+                d(now.static_args, was.static_args),
+                d(now.commands, was.commands),
             ));
         }
         vm.profile_report = cstring_lossy(&text);

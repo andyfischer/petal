@@ -813,6 +813,47 @@ TEST(host_built_return_records_share_a_shape) {
     CHECK_EQ(got[2][0]["id"].integer(), (int64_t)2);
 }
 
+TEST(commands_reissue_queries_follow_their_class_and_declares_replay) {
+    petal::Vm vm;
+    std::vector<int64_t> kicks;
+    int64_t physics = 1;
+    int64_t ray_calls = 0;
+    vm.native("kick", petal::fx::Command, [&](petal::Call& c) { kicks.push_back(c[0].integer()); });
+    vm.native("ray", petal::fx::Query, [&](petal::Call& c) {
+        ++ray_calls;
+        c.result().value(physics * 10);
+    });
+    vm.emitter_fx("decl", "decls", petal::fx::Declare);
+    vm.load_source(
+        "import io\n"
+        "native fn kick(id)\nnative fn ray()\nnative fn decl(id, x)\n"
+        "fn pushers()\n  for i in range(0, 3) do kick(i) end\n  push_output(symbol(\"out\"), 1)\n  nil\nend\n"
+        "fn aim()\n  push_output(symbol(\"out\"), ray())\n  nil\nend\n"
+        "fn crates()\n  for i in range(0, 4) do decl(i, float(i)) end\n  nil\nend\n"
+        "fn spin()\n  print(\"spin\")\nend\n"
+        "pushers()\naim()\ncrates()\n");
+    vm.set_memo(true);
+    CHECK_EQ(run_out(vm), (std::vector<double>{1, 10}));
+    CHECK_EQ(vm.drain("decls").size(), (size_t)4);
+    // Replayed: the commands are issued again, the query is not re-asked,
+    // and the declarations come back.
+    kicks.clear();
+    const int64_t asked = ray_calls;
+    CHECK_EQ(run_out(vm), (std::vector<double>{1, 10}));
+    CHECK_EQ(kicks, (std::vector<int64_t>{0, 1, 2}));
+    CHECK_EQ(ray_calls, asked);
+    CHECK_EQ(vm.drain("decls").size(), (size_t)4);
+    // Host data in general does not invalidate a PHYSICS read; a step does.
+    vm.note_host_data_changed();
+    physics = 2;
+    CHECK_EQ(run_out(vm), (std::vector<double>{1, 10}));
+    vm.note_class_changed(petal::fx::ReadsPhysics);
+    CHECK_EQ(run_out(vm), (std::vector<double>{1, 20}));
+    const std::string report = vm.dep_classes_report();
+    CHECK(report.find("aim: may PHYSICS") != std::string::npos);
+    CHECK(report.find("never replays: spin: calls `print`") != std::string::npos);
+}
+
 TEST(segmented_buffer_hands_a_replayed_scope_over_as_one_entry) {
     pb_vm* vm = pb_vm_create();
     CHECK_EQ(pb_vm_set_segmented(vm, "out", true), PB_OK);

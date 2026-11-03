@@ -383,3 +383,222 @@ fn a_host_that_lost_its_cache_is_given_everything_again() {
     assert_eq!(w.frame().len(), 10);
     assert_eq!(w.frames[2].defined.len(), 1);
 }
+
+// ── Errors, mixed buffers, deep trees, liveness ─────────────────────
+
+/// Deep recursion (past the memo frame-depth bound), a leaf that changes
+/// every few frames under a chain of recorded parents, closures passed in,
+/// and a state-writing scope that replays.
+#[test]
+fn deep_trees_closures_and_state_writes_match() {
+    let src = r#"
+native fn put(v)
+state frame = 0
+frame += 1
+
+fn tree(d, k)
+  put("enter {d}")
+  if d == 0 then
+    put("leaf {k}")
+  else
+    tree(d - 1, k)
+    tree(d - 1, 0)
+  end
+  put("exit {d}")
+  nil
+end
+
+fn deep(n)
+  put(n)
+  if n > 0 then deep(n - 1) end
+  nil
+end
+
+fn apply(f, xs)
+  for x in xs do put(f(x)) end
+  nil
+end
+
+fn counter(k)
+  state hits = 0
+  hits += 1
+  put("counter {k} {hits}")
+  for i in range(0, 12) do put(i) end
+  nil
+end
+
+tree(5, frame / 3)
+deep(120)
+apply(fn(x) x * 2 end, range(0, 30))
+counter(frame / 4)
+"#;
+    same_everywhere(src, 16, None);
+}
+
+/// A scope emitting into a segmented and a flat buffer at once.
+#[test]
+fn a_scope_emitting_into_a_segmented_and_a_flat_buffer() {
+    fn put2(c: &mut PetalCxt) -> NativeResult {
+        let v = c.get_value(1)?;
+        let a = c.intern_symbol("out");
+        let b = c.intern_symbol("side");
+        c.push_output(a, v);
+        c.push_output(b, v);
+        c.push_nil();
+        Ok(1)
+    }
+    let src = "native fn put(v)\nnative fn put2(v)\nstate n = 0\nn += 1\n\
+               fn row(k)\n  put2(\"row {k}\")\n  for i in range(0, 30) do put(i) end\n  put2(k)\n  nil\nend\n\
+               row(1)\nrow(n / 2)\nput2(\"end\")\n";
+    let run = |memo: bool, seg: bool| -> Vec<(Vec<String>, Vec<String>)> {
+        let mut env = Env::new();
+        env.set_echo(false);
+        let mut policy = RunPolicy::FAST;
+        policy.memo = memo;
+        policy.gate = false;
+        env.set_policy(policy);
+        env.register_native("put", put, NativeEffects::EMITS);
+        env.register_native("put2", put2, NativeEffects::EMITS);
+        let pid = env.load_program(src).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let out = env.intern_symbol("out");
+        let side = env.intern_symbol("side");
+        if seg {
+            env.set_output_segmented(out, true);
+        }
+        let mut cache = SegmentCache::default();
+        let mut frames = vec![];
+        for _ in 0..8 {
+            env.reset_stack(sid).unwrap();
+            env.run(sid).unwrap();
+            let a = if seg {
+                let f = env.take_output_segments(out);
+                cache.apply(&f)
+            } else {
+                env.take_output_buffer(out)
+            };
+            let b = env.take_output_buffer(side);
+            let heap = env.heap();
+            frames.push((
+                a.iter().map(|v| show(heap, *v)).collect(),
+                b.iter().map(|v| show(heap, *v)).collect(),
+            ));
+        }
+        frames
+    };
+    let reference = run(false, false);
+    assert_eq!(reference, run(true, false));
+    assert_eq!(reference, run(true, true));
+}
+
+/// A run that fails part way, inside a scope that emitted: what the buffer
+/// holds after the error must be the same segmented or not, and the next
+/// frames too.
+#[test]
+fn a_run_that_fails_inside_a_scope_leaves_the_same_buffer() {
+    let src = r#"
+native fn put(v)
+state frame = 0
+frame += 1
+fn wall(n)
+  for i in range(0, n) do put(i) end
+  nil
+end
+fn risky(k)
+  put("risky {k}")
+  wall(20)
+  if k % 3 == 2 then
+    let xs = [1, 2]
+    put(xs[k])
+  end
+  put("after")
+  nil
+end
+put("top")
+wall(40)
+risky(frame / 2)
+put("end")
+"#;
+    let run = |memo: bool, seg: bool| -> Vec<(bool, Vec<String>)> {
+        let mut env = Env::new();
+        env.set_echo(false);
+        let mut policy = RunPolicy::FAST;
+        policy.memo = memo;
+        policy.gate = false;
+        env.set_policy(policy);
+        env.register_native("put", put, NativeEffects::EMITS);
+        let pid = env.load_program(src).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let out = env.intern_symbol("out");
+        if seg {
+            env.set_output_segmented(out, true);
+        }
+        let mut cache = SegmentCache::default();
+        let mut frames = vec![];
+        for _ in 0..14 {
+            env.reset_stack(sid).unwrap();
+            let ok = env.run(sid).is_ok();
+            env.take_output();
+            let a = if seg {
+                let f = env.take_output_segments(out);
+                cache.apply(&f)
+            } else {
+                env.take_output_buffer(out)
+            };
+            let heap = env.heap();
+            frames.push((ok, a.iter().map(|v| show(heap, *v)).collect()));
+        }
+        frames
+    };
+    let reference = run(false, false);
+    assert!(reference.iter().any(|(ok, _)| !ok), "no frame failed");
+    assert_eq!(reference, run(true, false));
+    assert_eq!(reference, run(true, true));
+}
+
+/// Values a host keeps from a definition stay live until the drain that
+/// reports their serial dropped, even when the record holding them is
+/// replaced and the collector runs before that drain.
+#[test]
+fn kept_definitions_stay_live_until_dropped() {
+    let src = r#"
+native fn put(v)
+state n = 0
+n += 1
+fn row(k)
+  for i in range(0, 40) do put("row {k} {i}") end
+  nil
+end
+row(n)
+let garbage = map(range(0, 200000), fn(i) "g{i}{n}" end)
+"#;
+    let mut w = world(src, true, Drain::Segments);
+    let out = w.env.intern_symbol("out");
+    w.frame();
+    let kept: Vec<Value> = w.frames[0]
+        .defined
+        .iter()
+        .flat_map(|d| d.items.iter())
+        .filter_map(|i| match i {
+            SegItem::Value(v) => Some(*v),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(kept.len(), 40);
+    // The next run replaces `row`'s record; collect before draining.
+    let before = w.env.heap().collections();
+    // Runs that replace `row`'s record, with the collector running, all
+    // before the next drain.
+    for _ in 0..6 {
+        w.env.reset_stack(w.sid).unwrap();
+        w.env.run(w.sid).unwrap();
+    }
+    let heap = w.env.heap();
+    assert!(heap.collections() > before, "the collector never ran");
+    assert!(
+        kept.iter().all(|v| heap.is_live(*v)),
+        "a kept definition was collected before its serial was dropped"
+    );
+    let f = w.env.take_output_segments(out);
+    assert!(f.dropped.contains(&w.frames[0].defined[0].serial));
+}

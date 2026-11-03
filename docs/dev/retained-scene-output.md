@@ -36,8 +36,9 @@ a buffer:
   `pb_vm_drain_segments`): the frame's fresh values and segment references
   in order; the definition of every segment it has not been given yet,
   children before parents; and the serials no record or buffer refers to any
-  more. The channel remembers what it defined by weak reference, so "dropped"
-  is exactly "this body died".
+  more. The channel holds every body it defined until it lists the serial
+  as dropped (the first drain after nothing else holds the body), so the
+  values a host was given stay live until it is told to forget them.
 - A **cutoff** (a child re-executed during its parent's validation that
   produced the same output) keeps the previous record's bodies, so the host
   is never handed an equal segment under a new serial.
@@ -57,8 +58,10 @@ the buffer as fresh items; `take_output_buffer` on a segmented buffer
 returns it expanded, so a host that has not been taught segments keeps
 working; turning segmentation off expands what is undrained, and records
 made while it was on replay flat. Bodies are GC roots through the memo
-records and the undrained marks; a host may keep the `Value`s of a
-definition until its serial is reported dropped.
+records, the undrained marks and the channel's delivered set; a host may keep
+the `Value`s of a definition until its serial is reported dropped
+(`kept_definitions_stay_live_until_dropped` checks this with the
+record replaced and the collector run before that drain).
 
 **The host contract**, in full: keep a map serial → what you made of the
 segment; for each definition build its entry (its child references are
@@ -100,7 +103,13 @@ On the static world the host now handles 2 references a frame instead of
 (about 0.12 µs each through the planned decode) and, for orbits, sampling
 3,000 orbits natively. Every mode's world is hashed every frame and compared
 (the orbit variant compares the two hosts that sample orbits among
-themselves, since the others do not move declared motion).
+themselves, since the others do not move declared motion). That check once
+failed on the default world for the VM-segments host only: the hosts' field
+diff (`same_value`) compared a kept value's contents through its id after
+the collector had freed it and reused the slot for this frame's value, so a
+moved ship looked unchanged. Ids are generational, so it now compares
+contents only while the kept value is live (a fresh value is not rooted
+after the drain; a definition's are, until dropped).
 
 Reproduce:
 
@@ -116,8 +125,10 @@ references spliced per frame.
 **Checked by** `core/tests/output_segments.rs` (each script under memo off
 with a flat buffer, memo on flat, and memo on segmented drained both through
 a `SegmentCache` and flat, equal frame for frame through collections,
-re-recordings, effectful scopes, cutoffs and a reload; plus the identity,
-drop and reset rules) and
+re-recordings, effectful scopes, cutoffs and a reload, and also runs that
+fail inside a scope, a scope emitting into a segmented and a flat buffer, and
+recursion past the memo depth bound; plus the identity, drop, liveness and
+reset rules) and
 `segmented_draw_buffers_reproduce_unmemoized_frames_across_the_corpus` in
 `core-libs/petal-ui/tests/memo.rs` (every panel app, its draw buffer
 segmented, against the unmemoized run). Breaking the position rebase in the

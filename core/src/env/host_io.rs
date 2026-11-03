@@ -49,7 +49,10 @@ impl Env {
         self.ctx_mut(ck).take_output_buffer(sym)
     }
 
-    /// Peek at the buffer bound to `sym` without draining it.
+    /// Peek at the buffer bound to `sym` without draining it. For a
+    /// segmented buffer this is only the values held outside segments: a
+    /// recorded or replayed scope's are behind a mark, and only a drain
+    /// (`take_output_buffer`, `take_output_segments`) includes them.
     pub fn output_buffer(&self, sym: SymbolId) -> &[Value] {
         self.ctx(self.default_context).output_buffer(sym)
     }

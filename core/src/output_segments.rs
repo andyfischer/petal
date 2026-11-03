@@ -42,13 +42,14 @@
 //!
 //! # Lifetime
 //!
-//! A body lives as long as a memo record, a parent body, or an undrained
-//! buffer holds it. The VM remembers which serials it has defined to the host
-//! (by weak reference); when one of them dies the next drain lists it in
-//! [`SegmentedFrame::dropped`]. Until then the values in its definition stay
-//! rooted for the collector, so a host may keep them (by id) across frames. A
-//! hot reload clears the memo table, so every segment is dropped on the drain
-//! after it.
+//! A body is in use while a memo record, a parent body, or an undrained
+//! buffer holds it. The channel also holds every body it has defined to the
+//! host, and the next drain after the last other holder lets go lists its
+//! serial in [`SegmentedFrame::dropped`] and releases it. Until that drain
+//! the body, and so every value in its definition, stays rooted for the
+//! collector, so a host may keep the values it was given (by id) until it is
+//! told the serial is dropped. A hot reload clears the memo table, so every
+//! segment is dropped on the drain after it.
 //!
 //! What is not segmented: a buffer is segmented only while emit tracing is
 //! off ([`crate::execution_context::ExecutionContext::enable_emit_trace`]),
@@ -59,7 +60,7 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use crate::stack::PathPart;
 use crate::symbol::SymbolId;
@@ -158,9 +159,10 @@ pub struct SegChannel {
     /// This frame's segment references, by position in the buffer's values.
     /// Positions never decrease.
     pub marks: Vec<SegMark>,
-    /// The serials the host has been given a definition of, still alive or
-    /// not yet reported dropped.
-    delivered: HashMap<u64, Weak<SegmentBody>>,
+    /// The bodies the host has been given a definition of, by serial, held
+    /// (and rooted) until a drain reports them dropped: the host may keep
+    /// their values until then.
+    delivered: HashMap<u64, Arc<SegmentBody>>,
 }
 
 impl SegChannel {
@@ -175,6 +177,11 @@ impl SegChannel {
         self.delivered.len()
     }
 
+    /// The bodies the host holds a definition of, for the collector.
+    pub fn delivered_bodies(&self) -> impl Iterator<Item = &Arc<SegmentBody>> {
+        self.delivered.values()
+    }
+
     /// Build this frame's drain from the buffer's values and this channel's
     /// marks.
     pub fn take(&mut self, values: Vec<Value>) -> SegmentedFrame {
@@ -185,13 +192,22 @@ impl SegChannel {
             self.define(&m.body, &mut frame.defined);
         }
         drop(marks);
-        self.delivered.retain(|serial, body| {
-            let alive = body.strong_count() > 0;
-            if !alive {
-                frame.dropped.push(*serial);
+        // A body only this map holds is dropped. Releasing a parent can
+        // leave its children held by this map alone, so repeat until none
+        // goes.
+        loop {
+            let before = frame.dropped.len();
+            self.delivered.retain(|serial, body| {
+                let in_use = Arc::strong_count(body) > 1;
+                if !in_use {
+                    frame.dropped.push(*serial);
+                }
+                in_use
+            });
+            if frame.dropped.len() == before {
+                break;
             }
-            alive
-        });
+        }
         frame.dropped.sort_unstable();
         frame
     }
@@ -205,7 +221,7 @@ impl SegChannel {
         for m in &body.marks {
             self.define(&m.body, out);
         }
-        self.delivered.insert(body.serial, Arc::downgrade(body));
+        self.delivered.insert(body.serial, body.clone());
         out.push(SegmentDef {
             id: body.id,
             serial: body.serial,

@@ -53,7 +53,8 @@ process-unique serial, so a replayed world costs it O(scopes) instead of
 O(values). A cutoff keeps the previous record's bodies, since the output is
 the same, so the host is not handed an equal segment under a new serial. A
 buffer is not segmented while emit tracing is on. Bodies are GC roots
-through the records and the undrained marks.
+through the records, the undrained marks and the bodies defined to the host
+(held until a drain reports them dropped).
 
 **Early cutoff.** A child whose record fails validation is not necessarily a
 changed child. If the child's subtree wrote no state and no cell, the VM

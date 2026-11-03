@@ -12,6 +12,16 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- C bridge: option plans (`pb_plan`, `petal::Plan`) read a native's
+  options record by position, checking its field names once per record
+  shape; a decoded `PB_MAP` now carries its shape id in `integer`
+  (`Value::shape()`). Snapshots (`pb_snapshot`, `petal::Snapshot`) say which
+  options of a keyed declaration changed since last frame. Decoding copies a
+  shape's keys once rather than per record, and records a host builds with
+  the same keys share one shape. In `examples/scene_frame.cpp` the host's
+  option reads fall from about 405 to 165 µs a frame
+  ([embedding-c.md](docs/usage/embedding-c.md#options-records-read-by-position-with-a-plan)).
+
 - An import path may be a quoted string, so a module whose file or directory
   name is not an identifier can be imported: `import "./my-lib" as lib`,
   `import "../shared-utils/rng"`, `import "kit/extra-bits": knob`. A plain

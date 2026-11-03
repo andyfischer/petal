@@ -436,13 +436,23 @@ impl World {
     }
 }
 
+/// Whether field value `a` is `b`, a value kept from an earlier frame. `b`
+/// may have been emitted fresh, so nothing roots it after the drain: the
+/// collector may have freed it and reused its slot. Ids are generational, so
+/// `x == y` never mistakes the new tenant for it, but reading `b`'s contents
+/// through a stale id reads the new tenant's, so contents are compared only
+/// while `b` is live.
 fn same_value(heap: &Heap, a: Value, b: Value) -> bool {
     match (a, b) {
-        (Value::Vec3(x), Value::Vec3(y)) => x == y || heap.get_vec3(x) == heap.get_vec3(y),
+        (Value::Vec3(x), Value::Vec3(y)) => {
+            x == y || (heap.is_live(b) && heap.get_vec3(x) == heap.get_vec3(y))
+        }
         (Value::Float(x), Value::Float(y)) => x.to_bits() == y.to_bits(),
         (Value::Int(x), Value::Int(y)) => x == y,
         (Value::Bool(x), Value::Bool(y)) => x == y,
-        (Value::String(x), Value::String(y)) => x == y || heap.get_string(x) == heap.get_string(y),
+        (Value::String(x), Value::String(y)) => {
+            x == y || (heap.is_live(b) && heap.get_string(x) == heap.get_string(y))
+        }
         (Value::Map(x), Value::Map(y)) => x == y,
         (Value::Nil, Value::Nil) => true,
         _ => false,

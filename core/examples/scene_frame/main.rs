@@ -30,6 +30,7 @@
 //! | `emit+memo+ident` | same | skips any item whose opts record is the *same heap object* as last frame |
 //! | `emit+memo+plan`  | same | + per-shape option plans (validate once per shape) and field-level value diffs for keyed items |
 //! | `emit+memo+seg`   | same | retained segments: reuse last frame's result for an item by position (`SegHost`), int keys, slot array |
+//! | `emit+memo+vmseg` | same, the buffer segmented (`petal::output_segments`) | a replayed scope is one reference: splice the segment kept by serial (`VmSegHost`), O(scopes) |
 //!
 //! `SHIPS=orbit` declares each ship's motion (`orbit: {radius, speed, ...}`)
 //! instead of this frame's position, so the declaration reads no clock, is
@@ -43,11 +44,13 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
 
 use petal::env::Env;
 use petal::heap::{Heap, MapId, StringId};
 use petal::native_fn::{NativeEffects, NativeResult, PetalCxt};
+use petal::output_segments::{SegItem, SegmentedFrame};
 use petal::policy::RunPolicy;
 use petal::value::Value;
 
@@ -239,6 +242,8 @@ enum HostMode {
     EmitPlan,
     /// Retained segments: see `SegHost`.
     EmitSeg,
+    /// Segments from the VM: see `VmSegHost`.
+    EmitVmSeg,
 }
 
 /// A planned decode for one record shape: validated once, then fields are
@@ -706,31 +711,219 @@ impl SegHost {
     }
 
     fn digest(&self) -> u64 {
-        let mut h: u64 = 0;
-        let mut live: Vec<(String, &Slot)> =
-            self.slots.iter().filter(|s| s.live).map(|s| (s.key.digest_str(), s)).collect();
-        h = h.wrapping_add(live.len() as u64);
-        live.sort_by(|a, b| a.0.cmp(&b.0));
-        for (k, s) in live {
-            for b in k.bytes() {
-                h = h.wrapping_mul(31).wrapping_add(b as u64);
+        digest_of(&self.slots, &self.draws)
+    }
+}
+
+/// The world digest of a slot array and a draw list (`World::digest`'s).
+fn digest_of(slots: &[Slot], draws: &[DrawC]) -> u64 {
+    let mut h: u64 = 0;
+    let mut live: Vec<(String, &Slot)> =
+        slots.iter().filter(|s| s.live).map(|s| (s.key.digest_str(), s)).collect();
+    h = h.wrapping_add(live.len() as u64);
+    live.sort_by(|a, b| a.0.cmp(&b.0));
+    for (k, s) in live {
+        for b in k.bytes() {
+            h = h.wrapping_mul(31).wrapping_add(b as u64);
+        }
+        for p in s.desc.pos {
+            h = h.wrapping_mul(31).wrapping_add(p.to_bits());
+        }
+    }
+    for d in draws {
+        for x in d.xform {
+            h = h.wrapping_mul(31).wrapping_add(x.to_bits() as u64);
+        }
+        h = h.wrapping_mul(31).wrapping_add(d.material[0].to_bits() as u64);
+    }
+    h
+}
+
+// ─── Segments from the VM ───────────────────────────────────────────────────
+//
+// The buffer is segmented (`Env::set_output_segmented`): a memo scope that
+// replays reaches the host as one `SegItem::Segment(serial)`, defined once.
+// The host decodes a definition once into a `VmSeg` (its draws, the body
+// slots it declares, its child segments) and keeps it by serial; a frame is
+// a list of chunks, fresh draws or kept segments, so a replayed scope costs
+// one lookup whatever it holds. Bodies are counted by the segments live this
+// frame that declare them (plus this frame's fresh declarations), and reaped
+// when the count reaches zero: the walk is over segments, not bodies.
+//
+// It reuses `SegHost`'s slot array, planned decode and mesh table. Like
+// `SegHost` it assumes one declaration per body key per frame (what the
+// scene does): a key declared by two holders keeps the last decoded one.
+
+struct VmSeg {
+    /// The segment's own draws, in order.
+    draws: Vec<DrawC>,
+    /// Child segments, by the index in `draws` they come before.
+    children: Vec<(usize, Arc<VmSeg>)>,
+    /// Body slots the segment's own items declare.
+    bodies: Vec<u32>,
+    serial: u64,
+}
+
+enum Chunk {
+    Draw(DrawC),
+    Seg(Arc<VmSeg>),
+}
+
+#[derive(Default)]
+pub struct VmSegHost {
+    core: SegHost,
+    segs: HashMap<u64, Arc<VmSeg>>,
+    /// The segments this frame refers to, transitively, by serial.
+    live: HashMap<u64, Arc<VmSeg>>,
+    next_live: HashMap<u64, Arc<VmSeg>>,
+    /// Holders of each body slot: live segments that declare it, plus a
+    /// fresh declaration this frame.
+    refs: Vec<u32>,
+    fresh_bodies: Vec<u32>,
+    prev_fresh_bodies: Vec<u32>,
+    chunks: Vec<Chunk>,
+    spliced: u64,
+}
+
+impl VmSegHost {
+    fn frame(&mut self, heap: &Heap, frame: SegmentedFrame) -> Result<(), String> {
+        self.core.frame += 1;
+        for d in &frame.defined {
+            let mut seg = VmSeg { draws: vec![], children: vec![], bodies: vec![], serial: d.serial };
+            for it in &d.items {
+                match it {
+                    SegItem::Segment(s) => {
+                        let child = self.segs.get(s).ok_or("segment referenced before its definition")?;
+                        seg.children.push((seg.draws.len(), child.clone()));
+                    }
+                    SegItem::Value(v) => match self.item(heap, *v)? {
+                        Made::Draw(dc) => seg.draws.push(dc),
+                        Made::Body(slot) => seg.bodies.push(slot),
+                    },
+                }
             }
-            for p in s.desc.pos {
-                h = h.wrapping_mul(31).wrapping_add(p.to_bits());
+            self.segs.insert(d.serial, Arc::new(seg));
+        }
+        self.chunks.clear();
+        std::mem::swap(&mut self.fresh_bodies, &mut self.prev_fresh_bodies);
+        self.fresh_bodies.clear();
+        self.next_live.clear();
+        for it in &frame.items {
+            match it {
+                SegItem::Segment(s) => {
+                    let seg = self.segs.get(s).ok_or("segment referenced before its definition")?.clone();
+                    self.spliced += 1;
+                    mark_live(&seg, &mut self.next_live);
+                    self.chunks.push(Chunk::Seg(seg));
+                }
+                SegItem::Value(v) => match self.item(heap, *v)? {
+                    Made::Draw(dc) => self.chunks.push(Chunk::Draw(dc)),
+                    Made::Body(slot) => self.fresh_bodies.push(slot),
+                },
             }
         }
-        for d in &self.draws {
-            for x in d.xform {
-                h = h.wrapping_mul(31).wrapping_add(x.to_bits() as u64);
+        // Count holders: what arrives first, then what leaves, so a body
+        // that moves from one holder to another is never reaped.
+        let entered: Vec<Arc<VmSeg>> = self
+            .next_live
+            .iter()
+            .filter(|(serial, _)| !self.live.contains_key(serial))
+            .map(|(_, seg)| seg.clone())
+            .collect();
+        for seg in entered {
+            for &b in &seg.bodies {
+                self.hold(b, 1);
             }
-            h = h.wrapping_mul(31).wrapping_add(d.material[0].to_bits() as u64);
         }
-        h
+        for i in 0..self.fresh_bodies.len() {
+            self.hold(self.fresh_bodies[i], 1);
+        }
+        let mut released: Vec<u32> = self
+            .live
+            .iter()
+            .filter(|(serial, _)| !self.next_live.contains_key(serial))
+            .flat_map(|(_, seg)| seg.bodies.iter().copied())
+            .collect();
+        released.append(&mut self.prev_fresh_bodies);
+        for b in released {
+            self.hold(b, -1);
+        }
+        std::mem::swap(&mut self.live, &mut self.next_live);
+        for s in &frame.dropped {
+            self.segs.remove(s);
+        }
+        // Declared motion, as in `SegHost`.
+        let t = self.core.frame as f64 / 60.0;
+        for s in self.core.slots.iter_mut() {
+            if let (true, Some([r, sp, ph, y, bob, bph])) = (s.live, s.orbit) {
+                let a = t * sp + ph;
+                s.desc.pos = [a.cos() * r, y + (t + bph).sin() * bob, a.sin() * r];
+            }
+        }
+        Ok(())
+    }
+
+    /// Decode one fresh item.
+    fn item(&mut self, heap: &Heap, v: Value) -> Result<Made, String> {
+        let Value::List(l) = v else { return Err("scene item".into()) };
+        let xs = heap.get_list(l);
+        Ok(match xs[0] {
+            Value::Int(0) => {
+                let slot = self.core.body(heap, xs[1], xs[2])?;
+                if self.refs.len() <= slot as usize {
+                    self.refs.resize(slot as usize + 1, 0);
+                }
+                Made::Body(slot)
+            }
+            _ => Made::Draw(self.core.draw(heap, xs[1], xs[2])?),
+        })
+    }
+
+    fn hold(&mut self, slot: u32, delta: i32) {
+        let r = &mut self.refs[slot as usize];
+        *r = r.checked_add_signed(delta).expect("body holders went negative");
+        if *r == 0 {
+            let s = &mut self.core.slots[slot as usize];
+            if s.live {
+                s.live = false;
+                self.core.by_key.remove(&s.key);
+                self.core.free.push(slot);
+            }
+        }
+    }
+
+    fn digest(&self) -> u64 {
+        fn draws_of(seg: &VmSeg, out: &mut Vec<DrawC>) {
+            let mut i = 0;
+            for (at, child) in &seg.children {
+                out.extend_from_slice(&seg.draws[i..*at]);
+                draws_of(child, out);
+                i = *at;
+            }
+            out.extend_from_slice(&seg.draws[i..]);
+        }
+        let mut draws = vec![];
+        for c in &self.chunks {
+            match c {
+                Chunk::Draw(d) => draws.push(*d),
+                Chunk::Seg(s) => draws_of(s, &mut draws),
+            }
+        }
+        digest_of(&self.core.slots, &draws)
+    }
+}
+
+fn mark_live(seg: &Arc<VmSeg>, live: &mut HashMap<u64, Arc<VmSeg>>) {
+    if live.insert(seg.serial, seg.clone()).is_none() {
+        for (_, c) in &seg.children {
+            mark_live(c, live);
+        }
     }
 }
 
 thread_local! {
     static SEG: RefCell<SegHost> = RefCell::new(SegHost::default());
+    static VSEG: RefCell<VmSegHost> = RefCell::new(VmSegHost::default());
 }
 
 thread_local! {
@@ -788,6 +981,7 @@ struct Result_ {
 fn run_mode(name: &'static str, source: &str, emit: bool, memo: bool, host: HostMode, frames: usize) -> Result_ {
     WORLD.with(|w| *w.borrow_mut() = World::default());
     SEG.with(|w| *w.borrow_mut() = SegHost::default());
+    VSEG.with(|w| *w.borrow_mut() = VmSegHost::default());
     MODE.with(|m| *m.borrow_mut() = host);
     let mut env = Env::new();
     env.set_echo(false);
@@ -805,6 +999,9 @@ fn run_mode(name: &'static str, source: &str, emit: bool, memo: bool, host: Host
     let pid = env.load_program(source).unwrap_or_else(|e| panic!("{e}"));
     let sid = env.create_stack(pid).unwrap();
     let scene = env.intern_symbol("scene");
+    if host == HostMode::EmitVmSeg {
+        env.set_output_segmented(scene, true);
+    }
     let (mut script, mut hostt, mut times) = (vec![], vec![], vec![]);
     let mut digests = vec![];
     let warm = 30;
@@ -814,7 +1011,11 @@ fn run_mode(name: &'static str, source: &str, emit: bool, memo: bool, host: Host
         env.reset_stack(sid).unwrap();
         env.run(sid).unwrap_or_else(|e| panic!("{e}"));
         let t1 = Instant::now();
-        if emit {
+        if host == HostMode::EmitVmSeg {
+            let frame = env.take_output_segments(scene);
+            let heap = env.heap();
+            VSEG.with(|w| w.borrow_mut().frame(heap, frame)).unwrap();
+        } else if emit {
             let items = env.take_output_buffer(scene);
             let heap = env.heap();
             if host == HostMode::EmitSeg {
@@ -842,6 +1043,8 @@ fn run_mode(name: &'static str, source: &str, emit: bool, memo: bool, host: Host
             times.push((t2 - t0).as_secs_f64() * 1e6);
             digests.push(if host == HostMode::EmitSeg {
                 SEG.with(|w| w.borrow().digest())
+            } else if host == HostMode::EmitVmSeg {
+                VSEG.with(|w| w.borrow().digest())
             } else {
                 WORLD.with(|w| w.borrow().digest())
             });
@@ -853,13 +1056,23 @@ fn run_mode(name: &'static str, source: &str, emit: bool, memo: bool, host: Host
                 w.decoded = 0;
                 w.reused = 0;
             });
+            VSEG.with(|w| {
+                let mut w = w.borrow_mut();
+                w.core.decoded = 0;
+                w.spliced = 0;
+            });
         }
     }
     let med = |v: &mut Vec<f64>| {
         v.sort_by(|a, b| a.total_cmp(b));
         v[v.len() / 2]
     };
-    let (decoded, skipped) = if host == HostMode::EmitSeg {
+    let (decoded, skipped) = if host == HostMode::EmitVmSeg {
+        VSEG.with(|w| {
+            let w = w.borrow();
+            (w.core.decoded as f64 / frames as f64, w.spliced as f64 / frames as f64)
+        })
+    } else if host == HostMode::EmitSeg {
         SEG.with(|w| {
             let w = w.borrow();
             (w.decoded as f64 / frames as f64, w.reused as f64 / frames as f64)
@@ -909,7 +1122,7 @@ fn main() {
     }
     let source = source.as_str();
     let only: Option<String> = std::env::var("MODES").ok();
-    let modes: [(&'static str, bool, bool, HostMode); 7] = [
+    let modes: [(&'static str, bool, bool, HostMode); 8] = [
         ("effect (today)", false, false, HostMode::Effect),
         ("effect + memo", false, true, HostMode::Effect),
         ("emit (no memo)", true, false, HostMode::Emit),
@@ -917,6 +1130,7 @@ fn main() {
         ("emit + memo + identity", true, true, HostMode::EmitIdent),
         ("emit + memo + identity + shape plans", true, true, HostMode::EmitPlan),
         ("emit + memo + retained segments", true, true, HostMode::EmitSeg),
+        ("emit + memo + VM segments", true, true, HostMode::EmitVmSeg),
     ];
     let results: Vec<Result_> = modes
         .iter()
@@ -933,6 +1147,20 @@ fn main() {
             r.name, r.script_us, r.host_us, r.total_us, r.decoded_per_frame, r.skipped_per_frame, r.memo_hits
         );
     }
-    let same = results.iter().all(|r| r.digests == results[0].digests);
-    println!("worlds identical across modes, every frame: {same}");
+    // Only the two segment hosts sample declared motion (`orbit`), so with
+    // `SHIPS=orbit` the other modes' worlds keep the ships where they were
+    // declared and are compared among themselves.
+    let samples_motion = |r: &Result_| r.name.contains("segments");
+    let groups: Vec<Vec<&Result_>> = if variant == "orbit" {
+        let (a, b): (Vec<&Result_>, Vec<&Result_>) = results.iter().partition(|r| samples_motion(r));
+        vec![a, b]
+    } else {
+        vec![results.iter().collect()]
+    };
+    let same = groups.iter().all(|g| g.iter().all(|r| r.digests == g[0].digests));
+    if variant == "orbit" {
+        println!("worlds identical across modes (segment hosts, which sample orbits, among themselves), every frame: {same}");
+    } else {
+        println!("worlds identical across modes, every frame: {same}");
+    }
 }

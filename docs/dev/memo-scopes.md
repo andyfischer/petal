@@ -143,7 +143,11 @@ decide three things when the program is lowered, written into the bytecode
   record holds for the life of the program, so the replay check skips the
   captures and the dependency walk too, when the record's own entries are
   only children and observations. That is `draw_city(CITY)` retained once
-  and spliced every frame.
+  and spliced every frame. A capture counts as static only when the
+  function's one closure is made once per run: in top-level code outside any
+  loop. A closure made in a loop is a different closure on each iteration
+  (`for k in KS do set pick = fn(x) x + k end end`), and which of them a call
+  reaches can change from run to run, so its captures are compared.
 
 `Env::set_memo_hints(stack, false)` ignores them all: the reference run the
 hinted one is held to (`core/tests/dep_classes.rs`). `static_skips`,

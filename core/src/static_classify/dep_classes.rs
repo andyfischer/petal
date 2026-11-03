@@ -181,6 +181,12 @@ impl std::ops::BitOrAssign for Deps {
     }
 }
 
+/// The most rounds either fixed point is given. Each round of the forward
+/// walk carries a function's summary one call level up, so this bounds the
+/// depth of call chain the walk follows exactly; past it the walk gives up
+/// soundly (see [`Pass::dep_classes`]).
+const MAX_ROUNDS: usize = 4096;
+
 /// The dependency bits of a native row: its input classes, and what its
 /// call does to a memoized scope.
 pub fn native_deps(row: NativeEffects) -> Deps {
@@ -252,9 +258,9 @@ pub struct FnDeps {
     /// (directly), and the input classes it reads, the commands it issues and
     /// the output it pushes, directly, on every path.
     pub every: Deps,
-    /// Everything the function captures is static data or a known function
-    /// at every place a closure of it is made, and every such place is
-    /// top-level code.
+    /// The function captures nothing, or its one closure is made once per
+    /// run (top-level code, outside any loop) and captures static data or
+    /// known functions there.
     pub captures_static: bool,
     /// The first witness of each bit of `may` and of `every`.
     pub why_may: Vec<Witness>,
@@ -475,8 +481,15 @@ impl<'a> Pass<'a> {
         let mut terms = vec![Deps::CONST; p.terms.len()];
         let mut may = vec![Deps::CONST; nfns];
 
-        // The fixed point of the forward walk.
-        for _round in 0..64 {
+        // The fixed point of the forward walk. Every round only adds bits
+        // and a function's summary reaches its callers one round later, so a
+        // call chain needs a round per level: run until nothing changes. The
+        // bound is only a guard; a walk stopped short of its fixed point
+        // would miss bits (a read at the bottom of a deep chain, and the top
+        // taken for a constant), so then every term and function is given
+        // `UNKNOWN`, which no hint trusts.
+        let mut converged = false;
+        for _round in 0..MAX_ROUNDS {
             let mut changed = false;
             for term in &p.terms {
                 let m = self.term_deps(term, &terms, &may);
@@ -497,14 +510,20 @@ impl<'a> Pass<'a> {
                 changed = true;
             }
             if !changed {
+                converged = true;
                 break;
             }
         }
+        if !converged {
+            terms.iter_mut().for_each(|d| *d |= Deps::UNKNOWN);
+            may.iter_mut().for_each(|d| *d |= Deps::UNKNOWN);
+        }
 
-        // Every call: a least fixed point over the call graph.
+        // Every call: a least fixed point over the call graph. Stopped
+        // short it is a subset of the fixed point, which only costs hints.
         let mut every = vec![Deps::CONST; nfns];
         let mut why_every: Vec<Vec<Witness>> = vec![Vec::new(); nfns];
-        for _round in 0..64 {
+        for _round in 0..MAX_ROUNDS {
             let mut changed = false;
             for fi in 0..nfns {
                 let (e, why) = self.every_call(fi, &every);
@@ -968,17 +987,41 @@ impl<'a> Pass<'a> {
         false
     }
 
-    /// Whether every place a closure of `fi` is made is top-level code, and
-    /// what it captures there is static data or a known function.
+    /// Whether `site`, a `MakeClosure`, runs at most once per run: in
+    /// top-level code and not inside a loop. A closure made there captures
+    /// the same static values on every run; one made in a loop is a
+    /// different closure on each iteration, and which of them a later call
+    /// reaches may change from run to run.
+    fn once_per_run(&self, site: TermId) -> bool {
+        let st = self.p.get_term(site);
+        if self.owner.get(st.block_id.0 as usize).copied().flatten().is_some() {
+            return false;
+        }
+        let mut at = self.parent.get(st.block_id.0 as usize).copied().flatten();
+        for _ in 0..4096 {
+            let Some(c) = at else { return true };
+            let t = self.p.get_term(c);
+            if matches!(t.op, TermOp::ForLoop | TermOp::NumericForLoop | TermOp::WhileLoop) {
+                return false;
+            }
+            at = self.parent.get(t.block_id.0 as usize).copied().flatten();
+        }
+        false
+    }
+
+    /// Whether the function's one closure is made once per run
+    /// ([`once_per_run`](Self::once_per_run)) and what it captures there is
+    /// static data or a known function: then every closure of it a run can
+    /// call captures the same values as on every other run.
     fn captures_static(&self, fi: usize) -> bool {
         let f = self.func(fi);
         if f.capture_registers.is_empty() {
             return true;
         }
-        !self.sites[fi].is_empty()
+        self.sites[fi].len() == 1
             && self.sites[fi].iter().all(|&site| {
                 let st = self.p.get_term(site);
-                self.owner.get(st.block_id.0 as usize).copied().flatten().is_none()
+                self.once_per_run(site)
                     && st.inputs.iter().all(|&i| {
                         if let Some(decl) = if self.cells.is_decl(i) { Some(i) } else { self.cells.decl_of(i) } {
                             return self.fn_cells.contains_key(&decl);
@@ -1019,16 +1062,16 @@ impl<'a> Pass<'a> {
                 self.static_arg(term.inputs[0], depth + 1)
             }
             TermOp::Copy if Self::is_phantom(term) && term.block_id == self.func(fi).body_block => {
-                // A capture of top-level static data, at every place the
-                // closure is made.
+                // A capture of top-level static data, by the function's one
+                // closure, made once per run.
                 let f = self.func(fi);
                 let Some(slot) = f.capture_registers.iter().position(|r| *r == term.register) else {
                     return false;
                 };
-                !self.sites[fi].is_empty()
+                self.sites[fi].len() == 1
                     && self.sites[fi].iter().all(|&site| {
                         let st = self.p.get_term(site);
-                        self.owner.get(st.block_id.0 as usize).copied().flatten().is_none()
+                        self.once_per_run(site)
                             && st.inputs.get(slot).is_some_and(|&o| {
                                 !self.cells.is_decl(o)
                                     && self.cells.decl_of(o).is_none()

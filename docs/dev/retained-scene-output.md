@@ -323,7 +323,11 @@ Its result is `StaticAnalysis::dep_classes()`.
   call the summary of every function it can reach: `trace_dependents` run
   forward from every source at once and carried across calls. A function's
   `may` set is its body's union without `ARG`. The program is iterated to
-  a fixed point (the lattice is finite and only grows).
+  a fixed point (the lattice is finite and only grows). A summary reaches
+  its callers one round later, so a call chain costs a round per level; the
+  walk runs until nothing changes (an earlier cap of 64 rounds left the top
+  of an 80-deep chain looking constant, replayed stale), and the guard of
+  4,096 rounds, if ever hit, marks everything `UNKNOWN`.
 - An **every-call set per function**, a must-analysis: the terms of its body
   block in order, up to the first control term that can return from inside
   (a loop body may not run, a branch may not be taken). An `EFFECT` carries
@@ -368,7 +372,8 @@ accepts a command's effect and a revisioned read's host-read counter.
 - **Static arguments** (top-level static data, or in a function a literal of
   literals and static captures): the replay check does not compare them.
   When the callee is also **constant** (its `may` set is only output, and
-  it captures only static values at top-level closure sites) the record
+  it captures only static values, its one closure being made once per run:
+  in top-level code outside any loop) the record
   holds for the life of the program: captures and dependencies are not
   checked either (when the record's own entries are only children and
   observations), so `draw_city(CITY)` is retained once and spliced every
@@ -419,7 +424,10 @@ plus the classes and findings of the script, the every-call rules through
 call chains, branches and early returns, a module `var` against a `state
 var`, a query's revision against general host data, and the gate on a class
 change. Turning off the deferral of commands in a re-execution fails two of
-them (a command issued twice). The bridge has
+them (a command issued twice). The verification of B3 added three cases that
+had replayed stale: a call chain deeper than the walk's old round cap, and a
+lambda made in a top-level loop whose closure a later call picks by input
+(both as a constant callee and as a capture passed as a static argument). The bridge has
 `commands_reissue_queries_follow_their_class_and_declares_replay` in
 `bridge_tests.cpp`; `lint_state_const.rs` pins the opt-in rules.
 

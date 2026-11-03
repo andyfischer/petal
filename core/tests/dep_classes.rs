@@ -518,3 +518,102 @@ keep(1)
     assert!(note.reason.contains("var `log`") && note.reason.contains("MODULE_VAR"), "{}", note.reason);
     assert!(findings.iter().all(|x| x.name != "keep"), "{findings:?}");
 }
+
+/// Calls `run_all` on a script without the game's natives declared at the
+/// top: the natives are registered by `world` regardless.
+fn same_three_ways(body: &str) -> (World, World, World) {
+    let src = format!(
+        "native fn now()\nnative fn inp()\nnative fn ray(x)\nnative fn kick(id, v)\nnative fn put(v)\nnative fn decl(id, v)\n{body}"
+    );
+    run_all(&src)
+}
+
+/// One top-level lambda, made once per iteration of a static loop, captures
+/// a different static value each time; which of them is called is chosen by
+/// input. Every argument at the call is static and the function is
+/// constant, but the closure is not the same one every run: its captures
+/// must still be compared.
+#[test]
+fn a_closure_made_in_a_top_level_loop_is_not_a_constant_call() {
+    same_three_ways(
+        r#"
+var sel = fn(x) x end
+for k in [1, 2, 3] do
+  if inp() % 3 == k - 1 then
+    set sel = fn(x)
+      var acc = 0
+      for j in range(40) do
+        set acc = get acc + j * x
+      end
+      get acc * 10 + k
+    end
+  end
+end
+put((get sel)(1))
+"#,
+    );
+}
+
+/// A probe read at the bottom of a call chain deeper than any fixed number
+/// of rounds of the forward walk still reaches the top: the walk runs to its
+/// fixed point, so the top of the chain is not taken for a constant (whose
+/// call with a static argument would be replayed unchecked, stale once the
+/// pointer moves). Checked on the classes: running memo over a chain this
+/// deep costs seconds per changed frame in a debug build, hints or not.
+#[test]
+fn a_deep_call_chain_carries_its_reads_to_the_top() {
+    let depth = 80;
+    let mut body = format!("native fn inp()\nnative fn put(v)\nfn f{depth}(x)\n  inp() + x\nend\n");
+    for i in (1..depth).rev() {
+        body.push_str(&format!("fn f{i}(x)\n  f{}(x)\nend\n", i + 1));
+    }
+    body.push_str("put(f1(1))\n");
+    let w = world(&body, Mode::Hinted);
+    let program = w.env.get_program(w.pid).unwrap();
+    let analysis = w.env.static_analysis(program);
+    let deps = analysis.dep_classes();
+    let f1 = deps.fns.iter().find(|f| f.name == "f1").unwrap();
+    assert!(f1.may.input_classes().contains(InputClasses::POINTER), "{:?}", f1.may.names());
+    assert!(!f1.hint().constant);
+}
+
+/// A call in a top-level loop whose argument is the loop variable over
+/// static data: static on every run at each iteration's own path.
+#[test]
+fn static_arguments_in_a_top_level_loop_are_per_iteration() {
+    same_three_ways(
+        r#"
+fn sq(i)
+  i * i
+end
+for i in range(4) do
+  put(sq(i) + inp())
+end
+"#,
+    );
+}
+
+/// The same, one level down: inside such a closure, an argument that is a
+/// capture of top-level static data is not the same value on every run at
+/// that call, so it must still be compared.
+#[test]
+fn a_capture_of_a_closure_made_in_a_loop_is_not_a_static_argument() {
+    same_three_ways(
+        r#"
+fn heavy(x)
+  var acc = 0
+  for j in range(40) do
+    set acc = get acc + j * x
+  end
+  get acc + inp() * 0
+end
+var sel = fn() 0 end
+for k in [1, 2, 3] do
+  if int(now() * 10.0 + 0.5) % 3 == k - 1 then
+    set sel = fn() heavy(k) end
+  end
+end
+put((get sel)())
+"#,
+    );
+}

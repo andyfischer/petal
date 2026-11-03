@@ -975,12 +975,23 @@ drop_last([])          // []
 ### `remove(record, key)` / `remove(map, key)`
 
 Returns a **new** record or map without `key`. Removing an absent key is not
-an error. Works on records and maps, not lists.
+an error. Works on records and maps, not lists (for a list, see
+[`remove_at`](#remove_atlist-index)).
 
 ```petal
 remove({a: 1, b: 2}, "a")             // { b: 2 }
 remove({a: 1}, "missing")             // { a: 1 }
 remove(Map([[1, "a"], [2, "b"]]), 1)  // Map([[2, "b"]])
+```
+
+### `remove_at(list, index)`
+
+Returns a **new** list without the element at `index`. A negative index counts
+from the end, as `xs[i]` does. An index outside the list is an error.
+
+```petal
+remove_at(["a", "b", "c"], 1)    // ["a", "c"]
+remove_at(["a", "b", "c"], -1)   // ["a", "b"]
 ```
 
 ### `keys(record)` / `keys(map)`
@@ -1159,6 +1170,17 @@ text stays.
 ```petal
 trim("  hello world \n")   // "hello world"
 trim("   ")                // ""
+```
+
+### `replace(string, old, new)`
+
+The string with every occurrence of `old` replaced by `new`, scanning left to
+right; occurrences do not overlap. Replacing `""` is an error.
+
+```petal
+replace("a-b-c", "-", ", ")    // "a, b, c"
+replace("aaa", "aa", "b")      // "ba"
+replace("hello", "x", "y")     // "hello"
 ```
 
 ### `starts_with(string, prefix)` / `ends_with(string, suffix)`

@@ -237,6 +237,31 @@ pub(super) fn native_prepend(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
+/// `remove_at(list, index)` returns a NEW list without the element at
+/// `index` (value semantics; the input is never mutated). A negative index
+/// counts from the end, as `xs[i]` does; an index outside the list is an
+/// error, as reading it would be.
+pub(super) fn native_remove_at(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "remove_at")?;
+    let list = state.get_value(1)?;
+    let i = state.get_int(2)?;
+    match list {
+        Value::List(id) => {
+            let items = state.heap().get_list(id);
+            let len = items.len();
+            let k = numeric::resolve_index(len, i).ok_or_else(|| {
+                format!("remove_at() index {i} is out of bounds for a list of length {len}")
+            })?;
+            let mut out = Vec::with_capacity(len - 1);
+            out.extend_from_slice(&items[..k]);
+            out.extend_from_slice(&items[k + 1..]);
+            state.push_list(out);
+            Ok(1)
+        }
+        _ => Err(format!("remove_at() expects a list, got {}", list.type_name())),
+    }
+}
+
 /// `concat(a, b)` joins two lists (or two strings) into a NEW one. This is the
 /// operation `append(xs, ys)` is often mistaken for: `append` adds `ys` as a
 /// single *element*, `concat` splices its elements in.
@@ -1079,6 +1104,26 @@ pub(super) fn native_trim(state: &mut PetalCxt) -> Result<u32, String> {
         }
         _ => Err("trim() expects a string".into()),
     }
+}
+
+/// `replace(s, old, new)` — `s` with every occurrence of `old` replaced by
+/// `new`, scanning left to right without overlap. An empty `old` is an
+/// error: there is no one place it occurs.
+pub(super) fn native_replace(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 3, "replace")?;
+    let heap = state.heap();
+    let (s, old, new) = match (state.get_value(1)?, state.get_value(2)?, state.get_value(3)?) {
+        (Value::String(a), Value::String(b), Value::String(c)) => {
+            (heap.get_string(a), heap.get_string(b), heap.get_string(c))
+        }
+        _ => return Err("replace() expects (string, string, string)".into()),
+    };
+    if old.is_empty() {
+        return Err("replace() cannot replace the empty string".into());
+    }
+    let out = s.replace(old, new);
+    state.push_string(out);
+    Ok(1)
 }
 
 // ── The helpers every large program wrote by hand ───────────────────────────

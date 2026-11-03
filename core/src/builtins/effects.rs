@@ -91,6 +91,8 @@ builtin_effects![
     // property of theirs is knowable from the name.)
     ("prepend", FRESH | NO_REF | PURE),
     ("concat", FRESH | NO_REF | PURE),
+    // `remove_at` copies every other element into a new list, like `prepend`.
+    ("remove_at", FRESH | NO_REF | PURE),
     // character-indexed strings: each builds a brand-new string or list, and
     // strings are immutable, so nothing aliases the argument afterwards.
     ("chars", FRESH | NO_REF | PURE),
@@ -102,6 +104,7 @@ builtin_effects![
     ("starts_with", NO_REF | PURE),
     ("ends_with", NO_REF | PURE),
     ("trim", NO_REF | PURE),
+    ("replace", NO_REF | PURE),
     ("byte_len", NO_REF | PURE),
     ("byte_slice", NO_REF | PURE),
     ("drop_last", MUTATES | PURE | LOOKS_MUT),
@@ -365,6 +368,7 @@ mod tests {
                 "keys",
                 "prepend",
                 "range",
+                "remove_at",
                 "reverse",
                 "slice",
                 "sort",
@@ -418,7 +422,9 @@ mod tests {
                 "parse_int",
                 "prepend",
                 "print",
+                "remove_at",
                 "repeat",
+                "replace",
                 "reverse",
                 "slice",
                 "sort",
@@ -529,7 +535,9 @@ mod tests {
                 "radians",
                 "range",
                 "remove",
+                "remove_at",
                 "repeat",
+                "replace",
                 "reverse",
                 "rotate",
                 "round",

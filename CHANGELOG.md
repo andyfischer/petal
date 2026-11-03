@@ -12,6 +12,11 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- Builtins `remove_at(list, index)`, a new list without the element at
+  `index` (negative counts from the end), and `replace(string, old, new)`,
+  the string with every occurrence of `old` replaced. They stand in for the
+  `filter(enumerate(…))` and `join(split(…))` patterns programs used instead.
+
 - An import path may be a quoted string, so a module whose file or directory
   name is not an identifier can be imported: `import "./my-lib" as lib`,
   `import "../shared-utils/rng"`, `import "kit/extra-bits": knob`. A plain

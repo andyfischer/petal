@@ -623,6 +623,11 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.hint_tunable = Some(table.register("tunable", hints::native_tunable, NativeEffects::CONST));
     table.hint_rigid = Some(table.register("rigid", hints::native_rigid, NativeEffects::CONST));
 
+    // List and string edits that programs spelled with `filter(enumerate(…))`
+    // and `join(split(…))`. Append-only, like the rest.
+    table.register("remove_at", collections::native_remove_at, NativeEffects::CONST);
+    table.register("replace", collections::native_replace, NativeEffects::CONST);
+
     // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
     // ids they were just given.
     for op in crate::backend::bytecode::isa::IntrinsicOp::ALL {
@@ -820,7 +825,9 @@ mod effect_tests {
             "radians",
             "range",
             "remove",
+            "remove_at",
             "repeat",
+            "replace",
             "reverse",
             "rigid",
             "rotate",

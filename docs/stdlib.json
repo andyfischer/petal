@@ -244,7 +244,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 270
+        "line": 295
       }
     },
     {
@@ -542,7 +542,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 279
+        "line": 304
       }
     },
     {
@@ -567,7 +567,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 360
+        "line": 385
       }
     },
     {
@@ -592,7 +592,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 384
+        "line": 409
       }
     },
     {
@@ -625,7 +625,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 477
+        "line": 502
       }
     },
     {
@@ -847,7 +847,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 571
+        "line": 596
       }
     },
     {
@@ -872,7 +872,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 600
+        "line": 625
       }
     },
     {
@@ -905,7 +905,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 618
+        "line": 643
       }
     },
     {
@@ -938,7 +938,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 647
+        "line": 672
       }
     },
     {
@@ -963,7 +963,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 674
+        "line": 699
       }
     },
     {
@@ -988,7 +988,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 686
+        "line": 711
       }
     },
     {
@@ -1013,7 +1013,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 698
+        "line": 723
       }
     },
     {
@@ -1046,7 +1046,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 719
+        "line": 744
       }
     },
     {
@@ -1089,7 +1089,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 777
+        "line": 802
       }
     },
     {
@@ -1114,7 +1114,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 816
+        "line": 841
       }
     },
     {
@@ -1147,7 +1147,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 477
+        "line": 502
       },
       "aliasOf": "contains"
     },
@@ -2165,7 +2165,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 654
+        "line": 659
       }
     },
     {
@@ -2198,7 +2198,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 654
+        "line": 659
       },
       "aliasOf": "map"
     },
@@ -2240,7 +2240,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 654
+        "line": 659
       },
       "aliasOf": "map"
     },
@@ -2274,7 +2274,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 654
+        "line": 659
       },
       "aliasOf": "map"
     },
@@ -2645,7 +2645,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 285
+        "line": 310
       }
     },
     {
@@ -2670,7 +2670,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 305
+        "line": 330
       }
     },
     {
@@ -2703,7 +2703,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 324
+        "line": 349
       }
     },
     {
@@ -3038,7 +3038,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 896
+        "line": 921
       }
     },
     {
@@ -3063,7 +3063,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 917
+        "line": 942
       }
     },
     {
@@ -3096,7 +3096,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 934
+        "line": 959
       }
     },
     {
@@ -3139,7 +3139,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 954
+        "line": 979
       }
     },
     {
@@ -3172,7 +3172,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 978
+        "line": 1003
       }
     },
     {
@@ -3215,7 +3215,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 654
+        "line": 659
       },
       "aliasOf": "map"
     },
@@ -3282,7 +3282,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 243
+        "line": 268
       }
     },
     {
@@ -3802,7 +3802,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1013
+        "line": 1038
       }
     },
     {
@@ -3835,7 +3835,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1049
+        "line": 1074
       }
     },
     {
@@ -3868,7 +3868,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1058
+        "line": 1083
       }
     },
     {
@@ -3893,7 +3893,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1068
+        "line": 1093
       }
     },
     {
@@ -3918,7 +3918,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 851
+        "line": 876
       }
     },
     {
@@ -3961,7 +3961,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 867
+        "line": 892
       }
     },
     {
@@ -3986,7 +3986,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 654
+        "line": 659
       },
       "aliasOf": "map"
     },
@@ -4012,7 +4012,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 654
+        "line": 659
       },
       "aliasOf": "map"
     },
@@ -4225,7 +4225,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1093
+        "line": 1138
       }
     },
     {
@@ -4250,7 +4250,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1183
+        "line": 1228
       }
     },
     {
@@ -4275,7 +4275,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1189
+        "line": 1234
       }
     },
     {
@@ -4308,7 +4308,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1196
+        "line": 1241
       }
     },
     {
@@ -4341,7 +4341,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1245
+        "line": 1290
       }
     },
     {
@@ -4366,7 +4366,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1282
+        "line": 1327
       }
     },
     {
@@ -4391,7 +4391,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1297
+        "line": 1342
       }
     },
     {
@@ -4595,7 +4595,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 438
+        "line": 463
       }
     },
     {
@@ -4620,7 +4620,7 @@
       ],
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 403
+        "line": 428
       }
     },
     {
@@ -4653,7 +4653,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 654
+        "line": 659
       },
       "aliasOf": "map"
     },
@@ -4687,7 +4687,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 654
+        "line": 659
       },
       "aliasOf": "map"
     },
@@ -4721,7 +4721,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 654
+        "line": 659
       },
       "aliasOf": "map"
     },
@@ -4803,6 +4803,80 @@
       "source": {
         "file": "core/src/builtins/hints.rs",
         "line": 27
+      }
+    },
+    {
+      "name": "remove_at",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        },
+        {
+          "name": "index",
+          "type": "int"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          },
+          {
+            "name": "index",
+            "type": "int"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 244
+      }
+    },
+    {
+      "name": "replace",
+      "category": "collections",
+      "group": "core",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "string",
+          "type": "any"
+        },
+        {
+          "name": "old",
+          "type": "any"
+        },
+        {
+          "name": "new",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          },
+          {
+            "name": "old",
+            "type": "any"
+          },
+          {
+            "name": "new",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 1112
       }
     },
     {

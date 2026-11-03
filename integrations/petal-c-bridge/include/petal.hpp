@@ -24,6 +24,7 @@
 
 #include "petal_bridge.h"
 
+#include <bit>
 #include <concepts>
 #include <cstdint>
 #include <functional>
@@ -168,6 +169,8 @@ public:
     std::string_view key() const noexcept {
         return (v_ && v_->key) ? std::string_view(v_->key, v_->key_len) : std::string_view{};
     }
+    // A MAP's record shape id (what a Plan keys on); 0 for anything else.
+    uint64_t shape() const noexcept { return is_map() ? uint64_t(v_->integer) : 0; }
 
     // Children of LIST / MAP / ENUM.
     size_t size() const noexcept { return (is_list() || is_map() || is_enum()) ? v_->count : 0; }
@@ -231,6 +234,154 @@ public:
 
 private:
     pb_values v_{nullptr, 0};
+};
+
+// ─── Option plans ───────────────────────────────────────────────────────────
+
+// Reads an options record by position, checking its field names once per
+// record shape (pb_plan). Make one per native, with the options it reads:
+//
+//   enum { SHAPE, SIZE, MASS, POS };
+//   petal::Plan body_opts("shape, size, mass, pos");
+//   auto o = body_opts.bind(call[1]);
+//   if (!o.ok()) throw std::runtime_error("unknown option " + std::string(o.unknown().key()));
+//   double mass = o[MASS].number(1.0);
+//
+// Not thread-safe; the bound options are valid until the next bind on the
+// same plan (and while the record's view is).
+class Plan {
+public:
+    explicit Plan(const std::string& options) : p_(pb_plan_new(options.c_str())) {
+        if (!p_) throw Error(PB_ERR_INVALID_ARG, "petal::Plan: malformed option list: " + options);
+        slots_.resize(pb_plan_count(p_));
+    }
+    ~Plan() { pb_plan_free(p_); }
+    Plan(Plan&& o) noexcept : p_(std::exchange(o.p_, nullptr)), slots_(std::move(o.slots_)) {}
+    Plan& operator=(Plan&& o) noexcept {
+        if (this != &o) { pb_plan_free(p_); p_ = std::exchange(o.p_, nullptr); slots_ = std::move(o.slots_); }
+        return *this;
+    }
+    Plan(const Plan&) = delete;
+    Plan& operator=(const Plan&) = delete;
+
+    pb_plan* raw() const noexcept { return p_; }
+    size_t size() const noexcept { return slots_.size(); }
+    std::string_view name(size_t i) const noexcept {
+        const char* n = pb_plan_name(p_, i);
+        return n ? std::string_view(n) : std::string_view{};
+    }
+    // The position of option `name`, or size() if it is not one.
+    size_t index(std::string_view name) const noexcept {
+        for (size_t i = 0; i < size(); ++i) if (this->name(i) == name) return i;
+        return size();
+    }
+
+    // One record's options, by position.
+    class Options {
+    public:
+        // Every field is an option (or the record is nil).
+        bool ok() const noexcept { return ok_; }
+        // The first field that is not an option (nil when there is none, or
+        // when the value was not a record at all).
+        Value unknown() const noexcept { return Value(unknown_); }
+        Value operator[](size_t i) const noexcept { return i < n_ ? Value(slots_[i]) : Value(); }
+        size_t size() const noexcept { return n_; }
+        const pb_value* const* data() const noexcept { return slots_; }
+
+    private:
+        friend class Plan;
+        const pb_value* const* slots_ = nullptr;
+        size_t n_ = 0;
+        bool ok_ = true;
+        const pb_value* unknown_ = nullptr;
+    };
+
+    Options bind(Value record) {
+        Options o;
+        o.ok_ = pb_plan_bind(p_, record.raw(), slots_.data(), &o.unknown_);
+        o.slots_ = slots_.data();
+        o.n_ = slots_.size();
+        return o;
+    }
+
+private:
+    pb_plan* p_;
+    std::vector<const pb_value*> slots_;
+};
+
+// The options a keyed declaration was last given (pb_snapshot): update()
+// says which changed since.
+//
+//   auto changed = entry.snap.update(o);   // o from Plan::bind
+//   for (size_t i : changed) apply(i, o[i]);
+class Snapshot {
+public:
+    Snapshot() : s_(pb_snapshot_new()) {
+        if (!s_) throw Error(PB_ERR_PANIC, "pb_snapshot_new failed");
+    }
+    ~Snapshot() { pb_snapshot_free(s_); }
+    Snapshot(Snapshot&& o) noexcept : s_(std::exchange(o.s_, nullptr)), words_(std::move(o.words_)) {}
+    Snapshot& operator=(Snapshot&& o) noexcept {
+        if (this != &o) { pb_snapshot_free(s_); s_ = std::exchange(o.s_, nullptr); words_ = std::move(o.words_); }
+        return *this;
+    }
+    Snapshot(const Snapshot&) = delete;
+    Snapshot& operator=(const Snapshot&) = delete;
+
+    pb_snapshot* raw() const noexcept { return s_; }
+    void clear() { pb_snapshot_clear(s_); }
+
+    // The options that changed: iterate for their positions. Valid until the
+    // next update of the same snapshot.
+    class Changed {
+    public:
+        bool any() const noexcept { return any_; }
+        bool operator[](size_t i) const noexcept { return i / 64 < n_ && ((w_[i / 64] >> (i % 64)) & 1); }
+
+        class iterator {
+        public:
+            using value_type = size_t;
+            using difference_type = std::ptrdiff_t;
+            iterator() = default;
+            iterator(const uint64_t* w, size_t n, size_t word) : w_(w), n_(n), word_(word) { settle(); }
+            size_t operator*() const noexcept { return word_ * 64 + size_t(std::countr_zero(bits_)); }
+            iterator& operator++() noexcept { bits_ &= bits_ - 1; if (!bits_) { ++word_; settle(); } return *this; }
+            iterator operator++(int) noexcept { auto t = *this; ++*this; return t; }
+            bool operator==(const iterator& o) const noexcept { return word_ == o.word_ && bits_ == o.bits_; }
+
+        private:
+            void settle() noexcept {
+                while (word_ < n_ && !(bits_ = w_[word_])) ++word_;
+                if (word_ >= n_) { word_ = n_; bits_ = 0; }
+            }
+            const uint64_t* w_ = nullptr;
+            size_t n_ = 0, word_ = 0;
+            uint64_t bits_ = 0;
+        };
+        iterator begin() const noexcept { return iterator(w_, n_, 0); }
+        iterator end() const noexcept { return iterator(w_, n_, n_); }
+
+    private:
+        friend class Snapshot;
+        const uint64_t* w_ = nullptr;
+        size_t n_ = 0;
+        bool any_ = false;
+    };
+
+    // Compare with the values held, hold these, and say which differ.
+    Changed update(const Plan::Options& o) { return update(o.data(), o.size()); }
+    Changed update(const pb_value* const* values, size_t n) {
+        words_.resize((n + 63) / 64);
+        Changed c;
+        c.any_ = pb_snapshot_update(s_, values, n, words_.data());
+        c.w_ = words_.data();
+        c.n_ = words_.size();
+        return c;
+    }
+
+private:
+    pb_snapshot* s_;
+    std::vector<uint64_t> words_;
 };
 
 // ─── Builders ───────────────────────────────────────────────────────────────

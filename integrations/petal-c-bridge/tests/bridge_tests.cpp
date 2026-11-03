@@ -712,6 +712,107 @@ TEST(native_userdata_outlives_reload) {
 
 // A replayed scope reaches the host as one entry naming a segment it was
 // given before (petal_bridge.h, "Segmented output buffers").
+// ─── Option plans ───────────────────────────────────────────────────────────
+
+TEST(a_plan_reads_options_by_position_and_names_an_unknown_field) {
+    petal::Vm vm;
+    vm.emitter("body", "scene");
+    vm.load_source(
+        "native fn body(id, opts)\n"
+        "for i in range(0, 3) do body(i, {mass: 2.0, pos: i, name: \"b{i}\"}) end\n"
+        "body(9, {mass: 1.0, colour: 3})\n"
+        "body(10, nil)\nbody(11, 5)\n");
+    vm.run();
+    petal::Values cmds = vm.drain("scene");
+    REQUIRE(cmds.size() == 6);
+    petal::Plan plan("shape, mass, pos, name");
+    CHECK_EQ(plan.size(), (size_t)4);
+    CHECK_EQ(plan.name(1), std::string_view("mass"));
+    CHECK_EQ(plan.index("pos"), (size_t)2);
+    CHECK_EQ(plan.index("nope"), (size_t)4);
+    const uint64_t shape = cmds[0][1].shape();
+    CHECK(shape != 0);
+    for (size_t i = 0; i < 3; ++i) {
+        petal::Value opts = cmds[i][1];
+        CHECK_EQ(opts.shape(), shape);  // one literal, one shape
+        auto o = plan.bind(opts);
+        CHECK(o.ok());
+        CHECK(o[0].is_nil());
+        CHECK_EQ(o[1].number(), 2.0);
+        CHECK_EQ(o[2].integer(), (int64_t)i);
+        CHECK_EQ(o[3].string(), "b" + std::to_string(i));
+        CHECK_EQ(o[3].key(), std::string_view("name"));
+    }
+    auto odd = plan.bind(cmds[3][1]);
+    CHECK(!odd.ok());
+    CHECK_EQ(odd.unknown().key(), std::string_view("colour"));
+    CHECK_EQ(odd[1].number(), 1.0);  // the known options are still bound
+    auto nil = plan.bind(cmds[4][1]);
+    CHECK(nil.ok());
+    CHECK(nil[1].is_nil());
+    auto bad = plan.bind(cmds[5][1]);
+    CHECK(!bad.ok());
+    CHECK(bad.unknown().is_nil());
+    CHECK_THROWS_CODE(petal::Plan("a, a"), PB_ERR_INVALID_ARG);
+    CHECK(pb_plan_new("a,,b") == nullptr);
+}
+
+TEST(a_snapshot_reports_which_options_changed) {
+    petal::Vm vm;
+    vm.emitter("body", "scene");
+    vm.load_source(
+        "import vec2\nnative fn body(id, opts)\n"
+        "state t = 0\nt += 1\n"
+        "let p = if t < 3 then vec3(0, 0, 0) else vec3(1, 2, float(t)) end\n"
+        "let mass = if t < 4 then 2.0 else 3.0 end\n"
+        "body(1, {shape: \"box\", mass: mass, pos: p, mat: {color: #ff8800}})\n");
+    petal::Plan plan("shape, mass, pos, mat");
+    petal::Snapshot snap;
+    std::vector<std::vector<size_t>> seen;
+    for (int f = 0; f < 5; ++f) {
+        vm.run();
+        petal::Values cmds = vm.drain("scene");
+        REQUIRE(cmds.size() == 1);
+        auto o = plan.bind(cmds[0][1]);
+        REQUIRE(o.ok());
+        auto changed = snap.update(o);
+        std::vector<size_t> bits(changed.begin(), changed.end());
+        CHECK_EQ(changed.any(), !bits.empty());
+        seen.push_back(bits);
+    }
+    CHECK_EQ(seen[0], (std::vector<size_t>{0, 1, 2, 3}));  // a new snapshot: everything
+    CHECK(seen[1].empty());                                 // the same values, rebuilt
+    CHECK_EQ(seen[2], (std::vector<size_t>{2}));            // pos moved
+    CHECK_EQ(seen[3], (std::vector<size_t>{1, 2}));         // mass and pos
+    CHECK_EQ(seen[4], (std::vector<size_t>{2}));
+    snap.clear();
+    vm.run();
+    petal::Values cmds = vm.drain("scene");
+    auto again = snap.update(plan.bind(cmds[0][1]));
+    CHECK(again[0] && again[3]);
+}
+
+TEST(host_built_return_records_share_a_shape) {
+    petal::Vm vm;
+    vm.native("state_of", [](petal::Call& c) {
+        c.result().map([&](petal::BuilderRef m) {
+            m.field("id", c[0].integer());
+            m.key("pos").vec3(1, 2, 3);
+            m.field("sleeping", false);
+        });
+    });
+    vm.emitter("out", "out");
+    vm.load_source("native fn state_of(id)\nnative fn out(v)\nfor i in range(0, 3) do out(state_of(i)) end\n");
+    vm.run();
+    petal::Values got = vm.drain("out");
+    REQUIRE(got.size() == 3);
+    const uint64_t shape = got[0][0].shape();
+    CHECK(shape != 0);
+    CHECK_EQ(got[1][0].shape(), shape);
+    CHECK_EQ(got[2][0].shape(), shape);
+    CHECK_EQ(got[2][0]["id"].integer(), (int64_t)2);
+}
+
 TEST(segmented_buffer_hands_a_replayed_scope_over_as_one_entry) {
     pb_vm* vm = pb_vm_create();
     CHECK_EQ(pb_vm_set_segmented(vm, "out", true), PB_OK);

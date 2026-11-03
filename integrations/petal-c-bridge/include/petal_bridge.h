@@ -123,7 +123,8 @@ typedef enum pb_kind {
     PB_VEC2 = 4,     /* number = x, y = y */
     PB_STRING = 5,   /* str/str_len (UTF-8, NUL-terminated) */
     PB_LIST = 6,     /* items[count]  (f64 arrays decode as lists of PB_FLOAT) */
-    PB_MAP = 7,      /* items[count], each with key/key_len; str = class name or NULL */
+    PB_MAP = 7,      /* items[count], each with key/key_len; str = class name or NULL;
+                        integer = the record's shape id (see pb_plan), never 0 */
     PB_ENUM = 8,     /* str = variant tag ("Shape.circle"), items[count] = payload */
     PB_SYMBOL = 9,   /* str = symbol name */
     PB_HANDLE = 10,  /* integer = slot, count = serial, str = handle class name */
@@ -179,11 +180,88 @@ static inline const pb_value* pb_value_at(const pb_value* v, size_t i) {
     return (v && v->items && i < v->count) ? &v->items[i] : NULL;
 }
 
+/* ─── Option plans: read an options record by position ────────────────── */
+/*
+ * A native that takes an options record (`body(id, {shape: "box", pos: p})`)
+ * can check its field names once per record shape instead of on every call.
+ * A record literal's keys are fixed when the program is compiled, so every
+ * record it makes has one shape, and a decoded PB_MAP carries the shape's id
+ * in `integer`. A plan lists the options a native understands; binding a
+ * record fills one slot per option (the field, or NULL when absent), and the
+ * plan remembers per shape which field holds which option and whether any
+ * field is not an option. Binding a record of a shape seen before is a
+ * lookup by shape id: no key compares and no allow-list scan.
+ *
+ *   pb_plan* body_opts = pb_plan_new("shape, size, mass, pos");   // once
+ *   const pb_value* o[4];
+ *   const pb_value* unknown;
+ *   if (!pb_plan_bind(body_opts, opts, o, &unknown)) { ...report unknown->key... }
+ *   double mass = pb_value_num(o[2], 1.0);
+ *
+ * A plan belongs to the host (one per native, typically) and is independent
+ * of any VM; it can bind values decoded from a native's arguments or from a
+ * drained buffer. It is not thread-safe. Keys are only ever appended to a
+ * shape under its id, so a plan re-plans a record that has more fields than
+ * the shape had when planned. A record whose shape is rebuilt on every
+ * evaluation (for instance a spread that adds a field the source record
+ * lacks, `{...base, pos: p}`) gets a new shape id each time and is planned
+ * each time: correct, but without the saving.
+ *
+ * Values in the slots are views into the record: valid as long as it is.
+ */
+typedef struct pb_plan pb_plan;
+
+/* A plan for these option names, comma-separated ("shape, size, pos");
+ * whitespace around names is ignored. NULL when a name is empty or repeats.
+ * Option i is the i-th name. */
+pb_plan* pb_plan_new(const char* options);
+void pb_plan_free(pb_plan* plan);
+size_t pb_plan_count(const pb_plan* plan);
+/* Name of option i (NUL-terminated, owned by the plan), or NULL. */
+const char* pb_plan_name(const pb_plan* plan, size_t i);
+/* Bind `record`: out[i] (pb_plan_count slots; may be NULL to only check)
+ * gets the field for option i, or NULL. Returns true when every field of
+ * `record` is an option, or `record` is NULL or nil (all slots NULL). False
+ * when a field is not an option (`*out_unknown`, optional, gets the first
+ * such field; its key names it; the known options are still bound) or when
+ * `record` is not a record (`*out_unknown` = NULL). */
+bool pb_plan_bind(pb_plan* plan, const pb_value* record, const pb_value** out,
+                  const pb_value** out_unknown);
+
+/* A snapshot holds the option values a keyed declaration (a body, a light)
+ * was last given, so the host can apply only what changed:
+ *
+ *   pb_plan_bind(plan, opts, o, NULL);
+ *   uint64_t changed[1];                       // (count + 63) / 64 words
+ *   if (pb_snapshot_update(entry->snap, o, pb_plan_count(plan), changed))
+ *       for each bit i of changed: apply option i
+ *
+ * Values compare by content, exactly: numbers by their bits, strings by
+ * bytes, records by keys and values, lists item by item. A value whose
+ * contents a view does not carry (PB_OTHER, PB_PENDING) never compares
+ * equal. An option that appears or disappears counts as changed. */
+typedef struct pb_snapshot pb_snapshot;
+
+pb_snapshot* pb_snapshot_new(void);
+void pb_snapshot_free(pb_snapshot* snap);
+/* Forget what the snapshot holds: the next update reports every present
+ * value changed, as for a new snapshot. */
+void pb_snapshot_clear(pb_snapshot* snap);
+/* Compare `values` (n slots, NULL = absent, as pb_plan_bind fills them) with
+ * the values held, hold these from now on (a copy of their contents: the
+ * views need not outlive the call), and return whether any differs. Bit i
+ * of changed[i / 64] (optional, (n + 63) / 64 words) is set for each slot
+ * that differs. */
+bool pb_snapshot_update(pb_snapshot* snap, const pb_value* const* values, size_t n, uint64_t* changed);
+
 /* ─── Value builder (host → script) ───────────────────────────────────── */
 /*
  * A builder records a sequence of root values; containers are opened and
  * closed around their children. Inside a map, call pb_builder_key before each
  * field value. Builders are independent of any VM and reusable (pb_builder_clear).
+ * Maps built with the same keys in the same order share one record shape, as
+ * the records a script literal makes do, so a native that returns a state
+ * record on every call does not build a new key list each time.
  * Misuse (key outside a map, unbalanced end) is remembered and reported as
  * PB_ERR_INVALID_ARG by whichever call consumes the builder.
  */

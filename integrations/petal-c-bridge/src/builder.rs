@@ -5,11 +5,23 @@
 //! value is handed over (bound, passed as call arguments, or returned from a
 //! native), so a built value never sits on the heap unrooted where a GC could
 //! collect it, and one builder can be reused across VMs.
+//!
+//! Records a host builds share their shape: a native that returns
+//! `{pos, vel, sleeping}` on every call makes records of one
+//! `petal::record::Shape` (a [`ShapeCache`] per thread), as a record literal
+//! in a script does, so a record costs its value vector rather than a shape
+//! and an allocation per key, and a script's field reads on it hit the VM's
+//! inline cache.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::c_char;
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
+use petal::fxhash::{FxBuildHasher, FxHasher};
 use petal::heap::Heap;
+use petal::record::{Key, RecordMap, Shape};
 use petal::symbol::SymbolId;
 use petal::value::Value;
 
@@ -67,8 +79,13 @@ impl HostValue {
     }
 
     /// Allocate this tree on `heap`. `syms` must hold every symbol in it
-    /// (see [`materialize`]).
-    fn to_value(&self, heap: &mut Heap, syms: &HashMap<&str, SymbolId>) -> Value {
+    /// (see [`materialize`]); record shapes come from `shapes`.
+    fn to_value(
+        &self,
+        heap: &mut Heap,
+        syms: &HashMap<&str, SymbolId>,
+        shapes: &mut ShapeCache,
+    ) -> Value {
         match self {
             HostValue::Nil => Value::Nil,
             HostValue::Bool(b) => Value::Bool(*b),
@@ -82,13 +99,25 @@ impl HostValue {
                 .map(|id| Value::Symbol(*id))
                 .unwrap_or(Value::Nil),
             HostValue::List(items) => {
-                let vals: Vec<Value> = items.iter().map(|i| i.to_value(heap, syms)).collect();
+                let vals: Vec<Value> = items
+                    .iter()
+                    .map(|i| i.to_value(heap, syms, shapes))
+                    .collect();
                 Value::List(heap.alloc_list(vals))
             }
             HostValue::Map(fields) => {
+                if let Some(shape) = shapes.shape_of(fields) {
+                    let vals: Vec<Value> = fields
+                        .iter()
+                        .map(|(_, v)| v.to_value(heap, syms, shapes))
+                        .collect();
+                    return Value::Map(heap.alloc_map(RecordMap::from_shape(shape, vals)));
+                }
+                // A repeated key (the first position wins, the last value) or
+                // a dictionary-sized record: built key by key.
                 let mut map = petal::heap::record_map_with_capacity(fields.len());
                 for (k, v) in fields {
-                    let v = v.to_value(heap, syms);
+                    let v = v.to_value(heap, syms, shapes);
                     map.insert(k.as_str(), v);
                 }
                 Value::Map(heap.alloc_map(map))
@@ -96,14 +125,22 @@ impl HostValue {
             HostValue::Dict(entries) => {
                 let pairs: Vec<(Value, Value)> = entries
                     .iter()
-                    .map(|(k, v)| (k.to_value(heap, syms), v.to_value(heap, syms)))
+                    .map(|(k, v)| {
+                        (
+                            k.to_value(heap, syms, shapes),
+                            v.to_value(heap, syms, shapes),
+                        )
+                    })
                     .collect();
                 // `end("dict")` refused a NaN key, the only host key that
                 // cannot be hashed, so this does not fail.
                 heap.dict_from_pairs(pairs).map(Value::Dict).unwrap_or(Value::Nil)
             }
             HostValue::Enum(tag, items) => {
-                let vals: Vec<Value> = items.iter().map(|i| i.to_value(heap, syms)).collect();
+                let vals: Vec<Value> = items
+                    .iter()
+                    .map(|i| i.to_value(heap, syms, shapes))
+                    .collect();
                 let data = heap.alloc_list(vals);
                 let tag = heap.alloc_string(tag.clone());
                 Value::EnumVariant { tag, data }
@@ -126,13 +163,83 @@ pub fn intern_symbols(
     names.into_iter().map(|n| (n, intern(n))).collect()
 }
 
-/// Allocate `values` on `heap` (symbols from [`intern_symbols`]).
+/// Allocate `values` on `heap` (symbols from [`intern_symbols`]). Records
+/// with the same keys in the same order share one shape (this thread's
+/// [`ShapeCache`]).
 pub fn materialize(
     values: &[HostValue],
     heap: &mut Heap,
     syms: &HashMap<&str, SymbolId>,
 ) -> Vec<Value> {
-    values.iter().map(|v| v.to_value(heap, syms)).collect()
+    SHAPES.with(|cache| match cache.try_borrow_mut() {
+        Ok(mut shapes) => values
+            .iter()
+            .map(|v| v.to_value(heap, syms, &mut shapes))
+            .collect(),
+        // Not reachable today (nothing materializes from inside a
+        // materialize); a private cache keeps it correct if it ever is.
+        Err(_) => {
+            let mut shapes = ShapeCache::default();
+            values
+                .iter()
+                .map(|v| v.to_value(heap, syms, &mut shapes))
+                .collect()
+        }
+    })
+}
+
+/// Records with more keys than this are built key by key, uncached.
+const SHAPE_MAX_KEYS: usize = 64;
+/// Past this many shapes the cache starts over (records keep their shapes).
+const SHAPE_CACHE_MAX: usize = 1024;
+
+thread_local! {
+    static SHAPES: RefCell<ShapeCache> = RefCell::new(ShapeCache::default());
+}
+
+/// The shapes of host-built records, by key list. Holding a shape keeps it
+/// shared, so a script that adds a field to such a record copies the shape
+/// (with a fresh id) rather than extending the cached one.
+#[derive(Default)]
+pub struct ShapeCache {
+    /// Hash of the key list → the shapes with that hash.
+    by_hash: HashMap<u64, Vec<Arc<Shape>>, FxBuildHasher>,
+    len: usize,
+}
+
+impl ShapeCache {
+    /// The shape for a record with these fields, in this order; `None` when
+    /// a key repeats or there are too many to cache.
+    pub fn shape_of(&mut self, fields: &[(String, HostValue)]) -> Option<Arc<Shape>> {
+        if fields.len() > SHAPE_MAX_KEYS {
+            return None;
+        }
+        let mut h = FxHasher::default();
+        for (k, _) in fields {
+            k.hash(&mut h);
+        }
+        let hash = h.finish();
+        if let Some(bucket) = self.by_hash.get(&hash) {
+            let same = |s: &&Arc<Shape>| {
+                s.len() == fields.len()
+                    && s.keys()
+                        .iter()
+                        .zip(fields)
+                        .all(|(a, (b, _))| a.as_str() == b)
+            };
+            if let Some(s) = bucket.iter().find(same) {
+                return Some(s.clone());
+            }
+        }
+        let shape = Shape::from_keys(fields.iter().map(|(k, _)| Key::new(k)))?;
+        if self.len >= SHAPE_CACHE_MAX {
+            self.by_hash.clear();
+            self.len = 0;
+        }
+        self.by_hash.entry(hash).or_default().push(shape.clone());
+        self.len += 1;
+        Some(shape)
+    }
 }
 
 /// An open container on the builder stack.
@@ -183,13 +290,13 @@ impl Builder {
         }
     }
 
-    pub fn key(&mut self, k: &str) {
+    pub fn key(&mut self, k: String) {
         match self.stack.last_mut() {
             Some(Open::Map(_, key)) => {
                 if key.is_some() {
                     self.fail("pb_builder_key called twice without a value");
                 } else {
-                    *key = Some(k.to_string());
+                    *key = Some(k);
                 }
             }
             _ => self.fail("pb_builder_key outside a map"),
@@ -426,7 +533,7 @@ pub extern "C" fn pb_builder_begin_map(b: *mut PbBuilder) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn pb_builder_key(b: *mut PbBuilder, key: *const c_char) {
     with(b, |b| match unsafe { text(key) } {
-        Some(k) => b.key(&k),
+        Some(k) => b.key(k),
         None => b.fail("pb_builder_key: NULL key"),
     });
 }

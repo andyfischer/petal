@@ -54,7 +54,7 @@ fn always_in_scope() -> &'static HashMap<String, Vec<Arity>> {
                 ));
             }
         }
-        if let Ok((_tree, stmts)) = crate::rewrite::parse_ast(crate::env::STD_PRELUDE) {
+        if let Some(stmts) = parse_bundled(crate::env::STD_PRELUDE) {
             collect_exports(&stmts, false, &mut known);
         }
         known
@@ -98,7 +98,7 @@ fn bundled_exports(name: &str) -> Option<&'static HashMap<String, Vec<Arity>>> {
                 }
                 let mut exports = HashMap::new();
                 for (_path, source) in package.sources() {
-                    if let Ok((_tree, stmts)) = crate::rewrite::parse_ast(source) {
+                    if let Some(stmts) = parse_bundled(source) {
                         collect_exports(&stmts, true, &mut exports);
                     }
                 }
@@ -107,6 +107,18 @@ fn bundled_exports(name: &str) -> Option<&'static HashMap<String, Vec<Arity>>> {
             all
         })
         .get(name)
+}
+
+/// Parse a bundled source for the declarations these rules read. The parser
+/// alone, not `rewrite::parse_ast`: nothing here needs the syntax tree that
+/// also builds, and its debug-build projection check (which formats the
+/// whole AST twice) cost seconds per process over the `ui` prelude.
+fn parse_bundled(source: &str) -> Option<Vec<Stmt>> {
+    let mut lexer = crate::lexer::Lexer::new(source);
+    lexer.tokenize().ok()?;
+    crate::parse::Parser::new(lexer.tokens, lexer.token_spans)
+        .parse_program()
+        .ok()
 }
 
 fn takes(forms: &[Arity], count: usize) -> bool {
@@ -149,8 +161,8 @@ fn is_bundled_source(stmts: &[Stmt]) -> bool {
                     .flat_map(|p| p.sources().map(|(_, text)| text)),
             );
             texts
-                .filter_map(|text| crate::rewrite::parse_ast(text).ok())
-                .map(|(_tree, stmts)| declared_fns(&stmts))
+                .filter_map(parse_bundled)
+                .map(|stmts| declared_fns(&stmts))
                 .collect()
         })
         .contains(&mine)

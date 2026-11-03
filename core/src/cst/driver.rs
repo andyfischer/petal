@@ -72,10 +72,56 @@ pub fn parse_source_phased(
         .map_err(phased(Phase::Parse))?;
     // The corpus tests prove projection ≡ direct parse; this catches drift on
     // inputs the corpus lacks.
-    debug_assert_eq!(
-        format!("{direct:#?}"),
-        format!("{projected:#?}"),
-        "CST projection diverged from the parser's direct AST"
-    );
+    #[cfg(debug_assertions)]
+    check_projection(source, file, &direct, &projected);
+    #[cfg(not(debug_assertions))]
+    let _ = direct;
     Ok((green, projected))
+}
+
+/// The debug-build check that the projected AST is the parser's direct AST.
+///
+/// The AST has no `PartialEq`, so the two are compared through their `Debug`
+/// output — which costs far more than the parse itself. Every `Env` re-parses
+/// the same stdlib modules and tests load the same programs again and again,
+/// so a given text (in a given file) is checked once per process, and the two
+/// renderings are streamed into hashes rather than built as strings. Only a
+/// mismatch pays for the pretty-printed assert that shows the difference.
+#[cfg(debug_assertions)]
+fn check_projection(source: &str, file: FileId, direct: &[Stmt], projected: &[Stmt]) {
+    use std::collections::HashSet;
+    use std::fmt::Write as _;
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    use std::sync::{LazyLock, Mutex};
+
+    struct HashWriter(DefaultHasher);
+    impl std::fmt::Write for HashWriter {
+        fn write_str(&mut self, s: &str) -> std::fmt::Result {
+            self.0.write(s.as_bytes());
+            Ok(())
+        }
+    }
+    let debug_hash = |stmts: &[Stmt]| {
+        let mut w = HashWriter(DefaultHasher::new());
+        write!(w, "{stmts:?}").expect("hashing never fails");
+        w.0.finish()
+    };
+
+    static CHECKED: LazyLock<Mutex<HashSet<u64>>> = LazyLock::new(Default::default);
+    let mut key = DefaultHasher::new();
+    (source, file).hash(&mut key);
+    let key = key.finish();
+    if CHECKED.lock().is_ok_and(|seen| seen.contains(&key)) {
+        return;
+    }
+    if debug_hash(direct) != debug_hash(projected) {
+        assert_eq!(
+            format!("{direct:#?}"),
+            format!("{projected:#?}"),
+            "CST projection diverged from the parser's direct AST"
+        );
+    }
+    if let Ok(mut seen) = CHECKED.lock() {
+        seen.insert(key);
+    }
 }

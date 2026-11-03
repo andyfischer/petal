@@ -298,6 +298,11 @@ impl Env {
         self.stacks.get(&stack_id).map(|s| s.memo.stats)
     }
 
+    /// `stack_id`'s record template counters (`crate::record_template`).
+    pub fn record_template_stats(&self, stack_id: StackKey) -> Option<crate::record_template::TemplateStats> {
+        self.stacks.get(&stack_id).map(|s| s.statics.templates.stats)
+    }
+
     /// `stack_id`'s enum-data revision: bumped when a run publishes constant
     /// data for a variant that differs from what the run before published
     /// (see [`Stack::enum_data_revision`](crate::stack::Stack)). Constant
@@ -676,6 +681,7 @@ pub(super) fn make_vm<'a>(
     stack.statics.sync(&bc.statics, program.constants.revision());
     stack.statics.set_check(static_audit.check_kept);
     stack.statics.set_check_announced(static_audit.announce_check);
+    stack.statics.templates.set_enabled(!static_audit.templates_off);
     Vm {
         program,
         bc,

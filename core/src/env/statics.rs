@@ -150,6 +150,16 @@ impl Env {
         self.static_audit.check_kept = on;
     }
 
+    /// Tag the records of mostly-static literals with their template
+    /// (`crate::record_template`; on by default, with the static-value
+    /// cache), or build every record untagged. A program cannot tell the
+    /// two apart; a host reading a record's template can. Off is the oracle
+    /// the tags are held to. `PETAL_RECORD_TEMPLATES=0` turns it off for
+    /// every `Env`.
+    pub fn set_record_templates(&mut self, on: bool) {
+        self.static_audit.templates_off = !on;
+    }
+
     /// Whether runs keep static values right now: the policy asks for it
     /// and nothing that reads per-instruction results (the trace, the
     /// static audit) is on. Observations do not turn it off: a skipped

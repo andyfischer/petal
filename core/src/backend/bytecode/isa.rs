@@ -493,6 +493,11 @@ pub enum Inst {
         /// `None` when a field name repeats.
         #[serde(skip)]
         shape: Option<std::sync::Arc<crate::record::Shape>>,
+        /// The literal's template when most of its fields are static
+        /// (`crate::record_template`): its holes and its site. Written
+        /// after lowering, with the static-value cache; `None` otherwise.
+        #[serde(skip)]
+        template: Option<std::sync::Arc<crate::record_template::TemplatePlan>>,
     },
     AllocMapSpread {
         dst: Reg,

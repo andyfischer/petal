@@ -66,6 +66,7 @@ pub mod project_host;
 mod proofs;
 pub mod provenance;
 pub mod record;
+pub mod record_template;
 pub mod resource_table;
 pub mod named_calls;
 pub mod suggest;

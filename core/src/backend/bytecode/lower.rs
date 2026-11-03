@@ -481,6 +481,7 @@ impl<'p> FnLowerer<'p> {
                 vals: self.regs(ins)?,
                 class: *class,
                 shape: self.literal_shape(fields),
+                template: None,
             },
             TermOp::AllocMapSpread { entries } => Inst::AllocMapSpread {
                 dst,

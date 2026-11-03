@@ -350,11 +350,43 @@ impl Shape {
 
 static EMPTY_SHAPE: LazyLock<Arc<Shape>> = LazyLock::new(|| Arc::new(Shape::empty()));
 
+/// What a record made by a templated literal promises a host (see
+/// [`crate::record_template`]): the record has [`Template::len`] fields, the
+/// keys of the template, and every field that is not a hole holds exactly
+/// the value the template was built from. Two records with the same
+/// template id agree on all of that, so a host that decoded one of them can
+/// read only the holes of the next.
+///
+/// A template says nothing a program can see: records compare, print and
+/// copy as they do without one. Any write to a record drops it.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Template {
+    /// A hash of the keys, the hole positions and the static values'
+    /// contents: the same for the same literal and the same static values
+    /// across runs, reloads and processes.
+    pub id: u64,
+    /// Field positions that vary from record to record, ascending.
+    pub holes: Box<[u32]>,
+    /// Number of fields.
+    pub len: u32,
+}
+
+impl Template {
+    /// Whether field `i` is a hole.
+    #[inline]
+    pub fn is_hole(&self, i: usize) -> bool {
+        self.holes.binary_search(&(i as u32)).is_ok()
+    }
+}
+
 /// A record's fields: name → value, in insertion order. See the module docs.
 #[derive(Clone)]
 pub struct RecordMap {
     shape: Arc<Shape>,
     values: Vec<Value>,
+    /// The literal template the record was made from, while nothing has
+    /// written to it; see [`Template`].
+    template: Option<Arc<Template>>,
 }
 
 impl Default for RecordMap {
@@ -362,6 +394,7 @@ impl Default for RecordMap {
         RecordMap {
             shape: EMPTY_SHAPE.clone(),
             values: Vec::new(),
+            template: None,
         }
     }
 }
@@ -391,6 +424,7 @@ impl RecordMap {
         RecordMap {
             shape: EMPTY_SHAPE.clone(),
             values: Vec::with_capacity(n),
+            template: None,
         }
     }
 
@@ -398,7 +432,31 @@ impl RecordMap {
     #[inline]
     pub fn from_shape(shape: Arc<Shape>, values: Vec<Value>) -> Self {
         debug_assert_eq!(shape.len(), values.len());
-        RecordMap { shape, values }
+        RecordMap {
+            shape,
+            values,
+            template: None,
+        }
+    }
+
+    /// [`from_shape`](Self::from_shape), made from a templated literal whose
+    /// static fields `values` holds (the VM has checked them).
+    #[inline]
+    pub fn from_template(shape: Arc<Shape>, values: Vec<Value>, template: Arc<Template>) -> Self {
+        debug_assert_eq!(shape.len(), values.len());
+        debug_assert_eq!(template.len as usize, values.len());
+        RecordMap {
+            shape,
+            values,
+            template: Some(template),
+        }
+    }
+
+    /// The template the record was made from, if nothing has written to it
+    /// since.
+    #[inline]
+    pub fn template(&self) -> Option<&Arc<Template>> {
+        self.template.as_ref()
     }
 
     #[inline]
@@ -448,6 +506,7 @@ impl RecordMap {
     }
 
     pub fn get_mut(&mut self, key: &str) -> Option<&mut Value> {
+        self.template = None;
         self.shape.position(key).map(|i| &mut self.values[i])
     }
 
@@ -483,6 +542,7 @@ impl RecordMap {
     /// Set `key` to `val`. An existing key keeps its position (and the record
     /// its shape); a new one is appended. Returns the old value, if any.
     pub fn insert<K: IntoKey>(&mut self, key: K, val: Value) -> Option<Value> {
+        self.template = None;
         if let Some(i) = self.shape.position(key.key_str()) {
             return Some(std::mem::replace(&mut self.values[i], val));
         }
@@ -493,6 +553,7 @@ impl RecordMap {
 
     /// Like [`insert`](Self::insert), also returning the key's position.
     pub fn insert_full<K: IntoKey>(&mut self, key: K, val: Value) -> (usize, Option<Value>) {
+        self.template = None;
         if let Some(i) = self.shape.position(key.key_str()) {
             return (i, Some(std::mem::replace(&mut self.values[i], val)));
         }
@@ -503,18 +564,21 @@ impl RecordMap {
 
     /// Remove `key`, keeping the order of the rest.
     pub fn shift_remove(&mut self, key: &str) -> Option<Value> {
+        self.template = None;
         let i = self.shape.position(key)?;
         Arc::make_mut(&mut self.shape).remove_at(i);
         Some(self.values.remove(i))
     }
 
     pub fn shift_remove_entry(&mut self, key: &str) -> Option<(Key, Value)> {
+        self.template = None;
         let i = self.shape.position(key)?;
         let k = Arc::make_mut(&mut self.shape).remove_at(i);
         Some((k, self.values.remove(i)))
     }
 
     pub fn clear(&mut self) {
+        self.template = None;
         self.shape = EMPTY_SHAPE.clone();
         self.values.clear();
     }
@@ -525,6 +589,7 @@ impl RecordMap {
     }
 
     pub fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item = (&Key, &mut Value)> + ExactSizeIterator {
+        self.template = None;
         self.shape.keys.iter().zip(self.values.iter_mut())
     }
 
@@ -540,6 +605,7 @@ impl RecordMap {
 
     #[inline]
     pub fn values_mut(&mut self) -> std::slice::IterMut<'_, Value> {
+        self.template = None;
         self.values.iter_mut()
     }
 

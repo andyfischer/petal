@@ -237,8 +237,17 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             fields,
             vals,
             class,
+            template,
             ..
         } => {
+            let tail = match template {
+                Some(t) => format!(
+                    " template {} holes [{}]",
+                    t.site,
+                    t.holes.iter().map(|h| h.to_string()).collect::<Vec<_>>().join(", ")
+                ),
+                None => String::new(),
+            };
             let pairs: Vec<String> = fields
                 .iter()
                 .zip(vals.iter())
@@ -251,7 +260,7 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
                     kconst(program, *c),
                     pairs.join(", ")
                 ),
-                None => format!("r{} = map {{{}}}", dst, pairs.join(", ")),
+                None => format!("r{} = map {{{}}}{}", dst, pairs.join(", "), tail),
             }
         }
         AllocMapSpread { dst, ins, .. } => format!("r{} = map_spread {}", dst, reglist(ins)),

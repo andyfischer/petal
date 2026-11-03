@@ -278,6 +278,10 @@ pub struct StaticAudit {
     /// The check was asked for by `PETAL_STATIC_CHECK`: print each mismatch
     /// on stderr as it is found, since no test reads them.
     pub(crate) announce_check: bool,
+    /// Build every record untagged (see [`Env::set_record_templates`]).
+    ///
+    /// [`Env::set_record_templates`]: crate::env::Env::set_record_templates
+    pub(crate) templates_off: bool,
 }
 
 impl StaticAudit {
@@ -299,6 +303,7 @@ impl StaticAudit {
             keeps: self.keeps,
             check_kept: self.check_kept,
             announce_check: self.announce_check,
+            templates_off: self.templates_off,
             ..Default::default()
         };
     }
@@ -321,6 +326,8 @@ impl StaticAudit {
         // function bodies (`Env::set_static_check`).
         audit.check_kept = matches!(std::env::var("PETAL_STATIC_CHECK").as_deref(), Ok("1"));
         audit.announce_check = audit.check_kept;
+        // `PETAL_RECORD_TEMPLATES=0`: no record is tagged with a template.
+        audit.templates_off = matches!(std::env::var("PETAL_RECORD_TEMPLATES").as_deref(), Ok("0"));
         if matches!(std::env::var("PETAL_STATIC_AUDIT").as_deref(), Ok("watch" | "1")) {
             audit.announce = true;
             audit.set_mode(StaticAuditMode::Watch);

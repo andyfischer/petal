@@ -483,12 +483,15 @@ pub fn alloc_map(
     inputs: &[Value],
     class: Option<ConstantId>,
     shape: Option<&std::sync::Arc<crate::record::Shape>>,
+    template: Option<std::sync::Arc<crate::record::Template>>,
 ) -> Result<Value, String> {
     let map = match shape {
-        // The lowered literal's shared shape: no key is copied.
-        Some(shape) if shape.len() == fields.len() && inputs.len() == fields.len() => {
-            crate::heap::RecordMap::from_shape(shape.clone(), inputs.to_vec())
-        }
+        // The lowered literal's shared shape: no key is copied. A template
+        // (`crate::record_template`) is a tag beside the values.
+        Some(shape) if shape.len() == fields.len() && inputs.len() == fields.len() => match template {
+            Some(t) => crate::heap::RecordMap::from_template(shape.clone(), inputs.to_vec(), t),
+            None => crate::heap::RecordMap::from_shape(shape.clone(), inputs.to_vec()),
+        },
         _ => {
             let mut map = crate::heap::RecordMap::with_capacity(fields.len());
             for (i, field_cid) in fields.iter().enumerate() {

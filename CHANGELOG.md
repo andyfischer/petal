@@ -119,6 +119,18 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- A loose file (one in no package) is the module `./level`, not `level`: its
+  name is its path from the entry file written as a relative import. A loose
+  file named like a package (`color.ptl` beside `import ui`, which loads the
+  bundled `color`) used to stop the program with "two different sources are
+  both the module 'color'", and `fix-imports` took a loose `noise.ptl` for
+  the `noise` package. **Breaking for hosts and saved state:** names
+  qualified by a loose module change (`level::x` is `./level::x` in
+  `--term`, `call_function` and state dumps), and `state` saved for a loose
+  module by an older build is not restored. Error messages still name the
+  file (`level.ptl`), and the qualifier a file binds (`level.spawn()`) is
+  unchanged ([Module identity](docs/module-system.md#module-identity)).
+
 - petal-sdl internals: `renderer.rs` is split into
   `renderer/{raster,text,surface_fx}.rs`; `run_game` and `run_agent` share
   window setup, reload polling and the frame body. Removed unused public

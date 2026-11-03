@@ -201,9 +201,14 @@ A module is identified by *what it is*, not by how an importer spelled it:
   `bloom/menu`, and plain `bloom` for the module named after its package;
 - a module a host registered in memory is the name it was registered under;
 - any other file (a *loose* file) is its canonical path on disk, and is
-  *named* — in diagnostics, `state` keys, qualified function names and
-  `module_manifest` — by its path from the entry file's directory: `level`,
-  `ui/hud`, `../shared/rng`.
+  *named* (in `state` keys, qualified function names such as
+  `./level::spawn`, and `module_manifest`) by its path from the entry file's
+  directory, written as a relative import would be: `./level`, `./ui/hud`,
+  `../shared/rng`. The `./` keeps a loose file apart from a package: a
+  `color.ptl` beside an `import ui`, which loads the bundled `color`, is the
+  module `./color`, and the package stays `color`. Error messages name the
+  file (`color.ptl`, `ui/hud.ptl`), and the qualifier the file binds is still
+  its last segment (`color.tint()`).
 
 So `import ./motion` inside `bloom` and `import bloom/motion` from outside
 it are **one module**: it loads once, its top-level code runs once, and
@@ -536,7 +541,9 @@ variable. The module half of the key is the module's [canonical
 name](#module-identity), so it does not depend on how any importer spelled
 the path — but a loose file's name is its path from the entry file, and
 moving a directory of modules into a package (giving it a `petal.toml`)
-renames them from `level` to `<package>/level`.
+renames them from `./level` to `<package>/level`. (Before 2026-11-03 a loose
+file was named without the `./`, as `level`, so state saved by an older
+build for a loose module does not carry over.)
 
 ## Errors name the file
 

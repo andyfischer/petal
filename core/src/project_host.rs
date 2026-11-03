@@ -341,12 +341,7 @@ fn rebase_import<'a>(line: &'a str, prelude: &Path, doc_dir: &Path) -> Cow<'a, s
     else {
         return Cow::Borrowed(line);
     };
-    let name = crate::module::relative_module_name(doc_dir, &target);
-    let rebased = if name.starts_with("../") {
-        name
-    } else {
-        format!("./{name}")
-    };
+    let rebased = crate::module::loose_module_name(doc_dir, &target);
     let rebased = crate::ast::import_path_source(&rebased);
     Cow::Owned(format!("{}{}{}", &line[..at], rebased, &line[at + len..]))
 }

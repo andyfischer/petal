@@ -20,7 +20,9 @@ Steps 1–4 landed the same day, with tests in `core/tests/parse_hints.rs`,
 from the list below; their sections stay here as the record of the cause
 and the choice made. Step 4 keeps a relative import into a nested package
 working: the file is loaded as a module of the nested package, so it still
-has one name. Steps 5 and 6 are open.
+has one name (confirmed by the owner). Step 6 landed the same day as
+decided: loose files are named `./level`, with no fallback for state saved
+under the old names. Step 5 is open.
 Every repro was re-run on a debug build of `4fcedb6`. Line numbers are as of
 that commit. Ordered by value per effort: the first four are small and
 independent, and issue 1 needs a decision first.
@@ -122,7 +124,7 @@ Nothing in-repo relies on the current behaviour. Add a test to
 Tests: the unit tests near `module.rs` 1948–2195. One of them asserts
 issue 7's exact text.
 
-### Step 6: issue 1, a loose file named like a package (small code change, needs a decision)
+### Step 6: issue 1, a loose file named like a package: done 2026-11-03
 
 **Cause.** Module identity is one string.
 
@@ -176,38 +178,6 @@ section).
 
 Each repro is a handful of files in one empty directory, run with
 `petal check main.ptl` and `petal run main.ptl`.
-
-### 1. A loose file named like a bundled package breaks the program
-
-Severity: medium-high.
-
-```petal ignore
-// color.ptl
-pub fn tint(c) "tinted" end
-
-// main.ptl
-import ./color
-import ui
-print(tint(1))
-```
-
-Both `check` and `run` fail:
-
-```
-Error: two different sources are both the module 'color': …/color.ptl and
-<bundled:color>/color.ptl (imported by ui.ptl)
-```
-
-`ui` imports the bundled `color`, and a loose file is named by its path from
-the entry file, so the two collide on the canonical name `color`. The same
-happens for any loose sibling named after a package the program loads,
-directly or through another package. A loose file and a package should be
-different modules; module-system.md does not mention the limit.
-
-- Workaround: give the directory a `petal.toml`, which makes the file
-  `<package>/color`. Every Cheesecake game has one, so none is affected.
-- Knock-on: `petal fix-imports` abandons every import it would add to such a
-  file ("adding import … would not compile … left as it was").
 
 ### 6. The arity-merge warning suggests the wrong module
 

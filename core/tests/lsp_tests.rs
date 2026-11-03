@@ -824,7 +824,7 @@ fn hover_on_an_imported_name_shows_its_signature_and_module() {
     let resp = hover(&mut server, &uri, 1, 8);
     let text = resp["result"]["contents"]["value"].as_str().unwrap();
     assert!(text.contains("draw_score fn(n: int) -> string"), "{text}");
-    assert!(text.contains("from module hud"), "{text}");
+    assert!(text.contains("from module ./hud"), "{text}");
     let resp = hover(&mut server, &uri, 2, 9);
     let text = resp["result"]["contents"]["value"].as_str().unwrap();
     assert!(text.contains("(variable) margin"), "{text}");

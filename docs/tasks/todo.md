@@ -36,10 +36,12 @@ element `props`, `json_stringify` and `json_parse` keep the written order
 [images-followup.md](images-followup.md) item 2: a `value_to_static` that
 skips JSON.
 
-## 3. Module system: one hard failure left
+## 3. Module system: two misleading messages left
 
 [module-system-followup.md](module-system-followup.md). Fixed on 2026-11-03:
 
+- a loose file named like a package no longer collides with it: loose files
+  are now named `./level` (issue 1);
 - a nested `import` is now an error, not silently ignored (issue 4);
 - a nested package's files are no longer reachable through the outer
   package, where they could load twice (issue 8);
@@ -47,15 +49,9 @@ skips JSON.
 - a slip after an import path names its fix (`import ./my-mod`,
   `import ui.hud`, `.ptl`, `v as w`).
 
-Open:
-
-- **Issue 1:** a loose file named like a bundled package (`color.ptl` beside
-  `import ui`) stops the program with "two different sources are both the
-  module 'color'". The fix (name loose files `./color`) changes state keys
-  and qualified names for loose modules, and waits on a decision; see the
-  plan's step 6.
-- **Lower:** issue 6 (the arity-merge warning suggests the wrong module) and
-  issue 7 (facade ambiguity names unbound qualifiers), the plan's step 5.
+Open, both small (the plan's step 5): issue 6 (the arity-merge warning
+suggests the wrong module) and issue 7 (facade ambiguity names unbound
+qualifiers).
 
 ## 4. `check` and `show-static` miss things they claim to see
 

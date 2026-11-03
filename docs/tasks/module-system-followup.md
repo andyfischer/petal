@@ -15,11 +15,17 @@ still reproduces unless it says otherwise.
 ## Fix plan
 
 Causes found on 2026-11-03 by reading the loader, parser and compiler.
+Steps 1–4 landed the same day, with tests in `core/tests/parse_hints.rs`,
+`core/tests/modules.rs` and `core/tests/packages.rs`. Their issues are gone
+from the list below; their sections stay here as the record of the cause
+and the choice made. Step 4 keeps a relative import into a nested package
+working: the file is loaded as a module of the nested package, so it still
+has one name. Steps 5 and 6 are open.
 Every repro was re-run on a debug build of `4fcedb6`. Line numbers are as of
 that commit. Ordered by value per effort: the first four are small and
 independent, and issue 1 needs a decision first.
 
-### Step 1: issue 4, nested `import` (about 10 lines, parser)
+### Step 1: issue 4, nested `import`: done 2026-11-03
 
 **Cause.** The "imports must come first" check in `Parser::parse_program`
 (`core/src/parse.rs`, around line 225) looks only at top-level statements.
@@ -41,7 +47,7 @@ an indented import.
 
 **Tests:** `core/tests/parse_hints.rs`, `test/vitest/import-forms.test.ts`.
 
-### Step 2: misleading parse errors after an import (about 30 lines, parser)
+### Step 2: misleading parse errors after an import: done 2026-11-03
 
 **Cause.** `parse_import` (`parse.rs`, around 920–1008) returns as soon as
 the path, `as` or name list is complete. Statements need no separator on one
@@ -64,7 +70,7 @@ otherwise give a targeted error:
 
 No in-repo source puts anything after an import on its line.
 
-### Step 3: issue 5, trace frames without file names (about 5 lines)
+### Step 3: issue 5, trace frames without file names: done 2026-11-03
 
 **Cause.** `full_stack_trace` (`backend/errors.rs`, around 248) names the
 entry file's frames only when some *call site* is in a module. Frames show
@@ -77,7 +83,7 @@ crossing modules too.
 **Tests:** `core/tests/cli_args.rs`, vitest `error-format` and
 `error-positions`.
 
-### Step 4: issue 8, nested packages reachable from the outer one (about 20 lines)
+### Step 4: issue 8, nested packages reachable from the outer one: done 2026-11-03
 
 **Decision: change the code, not the doc.** `scan_modules` (`package.rs`,
 around 1105) already skips a directory with its own `petal.toml`. But the
@@ -203,44 +209,6 @@ different modules; module-system.md does not mention the limit.
 - Knock-on: `petal fix-imports` abandons every import it would add to such a
   file ("adding import … would not compile … left as it was").
 
-### 4. An `import` nested in a block or function is silently ignored
-
-Severity: medium-low.
-
-```petal ignore
-fn f()
-  import ./does_not_exist
-  1
-end
-print(f())
-```
-
-Runs clean and prints `1`: no error, nothing loaded, nothing bound, the path
-never resolved. The same inside `if … end`. The docs list "imports anywhere
-but the top of a file, including conditional imports" as unsupported, but the
-"must appear before any other statement" error only fires at top level.
-
-### 5. Stack trace frames lose the file name when every frame is in the entry file
-
-Severity: low.
-
-```petal ignore
-// m.ptl
-pub fn inner(x)
-  x + nil
-end
-
-// main.ptl
-import ./m
-fn outer() m.inner(1) end
-outer()
-```
-
-The headline now names the file (`[m.ptl line 2, column 3]`), but the
-frames still read `in inner() [line 2, column 12]`
-/ `in outer() [line 3, column 1]`, so line 2 looks like `main.ptl`'s. With a
-module-to-module call in the chain every frame is named, as documented.
-
 ### 6. The arity-merge warning suggests the wrong module
 
 Severity: low.
@@ -260,27 +228,12 @@ from both `button` and `menu`, gets: "write `button.shared` or `menu.shared`,
 or pin one with `import ./button: shared`". Neither qualifier is bound in
 that file, and the relative path is right only by accident of the layout.
 
-### 8. A nested package's files are importable through the outer package
-
-Severity: low; code or docs, whichever is intended.
-
-With `proj/petal.toml` (`modules = "code"`) and a second manifest at
-`proj/code/inner/petal.toml`, `import proj/inner/inner` works. packages.md
-says a nested package's files "are not modules of the one around it".
-
 ### Smaller things
 
 - A compile error inside an imported module has no source snippet and uses a
   different format (`Error: badsyn.ptl: … [line 2, column 3]`), contrary to
   "Source snippets … all show the right file".
-- Unsupported forms give generic or misleading parse errors:
-  - `import ui.hud` and `import ./level.ptl`: `Unexpected token: '.'`.
-  - `import ./thing: v as vv`: `undefined variable 'as'`.
-  - `import ./my-mod` parses as `import ./my` followed by the expression
-    `-mod`: `cannot find module './my'`, or `undefined variable mod` when
-    `my.ptl` exists. The quoted form (`import "./my-mod" as my_mod`, since
-    1064dcd) is the supported spelling, but the unquoted one still gives no
-    hint to use it.
+- A misleading error:
   - `set tally.hits = 5`: `` `tally` is not defined `` rather than the
     read-only-`var` message.
 - `petal fmt` does not normalise the spacing in `pub   import ./m`

@@ -150,6 +150,27 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- An `import` inside a function, a block or a test is an error. It used to
+  be ignored without a word: nothing loaded, nothing bound, and a missing
+  path never reported.
+
+- A package nested inside another (its own `petal.toml` below the outer
+  package's module directory) is no longer reachable through the outer one:
+  `import proj/inner/x` is an error that says to list `inner` as a
+  dependency. It used to load the file as a module of `proj`, and as a second
+  module when the same file was also imported another way
+  ([packages.md](docs/packages.md)).
+
+- An error inside an imported module names the entry file in its trace
+  frames even when every call was made from the entry file. A bare
+  `[line 2, column 12]` under `[m.ptl line 2, …]` read as the module's line.
+
+- A slip after an import path gets an error that names the fix, not one
+  about the next statement: `import ./my-mod` says to quote the name,
+  `import ui.hud` says to use `/`, `import ./level.ptl` says to drop the
+  extension, and `import m: v as w` says a selective import cannot rename.
+  An import now ends at the end of its line (or a `;`).
+
 - Records keep their key order when they cross into JSON. `value_to_json`
   (what a host reads natives' arguments, element `props` and state dumps
   through), `json_stringify` and `json_parse` used to sort keys, so

@@ -1057,3 +1057,23 @@ fn a_quoted_import_may_be_re_exported() {
         &["[r]"],
     );
 }
+
+/// An error inside a module, reached only through calls made from the entry
+/// file, still names the entry file in its trace frames: next to the
+/// headline's `[m line …]`, a bare `[line 2, …]` would read as the module's
+/// line (docs/tasks/module-system-followup.md, issue 5).
+#[test]
+fn trace_frames_name_the_entry_file_when_the_error_is_in_a_module() {
+    let mut env = Env::new();
+    env.register_module("m", "pub fn inner(x)\n  x + nil\nend\n");
+    let dir = std::env::temp_dir().join("petal-trace-names");
+    std::fs::create_dir_all(&dir).unwrap();
+    let main = dir.join("main.ptl");
+    let src = "import m\nfn outer() m.inner(1) end\nouter()\n";
+    let pid = env.load_program_at(src, &main).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let err = env.run(sid).unwrap_err().to_string();
+    let trace = err.split("Stack trace:").nth(1).unwrap_or_else(|| panic!("{err}"));
+    assert!(trace.contains("in inner() [main.ptl line 2"), "{err}");
+    assert!(trace.contains("in outer() [main.ptl line 3"), "{err}");
+}

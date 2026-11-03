@@ -700,7 +700,9 @@ impl ModuleRegistry {
                         .map_err(|_| leaves())?;
                     let module = path_to_module(inside);
                     return pkg.load(&module).ok_or_else(|| {
-                        format!("package '{}' has no module '{module}'", pkg.info.name)
+                        pkg.nested_package_error(&module).unwrap_or_else(|| {
+                            format!("package '{}' has no module '{module}'", pkg.info.name)
+                        })
                     });
                 }
                 let dir = canonical_path(dir);
@@ -827,7 +829,9 @@ impl ModuleRegistry {
         let load = |pkg: &crate::package::Package| -> Result<ModuleSource, String> {
             let module = rest.unwrap_or(&pkg.info.name);
             pkg.load(module).ok_or_else(|| match rest {
-                Some(rest) => format!("package '{package}' has no module '{rest}'"),
+                Some(rest) => pkg
+                    .nested_package_error(rest)
+                    .unwrap_or_else(|| format!("package '{package}' has no module '{rest}'")),
                 None => format!(
                     "package '{package}' has no module of its own name ({package}.ptl) to \
                      import as `{package}` — import one of its modules: {}",

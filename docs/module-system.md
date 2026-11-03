@@ -32,11 +32,19 @@ qualifier. A **selective import** names exactly what it wants and binds
 nothing else, the qualifier included.
 
 Import statements must come before every other statement in the file.
-Putting one later is an error:
+Putting one later is an error, and so is putting one inside a function, a
+block or a test:
 
 ```
 Error: import statements must appear before any other statement
+Error: an `import` is only allowed at the top of a file, before any other statement, not inside a function, a block or a test
 ```
+
+An import also ends at the end of its line (or at a `;`). Whatever follows it
+on the line is an error that names the usual fix: a hyphenated name must be
+quoted (`import "./my-mod" as my_mod`), a path uses `/` and not `.`
+(`import ui/hud`), an import names a module and not a file (no `.ptl`), and a
+selective import cannot rename (`import m: v as w`).
 
 A qualifier is only usable through `.`: writing `hud` on its own
 (`let x = hud`, `print(hud)`) is an error suggesting `hud.<name>` or a
@@ -573,11 +581,14 @@ selective import.
 
 ## Not supported
 
-- Dotted module names (`import lib.geom`) and path strings. Nesting is
-  spelled with `/`, and a file is reached with `./` or `../`.
+- Dotted module names (`import lib.geom`). Nesting is spelled with `/`, and
+  a file is reached with `./` or `../`. A quoted path is only for a name that
+  is not an identifier ([Quoted paths](#quoted-paths)).
+- Renaming a name in a selective import (`import m: v as w`).
 - Absolute paths, and a bare name for a sibling file.
 - A star import (`import m: *`). A plain `import m` binds every export.
-- Imports anywhere but the top of a file, including conditional imports.
+- Imports anywhere but the top of a file, including conditional imports
+  (an error).
 - Reaching a module through a facade's qualifier
   (`bloom.menu.open()`); module names are not values, and a facade passes on
   names, not qualifiers.

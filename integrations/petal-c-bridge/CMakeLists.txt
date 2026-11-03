@@ -108,6 +108,13 @@ if(PETAL_BRIDGE_BUILD_TESTS)
   add_executable(petal_bridge_bench_frame examples/bench_frame.cpp)
   target_link_libraries(petal_bridge_bench_frame PRIVATE petal::bridge)
 
+  # Not a test either: core/examples/scene_frame's script through the bridge,
+  # option reads by name vs by plan (docs/dev/retained-scene-output.md, L4).
+  add_executable(petal_bridge_scene_frame examples/scene_frame.cpp)
+  target_link_libraries(petal_bridge_scene_frame PRIVATE petal::bridge)
+  target_compile_definitions(petal_bridge_scene_frame PRIVATE
+    PETAL_SCENE_FRAME_PTL="${CMAKE_CURRENT_SOURCE_DIR}/../../core/examples/scene_frame/scene.ptl")
+
   # The crate's own Rust unit tests (error-position parsing, boxed-native
   # ownership, typed reload/call errors, scenarios). Built on first run into
   # the same cargo target dir, so give it time.

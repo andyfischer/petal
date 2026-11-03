@@ -513,7 +513,7 @@ pub fn missing_natives_message(
         })
         .collect();
     // `ui` is the one interface the binary knows a runner for: say so, since
-    // `petal check` accepts the script this run refuses.
+    // `petal lint` accepts the script this run refuses.
     let ui_hint = if by_module
         .iter()
         .any(|(module, _)| module.split('/').next() == Some("ui"))
@@ -630,7 +630,7 @@ mod tests {
 }
 
 /// Appended to a load error about the `ui` interface: it is the one interface
-/// the binary knows a runner for, and `petal check` accepts the script the run
+/// the binary knows a runner for, and `petal lint` accepts the script the run
 /// refuses.
 pub const UI_RUNNER_HINT: &str = " (`ui` is the petal-ui interface: use a petal-ui runner such \
      as petal-sdl; `petal run` provides the core builtins only)";

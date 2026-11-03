@@ -1,4 +1,4 @@
-// `petal check` over several files, the literal key-name warning, and the
+// `petal lint` over several files, the literal key-name warning, and the
 // missing-record-field hint (petal-movies follow-ups, 2026-10).
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "fs";
@@ -24,7 +24,7 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("check: literal key names", () => {
   it("warns on a key name that is not one, naming the likely key", () => {
-    const r = petalCapture(["check", warn]);
+    const r = petalCapture(["lint", "--single-file", warn]);
     expect(r.code).toBe(0);
     expect(r.stderr).toContain(
       'argument 1 to `key_pressed`: `"enter"` is not a key name; did you mean `"return"`?',
@@ -32,35 +32,35 @@ describe("check: literal key names", () => {
   });
 
   it("is silent on canonical names", () => {
-    const r = petalCapture(["check", "-e", 'import ui\nprint(key_down("return"), key_released("leftbracket"))']);
+    const r = petalCapture(["lint", "--single-file", "-e", 'import ui\nprint(key_down("return"), key_released("leftbracket"))']);
     expect(r.code).toBe(0);
     expect(r.stderr).toBe("");
   });
 
   it("--strict fails on it", () => {
-    expect(petalCapture(["check", "--strict", warn]).code).toBe(1);
+    expect(petalCapture(["lint", "--single-file", "--strict", warn]).code).toBe(1);
   });
 });
 
-describe("check: several files", () => {
+describe("lint: several files", () => {
   it("passes when every file passes, printing nothing for clean files", () => {
-    const r = petalCapture(["check", ok, ok]);
+    const r = petalCapture(["lint", ok, ok]);
     expect(r.code).toBe(0);
     expect(r.stdout + r.stderr).toBe("");
   });
 
   it("checks every file and fails when one fails", () => {
-    const r = petalCapture(["check", ok, warn, bad]);
+    const r = petalCapture(["lint", ok, warn, bad]);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain(`==> ${warn} <==`);
     expect(r.stderr).toContain(`==> ${bad} <==`);
     expect(r.stderr).not.toContain(`==> ${ok} <==`);
     expect(r.stderr).toContain("undefined variable `nope`");
-    expect(r.stderr).toContain(`check failed for 1 of 3 files: ${bad}`);
+    expect(r.stderr).toContain(`check failed for 1 of 3 program(s): ${bad}`);
   });
 
   it("--json prints one object with an entry per file", () => {
-    const r = petalCapture(["check", "--json", ok, bad]);
+    const r = petalCapture(["lint", "--json", ok, bad]);
     expect(r.code).toBe(1);
     const out = JSON.parse(r.stdout);
     expect(out.ok).toBe(false);
@@ -71,9 +71,9 @@ describe("check: several files", () => {
   });
 
   it("refuses -e alongside a file", () => {
-    const r = petalCapture(["check", "-e", "print(1)", ok]);
+    const r = petalCapture(["lint", "-e", "print(1)", ok]);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain("a source was already given");
+    expect(r.stderr).toContain("-e takes no paths");
   });
 });
 

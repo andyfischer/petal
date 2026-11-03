@@ -48,7 +48,7 @@
 //!
 //! Natives are static only when registered `CONST`
 //! ([`crate::native_fn::NativeConstness`]). A `native fn` whose host is not
-//! present (as under `petal check` and the language server) is not registered
+//! present (as under `petal lint` and the language server) is not registered
 //! and therefore dynamic, so those tools may report less as static than a
 //! host does and never more.
 //!

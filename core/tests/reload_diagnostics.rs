@@ -3,7 +3,7 @@
 //! `Env::render_diagnostics`. Warnings as well as errors, and only the ones
 //! the program did not already have, so a large program's standing warnings
 //! are not printed again on every save (docs/tasks/moses-debrief.md, 2.1:
-//! a `petal check` warning shipped as a bug because nothing ran `check` in
+//! a `petal lint` warning shipped as a bug because nothing ran `check` in
 //! the edit loop).
 
 use petal::diagnostic::Severity;

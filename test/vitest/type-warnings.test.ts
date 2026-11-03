@@ -8,12 +8,12 @@ import {
 } from "./helpers";
 
 
-// Chunk E: type-checker warnings surfaced by `petal check` and `petal run`.
+// Chunk E: type-checker warnings surfaced by `petal lint` and `petal run`.
 // Warnings are non-fatal: `check` still exits 0 and `run` still executes the
 // program (annotations are runtime-inert). `--json` check emits a `warnings`
 // array; text mode prints `warning:` lines to stderr.
 
-describe("type-checker warnings via `petal check --json`", () => {
+describe("type-checker warnings via `petal lint --json`", () => {
   it("reports a let type mismatch as a single warning, ok stays true", () => {
     const out = checkJson('let x: int = "hi"');
     expect(out.ok).toBe(true);
@@ -41,7 +41,7 @@ describe("type-checker warnings via `petal check --json`", () => {
   });
 });
 
-describe("type-checker warnings via `petal check` (text)", () => {
+describe("type-checker warnings via `petal lint` (text)", () => {
   it("prints a warning to stderr, empty stdout, exit 0", () => {
     const { stdout, stderr, code } = checkText('let x: int = "hi"');
     expect(code).toBe(0);
@@ -51,7 +51,7 @@ describe("type-checker warnings via `petal check` (text)", () => {
   });
 });
 
-describe("`petal check --strict`", () => {
+describe("`petal lint --strict`", () => {
   it("exits non-zero when warnings exist", () => {
     const { code, stderr } = checkStrict('let x: int = "hi"');
     expect(code).toBe(1);
@@ -313,7 +313,7 @@ describe("statically-known arity errors", () => {
     expect(checkJson("print(len([1, 2]))").warnings).toEqual([]);
   });
 
-  it("`check --strict` now fails on one", () => {
+  it("`lint --strict` now fails on one", () => {
     const { code, stderr } = checkStrict("fn f(a, b)\n  a\nend\nprint(f(1))");
     expect(code).toBe(1);
     expect(stderr).toMatch(/expects 2 arguments/);
@@ -321,7 +321,7 @@ describe("statically-known arity errors", () => {
 });
 
 // Programs that compile and run but compute the wrong thing: each must fail
-// `check --strict` with a warning that names the mistake.
+// `lint --strict` with a warning that names the mistake.
 describe("silently wrong programs warn", () => {
   it("a leading `-` under a line it was meant to continue", () => {
     const sum = "fn score(a, b, c)\n  a * 2\n    + b * 3\n    - c * 4\nend\nprint(score(1, 2, 3))";

@@ -5,13 +5,13 @@
 //! "Undefined variable: x") that fires only if the line runs. A host that
 //! reloads a script while it is being edited relies on that — a half-typed
 //! line must not take the frame down — but a program that is certain to fail
-//! the moment the line runs must not pass `petal check`, nor start under
+//! the moment the line runs must not pass `petal lint`, nor start under
 //! `petal run`.
 //!
 //! [`unresolved_globals`] closes that hole by scanning the program's IR for
 //! those terms. Every compile an `Env` does ends with it
 //! (`Env::scan_unresolved`), so its findings are on the program as errors
-//! for everything that reads them: `petal check` fails on them, `petal run`
+//! for everything that reads them: `petal lint` fails on them, `petal run`
 //! refuses to start on them ([`crate::check`]), and the LSP shows them. No
 //! host is consulted: a name is in scope because the file declares it, an import
 //! binds it, or it is a `core`/`std` builtin, and for no other reason. A

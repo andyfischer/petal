@@ -11,7 +11,7 @@
 //! - `petal fmt`, which normalizes it.
 //!
 //! The compiler says nothing about the old spelling: it is a matter of
-//! spelling, which is lint's and fmt's, not `petal check`'s.
+//! spelling, which is the lint rules' and fmt's, not the compile check's.
 //!
 //! A site is found from the AST rather than the token stream because
 //! `export` stays an ordinary field and record-key name (`r.export`,

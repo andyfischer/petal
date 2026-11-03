@@ -312,7 +312,7 @@ impl NativeEffects {
 pub enum NativeConstness {
     /// Not known to be constant. The default for every native, and the
     /// answer for a name that is not registered at all (a `native fn`
-    /// compiled without its host, as `petal check` and the LSP do).
+    /// compiled without its host, as `petal lint` and the LSP do).
     Dynamic,
     /// A constant function of its arguments ([`NativeEffects::is_const`]).
     Const,

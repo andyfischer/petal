@@ -5,7 +5,7 @@
 // everywhere `export` was; `export` keeps working and compiles to the same
 // program; the only places that tell them apart are the ones built to —
 // `petal lint` (the `prefer-pub` rule) and `petal fmt` (which rewrites it).
-// The compiler, and so `petal check` and the LSP, says nothing about it.
+// The compiler, and so `petal lint` and the LSP, says nothing about it.
 
 use petal::diagnostic::Diagnostic;
 use petal::env::Env;
@@ -184,7 +184,7 @@ fn a_dangling_modifier_names_the_word_that_was_written() {
 #[test]
 fn neither_spelling_draws_a_compile_warning() {
     // The old spelling is lint's (`prefer-pub`) and fmt's to report and
-    // rewrite; a compile, and so `petal check`, has nothing to say about it.
+    // rewrite; a compile, and so `petal lint`, has nothing to say about it.
     assert_eq!(compile_warnings(&every_form("pub")), vec![]);
     assert_eq!(compile_warnings(&every_form("export")), vec![]);
 }

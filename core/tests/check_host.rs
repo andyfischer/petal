@@ -1,4 +1,4 @@
-//! `petal check` on a script whose project describes its host (`[host]` in
+//! `petal lint` on a script whose project describes its host (`[host]` in
 //! `petal.toml`): the script is compiled as that host would compile it, the
 //! way `petal lsp` analyzes it, and what is found is reported against the
 //! script's own lines.
@@ -61,13 +61,13 @@ const FILES: &[(&str, &str)] = &[
 #[test]
 fn a_script_is_checked_with_what_its_host_puts_in_scope() {
     let dir = project("clean", FILES);
-    let (out, err, code) = petal_in(&dir, &["check", "screens/menu.ptl"]);
+    let (out, err, code) = petal_in(&dir, &["lint", "--single-file", "screens/menu.ptl"]);
     assert_eq!(code, 0, "{out}{err}");
     assert!(err.is_empty(), "{err}");
 
     // A prelude file is checked with the files listed before it, and its
     // relative import resolves beside it.
-    let (out, err, code) = petal_in(&dir, &["check", "lib/more.ptl"]);
+    let (out, err, code) = petal_in(&dir, &["lint", "--single-file", "lib/more.ptl"]);
     assert_eq!(code, 0, "{out}{err}");
 }
 
@@ -76,7 +76,7 @@ fn a_finding_is_reported_on_the_scripts_own_line() {
     let mut files = FILES.to_vec();
     files[4] = ("screens/menu.ptl", "print(twice(1))\n\nnope()\n");
     let dir = project("finding", &files);
-    let (_, err, code) = petal_in(&dir, &["check", "screens/menu.ptl"]);
+    let (_, err, code) = petal_in(&dir, &["lint", "--single-file", "screens/menu.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("unknown function `nope`"), "{err}");
     assert!(err.contains("[line 3, column 1]"), "{err}");
@@ -84,7 +84,7 @@ fn a_finding_is_reported_on_the_scripts_own_line() {
     assert!(err.contains("3 | nope()"), "{err}");
     assert_eq!(err.matches("error:").count(), 1, "{err}");
 
-    let (out, _, _) = petal_in(&dir, &["check", "--json", "screens/menu.ptl"]);
+    let (out, _, _) = petal_in(&dir, &["lint", "--single-file", "--json", "screens/menu.ptl"]);
     let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
     assert_eq!(v["warnings"][0]["line"], 3, "{out}");
 }
@@ -94,7 +94,7 @@ fn a_failed_compile_names_the_file_it_is_in() {
     let mut files = FILES.to_vec();
     files[1] = ("lib/base.ptl", "fn helper(x)\n  x +\nend\n");
     let dir = project("broken-prelude", &files);
-    let (_, err, code) = petal_in(&dir, &["check", "screens/menu.ptl"]);
+    let (_, err, code) = petal_in(&dir, &["lint", "--single-file", "screens/menu.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("lib/base.ptl: "), "{err}");
     assert!(!err.contains("screens/menu.ptl"), "{err}");
@@ -102,7 +102,7 @@ fn a_failed_compile_names_the_file_it_is_in() {
     let mut files = FILES.to_vec();
     files[4] = ("screens/menu.ptl", "print(1)\nlet x = (\n");
     let dir = project("broken-script", &files);
-    let (_, err, code) = petal_in(&dir, &["check", "screens/menu.ptl"]);
+    let (_, err, code) = petal_in(&dir, &["lint", "--single-file", "screens/menu.ptl"]);
     assert_eq!(code, 1, "{err}");
     assert!(!err.contains("lib/"), "{err}");
     assert!(
@@ -120,7 +120,7 @@ fn a_missing_prelude_file_is_a_warning() {
     );
     files[4] = ("screens/menu.ptl", "print(1)\n");
     let dir = project("missing", &files);
-    let (_, err, code) = petal_in(&dir, &["check", "screens/menu.ptl"]);
+    let (_, err, code) = petal_in(&dir, &["lint", "--single-file", "screens/menu.ptl"]);
     assert_eq!(code, 0, "{err}");
     assert!(
         err.contains("warning: petal.toml [host] prelude: cannot read lib/gone.ptl"),

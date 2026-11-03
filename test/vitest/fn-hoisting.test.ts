@@ -247,7 +247,7 @@ print(outer())
 
   it("a call to a not-hoistable declaration below is a compile diagnostic", () => {
     // The residue hoisting cannot fix. Before, this was a bare runtime
-    // `Cannot call nil` and `petal check` passed clean.
+    // `Cannot call nil` and `petal lint` passed clean.
     const code = `let base = abs(-10)\nprint(h(1))\nfn h(n) n + base end`;
     const { stdout, stderr } = checkText(code);
     const out = stdout + stderr;
@@ -255,7 +255,7 @@ print(outer())
     expect(out).toContain("still nil");
   });
 
-  it("that diagnostic reaches `check --json`", () => {
+  it("that diagnostic reaches `lint --json`", () => {
     const code = `let base = abs(-10)\nprint(h(1))\nfn h(n) n + base end`;
     const report = checkJsonAllowFail(code);
     expect(JSON.stringify(report)).toContain(
@@ -318,7 +318,7 @@ end
     expect(runPetal(code)).toBe("21");
   });
 
-  it("a computed let still blocks hoisting, and `check --strict` fails on the call", () => {
+  it("a computed let still blocks hoisting, and `lint --strict` fails on the call", () => {
     // The program is known to crash if the line runs, so CI must not pass it.
     const code = `let base = abs(-10)\nprint(h(1))\nfn h(n) n + base end`;
     const { code: exit, stderr } = checkStrict(code);

@@ -278,7 +278,7 @@ impl Compiler {
                     // natives: a native is reachable only through a
                     // declaration in scope. The call compiles to a deferred
                     // error that fires if the line runs ("Unknown function"),
-                    // which `petal check` reports first
+                    // which `petal lint` reports first
                     // (`typecheck::globals`).
                     if let ExprKind::Ident(name) = &function.kind {
                         self.check_import_call(

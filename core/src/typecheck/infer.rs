@@ -8,7 +8,7 @@
 //! `crate::suggest`.
 //!
 //! Everything here is a *suggestion*, never a warning: nothing it produces
-//! reaches `petal check`, and a wrong guess costs a rejected proposal rather
+//! reaches `petal lint`, and a wrong guess costs a rejected proposal rather
 //! than a spurious diagnostic. That still leaves a high bar, because
 //! `suggest --apply` writes source: a suggestion has to be one a careful
 //! author would have written by hand.

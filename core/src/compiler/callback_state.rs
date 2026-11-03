@@ -7,7 +7,7 @@
 //! computation over a list, not a place in the program, so its state would
 //! have no slot of its own. That error is authoritative. This pass reports,
 //! with error severity, the cases provable without running anything, so
-//! `petal check` fails on them, `petal run` refuses to start and the language
+//! `petal lint` fails on them, `petal run` refuses to start and the language
 //! server shows them:
 //!
 //! - a lambda passed to a callback builtin whose body declares `state`;

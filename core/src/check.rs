@@ -1,7 +1,7 @@
 //! The check: "will this program run?", answered without running it.
 //!
 //! One function, [`Env::check_program`](crate::env::Env::check_program), for
-//! everything that asks: `petal check` reports its answer, `petal run`
+//! everything that asks: `petal lint` reports its answer, `petal run`
 //! refuses to start on it, and a host that reloads a script while it is
 //! being edited prints it and runs anyway (a half-typed line must not take
 //! the frame down).

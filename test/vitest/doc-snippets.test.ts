@@ -1,7 +1,7 @@
 // Verifies the ```petal code blocks in the user-facing docs against the real
 // runtime, so documentation can't drift from the language:
 //
-//   • every block must pass `petal check` (lex + parse + compile), which catches
+//   • every block must pass `petal lint` (lex + parse + compile), which catches
 //     renamed builtins, removed syntax, and typos;
 //   • blocks whose lines are all `print(...) // expected` (plus plain bindings)
 //     are executed and their stdout asserted against the trailing-comment values.
@@ -72,7 +72,7 @@ function extractSnippets(relFile: string): Snippet[] {
 // something defined elsewhere or show a call that fails on purpose. This test
 // asks only whether it compiles; checker errors are not failures here.
 async function petalCheck(code: string): Promise<{ ok: boolean; err: string }> {
-  const r = await petalCaptureAsync(["check", "--lenient", "-e", code]);
+  const r = await petalCaptureAsync(["lint", "--single-file", "--lenient", "-e", code]);
   return { ok: r.code === 0, err: r.stderr.trim() };
 }
 
@@ -109,7 +109,7 @@ function expectedOutput(code: string): string[] | null {
 
 const snippets = docFiles().flatMap(extractSnippets);
 
-// Concurrent, and async spawns: ~300 blocks at a debug-build `petal check`
+// Concurrent, and async spawns: ~300 blocks at a debug-build `petal lint`
 // each would otherwise block the worker for minutes (see petalCaptureAsync).
 describe.concurrent("doc snippets", () => {
   it("found petal code blocks to verify", () => {
@@ -122,7 +122,7 @@ describe.concurrent("doc snippets", () => {
 
     it(`compiles — ${label}`, async ({ expect }) => {
       const { ok, err } = await petalCheck(s.code);
-      expect(ok, `\`petal check\` failed for ${label}:\n${err}\n\n${s.code}`).toBe(
+      expect(ok, `\`petal lint\` failed for ${label}:\n${err}\n\n${s.code}`).toBe(
         true,
       );
     });

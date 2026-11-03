@@ -738,7 +738,7 @@ pub struct Program {
     /// of every package a loaded file belongs to (the entry's project
     /// included), sorted by interface then package. Checked against what the
     /// host [provides](crate::env::Env::provides) when the program is loaded
-    /// to run; `petal check` reports it. Not serialized.
+    /// to run; `petal lint` reports it. Not serialized.
     #[serde(skip)]
     pub requires: Vec<crate::package::RequiredInterface>,
     /// How the program's modules name each other: every module's exports and

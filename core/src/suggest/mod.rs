@@ -1,6 +1,6 @@
 //! `petal suggest` — suggest safe refactors for a file.
 //!
-//! A *suggestion channel*, deliberately separate from `petal check` (which
+//! A *suggestion channel*, deliberately separate from `petal lint` (which
 //! warns) and `petal lint` (which normalizes). Nothing here ever fires during
 //! an ordinary compile, nothing here can fail a build, and applying a
 //! suggestion is always an explicit act. See docs/dev/suggestions-plan.md.
@@ -41,7 +41,7 @@
 //!
 //! # Host names
 //!
-//! A script is compiled the way `petal check` compiles it ([`HostEnv`]): a
+//! A script is compiled the way `petal lint` compiles it ([`HostEnv`]): a
 //! host's names come from the interface package the script imports
 //! (`import ui`), so a call to `draw_rect` resolves to the `ui` package's
 //! overloads with no host present.
@@ -632,7 +632,7 @@ pub struct Compiled {
 }
 
 impl Compiled {
-    /// Compile `source` the way `petal check` does. `Err` is the
+    /// Compile `source` the way `petal lint` does. `Err` is the
     /// compile error.
     pub fn new(source: &str, origin: Option<&Path>, opts: &SuggestOptions) -> Result<Self, String> {
         let mut host = HostEnv::new(&opts.include_dirs);

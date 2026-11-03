@@ -52,8 +52,10 @@ fn a_mistyped_command_is_an_unknown_command_not_a_missing_file() {
     assert!(err.contains("'tests' is not a petal command"), "{err}");
     assert!(err.contains("Did you mean 'petal test'?"), "{err}");
 
-    let (_, err, _) = petal(&["chek", "x.ptl"]);
-    assert!(err.contains("Did you mean 'petal check'?"), "{err}");
+    let (_, err, _) = petal(&["lintt", "x.ptl"]);
+    assert!(err.contains("Did you mean 'petal lint'?"), "{err}");
+    let (_, err, _) = petal(&["compile", "x.ptl"]);
+    assert!(err.contains("Did you mean 'petal lint'"), "{err}");
 }
 
 #[test]
@@ -74,7 +76,7 @@ fn the_file_shorthand_survives() {
 
 #[test]
 fn an_unknown_option_is_named_instead_of_read_as_the_file() {
-    for cmd in ["run", "bench", "check", "show-ir"] {
+    for cmd in ["run", "bench", "show-ir"] {
         let (_, err, code) = petal(&[cmd, "-e", "print(1)", "--iter", "3"]);
         assert_eq!(code, 1, "{cmd}");
         assert!(err.contains("Unknown option '--iter'"), "{cmd}: {err}");
@@ -94,16 +96,25 @@ fn a_second_source_is_refused() {
 }
 
 #[test]
-fn strict_check_has_nothing_to_say_about_the_export_spelling() {
-    // The old spelling is `petal lint`'s (`prefer-pub`), not `check`'s.
+fn the_export_spelling_is_a_style_finding_that_fails_only_a_strict_lint() {
+    // The old spelling is a rule's (`prefer-pub`), not the compile check's:
+    // plain `lint` reports it and passes…
     let old = "export fn f()\n  1\nend\nprint(f())\n";
-    let (_, err, code) = petal(&["check", "--strict", "-e", old]);
-    assert_eq!(err, "");
+    let (out, err, code) = petal(&["lint", "-e", old]);
+    assert!(out.contains("prefer-pub"), "{out}");
+    assert!(!err.contains("warning:"), "{err}");
     assert_eq!(code, 0, "{err}");
-
-    // Any other warning still fails it.
-    let (_, _, code) = petal(&["check", "--strict", "-e", "let x: int = \"s\""]);
+    // …and `--strict` fails on it, as on any warning.
+    assert_eq!(petal(&["lint", "--strict", "-e", old]).2, 1);
+    let (_, _, code) = petal(&["lint", "--strict", "-e", "let x: int = \"s\""]);
     assert_eq!(code, 1);
+}
+
+#[test]
+fn check_is_gone_and_says_to_use_lint() {
+    let (out, err, code) = petal(&["check", "x.ptl"]);
+    assert_eq!((out.as_str(), code), ("", 1));
+    assert!(err.contains("petal lint --single-file <file>"), "{err}");
 }
 
 #[test]
@@ -112,7 +123,7 @@ fn run_refuses_a_ui_script_at_load_and_says_which_runner_takes_it() {
     // such as `ui.label`, is an error for `check` on its own.)
     let src = "import ui\nprint(\"ran\")\nui.screen_width()";
     // `check` accepts it: the bundled `ui` package declares the natives…
-    assert_eq!(petal(&["check", "-e", src]).2, 0);
+    assert_eq!(petal(&["lint", "--single-file", "-e", src]).2, 0);
     // …and `run` refuses it before any line runs, naming what is missing.
     let (out, err, code) = petal(&["run", "-e", src]);
     assert_eq!(code, 1);
@@ -120,7 +131,7 @@ fn run_refuses_a_ui_script_at_load_and_says_which_runner_takes_it() {
     assert!(err.contains("module 'ui' needs native fns"), "{err}");
     assert!(err.contains("petal-ui runner"), "{err}");
     // Without the import the two agree as well: the name is unknown.
-    assert_eq!(petal(&["check", "-e", "ui.label(\"x\", 0, 0)"]).2, 1);
+    assert_eq!(petal(&["lint", "--single-file", "-e", "ui.label(\"x\", 0, 0)"]).2, 1);
     assert_eq!(petal(&["run", "-e", "ui.label(\"x\", 0, 0)"]).2, 1);
 
     // A name nobody provides gets no such note.

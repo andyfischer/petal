@@ -180,7 +180,7 @@ v[1]["missing"]["deeper"].is_nil();      // true: misses chain safely
 | `vec3(x, y, z)` | `PB_VEC3` | `x()`, `y()`, `z()`; also `num("x")`…`num("z")`, so host code written for `{x, y, z}` records accepts vectors (`[key]`/`has` stay map-only) |
 | `"text"` | `PB_STRING` | `str()` |
 | `[a, b]` | `PB_LIST` | `size()`, `[i]`, iteration |
-| `{k: v}`, colors, class instances | `PB_MAP` | `[key]`, `num(key)`, `has(key)`, iteration (`key()` on each field); `str()` = class name |
+| `{k: v}`, colors, class instances | `PB_MAP` | `[key]`, `num(key)`, `has(key)`, iteration (`key()` on each field); `str()` = class name; `shape()` = the record's shape id (see [option plans](#options-records-read-by-position-with-a-plan)) |
 | `Map([[k, v]])` | `PB_DICT` | `size()` = twice the entry count; `[2*i]` is entry `i`'s key and `[2*i + 1]` its value, in insertion order. Build one with `begin_dict()`/`end_dict()` (`pb_builder_begin_dict`), pushing key, value, key, value… |
 | `Shape.circle(3)` | `PB_ENUM` | `tag()` = `"Shape.circle"`, payload via `[i]` |
 | `symbol("s")` | `PB_SYMBOL` | `str()` |
@@ -405,6 +405,50 @@ In `core/examples/scene_frame` a host that splices segments this way spends
 4 µs a frame on a static world of 24,000 declarations, against 360 µs for
 the best host that walks every value (see
 [retained-scene-output.md](../dev/retained-scene-output.md)).
+
+### Options records: read by position with a plan
+
+A native that takes an options record (`body(id, {shape: "box", pos: p})`)
+typically checks every field against the options it knows and then looks
+each option up by name, on every call. A **plan** does the name work once
+per record shape. A record literal's keys are fixed when the program is
+compiled, so every record the literal makes has one shape, and a decoded
+record carries its shape id (`Value::shape()`, `integer` of a `PB_MAP`):
+
+```cpp
+enum { SHAPE, SIZE, MASS, POS };                    // the order of the list
+petal::Plan body_opts("shape, size, mass, pos");    // once per native
+// per call (a native's argument or a drained command):
+auto o = body_opts.bind(opts);
+if (!o.ok()) throw std::runtime_error("unknown option `" + std::string(o.unknown().key()) + "`");
+double mass = o[MASS].number(1.0);                  // nil when absent
+```
+
+The first record of a shape is checked name by name; after that, binding a
+record of that shape is a lookup by shape id and one pointer per option. A
+plan is the host's, independent of any VM; `pb_plan_new` / `pb_plan_bind` are
+the C form. A record whose shape is rebuilt on every evaluation, such as a
+spread that adds a field (`{...base, pos: p}` where `base` has no `pos`), gets
+a new shape id each time and is checked each time: correct, without the
+saving.
+
+For a keyed declaration, a **snapshot** says which options changed since the
+last time:
+
+```cpp
+struct Body { petal::Snapshot snap; /* ... */ };
+auto changed = body.snap.update(o);       // compares by content, exactly
+for (size_t i : changed) apply(body, i, o[i]);   // a moving ship: just POS
+```
+
+It holds a copy of the option values' contents (numbers by bits, strings by
+bytes, records and lists element by element), so the views need not outlive
+the call; a value a view cannot show (a closure) never compares equal.
+
+Records the host builds share shapes too: maps built with the same keys in
+the same order (a state record a native returns on every call) get one
+shape, as a literal's records do, so building one costs its values and a
+script's field reads on it hit the VM's inline cache.
 
 ### How it works (no globals)
 
@@ -1270,6 +1314,14 @@ Measured 2026-10-16 by `examples/bench_frame.cpp` (CMake target
 runs that agreed within 2%, on an Apple M4 with a load average of about 2.
 An earlier measurement inside Cheesecake gave about 0.4 ms for the same
 frame and about 0.1 s for a load.
+
+The same frame shape at game scale is `examples/scene_frame.cpp` (CMake
+target `petal_bridge_scene_frame`): the script of
+`core/examples/scene_frame` (2,000 static meshes, 400 static bodies, 300
+moving ships), with a host that reads every option it supports. Reading
+options through a plan instead of by name cuts the host's reads from about
+400 µs to about 160 µs a frame; the numbers are in
+[retained-scene-output.md](../dev/retained-scene-output.md#l4-shape-plans-at-the-bridge-as-built-b2).
 
 ## Limitations
 

@@ -152,3 +152,137 @@ collapse fails both; dropping the cutoff's body reuse fails
 - `pb_vm_restart` leaves the old stack (and its memo records) alive, so its
   segments are not reported dropped until the VM is destroyed. A reload that
   recompiles drops them.
+
+## L4: shape plans at the bridge (as built, B2)
+
+**The problem.** A C host reads an options record (`body(id, {shape: "box",
+pos: p})`) the way Cheesecake's natives do: it checks every field against an
+allow-list (`check_options`, O(fields × allowed) string compares), then
+finds each option it supports with a linear scan by name
+(`petal::Value::get`, about 30 reads per `body` and 40 per `draw_mesh`, most
+of them for absent options). Underneath, the bridge's decode copied every
+record's keys into the view arena (and found each key's length again by
+scanning for its NUL), copied each heap string twice, and a native that
+returns a state record built a fresh key list (one `Arc<str>` per key, a new
+shape) on every call.
+
+**What changed** (all in `integrations/petal-c-bridge`; no core change):
+
+- **Shape ids in views.** A decoded `PB_MAP` carries its record shape id in
+  `integer` (never 0; `petal::Value::shape()` in C++). Every record a literal
+  makes shares the literal's shape (`core/src/record.rs`), so the id says
+  "same keys, same order" without looking at them.
+- **Option plans** (`src/plan.rs`, `pb_plan_*`, `petal::Plan`). A plan lists
+  the options a native understands. The first time it binds a record of a
+  shape, it maps each option to the field holding it and notes the first
+  field that is not an option; after that, binding is a one-entry cache check
+  (or a hash lookup by shape id) and a pointer per present option. The host
+  reads values by position (`o[MASS]`), and an unknown field is reported
+  with its key, so the host keeps its own error text. Keys are only ever
+  appended under a shape id (`Shape::push` keeps the id for a uniquely held
+  shape), so an entry is checked against the record's field count and a
+  grown shape is planned again.
+- **Snapshots** (`pb_snapshot_*`, `petal::Snapshot`). A keyed declaration
+  keeps one; `update` compares the bound options with the ones held, exactly
+  (scalars inline by bits, strings by bytes, records and lists element by
+  element; a closure or pending value never compares equal) and returns the
+  changed options as a bit set. An option that stays absent costs one
+  compare. The comparison is on contents, not heap ids, so it does not
+  depend on values staying live between frames (the stale-id hazard of
+  L3's `same_value`).
+- **One key copy per shape.** The view arena keeps a key cache (shape id →
+  NUL-terminated key text) that survives `reset`, so the per-call argument
+  arena of a native copies a shape's keys once in its life and every record
+  of the shape points at them. Heap strings and class names are copied
+  straight into the arena once.
+- **Host-built records share a shape** (`src/builder.rs`, a per-thread
+  `ShapeCache` keyed by the key list). A native's state record, a binding or
+  a call argument with the same keys gets the same shape: its cost is its
+  value vector, and a script's `st.pos` hits the VM's inline cache. The cache
+  holds the shape, so a script that adds a field copies it with a fresh id.
+
+**Measured.** `examples/scene_frame.cpp` (CMake target
+`petal_bridge_scene_frame`) runs `core/examples/scene_frame/scene.ptl`
+through the bridge: 2,000 static city meshes, 400 static crate bodies and 300
+moving ships, memo on, the scene natives either as host callbacks applied in
+the call (Cheesecake today; `body` returns a state record) or as emitters
+drained after the run (L1). The mock host reads every option it supports
+(40 for `body`, 20 for `draw_mesh`) and keys bodies by string; every mode's
+world (bodies with every option, draws with every float) is hashed every
+frame and is identical across modes. Release build, Apple M4, load average
+6 to 16 (other builds running), median µs per frame over 300 frames; the
+"before" rows are the same program against the bridge at `960b5ad3`, where
+only the name-lookup reads exist.
+
+| Mode | Script | Drain (decode) | Host | Total |
+|---|---:|---:|---:|---:|
+| callbacks, by name, **before** | 2,010 | — | 4 | 2,014 |
+| callbacks, by name | 1,786 | — | 4 | 1,791 |
+| callbacks, plan | **1,453** | — | 4 | **1,457** |
+| callbacks, plan + snapshot | 1,494 | — | 4 | 1,498 |
+| emitters + memo, by name, **before** | 217 | 467 | 879 | 1,100 |
+| emitters + memo, by name | 216 | 351 | 755 | 972 |
+| emitters + memo, plan | 218 | 356 | **522** | **740** |
+| emitters + memo, plan + snapshot | 216 | 351 | 517 | 734 |
+
+(Host includes the drain. In callback modes the reads happen inside the
+script's calls and count as script time.)
+
+- The bridge changes alone (key cache, one string copy, shared return
+  shapes) take the drain from 467 to 351 µs and the callback frame from
+  about 2,010 to 1,790 µs. Of that, the shared return shapes are roughly
+  50 to 150 µs (switching the builder's cache off, in noisy runs).
+- Plans take the host's reads (host minus drain) from about 405 to 165 µs:
+  2.4× on reads, and the frame from 1,100 to 740 µs (emitters) or from
+  2,010 to 1,450 µs (callbacks). The Rust mock had predicted host 530 → 425
+  µs for this step; the measured gain is larger because the mock read 9
+  options per body rather than every option the native supports.
+- The snapshot applies 300 options a frame instead of 12,000 (the ships'
+  `pos`), at about the cost of comparing the parsed descriptions: in this
+  mock applying an option is an assignment, so it breaks even. It pays where
+  applying is costly (rebuilding a collider or a material), which is where
+  Cheesecake's field-by-field body diff is today.
+- On the static 24,000-item world (`… 150 20000 4000 0`) the reads go from
+  about 2,600 to 1,200 µs, but the drain's decode of 24,000 values (about
+  6 ms) dominates: that is L3's to remove, by draining segments.
+
+Reproduce (from the repository root; a build directory off the internal
+disk is fine):
+
+```sh
+cmake -S integrations/petal-c-bridge -B <build> -G Ninja -DPETAL_CARGO_TARGET_DIR=<target>
+cmake --build <build> --target petal_bridge_scene_frame
+<build>/petal_bridge_scene_frame [frames] [city] [crates] [ships]
+MODES=emit.lookup,emit.plan <build>/petal_bridge_scene_frame
+```
+
+**Checked by** `plan::tests` in the bridge's Rust unit tests (binding by
+position across one literal's records, the first unknown field, a grown
+shape planned again, a snapshot's changed bits through a spread, a nested
+record, an option going absent and a closure; key text shared per shape and
+kept across a reset; host-built records sharing a shape, a repeated key, and
+a script append not touching the cached shape), and in `bridge_tests.cpp`
+`a_plan_reads_options_by_position_and_names_an_unknown_field`,
+`a_snapshot_reports_which_options_changed` and
+`host_built_return_records_share_a_shape`; `c_smoke.c` binds and diffs a
+hand-made view from C.
+
+**Left for later:**
+
+- A record built by a spread that adds a field (`{...base, pos: p}` where
+  `base` has no `pos`) gets a fresh shape id on every evaluation, because
+  the shared shape is copied before it is extended (`RecordMap::insert`). A
+  plan then checks it every call (correct, no saving), and the VM's own
+  `GetField` inline caches miss on it too. A transition cache in
+  `core/src/record.rs` ((shape id, added key) → child shape, as V8's hidden
+  class transitions) would give such records a stable shape.
+- The bridge still decodes every value of a drained record, including the
+  ones no plan reads; with plans, decoding is most of what is left of the
+  host's per-item cost. A plan-driven (lazy) decode is possible but changes
+  the view API; L3 segments already remove the decode of replayed scopes.
+- Cheesecake does not use plans yet: its `check_options` and `o["…"]` reads
+  in `engine/script/src` become one `petal::Plan` per native, and its body
+  entry's field diff can become a `petal::Snapshot`, after it vendors this
+  bridge (`third_party/petal/VENDORED.md`).
+- A plan's cache is per plan, not per (native, VM); a host that shares one
+  plan across threads must lock it.

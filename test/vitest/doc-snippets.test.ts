@@ -70,9 +70,10 @@ function extractSnippets(relFile: string): Snippet[] {
 
 // `--lenient`: a snippet is a fragment of a larger program, so it may name
 // something defined elsewhere or show a call that fails on purpose. This test
-// asks only whether it compiles; checker errors are not failures here.
+// asks only whether it compiles; checker errors are not failures here, and
+// `--rules-include=` runs no lint rules, only the compile check.
 async function petalCheck(code: string): Promise<{ ok: boolean; err: string }> {
-  const r = await petalCaptureAsync(["lint", "--single-file", "--lenient", "-e", code]);
+  const r = await petalCaptureAsync(["lint", "--single-file", "--lenient", "--rules-include=", "-e", code]);
   return { ok: r.code === 0, err: r.stderr.trim() };
 }
 

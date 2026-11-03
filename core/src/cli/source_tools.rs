@@ -403,9 +403,10 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
             report["module"] = serde_json::json!(true);
         }
 
-        // Stage 2: the rules. `--ir` has no source to read them off.
+        // Stage 2: the rules. `--ir` has no source to read them off, and
+        // `--rules-include=` (no rules) asks for the compile check alone.
         let mut rows: Vec<serde_json::Value> = Vec::new();
-        if !opts.ir {
+        if !opts.ir && opts.rules.any_enabled() {
             lint_rules(
                 opts,
                 input,

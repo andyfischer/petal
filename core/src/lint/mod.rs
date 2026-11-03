@@ -301,6 +301,12 @@ impl RuleFilter {
         };
         included && !self.exclude.iter().any(|r| r == rule)
     }
+
+    /// Does any rule run? `--rules-include=` with an empty list runs none,
+    /// which leaves `petal lint` with its compile check alone.
+    pub fn any_enabled(&self) -> bool {
+        RULES.iter().any(|r| self.enabled(r.name))
+    }
 }
 
 /// Context the compile gate needs to compile the source the same way
@@ -594,7 +600,11 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     }
 
     let (chars, stmts) = reparse(&p.text)?;
-    p.apply(SHADOWS_BUILTIN, plan_shadow_reports(&stmts));
+    // Skipped outright when filtered out: telling a bundled package's own
+    // file from a user's parses every bundled source once per process.
+    if opts.rules.enabled(SHADOWS_BUILTIN) {
+        p.apply(SHADOWS_BUILTIN, plan_shadow_reports(&stmts));
+    }
     p.apply(REIMPLEMENTS_BUILTIN, plan_reimplement_reports(&stmts));
     let hints = plan_hint_reports(&stmts, &chars);
     p.apply(DM_HINT_NOT_LITERAL, hints.not_literal);

@@ -495,9 +495,10 @@ the compiler knows which fields cannot change and can take them out.
   strings by bytes; lists, records with keys and class, enums, dicts).
   The same literal with the same static values has the same id on every
   frame, after a reload that does not change them (including a recompile),
-  in a fresh `Env` and in another process; editing one of them gives a new
-  id. (A symbol is hashed by its id in the VM's table, stable within a
-  process.)
+  in a fresh `Env` and in another process of the same build; editing one of
+  them gives a new id. (A symbol is hashed by its id in the VM's table,
+  stable within a process. The hash is std's `DefaultHasher`, which a Rust
+  release may change, so ids are not to be kept across Petal builds.)
 - **Invisible to scripts.** Equality, printing, field reads, spreads and
   copies ignore the tag, and every `&mut` method of `RecordMap` drops it,
   so a record that was written to (`set b.size = 3.0`, or `b.pos`) or

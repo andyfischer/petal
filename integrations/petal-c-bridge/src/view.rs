@@ -243,15 +243,6 @@ impl TemplateCache {
             map.clear();
         }
     }
-
-    /// Templates held.
-    pub fn len(&self) -> usize {
-        self.0.borrow().len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
 }
 
 /// The decoded static fields of one record template, kept across decodes:

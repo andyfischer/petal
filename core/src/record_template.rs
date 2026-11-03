@@ -238,22 +238,6 @@ impl TemplateSites {
             }
         }
     }
-
-    /// The template the site of `plan` holds, if any (for tests and tools).
-    pub fn template_of(&self, site: u32) -> Option<&Arc<Template>> {
-        match self.sites.get(site as usize)? {
-            Site::Ready { template, .. } => Some(template),
-            _ => None,
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.sites.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.sites.is_empty()
-    }
 }
 
 /// Whether the static fields of `fields` that `plan` checks are `kept`'s
@@ -292,7 +276,10 @@ fn bits_eq(a: Value, b: Value) -> bool {
 /// static values' exact contents (numbers by bits and kind, so `1` and
 /// `1.0` differ; strings by bytes; containers element by element, records
 /// with their keys and class). SipHash with fixed keys, so the same in
-/// every process. `None` when a value has no contents to name.
+/// every process built from the same Petal (std's `DefaultHasher` may change
+/// between Rust releases; a host must not keep ids across builds). A symbol
+/// is hashed by its id, so only within one process. `None` when a value has
+/// no contents to name.
 pub fn content_id(shape: &Shape, holes: &[u32], statics: &[Value], heap: &Heap) -> Option<u64> {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     shape.len().hash(&mut h);

@@ -473,3 +473,44 @@ for i in range(0, 3) do ship(i) end
     assert_ne!(id(3), id(4));
     assert_ne!(id(4), id(0));
 }
+
+#[test]
+fn a_write_inside_a_static_field_drops_the_template() {
+    // A nested write goes through the record (`set b.tint[0] = ...` writes
+    // `b.tint` back), so the record a host sees is untagged; one built after
+    // it from the same literal has the first one's id.
+    let src = r#"
+native fn put(v)
+fn mk(p)
+  {tint: [1.0, 0.5], mat: {r: 1.0, g: [2.0]}, size: 1.0, name: "n", pos: p}
+end
+put(mk(0))
+var b = mk(2)
+set b.tint[0] = 9.0
+put(b)
+var c = mk(3)
+set c.mat.r = 7.0
+put(c)
+var d = mk(4)
+set d.mat.g[0] = 5.0
+put(d)
+var e = mk(5)
+set e.tint = append(e.tint, 3.0)
+put(e)
+fn g(p)
+  var r = mk(p)
+  set r.tint[1] = 8.0
+  r
+end
+put(g(7))
+put(mk(8))
+"#;
+    let frames = same_in_every_mode(src, 3, &[]);
+    for f in &frames {
+        let first = f[0].1.as_ref().expect("as built").0;
+        for (text, t) in &f[1..6] {
+            assert!(t.is_none(), "written to, still tagged: {text}");
+        }
+        assert_eq!(f[6].1.as_ref().expect("as built").0, first);
+    }
+}

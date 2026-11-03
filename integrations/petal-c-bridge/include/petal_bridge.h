@@ -143,8 +143,8 @@ typedef enum pb_kind {
  * with one `id` have the same keys in the same order, the same holes, and in
  * every field that is not a hole the same contents. The id is a content hash:
  * the same for the same literal and static values in another run, after a
- * reload and in another process (64 bits; a collision is possible in
- * principle). The bridge decodes a template's static fields once and copies
+ * reload and in another process of the same Petal build (not across builds;
+ * 64 bits, so a collision is possible in principle). The bridge decodes a template's static fields once and copies
  * them into each record's view, so only the holes are decoded per record.
  * Owned by the bridge; valid as long as the view that points at it. */
 typedef struct pb_template {

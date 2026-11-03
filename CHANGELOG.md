@@ -12,6 +12,14 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- `petal check` (and every compile) warns about a `fn` that takes the place
+  of a builtin, a standard-prelude function or a function of a bundled
+  package the file imports whole (`fn commas(n)`, `fn plural(n, w)`, `fn
+  pill(…)` under `import ui`): the `shadows-builtin` finding `petal lint`
+  already made, under the same rule id and silenced by the same `//
+  petal-lint-ignore shadows-builtin`. An overload with an argument count the
+  existing function does not take is not reported.
+
 - Builtins `remove_at(list, index)`, a new list without the element at
   `index` (negative counts from the end), and `replace(string, old, new)`,
   the string with every occurrence of `old` replaced. They stand in for the

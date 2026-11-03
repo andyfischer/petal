@@ -21,7 +21,7 @@
 //! Neither has a fix: the callers may be in other files.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use crate::ast::{
     BinOp, ElseBranch, Expr, ExprKind, ExprVisitor, Literal, Param, Stmt, StmtKind, walk_expr,
@@ -29,6 +29,8 @@ use crate::ast::{
 };
 
 use super::Fix;
+use crate::diagnostic::Diagnostic;
+use crate::source_map::SourceSpan;
 use super::util::{bound_names, call_of};
 
 /// The argument counts a known function takes: `(fewest, most)`, `most` being
@@ -87,26 +89,27 @@ fn collect_exports(stmts: &[Stmt], exported_only: bool, into: &mut HashMap<Strin
 }
 
 /// What a plain import of the bundled package `name` brings into scope.
+/// Each package is parsed the first time a file imports it.
 fn bundled_exports(name: &str) -> Option<&'static HashMap<String, Vec<Arity>>> {
-    static PACKAGES: OnceLock<HashMap<&'static str, HashMap<String, Vec<Arity>>>> = OnceLock::new();
-    PACKAGES
-        .get_or_init(|| {
-            let mut all = HashMap::new();
-            for package in crate::bundled::BUNDLED_PACKAGES {
-                if package.name == crate::bundled::CORE_PACKAGE {
-                    continue;
-                }
-                let mut exports = HashMap::new();
-                for (_path, source) in package.sources() {
-                    if let Ok((_tree, stmts)) = crate::rewrite::parse_ast(source) {
-                        collect_exports(&stmts, true, &mut exports);
-                    }
-                }
-                all.insert(package.name, exports);
+    static PACKAGES: OnceLock<Mutex<HashMap<&'static str, &'static HashMap<String, Vec<Arity>>>>> =
+        OnceLock::new();
+    let package = crate::bundled::package(name)?;
+    if package.name == crate::bundled::CORE_PACKAGE {
+        return None;
+    }
+    let mut cache = PACKAGES
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    Some(*cache.entry(package.name).or_insert_with(|| {
+        let mut exports = HashMap::new();
+        for (_path, source) in package.sources() {
+            if let Ok((_tree, stmts)) = crate::rewrite::parse_ast(source) {
+                collect_exports(&stmts, true, &mut exports);
             }
-            all
-        })
-        .get(name)
+        }
+        Box::leak(Box::new(exports))
+    }))
 }
 
 fn takes(forms: &[Arity], count: usize) -> bool {
@@ -156,34 +159,134 @@ fn is_bundled_source(stmts: &[Stmt]) -> bool {
         .contains(&mine)
 }
 
-pub(super) fn plan_shadow_reports(stmts: &[Stmt]) -> Vec<Fix> {
-    if is_bundled_source(stmts) {
-        return Vec::new();
-    }
-    // The bundled packages this file imports whole.
-    let imported: Vec<(&str, &HashMap<String, Vec<Arity>>)> = stmts
+/// One `fn` that takes the place of an existing function.
+pub(crate) struct Shadowing {
+    /// The whole declaration.
+    pub span: SourceSpan,
+    pub name: String,
+    pub message: String,
+    /// Written `pub fn`.
+    pub exported: bool,
+}
+
+/// The modules a file's `import` statements import whole (`import ui`, not
+/// `import ui: button` or `import ui.*`).
+fn whole_imports(stmts: &[Stmt]) -> Vec<&str> {
+    stmts
         .iter()
         .filter_map(|s| match &s.kind {
-            StmtKind::Import(i) if i.names.is_none() && !i.star => {
-                bundled_exports(&i.module).map(|e| (i.module.as_str(), e))
-            }
+            StmtKind::Import(i) if i.names.is_none() && !i.star => Some(i.module.as_str()),
             _ => None,
         })
+        .collect()
+}
+
+/// Every `fn` in `stmts` that takes the place of a builtin, a prelude
+/// function or a function of a bundled package the file imports whole (one
+/// of `whole_imports`), in source order. Nothing for a file that is itself
+/// one of those sources.
+pub(crate) fn shadowings(stmts: &[Stmt], whole_imports: &[&str]) -> Vec<Shadowing> {
+    let imported: Vec<(&str, &HashMap<String, Vec<Arity>>)> = whole_imports
+        .iter()
+        .filter_map(|m| bundled_exports(m).map(|e| (*m, e)))
         .collect();
     let mut finder = Shadows {
         imported,
-        fixes: Vec::new(),
+        found: Vec::new(),
     };
     for s in stmts {
         finder.visit_stmt(s);
     }
-    finder.fixes.sort_by_key(|f| f.anchor);
-    finder.fixes
+    // Asked last: telling a bundled source parses every one of them, and
+    // every compile comes through here.
+    if finder.found.is_empty() || is_bundled_source(stmts) {
+        return Vec::new();
+    }
+    finder.found.sort_by_key(|f| f.span.start.offset);
+    finder.found
+}
+
+pub(super) fn plan_shadow_reports(stmts: &[Stmt]) -> Vec<Fix> {
+    shadowings(stmts, &whole_imports(stmts))
+        .into_iter()
+        .map(|s| Fix {
+            anchor: s.span.start.offset as usize,
+            message: s.message,
+            splices: Vec::new(),
+        })
+        .collect()
+}
+
+/// The `shadows-builtin` findings of a module, as compiler warnings for
+/// `petal check` (and every other compile): `stmts` parsed from `source`,
+/// whose `import` statements (which the loader takes out of `stmts`) import
+/// `whole_imports` whole, less the findings a `petal-lint-ignore
+/// shadows-builtin` comment silences. The caret goes under `fn name`, not the
+/// whole body.
+///
+/// With `skip_exported` (an imported module), a `pub fn` is left alone: a
+/// library that exports its own `clamp` means to, and the file that imports
+/// it is warned where a call reaches it instead of the builtin.
+pub(crate) fn shadowed_builtin_warnings(
+    stmts: &[Stmt],
+    whole_imports: &[&str],
+    source: &str,
+    skip_exported: bool,
+) -> Vec<Diagnostic> {
+    let mut found = shadowings(stmts, whole_imports);
+    if skip_exported {
+        found.retain(|f| !f.exported);
+    }
+    if found.is_empty() {
+        return Vec::new();
+    }
+    // A file whose comments do not scan is reported in full.
+    let ignores = super::Ignores::scan(source).ok();
+    found
+        .into_iter()
+        .filter(|f| {
+            let line = (f.span.start.line as usize).saturating_sub(1);
+            !ignores
+                .as_ref()
+                .is_some_and(|i| i.suppresses(super::SHADOWS_BUILTIN, line))
+        })
+        .map(|f| {
+            let head = fn_head(f.span, &f.name, source);
+            Diagnostic::new(head, format!("{} [{}]", f.message, super::SHADOWS_BUILTIN))
+        })
+        .collect()
+}
+
+/// The span of `fn name` at the start of the declaration `decl` (after any
+/// `pub`), or `decl` itself when the source does not read that way.
+fn fn_head(decl: SourceSpan, name: &str, source: &str) -> SourceSpan {
+    let start = decl.start.offset as usize;
+    let Some(text) = source.get(start..) else {
+        return decl;
+    };
+    let line = text.split('\n').next().unwrap_or("");
+    let Some(fn_at) = line
+        .match_indices("fn")
+        .map(|(i, _)| i)
+        .find(|&i| line[i + 2..].trim_start().starts_with(name))
+    else {
+        return decl;
+    };
+    let after_fn = &line[fn_at + 2..];
+    let gap = after_fn.len() - after_fn.trim_start().len();
+    let end_rel = fn_at + 2 + gap + name.len();
+    let mut head = decl;
+    head.end = crate::source_map::SourcePosition {
+        line: decl.start.line,
+        column: decl.start.column + line[..end_rel].chars().count() as u32,
+        offset: (start + end_rel) as u32,
+    };
+    head
 }
 
 struct Shadows<'a> {
     imported: Vec<(&'a str, &'static HashMap<String, Vec<Arity>>)>,
-    fixes: Vec<Fix>,
+    found: Vec<Shadowing>,
 }
 
 impl ExprVisitor for Shadows<'_> {
@@ -207,14 +310,15 @@ impl ExprVisitor for Shadows<'_> {
                     .map(|(package, _)| format!("`{package}`'s"))
             };
             if let Some(whose) = whose {
-                self.fixes.push(Fix {
-                    anchor: s.span.start.offset as usize,
+                self.found.push(Shadowing {
+                    span: s.span,
+                    exported: s.exported,
+                    name: name.clone(),
                     message: format!(
                         "`fn {name}` takes the place of {whose} `{name}` in this file: every \
                          call here reaches this one. Use the existing function, or give this \
                          one its own name"
                     ),
-                    splices: Vec::new(),
                 });
             }
         }

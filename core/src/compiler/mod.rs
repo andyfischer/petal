@@ -936,6 +936,20 @@ impl Compiler {
         if !is_bundled_copy(module) {
             self.warnings
                 .extend(keyed_state::deprecated_keyed_states(&stmts, &module.source));
+            // A `fn` named for a builtin it replaces: the same finding as
+            // `petal lint`'s `shadows-builtin`, silenced the same way.
+            let whole: Vec<&str> = module
+                .imports
+                .iter()
+                .filter(|i| !i.implicit && i.decl.names.is_none() && !i.decl.star)
+                .map(|i| i.decl.module.as_str())
+                .collect();
+            self.warnings.extend(crate::lint::shadowed_builtin_warnings(
+                &stmts,
+                &whole,
+                &module.source,
+                !is_entry,
+            ));
         }
 
         if !is_entry {

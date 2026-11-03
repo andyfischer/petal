@@ -112,6 +112,7 @@ use to_match::{Splice, apply_match_edits, plan_match_fixes};
 use var_to_let::plan_var_fixes;
 
 pub use crate::fmt::reindent;
+pub(crate) use builtin_names::shadowed_builtin_warnings;
 
 /// Directive comments.
 pub const IGNORE_NEXT: &str = "petal-lint-ignore";

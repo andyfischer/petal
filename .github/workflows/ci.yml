@@ -32,8 +32,33 @@ jobs:
       - name: Run Rust tests
         run: cargo test --manifest-path core/Cargo.toml
 
-      # The fmt/lint/CST sweeps over every .ptl in the repo are `#[ignore]`d
-      # so a local `cargo test` stays cheap; CI is where they always run.
+  # The fmt/lint/CST sweeps over every .ptl in the repo are `#[ignore]`d so a
+  # local `cargo test` stays cheap; CI is where they always run. They are the
+  # longest single step, so they get their own job and run alongside
+  # `rust-core` rather than after it.
+  rust-corpus-sweeps:
+    name: Rust core (corpus sweeps)
+    runs-on: ubuntu-latest
+    env:
+      # The four sweeps start together on half the cores each; the lint sweep
+      # outlasts the others, so let each one use every core of the runner.
+      PETAL_TEST_JOBS: 4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            core/target
+          key: cargo-core-sweeps-${{ runner.os }}-${{ hashFiles('core/Cargo.lock') }}
+          restore-keys: cargo-core-sweeps-${{ runner.os }}-
+
       - name: Run the corpus sweeps
         run: make expensive_lint_tests
 

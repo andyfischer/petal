@@ -932,21 +932,24 @@ fn parse_show_ir_args(args: &[String]) -> CliArgs {
     }
 }
 
-/// Parse args for `show-static`: `--json`, and `--all` to include the
-/// declarations of imported modules.
+/// Parse args for `show-static`: `--json`, `--all` to include the
+/// declarations of imported modules, and `--deps` for the dependency classes
+/// of every function instead.
 fn parse_show_static_args(args: &[String]) -> CliArgs {
     let mut json = false;
     let mut all = false;
+    let mut deps = false;
     let source = parse_source_args(args, MISSING_SOURCE, |args, i| {
         match args[*i].as_str() {
             "--json" => json = true,
             "--all" => all = true,
+            "--deps" => deps = true,
             _ => return false,
         }
         true
     });
     CliArgs {
-        command: Command::ShowStatic { json, all },
+        command: Command::ShowStatic { json, all, deps },
         source,
         include_dirs: Vec::new(),
     }

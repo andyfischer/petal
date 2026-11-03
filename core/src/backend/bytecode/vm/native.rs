@@ -436,6 +436,17 @@ impl<'a> Vm<'a> {
         if self.spec.is_some() {
             return self.call_native_spec(nid, args, in_place, origin);
         }
+        // A command inside a speculative re-execution of a memoized child is
+        // recorded, not issued: if the child turns out unchanged its parent
+        // replays and re-issues it, and if not the parent runs and issues it
+        // (`NativeEffects::command`).
+        if self.memo && self.stack.memo.reexecuting > 0 && self.stack.memo.recording() {
+            let effects = self.native_fns.effects(nid);
+            if effects.command && !effects.effect {
+                self.memo_note_native(nid, args, Value::Nil, effects);
+                return Ok(Value::Nil);
+            }
+        }
         self.profile.record_native(nid.0);
         let natives = self.native_fns;
         let chain = self.emit_call_chain(origin);

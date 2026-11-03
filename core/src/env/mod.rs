@@ -455,8 +455,9 @@ impl Env {
         // The lowering and the audit both read the static classification:
         // work it out once, here, and leave it beside the program for them
         // and for whoever asks next (`static_classify::analyze_kept`). A
-        // compile that checked a `const` has already left it.
-        if flags.static_cache || self.static_audit.enabled {
+        // compile that checked a `const` has already left it. Memoization
+        // reads the dependency classes' hints from it too.
+        if flags.static_cache || self.static_audit.enabled || self.policy.memo {
             self.keep_static_analysis(pid);
         }
         let program = self.programs.get(&pid).ok_or("Program not found")?;
@@ -2041,6 +2042,29 @@ impl Env {
         crate::static_classify::analyze_kept(program, &self.native_fns).into_owned()
     }
 
+    /// The dependency classes of every function of `program` against this
+    /// `Env`'s natives, and the `never-replays` findings, as text: what
+    /// `petal show-static --deps` prints, for a host whose natives the CLI
+    /// does not have (`crate::static_classify::dep_classes`).
+    pub fn dep_classes_report(&self, program: &Program, all_modules: bool) -> String {
+        crate::static_classify::analyze_kept(program, &self.native_fns)
+            .dep_classes()
+            .render(program, all_modules)
+    }
+
+    /// The functions of `program`'s entry file (or of every module) whose
+    /// calls never (or rarely) replay from the memo table, and why, judged
+    /// against this `Env`'s natives: the `never-replays` lint as data.
+    pub fn replay_findings(
+        &self,
+        program: &Program,
+        all_modules: bool,
+    ) -> Vec<crate::static_classify::ReplayFinding> {
+        crate::static_classify::analyze_kept(program, &self.native_fns)
+            .dep_classes()
+            .findings(program, all_modules)
+    }
+
     /// [`static_analysis`](Self::static_analysis) worked out from nothing,
     /// whatever is kept beside the program: what the kept one is tested
     /// against.
@@ -2061,6 +2085,15 @@ impl Env {
     /// call a no-op instead of being absorbed as the result.
     pub fn set_native_class(&mut self, id: NativeFnId, class: NativeClass) {
         self.native_fns.set_class(id, class);
+    }
+
+    /// Replace the effect row of an already-registered native (see
+    /// [`NativeFnTable::set_effects`](crate::native_fn::NativeFnTable::set_effects)):
+    /// mark an emitter as a declaration, or a clock read as one that ticks.
+    /// Programs compiled before keep the hints they were lowered with; do it
+    /// before loading the programs that call the native.
+    pub fn set_native_effects(&mut self, id: NativeFnId, effects: crate::native_fn::NativeEffects) {
+        self.native_fns.set_effects(id, effects);
     }
 
     /// Register a class of host-owned foreign objects, returning its id.

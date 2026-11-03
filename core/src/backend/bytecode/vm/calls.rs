@@ -11,6 +11,22 @@ use crate::backend::bytecode::isa::ArgNames;
 use crate::backend::calls;
 use crate::program::{ClosureId, base_fn_name};
 
+/// How a call takes part in memoization, as the lowering decided it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CallMemo {
+    /// The call may be a memo scope (false for `Inst::Call::no_memo`, and for
+    /// the calls an intrinsic or the host drives).
+    pub scope: bool,
+    /// Every argument is static (`Inst::Call::static_args`): a replay check
+    /// need not compare them with the recorded ones.
+    pub static_args: bool,
+}
+
+impl CallMemo {
+    pub const OFF: CallMemo = CallMemo { scope: false, static_args: false };
+    pub const ON: CallMemo = CallMemo { scope: true, static_args: false };
+}
+
 impl<'a> Vm<'a> {
     /// A frame ran off the end of its code without an explicit `Return`: its
     /// value is the entry block's last-term register (mirrors the graph
@@ -158,7 +174,7 @@ impl<'a> Vm<'a> {
 
     /// Dispatch `callable(args...)`, writing the result into `dst` of frame `fi`
     /// (closures push a frame that writes `dst` on return; native/enum results
-    /// are written immediately). `memoize` is false for a call the lowering
+    /// are written immediately). `memo.scope` is false for a call the lowering
     /// kept out of memoized scopes (see `Inst::Call::no_memo`).
     #[allow(clippy::too_many_arguments)]
     pub(super) fn do_call(
@@ -169,12 +185,12 @@ impl<'a> Vm<'a> {
         args: &[Value],
         arg_names: &ArgNames,
         call_site: Option<TermId>,
-        memoize: bool,
+        memo: CallMemo,
     ) -> Result<(), String> {
         // `f(...args)`: only a call that names an argument can be one, so the
         // all-positional call pays one length test for it.
         if !arg_names.is_empty() && self.is_spread_call(arg_names) {
-            return self.do_spread_call(fi, dst, callable, args, call_site, memoize);
+            return self.do_spread_call(fi, dst, callable, args, call_site, memo);
         }
         match callable {
             Value::Closure(_) | Value::OverloadSet(_) => {
@@ -203,7 +219,7 @@ impl<'a> Vm<'a> {
                     }
                 };
                 let site = self.site_of(call_site);
-                self.push_closure_frame(cid, args, arg_names, Some(dst), call_site, site, memoize)?;
+                self.push_closure_frame(cid, args, arg_names, Some(dst), call_site, site, memo)?;
             }
             Value::NativeFunction(nid) => {
                 let bound = self.bind_native_args(nid, args, arg_names)?;
@@ -311,7 +327,7 @@ impl<'a> Vm<'a> {
             if let Some(field_val) = field_val {
                 match field_val {
                     Value::Closure(_) | Value::OverloadSet(_) => {
-                        return self.do_call(fi, dst, field_val, args, arg_names, call_site, true);
+                        return self.do_call(fi, dst, field_val, args, arg_names, call_site, CallMemo::ON);
                     }
                     Value::NativeFunction(nid) => {
                         let bound = self.bind_native_args(nid, args, arg_names)?;
@@ -346,7 +362,7 @@ impl<'a> Vm<'a> {
                     &with_receiver(recv, args),
                     &with_receiver_names(arg_names),
                     call_site,
-                    true,
+                    CallMemo::ON,
                 );
             }
             if let Some(nid) = self.native_fns.lookup_class_method(class, method_name) {
@@ -384,7 +400,7 @@ impl<'a> Vm<'a> {
                     &with_receiver(recv, args),
                     &with_receiver_names(arg_names),
                     call_site,
-                    true,
+                    CallMemo::ON,
                 );
             }
             if let Some(nid) = self.native_fns.lookup_class_method(hint, method_name) {
@@ -546,7 +562,7 @@ impl<'a> Vm<'a> {
         dst: Option<Reg>,
         call_site: Option<TermId>,
         site: u64,
-        memoize: bool,
+        memo: CallMemo,
     ) -> Result<(), String> {
         self.push_closure_frame_with(
             cid,
@@ -555,7 +571,7 @@ impl<'a> Vm<'a> {
             dst,
             call_site,
             site,
-            memoize,
+            memo,
         )
     }
 
@@ -573,7 +589,7 @@ impl<'a> Vm<'a> {
         dst: Option<Reg>,
         call_site: Option<TermId>,
         site: u64,
-        memoize: bool,
+        memo: CallMemo,
     ) -> Result<(), String> {
         // Every Petal call, callbacks included, pushes its frame here, so
         // this one check bounds recursion of every shape.
@@ -647,11 +663,25 @@ impl<'a> Vm<'a> {
         // A call with a destination register is a memo scope: replay it if
         // its record is still good, else run it and record it. Calls driven
         // synchronously (intrinsics, the host), and calls whose result the
-        // caller mutates in place (`memoize` false), are not scopes; their
+        // caller mutates in place (`memo.scope` false), are not scopes; their
         // reads land in whatever scope encloses them.
         // A site whose records keep dying unreplayed stops being recorded:
         // the recording is all cost there (`MemoTable::site_records`).
-        let scope = self.memo && memoize && dst.is_some() && !self.stack.memo.poisoned;
+        let scope = self.memo && memo.scope && dst.is_some() && !self.stack.memo.poisoned;
+        // The dependency classes know some functions never replay
+        // (`static_classify::dep_classes`): one with an effect on every path,
+        // and one that reads an input changing every run with no recording
+        // scope around the call to use its record for a cutoff. They are not
+        // recorded at all, which is what the cold-site guard would arrive at.
+        let hint = self.bc.function(fn_id).memo_hint;
+        let scope = scope && {
+            let skip = !self.stack.memo.no_hints
+                && (hint.effect_every_call || (hint.ticks_every_call && !self.stack.memo.recording()));
+            if skip {
+                self.stack.memo.stats.static_skips += 1;
+            }
+            !skip
+        };
         let scope = scope && {
             let records = self.stack.memo.site_records(fn_id, site);
             if !records {
@@ -686,7 +716,7 @@ impl<'a> Vm<'a> {
             if !self.stack.memo.has_room() && !self.stack.memo.contains(&path) {
                 self.stack.memo.stats.inlined += 1;
                 scope = false;
-            } else if let Some(value) = self.memo_try(&path, fn_id, cid, args) {
+            } else if let Some(value) = self.memo_try(&path, fn_id, cid, args, memo.static_args, hint.constant) {
                 self.profile.bench.note_replay(fn_id);
                 if let Some(dst) = dst {
                     self.set(caller, dst, value);
@@ -956,7 +986,7 @@ impl<'a> Vm<'a> {
         callable: Value,
         args: &[Value],
         call_site: Option<TermId>,
-        memoize: bool,
+        memo: CallMemo,
     ) -> Result<(), String> {
         let Some((&spread, lead)) = args.split_last() else {
             return Err("internal error: a spread call with no arguments".into());
@@ -972,7 +1002,7 @@ impl<'a> Vm<'a> {
                     &full,
                     &ArgNames::new(),
                     call_site,
-                    memoize,
+                    memo,
                 )
             }
             Value::Map(id) => {
@@ -1003,7 +1033,7 @@ impl<'a> Vm<'a> {
                             Some(dst),
                             call_site,
                             site,
-                            memoize,
+                            memo,
                         )
                     }
                     Value::NativeFunction(nid) => {

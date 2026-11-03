@@ -281,10 +281,18 @@ fn binding_facet(observed: &Observed, symbols: &SymbolTable) -> String {
 /// field of the row that would have produced the same dep.
 fn under_declared(observed: &Observed, row: NativeEffects, symbols: &SymbolTable) -> Vec<String> {
     let mut v = Vec::new();
-    if observed.effects > 0 && !row.effect {
+    // A command's effect is what the row declares: it is re-issued on
+    // replay rather than making the scope effectful.
+    if observed.effects > 0 && !row.effect && !row.command {
         v.push("effect".to_string());
     }
-    if observed.host_reads > 0 && !row.reads.contains(InputClasses::HOST_DATA) {
+    // A revisioned class (`PHYSICS`, `NET`) is host data with its own
+    // revision; `note_class_read` moves the same counter.
+    if observed.host_reads > 0
+        && !row.reads.intersects(InputClasses(
+            InputClasses::HOST_DATA.0 | InputClasses::REVISIONED.0,
+        ))
+    {
         v.push("host_read".to_string());
     }
     if observed.resource_reads > 0 && !row.reads.contains(InputClasses::RESOURCES) {

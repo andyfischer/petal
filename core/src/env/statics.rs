@@ -91,7 +91,10 @@ impl Env {
     /// both need the native table too. `show-bytecode` comes here as well,
     /// so a disassembly is of the code a run executes.
     pub fn lower_with(&self, program: &Program, flags: OptFlags) -> Result<BytecodeProgram, String> {
-        let mut bc = if flags.static_cache {
+        // Memoization reads the dependency classes' hints, which come with
+        // the analysis, so a memoized run lowers against it cache or not
+        // (`lower_with_statics` honours the cache flag itself).
+        let mut bc = if flags.static_cache || self.policy.memo {
             let analysis = crate::static_classify::analyze_kept(program, &self.native_fns);
             crate::backend::bytecode::lower_with_statics(program, flags, &analysis, &self.native_fns)
         } else {

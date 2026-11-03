@@ -413,11 +413,16 @@ impl<'a> Vm<'a> {
                 args,
                 arg_names,
                 no_memo,
+                static_args,
                 result,
             } => {
                 let callable = self.reg(fi, *callee);
                 let argv = self.take_args(fi, args);
-                let r = self.do_call(fi, *dst, callable, &argv, arg_names, origin, !*no_memo);
+                let memo = super::calls::CallMemo {
+                    scope: !*no_memo,
+                    static_args: *static_args,
+                };
+                let r = self.do_call(fi, *dst, callable, &argv, arg_names, origin, memo);
                 self.give_args(argv);
                 r?;
                 // A frame pushed for this call learns whether its result is

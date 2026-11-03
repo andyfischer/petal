@@ -219,6 +219,24 @@ pub enum Dep {
     /// A native consulted the resource table; valid while its revision is
     /// what it was when the record was made.
     ResourcesRead,
+    /// A `query` native read a revisioned class of host data
+    /// ([`InputClasses::REVISIONED`](crate::native_fn::InputClasses::REVISIONED):
+    /// `PHYSICS`, `NET`) when its revision was `revision`. Valid while the
+    /// class's revision is unchanged
+    /// ([`crate::run_deps::RunDeps::class_now`]).
+    ClassRead {
+        class: crate::native_fn::InputClasses,
+        revision: u64,
+    },
+    /// A `command` native was issued with `args`. Not a dependency but an
+    /// effect, kept in order with the writes: a replay **re-issues** it
+    /// (calls the native again with the same arguments), which is what
+    /// running the scope's code again would have done. A scope that holds
+    /// one is never re-executed speculatively (`MemoSlot::pure` is false).
+    Command {
+        native: NativeFnId,
+        args: SmallVec<[Value; 4]>,
+    },
     /// A field of an enum variant was read, which may have been constant data
     /// (`k.shape`). Valid while the stack's enum data is what it was then
     /// ([`crate::stack::Stack::enum_data_revision`]): data is evaluated by
@@ -305,7 +323,7 @@ impl MemoSlot {
         for d in &self.deps {
             n += match d {
                 Dep::Child { path, .. } => spilled(path),
-                Dep::Probe { args, .. } => spilled(args),
+                Dep::Probe { args, .. } | Dep::Command { args, .. } => spilled(args),
                 Dep::StateRead { key, .. } | Dep::StateWrite { key, .. } => spilled(&key.path),
                 _ => 0,
             };
@@ -408,6 +426,16 @@ pub struct MemoStats {
     /// Scopes not opened because their call site's scopes are always folded
     /// as too small to record (see [`TINY_AFTER_FOLDS`]).
     pub tiny: u64,
+    /// Calls not opened as scopes because the dependency classes say they
+    /// never replay: an effect on every path, or a read that changes every
+    /// run with no recording scope around the call to use the record
+    /// (`crate::static_classify::dep_classes`).
+    pub static_skips: u64,
+    /// Replay checks that skipped comparing the arguments, because every
+    /// argument of the call is static.
+    pub static_args: u64,
+    /// `command` calls re-issued by a replay.
+    pub commands: u64,
 }
 
 /// What a call site's records have been worth, for [`MemoTable::site_records`].
@@ -448,6 +476,9 @@ pub struct MemoTable {
     pub suppress: bool,
     /// A re-execution failed: nothing more is recorded or replayed this run.
     pub poisoned: bool,
+    /// How many speculative re-executions are running (nested ones count):
+    /// a `command` native is recorded, not issued, while this is nonzero.
+    pub reexecuting: u32,
     /// The verdict of the most recent re-execution: `Some(true)` if it
     /// produced something different from its previous record.
     pub last_reexec_changed: Option<bool>,
@@ -455,6 +486,10 @@ pub struct MemoTable {
     cold: FastMap<(FunctionId, u64), ColdSite>,
     /// Per-callsite count of scopes folded as too small to record.
     tiny: FastMap<(FunctionId, u64), TinySite>,
+    /// The compile-time hints of the dependency classes are ignored (every
+    /// call is treated as the runtime alone would): the reference a test
+    /// compares the hinted run with. Off by default.
+    pub no_hints: bool,
     /// Structural-equality answers for pairs of closures compared this run.
     /// Top-level functions are re-created every run and capture one another,
     /// so the same pairs come up for every scope that takes a callback.
@@ -515,6 +550,7 @@ impl MemoTable {
         self.run = self.run.wrapping_add(1);
         self.suppress = false;
         self.poisoned = false;
+        self.reexecuting = 0;
         self.last_reexec_changed = None;
         self.eq_cache.clear();
     }
@@ -804,7 +840,12 @@ fn mark_deps(deps: &[Dep], mark: &mut impl FnMut(Value)) {
             | Dep::CellRead { value, .. }
             | Dep::CellWrite { value, .. }
             | Dep::Observed { value, .. } => mark(*value),
-            Dep::HostRead | Dep::ResourcesRead | Dep::EnumData { .. } | Dep::Child { .. } => {}
+            Dep::Command { args, .. } => args.iter().for_each(|v| mark(*v)),
+            Dep::HostRead
+            | Dep::ResourcesRead
+            | Dep::ClassRead { .. }
+            | Dep::EnumData { .. }
+            | Dep::Child { .. } => {}
         }
     }
 }

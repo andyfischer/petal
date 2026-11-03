@@ -218,6 +218,41 @@ impl<'a> Vm<'a> {
             self.stack.memo.note_effect();
             return;
         }
+        if effects.command {
+            // Re-issued on replay, so it needs arguments a record can hold
+            // and must hand the script nothing a replay would not.
+            let holdable = !args.iter().any(|a| {
+                matches!(
+                    a,
+                    Value::Closure(_) | Value::OverloadSet(_) | Value::Pending(_) | Value::Cell(_)
+                )
+            });
+            if !holdable || !matches!(result, Value::Nil) {
+                self.stack.memo.note_effect();
+                return;
+            }
+            if let Some(s) = self.stack.memo.innermost() {
+                s.note(|| Dep::Command {
+                    native: nid,
+                    args: args.into(),
+                });
+            }
+        }
+        // A revisioned class (`PHYSICS`, `NET`) is validated by its own
+        // revision; one entry per class in a row of reads.
+        if effects.reads.intersects(InputClasses::REVISIONED) {
+            for (class, _) in InputClasses::NAMED {
+                if !InputClasses::REVISIONED.contains(class) || !effects.reads.contains(class) {
+                    continue;
+                }
+                let revision = self.stack.run_deps.class_now(class);
+                if let Some(s) = self.stack.memo.innermost()
+                    && !matches!(s.deps.last(), Some(Dep::ClassRead { class: c, .. }) if *c == class)
+                {
+                    s.note(|| Dep::ClassRead { class, revision });
+                }
+            }
+        }
         if effects.reads.contains(InputClasses::HOST_DATA) {
             if let Some(s) = self.stack.memo.innermost() {
                 s.note(|| Dep::HostRead);
@@ -230,7 +265,10 @@ impl<'a> Vm<'a> {
         }
         let probed = InputClasses(
             effects.reads.0
-                & !(InputClasses::HOST_DATA.0 | InputClasses::RESOURCES.0 | InputClasses::RNG.0),
+                & !(InputClasses::HOST_DATA.0
+                    | InputClasses::RESOURCES.0
+                    | InputClasses::RNG.0
+                    | InputClasses::REVISIONED.0),
         );
         if !probed.is_empty() {
             if effects.probe {
@@ -418,7 +456,7 @@ impl<'a> Vm<'a> {
         }
 
         let pure = sc.deps.iter().all(|d| match d {
-            Dep::StateWrite { .. } | Dep::CellWrite { .. } => false,
+            Dep::StateWrite { .. } | Dep::CellWrite { .. } | Dep::Command { .. } => false,
             Dep::Child { path, .. } => self.stack.memo.get(path).is_some_and(|c| c.pure),
             _ => true,
         });
@@ -506,7 +544,10 @@ impl<'a> Vm<'a> {
         fn is_effect(d: &&Dep) -> bool {
             matches!(
                 d,
-                Dep::StateWrite { .. } | Dep::CellWrite { .. } | Dep::Child { .. }
+                Dep::StateWrite { .. }
+                    | Dep::CellWrite { .. }
+                    | Dep::Child { .. }
+                    | Dep::Command { .. }
             )
         }
         let mut a = prev.deps.iter().filter(is_effect);
@@ -538,6 +579,23 @@ impl<'a> Vm<'a> {
                         serial: sb,
                     }),
                 ) => pa == pb && sa == sb,
+                (
+                    Some(Dep::Command {
+                        native: na,
+                        args: aa,
+                    }),
+                    Some(Dep::Command {
+                        native: nb,
+                        args: ab,
+                    }),
+                ) => {
+                    na == nb
+                        && aa.len() == ab.len()
+                        && aa
+                            .iter()
+                            .zip(ab.iter())
+                            .all(|(x, y)| self.memo_eq(*x, *y, ARG_COMPARE_BUDGET))
+                }
                 _ => false,
             };
             if !same {
@@ -648,15 +706,41 @@ impl<'a> Vm<'a> {
     /// A call of `fn_id` (through closure `cid`, with `args`) is about to run
     /// at `path`. If its record is still good, replay it and return the
     /// cached result; otherwise `None`, and the caller pushes the frame.
+    ///
+    /// `static_args` says every argument is static (the lowering's
+    /// `Inst::Call::static_args`): the same value on every run at this call,
+    /// so they are not compared. `constant` says the callee is a constant
+    /// function of its arguments (`MemoHint::constant`); with static
+    /// arguments as well the record holds for the life of the program, so
+    /// neither the captures nor the dependencies are checked either, as long
+    /// as the record's own entries are only children and observations.
     pub(super) fn memo_try(
         &mut self,
         path: &ScopePath,
         fn_id: FunctionId,
         cid: ClosureId,
         args: &[Value],
+        static_args: bool,
+        constant: bool,
     ) -> Option<Value> {
+        let hints = !self.stack.memo.no_hints;
+        let static_args = hints && static_args;
         let slot = self.stack.memo.get(path)?;
         let same_fn = slot.fn_id == fn_id;
+        let retained = static_args
+            && constant
+            && same_fn
+            && slot.args.len() == args.len()
+            && slot
+                .deps
+                .iter()
+                .all(|d| matches!(d, Dep::Child { .. } | Dep::Observed { .. }));
+        if retained {
+            self.stack.memo.stats.static_args += 1;
+            self.stack.memo.stats.hits += 1;
+            self.stack.memo.note_hit(path);
+            return self.memo_replay(path, true);
+        }
         let (recorded_args, recorded_caps) = (slot.args.clone(), slot.captures.clone());
         let captures: ScopeValues = self
             .closures
@@ -665,9 +749,13 @@ impl<'a> Vm<'a> {
             .iter()
             .copied()
             .collect();
-        let same_call = same_fn
-            && self.memo_all_eq(&recorded_args, args)
-            && self.memo_all_eq(&recorded_caps, &captures);
+        let same_args = if static_args && recorded_args.len() == args.len() {
+            self.stack.memo.stats.static_args += 1;
+            true
+        } else {
+            self.memo_all_eq(&recorded_args, args)
+        };
+        let same_call = same_fn && same_args && self.memo_all_eq(&recorded_caps, &captures);
         if !same_call || !self.memo_validate(path) {
             self.stack.memo.stats.misses += 1;
             return None;
@@ -768,6 +856,10 @@ impl<'a> Vm<'a> {
                     }
                 }
                 Dep::HostRead => self.stack.run_deps.host_data_now() == host_rev,
+                Dep::ClassRead { class, revision } => {
+                    self.stack.run_deps.class_now(*class) == *revision
+                }
+                Dep::Command { .. } => true,
                 Dep::ResourcesRead => self.resources.revision() == res_rev,
                 Dep::EnumData { revision } => self.stack.enum_data_revision == *revision,
                 Dep::Child { path, serial } => match self.memo_verify_child(path, *serial) {
@@ -877,6 +969,7 @@ impl<'a> Vm<'a> {
         // A re-execution runs the function, so a call bench counts it.
         self.bench_enter(fn_id, target);
         self.stack.memo.last_reexec_changed = None;
+        self.stack.memo.reexecuting += 1;
 
         let mut failed = false;
         loop {
@@ -892,6 +985,7 @@ impl<'a> Vm<'a> {
                 }
             }
         }
+        self.stack.memo.reexecuting = self.stack.memo.reexecuting.saturating_sub(1);
         // The output it emitted is not this frame's: the parent replays or
         // re-runs it.
         for (sym, len) in out_lens {
@@ -1002,6 +1096,18 @@ impl<'a> Vm<'a> {
                 }
                 Dep::Child { path, .. } => {
                     self.memo_replay(path, false);
+                }
+                // Inside a re-execution nothing is issued: its parent's
+                // replay (or run) issues what this record holds.
+                Dep::Command { .. } if self.stack.memo.reexecuting > 0 => {}
+                Dep::Command { native, args } => {
+                    // Issued again, as running the code would. Not recorded
+                    // into an enclosing scope: its `Child` entry for this
+                    // record already covers it.
+                    let was = std::mem::replace(&mut self.stack.memo.suppress, true);
+                    let _ = self.call_native_fn(*native, args, false, None);
+                    self.stack.memo.suppress = was;
+                    self.stack.memo.stats.commands += 1;
                 }
                 Dep::Observed { term, value } => {
                     if self.observations.enabled {

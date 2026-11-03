@@ -363,7 +363,7 @@ fn run() -> Result<i32, String> {
     if args.memo_stats {
         let m = ui.memo_stats();
         eprintln!(
-            "petal-ui-run: memo hits {} misses {} records {} inlined {} effectful {} reexecs {} cutoffs {} cold {} evicted {} slots {}",
+            "petal-ui-run: memo hits {} misses {} records {} inlined {} effectful {} reexecs {} cutoffs {} cold {} evicted {} static-skips {} static-args {} commands {} slots {}",
             m.hits,
             m.misses,
             m.records,
@@ -373,6 +373,9 @@ fn run() -> Result<i32, String> {
             m.cutoffs,
             m.cold,
             m.evicted,
+            m.static_skips,
+            m.static_args,
+            m.commands,
             ui.env.memo_slots(ui.stack_id()),
         );
     }

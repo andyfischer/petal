@@ -1377,6 +1377,7 @@ pub(super) fn handle_show_bytecode(
 pub(super) fn handle_show_static(
     json: bool,
     all: bool,
+    deps: bool,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
@@ -1391,6 +1392,13 @@ pub(super) fn handle_show_static(
         Ok(program) => program,
         Err(e) => die_plain(&e),
     };
+    if deps {
+        // Every function's classes, and why the ones that never replay do
+        // not (`--json` does not apply).
+        let analysis = env.static_analysis(&program);
+        print!("{}", analysis.dep_classes().render(&program, all));
+        return;
+    }
     let report = env.static_report(&program);
     if json {
         print_json(&report.to_json(all));

@@ -249,6 +249,22 @@ impl Env {
         }
     }
 
+    /// Tell the gate and the memoized scopes that the host data of the
+    /// revisioned classes in `classes` changed: a physics step
+    /// ([`InputClasses::PHYSICS`](crate::native_fn::InputClasses::PHYSICS)),
+    /// a network message applied (`NET`). A scope that read one of them
+    /// through a `query` native is valid while its revision holds, and a
+    /// scope that read only `HOST_DATA` is not disturbed by it.
+    pub fn note_class_changed(
+        &mut self,
+        stack_id: StackKey,
+        classes: crate::native_fn::InputClasses,
+    ) {
+        if let Some(stack) = self.stacks.get_mut(&stack_id) {
+            stack.run_deps.note_class_changed(classes);
+        }
+    }
+
     /// The dependency record of `stack_id`'s most recent run, for hosts and
     /// tools that want more than the yes/no (which bindings were read, whether
     /// host data was consulted).
@@ -262,6 +278,18 @@ impl Env {
     /// have no instructions in it, and the tools reading it want every one.
     pub fn memo_enabled(&self) -> bool {
         self.policy.memo && !self.trace.enabled
+    }
+
+    /// Honour (`true`, the default) or ignore the compile-time memo hints of
+    /// the dependency classes on `stack_id`
+    /// (`crate::backend::bytecode::memo_hints`): which calls never open a
+    /// scope, which skip comparing static arguments, which constant calls
+    /// replay unchecked. Off, every call is treated as the runtime alone
+    /// would; the reference a test holds the hinted run to.
+    pub fn set_memo_hints(&mut self, stack_id: StackKey, on: bool) {
+        if let Some(stack) = self.stacks.get_mut(&stack_id) {
+            stack.memo.no_hints = !on;
+        }
     }
 
     /// The memo counters of `stack_id`'s table (hits, misses, records, …),

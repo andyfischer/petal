@@ -74,7 +74,7 @@ impl<'a> Vm<'a> {
     /// [`call_closure_sync`](Self::call_closure_sync) runs one to the end.
     pub(crate) fn push_host_frame(&mut self, callable: Value, site: u64) -> Result<(), String> {
         let cid = calls::resolve_callable(self.program, self.closures, callable, 0, &[])?;
-        self.push_closure_frame(cid, &[], &Default::default(), None, None, site, false)?;
+        self.push_closure_frame(cid, &[], &Default::default(), None, None, site, super::calls::CallMemo::OFF)?;
         self.stack.last_pop_result = None;
         Ok(())
     }
@@ -113,7 +113,7 @@ impl<'a> Vm<'a> {
         )?;
         let target_depth = self.stack.vm_frames.len();
         if arg_names.is_empty() {
-            self.push_closure_frame(cid, call_args, &Default::default(), None, None, site, false)?;
+            self.push_closure_frame(cid, call_args, &Default::default(), None, None, site, super::calls::CallMemo::OFF)?;
         } else {
             self.push_named_frame(cid, call_args, arg_names, site)?;
         }

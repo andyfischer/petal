@@ -128,6 +128,16 @@ fn a_scope_that_prints_is_never_replayed() {
         ui.frame().unwrap();
         assert_eq!(ui.env.take_output().len(), 3, "every frame prints every row");
     }
+    // The dependency classes see the `print` on every path, so the calls
+    // open no scope at all (the prelude's drawing inside them may still
+    // replay on its own); without the hint each would be recorded and given
+    // up as effectful.
+    let m = ui.memo_stats();
+    assert!(m.static_skips >= 9, "{m:?}");
+    let sid = ui.stack_id();
+    ui.env.set_memo_hints(sid, false);
+    ui.frame().unwrap();
+    assert_eq!(ui.env.take_output().len(), 3);
     assert!(ui.memo_stats().effectful >= 3);
 }
 

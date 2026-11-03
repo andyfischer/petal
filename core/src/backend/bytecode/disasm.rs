@@ -157,11 +157,13 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             args,
             arg_names,
             no_memo,
+            static_args,
             result,
         } => format!(
-            "r{} = {}{} r{} {}",
+            "r{} = {}{}{} r{} {}",
             dst,
             if *no_memo { "call_no_memo" } else { "call" },
+            if *static_args { "_static" } else { "" },
             match result {
                 ResultUse::Read => "",
                 ResultUse::Dropped => "_dropped",

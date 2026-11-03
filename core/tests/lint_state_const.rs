@@ -264,7 +264,10 @@ fn the_rule_is_opt_in() {
     assert!(both.enabled(STATE_AS_CONSTANT) && both.enabled(petal::lint::PREFER_LET));
     let info = petal::lint::RULES.iter().find(|r| r.name == STATE_AS_CONSTANT).unwrap();
     assert!(info.opt_in);
-    // The other opt-in rule is `int-division`.
+    // The other opt-in rules are `never-replays` and `int-division`.
     let opt_in: Vec<&str> = petal::lint::RULES.iter().filter(|r| r.opt_in).map(|r| r.name).collect();
-    assert_eq!(opt_in, vec![petal::lint::INT_DIVISION, STATE_AS_CONSTANT]);
+    assert_eq!(
+        opt_in,
+        vec![petal::lint::NEVER_REPLAYS, petal::lint::INT_DIVISION, STATE_AS_CONSTANT]
+    );
 }

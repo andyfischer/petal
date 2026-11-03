@@ -55,7 +55,7 @@ describe("namespaced module paths", () => {
       "-e",
       "import ./bloom/menu\nimport ./petal/menu\nprint(1)"], FIXTURES);
     expect(err).toContain(
-      "'menu' is already an alias for module 'bloom/menu' and cannot also alias 'petal/menu'"
+      "'menu' is already an alias for module './bloom/menu' and cannot also alias './petal/menu'"
     );
   });
 

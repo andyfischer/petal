@@ -78,7 +78,7 @@ import ./level     // exports draw
 
 hud.draw()         // fine — qualified access always works
 level.draw()
-draw()             // Error: `draw` is ambiguous: 'hud' and 'level' export it — write
+draw()             // Error: `draw` is ambiguous: './hud' and './level' export it — write
                    //        `hud.draw` or `level.draw`, or pin one with `import ./hud: draw`
 ```
 
@@ -321,7 +321,7 @@ The facade's own imports follow [the usual tiers](#which-name-wins):
   as `facade.name`, and names the two original modules:
 
 ```
-Error: `shared` is ambiguous: 'a' and 'b' export it — write `a.shared` or `b.shared`, or
+Error: `shared` is ambiguous: './a' and './b' export it — write `a.shared` or `b.shared`, or
 pin one with `import ./a: shared`
 ```
 
@@ -371,8 +371,8 @@ the module that declared it:
 
 ```petal ignore
 import ./tally: hits
-set hits = 5     // Error: `hits` is a `var` exported by module `tally`;
-                 //        only `tally` can write it — call a function it exports instead
+set hits = 5     // Error: `hits` is a `var` exported by module `./tally`;
+                 //        only `./tally` can write it — call a function it exports instead
 ```
 
 Export a function that does the write instead. Reading an imported `var`

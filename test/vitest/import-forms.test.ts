@@ -32,7 +32,7 @@ describe("import forms", () => {
     for (const command of ["run", "check"]) {
       const r = petalCapture([command, game("ambiguous.ptl")]);
       expect(r.code).not.toBe(0);
-      expect(r.stderr).toContain("`draw` is ambiguous: 'hud' and 'level' export it");
+      expect(r.stderr).toContain("`draw` is ambiguous: './hud' and './level' export it");
       expect(r.stderr).toContain("write `hud.draw` or `level.draw`");
       expect(r.stderr).toContain("pin one with `import ./hud: draw`");
       expect(r.stderr).toContain("[line 5, column 7]");
@@ -51,7 +51,7 @@ describe("import forms", () => {
     const warnings = r.stderr.split("\n").filter((l) => l.startsWith("warning:"));
     expect(warnings.length).toBe(2);
     expect(warnings[0]).toContain(
-      "`score` is exported by 'hud' and 'level' with different parameter counts"
+      "`score` is exported by './hud' and './level' with different parameter counts"
     );
     const run = petalCapture(["run", game("merged.ptl")]);
     expect(run.stdout.trim()).toBe("score 1\nscore 3");

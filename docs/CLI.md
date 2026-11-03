@@ -623,7 +623,7 @@ An **error** is a line that fails whenever it runs, so `check` exits 1 on it:
   (`unknown function \`frob\``, `undefined variable \`nope\``) — it would
   fail with `Unknown function` or `Undefined variable`;
 - a qualifier read as a value, or a member a module does not export
-  (`'hud' is a module, not a value`, `module 'hud' has no export 'nope'`);
+  (`'hud' is a module, not a value`, `module './hud' has no export 'nope'`);
 - a call whose argument count no overload accepts (`f(1)` where every `f`
   takes two arguments) — for a function a plain import bound, counted
   against the module the name resolved to;

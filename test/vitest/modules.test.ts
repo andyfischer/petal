@@ -94,8 +94,8 @@ describe("module imports across files", () => {
 
   it("only the declaring module may `set` an exported `var`", () => {
     const err = runFileError(["run", "-e", "import ./tally: hits\nset hits = 5"], FIXTURES);
-    expect(err).toContain("exported by module `tally`");
-    expect(err).toContain("only `tally` can write it");
+    expect(err).toContain("exported by module `./tally`");
+    expect(err).toContain("only `./tally` can write it");
   });
 
   it("runtime errors in a module name the module file", () => {

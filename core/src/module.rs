@@ -422,6 +422,23 @@ pub(crate) fn relative_module_name(base: &Path, target: &Path) -> String {
     parts.join("/")
 }
 
+/// The canonical name of a loose file (one in no package): its path from the
+/// entry file's directory `base`, written as a relative import would be,
+/// `./level`, `./ui/hud`, `../shared/rng`. The `./` matters: a package name
+/// is always an identifier, so no loose file can share a name with a package
+/// (a loose `color.ptl` beside `import ui`, which loads the bundled `color`,
+/// used to stop the program as "two different sources are both the module
+/// 'color'"). The qualifier a file binds is still the last segment, and
+/// messages show the file name ([`display_name_for`]).
+pub(crate) fn loose_module_name(base: &Path, target: &Path) -> String {
+    let name = relative_module_name(base, target);
+    if name.starts_with("../") {
+        name
+    } else {
+        format!("./{name}")
+    }
+}
+
 /// The packages compiled into the binary, in the form the registry resolves
 /// against.
 fn bundled_packages() -> &'static [crate::package::Package] {
@@ -700,7 +717,9 @@ impl ModuleRegistry {
                         .map_err(|_| leaves())?;
                     let module = path_to_module(inside);
                     return pkg.load(&module).ok_or_else(|| {
-                        format!("package '{}' has no module '{module}'", pkg.info.name)
+                        pkg.nested_package_error(&module).unwrap_or_else(|| {
+                            format!("package '{}' has no module '{module}'", pkg.info.name)
+                        })
                     });
                 }
                 let dir = canonical_path(dir);
@@ -827,7 +846,9 @@ impl ModuleRegistry {
         let load = |pkg: &crate::package::Package| -> Result<ModuleSource, String> {
             let module = rest.unwrap_or(&pkg.info.name);
             pkg.load(module).ok_or_else(|| match rest {
-                Some(rest) => format!("package '{package}' has no module '{rest}'"),
+                Some(rest) => pkg
+                    .nested_package_error(rest)
+                    .unwrap_or_else(|| format!("package '{package}' has no module '{rest}'")),
                 None => format!(
                     "package '{package}' has no module of its own name ({package}.ptl) to \
                      import as `{package}` — import one of its modules: {}",
@@ -975,6 +996,9 @@ fn module_file_path(dir: &Path, name: &str) -> PathBuf {
 /// namespaces may well ship the same file name and an error has to say which
 /// one it means.
 fn display_name_for(name: &str, origin: &ModuleOrigin) -> String {
+    // A loose file's `./` prefix keeps its name apart from a package's; a
+    // message names the file as the reader sees it (`color.ptl`, `ui/hud.ptl`).
+    let name = name.strip_prefix("./").unwrap_or(name);
     match origin {
         ModuleOrigin::File(path) if !name.contains('/') => path
             .file_name()
@@ -1516,7 +1540,7 @@ impl Walker<'_> {
         }
         let name = match (&resolved.name, &resolved.origin) {
             (Some(name), _) => name.clone(),
-            (None, ModuleOrigin::File(file)) => relative_module_name(&self.base_dir, file),
+            (None, ModuleOrigin::File(file)) => loose_module_name(&self.base_dir, file),
             (None, ModuleOrigin::Memory) => path.to_string(),
         };
         self.resolved.insert(memo_key, name.clone());

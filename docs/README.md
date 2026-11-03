@@ -157,21 +157,29 @@ point-in-time status.
 
 | Document | Description |
 |----------|-------------|
-| [Static values](proposals/static-values.md) | Build-once constants that follow the source diff: the proposal and what was implemented |
+| [Static values](proposals/static-values.md) | Build-once constants that follow the source diff: the proposal and what was implemented (shipped) |
+| [State in callbacks](proposals/state-in-callbacks.md) | Why `state` inside a `map`/`filter` callback is an error (implemented) |
 | [Type Declarations](dev/type-declarations-plan.md) | Optional, warning-only type annotations (shipped) |
 | [Formatter and linter](dev/linter-plan.md) | `petal fmt` and `petal lint`: how rules are split between them (shipped) |
 | [Suggestions](dev/suggestions-plan.md) | `petal suggest`: the channel for safe refactors (shipped) |
 | [Pending Values](dev/pending-values-plan.md) | Async pending-value semantics and the petal-query data layer |
-| [Reactive Rendering](dev/reactive-rendering-plan.md) | The incremental-rendering roadmap and the status of each layer |
+| [Reactive Rendering](dev/reactive-rendering-plan.md) | The incremental-rendering roadmap and the status of each layer (P0, P1 shipped; P2 partly) |
 | [Typography](dev/typography-plan.md) | Fonts, measurement and flow layout (partly shipped) |
-| [Direct Manipulation v2](dev/direct-manipulation-v2-plan.md) | Backpropagating a drag through function calls by speculative re-runs: architecture and milestones (design) |
-| [DM hints: `tunable` / `rigid`](proposals/dm-v2-hints.md) | Identity builtins that tell direct manipulation which literals may move (proposed) |
-| [`config let` vs `tunable`](proposals/config-let-vs-tunable.md) | Whether `tunable` can replace the `config` keyword: recommends keeping both, composed, with ranges for host sliders (proposed) |
-| [IR Format Improvements](dev/ir-format-improvements-plan.md) | Audit of the token, AST, IR and bytecode dumps |
+| [Direct Manipulation v2](dev/direct-manipulation-v2-plan.md) | Backpropagating a drag through function calls by speculative re-runs: architecture and milestones (shipped; the default engine) |
+| [DM v2 complexity study](dev/direct-manipulation-v2-study.md) | The examples ladder and what v2 solves on each, with runs and timings |
+| [DM hints: `tunable` / `rigid`](proposals/dm-v2-hints.md) | Identity builtins that tell direct manipulation which literals may move (implemented) |
+| [`config let` vs `tunable`](proposals/config-let-vs-tunable.md) | Whether `tunable` can replace the `config` keyword: recommends keeping both, composed, with ranges for host sliders (implemented) |
+| [IR Format Improvements](dev/ir-format-improvements-plan.md) | Audit of the token, AST, IR and bytecode dumps (shipped) |
 | [Experimental: IR-based Editing](dev/experimental-ir-based-editing.md) | An early, unfinished surface for building a program as IR data |
 | [Testbed Challenge](dev/testbed-challenge-plan.md) | The target list of panel apps for the Garden testbed, and which are built |
-| [Improved automation](plan/improved-automation-ideas.md) | Idea: a scripted automated user, and one automation system under it |
+| [Improved automation](plan/improved-automation-ideas.md) | Idea: a scripted automated user, and one automation system under it (not started) |
 | [Aspirational ideas](aspirational-ideas/README.md) | Design sketches of how goal-level features should feel to use |
 
-[tasks/](tasks/) holds dated working notes: open-work lists, debriefs and
-migration notes. They record the state of things on their date.
+### Open work
+
+[tasks/todo.md](tasks/todo.md) is the ranked list of everything still open,
+re-checked against the source on its date. The other files in
+[tasks/](tasks/) hold the detail it links to: per-area follow-ups, debriefs
+and migration notes. Each one records the state of things on its date. When
+an item ships, take it out of todo.md and out of its detail file, and delete
+the detail file once nothing in it is open.

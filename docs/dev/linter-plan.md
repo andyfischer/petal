@@ -54,7 +54,11 @@ Go keeps unused variables in the compiler. Judgement calls ("hoist this into a
 - `export` → `pub` (the exception above; not whitespace).
 
 **lint** (token-changing, each with a fix): `prefer-let`, `no-redundant-cast`,
-`prefer-match`, `prefer-repeat`, `prefer-compound-assign`, `prefer-pub` (§5).
+`prefer-match`, `prefer-repeat`, `prefer-compound-assign`, `prefer-pub` (§5)
+were the first rules. There are about twenty now (`state-key-deprecated`,
+`shadows-builtin`, `int-division`, `dm-hint-state-init`, …): `petal lint
+--rules` lists them, `core/src/lint/mod.rs` (`RULES`) is the registry, and
+[CLI.md](../CLI.md) documents each one.
 
 ## 2. CLI
 
@@ -268,7 +272,8 @@ Semantic rules, each needing a gate. Ordered by how often they occurred in a
 - **`if v == nil then D else v end` → `v ?? D`.** 33 nil tests against zero
   uses of `??` in the survey.
 - `if c then true else false end` → `c`; redundant `return` of a body's last
-  expression; one canonical color-literal form; `x = x + 1` → `x += 1`.
+  expression; one canonical color-literal form. (`x = x + 1` → `x += 1` shipped as
+`prefer-compound-assign`.)
 
 Not a rule, despite appearances: a trailing bare `nil` at the end of a `fn`
 body is load-bearing — the last expression is the implicit result.

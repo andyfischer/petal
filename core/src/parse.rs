@@ -555,6 +555,17 @@ impl Parser {
         let start = self.pos;
         // Whatever this statement is, the statements inside it are nested.
         let top_level = std::mem::take(&mut self.at_top_level);
+        // An import binds names for the whole file and is resolved before
+        // anything runs, so it only means something at the top of a file. The
+        // loader collects top-level imports alone; one written inside a
+        // function, a block or a test used to be dropped without a word.
+        if !top_level && self.starts_import() {
+            return Err(self.error_at_current(
+                "an `import` is only allowed at the top of a file, before any other statement, \
+                 not inside a function, a block or a test"
+                    .to_string(),
+            ));
+        }
         match self.peek().clone() {
             // `test` is contextual: a keyword only when a string follows it at
             // the start of a statement, which no expression can be.
@@ -616,6 +627,18 @@ impl Parser {
             Token::Import => self.parse_import(start, false),
             Token::Pub | Token::Export => self.parse_export(start),
             _ => self.parse_expr_or_assign(start),
+        }
+    }
+
+    /// Does the statement at the cursor start with `import` (or `pub import`
+    /// / `export import`)?
+    fn starts_import(&self) -> bool {
+        match self.peek() {
+            Token::Import => true,
+            Token::Pub | Token::Export => {
+                matches!(self.tokens.get(self.pos + 1), Some(Token::Import))
+            }
+            _ => false,
         }
     }
 
@@ -965,6 +988,7 @@ impl Parser {
                 if matches!(self.peek(), Token::Star) {
                     self.advance(); // consume '*'
                     star = true;
+                    self.expect_import_end(&module, quoted, true)?;
                     return self.finish_import(start, module, alias, None, star, exported);
                 }
                 let mut list = Vec::new();
@@ -1005,7 +1029,54 @@ impl Parser {
             }
         }
 
+        self.expect_import_end(&module, quoted, names.is_some())?;
         self.finish_import(start, module, alias, names, star, exported)
+    }
+
+    /// An import ends at the end of its line. Statements need no separator,
+    /// so without this check whatever follows was parsed as a new statement
+    /// and failed far from the cause: `import ./my-mod` read as `import ./my`
+    /// then the expression `-mod`. Each common slip gets the fix spelled out.
+    fn expect_import_end(&self, module: &str, quoted: bool, selective: bool) -> Result<(), String> {
+        let next = self.peek().clone();
+        let after = self.tokens.get(self.pos + 1).cloned();
+        let word_after = match &after {
+            Some(Token::Ident(w)) => Some(w.clone()),
+            _ => None,
+        };
+        let message = match next {
+            Token::Newline | Token::Eof => return Ok(()),
+            Token::Minus if !quoted => {
+                let rest = word_after.unwrap_or_default();
+                let path = format!("{module}-{rest}");
+                let local = crate::ast::module_local_name(&path);
+                format!(
+                    "a module name with a `-` in it must be quoted: write `import \"{path}\" as \
+                     {}`",
+                    crate::ast::suggested_qualifier(local)
+                )
+            }
+            Token::Dot if word_after.as_deref() == Some("ptl") => format!(
+                "an import names a module, not a file: drop the extension and write `import \
+                 {module}`"
+            ),
+            Token::Dot => match word_after {
+                Some(w) => format!(
+                    "module paths are separated by `/`, not `.`: write `import {module}/{w}`"
+                ),
+                None => "module paths are separated by `/`, not `.`".to_string(),
+            },
+            Token::Ident(ref w) if w == "as" && selective => {
+                "a selective import cannot rename the names it brings in: import them as they \
+                 are, then bind a new name with `let`, or import the module `as` a qualifier"
+                    .to_string()
+            }
+            other => format!(
+                "unexpected {} after an import: an import ends at the end of its line",
+                token_desc(&other)
+            ),
+        };
+        Err(self.error_at_current(message))
     }
 
     /// The bare (unquoted) spelling of an import path: a relative prefix —

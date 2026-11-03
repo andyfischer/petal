@@ -1,6 +1,6 @@
 //! Parse errors that name the fix for a habit carried over from another
 //! language, rather than blaming whatever token happened to come next.
-//! See docs/tasks/testbed-takeaways.md (#8).
+//! First listed as #8 of the testbed takeaways (since removed; see git history).
 
 use petal::lexer::Lexer;
 use petal::parse::Parser;
@@ -85,4 +85,48 @@ fn word_operators_name_the_symbol() {
     assert!(err.contains("`&&`"), "{err}");
     let err = parse_err("if not a then print(1) end");
     assert!(err.contains("Petal spells logical not as `!`"), "{err}");
+}
+
+// ---------------------------------------------------------------------------
+// Imports (docs/tasks/module-system-followup.md, issue 4 and "Smaller things")
+// ---------------------------------------------------------------------------
+
+#[test]
+fn an_import_inside_a_function_a_block_or_a_test_is_an_error() {
+    for src in [
+        "fn f()\n  import ./nope\n  1\nend\n",
+        "if true then\n  import ./nope\nend\n",
+        "fn f()\n  pub import ./nope\nend\n",
+        "test \"t\" do\n  import ./nope\nend\n",
+        "for i in [1] do\n  import ui\nend\n",
+    ] {
+        let err = parse_err(src);
+        assert!(err.contains("only allowed at the top of a file"), "{src:?}: {err}");
+        assert!(err.contains("line 2"), "{src:?}: {err}");
+    }
+    parses("import ./a\npub import ./b\nprint(1)\n");
+}
+
+#[test]
+fn a_slip_after_an_import_path_names_its_fix() {
+    let cases = [
+        ("import ./my-mod\n", "must be quoted: write `import \"./my-mod\" as my_mod`"),
+        ("import ui.hud\n", "write `import ui/hud`"),
+        ("import ./level.ptl\n", "drop the extension and write `import ./level`"),
+        ("import ./thing: v as vv\n", "a selective import cannot rename"),
+        ("import ./my as m x\n", "an import ends at the end of its line"),
+        ("import ./thing: *, x\n", "an import ends at the end of its line"),
+    ];
+    for (src, want) in cases {
+        let err = parse_err(src);
+        assert!(err.contains(want), "{src:?}: {err}");
+    }
+}
+
+#[test]
+fn an_import_still_ends_at_a_semicolon_or_a_line_break() {
+    parses("import ./a; import ./b\nprint(1)\n");
+    parses("import ./thing: a,\n  b\nprint(a)\n");
+    parses("import \"./my-mod\" as my_mod\n");
+    parses("import ./a as q");
 }

@@ -952,7 +952,7 @@ TEST(state_round_trips_through_a_document) {
     CHECK_CONTAINS(saved, R"("$petal":"instance")");
     // The function is named in the report and absent from the document.
     CHECK_CONTAINS(a.state_report_json(), R"("op":"save")");
-    CHECK_CONTAINS(a.state_report_json(), R"({"holds":"a function","name":"on_done"})");
+    CHECK_CONTAINS(a.state_report_json(), R"({"name":"on_done","holds":"a function"})");
     CHECK(saved.find("on_done") == std::string::npos);
     std::string frame5 = run_printed(a);
     std::string frame6 = run_printed(a);
@@ -1052,7 +1052,7 @@ TEST(reload_reports_the_findings_the_edit_introduced) {
     CHECK_CONTAINS(introduced, "line 4");
     CHECK(introduced.find("line 2") == std::string::npos);
     CHECK_EQ(vm.new_diagnostics_text(true), std::string(""));
-    CHECK_CONTAINS(vm.last_reload_json(), R"("new_diagnostics":[{"column":)");
+    CHECK_CONTAINS(vm.last_reload_json(), R"("new_diagnostics":[{"severity":"warning",)");
 
     edited.replace(edited.find("print(a, b)"), 11, "print(b, a)");
     vm.reload_source(edited);

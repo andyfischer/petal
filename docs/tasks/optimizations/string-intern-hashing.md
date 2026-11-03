@@ -1,6 +1,8 @@
 # Faster hashing for interned string lookups
 
-Status: **proposed**, 2026-09-15. Measured but not started.
+Status: **proposed**, 2026-09-15. Measured but not started (re-checked
+2026-11-02: `Heap::intern_table` in `core/src/heap.rs` is still a
+`HashMap<String, StringId>` on the default hasher, with no ASCII cache).
 
 ## The observation
 
@@ -20,9 +22,10 @@ together are a visible slice of samples under `native_slice`.
 
 ## The change
 
-1. Hash the intern table with a fast, non-DoS-resistant hasher. `FastHasher`
-   in `core/src/memo.rs:74` already exists for exactly this reason (with
-   `FastMap`); either reuse it or lift it somewhere both modules can share.
+1. Hash the intern table with a fast, non-DoS-resistant hasher. The shared
+   one is `core/src/fxhash.rs` (`FxHasher`, `FxBuildHasher`), already used
+   by `dict.rs` and the ISA tables. (`FastHasher` in `core/src/memo.rs` is
+   an older, memo-local copy.)
    The table's keys are program text, not attacker-chosen network input, so
    SipHash's guarantee is not worth its cost here.
 2. Consider a direct-mapped cache for single-byte ASCII substrings: a
@@ -45,5 +48,6 @@ cd core-libs/petal-ui && cargo run --release --example bench_panel -- \
 ```
 
 Watch `max` (the commit frame) and `total script ms`. A microbenchmark of a
-tight `slice` loop under `./bin/test-snippet.sh` isolates it further. Expect
+tight `slice` loop (`petal run --profile` on a one-file script) isolates it
+further. Expect
 this to move text-heavy scripts only; the corpus goldens must not change.

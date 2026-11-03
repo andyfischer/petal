@@ -87,19 +87,22 @@ counts as static, the errors, and the `StaticValue` variants are in
 ### Goal-based edits to a *running* program's output
 
 "This value the program emitted should have been X; what do I change?" is
-answered by `petal::direct_manipulation` and the `petal propose-edit` command.
-Run with emit tracing, address an emitted value by channel and index, state the
-new value for one of the producing call's arguments, and get back concrete
-source edits (one per variable that can be moved to satisfy the goal). The
-edit is text you apply with `apply_edits`, then re-run. See
-[direct-manipulation.md](direct-manipulation.md#the-goal-based-protocol).
+answered by the `petal propose-edit` command (and the MCP and Garden
+surfaces over the same engine). Address an emitted value, state the value it
+should have, and get back ranked source edits to the literals it depends on.
+The edit is text you apply with `apply_edits`, then re-run.
 
-This inverts `+ - * /` and negation against the values the traced run
-actually saw. It is not a general solver: an argument that flows through a
-call, a field read or a comparison gets no proposal. There is no reverse-mode
-AD; Petal ships forward-mode sensitivity only (`dual`/`value_of`/`deriv_of`
-from `import autodiff`, see [differentiation.md](differentiation.md)), and
-the goal solver does not use it. See the [README](../../README.md#goals) for the project goals.
+The default engine (v2, `core/src/dm_v2/`) treats the program as a black box
+from its literals to its outputs: it re-runs it speculatively with effects
+contained and state frozen, measures how each literal moves the target, and
+solves for a change. So it reaches literals through function calls, field
+reads and loops, as long as the output moves smoothly with them. Hints
+(`tunable`, `rigid`, `config let`) and `assert` constraints steer it. The
+legacy v1 engine (`--v1`) only inverts `+ - * /` and negation in the call
+that emitted the value. See
+[direct-manipulation.md](direct-manipulation.md#what-can-be-edited) and the
+[v2 plan](../dev/direct-manipulation-v2-plan.md). See the
+[README](../../README.md#goals) for the project goals.
 
 ### CLI commands that rewrite source
 
@@ -238,9 +241,10 @@ See [time-travel.md](time-travel.md).
   reload.
 - **Only top-level state can be set by name.** A slot under a call path can
   be read in a state dump and not addressed.
-- **Edit proposals only invert `+ - * /` and negation.** An argument that
-  flows through a call, a field read or a comparison gets no proposal, and
-  there is no reverse-mode AD.
+- **Edit proposals need an output that moves smoothly with a literal.** A
+  value behind a branch flip or a step function, or one that depends on the
+  literal only through earlier frames' state, gets no proposal
+  ([direct-manipulation.md](direct-manipulation.md#limits)).
 - **Static reading and path edits see literals only.** A computed binding
   reads as `NotStatic`, and setting it replaces the whole right-hand side
   ([../usage/config-files.md](../usage/config-files.md#limits)).

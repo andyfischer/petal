@@ -234,7 +234,7 @@ fn a_map_annotation_is_checked() {
 fn json_round_trips_as_a_map() {
     assert_eq!(
         eval("json_stringify(Map([[1, \"a\"], [[2], true]]))"),
-        r#"{"entries":[[1,"a"],[[2],true]],"type":"map"}"#
+        r#"{"type":"map","entries":[[1,"a"],[[2],true]]}"#
     );
     assert_eq!(
         eval("let m = Map([[1, \"a\"], [{x: 1}, Map([[2, 3]])]])\njson_parse(json_stringify(m)) == m"),

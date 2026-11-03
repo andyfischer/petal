@@ -627,7 +627,7 @@ fn assigning_through_a_qualifier_is_the_same_error_for_check_and_run() {
     for cmd in ["check", "run"] {
         let (out, err, code) = petal_in(&t.root, &[cmd, "member.ptl"]);
         assert_eq!((out.as_str(), code), ("", 1), "{cmd}: {err}");
-        assert!(err.contains("module 'hud' has no export 'nope'"), "{cmd}: {err}");
+        assert!(err.contains("module './hud' has no export 'nope'"), "{cmd}: {err}");
     }
     // …and the call form, which is how a program that qualifies every
     // cross-module call is written: a private function, a missing one, and
@@ -643,9 +643,9 @@ fn assigning_through_a_qualifier_is_the_same_error_for_check_and_run() {
     for cmd in ["check", "run"] {
         let (out, err, code) = petal_in(&t.root, &[cmd, "call.ptl"]);
         assert_eq!((out.as_str(), code), ("", 1), "{cmd}: {err}");
-        assert!(err.contains("module 'hud' has no export 'hidden'"), "{cmd}: {err}");
-        assert!(err.contains("module 'hud' has no export 'nope'"), "{cmd}: {err}");
-        assert!(err.contains("module 'facade' has no export 'hidden'"), "{cmd}: {err}");
+        assert!(err.contains("module './hud' has no export 'hidden'"), "{cmd}: {err}");
+        assert!(err.contains("module './hud' has no export 'nope'"), "{cmd}: {err}");
+        assert!(err.contains("module './facade' has no export 'hidden'"), "{cmd}: {err}");
         assert!(err.contains("[line 5, column 3]"), "{cmd}: {err}");
         assert!(err.contains("3 errors found by check"), "{cmd}: {err}");
     }

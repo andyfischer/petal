@@ -141,6 +141,10 @@ pub struct Vm {
     // invalidation point. C pointers target the heap buffers *inside* these
     // values, so moving the values themselves (e.g. as the Vecs grow) is fine.
     views: Vec<ViewArena>,
+    /// The decoded record templates the drains share (`view::TemplateCache`):
+    /// a template's static fields are decoded once for the life of the VM,
+    /// not once per drain. Trimmed only when the views are cleared.
+    templates: crate::view::TemplateCache,
     segment_views: Vec<SegmentsView>,
     draws: Vec<DrawList>,
     ui_targets: Vec<crate::draw::TargetList>,
@@ -205,6 +209,7 @@ impl Vm {
             input: InputState::new(),
             last_error: None,
             views: Vec::new(),
+            templates: Default::default(),
             segment_views: Vec::new(),
             draws: Vec::new(),
             ui_targets: Vec::new(),
@@ -262,6 +267,8 @@ impl Vm {
 
     fn clear_views(&mut self) {
         self.views.clear();
+        // Nothing points into the template cache now.
+        self.templates.trim();
         self.segment_views.clear();
         self.draws.clear();
         self.ui_targets.clear();
@@ -276,7 +283,7 @@ impl Vm {
             symbol: Some(&sym),
             handle_class: Some(&class),
         };
-        let mut arena = ViewArena::new();
+        let mut arena = ViewArena::with_templates(self.templates.clone());
         let first = arena.decode(values, env.heap(), &names);
         arena.finish();
         let p = arena.node_ptr(first);
@@ -2018,6 +2025,16 @@ pub unsafe extern "C" fn pb_vm_drain_segments(
     });
     put(out, segments);
     st
+}
+
+/// Tag records of mostly-static literals with their template (the default)
+/// or build every record untagged.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_set_record_templates(vm: *mut VmHandle, on: bool) -> Status {
+    status(vm, |vm| {
+        vm.env_mut().set_record_templates(on);
+        Ok(())
+    })
 }
 
 /// Forget which of `buffer`'s segments the host was given.

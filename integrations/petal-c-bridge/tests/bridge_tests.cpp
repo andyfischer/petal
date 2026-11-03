@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -790,6 +791,51 @@ TEST(a_snapshot_reports_which_options_changed) {
     petal::Values cmds = vm.drain("scene");
     auto again = snap.update(plan.bind(cmds[0][1]));
     CHECK(again[0] && again[3]);
+}
+
+TEST(a_templated_record_carries_its_template_and_a_snapshot_compares_its_holes) {
+    auto run = [](bool templates) {
+        petal::Vm vm;
+        vm.set_record_templates(templates);
+        vm.emitter("body", "scene");
+        vm.load_source(
+            "import vec2\nnative fn body(id, opts)\n"
+            "state t = 0\nt += 1\n"
+            "fn ship(i, t)\n"
+            "  body(i, {shape: \"box\", size: 2.0, mat: {color: #ff8800}, pos: vec3(float(i), 0, float(t))})\n"
+            "end\n"
+            "for i in range(0, 2) do ship(i, t) end\n");
+        petal::Plan plan("shape, size, mat, pos");
+        petal::Snapshot snaps[2];
+        std::vector<std::vector<size_t>> seen;
+        std::vector<uint64_t> ids;
+        std::vector<std::string> dumps;
+        for (int f = 0; f < 3; ++f) {
+            vm.run();
+            petal::Values cmds = vm.drain("scene");
+            REQUIRE(cmds.size() == 2);
+            for (size_t k = 0; k < 2; ++k) {
+                petal::Value opts = cmds[k][1];
+                auto o = plan.bind(opts);
+                REQUIRE(o.ok());
+                auto changed = snaps[k].update(opts, o);
+                seen.emplace_back(changed.begin(), changed.end());
+                ids.push_back(opts.template_id());
+                dumps.push_back(std::string(o[0].str()) + "/" + std::to_string(o[1].number(0)) + "/" +
+                                std::to_string(o[2]["color"].integer()) + "/" + std::to_string(o[3].z()));
+            }
+        }
+        return std::make_tuple(seen, ids, dumps);
+    };
+    auto [seen, ids, dumps] = run(true);
+    auto [seen_off, ids_off, dumps_off] = run(false);
+    CHECK(dumps == dumps_off);  // the same values either way
+    CHECK(seen == seen_off);    // and the same changes
+    CHECK_EQ(seen[0], (std::vector<size_t>{0, 1, 2, 3}));
+    CHECK_EQ(seen[2], (std::vector<size_t>{3}));  // only pos, the hole
+    for (uint64_t id : ids) CHECK_EQ(id, ids[0]);
+    CHECK(ids[0] != 0);
+    for (uint64_t id : ids_off) CHECK_EQ(id, uint64_t(0));
 }
 
 TEST(host_built_return_records_share_a_shape) {

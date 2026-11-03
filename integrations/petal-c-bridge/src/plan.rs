@@ -231,6 +231,9 @@ pub struct Snapshot {
     bytes: Vec<u8>,
     next_bytes: Vec<u8>,
     stack: Vec<*const PbValue>,
+    /// The template of the record the held values were bound from
+    /// ([`update_record`](Self::update_record)), or 0.
+    template: u64,
 }
 
 fn put_u64(out: &mut Vec<u8>, x: u64) {
@@ -348,7 +351,54 @@ impl Snapshot {
     /// Compare `values` (one per option, null = absent) with what the
     /// snapshot holds, set bit `i` of `changed` for each option `i` that
     /// differs, and hold `values` from now on. Returns whether any differs.
-    pub fn update(&mut self, values: &[*const PbValue], mut changed: Option<&mut [u64]>) -> bool {
+    pub fn update(&mut self, values: &[*const PbValue], changed: Option<&mut [u64]>) -> bool {
+        self.template = 0;
+        self.update_skipping(values, changed, |_| false)
+    }
+
+    /// [`update`](Self::update) for `values` bound from `record`. When the
+    /// record has the template the held values were bound from, an option
+    /// bound to one of its static fields cannot have changed and is not
+    /// compared: only the holes are.
+    pub fn update_record(
+        &mut self,
+        record: Option<&PbValue>,
+        values: &[*const PbValue],
+        changed: Option<&mut [u64]>,
+    ) -> bool {
+        // SAFETY: a record's `tmpl` is null or points at its template.
+        let tmpl = record.and_then(|r| unsafe { r.tmpl.as_ref() }.map(|t| (r, t)));
+        let Some((rec, t)) = tmpl else {
+            return self.update(values, changed);
+        };
+        let same = t.id == self.template && values.len() == self.held.len();
+        self.template = t.id;
+        if !same {
+            return self.update_skipping(values, changed, |_| false);
+        }
+        let first = rec.items;
+        let count = (rec.count as usize).min(t.count as usize);
+        self.update_skipping(values, changed, |v: *const PbValue| {
+            if v.is_null() || first.is_null() {
+                return false;
+            }
+            // The field of `rec` the option was bound to, if it is one.
+            let off = (v as usize).wrapping_sub(first as usize) / std::mem::size_of::<PbValue>();
+            (v as usize) >= (first as usize)
+                && off < count
+                // SAFETY: `is_hole` has `count` bytes.
+                && unsafe { *t.is_hole.add(off) } == 0
+        })
+    }
+
+    /// The body of `update`: an option `fixed` says cannot have changed
+    /// keeps what is held.
+    fn update_skipping(
+        &mut self,
+        values: &[*const PbValue],
+        mut changed: Option<&mut [u64]>,
+        fixed: impl Fn(*const PbValue) -> bool,
+    ) -> bool {
         if let Some(c) = changed.as_deref_mut() {
             c.fill(0);
         }
@@ -371,6 +421,18 @@ impl Snapshot {
             if v.is_null() && self.held[i].tag == HELD_ABSENT {
                 continue; // most options of a record are absent, and stay so
             }
+            if fixed(v) {
+                // A static field of the template held before: the same
+                // contents. A blob is moved to the buffer being built.
+                let h = self.held[i];
+                if h.tag == HELD_BLOB {
+                    let start = self.next_bytes.len() as u64;
+                    let (a, b) = (h.words[0] as usize, h.words[1] as usize);
+                    self.next_bytes.extend_from_slice(&self.bytes[a..b]);
+                    self.held[i].words = [start, self.next_bytes.len() as u64, 0];
+                }
+                continue;
+            }
             let new = self.hold(v);
             let old = self.held[i];
             if !self.same(&old, &new) {
@@ -385,6 +447,7 @@ impl Snapshot {
     pub fn clear(&mut self) {
         self.held.clear();
         self.bytes.clear();
+        self.template = 0;
     }
 }
 
@@ -518,6 +581,34 @@ pub unsafe extern "C" fn pb_snapshot_update(
     })
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_snapshot_update_record(
+    snap: *mut Snapshot,
+    record: *const PbValue,
+    values: *const *const PbValue,
+    n: usize,
+    changed: *mut u64,
+) -> bool {
+    guard(true, || {
+        let Some(s) = (unsafe { snap.as_mut() }) else {
+            return true;
+        };
+        let values: &[*const PbValue] = if values.is_null() || n == 0 {
+            &[]
+        } else {
+            // SAFETY: the caller passes `n` slots.
+            unsafe { std::slice::from_raw_parts(values, n) }
+        };
+        let changed = if changed.is_null() {
+            None
+        } else {
+            // SAFETY: the caller passes (n + 63) / 64 words.
+            Some(unsafe { std::slice::from_raw_parts_mut(changed, n.div_ceil(64)) })
+        };
+        s.update_record(unsafe { record.as_ref() }, values, changed)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -600,6 +691,95 @@ mod tests {
         assert!(Plan::new("a, , b").is_none());
         assert!(Plan::new("a, b, a").is_none());
         assert_eq!(Plan::new("").unwrap().len(), 0);
+    }
+
+    /// A view as text: kinds, keys, text, numbers and children.
+    fn dump(v: &PbValue) -> String {
+        let text = |p: *const std::ffi::c_char, n: usize| {
+            if p.is_null() {
+                String::new()
+            } else {
+                String::from_utf8_lossy(unsafe { std::slice::from_raw_parts(p as *const u8, n) }).into_owned()
+            }
+        };
+        let mut out = format!(
+            "{}:{}={}/{}/{}/{}/{}/{}",
+            v.kind,
+            text(v.key, v.key_len),
+            text(v.str_, v.str_len),
+            if v.kind == Kind::Map as u32 { 0 } else { v.integer },
+            v.number,
+            v.y,
+            v.z,
+            v.count
+        );
+        if !v.items.is_null() {
+            out.push('[');
+            for i in 0..v.count as usize {
+                out.push_str(&dump(unsafe { &*v.items.add(i) }));
+                out.push(',');
+            }
+            out.push(']');
+        }
+        out
+    }
+
+    const SHIPS: &str = "fn ship(i)\n  put({shape: \"box\", size: 2.0, tint: [1.0, 0.5], mat: {color: 3, name: \"steel\"}, pos: vec3(i, 0, 0), n: i})\nend\nfor i in range(0, 4) do ship(i) end\nship(2)\nput({shape: \"box\", size: 2.0, tint: [1.0, 0.5], mat: {color: 3, name: \"steel\"}, pos: vec3(2, 0, 0), n: 2})";
+
+    #[test]
+    fn a_templated_record_decodes_as_an_untagged_one_from_one_decode_of_its_template() {
+        let mut on = env();
+        let (a, first, n) = decode(&mut on, SHIPS);
+        let mut off = env();
+        off.set_record_templates(false);
+        let (b, first_b, _) = decode(&mut off, SHIPS);
+        for i in 0..n {
+            assert_eq!(dump(node(&a, first + i)), dump(node(&b, first_b + i)), "record {i}");
+            assert!(node(&b, first_b + i).tmpl.is_null());
+        }
+        let ship = |i: usize| node(&a, first + i);
+        let t = unsafe { ship(0).tmpl.as_ref() }.expect("tagged");
+        assert_eq!(t.count, 6);
+        let holes = unsafe { std::slice::from_raw_parts(t.holes, t.hole_count as usize) };
+        assert_eq!(holes, &[4, 5], "pos and n");
+        for i in 1..5 {
+            assert_eq!(ship(i).tmpl, ship(0).tmpl, "one template for the literal");
+        }
+        // The static fields' text and children are the template's, shared.
+        let field = |i: usize, j: usize| unsafe { &*ship(i).items.add(j) };
+        assert_eq!(field(0, 0).str_, field(3, 0).str_);
+        assert_eq!(field(0, 2).items, field(3, 2).items);
+        assert_ne!(field(0, 4).number, field(3, 4).number);
+        // The top-level literal is a template of its own, with no holes.
+        let top = unsafe { ship(5).tmpl.as_ref() }.expect("tagged");
+        assert_ne!(top.id, t.id);
+        assert_eq!(top.hole_count, 0);
+        assert_eq!(a.templated, 6);
+    }
+
+    #[test]
+    fn a_snapshot_compares_only_the_holes_of_the_template_it_holds() {
+        let mut env = env();
+        let (arena, first, _) = decode(&mut env, SHIPS);
+        let mut plan = Plan::new("shape, size, tint, mat, pos, n").unwrap();
+        let mut snap = Snapshot::default();
+        let mut out = [std::ptr::null(); 6];
+        let mut step = |i: usize| {
+            let rec = node(&arena, first + i);
+            let _ = plan.bind(Some(rec), &mut out);
+            let mut changed = [0u64];
+            let any = snap.update_record(Some(rec), &out, Some(&mut changed));
+            (any, changed[0])
+        };
+        assert_eq!(step(0), (true, 0b111111), "a fresh snapshot");
+        assert_eq!(step(1), (true, 0b110000), "pos and n");
+        assert_eq!(step(2), (true, 0b110000));
+        assert_eq!(step(4), (false, 0), "ship(2) again");
+        // Another template: compared in full, against what was held through
+        // the skips (the text, the list and the record of the static part).
+        assert_eq!(step(5), (false, 0), "the same values from another literal");
+        assert_eq!(step(3), (true, 0b110000));
+        assert_eq!(step(3), (false, 0));
     }
 
     #[test]

@@ -136,6 +136,25 @@ typedef enum pb_kind {
                         count is twice the number of entries */
 } pb_kind;
 
+/* What a record made by a templated literal promises (Petal's
+ * `record_template`). A literal whose fields are mostly static
+ * (`{shape: "box", size: 2.0, mass: 5.0, pos: p}`) is compiled to a template
+ * plus holes (`pos`), and every record it makes carries the template: records
+ * with one `id` have the same keys in the same order, the same holes, and in
+ * every field that is not a hole the same contents. The id is a content hash:
+ * the same for the same literal and static values in another run, after a
+ * reload and in another process (64 bits; a collision is possible in
+ * principle). The bridge decodes a template's static fields once and copies
+ * them into each record's view, so only the holes are decoded per record.
+ * Owned by the bridge; valid as long as the view that points at it. */
+typedef struct pb_template {
+    uint64_t id;            /* never 0 */
+    uint32_t count;         /* fields */
+    uint32_t hole_count;
+    const uint32_t* holes;  /* hole_count field positions, ascending */
+    const uint8_t* is_hole; /* count bytes: 1 where the field is a hole */
+} pb_template;
+
 /* A decoded, immutable view of one Petal value. Children are contiguous. */
 typedef struct pb_value {
     uint32_t kind;                 /* pb_kind */
@@ -149,6 +168,7 @@ typedef struct pb_value {
     double number;
     double y;                      /* VEC2/VEC3 y component */
     double z;                      /* VEC3 z component */
+    const pb_template* tmpl;       /* MAP made by a templated literal: its template; else NULL */
 } pb_value;
 
 /* A list of root values (e.g. everything drained from one output buffer). */
@@ -254,6 +274,13 @@ void pb_snapshot_clear(pb_snapshot* snap);
  * of changed[i / 64] (optional, (n + 63) / 64 words) is set for each slot
  * that differs. */
 bool pb_snapshot_update(pb_snapshot* snap, const pb_value* const* values, size_t n, uint64_t* changed);
+/* pb_snapshot_update for `values` bound (by pb_plan_bind) from `record`. When
+ * `record` has the template (pb_value::tmpl) of the record the snapshot was
+ * last updated from, an option bound to a static field of it cannot have
+ * changed and is not compared: only the holes are. Use one plan per
+ * snapshot. Otherwise the same as pb_snapshot_update. */
+bool pb_snapshot_update_record(pb_snapshot* snap, const pb_value* record, const pb_value* const* values,
+                               size_t n, uint64_t* changed);
 
 /* ─── Value builder (host → script) ───────────────────────────────────── */
 /*
@@ -872,6 +899,11 @@ typedef struct pb_segments {
  * Default: flat. Turning it on again later starts over (everything is
  * defined again). */
 pb_status pb_vm_set_segmented(pb_vm* vm, const char* buffer, bool on);
+/* Tag the records of mostly-static literals with their template (pb_template,
+ * pb_value::tmpl; the default), or build every record untagged. A script
+ * cannot tell the two apart; off is the oracle a host holds its template
+ * reads to. */
+pb_status pb_vm_set_record_templates(pb_vm* vm, bool on);
 /* Drain a segmented buffer (see above). On a buffer that is not segmented,
  * every entry is a fresh value. */
 pb_status pb_vm_drain_segments(pb_vm* vm, const char* buffer, pb_segments* out);

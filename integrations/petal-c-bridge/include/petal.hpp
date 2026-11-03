@@ -180,6 +180,10 @@ public:
     }
     // A MAP's record shape id (what a Plan keys on); 0 for anything else.
     uint64_t shape() const noexcept { return is_map() ? uint64_t(v_->integer) : 0; }
+    // A MAP made by a templated literal: its template (see pb_template), else
+    // nullptr. template_id() is its id, or 0.
+    const pb_template* record_template() const noexcept { return is_map() ? v_->tmpl : nullptr; }
+    uint64_t template_id() const noexcept { return record_template() ? record_template()->id : 0; }
 
     // Children of LIST / MAP / ENUM.
     size_t size() const noexcept { return (is_list() || is_map() || is_enum()) ? v_->count : 0; }
@@ -383,6 +387,17 @@ public:
         words_.resize((n + 63) / 64);
         Changed c;
         c.any_ = pb_snapshot_update(s_, values, n, words_.data());
+        c.w_ = words_.data();
+        c.n_ = words_.size();
+        return c;
+    }
+    // The same for options bound from `record`: with the template of the
+    // record last given, only the holes are compared.
+    Changed update(const Value& record, const Plan::Options& o) { return update(record.raw(), o.data(), o.size()); }
+    Changed update(const pb_value* record, const pb_value* const* values, size_t n) {
+        words_.resize((n + 63) / 64);
+        Changed c;
+        c.any_ = pb_snapshot_update_record(s_, record, values, n, words_.data());
         c.w_ = words_.data();
         c.n_ = words_.size();
         return c;
@@ -902,6 +917,8 @@ public:
     void set_segmented(const std::string& buffer, bool on) {
         check(pb_vm_set_segmented(vm_, buffer.c_str(), on));
     }
+    // Record templates (pb_template) on (the default) or off.
+    void set_record_templates(bool on) { check(pb_vm_set_record_templates(vm_, on)); }
     pb_segments drain_segments(const std::string& buffer) {
         pb_segments out{};
         check(pb_vm_drain_segments(vm_, buffer.c_str(), &out));

@@ -184,7 +184,7 @@ v[1]["missing"]["deeper"].is_nil();      // true: misses chain safely
 | `Map([[k, v]])` | `PB_DICT` | `size()` = twice the entry count; `[2*i]` is entry `i`'s key and `[2*i + 1]` its value, in insertion order. Build one with `begin_dict()`/`end_dict()` (`pb_builder_begin_dict`), pushing key, value, key, value… |
 | `Shape.circle(3)` | `PB_ENUM` | `tag()` = `"Shape.circle"`, payload via `[i]` |
 | `symbol("s")` | `PB_SYMBOL` | `str()` |
-| handles | `PB_HANDLE` | `str()` = class name; the raw node has the slot in `raw()->integer` and the serial in `raw()->count` (`integer()` and `size()` return their fallbacks, since a handle is not a number or a container) |
+| handles | `PB_HANDLE` | `str()` = class name; the raw node has the slot in `raw()->integer`, the serial in `raw()->count` and the class's index (per VM) in `raw()->number` (`integer()` and `size()` return their fallbacks, since a handle is not a number or a container) |
 
 Color literals such as `#ff8800` are records `{r, g, b}` (0–255). A native
 `vec3` decodes as `PB_VEC3`, with its components in `number`, `y` and `z`

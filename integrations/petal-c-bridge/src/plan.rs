@@ -256,7 +256,8 @@ fn scalar(n: &PbValue) -> Option<Held> {
         k if k == Kind::Float as u32 => [n.number.to_bits(), 0, 0],
         k if k == Kind::Vec2 as u32 => [n.number.to_bits(), n.y.to_bits(), 0],
         k if k == Kind::Vec3 as u32 => [n.number.to_bits(), n.y.to_bits(), n.z.to_bits()],
-        k if k == Kind::Handle as u32 => [n.integer as u64, n.count as u64, 0],
+        // Slot, serial and class index: slots and serials are per class.
+        k if k == Kind::Handle as u32 => [n.integer as u64, n.count as u64, n.number.to_bits()],
         _ => return None,
     };
     Some(Held { tag: n.kind, words })
@@ -669,6 +670,32 @@ mod tests {
             (true, 0b10100),
             "a nested key; a closure is never equal"
         );
+    }
+
+    #[test]
+    fn a_snapshot_tells_handles_of_different_classes_apart() {
+        // Slots and serials are per class: the first object of two classes
+        // can both be (0, 1).
+        let handle = |class: u16| {
+            let mut h = PbValue {
+                ..crate::view::NIL_VALUE.0
+            };
+            h.kind = Kind::Handle as u32;
+            h.integer = 0;
+            h.count = 1;
+            h.number = class as f64;
+            h
+        };
+        let (a, b) = (handle(0), handle(1));
+        let mut snap = Snapshot::default();
+        let mut changed = [0u64];
+        assert!(snap.update(&[&a], Some(&mut changed)));
+        assert!(!snap.update(&[&a], Some(&mut changed)));
+        assert!(
+            snap.update(&[&b], Some(&mut changed)),
+            "another class's object"
+        );
+        assert_eq!(changed[0], 1);
     }
 
     fn key(v: &PbValue) -> &str {

@@ -127,7 +127,8 @@ typedef enum pb_kind {
                         integer = the record's shape id (see pb_plan), never 0 */
     PB_ENUM = 8,     /* str = variant tag ("Shape.circle"), items[count] = payload */
     PB_SYMBOL = 9,   /* str = symbol name */
-    PB_HANDLE = 10,  /* integer = slot, count = serial, str = handle class name */
+    PB_HANDLE = 10,  /* integer = slot, count = serial, number = class index (per VM),
+                        str = handle class name */
     PB_PENDING = 11, /* an unresolved resource */
     PB_OTHER = 12,   /* closure, native fn, element…; str = type name */
     PB_VEC3 = 13,    /* number = x, y = y, z = z */

@@ -3015,6 +3015,7 @@ mod tests {
         let node = unsafe { &*p };
         assert_eq!(node.kind, crate::view::Kind::Handle as u32);
         assert_eq!((node.integer, node.count), (7, 3));
+        assert_eq!(node.number, class.0 as f64, "the class index");
         let name = unsafe { std::slice::from_raw_parts(node.str_ as *const u8, node.str_len) };
         assert_eq!(name, b"Actor");
     }

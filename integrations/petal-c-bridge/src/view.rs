@@ -326,6 +326,9 @@ impl ViewArena {
                 node = PbValue::scalar(Kind::Handle);
                 node.integer = h.slot as i64;
                 node.count = h.serial;
+                // Slots and serials are per class, so the class index is part
+                // of which object this is (a snapshot compares it).
+                node.number = h.class.0 as f64;
                 text = names.handle_class.and_then(|f| f(h.class.0));
             }
             Value::Pending(_) => node = PbValue::scalar(Kind::Pending),

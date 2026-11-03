@@ -189,7 +189,9 @@ shape) on every call.
   changed options as a bit set. An option that stays absent costs one
   compare. The comparison is on contents, not heap ids, so it does not
   depend on values staying live between frames (the stale-id hazard of
-  L3's `same_value`).
+  L3's `same_value`). A handle compares by slot, serial and class index
+  (`PB_HANDLE` carries the class index in `number`), since slots and
+  serials are per class: the first object of two classes are both (0, 1).
 - **One key copy per shape.** The view arena keeps a key cache (shape id →
   NUL-terminated key text) that survives `reset`, so the per-call argument
   arena of a native copies a shape's keys once in its life and every record
@@ -247,10 +249,12 @@ script's calls and count as script time.)
   6 ms) dominates: that is L3's to remove, by draining segments.
 
 Reproduce (from the repository root; a build directory off the internal
-disk is fine):
+disk is fine). Configure with `CMAKE_BUILD_TYPE=Release`: without it the
+Rust library is still optimized but the C++ host is not, and its reads come
+out several times slower:
 
 ```sh
-cmake -S integrations/petal-c-bridge -B <build> -G Ninja -DPETAL_CARGO_TARGET_DIR=<target>
+cmake -S integrations/petal-c-bridge -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release -DPETAL_CARGO_TARGET_DIR=<target>
 cmake --build <build> --target petal_bridge_scene_frame
 <build>/petal_bridge_scene_frame [frames] [city] [crates] [ships]
 MODES=emit.lookup,emit.plan <build>/petal_bridge_scene_frame

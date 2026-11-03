@@ -236,10 +236,28 @@ fn the_baseline_policy_disables_memoization_with_the_other_optimizations() {
 
 
 fn drive(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64, frames: usize) -> (Vec<String>, u64) {
+    drive_with(app, includes, policy, seed, frames, false)
+}
+
+/// `drive`, with the draw buffer in segmented mode when `segmented`
+/// (`petal::output_segments`). The harness drains it flat, so the commands
+/// must come out as they do unsegmented.
+fn drive_with(
+    app: &Path,
+    includes: &[PathBuf],
+    policy: RunPolicy,
+    seed: u64,
+    frames: usize,
+    segmented: bool,
+) -> (Vec<String>, u64) {
     let size = (800, 600);
     let mut ui = Headless::panel_from_file_with_paths(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
     ui.env.set_echo(false);
+    if segmented {
+        let sym = ui.env.intern_symbol(petal_ui::draw::DRAW_COMMANDS_SYMBOL);
+        ui.env.set_output_segmented(sym, true);
+    }
     ui.env.set_seed(seed);
     // Garden panels observe every frame; a replayed scope must report the
     // same bindings a run would.
@@ -322,4 +340,25 @@ fn memoized_frames_reproduce_unmemoized_frames_across_the_corpus() {
     });
     let hits_total: u64 = hits.iter().map(|(_, hits)| hits).sum();
     assert!(hits_total > 0, "no scope was ever replayed across the corpus");
+}
+
+/// The same oracle with the draw buffer segmented: recorded scopes move
+/// their commands into segment bodies and replays push one mark each, and
+/// the flat drain must expand them back into exactly the unmemoized frames.
+#[test]
+fn segmented_draw_buffers_reproduce_unmemoized_frames_across_the_corpus() {
+    let frames = 45;
+    let seed = 1u64;
+    par_corpus(|app, includes| {
+        let (full, _) = drive(app, includes, RunPolicy::REPLAY.with_memo(false), seed, frames);
+        let (segmented, _) = drive_with(app, includes, RunPolicy::REPLAY, seed, frames, true);
+        for (i, (a, b)) in full.iter().zip(&segmented).enumerate() {
+            assert!(
+                a == b,
+                "{} seed {seed}: frame {i} differs with the draw buffer segmented: {}",
+                app.display(),
+                first_difference(a, b),
+            );
+        }
+    });
 }

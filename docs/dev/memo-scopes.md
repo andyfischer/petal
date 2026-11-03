@@ -32,7 +32,7 @@ half):
 | `var` cells read or written, when created outside the scope | cell and value | the cell is live and holds the value that was read |
 | Host data and the resource table consulted | a flag | the host-data / resource revision is what it was |
 | Child scopes | path and record serial | the child's own record validates, recursively |
-| Output emitted | the tail of each output buffer since entry | — (spliced back on replay) |
+| Output emitted | the tail of each output buffer since entry; for a segmented buffer, a segment body | — (spliced back on replay; a segmented buffer gets one mark) |
 | Observations recorded | term and value, in order with the children | — (re-recorded on replay) |
 | State keys touched | the touch capture of §3.3a | — (retained on replay, so the sweep keeps them) |
 
@@ -42,6 +42,18 @@ cached output is appended to the buffers, the writes are re-applied in order
 (children's included), the touched keys are marked live, the observations are
 re-recorded, and the cached result is returned without pushing a frame. An
 invalid record makes the call run normally, and the run replaces the record.
+
+**Segmented output.** A host can put an output buffer in segmented mode
+(`Env::set_output_segmented`, `core/src/output_segments.rs`). Then a scope
+that is recorded moves what it emitted into the buffer, its own values and
+the marks its children left, into a `SegmentBody` shared by `Arc`, and
+leaves one mark in its place; a replay pushes one mark and appends nothing.
+The host drains references and gets each body's definition once, by a
+process-unique serial, so a replayed world costs it O(scopes) instead of
+O(values). A cutoff keeps the previous record's bodies, since the output is
+the same, so the host is not handed an equal segment under a new serial. A
+buffer is not segmented while emit tracing is on. Bodies are GC roots
+through the records and the undrained marks.
 
 **Early cutoff.** A child whose record fails validation is not necessarily a
 changed child. If the child's subtree wrote no state and no cell, the VM

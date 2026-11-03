@@ -16,7 +16,10 @@ use crate::memo::{
     OpenScope, OutputSegment, PreviousRecord, ScopePath, ScopeValues, container_args_fingerprint,
     holds_local_cell,
 };
+use crate::memo::SegmentBodies;
 use crate::native_fn::{InputClasses, NativeEffects};
+use crate::output_segments::{SegMark, SegmentBody, scope_id};
+use std::sync::Arc;
 use crate::program::ClosureId;
 use crate::stack::RuntimeStateKey;
 
@@ -284,6 +287,7 @@ impl<'a> Vm<'a> {
             n => self.full_path(n - 1),
         };
         let out_start = self.memo_output_lens();
+        let seg_start = self.memo_seg_lens();
         let captures: ScopeValues = self
             .closures
             .closure(cid)
@@ -301,6 +305,7 @@ impl<'a> Vm<'a> {
             args: args.iter().copied().collect(),
             deps: Vec::new(),
             out_start,
+            seg_start,
             insts_at_entry: self.stack.insts,
             rng_at_entry: *self.rng_state,
             effectful: false,
@@ -328,9 +333,15 @@ impl<'a> Vm<'a> {
         let detached = sc.previous.is_some();
         let insts = self.stack.insts.saturating_sub(sc.insts_at_entry);
 
-        // The output the scope appended, per buffer.
+        // The output the scope appended, per buffer. A segmented buffer's is
+        // moved into a segment body below, once the record is known to be
+        // kept.
         let mut outputs = Vec::new();
+        let seg_emitted = self.memo_seg_emitted(&sc);
         for (sym, buf) in self.output_buffers.iter() {
+            if !self.trace_emit && self.segments.contains_key(sym) {
+                continue;
+            }
             let start = sc
                 .out_start
                 .iter()
@@ -387,7 +398,7 @@ impl<'a> Vm<'a> {
         let worth = detached
             || !sc.deps.is_empty()
             || insts >= MIN_SCOPE_INSTS
-            || (!outputs.is_empty() && !has_parent);
+            || ((!outputs.is_empty() || seg_emitted) && !has_parent);
         if !worth || (!detached && !self.stack.memo.has_room()) {
             // Fold into the parent: its record covers this call's reads,
             // observations and output range, and inherits its cells so a
@@ -415,12 +426,17 @@ impl<'a> Vm<'a> {
             Some(c) => self.stack.end_touch_capture(c),
             None => Default::default(),
         };
+        let segments = if seg_emitted {
+            self.memo_seg_collapse(&sc)
+        } else {
+            Default::default()
+        };
         self.stack.memo.note_recorded(sc.fn_id, sc.site);
         // The record keeps these for as long as it lives; the slack a
         // growing `Vec` leaves is most of a small record.
         sc.deps.shrink_to_fit();
         let serial = self.stack.memo.next_serial();
-        let slot = MemoSlot {
+        let mut slot = MemoSlot {
             serial,
             visited: self.stack.memo.run(),
             fn_id: sc.fn_id,
@@ -431,6 +447,7 @@ impl<'a> Vm<'a> {
             result,
             deps: sc.deps,
             outputs,
+            segments,
             touches,
             host_revision: self.stack.run_deps.host_data_now(),
             resources_revision: self.resources.revision(),
@@ -441,6 +458,10 @@ impl<'a> Vm<'a> {
             let changed = !self.memo_same_effects(&previous, &slot);
             if !changed {
                 self.stack.memo.stats.cutoffs += 1;
+                // The same output: keep the bodies the host was given, so a
+                // cutoff does not make the host decode an equal segment
+                // again under a new serial.
+                slot.segments = previous.segments;
             }
             self.stack.memo.last_reexec_changed = Some(changed);
         } else if let Some(p) = self.stack.memo.innermost() {
@@ -460,8 +481,16 @@ impl<'a> Vm<'a> {
         if !self.memo_eq(prev.result, now.result, ARG_COMPARE_BUDGET) {
             return false;
         }
-        if prev.touches != now.touches || prev.outputs.len() != now.outputs.len() {
+        if prev.touches != now.touches
+            || prev.outputs.len() != now.outputs.len()
+            || prev.segments.len() != now.segments.len()
+        {
             return false;
+        }
+        for ((sa, a), (sb, b)) in prev.segments.iter().zip(&now.segments) {
+            if sa != sb || !self.memo_same_body(a, b) {
+                return false;
+            }
         }
         for (a, b) in prev.outputs.iter().zip(&now.outputs) {
             if a.sym != b.sym || a.values.len() != b.values.len() {
@@ -515,6 +544,82 @@ impl<'a> Vm<'a> {
                 return false;
             }
         }
+    }
+
+    /// Whether two segment bodies hold the same output: equal values, and
+    /// the same child segments at the same places.
+    fn memo_same_body(&mut self, a: &SegmentBody, b: &SegmentBody) -> bool {
+        if a.values.len() != b.values.len()
+            || a.marks.len() != b.marks.len()
+            || a.marks
+                .iter()
+                .zip(&b.marks)
+                .any(|(x, y)| x.at != y.at || x.body.serial != y.body.serial)
+        {
+            return false;
+        }
+        let budget = 256 + OUTPUT_COMPARE_PER_VALUE * a.values.len();
+        a.values
+            .iter()
+            .zip(&b.values)
+            .all(|(x, y)| self.memo_eq(*x, *y, budget))
+    }
+
+    /// The mark count of every segmented buffer now (see
+    /// [`OpenScope::seg_start`]).
+    fn memo_seg_lens(&self) -> SmallVec<[(SymbolId, usize); 1]> {
+        if self.trace_emit {
+            return SmallVec::new();
+        }
+        self.segments
+            .iter()
+            .map(|(s, ch)| (*s, ch.marks.len()))
+            .collect()
+    }
+
+    /// Where `sc` started in segmented buffer `sym`: its value index and
+    /// mark index.
+    fn memo_seg_start(sc: &OpenScope, sym: SymbolId) -> (usize, usize) {
+        let at = |v: &[(SymbolId, usize)]| v.iter().find(|(s, _)| *s == sym).map_or(0, |(_, n)| *n);
+        (at(&sc.out_start), at(&sc.seg_start))
+    }
+
+    /// Whether `sc` emitted anything into a segmented buffer, itself or
+    /// through a child.
+    fn memo_seg_emitted(&self, sc: &OpenScope) -> bool {
+        !self.trace_emit
+            && self.segments.iter().any(|(sym, ch)| {
+                let (start, mstart) = Self::memo_seg_start(sc, *sym);
+                let len = self.output_buffers.get(sym).map_or(0, Vec::len);
+                len > start || ch.marks.len() > mstart
+            })
+    }
+
+    /// `sc` is being recorded: move what it emitted into each segmented
+    /// buffer (its own values and its children's marks) into a body, and
+    /// leave one mark for the body in its place.
+    fn memo_seg_collapse(&mut self, sc: &OpenScope) -> SegmentBodies {
+        let mut bodies = SegmentBodies::new();
+        let id = scope_id(&sc.path);
+        for (sym, ch) in self.segments.iter_mut() {
+            let (start, mstart) = Self::memo_seg_start(sc, *sym);
+            let buf = self.output_buffers.entry(*sym).or_default();
+            if buf.len() <= start && ch.marks.len() <= mstart {
+                continue;
+            }
+            let values = buf.split_off(start.min(buf.len()));
+            let mut marks = ch.marks.split_off(mstart.min(ch.marks.len()));
+            for m in &mut marks {
+                m.at -= start;
+            }
+            let body = Arc::new(SegmentBody::new(id, values, marks));
+            ch.marks.push(SegMark {
+                at: start,
+                body: body.clone(),
+            });
+            bodies.push((*sym, body));
+        }
+        bodies
     }
 
     /// Every output buffer's length now, to find what a scope appends.
@@ -724,6 +829,7 @@ impl<'a> Vm<'a> {
             result: slot.result,
             deps: slot.deps,
             outputs: slot.outputs,
+            segments: slot.segments,
             touches: slot.touches,
         };
         let bcfn = self.bc.function(fn_id);
@@ -735,6 +841,7 @@ impl<'a> Vm<'a> {
         }
         let target = self.stack.vm_frames.len();
         let out_lens = self.memo_output_lens();
+        let seg_lens = self.memo_seg_lens();
 
         // The frame is built by hand: there is no live closure for this call.
         // A function that refers to itself gets one minted for its
@@ -795,6 +902,11 @@ impl<'a> Vm<'a> {
                 o.truncate(len);
             }
         }
+        for (sym, n) in seg_lens {
+            if let Some(ch) = self.segments.get_mut(&sym) {
+                ch.marks.truncate(n);
+            }
+        }
         if failed || self.stack.vm_frames.len() > target {
             // Unwind what the failed run left, and stop memoizing for the
             // rest of this run: the parent will re-run and hit the same
@@ -835,6 +947,28 @@ impl<'a> Vm<'a> {
     fn memo_replay(&mut self, path: &ScopePath, with_output: bool) -> Option<Value> {
         let mut slot = self.stack.memo.take(path)?;
         slot.visited = self.stack.memo.run();
+        for (sym, body) in slot.segments.iter().filter(|_| with_output) {
+            let buf = self.output_buffers.entry(*sym).or_default();
+            match self.segments.get_mut(sym) {
+                // One mark for the whole scope: no value is appended.
+                Some(ch) if !self.trace_emit => ch.marks.push(SegMark {
+                    at: buf.len(),
+                    body: body.clone(),
+                }),
+                // The buffer stopped being segmented (or emits are being
+                // traced) since the record was made: append it flat.
+                _ => {
+                    body.flatten_into(buf);
+                    if self.trace_emit {
+                        let len = buf.len();
+                        self.emit_origins
+                            .entry(*sym)
+                            .or_default()
+                            .resize_with(len, Default::default);
+                    }
+                }
+            }
+        }
         for seg in slot.outputs.iter().filter(|_| with_output) {
             let buf = self.output_buffers.entry(seg.sym).or_default();
             buf.extend_from_slice(&seg.values);

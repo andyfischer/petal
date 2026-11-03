@@ -51,6 +51,7 @@ use crate::closure_table::ClosureTable;
 use crate::execution_context::EmitSite;
 use crate::heap::{CellId, Heap};
 use crate::native_fn::NativeFnId;
+use crate::output_segments::{SegMark, SegmentBody};
 use crate::program::{ClosureId, FunctionId, TermId};
 use crate::stack::{PathPart, RuntimeStateKey, StateTouches, TouchCapture};
 use crate::symbol::SymbolId;
@@ -233,6 +234,9 @@ pub enum Dep {
     Observed { term: TermId, value: Value },
 }
 
+/// What a scope emitted into each segmented buffer: one body per buffer.
+pub type SegmentBodies = SmallVec<[(SymbolId, std::sync::Arc<SegmentBody>); 1]>;
+
 /// The values a scope appended to one output buffer.
 #[derive(Debug, Clone)]
 pub struct OutputSegment {
@@ -262,6 +266,10 @@ pub struct MemoSlot {
     pub result: Value,
     pub deps: Vec<Dep>,
     pub outputs: Vec<OutputSegment>,
+    /// What the scope emitted into segmented buffers, a body per buffer
+    /// (see [`crate::output_segments`]). Such a buffer has no entry in
+    /// `outputs`.
+    pub segments: SegmentBodies,
     /// Every state key the scope's subtree touched.
     pub touches: StateTouches,
     /// Host-data revision when recorded, for a `HostRead` dep.
@@ -302,6 +310,12 @@ impl MemoSlot {
                 _ => 0,
             };
         }
+        for (_, b) in &self.segments {
+            // The body's own values; a child's are charged to its record.
+            n += size_of::<SegmentBody>()
+                + b.values.len() * size_of::<Value>()
+                + b.marks.len() * size_of::<SegMark>();
+        }
         for o in &self.outputs {
             n += size_of::<OutputSegment>() + o.values.len() * size_of::<Value>();
             n += o
@@ -332,6 +346,9 @@ pub struct OpenScope {
     pub deps: Vec<Dep>,
     /// Output buffer lengths at entry, so the scope's own segment is the tail.
     pub out_start: SmallVec<[(SymbolId, usize); 2]>,
+    /// Segment-mark counts of the segmented buffers at entry, so the marks
+    /// the scope's children left are the tail.
+    pub seg_start: SmallVec<[(SymbolId, usize); 1]>,
     pub insts_at_entry: u64,
     pub rng_at_entry: u64,
     /// Something happened that a replay could not reproduce.
@@ -358,6 +375,7 @@ pub struct PreviousRecord {
     pub result: Value,
     pub deps: Vec<Dep>,
     pub outputs: Vec<OutputSegment>,
+    pub segments: SegmentBodies,
     pub touches: StateTouches,
 }
 
@@ -720,11 +738,15 @@ impl MemoTable {
     /// values they compare against and replay; open scopes pin their
     /// arguments and what they have recorded so far.
     pub fn gc_roots(&self, mut mark: impl FnMut(Value)) {
+        let mut seen = HashSet::new();
         for s in self.slots.values() {
             s.captures.iter().chain(&s.args).for_each(|v| mark(*v));
             mark(s.result);
             mark_deps(&s.deps, &mut mark);
             mark_outputs(&s.outputs, &mut mark);
+            for (_, b) in &s.segments {
+                b.mark_values(&mut seen, &mut mark);
+            }
         }
         for s in &self.open {
             s.captures.iter().chain(&s.args).for_each(|v| mark(*v));
@@ -733,6 +755,9 @@ impl MemoTable {
                 mark(p.result);
                 mark_deps(&p.deps, &mut mark);
                 mark_outputs(&p.outputs, &mut mark);
+                for (_, b) in &p.segments {
+                    b.mark_values(&mut seen, &mut mark);
+                }
             }
         }
     }
@@ -1257,6 +1282,7 @@ mod tests {
             result: Value::Nil,
             deps: vec![],
             outputs: vec![],
+            segments: Default::default(),
             touches: StateTouches::default(),
             host_revision: 0,
             resources_revision: 0,
@@ -1552,6 +1578,7 @@ r"
                 values: vec![Value::Nil; values],
                 origins: None,
             }],
+            segments: Default::default(),
             touches: StateTouches::default(),
             host_revision: 0,
             resources_revision: 0,
@@ -1594,6 +1621,7 @@ r"
             args: ScopeValues::new(),
             deps: Vec::new(),
             out_start: SmallVec::new(),
+            seg_start: SmallVec::new(),
             insts_at_entry: 0,
             rng_at_entry: 0,
             effectful: false,

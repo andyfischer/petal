@@ -48,6 +48,7 @@ pub mod fmt;
 pub mod lint;
 pub mod lsp;
 pub mod memo;
+pub mod output_segments;
 pub mod module;
 pub mod native_decl;
 pub mod native_fn;

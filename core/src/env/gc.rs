@@ -58,6 +58,15 @@ impl Env {
                 heap.mark_value(*val);
             }
         }
+        // Segmented buffers hold the bodies of this frame's segment marks:
+        // memo records hold them too, but a mark outlives an evicted record
+        // until the host drains it.
+        let mut seen = std::collections::HashSet::new();
+        for ch in ctx.segments.values() {
+            for m in &ch.marks {
+                m.body.mark_values(&mut seen, &mut |v| heap.mark_value(v));
+            }
+        }
 
         // 4. Host→script bindings hold heap-backed Values (e.g. a bound list of
         //    pressed keys), so they are GC roots too. Counters are plain u64s.

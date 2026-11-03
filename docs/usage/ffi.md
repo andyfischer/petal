@@ -45,7 +45,7 @@ Entry points, all on `Env` (`core/src/env/`):
 | Programs | `load_program`, `load_program_at`, `load_program_diag`, `compile_program`, `compile_program_at`, `compile_program_diag`, `load_program_ir` |
 | Execution | `create_stack`, `run`, `run_bounded`, `reset_stack`, `call_function`, `call_function_diag`, `has_function` |
 | Host→script data | `intern_symbol`, `set_binding`, `clear_binding` |
-| Script→host data | `take_output_buffer`, `output_buffer`, `take_output` (print lines) |
+| Script→host data | `take_output_buffer`, `output_buffer`, `take_output` (print lines); for a buffer whose replayed scopes should arrive as one reference each, `set_output_segmented` and `take_output_segments` (`petal::output_segments`) |
 | Id allocation | `reset_counter`, `next_counter` |
 | State tooling | `get_state_json`, `set_state_from_json`, `snapshot_state`, `restore_state`, `diff_state` |
 | Observation | `observations_mut().enable()`, `get_observations_json` — the last value bound to every named term (see [embedding-guide.md](embedding-guide.md#reading-arbitrary-named-values-observation)) |

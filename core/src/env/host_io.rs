@@ -98,6 +98,15 @@ impl Env {
             .iter()
             .filter(|(_, buf)| !buf.is_empty())
             .map(|(&sym, _)| sym)
+            .chain(
+                ctx.segments
+                    .iter()
+                    .filter(|(sym, ch)| {
+                        !ch.marks.is_empty()
+                            && ctx.output_buffers.get(sym).is_none_or(|b| b.is_empty())
+                    })
+                    .map(|(&sym, _)| sym),
+            )
             .collect();
         syms.sort_by_key(|&s| self.symbol_name(s).map(str::to_string));
         syms
@@ -119,6 +128,45 @@ impl Env {
     pub fn clear_output_buffer(&mut self, sym: SymbolId) {
         let ck = self.default_context;
         self.ctx_mut(ck).clear_output_buffer(sym);
+    }
+
+    // ── Segmented output (see `crate::output_segments`) ──────────
+
+    /// Put the buffer bound to `sym` in segmented mode, or take it out: a
+    /// memo scope that replays reaches the host as one segment reference
+    /// instead of the values it emitted, and a host that keeps what it made
+    /// of each segment pays O(scopes) per frame instead of O(values). Drain
+    /// it with [`take_output_segments`](Self::take_output_segments);
+    /// [`take_output_buffer`](Self::take_output_buffer) still returns it
+    /// flat. Off by default. Applies to every stack of the default context.
+    pub fn set_output_segmented(&mut self, sym: SymbolId, on: bool) {
+        let ck = self.default_context;
+        self.ctx_mut(ck).set_output_segmented(sym, on);
+    }
+
+    /// Whether `sym`'s buffer is in segmented mode.
+    pub fn output_segmented(&self, sym: SymbolId) -> bool {
+        self.ctx(self.default_context).output_segmented(sym)
+    }
+
+    /// Drain the buffer bound to `sym` as segments: this frame's fresh values
+    /// and segment references in order, the definitions the host has not
+    /// been given (children first) and the serials it may forget. See
+    /// [`crate::output_segments::SegmentedFrame`]. An unsegmented buffer
+    /// drains as fresh values only.
+    pub fn take_output_segments(
+        &mut self,
+        sym: SymbolId,
+    ) -> crate::output_segments::SegmentedFrame {
+        let ck = self.default_context;
+        self.ctx_mut(ck).take_output_segments(sym)
+    }
+
+    /// Forget which of `sym`'s segments the host was given (a host that lost
+    /// its cache): the next drain defines every segment it references.
+    pub fn reset_output_segments(&mut self, sym: SymbolId) {
+        let ck = self.default_context;
+        self.ctx_mut(ck).reset_output_segments(sym);
     }
 
     // ── Bindings (host→script uniforms) ──────────────────────────

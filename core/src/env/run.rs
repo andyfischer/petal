@@ -659,6 +659,7 @@ pub(super) fn make_vm<'a>(
         output: &mut ctx.output,
         symbols,
         output_buffers: &mut ctx.output_buffers,
+        segments: &mut ctx.segments,
         trace_emit,
         emit_origins: &mut ctx.emit_origins,
         bindings: &mut ctx.bindings,

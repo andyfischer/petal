@@ -207,7 +207,7 @@ fn show_static_reports_class_reason_and_readers() {
 
     let (out, _, code) = petal_in(&dir, &["show-static", "--all", "app.ptl"]);
     assert_eq!(code, 0);
-    assert!(out.lines().any(|l| l.starts_with("static") && l.contains("let lib::BASE")), "{out}");
+    assert!(out.lines().any(|l| l.starts_with("static") && l.contains("let ./lib::BASE")), "{out}");
 
     let (out, err, code) = petal_in(&dir, &["show-static", "--json", "app.ptl"]);
     assert_eq!(code, 0, "{err}");
@@ -223,7 +223,7 @@ fn show_static_reports_class_reason_and_readers() {
         .iter()
         .filter_map(|d| d.as_str())
         .collect();
-    assert_eq!(deps, ["lib::BASE", "lib::twice"]);
+    assert_eq!(deps, ["./lib::BASE", "./lib::twice"]);
     let lab = decls.iter().find(|d| d["name"] == "LAB_W").unwrap();
     assert_eq!(lab["class"], "dynamic");
     assert_eq!(lab["reason"][0]["text"], "calls label_w");

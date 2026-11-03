@@ -5,6 +5,7 @@
 //! cargo run --release --example scene_frame [frames] [city] [crates] [ships]
 //! MODES="effect (today),emit + memo + retained" cargo run ...   # a subset
 //! SHIPS=math-only|orbit cargo run ...                            # ship variants
+//! TEMPLATES=off cargo run ...                                    # no record is tagged
 //! ```
 //!
 //! `scene.ptl` declares a world every frame the way a Cheesecake game does:
@@ -31,6 +32,7 @@
 //! | `emit+memo+plan`  | same | + per-shape option plans (validate once per shape) and field-level value diffs for keyed items |
 //! | `emit+memo+seg`   | same | retained segments: reuse last frame's result for an item by position (`SegHost`), int keys, slot array |
 //! | `emit+memo+vmseg` | same, the buffer segmented (`petal::output_segments`) | a replayed scope is one reference: splice the segment kept by serial (`VmSegHost`), O(scopes) |
+//! | `+ templates`     | same | reads record templates (`petal::record_template`): a body whose template is the one applied last compares only its holes; a draw's static fields are read once per template |
 //!
 //! `SHIPS=orbit` declares each ship's motion (`orbit: {radius, speed, ...}`)
 //! instead of this frame's position, so the declaration reads no clock, is
@@ -194,6 +196,7 @@ fn parse_draw(name: &str, v: &View) -> Result<MeshDraw, String> {
     Ok(compute_draw(name, &f))
 }
 
+#[derive(Clone)]
 struct DrawFields {
     pos: [f64; 3],
     scale: [f64; 3],
@@ -244,6 +247,8 @@ enum HostMode {
     EmitSeg,
     /// Segments from the VM: see `VmSegHost`.
     EmitVmSeg,
+    /// `EmitVmSeg`, reading record templates (L6).
+    EmitVmSegTmpl,
 }
 
 /// A planned decode for one record shape: validated once, then fields are
@@ -509,6 +514,8 @@ struct Slot {
     live: bool,
     last_vals: Vec<Value>,
     last_shape: u64,
+    /// The template of the record last applied (`templates` mode), or 0.
+    last_template: u64,
 }
 
 #[derive(Default)]
@@ -527,6 +534,14 @@ pub struct SegHost {
     draws: Vec<DrawC>,
     decoded: u64,
     reused: u64,
+    /// Read record templates (`petal::record_template`): a keyed
+    /// declaration whose template is the one it applied last compares only
+    /// its holes, and a draw's static fields are read once per template.
+    templates: bool,
+    /// Per template id: a draw's fields as its static part sets them.
+    draw_templates: HashMap<u64, DrawFields>,
+    /// Records read through a template.
+    templated: u64,
 }
 
 impl SegHost {
@@ -599,8 +614,39 @@ impl SegHost {
         };
         let Value::Map(mid) = opts else { return Err("body: opts".into()) };
         let m = heap.get_map(mid);
+        let tmpl = if self.templates { m.template() } else { None };
         if let Some(&si) = self.by_key.get(&key) {
             let s = &mut self.slots[si as usize];
+            if let Some(t) = tmpl
+                && t.id == s.last_template
+            {
+                // Same template as last applied: only the holes can differ.
+                let vals = m.values_slice();
+                let mut only_pos = true;
+                let mut moved = None;
+                for &h in t.holes.iter() {
+                    let h = h as usize;
+                    if !same_value(heap, vals[h], s.last_vals[h]) {
+                        if m.get_index(h).map(|(k, _)| k.as_str()) == Some("pos") {
+                            moved = Some(h);
+                        } else {
+                            only_pos = false;
+                            break;
+                        }
+                    }
+                }
+                if only_pos {
+                    self.templated += 1;
+                    if let Some(i) = moved {
+                        if let Value::Vec3(p) = vals[i] {
+                            s.desc.pos = heap.get_vec3(p);
+                        }
+                        s.last_vals[i] = vals[i];
+                    }
+                    s.declared = self.frame;
+                    return Ok(si);
+                }
+            }
             if m.shape_id() == s.last_shape {
                 let vals = m.values_slice();
                 let mut only_pos = true;
@@ -623,6 +669,7 @@ impl SegHost {
                     }
                     s.last_vals.clear();
                     s.last_vals.extend_from_slice(vals);
+                    s.last_template = tmpl.map_or(0, |t| t.id);
                     s.declared = self.frame;
                     return Ok(si);
                 }
@@ -644,6 +691,7 @@ impl SegHost {
                             live: false,
                             last_vals: vec![],
                             last_shape: 0,
+                            last_template: 0,
                         });
                         (self.slots.len() - 1) as u32
                     }
@@ -670,6 +718,7 @@ impl SegHost {
         s.live = true;
         s.declared = self.frame;
         s.last_shape = m.shape_id();
+        s.last_template = tmpl.map_or(0, |t| t.id);
         s.last_vals.clear();
         s.last_vals.extend_from_slice(m.values_slice());
         Ok(si)
@@ -706,7 +755,7 @@ impl SegHost {
             Some(Value::Vec3(id)) => heap.get_vec3(*id),
             _ => d,
         };
-        let f = DrawFields {
+        let read = || DrawFields {
             pos: v3(at[0], [0.0; 3]),
             scale: v3(at[1], [1.0; 3]),
             rot: num(at[2], 0.0),
@@ -714,6 +763,36 @@ impl SegHost {
             roughness: num(at[4], 0.5),
             metallic: num(at[5], 0.0),
             emissive: num(at[6], 0.0),
+        };
+        let tmpl = if self.templates { m.template() } else { None };
+        let f = match tmpl {
+            // Read the static fields once per template, the holes per draw.
+            Some(t) => {
+                let mut f = match self.draw_templates.get(&t.id) {
+                    Some(f) => f.clone(),
+                    None => {
+                        let f = read();
+                        self.draw_templates.insert(t.id, f.clone());
+                        f
+                    }
+                };
+                self.templated += 1;
+                for &h in t.holes.iter() {
+                    let h = h as usize;
+                    match at.iter().position(|&a| a == h) {
+                        Some(0) => f.pos = v3(h, [0.0; 3]),
+                        Some(1) => f.scale = v3(h, [1.0; 3]),
+                        Some(2) => f.rot = num(h, 0.0),
+                        Some(3) => f.color = num(h, 0.0),
+                        Some(4) => f.roughness = num(h, 0.5),
+                        Some(5) => f.metallic = num(h, 0.0),
+                        Some(6) => f.emissive = num(h, 0.0),
+                        _ => {}
+                    }
+                }
+                f
+            }
+            None => read(),
         };
         self.decoded += 1;
         let d = compute_draw("", &f);
@@ -985,20 +1064,30 @@ struct Result_ {
     digests: Vec<u64>,
     decoded_per_frame: f64,
     skipped_per_frame: f64,
+    templated_per_frame: f64,
     memo_hits: u64,
 }
 
 fn run_mode(name: &'static str, source: &str, emit: bool, memo: bool, host: HostMode, frames: usize) -> Result_ {
     WORLD.with(|w| *w.borrow_mut() = World::default());
     SEG.with(|w| *w.borrow_mut() = SegHost::default());
-    VSEG.with(|w| *w.borrow_mut() = VmSegHost::default());
+    VSEG.with(|w| {
+        let mut w = w.borrow_mut();
+        *w = VmSegHost::default();
+        w.core.templates = host == HostMode::EmitVmSegTmpl;
+    });
     MODE.with(|m| *m.borrow_mut() = host);
+    let vmseg = matches!(host, HostMode::EmitVmSeg | HostMode::EmitVmSegTmpl);
     let mut env = Env::new();
     env.set_echo(false);
     let mut policy = RunPolicy::FAST;
     policy.memo = memo;
     policy.gate = false;
     env.set_policy(policy);
+    // `TEMPLATES=off`: no record is tagged (the VM's share of L6).
+    if std::env::var("TEMPLATES").as_deref() == Ok("off") {
+        env.set_record_templates(false);
+    }
     if emit {
         env.register_native("body", body_emit, NativeEffects::EMITS);
         env.register_native("draw_mesh", draw_emit, NativeEffects::EMITS);
@@ -1009,7 +1098,7 @@ fn run_mode(name: &'static str, source: &str, emit: bool, memo: bool, host: Host
     let pid = env.load_program(source).unwrap_or_else(|e| panic!("{e}"));
     let sid = env.create_stack(pid).unwrap();
     let scene = env.intern_symbol("scene");
-    if host == HostMode::EmitVmSeg {
+    if vmseg {
         env.set_output_segmented(scene, true);
     }
     let (mut script, mut hostt, mut times) = (vec![], vec![], vec![]);
@@ -1021,7 +1110,7 @@ fn run_mode(name: &'static str, source: &str, emit: bool, memo: bool, host: Host
         env.reset_stack(sid).unwrap();
         env.run(sid).unwrap_or_else(|e| panic!("{e}"));
         let t1 = Instant::now();
-        if host == HostMode::EmitVmSeg {
+        if vmseg {
             let frame = env.take_output_segments(scene);
             let heap = env.heap();
             VSEG.with(|w| w.borrow_mut().frame(heap, frame)).unwrap();
@@ -1053,7 +1142,7 @@ fn run_mode(name: &'static str, source: &str, emit: bool, memo: bool, host: Host
             times.push((t2 - t0).as_secs_f64() * 1e6);
             digests.push(if host == HostMode::EmitSeg {
                 SEG.with(|w| w.borrow().digest())
-            } else if host == HostMode::EmitVmSeg {
+            } else if vmseg {
                 VSEG.with(|w| w.borrow().digest())
             } else {
                 WORLD.with(|w| w.borrow().digest())
@@ -1069,6 +1158,7 @@ fn run_mode(name: &'static str, source: &str, emit: bool, memo: bool, host: Host
             VSEG.with(|w| {
                 let mut w = w.borrow_mut();
                 w.core.decoded = 0;
+                w.core.templated = 0;
                 w.spliced = 0;
             });
         }
@@ -1077,7 +1167,8 @@ fn run_mode(name: &'static str, source: &str, emit: bool, memo: bool, host: Host
         v.sort_by(|a, b| a.total_cmp(b));
         v[v.len() / 2]
     };
-    let (decoded, skipped) = if host == HostMode::EmitVmSeg {
+    let templated = VSEG.with(|w| w.borrow().core.templated as f64 / frames as f64);
+    let (decoded, skipped) = if vmseg {
         VSEG.with(|w| {
             let w = w.borrow();
             (w.core.decoded as f64 / frames as f64, w.spliced as f64 / frames as f64)
@@ -1102,6 +1193,7 @@ fn run_mode(name: &'static str, source: &str, emit: bool, memo: bool, host: Host
         digests,
         decoded_per_frame: decoded,
         skipped_per_frame: skipped,
+        templated_per_frame: if host == HostMode::EmitVmSegTmpl { templated } else { 0.0 },
         memo_hits,
     }
 }
@@ -1132,7 +1224,7 @@ fn main() {
     }
     let source = source.as_str();
     let only: Option<String> = std::env::var("MODES").ok();
-    let modes: [(&'static str, bool, bool, HostMode); 8] = [
+    let modes: [(&'static str, bool, bool, HostMode); 9] = [
         ("effect (today)", false, false, HostMode::Effect),
         ("effect + memo", false, true, HostMode::Effect),
         ("emit (no memo)", true, false, HostMode::Emit),
@@ -1141,6 +1233,7 @@ fn main() {
         ("emit + memo + identity + shape plans", true, true, HostMode::EmitPlan),
         ("emit + memo + retained segments", true, true, HostMode::EmitSeg),
         ("emit + memo + VM segments", true, true, HostMode::EmitVmSeg),
+        ("emit + memo + VM segments + templates", true, true, HostMode::EmitVmSegTmpl),
     ];
     let results: Vec<Result_> = modes
         .iter()
@@ -1148,13 +1241,20 @@ fn main() {
         .map(|(n, e, m, h)| run_mode(n, source, *e, *m, *h, frames))
         .collect();
     println!(
-        "{:<40} {:>10} {:>10} {:>10} {:>12} {:>12} {:>10}",
-        "mode", "script µs", "host µs", "total µs", "decoded/fr", "skipped/fr", "memo hits"
+        "{:<40} {:>10} {:>10} {:>10} {:>12} {:>12} {:>12} {:>10}",
+        "mode", "script µs", "host µs", "total µs", "decoded/fr", "skipped/fr", "templated/fr", "memo hits"
     );
     for r in &results {
         println!(
-            "{:<40} {:>10.0} {:>10.0} {:>10.0} {:>12.0} {:>12.0} {:>10}",
-            r.name, r.script_us, r.host_us, r.total_us, r.decoded_per_frame, r.skipped_per_frame, r.memo_hits
+            "{:<40} {:>10.0} {:>10.0} {:>10.0} {:>12.0} {:>12.0} {:>12.0} {:>10}",
+            r.name,
+            r.script_us,
+            r.host_us,
+            r.total_us,
+            r.decoded_per_frame,
+            r.skipped_per_frame,
+            r.templated_per_frame,
+            r.memo_hits
         );
     }
     // Only the two segment hosts sample declared motion (`orbit`), so with

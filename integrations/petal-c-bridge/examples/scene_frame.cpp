@@ -11,6 +11,14 @@
 //           the values are read by position
 //   diff    plan, and a keyed body compares its options with last frame's
 //           (pb_snapshot) and reads and applies only the ones that changed
+//   tmpl    diff, reading record templates (L6, pb_template): a body whose
+//           template is the one it applied last compares only its holes
+//           (pb_snapshot_update_record), and a draw's static options are read
+//           once per template
+//
+// The modes ending in `.untagged` run the same host with record templates
+// off in the VM (pb_vm_set_record_templates), so every record's static
+// fields are decoded on every drain, as before L6.
 //
 // each with the scene natives as host callbacks applied inside the call
 // (Cheesecake today; `body` returns a state record, as Cheesecake's does) and
@@ -172,7 +180,7 @@ static MeshDraw compute_draw(std::string_view name, const DrawFields& f) {
     return d;
 }
 
-enum class Reads { Lookup, Plan, Diff };
+enum class Reads { Lookup, Plan, Diff, Tmpl };
 
 struct World {
     Reads reads = Reads::Lookup;
@@ -182,6 +190,10 @@ struct World {
     petal::Plan body_plan{plan_list(kBodyAllowed)};
     petal::Plan draw_plan{plan_list(kDrawAllowed)};
     uint64_t body_changes = 0, fields_applied = 0;
+    // tmpl: per template id, a draw's fields as its static options set them,
+    // and the options bound to its holes.
+    struct DrawTemplate { DrawFields f; std::vector<size_t> holes; };
+    std::unordered_map<uint64_t, DrawTemplate> draw_templates;
 
     void begin() { ++frame; draws.clear(); }
 
@@ -226,8 +238,10 @@ struct World {
             return;
         }
         // Only the options that differ from the ones this body was last
-        // declared with (all of them the first time) are applied.
-        auto changed = e.snap.update(o);
+        // declared with (all of them the first time) are applied. With
+        // templates, only the holes of the template applied last are
+        // compared.
+        auto changed = reads == Reads::Tmpl ? e.snap.update(opts, o) : e.snap.update(o);
         if (!changed.any()) return;
         ++body_changes;
         for (size_t i : changed) {
@@ -252,6 +266,18 @@ struct World {
         } else {
             auto o = draw_plan.bind(opts);
             if (!o.ok()) throw std::runtime_error("draw_mesh: unknown option `" + std::string(o.unknown().key()) + "`");
+            const pb_template* t = reads == Reads::Tmpl ? opts.record_template() : nullptr;
+            if (t) {
+                auto it = draw_templates.find(t->id);
+                if (it != draw_templates.end()) {
+                    // The static options as the template set them; read the
+                    // holes.
+                    f = it->second.f;
+                    for (size_t i : it->second.holes) read_draw(f, i, o[i]);
+                    draws.push_back(compute_draw(name.str(), f));
+                    return;
+                }
+            }
             f.pos = v3(o[D_POS]);
             f.scale = v3(o[D_SCALE], {1, 1, 1});
             f.rot = o[D_ROT].number(0.0);
@@ -261,8 +287,30 @@ struct World {
             f.emissive = o[D_EMISSIVE].number(0.0);
             for (size_t i = 0; i < kDrawN; ++i)
                 if (!draw_modeled(i)) f.rest[i] = o[i].number(0.0);
+            if (t) {
+                DrawTemplate& dt = draw_templates[t->id];
+                dt.f = f;
+                const pb_value* first = opts.raw()->items;
+                for (size_t i = 0; i < kDrawN; ++i) {
+                    const pb_value* v = o[i].raw();
+                    if (v && v >= first && size_t(v - first) < t->count && t->is_hole[v - first]) dt.holes.push_back(i);
+                }
+            }
         }
         draws.push_back(compute_draw(name.str(), f));
+    }
+
+    static void read_draw(DrawFields& f, size_t i, petal::Value v) {
+        switch (i) {
+            case D_POS: f.pos = v3(v); break;
+            case D_SCALE: f.scale = v3(v, {1, 1, 1}); break;
+            case D_ROT: f.rot = v.number(0.0); break;
+            case D_COLOR: f.color = v.number(0.0); break;
+            case D_ROUGHNESS: f.roughness = v.number(0.5); break;
+            case D_METALLIC: f.metallic = v.number(0.0); break;
+            case D_EMISSIVE: f.emissive = v.number(0.0); break;
+            default: if (!draw_modeled(i)) f.rest[i] = v.number(0.0); break;
+        }
     }
 
     void end() {
@@ -312,6 +360,7 @@ struct Mode {
     std::string name;
     bool emit;
     Reads reads;
+    bool templates = true;
 };
 
 struct Result {
@@ -331,6 +380,7 @@ static Result run(const Mode& m, const std::string& source, int frames) {
     w.reads = m.reads;
     petal::Vm vm;
     vm.set_echo(false);
+    vm.set_record_templates(m.templates);
     if (m.emit) {
         vm.emitter("body", "scene");
         vm.emitter("draw_mesh", "scene");
@@ -399,9 +449,13 @@ int main(int argc, char** argv) {
         {"callback.lookup", false, Reads::Lookup},
         {"callback.plan", false, Reads::Plan},
         {"callback.diff", false, Reads::Diff},
+        {"callback.tmpl", false, Reads::Tmpl},
         {"emit.lookup", true, Reads::Lookup},
         {"emit.plan", true, Reads::Plan},
         {"emit.diff", true, Reads::Diff},
+        {"emit.tmpl", true, Reads::Tmpl},
+        {"emit.plan.untagged", true, Reads::Plan, false},
+        {"emit.diff.untagged", true, Reads::Diff, false},
     };
     const char* only = std::getenv("MODES");
     std::vector<Result> results;

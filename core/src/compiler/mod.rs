@@ -401,8 +401,8 @@ pub struct Compiler {
     // belongs to whoever finally uses the name.
     ambiguous_imports: HashMap<TermId, AmbiguousImport>,
     // Overload sets stitched from several plain imports of the file being
-    // compiled: set term → (name, the modules it joins).
-    merged_imports: HashMap<TermId, (String, Vec<String>)>,
+    // compiled: set term → the name and what each module offered.
+    merged_imports: HashMap<TermId, MergedImport>,
     // Names of the file being compiled whose plain import hides a core/std
     // name. An entry is dropped once warned about.
     prelude_shadows: HashMap<String, PreludeShadow>,
@@ -413,6 +413,21 @@ pub struct Compiler {
     pub(super) alias_floor: HashMap<String, Option<TermId>>,
 }
 
+/// A function name several plain imports offer with disjoint parameter
+/// counts, merged into one overload set (see `Compiler::merged_imports`).
+struct MergedImport {
+    name: String,
+    /// Each offering module, the qualifier this file reaches it through, and
+    /// the function set it offered, in import order.
+    offers: Vec<MergedOffer>,
+}
+
+struct MergedOffer {
+    module: String,
+    qualifier: String,
+    set: TermId,
+}
+
 /// A bare name two plain imports both offer, with nothing to choose between
 /// them.
 struct AmbiguousImport {
@@ -421,6 +436,10 @@ struct AmbiguousImport {
     offers: Vec<(String, String)>,
     /// The first offering module's path as the importing file wrote it.
     pin: String,
+    /// The module whose imports met here (`None` for the entry file). A
+    /// facade re-exports the marker, so the use that reports it can be in
+    /// another file, where `offers`' qualifiers and `pin` mean nothing.
+    module: Option<String>,
 }
 
 /// A plain import that took a core/std name (see `Compiler::prelude_shadows`).
@@ -435,6 +454,26 @@ struct PreludeShadow {
 }
 
 impl AmbiguousImport {
+    /// The error for a use of the name in the module `using` (`None` for
+    /// the entry file).
+    fn message_in(&self, using: Option<&str>) -> String {
+        if using == self.module.as_deref() {
+            return self.message();
+        }
+        // Reached through a facade: name it, and spell an import of one of
+        // the original modules the way the using file would write it.
+        let modules: Vec<String> = self.offers.iter().map(|(m, _)| m.clone()).collect();
+        let facade = self.module.as_deref().unwrap_or("the entry file");
+        let first = &modules[0];
+        format!(
+            "`{name}` is ambiguous: '{facade}' re-exports it from both {modules} — import it \
+             from one of them directly, as `import {spelled}: {name}`",
+            name = self.name,
+            modules = join_quoted(&modules),
+            spelled = import_spelling(using, first),
+        )
+    }
+
     fn message(&self) -> String {
         let modules: Vec<String> = self.offers.iter().map(|(m, _)| m.clone()).collect();
         let qualified: Vec<String> = self
@@ -450,6 +489,39 @@ impl AmbiguousImport {
             qualified = qualified.join(" or "),
             first = self.pin,
         )
+    }
+}
+
+/// How the module `using` (`None` for the entry file) would write an import
+/// of the module named `target`. A package module is imported by its name
+/// from anywhere. A loose module's name is its path from the entry file's
+/// directory (`./kit/button`), so from another loose file the path is
+/// rebased onto that file's directory.
+fn import_spelling(using: Option<&str>, target: &str) -> String {
+    let loose = |n: &str| n.starts_with("./") || n.starts_with("../");
+    let Some(using) = using.filter(|u| loose(u) && loose(target)) else {
+        return target.to_string();
+    };
+    let segments = |n: &str| -> Vec<String> {
+        n.split('/')
+            .filter(|s| *s != ".")
+            .map(str::to_string)
+            .collect()
+    };
+    let mut from = segments(using);
+    from.pop(); // the using file's own name: its directory is what counts
+    let to = segments(target);
+    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    if from[common..].iter().any(|s| s == "..") {
+        // Climbing out of a directory reached by `..` needs its name.
+        return target.to_string();
+    }
+    let ups = from.len() - common;
+    let rest = to[common..].join("/");
+    if ups == 0 {
+        format!("./{rest}")
+    } else {
+        format!("{}{rest}", "../".repeat(ups))
     }
 }
 
@@ -1237,7 +1309,23 @@ impl Compiler {
                     let modules: Vec<String> = from.iter().map(|(m, _)| m.clone()).collect();
                     match self.merge_disjoint_sets(&name, &from) {
                         Some(set) => {
-                            self.merged_imports.insert(set, (name.clone(), modules));
+                            let offers = from
+                                .iter()
+                                .map(|(m, otid)| MergedOffer {
+                                    module: m.clone(),
+                                    qualifier: qualifier_of.get(m).cloned().unwrap_or_else(
+                                        || crate::ast::module_local_name(m).to_string(),
+                                    ),
+                                    set: *otid,
+                                })
+                                .collect();
+                            self.merged_imports.insert(
+                                set,
+                                MergedImport {
+                                    name: name.clone(),
+                                    offers,
+                                },
+                            );
                             self.scope_bind(name.clone(), set);
                             continue;
                         }
@@ -1264,6 +1352,7 @@ impl Compiler {
                                     name: name.clone(),
                                     offers,
                                     pin,
+                                    module: self.current_module.clone(),
                                 },
                             );
                             self.scope_bind(name.clone(), marker);
@@ -1436,7 +1525,7 @@ impl Compiler {
             return;
         };
         if let Some(ambiguous) = self.ambiguous_imports.get(&tid) {
-            let message = ambiguous.message();
+            let message = ambiguous.message_in(self.current_module.as_deref());
             self.error_at(span, message);
             return;
         }
@@ -1467,7 +1556,7 @@ impl Compiler {
         let Some(tid) = self.scope_lookup(name) else {
             return;
         };
-        let Some((name, modules)) = self.merged_imports.get(&tid) else {
+        let Some(merged) = self.merged_imports.get(&tid) else {
             // The function set an import bound, held to the counts *it*
             // takes. The checker's own pass knows functions by bare name
             // across the whole program, so it cannot tell which module's
@@ -1490,13 +1579,45 @@ impl Compiler {
             }
             return;
         };
-        let message = format!(
-            "`{name}` is exported by {} with different parameter counts; this call picks one \
-             by its {argc} argument{} — qualify it (`{}.{name}`) to say which",
-            join_quoted(modules),
-            if argc == 1 { "" } else { "s" },
-            crate::ast::module_local_name(&modules[0]),
-        );
+        // The module whose set takes this many arguments is the one the call
+        // reaches, so that is the qualifier to suggest. When none does, the
+        // call is an arity error, which the checker reports by itself; a
+        // warning about which module it picks would only contradict it.
+        let fits = |offer: &MergedOffer| {
+            self.imported_arities(offer.set)
+                .is_some_and(|ranges| ranges.iter().any(|&(lo, hi)| lo <= argc && argc <= hi))
+        };
+        let picked = if positional {
+            merged.offers.iter().find(|o| fits(o))
+        } else {
+            None
+        };
+        let modules: Vec<String> = merged.offers.iter().map(|o| o.module.clone()).collect();
+        let name = merged.name.clone();
+        let message = match picked {
+            Some(offer) => format!(
+                "`{name}` is exported by {} with different parameter counts; this call takes \
+                 {argc} argument{}, so it calls the one from '{}' — qualify it (`{}.{name}`) to \
+                 say so",
+                join_quoted(&modules),
+                if argc == 1 { "" } else { "s" },
+                offer.module,
+                offer.qualifier,
+            ),
+            // A call that names its arguments is matched when it runs.
+            None if !positional => format!(
+                "`{name}` is exported by {} with different parameter counts — qualify the call \
+                 ({}) to say which",
+                join_quoted(&modules),
+                merged
+                    .offers
+                    .iter()
+                    .map(|o| format!("`{}.{name}`", o.qualifier))
+                    .collect::<Vec<_>>()
+                    .join(" or "),
+            ),
+            None => return,
+        };
         self.warn_at(span, message);
     }
 
@@ -3262,6 +3383,24 @@ pub(crate) fn method_base_name(kind: &StmtKind) -> &str {
     match class {
         Some(c) => &name[c.len() + 1..],
         None => name,
+    }
+}
+
+#[cfg(test)]
+mod import_spelling_tests {
+    use super::import_spelling;
+
+    #[test]
+    fn an_import_is_spelled_from_the_using_file() {
+        // A package module, and any module seen from the entry file, as named.
+        assert_eq!(import_spelling(None, "./kit/button"), "./kit/button");
+        assert_eq!(import_spelling(Some("./app/user"), "kit/button"), "kit/button");
+        // A loose module, from a loose file elsewhere.
+        assert_eq!(import_spelling(Some("./app/user"), "./kit/button"), "../kit/button");
+        assert_eq!(import_spelling(Some("./kit/menu"), "./kit/button"), "./button");
+        assert_eq!(import_spelling(Some("./user"), "./kit/button"), "./kit/button");
+        assert_eq!(import_spelling(Some("./a/b/c"), "./x"), "../../x");
+        assert_eq!(import_spelling(Some("./app/user"), "../shared/rng"), "../../shared/rng");
     }
 }
 

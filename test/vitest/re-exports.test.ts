@@ -49,9 +49,13 @@ describe("re-exports", () => {
 
   it("two re-exports of one value name are ambiguous where the name is used", () => {
     // The facade itself is fine — nothing in it uses `shared` bare. The error
-    // belongs to the file that finally does, and names both sources.
+    // belongs to the file that finally does: it names the facade and both
+    // sources, and spells an import that file can write.
     const err = runFileError("collide_app.ptl");
-    expect(err).toContain("`shared` is ambiguous: './collide_a' and './collide_b' export it");
+    expect(err).toContain(
+      "`shared` is ambiguous: './collide' re-exports it from both './collide_a' and './collide_b'",
+    );
+    expect(err).toContain("as `import ./collide_a: shared`");
     expect(err).toContain("[line 2, column 7]");
   });
 

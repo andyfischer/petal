@@ -253,6 +253,19 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- The warning on a call through a merged overload set (`score` exported by
+  two plain imports with different parameter counts) names the module whose
+  set the call reaches, and the qualifier this file binds for it
+  (`lv.score` under `import ./level as lv`). It used to suggest the first
+  module imported whatever the call's argument count, and it was also printed
+  next to the arity error for a count no set takes.
+
+- An ambiguous name reached through a facade (two `pub import`s offering
+  `shared`) is reported in terms the using file can act on: it names the
+  facade and spells an import of one original module from that file
+  (`import ../kit/button: shared`). It used to suggest qualifiers that are
+  bound only inside the facade.
+
 - An `import` inside a function, a block or a test is an error. It used to
   be ignored without a word: nothing loaded, nothing bound, and a missing
   path never reported.

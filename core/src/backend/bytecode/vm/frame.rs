@@ -114,6 +114,55 @@ impl VmFrame {
     }
 }
 
+/// The full state path of the innermost of `frames` (the live frame stack, or
+/// a prefix of it), appended to `out`: the parts of every frame from the
+/// nearest one that does not inherit up to the last.
+pub(crate) fn frames_path_into(frames: &[VmFrame], out: &mut FramePath) {
+    let Some(fi) = frames.len().checked_sub(1) else {
+        return;
+    };
+    let mut start = fi;
+    while start > 0 && frames[start].path_inherits {
+        start -= 1;
+    }
+    for f in &frames[start..] {
+        out.extend_from_slice(&f.path);
+    }
+}
+
+/// The **implicit key** of a native call (retained scene output, L8): the
+/// call path the call is made on, `[Call(site) | Index(i) | Key(h)]` exactly
+/// as it keys `state`, with the native's own call site as its last part,
+/// hashed by [`crate::output_segments::scope_id`]. It is the id a memo scope
+/// would have if the native were a user function called there, so it is
+/// stable across frames, runs and reloads that keep the call path (see
+/// docs/dev/state-call-paths.md §3.1), follows its item through a keyed loop,
+/// and is unique within a run wherever a `state` slot would be.
+///
+/// `None` when the call has no call term (a probe re-evaluated during memo
+/// validation, a command re-issued by a replay: those carry the key they
+/// were recorded with) or no frame. A call term without a callsite id
+/// (hand-written IR) counts as callsite 0, as for `state`.
+pub(crate) fn call_key_of(
+    frames: &[VmFrame],
+    program: &Program,
+    origin: Option<TermId>,
+) -> Option<u64> {
+    let origin = origin?;
+    if frames.is_empty() {
+        return None;
+    }
+    let site = program
+        .terms
+        .get(origin.0 as usize)
+        .and_then(|t| t.call_site)
+        .unwrap_or(0);
+    let mut path = FramePath::new();
+    frames_path_into(frames, &mut path);
+    path.push(PathPart::Call(site));
+    Some(crate::output_segments::scope_id(&path))
+}
+
 /// A live loop's iteration state (replaces the graph engine's `LoopState`).
 ///
 /// `acc` is the collection accumulator for a value-position loop (`x = for …`):
@@ -263,14 +312,17 @@ impl<'a> Vm<'a> {
     /// Frame `fi`'s full state path, appended to `out`: the parts of every
     /// frame from the nearest one that does not inherit up to `fi`.
     pub(super) fn full_path_into(&self, fi: usize, out: &mut FramePath) {
-        let frames = &self.stack.vm_frames[..=fi];
-        let mut start = fi;
-        while start > 0 && frames[start].path_inherits {
-            start -= 1;
+        frames_path_into(&self.stack.vm_frames[..=fi], out);
+    }
+
+    /// The implicit key of a native call made at `origin` from the innermost
+    /// frame (see [`call_key_of`]), or `None` in a higher-order builtin's
+    /// callback, where every element would get the same one.
+    pub(super) fn call_key_here(&self, origin: Option<TermId>) -> Option<u64> {
+        if self.stack.callback.is_some() {
+            return None;
         }
-        for f in &frames[start..] {
-            out.extend_from_slice(&f.path);
-        }
+        call_key_of(&self.stack.vm_frames, self.program, origin)
     }
 
     /// Frame `fi`'s full state path.

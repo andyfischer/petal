@@ -249,6 +249,22 @@ impl Env {
         }
     }
 
+    /// Tell the gate and the memoized scopes that the host data of the
+    /// revisioned classes in `classes` changed: a physics step
+    /// ([`InputClasses::PHYSICS`](crate::native_fn::InputClasses::PHYSICS)),
+    /// a network message applied (`NET`). A scope that read one of them
+    /// through a `query` native is valid while its revision holds, and a
+    /// scope that read only `HOST_DATA` is not disturbed by it.
+    pub fn note_class_changed(
+        &mut self,
+        stack_id: StackKey,
+        classes: crate::native_fn::InputClasses,
+    ) {
+        if let Some(stack) = self.stacks.get_mut(&stack_id) {
+            stack.run_deps.note_class_changed(classes);
+        }
+    }
+
     /// The dependency record of `stack_id`'s most recent run, for hosts and
     /// tools that want more than the yes/no (which bindings were read, whether
     /// host data was consulted).
@@ -264,10 +280,27 @@ impl Env {
         self.policy.memo && !self.trace.enabled
     }
 
+    /// Honour (`true`, the default) or ignore the compile-time memo hints of
+    /// the dependency classes on `stack_id`
+    /// (`crate::backend::bytecode::memo_hints`): which calls never open a
+    /// scope, which skip comparing static arguments, which constant calls
+    /// replay unchecked. Off, every call is treated as the runtime alone
+    /// would; the reference a test holds the hinted run to.
+    pub fn set_memo_hints(&mut self, stack_id: StackKey, on: bool) {
+        if let Some(stack) = self.stacks.get_mut(&stack_id) {
+            stack.memo.no_hints = !on;
+        }
+    }
+
     /// The memo counters of `stack_id`'s table (hits, misses, records, …),
     /// cumulative since the stack was created.
     pub fn memo_stats(&self, stack_id: StackKey) -> Option<crate::memo::MemoStats> {
         self.stacks.get(&stack_id).map(|s| s.memo.stats)
+    }
+
+    /// `stack_id`'s record template counters (`crate::record_template`).
+    pub fn record_template_stats(&self, stack_id: StackKey) -> Option<crate::record_template::TemplateStats> {
+        self.stacks.get(&stack_id).map(|s| s.statics.templates.stats)
     }
 
     /// `stack_id`'s enum-data revision: bumped when a run publishes constant
@@ -648,6 +681,7 @@ pub(super) fn make_vm<'a>(
     stack.statics.sync(&bc.statics, program.constants.revision());
     stack.statics.set_check(static_audit.check_kept);
     stack.statics.set_check_announced(static_audit.announce_check);
+    stack.statics.templates.set_enabled(!static_audit.templates_off);
     Vm {
         program,
         bc,
@@ -659,6 +693,7 @@ pub(super) fn make_vm<'a>(
         output: &mut ctx.output,
         symbols,
         output_buffers: &mut ctx.output_buffers,
+        segments: &mut ctx.segments,
         trace_emit,
         emit_origins: &mut ctx.emit_origins,
         bindings: &mut ctx.bindings,

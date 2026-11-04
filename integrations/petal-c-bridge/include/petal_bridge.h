@@ -20,6 +20,7 @@
  *     pb_vm_set_*                        bind host data (bindings)
  *     pb_vm_run                          reset_stack + run the whole program
  *     pb_vm_drain / pb_vm_drain_draw     read what the script emitted
+ *     (pb_vm_drain_segments: a replayed scope as one reference)
  *   pb_vm_sources_changed + pb_vm_reload hot reload, keeping `state`
  *     (pb_vm_changed_sources names the edited files; a value or layout
  *     edit is taken up without recompiling)
@@ -122,16 +123,37 @@ typedef enum pb_kind {
     PB_VEC2 = 4,     /* number = x, y = y */
     PB_STRING = 5,   /* str/str_len (UTF-8, NUL-terminated) */
     PB_LIST = 6,     /* items[count]  (f64 arrays decode as lists of PB_FLOAT) */
-    PB_MAP = 7,      /* items[count], each with key/key_len; str = class name or NULL */
+    PB_MAP = 7,      /* items[count], each with key/key_len; str = class name or NULL;
+                        integer = the record's shape id (see pb_plan), never 0 */
     PB_ENUM = 8,     /* str = variant tag ("Shape.circle"), items[count] = payload */
     PB_SYMBOL = 9,   /* str = symbol name */
-    PB_HANDLE = 10,  /* integer = slot, count = serial, str = handle class name */
+    PB_HANDLE = 10,  /* integer = slot, count = serial, number = class index (per VM),
+                        str = handle class name */
     PB_PENDING = 11, /* an unresolved resource */
     PB_OTHER = 12,   /* closure, native fn, element…; str = type name */
     PB_VEC3 = 13,    /* number = x, y = y, z = z */
     PB_DICT = 14     /* a `map` (Map()): items[count] alternate key, value, so
                         count is twice the number of entries */
 } pb_kind;
+
+/* What a record made by a templated literal promises (Petal's
+ * `record_template`). A literal whose fields are mostly static
+ * (`{shape: "box", size: 2.0, mass: 5.0, pos: p}`) is compiled to a template
+ * plus holes (`pos`), and every record it makes carries the template: records
+ * with one `id` have the same keys in the same order, the same holes, and in
+ * every field that is not a hole the same contents. The id is a content hash:
+ * the same for the same literal and static values in another run, after a
+ * reload and in another process of the same Petal build (not across builds;
+ * 64 bits, so a collision is possible in principle). The bridge decodes a template's static fields once and copies
+ * them into each record's view, so only the holes are decoded per record.
+ * Owned by the bridge; valid as long as the view that points at it. */
+typedef struct pb_template {
+    uint64_t id;            /* never 0 */
+    uint32_t count;         /* fields */
+    uint32_t hole_count;
+    const uint32_t* holes;  /* hole_count field positions, ascending */
+    const uint8_t* is_hole; /* count bytes: 1 where the field is a hole */
+} pb_template;
 
 /* A decoded, immutable view of one Petal value. Children are contiguous. */
 typedef struct pb_value {
@@ -146,6 +168,7 @@ typedef struct pb_value {
     double number;
     double y;                      /* VEC2/VEC3 y component */
     double z;                      /* VEC3 z component */
+    const pb_template* tmpl;       /* MAP made by a templated literal: its template; else NULL */
 } pb_value;
 
 /* A list of root values (e.g. everything drained from one output buffer). */
@@ -178,11 +201,95 @@ static inline const pb_value* pb_value_at(const pb_value* v, size_t i) {
     return (v && v->items && i < v->count) ? &v->items[i] : NULL;
 }
 
+/* ─── Option plans: read an options record by position ────────────────── */
+/*
+ * A native that takes an options record (`body(id, {shape: "box", pos: p})`)
+ * can check its field names once per record shape instead of on every call.
+ * A record literal's keys are fixed when the program is compiled, so every
+ * record it makes has one shape, and a decoded PB_MAP carries the shape's id
+ * in `integer`. A plan lists the options a native understands; binding a
+ * record fills one slot per option (the field, or NULL when absent), and the
+ * plan remembers per shape which field holds which option and whether any
+ * field is not an option. Binding a record of a shape seen before is a
+ * lookup by shape id: no key compares and no allow-list scan.
+ *
+ *   pb_plan* body_opts = pb_plan_new("shape, size, mass, pos");   // once
+ *   const pb_value* o[4];
+ *   const pb_value* unknown;
+ *   if (!pb_plan_bind(body_opts, opts, o, &unknown)) { ...report unknown->key... }
+ *   double mass = pb_value_num(o[2], 1.0);
+ *
+ * A plan belongs to the host (one per native, typically) and is independent
+ * of any VM; it can bind values decoded from a native's arguments or from a
+ * drained buffer. It is not thread-safe. Keys are only ever appended to a
+ * shape under its id, so a plan re-plans a record that has more fields than
+ * the shape had when planned. A record whose shape is rebuilt on every
+ * evaluation (for instance a spread that adds a field the source record
+ * lacks, `{...base, pos: p}`) gets a new shape id each time and is planned
+ * each time: correct, but without the saving.
+ *
+ * Values in the slots are views into the record: valid as long as it is.
+ */
+typedef struct pb_plan pb_plan;
+
+/* A plan for these option names, comma-separated ("shape, size, pos");
+ * whitespace around names is ignored. NULL when a name is empty or repeats.
+ * Option i is the i-th name. */
+pb_plan* pb_plan_new(const char* options);
+void pb_plan_free(pb_plan* plan);
+size_t pb_plan_count(const pb_plan* plan);
+/* Name of option i (NUL-terminated, owned by the plan), or NULL. */
+const char* pb_plan_name(const pb_plan* plan, size_t i);
+/* Bind `record`: out[i] (pb_plan_count slots; may be NULL to only check)
+ * gets the field for option i, or NULL. Returns true when every field of
+ * `record` is an option, or `record` is NULL or nil (all slots NULL). False
+ * when a field is not an option (`*out_unknown`, optional, gets the first
+ * such field; its key names it; the known options are still bound) or when
+ * `record` is not a record (`*out_unknown` = NULL). */
+bool pb_plan_bind(pb_plan* plan, const pb_value* record, const pb_value** out,
+                  const pb_value** out_unknown);
+
+/* A snapshot holds the option values a keyed declaration (a body, a light)
+ * was last given, so the host can apply only what changed:
+ *
+ *   pb_plan_bind(plan, opts, o, NULL);
+ *   uint64_t changed[1];                       // (count + 63) / 64 words
+ *   if (pb_snapshot_update(entry->snap, o, pb_plan_count(plan), changed))
+ *       for each bit i of changed: apply option i
+ *
+ * Values compare by content, exactly: numbers by their bits, strings by
+ * bytes, records by keys and values, lists item by item. A value whose
+ * contents a view does not carry (PB_OTHER, PB_PENDING) never compares
+ * equal. An option that appears or disappears counts as changed. */
+typedef struct pb_snapshot pb_snapshot;
+
+pb_snapshot* pb_snapshot_new(void);
+void pb_snapshot_free(pb_snapshot* snap);
+/* Forget what the snapshot holds: the next update reports every present
+ * value changed, as for a new snapshot. */
+void pb_snapshot_clear(pb_snapshot* snap);
+/* Compare `values` (n slots, NULL = absent, as pb_plan_bind fills them) with
+ * the values held, hold these from now on (a copy of their contents: the
+ * views need not outlive the call), and return whether any differs. Bit i
+ * of changed[i / 64] (optional, (n + 63) / 64 words) is set for each slot
+ * that differs. */
+bool pb_snapshot_update(pb_snapshot* snap, const pb_value* const* values, size_t n, uint64_t* changed);
+/* pb_snapshot_update for `values` bound (by pb_plan_bind) from `record`. When
+ * `record` has the template (pb_value::tmpl) of the record the snapshot was
+ * last updated from, an option bound to a static field of it cannot have
+ * changed and is not compared: only the holes are. Use one plan per
+ * snapshot. Otherwise the same as pb_snapshot_update. */
+bool pb_snapshot_update_record(pb_snapshot* snap, const pb_value* record, const pb_value* const* values,
+                               size_t n, uint64_t* changed);
+
 /* ─── Value builder (host → script) ───────────────────────────────────── */
 /*
  * A builder records a sequence of root values; containers are opened and
  * closed around their children. Inside a map, call pb_builder_key before each
  * field value. Builders are independent of any VM and reusable (pb_builder_clear).
+ * Maps built with the same keys in the same order share one record shape, as
+ * the records a script literal makes do, so a native that returns a state
+ * record on every call does not build a new key list each time.
  * Misuse (key outside a map, unbalanced end) is remembered and reported as
  * PB_ERR_INVALID_ARG by whichever call consumes the builder.
  */
@@ -327,7 +434,35 @@ pb_status pb_vm_override_file(pb_vm* vm, const char* path, const char* source);
  *                   effectful native and answers nil instead. A callback that
  *                   touches host state must NOT set it.
  *   PB_FX_NO_FEEDBACK the native's result may not be moved by direct
- *                   manipulation through its arguments (like `random`). */
+ *                   manipulation through its arguments (like `random`).
+ *
+ * The four kinds of engine native (docs/dev/retained-scene-output.md, L5),
+ * and how a memoized scope that called one is replayed:
+ *   declare  PB_FX_DECLARE: a keyed, idempotent declaration the host
+ *            reconciles after the run (body, point_light, loop_sound). Only
+ *            meaningful on an emitter (pb_vm_register_emitter_fx): replayed
+ *            like an emit, and the host reaps what no visited scope repeats.
+ *   emit     PB_FX_EMITS: this frame's output (a draw). Replayed: the scope's
+ *            output is spliced back (or handed over as one segment).
+ *   command  PB_FX_COMMAND: a one-shot call whose consequence the script
+ *            cannot observe in the same run (apply_impulse, sfx). It must
+ *            return nil. A replay RE-ISSUES it, calling the native again with
+ *            the same arguments, which is what running the code again would
+ *            do; a re-execution during validation defers it. Not with
+ *            PB_FX_EFFECT (which makes the scope unreplayable instead).
+ *   query    PB_FX_READS_PHYSICS (or PB_FX_READS_NET): reads the world. A
+ *            scope that called it is valid while that class's revision is
+ *            unchanged; bump it with pb_vm_note_class_changed after each
+ *            physics step. The bridge notes the read for the frame gate.
+ *   PB_FX_TICKS     the answer of this read changes every run (a clock read
+ *                   like `time`, not a fixed `dt`): a helper that calls it
+ *                   on every path is not recorded at all (a hint; a wrong
+ *                   TICKS costs replays, never correctness).
+ *   PB_FX_KEYED     only for pb_vm_register_emitter_fx, and not an effect: the
+ *                   pushed payload starts with the call's IMPLICIT KEY (an
+ *                   int, or nil where the call has none), then the call's
+ *                   arguments. See pb_call_key for what the key is; a
+ *                   callback native asks pb_call_key instead. */
 enum {
     PB_FX_PURE = 0,
     PB_FX_PROBE = 1u << 0,
@@ -345,7 +480,13 @@ enum {
     PB_FX_READS_HOST_DATA = 1u << 12,
     PB_FX_READS_RESOURCES = 1u << 13,
     PB_FX_READS_RNG = 1u << 14,
-    PB_FX_READS_BINDINGS = 1u << 15
+    PB_FX_READS_BINDINGS = 1u << 15,
+    PB_FX_READS_PHYSICS = 1u << 16, /* the physics world, revised per step */
+    PB_FX_READS_NET = 1u << 17,     /* replicated state, revised per message */
+    PB_FX_DECLARE = 1u << 18,       /* a keyed declaration (with EMITS) */
+    PB_FX_COMMAND = 1u << 19,       /* a one-shot command, re-issued on replay */
+    PB_FX_TICKS = 1u << 20,         /* a read whose answer changes every run */
+    PB_FX_KEYED = 1u << 21          /* emitter: payload starts with the implicit key */
 };
 
 /* A host native. Read arguments with pb_call_arg*, build at most one result
@@ -372,6 +513,34 @@ pb_status pb_vm_register_native(pb_vm* vm, const char* name, pb_native_fn fn, vo
  * Pending-no-op policy. This is the fast path for command streams: no host
  * code runs during the script; drain `buffer` after the run. */
 pb_status pb_vm_register_emitter(pb_vm* vm, const char* name, const char* buffer, const char* tag);
+
+/* pb_vm_register_emitter with extra effect flags on top of PB_FX_EMITS and
+ * the Pending-no-op policy: PB_FX_DECLARE for a declaration the host
+ * reconciles (body, point_light). PB_FX_KEYED pushes `tag(key, args...)`,
+ * where `key` is the call's implicit key (pb_call_key) as an int, or nil:
+ * a declaration the script gave no id can be reconciled by it. Other flags
+ * are taken as given. */
+pb_status pb_vm_register_emitter_fx(pb_vm* vm, const char* name, const char* buffer, const char* tag,
+                                    uint32_t effects);
+
+/* The host data behind PB_FX_READS_HOST_DATA natives changed: the frame gate
+ * re-runs a script that read it, and a memoized scope that read it is no
+ * longer replayed. Applies to the loaded program's stack. */
+pb_status pb_vm_note_host_data_changed(pb_vm* vm);
+
+/* The host data of the revisioned classes in `reads` changed:
+ * PB_FX_READS_PHYSICS after a physics step, PB_FX_READS_NET after a message
+ * was applied (other bits are ignored). Each class has its own revision, so a
+ * physics step does not invalidate what read only PB_FX_READS_HOST_DATA. */
+pb_status pb_vm_note_class_changed(pb_vm* vm, uint32_t reads);
+
+/* The dependency classes of every function of the loaded program, judged
+ * against this VM's natives, and the `never-replays` findings: which helpers
+ * are never (or rarely) replayed from the memo table, and why, down to the
+ * native ("reads `raycast` on every call (class PHYSICS)"). Text, one line per
+ * function then one per finding; `all_modules` includes imported modules.
+ * NULL if nothing is loaded. Valid until the next call to this function. */
+const char* pb_vm_dep_classes_report(pb_vm* vm, bool all_modules);
 
 /* Declare the parameter names of a registered native (a callback or an
  * emitter), so scripts may call it with named arguments:
@@ -406,6 +575,25 @@ void pb_call_set_error(pb_call* call, const char* message);
  * optional. False (nothing written) when the call has no source position (a
  * call the host made itself). `*out_file` is valid during the callback. */
 bool pb_call_location(pb_call* call, const char** out_file, uint32_t* out_line, uint32_t* out_column);
+/* The call's IMPLICIT KEY: a 64-bit hash of the call path the script call is
+ * made on, the [Call(site) | Index(i) | Key(k)] parts that key `state`, then
+ * the call's own call site (docs/dev/retained-scene-output.md, L8). A
+ * declaration the script gave no id (`body({shape: "box"})`) can be
+ * reconciled by it instead of an id built from a string:
+ *   - the same on every frame while the call path is: the same call site
+ *     (callsite ids survive edits elsewhere and reloads), the same loop
+ *     iteration, the same chain of calls above it;
+ *   - one per loop iteration; under `for e in ents key e.id` it follows the
+ *     entity, not the position;
+ *   - unique within a run wherever a `state` slot would be (a host that
+ *     calls one Petal function twice per run can see a key twice).
+ * False (nothing written) when the call has none: in a callback of a
+ * higher-order builtin (map, forEach, ...), where every element runs on one
+ * path, or for a call no script call made. A memo replay hands back the
+ * scope's emitted values, keys included; a PB_FX_COMMAND re-issued by a
+ * replay gets the key it was recorded with; a PB_FX_PROBE that reads its key
+ * makes the enclosing memo scope unrecordable. */
+bool pb_call_key(pb_call* call, uint64_t* out_key);
 /* Record an expectation of the host's own (an `expect_pixel`, say), as the
  * script's expect() does: `ok` true counts a check that held; false records a
  * failure at the position of the script call and the script carries on. The
@@ -662,6 +850,94 @@ const char* pb_vm_take_expect_failures_json(pb_vm* vm);
  * and decode it. The views stay valid until
  * the next run/call/clear, so several buffers can be drained per frame. */
 pb_status pb_vm_drain(pb_vm* vm, const char* buffer, pb_values* out);
+
+/* ─── Segmented output buffers ───────────────────────────────────────────
+ *
+ * A script that re-declares a whole world every frame (a level, a city, a
+ * panel of widgets) mostly re-declares what it declared last frame. Petal
+ * skips a call whose inputs did not change and replays what it emitted (a
+ * memo scope; docs/dev/memo-scopes.md), but a replay still appends every
+ * value, so a host draining the buffer walks the whole world each frame.
+ *
+ * In segmented mode a replayed scope reaches the host as ONE reference
+ * instead of its values. A host that keeps what it made of each segment (the
+ * draws it decoded, the bodies it created) and splices it back where the
+ * reference appears pays per scope, not per value:
+ *
+ *   pb_vm_set_segmented(vm, "scene", true);       // once, before the runs
+ *   // per frame, after pb_vm_run:
+ *   pb_segments seg;
+ *   pb_vm_drain_segments(vm, "scene", &seg);
+ *   for (i < seg.defined_count)  build(seg.defined[i]);   // children first
+ *   walk(seg.entries, seg.count);                         // this frame, in order
+ *   for (i < seg.dropped_count)  forget(seg.dropped[i]);  // after the walk
+ *
+ * where an entry with segment == 0 is a value emitted fresh this frame and
+ * any other entry stands for everything segment `segment` holds (its own
+ * entries, which may name further segments), in its place. Expanding every
+ * reference gives exactly what pb_vm_drain would have returned.
+ *
+ * A segment is one recording of one scope:
+ *   serial  names the recording: unique for the life of the process, never 0,
+ *           and its contents never change, so a cache keyed by serial is never
+ *           stale. A scope that runs again (its inputs changed) is a new
+ *           serial; the old one is listed in `dropped` once nothing refers to
+ *           it.
+ *   scope   names the scope: a hash of the call path that ran it, the same
+ *           from frame to frame (and run to run) of one program. A new serial
+ *           with a known scope is that scope's new contents, which is how a
+ *           retained renderer can reuse the old segment's buffer range.
+ *
+ * Each serial is defined once, the first time a drain refers to it (directly
+ * or inside another definition). Definitions are only sent to the host that
+ * drains; a host that loses its cache calls pb_vm_reset_segments and the next
+ * drain defines everything it refers to again. A reload that recompiles
+ * drops every segment.
+ *
+ * Only scopes Petal keeps a record of become segments; everything else (code
+ * at the top level, a scope that prints or draws randomness, a call too small
+ * to record) stays fresh values. Memoization must be on (the default policy).
+ * pb_vm_drain still works on a segmented buffer and returns it expanded.
+ *
+ * The value views (pb_seg_entry.value) and the arrays are valid until the next
+ * run/call/clear, like pb_vm_drain's: decode what you keep. */
+
+typedef struct pb_seg_entry {
+    uint64_t segment;        /* 0: a fresh value, at `value`; else a segment's serial */
+    const pb_value* value;   /* the value when segment == 0, else NULL */
+} pb_seg_entry;
+
+typedef struct pb_segment {
+    uint64_t scope;          /* the scope (hash of its call path), stable across frames */
+    uint64_t serial;         /* this recording; what pb_seg_entry.segment names */
+    const pb_seg_entry* entries;
+    size_t count;
+} pb_segment;
+
+typedef struct pb_segments {
+    const pb_seg_entry* entries;   /* this frame's buffer, in order */
+    size_t count;
+    const pb_segment* defined;     /* segments not defined to this host before, children first */
+    size_t defined_count;
+    const uint64_t* dropped;       /* serials nothing refers to any more (sorted) */
+    size_t dropped_count;
+} pb_segments;
+
+/* Put output buffer `buffer` in segmented mode (on), or back to flat (off).
+ * Default: flat. Turning it on again later starts over (everything is
+ * defined again). */
+pb_status pb_vm_set_segmented(pb_vm* vm, const char* buffer, bool on);
+/* Tag the records of mostly-static literals with their template (pb_template,
+ * pb_value::tmpl; the default), or build every record untagged. A script
+ * cannot tell the two apart; off is the oracle a host holds its template
+ * reads to. */
+pb_status pb_vm_set_record_templates(pb_vm* vm, bool on);
+/* Drain a segmented buffer (see above). On a buffer that is not segmented,
+ * every entry is a fresh value. */
+pb_status pb_vm_drain_segments(pb_vm* vm, const char* buffer, pb_segments* out);
+/* Forget which segments of `buffer` this host was given: the next drain
+ * defines every segment it refers to. */
+pb_status pb_vm_reset_segments(pb_vm* vm, const char* buffer);
 
 /* Pointer-grab request made this frame by grab_mouse()/release_mouse():
  * 1 = grab, 0 = release, -1 = none. Drains the request channel. */

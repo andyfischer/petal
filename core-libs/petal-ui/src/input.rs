@@ -639,8 +639,10 @@ pub fn register_input_module(env: &mut Env) {
         NativeEffects::PURE.with_emits(),
     );
     register(env, "dt", native_dt, CLOCK);
-    register(env, "time", native_time, CLOCK);
-    register(env, "frame_count", native_frame_count, CLOCK);
+    // `time` and `frame_count` answer something new every frame; `dt` may
+    // repeat (a fixed step), so it does not tick.
+    register(env, "time", native_time, CLOCK.ticks());
+    register(env, "frame_count", native_frame_count, CLOCK.ticks());
     register(env, "screen_width", native_screen_width, VIEWPORT);
     register(env, "screen_height", native_screen_height, VIEWPORT);
     // The one constant function in petal-ui: a number compiled into the

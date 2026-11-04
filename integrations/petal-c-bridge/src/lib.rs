@@ -14,6 +14,7 @@
 //!   bindings as JSON, formatting-preserving edits by path).
 //! - [`view`]: decoding Petal values into flat `pb_value` trees.
 //! - [`builder`]: building host values (`pb_builder`).
+//! - [`plan`]: option plans and snapshots (`pb_plan`, `pb_snapshot`).
 //! - [`draw`]: petal-ui `DrawCommand` → `pb_draw_cmd`.
 //! - [`ffi`]: status codes, structured errors, the panic firewall.
 //!
@@ -38,6 +39,7 @@ pub mod call_json;
 pub mod draw;
 pub mod ffi;
 pub mod natives;
+pub mod plan;
 pub mod scenario;
 pub mod source;
 pub mod view;

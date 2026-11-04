@@ -223,6 +223,9 @@ pub enum Command {
         json: bool,
         /// Include the declarations of imported modules (the prelude too).
         all: bool,
+        /// Print the dependency classes of every function and the
+        /// `never-replays` findings instead (`static_classify::dep_classes`).
+        deps: bool,
     },
     ShowAst {
         json: bool,
@@ -687,8 +690,8 @@ pub fn execute(cli: CliArgs) {
         Command::ShowBytecode { json } => {
             handlers::handle_show_bytecode(json, &source, &source_input, &include_dirs);
         }
-        Command::ShowStatic { json, all } => {
-            handlers::handle_show_static(json, all, &source, &source_input, &include_dirs);
+        Command::ShowStatic { json, all, deps } => {
+            handlers::handle_show_static(json, all, deps, &source, &source_input, &include_dirs);
         }
         Command::Graph { json, terms, query } => {
             handlers::handle_graph(

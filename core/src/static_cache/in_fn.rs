@@ -956,9 +956,9 @@ pub(super) fn apply(
     analysis: &StaticAnalysis,
     natives: &NativeFnTable,
     plan: &StaticPlan,
+    fn_plan: &FnPlan,
     slots: &mut Vec<SlotFollow>,
 ) {
-    let fn_plan = FnPlan::of(program, analysis, plan);
     if fn_plan.is_empty() {
         return;
     }
@@ -966,7 +966,7 @@ pub(super) fn apply(
     let written = written_results(program, mutated);
     for i in 0..bc.fns.len() {
         let result_written = written.covers(bc.fns[i].name.as_deref());
-        let kept = stretches(&bc.fns[i], bc, program, analysis, natives, &fn_plan, mutated, result_written);
+        let kept = stretches(&bc.fns[i], bc, program, analysis, natives, fn_plan, mutated, result_written);
         if kept.is_empty() {
             continue;
         }

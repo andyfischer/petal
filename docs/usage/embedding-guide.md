@@ -44,7 +44,7 @@ The three channels, all keyed by an interned **symbol** (`env.intern_symbol(name
 | Direction | Channel | Host API | Script/native API |
 |-----------|---------|----------|-------------------|
 | host → script | **binding** (a uniform) | `set_binding` / `binding` / `clear_binding` | `binding(sym)` builtin (`import io`), `cxt.binding_named` |
-| script → host | **output buffer** (a stream) | `take_output_buffer` / `output_buffer` / `clear_output_buffer` | `push_output(sym, v)` builtin (`import io`), `cxt.push_output` / `cxt.emit` |
+| script → host | **output buffer** (a stream) | `take_output_buffer` / `output_buffer` / `clear_output_buffer`; segmented: `set_output_segmented` / `take_output_segments` | `push_output(sym, v)` builtin (`import io`), `cxt.push_output` / `cxt.emit` |
 | per-run ids | **counter** | `reset_counter` / `next_counter` | `cxt.next_counter` |
 
 ---

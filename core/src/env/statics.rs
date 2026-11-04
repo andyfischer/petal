@@ -91,7 +91,10 @@ impl Env {
     /// both need the native table too. `show-bytecode` comes here as well,
     /// so a disassembly is of the code a run executes.
     pub fn lower_with(&self, program: &Program, flags: OptFlags) -> Result<BytecodeProgram, String> {
-        let mut bc = if flags.static_cache {
+        // Memoization reads the dependency classes' hints, which come with
+        // the analysis, so a memoized run lowers against it cache or not
+        // (`lower_with_statics` honours the cache flag itself).
+        let mut bc = if flags.static_cache || self.policy.memo {
             let analysis = crate::static_classify::analyze_kept(program, &self.native_fns);
             crate::backend::bytecode::lower_with_statics(program, flags, &analysis, &self.native_fns)
         } else {
@@ -145,6 +148,16 @@ impl Env {
     /// `Env`.
     pub fn set_static_check(&mut self, on: bool) {
         self.static_audit.check_kept = on;
+    }
+
+    /// Tag the records of mostly-static literals with their template
+    /// (`crate::record_template`; on by default, with the static-value
+    /// cache), or build every record untagged. A program cannot tell the
+    /// two apart; a host reading a record's template can. Off is the oracle
+    /// the tags are held to. `PETAL_RECORD_TEMPLATES=0` turns it off for
+    /// every `Env`.
+    pub fn set_record_templates(&mut self, on: bool) {
+        self.static_audit.templates_off = !on;
     }
 
     /// Whether runs keep static values right now: the policy asks for it

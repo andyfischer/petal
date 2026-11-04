@@ -45,6 +45,22 @@ pub const FX_CONTAINED: u32 = 1 << 6;
 pub const FX_NO_FEEDBACK: u32 = 1 << 7;
 pub const FX_READS_SHIFT: u32 = 8;
 pub const FX_READS_HOST_DATA: u32 = 1 << 12;
+pub const FX_READS_PHYSICS: u32 = 1 << 16;
+pub const FX_READS_NET: u32 = 1 << 17;
+pub const FX_DECLARE: u32 = 1 << 18;
+pub const FX_COMMAND: u32 = 1 << 19;
+pub const FX_TICKS: u32 = 1 << 20;
+/// Bridge-only: an emitter puts the call's implicit key first in what it
+/// pushes ([`register_emitter_fx`]). Not part of the effect row.
+pub const FX_KEYED: u32 = 1 << 21;
+/// The read bits, `PB_FX_READS_POINTER` to `PB_FX_READS_NET`: one per input
+/// class, in the classes' bit order.
+const FX_READS_MASK: u32 = 0x3ff;
+
+/// The input classes a set of `PB_FX_READS_*` bits names.
+pub fn classes_from_flags(flags: u32) -> InputClasses {
+    InputClasses(((flags >> FX_READS_SHIFT) & FX_READS_MASK) as u16)
+}
 
 /// Translate `PB_FX_*` flags into Petal's effect row.
 ///
@@ -62,14 +78,17 @@ pub fn effects_from_flags(flags: u32) -> NativeEffects {
         NativeClass::Strict
     };
     NativeEffects {
-        reads: InputClasses(((flags >> FX_READS_SHIFT) & 0xff) as u16),
+        reads: classes_from_flags(flags),
         probe: flags & FX_PROBE != 0,
-        emits: flags & FX_EMITS != 0,
+        emits: flags & FX_EMITS != 0 || flags & FX_DECLARE != 0,
         effect: flags & FX_EFFECT != 0,
         pending,
         constant: flags & FX_CONST != 0,
         contained: flags & FX_CONTAINED != 0,
         no_feedback: flags & FX_NO_FEEDBACK != 0,
+        declares: flags & FX_DECLARE != 0,
+        command: flags & FX_COMMAND != 0,
+        ticks: flags & FX_TICKS != 0,
     }
 }
 
@@ -119,6 +138,9 @@ impl HostCallback {
     fn call(&self, cxt: &mut PetalCxt) -> NativeResult {
         if self.flags & FX_READS_HOST_DATA != 0 {
             cxt.note_host_read();
+        }
+        if self.flags & (FX_READS_PHYSICS | FX_READS_NET) != 0 {
+            cxt.note_class_read(classes_from_flags(self.flags & (FX_READS_PHYSICS | FX_READS_NET)));
         }
         if self.flags & FX_EFFECT != 0 {
             cxt.note_effect();
@@ -181,11 +203,6 @@ impl Drop for HostCallback {
     }
 }
 
-/// Every argument of the current native call.
-fn args_of(cxt: &PetalCxt) -> Result<Vec<Value>, String> {
-    (1..=cxt.arg_count()).map(|i| cxt.get_value(i)).collect()
-}
-
 /// Register a C callback as the native `name`. The returned id is the
 /// native's; `callback` (and so the userdata) now belongs to `env`.
 pub fn register_callback(env: &mut Env, callback: HostCallback) -> NativeFnId {
@@ -197,17 +214,47 @@ pub fn register_callback(env: &mut Env, callback: HostCallback) -> NativeFnId {
 /// Register an emitter: `name(args...)` pushes `tag(args...)` into `buffer`
 /// and returns nil. Declared `Emits` with the Pending-no-op policy.
 pub fn register_emitter(env: &mut Env, name: &str, buffer: SymbolId, tag: &str) -> NativeFnId {
+    register_emitter_fx(env, name, buffer, tag, 0)
+}
+
+/// [`register_emitter`] with `extra` effect flags on its row (`PB_FX_DECLARE`).
+///
+/// With [`FX_KEYED`] the pushed payload starts with the call's implicit key
+/// ([`PetalCxt::call_key`]) as an int, or nil where the call has none (in a
+/// `map`/`forEach` callback), followed by the call's arguments.
+pub fn register_emitter_fx(
+    env: &mut Env,
+    name: &str,
+    buffer: SymbolId,
+    tag: &str,
+    extra: u32,
+) -> NativeFnId {
     let tag: Rc<str> = Rc::from(tag);
+    let keyed = extra & FX_KEYED != 0;
     env.register_native_boxed(
         name,
         move |cxt| {
-            let args = args_of(cxt)?;
+            let mut args = Vec::with_capacity(cxt.arg_count() + keyed as usize);
+            if keyed {
+                args.push(key_value(cxt.call_key()));
+            }
+            for i in 1..=cxt.arg_count() {
+                args.push(cxt.get_value(i)?);
+            }
             cxt.emit(buffer, &tag, args);
             cxt.push_nil();
             Ok(1)
         },
-        effects_from_flags(FX_EMITS | FX_PENDING_EFFECTFUL),
+        effects_from_flags(FX_EMITS | FX_PENDING_EFFECTFUL | (extra & !FX_KEYED)),
     )
+}
+
+/// An implicit key as a script value: its 64 bits as an int, or nil.
+fn key_value(key: Option<u64>) -> Value {
+    match key {
+        Some(k) => Value::Int(k as i64),
+        None => Value::Nil,
+    }
 }
 
 /// The state behind a `pb_call*`: one in-flight host-native invocation.
@@ -331,6 +378,24 @@ pub unsafe extern "C" fn pb_call_location(
             if !out_column.is_null() {
                 out_column.write(loc.column);
             }
+        }
+        true
+    })
+}
+
+/// `pb_call_key`: the call's implicit key ([`PetalCxt::call_key`]). False
+/// (nothing written) where the call has none.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_call_key(call: *mut PbCall, out_key: *mut u64) -> bool {
+    crate::ffi::guard(false, || {
+        let Some(call) = (unsafe { call.as_mut() }) else {
+            return false;
+        };
+        let Some(key) = call.cxt().and_then(|cxt| cxt.call_key()) else {
+            return false;
+        };
+        if !out_key.is_null() {
+            unsafe { out_key.write(key) };
         }
         true
     })

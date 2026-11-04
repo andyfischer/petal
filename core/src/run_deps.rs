@@ -32,6 +32,7 @@ use std::collections::HashMap;
 use crate::closure_table::ClosureTable;
 use crate::heap::Heap;
 use crate::memo::content_equal;
+use crate::native_fn::InputClasses;
 use crate::symbol::SymbolId;
 use crate::value::Value;
 
@@ -58,6 +59,17 @@ pub enum RunReason {
     RngConsumed,
     /// A pending resource was created, resolved or rejected since the last run.
     ResourcesChanged,
+}
+
+/// The revisioned classes, each with a slot in [`RunDeps`]'s counters.
+const REVISIONED_CLASSES: [(InputClasses, &str); 2] =
+    [(InputClasses::PHYSICS, "PHYSICS"), (InputClasses::NET, "NET")];
+const CLASS_SLOTS: usize = REVISIONED_CLASSES.len();
+
+/// The counter slot of a single revisioned class.
+#[inline]
+fn class_slot(class: InputClasses) -> Option<usize> {
+    REVISIONED_CLASSES.iter().position(|(c, _)| *c == class)
 }
 
 /// A snapshot of [`RunDeps::activity`].
@@ -95,6 +107,13 @@ pub struct RunDeps {
     host_data_revision: u64,
     /// Current host-data revision.
     host_data_now: u64,
+    /// The revisioned classes ([`InputClasses::REVISIONED`]: `PHYSICS`,
+    /// `NET`) the last run read, and each one's revision then and now, by
+    /// [`class_slot`]. A sub-class of host data with its own counter, so a
+    /// physics step does not invalidate what read only host data.
+    class_read: u16,
+    class_revision: [u64; CLASS_SLOTS],
+    class_now: [u64; CLASS_SLOTS],
     /// The RNG state when the run began, to detect draws.
     rng_at_start: u64,
     rng_consumed: bool,
@@ -307,6 +326,32 @@ impl RunDeps {
         self.host_data_now = self.host_data_now.wrapping_add(1);
     }
 
+    /// The run in progress read a revisioned class (`PHYSICS`, `NET`):
+    /// another run is needed once the host reports that class changed.
+    /// Classes outside [`InputClasses::REVISIONED`] are ignored.
+    #[inline]
+    pub fn note_class_read(&mut self, classes: InputClasses) {
+        self.class_read |= classes.0 & InputClasses::REVISIONED.0;
+        self.host_reads = self.host_reads.wrapping_add(1);
+    }
+
+    /// The host's data of the revisioned classes in `classes` changed (a
+    /// physics step, a network message applied): bump each one's revision.
+    pub fn note_class_changed(&mut self, classes: InputClasses) {
+        for (i, (c, _)) in REVISIONED_CLASSES.iter().enumerate() {
+            if classes.intersects(*c) {
+                self.class_now[i] = self.class_now[i].wrapping_add(1);
+            }
+        }
+    }
+
+    /// The current revision of one revisioned class (`0` for a class that
+    /// is not one).
+    #[inline]
+    pub fn class_now(&self, class: InputClasses) -> u64 {
+        class_slot(class).map_or(0, |i| self.class_now[i])
+    }
+
     /// Start recording a run. Clears the in-progress scratch and marks the
     /// record invalid until [`finish_run`](Self::finish_run).
     pub fn begin_run(&mut self, rng_state: u64) {
@@ -314,6 +359,7 @@ impl RunDeps {
             self.read_flags[sym.0 as usize] = false;
         }
         self.host_read = false;
+        self.class_read = 0;
         self.state_unsettled = false;
         self.in_place_kept = None;
         self.rng_consumed = false;
@@ -350,6 +396,7 @@ impl RunDeps {
         self.rng_consumed = rng_state != self.rng_at_start;
         self.resources_revision = resources_revision;
         self.host_data_revision = self.host_data_now;
+        self.class_revision = self.class_now;
         self.valid = true;
     }
 
@@ -380,6 +427,12 @@ impl RunDeps {
         }
         if self.host_read && self.host_data_now != self.host_data_revision {
             return Some(RunReason::HostDataChanged);
+        }
+        // A revisioned class is host data with its own counter.
+        for (i, (c, _)) in REVISIONED_CLASSES.iter().enumerate() {
+            if self.class_read & c.0 != 0 && self.class_now[i] != self.class_revision[i] {
+                return Some(RunReason::HostDataChanged);
+            }
         }
         for (sym, fp, revision) in &self.reads {
             if *revision != 0 && revisions.get(sym) == Some(revision) {

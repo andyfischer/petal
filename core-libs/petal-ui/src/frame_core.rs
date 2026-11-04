@@ -450,6 +450,9 @@ impl FrameStats {
                 "cutoffs": m.cutoffs,
                 "evicted": m.evicted,
                 "cold": m.cold,
+                "static_skips": m.static_skips,
+                "static_args": m.static_args,
+                "commands": m.commands,
             },
         })
     }

@@ -569,9 +569,14 @@ fn a_const_is_classified_once_and_kept() {
     frame(&mut w);
     assert_eq!(petal::static_classify::analyses_run() - before, 1, "classified again");
 
-    // Without a `const` nothing is classified at compile time.
+    // Without a `const` nothing is classified at compile time (nor at the
+    // lowering, without the cache and without memoization, which reads the
+    // dependency classes).
     let before = petal::static_classify::analyses_run();
-    let mut plain = world(&src.replace("const ", "let "), RunPolicy::REPLAY.with_static_cache(false));
+    let mut plain = world(
+        &src.replace("const ", "let "),
+        RunPolicy::REPLAY.with_static_cache(false).with_memo(false),
+    );
     frame(&mut plain);
     assert_eq!(petal::static_classify::analyses_run() - before, 0);
 }

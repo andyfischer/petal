@@ -180,11 +180,11 @@ v[1]["missing"]["deeper"].is_nil();      // true: misses chain safely
 | `vec3(x, y, z)` | `PB_VEC3` | `x()`, `y()`, `z()`; also `num("x")`…`num("z")`, so host code written for `{x, y, z}` records accepts vectors (`[key]`/`has` stay map-only) |
 | `"text"` | `PB_STRING` | `str()` |
 | `[a, b]` | `PB_LIST` | `size()`, `[i]`, iteration |
-| `{k: v}`, colors, class instances | `PB_MAP` | `[key]`, `num(key)`, `has(key)`, iteration (`key()` on each field); `str()` = class name |
+| `{k: v}`, colors, class instances | `PB_MAP` | `[key]`, `num(key)`, `has(key)`, iteration (`key()` on each field); `str()` = class name; `shape()` = the record's shape id (see [option plans](#options-records-read-by-position-with-a-plan)) |
 | `Map([[k, v]])` | `PB_DICT` | `size()` = twice the entry count; `[2*i]` is entry `i`'s key and `[2*i + 1]` its value, in insertion order. Build one with `begin_dict()`/`end_dict()` (`pb_builder_begin_dict`), pushing key, value, key, value… |
 | `Shape.circle(3)` | `PB_ENUM` | `tag()` = `"Shape.circle"`, payload via `[i]` |
 | `symbol("s")` | `PB_SYMBOL` | `str()` |
-| handles | `PB_HANDLE` | `str()` = class name; the raw node has the slot in `raw()->integer` and the serial in `raw()->count` (`integer()` and `size()` return their fallbacks, since a handle is not a number or a container) |
+| handles | `PB_HANDLE` | `str()` = class name; the raw node has the slot in `raw()->integer`, the serial in `raw()->count` and the class's index (per VM) in `raw()->number` (`integer()` and `size()` return their fallbacks, since a handle is not a number or a container) |
 
 Color literals such as `#ff8800` are records `{r, g, b}` (0–255). A native
 `vec3` decodes as `PB_VEC3`, with its components in `number`, `y` and `z`
@@ -362,6 +362,180 @@ Emitters are declared `Emits` with the Pending-no-op policy. Emitting into
 petal-ui's own `"draw_commands"` buffer is supported: such commands come back
 from `drain_draw()` as `PB_DRAW_HOST` in their place in the draw order (see
 below) — useful for HUD extensions like sprites.
+
+### Declarations, commands and queries
+
+An emitter registered with `pb_vm_register_emitter_fx(vm, name, buffer, tag,
+PB_FX_DECLARE)` is a **declaration** the host reconciles (`body`,
+`point_light`); memoization replays it like any emitter. A callback flagged
+`PB_FX_COMMAND` (it must return nil) is a one-shot **command**: a memoized
+scope that called it re-issues the call when it is replayed. A callback
+flagged `PB_FX_READS_PHYSICS` is a **query**: a scope that called it is valid
+until the host calls `pb_vm_note_class_changed(vm, PB_FX_READS_PHYSICS)`,
+which it does after each physics step, and the bridge notes the read for the
+frame gate. `pb_vm_note_host_data_changed(vm)` is the same for
+`PB_FX_READS_HOST_DATA`. `PB_FX_TICKS` on a clock read whose answer changes
+every frame lets the compiler skip recording the helpers that call it.
+`pb_vm_dep_classes_report(vm, false)` returns, as text, every function's
+dependency classes and the helpers that never replay, with the reason (C++:
+`vm.emitter_fx`, `vm.note_class_changed`, `vm.dep_classes_report`; flags
+`petal::fx::Declare`, `Command`, `Query`, `Ticks`). See
+[native-effects.md](../dev/native-effects.md#the-four-kinds-of-engine-native).
+
+### Implicit keys: declarations without an id
+
+A declaration needs a key the host can reconcile it by, and a script that
+writes `body("crate{i}", {...})` builds a string for it on every call. The
+call path can key it instead: every script call of a native has an
+**implicit key**, a 64-bit hash of the chain of call sites and loop
+iterations it was made on (the path that keys `state`) and its own call
+site. Register a declaration emitter with `PB_FX_KEYED` and the pushed
+payload starts with that key; a callback native asks `pb_call_key`:
+
+```cpp
+vm.emitter_fx("body", "scene", petal::fx::Declare | petal::fx::Keyed);
+// script: for i in range(0, 400) do body({shape: "box", pos: p(i)}) end
+for (petal::Value d : vm.drain("scene")) {
+    uint64_t key = d[0].is_int() ? (uint64_t)d[0].integer() : 0;  // nil: no key
+    reconcile(key, d[1]);
+}
+vm.native("light", petal::fx::Effect, [&](petal::Call& c) {
+    if (auto key = c.key()) lights.set(*key, c[0]);
+});
+```
+
+The key is the same every frame while the call path is: the same call
+site (call-site ids survive edits elsewhere in the file and reloads, see
+[state-call-paths.md](../dev/state-call-paths.md#31-stable-identity)), the
+same loop iteration, the same calls above it. A loop gives each iteration
+its own; under `for e in ents key e.id` it follows the entity rather than
+its position. Within one run it is unique wherever a `state` slot would be.
+A call in a callback of `map`, `forEach` and the other higher-order
+builtins has none (every element runs on one path): the emitter pushes nil
+and `pb_call_key` returns false, and the host reports the missing id.
+Memoization hands back a replayed scope's declarations with their keys; a
+`PB_FX_COMMAND` re-issued by a replay gets the key it was recorded with. A
+script that does pass an id keeps working: the key is still first in the
+payload, and the host prefers the id. The rules are in `petal_bridge.h`
+(`pb_call_key`); the design is in
+[retained-scene-output.md](../dev/retained-scene-output.md#l8-implicit-keys-and-keyed-loops-as-built-b5).
+
+### Segmented buffers: a static world costs per scope, not per value
+
+A script that declares its whole world every frame mostly declares what it
+declared last frame. Petal already skips a helper whose inputs did not
+change and replays what it emitted ([memo scopes](../dev/memo-scopes.md)),
+but a replay appends every value again, so `drain("scene")` hands the host
+the whole world every frame. Put the buffer in **segmented** mode and a
+replayed helper arrives as one entry instead:
+
+```cpp
+vm.set_segmented("scene", true);        // once
+// per frame, after vm.run():
+pb_segments seg = vm.drain_segments("scene");
+for (size_t i = 0; i < seg.defined_count; ++i)   // new segments, children first
+    cache[seg.defined[i].serial] = build(seg.defined[i]);
+for (size_t i = 0; i < seg.count; ++i) {         // this frame, in order
+    const pb_seg_entry& e = seg.entries[i];
+    if (e.segment == 0) apply_fresh(*e.value);   // emitted fresh this frame
+    else splice(cache[e.segment]);               // everything that segment holds
+}
+for (size_t i = 0; i < seg.dropped_count; ++i)   // nothing refers to these now
+    cache.erase(seg.dropped[i]);
+```
+
+A segment is one recording of one helper call: everything it emitted into
+the buffer, with the segments of the helpers it called in their places. Its
+`serial` is unique for the life of the process and its contents never
+change, so a cache keyed by serial is never stale; its `scope` (a hash of the
+call path) stays the same from frame to frame, so a new serial with a known
+scope is that helper's new contents. Each serial is defined once, the first
+time a drain refers to it; `vm.reset_segments("scene")` makes the next drain
+define everything again. Only calls Petal keeps a memo record of become
+segments: top-level code, a helper that prints or draws randomness, and
+calls too small to record stay fresh values. `drain("scene")` still works
+on a segmented buffer and returns it expanded. The C declarations and the
+rules are in `petal_bridge.h` ("Segmented output buffers"); the mechanism is
+[`output_segments`](../../core/src/output_segments.rs) in Petal.
+
+In `core/examples/scene_frame` a host that splices segments this way spends
+4 µs a frame on a static world of 24,000 declarations, against 360 µs for
+the best host that walks every value (see
+[retained-scene-output.md](../dev/retained-scene-output.md)).
+
+### Options records: read by position with a plan
+
+A native that takes an options record (`body(id, {shape: "box", pos: p})`)
+typically checks every field against the options it knows and then looks
+each option up by name, on every call. A **plan** does the name work once
+per record shape. A record literal's keys are fixed when the program is
+compiled, so every record the literal makes has one shape, and a decoded
+record carries its shape id (`Value::shape()`, `integer` of a `PB_MAP`):
+
+```cpp
+enum { SHAPE, SIZE, MASS, POS };                    // the order of the list
+petal::Plan body_opts("shape, size, mass, pos");    // once per native
+// per call (a native's argument or a drained command):
+auto o = body_opts.bind(opts);
+if (!o.ok()) throw std::runtime_error("unknown option `" + std::string(o.unknown().key()) + "`");
+double mass = o[MASS].number(1.0);                  // nil when absent
+```
+
+The first record of a shape is checked name by name; after that, binding a
+record of that shape is a lookup by shape id and one pointer per option. A
+plan is the host's, independent of any VM; `pb_plan_new` / `pb_plan_bind` are
+the C form. A record whose shape is rebuilt on every evaluation, such as a
+spread that adds a field (`{...base, pos: p}` where `base` has no `pos`), gets
+a new shape id each time and is checked each time: correct, without the
+saving.
+
+For a keyed declaration, a **snapshot** says which options changed since the
+last time:
+
+```cpp
+struct Body { petal::Snapshot snap; /* ... */ };
+auto changed = body.snap.update(o);       // compares by content, exactly
+for (size_t i : changed) apply(body, i, o[i]);   // a moving ship: just POS
+```
+
+It holds a copy of the option values' contents (numbers by bits, strings by
+bytes, records and lists element by element), so the views need not outlive
+the call; a value a view cannot show (a closure) never compares equal.
+
+Records the host builds share shapes too: maps built with the same keys in
+the same order (a state record a native returns on every call) get one
+shape, as a literal's records do, so building one costs its values and a
+script's field reads on it hit the VM's inline cache.
+
+### Record templates: the static part of an options record, decoded once
+
+In `body(i, {shape: "box", size: 2.0, mass: 5.0, color: #f80, pos: p})`
+every field but `pos` is the same on every call. Petal compiles such a
+literal (one whose fields are mostly constants or values that cannot
+change) to a **template** plus **holes**, and every record it makes carries
+the template: `Value::record_template()` (`pb_value::tmpl`, a
+`pb_template`), with an `id` and the hole positions. Records with one id
+have the same keys and, in every field that is not a hole, the same
+contents. The id is a hash of those contents, so it is the same on the next
+frame, after a reload that leaves the literal alone, and in the next run.
+
+The bridge uses it itself: a template's static fields are decoded once per
+VM and copied into each record's view, so a drain decodes only the holes.
+A host can do the same with what it makes of the options:
+
+```cpp
+struct Body { petal::Snapshot snap; /* ... */ };
+auto o = body_opts.bind(opts);
+auto changed = body.snap.update(opts, o);   // same template as last time: compares only the holes
+for (size_t i : changed) apply(body, i, o[i]);
+```
+
+or keep what it parsed from a template's static options by
+`opts.template_id()`, and read only the options bound to holes
+(`tmpl->is_hole[field]`). A script cannot tell a tagged record from an
+untagged one, and any write to a record drops its template.
+`vm.set_record_templates(false)` (`pb_vm_set_record_templates`) builds every
+record untagged: the oracle to hold a host's template reads to.
 
 ### How it works (no globals)
 
@@ -1227,6 +1401,14 @@ Measured 2026-10-16 by `examples/bench_frame.cpp` (CMake target
 runs that agreed within 2%, on an Apple M4 with a load average of about 2.
 An earlier measurement inside Cheesecake gave about 0.4 ms for the same
 frame and about 0.1 s for a load.
+
+The same frame shape at game scale is `examples/scene_frame.cpp` (CMake
+target `petal_bridge_scene_frame`): the script of
+`core/examples/scene_frame` (2,000 static meshes, 400 static bodies, 300
+moving ships), with a host that reads every option it supports. Reading
+options through a plan instead of by name cuts the host's reads from about
+400 µs to about 160 µs a frame; the numbers are in
+[retained-scene-output.md](../dev/retained-scene-output.md#l4-shape-plans-at-the-bridge-as-built-b2).
 
 ## Limitations
 

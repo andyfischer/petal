@@ -31,8 +31,10 @@ half):
 | `state` slots read, initialized, or written | key and value | the slot holds the value that was read (writes seen earlier in the record overlay the live value) |
 | `var` cells read or written, when created outside the scope | cell and value | the cell is live and holds the value that was read |
 | Host data and the resource table consulted | a flag | the host-data / resource revision is what it was |
+| A `query` read of a revisioned class (`PHYSICS`, `NET`) | the class and its revision | that class's revision is what it was (`Env::note_class_changed` bumps it) |
+| A `command` issued | the native, its arguments and the implicit key it read (`PetalCxt::call_key`) | — (re-issued on replay, in order with the writes, with that key) |
 | Child scopes | path and record serial | the child's own record validates, recursively |
-| Output emitted | the tail of each output buffer since entry | — (spliced back on replay) |
+| Output emitted | the tail of each output buffer since entry; for a segmented buffer, a segment body | — (spliced back on replay; a segmented buffer gets one mark) |
 | Observations recorded | term and value, in order with the children | — (re-recorded on replay) |
 | State keys touched | the touch capture of §3.3a | — (retained on replay, so the sweep keeps them) |
 
@@ -42,6 +44,19 @@ cached output is appended to the buffers, the writes are re-applied in order
 (children's included), the touched keys are marked live, the observations are
 re-recorded, and the cached result is returned without pushing a frame. An
 invalid record makes the call run normally, and the run replaces the record.
+
+**Segmented output.** A host can put an output buffer in segmented mode
+(`Env::set_output_segmented`, `core/src/output_segments.rs`). Then a scope
+that is recorded moves what it emitted into the buffer, its own values and
+the marks its children left, into a `SegmentBody` shared by `Arc`, and
+leaves one mark in its place; a replay pushes one mark and appends nothing.
+The host drains references and gets each body's definition once, by a
+process-unique serial, so a replayed world costs it O(scopes) instead of
+O(values). A cutoff keeps the previous record's bodies, since the output is
+the same, so the host is not handed an equal segment under a new serial. A
+buffer is not segmented while emit tracing is on. Bodies are GC roots
+through the records, the undrained marks and the bodies defined to the host
+(held until a drain reports them dropped).
 
 **Early cutoff.** A child whose record fails validation is not necessarily a
 changed child. If the child's subtree wrote no state and no cell, the VM
@@ -55,6 +70,16 @@ This is why `hovered(r)` is a native rather than a prelude function: as a
 native it is a single probe whose answer rarely changes, so a row re-runs
 only when the pointer crosses its edge; written in Petal it would be two
 pointer reads, and every row would re-run on every move.
+
+**Implicit keys.** A native may ask for its call's implicit key
+(`PetalCxt::call_key`, [retained-scene-output.md](retained-scene-output.md#l8-implicit-keys-and-keyed-loops-as-built-b5)),
+a hash of the scope path it is called on plus its call site. A record is
+keyed by that path, so whatever a scope emitted with keys in it is right to
+replay as it is. A command keeps its key in its `Dep::Command` and is
+re-issued with it (`MemoTable::reissue_key`), since a replay runs on the
+parent's path; a command a re-execution defers keeps the key its call had
+there, at the child's own path. A probe that read its key gives the scope
+up: validation re-evaluates a probe with no call term and so no key.
 
 **What is not recorded.** A scope that did something a replay could not
 reproduce is *effectful*, and so is every scope enclosing it: it printed
@@ -104,6 +129,39 @@ also keeps the cell's mutation count and is invalid once that has moved. A call
 site whose scopes keep ending this way (a solver's `solve_contact`, called
 thousands of times a frame) is counted with the folded ones below and stops
 opening scopes after a few, one probe per run aside.
+
+**Compile-time hints.** The dependency classes
+(`core/src/static_classify/dep_classes.rs`, design and measurements in
+[retained-scene-output.md](retained-scene-output.md#l5-dependency-classes-and-effect-kinds-as-built-b3))
+decide three things when the program is lowered, written into the bytecode
+(`backend/bytecode/memo_hints.rs`):
+
+- A function with an effect on every path (directly, or through a function
+  it calls on every path) never opens a scope: it would be given up as
+  effectful at its close anyway, and its effect lands in the enclosing scope
+  either way.
+- A function that calls a native declared `ticks` (its answer changes every
+  run, like `time`) on every path cannot validate its own record. Its calls
+  open no scope **unless a recording scope encloses the call**: there the
+  record still serves the parent, whose validation may re-execute it to the
+  same output (a `blink()` that reads the clock but answers the same bool
+  most frames). This is the cold-site guard decided from the first frame.
+- A call whose arguments are all static (top-level static data, or in a
+  function a literal of literals and static captures) skips comparing its
+  arguments. If the callee is a **constant** function (it reads nothing
+  dynamic, has no effect or command, and captures only static values) the
+  record holds for the life of the program, so the replay check skips the
+  captures and the dependency walk too, when the record's own entries are
+  only children and observations. That is `draw_city(CITY)` retained once
+  and spliced every frame. A capture counts as static only when the
+  function's one closure is made once per run: in top-level code outside any
+  loop. A closure made in a loop is a different closure on each iteration
+  (`for k in KS do set pick = fn(x) x + k end end`), and which of them a call
+  reaches can change from run to run, so its captures are compared.
+
+`Env::set_memo_hints(stack, false)` ignores them all: the reference run the
+hinted one is held to (`core/tests/dep_classes.rs`). `static_skips`,
+`static_args` and `commands` (re-issued) are counted in `MemoStats`.
 
 **Cold sites.** Recording is not free, and a record only pays for itself when
 it is replayed. A site whose records keep being thrown away unreplayed —
@@ -204,7 +262,8 @@ scenario with the frame gate off, must produce identical commands, state and
 observations frame for frame with memoization on and off. `core/src/memo.rs`
 has the model's unit tests and end-to-end checks through `Env::run`.
 `petal-ui-run --memo-stats` prints hits, misses, records, inlined, effectful,
-re-executions, cutoffs, cold-site skips and evictions — the first thing to
+re-executions, cutoffs, cold-site skips, evictions, and the compile-time
+hints' static skips, static-argument checks and re-issued commands — the first thing to
 look at when a widget that
 should replay keeps running (an `effectful` count that grows every frame
 means something in it prints or draws randomness).

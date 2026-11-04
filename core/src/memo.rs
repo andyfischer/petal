@@ -51,6 +51,7 @@ use crate::closure_table::ClosureTable;
 use crate::execution_context::EmitSite;
 use crate::heap::{CellId, Heap};
 use crate::native_fn::NativeFnId;
+use crate::output_segments::{SegMark, SegmentBody};
 use crate::program::{ClosureId, FunctionId, TermId};
 use crate::stack::{PathPart, RuntimeStateKey, StateTouches, TouchCapture};
 use crate::symbol::SymbolId;
@@ -218,6 +219,29 @@ pub enum Dep {
     /// A native consulted the resource table; valid while its revision is
     /// what it was when the record was made.
     ResourcesRead,
+    /// A `query` native read a revisioned class of host data
+    /// ([`InputClasses::REVISIONED`](crate::native_fn::InputClasses::REVISIONED):
+    /// `PHYSICS`, `NET`) when its revision was `revision`. Valid while the
+    /// class's revision is unchanged
+    /// ([`crate::run_deps::RunDeps::class_now`]).
+    ClassRead {
+        class: crate::native_fn::InputClasses,
+        revision: u64,
+    },
+    /// A `command` native was issued with `args`. Not a dependency but an
+    /// effect, kept in order with the writes: a replay **re-issues** it
+    /// (calls the native again with the same arguments), which is what
+    /// running the scope's code again would have done. A scope that holds
+    /// one is never re-executed speculatively (`MemoSlot::pure` is false).
+    Command {
+        native: NativeFnId,
+        args: SmallVec<[Value; 4]>,
+        /// The call's implicit key (`PetalCxt::call_key`), whether or not
+        /// the native read it: re-issued with it, since a replay runs on its
+        /// parent's path, and compared, so a re-execution's deferred call
+        /// matches the record's.
+        key: Option<u64>,
+    },
     /// A field of an enum variant was read, which may have been constant data
     /// (`k.shape`). Valid while the stack's enum data is what it was then
     /// ([`crate::stack::Stack::enum_data_revision`]): data is evaluated by
@@ -232,6 +256,9 @@ pub enum Dep {
     /// last value per term a run would: not a dependency, an effect.
     Observed { term: TermId, value: Value },
 }
+
+/// What a scope emitted into each segmented buffer: one body per buffer.
+pub type SegmentBodies = SmallVec<[(SymbolId, std::sync::Arc<SegmentBody>); 1]>;
 
 /// The values a scope appended to one output buffer.
 #[derive(Debug, Clone)]
@@ -262,6 +289,10 @@ pub struct MemoSlot {
     pub result: Value,
     pub deps: Vec<Dep>,
     pub outputs: Vec<OutputSegment>,
+    /// What the scope emitted into segmented buffers, a body per buffer
+    /// (see [`crate::output_segments`]). Such a buffer has no entry in
+    /// `outputs`.
+    pub segments: SegmentBodies,
     /// Every state key the scope's subtree touched.
     pub touches: StateTouches,
     /// Host-data revision when recorded, for a `HostRead` dep.
@@ -297,10 +328,16 @@ impl MemoSlot {
         for d in &self.deps {
             n += match d {
                 Dep::Child { path, .. } => spilled(path),
-                Dep::Probe { args, .. } => spilled(args),
+                Dep::Probe { args, .. } | Dep::Command { args, .. } => spilled(args),
                 Dep::StateRead { key, .. } | Dep::StateWrite { key, .. } => spilled(&key.path),
                 _ => 0,
             };
+        }
+        for (_, b) in &self.segments {
+            // The body's own values; a child's are charged to its record.
+            n += size_of::<SegmentBody>()
+                + b.values.len() * size_of::<Value>()
+                + b.marks.len() * size_of::<SegMark>();
         }
         for o in &self.outputs {
             n += size_of::<OutputSegment>() + o.values.len() * size_of::<Value>();
@@ -332,6 +369,9 @@ pub struct OpenScope {
     pub deps: Vec<Dep>,
     /// Output buffer lengths at entry, so the scope's own segment is the tail.
     pub out_start: SmallVec<[(SymbolId, usize); 2]>,
+    /// Segment-mark counts of the segmented buffers at entry, so the marks
+    /// the scope's children left are the tail.
+    pub seg_start: SmallVec<[(SymbolId, usize); 1]>,
     pub insts_at_entry: u64,
     pub rng_at_entry: u64,
     /// Something happened that a replay could not reproduce.
@@ -358,6 +398,7 @@ pub struct PreviousRecord {
     pub result: Value,
     pub deps: Vec<Dep>,
     pub outputs: Vec<OutputSegment>,
+    pub segments: SegmentBodies,
     pub touches: StateTouches,
 }
 
@@ -390,6 +431,16 @@ pub struct MemoStats {
     /// Scopes not opened because their call site's scopes are always folded
     /// as too small to record (see [`TINY_AFTER_FOLDS`]).
     pub tiny: u64,
+    /// Calls not opened as scopes because the dependency classes say they
+    /// never replay: an effect on every path, or a read that changes every
+    /// run with no recording scope around the call to use the record
+    /// (`crate::static_classify::dep_classes`).
+    pub static_skips: u64,
+    /// Replay checks that skipped comparing the arguments, because every
+    /// argument of the call is static.
+    pub static_args: u64,
+    /// `command` calls re-issued by a replay.
+    pub commands: u64,
 }
 
 /// What a call site's records have been worth, for [`MemoTable::site_records`].
@@ -430,13 +481,24 @@ pub struct MemoTable {
     pub suppress: bool,
     /// A re-execution failed: nothing more is recorded or replayed this run.
     pub poisoned: bool,
+    /// How many speculative re-executions are running (nested ones count):
+    /// a `command` native is recorded, not issued, while this is nonzero.
+    pub reexecuting: u32,
     /// The verdict of the most recent re-execution: `Some(true)` if it
     /// produced something different from its previous record.
     pub last_reexec_changed: Option<bool>,
+    /// Set while a replay re-issues a command that read its implicit key
+    /// (`PetalCxt::call_key`): the key it was recorded with, which the
+    /// re-issued call gets in place of one computed from the replay's path.
+    pub reissue_key: Option<u64>,
     /// Per-callsite record of what memoizing there has been worth.
     cold: FastMap<(FunctionId, u64), ColdSite>,
     /// Per-callsite count of scopes folded as too small to record.
     tiny: FastMap<(FunctionId, u64), TinySite>,
+    /// The compile-time hints of the dependency classes are ignored (every
+    /// call is treated as the runtime alone would): the reference a test
+    /// compares the hinted run with. Off by default.
+    pub no_hints: bool,
     /// Structural-equality answers for pairs of closures compared this run.
     /// Top-level functions are re-created every run and capture one another,
     /// so the same pairs come up for every scope that takes a callback.
@@ -497,6 +559,7 @@ impl MemoTable {
         self.run = self.run.wrapping_add(1);
         self.suppress = false;
         self.poisoned = false;
+        self.reexecuting = 0;
         self.last_reexec_changed = None;
         self.eq_cache.clear();
     }
@@ -720,11 +783,15 @@ impl MemoTable {
     /// values they compare against and replay; open scopes pin their
     /// arguments and what they have recorded so far.
     pub fn gc_roots(&self, mut mark: impl FnMut(Value)) {
+        let mut seen = HashSet::new();
         for s in self.slots.values() {
             s.captures.iter().chain(&s.args).for_each(|v| mark(*v));
             mark(s.result);
             mark_deps(&s.deps, &mut mark);
             mark_outputs(&s.outputs, &mut mark);
+            for (_, b) in &s.segments {
+                b.mark_values(&mut seen, &mut mark);
+            }
         }
         for s in &self.open {
             s.captures.iter().chain(&s.args).for_each(|v| mark(*v));
@@ -733,6 +800,9 @@ impl MemoTable {
                 mark(p.result);
                 mark_deps(&p.deps, &mut mark);
                 mark_outputs(&p.outputs, &mut mark);
+                for (_, b) in &p.segments {
+                    b.mark_values(&mut seen, &mut mark);
+                }
             }
         }
     }
@@ -779,7 +849,12 @@ fn mark_deps(deps: &[Dep], mark: &mut impl FnMut(Value)) {
             | Dep::CellRead { value, .. }
             | Dep::CellWrite { value, .. }
             | Dep::Observed { value, .. } => mark(*value),
-            Dep::HostRead | Dep::ResourcesRead | Dep::EnumData { .. } | Dep::Child { .. } => {}
+            Dep::Command { args, .. } => args.iter().for_each(|v| mark(*v)),
+            Dep::HostRead
+            | Dep::ResourcesRead
+            | Dep::ClassRead { .. }
+            | Dep::EnumData { .. }
+            | Dep::Child { .. } => {}
         }
     }
 }
@@ -1257,6 +1332,7 @@ mod tests {
             result: Value::Nil,
             deps: vec![],
             outputs: vec![],
+            segments: Default::default(),
             touches: StateTouches::default(),
             host_revision: 0,
             resources_revision: 0,
@@ -1552,6 +1628,7 @@ r"
                 values: vec![Value::Nil; values],
                 origins: None,
             }],
+            segments: Default::default(),
             touches: StateTouches::default(),
             host_revision: 0,
             resources_revision: 0,
@@ -1594,6 +1671,7 @@ r"
             args: ScopeValues::new(),
             deps: Vec::new(),
             out_start: SmallVec::new(),
+            seg_start: SmallVec::new(),
             insts_at_entry: 0,
             rng_at_entry: 0,
             effectful: false,

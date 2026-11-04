@@ -16,7 +16,10 @@ use crate::memo::{
     OpenScope, OutputSegment, PreviousRecord, ScopePath, ScopeValues, container_args_fingerprint,
     holds_local_cell,
 };
+use crate::memo::SegmentBodies;
 use crate::native_fn::{InputClasses, NativeEffects};
+use crate::output_segments::{SegMark, SegmentBody, scope_id};
+use std::sync::Arc;
 use crate::program::ClosureId;
 use crate::stack::RuntimeStateKey;
 
@@ -210,10 +213,54 @@ impl<'a> Vm<'a> {
         args: &[Value],
         result: Value,
         effects: NativeEffects,
+        // The call term, for a command's implicit key.
+        origin: Option<TermId>,
+        // The implicit key the native read (`PetalCxt::call_key`), if it did.
+        key_taken: Option<u64>,
     ) {
         if effects.effect || matches!(result, Value::Pending(_)) {
             self.stack.memo.note_effect();
             return;
+        }
+        if effects.command {
+            // Re-issued on replay, so it needs arguments a record can hold
+            // and must hand the script nothing a replay would not.
+            let holdable = !args.iter().any(|a| {
+                matches!(
+                    a,
+                    Value::Closure(_) | Value::OverloadSet(_) | Value::Pending(_) | Value::Cell(_)
+                )
+            });
+            if !holdable || !matches!(result, Value::Nil) {
+                self.stack.memo.note_effect();
+                return;
+            }
+            // Every command keeps its call's key, read or not, so a record
+            // and a re-execution that defers the call (and cannot know
+            // whether the native would read it) agree.
+            let key = key_taken.or_else(|| self.call_key_here(origin));
+            if let Some(s) = self.stack.memo.innermost() {
+                s.note(|| Dep::Command {
+                    native: nid,
+                    args: args.into(),
+                    key,
+                });
+            }
+        }
+        // A revisioned class (`PHYSICS`, `NET`) is validated by its own
+        // revision; one entry per class in a row of reads.
+        if effects.reads.intersects(InputClasses::REVISIONED) {
+            for (class, _) in InputClasses::NAMED {
+                if !InputClasses::REVISIONED.contains(class) || !effects.reads.contains(class) {
+                    continue;
+                }
+                let revision = self.stack.run_deps.class_now(class);
+                if let Some(s) = self.stack.memo.innermost()
+                    && !matches!(s.deps.last(), Some(Dep::ClassRead { class: c, .. }) if *c == class)
+                {
+                    s.note(|| Dep::ClassRead { class, revision });
+                }
+            }
         }
         if effects.reads.contains(InputClasses::HOST_DATA) {
             if let Some(s) = self.stack.memo.innermost() {
@@ -227,10 +274,15 @@ impl<'a> Vm<'a> {
         }
         let probed = InputClasses(
             effects.reads.0
-                & !(InputClasses::HOST_DATA.0 | InputClasses::RESOURCES.0 | InputClasses::RNG.0),
+                & !(InputClasses::HOST_DATA.0
+                    | InputClasses::RESOURCES.0
+                    | InputClasses::RNG.0
+                    | InputClasses::REVISIONED.0),
         );
         if !probed.is_empty() {
-            if effects.probe {
+            // A probe is re-evaluated by validation with no call path, so
+            // an answer that read the call's key cannot be checked.
+            if effects.probe && key_taken.is_none() {
                 self.memo_note_probe(nid, args, result, effects.emits);
             } else {
                 self.stack.memo.note_effect();
@@ -284,6 +336,7 @@ impl<'a> Vm<'a> {
             n => self.full_path(n - 1),
         };
         let out_start = self.memo_output_lens();
+        let seg_start = self.memo_seg_lens();
         let captures: ScopeValues = self
             .closures
             .closure(cid)
@@ -301,6 +354,7 @@ impl<'a> Vm<'a> {
             args: args.iter().copied().collect(),
             deps: Vec::new(),
             out_start,
+            seg_start,
             insts_at_entry: self.stack.insts,
             rng_at_entry: *self.rng_state,
             effectful: false,
@@ -328,9 +382,15 @@ impl<'a> Vm<'a> {
         let detached = sc.previous.is_some();
         let insts = self.stack.insts.saturating_sub(sc.insts_at_entry);
 
-        // The output the scope appended, per buffer.
+        // The output the scope appended, per buffer. A segmented buffer's is
+        // moved into a segment body below, once the record is known to be
+        // kept.
         let mut outputs = Vec::new();
+        let seg_emitted = self.memo_seg_emitted(&sc);
         for (sym, buf) in self.output_buffers.iter() {
+            if !self.trace_emit && self.segments.contains_key(sym) {
+                continue;
+            }
             let start = sc
                 .out_start
                 .iter()
@@ -387,7 +447,7 @@ impl<'a> Vm<'a> {
         let worth = detached
             || !sc.deps.is_empty()
             || insts >= MIN_SCOPE_INSTS
-            || (!outputs.is_empty() && !has_parent);
+            || ((!outputs.is_empty() || seg_emitted) && !has_parent);
         if !worth || (!detached && !self.stack.memo.has_room()) {
             // Fold into the parent: its record covers this call's reads,
             // observations and output range, and inherits its cells so a
@@ -407,7 +467,7 @@ impl<'a> Vm<'a> {
         }
 
         let pure = sc.deps.iter().all(|d| match d {
-            Dep::StateWrite { .. } | Dep::CellWrite { .. } => false,
+            Dep::StateWrite { .. } | Dep::CellWrite { .. } | Dep::Command { .. } => false,
             Dep::Child { path, .. } => self.stack.memo.get(path).is_some_and(|c| c.pure),
             _ => true,
         });
@@ -415,12 +475,17 @@ impl<'a> Vm<'a> {
             Some(c) => self.stack.end_touch_capture(c),
             None => Default::default(),
         };
+        let segments = if seg_emitted {
+            self.memo_seg_collapse(&sc)
+        } else {
+            Default::default()
+        };
         self.stack.memo.note_recorded(sc.fn_id, sc.site);
         // The record keeps these for as long as it lives; the slack a
         // growing `Vec` leaves is most of a small record.
         sc.deps.shrink_to_fit();
         let serial = self.stack.memo.next_serial();
-        let slot = MemoSlot {
+        let mut slot = MemoSlot {
             serial,
             visited: self.stack.memo.run(),
             fn_id: sc.fn_id,
@@ -431,6 +496,7 @@ impl<'a> Vm<'a> {
             result,
             deps: sc.deps,
             outputs,
+            segments,
             touches,
             host_revision: self.stack.run_deps.host_data_now(),
             resources_revision: self.resources.revision(),
@@ -441,6 +507,10 @@ impl<'a> Vm<'a> {
             let changed = !self.memo_same_effects(&previous, &slot);
             if !changed {
                 self.stack.memo.stats.cutoffs += 1;
+                // The same output: keep the bodies the host was given, so a
+                // cutoff does not make the host decode an equal segment
+                // again under a new serial.
+                slot.segments = previous.segments;
             }
             self.stack.memo.last_reexec_changed = Some(changed);
         } else if let Some(p) = self.stack.memo.innermost() {
@@ -460,8 +530,16 @@ impl<'a> Vm<'a> {
         if !self.memo_eq(prev.result, now.result, ARG_COMPARE_BUDGET) {
             return false;
         }
-        if prev.touches != now.touches || prev.outputs.len() != now.outputs.len() {
+        if prev.touches != now.touches
+            || prev.outputs.len() != now.outputs.len()
+            || prev.segments.len() != now.segments.len()
+        {
             return false;
+        }
+        for ((sa, a), (sb, b)) in prev.segments.iter().zip(&now.segments) {
+            if sa != sb || !self.memo_same_body(a, b) {
+                return false;
+            }
         }
         for (a, b) in prev.outputs.iter().zip(&now.outputs) {
             if a.sym != b.sym || a.values.len() != b.values.len() {
@@ -477,7 +555,10 @@ impl<'a> Vm<'a> {
         fn is_effect(d: &&Dep) -> bool {
             matches!(
                 d,
-                Dep::StateWrite { .. } | Dep::CellWrite { .. } | Dep::Child { .. }
+                Dep::StateWrite { .. }
+                    | Dep::CellWrite { .. }
+                    | Dep::Child { .. }
+                    | Dep::Command { .. }
             )
         }
         let mut a = prev.deps.iter().filter(is_effect);
@@ -509,12 +590,108 @@ impl<'a> Vm<'a> {
                         serial: sb,
                     }),
                 ) => pa == pb && sa == sb,
+                (
+                    Some(Dep::Command {
+                        native: na,
+                        args: aa,
+                        key: ka,
+                    }),
+                    Some(Dep::Command {
+                        native: nb,
+                        args: ab,
+                        key: kb,
+                    }),
+                ) => {
+                    na == nb
+                        && ka == kb
+                        && aa.len() == ab.len()
+                        && aa
+                            .iter()
+                            .zip(ab.iter())
+                            .all(|(x, y)| self.memo_eq(*x, *y, ARG_COMPARE_BUDGET))
+                }
                 _ => false,
             };
             if !same {
                 return false;
             }
         }
+    }
+
+    /// Whether two segment bodies hold the same output: equal values, and
+    /// the same child segments at the same places.
+    fn memo_same_body(&mut self, a: &SegmentBody, b: &SegmentBody) -> bool {
+        if a.values.len() != b.values.len()
+            || a.marks.len() != b.marks.len()
+            || a.marks
+                .iter()
+                .zip(&b.marks)
+                .any(|(x, y)| x.at != y.at || x.body.serial != y.body.serial)
+        {
+            return false;
+        }
+        let budget = 256 + OUTPUT_COMPARE_PER_VALUE * a.values.len();
+        a.values
+            .iter()
+            .zip(&b.values)
+            .all(|(x, y)| self.memo_eq(*x, *y, budget))
+    }
+
+    /// The mark count of every segmented buffer now (see
+    /// [`OpenScope::seg_start`]).
+    fn memo_seg_lens(&self) -> SmallVec<[(SymbolId, usize); 1]> {
+        if self.trace_emit {
+            return SmallVec::new();
+        }
+        self.segments
+            .iter()
+            .map(|(s, ch)| (*s, ch.marks.len()))
+            .collect()
+    }
+
+    /// Where `sc` started in segmented buffer `sym`: its value index and
+    /// mark index.
+    fn memo_seg_start(sc: &OpenScope, sym: SymbolId) -> (usize, usize) {
+        let at = |v: &[(SymbolId, usize)]| v.iter().find(|(s, _)| *s == sym).map_or(0, |(_, n)| *n);
+        (at(&sc.out_start), at(&sc.seg_start))
+    }
+
+    /// Whether `sc` emitted anything into a segmented buffer, itself or
+    /// through a child.
+    fn memo_seg_emitted(&self, sc: &OpenScope) -> bool {
+        !self.trace_emit
+            && self.segments.iter().any(|(sym, ch)| {
+                let (start, mstart) = Self::memo_seg_start(sc, *sym);
+                let len = self.output_buffers.get(sym).map_or(0, Vec::len);
+                len > start || ch.marks.len() > mstart
+            })
+    }
+
+    /// `sc` is being recorded: move what it emitted into each segmented
+    /// buffer (its own values and its children's marks) into a body, and
+    /// leave one mark for the body in its place.
+    fn memo_seg_collapse(&mut self, sc: &OpenScope) -> SegmentBodies {
+        let mut bodies = SegmentBodies::new();
+        let id = scope_id(&sc.path);
+        for (sym, ch) in self.segments.iter_mut() {
+            let (start, mstart) = Self::memo_seg_start(sc, *sym);
+            let buf = self.output_buffers.entry(*sym).or_default();
+            if buf.len() <= start && ch.marks.len() <= mstart {
+                continue;
+            }
+            let values = buf.split_off(start.min(buf.len()));
+            let mut marks = ch.marks.split_off(mstart.min(ch.marks.len()));
+            for m in &mut marks {
+                m.at -= start;
+            }
+            let body = Arc::new(SegmentBody::new(id, values, marks));
+            ch.marks.push(SegMark {
+                at: start,
+                body: body.clone(),
+            });
+            bodies.push((*sym, body));
+        }
+        bodies
     }
 
     /// Every output buffer's length now, to find what a scope appends.
@@ -543,15 +720,41 @@ impl<'a> Vm<'a> {
     /// A call of `fn_id` (through closure `cid`, with `args`) is about to run
     /// at `path`. If its record is still good, replay it and return the
     /// cached result; otherwise `None`, and the caller pushes the frame.
+    ///
+    /// `static_args` says every argument is static (the lowering's
+    /// `Inst::Call::static_args`): the same value on every run at this call,
+    /// so they are not compared. `constant` says the callee is a constant
+    /// function of its arguments (`MemoHint::constant`); with static
+    /// arguments as well the record holds for the life of the program, so
+    /// neither the captures nor the dependencies are checked either, as long
+    /// as the record's own entries are only children and observations.
     pub(super) fn memo_try(
         &mut self,
         path: &ScopePath,
         fn_id: FunctionId,
         cid: ClosureId,
         args: &[Value],
+        static_args: bool,
+        constant: bool,
     ) -> Option<Value> {
+        let hints = !self.stack.memo.no_hints;
+        let static_args = hints && static_args;
         let slot = self.stack.memo.get(path)?;
         let same_fn = slot.fn_id == fn_id;
+        let retained = static_args
+            && constant
+            && same_fn
+            && slot.args.len() == args.len()
+            && slot
+                .deps
+                .iter()
+                .all(|d| matches!(d, Dep::Child { .. } | Dep::Observed { .. }));
+        if retained {
+            self.stack.memo.stats.static_args += 1;
+            self.stack.memo.stats.hits += 1;
+            self.stack.memo.note_hit(path);
+            return self.memo_replay(path, true);
+        }
         let (recorded_args, recorded_caps) = (slot.args.clone(), slot.captures.clone());
         let captures: ScopeValues = self
             .closures
@@ -560,9 +763,13 @@ impl<'a> Vm<'a> {
             .iter()
             .copied()
             .collect();
-        let same_call = same_fn
-            && self.memo_all_eq(&recorded_args, args)
-            && self.memo_all_eq(&recorded_caps, &captures);
+        let same_args = if static_args && recorded_args.len() == args.len() {
+            self.stack.memo.stats.static_args += 1;
+            true
+        } else {
+            self.memo_all_eq(&recorded_args, args)
+        };
+        let same_call = same_fn && same_args && self.memo_all_eq(&recorded_caps, &captures);
         if !same_call || !self.memo_validate(path) {
             self.stack.memo.stats.misses += 1;
             return None;
@@ -663,6 +870,10 @@ impl<'a> Vm<'a> {
                     }
                 }
                 Dep::HostRead => self.stack.run_deps.host_data_now() == host_rev,
+                Dep::ClassRead { class, revision } => {
+                    self.stack.run_deps.class_now(*class) == *revision
+                }
+                Dep::Command { .. } => true,
                 Dep::ResourcesRead => self.resources.revision() == res_rev,
                 Dep::EnumData { revision } => self.stack.enum_data_revision == *revision,
                 Dep::Child { path, serial } => match self.memo_verify_child(path, *serial) {
@@ -724,6 +935,7 @@ impl<'a> Vm<'a> {
             result: slot.result,
             deps: slot.deps,
             outputs: slot.outputs,
+            segments: slot.segments,
             touches: slot.touches,
         };
         let bcfn = self.bc.function(fn_id);
@@ -735,6 +947,7 @@ impl<'a> Vm<'a> {
         }
         let target = self.stack.vm_frames.len();
         let out_lens = self.memo_output_lens();
+        let seg_lens = self.memo_seg_lens();
 
         // The frame is built by hand: there is no live closure for this call.
         // A function that refers to itself gets one minted for its
@@ -770,6 +983,7 @@ impl<'a> Vm<'a> {
         // A re-execution runs the function, so a call bench counts it.
         self.bench_enter(fn_id, target);
         self.stack.memo.last_reexec_changed = None;
+        self.stack.memo.reexecuting += 1;
 
         let mut failed = false;
         loop {
@@ -785,6 +999,7 @@ impl<'a> Vm<'a> {
                 }
             }
         }
+        self.stack.memo.reexecuting = self.stack.memo.reexecuting.saturating_sub(1);
         // The output it emitted is not this frame's: the parent replays or
         // re-runs it.
         for (sym, len) in out_lens {
@@ -793,6 +1008,11 @@ impl<'a> Vm<'a> {
             }
             if let Some(o) = self.emit_origins.get_mut(&sym) {
                 o.truncate(len);
+            }
+        }
+        for (sym, n) in seg_lens {
+            if let Some(ch) = self.segments.get_mut(&sym) {
+                ch.marks.truncate(n);
             }
         }
         if failed || self.stack.vm_frames.len() > target {
@@ -835,6 +1055,28 @@ impl<'a> Vm<'a> {
     fn memo_replay(&mut self, path: &ScopePath, with_output: bool) -> Option<Value> {
         let mut slot = self.stack.memo.take(path)?;
         slot.visited = self.stack.memo.run();
+        for (sym, body) in slot.segments.iter().filter(|_| with_output) {
+            let buf = self.output_buffers.entry(*sym).or_default();
+            match self.segments.get_mut(sym) {
+                // One mark for the whole scope: no value is appended.
+                Some(ch) if !self.trace_emit => ch.marks.push(SegMark {
+                    at: buf.len(),
+                    body: body.clone(),
+                }),
+                // The buffer stopped being segmented (or emits are being
+                // traced) since the record was made: append it flat.
+                _ => {
+                    body.flatten_into(buf);
+                    if self.trace_emit {
+                        let len = buf.len();
+                        self.emit_origins
+                            .entry(*sym)
+                            .or_default()
+                            .resize_with(len, Default::default);
+                    }
+                }
+            }
+        }
         for seg in slot.outputs.iter().filter(|_| with_output) {
             let buf = self.output_buffers.entry(seg.sym).or_default();
             buf.extend_from_slice(&seg.values);
@@ -868,6 +1110,21 @@ impl<'a> Vm<'a> {
                 }
                 Dep::Child { path, .. } => {
                     self.memo_replay(path, false);
+                }
+                // Inside a re-execution nothing is issued: its parent's
+                // replay (or run) issues what this record holds.
+                Dep::Command { .. } if self.stack.memo.reexecuting > 0 => {}
+                Dep::Command { native, args, key } => {
+                    // Issued again, as running the code would, with the
+                    // implicit key it was recorded with. Not recorded into
+                    // an enclosing scope: its `Child` entry for this record
+                    // already covers it.
+                    let was = std::mem::replace(&mut self.stack.memo.suppress, true);
+                    let was_key = std::mem::replace(&mut self.stack.memo.reissue_key, *key);
+                    let _ = self.call_native_fn(*native, args, false, None);
+                    self.stack.memo.reissue_key = was_key;
+                    self.stack.memo.suppress = was;
+                    self.stack.memo.stats.commands += 1;
                 }
                 Dep::Observed { term, value } => {
                     if self.observations.enabled {

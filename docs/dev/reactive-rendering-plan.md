@@ -1,8 +1,9 @@
 # Reactive rendering
 
-Status (re-checked 2026-11-02): **P0 and P1 are shipped. Of P2, the
-constant class shipped as [static values](../internals/static-values.md);
-per-input-class slots and P3 are not started.** Hosts
+Status (re-checked 2026-11-02, segmented output and dependency classes
+2026-11-02): **P0 and P1 are shipped. Of P2, the constant class shipped as
+[static values](../internals/static-values.md), and dependency classes, hints
+and effect kinds have shipped; block guards and P3 are not started.** Hosts
 skip frames whose inputs did not change ([frame-gate.md](frame-gate.md)), and
 within a frame that runs, user-function calls whose inputs did not change are
 replayed ([memo-scopes.md](memo-scopes.md)). This file tracks the plan as a
@@ -34,9 +35,9 @@ P0 underlies everything, P2 and P3 make P1 cheaper.
 
 | Layer | Unit | Language change | Status |
 |---|---|---|---|
-| P0 Gated frames, retained output | whole frame | none | 🟡 gate shipped in every host; segmented output and damage rects not started |
+| P0 Gated frames, retained output | whole frame | none | 🟡 gate shipped in every host; segmented output shipped (VM and C bridge); damage rects not started |
 | P1 Memoized scopes | function call (loop body planned) | none | 🟡 function calls shipped; loop bodies, top-level body, hot-reload invalidation open |
-| P2 Dependency classes | block, by input class | none | 🟡 constant class shipped as static values; viewport/theme/input classes open |
+| P2 Dependency classes | block, by input class | none | 🟡 constant class shipped as static values; classes, hints, effect kinds and the `never-replays` lint shipped; block guards open |
 | P3 Keyed collections + hit-test index | collection element | `for … key` | 🟡 `for … key` syntax shipped; persistent collections and the hit-test index not started |
 | P4 Signals | binding | new mental model | 🔭 internal representation only, if ever |
 | P5 Self-adjusting term graph | IR term / block | none | 🔭 research |
@@ -48,14 +49,34 @@ Shipped (c2032ad, d90bc35): the read-set gate (`core/src/run_deps.rs`,
 petal-web-canvas; keyed DOM patching in petal-web-html in place of
 `innerHTML`.
 
+Shipped since: **segmented output** (`core/src/output_segments.rs`). A host
+opts a buffer in (`Env::set_output_segmented`, `pb_vm_set_segmented`); a
+recorded memo scope then moves what it emitted into a segment body and a
+replay pushes one reference instead of the values. The host drains
+`SegmentedFrame`s (`Env::take_output_segments`, `pb_vm_drain_segments`):
+the frame's fresh values and segment references in order, each segment's
+definition once (children first, by a process-unique serial, with a scope
+id hashed from the call path that is stable across frames), and the serials
+nothing refers to any more. A host that keeps what it made of each segment
+splices it back, so a replayed world costs it O(scopes): the 24,000-item
+static world of `core/examples/scene_frame` went from 360 µs of host time
+to 4 µs ([retained-scene-output.md](retained-scene-output.md)). Oracles:
+`core/tests/output_segments.rs` (flat buffer, memo off, against the
+segmented drain through a `SegmentCache`, through collections, cutoffs,
+re-recordings and reloads) and
+`segmented_draw_buffers_reproduce_unmemoized_frames_across_the_corpus` in
+`core-libs/petal-ui/tests/memo.rs` (every panel app with its draw buffer
+segmented).
+
 Open:
 
-- **Segmented output.** The output buffer is still a flat `Vec` per symbol. The
-  plan is a sequence of segments tagged with the emitting call path, so a host
-  can diff segment by segment. Memo replay already appends a scope's cached
-  tail, which is the in-VM half of this; the host-facing half is not built.
+- **Segments in the shipped hosts.** petal-ui, Garden and the canvas hosts
+  still drain flat (a segmented buffer drains flat through
+  `take_output_buffer`). Teaching `take_draw_commands` to keep decoded
+  commands per segment is the next step, and the input to damage rects.
 - **Damage rectangles for canvas hosts.** A frame that runs still repaints the
-  whole surface in SDL and web-canvas. Segments are the input to this.
+  whole surface in SDL and web-canvas. Segments are the input to this: an
+  unchanged segment is an unchanged region, once its bounds are kept.
 - **LIS moves in petal-web-html.** The keyed reconciler moves nodes naively;
   a longest-increasing-subsequence pass (Inferno, ivi) would cut moves for
   large reorders. The renderer's header comment notes it.
@@ -114,6 +135,18 @@ and extended across calls. Three uses:
    statically need no runtime read recording; scopes too small to pay for
    their check are never memoized (today that is the runtime
    `MIN_SCOPE_INSTS` heuristic).
+
+**Shipped (L5 of Cheesecake's retained plan, November 2026):** the pass
+(`core/src/static_classify/dep_classes.rs`): a mask per term and per
+function, with the game classes `PHYSICS` and `NET` beside the UI ones, a
+must-analysis of what every call does, and the first part of use 3: no
+recording for functions with an effect on every path, none for a ticking
+read on every path outside a recording scope, and no argument check (nor,
+for a constant callee, any check) for calls with static arguments. The
+native rows gained `declares`, `command` (re-issued on replay) and `ticks`,
+and revisioned `query` reads. Design, measurements and what is left are in
+[retained-scene-output.md](retained-scene-output.md#l5-dependency-classes-and-effect-kinds-as-built-b3).
+Uses 1 and 2 (hoisting, block guards for the top-level body) are open.
 
 On its own it is coarse — every list row has `pointer` in its mask — so its
 value is making P1's per-scope overhead nearly free. Tune it with P1's slot

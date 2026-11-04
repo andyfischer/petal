@@ -87,6 +87,7 @@ mod dead_alias;
 mod dm_hints;
 mod export_to_pub;
 mod field_set;
+mod never_replays;
 mod repeat;
 mod state_const;
 mod state_key;
@@ -104,6 +105,7 @@ use dead_alias::plan_alias_fixes;
 use dm_hints::plan_hint_reports;
 use export_to_pub::plan_export_fixes;
 use field_set::plan_field_set_fixes;
+use never_replays::plan_never_replays_reports;
 use typed::{plan_int_division, plan_neg_zero_fixes};
 use repeat::plan_repeat_fixes;
 use state_const::plan_state_fixes;
@@ -159,6 +161,7 @@ pub const DM_HINT_NOT_LITERAL: &str = crate::dm_v2::hints::NOT_LITERAL;
 pub const DM_HINT_BOUNDS: &str = crate::dm_v2::hints::BOUNDS;
 pub const DM_HINT_STATE_INIT: &str = "dm-hint-state-init";
 pub const CONFIG_NOT_DATA: &str = "config-not-data";
+pub const NEVER_REPLAYS: &str = "never-replays";
 
 /// Every rule, in the order it runs.
 pub const RULES: &[RuleInfo] = &[
@@ -251,6 +254,13 @@ pub const RULES: &[RuleInfo] = &[
         name: CONFIG_NOT_DATA,
         summary: "a `config let` whose initializer needs evaluating, so hosts see no value",
         opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: NEVER_REPLAYS,
+        summary: "a function whose calls are never replayed from the memo table, and why \
+                  (an effect, a ticking input or a top-level `var` on every call)",
+        opt_in: true,
         fixes: Fixes::None,
     },
     RuleInfo {
@@ -611,6 +621,10 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     p.apply(DM_HINT_BOUNDS, hints.bounds);
     p.apply(DM_HINT_STATE_INIT, hints.state_init);
     p.apply(CONFIG_NOT_DATA, plan_config_data_reports(&stmts, &chars));
+    // Compiles the file, so it is skipped outright when filtered out.
+    if opts.rules.enabled(NEVER_REPLAYS) {
+        p.apply(NEVER_REPLAYS, plan_never_replays_reports(&p.text, &chars, opts));
+    }
 
     let (chars, stmts) = reparse(&p.text)?;
     let exports_to_pub = p.apply(PREFER_PUB, plan_export_fixes(&stmts, &chars)?);

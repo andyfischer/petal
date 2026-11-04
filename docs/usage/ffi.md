@@ -45,7 +45,7 @@ Entry points, all on `Env` (`core/src/env/`):
 | Programs | `load_program`, `load_program_at`, `load_program_diag`, `compile_program`, `compile_program_at`, `compile_program_diag`, `load_program_ir` |
 | Execution | `create_stack`, `run`, `run_bounded`, `reset_stack`, `call_function`, `call_function_diag`, `has_function` |
 | Host→script data | `intern_symbol`, `set_binding`, `clear_binding` |
-| Script→host data | `take_output_buffer`, `output_buffer`, `take_output` (print lines) |
+| Script→host data | `take_output_buffer`, `output_buffer`, `take_output` (print lines); for a buffer whose replayed scopes should arrive as one reference each, `set_output_segmented` and `take_output_segments` (`petal::output_segments`) |
 | Id allocation | `reset_counter`, `next_counter` |
 | State tooling | `get_state_json`, `set_state_from_json`, `snapshot_state`, `restore_state`, `diff_state` |
 | Observation | `observations_mut().enable()`, `get_observations_json` — the last value bound to every named term (see [embedding-guide.md](embedding-guide.md#reading-arbitrary-named-values-observation)) |
@@ -787,6 +787,13 @@ native. So:
 | reads host state that moves without such a report (a live simulation) | `EFFECT` (plus the read), or bump the revision whenever it moves |
 | reads a bound input and answers a pure function of it | `probe(class)` |
 
+A declaration the script gives no id (`body({size: 1.0})`) can be keyed by
+`cxt.call_key()`: a hash of the call path it was made on (the one that keys
+`state`) and its call site, the same on every frame, one per loop iteration,
+following the item under `for … key`. It is `None` in a `map`/`forEach`
+callback. See
+[retained-scene-output.md](../dev/retained-scene-output.md#l8-implicit-keys-and-keyed-loops-as-built-b5).
+
 **The cheesecake case.** Cheesecake, a C++ engine scripted in Petal through a
 C bridge, registered its scene natives (`body`, `draw_mesh`, `point_light`,
 `camera`, …) as `Emits` and its queries (`raycast`, `contacts`,
@@ -838,6 +845,30 @@ buffer-emitter path", never "this callback writes something somewhere".
 petal-c-bridge follows this: only `pb_vm_register_emitter` pushes into a
 buffer, a C callback has no way to, and so `PB_FX_EMITS` on a callback is
 always an over-declaration (use `PB_FX_EFFECT`).
+
+**Saying more than `effect`: declare, command, query.** A host callback that
+writes host state does not have to make every helper above it unreplayable.
+Four kinds of engine native replay differently
+([native-effects.md](../dev/native-effects.md#the-four-kinds-of-engine-native)):
+
+- a **declare** (`body`, `point_light`) is an emitter flagged `DECLARES`
+  (`PB_FX_DECLARE` through `pb_vm_register_emitter_fx`): replayed like an
+  emit, reconciled by the host;
+- an **emit** (`draw_mesh`) is an emitter;
+- a **command** (`apply_impulse`, `sfx`) is a callback flagged `COMMAND`
+  (`PB_FX_COMMAND`) that returns nil and whose consequence the script cannot
+  observe in the same run: a replay calls it again with the same arguments,
+  exactly as running the code would;
+- a **query** (`raycast`, `body_state`) reads `PHYSICS` (`PB_FX_READS_PHYSICS`)
+  and stays valid while the physics revision holds: call
+  `Env::note_class_changed(stack, InputClasses::PHYSICS)`
+  (`pb_vm_note_class_changed`) after every step.
+
+A clock read whose answer changes every frame (`time`, not a fixed `dt`)
+should also say `ticks` (`PB_FX_TICKS`): helpers that call it on every path
+are then not recorded at all. `petal show-static --deps` (or
+`Env::dep_classes_report` / `pb_vm_dep_classes_report`, which know your
+natives) lists every helper that never replays and why.
 
 **The frame gate has the same shape at frame granularity.** On a skipped frame
 no native runs at all. A host whose natives must reach the host every frame

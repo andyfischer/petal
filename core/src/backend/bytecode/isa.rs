@@ -395,6 +395,14 @@ pub enum Inst {
         /// record may hold that result. Serialization-skipped when false.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         no_memo: bool,
+        /// Every argument is static: built from the source text alone, so it
+        /// is the same value on every run at this call (the dependency
+        /// classes, `static_classify::dep_classes`). A memoized call's replay
+        /// check then skips comparing them. Set after lowering by
+        /// [`apply_memo_hints`](super::memo_hints::apply); serialization-skipped
+        /// when false.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        static_args: bool,
         /// Whether anything reads this call's result (see [`ResultUse`]).
         /// Serialization-skipped when it is the default.
         #[serde(default, skip_serializing_if = "ResultUse::is_read")]
@@ -485,6 +493,11 @@ pub enum Inst {
         /// `None` when a field name repeats.
         #[serde(skip)]
         shape: Option<std::sync::Arc<crate::record::Shape>>,
+        /// The literal's template when most of its fields are static
+        /// (`crate::record_template`): its holes and its site. Written
+        /// after lowering, with the static-value cache; `None` otherwise.
+        #[serde(skip)]
+        template: Option<std::sync::Arc<crate::record_template::TemplatePlan>>,
     },
     AllocMapSpread {
         dst: Reg,
@@ -1287,6 +1300,37 @@ pub struct BytecodeFn {
     /// Source term each instruction was lowered from, parallel to `code`. Used
     /// to annotate a runtime error with the failing term's source position.
     pub origins: Vec<Option<TermId>>,
+    /// What the dependency classes say about memoizing calls of this
+    /// function (see [`MemoHint`]). Default (no hint) unless the program was
+    /// lowered with the static analysis.
+    pub memo_hint: MemoHint,
+}
+
+/// The compile-time memo decisions for one function, from the dependency
+/// classes (`crate::static_classify::dep_classes`), applied by
+/// [`apply_memo_hints`](super::memo_hints::apply). Each only saves work the
+/// runtime would otherwise do and throw away; `MemoTable::no_hints` turns
+/// them all off for a reference run.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MemoHint {
+    /// Something on every path of the body makes a scope unrecordable (an
+    /// effect, a draw from the random stream, a read nothing validates),
+    /// directly or through a call made on every path: a call never opens a
+    /// scope.
+    pub effect_every_call: bool,
+    /// The body calls a native whose answer changes every run
+    /// ([`NativeEffects::ticks`](crate::native_fn::NativeEffects::ticks)) on
+    /// every path, so its own record never validates: a call opens no scope
+    /// unless an enclosing scope is recording (which may still replay through
+    /// it by a cutoff).
+    pub ticks_every_call: bool,
+    /// The function is a constant of the program: its body reads nothing
+    /// dynamic (no input class, `state`, outside `var`, unresolved call or
+    /// dynamic enum data) and has no effect or command, and everything it
+    /// captures is static. With static arguments its record holds for the
+    /// life of the program, so a replay skips comparing captures and
+    /// validating dependencies.
+    pub constant: bool,
 }
 
 /// A whole program lowered to bytecode.

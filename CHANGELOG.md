@@ -17,6 +17,64 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   the string with every occurrence of `old` replaced. They stand in for the
   `filter(enumerate(…))` and `join(split(…))` patterns programs used instead.
 
+- Implicit keys (L8 of the retained scene plan): a native call can read a
+  key made from the call path it runs on, the one that keys `state`, plus
+  its own call site (`PetalCxt::call_key`). It is the same every frame and
+  across reloads that keep the call path, one per loop iteration, follows
+  the item under `for … key`, and is absent in a `map`/`forEach` callback.
+  A host can reconcile a declaration the script gave no id by it
+  (`body({shape: "box"})` instead of `body("crate{i}", …)`). Memo replays
+  keep the keys; a re-issued command gets the key it was recorded with.
+  C bridge: `pb_call_key` (`petal::Call::key()`) and `PB_FX_KEYED` on an
+  emitter, which puts the key first in the payload
+  ([retained-scene-output.md](docs/dev/retained-scene-output.md#l8-implicit-keys-and-keyed-loops-as-built-b5)).
+
+- Record templates (L6 of the retained scene plan): a record literal whose
+  fields are mostly static (`{shape: "box", size: 2.0, pos: p}`) is
+  compiled to a template plus holes, and each record it builds carries a
+  template id naming its static part, stable across frames, reloads and
+  processes. Scripts cannot tell; `Env::set_record_templates(false)` /
+  `PETAL_RECORD_TEMPLATES=0` turns it off. C bridge: `pb_value::tmpl`
+  (`pb_template`), a template's static fields decoded once per VM,
+  `pb_snapshot_update_record` (only the holes compared) and
+  `pb_vm_set_record_templates`. `pb_value` grew by one pointer: rebuild
+  hosts against the new header
+  ([retained-scene-output.md](docs/dev/retained-scene-output.md#l6-binding-time-split-of-option-records-as-built-b4)).
+
+- Dependency classes (L5 of the retained scene plan): every term and
+  function of a program gets a mask of what it can depend on (`CLOCK`,
+  `INPUT`, `VIEWPORT`, `HOST_DATA`, the new `PHYSICS` and `NET`, `STATE`,
+  `MODULE_VAR`, …) and of what every call does (`EFFECT`, `COMMAND`,
+  `EMIT`, `DECLARE`, `TICKS`). Memoization uses them at compile time: a
+  helper with an effect on every call, or one that reads a clock on every
+  call outside a recording scope, is not recorded; a call with static
+  arguments is not compared, and a constant one is not checked at all.
+  `petal show-static --deps` and the opt-in lint rule `never-replays` say
+  which helpers never replay and why, down to the native
+  ([retained-scene-output.md](docs/dev/retained-scene-output.md#l5-dependency-classes-and-effect-kinds-as-built-b3)).
+
+- Native rows can say `declares` (a keyed declaration, replayed as an
+  emit), `command` (a one-shot call re-issued when a memoized scope
+  replays) and `ticks` (a read whose answer changes every run), and read the
+  revisioned classes `PHYSICS` and `NET` (`NativeEffects::query`), validated
+  by their own revisions (`Env::note_class_changed`). petal-ui's `time` and
+  `frame_count` tick. C bridge: `PB_FX_DECLARE`, `PB_FX_COMMAND`,
+  `PB_FX_TICKS`, `PB_FX_READS_PHYSICS`, `PB_FX_READS_NET`,
+  `pb_vm_register_emitter_fx`, `pb_vm_note_host_data_changed`,
+  `pb_vm_note_class_changed`, `pb_vm_dep_classes_report`
+  ([native-effects.md](docs/dev/native-effects.md#the-four-kinds-of-engine-native)).
+
+- C bridge: option plans (`pb_plan`, `petal::Plan`) read a native's
+  options record by position, checking its field names once per record
+  shape; a decoded `PB_MAP` now carries its shape id in `integer`
+  (`Value::shape()`), and a `PB_HANDLE` its class index in `number`.
+  Snapshots (`pb_snapshot`, `petal::Snapshot`) say which options of a keyed
+  declaration changed since last frame. Decoding copies a
+  shape's keys once rather than per record, and records a host builds with
+  the same keys share one shape. In `examples/scene_frame.cpp` the host's
+  option reads fall from about 405 to 165 µs a frame
+  ([embedding-c.md](docs/usage/embedding-c.md#options-records-read-by-position-with-a-plan)).
+
 - An import path may be a quoted string, so a module whose file or directory
   name is not an identifier can be imported: `import "./my-lib" as lib`,
   `import "../shared-utils/rng"`, `import "kit/extra-bits": knob`. A plain

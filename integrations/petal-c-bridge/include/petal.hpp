@@ -24,6 +24,7 @@
 
 #include "petal_bridge.h"
 
+#include <bit>
 #include <concepts>
 #include <cstdint>
 #include <functional>
@@ -115,6 +116,16 @@ inline constexpr uint32_t ReadsHostData = PB_FX_READS_HOST_DATA;
 inline constexpr uint32_t ReadsResources = PB_FX_READS_RESOURCES;
 inline constexpr uint32_t ReadsRng = PB_FX_READS_RNG;
 inline constexpr uint32_t ReadsBindings = PB_FX_READS_BINDINGS;
+inline constexpr uint32_t ReadsPhysics = PB_FX_READS_PHYSICS;
+inline constexpr uint32_t ReadsNet = PB_FX_READS_NET;
+// The kinds of engine native (see petal_bridge.h): a declare is an emitter
+// (emitter_fx), a command is re-issued on replay, a query is valid while its
+// class's revision holds (note_class_changed).
+inline constexpr uint32_t Declare = PB_FX_DECLARE;
+inline constexpr uint32_t Command = PB_FX_COMMAND;
+inline constexpr uint32_t Query = PB_FX_READS_PHYSICS;
+inline constexpr uint32_t Ticks = PB_FX_TICKS;
+inline constexpr uint32_t Keyed = PB_FX_KEYED;
 }  // namespace fx
 
 // ─── Value views ────────────────────────────────────────────────────────────
@@ -168,6 +179,12 @@ public:
     std::string_view key() const noexcept {
         return (v_ && v_->key) ? std::string_view(v_->key, v_->key_len) : std::string_view{};
     }
+    // A MAP's record shape id (what a Plan keys on); 0 for anything else.
+    uint64_t shape() const noexcept { return is_map() ? uint64_t(v_->integer) : 0; }
+    // A MAP made by a templated literal: its template (see pb_template), else
+    // nullptr. template_id() is its id, or 0.
+    const pb_template* record_template() const noexcept { return is_map() ? v_->tmpl : nullptr; }
+    uint64_t template_id() const noexcept { return record_template() ? record_template()->id : 0; }
 
     // Children of LIST / MAP / ENUM.
     size_t size() const noexcept { return (is_list() || is_map() || is_enum()) ? v_->count : 0; }
@@ -231,6 +248,165 @@ public:
 
 private:
     pb_values v_{nullptr, 0};
+};
+
+// ─── Option plans ───────────────────────────────────────────────────────────
+
+// Reads an options record by position, checking its field names once per
+// record shape (pb_plan). Make one per native, with the options it reads:
+//
+//   enum { SHAPE, SIZE, MASS, POS };
+//   petal::Plan body_opts("shape, size, mass, pos");
+//   auto o = body_opts.bind(call[1]);
+//   if (!o.ok()) throw std::runtime_error("unknown option " + std::string(o.unknown().key()));
+//   double mass = o[MASS].number(1.0);
+//
+// Not thread-safe; the bound options are valid until the next bind on the
+// same plan (and while the record's view is).
+class Plan {
+public:
+    explicit Plan(const std::string& options) : p_(pb_plan_new(options.c_str())) {
+        if (!p_) throw Error(PB_ERR_INVALID_ARG, "petal::Plan: malformed option list: " + options);
+        slots_.resize(pb_plan_count(p_));
+    }
+    ~Plan() { pb_plan_free(p_); }
+    Plan(Plan&& o) noexcept : p_(std::exchange(o.p_, nullptr)), slots_(std::move(o.slots_)) {}
+    Plan& operator=(Plan&& o) noexcept {
+        if (this != &o) { pb_plan_free(p_); p_ = std::exchange(o.p_, nullptr); slots_ = std::move(o.slots_); }
+        return *this;
+    }
+    Plan(const Plan&) = delete;
+    Plan& operator=(const Plan&) = delete;
+
+    pb_plan* raw() const noexcept { return p_; }
+    size_t size() const noexcept { return slots_.size(); }
+    std::string_view name(size_t i) const noexcept {
+        const char* n = pb_plan_name(p_, i);
+        return n ? std::string_view(n) : std::string_view{};
+    }
+    // The position of option `name`, or size() if it is not one.
+    size_t index(std::string_view name) const noexcept {
+        for (size_t i = 0; i < size(); ++i) if (this->name(i) == name) return i;
+        return size();
+    }
+
+    // One record's options, by position.
+    class Options {
+    public:
+        // Every field is an option (or the record is nil).
+        bool ok() const noexcept { return ok_; }
+        // The first field that is not an option (nil when there is none, or
+        // when the value was not a record at all).
+        Value unknown() const noexcept { return Value(unknown_); }
+        Value operator[](size_t i) const noexcept { return i < n_ ? Value(slots_[i]) : Value(); }
+        size_t size() const noexcept { return n_; }
+        const pb_value* const* data() const noexcept { return slots_; }
+
+    private:
+        friend class Plan;
+        const pb_value* const* slots_ = nullptr;
+        size_t n_ = 0;
+        bool ok_ = true;
+        const pb_value* unknown_ = nullptr;
+    };
+
+    Options bind(Value record) {
+        Options o;
+        o.ok_ = pb_plan_bind(p_, record.raw(), slots_.data(), &o.unknown_);
+        o.slots_ = slots_.data();
+        o.n_ = slots_.size();
+        return o;
+    }
+
+private:
+    pb_plan* p_;
+    std::vector<const pb_value*> slots_;
+};
+
+// The options a keyed declaration was last given (pb_snapshot): update()
+// says which changed since.
+//
+//   auto changed = entry.snap.update(o);   // o from Plan::bind
+//   for (size_t i : changed) apply(i, o[i]);
+class Snapshot {
+public:
+    Snapshot() : s_(pb_snapshot_new()) {
+        if (!s_) throw Error(PB_ERR_PANIC, "pb_snapshot_new failed");
+    }
+    ~Snapshot() { pb_snapshot_free(s_); }
+    Snapshot(Snapshot&& o) noexcept : s_(std::exchange(o.s_, nullptr)), words_(std::move(o.words_)) {}
+    Snapshot& operator=(Snapshot&& o) noexcept {
+        if (this != &o) { pb_snapshot_free(s_); s_ = std::exchange(o.s_, nullptr); words_ = std::move(o.words_); }
+        return *this;
+    }
+    Snapshot(const Snapshot&) = delete;
+    Snapshot& operator=(const Snapshot&) = delete;
+
+    pb_snapshot* raw() const noexcept { return s_; }
+    void clear() { pb_snapshot_clear(s_); }
+
+    // The options that changed: iterate for their positions. Valid until the
+    // next update of the same snapshot.
+    class Changed {
+    public:
+        bool any() const noexcept { return any_; }
+        bool operator[](size_t i) const noexcept { return i / 64 < n_ && ((w_[i / 64] >> (i % 64)) & 1); }
+
+        class iterator {
+        public:
+            using value_type = size_t;
+            using difference_type = std::ptrdiff_t;
+            iterator() = default;
+            iterator(const uint64_t* w, size_t n, size_t word) : w_(w), n_(n), word_(word) { settle(); }
+            size_t operator*() const noexcept { return word_ * 64 + size_t(std::countr_zero(bits_)); }
+            iterator& operator++() noexcept { bits_ &= bits_ - 1; if (!bits_) { ++word_; settle(); } return *this; }
+            iterator operator++(int) noexcept { auto t = *this; ++*this; return t; }
+            bool operator==(const iterator& o) const noexcept { return word_ == o.word_ && bits_ == o.bits_; }
+
+        private:
+            void settle() noexcept {
+                while (word_ < n_ && !(bits_ = w_[word_])) ++word_;
+                if (word_ >= n_) { word_ = n_; bits_ = 0; }
+            }
+            const uint64_t* w_ = nullptr;
+            size_t n_ = 0, word_ = 0;
+            uint64_t bits_ = 0;
+        };
+        iterator begin() const noexcept { return iterator(w_, n_, 0); }
+        iterator end() const noexcept { return iterator(w_, n_, n_); }
+
+    private:
+        friend class Snapshot;
+        const uint64_t* w_ = nullptr;
+        size_t n_ = 0;
+        bool any_ = false;
+    };
+
+    // Compare with the values held, hold these, and say which differ.
+    Changed update(const Plan::Options& o) { return update(o.data(), o.size()); }
+    Changed update(const pb_value* const* values, size_t n) {
+        words_.resize((n + 63) / 64);
+        Changed c;
+        c.any_ = pb_snapshot_update(s_, values, n, words_.data());
+        c.w_ = words_.data();
+        c.n_ = words_.size();
+        return c;
+    }
+    // The same for options bound from `record`: with the template of the
+    // record last given, only the holes are compared.
+    Changed update(const Value& record, const Plan::Options& o) { return update(record.raw(), o.data(), o.size()); }
+    Changed update(const pb_value* record, const pb_value* const* values, size_t n) {
+        words_.resize((n + 63) / 64);
+        Changed c;
+        c.any_ = pb_snapshot_update_record(s_, record, values, n, words_.data());
+        c.w_ = words_.data();
+        c.n_ = words_.size();
+        return c;
+    }
+
+private:
+    pb_snapshot* s_;
+    std::vector<uint64_t> words_;
 };
 
 // ─── Builders ───────────────────────────────────────────────────────────────
@@ -318,6 +494,12 @@ public:
         const char* file = nullptr;
         if (pb_call_location(c_, &file, &loc.line, &loc.column) && file) loc.file = file;
         return loc;
+    }
+    // The call's implicit key (see pb_call_key), or nothing where it has none.
+    std::optional<uint64_t> key() const noexcept {
+        uint64_t k = 0;
+        if (pb_call_key(c_, &k)) return k;
+        return std::nullopt;
     }
     // Record an expectation of the host's own (see pb_call_expect).
     void expect(bool ok, const std::string& message, const char* check = nullptr) const {
@@ -570,6 +752,24 @@ public:
     void emitter(const std::string& name, const std::string& buffer, const std::string& tag = {}) {
         check(pb_vm_register_emitter(vm_, name.c_str(), buffer.c_str(), tag.empty() ? nullptr : tag.c_str()));
     }
+    // An emitter with extra effect flags: fx::Declare for a keyed
+    // declaration the host reconciles.
+    void emitter_fx(const std::string& name, const std::string& buffer, uint32_t effects,
+                    const std::string& tag = {}) {
+        check(pb_vm_register_emitter_fx(vm_, name.c_str(), buffer.c_str(), tag.empty() ? nullptr : tag.c_str(),
+                                        effects));
+    }
+    // Revisions for memoized scopes and the frame gate: host data changed, or
+    // a revisioned class (fx::ReadsPhysics after a physics step).
+    void note_host_data_changed() { check(pb_vm_note_host_data_changed(vm_)); }
+    void note_class_changed(uint32_t reads) { check(pb_vm_note_class_changed(vm_, reads)); }
+    // Every function's dependency classes and why the ones that never replay
+    // do not (see pb_vm_dep_classes_report).
+    std::string dep_classes_report(bool all_modules = false) {
+        const char* s = pb_vm_dep_classes_report(vm_, all_modules);
+        if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
+        return s;
+    }
     // Parameter names for a registered native, so scripts can call it with
     // named arguments: native_params("spawn", "kind, x, y, speed?").
     void native_params(const std::string& name, const std::string& params) {
@@ -718,6 +918,21 @@ public:
         pb_values out{nullptr, 0};
         check(pb_vm_drain(vm_, buffer.c_str(), &out));
         return Values(out);
+    }
+    // Segmented buffers (petal_bridge.h, "Segmented output buffers"): a
+    // replayed scope is one entry naming a segment the host already has.
+    void set_segmented(const std::string& buffer, bool on) {
+        check(pb_vm_set_segmented(vm_, buffer.c_str(), on));
+    }
+    // Record templates (pb_template) on (the default) or off.
+    void set_record_templates(bool on) { check(pb_vm_set_record_templates(vm_, on)); }
+    pb_segments drain_segments(const std::string& buffer) {
+        pb_segments out{};
+        check(pb_vm_drain_segments(vm_, buffer.c_str(), &out));
+        return out;
+    }
+    void reset_segments(const std::string& buffer) {
+        check(pb_vm_reset_segments(vm_, buffer.c_str()));
     }
     std::span<const pb_draw_cmd> drain_draw() {
         const pb_draw_cmd* cmds = nullptr;

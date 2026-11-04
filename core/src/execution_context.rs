@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use crate::closure_table::ClosureTable;
 use crate::heap::Heap;
+use crate::output_segments::{SegChannel, SegChannels, SegmentedFrame, flatten_buffer};
 use crate::program::TermId;
 use crate::resource_table::ResourceTable;
 use crate::stats::{AllocStats, DupStats};
@@ -29,6 +30,10 @@ pub struct ExecutionContext {
     pub closures: ClosureTable,
     pub output: Vec<String>,
     pub output_buffers: HashMap<SymbolId, Vec<Value>>,
+    /// The output buffers in segmented mode, with their segment marks (see
+    /// [`crate::output_segments`]). A symbol is segmented while it has an
+    /// entry; its fresh values stay in [`output_buffers`](Self::output_buffers).
+    pub segments: SegChannels,
     pub bindings: HashMap<SymbolId, Value>,
     /// When each binding last changed: a process-wide serial taken by
     /// [`set_binding`](Self::set_binding) and
@@ -128,6 +133,7 @@ impl ExecutionContext {
             closures: ClosureTable::new(),
             output: Vec::new(),
             output_buffers: HashMap::new(),
+            segments: HashMap::new(),
             bindings: HashMap::new(),
             binding_revisions: HashMap::new(),
             counters: HashMap::new(),
@@ -172,6 +178,14 @@ impl ExecutionContext {
             counters: self.counters.clone(),
             output: Vec::new(),
             output_buffers: HashMap::new(),
+            // Which buffers are segmented is a setting and is inherited; what
+            // the host was given is the source's host's, so the fork starts
+            // with nothing delivered.
+            segments: self
+                .segments
+                .keys()
+                .map(|s| (*s, SegChannel::default()))
+                .collect(),
             // Whether stdout is echoed is the caller's policy, not the fork's:
             // a fork inherits it and the caller turns it off if it wants silence.
             echo: self.echo,
@@ -268,12 +282,73 @@ impl ExecutionContext {
         std::mem::take(&mut self.output)
     }
 
-    /// Drain and return the buffer bound to `sym`, leaving it empty.
+    /// Drain and return the buffer bound to `sym`, leaving it empty. A
+    /// segmented buffer comes back flat, every segment expanded (what it
+    /// would have held unsegmented); the host is not told about its
+    /// segments.
     pub fn take_output_buffer(&mut self, sym: SymbolId) -> Vec<Value> {
-        self.output_buffers
+        let values = self
+            .output_buffers
             .get_mut(&sym)
             .map(std::mem::take)
-            .unwrap_or_default()
+            .unwrap_or_default();
+        match self.segments.get_mut(&sym) {
+            Some(ch) if !ch.marks.is_empty() => {
+                flatten_buffer(&values, &std::mem::take(&mut ch.marks))
+            }
+            _ => values,
+        }
+    }
+
+    /// Put `sym`'s buffer in segmented mode, or take it out (see
+    /// [`crate::output_segments`]). Turning it off expands any undrained
+    /// segment back into the buffer. Turning it on again starts over: the
+    /// next [`take_output_segments`](Self::take_output_segments) defines
+    /// every segment it references.
+    pub fn set_output_segmented(&mut self, sym: SymbolId, on: bool) {
+        if on {
+            self.segments.entry(sym).or_default();
+        } else if let Some(ch) = self.segments.remove(&sym)
+            && !ch.marks.is_empty()
+        {
+            let buf = self.output_buffers.entry(sym).or_default();
+            *buf = flatten_buffer(buf, &ch.marks);
+        }
+    }
+
+    /// Whether `sym`'s buffer is in segmented mode.
+    pub fn output_segmented(&self, sym: SymbolId) -> bool {
+        self.segments.contains_key(&sym)
+    }
+
+    /// Drain `sym`'s buffer as segments (see [`crate::output_segments`]).
+    /// For a buffer not in segmented mode every item is a fresh value and
+    /// nothing is defined or dropped.
+    pub fn take_output_segments(&mut self, sym: SymbolId) -> SegmentedFrame {
+        let values = self
+            .output_buffers
+            .get_mut(&sym)
+            .map(std::mem::take)
+            .unwrap_or_default();
+        match self.segments.get_mut(&sym) {
+            Some(ch) => ch.take(values),
+            None => SegmentedFrame {
+                items: values
+                    .into_iter()
+                    .map(crate::output_segments::SegItem::Value)
+                    .collect(),
+                ..Default::default()
+            },
+        }
+    }
+
+    /// Forget which segments of `sym`'s buffer the host was given, for a
+    /// host that lost its cache: the next drain defines every segment it
+    /// references again.
+    pub fn reset_output_segments(&mut self, sym: SymbolId) {
+        if let Some(ch) = self.segments.get_mut(&sym) {
+            ch.forget_delivered();
+        }
     }
 
     /// Drain the call-site origins recorded for `sym`'s buffer (see
@@ -290,7 +365,10 @@ impl ExecutionContext {
             .unwrap_or_default()
     }
 
-    /// Peek at the buffer bound to `sym` without draining it.
+    /// Peek at the buffer bound to `sym` without draining it. For a
+    /// segmented buffer this is only the values held outside segments: a
+    /// recorded or replayed scope's are behind a mark, and only a drain
+    /// (`take_output_buffer`, `take_output_segments`) includes them.
     pub fn output_buffer(&self, sym: SymbolId) -> &[Value] {
         self.output_buffers
             .get(&sym)
@@ -307,6 +385,9 @@ impl ExecutionContext {
         }
         if let Some(origins) = self.emit_origins.get_mut(&sym) {
             origins.clear();
+        }
+        if let Some(ch) = self.segments.get_mut(&sym) {
+            ch.marks.clear();
         }
     }
 

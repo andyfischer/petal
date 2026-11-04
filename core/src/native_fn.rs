@@ -90,6 +90,39 @@ impl InputClasses {
     /// record. The class is resolved per binding symbol rather than at the
     /// leaf.
     pub const BINDINGS: InputClasses = InputClasses(1 << 7);
+    /// A game's physics world, revised once per physics step: a `query`
+    /// native (`raycast`, `body_state`, `contacts`) reads it. Like
+    /// [`HOST_DATA`](Self::HOST_DATA), a read is validated by a revision
+    /// rather than by calling the native again, but by its own one
+    /// ([`crate::env::Env::note_class_changed`]), so a scope that reads only
+    /// host data is not invalidated by every physics step.
+    pub const PHYSICS: InputClasses = InputClasses(1 << 8);
+    /// State replicated from a network peer, revised when a message is
+    /// applied. Validated by its own revision, as `PHYSICS` is.
+    pub const NET: InputClasses = InputClasses(1 << 9);
+
+    /// The player's input devices: [`POINTER`](Self::POINTER) and
+    /// [`KEYBOARD`](Self::KEYBOARD). The dependency classes report them as one
+    /// class, `INPUT`.
+    pub const INPUT: InputClasses = InputClasses(Self::POINTER.0 | Self::KEYBOARD.0);
+    /// The classes validated by a revision the host bumps (a read records the
+    /// revision it saw), as opposed to by re-evaluating a probe: each has its
+    /// own counter ([`crate::run_deps::RunDeps::class_now`]).
+    pub const REVISIONED: InputClasses = InputClasses(Self::PHYSICS.0 | Self::NET.0);
+
+    /// Every class, by name, in bit order: what a report prints.
+    pub const NAMED: [(InputClasses, &'static str); 10] = [
+        (Self::POINTER, "POINTER"),
+        (Self::KEYBOARD, "KEYBOARD"),
+        (Self::CLOCK, "CLOCK"),
+        (Self::VIEWPORT, "VIEWPORT"),
+        (Self::HOST_DATA, "HOST_DATA"),
+        (Self::RESOURCES, "RESOURCES"),
+        (Self::RNG, "RNG"),
+        (Self::BINDINGS, "BINDINGS"),
+        (Self::PHYSICS, "PHYSICS"),
+        (Self::NET, "NET"),
+    ];
 
     pub const fn union(self, other: InputClasses) -> InputClasses {
         InputClasses(self.0 | other.0)
@@ -101,6 +134,20 @@ impl InputClasses {
 
     pub const fn is_empty(self) -> bool {
         self.0 == 0
+    }
+
+    /// Whether any class of `other` is in this set.
+    pub const fn intersects(self, other: InputClasses) -> bool {
+        self.0 & other.0 != 0
+    }
+
+    /// The names of the classes in this set, in bit order (`CLOCK | PHYSICS`).
+    pub fn names(self) -> Vec<&'static str> {
+        Self::NAMED
+            .iter()
+            .filter(|(c, _)| self.intersects(*c))
+            .map(|(_, n)| *n)
+            .collect()
     }
 }
 
@@ -182,6 +229,38 @@ pub struct NativeEffects {
     /// (docs/dev/direct-manipulation-v2-plan.md §2.5). Read by parameter
     /// discovery; nothing at run time looks at it.
     pub no_feedback: bool,
+    /// The call **declares** something keyed and idempotent that the host
+    /// reconciles after the run (`body`, `point_light`, `particles`,
+    /// `loop_sound`): with [`emits`](Self::emits), it pushes the declaration
+    /// into an output buffer. Replay rule: the same as an emit (a replayed
+    /// scope's declarations are spliced back, or handed over as one segment);
+    /// what the flag adds is the host's side of the contract, that a
+    /// declaration no visited scope repeats is reaped. The reactive layers
+    /// treat it as an emit; reports and the dependency classes name it.
+    pub declares: bool,
+    /// A one-shot **command**, issued per call (`apply_impulse`, `sfx`,
+    /// `burst`), whose consequence the script cannot observe during the
+    /// run that issues it (the host applies it later, or it reads nothing
+    /// a later call in the run reads). It must return nil.
+    ///
+    /// Replay rule: a memoized scope records the call (native and
+    /// arguments) and **re-issues** it when the scope is replayed, which is
+    /// what running the code again would do. A command call whose arguments
+    /// cannot be fingerprinted (a closure, a cell, a pending value) or that
+    /// returns something other than nil makes the scope effectful instead.
+    /// A scope that issued a command is never re-executed speculatively,
+    /// and a re-execution defers its commands rather than issuing them. A
+    /// speculative run (direct manipulation) treats a command as an effect:
+    /// suppressed unless [`contained`](Self::contained).
+    pub command: bool,
+    /// The answer of this native's read changes on every run (`time`,
+    /// `frame_count`; not `dt` under a fixed step, which repeats). A scope
+    /// that calls such a native directly on every path can never be replayed
+    /// itself, because its probe always fails, so the dependency classes
+    /// mark the function and its calls skip recording at compile time
+    /// (`crate::static_classify::dep_classes`). Only a performance hint: a
+    /// wrong `ticks` costs replays, never correctness.
+    pub ticks: bool,
 }
 
 impl NativeEffects {
@@ -197,6 +276,9 @@ impl NativeEffects {
         constant: false,
         contained: false,
         no_feedback: false,
+        declares: false,
+        command: false,
+        ticks: false,
     };
 
     /// [`PURE`](Self::PURE), and a constant function besides: same arguments,
@@ -225,6 +307,32 @@ impl NativeEffects {
         pending: NativeClass::Effectful,
         ..NativeEffects::PURE
     };
+
+    /// A **declare** native: pushes a keyed, idempotent declaration into an
+    /// output buffer for the host to reconcile (see
+    /// [`declares`](Self::declares)). Replays like an emit.
+    pub const DECLARES: NativeEffects = NativeEffects {
+        declares: true,
+        ..NativeEffects::EMITS
+    };
+
+    /// A **command** native: a one-shot call whose consequence the run cannot
+    /// observe, re-issued when a memoized scope that called it is replayed
+    /// (see [`command`](Self::command)).
+    pub const COMMAND: NativeEffects = NativeEffects {
+        command: true,
+        ..NativeEffects::PURE
+    };
+
+    /// A **query** native: reads the world through a revisioned class
+    /// (`query(InputClasses::PHYSICS)` for `raycast` or `body_state`). A
+    /// memoized scope that called it stays valid while the class's revision
+    /// is unchanged; the host bumps it ([`crate::env::Env::note_class_changed`])
+    /// after each step. The same row as [`reads`](Self::reads), named for
+    /// what it is.
+    pub const fn query(reads: InputClasses) -> NativeEffects {
+        NativeEffects::reads(reads)
+    }
 
     /// A pure function of its arguments and the given input classes, safe to
     /// re-evaluate at validation.
@@ -286,10 +394,60 @@ impl NativeEffects {
         }
     }
 
+    /// This row [`declaring`](Self::declares): an emit the host reconciles.
+    pub const fn with_declares(self) -> NativeEffects {
+        NativeEffects {
+            declares: true,
+            emits: true,
+            ..self
+        }
+    }
+
+    /// This row as a [`command`](Self::command).
+    pub const fn with_command(self) -> NativeEffects {
+        NativeEffects {
+            command: true,
+            ..self
+        }
+    }
+
+    /// This row with a read whose answer changes on every run
+    /// ([`ticks`](Self::ticks)).
+    pub const fn ticks(self) -> NativeEffects {
+        NativeEffects {
+            ticks: true,
+            ..self
+        }
+    }
+
     /// Whether a speculative run must not call this native: it has an
-    /// effect that is not [`contained`](Self::contained).
+    /// effect, or is a command, that is not [`contained`](Self::contained).
     pub const fn is_escaping(&self) -> bool {
-        self.effect && !self.contained
+        (self.effect || self.command) && !self.contained
+    }
+
+    /// The kind of engine native this row describes, in the vocabulary of
+    /// the retained optimization plan: what a report calls it.
+    pub const fn kind(&self) -> NativeKind {
+        if self.effect {
+            NativeKind::Effect
+        } else if self.command {
+            NativeKind::Command
+        } else if self.declares {
+            NativeKind::Declare
+        } else if self.emits {
+            NativeKind::Emit
+        } else if self.reads.intersects(InputClasses(
+            InputClasses::REVISIONED.0 | InputClasses::HOST_DATA.0,
+        )) {
+            NativeKind::Query
+        } else if !self.reads.is_empty() {
+            NativeKind::Read
+        } else if self.is_const() {
+            NativeKind::Const
+        } else {
+            NativeKind::Pure
+        }
     }
 
     /// Whether a call to this native with constant arguments is itself a
@@ -302,7 +460,53 @@ impl NativeEffects {
     /// row; [`NativeFnTable::constness`] is the same question asked of a
     /// registered native, and also knows about the higher-order builtins.
     pub const fn is_const(self) -> bool {
-        self.constant && self.reads.is_empty() && !self.probe && !self.emits && !self.effect
+        self.constant
+            && self.reads.is_empty()
+            && !self.probe
+            && !self.emits
+            && !self.effect
+            && !self.command
+            && !self.declares
+    }
+}
+
+/// What a native row amounts to, for a report: the four kinds of engine
+/// native (declare, emit, command, query) and the rest. Derived from the row
+/// by [`NativeEffects::kind`]; the row is what the runtime reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeKind {
+    /// A constant function.
+    Const,
+    /// A function of its arguments, reading no tracked input.
+    Pure,
+    /// Reads an input class that is re-evaluated (a probe) or that nothing
+    /// can validate (not a probe: the scope is effectful).
+    Read,
+    /// Reads host data or a revisioned class (`PHYSICS`, `NET`): valid while
+    /// the revision holds.
+    Query,
+    /// Pushes this frame's output (a draw).
+    Emit,
+    /// Pushes a keyed declaration the host reconciles.
+    Declare,
+    /// A one-shot command, re-issued on replay.
+    Command,
+    /// Something no replay reproduces.
+    Effect,
+}
+
+impl NativeKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            NativeKind::Const => "const",
+            NativeKind::Pure => "pure",
+            NativeKind::Read => "read",
+            NativeKind::Query => "query",
+            NativeKind::Emit => "emit",
+            NativeKind::Declare => "declare",
+            NativeKind::Command => "command",
+            NativeKind::Effect => "effect",
+        }
     }
 }
 
@@ -794,6 +998,19 @@ impl NativeFnTable {
         entry.effects.pending = class;
     }
 
+    /// Replace the effect row of an already-registered native: how a host
+    /// marks an emitter it registered through a fixed-row path as a
+    /// [`declare`](NativeEffects::declares), or a read as one that
+    /// [`ticks`](NativeEffects::ticks). Bumps the table's revision, so a
+    /// kept static analysis (which read the old row) is recomputed. Apply it
+    /// before compiling the programs that call the native.
+    pub fn set_effects(&mut self, id: NativeFnId, effects: NativeEffects) {
+        self.revision = next_revision();
+        let entry = &mut self.entries[id.0 as usize];
+        entry.class = effects.pending;
+        entry.effects = effects;
+    }
+
     /// Declare a parameter list for an already-registered native, so calls
     /// may pass its arguments by name. Opt-in, and applied by id after
     /// registration like [`set_class`](Self::set_class): a native that
@@ -1006,9 +1223,66 @@ pub struct PetalCxt<'a> {
     /// random draws come from and where emits are recorded. `None` in every
     /// other run.
     pub(crate) spec: Option<&'a mut crate::backend::bytecode::vm::spec::SpecTap>,
+    /// Where this call's implicit key comes from ([`call_key`](Self::call_key)).
+    pub(crate) key: CallKeySource<'a>,
+    /// The implicit key the native asked for, if it asked: the VM records it
+    /// with a command a memoized scope will re-issue, and gives up on a
+    /// scope whose probe read it (a probe is re-evaluated with no call path).
+    pub(crate) key_taken: Option<u64>,
+}
+
+/// Where a native call's implicit key comes from (see
+/// [`PetalCxt::call_key`]).
+#[derive(Clone, Copy)]
+pub(crate) enum CallKeySource<'a> {
+    /// The call has none: it runs in a higher-order builtin's callback (every
+    /// element would get the same key), or nothing made it from a call.
+    None,
+    /// Computed from the live frame stack on request, so a native that does
+    /// not ask pays nothing.
+    Frames(&'a [crate::backend::bytecode::vm::VmFrame]),
+    /// Fixed: a command re-issued by a memo replay gets the key its call was
+    /// recorded with.
+    Fixed(u64),
 }
 
 impl<'a> PetalCxt<'a> {
+    /// This call's **implicit key** (retained scene output, L8): a hash of the
+    /// call path the call is made on (the `[Call(site) | Index(i) | Key(h)]`
+    /// parts that key `state`, docs/dev/state-call-paths.md) followed by the
+    /// call's own call site. A host that reconciles declarations by key
+    /// (`body`, `point_light`) can key one the script gave no id by it:
+    ///
+    /// - it is the same on every frame and run while the call path is (a
+    ///   reload that does not rename the callee or reorder calls to it keeps
+    ///   it), and is the id a memo scope would have at that place;
+    /// - a call in a loop gets one per iteration; under `for e in ents key
+    ///   e.id` it follows the entity rather than the position;
+    /// - within one run it is unique wherever a `state` slot would be: two
+    ///   calls get the same key only from one call site on one path, which
+    ///   takes a host that calls back into Petal twice for one item.
+    ///
+    /// `None` in a callback of a higher-order builtin (`map`, `forEach`, …),
+    /// where every element runs on the same path (as `state` there is an
+    /// error), and for a call made by no call term (a probe re-evaluated by
+    /// memo validation). A memo replay hands back what the scope emitted,
+    /// keys included; a command it re-issues gets the key it was recorded
+    /// with. A **probe** that reads its key makes the enclosing memo scope
+    /// unrecordable, since the probe is re-evaluated where there is no path.
+    pub fn call_key(&mut self) -> Option<u64> {
+        let key = match self.key {
+            CallKeySource::None => None,
+            CallKeySource::Fixed(k) => Some(k),
+            CallKeySource::Frames(frames) => {
+                crate::backend::bytecode::vm::call_key_of(frames, self.program, self.origin)
+            }
+        };
+        if key.is_some() {
+            self.key_taken = key;
+        }
+        key
+    }
+
     /// Whether a mutating builtin may mutate its container argument in place
     /// (and reuse its id) rather than cloning. See [`set_in_place`](Self::set_in_place).
     pub fn in_place(&self) -> bool {
@@ -1292,6 +1566,15 @@ impl<'a> PetalCxt<'a> {
     /// data and does not call this can leave a skipped frame stale.
     pub fn note_host_read(&mut self) {
         self.run_deps.note_host_read();
+    }
+
+    /// Declare that this native read a revisioned class of host data
+    /// ([`InputClasses::PHYSICS`], [`InputClasses::NET`]): the frame gate
+    /// re-runs once the host reports that class changed
+    /// ([`crate::env::Env::note_class_changed`]). A `query` native calls it
+    /// as a `host_data` reader calls [`note_host_read`](Self::note_host_read).
+    pub fn note_class_read(&mut self, classes: InputClasses) {
+        self.run_deps.note_class_read(classes);
     }
 
     /// Declare that this native did something a replay could not reproduce

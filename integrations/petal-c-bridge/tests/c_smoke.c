@@ -145,6 +145,29 @@ int main(void) {
     REQUIRE(strstr(response, "\"error\":true") != NULL);
     REQUIRE(strcmp(pb_vm_last_error(vm)->phase, "goal") == 0);
 
+    /* Option plans and snapshots, over a hand-made record view. */
+    {
+        pb_plan* plan = pb_plan_new("size, pos");
+        REQUIRE(plan != NULL && pb_plan_count(plan) == 2 && strcmp(pb_plan_name(plan, 1), "pos") == 0);
+        pb_value fields[2];
+        memset(fields, 0, sizeof fields);
+        fields[0].kind = PB_FLOAT; fields[0].number = 2.0; fields[0].key = "size"; fields[0].key_len = 4;
+        fields[1].kind = PB_INT; fields[1].integer = 7; fields[1].key = "spin"; fields[1].key_len = 4;
+        pb_value rec;
+        memset(&rec, 0, sizeof rec);
+        rec.kind = PB_MAP; rec.count = 2; rec.items = fields; rec.integer = 0;
+        const pb_value* slots[2];
+        const pb_value* unknown = NULL;
+        REQUIRE(!pb_plan_bind(plan, &rec, slots, &unknown));
+        REQUIRE(unknown == &fields[1] && slots[0] == &fields[0] && slots[1] == NULL);
+        pb_snapshot* snap = pb_snapshot_new();
+        uint64_t changed = 0;
+        REQUIRE(pb_snapshot_update(snap, slots, 2, &changed) && changed == 1);
+        REQUIRE(!pb_snapshot_update(snap, slots, 2, &changed) && changed == 0);
+        pb_snapshot_free(snap);
+        pb_plan_free(plan);
+    }
+
     pb_vm_destroy(vm);
     printf("c_smoke: ok\n");
     return 0;

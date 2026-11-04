@@ -241,6 +241,7 @@ impl<'p> FnLowerer<'p> {
             loop_slots: self.next_slot,
             result_reg,
             origins: self.origins,
+            memo_hint: Default::default(),
         };
         Ok((bf, self.match_binds))
     }
@@ -480,6 +481,7 @@ impl<'p> FnLowerer<'p> {
                 vals: self.regs(ins)?,
                 class: *class,
                 shape: self.literal_shape(fields),
+                template: None,
             },
             TermOp::AllocMapSpread { entries } => Inst::AllocMapSpread {
                 dst,
@@ -559,6 +561,7 @@ impl<'p> FnLowerer<'p> {
                 args: self.regs(&ins[1..])?,
                 arg_names: term.arg_names.clone(),
                 no_memo: !self.in_place.memoizes_call(term.id),
+                static_args: false,
                 result: self.in_place.cells().result_use(term.id),
             },
             TermOp::MethodCall { name, hint } => Inst::MethodCall {

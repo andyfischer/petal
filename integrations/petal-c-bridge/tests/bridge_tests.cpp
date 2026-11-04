@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -708,6 +709,312 @@ TEST(native_userdata_outlives_reload) {
         pb_vm_destroy(vm);
     }
     CHECK_EQ(freed, 1);
+}
+
+// A replayed scope reaches the host as one entry naming a segment it was
+// given before (petal_bridge.h, "Segmented output buffers").
+// ─── Option plans ───────────────────────────────────────────────────────────
+
+TEST(a_plan_reads_options_by_position_and_names_an_unknown_field) {
+    petal::Vm vm;
+    vm.emitter("body", "scene");
+    vm.load_source(
+        "native fn body(id, opts)\n"
+        "for i in range(0, 3) do body(i, {mass: 2.0, pos: i, name: \"b{i}\"}) end\n"
+        "body(9, {mass: 1.0, colour: 3})\n"
+        "body(10, nil)\nbody(11, 5)\n");
+    vm.run();
+    petal::Values cmds = vm.drain("scene");
+    REQUIRE(cmds.size() == 6);
+    petal::Plan plan("shape, mass, pos, name");
+    CHECK_EQ(plan.size(), (size_t)4);
+    CHECK_EQ(plan.name(1), std::string_view("mass"));
+    CHECK_EQ(plan.index("pos"), (size_t)2);
+    CHECK_EQ(plan.index("nope"), (size_t)4);
+    const uint64_t shape = cmds[0][1].shape();
+    CHECK(shape != 0);
+    for (size_t i = 0; i < 3; ++i) {
+        petal::Value opts = cmds[i][1];
+        CHECK_EQ(opts.shape(), shape);  // one literal, one shape
+        auto o = plan.bind(opts);
+        CHECK(o.ok());
+        CHECK(o[0].is_nil());
+        CHECK_EQ(o[1].number(), 2.0);
+        CHECK_EQ(o[2].integer(), (int64_t)i);
+        CHECK_EQ(o[3].string(), "b" + std::to_string(i));
+        CHECK_EQ(o[3].key(), std::string_view("name"));
+    }
+    auto odd = plan.bind(cmds[3][1]);
+    CHECK(!odd.ok());
+    CHECK_EQ(odd.unknown().key(), std::string_view("colour"));
+    CHECK_EQ(odd[1].number(), 1.0);  // the known options are still bound
+    auto nil = plan.bind(cmds[4][1]);
+    CHECK(nil.ok());
+    CHECK(nil[1].is_nil());
+    auto bad = plan.bind(cmds[5][1]);
+    CHECK(!bad.ok());
+    CHECK(bad.unknown().is_nil());
+    CHECK_THROWS_CODE(petal::Plan("a, a"), PB_ERR_INVALID_ARG);
+    CHECK(pb_plan_new("a,,b") == nullptr);
+}
+
+TEST(a_snapshot_reports_which_options_changed) {
+    petal::Vm vm;
+    vm.emitter("body", "scene");
+    vm.load_source(
+        "import vec2\nnative fn body(id, opts)\n"
+        "state t = 0\nt += 1\n"
+        "let p = if t < 3 then vec3(0, 0, 0) else vec3(1, 2, float(t)) end\n"
+        "let mass = if t < 4 then 2.0 else 3.0 end\n"
+        "body(1, {shape: \"box\", mass: mass, pos: p, mat: {color: #ff8800}})\n");
+    petal::Plan plan("shape, mass, pos, mat");
+    petal::Snapshot snap;
+    std::vector<std::vector<size_t>> seen;
+    for (int f = 0; f < 5; ++f) {
+        vm.run();
+        petal::Values cmds = vm.drain("scene");
+        REQUIRE(cmds.size() == 1);
+        auto o = plan.bind(cmds[0][1]);
+        REQUIRE(o.ok());
+        auto changed = snap.update(o);
+        std::vector<size_t> bits(changed.begin(), changed.end());
+        CHECK_EQ(changed.any(), !bits.empty());
+        seen.push_back(bits);
+    }
+    CHECK_EQ(seen[0], (std::vector<size_t>{0, 1, 2, 3}));  // a new snapshot: everything
+    CHECK(seen[1].empty());                                 // the same values, rebuilt
+    CHECK_EQ(seen[2], (std::vector<size_t>{2}));            // pos moved
+    CHECK_EQ(seen[3], (std::vector<size_t>{1, 2}));         // mass and pos
+    CHECK_EQ(seen[4], (std::vector<size_t>{2}));
+    snap.clear();
+    vm.run();
+    petal::Values cmds = vm.drain("scene");
+    auto again = snap.update(plan.bind(cmds[0][1]));
+    CHECK(again[0] && again[3]);
+}
+
+TEST(a_templated_record_carries_its_template_and_a_snapshot_compares_its_holes) {
+    auto run = [](bool templates) {
+        petal::Vm vm;
+        vm.set_record_templates(templates);
+        vm.emitter("body", "scene");
+        vm.load_source(
+            "import vec2\nnative fn body(id, opts)\n"
+            "state t = 0\nt += 1\n"
+            "fn ship(i, t)\n"
+            "  body(i, {shape: \"box\", size: 2.0, mat: {color: #ff8800}, pos: vec3(float(i), 0, float(t))})\n"
+            "end\n"
+            "for i in range(0, 2) do ship(i, t) end\n");
+        petal::Plan plan("shape, size, mat, pos");
+        petal::Snapshot snaps[2];
+        std::vector<std::vector<size_t>> seen;
+        std::vector<uint64_t> ids;
+        std::vector<std::string> dumps;
+        for (int f = 0; f < 3; ++f) {
+            vm.run();
+            petal::Values cmds = vm.drain("scene");
+            REQUIRE(cmds.size() == 2);
+            for (size_t k = 0; k < 2; ++k) {
+                petal::Value opts = cmds[k][1];
+                auto o = plan.bind(opts);
+                REQUIRE(o.ok());
+                auto changed = snaps[k].update(opts, o);
+                seen.emplace_back(changed.begin(), changed.end());
+                ids.push_back(opts.template_id());
+                dumps.push_back(std::string(o[0].str()) + "/" + std::to_string(o[1].number(0)) + "/" +
+                                std::to_string(o[2]["color"].integer()) + "/" + std::to_string(o[3].z()));
+            }
+        }
+        return std::make_tuple(seen, ids, dumps);
+    };
+    auto [seen, ids, dumps] = run(true);
+    auto [seen_off, ids_off, dumps_off] = run(false);
+    CHECK(dumps == dumps_off);  // the same values either way
+    CHECK(seen == seen_off);    // and the same changes
+    CHECK_EQ(seen[0], (std::vector<size_t>{0, 1, 2, 3}));
+    CHECK_EQ(seen[2], (std::vector<size_t>{3}));  // only pos, the hole
+    for (uint64_t id : ids) CHECK_EQ(id, ids[0]);
+    CHECK(ids[0] != 0);
+    for (uint64_t id : ids_off) CHECK_EQ(id, uint64_t(0));
+}
+
+TEST(host_built_return_records_share_a_shape) {
+    petal::Vm vm;
+    vm.native("state_of", [](petal::Call& c) {
+        c.result().map([&](petal::BuilderRef m) {
+            m.field("id", c[0].integer());
+            m.key("pos").vec3(1, 2, 3);
+            m.field("sleeping", false);
+        });
+    });
+    vm.emitter("out", "out");
+    vm.load_source("native fn state_of(id)\nnative fn out(v)\nfor i in range(0, 3) do out(state_of(i)) end\n");
+    vm.run();
+    petal::Values got = vm.drain("out");
+    REQUIRE(got.size() == 3);
+    const uint64_t shape = got[0][0].shape();
+    CHECK(shape != 0);
+    CHECK_EQ(got[1][0].shape(), shape);
+    CHECK_EQ(got[2][0].shape(), shape);
+    CHECK_EQ(got[2][0]["id"].integer(), (int64_t)2);
+}
+
+TEST(commands_reissue_queries_follow_their_class_and_declares_replay) {
+    petal::Vm vm;
+    std::vector<int64_t> kicks;
+    int64_t physics = 1;
+    int64_t ray_calls = 0;
+    vm.native("kick", petal::fx::Command, [&](petal::Call& c) { kicks.push_back(c[0].integer()); });
+    vm.native("ray", petal::fx::Query, [&](petal::Call& c) {
+        ++ray_calls;
+        c.result().value(physics * 10);
+    });
+    vm.emitter_fx("decl", "decls", petal::fx::Declare);
+    vm.load_source(
+        "import io\n"
+        "native fn kick(id)\nnative fn ray()\nnative fn decl(id, x)\n"
+        "fn pushers()\n  for i in range(0, 3) do kick(i) end\n  push_output(symbol(\"out\"), 1)\n  nil\nend\n"
+        "fn aim()\n  push_output(symbol(\"out\"), ray())\n  nil\nend\n"
+        "fn crates()\n  for i in range(0, 4) do decl(i, float(i)) end\n  nil\nend\n"
+        "fn spin()\n  print(\"spin\")\nend\n"
+        "pushers()\naim()\ncrates()\n");
+    vm.set_memo(true);
+    CHECK_EQ(run_out(vm), (std::vector<double>{1, 10}));
+    CHECK_EQ(vm.drain("decls").size(), (size_t)4);
+    // Replayed: the commands are issued again, the query is not re-asked,
+    // and the declarations come back.
+    kicks.clear();
+    const int64_t asked = ray_calls;
+    CHECK_EQ(run_out(vm), (std::vector<double>{1, 10}));
+    CHECK_EQ(kicks, (std::vector<int64_t>{0, 1, 2}));
+    CHECK_EQ(ray_calls, asked);
+    CHECK_EQ(vm.drain("decls").size(), (size_t)4);
+    // Host data in general does not invalidate a PHYSICS read; a step does.
+    vm.note_host_data_changed();
+    physics = 2;
+    CHECK_EQ(run_out(vm), (std::vector<double>{1, 10}));
+    vm.note_class_changed(petal::fx::ReadsPhysics);
+    CHECK_EQ(run_out(vm), (std::vector<double>{1, 20}));
+    const std::string report = vm.dep_classes_report();
+    CHECK(report.find("aim: may PHYSICS") != std::string::npos);
+    CHECK(report.find("never replays: spin: calls `print`") != std::string::npos);
+}
+
+TEST(implicit_keys_reach_keyed_emitters_and_callbacks) {
+    petal::Vm vm;
+    std::vector<std::optional<uint64_t>> lights, kicks;
+    vm.emitter_fx("decl", "decls", petal::fx::Declare | petal::fx::Keyed);
+    vm.native("light", petal::fx::Effect, [&](petal::Call& c) { lights.push_back(c.key()); });
+    vm.native("kick", petal::fx::Command, [&](petal::Call& c) { kicks.push_back(c.key()); });
+    vm.load_source(
+        "native fn decl(v)\nnative fn light(v)\nnative fn kick(v)\n"
+        "fn crate_at(i)\n  decl(i)\n  nil\nend\n"
+        "fn pushers()\n  for i in range(0, 2) do kick(i) end\n  nil\nend\n"
+        "for i in range(0, 3) do crate_at(i) end\n"
+        "decl(99)\nlight(1)\nlight(2)\n"
+        "[1, 2].forEach(fn(x) decl(x + 10) end)\n"
+        "pushers()\n");
+    vm.set_memo(true);
+    auto frame = [&]() {
+        lights.clear();
+        kicks.clear();
+        vm.run();
+        std::vector<std::optional<uint64_t>> keys;
+        petal::Values decls = vm.drain("decls");
+        for (size_t i = 0; i < decls.size(); ++i) {
+            CHECK_EQ(decls[i].tag(), std::string_view("decl"));
+            REQUIRE(decls[i].size() == 2);
+            if (decls[i][0].is_nil()) {
+                keys.push_back(std::nullopt);
+            } else {
+                REQUIRE(decls[i][0].is_int());
+                keys.push_back((uint64_t)decls[i][0].integer());
+            }
+        }
+        return keys;
+    };
+    const auto first = frame();
+    REQUIRE(first.size() == 6);
+    // Three loop iterations and a top-level call: four keys, all different;
+    // the forEach callback's calls have none.
+    for (size_t i = 0; i < 4; ++i) {
+        REQUIRE(first[i].has_value());
+        for (size_t j = 0; j < i; ++j) CHECK(*first[i] != *first[j]);
+    }
+    CHECK(!first[4].has_value() && !first[5].has_value());
+    REQUIRE(lights.size() == 2 && lights[0] && lights[1]);
+    CHECK(*lights[0] != *lights[1]);
+    REQUIRE(kicks.size() == 2 && kicks[0] && kicks[1]);
+    const auto first_lights = lights, first_kicks = kicks;
+    // The next frame replays `crate_at` and `pushers`: the same keys come
+    // back with the declarations, and the re-issued commands get theirs.
+    CHECK(frame() == first);
+    CHECK(lights == first_lights);
+    CHECK(kicks == first_kicks);
+}
+
+TEST(segmented_buffer_hands_a_replayed_scope_over_as_one_entry) {
+    pb_vm* vm = pb_vm_create();
+    CHECK_EQ(pb_vm_set_segmented(vm, "out", true), PB_OK);
+    CHECK_EQ(pb_vm_load_source(vm,
+                               "import io\n"
+                               "fn wall(n)\n  for i in range(0, n) do push_output(symbol(\"out\"), i) end\n  nil\nend\n"
+                               "wall(100)\npush_output(symbol(\"out\"), \"tail\")\n",
+                               nullptr),
+             PB_OK);
+    CHECK_EQ(pb_vm_run(vm), PB_OK);
+    pb_segments seg;
+    CHECK_EQ(pb_vm_drain_segments(vm, "out", &seg), PB_OK);
+    REQUIRE(seg.count == 2);
+    REQUIRE(seg.defined_count == 1);
+    const uint64_t wall = seg.defined[0].serial;
+    CHECK(wall != 0);
+    CHECK_EQ(seg.entries[0].segment, wall);
+    CHECK(seg.entries[0].value == nullptr);
+    CHECK_EQ(seg.entries[1].segment, (uint64_t)0);
+    CHECK_EQ(std::string(seg.entries[1].value->str), std::string("tail"));
+    REQUIRE(seg.defined[0].count == 100);
+    CHECK_EQ(seg.defined[0].entries[99].value->integer, 99);
+    const uint64_t scope = seg.defined[0].scope;
+
+    // Replayed: the same serial, nothing to define.
+    CHECK_EQ(pb_vm_run(vm), PB_OK);
+    CHECK_EQ(pb_vm_drain_segments(vm, "out", &seg), PB_OK);
+    REQUIRE(seg.count == 2);
+    CHECK_EQ(seg.defined_count, (size_t)0);
+    CHECK_EQ(seg.entries[0].segment, wall);
+
+    // The flat drain still expands it.
+    CHECK_EQ(pb_vm_run(vm), PB_OK);
+    pb_values flat;
+    CHECK_EQ(pb_vm_drain(vm, "out", &flat), PB_OK);
+    CHECK_EQ(flat.count, (size_t)101);
+
+    // A host that lost its cache is given it again.
+    CHECK_EQ(pb_vm_reset_segments(vm, "out"), PB_OK);
+    CHECK_EQ(pb_vm_run(vm), PB_OK);
+    CHECK_EQ(pb_vm_drain_segments(vm, "out", &seg), PB_OK);
+    CHECK_EQ(seg.defined_count, (size_t)1);
+
+    // A reload records the scope again: a new serial, the same scope id,
+    // and the old serial dropped.
+    pb_reload_result r;
+    CHECK_EQ(pb_vm_reload_source(vm,
+                                 "import io\n"
+                                 "fn wall(n)\n  for i in range(0, n) do push_output(symbol(\"out\"), i) end\n  nil\nend\n"
+                                 "fn other() 1 end\n"
+                                 "wall(100)\npush_output(symbol(\"out\"), \"tail\")\n",
+                                 &r),
+             PB_OK);
+    CHECK_EQ(pb_vm_run(vm), PB_OK);
+    CHECK_EQ(pb_vm_drain_segments(vm, "out", &seg), PB_OK);
+    REQUIRE(seg.defined_count == 1);
+    CHECK(seg.defined[0].serial != wall);
+    CHECK_EQ(seg.defined[0].scope, scope);
+    bool dropped = false;
+    for (size_t i = 0; i < seg.dropped_count; ++i) dropped |= seg.dropped[i] == wall;
+    CHECK(dropped);
+    pb_vm_destroy(vm);
 }
 
 TEST(native_takes_named_arguments_once_declared) {

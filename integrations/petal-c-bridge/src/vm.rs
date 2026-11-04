@@ -51,6 +51,58 @@ pub struct PbValues {
     pub count: usize,
 }
 
+/// Mirrors `pb_seg_entry`: a fresh value (`segment` 0) or a segment
+/// reference (its serial).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PbSegEntry {
+    pub segment: u64,
+    pub value: *const PbValue,
+}
+
+/// Mirrors `pb_segment`: one definition.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PbSegment {
+    pub scope: u64,
+    pub serial: u64,
+    pub entries: *const PbSegEntry,
+    pub count: usize,
+}
+
+/// Mirrors `pb_segments`: one drain of a segmented buffer.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PbSegments {
+    pub entries: *const PbSegEntry,
+    pub count: usize,
+    pub defined: *const PbSegment,
+    pub defined_count: usize,
+    pub dropped: *const u64,
+    pub dropped_count: usize,
+}
+
+impl PbSegments {
+    const EMPTY: PbSegments = PbSegments {
+        entries: std::ptr::null(),
+        count: 0,
+        defined: std::ptr::null(),
+        defined_count: 0,
+        dropped: std::ptr::null(),
+        dropped_count: 0,
+    };
+}
+
+/// The arrays behind one `PbSegments`, kept until the views are cleared.
+/// Pointers target the heap buffers, so moving this is fine.
+#[derive(Default)]
+struct SegmentsView {
+    entries: Vec<PbSegEntry>,
+    defined: Vec<PbSegment>,
+    def_entries: Vec<Vec<PbSegEntry>>,
+    dropped: Vec<u64>,
+}
+
 /// Mirrors `pb_reload_result`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -89,6 +141,11 @@ pub struct Vm {
     // invalidation point. C pointers target the heap buffers *inside* these
     // values, so moving the values themselves (e.g. as the Vecs grow) is fine.
     views: Vec<ViewArena>,
+    /// The decoded record templates the drains share (`view::TemplateCache`):
+    /// a template's static fields are decoded once for the life of the VM,
+    /// not once per drain. Trimmed only when the views are cleared.
+    templates: crate::view::TemplateCache,
+    segment_views: Vec<SegmentsView>,
     draws: Vec<DrawList>,
     ui_targets: Vec<crate::draw::TargetList>,
     source_files: CStrList,
@@ -100,6 +157,7 @@ pub struct Vm {
     reload_json: CString,
     source_text: CString,
     profile_report: CString,
+    dep_classes_report: CString,
     static_values_json: CString,
     diagnostics_text: CString,
     diagnostics_json: CString,
@@ -151,6 +209,8 @@ impl Vm {
             input: InputState::new(),
             last_error: None,
             views: Vec::new(),
+            templates: Default::default(),
+            segment_views: Vec::new(),
             draws: Vec::new(),
             ui_targets: Vec::new(),
             source_files: CStrList::default(),
@@ -161,6 +221,7 @@ impl Vm {
             reload_json: CString::default(),
             source_text: CString::default(),
             profile_report: CString::default(),
+            dep_classes_report: CString::default(),
             static_values_json: CString::default(),
             diagnostics_text: CString::default(),
             diagnostics_json: CString::default(),
@@ -206,6 +267,9 @@ impl Vm {
 
     fn clear_views(&mut self) {
         self.views.clear();
+        // Nothing points into the template cache now.
+        self.templates.trim();
+        self.segment_views.clear();
         self.draws.clear();
         self.ui_targets.clear();
     }
@@ -219,12 +283,93 @@ impl Vm {
             symbol: Some(&sym),
             handle_class: Some(&class),
         };
-        let mut arena = ViewArena::new();
+        let mut arena = ViewArena::with_templates(self.templates.clone());
         let first = arena.decode(values, env.heap(), &names);
         arena.finish();
         let p = arena.node_ptr(first);
         self.views.push(arena);
         (p, values.len())
+    }
+
+    /// Put output buffer `buffer` in segmented mode, or take it out (see
+    /// `petal::output_segments`).
+    pub fn set_segmented(&mut self, buffer: &str, on: bool) {
+        let sym = self.env.intern_symbol(buffer);
+        self.env.set_output_segmented(sym, on);
+    }
+
+    /// Forget which segments of `buffer` the host was given: the next drain
+    /// defines every segment it references again.
+    pub fn reset_segments(&mut self, buffer: &str) {
+        let sym = self.env.intern_symbol(buffer);
+        self.env.reset_output_segments(sym);
+    }
+
+    /// Drain `buffer` as segments, decoded: the frame's entries, the
+    /// definitions the host has not been given (children first), and the
+    /// serials it may forget. Valid until the views are cleared.
+    pub fn drain_segments(&mut self, buffer: &str) -> PbSegments {
+        let sym = self.env.intern_symbol(buffer);
+        let frame = self.env.take_output_segments(sym);
+        // Every fresh value, top level first and then each definition's, is
+        // decoded into one arena; entries point at its roots in that order.
+        use petal::output_segments::SegItem;
+        fn fresh(items: &[SegItem]) -> impl Iterator<Item = Value> + '_ {
+            items.iter().filter_map(|i| match i {
+                SegItem::Value(v) => Some(*v),
+                SegItem::Segment(_) => None,
+            })
+        }
+        let values: Vec<Value> = fresh(&frame.items)
+            .chain(frame.defined.iter().flat_map(|d| fresh(&d.items)))
+            .collect();
+        let (roots, _) = self.keep_view(&values);
+        let mut next = 0usize;
+        let mut entries = |items: &[SegItem]| -> Vec<PbSegEntry> {
+            items
+                .iter()
+                .map(|i| match i {
+                    SegItem::Value(_) => {
+                        // SAFETY: `roots` holds `values.len()` contiguous
+                        // nodes, one per fresh value, in this order.
+                        let value = unsafe { roots.add(next) };
+                        next += 1;
+                        PbSegEntry { segment: 0, value }
+                    }
+                    SegItem::Segment(serial) => PbSegEntry {
+                        segment: *serial,
+                        value: std::ptr::null(),
+                    },
+                })
+                .collect()
+        };
+        let mut view = SegmentsView {
+            entries: entries(&frame.items),
+            ..Default::default()
+        };
+        view.def_entries = frame.defined.iter().map(|d| entries(&d.items)).collect();
+        view.defined = frame
+            .defined
+            .iter()
+            .zip(&view.def_entries)
+            .map(|(d, e)| PbSegment {
+                scope: d.id,
+                serial: d.serial,
+                entries: e.as_ptr(),
+                count: e.len(),
+            })
+            .collect();
+        view.dropped = frame.dropped;
+        let out = PbSegments {
+            entries: view.entries.as_ptr(),
+            count: view.entries.len(),
+            defined: view.defined.as_ptr(),
+            defined_count: view.defined.len(),
+            dropped: view.dropped.as_ptr(),
+            dropped_count: view.dropped.len(),
+        };
+        self.segment_views.push(view);
+        out
     }
 
     /// Materialize host values onto the default heap.
@@ -1305,6 +1450,64 @@ pub unsafe extern "C" fn pb_vm_register_emitter(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_register_emitter_fx(
+    vm: *mut VmHandle,
+    name: *const c_char,
+    buffer: *const c_char,
+    tag: *const c_char,
+    effects: u32,
+) -> Status {
+    status(vm, |vm| {
+        let name = unsafe { arg_str(name, "name") }?;
+        let buffer = unsafe { arg_str(buffer, "buffer") }?;
+        let tag = if tag.is_null() {
+            name
+        } else {
+            unsafe { arg_str(tag, "tag") }?
+        };
+        let sym = vm.env.intern_symbol(buffer);
+        natives::register_emitter_fx(&mut vm.env, name, sym, tag, effects);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_note_host_data_changed(vm: *mut VmHandle) -> Status {
+    status(vm, |vm| {
+        let stack = vm.loaded()?.stack_id;
+        vm.env.note_host_data_changed(stack);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_note_class_changed(vm: *mut VmHandle, reads: u32) -> Status {
+    status(vm, |vm| {
+        let stack = vm.loaded()?.stack_id;
+        vm.env
+            .note_class_changed(stack, natives::classes_from_flags(reads));
+        Ok(())
+    })
+}
+
+/// The dependency classes and `never-replays` findings of the loaded
+/// program, as text.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_dep_classes_report(vm: *mut VmHandle, all_modules: bool) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        let pid = vm.loaded()?.program_id;
+        let program = vm
+            .env
+            .get_program(pid)
+            .ok_or_else(|| BridgeError::invalid("no program loaded"))?;
+        let text = vm.env.dep_classes_report(program, all_modules);
+        vm.dep_classes_report = cstring_lossy(&text);
+        Ok(vm.dep_classes_report.as_ptr())
+    })
+    .1
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pb_vm_declare_native_params(
     vm: *mut VmHandle,
     name: *const c_char,
@@ -1797,6 +2000,51 @@ pub unsafe extern "C" fn pb_vm_drain(
         },
     );
     st
+}
+
+/// Put `buffer` in segmented mode, or take it out.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_set_segmented(vm: *mut VmHandle, buffer: *const c_char, on: bool) -> Status {
+    status(vm, |vm| {
+        let buffer = unsafe { arg_str(buffer, "buffer") }?;
+        vm.set_segmented(buffer, on);
+        Ok(())
+    })
+}
+
+/// Drain `buffer` as segments (see [`Vm::drain_segments`]).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_drain_segments(
+    vm: *mut VmHandle,
+    buffer: *const c_char,
+    out: *mut PbSegments,
+) -> Status {
+    let (st, segments) = with_vm(vm, PbSegments::EMPTY, |vm| {
+        let buffer = unsafe { arg_str(buffer, "buffer") }?;
+        Ok(vm.drain_segments(buffer))
+    });
+    put(out, segments);
+    st
+}
+
+/// Tag records of mostly-static literals with their template (the default)
+/// or build every record untagged.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_set_record_templates(vm: *mut VmHandle, on: bool) -> Status {
+    status(vm, |vm| {
+        vm.env_mut().set_record_templates(on);
+        Ok(())
+    })
+}
+
+/// Forget which of `buffer`'s segments the host was given.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_reset_segments(vm: *mut VmHandle, buffer: *const c_char) -> Status {
+    status(vm, |vm| {
+        let buffer = unsafe { arg_str(buffer, "buffer") }?;
+        vm.reset_segments(buffer);
+        Ok(())
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -2567,7 +2815,8 @@ pub extern "C" fn pb_vm_profile_report(vm: *mut VmHandle, top_n: usize) -> *cons
             let d = |a: u64, b: u64| a.saturating_sub(b);
             text.push_str(&format!(
                 "\n  memo (call memoization, over the measured runs):\n    \
-                 hits {}  misses {}  records {}  inlined {}  effectful {}  cold {}  tiny {}  evicted {}\n",
+                 hits {}  misses {}  records {}  inlined {}  effectful {}  cold {}  tiny {}  evicted {}\n    \
+                 static skips {}  static args {}  commands re-issued {}\n",
                 d(now.hits, was.hits),
                 d(now.misses, was.misses),
                 d(now.records, was.records),
@@ -2576,6 +2825,9 @@ pub extern "C" fn pb_vm_profile_report(vm: *mut VmHandle, top_n: usize) -> *cons
                 d(now.cold, was.cold),
                 d(now.tiny, was.tiny),
                 d(now.evicted, was.evicted),
+                d(now.static_skips, was.static_skips),
+                d(now.static_args, was.static_args),
+                d(now.commands, was.commands),
             ));
         }
         vm.profile_report = cstring_lossy(&text);
@@ -2844,6 +3096,7 @@ mod tests {
         let node = unsafe { &*p };
         assert_eq!(node.kind, crate::view::Kind::Handle as u32);
         assert_eq!((node.integer, node.count), (7, 3));
+        assert_eq!(node.number, class.0 as f64, "the class index");
         let name = unsafe { std::slice::from_raw_parts(node.str_ as *const u8, node.str_len) };
         assert_eq!(name, b"Actor");
     }

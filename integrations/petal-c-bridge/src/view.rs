@@ -10,11 +10,32 @@
 //! While decoding, child and string positions are recorded as offsets (the
 //! vectors may still reallocate); [`ViewArena::finish`] converts them to
 //! pointers once, after which the arena is frozen.
+//!
+//! Record keys are not copied per record. A record's key list is its shape
+//! (`petal::record::Shape`), shared by every record a literal makes, so the
+//! arena copies a shape's keys once into a [`KeyCache`] that outlives
+//! [`ViewArena::reset`], and every record of that shape points its entries'
+//! `key` at the cached text. A decoded record also carries its shape id
+//! (`integer` of a `PB_MAP`), which is what a host's option plan keys on
+//! (`crate::plan`).
+//!
+//! A record made by a templated literal (`petal::record_template`) is
+//! decoded in part. The arena keeps, per template id, the template's static
+//! fields decoded once into an arena of their own ([`TemplateEntry`], which
+//! also outlives `reset`), and copies those nodes into the record's
+//! children (their text and children stay in the template's arena); only
+//! the holes are decoded. The record's `tmpl` points at the template's
+//! description (`pb_template`: id and holes).
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ffi::c_char;
 use std::ptr;
+use std::rc::Rc;
 
+use petal::fxhash::FxBuildHasher;
 use petal::heap::Heap;
+use petal::record::RecordMap;
 use petal::symbol::SymbolId;
 use petal::value::Value;
 
@@ -54,6 +75,21 @@ pub struct PbValue {
     pub number: f64,
     pub y: f64,
     pub z: f64,
+    /// A `PB_MAP` made by a templated literal: its template; else null.
+    pub tmpl: *const PbTemplate,
+}
+
+/// Mirrors `pb_template`: what a record made by a templated literal
+/// (`petal::record_template`) promises. Records with one `id` have the same
+/// keys, the same holes and, in every other field, the same contents.
+#[repr(C)]
+pub struct PbTemplate {
+    pub id: u64,
+    pub count: u32,
+    pub hole_count: u32,
+    pub holes: *const u32,
+    /// `count` bytes, 1 where the field is a hole.
+    pub is_hole: *const u8,
 }
 
 impl PbValue {
@@ -70,6 +106,7 @@ impl PbValue {
             number: 0.0,
             y: 0.0,
             z: 0.0,
+            tmpl: ptr::null(),
         }
     }
 }
@@ -88,6 +125,7 @@ pub static NIL_VALUE: SyncValue = SyncValue(PbValue {
     number: 0.0,
     y: 0.0,
     z: 0.0,
+    tmpl: ptr::null(),
 });
 
 /// `PbValue` holds raw pointers; the static nil holds only nulls.
@@ -113,7 +151,124 @@ impl Names<'_> {
 struct Pending {
     first_child: Option<u32>,
     str_off: Option<u32>,
-    key_off: Option<u32>,
+    key: Option<KeyAt>,
+}
+
+/// Where a map entry's key text is: in the arena's string buffer (copied for
+/// this record) or in the [`KeyCache`] (shared by its shape).
+#[derive(Clone, Copy)]
+enum KeyAt {
+    Strings(u32),
+    Cache(u32),
+}
+
+/// Shapes with more keys than this are not cached (a dictionary-style
+/// record); their keys are copied per record, as before.
+const CACHE_MAX_KEYS: usize = 64;
+/// Past either bound the cache is emptied at the next `reset`, when nothing
+/// points into it.
+const CACHE_MAX_SHAPES: usize = 4096;
+const CACHE_MAX_BYTES: usize = 1 << 20;
+
+/// Key text of the record shapes an arena has decoded, by shape id.
+///
+/// A shape id names one key list for the life of the process with one
+/// exception: a shape held by a single record may have keys appended without
+/// a new id (`record.rs`, `Shape::push`). Keys are never changed or removed
+/// under an id, so an entry is valid for a shape with as many keys as it
+/// recorded; a longer shape replaces it.
+#[derive(Default)]
+struct KeyCache {
+    /// NUL-terminated key text.
+    text: Vec<u8>,
+    /// `(offset into text, length)` of each cached key.
+    spans: Vec<(u32, u32)>,
+    /// shape id → (first span, key count).
+    by_shape: HashMap<u64, (u32, u32), FxBuildHasher>,
+}
+
+impl KeyCache {
+    /// The first span of `map`'s keys, caching them if needed; `None` for a
+    /// shape too big to cache.
+    fn spans_of(&mut self, map: &RecordMap) -> Option<u32> {
+        let shape = map.shape();
+        let n = shape.len();
+        if n > CACHE_MAX_KEYS {
+            return None;
+        }
+        if let Some(&(first, count)) = self.by_shape.get(&shape.id()) {
+            if count as usize == n {
+                return Some(first);
+            }
+        }
+        let first = self.spans.len() as u32;
+        for k in shape.keys() {
+            let off = self.text.len() as u32;
+            self.text.extend_from_slice(k.as_bytes());
+            self.text.push(0);
+            self.spans.push((off, k.len() as u32));
+        }
+        self.by_shape.insert(shape.id(), (first, n as u32));
+        Some(first)
+    }
+
+    fn over_bounds(&self) -> bool {
+        self.by_shape.len() > CACHE_MAX_SHAPES || self.text.len() > CACHE_MAX_BYTES
+    }
+
+    fn clear(&mut self) {
+        self.text.clear();
+        self.spans.clear();
+        self.by_shape.clear();
+    }
+}
+
+/// Past this many a template cache is emptied when nothing points into it.
+const TEMPLATES_MAX: usize = 4096;
+
+/// Decoded record templates by id, shared by the arenas that point into it.
+/// An entry is boxed and stays put until the cache is emptied, which its
+/// owner does only when no view that points into it is left
+/// ([`ViewArena::reset`] for an arena's own cache, the VM's view clear for
+/// the cache its drains share).
+#[derive(Default, Clone)]
+pub struct TemplateCache(Rc<RefCell<HashMap<u64, Box<TemplateEntry>, FxBuildHasher>>>);
+
+impl TemplateCache {
+    /// Empty the cache if it grew past its bound. Every view decoded with it
+    /// must be gone.
+    pub fn trim(&self) {
+        let mut map = self.0.borrow_mut();
+        if map.len() > TEMPLATES_MAX {
+            map.clear();
+        }
+    }
+}
+
+/// The decoded static fields of one record template, kept across decodes:
+/// a templated record's static fields are copied from here (their text and
+/// children stay where they are), and only its holes are decoded.
+pub struct TemplateEntry {
+    info: PbTemplate,
+    holes: Vec<u32>,
+    is_hole: Vec<u8>,
+    /// Per field: the root in `statics` holding it, or `u32::MAX` for a hole.
+    root_of: Vec<u32>,
+    /// The static fields' values, decoded and finished: its roots, in field
+    /// order. Nothing in it moves until the entry is dropped.
+    statics: ViewArena,
+}
+
+impl TemplateEntry {
+    /// The decoded static field `j` (its pointers final), or `None` for a
+    /// hole.
+    fn kept_node(&self, j: usize) -> Option<PbValue> {
+        let root = *self.root_of.get(j)?;
+        if root == u32::MAX {
+            return None;
+        }
+        self.statics.nodes.get(root as usize).copied()
+    }
 }
 
 /// Owns a decoded value forest. See the module docs.
@@ -124,12 +279,29 @@ pub struct ViewArena {
     strings: Vec<u8>,
     /// `decode`'s breadth-first work list, kept for its capacity.
     queue: Vec<(usize, Value)>,
+    /// Key text per record shape; survives `reset`.
+    keys: KeyCache,
+    /// Static fields per record template id; survives `reset`, and may be
+    /// shared by the arenas of one VM ([`with_templates`](Self::with_templates)).
+    templates: TemplateCache,
+    /// Records whose static fields came from `templates` (cumulative).
+    pub templated: u64,
     finished: bool,
 }
 
 impl ViewArena {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// An arena that decodes templated records through `templates`, a cache
+    /// its owner shares between arenas (and empties only when none of them
+    /// is left).
+    pub fn with_templates(templates: TemplateCache) -> Self {
+        ViewArena {
+            templates,
+            ..Self::default()
+        }
     }
 
     /// Empty the arena for another decode, keeping its buffers' capacity.
@@ -139,7 +311,66 @@ impl ViewArena {
         self.fix.clear();
         self.strings.clear();
         self.queue.clear();
+        if self.keys.over_bounds() {
+            self.keys.clear();
+        }
+        // Only a cache of the arena's own: a shared one is its owner's.
+        if Rc::strong_count(&self.templates.0) == 1 {
+            self.templates.trim();
+        }
         self.finished = false;
+    }
+
+    /// The entry for `map`'s template `t`, decoding its static fields from
+    /// `map` the first time the id is seen. The entry is boxed and stays put
+    /// until a `reset` empties the cache.
+    fn template_entry(
+        &mut self,
+        t: &petal::record::Template,
+        map: &RecordMap,
+        heap: &Heap,
+        names: &Names,
+    ) -> *const TemplateEntry {
+        if let Some(e) = self.templates.0.borrow().get(&t.id) {
+            return &**e;
+        }
+        let n = map.len();
+        let mut is_hole = vec![0u8; n];
+        for &h in t.holes.iter() {
+            if let Some(b) = is_hole.get_mut(h as usize) {
+                *b = 1;
+            }
+        }
+        let mut root_of = vec![u32::MAX; n];
+        let mut statics_vals = Vec::with_capacity(n);
+        for (j, v) in map.values().enumerate() {
+            if is_hole[j] == 0 {
+                root_of[j] = statics_vals.len() as u32;
+                statics_vals.push(*v);
+            }
+        }
+        let mut statics = ViewArena::new();
+        statics.decode(&statics_vals, heap, names);
+        statics.finish();
+        let holes: Vec<u32> = t.holes.to_vec();
+        let mut e = Box::new(TemplateEntry {
+            info: PbTemplate {
+                id: t.id,
+                count: n as u32,
+                hole_count: holes.len() as u32,
+                holes: ptr::null(),
+                is_hole: ptr::null(),
+            },
+            holes,
+            is_hole,
+            root_of,
+            statics,
+        });
+        e.info.holes = e.holes.as_ptr();
+        e.info.is_hole = e.is_hole.as_ptr();
+        let p: *const TemplateEntry = &*e;
+        self.templates.0.borrow_mut().insert(t.id, e);
+        p
     }
 
     /// Append `s` (NUL-terminated) to the string buffer; returns its offset.
@@ -156,15 +387,26 @@ impl ViewArena {
         self.nodes.len() - 1
     }
 
-    /// Push one node for `v` without its children. `key` is the field name
-    /// when the node is a map entry.
-    fn push_shallow(&mut self, v: &Value, key: Option<&str>, heap: &Heap, names: &Names) -> usize {
+    /// Push one node for `v` without its children. `key` is where its field
+    /// name is, with the name's length, when the node is a map entry.
+    fn push_shallow(
+        &mut self,
+        v: &Value,
+        key: Option<(KeyAt, u32)>,
+        heap: &Heap,
+        names: &Names,
+    ) -> usize {
         let mut fix = Pending::default();
-        if let Some(k) = key {
-            fix.key_off = Some(self.add_str(k));
+        let mut key_len = 0;
+        if let Some((at, len)) = key {
+            fix.key = Some(at);
+            key_len = len as usize;
         }
         let mut node;
+        // Text the heap owns is copied straight into the string buffer;
+        // `text` is for names that have to be looked up.
         let mut text: Option<String> = None;
+        let mut heap_text: Option<&str> = None;
         match *v {
             Value::Nil => node = PbValue::scalar(Kind::Nil),
             Value::Bool(b) => {
@@ -205,19 +447,21 @@ impl ViewArena {
             }
             Value::String(id) => {
                 node = PbValue::scalar(Kind::String);
-                text = Some(heap.try_get_string(id).unwrap_or("").to_string());
+                heap_text = Some(heap.try_get_string(id).unwrap_or(""));
             }
             Value::List(_) | Value::F64Array(_) => node = PbValue::scalar(Kind::List),
             Value::Map(id) => {
                 node = PbValue::scalar(Kind::Map);
-                if heap.try_get_map(id).is_some() {
-                    text = heap.map_class_name(id).map(str::to_string);
+                if let Some(map) = heap.try_get_map(id) {
+                    // Shape ids are never 0, so a decoded record's is nonzero.
+                    node.integer = map.shape_id() as i64;
+                    heap_text = heap.map_class_name(id);
                 }
             }
             Value::Dict(_) => node = PbValue::scalar(Kind::Dict),
             Value::EnumVariant { tag, .. } => {
                 node = PbValue::scalar(Kind::Enum);
-                text = Some(heap.try_get_string(tag).unwrap_or("").to_string());
+                heap_text = Some(heap.try_get_string(tag).unwrap_or(""));
             }
             Value::Symbol(sym) => {
                 node = PbValue::scalar(Kind::Symbol);
@@ -228,6 +472,9 @@ impl ViewArena {
                 node = PbValue::scalar(Kind::Handle);
                 node.integer = h.slot as i64;
                 node.count = h.serial;
+                // Slots and serials are per class, so the class index is part
+                // of which object this is (a snapshot compares it).
+                node.number = h.class.0 as f64;
                 text = names.handle_class.and_then(|f| f(h.class.0));
             }
             Value::Pending(_) => node = PbValue::scalar(Kind::Pending),
@@ -236,10 +483,11 @@ impl ViewArena {
                 text = Some(other.type_name().to_string());
             }
         }
-        if let Some(t) = text {
+        if let Some(t) = heap_text.or(text.as_deref()) {
             node.str_len = t.len();
-            fix.str_off = Some(self.add_str(&t));
+            fix.str_off = Some(self.add_str(t));
         }
+        node.key_len = key_len;
         self.push(node, fix)
     }
 
@@ -282,9 +530,45 @@ impl ViewArena {
                 },
                 Value::Map(id) => match heap.try_get_map(id) {
                     Some(map) => {
-                        for (k, it) in map {
-                            let c = self.push_shallow(it, Some(k), heap, names);
-                            queue.push((c, *it));
+                        let cached = self.keys.spans_of(map);
+                        // A templated record: its static fields are the
+                        // template's, decoded once; only its holes are new.
+                        let entry = map
+                            .template()
+                            .filter(|t| t.len as usize == map.len())
+                            .map(|t| self.template_entry(t, map, heap, names));
+                        for (j, (k, it)) in map.iter().enumerate() {
+                            let key = match cached {
+                                Some(first) => {
+                                    let (off, len) = self.keys.spans[first as usize + j];
+                                    (KeyAt::Cache(off), len)
+                                }
+                                None => (KeyAt::Strings(self.add_str(k)), k.len() as u32),
+                            };
+                            // SAFETY: entries stay put until `reset`.
+                            let kept = entry.and_then(|e| unsafe { (*e).kept_node(j) });
+                            match kept {
+                                Some(mut node) => {
+                                    node.key = ptr::null();
+                                    node.key_len = key.1 as usize;
+                                    self.push(
+                                        node,
+                                        Pending {
+                                            key: Some(key.0),
+                                            ..Pending::default()
+                                        },
+                                    );
+                                }
+                                None => {
+                                    let c = self.push_shallow(it, Some(key), heap, names);
+                                    queue.push((c, *it));
+                                }
+                            }
+                        }
+                        if let Some(e) = entry {
+                            // SAFETY: as above.
+                            self.nodes[idx].tmpl = unsafe { &(*e).info };
+                            self.templated += 1;
                         }
                         map.len()
                     }
@@ -330,6 +614,7 @@ impl ViewArena {
         self.finished = true;
         let nodes_base = self.nodes.as_ptr();
         let str_base = self.strings.as_ptr() as *const c_char;
+        let key_base = self.keys.text.as_ptr() as *const c_char;
         for (node, fix) in self.nodes.iter_mut().zip(&self.fix) {
             if let Some(first) = fix.first_child {
                 // SAFETY: `first` indexes into `nodes`, which no longer grows.
@@ -338,11 +623,12 @@ impl ViewArena {
             if let Some(off) = fix.str_off {
                 node.str_ = unsafe { str_base.add(off as usize) };
             }
-            if let Some(off) = fix.key_off {
-                node.key = unsafe { str_base.add(off as usize) };
-                // Key length: up to the NUL we wrote.
-                let bytes = &self.strings[off as usize..];
-                node.key_len = bytes.iter().position(|b| *b == 0).unwrap_or(0);
+            // SAFETY (both): offsets into buffers that no longer grow; the
+            // key cache only grows during a decode, before `finish`.
+            match fix.key {
+                Some(KeyAt::Strings(off)) => node.key = unsafe { str_base.add(off as usize) },
+                Some(KeyAt::Cache(off)) => node.key = unsafe { key_base.add(off as usize) },
+                None => {}
             }
         }
         self.fix.clear();

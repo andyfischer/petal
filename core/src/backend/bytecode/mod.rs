@@ -18,6 +18,7 @@ pub mod escape;
 pub mod isa;
 pub mod lastuse;
 pub mod lower;
+pub mod memo_hints;
 pub mod vm;
 
 pub use copyprop::{Preserve, apply as apply_copy_prop};
@@ -64,6 +65,8 @@ fn lower(
     flags: OptFlags,
     statics: Option<(&crate::static_classify::StaticAnalysis, &crate::native_fn::NativeFnTable)>,
 ) -> Result<BytecodeProgram, String> {
+    // The dependency classes come with the analysis, cache or not.
+    let deps = statics.map(|(analysis, _)| analysis.dep_classes());
     // Which top-level terms a static slot may fill. The in-place analyses
     // are told, so neither takes a value shared across runs for a fresh one.
     let statics = statics.filter(|_| flags.static_cache);
@@ -112,6 +115,10 @@ fn lower(
                 stats.before, stats.after, stats.removed, stats.rewritten, stats.threaded
             );
         }
+    }
+    // The memo hints mark functions and calls; they move nothing.
+    if let Some(deps) = deps {
+        memo_hints::apply(&mut bc, program, deps);
     }
     // The static-value cache wraps runs of the code as it finally is: it
     // adds two instructions per run and moves or removes none.

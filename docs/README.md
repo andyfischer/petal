@@ -131,6 +131,7 @@ point-in-time status.
 | [Call-path keyed `state`](dev/state-call-paths.md) | The design decisions behind how `state` slots are keyed |
 | [The frame gate](dev/frame-gate.md) | How a host skips a frame whose inputs have not changed |
 | [Memoized scopes](dev/memo-scopes.md) | How a frame that runs replays the calls whose inputs have not changed |
+| [Retained scene output](dev/retained-scene-output.md) | Segmented output buffers: a replayed scope reaches the host as one reference, so a static world costs per scope |
 | [Native effect rows](dev/native-effects.md) | What a native's `NativeEffects` row declares, which layers read it, and the audits that check it |
 | [Performance](dev/performance.md) | Profiling tools, what the optimizer does, where the headroom is |
 | [`vec3`](dev/vec3.md) | Why the 3D vector is a heap value |

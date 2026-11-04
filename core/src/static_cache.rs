@@ -460,6 +460,9 @@ pub struct StaticLayout {
     pub root_runs: usize,
     /// The program's declarations, for a reload (see "Following the diff").
     pub follow: Arc<FollowInfo>,
+    /// Record literals marked as templates (`crate::record_template`): a
+    /// stack keeps one site per literal beside its slots.
+    pub template_sites: u32,
 }
 
 impl StaticLayout {
@@ -651,6 +654,8 @@ pub struct StaticSlots {
     /// `check`: each once.
     mismatches: Vec<u32>,
     pub stats: StaticStats,
+    /// The record template sites of the lowering (`crate::record_template`).
+    pub templates: crate::record_template::TemplateSites,
 }
 
 /// What one segment observed: the last value of each named term bound while
@@ -677,6 +682,7 @@ impl StaticSlots {
         self.stamp = Some((layout.id, revision));
         self.slots.clear();
         self.slots.resize(layout.slots.len(), Slot::Empty);
+        self.templates.reset(layout.template_sites as usize);
         self.pending.clear();
         self.pending.extend(layout.runs.iter().map(|r| r.feeds.len() as u32));
         self.rejected.clear();
@@ -777,6 +783,7 @@ impl StaticSlots {
         }
         self.stamp = None;
         self.slots.clear();
+        self.templates.clear();
         self.pending.clear();
         self.rejected.clear();
         self.reported = 0;
@@ -1154,6 +1161,8 @@ impl StaticSlots {
         for (_, v) in &self.log {
             mark(*v);
         }
+        // A template site compares the records it builds with these.
+        self.templates.gc_roots(&mut mark);
     }
 }
 
@@ -1739,12 +1748,18 @@ pub fn apply(
     bc.statics.root_slots = bc.statics.slots.len();
     bc.statics.root_runs = bc.statics.runs.len();
     slots.resize(bc.statics.root_slots, SlotFollow::default());
-    // Values built inside function bodies. Not where observations are
-    // preserved: a skipped stretch would have to report the names bound
+    // Values built inside function bodies, and which terms there are
+    // invariant (the record templates use it too). Not where observations
+    // are preserved: a skipped stretch would have to report the names bound
     // inside it, per call.
-    if in_functions && !observes {
-        in_fn::apply(bc, program, analysis, natives, plan, &mut slots);
+    let fn_plan = (in_functions && !observes).then(|| FnPlan::of(program, analysis, plan));
+    if let Some(fn_plan) = &fn_plan {
+        in_fn::apply(bc, program, analysis, natives, plan, fn_plan, &mut slots);
     }
+    // Record templates tag values and move no instruction. Where
+    // observations are preserved only constants and top-level values count
+    // as static fields.
+    bc.statics.template_sites = crate::record_template::apply(bc, program, plan, fn_plan.as_ref());
     follow(&mut bc.statics, slots, program, analysis);
 }
 

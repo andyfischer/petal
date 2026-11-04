@@ -9,7 +9,7 @@
 use super::*;
 
 use crate::handle::HandleVal;
-use crate::native_fn::PetalCxt;
+use crate::native_fn::{CallKeySource, PetalCxt};
 use crate::stack::BuiltinCallback;
 
 /// Runs one higher-order builtin: its arguments, and the call site its
@@ -406,6 +406,12 @@ impl<'a> Vm<'a> {
             } else {
                 None
             },
+            key: match self.stack.memo.reissue_key {
+                Some(k) => CallKeySource::Fixed(k),
+                None if self.stack.callback.is_some() => CallKeySource::None,
+                None => CallKeySource::Frames(&self.stack.vm_frames),
+            },
+            key_taken: None,
         }
     }
 
@@ -436,6 +442,19 @@ impl<'a> Vm<'a> {
         if self.spec.is_some() {
             return self.call_native_spec(nid, args, in_place, origin);
         }
+        // A command inside a speculative re-execution of a memoized child is
+        // recorded, not issued: if the child turns out unchanged its parent
+        // replays and re-issues it, and if not the parent runs and issues it
+        // (`NativeEffects::command`).
+        if self.memo && self.stack.memo.reexecuting > 0 && self.stack.memo.recording() {
+            let effects = self.native_fns.effects(nid);
+            if effects.command && !effects.effect {
+                // Not called, so it reads no key; the record keeps the key
+                // the call has here, for the replay that issues it.
+                self.memo_note_native(nid, args, Value::Nil, effects, origin, None);
+                return Ok(Value::Nil);
+            }
+        }
         self.profile.record_native(nid.0);
         let natives = self.native_fns;
         let chain = self.emit_call_chain(origin);
@@ -461,6 +480,7 @@ impl<'a> Vm<'a> {
         let timed = self.profile.enabled.then(std::time::Instant::now);
         let mut cxt = self.native_cxt(args, &chain, origin, in_place, false);
         let count = natives.call(nid, &mut cxt)?;
+        let key_taken = cxt.key_taken;
         let result = cxt.take_result(count);
         if let Some(t) = timed {
             let elapsed = t.elapsed();
@@ -496,7 +516,7 @@ impl<'a> Vm<'a> {
         }
         if self.memo && self.stack.memo.recording() {
             let effects = self.native_fns.effects(nid);
-            self.memo_note_native(nid, args, result, effects);
+            self.memo_note_native(nid, args, result, effects, origin, key_taken);
         }
         Ok(result)
     }

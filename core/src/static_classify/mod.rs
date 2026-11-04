@@ -70,6 +70,9 @@
 
 use std::collections::BTreeSet;
 
+pub mod dep_classes;
+pub use dep_classes::{DepClasses, Deps, FnDeps, ReplayFinding, ReplaySeverity};
+
 /// The pass's own tables are keyed by term, block and function ids and are
 /// asked several times per term: hashed with the VM's fast hasher, not
 /// SipHash. Nothing reads one in iteration order where the order could show.
@@ -638,6 +641,10 @@ pub struct StaticAnalysis {
     classes: Vec<TermClass>,
     /// What top-level terms depend on (see [`StaticAnalysis::root_dependencies`]).
     roots: RootDeps,
+    /// The dependency classes of every term and function
+    /// ([`dep_classes`]): what the memo hints and the `never-replays` lint
+    /// read.
+    deps: DepClasses,
 }
 
 /// The dependency sets of top-level terms, as indices into
@@ -665,6 +672,11 @@ struct RootDeps {
 }
 
 impl StaticAnalysis {
+    /// The dependency classes of the program (see [`dep_classes`]).
+    pub fn dep_classes(&self) -> &DepClasses {
+        &self.deps
+    }
+
     /// The class of a term. A term inside a function body is classified under
     /// the assumption that the function's parameters are data; that holds at
     /// every call this analysis calls static, and nowhere else.
@@ -845,7 +857,13 @@ pub fn analyze(program: &Program, natives: &NativeFnTable) -> StaticAnalysis {
             Class::Dynamic(_) => TermClass::Dynamic,
         })
         .collect();
-    StaticAnalysis { report, classes, roots }
+    let deps = pass.dep_classes();
+    StaticAnalysis {
+        report,
+        classes,
+        roots,
+        deps,
+    }
 }
 
 // ---------------------------------------------------------------------------

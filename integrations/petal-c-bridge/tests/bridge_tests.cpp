@@ -900,6 +900,59 @@ TEST(commands_reissue_queries_follow_their_class_and_declares_replay) {
     CHECK(report.find("never replays: spin: calls `print`") != std::string::npos);
 }
 
+TEST(implicit_keys_reach_keyed_emitters_and_callbacks) {
+    petal::Vm vm;
+    std::vector<std::optional<uint64_t>> lights, kicks;
+    vm.emitter_fx("decl", "decls", petal::fx::Declare | petal::fx::Keyed);
+    vm.native("light", petal::fx::Effect, [&](petal::Call& c) { lights.push_back(c.key()); });
+    vm.native("kick", petal::fx::Command, [&](petal::Call& c) { kicks.push_back(c.key()); });
+    vm.load_source(
+        "native fn decl(v)\nnative fn light(v)\nnative fn kick(v)\n"
+        "fn crate_at(i)\n  decl(i)\n  nil\nend\n"
+        "fn pushers()\n  for i in range(0, 2) do kick(i) end\n  nil\nend\n"
+        "for i in range(0, 3) do crate_at(i) end\n"
+        "decl(99)\nlight(1)\nlight(2)\n"
+        "[1, 2].forEach(fn(x) decl(x + 10) end)\n"
+        "pushers()\n");
+    vm.set_memo(true);
+    auto frame = [&]() {
+        lights.clear();
+        kicks.clear();
+        vm.run();
+        std::vector<std::optional<uint64_t>> keys;
+        petal::Values decls = vm.drain("decls");
+        for (size_t i = 0; i < decls.size(); ++i) {
+            CHECK_EQ(decls[i].tag(), std::string_view("decl"));
+            REQUIRE(decls[i].size() == 2);
+            if (decls[i][0].is_nil()) {
+                keys.push_back(std::nullopt);
+            } else {
+                REQUIRE(decls[i][0].is_int());
+                keys.push_back((uint64_t)decls[i][0].integer());
+            }
+        }
+        return keys;
+    };
+    const auto first = frame();
+    REQUIRE(first.size() == 6);
+    // Three loop iterations and a top-level call: four keys, all different;
+    // the forEach callback's calls have none.
+    for (size_t i = 0; i < 4; ++i) {
+        REQUIRE(first[i].has_value());
+        for (size_t j = 0; j < i; ++j) CHECK(*first[i] != *first[j]);
+    }
+    CHECK(!first[4].has_value() && !first[5].has_value());
+    REQUIRE(lights.size() == 2 && lights[0] && lights[1]);
+    CHECK(*lights[0] != *lights[1]);
+    REQUIRE(kicks.size() == 2 && kicks[0] && kicks[1]);
+    const auto first_lights = lights, first_kicks = kicks;
+    // The next frame replays `crate_at` and `pushers`: the same keys come
+    // back with the declarations, and the re-issued commands get theirs.
+    CHECK(frame() == first);
+    CHECK(lights == first_lights);
+    CHECK(kicks == first_kicks);
+}
+
 TEST(segmented_buffer_hands_a_replayed_scope_over_as_one_entry) {
     pb_vm* vm = pb_vm_create();
     CHECK_EQ(pb_vm_set_segmented(vm, "out", true), PB_OK);

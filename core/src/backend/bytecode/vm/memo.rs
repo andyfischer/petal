@@ -213,6 +213,10 @@ impl<'a> Vm<'a> {
         args: &[Value],
         result: Value,
         effects: NativeEffects,
+        // The call term, for a command's implicit key.
+        origin: Option<TermId>,
+        // The implicit key the native read (`PetalCxt::call_key`), if it did.
+        key_taken: Option<u64>,
     ) {
         if effects.effect || matches!(result, Value::Pending(_)) {
             self.stack.memo.note_effect();
@@ -231,10 +235,15 @@ impl<'a> Vm<'a> {
                 self.stack.memo.note_effect();
                 return;
             }
+            // Every command keeps its call's key, read or not, so a record
+            // and a re-execution that defers the call (and cannot know
+            // whether the native would read it) agree.
+            let key = key_taken.or_else(|| self.call_key_here(origin));
             if let Some(s) = self.stack.memo.innermost() {
                 s.note(|| Dep::Command {
                     native: nid,
                     args: args.into(),
+                    key,
                 });
             }
         }
@@ -271,7 +280,9 @@ impl<'a> Vm<'a> {
                     | InputClasses::REVISIONED.0),
         );
         if !probed.is_empty() {
-            if effects.probe {
+            // A probe is re-evaluated by validation with no call path, so
+            // an answer that read the call's key cannot be checked.
+            if effects.probe && key_taken.is_none() {
                 self.memo_note_probe(nid, args, result, effects.emits);
             } else {
                 self.stack.memo.note_effect();
@@ -583,13 +594,16 @@ impl<'a> Vm<'a> {
                     Some(Dep::Command {
                         native: na,
                         args: aa,
+                        key: ka,
                     }),
                     Some(Dep::Command {
                         native: nb,
                         args: ab,
+                        key: kb,
                     }),
                 ) => {
                     na == nb
+                        && ka == kb
                         && aa.len() == ab.len()
                         && aa
                             .iter()
@@ -1100,12 +1114,15 @@ impl<'a> Vm<'a> {
                 // Inside a re-execution nothing is issued: its parent's
                 // replay (or run) issues what this record holds.
                 Dep::Command { .. } if self.stack.memo.reexecuting > 0 => {}
-                Dep::Command { native, args } => {
-                    // Issued again, as running the code would. Not recorded
-                    // into an enclosing scope: its `Child` entry for this
-                    // record already covers it.
+                Dep::Command { native, args, key } => {
+                    // Issued again, as running the code would, with the
+                    // implicit key it was recorded with. Not recorded into
+                    // an enclosing scope: its `Child` entry for this record
+                    // already covers it.
                     let was = std::mem::replace(&mut self.stack.memo.suppress, true);
+                    let was_key = std::mem::replace(&mut self.stack.memo.reissue_key, *key);
                     let _ = self.call_native_fn(*native, args, false, None);
+                    self.stack.memo.reissue_key = was_key;
                     self.stack.memo.suppress = was;
                     self.stack.memo.stats.commands += 1;
                 }

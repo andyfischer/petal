@@ -9,7 +9,7 @@
 use super::*;
 
 use crate::handle::HandleVal;
-use crate::native_fn::PetalCxt;
+use crate::native_fn::{CallKeySource, PetalCxt};
 use crate::stack::BuiltinCallback;
 
 /// Runs one higher-order builtin: its arguments, and the call site its
@@ -406,6 +406,12 @@ impl<'a> Vm<'a> {
             } else {
                 None
             },
+            key: match self.stack.memo.reissue_key {
+                Some(k) => CallKeySource::Fixed(k),
+                None if self.stack.callback.is_some() => CallKeySource::None,
+                None => CallKeySource::Frames(&self.stack.vm_frames),
+            },
+            key_taken: None,
         }
     }
 
@@ -443,7 +449,9 @@ impl<'a> Vm<'a> {
         if self.memo && self.stack.memo.reexecuting > 0 && self.stack.memo.recording() {
             let effects = self.native_fns.effects(nid);
             if effects.command && !effects.effect {
-                self.memo_note_native(nid, args, Value::Nil, effects);
+                // Not called, so it reads no key; the record keeps the key
+                // the call has here, for the replay that issues it.
+                self.memo_note_native(nid, args, Value::Nil, effects, origin, None);
                 return Ok(Value::Nil);
             }
         }
@@ -472,6 +480,7 @@ impl<'a> Vm<'a> {
         let timed = self.profile.enabled.then(std::time::Instant::now);
         let mut cxt = self.native_cxt(args, &chain, origin, in_place, false);
         let count = natives.call(nid, &mut cxt)?;
+        let key_taken = cxt.key_taken;
         let result = cxt.take_result(count);
         if let Some(t) = timed {
             let elapsed = t.elapsed();
@@ -507,7 +516,7 @@ impl<'a> Vm<'a> {
         }
         if self.memo && self.stack.memo.recording() {
             let effects = self.native_fns.effects(nid);
-            self.memo_note_native(nid, args, result, effects);
+            self.memo_note_native(nid, args, result, effects, origin, key_taken);
         }
         Ok(result)
     }

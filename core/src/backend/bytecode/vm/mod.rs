@@ -46,6 +46,7 @@ mod native;
 pub mod spec;
 
 pub use frame::{FramePath, LoopCursor, VmFrame};
+pub(crate) use frame::call_key_of;
 
 /// Retention cap for [`Stack::vm_frame_pool`]: deep recursion can push the
 /// pool's high-water mark far above steady-state needs; beyond this many

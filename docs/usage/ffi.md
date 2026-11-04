@@ -787,6 +787,13 @@ native. So:
 | reads host state that moves without such a report (a live simulation) | `EFFECT` (plus the read), or bump the revision whenever it moves |
 | reads a bound input and answers a pure function of it | `probe(class)` |
 
+A declaration the script gives no id (`body({size: 1.0})`) can be keyed by
+`cxt.call_key()`: a hash of the call path it was made on (the one that keys
+`state`) and its call site, the same on every frame, one per loop iteration,
+following the item under `for … key`. It is `None` in a `map`/`forEach`
+callback. See
+[retained-scene-output.md](../dev/retained-scene-output.md#l8-implicit-keys-and-keyed-loops-as-built-b5).
+
 **The cheesecake case.** Cheesecake, a C++ engine scripted in Petal through a
 C bridge, registered its scene natives (`body`, `draw_mesh`, `point_light`,
 `camera`, …) as `Emits` and its queries (`raycast`, `contacts`,

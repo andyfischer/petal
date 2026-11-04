@@ -316,6 +316,14 @@ and treats the rest of the key as opaque.
   entries are not addressable.
 - `Env::get_state`/`set_state` synthesize empty-path keys, which is correct
   for top-level state, which is all hosts touch.
+- **Implicit keys.** A native call can read the path it is made on, with its
+  own call site as a last `Call` part, hashed like a memo scope's id
+  (`PetalCxt::call_key`, `pb_call_key`; `frame::call_key_of`). A host keys a
+  declaration the script gave no id by it, which inherits everything above:
+  stable across frames and reloads that keep the path, per iteration,
+  following the item under a keyed loop. In a higher-order builtin's
+  callback (§3.3) there is none. Design and measurements:
+  [retained-scene-output.md](retained-scene-output.md#l8-implicit-keys-and-keyed-loops-as-built-b5).
 
 ### 3.7 Optimizer (escape.rs)
 

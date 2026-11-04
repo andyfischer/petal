@@ -602,3 +602,129 @@ in `bridge_tests.cpp` (on against off through a VM).
   can use `Snapshot::update(opts, o)` and its draw path can keep what it
   parsed per `template_id()`. The `pb_value` size change needs its rebuild.
 - The id is 64 bits; a collision could mislead a host that caches by id.
+
+## L8: implicit keys and keyed loops (as built, B5)
+
+**The problem.** A declaration needs a key the host reconciles it by, and a
+script had to make one up: `body("crate{i}", {...})` formats a string per
+call, the host hashes it, and two helpers that happen to format the same
+string collide. The runtime already has the right identity for "this
+declaration, at this place in the program": the call path that keys `state`
+and memo scopes, `[Call(site) | Index(i) | Key(h)]`
+([state-call-paths.md](state-call-paths.md)).
+
+**The key** (`frame::call_key_of`, `core/src/backend/bytecode/vm/frame.rs`).
+A native call's implicit key is `scope_id(path ++ [Call(site)])`: the live
+frame stack's full path (the same walk `state` and memo use) with the
+native's own call site appended, hashed by the SipHash with fixed keys that
+names memo scopes and segments. So it is the id a memo scope would have if
+the native were a user function called there, and it inherits everything
+the path guarantees:
+
+- the same on every frame and every run while the call path is; call-site
+  ids are derived from callee text and ordinals, so an edit elsewhere and a
+  reload keep it (adding an earlier call of the same callee in the same
+  function moves it, exactly as for a `state` slot);
+- one per loop iteration (`for` and `while`), one per recursion depth, one
+  per call site of a helper;
+- under `for e in ents key e.id` it follows the entity, because the loop's
+  part is `Key(hash(e.id))`, not the index;
+- unique within a run wherever a `state` slot is.
+
+A call made in a callback of a higher-order builtin (`map`, `forEach`,
+`filter`, … while `Stack::callback` is set, nested calls included) has
+**no** key: every element runs on the same path, which is why `state` is an
+error there. A call with no call term (a probe re-evaluated by memo
+validation) has none either.
+
+**The API.** `PetalCxt::call_key() -> Option<u64>`, computed on request from
+the borrowed frame stack (`CallKeySource::Frames`), so a native that never
+asks pays nothing; no effect-row flag is involved. The bridge exposes it
+twice (`integrations/petal-c-bridge`): `pb_call_key(call, &key)` for a
+callback native (`petal::Call::key()`), and `PB_FX_KEYED` on
+`pb_vm_register_emitter_fx`, which makes the emitter push `tag(key,
+args...)` with the key as an int (nil where there is none). `PB_FX_KEYED` is
+bridge-only and does not reach the effect row. A host that already gets an
+explicit id keeps using it; the key is there for calls without one.
+
+**Memoization.** A record is keyed by its scope's path, so a replay at that
+path hands back emitted values whose keys are the ones a run would compute;
+segments carry them the same way. Two natives are re-called outside their
+call path, and both are handled:
+
+- a **command** re-issued by a replay runs on the parent's path with no call
+  term. `Dep::Command` now holds the key the call read and the replay sets
+  `MemoTable::reissue_key` around the re-issue, so the native gets
+  `CallKeySource::Fixed`. A command deferred by a re-execution (it is not
+  called then) stores the key computed at the child's own path.
+- a **probe** is re-evaluated by validation with no call term, so a probe
+  whose answer read its key cannot be checked: the scope is given up as
+  effectful (`memo_note_native`, the probe branch).
+
+**Keyed loops: scopes follow their entity.** This needed no new mechanism:
+memo records, segment ids and now declaration keys are all keyed by the path,
+and a keyed loop puts `Key(h)` where the index was. When the entities of
+`for e in ents key e.id do ent(e) end` change order, every `ent` scope is at
+the same path as last frame with the same argument and replays; a segmented
+host is handed no new segment. In a positional loop the same reorder makes
+every moved entity's scope miss (its position now holds another argument)
+and re-record, and its declarations change keys.
+
+**Measured** (`core/examples/implicit_keys_frame.rs`, release, Apple M4,
+200 frames, median µs per frame; host = drain plus a hash-map upsert per
+declaration):
+
+MEASUREMENTS
+
+**Checked by** `core/tests/implicit_keys.rs`. Each script runs frame by frame
+with memoization off, on with a flat buffer and on with the buffer segmented
+(drained through a `SegmentCache`), and all three must declare the same
+values under the same keys and issue the same commands with the same keys:
+call sites, loop iterations, recursion, `while`, top level, callbacks of
+`forEach`/`map` (none) and calls nested in them; a keyed loop whose entities
+reorder (keys and segments follow the entity; positional keys stay with the
+position; every `ent` replays); commands re-issued by replays and deferred by
+re-executions; a probe that reads its key (never replayed); and reloads that
+keep the call path (same keys) or add an earlier call of the same callee
+(that one key moves). Mutations each test was seen to catch: re-issuing a
+command without its recorded key, deferring one without computing its key,
+and letting a probe that read its key be recorded. The bridge has
+`implicit_keys_reach_keyed_emitters_and_callbacks` in `bridge_tests.cpp`
+(keyed emitter payloads, a callback's `Call::key()`, a command's key across
+a replay).
+
+**Left for later:**
+
+- **Persistent collections and incremental keyed loops (P3 of
+  [reactive-rendering-plan.md](reactive-rendering-plan.md)).** Not built: a
+  keyed loop over `n` unchanged entities still visits all `n` and validates
+  one memo record each (the second table above). Making it O(changes) needs
+  persistent lists and maps that diff by structural sharing (RRB vectors,
+  HAMTs) and a keyed `for` compiled to a map over that diff: bodies run
+  only for inserted or changed keys, removed keys drop their segments and
+  state, moves reorder segments. That is weeks of work in the value layer
+  (every list and map reader), estimated at 6 to 8 in the reactive plan.
+  An intermediate step that needs no new collection: a keyed loop whose
+  body is one call of a constant-class helper could compare its list with
+  last frame's by identity (`Value` ids are generational) and splice the
+  whole loop's segment when it is the same object.
+- **Keys in a higher-order builtin's callback.** None is given; `map` and
+  `forEach` could push an `Index` part per element (they visit elements in
+  order), but `filter` and `sort` call back a data-dependent number of
+  times, which is why per-element keying was rejected for `state`
+  ([state-call-paths.md](state-call-paths.md) §5).
+- **A probe that reads its key** gives its scope up. Recording the key in
+  `Dep::Probe` (as for commands) and re-evaluating with it would keep such
+  scopes, if a query keyed by its caller (`body_state()` without an id)
+  turns out to be wanted.
+- **No duplicate check.** Unlike a keyed loop's duplicate keys, two calls
+  with one implicit key in one run are not detected by the VM (they need a
+  host that calls one Petal function twice per run); a host that reconciles
+  by key sees the second as a duplicate.
+- **Cheesecake adopting it** (a Cheesecake step, after vendoring this
+  Petal): register `body`, `point_light` and the other declarations with
+  `PB_FX_KEYED` (or read `Call::key()` in the callback form) and key
+  declarations without an id by it, so a game can write
+  `body({shape: "box", ...})`; ids stay for what the script must name
+  (`body_state(id)`, joints).
+- The key is 64 bits; a collision would make a host merge two declarations.

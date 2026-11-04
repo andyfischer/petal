@@ -457,7 +457,12 @@ pb_status pb_vm_override_file(pb_vm* vm, const char* path, const char* source);
  *   PB_FX_TICKS     the answer of this read changes every run (a clock read
  *                   like `time`, not a fixed `dt`): a helper that calls it
  *                   on every path is not recorded at all (a hint; a wrong
- *                   TICKS costs replays, never correctness). */
+ *                   TICKS costs replays, never correctness).
+ *   PB_FX_KEYED     only for pb_vm_register_emitter_fx, and not an effect: the
+ *                   pushed payload starts with the call's IMPLICIT KEY (an
+ *                   int, or nil where the call has none), then the call's
+ *                   arguments. See pb_call_key for what the key is; a
+ *                   callback native asks pb_call_key instead. */
 enum {
     PB_FX_PURE = 0,
     PB_FX_PROBE = 1u << 0,
@@ -480,7 +485,8 @@ enum {
     PB_FX_READS_NET = 1u << 17,     /* replicated state, revised per message */
     PB_FX_DECLARE = 1u << 18,       /* a keyed declaration (with EMITS) */
     PB_FX_COMMAND = 1u << 19,       /* a one-shot command, re-issued on replay */
-    PB_FX_TICKS = 1u << 20          /* a read whose answer changes every run */
+    PB_FX_TICKS = 1u << 20,         /* a read whose answer changes every run */
+    PB_FX_KEYED = 1u << 21          /* emitter: payload starts with the implicit key */
 };
 
 /* A host native. Read arguments with pb_call_arg*, build at most one result
@@ -510,7 +516,10 @@ pb_status pb_vm_register_emitter(pb_vm* vm, const char* name, const char* buffer
 
 /* pb_vm_register_emitter with extra effect flags on top of PB_FX_EMITS and
  * the Pending-no-op policy: PB_FX_DECLARE for a declaration the host
- * reconciles (body, point_light). Other flags are taken as given. */
+ * reconciles (body, point_light). PB_FX_KEYED pushes `tag(key, args...)`,
+ * where `key` is the call's implicit key (pb_call_key) as an int, or nil:
+ * a declaration the script gave no id can be reconciled by it. Other flags
+ * are taken as given. */
 pb_status pb_vm_register_emitter_fx(pb_vm* vm, const char* name, const char* buffer, const char* tag,
                                     uint32_t effects);
 
@@ -566,6 +575,25 @@ void pb_call_set_error(pb_call* call, const char* message);
  * optional. False (nothing written) when the call has no source position (a
  * call the host made itself). `*out_file` is valid during the callback. */
 bool pb_call_location(pb_call* call, const char** out_file, uint32_t* out_line, uint32_t* out_column);
+/* The call's IMPLICIT KEY: a 64-bit hash of the call path the script call is
+ * made on, the [Call(site) | Index(i) | Key(k)] parts that key `state`, then
+ * the call's own call site (docs/dev/retained-scene-output.md, L8). A
+ * declaration the script gave no id (`body({shape: "box"})`) can be
+ * reconciled by it instead of an id built from a string:
+ *   - the same on every frame while the call path is: the same call site
+ *     (callsite ids survive edits elsewhere and reloads), the same loop
+ *     iteration, the same chain of calls above it;
+ *   - one per loop iteration; under `for e in ents key e.id` it follows the
+ *     entity, not the position;
+ *   - unique within a run wherever a `state` slot would be (a host that
+ *     calls one Petal function twice per run can see a key twice).
+ * False (nothing written) when the call has none: in a callback of a
+ * higher-order builtin (map, forEach, ...), where every element runs on one
+ * path, or for a call no script call made. A memo replay hands back the
+ * scope's emitted values, keys included; a PB_FX_COMMAND re-issued by a
+ * replay gets the key it was recorded with; a PB_FX_PROBE that reads its key
+ * makes the enclosing memo scope unrecordable. */
+bool pb_call_key(pb_call* call, uint64_t* out_key);
 /* Record an expectation of the host's own (an `expect_pixel`, say), as the
  * script's expect() does: `ok` true counts a check that held; false records a
  * failure at the position of the script call and the script carries on. The

@@ -236,6 +236,11 @@ pub enum Dep {
     Command {
         native: NativeFnId,
         args: SmallVec<[Value; 4]>,
+        /// The call's implicit key (`PetalCxt::call_key`), whether or not
+        /// the native read it: re-issued with it, since a replay runs on its
+        /// parent's path, and compared, so a re-execution's deferred call
+        /// matches the record's.
+        key: Option<u64>,
     },
     /// A field of an enum variant was read, which may have been constant data
     /// (`k.shape`). Valid while the stack's enum data is what it was then
@@ -482,6 +487,10 @@ pub struct MemoTable {
     /// The verdict of the most recent re-execution: `Some(true)` if it
     /// produced something different from its previous record.
     pub last_reexec_changed: Option<bool>,
+    /// Set while a replay re-issues a command that read its implicit key
+    /// (`PetalCxt::call_key`): the key it was recorded with, which the
+    /// re-issued call gets in place of one computed from the replay's path.
+    pub reissue_key: Option<u64>,
     /// Per-callsite record of what memoizing there has been worth.
     cold: FastMap<(FunctionId, u64), ColdSite>,
     /// Per-callsite count of scopes folded as too small to record.

@@ -125,6 +125,7 @@ inline constexpr uint32_t Declare = PB_FX_DECLARE;
 inline constexpr uint32_t Command = PB_FX_COMMAND;
 inline constexpr uint32_t Query = PB_FX_READS_PHYSICS;
 inline constexpr uint32_t Ticks = PB_FX_TICKS;
+inline constexpr uint32_t Keyed = PB_FX_KEYED;
 }  // namespace fx
 
 // ─── Value views ────────────────────────────────────────────────────────────
@@ -493,6 +494,12 @@ public:
         const char* file = nullptr;
         if (pb_call_location(c_, &file, &loc.line, &loc.column) && file) loc.file = file;
         return loc;
+    }
+    // The call's implicit key (see pb_call_key), or nothing where it has none.
+    std::optional<uint64_t> key() const noexcept {
+        uint64_t k = 0;
+        if (pb_call_key(c_, &k)) return k;
+        return std::nullopt;
     }
     // Record an expectation of the host's own (see pb_call_expect).
     void expect(bool ok, const std::string& message, const char* check = nullptr) const {

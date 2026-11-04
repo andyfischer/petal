@@ -382,6 +382,44 @@ dependency classes and the helpers that never replay, with the reason (C++:
 `petal::fx::Declare`, `Command`, `Query`, `Ticks`). See
 [native-effects.md](../dev/native-effects.md#the-four-kinds-of-engine-native).
 
+### Implicit keys: declarations without an id
+
+A declaration needs a key the host can reconcile it by, and a script that
+writes `body("crate{i}", {...})` builds a string for it on every call. The
+call path can key it instead: every script call of a native has an
+**implicit key**, a 64-bit hash of the chain of call sites and loop
+iterations it was made on (the path that keys `state`) and its own call
+site. Register a declaration emitter with `PB_FX_KEYED` and the pushed
+payload starts with that key; a callback native asks `pb_call_key`:
+
+```cpp
+vm.emitter_fx("body", "scene", petal::fx::Declare | petal::fx::Keyed);
+// script: for i in range(0, 400) do body({shape: "box", pos: p(i)}) end
+for (petal::Value d : vm.drain("scene")) {
+    uint64_t key = d[0].is_int() ? (uint64_t)d[0].integer() : 0;  // nil: no key
+    reconcile(key, d[1]);
+}
+vm.native("light", petal::fx::Effect, [&](petal::Call& c) {
+    if (auto key = c.key()) lights.set(*key, c[0]);
+});
+```
+
+The key is the same every frame while the call path is: the same call
+site (call-site ids survive edits elsewhere in the file and reloads, see
+[state-call-paths.md](../dev/state-call-paths.md#31-stable-identity)), the
+same loop iteration, the same calls above it. A loop gives each iteration
+its own; under `for e in ents key e.id` it follows the entity rather than
+its position. Within one run it is unique wherever a `state` slot would be.
+A call in a callback of `map`, `forEach` and the other higher-order
+builtins has none (every element runs on one path): the emitter pushes nil
+and `pb_call_key` returns false, and the host reports the missing id.
+Memoization hands back a replayed scope's declarations with their keys; a
+`PB_FX_COMMAND` re-issued by a replay gets the key it was recorded with. A
+script that does pass an id keeps working: the key is still first in the
+payload, and the host prefers the id. The rules are in `petal_bridge.h`
+(`pb_call_key`); the design is in
+[retained-scene-output.md](../dev/retained-scene-output.md#l8-implicit-keys-and-keyed-loops-as-built-b5).
+
 ### Segmented buffers: a static world costs per scope, not per value
 
 A script that declares its whole world every frame mostly declares what it

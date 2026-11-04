@@ -32,7 +32,7 @@ half):
 | `var` cells read or written, when created outside the scope | cell and value | the cell is live and holds the value that was read |
 | Host data and the resource table consulted | a flag | the host-data / resource revision is what it was |
 | A `query` read of a revisioned class (`PHYSICS`, `NET`) | the class and its revision | that class's revision is what it was (`Env::note_class_changed` bumps it) |
-| A `command` issued | the native and its arguments | — (re-issued on replay, in order with the writes) |
+| A `command` issued | the native, its arguments and the implicit key it read (`PetalCxt::call_key`) | — (re-issued on replay, in order with the writes, with that key) |
 | Child scopes | path and record serial | the child's own record validates, recursively |
 | Output emitted | the tail of each output buffer since entry; for a segmented buffer, a segment body | — (spliced back on replay; a segmented buffer gets one mark) |
 | Observations recorded | term and value, in order with the children | — (re-recorded on replay) |
@@ -70,6 +70,16 @@ This is why `hovered(r)` is a native rather than a prelude function: as a
 native it is a single probe whose answer rarely changes, so a row re-runs
 only when the pointer crosses its edge; written in Petal it would be two
 pointer reads, and every row would re-run on every move.
+
+**Implicit keys.** A native may ask for its call's implicit key
+(`PetalCxt::call_key`, [retained-scene-output.md](retained-scene-output.md#l8-implicit-keys-and-keyed-loops-as-built-b5)),
+a hash of the scope path it is called on plus its call site. A record is
+keyed by that path, so whatever a scope emitted with keys in it is right to
+replay as it is. A command keeps its key in its `Dep::Command` and is
+re-issued with it (`MemoTable::reissue_key`), since a replay runs on the
+parent's path; a command a re-execution defers keeps the key its call had
+there, at the child's own path. A probe that read its key gives the scope
+up: validation re-evaluates a probe with no call term and so no key.
 
 **What is not recorded.** A scope that did something a replay could not
 reproduce is *effectful*, and so is every scope enclosing it: it printed

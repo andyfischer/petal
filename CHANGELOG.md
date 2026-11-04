@@ -12,6 +12,18 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- Implicit keys (L8 of the retained scene plan): a native call can read a
+  key made from the call path it runs on, the one that keys `state`, plus
+  its own call site (`PetalCxt::call_key`). It is the same every frame and
+  across reloads that keep the call path, one per loop iteration, follows
+  the item under `for … key`, and is absent in a `map`/`forEach` callback.
+  A host can reconcile a declaration the script gave no id by it
+  (`body({shape: "box"})` instead of `body("crate{i}", …)`). Memo replays
+  keep the keys; a re-issued command gets the key it was recorded with.
+  C bridge: `pb_call_key` (`petal::Call::key()`) and `PB_FX_KEYED` on an
+  emitter, which puts the key first in the payload
+  ([retained-scene-output.md](docs/dev/retained-scene-output.md#l8-implicit-keys-and-keyed-loops-as-built-b5)).
+
 - Record templates (L6 of the retained scene plan): a record literal whose
   fields are mostly static (`{shape: "box", size: 2.0, pos: p}`) is
   compiled to a template plus holes, and each record it builds carries a

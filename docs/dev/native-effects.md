@@ -54,6 +54,16 @@ differently. `NativeEffects::kind()` names what a row amounts to:
 | **command** | `COMMAND` | `apply_impulse`, `sfx`, `burst` | recorded with its arguments and **re-issued** when the scope replays. A command whose arguments a record cannot hold (a closure, a cell, a pending value) or that returns non-nil makes the scope effectful. A scope that issued one is not `pure`, so it is never re-executed speculatively, and a re-execution (a child validated by running it) records a command without issuing it: the parent's replay or run issues it once |
 | **query** | `query(PHYSICS)` (or `NET`) | `raycast`, `body_state`, `contacts` | valid while that class's revision is what the record saw; the host bumps it with `Env::note_class_changed` (`pb_vm_note_class_changed`) after a physics step. A native calls `PetalCxt::note_class_read` for the frame gate (the bridge does it for a flagged callback) |
 
+A declare (or any native) that the script calls without an id can be keyed
+by its call's **implicit key**, `PetalCxt::call_key()` (C: `pb_call_key`, or
+`PB_FX_KEYED` on an emitter, which puts the key first in the payload): a hash
+of the call path that keys `state`, ending in the native's own call site. It
+is not part of the row; a native that never asks pays nothing. A command
+records the key with its arguments and is re-issued with it; a probe that
+reads its key makes the scope unrecordable, since validation re-evaluates a
+probe where there is no call path. See
+[retained-scene-output.md](retained-scene-output.md#l8-implicit-keys-and-keyed-loops-as-built-b5).
+
 A `HOST_DATA` read stays what it was: a flag validated by the single
 host-data revision (`Env::note_host_data_changed`, now also
 `pb_vm_note_host_data_changed`). The revisioned classes are host data with

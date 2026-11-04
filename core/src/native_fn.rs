@@ -1223,9 +1223,66 @@ pub struct PetalCxt<'a> {
     /// random draws come from and where emits are recorded. `None` in every
     /// other run.
     pub(crate) spec: Option<&'a mut crate::backend::bytecode::vm::spec::SpecTap>,
+    /// Where this call's implicit key comes from ([`call_key`](Self::call_key)).
+    pub(crate) key: CallKeySource<'a>,
+    /// The implicit key the native asked for, if it asked: the VM records it
+    /// with a command a memoized scope will re-issue, and gives up on a
+    /// scope whose probe read it (a probe is re-evaluated with no call path).
+    pub(crate) key_taken: Option<u64>,
+}
+
+/// Where a native call's implicit key comes from (see
+/// [`PetalCxt::call_key`]).
+#[derive(Clone, Copy)]
+pub(crate) enum CallKeySource<'a> {
+    /// The call has none: it runs in a higher-order builtin's callback (every
+    /// element would get the same key), or nothing made it from a call.
+    None,
+    /// Computed from the live frame stack on request, so a native that does
+    /// not ask pays nothing.
+    Frames(&'a [crate::backend::bytecode::vm::VmFrame]),
+    /// Fixed: a command re-issued by a memo replay gets the key its call was
+    /// recorded with.
+    Fixed(u64),
 }
 
 impl<'a> PetalCxt<'a> {
+    /// This call's **implicit key** (retained scene output, L8): a hash of the
+    /// call path the call is made on (the `[Call(site) | Index(i) | Key(h)]`
+    /// parts that key `state`, docs/dev/state-call-paths.md) followed by the
+    /// call's own call site. A host that reconciles declarations by key
+    /// (`body`, `point_light`) can key one the script gave no id by it:
+    ///
+    /// - it is the same on every frame and run while the call path is (a
+    ///   reload that does not rename the callee or reorder calls to it keeps
+    ///   it), and is the id a memo scope would have at that place;
+    /// - a call in a loop gets one per iteration; under `for e in ents key
+    ///   e.id` it follows the entity rather than the position;
+    /// - within one run it is unique wherever a `state` slot would be: two
+    ///   calls get the same key only from one call site on one path, which
+    ///   takes a host that calls back into Petal twice for one item.
+    ///
+    /// `None` in a callback of a higher-order builtin (`map`, `forEach`, …),
+    /// where every element runs on the same path (as `state` there is an
+    /// error), and for a call made by no call term (a probe re-evaluated by
+    /// memo validation). A memo replay hands back what the scope emitted,
+    /// keys included; a command it re-issues gets the key it was recorded
+    /// with. A **probe** that reads its key makes the enclosing memo scope
+    /// unrecordable, since the probe is re-evaluated where there is no path.
+    pub fn call_key(&mut self) -> Option<u64> {
+        let key = match self.key {
+            CallKeySource::None => None,
+            CallKeySource::Fixed(k) => Some(k),
+            CallKeySource::Frames(frames) => {
+                crate::backend::bytecode::vm::call_key_of(frames, self.program, self.origin)
+            }
+        };
+        if key.is_some() {
+            self.key_taken = key;
+        }
+        key
+    }
+
     /// Whether a mutating builtin may mutate its container argument in place
     /// (and reuse its id) rather than cloning. See [`set_in_place`](Self::set_in_place).
     pub fn in_place(&self) -> bool {

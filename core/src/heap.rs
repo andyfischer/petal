@@ -32,8 +32,6 @@
 //! every dereference (weak).** The execution trace buffer is the model weak
 //! holder. Dereferencing a stale id is checked only in debug builds.
 
-use std::collections::HashMap;
-
 /// A record's fields: name → value, in insertion order: a shared key list
 /// (shape) plus a value vector. See `crate::record`. Build one with
 /// `RecordMap::default()` or [`record_map_with_capacity`].
@@ -655,7 +653,7 @@ impl<T> Slab<T> {
 }
 
 /// Strings longer than this many bytes are not interned. Interning hashes the
-/// whole string and keeps a second copy as the table key, which pays for
+/// whole string (and compares it on a hit), which pays for
 /// itself on the short strings a program repeats (field names, labels, single
 /// characters) and is pure overhead on a long one that is almost never built
 /// twice: a loop growing a buffer with `out = out ++ piece` would hash and
@@ -671,15 +669,109 @@ pub const INTERN_MAX_LEN: usize = 512;
 /// that needs a walk: on ASCII a code-point index *is* the byte offset.
 #[derive(Clone, Default)]
 struct StrObj {
-    text: String,
+    text: Text,
     chars: usize,
 }
 
 impl StrObj {
-    fn new(text: String) -> Self {
+    fn new(text: Text) -> Self {
         let chars = count_chars(&text);
         StrObj { text, chars }
     }
+}
+
+/// Bytes of text a [`Text`] holds in place, without an allocation. Chosen so
+/// that a `Text` is the size of the `String` it replaces (24 bytes): most
+/// strings a program builds at run time (`str(i)`, keys, labels, single
+/// characters) fit, and cost no `malloc` at all.
+const INLINE_TEXT: usize = 22;
+
+/// The UTF-8 text of a heap string. Strings are immutable once allocated, so
+/// this needs no spare capacity: short text sits inline, and longer text is
+/// one exact-size allocation (a `String` would carry its capacity, and often
+/// its slack, for the string's whole life).
+#[derive(Clone)]
+enum Text {
+    /// `buf[..len]` is valid UTF-8.
+    Inline { len: u8, buf: [u8; INLINE_TEXT] },
+    Boxed(Box<str>),
+}
+
+const _: () = assert!(std::mem::size_of::<Text>() == 24);
+
+impl Default for Text {
+    fn default() -> Self {
+        Text::Inline {
+            len: 0,
+            buf: [0; INLINE_TEXT],
+        }
+    }
+}
+
+impl Text {
+    fn from_str(s: &str) -> Self {
+        if s.len() <= INLINE_TEXT {
+            let mut buf = [0; INLINE_TEXT];
+            buf[..s.len()].copy_from_slice(s.as_bytes());
+            Text::Inline {
+                len: s.len() as u8,
+                buf,
+            }
+        } else {
+            Text::Boxed(s.into())
+        }
+    }
+
+    fn from_string(s: String) -> Self {
+        if s.len() <= INLINE_TEXT {
+            Text::from_str(&s)
+        } else {
+            Text::Boxed(s.into_boxed_str())
+        }
+    }
+
+    /// Bytes allocated outside the slot for this text.
+    fn heap_bytes(&self) -> usize {
+        match self {
+            Text::Inline { .. } => 0,
+            Text::Boxed(b) => b.len(),
+        }
+    }
+}
+
+impl std::ops::Deref for Text {
+    type Target = str;
+    #[inline]
+    fn deref(&self) -> &str {
+        match self {
+            // SAFETY: `Inline` is only built by `from_str`, from the bytes of
+            // a `&str` of exactly `len` bytes, so `buf[..len]` is valid UTF-8.
+            Text::Inline { len, buf } => unsafe {
+                std::str::from_utf8_unchecked(buf.get_unchecked(..*len as usize))
+            },
+            Text::Boxed(b) => b,
+        }
+    }
+}
+
+/// The intern table's hash of a string's content.
+#[inline]
+fn text_hash(s: &str) -> u64 {
+    use std::hash::Hasher;
+    let mut h = crate::fxhash::FxHasher::default();
+    h.write(s.as_bytes());
+    h.write_usize(s.len());
+    h.finish()
+}
+
+/// The text in `id`'s slot, live or not (a reclaimed slot holds empty text).
+/// What the intern table rehashes with: it must not panic on an entry whose
+/// string was reclaimed some way other than the sweep.
+fn slot_text(strings: &Slab<StrObj>, id: StringId) -> &str {
+    strings
+        .slots
+        .get(id.raw().index as usize)
+        .map_or("", |slot| &slot.data.text)
 }
 
 /// Code points in `s`. The ASCII check is a word-at-a-time scan, so the common
@@ -733,8 +825,10 @@ pub struct Heap {
     elements: Slab<ElementPayload>,
     /// One-value mutable boxes behind `var` bindings. See [`CellId`].
     cells: Slab<CellSlot>,
-    /// String intern table: content → existing StringId
-    intern_table: HashMap<String, StringId>,
+    /// String intern table: content → the one live `StringId` with that
+    /// content. Holds ids only, hashed by the text they name ([`text_hash`]),
+    /// so a string's text is stored once, in its slot.
+    intern_table: hashbrown::HashTable<StringId>,
     /// Estimated collector work owed by everything allocated since the last
     /// collection, in the "bytes" currency of [`Heap::collection_cost`]: each
     /// allocation charges its payload size plus [`SLOT_TRACE_COST`]. Tracked
@@ -850,7 +944,7 @@ impl Heap {
             dicts: Slab::new(),
             elements: Slab::new(),
             cells: Slab::new(),
-            intern_table: HashMap::new(),
+            intern_table: hashbrown::HashTable::new(),
             alloc_charge: 0,
             gc_budget: GC_MIN_BUDGET_BYTES,
             held_budget: None,
@@ -917,7 +1011,7 @@ impl Heap {
             .strings
             .slots
             .iter()
-            .map(|s| s.data.text.capacity() as u64)
+            .map(|s| s.data.text.heap_bytes() as u64)
             .sum();
         let lists: u64 = self
             .lists
@@ -1208,7 +1302,7 @@ impl Heap {
 
     /// [`get_string`](Self::get_string) for a weak id: `None` once collected.
     pub fn try_get_string(&self, id: StringId) -> Option<&str> {
-        self.strings.try_get(id.raw()).map(|s| s.text.as_str())
+        self.strings.try_get(id.raw()).map(|s| &*s.text)
     }
 
     /// [`get_list`](Self::get_list) for a weak id: `None` once collected.
@@ -1240,20 +1334,30 @@ impl Heap {
         if s.len() > INTERN_MAX_LEN {
             return None;
         }
-        let id = *self.intern_table.get(s)?;
-        self.strings.is_live(id.raw()).then_some(id)
+        let strings = &self.strings;
+        self.intern_table
+            .find(text_hash(s), |&id| {
+                strings.try_get(id.raw()).is_some_and(|o| &*o.text == s)
+            })
+            .copied()
     }
 
     /// Allocate `s` and index it in the intern table (unless it is longer
     /// than [`INTERN_MAX_LEN`]). The caller must have missed
     /// [`interned`](Self::interned) first — this always allocates.
-    fn insert_interned(&mut self, s: String) -> StringId {
-        self.tick_alloc(AllocKind::String, s.len() as u64);
-        if s.len() > INTERN_MAX_LEN {
-            return StringId::from_raw(self.strings.alloc(StrObj::new(s)));
+    fn insert_interned(&mut self, text: Text) -> StringId {
+        self.tick_alloc(AllocKind::String, text.len() as u64);
+        let interned = text.len() <= INTERN_MAX_LEN;
+        let hash = if interned { text_hash(&text) } else { 0 };
+        let id = StringId::from_raw(self.strings.alloc(StrObj::new(text)));
+        if interned {
+            let Self {
+                strings,
+                intern_table,
+                ..
+            } = self;
+            intern_table.insert_unique(hash, id, |&e| text_hash(slot_text(strings, e)));
         }
-        let id = StringId::from_raw(self.strings.alloc(StrObj::new(s.clone())));
-        self.intern_table.insert(s, id);
         id
     }
 
@@ -1263,7 +1367,7 @@ impl Heap {
     pub fn alloc_string(&mut self, s: String) -> StringId {
         match self.interned(&s) {
             Some(id) => id,
-            None => self.insert_interned(s),
+            None => self.insert_interned(Text::from_string(s)),
         }
     }
 
@@ -1277,7 +1381,7 @@ impl Heap {
     pub fn intern_str(&mut self, s: &str) -> StringId {
         match self.interned(s) {
             Some(id) => id,
-            None => self.insert_interned(s.to_string()),
+            None => self.insert_interned(Text::from_str(s)),
         }
     }
 
@@ -1295,7 +1399,7 @@ impl Heap {
             Some(existing) => existing,
             // Miss: take ownership, which ends the borrow of `strings`.
             None => {
-                let owned = sub.to_string();
+                let owned = Text::from_str(sub);
                 self.insert_interned(owned)
             }
         }
@@ -2528,10 +2632,11 @@ impl Heap {
             // Remove only this id's entry. The table maps content to the one
             // live id with that content, so it should always be this one; the
             // check keeps a reclaim from ever evicting a different, live id.
-            if s.text.len() <= INTERN_MAX_LEN
-                && intern_table.get(s.text.as_str()) == Some(&StringId::from_raw(id))
-            {
-                intern_table.remove(s.text.as_str());
+            if s.text.len() <= INTERN_MAX_LEN {
+                let id = StringId::from_raw(id);
+                if let Ok(entry) = intern_table.find_entry(text_hash(&s.text), |&e| e == id) {
+                    entry.remove();
+                }
             }
             *s = StrObj::default();
         });
@@ -2632,6 +2737,56 @@ mod tests {
         assert_ne!(new, old);
         assert_eq!(heap.intern_str("hello"), new);
         assert_eq!(heap.get_string(new), "hello");
+    }
+
+    /// Text up to [`INLINE_TEXT`] bytes is held in the slot, longer text in
+    /// one allocation; either way the string reads back as it was written,
+    /// counts its code points, and interns to one id.
+    #[test]
+    fn short_text_is_inline_and_long_text_is_boxed() {
+        let mut heap = Heap::new();
+        let cases = [
+            String::new(),
+            "a".to_string(),
+            "x".repeat(INLINE_TEXT),
+            "x".repeat(INLINE_TEXT + 1),
+            // A multi-byte character ending exactly at the inline limit, and
+            // one that would straddle it.
+            format!("{}é", "x".repeat(INLINE_TEXT - 2)),
+            format!("{}é", "x".repeat(INLINE_TEXT - 1)),
+            "日本語のテキスト".to_string(),
+        ];
+        for text in &cases {
+            let id = heap.alloc_string(text.clone());
+            let obj = &heap.strings.get(id.raw()).text;
+            assert_eq!(matches!(obj, Text::Inline { .. }), text.len() <= INLINE_TEXT, "{text:?}");
+            assert_eq!(heap.get_string(id), text);
+            assert_eq!(heap.string_char_len(id), text.chars().count(), "{text:?}");
+            assert_eq!(heap.intern_str(text), id, "{text:?}");
+        }
+    }
+
+    /// The intern table holds ids, not text: a reclaimed string's entry goes
+    /// with it, and every other string is still found afterwards.
+    #[test]
+    fn the_intern_table_follows_the_strings_it_names() {
+        let mut heap = Heap::new();
+        let keep: Vec<StringId> = (0..200).map(|i| heap.intern_str(&format!("keep-{i}"))).collect();
+        for i in 0..200 {
+            heap.intern_str(&format!("drop-{i}-{}", "z".repeat(i % 40)));
+        }
+        for &id in &keep {
+            heap.mark_value(Value::String(id));
+        }
+        heap.sweep();
+        assert_eq!(heap.intern_table.len(), keep.len());
+        for (i, &id) in keep.iter().enumerate() {
+            assert_eq!(heap.intern_str(&format!("keep-{i}")), id);
+        }
+        // Content that was collected is allocated afresh, then found.
+        let again = heap.intern_str("drop-3-zzz");
+        assert_eq!(heap.intern_str("drop-3-zzz"), again);
+        assert_eq!(heap.intern_table.len(), keep.len() + 1);
     }
 
     /// A slot whose generations are exhausted is retired, not wrapped: it is

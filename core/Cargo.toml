@@ -17,6 +17,9 @@ dup-stats = []
 [dependencies]
 indexmap = { version = "2", features = ["serde"] }
 smallvec = { version = "1", features = ["serde"] }
+# Already in the tree through indexmap; used directly for the string intern
+# table, which is keyed by content it reads out of the heap (`HashTable`).
+hashbrown = { version = "0.16", default-features = false }
 slotmap = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

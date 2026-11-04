@@ -1,149 +1,145 @@
 {
-  "cell": {
-    "height": 16.0,
-    "width": 8.0
-  },
-  "command_line": null,
-  "cursor": {
-    "col": 0,
-    "line": 0
-  },
-  "dm": {
-    "active": false,
-    "allow": [],
-    "cursor": "default",
-    "deny": [],
-    "editor": null,
-    "engine": "auto",
-    "gutter": null,
-    "hints_changed": false,
-    "hover": null,
-    "last": null,
-    "marks": [],
-    "mode": false,
-    "overlay": null,
-    "panel_open": false
-  },
-  "file_finder": null,
-  "focus": 0,
-  "frame": 0,
+  "ok": true,
   "identity": {
-    "build": {
-      "build_date": "2026-10-24",
-      "commit": "3716f0fb",
-      "commit_date": "2026-10-24",
-      "dirty": true,
-      "prelude_level": 10,
-      "version": "0.1.0"
-    },
+    "pid": 2567,
+    "port": null,
+    "layout": null,
     "cwd": "<cwd>",
+    "build": {
+      "version": "0.1.0",
+      "commit": "8dc84b40",
+      "commit_date": "2026-11-04",
+      "build_date": "2026-11-04",
+      "dirty": false,
+      "prelude_level": 10
+    },
     "freshness": {
+      "head": "8dc84b40",
       "changed": 0,
-      "head": "3716f0fb",
       "stale": false,
       "warning": ""
     },
-    "layout": null,
     "panels": [
       {
         "pane": 1,
-        "path": "<tmp>/.tmpKY8br5.ptl",
-        "script": "<tmp>/.tmpKY8br5.ptl"
+        "script": "<tmp>/.tmpclTUfI.ptl",
+        "path": "<tmp>/.tmpclTUfI.ptl"
       }
-    ],
-    "pid": 39457,
-    "port": null
+    ]
+  },
+  "frame": 0,
+  "window": {
+    "width": 800.0,
+    "height": 600.0,
+    "scale": 1.0
+  },
+  "cell": {
+    "width": 8.0,
+    "height": 16.0
+  },
+  "focus": 0,
+  "cursor": {
+    "line": 0,
+    "col": 0
+  },
+  "selection": null,
+  "theme": {
+    "key": "dark",
+    "label": "Midnight"
+  },
+  "script_error": null,
+  "status_error": null,
+  "panel_error": null,
+  "status_note": null,
+  "command_line": null,
+  "file_finder": null,
+  "window_cmd_pending": false,
+  "trace": null,
+  "dm": {
+    "engine": "auto",
+    "allow": [],
+    "deny": [],
+    "active": false,
+    "last": null,
+    "editor": null,
+    "mode": false,
+    "panel_open": false,
+    "hints_changed": false,
+    "cursor": "default",
+    "hover": null,
+    "overlay": null,
+    "marks": [],
+    "gutter": null
   },
   "lsp": {
+    "servers": [],
     "documents": [],
     "failures": [],
-    "pending_completions": 0,
-    "servers": []
+    "pending_completions": 0
   },
-  "ok": true,
-  "panel_error": null,
+  "text_atlas": null,
+  "unresolved_fonts": [],
+  "script": {
+    "path": null,
+    "output": [],
+    "output_first": 0,
+    "output_next": 0
+  },
   "panes": [
     {
-      "cursor": {
-        "col": 0,
-        "line": 0
-      },
-      "dirty": false,
-      "file": "<tmp>/.tmpJKPmGM.txt",
       "index": 0,
       "kind": "editor",
-      "line_count": 3,
-      "mode": "NORMAL",
       "panel": null,
+      "file": "<tmp>/.tmp0Y0Qnr.txt",
+      "title": "<tmp>/.tmp0Y0Qnr.txt",
+      "mode": "NORMAL",
       "pending": null,
-      "rect": {
-        "h": 564.0,
-        "w": 393.0,
-        "x": 6.0,
-        "y": 6.0
+      "dirty": false,
+      "cursor": {
+        "line": 0,
+        "col": 0
       },
+      "selection": null,
+      "trace_highlight": null,
+      "scroll_top": 0,
+      "scroll_sub": 0,
       "scroll_frac": 0.0,
       "scroll_left": 0.0,
-      "scroll_sub": 0,
-      "scroll_top": 0,
-      "selection": null,
-      "title": "<tmp>/.tmpJKPmGM.txt",
-      "trace_highlight": null,
+      "wrap": true,
+      "line_count": 3,
       "visible_lines": 34,
-      "wrap": true
+      "rect": {
+        "x": 6.0,
+        "y": 6.0,
+        "w": 393.0,
+        "h": 564.0
+      }
     },
     {
-      "cursor": {
-        "col": 0,
-        "line": 0
-      },
-      "dirty": false,
-      "file": null,
       "index": 1,
       "kind": "panel",
-      "line_count": 1,
-      "mode": "NORMAL",
       "panel": {
-        "awake": true,
+        "script": "<tmp>/.tmpclTUfI.ptl",
         "client": null,
-        "error": null,
+        "awake": true,
         "frame": 2,
-        "frame_stats": {
-          "frames_run": 1,
-          "frames_skipped": 1,
-          "gate": true,
-          "last_frame_skipped": true,
-          "last_ms": 18.106625,
-          "last_run_reason": null,
-          "memo": {
-            "cold": 0,
-            "cutoffs": 0,
-            "effectful": 0,
-            "enabled": true,
-            "evicted": 0,
-            "hits": 0,
-            "inlined": 0,
-            "misses": 0,
-            "records": 1,
-            "reexecs": 0
-          },
-          "total_ms": 18.106625
+        "values": {
+          "label": "Save",
+          "hits": 0,
+          "seen": 0
         },
+        "values_frame": 0,
+        "values_stale": false,
+        "values_partial": null,
+        "error": null,
         "input": {
-          "click_count": 0,
-          "drag_active": false,
-          "drag_start": [
+          "mouse": [
             -401,
             -6
           ],
           "keys_down": [],
           "keys_pressed": [],
           "keys_released": [],
-          "modifiers": 0,
-          "mouse": [
-            -401,
-            -6
-          ],
           "mouse_buttons_down": [],
           "mouse_buttons_pressed": [],
           "mouse_buttons_released": [],
@@ -151,57 +147,64 @@
             0,
             0
           ],
+          "modifiers": 0,
+          "drag_active": false,
+          "drag_start": [
+            -401,
+            -6
+          ],
+          "click_count": 0,
           "text": ""
         },
-        "script": "<tmp>/.tmpKY8br5.ptl",
-        "values": {
-          "hits": 0,
-          "label": "Save",
-          "seen": 0
-        },
-        "values_frame": 0,
-        "values_partial": null,
-        "values_stale": false
+        "frame_stats": {
+          "gate": true,
+          "frames_run": 1,
+          "frames_skipped": 1,
+          "last_frame_skipped": true,
+          "last_run_reason": null,
+          "memo": {
+            "enabled": true,
+            "hits": 0,
+            "misses": 0,
+            "records": 1,
+            "inlined": 0,
+            "effectful": 0,
+            "reexecs": 0,
+            "cutoffs": 0,
+            "evicted": 0,
+            "cold": 0,
+            "static_skips": 0,
+            "static_args": 0,
+            "commands": 0
+          },
+          "last_ms": 28.037708000000002,
+          "total_ms": 28.037708000000002
+        }
       },
+      "file": null,
+      "title": ".tmpclTUfI.ptl",
+      "mode": "NORMAL",
       "pending": null,
-      "rect": {
-        "h": 564.0,
-        "w": 393.0,
-        "x": 401.0,
-        "y": 6.0
+      "dirty": false,
+      "cursor": {
+        "line": 0,
+        "col": 0
       },
+      "selection": null,
+      "trace_highlight": null,
+      "scroll_top": 0,
+      "scroll_sub": 0,
       "scroll_frac": 0.0,
       "scroll_left": 0.0,
-      "scroll_sub": 0,
-      "scroll_top": 0,
-      "selection": null,
-      "title": ".tmpKY8br5.ptl",
-      "trace_highlight": null,
+      "wrap": true,
+      "line_count": 1,
       "visible_lines": 34,
-      "wrap": true
+      "rect": {
+        "x": 401.0,
+        "y": 6.0,
+        "w": 393.0,
+        "h": 564.0
+      }
     }
-  ],
-  "script": {
-    "output": [],
-    "output_first": 0,
-    "output_next": 0,
-    "path": null
-  },
-  "script_error": null,
-  "selection": null,
-  "status_error": null,
-  "status_note": null,
-  "text_atlas": null,
-  "theme": {
-    "key": "dark",
-    "label": "Midnight"
-  },
-  "trace": null,
-  "unresolved_fonts": [],
-  "window": {
-    "height": 600.0,
-    "scale": 1.0,
-    "width": 800.0
-  },
-  "window_cmd_pending": false
+  ]
 }

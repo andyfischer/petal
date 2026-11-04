@@ -48,6 +48,12 @@ export interface PanelFrameStats {
     cutoffs: number;
     evicted: number;
     cold: number;
+    /** Calls not opened as scopes: their dependency classes say they never replay. */
+    static_skips: number;
+    /** Replay checks that skipped comparing arguments, all of them static. */
+    static_args: number;
+    /** `command` calls re-issued by a replay. */
+    commands: number;
   };
   /** Wall-clock cost of the most recent frame that ran the script; null before
    *  any has (feature `state.panel-frame-ms`). */

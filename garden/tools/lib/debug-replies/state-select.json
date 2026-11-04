@@ -1,37 +1,40 @@
 {
   "focus": 0,
-  "ok": true,
   "panes": [
     {
       "cursor": {
-        "col": 0,
-        "line": 0
+        "line": 0,
+        "col": 0
       }
     },
     {
       "panel": {
         "frame_stats": {
+          "gate": true,
           "frames_run": 1,
           "frames_skipped": 1,
-          "gate": true,
           "last_frame_skipped": true,
-          "last_ms": 37.776583,
           "last_run_reason": null,
           "memo": {
-            "cold": 0,
-            "cutoffs": 0,
-            "effectful": 0,
             "enabled": true,
-            "evicted": 0,
             "hits": 0,
-            "inlined": 0,
             "misses": 0,
-            "records": 2,
-            "reexecs": 0
+            "records": 1,
+            "inlined": 0,
+            "effectful": 0,
+            "reexecs": 0,
+            "cutoffs": 0,
+            "evicted": 0,
+            "cold": 0,
+            "static_skips": 0,
+            "static_args": 0,
+            "commands": 0
           },
-          "total_ms": 37.776583
+          "last_ms": 28.037708000000002,
+          "total_ms": 28.037708000000002
         }
       }
     }
-  ]
+  ],
+  "ok": true
 }

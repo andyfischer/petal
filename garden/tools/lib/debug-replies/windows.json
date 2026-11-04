@@ -2,9 +2,9 @@
   "ok": true,
   "windows": [
     {
+      "window": 1,
       "focused": true,
-      "panes": 2,
-      "window": 1
+      "panes": 2
     }
   ]
 }

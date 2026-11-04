@@ -1,4 +1,5 @@
 {
+  "ok": true,
   "actions": [
     {
       "action": "NewFile",
@@ -148,6 +149,5 @@
       "action": "NextPane",
       "arg": null
     }
-  ],
-  "ok": true
+  ]
 }

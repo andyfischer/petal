@@ -796,7 +796,7 @@ fn enum_data_is_kept_per_stack() {
 /// static, so it runs a script whose host is not here. With
 /// `set_static_only_keeps` it is lowered with the cache as well: the static
 /// part of a frame as a host with the cache runs it, which is how the cache
-/// is measured on such a script (`core/examples/static_frame.rs`).
+/// is measured on such a script (`test/benchmarks/harness/static_frame.rs`).
 #[test]
 fn the_static_only_build_can_keep_its_values() {
     use petal::static_audit::StaticAuditMode;

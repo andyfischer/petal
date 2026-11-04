@@ -868,7 +868,7 @@ print(Circle(2).area())        // or: import ./shapes: Circle  /  import ./shape
 ```
 
 `import ./shapes` is `shapes.ptl` next to the importing file; a path with no
-`./` or `../` in front names a *package* (`import bloom`, `import creative`).
+`./` or `../` in front names a *package* (`import bloom`, `import vec2`).
 A package is bundled with the runtime, or is a dependency listed in the
 project's `petal.toml` ([Packages](packages.md)). The rest — what happens
 when two modules export the same name, what `pub` covers, how modules share
@@ -913,7 +913,7 @@ wrap the whole expression in parentheses, or check the value with
 
 Most of these are in scope with no import. The ones that are not say which
 package to import, and `petal lint` names the import when you forget it
-(``unknown function `lerp` … add `import creative` ``). This is
+(``unknown function `noise` … add `import noise` ``). This is
 the working set, not the full list; [Builtins.md](Builtins.md) has the rest with
 exact signatures. Reach for this table before you guess a name, because a wrong
 guess costs a compile round-trip (`unknown function \`flatten\``).
@@ -931,7 +931,7 @@ guess costs a compile round-trip (`unknown function \`flatten\``).
 | **Records** | `keys(r)`, `values(r)`, `has_field(r, k)`, `field(r, k, fallback)`, `remove(r, k)` |
 | **Strings** | `++`, `join(xs, sep)`, `split(s, sep)`, `repeat(s, n)`, `trim(s)`, `starts_with(s, p)`, `ends_with(s, p)`, `upper`/`lower`, `pad_start(s, w)`, `char_at(s, i)`, `chars(s)`, `ord(c)`, `chr(n)` |
 | **Numbers** | `abs`, `min(a, b)`, `max(a, b)` — **two arguments, not a list** — `floor`, `ceil`, `round(x)`, `round(x, places)`, `sqrt`, `pow`, `sign`, `clamp(v, lo, hi)`, `safe_div(a, b)` (`nil` instead of aborting on a zero divisor) |
-| **Interpolate** (`import creative`) | `lerp(a, b, t)` (numbers, vectors, colors, number lists, records field by field), `map_range(v, a, b, c, d)`, `smoothstep(e0, e1, x)`, `distance(…)`, `mag(…)`, `choose(xs)` |
+| **Interpolate** | `lerp(a, b, t)` (numbers, vectors, colors, number lists, records field by field), `map_range(v, a, b, c, d)`, `smoothstep(e0, e1, x)`, `distance(…)`, `mag(…)`, `choose(xs)` |
 | **Trig** | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2(y, x)`, `hypot(x, y)`, `pi()`, `radians`, `degrees` |
 | **Convert** | `str(v)`, `int(v)`, `float(v)`, `parse_int(s)`, `parse_float(s)`, `type(v)`. `parse_*` return `nil` on bad text, so `parse_float(s) ?? 0.0` reads user input with a default |
 | **Random** | `random()` (in [0, 1)), `random(hi)`, `random(lo, hi)`, `random_int(lo, hi)` (half-open) |
@@ -1003,7 +1003,7 @@ these names (`shadows-builtin`) or only forwards to one
 | `if n == 1 then "1 car" else "{n} cars" end` | `plural(n, "car")`, `plural(n, "city", "cities")` |
 | `join(slice(xs, 0, n - 1), ", ") ++ " and " ++ xs[n - 1]` | `list_and(xs)`, `list_and(xs, "or")` |
 | a `curve(table, x)` that walks `[x, y]` pairs | `interp(table, x)` |
-| fifteen fields interpolated one at a time | `lerp(a, b, t)` on the two records (`import creative`) |
+| fifteen fields interpolated one at a time | `lerp(a, b, t)` on the two records |
 | mixing two colors channel by channel | `lerp(c1, c2, t)` or `color_lerp(c1, c2, t)` (`import color`) |
 | `index_of(ALPHABET, c)` for a character's number | `ord(c)`, and `chr(n)` back |
 | a multiply-and-modulo generator in a `var`, a string hashed with a character table | `hash_int(seed, i)`, `hash01(seed, i)`, `hash_str(text)` |

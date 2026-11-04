@@ -376,7 +376,7 @@ pub fn register_hit(env: &mut Env) {
     // reset, and a replay does not re-apply a scope's writes to cells the
     // scope itself created (which a module's own `state var`s are).
     // The effect is a marker in an output buffer: contained (a speculative
-    // run calls it, `petal::dm_v2::spec`).
+    // run calls it, `petal::dm::spec`).
     register(env, "ui_mark", native_ui_mark, EMITS.with_effect().contained());
     register(env, "ui_mute", native_ui_mute, EMITS);
     register(env, "ui_probe", native_ui_probe, HIT);

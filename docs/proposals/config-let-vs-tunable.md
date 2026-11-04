@@ -60,9 +60,9 @@ independently. The strongest argument against it is under
 The request is right that there is overlap. A top-level number can be marked
 in three ways today: `config let x = 4`, `let x = tunable(4)`, and
 `config let x = tunable(4)`. DM v2 gives them different weights, 0.5 and 0.25
-(`core/src/dm_v2/rank.rs:24-27`), and users cannot see that difference. It
+(`core/src/dm/rank.rs:24-27`), and users cannot see that difference. It
 also has a `Prefer::ConfigStrict` mode that fires only on `config`
-(`core/src/dm_v2/api.rs:564`). Removing one marker would cut that overlap. To
+(`core/src/dm/api.rs:564`). Removing one marker would cut that overlap. To
 see what removal would cost, here is everything `config` does today.
 
 ### Everything `config let` does today
@@ -78,7 +78,7 @@ see what removal would cost, here is everything `config` does today.
 | Introspection | `show-static` (`kind: "config let"`), `show-ast`, `fn_ast`, `show-ir --json`, and `static_classify::DeclKind::ConfigLet`. `ir_equiv` compares the flag. | `static_classify/mod.rs:228, 1303`, `ir_equiv.rs:518` |
 | Refactors | `apply-change convert-to-var` refuses a config binding. | `apply_change/convert_to_var.rs:82` |
 | DM v1 | Once any config let exists, every other named binding is pinned. | `direct_manipulation.rs:178-489` |
-| DM v2 | Weight 0.5, config-only subsets, `Prefer::ConfigStrict`, `--config-strict`, the selector `config`. | `dm_v2/params.rs:1135`, `rank.rs:24`, `api.rs:119, 564`, `cli/dm_v2.rs:148, 275` |
+| DM v2 | Weight 0.5, config-only subsets, `Prefer::ConfigStrict`, `--config-strict`, the selector `config`. | `dm/params.rs:1135`, `rank.rs:24`, `api.rs:119, 564`, `cli/dm.rs:148, 275` |
 | Garden | `:DragAllow config`, `CandState::Config`. Line targeting skips a leading `config`. | `garden-app/src/app/dm_mode.rs:89`, `garden-app/src/dm_hints.rs:404` |
 | MCP | The `allow`/`configStrict` parameters of the propose-edit tool. | `tools/petal-mcp.ts:246-273` |
 | LSP / grammar | Keyword list; tree-sitter `config` token and highlight. | `lsp/document.rs:1425`, `editor-support/tree-sitter-petal/grammar.js`, `queries/highlights.scm:37` |
@@ -104,7 +104,7 @@ host-listed knobs, and a slider UI. All three key on `config`.
 
 ### What `tunable` is today
 
-`core/src/builtins/hints.rs`, `core/src/dm_v2/hints.rs` and
+`core/src/builtins/hints.rs`, `core/src/dm/hints.rs` and
 `docs/Builtins.md` ("Direct-Manipulation Hints") define it:
 - It is the identity function and has a `CONST` effect row.
 - It marks the one **number** literal its argument resolves to.
@@ -156,7 +156,7 @@ There are 1,500 `config let` lines in 197 files. All are at the top level
 |---|---|---|
 | `petal/examples` | 131 | 19: games (asteroids 11, boids 14, hopper 12, particle-sandbox 12, fractal-explorer 11, flappy 9, terrain 9, memory 7, pong, breakout, tower-defense 6 each, physics-playground, solar-system, tetris 5 each, 2048, minesweeper 4 each) and `direct-manipulation-v2/` (a01 2, l01b 2, l07b 1) |
 | `petal/garden` | 14 | 4: `examples/panels/plant.ptl:8-17` (10), `drag-to-edit.ptl` (2), `dm-v2/01-helper-row.ptl`, `dm-v2/03-fractal-tree.ptl` (1 each, untracked) |
-| `petal/core/tests/dm_v2/04_random.ptl` | 2 | 1 |
+| `petal/core/tests/dm/04_random.ptl` | 2 | 1 |
 | core-libs, core-runtime, test/, integrations `.ptl`, `~/worlds-fair/ui/ptl`, `~/petal-creative`, `~/biz/petal-lang.org` `.ptl`, `~/.garden`, `~/tools` | 0 | 0 |
 | `~/cheesecake/games` | 1,326 | 159: moses 38, solitude 28, moonbear 24, neon 12, skyrace 11, tides 10, gta 8, stride 6, … |
 | `~/cheesecake` tests, engine, docs | 26 | 15 |
@@ -653,7 +653,7 @@ In this order, each step with its tests:
    - Test: `--allow config` on `config let BOX = {x: 140}` proposes the 140,
      tagged `config`, with weight 0.5.
    - Update the DM v2 study golden if its rankings move.
-2. **ConfigStrict trigger** (`dm_v2/api.rs:564`): also when any
+2. **ConfigStrict trigger** (`dm/api.rs:564`): also when any
    `Hint::Tunable` exists. Test: a `tunable`-only program under
    `--config-strict` pins the other bindings.
 3. **`static_bindings` unwrap and `range`** (`static_value.rs`), including
@@ -750,11 +750,11 @@ What was built, in the order of the sketch:
    it finds `is_config` (`Compiler::config_literals`). So the `140` in
    `config let BOX = {x: 140}` gets weight 0.5, matches `--allow config`,
    Garden's `:DragAllow config` and `ParamSelector::ConfigOnly`, and is kept
-   by ConfigStrict. Test: `dm_v2_solve::config_record_and_list_literals_are_config`.
+   by ConfigStrict. Test: `dm_solve::config_record_and_list_literals_are_config`.
 2. **ConfigStrict** fires when any term is `is_config` *or* `read_hints`
-   finds a `Hint::Tunable` mark (`dm_v2/api.rs`). The pin reason now reads
+   finds a `Hint::Tunable` mark (`dm/api.rs`). The pin reason now reads
    "the program declares `config let` or `tunable` knobs". Test:
-   `dm_v2_solve::config_strict_counts_tunable_knobs`.
+   `dm_solve::config_strict_counts_tunable_knobs`.
 3. **`static_bindings`.** `static_value::tunable_args` sorts a `tunable`
    call's arguments (positional or named `value`/`min`/`max`/`step`, one to
    four, each once); `config_value_expr` is the value position of a

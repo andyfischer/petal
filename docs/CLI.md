@@ -140,8 +140,8 @@ $ petal run -e 'print(1 + 2)'
 3
 ```
 
-`run` provides the core builtins and the builtin packages (`creative`, `vec2`,
-`noise`, `color`, `json`, `io`, `autodiff`) and nothing else. A script that
+`run` provides the core builtins and the builtin packages (`vec2`, `noise`,
+`color`, `json`, `io`, `autodiff`) and nothing else. A script that
 imports a host's interface — `import ui`, or a package that requires it such
 as `bloom` — is refused when it loads, before any line runs, with a message
 naming what this host lacks; run it with that host's runner (petal-sdl,
@@ -609,8 +609,8 @@ Options:
 
 No host is consulted. A name exists
 because the file declares it, an import binds it, or it is a `core`/`std`
-builtin. The domain builtins (`lerp`, `noise`, `vec2`, `hsv`, `json_parse`, …)
-are behind imports of their own (`import creative`, `import noise`, …; see
+builtin. The domain builtins (`noise`, `vec2`, `hsv`, `json_parse`, …)
+are behind imports of their own (`import noise`, `import vec2`, …; see
 [Builtins](Builtins.md#which-builtins-need-an-import)); an unimported one is
 an error that names the import to add. A script written for a host imports the host's **interface package**,
 whose `native fn` declarations ([usage/ffi.md](usage/ffi.md#native-interfaces-native-fn))
@@ -691,8 +691,8 @@ An **error** is a line that fails whenever it runs, so `lint` exits 1 on it:
   declaration does not take (`len(1, 2)`, `mouse_x(3)`); a native declared
   with a rest parameter takes any count above its fixed ones;
 - method syntax on a plain value (a number, a string, a list, a vector)
-  that needs a packaged builtin the file has not imported (`v.mag()` with no
-  `import creative`);
+  that needs a packaged builtin the file has not imported (`v.normalize()` with no
+  `import vec2`);
 - a named argument no parameter has, or one that fills a slot twice — on a
   `fn`, or on a builtin, which is checked against the parameter names it
   declares (`clamp(v, low: 0, hi: 1)` is `clamp() has no parameter named
@@ -1043,8 +1043,9 @@ else:
 | `import rng` (found through `-I shared`) | `import ../shared/rng` | the same `-I` is passed here |
 | `import m: *`, `pub import m: *` | `import m`, `pub import m` | always |
 | `import m: a` … `m.b` | adds `import m` | the file reaches through `m.`, which a selective import no longer binds |
+| `import creative` | *(deleted)* | always: `lerp`, `map_range`, `distance`, `mag`, `smoothstep` and `choose` are declared by `core` now |
 | *(nothing)* | adds `import kit` | a bare name nothing in the file provides is exported by exactly one available package |
-| *(nothing)* | adds `import creative`, `import vec2`, `import noise`, … | the same, for a builtin that now lives in a bundled package (`lerp`, `vec2`, `noise`, `hsv`, `json_parse`, `symbol`, …; [the list](Builtins.md#which-builtins-need-an-import)) |
+| *(nothing)* | adds `import vec2`, `import noise`, `import color`, … | the same, for a builtin that now lives in a bundled package (`vec2`, `noise`, `hsv`, `json_parse`, `symbol`, …; [the list](Builtins.md#which-builtins-need-an-import)) |
 | *(nothing)* | adds `import vec2` for `v.normalize()` | a moved builtin called with method syntax (a compile-check error on a plain value, otherwise a failure when the line runs): added when nothing in the program defines a function, class method or record field of that name |
 | *(nothing)* | adds `import ui` | the same, for a host's names: a script that used petal-ui names with no import gets its `import ui` (and, with the host's package a dependency of the project or on `-I`: `import garden`, `import sdl`, …). When several packages export the name and all but one are built on that one (bloom's `button` over ui's), the one underneath is imported |
 
@@ -1060,7 +1061,7 @@ $ petal fix-imports old.ptl
 old.ptl
   line 1: `import level` -> `import ./level`
   line 2: `import ease: *` -> `import ease`
-  added `import creative` (for `lerp`)
+  added `import noise` (for `noise`)
   added `import tw` (for `twice`)
 fixed imports in 1 of 1 file(s)
 ```

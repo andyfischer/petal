@@ -1,0 +1,1835 @@
+//! Candidate parameter discovery (docs/dev/direct-manipulation-v2-plan.md
+//! §2.2, M2): which numeric literals of a program could move a goal, and
+//! which of those a drag may move.
+//!
+//! A **parameter** is a numeric literal written in the source (a `Constant`
+//! term, or `Neg` over one) with a span. The candidates for a set of goals
+//! come in stages, cheapest first:
+//!
+//! 1. [`discover_params`], a static superset: a backward walk from the goals'
+//!    anchor terms ([`anchors_for`]) over value edges, made interprocedural
+//!    and conservative. It enters a function through its results at a call
+//!    and leaves it through its parameters to the arguments of the call it
+//!    came from (along the goal's own call chain where it knows it, every
+//!    caller otherwise), follows closures into callbacks (`map`, `filter`,
+//!    …), uses the baseline's observed call edges for dynamic calls and
+//!    method calls, and crosses `var` cells and `state` to their writes. It
+//!    records, per literal, *how* it was reached (only through a hint bound,
+//!    only through a comparison or an index, only through an RNG or other
+//!    no-feedback native, only through a `state` initializer, through a
+//!    `var`, …), and how far it is from the goal. A second, focused walk
+//!    follows only the field or element of each value a goal reads
+//!    ([`Param::focus`]); screening and measuring go by it first.
+//! 2. The loaded filter: what the baseline never loaded cannot matter
+//!    ([`SpecRun::loaded`](super::spec::SpecRun::loaded)).
+//! 3. [`eligibility`], the hard filters of §2.5.1, applied before anything is
+//!    perturbed. Library literals are never editable.
+//! 4. [`screen_params`]: adaptive group testing with real runs, to keep only
+//!    the literals that move a goal.
+//!
+//! Parameter identity is the literal's `Constant` [`TermId`], valid for one
+//! program. Clients that outlive a reload select by [`ParamSelector`].
+
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::{Path, PathBuf};
+use std::time::Instant;
+
+use crate::constant_table::ConstantValue;
+use crate::dm::hints::{Hint, HintKind, Hints};
+use crate::dm::observe::{Observable, PathStep};
+use crate::dm::spec::{OverrideValue, Overrides, SpecHost, SpecRun, SpecSession};
+use crate::env::Env;
+use crate::native_fn::{InputClasses, NativeFnTable};
+use crate::program::{BlockId, FunctionId, MapSpreadEntry, Program, Term, TermId, TermOp, base_fn_name};
+use crate::source_map::{ENTRY_FILE, FileId, SourceSpan};
+
+// ── the parameter ───────────────────────────────────────────────────────────
+
+/// Where a literal is written (§2.5.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CodeOrigin {
+    /// The entry file.
+    Entry,
+    /// Another file of the entry's project (under the nearest `petal.toml`,
+    /// else the entry's directory), outside the package cache and vendored
+    /// copies.
+    UserFile,
+    /// A file on disk outside the project: a local path dependency.
+    PathDep,
+    /// The `std` prelude, a bundled package, the package cache, a vendored
+    /// copy, or an in-memory module: never editable.
+    Library,
+}
+
+/// A numeric literal that may move a goal (§6.2).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Param {
+    /// The literal's `Constant` term: what a run overrides.
+    pub term: TermId,
+    /// What an edit replaces: the literal, including its `-` when negative.
+    pub span: SourceSpan,
+    pub file: FileId,
+    /// The value as written, sign included (`-5` for `-5`).
+    pub value: f64,
+    pub is_int: bool,
+    /// The binding the literal defines (`let gap = 10`), if it is one.
+    pub binding: Option<String>,
+    /// That binding is a `config let`.
+    pub config: bool,
+    pub hint: Option<Hint>,
+    /// The function whose body the literal is written in.
+    pub function: Option<FunctionId>,
+    /// Some path to a goal crosses a `var` cell.
+    pub through_var: bool,
+    /// Some path to a goal crosses `state` (feedback from earlier frames).
+    pub through_state: bool,
+    /// Every path to a goal goes through a `state` initializer.
+    pub state_init: bool,
+    /// Every path to a goal goes through the arguments of an RNG or other
+    /// no-feedback native, or through `rigid(...)`.
+    pub through_rng: bool,
+    /// Every path to a goal goes through a comparison, an index, a loop
+    /// bound, a `match` subject or a loop key: the literal changes which code
+    /// runs, not where a shape is.
+    pub structural: bool,
+    /// Every path to a goal is as a `tunable` bound (`min`/`max`/`step`).
+    pub hint_bound: bool,
+    /// Written as an argument of the goal's own user-frame call.
+    pub in_goal_frame: bool,
+    pub origin: CodeOrigin,
+    /// Call, definition and cell edges on the shortest path to a goal.
+    pub distance: u32,
+    /// The same distance along the goals' own parts only (the field a goal
+    /// reads, the element it is in), or `None` when only the rest of a value
+    /// the goal reads part of depends on this literal: a field-sensitive
+    /// reach, which screening and measuring go by first (§2.2).
+    pub focus: Option<u32>,
+}
+
+impl Param {
+    /// A knob: a literal marked by `config let` (including the literals of a
+    /// config record or list), by `tunable(...)`, or by both. Knobs share one
+    /// preference tier (§2.5.2): the weight, the `config` selector, the
+    /// config-only subsets and `Prefer::ConfigStrict` all ask this.
+    pub fn is_knob(&self) -> bool {
+        self.config || matches!(self.hint, Some(Hint::Tunable { .. }))
+    }
+
+    /// The override that makes this literal read `v`. An int literal takes
+    /// an int when `v` is whole.
+    pub fn override_for(&self, v: f64) -> OverrideValue {
+        if self.is_int && v.fract() == 0.0 && v.abs() < 9.0e15 {
+            OverrideValue::Int(v as i64)
+        } else {
+            OverrideValue::Num(v)
+        }
+    }
+
+    /// The override that makes this literal read the int `n`.
+    pub fn override_int(&self, n: i64) -> OverrideValue {
+        OverrideValue::Int(n)
+    }
+}
+
+/// The anchor of a goal: the term whose value the goal reads, and the call
+/// chain it was reached by (the emit's chain, innermost first), which lets
+/// discovery leave the anchor's function through the caller that actually
+/// called it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Anchor {
+    pub term: TermId,
+    pub chain: Vec<TermId>,
+    /// The part of the term's value the goal reads (a `--field` path), for
+    /// the focused walk; empty for the whole value.
+    pub path: Vec<PathStep>,
+}
+
+// ── selectors and eligibility (§2.5.1, §2.7) ────────────────────────────────
+
+/// A client's say over which parameters may move (§2.7).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParamSelector {
+    /// Exactly this literal (this program only).
+    Term(TermId),
+    /// A literal whose span starts inside this span.
+    Span(SourceSpan),
+    /// A binding, by name (module-qualified or base name).
+    Variable(String),
+    /// Any literal on this 1-based line of the entry file.
+    Line(u32),
+    /// The literal written at this 1-based line and column (anywhere inside
+    /// its text) of `file`: the entry file when `None`, else the file whose
+    /// path ends with it (`core/level.ptl`) or whose display name it is.
+    At { file: Option<String>, line: u32, column: u32 },
+    /// `config let` and `tunable` literals.
+    ConfigOnly,
+    /// Literals in this function's body.
+    Function(String),
+    /// Every literal in user code.
+    AllUserCode,
+    /// Let literals in local path dependencies be edited.
+    AllowPathDeps,
+    /// Screen library literals for the report; they are still never edited.
+    ReportLibrary,
+    IncludeStateInit,
+    IncludeStructural,
+    IncludeThroughRng,
+}
+
+impl ParamSelector {
+    /// Whether this selector names a set of literals (as opposed to lifting a
+    /// default exclusion).
+    fn is_set(&self) -> bool {
+        matches!(
+            self,
+            ParamSelector::Term(_)
+                | ParamSelector::Span(_)
+                | ParamSelector::Variable(_)
+                | ParamSelector::Line(_)
+                | ParamSelector::At { .. }
+                | ParamSelector::ConfigOnly
+                | ParamSelector::Function(_)
+                | ParamSelector::AllUserCode
+        )
+    }
+
+    /// Whether this selector names one place explicitly, which overrides the
+    /// default exclusions (rigid, structural, …) for what it names.
+    fn is_explicit(&self) -> bool {
+        matches!(
+            self,
+            ParamSelector::Term(_)
+                | ParamSelector::Span(_)
+                | ParamSelector::Variable(_)
+                | ParamSelector::Line(_)
+                | ParamSelector::At { .. }
+                | ParamSelector::Function(_)
+        )
+    }
+
+    /// Whether `p` is in the set this selector names.
+    pub fn matches(&self, program: &Program, p: &Param) -> bool {
+        match self {
+            ParamSelector::Term(t) => p.term == *t,
+            ParamSelector::Span(s) => {
+                s.file == p.file
+                    && s.start.offset <= p.span.start.offset
+                    && p.span.start.offset < s.end.offset.max(s.start.offset + 1)
+            }
+            ParamSelector::Variable(name) => p.binding.as_deref().is_some_and(|b| {
+                b == name || b.rsplit("::").next() == Some(name.as_str())
+            }),
+            ParamSelector::Line(l) => p.file == ENTRY_FILE && p.span.start.line == *l,
+            ParamSelector::At { file, line, column } => {
+                let (s, e) = (p.span.start, p.span.end);
+                let inside = s.line == *line
+                    && s.column <= *column
+                    && (e.line > s.line || *column < e.column.max(s.column + 1));
+                inside
+                    && match file {
+                        None => p.file == ENTRY_FILE,
+                        Some(f) => file_is(program, p.file, f),
+                    }
+            }
+            ParamSelector::ConfigOnly => p.is_knob(),
+            ParamSelector::Function(name) => p.function.is_some_and(|f| {
+                program
+                    .functions
+                    .get(f.0 as usize)
+                    .and_then(|d| d.name.as_deref())
+                    .is_some_and(|n| {
+                        let n = base_fn_name(n);
+                        n == name || n.rsplit("::").next() == Some(name.as_str())
+                    })
+            }),
+            ParamSelector::AllUserCode => p.origin != CodeOrigin::Library,
+            _ => false,
+        }
+    }
+}
+
+/// Whether `want` names the program's file `id`: its path ends with `want`
+/// (component-wise, so `level.ptl` does not match `sublevel.ptl`; a leading
+/// `./` is ignored), it is the same file on disk, or `want` is its display
+/// name.
+fn file_is(program: &Program, id: FileId, want: &str) -> bool {
+    let Some(f) = program.source_map.files.get(id.0 as usize) else {
+        return false;
+    };
+    if f.name == want {
+        return true;
+    }
+    let Some(origin) = f.origin.as_deref() else {
+        return false;
+    };
+    let want = Path::new(want.strip_prefix("./").unwrap_or(want));
+    origin.ends_with(want)
+        || match (std::fs::canonicalize(origin), std::fs::canonicalize(want)) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => false,
+        }
+}
+
+/// Which parameters may move: `allow: None` is the defaults of §2.5.1;
+/// `allow: Some(..)` with any set selector is exact (only what it names,
+/// minus what is never editable).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ParamFilter {
+    pub allow: Option<Vec<ParamSelector>>,
+    pub deny: Vec<ParamSelector>,
+}
+
+/// What the session knows about the checkpoint, for the state rule of
+/// §2.1.2: a `state` initializer's literal moves the running program only
+/// when the checkpoint does not already hold that state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EligibilityContext {
+    /// The checkpoint holds `state` (a live frame). On a fresh stack (the
+    /// CLI's) it holds none, and initializer literals are ordinary.
+    pub checkpoint_has_state: bool,
+}
+
+/// Whether a parameter is measured and whether it may be edited.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Eligibility {
+    /// Perturb it (screen and measure its column).
+    pub screen: bool,
+    /// Offer it as an edit; `Err` says why not.
+    pub edit: Result<(), &'static str>,
+}
+
+/// The hard filters of §2.5.1 for `p` under `filter`.
+pub fn eligibility(
+    program: &Program,
+    p: &Param,
+    filter: &ParamFilter,
+    ctx: EligibilityContext,
+) -> Eligibility {
+    let allow = filter.allow.as_deref().unwrap_or(&[]);
+    let has = |s: &ParamSelector| allow.contains(s);
+    let report_library = has(&ParamSelector::ReportLibrary);
+    let no = |why: &'static str, screen: bool| Eligibility { screen, edit: Err(why) };
+
+    // Never editable, whatever the filter says.
+    if p.origin == CodeOrigin::Library {
+        return no("library code (the prelude or a package) is never edited", report_library);
+    }
+    if p.hint_bound {
+        return no("a `tunable` bound is never edited", false);
+    }
+    if filter.deny.iter().any(|s| s.matches(program, p)) {
+        return no("denied by the request", false);
+    }
+    let sets: Vec<&ParamSelector> = allow.iter().filter(|s| s.is_set()).collect();
+    let explicit = if sets.is_empty() {
+        false
+    } else {
+        if !sets.iter().any(|s| s.matches(program, p)) {
+            return no("not among the allowed parameters", false);
+        }
+        sets.iter().any(|s| s.is_explicit() && s.matches(program, p))
+    };
+    if explicit {
+        return Eligibility { screen: true, edit: Ok(()) };
+    }
+    // Excluded by default.
+    if p.origin == CodeOrigin::PathDep && !has(&ParamSelector::AllowPathDeps) {
+        return no("in a path dependency (allow with AllowPathDeps)", false);
+    }
+    if p.hint == Some(Hint::Rigid) {
+        return no("declared `rigid`", false);
+    }
+    if p.state_init && ctx.checkpoint_has_state && !has(&ParamSelector::IncludeStateInit) {
+        return no("a `state` initializer, which a running program has already used", false);
+    }
+    if p.through_rng && !has(&ParamSelector::IncludeThroughRng) {
+        return no("reaches the goal only through randomness, noise or `rigid`", false);
+    }
+    if p.structural && !has(&ParamSelector::IncludeStructural) {
+        return no("structural: a comparison, index, loop bound or key", false);
+    }
+    Eligibility { screen: true, edit: Ok(()) }
+}
+
+// ── anchors ─────────────────────────────────────────────────────────────────
+
+/// The anchor terms of `goals` in `run` (normally the baseline): for an
+/// emit argument, the argument term of the native call that made the emit;
+/// for an emitted value, every argument of that call; for a watched term, the
+/// term. A goal whose emit the run does not have gives no anchor.
+pub fn anchors_for(program: &Program, run: &SpecRun, goals: &[Observable]) -> Vec<Anchor> {
+    let mut out: Vec<Anchor> = Vec::new();
+    let mut push = |a: Anchor| {
+        if !out.contains(&a) {
+            out.push(a);
+        }
+    };
+    for goal in goals {
+        match goal {
+            Observable::EmitArg { key, arg, path } => {
+                let Some(emit) = run.emit(key) else { continue };
+                let chain: Vec<TermId> = emit.chain.chain.iter().copied().collect();
+                let Some(&call) = chain.first() else { continue };
+                let Some(t) = program.terms.get(call.0 as usize) else { continue };
+                let offset = t.op.arg_offset().unwrap_or(0);
+                if let Some(&term) = t.inputs.get(offset + arg) {
+                    push(Anchor { term, chain, path: path.clone() });
+                }
+            }
+            Observable::EmitValue { key, path } => {
+                let Some(emit) = run.emit(key) else { continue };
+                let chain: Vec<TermId> = emit.chain.chain.iter().copied().collect();
+                let Some(&call) = chain.first() else { continue };
+                let Some(t) = program.terms.get(call.0 as usize) else { continue };
+                let offset = t.op.arg_offset().unwrap_or(0);
+                // `push_output(channel, v)` emits `v`: the path is into it.
+                // Another native's value is not one of its arguments.
+                let value_arg = match t.op {
+                    TermOp::BuiltinCall(c) => matches!(
+                        program.constants.get(c),
+                        ConstantValue::String(n) if n.as_str() == "push_output"
+                    )
+                    .then_some(offset + 1),
+                    _ => None,
+                };
+                for (k, &term) in t.inputs.iter().enumerate().skip(offset) {
+                    let path = if Some(k) == value_arg { path.clone() } else { Vec::new() };
+                    push(Anchor { term, chain: chain.clone(), path });
+                }
+            }
+            Observable::Watch { term, path, .. } => {
+                push(Anchor { term: *term, chain: Vec::new(), path: path.clone() })
+            }
+        }
+    }
+    out
+}
+
+// ── the static walk ─────────────────────────────────────────────────────────
+
+/// How the walk reached a term, as bits: the "every path" flags of [`Param`]
+/// are the bits every visit had, the "some path" ones the bits any had.
+mod via {
+    pub const VAR: u8 = 1;
+    pub const STATE: u8 = 2;
+    pub const STATE_INIT: u8 = 4;
+    pub const BARRIER: u8 = 8;
+    pub const STRUCT: u8 = 16;
+    pub const HINT_BOUND: u8 = 32;
+}
+
+/// Where in the call structure the walk is, for leaving a function by its
+/// parameters (§2.2): along the goal's own call chain, back through the call
+/// it entered by, or through every caller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Ctx {
+    /// In the frame of `chain[level]`'s function.
+    Chain(u16),
+    /// Entered the current function through this call.
+    Entered(TermId),
+    /// Anywhere.
+    Any,
+}
+
+/// A binding phantom (a term the compiler binds but never executes): a
+/// parameter, a capture, a self-reference, a loop or match variable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Phantom {
+    Param(FunctionId, usize),
+    Capture(FunctionId, usize),
+    SelfRef(FunctionId),
+    Bound(TermId),
+}
+
+/// The walk stops after this many visits; the answer is then marked
+/// truncated (still a usable, if partial, candidate list).
+const MAX_VISITS: usize = 2_000_000;
+
+/// Everything the walk asks of a program, computed once.
+struct Index<'p> {
+    program: &'p Program,
+    natives: &'p NativeFnTable,
+    hints: &'p Hints,
+    block_fn: HashMap<BlockId, Option<FunctionId>>,
+    block_last: HashMap<BlockId, TermId>,
+    phantoms: HashMap<TermId, Phantom>,
+    fn_results: HashMap<FunctionId, Vec<TermId>>,
+    closures_of: HashMap<FunctionId, Vec<TermId>>,
+    /// The functions each `Call` reaches statically.
+    static_callees: HashMap<TermId, Vec<FunctionId>>,
+    /// The functions each call term reached in the baseline (R13).
+    observed: HashMap<TermId, Vec<FunctionId>>,
+    /// Every call term that may call each function (static, observed, and
+    /// the calls a closure of it is handed to).
+    callers: HashMap<FunctionId, Vec<TermId>>,
+    /// The `CellWrite`s of each cell declaration.
+    cell_writes: HashMap<TermId, Vec<TermId>>,
+    state_terms: HashMap<u64, Vec<TermId>>,
+    phi_srcs: HashMap<TermId, Vec<TermId>>,
+}
+
+impl<'p> Index<'p> {
+    fn new(
+        program: &'p Program,
+        natives: &'p NativeFnTable,
+        hints: &'p Hints,
+        call_edges: &[(TermId, FunctionId)],
+    ) -> Index<'p> {
+        let mut ix = Index {
+            program,
+            natives,
+            hints,
+            block_fn: HashMap::new(),
+            block_last: HashMap::new(),
+            phantoms: HashMap::new(),
+            fn_results: HashMap::new(),
+            closures_of: HashMap::new(),
+            static_callees: HashMap::new(),
+            observed: HashMap::new(),
+            callers: HashMap::new(),
+            cell_writes: HashMap::new(),
+            state_terms: HashMap::new(),
+            phi_srcs: HashMap::new(),
+        };
+        let body_of: HashMap<BlockId, FunctionId> =
+            program.functions.iter().map(|f| (f.body_block, f.id)).collect();
+        let by_id: HashMap<BlockId, &crate::program::Block> =
+            program.blocks.iter().map(|b| (b.id, b)).collect();
+        for block in &program.blocks {
+            // The innermost function a block is in.
+            let mut cur = Some(block.id);
+            let mut f = None;
+            for _ in 0..256 {
+                let Some(b) = cur else { break };
+                if let Some(&fid) = body_of.get(&b) {
+                    f = Some(fid);
+                    break;
+                }
+                cur = by_id
+                    .get(&b)
+                    .and_then(|bb| bb.parent_term_id)
+                    .and_then(|t| program.terms.get(t.0 as usize))
+                    .map(|t| t.block_id);
+            }
+            ix.block_fn.insert(block.id, f);
+            if let Some(&last) = block.terms.last() {
+                ix.block_last.insert(block.id, last);
+            }
+            for po in &block.phi_outs {
+                ix.phi_srcs.entry(po.dest_term).or_default().push(po.src_term);
+            }
+        }
+        // Binding phantoms: the terms of a block that its `terms` list does
+        // not execute.
+        let executed: HashSet<TermId> =
+            program.blocks.iter().flat_map(|b| b.terms.iter().copied()).collect();
+        for t in &program.terms {
+            if !matches!(t.op, TermOp::Copy) || !t.inputs.is_empty() || executed.contains(&t.id) {
+                continue;
+            }
+            let kind = if let Some(&fid) = body_of.get(&t.block_id) {
+                let def = &program.functions[fid.0 as usize];
+                let name = t.name.as_deref();
+                if let Some(k) = name.and_then(|n| def.params.iter().position(|p| p == n)) {
+                    Some(Phantom::Param(fid, k))
+                } else if let Some(s) = def
+                    .capture_registers
+                    .iter()
+                    .position(|r| *r == t.register)
+                    .or_else(|| name.and_then(|n| def.capture_names.iter().position(|c| c == n)))
+                {
+                    Some(Phantom::Capture(fid, s))
+                } else if def.self_ref_register == Some(t.register) {
+                    Some(Phantom::SelfRef(fid))
+                } else {
+                    None
+                }
+            } else {
+                by_id
+                    .get(&t.block_id)
+                    .and_then(|b| b.parent_term_id)
+                    .filter(|p| {
+                        program.terms.get(p.0 as usize).is_some_and(|pt| {
+                            matches!(
+                                pt.op,
+                                TermOp::ForLoop | TermOp::NumericForLoop | TermOp::Match
+                            )
+                        })
+                    })
+                    .map(Phantom::Bound)
+            };
+            if let Some(k) = kind {
+                ix.phantoms.insert(t.id, k);
+            }
+        }
+        for t in &program.terms {
+            match t.op {
+                TermOp::MakeClosure(fid) => ix.closures_of.entry(fid).or_default().push(t.id),
+                TermOp::Return => {
+                    if let (Some(Some(f)), Some(&v)) = (ix.block_fn.get(&t.block_id), t.inputs.first()) {
+                        ix.fn_results.entry(*f).or_default().push(v);
+                    }
+                }
+                TermOp::StateInit | TermOp::StateWrite | TermOp::StateRead => {
+                    if let Some(k) = t.state_key {
+                        ix.state_terms.entry(k.0).or_default().push(t.id);
+                    }
+                }
+                _ => {}
+            }
+        }
+        for f in &program.functions {
+            if let Some(&last) = ix.block_last.get(&f.body_block) {
+                ix.fn_results.entry(f.id).or_default().push(last);
+            }
+        }
+        for &(site, f) in call_edges {
+            let e = ix.observed.entry(site).or_default();
+            if !e.contains(&f) {
+                e.push(f);
+            }
+        }
+        // Static callees, callers, and the calls closures are handed to.
+        for t in &program.terms {
+            let is_call = matches!(t.op, TermOp::Call | TermOp::MethodCall { .. } | TermOp::BuiltinCall(_));
+            if !is_call {
+                continue;
+            }
+            let add_caller = |ix: &mut Index, f: FunctionId| {
+                let e = ix.callers.entry(f).or_default();
+                if !e.contains(&t.id) {
+                    e.push(t.id);
+                }
+            };
+            if matches!(t.op, TermOp::Call)
+                && let Some(&callee) = t.inputs.first()
+            {
+                let fs = ix.closure_fns(callee);
+                for &f in &fs {
+                    add_caller(&mut ix, f);
+                }
+                if !fs.is_empty() {
+                    ix.static_callees.insert(t.id, fs);
+                }
+            }
+            let skip = usize::from(matches!(t.op, TermOp::Call));
+            for &input in t.inputs.iter().skip(skip) {
+                for f in ix.closure_fns(input) {
+                    add_caller(&mut ix, f);
+                }
+            }
+            if let Some(fs) = ix.observed.get(&t.id).cloned() {
+                for f in fs {
+                    add_caller(&mut ix, f);
+                }
+            }
+        }
+        // Cell writes, by the declaration they write.
+        for t in &program.terms {
+            if matches!(t.op, TermOp::CellWrite)
+                && let Some(&cell) = t.inputs.first()
+            {
+                for decl in ix.cell_decls(cell, 0) {
+                    ix.cell_writes.entry(decl).or_default().push(t.id);
+                }
+            }
+        }
+        ix
+    }
+
+    fn term(&self, id: TermId) -> Option<&'p Term> {
+        self.program.terms.get(id.0 as usize)
+    }
+
+    /// The functions `id` is a closure (or overload set) of, through
+    /// identity copies.
+    fn closure_fns(&self, id: TermId) -> Vec<FunctionId> {
+        let mut cur = id;
+        for _ in 0..16 {
+            let Some(t) = self.term(cur) else { break };
+            match t.op {
+                TermOp::MakeClosure(f) => return vec![f],
+                TermOp::MakeOverloadSet => {
+                    return t.inputs.iter().flat_map(|&i| self.closure_fns(i)).collect();
+                }
+                TermOp::Copy if !t.inputs.is_empty() => cur = t.inputs[0],
+                TermOp::Copy => {
+                    if let Some(Phantom::SelfRef(f)) = self.phantoms.get(&cur) {
+                        return vec![*f];
+                    }
+                    break;
+                }
+                _ => break,
+            }
+        }
+        Vec::new()
+    }
+
+    /// The cell declarations (`CellNew`, or a `state var`'s `StateInit`) the
+    /// cell operand `id` may be, through copies and captures.
+    fn cell_decls(&self, id: TermId, depth: u32) -> Vec<TermId> {
+        if depth > 16 {
+            return Vec::new();
+        }
+        let Some(t) = self.term(id) else { return Vec::new() };
+        match t.op {
+            TermOp::CellNew | TermOp::StateInit => vec![id],
+            TermOp::Copy if !t.inputs.is_empty() => self.cell_decls(t.inputs[0], depth + 1),
+            TermOp::Copy => match self.phantoms.get(&id) {
+                Some(Phantom::Capture(f, s)) => self
+                    .closures_of
+                    .get(f)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|&mc| self.term(mc).and_then(|m| m.inputs.get(*s)).copied())
+                    .flat_map(|outer| self.cell_decls(outer, depth + 1))
+                    .collect(),
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        }
+    }
+
+    fn fn_of(&self, term: TermId) -> Option<FunctionId> {
+        self.term(term).and_then(|t| self.block_fn.get(&t.block_id).copied().flatten())
+    }
+
+    /// The arguments of call `call` that feed parameter `k` of `f`.
+    fn args_for(&self, call: TermId, f: FunctionId, k: usize) -> Vec<TermId> {
+        let Some(t) = self.term(call) else { return Vec::new() };
+        let direct = matches!(t.op, TermOp::Call)
+            && (self.static_callees.get(&call).is_some_and(|fs| fs.contains(&f))
+                || self.observed.get(&call).is_some_and(|fs| fs.contains(&f)));
+        if direct && t.arg_names.is_empty() {
+            return t.inputs.get(1 + k).copied().into_iter().collect();
+        }
+        // Named arguments, a method call, a callback handed to a builtin:
+        // every argument that is not itself a function.
+        let skip = usize::from(matches!(t.op, TermOp::Call));
+        t.inputs
+            .iter()
+            .skip(skip)
+            .copied()
+            .filter(|&i| self.closure_fns(i).is_empty())
+            .collect()
+    }
+
+    /// What a builtin call named by constant `name` is.
+    fn builtin(&self, call: TermId, name: crate::constant_table::ConstantId) -> BuiltinKind {
+        if let Some(k) = self.hints.call_kind(call) {
+            return match k {
+                HintKind::Tunable => BuiltinKind::Tunable,
+                HintKind::Rigid => BuiltinKind::Rigid,
+            };
+        }
+        let ConstantValue::String(name) = self.program.constants.get(name) else {
+            return BuiltinKind::Plain;
+        };
+        self.builtin_by_name(name)
+    }
+
+    fn builtin_by_name(&self, name: &str) -> BuiltinKind {
+        if name == "range" {
+            return BuiltinKind::Range;
+        }
+        match self.natives.lookup_name(name) {
+            Some(id) => {
+                let fx = self.natives.effects(id);
+                if fx.no_feedback || fx.reads.contains(InputClasses::RNG) {
+                    BuiltinKind::Barrier
+                } else {
+                    BuiltinKind::Plain
+                }
+            }
+            None => BuiltinKind::Plain,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuiltinKind {
+    Plain,
+    Tunable,
+    Rigid,
+    Barrier,
+    Range,
+}
+
+/// What the walk learned about one literal.
+#[derive(Debug, Clone, Copy)]
+struct Reach {
+    all: u8,
+    any: u8,
+    distance: u32,
+}
+
+/// The result of [`discover_params`].
+#[derive(Debug, Clone, Default)]
+pub struct Discovered {
+    /// Every numeric literal the goals statically depend on, in proximity
+    /// order (nearest first), eligible or not.
+    pub params: Vec<Param>,
+    /// The walk hit its visit bound; the list may be missing literals.
+    pub truncated: bool,
+}
+
+/// The static superset of the literals that may move the anchors (§2.2,
+/// stage 1), in proximity order. `call_edges` are the baseline's observed
+/// call edges (R13, [`SpecRun::call_edges`]).
+pub fn discover_params(
+    program: &Program,
+    natives: &NativeFnTable,
+    hints: &Hints,
+    anchors: &[Anchor],
+    call_edges: &[(TermId, FunctionId)],
+) -> Discovered {
+    let ix = Index::new(program, natives, hints, call_edges);
+    // The superset walks each anchor term once, whatever part of it a goal
+    // reads; the focused walk follows the goal's path into it.
+    let mut whole: Vec<Anchor> = Vec::new();
+    for a in anchors {
+        let a = Anchor { path: Vec::new(), ..a.clone() };
+        if !whole.contains(&a) {
+            whole.push(a);
+        }
+    }
+    let (reach, truncated) = walk(&ix, &whole, false);
+    let (focus, focus_truncated) = walk(&ix, anchors, true);
+
+    let origins = file_origins(program);
+    let frames = goal_frame_spans(program, anchors);
+    // Char-to-byte tables of the files that are not ASCII.
+    let tables: Vec<Option<Vec<usize>>> = program
+        .source_map
+        .files
+        .iter()
+        .map(|f| {
+            (!f.source.is_ascii()).then(|| {
+                f.source.char_indices().map(|(b, _)| b).chain(std::iter::once(f.source.len())).collect()
+            })
+        })
+        .collect();
+    let mut params: Vec<Param> = reach
+        .into_iter()
+        .filter_map(|(term, r)| {
+            let focus = if focus_truncated { Some(r.distance) } else { focus.get(&term).map(|f| f.distance) };
+            make_param(program, &ix, &origins, &tables, term, r, &frames, focus)
+        })
+        .collect();
+    params.sort_by_key(|p| (p.distance, p.file.0, p.span.start.offset, p.term.0));
+    Discovered { params, truncated }
+}
+
+/// One step of the part of a value the focused walk wants (§2.2): a field of
+/// a record, or an element of a list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum WantStep<'p> {
+    Field(&'p str),
+    Elem,
+}
+
+/// The part of a term's value a goal reads, outermost step first; empty is
+/// the whole value. Longer paths are not followed (the walk then wants the
+/// whole value, which only reaches more).
+type Want<'p> = smallvec::SmallVec<[WantStep<'p>; MAX_WANT]>;
+
+const MAX_WANT: usize = 8;
+
+/// `step` then `rest`, or the whole value when that is too long.
+fn want_in<'p>(step: WantStep<'p>, rest: &Want<'p>) -> Want<'p> {
+    if rest.len() >= MAX_WANT {
+        return Want::new();
+    }
+    let mut w = Want::new();
+    w.push(step);
+    w.extend(rest.iter().copied());
+    w
+}
+
+/// The want past its first step, when that step is `step`.
+fn want_past<'p>(w: &Want<'p>, step: WantStep<'p>) -> Option<Want<'p>> {
+    (w.first() == Some(&step)).then(|| w[1..].iter().copied().collect())
+}
+
+/// The backward walk of [`discover_params`] from `starts`. Unfocused, it is
+/// the static superset of §2.2. Focused, it also carries which part of each
+/// value is wanted, and does not follow the parts that are not: a record
+/// literal's other fields, a list literal's items when a field of the list
+/// is read, the old value of a field a `SetField` replaced. Anything it does
+/// not model wants the whole value, so the focused reach is a subset of the
+/// unfocused one that still holds every literal that can move the goal's
+/// part. Returns the literals reached and whether the walk was cut short.
+fn walk<'p>(ix: &Index<'p>, starts: &'p [Anchor], focused: bool) -> (HashMap<TermId, Reach>, bool) {
+    let program = ix.program;
+    let mut reach: HashMap<TermId, Reach> = HashMap::new();
+    let mut seen: HashSet<(TermId, Ctx, u8, u16, Want<'p>)> = HashSet::new();
+    let mut queue: VecDeque<(TermId, Ctx, u8, u32, u16, Want<'p>)> = VecDeque::new();
+    let mut visits = 0usize;
+    let mut truncated = false;
+    let str_of = |c: crate::constant_table::ConstantId| -> Option<&'p str> {
+        match program.constants.get(c) {
+            ConstantValue::String(s) => Some(s.as_str()),
+            _ => None,
+        }
+    };
+    // Each anchor walks with its own chain.
+    let chains: Vec<&[TermId]> = starts.iter().map(|a| a.chain.as_slice()).collect();
+    for (ai, a) in starts.iter().enumerate() {
+        let ctx = if a.chain.is_empty() { Ctx::Any } else { Ctx::Chain(0) };
+        let mut w = Want::new();
+        if focused && a.path.len() <= MAX_WANT {
+            for step in &a.path {
+                w.push(match step {
+                    PathStep::Index(_) => WantStep::Elem,
+                    PathStep::Field(f) => WantStep::Field(f.as_str()),
+                });
+            }
+        }
+        queue.push_back((a.term, ctx, 0, 0, ai as u16, w));
+    }
+    let whole = Want::new;
+    while let Some((id, ctx, mask, dist, ai, want)) = queue.pop_front() {
+        if !seen.insert((id, ctx, mask, if matches!(ctx, Ctx::Chain(_)) { ai } else { 0 }, want.clone())) {
+            continue;
+        }
+        visits += 1;
+        if visits > MAX_VISITS {
+            truncated = true;
+            break;
+        }
+        let Some(t) = ix.term(id) else { continue };
+        let chain = chains[ai as usize];
+        let mut next: Vec<(TermId, Ctx, u8, i32, Want<'p>)> = Vec::new();
+        let mut go = |to: TermId, c: Ctx, bits: u8, cost: i32, w: Want<'p>| {
+            next.push((to, c, mask | bits, cost, if focused { w } else { Want::new() }))
+        };
+        // The same part of a value this term passes through.
+        let same = || want.clone();
+        use via::*;
+        match &t.op {
+            TermOp::Constant(_) => {
+                let r = reach.entry(id).or_insert(Reach { all: mask, any: mask, distance: dist });
+                r.all &= mask;
+                r.any |= mask;
+                r.distance = r.distance.min(dist);
+            }
+            TermOp::Copy if t.inputs.is_empty() => match ix.phantoms.get(&id) {
+                Some(Phantom::Param(f, k)) => {
+                    let (f, k) = (*f, *k);
+                    let along_chain = match ctx {
+                        Ctx::Chain(l) => {
+                            let l = l as usize;
+                            (chain.get(l).and_then(|&c| ix.fn_of(c)) == Some(f))
+                                .then(|| chain.get(l + 1).copied())
+                                .flatten()
+                                .map(|c| (c, Ctx::Chain((l + 1) as u16)))
+                        }
+                        Ctx::Entered(c) => Some((c, Ctx::Any)),
+                        Ctx::Any => None,
+                    };
+                    // Back out through the call the walk came in by: the
+                    // argument is as near as the call itself was, so the
+                    // edge in cancels this one (`2` in `draw(place(2))` is
+                    // in the goal's frame, `place`'s body one call away).
+                    let back = if matches!(ctx, Ctx::Entered(_)) { -1 } else { 1 };
+                    match along_chain {
+                        Some((call, c)) => {
+                            for a in ix.args_for(call, f, k) {
+                                go(a, c, 0, back, same());
+                            }
+                        }
+                        None => {
+                            for &call in ix.callers.get(&f).into_iter().flatten() {
+                                for a in ix.args_for(call, f, k) {
+                                    go(a, Ctx::Any, 0, 1, same());
+                                }
+                            }
+                        }
+                    }
+                }
+                Some(Phantom::Capture(f, s)) => {
+                    for &mc in ix.closures_of.get(f).into_iter().flatten() {
+                        if let Some(&outer) = ix.term(mc).and_then(|m| m.inputs.get(*s)) {
+                            go(outer, Ctx::Any, 0, 1, same());
+                        }
+                    }
+                }
+                Some(Phantom::SelfRef(_)) | None => {}
+                Some(Phantom::Bound(p)) => {
+                    if let Some(pt) = ix.term(*p) {
+                        match pt.op {
+                            TermOp::NumericForLoop => {
+                                if let Some(&start) = pt.inputs.first() {
+                                    go(start, ctx, 0, 0, whole());
+                                }
+                                for &end in pt.inputs.iter().skip(1) {
+                                    go(end, ctx, STRUCT, 0, whole());
+                                }
+                            }
+                            // A `for x in xs` variable is an element of `xs`.
+                            TermOp::ForLoop => {
+                                if let Some(&src) = pt.inputs.first() {
+                                    go(src, ctx, 0, 0, want_in(WantStep::Elem, &want));
+                                }
+                            }
+                            _ => {
+                                if let Some(&src) = pt.inputs.first() {
+                                    go(src, ctx, 0, 0, whole());
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            TermOp::MakeClosure(f) => {
+                // A function value reached as data: whatever it returns.
+                for &r in ix.fn_results.get(f).into_iter().flatten() {
+                    go(r, Ctx::Any, 0, 1, whole());
+                }
+            }
+            TermOp::Call => {
+                let statics = ix.static_callees.get(&id);
+                let observed = ix.observed.get(&id);
+                let mut known = false;
+                for f in statics.into_iter().flatten().chain(observed.into_iter().flatten()) {
+                    known = true;
+                    for &r in ix.fn_results.get(f).into_iter().flatten() {
+                        go(r, Ctx::Entered(id), 0, 1, same());
+                    }
+                }
+                if !known {
+                    // Nothing known about the callee: everything it was
+                    // handed may matter, the callee expression included.
+                    for &i in &t.inputs {
+                        go(i, ctx, 0, 0, whole());
+                    }
+                }
+            }
+            TermOp::MethodCall { name, .. } => {
+                let mut user = false;
+                for f in ix.observed.get(&id).into_iter().flatten() {
+                    user = true;
+                    for &r in ix.fn_results.get(f).into_iter().flatten() {
+                        go(r, Ctx::Entered(id), 0, 1, same());
+                    }
+                }
+                let kind = match program.constants.get(*name) {
+                    ConstantValue::String(n) if !user => ix.builtin_by_name(n),
+                    _ => BuiltinKind::Plain,
+                };
+                let bits = match kind {
+                    BuiltinKind::Barrier => BARRIER,
+                    BuiltinKind::Range => STRUCT,
+                    _ => 0,
+                };
+                // A user method's receiver and arguments are reached through
+                // its parameters; a builtin method's are its inputs.
+                for &i in t.inputs.iter().filter(|_| !user) {
+                    let fs = ix.closure_fns(i);
+                    if fs.is_empty() {
+                        go(i, ctx, bits, 0, whole());
+                    } else {
+                        for f in fs {
+                            for &r in ix.fn_results.get(&f).into_iter().flatten() {
+                                go(r, Ctx::Entered(id), bits, 1, whole());
+                            }
+                        }
+                    }
+                }
+            }
+            TermOp::BuiltinCall(name) => {
+                let kind = ix.builtin(id, *name);
+                let shape = str_of(*name).map_or(ListShape::Opaque, list_shape);
+                for (j, &i) in t.inputs.iter().enumerate() {
+                    let bits = match kind {
+                        BuiltinKind::Tunable if j > 0 => HINT_BOUND,
+                        BuiltinKind::Rigid | BuiltinKind::Barrier => BARRIER,
+                        BuiltinKind::Range => STRUCT,
+                        _ => 0,
+                    };
+                    let fs = ix.closure_fns(i);
+                    if fs.is_empty() {
+                        let w = match (shape, j) {
+                            (ListShape::Same, _) | (ListShape::SameFirst | ListShape::Append, 0) => same(),
+                            (ListShape::ElemOfFirst, 0) => want_in(WantStep::Elem, &want),
+                            (ListShape::Append, 1) => want_past(&want, WantStep::Elem).unwrap_or_default(),
+                            _ => whole(),
+                        };
+                        let w = if matches!(kind, BuiltinKind::Tunable | BuiltinKind::Rigid) && j == 0 { same() } else { w };
+                        go(i, ctx, bits, 0, w);
+                    } else {
+                        // A callback (`map`, `filter`, …): its results, with
+                        // its parameters fed by this call's other arguments.
+                        for f in fs {
+                            for &r in ix.fn_results.get(&f).into_iter().flatten() {
+                                go(r, Ctx::Entered(id), bits, 1, whole());
+                            }
+                        }
+                    }
+                }
+            }
+            TermOp::Eq | TermOp::Ne | TermOp::Lt | TermOp::Le | TermOp::Gt | TermOp::Ge | TermOp::LoopKey => {
+                for &i in &t.inputs {
+                    go(i, ctx, STRUCT, 0, whole());
+                }
+            }
+            TermOp::GetIndex | TermOp::GetIndexOpt => {
+                for (j, &i) in t.inputs.iter().enumerate() {
+                    if j == 0 {
+                        go(i, ctx, 0, 0, want_in(WantStep::Elem, &want));
+                    } else {
+                        go(i, ctx, STRUCT, 0, whole());
+                    }
+                }
+            }
+            TermOp::SetIndex => {
+                for (j, &i) in t.inputs.iter().enumerate() {
+                    let w = match j {
+                        0 => same(),
+                        2 => want_past(&want, WantStep::Elem).unwrap_or_default(),
+                        _ => whole(),
+                    };
+                    go(i, ctx, if j == 1 { STRUCT } else { 0 }, 0, w);
+                }
+            }
+            TermOp::GetField(f) | TermOp::GetFieldOpt(f) => {
+                let w = match str_of(*f) {
+                    Some(name) => want_in(WantStep::Field(name), &want),
+                    None => whole(),
+                };
+                for (j, &i) in t.inputs.iter().enumerate() {
+                    go(i, ctx, 0, 0, if j == 0 { w.clone() } else { whole() });
+                }
+            }
+            TermOp::SetField(f) => {
+                // `{...r, f: v}` read at `f` is `v`; at another field, `r`'s.
+                let name = str_of(*f);
+                let at_f = match (name, want.first()) {
+                    (Some(n), Some(WantStep::Field(w))) => Some(n == *w),
+                    _ => None,
+                };
+                for (j, &i) in t.inputs.iter().enumerate() {
+                    match (j, at_f) {
+                        (0, Some(true)) | (1, Some(false)) => {}
+                        (0, Some(false)) => go(i, ctx, 0, 0, same()),
+                        (1, Some(true)) => go(i, ctx, 0, 0, want[1..].iter().copied().collect()),
+                        _ => go(i, ctx, 0, 0, whole()),
+                    }
+                }
+            }
+            TermOp::AllocMap { fields, class: None } if focused && matches!(want.first(), Some(WantStep::Field(_))) => {
+                let Some(WantStep::Field(w)) = want.first() else { unreachable!() };
+                let rest: Want<'p> = want[1..].iter().copied().collect();
+                for (k, &c) in fields.iter().enumerate() {
+                    if str_of(c) == Some(*w)
+                        && let Some(&i) = t.inputs.get(k)
+                    {
+                        go(i, ctx, 0, 0, rest.clone());
+                    }
+                }
+            }
+            TermOp::AllocMapSpread { entries } if focused && matches!(want.first(), Some(WantStep::Field(_))) => {
+                let Some(WantStep::Field(w)) = want.first() else { unreachable!() };
+                let rest: Want<'p> = want[1..].iter().copied().collect();
+                for e in entries {
+                    match e {
+                        MapSpreadEntry::Spread(k) => {
+                            if let Some(&i) = t.inputs.get(*k) {
+                                go(i, ctx, 0, 0, same());
+                            }
+                        }
+                        MapSpreadEntry::Named(c, k) => {
+                            if str_of(*c) == Some(*w)
+                                && let Some(&i) = t.inputs.get(*k)
+                            {
+                                go(i, ctx, 0, 0, rest.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            TermOp::AllocList if focused && want.first() == Some(&WantStep::Elem) => {
+                let rest: Want<'p> = want[1..].iter().copied().collect();
+                for &i in &t.inputs {
+                    go(i, ctx, 0, 0, rest.clone());
+                }
+            }
+            TermOp::Branch | TermOp::Match => {
+                for &i in &t.inputs {
+                    go(i, ctx, STRUCT, 0, whole());
+                }
+                for b in &t.child_blocks {
+                    if let Some(&last) = ix.block_last.get(b) {
+                        go(last, ctx, 0, 0, same());
+                    }
+                }
+                if let Some(arms) = program.match_arms.get(&id) {
+                    for arm in arms {
+                        if let Some(&last) = ix.block_last.get(&arm.body_block) {
+                            go(last, ctx, 0, 0, same());
+                        }
+                    }
+                }
+            }
+            TermOp::And | TermOp::Or | TermOp::Coalesce => {
+                for &i in &t.inputs {
+                    go(i, ctx, 0, 0, same());
+                }
+                for b in &t.child_blocks {
+                    if let Some(&last) = ix.block_last.get(b) {
+                        go(last, ctx, 0, 0, same());
+                    }
+                }
+            }
+            TermOp::ForLoop | TermOp::NumericForLoop | TermOp::WhileLoop => {
+                if t.collect {
+                    if let Some(&last) = t.child_blocks.last().and_then(|b| ix.block_last.get(b)) {
+                        // The collected list's elements are the body's values.
+                        go(last, ctx, 0, 0, want_past(&want, WantStep::Elem).unwrap_or_default());
+                    }
+                    // The trip count decides how many items there are.
+                    for &i in &t.inputs {
+                        go(i, ctx, STRUCT, 0, whole());
+                    }
+                    if matches!(t.op, TermOp::WhileLoop)
+                        && let Some(&cond) = t.child_blocks.first().and_then(|b| ix.block_last.get(b))
+                    {
+                        go(cond, ctx, STRUCT, 0, whole());
+                    }
+                }
+            }
+            TermOp::Phi => {
+                for &i in &t.inputs {
+                    go(i, ctx, 0, 0, same());
+                }
+                for &s in ix.phi_srcs.get(&id).into_iter().flatten() {
+                    go(s, ctx, 0, 0, same());
+                }
+            }
+            TermOp::CellRead => {
+                for &i in &t.inputs {
+                    go(i, ctx, VAR, 0, same());
+                }
+            }
+            TermOp::CellNew => {
+                for &i in &t.inputs {
+                    go(i, ctx, 0, 0, same());
+                }
+                for &w in ix.cell_writes.get(&id).into_iter().flatten() {
+                    if let Some(&v) = ix.term(w).and_then(|wt| wt.inputs.get(1)) {
+                        go(v, ctx, VAR, 1, same());
+                    }
+                }
+            }
+            TermOp::CellWrite => {
+                if let Some(&v) = t.inputs.get(1) {
+                    go(v, ctx, 0, 0, same());
+                }
+            }
+            TermOp::StateInit => {
+                if let Some(&init) = t.child_blocks.first().and_then(|b| ix.block_last.get(b)) {
+                    // A `state` read is the value earlier frames left, or
+                    // (on a slot's first frame) the initializer.
+                    go(init, ctx, STATE_INIT | STATE, 0, same());
+                }
+                for &w in ix.cell_writes.get(&id).into_iter().flatten() {
+                    if let Some(&v) = ix.term(w).and_then(|wt| wt.inputs.get(1)) {
+                        go(v, ctx, VAR | STATE, 1, same());
+                    }
+                }
+                for &s in t.state_key.and_then(|k| ix.state_terms.get(&k.0)).into_iter().flatten() {
+                    if s != id
+                        && let Some(st) = ix.term(s)
+                        && matches!(st.op, TermOp::StateWrite)
+                        && let Some(&v) = st.inputs.first()
+                    {
+                        go(v, ctx, STATE, 1, same());
+                    }
+                }
+            }
+            TermOp::StateRead => {
+                for &s in t.state_key.and_then(|k| ix.state_terms.get(&k.0)).into_iter().flatten() {
+                    if let Some(st) = ix.term(s) {
+                        match st.op {
+                            TermOp::StateInit => go(s, ctx, STATE, 1, same()),
+                            TermOp::StateWrite => {
+                                if let Some(&v) = st.inputs.first() {
+                                    go(v, ctx, STATE, 1, same());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            TermOp::Break | TermOp::Continue | TermOp::Error(_) => {}
+            TermOp::Copy | TermOp::Return => {
+                for &i in &t.inputs {
+                    go(i, ctx, 0, 0, same());
+                }
+            }
+            _ => {
+                // Arithmetic, records, lists, fields, …: every input is a
+                // value edge, wanted whole.
+                for &i in &t.inputs {
+                    go(i, ctx, 0, 0, whole());
+                }
+            }
+        }
+        for (to, c, m, cost, w) in next {
+            let item = (to, c, m, (dist as i64 + cost as i64).max(0) as u32, ai, w);
+            if cost <= 0 {
+                queue.push_front(item);
+            } else {
+                queue.push_back(item);
+            }
+        }
+    }
+    (reach, truncated)
+}
+
+/// How a list builtin's result relates to its inputs, for the focused walk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListShape {
+    /// Unknown: every input is wanted whole.
+    Opaque,
+    /// Every input's elements are the result's (`concat`).
+    Same,
+    /// The first input's elements are the result's (`filter`, `sort`, …).
+    SameFirst,
+    /// The result is an element of the first input (`find`, `first`, …).
+    ElemOfFirst,
+    /// `append(xs, x)`: `xs`'s elements and `x`.
+    Append,
+}
+
+fn list_shape(name: &str) -> ListShape {
+    match name {
+        "concat" => ListShape::Same,
+        "filter" | "sort" | "sort_by" | "reverse" | "slice" | "take" | "drop" | "drop_last" => ListShape::SameFirst,
+        "find" | "first" | "last" => ListShape::ElemOfFirst,
+        "append" | "push" | "prepend" => ListShape::Append,
+        _ => ListShape::Opaque,
+    }
+}
+
+/// The spans of the goals' own user-frame calls: the innermost frame of each
+/// anchor's chain in the entry file. A literal written inside one (`2` in
+/// `draw(place(2), …)`) is written in the goal's call.
+fn goal_frame_spans(program: &Program, anchors: &[Anchor]) -> Vec<SourceSpan> {
+    anchors
+        .iter()
+        .filter_map(|a| crate::provenance::pick_frame(program, &a.chain, ENTRY_FILE))
+        .filter_map(|frame| program.source_map.get(frame).copied())
+        .filter(|s| s.file == ENTRY_FILE)
+        .collect()
+}
+
+/// The text of `[start, end)` of `source`, in chars (a span's offsets count
+/// chars, not bytes). `bytes` is `source`'s char-to-byte table when it is
+/// not ASCII.
+fn span_text<'s>(source: &'s str, bytes: Option<&[usize]>, start: u32, end: u32) -> Option<&'s str> {
+    let (start, end) = (start as usize, end as usize);
+    match bytes {
+        None => source.get(start..end),
+        Some(b) => source.get(*b.get(start)?..*b.get(end)?),
+    }
+}
+
+/// Build the parameter for literal `term`, if it is a numeric literal
+/// written in the source as itself.
+fn make_param(
+    program: &Program,
+    ix: &Index,
+    origins: &[CodeOrigin],
+    tables: &[Option<Vec<usize>>],
+    term: TermId,
+    r: Reach,
+    goal_frames: &[SourceSpan],
+    focus: Option<u32>,
+) -> Option<Param> {
+    let t = ix.term(term)?;
+    let TermOp::Constant(k) = t.op else { return None };
+    let (raw, is_int) = match program.constants.get(k) {
+        ConstantValue::Int(n) => (*n as f64, true),
+        ConstantValue::Float(bits) => (f64::from_bits(*bits), false),
+        _ => return None,
+    };
+    let own = *program.source_map.get(term)?;
+    // Written as itself: a constant the compiler made up (a loop's start, a
+    // default) has no span, or a span that is not this number's text.
+    let file = program.source_map.files.get(own.file.0 as usize);
+    let source = file.map(|f| f.source.as_str()).unwrap_or(program.source.as_str());
+    let table = tables.get(own.file.0 as usize).and_then(|t| t.as_deref());
+    let text = span_text(source, table, own.start.offset, own.end.offset)?;
+    let parsed = text.replace('_', "");
+    let written = if is_int {
+        parsed.parse::<i64>().ok() == Some(raw as i64)
+    } else {
+        parsed.parse::<f64>().ok() == Some(raw)
+    };
+    if !written {
+        return None;
+    }
+    // The binding the literal defines: its own name, or that of a hint call
+    // it is the value of (`let r = tunable(40)`).
+    let mut named = ix.term(term).filter(|bt| bt.name.is_some());
+    if named.is_none() {
+        named = ix
+            .hints
+            .calls
+            .keys()
+            .filter_map(|&call| ix.term(call))
+            .find(|ct| ct.inputs.first() == Some(&term) && ct.name.is_some());
+    }
+    let binding = named.and_then(|bt| bt.name.clone());
+    let config = named.is_some_and(|bt| bt.is_config) || t.is_config;
+    use via::*;
+    Some(Param {
+        term,
+        span: own,
+        file: own.file,
+        value: raw,
+        is_int,
+        binding,
+        config,
+        hint: ix.hints.get(term).copied(),
+        function: ix.block_fn.get(&t.block_id).copied().flatten(),
+        through_var: r.any & VAR != 0,
+        through_state: r.any & STATE != 0,
+        state_init: r.all & STATE_INIT != 0,
+        through_rng: r.all & BARRIER != 0,
+        structural: r.all & STRUCT != 0,
+        hint_bound: r.all & HINT_BOUND != 0 || ix.hints.bounds.contains(&term),
+        in_goal_frame: goal_frames.iter().any(|f| {
+            f.file == own.file && f.start.offset <= own.start.offset && own.end.offset <= f.end.offset
+        }),
+        origin: origins.get(own.file.0 as usize).copied().unwrap_or(CodeOrigin::Library),
+        distance: r.distance,
+        focus,
+    })
+}
+
+/// The origin of each file of `program` (§2.5.1).
+pub fn file_origins(program: &Program) -> Vec<CodeOrigin> {
+    let files = &program.source_map.files;
+    if files.is_empty() {
+        return vec![CodeOrigin::Entry];
+    }
+    // Canonical where the file exists: the loader may record one file by a
+    // resolved path and the entry by the path it was given (macOS's
+    // `/var` → `/private/var`), and the two must compare.
+    let abs = |p: &Path| {
+        p.canonicalize()
+            .or_else(|_| std::path::absolute(p))
+            .unwrap_or_else(|_| p.to_path_buf())
+    };
+    let root: Option<PathBuf> = files[0].origin.as_deref().map(|entry| {
+        let entry = abs(entry);
+        let dir = entry.parent().map(Path::to_path_buf).unwrap_or_default();
+        let mut cur: Option<&Path> = Some(dir.as_path());
+        while let Some(d) = cur {
+            if d.join("petal.toml").is_file() {
+                return d.to_path_buf();
+            }
+            cur = d.parent();
+        }
+        dir
+    });
+    let cache = abs(&crate::pkgman::cache_dir());
+    files
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            if i == 0 {
+                return CodeOrigin::Entry;
+            }
+            let Some(origin) = f.origin.as_deref() else { return CodeOrigin::Library };
+            if origin.to_string_lossy().starts_with('<') {
+                return CodeOrigin::Library;
+            }
+            let path = abs(origin);
+            if path.starts_with(&cache)
+                || path
+                    .components()
+                    .any(|c| matches!(c.as_os_str().to_str(), Some("vendor" | "third_party")))
+            {
+                return CodeOrigin::Library;
+            }
+            match &root {
+                Some(r) if path.starts_with(r) => CodeOrigin::UserFile,
+                Some(_) => CodeOrigin::PathDep,
+                None => CodeOrigin::UserFile,
+            }
+        })
+        .collect()
+}
+
+// ── the run budget ──────────────────────────────────────────────────────────
+
+/// Which limit of a [`RunBudget`] stopped a request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BudgetLimit {
+    /// The run count (`max_runs`, or the share of it a phase may spend).
+    Runs,
+    /// The wall clock (`max_wall`).
+    Wall,
+}
+
+/// The runs and the time one request may spend (§2.3.5).
+#[derive(Debug, Clone)]
+pub struct RunBudget {
+    pub max_runs: usize,
+    pub used: usize,
+    /// `None` where there is no wall clock (wasm), or for no time limit.
+    pub deadline: Option<Instant>,
+    /// The first limit a run was refused by ([`take`](Self::take),
+    /// [`note_stop`](Self::note_stop)); `None` while there is room.
+    pub stopped: Option<BudgetLimit>,
+}
+
+impl RunBudget {
+    /// `max_runs` runs within `wall` from now.
+    pub fn new(max_runs: usize, wall: std::time::Duration) -> RunBudget {
+        RunBudget {
+            max_runs,
+            used: 0,
+            deadline: crate::env::spec_run::wall_now().map(|now| now + wall),
+            stopped: None,
+        }
+    }
+
+    /// No limit but the run count.
+    pub fn runs(max_runs: usize) -> RunBudget {
+        RunBudget { max_runs, used: 0, deadline: None, stopped: None }
+    }
+
+    /// Whether another run fits.
+    pub fn has_room(&self) -> bool {
+        self.limit().is_none()
+    }
+
+    /// The limit that leaves no room for another run, if one does: the wall
+    /// clock first (a request that ran out of time is over, whatever its run
+    /// count), then the run count.
+    pub fn limit(&self) -> Option<BudgetLimit> {
+        if let (Some(d), Some(now)) = (self.deadline, crate::env::spec_run::wall_now())
+            && now >= d
+        {
+            return Some(BudgetLimit::Wall);
+        }
+        (self.used >= self.max_runs).then_some(BudgetLimit::Runs)
+    }
+
+    /// Record that work stopped for want of room ([`stopped`](Self::stopped)
+    /// keeps the first limit hit).
+    pub fn note_stop(&mut self) {
+        if self.stopped.is_none() {
+            self.stopped = self.limit();
+        }
+    }
+
+    /// Take one run, if it fits.
+    pub fn take(&mut self) -> bool {
+        if !self.has_room() {
+            self.note_stop();
+            return false;
+        }
+        self.used += 1;
+        true
+    }
+}
+
+// ── screening ───────────────────────────────────────────────────────────────
+
+/// The result of [`screen_params`].
+#[derive(Debug, Clone, Default)]
+pub struct ScreenResult {
+    /// The parameters that moved a goal (indices into the param list), by
+    /// proximity (distance, then source order).
+    pub kept: Vec<usize>,
+    /// Kept parameters whose own perturbation changed the control flow.
+    pub regime: Vec<usize>,
+    /// Kept parameters that move only the goals that hold their value (a
+    /// `--by 0`), or only the control flow: what an edit may need to undo,
+    /// not what makes it. Screened after the rest (§2.2 stage 5).
+    pub secondary: Vec<usize>,
+    /// Kept parameters the run budget ended before screening: they may
+    /// matter.
+    pub unscreened: Vec<usize>,
+    /// Parameters whose own perturbation made the run fail.
+    pub errored: Vec<(usize, String)>,
+    /// How many were screened, out of how many eligible (§2.2 stage 4).
+    pub screened: usize,
+    pub eligible: usize,
+    pub runs: usize,
+    pub budget_exhausted: bool,
+}
+
+/// How one probing run of a screening group came out.
+#[derive(Debug, Clone, Default)]
+struct Probe {
+    failed: Option<String>,
+    /// A goal that asks for a change moved.
+    primary: bool,
+    /// A goal that holds its value moved.
+    hold: bool,
+    /// The control flow changed.
+    regime: bool,
+}
+
+impl Probe {
+    fn still(&self) -> bool {
+        self.failed.is_none() && !self.primary && !self.hold && !self.regime
+    }
+
+    /// It moved only what an edit would have to undo: a held goal, or the
+    /// flow.
+    fn secondary(&self) -> bool {
+        self.failed.is_none() && !self.primary && (self.hold || self.regime)
+    }
+}
+
+/// The relative step of screening member `j` (§2.2 stage 5): distinct,
+/// incommensurate, alternating in sign, so that the changes of a group do not
+/// cancel.
+fn screen_step(p: &Param, j: usize, rel: f64) -> f64 {
+    let sign = if j.is_multiple_of(2) { 1.0 } else { -1.0 };
+    sign * rel * p.value.abs().max(1.0) * (1.0 + 0.137 * j as f64)
+}
+
+/// The override of screening member `j` of a group.
+fn screen_override(p: &Param, j: usize, rel: f64) -> OverrideValue {
+    if p.is_int {
+        let n = p.value as i64;
+        p.override_int(if j.is_multiple_of(2) { n + 1 } else { n - 1 })
+    } else {
+        p.override_for(p.value + screen_step(p, j, rel))
+    }
+}
+
+/// How `run` differs from `base` on `goals`; `primary[g]` says goal `g` asks
+/// for a change (missing: it does).
+fn probe(base: &SpecRun, run: &SpecRun, goals: &[Observable], primary: &[bool]) -> Probe {
+    if let Some(e) = &run.error {
+        return Probe { failed: Some(e.to_string()), ..Probe::default() };
+    }
+    let mut out = Probe { regime: run.fingerprint != base.fingerprint, ..Probe::default() };
+    for (k, g) in goals.iter().enumerate() {
+        let moved = match (base.read(g), run.read(g)) {
+            (Some(a), Some(b)) => (a - b).abs() > 1e-12 * a.abs().max(1.0) || a.is_nan() != b.is_nan(),
+            (Some(_), None) | (None, Some(_)) => true,
+            (None, None) => false,
+        };
+        if moved {
+            if primary.get(k).copied().unwrap_or(true) {
+                out.primary = true;
+            } else {
+                out.hold = true;
+            }
+        }
+    }
+    out
+}
+
+/// The order screening and measuring prefer (§2.2 stage 5): the literals
+/// the goals' own parts depend on (the focused reach, [`Param::focus`]),
+/// nearest first, then the rest, nearest first; then source order.
+pub fn screen_order(p: &Param) -> (bool, u32, u32, u16, u32) {
+    (p.focus.is_none(), p.focus.unwrap_or(p.distance), p.distance, p.file.0, p.span.start.offset)
+}
+
+/// One step of the screening search.
+enum Screen {
+    /// Run this group; when it moves nothing and `sibling` is given, the
+    /// sibling (the other half of a group that moved) must be what moved.
+    Test(Vec<usize>, Option<Vec<usize>>),
+    /// A group known to move a goal without running it.
+    Known(Vec<usize>),
+}
+
+/// [`screen_params_for`] with every goal asking for a change.
+#[allow(clippy::too_many_arguments)]
+pub fn screen_params(
+    session: &mut SpecSession,
+    env: &mut Env,
+    host: &mut dyn SpecHost,
+    params: &[Param],
+    eligible: &[usize],
+    max_screen: usize,
+    goals: &[Observable],
+    budget: &mut RunBudget,
+) -> ScreenResult {
+    screen_params_for(session, env, host, params, eligible, max_screen, goals, &[], budget)
+}
+
+/// Empirical screening by adaptive group testing (§2.2 stage 5): perturb a
+/// group together; a group that moves no goal is dropped whole, one that
+/// does is split in halves, and when the first half of a group that moved
+/// moves nothing, the second half is known to without a run of its own.
+/// Members are perturbed by distinct, incommensurate steps of alternating
+/// sign (ints by `±1`, type-preserving), so their effects do not cancel.
+/// `eligible` are indices into `params`, which must already be parameters of
+/// `session`; at most `max_screen` of them, in [`screen_order`], are
+/// screened, the focused ones as their own first group.
+///
+/// `primary[g]` says goal `g` asks for a change (a goal that holds its value
+/// is not primary; missing entries are). A group that moves only held goals,
+/// or only the control flow, cannot make the edit, so it is set aside and
+/// split only once the groups that move a primary goal are resolved: on a
+/// tight budget those are what gets screened ([`ScreenResult::secondary`]).
+#[allow(clippy::too_many_arguments)]
+pub fn screen_params_for(
+    session: &mut SpecSession,
+    env: &mut Env,
+    host: &mut dyn SpecHost,
+    params: &[Param],
+    eligible: &[usize],
+    max_screen: usize,
+    goals: &[Observable],
+    primary: &[bool],
+    budget: &mut RunBudget,
+) -> ScreenResult {
+    let mut order: Vec<usize> = eligible.to_vec();
+    order.sort_by_key(|&i| screen_order(&params[i]));
+    let mut out = ScreenResult {
+        eligible: order.len(),
+        ..Default::default()
+    };
+    order.truncate(max_screen);
+    out.screened = order.len();
+    let base = session.baseline().clone();
+    // The work stack pops from the end: the focused group goes on top.
+    let mut work: Vec<Screen> = Vec::new();
+    let split_at = order.iter().position(|&i| params[i].focus.is_none()).unwrap_or(order.len());
+    if split_at < order.len() {
+        work.push(Screen::Test(order[split_at..].to_vec(), None));
+    }
+    if split_at > 0 {
+        work.push(Screen::Test(order[..split_at].to_vec(), None));
+    }
+    // Groups set aside as secondary, and whether a singleton's own run
+    // changed the flow.
+    let mut deferred: Vec<Screen> = Vec::new();
+    let mut secondary_phase = false;
+    let split = |group: Vec<usize>, work: &mut Vec<Screen>| {
+        let mid = group.len() / 2;
+        work.push(Screen::Test(group[..mid].to_vec(), Some(group[mid..].to_vec())));
+    };
+    let flush = |out: &mut ScreenResult, w: Screen, unscreened: bool| {
+        let (g, s) = match w {
+            Screen::Known(g) => (g, None),
+            Screen::Test(g, s) => (g, s),
+        };
+        for i in g.into_iter().chain(s.into_iter().flatten()) {
+            out.kept.push(i);
+            if unscreened {
+                out.unscreened.push(i);
+            } else {
+                out.secondary.push(i);
+            }
+        }
+    };
+    loop {
+        let step = match work.pop() {
+            Some(s) => s,
+            None if !deferred.is_empty() => {
+                secondary_phase = true;
+                work.append(&mut deferred);
+                continue;
+            }
+            None => break,
+        };
+        let (group, sibling) = match step {
+            Screen::Known(group) => {
+                if group.len() == 1 {
+                    out.kept.push(group[0]);
+                    if secondary_phase {
+                        out.secondary.push(group[0]);
+                    }
+                } else {
+                    split(group, &mut work);
+                }
+                continue;
+            }
+            Screen::Test(group, sibling) => (group, sibling),
+        };
+        // Up to two runs: int members step by exactly ±1, so `a + b` cancels
+        // under the alternating signs: a group with two ints that moved
+        // nothing is probed once more with every int stepped +1 (§9 M3).
+        let mut result: Option<Probe> = None;
+        let ints = group.iter().filter(|&&i| params[i].is_int).count();
+        for attempt in 0..2 {
+            if attempt == 1 && (ints < 2 || !result.as_ref().is_some_and(Probe::still)) {
+                break;
+            }
+            if !budget.take() {
+                result = None;
+                break;
+            }
+            let mut ov = Overrides::none();
+            for (j, &i) in group.iter().enumerate() {
+                let p = &params[i];
+                let v = if attempt == 1 && p.is_int {
+                    p.override_int(p.value as i64 + 1)
+                } else {
+                    screen_override(p, j, 1e-3)
+                };
+                ov = ov.with(p.term, v);
+            }
+            let run = session.run(env, host, &ov);
+            out.runs += 1;
+            result = Some(probe(&base, &run, goals, primary));
+        }
+        let Some(result) = result else {
+            out.budget_exhausted = true;
+            // What was not screened is kept: it may matter.
+            flush(&mut out, Screen::Test(group, sibling), !secondary_phase);
+            for w in work.drain(..) {
+                flush(&mut out, w, !secondary_phase);
+            }
+            for w in deferred.drain(..) {
+                flush(&mut out, w, false);
+            }
+            break;
+        };
+        if result.still() {
+            if let Some(s) = sibling {
+                work.push(Screen::Known(s));
+            }
+            continue;
+        }
+        if let Some(s) = sibling {
+            work.push(Screen::Test(s, None));
+        }
+        if !secondary_phase && result.secondary() {
+            // Set aside, resolved once the primary groups are.
+            if group.len() == 1 && result.regime {
+                out.regime.push(group[0]);
+            }
+            deferred.push(Screen::Known(group));
+            continue;
+        }
+        if group.len() == 1 {
+            match result.failed {
+                Some(e) => out.errored.push((group[0], e)),
+                None => {
+                    out.kept.push(group[0]);
+                    if result.regime {
+                        out.regime.push(group[0]);
+                    }
+                    if secondary_phase {
+                        out.secondary.push(group[0]);
+                    }
+                }
+            }
+            continue;
+        }
+        split(group, &mut work);
+    }
+    let key = |&i: &usize| (params[i].distance, params[i].file.0, params[i].span.start.offset);
+    out.kept.sort_by_key(key);
+    out.regime.sort_by_key(key);
+    out.regime.dedup();
+    out
+}

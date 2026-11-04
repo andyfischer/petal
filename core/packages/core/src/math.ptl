@@ -34,8 +34,9 @@ pub native fn hash_int(a: num, b?: num, c?: num, d?: num) -> int
 pub native fn hash01(a: num, b?: num, c?: num, d?: num) -> float
 pub native fn hash_str(text: string, salt?: num) -> int
 
-// The functions of core/src/builtins/creative_coding.rs that read as plain
-// arithmetic; the rest of that set is the `creative` package.
+// The creative-coding set (core/src/builtins/creative_coding.rs):
+// interpolation, range mapping and shaping, distances and vector lengths,
+// random picks.
 pub native fn clamp(value: num, lo: num, hi: num)
 pub native fn pow(base: num, exp: num)
 pub native fn sign(x: num)
@@ -45,3 +46,11 @@ pub native fn fract(x: num)
 pub native fn radians(degrees: num)
 pub native fn degrees(radians: num)
 pub native fn random_int(lo: num, hi: num) -> int
+pub native fn lerp(a, b, t: num)
+pub native fn map_range(value: num, in_lo: num, in_hi: num, out_lo: num, out_hi: num)
+pub native fn distance(x1, y1, x2, y2)
+pub native fn distance(v1, v2) -> float
+pub native fn mag(x, y, z?)
+pub native fn mag(v)
+pub native fn smoothstep(edge0: num, edge1: num, x: num)
+pub native fn choose(list)

@@ -240,10 +240,6 @@ fn the_domain_builtins_are_declared_by_their_packages_and_not_by_core() {
         ("symbol", "io"),
         ("push_output", "io"),
         ("binding", "io"),
-        ("lerp", "creative"),
-        ("map_range", "creative"),
-        ("smoothstep", "creative"),
-        ("choose", "creative"),
     ] {
         assert_eq!(builtin_package_of(name), Some(package), "{name}");
         assert!(core_decls().get(name).is_none(), "{name} is still global");
@@ -251,6 +247,7 @@ fn the_domain_builtins_are_declared_by_their_packages_and_not_by_core() {
     for name in [
         "print", "len", "str", "range", "abs", "sqrt", "sin", "min", "max", "clamp", "pow", "sign",
         "exp", "log", "fract", "radians", "degrees", "random", "random_int", "fn_info", "assert",
+        "lerp", "map_range", "distance", "mag", "smoothstep", "choose",
     ] {
         assert!(core_decls().get(name).is_some(), "{name} should stay global");
         assert_eq!(builtin_package_of(name), None, "{name}");
@@ -268,15 +265,15 @@ fn the_domain_builtins_are_declared_by_their_packages_and_not_by_core() {
 /// brings it back; bare, qualified and method syntax all work with it.
 #[test]
 fn a_domain_builtin_needs_its_import() {
-    let err = Env::new().run_source("print(lerp(0, 10, 0.5))").unwrap_err();
-    assert!(err.contains("Unknown function: lerp"), "{err}");
-    assert!(err.contains("add `import creative`"), "{err}");
+    let err = Env::new().run_source("print(noise(0.5))").unwrap_err();
+    assert!(err.contains("Unknown function: noise"), "{err}");
+    assert!(err.contains("add `import noise`"), "{err}");
     let err = Env::new().run_source("let f = hsv\nprint(1)").unwrap_err();
     assert!(err.contains("Undefined variable: hsv"), "{err}");
     assert!(err.contains("add `import color`"), "{err}");
-    let err = Env::new().run_source("let v = [3, 4]\nprint(v.mag())").unwrap_err();
-    assert!(err.contains("No method 'mag' on type list"), "{err}");
-    assert!(err.contains("add `import creative` to call it as a method"), "{err}");
+    let err = Env::new().run_source("let x = 0.5\nprint(x.noise())").unwrap_err();
+    assert!(err.contains("No method 'noise' on type float"), "{err}");
+    assert!(err.contains("add `import noise` to call it as a method"), "{err}");
     // A selective import brings only the names it lists; method syntax
     // follows what is in scope.
     let err = Env::new()
@@ -297,8 +294,8 @@ fn a_domain_builtin_needs_its_import() {
 
     Env::new()
         .run_source(
-            "import creative\nimport vec2\nassert_eq(lerp(0, 10, 0.5), 5)\n\
-             assert_eq(creative.lerp(0, 10, 0.5), 5)\nlet v = vec2(3, 4)\n\
+            "import core\nimport vec2\nassert_eq(lerp(0, 10, 0.5), 5)\n\
+             assert_eq(core.lerp(0, 10, 0.5), 5)\nlet v = vec2(3, 4)\n\
              assert_eq(v.mag(), 5)\nassert_eq(vec2.dot(v, v), 25)\nassert_eq(clamp(5, 0, 1), 1)",
         )
         .unwrap();

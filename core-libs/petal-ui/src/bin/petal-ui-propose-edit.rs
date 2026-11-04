@@ -13,8 +13,8 @@
 //! clock), runs `--frames` frames (default 1) with the optional input
 //! `--scenario`, and takes the stack after the last one as the checkpoint.
 //! From there it is the core command: the goal and filter flags are
-//! `petal propose-edit`'s ([`petal::cli::dm_v2::V2Parser`]), the report is
-//! the same text or `--json` document ([`petal::cli::dm_v2::propose`]), and
+//! `petal propose-edit`'s ([`petal::cli::dm::V2Parser`]), the report is
+//! the same text or `--json` document ([`petal::cli::dm::propose`]), and
 //! `--apply --pick N` writes the chosen alternative to the files.
 //!
 //! Draw commands are emitted on the channel `draw_commands`: the k-th
@@ -30,7 +30,7 @@
 
 use std::path::PathBuf;
 
-use petal::cli::dm_v2::{self, V2Parser};
+use petal::cli::dm::{self, V2Parser};
 use petal_ui::harness::Headless;
 use petal_ui::scenario::Scenario;
 use serde_json::Value as Json;
@@ -132,7 +132,7 @@ fn run() -> Result<i32, String> {
     };
     // Echoed in the report.
     opts.frames = args.frames;
-    let seed = dm_v2::effective_seed(opts.seed);
+    let seed = dm::effective_seed(opts.seed);
 
     let mut ui = Headless::panel_from_file_with_paths(&args.app, args.size.0, args.size.1, &args.module_paths)?;
     ui.env.set_echo(false);
@@ -166,7 +166,7 @@ fn run() -> Result<i32, String> {
     let (env, mut host) = ui.spec_parts();
 
     if args.trace_emits {
-        let emits = dm_v2::baseline_emits(env, &mut host, sid, seed)
+        let emits = dm::baseline_emits(env, &mut host, sid, seed)
             .ok_or("the frame cannot be run speculatively (see `--explain` on a goal)")?;
         let mut by_channel = serde_json::Map::new();
         for (channel, e) in emits {
@@ -179,11 +179,11 @@ fn run() -> Result<i32, String> {
         return Ok(0);
     }
 
-    match dm_v2::propose(env, &mut host, pid, sid, &opts, Some(args.app.clone())) {
+    match dm::propose(env, &mut host, pid, sid, &opts, Some(args.app.clone())) {
         Ok(report) if opts.json => println!("{}", serde_json::to_string_pretty(&report).unwrap()),
-        Ok(report) => dm_v2::print_text(&report),
+        Ok(report) => dm::print_text(&report),
         Err(e) if opts.json => {
-            println!("{}", serde_json::to_string_pretty(&dm_v2::error_json(&e)).unwrap());
+            println!("{}", serde_json::to_string_pretty(&dm::error_json(&e)).unwrap());
             return Ok(1);
         }
         Err(e) => {

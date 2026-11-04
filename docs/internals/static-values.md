@@ -489,7 +489,7 @@ and `static check failure:`. `tools/test-examples.ts` runs every example
 twice on one stack with the cache on and off. The wider description of these
 harnesses is in [dev/testing.md](../dev/testing.md).
 
-Measuring tools: `core/examples/static_frame.rs` (the static part of a frame
+Measuring tools: `test/benchmarks/harness/static_frame.rs` (the static part of a frame
 with the cache off and on, for a script whose host is not here),
 `reload_follow.rs` and `reload_timing.rs` (what a reload costs), and
 `static_survey.rs`.

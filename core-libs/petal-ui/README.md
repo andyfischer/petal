@@ -60,7 +60,7 @@ input events → bind_frame_info / bind_input → clear_draw_commands
   bundles the package, so `petal lint` resolves `import ui` with no host;
   `petal run` refuses such a script at load, because it registers none of
   these natives. The package's own source imports the builtin packages it
-  uses (`color`, `creative`, `io`). It also wraps every draw native in record overloads
+  uses (`color`, `io`). It also wraps every draw native in record overloads
   (`draw_rect(rect, c)`, `draw_line(p1, p2, c, a, width)`), and each shape's
   parameters carry plain names — `x, y, w, h` / `rect`, `cx, cy` / `center`,
   `radius`, `r, g, b` / `c`, `a`, `width` — so a call can be written by name:

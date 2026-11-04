@@ -377,7 +377,7 @@ impl FrameCore {
         Ok(FrameRun::Ran)
     }
 
-    /// The env and a [`SpecHost`](petal::dm_v2::SpecHost) that installs this
+    /// The env and a [`SpecHost`](petal::dm::SpecHost) that installs this
     /// core's providers (host data, fonts) around a speculative run, exactly
     /// as [`frame`](Self::frame) installs them around a live one
     /// (docs/dev/direct-manipulation-v2-plan.md R11). Without it a
@@ -465,7 +465,7 @@ pub struct FrameSpecHost<'a> {
     fonts: &'a mut Option<draw::FontProvider>,
 }
 
-impl petal::dm_v2::SpecHost for FrameSpecHost<'_> {
+impl petal::dm::SpecHost for FrameSpecHost<'_> {
     fn with_run_env(&mut self, env: &mut Env, f: &mut dyn FnMut(&mut Env)) {
         let saved = host_data::swap_data_provider(self.provider.take());
         let saved_fonts = draw::swap_font_provider(self.fonts.take());

@@ -1,7 +1,7 @@
 # Proposal: `tunable` and `rigid`, direct-manipulation hints
 
 Status: accepted. Proposed 23 October 2026; implemented 24 October 2026 (milestone M2
-of the plan: the builtins, `core/src/dm_v2/hints.rs`, the three lint rules,
+of the plan: the builtins, `core/src/dm/hints.rs`, the three lint rules,
 docs/Builtins.md "Direct-Manipulation Hints"); accepted 24 October 2026,
 when the owner approved the names `tunable` and `rigid` (open question 1).
 Part of Direct Manipulation v2: see the
@@ -246,7 +246,7 @@ v1 keeps working. Autodiff passes through. `explain` and slicing show the
 call as one more node.
 
 **Implementation maintainability.** Touched: `builtins/` (two natives with
-param declarations), `dm_v2/hints.rs` (the reader), `provenance.rs`
+param declarations), `dm/hints.rs` (the reader), `provenance.rs`
 (identity look-through), `lint/` (three rules), `Builtins.md`,
 `stdlib.json` regen, and the effect-row pin test in `builtins/mod.rs`. No
 lexer, parser, IR, bytecode or type checker changes. The C bridge is not
@@ -290,7 +290,7 @@ anything else, which argues for having `rigid` from day one.
 In M2 of the plan:
 1. The natives (`tunable(x, min?, max?, step?)`, `rigid(x)`) with
    `declare_params`, as `CONST`.
-2. `dm_v2/hints.rs::read_hints(program)`.
+2. `dm/hints.rs::read_hints(program)`.
 3. Identity look-through in `provenance::resolve_arg` and `alias_target`.
 4. The spec-mode `rigid` replay in the native gate.
 5. The lint rules.

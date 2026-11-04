@@ -3,7 +3,6 @@
 // hashes, `plural` / `list_and`, and `lerp` of two records. docs/Builtins.md.
 // Run with `petal test test/ptl`.
 
-import creative
 import vec2
 
 // ── fill ───────────────────────────────────────────────────────────────────

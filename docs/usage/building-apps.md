@@ -65,7 +65,7 @@ Most 2D games and canvas sketches fit here.
 The script says what it uses with imports: `import ui` for drawing and input,
 the integration's own package for its extras (`import sdl` on petal-sdl,
 `import garden` in a Garden panel), bundled libraries such as `import bloom`,
-and the builtin packages (`import creative`, `import vec2`, …). Give the app
+and the builtin packages (`import vec2`, `import noise`, …). Give the app
 directory a `petal.toml` that lists the integration's interface package as a
 path dependency and the stock `petal lint` and the language server check the
 scripts with no flag ([../packages.md](../packages.md)); `petal run` itself cannot

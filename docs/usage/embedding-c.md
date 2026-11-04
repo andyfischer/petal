@@ -458,7 +458,7 @@ on a segmented buffer and returns it expanded. The C declarations and the
 rules are in `petal_bridge.h` ("Segmented output buffers"); the mechanism is
 [`output_segments`](../../core/src/output_segments.rs) in Petal.
 
-In `core/examples/scene_frame` a host that splices segments this way spends
+In `test/benchmarks/harness/scene_frame` a host that splices segments this way spends
 4 µs a frame on a static world of 24,000 declarations, against 360 µs for
 the best host that walks every value (see
 [retained-scene-output.md](../dev/retained-scene-output.md)).
@@ -1404,7 +1404,7 @@ frame and about 0.1 s for a load.
 
 The same frame shape at game scale is `examples/scene_frame.cpp` (CMake
 target `petal_bridge_scene_frame`): the script of
-`core/examples/scene_frame` (2,000 static meshes, 400 static bodies, 300
+`test/benchmarks/harness/scene_frame` (2,000 static meshes, 400 static bodies, 300
 moving ships), with a host that reads every option it supports. Reading
 options through a plan instead of by name cuts the host's reads from about
 400 µs to about 160 µs a frame; the numbers are in

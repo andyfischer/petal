@@ -92,15 +92,14 @@ fn the_hashes_want_numbers_and_a_string() {
 
 #[test]
 fn lerp_of_a_record_and_something_else_is_refused() {
-    refuses("import creative\nlerp({a: 1}, 5, 0.5)", "two lists of numbers or two records");
-    refuses("import creative\nlerp([1], {a: 1}, 0.5)", "two lists of numbers or two records");
+    refuses("lerp({a: 1}, 5, 0.5)", "two lists of numbers or two records");
+    refuses("lerp([1], {a: 1}, 0.5)", "two lists of numbers or two records");
 }
 
 /// A record of a class keeps its class through `lerp`.
 #[test]
 fn lerp_keeps_the_first_records_class() {
-    let src = "import creative
-class Look
+    let src = "class Look
   sepia: num,
   id: string
 end

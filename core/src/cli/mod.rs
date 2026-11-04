@@ -11,7 +11,7 @@ use std::process;
 
 mod args;
 mod bench;
-pub mod dm_v2;
+pub mod dm;
 mod handlers;
 mod help;
 mod pm;
@@ -140,7 +140,7 @@ pub struct ProposeEditOpts {
     pub apply: bool,
     /// `Some` selects the v2 engine (`--v2`, or any v2-only flag); it then
     /// carries every goal and option, and the v1 fields above are unused.
-    pub v2: Option<dm_v2::V2Opts>,
+    pub v2: Option<dm::V2Opts>,
 }
 
 /// Which dataflow walk `petal graph` runs. Chosen at parse time from

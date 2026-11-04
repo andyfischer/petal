@@ -188,7 +188,7 @@ COMMON OPTIONS
               petal.toml, or a directory of such packages. Repeatable; the
               PETAL_PATH directories are searched the same way. No flag is
               needed for a dependency named in the nearest petal.toml above
-              the file, for a bundled package (ui, bloom, creative, ...), or
+              the file, for a bundled package (ui, bloom, vec2, ...), or
               for a file imported relatively ('import ./x').
 ";
 
@@ -305,7 +305,7 @@ DESCRIPTION
        Warnings are printed and the program runs.
 
        This command provides the core builtins and the builtin packages
-       (creative, vec2, noise, color, json, io, autodiff) only. A script that
+       (vec2, noise, color, json, io, autodiff) only. A script that
        imports a host's interface, such as 'ui', checks clean but is refused
        here before it starts, naming the natives or the interface this host
        lacks: run it with that host's runner (petal-sdl for 'ui').
@@ -462,6 +462,10 @@ DESCRIPTION
               that writes 'm.b' beside it gets the 'import m' line it now
               needs.
 
+       An import of the retired 'creative' package is deleted.
+              lerp, map_range, distance, mag, smoothstep and choose are
+              declared by core now and need no import.
+
        A missing import is added.
               A bare name that no declaration or import in the file provides,
               and that exactly one available package exports, gets its
@@ -476,7 +480,6 @@ DESCRIPTION
 
        A builtin that moved into a package gets its import.
               The domain builtins are declared by bundled packages now:
-              creative (lerp, map_range, distance, mag, smoothstep, choose),
               noise, color (hsv, hsl, ...), vec2 (vec2, vec3, normalize,
               dot, ...), autodiff, json and io (symbol, push_output,
               binding). A bare use is a missing import like any other. A

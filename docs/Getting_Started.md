@@ -81,9 +81,9 @@ are always in scope. Everything else is one `import` away, at the top of the
 file:
 
 ```petal
-import creative                 // lerp, map_range, distance, …
+import noise                    // noise, noise_seed
 
-print(lerp(0, 10, 0.5))         // 5.0
+print(noise(0.5))
 ```
 
 ```petal ignore

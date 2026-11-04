@@ -32,10 +32,10 @@ Start the file with `import ui`: that is what brings in the drawing and input
 functions (`clear`, `draw_rect`, `key_down`, …). Without it those names do
 not exist; the shorter snippets below leave the line out. petal-sdl's own
 extras — `sfx`, `synth`, `load_text_file`, `save_text_file`, `file_exists`,
-the example browser — come with `import sdl`. The math and color helpers
-that are not plain math are behind imports too: `import creative` (`lerp`,
-`distance`, `map_range`, …), `import vec2`, `import noise`, `import color`
-(`hsv`, …). `petal lint` names the import a script is missing.
+the example browser — come with `import sdl`. The vector, noise and color
+helpers are behind imports too: `import vec2`, `import noise`, `import color`
+(`hsv`, …); `lerp`, `distance`, `map_range` and the rest of the
+creative-coding math are global. `petal lint` names the import a script is missing.
 
 Check a script without the runner with `petal lint game.ptl`. `import ui`
 resolves anywhere; `import sdl` resolves when the script's project lists the

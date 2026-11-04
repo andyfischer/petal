@@ -119,7 +119,7 @@ pub struct Env {
     /// [`Env::provides`].
     provided: std::collections::BTreeMap<String, crate::package::Version>,
     /// The speculative run in progress, if any: the fork it runs and the
-    /// hooks its VM consults (`crate::dm_v2::spec`). Set only for the
+    /// hooks its VM consults (`crate::dm::spec`). Set only for the
     /// duration of one run.
     pub(crate) spec: Option<crate::backend::bytecode::vm::spec::ActiveSpec>,
     /// Handle classes whose methods a speculative run may call; see
@@ -1750,7 +1750,7 @@ impl Env {
     /// forcing it off: the build of the static declarations alone, with what
     /// it builds kept between runs. That is the static part of a frame as a
     /// host with the cache runs it, for a program whose host is not here to
-    /// run the rest, and it is for measuring (`core/examples/static_frame.rs`):
+    /// run the rest, and it is for measuring (`test/benchmarks/harness/static_frame.rs`):
     /// a run the cache skips is not watched, so use the plain mode to audit.
     /// Off by default.
     pub fn set_static_only_keeps(&mut self, on: bool) {
@@ -2101,7 +2101,7 @@ impl Env {
     /// classes are not referenced by compiled programs.
     /// Say that the methods of handle class `id` are safe to call in a
     /// speculative run (direct manipulation re-running the script with a
-    /// literal nudged, `crate::dm_v2::spec`): they only read the host
+    /// literal nudged, `crate::dm::spec`): they only read the host
     /// objects, or change nothing a run can observe. Without this, a
     /// speculative run that calls a method of the class fails, since the
     /// runtime cannot tell what a method does to the host.

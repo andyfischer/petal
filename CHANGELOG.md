@@ -10,6 +10,19 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ## Unreleased
 
+### Changed
+
+- The `creative` package is gone: `lerp`, `map_range`, `distance`, `mag`,
+  `smoothstep` and `choose` are declared by `core` now and are in scope in
+  every file with no import, like `clamp` and `random_int`. Delete
+  `import creative` lines; a script that still has one fails to resolve it.
+- The direct-manipulation module `petal::dm_v2` is now `petal::dm`, and
+  `petal::cli::dm_v2` is `petal::cli::dm`.
+- The Rust measurement harnesses (`rerun_timing`, `reload_timing`,
+  `scene_frame`, …) moved from `core/examples/` to
+  `test/benchmarks/harness/`; `cd core && cargo run --release --example
+  <name>` runs them as before.
+
 ### Added
 
 - Builtins `remove_at(list, index)`, a new list without the element at

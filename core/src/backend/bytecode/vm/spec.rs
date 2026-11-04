@@ -3,7 +3,7 @@
 //! emit and watched-term capture, the branch fingerprint and observed call
 //! edges.
 //!
-//! [`SpecHooks`] is built by [`crate::dm_v2::spec::SpecSession`] for one run
+//! [`SpecHooks`] is built by [`crate::dm::spec::SpecSession`] for one run
 //! and handed to the VM that runs the session's fork; every other run has
 //! none, and pays one `Option` test at the few sites below (a `LoadConst` in
 //! the general executor, a frame push, a native call). With hooks present the
@@ -20,7 +20,7 @@ use std::hash::Hasher;
 use smallvec::SmallVec;
 
 use crate::constant_table::ConstantId;
-use crate::dm_v2::observe::{EmitKey, ObsBounds, ObsValue};
+use crate::dm::observe::{EmitKey, ObsBounds, ObsValue};
 use crate::execution_context::EmitSite;
 use crate::fxhash::FxHasher;
 use crate::heap::Heap;

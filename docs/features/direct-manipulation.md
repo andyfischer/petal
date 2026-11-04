@@ -435,7 +435,7 @@ edit don't apply to the edited program.
 
 A host that registers natives of its own can run the v2 engine on its own
 `Env` without going through a command line:
-`petal::cli::dm_v2::propose_json(env, host, program, checkpoint, &request, entry_path)`
+`petal::cli::dm::propose_json(env, host, program, checkpoint, &request, entry_path)`
 takes a JSON request with the CLI flags' fields (`{"channel": "shapes",
 "emit": 0, "native_arg": 1, "by": 25, "deny": ["x"]}`, see
 `opts_from_json`), re-runs the checkpoint speculatively with the host's

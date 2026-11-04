@@ -33,6 +33,7 @@ pub native fn swap(array, i, j)
 pub native fn last(list)
 pub native fn drop_last(list)
 pub native fn remove(record, key)
+pub native fn remove_at(list, index: num) -> list
 pub native fn chars(string: string) -> list
 pub native fn char_len(string: string) -> int
 pub native fn char_at(string: string, index: num) -> string
@@ -44,6 +45,7 @@ pub native fn repeat(string: string, count: num) -> string
 pub native fn starts_with(string: string, prefix: string) -> bool
 pub native fn ends_with(string: string, suffix: string) -> bool
 pub native fn trim(string: string) -> string
+pub native fn replace(string: string, old: string, new: string) -> string
 pub native fn byte_len(string: string) -> int
 pub native fn byte_slice(string: string, start: num, end?: num) -> string
 pub native fn fill(count: num, value) -> list

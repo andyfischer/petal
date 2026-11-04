@@ -12,6 +12,11 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- Builtins `remove_at(list, index)`, a new list without the element at
+  `index` (negative counts from the end), and `replace(string, old, new)`,
+  the string with every occurrence of `old` replaced. They stand in for the
+  `filter(enumerate(…))` and `join(split(…))` patterns programs used instead.
+
 - Implicit keys (L8 of the retained scene plan): a native call can read a
   key made from the call path it runs on, the one that keys `state`, plus
   its own call site (`PetalCxt::call_key`). It is the same every frame and

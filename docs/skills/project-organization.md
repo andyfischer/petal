@@ -212,8 +212,7 @@ core/ (language + CLI)
 A quick check for Rust crates:
 
 ```bash
-find . -name Cargo.toml -not -path '*/target/*' -not -path '*/node_modules/*' \
-  | xargs grep -Hn 'path *= *"\.\./'
+git ls-files '*Cargo.toml' | xargs grep -Hn 'path *= *"\.\./'
 ```
 
 Any `path` that climbs to a higher layer is a violation.

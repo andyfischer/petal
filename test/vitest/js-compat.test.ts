@@ -126,7 +126,7 @@ describe("JS idiom error hints", () => {
 
 describe("rotate(v, angle) on vec2", () => {
   it("turns in the same sense as vec2(cos(a), sin(a))", () => {
-    const out = runPetal(`import creative; import vec2
+    const out = runPetal(`import vec2
       let v = rotate(vec2(1.0, 0.0), pi() / 2)
       print(round(v.x * 1000.0) / 1000.0)
       print(round(v.y * 1000.0) / 1000.0)

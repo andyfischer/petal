@@ -41,7 +41,7 @@ Multi-file apps may add modules next to `app.ptl` and import them relatively
 Every import is explicit. A panel app typically starts with `import ui` and
 `import garden`, adds `import bloom` or `import text_layout` when it uses
 them, and imports the builtin packages whose names it calls
-(`import creative` for `lerp` and `distance`, `import vec2`, `import color`,
+(`import vec2`, `import color`,
 `import noise`, `import json`). `petal lint` names any import that is
 missing, and `petal fix-imports app.ptl` adds them.
 

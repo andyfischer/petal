@@ -1,5 +1,4 @@
 import io
-import creative
 // State initialised from a literal, and a recursive helper.
 let s = symbol("draw")
 state offset = 3.25

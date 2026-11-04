@@ -59,7 +59,7 @@ fn native_time(cxt: &mut PetalCxt) -> Result<u32, String> {
 
 /// On the first line, so the program's own lines keep their numbers.
 const PREFIX: &str =
-    "import io; import creative; import noise; native fn draw(x, y, r); native fn label(t); native fn time(); ";
+    "import io; import noise; native fn draw(x, y, r); native fn label(t); native fn time(); ";
 
 fn env() -> Env {
     let mut env = Env::new();

@@ -942,6 +942,12 @@ impl ModuleRegistry {
                  these)"
             ));
         }
+        if crate::bundled::MERGED_INTO_CORE.contains(&path) {
+            return Err(format!(
+                "there is no package named '{package}': its builtins are declared by `core` now \
+                 and are in scope with no import. Delete this import (`petal fix-imports` does)"
+            ));
+        }
         Err(format!(
             "there is no package named '{package}': not registered by the host, not the \
              importing file's own package or a [dependencies] entry of its petal.toml, not on \

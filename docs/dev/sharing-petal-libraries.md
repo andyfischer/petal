@@ -56,7 +56,7 @@ imported files (see the host section below).
 
 Nothing reaches a module without an import except the core builtins and
 `std`. A library module that draws says `import ui` at its top; one that
-calls `lerp` says `import creative`. An import reaches only the file it is
+calls `noise` says `import noise`. An import reaches only the file it is
 written in, so each of bloom's implementation modules carries its own.
 [Which name wins](../module-system.md#which-name-wins) has the precedence: a
 module's own declarations, then selective imports, then plain imports, then

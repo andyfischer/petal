@@ -41,7 +41,7 @@ fn native_draw(cxt: &mut PetalCxt) -> Result<u32, String> {
 
 /// The prefix every test program gets, on its first line so the source's
 /// own line numbers are kept.
-const PREFIX: &str = "import io; import creative; import noise; native fn draw(x, y, r); ";
+const PREFIX: &str = "import io; import noise; native fn draw(x, y, r); ";
 
 fn env() -> Env {
     let mut env = Env::new();

@@ -324,7 +324,7 @@ function parseNativeDecls(source: string): Map<string, DeclaredForm[]> {
  * registers everywhere but that are in scope only where the package is
  * imported (`import noise`). Mirrors `petal::bundled::BUILTIN_PACKAGES`.
  */
-const BUILTIN_PACKAGES = ["noise", "color", "vec2", "autodiff", "json", "io", "creative"];
+const BUILTIN_PACKAGES = ["noise", "color", "vec2", "autodiff", "json", "io"];
 const builtinPackagePtl = (name: string) =>
   join(repoRoot, "core/packages", name, `${name}.ptl`);
 

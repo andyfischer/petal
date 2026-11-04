@@ -34,13 +34,13 @@ fn load(source: &str) -> (Env, ProgramId, StackKey) {
 /// `source` with the packages these tests use imported, on its first line so
 /// line numbers stay the source's own.
 fn with_imports(source: &str) -> String {
-    format!("import io; import creative; {source}")
+    format!("import io; {source}")
 }
 
 /// [`with_imports`], declaring the host natives `names` too.
 fn with_natives(names: &[&str], source: &str) -> String {
     let decls: String = names.iter().map(|n| format!("native fn {n}(); ")).collect();
-    format!("import io; import creative; {decls}{source}")
+    format!("import io; {decls}{source}")
 }
 
 /// The numeric literal terms of the entry file whose source text is `text`,

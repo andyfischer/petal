@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn a_builtin_with_several_forms_takes_any_of_them() {
-        let ok = "import creative; import vec2; print(random(max: 2), random(min: 1, max: 2), distance(v1: vec2(0, 0), v2: vec2(1, 1)))";
+        let ok = "import vec2; print(random(max: 2), random(min: 1, max: 2), distance(v1: vec2(0, 0), v2: vec2(1, 1)))";
         assert!(unresolved(ok).is_empty());
         let got = unresolved("if false then random(lo: 1, hi: 2) end");
         assert_eq!(

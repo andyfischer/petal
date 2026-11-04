@@ -1,5 +1,4 @@
 import io
-import creative
 // Branches and clamping on a computed value.
 let s = symbol("draw")
 let width = 320

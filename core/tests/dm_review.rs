@@ -59,7 +59,7 @@ fn applied(env: &Env, pid: ProgramId, alt: &petal::dm::Alternative) -> String {
 /// `(-2).map_range(...)`, so the verified edit computes what was verified.
 #[test]
 fn negative_method_receiver_keeps_the_call() {
-    let src = "import io\nimport creative\nlet s = symbol(\"out\")\n\
+    let src = "import io\nlet s = symbol(\"out\")\n\
                push_output(s, 5.map_range(rigid(0), rigid(10), rigid(100), rigid(200)))\n";
     let (mut env, pid, sid) = load(src);
     let k = keys(&mut env, sid);
@@ -134,7 +134,7 @@ fn reload_after_propose_matches_fresh_run() {
 /// not: `-2.map_range(…)` is `(-2).map_range(…)`.
 #[test]
 fn preview_parenthesizes_negative_values() {
-    let src = "import io\nimport creative\nlet s = symbol(\"out\")\n\
+    let src = "import io\nlet s = symbol(\"out\")\n\
                push_output(s, 5.map_range(rigid(0), rigid(10), rigid(100), rigid(200)))\n\
                push_output(s, rigid(50) - 3)\n";
     let (mut env, _, sid) = load(src);

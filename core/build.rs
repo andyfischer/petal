@@ -22,7 +22,6 @@ const BUNDLED_PACKAGES: &[(&str, &str)] = &[
     ("autodiff", "packages/autodiff"),
     ("json", "packages/json"),
     ("io", "packages/io"),
-    ("creative", "packages/creative"),
     ("ui", "../core-libs/petal-ui/prelude"),
     ("bloom", "../core-runtime/bloom"),
     ("text_layout", "../core-runtime/text-layout"),

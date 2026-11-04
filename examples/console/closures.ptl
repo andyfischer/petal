@@ -18,9 +18,8 @@ print("add10(3) =", add10(3))
 let double = fn(x) -> x * 2
 print("double(7) =", double(7))
 
-// Apply a function to each element (written out here; the builtin `map`
-// does the same)
-fn my_map(list: list, f: function) -> list
+// Apply a function to each element
+fn map(list: list, f: function) -> list
   let result = []
   for item in list do
     result = append(result, f(item))
@@ -29,14 +28,14 @@ fn my_map(list: list, f: function) -> list
 end
 
 let numbers = [1, 2, 3, 4, 5]
-let doubled = my_map(numbers, fn(x) -> x * 2)
-let squared = my_map(numbers, fn(x) -> x * x)
+let doubled = map(numbers, fn(x) -> x * 2)
+let squared = map(numbers, fn(x) -> x * x)
 print("numbers:", numbers)
 print("doubled:", doubled)
 print("squared:", squared)
 
 // Filter
-fn my_filter(list: list, pred: function) -> list
+fn filter(list: list, pred: function) -> list
   let result = []
   for item in list do
     if pred(item) then
@@ -46,11 +45,11 @@ fn my_filter(list: list, pred: function) -> list
   result
 end
 
-let evens = my_filter(numbers, fn(x) -> x % 2 == 0)
+let evens = filter(numbers, fn(x) -> x % 2 == 0)
 print("evens:", evens)
 
 // Reduce
-fn my_reduce(list: list, init, f: function)
+fn reduce(list: list, init, f: function)
   let acc = init
   for item in list do
     acc = f(acc, item)
@@ -58,7 +57,7 @@ fn my_reduce(list: list, init, f: function)
   acc
 end
 
-let sum = my_reduce(numbers, 0, fn(a, b) -> a + b)
-let product = my_reduce(numbers, 1, fn(a, b) -> a * b)
+let sum = reduce(numbers, 0, fn(a, b) -> a + b)
+let product = reduce(numbers, 1, fn(a, b) -> a * b)
 print("sum:", sum)
 print("product:", product)

@@ -22,14 +22,14 @@ print("same result:", old_style() == new_style())
 
 // Argless lambdas are handy as callbacks: a thunk passed to a function that
 // decides whether (and how often) to run it.
-fn run_times(times: num, action: function)
+fn repeat(times: num, action: function)
   for i in range(0, times) do
     action()
   end
 end
 
 var count = 0
-run_times(3, fn set count = get count + 1 end)
+repeat(3, fn set count = get count + 1 end)
 print("count =", get count)
 
 // One wart to know about: in the block form, a body starting with `(` is read

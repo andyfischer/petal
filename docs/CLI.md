@@ -695,13 +695,7 @@ a module `state` rebound below it, a call to a declaration further down the
 file that could not be hoisted (the rules are in
 [syntax/declaration-order.md](syntax/declaration-order.md#when-a-fn-is-not-hoisted)), and a key name written as a literal that is
 not one (`key_pressed("enter")`, which is always false: `did you mean
-"return"?`; the names are in [ui-reference.md](ui-reference.md#input)), and
-a `fn` that takes the place of a builtin, a prelude function or a function of
-a package the file imports whole, with an argument count the existing one
-takes (`` `fn commas` takes the place of the builtin `commas` in this file
-… [shadows-builtin] ``): every call in the file reaches the new one. That is
-the [`shadows-builtin`](#lint--rules-with-fixes) lint rule,
-silenced the same way (`// petal-lint-ignore shadows-builtin`).
+"return"?`; the names are in [ui-reference.md](ui-reference.md#input)).
 
 #### Error phases
 
@@ -940,7 +934,7 @@ found 2 problem(s) in 1 file(s); run `petal lint --fix` to fix them
 | `neg-zero-sub` | `0 - x` and `0.0 - x` | `-x` where the zero is `0` and `x` is a proven `int`. Otherwise reported: `0.0 - 0.0` is `0.0` and `-0.0` is not (`atan2` and a division tell them apart), and `0.0 - n` makes a float of an int |
 | `prefer-any` | `len(filter(xs, p)) > 0` (also `!= 0`, `>= 1`; and `== 0`, `< 1`, `<= 0` for `!any`) | `any(xs, p)`, which stops at the first match. Applied where `p` is a lambda written in place whose body is one expression with no call but to pure builtins; otherwise reported, since `any` does not call `p` on the rest. (A pure body can still raise on a later element, such as `x.v` of an int: the fixed program then finishes where the old one raised, never the reverse.) |
 | `dead-alias` | `let a = v` in a function, where `v` is a parameter or a local of that function that is not written from there on (nor in a loop around the alias, nor by any nested function) and `a` is only read | delete the `let` and read `v` (`get v` for a `var` read from a nested function). Reported only, when the `let` shares its line |
-| `shadows-builtin` | a `fn` with the name of a core builtin, a standard-prelude function, or a function of a bundled package the file imports whole, taking an argument count the existing one takes. Every call in the file reaches the new one (the compiler warns about it too, under the same rule id, so `petal check` reports it) | none (callers may be in other files) |
+| `shadows-builtin` | a `fn` with the name of a core builtin, a standard-prelude function, or a function of a bundled package the file imports whole, taking an argument count the existing one takes. Every call in the file reaches the new one | none (callers may be in other files) |
 | `reimplements-builtin` | a `fn` whose whole body calls one builtin with its own parameters in order, or is `if r == nil then d else field(r, k, d) end` (`field` already answers the fallback for `nil`) | none |
 | `dm-hint-not-literal` | `tunable(e)` where `e` is computed (`tunable(a + b)`): the hint marks a literal or a name bound to one, so this marks nothing. On a string, bool, record or list the message says so and points to `config let` ([Builtins](Builtins.md#direct-manipulation-hints)) | none: wrap the literal itself (`tunable(a) + b`), or declare a non-number setting with `config let` |
 | `dm-hint-bounds` | a `tunable` bound (`min`, `max`, `step`) that is not a number literal, or a `min` above the `max` | none |

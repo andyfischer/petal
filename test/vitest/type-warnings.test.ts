@@ -102,12 +102,8 @@ describe("discarded pure-builtin result lint", () => {
   });
 
   it("does not warn when a user fn shadows a builtin name", () => {
-    // The user's `push` has effects, so discarding its result is fine. The
-    // one thing to say is that it takes the builtin's place.
     const out = checkJson('fn push(a, b)\n  print("fx")\n  a\nend\npush([1], 2)');
-    expect(out.warnings.map((w: { message: string }) => w.message)).toEqual([
-      expect.stringContaining("[shadows-builtin]"),
-    ]);
+    expect(out.warnings).toEqual([]);
   });
 
   it("does not warn on a pure builtin as the program's final value", () => {

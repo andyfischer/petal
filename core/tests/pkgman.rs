@@ -239,7 +239,7 @@ fn install_lock_vendor_bundle_run() {
 
     // run and check agree, with no flags.
     assert_eq!(w.ok("app", &["run", "main.ptl"]), "12 9 8 one\n");
-    let check = w.petal("app", &["check", "main.ptl"]);
+    let check = w.petal("app", &["lint", "--single-file", "main.ptl"]);
     assert!(check.ok, "{}", check.stderr);
     assert!(check.stdout.contains("requires host interfaces: core >=0.1 (tween)"), "{}", check.stdout);
 
@@ -347,14 +347,14 @@ fn check_and_run_install_what_a_program_imports() {
     assert!(!w.path("home").exists());
 
     // Offline, the missing install is the error, and it names the cure.
-    let out = w.petal_env("app", &["check", "main.ptl"], &[("PETAL_OFFLINE", "1")]);
+    let out = w.petal_env("app", &["lint", "--single-file", "main.ptl"], &[("PETAL_OFFLINE", "1")]);
     assert!(!out.ok);
     assert!(out.stderr.contains("is a git dependency"), "{}", out.stderr);
     assert!(out.stderr.contains("run `petal install`"), "{}", out.stderr);
     assert!(!w.path("app/petal.lock").exists());
 
     // Otherwise the first import of one installs the project.
-    let out = w.petal("app", &["check", "main.ptl"]);
+    let out = w.petal("app", &["lint", "--single-file", "main.ptl"]);
     assert!(out.ok, "{}", out.stderr);
     assert!(out.stderr.contains("Installing the dependencies of"), "{}", out.stderr);
     assert_eq!(w.lock("app").packages.len(), 3);

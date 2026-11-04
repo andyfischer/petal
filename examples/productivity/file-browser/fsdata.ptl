@@ -341,7 +341,7 @@ alias gl='git log --oneline --graph -20'
 alias gd='git diff'
 
 # petal
-alias pc='petal check --strict'
+alias pc='petal lint --strict'
 alias pr='petal run'"""],
   ["install.sh", """#!/bin/sh
 set -eu

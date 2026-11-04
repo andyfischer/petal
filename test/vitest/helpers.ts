@@ -102,14 +102,14 @@ export function runPetalFileError(path: string): string {
   return r.stderr.trim();
 }
 
-/** `petal check --json -e <code>`, parsed. */
+/** `petal lint --json -e <code>`, parsed. */
 export function checkJson(code: string): any {
-  return JSON.parse(run(["check", "--json", "-e", code]));
+  return JSON.parse(run(["lint", "--single-file", "--json", "-e", code]));
 }
 
-/** `petal check --json <path>`, parsed, tolerating a non-zero exit. */
+/** `petal lint --json <path>`, parsed, tolerating a non-zero exit. */
 export function checkFileJson(path: string): any {
-  return JSON.parse(petalCapture(["check", "--json", path]).stdout);
+  return JSON.parse(petalCapture(["lint", "--single-file", "--json", path]).stdout);
 }
 
 // ---------------------------------------------------------------------------
@@ -167,21 +167,21 @@ export function dataflowText(
 }
 
 /**
- * `petal check --json -e <code>`, parsed, tolerating a non-zero exit — unlike
+ * `petal lint --json -e <code>`, parsed, tolerating a non-zero exit — unlike
  * [`checkJson`], which throws. Use when the failure object *is* the assertion.
  */
 export function checkJsonAllowFail(code: string): any {
-  return JSON.parse(petalCapture(["check", "--json", "-e", code]).stdout);
+  return JSON.parse(petalCapture(["lint", "--single-file", "--json", "-e", code]).stdout);
 }
 
-/** `petal check -e <code>` (text mode): capture stdout/stderr/exit code. */
+/** `petal lint -e <code>` (text mode): capture stdout/stderr/exit code. */
 export function checkText(code: string): CliResult {
-  return petalCapture(["check", "-e", code]);
+  return petalCapture(["lint", "--single-file", "-e", code]);
 }
 
-/** `petal check --strict -e <code>`: capture stdout/stderr/exit code. */
+/** `petal lint --strict -e <code>`: capture stdout/stderr/exit code. */
 export function checkStrict(code: string): CliResult {
-  return petalCapture(["check", "--strict", "-e", code]);
+  return petalCapture(["lint", "--single-file", "--strict", "-e", code]);
 }
 
 /** `petal run -e <code>`: capture both stdout and stderr (expects success). */
@@ -199,16 +199,16 @@ export function showIrJsonRaw(code: string): string {
 }
 
 /**
- * `petal check --json --ir -` on a JSON IR string (IR read from stdin),
+ * `petal lint --json --ir -` on a JSON IR string (IR read from stdin),
  * parsed, tolerating a non-zero exit — the failure object *is* the assertion.
  */
 export function checkIrJsonAllowFail(irJson: string): any {
-  return JSON.parse(petalCapture(["check", "--json", "--ir", "-"], irJson).stdout);
+  return JSON.parse(petalCapture(["lint", "--single-file", "--json", "--ir", "-"], irJson).stdout);
 }
 
-/** `petal check --ir -` (text mode) on a JSON IR string read from stdin. */
+/** `petal lint --ir -` (text mode) on a JSON IR string read from stdin. */
 export function checkIrText(irJson: string): CliResult {
-  return petalCapture(["check", "--ir", "-"], irJson);
+  return petalCapture(["lint", "--single-file", "--ir", "-"], irJson);
 }
 
 /** Run a JSON IR string through `petal run --ir -` (IR read from stdin). */

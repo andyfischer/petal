@@ -357,7 +357,7 @@ impl Env {
 
     /// Compile without linking: a program may declare (`native fn`) natives
     /// this `Env` does not register. For tools that only *check* a program —
-    /// `petal check`, the LSP, lint, suggest — which answer for a host's
+    /// `petal lint`, the LSP, suggest — which answer for a host's
     /// natives from the host's interface module without being that host.
     /// Running such a program still fails, at the first call to a native
     /// that is not there ("Unknown builtin").
@@ -944,6 +944,28 @@ impl Env {
         Ok((exports, loaded))
     }
 
+    /// The files on disk that the program in `source` (at `origin`) imports,
+    /// directly or through other modules, the entry file left out. Empty when
+    /// the imports do not resolve: the program's own check reports that.
+    /// `petal lint` uses it to tell a walked file that only other files
+    /// import (a module) from one that is a program of its own.
+    pub fn imported_files(
+        &self,
+        source: &str,
+        origin: Option<&std::path::Path>,
+    ) -> Vec<std::path::PathBuf> {
+        let Ok(modules) = crate::module::load_modules(source, origin, &self.modules, &[]) else {
+            return Vec::new();
+        };
+        let entry = origin.map(crate::module::canonical_path);
+        modules
+            .iter()
+            .filter_map(|m| m.origin.as_deref())
+            .map(crate::module::canonical_path)
+            .filter(|p| Some(p) != entry.as_ref())
+            .collect()
+    }
+
     /// Every package path a script could write after `import` to reach a
     /// module that is not already in scope: each registered, search-path and
     /// bundled package by its own name when it has a module of that name,
@@ -1023,7 +1045,7 @@ impl Env {
     ///
     /// The answer is this `Env`'s: a native counts as constant only when it
     /// is registered `CONST` here. A `const` that is dynamic only because of
-    /// natives nothing here registers (`petal check` and the language server
+    /// natives nothing here registers (`petal lint` and the language server
     /// on a script written for a host) is not reported: it cannot be verified
     /// here, and the host that has those natives reports it if it is wrong.
     /// The classifier runs only for a program that declares a `const`.
@@ -1248,7 +1270,7 @@ impl Env {
         }
     }
 
-    /// Every finding of `pid`'s compile, rendered as `petal check` prints
+    /// Every finding of `pid`'s compile, rendered as `petal lint` prints
     /// them (empty when there are none). For a host that has no diagnostics
     /// surface of its own: print this to stderr after a load or a reload.
     pub fn diagnostics_text(&self, pid: ProgramId) -> String {
@@ -1258,7 +1280,7 @@ impl Env {
             .unwrap_or_default()
     }
 
-    /// `diagnostics` rendered as `petal check` prints findings, against
+    /// `diagnostics` rendered as `petal lint` prints findings, against
     /// `pid`'s source: the position line and the caret snippet of each. For
     /// a subset of the program's findings, such as the ones a reload
     /// introduced
@@ -1778,7 +1800,7 @@ impl Env {
     }
 
     /// Get a mutable reference to a loaded program — for a tool that adds
-    /// diagnostics of its own after the compile (`petal check`).
+    /// diagnostics of its own after the compile (`petal lint`).
     pub fn get_program_mut(&mut self, id: ProgramId) -> Option<&mut Program> {
         let program = self.programs.get_mut(&id)?;
         // Whatever the caller changes, the classification kept beside the
@@ -1989,7 +2011,7 @@ impl Env {
 
     /// [`native_constness`](Self::native_constness) by name. A name nothing
     /// registered — a `native fn` declared by an interface module whose host
-    /// is not present, as under `petal check` — is `Dynamic`.
+    /// is not present, as under `petal lint` — is `Dynamic`.
     pub fn native_constness_of_name(&self, name: &str) -> crate::native_fn::NativeConstness {
         self.native_fns.constness_of_name(name)
     }

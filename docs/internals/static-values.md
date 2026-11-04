@@ -60,7 +60,7 @@ doc and, as the user sees them, in the
 (`native_fn::NativeConstness`: `Const`, `Dynamic`, or `ConstIfCallbacksAre`
 for `map`, `filter`, `reduce`, `sort`, `sort_by`). A name nothing registered
 is dynamic. So the answer depends on the native table of the `Env` that asks,
-and a process without the host's natives (`petal check`, the language
+and a process without the host's natives (`petal lint`, the language
 server) reports less as static than the host does, never more.
 
 **The output** is a `StaticAnalysis`: the class of every term, and a

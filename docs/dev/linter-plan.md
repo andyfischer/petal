@@ -32,9 +32,14 @@ after the parser, so a formatter that left the old spelling in place would be
 leaving a non-canonical file. fmt gates it separately (below).
 
 Diagnostics that describe a *bug* rather than a spelling — a discarded pure
-call (`typecheck/unused.rs`), a type mismatch — stay in `petal check`, the way
-Go keeps unused variables in the compiler. Judgement calls ("hoist this into a
-`let`") stay in `petal suggest` (§6).
+call (`typecheck/unused.rs`), a type mismatch — stay in the compiler, the way
+Go keeps unused variables there. Until November 2026 they were reported by a
+separate `petal check`; that command is now the first stage of `petal lint`
+(`check_program_stage` in `core/src/cli/handlers.rs`), so one command answers
+"is this right?", the way `cargo clippy` runs `cargo check` first. The
+compile's errors fail the lint; its warnings and the rules' findings fail only
+`--strict`. Judgement calls ("hoist this into a `let`") stay in
+`petal suggest` (§6).
 
 ### Where each rule landed
 
@@ -54,14 +59,19 @@ Go keeps unused variables in the compiler. Judgement calls ("hoist this into a
 - `export` → `pub` (the exception above; not whitespace).
 
 **lint** (token-changing, each with a fix): `prefer-let`, `no-redundant-cast`,
-`prefer-match`, `prefer-repeat`, `prefer-compound-assign`, `prefer-pub` (§5).
+`prefer-match`, `prefer-repeat`, `prefer-compound-assign`, `prefer-pub` (§5)
+were the first rules. There are about twenty now (`state-key-deprecated`,
+`shadows-builtin`, `int-division`, `dm-hint-state-init`, …): `petal lint
+--rules` lists them, `core/src/lint/mod.rs` (`RULES`) is the registry, and
+[CLI.md](../CLI.md) documents each one.
 
 ## 2. CLI
 
 ```
 petal fmt [--check] [--diff] [<path>...]      # gofmt -l/-d, deno fmt --check
 petal fmt -e <code> | petal fmt -
-petal lint [--fix] [--json] [--rules-include=…] [--rules-exclude=…] [<path>...]
+petal lint [--fix] [--json] [--strict | --lenient] [--rules-include=…] [--rules-exclude=…] [<path>...]
+petal lint --single-file [<options>] <file>
 petal lint --rules
 petal lint --fix --verify[=ir|strict] <path>  # prove the rewrite (see §4)
 ```
@@ -69,7 +79,9 @@ petal lint --fix --verify[=ir|strict] <path>  # prove the rewrite (see §4)
 Both take files or directories (walked for `.ptl`, skipping dot-directories,
 `node_modules` and `target`), default to `.`, and keep going past a file that
 fails. `lint --fix` formats each file it changes, since a rewritten chain
-moves code between lines.
+moves code between lines. A `lint` walk compiles each program it finds, and
+skips the compile check of a file another walked file imports (a module),
+which its importers' checks cover.
 
 ## 3. Architecture
 
@@ -268,7 +280,8 @@ Semantic rules, each needing a gate. Ordered by how often they occurred in a
 - **`if v == nil then D else v end` → `v ?? D`.** 33 nil tests against zero
   uses of `??` in the survey.
 - `if c then true else false end` → `c`; redundant `return` of a body's last
-  expression; one canonical color-literal form; `x = x + 1` → `x += 1`.
+  expression; one canonical color-literal form. (`x = x + 1` → `x += 1` shipped as
+`prefer-compound-assign`.)
 
 Not a rule, despite appearances: a trailing bare `nil` at the end of a `fn`
 body is load-bearing — the last expression is the implicit result.

@@ -44,27 +44,30 @@ describe("pub / export", () => {
     expect(showAstJson("pub let a = 1")[0].exported).toBe(true);
   });
 
-  test("check is silent about either spelling: the old one is lint's to report", () => {
+  test("the compile check is silent about either spelling: the old one is a rule's", () => {
     for (const source of [OLD, NEW]) {
-      const r = petalCapture(["check", "-e", source]);
+      const r = petalCapture(["lint", "-e", source]);
       expect(r.code).toBe(0);
-      expect(r.stderr).toBe("");
+      expect(r.stderr).not.toContain("warning:");
       expect(checkJson(source).warnings).toEqual([]);
-      expect(checkStrict(source).code).toBe(0);
     }
+    // A finding of a rule fails only a strict lint.
+    expect(checkStrict(NEW).code).toBe(0);
+    expect(checkStrict(OLD).code).toBe(1);
   });
 
   test("lint reports prefer-pub and --fix rewrites the file", () => {
     const path = file(OLD);
     const report = petalCapture(["lint", path]);
-    expect(report.code).toBe(1);
+    expect(report.code).toBe(0);
     expect(report.stdout).toContain(":1:1: prefer-pub: `export` is deprecated; write `pub`");
     expect(report.stdout).toContain(":4:1: prefer-pub:");
+    expect(petalCapture(["lint", "--strict", path]).code).toBe(1);
 
     const fix = petalCapture(["lint", "--fix", "--verify=strict", path]);
     expect(fix.code).toBe(0);
     expect(readFileSync(path, "utf-8")).toBe(NEW);
-    expect(petalCapture(["lint", path]).code).toBe(0);
+    expect(petalCapture(["lint", "--strict", path]).code).toBe(0);
   });
 
   test("lint --rules lists prefer-pub", () => {

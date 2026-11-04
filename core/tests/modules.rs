@@ -740,7 +740,7 @@ fn a_loose_file_is_one_module_however_it_is_spelled_and_is_named_from_the_entry(
     let names: Vec<String> = env.module_manifest(pid).into_iter().map(|m| m.name).collect();
     assert_eq!(names, ["main.ptl", "lib/counter.ptl", "lib/other.ptl"]);
     assert!(
-        env.call_function(sid, "lib/counter::bump", &[]).is_ok(),
+        env.call_function(sid, "./lib/counter::bump", &[]).is_ok(),
         "a loose module's functions are addressed by that name"
     );
 }
@@ -1056,4 +1056,47 @@ fn a_quoted_import_may_be_re_exported() {
         "import facade: button\nprint(button(\"r\"))",
         &["[r]"],
     );
+}
+
+/// An error inside a module, reached only through calls made from the entry
+/// file, still names the entry file in its trace frames: next to the
+/// headline's `[m line …]`, a bare `[line 2, …]` would read as the module's
+/// line (docs/tasks/module-system-followup.md, issue 5).
+#[test]
+fn trace_frames_name_the_entry_file_when_the_error_is_in_a_module() {
+    let mut env = Env::new();
+    env.register_module("m", "pub fn inner(x)\n  x + nil\nend\n");
+    let dir = std::env::temp_dir().join("petal-trace-names");
+    std::fs::create_dir_all(&dir).unwrap();
+    let main = dir.join("main.ptl");
+    let src = "import m\nfn outer() m.inner(1) end\nouter()\n";
+    let pid = env.load_program_at(src, &main).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let err = env.run(sid).unwrap_err().to_string();
+    let trace = err.split("Stack trace:").nth(1).unwrap_or_else(|| panic!("{err}"));
+    assert!(trace.contains("in inner() [main.ptl line 2"), "{err}");
+    assert!(trace.contains("in outer() [main.ptl line 3"), "{err}");
+}
+
+/// A loose file named like a package is its own module: a loose `json.ptl`
+/// beside `import json` (the bundled package) used to stop the program with
+/// "two different sources are both the module 'json'". Loose files are named
+/// as a relative import spells them (`./json`), which no package name can be
+/// (docs/tasks/module-system-followup.md, issue 1).
+#[test]
+fn a_loose_file_named_like_a_package_is_a_different_module() {
+    let tree = TempTree::new("loose-vs-package");
+    tree.write("json.ptl", "pub fn shout(s)\n  s ++ \"!\"\nend\n");
+    let main = tree.write(
+        "main.ptl",
+        "import json\nimport ./json as mine\nprint(json_stringify({a: 1}), mine.shout(\"hi\"))\n",
+    );
+    let mut env = Env::new();
+    let source = std::fs::read_to_string(&main).unwrap();
+    let pid = env.load_program_at(&source, &main).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec![r#"{"a":1} hi!"#]);
+    let names: Vec<String> = env.module_manifest(pid).into_iter().map(|m| m.name).collect();
+    assert!(names.contains(&"json.ptl".to_string()), "{names:?}");
 }

@@ -54,7 +54,7 @@ fn run_err(src: &str) -> String {
     }
 }
 
-/// The compiler's warnings for `src` — what `petal check` prints as warnings.
+/// The compiler's warnings for `src` — what `petal lint` prints as warnings.
 fn warnings(src: &str) -> Vec<String> {
     let mut env = env_with(&[]);
     let pid = env.load_program(src).unwrap_or_else(|e| panic!("{src}\n-- failed to compile: {e}"));
@@ -222,7 +222,7 @@ fn constant_data_cannot_read_what_the_file_computes_as_it_runs() {
 fn constant_data_cannot_call_a_function_that_is_not_hoisted() {
     // `scaled` reads `base`, which the file computes as it runs, so it is
     // not hoisted and is not there when the data is evaluated. That is said
-    // by name (`petal check` reports it, and a run stops on it) rather than
+    // by name (`petal lint` reports it, and a run stops on it) rather than
     // as `Cannot call nil`.
     let e = run_err(
         "let base = len(\"abc\") + 1\nfn scaled(n)\n  n * base\nend\n\
@@ -503,7 +503,7 @@ print(Kind.park == Kind.park, Kind.park == Use.park, Kind.park != Use.park)
 print(Kind.park, Use.park)
 ";
     assert_eq!(run(src), ["true false true", "Kind.park Use.park"]);
-    // …and `petal check` has nothing to say about it, nor about a variant
+    // …and `petal lint` has nothing to say about it, nor about a variant
     // named like another top-level declaration.
     assert!(warnings(src).is_empty(), "{:?}", warnings(src));
     let src = "let red = 5\nfn green()\n  1\nend\nenum Color\n  red,\n  green,\nend\nprint(red, green(), Color.red)";

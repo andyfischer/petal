@@ -4,7 +4,7 @@
 #
 # The console registers this package in memory (src/host.rs). The stock CLI
 # finds it by path:
-#   petal check -I examples/custom-apps/petal-fantasy-nes/prelude carts/hello.ptl
+#   petal lint -I examples/custom-apps/petal-fantasy-nes/prelude carts/hello.ptl
 [package]
 name = "nes"
 version = "0.1.0"

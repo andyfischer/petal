@@ -1,6 +1,6 @@
 //! The host a document is written for, as its project describes it.
 //!
-//! The language server (`petal lsp`) and `petal check` compile each file
+//! The language server (`petal lsp`) and `petal lint` compile each file
 //! alone, but a host may put names in scope
 //! that the file never imports: a module it binds as an implicit prelude, or
 //! library files it joins ahead of the script into one program. Compiled
@@ -247,7 +247,7 @@ impl Joined {
     }
 
     /// Move the findings of the joined program back onto the document, as
-    /// `petal check` reports them: each one in the document gets its own
+    /// `petal lint` reports them: each one in the document gets its own
     /// line (every span it cites moves with it), one in a prelude file is
     /// dropped (checking that file reports it), and one in an imported
     /// module is kept. The program's entry source becomes `doc_source`, so
@@ -341,12 +341,7 @@ fn rebase_import<'a>(line: &'a str, prelude: &Path, doc_dir: &Path) -> Cow<'a, s
     else {
         return Cow::Borrowed(line);
     };
-    let name = crate::module::relative_module_name(doc_dir, &target);
-    let rebased = if name.starts_with("../") {
-        name
-    } else {
-        format!("./{name}")
-    };
+    let rebased = crate::module::loose_module_name(doc_dir, &target);
     let rebased = crate::ast::import_path_source(&rebased);
     Cow::Owned(format!("{}{}{}", &line[..at], rebased, &line[at + len..]))
 }

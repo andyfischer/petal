@@ -198,7 +198,7 @@ pub fn package_modules() -> [(&'static str, &'static str); 2] {
 /// registered in `env` their declared parameter names, so call this after
 /// the `register_*` functions (as [`register_all`] does).
 ///
-/// The `petal` binary bundles the same source, so `petal check` resolves
+/// The `petal` binary bundles the same source, so `petal lint` resolves
 /// `import ui` with no host; this registration takes precedence over it.
 pub fn register_prelude(env: &mut petal::env::Env) {
     env.register_package(

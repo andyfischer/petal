@@ -1215,7 +1215,7 @@ int pb_vm_flush_static_rebuilds(pb_vm* vm);
  * said once). Valid until the next call to this function. */
 const char* pb_vm_static_values_json(pb_vm* vm);
 /* What the compile of the loaded program found and did not stop for, as
- * `petal check` prints it ("" = nothing; NULL with no program loaded).
+ * `petal lint` prints it ("" = nothing; NULL with no program loaded).
  * `errors_only` leaves the warnings out. Print it after a load and after a
  * reload: a `const` that is not constant is such an error, the program runs
  * with that binding built on every run like a `let`, and because the check
@@ -1231,7 +1231,7 @@ const char* pb_vm_diagnostics_text(pb_vm* vm, bool errors_only);
  * program loaded. Valid until the next call to this function. */
 const char* pb_vm_diagnostics_json(pb_vm* vm);
 /* What the last reload introduced: the findings of its compile, warnings and
- * errors, that the program before the edit did not have, as `petal check`
+ * errors, that the program before the edit did not have, as `petal lint`
  * prints them. This is what to print after a reload: a large program's
  * standing warnings are not repeated on every save, and the one the edit
  * just wrote is. "" when the edit introduced nothing, when the reload did

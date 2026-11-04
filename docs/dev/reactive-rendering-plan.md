@@ -1,6 +1,8 @@
 # Reactive rendering
 
-Status (2026-09-15): **P0 and P1 are shipped; P2 and P3 are next.** Hosts
+Status (re-checked 2026-11-02): **P0 and P1 are shipped. Of P2, the
+constant class shipped as [static values](../internals/static-values.md);
+per-input-class slots and P3 are not started.** Hosts
 skip frames whose inputs did not change ([frame-gate.md](frame-gate.md)), and
 within a frame that runs, user-function calls whose inputs did not change are
 replayed ([memo-scopes.md](memo-scopes.md)). This file tracks the plan as a
@@ -34,8 +36,8 @@ P0 underlies everything, P2 and P3 make P1 cheaper.
 |---|---|---|---|
 | P0 Gated frames, retained output | whole frame | none | 🟡 gate shipped in every host; segmented output and damage rects not started |
 | P1 Memoized scopes | function call (loop body planned) | none | 🟡 function calls shipped; loop bodies, top-level body, hot-reload invalidation open |
-| P2 Dependency classes | block, by input class | none | ⬜ next |
-| P3 Keyed collections + hit-test index | collection element | `for … key` | ⬜ |
+| P2 Dependency classes | block, by input class | none | 🟡 constant class shipped as static values; viewport/theme/input classes open |
+| P3 Keyed collections + hit-test index | collection element | `for … key` | 🟡 `for … key` syntax shipped; persistent collections and the hit-test index not started |
 | P4 Signals | binding | new mental model | 🔭 internal representation only, if ever |
 | P5 Self-adjusting term graph | IR term / block | none | 🔭 research |
 

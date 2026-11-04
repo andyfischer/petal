@@ -128,7 +128,7 @@ A plan lists steps, each a named check with a `stop_on: pass|fail`:
 
 The checks:
 
-1. **compiles** — `petal check` both sides.
+1. **compiles** — `petal lint` both sides.
 2. **ir-equal** — `petal ir-equal` on both sides. For a formatting-only
    refactor this is proof with no execution and no determinism worries, and a
    pass ends the pipeline for that file. For a semantic rewrite (`if` →

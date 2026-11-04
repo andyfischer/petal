@@ -142,7 +142,7 @@ by card → due 0; close → $203.62 collected.
   that otherwise reads the cell bare; the app copies to a `let` first.
 - **A hoisted function cannot read a `state var` declared below it.**
   `now()` reads `clock_skew`, so it had to move below the state block
-  (`undefined variable` from `check`, not a hoisting warning).
+  (`undefined variable` from `petal lint`, not a hoisting warning).
 - **`json_parse` round-trips ints as ints**, which the money math depends on;
   nothing checks the saved document's shape, so a store from an incompatible
   version would fail on first use (the key is versioned, `floor-v1`).

@@ -1,6 +1,9 @@
 # Proposal: static values (build-once constants that follow the source diff)
 
-Status: proposed, 12 October 2026. Stage 0 (the classifier, `petal
+Status: **accepted and shipped** (every planned stage, by 23 October 2026;
+what is left is in
+[tasks/static-value-optimization.md](../tasks/static-value-optimization.md)).
+Proposed 12 October 2026. Stage 0 (the classifier, `petal
 show-static`, the `CONST` flag, `--static-audit`) is implemented and its
 go/no-go gate passed. Stage 1 is implemented (`core/src/static_cache.rs`:
 slots, the skip lowering, the immutable bit), and so is stage 2: a reload
@@ -109,7 +112,7 @@ inside noise; instruction and allocation counts are exact.
 | Enum data declaration | about 220 ns per variant per run |
 | Moses: 180 literal top-level lets moved behind build-once by hand | 83.1k → 79.1k instructions per frame (−4.8%), record allocations −41%, GC time −14% |
 | Same experiment on four example panels | −0.03% to −2.8% instructions |
-| `petal check` on Moses (a full compile) | 587 ms |
+| `petal lint` on Moses (a full compile) | 587 ms |
 | Moses boot (first 60 frames) | about 2.3 s, much of it building tables |
 | A 400-record `let` table passed to a memoized function | 58 misses in 30 frames; 0 when its identity is stable |
 
@@ -159,7 +162,7 @@ through the host's font provider), `is_valid`, several Garden panel stubs, and
 the C bridge's default of flags `0` meaning pure. `CONST` is an explicit
 opt-in per native: same arguments, same result, in any run, on any host. A
 native without it is dynamic. `native fn` declarations compiled without a
-host (`petal check`, the LSP) are dynamic too, so those tools may report less
+host (`petal lint`, the LSP) are dynamic too, so those tools may report less
 as static than a host does; they never report more.
 
 **Static-pure functions** need an interprocedural summary, which does not
@@ -675,7 +678,9 @@ Decided on 12 October 2026: 1 yes (`const` is in), 2 yes (stage 0 is a
 go/no-go), 7 yes (the enum read path and the frozen generation go first).
 The work order is in
 [`docs/tasks/static-value-optimization.md`](../tasks/static-value-optimization.md).
-Questions 3 to 6 are still open.
+Questions 3 to 6 were left open here; the implementation has since
+answered them (see each one's outcome in
+[internals/static-values.md](../internals/static-values.md)).
 
 1. **Is `const` acceptable?** The request was for automatic detection. This
    proposal keeps detection as the mechanism and adds `const` as an

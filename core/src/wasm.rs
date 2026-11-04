@@ -22,7 +22,7 @@ const CLICKED_ID_BINDING: &str = "clicked_id";
 
 /// The interface package of this host: `import web` binds the element-tree
 /// natives. Its source lives in `core/packages/web` so the stock CLI can
-/// check scripts against it (`petal check -I core/packages`).
+/// check scripts against it (`petal lint -I core/packages`).
 pub const WEB_PACKAGE: &str = "web";
 const WEB_INTERFACE: &str = include_str!("../packages/web/src/web.ptl");
 const WEB_MANIFEST: &str = include_str!("../packages/web/petal.toml");

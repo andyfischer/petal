@@ -85,7 +85,7 @@ pub struct FileReport {
     /// The file as it was named to the runner.
     pub file: String,
     /// Why none of the file's tests could run: it does not parse, compile,
-    /// pass `petal check`, or link against this host.
+    /// pass `petal lint`, or link against this host.
     pub error: Option<String>,
     /// Expectations at the file's top level (outside any test) that did not
     /// hold when it ran.

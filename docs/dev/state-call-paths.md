@@ -57,7 +57,8 @@ uses split three ways:
 - **A pure cache** (`nes.ptl`'s `_font_rows`, one build per ink for every
   caller) is a [`memo(key)`](../features/memo.md). Sharing a pure result is
   unobservable, so an absolute key is acceptable there. `petal lint --fix`
-  makes this rewrite when the slot is never written.
+  makes this rewrite when the slot is never written and the initializer is
+  plainly a pure function of the key (no calls).
 - **Sharing on purpose** (`nes.ptl`'s `btn_repeat`, where two widgets asking
   about one button share one repeat phase) and **identity that outlives a
   position** (`garden/examples/panels/plant.ptl`'s lineage keying, where the
@@ -226,7 +227,7 @@ copy; it is designed but not built (§4).
   be listed in `callback_intrinsic`. The drivers still pass the builtin's
   `call_site` to `call_closure_sync`, which the host path shares, but no
   `state` is ever keyed under it. `Index` parts come from `for`/`while`
-  only. `petal check` reports the provable cases at compile time
+  only. `petal lint` reports the provable cases at compile time
   (`compiler/callback_state.rs`, rule `state-in-callback`). Decision record:
   [proposals/state-in-callbacks.md](../proposals/state-in-callbacks.md).
 

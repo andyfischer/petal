@@ -19,19 +19,19 @@ const APP = resolve(__dirname, "fixtures/manifest/app");
 
 describe("manifest dependencies", () => {
   it("check resolves a path dependency by its key with no flag", () => {
-    const r = petalCapture(["check", resolve(APP, "main.ptl")]);
+    const r = petalCapture(["lint", "--single-file", resolve(APP, "main.ptl")]);
     expect(r.stderr).toBe("");
     expect(r.code).toBe(0);
   });
 
   it("finds the manifest from a file below the project root", () => {
-    const r = petalCapture(["check", resolve(APP, "screens/menu.ptl")]);
+    const r = petalCapture(["lint", "--single-file", resolve(APP, "screens/menu.ptl")]);
     expect(r.stderr).toBe("");
     expect(r.code).toBe(0);
   });
 
   it("-e code run inside the project sees its dependencies", () => {
-    const r = spawnSync(PETAL, ["check", "-e", "import tw\nprint(go())"], {
+    const r = spawnSync(PETAL, ["lint", "--single-file", "-e", "import tw\nprint(go())"], {
       encoding: "utf-8",
       cwd: APP,
     });
@@ -42,7 +42,7 @@ describe("manifest dependencies", () => {
   it("a git dependency that is not installed is a clear error where it is imported", () => {
     // PETAL_OFFLINE: the CLI would otherwise try to install it (fetching the
     // url). The package manager itself is covered by core/tests/pkgman.rs.
-    const r = spawnSync(PETAL, ["check", resolve(APP, "uses_git.ptl")], {
+    const r = spawnSync(PETAL, ["lint", "--single-file", resolve(APP, "uses_git.ptl")], {
       encoding: "utf-8",
       env: { ...process.env, PETAL_OFFLINE: "1" },
     });
@@ -53,7 +53,7 @@ describe("manifest dependencies", () => {
   });
 
   it("a registry version is a clear error where it is imported", () => {
-    const r = petalCapture(["check", resolve(APP, "uses_registry.ptl")]);
+    const r = petalCapture(["lint", "--single-file", resolve(APP, "uses_registry.ptl")]);
     expect(r.code).not.toBe(0);
     expect(r.stderr).toContain("registries are not supported yet");
   });
@@ -61,7 +61,7 @@ describe("manifest dependencies", () => {
 
 describe("required host interfaces", () => {
   it("check reports them and passes", () => {
-    const r = petalCapture(["check", resolve(APP, "main.ptl")]);
+    const r = petalCapture(["lint", "--single-file", resolve(APP, "main.ptl")]);
     expect(r.code).toBe(0);
     expect(r.stdout.trim()).toBe(
       "requires host interfaces: audio ^1.0 (tween), gfx >=0.2 (marble)",
@@ -69,12 +69,12 @@ describe("required host interfaces", () => {
   });
 
   it("only the packages a program loads count", () => {
-    const r = petalCapture(["check", resolve(APP, "plain.ptl")]);
+    const r = petalCapture(["lint", "--single-file", resolve(APP, "plain.ptl")]);
     expect(r.stdout.trim()).toBe("requires host interfaces: gfx >=0.2 (marble)");
   });
 
   it("check --json carries them", () => {
-    const r = petalCapture(["check", "--json", resolve(APP, "main.ptl")]);
+    const r = petalCapture(["lint", "--single-file", "--json", resolve(APP, "main.ptl")]);
     const parsed = JSON.parse(r.stdout);
     expect(parsed.ok).toBe(true);
     expect(parsed.requires).toEqual([
@@ -94,7 +94,7 @@ describe("required host interfaces", () => {
   });
 
   it("a bundled package states its own: bloom requires ui", () => {
-    const check = petalCapture(["check", "-e", "import ui\nimport bloom\nprint(1)"]);
+    const check = petalCapture(["lint", "--single-file", "-e", "import ui\nimport bloom\nprint(1)"]);
     expect(check.code).toBe(0);
     expect(check.stdout).toContain("ui >=0.1 (bloom)");
     const run = petalCapture(["run", "-e", "import ui\nimport bloom\nprint(1)"]);

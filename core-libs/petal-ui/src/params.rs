@@ -3,7 +3,7 @@
 //! `mouse_pressed(button: 0)`.
 //!
 //! The names are written once, in the `native fn` declarations of the `ui`
-//! module (`prelude/ui.ptl`) — the interface `petal check` reads without ever
+//! module (`prelude/ui.ptl`) — the interface `petal lint` reads without ever
 //! registering these natives. This module is what makes those declarations
 //! the ones this host actually binds against: [`register`] is how every
 //! native in this crate is registered, and it gives the native the parameter

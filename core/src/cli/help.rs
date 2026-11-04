@@ -17,7 +17,10 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
         "run and check programs",
         &[
             ("run", "Execute a program"),
-            ("check", "Compile a program without executing it"),
+            (
+                "lint",
+                "Check programs without running them, and report better spellings",
+            ),
             ("test", "Run the test blocks of files and directories"),
             ("bench", "Measure what a call of a named function costs"),
             ("lsp", "Serve the language server over stdio"),
@@ -43,7 +46,6 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
         "tidy and compare source",
         &[
             ("fmt", "Rewrite files in the canonical layout"),
-            ("lint", "Report code that has a better spelling, and fix it"),
             (
                 "fix-imports",
                 "Rewrite imports for the current module system",
@@ -144,7 +146,6 @@ pub(super) fn is_command(name: &str) -> bool {
 fn page(name: &str) -> Option<&'static str> {
     Some(match name {
         "run" => RUN,
-        "check" => CHECK,
         "bench" => BENCH,
         "fmt" => FMT,
         "lint" => LINT,
@@ -298,8 +299,8 @@ DESCRIPTION
        Checks <file>, then runs it. 'petal <file>' with no subcommand is
        shorthand for this command, and accepts the same options.
 
-       The check is the one 'petal check' does, and its findings are printed
-       the same way. A program with a check error is not run: no line of it
+       The check is the compile check 'petal lint' does, and its findings
+       are printed the same way. A program with a check error is not run: no line of it
        executes, whether or not the line at fault would have been reached.
        Warnings are printed and the program runs.
 
@@ -425,97 +426,10 @@ OPTIONS
 
 {COMMON}
 SEE ALSO
-       petal help check, petal help install, petal help show-ir,
+       petal help lint, petal help install, petal help show-ir,
        petal help pending-report, docs/module-system.md
 ";
 
-const CHECK: &str = "\
-NAME
-       petal-check - Compile a program without executing it
-
-SYNOPSIS
-       petal check [<options>] <file>...
-       petal check [<options>] -e <code>
-
-DESCRIPTION
-       Lexes, parses, compiles and lowers the program, then stops. Exits 1
-       when it does not compile, or when the checker finds an error: a line
-       that fails whenever it runs, such as a call to or read of a name
-       nothing defines, or a call whose argument count no overload accepts.
-       Other findings (type mismatches against annotations, discarded
-       results) are warnings and do not change the exit code unless
-       --strict is given. Exits 0 otherwise, so it is the cheap gate for
-       editors and CI.
-
-       A call to, or read of, a name that nothing defines is an error (the
-       line fails with 'Unknown function' or 'Undefined variable' when it
-       runs). A name is defined by a declaration in the file, by an import,
-       or by being a core builtin; no host is consulted. A script written
-       for a host imports the host's interface package ('import ui'), whose
-       'native fn' declarations are all a check needs: 'ui', 'bloom',
-       'text_layout' and 'glsl' are bundled in this binary, and any other
-       host's package is found through the project's petal.toml (a path
-       under [dependencies]) or with -I (for Garden:
-       -I garden/garden-script/packages). 'petal run' starts with this
-       same check and does not run a program that fails it; a script that
-       imports 'ui' passes the check and is then refused by 'run', because
-       'run' registers the core builtins only.
-
-       The nearest petal.toml is found by walking up from the script, as in
-       every command that compiles: its [dependencies] are importable by
-       their keys with no flag. A git dependency the program imports is
-       installed first if it is missing or petal.lock is out of date (see
-       'petal help install'; PETAL_OFFLINE=1 forbids it). When the packages
-       the program loads state
-       [requires], a passing check prints one line naming those host
-       interfaces ('requires host interfaces: ui >=0.1 (bloom)'; a
-       'requires' array with --json). It never fails on them: it has no
-       host. A run in a host that does not provide one fails at load.
-
-       Given several files, check checks each as its own program, prints
-       each file's findings under a '==> <file> <==' header, and exits
-       non-zero when any file fails, naming those that did. With --json it
-       prints one object with 'ok' and 'files', each entry of 'files' being
-       that file's --json object plus its 'file'.
-
-OPTIONS
-       --json
-              Emit errors and warnings as structured JSON.
-
-       --strict
-              Exit 1 when there are warnings too.
-
-       --lenient
-              Exit 0 despite checker errors: fail only when the program does
-              not compile or lower.
-
-       --ir   Check <file> as JSON IR ('show-ir --json' output) rather than
-              source. Use '-' to read it from stdin.
-
-       --error-format full|bare
-              As on 'petal run'.
-
-       --strict
-              Exit non-zero when type-checker warnings exist. Plain 'check'
-              exits 0 for a program that only has warnings.
-
-       --lenient
-              Report checker errors but exit 0 unless the program fails to
-              compile or lower. For tools that only ask whether a file
-              compiles, such as a corpus sweep over scripts for several
-              hosts.
-
-       --ir   Check <file> as JSON IR ('show-ir --json' output) rather than
-              source. Use '-' to read the IR from stdin.
-
-       --error-format full|bare
-              'bare' prints only the error message, with no position suffix
-              and no source snippet. Same flag as 'run'.
-
-{COMMON}
-SEE ALSO
-       petal help run, petal help lint
-";
 
 const FIX_IMPORTS: &str = "\
 NAME
@@ -748,29 +662,86 @@ SEE ALSO
 
 const LINT: &str = "\
 NAME
-       petal-lint - Report code that has a better spelling, and fix it
+       petal-lint - Check programs without running them, and report better
+       spellings
 
 SYNOPSIS
-       petal lint [--fix [--verify[=ir|strict]]] [--json]
-                  [--rules-include=<rules>] [--rules-exclude=<rules>] [<path>...]
-       petal lint --rules
+       petal lint [<options>] [<path>...]
+       petal lint --single-file [<options>] <file>
        petal lint [<options>] -e <code>
+       petal lint --ir [--json] <file>
+       petal lint --rules
+
+       <options>: [--fix [--verify[=ir|strict]]] [--json] [--strict | --lenient]
+                  [--rules-include=<rules>] [--rules-exclude=<rules>]
+                  [--error-format full|bare] [-I <dir>]...
 
 DESCRIPTION
-       Runs named rules over every .ptl file under the given paths (the
-       default is the current directory) and prints one line per finding:
+       The one command that asks whether code is right without running it.
+       Every .ptl file under the given paths is linted (the default is the
+       current directory; dot-directories, node_modules and target are
+       skipped), in two stages:
+
+       1. The compile check. Each program is lexed, parsed, compiled,
+          type-checked and lowered to bytecode, exactly as 'petal run' does
+          before it starts, and stops there. Its findings print to stderr
+          with a source caret. An error is a line that fails whenever it
+          runs, such as a call to or read of a name nothing defines, or a
+          call whose argument count no overload accepts; 'run' refuses a
+          program that has one. Everything else (a type mismatch against an
+          annotation, a discarded result) is a warning.
+
+       2. The rules. Named rules over the file's text, each a spelling with
+          a better alternative, print one line per finding to stdout:
 
               file:line:column: rule: message
 
-       and exits 1 if there are any. Most rules carry a fix, and --fix
-       applies them in place; a fixed file is then formatted with
-       'petal fmt', since a rewrite can move code between lines. Layout is
-       not lint's business: an unformatted file with no findings is clean.
+       Exits 1 when any program does not compile or lower, has a check
+       error, or a file cannot be read or linted. Warnings and rule findings
+       are reported and do not change the exit code unless --strict is
+       given, so a plain 'petal lint' is the cheap gate for editors and CI.
+
+       A file that another linted file imports is a module: it is checked as
+       part of the programs that import it, whose report includes what is
+       found in it, and not again on its own. The rules still run over it.
+
+       Over a walk, the compile check's output for each file is headed
+       '==> <file> <==', and a closing line names the programs that failed.
+       --single-file lints exactly one file, checked as its own program
+       whether or not something imports it, with no headers; '-' (stdin)
+       and -e are linted the same way.
+
+       A name is defined by a declaration in the file, by an import, or by
+       being a core builtin; no host is consulted. A script written for a
+       host imports the host's interface package ('import ui'), whose
+       'native fn' declarations are all the check needs: 'ui', 'bloom',
+       'text_layout' and 'glsl' are bundled in this binary, and any other
+       host's package is found through the project's petal.toml (a path
+       under [dependencies]) or with -I (for Garden:
+       -I garden/garden-script/packages). A script that imports 'ui' passes
+       the check and is then refused by 'petal run', because 'run' registers
+       the core builtins only.
+
+       The nearest petal.toml is found by walking up from each file, as in
+       every command that compiles: its [dependencies] are importable by
+       their keys with no flag, and a file whose project declares [host] is
+       checked as that host compiles it. A git dependency the program
+       imports is installed first if it is missing or petal.lock is out of
+       date (see 'petal help install'; PETAL_OFFLINE=1 forbids it). When the
+       packages a single file's program loads state [requires], a passing
+       lint prints one line naming those host interfaces ('requires host
+       interfaces: ui >=0.1 (bloom)'; a 'requires' array with --json). It
+       never fails on them: it has no host. A run in a host that does not
+       provide one fails at load.
+
+       Most rules carry a fix, and --fix applies them in place; a fixed file
+       is then formatted with 'petal fmt', since a rewrite can move code
+       between lines. Layout is not lint's business: an unformatted file
+       with no findings is clean.
 
        A rule fixes only what it can show to be the same program. A finding
-       it cannot is reported and left, and --fix prints those and still
-       exits 1. 'petal lint --rules' says which rules fix everything, which
-       fix where provable, and which only report.
+       it cannot is reported and left. 'petal lint --rules' says which rules
+       fix everything, which fix where provable, and which only report.
 
        Each fix is gated: if the file compiled before, it must compile after,
        or nothing is written.
@@ -830,12 +801,13 @@ DESCRIPTION
        int-division (opt-in, report only)
               a / b on two ints, truncated, then used as a float. Opt-in
               because a row or column index scaled by a float is the same
-              shape. A literal 1 / 2 is a 'petal check' warning instead
+              shape. A literal 1 / 2 is a compile-check warning instead
        prefer-pub
               the deprecated export modifier becomes pub
        state-key-deprecated
-              state(key), which is deprecated (petal check warns too):
-              never written, it becomes memo(key); otherwise reported
+              state(key), which is deprecated (the compile check warns too):
+              never written and built from its key alone (no calls), it
+              becomes memo(key); otherwise reported
        state-as-constant (opt-in)
               a top-level state that nothing assigns and whose initializer
               is static becomes a const. Runs only when --rules-include
@@ -859,21 +831,54 @@ OPTIONS
               change the IR by design and proves the rest; --verify=strict
               demands IR equality of the whole rewrite.
 
-       --json Print the findings as a JSON array of objects with file, line,
-              column, rule, message and fixed.
+       --json Print one object. For one file (--single-file, '-', -e) it has
+              'ok'; 'warnings', the compile check's findings, each with
+              message, severity ('error' or 'warning'), line, column and
+              file (null for the file itself); 'findings', the rules',
+              each with file, line, column, rule, message, fixable and
+              fixed; and 'requires' when the packages state any. A program
+              that does not compile or lower is the error object 'petal run
+              --json' prints ('error', 'phase', 'message', 'errors', ...)
+              with 'ok' false and 'findings' added. Over a walk: an object
+              with 'ok' and 'files', each entry being one file's object plus
+              its 'file'; a module's entry has 'module': true and no
+              'warnings'.
+
+       --strict
+              Exit 1 when there are warnings or rule findings too. After
+              --fix, a finding that was fixed no longer counts.
+
+       --lenient
+              Report check errors but exit 0 unless a program fails to
+              compile or lower. For tools that only ask whether a file
+              compiles, such as a corpus sweep over scripts for several
+              hosts.
+
+       --single-file
+              Lint exactly one file as its own program: no directory walk,
+              no module skipping, and the output of a single file.
+
+       --ir   Check <file> as JSON IR ('show-ir --json' output) rather than
+              source; '-' reads it from stdin. Only the compile check runs:
+              there is no source for the rules. Implies --single-file.
+
+       --error-format full|bare
+              'bare' prints only each error's message, with no position
+              suffix and no source snippet. Same flag as 'run'.
 
        --rules
               List the rules and exit.
 
        --rules-include=<rule>,...
-              Run only these rules.
+              Run only these rules. An empty list (--rules-include=) runs
+              none: the compile check alone.
 
        --rules-exclude=<rule>,...
               Run every rule but these.
 
 {COMMON}
 SEE ALSO
-       petal help fmt, petal help ir-equal
+       petal help run, petal help fmt, petal help ir-equal
 ";
 
 const SUGGEST: &str = "\
@@ -911,7 +916,7 @@ DESCRIPTION
 
        This is a suggestion channel, not a check. Nothing here runs during an
        ordinary compile, nothing here can fail a build, and nothing is
-       written unless --apply is given. 'petal check' remains the tool that
+       written unless --apply is given. 'petal lint' remains the tool that
        warns; this is the tool that proposes.
 
        Most suggestions leave the compiled program exactly as it was, but that
@@ -1062,7 +1067,7 @@ OPTIONS
 
 {COMMON}
 SEE ALSO
-       petal help check, petal help lint, petal help ir-equal
+       petal help lint, petal help ir-equal
 ";
 
 const APPLY_CHANGE: &str = "\
@@ -1193,7 +1198,7 @@ EXIT STATUS
        1 when it was refused or failed. On 1 no file has been touched.
 
 SEE ALSO
-       petal help lint, petal help suggest, petal help check
+       petal help lint, petal help suggest
 ";
 
 const IR_EQUAL: &str = "\
@@ -1272,7 +1277,7 @@ DESCRIPTION
        phantom terms and the auto-loaded prelude and imported modules.
 
        'show-ir --json' is also Petal's interchange format: its output loads
-       back into 'petal run --ir' and 'petal check --ir'.
+       back into 'petal run --ir' and 'petal lint --ir'.
 
 OPTIONS
        --json
@@ -1382,7 +1387,7 @@ OPTIONS
 
 {COMMON}
 SEE ALSO
-       petal help show-ir, petal help check
+       petal help show-ir, petal help lint
 ";
 
 const SHOW_AST: &str = "\
@@ -1696,7 +1701,7 @@ DESCRIPTION
        because documents arrive over the protocol.
 
 SEE ALSO
-       petal help check
+       petal help lint
 ";
 
 const PACKAGES: &str = "\
@@ -1759,7 +1764,7 @@ OPTIONS
               A directory to search for libraries. Repeatable.
 
 SEE ALSO
-       petal help install, petal help run, petal help check,
+       petal help install, petal help run, petal help lint,
        docs/packages.md
 ";
 
@@ -1799,7 +1804,6 @@ mod tests {
 
     const ALL_PAGES: &[&str] = &[
         "run",
-        "check",
         "fmt",
         "lint",
         "test",

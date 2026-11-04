@@ -1,4 +1,4 @@
-// `petal check` must answer "will this run?", which means lowering to bytecode
+// `petal lint`'s compile check must answer "will this run?", which means lowering to bytecode
 // and not just lexing/parsing/compiling. A program can compile cleanly and
 // still fail to lower, and `check` is what CI and editors call — so a check
 // that stops before lowering reports a green build for a program that aborts on
@@ -18,7 +18,7 @@
 //
 // So the gate builds the edge itself: take a real program's IR, repoint one
 // root-block term's input at a term inside a function body, and feed it to
-// `check --ir -`. `Program::validate` (core/src/ir_validate.rs) only
+// `lint --ir -`. `Program::validate` (core/src/ir_validate.rs) only
 // range-checks ids and arities — it does not check function-boundary edges —
 // so the corrupted IR imports fine and dies in lowering, which is precisely
 // what the gate needs to observe. The IR is built here rather than checked in
@@ -52,7 +52,7 @@ function badIr(): string {
   return JSON.stringify(ir);
 }
 
-describe("petal check lowers to bytecode", () => {
+describe("petal lint lowers to bytecode", () => {
   it("still passes a program that lowers", () => {
     const { code, stderr } = checkText(`let i = 0
 if true then i = 1 end
@@ -76,7 +76,8 @@ print(i)`);
     end
   end
 end`);
-    expect(stderr).toBe("");
+    // The style rules may have a spelling to suggest; the check has nothing.
+    expect(stderr).not.toMatch(/warning:|error|Error/);
     expect(code).toBe(0);
   });
 

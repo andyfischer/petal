@@ -22,7 +22,7 @@ fn compile(env: &Env, src: &str) -> Program {
     program
 }
 
-/// A check-only `Env`, as `petal show-static` and `petal check` build one: a
+/// A check-only `Env`, as `petal show-static` and `petal lint` build one: a
 /// `native fn` nothing registers still compiles.
 fn check_env() -> Env {
     let mut env = Env::new();
@@ -174,7 +174,7 @@ let B = h_pure(1, 2)
     assert_dynamic(&r, "B", "calls h_pure, which is not declared constant");
 }
 
-/// `petal check` and the language server compile without a host. They may
+/// `petal lint` and the language server compile without a host. They may
 /// report less as static than the host does, never more.
 #[test]
 fn without_the_host_a_native_is_dynamic() {
@@ -1606,5 +1606,5 @@ fn a_tunable_config_let_reports_its_range() {
     // A plain `let` has none.
     assert_eq!(decl(&r, "R").range, None);
     let json = r.to_json(false).to_string();
-    assert!(json.contains("\"range\":{\"max\":10.0,\"min\":0.0}"), "{json}");
+    assert!(json.contains("\"range\":{\"min\":0.0,\"max\":10.0}"), "{json}");
 }

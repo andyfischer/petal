@@ -3,7 +3,7 @@
 # input, timing and frame natives are petal-ui's (`import ui/input`).
 #
 # The host registers this package in memory. The stock CLI finds it by path:
-# `petal check -I examples/custom-apps/petal-fps/packages <script>`.
+# `petal lint -I examples/custom-apps/petal-fps/packages <script>`.
 [package]
 name = "fps"
 version = "0.1.0"

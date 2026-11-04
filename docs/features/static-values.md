@@ -100,7 +100,7 @@ error: `TITLE` is declared `const` but is not constant
   |               ^^^^^^^^^^^^^
 ```
 
-`petal check` exits non-zero on it and `petal run` does not start. A host
+`petal lint` exits non-zero on it and `petal run` does not start. A host
 that reloads a script while it is being edited reports the error and keeps
 running, with the binding behaving as the `let` it otherwise is.
 
@@ -382,7 +382,7 @@ the API are in [ffi.md, Constant natives](../usage/ffi.md#constant-natives);
 from C the flag is `PB_FX_CONST`
 ([embedding-c.md](../usage/embedding-c.md)).
 
-**A `const` built from host natives is checked by the host.** `petal check`,
+**A `const` built from host natives is checked by the host.** `petal lint`,
 `petal lint` and the language server run without any host, so they do not
 know which of its natives are constant. For a `const` whose only obstacle is
 such a native they report nothing, and `show-static` says `declared const:

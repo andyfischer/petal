@@ -496,7 +496,7 @@ let double = fn(n: int) -> n * 2   // lambda params, but no lambda return type
 
 `:` annotates a binding (`let`, `var`, or `state`), a parameter or a class
 field; `->` annotates a named function's return type. Annotations are optional
-and checked by `petal check` as warnings, with no effect at runtime except
+and checked by `petal lint` as warnings, with no effect at runtime except
 `-> nil`, which turns off the function's
 [implicit return](implicit-return-values.md#--nil-turns-the-implicit-return-off).
 

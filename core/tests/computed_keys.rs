@@ -78,7 +78,7 @@ fn a_key_that_is_not_a_string_is_refused_by_name() {
     assert_eq!(run("print({[str(5)]: 1})").unwrap(), "{ 5: 1 }");
 }
 
-/// `petal check` has nothing to say about a record built with one, or about
+/// `petal lint` has nothing to say about a record built with one, or about
 /// reading it; `petal fmt` keeps the form and tidies its spacing.
 #[test]
 fn check_and_fmt_take_the_form_as_written() {

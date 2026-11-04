@@ -1,7 +1,7 @@
 # String offsets are code points: what to change when you re-vendor
 
 Status: 2026-10-09. Petal `core` switched string offsets from UTF-8 bytes to
-Unicode code points (todo item 4, [testbed-takeaways §1](testbed-takeaways.md)).
+Unicode code points (an item of the 2026-10-08 todo list, since removed).
 This file lists what each project that vendors or installs Petal has to do.
 Nothing outside `~/petal` was edited.
 
@@ -92,26 +92,11 @@ Swept read-only: `~/cheesecake/games` (164 scripts), `~/cheesecake/engine` (2),
   `~/worlds-fair/vendor/petal/docs/Builtins.md`) still describe byte indexing
   until the project re-vendors.
 
-## Inside `~/petal`, left for the owner of those directories
+## Inside `~/petal`
 
-`core-libs/petal-ui/` and `garden/` were being edited by another task when this
-landed, so these were not touched. None is needed for the build or the tests.
-
-- `core-libs/petal-ui/prelude/ui.ptl:1151-1153` (`wrap`), `:1170-1173`
-  (`preview`) and `:1234-1240` (`ellipsize`): the comments say widths are
-  bytes and that `slice` snaps to UTF-8 boundaries. `wrap`, `preview`,
-  `truncate_head` (`:1105`) and `truncate_tail` (`:1096`) now count
-  characters, which is what their `max_chars` parameter always claimed. A
-  line holding non-ASCII text used to be cut by bytes, so it now keeps more of
-  the text for the same `max_chars`; the result is at most `max_chars`
-  characters. Panel goldens that show such a line will change.
-- `core-libs/petal-ui/prelude/ui.ptl:1332-1345`, `:2135-2259` (`text_field`
-  and its helpers) use `char_len`/`char_slice` and are unaffected.
-- `garden/docs/petal-graphical-panels.md:260-261` says "`len` and `slice` are
-  byte-indexed".
-- `garden/gpp-apps/git-viewers/src/git_panel.ptl:420-421` and
-  `garden/gpp-apps/sqlite-browser/src/db_view.ptl:102` slice strings by
-  offsets they computed with `len`, so they stay consistent.
+Done. The `ui.ptl` comments and `garden/docs/petal-graphical-panels.md` that
+still described byte offsets were updated after this landed (re-checked
+2026-11-02).
 
 ## Natives that exchange string offsets with scripts
 

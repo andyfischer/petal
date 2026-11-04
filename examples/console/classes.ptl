@@ -27,7 +27,7 @@ print(p.dist2())
 print(p.shifted(10, 20).dist2())
 
 // The class name is a type name: passing anything else warns at check time
-// (`petal check classes.ptl`) and never blocks the run.
+// (`petal lint classes.ptl`) and never blocks the run.
 fn describe(p: Point) -> string
   "({p.x}, {p.y})"
 end

@@ -76,7 +76,7 @@ end
 ```
 
 The binding itself is not hoisted. Top-level code above `let NODE_W` that
-names `NODE_W` directly fails `petal check` with ``undefined variable
+names `NODE_W` directly fails `petal lint` with ``undefined variable
 `NODE_W` ``; only a hoisted function body may read it early.
 
 ## When a `fn` is not hoisted
@@ -91,7 +91,7 @@ exactly where it is written when
   `let old_max = max` above `fn max` still reads the builtin `max`.
 
 Until its line runs, such a function is `nil`. A top-level call to it from
-above fails with `Cannot call nil`, and `petal check` says why first:
+above fails with `Cannot call nil`, and `petal lint` says why first:
 
 ```petal ignore
 print(fit(2))
@@ -108,7 +108,7 @@ so at this point `fit` is still nil. Move this call below the declaration of
 `fit`.
 ```
 
-It is a warning, so `petal check` exits 0 and `petal check --strict` exits 1.
+It is a warning, so `petal lint` exits 0 and `petal lint --strict` exits 1.
 The fix is to keep a helper that reads a computed value below that value and
 above its first top-level call.
 
@@ -143,5 +143,5 @@ top level.
   [enums](../language-guide.md#enums), which are hoisted as declarations
 - [`var`](var.md) and [inline state](../features/inline-state.md), which are
   never hoisted
-- [`petal check`](../CLI.md#check--compile-without-running), where the
+- [`petal lint`](../CLI.md#lint--check-programs-without-running-them), where the
   warning comes from

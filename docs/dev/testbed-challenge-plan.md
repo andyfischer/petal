@@ -16,8 +16,11 @@ stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-`examples/custom-apps/side-scroller` is a thirty-eighth panel app that was not on
-this list. The remaining 8 have not been attempted.
+Apps that were not on this list: `examples/custom-apps/side-scroller`,
+`examples/games/hopper` and the larger custom apps
+(`examples/custom-apps/{diagram-canvas,petal-fantasy-nes,petal-fps}`). The
+remaining 8 (#21, #27–#31, #40, #44) have not been attempted (re-checked
+2026-11-02).
 
 | # | App | What it tests | Status |
 |---|---|---|---|

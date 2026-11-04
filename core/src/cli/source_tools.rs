@@ -6,12 +6,13 @@
 //! and `target`), `.` when none is given, `-` for stdin — or inline code with
 //! `-e`. A file that fails is reported and skipped; the others still run.
 
+use std::collections::HashSet;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process;
 
-use super::{ApplyChangeArgs, LintArgs};
+use super::{ApplyChangeArgs, LintArgs, SourceInput};
 
 /// Exit code for "the rewrite could not be proven equivalent" — distinct from
 /// the plain "problems found" exit 1.
@@ -336,90 +337,111 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
         return;
     }
 
+    super::set_error_format(opts.error_format);
     let mut errors = 0usize;
     let inputs = collect_inputs(&opts.paths, opts.inline.as_deref(), &mut errors);
-    let mut json_rows: Vec<serde_json::Value> = Vec::new();
+    // One source on its own (`--single-file`, stdin, `-e`) is checked as a
+    // program whatever imports it, and reports as one object; a walk skips
+    // the check of a module, which the programs importing it check.
+    let single = opts.single_file || opts.inline.is_some();
+    let modules = if single {
+        HashSet::new()
+    } else {
+        imported_by_others(&inputs, include_dirs)
+    };
+
+    let mut file_reports: Vec<serde_json::Value> = Vec::new();
     let mut remaining = 0usize;
     let mut fixed = 0usize;
     let mut fixable = 0usize;
     let mut files_with_findings = 0usize;
+    let mut warnings = 0usize;
+    let mut programs = 0usize;
+    let mut failed_programs: Vec<&str> = Vec::new();
+    let mut requires: Vec<String> = Vec::new();
 
     for input in &inputs {
-        let lint_opts = crate::lint::LintOptions {
-            include_dirs: include_dirs.to_vec(),
-            origin: input.path.clone(),
-            rules: opts.rules.clone(),
-        };
-        let outcome = match crate::lint::lint_source(&input.source, &lint_opts) {
-            Ok(o) => o,
-            Err(e) => {
-                eprintln!("error: {}: {}", input.name, e);
-                errors += 1;
-                continue;
+        let is_module = input
+            .path
+            .as_deref()
+            .is_some_and(|p| modules.contains(&crate::module::canonical_path(p)));
+
+        // Stage 1: the compile check — what `petal run` refuses to start on.
+        let mut report = serde_json::json!({});
+        let mut file_ok = true;
+        let mut broken = false;
+        if !is_module {
+            programs += 1;
+            let origin = match &input.path {
+                Some(p) => SourceInput::File(p.display().to_string()),
+                None => SourceInput::Inline(String::new()),
+            };
+            let stage = super::handlers::check_program_stage(
+                opts.json,
+                opts.ir,
+                &input.source,
+                &origin,
+                include_dirs,
+            );
+            broken = stage.broken;
+            warnings += stage.warnings;
+            if stage.broken || (stage.errors > 0 && !opts.lenient) {
+                file_ok = false;
+                failed_programs.push(&input.name);
             }
-        };
-        if outcome.findings.is_empty() {
-            continue;
-        }
-        files_with_findings += 1;
-
-        // Verification runs before any write, so `--verify` with and without
-        // `--fix` agree on whether the rewrite is acceptable at all.
-        if let Some(mode) = opts.verify {
-            verify(mode, &input.name, &input.source, &outcome, &lint_opts);
-        }
-
-        for f in &outcome.findings {
-            if opts.json {
-                json_rows.push(serde_json::json!({
-                    "file": input.name,
-                    "line": f.line,
-                    "column": f.column,
-                    "rule": f.rule,
-                    "message": f.message,
-                    "fixable": f.fixable,
-                    "fixed": opts.fix && f.fixable,
-                }));
-            } else if !opts.fix || !f.fixable {
-                // Under `--fix`, what is left to print is what has no fix.
-                println!(
-                    "{}:{}:{}: {}: {}",
-                    input.name, f.line, f.column, f.rule, f.message
-                );
-            }
-        }
-
-        if !opts.fix {
-            remaining += outcome.findings.len();
-            fixable += outcome.fixable();
-            continue;
-        }
-        let unfixed = outcome.findings.len() - outcome.fixable();
-        remaining += unfixed;
-        if outcome.fixable() == 0 {
-            continue;
-        }
-        match &input.path {
-            None => print!("{}", outcome.output),
-            Some(path) => {
-                if let Err(e) = fs::write(path, &outcome.output) {
-                    eprintln!("error: writing {}: {e}", input.name);
-                    errors += 1;
-                    continue;
+            if !stage.text.is_empty() {
+                if !single {
+                    eprintln!("==> {} <==", input.name);
                 }
-                if !opts.json {
-                    println!("fixed {}: {}", input.name, summarize(&outcome));
-                }
+                eprint!("{}", stage.text);
             }
+            if !stage.broken {
+                requires = stage.requires;
+            }
+            report = stage.json;
+        } else {
+            report["module"] = serde_json::json!(true);
         }
-        fixed += outcome.fixable();
+
+        // Stage 2: the rules. `--ir` has no source to read them off, and
+        // `--rules-include=` (no rules) asks for the compile check alone.
+        let mut rows: Vec<serde_json::Value> = Vec::new();
+        if !opts.ir && opts.rules.any_enabled() {
+            lint_rules(
+                opts,
+                input,
+                include_dirs,
+                broken,
+                &mut rows,
+                &mut RuleTally {
+                    errors: &mut errors,
+                    remaining: &mut remaining,
+                    fixed: &mut fixed,
+                    fixable: &mut fixable,
+                    files_with_findings: &mut files_with_findings,
+                    file_ok: &mut file_ok,
+                },
+            );
+        }
+
+        if opts.json {
+            report["ok"] = serde_json::json!(file_ok);
+            report["findings"] = serde_json::Value::Array(rows);
+            if !single {
+                report["file"] = serde_json::json!(input.name);
+            }
+            file_reports.push(report);
+        }
     }
 
+    let failed = errors > 0 || !failed_programs.is_empty();
     if opts.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json_rows).unwrap_or_else(|_| "[]".into())
-        );
+        let out = if single && file_reports.len() == 1 {
+            file_reports.pop().unwrap_or_default()
+        } else {
+            serde_json::json!({ "ok": !failed, "files": file_reports })
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap_or_else(|_| "{}".into()));
     } else {
         if fixed > 0 {
             eprintln!("fixed {fixed} problem(s) in {files_with_findings} file(s)");
@@ -439,10 +461,135 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
                  `petal lint --fix` fixes {fixable} of them"
             );
         }
+        if !single && !failed_programs.is_empty() {
+            eprintln!(
+                "check failed for {} of {} program(s): {}",
+                failed_programs.len(),
+                programs,
+                failed_programs.join(", ")
+            );
+        }
+        // Silent on success but for one line saying which host interfaces
+        // the program's packages require: the check passes with no host
+        // present, and a run will need them.
+        if single && failed_programs.is_empty() && !requires.is_empty() {
+            println!("requires host interfaces: {}", requires.join(", "));
+        }
     }
-    if remaining > 0 || errors > 0 {
+    // Errors fail the lint; `--strict` extends that to warnings and to
+    // findings left unfixed (for CI). The output above is the same either way.
+    if failed || (opts.strict && (warnings > 0 || remaining > 0)) {
         process::exit(1);
     }
+}
+
+/// The counters [`lint_rules`] adds to across files.
+struct RuleTally<'a> {
+    errors: &'a mut usize,
+    remaining: &'a mut usize,
+    fixed: &'a mut usize,
+    fixable: &'a mut usize,
+    files_with_findings: &'a mut usize,
+    file_ok: &'a mut bool,
+}
+
+/// Run the rules over one input: print (or collect, under `--json`) its
+/// findings and, under `--fix`, write the fixes. `broken` says the compile
+/// check already reported that the file does not load, so a parse failure
+/// here is not news.
+fn lint_rules(
+    opts: &LintArgs,
+    input: &Input,
+    include_dirs: &[PathBuf],
+    broken: bool,
+    rows: &mut Vec<serde_json::Value>,
+    tally: &mut RuleTally,
+) {
+    let lint_opts = crate::lint::LintOptions {
+        include_dirs: include_dirs.to_vec(),
+        origin: input.path.clone(),
+        rules: opts.rules.clone(),
+    };
+    let outcome = match crate::lint::lint_source(&input.source, &lint_opts) {
+        Ok(o) => o,
+        Err(_) if broken => return,
+        Err(e) => {
+            if !opts.json {
+                eprintln!("error: {}: {}", input.name, e);
+            }
+            *tally.errors += 1;
+            *tally.file_ok = false;
+            return;
+        }
+    };
+    if outcome.findings.is_empty() {
+        return;
+    }
+    *tally.files_with_findings += 1;
+
+    // Verification runs before any write, so `--verify` with and without
+    // `--fix` agree on whether the rewrite is acceptable at all.
+    if let Some(mode) = opts.verify {
+        verify(mode, &input.name, &input.source, &outcome, &lint_opts);
+    }
+
+    for f in &outcome.findings {
+        if opts.json {
+            rows.push(serde_json::json!({
+                "file": input.name,
+                "line": f.line,
+                "column": f.column,
+                "rule": f.rule,
+                "message": f.message,
+                "fixable": f.fixable,
+                "fixed": opts.fix && f.fixable,
+            }));
+        } else if !opts.fix || !f.fixable {
+            // Under `--fix`, what is left to print is what has no fix.
+            println!(
+                "{}:{}:{}: {}: {}",
+                input.name, f.line, f.column, f.rule, f.message
+            );
+        }
+    }
+
+    if !opts.fix {
+        *tally.remaining += outcome.findings.len();
+        *tally.fixable += outcome.fixable();
+        return;
+    }
+    *tally.remaining += outcome.findings.len() - outcome.fixable();
+    if outcome.fixable() == 0 {
+        return;
+    }
+    match &input.path {
+        None => print!("{}", outcome.output),
+        Some(path) => {
+            if let Err(e) = fs::write(path, &outcome.output) {
+                eprintln!("error: writing {}: {e}", input.name);
+                *tally.errors += 1;
+                *tally.file_ok = false;
+                return;
+            }
+            if !opts.json {
+                println!("fixed {}: {}", input.name, summarize(&outcome));
+            }
+        }
+    }
+    *tally.fixed += outcome.fixable();
+}
+
+/// The walked files that another walked file imports: modules, checked as
+/// part of the programs that import them rather than each on its own.
+fn imported_by_others(inputs: &[Input], include_dirs: &[PathBuf]) -> HashSet<PathBuf> {
+    let env = super::handlers::make_env(include_dirs);
+    let mut modules = HashSet::new();
+    for input in inputs {
+        if let Some(path) = &input.path {
+            modules.extend(env.imported_files(&input.source, Some(path)));
+        }
+    }
+    modules
 }
 
 /// `3 prefer-let, 1 no-redundant-cast`.

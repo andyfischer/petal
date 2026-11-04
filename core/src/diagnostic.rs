@@ -90,7 +90,7 @@ impl CitedLine {
 /// How sure the checker is that a diagnostic describes a failure.
 ///
 /// Neither severity stops compilation: the program still compiles and runs, and
-/// the line may never execute. The difference is what `petal check` does with
+/// the line may never execute. The difference is what `petal lint` does with
 /// it. A [`Severity::Warning`] is advice (a type mismatch against an advisory
 /// annotation, a discarded pure call). A [`Severity::Error`] is a line that
 /// cannot succeed when it runs (a call to a name nothing defines, a call no

@@ -191,7 +191,7 @@ to a false positive. Notes that follow from that:
   qualified call's return type can never make it delete a cast it would have
   left alone.
 
-The whole un-annotated corpus must stay silent: `petal check` over every
+The whole un-annotated corpus must stay silent: `petal lint` over every
 `.ptl` in the repo must not gain a warning from a checker change.
 
 ### Annotations drive static dispatch
@@ -223,19 +223,19 @@ fully typed: its fields are `num`, the edge accessors return `num`, and
 
 ### Surfacing
 
-- `petal check` prints warnings with carets to stderr and exits 0;
+- `petal lint` prints warnings with carets to stderr and exits 0;
   `--json` adds a `warnings[]` array; `--strict` exits 1 when any warning
   exists (for CI).
 - `petal run` prints warnings to stderr before executing. Under `--json` they
   still go to stderr so stdout stays clean for JSON consumers.
-- MCP `CheckSnippet` forwards `check --json`; `TestSnippet` shows them via
+- MCP `LintSnippet` forwards `lint --json`; `TestSnippet` shows them via
   `run`'s stderr.
 - `show-ast --json` serializes an annotation as `{"name": "int",
   "resolved": "Int"}` (`resolved` omitted for an unknown name).
 
 ### Docs and examples
 
-`language-guide.md` (Type Annotations), `CLI.md` (`check`), `Builtins.md`
+`language-guide.md` (Type Annotations), `CLI.md` (`lint`), `Builtins.md`
 (casts), `goals.md` ("Types as a projection"; that file has since been
 replaced by the [README](../../README.md#goals)), `examples/console/typed.ptl`
 with its golden.

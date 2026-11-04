@@ -136,22 +136,27 @@ server.registerTool("ExplainTerm", {
   },
 }, ({ code, term }) => petalTool(["explain", "--json", "--term", term], code));
 
-server.registerTool("CheckSnippet", {
-  title: "Check Petal Snippet",
+server.registerTool("LintSnippet", {
+  title: "Lint Petal Snippet",
   description:
-    "Lex+parse+compile a Petal snippet without running it. Returns " +
-    "{ok, warnings: [...]} where each entry is a checker diagnostic " +
-    "{message, severity, line, column, file}. severity \"warning\" is advice " +
-    "(a declared/inferred type mismatch, an unknown type name) and never fails " +
-    "the check; severity \"error\" is a line that fails whenever it runs (an " +
-    "unknown function or variable, a call no overload's arity accepts) and makes " +
-    "ok false. The names known are core builtins plus petal-ui. A program that " +
-    "does not compile returns a structured error with phase/line/column instead. " +
-    "Cheaper than TestSnippet for validating syntax and type annotations.",
+    "`petal lint` on a snippet: lex, parse, compile, type-check and lower it " +
+    "without running it, then run the lint rules over it. Returns " +
+    "{ok, warnings: [...], findings: [...]}. Each `warnings` entry is a " +
+    "compile-check diagnostic {message, severity, line, column, file}: " +
+    "severity \"warning\" is advice (a declared/inferred type mismatch, an " +
+    "unknown type name) and never fails the lint; severity \"error\" is a line " +
+    "that fails whenever it runs (an unknown function or variable, a call no " +
+    "overload's arity accepts) and makes ok false. Each `findings` entry is a " +
+    "lint rule's {rule, message, line, column, fixable}: a better spelling, " +
+    "never a failure. The names known are core builtins plus bundled packages " +
+    "the snippet imports. A program that does not compile returns a structured " +
+    "error with phase/line/column instead. Cheaper than TestSnippet for " +
+    "validating syntax and type annotations.",
   inputSchema: {
     code: z.string().describe("The Petal source code to validate"),
   },
-}, ({ code }) => petalTool(["check", "--json"], code, '{"ok": true, "warnings": []}'));
+}, ({ code }) =>
+  petalTool(["lint", "--json", "--single-file"], code, '{"ok": true, "warnings": [], "findings": []}'));
 
 const stageCommands = {
   tokens: "show-tokens",

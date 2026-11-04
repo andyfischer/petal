@@ -29,7 +29,7 @@ import ui                 // the host interface bloom and text_layout draw throu
 ```
 
 ```bash
-petal check app.ptl                    # prints: requires host interfaces: ui >=0.1 (bloom), …
+petal lint app.ptl                     # prints: requires host interfaces: ui >=0.1 (bloom), …
 petal-ui-run app.ptl --frames 60       # runs it; petal-ui-run provides `ui`
 petal packages                         # lists the bundled packages
 ```

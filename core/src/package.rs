@@ -488,6 +488,13 @@ impl Package {
                 origin: ModuleOrigin::File(module_file_path(&self.info.module_dir, module)),
             }),
             None => {
+                // A directory with its own manifest is another package: its
+                // files are its modules, not this one's (packages.md), and
+                // reaching one through this package would load the file a
+                // second time under a second name.
+                if self.nested_package_dir(module).is_some() {
+                    return None;
+                }
                 let path = module_file_path(&self.info.module_dir, module);
                 std::fs::read_to_string(&path)
                     .ok()
@@ -498,6 +505,54 @@ impl Package {
                     })
             }
         }
+    }
+
+    /// The directory of the nested package that `module`'s path runs
+    /// through, if one does: the first directory under the module directory,
+    /// on the way to the file, that has its own `petal.toml`. `None` for a
+    /// package held in memory.
+    pub(crate) fn nested_package_dir(&self, module: &str) -> Option<PathBuf> {
+        if self.sources.is_some() {
+            return None;
+        }
+        let mut dir = self.info.module_dir.clone();
+        let mut segments = module.split('/').peekable();
+        while let Some(segment) = segments.next() {
+            if segments.peek().is_none() {
+                break;
+            }
+            dir.push(segment);
+            if dir.join(MANIFEST_FILE).is_file() {
+                return Some(dir);
+            }
+        }
+        None
+    }
+
+    /// Why `module` is not a module of this package, when the reason is that
+    /// it belongs to a package nested inside this one: the message names
+    /// that package and says how to depend on it.
+    pub(crate) fn nested_package_error(&self, module: &str) -> Option<String> {
+        let dir = self.nested_package_dir(module)?;
+        let nested = Package::from_dir(&dir)
+            .ok()
+            .map(|p| p.info.name)
+            .unwrap_or_else(|| {
+                dir.file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            });
+        let rel = dir
+            .strip_prefix(&self.info.root)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|_| dir.to_string_lossy().into_owned());
+        Some(format!(
+            "'{module}' is in the package '{nested}' ({rel}/petal.toml), which is nested inside \
+             '{outer}' and is a package of its own: its files are not modules of '{outer}'. \
+             List it under [dependencies] in '{outer}'s petal.toml \
+             (`{nested} = {{ path = \"{rel}\" }}`) and import it by its own name",
+            outer = self.info.name,
+        ))
     }
 
     /// The source of the in-memory module whose synthetic origin is `path`

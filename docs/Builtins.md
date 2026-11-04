@@ -35,7 +35,7 @@ print([1, 2, 3, 4].slice(start: 1, end: 3))            // [2, 3]
   (`builtin 'print' does not accept named arguments`).
 
 A wrong name is an error when the line runs (`clamp() has no parameter named
-'low'`), and from `petal check` before that.
+'low'`), and from `petal lint` before that.
 
 Each builtin's signature is written once, as a `native fn` declaration in a
 package compiled into the binary (`core/packages/`): parameter names, which
@@ -72,10 +72,10 @@ file that imports the package:
 After `import noise` the names work bare (`noise(x)`), qualified
 (`noise.noise_seed(1)`) and as methods (`x.noise()`); `import noise: noise_seed`
 takes just the names listed. Without the import, a call is an error that says
-which import to add (`petal check` reports it, and `petal fix-imports` adds
+which import to add (`petal lint` reports it, and `petal fix-imports` adds
 it). Method syntax follows the same rule: `v.normalize()` reaches the `vec2`
 builtin only in a file that imports `vec2` — the import of some other file of
-the program does not count, and `petal check` reports the call when the
+the program does not count, and `petal lint` reports the call when the
 receiver is plainly a number, string, list or vector. The values themselves need no
 import: a `vec2` a function was handed still has `.x`, arithmetic and `==`.
 
@@ -1111,7 +1111,7 @@ sort(rows, fn(a, b) -> a.score < b.score)     // lowest score first
 
 Sorts by a key read off each element; `key(element)` is called once per
 element and must return a number or a string (any other key is an error, and
-`petal check` reports it ahead of time when it can see what the key function
+`petal lint` reports it ahead of time when it can see what the key function
 returns).
 `descending` is `true` or `"desc"` for descending order, and `false`,
 `"asc"`, or omitted for ascending. The sort is stable in both directions, so
@@ -1593,7 +1593,7 @@ A builtin may itself be the function: `map(words, upper)`, `map(rows, len)`,
 
 A callback of any of these may not declare `state`: it runs once per element
 and has no place in the program to keep a slot at. Reaching a `state` or
-`state var` declaration from one is an error, and `petal check` reports it
+`state var` declaration from one is an error, and `petal lint` reports it
 when it can prove it. A loop or `reduce`'s accumulator is the fix
 ([State is not allowed in callbacks](features/inline-state.md#state-is-not-allowed-in-callbacks)).
 

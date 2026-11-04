@@ -2391,7 +2391,7 @@ pub extern "C" fn pb_vm_static_values_json(vm: *mut VmHandle) -> *const c_char {
 }
 
 /// What the compile of the loaded program found and did not stop for,
-/// rendered as `petal check` prints it: "" when there is nothing, NULL with
+/// rendered as `petal lint` prints it: "" when there is nothing, NULL with
 /// no program loaded. `errors_only` leaves the warnings out. The finding a
 /// host should always print is a `const` that is not constant: the program
 /// loads and runs, with that binding built on every run as a `let` is. It

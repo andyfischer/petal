@@ -57,7 +57,7 @@ on. The ones most tests use:
 - `runPetal(code)` / `runPetalError(code)` — run a snippet, return stdout, or
   stderr for an expected failure.
 - `runPetalFile(path)` — run a file; throws if it fails.
-- `checkJson(code)` / `checkStrict(code)` — `petal check --json` / `--strict`.
+- `checkJson(code)` / `checkStrict(code)` — `petal lint --json` / `--strict`.
 - `showIrJson(code)`, `showAstJson(code)`, `showTokensJson(code)`,
   `showBytecodeJson(code)` — parsed `--json` dumps.
 - `graphJson(code, terms, direction?, slice?)`, and the shorthands over it
@@ -90,7 +90,7 @@ that behavior was meant to change.
 ### Documentation snippets
 
 `test/vitest/doc-snippets.test.ts` compiles every ```` ```petal ```` code block
-in the user-facing docs with `petal check --lenient`, and runs the blocks that
+in the user-facing docs with `petal lint --lenient`, and runs the blocks that
 carry `print(...) // expected` comments and compares the output. A block
 tagged ```` ```petal ignore ```` is skipped. Design docs under `docs/dev/` and the
 sketches in `docs/aspirational-ideas/` are not checked.
@@ -134,7 +134,7 @@ a refactor needs (see [refactor-verification.md](refactor-verification.md)):
 
 - **`petal run --seed <n>`** (or `PETAL_SEED`, or `Env::set_seed` in an
   embedder) fixes the `random` / `random_int` / `choose` stream.
-- **`petal run --error-format bare`** (also on `check`) prints the error
+- **`petal run --error-format bare`** (also on `lint`) prints the error
   message without its position, so a re-indenting refactor does not show up
   as an output diff. The verifier treats a warnings-only difference as a note
   rather than a failure.
@@ -342,7 +342,7 @@ the reload.
 Plans live in `test/verify-plans/`. A plan's `exclude` list drops directories
 from its corpus roots (the vitest fixtures under `test/vitest`). A plan's `include` list names module search
 directories (relative to each side's root) handed as `-I` to every side of the
-run — the UI driver, `petal check`, and `petal run` alike — so corpus apps that
+run — the UI driver, `petal lint`, and `petal run` alike — so corpus apps that
 import a shared Petal library (`core-runtime`, which ships the `bloom` package)
 still compile. A step that dropped the `-I` would write such an app off as
 `unsupported` and silently skip its golden hash. The design is in
@@ -371,21 +371,29 @@ whole corpus.
 
 Four unit tests sweep every `.ptl` file in the repository (409 on 16 October
 2026, by `test_corpus::repo_ptl_files`, which skips `node_modules`, `target`
-and dot-directories) in a debug build, and cost far more than the rest of the suite put together. They
-are `#[ignore]`d, so `cargo test` does not run them; `make
-expensive_lint_tests` does, and CI runs it on every push. Run it yourself
-after changing `petal fmt`, a lint rule, the lexer or parser, or the CST:
+and dot-directories) in a debug build, and cost more than the rest of the
+suite put together. They are `#[ignore]`d, so `cargo test` does not run them;
+`make expensive_lint_tests` does, and CI runs it on every push, in its own job
+beside the main test run. Run it yourself after changing `petal fmt`, a lint
+rule, the lexer or parser, or the CST:
 
-| Test | CPU-seconds (approximate, from one past run) |
-|---|---|
-| `lint::tests::lint_preserves_compilation_over_repo_corpus` | about 500 |
-| `fmt::tests::fmt_is_ir_equal_and_idempotent_over_repo_corpus` | about 150 |
-| `fmt::tests::fmt_undoes_mangled_indentation_over_repo_corpus` | about 60 |
-| `cst_project::tests::projected_ast_matches_parser_over_repo_corpus` | about 25 |
+- `lint::tests::lint_preserves_compilation_over_repo_corpus` (the longest)
+- `fmt::tests::fmt_is_ir_equal_and_idempotent_over_repo_corpus`
+- `fmt::tests::fmt_undoes_mangled_indentation_over_repo_corpus`
+- `cst_project::tests::projected_ast_matches_parser_over_repo_corpus`
 
-Each fans out over the corpus on half the machine's cores;
-`PETAL_TEST_JOBS=<n>` sets the number. The other unit tests (1,361 on 16 October 2026,
-`cargo test --lib -- --list`) take a few seconds together.
+Together they took about 500 CPU-seconds, 3 minutes on 4 cores, on 3 November
+2026. Each fans out over the corpus on half the machine's cores;
+`PETAL_TEST_JOBS=<n>` sets the number. The other unit tests (1,394 on 3
+November 2026, `cargo test --lib -- --list`) take about 2 minutes on 4 cores,
+and the whole `cargo test` about 6.
+
+Most of a debug build's parse time used to be the check, in
+`cst/driver.rs`, that the AST projected from the CST is the parser's own:
+it pretty-printed both ASTs on every parse. It now runs once per distinct
+source text per process and compares hashes, which cut the debug suite to
+about a third. Keep a debug-only check of that kind cheap per call; the
+suite parses the stdlib once per `Env`.
 
 ```bash
 make expensive_lint_tests                       # the four sweeps

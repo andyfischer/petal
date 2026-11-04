@@ -834,7 +834,7 @@ fn collateral_weights_change_the_top_alternative() {
         "solid=10,nope=2", path.to_str().unwrap(),
     ]);
     assert!(ok, "{stderr}");
-    assert!(stdout.contains("collateral weights: nope=2, solid=10 (other channels 1)"), "{stdout}");
+    assert!(stdout.contains("collateral weights: solid=10, nope=2 (other channels 1)"), "{stdout}");
     assert!(stdout.contains("collateral weight for channel `nope`: no emit on it"), "{stdout}");
 
     for bad in ["solid", "solid=-1", "=2", "solid=x", "solid=inf"] {

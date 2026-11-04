@@ -7,7 +7,7 @@ import { afterEach } from "vitest";
 // to more than 60 seconds never reads the main process's reply to its
 // `onTaskUpdate` RPC before that call's 60 second timer fires, and vitest
 // reports "Timeout calling onTaskUpdate" as an unhandled error (exit 1) though
-// every test passed. `petal check` compiles and lowers the `ui` prelude, close
+// every test passed. `petal lint` compiles and lowers the `ui` prelude, close
 // to a second per call in a debug build, so a check-heavy file gets there
 // easily when the machine is busy. `setImmediate` runs after the poll phase,
 // so the reply is read between tests and only a single test that blocks for

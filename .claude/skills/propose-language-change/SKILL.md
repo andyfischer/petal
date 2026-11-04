@@ -62,7 +62,7 @@ as it would be written with the change.
 
 - "Before" is real code, quoted from the corpus with its path. Trim it, but do
   not tidy it into a strawman.
-- Verify that every "before" snippet runs today (`TestSnippet` / `CheckSnippet`
+- Verify that every "before" snippet runs today (`TestSnippet` / `LintSnippet`
   from the `petal-tools` MCP server, or `./tools/run-petal.ts run`).
 - "After" uses the proposed design exactly as specified. It will not run yet;
   label it as proposed. If a prototype is cheap, build one in a worktree and
@@ -105,7 +105,7 @@ change, work through them yourself.
 
 **Bug-freedom**
 - Which classes of bug does it prevent, and which become possible?
-- Can the type checker, `lint` and `check` see misuse statically? Does it
+- Can the type checker and `lint` see misuse statically? Does it
   create silent failures, surprising defaults or action at a distance?
 - Does it stay testable under the differential oracle (optimizer on vs
   `--no-opt`), the golden corpus, the small-scope check and the Kani proofs?

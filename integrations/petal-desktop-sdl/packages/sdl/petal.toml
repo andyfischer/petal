@@ -6,7 +6,7 @@
 # the interface `sdl` at this version. The stock CLI finds it as a path
 # dependency of the script's project (`sdl = { path = "…/packages/sdl" }`
 # under [dependencies], as examples/petal.toml has), or ad hoc with
-# `petal check -I integrations/petal-desktop-sdl/packages`.
+# `petal lint -I integrations/petal-desktop-sdl/packages`.
 [package]
 name = "sdl"
 version = "0.1.0"

@@ -3,8 +3,8 @@
 "Programming by direct manipulation" is an approach to programming where
 you modify the program by interacting with the program's output, instead
 of working with the source code. This is a concept that has a lot
-of research behind it (TODO add references here), but it hasn't shown
-up much in mainstream languages. Petal aims to provide good support for it.
+of research behind it (Bret Victor's *Inventing on Principle* is the
+best-known statement of it), but it hasn't shown up much in mainstream languages. Petal aims to provide good support for it.
 
 A very simple example of this could look like:
 
@@ -17,7 +17,7 @@ And, this same approach can work in lots of situations, not just with 2D graphic
 In order to make this work, the runtime needs a few things:
 
  - High introspection and tracing and provenance, so that you can find the sources for certain values or function calls.
- - Program differentiation (TODO - add link here) which helps backpropogate a numerical value towards a goal.
+ - Program differentiation ([differentiation.md](differentiation.md)), which helps backpropogate a numerical value towards a goal.
  - Frozen state and safe replayability. When using this approach, we often need to safely re-run a program without effects and without modifying state.
  - Source code rewriting tools that preserve formatting.
  

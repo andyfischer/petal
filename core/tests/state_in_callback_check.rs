@@ -1,4 +1,4 @@
-//! `petal check` reports `state` that a higher-order builtin's callback is
+//! `petal lint` reports `state` that a higher-order builtin's callback is
 //! sure to reach (core/src/compiler/callback_state.rs): an error carrying the
 //! rule id `state-in-callback`, at the declaration, citing the builtin call.
 //! Only what can be proved is reported; a callback that arrives through a

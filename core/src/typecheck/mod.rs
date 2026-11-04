@@ -97,7 +97,7 @@ pub struct RedundantCast {
     pub promotes: bool,
 }
 
-/// A site the type pass noticed for [`crate::lint`] or `petal check`, beyond
+/// A site the type pass noticed for [`crate::lint`] or the compile check, beyond
 /// the redundant casts.
 #[derive(Debug, Clone, Copy)]
 pub enum TypeNote {
@@ -127,7 +127,7 @@ pub enum TypeNote {
         inexact: bool,
     },
     /// Arithmetic on operands proven to be two lists (`[1] + [2]`), or `+` on
-    /// two strings: it raises whenever it runs. `petal check` reports it as an
+    /// two strings: it raises whenever it runs. `petal lint` reports it as an
     /// error; `petal lint` leaves the statement alone rather than tidying it.
     FailingArithmetic {
         /// The whole operation.
@@ -861,7 +861,7 @@ impl<'a> Checker<'a> {
     /// Both layers report a bad name, deliberately, because neither subsumes
     /// the other. This check answers *"does this file contain a call that can
     /// never work?"* — it fires whether or not the line ever runs, which is
-    /// what `petal check`, `--strict`, the LSP and the MCP server consume, and
+    /// what `petal lint`, `--strict`, the LSP and the MCP server consume, and
     /// it is the only report a call inside an untaken branch ever gets. The
     /// VM's check answers *"this call just failed"* — only when reached, but
     /// for the shapes this pass cannot see at all: method calls and opaque
@@ -2014,7 +2014,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// What `petal lint` and `petal check` want to know about one arithmetic
+    /// What `petal lint` wants to know about one arithmetic
     /// expression, given the types of its operands.
     fn note_arithmetic(
         &mut self,

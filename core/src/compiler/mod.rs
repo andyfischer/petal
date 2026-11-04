@@ -626,7 +626,7 @@ impl Compiler {
     ///
     /// A call whose names do not bind (an unknown name, a slot filled twice, a
     /// native that declares no parameters) is left as written, names and all:
-    /// the VM reports it when the line runs, and `petal check` before that
+    /// the VM reports it when the line runs, and `petal lint` before that
     /// (`typecheck::globals`).
     fn normalize_named_builtin_calls(&mut self, native_fns: &NativeFnTable) {
         for term in &mut self.terms {

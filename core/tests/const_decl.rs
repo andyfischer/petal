@@ -49,7 +49,7 @@ fn errors(src: &str) -> Vec<String> {
         .collect()
 }
 
-/// The error messages of compiling `src` the way `petal check` and the
+/// The error messages of compiling `src` the way `petal lint` and the
 /// language server do: nothing is linked, so a `native fn` has no host.
 fn check_errors(src: &str) -> Vec<String> {
     let mut env = quiet();
@@ -387,7 +387,7 @@ fn a_host_native_is_constant_only_when_registered_const() {
 
 #[test]
 fn without_the_host_a_const_on_its_natives_is_not_judged() {
-    // `petal check` and the language server: neither native is registered,
+    // `petal lint` and the language server: neither native is registered,
     // so neither declaration can be verified, and neither is reported —
     // including the one its host rejects (the test above).
     for native in ["tile_count", "frame_count"] {

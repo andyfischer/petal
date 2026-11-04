@@ -124,6 +124,33 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- `petal check` is gone: its compile check is now the first stage of
+  `petal lint`, which then runs the lint rules. `petal lint` walks the current
+  directory (or the given paths) by default, checking every program and
+  skipping the check of a module another linted file imports (its findings
+  come through the importer); `--single-file <file>` lints exactly one file
+  as its own program, as `petal check <file>` did. `--strict`, `--lenient`,
+  `--ir` and `--error-format` moved over. Exit status: 1 on a program that
+  does not compile or lower, or has a check error; warnings and rule findings
+  now pass unless `--strict` (rule findings used to fail `lint`). `--json`
+  is one object per file — `{ok, warnings, findings, requires?}` — or
+  `{ok, files: [...]}` over a walk, replacing `lint`'s flat array.
+  `--rules-include=` (empty) runs the compile check alone. The MCP tool
+  `CheckSnippet` is now `LintSnippet`
+  ([`lint`](docs/CLI.md#lint--check-programs-without-running-them)).
+
+- A loose file (one in no package) is the module `./level`, not `level`: its
+  name is its path from the entry file written as a relative import. A loose
+  file named like a package (`color.ptl` beside `import ui`, which loads the
+  bundled `color`) used to stop the program with "two different sources are
+  both the module 'color'", and `fix-imports` took a loose `noise.ptl` for
+  the `noise` package. **Breaking for hosts and saved state:** names
+  qualified by a loose module change (`level::x` is `./level::x` in
+  `--term`, `call_function` and state dumps), and `state` saved for a loose
+  module by an older build is not restored. Error messages still name the
+  file (`level.ptl`), and the qualifier a file binds (`level.spawn()`) is
+  unchanged ([Module identity](docs/module-system.md#module-identity)).
+
 - petal-sdl internals: `renderer.rs` is split into
   `renderer/{raster,text,surface_fx}.rs`; `run_game` and `run_agent` share
   window setup, reload polling and the frame body. Removed unused public
@@ -154,6 +181,45 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   [Unary minus](docs/syntax/commas.md#unary-minus)).
 
 ### Fixed
+
+- An `import` inside a function, a block or a test is an error. It used to
+  be ignored without a word: nothing loaded, nothing bound, and a missing
+  path never reported.
+
+- A package nested inside another (its own `petal.toml` below the outer
+  package's module directory) is no longer reachable through the outer one:
+  `import proj/inner/x` is an error that says to list `inner` as a
+  dependency. It used to load the file as a module of `proj`, and as a second
+  module when the same file was also imported another way
+  ([packages.md](docs/packages.md)).
+
+- An error inside an imported module names the entry file in its trace
+  frames even when every call was made from the entry file. A bare
+  `[line 2, column 12]` under `[m.ptl line 2, …]` read as the module's line.
+
+- A slip after an import path gets an error that names the fix, not one
+  about the next statement: `import ./my-mod` says to quote the name,
+  `import ui.hud` says to use `/`, `import ./level.ptl` says to drop the
+  extension, and `import m: v as w` says a selective import cannot rename.
+  An import now ends at the end of its line (or a `;`).
+
+- Records keep their key order when they cross into JSON. `value_to_json`
+  (what a host reads natives' arguments, element `props` and state dumps
+  through), `json_stringify` and `json_parse` used to sort keys, so
+  `{x, y, w, h}` reached a host as `{h, w, x, y}`, and a host that writes
+  values back to source reordered the user's file. Core now turns on
+  serde_json's `preserve_order`. Output that showed sorted keys now shows
+  them in written order.
+
+- `petal lint --fix` no longer rewrites a `state(key)` into a `memo` that
+  changes what the program does. A `memo` is shared by every caller with an
+  equal key and recomputed after a reload, so the old fix turned
+  `state(k) v = k * scale` into a value every caller shares, and
+  `state(id) tint = random(0.0, 1.0)` into one redrawn on each reload. The
+  `state-key-deprecated` fix now applies only to an initializer that is
+  plainly built from its key (no calls, no `get`, no other names). Every
+  other site is reported without a fix
+  ([Deprecated: `state(key)`](docs/features/inline-state.md#deprecated-statekey)).
 
 - petal-ui: `FrameCore` no longer panics on `wasm32-unknown-unknown`. It
   started on the wall clock (`Instant::now()`, which has no clock to read

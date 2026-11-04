@@ -832,7 +832,7 @@ fn load_switch<H: Host>(
         Some(sp) => env.load_program_at(&switch.source, Path::new(sp))?,
         None => env.load_program(&switch.source)?,
     };
-    // What `petal check` says about the script, where its author is looking.
+    // What `petal lint` says about the script, where its author is looking.
     eprint!("{}", env.diagnostics_text(program_id));
     let stack_id = env.create_stack(program_id)?;
     petal_ui::input::bind_dimensions(env, config.width as i32, config.height as i32);

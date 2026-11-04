@@ -16,7 +16,7 @@ use crate::source_map::ENTRY_FILE;
 use crate::stack::StackKey;
 
 use super::{
-    GraphQuery, ProposeEditOpts, RunOpts, SourceInput, die, die_error, die_plain, die_with,
+    GraphQuery, ProposeEditOpts, RunOpts, SourceInput, die, die_error, die_plain,
     error_json_value, print_json,
 };
 
@@ -988,11 +988,12 @@ pub(super) fn handle_explain(
 /// [`crate::check::render_diagnostics`] renders them. Used before running and
 /// by `check`; stderr keeps them off the stdout JSON channel.
 pub(super) fn eprint_warnings(program: &Program) {
-    let text =
-        crate::check::render_diagnostics(program, &program.warnings, super::bare_errors());
-    if !text.is_empty() {
-        eprint!("{}", text);
-    }
+    eprint!("{}", diagnostics_text(program));
+}
+
+/// What [`eprint_warnings`] prints.
+fn diagnostics_text(program: &Program) -> String {
+    crate::check::render_diagnostics(program, &program.warnings, super::bare_errors())
 }
 
 /// Build the JSON array of a program's diagnostics: one object per diagnostic
@@ -1016,15 +1017,48 @@ fn warnings_json(program: &Program) -> serde_json::Value {
     serde_json::Value::Array(items)
 }
 
-pub(super) fn handle_check(
+/// What the compile check of one program found: `petal lint`'s first stage.
+pub(super) struct CheckStage {
+    /// The program did not load (lex, parse, imports, compile) or did not
+    /// lower: it cannot run at all.
+    pub broken: bool,
+    /// Checker errors: lines that fail whenever they run.
+    pub errors: usize,
+    /// Every other finding of the compile.
+    pub warnings: usize,
+    /// The host interfaces the program's packages require, for the
+    /// `requires host interfaces:` line.
+    pub requires: Vec<String>,
+    /// The check's `--json` object (`warnings`, `requires`, or the error
+    /// object of a program that did not load), when `json` was asked for.
+    /// The caller adds `ok`.
+    pub json: serde_json::Value,
+    /// Without `json`: what the check has to say, as `petal run` prints it
+    /// to stderr before it starts. Empty for a clean program.
+    pub text: String,
+}
+
+/// Compile and check one program without running it — lex, parse, resolve
+/// imports, compile, type-check, lower — and report what that found. Under
+/// `json` nothing is printed and the findings are in [`CheckStage::json`];
+/// otherwise the diagnostics go to stderr as `petal run` prints them before
+/// it starts. Never exits: a file that fails here is one finding of a lint
+/// over many.
+pub(super) fn check_program_stage(
     json: bool,
-    strict: bool,
-    lenient: bool,
     ir: bool,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
-) {
+) -> CheckStage {
+    let mut stage = CheckStage {
+        broken: false,
+        errors: 0,
+        warnings: 0,
+        requires: Vec::new(),
+        json: serde_json::json!({}),
+        text: String::new(),
+    };
     let mut env = make_env(include_dirs);
     // A check, not a run: the script may be written for a host whose natives
     // this process does not register. The interface package it imports
@@ -1045,23 +1079,49 @@ pub(super) fn handle_check(
         _ => crate::project_host::HostView::default(),
     };
     for problem in &host.problems {
-        eprintln!("warning: {problem}");
+        stage.text.push_str(&format!("warning: {problem}\n"));
     }
     host.apply(&mut env);
     let joined = host.join(source);
     // `--ir` swaps the front end for the IR deserializer, so a third-party
     // emitter's IR can be CI-validated the same way source is. Everything below
-    // is unchanged: the lowering gate is the point of `check` either way.
-    let pid = if joined.is_joined() {
-        match load_into(&mut env, &joined.text, source_input) {
-            Ok(pid) => pid,
-            Err(mut e) => {
-                joined.relocate_load_error(&mut e, &host);
-                die_error(json, &e, serde_json::Value::Null, source)
+    // is unchanged: the lowering gate is the point of the check either way.
+    let loaded = if ir {
+        // The IR loader is a deserializer, not the front end; it has no phase
+        // of its own, and reported "parse" before the phase channel existed.
+        env.load_program_ir(source).map_err(|e| {
+            if json {
+                error_json_value(&e, "parse")
+            } else {
+                serde_json::Value::String(super::error_text(&e))
             }
-        }
+        })
     } else {
-        load_or_die(&mut env, json, ir, source, source_input)
+        let text = if joined.is_joined() { &joined.text } else { source };
+        load_into(&mut env, text, source_input).map_err(|mut e| {
+            if joined.is_joined() {
+                joined.relocate_load_error(&mut e, &host);
+            }
+            if json {
+                super::load_error_json(&e, serde_json::Value::Null)
+            } else {
+                serde_json::Value::String(super::error_text(&super::render_load_error(&e, source)))
+            }
+        })
+    };
+    let pid = match loaded {
+        Ok(pid) => pid,
+        Err(serde_json::Value::String(text)) => {
+            stage.broken = true;
+            stage.text.push_str(&text);
+            stage.text.push('\n');
+            return stage;
+        }
+        Err(obj) => {
+            stage.broken = true;
+            stage.json = obj;
+            return stage;
+        }
     };
     // The check itself (`crate::check`) is the library's: the findings of the
     // compile, and whether the program lowers. `petal run` asks the same
@@ -1073,166 +1133,48 @@ pub(super) fn handle_check(
         joined.relocate_program(program, source);
         report.diagnostics = program.warnings.clone();
     }
-    let program = env.get_program(pid);
-    if let (Some(e), Some(program)) = (&report.lower_error, program) {
+    let Some(program) = env.get_program(pid) else {
+        return stage;
+    };
+    stage.warnings = report.diagnostics.len() - report.error_count();
+    stage.errors = report.error_count();
+    stage.requires = program.requires.iter().map(|r| r.to_string()).collect();
+    if let Some(e) = &report.lower_error {
         // Warnings are about the source, not the lowering, so report
         // them even though the program can't run — a sweep over a
         // corpus must not score a broken file as warning-free.
-        if !json {
-            eprint_warnings(program);
+        stage.broken = true;
+        if json {
+            let mut obj = error_json_value(e, "lower");
+            obj["warnings"] = warnings_json(program);
+            stage.json = obj;
+        } else {
+            stage.text.push_str(&diagnostics_text(program));
+            stage.text.push_str(&super::error_text(e));
+            stage.text.push('\n');
         }
-        die_with(json, e, "lower", warnings_json(program));
+        return stage;
     }
-    let warning_count = report.diagnostics.len();
-    let error_count = report.error_count();
-    // A checker error is a line that fails whenever it runs, so the program
-    // does not pass `check` — unless `--lenient` asks only "does it compile?".
-    let failed = error_count > 0 && !lenient;
     if json {
-        let warnings = program
-            .map(warnings_json)
-            .unwrap_or_else(|| serde_json::Value::Array(Vec::new()));
-        let mut obj = serde_json::json!({ "ok": !failed, "warnings": warnings });
-        if let Some(program) = program
-            && !program.requires.is_empty()
-        {
+        let mut obj = serde_json::json!({ "warnings": warnings_json(program) });
+        if !program.requires.is_empty() {
             obj["requires"] = requires_json(&program.requires);
         }
         if is_empty {
             obj["warning"] = serde_json::json!("empty program");
         }
-        println!("{}", obj);
+        stage.json = obj;
     } else {
-        if let Some(program) = program {
-            eprint_warnings(program);
-        }
+        stage.text.push_str(&diagnostics_text(program));
         if is_empty {
-            eprintln!("warning: empty program");
+            stage.text.push_str("warning: empty program\n");
         }
         if let Some(summary) = report.summary() {
-            eprintln!("{summary}");
-        }
-        // Otherwise silent on success, like most linters — but for one line
-        // saying which host interfaces the program's packages require, since
-        // a check passes with no host present and a run will need them.
-        if let Some(program) = program
-            && !program.requires.is_empty()
-        {
-            println!(
-                "requires host interfaces: {}",
-                program
-                    .requires
-                    .iter()
-                    .map(|r| r.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
+            stage.text.push_str(&summary);
+            stage.text.push('\n');
         }
     }
-    // Checker errors fail `check`; `--strict` extends that to warnings (for
-    // CI). Output above is unchanged either way.
-    if failed || (strict && warning_count > 0) {
-        process::exit(1);
-    }
-}
-
-/// The flags of a `petal check` over several files, passed on to each file's
-/// check.
-pub(super) struct CheckFlags {
-    pub json: bool,
-    pub strict: bool,
-    pub lenient: bool,
-    pub ir: bool,
-    pub bare: bool,
-}
-
-/// `petal check a.ptl b.ptl …` — check each file as its own program, the
-/// same as `petal check <file>` one at a time, and fail if any fails.
-///
-/// Each file is checked by a child `petal check` of this same binary: a check
-/// ends the process on the first error it cannot report past (a parse error,
-/// a lowering error), and one file's must not stop the others'.
-///
-/// Text output: a `==> file <==` header before each file that printed
-/// anything, then what its check printed, then a closing line naming the
-/// files that failed. `--json`: one object, `{"ok", "files": [...]}`, each
-/// entry being that file's `check --json` object plus its `"file"`.
-pub(super) fn handle_check_many(flags: &CheckFlags, files: &[&str], include_dirs: &[PathBuf]) {
-    let exe = std::env::current_exe().unwrap_or_else(|e| {
-        eprintln!("Error: cannot find the petal binary to check each file: {e}");
-        process::exit(1);
-    });
-    let mut base: Vec<String> = vec!["check".into()];
-    for (on, flag) in [
-        (flags.json, "--json"),
-        (flags.strict, "--strict"),
-        (flags.lenient, "--lenient"),
-        (flags.ir, "--ir"),
-    ] {
-        if on {
-            base.push(flag.into());
-        }
-    }
-    if flags.bare {
-        base.extend(["--error-format".into(), "bare".into()]);
-    }
-    for dir in include_dirs {
-        base.extend(["-I".into(), dir.display().to_string()]);
-    }
-    let mut worst = 0;
-    let mut failed: Vec<&str> = Vec::new();
-    let mut reports: Vec<serde_json::Value> = Vec::new();
-    for &file in files {
-        let out = process::Command::new(&exe).args(&base).arg(file).output();
-        let out = match out {
-            Ok(out) => out,
-            Err(e) => {
-                eprintln!("Error: could not run the check of '{file}': {e}");
-                process::exit(1);
-            }
-        };
-        let code = out.status.code().unwrap_or(1);
-        if code != 0 {
-            worst = worst.max(code);
-            failed.push(file);
-        }
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        if flags.json {
-            let mut obj = serde_json::from_str::<serde_json::Value>(stdout.trim())
-                .ok()
-                .filter(|v| v.is_object())
-                .unwrap_or_else(|| {
-                    serde_json::json!({
-                        "ok": false,
-                        "error": format!("{}{}", stdout, stderr).trim(),
-                    })
-                });
-            obj["file"] = serde_json::json!(file);
-            reports.push(obj);
-            continue;
-        }
-        if stdout.is_empty() && stderr.is_empty() {
-            continue;
-        }
-        eprintln!("==> {file} <==");
-        eprint!("{stderr}");
-        print!("{stdout}");
-    }
-    if flags.json {
-        let obj = serde_json::json!({ "ok": failed.is_empty(), "files": reports });
-        println!("{obj}");
-    } else if !failed.is_empty() {
-        eprintln!(
-            "check failed for {} of {} files: {}",
-            failed.len(),
-            files.len(),
-            failed.join(", ")
-        );
-    }
-    if worst != 0 {
-        process::exit(worst);
-    }
+    stage
 }
 
 /// `petal ir-equal <a.ptl> <b.ptl>` — the standalone IR comparison, which is
@@ -1753,7 +1695,7 @@ pub(super) fn handle_show_graph(
 
 /// The filesystem path a source input was read from, if any — the anchor for
 /// resolving that file's imports relative to its own directory.
-fn source_origin(input: &SourceInput) -> Option<PathBuf> {
+pub(super) fn source_origin(input: &SourceInput) -> Option<PathBuf> {
     match input {
         SourceInput::File(path) if path != "-" => Some(PathBuf::from(path)),
         _ => None,
@@ -2303,12 +2245,12 @@ fn load_or_die(
 }
 
 /// [`load_or_die`] for a command that is about to *run* the program: check,
-/// link, and only then hand it back. The check is `petal check`'s
+/// link, and only then hand it back. The check is `petal lint`'s
 /// ([`Env::check_program`]) — its findings are printed to stderr the same
 /// way, and an error among them, or a program that does not lower, ends the
 /// command before the first line runs, whether or not the line at fault
-/// would have been reached. So a script `petal check` rejects does not
-/// start, and one that starts is one `petal check` passes.
+/// would have been reached. So a script `petal lint` rejects does not
+/// start, and one that starts is one `petal lint` passes.
 ///
 /// The load itself does not link, so that a program with both problems is
 /// told about its own errors before it is told this host cannot run it.

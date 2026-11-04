@@ -55,11 +55,11 @@ petal run -e 'print(1 + 2)'
 ## The loop you will use
 
 ```bash
-petal check app.ptl    # compile and check without running; exits 1 on any error
+petal lint app.ptl     # compile and check without running; exits 1 on any error
 petal run app.ptl      # then run it
 ```
 
-`check` is fast. It catches syntax errors, misspelled names, calls with the
+`lint` is fast. It catches syntax errors, misspelled names, calls with the
 wrong number of arguments, and type mismatches against any annotations you
 wrote, all before anything runs. Run it after every edit.
 
@@ -72,7 +72,7 @@ petal explain --term total app.ptl # where the value of `total` came from, step 
 ```
 
 Every subcommand has built-in help: `petal help`, `petal help run`,
-`petal help check`.
+`petal help lint`.
 
 ## Imports and projects
 
@@ -92,7 +92,7 @@ import vec2                     // vec2, vec3, normalize, dot, …
 import ui                       // drawing and input, for a graphical host
 ```
 
-`petal check` names the import a script is missing, and `petal fix-imports
+`petal lint` names the import a script is missing, and `petal fix-imports
 app.ptl` adds it. To depend on a library, make the directory a project and
 add it; every command then finds the project from the file it is given:
 

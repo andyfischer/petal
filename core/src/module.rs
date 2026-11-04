@@ -1986,11 +1986,18 @@ mod tests {
             run(&modules, "import facade\nprint(only_one)"),
             vec!["10"]
         );
+        // The use is in the entry file, which never imported `one` or `two`:
+        // the message names the facade and spells an import this file can
+        // write, not qualifiers that are only bound inside the facade.
         let err = load_err(&modules, "import facade: v\nprint(v)");
         assert!(
-            err.contains("`v` is ambiguous: 'one' and 'two' export it"),
+            err.contains(
+                "`v` is ambiguous: 'facade' re-exports it from both 'one' and 'two' — import \
+                 it from one of them directly, as `import one: v`"
+            ),
             "{err}"
         );
+        assert!(!err.contains("one.v"), "{err}");
         let err = load_err(&modules, "import facade\nprint(facade.v)");
         assert!(err.contains("`v` is ambiguous"), "{err}");
     }
@@ -2216,9 +2223,56 @@ mod tests {
             ),
             "{warnings:?}"
         );
+        // Each call is told the module whose set it reaches, by the
+        // qualifier this file binds (docs/tasks/module-system-followup.md,
+        // issue 6).
+        assert!(warnings[0].contains("so it calls the one from 'hud'"), "{warnings:?}");
+        assert!(warnings[0].contains("(`hud.score`)"), "{warnings:?}");
+        assert!(warnings[1].contains("so it calls the one from 'level'"), "{warnings:?}");
+        assert!(warnings[1].contains("(`level.score`)"), "{warnings:?}");
         let sid = env.create_stack(pid).unwrap();
         env.run(sid).unwrap();
         assert_eq!(env.take_output(), vec!["hud1", "level2"]);
+    }
+
+    #[test]
+    fn the_arity_merge_warning_uses_this_files_qualifier_and_skips_arity_errors() {
+        let mut env = Env::new();
+        env.register_module("hud", HUD);
+        env.register_module("level", LEVEL);
+        let pid = env
+            .load_program("import hud
+import level as lv
+print(score(1, 2))")
+            .unwrap();
+        let warnings: Vec<String> = env
+            .get_program(pid)
+            .unwrap()
+            .warnings
+            .iter()
+            .map(|w| w.message.clone())
+            .collect();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("(`lv.score`)"), "{warnings:?}");
+        // A count no set takes is an arity error, and only that.
+        let pid = env
+            .load_program("import hud\nimport level\nprint(score(1, 2, 3))")
+            .unwrap();
+        let found: Vec<String> = env
+            .get_program(pid)
+            .unwrap()
+            .warnings
+            .iter()
+            .map(|w| w.message.clone())
+            .collect();
+        assert!(
+            found.iter().any(|m| m.contains("expects 1 or 2 arguments, got 3")),
+            "{found:?}"
+        );
+        assert!(
+            !found.iter().any(|m| m.contains("different parameter counts")),
+            "{found:?}"
+        );
     }
 
     #[test]

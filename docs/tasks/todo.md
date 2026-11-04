@@ -36,22 +36,15 @@ element `props`, `json_stringify` and `json_parse` keep the written order
 [images-followup.md](images-followup.md) item 2: a `value_to_static` that
 skips JSON.
 
-## 3. Module system: two misleading messages left
+## 3. *(Done 2026-11-04)* Module system
 
-[module-system-followup.md](module-system-followup.md). Fixed on 2026-11-03:
-
-- a loose file named like a package no longer collides with it: loose files
-  are now named `./level` (issue 1);
-- a nested `import` is now an error, not silently ignored (issue 4);
-- a nested package's files are no longer reachable through the outer
-  package, where they could load twice (issue 8);
-- trace frames name their file (issue 5);
-- a slip after an import path names its fix (`import ./my-mod`,
-  `import ui.hud`, `.ptl`, `v as w`).
-
-Open, both small (the plan's step 5): issue 6 (the arity-merge warning
-suggests the wrong module) and issue 7 (facade ambiguity names unbound
-qualifiers).
+Every issue in [module-system-followup.md](module-system-followup.md)'s fix
+plan is fixed: loose files are named `./level` and no longer collide with
+packages, nested imports and nested-package paths are errors, slips after an
+import name their fix, trace frames name their file, and the arity-merge and
+facade-ambiguity messages name the right module. What is left there is the
+"Smaller things" list (formatter and `fix-imports` details, one misleading
+`set` message) and the documentation follow-up.
 
 ## 4. `check` and `show-static` miss things they claim to see
 

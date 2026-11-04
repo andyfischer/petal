@@ -100,8 +100,11 @@ Three refinements:
   `score(points)` and `level` exports `score(points, bonus)`, both are
   callable bare — with a compile-check warning on each call through the merged
   name, since which module answers depends on how many arguments were
-  written. The same parameter count from two unrelated modules is the
-  ambiguity error above, at the call.
+  written. The warning names the module the call reaches and the qualifier
+  that pins it (`score(1, 2)` calls the one from `level`: write
+  `level.score`). A count no set takes is an arity error instead. The same
+  parameter count from two unrelated modules is the ambiguity error above,
+  at the call.
 
 A plain import that takes a name away from a builtin or a `std` function is
 legal, and worth knowing about: the compile check warns once per name per file, at the
@@ -318,12 +321,16 @@ The facade's own imports follow [the usual tiers](#which-name-wins):
   rules. Function sets with different parameter counts merge. Otherwise the
   name is ambiguous — which is *not* an error in the facade, where nobody
   used it. The error belongs to the file that finally uses the name, bare or
-  as `facade.name`, and names the two original modules:
+  as `facade.name`. It names the facade and the two original modules, and
+  spells an import of one of them from the file that used the name:
 
 ```
-Error: `shared` is ambiguous: './a' and './b' export it — write `a.shared` or `b.shared`, or
-pin one with `import ./a: shared`
+Error: `shared` is ambiguous: './kit/bloomx' re-exports it from both './kit/a' and './kit/b' —
+import it from one of them directly, as `import ./kit/a: shared`
 ```
+
+  Inside the facade itself, the usual message applies, with the facade's own
+  qualifiers (`write a.shared or b.shared`).
 
 Chains work — a facade over a facade re-exports what it received — and a
 re-export cycle is caught by the ordinary cycle check

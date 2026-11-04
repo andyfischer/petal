@@ -292,6 +292,64 @@ fn a_trivial_builtin_in_the_written_value_changes_no_result() {
     assert!(fast.0.iter().any(|l| l.contains("Expected float")), "{:?}", fast.0);
 }
 
+/// A cell no closure captures is reachable from its own frame alone, so a
+/// call of any kind may sit between its read and its write (see "Private
+/// cells" in `backend::bytecode::cells`). This was the loop that took minutes:
+/// every `append` copied the whole list.
+#[test]
+fn a_call_in_the_written_value_of_a_private_cell_does_not_copy_per_write() {
+    for value in ["str(i)", "sqrt(i)", "sq(i)", "[sq(i), str(i)]"] {
+        assert_copies_at_most(
+            &format!("set xs = append(xs, {value}) on a root var"),
+            2,
+            &format!(
+                "fn sq(x)\n  x * x\nend\nvar xs = []\nfor i in range(0, {N}) do\n  \
+                 set xs = append(xs, {value})\nend\nprint(len(xs))"
+            ),
+        );
+        assert_copies_at_most(
+            &format!("set xs = append(xs, {value}) on a function's local var"),
+            2,
+            &format!(
+                "fn sq(x)\n  x * x\nend\nfn build(n)\n  var xs = []\n  for i in range(0, n) do\n    \
+                 set xs = append(xs, {value})\n  end\n  get xs\nend\nprint(len(build({N})))"
+            ),
+        );
+    }
+    assert_copies_at_most(
+        "set xs[i] = f(i) on a function's local var",
+        2,
+        &format!(
+            "fn sq(x)\n  x * x\nend\nfn build(n)\n  var xs = range(0, n)\n  for i in range(0, n) do\n    \
+             set xs[i] = sq(i)\n  end\n  get xs\nend\nprint(len(build({N})))"
+        ),
+    );
+}
+
+#[test]
+fn a_call_in_the_written_value_of_a_private_cell_changes_no_result() {
+    // Snapshots taken around the calls keep what they took.
+    assert_prints(
+        "fn sq(x)\n  x * x\nend\nfn go()\n  var xs = [1]\n  let a = xs\n  \
+         set xs = append(xs, sq(2))\n  let b = xs\n  set xs = append(xs, str(sq(3)))\n  \
+         set xs[0] = sq(xs[1])\n  [a, b, xs]\nend\nprint(go())",
+        "[[1], [1, 4], [16, 4, \"9\"]]",
+    );
+    // The callee builds and returns lists of its own, from the same values.
+    assert_prints(
+        "fn pair(x)\n  [x, x]\nend\nvar xs = []\nfor i in range(0, 3) do\n  \
+         set xs = append(xs, pair(i))\nend\nprint(xs)",
+        "[[0, 0], [1, 1], [2, 2]]",
+    );
+    // A captured cell keeps the call's rules: the callee's append is lost
+    // under the old value, exactly as the baseline does it.
+    assert_prints(
+        "fn go()\n  var xs = [1]\n  let f = fn()\n    set xs = append(get xs, 9)\n    2\n  end\n  \
+         set xs = append(xs, f())\n  get xs\nend\nprint(go())",
+        "[1, 2]",
+    );
+}
+
 #[test]
 fn a_nested_write_copies_the_inner_container_only() {
     if !DUP_STATS_ENABLED {

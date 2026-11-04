@@ -444,8 +444,15 @@ or reach a cell (`bytecode::cells`, condition 1), which ruled out every call:
 native can do either of those things, and for the nine above that is now
 taken into account, so a call of one of them may sit in the written value.
 That loop went from quadratic (36, 138 and 647 ms for 10,000, 20,000 and
-40,000 appends) to linear. Any other call in the written value, builtin or
-user, still closes nothing; bind it first.
+40,000 appends) to linear.
+
+Any call at all may now sit in the written value of a *private* cell: a `var`
+that no closure captures and that is no `state var`, which no callee can
+reach (see "Private cells" in `bytecode::cells`). Before that,
+`set xs = append(xs, str(i))` copied the list on every append: 200,000 of them
+took 142 s and 136 MB of peak RSS, and now take 0.16 s and 42 MB (release
+build, 4 November 2026). On a captured or `state` cell any other call still
+closes the window; bind it first.
 
 ## Frozen data and collection pauses
 

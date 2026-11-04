@@ -21,7 +21,7 @@ list on every iteration.
 
 **Recommendation, in priority order:**
 
-1. **Fix now:** `set xs = append(xs, f(x))` is O(n²) in time and garbage
+1. **Fix now (done, 2026-11-04: private cells in `backend/bytecode/cells.rs`):** `set xs = append(xs, f(x))` is O(n²) in time and garbage
    whenever `f` is a non-trivial builtin or a user call. 200k appends of
    `str(i)` took **142 s**; the same loop with the argument bound by `let`
    first takes 0.2 s. This is a separate change; see

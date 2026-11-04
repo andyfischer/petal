@@ -304,9 +304,13 @@ keeps what it saw.
 Three limits, all of which fall back to copying rather than to a wrong
 answer. Each comes with the habit that avoids it:
 
-- **A call between the read and the write.** `set xs = append(xs, f(x))` reads
-  `xs`, then runs `f`, which might read or write `xs` itself. Bind the argument
-  first: `let v = f(x)` then `set xs = append(xs, v)`.
+- **A call between the read and the write, on a captured or `state` cell.**
+  `set xs = append(xs, f(x))` reads `xs`, then runs `f`. When no closure
+  captures `xs` and it is no `state var` (a plain `var` that only its own
+  function uses), no callee can reach it, and the write stays in place. When
+  a closure captures it, or it is a `state var`, `f` might read or write `xs`
+  itself, so the write copies. Bind the argument first: `let v = f(x)` then
+  `set xs = append(xs, v)`.
 - **Inner containers.** `set g[i][j] = v` rewrites `g` in place and copies row
   `i`; `set ps[i].x = v` copies one record. The bit covers the cell's top-level
   container only, since `get g[i]` hands a row out. Keep hot data one level

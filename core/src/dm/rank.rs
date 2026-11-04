@@ -15,9 +15,9 @@
 //! - [`collateral_norm`] and [`score`]: §2.5.4. What else moved is measured
 //!   from the verification run, not guessed from the program's shape.
 
-use crate::dm_v2::jacobian::Jacobian;
-use crate::dm_v2::params::{CodeOrigin, Param};
-use crate::dm_v2::solve::rank;
+use crate::dm::jacobian::Jacobian;
+use crate::dm::params::{CodeOrigin, Param};
+use crate::dm::solve::rank;
 
 /// The weight of a knob (§2.5.2): a literal marked by `config let`, by
 /// `tunable(...)`, or by both. One tier, so marking a literal twice changes

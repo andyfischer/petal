@@ -27,8 +27,8 @@
 
 use std::time::Duration;
 
-use petal::dm_v2::spec::SpecSession;
-use petal::dm_v2::{
+use petal::dm::spec::SpecSession;
+use petal::dm::{
     CandidateReport, DmGoal, DmRequest, DmSession, EmitKey, Observable, ParamChange, ParamFilter,
     ParamSelector, PathStep, SpecConfig, SpecHost,
 };
@@ -539,7 +539,7 @@ type Goals = (Vec<Observable>, Vec<f64>, Vec<usize>);
 /// The observables of a command's position arguments, and their baseline
 /// values: x goals first, then y. A number argument is read as it is; a
 /// record argument (`draw_rect(rect, color)`) through its `x` / `y` field.
-fn position_observables(base: &petal::dm_v2::SpecRun, key: EmitKey, xs: &[usize], ys: &[usize]) -> Option<Goals> {
+fn position_observables(base: &petal::dm::SpecRun, key: EmitKey, xs: &[usize], ys: &[usize]) -> Option<Goals> {
     let at = |arg: usize, path: Vec<PathStep>| Observable::EmitArg { key, arg, path };
     let mut x_goals = Vec::new();
     let mut y_goals = Vec::new();
@@ -623,7 +623,7 @@ fn property_layouts(native: &str, property: DragProperty) -> &'static [Layout] {
 /// or the run did not hand it numbers where any layout says (`draw_text`
 /// with a style record carries no color arguments).
 fn property_observables(
-    base: &petal::dm_v2::SpecRun,
+    base: &petal::dm::SpecRun,
     key: EmitKey,
     native: &str,
     property: DragProperty,
@@ -718,8 +718,8 @@ fn candidate(program: &Program, c: &CandidateReport, axis: &[usize]) -> DragCand
         file: file_path(program, p.file),
         value: p.value,
         config: p.is_knob(),
-        tunable: matches!(p.hint, Some(petal::dm_v2::Hint::Tunable { .. })),
-        rigid: matches!(p.hint, Some(petal::dm_v2::Hint::Rigid)),
+        tunable: matches!(p.hint, Some(petal::dm::Hint::Tunable { .. })),
+        rigid: matches!(p.hint, Some(petal::dm::Hint::Rigid)),
         eligible: c.eligible.is_ok(),
         why_not: c.eligible.err().map(str::to_string),
         moves: c.column.as_ref().is_some_and(|col| col.iter().any(|v| *v != 0.0)),

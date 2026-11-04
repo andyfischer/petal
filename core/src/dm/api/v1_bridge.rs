@@ -3,11 +3,11 @@
 use std::collections::HashMap;
 
 use crate::direct_manipulation::{self as v1, ManipulationGoal, VarPolicy};
-use crate::dm_v2::DmError;
-use crate::dm_v2::observe::Observable;
-use crate::dm_v2::params::ParamSelector;
-use crate::dm_v2::rank::{ScoreParts, SubsetKind};
-use crate::dm_v2::spec::SpecSession;
+use crate::dm::DmError;
+use crate::dm::observe::Observable;
+use crate::dm::params::ParamSelector;
+use crate::dm::rank::{ScoreParts, SubsetKind};
+use crate::dm::spec::SpecSession;
 use crate::env::Env;
 use crate::source_map::FileId;
 use crate::static_value::StaticValue;
@@ -19,7 +19,7 @@ use super::response::{Alternative, Collateral, DmDiagnostics, DmResponse, Engine
 /// argument of the call that made its emit, and v1's proposals (not re-run)
 /// become the alternatives.
 pub(super) fn v1_fallback(env: &Env, spec: &SpecSession, req: &DmRequest) -> Result<DmResponse, DmError> {
-    let program = env.get_program(spec.program()).ok_or(DmError::Spec(crate::dm_v2::SpecError::Stale))?;
+    let program = env.get_program(spec.program()).ok_or(DmError::Spec(crate::dm::SpecError::Stale))?;
     let mut goals: Vec<ManipulationGoal> = Vec::new();
     for (i, g) in req.goals.iter().enumerate() {
         let bad = || DmError::BadObservable(format!("goal {i}: v1 cannot address {:?}", g.observable));

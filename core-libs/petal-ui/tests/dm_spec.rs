@@ -6,9 +6,9 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use petal::dm_v2::observe::hash_str;
-use petal::dm_v2::spec::{NoHost, ObsValue, OverrideValue, Overrides, SpecConfig, SpecError, SpecSession};
-use petal::dm_v2::{EmitKey, LiveObservation, Observable, PathStep};
+use petal::dm::observe::hash_str;
+use petal::dm::spec::{NoHost, ObsValue, OverrideValue, Overrides, SpecConfig, SpecError, SpecSession};
+use petal::dm::{EmitKey, LiveObservation, Observable, PathStep};
 use petal::env::Env;
 use petal::program::{ProgramId, TermId, TermOp};
 use petal_ui::draw::{DRAW_COMMANDS_SYMBOL, DrawCommand};

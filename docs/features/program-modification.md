@@ -92,7 +92,7 @@ surfaces over the same engine). Address an emitted value, state the value it
 should have, and get back ranked source edits to the literals it depends on.
 The edit is text you apply with `apply_edits`, then re-run.
 
-The default engine (v2, `core/src/dm_v2/`) treats the program as a black box
+The default engine (v2, `core/src/dm/`) treats the program as a black box
 from its literals to its outputs: it re-runs it speculatively with effects
 contained and state frozen, measures how each literal moves the target, and
 solves for a change. So it reaches literals through function calls, field

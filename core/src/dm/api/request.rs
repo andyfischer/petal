@@ -3,10 +3,10 @@
 
 use std::time::Duration;
 
-use crate::dm_v2::jacobian::FdOptions;
-use crate::dm_v2::observe::{LiveObservation, Observable};
-use crate::dm_v2::params::ParamFilter;
-use crate::dm_v2::spec::SpecConfig;
+use crate::dm::jacobian::FdOptions;
+use crate::dm::observe::{LiveObservation, Observable};
+use crate::dm::params::ParamFilter;
+use crate::dm::spec::SpecConfig;
 use crate::static_value::StaticValue;
 
 /// What a goal wants its observable to be.
@@ -19,7 +19,7 @@ pub enum GoalTarget {
     /// Anywhere in `[lo, hi]` (an end left out is open): `--at-most`,
     /// `--at-least`, `--within`. It holds anywhere inside, so one that holds
     /// at the baseline asks for no edit, and one that does not is solved to
-    /// one tolerance inside the bound it is past ([`GoalRow`](crate::dm_v2::solve::GoalRow)). A drag's
+    /// one tolerance inside the bound it is past ([`GoalRow`](crate::dm::solve::GoalRow)). A drag's
     /// `targets` entry for it is ignored.
     Range { lo: Option<f64>, hi: Option<f64> },
 }
@@ -153,7 +153,7 @@ pub struct DmRequest {
     /// `--collateral solid=10,coin=1`); a channel not named weighs 1. A
     /// shape on a channel of weight `W > 1` that moves as far as the drag
     /// adds `W - 1` to the score on top of its share of the compressed count
-    /// ([`crate::dm_v2::rank::WeightedCollateral`]), and the solver's step
+    /// ([`crate::dm::rank::WeightedCollateral`]), and the solver's step
     /// scales that channel's rows by `W`; a weight below 1 discounts the
     /// channel, 0 ignores it.
     pub collateral_weights: Vec<(String, f64)>,

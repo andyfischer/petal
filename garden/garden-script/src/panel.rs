@@ -65,9 +65,9 @@ pub use petal_ui::host_data::{DataProvider, HostData as PanelData};
 
 use crate::query::{self, QueryProvider};
 
-mod dm_v2;
-pub use dm_v2::{DRAG_ALTERNATIVES, DRAG_ITERS, FINISH_RUNS, FINISH_WALL, OPEN_RUNS, OPEN_WALL};
-use dm_v2::V2Drag;
+mod dm;
+pub use dm::{DRAG_ALTERNATIVES, DRAG_ITERS, FINISH_RUNS, FINISH_WALL, OPEN_RUNS, OPEN_WALL};
+use dm::V2Drag;
 
 thread_local! {
     /// Live text of each `edit_view` region on this thread, keyed by region id,

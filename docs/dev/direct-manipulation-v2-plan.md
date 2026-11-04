@@ -321,19 +321,19 @@ It cannot:
                         └───────────────────────┘
 ```
 
-New code lives in `core/src/dm_v2/`:
+New code lives in `core/src/dm/`:
 
 | File | Milestone | Contents |
 |---|---|---|
-| `dm_v2/mod.rs` | M1 | re-exports, `DmError` |
-| `dm_v2/spec.rs` | M1 | `SpecSession`, `SpecConfig`, `SpecRun`, `Overrides`, capture types |
-| `dm_v2/observe.rs` | M1 | `Observable`, `EmitKey`, `ObsValue`, value extraction |
-| `dm_v2/params.rs` | M2 | `Param`, static discovery, empirical screening |
-| `dm_v2/hints.rs` | M2 | reading `tunable`/`rigid` from the IR |
-| `dm_v2/jacobian.rs` | M2 | finite differences, column quality, optional dual path |
-| `dm_v2/solve.rs` | M3 | damped least squares, verification loop, rounding |
-| `dm_v2/rank.rs` | M3 | weights, alternatives, collateral |
-| `dm_v2/api.rs` | M3 | `propose_edits_v2`, `DmRequest`, `DmResponse` |
+| `dm/mod.rs` | M1 | re-exports, `DmError` |
+| `dm/spec.rs` | M1 | `SpecSession`, `SpecConfig`, `SpecRun`, `Overrides`, capture types |
+| `dm/observe.rs` | M1 | `Observable`, `EmitKey`, `ObsValue`, value extraction |
+| `dm/params.rs` | M2 | `Param`, static discovery, empirical screening |
+| `dm/hints.rs` | M2 | reading `tunable`/`rigid` from the IR |
+| `dm/jacobian.rs` | M2 | finite differences, column quality, optional dual path |
+| `dm/solve.rs` | M3 | damped least squares, verification loop, rounding |
+| `dm/rank.rs` | M3 | weights, alternatives, collateral |
+| `dm/api.rs` | M3 | `propose_edits_v2`, `DmRequest`, `DmResponse` |
 
 The VM-side hooks (§3) go in `backend/bytecode/vm/spec.rs`, so the VM files
 stay focused. v1 (`direct_manipulation.rs`) stays as it is. v2 reuses its
@@ -1014,10 +1014,10 @@ See [§4](#4-surfaces).
 | R8 | Emit records: when spec capture is on, push `EmitRecord` (channel, chain, key with loop-path hash, spec seq, raw args) beside `emit_origins`. `PetalCxt::push_output`/`emit` already know the chain. Raw args are captured in `call_native_fn` before `natives.call` and attached to the emits that call produced | `vm/native.rs`, `native_fn.rs` (`push_output`, `emit` at `:1209`) | Bounded: arg conversion depth 3, lists ≤ 64 |
 | R9 | `literal_edit::float_like` becomes `pub(crate)` | `literal_edit.rs:1888` | For §2.4.4 |
 | R10 | `tunable`/`rigid` builtins (identity, `CONST`, declared in `core/packages/core` like the other builtins), identity look-through in `provenance::resolve_arg` so v1 keeps working, docs in `Builtins.md`, `stdlib.json` regen, lints `dm-hint-not-literal` / `dm-hint-state-init` / non-literal bounds | `builtins/`, `packages/core`, `provenance.rs`, `lint/` | M2. See the proposal |
-| R11 | `trait SpecHost { fn with_run_env(&mut self, env: &mut Env, f: &mut dyn FnMut(&mut Env)); }`: the host installs its thread-local providers (host data, fonts, clipboard) around a spec run exactly as around a live frame. `NoHost` for plain core. petal-ui's `Headless` and Garden's panel implement it | `dm_v2/spec.rs`, `core-libs/petal-ui/src/harness.rs`, `garden-script/src/panel.rs` | Without it, `host_data` answers nil and `text_width` measures differently in spec runs, and every baseline mismatches |
+| R11 | `trait SpecHost { fn with_run_env(&mut self, env: &mut Env, f: &mut dyn FnMut(&mut Env)); }`: the host installs its thread-local providers (host data, fonts, clipboard) around a spec run exactly as around a live frame. `NoHost` for plain core. petal-ui's `Headless` and Garden's panel implement it | `dm/spec.rs`, `core-libs/petal-ui/src/harness.rs`, `garden-script/src/panel.rs` | Without it, `host_data` answers nil and `text_width` measures differently in spec runs, and every baseline mismatches |
 | R12 | `HOST_DATA` replay in the gate: record by (native, args hash) in the baseline, replay after; unseen keys give `Nil` and `new_host_keys += 1` | `vm/spec.rs` | Keeps a perturbed key from triggering a host fetch |
 | R13 | Observed call edges: in spec mode, record `(call term, FunctionId)` for every user-function call | `vm/spec.rs`, call paths in `vm/` | Feeds §2.2 for dynamic calls and methods |
-| R14 | `apply_edits_multi` (per-file splice, §2.4.4) and `DmResponse` edits carrying `FileId` + path | `dm_v2/api.rs` | v1 `apply_edits` unchanged |
+| R14 | `apply_edits_multi` (per-file splice, §2.4.4) and `DmResponse` edits carrying `FileId` + path | `dm/api.rs` | v1 `apply_edits` unchanged |
 
 No change to the language grammar, IR schema or bytecode format.
 
@@ -1027,8 +1027,8 @@ No change to the language grammar, IR schema or bytecode format.
 
 ### 4.1 Rust API (M3)
 
-`dm_v2::propose_edits_v2(env, checkpoint, &DmRequest) -> Result<DmResponse,
-DmError>` (§6.3). It is re-exported from `lib.rs` as `petal::dm_v2`. The
+`dm::propose_edits_v2(env, checkpoint, &DmRequest) -> Result<DmResponse,
+DmError>` (§6.3). It is re-exported from `lib.rs` as `petal::dm`. The
 embedding guide gets a section in M4.
 
 ### 4.2 CLI (M4)
@@ -1039,7 +1039,7 @@ passes the bar in §5 (M5); `--v1` keeps the old engine. (Done 24 October
 
 Two binaries carry it, because the core `petal` binary has no draw natives
 (§1.7). The argument parser and JSON rendering live once, in core
-(`dm_v2::cli`), and both binaries call them:
+(`dm::cli`), and both binaries call them:
 - `petal propose-edit --v2` for scripts that emit through `push_output`/`emit`
   channels (no petal-ui).
 - `petal-ui-run propose-edit [--frames N] [--size WxH] [--scenario …]
@@ -1147,9 +1147,9 @@ green (`cargo test` in `core/`, plus the named suites) and updates
 
 Scope: R1 (overrides, gate, capture, loaded set), R2 (facets, core rows,
 in-repo host rows, handle registry), R3, R4, R5 (revised), R7, R8, R11, R12,
-R13, and `dm_v2/{mod,spec,observe}.rs`.
+R13, and `dm/{mod,spec,observe}.rs`.
 
-Acceptance (in `core/tests/dm_v2_spec.rs` unless noted):
+Acceptance (in `core/tests/dm_spec.rs` unless noted):
 1. `override_moves_only_that_literal`: `let a = 10` / `let b = 10` /
    `push_output(sym, a)` / `push_output(sym, b)`. Overriding `a`'s term to
    12.5 moves emit 0 only. The two `10`s were interned to one `ConstantId`
@@ -1184,7 +1184,7 @@ Acceptance (in `core/tests/dm_v2_spec.rs` unless noted):
     with `x = 5.0`. The override 5.1 changes the fingerprint and 4.9 does not.
 11. `recompile_oracle_agrees`: for every `.ptl` in
     `examples/direct-manipulation-v2/` (or the M1 seed set
-    `core/tests/dm_v2/*.ptl` until M5), override each literal in turn by
+    `core/tests/dm/*.ptl` until M5), override each literal in turn by
     `+1e-3` with both strategies. The observables are bit-identical.
 12. `budget_overrun_is_a_failed_run`: a `while i < n` loop with `n`
     overridden to `1e12` returns `SpecRun { error: Some(..) }` and the
@@ -1212,17 +1212,17 @@ Acceptance (in `core/tests/dm_v2_spec.rs` unless noted):
 
 ### M2: discovery, Jacobian, hints
 
-Scope: `dm_v2/{params,hints,jacobian}.rs`, R9, R10, the no-feedback facet
+Scope: `dm/{params,hints,jacobian}.rs`, R9, R10, the no-feedback facet
 wired into discovery and the gate. (The dual fast path is future work,
 §2.3.6.)
 
-Core tests cannot call `draw_circle` (§1.7). `core/tests/dm_v2_*` register a
+Core tests cannot call `draw_circle` (§1.7). `core/tests/dm_*` register a
 test native `draw(x, y, r)` with `EMITS`, which reads its args with
 `get_int` exactly as petal-ui does. Wherever the tests below say
 `draw_circle`, they mean this native. The petal-ui variants live in
 `core-libs/petal-ui/tests/`.
 
-Acceptance (`core/tests/dm_v2_jacobian.rs`):
+Acceptance (`core/tests/dm_jacobian.rs`):
 1. `discovers_literal_inside_helper`: `fn place(i) 20 + i * 30 end` (the body on its own line) /
    `draw(place(2), 50)`. Discovery for arg 0 includes `20` and `30` (in the
    body) and `2` (the call arg), and not `50`. Their Jacobian columns are 1,
@@ -1265,9 +1265,9 @@ Acceptance (`core/tests/dm_v2_jacobian.rs`):
 
 ### M3: solver, ranking, disambiguation, public API
 
-Scope: `dm_v2/{solve,rank,api}.rs`, `propose_edits_v2`.
+Scope: `dm/{solve,rank,api}.rs`, `propose_edits_v2`.
 
-Acceptance (`core/tests/dm_v2_solve.rs`):
+Acceptance (`core/tests/dm_solve.rs`):
 1. `through_helper_single_goal`: `fn place(i) 20 + i * 30 end` (the body on
    its own line), then `draw_circle(place(1.0), 100, 10, …)` and
    `draw_circle(place(2.0), 100, 10, …)`. Dragging the second circle to
@@ -1416,7 +1416,7 @@ Acceptance:
 These are the contracts later milestones code against. Names may gain
 fields. Changing the meaning of a field requires updating this section.
 
-### 6.1 M1 provides (`dm_v2::spec`, `dm_v2::observe`)
+### 6.1 M1 provides (`dm::spec`, `dm::observe`)
 
 ```rust
 pub struct SpecConfig {
@@ -1510,7 +1510,7 @@ pub enum SpecError {
 `dm_checkpoint`. `NativeEffects` additions (R2): `contained`,
 `no_feedback`, plus `Env::mark_handle_class_spec_safe`.
 
-### 6.2 M2 provides (`dm_v2::params`, `dm_v2::hints`, `dm_v2::jacobian`)
+### 6.2 M2 provides (`dm::params`, `dm::hints`, `dm::jacobian`)
 
 ```rust
 pub struct Param {
@@ -1555,7 +1555,7 @@ pub fn collateral_rows(baseline: &SpecRun, goals: &[Observable], cap: usize) -> 
 pub struct RunBudget { pub max_runs: usize, pub used: usize, pub deadline: std::time::Instant }
 ```
 
-### 6.3 M3 provides (`dm_v2::api`, `dm_v2::solve`, `dm_v2::rank`)
+### 6.3 M3 provides (`dm::api`, `dm::solve`, `dm::rank`)
 
 ```rust
 pub struct DmGoal { pub observable: Observable, pub target: f64,
@@ -1687,16 +1687,16 @@ with a golden test.
 |---|---|---|---|
 | Design | done, 2026-10-23 | `c9eb67b7` | plan + [hints proposal](../proposals/dm-v2-hints.md) |
 | Design review | done, 2026-10-23 | (this commit) | adversarial review against the code, [§10](#10-review-notes) |
-| M1 speculative runner | done, 2026-10-23 | `07e81adf` | `dm_v2::{spec,observe}`, `vm/spec.rs`, `env/spec_run.rs`; tests `core/tests/dm_v2_spec.rs` (24), `core-libs/petal-ui/tests/dm_v2_spec.rs` (2); deviations below |
-| M2 discovery + Jacobian + hints | done, 2026-10-24 | `43ee2820` | `dm_v2::{params,hints,jacobian}`, `builtins/hints.rs`, `lint/dm_hints.rs`; tests `core/tests/dm_v2_jacobian.rs` (17), `core-libs/petal-ui/tests/dm_v2_params.rs` (1); deviations below |
-| M3 solver + ranking + API | done, 2026-10-24 | `1c28a217` | `dm_v2::{solve,rank,api}`, `propose_edits_v2`, `DmSession`, `apply_edits_multi`; tests `core/tests/dm_v2_solve.rs` (27); deviations below |
-| M4 surfaces | M4a (CLI, MCP, docs) done, 2026-10-24; M4b (Garden) done, 2026-10-24 | M4a: `83cd1469`; M4b: `6da29349`, `1f565eca` | M4b: Garden drag-to-edit on v2 (`garden-script/src/panel/dm_v2.rs`, `garden-app/src/app/manip_v2.rs`); tests `garden-script/tests/dm_v2_drag.rs` (13), `tools/dm-drag-integration-test.ts`. M4a: `cli/dm_v2.rs` (`propose-edit --v2`), `run --trace-emits` keys + native args, MCP `ProposeEdit`/`TraceEmits`, docs; tests `core/tests/cli_propose_edit_v2.rs` (12), `test/vitest/petal-mcp.test.ts` (5); deviations below |
-| M5 examples + study | done, 2026-10-24 | `ccc25ce7` | `examples/direct-manipulation-v2/` (27 examples, 105 goals), harness `core-libs/petal-ui/tests/dm_v2_study.rs`, report [direct-manipulation-v2-study.md](direct-manipulation-v2-study.md) + `.json`; engine revisions in `dm_v2::{rank,api,jacobian,spec}`; deviations below |
-| Code review (post-M5) | done, 2026-10-24 | `0d6dae6e`, `08bc37cd`, `1e6f7913`, `4dea9231` | adversarial review of the whole change set; five bugs fixed, each pinned by `core/tests/dm_v2_review.rs` (7); see "Code review" below |
+| M1 speculative runner | done, 2026-10-23 | `07e81adf` | `dm::{spec,observe}`, `vm/spec.rs`, `env/spec_run.rs`; tests `core/tests/dm_spec.rs` (24), `core-libs/petal-ui/tests/dm_spec.rs` (2); deviations below |
+| M2 discovery + Jacobian + hints | done, 2026-10-24 | `43ee2820` | `dm::{params,hints,jacobian}`, `builtins/hints.rs`, `lint/dm_hints.rs`; tests `core/tests/dm_jacobian.rs` (17), `core-libs/petal-ui/tests/dm_params.rs` (1); deviations below |
+| M3 solver + ranking + API | done, 2026-10-24 | `1c28a217` | `dm::{solve,rank,api}`, `propose_edits_v2`, `DmSession`, `apply_edits_multi`; tests `core/tests/dm_solve.rs` (27); deviations below |
+| M4 surfaces | M4a (CLI, MCP, docs) done, 2026-10-24; M4b (Garden) done, 2026-10-24 | M4a: `83cd1469`; M4b: `6da29349`, `1f565eca` | M4b: Garden drag-to-edit on v2 (`garden-script/src/panel/dm.rs`, `garden-app/src/app/manip_v2.rs`); tests `garden-script/tests/dm_drag.rs` (13), `tools/dm-drag-integration-test.ts`. M4a: `cli/dm.rs` (`propose-edit --v2`), `run --trace-emits` keys + native args, MCP `ProposeEdit`/`TraceEmits`, docs; tests `core/tests/cli_propose_edit_v2.rs` (12), `test/vitest/petal-mcp.test.ts` (5); deviations below |
+| M5 examples + study | done, 2026-10-24 | `ccc25ce7` | `examples/direct-manipulation-v2/` (27 examples, 105 goals), harness `core-libs/petal-ui/tests/dm_study.rs`, report [direct-manipulation-v2-study.md](direct-manipulation-v2-study.md) + `.json`; engine revisions in `dm::{rank,api,jacobian,spec}`; deviations below |
+| Code review (post-M5) | done, 2026-10-24 | `0d6dae6e`, `08bc37cd`, `1e6f7913`, `4dea9231` | adversarial review of the whole change set; five bugs fixed, each pinned by `core/tests/dm_review.rs` (7); see "Code review" below |
 | Final test pass | done, 2026-10-24 | `4a8d7145`, `62be2098` (+ this commit) | every suite green, study re-run (unchanged outcomes), effect audits clean, ecosystem checked; see "Final test pass" below |
 | v2 the default | done, 2026-10-24 | (this commit) | `petal propose-edit` uses v2 unless `--v1` (`cli/args.rs`); MCP `ProposeEdit` defaults to v2 (the argv carries no engine flag); hint names `tunable`/`rigid` accepted; tests `core/tests/cli_propose_edit_v2.rs`, `test/vitest/petal-mcp.test.ts` updated; see "v2 the default" below |
 | Garden drag mode (M4c) | done, 2026-10-24 | `58144b0d`, `43eea4ff`, `35c7ef95`, `8c9c32cb` (+ this commit) | Petal IDE drag mode (`:DragMode`, toolbar Drag, Cmd+Shift+D): modifier-free drags, the drag result panel (alternatives, candidates with state, session chips), `tunable`/`rigid` toggled by mouse as source rewrites (`garden-app/src/dm_hints.rs`), Garden `:DragEngine auto` = v2 for every shape; examples `garden/examples/panels/dm-v2/` (7); tests `dm_hints` (12), 5 `garden-app` tests, `the_drag_mode_examples_solve`, `garden/tools/dm-mode-integration-test.ts` (36 checks); see "Garden drag mode" below |
-| One knob tier | done, 2026-10-24 | (this commit) | `config let` and `tunable` share one weight, 0.5 (`rank::KNOB_WEIGHT`, `Param::is_knob`); the `config` selector gains the alias `knob`; study re-run with 0.25 and 0.5 (same outcomes; 0.5 changes no run count); test `dm_v2_solve::config_and_tunable_are_one_tier`; see "One knob tier" below |
+| One knob tier | done, 2026-10-24 | (this commit) | `config let` and `tunable` share one weight, 0.5 (`rank::KNOB_WEIGHT`, `Param::is_knob`); the `config` selector gains the alias `knob`; study re-run with 0.25 and 0.5 (same outcomes; 0.5 changes no run count); test `dm_solve::config_and_tunable_are_one_tier`; see "One knob tier" below |
 
 Deviations from this plan are recorded here as they happen, with the reason.
 
@@ -1753,7 +1753,7 @@ Deviations:
    by `+1` and floats by `+1e-3` (§2.3.4), and when both strategies fail it
    compares only that both failed (the messages quote different source
    text). It leaves one compiled program per run loaded; it is test-only.
-   It runs over the seed set `core/tests/dm_v2/*.ptl` until M5.
+   It runs over the seed set `core/tests/dm/*.ptl` until M5.
 9. *Baseline step budget* is `max_steps` or 10⁹; perturbed runs default to
    ten times the baseline's steps, at least 10,000.
 10. *Hot path.* A spec run sets `Vm::hooks`, so every instruction takes
@@ -1781,10 +1781,10 @@ measurements; the native-call-heavy spreadsheet is the one that leans
 positive (≈ +0.5 to +1%).
 
 **M2 (discovery, Jacobian, hints), 2026-10-24.** What landed:
-`dm_v2::hints` (`read_hints`, checked against the core's `NativeFnId`s,
-`NativeFnTable::hint_tunable` / `hint_rigid`), `dm_v2::params` (`Param`,
+`dm::hints` (`read_hints`, checked against the core's `NativeFnId`s,
+`NativeFnTable::hint_tunable` / `hint_rigid`), `dm::params` (`Param`,
 `CodeOrigin`, `Anchor`, `anchors_for`, `discover_params`, `ParamSelector`,
-`ParamFilter`, `eligibility`, `RunBudget`, `screen_params`), `dm_v2::jacobian`
+`ParamFilter`, `eligibility`, `RunBudget`, `screen_params`), `dm::jacobian`
 (`FdOptions`, `Jacobian`, `ColumnQuality`, `jacobian`, `collateral_rows`), R10
 (the `tunable` / `rigid` builtins in `builtins/hints.rs`, declared in
 `core/packages/core/src/dm.ptl`, CONST; the lints; docs/Builtins.md
@@ -1882,17 +1882,17 @@ Deviations:
     int) is M3's to settle.
 
 **M3 (solver, ranking, disambiguation, public API), 2026-10-24.** What
-landed: `dm_v2::solve` (`solve_dense`, `rank`, `linear_step`, `Bound`,
+landed: `dm::solve` (`solve_dense`, `rank`, `linear_step`, `Bound`,
 `GoalRow`, `SolveCtx::{solve_subset, round_solution}`, `ladder`),
-`dm_v2::rank` (`param_weight`, `ScoreWeights`, `score`, `collateral_norm`,
-`candidate_subsets`, `strength`, `SubsetKind`), `dm_v2::api`
+`dm::rank` (`param_weight`, `ScoreWeights`, `score`, `collateral_norm`,
+`candidate_subsets`, `strength`, `SubsetKind`), `dm::api`
 (`propose_edits_v2`, `DmSession::{open, preview, finish}`, `DmRequest`,
 `DmGoal`, `GoalTarget`, `Prefer`, `DmResponse`, `Alternative`,
 `ParamChange`, `FileEdit`, `Collateral`, `CandidateReport`,
 `DmDiagnostics`, `ExplainLog`, `apply_edits_multi`, `program_files`), R9
 (`literal_edit::float_like` is `pub(crate)`), R14, the v1 fallback for
 non-numeric goals, and `SpecSession::drew_random`. Every M3 acceptance item
-has a test in `core/tests/dm_v2_solve.rs`, which also checks each accepted
+has a test in `core/tests/dm_solve.rs`, which also checks each accepted
 alternative end to end (its edits applied to the text, the edited program
 compiled and run from scratch, the goal met there) and compares v2 with v1
 on v1's cases.
@@ -2031,7 +2031,7 @@ changelog. The `--json` shape is frozen by
 `docs/CLI.md`. Deviations:
 
 1. *Where the shared CLI code lives.* §4.2 put the parser and JSON rendering
-   in `dm_v2::cli`; they are in `petal::cli::dm_v2` (`core/src/cli/dm_v2.rs`,
+   in `dm::cli`; they are in `petal::cli::dm` (`core/src/cli/dm.rs`,
    public): `V2Parser::flag` (leaves the index on the last token it
    consumed, the core CLI's convention, so a host binary can mix in its own
    flags), `V2Opts`, `propose(env, host, pid, checkpoint, opts, entry_path)
@@ -2083,7 +2083,7 @@ changelog. The `--json` shape is frozen by
 Petal IDE's Cmd-drag solves through function calls with the v2 engine.
 `garden-script`: `PanelHost::{set_dm_checkpoint, pin_dm_checkpoint,
 begin_drag_v2, preview_drag_v2, finish_drag_v2, cancel_drag_v2,
-propose_drag_edits_v2}` in `garden-script/src/panel/dm_v2.rs`, Garden's
+propose_drag_edits_v2}` in `garden-script/src/panel/dm.rs`, Garden's
 `SpecHost` (R11), `DragFilter`/`DragSelector`, `DragCandidate`,
 `DragAlternative`, `DragOutcomeV2`, `apply_rewrites_to`, and
 `SourceRewrite::file` for edits in imported modules. `garden-app`
@@ -2092,7 +2092,7 @@ propose_drag_edits_v2}` in `garden-script/src/panel/dm_v2.rs`, Garden's
 (`:DragAllow` / `:DragDeny` with `name`, `line:N`, `fn:NAME`, `config`),
 `:DragEngine auto|v1|v2`, and `/state`'s `dm` (feature `state.dm-drag`).
 Core: `DmSession::cancel` and `DmSession::renew_budget`. Tests:
-`garden/garden-script/tests/dm_v2_drag.rs` (13, including
+`garden/garden-script/tests/dm_drag.rs` (13, including
 `drag_through_helper_v2` and the shipped `drag-to-edit.ptl` demo), five new
 `garden-app` tests, and `garden/tools/dm-drag-integration-test.ts` (15
 checks over the debug server). Docs: `garden/docs/petal-ide-mode.md`
@@ -2160,7 +2160,7 @@ Deviations:
 27 examples in `examples/direct-manipulation-v2/` (L0 to L10, the
 adversarial A1 to A7, and a verbatim copy of `server-monitoring`), with 105
 drag goals in their headers; the harness
-`core-libs/petal-ui/tests/dm_v2_study.rs` (the asserted `ladder` test and the
+`core-libs/petal-ui/tests/dm_study.rs` (the asserted `ladder` test and the
 ignored `full_study`, which adds a scaling sweep and an external pass over
 every headless-runnable app of the ecosystem and rewrites the report); the
 report [direct-manipulation-v2-study.md](direct-manipulation-v2-study.md)
@@ -2226,7 +2226,7 @@ Deviations:
       1 (`rank::compress_collateral`).
    A seventh, unverifying an alternative whose flow change renumbered the
    goal call's emits, was tried and reverted (it rejected correct answers).
-   `core/tests/dm_v2_solve.rs`: three tests updated for the new scores and
+   `core/tests/dm_solve.rs`: three tests updated for the new scores and
    orders (`through_helper_single_goal`, `config_preferred_softly`,
    `budget`). M3's open issue about the two-literal spread is moot: with the
    first circle gone it now ranks third, after `20 → 35`, because `30 →
@@ -2242,7 +2242,7 @@ Deviations:
 **Code review (post-M5), 2026-10-24.** An adversarial review of everything
 since `c9eb67b7`: effect leaks, live-state and cache mutation, determinism,
 span splicing, formatting, solver edge cases, v1 parity. Fixed, each with a
-failing test first in `core/tests/dm_v2_review.rs`:
+failing test first in `core/tests/dm_review.rs`:
 
 1. *A verified edit that computes something else once written* (`0d6dae6e`).
    A literal receiving a method call (`5.map_range(...)`) that went negative
@@ -2300,7 +2300,7 @@ the code review:
 | petal-ui `cargo test` (includes the study `ladder` and the `effect_audit` corpus test) | 374 passed, 0 failed, 7 ignored |
 | petal-c-bridge `cargo test` / `make test-c-bridge` | 44 passed, 0 failed / 4 of 4 ctest |
 | petal-query `cargo test` | 33 passed, 0 failed |
-| garden `cargo test -p garden-script -p garden-app` | garden-app 998; garden-script lib 138 (1 ignored), bloom 10, dm_v2_drag 13, script_host 19, text_layout 15; 0 failed |
+| garden `cargo test -p garden-script -p garden-app` | garden-app 998; garden-script lib 138 (1 ignored), bloom 10, dm_drag 13, script_host 19, text_layout 15; 0 failed |
 | garden `tools/dm-drag-integration-test.ts` (headless, debug server) | 15 passed, 0 failed |
 | petal-desktop-sdl `cargo check --all-targets` | clean |
 | study `ladder` (release) | 105 goals, 91 succeed, 14 xfail, 0 unexpected |
@@ -2308,7 +2308,7 @@ the code review:
 | `tools/native-effect-audit.ts` (static) | 1 finding, petal-desktop-sdl `queue_on_host`: a test-only native in a `#[cfg(test)]` module, pre-existing (`473c89a2`) |
 | `petal-ui-run --effect-audit --frames 3` on all 28 DM v2 example entry files | 0 under-declared, 0 over-declared on each |
 | clippy, CI's enforced wasm32 `disallowed_methods` step | clean (the spec runner's clock read is cfg'd out of wasm) |
-| clippy, host, on the dm_v2 modules | 7 warnings, 4 fixed (`4a8d7145`); the 3 `needless_range_loop` in the linear algebra are left as written. No new warnings in the other touched core files or in Garden's DM files (the ones there predate v2) |
+| clippy, host, on the dm modules | 7 warnings, 4 fixed (`4a8d7145`); the 3 `needless_range_loop` in the linear algebra are left as written. No new warnings in the other touched core files or in Garden's DM files (the ones there predate v2) |
 
 Ecosystem: no `.ptl` in `examples/`, `garden/`, `~/worlds-fair/ui/ptl`,
 `~/petal-creative`, `~/cheesecake/games` or `~/biz/petal-lang.org` calls or
@@ -2568,12 +2568,12 @@ goals are now real goals, not CLI sugar for a midpoint and a tolerance:
   already holds at the baseline (coins[0].y = 3.4 ≤ 5)`. Descriptions add
   `near[0].0 ≤ 0.6 (was 0.8448, now 0.5978)` per range goal (`keeps …` for
   one that held already); `misses` is the distance outside the range.
-- *Tests.* `core/tests/dm_v2_ranges.rs` (each kind, already holds,
+- *Tests.* `core/tests/dm_ranges.rs` (each kind, already holds,
   unreachable, an equality with a `--by 0` pin and a range that joins the
   step, and a distilled #33/#34 harness: three `at_most 0.6` goals on a
   min-over-frames distance; the coin row's two knobs verify first, the
   beetle's `x` second), `cli_propose_edit_v2::range_goals_on_the_command_line`,
-  `dm_v2_embed` (JSON keys, `propose_with_natives`).
+  `dm_embed` (JSON keys, `propose_with_natives`).
 
   Equality-only requests take the same path as before (every row active, one
   `linear_step`), so the ladder is unchanged.
@@ -2592,7 +2592,7 @@ of two or more goals. The pins stay goal rows of every solve (the step
 holds them), so a literal that moves a pinned shape fails verification. The
 count penalty's free edits and the spread pruning count the same rows.
 The config-only set and the full spread still take every column that moves
-any goal, pins included. Test `dm_v2_canopy::a_pin_keeps_the_single_literal_answer`.
+any goal, pins included. Test `dm_canopy::a_pin_keeps_the_single_literal_answer`.
 On the #40 shape (a scratch program) the pinned request costs 49 runs (30
 before, with the wrong answer); the unpinned one is unchanged at 46. The
 ladder's outcomes and top edits are unchanged (91 succeed, 14 xfail); total
@@ -2635,7 +2635,7 @@ context all held. What changed:
    (`make_env` = `Env::new()`), so `petal propose-edit --channel
    draw_commands` on a `draw_circle` sketch cannot work. DM for petal-ui
    scripts runs under `petal-ui-run propose-edit`, with a shared
-   `dm_v2::cli`. Core tests use a test-registered `draw` native (§1.7,
+   `dm::cli`. Core tests use a test-registered `draw` native (§1.7,
    §4.2, M2/M3 preambles, M5).
 2. **Trace isolation.** The `TraceBuffer` is Env-wide and holds values
    weakly. Watch capture moved into `SpecHooks` as strong `ObsValue`s, and

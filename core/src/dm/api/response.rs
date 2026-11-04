@@ -5,10 +5,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::direct_manipulation::SourceEdit;
-use crate::dm_v2::jacobian::ColumnQuality;
-use crate::dm_v2::observe::{EmitKey, PathStep, path_text};
-use crate::dm_v2::params::{BudgetLimit, Param};
-use crate::dm_v2::rank::{ScoreParts, SubsetKind};
+use crate::dm::jacobian::ColumnQuality;
+use crate::dm::observe::{EmitKey, PathStep, path_text};
+use crate::dm::params::{BudgetLimit, Param};
+use crate::dm::rank::{ScoreParts, SubsetKind};
 use crate::program::TermId;
 use crate::source_map::{FileId, SourceSpan};
 
@@ -108,12 +108,12 @@ pub struct Collateral {
     pub norm: f64,
     /// How many other emits moved, each counted by how far it moved
     /// relative to the goals, at most 1
-    /// ([`weighted_collateral`](crate::dm_v2::rank::weighted_collateral)): what the
+    /// ([`weighted_collateral`](crate::dm::rank::weighted_collateral)): what the
     /// score charges. Under channel weights, each emit counts `min(w, 1)`
     /// times its share.
     pub shapes: f64,
     /// What channel weights above 1 add to the score, uncompressed
-    /// ([`crate::dm_v2::rank::WeightedCollateral::excess`]); 0 without them.
+    /// ([`crate::dm::rank::WeightedCollateral::excess`]); 0 without them.
     pub excess: f64,
     pub items: Vec<CollateralItem>,
 }
@@ -136,7 +136,7 @@ pub struct Alternative {
     /// What the linear model predicted for each goal before any run.
     pub predicted: Vec<f64>,
     /// Each goal's distance from what it asks for, in its own units
-    /// ([`GoalRow::miss`](crate::dm_v2::solve::GoalRow::miss): a range's is how far outside it).
+    /// ([`GoalRow::miss`](crate::dm::solve::GoalRow::miss): a range's is how far outside it).
     pub misses: Vec<f64>,
     /// `max_j |achieved - target| / τ_j`.
     pub max_error: f64,

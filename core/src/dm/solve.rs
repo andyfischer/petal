@@ -23,10 +23,10 @@
 //! The dense algebra is a small Gaussian elimination with partial pivoting:
 //! `k ≤ 32` unknowns, no new dependency.
 
-use crate::dm_v2::jacobian::{FdOptions, Jacobian, jacobian};
-use crate::dm_v2::params::{Param, RunBudget};
-use crate::dm_v2::spec::{Overrides, RunError, SpecHost, SpecRun, SpecSession};
-use crate::dm_v2::hints::Hint;
+use crate::dm::jacobian::{FdOptions, Jacobian, jacobian};
+use crate::dm::params::{Param, RunBudget};
+use crate::dm::spec::{Overrides, RunError, SpecHost, SpecRun, SpecSession};
+use crate::dm::hints::Hint;
 use crate::env::Env;
 
 // ── dense algebra ──────────────────────────────────────────────────────────

@@ -50,7 +50,7 @@ use crate::symbol::SymbolId;
 use crate::value::Value;
 
 pub use crate::backend::bytecode::vm::spec::{EmitRecord, RngMode, SuppressedCall, WatchRecord};
-pub use crate::dm_v2::observe::{EmitKey, LiveObservation, ObsValue, Observable, PathStep};
+pub use crate::dm::observe::{EmitKey, LiveObservation, ObsValue, Observable, PathStep};
 
 /// Where a run's `state` starts from (§2.1.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

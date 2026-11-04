@@ -1388,7 +1388,7 @@ pub fn register_draw(env: &mut Env) {
 /// is never memoized.
 pub fn register_canvas(env: &mut Env) {
     // Their effect is the context's canvas counters: contained, so a
-    // speculative run (`petal::dm_v2::spec`) draws the layers as a live one.
+    // speculative run (`petal::dm::spec`) draws the layers as a live one.
     register(env, "create_canvas", native_create_canvas, DRAW.with_effect().contained());
     register(env, "draw_to", native_draw_to, DRAW.with_effect().contained());
     register(env, "draw_to_screen", native_draw_to_screen, DRAW.with_effect().contained());

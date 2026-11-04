@@ -35,9 +35,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crate::constant_table::ConstantValue;
-use crate::dm_v2::hints::{Hint, HintKind, Hints};
-use crate::dm_v2::observe::{Observable, PathStep};
-use crate::dm_v2::spec::{OverrideValue, Overrides, SpecHost, SpecRun, SpecSession};
+use crate::dm::hints::{Hint, HintKind, Hints};
+use crate::dm::observe::{Observable, PathStep};
+use crate::dm::spec::{OverrideValue, Overrides, SpecHost, SpecRun, SpecSession};
 use crate::env::Env;
 use crate::native_fn::{InputClasses, NativeFnTable};
 use crate::program::{BlockId, FunctionId, MapSpreadEntry, Program, Term, TermId, TermOp, base_fn_name};

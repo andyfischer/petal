@@ -1,18 +1,18 @@
 //! Direct manipulation v2, milestone M1: the speculative runner
-//! (`petal::dm_v2::spec`). The acceptance list is in
+//! (`petal::dm::spec`). The acceptance list is in
 //! docs/dev/direct-manipulation-v2-plan.md §5 (M1); each test names the item
 //! it covers. Tests 8 and 16 need petal-ui's draw natives and host data and
-//! live in `core-libs/petal-ui/tests/dm_v2_spec.rs`.
+//! live in `core-libs/petal-ui/tests/dm_spec.rs`.
 
 use std::cell::Cell;
 use std::rc::Rc;
 
 use petal::constant_table::ConstantValue;
-use petal::dm_v2::spec::{
+use petal::dm::spec::{
     CaptureSpec, EmitRecord, NoHost, ObsValue, OverrideStrategy, OverrideValue, Overrides, RngMode,
     RunError, SpecConfig, SpecError, SpecRun, SpecSession, StateMode,
 };
-use petal::dm_v2::{Observable, PathStep};
+use petal::dm::{Observable, PathStep};
 use petal::env::Env;
 use petal::native_fn::{NativeEffects, NativeFnId};
 use petal::program::{ProgramId, TermId, TermOp};
@@ -454,9 +454,9 @@ fn fingerprint_flips_on_branch() {
 /// observables, for every literal of every seed program.
 #[test]
 fn recompile_oracle_agrees() {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/dm_v2");
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/dm");
     let mut files: Vec<_> = std::fs::read_dir(&dir)
-        .expect("tests/dm_v2 exists")
+        .expect("tests/dm exists")
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().is_some_and(|x| x == "ptl"))
         .collect();
@@ -755,7 +755,7 @@ fn live_observation_mismatch_names_suppressed() {
     let sid = env.create_stack(pid).unwrap();
     // Find the key from a session with no live comparison.
     let key = begin(&mut env, sid, &[], SpecConfig::default()).baseline().emits[0].key;
-    let live = petal::dm_v2::LiveObservation {
+    let live = petal::dm::LiveObservation {
         goals: vec![(Observable::EmitValue { key, path: vec![] }, 42.0)],
     };
     let err = SpecSession::begin(&mut env, &mut NoHost, sid, &[], SpecConfig::default(), Some(&live))

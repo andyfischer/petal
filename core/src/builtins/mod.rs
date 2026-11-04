@@ -171,8 +171,8 @@ const INSPECTS_PENDING: NativeEffects =
 /// execution context or the running stack (the print buffer, the noise seed,
 /// the resource table, the expectation log, the method and enum tables, the
 /// heap's frozen set), so every one is [`contained`](NativeEffects::contained):
-/// a speculative run (`crate::dm_v2::spec`) calls it and discards what it did
-/// with the fork. `core/tests/dm_v2_spec.rs` fails when a new effect row is
+/// a speculative run (`crate::dm::spec`) calls it and discards what it did
+/// with the fork. `core/tests/dm_spec.rs` fails when a new effect row is
 /// not.
 pub fn register_builtins(table: &mut NativeFnTable) {
     // Order matters — these must be registered in the same order as the old
@@ -616,7 +616,7 @@ pub fn register_builtins(table: &mut NativeFnTable) {
 
     // Direct-manipulation hints (docs/proposals/dm-v2-hints.md): the identity
     // on their first argument, CONST, so static values, memo and the
-    // classifier treat a call like any constant call. `crate::dm_v2::hints`
+    // classifier treat a call like any constant call. `crate::dm::hints`
     // reads them from the IR, and only when the name still resolves to these
     // ids: a host that registers its own `rigid` (a rigid-body constructor)
     // turns the hint off for that name. Append-only, like the rest.

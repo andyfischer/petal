@@ -1,23 +1,23 @@
 //! Direct manipulation v2, milestone M2: candidate discovery, the
 //! finite-difference Jacobian and the `tunable` / `rigid` hints
-//! (`petal::dm_v2::{params, jacobian, hints}`). The acceptance list is in
+//! (`petal::dm::{params, jacobian, hints}`). The acceptance list is in
 //! docs/dev/direct-manipulation-v2-plan.md §5 (M2); each test names the item
 //! it covers. Item 11's petal-ui half (the `draw_circle` overloads of the
-//! bundled `ui` prelude) is in `core-libs/petal-ui/tests/dm_v2_params.rs`.
+//! bundled `ui` prelude) is in `core-libs/petal-ui/tests/dm_params.rs`.
 //!
 //! Core has no draw natives, so these tests register `draw(x, y, r)`: it
 //! emits, and reads its arguments with `get_int` exactly as petal-ui's draw
 //! natives do, so the emitted command is truncated while the raw arguments a
 //! goal reads are not.
 
-use petal::dm_v2::hints::{self, Hint};
-use petal::dm_v2::jacobian::{ColumnQuality, FdOptions, Jacobian, Side, collateral_rows, jacobian};
-use petal::dm_v2::params::{
+use petal::dm::hints::{self, Hint};
+use petal::dm::jacobian::{ColumnQuality, FdOptions, Jacobian, Side, collateral_rows, jacobian};
+use petal::dm::params::{
     CodeOrigin, EligibilityContext, Param, ParamFilter, ParamSelector, RunBudget, anchors_for,
     discover_params, eligibility, screen_params,
 };
-use petal::dm_v2::spec::{NoHost, Overrides, SpecConfig, SpecSession};
-use petal::dm_v2::{Observable, read_hints};
+use petal::dm::spec::{NoHost, Overrides, SpecConfig, SpecSession};
+use petal::dm::{Observable, read_hints};
 use petal::env::Env;
 use petal::native_fn::{NativeEffects, PetalCxt};
 use petal::program::{ProgramId, TermId, TermOp};

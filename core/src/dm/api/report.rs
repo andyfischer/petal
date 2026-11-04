@@ -3,12 +3,12 @@
 
 use std::collections::HashMap;
 
-use crate::dm_v2::jacobian::{ColumnQuality, Jacobian};
-use crate::dm_v2::observe::{EmitKey, Observable, PathStep, path_text};
-use crate::dm_v2::params::file_origins;
-use crate::dm_v2::rank::{collateral_norm, weighted_collateral};
-use crate::dm_v2::solve::GoalRow;
-use crate::dm_v2::spec::SpecRun;
+use crate::dm::jacobian::{ColumnQuality, Jacobian};
+use crate::dm::observe::{EmitKey, Observable, PathStep, path_text};
+use crate::dm::params::file_origins;
+use crate::dm::rank::{collateral_norm, weighted_collateral};
+use crate::dm::solve::GoalRow;
+use crate::dm::spec::SpecRun;
 use crate::env::Env;
 
 use super::emit_key_of;
@@ -31,7 +31,7 @@ pub(super) fn emit_info(env: &Env, pid: crate::program::ProgramId, base: &SpecRu
             let line = program.and_then(|program| {
                 e.chain.chain.iter().find_map(|t| {
                     let span = program.source_map.get(*t)?;
-                    let user = origins.get(span.file.0 as usize).is_some_and(|o| *o != crate::dm_v2::CodeOrigin::Library);
+                    let user = origins.get(span.file.0 as usize).is_some_and(|o| *o != crate::dm::CodeOrigin::Library);
                     user.then_some(span.start.line)
                 })
             });

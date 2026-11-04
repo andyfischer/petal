@@ -2,7 +2,7 @@
 //! §2.1.1): forking a checkpoint into a run-ready stack, and running a fork
 //! under a step budget and a wall-clock cap with the Env-wide recorders
 //! (trace, observations, profile, static audit) out of the way, so a live
-//! host never sees a speculative event. [`crate::dm_v2::spec`] drives these.
+//! host never sees a speculative event. [`crate::dm::spec`] drives these.
 
 use super::*;
 

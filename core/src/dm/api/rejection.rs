@@ -1,8 +1,8 @@
 //! The runs an `assert` (or another error) rejected, grouped by the check
 //! that rejected them.
 
-use crate::dm_v2::solve::FailedRun;
-use crate::dm_v2::spec::RunError;
+use crate::dm::solve::FailedRun;
+use crate::dm::spec::RunError;
 use crate::program::{Program, TermId};
 use crate::source_map::FileId;
 
@@ -44,7 +44,7 @@ pub(super) fn rejections(
 /// and for an `assert(...)` the condition's source text.
 pub(super) fn rejection_of(program: Option<&Program>, e: &RunError) -> Rejection {
     let raw = e.to_string();
-    let first = crate::dm_v2::solve::first_line(&raw);
+    let first = crate::dm::solve::first_line(&raw);
     let mut r = Rejection {
         message: first.to_string(),
         file: None,

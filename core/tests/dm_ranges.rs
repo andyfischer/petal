@@ -6,8 +6,8 @@
 //! step as an active constraint. Every verified alternative is checked by
 //! applying its edits and running the edited program from scratch.
 
-use petal::dm_v2::spec::{NoHost, SpecConfig, SpecSession};
-use petal::dm_v2::{
+use petal::dm::spec::{NoHost, SpecConfig, SpecSession};
+use petal::dm::{
     Alternative, DmGoal, DmRequest, DmResponse, EmitKey, Observable, PathStep, apply_edits_multi, program_files,
     propose_edits_v2,
 };
@@ -32,7 +32,7 @@ fn load(src: &str) -> (Env, ProgramId, StackKey) {
 }
 
 /// The emitted values of a fresh run of `src`, read at `path` per emit.
-fn values(env: &mut Env, sid: StackKey) -> (Vec<EmitKey>, Vec<petal::dm_v2::ObsValue>) {
+fn values(env: &mut Env, sid: StackKey) -> (Vec<EmitKey>, Vec<petal::dm::ObsValue>) {
     let s = SpecSession::begin(env, &mut NoHost, sid, &[], SpecConfig::default(), None).expect("session");
     let out = s.baseline().emits.iter().map(|e| (e.key, e.value.clone())).unzip();
     s.end(env);
@@ -62,7 +62,7 @@ impl T {
 
     /// Run the program with `alt` applied, from scratch; `read` gets each
     /// emit's value.
-    fn rerun(&self, alt: &Alternative) -> Vec<petal::dm_v2::ObsValue> {
+    fn rerun(&self, alt: &Alternative) -> Vec<petal::dm::ObsValue> {
         let mut files = program_files(self.env.get_program(self.pid).unwrap());
         apply_edits_multi(&mut files, &alt.edits).expect("edits apply");
         let (mut env, _, sid) = load(&files[0].1);
@@ -70,7 +70,7 @@ impl T {
     }
 }
 
-fn num(v: &petal::dm_v2::ObsValue, path: &[PathStep]) -> f64 {
+fn num(v: &petal::dm::ObsValue, path: &[PathStep]) -> f64 {
     v.at(path).and_then(|x| x.as_f64()).unwrap_or_else(|| panic!("no number at {path:?} in {v:?}"))
 }
 

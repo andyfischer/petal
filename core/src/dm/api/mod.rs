@@ -32,20 +32,20 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::direct_manipulation::{self as v1, SourceEdit};
-use crate::dm_v2::DmError;
-use crate::dm_v2::hints::{Hint, read_hints};
-use crate::dm_v2::jacobian::{ColumnQuality, Jacobian, collateral_rows_keeping, jacobian};
-use crate::dm_v2::observe::{EmitKey, ObsValue, Observable};
-use crate::dm_v2::params::{
+use crate::dm::DmError;
+use crate::dm::hints::{Hint, read_hints};
+use crate::dm::jacobian::{ColumnQuality, Jacobian, collateral_rows_keeping, jacobian};
+use crate::dm::observe::{EmitKey, ObsValue, Observable};
+use crate::dm::params::{
     BudgetLimit, Eligibility, EligibilityContext, Param, ParamSelector, RunBudget, anchors_for, discover_params,
     eligibility, screen_order, screen_params_for,
 };
-use crate::dm_v2::rank::{
+use crate::dm::rank::{
     ScoreFacts, ScoreWeights, ScoredChange, SubsetKind, candidate_subsets, param_weight, score, strength,
     weighted_collateral,
 };
-use crate::dm_v2::solve::{Bound, GoalRow, SolveCtx, SolveOptions, goal_step, max_error, weigh_rows};
-use crate::dm_v2::spec::{Overrides, SpecHost, SpecRun, SpecSession};
+use crate::dm::solve::{Bound, GoalRow, SolveCtx, SolveOptions, goal_step, max_error, weigh_rows};
+use crate::dm::spec::{Overrides, SpecHost, SpecRun, SpecSession};
 use crate::env::Env;
 use crate::native_fn::InputClasses;
 use crate::program::{Program, TermId, TermOp};
@@ -285,7 +285,7 @@ impl DmSession {
 
         // Discovery (§2.2).
         let hints = {
-            let program = env.get_program(pid).ok_or(DmError::Spec(crate::dm_v2::SpecError::Stale))?;
+            let program = env.get_program(pid).ok_or(DmError::Spec(crate::dm::SpecError::Stale))?;
             let hints = read_hints(program, env.native_table());
             let anchors = anchors_for(program, spec.baseline(), &goals);
             let found =
@@ -838,7 +838,7 @@ impl DmSession {
                     let cols: Vec<usize> = keep.iter().map(|&k| s.cols[k]).collect();
                     let jg: Vec<Vec<f64>> =
                         active.iter().map(|&g| keep.iter().map(|&k| local[g][k]).collect()).collect();
-                    if crate::dm_v2::solve::rank(&jg) < ga {
+                    if crate::dm::solve::rank(&jg) < ga {
                         break;
                     }
                     s.cols = cols;
@@ -942,7 +942,7 @@ impl DmSession {
             .filter(|&(&c, &v)| v != self.params[self.jac.params[c]].value)
             .map(|(&c, &v)| {
                 let i = self.jac.params[c];
-                let v = crate::dm_v2::solve::round_to(v, 6);
+                let v = crate::dm::solve::round_to(v, 6);
                 let (p, t) = (&self.params[i], &self.texts[i]);
                 change_of(p, t, v, render_in_place(p, t, v, |_| needs_parens_by_neighbours(t)))
             })
@@ -958,7 +958,7 @@ impl DmSession {
             return Ok(response);
         }
         let Some(mut spec) = self.spec.take() else {
-            return Err(DmError::Spec(crate::dm_v2::SpecError::Stale));
+            return Err(DmError::Spec(crate::dm::SpecError::Stale));
         };
         let result = self.solve_all(env, host, &mut spec, targets);
         spec.end(env);
@@ -1395,7 +1395,7 @@ fn share(jac: &Jacobian, c: usize, delta: f64, drag: f64) -> f64 {
 
 /// Whether `screen` got to parameter `i` (screening stops at `max_screen`,
 /// nearest first).
-fn i_screened(screen: &crate::dm_v2::params::ScreenResult, eligible: &[usize], i: usize) -> bool {
+fn i_screened(screen: &crate::dm::params::ScreenResult, eligible: &[usize], i: usize) -> bool {
     screen.screened >= eligible.len() || eligible.iter().position(|&e| e == i).is_some_and(|k| k < screen.screened)
 }
 

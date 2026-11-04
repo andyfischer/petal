@@ -8,7 +8,7 @@
 //! - [`V2Parser`] reads the goal and filter flags out of an argument list;
 //!   [`V2Opts`] is what it builds.
 //! - [`propose`] resolves the goals against a speculative baseline of the
-//!   checkpoint, runs [`crate::dm_v2::DmSession`], applies the chosen
+//!   checkpoint, runs [`crate::dm::DmSession`], applies the chosen
 //!   alternative when asked, and returns the report as JSON.
 //! - [`print_text`] renders that report for people.
 //!
@@ -19,9 +19,9 @@ use std::path::PathBuf;
 
 use serde_json::{Value as Json, json};
 
-use crate::dm_v2::params::{BudgetLimit, ParamFilter, ParamSelector};
-use crate::dm_v2::spec::{SpecConfig, SpecHost, SpecSession};
-use crate::dm_v2::{
+use crate::dm::params::{BudgetLimit, ParamFilter, ParamSelector};
+use crate::dm::spec::{SpecConfig, SpecHost, SpecSession};
+use crate::dm::{
     Alternative, CandidateReport, ColumnQuality, DmGoal, DmRequest, DmResponse, DmSession, EmitKey, Engine,
     Hint, ObsValue, Observable, PathStep, Prefer, Rejection, apply_edits_multi, program_files,
 };
@@ -551,7 +551,7 @@ pub fn propose(
         .enumerate()
         .map(|(i, g)| match (&g.value, &req.goals[i].target) {
             (GoalValue::By(d), _) => baseline.get(i).copied().unwrap_or(f64::NAN) + d,
-            (_, crate::dm_v2::GoalTarget::Num(t)) => *t,
+            (_, crate::dm::GoalTarget::Num(t)) => *t,
             _ => f64::NAN,
         })
         .collect();
@@ -770,7 +770,7 @@ pub fn error_json(e: &CliDmError) -> Json {
 /// registered, the program loaded and run to `checkpoint`) passes its
 /// [`SpecHost`] and gets the same document `petal propose-edit --json`
 /// prints. Natives whose effects are not contained are not called by the
-/// speculative runs (see [`crate::dm_v2::spec`]).
+/// speculative runs (see [`crate::dm::spec`]).
 pub fn propose_json(
     env: &mut Env,
     host: &mut dyn SpecHost,
@@ -1489,7 +1489,7 @@ fn report(
 // ── text ───────────────────────────────────────────────────────────────────
 
 fn fmt_num(v: &Json) -> String {
-    v.as_f64().map_or_else(|| "?".into(), crate::dm_v2::api::short)
+    v.as_f64().map_or_else(|| "?".into(), crate::dm::api::short)
 }
 
 /// `path` relative to the working directory when it is under it.

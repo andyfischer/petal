@@ -360,7 +360,7 @@ fn parse_bench_args(args: &[String]) -> CliArgs {
 /// Two engines answer it. v2 (the default; `--v2` is accepted and changes
 /// nothing) re-runs the program speculatively and solves through function
 /// calls (docs/dev/direct-manipulation-v2-plan.md §4.2); its flags are parsed
-/// by [`super::dm_v2::V2Parser`]. v1 (legacy, `--v1` only) inverts the
+/// by [`super::dm::V2Parser`]. v1 (legacy, `--v1` only) inverts the
 /// arithmetic of the emitting call's arguments. Under v1, `--configurable` /
 /// `--static` name preferred / pinned variables; under v2 they read as
 /// `--allow` / `--deny`, which take any selector.
@@ -371,7 +371,7 @@ fn parse_propose_edit_args(args: &[String]) -> CliArgs {
                  [--allow <sel>]* [--deny <sel>]* [--configurable <var>]* [--static <var>]* \
                  [--alternatives N] [--explain] [--frames N] [--max-wall S] [--collateral CHANNEL=W[,...]] [--apply [--pick N]] [--json] <file>";
     let mut engine: Option<&'static str> = None;
-    let mut parser = super::dm_v2::V2Parser::new();
+    let mut parser = super::dm::V2Parser::new();
     let mut configurable: Vec<String> = Vec::new();
     let mut pinned: Vec<String> = Vec::new();
 
@@ -457,7 +457,7 @@ fn parse_propose_edit_args(args: &[String]) -> CliArgs {
     if !use_v2 {
         for g in &v2.goals {
             match (&g.addr, &g.value) {
-                (super::dm_v2::GoalAddr::Arg(k), super::dm_v2::GoalValue::To(t)) => goals.push((*k, t.clone())),
+                (super::dm::GoalAddr::Arg(k), super::dm::GoalValue::To(t)) => goals.push((*k, t.clone())),
                 _ => unreachable!("v2-only goal forms select v2"),
             }
         }

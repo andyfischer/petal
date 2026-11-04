@@ -2,8 +2,8 @@
 //! (~/cheesecake/games/canopy/DM-DEBRIEF.md, attempts cited as #N). Each test
 //! pins one solver failure the study hit.
 
-use petal::dm_v2::spec::{NoHost, SpecConfig, SpecSession};
-use petal::dm_v2::{DmGoal, DmRequest, DmResponse, EmitKey, Observable, PathStep, propose_edits_v2};
+use petal::dm::spec::{NoHost, SpecConfig, SpecSession};
+use petal::dm::{DmGoal, DmRequest, DmResponse, EmitKey, Observable, PathStep, propose_edits_v2};
 use petal::env::Env;
 use petal::stack::StackKey;
 
@@ -153,7 +153,7 @@ fn focused_reach_follows_fields_and_elements() {
     let k = keys(&mut env, sid);
     let focus_of = |env: &mut Env, goal: Observable| -> Vec<(f64, bool)> {
         let session =
-            petal::dm_v2::DmSession::open(env, &mut NoHost, sid, &DmRequest::new(vec![DmGoal::to(goal, 100.0)])).unwrap();
+            petal::dm::DmSession::open(env, &mut NoHost, sid, &DmRequest::new(vec![DmGoal::to(goal, 100.0)])).unwrap();
         let mut out: Vec<(f64, bool)> = session.candidates().iter().map(|c| (c.param.value, c.param.focus.is_some())).collect();
         out.sort_by(|a, b| a.0.total_cmp(&b.0));
         session.finish(env, &mut NoHost, &[100.0]).unwrap();

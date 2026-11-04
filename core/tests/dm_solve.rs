@@ -1,5 +1,5 @@
 //! Direct manipulation v2, milestone M3: the solver, ranking, client
-//! disambiguation and the public API (`petal::dm_v2::{solve, rank, api}`).
+//! disambiguation and the public API (`petal::dm::{solve, rank, api}`).
 //! The acceptance list is in docs/dev/direct-manipulation-v2-plan.md §5
 //! (M3); each test names the item it covers. The tests after the numbered
 //! ones cover the rest of the M3 task: nested calls, trig, the RNG path, the
@@ -13,10 +13,10 @@
 //! the goal must hold there.
 
 use petal::direct_manipulation::{self as v1, ManipulationGoal, VarPolicy};
-use petal::dm_v2::params::{ParamFilter, ParamSelector};
-use petal::dm_v2::rank::KNOB_WEIGHT;
-use petal::dm_v2::spec::{NoHost, SpecConfig, SpecSession};
-use petal::dm_v2::{
+use petal::dm::params::{ParamFilter, ParamSelector};
+use petal::dm::rank::KNOB_WEIGHT;
+use petal::dm::spec::{NoHost, SpecConfig, SpecSession};
+use petal::dm::{
     Alternative, DmError, DmGoal, DmRequest, DmResponse, DmSession, EmitKey, Engine, Observable, Prefer,
     apply_edits_multi, program_files, propose_edits_v2,
 };

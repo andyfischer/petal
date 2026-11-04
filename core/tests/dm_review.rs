@@ -2,8 +2,8 @@
 //! the v2 change set (docs/dev/direct-manipulation-v2-plan.md §9, "Review").
 //! Each test pins one bug that was fixed.
 
-use petal::dm_v2::spec::{NoHost, SpecConfig, SpecSession};
-use petal::dm_v2::{DmGoal, DmRequest, DmResponse, EmitKey, Observable, apply_edits_multi, program_files, propose_edits_v2};
+use petal::dm::spec::{NoHost, SpecConfig, SpecSession};
+use petal::dm::{DmGoal, DmRequest, DmResponse, EmitKey, Observable, apply_edits_multi, program_files, propose_edits_v2};
 use petal::env::Env;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
@@ -48,7 +48,7 @@ fn propose(env: &mut Env, sid: StackKey, goals: Vec<DmGoal>) -> DmResponse {
     propose_edits_v2(env, &mut NoHost, sid, &DmRequest::new(goals)).expect("proposes")
 }
 
-fn applied(env: &Env, pid: ProgramId, alt: &petal::dm_v2::Alternative) -> String {
+fn applied(env: &Env, pid: ProgramId, alt: &petal::dm::Alternative) -> String {
     let mut files = program_files(env.get_program(pid).unwrap());
     apply_edits_multi(&mut files, &alt.edits).expect("edits apply");
     files[0].1.clone()
@@ -141,7 +141,7 @@ fn preview_parenthesizes_negative_values() {
     let k = keys(&mut env, sid);
     for (emit, target, old, want) in [(0, 80.0, "5", "-2"), (1, 60.0, "3", "(-10)")] {
         let goal = DmGoal::to(Observable::EmitValue { key: k[emit], path: vec![] }, target);
-        let session = petal::dm_v2::DmSession::open(&mut env, &mut NoHost, sid, &DmRequest::new(vec![goal]))
+        let session = petal::dm::DmSession::open(&mut env, &mut NoHost, sid, &DmRequest::new(vec![goal]))
             .expect("opens");
         let preview = session.preview(&[target]);
         let change = preview.iter().find(|c| c.old_text == old).expect("the literal moves");
@@ -162,7 +162,7 @@ fn default_tolerance_follows_the_finish_target() {
     let up_front = propose(&mut env, sid, vec![DmGoal::to(obs.clone(), 183.0)]);
     let goal = DmGoal::to(obs, f64::NAN);
     let session =
-        petal::dm_v2::DmSession::open(&mut env, &mut NoHost, sid, &DmRequest::new(vec![goal])).expect("opens");
+        petal::dm::DmSession::open(&mut env, &mut NoHost, sid, &DmRequest::new(vec![goal])).expect("opens");
     let late = session.finish(&mut env, &mut NoHost, &[183.0]).expect("finishes");
     assert_eq!(late.diagnostics.tolerances, up_front.diagnostics.tolerances);
     assert_eq!(late.alternatives[0].changes[0].new_text, up_front.alternatives[0].changes[0].new_text);

@@ -4,14 +4,14 @@
 //! offers a literal of either as an edit, even when the client asks to screen
 //! library code for the report and allows all user code.
 
-use petal::dm_v2::jacobian::{ColumnQuality, FdOptions, jacobian};
-use petal::dm_v2::observe::hash_str;
-use petal::dm_v2::params::{
+use petal::dm::jacobian::{ColumnQuality, FdOptions, jacobian};
+use petal::dm::observe::hash_str;
+use petal::dm::params::{
     CodeOrigin, EligibilityContext, ParamFilter, ParamSelector, RunBudget, anchors_for, discover_params,
     eligibility,
 };
-use petal::dm_v2::spec::{ObsValue, Overrides, SpecConfig, SpecSession};
-use petal::dm_v2::{Observable, read_hints};
+use petal::dm::spec::{ObsValue, Overrides, SpecConfig, SpecSession};
+use petal::dm::{Observable, read_hints};
 use petal::program::TermId;
 use petal_ui::harness::Headless;
 

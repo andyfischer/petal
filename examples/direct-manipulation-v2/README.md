@@ -73,8 +73,8 @@ Options:
 From `core-libs/petal-ui`:
 
 ```sh
-cargo test --release --test dm_v2_study ladder -- --nocapture
-DM_STUDY_ONLY=l07 DM_STUDY_VERBOSE=1 cargo test --release --test dm_v2_study ladder -- --nocapture
+cargo test --release --test dm_study ladder -- --nocapture
+DM_STUDY_ONLY=l07 DM_STUDY_VERBOSE=1 cargo test --release --test dm_study ladder -- --nocapture
 ```
 
 `DM_STUDY_DUMP=1` prints each example's draw list (to find `tag#k`),

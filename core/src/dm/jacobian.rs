@@ -24,9 +24,9 @@
 //! ([`collateral_rows`]), the raw native arguments of every other emit, so
 //! the solver (M3) can tell what else an edit moves.
 
-use crate::dm_v2::observe::{ObsValue, Observable, PathStep};
-use crate::dm_v2::params::{Param, RunBudget};
-use crate::dm_v2::spec::{OverrideValue, Overrides, SpecHost, SpecRun, SpecSession};
+use crate::dm::observe::{ObsValue, Observable, PathStep};
+use crate::dm::params::{Param, RunBudget};
+use crate::dm::spec::{OverrideValue, Overrides, SpecHost, SpecRun, SpecSession};
 use crate::env::Env;
 
 /// How a column is differenced.

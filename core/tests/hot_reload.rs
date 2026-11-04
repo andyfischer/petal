@@ -1004,7 +1004,7 @@ fn setting_a_value_in_a_module_finds_its_file() {
 /// replaces. The program is 150 functions and a config record; the numbers
 /// are printed (`--nocapture`), and the bound asserted is deliberately loose,
 /// since a debug build on a loaded machine is what usually runs this.
-/// `examples/reload_timing.rs` measures a real program in release.
+/// `test/benchmarks/harness/reload_timing.rs` measures a real program in release.
 #[test]
 fn a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile() {
     use std::fmt::Write;

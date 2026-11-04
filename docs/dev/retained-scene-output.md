@@ -6,7 +6,7 @@ is Petal's side of Cheesecake's retained optimization plan
 (`docs/retained-optimization-plan.md` in the Cheesecake repository), whose
 layers are named L1 to L8 there; it is also the "segmented output" item of
 P0 in [reactive-rendering-plan.md](reactive-rendering-plan.md). The
-prototype that measures it is `core/examples/scene_frame`.
+prototype that measures it is `test/benchmarks/harness/scene_frame`.
 
 ## L3: segmented output from the VM (as built, B1)
 
@@ -204,7 +204,7 @@ shape) on every call.
   holds the shape, so a script that adds a field copies it with a fresh id.
 
 **Measured.** `examples/scene_frame.cpp` (CMake target
-`petal_bridge_scene_frame`) runs `core/examples/scene_frame/scene.ptl`
+`petal_bridge_scene_frame`) runs `test/benchmarks/harness/scene_frame/scene.ptl`
 through the bridge: 2,000 static city meshes, 400 static crate bodies and 300
 moving ships, memo on, the scene natives either as host callbacks applied in
 the call (Cheesecake today; `body` returns a state record) or as emitters
@@ -397,7 +397,7 @@ rarely replays: hit_test: reads `ray` on every call (class PHYSICS): it replays 
 never replays: noisy: calls `shout` on every call, which never replays: shout calls `print` on every call (an effect a replay cannot reproduce)
 ```
 
-**Measured** (`core/examples/dep_classes_frame.rs`, release, Apple M4, 300
+**Measured** (`test/benchmarks/harness/dep_classes_frame.rs`, release, Apple M4, 300
 frames, median µs per frame; the two runs' output is compared every frame).
 A static city of 2,000 blocks drawn through `city → district → block`, 300
 ships that read a ticking clock directly, and a HUD that reads the clock for
@@ -546,7 +546,7 @@ host with tagging off in the VM; host includes the drain):
   this load to separate (`callback.diff` 1,550 to 1,620, `callback.tmpl`
   1,470 to 1,620).
 
-In the Rust mock (`core/examples/scene_frame`, VM segments), a host that
+In the Rust mock (`test/benchmarks/harness/scene_frame`, VM segments), a host that
 reads templates (`emit + memo + VM segments + templates`) goes from 41 to
 37 µs: it reads values off the heap, so it never paid for decoding, and
 only the field compares go. Script time with tagging on and off
@@ -670,7 +670,7 @@ host is handed no new segment. In a positional loop the same reorder makes
 every moved entity's scope miss (its position now holds another argument)
 and re-record, and its declarations change keys.
 
-**Measured** (`core/examples/implicit_keys_frame.rs`, release, Apple M4,
+**Measured** (`test/benchmarks/harness/implicit_keys_frame.rs`, release, Apple M4,
 200 frames, median µs per frame; host = drain plus a hash-map upsert per
 declaration):
 

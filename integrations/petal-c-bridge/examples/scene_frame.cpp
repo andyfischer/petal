@@ -1,4 +1,4 @@
-// scene_frame.cpp — the C++ half of core/examples/scene_frame: the same
+// scene_frame.cpp — the C++ half of test/benchmarks/harness/scene_frame: the same
 // game-shaped script (2,000 static city meshes, 400 static crate bodies, 300
 // moving ships) run through the C bridge, with a host that reads `body` and
 // `draw_mesh` options the way Cheesecake's script host does. It measures
@@ -47,7 +47,7 @@
 #include <vector>
 
 #ifndef PETAL_SCENE_FRAME_PTL
-#define PETAL_SCENE_FRAME_PTL "core/examples/scene_frame/scene.ptl"
+#define PETAL_SCENE_FRAME_PTL "test/benchmarks/harness/scene_frame/scene.ptl"
 #endif
 
 using clk = std::chrono::steady_clock;

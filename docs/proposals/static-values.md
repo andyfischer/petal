@@ -563,7 +563,7 @@ frame; retained memory (about 65 KB for Moses's literal tables, estimated);
 longer GC marking of retained data until a frozen generation exists. Gating
 benchmarks: the Moses headless profile (49.87M instructions per 600 frames,
 2.71 ms per frame), the four panels, `test/benchmarks/*` under `petal run`
-(must not regress), `core/examples/reload_timing.rs` for the 0.8 ms patched
+(must not regress), `test/benchmarks/harness/reload_timing.rs` for the 0.8 ms patched
 path.
 
 ### Live coding and hot reload

@@ -59,7 +59,7 @@ definition once (children first, by a process-unique serial, with a scope
 id hashed from the call path that is stable across frames), and the serials
 nothing refers to any more. A host that keeps what it made of each segment
 splices it back, so a replayed world costs it O(scopes): the 24,000-item
-static world of `core/examples/scene_frame` went from 360 µs of host time
+static world of `test/benchmarks/harness/scene_frame` went from 360 µs of host time
 to 4 µs ([retained-scene-output.md](retained-scene-output.md)). Oracles:
 `core/tests/output_segments.rs` (flat buffer, memo off, against the
 segmented drain through a `SegmentCache`, through collections, cutoffs,

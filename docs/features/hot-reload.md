@@ -431,7 +431,7 @@ changed since.
 
 ## What it costs
 
-`core/examples/reload_timing.rs` times each path on a real program, lowering
+`test/benchmarks/harness/reload_timing.rs` times each path on a real program, lowering
 included, without touching the disk:
 
 ```bash
@@ -497,7 +497,7 @@ Two things keep the recompile itself down:
   (`module::ParseCache`), so a recompile re-parses only the files whose text
   changed. Parsing was about half of a compile.
 
-`core/examples/reload_follow.rs` times a reload and the frame after it with
+`test/benchmarks/harness/reload_follow.rs` times a reload and the frame after it with
 static values followed and not, on the static part of a program whose host
 is not here (`cargo run --release --example reload_follow -- game.ptl`). On
 Moses (27,000 lines, 451 kept values; release, minimum of 7 cycles, 13

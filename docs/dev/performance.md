@@ -152,9 +152,9 @@ baseline`, or `--no-opt`) gives the unoptimized baseline for a same-binary A/B.
 ## Lowering cost
 
 Lowering a program to bytecode runs the optimizer passes, and a hot reload
-that recompiles pays for it before the next frame. `examples/lower_passes.rs`
-in `core/` lowers a real program with no passes, with each pass alone and
-with all of them, without running it; `examples/reload_timing.rs` times each
+that recompiles pays for it before the next frame. `test/benchmarks/harness/lower_passes.rs`
+(an example of the `core/` crate) lowers a real program with no passes, with each pass alone and
+with all of them, without running it; `test/benchmarks/harness/reload_timing.rs` times each
 reload path, lowering included:
 
 ```bash
@@ -720,7 +720,7 @@ to none.
 
 Costs. A recompile classifies the program (52 to 56 ms on Moses, 36,000
 lines and 196,000 terms, and 16 ms on `neon`, 81,000 terms, on 16 October;
-3 to 5 ms on an example panel in October; `core/examples/reload_timing.rs`
+3 to 5 ms on an example panel in October; `test/benchmarks/harness/reload_timing.rs`
 prints it) and runs the pass; nothing is
 classified on a reload that only moves positions or changes literals. The
 answer is kept beside the program (`Program::static_analysis`) by whichever
@@ -890,7 +890,7 @@ plus the tests and stores: 933 and 1,135. The first frame after a reload
 builds what the edit reached: 2,642 instructions after an edit to dynamic
 code and 2,681 after an edit to one table, against 9,218 when every value
 is rebuilt (2,558 and 2,600 against 36,331 with the 74 cells;
-`core/examples/reload_follow.rs`, numbers in
+`test/benchmarks/harness/reload_follow.rs`, numbers in
 [hot-reload.md](../features/hot-reload.md#what-it-costs)). What is left on a later
 frame is the function declarations (a closure is made on every run) and the
 stretches that allocate nothing.

@@ -309,6 +309,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   extension, and `import m: v as w` says a selective import cannot rename.
   An import now ends at the end of its line (or a `;`).
 
+- A state dump lists its variables by name again. Since records started
+  keeping their key order in JSON, `Env::get_state_json` (behind
+  `--dump-state`, `pb_vm_state_json` and the debug protocol) wrote top-level
+  state in hash order, different from run to run. A record's own keys still
+  come out in written order.
+
 - Records keep their key order when they cross into JSON. `value_to_json`
   (what a host reads natives' arguments, element `props` and state dumps
   through), `json_stringify` and `json_parse` used to sort keys, so

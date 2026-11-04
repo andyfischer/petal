@@ -150,6 +150,7 @@ point-in-time status.
 | [Refactor Verification](dev/refactor-verification.md) | Proving a large mechanical change was behavior-preserving |
 | [Sharing Petal Libraries](dev/sharing-petal-libraries.md) | What writing a pure-Petal library needs from the language and from hosts |
 | [Write an example app](skills/write-example-app.md) | Skill: build, verify, document and commit one testbed app |
+| [Project organization](skills/project-organization.md) | Skill: whether code belongs in this repo, which directory it goes in, layering rules, and known misplacements |
 | [Releasing](dev/releasing.md) | How prebuilt `petal` binaries are built, published and installed |
 | [Release checklist](dev/release-checklist.md) | The ordered commands to cut a release, deploy the site, and test the installer |
 | [Releasing Garden](dev/releasing-garden.md) | How the Garden Homebrew formula is updated |

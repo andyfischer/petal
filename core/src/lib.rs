@@ -1,6 +1,12 @@
 // Petal language runtime - Rust implementation
 //
 // See docs/Architecture.md for the module layout and the term-graph IR design.
+//
+// The `tooling` feature (on by default) adds what the `petal` binary (`cli/`)
+// needs beyond the runtime: `cli`, `lsp` and `fix_imports`. Embedders that
+// only run Petal (the C bridge, the wasm runtimes, petal-ui, Garden) build
+// with `default-features = false` and skip them. The formatter, linter and
+// `suggest` stay in the library: `apply_change` and the compiler use them.
 
 pub mod apply_change;
 pub mod ast;
@@ -9,6 +15,7 @@ pub mod backend;
 pub mod builtins;
 pub mod bundled;
 pub mod classes;
+#[cfg(feature = "tooling")]
 pub mod cli;
 pub mod closure_table;
 pub mod compiler;
@@ -26,10 +33,12 @@ pub mod dm;
 pub mod dot_graph;
 pub mod env;
 pub mod error;
+pub mod error_json;
 pub mod execution_context;
 pub mod expect;
 pub mod export_keyword;
 pub mod extract;
+#[cfg(feature = "tooling")]
 pub mod fix_imports;
 pub mod fn_introspect;
 pub mod fxhash;
@@ -46,6 +55,7 @@ pub mod lexer;
 pub mod literal_edit;
 pub mod fmt;
 pub mod lint;
+#[cfg(feature = "tooling")]
 pub mod lsp;
 pub mod memo;
 pub mod output_segments;
@@ -64,6 +74,7 @@ pub mod program_analysis;
 pub mod project_host;
 #[cfg(kani)]
 mod proofs;
+pub mod propose_edit;
 pub mod provenance;
 pub mod record;
 pub mod record_template;
@@ -99,5 +110,3 @@ pub mod version;
 
 pub use handle::{HandleClass, HandleClassId, HandleVal};
 
-#[cfg(feature = "wasm")]
-pub mod wasm;

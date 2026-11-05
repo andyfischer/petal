@@ -1,4 +1,4 @@
-import init, { PetalRuntime } from "../pkg/petal.js";
+import init, { PetalRuntime } from "../pkg/petal_web_html.js";
 import { renderToContainer } from "./renderer.js";
 
 export class PetalWeb {

@@ -221,7 +221,8 @@ jobs:
             ~/.cargo/git
             core/target
             integrations/petal-web-canvas/rust/target
-          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('core/Cargo.lock', 'integrations/petal-web-canvas/rust/Cargo.lock') }}
+            integrations/petal-web-html/rust/target
+          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('core/Cargo.lock', 'integrations/petal-web-canvas/rust/Cargo.lock', 'integrations/petal-web-html/rust/Cargo.lock') }}
           restore-keys: cargo-wasm-${{ runner.os }}-
 
       # `Instant::now()` / `SystemTime::now()` panic on wasm32; core/clippy.toml
@@ -229,7 +230,7 @@ jobs:
       # lint is enforced here.
       - name: core — std::time lint (wasm32)
         working-directory: core
-        run: cargo clippy --lib --target wasm32-unknown-unknown --features wasm -- -A clippy::all -A warnings -D clippy::disallowed_methods
+        run: cargo clippy --lib --target wasm32-unknown-unknown -- -A clippy::all -A warnings -D clippy::disallowed_methods
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

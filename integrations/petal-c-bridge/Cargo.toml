@@ -26,7 +26,7 @@ default = ["query"]
 query = ["dep:petal-query"]
 
 [dependencies]
-petal = { path = "../../core" }
+petal = { path = "../../core", default-features = false }
 petal-ui = { path = "../../core-libs/petal-ui" }
 petal-query = { path = "../../core-libs/petal-query", optional = true }
 indexmap = "2"

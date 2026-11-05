@@ -29,7 +29,18 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   every file with no import, like `clamp` and `random_int`. Delete
   `import creative` lines; a script that still has one fails to resolve it.
 - The direct-manipulation module `petal::dm_v2` is now `petal::dm`, and
-  `petal::cli::dm_v2` is `petal::cli::dm`.
+  `petal::cli::dm_v2` is `petal::propose_edit` (it was briefly
+  `petal::cli::dm`).
+- The `petal` crate's command-line tooling (`cli`, `lsp`, `fix_imports`) is
+  behind a default-on `tooling` feature, which the `petal` binary (`cli/`)
+  uses. Embedders
+  that only run Petal depend on it with `default-features = false`; every
+  in-repo host does.
+- The petal-web-html runtime is its own crate,
+  `integrations/petal-web-html/rust`, and its `web` interface package moved
+  to `integrations/petal-web-html/packages/web`. The `petal` crate has no
+  `wasm` feature any more, and the built module is `pkg/petal_web_html.js`.
+- The GPP wire crate moved from `garden/gpp` to `core-libs/gpp`.
 - The Rust measurement harnesses (`rerun_timing`, `reload_timing`,
   `scene_frame`, …) moved from `core/examples/` to
   `test/benchmarks/harness/`; `cd core && cargo run --release --example

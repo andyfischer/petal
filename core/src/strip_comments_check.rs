@@ -19,10 +19,6 @@ fn embedded_sources() -> Vec<(String, &'static str)> {
             "prelude/std.ptl".to_string(),
             include_str!("../prelude/std.ptl"),
         ),
-        (
-            "packages/web/src/web.ptl".to_string(),
-            include_str!("../packages/web/src/web.ptl"),
-        ),
     ];
     for package in crate::bundled::BUNDLED_PACKAGES {
         for (path, source) in package.sources() {

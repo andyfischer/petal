@@ -15,7 +15,7 @@ name = "petal-sdl"
 path = "src/main.rs"
 
 [dependencies]
-petal = { path = "../../core" }
+petal = { path = "../../core", default-features = false }
 petal-ui = { path = "../../core-libs/petal-ui" }
 sdl2 = { version = "0.37", features = ["image", "ttf"] }
 notify = "7"

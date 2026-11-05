@@ -176,7 +176,8 @@ its file watcher or its own call. The diagram-canvas command set is `pause,
 resume, step, state, set_state, capture_draw_commands, input, screenshot,
 pending_report`
 ([`debug.ts`](../../examples/custom-apps/diagram-canvas/src/debug.ts)), and
-its `Diagram*` MCP tools are in `tools/petal-diagram-mcp.ts`.
+its `Diagram*` MCP tools are in
+[`petal-diagram-mcp.ts`](../../examples/custom-apps/diagram-canvas/petal-diagram-mcp.ts).
 
 ### Speculative execution
 

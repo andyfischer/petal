@@ -7,7 +7,7 @@ license = "MIT"
 repository = "https://github.com/andyfischer/petal"
 
 [dependencies]
-petal = { path = "../../../core" }
+petal = { path = "../../../core", default-features = false }
 petal-ui = { path = "../../../core-libs/petal-ui" }
 petal-sdl = { path = "../../../integrations/petal-desktop-sdl" }
 sdl2 = { version = "0.37", features = ["image", "ttf"] }

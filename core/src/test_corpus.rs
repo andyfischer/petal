@@ -26,7 +26,7 @@ pub fn host_package_dirs() -> Vec<PathBuf> {
     [
         "garden/garden-script/packages",
         "integrations/petal-desktop-sdl/packages",
-        "core/packages/web",
+        "integrations/petal-web-html/packages",
         "examples/custom-apps/petal-fps/packages",
         "examples/custom-apps/petal-fantasy-nes/prelude",
     ]

@@ -19,7 +19,7 @@
     "noEmit": true
   },
   "include": ["tools/*.ts", "test/vitest/**/*.ts"],
-  // The MCP servers import packages that only tools/package.json installs;
+  // The MCP server imports packages that only tools/package.json installs;
   // `npm run tsc` in tools/ checks them.
-  "exclude": ["tools/petal-mcp.ts", "tools/petal-diagram-mcp.ts"]
+  "exclude": ["tools/petal-mcp.ts"]
 }

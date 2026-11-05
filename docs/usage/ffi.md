@@ -12,6 +12,20 @@ stack-style calling convention (`core/src/native_fn.rs`). Everything crosses
 the boundary **by value**, except for [handles](#handles), which are opaque
 references to host-owned objects.
 
+## Depending on the crate
+
+The `petal` crate's default `tooling` feature adds the command-line tool:
+the `cli`, `lsp` and `fix_imports` modules and the `petal` binary. A host
+that only runs Petal turns it off:
+
+```toml
+[dependencies]
+petal = { path = "path/to/petal/core", default-features = false }
+```
+
+Everything on this page, and direct manipulation (`petal::propose_edit`), is
+available without it.
+
 ## The embedding lifecycle
 
 Every embedder (petal-sdl, the wasm runtimes, the headless test harness)
@@ -684,7 +698,7 @@ source edit that puts it there
 with the host's own natives in the loop. From Rust:
 
 ```rust
-use petal::cli::dm::propose_json;
+use petal::propose_edit::propose_json;
 env.reset_stack(stack)?;                 // the checkpoint: the frame after the last run
 let response = propose_json(&mut env, &mut petal::dm::NoHost, pid, stack,
     &serde_json::json!({"channel": "scene", "emit": 0, "native_arg": 1, "to": 42}),
@@ -1068,7 +1082,7 @@ integration and app.
   `reload_program`; values cross as decoded `pb_value` trees rather than
   JSON.
 - **petal-web-canvas** (`integrations/petal-web-canvas/rust/`) and
-  **petal-web-html** (`core/src/wasm.rs`, built with the `wasm` feature) —
+  **petal-web-html** (`integrations/petal-web-html/rust/`) —
   wasm-bindgen `PetalRuntime` structs owning an `Env`, with the same channels
   marshalled as JSON strings across the wasm boundary. petal-web-canvas
   returns petal-ui draw commands and exposes `run_speculative` for isolated

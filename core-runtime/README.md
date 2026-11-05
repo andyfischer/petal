@@ -21,6 +21,21 @@ All three are **bundled in the runtime**: the `petal` binary and every host
 that embeds Petal carry their source, so a script imports them with nothing
 installed, registered or passed on the command line.
 
+**bloom is the default widget set.** It is opinionated (one look, one
+component set), and it is bundled on purpose: it is what Garden's start
+screen and the example apps draw with, and a script that wants a button
+should not have to install one. A project that wants a different look
+brings its own library, or its own copy of bloom (see *Using a different
+copy* below); the bundled one is only the fallback. Its API is versioned
+with the runtime, so a breaking change to bloom is a breaking change to
+Petal and goes in the changelog.
+
+**glsl is bundled although it is experimental.** That breaks the bundling
+bar in [docs/skills/project-organization.md](../docs/skills/project-organization.md#the-bundling-bar)
+and is listed there as an open misplacement: Cheesecake's engine imports
+`glsl` from the bundled copy, so unbundling it waits on that host
+registering its own copy.
+
 ```petal ignore
 import bloom              // the facade module, named like its package
 import bloom/menu         // one implementation module

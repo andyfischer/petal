@@ -108,11 +108,11 @@ function missing(key: string, dir: string): void {
     }
 }
 
-// ----- petal-web-html (core's wasm feature) -----
+// ----- petal-web-html -----
 {
     const root = join(repoRoot, 'integrations/petal-web-html');
     console.log('petal-web-html');
-    const mod = await loadPkg(join(root, 'pkg'), 'petal');
+    const mod = await loadPkg(join(root, 'pkg'), 'petal_web_html');
     if (!mod) {
         missing('html', join(root, 'pkg'));
     } else {

@@ -2031,8 +2031,8 @@ changelog. The `--json` shape is frozen by
 `docs/CLI.md`. Deviations:
 
 1. *Where the shared CLI code lives.* §4.2 put the parser and JSON rendering
-   in `dm::cli`; they are in `petal::cli::dm` (`core/src/cli/dm.rs`,
-   public): `V2Parser::flag` (leaves the index on the last token it
+   in `dm::cli`; they are in `petal::propose_edit` (`core/src/propose_edit.rs`,
+   public; it was `petal::cli::dm` until the `tooling` feature split): `V2Parser::flag` (leaves the index on the last token it
    consumed, the core CLI's convention, so a host binary can mix in its own
    flags), `V2Opts`, `propose(env, host, pid, checkpoint, opts, entry_path)
    -> serde_json::Value`, `print_text`, `baseline_emits`, `parse_selector`.

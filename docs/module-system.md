@@ -728,7 +728,7 @@ CLI and the language server with no flag and no knowledge of the host;
 | Garden panels | `garden` | `garden/garden-script/packages/garden/` |
 | Garden's config host | `garden_config` | `garden/garden-script/packages/garden_config/` |
 | petal-desktop-sdl | `sdl` | `integrations/petal-desktop-sdl/packages/sdl/` |
-| the wasm element-tree runtime | `web` | `core/packages/web/` |
+| the wasm element-tree runtime | `web` | `integrations/petal-web-html/packages/web/` |
 | the `petal-fps` example host | `fps` | `examples/custom-apps/petal-fps/packages/fps/` |
 | the `petal-fantasy-nes` example host | `nes`, `nes/nes_host`, `nes/nes_sound` | `examples/custom-apps/petal-fantasy-nes/prelude/` |
 

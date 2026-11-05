@@ -7,7 +7,7 @@ license = "MIT"
 repository = "https://github.com/andyfischer/petal"
 
 [dependencies]
-petal = { path = "../../../core" }
+petal = { path = "../../../core", default-features = false }
 petal-ui = { path = "../../../core-libs/petal-ui" }
 wasm-bindgen = "0.2"
 console_error_panic_hook = "0.1"
@@ -25,7 +25,7 @@ crate-type = ["cdylib"]
 lto = true
 codegen-units = 1
 
-# Mirrors `core/Cargo.toml` — see the note there. wasm-pack reads this metadata
+# Mirrors `integrations/petal-web-html/rust/Cargo.toml` — see the note there. wasm-pack reads this metadata
 # per crate, so the list has to be repeated rather than inherited.
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = [

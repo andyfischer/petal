@@ -10,5 +10,5 @@ repository = "https://github.com/andyfischer/petal"
 # (browser, SDL, C) do not carry it. The `petal` CLI (`cli/`) links it and
 # registers it with `petal::package_manager::register`.
 [dependencies]
-petal = { path = "../../core" }
+petal = { path = "../../core", default-features = false }
 serde_json = { version = "1", features = ["preserve_order"] }

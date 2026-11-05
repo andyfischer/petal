@@ -13,7 +13,7 @@ mod strip_comments;
 /// Loose `.ptl` files the crate embeds outside the bundled packages, relative
 /// to this crate: each goes through [`embed_source`] to
 /// `$OUT_DIR/embedded/<same path>`, where the crate's `include_str!` reads it.
-const EMBEDDED_FILES: &[&str] = &["prelude/std.ptl", "packages/web/src/web.ptl"];
+const EMBEDDED_FILES: &[&str] = &["prelude/std.ptl"];
 
 /// Whether embedded Petal sources lose their comments. Default: on for wasm32
 /// (every byte is downloaded), off elsewhere (native tools — the LSP, `petal

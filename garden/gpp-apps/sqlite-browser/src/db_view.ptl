@@ -218,17 +218,9 @@ else
 end
 if focused(fc, "detail") then
   if is_overview then
-    if key_pressed("down") || key_pressed("j") then over_scroll += 1 end
-    if key_pressed("up") || key_pressed("k") then over_scroll -= 1 end
-    if key_pressed("space") then over_scroll += over_rows end
-    if key_pressed("home") then over_scroll = 0 end
-    if key_pressed("end") then over_scroll = table_count end
+    over_scroll = scroll_keys(over_scroll, table_count, over_rows)
   else
-    if key_pressed("down") || key_pressed("j") then detail_scroll += 1 end
-    if key_pressed("up") || key_pressed("k") then detail_scroll -= 1 end
-    if key_pressed("space") then detail_scroll += grid_rows end
-    if key_pressed("home") then detail_scroll = 0 end
-    if key_pressed("end") then detail_scroll = detail_lines end
+    detail_scroll = scroll_keys(detail_scroll, detail_lines, grid_rows)
   end
 end
 detail_scroll = int(clamp(detail_scroll, 0, max(0, detail_lines - grid_rows)))

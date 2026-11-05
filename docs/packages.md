@@ -520,11 +520,23 @@ Error: cannot find module 'ease' (imported by main.ptl): dependency 'ease' of pa
 petal.lock in /work/game — run `petal install`
 ```
 
-`petal fix-imports`, `petal suggest`, `petal apply-change`, the language
-server, and a host embedding the runtime never fetch. They read `petal.lock`
-and open the vendored or cached tree, and report an uninstalled dependency
-with the error above. A Rust host opts in with
-`Env::set_install_on_demand(true)`.
+`petal fix-imports`, `petal suggest`, `petal apply-change` and the language
+server never fetch. They read `petal.lock` and open the vendored or cached
+tree, and report an uninstalled dependency with the error above.
+
+The package manager is the `petal-pkgman` crate (`core-libs/petal-pkgman`),
+which the `petal` binary links and the `petal` library does not, so a
+runtime embedded in another program (a wasm page, the SDL or C host) does
+not carry it. Such a host resolves path dependencies and `vendor/<name>`
+directories as above, but a git dependency is an error unless the host
+registers the package manager:
+
+```rust
+petal_pkgman::register();          // once per process; git dependencies now resolve
+env.set_install_on_demand(true);   // and may be fetched at load (off by default)
+```
+
+A host with no filesystem uses a bundle instead.
 
 ## Bundles
 

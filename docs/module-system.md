@@ -439,7 +439,9 @@ this order, and the first place that has a package of that name wins:
    bundled or in-memory package) picks up the project's choice of a package.
    A `git` dependency is found where [the package manager](packages.md#the-package-manager)
    put it: `vendor/<name>` at the project root, else the cache, as
-   `petal.lock` pins it. A `vendor/<name>` directory also answers for a name
+   `petal.lock` pins it. That takes the package manager, which the `petal`
+   binary registers and an embedding host registers only if it links
+   `petal-pkgman` ([install on demand](packages.md#install-on-demand)). A `vendor/<name>` directory also answers for a name
    no manifest lists.
 3. **The search path**: packages under the directories given with
    `petal run -I <dir>` (repeatable, and accepted by every command that
@@ -641,6 +643,8 @@ env.add_module_path(dir);                          // a directory of packages (o
 env.add_package("core-runtime/bloom")?;              // a whole petal.toml library, one call
 env.register_package("bloom", modules)?;           // the same, from in-memory sources; a source named
                                                    // "petal.toml" is the package's manifest
+petal_pkgman::register();                          // resolve git dependencies (once per process;
+                                                   // the petal-pkgman crate, which the library leaves out)
 env.set_install_on_demand(true);                   // fetch a missing git dependency at load (off by default)
 env.set_inline_import_dir(Some(dir));              // where `./x` leads for a program with no path
 env.override_file_source(&path, &text);            // compile as if the file at `path` held `text`

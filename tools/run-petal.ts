@@ -1,8 +1,11 @@
 #!/usr/bin/env -S node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
 // Runs the Petal binary, rebuilding it first if any Rust source is newer
 // than the binary. Forwards all command-line args. Use this instead of
-// calling core/target/debug/petal directly — it keeps the binary in sync
-// with source while avoiding a full `cargo build` on every call.
+// calling cli/target/debug/petal directly — it keeps the binary in sync
+// with source while avoiding a full `cargo build` on every call. The binary
+// is the `cli/` crate, built from `core/` (the language) and
+// `core-libs/petal-pkgman` (the package manager); a change to any of them
+// rebuilds it.
 
 import { spawnSync } from 'node:child_process';
 import { readdirSync, statSync } from 'node:fs';
@@ -10,9 +13,14 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const rustDir = join(repoRoot, 'core');
+const rustDir = join(repoRoot, 'cli');
 const binary = join(rustDir, 'target', 'debug', 'petal');
-const srcDir = join(rustDir, 'src');
+const srcDirs = [
+    join(rustDir, 'src'),
+    join(repoRoot, 'core', 'src'),
+    join(repoRoot, 'core', 'Cargo.toml'),
+    join(repoRoot, 'core-libs', 'petal-pkgman', 'src'),
+];
 const cargoToml = join(rustDir, 'Cargo.toml');
 const cargoLock = join(rustDir, 'Cargo.lock');
 
@@ -33,7 +41,7 @@ function isStale(): boolean {
     } catch {
         return true;
     }
-    const sources = [newestMtime(srcDir), statSync(cargoToml).mtimeMs];
+    const sources = [...srcDirs.map(newestMtime), statSync(cargoToml).mtimeMs];
     try { sources.push(statSync(cargoLock).mtimeMs); } catch {}
     return Math.max(...sources) > binMtime;
 }

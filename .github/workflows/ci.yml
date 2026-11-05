@@ -23,7 +23,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             core/target
-          key: cargo-core-${{ runner.os }}-${{ hashFiles('core/Cargo.lock') }}
+            cli/target
+            core-libs/petal-pkgman/target
+          key: cargo-core-${{ runner.os }}-${{ hashFiles('core/Cargo.lock', 'cli/Cargo.lock', 'core-libs/petal-pkgman/Cargo.lock') }}
           restore-keys: cargo-core-${{ runner.os }}-
 
       - name: Build Rust
@@ -31,6 +33,14 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --manifest-path core/Cargo.toml
+
+      # The `petal` binary and the package manager, which `core` leaves out so
+      # embedded runtimes do not carry it. The CLI tests run the binary.
+      - name: Run package manager tests
+        run: cargo test --manifest-path core-libs/petal-pkgman/Cargo.toml
+
+      - name: Run CLI tests
+        run: cargo test --manifest-path cli/Cargo.toml
 
   # The fmt/lint/CST sweeps over every .ptl in the repo are `#[ignore]`d so a
   # local `cargo test` stays cheap; CI is where they always run. They are the
@@ -77,13 +87,13 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            core/target
+            cli/target
             core-libs/petal-ui/target
-          key: cargo-ts-${{ runner.os }}-${{ hashFiles('core/Cargo.lock', 'core-libs/petal-ui/Cargo.lock') }}
+          key: cargo-ts-${{ runner.os }}-${{ hashFiles('cli/Cargo.lock', 'core-libs/petal-ui/Cargo.lock') }}
           restore-keys: cargo-ts-${{ runner.os }}-
 
       - name: Build petal binary (used by vitest)
-        run: cargo build --manifest-path core/Cargo.toml
+        run: cargo build --manifest-path cli/Cargo.toml
 
       # verify.ts aborts its whole run (exit 2) when the corpus has UI apps and
       # this driver is missing, which fails test/verify.test.ts.

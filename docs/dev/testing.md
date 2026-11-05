@@ -158,7 +158,7 @@ pass, a prelude rewrite — wants proof that it preserved behavior.
 ./tools/verify.ts --plan lint-fix --before ab3304a~1 --after .
 
 # binary A/B — the same sources under two `petal` builds
-./tools/verify.ts --plan compiler --before-bin old/petal --after-bin core/target/debug/petal
+./tools/verify.ts --plan compiler --before-bin old/petal --after-bin cli/target/debug/petal
 ```
 
 `--before` takes a git ref (materialized with `git archive` under the
@@ -196,7 +196,7 @@ on one side and on on the other:
 printf '#!/bin/sh\nexec %s/core-libs/petal-ui/target/debug/petal-ui-run --policy fast-static "$@"\n' "$PWD" > /tmp/ui-run-nocache.sh
 chmod +x /tmp/ui-run-nocache.sh
 ./tools/verify.ts --plan compiler \
-    --before-bin core/target/debug/petal --after-bin core/target/debug/petal \
+    --before-bin cli/target/debug/petal --after-bin cli/target/debug/petal \
     --before-ui-bin /tmp/ui-run-nocache.sh \
     --after-ui-bin core-libs/petal-ui/target/debug/petal-ui-run
 ```

@@ -34,7 +34,7 @@ export default function globalSetup() {
     ? { ...process.env, PATH: `${cargoDir}:${process.env.PATH ?? ""}` }
     : process.env;
 
-  execSync(`${cargo} build --manifest-path core/Cargo.toml`, {
+  execSync(`${cargo} build --manifest-path cli/Cargo.toml`, {
     cwd: root,
     stdio: "pipe",
     env,

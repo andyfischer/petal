@@ -10,7 +10,7 @@ import { randomBytes } from "node:crypto";
 import { proposeEditArgs, type ProposeInput } from "./petal-mcp-propose.ts";
 
 const projectRoot = resolve(import.meta.dirname, "..");
-const petalBin = join(projectRoot, "core/target/debug/petal");
+const petalBin = join(projectRoot, "cli/target/debug/petal");
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -25,7 +25,7 @@ function runCommand(cmd: string, args: string[]): Promise<{ stdout: string; stde
 
 async function ensureBuild(): Promise<ToolResult | null> {
   const build = await runCommand("cargo", [
-    "build", "--quiet", "--manifest-path", join(projectRoot, "core/Cargo.toml"),
+    "build", "--quiet", "--manifest-path", join(projectRoot, "cli/Cargo.toml"),
   ]);
   if (build.exitCode !== 0) {
     return { content: [{ type: "text", text: `Build failed:\n${build.stderr}` }], isError: true };

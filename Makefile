@@ -9,8 +9,8 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "} {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-build: ## Build the Petal compiler (debug)
-	cd core && cargo build
+build: ## Build the petal binary (debug), cli/target/debug/petal
+	cd cli && cargo build
 
 test: build ## Run the full vitest suite (also runs every examples/console/*.ptl)
 	npx vitest run
@@ -31,3 +31,5 @@ prove: ## Run the Kani proofs of the core numeric semantics (needs cargo-kani)
 
 clean: ## Remove Rust build artifacts
 	cd core && cargo clean
+	cd cli && cargo clean
+	cd core-libs/petal-pkgman && cargo clean

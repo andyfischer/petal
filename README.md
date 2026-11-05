@@ -82,10 +82,10 @@ See [docs/dev/releasing.md](docs/dev/releasing.md) for how the binaries are buil
 make build
 
 # Hello world
-core/target/debug/petal run -e 'print("hello, world!")'
+cli/target/debug/petal run -e 'print("hello, world!")'
 
 # Run an example
-core/target/debug/petal run examples/console/fizzbuzz.ptl
+cli/target/debug/petal run examples/console/fizzbuzz.ptl
 ```
 
 For the full list of developer commands, see [Developer Scripts & Commands](docs/dev/scripts.md).

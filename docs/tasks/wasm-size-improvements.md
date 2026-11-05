@@ -52,7 +52,7 @@ finished program downloads all of it.
 |---|---|---|---|---|
 | 1 | Strip comments from embedded `.ptl` | −170 KB / −59 KB | none at run time | **Done** 2026-11-05 |
 | 2 | Bloom, glsl and text_layout opt-in | −156 KB / −45 KB of source (before 1; ~−100 KB raw after) | pages that use them load them | Not started |
-| 3 | Leave `pkgman` and `fn_introspect` out of wasm | ~−130 KB raw | `fn_info`/`fn_ast` unavailable in the browser | Not started |
+| 3 | Leave `pkgman` and `fn_introspect` out of wasm | ~−130 KB raw | `fn_info`/`fn_ast` unavailable in the browser | `pkgman` **done** 2026-11-05; `fn_introspect` not started |
 | 4 | Draw commands as binary, not JSON | −13 KB code; no per-frame JSON | API change for JS embedders | **Done** 2026-11-05 |
 | 5 | Serve brotli | 1.31 MB → 932 KB transferred | hosting config | Not started (outside this repo) |
 | 6 | Size profile by default (`opt-level z` + `-Oz`) | −1.6 MB / −480 KB | frames ~1.5x slower | Available as `--size`; not the default |
@@ -98,10 +98,22 @@ one call the existing `register_package` with a `petal bundle` of it.
 
 ### 3. Leave `pkgman` and `fn_introspect` out of wasm
 
-`pkgman` (59K) installs packages from the network and the filesystem; it is
-reachable through `ModuleRegistry::dependency_package` but cannot do anything
-in a browser. `fn_introspect` (71K) backs the experimental `fn_info` /
-`fn_ast`. Gate both on `not(target_arch = "wasm32")` or a cargo feature.
+**`pkgman` — done.** It installed packages from the network and the
+filesystem, and was linked in only because module loading could reach it
+(`ModuleRegistry::dependency_package`, for a git dependency of a package on
+disk), which never happens in a browser. It is now its own crate,
+`core-libs/petal-pkgman`, linked only by the `petal` binary (`cli/`). Core
+reaches it through `petal::package_manager::PackageManager`, which the
+binary registers at startup. Without one, path dependencies and
+`vendor/<name>` resolve as before and a git dependency is an error saying to
+bundle the package.
+
+**`fn_introspect` — not started.** It backs the experimental `fn_info` /
+`fn_ast` and `Env::function_params` (the C bridge). The bundled `glsl`
+library calls `fn_info`/`fn_ast` to translate lambdas, so it can only leave
+the wasm build together with `glsl` (item 2); then gate it on
+`not(target_arch = "wasm32")` and have the two builtins report that they are
+not available.
 
 ### 4. Draw commands as binary — done
 

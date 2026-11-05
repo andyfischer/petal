@@ -1,5 +1,5 @@
 // The package manager: git dependencies, petal.lock, vendor/, bundles
-// (src/pkgman.rs, src/cli/pm.rs, docs/module-system.md#the-package-manager).
+// (core-libs/petal-pkgman, core/src/cli/pm.rs, cli/src/pm.rs, docs/module-system.md#the-package-manager).
 //
 // Nothing here touches the network: every "remote" is a git repository built
 // in a temp directory and named by path or file:// url, and every command
@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use petal::env::Env;
-use petal::pkgman::{Lock, LockedSource};
+use petal_pkgman::{Lock, LockedSource};
 
 /// A scratch directory holding the remotes, the project and the petal home
 /// of one test.
@@ -235,7 +235,7 @@ fn install_lock_vendor_bundle_run() {
         .path("home/cache/trees")
         .join(tree.strip_prefix("sha256:").unwrap());
     assert!(cached.join("src/ease.ptl").is_file());
-    assert_eq!(petal::pkgman::hash_tree(&cached).unwrap(), tree);
+    assert_eq!(petal_pkgman::hash_tree(&cached).unwrap(), tree);
 
     // run and check agree, with no flags.
     assert_eq!(w.ok("app", &["run", "main.ptl"]), "12 9 8 one\n");
@@ -282,8 +282,9 @@ fn install_lock_vendor_bundle_run() {
     assert!(installed.stdout.contains("(vendored)"), "{}", installed.stdout);
     assert!(!w.path("home").exists(), "a vendored project needs no cache");
 
-    // A host (or the language server) reads the same lockfile and vendor/
-    // directory, with no package manager involved.
+    // A host (or the language server) that registers the package manager
+    // reads the same lockfile and vendor/ directory, fetching nothing.
+    petal_pkgman::register();
     let main = w.path("app/main.ptl");
     let mut host = Env::new();
     let pid = host
@@ -383,7 +384,10 @@ fn check_and_run_install_what_a_program_imports() {
 #[test]
 fn an_embedding_host_never_fetches() {
     // Env::new() — what a host and the language server use — has install on
-    // demand off: an uninstalled git dependency is an error naming the cure.
+    // demand off: even with the package manager registered, an uninstalled
+    // git dependency is an error naming the cure. (A host without it is
+    // core/tests/no_package_manager.rs.)
+    petal_pkgman::register();
     let w = World::new("host");
     w.ease_repo();
     w.write(

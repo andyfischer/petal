@@ -824,9 +824,11 @@ impl Env {
     }
 
     /// Let a load run `petal install` for its project when it imports a git
-    /// dependency that is not installed (fetching with `git`; see
-    /// [`crate::pkgman`]). Off by default — a host decides when the network
-    /// is touched. The `petal` CLI turns it on for the commands that compile.
+    /// dependency that is not installed (fetching with `git`). It takes effect
+    /// only where a package manager is registered
+    /// ([`crate::package_manager`]), which the `petal` CLI does. Off by
+    /// default — a host decides when the network is touched. The CLI turns it
+    /// on for the commands that compile.
     pub fn set_install_on_demand(&mut self, on: bool) {
         self.modules.install_on_demand = on;
     }

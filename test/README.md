@@ -68,6 +68,6 @@ always run.
 ### Adding a case
 
 1. `mkdir test/my-case` and write `test/my-case/main.ptl`.
-2. Capture the current numbers: `cd core && cargo run -- run --dup-stats ../test/my-case/main.ptl`.
+2. Capture the current numbers: `cd cli && cargo run -- run --dup-stats ../test/my-case/main.ptl`.
 3. Write `test/my-case/expects` with the `out:` lines and `max` ceilings.
 4. `cd core && cargo test --test script_cases`.

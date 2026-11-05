@@ -474,7 +474,7 @@ impl Package {
 
     /// Load one module of this package by its package-relative name, or
     /// `None` when the package has no such module.
-    pub(crate) fn load(&self, module: &str) -> Option<ModuleSource> {
+    pub fn load(&self, module: &str) -> Option<ModuleSource> {
         if relative_module_error(module).is_some() {
             return None;
         }

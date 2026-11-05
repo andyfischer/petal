@@ -8,9 +8,11 @@ this if you're working on the compiler or debugging IR behavior.
 Source Code → Lexer → Parser → AST → Compiler → IR (Term Graph) → Bytecode VM
 ```
 
-All of the above lives in `core/src/` as a single crate. The binary entry
-point is `core/src/main.rs`, which delegates to the CLI dispatcher in
-`cli/`. The libraries built on the crate are outside it: `core-libs/petal-ui`
+All of the above lives in `core/src/` as a single crate, the `petal`
+library that embedders link. The `petal` binary is the `cli/` crate: its
+`main.rs` registers the package manager (`core-libs/petal-pkgman`, kept out
+of the library so embedded runtimes do not carry it) and delegates to the
+CLI dispatcher in `core/src/cli/`. The libraries built on the crate are outside it: `core-libs/petal-ui`
 (the UI host library and the headless harness), `core-libs/petal-query`,
 `core-runtime/` (Petal-source packages such as `bloom`), and the hosts under
 `integrations/` (SDL, web, the C bridge).
@@ -39,7 +41,7 @@ The main files and directories under `core/src/`, grouped by pipeline stage.
 | `parse.rs`, `ast.rs`, `ast_display.rs` | Tokens → AST; AST node types; AST pretty-printer |
 | `cst/`, `cst_project.rs`, `trivia.rs` | Lossless concrete syntax tree for source-preserving edits, and its projection to the typed AST. `parse.rs` and the CST parser are kept in lockstep; unifying them is future work |
 | `desugar.rs`, `export_keyword.rs` | `@`-argument (in-out call) desugaring; `export` as the deprecated spelling of `pub` |
-| `module.rs`, `package.rs`, `pkgman.rs`, `bundled.rs` | Module resolution and the import walk (merges imports into one `Program`); `petal.toml` packages; the package manager (git dependencies, `petal.lock`, `vendor/`); the packages compiled into the binary (`core/packages/`) |
+| `module.rs`, `package.rs`, `package_manager.rs`, `bundled.rs` | Module resolution and the import walk (merges imports into one `Program`); `petal.toml` packages; the hook a package manager answers git dependencies through (the package manager itself — git dependencies, `petal.lock`, `vendor/` — is `core-libs/petal-pkgman`); the packages compiled into the binary (`core/packages/`) |
 | `native_decl.rs` | `native fn` interface declarations: what a package says about a host native |
 | `compiler/` | AST → IR term graph: `expr.rs`, `stmt.rs`, `function.rs`, `phi.rs` (phi insertion), `state_ids.rs` (state keys and callsite ids), `enums.rs`, `match_check.rs`, `native.rs`, `capture_lag.rs` |
 | `typecheck/` | The warning-only static type checker |
@@ -623,8 +625,10 @@ found among what the host registered (`Env::register_module`,
 package and its dependencies, the search path (`-I`, `PETAL_PATH`), and the
 packages bundled in the binary. A module's identity is canonical, not the
 spelling an importer used, and that identity is what qualifies its `state`
-keys. `pkgman.rs` is the package manager behind `petal add` / `install` /
-`update` / `vendor` / `bundle`.
+keys. The package manager behind `petal add` / `install` / `update` / `vendor` /
+`bundle` is the `petal-pkgman` crate (`core-libs/petal-pkgman`); the loader
+reaches it through `package_manager::PackageManager`, which only the `petal`
+binary registers.
 
 A package can also declare a host interface: `native fn` declarations that
 are linked against the host's native table at load (`Program::native_links`,

@@ -10,7 +10,7 @@ The [`Makefile`](../../Makefile) wraps the most common tasks. Run `make` (or
 
 | Command | Description |
 |---------|-------------|
-| `make build` | Build the Petal compiler (debug). Binary lands at `core/target/debug/petal`. |
+| `make build` | Build the Petal compiler (debug). Binary lands at `cli/target/debug/petal`. |
 | `make test` | Build, then run the full vitest suite (which also runs every `examples/console/*.ptl`). |
 | `make test-examples` | Print each example program's output for manual inspection. |
 | `make test-c-bridge` | Build `integrations/petal-c-bridge` (the C/C++ embedding bridge) with CMake + Ninja and run its `ctest` suite: C++ tests, plain-C smoke test, example, and the crate's Rust unit tests. Needs CMake, Ninja and a C++20 compiler. See [embedding-c.md](../usage/embedding-c.md). |
@@ -22,12 +22,14 @@ The [`Makefile`](../../Makefile) wraps the most common tasks. Run `make` (or
 
 | Command | Description |
 |---------|-------------|
-| `cd core && cargo build` | Build the debug binary. |
-| `cd core && cargo build --release` | Build the optimized binary at `core/target/release/petal` (used by the benchmarks). |
-| `cd core && cargo test` | Run the Rust unit tests. |
+| `cd cli && cargo build` | Build the debug binary. |
+| `cd cli && cargo build --release` | Build the optimized binary at `cli/target/release/petal` (used by the benchmarks). |
+| `cd core && cargo test` | Run the language's Rust tests. |
+| `cd cli && cargo test` | Run the CLI's tests, which drive the `petal` binary (package manager included). |
+| `cd core-libs/petal-pkgman && cargo test` | Run the package manager's unit tests. |
 | `./tools/run-petal.ts run <file.ptl>` (or `npm run petal -- run <file.ptl>`) | Run Petal locally: rebuilds the binary if needed, then forwards all arguments to `petal`. |
 | `./tools/run-petal.ts run -e '<expr>'` | Run a one-liner. |
-| `core/target/debug/petal run <file.ptl>` | Run the binary directly (no auto-rebuild). |
+| `cli/target/debug/petal run <file.ptl>` | Run the binary directly (no auto-rebuild). |
 
 ## Testing
 
@@ -88,7 +90,7 @@ See [performance.md](performance.md) for how to read these numbers.
 | `petal run --dup-stats <file>` | Value-duplication and heap-allocation counters. A runtime switch, so it works in any build; the `dup-stats` cargo feature only makes it the default (as it is in debug builds). |
 | `PETAL_OPT_STATS=1 petal run <file>` | Report what the bytecode optimizer did: instructions before/after, moves removed, reads rewritten, jumps threaded. |
 | `PETAL_POLICY=<name> petal run <file>` | Run under a named [run policy](../internals/run-policies.md) (`fast`, `baseline`, `explain`, `replay`, with modifiers like `fast-memo`), for every command and embedder. Same as `--policy <name>`; `PETAL_OPT=off` and `--no-opt` mean `baseline`. |
-| `cd core && cargo build --profile profiling` | Release codegen with symbols kept, at `core/target/profiling/petal`, for a sampling profiler (`sample <pid>`, `perf`, `samply`). |
+| `cd cli && cargo build --profile profiling` | Release codegen with symbols kept, at `cli/target/profiling/petal`, for a sampling profiler (`sample <pid>`, `perf`, `samply`). |
 
 ## Other tooling
 
@@ -99,7 +101,7 @@ See [performance.md](performance.md) for how to read these numbers.
 | `./tools/native-effect-audit.ts` | Static approximation of `--effect-audit` over the source of every registration site, including natives no corpus app calls: which bodies report what they do through `PetalCxt`, and which reach outside their arguments (the filesystem, a thread-local, the clock) without reporting anything — the natives whose rows want a second look. Exits non-zero if any does. `--all` lists every native, `--json` for machine-readable output. See [Declaring native effects honestly](../usage/ffi.md#declaring-native-effects-honestly). |
 | `tools/run-example.ts <slug>` | Launch an example panel app (`examples/<category>/<slug>/`) in Garden; extra arguments go to Garden, `--list` shows the examples. Refuses a Garden binary that is behind the checkout. See [examples/AUTHORING.md](../../examples/AUTHORING.md). |
 | `tools/panel-test.sh` | Shell helpers for the headless panel test loop: `panel_start <slug>`, `click`/`move`/`drag`/`scroll` (pane-local coordinates), `key`, `tick`, `obs`, `shot`, `panel_reset`, `panel_stop`. `source` it, or run `tools/panel-test.sh <command> …` one command at a time. Needs `curl` and `jq`. See [examples/AUTHORING.md](../../examples/AUTHORING.md#running-it). |
-| `./install-local.sh` | Install the `petal` binary from this checkout (`cargo install --path core`). |
+| `./install-local.sh` | Install the `petal` binary from this checkout (`cargo install --path cli`). |
 | `tools/calc-to-ir.ts` | A reference external emitter: a toy arithmetic language compiled straight to Petal IR JSON, sharing no code with the compiler. `echo 'print 1 + 2 * 3' \| ./tools/calc-to-ir.ts \| petal run --ir -`. See [ir-as-target.md](ir-as-target.md). |
 | `npm run stdlib:json` | Extract the standard library into JSON (`tools/extract-stdlib.ts`). |
 | `npm run tsc` | Type-check the vitest suite and the `tools/` scripts (`tsc --noEmit`). `cd tools && npm run tsc` also covers the MCP servers (run `npm install` there once; they need it to run too). |

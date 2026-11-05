@@ -1,0 +1,40 @@
+[package]
+name = "petal-cli"
+version = "0.1.0"
+edition = "2024"
+description = "The `petal` command-line tool"
+license = "MIT"
+repository = "https://github.com/andyfischer/petal"
+
+# The `petal` binary: the CLI in `petal::cli` plus the package manager
+# (`petal-pkgman`), which the `petal` library leaves out so the runtimes
+# embedded in other programs do not carry it.
+[[bin]]
+name = "petal"
+path = "src/main.rs"
+
+[dependencies]
+petal = { path = "../core" }
+petal-pkgman = { path = "../core-libs/petal-pkgman" }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+
+# Optimized profile for the binaries we ship in releases: smaller, faster.
+# (`strip` removes debug symbols; `lto`/`codegen-units=1` trade build time for
+# a leaner, faster binary.)
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+# Release codegen with symbols kept, for sampling profilers (`sample`, `perf`,
+# `samply`). `cargo build --profile profiling` writes to target/profiling/petal.
+# Identical optimization to `release` — only the debug info differs — so timings
+# taken here transfer to a shipped build.
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false

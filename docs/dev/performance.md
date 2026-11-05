@@ -65,10 +65,10 @@ the host's choice, not the profiler's (`petal run --profile` profiles from the
 first instruction).
 
 **2. Attribute the time.** A count is not a cost. Build with symbols —
-`cd core && cargo build --profile profiling` — and sample the binary:
+`cd cli && cargo build --profile profiling` — and sample the binary:
 
 ```bash
-./core/target/profiling/petal run test/benchmarks/spreadsheet.ptl & \
+./cli/target/profiling/petal run test/benchmarks/spreadsheet.ptl & \
   sleep 0.3 && sample $(pgrep -n petal) 2 -mayDie -f /tmp/prof.txt
 ```
 

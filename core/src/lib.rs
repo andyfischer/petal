@@ -55,7 +55,7 @@ pub mod native_fn;
 pub mod numeric;
 pub mod observe;
 pub mod package;
-pub mod pkgman;
+pub mod package_manager;
 pub mod policy;
 pub mod parse;
 pub mod profile;

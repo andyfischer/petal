@@ -1801,8 +1801,8 @@ impl DepPackage {
 /// The graph as the package manager resolves it from what is installed:
 /// one version of each package, git packages at their locked commits.
 fn installed_dependency_graph(
-    graph: &crate::pkgman::Graph,
-    owner: &crate::pkgman::Node,
+    graph: &crate::package_manager::InstalledGraph,
+    owner: &crate::package_manager::InstalledNode,
     seen: &mut Vec<String>,
 ) -> Vec<DepNode> {
     let manifest = crate::package::Manifest::load(&owner.root).ok();
@@ -1819,14 +1819,15 @@ fn installed_dependency_graph(
                     repeated: false,
                 };
             };
-            let source = match &node.source {
+            let source = if node.is_path {
                 // A path reads best as the owner's manifest writes it.
-                crate::pkgman::NodeSource::Path { .. } => manifest
+                manifest
                     .as_ref()
                     .and_then(|m| m.dependencies.iter().find(|d| d.name == *key))
                     .map(|d| d.source.to_string())
-                    .unwrap_or_else(|| node.source.to_string()),
-                other => other.to_string(),
+                    .unwrap_or_else(|| node.source.clone())
+            } else {
+                node.source.clone()
             };
             let repeated = seen.contains(&node.name);
             let children = if repeated {
@@ -1843,15 +1844,7 @@ fn installed_dependency_graph(
                     version: node.version.clone(),
                     root: node.root.clone(),
                     requires: node.requires.clone(),
-                    locked: match &node.source {
-                        crate::pkgman::NodeSource::Git {
-                            commit,
-                            tree,
-                            vendored,
-                            ..
-                        } => Some((commit.clone(), tree.clone(), *vendored)),
-                        _ => None,
-                    },
+                    locked: node.locked.clone(),
                 }),
                 children,
                 repeated,
@@ -2066,7 +2059,11 @@ pub fn handle_packages(json: bool, path: Option<&str>, include_dirs: &[PathBuf])
         }
     };
     let graph = project.as_ref().map(|p| {
-        match crate::pkgman::installed_graph(&p.root) {
+        let installed = match crate::package_manager::registered() {
+            Some(pm) => pm.installed_graph(&p.root),
+            None => Err("this build of petal has no package manager".to_string()),
+        };
+        match installed {
             Ok(resolved) => {
                 let mut seen = vec![resolved.project().name.clone()];
                 installed_dependency_graph(&resolved, resolved.project(), &mut seen)
@@ -2080,7 +2077,7 @@ pub fn handle_packages(json: bool, path: Option<&str>, include_dirs: &[PathBuf])
     });
     let locked = project
         .as_ref()
-        .is_some_and(|p| p.root.join(crate::pkgman::LOCK_FILE).is_file());
+        .is_some_and(|p| p.root.join(crate::package_manager::LOCK_FILE).is_file());
     let requires = project
         .as_ref()
         .zip(graph.as_ref())

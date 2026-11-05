@@ -41,7 +41,7 @@ describe("manifest dependencies", () => {
 
   it("a git dependency that is not installed is a clear error where it is imported", () => {
     // PETAL_OFFLINE: the CLI would otherwise try to install it (fetching the
-    // url). The package manager itself is covered by core/tests/pkgman.rs.
+    // url). The package manager itself is covered by cli/tests/pkgman.rs.
     const r = spawnSync(PETAL, ["lint", "--single-file", resolve(APP, "uses_git.ptl")], {
       encoding: "utf-8",
       env: { ...process.env, PETAL_OFFLINE: "1" },

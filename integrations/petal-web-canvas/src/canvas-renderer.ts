@@ -37,9 +37,27 @@ export interface DrawCommand {
   y3?: number;
   // Poly — serialized as [[x, y], ...]
   points?: number[][];
-  // Circle
+  // Circle / Ellipse / Arc / Fan (the fan's hub)
   cx?: number;
   cy?: number;
+  /** Ellipse semi-axes. */
+  rx?: number;
+  ry?: number;
+  /** Arc: inner and outer radius, start and end angle (radians, clockwise
+   * from +x with y growing downward). */
+  r_in?: number;
+  r_out?: number;
+  // (`a0`/`a1`, the angles, share their fields with the gradient stop alphas
+  // below.)
+  // Image
+  /** Host-resolved asset path or logical name. */
+  source?: string;
+  /** Multiply color over the image's own (alpha kept). */
+  tint?: [number, number, number];
+  /** Source rect `[x, y, w, h]` in image pixels (an atlas cell). */
+  src?: [number, number, number, number];
+  /** Nine-slice insets `[left, top, right, bottom]` in image pixels. */
+  slice?: [number, number, number, number];
   // Text
   text?: string;
   size?: number;
@@ -57,10 +75,12 @@ export interface DrawCommand {
   r0?: number;
   g0?: number;
   b0?: number;
+  /** First gradient stop's alpha — or, on `arc`, the start angle. */
   a0?: number;
   r1?: number;
   g1?: number;
   b1?: number;
+  /** Second gradient stop's alpha — or, on `arc`, the end angle. */
   a1?: number;
   /** Gradient axis in radians, clockwise from +x with y growing downward. */
   angle?: number;
@@ -102,6 +122,95 @@ function roundRectPath(
   } else {
     ctx.roundRect(x, y, w, h, rr);
   }
+}
+
+/** Trace an open or closed path through `points` (`[[x, y], ...]`). */
+function tracePoints(ctx: CanvasRenderingContext2D, points: number[][]): void {
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(points[i][0], points[i][1]);
+  }
+}
+
+/** Loaded images by source, shared across frames. A source that has not
+ * finished loading draws nothing this frame; `onImageLoad` (set by the
+ * runtime) asks for a repaint once it arrives. */
+const imageCache = new Map<string, HTMLImageElement | "error">();
+let imageLoaded: (() => void) | null = null;
+
+/** Register a callback run when a `draw_image` source finishes loading, so a
+ * host that skips unchanged frames can repaint. */
+export function onImageLoad(cb: (() => void) | null): void {
+  imageLoaded = cb;
+}
+
+function imageFor(source: string): HTMLImageElement | null {
+  const hit = imageCache.get(source);
+  if (hit === "error") return null;
+  if (hit) return hit.complete && hit.naturalWidth > 0 ? hit : null;
+  if (typeof Image === "undefined") return null;
+  const img = new Image();
+  img.onload = () => imageLoaded?.();
+  img.onerror = () => imageCache.set(source, "error");
+  img.src = source;
+  imageCache.set(source, img);
+  return null;
+}
+
+/** Draw `cmd` (an `image` command) from `img`: its `src` cell (or the whole
+ * image), nine-sliced when `slice` is set, tinted, at opacity `a`, inside its
+ * rounded corners. */
+function drawImageCmd(
+  ctx: CanvasRenderingContext2D,
+  img: CanvasImageSource & { width: number; height: number },
+  cmd: DrawCommand,
+): void {
+  const [sx, sy, sw, sh] = cmd.src ?? [0, 0, img.width, img.height];
+  const x = cmd.x!, y = cmd.y!, w = cmd.w!, h = cmd.h!;
+  if (w <= 0 || h <= 0 || sw <= 0 || sh <= 0) return;
+  // Tint multiplies the color in and keeps the image's alpha: render the
+  // cell into a scratch canvas, then multiply and re-mask it there.
+  let from: CanvasImageSource = img;
+  let [fx, fy] = [sx, sy];
+  if (cmd.tint) {
+    const scratch = createOffscreen(sw, sh);
+    scratch.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+    scratch.globalCompositeOperation = "multiply";
+    scratch.fillStyle = `rgb(${cmd.tint[0]},${cmd.tint[1]},${cmd.tint[2]})`;
+    scratch.fillRect(0, 0, sw, sh);
+    scratch.globalCompositeOperation = "destination-in";
+    scratch.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+    from = scratch.canvas;
+    [fx, fy] = [0, 0];
+  }
+  ctx.save();
+  ctx.globalAlpha *= (cmd.a ?? 255) / 255;
+  if (cmd.radius && cmd.radius > 0) {
+    roundRectPath(ctx, x, y, w, h, cmd.radius);
+    ctx.clip();
+  }
+  if (cmd.slice) {
+    // Corners at their own size, edges stretched along one axis, the
+    // centre along both. Insets clamp so they never cross on a small box.
+    const [l, t, r, b] = cmd.slice;
+    const kx = Math.min(1, w / Math.max(1, l + r));
+    const ky = Math.min(1, h / Math.max(1, t + b));
+    const dl = l * kx, dr = r * kx, dt = t * ky, db = b * ky;
+    const sxs = [0, l, sw - r, sw], sys = [0, t, sh - b, sh];
+    const dxs = [x, x + dl, x + w - dr, x + w], dys = [y, y + dt, y + h - db, y + h];
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 3; col++) {
+        const cw = sxs[col + 1] - sxs[col], ch = sys[row + 1] - sys[row];
+        const dw = dxs[col + 1] - dxs[col], dh = dys[row + 1] - dys[row];
+        if (cw > 0 && ch > 0 && dw > 0 && dh > 0) {
+          ctx.drawImage(from, fx + sxs[col], fy + sys[row], cw, ch, dxs[col], dys[row], dw, dh);
+        }
+      }
+    }
+  } else {
+    ctx.drawImage(from, fx, fy, sw, sh, x, y, w, h);
+  }
+  ctx.restore();
 }
 
 /** Draw a single primitive command into a 2D context (the active target). */
@@ -177,6 +286,108 @@ function renderPrimitive(
         ctx.closePath();
         ctx.fill();
       }
+      break;
+    }
+
+    case "polygon": {
+      // Any simple polygon, concave included: the nonzero fill rule covers
+      // exactly its interior, which is what the native hosts' ear-clipping
+      // tessellates.
+      const points = cmd.points!;
+      if (points.length >= 3) {
+        ctx.fillStyle = fillStyle(cmd);
+        ctx.beginPath();
+        tracePoints(ctx, points);
+        ctx.closePath();
+        ctx.fill();
+      }
+      break;
+    }
+
+    case "fan": {
+      // Triangles from the hub to each consecutive pair of points. The fan
+      // is open (repeat the first point to close it), so the path runs hub →
+      // points → hub.
+      const points = cmd.points!;
+      if (points.length >= 2) {
+        ctx.fillStyle = fillStyle(cmd);
+        ctx.beginPath();
+        ctx.moveTo(cmd.cx!, cmd.cy!);
+        for (const [px, py] of points) ctx.lineTo(px, py);
+        ctx.closePath();
+        ctx.fill();
+      }
+      break;
+    }
+
+    case "polyline": {
+      // One stroke, so a translucent line composites once, with round joins
+      // and caps like the native hosts' wedge joins and half-disc caps.
+      const points = cmd.points!;
+      if (points.length >= 2) {
+        ctx.save();
+        ctx.strokeStyle = fillStyle(cmd);
+        ctx.lineWidth = cmd.width ?? 1;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        tracePoints(ctx, points);
+        ctx.stroke();
+        ctx.restore();
+      }
+      break;
+    }
+
+    case "ellipse":
+      ctx.fillStyle = fillStyle(cmd);
+      ctx.beginPath();
+      ctx.ellipse(cmd.cx!, cmd.cy!, Math.abs(cmd.rx!), Math.abs(cmd.ry!), 0, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+
+    case "ellipse_outline": {
+      // Stroked *inside* the rx/ry boundary; a width at or past the smaller
+      // semi-axis fills solid, as the native hosts do.
+      const rx = Math.abs(cmd.rx!), ry = Math.abs(cmd.ry!);
+      const t = cmd.width ?? 1;
+      ctx.beginPath();
+      if (t >= Math.min(rx, ry)) {
+        ctx.fillStyle = fillStyle(cmd);
+        ctx.ellipse(cmd.cx!, cmd.cy!, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = fillStyle(cmd);
+        ctx.lineWidth = t;
+        ctx.ellipse(cmd.cx!, cmd.cy!, rx - t / 2, ry - t / 2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      break;
+    }
+
+    case "arc": {
+      // An annular sector from a0 to a1 between r_in and r_out; r_in = 0 is
+      // a pie slice. A sweep past a full turn is clamped to one ring.
+      const rIn = Math.max(0, cmd.r_in ?? 0), rOut = Math.max(0, cmd.r_out ?? 0);
+      const a0 = cmd.a0 ?? 0;
+      const sweep = Math.max(-Math.PI * 2, Math.min(Math.PI * 2, (cmd.a1 ?? 0) - a0));
+      if (rOut <= rIn || Math.abs(sweep) < 1e-6) break;
+      const a1 = a0 + sweep, ccw = sweep < 0;
+      ctx.fillStyle = fillStyle(cmd);
+      ctx.beginPath();
+      ctx.arc(cmd.cx!, cmd.cy!, rOut, a0, a1, ccw);
+      if (rIn > 0) {
+        ctx.arc(cmd.cx!, cmd.cy!, rIn, a1, a0, !ccw);
+      } else {
+        ctx.lineTo(cmd.cx!, cmd.cy!);
+      }
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+
+    case "image": {
+      const img = imageFor(cmd.source!);
+      if (img) drawImageCmd(ctx, img, cmd);
       break;
     }
 

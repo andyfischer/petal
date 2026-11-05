@@ -13,8 +13,8 @@
 //! clock), runs `--frames` frames (default 1) with the optional input
 //! `--scenario`, and takes the stack after the last one as the checkpoint.
 //! From there it is the core command: the goal and filter flags are
-//! `petal propose-edit`'s ([`petal::cli::dm::V2Parser`]), the report is
-//! the same text or `--json` document ([`petal::cli::dm::propose`]), and
+//! `petal propose-edit`'s ([`petal::propose_edit::V2Parser`]), the report is
+//! the same text or `--json` document ([`petal::propose_edit::propose`]), and
 //! `--apply --pick N` writes the chosen alternative to the files.
 //!
 //! Draw commands are emitted on the channel `draw_commands`: the k-th
@@ -30,7 +30,7 @@
 
 use std::path::PathBuf;
 
-use petal::cli::dm::{self, V2Parser};
+use petal::propose_edit::{self as dm, V2Parser};
 use petal_ui::harness::Headless;
 use petal_ui::scenario::Scenario;
 use serde_json::Value as Json;

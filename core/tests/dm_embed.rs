@@ -1,12 +1,12 @@
 //! Direct manipulation v2 for embedders: the JSON request
-//! (`cli::dm::opts_from_json`), `propose_json` and `propose_with_natives`,
+//! (`propose_edit::opts_from_json`), `propose_json` and `propose_with_natives`,
 //! which hosts with natives of their own (the C bridge's `pb_vm_propose_edit`,
 //! petal-ui's `petal-ui-propose-edit`) drive instead of the `petal` CLI.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use petal::cli::dm::{GoalAddr, GoalValue, opts_from_json, propose_json, propose_with_natives};
+use petal::propose_edit::{GoalAddr, GoalValue, opts_from_json, propose_json, propose_with_natives};
 use petal::dm::NoHost;
 use petal::dm::PathStep;
 use petal::env::Env;

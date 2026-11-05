@@ -225,6 +225,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "tooling")]
     fn the_lsp_shows_what_check_reports() {
         use crate::lsp::document::analyze;
         use crate::lsp::lsp_types::DiagnosticSeverity;

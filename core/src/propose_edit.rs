@@ -760,7 +760,7 @@ pub fn opts_from_json(req: &Json) -> Result<V2Opts, String> {
 /// The JSON error object the CLI prints for a failed `propose-edit --json`
 /// (`{"error": true, "phase": …, "message": …, …}`).
 pub fn error_json(e: &CliDmError) -> Json {
-    super::error_json_value(&e.message, e.phase)
+    crate::error_json::error_json_value(&e.message, e.phase)
 }
 
 /// [`propose`] for a JSON request ([`opts_from_json`]), answering in the

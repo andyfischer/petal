@@ -7,7 +7,11 @@ license = "MIT"
 repository = "https://github.com/andyfischer/petal"
 
 [features]
-default = []
+default = ["tooling"]
+# The developer tooling behind the `petal` command: the `cli`, `lsp` and
+# `fix_imports` modules, which the binary (`cli/`) needs. Embedders turn it
+# off (`default-features = false`); see the note at the top of src/lib.rs.
+tooling = []
 # Collect value-duplication statistics even in release builds. Stats are always
 # collected in debug builds; this feature forces them on for release. See
 # `src/stats.rs`.

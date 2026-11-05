@@ -27,7 +27,7 @@ garden-core = { path = "garden-core" }
 garden-render = { path = "garden-render" }
 garden-script = { path = "garden-script" }
 gpp = { path = "../core-libs/gpp" }
-petal = { path = "../core" }
+petal = { path = "../core", default-features = false }
 petal-ui = { path = "../core-libs/petal-ui" }
 petal-query = { path = "../core-libs/petal-query" }
 

@@ -17,6 +17,7 @@ use petal::value::value_to_json;
 use petal_ui::draw::{
     clear_draw_commands, reset_canvas_ids, take_draw_commands, take_draw_commands_for,
 };
+use petal_ui::draw_wire::DrawWire;
 use petal_ui::input::{
     InputEvent, InputState, bind_dimensions, bind_frame_info, bind_input, bind_time, buttons,
 };
@@ -57,6 +58,9 @@ pub struct PetalRuntime {
     frame_count: i64,
     width: i32,
     height: i32,
+    /// The strings of the frame last drained by `take_draw_buffer` or
+    /// `run_speculative`, served by `draw_strings`.
+    draw_strings: Vec<String>,
 }
 
 #[wasm_bindgen]
@@ -86,6 +90,7 @@ impl PetalRuntime {
             frame_count: 0,
             width: 0,
             height: 0,
+            draw_strings: Vec::new(),
         }
     }
 
@@ -218,11 +223,26 @@ impl PetalRuntime {
 
     // --- Graphics ---
 
-    /// Drain the frame's draw commands as a JSON array of `{ "op": ... }`
-    /// objects (petal-ui's `DrawCommand` shape) for the canvas renderer.
-    pub fn take_draw_commands(&mut self) -> String {
+    /// Drain the frame's draw commands in petal-ui's binary wire form
+    /// (`petal_ui::draw_wire`): the numbers come back as a `Float64Array`,
+    /// and the strings they reference are then served by `draw_strings`.
+    /// `decodeDrawCommands` in `src/draw-wire.ts` turns the pair into the
+    /// `{ op, ...fields }` objects the renderer draws.
+    pub fn take_draw_buffer(&mut self) -> Vec<f64> {
         let cmds = take_draw_commands(&mut self.env);
-        serde_json::to_string(&cmds).unwrap_or_else(|_| "[]".to_string())
+        self.encode(&cmds)
+    }
+
+    /// The strings of the frame last drained by `take_draw_buffer` or
+    /// `run_speculative`, indexed by that buffer.
+    pub fn draw_strings(&self) -> Vec<String> {
+        self.draw_strings.clone()
+    }
+
+    fn encode(&mut self, cmds: &[petal_ui::draw::DrawCommand]) -> Vec<f64> {
+        let wire = DrawWire::encode(cmds);
+        self.draw_strings = wire.strings;
+        wire.numbers
     }
 
     // --- Input (browser events → petal-ui InputState) ---
@@ -391,7 +411,10 @@ impl PetalRuntime {
             .map_err(|e| JsValue::from_str(&e))
     }
 
-    pub fn run_speculative(&mut self) -> Result<String, JsValue> {
+    /// Run one frame on a fork of the active stack and return its draw
+    /// commands, leaving the live state untouched. The result is a draw
+    /// buffer like `take_draw_buffer`'s, with its strings in `draw_strings`.
+    pub fn run_speculative(&mut self) -> Result<Vec<f64>, JsValue> {
         let sid = self
             .active_stack
             .ok_or_else(|| JsValue::from_str("No active stack"))?;
@@ -415,10 +438,9 @@ impl PetalRuntime {
         let result = self
             .env
             .run(fork)
-            .map(|_| {
-                let cmds = take_draw_commands_for(&mut self.env, fork);
-                serde_json::to_string(&cmds).unwrap_or_else(|_| "[]".to_string())
-            })
+            .map(|_| take_draw_commands_for(&mut self.env, fork));
+        let result = result
+            .map(|cmds| self.encode(&cmds))
             .map_err(|e| JsValue::from_str(&e));
         self.env.drop_fork(fork);
         result

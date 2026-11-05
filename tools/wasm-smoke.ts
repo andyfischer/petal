@@ -20,6 +20,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { decodeDrawCommands } from '../integrations/petal-web-canvas/src/draw-wire.ts';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -99,7 +100,7 @@ function missing(key: string, dir: string): void {
                     rt.begin_frame();
                     rt.frame_needed(stack);
                     rt.reset_and_run(stack);
-                    cmds += JSON.parse(rt.take_draw_commands()).length;
+                    cmds += decodeDrawCommands(rt.take_draw_buffer(), rt.draw_strings()).length;
                 }
                 return `(${cmds} draw commands over 3 frames)`;
             });

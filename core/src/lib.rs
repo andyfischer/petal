@@ -76,6 +76,8 @@ pub mod source_diff;
 pub mod source_map;
 pub mod source_watch;
 pub mod stack;
+#[cfg(test)]
+mod strip_comments_check;
 pub mod static_audit;
 pub mod static_cache;
 pub mod static_survey;

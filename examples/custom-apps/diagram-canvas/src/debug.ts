@@ -5,7 +5,7 @@
  *                   by the WebSocket bridge.
  */
 
-import type { PetalRuntime } from "petal-web-canvas";
+import { decodeDrawCommands, type DrawCommand, type PetalRuntime } from "petal-web-canvas";
 
 // ---------------------------------------------------------------------------
 // DebugController
@@ -31,8 +31,8 @@ export class DebugController {
 // ---------------------------------------------------------------------------
 
 export interface DebugHooks {
-  /** Run one frame with a given dt, returning draw commands JSON. */
-  runOneFrame(dt: number): string;
+  /** Run one frame with a given dt, returning its draw commands. */
+  runOneFrame(dt: number): DrawCommand[];
   /** Get the canvas element. */
   getCanvas(): HTMLCanvasElement | null;
   /** Get the PetalRuntime. */
@@ -66,12 +66,9 @@ export class PetalDebugAPI {
     const ctrl = this.hooks.getController();
     ctrl.paused = true;
     // Run N frames synchronously right now
-    const allCmds: any[] = [];
+    const allCmds: DrawCommand[] = [];
     for (let i = 0; i < n; i++) {
-      const cmdsJson = this.hooks.runOneFrame(1 / 60);
-      try {
-        allCmds.push(...JSON.parse(cmdsJson));
-      } catch {}
+      allCmds.push(...this.hooks.runOneFrame(1 / 60));
     }
     return this.buildResponse({ draw_commands: allCmds });
   }
@@ -98,8 +95,10 @@ export class PetalDebugAPI {
     const runtime = this.hooks.getRuntime();
     if (!runtime) return this.buildResponse();
     try {
-      const cmdsJson = runtime.run_speculative();
-      return this.buildResponse({ draw_commands: JSON.parse(cmdsJson) });
+      const buffer = runtime.run_speculative();
+      return this.buildResponse({
+        draw_commands: decodeDrawCommands(buffer, runtime.draw_strings()),
+      });
     } catch (e) {
       return this.buildResponse({ draw_commands: [] });
     }

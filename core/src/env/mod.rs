@@ -182,7 +182,10 @@ pub const STD_MODULE: &str = "std";
 /// over the native builtins. Compiled into the binary (works with no
 /// filesystem, e.g. wasm) and registered by [`Env::new`] as a permanent
 /// implicit import. See `core/prelude/std.ptl`.
-pub const STD_PRELUDE: &str = include_str!("../../prelude/std.ptl");
+/// Read from `core/build.rs`'s copy, which drops whole-line comments in a
+/// wasm build ([`crate::bundled::COMMENTS_STRIPPED`]).
+pub const STD_PRELUDE: &str =
+    include_str!(concat!(env!("OUT_DIR"), "/embedded/prelude/std.ptl"));
 
 impl Env {
     /// Create a new environment

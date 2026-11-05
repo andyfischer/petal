@@ -7,6 +7,53 @@
 
 use std::path::Path;
 
+#[path = "build_support/strip_comments.rs"]
+mod strip_comments;
+
+/// Loose `.ptl` files the crate embeds outside the bundled packages, relative
+/// to this crate: each goes through [`embed_source`] to
+/// `$OUT_DIR/embedded/<same path>`, where the crate's `include_str!` reads it.
+const EMBEDDED_FILES: &[&str] = &["prelude/std.ptl", "packages/web/src/web.ptl"];
+
+/// Whether embedded Petal sources lose their comments. Default: on for wasm32
+/// (every byte is downloaded), off elsewhere (native tools — the LSP, `petal
+/// lint` — show comments of bundled code). `PETAL_EMBED_COMMENTS=keep|strip`
+/// overrides either way.
+fn strip_embedded_comments() -> bool {
+    println!("cargo::rerun-if-env-changed=PETAL_EMBED_COMMENTS");
+    match std::env::var("PETAL_EMBED_COMMENTS").as_deref() {
+        Ok("keep") => false,
+        Ok("strip") => true,
+        Ok(other) => panic!("PETAL_EMBED_COMMENTS must be `keep` or `strip`, not `{other}`"),
+        Err(_) => std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("wasm32"),
+    }
+}
+
+/// Copy the embedded source `abs` to `$OUT_DIR/embedded/<rel>` — with its
+/// comments stripped when `strip` and it is a `.ptl` — and return the path of
+/// the copy, for an `include_str!`. Every embedded file goes through here, so
+/// the crate reads one location whichever way the build goes.
+fn embed_source(abs: &Path, rel: &str, strip: bool) -> String {
+    println!("cargo::rerun-if-changed={}", abs.display());
+    let text = std::fs::read_to_string(abs)
+        .unwrap_or_else(|e| panic!("reading embedded source {}: {e}", abs.display()));
+    let text = if strip && rel.ends_with(".ptl") {
+        strip_comments::strip_comments(&text)
+    } else {
+        text
+    };
+    let out = Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR"))
+        .join("embedded")
+        .join(rel);
+    std::fs::create_dir_all(out.parent().unwrap()).expect("creating $OUT_DIR/embedded");
+    // Rewrite only on change, so an unchanged file keeps its mtime and does not
+    // make cargo rebuild the crate.
+    if std::fs::read_to_string(&out).ok().as_deref() != Some(text.as_str()) {
+        std::fs::write(&out, &text).unwrap_or_else(|e| panic!("writing {}: {e}", out.display()));
+    }
+    out.display().to_string()
+}
+
 /// The packages compiled into the petal binary: `(name, directory relative to
 /// this crate)`. Each is a `petal.toml` package of Petal source and
 /// `native fn` declarations; `petal::bundled` serves them. A directory that
@@ -60,7 +107,7 @@ fn package_files(dir: &Path, rel: &str, out: &mut Vec<String>) {
 }
 
 /// Write `$OUT_DIR/bundled_packages.rs`: the table `petal::bundled` includes.
-fn embed_bundled_packages(manifest: &str) {
+fn embed_bundled_packages(manifest: &str, strip: bool) {
     let mut code = String::from("&[\n");
     for (name, rel) in BUNDLED_PACKAGES {
         let dir = Path::new(manifest).join(rel);
@@ -88,12 +135,8 @@ fn embed_bundled_packages(manifest: &str) {
         }
         code.push_str(&format!("    BundledPackage {{ name: {name:?}, files: &[\n"));
         for file in files {
-            let abs = dir.join(&file);
-            println!("cargo::rerun-if-changed={}", abs.display());
-            code.push_str(&format!(
-                "        ({file:?}, include_str!({:?})),\n",
-                abs.display().to_string()
-            ));
+            let embedded = embed_source(&dir.join(&file), &format!("bundled/{name}/{file}"), strip);
+            code.push_str(&format!("        ({file:?}, include_str!({embedded:?})),\n"));
         }
         code.push_str("    ] },\n");
     }
@@ -218,6 +261,14 @@ fn embed_build_info(manifest: &str) {
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
-    embed_bundled_packages(&manifest);
+    let strip = strip_embedded_comments();
+    println!(
+        "cargo::rustc-env=PETAL_EMBED_COMMENTS_STRIPPED={}",
+        if strip { "1" } else { "0" }
+    );
+    embed_bundled_packages(&manifest, strip);
+    for rel in EMBEDDED_FILES {
+        embed_source(&Path::new(&manifest).join(rel), rel, strip);
+    }
     embed_build_info(&manifest);
 }

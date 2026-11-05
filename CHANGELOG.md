@@ -22,6 +22,18 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `scene_frame`, …) moved from `core/examples/` to
   `test/benchmarks/harness/`; `cd core && cargo run --release --example
   <name>` runs them as before.
+- petal-web-canvas hands draw commands to JavaScript in a binary form
+  instead of JSON: `take_draw_commands()` is replaced by
+  `take_draw_buffer()` (a `Float64Array`) and `draw_strings()`, which
+  `decodeDrawCommands` (exported from `petal-web-canvas`) turns into the same
+  `{ op, ...fields }` objects as before. `run_speculative()` returns a draw
+  buffer too, and `PetalCanvas.runOneFrame` returns the decoded commands
+  rather than a JSON string. The encoding is `petal_ui::draw_wire`
+  ([embedding-web.md](docs/usage/embedding-web.md)).
+- Wasm builds embed the bundled Petal libraries and the std prelude with
+  their whole-line comments blanked, about 170 KB less to download.
+  Positions in error messages are unchanged; `PETAL_EMBED_COMMENTS=keep`
+  at build time keeps the comments ([embedding-web.md](docs/usage/embedding-web.md)).
 
 ### Added
 

@@ -42,6 +42,15 @@ impl BundledPackage {
     }
 }
 
+/// Whether the embedded Petal sources (the bundled packages, the std prelude)
+/// had their whole-line comments stripped by `core/build.rs`. On by default for
+/// wasm32, where every byte is downloaded; off for native builds, whose tools
+/// show the comments of bundled code. `PETAL_EMBED_COMMENTS=keep|strip` at
+/// build time overrides it. Lines are blanked, not removed, so positions in
+/// error messages match the repository files either way.
+pub const COMMENTS_STRIPPED: bool =
+    matches!(env!("PETAL_EMBED_COMMENTS_STRIPPED").as_bytes(), b"1");
+
 /// Every bundled package, in the order `core/build.rs` lists them.
 pub static BUNDLED_PACKAGES: &[BundledPackage] =
     include!(concat!(env!("OUT_DIR"), "/bundled_packages.rs"));

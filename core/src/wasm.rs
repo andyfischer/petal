@@ -24,7 +24,8 @@ const CLICKED_ID_BINDING: &str = "clicked_id";
 /// natives. Its source lives in `core/packages/web` so the stock CLI can
 /// check scripts against it (`petal lint -I core/packages`).
 pub const WEB_PACKAGE: &str = "web";
-const WEB_INTERFACE: &str = include_str!("../packages/web/src/web.ptl");
+const WEB_INTERFACE: &str =
+    include_str!(concat!(env!("OUT_DIR"), "/embedded/packages/web/src/web.ptl"));
 const WEB_MANIFEST: &str = include_str!("../packages/web/petal.toml");
 
 // ---------------------------------------------------------------------------

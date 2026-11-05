@@ -376,7 +376,8 @@ pub(super) fn fill_circle_gradient<T: RenderTarget>(
 }
 
 /// Draw a soft shadow per pixel, from the signed distance to the (offset,
-/// spread) rounded rect: full alpha inside, ramping linearly to 0 at `blur`.
+/// spread) rounded rect: full alpha inside, falling to 0 at `blur` along
+/// [`petal_ui::tess::shadow_falloff`] (a smoothstep).
 ///
 /// That is the same falloff [`petal_ui::tess::shadow_mesh`] tessellates for a
 /// GPU host, evaluated analytically instead — which on a software canvas is
@@ -429,7 +430,7 @@ pub(super) fn fill_shadow<T: RenderTarget>(
             } else if blur <= 0.0 {
                 0.0
             } else {
-                (1.0 - d / blur).max(0.0)
+                petal_ui::tess::shadow_falloff((d / blur) as f32) as f64
             };
             plot(canvas, px, py, Color::RGBA(r, g, b, a), falloff);
         }

@@ -817,6 +817,50 @@ impl petal_ui::draw::FontSource for SdlFontSource {
     }
 }
 
+/// The (weight, italic) variants measured and bound for every face. SDL_ttf
+/// synthesizes exactly these two axes, so there is nothing to gain from a
+/// finer weight ladder: 700 is what `>= 600` embolden to.
+pub const STYLE_VARIANTS: &[(u16, bool)] = &[(400, false), (700, false), (400, true), (700, true)];
+
+/// Publish `fonts`' text metrics to a script, so `text_width` and friends
+/// measure what [`crate::renderer`] will draw: the default face's ASCII advance
+/// table and vertical ratios, the default font name (the `ui` role), and the
+/// metrics of every role × [`STYLE_VARIANTS`] entry. Roles the machine hasn't
+/// got stay unregistered and degrade to the default font.
+///
+/// Every SDL host calls this once its `Env` is built (and again after a
+/// program is swapped in); pair it with [`install_font_source`] so installed
+/// families and non-ASCII glyphs are measured on demand too.
+pub fn bind_metrics(env: &mut petal::env::Env, fonts: &mut FontBook) {
+    let ratios = fonts.default_face().ascii_advance_ratios();
+    petal_ui::draw::bind_text_advance_table(env, &ratios);
+    // This renderer blits a run's surface with its top-left at the command's
+    // `(x, y)`, so where the baseline sits relative to `y` has an exact
+    // answer here; publishing it lets a script centre a label on its cap
+    // height instead of assuming the run is `size` px tall.
+    let vertical = fonts.default_face().vertical_ratios();
+    petal_ui::draw::bind_text_vertical_metrics(env, &vertical);
+    // The default font *is* the `ui` role here, so a style that names no face
+    // still resolves that face's bold/italic variants.
+    petal_ui::draw::bind_default_font_name(env, DEFAULT_ROLE);
+    // One entry per face × variant this host can draw, so a style's weight and
+    // slant measure the widths it is rasterized at (emboldening widens glyphs).
+    for (role, face) in fonts.roles() {
+        for &(weight, italic) in STYLE_VARIANTS {
+            let metrics = face.metrics_styled(weight, italic);
+            petal_ui::draw::bind_font_variant_metrics(env, role, weight, italic, &metrics);
+        }
+    }
+}
+
+/// Install `fonts` as petal-ui's [`FontSource`](petal_ui::draw::FontSource) for
+/// this thread, so a script's `font: "Georgia"` and characters outside the
+/// ASCII advance table are measured from the same book the renderer draws
+/// with. It stays installed for the life of the thread.
+pub fn install_font_source(fonts: std::rc::Rc<std::cell::RefCell<FontBook<'static>>>) {
+    petal_ui::draw::swap_font_provider(Some(Box::new(SdlFontSource::new(fonts))));
+}
+
 /// The first font path in `paths` that exists and loads at a probe size.
 fn resolve_font_path(ttf: &Sdl2TtfContext, paths: &[&str]) -> Option<String> {
     for path in paths {

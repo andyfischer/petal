@@ -34,7 +34,6 @@ garden-app     app core (panes, editor views, vim, input, debug server) plus the
                window / terminal / headless frontends and ~/.garden/state
 garden-web     the panel runtime in the browser (wasm-bindgen over garden-script):
                a traced, checkpointed PanelHost with v2 gestures, for petal-lang.org
-gpp            Garden Pane Protocol: the JSON-RPC contract for subprocess-backed panes
 gpp-apps/      GPP client binaries, one crate per directory:
   directory-browser  netrw-style directory listing (`garden <dir>`, `:E`, `-`)
   git-viewers        the `git-log` app behind `:Git`
@@ -49,6 +48,9 @@ gpp-python/    a Python GPP client library and two sample apps
 
 Dependency direction: `garden-app` depends on `garden-core`, `garden-render`,
 `garden-script`, and `gpp`; those four do not depend on each other.
+`gpp` (the Garden Pane Protocol's JSON-RPC wire definition) lives in
+`../core-libs/gpp`, beside the client library built on it, so no core library
+depends on a crate under `garden/`.
 `garden-script` also depends on the `petal` and `petal-ui` crates one level
 up in this repo (the language, and the shared input/draw/`ui`-package
 contract every Petal embedder uses). The GPP clients depend only on
@@ -460,7 +462,7 @@ previous five minutes of this window's events as context, and inserts a
 
 The wire protocol is [gpp.md](gpp.md). In-tree, the host pieces are:
 
-- **`gpp` crate**: the envelope, the typed params and results, method and
+- **`gpp` crate** (`core-libs/gpp`): the envelope, the typed params and results, method and
   error constants, and newline-framed `write_message` / `read_message`. It
   depends only on serde, so any client can link it alone.
 - **`ProcessPane`** (`process_pane.rs`): owns the child, a buffered writer

@@ -9,7 +9,7 @@
  * directly (debug tooling, headless drivers). */
 
 export { PetalCanvas } from "./runtime";
-export { renderCommands, type DrawCommand } from "./canvas-renderer";
+export { onImageLoad, renderCommands, type DrawCommand } from "./canvas-renderer";
 export { decodeDrawCommands } from "./draw-wire";
 export { InputTracker } from "./input";
 export { default as initRuntime, PetalRuntime } from "../pkg/petal_web_canvas.js";

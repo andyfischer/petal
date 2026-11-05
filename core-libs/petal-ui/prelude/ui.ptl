@@ -2871,11 +2871,16 @@ end
 //   cmd + c / x / v               copy, cut, paste (`clipboard_get` / `clipboard_set`)
 //   cmd + z,  cmd + shift + z or cmd + y     undo, redo
 //   return                        sets `submitted`
+//   escape                        sets `cancelled` (the field keeps the focus;
+//                                 a caller that reverts drops it)
 // Typing replaces the selection. A run of typing undoes as one step, a word
 // at a time. Pasted text loses its line breaks (the field is one line).
 //
 // Returns {focus, text, caret, submitted, changed, anchor, sel_start, sel_end,
-// scroll, overflow}. `caret` and the selection are character offsets;
+// scroll, overflow, blurred, cancelled}. `blurred` is true on the frame after
+// the field lost the keyboard (a click elsewhere, Tab, a `focus_clear`), the
+// cue to apply an edit on blur; `commit_field` below does exactly that.
+// `caret` and the selection are character offsets;
 // `sel_start == sel_end` means nothing is selected, and `anchor` is the end of
 // the selection that is not the caret. When `buf` is not what the field last
 // returned (the app cleared or replaced it), the history is dropped: it
@@ -3149,6 +3154,9 @@ pub fn text_field_update(fc, id, r, buf, style)
     caret = n
     anchor = n
   end
+  // Lost the keyboard since the last frame (a click elsewhere, Tab, the
+  // caller's focus_clear): the cue a commit-on-blur field applies on.
+  let blurred = had_focus && !has
   had_focus = has
   if has then
     let shift = mod_shift()
@@ -3207,7 +3215,8 @@ pub fn text_field_update(fc, id, r, buf, style)
   let changed = text != buf
   last_text = text
   {focus: f, text: text, caret: caret, submitted: submitted, changed: changed, anchor: anchor,
-   sel_start: min(caret, anchor), sel_end: max(caret, anchor), scroll: scroll, overflow: overflow}
+   sel_start: min(caret, anchor), sel_end: max(caret, anchor), scroll: scroll, overflow: overflow,
+   blurred: blurred, cancelled: has && key_pressed("escape")}
 end
 
 // The draw half. `has` is whether the field holds focus (draws the accent
@@ -3426,6 +3435,12 @@ pub fn text_area_update(fc, id, r, buf, style)
     // Focus arrived by keyboard: start at the end.
     caret = n
     anchor = n
+  end
+  if _get(style, "select_all", false) then
+    // The caller's "everything, ready to be typed over" (a layer just
+    // added with placeholder text): select the whole text this frame.
+    anchor = 0
+    caret = n
   end
   had_focus = has
   let vertical = false
@@ -4373,6 +4388,382 @@ fn _slider_draw(r, value, lo, hi, style, dragging, act)
   let kx = tr.x + fw
   draw_circle({x: kx, y: cy}, float(knob) + act * 1.5, _get(style, "knob", t.text))
   v
+end
+
+// ── Inspector fields ──────────────────────────────────────────────────────
+// The controls of a property inspector, which every document editor needs
+// and each used to copy: a text that applies on Return or blur, a number box
+// that scrubs, a hex colour, a row of colour chips, a ‹ value › stepper, a
+// segmented control and a dropdown.
+//
+// The keyboard fields share the focus registry with `text_field` (`fc` in,
+// `.focus` out). Each one keeps its edit in widget `state`, which is keyed per
+// callsite — so in a loop, key it by the row (`for p in props key p.name do
+// ... end`) to keep an edit with its row when rows move.
+//
+// Every one applies only when the edit is done: the result holds the new
+// value on the frame it is committed (Return, or the field losing the
+// keyboard) and the old one, or nil, before. Escape abandons the edit and
+// gives the focus up.
+
+// One line of text that applies on Return or when the field loses the
+// keyboard; Escape reverts. While unfocused it shows `current`. Returns
+// {text, focus, editing}: `text` is nil except on the frame the edit is
+// applied. `style` is `text_field`'s ({placeholder, size, font, ...}), plus
+// `start`: take the keyboard as soon as the field shows (a rename opened by
+// a double-click), rather than on a click in it.
+pub fn commit_field(fc, id, r, current)
+  commit_field(fc, id, r, current, {})
+end
+
+pub fn commit_field(fc, id, r, current, style)
+  state buf = ""
+  state editing = false
+  let out = nil
+  let start = _get(style, "start", false) && !editing && !focused(fc, id)
+  let fc0 = if start then focus_set(fc, id) else fc end
+  let res = text_field(fc0, id, r, if editing then buf else str(current ?? "") end, style)
+  let focus = res.focus
+  if focused(focus, id) then
+    if !editing then
+      editing = true
+    end
+    buf = res.text
+    if res.cancelled then
+      focus = focus_clear(focus)
+      editing = false
+    elsif res.submitted then
+      out = buf
+      focus = focus_clear(focus)
+      editing = false
+    end
+  elsif editing then
+    // The keyboard went elsewhere (a click, Tab) mid-edit: apply it.
+    editing = false
+    out = buf
+  end
+  {text: out, focus: focus, editing: editing}
+end
+
+// A number box: drag sideways to scrub (shift for fine steps), double-click
+// to type, Return or a click away to apply the typed value, Escape to drop
+// it. Returns {value, focus, changed}: `value` is the new value (the old one
+// when nothing happened), `changed` whether it differs.
+//
+// `style` sets {step (1.0, per pixel of drag), places (2, decimals shown and
+// typed), min, max, fine (0.1, the shift multiplier), tip (the hover hint; ""
+// for none), size, font, bg, hover, active, fg, radius}.
+pub fn number_field(fc, id, r, value)
+  number_field(fc, id, r, value, {})
+end
+
+pub fn number_field(fc, id, r, value, style)
+  let t = _palette()
+  let places = _get(style, "places", 2)
+  state buf = ""
+  state editing = false
+  state last_x = 0
+  let out = value
+  let focus = fc
+  if focused(fc, id) then
+    // Typing: entered by a double-click, or by the focus arriving (Tab).
+    if !editing then
+      buf = fixed(float(value), places)
+      editing = true
+    end
+    let res = text_field(fc, id, r, buf, style)
+    focus = res.focus
+    buf = res.text
+    if res.cancelled then
+      focus = focus_clear(focus)
+      editing = false
+    elsif res.submitted || !focused(focus, id) then
+      let v = parse_float(trim(buf))
+      if v != nil then out = v end
+      focus = focus_clear(focus)
+      editing = false
+    end
+  else
+    if editing then
+      // The focus went elsewhere while typing (a click, Tab): keep the value.
+      editing = false
+      let v = parse_float(trim(buf))
+      if v != nil then out = v end
+    end
+    let it = interact(r, id)
+    let bg = if it.down then _get(style, "active", t.selection)
+             elsif it.hover then _get(style, "hover", t.hover)
+             else _get(style, "bg", t.overlay) end
+    draw_rect_rounded(r, _get(style, "radius", t.radius_sm), bg)
+    let size = _get(style, "size", t.font_sm)
+    let ts = _ts(_face(t, style), size, _get(style, "fg", t.text))
+    draw_text_center(text_ellipsize(fixed(float(value), places), ts, r.w - 4), r.x + r.w / 2, r.y + (r.h - size) / 2, ts)
+    // The drag is measured from the pointer itself, not `mouse_dx()`, so it
+    // scrubs in hosts that report no relative motion.
+    if it.down && !it.pressed && mouse_x() != last_x then
+      let k = if mod_shift() then _get(style, "fine", 0.1) else 1.0 end
+      out = float(value) + float(mouse_x() - last_x) * float(_get(style, "step", 1.0)) * k
+    end
+    last_x = mouse_x()
+    if it.pressed && click_count() == 2 then
+      focus = focus_set(fc, id)
+    end
+    let tip = _get(style, "tip", "drag to change · shift for fine · double-click to type")
+    if tip != "" then tooltip(r, tip) end
+  end
+  if out != value then
+    if style["min"] != nil then out = max(out, style["min"]) end
+    if style["max"] != nil then out = min(out, style["max"]) end
+  end
+  {value: out, focus: focus, changed: out != value}
+end
+
+let _HEX = "0123456789abcdef"
+
+fn _hex2(v)
+  let n = clamp(int(round(float(v))), 0, 255)
+  char_at(_HEX, n / 16) ++ char_at(_HEX, n % 16)
+end
+
+// A colour as `#rrggbb`, or `#rrggbbaa` when it is not opaque.
+pub fn color_to_hex(c)
+  let a = c["a"] ?? 255
+  let base = "#" ++ _hex2(c.r) ++ _hex2(c.g) ++ _hex2(c.b)
+  if int(round(float(a))) >= 255 then base else base ++ _hex2(a) end
+end
+
+fn _hex_digit(s, i)
+  index_of(_HEX, char_slice(s, i, i + 1))
+end
+
+fn _hex_pair(s, i)
+  let hi = _hex_digit(s, i)
+  let lo = _hex_digit(s, i + 1)
+  if hi < 0 || lo < 0 then -1 else hi * 16 + lo end
+end
+
+// The colour `#rgb`, `#rrggbb` or `#rrggbbaa` names (the `#` is optional,
+// case and surrounding space don't matter), or nil when it names none.
+pub fn color_from_hex(text)
+  let s = lower(trim(text))
+  if char_slice(s, 0, 1) == "#" then s = char_slice(s, 1, char_len(s)) end
+  let n = char_len(s)
+  if n == 3 then
+    let r = _hex_digit(s, 0)
+    let g = _hex_digit(s, 1)
+    let b = _hex_digit(s, 2)
+    if r < 0 || g < 0 || b < 0 then nil else {r: r * 17, g: g * 17, b: b * 17} end
+  elsif n == 6 || n == 8 then
+    let r = _hex_pair(s, 0)
+    let g = _hex_pair(s, 2)
+    let b = _hex_pair(s, 4)
+    let a = if n == 8 then _hex_pair(s, 6) else 255 end
+    if r < 0 || g < 0 || b < 0 || a < 0 then nil
+    elsif n == 8 then {r: r, g: g, b: b, a: a}
+    else {r: r, g: g, b: b} end
+  else
+    nil
+  end
+end
+
+// Whether two colours are the same, alpha included (absent is opaque). Two
+// nils are the same; a nil and a colour are not.
+pub fn same_color(a, b)
+  if a == nil || b == nil then
+    a == b
+  else
+    a.r == b.r && a.g == b.g && a.b == b.b && (a["a"] ?? 255) == (b["a"] ?? 255)
+  end
+end
+
+// A colour chip and its hex, typed: Return or a click away applies, Escape
+// reverts. Returns {color, focus}: `color` is nil unless a valid new colour
+// was entered. A nil `color` shows an empty chip and field. `style` is
+// `commit_field`'s, plus {chip_radius, outline}.
+pub fn color_field(fc, id, r, color)
+  color_field(fc, id, r, color, {})
+end
+
+pub fn color_field(fc, id, r, color, style)
+  let t = _palette()
+  let chip = rect(r.x, r.y + 3, r.h - 6, r.h - 6)
+  let cr = _get(style, "chip_radius", 3)
+  if color != nil then draw_rect_rounded(chip, cr, color) end
+  draw_rect_rounded_outline(chip, cr, _get(style, "outline", t.border_strong), 255, 1)
+  let fr = rect(r.x + r.h, r.y, r.w - r.h, r.h)
+  let shown = if color == nil then "" else color_to_hex(color) end
+  let res = commit_field(fc, id, fr, shown, {placeholder: "#rrggbb", ...style})
+  let picked = if res.text == nil then nil else color_from_hex(res.text) end
+  {color: if same_color(picked, color) then nil else picked end, focus: res.focus}
+end
+
+// A row of square colour chips, `r.h` on a side, `current` ringed; chips
+// that would overrun `r.w` are left out. Returns the colour clicked, or nil. `style` sets {gap (4), radius (3), ring, hover,
+// id (the hit-test name prefix)}.
+pub fn swatches(r, colors, current)
+  swatches(r, colors, current, {})
+end
+
+pub fn swatches(r, colors, current, style)
+  let t = _palette()
+  let picked = nil
+  let size = r.h
+  let gap = _get(style, "gap", 4)
+  let rad = _get(style, "radius", 3)
+  let prefix = _get(style, "id", "swatch-" ++ str(r.x) ++ "-" ++ str(r.y))
+  for i in range(0, len(colors)) do
+    let c = colors[i]
+    let cr = rect(r.x + i * (size + gap), r.y, size, size)
+    if cr.x + cr.w <= r.x + r.w then
+      let it = interact(cr, prefix ++ "-" ++ str(i))
+      draw_rect_rounded(cr, rad, c)
+      if same_color(c, current) then
+        draw_rect_rounded_outline(pad(cr, -2), rad + 1, _get(style, "ring", t.accent), 255, 2)
+      elsif it.hover then
+        draw_rect_rounded_outline(pad(cr, -1), rad + 1, _get(style, "hover", t.border_strong), 255, 1)
+      end
+      if it.click then picked = c end
+    end
+  end
+  picked
+end
+
+// A small chevron pointing left (`dir` -1) or right (1), centred in `r`.
+fn _chevron(r, dir, c)
+  let cx = r.x + r.w / 2
+  let cy = r.y + r.h / 2
+  let s = max(2, min(r.w, r.h) / 5)
+  draw_line({x: cx + dir * s / 2, y: cy - s}, {x: cx - dir * s / 2, y: cy}, c, 255, 2)
+  draw_line({x: cx - dir * s / 2, y: cy}, {x: cx + dir * s / 2, y: cy + s}, c, 255, 2)
+end
+
+// ‹ value › — the arrows step back and forward through `options` (wrapping),
+// and a click on the value steps forward. Returns the chosen option.
+// `style` sets {labels (shown in place of `str(option)`), id, size, font, bg,
+// hover, fg, radius, arrow_w (22)}.
+pub fn stepper(r, options, current)
+  stepper(r, options, current, {})
+end
+
+pub fn stepper(r, options, current, style)
+  let t = _palette()
+  let n = len(options)
+  let i = max(0, index_of(options, current))
+  let aw = _get(style, "arrow_w", 22)
+  let id = _get(style, "id", "stepper-" ++ str(r.x) ++ "-" ++ str(r.y))
+  let left = rect(r.x, r.y, aw, r.h)
+  let right = rect(r.x + r.w - aw, r.y, aw, r.h)
+  let mid = rect(r.x + aw, r.y, r.w - 2 * aw, r.h)
+  let rad = _get(style, "radius", t.radius_sm)
+  draw_rect_rounded(r, rad, _get(style, "bg", t.overlay))
+  let out = current
+  if n > 0 then
+    let lt = interact(left, id ++ "-prev")
+    let rt = interact(right, id ++ "-next")
+    let md = interact(mid, id)
+    for side in [{it: lt, r: left, dir: -1}, {it: rt, r: right, dir: 1}] do
+      if side.it.hover then draw_rect_rounded(pad(side.r, 2), rad, _get(style, "hover", t.hover)) end
+      _chevron(side.r, side.dir, if side.it.hover then t.text else t.muted end)
+    end
+    if lt.click then out = options[(i + n - 1) % n] end
+    if rt.click || md.click then out = options[(i + 1) % n] end
+  end
+  let labels = _get(style, "labels", nil)
+  let shown = if labels != nil && index_of(options, current) >= 0 then labels[index_of(options, current)] else str(current) end
+  let size = _get(style, "size", t.font_sm)
+  let ts = _ts(_face(t, style), size, _get(style, "fg", t.text))
+  draw_text_center(text_ellipsize(shown, ts, max(0, mid.w - 4)), mid.x + mid.w / 2, mid.y + (mid.h - size) / 2, ts)
+  out
+end
+
+// One of n, as a row of equal segments. Returns the new selected index.
+// `style` sets {id, size, font, bg, on (the selected segment), hover, fg,
+// fg_on, radius, inset (2)}.
+pub fn segmented(r, labels, index)
+  segmented(r, labels, index, {})
+end
+
+pub fn segmented(r, labels, index, style)
+  let t = _palette()
+  let n = max(1, len(labels))
+  let rad = _get(style, "radius", t.radius_sm)
+  let inset = _get(style, "inset", 2)
+  let id = _get(style, "id", "segmented-" ++ str(r.x) ++ "-" ++ str(r.y))
+  draw_rect_rounded(r, rad, _get(style, "bg", t.overlay))
+  let size = _get(style, "size", t.font_sm)
+  let face = _face(t, style)
+  let out = index
+  for i in range(0, len(labels)) do
+    let x0 = r.x + r.w * i / n
+    let x1 = r.x + r.w * (i + 1) / n
+    let sr = rect(x0, r.y, x1 - x0, r.h)
+    let it = interact(sr, id ++ "-" ++ str(i))
+    if i == index then
+      draw_rect_rounded(pad(sr, inset), max(0, rad - inset), _get(style, "on", t.panel))
+    elsif it.hover then
+      draw_rect_rounded(pad(sr, inset), max(0, rad - inset), _get(style, "hover", t.hover))
+    end
+    if it.click then out = i end
+    let fg = if i == index then _get(style, "fg_on", t.text) else _get(style, "fg", t.muted) end
+    let ts = _ts(face, size, fg)
+    draw_text_center(text_ellipsize(labels[i], ts, max(0, sr.w - 6)), sr.x + sr.w / 2, sr.y + (r.h - size) / 2, ts)
+  end
+  out
+end
+
+// A button showing `current` that opens a menu of `options` under itself.
+// Returns the chosen option (`current` until one is picked). The menu is a
+// `context_menu` on the popup layer, so it draws over the widgets after it
+// and takes the pointer while open: call `dropdown` where the button goes.
+// `style` sets {labels, id, placeholder, size, font, bg, hover, fg, radius}
+// plus `context_menu`'s keys for the menu.
+pub fn dropdown(r, options, current)
+  dropdown(r, options, current, {})
+end
+
+pub fn dropdown(r, options, current, style)
+  let t = _palette()
+  state m = menu_state()
+  let id = _get(style, "id", "dropdown-" ++ str(r.x) ++ "-" ++ str(r.y))
+  let labels = _get(style, "labels", nil)
+  let label_of = fn(i) -> if labels != nil then labels[i] else str(options[i]) end
+  let i = index_of(options, current)
+  let shown = if i >= 0 then label_of(i) else _get(style, "placeholder", str(current ?? "")) end
+  let it = interact(r, id)
+  let rad = _get(style, "radius", t.radius_sm)
+  let bg = if m.open then t.selection elsif it.hover then _get(style, "hover", t.hover) else _get(style, "bg", t.overlay) end
+  draw_rect_rounded(r, rad, bg)
+  let size = _get(style, "size", t.font_sm)
+  let ts = _ts(_face(t, style), size, _get(style, "fg", t.text))
+  draw_text(text_ellipsize(shown, ts, max(0, r.w - 30)), {x: r.x + 8, y: r.y + (r.h - size) / 2}, ts)
+  // A down chevron at the right end.
+  let cx = r.x + r.w - 12
+  let cy = r.y + r.h / 2
+  draw_line({x: cx - 4, y: cy - 2}, {x: cx, y: cy + 2}, t.muted, 255, 2)
+  draw_line({x: cx, y: cy + 2}, {x: cx + 4, y: cy - 2}, t.muted, 255, 2)
+  if it.click && !m.open then
+    m = menu_show(m, r.x, r.y + r.h + 2, id)
+  end
+  let items = map(range(0, len(options)), fn(k) -> menu_item(label_of(k)))
+  let res = context_menu(m, items, style)
+  m = res.menu
+  if res.index >= 0 then options[res.index] else current end
+end
+
+// ── Keyboard scrolling ────────────────────────────────────────────────────
+// The keys a scrolled view (a log, a table, a preview) answers when it has
+// the keyboard: j / k or down / up by a line, space by a page, home / end to
+// either end. Pair it with `scroll_update`, which handles the wheel and
+// pageup / pagedown; this one adds what a reader expects on top. Returns the
+// new offset, clamped to [0, total_lines - visible_lines].
+pub fn scroll_keys(offset, total_lines, visible_lines)
+  let off = offset
+  if key_pressed("down") || key_pressed("j") then off += 1 end
+  if key_pressed("up") || key_pressed("k") then off -= 1 end
+  if key_pressed("space") then off += visible_lines end
+  if key_pressed("home") then off = 0 end
+  if key_pressed("end") then off = total_lines end
+  clamp(off, 0, max(0, total_lines - visible_lines))
 end
 
 // ── Tab bar ───────────────────────────────────────────────────────────────

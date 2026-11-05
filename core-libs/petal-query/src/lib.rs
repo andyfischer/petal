@@ -31,7 +31,7 @@
 //!
 //! # Relationship to the `gpp` crate
 //!
-//! Garden's `gpp` crate (`garden/gpp`) is the **single** wire definition of the
+//! The `gpp` crate (`core-libs/gpp`) is the **single** wire definition of the
 //! Garden Pane Protocol — the JSON-RPC envelope, every message shape, and
 //! [`CachePolicy`] itself, which this crate re-exports. petal-query depends on
 //! it and adds the client-side machinery: the [`Provider`] handler API and the

@@ -785,32 +785,22 @@ pub fn circle_gradient(buf: &mut Vec<Vertex>, cx: f32, cy: f32, radius: f32, c0:
     }
 }
 
-/// How many concentric rings the shadow's falloff is sampled at. The alpha
-/// ramp is smooth (below), so it has to be *sampled*: within one ring the
-/// rasterizer interpolates linearly, and 12 chords are enough that the
-/// piecewise-linear stand-in is indistinguishable from the curve at the blur
-/// radii a UI actually uses.
-const SHADOW_RINGS: usize = 12;
+/// How many concentric bands the shadow's falloff is sampled at (petal-ui's
+/// shared tessellation decides; re-exported for the tests below).
+#[cfg(test)]
+const SHADOW_RINGS: usize = petal_ui::tess::SHADOW_RINGS;
 
 /// Append a soft drop shadow as **one** non-overlapping mesh with per-vertex
 /// alpha: a solid core (the rect offset by `dx`/`dy` and grown by `spread`,
-/// with its corner radius grown to match) surrounded by a ring that fades to
-/// fully transparent `blur` px further out.
+/// with its corner radius grown to match) surrounded by bands that fade along
+/// a smoothstep to fully transparent `blur` px further out.
 ///
-/// Non-overlap is what makes this composite correctly. A shadow is translucent
-/// by construction, so the naive implementation — N nested translucent rects —
-/// blends each one over the last and the middle of the falloff comes out far
-/// darker than either end, while the whole thing costs N draws' worth of
-/// overdraw. Here every ring is the region *between* two expansions of the
-/// same silhouette, sampled at corresponding points, so the rings tile the
-/// falloff exactly: each pixel is covered once, and one alpha-blended pass
-/// puts the shadow down.
-///
-/// The falloff is a smoothstep rather than a straight line. A real box-shadow
-/// is a Gaussian blur of the silhouette, whose profile has zero slope at both
-/// ends; a linear ramp has a visible crease where it meets the solid core and
-/// another where it reaches zero. `3u^2 - 2u^3` has neither and costs nothing,
-/// since the ring alphas are computed once on the CPU.
+/// The geometry is petal-ui's [`petal_ui::tess::shadow_mesh`], shared with the
+/// other hosts so a shadow looks the same in Garden, in petal-sdl and in the
+/// creative editors; this only folds the color in. Non-overlap is what makes
+/// it composite correctly: a stack of nested translucent rects would blend
+/// each over the last and darken the middle of the falloff.
+#[allow(clippy::too_many_arguments)]
 pub fn shadow(
     buf: &mut Vec<Vertex>,
     x: f32,
@@ -824,83 +814,13 @@ pub fn shadow(
     dy: f32,
     color: Color,
 ) {
-    // The core: the source rect displaced and grown. A spread that eats the
-    // rect entirely leaves nothing to cast.
-    let (cw, ch) = (w + 2.0 * spread, h + 2.0 * spread);
-    if cw <= 0.0 || ch <= 0.0 {
-        return;
-    }
-    let (cx0, cy0) = (x + dx - spread, y + dy - spread);
-    // Corner radius grows with the spread, the way CSS's does, and is clamped
-    // so it never exceeds half the (grown) box.
-    let r = (radius + spread).max(0.0).min(cw * 0.5).min(ch * 0.5);
-    // The four corner centers stay fixed as the silhouette is expanded, which
-    // is what makes ring i and ring i+1 correspond point for point.
-    let centers = [
-        (cx0 + r, cy0 + r),           // top-left
-        (cx0 + cw - r, cy0 + r),      // top-right
-        (cx0 + cw - r, cy0 + ch - r), // bottom-right
-        (cx0 + r, cy0 + ch - r),      // bottom-left
-    ];
-    let blur = blur.max(0.0);
-    // Segments per corner, sized from the outermost silhouette so the widest
-    // ring is smooth; every ring uses the same count, since they must pair up.
-    let seg = (circle_segments(r + blur) / 4).max(2);
-
-    // The solid core, as a fan from the box's center out to the silhouette.
-    let hub = (cx0 + cw * 0.5, cy0 + ch * 0.5);
-    let mut inner = silhouette(&centers, r, seg);
-    for i in 0..inner.len() {
-        let (a, b) = (inner[i], inner[(i + 1) % inner.len()]);
-        buf.push(Vertex::new(hub, color));
-        buf.push(Vertex::new(a, color));
-        buf.push(Vertex::new(b, color));
-    }
-    if blur <= 0.0 {
-        return;
-    }
-
-    // …then the falloff, ring by ring.
-    let mut inner_alpha = 1.0;
-    for i in 1..=SHADOW_RINGS {
-        let u = i as f32 / SHADOW_RINGS as f32;
-        let outer = silhouette(&centers, r + u * blur, seg);
-        let outer_alpha = 1.0 - u * u * (3.0 - 2.0 * u);
-        let ci = Color::rgba(color.r, color.g, color.b, color.a * inner_alpha);
-        let co = Color::rgba(color.r, color.g, color.b, color.a * outer_alpha);
-        for j in 0..inner.len() {
-            let k = (j + 1) % inner.len();
-            buf.push(Vertex::new(inner[j], ci));
-            buf.push(Vertex::new(outer[j], co));
-            buf.push(Vertex::new(outer[k], co));
-            buf.push(Vertex::new(inner[j], ci));
-            buf.push(Vertex::new(outer[k], co));
-            buf.push(Vertex::new(inner[k], ci));
-        }
-        inner = outer;
-        inner_alpha = outer_alpha;
-    }
-}
-
-/// The outline of a rounded rect at corner radius `r`, walked clockwise from
-/// the top-left corner, with `seg` samples per corner.
-///
-/// `centers` are the four corner centers in clockwise order starting top-left;
-/// they do **not** move with `r`, so two calls differing only in `r` return
-/// point lists that correspond one-to-one — the property [`shadow`] leans on
-/// to tile its falloff without a gap or an overlap.
-fn silhouette(centers: &[(f32, f32); 4], r: f32, seg: usize) -> Vec<(f32, f32)> {
-    let quarter = std::f32::consts::FRAC_PI_2;
-    let mut out = Vec::with_capacity(4 * seg);
-    for (corner, &(ccx, ccy)) in centers.iter().enumerate() {
-        // Screen space, y down: the top-left corner's arc runs 180°→270°.
-        let start = std::f32::consts::PI + quarter * corner as f32;
-        for i in 0..seg {
-            let theta = start + quarter * (i as f32) / ((seg - 1).max(1) as f32);
-            out.push((ccx + r * theta.cos(), ccy + r * theta.sin()));
-        }
-    }
-    out
+    let mesh = petal_ui::tess::shadow_mesh(x, y, w, h, radius, blur, spread, dx, dy);
+    buf.extend(mesh.into_iter().map(|v| {
+        Vertex::new(
+            (v.x, v.y),
+            Color::rgba(color.r, color.g, color.b, color.a * v.alpha),
+        )
+    }));
 }
 
 #[cfg(test)]
@@ -1028,24 +948,6 @@ mod tests {
             first_step < middle_step * 0.5,
             "the ramp should flatten near the core ({first_step} vs {middle_step})"
         );
-    }
-
-    /// Ring `i`'s outer boundary is ring `i+1`'s inner boundary, point for
-    /// point. That is the whole reason a translucent shadow composites evenly:
-    /// overlapping rings would double-blend and darken the middle of the
-    /// falloff, gaps would show the background through it.
-    #[test]
-    fn the_shadow_rings_tile_without_gap_or_overlap() {
-        let centers = [(10.0, 10.0), (50.0, 10.0), (50.0, 40.0), (10.0, 40.0)];
-        let inner = silhouette(&centers, 6.0, 5);
-        let outer = silhouette(&centers, 9.0, 5);
-        assert_eq!(inner.len(), outer.len());
-        for (a, b) in inner.iter().zip(&outer) {
-            // Corresponding points differ by exactly the radius step, along
-            // the same ray from the same corner center.
-            let d = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
-            assert!((d - 3.0).abs() < 1e-4, "expected a 3px step, got {d}");
-        }
     }
 
     fn col() -> Color {

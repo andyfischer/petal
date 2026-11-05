@@ -96,7 +96,7 @@ background-refresh, or expire an entry.
 
 ## Relationship to Garden's `gpp`
 
-The `gpp` crate (`garden/gpp`) is the single wire definition of the Garden
+The `gpp` crate (`core-libs/gpp`) is the single wire definition of the Garden
 Pane Protocol: the JSON-RPC envelope, every message shape, and `CachePolicy`
 itself, which this crate re-exports. `petal-query` adds the client-side
 machinery on top: the `Provider` handler API and the `gpp::serve` loop.

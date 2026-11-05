@@ -26,7 +26,7 @@ place to add a test for any new behavior.
 | State / event log | `garden-app/src/state.rs`, `event_log.rs`, `recents.rs` | the SQLite state dir: window ids, migrations, event buffering, `:report`, recents (temp-dir DBs) |
 | Terminal grid | `garden-app/src/frontend/grid.rs` | scene to character-grid rasterization for the TUI |
 | Window registry | `garden-app/src/frontend/registry.rs` | multi-window bookkeeping, close vs. quit |
-| GPP contract | `gpp/src/lib.rs` | v2 envelope serde round-trips and NDJSON framing |
+| GPP contract | `../core-libs/gpp/src/lib.rs` | v2 envelope serde round-trips and NDJSON framing |
 | GPP clients | `gpp-apps/*/src/` | directory-browser's listing core; `git-log`'s git plumbing (`cargo test -p git-viewers`); `garden-diff`'s diff parsing, projection spec, comment weaving, and write-back splicing (`cargo test -p garden-diff`), against real temporary repos |
 | Renderer | `garden-render/tests/srgb_compositing.rs` | pins the sRGB blending numbers across all three pipelines |
 

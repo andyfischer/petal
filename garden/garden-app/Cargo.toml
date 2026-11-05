@@ -12,7 +12,7 @@ path = "src/main.rs"
 garden-core.workspace = true
 garden-render.workspace = true
 garden-script.workspace = true
-gpp = { path = "../gpp" }
+gpp = { workspace = true }
 petal-query = { workspace = true }
 # Read directly (not just through garden-script) so `garden --version` can
 # report the prelude actually linked into this binary — see src/version.rs.

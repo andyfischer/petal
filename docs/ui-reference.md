@@ -373,6 +373,9 @@ draw_text("ROUND 3", 40, 20, title)
 | `tint(bg, fg, pct)` | The same with a percentage. |
 | `hairline(bg, ink)` | A separator colour for a surface. |
 | `alpha_pct(p)` | A percentage as a 0–255 alpha. |
+| `color_to_hex(c)` | `#rrggbb`, or `#rrggbbaa` when `c` is not opaque. |
+| `color_from_hex(text)` | The colour `#rgb`, `#rrggbb` or `#rrggbbaa` names (the `#` optional), or nil. |
+| `same_color(a, b)` | Whether two colours are equal, alpha included (absent is opaque). |
 
 ## Theme
 
@@ -494,6 +497,7 @@ Every widget takes an optional trailing `style`.
 | `list_row_rect(r, visible_rows, i, scroll)` | Where row `i` is. |
 | `ensure_visible(scroll, selected, visible_rows)`, `ensure_visible_px(scroll, row_off, row_h, view_h)` | The scroll that keeps a row in view, by rows or by pixels. |
 | `scroll_update(offset, total_lines, visible_lines, r, active?)` | Wheel and page keys for a region with no selection. Returns the next offset. |
+| `scroll_keys(offset, total_lines, visible_lines)` | The reader's keys on top: j/k or down/up a line, space a page, home/end. Call it when the region has the keyboard. Returns the next offset. |
 | `draw_scrollbar(r, count, rows, scroll, style?)` | A proportional thumb on the right edge. |
 | `table_state()`, `table(tb, r, cols, rows_data, style?)` | A sortable table with a header. Returns the next state. |
 | `table_col_rects(r, cols)` | The column rects a table would use. |
@@ -505,7 +509,7 @@ Every widget takes an optional trailing `style`.
 | `focus_state()` | The record that says which widget has the keyboard. |
 | `focused(fc, id)`, `focus_set(fc, id)`, `focus_clear(fc)` | Ask and change. |
 | `focus_next(fc, ids)`, `focus_prev(fc, ids)`, `focus_update(fc, ids)` | Move through a ring of ids; `focus_update` does Tab and Shift+Tab. |
-| `text_field(fc, id, r, buf, style?)` | A single-line editor with a caret, selection, clipboard and undo. Returns `{focus, text, caret, submitted, changed, …}`. |
+| `text_field(fc, id, r, buf, style?)` | A single-line editor with a caret, selection, clipboard and undo. Returns `{focus, text, caret, submitted, changed, blurred, cancelled, …}`: `blurred` on the frame after it lost the keyboard, `cancelled` when Escape was pressed in it. |
 | `text_field_update(fc, id, r, buf, style?)`, `draw_text_field(r, text, has, …)` | The two halves, for a field with its own chrome. |
 | `text_area(fc, id, r, buf, style?)` | A multi-line editor: wraps to its width, Return is a line break, the wheel scrolls it. Returns `{focus, text, caret, changed, sel_start, sel_end, scroll, overflow, rows, line_h, content_h, …}`. |
 | `text_area_update(fc, id, r, buf, style?)`, `draw_text_area(r, res, has, style?)` | Its two halves. |
@@ -535,7 +539,8 @@ a word at a time), and the same focus rules. What differs:
 Style keys are the field's (`size`, `font`, `text_style`, `inset`, `bg`, `fg`,
 `outline`, `focus`, `caret`, `selection`, `placeholder`, `pointer`) plus
 `line_gap`, the pixels added to the face's line height between rows
-(default 2).
+(default 2), and `select_all`: select the whole text on this frame (a layer
+just added, whose placeholder text the next keystroke should replace).
 
 ```petal
 state notes = ""
@@ -543,6 +548,28 @@ let h = text_area_height(notes, 320)
 let res = text_area(fc, "notes", rect(20, 80, 320, h), notes)
 fc = res.focus
 notes = res.text
+```
+
+### Inspector fields
+
+The controls of a property panel. The keyboard ones share the focus registry
+(`fc` in, `.focus` out) and apply only when an edit is done: Return, or the
+field losing the keyboard. Escape abandons the edit.
+
+| Call | What it does |
+|---|---|
+| `commit_field(fc, id, r, current, style?)` | One line of text that applies on Return or blur. Returns `{text, focus, editing}`; `text` is nil except on the frame the edit applies. |
+| `number_field(fc, id, r, value, style?)` | Drag sideways to scrub (shift for fine), double-click to type. Returns `{value, focus, changed}`. `style`: `{step, places, min, max, fine, tip, …}`. |
+| `color_field(fc, id, r, color, style?)` | A colour chip and its hex. Returns `{color, focus}`; `color` is nil unless a valid new one was entered. |
+| `swatches(r, colors, current, style?)` | A row of `r.h`-square chips, `current` ringed. Returns the colour clicked, or nil. |
+| `stepper(r, options, current, style?)` | ‹ value ›: the arrows step through `options`, wrapping. Returns the chosen option. `style.labels` shows names in place of the values. |
+| `segmented(r, labels, index, style?)` | One of n as equal segments. Returns the new index. |
+| `dropdown(r, options, current, style?)` | A button that opens a menu of `options` under itself, on the popup layer. Returns the chosen option. `style.labels`, `style.placeholder`. |
+
+```petal
+let res = number_field(fc, "opacity", rect(x, y, 64, 22), layer.opacity, {step: 0.01, places: 2, min: 0, max: 1})
+fc = res.focus
+if res.changed then set_opacity(res.value) end
 ```
 
 ### Menus, dialogs and drag and drop

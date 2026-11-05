@@ -8,7 +8,6 @@ members = [
     "garden-render",
     "garden-script",
     "garden-app",
-    "gpp",
     "gpp-apps/directory-browser",
     "gpp-apps/garden-diff",
     "gpp-apps/git-viewers",
@@ -27,7 +26,7 @@ license = "MIT"
 garden-core = { path = "garden-core" }
 garden-render = { path = "garden-render" }
 garden-script = { path = "garden-script" }
-gpp = { path = "gpp" }
+gpp = { path = "../core-libs/gpp" }
 petal = { path = "../core" }
 petal-ui = { path = "../core-libs/petal-ui" }
 petal-query = { path = "../core-libs/petal-query" }

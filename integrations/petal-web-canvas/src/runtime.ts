@@ -1,7 +1,7 @@
 /** PetalCanvas — wraps PetalRuntime for canvas-based frame-loop execution. */
 
 import init, { PetalRuntime } from "../pkg/petal_web_canvas.js";
-import { renderCommands, type DrawCommand } from "./canvas-renderer";
+import { onImageLoad, renderCommands, type DrawCommand } from "./canvas-renderer";
 import { decodeDrawCommands } from "./draw-wire";
 import { InputTracker } from "./input";
 import { bindFontMetrics } from "./text-metrics";
@@ -230,6 +230,12 @@ export class PetalCanvas {
     this.resizeObserver?.disconnect();
     this.resizeObserver = new ResizeObserver(() => this.resizeCanvas());
     this.resizeObserver.observe(canvas.parentElement ?? canvas);
+
+    // An image that finishes loading changes what an unchanged frame draws,
+    // so the gate must let the next one repaint.
+    onImageLoad(() => {
+      if (this.runtime && this.stackId !== null) this.runtime.invalidate_frame(this.stackId);
+    });
 
     this.lastTime = performance.now();
     this.loop();

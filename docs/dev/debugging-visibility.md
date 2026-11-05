@@ -127,7 +127,7 @@ for `Env::observations_mut().enable()` and `Env::get_observations_json`.
 bytecode), `PendingReport`, `TraceEmits`, `ProposeEdit`. The
 tool reference is [mcp-server.md](mcp-server.md).
 
-`petal-diagram` (`tools/petal-diagram-mcp.ts`) is a frame-by-frame
+`petal-diagram` (`examples/custom-apps/diagram-canvas/petal-diagram-mcp.ts`) is a frame-by-frame
 debugger for a running diagram canvas. It connects over WebSocket
 (`ws://localhost:4012/debug`, override with `PETAL_DEBUG_URL`). Every
 response has the shape `{ok, paused, frame, ...extras}`.

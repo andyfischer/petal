@@ -736,7 +736,7 @@ fn native_hovered(state: &mut PetalCxt) -> NativeResult {
         match state.heap().get_map(id).get(name) {
             Some(Value::Int(n)) => Ok(*n as f64),
             Some(Value::Float(f)) => Ok(*f),
-            Some(Value::Dual { value, .. }) => Ok(*value),
+            Some(Value::Dual(d)) => Ok(state.heap().get_dual(*d).0),
             Some(other) => Err(format!(
                 "hovered() expects a number for rect field '{name}', got {}",
                 other.type_name()

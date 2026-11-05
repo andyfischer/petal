@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
 # --size: opt-level "z" for a page that cares more about the download than
-# frame time (a decorative background). On petal-web-canvas, 2026-10-23:
+# frame time (a decorative background). On petal-web-canvas, 2026-10-23
+# (sizes have moved since; docs/tasks/wasm-size-improvements.md has current ones):
 #   default  3.69 MB raw, 1.29 MB gzip
 #   --size   2.26 MB raw, 0.85 MB gzip, frames ~1.5x slower
 PROFILE=speed

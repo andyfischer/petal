@@ -183,3 +183,23 @@ fn a_pathed_entry_is_skipped_by_a_state_map_restore() {
         "a pathed name is not a settable address"
     );
 }
+
+#[test]
+fn the_dump_lists_state_by_name_and_records_in_written_order() {
+    // Hosts diff and regex-match state dumps (`--dump-state`,
+    // `pb_vm_state_json`), so the top level is sorted by name, as it was
+    // before serde_json's `preserve_order` made the map keep insertion
+    // order. A record's own keys keep the order the script wrote them.
+    let mut env = Env::new();
+    let pid = env
+        .load_program(
+            "state zz = 6\nstate c = 3\nstate m = {y: 1, x: 2}\nstate a = 1\nstate e = 5\nstate b = 2\n",
+        )
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    let json = env.get_state_json(pid, sid);
+    let keys: Vec<&str> = json.keys().map(String::as_str).collect();
+    assert_eq!(keys, ["a", "b", "c", "e", "m", "zz"]);
+    assert_eq!(serde_json::Value::Object(json)["m"].to_string(), r#"{"y":1,"x":2}"#);
+}

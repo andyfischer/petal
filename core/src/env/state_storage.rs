@@ -501,15 +501,21 @@ fn encode(val: &Value, heap: &Heap, symbols: &SymbolTable) -> Result<Json, Strin
         }
         Value::EnumVariant { tag, data } => json!({
             TAG: "enum",
-            "tag": heap.get_string(*tag),
+            "tag": heap.tag_str(*tag),
             "data": encode_all(heap.get_list(*data), heap, symbols)?,
         }),
-        Value::Dual { value, derivative } => json!({
-            TAG: "dual",
-            "value": encode_float(*value),
-            "derivative": encode_float(*derivative),
-        }),
-        Value::Vec2(x, y) => json!({ TAG: "vec2", "x": encode_float(*x), "y": encode_float(*y) }),
+        Value::Dual(id) => {
+            let (value, derivative) = heap.get_dual(*id);
+            json!({
+                TAG: "dual",
+                "value": encode_float(value),
+                "derivative": encode_float(derivative),
+            })
+        }
+        Value::Vec2(id) => {
+            let (x, y) = heap.get_vec2(*id);
+            json!({ TAG: "vec2", "x": encode_float(x), "y": encode_float(y) })
+        }
         Value::Vec3(id) => {
             let [x, y, z] = heap.get_vec3(*id);
             json!({ TAG: "vec3", "x": encode_float(x), "y": encode_float(y), "z": encode_float(z) })
@@ -639,15 +645,18 @@ fn decode_tagged(
         "enum" => {
             let data = decode_all(list("data")?, heap, symbols)?;
             Value::EnumVariant {
-                tag: heap.alloc_string(text("tag")?.to_string()),
+                tag: heap.enum_tag_str(text("tag")?),
                 data: heap.alloc_list(data),
             }
         }
-        "dual" => Value::Dual {
-            value: float("value")?,
-            derivative: float("derivative")?,
-        },
-        "vec2" => Value::Vec2(float("x")?, float("y")?),
+        "dual" => {
+            let (value, derivative) = (float("value")?, float("derivative")?);
+            heap.dual_value(value, derivative)
+        }
+        "vec2" => {
+            let (x, y) = (float("x")?, float("y")?);
+            heap.vec2_value(x, y)
+        }
         "vec3" => heap.vec3_value(float("x")?, float("y")?, float("z")?),
         "symbol" => Value::Symbol(symbols.intern(text("name")?)),
         other => return Err(format!("unknown value tag \"{other}\"")),

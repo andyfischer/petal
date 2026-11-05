@@ -900,6 +900,48 @@ TEST(commands_reissue_queries_follow_their_class_and_declares_replay) {
     CHECK(report.find("never replays: spin: calls `print`") != std::string::npos);
 }
 
+// A command that changes a revisioned class during the run says so
+// (pb_call_note_class_changed): a scope that read the class before the change
+// is not replayed with the old answer, in this run or the next, while one
+// that read it after a run in which nothing changed still replays.
+TEST(a_command_that_changes_a_class_in_the_run_invalidates_its_readers) {
+    for (const bool memo : {false, true}) {
+        petal::Vm vm;
+        double pos = 0;
+        int64_t asked = 0;
+        vm.native("move", petal::fx::Command, [&](petal::Call& c) {
+            const double x = c[0].number();
+            if (x == pos) return;
+            pos = x;
+            CHECK(c.note_class_changed(petal::fx::ReadsPhysics));
+        });
+        vm.native("where", petal::fx::Query, [&](petal::Call& c) {
+            ++asked;
+            c.result().value(pos);
+        });
+        vm.load_source(
+            "import io\n"
+            "native fn move(x)\nnative fn where()\n"
+            "state n = 0\n"
+            "n += 1\n"
+            "fn show(tag)\n  push_output(symbol(\"out\"), where())\n  nil\nend\n"
+            "show(1)\n"
+            "move(float(min(n, 3)))\n"
+            "show(2)\n");
+        vm.set_memo(memo);
+        for (int f = 1; f <= 6; ++f) {
+            const int64_t before = asked;
+            const double moved = double(std::min(f, 3));
+            // The first show sees the last frame's move, the second this one's.
+            CHECK_EQ(run_out(vm), (std::vector<double>{double(std::min(f - 1, 3)), moved}));
+            // Once nothing moves (from frame 5 on, both records were made
+            // after the last change) both shows replay.
+            if (memo && f >= 5) CHECK_EQ(asked, before);
+            if (!memo) CHECK_EQ(asked, before + 2);
+        }
+    }
+}
+
 TEST(implicit_keys_reach_keyed_emitters_and_callbacks) {
     petal::Vm vm;
     std::vector<std::optional<uint64_t>> lights, kicks;

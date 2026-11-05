@@ -1,10 +1,21 @@
 {
-  "cursor": {
-    "col": 1,
-    "line": 0
-  },
   "focus": 0,
-  "ok": true,
+  "cursor": {
+    "line": 0,
+    "col": 1
+  },
+  "selection": {
+    "anchor": {
+      "line": 0,
+      "col": 0
+    },
+    "head": {
+      "line": 0,
+      "col": 1
+    },
+    "text": "h",
+    "truncated": false
+  },
   "panes": [
     null,
     {
@@ -15,16 +26,5 @@
       }
     }
   ],
-  "selection": {
-    "anchor": {
-      "col": 0,
-      "line": 0
-    },
-    "head": {
-      "col": 1,
-      "line": 0
-    },
-    "text": "h",
-    "truncated": false
-  }
+  "ok": true
 }

@@ -22,6 +22,18 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `scene_frame`, …) moved from `core/examples/` to
   `test/benchmarks/harness/`; `cd core && cargo run --release --example
   <name>` runs them as before.
+- petal-web-canvas hands draw commands to JavaScript in a binary form
+  instead of JSON: `take_draw_commands()` is replaced by
+  `take_draw_buffer()` (a `Float64Array`) and `draw_strings()`, which
+  `decodeDrawCommands` (exported from `petal-web-canvas`) turns into the same
+  `{ op, ...fields }` objects as before. `run_speculative()` returns a draw
+  buffer too, and `PetalCanvas.runOneFrame` returns the decoded commands
+  rather than a JSON string. The encoding is `petal_ui::draw_wire`
+  ([embedding-web.md](docs/usage/embedding-web.md)).
+- Wasm builds embed the bundled Petal libraries and the std prelude with
+  their whole-line comments blanked, about 170 KB less to download.
+  Positions in error messages are unchanged; `PETAL_EMBED_COMMENTS=keep`
+  at build time keeps the comments ([embedding-web.md](docs/usage/embedding-web.md)).
 
 ### Added
 
@@ -195,6 +207,28 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- `Value` is 16 bytes, down from 24, so every list element, record field,
+  `map` entry, register and closure capture takes a third less memory (a
+  million-int list: 24 MB → 16 MB). `vec2` and dual numbers are now small
+  immutable heap objects like `vec3`, and an enum variant's tag is a 4-byte
+  index of its (permanently interned) name. Scripts see no difference except
+  that `frozen(v)` is true for a vec2 or dual number that `freeze` reached.
+  **Embedders**: `Value::Vec2(x, y)` / `Value::Dual { value, derivative }` are
+  now `Value::Vec2(Vec2Id)` / `Value::Dual(DualId)` (read with
+  `heap.get_vec2` / `heap.get_dual`, build with `heap.vec2_value` /
+  `heap.dual_value` or `PetalCxt::push_vec2` / `push_dual`); an
+  `EnumVariant`'s `tag` is an `EnumTag` (`heap.tag_str(tag)`,
+  `heap.enum_tag_str(name)`); `Value::is_truthy`, `as_f64` and `derivative`
+  are replaced by `heap.truthy(v)`, `heap.num_f64(v)` and
+  `heap.derivative_of(v)`, and `value::as_num` takes the heap.
+- Strings store their text once: short text (up to 22 bytes) sits in the heap
+  slot with no allocation, and the intern table no longer keeps a second copy.
+  A million short strings: 213 MB → 83 MB.
+- `set xs = append(xs, f(x))` on a `var` that no closure captures (and that is
+  not a `state var`) updates the list in place whatever `f` is. It copied the
+  whole list on every append before, unless `f` was a trivial builtin: 200,000
+  appends of `str(i)` took 142 s and now take 0.16 s.
+
 - `petal check` is gone: its compile check is now the first stage of
   `petal lint`, which then runs the lint rules. `petal lint` walks the current
   directory (or the given paths) by default, checking every program and
@@ -286,6 +320,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `import ui.hud` says to use `/`, `import ./level.ptl` says to drop the
   extension, and `import m: v as w` says a selective import cannot rename.
   An import now ends at the end of its line (or a `;`).
+
+- A state dump lists its variables by name again. Since records started
+  keeping their key order in JSON, `Env::get_state_json` (behind
+  `--dump-state`, `pb_vm_state_json` and the debug protocol) wrote top-level
+  state in hash order, different from run to run. A record's own keys still
+  come out in written order.
 
 - Records keep their key order when they cross into JSON. `value_to_json`
   (what a host reads natives' arguments, element `props` and state dumps

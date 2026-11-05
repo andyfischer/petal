@@ -1,7 +1,8 @@
 /** PetalCanvas — wraps PetalRuntime for canvas-based frame-loop execution. */
 
 import init, { PetalRuntime } from "../pkg/petal_web_canvas.js";
-import { onImageLoad, renderCommands } from "./canvas-renderer";
+import { onImageLoad, renderCommands, type DrawCommand } from "./canvas-renderer";
+import { decodeDrawCommands } from "./draw-wire";
 import { InputTracker } from "./input";
 import { bindFontMetrics } from "./text-metrics";
 
@@ -49,8 +50,8 @@ export class PetalCanvas {
 
   /** Optional callback invoked after each frame renders (debug panels use it). */
   onFrameComplete: (() => void) | null = null;
-  /** The most recent frame's draw commands (JSON); served again by a gated frame. */
-  private lastCommandsJson = "[]";
+  /** The most recent frame's draw commands; served again by a gated frame. */
+  private lastCommands: DrawCommand[] = [];
   /** Frames that ran the script / frames the gate skipped. */
   framesRun = 0;
   framesSkipped = 0;
@@ -276,11 +277,11 @@ export class PetalCanvas {
   };
 
   /**
-   * Run one frame with an explicit dt and return its draw commands as JSON.
+   * Run one frame with an explicit dt and return its draw commands.
    * Used by the loop and by debug stepping (which drives frames while the
    * loop is gated off). Bypasses the frame gate.
    */
-  runOneFrame(dt: number): string {
+  runOneFrame(dt: number): DrawCommand[] {
     return this.runFrame(dt);
   }
 
@@ -294,9 +295,9 @@ export class PetalCanvas {
     this.resizeObserver = null;
   }
 
-  private runFrame(dt: number): string {
-    if (!this.runtime || this.stackId === null || !this.ctx || !this.canvas) return "[]";
-    if (this.errored) return "[]";
+  private runFrame(dt: number): DrawCommand[] {
+    if (!this.runtime || this.stackId === null || !this.ctx || !this.canvas) return [];
+    if (this.errored) return [];
 
     try {
       // Stage timing/dimensions first (begin_frame advances the input clock by
@@ -322,24 +323,24 @@ export class PetalCanvas {
         this.frameCount++;
         this.framesSkipped++;
         this.onFrameComplete?.();
-        return this.lastCommandsJson;
+        return this.lastCommands;
       }
       this.runtime.reset_and_run(this.stackId);
       this.frameCount++;
       this.framesRun++;
 
-      const cmdsJson = this.runtime.take_draw_commands();
-      this.lastCommandsJson = cmdsJson;
-      const commands = JSON.parse(cmdsJson);
+      const buffer = this.runtime.take_draw_buffer();
+      const commands = decodeDrawCommands(buffer, this.runtime.draw_strings());
+      this.lastCommands = commands;
       renderCommands(this.ctx, commands, this.canvas.width, this.canvas.height);
 
       this.clearError();
       this.onFrameComplete?.();
-      return cmdsJson;
+      return commands;
     } catch (err: any) {
       this.showError(String(err));
       this.errored = true;
-      return "[]";
+      return [];
     }
   }
 

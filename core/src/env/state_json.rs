@@ -58,17 +58,26 @@ impl Env {
                 Some(program) if has_call_part => call_site_labels(program),
                 _ => HashMap::new(),
             };
-            for (key, val) in state {
+            // `state` is a HashMap, and serde_json keeps insertion order
+            // (`preserve_order`), so sort the rendered names: the dump lists
+            // state variables by name, the same on every run. Records inside a
+            // value keep their written order.
+            let mut entries: Vec<(String, &Value)> = state
+                .iter()
                 // A `memo(key)` entry is a cache, not state (docs/features/memo.md).
-                if key.is_memo() {
-                    continue;
-                }
-                let base_name = names
-                    .get(&key.base)
-                    .cloned()
-                    .unwrap_or_else(|| format!("unknown_{}", key.base.0));
+                .filter(|(key, _)| !key.is_memo())
+                .map(|(key, val)| {
+                    let base_name = names
+                        .get(&key.base)
+                        .cloned()
+                        .unwrap_or_else(|| format!("unknown_{}", key.base.0));
+                    (render_state_key(&base_name, &key.path, &labels, key_labels), val)
+                })
+                .collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            for (name, val) in entries {
                 map.insert(
-                    render_state_key(&base_name, &key.path, &labels, key_labels),
+                    name,
                     crate::value::value_to_json_ctx(val, heap, pending_ctx.as_ref()),
                 );
             }

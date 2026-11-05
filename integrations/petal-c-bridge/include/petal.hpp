@@ -501,6 +501,9 @@ public:
         if (pb_call_key(c_, &k)) return k;
         return std::nullopt;
     }
+    // This call changed a revisioned class of host data (fx::ReadsPhysics,
+    // fx::ReadsNet) during the run (see pb_call_note_class_changed).
+    bool note_class_changed(uint32_t reads) const noexcept { return pb_call_note_class_changed(c_, reads); }
     // Record an expectation of the host's own (see pb_call_expect).
     void expect(bool ok, const std::string& message, const char* check = nullptr) const {
         pb_call_expect(c_, ok, check, message.c_str());

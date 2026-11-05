@@ -32,8 +32,6 @@
 //! every dereference (weak).** The execution trace buffer is the model weak
 //! holder. Dereferencing a stale id is checked only in debug builds.
 
-use std::collections::HashMap;
-
 /// A record's fields: name → value, in insertion order: a shared key list
 /// (shape) plus a value vector. See `crate::record`. Build one with
 /// `RecordMap::default()` or [`record_map_with_capacity`].
@@ -161,6 +159,38 @@ generational_id! {
     /// allocation is a free-list pop with no `malloc`, and a vec3 is immutable
     /// like every other heap object. See docs/dev/vec3.md.
     pub struct Vec3Id;
+}
+
+generational_id! {
+    /// Opaque handle to a heap-allocated **vec2**: two `f64`s in the heap's
+    /// pair slab, immutable like a vec3. Boxed so that a `Value` fits in 16
+    /// bytes; see docs/dev/vec3.md.
+    pub struct Vec2Id;
+}
+
+generational_id! {
+    /// Opaque handle to a heap-allocated **dual number** (forward-mode
+    /// autodiff): `[value, derivative]` in the heap's pair slab, immutable.
+    pub struct DualId;
+}
+
+/// The tag of an enum variant: the slab index of the variant's name, an
+/// interned string the heap has made **permanent** ([`Heap::enum_tag`]). A
+/// permanent slot is never reclaimed or reused, so the index alone names the
+/// string for the heap's whole life and needs no generation. That keeps a
+/// `Value::EnumVariant` (tag plus payload id) in 12 bytes. Tags are variant
+/// names, bounded by the program text, so keeping them is cheap.
+///
+/// Equal tags name the same string. Two tags with equal text are equal too,
+/// since tag names are interned (and well under [`INTERN_MAX_LEN`]).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct EnumTag(u32);
+
+impl EnumTag {
+    /// The slab index of the tag's string.
+    pub(crate) fn index(self) -> u32 {
+        self.0
+    }
 }
 
 generational_id! {
@@ -491,6 +521,24 @@ impl<T> Slab<T> {
         }
     }
 
+    /// Make the live object `id` permanent, outside a freeze walk. Unlike
+    /// [`finish_freeze`](Self::finish_freeze) it leaves the mark bit alone,
+    /// so it is safe whatever a collection is doing.
+    fn make_permanent(&mut self, id: RawId) {
+        let index = id.index as usize;
+        let slot = &mut self.slots[index];
+        debug_assert!(slot.alive && slot.generation == id.generation, "stale id made permanent");
+        if !slot.permanent {
+            slot.permanent = true;
+            let word = index / 64;
+            if self.permanent_bits.len() <= word {
+                self.permanent_bits.resize(word + 1, 0);
+            }
+            self.permanent_bits[word] |= 1u64 << (index % 64);
+            self.permanent_count += 1;
+        }
+    }
+
     /// How many slots hold permanent objects. O(1).
     pub(crate) fn permanent_count(&self) -> usize {
         self.permanent_count
@@ -655,7 +703,7 @@ impl<T> Slab<T> {
 }
 
 /// Strings longer than this many bytes are not interned. Interning hashes the
-/// whole string and keeps a second copy as the table key, which pays for
+/// whole string (and compares it on a hit), which pays for
 /// itself on the short strings a program repeats (field names, labels, single
 /// characters) and is pure overhead on a long one that is almost never built
 /// twice: a loop growing a buffer with `out = out ++ piece` would hash and
@@ -671,15 +719,109 @@ pub const INTERN_MAX_LEN: usize = 512;
 /// that needs a walk: on ASCII a code-point index *is* the byte offset.
 #[derive(Clone, Default)]
 struct StrObj {
-    text: String,
+    text: Text,
     chars: usize,
 }
 
 impl StrObj {
-    fn new(text: String) -> Self {
+    fn new(text: Text) -> Self {
         let chars = count_chars(&text);
         StrObj { text, chars }
     }
+}
+
+/// Bytes of text a [`Text`] holds in place, without an allocation. Chosen so
+/// that a `Text` is the size of the `String` it replaces (24 bytes): most
+/// strings a program builds at run time (`str(i)`, keys, labels, single
+/// characters) fit, and cost no `malloc` at all.
+const INLINE_TEXT: usize = 22;
+
+/// The UTF-8 text of a heap string. Strings are immutable once allocated, so
+/// this needs no spare capacity: short text sits inline, and longer text is
+/// one exact-size allocation (a `String` would carry its capacity, and often
+/// its slack, for the string's whole life).
+#[derive(Clone)]
+enum Text {
+    /// `buf[..len]` is valid UTF-8.
+    Inline { len: u8, buf: [u8; INLINE_TEXT] },
+    Boxed(Box<str>),
+}
+
+const _: () = assert!(std::mem::size_of::<Text>() == 24);
+
+impl Default for Text {
+    fn default() -> Self {
+        Text::Inline {
+            len: 0,
+            buf: [0; INLINE_TEXT],
+        }
+    }
+}
+
+impl Text {
+    fn from_str(s: &str) -> Self {
+        if s.len() <= INLINE_TEXT {
+            let mut buf = [0; INLINE_TEXT];
+            buf[..s.len()].copy_from_slice(s.as_bytes());
+            Text::Inline {
+                len: s.len() as u8,
+                buf,
+            }
+        } else {
+            Text::Boxed(s.into())
+        }
+    }
+
+    fn from_string(s: String) -> Self {
+        if s.len() <= INLINE_TEXT {
+            Text::from_str(&s)
+        } else {
+            Text::Boxed(s.into_boxed_str())
+        }
+    }
+
+    /// Bytes allocated outside the slot for this text.
+    fn heap_bytes(&self) -> usize {
+        match self {
+            Text::Inline { .. } => 0,
+            Text::Boxed(b) => b.len(),
+        }
+    }
+}
+
+impl std::ops::Deref for Text {
+    type Target = str;
+    #[inline]
+    fn deref(&self) -> &str {
+        match self {
+            // SAFETY: `Inline` is only built by `from_str`, from the bytes of
+            // a `&str` of exactly `len` bytes, so `buf[..len]` is valid UTF-8.
+            Text::Inline { len, buf } => unsafe {
+                std::str::from_utf8_unchecked(buf.get_unchecked(..*len as usize))
+            },
+            Text::Boxed(b) => b,
+        }
+    }
+}
+
+/// The intern table's hash of a string's content.
+#[inline]
+fn text_hash(s: &str) -> u64 {
+    use std::hash::Hasher;
+    let mut h = crate::fxhash::FxHasher::default();
+    h.write(s.as_bytes());
+    h.write_usize(s.len());
+    h.finish()
+}
+
+/// The text in `id`'s slot, live or not (a reclaimed slot holds empty text).
+/// What the intern table rehashes with: it must not panic on an entry whose
+/// string was reclaimed some way other than the sweep.
+fn slot_text(strings: &Slab<StrObj>, id: StringId) -> &str {
+    strings
+        .slots
+        .get(id.raw().index as usize)
+        .map_or("", |slot| &slot.data.text)
 }
 
 /// Code points in `s`. The ASCII check is a word-at-a-time scan, so the common
@@ -727,14 +869,19 @@ pub struct Heap {
     f64_arrays: Slab<Vec<f64>>,
     /// `vec3` components, inline in the slot. See [`Vec3Id`].
     vec3s: Slab<[f64; 3]>,
+    /// `vec2` components and dual numbers, inline in the slot. See
+    /// [`Vec2Id`] and [`DualId`].
+    pairs: Slab<[f64; 2]>,
     maps: Slab<MapObj>,
     /// `map` values (`Value::Dict`). See [`DictId`].
     dicts: Slab<DictEntries>,
     elements: Slab<ElementPayload>,
     /// One-value mutable boxes behind `var` bindings. See [`CellId`].
     cells: Slab<CellSlot>,
-    /// String intern table: content → existing StringId
-    intern_table: HashMap<String, StringId>,
+    /// String intern table: content → the one live `StringId` with that
+    /// content. Holds ids only, hashed by the text they name ([`text_hash`]),
+    /// so a string's text is stored once, in its slot.
+    intern_table: hashbrown::HashTable<StringId>,
     /// Estimated collector work owed by everything allocated since the last
     /// collection, in the "bytes" currency of [`Heap::collection_cost`]: each
     /// allocation charges its payload size plus [`SLOT_TRACE_COST`]. Tracked
@@ -777,6 +924,12 @@ pub struct Heap {
     /// value (so nothing can grow it in place), and kept alive by
     /// [`sweep`](Self::sweep) itself. See [`empty_payload`](Self::empty_payload).
     empty_payload: Option<ListId>,
+    /// Which enum tags `freeze` has reached, by [`EnumTag`] index (bit
+    /// `i % 64` of word `i / 64`). Every tag's string is permanent from the
+    /// start (see [`EnumTag`]), so this is what [`is_frozen`](Self::is_frozen)
+    /// asks about a variant: freezing a table that holds `Kind.park` does not
+    /// make `Kind.lake`, which shares its empty payload, read as frozen.
+    frozen_tags: Vec<u64>,
 }
 
 /// How many frozen (permanent) objects a heap holds, per kind. See
@@ -787,6 +940,8 @@ pub struct FrozenCounts {
     pub lists: usize,
     pub f64_arrays: usize,
     pub vec3s: usize,
+    /// Frozen `vec2`s and dual numbers.
+    pub pairs: usize,
     pub maps: usize,
     pub dicts: usize,
     pub elements: usize,
@@ -798,6 +953,7 @@ impl FrozenCounts {
             + self.lists
             + self.f64_arrays
             + self.vec3s
+            + self.pairs
             + self.maps
             + self.dicts
             + self.elements
@@ -821,6 +977,9 @@ const SLOT_WALK_COST: u64 = 8;
 
 /// Payload bytes of one `vec3` slot (three `f64`s).
 const VEC3_BYTES: usize = 3 * std::mem::size_of::<f64>();
+
+/// Payload bytes of one pair slot (a `vec2` or a dual number).
+const PAIR_BYTES: usize = 2 * std::mem::size_of::<f64>();
 
 /// Floor on the work budget between collections. Below this the heap is small
 /// enough that collecting is pointless: a megabyte of floating garbage is
@@ -846,11 +1005,12 @@ impl Heap {
             lists: Slab::new(),
             f64_arrays: Slab::new(),
             vec3s: Slab::new(),
+            pairs: Slab::new(),
             maps: Slab::new(),
             dicts: Slab::new(),
             elements: Slab::new(),
             cells: Slab::new(),
-            intern_table: HashMap::new(),
+            intern_table: hashbrown::HashTable::new(),
             alloc_charge: 0,
             gc_budget: GC_MIN_BUDGET_BYTES,
             held_budget: None,
@@ -858,6 +1018,7 @@ impl Heap {
             gray_closures: Vec::new(),
             gray_overload_sets: Vec::new(),
             empty_payload: None,
+            frozen_tags: Vec::new(),
             dup_stats: DupStats::new(),
             alloc_stats: AllocStats::new(),
         }
@@ -917,7 +1078,7 @@ impl Heap {
             .strings
             .slots
             .iter()
-            .map(|s| s.data.text.capacity() as u64)
+            .map(|s| s.data.text.heap_bytes() as u64)
             .sum();
         let lists: u64 = self
             .lists
@@ -939,7 +1100,8 @@ impl Heap {
             .sum();
         let dicts: u64 = self.dicts.slots.iter().map(|d| d.data.payload_bytes()).sum();
         let vec3s = (self.vec3s.slots.len() * VEC3_BYTES) as u64;
-        strings + lists + f64s + maps + dicts + vec3s
+        let pairs = (self.pairs.slots.len() * PAIR_BYTES) as u64;
+        strings + lists + f64s + maps + dicts + vec3s + pairs
     }
 
     /// Total bytes of live payload this heap holds — the rough cost of cloning
@@ -983,7 +1145,8 @@ impl Heap {
             .map(|d| d.data.payload_bytes())
             .sum();
         let vec3s = (self.vec3s.slots.iter().filter(|v| v.alive).count() * VEC3_BYTES) as u64;
-        strings + lists + f64s + maps + dicts + vec3s
+        let pairs = (self.pairs.slots.iter().filter(|v| v.alive).count() * PAIR_BYTES) as u64;
+        strings + lists + f64s + maps + dicts + vec3s + pairs
     }
 
     /// Estimated cost of running one collection right now: the live payload
@@ -1016,6 +1179,7 @@ impl Heap {
             + traced(&self.lists, |d| value_slice_bytes(d.len()))
             + traced(&self.f64_arrays, |d| (d.len() * std::mem::size_of::<f64>()) as u64)
             + traced(&self.vec3s, |_| VEC3_BYTES as u64)
+            + traced(&self.pairs, |_| PAIR_BYTES as u64)
             + traced(&self.maps, |d| map_entries_bytes(&d.entries))
             + traced(&self.dicts, DictEntries::payload_bytes)
             + traced(&self.elements, |_| 0)
@@ -1024,6 +1188,7 @@ impl Heap {
             + walked(&self.lists)
             + walked(&self.f64_arrays)
             + walked(&self.vec3s)
+            + walked(&self.pairs)
             + walked(&self.maps)
             + walked(&self.dicts)
             + walked(&self.elements)
@@ -1149,6 +1314,8 @@ impl Heap {
             .inherit_generations(&previous.f64_arrays, Vec::new);
         self.vec3s
             .inherit_generations(&previous.vec3s, || [0.0; 3]);
+        self.pairs
+            .inherit_generations(&previous.pairs, || [0.0; 2]);
         self.maps.inherit_generations(&previous.maps, || MapObj {
             entries: RecordMap::default(),
             class: None,
@@ -1184,12 +1351,14 @@ impl Heap {
             Value::List(id) => self.lists.is_live(id.raw()),
             Value::F64Array(id) => self.f64_arrays.is_live(id.raw()),
             Value::Vec3(id) => self.vec3s.is_live(id.raw()),
+            Value::Vec2(id) => self.pairs.is_live(id.raw()),
+            Value::Dual(id) => self.pairs.is_live(id.raw()),
             Value::Map(id) => self.maps.is_live(id.raw()),
             Value::Dict(id) => self.dicts.is_live(id.raw()),
             Value::Element(id) => self.elements.is_live(id.raw()),
             Value::Cell(id) => self.cells.is_live(id.raw()),
             Value::EnumVariant { tag, data } => {
-                self.strings.is_live(tag.raw()) && self.lists.is_live(data.raw())
+                self.tag_is_live(tag) && self.lists.is_live(data.raw())
             }
             Value::Closure(_)
             | Value::OverloadSet(_)
@@ -1198,8 +1367,6 @@ impl Heap {
             | Value::Int(_)
             | Value::Float(_)
             | Value::NativeFunction(_)
-            | Value::Dual { .. }
-            | Value::Vec2(_, _)
             | Value::Symbol(_)
             | Value::Handle(_)
             | Value::Pending(_) => true,
@@ -1208,7 +1375,7 @@ impl Heap {
 
     /// [`get_string`](Self::get_string) for a weak id: `None` once collected.
     pub fn try_get_string(&self, id: StringId) -> Option<&str> {
-        self.strings.try_get(id.raw()).map(|s| s.text.as_str())
+        self.strings.try_get(id.raw()).map(|s| &*s.text)
     }
 
     /// [`get_list`](Self::get_list) for a weak id: `None` once collected.
@@ -1240,20 +1407,30 @@ impl Heap {
         if s.len() > INTERN_MAX_LEN {
             return None;
         }
-        let id = *self.intern_table.get(s)?;
-        self.strings.is_live(id.raw()).then_some(id)
+        let strings = &self.strings;
+        self.intern_table
+            .find(text_hash(s), |&id| {
+                strings.try_get(id.raw()).is_some_and(|o| &*o.text == s)
+            })
+            .copied()
     }
 
     /// Allocate `s` and index it in the intern table (unless it is longer
     /// than [`INTERN_MAX_LEN`]). The caller must have missed
     /// [`interned`](Self::interned) first — this always allocates.
-    fn insert_interned(&mut self, s: String) -> StringId {
-        self.tick_alloc(AllocKind::String, s.len() as u64);
-        if s.len() > INTERN_MAX_LEN {
-            return StringId::from_raw(self.strings.alloc(StrObj::new(s)));
+    fn insert_interned(&mut self, text: Text) -> StringId {
+        self.tick_alloc(AllocKind::String, text.len() as u64);
+        let interned = text.len() <= INTERN_MAX_LEN;
+        let hash = if interned { text_hash(&text) } else { 0 };
+        let id = StringId::from_raw(self.strings.alloc(StrObj::new(text)));
+        if interned {
+            let Self {
+                strings,
+                intern_table,
+                ..
+            } = self;
+            intern_table.insert_unique(hash, id, |&e| text_hash(slot_text(strings, e)));
         }
-        let id = StringId::from_raw(self.strings.alloc(StrObj::new(s.clone())));
-        self.intern_table.insert(s, id);
         id
     }
 
@@ -1263,7 +1440,7 @@ impl Heap {
     pub fn alloc_string(&mut self, s: String) -> StringId {
         match self.interned(&s) {
             Some(id) => id,
-            None => self.insert_interned(s),
+            None => self.insert_interned(Text::from_string(s)),
         }
     }
 
@@ -1277,7 +1454,7 @@ impl Heap {
     pub fn intern_str(&mut self, s: &str) -> StringId {
         match self.interned(s) {
             Some(id) => id,
-            None => self.insert_interned(s.to_string()),
+            None => self.insert_interned(Text::from_str(s)),
         }
     }
 
@@ -1295,7 +1472,7 @@ impl Heap {
             Some(existing) => existing,
             // Miss: take ownership, which ends the borrow of `strings`.
             None => {
-                let owned = sub.to_string();
+                let owned = Text::from_str(sub);
                 self.insert_interned(owned)
             }
         }
@@ -1561,6 +1738,142 @@ impl Heap {
     /// A `vec3`'s components, copied out (`[f64; 3]` is `Copy`).
     pub fn get_vec3(&self, id: Vec3Id) -> [f64; 3] {
         *self.vec3s.get(id.raw())
+    }
+
+    // --- vec2 and dual numbers ---
+    //
+    // Both are two `f64`s in the pair slab, immutable once built: every
+    // operation allocates a fresh one, as for a vec3. After warm-up an
+    // allocation is a free-list pop.
+
+    /// A new `vec2(x, y)` value.
+    pub fn vec2_value(&mut self, x: f64, y: f64) -> Value {
+        self.tick_alloc(AllocKind::Vec2, PAIR_BYTES as u64);
+        Value::Vec2(Vec2Id::from_raw(self.pairs.alloc([x, y])))
+    }
+
+    /// The `(x, y)` components of a vec2.
+    #[inline]
+    pub fn get_vec2(&self, id: Vec2Id) -> (f64, f64) {
+        let [x, y] = *self.pairs.get(id.raw());
+        (x, y)
+    }
+
+    /// A new dual number `value + derivative·ε`.
+    pub fn dual_value(&mut self, value: f64, derivative: f64) -> Value {
+        self.tick_alloc(AllocKind::Dual, PAIR_BYTES as u64);
+        Value::Dual(DualId::from_raw(self.pairs.alloc([value, derivative])))
+    }
+
+    /// The `(value, derivative)` of a dual number.
+    #[inline]
+    pub fn get_dual(&self, id: DualId) -> (f64, f64) {
+        let [v, d] = *self.pairs.get(id.raw());
+        (v, d)
+    }
+
+    /// `v` as a number: an int, a float, or a dual number's value. What
+    /// arithmetic and the math builtins read their operands with.
+    #[inline]
+    pub fn num_f64(&self, v: Value) -> Option<f64> {
+        match v {
+            Value::Int(n) => Some(n as f64),
+            Value::Float(f) => Some(f),
+            Value::Dual(id) => Some(self.get_dual(id).0),
+            _ => None,
+        }
+    }
+
+    /// The derivative part of `v`: a dual number's, and 0 for anything else.
+    #[inline]
+    pub fn derivative_of(&self, v: Value) -> f64 {
+        match v {
+            Value::Dual(id) => self.get_dual(id).1,
+            _ => 0.0,
+        }
+    }
+
+    /// The vec2 components of `v`, if it is one.
+    #[inline]
+    pub fn vec2_of(&self, v: Value) -> Option<(f64, f64)> {
+        match v {
+            Value::Vec2(id) => Some(self.get_vec2(id)),
+            _ => None,
+        }
+    }
+
+    /// Truthiness, including the values whose answer lives on the heap: a
+    /// zero vec2 and a dual number whose value is zero are false, as when
+    /// they were inline. Everything else answers as
+    /// [`Value::is_truthy`](crate::value::Value::is_truthy).
+    #[inline]
+    pub fn truthy(&self, v: Value) -> bool {
+        match v {
+            Value::Vec2(id) => {
+                let (x, y) = self.get_vec2(id);
+                x != 0.0 || y != 0.0
+            }
+            Value::Dual(id) => self.get_dual(id).0 != 0.0,
+            _ => v.truthy_without_heap().unwrap_or(true),
+        }
+    }
+
+    // --- enum tags ---
+
+    /// The tag for a variant named by `name`, which becomes permanent (see
+    /// [`EnumTag`]). `name` must be an interned string.
+    pub fn enum_tag(&mut self, name: StringId) -> EnumTag {
+        self.strings.make_permanent(name.raw());
+        EnumTag(name.raw().index)
+    }
+
+    /// The tag for a variant named `name`, interning it.
+    pub fn enum_tag_str(&mut self, name: &str) -> EnumTag {
+        let id = self.intern_str(name);
+        self.enum_tag(id)
+    }
+
+    /// The tag `name` already is, if it is one: an interned string some
+    /// variant's tag made permanent. Changes nothing, so a read path can ask.
+    #[inline]
+    pub fn tag_of_string(&self, name: StringId) -> Option<EnumTag> {
+        self.strings
+            .is_permanent(name.raw())
+            .then_some(EnumTag(name.raw().index))
+    }
+
+    /// The interned string a tag names.
+    #[inline]
+    pub fn tag_string(&self, tag: EnumTag) -> StringId {
+        let generation = self.strings.slots[tag.0 as usize].generation;
+        StringId::from_raw(RawId {
+            index: tag.0,
+            generation,
+        })
+    }
+
+    /// The text of a tag.
+    #[inline]
+    pub fn tag_str(&self, tag: EnumTag) -> &str {
+        &self.strings.slots[tag.0 as usize].data.text
+    }
+
+    /// Whether `tag` names a string of this heap (it always does for a tag
+    /// this heap issued; a tag from another heap may not).
+    fn tag_is_live(&self, tag: EnumTag) -> bool {
+        self.strings
+            .slots
+            .get(tag.0 as usize)
+            .is_some_and(|s| s.alive && s.permanent)
+    }
+
+    /// A variant value: the tag named by `name` (made permanent) and the
+    /// payload list `data`.
+    pub fn enum_variant(&mut self, name: StringId, data: ListId) -> Value {
+        Value::EnumVariant {
+            tag: self.enum_tag(name),
+            data,
+        }
     }
 
     pub fn get_f64_array(&self, id: F64ArrayId) -> &[f64] {
@@ -2045,11 +2358,13 @@ impl Heap {
             L(RawId),
             F(RawId),
             V(RawId),
+            P(RawId),
             M(RawId),
             D(RawId),
             E(RawId),
         }
         let mut visited: Vec<Obj> = Vec::new();
+        let mut frozen_tags: Vec<EnumTag> = Vec::new();
         let mut stack = vec![root];
         let mut error: Option<&'static str> = None;
         while let Some(v) = stack.pop() {
@@ -2075,6 +2390,16 @@ impl Heap {
                         visited.push(Obj::V(id.raw()));
                     }
                 }
+                Value::Vec2(id) => {
+                    if self.pairs.visit_for_freeze(id.raw()) {
+                        visited.push(Obj::P(id.raw()));
+                    }
+                }
+                Value::Dual(id) => {
+                    if self.pairs.visit_for_freeze(id.raw()) {
+                        visited.push(Obj::P(id.raw()));
+                    }
+                }
                 Value::Map(id) => {
                     if self.maps.visit_for_freeze(id.raw()) {
                         visited.push(Obj::M(id.raw()));
@@ -2091,8 +2416,12 @@ impl Heap {
                         stack.extend(self.dicts.get(id.raw()).all_values());
                     }
                 }
+                // The tag's string is permanent already; what freezing adds
+                // is the tag's own frozen bit.
                 Value::EnumVariant { tag, data } => {
-                    stack.push(Value::String(tag));
+                    if !self.tag_frozen(tag) && !frozen_tags.contains(&tag) {
+                        frozen_tags.push(tag);
+                    }
                     stack.push(Value::List(data));
                 }
                 Value::Element(id) => {
@@ -2111,8 +2440,6 @@ impl Heap {
                 | Value::Int(_)
                 | Value::Float(_)
                 | Value::NativeFunction(_)
-                | Value::Dual { .. }
-                | Value::Vec2(_, _)
                 | Value::Symbol(_)
                 | Value::Handle(_)
                 | Value::Pending(_) => {}
@@ -2125,6 +2452,11 @@ impl Heap {
         // What the newly frozen objects would have cost the next collection,
         // as `collection_cost` prices them.
         let mut released: u64 = 0;
+        if ok {
+            for &tag in &frozen_tags {
+                self.set_tag_frozen(tag);
+            }
+        }
         for o in &visited {
             let bytes = match *o {
                 Obj::S(id) => {
@@ -2142,6 +2474,10 @@ impl Heap {
                 Obj::V(id) => {
                     self.vec3s.finish_freeze(id, ok);
                     VEC3_BYTES as u64
+                }
+                Obj::P(id) => {
+                    self.pairs.finish_freeze(id, ok);
+                    PAIR_BYTES as u64
                 }
                 Obj::M(id) => {
                     self.maps.finish_freeze(id, ok);
@@ -2172,8 +2508,21 @@ impl Heap {
         }
         match error {
             Some(what) => Err(format!("freeze: the value holds {what}, which cannot be frozen")),
-            None => Ok(visited.len()),
+            None => Ok(visited.len() + frozen_tags.len()),
         }
+    }
+
+    fn tag_frozen(&self, tag: EnumTag) -> bool {
+        let i = tag.0 as usize;
+        self.frozen_tags.get(i / 64).is_some_and(|w| w & (1 << (i % 64)) != 0)
+    }
+
+    fn set_tag_frozen(&mut self, tag: EnumTag) {
+        let i = tag.0 as usize;
+        if self.frozen_tags.len() <= i / 64 {
+            self.frozen_tags.resize(i / 64 + 1, 0);
+        }
+        self.frozen_tags[i / 64] |= 1 << (i % 64);
     }
 
     /// How many frozen objects this heap holds, per kind. A diagnostic: frozen
@@ -2189,6 +2538,7 @@ impl Heap {
             lists: count(&self.lists),
             f64_arrays: count(&self.f64_arrays),
             vec3s: count(&self.vec3s),
+            pairs: count(&self.pairs),
             maps: count(&self.maps),
             dicts: count(&self.dicts),
             elements: count(&self.elements),
@@ -2203,6 +2553,8 @@ impl Heap {
             Value::List(id) => self.lists.is_permanent(id.raw()),
             Value::F64Array(id) => self.f64_arrays.is_permanent(id.raw()),
             Value::Vec3(id) => self.vec3s.is_permanent(id.raw()),
+            Value::Vec2(id) => self.pairs.is_permanent(id.raw()),
+            Value::Dual(id) => self.pairs.is_permanent(id.raw()),
             Value::Map(id) => self.maps.is_permanent(id.raw()),
             Value::Dict(id) => self.dicts.is_permanent(id.raw()),
             Value::Element(id) => self.elements.is_permanent(id.raw()),
@@ -2210,7 +2562,7 @@ impl Heap {
             // list, so that list being permanent says nothing about this
             // variant's tag.
             Value::EnumVariant { tag, data } => {
-                self.strings.is_permanent(tag.raw()) && self.lists.is_permanent(data.raw())
+                self.tag_frozen(tag) && self.lists.is_permanent(data.raw())
             }
             _ => false,
         }
@@ -2334,8 +2686,8 @@ impl Heap {
                 | Value::String(_)
                 | Value::Vec3(_)
                 | Value::NativeFunction(_)
-                | Value::Dual { .. }
-                | Value::Vec2(_, _)
+                | Value::Vec2(_)
+                | Value::Dual(_)
                 | Value::Symbol(_) => {}
             }
             if error.is_some() {
@@ -2383,8 +2735,6 @@ impl Heap {
                 | Value::Int(_)
                 | Value::Float(_)
                 | Value::NativeFunction(_)
-                | Value::Dual { .. }
-                | Value::Vec2(_, _)
                 | Value::Symbol(_)
                 | Value::Handle(_)
                 | Value::Pending(_)
@@ -2402,14 +2752,18 @@ impl Heap {
             Value::Vec3(id) => {
                 self.vec3s.mark(id.raw());
             }
+            Value::Vec2(id) => {
+                self.pairs.mark(id.raw());
+            }
+            Value::Dual(id) => {
+                self.pairs.mark(id.raw());
+            }
             Value::Map(id) => self.mark_map(id),
             Value::Dict(id) => self.mark_dict(id),
             Value::Element(id) => self.mark_element(id),
             Value::Cell(id) => self.mark_cell(id),
-            Value::EnumVariant { tag, data } => {
-                self.mark_string(tag);
-                self.mark_list(data);
-            }
+            // The tag is permanent: nothing to mark.
+            Value::EnumVariant { data, .. } => self.mark_list(data),
             // Ids into the context's ClosureTable, which this heap cannot
             // reach: record them for the collector to follow (see
             // `gray_closures`) instead of marking them here.
@@ -2422,8 +2776,6 @@ impl Heap {
             | Value::Int(_)
             | Value::Float(_)
             | Value::NativeFunction(_)
-            | Value::Dual { .. }
-            | Value::Vec2(_, _)
             | Value::Symbol(_)
             | Value::Handle(_)
             | Value::Pending(_) => {}
@@ -2528,10 +2880,11 @@ impl Heap {
             // Remove only this id's entry. The table maps content to the one
             // live id with that content, so it should always be this one; the
             // check keeps a reclaim from ever evicting a different, live id.
-            if s.text.len() <= INTERN_MAX_LEN
-                && intern_table.get(s.text.as_str()) == Some(&StringId::from_raw(id))
-            {
-                intern_table.remove(s.text.as_str());
+            if s.text.len() <= INTERN_MAX_LEN {
+                let id = StringId::from_raw(id);
+                if let Ok(entry) = intern_table.find_entry(text_hash(&s.text), |&e| e == id) {
+                    entry.remove();
+                }
             }
             *s = StrObj::default();
         });
@@ -2539,6 +2892,7 @@ impl Heap {
         self.lists.sweep_with(|_, v| *v = Vec::new());
         self.f64_arrays.sweep_with(|_, v| *v = Vec::new());
         self.vec3s.sweep_with(|_, _| {});
+        self.pairs.sweep_with(|_, _| {});
         self.maps.sweep_with(|_, v| {
             v.entries = RecordMap::default();
             v.class = None;
@@ -2601,10 +2955,15 @@ mod tests {
         assert!(!heap.is_live(Value::String(s)));
         assert_eq!(heap.try_get_string(s), None);
         assert_eq!(heap.try_get_string(kept), Some("kept"));
-        // An enum variant is live only if both of its ids are.
+        // An enum variant's tag is permanent, so the variant is live while
+        // its payload is.
         let data = heap.alloc_list(vec![]);
-        assert!(!heap.is_live(Value::EnumVariant { tag: s, data }));
-        assert!(heap.is_live(Value::EnumVariant { tag: kept, data }));
+        let variant = heap.enum_variant(kept, data);
+        assert!(heap.is_live(variant));
+        heap.sweep();
+        assert!(!heap.is_live(variant), "the unrooted payload went");
+        let Value::EnumVariant { tag, .. } = variant else { unreachable!() };
+        assert_eq!(heap.tag_str(tag), "kept", "the tag stays");
     }
 
     /// Marking a stale id must not resurrect the slot's new occupant.
@@ -2632,6 +2991,56 @@ mod tests {
         assert_ne!(new, old);
         assert_eq!(heap.intern_str("hello"), new);
         assert_eq!(heap.get_string(new), "hello");
+    }
+
+    /// Text up to [`INLINE_TEXT`] bytes is held in the slot, longer text in
+    /// one allocation; either way the string reads back as it was written,
+    /// counts its code points, and interns to one id.
+    #[test]
+    fn short_text_is_inline_and_long_text_is_boxed() {
+        let mut heap = Heap::new();
+        let cases = [
+            String::new(),
+            "a".to_string(),
+            "x".repeat(INLINE_TEXT),
+            "x".repeat(INLINE_TEXT + 1),
+            // A multi-byte character ending exactly at the inline limit, and
+            // one that would straddle it.
+            format!("{}é", "x".repeat(INLINE_TEXT - 2)),
+            format!("{}é", "x".repeat(INLINE_TEXT - 1)),
+            "日本語のテキスト".to_string(),
+        ];
+        for text in &cases {
+            let id = heap.alloc_string(text.clone());
+            let obj = &heap.strings.get(id.raw()).text;
+            assert_eq!(matches!(obj, Text::Inline { .. }), text.len() <= INLINE_TEXT, "{text:?}");
+            assert_eq!(heap.get_string(id), text);
+            assert_eq!(heap.string_char_len(id), text.chars().count(), "{text:?}");
+            assert_eq!(heap.intern_str(text), id, "{text:?}");
+        }
+    }
+
+    /// The intern table holds ids, not text: a reclaimed string's entry goes
+    /// with it, and every other string is still found afterwards.
+    #[test]
+    fn the_intern_table_follows_the_strings_it_names() {
+        let mut heap = Heap::new();
+        let keep: Vec<StringId> = (0..200).map(|i| heap.intern_str(&format!("keep-{i}"))).collect();
+        for i in 0..200 {
+            heap.intern_str(&format!("drop-{i}-{}", "z".repeat(i % 40)));
+        }
+        for &id in &keep {
+            heap.mark_value(Value::String(id));
+        }
+        heap.sweep();
+        assert_eq!(heap.intern_table.len(), keep.len());
+        for (i, &id) in keep.iter().enumerate() {
+            assert_eq!(heap.intern_str(&format!("keep-{i}")), id);
+        }
+        // Content that was collected is allocated afresh, then found.
+        let again = heap.intern_str("drop-3-zzz");
+        assert_eq!(heap.intern_str("drop-3-zzz"), again);
+        assert_eq!(heap.intern_table.len(), keep.len() + 1);
     }
 
     /// A slot whose generations are exhausted is retired, not wrapped: it is
@@ -3365,12 +3774,13 @@ mod tests {
     #[test]
     fn frozen_values_freeze_the_shared_empty_enum_payload() {
         let mut heap = Heap::new();
-        let tag = heap.alloc_string("Kind.park".to_string());
+        let tag = heap.intern_str("Kind.park");
         let data = heap.alloc_payload(&[]);
-        let variant = Value::EnumVariant { tag, data };
+        let variant = heap.enum_variant(tag, data);
         let mut entries = RecordMap::default();
         entries.insert("kind".to_string(), variant);
         let root = heap.alloc_map(entries);
+        // The record, the payload and the tag.
         assert_eq!(heap.freeze(Value::Map(root)), Ok(3));
         assert!(heap.is_frozen(variant));
         heap.sweep();
@@ -3638,15 +4048,17 @@ mod tests {
     #[test]
     fn a_variant_is_frozen_only_when_its_tag_is_too() {
         let mut heap = Heap::new();
-        let park = heap.alloc_string("Kind.park".to_string());
+        let park = heap.intern_str("Kind.park");
         let data = heap.alloc_payload(&[]);
-        let held = Value::EnumVariant { tag: park, data };
+        let held = heap.enum_variant(park, data);
+        assert!(!heap.is_frozen(held));
         let holder = heap.alloc_list(vec![held]);
         heap.freeze(Value::List(holder)).unwrap();
         assert!(heap.is_frozen(held));
 
-        let lake = heap.alloc_string("Kind.lake".to_string());
-        let other = Value::EnumVariant { tag: lake, data: heap.alloc_payload(&[]) };
+        let lake = heap.intern_str("Kind.lake");
+        let payload = heap.alloc_payload(&[]);
+        let other = heap.enum_variant(lake, payload);
         assert!(!heap.is_frozen(other), "sharing the empty payload is not being frozen");
         assert_eq!(heap.freeze(other), Ok(1), "only the tag was left to freeze");
         assert!(heap.is_frozen(other));

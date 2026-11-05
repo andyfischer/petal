@@ -47,7 +47,7 @@ pub(crate) fn type_name_id(heap: &mut crate::heap::Heap, v: Value) -> crate::hea
         },
         // A variant reports its enum, as a class instance reports its class.
         Value::EnumVariant { tag, .. } => {
-            match crate::program::split_enum_tag(heap.get_string(tag)).0 {
+            match crate::program::split_enum_tag(heap.tag_str(tag)).0 {
                 Some(name) => {
                     let name = name.to_string();
                     heap.alloc_string(name)

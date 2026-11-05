@@ -321,8 +321,9 @@ fn hash_exact(v: Value, heap: &Heap, h: &mut impl Hasher) -> Option<()> {
                 hash_exact(*x, heap, h)?;
             }
         }
-        Value::Vec2(x, y) => {
+        Value::Vec2(id) => {
             6u8.hash(h);
+            let (x, y) = heap.get_vec2(id);
             x.to_bits().hash(h);
             y.to_bits().hash(h);
         }
@@ -357,11 +358,12 @@ fn hash_exact(v: Value, heap: &Heap, h: &mut impl Hasher) -> Option<()> {
         }
         Value::EnumVariant { tag, data } => {
             11u8.hash(h);
-            heap.get_string(tag).hash(h);
+            heap.tag_str(tag).hash(h);
             hash_exact(Value::List(data), heap, h)?;
         }
-        Value::Dual { value, derivative } => {
+        Value::Dual(id) => {
             12u8.hash(h);
+            let (value, derivative) = heap.get_dual(id);
             value.to_bits().hash(h);
             derivative.to_bits().hash(h);
         }

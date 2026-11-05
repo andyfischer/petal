@@ -594,6 +594,16 @@ bool pb_call_location(pb_call* call, const char** out_file, uint32_t* out_line, 
  * replay gets the key it was recorded with; a PB_FX_PROBE that reads its key
  * makes the enclosing memo scope unrecordable. */
 bool pb_call_key(pb_call* call, uint64_t* out_key);
+/* Inside a callback: this call changed the host data of the revisioned
+ * classes in `reads` (PB_FX_READS_PHYSICS, PB_FX_READS_NET; other bits are
+ * ignored), as pb_vm_note_class_changed says between runs. The class's
+ * revision moves at once, so a memoized scope that read it earlier (in this
+ * run or an earlier one) is not replayed with the old answer later in this
+ * run; a run that read the class and changed it counts as not settled for
+ * the frame gate. For a PB_FX_COMMAND (or a declaration applied in the
+ * call) that moved a body: call it only when something changed, or every
+ * query after it re-runs. False (nothing noted) outside a script call. */
+bool pb_call_note_class_changed(pb_call* call, uint32_t reads);
 /* Record an expectation of the host's own (an `expect_pixel`, say), as the
  * script's expect() does: `ok` true counts a check that held; false records a
  * failure at the position of the script call and the script carries on. The

@@ -1,9 +1,10 @@
 /** Render petal-ui draw commands to a Canvas2D context.
  *
- * The WASM runtime serializes petal-ui's `DrawCommand` enum directly, so each
- * command already arrives in `{ op, ...fields }` form — no decoding step. Alpha
- * (`a`), corner radius (`radius`), and stroke width (`width`) are optional and
- * omitted from the JSON when at their defaults (opaque / square / hairline). */
+ * Commands are petal-ui's `DrawCommand` enum in `{ op, ...fields }` form, as
+ * `decodeDrawCommands` (`draw-wire.ts`) rebuilds them from the runtime's
+ * binary draw buffer. Alpha (`a`), corner radius (`radius`), and stroke width
+ * (`width`) are optional and left out when at their defaults (opaque / square
+ * / hairline). */
 
 import {
   cssFont,

@@ -68,6 +68,7 @@
 pub mod clipboard;
 pub mod compose;
 pub mod draw;
+pub mod draw_wire;
 pub mod frame_core;
 pub mod harness;
 pub mod hit;
@@ -170,9 +171,20 @@ pub const PRELUDE_LEVEL: u32 = 10;
 /// Name of the Petal-source prelude module: `import ui`.
 pub const MODULE_NAME: &str = "ui";
 
+/// A file of the `ui` package as the petal binary bundles it
+/// (`petal::bundled`), which is this crate's `prelude/` directory. Reading the
+/// bundled copy rather than an `include_str!` of our own keeps one copy in the
+/// binary, and gives a wasm build the comment-stripped text core embeds.
+fn bundled_ui_file(path: &str) -> &'static str {
+    petal::bundled::package(MODULE_NAME)
+        .and_then(|p| p.files.iter().find(|(p, _)| *p == path))
+        .map(|(_, text)| *text)
+        .unwrap_or_else(|| panic!("the petal binary bundles ui/{path}"))
+}
+
 /// The Petal source of the `ui` module.
 pub fn prelude_source() -> &'static str {
-    include_str!("../prelude/ui.ptl")
+    bundled_ui_file("ui.ptl")
 }
 
 /// Name of the input half of the interface: `import ui/input`.
@@ -181,7 +193,7 @@ pub const INPUT_MODULE_NAME: &str = "ui/input";
 /// The Petal source of the `ui/input` module: the declarations of the input,
 /// timing and frame natives, which `ui` re-exports.
 pub fn input_source() -> &'static str {
-    include_str!("../prelude/input.ptl")
+    bundled_ui_file("input.ptl")
 }
 
 /// Every module of the `ui` package, as `(package-relative name, source)` —

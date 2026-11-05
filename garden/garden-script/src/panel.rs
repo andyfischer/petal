@@ -2080,7 +2080,7 @@ impl PanelHost {
         let mut out = Vec::with_capacity(values.len());
         for v in &values {
             if let Value::EnumVariant { tag, data } = v {
-                let event = heap.get_string(*tag).to_string();
+                let event = heap.tag_str(*tag).to_string();
                 let arg = heap
                     .get_list(*data)
                     .first()
@@ -2105,7 +2105,7 @@ impl PanelHost {
         let mut out = Vec::with_capacity(values.len());
         for v in &values {
             if let Value::EnumVariant { tag, data } = v {
-                let name = heap.get_string(*tag).to_string();
+                let name = heap.tag_str(*tag).to_string();
                 let items = heap.get_list(*data);
                 let arg = items
                     .first()
@@ -2165,7 +2165,7 @@ impl PanelHost {
         let mut out = Vec::with_capacity(values.len());
         for v in &values {
             if let Value::EnumVariant { tag, data } = v {
-                let key = heap.get_string(*tag).to_ascii_lowercase();
+                let key = heap.tag_str(*tag).to_ascii_lowercase();
                 let mods = match heap.get_list(*data).first() {
                     Some(Value::Int(bits)) => Some(*bits as u8),
                     _ => None,
@@ -2205,7 +2205,7 @@ impl PanelHost {
         let mut out = Vec::with_capacity(values.len());
         for v in &values {
             if let Value::EnumVariant { tag, data } = v {
-                let kind = heap.get_string(*tag);
+                let kind = heap.tag_str(*tag);
                 let screen = || {
                     heap.get_list(*data).first().and_then(|v| match v {
                         Value::String(sid) => Some(heap.get_string(*sid).to_string()),

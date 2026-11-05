@@ -71,6 +71,7 @@ name = "petal"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
+ "hashbrown",
  "indexmap",
  "serde",
  "serde_json",

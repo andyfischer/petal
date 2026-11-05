@@ -145,8 +145,10 @@ fn unhashable_part(v: Value, heap: &Heap) -> Option<String> {
         Value::Pending(_) => Some("a pending value".into()),
         Value::Cell(_) => Some("a `var` cell".into()),
         Value::Float(f) if f.is_nan() => Some("NaN".into()),
-        Value::Dual { value, .. } if value.is_nan() => Some("NaN".into()),
-        Value::Vec2(x, y) if x.is_nan() || y.is_nan() => Some("a vector holding NaN".into()),
+        Value::Dual(id) if heap.get_dual(id).0.is_nan() => Some("NaN".into()),
+        Value::Vec2(id) if { let (x, y) = heap.get_vec2(id); x.is_nan() || y.is_nan() } => {
+            Some("a vector holding NaN".into())
+        }
         Value::Vec3(id) if heap.get_vec3(id).iter().any(|c| c.is_nan()) => {
             Some("a vector holding NaN".into())
         }

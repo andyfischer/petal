@@ -712,7 +712,10 @@ fn decode_points(tag: &str, points: &Value, heap: &Heap) -> Result<Vec<(i32, i32
     let mut out = Vec::new();
     for p in heap.get_list(list_id) {
         match p {
-            Value::Vec2(x, y) => out.push((*x as i32, *y as i32)),
+            Value::Vec2(id) => {
+                let (x, y) = heap.get_vec2(*id);
+                out.push((x as i32, y as i32))
+            }
             Value::List(pid) => {
                 let coords = heap.get_list(*pid);
                 if coords.len() != 2 {
@@ -773,7 +776,7 @@ impl DrawCommand {
     pub fn from_value(val: &Value, heap: &Heap) -> Result<DrawCommand, String> {
         let (tag, data) = match val {
             Value::EnumVariant { tag, data } => (
-                heap.get_string(*tag).to_string(),
+                heap.tag_str(*tag).to_string(),
                 heap.get_list(*data).to_vec(),
             ),
             other => {
@@ -1978,7 +1981,7 @@ fn point_list_arg(state: &PetalCxt, index: usize, name: &str, min: usize) -> Res
     let elements: Vec<Value> = state.heap().get_list(list_id).to_vec();
     for el in &elements {
         match el {
-            Value::Vec2(_, _) => {}
+            Value::Vec2(_) => {}
             Value::List(pid) => {
                 let coords = state.heap().get_list(*pid);
                 if coords.len() != 2 {

@@ -1333,7 +1333,7 @@ impl<'a> PetalCxt<'a> {
         match self.get_value(index)? {
             Value::Float(f) => Ok(f),
             Value::Int(n) => Ok(n as f64),
-            Value::Dual { .. } => Err(format!(
+            Value::Dual(_) => Err(format!(
                 "Expected float at arg {index}, got dual: this function has no derivative \
                  rule, so the derivative would be lost (pass value_of(x) to use the value alone)"
             )),
@@ -1423,6 +1423,18 @@ impl<'a> PetalCxt<'a> {
 
     pub fn push_float(&mut self, f: f64) {
         self.results.push(Value::Float(f));
+    }
+
+    /// Push a fresh `vec2(x, y)`.
+    pub fn push_vec2(&mut self, x: f64, y: f64) {
+        let v = self.heap.vec2_value(x, y);
+        self.results.push(v);
+    }
+
+    /// Push a fresh dual number.
+    pub fn push_dual(&mut self, value: f64, derivative: f64) {
+        let v = self.heap.dual_value(value, derivative);
+        self.results.push(v);
     }
 
     pub fn push_bool(&mut self, b: bool) {
@@ -1545,7 +1557,7 @@ impl<'a> PetalCxt<'a> {
     /// host command streams (e.g. draw commands): a string tag plus a flat list
     /// of argument values.
     pub fn emit(&mut self, sym: SymbolId, tag: &str, data: Vec<Value>) {
-        let tag = self.heap.alloc_string(tag.to_string());
+        let tag = self.heap.enum_tag_str(tag);
         let data = self.heap.alloc_list(data);
         self.push_output(sym, Value::EnumVariant { tag, data });
     }
@@ -1575,6 +1587,19 @@ impl<'a> PetalCxt<'a> {
     /// as a `host_data` reader calls [`note_host_read`](Self::note_host_read).
     pub fn note_class_read(&mut self, classes: InputClasses) {
         self.run_deps.note_class_read(classes);
+    }
+
+    /// Declare that this native changed a revisioned class of host data
+    /// ([`InputClasses::PHYSICS`], [`InputClasses::NET`]) during the run: a
+    /// `command` that moved a body, a declaration applied in the call. Bumps
+    /// the class's revision at once, as
+    /// [`Env::note_class_changed`](crate::env::Env::note_class_changed) does
+    /// between runs, so a memoized scope that read the class before the
+    /// change is not replayed with the old answer later in this run or the
+    /// next. A host that changes the class only between runs need not call
+    /// it. Classes outside [`InputClasses::REVISIONED`] are ignored.
+    pub fn note_class_changed(&mut self, classes: InputClasses) {
+        self.run_deps.note_class_changed_in_run(classes);
     }
 
     /// Declare that this native did something a replay could not reproduce

@@ -138,7 +138,9 @@ counterpart `ensure_visible_px(scroll, row_off, row_h, view_h)`;
 
 ### Scroll region
 `scroll_update(offset, total, visible, r, active)` → new offset (wheel is
-hover-scoped; page keys gated on `active`).
+hover-scoped; page keys gated on `active`). `scroll_keys(offset, total,
+visible)` adds a reader's keys for the region with the keyboard: j/k or
+down/up a line, space a page, home/end.
 
 ### Focus registry
 `focus_state()`, `focused(fc, id)`, `focus_set/clear`, `focus_next/prev(fc,
@@ -147,7 +149,10 @@ ids)`, `focus_update(fc, ids)` (Tab / Shift+Tab over the ring).
 
 ### Text field (caret, selection, clipboard, undo)
 `text_field(fc, id, r, buf, style)` → `{focus, text, caret, submitted,
-changed, anchor, sel_start, sel_end, scroll, overflow}`. `buf` is a plain
+changed, anchor, sel_start, sel_end, scroll, overflow, blurred, cancelled}`.
+`blurred` is true on the frame after the field lost the keyboard (the cue to
+apply an edit on blur) and `cancelled` when Escape was pressed in it; the
+field keeps the focus on Escape, so a caller that reverts drops it. `buf` is a plain
 string kept in the caller's `state`; the caret, the selection and the undo
 history are widget-internal state, per callsite. `caret`, `anchor`,
 `sel_start` and `sel_end` are **character** offsets (what `char_slice` takes),
@@ -273,6 +278,33 @@ row per label, `style.row_h`); `slider(r, value, lo, hi, style)` → new float
 (press-to-jump, drag keeps tracking outside `r`). In a loop over a list that
 can reorder, key the loop (`for item in items key item.id do`) so each
 slider's drag stays with its item rather than with its row position.
+
+### Inspector fields
+The controls of a property panel, which document editors used to copy. The
+keyboard ones take and return the focus registry and apply an edit only when
+it is done (Return, or the field losing the keyboard); Escape drops it.
+
+- `commit_field(fc, id, r, current, style)` → `{text, focus, editing}`: a
+  line of text, `text` nil except on the frame it applies.
+- `number_field(fc, id, r, value, style)` → `{value, focus, changed}`: drag
+  sideways to scrub by `style.step` per pixel (× `style.fine`, 0.1, with
+  shift), double-click to type; `places` (2) decimals, optional `min`/`max`,
+  `tip` the hover hint (`""` for none). The drag is measured from
+  `mouse_x()`, so it scrubs in every host.
+- `color_field(fc, id, r, color, style)` → `{color, focus}`: a chip and its
+  hex; `color` is nil unless a valid new one was typed. `color_to_hex(c)`,
+  `color_from_hex(text)` and `same_color(a, b)` are the helpers it uses.
+- `swatches(r, colors, current, style)` → the colour clicked or nil; chips
+  are `r.h` square with `style.gap` (4) between, `current` ringed in accent.
+- `stepper(r, options, current, style)` → option: ‹ value ›, wrapping;
+  `style.labels` names the options.
+- `segmented(r, labels, index, style)` → new index.
+- `dropdown(r, options, current, style)` → option: a button that opens a
+  `context_menu` of `options` under itself, on the popup layer (so it draws
+  over later widgets and holds the pointer while open).
+
+In a loop, key the rows (`for p in props key p.name do`) so each field's
+edit state stays with its row.
 
 ### Tab bar
 `tab_bar(r, labels, active, style)` → new active index; underlined active tab,

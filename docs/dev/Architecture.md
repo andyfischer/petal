@@ -98,7 +98,6 @@ The main files and directories under `core/src/`, grouped by pipeline stage.
 | `trace.rs` | Ring-buffered per-term execution trace |
 | `transfer_state.rs` | Move a stack's state onto a different program, reconciling by `StateKey` (hot reload) |
 | `extract.rs` | Typed accessors for pulling Rust data out of a `Value` |
-| `wasm.rs` | `wasm-bindgen` bindings used by the browser integrations |
 
 The crate is about 190 source files and 130k lines, tests included.
 
@@ -737,8 +736,11 @@ emits terms. Key responsibilities:
 
 ## WebAssembly
 
-`wasm.rs` exposes a `PetalRuntime` struct through `wasm-bindgen`. It wraps an
-`Env` and adds the element-tree natives petal-web needs. The JS host calls
+The core crate has no wasm-specific code: it builds for
+`wasm32-unknown-unknown` as it is, and each browser host is its own crate
+that depends on it. `integrations/petal-web-html/rust` exposes a
+`PetalRuntime` struct through `wasm-bindgen`. It wraps an `Env` and adds the
+element-tree natives petal-web needs. The JS host calls
 `load_program(source)`, `create_stack(program_id)`, then `run(stack_id)` or
 `reset_and_run(stack_id)` once per frame, and reads printed output with
 `take_output()`. `register_module` and `register_package` set up module

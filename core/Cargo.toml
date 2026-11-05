@@ -8,7 +8,6 @@ repository = "https://github.com/andyfischer/petal"
 
 [features]
 default = []
-wasm = ["wasm-bindgen", "console_error_panic_hook"]
 # Collect value-duplication statistics even in release builds. Stats are always
 # collected in debug builds; this feature forces them on for release. See
 # `src/stats.rs`.
@@ -23,11 +22,6 @@ hashbrown = { version = ">=0.16, <0.18", default-features = false }
 slotmap = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-wasm-bindgen = { version = "0.2", optional = true }
-console_error_panic_hook = { version = "0.1", optional = true }
-
-[lib]
-crate-type = ["cdylib", "rlib"]
 
 # Measurement harnesses: Rust programs that drive the crate directly to time
 # one cost (a rerun, a reload, a frame, a collection). They live beside the
@@ -74,24 +68,6 @@ path = "../test/benchmarks/harness/static_frame.rs"
 [[example]]
 name = "static_survey"
 path = "../test/benchmarks/harness/static_survey.rs"
-
-# `wasm-opt` starts from the WebAssembly MVP plus a couple of extras, while
-# rustc has enabled a wider default feature set for wasm32-unknown-unknown
-# since 1.82 (`rustc --print cfg --target wasm32-unknown-unknown`). Anything
-# rustc emits that wasm-opt was not told to allow fails validation outright —
-# "Bulk memory operations require bulk memory [--enable-bulk-memory]" — so the
-# list below mirrors rustc's defaults. Keep the two in sync when the toolchain
-# moves; the alternative, `wasm-opt = false`, costs ~30% of the payload.
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = [
-    "-O",
-    "--enable-bulk-memory",
-    "--enable-multivalue",
-    "--enable-mutable-globals",
-    "--enable-nontrapping-float-to-int",
-    "--enable-reference-types",
-    "--enable-sign-ext",
-]
 
 # Optimized profile for the binaries we ship in releases: smaller, faster.
 # (`strip` removes debug symbols; `lto`/`codegen-units=1` trade build time for

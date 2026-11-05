@@ -9,13 +9,12 @@ if [ "$1" = "--size" ]; then
   PROFILE=size
   export CARGO_PROFILE_RELEASE_OPT_LEVEL=z
 fi
-cd "$(dirname "$0")/../../core"
+cd "$(dirname "$0")/rust"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-PKG=../integrations/petal-web-html/pkg
-wasm-pack build --target web --features wasm
-# Copy pkg to petal-web-html
-rm -rf ../integrations/petal-web-html/pkg
-cp -r pkg ../integrations/petal-web-html/pkg
+PKG=../pkg
+wasm-pack build --target web
+rm -rf ../pkg
+cp -r pkg ../pkg
 # Stamp the pkg with the Petal it was built from, so a project that vendors
 # it can tell which one it has.
 {
@@ -28,4 +27,4 @@ cp -r pkg ../integrations/petal-web-html/pkg
   echo "profile=$PROFILE"
   echo "built=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$PKG/BUILD_INFO"
-echo "WASM build complete → integrations/petal-web-html/pkg/"
+echo "WASM build complete → petal-web-html/pkg/"

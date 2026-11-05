@@ -7,7 +7,7 @@ Petal runs in the browser as WebAssembly. Two wasm builds exist, each a
 | Runtime | Built from | What a script does | Used by |
 |---|---|---|---|
 | canvas | `integrations/petal-web-canvas/rust/src/lib.rs` | `import ui`: draws, reads pointer and keys, every frame | petal-web-canvas, the diagram canvas, the petal-lang.org snippets |
-| element tree | `core/src/wasm.rs` (the core crate, `--features wasm`) | `import web`: returns an element tree, re-run on each click | petal-web-html |
+| element tree | `integrations/petal-web-html/rust/src/lib.rs` | `import web`: returns an element tree, re-run on each click | petal-web-html |
 
 Each integration also ships a TypeScript class that drives its runtime
 (`PetalCanvas`, `PetalWeb`), which is what most pages use. This page is the
@@ -17,7 +17,7 @@ Each integration also ships a TypeScript class that drives its runtime
 
 ```bash
 integrations/petal-web-canvas/build-wasm.sh   # wasm-pack build of rust/ into petal-web-canvas/pkg/
-integrations/petal-web-html/build-wasm.sh     # wasm-pack build --features wasm of core/ into petal-web-html/pkg/
+integrations/petal-web-html/build-wasm.sh     # wasm-pack build of rust/ into petal-web-html/pkg/
 ```
 
 Both use `wasm-pack build --target web`, so the module is an ES module with a
@@ -168,7 +168,7 @@ next frame, so a page can feed a script data without a native
 
 ## The element-tree runtime
 
-Registers two natives, declared by the `web` package (`core/packages/web`),
+Registers two natives, declared by the `web` package (`integrations/petal-web-html/packages/web`),
 which a script imports:
 
 | Native | Script side |

@@ -1,15 +1,17 @@
-//! WASM bindings for the core Petal runtime.
+//! WASM runtime for petal-web-html.
 //!
 //! Provides a `PetalRuntime` struct exposed via wasm-bindgen, wrapping
-//! the core `Env` with element-tree support for petal-web.
+//! the core `Env` with the element-tree host: the `next_id` / `clicked`
+//! natives and the `web` interface package that declares them. It uses only
+//! the `petal` crate's public embedding API, like petal-web-canvas.
 
 use wasm_bindgen::prelude::*;
 
-use crate::env::Env;
-use crate::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
-use crate::program::ProgramId;
-use crate::stack::StackKey;
-use crate::value::{Value, value_to_json};
+use petal::env::Env;
+use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
+use petal::program::ProgramId;
+use petal::stack::StackKey;
+use petal::value::{Value, value_to_json};
 
 // ---------------------------------------------------------------------------
 // Env channel names — element tree (petal-web)
@@ -21,12 +23,14 @@ const ELEMENT_ID_COUNTER: &str = "element_id";
 const CLICKED_ID_BINDING: &str = "clicked_id";
 
 /// The interface package of this host: `import web` binds the element-tree
-/// natives. Its source lives in `core/packages/web` so the stock CLI can
-/// check scripts against it (`petal lint -I core/packages`).
+/// natives. Its source lives in `../packages/web` so the stock CLI can
+/// check scripts against it (`petal lint -I integrations/petal-web-html/packages`).
 pub const WEB_PACKAGE: &str = "web";
-const WEB_INTERFACE: &str =
-    include_str!(concat!(env!("OUT_DIR"), "/embedded/packages/web/src/web.ptl"));
-const WEB_MANIFEST: &str = include_str!("../packages/web/petal.toml");
+// Embedded as written: the file is a few hundred bytes, so stripping its
+// comments for wasm (as core/build.rs does for core's own sources) would
+// save nothing worth a build script.
+const WEB_INTERFACE: &str = include_str!("../../packages/web/src/web.ptl");
+const WEB_MANIFEST: &str = include_str!("../../packages/web/petal.toml");
 
 // ---------------------------------------------------------------------------
 // Native functions — element tree
@@ -84,7 +88,7 @@ impl PetalRuntime {
             WEB_PACKAGE,
             [
                 (WEB_PACKAGE, WEB_INTERFACE),
-                (crate::package::MANIFEST_FILE, WEB_MANIFEST),
+                (petal::package::MANIFEST_FILE, WEB_MANIFEST),
             ],
         )
         .expect("the web interface package registers");
@@ -218,5 +222,11 @@ impl PetalRuntime {
     pub fn take_output(&mut self) -> String {
         let output = self.env.take_output();
         serde_json::to_string(&output).unwrap_or_else(|_| "[]".to_string())
+    }
+}
+
+impl Default for PetalRuntime {
+    fn default() -> Self {
+        Self::new()
     }
 }

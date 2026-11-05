@@ -35,8 +35,9 @@ The dev server loads `examples/menu.ptl` by default.
 
 ## How it works
 
-1. `build-wasm.sh` compiles the Petal core (`../../core/`) to WASM via
-   `wasm-pack` with the `wasm` feature and copies the output into `pkg/`.
+1. `build-wasm.sh` compiles this host's runtime crate (`rust/`, which
+   depends on the Petal core in `../../core/`) to WASM via `wasm-pack` and
+   copies the output into `pkg/`.
 2. `src/runtime.ts` loads Petal source and executes it.
 3. The program returns an element tree, which `src/renderer.ts` converts to
    DOM.
@@ -46,7 +47,7 @@ The dev server loads `examples/menu.ptl` by default.
    `examples/menu.ptl` shows the pattern.
 
 `clicked` and `next_id` are this host's two natives. They are declared by the
-`web` interface package ([`core/packages/web`](../../core/packages/web/)),
+`web` interface package ([`packages/web`](packages/web/)),
 which the runtime registers in memory and provides, so a script starts with
 `import web`. `examples/petal.toml` lists the package as a path dependency,
 which is what lets the stock CLI check the examples with no flag:

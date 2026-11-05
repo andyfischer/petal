@@ -1068,7 +1068,7 @@ integration and app.
   `reload_program`; values cross as decoded `pb_value` trees rather than
   JSON.
 - **petal-web-canvas** (`integrations/petal-web-canvas/rust/`) and
-  **petal-web-html** (`core/src/wasm.rs`, built with the `wasm` feature) —
+  **petal-web-html** (`integrations/petal-web-html/rust/`) —
   wasm-bindgen `PetalRuntime` structs owning an `Env`, with the same channels
   marshalled as JSON strings across the wasm boundary. petal-web-canvas
   returns petal-ui draw commands and exposes `run_speculative` for isolated

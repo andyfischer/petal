@@ -99,5 +99,3 @@ pub mod version;
 
 pub use handle::{HandleClass, HandleClassId, HandleVal};
 
-#[cfg(feature = "wasm")]
-pub mod wasm;

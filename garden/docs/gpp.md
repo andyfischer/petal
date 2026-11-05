@@ -10,7 +10,7 @@ on the running script's behalf. Only data crosses the pipe.
 This is the normative reference for GPP v2, written so a client can be
 implemented from it alone in any language. Related:
 
-- The Rust wire definition is the `gpp` crate (`gpp/src/lib.rs`). The host
+- The Rust wire definition is the `gpp` crate (`core-libs/gpp/src/lib.rs`). The host
   side is `garden-app/src/process_pane.rs`, `script_client.rs`, and
   `panel_view.rs`.
 - The Rust client library is [petal-query](../../core-libs/petal-query/README.md)

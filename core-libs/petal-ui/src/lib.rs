@@ -68,6 +68,7 @@
 pub mod clipboard;
 pub mod compose;
 pub mod draw;
+pub mod draw_wire;
 pub mod frame_core;
 pub mod harness;
 pub mod hit;

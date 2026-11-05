@@ -3436,6 +3436,12 @@ pub fn text_area_update(fc, id, r, buf, style)
     caret = n
     anchor = n
   end
+  if _get(style, "select_all", false) then
+    // The caller's "everything, ready to be typed over" (a layer just
+    // added with placeholder text): select the whole text this frame.
+    anchor = 0
+    caret = n
+  end
   had_focus = has
   let vertical = false
   if has then
@@ -4403,7 +4409,9 @@ end
 // One line of text that applies on Return or when the field loses the
 // keyboard; Escape reverts. While unfocused it shows `current`. Returns
 // {text, focus, editing}: `text` is nil except on the frame the edit is
-// applied. `style` is `text_field`'s ({placeholder, size, font, ...}).
+// applied. `style` is `text_field`'s ({placeholder, size, font, ...}), plus
+// `start`: take the keyboard as soon as the field shows (a rename opened by
+// a double-click), rather than on a click in it.
 pub fn commit_field(fc, id, r, current)
   commit_field(fc, id, r, current, {})
 end
@@ -4412,7 +4420,9 @@ pub fn commit_field(fc, id, r, current, style)
   state buf = ""
   state editing = false
   let out = nil
-  let res = text_field(fc, id, r, if editing then buf else str(current) end, style)
+  let start = _get(style, "start", false) && !editing && !focused(fc, id)
+  let fc0 = if start then focus_set(fc, id) else fc end
+  let res = text_field(fc0, id, r, if editing then buf else str(current ?? "") end, style)
   let focus = res.focus
   if focused(focus, id) then
     if !editing then
@@ -4455,7 +4465,12 @@ pub fn number_field(fc, id, r, value, style)
   state last_x = 0
   let out = value
   let focus = fc
-  if focused(fc, id) && editing then
+  if focused(fc, id) then
+    // Typing: entered by a double-click, or by the focus arriving (Tab).
+    if !editing then
+      buf = fixed(float(value), places)
+      editing = true
+    end
     let res = text_field(fc, id, r, buf, style)
     focus = res.focus
     buf = res.text
@@ -4492,8 +4507,6 @@ pub fn number_field(fc, id, r, value, style)
     last_x = mouse_x()
     if it.pressed && click_count() == 2 then
       focus = focus_set(fc, id)
-      buf = fixed(float(value), places)
-      editing = true
     end
     let tip = _get(style, "tip", "drag to change · shift for fine · double-click to type")
     if tip != "" then tooltip(r, tip) end
@@ -4553,14 +4566,20 @@ pub fn color_from_hex(text)
   end
 end
 
-// Whether two colours are the same, alpha included (absent is opaque).
+// Whether two colours are the same, alpha included (absent is opaque). Two
+// nils are the same; a nil and a colour are not.
 pub fn same_color(a, b)
-  a != nil && b != nil && a.r == b.r && a.g == b.g && a.b == b.b && (a["a"] ?? 255) == (b["a"] ?? 255)
+  if a == nil || b == nil then
+    a == b
+  else
+    a.r == b.r && a.g == b.g && a.b == b.b && (a["a"] ?? 255) == (b["a"] ?? 255)
+  end
 end
 
 // A colour chip and its hex, typed: Return or a click away applies, Escape
 // reverts. Returns {color, focus}: `color` is nil unless a valid new colour
-// was entered. `style` is `commit_field`'s, plus {chip_radius, outline}.
+// was entered. A nil `color` shows an empty chip and field. `style` is
+// `commit_field`'s, plus {chip_radius, outline}.
 pub fn color_field(fc, id, r, color)
   color_field(fc, id, r, color, {})
 end
@@ -4569,16 +4588,17 @@ pub fn color_field(fc, id, r, color, style)
   let t = _palette()
   let chip = rect(r.x, r.y + 3, r.h - 6, r.h - 6)
   let cr = _get(style, "chip_radius", 3)
-  draw_rect_rounded(chip, cr, color)
+  if color != nil then draw_rect_rounded(chip, cr, color) end
   draw_rect_rounded_outline(chip, cr, _get(style, "outline", t.border_strong), 255, 1)
   let fr = rect(r.x + r.h, r.y, r.w - r.h, r.h)
-  let res = commit_field(fc, id, fr, color_to_hex(color), {placeholder: "#rrggbb", ...style})
+  let shown = if color == nil then "" else color_to_hex(color) end
+  let res = commit_field(fc, id, fr, shown, {placeholder: "#rrggbb", ...style})
   let picked = if res.text == nil then nil else color_from_hex(res.text) end
   {color: if same_color(picked, color) then nil else picked end, focus: res.focus}
 end
 
-// A row of square colour chips, `r.h` on a side, `current` ringed. Returns
-// the colour clicked, or nil. `style` sets {gap (4), radius (3), ring, hover,
+// A row of square colour chips, `r.h` on a side, `current` ringed; chips
+// that would overrun `r.w` are left out. Returns the colour clicked, or nil. `style` sets {gap (4), radius (3), ring, hover,
 // id (the hit-test name prefix)}.
 pub fn swatches(r, colors, current)
   swatches(r, colors, current, {})
@@ -4594,14 +4614,16 @@ pub fn swatches(r, colors, current, style)
   for i in range(0, len(colors)) do
     let c = colors[i]
     let cr = rect(r.x + i * (size + gap), r.y, size, size)
-    let it = interact(cr, prefix ++ "-" ++ str(i))
-    draw_rect_rounded(cr, rad, c)
-    if same_color(c, current) then
-      draw_rect_rounded_outline(pad(cr, -2), rad + 1, _get(style, "ring", t.accent), 255, 2)
-    elsif it.hover then
-      draw_rect_rounded_outline(pad(cr, -1), rad + 1, _get(style, "hover", t.border_strong), 255, 1)
+    if cr.x + cr.w <= r.x + r.w then
+      let it = interact(cr, prefix ++ "-" ++ str(i))
+      draw_rect_rounded(cr, rad, c)
+      if same_color(c, current) then
+        draw_rect_rounded_outline(pad(cr, -2), rad + 1, _get(style, "ring", t.accent), 255, 2)
+      elsif it.hover then
+        draw_rect_rounded_outline(pad(cr, -1), rad + 1, _get(style, "hover", t.border_strong), 255, 1)
+      end
+      if it.click then picked = c end
     end
-    if it.click then picked = c end
   end
   picked
 end

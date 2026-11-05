@@ -223,7 +223,9 @@ The text wraps to the box with `text_wrap_rows`; `res.rows` is that wrap and
 `res.scroll` how many pixels it is shifted up. A caret that moves, or a text
 that changes, is scrolled into view; on a quiet frame the wheel is free to
 scroll away from it. A paste keeps its line breaks. Style keys are the
-field's plus `line_gap` (pixels added to the face's line height, default 2).
+field's plus `line_gap` (pixels added to the face's line height, default 2)
+and `select_all` (select the whole text on this frame, for text the next
+keystroke should replace).
 Split forms: `text_area_update(fc, id, r, buf, style)` and
 `draw_text_area(r, res, has, style)`. `text_area_height(text, w, min_lines,
 max_lines, style)` sizes a box that grows with its text (3 to 12 rows by

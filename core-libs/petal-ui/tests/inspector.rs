@@ -251,3 +251,54 @@ fn scroll_keys_move_by_line_page_and_end() {
     ui.key("home").unwrap();
     assert_eq!(ui.state_int("off"), Some(0));
 }
+
+// ── What the editors' copies did that ui now does too ───────────────────────
+
+#[test]
+fn commit_field_with_start_takes_the_keyboard_when_it_shows() {
+    let mut ui = ui("state fc = focus_state()\n\
+                     state name = \"a\"\n\
+                     let res = commit_field(fc, \"rename\", {x: 10, y: 10, w: 200, h: 24}, name, {start: true})\n\
+                     fc = res.focus\n\
+                     if res.text != nil then name = res.text end");
+    ui.text("b").unwrap();
+    ui.key("return").unwrap();
+    assert_eq!(ui.state_string("name").as_deref(), Some("ab"), "typed with no click first");
+}
+
+#[test]
+fn color_field_shows_a_nil_colour_empty() {
+    let mut ui = ui("state fc = focus_state()\n\
+                     state hex = \"none\"\n\
+                     let res = color_field(fc, \"c\", {x: 10, y: 10, w: 160, h: 24}, nil)\n\
+                     fc = res.focus\n\
+                     if res.color != nil then hex = color_to_hex(res.color) end");
+    click(&mut ui, 100, 20);
+    ui.text("#123").unwrap();
+    ui.key("return").unwrap();
+    assert_eq!(ui.state_string("hex").as_deref(), Some("#112233"));
+}
+
+#[test]
+fn swatches_leave_out_chips_that_do_not_fit() {
+    let mut ui = ui("state n = 0\n\
+                     let picked = swatches({x: 0, y: 0, w: 50, h: 20}, [#ff0000, #00ff00, #0000ff], nil)\n\
+                     if picked != nil then n += 1 end");
+    click(&mut ui, 49, 10); // where the third chip (48..68) would start
+    assert_eq!(ui.state_int("n"), Some(0));
+    assert!(ui.target("swatch-0-0-2").is_none(), "the third chip is not drawn");
+    assert!(ui.target("swatch-0-0-1").is_some(), "the second, 24..44, fits");
+}
+
+#[test]
+fn text_area_select_all_selects_everything_on_that_frame() {
+    let mut ui = ui("state fc = focus_set(focus_state(), \"t\")\n\
+                     state buf = \"Your text\"\n\
+                     state fresh = true\n\
+                     let res = text_area(fc, \"t\", {x: 10, y: 10, w: 200, h: 80}, buf, {select_all: fresh})\n\
+                     fresh = false\n\
+                     fc = res.focus\n\
+                     buf = res.text");
+    ui.text("Hi").unwrap();
+    assert_eq!(ui.state_string("buf").as_deref(), Some("Hi"), "typing replaced the selected text");
+}

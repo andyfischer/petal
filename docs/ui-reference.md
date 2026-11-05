@@ -539,7 +539,8 @@ a word at a time), and the same focus rules. What differs:
 Style keys are the field's (`size`, `font`, `text_style`, `inset`, `bg`, `fg`,
 `outline`, `focus`, `caret`, `selection`, `placeholder`, `pointer`) plus
 `line_gap`, the pixels added to the face's line height between rows
-(default 2).
+(default 2), and `select_all`: select the whole text on this frame (a layer
+just added, whose placeholder text the next keystroke should replace).
 
 ```petal
 state notes = ""

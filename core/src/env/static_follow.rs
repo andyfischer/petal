@@ -686,7 +686,7 @@ impl Env {
                     // the reload emptied and only the skipped run would fill.
                     if let (Some(tag), Value::Map(record)) = (&info.enum_tag, v) {
                         stack.enums.sync(&bc.enum_layout, heap);
-                        let tag = heap.intern_str(tag);
+                        let tag = heap.enum_tag_str(tag);
                         stack.enums.publish(heap, tag, record);
                     }
                 }

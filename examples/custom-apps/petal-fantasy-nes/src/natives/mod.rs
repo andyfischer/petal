@@ -187,7 +187,7 @@ fn decode_all(values: &[Value], heap: &Heap) -> Vec<Command> {
         .iter()
         .filter_map(|v| match v {
             Value::EnumVariant { tag, data } => Some(Command {
-                tag: heap.get_string(*tag).to_string(),
+                tag: heap.tag_str(*tag).to_string(),
                 args: heap
                     .get_list(*data)
                     .iter()

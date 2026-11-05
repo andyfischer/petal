@@ -424,15 +424,22 @@ impl ViewArena {
                 node.number = f;
                 node.integer = f as i64;
             }
-            Value::Dual { value, .. } => {
+            Value::Dual(id) => {
                 node = PbValue::scalar(Kind::Float);
-                node.number = value;
-                node.integer = value as i64;
+                // A stale id decodes as zero, like a stale vec3.
+                if heap.is_live(*v) {
+                    let (value, _) = heap.get_dual(id);
+                    node.number = value;
+                    node.integer = value as i64;
+                }
             }
-            Value::Vec2(x, y) => {
+            Value::Vec2(id) => {
                 node = PbValue::scalar(Kind::Vec2);
-                node.number = x;
-                node.y = y;
+                if heap.is_live(*v) {
+                    let (x, y) = heap.get_vec2(id);
+                    node.number = x;
+                    node.y = y;
+                }
             }
             Value::Vec3(id) => {
                 node = PbValue::scalar(Kind::Vec3);
@@ -461,7 +468,7 @@ impl ViewArena {
             Value::Dict(_) => node = PbValue::scalar(Kind::Dict),
             Value::EnumVariant { tag, .. } => {
                 node = PbValue::scalar(Kind::Enum);
-                heap_text = Some(heap.try_get_string(tag).unwrap_or(""));
+                heap_text = Some(heap.tag_str(tag));
             }
             Value::Symbol(sym) => {
                 node = PbValue::scalar(Kind::Symbol);

@@ -29,7 +29,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::heap::{Heap, ListId, MapId, StringId};
+use crate::heap::{EnumTag, Heap, ListId, MapId, StringId};
 use crate::program::{Program, enum_variant_tag, split_enum_tag};
 use crate::value::Value;
 
@@ -117,13 +117,38 @@ impl EnumLayout {
 /// addressing over a power-of-two table at most half full. Built once per
 /// layout from ids the owner keeps alive, so an id it holds can never come to
 /// name another string.
-#[derive(Debug, Clone, Default)]
-struct IdIndex {
-    cells: Vec<Option<(StringId, u32)>>,
+#[derive(Debug, Clone)]
+struct IdIndex<K> {
+    cells: Vec<Option<(K, u32)>>,
 }
 
-impl IdIndex {
-    fn build(ids: &[StringId]) -> Self {
+impl<K> Default for IdIndex<K> {
+    fn default() -> Self {
+        IdIndex { cells: Vec::new() }
+    }
+}
+
+/// A key an [`IdIndex`] can hold: a heap id with a slot index to hash by.
+trait IndexKey: Copy + Eq {
+    fn slot(self) -> u32;
+}
+
+impl IndexKey for StringId {
+    #[inline(always)]
+    fn slot(self) -> u32 {
+        self.index()
+    }
+}
+
+impl IndexKey for EnumTag {
+    #[inline(always)]
+    fn slot(self) -> u32 {
+        self.index()
+    }
+}
+
+impl<K: IndexKey> IdIndex<K> {
+    fn build(ids: &[K]) -> Self {
         if ids.is_empty() {
             return IdIndex::default();
         }
@@ -145,14 +170,14 @@ impl IdIndex {
     }
 
     #[inline(always)]
-    fn home(&self, id: StringId) -> usize {
+    fn home(&self, id: K) -> usize {
         // Fibonacci hashing of the slot index: neighbouring ids, which is
         // what a run of freshly interned tags is, spread over the table.
-        (id.index().wrapping_mul(0x9E37_79B1) >> 7) as usize & (self.cells.len() - 1)
+        (id.slot().wrapping_mul(0x9E37_79B1) >> 7) as usize & (self.cells.len() - 1)
     }
 
     #[inline(always)]
-    fn get(&self, id: StringId) -> Option<u32> {
+    fn get(&self, id: K) -> Option<u32> {
         if self.cells.is_empty() {
             return None;
         }
@@ -176,15 +201,15 @@ impl IdIndex {
 #[derive(Debug, Clone, Default)]
 pub struct EnumTable {
     layout: Option<Arc<EnumLayout>>,
-    /// By slot: the interned id of the variant's tag.
-    tags: Vec<StringId>,
+    /// By slot: the variant's tag (a permanent string; see [`EnumTag`]).
+    tags: Vec<EnumTag>,
     /// By slot: the record of constant data the last declaration published.
     records: Vec<Option<MapId>>,
-    by_tag: IdIndex,
+    by_tag: IdIndex<EnumTag>,
     /// By enum: the interned id of its name, and its `all` list once asked for.
     names: Vec<StringId>,
     alls: Vec<Option<ListId>>,
-    by_name: IdIndex,
+    by_name: IdIndex<StringId>,
     /// Data published under a tag the layout does not declare. The compiler
     /// never does that; a hand-written IR document may.
     undeclared: HashMap<String, MapId>,
@@ -207,7 +232,7 @@ impl EnumTable {
     #[cold]
     fn rebuild(&mut self, layout: &Arc<EnumLayout>, heap: &mut Heap) {
         self.clear();
-        self.tags = layout.variants.iter().map(|v| heap.intern_str(&v.tag)).collect();
+        self.tags = layout.variants.iter().map(|v| heap.enum_tag_str(&v.tag)).collect();
         self.records = vec![None; layout.variants.len()];
         self.by_tag = IdIndex::build(&self.tags);
         self.names = layout.enums.iter().map(|e| heap.intern_str(&e.name)).collect();
@@ -224,14 +249,14 @@ impl EnumTable {
     /// The slot of the variant `tag` names, when the running program declares
     /// it and the id is the interned one. Integer work only.
     #[inline(always)]
-    pub fn slot_of(&self, tag: StringId) -> Option<u32> {
+    pub fn slot_of(&self, tag: EnumTag) -> Option<u32> {
         self.by_tag.get(tag)
     }
 
     /// [`slot_of`](Self::slot_of), falling back to the tag's text.
-    pub fn resolve(&self, heap: &Heap, tag: StringId) -> Option<u32> {
+    pub fn resolve(&self, heap: &Heap, tag: EnumTag) -> Option<u32> {
         self.slot_of(tag)
-            .or_else(|| self.layout.as_ref()?.slot_of_text(heap.get_string(tag)))
+            .or_else(|| self.layout.as_ref()?.slot_of_text(heap.tag_str(tag)))
     }
 
     /// The declaration at `slot`.
@@ -243,7 +268,7 @@ impl EnumTable {
     /// The interned tag of the variant at `slot`: what `Enum.variant` builds
     /// its value from, with no string interned at the construction.
     #[inline(always)]
-    pub fn tag_at(&self, slot: u32) -> Option<StringId> {
+    pub fn tag_at(&self, slot: u32) -> Option<EnumTag> {
         self.tags.get(slot as usize).copied()
     }
 
@@ -256,7 +281,7 @@ impl EnumTable {
     /// The constant data of the variant `tag` names — the fast half of a
     /// field read: `None` sends the caller to the general path.
     #[inline(always)]
-    pub fn data_of(&self, tag: StringId) -> Option<MapId> {
+    pub fn data_of(&self, tag: EnumTag) -> Option<MapId> {
         self.data_at(self.slot_of(tag)?)
     }
 
@@ -267,10 +292,10 @@ impl EnumTable {
 
     /// Publish `record` as the constant data of the variant `tag` names;
     /// the record it replaces, if a run before published one.
-    pub fn publish(&mut self, heap: &Heap, tag: StringId, record: MapId) -> Option<MapId> {
+    pub fn publish(&mut self, heap: &Heap, tag: EnumTag, record: MapId) -> Option<MapId> {
         match self.resolve(heap, tag) {
             Some(slot) => self.records[slot as usize].replace(record),
-            None => self.undeclared.insert(heap.get_string(tag).to_string(), record),
+            None => self.undeclared.insert(heap.tag_str(tag).to_string(), record),
         }
     }
 
@@ -285,7 +310,7 @@ impl EnumTable {
     /// here is always equal content; data that builds an equal list afresh
     /// each run is `false`, and is compared in depth by the caller.
     #[inline]
-    pub fn republish(&mut self, heap: &Heap, tag: StringId, record: MapId) -> bool {
+    pub fn republish(&mut self, heap: &Heap, tag: EnumTag, record: MapId) -> bool {
         let Some(slot) = self.slot_of(tag) else {
             return false;
         };
@@ -343,11 +368,11 @@ impl EnumTable {
         self.alls.get(self.by_name.get(name)? as usize).copied().flatten()
     }
 
-    /// Everything here that must survive a collection: the tag and name
-    /// strings the indexes are keyed by, the published records and the
-    /// `all` lists.
+    /// Everything here that must survive a collection: the name strings
+    /// the name index is keyed by (tags are permanent), the published
+    /// records and the `all` lists.
     pub fn gc_roots(&self, mut mark: impl FnMut(Value)) {
-        for &id in self.tags.iter().chain(&self.names) {
+        for &id in &self.names {
             mark(Value::String(id));
         }
         for &rec in self.records.iter().flatten().chain(self.undeclared.values()) {

@@ -915,8 +915,11 @@ impl<'a> ValueEq<'a> {
                 a == b || heap.get_string(*a) == heap.get_string(*b)
             }
             (Value::Symbol(a), Value::Symbol(b)) => a == b,
-            (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => {
-                ax.to_bits() == bx.to_bits() && ay.to_bits() == by.to_bits()
+            (Value::Vec2(a), Value::Vec2(b)) => {
+                a == b || {
+                    let ((ax, ay), (bx, by)) = (heap.get_vec2(*a), heap.get_vec2(*b));
+                    ax.to_bits() == bx.to_bits() && ay.to_bits() == by.to_bits()
+                }
             }
             (Value::Vec3(a), Value::Vec3(b)) => {
                 a == b || {
@@ -924,16 +927,12 @@ impl<'a> ValueEq<'a> {
                     xs.iter().zip(ys).all(|(x, y)| x.to_bits() == y.to_bits())
                 }
             }
-            (
-                Value::Dual {
-                    value: av,
-                    derivative: ad,
-                },
-                Value::Dual {
-                    value: bv,
-                    derivative: bd,
-                },
-            ) => av.to_bits() == bv.to_bits() && ad.to_bits() == bd.to_bits(),
+            (Value::Dual(a), Value::Dual(b)) => {
+                a == b || {
+                    let ((av, ad), (bv, bd)) = (heap.get_dual(*a), heap.get_dual(*b));
+                    av.to_bits() == bv.to_bits() && ad.to_bits() == bd.to_bits()
+                }
+            }
             (Value::List(a), Value::List(b)) => {
                 if a == b {
                     return true;
@@ -976,7 +975,7 @@ impl<'a> ValueEq<'a> {
                 Value::EnumVariant { tag: at, data: ad },
                 Value::EnumVariant { tag: bt, data: bd },
             ) => {
-                (at == bt || heap.get_string(*at) == heap.get_string(*bt))
+                (at == bt || heap.tag_str(*at) == heap.tag_str(*bt))
                     && self.eq(&Value::List(*ad), &Value::List(*bd))
             }
             (Value::F64Array(a), Value::F64Array(b)) => {

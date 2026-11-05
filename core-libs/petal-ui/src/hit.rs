@@ -137,13 +137,9 @@ impl Target {
     }
 }
 
-fn num(v: &Value) -> Option<f64> {
-    match v {
-        Value::Int(n) => Some(*n as f64),
-        Value::Float(f) => Some(*f),
-        Value::Dual { value, .. } => Some(*value),
-        _ => None,
-    }
+/// A number field: an int, a float, or a dual number's value.
+fn num(v: &Value, heap: &Heap) -> Option<f64> {
+    heap.num_f64(*v)
 }
 
 fn decode_row(v: &Value, heap: &Heap) -> Option<Target> {
@@ -152,7 +148,7 @@ fn decode_row(v: &Value, heap: &Heap) -> Option<Target> {
     if row.len() < 7 {
         return None;
     }
-    let flags = num(&row[5])? as i64;
+    let flags = num(&row[5], heap)? as i64;
     let id = match &row[6] {
         Value::String(s) => Some(heap.get_string(*s).to_string()),
         Value::Int(n) => Some(n.to_string()),
@@ -160,11 +156,11 @@ fn decode_row(v: &Value, heap: &Heap) -> Option<Target> {
     };
     Some(Target {
         id,
-        x: num(&row[0])?,
-        y: num(&row[1])?,
-        w: num(&row[2])?,
-        h: num(&row[3])?,
-        layer: num(&row[4])? as i64,
+        x: num(&row[0], heap)?,
+        y: num(&row[1], heap)?,
+        w: num(&row[2], heap)?,
+        h: num(&row[3], heap)?,
+        layer: num(&row[4], heap)? as i64,
         blocks: flags & FLAG_BLOCKS != 0,
         modal: flags & FLAG_MODAL != 0,
     })
@@ -397,7 +393,7 @@ fn rect_arg(state: &PetalCxt, index: usize, who: &str) -> Result<[f64; 4], Strin
     let map = state.heap().get_map(id);
     let field = |name: &str| -> Result<f64, String> {
         match map.get(name) {
-            Some(v) => num(v).ok_or_else(|| {
+            Some(v) => num(v, state.heap()).ok_or_else(|| {
                 format!(
                     "{who}() expects a number for rect field '{name}', got {}",
                     v.type_name()
@@ -438,14 +434,15 @@ fn inside(r: &[f64; 4], px: f64, py: f64) -> bool {
 fn opt_layer(state: &PetalCxt, index: usize) -> Result<Option<i64>, String> {
     match state.get_value(index)? {
         Value::Nil => Ok(None),
-        v => num(&v)
+        v => num(&v, state.heap())
             .map(|n| Some(n as i64))
             .ok_or_else(|| format!("expected a layer number, got {}", v.type_name())),
     }
 }
 
 fn binding_num(state: &mut PetalCxt, name: &str) -> Option<f64> {
-    num(&state.binding_named(name))
+    let v = state.binding_named(name);
+    num(&v, state.heap())
 }
 
 fn binding_has(state: &mut PetalCxt, name: &str, button: i64) -> bool {

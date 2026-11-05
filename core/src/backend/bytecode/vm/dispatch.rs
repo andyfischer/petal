@@ -34,12 +34,12 @@ impl<'a> Vm<'a> {
             // `step` already advanced past this instruction).
             Inst::Jump { to } => self.stack.vm_frames[fi].ip = *to as usize,
             Inst::JumpIfFalse { cond, to } => {
-                if !self.reg(fi, *cond).is_truthy() {
+                if !self.heap.truthy(self.reg(fi, *cond)) {
                     self.stack.vm_frames[fi].ip = *to as usize;
                 }
             }
             Inst::JumpIfTrue { cond, to } => {
-                if self.reg(fi, *cond).is_truthy() {
+                if self.heap.truthy(self.reg(fi, *cond)) {
                     self.stack.vm_frames[fi].ip = *to as usize;
                 }
             }
@@ -223,7 +223,7 @@ impl<'a> Vm<'a> {
             Inst::Ge { dst, a, b } => self.cmp(fi, TermOp::Ge, *dst, *a, *b, origin)?,
 
             Inst::Not { dst, a } => {
-                let v = ops::not(self.reg(fi, *a));
+                let v = ops::not(self.reg(fi, *a), self.heap);
                 self.note_absorption(v, origin);
                 self.set(fi, *dst, v);
             }
@@ -872,7 +872,7 @@ impl<'a> Vm<'a> {
                         self.set(fi, r, old);
                         let tag = self.bc.statics.follow.slots.get(slot as usize).and_then(|s| s.enum_tag.as_deref());
                         if let (Some(tag), Value::Map(record)) = (tag, old) {
-                            let tag = self.heap.intern_str(tag);
+                            let tag = self.heap.enum_tag_str(tag);
                             self.stack.enums.publish(self.heap, tag, record);
                         }
                     }
@@ -952,7 +952,7 @@ impl<'a> Vm<'a> {
                     Value::String(s) => Some(table.str_target(self.heap.get_string(s))),
                     Value::Int(n) => Some(table.int_target(n)),
                     Value::EnumVariant { tag, data } => table.variant_target(
-                        self.heap.get_string(tag),
+                        self.heap.tag_str(tag),
                         self.heap.get_list(data).is_empty(),
                     ),
                     // Anything else — a float an int literal may equal, for

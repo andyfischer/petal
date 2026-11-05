@@ -305,7 +305,7 @@ impl<'a> Vm<'a> {
                 {
                     self.stack.insts += 1;
                     self.stack.vm_frames[frame_idx].ip =
-                        if v.is_truthy() { ip + 2 } else { t2 as usize };
+                        if self.heap.truthy(v) { ip + 2 } else { t2 as usize };
                     return StepResult::Continue;
                 }
             }
@@ -378,7 +378,8 @@ impl<'a> Vm<'a> {
         // the straight-line loop nor `exec_inst` needs to know.
         let executed = match (self.spec.as_deref_mut(), inst) {
             (Some(spec), &Inst::LoadConst { dst, k }) => match spec.load_const(k) {
-                Some(v) => {
+                Some(o) => {
+                    let v = o.materialize(self.heap);
                     self.set(frame_idx, dst, v);
                     Ok(StepResult::Continue)
                 }

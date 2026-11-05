@@ -121,7 +121,7 @@ fn number(
 ) -> Result<f64, String> {
     match fields.get(heap, key) {
         None | Some(Value::Nil) => Ok(default),
-        Some(v) => match v.as_f64() {
+        Some(v) => match heap.num_f64(v) {
             Some(n) if n.is_finite() => Ok(n),
             Some(_) => Err(format!("{what}: {key} must be finite")),
             None => Err(format!(
@@ -329,7 +329,7 @@ pub fn take_requests(env: &mut Env) -> Vec<SoundRequest> {
         .filter_map(|v| match v {
             Value::EnumVariant { tag, data } => {
                 let args = heap.get_list(data);
-                match heap.get_string(tag) {
+                match heap.tag_str(tag) {
                     "sfx" => parse_sfx(heap, args).ok(),
                     "synth" => parse_synth(heap, args).ok(),
                     _ => None,

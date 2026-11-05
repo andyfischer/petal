@@ -444,7 +444,7 @@ fn convert_ratios(
     }
     let mut parsed = Vec::with_capacity(elements.len());
     for element in elements {
-        match element.as_f64() {
+        match heap.num_f64(*element) {
             Some(f) => parsed.push(f as f32),
             None => {
                 warnings.push(format!(

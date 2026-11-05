@@ -67,8 +67,8 @@ pub fn arithmetic(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result<Va
         }
     }
     match (a, b) {
-        (Value::Dual { .. }, _) | (_, Value::Dual { .. }) => dual_arith(op, a, b),
-        (Value::Vec2(..), _) | (_, Value::Vec2(..)) => vec2_arith(op, a, b),
+        (Value::Dual(_), _) | (_, Value::Dual(_)) => dual_arith(op, a, b, heap),
+        (Value::Vec2(_), _) | (_, Value::Vec2(_)) => vec2_arith(op, a, b, heap),
         (Value::Vec3(..), _) | (_, Value::Vec3(..)) => vec3_arith(op, a, b, heap),
         (Value::List(..), _) | (_, Value::List(..)) => list_scalar_arith(op, a, b, heap),
         (Value::Int(x), Value::Int(y)) => int_arith(op, x, y).map(Value::Int),
@@ -105,16 +105,16 @@ fn leftmost_pending(a: Value, b: Value) -> Option<Value> {
 }
 
 /// Forward-mode AD arithmetic for Dual numbers.
-fn dual_arith(op: &TermOp, a: Value, b: Value) -> Result<Value, String> {
-    let (Some(a_val), Some(b_val)) = (a.as_f64(), b.as_f64()) else {
+fn dual_arith(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result<Value, String> {
+    let (Some(a_val), Some(b_val)) = (heap.num_f64(a), heap.num_f64(b)) else {
         return Err(format!(
             "Cannot perform arithmetic on {} and {}",
             a.type_name(),
             b.type_name()
         ));
     };
-    let a_deriv = a.derivative();
-    let b_deriv = b.derivative();
+    let a_deriv = heap.derivative_of(a);
+    let b_deriv = heap.derivative_of(b);
 
     let (value, derivative) = match op {
         TermOp::Add => (a_val + b_val, a_deriv + b_deriv),
@@ -134,28 +134,33 @@ fn dual_arith(op: &TermOp, a: Value, b: Value) -> Result<Value, String> {
         _ => return Err("Unsupported dual operation".into()),
     };
 
-    Ok(Value::Dual { value, derivative })
+    Ok(heap.dual_value(value, derivative))
 }
 
 /// Vec2 arithmetic: component-wise between vectors, scalar broadcast otherwise.
-fn vec2_arith(op: &TermOp, a: Value, b: Value) -> Result<Value, String> {
-    let val = match (a, b) {
+/// Each result is a fresh heap vec2.
+fn vec2_arith(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result<Value, String> {
+    let (x, y) = match (a, b) {
         // vec2 op vec2
-        (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => match op {
-            TermOp::Add => Value::Vec2(ax + bx, ay + by),
-            TermOp::Sub => Value::Vec2(ax - bx, ay - by),
-            TermOp::Mul => Value::Vec2(ax * bx, ay * by),
-            TermOp::Div => {
-                if bx == 0.0 || by == 0.0 {
-                    return Err("Division by zero in vec2".into());
+        (Value::Vec2(a), Value::Vec2(b)) => {
+            let ((ax, ay), (bx, by)) = (heap.get_vec2(a), heap.get_vec2(b));
+            match op {
+                TermOp::Add => (ax + bx, ay + by),
+                TermOp::Sub => (ax - bx, ay - by),
+                TermOp::Mul => (ax * bx, ay * by),
+                TermOp::Div => {
+                    if bx == 0.0 || by == 0.0 {
+                        return Err("Division by zero in vec2".into());
+                    }
+                    (ax / bx, ay / by)
                 }
-                Value::Vec2(ax / bx, ay / by)
+                _ => return Err("Unsupported vec2 operation".into()),
             }
-            _ => return Err("Unsupported vec2 operation".into()),
-        },
+        }
         // vec2 op scalar
-        (Value::Vec2(x, y), other) => {
-            let s = match other.as_f64() {
+        (Value::Vec2(v), other) => {
+            let (x, y) = heap.get_vec2(v);
+            let s = match heap.num_f64(other) {
                 Some(v) => v,
                 None => {
                     return Err(format!(
@@ -165,21 +170,22 @@ fn vec2_arith(op: &TermOp, a: Value, b: Value) -> Result<Value, String> {
                 }
             };
             match op {
-                TermOp::Mul => Value::Vec2(x * s, y * s),
+                TermOp::Mul => (x * s, y * s),
                 TermOp::Div => {
                     if s == 0.0 {
                         return Err("Division by zero".into());
                     }
-                    Value::Vec2(x / s, y / s)
+                    (x / s, y / s)
                 }
-                TermOp::Add => Value::Vec2(x + s, y + s),
-                TermOp::Sub => Value::Vec2(x - s, y - s),
+                TermOp::Add => (x + s, y + s),
+                TermOp::Sub => (x - s, y - s),
                 _ => return Err("Unsupported vec2 operation".into()),
             }
         }
         // scalar op vec2
-        (other, Value::Vec2(x, y)) => {
-            let s = match other.as_f64() {
+        (other, Value::Vec2(v)) => {
+            let (x, y) = heap.get_vec2(v);
+            let s = match heap.num_f64(other) {
                 Some(v) => v,
                 None => {
                     return Err(format!(
@@ -189,15 +195,15 @@ fn vec2_arith(op: &TermOp, a: Value, b: Value) -> Result<Value, String> {
                 }
             };
             match op {
-                TermOp::Mul => Value::Vec2(s * x, s * y),
-                TermOp::Add => Value::Vec2(s + x, s + y),
-                TermOp::Sub => Value::Vec2(s - x, s - y),
+                TermOp::Mul => (s * x, s * y),
+                TermOp::Add => (s + x, s + y),
+                TermOp::Sub => (s - x, s - y),
                 _ => return Err("Unsupported vec2 operation".into()),
             }
         }
         _ => return Err("Unsupported vec2 operation".into()),
     };
-    Ok(val)
+    Ok(heap.vec2_value(x, y))
 }
 
 /// Vec3 arithmetic, with exactly vec2's rules: component-wise between two
@@ -205,7 +211,7 @@ fn vec2_arith(op: &TermOp, a: Value, b: Value) -> Result<Value, String> {
 /// `+ - * /`, `s op v` for `+ - *`). Each result is a fresh heap vec3.
 fn vec3_arith(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result<Value, String> {
     let scalar = |other: Value, vec_first: bool| {
-        other.as_f64().ok_or_else(|| {
+        heap.num_f64(other).ok_or_else(|| {
             if vec_first {
                 format!("Cannot perform arithmetic on vec3 and {}", other.type_name())
             } else {
@@ -402,11 +408,11 @@ pub fn comparison(op: &TermOp, a: Value, b: Value, heap: &Heap) -> Result<Value,
 
 /// Logical `!`: negate truthiness. A Pending operand absorbs (the negation is
 /// unknown), yielding the same Pending rather than a Bool.
-pub fn not(v: Value) -> Value {
+pub fn not(v: Value, heap: &Heap) -> Value {
     if let Value::Pending(_) = v {
         return v;
     }
-    Value::Bool(!v.is_truthy())
+    Value::Bool(!heap.truthy(v))
 }
 
 /// Unary negation for numbers, dual numbers, vec2 and vec3 (which allocates
@@ -421,11 +427,14 @@ pub fn negate(v: Value, heap: &mut Heap) -> Result<Value, String> {
             .map(Value::Int)
             .map_err(|_| "Integer overflow when trying to negate".to_string()),
         Value::Float(f) => Ok(Value::Float(-f)),
-        Value::Dual { value, derivative } => Ok(Value::Dual {
-            value: -value,
-            derivative: -derivative,
-        }),
-        Value::Vec2(x, y) => Ok(Value::Vec2(-x, -y)),
+        Value::Dual(id) => {
+            let (value, derivative) = heap.get_dual(id);
+            Ok(heap.dual_value(-value, -derivative))
+        }
+        Value::Vec2(id) => {
+            let (x, y) = heap.get_vec2(id);
+            Ok(heap.vec2_value(-x, -y))
+        }
         Value::Vec3(id) => {
             let [x, y, z] = heap.get_vec3(id);
             Ok(heap.vec3_value(-x, -y, -z))
@@ -598,14 +607,14 @@ pub fn make_enum_variant(
     let Some(name) = program.get_string_constant(name_cid) else {
         return Err("MakeEnumVariant: invalid name".into());
     };
-    let tag = heap.intern_str(name);
+    let tag = heap.enum_tag_str(name);
     Ok(make_enum_variant_tagged(heap, tag, inputs))
 }
 
 /// [`make_enum_variant`] for a tag already in hand: the variant's slot in the
 /// stack's [`EnumTable`] gives it without interning the name again.
 #[inline]
-pub fn make_enum_variant_tagged(heap: &mut Heap, tag: crate::heap::StringId, inputs: &[Value]) -> Value {
+pub fn make_enum_variant_tagged(heap: &mut Heap, tag: crate::heap::EnumTag, inputs: &[Value]) -> Value {
     let data = heap.alloc_payload(inputs);
     Value::EnumVariant { tag, data }
 }
@@ -623,14 +632,15 @@ pub fn enum_variant_field(
     program: &Program,
     heap: &mut Heap,
     enums: &EnumTable,
-    tag: crate::heap::StringId,
+    tag: crate::heap::EnumTag,
     data: crate::heap::ListId,
     field: &str,
 ) -> Option<Value> {
     if field == crate::program::VARIANT_NAME_FIELD {
-        let text = heap.get_string(tag);
+        let text = heap.tag_str(tag);
         let end = text.len();
         let start = end - crate::program::split_enum_tag(text).1.len();
+        let tag = heap.tag_string(tag);
         return Some(Value::String(heap.intern_substring(tag, start, end)));
     }
     if let Some(slot) = enums.resolve(heap, tag) {
@@ -647,7 +657,7 @@ pub fn enum_variant_field(
     // No enum of the running program declares this tag, by its table. The
     // program is asked all the same: a stack that has not been synced to a
     // lowering (none runs that way) would otherwise lose its payload names.
-    let tag = heap.get_string(tag);
+    let tag = heap.tag_str(tag);
     if let Some(i) = program
         .enum_variant(tag)
         .and_then(|def| def.fields.iter().position(|f| f == field))
@@ -787,7 +797,7 @@ pub fn get_field(
                 Some(v) => v,
                 None if opt => Value::Nil,
                 None => {
-                    let tag = heap.get_string(tag);
+                    let tag = heap.tag_str(tag);
                     let declared = program
                         .enum_variant(tag)
                         .is_some_and(|def| def.data.iter().any(|k| k == field_name));
@@ -810,16 +820,19 @@ pub fn get_field(
         Value::String(str_id) if field_name == "length" => {
             Value::Int(heap.string_char_len(str_id) as i64)
         }
-        Value::Vec2(x, y) => match field_name {
-            "x" => Value::Float(x),
-            "y" => Value::Float(y),
-            _ => {
-                return Err(format!(
-                    "No field '{}' on vec2 (available: x, y)",
-                    field_name
-                ));
+        Value::Vec2(id) => {
+            let (x, y) = heap.get_vec2(id);
+            match field_name {
+                "x" => Value::Float(x),
+                "y" => Value::Float(y),
+                _ => {
+                    return Err(format!(
+                        "No field '{}' on vec2 (available: x, y)",
+                        field_name
+                    ));
+                }
             }
-        },
+        }
         Value::Vec3(id) => {
             let [x, y, z] = heap.get_vec3(id);
             match field_name {

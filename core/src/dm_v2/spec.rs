@@ -134,11 +134,12 @@ pub enum OverrideValue {
 }
 
 impl OverrideValue {
-    fn to_value(self) -> Value {
+    fn to_override(self) -> crate::backend::bytecode::vm::spec::SpecOverride {
+        use crate::backend::bytecode::vm::spec::SpecOverride;
         match self {
-            OverrideValue::Num(f) => Value::Float(f),
-            OverrideValue::Int(i) => Value::Int(i),
-            OverrideValue::Dual(value, derivative) => Value::Dual { value, derivative },
+            OverrideValue::Num(f) => SpecOverride::Value(Value::Float(f)),
+            OverrideValue::Int(i) => SpecOverride::Value(Value::Int(i)),
+            OverrideValue::Dual(value, derivative) => SpecOverride::Dual(value, derivative),
         }
     }
 }
@@ -696,7 +697,7 @@ impl SpecSession {
             if hooks.overrides.len() <= slot {
                 hooks.overrides.resize(slot + 1, None);
             }
-            hooks.overrides[slot] = Some(value.to_value());
+            hooks.overrides[slot] = Some(value.to_override());
         }
         hooks.tap.rng_mode = mode.rng;
         hooks.tap.phase = Some(mode.phase);

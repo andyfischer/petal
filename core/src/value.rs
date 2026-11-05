@@ -5,7 +5,9 @@
 use std::fmt;
 
 use crate::handle::HandleVal;
-use crate::heap::{CellId, DictId, ElementId, F64ArrayId, ListId, MapId, StringId, Vec3Id};
+use crate::heap::{
+    CellId, DictId, DualId, ElementId, EnumTag, F64ArrayId, ListId, MapId, StringId, Vec2Id, Vec3Id,
+};
 use crate::native_fn::NativeFnId;
 use crate::program::{ClosureId, OverloadSetId, Program, TermId};
 use crate::resource_table::{ResourceState, ResourceTable};
@@ -40,8 +42,10 @@ pub enum Value {
     /// Multi-arity function: dispatches to the right closure based on arg count.
     OverloadSet(OverloadSetId),
     NativeFunction(NativeFnId),
+    /// A value of a declared `enum`: the variant's tag (see
+    /// [`EnumTag`](crate::heap::EnumTag)) and its payload list.
     EnumVariant {
-        tag: StringId,
+        tag: EnumTag,
         data: ListId,
     },
     Element(ElementId),
@@ -51,17 +55,17 @@ pub enum Value {
     /// one is closure capture, which is lexically visible. See the containment
     /// invariant in docs/syntax/var.md (Containment).
     Cell(CellId),
-    /// Dual number for forward-mode automatic differentiation.
-    /// Carries a primal value and its derivative (tangent).
-    Dual {
-        value: f64,
-        derivative: f64,
-    },
-    /// 2D vector for creative coding (positions, velocities, forces).
-    Vec2(f64, f64),
+    /// Dual number for forward-mode automatic differentiation: a primal
+    /// value and its derivative (tangent), on the heap
+    /// ([`Heap::get_dual`](crate::heap::Heap::get_dual)).
+    Dual(DualId),
+    /// 2D vector for creative coding (positions, velocities, forces). Its
+    /// components are on the heap ([`Heap::get_vec2`](crate::heap::Heap::get_vec2)),
+    /// immutable, so the id behaves like a value.
+    Vec2(Vec2Id),
     /// 3D vector (positions, directions, colors in 3D code). Heap-allocated
-    /// because three `f64`s would widen every `Value`; the components are
-    /// immutable, so the id behaves like a value. See docs/dev/vec3.md.
+    /// like `Vec2`; the components are immutable, so the id behaves like a
+    /// value. See docs/dev/vec3.md.
     Vec3(Vec3Id),
     /// An interned symbol — a binding key shared with the embedding host.
     /// See `crate::symbol`.
@@ -75,26 +79,34 @@ pub enum Value {
     Pending(PendingId),
 }
 
-// Heap ids are 8 bytes (index + generation); the widest payloads are
-// `Dual`/`Vec2` and `EnumVariant`'s two ids, all 16 bytes. Keep it that way —
-// it is why `Vec3` is a heap id rather than three inline f64s.
-const _: () = assert!(std::mem::size_of::<Value>() == 24);
+// A tag byte plus at most 12 bytes of 4-aligned payload, or 8 of 8-aligned:
+// heap ids are 8 bytes (index + generation), the widest payloads are
+// `EnumVariant` (a 4-byte tag and a payload id) and `Handle`, 12 bytes each.
+// Keep it that way: every register, list slot, record field, map entry and
+// closure capture is a `Value`. It is why `Vec2`, `Dual` and `Vec3` are heap
+// ids rather than inline f64s. See docs/proposals/value-representation.md.
+const _: () = assert!(std::mem::size_of::<Value>() == 16);
+const _: () = assert!(std::mem::size_of::<Option<Value>>() == 16);
 
 impl Value {
-    pub fn is_truthy(&self) -> bool {
-        match self {
+    /// Truthiness, when it can be told without the heap: `None` for a vec2
+    /// or a dual number, whose components are on the heap (a zero one is
+    /// false). [`Heap::truthy`](crate::heap::Heap::truthy) answers for every
+    /// value; this is its fast path.
+    #[inline]
+    pub fn truthy_without_heap(&self) -> Option<bool> {
+        Some(match self {
             Value::Nil => false,
             Value::Bool(b) => *b,
             Value::Int(n) => *n != 0,
             Value::Float(f) => *f != 0.0,
-            Value::Dual { value, .. } => *value != 0.0,
-            Value::Vec2(x, y) => *x != 0.0 || *y != 0.0,
-            // Always truthy, like a list or record: its components are on the
-            // heap, which this heap-free check cannot read. Test a zero vector
-            // explicitly (`v == vec3(0, 0, 0)`).
+            Value::Dual(_) | Value::Vec2(_) => return None,
+            // Always truthy, like a list or record: a vec3 never had its
+            // components inline. Test a zero vector explicitly
+            // (`v == vec3(0, 0, 0)`).
             Value::Vec3(_) => true,
             _ => true,
-        }
+        })
     }
 
     /// Whether a value is "present" for the `??` coalescing operator: anything
@@ -121,30 +133,12 @@ impl Value {
             Value::EnumVariant { .. } => "enum",
             Value::Element(_) => "element",
             Value::Cell(_) => "cell",
-            Value::Dual { .. } => "dual",
-            Value::Vec2(_, _) => "vec2",
+            Value::Dual(_) => "dual",
+            Value::Vec2(_) => "vec2",
             Value::Vec3(_) => "vec3",
             Value::Symbol(_) => "symbol",
             Value::Handle(_) => "handle",
             Value::Pending(_) => "pending",
-        }
-    }
-
-    /// Extract the numeric value as f64 (for arithmetic with Dual numbers).
-    pub fn as_f64(&self) -> Option<f64> {
-        match self {
-            Value::Int(n) => Some(*n as f64),
-            Value::Float(f) => Some(*f),
-            Value::Dual { value, .. } => Some(*value),
-            _ => None,
-        }
-    }
-
-    /// Extract the derivative component (0.0 for non-Dual values).
-    pub fn derivative(&self) -> f64 {
-        match self {
-            Value::Dual { derivative, .. } => *derivative,
-            _ => 0.0,
         }
     }
 }
@@ -177,17 +171,9 @@ impl fmt::Debug for Value {
             }
             Value::Element(id) => write!(f, "Element({:?})", id),
             Value::Cell(id) => write!(f, "Cell({:?})", id),
-            Value::Dual { value, derivative } => {
-                write!(
-                    f,
-                    "Dual({}, {})",
-                    format_float(*value),
-                    format_float(*derivative)
-                )
-            }
-            Value::Vec2(x, y) => {
-                write!(f, "Vec2({}, {})", format_float(*x), format_float(*y))
-            }
+            // The components are on the heap, which `Debug` has no access to.
+            Value::Dual(id) => write!(f, "Dual({:?})", id),
+            Value::Vec2(id) => write!(f, "Vec2({:?})", id),
             Value::Vec3(id) => write!(f, "Vec3({:?})", id),
             Value::Symbol(id) => write!(f, "Symbol({})", id.0),
             Value::Handle(h) => write!(f, "{}", h),
@@ -257,7 +243,7 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
         Value::OverloadSet(_) => "<function>".to_string(),
         Value::NativeFunction(_) => "<native>".to_string(),
         Value::EnumVariant { tag, data } => {
-            let name = heap.get_string(*tag);
+            let name = heap.tag_str(*tag);
             let fields = heap.get_list(*data);
             if fields.is_empty() {
                 name.to_string()
@@ -269,15 +255,17 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
                 format!("{}({})", name, parts.join(", "))
             }
         }
-        Value::Dual { value, derivative } => {
+        Value::Dual(id) => {
+            let (value, derivative) = heap.get_dual(*id);
             format!(
                 "dual({}, {})",
-                format_float(*value),
-                format_float(*derivative)
+                format_float(value),
+                format_float(derivative)
             )
         }
-        Value::Vec2(x, y) => {
-            format!("vec2({}, {})", format_float(*x), format_float(*y))
+        Value::Vec2(id) => {
+            let (x, y) = heap.get_vec2(*id);
+            format!("vec2({}, {})", format_float(x), format_float(y))
         }
         Value::Vec3(id) => {
             let [x, y, z] = heap.get_vec3(*id);
@@ -555,18 +543,20 @@ pub fn value_to_json_ctx(
                 .collect();
             serde_json::json!({ "type": "map", "entries": entries })
         }
-        Value::Dual { value, derivative } => {
-            serde_json::json!({ "type": "dual", "value": *value, "derivative": *derivative })
+        Value::Dual(id) => {
+            let (value, derivative) = heap.get_dual(*id);
+            serde_json::json!({ "type": "dual", "value": value, "derivative": derivative })
         }
-        Value::Vec2(x, y) => {
-            serde_json::json!({ "type": "vec2", "x": *x, "y": *y })
+        Value::Vec2(id) => {
+            let (x, y) = heap.get_vec2(*id);
+            serde_json::json!({ "type": "vec2", "x": x, "y": y })
         }
         Value::Vec3(id) => {
             let [x, y, z] = heap.get_vec3(*id);
             serde_json::json!({ "type": "vec3", "x": x, "y": y, "z": z })
         }
         Value::EnumVariant { tag, data } => {
-            let name = heap.get_string(*tag).to_string();
+            let name = heap.tag_str(*tag).to_string();
             let fields = heap.get_list(*data);
             let arr: Vec<serde_json::Value> = fields
                 .iter()
@@ -653,7 +643,10 @@ fn json_to_vector(json: &serde_json::Value, heap: &mut Heap) -> Option<Value> {
     let obj = json.as_object()?;
     let num = |k: &str| obj.get(k).and_then(serde_json::Value::as_f64);
     match obj.get("type")?.as_str()? {
-        "vec2" if obj.len() == 3 => Some(Value::Vec2(num("x")?, num("y")?)),
+        "vec2" if obj.len() == 3 => {
+            let (x, y) = (num("x")?, num("y")?);
+            Some(heap.vec2_value(x, y))
+        }
         "vec3" if obj.len() == 4 => {
             let (x, y, z) = (num("x")?, num("y")?, num("z")?);
             Some(heap.vec3_value(x, y, z))
@@ -680,11 +673,11 @@ fn json_map_entries(json: &serde_json::Value) -> Option<Vec<&[serde_json::Value]
 
 /// The numeric view of a value that `==` and `<` compare by: ints, floats, and
 /// a dual number's primal. `None` for everything else.
-pub fn as_num(v: &Value) -> Option<Num> {
+pub fn as_num(v: &Value, heap: &Heap) -> Option<Num> {
     match *v {
         Value::Int(n) => Some(Num::Int(n)),
         Value::Float(f) => Some(Num::Float(f)),
-        Value::Dual { value, .. } => Some(Num::Float(value)),
+        Value::Dual(id) => Some(Num::Float(heap.get_dual(id).0)),
         _ => None,
     }
 }
@@ -725,7 +718,7 @@ pub fn holds_pending(val: &Value, heap: &Heap) -> bool {
 
 fn hash_into(val: &Value, heap: &Heap, h: &mut impl std::hash::Hasher) {
     use std::hash::{Hash, Hasher};
-    if let Some(n) = as_num(val) {
+    if let Some(n) = as_num(val, heap) {
         2u8.hash(h);
         numeric::num_key(n).hash(h);
         return;
@@ -748,10 +741,11 @@ fn hash_into(val: &Value, heap: &Heap, h: &mut impl std::hash::Hasher) {
                 hash_into(elem, heap, h);
             }
         }
-        Value::Vec2(x, y) => {
+        Value::Vec2(id) => {
             7u8.hash(h);
-            numeric::num_key(Num::Float(*x)).hash(h);
-            numeric::num_key(Num::Float(*y)).hash(h);
+            let (x, y) = heap.get_vec2(*id);
+            numeric::num_key(Num::Float(x)).hash(h);
+            numeric::num_key(Num::Float(y)).hash(h);
         }
         Value::Vec3(id) => {
             13u8.hash(h);
@@ -803,7 +797,7 @@ fn hash_into(val: &Value, heap: &Heap, h: &mut impl std::hash::Hasher) {
         }
         Value::EnumVariant { tag, data } => {
             11u8.hash(h);
-            heap.get_string(*tag).hash(h);
+            heap.tag_str(*tag).hash(h);
             hash_into(&Value::List(*data), heap, h);
         }
         Value::Element(id) => {
@@ -834,7 +828,7 @@ fn hash_into(val: &Value, heap: &Heap, h: &mut impl std::hash::Hasher) {
 ///   key set and values, ignoring insertion order;
 /// - functions, symbols, cells, handles and pendings compare by identity.
 pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
-    if let (Some(x), Some(y)) = (as_num(a), as_num(b)) {
+    if let (Some(x), Some(y)) = (as_num(a, heap), as_num(b, heap)) {
         return numeric::num_eq(x, y);
     }
     match (a, b) {
@@ -845,7 +839,7 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
             a == b || heap.get_string(*a) == heap.get_string(*b)
         }
         (Value::EnumVariant { tag: at, data: ad }, Value::EnumVariant { tag: bt, data: bd }) => {
-            (at == bt || heap.get_string(*at) == heap.get_string(*bt))
+            (at == bt || heap.tag_str(*at) == heap.tag_str(*bt))
                 && values_equal(&Value::List(*ad), &Value::List(*bd), heap)
         }
         (Value::List(a), Value::List(b)) => {
@@ -894,7 +888,9 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
         (Value::OverloadSet(a), Value::OverloadSet(b)) => a == b,
         (Value::Cell(a), Value::Cell(b)) => a == b,
         (Value::Symbol(a), Value::Symbol(b)) => a == b,
-        (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => ax == bx && ay == by,
+        // Componentwise, with no same-id shortcut: a vec2 holding a NaN is
+        // not `==` to itself, as when it was inline.
+        (Value::Vec2(a), Value::Vec2(b)) => heap.get_vec2(*a) == heap.get_vec2(*b),
         (Value::Vec3(a), Value::Vec3(b)) => a == b || heap.get_vec3(*a) == heap.get_vec3(*b),
         (Value::Handle(a), Value::Handle(b)) => a == b,
         // Two Pendings are equal iff they reference the same resource entry.
@@ -930,7 +926,7 @@ pub fn compare_values_partial(
     b: &Value,
     heap: &Heap,
 ) -> Result<Option<std::cmp::Ordering>, String> {
-    if let (Some(x), Some(y)) = (as_num(a), as_num(b)) {
+    if let (Some(x), Some(y)) = (as_num(a, heap), as_num(b, heap)) {
         return Ok(numeric::num_cmp(x, y));
     }
     match (a, b) {
@@ -958,37 +954,37 @@ mod tests {
 
     #[test]
     fn nil_is_falsy() {
-        assert!(!Value::Nil.is_truthy());
+        assert!(!Value::Nil.truthy_without_heap().unwrap());
     }
 
     #[test]
     fn false_is_falsy() {
-        assert!(!Value::Bool(false).is_truthy());
+        assert!(!Value::Bool(false).truthy_without_heap().unwrap());
     }
 
     #[test]
     fn true_is_truthy() {
-        assert!(Value::Bool(true).is_truthy());
+        assert!(Value::Bool(true).truthy_without_heap().unwrap());
     }
 
     #[test]
     fn zero_int_is_falsy() {
-        assert!(!Value::Int(0).is_truthy());
+        assert!(!Value::Int(0).truthy_without_heap().unwrap());
     }
 
     #[test]
     fn nonzero_int_is_truthy() {
-        assert!(Value::Int(42).is_truthy());
+        assert!(Value::Int(42).truthy_without_heap().unwrap());
     }
 
     #[test]
     fn zero_float_is_falsy() {
-        assert!(!Value::Float(0.0).is_truthy());
+        assert!(!Value::Float(0.0).truthy_without_heap().unwrap());
     }
 
     #[test]
     fn nonzero_float_is_truthy() {
-        assert!(Value::Float(3.25).is_truthy());
+        assert!(Value::Float(3.25).truthy_without_heap().unwrap());
     }
 
     #[test]
@@ -1032,16 +1028,10 @@ mod tests {
             Value::Float(1.0),
             Value::Float(9007199254740992.0),
             Value::Float(f64::NAN),
-            Value::Dual {
-                value: 1.0,
-                derivative: 5.0,
-            },
-            Value::Dual {
-                value: 1.0,
-                derivative: 0.0,
-            },
-            Value::Vec2(0.0, 1.0),
-            Value::Vec2(-0.0, 1.0),
+            heap.dual_value(1.0, 5.0),
+            heap.dual_value(1.0, 0.0),
+            heap.vec2_value(0.0, 1.0),
+            heap.vec2_value(-0.0, 1.0),
         ];
         // Equal strings with distinct ids, and a different one.
         for s in ["a", "a", "b"] {
@@ -1059,7 +1049,7 @@ mod tests {
             all.push(Value::Map(heap.alloc_map(m.clone())));
             all.push(Value::Map(heap.alloc_class_instance(m, class)));
             let data = heap.alloc_list(vec![x]);
-            all.push(Value::EnumVariant { tag: key, data });
+            all.push(heap.enum_variant(key, data));
             // A map holding `x` as a value, and (unless it is NaN, which no
             // map may hold as a key) as a key.
             let one = Value::Int(1);
@@ -1093,7 +1083,7 @@ mod tests {
     fn contains_nan(v: &Value, heap: &Heap) -> bool {
         match *v {
             Value::Float(f) => f.is_nan(),
-            Value::Dual { value, .. } => value.is_nan(),
+            Value::Dual(id) => heap.get_dual(id).0.is_nan(),
             Value::List(id) => heap.get_list(id).iter().any(|x| contains_nan(x, heap)),
             Value::Map(id) => heap.get_map(id).values().any(|x| contains_nan(x, heap)),
             Value::Dict(id) => heap.get_dict(id).all_values().any(|x| contains_nan(&x, heap)),

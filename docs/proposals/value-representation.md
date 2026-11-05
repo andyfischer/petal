@@ -26,10 +26,10 @@ list on every iteration.
    `str(i)` took **142 s**; the same loop with the argument bound by `let`
    first takes 0.2 s. This is a separate change; see
    [the in-place window](#1-the-in-place-window-is-too-narrow).
-2. **Adopt:** slim string storage. Stop duplicating each string's text in the
+2. **Adopt (done, 2026-11-04: `Text` and a content-keyed intern table in `heap.rs`):** slim string storage. Stop duplicating each string's text in the
    intern table, and store short strings inline. That is roughly −60% per
    short string.
-3. **Adopt:** the 16-byte `Value` (box `Vec2`/`Dual`, `u32` enum tag).
+3. **Adopt (done, 2026-11-05):** the 16-byte `Value` (box `Vec2`/`Dual`, `u32` enum tag).
 4. **Adopt (small):** shrink slab slot metadata from 12 to 4 bytes per object.
 5. **Reject:** NaN-boxing or pointer-tagging to 8 bytes. It needs a language
    change to `int` and a 64→48-bit id squeeze, and it gives up exhaustive

@@ -583,10 +583,8 @@ Operators, for either kind:
 - `==` / `!=` compare components.
 - `.x`, `.y` (and `.z` on a `vec3`) read a component as a float.
 
-A `vec2` is stored inline in a value; a `vec3` is a small immutable heap object
-(three f64s would not fit), which makes it slightly costlier to create but
-otherwise indistinguishable. One visible difference: a zero `vec2` is falsy in
-an `if`, while every `vec3` is truthy, like a record — compare against
+Both are small immutable heap objects. One visible difference: a zero `vec2`
+is falsy in an `if`, while every `vec3` is truthy, like a record — compare against
 `vec3(0, 0, 0)` explicitly. Both survive `json_stringify` / `json_parse` (as
 `{"type": "vec3", "x": ..., "y": ..., "z": ...}`) and a state save/restore.
 

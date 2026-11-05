@@ -17,14 +17,15 @@ pub(super) fn native_dual(state: &mut PetalCxt) -> Result<u32, String> {
         Value::Float(f) => f,
         _ => return Err("dual() derivative must be a number".into()),
     };
-    state.push_value(Value::Dual { value, derivative });
+    state.push_dual(value, derivative);
     Ok(1)
 }
 
 pub(super) fn native_value_of(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "value_of")?;
     match state.get_value(1)? {
-        Value::Dual { value, .. } => {
+        Value::Dual(id) => {
+            let (value, _) = state.heap().get_dual(id);
             state.push_float(value);
             Ok(1)
         }
@@ -43,7 +44,8 @@ pub(super) fn native_value_of(state: &mut PetalCxt) -> Result<u32, String> {
 pub(super) fn native_deriv_of(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "deriv_of")?;
     match state.get_value(1)? {
-        Value::Dual { derivative, .. } => {
+        Value::Dual(id) => {
+            let (_, derivative) = state.heap().get_dual(id);
             state.push_float(derivative);
             Ok(1)
         }
@@ -102,13 +104,29 @@ impl D {
 /// was a dual. Anything else is the error `get_float` gives for a non-number.
 pub(super) fn arg_d(state: &PetalCxt, index: usize) -> Result<(D, bool), String> {
     match state.get_value(index)? {
-        Value::Dual { value, derivative } => Ok((D { v: value, d: derivative }, true)),
+        Value::Dual(id) => {
+            let (v, d) = state.heap().get_dual(id);
+            Ok((D { v, d }, true))
+        }
         Value::Int(n) => Ok((D::konst(n as f64), false)),
         Value::Float(f) => Ok((D::konst(f), false)),
         other => Err(format!(
             "Expected float at arg {index}, got {}",
             other.type_name()
         )),
+    }
+}
+
+/// `v` as a [`D`] when it is a number or a dual, and whether it was a dual.
+pub(super) fn value_d(heap: &crate::heap::Heap, v: Value) -> Option<(D, bool)> {
+    match v {
+        Value::Dual(id) => {
+            let (v, d) = heap.get_dual(id);
+            Some((D { v, d }, true))
+        }
+        Value::Int(n) => Some((D::konst(n as f64), false)),
+        Value::Float(f) => Some((D::konst(f), false)),
+        _ => None,
     }
 }
 
@@ -127,7 +145,7 @@ pub(super) fn args_d<const N: usize>(state: &PetalCxt) -> Result<([D; N], bool),
 /// Push `r`: as a dual when any argument was one, else as its plain float.
 pub(super) fn push_d(state: &mut PetalCxt, r: D, as_dual: bool) {
     if as_dual {
-        state.push_value(Value::Dual { value: r.v, derivative: r.d });
+        state.push_dual(r.v, r.d);
     } else {
         state.push_float(r.v);
     }

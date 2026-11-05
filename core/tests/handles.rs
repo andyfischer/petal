@@ -156,7 +156,7 @@ fn handle_is_truthy_host_side() {
     let (env, class) = env_with_test_class();
     let v = env.make_handle(class, 0, 0);
     assert!(
-        v.is_truthy(),
+        env.heap().truthy(v),
         "a handle is truthy regardless of slot/serial"
     );
 }

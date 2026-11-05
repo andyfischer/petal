@@ -1209,7 +1209,7 @@ fn native_host_variant(cx: &mut PetalCxt) -> NativeResult {
     let tag = cx.heap().get_string(tag).to_string();
     let payload: Vec<Value> = (2..=cx.arg_count()).map(|i| cx.get_value(i)).collect::<Result<_, _>>()?;
     let heap = cx.heap_mut();
-    let tag = heap.alloc_string(tag);
+    let tag = heap.enum_tag_str(&tag);
     let data = heap.alloc_list(payload);
     cx.push_value(Value::EnumVariant { tag, data });
     Ok(1)

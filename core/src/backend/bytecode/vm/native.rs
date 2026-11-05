@@ -314,7 +314,8 @@ impl<'a> Vm<'a> {
         // Data that is what the last run published leaves every memo record
         // that read it valid, which is the usual case: most data is constant.
         // The very record again needs no comparing at all.
-        let old = self.stack.enums.publish(self.heap, *tag, *record);
+        let tag = self.heap.enum_tag(*tag);
+        let old = self.stack.enums.publish(self.heap, tag, *record);
         let same = old == Some(*record)
             || (self.memo && old.is_some_and(|old| self.memo_same_enum_data(old, *record)));
         if !same {
@@ -353,7 +354,7 @@ impl<'a> Vm<'a> {
             return Ok(Value::Nil);
         }
         let tag = crate::program::enum_variant_tag(enum_name, name);
-        let tag = self.heap.intern_str(&tag);
+        let tag = self.heap.enum_tag_str(&tag);
         let data = self.heap.empty_payload();
         Ok(Value::EnumVariant { tag, data })
     }

@@ -311,15 +311,8 @@ mod tests {
             (Type::Bool, Value::Bool(true).type_name()),
             (Type::Int, Value::Int(1).type_name()),
             (Type::Float, Value::Float(1.0).type_name()),
-            (Type::Vec2, Value::Vec2(0.0, 0.0).type_name()),
-            (
-                Type::Dual,
-                Value::Dual {
-                    value: 0.0,
-                    derivative: 0.0,
-                }
-                .type_name(),
-            ),
+            (Type::Vec2, crate::heap::Heap::new().vec2_value(0.0, 0.0).type_name()),
+            (Type::Dual, crate::heap::Heap::new().dual_value(0.0, 0.0).type_name()),
         ];
         for (ty, runtime_name) in cases {
             assert_eq!(ty.name(), *runtime_name, "{ty:?}");

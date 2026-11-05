@@ -91,7 +91,7 @@ impl HostValue {
             HostValue::Bool(b) => Value::Bool(*b),
             HostValue::Int(i) => Value::Int(*i),
             HostValue::Float(f) => Value::Float(*f),
-            HostValue::Vec2(x, y) => Value::Vec2(*x, *y),
+            HostValue::Vec2(x, y) => heap.vec2_value(*x, *y),
             HostValue::Vec3(x, y, z) => heap.vec3_value(*x, *y, *z),
             HostValue::Str(s) => Value::String(heap.alloc_string(s.clone())),
             HostValue::Symbol(s) => syms
@@ -142,7 +142,7 @@ impl HostValue {
                     .map(|i| i.to_value(heap, syms, shapes))
                     .collect();
                 let data = heap.alloc_list(vals);
-                let tag = heap.alloc_string(tag.clone());
+                let tag = heap.enum_tag_str(tag);
                 Value::EnumVariant { tag, data }
             }
         }

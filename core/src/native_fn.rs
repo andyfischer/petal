@@ -1577,6 +1577,19 @@ impl<'a> PetalCxt<'a> {
         self.run_deps.note_class_read(classes);
     }
 
+    /// Declare that this native changed a revisioned class of host data
+    /// ([`InputClasses::PHYSICS`], [`InputClasses::NET`]) during the run: a
+    /// `command` that moved a body, a declaration applied in the call. Bumps
+    /// the class's revision at once, as
+    /// [`Env::note_class_changed`](crate::env::Env::note_class_changed) does
+    /// between runs, so a memoized scope that read the class before the
+    /// change is not replayed with the old answer later in this run or the
+    /// next. A host that changes the class only between runs need not call
+    /// it. Classes outside [`InputClasses::REVISIONED`] are ignored.
+    pub fn note_class_changed(&mut self, classes: InputClasses) {
+        self.run_deps.note_class_changed_in_run(classes);
+    }
+
     /// Declare that this native did something a replay could not reproduce
     /// — wrote host state, advanced a counter, printed. A memoized scope
     /// (see [`crate::memo`]) that calls it is never skipped. The `PetalCxt`

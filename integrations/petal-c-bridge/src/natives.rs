@@ -401,6 +401,23 @@ pub unsafe extern "C" fn pb_call_key(call: *mut PbCall, out_key: *mut u64) -> bo
     })
 }
 
+/// `pb_call_note_class_changed`: this call changed the host data of the
+/// revisioned classes in `reads` ([`PetalCxt::note_class_changed`]). False
+/// when the call is not running (nothing noted).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_call_note_class_changed(call: *mut PbCall, reads: u32) -> bool {
+    crate::ffi::guard(false, || {
+        let Some(call) = (unsafe { call.as_mut() }) else {
+            return false;
+        };
+        let Some(cxt) = call.cxt() else {
+            return false;
+        };
+        cxt.note_class_changed(classes_from_flags(reads));
+        true
+    })
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn pb_call_name(call: *const PbCall) -> *const c_char {
     if call.is_null() {

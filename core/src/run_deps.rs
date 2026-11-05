@@ -112,6 +112,10 @@ pub struct RunDeps {
     /// [`class_slot`]. A sub-class of host data with its own counter, so a
     /// physics step does not invalidate what read only host data.
     class_read: u16,
+    /// The revisioned classes a native changed during the run in progress
+    /// ([`note_class_changed_in_run`](Self::note_class_changed_in_run)): a
+    /// run that read one of them did not reach a fixed point.
+    class_changed_in_run: u16,
     class_revision: [u64; CLASS_SLOTS],
     class_now: [u64; CLASS_SLOTS],
     /// The RNG state when the run began, to detect draws.
@@ -345,6 +349,17 @@ impl RunDeps {
         }
     }
 
+    /// A native changed the host's data of the revisioned classes in
+    /// `classes` while the run is in progress (a command that moved a body):
+    /// bump each one's revision now, so a memoized scope that read the class
+    /// earlier in this run (or in an earlier one) is not replayed after the
+    /// change, and the run itself counts as not settled when it read one of
+    /// them ([`run_needed`](Self::run_needed) answers `HostDataChanged`).
+    pub fn note_class_changed_in_run(&mut self, classes: InputClasses) {
+        self.note_class_changed(classes);
+        self.class_changed_in_run |= classes.0 & InputClasses::REVISIONED.0;
+    }
+
     /// The current revision of one revisioned class (`0` for a class that
     /// is not one).
     #[inline]
@@ -360,6 +375,7 @@ impl RunDeps {
         }
         self.host_read = false;
         self.class_read = 0;
+        self.class_changed_in_run = 0;
         self.state_unsettled = false;
         self.in_place_kept = None;
         self.rng_consumed = false;
@@ -428,7 +444,12 @@ impl RunDeps {
         if self.host_read && self.host_data_now != self.host_data_revision {
             return Some(RunReason::HostDataChanged);
         }
-        // A revisioned class is host data with its own counter.
+        // A revisioned class is host data with its own counter. One the run
+        // read and also changed (through a native) may have been read
+        // before the change.
+        if self.class_read & self.class_changed_in_run != 0 {
+            return Some(RunReason::HostDataChanged);
+        }
         for (i, (c, _)) in REVISIONED_CLASSES.iter().enumerate() {
             if self.class_read & c.0 != 0 && self.class_now[i] != self.class_revision[i] {
                 return Some(RunReason::HostDataChanged);
@@ -647,6 +668,33 @@ mod tests {
 
     fn bindings(entries: &[(u32, Value)]) -> HashMap<SymbolId, Value> {
         entries.iter().map(|(s, v)| (SymbolId(*s), *v)).collect()
+    }
+
+    #[test]
+    fn a_class_changed_during_a_run_that_read_it_leaves_the_run_unsettled() {
+        let heap = Heap::new();
+        let none: HashMap<SymbolId, Value> = HashMap::new();
+        let revs: HashMap<SymbolId, u64> = HashMap::new();
+        let mut deps = RunDeps::default();
+        // Read, then changed by a native in the same run: not a fixed point.
+        deps.begin_run(0);
+        deps.note_class_read(InputClasses::PHYSICS);
+        let before = deps.class_now(InputClasses::PHYSICS);
+        deps.note_class_changed_in_run(InputClasses::PHYSICS);
+        assert_eq!(deps.class_now(InputClasses::PHYSICS), before.wrapping_add(1));
+        deps.finish_run(&none, &revs, &heap, 0, 0);
+        assert_eq!(deps.run_needed(&none, &revs, &heap, 0), Some(RunReason::HostDataChanged));
+        // The next run reads it and changes nothing: settled.
+        deps.begin_run(0);
+        deps.note_class_read(InputClasses::PHYSICS);
+        deps.finish_run(&none, &revs, &heap, 0, 0);
+        assert_eq!(deps.run_needed(&none, &revs, &heap, 0), None);
+        // Changing a class the run did not read leaves it settled too.
+        deps.begin_run(0);
+        deps.note_class_read(InputClasses::PHYSICS);
+        deps.note_class_changed_in_run(InputClasses::NET);
+        deps.finish_run(&none, &revs, &heap, 0, 0);
+        assert_eq!(deps.run_needed(&none, &revs, &heap, 0), None);
     }
 
     #[test]

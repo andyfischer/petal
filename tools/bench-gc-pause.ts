@@ -25,12 +25,12 @@ function flag(name: string): string | undefined {
 const runs = parseInt(flag('runs') ?? '5', 10);
 const sizes = (flag('n') ?? '10000,100000').split(',').map(s => parseInt(s, 10));
 const petalFlag = flag('petal');
-const petal = petalFlag ?? join(repoRoot, 'core', 'target', 'release', 'petal');
+const petal = petalFlag ?? join(repoRoot, 'cli', 'target', 'release', 'petal');
 
 if (!petalFlag) {
     const build = spawnSync(
         'cargo',
-        ['build', '--release', '--quiet', '--manifest-path', join(repoRoot, 'core', 'Cargo.toml')],
+        ['build', '--release', '--quiet', '--manifest-path', join(repoRoot, 'cli', 'Cargo.toml')],
         { stdio: 'inherit' },
     );
     if (build.status !== 0) process.exit(build.status ?? 1);

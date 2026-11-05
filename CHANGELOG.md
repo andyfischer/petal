@@ -12,6 +12,18 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- The package manager left the `petal` library: it is the `petal-pkgman`
+  crate (`core-libs/petal-pkgman`), and the `petal` binary is built from a
+  new `cli/` crate that links it. Runtimes embedded in other programs (the
+  browser, SDL and C hosts) no longer carry it. Build the binary with
+  `cd cli && cargo build` (`make build`); it lands at
+  `cli/target/debug/petal`, and `cargo install --path cli` installs it.
+  `petal::pkgman` is gone. A host that loads on-disk projects with git
+  dependencies calls `petal_pkgman::register()` once; without it, path
+  dependencies and `vendor/<name>` still resolve and a git dependency is an
+  error that says to bundle the package
+  ([packages.md](docs/packages.md#install-on-demand)).
+
 - The `creative` package is gone: `lerp`, `map_range`, `distance`, `mag`,
   `smoothstep` and `choose` are declared by `core` now and are in scope in
   every file with no import, like `clamp` and `random_int`. Delete

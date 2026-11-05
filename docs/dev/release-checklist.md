@@ -51,6 +51,8 @@ it (macOS has no `timeout`):
 
 ```bash
 cargo test --manifest-path core/Cargo.toml
+cargo test --manifest-path core-libs/petal-pkgman/Cargo.toml
+cargo test --manifest-path cli/Cargo.toml
 perl -e 'alarm shift; exec @ARGV' 1800 npx vitest run
 npm run scan-secrets          # the history becomes more visible after a release
 ```
@@ -76,8 +78,8 @@ for d in core core-libs/petal-ui garden integrations/petal-c-bridge \
   cargo metadata --format-version 1 --manifest-path "$d/Cargo.toml" >/dev/null
 done
 git status --short            # expect: core/Cargo.toml and the seven Cargo.lock files
-cargo build --release --locked --manifest-path core/Cargo.toml
-core/target/release/petal --version   # expect: petal X.Y.Z
+cargo build --release --locked --manifest-path cli/Cargo.toml
+cli/target/release/petal --version   # expect: petal X.Y.Z
 ```
 
 In `CHANGELOG.md`, rename `## Unreleased` to `## X.Y.Z - YYYY-MM-DD`, add
@@ -103,7 +105,7 @@ cd ~/petal
 target=$(rustc -vV | sed -n 's/host: //p')
 rel=$(mktemp -d)
 mkdir -p "$rel/latest/download/petal-$target"
-cp core/target/release/petal LICENSE README.md "$rel/latest/download/petal-$target/"
+cp cli/target/release/petal LICENSE README.md "$rel/latest/download/petal-$target/"
 ( cd "$rel/latest/download" && tar -czf "petal-$target.tar.gz" "petal-$target" \
   && shasum -a 256 "petal-$target.tar.gz" > "petal-$target.tar.gz.sha256" )
 

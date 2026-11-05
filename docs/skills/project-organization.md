@@ -91,7 +91,8 @@ Lower layers must never depend on higher ones ([Layering](#layering-rules)).
 | 0 | `core/src/` | The language: lexer, parser, CST, compiler, IR, type checker, VM, GC, state, reload, introspection (provenance, DM, autodiff), and the embedding API (`Env`, natives, packages). | Rust |
 | 0 | `core/src/builtins/` + `core/packages/<name>/` | Natives registered in every `Env`. The `.rs` file implements them; the package declares them. `core` is always in scope; the domain packages (`vec2`, `color`, `noise`, `json`, …) need an `import`. | Rust + `.ptl` decls |
 | 0 | `core/prelude/std.ptl` | Pure-Petal helpers implicitly imported everywhere. Must cost nothing when unused. | Petal |
-| 0 | `core/src/cli/`, `lsp/`, `fmt/`, `lint/`, `pkgman.rs` | The `petal` command-line tool and the developer tooling every Petal user runs. | Rust |
+| 0 | `core/src/cli/`, `lsp/`, `fmt/`, `lint/` | The `petal` command-line tool and the developer tooling every Petal user runs. | Rust |
+| 0 | `cli/`, `core-libs/petal-pkgman/` | The `petal` binary, and the package manager only it links (git dependencies, `petal.lock`, `vendor/`, bundles). Embedders do not carry either. | Rust |
 | 1 | `core-libs/<crate>/` | Rust crates that **hosts** link to provide a shared host interface. Each one holds the natives plus the Petal interface package that declares them (`core-libs/petal-ui` gives `ui`). | Rust (+ `.ptl` interface) |
 | 2 | `core-runtime/<package>/` | **Pure Petal** libraries over a host interface or over `core`. No Rust, no build step. Bundled into the binary only if they meet the bundling bar below. | Petal |
 | 3 | `integrations/<host>/` | Hosts: the programs and libraries that embed Petal on one platform (SDL desktop, browser canvas, browser DOM, C/C++). Host-specific natives and that host's interface package live here, inside the host. | Rust/TS/C |
@@ -130,7 +131,8 @@ Work through these in order and stop at the first "yes".
 
 4. **Is it part of the `petal` command or developer tooling every user runs**
    (a subcommand, formatter rule, lint, LSP feature, package command)?
-   → `core/src/cli/`, `lint/`, `fmt/`, `lsp/`, `pkgman.rs`. Put the logic in a
+   → `core/src/cli/`, `lint/`, `fmt/`, `lsp/`; a package command in
+   `core-libs/petal-pkgman` (run from `cli/src/pm.rs`). Put the logic in a
    library module the CLI calls, not in `cli/handlers.rs`, so Garden and the
    LSP can reuse it.
 
@@ -256,16 +258,18 @@ list once it is fixed.
 
 ### Too much inside the `petal` library crate
 
-3. **The CLI, LSP, formatter, linter, package manager and `fix-imports` are
-   all public modules of the `petal` library crate** (`core/src/lib.rs`: `cli`,
-   `lsp`, `fmt`, `lint`, `pkgman`, `fix_imports`, `suggest`). So every
+3. **The CLI, LSP, formatter, linter and `fix-imports` are all public
+   modules of the `petal` library crate** (`core/src/lib.rs`: `cli`, `lsp`,
+   `fmt`, `lint`, `fix_imports`, `suggest`). The package manager was the
+   first to leave: it is `core-libs/petal-pkgman`, linked only by the `petal`
+   binary (`cli/`). So every
    embedder (C bridge, Garden, petal-sdl, wasm) compiles them, and they are
    part of the public API surface. That is about 25k lines. These belong in
    this repo (decision-tree step 4), but not in the runtime crate.
    *Fix, in order of cost:* (a) put them behind a default-on `tooling` cargo
-   feature that embedders and the wasm build turn off. (b) Later, split them
-   into a `petal-cli` crate (a binary that also exposes `lsp`/`fmt`/`lint` as
-   a library) that depends on `petal`. Garden already needs `fmt`/`lint`, so
+   feature that embedders and the wasm build turn off. (b) Move them into the
+   `petal-cli` crate (`cli/`, the binary, which exists now) or a library
+   beside it that depends on `petal`. Garden already needs `fmt`/`lint`, so
    it would depend on that crate.
 
 ### Bundled packages that don't meet the bundling bar

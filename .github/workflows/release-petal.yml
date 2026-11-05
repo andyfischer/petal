@@ -92,17 +92,17 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            core/target
-          key: cargo-release-${{ matrix.target }}-${{ hashFiles('core/Cargo.lock') }}
+            cli/target
+          key: cargo-release-${{ matrix.target }}-${{ hashFiles('cli/Cargo.lock') }}
           restore-keys: cargo-release-${{ matrix.target }}-
 
       - name: Build (cargo)
         if: matrix.builder == 'cargo'
-        run: cargo build --release --locked --manifest-path core/Cargo.toml --target ${{ matrix.target }}
+        run: cargo build --release --locked --manifest-path cli/Cargo.toml --target ${{ matrix.target }}
 
       - name: Build (cargo-zigbuild)
         if: matrix.builder == 'zigbuild'
-        run: cargo zigbuild --release --locked --manifest-path core/Cargo.toml --target ${{ matrix.target }}
+        run: cargo zigbuild --release --locked --manifest-path cli/Cargo.toml --target ${{ matrix.target }}
 
       # The binary must work with nothing else from the checkout beside it,
       # since the installer drops only `petal` into ~/.petal/bin.
@@ -111,7 +111,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bin="$PWD/core/target/${{ matrix.target }}/release/petal"
+          bin="$PWD/cli/target/${{ matrix.target }}/release/petal"
           cd "$RUNNER_TEMP"
           "$bin" --version
           test "$("$bin" run -e 'print(1 + 2)')" = "3"
@@ -121,7 +121,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${{ matrix.target }}"
-          bin="core/target/${target}/release/petal"
+          bin="cli/target/${target}/release/petal"
           dist="petal-${target}"
           mkdir -p "dist/${dist}"
           cp "$bin" "dist/${dist}/petal"

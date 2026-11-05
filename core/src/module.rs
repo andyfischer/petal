@@ -178,7 +178,7 @@ pub struct ModuleRegistry {
     /// found from. `None` for an entry with no path and no inline directory.
     entry_dir: std::cell::RefCell<Option<PathBuf>>,
     /// Run `petal install` for the project the first time a load imports a
-    /// git dependency that is not installed (see [`crate::pkgman`]). Off by
+    /// git dependency that is not installed (see [`crate::package_manager`]). Off by
     /// default: a host, and the language server, never shell out to git on
     /// their own. The CLI turns it on.
     pub install_on_demand: bool,
@@ -377,7 +377,7 @@ pub fn canonical_path(path: &Path) -> PathBuf {
 
 /// `path` with `.` and `..` components folded away without touching the
 /// filesystem. `None` when a `..` would climb above the path's root.
-pub(crate) fn normalize_lexical(path: &Path) -> Option<PathBuf> {
+pub fn normalize_lexical(path: &Path) -> Option<PathBuf> {
     use std::path::Component;
     let mut out = PathBuf::new();
     let mut depth = 0usize;
@@ -597,7 +597,8 @@ impl ModuleRegistry {
                 let root = canonical_path(&normalize_lexical(&joined).unwrap_or(joined));
                 // A package that was fetched may not reach outside what was
                 // fetched with it.
-                if let Some(tree) = crate::pkgman::fetched_tree_of(&project_root(), &owner_root)
+                if let Some(tree) = crate::package_manager::registered()
+                    .and_then(|pm| pm.fetched_tree_of(&project_root(), &owner_root))
                     && !root.starts_with(&tree)
                 {
                     return Err(format!(
@@ -610,42 +611,37 @@ impl ModuleRegistry {
                 load(root, format!("path = \"{rel}\""))
             }
             DependencySource::Git { url, tag, rev } => {
+                use crate::package_manager::LocateError;
+                let Some(pm) = crate::package_manager::registered() else {
+                    return Err(format!(
+                        "dependency '{}' of package '{}' is a git dependency ({url}), and this \
+                         host has no package manager to find it: `petal bundle` the package and \
+                         register it with register_package instead",
+                        dep.name, owner.info.name
+                    ));
+                };
                 let project = project_root();
                 let owner_root = canonical_path(&owner.info.root);
-                let locate = |trust: bool| {
-                    crate::pkgman::locate_git(&project, &owner_root, url, tag, rev, trust)
-                };
+                let git = crate::package_manager::GitDependency { url, tag, rev };
                 // The first git dependency a load meets checks the whole
                 // graph against the lockfile, before any fetched package is
                 // loaded: a manifest that has moved past petal.lock is
                 // installed once, up front, so every importer then sees the
                 // same single version.
-                if self.install_on_demand
-                    && self.install_tried.borrow_mut().insert(project.clone())
-                    && let Err(crate::pkgman::ResolveError::NotInstalled(_)) =
-                        crate::pkgman::installed_graph(&project)
-                {
-                    eprintln!("Installing the dependencies of {}", project.display());
-                    crate::pkgman::install_with(
-                        &project,
-                        &crate::pkgman::InstallOptions {
-                            announce: true,
-                            ..Default::default()
-                        },
-                    )
-                    .map_err(|e| {
-                        format!(
+                let install = self.install_on_demand
+                    && self.install_tried.borrow_mut().insert(project.clone());
+                let root = pm.locate_git(&project, &owner_root, &git, install).map_err(|e| {
+                    match e {
+                        LocateError::InstallFailed(e) => format!(
                             "dependency '{}' of package '{}' ({url}) could not be installed: {e}",
                             dep.name, owner.info.name
-                        )
-                    })?;
-                }
-                let root = locate(false).map_err(|e| {
-                    format!(
-                        "dependency '{}' of package '{}' is a git dependency ({url}) that is \
-                         not installed: {e} — run `petal install`",
-                        dep.name, owner.info.name
-                    )
+                        ),
+                        LocateError::NotInstalled(e) => format!(
+                            "dependency '{}' of package '{}' is a git dependency ({url}) that \
+                             is not installed: {e} — run `petal install`",
+                            dep.name, owner.info.name
+                        ),
+                    }
                 })?;
                 load(canonical_path(&root), format!("git = \"{url}\""))
             }
@@ -896,7 +892,7 @@ impl ModuleRegistry {
             let vendored = project
                 .info
                 .root
-                .join(crate::pkgman::VENDOR_DIR)
+                .join(crate::package_manager::VENDOR_DIR)
                 .join(package);
             if vendored.join(crate::package::MANIFEST_FILE).is_file() {
                 let root = canonical_path(&vendored);

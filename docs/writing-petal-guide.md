@@ -20,7 +20,7 @@ prebuilt `petal` binary. In a checkout of this repository you can build it
 instead:
 
 ```bash
-make build                       # binary at core/target/debug/petal
+make build                       # binary at cli/target/debug/petal
 ./tools/run-petal.ts run x.ptl  # wrapper: rebuilds if Rust source is newer
 ```
 

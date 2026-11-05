@@ -14,7 +14,7 @@ mod bench;
 pub mod dm;
 mod handlers;
 mod help;
-mod pm;
+pub mod pm;
 mod source_tools;
 
 /// How human-readable (non-`--json`) errors are printed.
@@ -266,7 +266,8 @@ pub enum Command {
         path: Option<String>,
     },
     /// The package-manager commands (`init`, `add`, `remove`, `install`,
-    /// `update`, `vendor`, `bundle`); see `crate::pkgman`.
+    /// `update`, `vendor`, `bundle`), run by the `petal` binary with
+    /// `petal-pkgman` (see [`pm`]).
     Pm(pm::PmCommand),
 }
 
@@ -621,9 +622,15 @@ pub fn execute(cli: CliArgs) {
         source_tools::handle_apply_change(opts, &include_dirs);
         return;
     }
-    if let Command::Pm(pm) = &command {
-        pm::handle(pm);
-        return;
+    // Package-manager commands are run by the `petal` binary, which links
+    // the package manager (`cli/`, `petal-pkgman`) and handles them before
+    // calling `execute`. A host that reuses this CLI without it cannot.
+    if let Command::Pm(_) = &command {
+        eprintln!(
+            "Error: this command needs the package manager, which this build of petal does not \
+             include"
+        );
+        process::exit(1);
     }
     // `packages` reports on the search path itself; there is no program.
     if let Command::Packages { json, path } = command {

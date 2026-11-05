@@ -1,2 +1,2 @@
 
-cargo install --path core
+cargo install --path cli

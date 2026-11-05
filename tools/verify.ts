@@ -7,7 +7,7 @@
 //
 //   ./tools/verify.ts --plan test/verify-plans/lint-fix.json --before ab3304a~1 --after .
 //   ./tools/verify.ts --plan test/verify-plans/compiler.json \
-//        --before-bin old/petal --after-bin core/target/debug/petal
+//        --before-bin old/petal --after-bin cli/target/debug/petal
 //
 // A plan is an ordered list of checks, cheapest first, that short-circuits per
 // file (see docs/dev/refactor-verification.md §4-6). Each file gets one table
@@ -841,7 +841,7 @@ async function main() {
     const outDir = opts.out ?? join(repoRoot, '.temp', 'verify-runs', `${plan.name}-${stamp}`);
     mkdirSync(outDir, { recursive: true });
 
-    const defaultPetal = join(repoRoot, 'core', 'target', 'debug', 'petal');
+    const defaultPetal = join(repoRoot, 'cli', 'target', 'debug', 'petal');
     const defaultUi = join(repoRoot, 'core-libs', 'petal-ui', 'target', 'debug', 'petal-ui-run');
 
     /** `-I <dir>` pairs for one side, from the plan's `include` list. */
@@ -865,7 +865,7 @@ async function main() {
                   uiRun: opts.afterUiBin ?? defaultUi, includeArgs: includeFor(opts.after), gateArgs: [] };
     }
     for (const s of [before, after]) {
-        if (!existsSync(s.petal)) fail(`no petal binary at ${s.petal} (cd core && cargo build)`);
+        if (!existsSync(s.petal)) fail(`no petal binary at ${s.petal} (cd cli && cargo build)`);
     }
 
     const notes: string[] = [];

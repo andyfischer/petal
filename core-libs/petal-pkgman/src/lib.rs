@@ -1,6 +1,6 @@
 //! The package manager: git dependencies, `petal.lock`, `vendor/`, bundles.
 //!
-//! A project is a directory with a `petal.toml` ([`crate::package`]). Its
+//! A project is a directory with a `petal.toml` ([`petal::package`]). Its
 //! `[dependencies]` — and those of every package they reach — form a graph
 //! this module resolves into exactly **one version of each package**:
 //!
@@ -19,42 +19,26 @@
 //! against the locked hash. A `vendor/<name>` directory at the project root,
 //! when present, is used in preference to the cache.
 //!
-//! The loader ([`crate::module`]) never fetches: it reads `petal.lock` and
+//! The loader ([`petal::module`]) never fetches: it reads `petal.lock` and
 //! opens the vendored or cached tree ([`locate_git`]). The CLI turns on
 //! install-on-demand, which runs [`install`] the first time a program imports
 //! a git dependency that is not there.
+//!
+//! This crate is not part of `petal` itself, so the runtimes embedded in
+//! other programs (the browser, SDL and C hosts) do not carry it. The loader
+//! reaches it through [`petal::package_manager::PackageManager`]; the `petal`
+//! CLI calls [`register`] at startup.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use crate::package::{DependencySource, MANIFEST_FILE, Manifest, Requirement, Version};
+use petal::package::{DependencySource, MANIFEST_FILE, Manifest, Requirement, Version};
 
-/// The lockfile's name, beside the project's `petal.toml`.
-pub const LOCK_FILE: &str = "petal.lock";
-
-/// The directory at the project root whose `<name>/` subdirectories stand in
-/// for cached packages.
-pub const VENDOR_DIR: &str = "vendor";
+/// The lockfile's name, the vendor directory, and where the cache is: defined
+/// in `petal` so the loader and tools agree with this crate on them.
+pub use petal::package_manager::{LOCK_FILE, VENDOR_DIR, cache_dir, petal_home};
 
 // ── where things live ────────────────────────────────────────────
-
-/// `$PETAL_HOME`, or `~/.petal`.
-pub fn petal_home() -> PathBuf {
-    if let Some(home) = std::env::var_os("PETAL_HOME").filter(|h| !h.is_empty()) {
-        return PathBuf::from(home);
-    }
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    home.join(".petal")
-}
-
-/// `<petal home>/cache`: git databases under `git/`, checked-out trees under
-/// `trees/<sha256>`, and the commit-to-tree index under `commits/`.
-pub fn cache_dir() -> PathBuf {
-    petal_home().join("cache")
-}
 
 fn tree_dir(tree: &str) -> PathBuf {
     cache_dir()
@@ -63,7 +47,7 @@ fn tree_dir(tree: &str) -> PathBuf {
 }
 
 fn canonical(path: &Path) -> PathBuf {
-    crate::module::canonical_path(path)
+    petal::module::canonical_path(path)
 }
 
 /// A git url as the cache and the lockfile key it: a relative path that
@@ -838,12 +822,12 @@ impl Graph {
     }
 
     /// Every `[requires]` in the graph, by interface then package.
-    pub fn requires(&self) -> Vec<crate::package::RequiredInterface> {
-        let mut out: Vec<crate::package::RequiredInterface> = self
+    pub fn requires(&self) -> Vec<petal::package::RequiredInterface> {
+        let mut out: Vec<petal::package::RequiredInterface> = self
             .packages
             .iter()
             .flat_map(|n| {
-                n.requires.iter().map(|r| crate::package::RequiredInterface {
+                n.requires.iter().map(|r| petal::package::RequiredInterface {
                     interface: r.interface.clone(),
                     version: r.version.clone(),
                     package: n.name.clone(),
@@ -1030,7 +1014,7 @@ impl Resolver<'_> {
                     DependencySource::Path(rel) => {
                         let joined = root.join(rel);
                         let dep_root = canonical(
-                            &crate::module::normalize_lexical(&joined).unwrap_or(joined),
+                            &petal::module::normalize_lexical(&joined).unwrap_or(joined),
                         );
                         let source = match &tree {
                             Some((tree_root, tree_name)) => {
@@ -1348,7 +1332,7 @@ impl Resolver<'_> {
 
 /// The directory of the nearest `petal.toml` at or above `start`.
 pub fn project_root(start: &Path) -> Result<PathBuf, String> {
-    crate::package::find_manifest(start)
+    petal::package::find_manifest(start)
         .and_then(|m| m.parent().map(Path::to_path_buf))
         .ok_or_else(|| {
             format!(
@@ -1715,7 +1699,7 @@ pub fn bundle(entry: &Path) -> Result<serde_json::Value, String> {
             ));
         }
         let package =
-            crate::package::Package::from_dir(&node.root).map_err(|e| e.to_string())?;
+            petal::package::Package::from_dir(&node.root).map_err(|e| e.to_string())?;
         let mut modules = serde_json::Map::new();
         let manifest_path = node.root.join(MANIFEST_FILE);
         let manifest = std::fs::read_to_string(&manifest_path)
@@ -1763,6 +1747,77 @@ pub fn bundle(entry: &Path) -> Result<serde_json::Value, String> {
         "packages": packages,
         "requires": requires,
     }))
+}
+
+// ── the loader's view ────────────────────────────────────────────
+
+/// This crate as the module loader's [`petal::package_manager::PackageManager`].
+pub struct Manager;
+
+impl petal::package_manager::PackageManager for Manager {
+    fn locate_git(
+        &self,
+        project_root: &Path,
+        owner_root: &Path,
+        dep: &petal::package_manager::GitDependency,
+        install: bool,
+    ) -> Result<PathBuf, petal::package_manager::LocateError> {
+        use petal::package_manager::LocateError;
+        if install && let Err(ResolveError::NotInstalled(_)) = installed_graph(project_root) {
+            eprintln!("Installing the dependencies of {}", project_root.display());
+            install_with(
+                project_root,
+                &InstallOptions {
+                    announce: true,
+                    ..Default::default()
+                },
+            )
+            .map_err(LocateError::InstallFailed)?;
+        }
+        locate_git(project_root, owner_root, dep.url, dep.tag, dep.rev, false)
+            .map_err(LocateError::NotInstalled)
+    }
+
+    fn fetched_tree_of(&self, project_root: &Path, root: &Path) -> Option<PathBuf> {
+        fetched_tree_of(project_root, root)
+    }
+
+    fn installed_graph(
+        &self,
+        project_root: &Path,
+    ) -> Result<petal::package_manager::InstalledGraph, String> {
+        let graph = installed_graph(project_root).map_err(|e| e.to_string())?;
+        Ok(petal::package_manager::InstalledGraph {
+            nodes: graph
+                .packages
+                .iter()
+                .map(|n| petal::package_manager::InstalledNode {
+                    name: n.name.clone(),
+                    version: n.version.clone(),
+                    root: n.root.clone(),
+                    requires: n.requires.clone(),
+                    source: n.source.to_string(),
+                    is_path: matches!(n.source, NodeSource::Path { .. }),
+                    locked: match &n.source {
+                        NodeSource::Git {
+                            commit,
+                            tree,
+                            vendored,
+                            ..
+                        } => Some((commit.clone(), tree.clone(), *vendored)),
+                        _ => None,
+                    },
+                    dependencies: n.dependencies.clone(),
+                })
+                .collect(),
+        })
+    }
+}
+
+/// Make this crate answer for git dependencies in this process (see
+/// [`petal::package_manager::register`]). Idempotent.
+pub fn register() {
+    let _ = petal::package_manager::register(Box::new(Manager));
 }
 
 #[cfg(test)]

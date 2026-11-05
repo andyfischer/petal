@@ -1436,7 +1436,7 @@ pub fn file_origins(program: &Program) -> Vec<CodeOrigin> {
         }
         dir
     });
-    let cache = abs(&crate::pkgman::cache_dir());
+    let cache = abs(&crate::package_manager::cache_dir());
     files
         .iter()
         .enumerate()

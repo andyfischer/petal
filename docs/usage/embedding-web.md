@@ -38,8 +38,14 @@ Node:
 | `--size` | 2.26 MB | 0.85 MB | 9.3 ms | 2.7 ms |
 
 `opt-level = "s"` falls between them (2.71 MB, 1.00 MB gzip, frames ~1.3x
-slower). The rest of the size is mostly core's own code; the embedded
-library sources (the ui prelude, bloom, glsl, text_layout) are about 300 KB.
+slower). The rest of the size is mostly core's own code. The embedded library
+sources (the ui prelude, bloom, glsl, text_layout) are about 370 KB in the
+repository; a wasm build embeds them with their whole-line comments blanked
+(`core/build.rs`, `petal::bundled::COMMENTS_STRIPPED`), which takes about
+170 KB off. Set `PETAL_EMBED_COMMENTS=keep` when building to keep them. The
+default build measured 3.75 MB raw, 1.31 MB gzip, 0.93 MB brotli on
+2026-11-05. What the size is made of, and the plan to shrink it, is in
+[wasm-size-improvements](../tasks/wasm-size-improvements.md).
 
 `tools/wasm-smoke.ts` runs scripts through both built pkgs in Node, a few
 frames each; CI runs it after the builds. A Rust panic inside the runtime is
@@ -50,6 +56,7 @@ logged to the console (message, location and stack) before the page sees
 
 ```ts
 import init, { PetalRuntime } from "./pkg/petal_web_canvas.js";
+import { decodeDrawCommands } from "petal-web-canvas"; // src/draw-wire.ts
 
 await init();
 const rt = new PetalRuntime();                  // natives and `ui` registered
@@ -62,7 +69,7 @@ function frame(now: number) {
   rt.begin_frame();                             // promote input edges
   if (rt.frame_needed(sid)) {                   // the frame gate
     rt.reset_and_run(sid);                      // state persists
-    paint(JSON.parse(rt.take_draw_commands()));
+    paint(decodeDrawCommands(rt.take_draw_buffer(), rt.draw_strings()));
   }
   for (const line of JSON.parse(rt.take_output())) console.log(line);
   requestAnimationFrame(frame);
@@ -113,7 +120,14 @@ Registers the whole petal-ui layer (input, draw commands, offscreen canvases,
 | `frame_needed(stackId)` | the [frame gate](../dev/frame-gate.md): binds the frame's inputs and answers whether a run could differ from the last. `false` means the last frame's commands are this frame's |
 | `invalidate_frame(stackId)` | make the next `frame_needed` answer `true` (a resize, new fonts, host data the runtime cannot see) |
 | `reset_and_run(stackId)` | clear the draw buffer and canvas ids, bind the frame's inputs, reset and run |
-| `take_draw_commands()` | JSON array of the frame's draw commands, petal-ui's `DrawCommand` shape (`{"op": …}`), for the renderer ([`ui` host contract](../ui-host-contract.md)) |
+| `take_draw_buffer()` | drain the frame's draw commands in petal-ui's binary wire form (`petal_ui::draw_wire`), a `Float64Array` |
+| `draw_strings()` | the strings (text, fonts, image sources) the last drained buffer refers to by index |
+
+`decodeDrawCommands(buffer, strings)` (`petal-web-canvas/src/draw-wire.ts`)
+turns the pair into petal-ui's `DrawCommand` objects (`{ op, ...fields }`,
+defaults left out, the same shape the JSON form had) for the renderer
+([`ui` host contract](../ui-host-contract.md)). The wire form replaced a JSON
+string in November 2026: it skips building and parsing JSON every frame.
 
 **Input**, called as browser events arrive; `InputTracker` in
 `petal-web-canvas/src/input.ts` does the mapping:
@@ -145,7 +159,7 @@ ratios of the font size. See [text and fonts](text-and-fonts.md).
 |---|---|
 | `get_state_json()` | the active stack's `state` as a JSON object |
 | `set_state_json(name, json)` | set one top-level `state` by name; throws for a name the program has no `state` for |
-| `run_speculative()` | run a fork of the active stack once with this frame's inputs and return its draw commands as JSON, leaving the live state alone ([time travel](../features/time-travel.md)) |
+| `run_speculative()` | run a fork of the active stack once with this frame's inputs and return its draw buffer (strings in `draw_strings()`, as for `take_draw_buffer`), leaving the live state alone ([time travel](../features/time-travel.md)) |
 
 `PetalCanvas.setProp(name, value)` is built on `set_state_json`: it stages a
 JSON value and writes it into the like-named top-level `state` just before the

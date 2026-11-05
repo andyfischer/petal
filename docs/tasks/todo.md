@@ -160,6 +160,23 @@ From [moses-debrief.md](moses-debrief.md), "VM":
     retina strokes blur;
   - neither host is an npm package with dist JS and `.d.ts`;
   - `panic = "abort"` is not set for the wasm build.
+- **Repository layout** (updated 2026-11-05;
+  [skills/project-organization.md](../skills/project-organization.md#current-misplacements-audit-of-2026-11-04-updated-2026-11-05)):
+  the 2026-11-04 audit's moves are done (`gpp` in `core-libs/`, the
+  element-tree wasm host in `integrations/petal-web-html`, the CLI/LSP behind
+  a `tooling` feature that embedders turn off, two tools moved next to
+  examples). Still open:
+  - `glsl` is bundled though experimental; Cheesecake imports the bundled
+    copy, so unbundling waits on its script host registering its own;
+  - `petal-fps` and `petal-fantasy-nes` wait on a small in-repo example of
+    petal-sdl's `Host` trait before they can leave;
+  - `core/prelude/std.ptl` into `core/packages/std/` needs `std` registered
+    as a package;
+  - the `petal-sdl` crate and binary rename waits on downstream references.
+  Downstream follow-ups: Cheesecake's next re-vendor archives
+  `core-libs/gpp` instead of `garden/gpp` and drops its one local
+  modification (`gpp/Cargo.toml`); a page that vendors petal-web-html's pkg
+  now loads `petal_web_html.js`, not `petal.js`.
 - **Headless UI from the CLI:** `petal run` refuses `ui` scripts. Today the
   answer is `petal-sdl --headless --frames N`, or `petal-ui-run` from
   core-libs. A one-command way to report draw counts and frame times is still

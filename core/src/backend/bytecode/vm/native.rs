@@ -538,7 +538,7 @@ impl<'a> Vm<'a> {
     ) -> Result<Value, String> {
         let chain = self.call_chain(origin);
         use super::spec::{CallInfo, Portable, ReplayPhase, SuppressedCall, chain_hash, loop_path_hash};
-        use crate::dm_v2::observe::{ObsBounds, ObsValue};
+        use crate::dm::observe::{ObsBounds, ObsValue};
         let natives = self.native_fns;
         let effects = natives.effects(nid);
         if effects.is_escaping() {

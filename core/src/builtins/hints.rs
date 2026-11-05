@@ -4,7 +4,7 @@
 //!
 //! Both are the identity on their first argument at run time: a dual number
 //! passes through unchanged, and the bounds of `tunable` are evaluated by the
-//! call and ignored. What they mean is static: `crate::dm_v2::hints` reads
+//! call and ignored. What they mean is static: `crate::dm::hints` reads
 //! them from the IR to decide which literals a drag may move. In a
 //! speculative run the gate (`vm::native::call_native_spec`) replays the
 //! baseline's answer of `rigid`, so nothing upstream of it receives feedback

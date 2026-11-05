@@ -487,7 +487,7 @@ Registering a native does not put its name in scope. A package declares it
 with `native fn` (`native_decl.rs`), which gives the checker its parameter
 names, arity and types, and a script sees the name by importing the package.
 The builtins are declared by the packages under `core/packages/` (`core`,
-`io`, `json`, `color`, `noise`, `vec2`, `autodiff`, `creative`, `web`), which
+`io`, `json`, `color`, `noise`, `vec2`, `autodiff`, `web`), which
 are compiled into the binary (`bundled.rs`); the std prelude is
 `core/prelude/std.ptl`. See [ffi.md](../usage/ffi.md#native-interfaces-native-fn).
 

@@ -111,7 +111,7 @@
       "id": "hints",
       "title": "Direct-Manipulation Hints",
       "group": "core",
-      "doc": "Direct-manipulation hints: `tunable` and `rigid` (docs/proposals/dm-v2-hints.md, docs/dev/direct-manipulation-v2-plan.md §2.6).  Both are the identity on their first argument at run time: a dual number passes through unchanged, and the bounds of `tunable` are evaluated by the call and ignored. What they mean is static: `crate::dm_v2::hints` reads them from the IR to decide which literals a drag may move. In a speculative run the gate (`vm::native::call_native_spec`) replays the baseline's answer of `rigid`, so nothing upstream of it receives feedback through it."
+      "doc": "Direct-manipulation hints: `tunable` and `rigid` (docs/proposals/dm-v2-hints.md, docs/dev/direct-manipulation-v2-plan.md §2.6).  Both are the identity on their first argument at run time: a dual number passes through unchanged, and the bounds of `tunable` are evaluated by the call and ignored. What they mean is static: `crate::dm::hints` reads them from the IR to decide which literals a drag may move. In a speculative run the gate (`vm::native::call_native_spec`) replays the baseline's answer of `rigid`, so nothing upstream of it receives feedback through it."
     },
     {
       "id": "drawing",
@@ -1354,8 +1354,7 @@
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 41
-      },
-      "import": "creative"
+      }
     },
     {
       "name": "map_range",
@@ -1412,8 +1411,7 @@
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 245
-      },
-      "import": "creative"
+      }
     },
     {
       "name": "distance",
@@ -1472,8 +1470,7 @@
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 257
-      },
-      "import": "creative"
+      }
     },
     {
       "name": "mag",
@@ -1522,8 +1519,7 @@
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 293
-      },
-      "import": "creative"
+      }
     },
     {
       "name": "pow",
@@ -1647,8 +1643,7 @@
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 397
-      },
-      "import": "creative"
+      }
     },
     {
       "name": "radians",
@@ -1878,8 +1873,7 @@
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 461
-      },
-      "import": "creative"
+      }
     },
     {
       "name": "hsv",

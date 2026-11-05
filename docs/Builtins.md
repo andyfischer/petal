@@ -13,7 +13,6 @@ fixed parameter list takes [named arguments](syntax/function-overloading.md#name
 under the names its heading shows, in any order after the positional ones:
 
 ```petal
-import creative
 print(clamp(15, lo: 0, hi: 10))                        // 10
 print(map_range(value: 5, in_lo: 0, in_hi: 10, out_lo: 0, out_hi: 100))  // 50.0
 print([1, 2, 3, 4].slice(start: 1, end: 3))            // [2, 3]
@@ -53,15 +52,15 @@ in scope in every file with no import — `print`, `len`, `str`, `type`,
 `range`, the casts, assertions, the collection, string and record functions,
 the higher-order functions, [formatting](#formatting-numbers-and-text), the
 [reductions and selections](#list-helpers) of the Petal
-prelude, and the plain math of the [Math](#math) section (plus `clamp` and
-`random_int`).
+prelude, the plain math of the [Math](#math) section, and the
+[creative-coding math](#creative-coding-math) (`clamp`, `lerp`, `map_range`,
+`distance`, `mag`, `smoothstep`, `random_int`, `choose`).
 
 The **domain builtins** live in bundled packages and are in scope only in a
 file that imports the package:
 
 | Import | Names |
 |---|---|
-| `import creative` | `lerp`, `map_range`, `distance`, `mag`, `smoothstep`, `choose` |
 | `import noise` | `noise`, `noise_seed` |
 | `import color` | `hsv`, `hsl`, `hsv_deg`, `hsl_deg`, `color_lerp` |
 | `import vec2` | `vec2`, `vec3`, `normalize`, `dot`, `cross`, `limit`, `rotate` |
@@ -361,8 +360,6 @@ little-endian word `w` of the text, the last one zero-padded; the result is
 
 ## Creative Coding Math
 
-`clamp` is global; the rest of this section needs `import creative`.
-
 Processing-style helpers for animation, layout, and generative code.
 
 ### `clamp(value, lo, hi)`
@@ -399,7 +396,6 @@ is taken whole from `a` while `t < 0.5` and from `b` after. A field `b` does
 not have keeps `a`'s value.
 
 ```petal
-import creative
 let noir   = {sepia: 0.0, grain: 0.8, tint: #202830, id: "noir"}
 let golden = {sepia: 1.0, grain: 0.2, tint: #ffd08a, id: "golden"}
 lerp(noir, golden, 0.25)
@@ -407,7 +403,6 @@ lerp(noir, golden, 0.25)
 ```
 
 ```petal
-import creative
 import vec2
 lerp(0.0, 100.0, 0.3)   // 30.0
 lerp(10.0, 20.0, 0.5)   // 15.0
@@ -422,7 +417,6 @@ Remap a value from one range to another — for example a pixel coordinate in
 `[0, width]` to an angle in `[0, 2π]`.
 
 ```petal
-import creative
 map_range(5.0, 0.0, 10.0, 100.0, 200.0)   // 150.0
 map_range(0.5, 0.0, 1.0, -1.0, 1.0)       //   0.0
 ```
@@ -433,7 +427,6 @@ Euclidean distance. Accepts either four scalars, two `vec2` values, or two
 `vec3` values.
 
 ```petal
-import creative
 import vec2
 distance(0.0, 0.0, 3.0, 4.0)                // 5.0
 distance(vec2(0.0, 0.0), vec2(3.0, 4.0))    // 5.0
@@ -446,7 +439,6 @@ Vector magnitude (length). Accepts 2D or 3D scalars, or a single `vec2` or
 `vec3`.
 
 ```petal
-import creative
 import vec2
 mag(3.0, 4.0)          // 5.0
 mag(vec2(3.0, 4.0))    // 5.0
@@ -459,7 +451,6 @@ Hermite interpolation between two edges — produces a smooth S-curve from 0 to 
 Equivalent to GLSL's `smoothstep`.
 
 ```petal
-import creative
 smoothstep(0.0, 1.0, 0.5)   // 0.5
 smoothstep(0.0, 1.0, 0.25)  // 0.15625
 ```
@@ -491,8 +482,6 @@ noise_seed(42)
 
 ## Extended Randomness
 
-`random_int` is global; `choose` needs `import creative`.
-
 ### `random_int(lo, hi)`
 
 Random integer in the half-open range `[lo, hi)`.
@@ -506,7 +495,6 @@ random_int(0, 10)    // 0..9
 Returns a random element from a list, or `nil` for an empty list.
 
 ```petal
-import creative
 choose([1, 2, 3])             // one of 1, 2, or 3
 choose(["red", "green"])      // "red" or "green"
 ```
@@ -593,7 +581,6 @@ is falsy in an `if`, while every `vec3` is truthy, like a record — compare aga
 Construct a 2D vector.
 
 ```petal
-import creative
 import vec2
 let v = vec2(3.0, 4.0)
 print(mag(v))    // 5.0
@@ -604,7 +591,6 @@ print(mag(v))    // 5.0
 Construct a 3D vector.
 
 ```petal
-import creative
 import vec2
 let p = vec3(1.0, 2.0, 2.0)
 print(mag(p))    // 3.0

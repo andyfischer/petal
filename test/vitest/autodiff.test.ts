@@ -188,7 +188,6 @@ describe("forward-mode automatic differentiation", () => {
     for (const [expr, at] of cases) {
       it(`${expr} at ${at}`, () => {
         const code = `import autodiff
-import creative
 fn f(x) ${expr} end
 let h = 0.000001
 let d = deriv_of(f(dual(${at}, 1.0)))
@@ -218,7 +217,7 @@ print(type(f(dual(${at}, 1.0))), abs(d - fd) < 0.0001, d)`;
 
     it("lerp of lists carries element derivatives", () => {
       expect(
-        runPetal(`import autodiff; import creative; print(lerp([dual(1.0, 1.0), 2.0], [3.0, 4.0], 0.5))`),
+        runPetal(`import autodiff; print(lerp([dual(1.0, 1.0), 2.0], [3.0, 4.0], 0.5))`),
       ).toBe("[dual(2.0, 0.5), 3.0]");
     });
   });
@@ -241,7 +240,7 @@ print(type(f(dual(${at}, 1.0))), abs(d - fd) < 0.0001, d)`;
 
     it("a lerp of vectors refuses a dual t", () => {
       expect(
-        runPetalError(`import autodiff; import creative; import vec2; lerp(vec2(0, 0), vec2(1, 1), dual(0.5, 1.0))`),
+        runPetalError(`import autodiff; import vec2; lerp(vec2(0, 0), vec2(1, 1), dual(0.5, 1.0))`),
       ).toContain("got dual");
     });
   });

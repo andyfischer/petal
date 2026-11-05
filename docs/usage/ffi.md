@@ -340,7 +340,7 @@ the `core` package (`core/packages/core/src/*.ptl`: `basics`, `collections`,
 `math`, `format`, `introspect`, `handle`, `pending`, `classes`), whose
 declarations are in scope in every file with no import. The domain builtins
 are declared by one package each — `noise`, `color`, `vec2`, `autodiff`,
-`json`, `io`, `creative` (`core/packages/<name>/<name>.ptl`) — and are in
+`json`, `io` (`core/packages/<name>/<name>.ptl`) — and are in
 scope where the package is imported. All of them are compiled into the binary
 by `core/build.rs`, which fails the build if a directory is missing, and every
 `Env` registers every one of these natives, so importing a builtin package
@@ -684,9 +684,9 @@ source edit that puts it there
 with the host's own natives in the loop. From Rust:
 
 ```rust
-use petal::cli::dm_v2::propose_json;
+use petal::cli::dm::propose_json;
 env.reset_stack(stack)?;                 // the checkpoint: the frame after the last run
-let response = propose_json(&mut env, &mut petal::dm_v2::NoHost, pid, stack,
+let response = propose_json(&mut env, &mut petal::dm::NoHost, pid, stack,
     &serde_json::json!({"channel": "scene", "emit": 0, "native_arg": 1, "to": 42}),
     Some(entry_path));                   // where "apply": true writes the entry file
 ```

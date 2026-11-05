@@ -216,7 +216,7 @@ pub struct NativeEffects {
     /// the `ExecutionContext` (the print buffer, the noise seed, a counter,
     /// an output buffer, the resource table) or in the running stack, which
     /// a forked execution owns a copy of. A speculative run
-    /// (`crate::dm_v2::spec`) calls a contained native as usual, and its
+    /// (`crate::dm::spec`) calls a contained native as usual, and its
     /// effect is discarded with the fork. An effect that is **not**
     /// contained reaches the host (a file, a network request, an editor
     /// document, a `Cell` the closure captured), and a speculative run
@@ -870,7 +870,7 @@ pub struct NativeFnTable {
     /// The core `tunable` and `rigid` hints (`builtins::hints`), by the ids
     /// `register_builtins` gave them. A name a host has since registered over
     /// resolves to another id, and is then not a hint
-    /// (`crate::dm_v2::hints`).
+    /// (`crate::dm::hints`).
     pub hint_tunable: Option<NativeFnId>,
     pub hint_rigid: Option<NativeFnId>,
     /// `fn_info(f)` / `fn_ast(f)` (experimental): they read the closure table

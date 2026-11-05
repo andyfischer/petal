@@ -2387,7 +2387,7 @@ arrives through an `import` at the top of the file:
 import ./level              // level.ptl beside this file: go(), level.go()
 import ./level as lv        // the same, with the qualifier renamed
 import ./level: go, reset   // only these names, and no qualifier
-import creative             // a package: lerp(a, b, t), creative.lerp(a, b, t)
+import noise                // a package: noise(x), noise.noise(x)
 import ui                   // the petal-ui interface, for a UI script
 ```
 

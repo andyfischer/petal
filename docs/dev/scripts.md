@@ -75,6 +75,9 @@ See [testing.md](testing.md) for the full guide.
 | `cd core && cargo run --release --example reload_follow -- <file.ptl> [cycles]` | What a reload costs when it follows the diff and when it rebuilds every static value, for a script whose host is not here. See "Static values" in [performance.md](performance.md#static-values). |
 | `cd core && cargo run --release --example gc_pause -- [records …]` | One collection with a table of that many records as the only root and nothing to free, rooted and then frozen: the cost the table itself adds to every collection. |
 
+The `cargo run --example` harnesses above live in `test/benchmarks/harness/`
+and are declared as `[[example]]`s in `core/Cargo.toml`.
+
 See [performance.md](performance.md) for how to read these numbers.
 
 ## Profiling

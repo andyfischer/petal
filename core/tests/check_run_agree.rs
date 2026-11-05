@@ -159,32 +159,35 @@ fn method_syntax_reaches_a_packaged_builtin_only_in_a_file_that_imports_it() {
     let t = Tree::new("method");
     t.write(
         "mod.ptl",
-        "import creative\npub fn half(x)\n  return x.lerp(10.0, 0.5)\nend\n",
+        "import noise\npub fn n(x)\n  return x.noise()\nend\n",
     );
-    // The importing module has `lerp` in scope; this file does not.
-    t.write("main.ptl", "import ./mod\nlet y = 0.0\nprint(half(y))\nprint(y.lerp(10.0, 0.5))\n");
+    // The importing module has `noise` in scope; this file does not.
+    t.write("main.ptl", "import ./mod\nlet y = 0.5\nprint(n(y))\nprint(y.noise())\n");
     let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "main.ptl"]);
     assert_eq!(code, 1, "{err}");
-    assert!(err.contains("no method `lerp` on a `float` here"), "{err}");
-    assert!(err.contains("add `import creative`"), "{err}");
+    assert!(err.contains("no method `noise` on a `float` here"), "{err}");
+    assert!(err.contains("add `import noise`"), "{err}");
     // With the import, in this file, it is fine — and the module's own use
     // was fine all along.
     t.write(
         "ok.ptl",
-        "import ./mod\nimport creative\nlet y = 0.0\nprint(half(y))\nprint(y.lerp(10.0, 0.5))\n",
+        "import ./mod\nimport noise\nlet y = 0.5\nprint(n(y))\nprint(y.noise())\n",
     );
     let (out, err, code) = petal_in(&t.root, &["run", "ok.ptl"]);
-    assert_eq!((out.as_str(), code), ("5.0\n5.0\n", 0), "{err}");
+    assert_eq!(code, 0, "{err}");
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 2, "{out}");
+    assert_eq!(lines[0], lines[1], "{out}");
     // A receiver the checker cannot type is still refused when it runs: the
     // other module's import does not leak.
     t.write(
         "dyn.ptl",
-        "import ./mod\nfn id(v)\n  return v\nend\nprint(half(0.0))\nprint(id(0.0).lerp(10.0, 0.5))\n",
+        "import ./mod\nfn id(v)\n  return v\nend\nprint(n(0.5))\nprint(id(0.5).noise())\n",
     );
     let (out, err, code) = petal_in(&t.root, &["run", "dyn.ptl"]);
-    assert_eq!((out.as_str(), code), ("5.0\n", 1), "{err}");
-    assert!(err.contains("No method 'lerp'"), "{err}");
-    assert!(err.contains("add `import creative`"), "{err}");
+    assert_eq!((out.lines().count(), code), (1, 1), "{out}{err}");
+    assert!(err.contains("No method 'noise'"), "{err}");
+    assert!(err.contains("add `import noise`"), "{err}");
 }
 
 #[test]
@@ -235,7 +238,7 @@ fn run_refuses_whatever_check_rejects() {
         "fn f(a, b) a + b end\nprint(\"ran\")\nif false then print(f(1)) end\n",
         "fn f(a, b) a + b end\nprint(\"ran\")\nif false then print(f(1, c: 2)) end\n",
         // method syntax that needs an import
-        "print(\"ran\")\nlet v = [1, 2]\nif false then print(v.mag()) end\n",
+        "print(\"ran\")\nlet x = 0.5\nif false then print(x.noise()) end\n",
         // the name scan's: a named argument a builtin does not have
         "print(\"ran\")\nif false then print(clamp(5, low: 0, hi: 3)) end\n",
         "print(\"ran\")\nif false then print(1, sep: 2) end\n",
@@ -672,7 +675,7 @@ fn serialized_ir_is_linked_before_any_line_runs() {
     let (_, err, code) = petal_in(&t.root, &["lint", "--single-file", "--ir", "irs.json"]);
     assert_eq!(code, 0, "{err}");
     // IR that calls only what every Env registers still runs.
-    t.write("ok.ptl", "import creative\nprint(lerp(0.0, 10.0, 0.5))\n");
+    t.write("ok.ptl", "print(lerp(0.0, 10.0, 0.5))\n");
     let (ir, _, _) = petal_in(&t.root, &["show-ir", "--json", "ok.ptl"]);
     t.write("ok.json", &ir);
     let (out, err, code) = petal_in(&t.root, &["run", "--ir", "ok.json"]);

@@ -29,7 +29,6 @@
 
 import ./nes_host
 import ui/input
-import creative
 
 // ── Note vocabulary ───────────────────────────────────────────────────────
 // Notes are MIDI semitones so a pitch bend is just a fractional value: 60 is

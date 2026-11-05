@@ -210,7 +210,7 @@ pub struct Vm<'a> {
     /// sets to suspend a test ([`crate::expect::ExpectLog`]).
     pub expects: &'a mut crate::expect::ExpectLog,
     /// The hooks of a speculative run ([`spec`]), present only while
-    /// `crate::dm_v2::spec` runs one of its forks. Their presence turns
+    /// `crate::dm::spec` runs one of its forks. Their presence turns
     /// [`hooks`](Self::hooks) on, so every instruction takes the general path.
     pub spec: Option<&'a mut spec::SpecHooks>,
 }

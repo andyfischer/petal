@@ -1006,7 +1006,7 @@ impl Vm {
 
     /// Direct manipulation v2 on the loaded program: what
     /// `pb_vm_propose_edit` does. `request_json` has the fields of the
-    /// `petal propose-edit` flags (see `petal::cli::dm_v2::opts_from_json`);
+    /// `petal propose-edit` flags (see `petal::cli::dm::opts_from_json`);
     /// the answer is the `propose-edit --json` document, the report or the
     /// error object (`{"error": true, "phase", "message", …}`).
     ///
@@ -1028,9 +1028,9 @@ impl Vm {
         self.env
             .reset_stack(stack)
             .map_err(|e| BridgeError::runtime(e, &name))?;
-        Ok(petal::cli::dm_v2::propose_json(
+        Ok(petal::cli::dm::propose_json(
             &mut self.env,
-            &mut petal::dm_v2::NoHost,
+            &mut petal::dm::NoHost,
             pid,
             stack,
             &request,

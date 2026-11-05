@@ -58,10 +58,16 @@ pub const CORE_PACKAGE: &str = "core";
 /// runtime registers in every Env ([`crate::builtins::register_builtins`]),
 /// but which are in scope only in a file that imports the package
 /// (`import noise`). One per group of `core/src/builtins/`; `io` is the
-/// host-I/O set of `output.rs`, `creative` the creative-coding set.
+/// host-I/O set of `output.rs`. The creative-coding set (`lerp`, `mag`, …)
+/// is declared by `core` and needs no import.
 pub const BUILTIN_PACKAGES: &[&str] = &[
-    "noise", "color", "vec2", "autodiff", "json", "io", "creative",
+    "noise", "color", "vec2", "autodiff", "json", "io",
 ];
+
+/// Bundled packages that no longer exist because `core` declares their
+/// builtins now: `import creative` names nothing, says so when it fails to
+/// resolve, and `petal fix-imports` deletes it.
+pub const MERGED_INTO_CORE: &[&str] = &["creative"];
 
 #[cfg(test)]
 mod tests {

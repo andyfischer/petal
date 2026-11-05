@@ -1,7 +1,7 @@
 //! `petal fix-imports` — rewrite a file's imports for the current module
 //! system (docs/module-system.md).
 //!
-//! Three rewrites, each safe to run again on its own output:
+//! Four rewrites, each safe to run again on its own output:
 //!
 //! 1. **A sibling file imported by a bare name becomes a relative import.**
 //!    `import level` used to find `level.ptl` beside the importing file; a
@@ -14,7 +14,11 @@
 //!    A selective import used to bind the module's qualifier as well
 //!    (`import m: a` allowed `m.b`); a file that relies on that gains the
 //!    plain `import m` it now needs.
-//! 3. **A missing import is added.** A bare name that nothing in the file
+//! 3. **An import of a package merged into `core` is deleted.**
+//!    `import creative` named the creative-coding builtins (`lerp`, `mag`,
+//!    …); `core` declares them now, so the line names nothing
+//!    ([`crate::bundled::MERGED_INTO_CORE`]).
+//! 4. **A missing import is added.** A bare name that nothing in the file
 //!    declares or imports, and that exactly one available package (or one
 //!    module of a package with no module of its own name) exports, gets the
 //!    `import <package>` line it needs. This is how the import for a host
@@ -23,8 +27,8 @@
 //! "Available" is whatever the [`Env`] the fixer holds can resolve: bundled
 //! packages, `-I` / `PETAL_PATH` packages, and anything a host registered.
 //!
-//! The first two are edits to the import lines alone and need only a parse.
-//! The third compiles the file (check-only), so it runs after every file of
+//! The first three are edits to the import lines alone and need only a parse.
+//! The fourth compiles the file (check-only), so it runs after every file of
 //! the batch has had the first two applied — a file's siblings have to load.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -96,7 +100,7 @@ impl ImportFixer {
         }
     }
 
-    /// Rewrites 1 and 2: the import lines of `source`, which lives at `file`
+    /// Rewrites 1 to 3: the import lines of `source`, which lives at `file`
     /// (`None` for text with no path, where only rewrite 2 applies). `Err`
     /// when the text does not parse.
     pub fn rewrite_import_lines(&self, source: &str, file: Option<&Path>) -> Result<Fixed, String> {
@@ -118,6 +122,16 @@ impl ImportFixer {
                 continue;
             };
             let line = stmt.span.start.line;
+            if crate::bundled::MERGED_INTO_CORE.contains(&decl.module.as_str())
+                && file.is_none_or(|f| self.env.resolve_import(&decl.module, f).is_err())
+            {
+                changes.push(format!(
+                    "line {line}: removed `import {}` — `core` declares its builtins now",
+                    decl.module
+                ));
+                edits.push(statement_removal(&chars, stmt));
+                continue;
+            }
             let qualifier = import_qualifier(decl);
             let mut new_path = file.and_then(|f| self.relative_spelling(&decl.module, f));
             // A bare path that names a package *and* a file beside this one
@@ -764,6 +778,34 @@ impl ImportSite {
     }
 }
 
+/// The edit that deletes `stmt`: its whole line when it is alone on it,
+/// else the statement and the `;` and blanks after it.
+fn statement_removal(chars: &[char], stmt: &Stmt) -> (usize, usize, String) {
+    let blank = |c: char| c == ' ' || c == '\t';
+    let start = (stmt.span.start.offset as usize).min(chars.len());
+    let end = (stmt.span.end.offset as usize).min(chars.len());
+    let mut line_start = start;
+    while line_start > 0 && blank(chars[line_start - 1]) {
+        line_start -= 1;
+    }
+    let mut after = end;
+    while after < chars.len() && blank(chars[after]) {
+        after += 1;
+    }
+    let alone_before = line_start == 0 || chars[line_start - 1] == '\n';
+    if alone_before && (after == chars.len() || chars[after] == '\n') {
+        return (line_start, (after + 1).min(chars.len()), String::new());
+    }
+    if chars.get(after) == Some(&';') {
+        after += 1;
+        while after < chars.len() && blank(chars[after]) {
+            after += 1;
+        }
+        return (start, after, String::new());
+    }
+    (start, end, String::new())
+}
+
 /// Apply non-overlapping `(start, end, text)` replacements, given in any
 /// order.
 fn apply_edits(chars: &[char], mut edits: Vec<(usize, usize, String)>) -> String {
@@ -1084,6 +1126,22 @@ mod tests {
     // ---- builtins that moved into packages ------------------------------
 
     #[test]
+    fn an_import_of_a_package_merged_into_core_is_deleted() {
+        let mut fixer = ImportFixer::new(&[]);
+        let src = "import creative\nimport vec2\nprint(lerp(0, 10, 0.5), vec2(3, 4).mag())\n";
+        let fixed = fixer.fix(src, None).unwrap();
+        assert_eq!(fixed.source, "import vec2\nprint(lerp(0, 10, 0.5), vec2(3, 4).mag())\n");
+        assert_eq!(fixed.changes, ["line 1: removed `import creative` — `core` declares its builtins now"]);
+        let one_line = fixer.fix("import creative; import vec2\nprint(vec2(1, 2))\n", None).unwrap();
+        assert_eq!(one_line.source, "import vec2\nprint(vec2(1, 2))\n");
+        let again = fixer.fix(&fixed.source, None).unwrap();
+        assert_eq!(again.source, fixed.source);
+        assert!(again.changes.is_empty());
+        let err = Env::new().run_source("import creative\nprint(1)").unwrap_err();
+        assert!(err.contains("declared by `core` now"), "{err}");
+    }
+
+    #[test]
     fn a_moved_builtin_gets_the_import_of_its_package() {
         let mut fixer = ImportFixer::new(&[]);
         let src = "print(lerp(0, 10, 0.5))\nlet v = vec3(1, 2, 3)\nprint(noise(0.5), hsv(0, 1, 1))\n\
@@ -1092,7 +1150,7 @@ mod tests {
         assert_eq!(
             fixed.source,
             format!(
-                "import autodiff\nimport color\nimport creative\nimport io\nimport json\n\
+                "import autodiff\nimport color\nimport io\nimport json\n\
                  import noise\nimport vec2\n\n{src}"
             )
         );
@@ -1105,7 +1163,7 @@ mod tests {
     #[test]
     fn a_name_the_file_defines_is_not_a_moved_builtin() {
         let mut fixer = ImportFixer::new(&[]);
-        let src = "fn lerp(a, b)\n  a + b\nend\nprint(lerp(1, 2))\n";
+        let src = "fn noise(a, b)\n  a + b\nend\nprint(noise(1, 2))\n";
         let fixed = fixer.add_missing_imports(src, None);
         assert_eq!(fixed.source, src);
     }
@@ -1114,10 +1172,10 @@ mod tests {
     fn a_method_call_that_can_only_be_a_moved_builtin_gets_the_import() {
         let mut fixer = ImportFixer::new(&[]);
         // Nothing fails to compile here: `v.mag()` only fails when it runs.
-        let src = "let v = [3, 4]\nprint(v.mag())\n";
+        let src = "let v = [3, 4]\nprint(v.normalize())\n";
         let fixed = fixer.add_missing_imports(src, None);
-        assert_eq!(fixed.source, format!("import creative\n\n{src}"));
-        assert_eq!(fixed.changes, ["added `import creative` (for `.mag()`)"]);
+        assert_eq!(fixed.source, format!("import vec2\n\n{src}"));
+        assert_eq!(fixed.changes, ["added `import vec2` (for `.normalize()`)"]);
         assert!(fixer.add_missing_imports(&fixed.source, None).changes.is_empty());
     }
 

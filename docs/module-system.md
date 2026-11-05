@@ -12,7 +12,7 @@ lockfile and the package commands.
 
 Nothing arrives without an import except the core builtins and
 [`std`](#the-standard-prelude). A UI script says `import ui`; a script that
-calls `lerp` says `import creative`; a host's own functions come from the
+calls `noise` says `import noise`; a host's own functions come from the
 host's package.
 
 ## Importing
@@ -100,8 +100,11 @@ Three refinements:
   `score(points)` and `level` exports `score(points, bonus)`, both are
   callable bare — with a compile-check warning on each call through the merged
   name, since which module answers depends on how many arguments were
-  written. The same parameter count from two unrelated modules is the
-  ambiguity error above, at the call.
+  written. The warning names the module the call reaches and the qualifier
+  that pins it (`score(1, 2)` calls the one from `level`: write
+  `level.score`). A count no set takes is an arity error instead. The same
+  parameter count from two unrelated modules is the ambiguity error above,
+  at the call.
 
 A plain import that takes a name away from a builtin or a `std` function is
 legal, and worth knowing about: the compile check warns once per name per file, at the
@@ -117,8 +120,8 @@ the warning goes. First-party packages that redefine builtin names by design
 (the packages bundled in the binary: `ui`, `bloom`, …) do not raise it.
 
 The warning is about the names that are in scope with no import (`core` and
-`std`). A domain builtin such as `lerp` arrives through a plain import of its
-own (`import creative`), so a second module exporting `lerp` is two plain
+`std`). A domain builtin such as `noise` arrives through a plain import of its
+own (`import noise`), so a second module exporting `noise` is two plain
 imports offering one name: the ambiguity error above, at each bare use.
 
 ### Import paths
@@ -318,12 +321,16 @@ The facade's own imports follow [the usual tiers](#which-name-wins):
   rules. Function sets with different parameter counts merge. Otherwise the
   name is ambiguous — which is *not* an error in the facade, where nobody
   used it. The error belongs to the file that finally uses the name, bare or
-  as `facade.name`, and names the two original modules:
+  as `facade.name`. It names the facade and the two original modules, and
+  spells an import of one of them from the file that used the name:
 
 ```
-Error: `shared` is ambiguous: './a' and './b' export it — write `a.shared` or `b.shared`, or
-pin one with `import ./a: shared`
+Error: `shared` is ambiguous: './kit/bloomx' re-exports it from both './kit/a' and './kit/b' —
+import it from one of them directly, as `import ./kit/a: shared`
 ```
+
+  Inside the facade itself, the usual message applies, with the facade's own
+  qualifiers (`write a.shared or b.shared`).
 
 Chains work — a facade over a facade re-exports what it received — and a
 re-export cycle is caught by the ordinary cycle check
@@ -443,7 +450,7 @@ this order, and the first place that has a package of that name wins:
    importable as `util`.
 4. **The packages bundled in the `petal` binary**, which every embedding
    of the runtime carries as well: `core`, the domain builtin packages
-   (`creative`, `vec2`, `noise`, …), `ui`, `bloom`, `text_layout` and `glsl`.
+   (`vec2`, `noise`, `color`, …), `ui`, `bloom`, `text_layout` and `glsl`.
    [Bundled packages](packages.md#bundled-packages) lists them. A bundled
    package is Petal source and `native fn` declarations only, so
    `petal lint` resolves `import ui` with no host. *Running* a script that
@@ -493,7 +500,7 @@ so it costs nothing otherwise.
 `std` and the `core` builtins are the only names in scope with no import. A
 script that uses a host's names imports the host's package (`import ui`),
 like any other library, and the domain builtins are behind imports too
-(`import creative`, `import vec2`, …; see
+(`import vec2`, `import noise`, …; see
 [Builtins](Builtins.md#which-builtins-need-an-import)).
 
 ## How a multi-file program runs

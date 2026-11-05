@@ -132,11 +132,11 @@ Expected float at arg 1, got dual: this function has no derivative rule, so the 
 | `fract(x)` | `1` (between the jumps) |
 | `floor(x)`, `ceil(x)`, `round(x)`, `round(x, places)`, `sign(x)` | `0` (they are step functions). The result is still a dual. |
 | `radians(x)`, `degrees(x)` | `pi / 180`, `180 / pi` |
-| `lerp(a, b, t)` (package `creative`) | Of `a + (b - a) * t`, in all three arguments. A list or record `lerp` carries the derivatives of its elements; its `t` must be a plain number. |
-| `map_range(v, in_lo, in_hi, out_lo, out_hi)` (`creative`) | Of the linear map, in all five arguments |
-| `smoothstep(e0, e1, x)` (`creative`) | `6t(1 - t)` times the derivative of `t = (x - e0) / (e1 - e0)` inside the edges, `0` outside |
+| `lerp(a, b, t)` | Of `a + (b - a) * t`, in all three arguments. A list or record `lerp` carries the derivatives of its elements; its `t` must be a plain number. |
+| `map_range(v, in_lo, in_hi, out_lo, out_hi)` | Of the linear map, in all five arguments |
+| `smoothstep(e0, e1, x)` | `6t(1 - t)` times the derivative of `t = (x - e0) / (e1 - e0)` inside the edges, `0` outside |
 | `interp(table, x)` | The slope of the segment `x` is on, `0` past either end |
-| `mag(x, y)`, `mag(x, y, z)`, `mag(x)`, `distance(x1, y1, x2, y2)` (`creative`) | Of the square root of the sum of squares |
+| `mag(x, y)`, `mag(x, y, z)`, `mag(x)`, `distance(x1, y1, x2, y2)` | Of the square root of the sum of squares |
 | `float(x)` | Returns the dual unchanged. |
 | `sum(list)`, `mean(list)` | They add and divide with the ordinary operators. |
 | `safe_div(a, b)` | As `/`, and `nil` when the divisor's value is zero. |

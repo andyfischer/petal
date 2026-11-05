@@ -636,7 +636,7 @@ impl Compiler {
         }
         if let Some(tid) = self.scope_lookup(&qualified) {
             if let Some(ambiguous) = self.ambiguous_imports.get(&tid) {
-                let message = ambiguous.message();
+                let message = ambiguous.message_in(self.current_module.as_deref());
                 self.error_at(object.span, message);
             }
             return Some(self.compile_ident(&qualified));

@@ -29,6 +29,52 @@ console_error_panic_hook = { version = "0.1", optional = true }
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+# Measurement harnesses: Rust programs that drive the crate directly to time
+# one cost (a rerun, a reload, a frame, a collection). They live beside the
+# Petal benchmarks in `test/benchmarks/harness/` rather than in Cargo's default
+# `examples/` (the repository's top-level `examples/` is Petal programs), and
+# run as `cd core && cargo run --release --example <name> -- ...`.
+# See docs/dev/scripts.md.
+[[example]]
+name = "dep_classes_frame"
+path = "../test/benchmarks/harness/dep_classes_frame.rs"
+
+[[example]]
+name = "gc_pause"
+path = "../test/benchmarks/harness/gc_pause.rs"
+
+[[example]]
+name = "implicit_keys_frame"
+path = "../test/benchmarks/harness/implicit_keys_frame.rs"
+
+[[example]]
+name = "lower_passes"
+path = "../test/benchmarks/harness/lower_passes.rs"
+
+[[example]]
+name = "reload_follow"
+path = "../test/benchmarks/harness/reload_follow.rs"
+
+[[example]]
+name = "reload_timing"
+path = "../test/benchmarks/harness/reload_timing.rs"
+
+[[example]]
+name = "rerun_timing"
+path = "../test/benchmarks/harness/rerun_timing.rs"
+
+[[example]]
+name = "scene_frame"
+path = "../test/benchmarks/harness/scene_frame/main.rs"
+
+[[example]]
+name = "static_frame"
+path = "../test/benchmarks/harness/static_frame.rs"
+
+[[example]]
+name = "static_survey"
+path = "../test/benchmarks/harness/static_survey.rs"
+
 # `wasm-opt` starts from the WebAssembly MVP plus a couple of extras, while
 # rustc has enabled a wider default feature set for wasm32-unknown-unknown
 # since 1.82 (`rustc --print cfg --target wasm32-unknown-unknown`). Anything

@@ -22,7 +22,11 @@ and the choice made. Step 4 keeps a relative import into a nested package
 working: the file is loaded as a module of the nested package, so it still
 has one name (confirmed by the owner). Step 6 landed the same day as
 decided: loose files are named `./level`, with no fallback for state saved
-under the old names. Step 5 is open.
+under the old names. Step 5 landed on 2026-11-04: the arity-merge warning
+names the module whose set the call reaches, by this file's qualifier, and
+says nothing on a call no set accepts; a facade's ambiguity names the facade
+and spells an import from the using file (`import_spelling` in
+`core/src/compiler/mod.rs`). Every issue in the plan is fixed.
 Every repro was re-run on a debug build of `4fcedb6`. Line numbers are as of
 that commit. Ordered by value per effort: the first four are small and
 independent, and issue 1 needs a decision first.
@@ -104,7 +108,7 @@ import from the outer package into the nested one should be rejected too.
 Nothing in-repo relies on the current behaviour. Add a test to
 `core/tests/packages.rs`.
 
-### Step 5: issues 6 and 7, messages that name the wrong module (about 30 lines each)
+### Step 5: issues 6 and 7, messages that name the wrong module: done 2026-11-04
 
 - **Issue 6.** `check_import_call` (`compiler/mod.rs`, around 1460–1500)
   always suggests the *first*-imported module, whatever arity the call
@@ -178,25 +182,6 @@ section).
 
 Each repro is a handful of files in one empty directory, run with
 `petal lint main.ptl` and `petal run main.ptl`.
-
-### 6. The arity-merge warning suggests the wrong module
-
-Severity: low.
-
-`base` exports `score(points)`, `level` exports `score(points, bonus)`, and
-the entry file plainly imports both. `score(1, 2)` resolves to `level`'s, but
-the warning on that call says to qualify it as `base.score`; following the
-advice produces an arity error. The warning is also printed for
-`score(1, 2, 3)`, which is already an error.
-
-### 7. Facade ambiguity errors name things the user's file cannot write
-
-Severity: low.
-
-A file that says only `import ./bloomx`, where `bloomx` re-exports `shared`
-from both `button` and `menu`, gets: "write `button.shared` or `menu.shared`,
-or pin one with `import ./button: shared`". Neither qualifier is bound in
-that file, and the relative path is right only by accident of the layout.
 
 ### Smaller things
 

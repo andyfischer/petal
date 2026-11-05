@@ -85,7 +85,7 @@ back to the project's choice or the bundled copy otherwise. See
 - **Import the host's package in every module that uses it.** An import
   reaches only the file it is written in: a library module that calls
   `draw_rect(r, c)` says `import ui` at its top, like bloom's modules do, and
-  one that calls `lerp` says `import creative`. The one catch: if your library
+  one that calls `noise` says `import noise`. The one catch: if your library
   exports a name `ui` also has *and* one arity of it calls another, route both
   through a private implementation — inside a variant's own body the name
   cannot see its siblings and escapes outward to `ui`'s set. See

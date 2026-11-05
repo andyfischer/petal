@@ -13,7 +13,7 @@ use petal::value::{value_to_display_string, value_to_json, Value};
 /// Run `src` and render its final value the way `print` would.
 /// The vector builtins live in packages (`vec2` declares `vec3` too); every
 /// snippet here gets them, on its first line so positions do not move.
-const IMPORTS: &str = "import vec2; import creative; import json; ";
+const IMPORTS: &str = "import vec2; import json; ";
 
 fn eval(src: &str) -> String {
     let mut env = Env::new();

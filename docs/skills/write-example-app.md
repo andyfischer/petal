@@ -104,7 +104,7 @@ panel_stop
 
 The app starts with `import ui` and `import garden` (and `import bloom` if it
 uses bloom), plus the builtin packages whose names it calls (`import
-creative`, `import vec2`, `import color`, …); `petal lint` names a missing one and
+vec2`, `import color`, `import noise`, …); `petal lint` names a missing one and
 `petal fix-imports` adds it. `check` finds the `garden` package through
 `examples/petal.toml`, so no flag is needed under `examples/`. `petal lint` is a
 separate pass: it reports spellings that have a better

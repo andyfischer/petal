@@ -80,7 +80,7 @@ describe("vec3 operators", () => {
 
 describe("vec3 builtins", () => {
   it("mag, distance, dot, cross, normalize, limit, lerp", () => {
-    const out = runPetal(`import creative; import vec2
+    const out = runPetal(`import vec2
       print(mag(vec3(2, 3, 6)))
       print(distance(vec3(1, 1, 1), vec3(3, 4, 7)))
       print(dot(vec3(1, 2, 3), vec3(4, 5, 6)))

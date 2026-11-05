@@ -14438,7 +14438,7 @@
       "top_verified_rate": 0.9302325581395349
     }
   },
-  "generated": "core-libs/petal-ui/tests/dm_v2_study.rs (DM_STUDY_WRITE=1)",
+  "generated": "core-libs/petal-ui/tests/dm_study.rs (DM_STUDY_WRITE=1)",
   "ladder": {
     "examples": [
       {

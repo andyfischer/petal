@@ -13,6 +13,7 @@ the refactor verifier — is in [docs/dev/testing.md](../docs/dev/testing.md).
 | `test/ui-golden/` | Hashes of each UI app's 60-frame headless trace | `tools/verify.ts` (`--update-golden` to re-baseline) |
 | `test/verify-plans/` | Plans for `tools/verify.ts` | see "Verifying a refactor" in testing.md |
 | `test/benchmarks/` | Programs timed at both optimization levels | `tools/bench-opts.ts` |
+| `test/benchmarks/harness/` | Rust measurement harnesses, declared as `[[example]]`s of the `core/` crate | `cd core && cargo run --release --example <name>`; see [scripts.md](../docs/dev/scripts.md) |
 
 ## Script regression cases
 

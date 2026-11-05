@@ -9,7 +9,7 @@
 //! `tunable({x: 140})`), the message says so and points to `config let`,
 //! which exposes a setting of any type. (A name
 //! bound to a computed value is caught where the hints are read,
-//! `crate::dm_v2::hints`, which sees bindings.)
+//! `crate::dm::hints`, which sees bindings.)
 //!
 //! **`dm-hint-bounds`**: a `tunable` bound (`min`, `max`, `step`) that is not
 //! a number literal, so no tool can read it without running the program, or
@@ -149,7 +149,7 @@ impl ExprVisitor for Finder<'_> {
                                         ..(a.span.end.offset as usize).min(self.chars.len())]
                                         .iter()
                                         .collect();
-                                    crate::dm_v2::hints::not_a_number_message(&short(&text), kind)
+                                    crate::dm::hints::not_a_number_message(&short(&text), kind)
                                 }
                                 None => "`tunable` marks a literal or a name bound to one; this \
                                          argument is computed, so nothing is marked. Wrap the \

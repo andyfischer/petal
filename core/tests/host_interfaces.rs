@@ -38,7 +38,7 @@ fn the_bundled_set_is_core_the_domain_builtins_ui_bloom_text_layout_and_glsl() {
     assert_eq!(
         names,
         [
-            "core", "noise", "color", "vec2", "autodiff", "json", "io", "creative", "ui", "bloom",
+            "core", "noise", "color", "vec2", "autodiff", "json", "io", "ui", "bloom",
             "text_layout", "glsl"
         ]
     );

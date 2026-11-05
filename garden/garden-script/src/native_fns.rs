@@ -35,7 +35,7 @@ pub(crate) fn register_all(env: &mut Env) {
     // `row` / `column` build a record; the one thing a replay could not
     // reproduce is the warning they print for a mismatched ratios list.
     // The warning goes to the context's print buffer: contained, so a
-    // speculative run (`petal::dm_v2::spec`) calls them.
+    // speculative run (`petal::dm::spec`) calls them.
     env.register_native("row", native_row, NativeEffects::EFFECT.contained());
     env.register_native("column", native_column, NativeEffects::EFFECT.contained());
     // The three observable calls only emit into an output buffer, and are

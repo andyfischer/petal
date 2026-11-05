@@ -139,7 +139,7 @@ pub(super) fn handle_run(
     // nothing): what `propose-edit --v2` addresses. Only for a single run with
     // no stored state, whose emits the baseline reproduces.
     let spec_emits = (trace_emits && opts.runs.is_none() && opts.state_storage.is_none())
-        .then(|| super::dm_v2::baseline_emits(&mut env, &mut crate::dm_v2::NoHost, sid, seed.unwrap_or(0)))
+        .then(|| super::dm::baseline_emits(&mut env, &mut crate::dm::NoHost, sid, seed.unwrap_or(0)))
         .flatten();
     #[allow(clippy::disallowed_methods, reason = "the CLI runs natively")]
     let run_started = std::time::Instant::now();
@@ -834,14 +834,14 @@ pub(super) fn handle_propose_edit(
 /// seed is pinned (`--seed`, else `PETAL_SEED`, else 0) and echoed, so the
 /// emit indices agree with `petal run --trace-emits --seed N`.
 fn handle_propose_edit_v2(
-    opts: &super::dm_v2::V2Opts,
+    opts: &super::dm::V2Opts,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
     let json = opts.json;
     let mut env = make_env(include_dirs);
-    env.set_seed(super::dm_v2::effective_seed(opts.seed));
+    env.set_seed(super::dm::effective_seed(opts.seed));
     let pid = load_checked_or_die(&mut env, json, false, source, source_input);
     let sid = stack_or_die(&mut env, json, pid);
     // `--frames N`: run N frames for real first, each from the top with
@@ -862,9 +862,9 @@ fn handle_propose_edit_v2(
         }
     }
     let entry = source_origin(source_input);
-    match super::dm_v2::propose(&mut env, &mut crate::dm_v2::NoHost, pid, sid, opts, entry) {
+    match super::dm::propose(&mut env, &mut crate::dm::NoHost, pid, sid, opts, entry) {
         Ok(report) if json => print_json(&report),
-        Ok(report) => super::dm_v2::print_text(&report),
+        Ok(report) => super::dm::print_text(&report),
         Err(e) => die(json, &e.message, e.phase),
     }
 }

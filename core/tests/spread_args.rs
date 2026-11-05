@@ -225,7 +225,7 @@ fn builtins_bind_by_their_declared_names() {
     assert_eq!(out("let m = min\nprint(m(...[4, 2]))"), "2");
     assert_eq!(out("print(map(...[[1, 2], fn(x) -> x + 1]))"), "[2, 3]");
     assert_eq!(out("print(map(...{f: fn(x) -> x + 1, list: [1, 2]}))"), "[2, 3]");
-    assert_eq!(out("import creative\nprint(lerp(...{a: 0, b: 10, t: 0.5}))"), "5.0");
+    assert_eq!(out("print(lerp(...{a: 0, b: 10, t: 0.5}))"), "5.0");
 }
 
 #[test]

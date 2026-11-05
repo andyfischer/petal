@@ -106,8 +106,11 @@ impl ObsValue {
             Value::Bool(b) => ObsValue::Bool(b),
             Value::Int(i) => ObsValue::Int(i),
             Value::Float(f) => ObsValue::Num(f),
-            Value::Dual { value, .. } => ObsValue::Num(value),
-            Value::Vec2(x, y) => ObsValue::List(vec![ObsValue::Num(x), ObsValue::Num(y)]),
+            Value::Dual(id) => ObsValue::Num(heap.get_dual(id).0),
+            Value::Vec2(id) => {
+                let (x, y) = heap.get_vec2(id);
+                ObsValue::List(vec![ObsValue::Num(x), ObsValue::Num(y)])
+            }
             Value::Vec3(id) => {
                 ObsValue::List(heap.get_vec3(id).iter().map(|&c| ObsValue::Num(c)).collect())
             }
@@ -146,7 +149,7 @@ impl ObsValue {
                 )
             }
             Value::EnumVariant { tag, data } => {
-                let tag = hash_str(heap.get_string(tag));
+                let tag = hash_str(heap.tag_str(tag));
                 if depth == 0 {
                     return ObsValue::Variant { tag, data: Vec::new() };
                 }

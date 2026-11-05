@@ -73,11 +73,11 @@ fn group_thousands(s: &str) -> String {
 
 /// Coerce a formatting argument to f64. Accepts the numeric values and the
 /// dual-number primal; anything else is a caller error worth naming.
-fn as_number(v: Value, who: &str) -> Result<f64, String> {
+fn as_number(heap: &crate::heap::Heap, v: Value, who: &str) -> Result<f64, String> {
     match v {
         Value::Int(n) => Ok(n as f64),
         Value::Float(f) => Ok(f),
-        Value::Dual { value, .. } => Ok(value),
+        Value::Dual(id) => Ok(heap.get_dual(id).0),
         Value::Bool(b) => Ok(if b { 1.0 } else { 0.0 }),
         other => Err(format!(
             "{}() expects a number, got {}",
@@ -100,7 +100,7 @@ pub(super) fn native_fixed(state: &mut PetalCxt) -> Result<u32, String> {
             ));
         }
     };
-    let x = as_number(state.get_value(1)?, "fixed")?;
+    let x = as_number(state.heap(), state.get_value(1)?, "fixed")?;
     let s = fixed_string(x, places);
     state.push_string(s);
     Ok(1)
@@ -120,7 +120,7 @@ pub(super) fn native_commas(state: &mut PetalCxt) -> Result<u32, String> {
     let v = state.get_value(1)?;
     let rendered = if argc == 2 {
         let places = state.get_int(2)?;
-        fixed_string(as_number(v, "commas")?, places)
+        fixed_string(as_number(state.heap(), v, "commas")?, places)
     } else {
         match v {
             // An int has no fractional part to preserve and must never gain one.
@@ -128,7 +128,7 @@ pub(super) fn native_commas(state: &mut PetalCxt) -> Result<u32, String> {
             other => {
                 // Reuse the display rendering so `commas(x)` and `str(x)` never
                 // disagree about the digits, only about the separators.
-                as_number(other, "commas")?;
+                as_number(state.heap(), other, "commas")?;
                 value::value_to_display_string(&other, state.heap())
             }
         }
@@ -311,17 +311,17 @@ pub(super) fn native_format(state: &mut PetalCxt) -> Result<u32, String> {
                 // string it would be a truncation nobody asked for, so it only
                 // applies to numbers.
                 Some(p) if !matches!(v, Value::String(_)) => {
-                    fixed_string(as_number(v, "format")?, p)
+                    fixed_string(as_number(state.heap(), v, "format")?, p)
                 }
                 _ => value::value_to_display_string(&v, state.heap()),
             },
             'd' => {
-                let n = as_number(v, "format")?;
+                let n = as_number(state.heap(), v, "format")?;
                 // Truncate toward zero, matching `int(x)`.
                 format!("{}", n.trunc() as i64)
             }
-            'f' => fixed_string(as_number(v, "format")?, spec.precision.unwrap_or(6)),
-            'x' => format!("{:x}", as_number(v, "format")?.trunc() as i64),
+            'f' => fixed_string(as_number(state.heap(), v, "format")?, spec.precision.unwrap_or(6)),
+            'x' => format!("{:x}", as_number(state.heap(), v, "format")?.trunc() as i64),
             _ => unreachable!("parse_spec only accepts sdfx%"),
         };
         if spec.group {

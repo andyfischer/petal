@@ -557,7 +557,7 @@ impl SortKey {
     pub(crate) fn of(heap: &crate::heap::Heap, v: Value) -> SortKey {
         match v {
             Value::String(sid) => SortKey::Str(heap.get_string(sid).to_string()),
-            _ => match crate::value::as_num(&v) {
+            _ => match crate::value::as_num(&v, heap) {
                 Some(n) => SortKey::Num(n),
                 None => SortKey::Other,
             },
@@ -1169,7 +1169,7 @@ fn numbers_of(state: &PetalCxt, index: usize, who: &str) -> Result<Result<Vec<f6
             }
             let mut out = Vec::with_capacity(items.len());
             for (i, v) in items.iter().enumerate() {
-                match v.as_f64() {
+                match state.heap().num_f64(*v) {
                     Some(x) => out.push(x),
                     None => {
                         return Err(format!(

@@ -20,10 +20,10 @@ fn unary_float_dual(
 ) -> Result<u32, String> {
     require_args(state, 1, name)?;
     match state.get_value(1)? {
-        Value::Dual { value, derivative } => state.push_value(Value::Dual {
-            value: primal(value),
-            derivative: deriv(value) * derivative,
-        }),
+        Value::Dual(id) => {
+            let (value, derivative) = state.heap().get_dual(id);
+            state.push_dual(primal(value), deriv(value) * derivative);
+        }
         _ => {
             let n = state.get_float(1)?;
             state.push_float(primal(n));
@@ -48,10 +48,10 @@ fn unary_num_preserving(
             state.push_int(int_fn(n).map_err(|_| format!("Integer overflow in {}()", name))?)
         }
         Value::Float(f) => state.push_float(float_fn(f)),
-        Value::Dual { value, derivative } => state.push_value(Value::Dual {
-            value: float_fn(value),
-            derivative: deriv(value) * derivative,
-        }),
+        Value::Dual(id) => {
+            let (value, derivative) = state.heap().get_dual(id);
+            state.push_dual(float_fn(value), deriv(value) * derivative);
+        }
         _ => return Err(format!("{}() expects a number", name)),
     }
     Ok(1)
@@ -263,12 +263,10 @@ pub(super) fn native_round(state: &mut PetalCxt) -> Result<u32, String> {
                 state.push_float(round_to_places(f, places));
                 Ok(1)
             }
-            Value::Dual { value, derivative } => {
+            Value::Dual(id) => {
                 // Rounding is a step function: derivative 0 almost everywhere.
-                state.push_value(Value::Dual {
-                    value: round_to_places(value, places),
-                    derivative: 0.0 * derivative,
-                });
+                let (value, derivative) = state.heap().get_dual(id);
+                state.push_dual(round_to_places(value, places), 0.0 * derivative);
                 Ok(1)
             }
             _ => Err("round() expects a number".to_string()),
@@ -354,7 +352,7 @@ pub(super) fn native_safe_div(state: &mut PetalCxt) -> Result<u32, String> {
     let divisor_is_zero = match b {
         Value::Int(0) => true,
         Value::Float(f) => f == 0.0,
-        Value::Dual { value, .. } => value == 0.0,
+        Value::Dual(id) => state.heap().get_dual(id).0 == 0.0,
         _ => false,
     };
     if divisor_is_zero {
@@ -373,9 +371,9 @@ pub(super) fn native_safe_div(state: &mut PetalCxt) -> Result<u32, String> {
 /// The `(x, y)` of one knot of an `interp` table: a two-number list or a vec2.
 fn knot(state: &PetalCxt, v: Value, i: usize) -> Result<(f64, f64), String> {
     let pair = match v {
-        Value::Vec2(x, y) => Some((x, y)),
+        Value::Vec2(id) => Some(state.heap().get_vec2(id)),
         Value::List(id) => match state.heap().get_list(id) {
-            [x, y] => x.as_f64().zip(y.as_f64()),
+            [x, y] => state.heap().num_f64(*x).zip(state.heap().num_f64(*y)),
             _ => None,
         },
         _ => None,
@@ -443,8 +441,8 @@ pub(crate) fn splitmix64(x: u64) -> u64 {
 
 /// A number as hash input: its value as an IEEE-754 double, so `2` and `2.0`
 /// hash alike, with `-0.0` taken as `0.0`.
-fn number_bits(v: Value, who: &str) -> Result<u64, String> {
-    match v.as_f64() {
+fn number_bits(heap: &crate::heap::Heap, v: Value, who: &str) -> Result<u64, String> {
+    match heap.num_f64(v) {
         Some(d) => Ok(if d == 0.0 { 0.0f64 } else { d }.to_bits()),
         None => Err(format!("{who}() expects numbers, got {}", v.type_name())),
     }
@@ -460,7 +458,7 @@ fn hash_number_args(state: &PetalCxt, who: &str) -> Result<u64, String> {
     }
     let mut h = 0x243f_6a88_85a3_08d3u64;
     for i in 1..=argc {
-        h = splitmix64(h ^ number_bits(state.get_value(i)?, who)?);
+        h = splitmix64(h ^ number_bits(state.heap(), state.get_value(i)?, who)?);
     }
     Ok(h)
 }
@@ -511,7 +509,7 @@ pub(super) fn native_hash_str(state: &mut PetalCxt) -> Result<u32, String> {
     }
     let salt = match if argc == 2 { state.get_value(2)? } else { Value::Nil } {
         Value::Nil => None,
-        v => Some(f64::from_bits(number_bits(v, "hash_str")?)),
+        v => Some(f64::from_bits(number_bits(state.heap(), v, "hash_str")?)),
     };
     let h = match state.get_value(1)? {
         Value::String(id) => hash_bytes(state.heap().get_string(id).as_bytes(), salt),

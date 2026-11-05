@@ -497,7 +497,7 @@ impl<'a> Vm<'a> {
                 None => match recv {
                     Value::Map(_) => "type record".to_string(),
                     Value::EnumVariant { tag, .. } => {
-                        let tag = self.heap.get_string(tag);
+                        let tag = self.heap.tag_str(tag);
                         match crate::program::split_enum_tag(tag).0 {
                             Some(enum_name) => format!("enum {enum_name}"),
                             None => "type enum".to_string(),

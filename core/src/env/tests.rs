@@ -949,7 +949,7 @@ mod host_surface_tests {
         let heap = env.heap_for(fork).unwrap();
         match cmds[0] {
             Value::EnumVariant { tag, .. } => {
-                assert_eq!(heap.get_string(tag), "rect");
+                assert_eq!(heap.tag_str(tag), "rect");
             }
             other => panic!("expected an emitted draw command, got {other:?}"),
         }

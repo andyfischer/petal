@@ -114,7 +114,10 @@ impl Portable {
             Value::Bool(b) => Portable::Bool(b),
             Value::Int(i) => Portable::Int(i),
             Value::Float(f) => Portable::Float(f),
-            Value::Vec2(x, y) => Portable::Vec2(x, y),
+            Value::Vec2(id) => {
+                let (x, y) = heap.get_vec2(id);
+                Portable::Vec2(x, y)
+            }
             Value::Symbol(s) => Portable::Symbol(s),
             Value::String(id) => Portable::Str(heap.get_string(id).to_string()),
             Value::List(id) => Portable::List(
@@ -140,7 +143,7 @@ impl Portable {
             Portable::Bool(b) => Value::Bool(*b),
             Portable::Int(i) => Value::Int(*i),
             Portable::Float(f) => Value::Float(*f),
-            Portable::Vec2(x, y) => Value::Vec2(*x, *y),
+            Portable::Vec2(x, y) => heap.vec2_value(*x, *y),
             Portable::Symbol(s) => Value::Symbol(*s),
             Portable::Str(s) => Value::String(heap.alloc_string(s.clone())),
             Portable::List(items) => {
@@ -270,12 +273,30 @@ impl SpecTap {
     }
 }
 
+/// What a `LoadConst` loads in an overridden literal's place. A dual number
+/// lives on the heap, so it is kept as its two numbers and allocated in the
+/// run's heap when loaded.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum SpecOverride {
+    Value(Value),
+    Dual(f64, f64),
+}
+
+impl SpecOverride {
+    pub(crate) fn materialize(self, heap: &mut Heap) -> Value {
+        match self {
+            SpecOverride::Value(v) => v,
+            SpecOverride::Dual(v, d) => heap.dual_value(v, d),
+        }
+    }
+}
+
 /// Everything a speculative run's VM consults. See the module docs.
 #[derive(Debug, Default)]
 pub struct SpecHooks {
     /// The override for each constant, by `ConstantId`; empty past the last
     /// overridden one.
-    pub(crate) overrides: Vec<Option<Value>>,
+    pub(crate) overrides: Vec<Option<SpecOverride>>,
     /// The session's parameter index of each slotted constant, by
     /// `ConstantId` (`u32::MAX` for none), for the loaded set.
     pub(crate) param_of: Vec<u32>,
@@ -312,7 +333,7 @@ impl SpecHooks {
     /// What a `LoadConst` of `k` loads instead of the table's value, if
     /// anything; notes the parameter as loaded either way.
     #[inline]
-    pub(crate) fn load_const(&mut self, k: ConstantId) -> Option<Value> {
+    pub(crate) fn load_const(&mut self, k: ConstantId) -> Option<SpecOverride> {
         let i = k.0 as usize;
         if let Some(&p) = self.param_of.get(i)
             && p != u32::MAX

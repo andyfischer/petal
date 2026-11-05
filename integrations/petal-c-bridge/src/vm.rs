@@ -1603,7 +1603,7 @@ pub unsafe extern "C" fn pb_vm_set_vec2(
     x: f64,
     y: f64,
 ) -> Status {
-    bind_with(vm, name, |_| Ok(Value::Vec2(x, y)))
+    bind_with(vm, name, |vm| Ok(vm.env.heap_mut().vec2_value(x, y)))
 }
 
 #[unsafe(no_mangle)]

@@ -119,7 +119,7 @@ pub(super) fn is_color_map(state: &PetalCxt, id: MapId) -> bool {
     let m = state.heap().get_map(id);
     ["r", "g", "b"]
         .iter()
-        .all(|k| m.get(*k).and_then(|v| v.as_f64()).is_some())
+        .all(|k| m.get(*k).and_then(|v| state.heap().num_f64(*v)).is_some())
 }
 
 /// Blend two color records channel by channel and push the result, rounded to
@@ -134,7 +134,7 @@ pub(super) fn lerp_color_maps(state: &mut PetalCxt, id1: MapId, id2: MapId, t: f
 /// [`lerp_color_maps`], handing the blended color back instead of pushing it.
 pub(super) fn lerp_color_value(state: &mut PetalCxt, id1: MapId, id2: MapId, t: f64) -> Value {
     let channel = |state: &PetalCxt, id: MapId, k: &str| {
-        state.heap().get_map(id).get(k).and_then(|v| v.as_f64())
+        state.heap().get_map(id).get(k).and_then(|v| state.heap().num_f64(*v))
     };
     let mix = |a: f64, b: f64| Value::Int((a + (b - a) * t).round() as i64);
     let mut map = crate::heap::RecordMap::default();

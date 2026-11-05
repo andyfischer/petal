@@ -5,7 +5,7 @@
 use crate::native_fn::PetalCxt;
 use crate::value::Value;
 
-use super::autodiff::{D, args_d, push_d};
+use super::autodiff::{D, args_d, push_d, value_d};
 use super::require_args;
 use super::vec2::{push_vec3, vec3_parts};
 
@@ -41,9 +41,10 @@ pub(super) fn native_clamp(state: &mut PetalCxt) -> Result<u32, String> {
 pub(super) fn native_lerp(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 3, "lerp")?;
     match (state.get_value(1)?, state.get_value(2)?) {
-        (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => {
+        (Value::Vec2(a), Value::Vec2(b)) => {
             let t = state.get_float(3)?;
-            state.push_value(Value::Vec2(ax + (bx - ax) * t, ay + (by - ay) * t));
+            let ((ax, ay), (bx, by)) = (state.heap().get_vec2(a), state.heap().get_vec2(b));
+            state.push_vec2(ax + (bx - ax) * t, ay + (by - ay) * t);
             return Ok(1);
         }
         (a @ Value::Vec3(_), b @ Value::Vec3(_)) => {
@@ -76,28 +77,32 @@ pub(super) fn native_lerp(state: &mut PetalCxt) -> Result<u32, String> {
                     b.len()
                 ));
             }
-            let mixed = a
+            // The blended numbers first (reading the heap), then the values
+            // (a dual result is allocated).
+            let heap = state.heap();
+            let blended = a
                 .iter()
                 .zip(b)
-                .map(|(x, y)| match (x.as_f64(), y.as_f64()) {
-                    (Some(_), Some(_))
-                        if matches!(x, Value::Dual { .. }) || matches!(y, Value::Dual { .. }) =>
-                    {
-                        let (a, b) = (D { v: x.as_f64().unwrap(), d: x.derivative() }, D {
-                            v: y.as_f64().unwrap(),
-                            d: y.derivative(),
-                        });
-                        let r = lerp_d(a, b, D::konst(t));
-                        Ok(Value::Dual { value: r.v, derivative: r.d })
+                .map(|(&x, &y)| match (value_d(heap, x), value_d(heap, y)) {
+                    (Some((a, da)), Some((b, db))) if da || db => {
+                        Ok(Err(lerp_d(a, b, D::konst(t))))
                     }
-                    (Some(x), Some(y)) => Ok(Value::Float(x + (y - x) * t)),
+                    (Some((a, _)), Some((b, _))) => Ok(Ok(a.v + (b.v - a.v) * t)),
                     _ => Err(format!(
                         "lerp(a, b, t) on lists needs numbers, got {} and {}",
                         x.type_name(),
                         y.type_name()
                     )),
                 })
-                .collect::<Result<Vec<_>, _>>()?;
+                .collect::<Result<Vec<Result<f64, D>>, _>>()?;
+            let heap = state.heap_mut();
+            let mixed = blended
+                .into_iter()
+                .map(|r| match r {
+                    Ok(f) => Value::Float(f),
+                    Err(r) => heap.dual_value(r.v, r.d),
+                })
+                .collect();
             let id = state.heap_mut().alloc_list(mixed);
             state.push_value(Value::List(id));
             return Ok(1);
@@ -110,10 +115,10 @@ pub(super) fn native_lerp(state: &mut PetalCxt) -> Result<u32, String> {
             return Ok(1);
         }
         (
-            Value::Vec2(..) | Value::Vec3(_) | Value::Map(_) | Value::List(_),
+            Value::Vec2(_) | Value::Vec3(_) | Value::Map(_) | Value::List(_),
             _,
         )
-        | (_, Value::Vec2(..) | Value::Vec3(_) | Value::Map(_) | Value::List(_)) => {
+        | (_, Value::Vec2(_) | Value::Vec3(_) | Value::Map(_) | Value::List(_)) => {
             return Err(
                 "lerp(a, b, t) expects two numbers, two vectors of the same kind, \
                  two colors {r, g, b}, two lists of numbers or two records"
@@ -179,8 +184,9 @@ fn lerp_records(
 /// blend.
 fn lerp_field(state: &mut PetalCxt, x: Value, y: Value, t: f64, depth: usize) -> Option<Value> {
     match (x, y) {
-        (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => {
-            Some(Value::Vec2(ax + (bx - ax) * t, ay + (by - ay) * t))
+        (Value::Vec2(a), Value::Vec2(b)) => {
+            let ((ax, ay), (bx, by)) = (state.heap().get_vec2(a), state.heap().get_vec2(b));
+            Some(state.heap_mut().vec2_value(ax + (bx - ax) * t, ay + (by - ay) * t))
         }
         (Value::Vec3(_), Value::Vec3(_)) => {
             let (a, b) = (vec3_parts(state, x)?, vec3_parts(state, y)?);
@@ -219,17 +225,17 @@ fn lerp_field(state: &mut PetalCxt, x: Value, y: Value, t: f64, depth: usize) ->
         }
         _ => match (x, y) {
             (Value::Int(_) | Value::Float(_), Value::Int(_) | Value::Float(_)) => {
-                let (a, b) = (x.as_f64()?, y.as_f64()?);
+                let (a, b) = (state.heap().num_f64(x)?, state.heap().num_f64(y)?);
                 Some(Value::Float(a + (b - a) * t))
             }
             (
-                Value::Int(_) | Value::Float(_) | Value::Dual { .. },
-                Value::Int(_) | Value::Float(_) | Value::Dual { .. },
+                Value::Int(_) | Value::Float(_) | Value::Dual(_),
+                Value::Int(_) | Value::Float(_) | Value::Dual(_),
             ) => {
-                let a = D { v: x.as_f64()?, d: x.derivative() };
-                let b = D { v: y.as_f64()?, d: y.derivative() };
+                let (a, _) = value_d(state.heap(), x)?;
+                let (b, _) = value_d(state.heap(), y)?;
                 let r = lerp_d(a, b, D::konst(t));
-                Some(Value::Dual { value: r.v, derivative: r.d })
+                Some(state.heap_mut().dual_value(r.v, r.d))
             }
             _ => None,
         },
@@ -256,7 +262,8 @@ pub(super) fn native_distance(state: &mut PetalCxt) -> Result<u32, String> {
             let a = state.get_value(1)?;
             let b = state.get_value(2)?;
             match (a, b) {
-                (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => {
+                (Value::Vec2(a), Value::Vec2(b)) => {
+                    let ((ax, ay), (bx, by)) = (state.heap().get_vec2(a), state.heap().get_vec2(b));
                     let dx = bx - ax;
                     let dy = by - ay;
                     state.push_float((dx * dx + dy * dy).sqrt());
@@ -289,7 +296,8 @@ pub(super) fn native_mag(state: &mut PetalCxt) -> Result<u32, String> {
         1 => {
             // mag(vec2) / mag(vec3)
             match state.get_value(1)? {
-                Value::Vec2(x, y) => {
+                Value::Vec2(id) => {
+                    let (x, y) = state.heap().get_vec2(id);
                     state.push_float((x * x + y * y).sqrt());
                     Ok(1)
                 }
@@ -362,7 +370,8 @@ pub(super) fn native_sign(state: &mut PetalCxt) -> Result<u32, String> {
             Ok(1)
         }
         // A step function: derivative 0, and the result is still a dual.
-        Value::Dual { value, .. } => {
+        Value::Dual(id) => {
+            let (value, _) = state.heap().get_dual(id);
             let s = if value > 0.0 {
                 1.0
             } else if value < 0.0 {
@@ -370,7 +379,7 @@ pub(super) fn native_sign(state: &mut PetalCxt) -> Result<u32, String> {
             } else {
                 0.0
             };
-            state.push_value(Value::Dual { value: s, derivative: 0.0 });
+            state.push_dual(s, 0.0);
             Ok(1)
         }
         _ => Err("sign() expects a number".into()),

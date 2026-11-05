@@ -2135,6 +2135,31 @@ fn a_call_between_the_read_and_the_write_keeps_the_write_out() {
 }
 
 #[test]
+fn a_call_in_the_window_of_a_private_cell_keeps_the_write_in() {
+    // No closure captures these cells, so no callee can reach them.
+    for code in [
+        "var xs = []\nfor i in range(0, 3) do\n  set xs = append(xs, str(i))\nend\nnil",
+        "fn sq(x)\n  x * x\nend\nvar xs = []\nfor i in range(0, 3) do\n  set xs = append(xs, sq(i))\nend\nnil",
+        "fn sq(x)\n  x * x\nend\nfn go(n)\n  var xs = [0, 0]\n  set xs[0] = sq(n)\n  get xs\nend\nprint(go(2))",
+        // A read of another cell in the window is no read of this one.
+        "var n = 3\nvar xs = []\nset xs = append(xs, str(get n))\nnil",
+    ] {
+        assert_eq!(cell_plan(code).in_place_writes(), 1, "{code}");
+    }
+    for (code, writes) in [
+        // Captured: the closure may be the callee. (Its own write, with no
+        // call in its window, is still in place.)
+        ("fn go()\n  var xs = []\n  let f = fn()\n    set xs = append(get xs, 9)\n    1\n  end\n  set xs = append(xs, f())\n  get xs\nend\nprint(go())", 1),
+        // A `state var`'s cell is its init block's result, not private.
+        ("state var xs = []\nset xs = append(xs, str(1))\nnil", 0),
+        // The cell itself is read again inside the window.
+        ("var xs = []\nset xs = append(xs, str(len(xs)))\nnil", 0),
+    ] {
+        assert_eq!(cell_plan(code).in_place_writes(), writes, "{code}");
+    }
+}
+
+#[test]
 fn a_read_that_keeps_the_contents_is_not_a_peek() {
     for (body, peeks) in [
         ("get xs[0]", 1),

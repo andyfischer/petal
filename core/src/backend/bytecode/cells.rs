@@ -96,9 +96,30 @@
 //!   in-place write would rewrite, so this pass is off whenever the trace is
 //!   on ([`OptFlags::preserve_trace`](crate::backend::OptFlags)).
 //!
+//! ## Private cells: calls inside the window
+//! Condition 1 rejects a call because the callee might reach the cell. For
+//! most cells it cannot: a cell is shared only by closure capture (the
+//! containment invariant, docs/syntax/var.md), so a cell that no closure
+//! captures is reachable from its own frame alone. Such a *private* cell
+//! ([`Analysis::private_cells`]) is a `CellNew` whose every user is a
+//! `CellRead` or `CellWrite` naming it as the cell, in the function that
+//! created it, and which is no block's result and no phi's carry-out. That
+//! leaves out every captured `var` (its `MakeClosure` is a user) and every
+//! `state var` (its cell is the `StateInit` init block's result).
+//!
+//! For a private cell the window may also hold any call, and reads of
+//! *other* cells, since nothing they run can read or write this one. So
+//! `set xs = append(xs, f(x))` on a local `var` is in place, where it used to
+//! copy the whole list on every pass of a loop. A call that fails leaves the
+//! cell as it was: the take hands out the cell's own container, or a copy,
+//! and nothing edits it until the mutation, which still sits directly before
+//! the write. Reads of the cell itself are still rejected in the window: a
+//! shared read there would hand out the container the mutation then edits.
+//!
 //! ## What does not fire
-//! * `set xs = append(xs, f(x))` — the call sits between the read and the
-//!   write. Bind the argument first. The exceptions are the trivial builtins
+//! * `set xs = append(xs, f(x))` on a captured or `state` `var` — the call
+//!   sits between the read and the write and may reach the cell. Bind the
+//!   argument first. The exceptions are the trivial builtins
 //!   ([`is_trivial_call`]: `float`, `int`, `min`, `max`, `clamp`, `abs`,
 //!   `floor`, `len`, `type`), which cannot run script code or reach a cell
 //!   and so may sit in a window like the arithmetic they stand in for.
@@ -267,6 +288,15 @@ fn is_trivial_call(program: &Program, term: &Term) -> bool {
         && term.arg_names.iter().all(Option::is_none)
 }
 
+/// A call of any kind: it may run script code, but reaches only the cells
+/// it can name, which a private cell's are not (see the module docs).
+fn is_call(term: &Term) -> bool {
+    matches!(
+        term.op,
+        TermOp::Call | TermOp::MethodCall { .. } | TermOp::BuiltinCall(_)
+    ) && term.child_blocks.is_empty()
+}
+
 /// Whether `term` is a mutation whose container is `inputs[0]`.
 fn is_mutation(program: &Program, term: &Term) -> bool {
     matches!(term.op, TermOp::SetIndex | TermOp::SetField(_)) || is_mutating_call(program, term)
@@ -299,6 +329,9 @@ struct Analysis<'p> {
     order: HashMap<BlockId, Vec<TermId>>,
     /// Function body blocks: their result is a function's return value.
     fn_bodies: HashSet<BlockId>,
+    /// `CellNew` terms whose cell no other frame can reach; see "Private
+    /// cells" in the module docs.
+    private_cells: HashSet<TermId>,
 }
 
 impl<'p> Analysis<'p> {
@@ -328,14 +361,62 @@ impl<'p> Analysis<'p> {
                 cur = program.get_term(tid).block_next;
             }
         }
-        Analysis {
+        let mut a = Analysis {
             program,
             users,
             phi_carry_srcs,
             position,
             order,
             fn_bodies: program.functions.iter().map(|f| f.body_block).collect(),
+            private_cells: HashSet::new(),
+        };
+        a.private_cells = program
+            .terms
+            .iter()
+            .filter(|t| matches!(t.op, TermOp::CellNew) && a.is_private_cell(t))
+            .map(|t| t.id)
+            .collect();
+        a
+    }
+
+    /// The body block of the function `block` belongs to (the root block for
+    /// top-level code), or `None` for malformed nesting.
+    fn frame_of(&self, mut block: BlockId) -> Option<BlockId> {
+        let program = self.program;
+        // Bounded by the nesting depth; the cap only guards malformed IR.
+        for _ in 0..=program.blocks.len() {
+            if block == program.root_block || self.fn_bodies.contains(&block) {
+                return Some(block);
+            }
+            block = program
+                .get_term(program.get_block(block).parent_term_id?)
+                .block_id;
         }
+        None
+    }
+
+    /// Whether the cell `new` (a `CellNew`) is reachable from its own frame
+    /// only: every user reads or writes it as the cell, in the same function,
+    /// and the cell value flows nowhere else (no capture, no phi, no block
+    /// result).
+    fn is_private_cell(&self, new: &Term) -> bool {
+        if self.phi_carry_srcs.contains(&new.id) || self.is_block_result(new) {
+            return false;
+        }
+        let Some(frame) = self.frame_of(new.block_id) else {
+            return false;
+        };
+        self.users_of(new.id).iter().all(|&u| {
+            let user = self.program.get_term(u);
+            let as_cell = match user.op {
+                TermOp::CellRead => user.inputs.as_slice() == [new.id],
+                TermOp::CellWrite => {
+                    user.inputs.len() == 2 && user.inputs[0] == new.id && user.inputs[1] != new.id
+                }
+                _ => false,
+            };
+            as_cell && self.frame_of(user.block_id) == Some(frame)
+        })
     }
 
     fn users_of(&self, t: TermId) -> &[TermId] {
@@ -395,9 +476,16 @@ impl<'p> Analysis<'p> {
         // container has been edited, nothing may fail before the write that
         // was supposed to make the edit visible (a `state var` outlives a run
         // that errors, and must hold what clone-and-alloc would have left).
-        if !(r < m && w == m + 1)
-            || !self.window_is(write.block_id, r, w, |t| window_op(program, t))
-        {
+        // A private cell's window may also hold calls and reads of other
+        // cells: nothing they run can reach this one ("Private cells").
+        let private = self.private_cells.contains(&cell);
+        let in_window = |t: &Term| {
+            window_op(program, t)
+                || (private
+                    && (is_call(t)
+                        || (matches!(t.op, TermOp::CellRead) && t.inputs.as_slice() != [cell])))
+        };
+        if !(r < m && w == m + 1) || !self.window_is(write.block_id, r, w, in_window) {
             return None;
         }
 

@@ -1212,8 +1212,13 @@ fn same(a: Value, b: Value, heap: &Heap, private: bool, frozen_too: bool) -> boo
             x == y || (frozen(a, b) && heap.get_string(x) == heap.get_string(y))
         }
         (Value::Symbol(x), Value::Symbol(y)) => x == y,
-        (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => {
-            ax.to_bits() == bx.to_bits() && ay.to_bits() == by.to_bits()
+        // Heap leaves like a vec3: the same object, or equal components and
+        // the same answer to `frozen`.
+        (Value::Vec2(x), Value::Vec2(y)) => {
+            x == y || {
+                let ((ax, ay), (bx, by)) = (heap.get_vec2(x), heap.get_vec2(y));
+                frozen(a, b) && ax.to_bits() == bx.to_bits() && ay.to_bits() == by.to_bits()
+            }
         }
         (Value::Vec3(x), Value::Vec3(y)) => {
             x == y || {
@@ -1221,8 +1226,11 @@ fn same(a: Value, b: Value, heap: &Heap, private: bool, frozen_too: bool) -> boo
                 frozen(a, b) && p.iter().zip(&q).all(|(m, n)| m.to_bits() == n.to_bits())
             }
         }
-        (Value::Dual { value: av, derivative: ad }, Value::Dual { value: bv, derivative: bd }) => {
-            av.to_bits() == bv.to_bits() && ad.to_bits() == bd.to_bits()
+        (Value::Dual(x), Value::Dual(y)) => {
+            x == y || {
+                let ((av, ad), (bv, bd)) = (heap.get_dual(x), heap.get_dual(y));
+                frozen(a, b) && av.to_bits() == bv.to_bits() && ad.to_bits() == bd.to_bits()
+            }
         }
         (Value::List(x), Value::List(y)) => {
             if x == y {
@@ -1272,7 +1280,7 @@ fn same(a: Value, b: Value, heap: &Heap, private: bool, frozen_too: bool) -> boo
                 })
         }
         (Value::EnumVariant { tag: at, data: ad }, Value::EnumVariant { tag: bt, data: bd }) => {
-            (at == bt || heap.get_string(at) == heap.get_string(bt))
+            (at == bt || heap.tag_str(at) == heap.tag_str(bt))
                 && same(Value::List(ad), Value::List(bd), heap, private, frozen_too)
         }
         (Value::Element(x), Value::Element(y)) => {

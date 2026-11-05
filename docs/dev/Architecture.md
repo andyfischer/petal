@@ -285,12 +285,19 @@ was-it-passed flag that the body tests before evaluating the default.
 
 ### Value
 
-`Value` is a `Copy` 24-byte enum. Heap-allocated values (strings, lists,
-f64 arrays, records, `map`s, elements, `Vec3`s, cells) are stored by ID into the `Heap` —
-`Value` just carries the ID. `Vec2` and `Dual` are stored inline (unboxed), no
-heap allocation; a `Vec3` is a heap id because three `f64`s would widen every
-`Value` (see [vec3.md](vec3.md)). A static assertion in `value.rs` keeps it at
-24 bytes.
+`Value` is a `Copy` 16-byte enum: a tag byte and at most 12 bytes of
+payload. Heap-allocated values (strings, lists, f64 arrays, records, `map`s,
+elements, `Vec2`s, `Vec3`s, dual numbers, cells) are stored by ID into the
+`Heap` — `Value` just carries the ID. `Vec2` and `Dual` share one pair slab
+(`[f64; 2]` per slot); like `Vec3` they are immutable, so the id behaves like a
+value. An `EnumVariant` is a 4-byte [`EnumTag`] (the index of its name, an
+interned string the heap keeps permanently) and its payload list id. Static
+assertions in `value.rs` keep `Value` and `Option<Value>` at 16 bytes; see
+[proposals/value-representation.md](../proposals/value-representation.md).
+
+Truthiness of a vec2 or a dual number needs the heap: `Heap::truthy(v)`
+answers for every value (`Value::truthy_without_heap` is its fast path), and
+numeric reads go through `Heap::num_f64` / `Heap::derivative_of`.
 
 Every heap id (and `ClosureId`/`OverloadSetId`) is a `(slot index,
 generation)` pair naming one *allocation*, not one slot. Reusing a reclaimed
@@ -321,11 +328,11 @@ pub enum Value {
     Closure(ClosureId),
     OverloadSet(OverloadSetId),
     NativeFunction(NativeFnId),
-    EnumVariant { tag: StringId, data: ListId },
+    EnumVariant { tag: EnumTag, data: ListId },
     Element(ElementId),
     Cell(CellId),
-    Dual { value: f64, derivative: f64 },
-    Vec2(f64, f64),
+    Dual(DualId),        // [value, derivative] in the pair slab
+    Vec2(Vec2Id),        // [x, y] in the pair slab
     Vec3(Vec3Id),
     Symbol(SymbolId),
     Handle(HandleVal),
@@ -668,8 +675,8 @@ The graph walks live in `program_analysis.rs` (with the CLI handlers in
 
 ## Differentiation (forward-mode)
 
-Petal has built-in forward-mode automatic differentiation via `Value::Dual
-{ value, derivative }`, stored inline in the 16-byte `Value`. Usage, and the
+Petal has built-in forward-mode automatic differentiation via `Value::Dual`,
+a heap id for an immutable `(value, derivative)` pair (`Heap::get_dual`). Usage, and the
 list of builtins that carry or drop a derivative, is in
 [features/differentiation.md](../features/differentiation.md).
 

@@ -28,8 +28,8 @@ pub fn match_pattern(
             (Literal::Bool(a), Value::Bool(b)) => *a == b,
             // A numeric literal matches what it is `==` to, so `when 2` matches
             // `2.0` exactly as `x == 2` would (the proven `num_eq`).
-            (Literal::Int(a), v) => as_num(&v).is_some_and(|n| num_eq(Num::Int(*a), n)),
-            (Literal::Float(a), v) => as_num(&v).is_some_and(|n| num_eq(Num::Float(*a), n)),
+            (Literal::Int(a), v) => as_num(&v, heap).is_some_and(|n| num_eq(Num::Int(*a), n)),
+            (Literal::Float(a), v) => as_num(&v, heap).is_some_and(|n| num_eq(Num::Float(*a), n)),
             (Literal::String(a), Value::String(sid)) => a == heap.get_string(sid),
             _ => false,
         },
@@ -55,7 +55,7 @@ pub fn match_pattern(
             let Value::EnumVariant { tag, data } = value else {
                 return false;
             };
-            if heap.get_string(tag) != name {
+            if heap.tag_str(tag) != name {
                 return false;
             }
             let data_fields = heap.get_list(data);

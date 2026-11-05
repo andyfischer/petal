@@ -272,7 +272,8 @@ impl<'a> Vm<'a> {
         let elements = self.heap.get_list(list_id).to_vec();
         let mut results = Vec::new();
         for elem in elements {
-            if self.call_closure_sync(*func, &[elem], site)?.is_truthy() {
+            let kept = self.call_closure_sync(*func, &[elem], site)?;
+            if self.heap.truthy(kept) {
                 results.push(elem);
             }
         }
@@ -327,7 +328,7 @@ impl<'a> Vm<'a> {
     ) -> Result<Option<bool>, String> {
         match self.call_closure_sync(pred, &[elem], site)? {
             Value::Pending(_) => Ok(None),
-            held => Ok(Some(held.is_truthy())),
+            held => Ok(Some(self.heap.truthy(held))),
         }
     }
 

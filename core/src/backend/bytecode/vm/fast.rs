@@ -224,19 +224,19 @@ impl<'a> Vm<'a> {
                         && c2 == cond
                     {
                         n += 2;
-                        ip = if v.is_truthy() { ip + 2 } else { t2 as usize };
+                        ip = if heap.truthy(v) { ip + 2 } else { t2 as usize };
                         continue;
                     }
                 }
                 Inst::JumpIfFalse { cond, to } => {
-                    if !get!(cond).is_truthy() {
+                    if !heap.truthy(get!(cond)) {
                         n += 1;
                         ip = to as usize;
                         continue;
                     }
                 }
                 Inst::JumpIfTrue { cond, to } => {
-                    if get!(cond).is_truthy() {
+                    if heap.truthy(get!(cond)) {
                         n += 1;
                         ip = to as usize;
                         continue;
@@ -383,7 +383,7 @@ impl<'a> Vm<'a> {
                     if is_pending(x) {
                         break StraightStop::Slow;
                     }
-                    put!(dst, Value::Bool(!x.is_truthy()));
+                    put!(dst, Value::Bool(!heap.truthy(x)));
                 }
 
                 Inst::GetField {
@@ -739,6 +739,7 @@ fn straight_enum_builtin(
         },
         [tag, record] if builtins.data == Some(id) => match (reg(tag), reg(record)) {
             (Value::String(tag), Value::Map(record)) => {
+                let tag = heap.tag_of_string(tag)?;
                 enums.republish(heap, tag, record).then_some(Value::Nil)
             }
             _ => None,
@@ -808,7 +809,7 @@ mod intrinsic_tests {
         let mut heap = Heap::new();
         let text = Value::String(heap.intern_str("12"));
         let list = Value::List(heap.alloc_list(Vec::new()));
-        let dual = Value::Dual { value: 1.0, derivative: 1.0 };
+        let dual = heap.dual_value(1.0, 1.0);
         let pending = Value::Pending(crate::value::PendingId(0));
         let nil = Value::Nil;
         let one = Value::Int(1);

@@ -151,7 +151,7 @@ impl DrawCommand {
     pub fn from_value(val: &Value, heap: &Heap) -> Result<DrawCommand, String> {
         let (tag, d) = match val {
             Value::EnumVariant { tag, data } => (
-                heap.get_string(*tag).to_string(),
+                heap.tag_str(*tag).to_string(),
                 heap.get_list(*data).to_vec(),
             ),
             other => {

@@ -557,7 +557,7 @@ fn hash_content(
         }
         Value::EnumVariant { tag, data } => {
             h.write_u8(7);
-            h.write(heap.get_string(*tag).as_bytes());
+            h.write(heap.tag_str(*tag).as_bytes());
             h.write_u8(0);
             return hash_content(&Value::List(*data), heap, h, budget);
         }
@@ -569,8 +569,9 @@ fn hash_content(
                 h.write_u64(f.to_bits());
             }
         }
-        Value::Vec2(x, y) => {
+        Value::Vec2(id) => {
             h.write_u8(9);
+            let (x, y) = heap.get_vec2(*id);
             h.write_u64(x.to_bits());
             h.write_u64(y.to_bits());
         }
@@ -580,8 +581,9 @@ fn hash_content(
                 h.write_u64(f.to_bits());
             }
         }
-        Value::Dual { value, derivative } => {
+        Value::Dual(id) => {
             h.write_u8(10);
+            let (value, derivative) = heap.get_dual(*id);
             h.write_u64(value.to_bits());
             h.write_u64(derivative.to_bits());
         }

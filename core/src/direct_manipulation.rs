@@ -585,7 +585,13 @@ fn invert_right(op: TermOp, target: f64, a: f64) -> Option<f64> {
 fn current_value(program: &Program, trace: Option<&TraceBuffer>, term: TermId) -> Option<f64> {
     if let Some(trace) = trace
         && let Some(event) = trace.last_for_term(term)
-        && let Some(v) = event.result.as_f64()
+        // The trace holds values weakly, so only the inline numbers are read
+        // from it (a dual number's value would be a heap read).
+        && let Some(v) = match event.result {
+            crate::value::Value::Int(n) => Some(n as f64),
+            crate::value::Value::Float(f) => Some(f),
+            _ => None,
+        }
     {
         return Some(v);
     }

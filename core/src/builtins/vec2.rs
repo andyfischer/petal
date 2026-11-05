@@ -1,7 +1,7 @@
 //! Vector builtins: vec2, vec3, normalize, dot, cross, limit, rotate.
 
-// `vec2` is an inline `Value::Vec2`; `vec3` is a heap-allocated `Value::Vec3`
-// (three f64s would not fit in a `Value` — see docs/dev/vec3.md). The shared
+// `vec2` and `vec3` are heap-allocated (`Value::Vec2` / `Value::Vec3`), so
+// that a `Value` stays 16 bytes — see docs/dev/vec3.md. The shared
 // natives (`normalize`, `dot`, `limit`, and `distance`/`mag`/`lerp` in
 // `creative_coding`) take either kind and answer in the kind they were given.
 
@@ -14,7 +14,7 @@ use super::require_args;
 /// derivative: refuse it by name rather than with `get_float`'s generic error.
 fn refuse_dual_components(state: &PetalCxt, who: &str) -> Result<(), String> {
     for i in 1..=state.arg_count() {
-        if let Value::Dual { .. } = state.get_value(i)? {
+        if let Value::Dual(_) = state.get_value(i)? {
             return Err(format!(
                 "{who}() cannot hold a dual number (argument {i}): a vector stores plain \
                  floats, so the derivative would be lost. Keep duals in a list or a record \
@@ -30,7 +30,7 @@ pub(super) fn native_vec2(state: &mut PetalCxt) -> Result<u32, String> {
     refuse_dual_components(state, "vec2")?;
     let x = state.get_float(1)?;
     let y = state.get_float(2)?;
-    state.push_value(Value::Vec2(x, y));
+    state.push_vec2(x, y);
     Ok(1)
 }
 
@@ -71,12 +71,13 @@ pub(super) fn native_normalize(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "normalize")?;
     let v = state.get_value(1)?;
     match v {
-        Value::Vec2(x, y) => {
+        Value::Vec2(id) => {
+            let (x, y) = state.heap().get_vec2(id);
             let m = (x * x + y * y).sqrt();
             if m < f64::EPSILON {
-                state.push_value(Value::Vec2(0.0, 0.0));
+                state.push_vec2(0.0, 0.0);
             } else {
-                state.push_value(Value::Vec2(x / m, y / m));
+                state.push_vec2(x / m, y / m);
             }
             Ok(1)
         }
@@ -100,7 +101,8 @@ pub(super) fn native_dot(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 2, "dot")?;
     let (a, b) = (state.get_value(1)?, state.get_value(2)?);
     match (a, b) {
-        (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => {
+        (Value::Vec2(a), Value::Vec2(b)) => {
+            let ((ax, ay), (bx, by)) = (state.heap().get_vec2(a), state.heap().get_vec2(b));
             state.push_float(ax * bx + ay * by);
             Ok(1)
         }
@@ -135,14 +137,16 @@ pub(super) fn native_limit(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 2, "limit")?;
     let v = state.get_value(1)?;
     match v {
-        Value::Vec2(x, y) => {
+        Value::Vec2(id) => {
             let max_mag = state.get_float(2)?;
+            let (x, y) = state.heap().get_vec2(id);
             let m = (x * x + y * y).sqrt();
             if m > max_mag && m > f64::EPSILON {
                 let scale = max_mag / m;
-                state.push_value(Value::Vec2(x * scale, y * scale));
+                state.push_vec2(x * scale, y * scale);
             } else {
-                state.push_value(Value::Vec2(x, y));
+                // Already short enough: hand back the same (immutable) vec2.
+                state.push_value(v);
             }
             Ok(1)
         }
@@ -167,10 +171,11 @@ pub(super) fn native_limit(state: &mut PetalCxt) -> Result<u32, String> {
 pub(super) fn native_rotate(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 2, "rotate")?;
     match state.get_value(1)? {
-        Value::Vec2(x, y) => {
+        Value::Vec2(id) => {
             let a = state.get_float(2)?;
+            let (x, y) = state.heap().get_vec2(id);
             let (s, c) = a.sin_cos();
-            state.push_value(Value::Vec2(x * c - y * s, x * s + y * c));
+            state.push_vec2(x * c - y * s, x * s + y * c);
             Ok(1)
         }
         _ => Err("rotate() expects a vec2 as first argument".into()),

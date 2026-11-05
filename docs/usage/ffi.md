@@ -463,16 +463,25 @@ input half, for `import ui/input`, does not call it.
 
 ## Values and the heap
 
-`Value` (`core/src/value.rs`) is a `Copy` enum of 24 bytes; anything bigger
+`Value` (`core/src/value.rs`) is a `Copy` enum of 16 bytes; anything bigger
 lives in the `Heap` behind a typed id (a slot index plus a generation):
 
 ```
-Nil, Bool, Int(i64), Float(f64), Vec2(f64, f64), Dual { value, derivative },
+Nil, Bool, Int(i64), Float(f64), Vec2(Vec2Id), Dual(DualId),
 String(StringId), List(ListId), F64Array(F64ArrayId), Vec3(Vec3Id), Map(MapId),
 Dict(DictId), Closure(ClosureId), OverloadSet(..), NativeFunction(NativeFnId),
-EnumVariant { tag: StringId, data: ListId }, Element(ElementId),
+EnumVariant { tag: EnumTag, data: ListId }, Element(ElementId),
 Symbol(SymbolId), Cell(CellId), Handle(HandleVal), Pending(PendingId)
 ```
+
+Vectors and dual numbers are read and built through the heap:
+`heap.get_vec2(id) -> (x, y)`, `heap.vec2_value(x, y)`, `heap.get_dual(id)`,
+`heap.dual_value(v, d)`, and `PetalCxt::push_vec2` / `push_dual`. A number
+argument that may be a dual reads with `heap.num_f64(v)`, truthiness with
+`heap.truthy(v)`. An enum tag reads with `heap.tag_str(tag)` (or
+`heap.tag_string(tag)` for its `StringId`) and is made with
+`heap.enum_tag_str("Shape.circle")`; tags are interned and kept for the
+heap's life.
 
 An `EnumVariant` is its tag and its positional payload, nothing else. A
 variant of a script's `enum` has the tag `Enum.variant` (`"Shape.circle"`);

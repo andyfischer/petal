@@ -195,6 +195,28 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- `Value` is 16 bytes, down from 24, so every list element, record field,
+  `map` entry, register and closure capture takes a third less memory (a
+  million-int list: 24 MB → 16 MB). `vec2` and dual numbers are now small
+  immutable heap objects like `vec3`, and an enum variant's tag is a 4-byte
+  index of its (permanently interned) name. Scripts see no difference except
+  that `frozen(v)` is true for a vec2 or dual number that `freeze` reached.
+  **Embedders**: `Value::Vec2(x, y)` / `Value::Dual { value, derivative }` are
+  now `Value::Vec2(Vec2Id)` / `Value::Dual(DualId)` (read with
+  `heap.get_vec2` / `heap.get_dual`, build with `heap.vec2_value` /
+  `heap.dual_value` or `PetalCxt::push_vec2` / `push_dual`); an
+  `EnumVariant`'s `tag` is an `EnumTag` (`heap.tag_str(tag)`,
+  `heap.enum_tag_str(name)`); `Value::is_truthy`, `as_f64` and `derivative`
+  are replaced by `heap.truthy(v)`, `heap.num_f64(v)` and
+  `heap.derivative_of(v)`, and `value::as_num` takes the heap.
+- Strings store their text once: short text (up to 22 bytes) sits in the heap
+  slot with no allocation, and the intern table no longer keeps a second copy.
+  A million short strings: 213 MB → 83 MB.
+- `set xs = append(xs, f(x))` on a `var` that no closure captures (and that is
+  not a `state var`) updates the list in place whatever `f` is. It copied the
+  whole list on every append before, unless `f` was a trivial builtin: 200,000
+  appends of `str(i)` took 142 s and now take 0.16 s.
+
 - `petal check` is gone: its compile check is now the first stage of
   `petal lint`, which then runs the lint rules. `petal lint` walks the current
   directory (or the given paths) by default, checking every program and

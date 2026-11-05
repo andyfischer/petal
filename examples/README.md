@@ -10,6 +10,7 @@ Runnable Petal programs, grouped by what they are:
 | [`dashboards/`](dashboards/) | Data-visualization demos — analytics, server monitoring, finance, a [`network-graph`](dashboards/network-graph/) explorer, a [`timeline-explorer`](dashboards/timeline-explorer/) |
 | [`ui/`](ui/) | Component-library showcases — [`bloom-gallery`](ui/bloom-gallery/), every component in [bloom](../core-runtime/bloom/) |
 | [`direct-manipulation-v2/`](direct-manipulation-v2/) | A ladder of drag-to-edit programs from a literal in a call to a 944-line dashboard, each with the drags to try in its header; the input of the [DM v2 complexity study](../docs/dev/direct-manipulation-v2-study.md) |
+| [`ir-target/`](ir-target/) | [`calc-to-ir.ts`](ir-target/calc-to-ir.ts), a reference external front end: a toy arithmetic language compiled straight to Petal IR JSON, sharing no code with the compiler ([ir-as-target.md](../docs/dev/ir-as-target.md)) |
 | [`custom-apps/`](custom-apps/) | Full applications that run outside Garden, each on an integration — [`diagram-canvas`](custom-apps/diagram-canvas/) (petal-web-canvas), and [`petal-fps`](custom-apps/petal-fps/), [`petal-fantasy-nes`](custom-apps/petal-fantasy-nes/) and the [`side-scroller`](custom-apps/side-scroller/) platformer (petal-desktop-sdl) |
 
 The apps under `games/`, `productivity/`, `dashboards/`, and `ui/` are Garden

@@ -1,6 +1,6 @@
 ---
 name: project-organization
-description: Decide whether new code belongs in the Petal repo at all and, if it does, which directory it goes in. Use before adding a new library, host, builtin, tool or app, when moving code between directories, or when reviewing a change that adds a new top-level piece. Includes the layering rules and a list of code that is in the wrong place today.
+description: Decide whether new code belongs in the Petal repo at all and, if it does, which directory it goes in. Use before adding a new library, host, builtin, tool or app, when moving code between directories, or when reviewing a change that adds a new top-level piece. Includes the layering rules and a list of code that is still in the wrong place.
 ---
 
 # Project organization
@@ -91,12 +91,12 @@ Lower layers must never depend on higher ones ([Layering](#layering-rules)).
 | 0 | `core/src/` | The language: lexer, parser, CST, compiler, IR, type checker, VM, GC, state, reload, introspection (provenance, DM, autodiff), and the embedding API (`Env`, natives, packages). | Rust |
 | 0 | `core/src/builtins/` + `core/packages/<name>/` | Natives registered in every `Env`. The `.rs` file implements them; the package declares them. `core` is always in scope; the domain packages (`vec2`, `color`, `noise`, `json`, …) need an `import`. | Rust + `.ptl` decls |
 | 0 | `core/prelude/std.ptl` | Pure-Petal helpers implicitly imported everywhere. Must cost nothing when unused. | Petal |
-| 0 | `core/src/cli/`, `lsp/`, `fmt/`, `lint/` | The `petal` command-line tool and the developer tooling every Petal user runs. | Rust |
+| 0 | `core/src/cli/`, `lsp/`, `fmt/`, `lint/` | The `petal` command-line tool and the developer tooling every Petal user runs. `cli`, `lsp` and `fix_imports` are behind the default-on `tooling` cargo feature, which embedders turn off. | Rust |
 | 0 | `cli/`, `core-libs/petal-pkgman/` | The `petal` binary, and the package manager only it links (git dependencies, `petal.lock`, `vendor/`, bundles). Embedders do not carry either. | Rust |
 | 1 | `core-libs/<crate>/` | Rust crates that **hosts** link to provide a shared host interface. Each one holds the natives plus the Petal interface package that declares them (`core-libs/petal-ui` gives `ui`). | Rust (+ `.ptl` interface) |
 | 2 | `core-runtime/<package>/` | **Pure Petal** libraries over a host interface or over `core`. No Rust, no build step. Bundled into the binary only if they meet the bundling bar below. | Petal |
 | 3 | `integrations/<host>/` | Hosts: the programs and libraries that embed Petal on one platform (SDL desktop, browser canvas, browser DOM, C/C++). Host-specific natives and that host's interface package live here, inside the host. | Rust/TS/C |
-| 4 | `garden/` | The Petal IDE. It is an application, kept here as the reference editor and the heaviest user of the embedding API. New code goes in Garden only if it is about the editor. | Rust |
+| 4 | `garden/` | The Petal IDE. It is an application, kept here as the reference editor and the heaviest user of the embedding API. New code goes in Garden only if it is about the editor. `garden/gpp-apps/` holds only the GPP clients Garden ships as built-in commands, its test fixture and the `screens-demo` worked example. | Rust |
 | 5 | `examples/` | Small, runnable programs that teach the language or a host. `examples/console/` is a golden-tested corpus; do not add to it casually. See `examples/AUTHORING.md`. | Petal (Rust only in `custom-apps/`) |
 | — | `tools/` | Scripts that develop **this repo**: test runners, generators, benchmarks, the repo's MCP servers. | TypeScript |
 | — | `test/` | Cross-cutting test suites (vitest, golden output). Unit tests live next to their code. | |
@@ -134,7 +134,9 @@ Work through these in order and stop at the first "yes".
    → `core/src/cli/`, `lint/`, `fmt/`, `lsp/`; a package command in
    `core-libs/petal-pkgman` (run from `cli/src/pm.rs`). Put the logic in a
    library module the CLI calls, not in `cli/handlers.rs`, so Garden and the
-   LSP can reuse it.
+   LSP can reuse it. `cli`, `lsp` and `fix_imports` only exist with the
+   `tooling` feature, so anything an embedder calls (as the C bridge calls
+   `propose_edit`) must live outside them.
 
 5. **Is it a host interface that several hosts must implement the same way**
    (input, drawing, data fetching, a protocol)?
@@ -158,7 +160,9 @@ Work through these in order and stop at the first "yes".
 
 8. **Is it about editing Petal in Garden** (a pane, keybinding, renderer
    feature, GPP app that ships with Garden)?
-   → `garden/`. Follow [garden/CLAUDE.md](../../garden/CLAUDE.md).
+   → `garden/`. Follow [garden/CLAUDE.md](../../garden/CLAUDE.md). A GPP app
+   that Garden does not ship as a built-in command is an application: it goes
+   in its own repo.
 
 9. **Does it exist to teach or demonstrate?**
    → `examples/<category>/`. Keep it small. A program that needs its own Rust
@@ -229,100 +233,71 @@ Any `path` that climbs to a higher layer is a violation.
   `docs/`. The top level is the table in [README.md](../../README.md#repository-layout);
   update that table when it changes.
 
-## Current misplacements (audit of 2026-11-04)
+## Current misplacements (audit of 2026-11-04, updated 2026-11-05)
 
-These are the places where today's tree does not follow the rules above, most
-important first. Each has a proposed fix. Nothing here has been moved yet.
-Check the current tree before acting on one, and remove an entry from this
-list once it is fixed.
+These are the places where today's tree still does not follow the rules
+above, most important first. Each has a proposed fix and what it is waiting
+on. Check the current tree before acting on one, and remove an entry from
+this list once it is fixed.
 
-### Layering violations
-
-1. **`core-libs/petal-query` depends on `garden/gpp`.** A layer-1 shared
-   library depends on the IDE, and through petal-query's optional feature
-   `integrations/petal-c-bridge` pulls in `garden/gpp` too. GPP is already a
-   cross-language protocol (`garden/gpp-python`, the spec in
-   `garden/docs/gpp.md`), so it is a shared contract (R5), not a Garden
-   internal.
-   *Fix:* move `garden/gpp` to `core-libs/gpp` (and consider
-   `garden/gpp-python` alongside it). Garden then depends on it from below.
-
-2. **The `web` host lives in `core`.** `core/src/wasm.rs` holds
-   `PetalRuntime`, the element-tree host used only by
-   `integrations/petal-web-html`, and its interface package is
-   `core/packages/web`. That is host-specific code in layer 0, against R2.
-   *Fix:* keep in `core` only the generic wasm embedding surface that any
-   browser host needs. Move the element-tree natives and `packages/web` into
-   `integrations/petal-web-html` (a small wasm crate there, like
-   `petal-web-canvas/rust`).
-
-### Too much inside the `petal` library crate
-
-3. **The CLI, LSP, formatter, linter and `fix-imports` are all public
-   modules of the `petal` library crate** (`core/src/lib.rs`: `cli`, `lsp`,
-   `fmt`, `lint`, `fix_imports`, `suggest`). The package manager was the
-   first to leave: it is `core-libs/petal-pkgman`, linked only by the `petal`
-   binary (`cli/`). So every
-   embedder (C bridge, Garden, petal-sdl, wasm) compiles them, and they are
-   part of the public API surface. That is about 25k lines. These belong in
-   this repo (decision-tree step 4), but not in the runtime crate.
-   *Fix, in order of cost:* (a) put them behind a default-on `tooling` cargo
-   feature that embedders and the wasm build turn off. (b) Move them into the
-   `petal-cli` crate (`cli/`, the binary, which exists now) or a library
-   beside it that depends on `petal`. Garden already needs `fmt`/`lint`, so
-   it would depend on that crate.
+The 2026-11-04 audit also found the GPP crate in `garden/`, the
+element-tree wasm host in `core`, the CLI, LSP and package manager compiled
+into every embedder, and two repo tools that belonged with examples. Those
+were fixed on 2026-11-05 (the package manager by moving it to
+`core-libs/petal-pkgman`, the rest of the tooling by the `tooling` feature).
+Decided rather than moved: `bloom` stays bundled as
+the default widget set (stated in `core-runtime/README.md`), and every
+`garden/gpp-apps/` crate stays, because each is a built-in command Garden
+ships (`directory-browser`, `git-viewers`, `garden-diff`, `sqlite-browser`,
+`main-menu`), its test fixture (`gpp-test-app`) or the protocol's worked
+example (`screens-demo`).
 
 ### Bundled packages that don't meet the bundling bar
 
-4. **`glsl` is bundled but marked experimental** (`core-runtime/glsl`). An
+1. **`glsl` is bundled but marked experimental** (`core-runtime/glsl`). An
    experimental API inside every binary gets locked to runtime versions.
-   *Fix:* drop it from `core/build.rs`'s list and keep it in `core-runtime/`
-   as a path dependency until it stabilizes.
+   *Blocked on Cheesecake:* its engine package
+   (`engine/script/packages/cheesecake/petal_fx.ptl`) and the Rivet game say
+   `import glsl` and get it from the bundled copy, because the engine's
+   script host registers its own packages in memory and has no way to
+   resolve a path dependency. Unbundling first would break the engine at its
+   next re-vendor.
+   *Fix:* either have Cheesecake's script host register its vendored
+   `core-runtime/glsl` itself and then drop `glsl` from `core/build.rs`'s
+   list, or decide glsl is stable and drop the experimental label.
 
-5. **`bloom` is bundled.** It is an opinionated widget kit (a look, a
-   component set). It is useful, but it fails "opinionated" and should be
-   free to version on its own. Worth a decision, not urgent: either keep it
-   bundled as *the* default widget set and say so in
-   `core-runtime/README.md`, or unbundle it.
+### Applications in the repo
 
-### Applications and app-specific tooling in the repo
-
-6. **`examples/custom-apps/petal-fantasy-nes`** (about 5,200 lines of Rust,
+2. **`examples/custom-apps/petal-fantasy-nes`** (about 5,200 lines of Rust,
    a PPU/APU emulator core) and **`examples/custom-apps/petal-fps`** (about
    1,600 lines of Rust) are products with their own hosts, not small teaching
    examples. They do act as the main test of the petal-sdl `Host` trait.
-   *Fix:* move them to their own repos (or `sample-apps/`) once petal-sdl's
-   `Host` trait has a small in-repo example and tests that cover what they
-   exercise.
+   *Fix:* move them to their own repos once petal-sdl's `Host` trait has a
+   small in-repo example and tests that cover what they exercise. Neither
+   exists yet (`examples/custom-apps/side-scroller` is pure Petal and does
+   not implement `Host`).
 
-7. **`garden/gpp-apps/sqlite-browser`, `git-viewers`, `directory-browser`.**
-   These are applications that use GPP. Keep the ones Garden ships as
-   built-in panes and the test app. Move the rest out, or justify them as
-   examples of writing GPP apps.
+### Inconsistencies
 
-8. **`tools/petal-diagram-mcp.ts`** serves only
-   `examples/custom-apps/diagram-canvas`. *Fix:* move it next to that example.
+3. **`core/prelude/std.ptl` sits outside `core/packages/`.** It is not a
+   file move: `std` is registered as a single implicit module
+   (`Env::new` registers `STD_MODULE` from `STD_PRELUDE`), not as a package,
+   so moving it into `core/packages/std/` with a `petal.toml` means
+   registering it as a package and checking that module identity, error
+   locations (`std.ptl line …`) and `tools/extract-stdlib.ts` still agree.
+   Low priority.
 
-9. **`tools/calc-to-ir.ts`** is a reference external front end that shows
-   off the IR-as-target contract. It is an example, not a repo tool.
-   *Fix:* move it to `examples/` (for instance `examples/ir-target/`) and
-   link it from `docs/dev/ir-as-target.md`.
+4. **`integrations/petal-desktop-sdl`'s crate and binary are still named
+   `petal-sdl`.** Known (its README says so). About 200 references in this
+   repo use the old name, so does the installed binary, and so do downstream
+   projects (`~/biz` mentions it; downstream projects that launch it by name
+   need checking too). Rename when the downstream references can be
+   updated in the same change.
 
-### Inconsistencies and leftovers
-
-10. **`core/prelude/std.ptl` sits outside `core/packages/`,** even though
-    `std` is a package-shaped module like the others. *Fix:* consider
-    `core/packages/std/` with a `petal.toml`, so every bundled Petal source
-    sits in one place. Low priority.
-
-11. **`integrations/petal-desktop-sdl`'s crate and binary are still named
-    `petal-sdl`.** Known (its README says so). Rename when downstream
-    references can be updated in the same change.
-
-12. **Untracked leftover directories at the repo root:** `petal-ui/` (empty),
-    `playground/` and `ts/` (only `node_modules`), `rust/pkg/` (an old wasm
-    build). None are tracked by git. *Fix:* delete them locally. They are
-    leftovers from older layouts and mislead anyone who reads the tree.
+5. **`cli`, `lsp` and `fix_imports` are still modules of the `petal` crate,**
+   behind the `tooling` feature, though the binary is now its own crate
+   (`cli/`). *Fix:* move them into `cli/` or a library beside it that
+   depends on `petal`. Not urgent: embedders already leave them out.
 
 ## Procedure
 

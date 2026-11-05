@@ -97,6 +97,7 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 | [`core/`](core/) | The language implementation: lexer, parser, compiler, IR, evaluator, bytecode VM |
 | [`core-libs/petal-ui/`](core-libs/petal-ui/README.md) | Helper library that implements user-interaction primitives |
 | [`core-libs/petal-query/`](core-libs/petal-query/README.md) | Helper library that implements asynchronous data fetching |
+| [`core-libs/gpp/`](core-libs/gpp/) | Wire definition of the Garden Pane Protocol, shared by Garden and its clients |
 | [`core-runtime/`](core-runtime/README.md) | Shared libraries written in Petal |
 | [`integrations/`](integrations/) | Native bindings for Petal |
 | [`garden/`](garden/README.md) | Text editor and IDE built for Petal |

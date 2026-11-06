@@ -878,6 +878,13 @@ pub struct NativeFnTable {
     /// [`crate::fn_introspect`].
     pub intrinsic_fn_info: Option<NativeFnId>,
     pub intrinsic_fn_ast: Option<NativeFnId>,
+    /// `speculate(f, ...args)`, `speculating()` and `speculate_place(key,
+    /// value)`: a hypothetical call and the two natives a library uses inside
+    /// one. They read and write the running stack's speculation record
+    /// (`vm::speculate`), which no native can reach through [`PetalCxt`].
+    pub intrinsic_speculate: Option<NativeFnId>,
+    pub intrinsic_speculating: Option<NativeFnId>,
+    pub intrinsic_speculate_place: Option<NativeFnId>,
     /// Built-in class methods, indexed `class -> method -> native`. The same
     /// natives are in `entries` under their qualified names (`Rect.inset`);
     /// this index exists so method dispatch is a two-hop lookup on borrowed
@@ -908,6 +915,9 @@ impl NativeFnTable {
             intrinsic_enum_from: None,
             intrinsic_fn_info: None,
             intrinsic_fn_ast: None,
+            intrinsic_speculate: None,
+            intrinsic_speculating: None,
+            intrinsic_speculate_place: None,
             class_methods: HashMap::new(),
             revision: 0,
         }

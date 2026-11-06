@@ -432,7 +432,7 @@ is the content height.
 
 | Call | What it does |
 |---|---|
-| `ui_measure(body)` | Runs `body()` without drawing, registering or hovering anything, and returns what it returns. |
+| `ui_measure(body)` | Runs `body()` as a hypothetical call ([`speculate`](../../../docs/features/speculate.md)): nothing is drawn, registered or hovered, nothing it changes outlives it, and it returns what `body()` returns. |
 | `ui_measuring()` | True inside one. |
 
 One function is both the measuring pass and the drawing pass, so the two
@@ -448,7 +448,10 @@ let content = ui_measure(fn() rows(rect(0, 0, list.w, 0)) end)
 // scroll by content.h, then call rows(...) again to draw
 ```
 
-The body does run: `state` it writes is written.
+Nothing the body does outlives the measurement: `state` it writes, `set`s,
+random draws, and the layer, clip and flow it changes are all put back. A
+widget with `state` inside the body starts from its initializer there every
+frame (its slots under `ui_measure` are not the ones it has when drawn).
 
 ## Motion
 

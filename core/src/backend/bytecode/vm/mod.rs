@@ -44,6 +44,7 @@ mod introspect;
 mod memo;
 mod native;
 pub mod spec;
+pub mod speculate;
 
 pub use frame::{FramePath, LoopCursor, VmFrame};
 pub(crate) use frame::call_key_of;

@@ -961,8 +961,12 @@ end
 //
 // `ui_measure(body)` returns what `body()` returns. While it runs nothing is
 // drawn, nothing is registered, and nothing is hot — one function is both the
-// measuring pass and the drawing pass, so the two cannot disagree. It is a
-// real run of the body, though: `state` it writes is written.
+// measuring pass and the drawing pass, so the two cannot disagree. It runs
+// the body as a hypothetical call (`speculate`), so nothing the body does
+// outlives it either: `state` it writes, `set`s, random draws and the
+// layer, clip and flow it changes are all put back. (Inside a `speculate`
+// call of the script's own, where another cannot start, it brackets the body
+// with `ui_mute` instead and puts the context back by hand.)
 //
 // `ui_measuring()` is true inside one, for a widget with something expensive
 // to skip.
@@ -981,6 +985,18 @@ end
 pub fn ui_measure(body)
   if get _measuring then
     return body()
+  end
+  if !speculating() then
+    // A floor nothing reaches, and a top above everything so that every rect
+    // looks at it: no rect is hot while measuring. The call puts all three
+    // back, with whatever else the body changed.
+    let measured = speculate(fn()
+      set _measuring = true
+      set _floor = 1000000000
+      set _top = 1000000000
+      body()
+    end)
+    return measured.value
   end
   // The run's context is put back as it was: nothing the body did to the
   // layer, the clip or the floor happened, as far as the frame is concerned.

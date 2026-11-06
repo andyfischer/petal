@@ -645,6 +645,40 @@ fn ui_measure_runs_a_panel_without_drawing_or_registering_it() {
     assert_eq!(ui.target("row-1").unwrap().y, 132.0);
 }
 
+/// The measured body runs as a hypothetical call (`speculate`): `state` it
+/// writes and cells it sets are put back, frame after frame, and a measure
+/// made inside a script's own speculative call still measures (by the muted
+/// fallback) without drawing.
+#[test]
+fn ui_measure_leaves_no_state_behind() {
+    let mut ui = ui("state var outer = 0\n\
+                     state counted = 0\n\
+                     state inside = 0\n\
+                     state spec_h = 0\n\
+                     fn panel(r)\n\
+                       state renders = 0\n\
+                       renders += 1\n\
+                       set outer = get outer + 1\n\
+                       flow_begin(r, {gap: 4})\n\
+                       flow_next(20)\n\
+                       flow_next(20)\n\
+                       {size: flow_end(), renders: renders}\n\
+                     end\n\
+                     let m = ui_measure(fn() panel(rect(0, 0, 100, 0)) end)\n\
+                     counted = m.renders\n\
+                     inside = get outer\n\
+                     let s = speculate(fn() ui_measure(fn() panel(rect(0, 0, 100, 0)) end) end)\n\
+                     spec_h = s.value.size.h\n\
+                     draw_rect(1, 1, 1, 1, #ffffff)");
+    for _ in 0..3 {
+        let cmds = ui.frame().unwrap().to_vec();
+        assert_eq!(ui.state_int("counted"), Some(1), "the slot starts over every frame");
+        assert_eq!(ui.state_int("inside"), Some(0), "the set was put back");
+        assert_eq!(ui.state_int("spec_h"), Some(44));
+        assert_eq!(rect_x(&cmds), [1]);
+    }
+}
+
 #[test]
 fn a_flow_hands_out_rects_in_order_and_nests() {
     let mut ui = ui("flow_begin(rect(10, 10, 200, 300), {pad: 5, gap: 2})\n\

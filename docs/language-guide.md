@@ -2315,6 +2315,31 @@ cache rather than state: host state dumps and `--state-storage` leave it out,
 and a reload that changes the program clears it. See
 [Cached results: `memo`](features/memo.md).
 
+### `speculate` — a hypothetical call
+
+`speculate(f, ...args)` calls `f(...args)` as if: the call sees the live
+program's state and data, and when it returns every `state` write, every
+`set`, every random draw and everything it emitted is put back. A native
+whose effect would escape the run (a host's `save_file`) is not called. It
+returns `{value, emits, places}`: what `f` returned, what it would have drawn
+or pushed (`[{channel, value, at}]`), and what it recorded with
+`speculate_place(key, value)`.
+
+```petal
+fn bump()
+  state n = 0
+  n += 1
+  speculate_place("n", n)
+end
+let r = speculate(bump)
+print(r.value)              // 1
+print(r.places[0].value)    // 1
+print(speculate(bump).value) // 1
+```
+
+`speculating()` is true inside one; a `speculate` inside another is an
+error. See [Hypothetical calls: `speculate`](features/speculate.md).
+
 ## JSX-like Elements
 
 Petal supports a JSX-style element syntax for building tree-shaped data,

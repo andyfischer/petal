@@ -216,7 +216,8 @@ fn the_natives_that_refuse_names_are_the_variadic_and_internal_ones() {
             "__reject",
             "__resolve",
             "format",
-            "print"
+            "print",
+            "speculate"
         ]
     );
 }

@@ -96,6 +96,17 @@ impl Env {
             .unwrap_or(&[])
     }
 
+    /// The warnings `stack_id`'s runs have raised since they were last
+    /// taken: a native a speculative call did not make because its effect
+    /// escapes the run (`speculate`, docs/features/speculate.md), once per
+    /// call site for the life of the stack.
+    pub fn take_runtime_warnings(&mut self, stack_id: StackKey) -> Vec<String> {
+        match self.stacks.get_mut(&stack_id) {
+            Some(stack) => std::mem::take(&mut stack.runtime_warnings),
+            None => Vec::new(),
+        }
+    }
+
     /// The expectation failures recorded in `stack_id`'s context since they
     /// were last taken, by code that was not a test: the program's ordinary
     /// runs and the host's own calls. (A test's failures are in its

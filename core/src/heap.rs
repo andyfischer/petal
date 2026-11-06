@@ -309,6 +309,12 @@ pub(crate) struct Slot<T> {
     /// the object is traced and swept like any other, and is released when
     /// its last holder lets go. Cleared when the slot is reused.
     immutable: bool,
+    /// The [`Slab::epoch`] the object was allocated in: the speculative call
+    /// (`speculate`) that made it, or 0 for an ordinary allocation. While a
+    /// speculative call runs, only an object born in its epoch may be edited
+    /// in place ([`Slab::is_shared`]); everything older is the live program's
+    /// and is copied instead, so nothing the call does reaches it.
+    born: u32,
 }
 
 /// A generic slot store with an index free list. Backs each of the heap's object
@@ -334,6 +340,10 @@ pub(crate) struct Slab<T> {
     permanent_bits: Vec<u64>,
     /// How many slots are permanent (the number of set bits above).
     permanent_count: usize,
+    /// The speculative call allocations are made under (`speculate`, see
+    /// [`Heap::begin_speculation`]); 0 outside one. Stamped onto each new
+    /// slot as [`Slot::born`].
+    epoch: u32,
 }
 
 /// Call `f(index, slot)` for every slot that is not permanent, in index order,
@@ -373,6 +383,7 @@ impl<T> Slab<T> {
             free: Vec::new(),
             permanent_bits: Vec::new(),
             permanent_count: 0,
+            epoch: 0,
         }
     }
 
@@ -397,6 +408,7 @@ impl<T> Slab<T> {
             slot.alive = true;
             slot.permanent = false;
             slot.immutable = false;
+            slot.born = self.epoch;
             return RawId {
                 index: idx,
                 generation,
@@ -411,6 +423,7 @@ impl<T> Slab<T> {
             alive: true,
             permanent: false,
             immutable: false,
+            born: self.epoch,
         });
         RawId {
             index: idx,
@@ -449,12 +462,25 @@ impl<T> Slab<T> {
 
     /// Whether an in-place operation has to copy `id` instead of editing it:
     /// the object is permanent ([`Heap::freeze`]) or immutable
-    /// ([`Heap::mark_immutable`]).
+    /// ([`Heap::mark_immutable`]), or a speculative call is running and the
+    /// object is older than it ([`Heap::begin_speculation`]).
     #[inline]
     pub(crate) fn is_shared(&self, id: RawId) -> bool {
         self.slots.get(id.index as usize).is_some_and(|slot| {
-            slot.alive && slot.generation == id.generation && (slot.permanent || slot.immutable)
+            slot.alive
+                && slot.generation == id.generation
+                && (slot.permanent || slot.immutable || (self.epoch != 0 && slot.born != self.epoch))
         })
+    }
+
+    /// Whether `id` was allocated by the speculative call running now.
+    #[inline]
+    pub(crate) fn born_in_epoch(&self, id: RawId) -> bool {
+        self.epoch != 0
+            && self
+                .slots
+                .get(id.index as usize)
+                .is_some_and(|slot| slot.alive && slot.generation == id.generation && slot.born == self.epoch)
     }
 
     /// Whether `id` is a live immutable object ([`Heap::mark_immutable`]).
@@ -684,6 +710,7 @@ impl<T> Slab<T> {
                         alive: false,
                         permanent: false,
                         immutable: false,
+                        born: 0,
                     });
                     if theirs.high_water != u32::MAX {
                         extra.push(i as u32);
@@ -2150,6 +2177,45 @@ impl Heap {
 
     pub fn get_element_children(&self, id: ElementId) -> ListId {
         self.elements.get(id.raw()).children
+    }
+
+    // --- Speculative calls (`speculate`) ---
+
+    /// Begin a speculative call: from now until
+    /// [`end_speculation`](Self::end_speculation), the in-place operations
+    /// copy every container (and the VM treats every cell) allocated before
+    /// this point as shared, so the call can build and edit its own values in
+    /// place while nothing the live program holds changes under it. Each call
+    /// gets an epoch of its own, process-wide and never 0, so an object one
+    /// call made is old to the next.
+    pub fn begin_speculation(&mut self) {
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+        let mut epoch = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if epoch == 0 {
+            epoch = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        self.set_epoch(epoch);
+    }
+
+    /// End the speculative call [`begin_speculation`](Self::begin_speculation)
+    /// began: allocations are ordinary again, and so are the in-place rules.
+    pub fn end_speculation(&mut self) {
+        self.set_epoch(0);
+    }
+
+    fn set_epoch(&mut self, epoch: u32) {
+        self.lists.epoch = epoch;
+        self.f64_arrays.epoch = epoch;
+        self.maps.epoch = epoch;
+        self.dicts.epoch = epoch;
+        self.cells.epoch = epoch;
+    }
+
+    /// Whether `id` is a cell the running speculative call created (false
+    /// outside one): a write to it needs no undo, since nothing outside the
+    /// call can reach it once the call is over.
+    pub fn cell_born_in_speculation(&self, id: CellId) -> bool {
+        self.cells.born_in_epoch(id.raw())
     }
 
     // --- Cell allocation (`var` bindings) ---

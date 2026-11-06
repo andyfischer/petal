@@ -1742,6 +1742,44 @@ there is no source to read (a builtin, an overloaded name, a class
 constructor, a program loaded from IR). See
 [`fn_ast`](features/function-introspection.md#fn_astf).
 
+## Hypothetical Calls
+
+Run a function "as if" and keep only what it computed.
+[`speculate`](features/speculate.md) is the full description: what is put
+back, which natives run, and how `state` behaves inside the call.
+
+### `speculate(f, args...)`
+
+Calls `f(args...)` against the live program, then puts back every `state`
+write, every `set` on a cell older than the call, the random stream, the
+noise seed and the print buffer. A native whose effect escapes the run, and
+any host-handle method, is not called (it answers `nil`, with a warning once
+per call site). Returns `{value, emits, places}`: `f`'s result; what it
+pushed into output buffers, as `[{channel, value, at}]` with `at` the
+`{file, line, column}` that emitted; and what `speculate_place` recorded, as
+`[{key, value}]`. Nothing it emitted reaches the host. A `speculate` inside
+another is an error.
+
+```petal
+var calls = 0
+fn view(x)
+  set calls += 1
+  x * 2
+end
+print(speculate(view, 21).value)   // 42
+print(get calls)                   // 0
+```
+
+### `speculating()`
+
+`true` while a speculative call is running, `false` otherwise.
+
+### `speculate_place(key, value)`
+
+Inside a speculative call, appends `{key, value}` to its `places`; returns
+`value` either way. The key must be one a `for … key` loop accepts (not a
+function, a cell, a pending value or NaN).
+
 ## Assertions
 
 Assertions stop the program with a message and source location when their

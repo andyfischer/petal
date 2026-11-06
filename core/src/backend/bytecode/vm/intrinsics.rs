@@ -235,7 +235,7 @@ impl<'a> Vm<'a> {
 
     /// Whether `term` is written in a module the entry file imports without
     /// saying so (the core prelude, a host's).
-    fn in_prelude(&self, term: TermId) -> bool {
+    pub(super) fn in_prelude(&self, term: TermId) -> bool {
         let Some(span) = self.program.source_map.get(term) else {
             return false;
         };

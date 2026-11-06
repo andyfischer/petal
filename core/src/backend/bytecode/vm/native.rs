@@ -213,13 +213,27 @@ impl<'a> Vm<'a> {
         let callback = self.callback_intrinsic(nid, sort_with_cmp);
         // The intrinsics never reach the shared leaf, so they are counted here;
         // everything else is counted once, in `call_native_fn`.
+        let speculate_op = nf.intrinsic_speculate == Some(nid)
+            || nf.intrinsic_speculating == Some(nid)
+            || nf.intrinsic_speculate_place == Some(nid);
         if callback.is_some()
+            || speculate_op
             || nf.intrinsic_fn_info == Some(nid)
             || nf.intrinsic_fn_ast == Some(nid)
             || nf.intrinsic_enum_from == Some(nid)
             || nf.intrinsic_enum_all == Some(nid)
         {
             self.profile.record_native(nid.0);
+        }
+        // `speculate` and the two natives used inside one (`vm::speculate`).
+        if speculate_op {
+            return if nf.intrinsic_speculate == Some(nid) {
+                self.builtin_speculate(args, origin)
+            } else if nf.intrinsic_speculating == Some(nid) {
+                self.builtin_speculating(args)
+            } else {
+                self.builtin_speculate_place(args)
+            };
         }
         if let Some((builtin, drive)) = callback {
             // Every callback the builtin drives runs under this record, which
@@ -437,6 +451,12 @@ impl<'a> Vm<'a> {
         // returns early; the scan is a cheap no-op when no arg is Pending).
         if let Some(v) = self.intercept_pending(nid, args, origin) {
             return Ok(v);
+        }
+        // A speculative call (`speculate`, `vm::speculate`) does not make a
+        // call whose effect escapes the run.
+        if self.speculating() && self.native_fns.effects(nid).is_escaping() {
+            let name = self.native_fns.get_name(nid).to_string();
+            return Ok(self.speculate_decline(&name, origin));
         }
         // A speculative run gates the call by the native's row first
         // (`vm::spec`, docs/dev/direct-manipulation-v2-plan.md §2.1.3).
@@ -660,6 +680,12 @@ impl<'a> Vm<'a> {
                 class.name,
                 (class.describe)(h.slot, h.serial)
             ));
+        }
+        // Nor may a speculative call (`speculate`): a host object is outside
+        // what it can put back, so the method is not called.
+        if self.speculating() {
+            let name = format!("{}.{}", class.name, method_name);
+            return Ok(self.speculate_decline(&name, origin));
         }
         // A speculative run may not reach into host objects unless the host
         // said the class is safe to call (`Env::mark_handle_class_spec_safe`).

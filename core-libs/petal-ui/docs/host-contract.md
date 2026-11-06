@@ -25,7 +25,7 @@ host did not ask for:
 | `draw_image` with `tint`, `src`, `slice` | An `image` command with three more optional fields. | Drawing them. A host that ignores them draws the whole image untinted. |
 | `image_load`, `image_size` | Requests in an output buffer; sizes read from a binding. | Registering its own natives under those names. |
 | Text `shadow` / `outline` | Extra `text` commands under the run. | Nothing. |
-| `ui_measure` | Nothing: the measured span is dropped by the drain. | Nothing. |
+| `ui_measure` | Nothing: the measured body's commands never reach the buffer (it runs under `speculate`); inside a script's own `speculate` call it falls back to a muted span the drain drops. | Nothing. |
 
 ## The frame
 

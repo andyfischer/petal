@@ -628,6 +628,26 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("remove_at", collections::native_remove_at, NativeEffects::CONST);
     table.register("replace", collections::native_replace, NativeEffects::CONST);
 
+    // Hypothetical calls (docs/features/speculate.md): `speculate(f, ...args)`
+    // runs `f` and puts back everything it changed; `speculating()` and
+    // `speculate_place(key, value)` are what a library calls inside one. VM
+    // intrinsics: they read and write the stack's speculation record.
+    // `speculate` is an effect (a scope that calls it is never replayed: the
+    // call's own reads are not recorded), contained since it undoes itself.
+    // The other two are pure: outside a speculative call `speculating()` is
+    // always false and `speculate_place` is the identity, and no memo scope
+    // records inside one. Append-only, like the rest.
+    let allow = NativeEffects::PURE.with_pending(NativeClass::AllowPending);
+    table.intrinsic_speculate = Some(table.register(
+        "speculate",
+        native_intrinsic_placeholder,
+        NativeEffects::EFFECT.contained().with_pending(NativeClass::AllowPending),
+    ));
+    table.intrinsic_speculating =
+        Some(table.register("speculating", native_intrinsic_placeholder, NativeEffects::PURE));
+    table.intrinsic_speculate_place =
+        Some(table.register("speculate_place", native_intrinsic_placeholder, allow));
+
     // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
     // ids they were just given.
     for op in crate::backend::bytecode::isa::IntrinsicOp::ALL {

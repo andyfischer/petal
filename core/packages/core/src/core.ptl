@@ -12,3 +12,4 @@ pub import ./handle
 pub import ./introspect
 pub import ./math
 pub import ./pending
+pub import ./speculate

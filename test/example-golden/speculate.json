@@ -1,0 +1,6 @@
+{
+  "example": "speculate.ptl",
+  "status": 0,
+  "stdout": "[\"A\", \"B\", \"C\"]: A lands at x=40, 3 draw commands, renders=1\n[\"B\", \"A\", \"C\"]: A lands at x=110, 3 draw commands, renders=1\n[\"B\", \"C\", \"A\"]: A lands at x=180, 3 draw commands, renders=1\ndraws after speculating: 0\nsame next draw: true\nlive renders: 1, draws: 1\nspeculating now: false\n",
+  "stderr": "warning: this script declares `state` (`renders`), and 'petal run' does not keep state between runs: every run starts from the initial values. Re-run with --state-storage <file> to save state to a file and load it on the next run.\n"
+}

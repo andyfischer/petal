@@ -327,6 +327,16 @@ pub struct Stack {
     /// the hash. Written the first time a hash is seen; pruned to the hashes
     /// live slots still use once it grows past [`LOOP_KEY_LABELS_PRUNE_AT`].
     pub loop_key_labels: HashMap<u64, String>,
+    /// The speculative call (`speculate`) running now, if any: the undo log
+    /// of the state slots and cells it wrote, and what it recorded. See
+    /// [`crate::backend::bytecode::vm::speculate`].
+    pub speculation: Option<Box<crate::backend::bytecode::vm::speculate::Speculation>>,
+    /// The call sites of natives a speculative call has declined to call,
+    /// so each is warned about once for the life of the stack.
+    pub speculate_warned: HashSet<crate::program::TermId>,
+    /// Warnings a run raised and the host has not taken yet
+    /// ([`Env::take_runtime_warnings`](crate::env::Env::take_runtime_warnings)).
+    pub runtime_warnings: Vec<String>,
 }
 
 /// How many [`Stack::loop_key_labels`] the sweep lets accumulate before it
@@ -409,6 +419,9 @@ impl Stack {
             statics: crate::static_cache::StaticSlots::default(),
             test: None,
             loop_key_labels: HashMap::new(),
+            speculation: None,
+            speculate_warned: HashSet::new(),
+            runtime_warnings: Vec::new(),
         }
     }
 
@@ -675,6 +688,10 @@ impl Stack {
         // Static values are loaded into registers by the runs that skip
         // building them.
         self.statics.gc_roots(&mut mark);
+        // A speculative call's undo log holds what it will put back.
+        if let Some(spec) = &self.speculation {
+            spec.gc_roots(&mut mark);
+        }
     }
 }
 

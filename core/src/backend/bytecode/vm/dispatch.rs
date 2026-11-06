@@ -513,6 +513,12 @@ impl<'a> Vm<'a> {
                             self.memo_note_cell_read(id, v);
                             v
                         }
+                        // A speculative call edits an older cell's
+                        // container as shared: a copy, never the live one
+                        // (`vm::speculate`).
+                        CellReadMode::Take if self.speculating() && self.speculate_log_cell(id) => {
+                            self.heap.cell_read_shared(id)
+                        }
                         CellReadMode::Take => {
                             self.memo_note_cell_mutation(id);
                             // The frame gate kept this `state var`'s contents
@@ -558,6 +564,10 @@ impl<'a> Vm<'a> {
                 // nothing reads the write's own value: never for `Shared`,
                 // always for `Put`, and for `PutTail` when this frame's caller
                 // dropped its result.
+                // A speculative call logs an older cell before writing it.
+                if self.speculating() {
+                    self.speculate_log_cell(id);
+                }
                 let keeps = match mode {
                     CellWriteMode::Shared => false,
                     CellWriteMode::Put => true,
@@ -645,10 +655,17 @@ impl<'a> Vm<'a> {
                     if *init && *memo {
                         self.check_memo_value(val_v)?;
                     }
+                    // A speculative call logs the slot and writes it; it
+                    // is put back when the call returns, so the frame gate
+                    // and the memo hear nothing of it (`vm::speculate`).
+                    let speculative = self.speculating();
+                    if speculative {
+                        self.speculate_log_state(&k);
+                    }
                     // A `state var` being created: snapshot its initial
                     // contents so a `set` later this run counts as a change
                     // (see `Stack::finish_run_deps`).
-                    if *init && let Value::Cell(cell) = val_v {
+                    if !speculative && *init && let Value::Cell(cell) = val_v {
                         let contents = self.heap.cell_read(cell);
                         let mutations = self.heap.cell_mutations(cell);
                         self.heap.cell_watch(cell);
@@ -665,7 +682,7 @@ impl<'a> Vm<'a> {
                     // A reassignment that leaves the slot different from how
                     // the run found it means the next run starts from other
                     // state: the frame has not settled (see `run_deps`).
-                    if !*init {
+                    if !*init && !speculative {
                         self.stack.run_deps.note_state_write(
                             old,
                             val_v,

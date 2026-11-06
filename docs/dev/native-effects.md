@@ -84,6 +84,7 @@ type checker checking the kinds (they are runtime rows).
 | Pending values | `pending`, at the native-call boundary, only when an argument is pending | `core/src/backend/bytecode/vm/native.rs` |
 | Speculative runs | `effect` or `command`, and `contained` (suppress an escaping effect), `emits` (record the raw arguments), `reads(HOST_DATA)` (replay the baseline's answer), `reads(RNG)` (replay the draw by place) | `call_native_spec`, `core/src/backend/bytecode/vm/native.rs`; docs/dev/direct-manipulation-v2-plan.md §2.1.3 |
 | Parameter discovery | `no_feedback` and `reads(RNG)` (the arguments are a feedback barrier) | `core/src/dm/params.rs`; plan §2.2 |
+| Hypothetical calls (`speculate`) | `effect`/`command` and `contained`: an escaping row is not called (answers `nil`, warned once per call site); everything else runs, and contained effects are undone when the call returns | `call_native_fn`, `core/src/backend/bytecode/vm/native.rs`; [features/speculate.md](../features/speculate.md) |
 
 The frame gate does not read rows. It reads the **activity counters**, which
 the instrumented `PetalCxt` methods move by construction: `binding`,

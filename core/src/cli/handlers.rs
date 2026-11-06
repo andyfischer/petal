@@ -157,6 +157,10 @@ pub(super) fn handle_run(
     for warning in env.take_static_warnings(sid) {
         eprintln!("warning: {warning}");
     }
+    // A native a `speculate` call declined to make, once per call site.
+    for warning in env.take_runtime_warnings(sid) {
+        eprintln!("warning: {warning}");
+    }
     let run_elapsed = run_started.elapsed();
 
     // Snapshot the observed values now. The map is a snapshot by contract, and

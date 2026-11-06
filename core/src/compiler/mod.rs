@@ -185,6 +185,9 @@ pub struct Compiler {
     // shadows (or merges) instead, like any other redeclaration. Cleared per
     // module.
     own_fn_cells: HashSet<TermId>,
+    /// A hoisted fn cell → the binding its name had before the prescan bound
+    /// the cell (an imported overload set), for `bind_fn_result` to merge.
+    cell_shadows: HashMap<TermId, TermId>,
 
     // Per-block rebinding log: block → (name → latest rebind term in that
     // block). Populated by `compile_assign` when a name bound in an outer
@@ -594,6 +597,7 @@ impl Compiler {
             overload_variants: HashMap::new(),
             overload_index: function::OverloadIndex::default(),
             own_fn_cells: HashSet::new(),
+            cell_shadows: HashMap::new(),
             block_rebinds: HashMap::new(),
             carry_slots: Vec::new(),
             block_shadowed: HashMap::new(),
@@ -989,6 +993,7 @@ impl Compiler {
         self.overloaded_fns.clear();
         self.overload_variants.clear();
         self.own_fn_cells.clear();
+        self.cell_shadows.clear();
         self.reexported_names.clear();
         self.explicit_aliases.clear();
         self.merged_imports.clear();
@@ -2343,6 +2348,19 @@ impl Compiler {
         let hoistable = hoistable_fn_names(stmts, &consts, protected);
         let mut forward = forward_referenced_fns(stmts);
         forward.extend(late_bound_fn_refs(stmts, &hoistable));
+        // A variant of an overload set that calls its own name (the 3-argument
+        // form forwarding to the 4-argument one) is compiled before the set
+        // exists: each variant binds only `name#arity`, so the call would
+        // reach whatever `name` meant before the set — another module's set
+        // when an import put the name in scope. A cell makes the call reach
+        // the set the declarations build. Only when something else already
+        // binds the name: otherwise the call reaches the set as it always did,
+        // and a cell would only rename the call-path state keys under it.
+        forward.extend(
+            self_referencing_overloads(stmts, &self.overloaded_fns)
+                .into_iter()
+                .filter(|n| self.scope_lookup(n).is_some()),
+        );
         // Same two exclusions as hoisting: a name whose old meaning the file
         // reads above the declaration keeps that meaning until the declaration
         // shadows it, and a name a `let`/`state` also declares is rebound in
@@ -2391,6 +2409,21 @@ impl Compiler {
                         let cell = self.emit_term(TermOp::CellNew, smallvec![nil_tid], None);
                         self.source_map.add(cell, stmt.span);
                         self.own_fn_cells.insert(cell);
+                        // What the name meant before (an imported set): the
+                        // declaration still joins it when it fills the cell.
+                        // (An overload set has one statement per variant, so
+                        // the name may already be bound to this file's cell
+                        // from its first variant: carry that cell's shadow.)
+                        let shadowed = self.scope_lookup(name).and_then(|existing| {
+                            if self.own_fn_cells.contains(&existing) {
+                                self.cell_shadows.get(&existing).copied()
+                            } else {
+                                Some(existing)
+                            }
+                        });
+                        if let Some(existing) = shadowed {
+                            self.cell_shadows.insert(cell, existing);
+                        }
                         self.scope_bind_fn_cell(name.clone(), cell);
                     } else if self.scope_lookup(name).is_none() {
                         let tid = self.emit_phantom_term(name.clone());
@@ -3072,6 +3105,29 @@ fn idents_in_stmts(stmts: &[Stmt]) -> HashSet<String> {
 /// Method declarations (`fn Point.scaled(...)`, whose bound name is
 /// `"Point.scaled"`) can never match: that name has no identifier spelling.
 /// Method registration therefore keeps its source-order behaviour.
+/// Top-level overloaded `fn` names that one of their own variants' bodies
+/// references (see the call site in `prescan_emit`).
+fn self_referencing_overloads(
+    stmts: &[Stmt],
+    overloaded: &HashMap<String, usize>,
+) -> HashSet<String> {
+    let mut out = HashSet::new();
+    for stmt in stmts {
+        if let StmtKind::FnDecl {
+            name,
+            class: None,
+            body,
+            ..
+        } = &stmt.kind
+            && overloaded.contains_key(name)
+            && idents_in_stmts(body).contains(name)
+        {
+            out.insert(name.clone());
+        }
+    }
+    out
+}
+
 fn forward_referenced_fns(stmts: &[Stmt]) -> HashSet<String> {
     // First declaration index per top-level fn name.
     let mut decl_at: HashMap<&str, usize> = HashMap::new();

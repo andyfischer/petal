@@ -245,6 +245,10 @@ impl Compiler {
             && let Some(cell) = cell
         {
             let display = self.qualified_name(name);
+            let value = match self.cell_shadows.get(&cell).copied() {
+                Some(existing) => self.merge_overload_binding(name, existing, value).unwrap_or(value),
+                None => value,
+            };
             self.emit_term(TermOp::CellWrite, smallvec![cell, value], Some(display));
             self.overload_index.cell_value.insert(cell, value);
             return value;

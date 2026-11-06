@@ -540,6 +540,11 @@ The rules:
 - **A variant's own name still means that variant inside its own body**, the
   self-recursion binding. To reach another arity from inside an added variant,
   call it through the module (`ui.draw_rect(r, c)`), as above.
+- **A file that declares several arities itself** reaches its own set from
+  inside any of them: bloom's `dropdown(r, label, items)` forwards to its own
+  `dropdown(r, label, items, {})` although `import ui` has a 4-argument
+  `dropdown` too. The set the file builds still joins the imported one, so an
+  arity only `ui` defines stays callable from those bodies.
 
 Merging reaches the weak bindings too — that is the point of it — so a module
 that declares `fn count(xs)` keeps `std`'s `count(xs, pred)` callable. One

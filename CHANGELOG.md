@@ -345,6 +345,16 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- A variant of a file's own overload set that calls its own name (the
+  3-argument form forwarding to the 4-argument one) reaches the file's set
+  even when an import binds the name too. It reached the import's: bloom's
+  `dropdown(r, label, items)` called `ui`'s 4-argument `dropdown` and failed
+  with "index_of() on string expects a string". The file's set still joins
+  the imported one, so an arity only the import defines stays callable
+  ([Sets merge across modules](docs/syntax/function-overloading.md#sets-merge-across-modules)).
+- `shadows-builtin` counts only what the imported module exports: a plain
+  `import ui` no longer reports a file's own `fn place` or `fn draggable`
+  as taking the place of `ui/drag`'s, which `ui` does not re-export.
 - The warning on a call through a merged overload set (`score` exported by
   two plain imports with different parameter counts) names the module whose
   set the call reaches, and the qualifier this file binds for it

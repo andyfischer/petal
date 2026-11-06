@@ -151,6 +151,27 @@ fn overloaded_module_fn_exports_as_one_set() {
 }
 
 #[test]
+fn an_overload_calling_its_own_name_reaches_its_own_set_over_an_import() {
+    // bloom's `dropdown(r, label, items)` forwards to its own 4-argument form
+    // while `import ui` has a `dropdown` of both arities too. Each variant is
+    // compiled before the set exists, so the forwarding call reached ui's.
+    let lib = "pub fn f(a)\n  \"lib1\"\nend\npub fn f(a, b)\n  \"lib2\"\nend\npub fn g(a)\n  \"lib-g\"\nend";
+    let own = "import lib\n\
+               fn f(a)\n  f(a, 0)\nend\n\
+               fn f(a, b)\n  \"own2\"\nend\n\
+               fn g(a, b)\n  g(a)\nend\n\
+               fn g(a, b, c)\n  g(a, b)\nend\n\
+               print(f(1))\nprint(g(1, 2, 3))\nprint(g(1))";
+    check_output(&[("lib", lib)], "import lib\nfn g(a, b)\n  1\nend\nfn g(a, b, c)\n  2\nend\nprint(g(1))", &["lib-g"]);
+    check_output(&[("lib", lib)], own, &["own2", "lib-g", "lib-g"]);
+    // The same in a module, with the forwarding variant declared second.
+    let m = "import lib\n\
+             pub fn f(a, b)\n  \"m2\"\nend\n\
+             pub fn f(a)\n  f(a, 0)\nend";
+    check_output(&[("lib", lib), ("m", m)], "import m: f\nprint(f(1))", &["m2"]);
+}
+
+#[test]
 fn overloaded_module_fn_with_mixed_export_markers_is_a_compile_error() {
     // Export visibility is per-name and all arities share one binding, so a
     // single `pub` arity would silently leak the unmarked one. Require the

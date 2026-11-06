@@ -15,7 +15,7 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 - A top-level `let X = tunable(…)` is a setting, exactly as `config let`
   was: hosts list it (`static_bindings`, the C bridge's
   `pb_source_bindings_json` with `"config": true` and `"range"`), the path
-  `X` names the value (`set_config_value`, `pb_vm_set_config`,
+  `X` names the value (`set_config_value`, `pb_vm_set_tunable`,
   `literal_edit`, reload reports), and every literal in its data is a knob
   to direct manipulation. `tunable` now takes data of any type
   (`tunable("title")`, `tunable(false)`, `tunable({bloom: 0.3})`) and an
@@ -33,6 +33,23 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
     `let s: int = tunable(1.5)` warns.
   - `petal propose-edit --knob-strict` (and `knob_strict` in JSON requests)
     is the new name of `--config-strict`, which still works.
+
+- The C bridge has a `tunable` section for settings
+  ([proposal](docs/proposals/remove-config-keyword.md), Phase 2). Nothing
+  is removed; old hosts keep working after a re-vendor.
+  - `pb_source_bindings_json`: each setting carries `"tunable": {…}` with
+    the `min`, `max`, `step` and `options` written (`{}` when none are).
+    `"config"` and `"range"` are still emitted as deprecated mirrors.
+  - `pb_source_set_setting(s, name, value_json)` (C++ `Source::set_setting`)
+    sets a setting by name and refuses a binding that is not one.
+  - `pb_vm_set_tunable` (C++ `Vm::set_tunable`, Rust `Vm::set_tunable`) is
+    the new name of `pb_vm_set_config`, which stays as an alias; the C++
+    `set_config` is `[[deprecated]]`.
+  - The reload report marks changed values `"tunable"` (`"config"`
+    mirrored) and names a changed `let X = tunable(…)` construct
+    `"tunable let"` (`source_diff::ConstructKind::TunableLet`).
+  - `petal_bridge.h` and `docs/usage/embedding-c.md` have a "Tunables"
+    section.
 
 - The package manager left the `petal` library: it is the `petal-pkgman`
   crate (`core-libs/petal-pkgman`), and the `petal` binary is built from a

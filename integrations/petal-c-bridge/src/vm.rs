@@ -152,7 +152,7 @@ pub struct Vm {
     changed_files: CStrList,
     output_lines: CStrList,
     state_json: CString,
-    /// How the last successful reload or `set_config` was carried out.
+    /// How the last successful reload or `set_tunable` was carried out.
     last_reload: Option<ReloadReport>,
     reload_json: CString,
     source_text: CString,
@@ -529,7 +529,7 @@ impl Vm {
     }
 
     /// What the last successful [`reload`](Self::reload) /
-    /// [`reload_with`](Self::reload_with) / [`set_config`](Self::set_config)
+    /// [`reload_with`](Self::reload_with) / [`set_tunable`](Self::set_tunable)
     /// did. `None` before the first one.
     pub fn last_reload(&self) -> Option<&ReloadReport> {
         self.last_reload.as_ref()
@@ -541,7 +541,10 @@ impl Vm {
     /// source file holding the binding (`None` finds it). The running text
     /// of that file ([`source_text`](Self::source_text)) takes the edit, so
     /// writing it to disk later is a reload with nothing to do.
-    pub fn set_config(
+    ///
+    /// For `let SPEED = tunable(4.0, 0, 10)`, `SPEED` sets the 4.0. The value
+    /// is not clamped to the bounds.
+    pub fn set_tunable(
         &mut self,
         file: Option<&Path>,
         path: &str,
@@ -566,9 +569,20 @@ impl Vm {
         Ok(())
     }
 
+    /// The old name of [`set_tunable`](Self::set_tunable), kept until
+    /// `config let` is removed (docs/proposals/remove-config-keyword.md).
+    pub fn set_config(
+        &mut self,
+        file: Option<&Path>,
+        path: &str,
+        value: &StaticValue,
+    ) -> BResult<()> {
+        self.set_tunable(file, path, value)
+    }
+
     /// The text the running program holds for a source file (`None`: the
     /// entry file): what it was compiled from, plus every
-    /// [`set_config`](Self::set_config) since.
+    /// [`set_tunable`](Self::set_tunable) since.
     pub fn source_text(&self, file: Option<&Path>) -> Option<&str> {
         let l = self.loaded.as_ref()?;
         // The entry file can be named by its path too.
@@ -2264,6 +2278,7 @@ fn reload_report_json(report: &ReloadReport) -> serde_json::Value {
                 .map(|v| {
                     json!({
                         "path": v.path,
+                        "tunable": v.config,
                         "config": v.config,
                         "old": literal(&v.old),
                         "new": literal(&v.new),
@@ -2281,6 +2296,7 @@ fn reload_report_json(report: &ReloadReport) -> serde_json::Value {
                             ConstructKind::Function => "fn",
                             ConstructKind::Let => "let",
                             ConstructKind::ConfigLet => "config let",
+                            ConstructKind::TunableLet => "tunable let",
                             ConstructKind::Const => "const",
                             ConstructKind::Var => "var",
                             ConstructKind::State => "state",
@@ -2362,7 +2378,7 @@ pub extern "C" fn pb_vm_last_reload_json(vm: *mut VmHandle) -> *const c_char {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn pb_vm_set_config(
+pub unsafe extern "C" fn pb_vm_set_tunable(
     vm: *mut VmHandle,
     file: *const c_char,
     path: *const c_char,
@@ -2378,9 +2394,20 @@ pub unsafe extern "C" fn pb_vm_set_config(
         let json = unsafe { arg_str(value_json, "value_json") }?;
         let value = petal::static_json::from_json(json)
             .map_err(|e| BridgeError::invalid(format!("value_json: {e}")))?;
-        vm.set_config(file.as_deref(), path, &value)
+        vm.set_tunable(file.as_deref(), path, &value)
     })
     .0
+}
+
+/// The old name of `pb_vm_set_tunable`, kept until `config let` is removed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_set_config(
+    vm: *mut VmHandle,
+    file: *const c_char,
+    path: *const c_char,
+    value_json: *const c_char,
+) -> Status {
+    unsafe { pb_vm_set_tunable(vm, file, path, value_json) }
 }
 
 #[unsafe(no_mangle)]
@@ -2544,7 +2571,7 @@ pub extern "C" fn pb_vm_set_static_follow(vm: *mut VmHandle, on: bool) -> Status
     .0
 }
 
-/// How a slow static rebuild waits while `pb_vm_set_config` is driven
+/// How a slow static rebuild waits while `pb_vm_set_tunable` is driven
 /// continuously (`Env::set_static_debounce`): a value whose last build took
 /// at least `threshold_ms` keeps its old value for every tick after the
 /// first of a drag, and is rebuilt by the first run that starts `quiet_ms`
@@ -3654,7 +3681,7 @@ pub config let LOOK = {step: 10, fog: 0.5}
         assert_eq!(vm.env.work_counters(), work);
 
         // A drag: the value changes, the file does not.
-        vm.set_config(None, "LOOK.step", &StaticValue::int(100)).unwrap();
+        vm.set_tunable(None, "LOOK.step", &StaticValue::int(100)).unwrap();
         assert_eq!(vm.last_reload().unwrap().outcome, ReloadOutcome::Patched);
         assert!(!vm.sources_changed());
         vm.run().unwrap();
@@ -3666,7 +3693,7 @@ pub config let LOOK = {step: 10, fog: 0.5}
         assert_eq!(json["values"][0]["new"], 100);
         // A different type needs the file and a reload; nothing changes.
         let err = vm
-            .set_config(Some(&config), "LOOK.step", &StaticValue::float(1.5))
+            .set_tunable(Some(&config), "LOOK.step", &StaticValue::float(1.5))
             .unwrap_err();
         assert_eq!(err.code, Status::NeedsReload);
         assert_eq!(
@@ -3692,6 +3719,51 @@ pub config let LOOK = {step: 10, fog: 0.5}
         assert_eq!(vm.last_reload().unwrap().outcome, ReloadOutcome::Recompiled);
         vm.run().unwrap();
         assert_eq!(out_ints(&mut vm), vec![212, 7]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A `let X = tunable(…)` setting, with no `config`: set by name, and
+    /// reported as `tunable` in the reload JSON
+    /// (docs/proposals/remove-config-keyword.md, Phase 2).
+    #[test]
+    fn a_tunable_setting_is_set_and_reported_as_tunable() {
+        let dir =
+            std::env::temp_dir().join(format!("petal-c-bridge-tunable-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::create_dir_all(&dir).unwrap();
+        let main = dir.join("main.ptl");
+        let entry = "import io
+let STEP = tunable(2, 0, 10)
+let MODE = tunable(\"a\", options: [\"a\", \"b\"])
+push_output(symbol(\"out\"), if MODE == \"a\" then STEP else -STEP end)
+";
+        std::fs::write(&main, entry).unwrap();
+        let mut vm = Vm::new();
+        vm.load_file(&main).unwrap();
+        vm.run().unwrap();
+        assert_eq!(out_ints(&mut vm), vec![2]);
+
+        vm.set_tunable(None, "STEP", &StaticValue::int(7)).unwrap();
+        let json = reload_report_json(vm.last_reload().unwrap());
+        assert_eq!(json["values"][0]["path"], "STEP");
+        assert_eq!(json["values"][0]["tunable"], true);
+        assert_eq!(json["values"][0]["config"], true, "the deprecated mirror");
+        // The old name still works.
+        vm.set_config(None, "MODE", &StaticValue::Str("b".into())).unwrap();
+        vm.run().unwrap();
+        assert_eq!(out_ints(&mut vm), vec![-7]);
+        assert!(
+            vm.source_text(None)
+                .unwrap()
+                .contains("let STEP = tunable(7, 0, 10)\nlet MODE = tunable(\"b\", options:")
+        );
+
+        // A type change recompiles, and names the construct a `tunable let`.
+        std::fs::write(&main, entry.replace("tunable(2, 0, 10)", "tunable(2.5, 0, 10)")).unwrap();
+        vm.reload().unwrap();
+        let json = reload_report_json(vm.last_reload().unwrap());
+        assert_eq!(json["constructs"][0]["kind"], "tunable let", "{json}");
+        assert_eq!(json["constructs"][0]["name"], "STEP");
         std::fs::remove_dir_all(&dir).ok();
     }
 

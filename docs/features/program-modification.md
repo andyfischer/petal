@@ -218,7 +218,7 @@ See [time-travel.md](time-travel.md).
 | Propose edits that change an emitted value | yes | proposals | `direct_manipulation::propose_edits` / `propose_edits_batch`, `petal propose-edit`, MCP `ProposeEdit` |
 | Classify an edit without applying it | yes | — | `source_diff::diff_source`, `Env::diff_program` |
 | Hot reload (state-preserving) | — | yes | `Env::reload_program` (`transfer_state` for the recompile); the SDL watcher, `pb_vm_reload`, Garden |
-| Set one config value in a running program | — | yes | `Env::set_config_value`; `pb_vm_set_config` |
+| Set one setting's value in a running program | — | yes | `Env::set_config_value`; `pb_vm_set_tunable` |
 | Full reload (state reset) | — | yes | `petal.load` (diagram-canvas) |
 | Mutate one live top-level state var | — | yes | `set_state` / `DiagramSetState` |
 | Inject input / bindings | — | yes | `input`, `set_binding_for` |

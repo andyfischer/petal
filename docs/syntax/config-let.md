@@ -150,7 +150,7 @@ identity. What hosts see is the setting, not the call:
   is not written is left out. `petal show-static --json` shows the same
   `range`.
 - The path `SPEED` names the `4.0`, so `set_config_value("SPEED", …)` and
-  `pb_vm_set_config` set it live without a reload, across zero too, and the
+  `pb_vm_set_tunable` set it live without a reload, across zero too, and the
   path edits (`literal_edit`, `pb_source_set_value`) change the number and
   leave the bounds as written.
 - Editing the number in the file (`tunable(4.0, …)` to `tunable(7.0, …)`) is a
@@ -161,7 +161,7 @@ identity. What hosts see is the setting, not the call:
   so the wrapper adds the range and nothing else.
 
 The range is **advice, not a clamp**. Nothing in Petal enforces it:
-`set_config_value` and `pb_vm_set_config` accept a value outside it, as
+`set_config_value` and `pb_vm_set_tunable` accept a value outside it, as
 direct manipulation treats it as a box for its search and nothing more. A host
 that wants a hard limit clamps before it sets.
 
@@ -270,7 +270,7 @@ value keeps what it holds; the reload report names both. See
 
 A host can also set a value without the file changing at all, which is what a
 slider needs while it is being dragged: `Env::set_config_value` in Rust,
-`pb_vm_set_config` in C. The value is addressed by a binding path such as
+`pb_vm_set_tunable` in C. The value is addressed by a binding path such as
 `SPEED` or `POST.effects[2].amount`, the result is exactly what reloading the
 edited file would give, and the host writes the file once when the drag ends.
 The same type and shape rule applies: a value that would need a recompile is

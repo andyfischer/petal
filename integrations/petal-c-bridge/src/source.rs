@@ -5,7 +5,8 @@
 //! `docs/usage/config-files.md` and `docs/features/program-modification.md`): a host that
 //! shows a script's settings — an editor panel of sliders, say — reads them
 //! with [`pb_source_bindings_json`], and writes them back by path
-//! (`POST.effects[2].amount`): [`pb_source_set_value`], [`pb_source_insert`],
+//! (`POST.effects[2].amount`): [`pb_source_set_value`] (and
+//! [`pb_source_set_setting`], by a setting's name), [`pb_source_insert`],
 //! [`pb_source_append`] and [`pb_source_remove`] take values (as JSON) and
 //! edit the literal in place through `petal::literal_edit` — only what differs
 //! is rewritten, and new text is formatted like what is already there — while
@@ -161,6 +162,23 @@ impl PbSource {
         })
     }
 
+    /// Set the value of the setting `name`: only `v` of `let NAME =
+    /// tunable(v, …)` changes; bounds, options and comment stay as written.
+    fn set_setting(&mut self, name: &str, value_json: &str) -> Status {
+        let bindings = match static_bindings(&self.text) {
+            Ok(b) => b,
+            Err(e) => return self.fail(Status::Compile, format!("source did not parse: {e}")),
+        };
+        match bindings.iter().rev().find(|b| b.name == name) {
+            Some(b) if b.is_config => self.set_value(name, value_json),
+            Some(_) => self.fail(
+                Status::InvalidArg,
+                format!("`{name}` is not a setting (write it `let {name} = tunable(…)`)"),
+            ),
+            None => self.fail(Status::NotFound, format!("no top-level binding for `{name}`")),
+        }
+    }
+
     fn insert(&mut self, path: &str, value_json: &str, before: Option<&str>) -> Status {
         let placement = before.map_or(Placement::End, |key| Placement::Before(key.to_string()));
         self.edit(Some(value_json), |text, value| {
@@ -208,13 +226,25 @@ pub fn bindings_json(source: &str) -> Result<String, String> {
             }
             Err(reason) => out.push_str(&format!(",\"reason\":{}", string(reason))),
         }
-        // `config let X = tunable(v, min, max, step)`: the bounds written,
-        // each omitted when it is not.
-        if let Some(range) = &b.range {
-            let bounds: Vec<String> = [("min", range.min), ("max", range.max), ("step", range.step)]
-                .into_iter()
-                .filter_map(|(k, v)| Some(format!("\"{k}\":{}", serde_json::Value::from(v?))))
-                .collect();
+        // A setting (`let X = tunable(v, min, max, step, options)`, or
+        // `config let`): what was written, each key omitted when it is not.
+        // `"config"` and `"range"` are its deprecated mirrors
+        // (docs/proposals/remove-config-keyword.md, Phase 2).
+        let bounds: Vec<String> = b
+            .range
+            .iter()
+            .flat_map(|r| [("min", r.min), ("max", r.max), ("step", r.step)])
+            .filter_map(|(k, v)| Some(format!("\"{k}\":{}", serde_json::Value::from(v?))))
+            .collect();
+        if b.is_config {
+            let mut meta = bounds.clone();
+            if let Some(options) = &b.options {
+                let items: Vec<String> = options.iter().map(static_json::to_json).collect();
+                meta.push(format!("\"options\":[{}]", items.join(",")));
+            }
+            out.push_str(&format!(",\"tunable\":{{{}}}", meta.join(",")));
+        }
+        if b.range.is_some() {
             out.push_str(&format!(",\"range\":{{{}}}", bounds.join(",")));
         }
         out.push('}');
@@ -370,6 +400,21 @@ pub unsafe extern "C" fn pb_source_set_value(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_source_set_setting(
+    s: *mut PbSource,
+    name: *const c_char,
+    value_json: *const c_char,
+) -> Status {
+    unsafe {
+        edit_call(
+            s,
+            [(name, "name", false), (value_json, "value_json", false)],
+            |s, [name, value]| s.set_setting(name.unwrap_or(""), value.unwrap_or("")),
+        )
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn pb_source_insert(
     s: *mut PbSource,
     path: *const c_char,
@@ -482,6 +527,63 @@ mod tests {
         assert_eq!(s.set("C", "0.75"), Status::Ok);
         assert!(s.text.starts_with("config let A = tunable(-1.5, 0, 10)\n"), "{}", s.text);
         assert!(s.text.contains("config let C = tunable(0.75)\n"), "{}", s.text);
+    }
+
+    #[test]
+    fn a_setting_has_a_tunable_section_with_the_old_keys_mirrored() {
+        let src = "let START = tunable(\"title\", options: [\"title\", \"select\", \"play\"])\n\
+                   let SPEED = tunable(4.0, 0, 10)  // px per frame\n\
+                   let DEBUG = tunable(false)\n\
+                   pub let LOOK = tunable({bloom: 0.3, tint: #ff2e88})\n\
+                   config let OLD = 3\n\
+                   let PLAIN = 2\n\
+                   var V = tunable(1.0)\n";
+        let json: serde_json::Value = serde_json::from_str(&bindings_json(src).unwrap()).unwrap();
+        let by = |n: &str| json.as_array().unwrap().iter().find(|b| b["name"] == n).unwrap().clone();
+        let start = by("START");
+        assert_eq!(start["value"], "title");
+        assert_eq!(start["tunable"], serde_json::json!({"options": ["title", "select", "play"]}));
+        assert_eq!(start["config"], true);
+        assert!(start.get("range").is_none());
+        let speed = by("SPEED");
+        assert_eq!(speed["tunable"], serde_json::json!({"min": 0.0, "max": 10.0}));
+        assert_eq!(speed["range"], speed["tunable"]);
+        assert_eq!(speed["comment"], serde_json::Value::Null);
+        assert_eq!(by("DEBUG")["value"], false);
+        assert_eq!(by("DEBUG")["tunable"], serde_json::json!({}));
+        let look = by("LOOK");
+        assert_eq!(look["exported"], true);
+        assert_eq!(look["value"]["rec"]["bloom"], 0.3);
+        assert_eq!(look["tunable"], serde_json::json!({}));
+        // `config let` is a setting with nothing written: an empty section.
+        assert_eq!(by("OLD")["tunable"], serde_json::json!({}));
+        for n in ["PLAIN", "V"] {
+            assert!(by(n).get("tunable").is_none(), "{n}");
+            assert_eq!(by(n)["config"], false, "{n}");
+        }
+    }
+
+    #[test]
+    fn set_setting_edits_only_the_value_of_a_setting() {
+        let src = "let START = tunable(\"title\", options: [\"title\", \"play\"])  // first screen\n\
+                   let SPEED = tunable(4.0, 0, 10)\n\
+                   let PLAIN = 2\n";
+        let mut s = PbSource::new(src);
+        assert_eq!(s.set_setting("START", "\"play\""), Status::Ok);
+        assert_eq!(s.set_setting("SPEED", "12.5"), Status::Ok, "not clamped");
+        assert_eq!(
+            s.text,
+            "let START = tunable(\"play\", options: [\"title\", \"play\"])  // first screen\n\
+             let SPEED = tunable(12.5, 0, 10)\n\
+             let PLAIN = 2\n"
+        );
+        let before = s.text.clone();
+        assert_eq!(s.set_setting("PLAIN", "{\"int\": 3}"), Status::InvalidArg);
+        assert!(s.error.is_some());
+        assert_eq!(s.set_setting("NOPE", "1.0"), Status::NotFound);
+        // A path is not a name.
+        assert_eq!(s.set_setting("SPEED.x", "1.0"), Status::NotFound);
+        assert_eq!(s.text, before, "a failed call changes nothing");
     }
 
     #[test]

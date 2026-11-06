@@ -2157,7 +2157,7 @@ Rules:
   is not one of them; nothing else enforces it, and its numbers are never
   moved by a drag.
 - The range is advice. Direct manipulation keeps a drag inside it; nothing
-  else enforces it, and `set_config_value` / `pb_vm_set_config` do not clamp
+  else enforces it, and `set_config_value` / `pb_vm_set_tunable` do not clamp
   to it.
 - The bounds must be number literals, and `min` must not be above `max`
   (`dm-hint-bounds`). A computed bound is evaluated and ignored.

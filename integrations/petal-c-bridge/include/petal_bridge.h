@@ -24,7 +24,7 @@
  *   pb_vm_sources_changed + pb_vm_reload hot reload, keeping `state`
  *     (pb_vm_changed_sources names the edited files; a value or layout
  *     edit is taken up without recompiling)
- *   pb_vm_set_config                     set one config value now, no file write
+ *   pb_vm_set_tunable                    set one setting's value now, no file write
  *   pb_vm_propose_edit                   direct manipulation: the edit that moves a drag
  *   pb_vm_tests_json + pb_vm_test_*      run the script's test blocks, across frames
  *   pb_scenario_* + pb_vm_apply_scenario replay recorded input (headless tests)
@@ -63,7 +63,7 @@ typedef enum pb_status {
     PB_ERR_PANIC = 7,        /* an internal Rust panic was caught; the VM may be inconsistent */
     PB_ERR_REENTRANT = 8,    /* called from inside a native callback while the VM is running */
     PB_ERR_LIMIT = 9,        /* a fixed capacity was exhausted (reserved; nothing reports it today) */
-    PB_ERR_NEEDS_RELOAD = 10 /* pb_vm_set_config: the value cannot be set without recompiling */
+    PB_ERR_NEEDS_RELOAD = 10 /* pb_vm_set_tunable: the value cannot be set without recompiling */
 } pb_status;
 
 /* Human-readable name of a status code ("ok", "compile error", ...). Static. */
@@ -1131,7 +1131,7 @@ typedef enum pb_reload_kind {
     PB_RELOAD_RECOMPILED = 3  /* recompiled, state transferred */
 } pb_reload_kind;
 
-/* How the last successful pb_vm_reload / pb_vm_reload_source / pb_vm_set_config
+/* How the last successful pb_vm_reload / pb_vm_reload_source / pb_vm_set_tunable
  * was carried out (a pb_reload_kind), or -1 before the first one. */
 int pb_vm_last_reload_kind(pb_vm* vm);
 
@@ -1143,11 +1143,13 @@ int pb_vm_last_reload_kind(pb_vm* vm);
  *    "state_preserved": 12, "state_dropped": 0,
  *    "values": [                    // change == "values": each literal that changed
  *      {"path": "POST.bloom",       //   binding path, or null outside a top-level let
- *       "config": true,             //   inside a `config let`
+ *       "tunable": true,            //   inside a setting (see Tunables below)
+ *       "config": true,             //   deprecated mirror of "tunable"
  *       "old": 0.2, "new": 0.4, "line": 3}],
  *    "constructs": [                // change == "constructs": what differs
- *      {"kind": "fn",               //   fn | let | config let | var | state | enum |
- *       "name": "draw",             //   class | import | statement (name null)
+ *      {"kind": "fn",               //   fn | let | tunable let | config let | const |
+ *       "name": "draw",             //   var | state | memo | enum | class | import |
+ *                                   //   statement (name null)
  *       "edit": "changed",          //   added | removed | changed
  *       "line": 40}],
  *    "reason": "...",               // change == "full": why
@@ -1159,7 +1161,7 @@ int pb_vm_last_reload_kind(pb_vm* vm);
  *                                   //   changed: still held
  *      "rebuilt": 3,                //   static values the next run builds
  *      "rebuilt_names": ["TILES"],  //   the declarations among them
- *      "deferred": ["GRID"],        //   changed by a pb_vm_set_config, slow to
+ *      "deferred": ["GRID"],        //   changed by a pb_vm_set_tunable, slow to
  *                                   //   build: rebuilt when the drag pauses
  *      "stale_seeds": [             //   state that kept its value although its
  *        {"name": "grid",           //   initializer read something that changed
@@ -1179,7 +1181,7 @@ const char* pb_vm_last_reload_json(pb_vm* vm);
 /* Set one value of a top-level binding in the running program now, without
  * the file changing on disk: the live half of a drag.
  *
- *   pb_vm_set_config(vm, NULL, "POST.effects[2].amount", "0.35");
+ *   pb_vm_set_tunable(vm, NULL, "POST.effects[2].amount", "0.35");
  *
  * `path` is a binding path as for pb_source_set_value and `value_json` a value
  * in the same JSON (a bare number is a float; an integer is {"int": 3}, so a
@@ -1195,9 +1197,10 @@ const char* pb_vm_last_reload_json(pb_vm* vm);
  * drag ends, and the reload that follows has nothing to do. To abandon the
  * drag instead, pb_vm_reload: the file's own values come back.
  *
- * For `config let SPEED = tunable(4.0, 0, 10)`, `SPEED` sets the 4.0 (see
- * pb_source_*). The value is not clamped to the declared "range": clamp in
- * the host if the setting needs a hard limit.
+ * For `let SPEED = tunable(4.0, 0, 10)`, `SPEED` sets the 4.0 (see Tunables
+ * below). The value is not clamped to the declared bounds: clamp in the host
+ * if the setting needs a hard limit. Any top-level binding path can be set,
+ * a setting or not.
  *
  * PB_ERR_NEEDS_RELOAD when the value has a different type or shape from the
  * one written (10 to 10.5, a list that grew, a field that is not there):
@@ -1208,11 +1211,15 @@ const char* pb_vm_last_reload_json(pb_vm* vm);
  * Like a reload, a successful call ends the lifetime of views handed out by
  * the last run, and the functions of the program are callable again only
  * after the next pb_vm_run. */
+pb_status pb_vm_set_tunable(pb_vm* vm, const char* file, const char* path,
+                            const char* value_json);
+
+/* Deprecated: the old name of pb_vm_set_tunable, removed with `config let`. */
 pb_status pb_vm_set_config(pb_vm* vm, const char* file, const char* path,
                            const char* value_json);
 
 /* The text the running program holds for one of its source files: what it was
- * compiled from, plus every pb_vm_set_config since. `file` is the file's path;
+ * compiled from, plus every pb_vm_set_tunable since. `file` is the file's path;
  * NULL is the entry file. NULL when it is not a source file of the program.
  * Valid until the next call to this function. */
 const char* pb_vm_source_text(pb_vm* vm, const char* file);
@@ -1294,10 +1301,46 @@ pb_status pb_vm_apply_scenario(pb_vm* vm, const pb_scenario* s, size_t frame, si
  * `[index]` (into a list literal, or the arguments of a call such as
  * `vec3(0.3, -1.0, 0.5)`) steps. The name alone is the binding's whole
  * right-hand side; the last binding of a name is the one read and edited.
- * One exception: in `config let SPEED = tunable(4.0, 0, 10)` the name is the
- * value, `4.0` (the `tunable` gives the setting a range, reported as
- * "range"), so `SPEED` reads and edits that number and the bounds stay as
- * written.
+ * One exception: in a setting, `let SPEED = tunable(4.0, 0, 10)`, the name
+ * is the value, `4.0`, so `SPEED` reads and edits that number and the bounds
+ * stay as written (see Tunables below).
+ *
+ * ─── Tunables ───
+ *
+ * A setting is a top-level `let` (or `pub let`) whose whole right-hand side
+ * is a `tunable(...)` call: the values a host may show on a settings screen,
+ * set from a command line or drag. The data can be of any kind:
+ *
+ *   let SPEED = tunable(4.0, 0, 10)                      // a number, with bounds
+ *   let START = tunable("title", options: ["title", "play"])
+ *   let DEBUG = tunable(false)
+ *   pub let LOOK = tunable({bloom: 0.3, tint: #ff2e88})  // a record
+ *
+ * The deprecated `config let X = v` is a setting too, with nothing written.
+ * `let X = tunable(v) * 2`, `var X = tunable(v)` and a `tunable` below the
+ * top level are not settings.
+ *
+ * In pb_source_bindings_json a setting has a "tunable" object holding what
+ * was written, each key present only when it is: "min", "max", "step"
+ * (number literals) and "options" (the values, in the same JSON as "value").
+ * It is {} when nothing is written, and absent on a binding that is not a
+ * setting:
+ *
+ *   {"name": "START", "config": true, "exported": false, "line": 2,
+ *    "text": "\"title\"", "value": "title",
+ *    "tunable": {"options": ["title", "play"]}}
+ *   {"name": "SPEED", "config": true, ..., "text": "4.0", "value": 4.0,
+ *    "tunable": {"min": 0.0, "max": 10.0}, "range": {"min": 0.0, "max": 10.0}}
+ *
+ * "config" (true exactly when "tunable" is present) and "range" (the numeric
+ * part, present when a bound is written) are deprecated mirrors, emitted
+ * until `config let` is removed. Nothing enforces the bounds or the options:
+ * they are advice for a host's widget, as they are to direct manipulation.
+ *
+ * Set a setting with pb_source_set_setting (in the text) or
+ * pb_vm_set_tunable (in the running program). The reload JSON marks a
+ * changed value inside a setting "tunable": true, and a changed setting
+ * construct "kind": "tunable let" ("config let" for the old spelling).
  */
 typedef struct pb_source pb_source;
 
@@ -1318,13 +1361,9 @@ const char* pb_source_text(const pb_source* s);
  *     "range": {"min": 0.0, "max": 10.0}},
  *    {"name": "atmosphere", ..., "reason": "a function declaration"}]
  *
- * `config`: written `config let`. `text`: the right-hand side as written.
- * `range`: present only for `config let X = tunable(v, min, max, step)`
- * (bounds by position or by name); it holds the bounds written as number
- * literals, each of "min", "max" and "step" omitted when it is not. `value`
- * and `text` are then `v`'s. The range is advice for a slider's ends, as it
- * is to direct manipulation: nothing enforces it (pb_vm_set_config and the
- * value edits do not clamp), so a host that wants a hard limit clamps.
+ * `tunable`: present for a setting (see Tunables above); `value` and `text`
+ * are then those of `v` in `tunable(v, ...)`. `config` and `range`: its
+ * deprecated mirrors. `text`: the right-hand side as written.
  * `comment`: the comment block directly above. A binding has either `value`
  * (its static value: literals, lists, records, calls, variants of the file's
  * enums and names bound above) or `reason` (why it has none: arithmetic, a
@@ -1378,6 +1417,15 @@ pb_status pb_source_set(pb_source* s, const char* path, const char* value);
  * changed is edited element by element (inserts, removes, moves), not
  * rewritten. A record field that does not exist yet is added to its record. */
 pb_status pb_source_set_value(pb_source* s, const char* path, const char* value_json);
+
+/* Make the setting `name` read as `value_json`: only `v` of
+ * `let NAME = tunable(v, ...)` changes; the bounds, options and comments stay
+ * as written (see Tunables above). It is pb_source_set_value with `name` as
+ * the path, after checking that `name` is a setting: PB_ERR_INVALID_ARG when
+ * the binding is not one, PB_ERR_NOT_FOUND when nothing is bound to `name`
+ * at the top level (a path such as "LOOK.bloom" is not a name). The value is
+ * not checked against the bounds or options. */
+pb_status pb_source_set_setting(pb_source* s, const char* name, const char* value_json);
 /* Insert a value so that `path` names it afterwards: "effects[1]" inserts
  * before the current element 1 of a list (or call), "POST.bloom" adds a field
  * to a record — before the sibling field `before`, or last when `before` is

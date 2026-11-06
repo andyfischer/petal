@@ -36,5 +36,5 @@ That needs CMake, Ninja and a C++20 compiler. The guide is
 contract, values and builders, host natives and emitters, petal-ui input and
 draw commands, modules and packages (interface packages, `[requires]` and
 `provides`, bundles for hosts with no filesystem), input-scenario replay, hot reload (a value or layout edit is
-taken up without recompiling, and `vm.set_config(path, json)` sets a config
+taken up without recompiling, and `vm.set_tunable(path, json)` sets a setting's
 value with no file write) and errors.

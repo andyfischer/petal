@@ -146,11 +146,11 @@ TEST(static_rebuilds_wait_for_a_drag_and_can_be_flushed) {
     vm.set_static_debounce(0, 60000);
     CHECK_EQ(run_out(vm), std::vector<double>{201});
     // The first tick of a drag rebuilds at once.
-    CHECK(vm.set_config("ROWS[0][1]", "{\"int\": 3}"));
+    CHECK(vm.set_tunable("ROWS[0][1]", "{\"int\": 3}"));
     CHECK(vm.last_reload_json().find("\"rebuilt_names\":[\"ROWS\"]") != std::string::npos);
     CHECK_EQ(run_out(vm), std::vector<double>{302});
     // The second waits: the table keeps the value of the tick before.
-    CHECK(vm.set_config("ROWS[0][1]", "{\"int\": 4}"));
+    CHECK(vm.set_tunable("ROWS[0][1]", "{\"int\": 4}"));
     CHECK(vm.last_reload_json().find("\"deferred\":[\"ROWS\"]") != std::string::npos);
     CHECK_EQ(run_out(vm), std::vector<double>{303});
     // The host knows the drag ended.
@@ -160,12 +160,12 @@ TEST(static_rebuilds_wait_for_a_drag_and_can_be_flushed) {
     // Off: every tick rebuilds. And a reload that follows nothing reports
     // nothing about constants.
     vm.set_static_debounce(-1, 0);
-    CHECK(vm.set_config("ROWS[0][1]", "{\"int\": 5}"));
-    CHECK(vm.set_config("ROWS[0][1]", "{\"int\": 6}"));
+    CHECK(vm.set_tunable("ROWS[0][1]", "{\"int\": 5}"));
+    CHECK(vm.set_tunable("ROWS[0][1]", "{\"int\": 6}"));
     CHECK(vm.last_reload_json().find("\"deferred\":[]") != std::string::npos);
     CHECK_EQ(run_out(vm), std::vector<double>{605});
     vm.set_static_follow(false);
-    CHECK(vm.set_config("ROWS[0][1]", "{\"int\": 7}"));
+    CHECK(vm.set_tunable("ROWS[0][1]", "{\"int\": 7}"));
     CHECK(vm.last_reload_json().find("\"statics\"") == std::string::npos);
     CHECK_EQ(run_out(vm), std::vector<double>{706});
 }
@@ -1972,14 +1972,14 @@ TEST(hot_reload_patches_values_and_set_config_writes_no_file) {
 
     // A drag: no file write.
     // (A bare JSON number is a float; an integer is {"int": n}.)
-    CHECK(vm.set_config("POST.steps[1]", "{\"int\":9}"));
-    CHECK(vm.set_config("POST.bloom", "0.75", config.string()));
+    CHECK(vm.set_tunable("POST.steps[1]", "{\"int\":9}"));
+    CHECK(vm.set_tunable("POST.bloom", "0.75", config.string()));
     CHECK(!vm.sources_changed());
     CHECK_EQ(vm.last_reload_kind(), PB_RELOAD_PATCHED);
     CHECK_EQ(run_out(vm), std::vector<double>{84});
     // A value of another type needs the file and a reload.
-    CHECK(!vm.set_config("POST.steps[1]", "9.5"));
-    CHECK_THROWS_CODE(vm.set_config("POST.missing.deep", "1"), PB_ERR_NOT_FOUND);
+    CHECK(!vm.set_tunable("POST.steps[1]", "9.5"));
+    CHECK_THROWS_CODE(vm.set_tunable("POST.missing.deep", "1"), PB_ERR_NOT_FOUND);
     CHECK_EQ(run_out(vm), std::vector<double>{84});
 
     // The drag ends: write the running text; the reload finds nothing to do.
@@ -2138,9 +2138,11 @@ TEST(a_tunable_config_reports_its_range_and_sets_by_name) {
     const std::optional<std::string> json = src.bindings_json();
     REQUIRE(json.has_value());
     CHECK_CONTAINS(*json, "\"name\":\"SPEED\",\"config\":true");
-    CHECK_CONTAINS(*json, "\"text\":\"4.0\",\"value\":4.0,\"range\":{\"min\":0.0,\"max\":10.0}");
-    CHECK_CONTAINS(*json, "\"value\":-9.8,\"range\":{\"min\":-20.0,\"max\":0.0,\"step\":0.1}");
-    CHECK(json->find("\"value\":{\"int\":3},\"range\"") == std::string::npos);
+    CHECK_CONTAINS(*json, "\"text\":\"4.0\",\"value\":4.0,\"tunable\":{\"min\":0.0,\"max\":10.0},"
+                          "\"range\":{\"min\":0.0,\"max\":10.0}");
+    CHECK_CONTAINS(*json, "\"value\":-9.8,\"tunable\":{\"min\":-20.0,\"max\":0.0,\"step\":0.1},"
+                          "\"range\":{\"min\":-20.0,\"max\":0.0,\"step\":0.1}");
+    CHECK_CONTAINS(*json, "\"value\":{\"int\":3},\"tunable\":{}}");
     CHECK_EQ(src.expr("SPEED").value_or(""), std::string("4.0"));
     CHECK(src.set_value("SPEED", "5.5"));
     CHECK(src.set_value("GRAV", "1.5"));
@@ -2154,11 +2156,57 @@ TEST(a_tunable_config_reports_its_range_and_sets_by_name) {
     vm.load_source("import io\nconfig let SPEED = tunable(4.0, 0, 10)\n"
                    "push_output(symbol(\"out\"), SPEED)\n");
     CHECK_EQ(run_out(vm), std::vector<double>{4});
-    CHECK(vm.set_config("SPEED", "-2.5"));
+    CHECK(vm.set_tunable("SPEED", "-2.5"));
     CHECK_EQ(vm.last_reload_kind(), PB_RELOAD_PATCHED);
     CHECK_EQ(run_out(vm), std::vector<double>{-2.5});
-    CHECK(vm.set_config("SPEED", "12.0"));
+    CHECK(vm.set_tunable("SPEED", "12.0"));
     CHECK_EQ(run_out(vm), std::vector<double>{12});
+}
+
+// Settings written without `config`: `let X = tunable(v, ...)`, of any data.
+// The "tunable" section says what was written; "config" and "range" mirror it.
+TEST(tunable_settings_have_a_tunable_section_and_set_by_name) {
+    const std::string text =
+        "let START = tunable(\"title\", options: [\"title\", \"play\"])  // first screen\n"
+        "let SPEED = tunable(4.0, 0, 10)\n"
+        "let DEBUG = tunable(false)\n"
+        "pub let LOOK = tunable({bloom: 0.3, steps: [1, 2]})\n"
+        "let PLAIN = 2\n";
+    petal::Source src(text);
+    const std::optional<std::string> json = src.bindings_json();
+    REQUIRE(json.has_value());
+    CHECK_CONTAINS(*json, "\"name\":\"START\",\"config\":true");
+    CHECK_CONTAINS(*json, "\"value\":\"title\",\"tunable\":{\"options\":[\"title\",\"play\"]}}");
+    CHECK_CONTAINS(*json, "\"value\":4.0,\"tunable\":{\"min\":0.0,\"max\":10.0},\"range\":{\"min\":0.0,\"max\":10.0}");
+    CHECK_CONTAINS(*json, "\"value\":false,\"tunable\":{}}");
+    CHECK_CONTAINS(*json, "\"name\":\"LOOK\",\"config\":true,\"exported\":true");
+    CHECK_CONTAINS(*json, "\"name\":\"PLAIN\",\"config\":false");
+    CHECK(json->find("\"value\":{\"int\":2},\"tunable\"") == std::string::npos);
+
+    // Set by name: only the value changes.
+    CHECK(src.set_setting("START", "\"play\""));
+    CHECK(src.set_setting("DEBUG", "true"));
+    CHECK(src.set_setting("LOOK", "{\"rec\":{\"bloom\":0.5,\"steps\":[{\"int\":1},{\"int\":2}]}}"));
+    CHECK(!src.set_setting("PLAIN", "{\"int\":3}"));
+    CHECK(!src.error().empty());
+    CHECK(!src.set_setting("NOPE", "1.0"));
+    CHECK_EQ(src.text(), std::string("let START = tunable(\"play\", options: [\"title\", \"play\"])  // first screen\n"
+                                     "let SPEED = tunable(4.0, 0, 10)\n"
+                                     "let DEBUG = tunable(true)\n"
+                                     "pub let LOOK = tunable({bloom: 0.5, steps: [1, 2]})\n"
+                                     "let PLAIN = 2\n"));
+
+    // Live: set_tunable, and the old C name still answers.
+    petal::Vm vm;
+    vm.load_source("import io\nlet SPEED = tunable(4.0, 0, 10)\nlet LOOK = tunable({bloom: 0.25})\n"
+                   "push_output(symbol(\"out\"), SPEED + LOOK.bloom)\n");
+    CHECK_EQ(run_out(vm), std::vector<double>{4.25});
+    CHECK(vm.set_tunable("SPEED", "6.0"));
+    CHECK_EQ(vm.last_reload_kind(), PB_RELOAD_PATCHED);
+    CHECK_CONTAINS(vm.last_reload_json(), "\"tunable\":true");
+    CHECK_EQ(pb_vm_set_config(vm.raw(), nullptr, "LOOK.bloom", "0.5"), PB_OK);
+    CHECK_EQ(run_out(vm), std::vector<double>{6.5});
+    CHECK_CONTAINS(vm.source_text(), "let SPEED = tunable(6.0, 0, 10)\nlet LOOK = tunable({bloom: 0.5})\n");
 }
 
 TEST(source_edits_values_in_place_keeping_style) {

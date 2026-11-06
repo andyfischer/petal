@@ -284,7 +284,7 @@ In `config let SPEED = tunable(4.0, 0, 10)` the path `SPEED` names the `4.0`
 ([Giving a setting a range](../syntax/config-let.md#giving-a-setting-a-range)),
 and the value is not clamped to that range.
 
-From C: `pb_vm_set_config(vm, file, path, value_json)` and
+From C: `pb_vm_set_tunable(vm, file, path, value_json)` and
 `pb_vm_source_text(vm, file)`.
 
 ### A slow table under a drag

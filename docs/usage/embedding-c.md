@@ -134,7 +134,7 @@ expected-style variant. An error carries:
   `PB_ERR_NOT_LOADED`, `PB_ERR_INVALID_ARG`, `PB_ERR_NOT_FOUND`,
   `PB_ERR_PANIC`, `PB_ERR_REENTRANT`; `PB_ERR_LIMIT` is reserved, and
   `PB_ERR_NEEDS_RELOAD` is only ever the `false` that
-  [`set_config`](#setting-a-value-without-writing-the-file) returns);
+  [`set_tunable`](#setting-a-value-without-writing-the-file) returns);
 - `what()` — the full message, including Petal's source excerpt with a caret;
 - `phase()` — `"lex"`, `"parse"`, `"module"`, `"compile"`, `"lower"`,
   `"link"` (a declared native or a required interface this VM does not have)
@@ -814,13 +814,14 @@ The request fields and the response are in
 
 ### Setting a value without writing the file
 
-A slider drag should not write a file every frame. `set_config`
-(`pb_vm_set_config`) sets one value of a top-level binding in the running
-program directly:
+A slider drag should not write a file every frame. `set_tunable`
+(`pb_vm_set_tunable`; `set_config` / `pb_vm_set_config` is its deprecated
+old name) sets one value of a top-level binding in the running program
+directly:
 
 ```cpp
 // while dragging
-if (!vm.set_config("POST.effects[2].amount", "0.35")) {
+if (!vm.set_tunable("POST.effects[2].amount", "0.35")) {
     // a different type or shape: write the file and reload instead
 }
 // on release: the running text is the file with every edit applied
@@ -837,9 +838,10 @@ vm.reload();                                // PB_RELOAD_UNCHANGED: nothing to d
   recompiling
   ([../features/hot-reload.md](../features/hot-reload.md#setting-a-value-without-writing-the-file)
   has the rules).
-- For `config let SPEED = tunable(4.0, 0, 10)`, the path `SPEED` sets the
-  `4.0`, live and across zero. The value is not clamped to the declared
-  range: clamp in the host if the setting needs a hard limit.
+- For a setting, `let SPEED = tunable(4.0, 0, 10)`, the path `SPEED` sets
+  the `4.0`, live and across zero. The value is not clamped to the declared
+  bounds: clamp in the host if the setting needs a hard limit
+  ([Tunables and settings](#tunables-and-settings)).
 - `source_text(file)` (`pb_vm_source_text`) returns that text. Writing it on
   release makes the following reload a no-op; reloading without writing it
   abandons the drag and brings the file's own values back.
@@ -868,8 +870,8 @@ the file:
 ```cpp
 petal::Source src(read_file("games/neon/config.ptl"));
 
-// What the file sets, as JSON: name, `config let` or not, the comment above
-// it, the right-hand side as written, and its static value.
+// What the file sets, as JSON: name, whether it is a setting, the comment
+// above it, the right-hand side as written, and its static value.
 std::optional<std::string> bindings = src.bindings_json();
 
 // Change values where they are written. Nothing else in the file moves.
@@ -893,8 +895,8 @@ write_file("games/neon/config.ptl", src.text());
 
 - A **path** is a top-level name followed by `.field` steps into record
   literals and `[index]` steps into list literals or call arguments. The name
-  alone is the binding's whole right-hand side, with one exception: in
-  `config let SPEED = tunable(4.0, 0, 10)` the name `SPEED` is the value
+  alone is the binding's whole right-hand side, with one exception: in a
+  setting, `let SPEED = tunable(4.0, 0, 10)`, the name `SPEED` is the value
   `4.0`, so `set_value("SPEED", "5.5")` writes `tunable(5.5, 0, 10)` and the
   bounds stay. A path can only see literals:
   it stops (`PB_ERR_NOT_FOUND`) at a name, a spread or a computed value.
@@ -917,7 +919,7 @@ write_file("games/neon/config.ptl", src.text());
   to the text it already has changes nothing.
 - `bindings_json()` is [`static_bindings`](config-files.md#reading-the-whole-file-including-what-it-cannot-read) as JSON (the
   format is documented at `pb_source_bindings_json` in `petal_bridge.h`).
-  Bindings written [`config let`](../syntax/config-let.md) carry `"config": true`: those are the knobs
+  Settings carry a `"tunable"` object (next section): those are the knobs
   the author declared, and the ones an editor should offer. Values are JSON:
   floats are numbers, strings strings, lists arrays, `nil` is `null`, and the
   rest are tagged — `{"int": 3}`, `{"rec": {"key": value}}` (keys in source
@@ -926,17 +928,61 @@ write_file("games/neon/config.ptl", src.text());
   `"args": [...]` when it carries a payload). A
   color is always `#rrggbb` or `#rrggbbaa` in lowercase there; `expr(path)`
   returns an expression as written (`#F80`, `0.020000`).
-- A binding declared `config let X = tunable(v, min, max, step)` (bounds by
-  position or by name) also carries `"range": {"min": 0.0, "max": 10.0,
-  "step": 0.5}`, each bound left out when it is not written, and its `"value"`
-  and `"text"` are `v`'s. The field is additive: a host that does not know it
-  ignores it. A slider can use it for its ends. It is **not** enforced:
-  `set_value` and `pb_vm_set_config` accept a value outside it, so a host
-  that needs a hard limit clamps
-  ([Giving a setting a range](../syntax/config-let.md#giving-a-setting-a-range)).
 - A failed call returns false (the edits) or `nullopt` and leaves the text as
   it was; `error()` says why. The text is never left unparseable. A `Source`
   is independent of any `Vm`.
+
+### Tunables and settings
+
+A **setting** is a top-level `let` or `pub let` whose whole right-hand side
+is a [`tunable(...)`](../Builtins.md) call. It is what a script offers its
+host: the values a settings screen lists, a `--set NAME=VALUE` overrides,
+and a drag moves. The value can be any data:
+
+```petal
+let SPEED = tunable(4.0, 0, 10)                       // a number, with bounds
+let START = tunable("title", options: ["title", "play"])
+let DEBUG = tunable(false)
+pub let LOOK = tunable({bloom: 0.3, tint: #ff2e88})   // every number a knob
+```
+
+`let X = tunable(v) * 2`, `var X = tunable(v)` and a `tunable` below the top
+level are not settings (`petal lint` says so). The deprecated
+[`config let X = v`](../syntax/config-let.md) is a setting with nothing
+written.
+
+In `bindings_json()` a setting carries a `"tunable"` object with what was
+written, each key present only when it is: `"min"`, `"max"` and `"step"`
+(number literals, by position or by name) and `"options"` (the values, in the
+same JSON as `"value"`). It is `{}` when nothing is written, and absent on a
+binding that is not a setting. `"value"` and `"text"` are `v`'s:
+
+```json
+{"name": "START", "config": true, "exported": false, "line": 2,
+ "text": "\"title\"", "value": "title",
+ "tunable": {"options": ["title", "play"]}}
+{"name": "SPEED", "config": true, "exported": false, "line": 1,
+ "text": "4.0", "value": 4.0,
+ "tunable": {"min": 0.0, "max": 10.0}, "range": {"min": 0.0, "max": 10.0}}
+```
+
+- `"config"` (true exactly when `"tunable"` is present) and `"range"` (its
+  numeric part, present when a bound is written) are **deprecated mirrors**,
+  emitted until `config let` is removed. New code reads `"tunable"`.
+- Nothing enforces the bounds or the options. They are advice for a
+  slider's ends or a dropdown's entries, as they are to direct manipulation:
+  `set_setting`, `set_value` and `set_tunable` accept any value, so a host
+  that needs a hard limit checks it.
+- `set_setting(name, json)` (`pb_source_set_setting`) sets a setting by
+  name: only `v` changes, and the bounds, options and comment stay. It fails
+  (`PB_ERR_INVALID_ARG`) on a binding that is not a setting, so a `--set`
+  cannot reach into the rest of a script by accident.
+- In the running program, `set_tunable` sets it live (above). The reload
+  report (`last_reload_json()`) marks a changed value inside a setting
+  `"tunable": true` (`"config"` mirrors it), and a changed setting construct
+  has `"kind": "tunable let"` (`"config let"` for the old spelling).
+- Direct manipulation's `"allow": ["knob"]` (`"config"` is an alias) limits
+  a drag to settings' literals.
 
 ## Modules and packages
 
@@ -1005,7 +1051,7 @@ from a string).
 
 `vm.override_file(path, source)` (`pb_vm_override_file`) compiles as if the
 file at `path` held `source`, for every later import that resolves to it: how
-an engine applies a `--set NAME=VALUE` to a `config let` in an imported module
+an engine applies a `--set NAME=VALUE` to a setting in an imported module
 without writing the file. It is `Env::override_file_source`; what it covers,
 how long it stands and why the entry file is not one are in
 [../module-system.md](../module-system.md#embedding).

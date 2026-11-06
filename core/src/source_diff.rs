@@ -154,6 +154,9 @@ pub enum ConstructKind {
     Function,
     Let,
     ConfigLet,
+    /// `let NAME = tunable(…)`: a setting written without `config`
+    /// (docs/proposals/remove-config-keyword.md).
+    TunableLet,
     /// `const NAME = …`: a `let` that must be static.
     Const,
     Var,
@@ -594,6 +597,7 @@ fn construct_kind(s: &Stmt) -> (ConstructKind, Option<&str>) {
             is_var,
             is_config,
             is_const,
+            value,
             ..
         } => (
             if *is_const {
@@ -602,6 +606,8 @@ fn construct_kind(s: &Stmt) -> (ConstructKind, Option<&str>) {
                 ConstructKind::ConfigLet
             } else if *is_var {
                 ConstructKind::Var
+            } else if crate::static_value::is_setting(value, false, false, false) {
+                ConstructKind::TunableLet
             } else {
                 ConstructKind::Let
             },
@@ -1652,6 +1658,27 @@ mod tests {
                 assert_eq!(c[0].edit, ConstructEdit::Changed);
             }
             other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_tunable_let_is_its_own_construct_kind() {
+        match change("let N = tunable(10)\n", "let N = tunable(10.5)\n") {
+            SourceChange::Constructs(c) => {
+                assert_eq!(c.len(), 1);
+                assert_eq!(c[0].kind, ConstructKind::TunableLet);
+            }
+            other => panic!("{other:?}"),
+        }
+        // A `var` and a hint inside arithmetic are not settings.
+        for (a, b, kind) in [
+            ("var N = tunable(1)\nset N = 2\n", "var N = tunable(1.5)\nset N = 2\n", ConstructKind::Var),
+            ("let N = tunable(1) * 2\n", "let N = tunable(1.5) * 2\n", ConstructKind::Let),
+        ] {
+            match change(a, b) {
+                SourceChange::Constructs(c) => assert_eq!(c[0].kind, kind, "{a}"),
+                other => panic!("{a}: {other:?}"),
+            }
         }
     }
 

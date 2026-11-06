@@ -644,6 +644,12 @@ public:
     bool set_value(const std::string& path, const std::string& value_json) {
         return pb_source_set_value(s_, path.c_str(), value_json.c_str()) == PB_OK;
     }
+    // Set the setting `name` (`let NAME = tunable(v, ...)`): only `v` changes
+    // (pb_source_set_setting). False, with error() saying why, when `name` is
+    // not a setting or the value cannot be written.
+    bool set_setting(const std::string& name, const std::string& value_json) {
+        return pb_source_set_setting(s_, name.c_str(), value_json.c_str()) == PB_OK;
+    }
     // Insert so that `path` names the new value: a list index ("xs[0]"), or a
     // record field ("POST.bloom"), placed before the field `before` or last.
     bool insert(const std::string& path, const std::string& value_json, const std::string& before = {}) {
@@ -984,24 +990,30 @@ public:
         int k = pb_vm_last_reload_kind(vm_);
         return k < 0 ? PB_RELOAD_RECOMPILED : static_cast<pb_reload_kind>(k);
     }
-    // What the last reload or set_config did, as JSON ("" before the first).
+    // What the last reload or set_tunable did, as JSON ("" before the first).
     std::string last_reload_json() {
         const char* s = pb_vm_last_reload_json(vm_);
         return s ? s : "";
     }
-    // Set one config value in the running program without writing the file
-    // (pb_vm_set_config). Returns false when the value needs a reload instead
-    // (a different type or shape); throws for a bad path, file or JSON.
-    bool set_config(const std::string& path, const std::string& value_json,
-                    const std::string& file = {}) {
-        pb_status st = pb_vm_set_config(vm_, file.empty() ? nullptr : file.c_str(), path.c_str(),
-                                        value_json.c_str());
+    // Set one value of a top-level binding (a setting's, usually) in the
+    // running program without writing the file (pb_vm_set_tunable). Returns
+    // false when the value needs a reload instead (a different type or
+    // shape); throws for a bad path, file or JSON.
+    bool set_tunable(const std::string& path, const std::string& value_json,
+                     const std::string& file = {}) {
+        pb_status st = pb_vm_set_tunable(vm_, file.empty() ? nullptr : file.c_str(), path.c_str(),
+                                         value_json.c_str());
         if (st == PB_ERR_NEEDS_RELOAD) return false;
         check(st);
         return true;
     }
+    [[deprecated("use set_tunable")]]
+    bool set_config(const std::string& path, const std::string& value_json,
+                    const std::string& file = {}) {
+        return set_tunable(path, value_json, file);
+    }
     // The text the running program holds for a source file ("" = the entry
-    // file), every set_config included.
+    // file), every set_tunable included.
     std::string source_text(const std::string& file = {}) {
         const char* s = pb_vm_source_text(vm_, file.empty() ? nullptr : file.c_str());
         if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_FOUND);

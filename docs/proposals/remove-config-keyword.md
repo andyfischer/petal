@@ -1,8 +1,9 @@
 # Proposal: remove the `config` keyword in favour of `tunable(...)`
 
-Status: Phase 1 implemented 6 November 2026 (see
-[Implementation notes](#implementation-notes-phase-1-6-november-2026));
-phases 2 to 5 proposed. This revisits
+Status: Phases 1 and 2 implemented 6 November 2026 (see
+[Phase 1 notes](#implementation-notes-phase-1-6-november-2026) and
+[Phase 2 notes](#implementation-notes-phase-2-6-november-2026));
+phases 3 to 5 proposed. This revisits
 [config-let-vs-tunable.md](config-let-vs-tunable.md), where removal was
 rejected on 24 October 2026 and design E (`config let X = tunable(…)`
 composing) was built. The owner now wants removal. This plan answers each
@@ -719,10 +720,56 @@ Phase 1 shipped additively; `config let` is untouched and means what it did.
   `tunable(2.5, max: 5)`, which was already an error before this change.
 - **Unchanged until later phases:**
   - `ConstructKind::ConfigLet` stays as it is, and a `tunable` setting's
-    construct kind stays `Let`;
+    construct kind stays `Let` (Phase 2 added `TunableLet`);
   - `DeclKind::ConfigLet` keeps the `"config let"` label for every setting;
   - Garden's `CandState::Config` keeps its `"config"` label (nested
     setting literals now show as `tunable` through the widened hint);
   - the `"config"` tag in propose-edit's text output.
 - **DM v1 needed no change.** Settings' terms carry `is_config`, which v1's
   `apply_policy` already reads.
+
+## Implementation notes (Phase 2, 6 November 2026)
+
+Phase 2 is additive: every key and function a host used before is still
+there, so a re-vendor changes nothing for Cheesecake or worlds-fair.
+
+**What was built:**
+- **`"tunable"` in `pb_source_bindings_json`** (`source.rs::bindings_json`).
+  It is present exactly when the binding is a setting (`StaticBinding.is_config`,
+  which Phase 1 made "is a setting"), so `"config"` is true exactly when
+  it is present. It holds `min`/`max`/`step` from the range and `options`
+  as values in the bindings' JSON, each key only when written. A
+  `config let X = v` gets `"tunable": {}`. `"range"` is unchanged.
+- **`pb_source_set_setting(s, name, value_json)`**: `pb_source_set_value`
+  with the name as the path, after checking the last binding of `name` is a
+  setting (`PB_ERR_INVALID_ARG` if not, `PB_ERR_NOT_FOUND` if unbound). C++
+  `Source::set_setting`.
+- **`pb_vm_set_tunable`** and Rust `Vm::set_tunable`. `pb_vm_set_config`
+  and `Vm::set_config` call them. The C++ `Vm::set_config` is
+  `[[deprecated("use set_tunable")]]`; the C function and the Rust method
+  are deprecated in their docs only, so no vendored build gains a warning
+  from them.
+- **Reload report:** `values[].tunable` beside `config` (the same value),
+  and `constructs[].kind` `"tunable let"`, from a new
+  `source_diff::ConstructKind::TunableLet`: a non-`var`, non-`const`
+  top-level `let` that `is_setting` accepts without the keyword. Changing
+  `let X = 1` to `let X = tunable(1)` when statements were also added or
+  removed is therefore a remove plus an add, the same as gaining `config`
+  is today.
+- **Docs:** a "Tunables" section in `include/petal_bridge.h` (after the
+  bindings overview) and the `pb_source_set_setting` entry; "Tunables and
+  settings" in `docs/usage/embedding-c.md`, replacing the `config let` /
+  `"range"` bullets; the C name renamed in `hot-reload.md`,
+  `program-modification.md`, `Builtins.md`, `config-let.md` and the bridge
+  README. `Env::set_config_value` (Rust core) keeps its name until Phase 3.
+- **Tests:** `source::tests` (the section with mirrors for a string with
+  options, a bool, a record, a `config let`, a plain `let` and a `var`;
+  `set_setting`), `vm::tests::a_tunable_setting_is_set_and_reported_as_tunable`,
+  `source_diff` (`TunableLet`, not for a `var` or arithmetic), and
+  `bridge_tests.cpp::tunable_settings_have_a_tunable_section_and_set_by_name`.
+  The existing C++ tests use `set_tunable`.
+
+**Not done here (outside this repo):** re-vendoring into Cheesecake and
+worlds-fair, and dropping Cheesecake's `6e124ec` hand patch. After a
+re-vendor, Cheesecake's `script_host.cpp:908` (`s.vm.set_config(...)`) gets
+a deprecation warning; renaming it to `set_tunable` is a one-line change.

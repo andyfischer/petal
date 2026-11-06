@@ -1,0 +1,48 @@
+// Rotary dial with declarative dragging (ui/drag): `vary`.
+//
+// The model is one angle. The view puts the knob on a circle at that angle;
+// nothing in the app turns a pointer position back into an angle. `vary`
+// solves for the angle that puts the knob under the pointer, one solver
+// step per frame, by rendering the view hypothetically. The knob's position
+// is built from the angle with plain arithmetic, so the solver can use
+// dual numbers for the exact derivative (`sensitivity: "dual"`); a view
+// that goes through `rect()` or rounding would leave that option out and
+// get forward differences.
+import ui
+import ui/drag
+
+let C = {x: 180, y: 170}
+let R = 100
+let KNOB = 16
+
+state dial = {angle: 0.0}
+state turns = 0
+
+fn knob_at(a)
+  {x: C.x + cos(a) * R - KNOB, y: C.y + sin(a) * R - KNOB, w: 2 * KNOB, h: 2 * KNOB}
+end
+
+fn view(dial)
+  draw_circle_outline(C, R, #5a6070, 255, 4)
+  for i in range(12) do
+    let t = i * 2 * pi() / 12
+    draw_line({x: C.x + cos(t) * (R - 14), y: C.y + sin(t) * (R - 14)},
+      {x: C.x + cos(t) * (R - 4), y: C.y + sin(t) * (R - 4)}, #8a8f9c, 255, 2)
+  end
+  let k = place("knob", knob_at(dial.angle))
+  draggable("knob", k, fn() vary(dial, ["angle"], {sensitivity: "dual"}) end)
+  let mid = {x: k.x + KNOB, y: k.y + KNOB}
+  draw_line(C, mid, #f0b429, 255, 3)
+  draw_circle(mid, KNOB, #f0b429)
+  nil
+end
+
+let d = drag_session(dial, view)
+view(d.preview)
+let deg = int(round(degrees(d.preview.angle))) % 360
+draw_text("{(deg + 360) % 360}°", C.x - 16, C.y - 8, 18, #e8eaf0)
+draw_text("Drag the knob around the dial.", 16, 16, 14, #c8ccd8)
+if d.dropped then
+  dial = d.drop
+  turns += 1
+end

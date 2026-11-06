@@ -1,0 +1,114 @@
+// Scheduler (paper §4) with declarative dragging (ui/drag): `between` and
+// `vary`.
+//
+// The model is a list of meetings, each with a start, an end (minutes after
+// 8:00) and a room. The view draws each room as a track and each meeting as
+// a bar on its room's track. Two drags, both written as what they change:
+//
+// - Dragging a bar changes its room. Its states are the meeting in every
+//   room (`choices`), and `between` lets the bar slide along the line those
+//   renderings make — up and down, never sideways, since a room change does
+//   not move it in time — and drop into the nearest room.
+// - Dragging a bar's end handle changes that time. Time is continuous, so
+//   `vary` solves for the number at ["meetings", i, "start"] (or "end")
+//   that puts the handle under the pointer, refusing a step that would make
+//   the meeting shorter than MIN_LEN or leave the day; `on_drop` rounds the
+//   time to five minutes.
+//
+// Meetings that overlap in one room are drawn red: the puzzle is to use as
+// few rooms as possible without a clash.
+import ui
+import ui/drag
+
+let ROOMS = 3
+let DAY = 600
+let MIN_LEN = 30
+let X0 = 70
+let PX = 1.0
+let TRACK_Y = 70
+let TRACK_H = 56
+let BAR_H = 36
+let HANDLE_W = 10
+let COLORS = [#64b5f6, #81c784, #ffb74d, #ba68c8, #4dd0e1]
+
+state sched = {meetings: [
+  {id: "standup", start: 30, end: 90, room: 0},
+  {id: "review", start: 60, end: 180, room: 1},
+  {id: "lunch", start: 240, end: 300, room: 0},
+  {id: "design", start: 150, end: 270, room: 2},
+  {id: "retro", start: 420, end: 510, room: 1}]}
+state edits = 0
+
+fn time_x(t)
+  X0 + t * PX
+end
+
+fn bar_rect(m)
+  rect(time_x(m.start), TRACK_Y + m.room * TRACK_H + (TRACK_H - BAR_H) / 2, (m.end - m.start) * PX, BAR_H)
+end
+
+// A meeting clashes when another in its room overlaps it.
+fn clashes(ms, i)
+  let m = ms[i]
+  any(range(len(ms)), fn(j) j != i && ms[j].room == m.room && ms[j].start < m.end && m.start < ms[j].end end)
+end
+
+fn round5(s, i)
+  let m = s.meetings[i]
+  set_in(set_in(s, ["meetings", i, "start"], int(round(m.start / 5) * 5)), ["meetings", i, "end"], int(round(m.end / 5) * 5))
+end
+
+// Dragging one end of meeting i: vary that time, keep the meeting at least
+// MIN_LEN long and inside the day.
+fn end_spec(s, i, field)
+  let ok = fn(st)
+    let m = st.meetings[i]
+    m.start >= 0 && m.end <= DAY && m.end - m.start >= MIN_LEN
+  end
+  vary(s, ["meetings", i, field], {constraint: ok}) |> on_drop(fn(st) round5(st, i) end)
+end
+
+fn view(s)
+  for r in range(ROOMS) do
+    let y = TRACK_Y + r * TRACK_H
+    draw_rect(X0, y + 2, DAY * PX, TRACK_H - 4, #262931)
+    draw_text("Room {r + 1}", 10, y + TRACK_H / 2 - 7, 13, #8a8f9c)
+  end
+  for h in range(0, DAY + 1, 60) do
+    draw_line({x: time_x(h), y: TRACK_Y - 6}, {x: time_x(h), y: TRACK_Y + ROOMS * TRACK_H}, #3a3e48, 255, 1)
+    draw_text("{8 + h / 60}:00", time_x(h) - 14, TRACK_Y - 24, 12, #8a8f9c)
+  end
+  let ms = s.meetings
+  for i in range(len(ms)) key ms[i].id do
+    let m = ms[i]
+    let r = place(m.id, bar_rect(m))
+    // The bar's grip is between its end handles.
+    let grip = rect(r.x + HANDLE_W + 4, r.y, max(r.w - 2 * HANDLE_W - 8, 4), r.h)
+    draggable(m.id, grip, fn() between(choices(s, ["meetings", i, "room"], range(ROOMS))) end)
+    let c = if clashes(ms, i) then #e57373 else COLORS[i % len(COLORS)] end
+    place(m.id, r, fn(p)
+      draw_rect_rounded(p, 5, c)
+      draw_text(m.id, p.x + HANDLE_W + 4, p.y + 11, 13, #1e1e24)
+    end)
+    // The end handles, inset into the bar.
+    for field in ["start", "end"] key field do
+      let hx = if field == "start" then r.x + 2 else r.x + r.w - HANDLE_W - 2 end
+      let hk = "{m.id}:{field}"
+      let hr = place(hk, rect(hx, r.y + 4, HANDLE_W, BAR_H - 8))
+      draggable(hk, hr, fn() end_spec(s, i, field) end)
+      draw_rect_rounded(hr, 3, #1e1e24, 120)
+    end
+  end
+  nil
+end
+
+clear(24, 24, 32)
+let d = drag_session(sched, view)
+view(d.preview)
+let used = len(filter(range(ROOMS), fn(r) any(d.preview.meetings, fn(m) m.room == r end) end))
+let bad = any(range(len(d.preview.meetings)), fn(i) clashes(d.preview.meetings, i) end)
+draw_text("Rooms in use: {used}" ++ (if bad then "  (clash)" else "" end), 10, 20, 14, #c8ccd8)
+if d.dropped && d.drop != sched then
+  sched = d.drop
+  edits += 1
+end

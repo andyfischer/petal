@@ -24,6 +24,7 @@
 //! `k ≤ 32` unknowns, no new dependency.
 
 use crate::dm::jacobian::{FdOptions, Jacobian, jacobian};
+use crate::dm::lever::{Lever, TermLever};
 use crate::dm::params::{Param, RunBudget};
 use crate::dm::spec::{Overrides, RunError, SpecHost, SpecRun, SpecSession};
 use crate::dm::hints::Hint;
@@ -465,12 +466,13 @@ impl Default for SolveOptions {
 }
 
 /// What a request's solves share: the session, the parameters, the
-/// Jacobian measured at the baseline and the goals.
-pub struct SolveCtx<'a> {
+/// Jacobian measured at the baseline and the goals. Generic over the lever
+/// ([`TermLever`]); DM v2's is the source literal, [`Param`].
+pub struct SolveCtx<'a, L: TermLever = Param> {
     pub session: &'a mut SpecSession,
     pub env: &'a mut Env,
     pub host: &'a mut dyn SpecHost,
-    pub params: &'a [Param],
+    pub params: &'a [L],
     pub jac: &'a Jacobian,
     /// The baseline value of every Jacobian row.
     pub base_rows: Vec<Option<f64>>,
@@ -541,7 +543,7 @@ pub struct Solution {
     pub local: Vec<Vec<f64>>,
 }
 
-impl SolveCtx<'_> {
+impl<L: TermLever> SolveCtx<'_, L> {
     fn log(&mut self, line: impl FnOnce() -> String) {
         if let Some(log) = self.log.as_deref_mut() {
             log.push(line());
@@ -550,7 +552,7 @@ impl SolveCtx<'_> {
 
     /// The written value of column `c` at the baseline.
     pub fn base_value(&self, c: usize) -> f64 {
-        self.params[self.jac.params[c]].value
+        self.params[self.jac.params[c]].value()
     }
 
     /// The overrides that set `cols` to `values` (as written).
@@ -558,8 +560,8 @@ impl SolveCtx<'_> {
         let mut ov = Overrides::none();
         for (&c, &v) in cols.iter().zip(values) {
             let p = &self.params[self.jac.params[c]];
-            if v != p.value || !p.is_int {
-                ov = ov.with(p.term, p.override_for(v));
+            if v != p.value() || !p.is_int() {
+                ov = ov.with(p.term(), p.override_for(v));
             }
         }
         ov
@@ -741,7 +743,7 @@ pub fn written_decimals(text: &str) -> Option<u32> {
 /// The values a parameter may be rounded to, nicest first (§2.4.4): an int
 /// if it was one, then its own decimals, then 0 to 6 decimals, then the
 /// value itself (to 9 decimals).
-pub fn ladder(v: f64, p: &Param, text: &str, bound: &Bound, allow_respell: bool) -> Vec<f64> {
+pub fn ladder(v: f64, p: &impl Lever, text: &str, bound: &Bound, allow_respell: bool) -> Vec<f64> {
     let mut out: Vec<f64> = Vec::new();
     let mut push = |x: f64| {
         let x = bound.project(x);
@@ -749,7 +751,7 @@ pub fn ladder(v: f64, p: &Param, text: &str, bound: &Bound, allow_respell: bool)
             out.push(x);
         }
     };
-    if p.is_int {
+    if p.is_int() {
         push(v.round());
         if !allow_respell || bound.int {
             return out;
@@ -773,7 +775,7 @@ pub struct Rounded {
     pub rows: Vec<Option<f64>>,
 }
 
-impl SolveCtx<'_> {
+impl<L: TermLever> SolveCtx<'_, L> {
     /// Round `sol` to nice literals (§2.4.4): pick, per parameter, the
     /// nicest ladder value the linear model says keeps every goal within
     /// tolerance, and run them jointly; when that misses, round one
@@ -787,8 +789,8 @@ impl SolveCtx<'_> {
             .enumerate()
             .map(|(i, &c)| {
                 let p = &self.params[self.jac.params[c]];
-                if sol.values[i] == p.value {
-                    vec![p.value]
+                if sol.values[i] == p.value() {
+                    vec![p.value()]
                 } else {
                     ladder(sol.values[i], p, &texts[i], &self.bounds[c], self.opts.fd.allow_respell)
                 }

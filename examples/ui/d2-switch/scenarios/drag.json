@@ -1,0 +1,6 @@
+{"size": [360, 300], "frames": 50,
+ "events": [
+  {"at": 2, "mouse_move": [90, 230]}, {"at": 3, "mouse_down": 0},
+  {"at": 5, "mouse_move": [100, 225]}, {"at": 8, "mouse_move": [150, 200]},
+  {"at": 11, "mouse_move": [190, 160]}, {"at": 14, "mouse_move": [300, 150]},
+  {"at": 17, "mouse_move": [200, 110]}, {"at": 20, "mouse_up": 0}]}

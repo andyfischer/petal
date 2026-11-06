@@ -16,6 +16,8 @@
 //!   eligibility, empirical screening).
 //! - [`jacobian`] (M2): finite-difference sensitivities, with each column
 //!   classified (smooth, kink, branch flip, step, discrete).
+//! - [`lever`]: what a solve moves — the [`Lever`](lever::Lever) trait, with
+//!   the source literal (`Param`) and `ui/drag`'s path lever.
 //! - [`solve`] (M3): the constrained Gauss-Newton step, the verification
 //!   loop and rounding to nice literals.
 //! - [`rank`] (M3): parameter weights, candidate subsets, measured
@@ -29,6 +31,7 @@
 pub mod api;
 pub mod hints;
 pub mod jacobian;
+pub mod lever;
 pub mod observe;
 pub mod params;
 pub mod rank;
@@ -42,6 +45,7 @@ pub use api::{
     propose_edits_v2,
 };
 pub use rank::SubsetKind;
+pub use lever::{Lever, LiteralLever, PathLever, TermLever, lever_step};
 
 pub use hints::{Hint, HintKind, Hints, read_hints};
 pub use jacobian::{ColumnQuality, FdMode, FdOptions, Jacobian, Side, collateral_rows, jacobian};

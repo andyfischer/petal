@@ -1804,6 +1804,55 @@ Inside a speculative call, appends `{key, value}` to its `places`; returns
 `value` either way. The key must be one a `for … key` loop accepts (not a
 function, a cell, a pending value or NaN).
 
+## Drag Math
+
+The numeric half of `ui/drag`'s `between` and `vary`
+([drag guide](../core-libs/petal-ui/docs/drag.md#continuous-drags-between-and-vary)).
+The drag engine renders its candidate states in Petal (a native cannot call
+a Petal function) and hands these only numbers. Each reads nothing but its
+arguments.
+
+### `drag_triangulate(points)`
+
+A Delaunay triangulation of `points` (`[[x, y], …]`), as `[[i, j, k], …]`
+point indices, each triangle counter-clockwise. A point equal to an earlier
+one is left out; fewer than three distinct points, or all on one line, give
+`[]`.
+
+### `drag_weights(points, tris, x, y)`
+
+One weight per point for `(x, y)`, summing to 1: the barycentric weights in
+the triangle of `tris` that holds it. A point outside every triangle is
+first moved to the nearest point of their edges (clamped to the hull). With
+no triangles — two points, or points on a line — it is the projection onto
+the nearest segment between neighbours along the line.
+
+```petal
+let pts = [[0, 0], [100, 0], [0, 100]]
+let tris = drag_triangulate(pts)
+print(tris)                                  // [[0, 1, 2]]
+print(drag_weights(pts, tris, 25, 25))       // [0.5, 0.25, 0.25]
+print(drag_weights(pts, tris, 50, -40))      // [0.5, 0.5, 0.0]
+print(drag_weights([[0, 0], [100, 0]], [], 25, 30))  // [0.75, 0.25]
+```
+
+### `drag_solve_step(values, rows, targets, jac, bounds, scale)`
+
+One Gauss-Newton step of the direct-manipulation solver (`core/src/dm`) for
+the levers `values` (`k` numbers): `rows` are the goals' current values and
+`targets` where they should be (`m` each; for a dragged point, its `[x, y]`
+and the pointer's), `jac` is `m` rows of `k` sensitivities, `bounds` is nil
+or one `[lo, hi]` (or nil; either end may be nil) per lever, and `scale`
+shortens the step (1 for a full one). Returns the next values, each clamped
+into its bounds. When the levers outnumber the goals, the step moves each in
+proportion to its size.
+
+```petal
+// y = 2·v, now 2 at v = 1; the pointer wants y = 10
+print(drag_solve_step([1.0], [2.0], [10.0], [[2.0]], nil, 1))       // [5.0]
+print(drag_solve_step([1.0], [2.0], [10.0], [[2.0]], [[0, 3]], 1))  // [3.0]
+```
+
 ## Assertions
 
 Assertions stop the program with a message and source location when their

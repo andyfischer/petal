@@ -1,0 +1,9 @@
+{"size": [700, 260], "frames": 70,
+ "events": [
+  {"at": 2, "mouse_move": [145, 165]}, {"at": 3, "mouse_down": 0},
+  {"at": 5, "mouse_move": [148, 160]}, {"at": 8, "mouse_move": [160, 140]},
+  {"at": 11, "mouse_move": [170, 112]}, {"at": 14, "mouse_up": 0},
+  {"at": 30, "mouse_move": [575, 154]}, {"at": 31, "mouse_down": 0},
+  {"at": 33, "mouse_move": [585, 154]}, {"at": 36, "mouse_move": [620, 150]},
+  {"at": 39, "mouse_move": [651, 150]}, {"at": 42, "mouse_move": [700, 150]},
+  {"at": 48, "mouse_up": 0}]}

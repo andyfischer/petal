@@ -98,6 +98,10 @@ builtin_effects![
     // empty path answers `v` itself, so neither is FRESH or NO_REF.
     ("get_in", PURE),
     ("set_in", PURE),
+    // `ui/drag`'s drag math: each builds new lists of numbers.
+    ("drag_triangulate", FRESH | NO_REF | PURE),
+    ("drag_weights", FRESH | NO_REF | PURE),
+    ("drag_solve_step", FRESH | NO_REF | PURE),
     // character-indexed strings: each builds a brand-new string or list, and
     // strings are immutable, so nothing aliases the argument afterwards.
     ("chars", FRESH | NO_REF | PURE),
@@ -364,6 +368,9 @@ mod tests {
                 "__record_of",
                 "chars",
                 "concat",
+                "drag_solve_step",
+                "drag_triangulate",
+                "drag_weights",
                 "entries",
                 "enumerate",
                 "f64_array",
@@ -402,6 +409,9 @@ mod tests {
                 "commas",
                 "concat",
                 "contains",
+                "drag_solve_step",
+                "drag_triangulate",
+                "drag_weights",
                 "ends_with",
                 "entries",
                 "enumerate",
@@ -480,6 +490,9 @@ mod tests {
                 "deriv_of",
                 "distance",
                 "dot",
+                "drag_solve_step",
+                "drag_triangulate",
+                "drag_weights",
                 "drop",
                 "drop_last",
                 "ends_with",

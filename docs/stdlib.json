@@ -12,12 +12,6 @@
   ],
   "categories": [
     {
-      "id": "paths",
-      "title": "paths",
-      "group": "core",
-      "doc": "`get_in(value, path)` and `set_in(value, path, v)`: reading and replacing a value nested inside records, lists and maps, with the path given as data.  `set_in` is the expression form of a path assignment: `set_in(st, [\"meetings\", 2, \"room\"], 3)` is the value `st` would hold after `st.meetings[2].room = 3`, and `st` itself is unchanged (value semantics). It exists for code that builds many candidate states from one model — a drag library's `moves`, a solver's levers — where a `for` loop rebinding a copy is easy to get wrong (docs/proposals/declarative-dragging.md, P3).  Each step is a field name (a string) or a list index (an int; negative counts from the end), or any key for a `Map`. Every step goes through the same `ops::get_index` / `ops::set_index` the `x[k]` and `x[k] = v` forms use, so the two cannot drift apart. An error names the step that failed, both by its position and as the path written in Petal syntax up to it."
-    },
-    {
       "id": "io",
       "title": "I/O & Types",
       "group": "core",
@@ -118,6 +112,18 @@
       "title": "Direct-Manipulation Hints",
       "group": "core",
       "doc": "Direct-manipulation hints: `tunable` and `rigid` (docs/proposals/dm-v2-hints.md, docs/dev/direct-manipulation-v2-plan.md §2.6).  Both are the identity on their first argument at run time: a dual number passes through unchanged, and the bounds of `tunable` are evaluated by the call and ignored. What they mean is static: `crate::dm::hints` reads them from the IR to decide which literals a drag may move. In a speculative run the gate (`vm::native::call_native_spec`) replays the baseline's answer of `rigid`, so nothing upstream of it receives feedback through it."
+    },
+    {
+      "id": "paths",
+      "title": "Nested Paths",
+      "group": "core",
+      "doc": "`get_in(value, path)` and `set_in(value, path, v)`: reading and replacing a value nested inside records, lists and maps, with the path given as data.  `set_in` is the expression form of a path assignment: `set_in(st, [\"meetings\", 2, \"room\"], 3)` is the value `st` would hold after `st.meetings[2].room = 3`, and `st` itself is unchanged (value semantics). It exists for code that builds many candidate states from one model — a drag library's `moves`, a solver's levers — where a `for` loop rebinding a copy is easy to get wrong (docs/proposals/declarative-dragging.md, P3).  Each step is a field name (a string) or a list index (an int; negative counts from the end), or any key for a `Map`. Every step goes through the same `ops::get_index` / `ops::set_index` the `x[k]` and `x[k] = v` forms use, so the two cannot drift apart. An error names the step that failed, both by its position and as the path written in Petal syntax up to it."
+    },
+    {
+      "id": "drag_math",
+      "title": "Drag Math",
+      "group": "core",
+      "doc": "The numeric half of `ui/drag`'s `between` and `vary` (docs/proposals/declarative-dragging.md, P2). The drag engine is Petal code, and a native cannot call a Petal closure, so the speculative runs happen in Petal and only numbers come here:  - `drag_triangulate(points)`: a Delaunay triangulation of `[[x, y], …]`, as `[[i, j, k], …]` (counter-clockwise) — `between` over 3+ targets. - `drag_weights(points, tris, x, y)`: the barycentric weights of `(x, y)` over that triangulation, one per point, clamped to the hull (a point outside is first moved to the nearest point of the hull). With no triangles — 2 points, or all on a line — the weights are the linear projection onto the nearest segment between neighbours on the line. - `drag_solve_step(values, rows, targets, jac, bounds, scale)`: one Gauss-Newton step for `vary`'s levers ([`crate::dm::lever_step`], the DM v2 solver's `goal_step` and `Bound::project`)."
     },
     {
       "id": "drawing",
@@ -2165,7 +2171,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 686
+        "line": 695
       }
     },
     {
@@ -2198,7 +2204,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 686
+        "line": 695
       },
       "aliasOf": "map"
     },
@@ -2240,7 +2246,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 686
+        "line": 695
       },
       "aliasOf": "map"
     },
@@ -2274,7 +2280,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 686
+        "line": 695
       },
       "aliasOf": "map"
     },
@@ -3215,7 +3221,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 686
+        "line": 695
       },
       "aliasOf": "map"
     },
@@ -3986,7 +3992,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 686
+        "line": 695
       },
       "aliasOf": "map"
     },
@@ -4012,7 +4018,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 686
+        "line": 695
       },
       "aliasOf": "map"
     },
@@ -4653,7 +4659,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 686
+        "line": 695
       },
       "aliasOf": "map"
     },
@@ -4687,7 +4693,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 686
+        "line": 695
       },
       "aliasOf": "map"
     },
@@ -4721,7 +4727,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 686
+        "line": 695
       },
       "aliasOf": "map"
     },
@@ -4889,7 +4895,7 @@
       "signatures": [],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 686
+        "line": 695
       },
       "aliasOf": "map"
     },
@@ -4905,7 +4911,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 686
+        "line": 695
       },
       "aliasOf": "map"
     },
@@ -4939,7 +4945,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 686
+        "line": 695
       },
       "aliasOf": "map"
     },
@@ -5015,6 +5021,145 @@
       "source": {
         "file": "core/src/builtins/paths.rs",
         "line": 115
+      }
+    },
+    {
+      "name": "drag_triangulate",
+      "category": "drag_math",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "points",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "points",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/drag_math.rs",
+        "line": 215
+      }
+    },
+    {
+      "name": "drag_weights",
+      "category": "drag_math",
+      "group": "core",
+      "arity": 4,
+      "variadic": false,
+      "params": [
+        {
+          "name": "points",
+          "type": "any"
+        },
+        {
+          "name": "tris",
+          "type": "any"
+        },
+        {
+          "name": "x",
+          "type": "any"
+        },
+        {
+          "name": "y",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "points",
+            "type": "any"
+          },
+          {
+            "name": "tris",
+            "type": "any"
+          },
+          {
+            "name": "x",
+            "type": "any"
+          },
+          {
+            "name": "y",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/drag_math.rs",
+        "line": 227
+      }
+    },
+    {
+      "name": "drag_solve_step",
+      "category": "drag_math",
+      "group": "core",
+      "arity": 6,
+      "variadic": false,
+      "params": [
+        {
+          "name": "values",
+          "type": "any"
+        },
+        {
+          "name": "rows",
+          "type": "any"
+        },
+        {
+          "name": "targets",
+          "type": "any"
+        },
+        {
+          "name": "jac",
+          "type": "any"
+        },
+        {
+          "name": "bounds",
+          "type": "any"
+        },
+        {
+          "name": "scale",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "values",
+            "type": "any"
+          },
+          {
+            "name": "rows",
+            "type": "any"
+          },
+          {
+            "name": "targets",
+            "type": "any"
+          },
+          {
+            "name": "jac",
+            "type": "any"
+          },
+          {
+            "name": "bounds",
+            "type": "any"
+          },
+          {
+            "name": "scale",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/drag_math.rs",
+        "line": 262
       }
     },
     {
@@ -8652,7 +8797,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 712
+        "line": 749
       }
     },
     {
@@ -8667,7 +8812,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 760
+        "line": 797
       }
     },
     {
@@ -8692,7 +8837,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 727
+        "line": 764
       }
     },
     {
@@ -8707,7 +8852,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 764
+        "line": 801
       }
     },
     {
@@ -8722,7 +8867,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 768
+        "line": 805
       }
     },
     {
@@ -8747,7 +8892,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 772
+        "line": 809
       }
     },
     {
@@ -8772,7 +8917,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 779
+        "line": 816
       }
     },
     {
@@ -8797,7 +8942,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 786
+        "line": 823
       }
     },
     {
@@ -8812,7 +8957,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 793
+        "line": 830
       }
     },
     {
@@ -8827,7 +8972,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 797
+        "line": 834
       }
     },
     {
@@ -8852,7 +8997,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 801
+        "line": 845
       }
     },
     {
@@ -8877,7 +9022,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 808
+        "line": 852
       }
     },
     {
@@ -8902,7 +9047,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 815
+        "line": 859
       }
     },
     {
@@ -8917,7 +9062,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 822
+        "line": 866
       }
     },
     {
@@ -8932,7 +9077,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 826
+        "line": 870
       }
     },
     {
@@ -8947,7 +9092,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 830
+        "line": 874
       }
     },
     {
@@ -8962,7 +9107,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 834
+        "line": 878
       }
     },
     {
@@ -8977,7 +9122,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 838
+        "line": 882
       }
     },
     {
@@ -8992,7 +9137,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 842
+        "line": 886
       }
     },
     {
@@ -9007,7 +9152,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 846
+        "line": 890
       }
     },
     {
@@ -9022,7 +9167,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 850
+        "line": 894
       }
     },
     {
@@ -9037,7 +9182,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 854
+        "line": 898
       }
     },
     {
@@ -9052,7 +9197,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 863
+        "line": 907
       }
     },
     {
@@ -9067,7 +9212,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 870
+        "line": 914
       }
     },
     {
@@ -9082,7 +9227,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 877
+        "line": 921
       }
     },
     {
@@ -9097,7 +9242,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 886
+        "line": 930
       }
     },
     {
@@ -9112,7 +9257,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 892
+        "line": 936
       }
     },
     {
@@ -9127,7 +9272,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 896
+        "line": 940
       }
     },
     {
@@ -9142,7 +9287,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 900
+        "line": 944
       }
     },
     {
@@ -9157,7 +9302,32 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 904
+        "line": 948
+      }
+    },
+    {
+      "name": "ui_debug",
+      "category": "input",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "name",
+            "type": "string"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core-libs/petal-ui/src/input.rs",
+        "line": 838
       }
     }
   ]

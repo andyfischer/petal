@@ -315,12 +315,17 @@ fn ambiguous_targets_warn_once_and_closest_takes_the_first() {
 }
 
 #[test]
-fn between_and_vary_are_not_yet_available() {
+fn between_blends_every_key_and_drops_on_the_heaviest() {
+    // A's five states lie on a line (slot centres y = 60, 110, …). With A's
+    // centre at y = 130, it is 40% of the way from slot 1 to slot 2: A is
+    // drawn at 0.6·90 + 0.4·140 = 110 and C, which swaps with it, at
+    // 0.6·140 + 0.4·90 = 120, both at once; the drop is slot 1's state.
+    // (More in tests/drag_p2.rs.)
     let mut h = list_app("between(moves(items, i))", "");
-    press_and_move(&mut h, 100, 60, &[]);
-    h.mouse_move(110, 90);
-    let err = h.frame().unwrap_err();
-    assert!(err.contains("`between` is not yet available"), "{err}");
+    press_and_move(&mut h, 100, 60, &[(100, 90), (100, 130)]);
+    assert_eq!(state(&h, "ys"), json!([110, 40, 120, 190, 240]));
+    release(&mut h);
+    assert_eq!(state(&h, "items"), json!(["B", "A", "C", "D", "E"]));
 }
 
 #[test]

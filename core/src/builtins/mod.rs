@@ -15,6 +15,7 @@ mod classes;
 mod collections;
 mod color;
 mod creative_coding;
+mod drag_math;
 mod effects;
 mod format;
 mod handle;
@@ -655,6 +656,14 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("get_in", paths::native_get_in, NativeEffects::CONST);
     table.register("set_in", paths::native_set_in, NativeEffects::CONST);
 
+    // The numeric half of `ui/drag`'s `between` and `vary`
+    // (`builtins/drag_math.rs`): a Delaunay triangulation, barycentric
+    // weights clamped to the hull, and one Gauss-Newton step of the DM v2
+    // solver. Each reads only its arguments. Append-only.
+    table.register("drag_triangulate", drag_math::native_drag_triangulate, NativeEffects::CONST);
+    table.register("drag_weights", drag_math::native_drag_weights, NativeEffects::CONST);
+    table.register("drag_solve_step", drag_math::native_drag_solve_step, NativeEffects::CONST);
+
     // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
     // ids they were just given.
     for op in crate::backend::bytecode::isa::IntrinsicOp::ALL {
@@ -797,6 +806,9 @@ mod effect_tests {
             "deriv_of",
             "distance",
             "dot",
+            "drag_solve_step",
+            "drag_triangulate",
+            "drag_weights",
             "drop_last",
             "dual",
             "ends_with",

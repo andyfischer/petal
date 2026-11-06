@@ -161,6 +161,8 @@ const CATEGORY_TITLES: Record<string, string> = {
   handle: "Handles",
   pending: "Async & Query Values",
   hints: "Direct-Manipulation Hints",
+  paths: "Nested Paths",
+  drag_math: "Drag Math",
   drawing: "Drawing",
   input: "Input & Timing",
 };

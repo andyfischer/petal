@@ -1,0 +1,50 @@
+// Three-way switch with declarative dragging (ui/drag): `between`.
+//
+// The model is which of three positions the switch is in. The view draws
+// the knob at that position, in that position's colour, over a background
+// of that colour. Dragging the knob reaches all three states, and `between`
+// lets it slide anywhere inside the triangle they make, stopping at its
+// edges: the knob's rect and both colours are blended from the three
+// renderings by the knob's barycentric weights. Letting go settles on the
+// position with the largest weight.
+import ui
+import ui/drag
+
+let SPOTS = {off: {x: 90, y: 230}, low: {x: 270, y: 230}, high: {x: 180, y: 80}}
+let COLORS = {off: #8a8f9c, low: #f0b429, high: #4caf50}
+let BG = {off: #2a2c33, low: #3a3222, high: #1f3a26}
+let KNOB = 26
+
+state pos = "off"
+state changes = 0
+
+fn view(pos)
+  let bg = place("bg", BG[pos])
+  draw_rect(0, 0, 360, 300, bg)
+  // The track: the triangle between the three positions.
+  let names = ["off", "low", "high"]
+  for i in range(3) do
+    let a = SPOTS[names[i]]
+    let b = SPOTS[names[(i + 1) % 3]]
+    draw_line(a, b, #5a6070, 255, 6)
+  end
+  for n in names do
+    draw_circle(SPOTS[n], 8, COLORS[n])
+    draw_text(n, SPOTS[n].x - 12, SPOTS[n].y + 34, 14, #c8ccd8)
+  end
+  let s = SPOTS[pos]
+  let r = place("knob", rect(s.x - KNOB, s.y - KNOB, 2 * KNOB, 2 * KNOB))
+  draggable("knob", r, fn() between(names) end)
+  let c = place("knob-color", COLORS[pos])
+  draw_circle({x: r.x + KNOB, y: r.y + KNOB}, KNOB, c)
+  draw_circle_outline({x: r.x + KNOB, y: r.y + KNOB}, KNOB, #e8eaf0, 255, 2)
+  nil
+end
+
+let d = drag_session(pos, view)
+view(d.preview)
+draw_text("Drag the knob anywhere in the triangle.", 16, 16, 14, #c8ccd8)
+if d.dropped && d.drop != pos then
+  pos = d.drop
+  changes += 1
+end

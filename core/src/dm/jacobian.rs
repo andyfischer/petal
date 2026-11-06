@@ -25,7 +25,8 @@
 //! the solver (M3) can tell what else an edit moves.
 
 use crate::dm::observe::{ObsValue, Observable, PathStep};
-use crate::dm::params::{Param, RunBudget};
+use crate::dm::lever::TermLever;
+use crate::dm::params::RunBudget;
 use crate::dm::spec::{OverrideValue, Overrides, SpecHost, SpecRun, SpecSession};
 use crate::env::Env;
 
@@ -336,12 +337,12 @@ struct Prober<'a> {
 
 impl Prober<'_> {
     /// Run with `param` set to `value` on top of the base point.
-    fn probe(&mut self, param: &Param, value: OverrideValue) -> Result<Sample, NoRun> {
+    fn probe<L: TermLever>(&mut self, param: &L, value: OverrideValue) -> Result<Sample, NoRun> {
         if !self.budget.take() {
             return Err(NoRun::Budget);
         }
-        let mut ov = Overrides(self.at.0.iter().filter(|(t, _)| *t != param.term).copied().collect());
-        ov.0.push((param.term, value));
+        let mut ov = Overrides(self.at.0.iter().filter(|(t, _)| *t != param.term()).copied().collect());
+        ov.0.push((param.term(), value));
         let run = self.session.run(self.env, self.host, &ov);
         self.runs += 1;
         Ok(Sample::of(&run, self.rows))
@@ -383,13 +384,14 @@ impl Column {
 
 /// The Jacobian at the point `at` (empty: the baseline) of `rows` (the first
 /// `goal_rows` of which are goals) with respect to `params[keep[..]]`, which
-/// must be parameters of `session`.
+/// must be parameters of `session`. Generic over the lever ([`TermLever`]);
+/// DM v2's is the source literal, [`Param`](crate::dm::params::Param).
 #[allow(clippy::too_many_arguments)]
-pub fn jacobian(
+pub fn jacobian<L: TermLever>(
     session: &mut SpecSession,
     env: &mut Env,
     host: &mut dyn SpecHost,
-    params: &[Param],
+    params: &[L],
     keep: &[usize],
     rows: Vec<Observable>,
     goal_rows: usize,
@@ -431,16 +433,16 @@ pub fn jacobian(
         let cur = at
             .0
             .iter()
-            .find(|(t, _)| *t == p.term)
+            .find(|(t, _)| *t == p.term())
             .map(|(_, v)| match v {
                 OverrideValue::Num(f) => *f,
                 OverrideValue::Int(i) => *i as f64,
                 OverrideValue::Dual(f, _) => *f,
             })
-            .unwrap_or(p.value);
+            .unwrap_or(p.value());
         let col = if base.error.is_some() || !base.readable(goal_rows) {
             Ok(Column::errored(n, "a goal is not readable at the base point"))
-        } else if p.is_int && cur.fract() == 0.0 {
+        } else if p.is_int() && cur.fract() == 0.0 {
             int_column(&mut prober, p, cur as i64, &base, goal_rows, opts)
         } else {
             float_column(&mut prober, p, cur, &base, goal_rows, opts)
@@ -464,9 +466,9 @@ pub fn jacobian(
 }
 
 /// An int literal's column: the integer secant, `n ± k` for `k` = 1, 2, 4, …
-fn int_column(
+fn int_column<L: TermLever>(
     pr: &mut Prober,
-    p: &Param,
+    p: &L,
     n: i64,
     base: &Sample,
     goal_rows: usize,
@@ -506,9 +508,9 @@ fn int_column(
 
 /// Under `allow_respell`: a float probe of an int literal, kept when it
 /// agrees with the integer secant within 25% (§2.3.4).
-fn respell(
+fn respell<L: TermLever>(
     pr: &mut Prober,
-    p: &Param,
+    p: &L,
     cur: f64,
     base: &Sample,
     goal_rows: usize,
@@ -533,9 +535,9 @@ fn respell(
 }
 
 /// A float literal's column (§2.3.2, §2.3.3).
-fn float_column(
+fn float_column<L: TermLever>(
     pr: &mut Prober,
-    p: &Param,
+    p: &L,
     cur: f64,
     base: &Sample,
     goal_rows: usize,
@@ -659,9 +661,9 @@ fn smooth_or_kink(plus: &Sample, base: &Sample, minus: &Sample, h: f64, goal_row
 /// moves. A secant found that way is a `Step`, taken over one more ×10 when
 /// that still fits, so that it averages over at least one jump.
 #[allow(clippy::too_many_arguments)]
-fn escalate(
+fn escalate<L: TermLever>(
     pr: &mut Prober,
-    p: &Param,
+    p: &L,
     cur: f64,
     base: &Sample,
     goal_rows: usize,

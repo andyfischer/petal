@@ -22,6 +22,7 @@ asked to "make this draggable", read [The rules](#the-rules) first.
 - [The three calls](#the-three-calls)
 - [Specs](#specs)
 - [Candidate states](#candidate-states)
+- [Continuous drags: `between` and `vary`](#continuous-drags-between-and-vary)
 - [Recipes](#recipes)
 - [The rules](#the-rules)
 - [Debugging and testing](#debugging-and-testing)
@@ -168,8 +169,10 @@ with `|>`:
 | `spec \|> snap_radius(px, {chain?})` | Within `px` of the target, the element snaps into its slot instead of floating. `chain: true` makes the snapped state the drag's new start, and the drag goes on with the spec the view's `draggable` gives there. |
 | `spec \|> when_far(far, {px?})` | Use `far` once `spec`'s target is more than `px` (default 60) away. |
 | `drop_target(key, s)` | A release with the pointer over the element placed as `key` gives `s`. For removals: the dragged element does not exist in `s`, so no rendering of `s` can show where it would go. |
-| `spec \|> on_drop(f)` | Every target's drop state becomes `f(state)`. Applied when the spec is built: the spec still holds no function. |
+| `spec \|> on_drop(f)` | Every target's drop state becomes `f(state)`. Applied when the spec is built: the spec still holds no function. Around `between` or `vary`, whose drop is only known per frame, `f` is applied to each frame's drop. |
 | `switch_to(s, key, spec_fn?)` | Reaching this option switches the model to `s` at once and keeps dragging the element `key` (a palette that spawns a new item). The drag goes on with `spec_fn()`, or, without one, with the spec the view's `draggable(key, …)` gives in `s`. |
+| `between([s, …])` | The element slides continuously inside the region its positions in the states span, and stops at its edge; everything every state places is drawn at the blend. Drops on the nearest state. See [below](#continuous-drags-between-and-vary). |
+| `vary(s, paths, opts?)` | Solve the numbers at `paths` in `s` so the element follows the pointer (a dial, a time, a slider along a curve). See [below](#continuous-drags-between-and-vary). |
 
 "Nearest" compares the centre of the dragged element (where it would be,
 under the pointer) with the centre of the element in each target's
@@ -218,6 +221,79 @@ end
 Note the `let next = pegs` before the path assignments: without it, the
 assignment rebinds `pegs` itself for the rest of the loop.
 
+## Continuous drags: `between` and `vary`
+
+`closest` jumps between targets. Two operators move continuously.
+
+**`between(states)`** interpolates between the states' renderings. The
+dragged element's centre in each state is a point; with 2 states the element
+slides along the segment between them, with 3 or more it moves anywhere in
+the convex hull of the points (a Delaunay triangulation, barycentric weights
+inside each triangle). Outside, it stops at the nearest point of the edge:
+pull a switch knob past its end and it stays at the end. Every key that
+*all* the states place is drawn at the weighted blend of its values: rects
+and points field by field, numbers, colours channel by channel. So the knob's
+colour, the background behind it, a label's alpha — anything placed — cross
+fade as it moves. A key some state does not place eases as usual. Letting go
+drops on the state with the largest weight, and everything springs from the
+blend into it. Frames cost no speculation: the table, with every key's value
+in every state, is built at the press.
+
+```petal ignore
+// examples/ui/d2-switch: a knob with three positions in a triangle
+let r = place("knob", rect(s.x - 26, s.y - 26, 52, 52))
+draggable("knob", r, fn() between(["off", "low", "high"]) end)
+let c = place("knob-color", COLORS[pos])       // blends while dragging
+```
+
+`between` takes states (or `fixed_state`), not other specs; put it inside
+`closest` or `when_far`, not around them.
+
+**`vary(state, paths, opts?)`** solves for numbers instead of listing states.
+Each path addresses a number in `state` — `["meetings", i, "start"]`, or just
+`"angle"` for a top-level field — and every frame the engine moves those
+numbers so the dragged element's centre goes where the pointer says. It is
+the direct-manipulation solver run on the model: one Gauss-Newton step per
+frame, warm-started from the last frame's numbers, kept only if it brings the
+element closer (else halved). The preview is `state` with the solved numbers
+in; so is the drop. Nothing in the app inverts the view.
+
+```petal ignore
+// examples/ui/d2-dial: the knob on a circle at angle a
+let k = place("knob", {x: C.x + cos(a) * R - 16, y: C.y + sin(a) * R - 16, w: 32, h: 32})
+draggable("knob", k, fn() vary(dial, "angle", {sensitivity: "dual"}) end)
+```
+
+`opts`:
+
+| Option | Meaning |
+|---|---|
+| `bounds` | `[lo, hi]` for a single path, or one `[lo, hi]` (or nil) per path; either end may be nil. A step is clamped into them. |
+| `constraint` | `fn(state) -> bool`. A step to a state it refuses is halved until one passes, so the element stops at the constraint's edge (a meeting's end cannot pass its start). Checking it costs no rendering. |
+| `sensitivity` | How the engine learns which way the numbers move the element. `"fd"` (the default): forward differences, one extra rendering per path. `"dual"`: one rendering per path with the number replaced by a dual number, which gives the exact derivative — only for views whose arithmetic from the number to `place` keeps duals (see the rules). Checked against differences on the first frame and replaced by them if it disagrees. |
+
+`paths` is one path or a list of paths: `"v"`, `["v"]` and
+`["meetings", 2, "start"]` are one path each; two levers are
+`[["x"], ["y"]]`. Each frame costs one rendering per path for the
+sensitivities plus one or two for the step; a frame where the element is
+already under the pointer costs none.
+
+**Composing them.** `vary` is a spec like any other: `closest` over one
+`vary` per track gives the paper's timeline (continuous along a track,
+discrete between them), and `on_drop` rounds a solved time:
+
+```petal ignore
+closest(for t in range(TRACKS) do vary(set_in(doc, ["clips", k, "track"], t), ["clips", k, "start"]) end)
+vary(s, ["meetings", i, "end"], {constraint: ok}) |> on_drop(fn(st) round5(st, i) end)
+```
+
+The scheduler from the paper's §4,
+[`examples/ui/d2-scheduler`](../../../examples/ui/d2-scheduler/app.ptl),
+uses both: a bar's body is `between(choices(s, ["meetings", i, "room"],
+range(ROOMS)))` (the bar slides up and down between rooms and never sideways,
+since a room change does not move it in time), and each end handle is a
+`vary` on that time with a constraint.
+
 ## Recipes
 
 **Kanban** (cards in columns; each column a list of cards, or a record whose
@@ -256,6 +332,15 @@ draggable("swatch", sw, fn() closest([switch_to(items ++ [new_item], new_item.id
 
 **A layers panel:** `closest(tree_moves(layers, path)) |> floating()`.
 
+**A switch** that slides between off and on, its colour fading:
+`between([false, true])`, with the fill placed as a colour.
+
+**A slider along any curve, a dial, a knob on a path:** place the knob from
+the number and `vary(st, "value", {bounds: [0, 1]})`.
+
+**A time that snaps to five minutes on release:**
+`vary(s, ["events", i, "start"]) |> on_drop(fn(st) round_times(st) end)`.
+
 ## The rules
 
 1. **The view is a function of the model.** Write `fn view(model)` and call
@@ -287,6 +372,9 @@ draggable("swatch", sw, fn() closest([switch_to(items ++ [new_item], new_item.id
    Usually it means two candidates are really the same move: drop one.
 9. **Do not keep closures in the model or the spec.** `spec_fn` and
    `on_drop`'s `f` are called while the spec is built; what is kept is data.
+   (The two functions a drag needs while it runs — `on_drop` around
+   `between`/`vary`, and `vary`'s `constraint` — the engine keeps outside
+   its state and reads again from the view after a reload.)
 10. **Keep expensive pure work out of the view.** A drag start runs the view
     once per reachable state, and memo does not record or replay inside a
     speculative call. Work that is the same in every state (text wrapping,
@@ -299,6 +387,17 @@ draggable("swatch", sw, fn() closest([switch_to(items ++ [new_item], new_item.id
     behind any later write (the compiler warns). Give the session a closure
     that passes them: `drag_session(cols, fn(cs) view(cs, scrolls, sel_id) end)`,
     and draw with `view(d.preview, scrolls, sel_id)`.
+12. **`vary`'s numbers must reach `place` by arithmetic** the solver can
+    follow: the element should move smoothly (or in small steps) as the
+    number changes. Under `sensitivity: "dual"` the path from the number to
+    `place` must also keep dual numbers: plain records and maths (`cos`,
+    `+`, `*`, `max`) do; `rect()`, `int`, `round`, string formatting and most
+    natives refuse a dual, and that is an error, which cannot be caught —
+    leave `sensitivity` at its default for such views. `place` hands the rest
+    of the view plain numbers, so drawing after it is fine.
+13. **`between` takes states.** Its options are model states (or
+    `fixed_state`), and the blend covers what `place` marks, not every draw
+    call: place the colours and numbers you want to cross fade.
 
 ## Debugging and testing
 
@@ -386,7 +485,12 @@ nothing). Every drop is announced on the `drag_drops` output channel
 ## Hot reload
 
 The session keeps only values: the spec, the states it can reach and the
-grab offset. An edit to the view while a card is held re-renders the stored
+grab offset (and, for `vary`, the numbers solved so far). A function in a
+spec (`on_drop` around `between`/`vary`, a `vary` constraint) is kept
+outside the session's state, since a reload drops a state slot that holds
+one, and is read again from the view's `draggable` after the reload. A
+`vary` drag keeps its numbers across a reload and goes on solving against
+the new view. An edit to the view while a card is held re-renders the stored
 states against the new view, the targets move to the new layout, and the
 drag goes on: you can change the row spacing with a card in your hand. An
 edit to the spec function takes effect at the next press. If the new view no
@@ -421,6 +525,23 @@ view, took 134 ms at 50 cards; skipping `place`'s body during speculation
 and moving the wrapping out of the view (rule 10) are what brought it down.
 Spreading the drag start over several frames is not built.
 
+`between` and `vary` (`cargo run --release --example bench_vary` in
+`core-libs/petal-ui`, on the P2 examples; minimum of 15 runs, frame gate
+off, Apple silicon; "worst" is the slowest frame while held):
+
+| Drag | Idle frame | Frame while dragging (median) | Worst frame while dragging |
+|---|---|---|---|
+| switch: `between`, 3 states | 0.13 ms | 0.09 ms | 0.21 ms |
+| dial: `vary`, 1 path, dual | 0.13 ms | 0.17 ms | 0.31 ms |
+| dial: `vary`, 1 path, differences | 0.14 ms | 0.18 ms | 0.32 ms |
+| scheduler bar: `between`, 3 rooms | 0.30 ms | 0.22 ms | 0.48 ms |
+| scheduler end: `vary` + constraint | 0.29 ms | 0.39 ms | 0.74 ms |
+
+`between` costs nothing per frame beyond drawing. `vary` costs about one
+rendering of the view per path plus one or two per frame in which it takes
+a step; for `closest` over n `vary` options multiply by n, and use
+`when_far` to keep only the nearest live on a big view.
+
 ## When not to use it
 
 For a **free translation** (moving nodes on a canvas, panning, a selection
@@ -436,9 +557,6 @@ Use `ui/drag` for anything that **snaps, reorders or re-parents**.
 
 ## What is not here yet
 
-- `between` and `vary` (interpolating between targets, and solving numbers
-  so the element tracks the pointer) build spec data now, and a drag that
-  reaches one stops with "not yet available". They arrive with P2.
 - One drag at a time: a second pointer does not start a second drag.
 - `drag_debug` cannot sample the drop zones of a `vary` spec without
   rendering, so it does not.

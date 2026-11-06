@@ -40,6 +40,7 @@
 // their own state; `place` records into the call's `places`.
 
 import ui
+import autodiff
 import io
 
 // The layer a dragged element is drawn on, and stays on until it has settled
@@ -74,6 +75,13 @@ var _walk = nil
 // renderings this run made.
 var _dbg = nil
 var _spec_runs = 0
+// `vary`'s solver state per leaf id: as the session kept it from last frame
+// (in), and as this frame's solve leaves it (out). Whether the speculation
+// running is a dual-number run, in which `place` records the duals and hands
+// the view plain numbers.
+var _vary_in = Map()
+var _vary_out = Map()
+var _dual_run = false
 
 // Across runs: a press waiting to become a drag ({key, x, y, spec} — data,
 // never a closure), the element settling after a drop, every placed key's
@@ -83,6 +91,11 @@ state var _settle = nil
 state var _anim = Map()
 state var _warned = Map()
 state var _tok = 0
+// The functions the live drag's spec holds (on_drop's transform, vary's
+// constraint). The session's own state holds only data — each function is
+// replaced there by its index here — because a reload drops a state slot
+// that holds a function; this one is then filled again from the view.
+state var _fns = []
 
 // ── Speculation ───────────────────────────────────────────────────────────
 // Run `view(model)` as a hypothetical call (core `speculate`): nothing it
@@ -192,6 +205,11 @@ end
 // unchanged. Keys compare like `for … key` keys and must be unique on screen.
 pub fn place(key, value)
   if speculating() then
+    if get _dual_run then
+      // `vary`'s dual-number run: record the duals, draw plain numbers.
+      speculate_place(key, value)
+      return _undual(value)
+    end
     return speculate_place(key, value)
   end
   // Placing the value this run already displayed for `key` (the usual
@@ -210,6 +228,17 @@ fn _place(key, value)
     let fv = _at(value, live.fx, live.fy)
     set _anim[key] = _shift(fv, o, -1)
     return fv
+  end
+  if live != nil && (live.blend != nil || live.instant) then
+    // `between`: a key every active target placed is drawn at the blend of
+    // those values; `vary`: everything is drawn where the solved state puts
+    // it. Either way at once, with no easing, so it tracks the pointer.
+    let bv = if live.blend != nil then _blend_key(live.blend, key) else nil end
+    let shown = if bv != nil then bv elsif live.instant then value else nil end
+    if shown != nil then
+      set _anim[key] = _shift(shown, o, -1)
+      return shown
+    end
   end
   let target = _shift(value, o, -1)
   let cur = get _anim[key]
@@ -359,20 +388,55 @@ pub fn switch_to(st, key, spec_fn = nil)
   {d2: "switch_to", state: st, drop: st, key: key, follow: follow}
 end
 
-// Interpolate between the options' renderings (P2). The shape is fixed now
-// so that specs written today keep their meaning.
+// Interpolate between the options' renderings. The dragged element moves
+// continuously inside the region its positions in the options span — along
+// the segment for 2 options, over a Delaunay triangulation of the positions
+// for 3 or more — and stops at its edge. Every key that all the options
+// place, the dragged one included, is drawn at the blend of its values in
+// the options around the pointer (rects, points, numbers, colours). The
+// preview and the drop are the option with the largest weight. Each option
+// is a model state (or `fixed_state`).
 pub fn between(options)
   {d2: "between", options: for o in options do _spec_of(o) end}
 end
 
-// Solve the numbers at `paths` in `st` so the element tracks the pointer
-// (P2). `opts`: {bounds: [[lo, hi], …], constraint: fn(state) -> bool}.
+// Solve the numbers at `paths` in `st` so the dragged element tracks the
+// pointer: each frame one step of the DM v2 solver (Gauss-Newton, warm-started
+// from the last frame, with a step-length backtrack). `paths` is one path
+// (`["meetings", 2, "start"]`, or a field name) or a list of them; each must
+// hold a number in `st`. The preview and the drop are `st` with the solved
+// numbers in.
+//
+// opts:
+//   bounds       [lo, hi] for one path, or a list with one [lo, hi] (or nil)
+//                per path; either end may be nil
+//   constraint   fn(state) -> bool: a step to a state it refuses is shortened
+//   sensitivity  "fd" (default): forward differences, one rendering per path;
+//                "dual": a dual-number rendering per path, exact, for views
+//                whose arithmetic from the number to `place` keeps duals (no
+//                `rect()`, `int`, `round` on the way); checked against
+//                differences at the press, and replaced by them if it disagrees
+// Each frame costs one speculative rendering per path plus one or two.
 pub fn vary(st, paths, opts = {})
-  {d2: "vary", state: st, paths: paths, bounds: opts.bounds ?? nil, constraint: opts.constraint ?? nil}
+  let ps = _paths_of(paths)
+  {d2: "vary", state: st, drop: st, paths: ps, bounds: _bounds_of(opts.bounds ?? nil, len(ps)),
+    constraint: opts.constraint ?? nil, sensitivity: opts.sensitivity ?? "fd"}
 end
 
-fn _p2(kind)
-  assert(false, "ui/drag: `{kind}` is not yet available (it arrives with P2 of declarative dragging); use closest, snap_radius or when_far for now")
+// One path or a list of paths, as a list of paths.
+fn _paths_of(paths)
+  if type(paths) != "list" then return [[paths]] end
+  if len(paths) > 0 && all(paths, fn(p) type(p) == "list" end) then paths else [paths] end
+end
+
+// The bounds, one [lo, hi] or nil per path.
+fn _bounds_of(b, n)
+  if b == nil then return nil end
+  assert(type(b) == "list", "ui/drag: vary bounds must be [lo, hi] or a list of them, got {b}")
+  let one = len(b) == 2 && all(b, fn(x) x == nil || _is_num(x) end)
+  if one && n == 1 then return [b] end
+  assert(len(b) == n, "ui/drag: vary has {n} paths but {len(b)} bounds")
+  b
 end
 
 // Apply `f` to every leaf (fixed, drop_target, switch_to) of a spec.
@@ -388,7 +452,7 @@ fn _map_leaves(spec, f)
     {...spec, inner: _map_leaves(spec.inner, f), far: _map_leaves(spec.far, f)}
   else
     // between / vary: a drop state that is only known per frame. The
-    // transform is kept as a wrapper, which P2 applies at the drop.
+    // transform is kept as a wrapper, applied to the drop each frame.
     {d2: "on_drop", inner: spec, f: f}
   end
 end
@@ -396,7 +460,7 @@ end
 // Every leaf of a resolved spec, in spec order.
 fn _leaves(spec)
   let t = spec.d2
-  if t == "fixed" || t == "drop_target" || t == "switch_to" then
+  if t == "fixed" || t == "drop_target" || t == "switch_to" || t == "vary" then
     [spec]
   elsif t == "closest" || t == "between" then
     flat(for o in spec.options do _leaves(o) end)
@@ -429,10 +493,12 @@ fn _res(spec)
     {...spec, inner: _res(spec.inner)}
   elsif t == "when_far" then
     {...spec, inner: _res(spec.inner), far: _res(spec.far)}
-  elsif t == "between" || t == "vary" then
-    _p2(t)
+  elsif t == "between" then
+    _res_between(spec)
+  elsif t == "vary" then
+    _res_vary(spec)
   elsif t == "on_drop" then
-    _p2(spec.inner.d2)
+    {...spec, inner: _res(spec.inner)}
   else
     assert(false, "ui/drag: not a drag spec: {spec}")
   end
@@ -454,7 +520,8 @@ end
 // Two different states that put the dragged element on the same spot cannot
 // be told apart by where it is: warn once, and `closest` takes the first.
 fn _check_ambiguous(key, spec)
-  let ls = _leaves(spec)
+  // A vary leaf's position is solved, not a target: it cannot collide.
+  let ls = filter(_leaves(spec), fn(l) l.d2 != "vary" end)
   for i in range(0, len(ls)) do
     let a = _center(ls[i].at)
     if a != nil && ls[i].d2 != "drop_target" then
@@ -515,9 +582,287 @@ fn _eval(spec, c)
   elsif t == "when_far" then
     let r = _eval(spec.inner, c)
     if r.gap > spec.px then _eval(spec.far, c) else r end
+  elsif t == "between" then
+    _eval_between(spec, c)
+  elsif t == "vary" then
+    _eval_vary(spec, c)
+  elsif t == "on_drop" then
+    let r = _eval(spec.inner, c)
+    // `f` maps a leaf (on_drop's own transform of its `drop`).
+    let f = _fn(spec.f)
+    if r.leaf == nil then r else {...r, leaf: f(r.leaf)} end
   else
-    _p2(t)
+    assert(false, "ui/drag: not a drag spec: {spec}")
   end
+end
+
+// ── between and vary ──────────────────────────────────────────────────────
+// `between` reads its table like `closest` (no speculation per frame): the
+// options' positions, their triangulation, and every key each option placed.
+// `vary` speculates per frame; its solver state per leaf (the numbers, and
+// where they put the element) lives in the session, handed in and out
+// through `_vary_in` / `_vary_out`.
+
+fn _res_between(spec)
+  let w = get _walk
+  let opts = for o in spec.options do
+    assert(o.d2 == "fixed", "ui/drag: between takes model states (or fixed_state), got a `{o.d2}` spec; put between inside closest/when_far, not around them")
+    set _leaf_n = (get _leaf_n) + 1
+    let sp = _spec_run(o.state)
+    {...o, id: get _leaf_n, at: _placed(sp, w.key), places: sp.places}
+  end
+  let ok = filter(opts, fn(o) _center(o.at) != nil end)
+  let pts = for o in ok do
+    let p = _center(o.at)
+    [p.x, p.y]
+  end
+  let tris = if len(pts) >= 3 then drag_triangulate(pts) else [] end
+  {...spec, options: ok, pts: pts, tris: tris}
+end
+
+fn _eval_between(spec, c)
+  let n = len(spec.options)
+  if n == 0 then return _NONE end
+  let ws = drag_weights(spec.pts, spec.tris, c.ex, c.ey)
+  let bx = 0.0
+  let by = 0.0
+  let top = 0
+  for i in range(n) do
+    bx += ws[i] * spec.pts[i][0]
+    by += ws[i] * spec.pts[i][1]
+    if ws[i] > ws[top] then top = i end
+  end
+  let blend = []
+  for i in range(n) do
+    if ws[i] > 1.0e-6 then blend ++= [{w: ws[i], places: spec.options[i].places}] end
+  end
+  {leaf: spec.options[top], gap: hypot(bx - c.ex, by - c.ey), float: false, snapped: false, chain: false,
+    blend: blend}
+end
+
+// `key`'s value blended across the active targets, or nil when one of them
+// does not place it.
+fn _blend_key(blend, key)
+  let vs = []
+  let ws = []
+  for b in blend do
+    let v = b.places[key]
+    if v == nil then return nil end
+    vs ++= [v]
+    ws ++= [b.w]
+  end
+  if len(vs) == 0 then return nil end
+  if len(vs) == 1 then return vs[0] end
+  _blend(vs, ws)
+end
+
+fn _is_color(v)
+  type(v) == "record" && len(keys(v)) <= 4 && _is_num(v.r ?? nil) && _is_num(v.g ?? nil) && _is_num(v.b ?? nil)
+end
+
+// The weighted blend of values of one shape: numbers mix, lists mix by item,
+// records and rects by field (a colour's channels round to ints), and
+// anything else — or values whose shapes differ — is the heaviest one's.
+fn _blend(vs, ws)
+  let top = 0
+  for i in range(len(ws)) do
+    if ws[i] > ws[top] then top = i end
+  end
+  let v0 = vs[top]
+  if _is_num(v0) then
+    if !all(vs, fn(v) _is_num(v) end) then return v0 end
+    let s = 0.0
+    for i in range(len(vs)) do s += ws[i] * vs[i] end
+    return s
+  end
+  let t = type(v0)
+  if t == "list" then
+    if !all(vs, fn(v) type(v) == "list" && len(v) == len(v0) end) then return v0 end
+    return for j in range(len(v0)) do _blend(for v in vs do v[j] end, ws) end
+  end
+  if t == "record" || t == "Rect" then
+    if !all(vs, fn(v) type(v) == t end) then return v0 end
+    let col = _is_color(v0)
+    let o = v0
+    for k in keys(v0) do
+      let parts = for v in vs do v[k] ?? nil end
+      if all(parts, fn(p) p != nil end) then
+        let b = _blend(parts, ws)
+        o[k] = if col && _is_num(b) then int(round(b)) else b end
+      end
+    end
+    return o
+  end
+  v0
+end
+
+// `st` with the numbers `vals` at `paths`.
+fn _with_vals(st, paths, vals)
+  let out = st
+  for i in range(len(paths)) do
+    out = set_in(out, paths[i], vals[i])
+  end
+  out
+end
+
+// Plain numbers in place of duals, anywhere in a value.
+fn _undual(v)
+  let t = type(v)
+  if t == "dual" then return value_of(v) end
+  if t == "list" then return for x in v do _undual(x) end end
+  if t == "record" then
+    let o = v
+    for k in keys(v) do o[k] = _undual(v[k]) end
+    return o
+  end
+  v
+end
+
+// A placed value's centre with duals in it: {x, y, dx, dy} (the derivative
+// of the centre), or nil when it has no position.
+fn _dual_center(v)
+  if v == nil || type(v) != "record" then return nil end
+  let x = v.x ?? nil
+  let y = v.y ?? nil
+  let num = fn(a) a != nil && (type(a) == "dual" || _is_num(a)) end
+  if !num(x) || !num(y) then return nil end
+  let w = v.w ?? 0
+  let h = v.h ?? 0
+  {x: value_of(x) + value_of(w) / 2.0, y: value_of(y) + value_of(h) / 2.0,
+    dx: deriv_of(x) + deriv_of(w) / 2.0, dy: deriv_of(y) + deriv_of(h) / 2.0,
+    any: type(x) == "dual" || type(y) == "dual"}
+end
+
+fn _res_vary(spec)
+  let w = get _walk
+  set _leaf_n = (get _leaf_n) + 1
+  let vals = for p in spec.paths do
+    let v = get_in(spec.state, p)
+    assert(_is_num(v), "ui/drag: vary path {p} holds {v}, not a number")
+    v * 1.0
+  end
+  let at = _placed(_spec_run(spec.state), w.key)
+  {...spec, id: get _leaf_n, at: at, vals: vals}
+end
+
+// Where `vals` put the dragged element, by one speculative rendering.
+fn _vary_at(spec, vals)
+  let w = get _walk
+  _placed(_speculate(w.view, _with_vals(spec.state, spec.paths, vals)), w.key)
+end
+
+// ∂centre/∂lever for every lever at `vals` (the element is at `p` there):
+// 2 rows × k. Forward differences, or dual numbers.
+fn _vary_jac(spec, vals, p, use_dual)
+  let w = get _walk
+  let k = len(vals)
+  let cols = for i in range(k) do
+    if use_dual then
+      let st = set_in(_with_vals(spec.state, spec.paths, vals), spec.paths[i], dual(vals[i], 1.0))
+      set _dual_run = true
+      let sp = _speculate(w.view, st)
+      set _dual_run = false
+      let dc = _dual_center(_placed(sp, w.key))
+      if dc == nil then [0.0, 0.0] else [dc.dx, dc.dy] end
+    else
+      // A step of 1e-3 of the value; nothing moving at that step (a view
+      // that rounds or snaps) tries ×10 up to the value's own size, as DM v2
+      // escalates its probes.
+      let b = if spec.bounds == nil then nil else spec.bounds[i] end
+      let hi = if b == nil then nil else b[1] end
+      let col = [0.0, 0.0]
+      let h0 = 1.0e-3 * max(abs(vals[i]), 1.0)
+      for attempt in range(4) do
+        if col[0] == 0.0 && col[1] == 0.0 then
+          let h = if hi != nil && vals[i] + h0 > hi then -h0 else h0 end
+          let nv = for j in range(k) do if j == i then vals[j] + h else vals[j] end end
+          let q = _center(_vary_at(spec, nv))
+          if q != nil then col = [(q.x - p.x) / h, (q.y - p.y) / h] end
+          h0 *= 10.0
+        end
+      end
+      col
+    end
+  end
+  [for c in cols do c[0] end, for c in cols do c[1] end]
+end
+
+// Whether a dual Jacobian agrees with differences (within 10%, or both ~0).
+fn _jac_agrees(a, b)
+  for r in range(2), i in range(len(a[0])) do
+    let x = a[r][i]
+    let y = b[r][i]
+    if abs(x - y) > 0.1 * max(abs(x), abs(y)) + 1.0e-6 then return false end
+  end
+  true
+end
+
+// One frame of `vary`: from last frame's numbers, one Gauss-Newton step
+// toward putting the element's centre at (c.ex, c.ey), shortened while it
+// does not get closer or the constraint refuses it.
+fn _eval_vary(spec, c)
+  let vin = get _vary_in
+  let vs0 = vin[spec.id] ?? nil
+  let fresh = {vals: spec.vals, at: spec.at, dual: spec.sensitivity == "dual", checked: false}
+  let vs1 = if vs0 == nil || len(vs0.vals) != len(spec.vals) then fresh else vs0 end
+  // After a reload the numbers are kept but where they put the element is
+  // rendered again, by the new view.
+  let vs = if vs1.at == nil then {...vs1, at: _vary_at(spec, vs1.vals)} else vs1 end
+  if _center(vs.at) == nil then return _NONE end
+  let p = _center(vs.at)
+  let err = (p.x - c.ex) * (p.x - c.ex) + (p.y - c.ey) * (p.y - c.ey)
+  let cur = vs
+  if err > 0.25 then
+    let by_dual = vs.dual
+    let jac = _vary_jac(spec, vs.vals, p, by_dual)
+    if by_dual && !vs.checked then
+      // The first dual Jacobian is checked against differences once.
+      let fd = _vary_jac(spec, vs.vals, p, false)
+      if !_jac_agrees(jac, fd) then
+        by_dual = false
+        jac = fd
+      end
+    end
+    cur = {...vs, dual: by_dual, checked: true}
+    // Up to 3 renderings per frame; a state the constraint refuses costs
+    // none, so the step is halved up to 12 times to reach its edge.
+    let scale = 1.0
+    let tries = 0
+    let done = false
+    let ok = _fn(spec.constraint)
+    for attempt in range(15) do
+      if !done && tries < 3 then
+        let next = drag_solve_step(vs.vals, [p.x, p.y], [c.ex, c.ey], jac, spec.bounds, scale)
+        if next == vs.vals then
+          done = true
+        else
+          let st = _with_vals(spec.state, spec.paths, next)
+          if ok == nil || ok(st) then
+            tries += 1
+            let at = _placed(_speculate((get _walk).view, st), (get _walk).key)
+            let q = _center(at)
+            if q != nil && (q.x - c.ex) * (q.x - c.ex) + (q.y - c.ey) * (q.y - c.ey) < err then
+              cur.vals = next
+              cur.at = at
+              done = true
+            end
+          end
+          scale /= 2.0
+        end
+      end
+    end
+    // Not there yet but getting closer: keep frames coming (the frame gate
+    // would otherwise stop running them once the pointer is still).
+    let q0 = _center(cur.at)
+    if cur.vals != vs.vals && (q0.x - c.ex) * (q0.x - c.ex) + (q0.y - c.ey) * (q0.y - c.ey) > 0.25 then
+      dt()
+    end
+  end
+  set _vary_out[spec.id] = cur
+  let q = _center(cur.at)
+  let st = _with_vals(spec.state, spec.paths, cur.vals)
+  {leaf: {...spec, state: st, drop: st, at: cur.at}, gap: hypot(q.x - c.ex, q.y - c.ey),
+    float: false, snapped: false, chain: false, instant: true}
 end
 
 // ── Reload detection ──────────────────────────────────────────────────────
@@ -550,12 +895,13 @@ end
 // Build the drag for press `p` against `model`, or nil when `view` does not
 // place `p.key` (the press belongs to another session).
 fn _start(model, view, p)
-  let res = _resolve(view, model, p.key, p.spec)
+  let raw = _stash_fns(p.spec)
+  let res = _resolve(view, model, p.key, raw)
   if res.home == nil then return nil end
   if _center(res.home) == nil then
     assert(false, "ui/drag: `{p.key}` is dragged but placed with {res.home}: place a draggable key with a rect (\{x, y, w, h\}) or a point (\{x, y\})")
   end
-  {phase: "drag", key: p.key, base: model, raw: p.spec, spec: res.spec, home: res.home,
+  {phase: "drag", key: p.key, base: model, raw: raw, spec: res.spec, home: res.home,
     grab: {x: p.x - res.home.x, y: p.y - res.home.y}, choice: nil, tok: _token()}
 end
 
@@ -570,9 +916,10 @@ fn _rebase(view, s, leaf)
     if dg == nil then nil else _spec_of(dg.spec()) end
   end
   if spec == nil then return nil end
-  let res = _resolve(view, leaf.state, key, spec)
+  let raw = _stash_fns(spec)
+  let res = _resolve(view, leaf.state, key, raw)
   if res.home == nil then return nil end
-  {...s, key: key, base: leaf.state, raw: spec, spec: res.spec, home: res.home, choice: nil}
+  {...s, key: key, base: leaf.state, raw: raw, spec: res.spec, home: res.home, choice: nil}
 end
 
 // The engine. Call it once per frame, before drawing `view(d.preview)`, with
@@ -618,9 +965,22 @@ pub fn drag_session(model, view, opts = {})
   end
 
   // A reload changed the program: re-speculate the stored states against
-  // the new view. The spec itself was resolved at the press and is kept.
+  // the new view. The spec itself was resolved at the press and is kept —
+  // unless it holds functions (`on_drop` around between/vary, a `vary`
+  // constraint), which a reload drops: then the view's `draggable` gives it
+  // again.
   let tok = _token()
   if tok != s.tok then
+    if _holds_fn(s.raw) then
+      let dg = _speculate(view, s.base).drags[s.key]
+      if dg != nil then s.raw = _stash_fns(_spec_of(dg.spec())) end
+    end
+    // Keep vary's numbers; where they put the element is rendered again.
+    let kept = Map()
+    for id in keys(s.vary ?? Map()) do
+      kept[id] = {...s.vary[id], at: nil}
+    end
+    s.vary = kept
     let res = _resolve(view, s.base, s.key, s.raw)
     if res.home == nil then
       let key = s.key
@@ -642,15 +1002,16 @@ pub fn drag_session(model, view, opts = {})
   let fx = mx - s.grab.x
   let fy = my - s.grab.y
   let hc = _center(_at(s.home, fx, fy))
-  let r = _eval(s.spec, {ex: hc.x, ey: hc.y, px: mx, py: my, prev: s.choice})
+  let r = _eval_frame(view, s, {ex: hc.x, ey: hc.y, px: mx, py: my, prev: s.choice})
   if r.chain && r.leaf != nil && r.leaf.state != s.base then
     let nb = _rebase(view, s, r.leaf)
     if nb != nil then
-      s = nb
+      s = {...nb, vary: Map()}
       let hc2 = _center(_at(s.home, fx, fy))
-      r = _eval(s.spec, {ex: hc2.x, ey: hc2.y, px: mx, py: my, prev: nil})
+      r = _eval_frame(view, s, {ex: hc2.x, ey: hc2.y, px: mx, py: my, prev: nil})
     end
   end
+  s.vary = r.vary
   let leaf = r.leaf
   s.choice = if leaf == nil then nil else leaf.id end
   let preview = if leaf != nil && leaf.at != nil then leaf.state else s.base end
@@ -668,8 +1029,63 @@ pub fn drag_session(model, view, opts = {})
     end
     return _out(model, s, {...info, active: false, preview: drop, dropped: true})
   end
-  set _live = {key: s.key, float: r.float, fx: fx, fy: fy}
+  set _live = {key: s.key, float: r.float, fx: fx, fy: fy, blend: r.blend ?? nil, instant: r.instant ?? false}
   _out(model, s, info)
+end
+
+// `_eval` for this frame of drag `s`, with what `vary` needs: the view, and
+// its solver state from last frame. The result carries the new solver state
+// as `vary`.
+fn _eval_frame(view, s, c)
+  let vin = s.vary ?? Map()
+  set _vary_in = vin
+  set _vary_out = vin
+  set _walk = {view: view, base: s.base, key: s.key}
+  let r = _eval(s.spec, c)
+  set _walk = nil
+  {...r, vary: get _vary_out}
+end
+
+// Whether a spec holds a function (which a reload drops from `state`).
+// Whether a stashed spec refers to functions in `_fns`.
+fn _holds_fn(spec)
+  let t = type(spec)
+  if t == "list" then return any(spec, fn(x) _holds_fn(x) end) end
+  if t == "record" then
+    if (spec.d2fn ?? nil) != nil then return true end
+    if !_is_spec(spec) then return false end
+    return any(keys(spec), fn(k) k != "state" && k != "drop" && _holds_fn(spec[k]) end)
+  end
+  false
+end
+
+// `spec` with every function in it moved to `_fns` and replaced by
+// `{d2fn: index}`.
+fn _stash_fns(spec)
+  set _fns = []
+  _strip_fns(spec)
+end
+
+fn _strip_fns(x)
+  let t = type(x)
+  if t == "function" then
+    set _fns = (get _fns) ++ [x]
+    return {d2fn: len(get _fns) - 1}
+  end
+  if t == "list" then return for v in x do _strip_fns(v) end end
+  if _is_spec(x) then
+    let o = x
+    for k in keys(x) do
+      if k != "state" && k != "drop" then o[k] = _strip_fns(x[k]) end
+    end
+    return o
+  end
+  x
+end
+
+// The function a stashed spec field stands for (nil stays nil).
+fn _fn(f)
+  if type(f) == "record" then (get _fns)[f.d2fn] else f end
 end
 
 // ── Candidate sets ────────────────────────────────────────────────────────

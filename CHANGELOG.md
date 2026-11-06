@@ -60,6 +60,16 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- `ui/drag`'s `between` and `vary` (D2 P2). `between(states)` slides the
+  dragged element inside the hull of its positions in the states (a segment
+  for two, a Delaunay triangulation for more) and blends every placed key —
+  rects, numbers, colours — across them; `vary(state, paths, {bounds,
+  constraint, sensitivity})` solves the numbers at `paths` each frame so the
+  element follows the pointer, with the direct-manipulation solver (now
+  generic over a `Lever` trait in `core/src/dm/lever.rs`). New core natives
+  `drag_triangulate`, `drag_weights` and `drag_solve_step`. Examples:
+  `examples/ui/d2-switch`, `d2-dial`, `d2-scheduler`.
+
 - Declarative-dragging tooling (D2 P4): `ui/drag`'s `drag_debug(d)` overlay
   (drop zones, target table with distances, spec tree) and `drag_explain()`,
   switched by the host's debug key through the new `ui_debug(name)` native

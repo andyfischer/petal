@@ -86,27 +86,69 @@ fn collect_exports(stmts: &[Stmt], exported_only: bool, into: &mut HashMap<Strin
     }
 }
 
-/// What a plain import of the bundled package `name` brings into scope.
+/// What a plain import of the bundled module `name` brings into scope: the
+/// package's main module for `import ui`, a sub-module for `import ui/drag`.
+/// A module's exports are its own `pub` functions plus those of the sibling
+/// modules it `pub import`s, so `import ui` counts `ui/input` (re-exported)
+/// and not `ui/drag` (imported separately).
 fn bundled_exports(name: &str) -> Option<&'static HashMap<String, Vec<Arity>>> {
-    static PACKAGES: OnceLock<HashMap<&'static str, HashMap<String, Vec<Arity>>>> = OnceLock::new();
-    PACKAGES
+    static MODULES: OnceLock<HashMap<String, HashMap<String, Vec<Arity>>>> = OnceLock::new();
+    MODULES
         .get_or_init(|| {
             let mut all = HashMap::new();
             for package in crate::bundled::BUNDLED_PACKAGES {
                 if package.name == crate::bundled::CORE_PACKAGE {
                     continue;
                 }
-                let mut exports = HashMap::new();
-                for (_path, source) in package.sources() {
-                    if let Some(stmts) = parse_bundled(source) {
-                        collect_exports(&stmts, true, &mut exports);
-                    }
+                // Each file by its module stem (`ui.ptl`, `src/ui.ptl` → `ui`).
+                let files: HashMap<&str, Vec<Stmt>> = package
+                    .sources()
+                    .filter_map(|(path, source)| {
+                        let stem = path.rsplit('/').next()?.strip_suffix(".ptl")?;
+                        Some((stem, parse_bundled(source)?))
+                    })
+                    .collect();
+                for stem in files.keys() {
+                    let mut exports = HashMap::new();
+                    let mut seen = HashSet::new();
+                    collect_module_exports(&files, stem, &mut seen, &mut exports);
+                    let module = if *stem == package.name {
+                        package.name.to_string()
+                    } else {
+                        format!("{}/{stem}", package.name)
+                    };
+                    all.insert(module, exports);
                 }
-                all.insert(package.name, exports);
             }
             all
         })
         .get(name)
+}
+
+/// The exports of the package file `stem`, following its `pub import ./x`
+/// re-exports to sibling files.
+fn collect_module_exports(
+    files: &HashMap<&str, Vec<Stmt>>,
+    stem: &str,
+    seen: &mut HashSet<String>,
+    into: &mut HashMap<String, Vec<Arity>>,
+) {
+    let Some(stmts) = files.get(stem) else {
+        return;
+    };
+    if !seen.insert(stem.to_string()) {
+        return;
+    }
+    collect_exports(stmts, true, into);
+    for s in stmts {
+        if let StmtKind::Import(i) = &s.kind
+            && i.exported
+            && i.names.is_none()
+            && let Some(sibling) = i.module.strip_prefix("./")
+        {
+            collect_module_exports(files, sibling, seen, into);
+        }
+    }
 }
 
 /// Parse a bundled source for the declarations these rules read. The parser
@@ -431,6 +473,18 @@ mod tests {
             shadows(&format!("import color: rgb\n{body}")),
             Vec::<String>::new()
         );
+    }
+
+    #[test]
+    fn a_sub_module_counts_only_where_it_is_imported() {
+        // `ui/drag` is not re-exported by `ui`; `ui/input` is.
+        let body = "fn place(k, v) v end\n";
+        assert_eq!(shadows(&format!("import ui\n{body}")), Vec::<String>::new());
+        let got = shadows(&format!("import ui\nimport ui/drag\n{body}"));
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert!(got[0].contains("`ui/drag`'s `place`"), "{got:?}");
+        let got = shadows("import ui\nfn mouse_x() 0 end\n");
+        assert_eq!(got.len(), 1, "{got:?}");
     }
 
     #[test]

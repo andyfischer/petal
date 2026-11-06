@@ -1,0 +1,42 @@
+// Reorderable list with declarative dragging (ui/drag).
+//
+// The view is a function of the list. Each row says where it is (`place`)
+// and what dragging it can reach (`draggable` with a spec): the row moved to
+// any other index, the closest one winning, the row itself following the
+// pointer. Everything else — slop, hit testing, the rows sliding out of the
+// way, the drop settling into its slot, Escape — is the library's.
+import ui
+import ui/drag
+
+let COLORS = {A: #e57373, B: #ffb74d, C: #81c784, D: #64b5f6, E: #ba68c8}
+let ROW_H = 44
+let GAP = 8
+
+state items = ["A", "B", "C", "D", "E"]
+state drops = 0
+
+fn slot(i)
+  rect(40, 60 + i * (ROW_H + GAP), 240, ROW_H)
+end
+
+fn view(items)
+  for i in range(0, len(items)) key items[i] do
+    let k = items[i]
+    let r = place(k, slot(i))
+    draggable(k, r, fn() closest(moves(items, i)) |> floating() end)
+    place(k, r, fn(p)
+      draw_rect_rounded(p, 6, COLORS[k])
+      draw_text("Item {k}", p.x + 14, p.y + 14, 16, #1e1e24)
+    end)
+  end
+  nil
+end
+
+clear(24, 24, 32)
+draw_text("Drag a row to reorder. Esc cancels.", 40, 24, 14, #c8ccd8)
+let d = drag_session(items, view)
+view(d.preview)
+if d.dropped then
+  items = d.drop
+  drops += 1
+end

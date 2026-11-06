@@ -196,10 +196,25 @@ pub fn input_source() -> &'static str {
     bundled_ui_file("input.ptl")
 }
 
+/// Name of the declarative-dragging module: `import ui/drag`.
+pub const DRAG_MODULE_NAME: &str = "ui/drag";
+
+/// The Petal source of the `ui/drag` module: `place`, `draggable`,
+/// `drag_session`, the drag-spec constructors and the candidate-set helpers
+/// (`docs/drag.md` in this crate). It is written over `ui` and is not
+/// re-exported by it: a script that drags writes `import ui/drag`.
+pub fn drag_source() -> &'static str {
+    bundled_ui_file("drag.ptl")
+}
+
 /// Every module of the `ui` package, as `(package-relative name, source)` —
 /// what [`petal::env::Env::register_package`] takes.
-pub fn package_modules() -> [(&'static str, &'static str); 2] {
-    [("input", input_source()), (MODULE_NAME, prelude_source())]
+pub fn package_modules() -> [(&'static str, &'static str); 3] {
+    [
+        ("input", input_source()),
+        ("drag", drag_source()),
+        (MODULE_NAME, prelude_source()),
+    ]
 }
 
 /// Register the `ui` interface package in memory: the `native fn`

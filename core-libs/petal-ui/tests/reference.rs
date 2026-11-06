@@ -54,6 +54,7 @@ fn the_reference_page_names_every_export() {
         .unwrap_or_else(|e| panic!("{}: {e}", page_path.display()));
     let mut names = exports(petal_ui::prelude_source());
     names.extend(exports(petal_ui::input_source()));
+    names.extend(exports(petal_ui::drag_source()));
     assert!(names.len() > 200, "the export scan found only {}", names.len());
     let missing: Vec<&String> = names.iter().filter(|n| !documented(&page, n)).collect();
     assert!(

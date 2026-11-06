@@ -1,0 +1,8 @@
+{"size": [540, 320], "frames": 60,
+ "events": [
+  {"at": 2, "mouse_move": [110, 200]}, {"at": 3, "mouse_down": 0},
+  {"at": 5, "mouse_move": [150, 190]}, {"at": 8, "mouse_move": [250, 180]},
+  {"at": 11, "mouse_move": [425, 190]}, {"at": 14, "mouse_up": 0},
+  {"at": 30, "mouse_move": [110, 222]}, {"at": 31, "mouse_down": 0},
+  {"at": 33, "mouse_move": [160, 220]}, {"at": 36, "mouse_move": [420, 230]},
+  {"at": 39, "mouse_up": 0}]}

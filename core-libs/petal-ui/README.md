@@ -23,6 +23,7 @@ Hosts that embed it: Garden panels (`garden/garden-script`),
 | Understand layers, hit testing, named targets, retained drawing, flow layout | [docs/reference.md](docs/reference.md#layers-and-hit-testing) |
 | Use a widget well: conventions, theme tokens, each widget in depth | [docs/widgets.md](docs/widgets.md) |
 | Draw: every primitive's signatures, text measuring, tints, gradients, shadows, offscreen layers | [docs/drawing.md](docs/drawing.md) |
+| Make things draggable: reorder, snap, drop targets, animated drops (`import ui/drag`) | [docs/drag.md](docs/drag.md) |
 | Write a host: the frame loop, draw commands, capabilities, the hit-test registry, images, natives for a non-Rust host | [docs/host-contract.md](docs/host-contract.md) |
 | Embed the crate in Rust | [Embedding](#embedding) below |
 | Run or test a script without a window | [Running scripts headlessly](#running-scripts-headlessly), [Testing](#testing) |

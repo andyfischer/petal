@@ -585,6 +585,9 @@ if res.changed then set_opacity(res.value) end
 | `drag_state()`, `drag_update(ds, item_id, r)`, `dragging(ds, item_id)`, `drag_cancel(ds)` | Drag an item; `drag_update` reports the drop. |
 | `insertion_index(rects, y)`, `insertion_index_x(rects, x)` | Where a drop belongs among rows, or columns. |
 
+For drags that snap, reorder or re-parent, with the animation done for you,
+see [Declarative dragging](#declarative-dragging-uidrag) below.
+
 ### Async
 
 | Call | What it does |
@@ -593,6 +596,35 @@ if res.changed then set_opacity(res.value) end
 | `load_poll(ls, key, pv)` | One step: restart on a new key, absorb a pending value. |
 | `load_loading(ls)`, `load_ready(ls)`, `load_failed(ls)` | Ask. |
 | `draw_load(r, ls, style?)` | Draws the spinner or the error; true when the content is ready to draw. |
+
+## Declarative dragging (`ui/drag`)
+
+A separate module: `import ui` then `import ui/drag`. The view says where
+each element is and which model states a drag can reach; the engine does the
+rest. The guide, with worked examples and the mistakes to avoid, is
+[drag.md](drag.md).
+
+| Call | What it does |
+|---|---|
+| `place(key, value)` | Where `key` landed in this rendering; returns the value to draw: eased from where `key` was (layout animation), under the pointer while it floats. `value` is a rect, a point, a number or a colour. |
+| `place(key, value, body)` | The same, then `body(v)` with the displayed value, on the drag layer while `key` is dragged or settling. |
+| `draggable(key, r, spec_fn)` | A press on `r` (then `DRAG_SLOP` px of movement) drags `key`; `spec_fn()` returns its spec. Registers `r` as `"drag:<key>"`; returns the `interact` record. |
+| `drag_session(model, view, opts?)` | The engine, once per frame before `view(d.preview)`: `{active, key, preview, drop, dropped, cancelled, spec, target, gap, reason}`. `opts`: `{slop}`. |
+| `is_dragging(key)` | Whether `key` is the element being dragged now. |
+| `fixed_state(state)` | Spec: one target state. A bare state where a spec goes means this. |
+| `closest(options, opts?)` | Spec: the option whose target is nearest the element. `opts`: `{stickiness}` (px). |
+| `floating(spec)` | Spec: the element follows the pointer while the rest previews. |
+| `snap_radius(spec, px, opts?)` | Spec: within `px` of the target the element snaps into its slot. `opts`: `{chain}` to carry on from the snapped state. |
+| `when_far(spec, far, opts?)` | Spec: `far` once the element is more than `opts.px` (60) from `spec`'s target. |
+| `drop_target(key, state)` | Spec: a release over element `key` gives `state` (trash, toolbar). |
+| `on_drop(spec, f)` | Spec: every drop state goes through `f`, applied when the spec is built. |
+| `switch_to(state, key, spec_fn?)` | Spec: switch to `state` at once and keep dragging `key`. |
+| `between(options)`, `vary(state, paths, opts?)` | Spec shapes for interpolation and continuous solving; a drag that reaches one stops with "not yet available" until P2. |
+| `moves(xs, i)` | Candidate states: item `i` of a list at every index. |
+| `moves_nested(lists, key, field?)` | Candidate states: an item moved to every slot of every column (kanban). |
+| `tree_moves(tree, path, opts?)` | Candidate states: a tree node above, below or into every other node, never into itself. `opts`: `{children, into}`. |
+| `choices(state, path, values)` | Candidate states: the value at `path` set to each of `values`. |
+| `UI_LAYER_DRAG`, `DRAG_SLOP`, `PLACE_RATE` | The drag layer (900), the press-to-drag threshold (4 px), `place`'s easing rate (18/s). |
 
 ## Testing a UI
 

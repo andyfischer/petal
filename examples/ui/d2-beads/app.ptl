@@ -1,0 +1,56 @@
+// Ring of beads with declarative dragging (ui/drag), after Dragology's first
+// scenario: beads on a ring, dragged into a different cyclic order.
+//
+// Dragging a bead can reach every state with that bead reinserted at another
+// index (`moves`); `closest` picks the one whose ring position is nearest,
+// `floating` keeps the bead under the pointer while the others slide round
+// to make room. A ring has no first bead, so `on_drop` turns each drop state
+// until bead A is back at the top: the whole ring rotates into place after
+// the drop, animated by `place` with nothing extra in the app.
+import ui
+import ui/drag
+
+let CX = 220
+let CY = 210
+let R = 130
+let BEAD = 40
+let COLORS = {A: #e57373, B: #ffb74d, C: #fff176, D: #81c784, E: #64b5f6, F: #ba68c8}
+
+state beads = ["A", "B", "C", "D", "E", "F"]
+state turns = 0
+
+fn bead_rect(i, n)
+  let a = 2 * pi() * i / n - pi() / 2
+  rect(CX + R * cos(a) - BEAD / 2, CY + R * sin(a) - BEAD / 2, BEAD, BEAD)
+end
+
+// The same ring, turned so "A" is first.
+fn a_first(bs)
+  let i = index_of(bs, "A")
+  slice(bs, i) ++ slice(bs, 0, i)
+end
+
+fn view(beads)
+  draw_circle(CX, CY, R, #3a3f4c)
+  for i in range(0, len(beads)) key beads[i] do
+    let b = beads[i]
+    let r = place(b, bead_rect(i, len(beads)))
+    draggable(b, r, fn()
+      closest(moves(beads, i)) |> floating() |> on_drop(a_first)
+    end)
+    place(b, r, fn(p)
+      draw_circle(p.x + BEAD / 2, p.y + BEAD / 2, BEAD / 2, COLORS[b])
+      draw_text(b, p.x + 15, p.y + 12, 16, #1e1e24)
+    end)
+  end
+  nil
+end
+
+clear(24, 24, 32)
+draw_text("Drag a bead round the ring", 20, 20, 14, #c8ccd8)
+let d = drag_session(beads, view)
+view(d.preview)
+if d.dropped then
+  if d.drop != beads then turns += 1 end
+  beads = d.drop
+end

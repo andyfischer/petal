@@ -167,7 +167,14 @@ pub const UI_VERSION: i64 = 1;
 ///   press outside a focused `text_field` clears its focus, and
 ///   `interact().click` goes only to a rect that was under the press when
 ///   the button went down.
-pub const PRELUDE_LEVEL: u32 = 10;
+/// - 11 — declarative dragging (2026-11-06): the `ui/drag` module
+///   (`import ui/drag`: `place`, `draggable`, `drag_session`, the drag-spec
+///   constructors, the candidate-set helpers, `drag_debug` /
+///   `drag_explain`; [`DRAG_MODULE_NAME`], `docs/drag.md`), not re-exported
+///   by `ui`; the input native `ui_debug(name)`. Behavior change alongside
+///   it: `ui_measure` runs its body through core `speculate`, so state,
+///   `set`s, random draws and registrations made inside it are undone.
+pub const PRELUDE_LEVEL: u32 = 11;
 
 /// Name of the Petal-source prelude module: `import ui`.
 pub const MODULE_NAME: &str = "ui";

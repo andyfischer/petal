@@ -316,13 +316,21 @@ fn tunable_range_recorded() {
 
 #[test]
 fn tunable_on_a_non_number_says_so() {
-    let (env, pid, _) = load("let flag = true\nprint(tunable(flag), tunable(\"title\"))\n");
-    let h = read_hints(env.get_program(pid).unwrap(), env.native_table());
-    let messages: Vec<&str> = h.warnings.iter().filter(|w| w.rule == hints::NOT_LITERAL).map(|w| w.message.as_str()).collect();
-    assert_eq!(messages.len(), 2, "{messages:?}");
-    assert!(messages[0].starts_with("`tunable` marks a number; `true` is a bool."), "{}", messages[0]);
-    assert!(messages[1].contains("`\"title\"` is a string"), "{}", messages[1]);
-    assert!(messages.iter().all(|m| m.ends_with("declare it with `config let`")));
+    // Data of any type is a valid `tunable` (a setting: a string, a bool, a
+    // record); only bounds on it are reported, since they describe a number
+    // (docs/proposals/remove-config-keyword.md).
+    let (env, pid, _) = load(
+        "let flag = true\nprint(tunable(flag), tunable(\"title\"), tunable(\"x\", 0, 1), tunable({w: 40}))\n",
+    );
+    let program = env.get_program(pid).unwrap();
+    let h = read_hints(program, env.native_table());
+    assert!(!h.warnings.iter().any(|w| w.rule == hints::NOT_LITERAL), "{:?}", h.warnings);
+    let bounds: Vec<&str> = h.warnings.iter().filter(|w| w.rule == hints::BOUNDS).map(|w| w.message.as_str()).collect();
+    assert_eq!(bounds.len(), 1, "{bounds:?}");
+    assert!(bounds[0].starts_with("`min`, `max` and `step` describe a number; `\"x\"` is a string"), "{}", bounds[0]);
+    // The record's number is marked, without bounds.
+    let marked: Vec<_> = h.marks.values().collect();
+    assert_eq!(marked, vec![&Hint::Tunable { min: None, max: None, step: None }], "{marked:?}");
 }
 
 // ── 7. screening_cost ────────────────────────────────────────────────────

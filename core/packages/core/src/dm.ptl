@@ -3,9 +3,14 @@
 //
 // Both return their first argument unchanged. Tools read them from the
 // program: `tunable` marks the literal `value` resolves to as a preferred
-// target for a drag, optionally with a range and a step; `rigid` marks it as
-// never moving, and stops feedback from passing through the call.
+// target for a drag, optionally with a range and a step, or every number in
+// it when `value` is data (a record, a list); `options:` lists the values a
+// setting can take. A top-level `let X = tunable(…)` is a setting that hosts
+// list and set. `rigid` marks a literal as never moving, and stops feedback
+// from passing through the call. Neither name can be redefined.
 // See docs/Builtins.md (Direct-Manipulation Hints).
 
-pub native fn tunable(value, min?: num, max?: num, step?: num)
+pub native fn tunable(value, min?: num, max?: num, step?: num, options?: list)
+// The form a setting with choices uses: `tunable("title", options: [...])`.
+pub native fn tunable(value, options: list)
 pub native fn rigid(value)

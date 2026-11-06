@@ -262,6 +262,37 @@ fn config_record_and_list_literals_are_config() {
     assert_eq!(all_edits(&t.propose(&r)), vec![vec!["140→150"]]);
 }
 
+/// The same without `config`: a `let X = tunable({…})` setting makes every
+/// number in its data a knob (docs/proposals/remove-config-keyword.md).
+#[test]
+fn tunable_record_and_list_settings_are_knobs() {
+    let mut t = T::new("let BOX = tunable({x: 140, y: 90})\nlet XS = tunable([20, 30])\ndraw(BOX.x + 10, XS[1], 10)\n");
+    let resp = t.propose(&req(vec![DmGoal::to(t.arg(0, 0), 160.0)]));
+    let e = all_edits(&resp);
+    assert_eq!(e[0], vec!["140→150"], "{e:?}");
+    assert!(resp.alternatives[0].config_only);
+    let mut r = req(vec![DmGoal::to(t.arg(0, 1), 45.0)]);
+    r.filter = allow(vec![ParamSelector::ConfigOnly]);
+    assert_eq!(all_edits(&t.propose(&r)), vec![vec!["30→45"]]);
+    let mut r = req(vec![DmGoal::to(t.arg(0, 0), 160.0)]);
+    r.prefer = Prefer::ConfigStrict;
+    assert_eq!(all_edits(&t.propose(&r)), vec![vec!["140→150"]]);
+}
+
+/// A `tunable` on data inside a function body (not a setting) marks the
+/// numbers in it, and its options are never moved.
+#[test]
+fn tunable_on_inline_data_marks_its_numbers() {
+    let mut t = T::new("fn f()\n  let p = tunable({x: 140, y: 90})\n  draw(p.x + 10, p.y, 10)\nend\nf()\n");
+    let resp = t.propose(&req(vec![DmGoal::to(t.arg(0, 0), 160.0)]));
+    assert_eq!(all_edits(&resp)[0], vec!["140→150"]);
+    assert!(resp.alternatives[0].config_only);
+    let mut t = T::new("let N = tunable(16, options: [8, 16, 32])\ndraw(N, 0, 10)\n");
+    let mut r = req(vec![DmGoal::to(t.arg(0, 0), 20.0)]);
+    r.filter = allow(vec![ParamSelector::ConfigOnly]);
+    assert_eq!(all_edits(&t.propose(&r)), vec![vec!["16→20"]]);
+}
+
 /// ConfigStrict in a program whose only knobs are `tunable`s: the other
 /// named bindings are pinned, as they are under a `config let` (bug 2).
 #[test]

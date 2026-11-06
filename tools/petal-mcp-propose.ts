@@ -35,6 +35,8 @@ export type ProposeInput = {
   static?: string[];
   allow?: string[];
   deny?: string[];
+  knobStrict?: boolean;
+  /** Deprecated name of `knobStrict`. */
   configStrict?: boolean;
   alternatives?: number;
   explain?: boolean;
@@ -85,7 +87,7 @@ export function proposeEditArgs(input: ProposeInput): { args: string[] } | { err
   for (const name of input.static ?? []) args.push("--static", name);
   for (const sel of input.allow ?? []) args.push("--allow", sel);
   for (const sel of input.deny ?? []) args.push("--deny", sel);
-  if (input.configStrict) args.push("--config-strict");
+  if (input.knobStrict || input.configStrict) args.push("--knob-strict");
   if (input.alternatives !== undefined) args.push("--alternatives", String(input.alternatives));
   if (input.explain) args.push("--explain");
   if (input.tol !== undefined) args.push("--tol", String(input.tol));

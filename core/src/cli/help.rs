@@ -1533,7 +1533,7 @@ SYNOPSIS
                            | --at-most <v> | --at-least <v> | --within <lo>..<hi>))...
                           [--allow <sel>]... [--deny <sel>]...
                           [--configurable <var>]... [--static <var>]...
-                          [--alternatives N] [--explain] [--config-strict]
+                          [--alternatives N] [--explain] [--knob-strict]
                           [--tol T] [--max-runs N] [--max-wall S] [--max-screen N]
                           [--allow-respell] [--seed N] [--frames N]
                           [--collateral CHANNEL=W[,CHANNEL=W...]]...
@@ -1606,7 +1606,8 @@ GOALS
 FILTERS
        --allow <sel>, --deny <sel>
               (v2) Which literals may move. Selectors: a binding NAME,
-              line:N, fn:NAME, config (alias knob: every config let and
+              line:N, fn:NAME, knob (alias config: every literal of a
+              setting, `let X = tunable(...)` or `config let`, and every
               tunable literal), user (all user code); one literal:
               at:FILE:LINE:COL (1-based, anywhere in its text; FILE is a
               path suffix such as core/level.ptl, left out for the entry
@@ -1622,10 +1623,10 @@ FILTERS
               --allow <var> / --deny <var>; under --v1, a variable to prefer /
               never edit.
 
-       --config-strict
-              (v2) v1's rule: once the program has a config let (or a tunable
-              that marks a literal), only knobs (config let and tunable
-              literals) move when they can.
+       --knob-strict (alias --config-strict)
+              (v2) v1's rule: once the program has a knob (a setting
+              `let X = tunable(...)`, a config let, or a tunable that marks
+              a literal), only knobs move when they can.
 
 OPTIONS
        --alternatives N

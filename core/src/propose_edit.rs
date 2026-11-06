@@ -94,7 +94,8 @@ pub struct V2Opts {
     pub allow: Vec<String>,
     /// `--deny` selectors (`--static x` adds `x`).
     pub deny: Vec<String>,
-    /// `--config-strict`: v1's `config let` rule ([`Prefer::ConfigStrict`]).
+    /// `--knob-strict` (or its old name `--config-strict`): v1's knob rule
+    /// ([`Prefer::ConfigStrict`]).
     pub config_strict: bool,
     pub alternatives: usize,
     pub explain: bool,
@@ -202,7 +203,7 @@ pub fn parse_selector(s: &str) -> Result<ParamSelector, String> {
     }
     Ok(match s {
         // Every knob: `config let` and `tunable` literals, one tier.
-        "config" | "knob" => ParamSelector::ConfigOnly,
+        "knob" | "config" => ParamSelector::ConfigOnly,
         "user" => ParamSelector::AllUserCode,
         "lib" => ParamSelector::ReportLibrary,
         "path-deps" => ParamSelector::AllowPathDeps,
@@ -274,6 +275,7 @@ impl V2Parser {
             "--within",
             "--allow",
             "--deny",
+            "--knob-strict",
             "--config-strict",
             "--alternatives",
             "--explain",
@@ -359,7 +361,7 @@ impl V2Parser {
             }
             "--allow" | "--configurable" => self.opts.allow.push(value(i)?),
             "--deny" | "--static" => self.opts.deny.push(value(i)?),
-            "--config-strict" => self.opts.config_strict = true,
+            "--knob-strict" | "--config-strict" => self.opts.config_strict = true,
             "--alternatives" => {
                 let v = value(i)?;
                 self.opts.alternatives = v
@@ -602,8 +604,8 @@ const GOAL_VALUE_KEYS: &[&str] = GOAL_KEYS.split_at(6).1;
 /// so its rules are the CLI's exactly.
 pub fn opts_from_json(req: &Json) -> Result<V2Opts, String> {
     let obj = req.as_object().ok_or("the request must be a JSON object")?;
-    const OPTION_KEYS: [&str; 17] = [
-        "goals", "allow", "deny", "pins", "config_strict", "alternatives", "explain", "apply", "pick", "tol",
+    const OPTION_KEYS: [&str; 18] = [
+        "goals", "allow", "deny", "pins", "knob_strict", "config_strict", "alternatives", "explain", "apply", "pick", "tol",
         "max_runs", "max_wall", "max_screen", "allow_respell", "seed", "json", "collateral",
     ];
     for k in obj.keys() {
@@ -709,6 +711,7 @@ pub fn opts_from_json(req: &Json) -> Result<V2Opts, String> {
         }
     }
     for (key, flag) in [
+        ("knob_strict", "--knob-strict"),
         ("config_strict", "--config-strict"),
         ("explain", "--explain"),
         ("apply", "--apply"),

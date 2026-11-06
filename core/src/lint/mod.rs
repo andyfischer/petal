@@ -161,6 +161,9 @@ pub const DM_HINT_NOT_LITERAL: &str = crate::dm::hints::NOT_LITERAL;
 pub const DM_HINT_BOUNDS: &str = crate::dm::hints::BOUNDS;
 pub const DM_HINT_STATE_INIT: &str = "dm-hint-state-init";
 pub const CONFIG_NOT_DATA: &str = "config-not-data";
+pub const TUNABLE_NOT_IN_OPTIONS: &str = "tunable-value-not-in-options";
+pub const TUNABLE_ON_VAR: &str = "tunable-on-var";
+pub const TUNABLE_NOT_WHOLE: &str = "tunable-not-whole-initializer";
 pub const NEVER_REPLAYS: &str = "never-replays";
 
 /// Every rule, in the order it runs.
@@ -240,7 +243,8 @@ pub const RULES: &[RuleInfo] = &[
     },
     RuleInfo {
         name: DM_HINT_BOUNDS,
-        summary: "a `tunable` bound that is not a literal, or a `min` above the `max`",
+        summary: "a `tunable` bound that is not a literal, a `min` above the `max`, or bounds \
+                  on a value that is not a number",
         opt_in: false,
         fixes: Fixes::None,
     },
@@ -251,8 +255,28 @@ pub const RULES: &[RuleInfo] = &[
         fixes: Fixes::None,
     },
     RuleInfo {
+        name: TUNABLE_NOT_IN_OPTIONS,
+        summary: "a `tunable` whose value is not one of its own `options:`",
+        opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: TUNABLE_ON_VAR,
+        summary: "a top-level `var X = tunable(…)`: a `var` is not a setting, so hosts do not \
+                  list it",
+        opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: TUNABLE_NOT_WHOLE,
+        summary: "a top-level `let` with a `tunable` inside an operator: only a whole \
+                  `let X = tunable(…)` is a setting",
+        opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
         name: CONFIG_NOT_DATA,
-        summary: "a `config let` whose initializer needs evaluating, so hosts see no value",
+        summary: "a setting (`let X = tunable(…)`, `config let`) whose value needs evaluating, so hosts see no value",
         opt_in: false,
         fixes: Fixes::None,
     },
@@ -620,6 +644,9 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     p.apply(DM_HINT_NOT_LITERAL, hints.not_literal);
     p.apply(DM_HINT_BOUNDS, hints.bounds);
     p.apply(DM_HINT_STATE_INIT, hints.state_init);
+    p.apply(TUNABLE_NOT_IN_OPTIONS, hints.not_in_options);
+    p.apply(TUNABLE_ON_VAR, hints.on_var);
+    p.apply(TUNABLE_NOT_WHOLE, hints.not_whole);
     p.apply(CONFIG_NOT_DATA, plan_config_data_reports(&stmts, &chars));
     // Compiles the file, so it is skipped outright when filtered out.
     if opts.rules.enabled(NEVER_REPLAYS) {
@@ -1084,25 +1111,48 @@ mod tests {
     }
 
     #[test]
-    fn tunable_on_data_that_is_not_a_number_points_to_config_let() {
-        let src = "let a = 1.0\nlet b = 2.0\nprint(tunable(true), tunable(\"title\"), tunable({x: 140}), tunable(a + b))\n";
+    fn tunable_takes_data_of_any_type_but_bounds_only_on_numbers() {
+        let src = "let a = 1.0\nlet b = 2.0\n\
+                   print(tunable(true), tunable(\"title\"), tunable({x: 140}), tunable(a + b))\n\
+                   print(tunable(\"title\", 0, 1), tunable(rgb(1, 2, 3)))\n";
         let out = lint_source(src, &LintOptions::default()).unwrap();
-        let messages: Vec<&str> = out
-            .findings
-            .iter()
-            .filter(|f| f.rule == DM_HINT_NOT_LITERAL)
-            .map(|f| f.message.as_str())
-            .collect();
-        assert_eq!(messages.len(), 4, "{messages:?}");
+        let of = |rule: &str| -> Vec<(usize, String)> {
+            out.findings
+                .iter()
+                .filter(|f| f.rule == rule)
+                .map(|f| (f.line, f.message.clone()))
+                .collect()
+        };
+        // Only the computed argument marks nothing.
+        let not_literal = of(DM_HINT_NOT_LITERAL);
+        assert_eq!(not_literal.len(), 1, "{not_literal:?}");
+        assert!(not_literal[0].1.contains("is computed"), "{not_literal:?}");
+        // Bounds on a string mean nothing.
+        let bounds = of(DM_HINT_BOUNDS);
+        assert_eq!(bounds.len(), 1, "{bounds:?}");
         assert_eq!(
-            messages[0],
-            "`tunable` marks a number; `true` is a bool. To expose a setting of any type, \
-             declare it with `config let`"
+            bounds[0].1,
+            "`min`, `max` and `step` describe a number; `\"title\"` is a string, so they are \
+             ignored. Use `options:` to list the values it can take"
         );
-        assert!(messages[1].contains("`\"title\"` is a string"), "{}", messages[1]);
-        assert!(messages[2].contains("`{x: 140}` is a record"), "{}", messages[2]);
-        assert!(messages[3].contains("is computed"), "{}", messages[3]);
-        assert!(messages[..3].iter().all(|m| !m.contains("computed")));
+    }
+
+    #[test]
+    fn settings_that_are_not_quite_settings_are_reported() {
+        let src = "let START = tunable(\"menu\", options: [\"title\", \"play\"])\n\
+                   let OK = tunable(\"play\", options: [\"title\", \"play\"])\n\
+                   var CELL = tunable(4)\n\
+                   let SCALED = tunable(4) * 2\n\
+                   fn bump() set CELL = get CELL + 1 end\n\
+                   bump()\n\
+                   print(START, OK, CELL, SCALED)\n";
+        let out = lint_source(src, &LintOptions::default()).unwrap();
+        let lines = |rule: &str| -> Vec<usize> {
+            out.findings.iter().filter(|f| f.rule == rule).map(|f| f.line).collect()
+        };
+        assert_eq!(lines(TUNABLE_NOT_IN_OPTIONS), vec![1]);
+        assert_eq!(lines(TUNABLE_ON_VAR), vec![3]);
+        assert_eq!(lines(TUNABLE_NOT_WHOLE), vec![4]);
     }
 
     #[test]
@@ -1110,7 +1160,8 @@ mod tests {
         let src = "let level = {SPAWN: 3}\nconfig let SPAWN = level.SPAWN\nconfig let W = 2 * 8\n\
                    config let OK = {x: -1, c: rgb(1, 2, 3)}\nconfig let T = tunable(4.0, min: 0)\n\
                    config let REF = OK\nconfig let BAD = tunable(level.SPAWN, 0, 9)\n\
-                   print(SPAWN, W, OK, T, REF, BAD)\n";
+                   let NEW = tunable(level.SPAWN)\nlet FINE = tunable(level.SPAWN + 1) * 1\n\
+                   print(SPAWN, W, OK, T, REF, BAD, NEW, FINE)\n";
         let out = lint_source(src, &LintOptions::default()).unwrap();
         let found: Vec<(usize, &str)> = out
             .findings
@@ -1118,10 +1169,16 @@ mod tests {
             .filter(|f| f.rule == CONFIG_NOT_DATA)
             .map(|f| (f.line, f.message.as_str()))
             .collect();
-        assert_eq!(found.iter().map(|f| f.0).collect::<Vec<_>>(), vec![2, 3, 7], "{found:?}");
+        assert_eq!(found.iter().map(|f| f.0).collect::<Vec<_>>(), vec![2, 3, 7, 8], "{found:?}");
+        // A setting's computed value is this rule's, not `dm-hint-not-literal`'s.
+        assert!(
+            !out.findings.iter().any(|f| f.rule == DM_HINT_NOT_LITERAL && f.line == 8),
+            "{:?}",
+            out.findings
+        );
         assert_eq!(
             found[0].1,
-            "a `config let` initializer is read by hosts without running the program; \
+            "a setting's value is read by hosts without running the program; \
              `level.SPAWN` is a field access, which needs evaluating, so hosts see no value"
         );
     }

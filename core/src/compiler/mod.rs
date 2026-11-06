@@ -17,6 +17,7 @@ mod enums;
 pub use enums::collect_enums;
 mod expr;
 mod function;
+pub(crate) mod hint_names;
 pub(crate) mod keyed_state;
 mod match_check;
 mod native;
@@ -241,6 +242,11 @@ pub struct Compiler {
     /// to is marked `is_config`, so `140` in `config let BOX = {x: 140}` is
     /// config data to direct manipulation, as a scalar `config let` is.
     config_literals: HashSet<SourceSpan>,
+    /// Spans of the current module's top-level `let` statements that are
+    /// settings (`crate::static_value::is_setting`: `let X = tunable(…)` or
+    /// `config let`). Their binding term is marked `is_config` and their data
+    /// literals go into [`Self::config_literals`]. Reset per module.
+    setting_stmts: HashSet<SourceSpan>,
     /// Layout the checks compared while compiling (see
     /// [`crate::diagnostic::LayoutDep`]).
     layout_deps: Vec<crate::diagnostic::LayoutDep>,
@@ -606,6 +612,7 @@ impl Compiler {
             fn_cell_scopes: Vec::new(),
             hoisted_decls: HashSet::new(),
             config_literals: HashSet::new(),
+            setting_stmts: HashSet::new(),
             layout_deps: Vec::new(),
             imported_vars: HashMap::new(),
             errors: Vec::new(),
@@ -974,6 +981,20 @@ impl Compiler {
         // overloads that forward to it, so the overload machinery below sees
         // nothing new.
         let native_errors = native::lower_native_overloads(&mut stmts);
+        self.setting_stmts = stmts
+            .iter()
+            .filter(|s| match &s.kind {
+                StmtKind::Let {
+                    value,
+                    is_config,
+                    is_var,
+                    is_const,
+                    ..
+                } => crate::static_value::is_setting(value, *is_config, *is_var, *is_const),
+                _ => false,
+            })
+            .map(|s| s.span)
+            .collect();
 
         let is_entry = module.name.is_none();
         self.current_module = module.name.clone();
@@ -1004,6 +1025,7 @@ impl Compiler {
             .into_iter()
             .chain(native::misplaced_native_decls(&stmts))
             .chain(native::conflicting_native_decls(&stmts))
+            .chain(hint_names::reserved_hint_bindings(&stmts))
         {
             self.errors.push((diag, self.error_file.clone()));
         }

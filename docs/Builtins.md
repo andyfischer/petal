@@ -2102,16 +2102,30 @@ should be, through function calls if need be
 Usually several literals could serve. These two builtins tell the tools which
 ones to prefer and which never to touch. Both return their first argument
 unchanged and do nothing else at run time; the tools read them from the
-program. They are global (no import).
+program. They are global (no import), and the names are reserved: declaring a
+function, binding, parameter or loop variable called `tunable` or `rigid` is
+a compile error.
 
-`config let` stays the spelling for a setting: a top-level binding of any
-type that hosts list and set. The hints are for ranges, for literals inside
-functions or calls, and for the negative case. To give a setting a range,
-combine the two: `config let SPEED = tunable(4.0, 0, 10)`. Hosts then read
-`SPEED` as the setting `4.0` with the range 0..10
-([Giving a setting a range](syntax/config-let.md#giving-a-setting-a-range)).
+**Settings.** A top-level `let` whose whole initializer is a `tunable(…)`
+call is a *setting*: a binding hosts list, set live and override from
+outside, of any data type. Hosts read `let SPEED = tunable(4.0, 0, 10)` as
+the setting `4.0` with the range 0..10, and the path `SPEED` names the
+`4.0`. This replaces `config let`, which still works and means the same, but
+is being removed ([proposal](proposals/remove-config-keyword.md)).
 
-### `tunable(value)` / `tunable(value, min, max)` / `tunable(value, min:, max:, step:)`
+```petal
+pub let SPEED = tunable(4.0, 0, 10)                                 // a number with a range
+pub let START = tunable("title", options: ["title", "select", "play"])
+pub let GOD = tunable(false)
+pub let POST = tunable({exposure: 1.2, bloom: 0.32})               // every number is a knob
+print(SPEED, START, GOD, POST.bloom)                               // 4.0 title false 0.32
+```
+
+A `var` is never a setting (`tunable-on-var`), and neither is a `let` with
+the hint inside an operator, `let X = tunable(4) * 2`
+(`tunable-not-whole-initializer`): there the hint only marks the `4`.
+
+### `tunable(value)` / `tunable(value, min, max, step?)` / `tunable(value, min:, max:, step:, options:)`
 
 Returns `value`. The literal `value` is, or the literal a name in its place is
 bound to, becomes a preferred target for direct manipulation, kept within
@@ -2128,12 +2142,20 @@ print(radius, dx)                               // 40 7
 
 Rules:
 
-- `value` must be a number literal or a name bound to one. On a computed value
-  (`tunable(a + b)`) nothing is marked, and `petal lint` reports
-  `dm-hint-not-literal`. Wrap the literal itself: `tunable(a) + b`.
-- `tunable` marks numbers only. On other data (`tunable(true)`,
-  `tunable("title")`, `tunable({x: 140})`) the same lint says what the value
-  is and points to `config let`, which exposes a setting of any type.
+- `value` is a literal, a name bound to one, or data: a record, a list or a
+  constructor call such as `rgb(255, 0, 80)`. A drag only moves numbers, so
+  on data every number literal in it is marked (without bounds), and a
+  string, bool or `nil` marks nothing but is still a valid setting.
+- On a computed value (`tunable(a + b)`) nothing is marked, and `petal lint`
+  reports `dm-hint-not-literal`. Wrap the literal itself: `tunable(a) + b`.
+  For a setting it reports `config-not-data` instead, since hosts see no
+  value.
+- `min`, `max` and `step` describe a number. On anything else they are
+  ignored, with a `dm-hint-bounds` warning.
+- `options:` lists the values a setting can take, for a host to offer as a
+  dropdown. `petal lint` reports `tunable-value-not-in-options` when `value`
+  is not one of them; nothing else enforces it, and its numbers are never
+  moved by a drag.
 - The range is advice. Direct manipulation keeps a drag inside it; nothing
   else enforces it, and `set_config_value` / `pb_vm_set_config` do not clamp
   to it.
@@ -2143,7 +2165,7 @@ Rules:
   defeat it.
 - On a `state` initializer the hint cannot work, because a running program
   keeps its state across a reload (`dm-hint-state-init`). Put the start value
-  in a `config let` and initialise the state from it.
+  in a setting, `let START = tunable(…)`, and initialise the state from it.
 
 ### `rigid(value)`
 

@@ -126,7 +126,8 @@ pub struct ValueChange {
     /// arguments. `None` for a literal anywhere else (a function body, a
     /// statement, an operand).
     pub path: Option<String>,
-    /// The literal is inside a `config let` initializer.
+    /// The literal is inside a setting's initializer (`let X = tunable(…)`,
+    /// or the deprecated `config let`).
     pub config: bool,
     pub old: Literal,
     pub new: Literal,
@@ -671,12 +672,12 @@ struct Cmp {
     /// The binding path of the expression being compared, when it is data
     /// inside a top-level `let`.
     path: Option<String>,
-    /// Inside a `config let` initializer at all (for [`ValueChange::config`]).
+    /// Inside a setting's initializer at all (for [`ValueChange::config`]).
     config: bool,
-    /// The old tree's `tunable(v, …)` call that a `config let` is
-    /// initialized with, by span: its `v` has the binding's own path (as
-    /// `crate::static_value::config_value_expr` addresses it) and its bounds
-    /// have none.
+    /// The old tree's `tunable(v, …)` call that a setting is initialized
+    /// with, by span: its `v` has the binding's own path (as
+    /// `crate::static_value::setting_value_expr` addresses it) and its
+    /// bounds and options have none.
     config_tunable: Option<SourceSpan>,
 }
 
@@ -731,8 +732,8 @@ impl Cmp {
                 }
                 let saved = self.config;
                 // The compiler marks config literals in exactly this case: a
-                // `config let` that is not a `var`.
-                self.config = *c1 && !*var1;
+                // setting (`let X = tunable(…)` or `config let`).
+                self.config = crate::static_value::is_setting(v1, *c1, *var1, *k1);
                 self.config_tunable = (self.config
                     && crate::static_value::tunable_args(v1).is_some())
                 .then_some(v1.span);
@@ -1033,7 +1034,7 @@ impl Cmp {
                 if n1 != n2 || a1.len() != a2.len() || !self.expr(f1, f2) {
                     return false;
                 }
-                // `config let X = tunable(v, …)`: `X` is `v`.
+                // `let X = tunable(v, …)`: `X` is `v`.
                 let tunable_value = (self.config_tunable == Some(a.span))
                     .then(|| crate::static_value::tunable_args(a).map(|t| t.value.span))
                     .flatten();
@@ -1620,9 +1621,25 @@ mod tests {
         assert!(v[0].config);
         assert!(matches!(v[0].new, Literal::Float(f) if f == -4.0));
         assert_eq!(v[1].path, None);
-        // A plain `let` keeps the call's argument paths.
-        let v = values("let X = tunable(4.0)\n", "let X = tunable(5.0)\n");
-        assert_eq!(v[0].path.as_deref(), Some("X[0]"));
+        // Without `config` it is the same setting, with the same paths.
+        let v = values("let X = tunable(4.0, -1, 10)\n", "let X = tunable(-4.0, 1, 10)\n");
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].path.as_deref(), Some("X"));
+        assert!(v[0].config);
+        assert_eq!(v[1].path, None);
+        // A record setting: every literal has its field path, and is config.
+        let v = values(
+            "let BOX = tunable({x: 140, c: \"red\"})\n",
+            "let BOX = tunable({x: 150, c: \"blue\"})\n",
+        );
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].path.as_deref(), Some("BOX.x"));
+        assert_eq!(v[1].path.as_deref(), Some("BOX.c"));
+        assert!(v.iter().all(|c| c.config));
+        // A `var` is not a setting: the call's argument paths, not config.
+        let v = values("var X = tunable(4.0)\nset X = 1\n", "var X = tunable(5.0)\nset X = 1\n");
+        assert_eq!(v[0].path, None);
+        assert!(!v[0].config);
     }
 
     #[test]

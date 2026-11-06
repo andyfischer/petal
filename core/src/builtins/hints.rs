@@ -12,11 +12,11 @@
 
 use crate::native_fn::PetalCxt;
 
-/// `tunable(value, min?, max?, step?)`: `value`.
+/// `tunable(value, min?, max?, step?, options?)`: `value`.
 pub(super) fn native_tunable(state: &mut PetalCxt) -> Result<u32, String> {
     let n = state.arg_count();
-    if !(1..=4).contains(&n) {
-        return Err(format!("tunable() expects 1 to 4 arguments, got {n}"));
+    if !(1..=5).contains(&n) {
+        return Err(format!("tunable() expects 1 to 5 arguments, got {n}"));
     }
     let v = state.get_value(1)?;
     state.push_value(v);

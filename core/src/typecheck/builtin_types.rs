@@ -66,6 +66,13 @@ pub fn intrinsic_return_type(name: &str, args: &[Type]) -> Option<Option<Type>> 
             }
             _ => None,
         },
+        // The direct-manipulation hints are the identity on their first
+        // argument (`builtins/hints.rs`), so `let s: int = tunable(1.5)`
+        // is checked as `1.5` is.
+        "tunable" | "rigid" => match args.first() {
+            Some(t) if *t != Type::Any => Some(*t),
+            _ => None,
+        },
         // Return whichever operand compares smaller/larger, unchanged — so the
         // result type is known only when both operands agree.
         "min" | "max" => match args {
@@ -339,6 +346,17 @@ mod tests {
             Some(Type::Float)
         );
         assert_eq!(builtin_return_type("lerp", &[Type::Any, Type::Any, Type::Float]), None);
+    }
+
+    /// The hints are the identity on their first argument.
+    #[test]
+    fn hints_return_their_value_type() {
+        assert_eq!(
+            builtin_return_type("tunable", &[Type::Float, Type::Int, Type::Int]),
+            Some(Type::Float)
+        );
+        assert_eq!(builtin_return_type("rigid", &[Type::Int]), Some(Type::Int));
+        assert_eq!(builtin_return_type("tunable", &[Type::Any]), None);
     }
 
     /// `clamp` preserves int-ness the way `min`/`max` do: an all-int clamp is

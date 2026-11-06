@@ -1603,8 +1603,13 @@ fn a_tunable_config_let_reports_its_range() {
     // `config let`, with no range.
     assert_eq!(decl(&r, "BOX").kind, DeclKind::ConfigLet);
     assert_eq!(decl(&r, "BOX").range, None);
-    // A plain `let` has none.
-    assert_eq!(decl(&r, "R").range, None);
+    // Without `config`, `let R = tunable(…)` is the same setting
+    // (docs/proposals/remove-config-keyword.md).
+    assert_eq!(decl(&r, "R").kind, DeclKind::ConfigLet);
+    assert_eq!(
+        decl(&r, "R").range,
+        Some(crate::static_value::StaticRange { min: Some(0.0), max: Some(5.0), step: None })
+    );
     let json = r.to_json(false).to_string();
     assert!(json.contains("\"range\":{\"min\":0.0,\"max\":10.0}"), "{json}");
 }

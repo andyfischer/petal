@@ -469,11 +469,13 @@ mod tests {
         assert_eq!(json[0]["range"], serde_json::json!({"min": 0.0, "max": 10.0}));
         assert_eq!(json[1]["value"]["int"], 2);
         assert_eq!(json[1]["range"], serde_json::json!({"step": 1.0}));
-        // No bound written, no range; a plain `let` is not unwrapped.
+        // No bound written, no range. Without `config` it is the same
+        // setting (docs/proposals/remove-config-keyword.md).
         assert_eq!(json[2]["value"], 0.5);
         assert!(json[2].get("range").is_none());
-        assert_eq!(json[3]["value"]["call"], "tunable");
-        assert!(json[3].get("range").is_none());
+        assert_eq!(json[3]["config"], true);
+        assert_eq!(json[3]["value"], 1.0);
+        assert_eq!(json[3]["range"], serde_json::json!({"min": 0.0, "max": 2.0}));
 
         let mut s = PbSource::new(src);
         assert_eq!(s.set_value("A", "-1.5"), Status::Ok);

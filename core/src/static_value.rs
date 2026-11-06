@@ -592,8 +592,9 @@ pub struct StaticBinding {
     pub value: Result<StaticValue, String>,
     /// The right-hand side exactly as it was written, whitespace and all.
     /// `None` for a `fn` or `state` declaration, which has no right-hand side
-    /// in this sense. For `config let X = tunable(v, …)` it is `v`'s text, as
-    /// `value` is `v`'s value (the bounds are in [`range`](Self::range)).
+    /// in this sense. For a setting written `let X = tunable(v, …)` it is
+    /// `v`'s text, as `value` is `v`'s value (the bounds are in
+    /// [`range`](Self::range), the choices in [`options`](Self::options)).
     ///
     /// Keeping the source text is what lets a host write a value back in the
     /// author's own spelling: `0.020000` and `0.02` are the same `f64`, so
@@ -605,19 +606,26 @@ pub struct StaticBinding {
     /// a file header does not attach itself to the first binding. `None` when
     /// there is no such comment.
     pub comment: Option<String>,
-    /// Written `config let …`: the author declared the binding a tuning knob
-    /// (see docs/features/direct-manipulation.md). A host showing a file's settings
-    /// can offer exactly these for editing. Always `false` for a bare
-    /// `name = …` rebinding, a `fn` and a `state`.
+    /// The binding is a *setting* ([`is_setting`]): written
+    /// `let X = tunable(…)`, or with the deprecated `config let`. A host
+    /// showing a file's settings can offer exactly these for editing. Always
+    /// `false` for a `var`, a bare `name = …` rebinding, a `fn` and a `state`.
+    ///
+    /// The field keeps its old name until `config let` is removed
+    /// (docs/proposals/remove-config-keyword.md).
     pub is_config: bool,
     /// Written with `pub` (or `export`): other modules can import it.
     pub exported: bool,
-    /// The range a `config let X = tunable(v, min, max, step)` declares:
+    /// The range a setting `let X = tunable(v, min, max, step)` declares:
     /// the bounds written as number literals, by position or by name.
-    /// `None` when the binding is not such a `config let`, or names no
-    /// bound. A host showing a slider can use it for the slider's ends; it
-    /// is advice, as it is to direct manipulation, and nothing enforces it.
+    /// `None` when the binding is not a setting, or names no bound. A host
+    /// showing a slider can use it for the slider's ends; it is advice, as
+    /// it is to direct manipulation, and nothing enforces it.
     pub range: Option<StaticRange>,
+    /// The choices a setting `let X = tunable(v, options: [a, b, …])`
+    /// declares, when the list is static. A host can offer them as a
+    /// dropdown; nothing enforces them (`petal lint` checks that `v` is one).
+    pub options: Option<Vec<StaticValue>>,
     /// The 1-based line the binding's statement starts on.
     pub line: u32,
     /// The declaration, when the binding is an `enum`'s name: what makes
@@ -625,7 +633,7 @@ pub struct StaticBinding {
     pub(crate) enum_decl: Option<crate::program::EnumDef>,
 }
 
-/// The bounds of a `tunable(value, min?, max?, step?)` a `config let` is
+/// The bounds of a `tunable(value, min?, max?, step?)` a setting is
 /// initialized with (see [`StaticBinding::range`]). Each is the number its
 /// literal says, or `None` when it is not written (or written `nil`).
 #[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize)]
@@ -638,25 +646,25 @@ pub struct StaticRange {
     pub step: Option<f64>,
 }
 
-/// The arguments of a `tunable(value, min?, max?, step?)` call, sorted into
-/// their parameters: by position, or by name (`tunable(4.0, min: 1)`).
+/// The arguments of a `tunable(value, min?, max?, step?, options?)` call,
+/// sorted into their parameters: by position, or by name
+/// (`tunable(4.0, min: 1)`, `tunable("a", options: ["a", "b"])`).
 pub struct TunableArgs<'a> {
     pub value: &'a Expr,
     pub min: Option<&'a Expr>,
     pub max: Option<&'a Expr>,
     pub step: Option<&'a Expr>,
+    pub options: Option<&'a Expr>,
 }
 
 /// `e`'s arguments when `e` is a well-formed call of `tunable` by that name:
-/// one to four arguments, each parameter given once, a named argument only
+/// one to five arguments, each parameter given once, a named argument only
 /// after the positional ones, no spread. `None` for anything else.
 ///
-/// This goes by the name alone, so it is only asked where the syntax has
-/// already said "this is a knob": the initializer of a `config let`
-/// ([`config_value_expr`]). A file that declares its own `fn tunable` still
-/// has its `config let X = tunable(…)` read this way.
+/// This goes by the name alone, which is sound because Petal code cannot
+/// bind the name `tunable` (`crate::compiler::hint_names`).
 pub fn tunable_args(e: &Expr) -> Option<TunableArgs<'_>> {
-    const PARAMS: [&str; 4] = ["value", "min", "max", "step"];
+    const PARAMS: [&str; 5] = ["value", "min", "max", "step", "options"];
     let ExprKind::Call {
         function,
         args,
@@ -668,10 +676,10 @@ pub fn tunable_args(e: &Expr) -> Option<TunableArgs<'_>> {
     let ExprKind::Ident(f) = &function.kind else {
         return None;
     };
-    if f != "tunable" || args.is_empty() || args.len() > 4 {
+    if f != "tunable" || args.is_empty() || args.len() > PARAMS.len() {
         return None;
     }
-    let mut slots: [Option<&Expr>; 4] = [None; 4];
+    let mut slots: [Option<&Expr>; 5] = [None; 5];
     let mut named_seen = false;
     for (i, arg) in args.iter().enumerate() {
         let slot = match arg_names.get(i).and_then(|n| n.as_deref()) {
@@ -691,26 +699,40 @@ pub fn tunable_args(e: &Expr) -> Option<TunableArgs<'_>> {
         min: slots[1],
         max: slots[2],
         step: slots[3],
+        options: slots[4],
     })
 }
 
+/// Whether a top-level `let` is a *setting*: a binding hosts list, set live
+/// and override from outside. It is one when its whole initializer is a
+/// `tunable(…)` call (`let SPEED = tunable(4.0, 0, 10)`,
+/// `pub let START = tunable("title", options: ["title", "play"])`), or when
+/// it is written with the deprecated `config let`. A `var` is never a
+/// setting, and neither is a `const` (which `config` could not mark either).
+///
+/// See docs/proposals/remove-config-keyword.md.
+pub fn is_setting(value: &Expr, is_config: bool, is_var: bool, is_const: bool) -> bool {
+    !is_var && (is_config || (!is_const && tunable_args(value).is_some()))
+}
+
 /// Where a top-level binding's value is written, for a reader that goes by
-/// paths: its initializer, except that in `config let X = tunable(v, …)` it
-/// is `v`. The `tunable` there gives the setting a range; the setting is the
-/// value, so `X` names `v` to [`static_bindings`], to path edits
-/// ([`crate::literal_edit`], [`crate::rewrite::find_binding_path`]) and so to
+/// paths: its initializer, except that in `let X = tunable(v, …)` (or
+/// `config let X = tunable(v, …)`) it is `v`. The `tunable` there gives the
+/// setting a range; the setting is the value, so `X` names `v` to
+/// [`static_bindings`], to path edits ([`crate::literal_edit`],
+/// [`crate::rewrite::find_binding_path`]) and so to
 /// `Env::set_config_value`.
-pub fn config_value_expr(value: &Expr, is_config: bool) -> &Expr {
-    match is_config.then(|| tunable_args(value)).flatten() {
+pub fn setting_value_expr(value: &Expr) -> &Expr {
+    match tunable_args(value) {
         Some(args) => args.value,
         None => value,
     }
 }
 
-/// The range a `config let`'s initializer declares, when it is a `tunable`
-/// call with at least one bound written as a number literal.
-fn config_range(value: &Expr, is_config: bool) -> Option<StaticRange> {
-    let args = is_config.then(|| tunable_args(value)).flatten()?;
+/// The range a setting's initializer declares, when it is a `tunable` call
+/// with at least one bound written as a number literal.
+fn setting_range(value: &Expr) -> Option<StaticRange> {
+    let args = tunable_args(value)?;
     let number = |e: Option<&Expr>| match e.map(|e| &e.kind) {
         Some(ExprKind::Literal(Literal::Int(n))) => Some(*n as f64),
         Some(ExprKind::Literal(Literal::Float(f))) => Some(*f),
@@ -776,6 +798,7 @@ pub(crate) fn bindings_of(stmts: &[Stmt], chars: &[char]) -> Vec<StaticBinding> 
             is_config: false,
             exported: stmt.exported,
             range: None,
+            options: None,
             line: stmt.span.start.line,
             enum_decl: Some(crate::program::EnumDef::declared(variants)),
         })
@@ -793,22 +816,34 @@ pub(crate) fn bindings_of(stmts: &[Stmt], chars: &[char]) -> Vec<StaticBinding> 
     };
     for stmt in stmts {
         let mut range = None;
+        let mut options = None;
         let (name, value, text, is_config) = match &stmt.kind {
             StmtKind::Let {
                 name,
                 value,
                 is_config,
+                is_var,
+                is_const,
                 ..
             } => {
-                // `config let X = tunable(v, …)`: the setting is `v`, with a
-                // range.
-                range = config_range(value, *is_config);
-                let value = config_value_expr(value, *is_config);
+                let setting = is_setting(value, *is_config, *is_var, *is_const);
+                // `let X = tunable(v, …)`: the setting is `v`, with a range
+                // and choices.
+                if setting {
+                    range = setting_range(value);
+                    options = tunable_args(value)
+                        .and_then(|a| a.options)
+                        .and_then(|o| match eval(o, &bindings) {
+                            Ok(StaticValue::List(items)) => Some(items),
+                            _ => None,
+                        });
+                }
+                let value = setting_value_expr(value);
                 (
                     name.clone(),
                     eval(value, &bindings),
                     Some(span_text(chars, value.span)),
-                    *is_config,
+                    setting,
                 )
             }
             StmtKind::Assign {
@@ -862,6 +897,7 @@ pub(crate) fn bindings_of(stmts: &[Stmt], chars: &[char]) -> Vec<StaticBinding> 
                 is_config,
                 exported: stmt.exported,
                 range,
+                options,
                 line: stmt.span.start.line,
                 enum_decl: None,
             },
@@ -1678,16 +1714,54 @@ let drag = 0.02
         let by_name = binding(src, "BYNAME");
         assert_eq!(by_name.value, Ok(StaticValue::float(2.5)));
         assert_eq!(by_name.range, range(None, Some(5.0), None));
-        // A plain `let` is a plain call, as before.
+        // Without `config`, a `let` whose initializer is `tunable(…)` is a
+        // setting just the same (docs/proposals/remove-config-keyword.md).
         let plain = binding(src, "PLAIN");
-        assert!(matches!(plain.value, Ok(StaticValue::Call { ref function, .. }) if function == "tunable"));
-        assert_eq!(plain.range, None);
+        assert!(plain.is_config);
+        assert_eq!(plain.value, Ok(StaticValue::float(1.0)));
+        assert_eq!(plain.text.as_deref(), Some("1.0"));
+        assert_eq!(plain.range, range(Some(0.0), Some(2.0), None));
+    }
+
+    #[test]
+    fn a_tunable_let_of_any_data_is_a_setting() {
+        let src = "pub let START = tunable(\"title\", options: [\"title\", \"play\"])\n\
+                   let GOD = tunable(false)\n\
+                   let POST = tunable({bloom: 0.3, effect: \"crt\"})\n\
+                   let SIZE = tunable(16, options: [8, 16, 32])\n\
+                   var CELL = tunable(4)\n\
+                   let SCALED = tunable(4) * 2\n\
+                   let PLAIN = 4\n";
+        let start = binding(src, "START");
+        assert!(start.is_config && start.exported);
+        assert_eq!(start.value, Ok(StaticValue::Str("title".into())));
+        assert_eq!(start.text.as_deref(), Some("\"title\""));
+        assert_eq!(
+            start.options,
+            Some(vec![StaticValue::Str("title".into()), StaticValue::Str("play".into())])
+        );
+        assert_eq!(start.range, None);
+        let god = binding(src, "GOD");
+        assert!(god.is_config);
+        assert_eq!(god.value, Ok(StaticValue::Bool(false)));
+        let post = binding(src, "POST");
+        assert!(post.is_config);
+        assert!(matches!(post.value, Ok(StaticValue::Record(_))), "{:?}", post.value);
+        let size = binding(src, "SIZE");
+        assert_eq!(size.value, Ok(StaticValue::int(16)));
+        assert_eq!(size.options.as_ref().map(Vec::len), Some(3));
+        // Not settings: a `var`, a `tunable` inside an operator, a plain `let`.
+        for name in ["CELL", "SCALED", "PLAIN"] {
+            let b = binding(src, name);
+            assert!(!b.is_config, "{name}");
+            assert_eq!(b.options, None, "{name}");
+        }
     }
 
     #[test]
     fn a_tunable_config_is_unwrapped_even_when_the_file_shadows_tunable() {
-        // `config` already says this is a knob, so a user `fn tunable` does
-        // not hide it from hosts.
+        // Static readers go by the name: binding it is a compile error
+        // (`crate::compiler::hint_names`), so a shadowing file never runs.
         let src = "fn tunable(v, lo, hi) v end\nconfig let X = tunable(4, 1, 8)\n";
         let x = binding(src, "X");
         assert_eq!(x.value, Ok(StaticValue::int(4)));
@@ -1698,7 +1772,7 @@ let drag = 0.02
     fn a_malformed_tunable_config_is_left_as_a_call() {
         // Too many arguments, a repeated parameter, an unknown name: not the
         // hint's shape, so not unwrapped.
-        for init in ["tunable(1, 2, 3, 4, 5)", "tunable(1, value: 2)", "tunable(1, lo: 0)"] {
+        for init in ["tunable(1, 2, 3, 4, 5, 6)", "tunable(1, value: 2)", "tunable(1, lo: 0)"] {
             let src = format!("config let X = {init}\n");
             let x = binding(&src, "X");
             assert_eq!(x.range, None, "{init}");

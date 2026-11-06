@@ -7,7 +7,10 @@
 //!
 //! - `tunable(x)`, `tunable(x, min, max)`, `tunable(x, min:, max:, step:)`
 //!   mark the literal `x` resolves to as a preferred target, with an optional
-//!   box constraint and step;
+//!   box constraint and step. When `x` is data rather than one number (a
+//!   record, a list, a constructor call such as `rgb(…)`), every number
+//!   literal in it is marked, without bounds; a string, bool or `nil` is a
+//!   valid setting that marks nothing, since a drag only moves numbers;
 //! - `rigid(x)` marks it as never moving. The call is also a feedback
 //!   barrier: discovery stops crediting what is upstream of it
 //!   ([`super::params`]), and a speculative run replays its baseline answer.
@@ -56,13 +59,13 @@ pub const BOUNDS: &str = "dm-hint-bounds";
 /// The name of the warning that a host replaced a hint builtin.
 pub const DISABLED: &str = "dm-hint-disabled";
 
-/// The message for `tunable(e)` where `e` is data but not a number
-/// (`text` is how it is written, `kind` what it is: "a string"). Shared by
-/// this reader and `petal lint`.
-pub fn not_a_number_message(text: &str, kind: &str) -> String {
+/// The message for `tunable(e, min, …)` where `e` is data but not a number
+/// (`text` is how it is written, `kind` what it is: "a string"): the bounds
+/// mean nothing for it. Shared by this reader and `petal lint`.
+pub fn bounds_on_non_number_message(text: &str, kind: &str) -> String {
     format!(
-        "`tunable` marks a number; `{text}` is {kind}. To expose a setting of any type, \
-         declare it with `config let`"
+        "`min`, `max` and `step` describe a number; `{text}` is {kind}, so they are \
+         ignored. Use `options:` to list the values it can take"
     )
 }
 
@@ -83,6 +86,58 @@ fn non_number_constant(program: &Program, id: TermId) -> Option<(String, &'stati
         cur = provenance::alias_target(program, cur)?;
     }
     None
+}
+
+/// Whether `id` is data — a constant, or a list, record or constructor call
+/// of data — collecting the number literals in it into `out`. The IR
+/// counterpart of `crate::source_diff::config_data_literals`. A computed
+/// part of a record or list (`{x: a + 1}`) is skipped; only a computed whole
+/// is not data.
+fn data_number_literals(
+    program: &Program,
+    natives: &NativeFnTable,
+    id: TermId,
+    depth: usize,
+    out: &mut Vec<TermId>,
+) -> bool {
+    if depth > 64 {
+        return false;
+    }
+    let mut cur = id;
+    for _ in 0..16 {
+        let Some(t) = program.terms.get(cur.0 as usize) else { return false };
+        match &t.op {
+            TermOp::Constant(_) => {
+                if let Some(lit) = literal_term(program, cur) {
+                    out.push(lit);
+                }
+                return true;
+            }
+            TermOp::AllocList | TermOp::AllocMap { .. } => {
+                for &input in &t.inputs {
+                    data_number_literals(program, natives, input, depth + 1, out);
+                }
+                return true;
+            }
+            // A constructor (`rgb(…)`, `vec3(…)`), but not a nested hint,
+            // which is read on its own.
+            TermOp::BuiltinCall(name)
+                if !matches!(program.constants.get(*name), ConstantValue::String(n)
+                    if kind_of(natives, n).is_some()) =>
+            {
+                for &input in &t.inputs {
+                    data_number_literals(program, natives, input, depth + 1, out);
+                }
+                return true;
+            }
+            _ => {}
+        }
+        match provenance::alias_target(program, cur) {
+            Some(next) => cur = next,
+            None => return false,
+        }
+    }
+    false
 }
 
 /// Something about the hints that a tool should tell the author.
@@ -203,23 +258,44 @@ pub fn read_hints(program: &Program, natives: &NativeFnTable) -> Hints {
             }
             HintKind::Tunable => {
                 let (min, max, step) = read_bounds(program, term, &mut hints);
+                read_options(program, natives, term, &mut hints);
+                let mut data = Vec::new();
                 match literal {
                     Some(lit) => {
                         if !matches!(hints.marks.get(&lit), Some(Hint::Rigid)) {
                             hints.marks.insert(lit, Hint::Tunable { min, max, step });
                         }
                     }
+                    // Data that is not one number: a setting of any type.
+                    // Its numbers are knobs; bounds mean nothing for it.
+                    None if data_number_literals(program, natives, arg, 0, &mut data) => {
+                        for lit in data {
+                            if !hints.marks.contains_key(&lit) {
+                                hints.marks.insert(
+                                    lit,
+                                    Hint::Tunable { min: None, max: None, step: None },
+                                );
+                            }
+                        }
+                        if min.is_some() || max.is_some() || step.is_some() {
+                            let (text, kind) = non_number_constant(program, arg)
+                                .unwrap_or_else(|| ("this value".to_string(), "data"));
+                            hints.warnings.push(HintWarning {
+                                rule: BOUNDS,
+                                term: Some(term.id),
+                                span: span(term.id),
+                                message: bounds_on_non_number_message(&text, kind),
+                            });
+                        }
+                    }
                     None => hints.warnings.push(HintWarning {
                         rule: NOT_LITERAL,
                         term: Some(term.id),
                         span: span(term.id),
-                        message: match non_number_constant(program, arg) {
-                            Some((text, kind)) => not_a_number_message(&text, kind),
-                            None => "`tunable` marks a literal or a name bound to one; its \
-                                     argument is computed, so nothing is marked. Wrap the \
-                                     literal itself"
-                                .to_string(),
-                        },
+                        message: "`tunable` marks a literal or a name bound to one; its \
+                                  argument is computed, so nothing is marked. Wrap the \
+                                  literal itself"
+                            .to_string(),
                     }),
                 }
                 if let (Some(lo), Some(hi)) = (min, max)
@@ -236,6 +312,28 @@ pub fn read_hints(program: &Program, natives: &NativeFnTable) -> Hints {
         }
     }
     hints
+}
+
+/// The numbers in the `options:` list of the `tunable` call `term` (named,
+/// or the fifth positional argument) are, like bounds, never editable: a
+/// drag must not rewrite the list of choices to reach a goal.
+fn read_options(
+    program: &Program,
+    natives: &NativeFnTable,
+    term: &crate::program::Term,
+    hints: &mut Hints,
+) {
+    for (j, &input) in term.inputs.iter().enumerate().skip(1) {
+        let is_options = match term.arg_names.get(j).copied().flatten() {
+            Some(c) => matches!(program.constants.get(c), ConstantValue::String(n) if n == "options"),
+            None => j == 4,
+        };
+        if is_options {
+            let mut lits = Vec::new();
+            data_number_literals(program, natives, input, 0, &mut lits);
+            hints.bounds.extend(lits);
+        }
+    }
 }
 
 /// The `min`, `max` and `step` of the `tunable` call `term`. Each must be a

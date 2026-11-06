@@ -12,6 +12,28 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- A top-level `let X = tunable(…)` is a setting, exactly as `config let`
+  was: hosts list it (`static_bindings`, the C bridge's
+  `pb_source_bindings_json` with `"config": true` and `"range"`), the path
+  `X` names the value (`set_config_value`, `pb_vm_set_config`,
+  `literal_edit`, reload reports), and every literal in its data is a knob
+  to direct manipulation. `tunable` now takes data of any type
+  (`tunable("title")`, `tunable(false)`, `tunable({bloom: 0.3})`) and an
+  `options:` list of the values a setting can take. This is the first step
+  of removing `config let`, which still works and means the same
+  ([proposal](docs/proposals/remove-config-keyword.md)).
+  - `tunable` and `rigid` are reserved: binding either name (a `fn`, a
+    `let`, a parameter, a loop variable) is a compile error.
+  - A plain `let X = tunable(v, …)` used to read as a call to hosts, with
+    the value at path `X[0]`. It now reads as `v`, at path `X`.
+  - New lints: `tunable-value-not-in-options`, `tunable-on-var`,
+    `tunable-not-whole-initializer`. `dm-hint-not-literal` no longer fires
+    on a string, bool or record; bounds on one are `dm-hint-bounds`.
+  - The checker types `tunable` and `rigid` as the identity, so
+    `let s: int = tunable(1.5)` warns.
+  - `petal propose-edit --knob-strict` (and `knob_strict` in JSON requests)
+    is the new name of `--config-strict`, which still works.
+
 - The package manager left the `petal` library: it is the `petal-pkgman`
   crate (`core-libs/petal-pkgman`), and the `petal` binary is built from a
   new `cli/` crate that links it. Runtimes embedded in other programs (the

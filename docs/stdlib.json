@@ -4756,6 +4756,11 @@
           "name": "step",
           "type": "any",
           "optional": true
+        },
+        {
+          "name": "options",
+          "type": "any",
+          "optional": true
         }
       ],
       "signatures": [
@@ -4778,6 +4783,21 @@
             "name": "step",
             "type": "any",
             "optional": true
+          },
+          {
+            "name": "options",
+            "type": "any",
+            "optional": true
+          }
+        ],
+        [
+          {
+            "name": "value",
+            "type": "any"
+          },
+          {
+            "name": "options",
+            "type": "any"
           }
         ]
       ],

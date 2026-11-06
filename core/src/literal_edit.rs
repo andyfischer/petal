@@ -50,7 +50,7 @@ use crate::rewrite::{
     parse_binding_path, significant_range,
 };
 use crate::static_value::{
-    StaticBinding, StaticValue, bindings_of, color_literal, config_value_expr,
+    StaticBinding, StaticValue, bindings_of, color_literal, setting_value_expr,
     element_child_lines, eval,
 };
 
@@ -655,8 +655,8 @@ impl Doc {
 
     /// The last top-level binding of `name`: its statement index and value.
     /// The last top-level binding of `name`: its statement index and where
-    /// its value is written. In `config let X = tunable(v, …)` that is `v`
-    /// ([`config_value_expr`]): the path `X` names the setting, not the hint.
+    /// its value is written. In `let X = tunable(v, …)` that is `v`
+    /// ([`setting_value_expr`]): the path `X` names the setting, not the hint.
     fn binding(&self, name: &str) -> Result<(usize, &Expr), EditError> {
         self.stmts
             .iter()
@@ -666,9 +666,8 @@ impl Doc {
                 StmtKind::Let {
                     name: bound,
                     value,
-                    is_config,
                     ..
-                } if bound == name => Some((i, config_value_expr(value, *is_config))),
+                } if bound == name => Some((i, setting_value_expr(value))),
                 StmtKind::Assign {
                     target: AssignTarget::Name(bound),
                     value,

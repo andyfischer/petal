@@ -40,7 +40,6 @@ impl Compiler {
                 name,
                 value,
                 is_var,
-                is_config,
                 is_const,
                 ..
             } => {
@@ -49,10 +48,12 @@ impl Compiler {
                 if self.hoisted_decls.contains(&stmt_span) {
                     return;
                 }
-                // A `config let` is data a person tunes: every literal in
-                // that data is config, not only the binding's root term (a
-                // record's fields, a list's items).
-                if *is_config && !*is_var {
+                // A setting (`let X = tunable(…)`, `config let`) is data a
+                // person tunes: every literal in that data is config, not
+                // only the binding's root term (a record's fields, a list's
+                // items).
+                let setting = self.setting_stmts.contains(&stmt_span);
+                if setting {
                     let literals = &mut self.config_literals;
                     crate::source_diff::config_data_literals(value, &mut |e| {
                         literals.insert(e.span);
@@ -74,7 +75,7 @@ impl Compiler {
                     // The flag rides on the binding's value term — for a
                     // `config let` with a literal initializer that is exactly
                     // the term a proposal edits.
-                    self.terms[val_tid.0 as usize].is_config = *is_config;
+                    self.terms[val_tid.0 as usize].is_config = setting;
                     // Likewise `const`: the classifier reads it off the term
                     // that carries the declaration's value.
                     self.terms[val_tid.0 as usize].is_const = *is_const;

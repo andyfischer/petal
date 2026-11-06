@@ -249,10 +249,11 @@ server.registerTool("ProposeEdit", {
     "`score`), `candidates` (every literal considered, with why it was excluded and its " +
     "measured sensitivity `column`) and `diagnostics`. Workflow: ask once (with " +
     "`explain: true` to see the candidate table), then re-ask with `allow` naming the " +
-    "literals you want moved (a binding name, 'line:N', 'fn:NAME', 'config') or `deny` " +
-    "for ones to keep — the engine works out the values. In source, `config let` and " +
-    "`tunable(x, min, max)` mark preferred knobs (one tier: either mark, or both, " +
-    "weighs the same; 'config', alias 'knob', selects them all) and `rigid(x)` " +
+    "literals you want moved (a binding name, 'line:N', 'fn:NAME', 'knob') or `deny` " +
+    "for ones to keep — the engine works out the values. In source, " +
+    "`tunable(x, min, max)` marks a preferred knob (a top-level `let X = tunable(…)` " +
+    "is a setting, and every number in it is a knob; the deprecated `config let` " +
+    "weighs the same; 'knob', alias 'config', selects them all) and `rigid(x)` " +
     "freezes a value.\n\n" +
     "engine 'v1' (legacy; only when passed) inverts the emitting call's own " +
     "arguments: a literal, a binding, or + - * / arithmetic; it refuses values that " +
@@ -276,9 +277,10 @@ server.registerTool("ProposeEdit", {
     static: z.array(z.string()).optional()
       .describe("Variables that must not be edited (v1); under v2 the same as deny"),
     allow: z.array(z.string()).optional()
-      .describe("v2: only these may move: binding names, 'line:N', 'fn:NAME', 'config' (alias 'knob': every config let / tunable literal), 'user'"),
+      .describe("v2: only these may move: binding names, 'line:N', 'fn:NAME', 'knob' (alias 'config': every tunable / setting literal), 'user'"),
     deny: z.array(z.string()).optional().describe("v2: these may not move (same selectors)"),
-    configStrict: z.boolean().optional().describe("v2: v1's rule that knobs (config let / tunable) win outright"),
+    knobStrict: z.boolean().optional().describe("v2: v1's rule that knobs (tunable / settings) win outright"),
+    configStrict: z.boolean().optional().describe("Deprecated name of knobStrict"),
     alternatives: z.number().int().min(1).optional().describe("v2: how many alternatives (default 3)"),
     explain: z.boolean().optional().describe("v2: include the pipeline log and candidate table"),
     tol: z.number().optional().describe("v2: goal tolerance"),

@@ -23,7 +23,7 @@
 // keys and re-loads — calling git again for fresh data.
 //
 // The widgets are the `ui` prelude's component library (petal-ui
-// docs/components.md): the two draggable dividers are `splitter`s, the commit
+// docs/widgets.md): the two draggable dividers are `splitter`s, the commit
 // and file lists are `list_state`/`list_update` (+ `list_row_rect` for row
 // painting and the prelude `draw_scrollbar`), the section headings are
 // `section_label`, long paths wrap with `wrap_px`, load/empty states use

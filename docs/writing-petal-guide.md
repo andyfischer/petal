@@ -792,7 +792,7 @@ use the names in the [Builtins Reference](Builtins.md)**
 (`clamp(v, lo: 0, hi: 1)`, `xs.slice(start: 1, end: 3)`). The `ui` package's
 draw calls take several shapes, and the names pick the shape:
 `draw_circle(center: p, radius: 6, c: red)`; see the
-[signature table](../core-libs/petal-ui/docs/components.md#draw-primitives--fills-and-strokes).
+[signature table](../core-libs/petal-ui/docs/drawing.md#draw-primitives--fills-and-strokes).
 A wrong name is an error `petal lint` catches. The binding rules and the
 errors are in [Named Arguments](syntax/function-overloading.md#named-arguments).
 
@@ -1014,7 +1014,7 @@ these names (`shadows-builtin`) or only forwards to one
 | trimming a label to fit with an ellipsis (petal-ui) | `text_ellipsize(text, style, max_width)` |
 
 The exact signatures are in [Builtins.md](Builtins.md); the two text
-functions are in the [UI reference](ui-reference.md).
+functions are in the [UI reference](../core-libs/petal-ui/docs/reference.md).
 
 ---
 

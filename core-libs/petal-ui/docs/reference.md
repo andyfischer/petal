@@ -3,16 +3,15 @@
 Everything a script gets from `import ui`: every input helper, draw call,
 layout helper and widget, with its signature and one line on what it does.
 It is the index. For the reasoning behind a widget, worked examples and the
-theme tokens, see
-[the component library guide](../core-libs/petal-ui/docs/components.md); for
-what a host has to do to draw any of this, see
-[the host contract](ui-host-contract.md).
+theme tokens, see [widgets.md](widgets.md); for the draw primitives in depth,
+[drawing.md](drawing.md); for what a host has to do to draw any of this,
+[host-contract.md](host-contract.md).
 
-A test (`core-libs/petal-ui/tests/reference.rs`) fails if a name the package
-exports is missing from this page.
+A test (`tests/reference.rs`) fails if a name the package exports is missing
+from this page.
 
 Two apps to read beside it: `garden/examples/panels/gallery.ptl` uses every
-widget, and [`examples/ui/layers`](../examples/ui/layers/) is a HUD over a
+widget, and [`examples/ui/layers`](../../../examples/ui/layers/) is a HUD over a
 "world" — layers, `pointer_captured`, a modal, `cached_layer` with
 `draw_rects`, flow layout and `ui_measure` in about 150 lines.
 
@@ -191,7 +190,7 @@ let r = ui_target_rect("End turn")
 if r != nil then draw_focus_ring(r, 4) end
 ```
 
-A host reads the same registry; see [the host contract](ui-host-contract.md#the-target-registry).
+A host reads the same registry; see [the host contract](host-contract.md#the-target-registry).
 
 ## Drawing
 
@@ -340,7 +339,7 @@ A **text style** is a record. Every field is optional.
 |---|---|
 | `size` | Pixel size. |
 | `color` | A colour record; its `a` is the run's alpha. |
-| `font` | A face: an installed family name (`"Georgia"`, any case), a host role (`"ui"`, `"mono"`), or a fallback list (`"Georgia, ui"`). A family the host can't find draws, and measures, in the default face. See [Text and fonts](usage/text-and-fonts.md#per-host-status) for which hosts look families up. |
+| `font` | A face: an installed family name (`"Georgia"`, any case), a host role (`"ui"`, `"mono"`), or a fallback list (`"Georgia, ui"`). A family the host can't find draws, and measures, in the default face. See [Text and fonts](../../../docs/usage/text-and-fonts.md#per-host-status) for which hosts look families up. |
 | `weight` | 400 regular, 600 semibold, 700 bold. |
 | `italic` | `true` for italic. |
 | `spacing` or `tracking` | Extra pixels between letters. Measured as well as drawn. |
@@ -597,15 +596,5 @@ if res.changed then set_opacity(res.value) end
 
 ## Testing a UI
 
-`petal_ui::harness::Headless` runs a script with no window. Feed it input,
-run frames, and read state, draw commands and the target registry:
-
-```rust
-let mut ui = Headless::with_ui("state n = 0\nif button(rect(8, 8, 80, 24), \"Go\") then n = n + 1 end")?;
-ui.frame()?;
-ui.click_target("Go")?;                 // by name, not by coordinates
-assert_eq!(ui.state_int("n"), Some(1));
-```
-
-`ui.targets()` lists every registered rect. `petal-ui-run` does the same from
-the command line; see [headless-ui-run.md](dev/headless-ui-run.md).
+`petal_ui::harness::Headless` runs a script with no window; `petal-ui-run`
+does the same from the command line. See [the README](../README.md#testing).

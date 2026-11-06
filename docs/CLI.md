@@ -755,7 +755,7 @@ a module `state` rebound below it, a call to a declaration further down the
 file that could not be hoisted (the rules are in
 [syntax/declaration-order.md](syntax/declaration-order.md#when-a-fn-is-not-hoisted)), and a key name written as a literal that is
 not one (`key_pressed("enter")`, which is always false: `did you mean
-"return"?`; the names are in [ui-reference.md](ui-reference.md#input)).
+"return"?`; the names are in [the `ui` reference](../core-libs/petal-ui/docs/reference.md#input)).
 
 #### Error phases
 

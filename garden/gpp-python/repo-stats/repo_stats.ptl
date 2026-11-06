@@ -9,7 +9,7 @@
 //     authors: [{name, count, frac} …],
 //     recent:  [{short, subject, author, when} …] }
 //
-// Built on the ui component library (components.md): cards for the three
+// Built on the ui component library (petal-ui docs/widgets.md): cards for the three
 // sections, pill/badge header stats, split_h/cut_* RectCut layout,
 // load_state for the async fetch, empty_state for a commitless repo.
 //

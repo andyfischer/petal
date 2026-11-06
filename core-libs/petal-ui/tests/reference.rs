@@ -1,6 +1,6 @@
 //! The reference page lists every name the `ui` package exports.
 //!
-//! `docs/ui-reference.md` is where a game author looks to learn what the
+//! `docs/reference.md` (in this crate) is where a game author looks to learn what the
 //! prelude has. A widget that exists and is not on that page is a widget that
 //! gets written again (see `docs/tasks/moses-debrief.md`, section 5), so the
 //! page is checked against the package rather than trusted to keep up.
@@ -49,7 +49,7 @@ fn documented(page: &str, name: &str) -> bool {
 
 #[test]
 fn the_reference_page_names_every_export() {
-    let page_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/ui-reference.md");
+    let page_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/reference.md");
     let page = std::fs::read_to_string(&page_path)
         .unwrap_or_else(|e| panic!("{}: {e}", page_path.display()));
     let mut names = exports(petal_ui::prelude_source());
@@ -58,7 +58,7 @@ fn the_reference_page_names_every_export() {
     let missing: Vec<&String> = names.iter().filter(|n| !documented(&page, n)).collect();
     assert!(
         missing.is_empty(),
-        "docs/ui-reference.md does not mention these `ui` exports: {missing:?}\n\
+        "core-libs/petal-ui/docs/reference.md does not mention these `ui` exports: {missing:?}\n\
          Add each to the table it belongs in, as `name(args)` with one line on what it does."
     );
 }

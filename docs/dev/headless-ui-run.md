@@ -133,7 +133,7 @@ Two spellings are shorthand and expand at parse time, matching what
 `click_target: "id"` clicks the middle of the rect the script registered
 under `id`: a `button` or `checkbox` by its label, anything passed to
 `interact(r, id)` or `ui_target(id, r)`, a widget given `{id: ...}` in its
-style (see [ui-reference.md](../ui-reference.md#named-targets)). It is the
+style (see [the `ui` reference](../../core-libs/petal-ui/docs/reference.md#named-targets)). It is the
 same press at N and release at N+1 as `click`, but the position is looked up
 when frame N is about to run, in what frame N-1 registered. So a scenario
 survives a layout change, and a widget has to have been on screen for a frame

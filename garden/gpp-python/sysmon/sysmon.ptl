@@ -11,7 +11,7 @@
 //     proc_count: int,  cpu_total: float,  ncpu: int,
 //     load1/load5/load15: float,  rss_total_gb: float }
 //
-// Everything visual is the ui prelude component library (components.md):
+// Everything visual is the ui prelude component library (petal-ui docs/widgets.md):
 // table (sortable headers, keyboard nav, scrollbar), badge/pill for the
 // header stats, progress_bar as the CPU meter, load_state for the async
 // fetch, hint_bar along the bottom.

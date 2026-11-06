@@ -15,6 +15,23 @@ Hosts that embed it: Garden panels (`garden/garden-script`),
 `examples/custom-apps/`, standalone app embedders outside this repo
 (the todo app, worlds-fair), and the headless `petal-ui-run` CLI in this crate.
 
+## Documentation
+
+| If you want to… | Read |
+|---|---|
+| Find a function: every input helper, draw call, layout helper and widget, one line each | [docs/reference.md](docs/reference.md) |
+| Understand layers, hit testing, named targets, retained drawing, flow layout | [docs/reference.md](docs/reference.md#layers-and-hit-testing) |
+| Use a widget well: conventions, theme tokens, each widget in depth | [docs/widgets.md](docs/widgets.md) |
+| Draw: every primitive's signatures, text measuring, tints, gradients, shadows, offscreen layers | [docs/drawing.md](docs/drawing.md) |
+| Write a host: the frame loop, draw commands, capabilities, the hit-test registry, images, natives for a non-Rust host | [docs/host-contract.md](docs/host-contract.md) |
+| Embed the crate in Rust | [Embedding](#embedding) below |
+| Run or test a script without a window | [Running scripts headlessly](#running-scripts-headlessly), [Testing](#testing) |
+
+For a component layer *above* this one, written in Petal rather than Rust, see
+[`core-runtime/bloom`](../../core-runtime/bloom/README.md): buttons, menus, controls
+and overlays that animate by default, built on these same primitives. The two
+compose in one script.
+
 ## The model
 
 Immediate mode: the script's whole top level re-runs every frame.
@@ -66,15 +83,7 @@ input events → bind_frame_info / bind_input → clear_draw_commands
   `radius`, `r, g, b` / `c`, `a`, `width` — so a call can be written by name:
   `draw_rect_outline(x: 0, y: 0, w: 10, h: 4, c: red, width: 2)`. The
   signatures are tabulated in
-  [docs/components.md](docs/components.md#draw-primitives--fills-and-strokes).
-
-See [docs/components.md](docs/components.md) for the full reference: theme,
-layout, every widget, motion helpers, draw primitives and layers.
-
-For a component layer *above* this one, written in Petal rather than Rust, see
-[`core-runtime/bloom`](../../core-runtime/bloom/README.md): buttons, menus, controls
-and overlays that animate by default, built on these same primitives. The two
-compose in one script.
+  [docs/drawing.md](docs/drawing.md#draw-primitives--fills-and-strokes).
 
 ## Embedding
 
@@ -131,8 +140,8 @@ draws the right picture:
   `compose::set_host_caps` and receives `CacheBegin` / `CacheEnd` /
   `CacheDraw` and `Rects` instead.
 
-The script side is in [docs/ui-reference.md](../../docs/ui-reference.md), the
-host side in [docs/ui-host-contract.md](../../docs/ui-host-contract.md).
+The script side is in [docs/reference.md](docs/reference.md#layers-and-hit-testing),
+the host side in [docs/host-contract.md](docs/host-contract.md).
 
 ## Running scripts headlessly
 
@@ -142,7 +151,7 @@ cargo run --bin petal-ui-run -- app.ptl --frames 60 --scenario monkey:1 --seed 1
 
 `petal-ui-run` runs a UI script without a window, prints the draw commands
 and state as JSON, and replays deterministic input scenarios. See
-`docs/dev/headless-ui-run.md` at the repo root. The showcase script
+[headless-ui-run.md](../../docs/dev/headless-ui-run.md). The showcase script
 `garden/examples/panels/gallery.ptl` exercises every component and runs both
 headlessly and as a Garden panel.
 
@@ -162,23 +171,40 @@ argument (`--channel draw_commands --emit K --native-arg I --to V`;
   Scripts can read it with `ui_version()`. It is a separate integer and not
   what `[requires]` compares.
 - `PRELUDE_LEVEL` counts additions to the prelude's export surface. Levels
-  are additive, so a script written against an older level keeps working.
+  are additive: every existing export keeps its signature, so a script
+  written against an older level keeps working. Apps that shadow prelude
+  names with their own (`fn spinner`, `fn draw_scrollbar`, …) also keep
+  working, because a plain import's bindings are weak.
   `garden --version --json` lists the exact exports compiled into a binary
   under `prelude.exports`.
 
-## Tests
+## Testing
 
-```
-cargo test
+`harness::Headless` (public) runs a script with no window. Feed it input
+(`click`, `click_target`, `key`, `text`, `mouse_move`, `scroll`), run
+`frame()`, and read state (`state_int`, `state_float`, `state_string`), the
+draw commands it returns, and the target registry (`targets()`):
+
+```rust
+let mut ui = Headless::with_ui("state n = 0\nif button(rect(8, 8, 80, 24), \"Go\") then n = n + 1 end")?;
+ui.frame()?;
+ui.click_target("Go")?;                 // by name, not by coordinates
+assert_eq!(ui.state_int("n"), Some(1));
 ```
 
-`tests/widgets.rs` covers the component library through `harness::Headless`:
-synthetic clicks and keys, then assertions on state and draw commands.
-`tests/hit.rs` covers layers, hit testing, the target registry, `ui_measure`
-and flow layout; `tests/retained.rs` covers `cached_layer`, `draw_rects`, the
-image and text-style additions, in both the lowered form every host gets and
-the form a host that asked for it gets. `tests/reference.rs` fails if an
-export is missing from `docs/ui-reference.md`.
-`tests/prelude.rs` covers the older prelude surface and compatibility
-(shadowing, style records). `harness::Headless` is public, so you can test
-your own panels the same way.
+`petal-ui-run` is the command-line equivalent (see
+[headless-ui-run.md](../../docs/dev/headless-ui-run.md)).
+
+This crate's own tests run with `cargo test`:
+
+- `tests/widgets.rs`: the component library, one worked test per widget —
+  synthetic clicks and keys, then assertions on state and draw commands.
+- `tests/hit.rs`: layers, hit testing, the target registry, `ui_measure` and
+  flow layout.
+- `tests/retained.rs`: `cached_layer`, `draw_rects`, the image and text-style
+  additions, both in the lowered form every host gets and the form a host
+  that asked for it gets.
+- `tests/prelude.rs`: the older prelude surface and compatibility
+  (shadowing, style records).
+- `tests/reference.rs`: fails if an export is missing from
+  [docs/reference.md](docs/reference.md).

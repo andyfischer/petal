@@ -126,7 +126,7 @@ Registers the whole petal-ui layer (input, draw commands, offscreen canvases,
 `decodeDrawCommands(buffer, strings)` (`petal-web-canvas/src/draw-wire.ts`)
 turns the pair into petal-ui's `DrawCommand` objects (`{ op, ...fields }`,
 defaults left out, the same shape the JSON form had) for the renderer
-([`ui` host contract](../ui-host-contract.md)). The wire form replaced a JSON
+([`ui` host contract](../../core-libs/petal-ui/docs/host-contract.md)). The wire form replaced a JSON
 string in November 2026: it skips building and parsing JSON every frame.
 
 **Input**, called as browser events arrive; `InputTracker` in

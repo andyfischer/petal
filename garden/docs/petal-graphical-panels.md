@@ -213,7 +213,7 @@ layout (`cut_left` / `cut_right` / `cut_top` / `cut_bottom`, `split_h` /
 `toggle`, `radio_group`, `slider`, `tab_bar`, `splitter`, `table`, `modal`,
 `tooltip`, `spinner`, `progress_bar`, `badge` / `pill`, `card`,
 `empty_state`, `hint_bar`, the `load_state` family). The reference is
-[core-libs/petal-ui/docs/components.md](../../core-libs/petal-ui/docs/components.md); the
+[core-libs/petal-ui/docs/widgets.md](../../core-libs/petal-ui/docs/widgets.md); the
 showcase panel is `examples/panels/gallery.ptl`.
 
 ### `import bloom`

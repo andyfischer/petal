@@ -49,7 +49,7 @@ In order:
    vocabulary, text and fonts, alpha, the `ui` prelude, the quality bar.
 2. `docs/language-guide.md` - a more detailed guide to the language.
 3. `docs/Builtins.md` — list of builtin stdlib functions.
-4. `core-libs/petal-ui/docs/components.md` (the `ui` prelude) and, if the app wants
+4. `core-libs/petal-ui/README.md` and its `docs/` (the `ui` prelude: `reference.md`, `widgets.md`, `drawing.md`) and, if the app wants
    animated controls, `core-runtime/bloom/docs/components.md`.
 5. `garden/docs/petal-graphical-panels.md` and `garden/docs/debug-server.md`.
 6. Two or three finished apps closest to yours, for example

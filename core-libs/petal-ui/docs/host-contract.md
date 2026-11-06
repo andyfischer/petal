@@ -5,9 +5,10 @@ respond correctly. It covers the frame loop, the draw commands a host is
 handed, the hit-testing registry, and the three things a host can choose to
 do itself for speed: batches, retained layers and images.
 
-The script side is in [ui-reference.md](ui-reference.md). The Rust API is the
-`petal-ui` crate (`core-libs/petal-ui`); the C API is `petal_bridge.h`
-(`integrations/petal-c-bridge`, guide in [embedding-c.md](usage/embedding-c.md)).
+The script side is in [reference.md](reference.md). The Rust API is this
+crate; the C API is `petal_bridge.h` (`integrations/petal-c-bridge`, guide in
+[embedding-c.md](../../../docs/usage/embedding-c.md)). The basic embedding
+loop is in [the README](../README.md#embedding).
 
 ## Summary
 
@@ -28,7 +29,7 @@ host did not ask for:
 
 ## The frame
 
-Unchanged, and repeated here because two steps now do more:
+Two of these steps do more than their names say (marked):
 
 ```
 input events → InputState::event
@@ -44,7 +45,7 @@ rasterize
 
 In C: `pb_vm_input_*`, `pb_vm_begin_frame`, `pb_vm_run`, `pb_vm_drain_draw`.
 
-Two rules follow from the additions:
+Two rules follow:
 
 1. **Call `bind_input` exactly once per frame, before the gate.** It is where
    the rects the last run registered become the registry the next run is
@@ -62,10 +63,10 @@ Coordinates are logical pixels, (0, 0) at the top-left. Colours are sRGB,
 (`serde`, tagged by `op`) is what `petal-ui-run` prints; the C form is
 `pb_draw_cmd`.
 
-Only the commands that are new or extended are listed. The rest are
-documented on the enum.
+Only the commands with rules a host must know are listed here. The rest
+(`rect`, `text`, `line`, `clip_push`, …) are documented on the enum.
 
-### `image` (extended)
+### `image`
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -315,7 +316,7 @@ addition to the input and draw sets, to load the `ui` package:
 | `ui_register` | `rect, layer, clip, id?, flags?` | Push a row into `ui_targets`. `rect` may be `nil` when `flags` has bit 2. |
 | `ui_mark` | | Push `nil` into `ui_targets`. Declare it an effect, so the `ui` module's scope is never replayed from a memo record. |
 | `ui_mute` | `on` | Push `on` into `ui_targets` and emit `mute` into `draw_commands`. |
-| `ui_probe` | `rect, layer, clip, floor` | Return `{hover, down, pressed, released, click}`. |
+| `ui_probe` | `rect, layer, clip, floor, id?` | Return `{hover, down, pressed, released, click}`. |
 | `ui_hot` | `rect, layer, clip, floor` | Return `hover`. |
 | `ui_floor` | | Return the `ui_floor` binding. |
 | `ui_target_rect` | `id` | Return `{x, y, w, h, layer}` from `ui_registry`, or `nil`. |

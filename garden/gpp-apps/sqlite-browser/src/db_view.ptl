@@ -19,7 +19,7 @@
 // BAR CHART of every object's row count — the "visualizer".
 //
 // The widgets are the `ui` prelude's component library (petal-ui
-// docs/components.md): the draggable divider is a `splitter`, the catalog is
+// docs/widgets.md): the draggable divider is a `splitter`, the catalog is
 // `list_state`/`list_update` (+ `list_row_rect` and the prelude
 // `draw_scrollbar`), the overview scrolls with `scroll_update`, the chart bars
 // are `progress_bar`s, headings are `section_label`, load/empty states use

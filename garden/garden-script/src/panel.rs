@@ -5184,7 +5184,7 @@ mod tests {
         // catch it.
         assert!(raw.contains_key("draw_rect_rounded.a"));
         let keys: Vec<&String> = obs.keys().collect();
-        assert_eq!(keys, ["name", "sel"], "only the script's own bindings");
+        assert_eq!(keys, ["sel", "name"], "only the script's own bindings, in declaration order");
     }
 
     /// The same key shape from the script's own function is the script's.

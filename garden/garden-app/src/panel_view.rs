@@ -1887,6 +1887,31 @@ impl PanelView {
         self.host.propose_drag_edits(cmd_index, goals)
     }
 
+    // ── Structural direct manipulation (ui/drag drops on a literal) ──────
+
+    /// Whether a press at window point (`x`, `y`) lands on one of the
+    /// sketch's own `ui/drag` draggables (what drag mode hands to the sketch
+    /// instead of starting a DM v2 drag).
+    pub fn model_drag_at(&mut self, pane_rect: Rect, x: f32, y: f32) -> bool {
+        self.host
+            .model_drag_at((x - pane_rect.x) as f64, (y - pane_rect.y) as f64)
+    }
+
+    /// The `ui/drag` drops the sketch announced since the last call.
+    pub fn take_model_drops(&mut self) -> Vec<garden_script::ModelDrop> {
+        self.host.take_model_drops()
+    }
+
+    /// The commands of the frame on screen.
+    pub fn commands(&self) -> &[PanelCmd] {
+        &self.cmds
+    }
+
+    /// Switch a debug overlay of the sketch (`ui_debug(name)`) on or off.
+    pub fn set_ui_debug(&mut self, name: &str, on: bool) {
+        self.host.set_ui_debug(name, on);
+    }
+
     // ── Direct manipulation v2 (solved by re-running the frame) ──────────
 
     /// The shape under (`x`, `y`) as a v2 drag target: its command index, if

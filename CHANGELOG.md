@@ -60,6 +60,18 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- Declarative-dragging tooling (D2 P4): `ui/drag`'s `drag_debug(d)` overlay
+  (drop zones, target table with distances, spec tree) and `drag_explain()`,
+  switched by the host's debug key through the new `ui_debug(name)` native
+  (F8 in petal-sdl, Cmd/Ctrl+Shift+G or `:DragDebug` in Garden,
+  `--ui-debug drag` in `petal-ui-run`); scenario `drag: {target, to,
+  frames}` sugar and `--drag-trace` / `--drag-trace-full` in `petal-ui-run`;
+  the `DragExplain` MCP tool; and `petal::drop_edit`, which turns a drop on a
+  top-level `let` literal into goal edits (`should_remove` /
+  `should_insert` / `should_set_path`) that keep the file's comments. In
+  Garden's drag mode a drag on a sketch's `ui/drag` draggable writes the drop
+  into that literal.
+
 - Multi-generator `for`: `for a in xs, b in ys do … end` is the nested
   loops in one header, the first generator outermost. In value position it
   collects one flat list in that order. Each generator may carry its own

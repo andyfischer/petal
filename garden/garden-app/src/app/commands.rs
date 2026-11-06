@@ -288,6 +288,7 @@ impl App {
             Command::DragPick(n) => self.cycle_drag_alternative(0, Some(n - 1)),
             Command::DragEngine(arg) => self.set_drag_engine(&arg),
             Command::DragMode(arg) => self.dm_mode_command(&arg),
+            Command::DragDebug(arg) => self.drag_debug_command(&arg),
             Command::DragHint(arg) => self.dm_hint_command(&arg),
             Command::Back => return self.nav_focused_panel(garden_script::NavIntent::Back),
             Command::Forward => return self.nav_focused_panel(garden_script::NavIntent::Forward),

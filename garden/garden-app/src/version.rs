@@ -298,6 +298,11 @@ pub const HOST_FEATURES: &[&str] = &[
     // `hover` outline and the pointer `cursor`; `:DragHint` marks a number
     // `tunable` / `rigid`.
     "state.dm-mode",
+    // Declarative dragging in Petal IDE: in drag mode a press on a sketch's
+    // `ui/drag` draggable goes to the sketch, and a drop on a top-level `let`
+    // literal model is written into the literal; `:DragDebug` (Cmd+Shift+G)
+    // switches `ui/drag`'s debug overlay in every panel.
+    "dm.model-drop",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a

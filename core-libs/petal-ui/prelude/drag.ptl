@@ -33,13 +33,14 @@
 // `switch_to`. The engine resolves it once, at drag start, into a table of
 // positions; frames during the drag only read that table.
 //
-// P0 speculation is a plain call of `view(candidate)` under `ui_measure`
-// (nothing drawn, nothing registered, nothing hot), so the view must not
-// write `state` it cares about: a speculative run's state writes are real.
-// `_speculate` is the one function that changes when the core `speculate()`
-// builtin lands.
+// Speculation is the core `speculate(f, ...args)` hypothetical call: the
+// view's drawing and hit-test registrations are captured and dropped, and
+// every `state` write, `set` and random draw it makes is put back. So the
+// view can be ordinary immediate-mode drawing code that calls widgets with
+// their own state; `place` records into the call's `places`.
 
 import ui
+import io
 
 // The layer a dragged element is drawn on, and stays on until it has settled
 // into its slot: above the base UI, below popups.
@@ -50,19 +51,29 @@ pub let DRAG_SLOP = 4
 // The rate `place` eases an element toward where the view put it (1/s, as
 // `approach` takes it).
 pub let PLACE_RATE = 18.0
+// The output channel a drop is announced on: `{key, model, drop}` per drop,
+// for a host that edits source (Garden's edit mode).
+pub let DRAG_DROPS_CHANNEL = "drag_drops"
 
 // ── Engine cells ──────────────────────────────────────────────────────────
-// Per run (a plain `var` is made afresh on every run): whether a speculation
-// is capturing, what it captured, and what the live drag tells `place`.
-var _cap_on = false
-var _cap_places = Map()
+// Per run (a plain `var` is made afresh on every run): the draggables a
+// speculation saw, what the live drag tells `place`, the origin
+// `place_origin` puts positions in, and what `place` displayed this run.
 var _cap_drags = Map()
 var _live = nil
+var _origin = nil
+// What `place` displayed for each key this run.
+var _shown = Map()
 // The spec walk's scratch: a cache of speculations by state, a leaf counter,
 // and the context of the walk.
 var _cache = Map()
 var _leaf_n = 0
 var _walk = nil
+// What the live drag looked like this run (its session state, pointer and
+// choice), for `drag_debug` / `drag_explain`; and how many speculative
+// renderings this run made.
+var _dbg = nil
+var _spec_runs = 0
 
 // Across runs: a press waiting to become a drag ({key, x, y, spec} — data,
 // never a closure), the element settling after a drop, every placed key's
@@ -74,28 +85,28 @@ state var _warned = Map()
 state var _tok = 0
 
 // ── Speculation ───────────────────────────────────────────────────────────
-// Run `view(model)` as a hypothetical: nothing drawn, registered or hot, and
-// every `place` / `draggable` it makes captured instead of acted on. Returns
-// {value, places: Map key -> value, drags: Map key -> {rect, spec}}. The
-// closures in `drags` are only good for the current run; never store them.
+// Run `view(model)` as a hypothetical call (core `speculate`): nothing it
+// draws, registers or writes outlives it, and every `place` / `draggable` it
+// makes is captured instead of acted on. Returns {value, places: Map key ->
+// value, drags: Map key -> {rect, spec}}. The closures in `drags` are only
+// good for the current run; never store them.
 //
-// The capture is read inside the measured body and handed out as its value,
-// so it survives a `ui_measure` that puts back every write the body made
-// (one built on the core `speculate`) as well as one that keeps them. P1's
-// `speculate(f, x)` replaces this body: its `r.places` is this `places`.
+// `places` is the call's own capture (`speculate_place`). The draggables are
+// written to a cell, which the call puts back, so they are read inside the
+// call and handed out as its value.
 fn _speculate(view, model)
-  assert(!(get _cap_on), "ui/drag: a drag view ran drag_session or a speculation inside a speculation; call drag_session outside the view")
-  let out = ui_measure(fn()
-    set _cap_on = true
-    set _cap_places = Map()
+  assert(!speculating(), "ui/drag: a drag view ran drag_session, or a drag was speculated inside a speculation; call drag_session outside the view")
+  set _spec_runs = (get _spec_runs) + 1
+  let r = speculate(fn()
     set _cap_drags = Map()
     let value = view(model)
-    {value: value, places: get _cap_places, drags: get _cap_drags}
+    {value: value, drags: get _cap_drags}
   end)
-  set _cap_on = false
-  set _cap_places = Map()
-  set _cap_drags = Map()
-  out
+  let places = Map()
+  for p in r.places do
+    places[p.key] = p.value
+  end
+  {value: r.value.value, places: places, drags: r.value.drags}
 end
 
 // Where a speculation put `key`: its `place` record, or — for a view that
@@ -180,37 +191,76 @@ end
 // follows the pointer. Inside a speculation it records `value` and returns it
 // unchanged. Keys compare like `for … key` keys and must be unique on screen.
 pub fn place(key, value)
-  if get _cap_on then
-    set _cap_places[key] = value
-    return value
+  if speculating() then
+    return speculate_place(key, value)
   end
+  // Placing the value this run already displayed for `key` (the usual
+  // `place(k, place(k, r), body)` pair) is not a new target: hand it back.
+  let shown = get _shown[key]
+  if shown != nil && shown == value then return value end
+  let out = _place(key, value)
+  set _shown[key] = out
+  out
+end
+
+fn _place(key, value)
+  let o = get _origin
   let live = get _live
   if live != nil && live.float && live.key == key then
     let fv = _at(value, live.fx, live.fy)
-    set _anim[key] = fv
+    set _anim[key] = _shift(fv, o, -1)
     return fv
   end
+  let target = _shift(value, o, -1)
   let cur = get _anim[key]
   if cur == nil then
-    set _anim[key] = value
+    set _anim[key] = target
     return value
   end
-  let v = _approach_value(cur, value, PLACE_RATE)
+  let v = _approach_value(cur, target, PLACE_RATE)
   if v != cur then set _anim[key] = v end
-  if v == value && (get _settle) == key then set _settle = nil end
-  v
+  if v == target && (get _settle) == key then set _settle = nil end
+  _shift(v, o, 1)
+end
+
+// `v` with its position moved by `sign` times origin `o` (nil: unchanged).
+fn _shift(v, o, sign)
+  if o == nil || _center(v) == nil then return v end
+  _at(v, v.x + sign * o.x, v.y + sign * o.y)
 end
 
 // The same, drawing: `body(v)` gets the displayed value and runs on the drag
 // layer while `key` is being dragged or is settling after a drop, so the
-// dragged element is drawn on top of everything it passes over.
+// dragged element is drawn on top of everything it passes over, and outside
+// the clip of the container it came from. A speculation needs only the
+// position, so there the body is not run.
 pub fn place(key, value, body)
   let v = place(key, value)
+  if speculating() then return nil end
   if _on_top(key) then
-    with_layer(max(ui_layer(), UI_LAYER_DRAG), fn() body(v) end)
+    ui_overlay(max(ui_layer(), UI_LAYER_DRAG), fn() body(v) end)
   else
     body(v)
   end
+end
+
+// Inside `body()`, `place` eases positions relative to `origin` ({x, y}, in
+// screen coordinates) instead of the screen. Put a scrolled container's
+// elements under its scroll origin — `place_origin({x: 0, y: -scroll}, …)` —
+// and scrolling moves them at once, while a reorder inside still animates.
+// Values without a position (numbers, colours) are unaffected.
+pub fn place_origin(origin, body)
+  let prev = get _origin
+  set _origin = origin
+  let out = body()
+  set _origin = prev
+  out
+end
+
+// The key of the element being dragged right now, or nil.
+pub fn drag_key()
+  let live = get _live
+  if live == nil then nil else live.key end
 end
 
 fn _on_top(key)
@@ -231,7 +281,7 @@ end
 // The rect is registered for hit testing as `interact(r, "drag:<key>")`
 // would, and the interact record is returned (hover for styling).
 pub fn draggable(key, r, spec_fn)
-  if get _cap_on then
+  if speculating() then
     set _cap_drags[key] = {rect: r, spec: spec_fn}
     return {hover: false, down: false, pressed: false, released: false, click: false}
   end
@@ -486,8 +536,15 @@ end
 // ── drag_session ──────────────────────────────────────────────────────────
 
 fn _out(model, s, extra)
-  {active: false, key: nil, preview: model, drop: nil, dropped: false, cancelled: false,
+  let d = {active: false, key: nil, preview: model, drop: nil, dropped: false, cancelled: false,
     spec: nil, target: nil, gap: nil, reason: nil, ...extra}
+  // A drop is announced to the host on the `drag_drops` channel, so an
+  // editor can turn a drop on a literal model into a source edit.
+  if d.dropped then
+    push_output(symbol(DRAG_DROPS_CHANNEL), {key: d.key, model: model, drop: d.drop})
+  end
+  if ui_debug("drag") then drag_debug(d) end
+  d
 end
 
 // Build the drag for press `p` against `model`, or nil when `view` does not
@@ -539,7 +596,8 @@ pub fn drag_session(model, view, opts = {})
   let slop = opts.slop ?? DRAG_SLOP
   let mx = mouse_x()
   let my = mouse_y()
-  let down = mouse_down(0)
+  // A release and a new press in one frame still end the drag (or press).
+  let down = mouse_down(0) && !mouse_released(0)
 
   if s.phase == "idle" then
     let p = get _press
@@ -600,6 +658,7 @@ pub fn drag_session(model, view, opts = {})
   let info = {active: true, key: s.key, preview: preview, drop: drop, spec: s.raw,
     target: s.choice, gap: if leaf == nil then nil else r.gap end}
 
+  set _dbg = {s: s, mx: mx, my: my, fx: fx, fy: fy, gap: r.gap}
   if !down then
     let k = s.key
     s = {phase: "idle"}
@@ -623,9 +682,12 @@ pub fn moves(xs, i)
   for j in range(0, len(xs)) do slice(rest, 0, j) ++ [x] ++ slice(rest, j) end
 end
 
-// An item's identity: its `id`, else its `key`, else the item itself.
+// An item's identity: its `id`, else its `key`, else the item itself. A
+// record or a class instance (whose type() is its class name) has fields.
 fn _key_of(it)
-  if type(it) == "record" then it.id ?? (it.key ?? it) else it end
+  let t = type(it)
+  let plain = t == "string" || t == "int" || t == "float" || t == "bool" || t == "nil" || t == "list" || t == "map"
+  if plain then it else it.id ?? (it.key ?? it) end
 end
 
 fn _items(col, field)
@@ -734,4 +796,223 @@ pub fn tree_moves(tree, path, opts = {})
     end
   end
   out
+end
+
+// ── Debugging: drag_explain and drag_debug ────────────────────────────────
+// The target table, the distances and the chosen branch are data the engine
+// already holds, so these read them and speculate nothing. The drop-zone map
+// evaluates the spec at every sample point the way a frame of the drag does,
+// which for closest / snap_radius / when_far / drop_target reads only the
+// table: zero speculative runs.
+
+let _DBG_COLORS = [#4fc3f7, #ffb74d, #81c784, #f06292, #ba68c8, #fff176, #4db6ac, #e57373]
+let _DBG_ON = #ffffff
+let _DBG_DIM = #9aa0ac
+let _DBG_ZONE = #ff5252
+let _DBG_BG = #15161c
+
+fn _dbg_color(id)
+  if id == nil || id < 1 then #808080 else _DBG_COLORS[(id - 1) % len(_DBG_COLORS)] end
+end
+
+fn _is_leaf(spec)
+  let t = spec.d2
+  t == "fixed" || t == "drop_target" || t == "switch_to"
+end
+
+// A spec's sub-specs, in spec order.
+fn _kids(spec)
+  let t = spec.d2
+  if t == "closest" || t == "between" then
+    spec.options
+  elsif t == "when_far" then
+    [spec.inner, spec.far]
+  elsif t == "floating" || t == "snap_radius" || t == "on_drop" then
+    [spec.inner]
+  else
+    []
+  end
+end
+
+fn _has_kind(spec, kind)
+  if spec.d2 == kind then return true end
+  for k in _kids(spec) do
+    if _has_kind(k, kind) then return true end
+  end
+  false
+end
+
+// The kinds from `spec` down to leaf `id`, root first ("fixed #3" last), or
+// nil when `id` is not under `spec`.
+fn _branch(spec, id)
+  if _is_leaf(spec) then
+    return if (spec.id ?? nil) == id then ["{spec.d2} #{id}"] else nil end
+  end
+  for k in _kids(spec) do
+    let b = _branch(k, id)
+    if b != nil then return [spec.d2] ++ b end
+  end
+  nil
+end
+
+fn _explain(g)
+  let s = g.s
+  let c = _center(_at(s.home, g.fx, g.fy))
+  let targets = for l in _leaves(s.spec) do
+    let p = _center(l.at ?? nil)
+    {id: l.id ?? nil, kind: l.d2, at: l.at ?? nil, zone: l.zone ?? nil,
+      gap: if p == nil then nil else hypot(p.x - c.x, p.y - c.y) end,
+      active: s.choice != nil && (l.id ?? nil) == s.choice, drop: l.drop ?? nil}
+  end
+  {key: s.key, pointer: {x: g.mx, y: g.my}, element: c, grab: s.grab, home: s.home,
+    choice: s.choice, gap: if s.choice == nil then nil else g.gap end,
+    branch: if s.choice == nil then nil else _branch(s.spec, s.choice) end,
+    targets: targets, spec: s.raw, speculations: get _spec_runs}
+end
+
+// The drag in flight this frame, as data — or nil when nothing is dragged.
+// Call it after `drag_session`. `targets` is the target table: each leaf of
+// the spec with its `id`, `kind`, where the dragged element lands in its
+// state (`at`), a drop target's `zone`, its distance from the element now
+// (`gap`), whether it is the chosen one (`active`) and what it drops. Also
+// `key`, `pointer`, `element` (the element's centre), `grab`, `home`,
+// `choice`, `gap`, `branch` (the kinds on the way to the chosen leaf),
+// `spec` (as built) and `speculations` (renderings made this frame).
+pub fn drag_explain()
+  let g = get _dbg
+  if g == nil then nil else _explain(g) end
+end
+
+// Which leaf wins at each `step`-px cell of a `w` x `h` screen, as runs of
+// cells per row ({x, y, w, h, id}; id -1 is "no target").
+fn _zone_cells(spec, home, grab, step, w, h)
+  let out = []
+  let cols = int(w / step) + 1
+  for gy in range(0, int(h / step) + 1) do
+    let py = gy * step + step / 2
+    let start = 0
+    let cur = -2
+    for gx in range(0, cols) do
+      let px = gx * step + step / 2
+      let c = _center(_at(home, px - grab.x, py - grab.y))
+      let r = _eval(spec, {ex: c.x, ey: c.y, px: px, py: py, prev: nil})
+      let id = if r.leaf == nil then -1 else r.leaf.id end
+      if id != cur then
+        if cur != -2 then
+          out ++= [{x: start * step, y: gy * step, w: (gx - start) * step, h: step, id: cur}]
+        end
+        cur = id
+        start = gx
+      end
+    end
+    out ++= [{x: start * step, y: gy * step, w: (cols - start) * step, h: step, id: cur}]
+  end
+  out
+end
+
+// The spec as indented lines, those on the chosen branch marked.
+fn _tree(spec, depth, choice)
+  let t = spec.d2
+  let on = choice != nil && _branch(spec, choice) != nil
+  let label = if _is_leaf(spec) then
+    let p = _center(spec.at ?? nil)
+    let where = if p == nil then "not placed" else "at ({_dbg_n(p.x)}, {_dbg_n(p.y)})" end
+    "#{spec.id ?? nil} {t} {where}"
+  elsif t == "closest" then
+    let st = if spec.stickiness > 0 then ", stickiness {spec.stickiness}" else "" end
+    "closest, {len(spec.options)} options{st}"
+  elsif t == "snap_radius" then
+    let ch = if spec.chain then ", chain" else "" end
+    "snap_radius {spec.px}{ch}"
+  elsif t == "when_far" then
+    "when_far {spec.px}"
+  else
+    t
+  end
+  let rest = for k in _kids(spec) do _tree(k, depth + 1, choice) end
+  [{text: label, depth: depth, on: on}] ++ flat(rest)
+end
+
+fn _dbg_n(x)
+  if x == nil then "-" else "{int(round(x))}" end
+end
+
+fn _dbg_label(text, x, y, c)
+  draw_rect(rect(x - 4, y - 2, 8 + len(text) * 7, 17), _DBG_BG, 220)
+  draw_text(text, x, y, 12, c)
+end
+
+// Draw the drag debugger over the app: the drop-zone map (which target wins
+// where the pointer is), the target table with each target's distance from
+// the dragged element, and the spec tree with the chosen branch lit. Call it
+// with the session's result, after drawing the view. `drag_session` draws it
+// by itself while the host's debug key for "drag" is on (`ui_debug("drag")`:
+// F8 in petal-sdl, Cmd/Ctrl+Shift+G in Garden). opts: {zones: true, step: 24,
+// tree: true, max_lines: 28}.
+pub fn drag_debug(d, opts = {})
+  let g = get _dbg
+  ui_overlay(max(ui_layer(), UI_LAYER_DRAG + 10), fn()
+    if g == nil then
+      _dbg_label("ui/drag debug: no drag", 8, 8, _DBG_DIM)
+    else
+      _dbg_draw(g, opts)
+    end
+  end)
+  nil
+end
+
+fn _dbg_draw(g, opts)
+  let ex = _explain(g)
+  let s = g.s
+  let step = opts.step ?? 24
+  let w = screen_width()
+  let h = screen_height()
+  if opts.zones ?? true then
+    if _has_kind(s.spec, "vary") then
+      _dbg_label("drop zones: vary needs speculative runs; not sampled", 8, h - 24, _DBG_DIM)
+    else
+      memo([s.key, s.base, s.home, s.grab, s.tok, step, w, h]) cells = _zone_cells(s.spec, s.home, s.grab, step, w, h)
+      for c in cells do
+        if c.id >= 0 then draw_rect(rect(c.x, c.y, c.w, c.h), _dbg_color(c.id), 40) end
+      end
+    end
+  end
+  let el = ex.element
+  for t in ex.targets do
+    let col = if t.active then _DBG_ON else _dbg_color(t.id) end
+    if t.zone != nil then draw_rect_outline(t.zone, _DBG_ZONE, 220, 2) end
+    let p = _center(t.at)
+    if p != nil then
+      if (t.at.w ?? nil) != nil then
+        draw_rect_outline(t.at, col, if t.active then 230 else 140 end, if t.active then 2 else 1 end)
+      end
+      draw_line(el, p, col, if t.active then 230 else 80 end, 1)
+      draw_circle(p, 3, col, 230)
+      // A shadow keeps the label legible over an element of its own colour.
+      draw_text("#{t.id} {_dbg_n(t.gap)}", p.x + 5, p.y - 14, {size: 11, color: col, shadow: true})
+    end
+  end
+  draw_circle(el, 4, _DBG_ON, 255)
+  if opts.tree ?? true then
+    let lines = _tree(s.spec, 0, s.choice)
+    let max_lines = opts.max_lines ?? 28
+    let branch = if ex.branch == nil then "none" else join(ex.branch, " > ") end
+    let head = [
+      "drag `{s.key}`: {len(ex.targets)} targets, {ex.speculations} renderings this frame",
+      "chosen: #{_dbg_n(ex.choice)}  gap {_dbg_n(ex.gap)}  branch {branch}"]
+    let shown = slice(lines, 0, min(len(lines), max_lines))
+    let x = max(8, w - 340)
+    let n = len(head) + len(shown) + (if len(lines) > len(shown) then 1 else 0 end)
+    draw_rect(rect(x - 8, 4, 340, n * 15 + 10), _DBG_BG, 215)
+    for i in range(0, len(head)) do
+      draw_text(head[i], x, 9 + i * 15, 11, _DBG_ON)
+    end
+    for i in range(0, len(shown)) do
+      let ln = shown[i]
+      draw_text(ln.text, x + ln.depth * 12, 9 + (len(head) + i) * 15, 11, if ln.on then _DBG_ON else _DBG_DIM end)
+    end
+    if len(lines) > len(shown) then
+      draw_text("… {len(lines) - len(shown)} more", x, 9 + (n - 1) * 15, 11, _DBG_DIM)
+    end
+  end
 end

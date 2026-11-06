@@ -71,6 +71,9 @@ pub use panel::{
 };
 /// The budgets of a v2 drag (see `PanelHost::begin_drag_v2`).
 pub use panel::{DRAG_ALTERNATIVES, DRAG_ITERS, FINISH_RUNS, FINISH_WALL, OPEN_RUNS, OPEN_WALL};
+/// Structural direct manipulation: a `ui/drag` drop on a literal model,
+/// proposed as a source edit (see `PanelHost::take_model_drops`).
+pub use panel::{propose_model_drop, ModelDrop, ModelDropOutcome};
 pub use panel_store::PanelStore;
 pub use panel_trace::{
     apply_rewrites_to, cmd_bounds, drag_handle, hit_test, ArgSource, CallRef, CodeSpan, DragAlternative,

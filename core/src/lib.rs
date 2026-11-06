@@ -31,6 +31,7 @@ pub mod enum_table;
 pub mod direct_manipulation;
 pub mod dm;
 pub mod dot_graph;
+pub mod drop_edit;
 pub mod env;
 pub mod error;
 pub mod error_json;

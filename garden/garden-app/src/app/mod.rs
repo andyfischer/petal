@@ -43,6 +43,7 @@ mod events;
 mod input;
 mod lsp;
 mod dm_mode;
+mod model_drop;
 mod manip_v2;
 mod mouse;
 mod panes;
@@ -279,6 +280,13 @@ pub struct App {
     /// drag on a traced canvas edits the code, and the sketch's own mouse
     /// input is suspended (see `dm_mode.rs`).
     dm_mode: bool,
+    /// The traced canvas whose own `ui/drag` drag drag mode handed the pointer
+    /// to (a press on a draggable): its drop becomes a proposed edit of the
+    /// literal it dragged (see `model_drop.rs`).
+    model_drag: Option<usize>,
+    /// The sketch debug overlays switched on (`:DragDebug`, Cmd+Shift+G),
+    /// applied to every panel each frame.
+    ui_debug_drag: bool,
     /// Whether the drag result panel (alternatives and candidates) is shown
     /// over the canvas.
     dm_panel_open: bool,
@@ -387,6 +395,8 @@ impl App {
             dm_filter: garden_script::DragFilter::default(),
             dm_choices: None,
             dm_mode: false,
+            model_drag: None,
+            ui_debug_drag: false,
             dm_panel_open: false,
             dm_gen: 0,
             dm_decor_key: 0,
@@ -777,7 +787,8 @@ impl App {
             if let Some(panel) = pane.panel.as_mut() {
                 panel.note_activity(now);
                 panel.set_theme(panel_theme);
-                if self.dm_mode && panel.traces_origins() {
+                panel.set_ui_debug("drag", self.ui_debug_drag);
+                if self.dm_mode && panel.traces_origins() && self.model_drag != Some(idx) {
                     panel.set_mouse(dm_mode::OFF_CANVAS, dm_mode::OFF_CANVAS);
                 } else {
                     panel.set_mouse((mx - pane.rect.x) as i32, (my - pane.rect.y) as i32);

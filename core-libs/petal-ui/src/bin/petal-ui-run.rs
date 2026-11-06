@@ -6,6 +6,7 @@
 //!              [--out trace.jsonl] [--error-format full|bare] [-I <dir>]
 //!              [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats] [--targets]
 //!              [--effect-audit] [--static-audit] [--static-only]
+//!              [--drag-trace] [--drag-trace-full] [--ui-debug <name>]
 //! ```
 //!
 //! One JSON object per line, one line per frame:
@@ -38,6 +39,16 @@
 //! registered on that frame (`interact(r, id)`, the prelude widgets,
 //! `ui_target`), with their ids — what a scenario's `click_target` can name.
 //!
+//! `--drag-trace` adds a `drag` record to every frame: each `ui/drag` drag in
+//! flight, explained (its target table with each target's distance from the
+//! dragged element, the chosen target and the branch of the spec down to it;
+//! see `petal_ui::drag_trace`), and the drops announced that frame. A line
+//! per drag frame also goes to stderr. `--drag-trace-full` adds the spec as
+//! built, the base model and every target's drop state (what the
+//! `DragExplain` MCP tool reads). `--ui-debug <name>` switches on a
+//! debug overlay as a host's debug key would (`ui_debug(name)`; `drag` draws
+//! `ui/drag`'s `drag_debug` into the trace).
+//!
 //! `--effect-audit` watches what every native does over the run and reports,
 //! on stderr, each one whose behavior differs from its declared effect row
 //! (see `petal::effect_audit`): an under-declared row is a staleness bug
@@ -65,7 +76,7 @@ use petal_ui::scenario::Scenario;
 
 const USAGE: &str = "usage: petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N] \
 [--scenario s.json|monkey:<seed>] [--host-data fixtures.json] \
-[--query-fixtures q.json] [--out trace.jsonl] [--error-format full|bare] [-I <dir>] [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats] [--targets] [--effect-audit] [--static-audit] [--static-only]";
+[--query-fixtures q.json] [--out trace.jsonl] [--error-format full|bare] [-I <dir>] [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats] [--targets] [--effect-audit] [--static-audit] [--static-only] [--drag-trace] [--drag-trace-full] [--ui-debug <name>]";
 
 const DEFAULT_FRAMES: usize = 60;
 const DEFAULT_SIZE: (i32, i32) = (800, 600);
@@ -109,6 +120,11 @@ struct Args {
     /// report the differences on stderr at the end.
     effect_audit: bool,
     static_audit: petal::static_audit::StaticAuditMode,
+    /// Add each frame's `ui/drag` drags and drops to its record: 0 off, 1
+    /// the table, 2 (`--drag-trace-full`) with the spec and the drop states.
+    drag_trace: u8,
+    /// Debug overlays to switch on (`ui_debug(name)`).
+    ui_debug: Vec<String>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -130,6 +146,9 @@ fn parse_args() -> Result<Args, String> {
     let mut targets = false;
     let mut effect_audit = false;
     let mut static_audit = petal::static_audit::StaticAuditMode::Off;
+    // 0 off, 1 the per-frame table, 2 with the spec and every target's drop.
+    let mut drag_trace = 0u8;
+    let mut ui_debug = Vec::new();
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         let mut value = |name: &str| -> Result<String, String> {
@@ -170,6 +189,9 @@ fn parse_args() -> Result<Args, String> {
             "--memo-stats" => memo_stats = true,
             "--targets" => targets = true,
             "--effect-audit" => effect_audit = true,
+            "--drag-trace" => drag_trace = drag_trace.max(1),
+            "--drag-trace-full" => drag_trace = 2,
+            "--ui-debug" => ui_debug.push(value("--ui-debug")?),
             "--static-audit" => {
                 if static_audit == petal::static_audit::StaticAuditMode::Off {
                     static_audit = petal::static_audit::StaticAuditMode::Watch;
@@ -213,6 +235,8 @@ fn parse_args() -> Result<Args, String> {
         targets,
         effect_audit,
         static_audit,
+        drag_trace,
+        ui_debug,
     })
 }
 
@@ -262,6 +286,9 @@ fn run() -> Result<i32, String> {
     }
     if let Some(seed) = args.seed {
         ui.env.set_seed(seed);
+    }
+    for name in &args.ui_debug {
+        ui.input.set_debug(name, true);
     }
     if let Some(path) = &args.host_data {
         ui.set_data_provider(fixture_provider(path)?);
@@ -329,6 +356,24 @@ fn run() -> Result<i32, String> {
             "result": result,
             "error": error,
         });
+        // Drops are announced on an output channel nothing else drains.
+        let drops = petal_ui::drag_trace::take_drops(&mut ui.env);
+        if args.drag_trace > 0 {
+            let pointer = (ui.input.mouse_x, ui.input.mouse_y);
+            let full = args.drag_trace > 1;
+            let sessions = petal_ui::drag_trace::explain_all(&ui.state(), pointer, full);
+            for s in &sessions {
+                eprintln!("petal-ui-run: frame {frame}: {}", petal_ui::drag_trace::summary(s));
+            }
+            for d in &drops {
+                eprintln!("petal-ui-run: frame {frame}: drop {} -> {}", d["key"], d["drop"]);
+            }
+            record["drag"] = if sessions.is_empty() && drops.is_empty() {
+                Json::Null
+            } else {
+                serde_json::json!({"sessions": sessions, "drops": drops})
+            };
+        }
         if args.targets {
             // What `interact`, the widgets and `ui_target` registered on this
             // frame: what a `click_target` on the next frame can name.

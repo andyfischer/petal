@@ -16,6 +16,7 @@ petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
              [--error-format full|bare] [-I <dir>]
              [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats] [--targets]
              [--effect-audit] [--static-audit] [--static-only]
+             [--drag-trace] [--drag-trace-full] [--ui-debug <name>]
 ```
 
 Build it with `cd core-libs/petal-ui && cargo build`; the binary lands at
@@ -40,6 +41,9 @@ Build it with `cd core-libs/petal-ui && cargo build`; the binary lands at
 | `--targets` | off | Add a `targets` list to every record: the rects the script registered on that frame, with their ids (see "Clicking a widget by name"). |
 | `--effect-audit` | off | Bracket every native call with activity snapshots and report, on stderr, each native whose observed behavior differs from its declared effect row (`petal::effect_audit`). Exit 3 if a declared native did more than it declared. |
 | `--static-audit` | off | Watch the dynamic inputs (bindings, host data, resources, output, effects, the random stream, `state`, any native not registered constant) on every frame while each top-level term `petal show-static` calls static is evaluated, and report each one touched on stderr with the declaration, the input and the call (`petal::static_audit`). |
+| `--drag-trace` | off | Add a `drag` record to every frame: each `ui/drag` drag in flight, explained, and the drops announced that frame (see "Tracing a drag"); a line per drag frame on stderr. `null` on a frame with neither. |
+| `--drag-trace-full` | off | The same, with the spec as built, the base model and each target's drop state. Larger; what the `DragExplain` MCP tool reads. |
+| `--ui-debug <name>` | none | Switch on the host debug overlay `name`, as a host's debug key would (`ui_debug(name)` answers true). `drag` draws `ui/drag`'s `drag_debug` into the trace. Repeatable. |
 | `--static-only` | off | Evaluate only the static top-level statements, under the same audit. The frames draw nothing; a frame that raises is a failed build. |
 
 A relative import (`import ./level`) resolves against the importing file, so
@@ -148,6 +152,56 @@ carries `error: "scenario: no ui target named ..."` and the exit code is 1.
 petal-ui-run app.ptl --frames 2 --targets | tail -1 | jq -c '.targets[]'
 {"id":"Save","x":16,"y":16,"w":80,"h":24,"layer":0,"blocks":true}
 ```
+
+### Dragging by name
+
+`drag: {target, to, frames}` is a held drag between named things: a press on
+the middle of `target` at N, `frames` even steps of pointer movement to `to`
+on N+1 … N+frames with the button held, and the release on N+frames+1
+(`frames` defaults to 10).
+
+```json
+{"at": 3, "drag": {"target": "card:7", "to": "col:done", "frames": 8}}
+{"at": 30, "drag": {"target": "A", "to": [160, 240]}}
+```
+
+A name is looked up as a target id (as `click_target` does), then as
+`drag:<name>` — the id `ui/drag`'s `draggable(key, …)` registers, so a
+draggable is named by its place key — then as a key `ui/drag` has placed
+(where it was last drawn, read from the engine's state). `to` is a name or
+`[x, y]`. Both ends are looked up once, on frame N, so the path does not
+chase a target the drag's own preview moves. A name that resolves to
+nothing fails the run at frame N like an unknown `click_target`.
+
+### Tracing a drag
+
+`--drag-trace` reads the `ui/drag` engine out of each frame's state (its
+session state holds the resolved spec and target table as plain values; no
+hook in the app) and adds:
+
+```json
+"drag": {"sessions": [{"key": "A", "choice": 3, "gap": 12.0,
+           "branch": ["floating", "closest", "fixed #3"],
+           "pointer": [160, 186], "element": {"x": 160.0, "y": 186.0},
+           "home": {...}, "grab": {...},
+           "targets": [{"id": 1, "kind": "fixed", "at": {"x": 40, "y": 60, "w": 240, "h": 44},
+                        "zone": null, "gap": 104.0, "active": false}, ...]}],
+         "drops": [{"key": "A", "model": [...], "drop": [...]}]}
+```
+
+`targets` is the target table: where the dragged element lands in each
+target's state, and its distance from the element at the pointer. `branch`
+is the spec's kinds down to the chosen target. A spec with `between` or
+`vary` lists them under `per_frame`, since their targets are computed each
+frame rather than tabled. stderr gets one line per drag frame:
+
+```
+petal-ui-run: frame 7: drag "A": #3 of 5 (floating > closest > fixed #3), gap 0.0
+petal-ui-run: frame 10: drop "A" -> ["B","C","D","A","E"]
+```
+
+The reader is `petal_ui::drag_trace`; a host can call it on its own state
+dump.
 
 ### Monkey scenarios
 

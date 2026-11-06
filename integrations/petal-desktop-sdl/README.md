@@ -114,6 +114,11 @@ re-simulated through an edit. Nothing in the script opts in.
 | `F6` | Toggle the trail overlay |
 | `F7` | Track the shape under the pointer: its `draw_*` call is followed through every recorded frame and drawn as a path |
 
+`F8` (any time, not only with the timeline) switches the `ui/drag` drag
+debugger on and off: an app that drags with `ui/drag` shows its drop zones,
+its target table with each target's distance, and its drag spec with the
+chosen branch lit (`drag_debug`, read by the script as `ui_debug("drag")`).
+
 The part worth trying: freeze, scrub back to just before a jump, press `F7`
 on the player, then **edit a constant in the script and save**. The cursor
 frame and the frames after it are replayed through the new code (starting

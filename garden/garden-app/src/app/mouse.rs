@@ -341,7 +341,7 @@ impl App {
 
     /// The editor pane showing `path` — the pairing rule the live binding, the
     /// hover highlight and the jump all share.
-    fn editor_pane_for(&self, path: &std::path::Path) -> Option<usize> {
+    pub(in crate::app) fn editor_pane_for(&self, path: &std::path::Path) -> Option<usize> {
         let script_dir = self
             .script
             .as_ref()
@@ -537,7 +537,7 @@ impl App {
     /// span, and deduplicated on the way: two goals can legitimately resolve to
     /// the same edit (both axes of a shape placed from one `config let`), which
     /// is one edit chosen twice, not a collision.
-    fn apply_rewrites(&mut self, editor: usize, rewrites: &[garden_script::SourceRewrite]) {
+    pub(in crate::app) fn apply_rewrites(&mut self, editor: usize, rewrites: &[garden_script::SourceRewrite]) {
         let mut ordered: Vec<&garden_script::SourceRewrite> = rewrites.iter().collect();
         ordered.sort_by_key(|r| std::cmp::Reverse((r.span.start_line, r.span.start_col)));
         ordered.dedup_by_key(|r| (r.span.start_line, r.span.start_col, r.new_text.clone()));
@@ -937,6 +937,8 @@ impl App {
                         panel.mouse_up(0);
                     }
                     self.tick_panel_at(idx);
+                    // A drag-mode `ui/drag` gesture: its drop is an edit.
+                    self.end_model_drag(idx);
                 }
                 Drag::PanelText { pane, id } => {
                     if let Some(panel) = self.panes.get_mut(pane).and_then(|p| p.panel.as_mut()) {

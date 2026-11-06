@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { proposeEditArgs, type ProposeInput } from "./petal-mcp-propose.ts";
+import { dragExplain, ensureUiRun, type DragExplainInput } from "./petal-mcp-drag.ts";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 const petalBin = join(projectRoot, "cli/target/debug/petal");
@@ -304,6 +305,56 @@ server.registerTool("PendingReport", {
     code: z.string().describe("The Petal source code to run"),
   },
 }, ({ code }) => petalTool(["pending-report", "--json"], code));
+
+server.registerTool("DragExplain", {
+  title: "Explain a ui/drag drag",
+  description:
+    "Runs a `ui/drag` app headlessly (petal-ui-run --drag-trace-full), performs a drag " +
+    "in it, and returns what the declarative-dragging engine holds at one frame: " +
+    "`sessions[]`, each with the dragged `key`, the `spec` as the app built it (data), " +
+    "the target table `targets[]` ({id, kind, at: where the dragged element lands in " +
+    "that target's state, zone for a drop_target, gap: its distance from the element " +
+    "now, active, drop: the model a release there commits}), the chosen target " +
+    "(`choice`, `gap`) and `branch` (the spec's kinds down to it, e.g. floating > " +
+    "closest > fixed #3); also `timeline` ([frame, chosen id] for every drag frame), " +
+    "`all_drops`, `final_state` and `error`. Use it to tune a drag: why the element " +
+    "snaps where it does, whether two targets are ambiguous (same `at`), whether the " +
+    "candidate set is too large. Give `drag: {target, to, frames?, at?}` — `target` is " +
+    "the element's place key, `to` is [x, y] or another element's key — or a full " +
+    "petal-ui-run `scenario`. By default the last frame a drag was in flight is " +
+    "reported; `frame` picks another.",
+  inputSchema: {
+    code: z.string().optional().describe("The app's Petal source (import ui; import ui/drag; …)"),
+    path: z.string().optional().describe("Path to the app instead of code (needed when it imports siblings)"),
+    drag: z.object({
+      target: z.string().describe("Place key of the element to drag (or a ui target id)"),
+      to: z.union([z.tuple([z.number(), z.number()]), z.string()])
+        .describe("[x, y], or the key / target id of the element to drop onto"),
+      frames: z.number().int().min(1).optional().describe("Frames of movement (default 10)"),
+      at: z.number().int().min(0).optional().describe("Frame of the press (default 2)"),
+    }).optional(),
+    scenario: z.object({
+      size: z.tuple([z.number(), z.number()]).optional(),
+      frames: z.number().int().optional(),
+      events: z.array(z.any()).optional(),
+    }).optional().describe("A petal-ui-run scenario (docs/dev/headless-ui-run.md), instead of or with drag"),
+    frame: z.number().int().min(0).optional().describe("The frame to report (default: the last drag frame)"),
+    size: z.tuple([z.number(), z.number()]).optional().describe("Window size (default 800x600)"),
+    seed: z.number().int().min(0).optional().describe("Seed the random stream"),
+  },
+}, async (input) => {
+  const buildErr = await ensureUiRun();
+  if (buildErr) return { content: [{ type: "text" as const, text: buildErr }], isError: true };
+  try {
+    const { stderr, ...result } = await dragExplain(input as DragExplainInput);
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+      isError: result.error !== null,
+    };
+  } catch (e) {
+    return { content: [{ type: "text" as const, text: String((e as Error).message ?? e) }], isError: true };
+  }
+});
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

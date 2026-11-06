@@ -25,6 +25,7 @@ Buffers open in **Normal** mode; the mode shows in the status bar.
 | Report | `:report <text>` | file a bug / feature report with the last 5 minutes of session events attached (stored in `~/.garden/state`) |
 | Drag-to-edit | `:DragNext` `:DragPrev` `:DragPick N` `:DragAllow [sel…]` `:DragDeny [sel…]` `:DragEngine [auto\|v1\|v2]` | write the next / previous / Nth alternative of the last solved Cmd-drag on a Petal-IDE canvas / restrict later drags to these numbers / rule numbers out (a selector is a name, `line:N`, `fn:NAME` or `config` (alias `knob`: every `config let` / `tunable` number); no argument clears) / pick the engine ([petal-ide-mode.md](petal-ide-mode.md#dragging-a-shape-to-edit-its-code)) |
 | Drag mode | `:DragMode [on\|off]` `:DragHint [free\|tunable\|rigid\|line]` | Petal IDE's drag mode: plain drags on the canvas edit the code (no argument toggles; also Cmd+Shift+D and the toolbar's Drag) / mark the number under the cursor (no argument cycles free → tunable → rigid), or cycle the cursor's line ([petal-ide-mode.md](petal-ide-mode.md#drag-mode)) |
+| Drag debug | `:DragDebug [on\|off]` | `ui/drag`'s debug overlay (drop zones, target table, spec) in every panel; no argument toggles; also Cmd+Shift+G ([petal-ide-mode.md](petal-ide-mode.md#the-drag-debugger)) |
 | Inspect | `:State` | toggle the Petal-IDE live-state inspector overlay on panel panes (every value the last frame bound, by name, + frame count) |
 | History | `Ctrl+[` `Ctrl+]` / `:back` `:forward` | step back / forward through the focused panel's browser-style history — its in-script `navigate(...)` steps first, then to the previously visited `.ptl` screen; a no-op at the ends (`:fwd` = `:forward`). *(In a plain TUI terminal `Ctrl+[` is indistinguishable from Escape, so use `:back` there; the keys work in the windowed frontend and kitty-protocol terminals.)* |
 
@@ -50,6 +51,7 @@ copy-indent only — no language awareness — and pasting never re-indents.
 | Cmd+W | close the window (each Garden window is its own process, so this exits — like Cmd+Q) |
 | Cmd+Q / Ctrl+Q | quit |
 | Cmd+Shift+D / Ctrl+Shift+D | Petal IDE: drag mode on / off ([petal-ide-mode.md](petal-ide-mode.md#drag-mode)); only while a canvas is paired with an editor |
+| Cmd+Shift+G / Ctrl+Shift+G | `ui/drag`'s drag debugger on / off in every panel ([petal-ide-mode.md](petal-ide-mode.md#the-drag-debugger)); only while a panel is open |
 | Cmd+P / Ctrl+P | fuzzy file finder (type to filter; ↑/↓ or Ctrl+P/Ctrl+N to move; Enter opens in the focused pane; Esc cancels) |
 | Ctrl+W then `h` `j` `k` `l` | move focus to the pane left / down / up / right (the direction key may hold Ctrl) |
 | Ctrl+W then `w` | cycle focus to the next pane |

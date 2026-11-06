@@ -5347,3 +5347,63 @@ fn a_drag_after_an_edit_while_paused_uses_the_edited_text() {
     assert_eq!(app.panes[editor].view.buffer.line(1), "config let gap = rigid(30)");
     assert_eq!(app.panes[editor].view.buffer.line(2), "let x0 = 52", "{:?}", app.status_note);
 }
+
+/// A sketch that drags its own top-level literal with `ui/drag`.
+const LITERAL_DRAG_SKETCH: &str = "import ui/drag
+// The pipeline, in the order it runs.
+let STEPS = [
+  \"fetch\",
+  \"parse\",   // tolerant
+  \"check\",
+]
+fn view(steps)
+  for i in range(0, len(steps)) key steps[i] do
+    let k = steps[i]
+    let r = place(k, rect(20, 20 + i * 50, 200, 40))
+    draggable(k, r, fn() closest(moves(steps, i)) |> floating() end)
+    place(k, r, fn(p) draw_rect(p, #446688) end)
+  end
+  nil
+end
+clear(0, 0, 0)
+let d = drag_session(STEPS, view)
+view(d.preview)
+";
+
+/// Drag mode hands a press on a `ui/drag` draggable to the sketch, and the
+/// drop is written into the literal it dragged — a structural edit DM v2's
+/// number levers cannot make — with the literal's comments kept. (Outside
+/// drag mode the drop is the sketch's alone and the literal settles home.)
+#[test]
+fn drag_mode_writes_a_ui_drag_drop_into_its_literal() {
+    let (mut app, editor, canvas, _dir) = traced_pair("petal-ide-model-drop", LITERAL_DRAG_SKETCH);
+    app.settle_panels();
+    app.run_command(crate::command_line::Command::DragMode("on".into()));
+    app.settle_panels();
+    plain_drag(&mut app, canvas, (100.0, 40.0), (0.0, 110.0));
+    let after = app.panes[editor].view.buffer.text();
+    assert!(
+        after.contains("let STEPS = [\n  \"parse\",   // tolerant\n  \"check\",\n  \"fetch\",\n]"),
+        "{after}\nstatus: {:?}",
+        app.status_note
+    );
+    assert!(after.contains("// The pipeline, in the order it runs."));
+    assert!(app.status_note.as_deref().unwrap_or("").contains("STEPS"), "{:?}", app.status_note);
+}
+
+#[test]
+fn drag_debug_command_switches_the_overlay_in_panels() {
+    let (mut app, _editor, canvas, _dir) = traced_pair(
+        "petal-ide-drag-debug",
+        "clear(0, 0, 0)\nif ui_debug(\"drag\") then draw_rect(0, 0, 5, 5, #ffffff) end\n",
+    );
+    app.settle_panels();
+    let off = app.panes[canvas].panel.as_ref().unwrap().commands().len();
+    app.run_command(crate::command_line::Command::DragDebug(String::new()));
+    app.settle_panels();
+    let on = app.panes[canvas].panel.as_ref().unwrap().commands().len();
+    assert_eq!(on, off + 1);
+    app.run_command(crate::command_line::Command::DragDebug("off".into()));
+    app.settle_panels();
+    assert_eq!(app.panes[canvas].panel.as_ref().unwrap().commands().len(), off);
+}

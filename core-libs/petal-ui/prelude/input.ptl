@@ -30,6 +30,9 @@ pub native fn drag_start_x() -> int
 pub native fn drag_start_y() -> int
 pub native fn click_count() -> int
 pub native fn text_input() -> string
+// Whether the host switched on its debug overlay `name` (petal-sdl: F8 for
+// "drag"; Garden: Cmd/Ctrl+Shift+G). False on a host with no such key.
+pub native fn ui_debug(name: string) -> bool
 pub native fn grab_mouse()
 pub native fn release_mouse()
 

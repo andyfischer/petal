@@ -61,6 +61,7 @@ Polled, never called back. An *edge* is true on one frame.
 | `frame_count()` | Frames so far. Reading it makes a script run every frame. |
 | `screen_width()`, `screen_height()` | The drawable, in logical pixels. |
 | `ui_version()` | The interface version (1). |
+| `ui_debug(name)` | Whether the host switched on its debug overlay `name`: `"drag"` is `ui/drag`'s debugger (F8 in petal-sdl, Cmd/Ctrl+Shift+G in Garden, `--ui-debug drag` in `petal-ui-run`). False on a host without one. |
 | `host_data(kind, arg)` | Ask the host for data it publishes (host specific). |
 
 **Key names.** A key is named for the key, not for what it types: `"a"`–`"z"`,
@@ -629,7 +630,10 @@ rest. The guide, with worked examples and the mistakes to avoid, is
 | `moves_nested(lists, key, field?)` | Candidate states: an item moved to every slot of every column (kanban). |
 | `tree_moves(tree, path, opts?)` | Candidate states: a tree node above, below or into every other node, never into itself. `opts`: `{children, into}`. |
 | `choices(state, path, values)` | Candidate states: the value at `path` set to each of `values`. |
+| `drag_explain()` | The drag in flight this frame as data, or nil: `{key, pointer, element, grab, home, choice, gap, branch, targets, spec, speculations}`; `targets` is the target table (`{id, kind, at, zone, gap, active, drop}` per leaf). Speculates nothing. Call after `drag_session`. |
+| `drag_debug(d, opts?)` | Draw the drag debugger over the app: the drop-zone map, each target with its distance, and the spec tree with the chosen branch lit. `drag_session` draws it by itself while `ui_debug("drag")` is on. `opts`: `{zones, step, tree, max_lines}`. |
 | `UI_LAYER_DRAG`, `DRAG_SLOP`, `PLACE_RATE` | The drag layer (900), the press-to-drag threshold (4 px), `place`'s easing rate (18/s). |
+| `DRAG_DROPS_CHANNEL` | The output channel each drop is announced on, as `{key, model, drop}` (`"drag_drops"`): what an editor reads to write a drop on a literal model back to source. |
 
 ## Testing a UI
 

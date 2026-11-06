@@ -189,6 +189,33 @@ step through a computed value) is an error, as is an edit that would leave
 source that does not parse (a record key that is not an identifier). The
 source is returned only when every goal succeeded.
 
+### Goals from a diff: `petal::drop_edit`
+
+A caller that has the *new value* of a literal rather than the edit — a
+`ui/drag` drop on a model that is a top-level `let` — gets the goals from
+`drop_edit::diff_goals(path, old, new)`. Lists are matched element by
+element on an identity (a record's `id`, else its `key`, else the element)
+with a longest common subsequence, so a move is one `should_remove` and one
+`should_insert` and every element that stayed keeps its text and comments;
+records are diffed field by field (`should_insert` / `should_remove` for
+added and dropped fields); anything else is `should_set_path`. The goals are
+ordered to apply in sequence: removals back to front, insertions front to
+back at their final index, then edits inside the elements that stayed.
+
+```rust
+use petal::drop_edit::{diff_goals, propose_drop};
+// STEPS = ["fetch", "parse", "check"]  →  ["parse", "check", "fetch"]
+// goals: [should_remove("STEPS[0]"), should_insert("STEPS[2]", "fetch")]
+let edit = propose_drop(&source, &model_json, &drop_json)?;   // DropEdit {binding, goals, source}
+```
+
+`propose_drop` finds the one top-level `let` whose literal *is* the model
+(`literal_bindings`; a colour literal equals its runtime `{r, g, b}`
+record), diffs and applies. `state` initializers are never targets. Garden's
+Petal IDE uses it to turn a drag-mode drop into an edit
+(`garden/docs/petal-ide-mode.md`); the design is
+[declarative-dragging.md](../proposals/declarative-dragging.md) §P4.
+
 ### Placement
 
 Where a goal's statement goes **when one has to be inserted**. A goal that

@@ -25,6 +25,7 @@ asked to "make this draggable", read [The rules](#the-rules) first.
 - [Recipes](#recipes)
 - [The rules](#the-rules)
 - [Debugging and testing](#debugging-and-testing)
+- [Dragging a literal edits the source](#dragging-a-literal-edits-the-source)
 - [Hot reload](#hot-reload)
 - [When not to use it](#when-not-to-use-it)
 - [What is not here yet](#what-is-not-here-yet)
@@ -301,11 +302,41 @@ draggable("swatch", sw, fn() closest([switch_to(items ++ [new_item], new_item.id
 
 ## Debugging and testing
 
+- **The debugger.** Press **F8** in petal-sdl (Cmd/Ctrl+Shift+G or
+  `:DragDebug` in Garden; `--ui-debug drag` in `petal-ui-run`) and every
+  `drag_session` draws `drag_debug` over the app, with nothing in the app's
+  code. It shows three things, all read from the target table, so drawing
+  them costs no speculative rendering:
+  - the **drop zones**: the screen sampled on a 24 px grid, each cell tinted
+    by the target a pointer there would choose (for `vary` it is not
+    sampled, since that would need renderings);
+  - the **target table**: where the dragged element lands in each target's
+    state, a line from the element to it and its distance (`#3 52`), the
+    chosen one in white, a `drop_target`'s zone in red;
+  - the **spec tree** in a panel at the top right, the chosen branch lit,
+    with how many renderings the frame made (0 on every frame after the
+    drag starts, for `closest`, `snap_radius`, `when_far` and `drop_target`).
+
+  Call `drag_debug(d, opts?)` yourself to show it always (`opts`:
+  `{zones: false}`, `{step: 12}`, `{tree: false}`, `{max_lines}`).
+- **`drag_explain()`** returns the same as data, after `drag_session`:
+  `{key, choice, gap, branch, targets: [{id, kind, at, zone, gap, active,
+  drop}], spec, speculations, …}`, or nil when nothing is dragged. Two
+  targets with the same `at` are the ambiguity the engine warns about; a
+  long `targets` list is over-enumeration.
 - `d.spec` is the spec as data, `d.target` the chosen option and `d.gap` its
-  distance: print them, or show them on screen.
+  distance.
+- `petal-ui-run app.ptl --drag-trace` adds a `drag` record to every frame
+  (the explained drag and the frame's drops) and prints one line per drag
+  frame on stderr: `drag "A": #3 of 5 (floating > closest > fixed #3), gap
+  12`. The `DragExplain` MCP tool runs a drag and returns the spec, the
+  table and the branch ([mcp-server.md](../../../docs/dev/mcp-server.md)).
 - `petal-ui-run app.ptl --targets` lists each draggable as `drag:<key>`.
-- A scenario drags like a user: press, move a few frames, release
-  ([headless-ui-run.md](../../../docs/dev/headless-ui-run.md)):
+- A scenario names the drag: `{"at": 3, "drag": {"target": "A", "to":
+  "D", "frames": 8}}` presses on the element placed as `A`, moves to `D`
+  over 8 frames with the button held, and releases on the frame after
+  ([headless-ui-run.md](../../../docs/dev/headless-ui-run.md)). `to` may be
+  `[x, y]`. Or spell it out like a user: press, move a few frames, release:
 
   ```json
   {"size": [320, 340], "frames": 40, "events": [
@@ -320,6 +351,37 @@ draggable("swatch", sw, fn() closest([switch_to(items ++ [new_item], new_item.id
 - The engine's cells appear in the trace's `state` under `ui/drag::`:
   `_anim` (every key's displayed value), `_press` (a press waiting to
   become a drag) and `drag_session/ui/drag::s` (the drag).
+
+## Dragging a literal edits the source
+
+When the model is a top-level `let` literal rather than `state`, a drop can
+be written back to the file. In Garden's drag mode (Cmd/Ctrl+Shift+D in
+Petal IDE), a press on a `ui/drag` draggable goes to the sketch, which
+previews the drag as usual; the drop is then proposed as an edit of the
+literal in the paired editor:
+
+```petal ignore
+// The pipeline, in the order it runs.
+let STEPS = [
+  "fetch",
+  "parse",   // tolerant
+  "check",
+]
+let d = drag_session(STEPS, view)
+view(d.preview)
+```
+
+Dragging `fetch` below `check` rewrites the list as `parse, check, fetch`.
+The edit is goal-based (`petal::drop_edit`): the old and new models are
+diffed into `should_remove("STEPS[0]")` + `should_insert("STEPS[2]",
+"fetch")` (records are matched by `id`, then `key`, and diffed field by
+field; scalars are `should_set_path`), so the other elements, their comments
+and the file's layout stay as they are. The moved element itself is written
+fresh, so a comment trailing it on its line is dropped with it. The model must be
+the value of exactly one top-level `let` in the file; a `state` initializer
+is not edited (a reload keeps the state's value, so the edit would show
+nothing). Every drop is announced on the `drag_drops` output channel
+(`DRAG_DROPS_CHANNEL`) as `{key, model, drop}`, which is how a host sees it.
 
 ## Hot reload
 
@@ -378,4 +440,5 @@ Use `ui/drag` for anything that **snaps, reorders or re-parents**.
   so the element tracks the pointer) build spec data now, and a drag that
   reaches one stops with "not yet available". They arrive with P2.
 - One drag at a time: a second pointer does not start a second drag.
-- `drag_debug(d)` overlays and the scenario `drag` sugar are planned (P4).
+- `drag_debug` cannot sample the drop zones of a `vary` spec without
+  rendering, so it does not.

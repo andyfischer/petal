@@ -53,6 +53,11 @@ pub const SYM_DRAG_START_X: &str = "drag_start_x";
 pub const SYM_DRAG_START_Y: &str = "drag_start_y";
 pub const SYM_CLICK_COUNT: &str = "click_count";
 pub const SYM_TEXT_INPUT: &str = "text_input";
+/// The debug overlays the host has switched on (a list of names, `"drag"`
+/// for `ui/drag`'s `drag_debug`), read by `ui_debug(name)`. A host toggles
+/// one with [`InputState::toggle_debug`] from a key of its own (F8 in
+/// petal-sdl, Cmd/Ctrl+Shift+G in Garden).
+pub const SYM_UI_DEBUG: &str = "ui_debug_flags";
 pub const SYM_DT: &str = "dt";
 pub const SYM_FRAME_COUNT: &str = "frame_count";
 /// Absolute monotonic clock in seconds, read fresh from the host each frame
@@ -218,6 +223,10 @@ pub struct InputState {
     // Multi-click chain: (time, x, y, count) of the last left press.
     last_click: Option<(f64, i32, i32, i64)>,
     now: f64,
+
+    /// Debug overlays the host switched on (`ui_debug(name)`); sorted, so
+    /// the bound list is the same from run to run.
+    debug_flags: std::collections::BTreeSet<String>,
 }
 
 impl InputState {
@@ -416,6 +425,30 @@ impl InputState {
         self.buttons_down.contains(&button)
     }
 
+    /// Switch the debug overlay `name` on or off (`ui_debug(name)` in a
+    /// script; `"drag"` is `ui/drag`'s `drag_debug`). Level state: it holds
+    /// until switched again.
+    pub fn set_debug(&mut self, name: &str, on: bool) {
+        if on {
+            self.debug_flags.insert(name.to_string());
+        } else {
+            self.debug_flags.remove(name);
+        }
+    }
+
+    /// Flip the debug overlay `name`, returning whether it is now on — what a
+    /// host's debug key calls.
+    pub fn toggle_debug(&mut self, name: &str) -> bool {
+        let on = !self.debug_flags.contains(name);
+        self.set_debug(name, on);
+        on
+    }
+
+    /// Whether the debug overlay `name` is on.
+    pub fn debug_on(&self, name: &str) -> bool {
+        self.debug_flags.contains(name)
+    }
+
     /// Where the left button last went down — `(0, 0)` before any press.
     /// Still set after the release, which `drag_start` is not.
     pub fn last_press(&self) -> (i32, i32) {
@@ -458,6 +491,7 @@ pub fn bind_input(env: &mut Env, input: &InputState) {
     bind_int(env, SYM_DRAG_START_X, sx as i64);
     bind_int(env, SYM_DRAG_START_Y, sy as i64);
     bind_int(env, SYM_CLICK_COUNT, input.frame_click_count);
+    bind_str_list(env, SYM_UI_DEBUG, input.debug_flags.iter());
     let text = Value::String(env.heap_mut().alloc_string(input.frame_text.clone()));
     let s = env.intern_symbol(SYM_TEXT_INPUT);
     env.set_binding(s, text);
@@ -649,6 +683,9 @@ pub fn register_input_module(env: &mut Env) {
     // library. Everything else here reads an input class, emits, or (like
     // `font`) answers from host state.
     register(env, "ui_version", native_ui_version, NativeEffects::CONST);
+    // A host's debug key flips it, so it is keyboard input. Registered last
+    // so it does not shift the natives before it.
+    register(env, "ui_debug", native_ui_debug, KEYBOARD);
 }
 
 fn binding_int(state: &mut PetalCxt, name: &str) -> i64 {
@@ -796,6 +833,13 @@ fn native_scroll_x(state: &mut PetalCxt) -> NativeResult {
 
 fn native_scroll_y(state: &mut PetalCxt) -> NativeResult {
     push_binding_int(state, SYM_SCROLL_Y)
+}
+
+fn native_ui_debug(state: &mut PetalCxt) -> NativeResult {
+    let name = state.get_string(1)?;
+    let v = binding_has_str(state, SYM_UI_DEBUG, &name);
+    state.push_bool(v);
+    Ok(1)
 }
 
 fn native_key_down(state: &mut PetalCxt) -> NativeResult {

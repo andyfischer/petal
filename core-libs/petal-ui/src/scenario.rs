@@ -30,9 +30,19 @@
 //! - `key: "name"` → `key_down` + `key_up` both at `N` (one frame sees both
 //!   edges, as in [`Headless::key`]).
 //!
+//! Two more are resolved when applied, because where they land depends on what
+//! the frame before registered: `click_target: "id"` (a click on a named
+//! target) and `drag: {target, to, frames}`, a held drag from a `ui/drag`
+//! draggable (or any named target) to a point or another target — the
+//! press at `N`, `frames` moves (default [`DEFAULT_DRAG_FRAMES`]) on
+//! `N+1..=N+frames`, the release on `N+frames+1`. See [`TargetDrag`].
+//!
 //! [`Scenario::monkey`] generates one from a seed: deterministic pseudo-random
 //! clicks, canonical keys, and short text. A failing monkey run is replayable
 //! from `(app, seed, monkey seed)` alone.
+
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 
 use serde_json::Value as Json;
 
@@ -51,6 +61,49 @@ pub struct Scenario {
     /// is depends on the frame before — so they are kept apart and resolved
     /// when applied ([`events_at`](Self::events_at)).
     pub target_clicks: Vec<TargetClick>,
+    /// Drags between named things (`{"at": N, "drag": {...}}`), resolved
+    /// when their press frame is about to run, like `target_clicks`.
+    pub target_drags: Vec<TargetDrag>,
+    /// Each drag's endpoints, fixed on its press frame so the rest of the
+    /// gesture does not chase a target the drag itself moves (the preview
+    /// reflows the layout). Indexed like `target_drags`; `None` when an
+    /// endpoint did not resolve.
+    resolved_drags: RefCell<BTreeMap<usize, Option<((i32, i32), (i32, i32))>>>,
+}
+
+/// Frames of pointer movement a scenario `drag` takes when it does not say.
+pub const DEFAULT_DRAG_FRAMES: usize = 10;
+
+/// A held drag (`{"at": N, "drag": {"target": "A", "to": [x, y] | "id",
+/// "frames": k}}`): press on the middle of `target` on frame `at`, move in
+/// `frames` even steps to `to` on frames `at+1..=at+frames`, release on
+/// `at+frames+1`.
+///
+/// A name is looked up as a registered target id (`interact`, `ui_target`, a
+/// button's label), then as `"drag:<name>"` — the id `ui/drag`'s
+/// `draggable(key, …)` registers, so a draggable is named by its place key —
+/// and, by [`Scenario::apply`], as a key `ui/drag` has placed (the rect it
+/// was last drawn at). Both endpoints are looked up once, on frame `at`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TargetDrag {
+    pub at: usize,
+    pub target: String,
+    pub to: DragTo,
+    pub frames: usize,
+}
+
+/// Where a scenario `drag` ends.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DragTo {
+    Point(i32, i32),
+    Target(String),
+}
+
+impl TargetDrag {
+    /// The frame the release lands on.
+    pub fn release_frame(&self) -> usize {
+        self.at + self.frames + 1
+    }
 }
 
 /// A click on the rect a script registered under `id` (`interact(r, id)`, a
@@ -97,22 +150,26 @@ impl Scenario {
 
         let mut events = Vec::new();
         let mut target_clicks = Vec::new();
+        let mut target_drags = Vec::new();
         if let Some(list) = obj.get("events") {
             let list = list
                 .as_array()
                 .ok_or_else(|| "`events` must be an array".to_string())?;
             for (i, entry) in list.iter().enumerate() {
-                parse_event(entry, &mut events, &mut target_clicks)
+                parse_event(entry, &mut events, &mut target_clicks, &mut target_drags)
                     .map_err(|e| format!("events[{i}]: {e}"))?;
             }
         }
         events.sort_by_key(|e| e.at);
         target_clicks.sort_by_key(|c| c.at);
+        target_drags.sort_by_key(|d| d.at);
         Ok(Self {
             size,
             frames,
             events,
             target_clicks,
+            target_drags,
+            resolved_drags: RefCell::default(),
         })
     }
 
@@ -123,8 +180,17 @@ impl Scenario {
     /// have should fail loudly, and the caller decides how.
     pub fn apply(&self, ui: &mut Headless, frame: usize) -> Vec<String> {
         let left_down = ui.input.button_down(input::buttons::LEFT);
+        // A drag endpoint may also be a key `ui/drag` placed: read where it
+        // was last drawn out of the state, only when a drag is due.
+        let placed = if self.target_drags.iter().any(|d| d.at == frame) {
+            crate::drag_trace::placed_keys(&ui.state())
+        } else {
+            Default::default()
+        };
         let (events, missing) = self.events_at(frame, left_down, |id| {
-            crate::hit::target(&mut ui.env, id).map(|t| t.center())
+            crate::hit::target(&mut ui.env, id)
+                .map(|t| t.center())
+                .or_else(|| placed.get(id).copied())
         });
         for ev in events {
             ui.event(ev);
@@ -155,6 +221,52 @@ impl Scenario {
         let button = input::buttons::LEFT;
         if left_down && self.target_clicks.iter().any(|c| c.at + 1 == frame) {
             events.push(InputEvent::MouseUp { button });
+        }
+        for (i, drag) in self.target_drags.iter().enumerate() {
+            if frame < drag.at || frame > drag.release_frame() {
+                continue;
+            }
+            if frame == drag.at {
+                // A draggable is registered as `drag:<key>`; try that second.
+                let mut find = |name: &str| {
+                    resolve(name).or_else(|| resolve(&format!("drag:{name}")))
+                };
+                let from = find(&drag.target);
+                if from.is_none() {
+                    missing.push(drag.target.clone());
+                }
+                let to = match &drag.to {
+                    DragTo::Point(x, y) => Some((*x, *y)),
+                    DragTo::Target(id) => {
+                        let to = find(id);
+                        if to.is_none() {
+                            missing.push(id.clone());
+                        }
+                        to
+                    }
+                };
+                let ends = from.zip(to);
+                self.resolved_drags.borrow_mut().insert(i, ends);
+                if let Some(((x, y), _)) = ends {
+                    events.push(InputEvent::MouseMove { x, y });
+                    events.push(InputEvent::MouseDown { button });
+                }
+                continue;
+            }
+            let Some(Some(((x0, y0), (x1, y1)))) = self.resolved_drags.borrow().get(&i).copied()
+            else {
+                continue;
+            };
+            if frame == drag.release_frame() {
+                events.push(InputEvent::MouseUp { button });
+            } else {
+                let t = (frame - drag.at) as f64 / drag.frames.max(1) as f64;
+                let lerp = |a: i32, b: i32| (a as f64 + (b - a) as f64 * t).round() as i32;
+                events.push(InputEvent::MouseMove {
+                    x: lerp(x0, x1),
+                    y: lerp(y0, y1),
+                });
+            }
         }
         for click in self.target_clicks.iter().filter(|c| c.at == frame) {
             match resolve(&click.id) {
@@ -217,7 +329,7 @@ impl Scenario {
             size: Some(size),
             frames: Some(frames),
             events,
-            target_clicks: Vec::new(),
+            ..Self::default()
         }
     }
 
@@ -257,6 +369,13 @@ impl Scenario {
                 .iter()
                 .map(|c| serde_json::json!({"at": c.at, "click_target": c.id})),
         );
+        events.extend(self.target_drags.iter().map(|d| {
+            let to = match &d.to {
+                DragTo::Point(x, y) => serde_json::json!([x, y]),
+                DragTo::Target(id) => Json::from(id.clone()),
+            };
+            serde_json::json!({"at": d.at, "drag": {"target": d.target, "to": to, "frames": d.frames}})
+        }));
         let mut root = serde_json::Map::new();
         if let Some((w, h)) = self.size {
             root.insert("size".into(), Json::from(vec![w, h]));
@@ -307,6 +426,7 @@ fn parse_event(
     entry: &Json,
     out: &mut Vec<TimedEvent>,
     target_clicks: &mut Vec<TargetClick>,
+    target_drags: &mut Vec<TargetDrag>,
 ) -> Result<(), String> {
     let obj = entry
         .as_object()
@@ -366,6 +486,7 @@ fn parse_event(
                     .ok_or_else(|| "`click_target` must be a target id string".to_string())?
                     .to_string(),
             }),
+            "drag" => target_drags.push(parse_drag(at, v)?),
             "scroll" => {
                 let (dx, dy) = parse_pair(v, "scroll")?;
                 out.push(TimedEvent {
@@ -413,6 +534,45 @@ fn parse_event(
         return Err("event has no action field".to_string());
     }
     Ok(())
+}
+
+fn parse_drag(at: usize, v: &Json) -> Result<TargetDrag, String> {
+    let o = v
+        .as_object()
+        .ok_or_else(|| "`drag` must be an object {target, to, frames?}".to_string())?;
+    for k in o.keys() {
+        if !matches!(k.as_str(), "target" | "to" | "frames") {
+            return Err(format!("unknown `drag` field `{k}` (expected target, to, frames)"));
+        }
+    }
+    let target = match o.get("target") {
+        Some(Json::String(s)) => s.clone(),
+        // A numeric place key, written as a number.
+        Some(Json::Number(n)) => n.to_string(),
+        _ => return Err("`drag.target` must be a target id or place key".to_string()),
+    };
+    let to = match o.get("to") {
+        Some(Json::String(s)) => DragTo::Target(s.clone()),
+        Some(Json::Number(n)) => DragTo::Target(n.to_string()),
+        Some(v @ Json::Array(_)) => {
+            let (x, y) = parse_pair(v, "drag.to")?;
+            DragTo::Point(x as i32, y as i32)
+        }
+        _ => return Err("`drag.to` must be [x, y] or a target id".to_string()),
+    };
+    let frames = match o.get("frames") {
+        None | Some(Json::Null) => DEFAULT_DRAG_FRAMES,
+        Some(f) => match f.as_u64() {
+            Some(n) if n >= 1 => n as usize,
+            _ => return Err("`drag.frames` must be a positive integer".to_string()),
+        },
+    };
+    Ok(TargetDrag {
+        at,
+        target,
+        to,
+        frames,
+    })
 }
 
 fn parse_pair(v: &Json, what: &str) -> Result<(f64, f64), String> {
@@ -531,6 +691,72 @@ mod tests {
                 assert!((0..400).contains(&x) && (0..300).contains(&y));
             }
         }
+    }
+
+    fn drag_scenario() -> Scenario {
+        Scenario::from_json_str(
+            r#"{"events": [{"at": 2, "drag": {"target": "A", "to": "slot", "frames": 4}}]}"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn drag_presses_moves_and_releases() {
+        let s = drag_scenario();
+        assert_eq!(s.target_drags[0].release_frame(), 7);
+        let resolve = |id: &str| match id {
+            "drag:A" => Some((10, 10)),
+            "slot" => Some((50, 90)),
+            _ => None,
+        };
+        let (e2, m2) = s.events_at(2, false, resolve);
+        assert!(m2.is_empty());
+        assert_eq!(
+            e2,
+            vec![
+                InputEvent::MouseMove { x: 10, y: 10 },
+                InputEvent::MouseDown { button: 0 }
+            ]
+        );
+        // The endpoints were fixed on the press: a target that moves later
+        // (the drag's own preview reflowing) does not bend the path.
+        let moved = |id: &str| if id == "slot" { Some((0, 0)) } else { None };
+        let moves: Vec<_> = (3..=6).map(|f| s.events_at(f, true, moved).0).collect();
+        assert_eq!(moves[0], vec![InputEvent::MouseMove { x: 20, y: 30 }]);
+        assert_eq!(moves[3], vec![InputEvent::MouseMove { x: 50, y: 90 }]);
+        assert_eq!(s.events_at(7, true, moved).0, vec![InputEvent::MouseUp { button: 0 }]);
+        assert!(s.events_at(8, false, moved).0.is_empty());
+    }
+
+    #[test]
+    fn drag_reports_unresolved_names() {
+        let s = drag_scenario();
+        let (events, missing) = s.events_at(2, false, |_| None);
+        assert!(events.is_empty());
+        assert_eq!(missing, vec!["A".to_string(), "slot".to_string()]);
+        // Nothing was pressed, so nothing moves or is released after.
+        assert!(s.events_at(3, false, |_| None).0.is_empty());
+        assert!(s.events_at(7, false, |_| None).0.is_empty());
+    }
+
+    #[test]
+    fn drag_parses_points_and_defaults_and_round_trips() {
+        let s = Scenario::from_json_str(
+            r#"{"events": [{"at": 1, "drag": {"target": 7, "to": [3, 4]}}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            s.target_drags[0],
+            TargetDrag {
+                at: 1,
+                target: "7".into(),
+                to: DragTo::Point(3, 4),
+                frames: DEFAULT_DRAG_FRAMES
+            }
+        );
+        assert_eq!(Scenario::from_json(&s.to_json()).unwrap(), s);
+        let bad = Scenario::from_json_str(r#"{"events": [{"at": 1, "drag": {"target": "a", "to": "b", "speed": 2}}]}"#);
+        assert!(bad.unwrap_err().contains("speed"));
     }
 
     #[test]

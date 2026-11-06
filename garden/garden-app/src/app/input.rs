@@ -142,6 +142,17 @@ impl App {
             return KeyOutcome::Handled;
         }
 
+        // `Cmd`/`Ctrl`+`Shift`+`G`: `ui/drag`'s debug overlay in every panel.
+        if !panel_claimed
+            && (mods.cmd || mods.ctrl)
+            && mods.shift
+            && matches!(key, Key::Char('g' | 'G'))
+            && self.panes.iter().any(|p| p.is_panel())
+        {
+            self.set_drag_debug(!self.ui_debug_drag);
+            return KeyOutcome::Handled;
+        }
+
         // A pending `Ctrl+W` consumes the next key as a window command (move or
         // cycle focus); any other key cancels the prefix without side effects.
         if std::mem::take(&mut self.window_cmd_pending) {

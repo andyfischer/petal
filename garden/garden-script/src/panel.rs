@@ -66,6 +66,8 @@ pub use petal_ui::host_data::{DataProvider, HostData as PanelData};
 use crate::query::{self, QueryProvider};
 
 mod dm;
+mod model_drop;
+pub use model_drop::{propose_model_drop, ModelDrop, ModelDropOutcome};
 pub use dm::{DRAG_ALTERNATIVES, DRAG_ITERS, FINISH_RUNS, FINISH_WALL, OPEN_RUNS, OPEN_WALL};
 use dm::V2Drag;
 
@@ -1163,6 +1165,9 @@ pub struct PanelHost {
     /// The commands of the last frame that ran, served again by a frame the
     /// gate skips (see [`frame`](Self::frame)).
     last_cmds: Vec<PanelCmd>,
+    /// `ui/drag` drops the frames announced since the last
+    /// [`take_model_drops`](Self::take_model_drops), newest last (capped).
+    model_drops: Vec<ModelDrop>,
     /// What the last reload said about the script's constants and stale
     /// `state` seeds (see [`last_reload_report`](Self::last_reload_report)).
     reload_lines: Vec<String>,
@@ -1231,6 +1236,7 @@ impl PanelHost {
             imports: SourceWatch::default(),
             frame_origins: Vec::new(),
             last_cmds: Vec::new(),
+            model_drops: Vec::new(),
             reload_lines: Vec::new(),
             frame_raw_index: Vec::new(),
             dm_checkpoint_on: false,
@@ -1299,6 +1305,7 @@ impl PanelHost {
             imports: SourceWatch::default(),
             frame_origins: Vec::new(),
             last_cmds: Vec::new(),
+            model_drops: Vec::new(),
             reload_lines: Vec::new(),
             frame_raw_index: Vec::new(),
             dm_checkpoint_on: false,
@@ -1821,6 +1828,7 @@ impl PanelHost {
         self.frame_origins = origins;
         self.frame_raw_index = raw_index;
         self.last_cmds = cmds.clone();
+        self.collect_model_drops();
         Ok(cmds)
     }
 

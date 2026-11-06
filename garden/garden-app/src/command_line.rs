@@ -172,6 +172,9 @@ pub enum Command {
     DragEngine(String),
     /// `:DragMode [on|off]` — Petal IDE's drag mode (no argument toggles).
     DragMode(String),
+    /// `:DragDebug [on|off]` — `ui/drag`'s debug overlay in every panel (no
+    /// argument toggles).
+    DragDebug(String),
     /// `:DragHint [free|tunable|rigid|line]` — mark the number under the
     /// cursor (no argument cycles it), or cycle the cursor's line.
     DragHint(String),
@@ -276,6 +279,7 @@ pub fn parse(input: &str) -> Command {
         },
         "DragEngine" => Command::DragEngine(arg.to_string()),
         "DragMode" => Command::DragMode(arg.to_string()),
+        "DragDebug" => Command::DragDebug(arg.to_string()),
         "DragHint" => Command::DragHint(arg.to_string()),
         "back" => Command::Back,
         "forward" | "fwd" => Command::Forward,
@@ -479,6 +483,7 @@ mod tests {
         assert_eq!(parse("DragEngine v2"), Command::DragEngine("v2".into()));
         assert_eq!(parse("DragMode"), Command::DragMode(String::new()));
         assert_eq!(parse("DragMode on"), Command::DragMode("on".into()));
+        assert_eq!(parse("DragDebug"), Command::DragDebug(String::new()));
         assert_eq!(parse("DragHint rigid"), Command::DragHint("rigid".into()));
     }
 

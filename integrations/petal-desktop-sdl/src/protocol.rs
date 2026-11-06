@@ -311,6 +311,7 @@ pub fn run_one_frame<H: Host>(
     // `env.pending_report` / the `pending_report` command).
     env.advance_frame(stack_id);
     input.begin_frame(1.0 / 60.0);
+    crate::game_loop::handle_debug_keys(input);
     bind_frame_info(env, 1.0 / 60.0, *frame_count);
     // Bind `time()` from the session's single clock source: the simulated
     // clock shared with a live loop (windowed agent mode), or a deterministic

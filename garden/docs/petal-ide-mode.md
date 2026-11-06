@@ -434,7 +434,22 @@ While it is on:
 - **The sketch's own mouse is suspended**: its frames see the pointer off the
   canvas, and no press, release, wheel or right click reaches it. Its keys
   still do. Leave the mode to use an interactive sketch again; Cmd-drag works
-  either way.
+  either way. The exception is a press on one of the sketch's own `ui/drag`
+  draggables (below).
+- **A `ui/drag` drag edits the literal it drags.** A press on an element
+  the sketch registered with `draggable(key, …)` goes to the sketch for the
+  whole gesture, so it previews the drag as it always does (the other
+  elements move out of the way). When the model it drags is a top-level
+  `let` literal, the drop is written into that literal in the editor's
+  buffer: dragging `fetch` below `check` in
+  `let STEPS = ["fetch", "parse", "check"]` rewrites the list as
+  `["parse", "check", "fetch"]`. The edit is a goal-based diff (one removal
+  and one insertion for a move; a field set for a scalar), so the other
+  elements, their comments and the file's layout stay put. This is the
+  structural edit a DM drag cannot make, since its levers are numbers. A drop
+  on `state`, or on a value that is no single literal of the file, says why
+  in the status line and writes nothing. See
+  [`ui/drag`'s guide](../../core-libs/petal-ui/docs/drag.md#dragging-a-literal-edits-the-source).
 - **Affordances**: a `DRAG MODE` badge on the canvas, an outline around the
   shape a press would grab with a label naming the call that drew it
   (`draw_circle · line 9`), and a grab-hand pointer (a closed hand while
@@ -509,6 +524,15 @@ the pointer `cursor`, the result panel's cells with their rects and actions
   `:DragPick N` are the keyboard path.
 - Other shapes sharing a dragged number catch up on release, not live (see
   "Which engine").
+
+### The drag debugger
+
+`:DragDebug` (alone it toggles; `on` / `off`), or **Cmd+Shift+G**
+(Ctrl+Shift+G) with any panel open, switches on `ui/drag`'s `drag_debug` in
+every panel, in or out of drag mode: a sketch that drags with `ui/drag`
+draws its drop zones, each target of the drag with its distance from the
+dragged element, and the drag's spec with the chosen branch lit. Nothing in
+the sketch opts in; it reads `ui_debug("drag")`.
 
 ## Troubleshooting
 

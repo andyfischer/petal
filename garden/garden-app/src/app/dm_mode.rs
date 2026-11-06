@@ -794,6 +794,12 @@ impl App {
             return false;
         };
         if self.traced_panel_at(x, y).is_some() {
+            // A press on one of the sketch's own `ui/drag` draggables is the
+            // sketch's: it previews the drag, and its drop is proposed as an
+            // edit of the literal it dragged (`model_drop.rs`).
+            if self.model_drag_press(idx, x, y) {
+                return false;
+            }
             // A press on bare canvas is swallowed too: the sketch's mouse is
             // suspended while the mode is on.
             self.begin_manipulation(x, y);

@@ -391,6 +391,7 @@ pub fn run_game<H: Host>(
         let dt = now.duration_since(last_frame).as_secs_f64();
         last_frame = now;
         input.begin_frame(dt);
+        handle_debug_keys(&mut input);
 
         if timeline_on {
             handle_timeline_keys(
@@ -467,6 +468,17 @@ pub fn run_game<H: Host>(
     }
 
     Ok(())
+}
+
+/// The debug-overlay keys, read from the frame's input edges before the
+/// script runs: F8 switches `ui/drag`'s `drag_debug` (the script reads it as
+/// `ui_debug("drag")`), so a drag can be inspected in any app that drags with
+/// `ui/drag`, with no code in the app. The key still reaches the script.
+pub(crate) fn handle_debug_keys(input: &mut InputState) {
+    if input.was_key_pressed("f8") {
+        let on = input.toggle_debug("drag");
+        eprintln!("[ui] drag debug {}", if on { "on (F8 hides)" } else { "off" });
+    }
 }
 
 /// The windowed timeline chords, read from the frame's input edges before the
@@ -622,6 +634,7 @@ pub fn run_agent<H: Host>(
             env.advance_frame(current.stack_id);
 
             input.begin_frame(dt);
+            handle_debug_keys(&mut input);
             bind_frame_info(&mut env, dt, frame_count);
             let t = clock.tick(frame_count, dt);
             bind_time(&mut env, t);

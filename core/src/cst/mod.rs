@@ -158,6 +158,12 @@ pub enum SyntaxKind {
     /// The `key <expr>` clause of a `for` header: the contextual `key`
     /// identifier and the key expression's node.
     ForKey,
+    /// A second or later generator of a `for` header (`, b in ys [key k]`):
+    /// the comma, the variable's identifier, `in`, the iterable's node and an
+    /// optional [`SyntaxKind::ForKey`]. The first generator's parts stay
+    /// direct children of the `ForStmt`/`ForExpr`, so a one-generator loop's
+    /// tree is unchanged.
+    ForGenerator,
     /// One `name="value"` / `name={expr}` attribute of a JSX element.
     JsxAttr,
 }
@@ -191,6 +197,7 @@ mod tests {
         assert_round_trips("// leading\n// two lines\nlet x = 1\n");
         assert_round_trips("x = 1;y = 2\n");
         assert_round_trips("grid = for i in xs do\n  i * 2\nend\n");
+        assert_round_trips("for a in xs, b in ys key b.id do\n  print(a)\nend\n");
         assert_round_trips("no_newline_at_eof");
         assert_round_trips("   \t  \n   \n");
         assert_round_trips("");

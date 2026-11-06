@@ -624,3 +624,23 @@ end
     key: (field_access object: (identifier) field: (identifier))
     body: (block
       (call function: (identifier) arguments: (argument_list (identifier))))))
+
+==================
+Multi-generator for loop
+==================
+
+for a in xs, b in ys key b do
+  f(a)
+end
+
+---
+
+(source_file
+  (for_statement
+    variable: (identifier)
+    iterator: (identifier)
+    variable: (identifier)
+    iterator: (identifier)
+    key: (identifier)
+    body: (block
+      (call function: (identifier) arguments: (argument_list (identifier))))))

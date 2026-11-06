@@ -556,7 +556,7 @@ impl ExprVisitor for AssignedNames<'_> {
             }
             // A nested `fn` opens its own scope; its assignments don't carry out.
             StmtKind::FnDecl { .. } => {}
-            StmtKind::For { var, iter, key, body } => {
+            StmtKind::For { var, iter, key, body, .. } => {
                 self.visit_expr(iter);
                 self.push_scope();
                 self.bind(var);
@@ -605,7 +605,7 @@ impl ExprVisitor for AssignedNames<'_> {
                     self.pop_scope();
                 }
             }
-            ExprKind::For { var, iter, key, body } => {
+            ExprKind::For { var, iter, key, body, .. } => {
                 self.visit_expr(iter);
                 self.push_scope();
                 self.bind(var);

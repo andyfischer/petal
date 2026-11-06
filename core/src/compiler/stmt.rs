@@ -159,12 +159,16 @@ impl Compiler {
                 // ahead of the file's first statement (see `enums.rs`).
             }
 
-            StmtKind::For { var, iter, key, body } => {
+            StmtKind::For { var, iter, key, body, flatten } => {
                 // Statement form: a side-effect loop that allocates nothing,
                 // unless it sits in tail position — an implicit return or the
                 // last statement of a value-position branch — where the
                 // documented value-position rule makes it a mapping.
-                self.compile_for(var, iter, key.as_deref(), body, stmt_value_used, stmt_span);
+                let tid =
+                    self.compile_for(var, iter, key.as_deref(), body, stmt_value_used, stmt_span);
+                if stmt_value_used && *flatten {
+                    self.flatten_multi_for(tid);
+                }
             }
 
             StmtKind::While { condition, body } => {
@@ -262,6 +266,19 @@ impl Compiler {
 
         self.compile_loop_body(body_block, body, &phis, Some(var), key, collect);
         for_tid
+    }
+
+    /// The value of a multi-generator `for` (`for a in xs, b in ys do … end`)
+    /// in value position. The parser desugared it into nested loops whose
+    /// outer one collects one list per outer element; this joins them into one
+    /// flat list with the `flat` builtin, called by its host name so that a
+    /// program's own `flat` cannot take its place. `flat` spreads one level
+    /// only, and every element it is handed is a loop's list, so a body value
+    /// that is itself a list stays one element.
+    pub(super) fn flatten_multi_for(&mut self, loop_tid: TermId) -> TermId {
+        let name = "flat";
+        let name_cid = self.constants.intern(ConstantValue::String(name.to_string()));
+        self.emit_call_term(TermOp::BuiltinCall(name_cid), smallvec![loop_tid], name, smallvec![])
     }
 
     /// Compile a `while … do … end` loop. `while` is statement-only (no

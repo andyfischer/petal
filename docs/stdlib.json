@@ -12,6 +12,12 @@
   ],
   "categories": [
     {
+      "id": "paths",
+      "title": "paths",
+      "group": "core",
+      "doc": "`get_in(value, path)` and `set_in(value, path, v)`: reading and replacing a value nested inside records, lists and maps, with the path given as data.  `set_in` is the expression form of a path assignment: `set_in(st, [\"meetings\", 2, \"room\"], 3)` is the value `st` would hold after `st.meetings[2].room = 3`, and `st` itself is unchanged (value semantics). It exists for code that builds many candidate states from one model — a drag library's `moves`, a solver's levers — where a `for` loop rebinding a copy is easy to get wrong (docs/proposals/declarative-dragging.md, P3).  Each step is a field name (a string) or a list index (an int; negative counts from the end), or any key for a `Map`. Every step goes through the same `ops::get_index` / `ops::set_index` the `x[k]` and `x[k] = v` forms use, so the two cannot drift apart. An error names the step that failed, both by its position and as the path written in Petal syntax up to it."
+    },
+    {
       "id": "io",
       "title": "I/O & Types",
       "group": "core",
@@ -2159,7 +2165,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 679
+        "line": 686
       }
     },
     {
@@ -2192,7 +2198,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 679
+        "line": 686
       },
       "aliasOf": "map"
     },
@@ -2234,7 +2240,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 679
+        "line": 686
       },
       "aliasOf": "map"
     },
@@ -2268,7 +2274,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 679
+        "line": 686
       },
       "aliasOf": "map"
     },
@@ -3209,7 +3215,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 679
+        "line": 686
       },
       "aliasOf": "map"
     },
@@ -3980,7 +3986,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 679
+        "line": 686
       },
       "aliasOf": "map"
     },
@@ -4006,7 +4012,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 679
+        "line": 686
       },
       "aliasOf": "map"
     },
@@ -4647,7 +4653,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 679
+        "line": 686
       },
       "aliasOf": "map"
     },
@@ -4681,7 +4687,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 679
+        "line": 686
       },
       "aliasOf": "map"
     },
@@ -4715,7 +4721,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 679
+        "line": 686
       },
       "aliasOf": "map"
     },
@@ -4883,7 +4889,7 @@
       "signatures": [],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 679
+        "line": 686
       },
       "aliasOf": "map"
     },
@@ -4899,7 +4905,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 679
+        "line": 686
       },
       "aliasOf": "map"
     },
@@ -4933,9 +4939,83 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 679
+        "line": 686
       },
       "aliasOf": "map"
+    },
+    {
+      "name": "get_in",
+      "category": "paths",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "value",
+          "type": "any"
+        },
+        {
+          "name": "path",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          },
+          {
+            "name": "path",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/paths.rs",
+        "line": 97
+      }
+    },
+    {
+      "name": "set_in",
+      "category": "paths",
+      "group": "core",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "value",
+          "type": "any"
+        },
+        {
+          "name": "path",
+          "type": "any"
+        },
+        {
+          "name": "v",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          },
+          {
+            "name": "path",
+            "type": "any"
+          },
+          {
+            "name": "v",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/paths.rs",
+        "line": 115
+      }
     },
     {
       "name": "Rect",

@@ -93,6 +93,11 @@ builtin_effects![
     ("concat", FRESH | NO_REF | PURE),
     // `remove_at` copies every other element into a new list, like `prepend`.
     ("remove_at", FRESH | NO_REF | PURE),
+    // `get_in` answers a part of its argument (it shares it); `set_in`
+    // copies the spine of the path but shares every other subtree, and an
+    // empty path answers `v` itself, so neither is FRESH or NO_REF.
+    ("get_in", PURE),
+    ("set_in", PURE),
     // character-indexed strings: each builds a brand-new string or list, and
     // strings are immutable, so nothing aliases the argument afterwards.
     ("chars", FRESH | NO_REF | PURE),
@@ -490,6 +495,7 @@ mod tests {
                 "floor",
                 "format",
                 "fract",
+                "get_in",
                 "group_by_keys",
                 "hash01",
                 "hash_int",
@@ -543,6 +549,7 @@ mod tests {
                 "round",
                 "safe_div",
                 "set_at",
+                "set_in",
                 "sign",
                 "sin",
                 "slice",

@@ -824,15 +824,18 @@ impl Cmp {
                     iter: i1,
                     key: k1,
                     body: b1,
+                    flatten: f1,
                 },
                 StmtKind::For {
                     var: x2,
                     iter: i2,
                     key: k2,
                     body: b2,
+                    flatten: f2,
                 },
             ) => {
                 x1 == x2
+                    && f1 == f2
                     && self.expr(i1, i2)
                     && self.opt_expr(k1.as_deref(), k2.as_deref())
                     && self.stmts(b1, b2)
@@ -1088,15 +1091,18 @@ impl Cmp {
                     iter: i1,
                     key: k1,
                     body: b1,
+                    flatten: f1,
                 },
                 ExprKind::For {
                     var: v2,
                     iter: i2,
                     key: k2,
                     body: b2,
+                    flatten: f2,
                 },
             ) => {
                 v1 == v2
+                    && f1 == f2
                     && self.expr(i1, i2)
                     && self.opt_expr(k1.as_deref(), k2.as_deref())
                     && self.stmts(b1, b2)

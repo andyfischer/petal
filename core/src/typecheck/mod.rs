@@ -1313,7 +1313,7 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
-            StmtKind::For { var, iter, key, body } => {
+            StmtKind::For { var, iter, key, body, .. } => {
                 self.check_expr(iter);
                 self.widen_assigned(body);
                 let var_ty = self.loop_var_type(var, iter, body);
@@ -1829,7 +1829,7 @@ impl<'a> Checker<'a> {
                 }
                 result.unwrap_or(Type::Any)
             }
-            ExprKind::For { var, iter, key, body } => {
+            ExprKind::For { var, iter, key, body, .. } => {
                 self.check_expr(iter);
                 self.widen_assigned(body);
                 let var_ty = self.loop_var_type(var, iter, body);

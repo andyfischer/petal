@@ -466,12 +466,8 @@ impl Projector {
                 StmtKind::ClassDecl { name, fields }
             }
             SyntaxKind::ForStmt => {
-                let var = self.only_ident(node)?;
-                let nodes = child_nodes(node);
-                let iter = self.expr(nodes.first().ok_or("for statement missing iterable")?)?;
-                let key = self.for_key(node)?;
-                let body = self.block(node)?;
-                StmtKind::For { var, iter, key, body }
+                let (var, iter, key, body, flatten) = self.for_parts(node)?;
+                StmtKind::For { var, iter, key, body, flatten }
             }
             SyntaxKind::WhileStmt => {
                 let nodes = child_nodes(node);
@@ -756,6 +752,35 @@ impl Projector {
     }
 
     /// The key expression of a `for … key k do` header, if it has one.
+    /// A `ForStmt`/`ForExpr` node's outermost loop: the first generator's
+    /// parts are direct children, each later one a `ForGenerator` node, and
+    /// [`crate::ast::desugar_multi_for`] nests them as the parser does.
+    fn for_parts(&mut self, node: &SyntaxNode) -> Result<crate::ast::DesugaredFor, String> {
+        let mut gens = vec![self.for_generator(node)?];
+        for g in child_nodes(node).iter().filter(|n| n.kind() == SyntaxKind::ForGenerator) {
+            gens.push(self.for_generator(g)?);
+        }
+        let body = self.block(node)?;
+        let end = self.end_of(node)?;
+        crate::ast::desugar_multi_for(gens, body, end, self.file)
+    }
+
+    /// One generator: the first direct identifier, the first child node (the
+    /// iterable) and a direct `ForKey`. Serves the `for` node itself (its first
+    /// generator) and a `ForGenerator` node alike.
+    fn for_generator(&mut self, node: &SyntaxNode) -> Result<crate::ast::ForGenerator, String> {
+        let ident = direct_tokens(node)
+            .into_iter()
+            .find(|t| ident_value(t).is_some())
+            .ok_or_else(|| format!("{:?} missing an identifier token", node.kind()))?;
+        let var = ident_value(&ident).expect("found above");
+        let start = self.pos_at(ident.offset());
+        let nodes = child_nodes(node);
+        let iter = self.expr(nodes.first().ok_or("for loop missing its iterable")?)?;
+        let key = self.for_key(node)?;
+        Ok(crate::ast::ForGenerator { var, iter, key, start })
+    }
+
     fn for_key(&mut self, node: &SyntaxNode) -> Result<Option<Box<Expr>>, String> {
         let Some(clause) = child_nodes(node).into_iter().find(|n| n.kind() == SyntaxKind::ForKey) else {
             return Ok(None);
@@ -932,17 +957,14 @@ impl Projector {
                 })
             }
             SyntaxKind::ForExpr => {
-                let var = self.only_ident(node)?;
-                let nodes = child_nodes(node);
-                let iter = self.expr(nodes.first().ok_or("for expression missing iterable")?)?;
-                let key = self.for_key(node)?;
-                let body = self.block(node)?;
+                let (var, iter, key, body, flatten) = self.for_parts(node)?;
                 Ok(Expr {
                     kind: ExprKind::For {
                         var,
                         iter: Box::new(iter),
                         key,
                         body,
+                        flatten,
                     },
                     span: self.node_span(node)?,
                 })
@@ -1615,6 +1637,10 @@ mod tests {
         // The value-position `for` (an expression that projects to ExprKind::For).
         assert_projects("x = for i in [1, 2] do\n  i * 2\nend\n");
         assert_projects("print(for i in range(3) do\n  i\nend)\n");
+        // Multi-generator `for`: both front ends desugar it the same way.
+        assert_projects("for a in xs, b in ys do\n  print(a + b)\nend\n");
+        assert_projects("x = for a in xs key a.id, b in ys key b, c in zs do\n  [a, b, c]\nend\n");
+        assert_projects("x = for a in xs,\n    b in f(a, 1) do a end\n");
         assert_projects("while x < 10 do\n  x += 1\nend\n");
         assert_projects("fn f()\n  return\nend\nfn g()\n  return 1\nend\n");
         assert_projects(

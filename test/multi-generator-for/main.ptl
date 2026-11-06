@@ -1,0 +1,22 @@
+// The multi-generator `for` (docs/language-guide.md, Several generators):
+// nested loops in one header, one flat list in value position.
+let pairs = for a in [1, 2, 3], b in ["x", "y"] do "{a}{b}" end
+print(pairs)
+let below = for a in range(4), b in range(a) do [a, b] end
+print(below)
+let cube = for a in range(2), b in range(2), c in range(2) do a * 4 + b * 2 + c end
+print(cube)
+let off_diagonal = for a in range(3), b in range(3) do
+  if a == b then continue end
+  a * 10 + b
+end
+print(off_diagonal)
+var total = 0
+for a in range(3), b in range(4) do
+  set total += a * b
+end
+print(total)
+let st = {rows: [[0, 0], [0, 0]]}
+let moves = for r in range(2), c in range(2) do set_in(st, ["rows", r, c], 1) end
+print(moves[3])
+print(get_in(moves[1], ["rows", 0]))

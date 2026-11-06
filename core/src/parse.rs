@@ -1516,9 +1516,9 @@ impl Parser {
 
     fn parse_for(&mut self, start: usize) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::ForStmt);
-        let (var, iter, key, body) = self.parse_for_inner()?;
+        let (var, iter, key, body, flatten) = self.parse_for_inner()?;
         self.ev_close();
-        Ok(self.mk_stmt(StmtKind::For { var, iter, key, body }, start))
+        Ok(self.mk_stmt(StmtKind::For { var, iter, key, body, flatten }, start))
     }
 
     /// The expression form of `for`, reached only in value position (`x = for …`,
@@ -1528,7 +1528,7 @@ impl Parser {
     fn parse_for_expr(&mut self) -> Result<Expr, String> {
         let start = self.pos;
         self.ev_open(SyntaxKind::ForExpr);
-        let (var, iter, key, body) = self.parse_for_inner()?;
+        let (var, iter, key, body, flatten) = self.parse_for_inner()?;
         self.ev_close();
         Ok(self.mk_expr(
             ExprKind::For {
@@ -1536,17 +1536,38 @@ impl Parser {
                 iter: Box::new(iter),
                 key,
                 body,
+                flatten,
             },
             start,
         ))
     }
 
     /// Shared body of the statement and expression `for` forms: consumes
-    /// `for <var> in <iter> [key <expr>] do <body> end` and returns its parts.
-    #[allow(clippy::type_complexity)]
-    fn parse_for_inner(&mut self) -> Result<(String, Expr, Option<Box<Expr>>, Vec<Stmt>), String> {
+    /// `for <var> in <iter> [key <expr>] {, <var> in <iter> [key <expr>]} do
+    /// <body> end` and returns the outermost loop's parts, later generators
+    /// desugared into nested loops ([`crate::ast::desugar_multi_for`]).
+    fn parse_for_inner(&mut self) -> Result<crate::ast::DesugaredFor, String> {
         let for_pos = self.pos;
         self.advance(); // consume 'for'
+        let mut gens = vec![self.parse_for_generator()?];
+        while matches!(self.peek(), Token::Comma) {
+            self.ev_open(SyntaxKind::ForGenerator);
+            self.advance(); // consume ','
+            self.skip_newlines();
+            gens.push(self.parse_for_generator()?);
+            self.ev_close();
+        }
+        self.skip_newlines();
+        self.expect(&Token::Do)?;
+        let body = self.parse_block_until(&[Token::End])?;
+        self.expect_block_end(for_pos, "a `for` loop")?;
+        let end = self.span_from(for_pos);
+        crate::ast::desugar_multi_for(gens, body, end.end, end.file)
+    }
+
+    /// One `<var> in <iter> [key <expr>]` clause of a `for` header.
+    fn parse_for_generator(&mut self) -> Result<crate::ast::ForGenerator, String> {
+        let start = self.span_from(self.pos).start;
         let var = self.expect_ident()?;
         self.expect(&Token::In)?;
         let iter = self.parse_expr()?;
@@ -1559,11 +1580,7 @@ impl Parser {
         } else {
             None
         };
-        self.skip_newlines();
-        self.expect(&Token::Do)?;
-        let body = self.parse_block_until(&[Token::End])?;
-        self.expect_block_end(for_pos, "a `for` loop")?;
-        Ok((var, iter, key, body))
+        Ok(crate::ast::ForGenerator { var, iter, key, start })
     }
 
     /// `while` is statement-only (no expression / collecting form).

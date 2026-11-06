@@ -34,6 +34,8 @@ pub native fn last(list)
 pub native fn drop_last(list)
 pub native fn remove(record, key)
 pub native fn remove_at(list, index: num) -> list
+pub native fn get_in(value, path: list)
+pub native fn set_in(value, path: list, v)
 pub native fn chars(string: string) -> list
 pub native fn char_len(string: string) -> int
 pub native fn char_at(string: string, index: num) -> string

@@ -119,6 +119,14 @@ pub enum ExprKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<Box<Expr>>,
         body: Vec<Stmt>,
+        /// The outer loop of a multi-generator `for` (`for a in xs, b in ys do
+        /// … end`), which the parser desugars into nested loops: the body is
+        /// the next generator's loop, and in value position the collected list
+        /// of lists is flattened one level, so the loop yields one flat list
+        /// (cartesian order, the first generator outermost). See
+        /// [`desugar_multi_for`].
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        flatten: bool,
     },
     List(Vec<Expr>),
     Record(Vec<RecordField>),
@@ -645,6 +653,11 @@ pub enum StmtKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<Box<Expr>>,
         body: Vec<Stmt>,
+        /// See [`ExprKind::For`]'s `flatten`: the outer loop of a desugared
+        /// multi-generator `for`. A statement `for` collects only in tail
+        /// position, and flattens only then.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        flatten: bool,
     },
     While {
         condition: Expr,
@@ -1327,4 +1340,114 @@ mod import_path_tests {
             assert_eq!(decl.module, module, "{src}");
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Multi-generator `for`
+// ---------------------------------------------------------------------------
+
+/// One `name in iterable [key k]` clause of a `for` header. `for a in xs, b in
+/// ys do … end` has two.
+#[derive(Debug, Clone)]
+pub struct ForGenerator {
+    pub var: String,
+    pub iter: Expr,
+    pub key: Option<Box<Expr>>,
+    /// Where the clause starts (its variable name): the start of the nested
+    /// loop it becomes.
+    pub start: crate::source_map::SourcePosition,
+}
+
+/// The parts of the outermost loop a `for` header desugars to:
+/// `(var, iter, key, body, flatten)`.
+pub type DesugaredFor = (String, Expr, Option<Box<Expr>>, Vec<Stmt>, bool);
+
+/// Desugar a `for` header with one or more generators into nested loops, for
+/// both front ends (`parse.rs` and `cst_project.rs`), so they cannot disagree.
+///
+/// `for a in xs, b in ys do body end` is `for a in xs do for b in ys do body
+/// end end`, each later clause a statement loop that is the whole body of the
+/// one before it. Every loop but the innermost is marked `flatten`: in value
+/// position it collects one list per element and the compiler joins them, so
+/// the whole loop yields one flat list in cartesian order, the first clause
+/// outermost. Each clause keeps its own `key`, evaluated where the nested loop
+/// would evaluate it (so a clause's key may name the variables of the clauses
+/// before it, not after). `state` in the body gets one call-path `Index` part
+/// per clause, as with hand-written nested loops.
+///
+/// A `break` directly in the body is rejected: in the nested loops it would
+/// end only the innermost clause, which a reader of the one-line header would
+/// not expect. `continue` skips the current combination, which is what it
+/// means for nested loops too.
+///
+/// `end` is where the whole `for` ends (after `end`); the nested loops' spans
+/// run from their clause to there.
+pub fn desugar_multi_for(
+    gens: Vec<ForGenerator>,
+    body: Vec<Stmt>,
+    end: crate::source_map::SourcePosition,
+    file: crate::source_map::FileId,
+) -> Result<DesugaredFor, String> {
+    let mut gens = gens.into_iter();
+    let first = gens.next().ok_or("a `for` loop needs a generator")?;
+    let rest: Vec<ForGenerator> = gens.collect();
+    if rest.is_empty() {
+        return Ok((first.var, first.iter, first.key, body, false));
+    }
+    if let Some(span) = direct_break(&body) {
+        let mut msg = "`break` is not allowed in a `for` with several generators \
+                       (`for a in xs, b in ys do`): it would end only the innermost one. \
+                       Write the loops out nested, or find the element first with `find`/`any`"
+            .to_string();
+        if span.start.line > 0 {
+            msg.push_str(&format!(" [line {}, column {}]", span.start.line, span.start.column));
+        }
+        return Err(msg);
+    }
+    let last = rest.len() - 1;
+    let mut inner = body;
+    for (i, g) in rest.into_iter().enumerate().rev() {
+        inner = vec![Stmt {
+            kind: StmtKind::For {
+                var: g.var,
+                iter: g.iter,
+                key: g.key,
+                body: inner,
+                flatten: i != last,
+            },
+            span: SourceSpan { start: g.start, end, file },
+            exported: false,
+            test: None,
+        }];
+    }
+    Ok((first.var, first.iter, first.key, inner, true))
+}
+
+/// The span of a `break` that would leave the loop whose body is `body`: one
+/// not inside a nested loop, function or lambda.
+fn direct_break(body: &[Stmt]) -> Option<SourceSpan> {
+    struct Find(Option<SourceSpan>);
+    impl ExprVisitor for Find {
+        fn visit_stmt(&mut self, s: &Stmt) {
+            if self.0.is_some() {
+                return;
+            }
+            match &s.kind {
+                StmtKind::Break => self.0 = Some(s.span),
+                StmtKind::For { .. } | StmtKind::While { .. } | StmtKind::FnDecl { .. } => {}
+                _ => walk_stmt(self, s),
+            }
+        }
+        fn visit_expr(&mut self, e: &Expr) {
+            match &e.kind {
+                ExprKind::For { .. } | ExprKind::Lambda { .. } => {}
+                _ => walk_expr(self, e),
+            }
+        }
+    }
+    let mut f = Find(None);
+    for s in body {
+        f.visit_stmt(s);
+    }
+    f.0
 }

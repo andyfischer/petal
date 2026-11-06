@@ -340,6 +340,15 @@ module.exports = grammar({
       field('iterator', $._expression),
       // `for t in tasks key t.id do`: key each iteration's state by item.
       optional(seq('key', field('key', $._expression))),
+      // `for a in xs, b in ys do`: more generators, nested loops in one
+      // header, each with its own optional `key`.
+      repeat(seq(
+        ',',
+        field('variable', $.identifier),
+        'in',
+        field('iterator', $._expression),
+        optional(seq('key', field('key', $._expression))),
+      )),
       'do',
       optional(field('body', $.block)),
       'end',

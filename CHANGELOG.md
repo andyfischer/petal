@@ -60,6 +60,19 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- Multi-generator `for`: `for a in xs, b in ys do … end` is the nested
+  loops in one header, the first generator outermost. In value position it
+  collects one flat list in that order. Each generator may carry its own
+  `key`, `state` in the body is keyed as in the nested loops, and `break` in
+  the body is refused
+  ([language-guide.md](docs/language-guide.md#several-generators)).
+
+- Builtins `get_in(value, path)` and `set_in(value, path, v)`, which read and
+  replace a nested value with the path as data (`["meetings", 2, "room"]`).
+  `set_in` is the expression form of `value.meetings[2].room = v`. An error
+  names the step that failed
+  ([language-guide.md](docs/language-guide.md#paths-as-data)).
+
 - Builtins `remove_at(list, index)`, a new list without the element at
   `index` (negative counts from the end), and `replace(string, old, new)`,
   the string with every occurrence of `old` replaced. They stand in for the

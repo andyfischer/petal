@@ -1,0 +1,44 @@
+// `get_in` / `set_in` (nested reads and replacements with the path as data)
+// and the multi-generator `for`. Run with `petal test test/ptl`.
+
+test "set_in is the value a path assignment leaves" do
+  let st = {meetings: [{room: 1}, {room: 2}, {room: 5}], name: "plan"}
+  var by_hand = st
+  set by_hand.meetings[2].room = 3
+  expect_eq(set_in(st, ["meetings", 2, "room"], 3), by_hand)
+end
+
+test "set_in leaves its argument alone" do
+  let st = {xs: [1, 2]}
+  let moved = set_in(st, ["xs", 0], 9)
+  expect_eq(st, {xs: [1, 2]})
+  expect_eq(moved, {xs: [9, 2]})
+end
+
+test "set_in adds a field at the last step, and an empty path is the value" do
+  expect_eq(set_in({a: 1}, ["b"], 2), {a: 1, b: 2})
+  expect_eq(set_in({a: 1}, [], 5), 5)
+  expect_eq(set_in([[1, 2], [3]], [-1, 0], 0), [[1, 2], [0]])
+end
+
+test "get_in follows fields, indices and map keys" do
+  let m = Map()
+  let doc = {clips: [{s: 1}, {s: 4}], by_id: set_in(m, ["k"], 7)}
+  expect_eq(get_in(doc, ["clips", 1, "s"]), 4)
+  expect_eq(get_in(doc, ["clips", -1, "s"]), 4)
+  expect_eq(get_in(doc, ["by_id", "k"]), 7)
+  expect_eq(get_in(doc, []), doc)
+end
+
+test "a multi-generator for is the flat cartesian product" do
+  let got = for a in [1, 2], b in ["x", "y"] do "{a}{b}" end
+  expect_eq(got, ["1x", "1y", "2x", "2y"])
+  expect_eq(for a in range(3), b in range(a) do [a, b] end, [[1, 0], [2, 0], [2, 1]])
+end
+
+test "candidate states from set_in and a multi-generator for" do
+  let st = {grid: [[0, 0], [0, 0]]}
+  let cands = for r in range(2), c in range(2) do set_in(st, ["grid", r, c], 1) end
+  expect_eq(len(cands), 4)
+  expect_eq(cands[2], {grid: [[0, 0], [1, 0]]})
+end

@@ -24,6 +24,7 @@ mod json;
 mod math;
 mod noise;
 mod output;
+mod paths;
 #[cfg(test)]
 mod decls;
 mod pending;
@@ -648,6 +649,12 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.intrinsic_speculate_place =
         Some(table.register("speculate_place", native_intrinsic_placeholder, allow));
 
+    // Nested reads and replacements with the path as data
+    // (`builtins/paths.rs`): `set_in` is the expression form of a path
+    // assignment. Both read nothing but their arguments. Append-only.
+    table.register("get_in", paths::native_get_in, NativeEffects::CONST);
+    table.register("set_in", paths::native_set_in, NativeEffects::CONST);
+
     // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
     // ids they were just given.
     for op in crate::backend::bytecode::isa::IntrinsicOp::ALL {
@@ -804,6 +811,7 @@ mod effect_tests {
             "floor",
             "format",
             "fract",
+            "get_in",
             "group_by_keys",
             "hash01",
             "hash_int",
@@ -854,6 +862,7 @@ mod effect_tests {
             "round",
             "safe_div",
             "set_at",
+            "set_in",
             "sign",
             "sin",
             "slice",

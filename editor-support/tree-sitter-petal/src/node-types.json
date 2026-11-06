@@ -1555,7 +1555,7 @@
         ]
       },
       "iterator": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
           {
@@ -1649,7 +1649,7 @@
         ]
       },
       "key": {
-        "multiple": false,
+        "multiple": true,
         "required": false,
         "types": [
           {
@@ -1743,7 +1743,7 @@
         ]
       },
       "variable": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
           {

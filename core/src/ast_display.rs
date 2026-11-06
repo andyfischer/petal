@@ -155,8 +155,9 @@ impl Printer {
                     self.line(depth + 1, &head, Some(&f.span));
                 }
             }
-            StmtKind::For { var, iter, key, body } => {
-                self.line(depth, &format!("For {var}"), Some(&stmt.span));
+            StmtKind::For { var, iter, key, body, flatten } => {
+                let flat = if *flatten { " flatten" } else { "" };
+                self.line(depth, &format!("For {var}{flat}"), Some(&stmt.span));
                 self.expr(iter, depth + 1);
                 if let Some(k) = key {
                     self.line(depth + 1, "Key", None);
@@ -301,8 +302,9 @@ impl Printer {
                     self.match_arm(arm, depth + 1);
                 }
             }
-            ExprKind::For { var, iter, key, body } => {
-                self.line(depth, &format!("For {var}"), span);
+            ExprKind::For { var, iter, key, body, flatten } => {
+                let flat = if *flatten { " flatten" } else { "" };
+                self.line(depth, &format!("For {var}{flat}"), span);
                 self.expr(iter, depth + 1);
                 if let Some(k) = key {
                     self.line(depth + 1, "Key", None);

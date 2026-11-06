@@ -391,6 +391,15 @@ side effects only. In value position it collects the last expression of each
 iteration into a list. See [Loops](implicit-return-values.md#loops) for what
 counts as value position.
 
+Several generators are nested loops in one header, the first outermost; in
+value position they collect one flat list
+([Several generators](../language-guide.md#several-generators)):
+
+```petal
+let pairs = for a in [1, 2], b in ["x", "y"] do "{a}{b}" end
+// pairs == ["1x", "1y", "2x", "2y"]
+```
+
 ### `while` (loop)
 
 Statement-only; there is no value-collecting `while` form

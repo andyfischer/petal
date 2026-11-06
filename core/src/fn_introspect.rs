@@ -384,10 +384,13 @@ fn params_json(params: &[Param]) -> J {
 }
 
 /// A `for` loop's fields; `key` appears only on a keyed loop.
-fn for_json(var: &str, iter: &Expr, key: Option<&Expr>, body: &[Stmt]) -> J {
+fn for_json(var: &str, iter: &Expr, key: Option<&Expr>, body: &[Stmt], flatten: bool) -> J {
     let mut j = json!({"var": var, "iter": expr_json(iter), "body": stmts_json(body)});
     if let Some(k) = key {
         j["key"] = expr_json(k);
+    }
+    if flatten {
+        j["flatten"] = J::Bool(true);
     }
     j
 }
@@ -463,8 +466,8 @@ fn stmt_json(s: &Stmt) -> J {
                     .map(|f| json!({"name": f.name, "type": ty_json(f.ty.as_ref())})).collect::<Vec<J>>()}),
             );
         }
-        StmtKind::For { var, iter, key, body } => {
-            return node("For", s.span, for_json(var, iter, key.as_deref(), body));
+        StmtKind::For { var, iter, key, body, flatten } => {
+            return node("For", s.span, for_json(var, iter, key.as_deref(), body, *flatten));
         }
         StmtKind::While { condition, body } => {
             return node(
@@ -593,7 +596,9 @@ fn expr_json(e: &Expr) -> J {
                 "body": arm_body_json(&arm.body),
             })).collect::<Vec<J>>()}),
         ),
-        ExprKind::For { var, iter, key, body } => ("For", for_json(var, iter, key.as_deref(), body)),
+        ExprKind::For { var, iter, key, body, flatten } => {
+            ("For", for_json(var, iter, key.as_deref(), body, *flatten))
+        }
         ExprKind::List(items) => ("List", json!({"items": exprs_json(items)})),
         ExprKind::Record(fields) => (
             "Record",

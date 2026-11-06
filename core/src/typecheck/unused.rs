@@ -149,7 +149,7 @@ impl Walker {
                 // (`fn f() for x in xs do g(x) end end`), but tail position
                 // makes its value the block's value, so each iteration's tail
                 // becomes a list element rather than being thrown away.
-                StmtKind::For { var, iter, key, body } if tail && for_collects => {
+                StmtKind::For { var, iter, key, body, .. } if tail && for_collects => {
                     self.walk_expr(iter, true);
                     self.push_scope();
                     self.bind(var);
@@ -213,7 +213,7 @@ impl Walker {
                 self.walk_block(body, true);
                 self.pop_scope();
             }
-            StmtKind::For { var, iter, key, body } => {
+            StmtKind::For { var, iter, key, body, .. } => {
                 self.walk_expr(iter, true);
                 self.push_scope();
                 self.bind(var);
@@ -294,7 +294,7 @@ impl Walker {
                     self.walk_block(&arm.body, used);
                 }
             }
-            ExprKind::For { var, iter, key, body } => {
+            ExprKind::For { var, iter, key, body, .. } => {
                 self.walk_expr(iter, true);
                 self.push_scope();
                 self.bind(var);

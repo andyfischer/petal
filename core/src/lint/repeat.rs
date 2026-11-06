@@ -238,6 +238,7 @@ impl Finder<'_> {
             iter,
             key: None,
             body,
+            ..
         } = &stmt.kind
         else {
             return None;
@@ -387,6 +388,7 @@ fn is_append(s: &Stmt, acc: &str) -> bool {
             iter,
             key: None,
             body,
+            ..
         } => {
             var != acc
                 && !writes_in_expr(iter, acc)

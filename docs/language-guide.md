@@ -618,6 +618,38 @@ changes.
 
 `while` loops are statement-only: they have no collecting expression form.
 
+#### Several generators
+
+A `for` header can name more than one `name in iterable`, separated by
+commas. It is the nested loops written in one line, the first generator
+outermost, and a later iterable may use the names before it:
+
+```petal
+for a in [1, 2], b in ["x", "y"] do
+    print("{a}{b}")          // 1x, 1y, 2x, 2y
+end
+
+let below = for a in range(3), b in range(a) do [a, b] end
+// below == [[1, 0], [2, 0], [2, 1]]
+```
+
+In value position it collects **one flat list**, every combination in that
+order (a body value that is itself a list stays one element). Each generator
+may have its own `key` clause, which can name the generators before it, and
+[`state`](#state) in the body is keyed per generator exactly as in the
+hand-written nested loops. `continue` skips the current combination. `break`
+is refused in the body (it would end only the innermost generator): write the
+loops out nested when you need it.
+
+This is the usual way to build every candidate of a choice, for example every
+cell a piece could move to, with [`set_in`](#paths-as-data):
+
+```petal
+let board = {cells: [[0, 0], [0, 0]]}
+let moves = for r in range(2), c in range(2) do set_in(board, ["cells", r, c], 1) end
+print(len(moves))   // 4
+```
+
 ### While Loops
 
 ```petal
@@ -1095,6 +1127,30 @@ The same is true across a call: a function that assigns to a field of its
 parameter updates its own local binding, not the caller's record. To share one
 record between writers, declare it [`var`](#var-and-set) and write it with
 `set r.a = ...`.
+
+### Paths as data
+
+`get_in(value, path)` and `set_in(value, path, v)` read and replace a value
+nested inside records, lists and maps when the path is data rather than code.
+A path is a list of steps: a field name (a string), a list index (an int;
+negative counts from the end) or a map key.
+
+```petal
+let st = {meetings: [{room: 1}, {room: 2}, {room: 5}]}
+let moved = set_in(st, ["meetings", 2, "room"], 3)
+print(get_in(moved, ["meetings", 2, "room"]))   // 3
+print(st.meetings[2].room)                      // 5
+```
+
+`set_in` is the expression form of the path assignment `st.meetings[2].room =
+3`: it returns the updated value and leaves `st` alone (the second line
+prints 5). That makes it the convenient form inside a collecting loop, which
+builds one updated copy per iteration without rebinding a loop-carried name. The last step may add a
+field to a record or a key to a map; every step before it must exist, and a
+list index must be in bounds. An error names the step that failed, as a
+position and as the path so far: `set_in(): path step 2 of 3 (.meetings[5]):
+Index 5 out of bounds (len 3)`. An empty path is the value itself (`get_in`)
+or `v` (`set_in`).
 
 ### Spread
 

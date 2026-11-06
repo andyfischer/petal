@@ -978,6 +978,30 @@ remove_at(["a", "b", "c"], 1)    // ["a", "c"]
 remove_at(["a", "b", "c"], -1)   // ["a", "b"]
 ```
 
+### `get_in(value, path)` / `set_in(value, path, v)`
+
+Read, or replace, a value nested inside records, lists and maps, with the
+path given as data: a list of steps, each a field name (a string), a list
+index (an int; negative counts from the end) or a map key. `set_in` returns a
+**new** value, the one the path assignment `value.a[i].b = v` would leave;
+`value` itself is unchanged. The last step may add a field or a map key;
+every earlier step must exist and a list index must be in bounds. An empty
+path is `value` (`get_in`) or `v` (`set_in`). An error names the failing step
+by position and as the path so far
+([Paths as data](language-guide.md#paths-as-data)).
+
+```petal
+let st = {meetings: [{room: 1}, {room: 2}, {room: 5}]}
+set_in(st, ["meetings", 2, "room"], 3)   // { meetings: [{ room: 1 }, { room: 2 }, { room: 3 }] }
+get_in(st, ["meetings", -1, "room"])      // 5
+set_in({a: 1}, ["b"], 2)                  // { a: 1, b: 2 }
+```
+
+```petal ignore
+set_in({a: [1, 2]}, ["a", 5], 0)
+// error: set_in(): path step 2 of 2 (.a[5]): Index 5 out of bounds (len 2)
+```
+
 ### `keys(record)` / `keys(map)`
 
 Returns a list of all keys of a record or a map, in insertion order.

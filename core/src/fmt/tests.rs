@@ -32,6 +32,15 @@ fn is_idempotent_on_its_own_output() {
 }
 
 #[test]
+fn spaces_a_multi_generator_for_header() {
+    let src = "for a in xs,b in ys   key  b do\nprint(a)\nend\nx = for a in xs ,  b in ys do a end\n";
+    let want = "for a in xs, b in ys key b do\n  print(a)\nend\nx = for a in xs, b in ys do a end\n";
+    assert_eq!(fmt(src), want);
+    assert_eq!(fmt(want), want);
+    assert_eq!(ast_shape(src), ast_shape(want));
+}
+
+#[test]
 fn a_keyword_used_as_a_label_does_not_close_or_open_a_block() {
     // `end:` names slice's parameter; it is not the `end` of the `if` or `fn`.
     let src = "fn trim(s, t)\n  if len(s) > 0 then set s = slice(s, start: 0, end: len(s) - 1) end\n  if len(t) > 0 then set s = s ++ t end\n  s\nend\n";

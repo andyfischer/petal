@@ -400,7 +400,13 @@ if d.dropped then items = d.drop end
 
 /// The examples, under their checked-in scenarios.
 fn run_example(name: &str) -> Vec<Value> {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/ui").join(name);
+    run_example_at(&format!("ui/{name}"))
+}
+
+/// Run `examples/<rel>/app.ptl` against its `scenarios/drag.json`, returning
+/// the state after every frame.
+fn run_example_at(rel: &str) -> Vec<Value> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples").join(rel);
     let scenario: Value =
         serde_json::from_str(&std::fs::read_to_string(root.join("scenarios/drag.json")).unwrap()).unwrap();
     let size = scenario["size"].as_array().unwrap();
@@ -458,4 +464,136 @@ fn example_ring_of_beads() {
     assert_eq!(s[20]["beads"], json!(["A", "D", "E", "F", "B", "C"]));
     assert_eq!(last["beads"], json!(["A", "E", "F", "B", "C", "D"]));
     assert_eq!(last["turns"], json!(2));
+}
+
+#[test]
+fn example_kanban() {
+    let s = run_example_at("productivity/kanban");
+    let last = s.last().unwrap();
+    let ids = |c: usize| -> Vec<String> {
+        last["cols"][c].as_array().unwrap().iter().map(|x| x["id"].as_str().unwrap().to_string()).collect()
+    };
+    // c1 picked up from BACKLOG and dropped in REVIEW, between c8 and c9.
+    assert_eq!(ids(0), ["c2", "c3", "c4", "c5"]);
+    assert_eq!(ids(2), ["c8", "c1", "c9"]);
+    assert_eq!(last["moves"], json!(1));
+    assert_eq!(last["sel_id"], json!("c1"));
+    // The displayed y of a card on frame `f`, from `place`'s animation table.
+    let y = |f: usize, key: &str| -> f64 {
+        s[f]["ui/drag::_anim"]["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e[0] == key)
+            .map(|e| e[1]["y"].as_f64().unwrap())
+            .unwrap()
+    };
+    // Mid-drag, the cards around the gap glide: c2 closes BACKLOG's hole
+    // (286 -> 156) and c9 makes room in REVIEW (286 -> 416), over frames.
+    assert!(y(9, "c2") < 286.0 && y(9, "c2") > 156.0, "{}", y(9, "c2"));
+    assert!(y(12, "c9") > 286.0 && y(12, "c9") < 416.0, "{}", y(12, "c9"));
+    // After the release the dropped card eases into its slot.
+    assert!((y(49, "c1") - 286.0).abs() < 0.5, "{}", y(49, "c1"));
+    assert!((y(49, "c9") - 416.0).abs() < 0.5, "{}", y(49, "c9"));
+}
+
+/// Speculation is the core `speculate` call: a view that writes `state`,
+/// sets a cell and draws as it goes is run on every candidate at drag start,
+/// and none of it leaks into the live frame.
+#[test]
+fn speculating_an_imperative_view_leaves_nothing_behind() {
+    let mut h = ui(r#"
+state items = ["A", "B", "C"]
+state var renders = 0
+var drawn = 0
+fn view(items)
+  for i in range(0, len(items)) key items[i] do
+    let k = items[i]
+    state seen = 0
+    seen = seen + 1
+    let r = place(k, rect(40, 40 + i * 50, 220, 40))
+    draggable(k, r, fn() closest(moves(items, i)) |> floating() end)
+    set drawn = (get drawn) + 1
+    draw_rect(r, #808080)
+  end
+  set renders = (get renders) + 1
+  nil
+end
+let d = drag_session(items, view)
+view(d.preview)
+state rects = 0
+rects = get drawn
+if d.dropped then items = d.drop end
+"#);
+    press_and_move(&mut h, 100, 60, &[(104, 90), (104, 130)]);
+    // Frame count so far: 1 (move) + 1 (down) + 2 (moves) = 4 runs, one
+    // live render each. The drag start speculated 3 candidates plus the base:
+    // none of their `renders` writes, cell sets or draws survived.
+    assert_eq!(state(&h, "renders"), json!(4));
+    assert_eq!(state(&h, "rects"), json!(3));
+    let cmds = h.frame().unwrap().to_vec();
+    let rects = cmds.iter().filter(|c| serde_json::to_value(c).unwrap()["op"] == "rect").count();
+    assert_eq!(rects, 3);
+    release(&mut h);
+    assert_eq!(state(&h, "items"), json!(["B", "A", "C"]));
+}
+
+#[test]
+fn moves_nested_finds_class_instances_by_id() {
+    let mut h = ui(r#"
+class Card
+  id: string,
+end
+let a = Card(id: "a")
+let b = Card(id: "b")
+assert_eq(len(moves_nested([[a, b], []], "b")), 3)
+assert_eq(moves_nested([[a, b], []], "b")[2], [[a], [b]])
+"#);
+    frame(&mut h);
+}
+
+/// `place_origin`: positions are eased relative to the origin, so moving the
+/// origin (a scroll) moves the element at once, while a change relative to it
+/// still animates.
+#[test]
+fn place_origin_makes_scrolling_instant() {
+    let mut h = ui(r#"
+state n = 0
+n = n + 1
+let scroll = if n >= 2 then 40 else 0 end
+let y = if n >= 3 then 200 else 100 end
+state shown = 0
+shown = place_origin({x: 0, y: -scroll}, fn() place("k", rect(0, y - scroll, 10, 10)).y end)
+"#);
+    frame(&mut h);
+    assert_eq!(state(&h, "shown"), json!(100));
+    frame(&mut h);
+    assert_eq!(state(&h, "shown"), json!(60), "the scroll is not animated");
+    frame(&mut h);
+    let v = state(&h, "shown").as_f64().unwrap();
+    assert!(v > 60.0 && v < 160.0, "a move inside the origin eases toward 160: {v}");
+}
+
+#[test]
+fn drag_key_names_the_dragged_element() {
+    let mut h = ui(r#"
+state items = ["A", "B"]
+state dk = "none"
+fn view(items)
+  for i in range(0, len(items)) key items[i] do
+    let r = place(items[i], rect(40, 40 + i * 50, 220, 40))
+    draggable(items[i], r, fn() closest(moves(items, i)) |> floating() end)
+  end
+  nil
+end
+let d = drag_session(items, view)
+view(d.preview)
+dk = drag_key() ?? "none"
+"#);
+    frame(&mut h);
+    assert_eq!(state(&h, "dk"), json!("none"));
+    press_and_move(&mut h, 100, 60, &[(104, 90)]);
+    assert_eq!(state(&h, "dk"), json!("A"));
+    release(&mut h);
+    assert_eq!(state(&h, "dk"), json!("none"));
 }

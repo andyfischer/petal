@@ -1,8 +1,12 @@
 # 24 — Kanban board
 
 A sprint board drawn entirely by a Petal script inside a Garden panel: four
-lanes, twelve cards, and a real drag-and-drop that reflows the source column,
-opens a gap under the pointer, and drops the card where the gap is.
+lanes, twelve cards, and drag and drop built with
+[`ui/drag`](../../../core-libs/petal-ui/docs/drag.md): the board is a function
+of its columns, each card says where it is (`place`) and which boards a drag
+can reach (`draggable` with `closest(moves_nested(...)) |> floating()`), and
+the engine does the rest. While a card is held the other cards slide apart to
+show where it would land; on release it eases into its slot.
 
 ## Run it
 
@@ -24,14 +28,14 @@ Designed for a **1280×850** viewport (the headless default). The panel pane is
 `screen_height()` every frame, so it reflows if the pane is resized — below
 roughly 1000px wide the card titles start wrapping hard.
 
-Nothing animates, so the 10-second panel sleep window is invisible here: the
-board simply holds its last frame until the next input wakes it.
+Cards animate only when they move (a drag, a keyboard move); a still board
+holds its last frame until the next input wakes it.
 
 ## Controls
 
 | Input | Effect |
 |---|---|
-| **Drag a card** | Lift it (shadow + accent border), the source column closes up, the target column outlines and opens a "drop here" gap under the pointer; release to drop it there. Works within a column and across columns, including into an empty one. |
+| **Drag a card** | Lift it (shadow + accent border) and it follows the pointer; the source column closes up and the lane it would land in outlines and opens a gap where it would go, the other cards sliding out of the way. Release to drop it there; it eases into the slot. `esc` puts it back. Works within a column and across columns, including into an empty one. |
 | **Click a card** | Select it — accent border, left stripe, and full detail in the footer bar. |
 | **Click bare well space** | Deselect. |
 | **Hover a card** | Lighter card fill. |
@@ -45,8 +49,8 @@ board simply holds its last frame until the next input wakes it.
 
 The `IN PROGRESS` and `REVIEW` lanes carry WIP limits; the count in the lane
 header turns red when a lane is over its limit. The header's progress bar
-tracks story points in `SHIPPED` against the board total, and both update
-live as cards move.
+tracks story points in `SHIPPED` against the board total. While a card is
+dragged, the lane counts show the board it would drop.
 
 ## What it exercises
 
@@ -54,13 +58,13 @@ live as cards move.
 
 - `class Card` to name the record shape, with typed fields.
 - `state` for everything that persists across frames (`cols`, `sel_id`,
-  `scrolls`, `drag`, `moves`) — no `var`/`set` anywhere; every mutation is a
-  rebind of an immutable list or record.
+  `scrolls`, `moves`); the one `var` is the hovered card, which the view reads.
+  Every board mutation is a rebind of an immutable list or record.
 - Immutable list surgery: `list_remove` / `list_insert` built from collecting
   `for` loops, and nested index assignment (`cols[c] = …`,
   `cols[c][i] = card`).
-- `for` in value position as a mapping expression — the per-column plan
-  (`base`, `tops`, `slots`) is four one-line comprehensions.
+- `fn view(cs, sc, sel)`: the board as a function of the columns, which the
+  drag engine also runs, speculatively, on every board a drag can reach.
 - Functions returning records, string interpolation, `elsif` chains for the
   colour lookups.
 
@@ -73,12 +77,18 @@ live as cards move.
   `draw_text_center`, `draw_text_right`, `text_width` for exact measurement,
   `preview` for two-line title wrapping, `ellipsize` and `fit_parts` for the
   footer. Hierarchy is built from size, colour and letter-spacing only.
-- Input: `mouse_pressed(0)` / `mouse_down(0)` / `mouse_released(0)` for the
-  drag gesture, `mouse_x`/`mouse_y`, `scroll_y`, `key_pressed`, `mod_shift`.
-- Prelude widgets: `rect`, `point_in`, `hovered`, `ensure_visible_px`.
+- Input: `mouse_pressed(0)`, `mouse_x`/`mouse_y`, `scroll_y`, `key_pressed`,
+  `mod_shift`.
+- Prelude widgets: `rect`, `point_in`, `ui_target_rect` (the hover test reads
+  where each card was drawn), `ensure_visible_px`.
+- `ui/drag`: `drag_session`, `place` (with `place_origin` so the wheel scroll
+  is instant while reorders animate), `draggable`, `closest`, `floating`,
+  `moves_nested`, `drag_key`, `is_dragging`. `scenarios/drag.json` drags a
+  card from BACKLOG into REVIEW headlessly; `scenarios/browse.json` clicks,
+  scrolls and uses the keyboard.
 
 **Debug server** — every logical value is observable in
 `GET /state → panes[0].panel.values`: `cols` (the full board as four id
-lists), `sel_id`, `drag`, `scrolls`, `moves`, and the derived plan `P`
-(`P.tcol`, `P.tidx`, `P.lifting`). Drag is driven with
+lists), `sel_id`, `scrolls`, `moves`, and the drag session `d` (`d.active`,
+`d.key`, `d.target`, `d.spec`). Drag is driven with
 `/mouse {"op":"down"|"move"|"up"}`.

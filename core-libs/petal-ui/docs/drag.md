@@ -81,12 +81,46 @@ work (records and lists are eased field by field).
 
 The three-argument form calls `body(v)` with the displayed value. Use it for
 the drawing: while `key` is being dragged, or is settling after a drop, the
-body runs on `UI_LAYER_DRAG`, so the dragged element is drawn over the rows
-it passes. Drawing with the two-argument form's value works, but a floating
-element is then drawn in list order, under whatever comes after it.
+body runs on `UI_LAYER_DRAG` with the clip suspended (`ui_overlay`), so the
+dragged element is drawn over the rows it passes and outside the scrolled
+well it came from. Drawing with the two-argument form's value works, but a
+floating element is then drawn in list order, under whatever comes after it.
+While the engine is speculating, the body is **not run**: speculation only
+needs the positions, and skipping the drawing halves the drag-start cost.
+So do not `place` other elements inside a body.
+
+Calling `place(k, r)` and then `place(k, r, body)` with the value the first
+call returned (the usual pair) eases once: the second call sees the value it
+already displayed this frame and hands it back.
+
+### `place_origin(origin, body)`
+
+Inside `body()`, `place` eases positions relative to `origin` (`{x, y}` in
+screen coordinates) rather than to the screen. Wrap a scrolled container's
+elements in it with the scroll offset:
+
+```petal ignore
+place_origin({x: 0, y: -scroll}, fn()
+  for card in cards key card.id do
+    let r = place(card.id, rect(x, top - scroll + card.off, w, card.h))
+    ...
+  end
+end)
+```
+
+Scrolling then moves the elements at once, as a scroll should, while a
+reorder inside the container still animates. Values given to `place` are
+still screen positions; only the easing is relative.
 
 `key` is compared like a `for … key` key (by content). Keys must be unique on
 the screen and stable across states: an item's id, never its index.
+
+### `drag_key()` and `is_dragging(key)`
+
+`drag_key()` is the key of the element being dragged right now, or nil;
+`is_dragging(key)` asks about one key. Use them for styling: a lifted card,
+the column the dragged card would land in. Both are nil/false while the
+engine is speculating, so a view's drop positions never depend on them.
 
 ### `draggable(key, r, spec_fn)`
 
@@ -185,9 +219,14 @@ assignment rebinds `pegs` itself for the rest of the loop.
 
 ## Recipes
 
-**Kanban** (cards in columns; each column a record with `cards`):
+**Kanban** (cards in columns; each column a list of cards, or a record whose
+`cards` is that list). The whole port is
+[`examples/productivity/kanban`](../../../examples/productivity/kanban/app.ptl):
 
 ```petal ignore
+// columns are lists of cards
+draggable(card.id, r, fn() closest(moves_nested(cs, card.id)) |> floating() end)
+// columns are records holding the list in `cards`
 draggable(card.id, r, fn() closest(moves_nested(cols, card.id, "cards")) |> floating() end)
 ```
 
@@ -222,10 +261,12 @@ draggable("swatch", sw, fn() closest([switch_to(items ++ [new_item], new_item.id
    it as `view(d.preview)`. Everything a drag can change must come from the
    argument, not from top-level `state` read inside the view.
 2. **Speculation runs your view.** The engine calls `view(candidate)` for
-   every reachable state at the press. Those runs draw nothing, register
-   nothing and are not hot. In this version (P0) a `state` write inside the
-   view is real, so the view should not write state it cares about; keep
-   writes outside it. Widgets with their own animation state are fine.
+   every reachable state when a drag starts, each one as a core
+   [`speculate`](../../../docs/features/speculate.md) call: nothing it draws
+   or registers reaches the screen, and every `state` write, `set` and
+   random draw it makes is put back. So the view can be your ordinary
+   immediate-mode drawing code, widgets and all. An escaping native (a file
+   save, a host handle method) is not called in there and answers nil.
 3. **Key every loop that places**: `for c in cards key c.id do`. Keys are
    ids, unique on screen, the same in every state.
 4. **Put `place` and `draggable` inside the view**, so speculation sees them.
@@ -245,6 +286,18 @@ draggable("swatch", sw, fn() closest([switch_to(items ++ [new_item], new_item.id
    Usually it means two candidates are really the same move: drop one.
 9. **Do not keep closures in the model or the spec.** `spec_fn` and
    `on_drop`'s `f` are called while the spec is built; what is kept is data.
+10. **Keep expensive pure work out of the view.** A drag start runs the view
+    once per reachable state, and memo does not record or replay inside a
+    speculative call. Work that is the same in every state (text wrapping,
+    measuring, anything keyed by the items rather than their order) belongs
+    before the view, computed once a frame. Kanban's wrapped titles are the
+    worked example: moving them out took its 50-card drag start from 63 ms to
+    19 ms.
+11. **Pass what the view reads.** A `fn view` defined at the top reads the
+    `state` bindings it names as they were when it was defined, one run
+    behind any later write (the compiler warns). Give the session a closure
+    that passes them: `drag_session(cols, fn(cs) view(cs, scrolls, sel_id) end)`,
+    and draw with `view(d.preview, scrolls, sel_id)`.
 
 ## Debugging and testing
 
@@ -281,6 +334,31 @@ The engine notices a reload through `memo`: a reload that changes the
 program drops every memo entry, so an entry made at the press being made
 again means the program changed.
 
+## Performance
+
+A drag start speculates the view once per reachable state, so for a reorder
+of n items over a view that draws all n, it costs about n renderings: it
+grows with the square of the board. Frames during the drag run no
+speculation for `closest`, `floating`, `snap_radius`, `when_far` and
+`drop_target`; they only read the table built at the start.
+
+Measured on the kanban example with its board replaced by n cards
+(`cargo run --release --example bench_drag -- examples/productivity/kanban/app.ptl <n>`
+in `core-libs/petal-ui`; minimum of 15 runs, frame gate off, Apple silicon):
+
+| Cards | Idle frame | Drag start | Frame while dragging | Old hand-rolled app, while dragging |
+|---|---|---|---|---|
+| 12 | 0.30 ms | 2.1 ms | 0.38 ms | |
+| 50 | 0.68 ms | 19 ms | 1.11 ms | 0.64 ms |
+| 100 | 1.19 ms | 53 ms | 2.04 ms | |
+
+So a 50-card board drops about one frame when a drag starts, and each frame
+costs about 0.5 ms more than the hand-written drag (the per-key easing in
+`place`). The first version of the port, which wrapped every title inside the
+view, took 134 ms at 50 cards; skipping `place`'s body during speculation
+and moving the wrapping out of the view (rule 10) are what brought it down.
+Spreading the drag start over several frames is not built.
+
 ## When not to use it
 
 For a **free translation** (moving nodes on a canvas, panning, a selection
@@ -299,7 +377,5 @@ Use `ui/drag` for anything that **snaps, reorders or re-parents**.
 - `between` and `vary` (interpolating between targets, and solving numbers
   so the element tracks the pointer) build spec data now, and a drag that
   reaches one stops with "not yet available". They arrive with P2.
-- The core `speculate()` hypothetical call (P1) makes speculation discard
-  the view's state writes; once it is in, rule 2's caveat goes.
 - One drag at a time: a second pointer does not start a second drag.
 - `drag_debug(d)` overlays and the scenario `drag` sugar are planned (P4).

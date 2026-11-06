@@ -1,15 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────
 // Kanban — a drag-and-drop sprint board, drawn as a Garden panel.
 //
-// Exercises: columns, cards, mouse drag/drop with a live insertion ghost,
-// per-column pixel scrolling, keyboard navigation and card movement,
-// hover/selection states, and a typographic hierarchy built only from size /
-// color / spacing.
+// Exercises: columns, cards, declarative drag and drop (`ui/drag`) with the
+// other cards sliding out of the way, per-column pixel scrolling, keyboard
+// navigation and card movement, hover/selection states, and a typographic
+// hierarchy built only from size / color / spacing.
 //
 // Run:  garden --headless --debug-port 0 --init layout.ptl
 // ─────────────────────────────────────────────────────────────────────────
 
 import ui
+import ui/drag
 
 class Card
   id: string,
@@ -102,8 +103,6 @@ state cols = [
 
 state sel_id = "c6"
 state scrolls = [0, 0, 0, 0]
-state drag = {active: false, col: 0, idx: 0, card: Card(id: "", title: "", tag: "", who: "", pts: 0, pri: 0),
-  ox: 0, oy: 0, sx: 0, sy: 0, moved: false}
 state moves = 0
 
 // ── Layout metrics (recomputed every frame — the pane can resize) ─────────
@@ -179,8 +178,17 @@ end
 
 // ── Card geometry ────────────────────────────────────────────────────────
 
+// Each title's wrapped lines, worked out once a frame: the drag engine runs
+// the view once per board a drag can reach, and every one has these cards.
+let TITLE_LINES = Map()
+for col in cols do
+  for card in col do
+    TITLE_LINES[card.title] = preview(card.title, max_chars: LINE_CHARS, max_lines: 2).lines
+  end
+end
+
 fn card_lines(card: record)
-  preview(card.title, max_chars: LINE_CHARS, max_lines: 2).lines
+  TITLE_LINES[card.title] ?? preview(card.title, max_chars: LINE_CHARS, max_lines: 2).lines
 end
 
 fn card_h(card: record) -> int
@@ -193,69 +201,6 @@ fn column_h(cards: list) -> int
     h = h + card_h(c) + CARD_GAP
   end
   max(0, h - CARD_GAP)
-end
-
-// Where a card whose vertical center is at `cy` would be inserted.
-fn insert_index(cards: list, top: num, cy: num) -> int
-  let idx = 0
-  let y = top
-  for i in range(0, len(cards)) do
-    let ch = card_h(cards[i])
-    if cy > y + ch / 2 then
-      idx = i + 1
-    end
-    y = y + ch + CARD_GAP
-  end
-  idx
-end
-
-// Stacked rects for one column: every card, plus a `ghost` gap at `gi`.
-fn slot_list(cards: list, x: num, top: num, gi: num, gh: num) -> list
-  let out = []
-  let y = top
-  for i in range(0, len(cards)) do
-    if i == gi then
-      out = append(out, {ghost: true, i: i, r: rect(x, y, INNER_W, gh)})
-      y = y + gh + CARD_GAP
-    end
-    let ch = card_h(cards[i])
-    out = append(out, {ghost: false, i: i, r: rect(x, y, INNER_W, ch)})
-    y = y + ch + CARD_GAP
-  end
-  if gi >= len(cards) then
-    out = append(out, {ghost: true, i: len(cards), r: rect(x, y, INNER_W, gh)})
-  end
-  out
-end
-
-// The whole board's derived geometry for this pointer position.
-fn plan(cs: list, d: record, sc: list, mx: num, my: num) -> record
-  let lifting = d.active && d.moved
-  let dh = card_h(d.card)
-  let base = for c in range(0, 4) do
-    if d.active && c == d.col then list_remove(cs[c], d.idx) else cs[c] end
-  end
-  let tops = for c in range(0, 4) do
-    SURF_TOP + COL_PAD - sc[c]
-  end
-  let tcol = d.col
-  if lifting then
-    for c in range(0, 4) do
-      if mx >= col_x(c) - GUT && mx < col_x(c) + COL_W + GUT then
-        tcol = c
-      end
-    end
-  end
-  let tidx = 0
-  if lifting then
-    tidx = insert_index(cards: base[tcol], top: tops[tcol], cy: my - d.oy + dh / 2)
-  end
-  let slots = for c in range(0, 4) do
-    let gi = if lifting && c == tcol then tidx else -1 end
-    slot_list(cards: base[c], x: col_x(c) + COL_PAD, top: tops[c], gi: gi, gh: dh)
-  end
-  {base: base, tops: tops, tcol: tcol, tidx: tidx, dh: dh,
-    slots: slots, lifting: lifting}
 end
 
 // ── Drawing ──────────────────────────────────────────────────────────────
@@ -303,12 +248,6 @@ fn draw_card(r: record, card: record, mode: string)
   draw_text_right("{card.pts} pts", right_x: r.x + r.w - CARD_PAD, y: fy + 5, size: 11, c: FAINT)
 end
 
-fn draw_ghost(r: record)
-  draw_rect_rounded(r, radius: 12, c: ACCENT, a: 26)
-  draw_rect_outline(r, c: ACCENT, a: 110, width: 1)
-  draw_text_center("drop here", cx: r.x + r.w / 2, y: r.y + r.h / 2 - 6, size: 11, c: ACCENT)
-end
-
 // Soft edges where the well clips its cards, so a scrolled column reads as
 // continuing rather than as a card sliced in half.
 fn draw_edge_fade(surf: record, content: num, off: num)
@@ -333,35 +272,98 @@ fn draw_vscroll(surf: record, content: num, off: num)
   end
 end
 
+// ── The board, as a function of the columns ──────────────────────────────
+// Everything a drag can change comes from `cs`. The drag engine also runs it,
+// speculatively, on every board a drag can reach, so a card lands exactly
+// where this code would draw it. `sc` (the scrolls), `sel` (the selected id)
+// and `hover_id` only place the wells' contents and pick card styles.
+
+var hover_id = ""
+
+fn view(cs: list, sc: list, sel: string)
+  let dk = drag_key()
+  let tc = if dk == nil then -1 else find_card(cs, dk).c end
+  for c in range(0, 4) do
+    let lane = LANES[c]
+    let x = col_x(c)
+    let surf = col_surf(c)
+    let cnt = len(cs[c])
+
+    // Lane header, above the surface so the surface stays a clean card well.
+    draw_circle(center: {x: x + 6, y: BOARD_TOP + 12}, radius: 4, c: lane.color)
+    draw_text(lane.name, pos: {x: x + 18, y: BOARD_TOP + 5},
+      style: {size: 12, color: TEXT, spacing: 1})
+    let over = lane.limit > 0 && cnt > lane.limit
+    let ctext = if lane.limit > 0 then "{cnt}/{lane.limit}" else str(cnt) end
+    draw_text_right(ctext, right_x: x + COL_W, y: BOARD_TOP + 5, size: 12,
+      c: if over then DANGER else FAINT end)
+    draw_rect(rect(x, BOARD_TOP + 24, COL_W, 2), c: lane.color, a: 90)
+
+    // Card well; mid-drag, the lane the card would land in is outlined.
+    draw_rect_rounded(surf, radius: 14, c: SURFACE)
+    if c == tc then
+      draw_rect_outline(surf, c: ACCENT, a: 70, width: 1)
+    end
+
+    clip(x: surf.x, y: surf.y, w: surf.w, h: surf.h)
+    if cnt == 0 then
+      draw_text_center("empty", cx: x + COL_W / 2, y: SURF_TOP + 26, size: 11, c: #333b47)
+    end
+    // Cards ease to new slots relative to the scroll, so the wheel moves
+    // them at once while a reorder animates.
+    place_origin({x: 0, y: -sc[c]}, fn()
+      let y = SURF_TOP + COL_PAD - sc[c]
+      for card in cs[c] key card.id do
+        let h = card_h(card)
+        let r = place(card.id, rect(x + COL_PAD, y, INNER_W, h))
+        draggable(card.id, r, fn() closest(moves_nested(cs, card.id)) |> floating() end)
+        let mode = if is_dragging(card.id) then "lift"
+        elsif card.id == sel then "sel"
+        elsif card.id == get hover_id then "hover"
+        else "plain"
+        end
+        place(card.id, r, fn(p) draw_card(p, card, mode) end)
+        y = y + h + CARD_GAP
+      end
+    end)
+    let content = column_h(cs[c]) + COL_PAD * 2
+    draw_edge_fade(surf, content, off: sc[c])
+    clip_none()
+    draw_vscroll(surf, content, off: sc[c])
+  end
+  nil
+end
+
 // ── Input ────────────────────────────────────────────────────────────────
+
+// The drag engine: a press on a card and a few pixels of travel pick it up;
+// releasing commits the board it previews.
+let d = drag_session(cols, fn(cs) view(cs, scrolls, sel_id) end)
+if d.dropped then
+  cols = d.drop
+  moves += 1
+end
 
 let mx = mouse_x()
 let my = mouse_y()
-let P0 = plan(cs: cols, d: drag, sc: scrolls, mx: mx, my: my)
 
-// Which card is the pointer over? (Not while a card is airborne.)
-let hit_c = -1
-let hit_i = -1
-let hit_x = 0
-let hit_y = 0
-if !P0.lifting then
+// Which card is the pointer over, as drawn last frame? (Not mid-drag.)
+if !d.active then
   for c in range(0, 4) do
-    let surf = col_surf(c)
-    if point_in(px: mx, py: my, r: surf) then
-      for s in P0.slots[c] do
-        if !s.ghost && point_in(px: mx, py: my, r: s.r) then
-          hit_c = c
-          hit_i = s.i
-          hit_x = s.r.x
-          hit_y = s.r.y
+    if point_in(px: mx, py: my, r: col_surf(c)) then
+      for card in cols[c] do
+        let r = ui_target_rect("drag:{card.id}")
+        if r != nil && point_in(px: mx, py: my, r: r) then
+          set hover_id = card.id
         end
       end
     end
   end
 end
+let hit = get hover_id
 
 // Wheel scrolls the column under the pointer.
-if scroll_y() != 0 && !drag.active then
+if scroll_y() != 0 && !d.active then
   for c in range(0, 4) do
     let surf = col_surf(c)
     if point_in(px: mx, py: my, r: surf) then
@@ -372,15 +374,10 @@ if scroll_y() != 0 && !drag.active then
   end
 end
 
-// Press: select, and arm a drag.
-if mouse_pressed(0) && hit_c >= 0 then
-  sel_id = cols[hit_c][hit_i].id
-  drag = {active: true, col: hit_c, idx: hit_i, card: cols[hit_c][hit_i],
-    ox: mx - hit_x, oy: my - hit_y, sx: mx, sy: my, moved: false}
-end
-
-// A press on bare well space clears the selection.
-if mouse_pressed(0) && hit_c < 0 then
+// Press: select the card, or clear the selection on bare well space.
+if mouse_pressed(0) && hit != "" then
+  sel_id = hit
+elsif mouse_pressed(0) then
   let over_board = false
   for c in range(0, 4) do
     if point_in(px: mx, py: my, r: col_surf(c)) then
@@ -390,28 +387,6 @@ if mouse_pressed(0) && hit_c < 0 then
   if over_board then
     sel_id = ""
   end
-end
-
-// Held: past a few pixels of travel the press becomes a drag.
-if drag.active && !drag.moved && (abs(mx - drag.sx) + abs(my - drag.sy)) > 4 then
-  drag.moved = true
-end
-
-// Release: drop it where the ghost is.
-if mouse_released(0) && drag.active then
-  if drag.moved then
-    let dst = P0.tcol
-    let at = P0.tidx
-    if dst == drag.col then
-      cols[dst] = list_insert(list_remove(cols[dst], drag.idx), k: at, v: drag.card)
-    else
-      cols[drag.col] = list_remove(cols[drag.col], drag.idx)
-      cols[dst] = list_insert(cols[dst], k: at, v: drag.card)
-    end
-    moves = moves + 1
-  end
-  drag = {active: false, col: 0, idx: 0, card: drag.card,
-    ox: 0, oy: 0, sx: 0, sy: 0, moved: false}
 end
 
 // Keyboard: arrows select, shift+arrows move, 1-4 send, p cycles priority.
@@ -481,8 +456,8 @@ if arrowed || sent then
     for i in range(0, s2.i) do
       off = off + card_h(cols[s2.c][i]) + CARD_GAP
     end
-    let view = SURF_H - COL_PAD * 2
-    scrolls[s2.c] = max(0, ensure_visible_px(scroll: scrolls[s2.c], row_off: off, row_h: card_h(cols[s2.c][s2.i]), view_h: view))
+    let view_h = SURF_H - COL_PAD * 2
+    scrolls[s2.c] = max(0, ensure_visible_px(scroll: scrolls[s2.c], row_off: off, row_h: card_h(cols[s2.c][s2.i]), view_h: view_h))
   end
 end
 
@@ -497,7 +472,6 @@ end
 
 // ── Frame ────────────────────────────────────────────────────────────────
 
-let P = plan(cs: cols, d: drag, sc: scrolls, mx: mx, my: my)
 let sel = find_card(cols, sel_id)
 
 clear(BG.r, BG.g, BG.b)
@@ -531,56 +505,8 @@ if fill_w > 0 then
 end
 draw_rect(rect(0, 86, W, 1), RULE)
 
-// Columns -----------------------------------------------------------------
-for c in range(0, 4) do
-  let lane = LANES[c]
-  let x = col_x(c)
-  let surf = col_surf(c)
-  let cnt = len(cols[c])
-
-  // Lane header, above the surface so the surface stays a clean card well.
-  draw_circle(center: {x: x + 6, y: BOARD_TOP + 12}, radius: 4, c: lane.color)
-  draw_text(lane.name, pos: {x: x + 18, y: BOARD_TOP + 5},
-    style: {size: 12, color: TEXT, spacing: 1})
-  let over = lane.limit > 0 && cnt > lane.limit
-  let ctext = if lane.limit > 0 then "{cnt}/{lane.limit}" else str(cnt) end
-  draw_text_right(ctext, right_x: x + COL_W, y: BOARD_TOP + 5, size: 12,
-    c: if over then DANGER else FAINT end)
-  draw_rect(rect(x, BOARD_TOP + 24, COL_W, 2), c: lane.color, a: 90)
-
-  // Card well.
-  let is_target = P.lifting && c == P.tcol
-  draw_rect_rounded(surf, radius: 14, c: SURFACE)
-  if is_target then
-    draw_rect_outline(surf, c: ACCENT, a: 70, width: 1)
-  end
-
-  clip(x: surf.x, y: surf.y, w: surf.w, h: surf.h)
-  if cnt == 0 && !is_target then
-    draw_text_center("empty", cx: x + COL_W / 2, y: SURF_TOP + 26, size: 11, c: #333b47)
-  end
-  for s in P.slots[c] do
-    if s.ghost then
-      draw_ghost(s.r)
-    else
-      let card = P.base[c][s.i]
-      let mode = if card.id == sel_id then "sel"
-      elsif !P.lifting && c == hit_c && s.i == hit_i then "hover"
-      else "plain"
-      end
-      draw_card(s.r, card, mode)
-    end
-  end
-  let content = column_h(cols[c]) + COL_PAD * 2
-  draw_edge_fade(surf, content, off: scrolls[c])
-  clip_none()
-  draw_vscroll(surf, content, off: scrolls[c])
-end
-
-// The airborne card, over everything.
-if P.lifting then
-  draw_card(rect(mx - drag.ox, my - drag.oy, INNER_W, P.dh), card: drag.card, mode: "lift")
-end
+// Columns: the board a drag previews, else the board.
+view(if d.active then d.preview else cols end, scrolls, sel_id)
 
 // Footer ------------------------------------------------------------------
 let fy = H - FOOT_H

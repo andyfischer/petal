@@ -610,10 +610,12 @@ rest. The guide, with worked examples and the mistakes to avoid, is
 | Call | What it does |
 |---|---|
 | `place(key, value)` | Where `key` landed in this rendering; returns the value to draw: eased from where `key` was (layout animation), under the pointer while it floats. `value` is a rect, a point, a number or a colour. |
-| `place(key, value, body)` | The same, then `body(v)` with the displayed value, on the drag layer while `key` is dragged or settling. |
+| `place(key, value, body)` | The same, then `body(v)` with the displayed value, on the drag layer with the clip suspended while `key` is dragged or settling. Not run while the engine speculates. |
 | `draggable(key, r, spec_fn)` | A press on `r` (then `DRAG_SLOP` px of movement) drags `key`; `spec_fn()` returns its spec. Registers `r` as `"drag:<key>"`; returns the `interact` record. |
 | `drag_session(model, view, opts?)` | The engine, once per frame before `view(d.preview)`: `{active, key, preview, drop, dropped, cancelled, spec, target, gap, reason}`. `opts`: `{slop}`. |
 | `is_dragging(key)` | Whether `key` is the element being dragged now. |
+| `drag_key()` | The key of the element being dragged now, or nil. |
+| `place_origin(origin, body)` | Inside `body()`, `place` eases positions relative to `origin` (`{x, y}`): put a scrolled container's elements under `{x: 0, y: -scroll}` and scrolling moves them at once. |
 | `fixed_state(state)` | Spec: one target state. A bare state where a spec goes means this. |
 | `closest(options, opts?)` | Spec: the option whose target is nearest the element. `opts`: `{stickiness}` (px). |
 | `floating(spec)` | Spec: the element follows the pointer while the rest previews. |

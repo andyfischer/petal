@@ -33,11 +33,11 @@
 // `switch_to`. The engine resolves it once, at drag start, into a table of
 // positions; frames during the drag only read that table.
 //
-// P0 speculation is a plain call of `view(candidate)` under `ui_measure`
-// (nothing drawn, nothing registered, nothing hot), so the view must not
-// write `state` it cares about: a speculative run's state writes are real.
-// `_speculate` is the one function that changes when the core `speculate()`
-// builtin lands.
+// Speculation is the core `speculate(f, ...args)` hypothetical call: the
+// view's drawing and hit-test registrations are captured and dropped, and
+// every `state` write, `set` and random draw it makes is put back. So the
+// view can be ordinary immediate-mode drawing code that calls widgets with
+// their own state; `place` records into the call's `places`.
 
 import ui
 
@@ -52,12 +52,14 @@ pub let DRAG_SLOP = 4
 pub let PLACE_RATE = 18.0
 
 // ── Engine cells ──────────────────────────────────────────────────────────
-// Per run (a plain `var` is made afresh on every run): whether a speculation
-// is capturing, what it captured, and what the live drag tells `place`.
-var _cap_on = false
-var _cap_places = Map()
+// Per run (a plain `var` is made afresh on every run): the draggables a
+// speculation saw, what the live drag tells `place`, the origin
+// `place_origin` puts positions in, and what `place` displayed this run.
 var _cap_drags = Map()
 var _live = nil
+var _origin = nil
+// What `place` displayed for each key this run.
+var _shown = Map()
 // The spec walk's scratch: a cache of speculations by state, a leaf counter,
 // and the context of the walk.
 var _cache = Map()
@@ -74,28 +76,27 @@ state var _warned = Map()
 state var _tok = 0
 
 // ── Speculation ───────────────────────────────────────────────────────────
-// Run `view(model)` as a hypothetical: nothing drawn, registered or hot, and
-// every `place` / `draggable` it makes captured instead of acted on. Returns
-// {value, places: Map key -> value, drags: Map key -> {rect, spec}}. The
-// closures in `drags` are only good for the current run; never store them.
+// Run `view(model)` as a hypothetical call (core `speculate`): nothing it
+// draws, registers or writes outlives it, and every `place` / `draggable` it
+// makes is captured instead of acted on. Returns {value, places: Map key ->
+// value, drags: Map key -> {rect, spec}}. The closures in `drags` are only
+// good for the current run; never store them.
 //
-// The capture is read inside the measured body and handed out as its value,
-// so it survives a `ui_measure` that puts back every write the body made
-// (one built on the core `speculate`) as well as one that keeps them. P1's
-// `speculate(f, x)` replaces this body: its `r.places` is this `places`.
+// `places` is the call's own capture (`speculate_place`). The draggables are
+// written to a cell, which the call puts back, so they are read inside the
+// call and handed out as its value.
 fn _speculate(view, model)
-  assert(!(get _cap_on), "ui/drag: a drag view ran drag_session or a speculation inside a speculation; call drag_session outside the view")
-  let out = ui_measure(fn()
-    set _cap_on = true
-    set _cap_places = Map()
+  assert(!speculating(), "ui/drag: a drag view ran drag_session, or a drag was speculated inside a speculation; call drag_session outside the view")
+  let r = speculate(fn()
     set _cap_drags = Map()
     let value = view(model)
-    {value: value, places: get _cap_places, drags: get _cap_drags}
+    {value: value, drags: get _cap_drags}
   end)
-  set _cap_on = false
-  set _cap_places = Map()
-  set _cap_drags = Map()
-  out
+  let places = Map()
+  for p in r.places do
+    places[p.key] = p.value
+  end
+  {value: r.value.value, places: places, drags: r.value.drags}
 end
 
 // Where a speculation put `key`: its `place` record, or — for a view that
@@ -180,37 +181,76 @@ end
 // follows the pointer. Inside a speculation it records `value` and returns it
 // unchanged. Keys compare like `for … key` keys and must be unique on screen.
 pub fn place(key, value)
-  if get _cap_on then
-    set _cap_places[key] = value
-    return value
+  if speculating() then
+    return speculate_place(key, value)
   end
+  // Placing the value this run already displayed for `key` (the usual
+  // `place(k, place(k, r), body)` pair) is not a new target: hand it back.
+  let shown = get _shown[key]
+  if shown != nil && shown == value then return value end
+  let out = _place(key, value)
+  set _shown[key] = out
+  out
+end
+
+fn _place(key, value)
+  let o = get _origin
   let live = get _live
   if live != nil && live.float && live.key == key then
     let fv = _at(value, live.fx, live.fy)
-    set _anim[key] = fv
+    set _anim[key] = _shift(fv, o, -1)
     return fv
   end
+  let target = _shift(value, o, -1)
   let cur = get _anim[key]
   if cur == nil then
-    set _anim[key] = value
+    set _anim[key] = target
     return value
   end
-  let v = _approach_value(cur, value, PLACE_RATE)
+  let v = _approach_value(cur, target, PLACE_RATE)
   if v != cur then set _anim[key] = v end
-  if v == value && (get _settle) == key then set _settle = nil end
-  v
+  if v == target && (get _settle) == key then set _settle = nil end
+  _shift(v, o, 1)
+end
+
+// `v` with its position moved by `sign` times origin `o` (nil: unchanged).
+fn _shift(v, o, sign)
+  if o == nil || _center(v) == nil then return v end
+  _at(v, v.x + sign * o.x, v.y + sign * o.y)
 end
 
 // The same, drawing: `body(v)` gets the displayed value and runs on the drag
 // layer while `key` is being dragged or is settling after a drop, so the
-// dragged element is drawn on top of everything it passes over.
+// dragged element is drawn on top of everything it passes over, and outside
+// the clip of the container it came from. A speculation needs only the
+// position, so there the body is not run.
 pub fn place(key, value, body)
   let v = place(key, value)
+  if speculating() then return nil end
   if _on_top(key) then
-    with_layer(max(ui_layer(), UI_LAYER_DRAG), fn() body(v) end)
+    ui_overlay(max(ui_layer(), UI_LAYER_DRAG), fn() body(v) end)
   else
     body(v)
   end
+end
+
+// Inside `body()`, `place` eases positions relative to `origin` ({x, y}, in
+// screen coordinates) instead of the screen. Put a scrolled container's
+// elements under its scroll origin — `place_origin({x: 0, y: -scroll}, …)` —
+// and scrolling moves them at once, while a reorder inside still animates.
+// Values without a position (numbers, colours) are unaffected.
+pub fn place_origin(origin, body)
+  let prev = get _origin
+  set _origin = origin
+  let out = body()
+  set _origin = prev
+  out
+end
+
+// The key of the element being dragged right now, or nil.
+pub fn drag_key()
+  let live = get _live
+  if live == nil then nil else live.key end
 end
 
 fn _on_top(key)
@@ -231,7 +271,7 @@ end
 // The rect is registered for hit testing as `interact(r, "drag:<key>")`
 // would, and the interact record is returned (hover for styling).
 pub fn draggable(key, r, spec_fn)
-  if get _cap_on then
+  if speculating() then
     set _cap_drags[key] = {rect: r, spec: spec_fn}
     return {hover: false, down: false, pressed: false, released: false, click: false}
   end
@@ -539,7 +579,8 @@ pub fn drag_session(model, view, opts = {})
   let slop = opts.slop ?? DRAG_SLOP
   let mx = mouse_x()
   let my = mouse_y()
-  let down = mouse_down(0)
+  // A release and a new press in one frame still end the drag (or press).
+  let down = mouse_down(0) && !mouse_released(0)
 
   if s.phase == "idle" then
     let p = get _press
@@ -623,9 +664,12 @@ pub fn moves(xs, i)
   for j in range(0, len(xs)) do slice(rest, 0, j) ++ [x] ++ slice(rest, j) end
 end
 
-// An item's identity: its `id`, else its `key`, else the item itself.
+// An item's identity: its `id`, else its `key`, else the item itself. A
+// record or a class instance (whose type() is its class name) has fields.
 fn _key_of(it)
-  if type(it) == "record" then it.id ?? (it.key ?? it) else it end
+  let t = type(it)
+  let plain = t == "string" || t == "int" || t == "float" || t == "bool" || t == "nil" || t == "list" || t == "map"
+  if plain then it else it.id ?? (it.key ?? it) end
 end
 
 fn _items(col, field)

@@ -1,0 +1,14 @@
+{"size": [1280, 850], "frames": 60,
+ "events": [
+  {"at": 2, "mouse_move": [400, 200]},
+  {"at": 4, "click": [100, 300]},
+  {"at": 8, "mouse_move": [700, 200]},
+  {"at": 10, "key": "down"}, {"at": 12, "key": "right"}, {"at": 14, "key": "up"},
+  {"at": 16, "key": "p"}, {"at": 18, "key": "p"},
+  {"at": 20, "mouse_move": [150, 400]}, {"at": 22, "scroll": [0, 2]}, {"at": 26, "scroll": [0, -1]},
+  {"at": 30, "click": [500, 700]},
+  {"at": 34, "click": [1000, 200]},
+  {"at": 38, "key": "escape"},
+  {"at": 42, "key": "left"},
+  {"at": 46, "click": [20, 20]},
+  {"at": 50, "mouse_move": [1000, 250]}]}

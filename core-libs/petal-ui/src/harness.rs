@@ -269,6 +269,12 @@ impl Headless {
         crate::hit::pointer_owner(&mut self.core.env)
     }
 
+    /// Who has the keyboard for the frame about to run (`focus::focus`),
+    /// `""` for nobody, as of the last input bound.
+    pub fn focus(&mut self) -> String {
+        crate::focus::focus(&mut self.core.env)
+    }
+
     pub fn click(&mut self, x: i32, y: i32) -> Result<&[DrawCommand], String> {
         self.mouse_move(x, y);
         self.mouse_down(input::buttons::LEFT);

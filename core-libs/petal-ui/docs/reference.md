@@ -88,7 +88,7 @@ dialogs and about clipping. See [Layers and hit testing](#layers-and-hit-testing
 | `point_in(px, py, r)` | Whether a point is inside a rect. |
 | `hovered(r)` | Raw: the pointer is inside `r`. |
 | `clicked(r)` | Raw: `hovered(r) && mouse_pressed(0)`. |
-| `interact(r, id?)` | Layered: `{hover, down, pressed, released, click}`. Registers `r`. |
+| `interact(r, id?, wants?)` | Layered: `{hover, down, pressed, released, click}`. Registers `r`. `wants` says what it does with the keyboard: `{text: true}`, `{focus: true}`, `{keys: ["up", "down"]}` (see "Text entry and focus"). |
 | `ui_hot(r, id?)` | Layered: just the hover. Registers `r`. |
 | `ui_block(r, id?)` | Registers `r` and asks nothing: a panel's background. |
 | `pointer_captured()` | The UI has the pointer: gate world clicks with it. |
@@ -512,10 +512,27 @@ Every widget takes an optional trailing `style`.
 
 ### Text entry and focus
 
+The runtime decides who has the keyboard once per frame, before the script
+runs. A press on a rect that declared `{text: true}` or `{focus: true}`
+(every text field does) gives it the keyboard on that same frame. A press
+anywhere else takes it away, unless it lands on a higher layer than the
+focused widget, as a menu opened from a field does.
+
+While a widget has the keyboard, the keys it claims are not the app's
+shortcuts. A text widget claims every key pressed without Cmd/Ctrl and the
+editing chords (Cmd+A, C, X, V, Z, Shift+Z, Y, and Cmd with an arrow,
+Backspace or Delete). Any widget claims the chords it listed in `keys`.
+So `shortcut("v")` and `shortcut("escape")` are quiet while the user types,
+and `shortcut("cmd+s")` still fires.
+
 | Call | What it does |
 |---|---|
-| `focus_state()` | The record that says which widget has the keyboard. |
-| `focused(fc, id)`, `focus_set(fc, id)`, `focus_clear(fc)` | Ask and change. |
+| `shortcut(chord)` | Whether `chord` was pressed this frame and is the app's: the focused widget does not claim it. A chord is modifiers and a key name joined with `+`: `"cmd+shift+z"`, `"escape"`, `"alt+left"`. `cmd` is Cmd or Ctrl. The modifiers must match exactly. |
+| `shortcut(chord, id)` | Whether `chord` was pressed while `id` has the keyboard. |
+| `has_focus(id)`, `focus_owner()` | Whether `id` has the keyboard this frame; the id that has it (`""` for nobody). |
+| `focus_request(id)` | Give `id` the keyboard from the next frame (`nil`: nobody). The last request in a frame wins. |
+| `focus_state()` | The record the older, threaded API keeps: `state fc = focus_state()`, passed into fields and assigned back from their `.focus`. |
+| `focused(fc, id)`, `focus_set(fc, id)`, `focus_clear(fc)` | Ask and change it. `focus_set` and `focus_clear` also make a `focus_request`, so the runtime's focus follows. |
 | `focus_next(fc, ids)`, `focus_prev(fc, ids)`, `focus_update(fc, ids)` | Move through a ring of ids; `focus_update` does Tab and Shift+Tab. |
 | `text_field(fc, id, r, buf, style?)` | A single-line editor with a caret, selection, clipboard and undo. Returns `{focus, text, caret, submitted, changed, blurred, cancelled, …}`: `blurred` on the frame after it lost the keyboard, `cancelled` when Escape was pressed in it. |
 | `text_field_update(fc, id, r, buf, style?)`, `draw_text_field(r, text, has, …)` | The two halves, for a field with its own chrome. |

@@ -18,11 +18,15 @@
 //!   face the machine has (`font("Helvetica")`) and have it measured on
 //!   demand. Its public items are re-exported from [`draw`].
 //! - the `ui` Petal module (Layer 1): interaction primitives written in Petal
-//!   (`hovered`, `clicked`, `button`, `list_update`, …), a panel-global focus
-//!   registry (`focus_state`/`focused`/`focus_set`, `focus_next`/`focus_prev`,
+//!   (`hovered`, `clicked`, `button`, `list_update`, …), focus and shortcuts
+//!   (`shortcut`, `has_focus`, `focus_request`, and the older threaded
+//!   `focus_state`/`focused`/`focus_set`, `focus_next`/`focus_prev`,
 //!   `focus_update`) and the focus-aware `text_field` widget + gated
 //!   `list_update` built on it, registered with [`register_prelude`] as the
 //!   package `ui`, which a script reaches with `import ui`.
+//! - [`focus`]: who has the keyboard, decided once a frame by
+//!   [`hit::roll`], and which keys the focused widget claims from the app's
+//!   shortcuts.
 //! - [`hit`]: layered hit testing and the target registry — what
 //!   `interact`, `ui_layer`, `ui_modal` and `pointer_captured` in the prelude
 //!   are built on, and what a host reads to click a widget by name.
@@ -72,6 +76,7 @@ pub mod draw_wire;
 pub mod drag_trace;
 pub mod frame_core;
 pub mod harness;
+pub mod focus;
 pub mod hit;
 pub mod host_data;
 pub mod input;
@@ -174,7 +179,13 @@ pub const UI_VERSION: i64 = 1;
 ///   by `ui`; the input native `ui_debug(name)`. Behavior change alongside
 ///   it: `ui_measure` runs its body through core `speculate`, so state,
 ///   `set`s, random draws and registrations made inside it are undone.
-pub const PRELUDE_LEVEL: u32 = 11;
+/// - 12 — runtime focus (2026-11-07): `shortcut(chord)`,
+///   `shortcut(chord, id)`, `has_focus`, `focus_owner`, `focus_request`,
+///   `interact`'s `wants`, and the natives `ui_focus`, `ui_focus_request`,
+///   `ui_shortcut` ([`focus`]). Behavior change alongside it: overlapping
+///   rects have one owner, the one in front (`hit`, "One owner"), and
+///   `focus_set` / `focus_clear` also make a focus request.
+pub const PRELUDE_LEVEL: u32 = 12;
 
 /// Name of the Petal-source prelude module: `import ui`.
 pub const MODULE_NAME: &str = "ui";

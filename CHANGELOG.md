@@ -82,6 +82,20 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- petal-ui: the runtime keeps track of focus. `hit::roll` decides once a
+  frame, before the script runs, who has the keyboard: the last
+  `focus_request(id)`, then a press on a rect that declared `{text: true}`
+  or `{focus: true}` (`interact(r, id, wants)`; every text field does). A
+  press elsewhere takes the keyboard away, unless it lands on a higher
+  layer. `shortcut("cmd+z")` fires only when the focused widget does not
+  claim the chord: a text widget claims every key without Cmd/Ctrl and the
+  editing chords, so plain-letter tools and Escape are quiet while the user
+  types and Cmd+S is not. Also `shortcut(chord, id)`, `has_focus(id)`,
+  `focus_owner()`, `Headless::focus()` and `focus::focus`. The threaded
+  `fc` API keeps working: `focus_set` and `focus_clear` also make a request.
+  `PRELUDE_LEVEL` is 12
+  ([proposal](docs/proposals/input-dispatch.md), Phase 2).
+
 - `ui/drag`'s `between` and `vary` (D2 P2). `between(states)` slides the
   dragged element inside the hull of its positions in the states (a segment
   for two, a Delaunay triangulation for more) and blends every placed key —

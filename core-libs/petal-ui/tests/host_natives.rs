@@ -211,7 +211,7 @@ fn every_petal_ui_native_declares_its_parameters() {
 /// types, so an all-integer call would fail before reading every argument.
 fn sample(param: &str) -> &'static str {
     match param {
-        "text" | "source" | "name" | "key" | "kind" | "arg" | "font" => "\"a\"",
+        "text" | "source" | "name" | "key" | "kind" | "arg" | "font" | "chord" => "\"a\"",
         "where" => "\"tail\"",
         "style" => "{size: 12}",
         "rect" => "{x: 0, y: 0, w: 4, h: 4}",

@@ -18,7 +18,8 @@
 //!    frame, and where);
 //! 2. it works out the **floor** for the frame about to run — the highest
 //!    layer that has a registered rect under the pointer *now*, or that
-//!    declared itself modal — and binds it as [`SYM_UI_FLOOR`].
+//!    declared itself modal — and binds it as [`SYM_UI_FLOOR`];
+//! 3. it works out who has the keyboard ([`crate::focus`]).
 //!
 //! A rect at layer `L` is then *hot* when the pointer is inside it (and
 //! inside its clip), and `L` is not below the floor. The script side adds one
@@ -121,6 +122,14 @@ pub const FLAG_BLOCKS: i64 = 1;
 /// `flags` bit: not a rect at all — the layer declared itself modal, so every
 /// lower layer is inert wherever the pointer is.
 pub const FLAG_MODAL: i64 = 2;
+/// `flags` bit: the rect takes text (`interact(r, id, {text: true})`, every
+/// text field). A press on it gives it the keyboard, and while it has the
+/// keyboard it claims every key pressed without Cmd/Ctrl and the editing
+/// chords (see [`crate::focus`]).
+pub const FLAG_TEXT: i64 = 4;
+/// `flags` bit: a press on the rect gives it the keyboard
+/// (`{focus: true}`), without claiming text: a list that reads its arrows.
+pub const FLAG_FOCUS: i64 = 8;
 
 /// One row of the registry: a rect a script declared, as the host sees it.
 #[derive(Debug, Clone, PartialEq)]
@@ -140,6 +149,13 @@ pub struct Target {
     pub blocks: bool,
     /// A modal declaration rather than a rect (`w` and `h` are 0).
     pub modal: bool,
+    /// It takes text: a press focuses it, and focused it claims typing.
+    pub text: bool,
+    /// A press on it gives it the keyboard.
+    pub focus: bool,
+    /// The chords it claims while it has the keyboard (`{keys: [...]}`),
+    /// canonical (`"cmd+shift+z"`, see [`crate::focus::canonical_chord`]).
+    pub keys: Vec<String>,
 }
 
 impl Target {
@@ -148,6 +164,10 @@ impl Target {
     }
 
     /// The middle of the rect — where a test or an agent clicks it.
+    pub fn takes_focus(&self) -> bool {
+        self.text || self.focus
+    }
+
     pub fn center(&self) -> (i32, i32) {
         (
             (self.x + self.w / 2.0).floor() as i32,
@@ -173,6 +193,17 @@ fn decode_row(v: &Value, heap: &Heap) -> Option<Target> {
         Value::Int(n) => Some(n.to_string()),
         _ => None,
     };
+    let keys = match row.get(7) {
+        Some(Value::List(l)) => heap
+            .get_list(*l)
+            .iter()
+            .filter_map(|v| match v {
+                Value::String(s) => Some(heap.get_string(*s).to_string()),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
     Some(Target {
         id,
         x: num(&row[0], heap)?,
@@ -182,6 +213,9 @@ fn decode_row(v: &Value, heap: &Heap) -> Option<Target> {
         layer: num(&row[4], heap)? as i64,
         blocks: flags & FLAG_BLOCKS != 0,
         modal: flags & FLAG_MODAL != 0,
+        text: flags & FLAG_TEXT != 0,
+        focus: flags & FLAG_FOCUS != 0,
+        keys,
     })
 }
 
@@ -270,6 +304,8 @@ pub fn roll(env: &mut Env, input: &InputState) {
     let s = env.intern_symbol(SYM_PRESS_Y);
     env.set_binding(s, Value::Int(py as i64));
     roll_press(env, &registry, px as f64, py as f64);
+    // Who has the keyboard: last frame's requests, then this frame's press.
+    crate::focus::roll_focus(env, &registry, px as f64, py as f64);
 }
 
 /// Whether the int list bound as `name` holds `button`.
@@ -287,7 +323,7 @@ fn env_list_has(env: &mut Env, name: &str, button: i64) -> bool {
 
 /// The rows of `registry` a press at (`px`, `py`) landed on: under the point
 /// and not below its floor.
-fn press_rows(registry: &[Target], px: f64, py: f64) -> Vec<Target> {
+pub(crate) fn press_rows(registry: &[Target], px: f64, py: f64) -> Vec<Target> {
     let floor = floor_of(registry, px, py);
     registry
         .iter()
@@ -297,7 +333,9 @@ fn press_rows(registry: &[Target], px: f64, py: f64) -> Vec<Target> {
 }
 
 fn encode_row(env: &mut Env, t: &Target) -> Value {
-    let flags = if t.blocks { FLAG_BLOCKS } else { 0 };
+    let flags = (if t.blocks { FLAG_BLOCKS } else { 0 })
+        | (if t.text { FLAG_TEXT } else { 0 })
+        | (if t.focus { FLAG_FOCUS } else { 0 });
     let id = match &t.id {
         Some(s) => Value::String(env.heap_mut().alloc_string(s.clone())),
         None => Value::Nil,
@@ -311,6 +349,15 @@ fn encode_row(env: &mut Env, t: &Target) -> Value {
         Value::Int(flags),
         id,
     ];
+    let mut row = row;
+    if !t.keys.is_empty() {
+        let keys: Vec<Value> = t
+            .keys
+            .iter()
+            .map(|k| Value::String(env.heap_mut().alloc_string(k.clone())))
+            .collect();
+        row.push(Value::List(env.heap_mut().alloc_list(keys)));
+    }
     Value::List(env.heap_mut().alloc_list(row))
 }
 
@@ -417,6 +464,7 @@ pub fn register_hit(env: &mut Env) {
     register(env, "ui_hot", native_ui_hot, HIT);
     register(env, "ui_floor", native_ui_floor, READS);
     register(env, "ui_target_rect", native_ui_target_rect, READS);
+    crate::focus::register_focus(env);
 }
 
 /// A rect argument: an `{x, y, w, h}` record.
@@ -494,8 +542,10 @@ fn binding_has(state: &mut PetalCxt, name: &str, button: i64) -> bool {
     }
 }
 
-/// `ui_register(rect, layer, clip, [id], [flags])` — record `rect ∩ clip` in
-/// this frame's registry. `flags` defaults to [`FLAG_BLOCKS`].
+/// `ui_register(rect, layer, clip, [id], [flags], [keys])` — record
+/// `rect ∩ clip` in this frame's registry. `flags` defaults to
+/// [`FLAG_BLOCKS`]; `keys` is the list of chords the rect claims while it has
+/// the keyboard, canonicalized here.
 fn native_ui_register(state: &mut PetalCxt) -> NativeResult {
     let flags = if state.arg_count() >= 5 {
         state.get_int(5)?
@@ -517,7 +567,7 @@ fn native_ui_register(state: &mut PetalCxt) -> NativeResult {
     } else {
         Value::Nil
     };
-    let row = vec![
+    let mut row = vec![
         Value::Float(r[0]),
         Value::Float(r[1]),
         Value::Float(r[2]),
@@ -526,6 +576,28 @@ fn native_ui_register(state: &mut PetalCxt) -> NativeResult {
         Value::Int(flags),
         id,
     ];
+    if state.arg_count() >= 6 {
+        if let Value::List(l) = state.get_value(6)? {
+            let chords: Vec<String> = state
+                .heap()
+                .get_list(l)
+                .iter()
+                .filter_map(|v| match v {
+                    Value::String(s) => Some(state.heap().get_string(*s).to_string()),
+                    _ => None,
+                })
+                .collect();
+            let mut keys = Vec::with_capacity(chords.len());
+            for c in chords {
+                let c = crate::focus::canonical_chord(&c)
+                    .ok_or_else(|| format!("ui_register(): '{c}' is not a chord (like \"cmd+shift+z\")"))?;
+                keys.push(Value::String(state.heap_mut().alloc_string(c)));
+            }
+            if !keys.is_empty() {
+                row.push(Value::List(state.heap_mut().alloc_list(keys)));
+            }
+        }
+    }
     let row = Value::List(state.heap_mut().alloc_list(row));
     let sym = state.intern_symbol(UI_TARGETS_BUFFER);
     state.push_output(sym, row);
@@ -759,6 +831,9 @@ mod tests {
             layer,
             blocks: true,
             modal: false,
+            text: false,
+            focus: false,
+            keys: Vec::new(),
         }
     }
 

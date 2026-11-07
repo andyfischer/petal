@@ -1,6 +1,6 @@
 # Proposal: Input dispatch, one owner per event (ID) for petal-ui
 
-Status: proposed, 2026-11-07. Phase 0 is done (see the end).
+Status: in progress, 2026-11-07. Phases 0, 1 and 2 are done (see Phases).
 
 ## Summary
 
@@ -188,8 +188,30 @@ before their cover. `speculate` is not needed.
     registered rects. A plain click on a gallery page now goes through
     `<section>` and `<phone_row>` to the phone or note in front, where it
     used to pick the whole section behind them.
-- **Phase 2: keys and focus.** Add `wants`, `shortcut` and
-  `focus_request`, routing in roll, and the `focus_state` shim.
+- **Phase 2 (done 2026-11-07): keys and focus.** What shipped
+  (`core-libs/petal-ui/src/focus.rs`):
+  - `hit::roll` decides the focus before the script runs and binds it as
+    `ui_focus`. The last `focus_request(id)` of the frame before applies
+    first. Then a press whose owner declared `{text: true}` or
+    `{focus: true}` focuses it on the press frame itself. A press elsewhere
+    clears the focus unless it lands on a higher layer.
+  - What the focused widget claims is bound as `ui_focus_claims`.
+    `shortcut(chord)` is quiet on a claimed chord. Text claims every key
+    without Cmd/Ctrl plus the editing chords. `{keys: [...]}` claims the
+    listed chords. `shortcut(chord, id)` fires only while `id` has the
+    keyboard.
+  - Every text field and text area registers as text, and still declares
+    its claims when it gets `pointer: false`.
+  - The shim runs in the other direction from the one planned: `fc` stays
+    the app's value, and `focus_set` / `focus_clear` also emit a request,
+    so the runtime follows code that threads `fc`. `focus_state()` is
+    unchanged.
+  - New names avoid bloom's 1-argument `focused`, `focus_set` and
+    `focus_clear`: `has_focus(id)`, `focus_owner()`. Two plain imports
+    overlapping in count are ambiguous (Phase 0).
+  - Not done yet: key routing to the topmost modal, and one `dispatch`
+    record. Focus and claims are two bindings next to `ui_under` and the
+    press snapshot, which answers the first open question for now.
 - **Phase 3: `popover`.** Port `context_menu` and `dropdown` onto it.
 - **Phase 4: port petal-design.** Delete its `fc` threading and `TYPING`,
   and keep its GUI scenarios green. As with D2's kanban rule: if one real

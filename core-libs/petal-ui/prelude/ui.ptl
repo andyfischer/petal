@@ -748,7 +748,7 @@ end
 // `hovered(r)` and `clicked(r)` are the raw tests — the pointer and the rect,
 // nothing else. Every widget in this file uses the layered ones.
 
-native fn _ui_register(rect, layer, clip, id?, flags?) = "ui_register"
+native fn _ui_register(rect, layer, clip, id?, flags?, keys?) = "ui_register"
 native fn _ui_mark() = "ui_mark"
 native fn _ui_mute(on) = "ui_mute"
 native fn _ui_probe(rect, layer, clip, floor, id?) = "ui_probe"
@@ -867,6 +867,27 @@ fn _over(r)
   h
 end
 
+// The registration flags for `interact`'s `wants` (core-libs/petal-ui/src/hit.rs).
+fn _wants_flags(wants)
+  1 + (if _get(wants, "text", false) then 4 else 0 end) + (if _get(wants, "focus", false) then 8 else 0 end)
+end
+
+// `_hot` for a rect that takes text. With `pointer` false (the field is
+// under a modal) it still says what it claims, without taking the pointer.
+fn _hot_text(r, id, pointer)
+  if pointer then
+    set _wrote = 0
+    let l = get _layer
+    _ui_register(r, l, get _clip, id, 5)
+    let h = _ui_hot(r, l, get _clip, _run_floor(l))
+    if h then _raise() end
+    h
+  else
+    _ui_register(r, get _layer, get _clip, id, 4)
+    false
+  end
+end
+
 // Register and ask: what every widget's first pointer question is.
 fn _hot(r, id)
   set _wrote = 0
@@ -890,10 +911,20 @@ end
 // `id` (a string or an int) names the rect for `ui_target_rect`, tests and
 // agents. It does not have to be unique, but only the last rect registered
 // under a name is found by it.
-pub fn interact(r, id = nil)
+//
+// `wants` declares what the rect does with the keyboard, for a rect with an
+// id: `{text: true}` (a press gives it the keyboard, and while it has it,
+// it claims typing and the editing chords), `{focus: true}` (a press gives
+// it the keyboard, claiming nothing), `{keys: ["up", "down"]}` (the chords
+// it claims while it has the keyboard). See "Focus" below.
+pub fn interact(r, id = nil, wants = nil)
   set _wrote = 0
   let l = get _layer
-  _ui_register(r, l, get _clip, id)
+  if wants == nil then
+    _ui_register(r, l, get _clip, id)
+  else
+    _ui_register(r, l, get _clip, id, _wants_flags(wants), _get(wants, "keys", []))
+  end
   let s = _ui_probe(r, l, get _clip, _run_floor(l), id)
   if s.hover then _raise() end
   s
@@ -2675,13 +2706,58 @@ pub fn draw_scrollbar(r, count, rows, scroll, style)
   end
 end
 
-// ── Focus registry ─────────────────────────────────────────────────────────
-// Focus is panel-global: at most one widget id holds the keyboard at a time.
-// Keep it in a `state` record so it survives hot reload:
-//   state fc = focus_state()
-// An id is any value you compare with == ; the default "" means "nothing".
-// Widgets that consume the keyboard (text_field, the gated list_update) check
-// `focused(fc, id)` before reading keys, and request focus on click.
+// ── Focus ──────────────────────────────────────────────────────────────────
+// At most one widget id has the keyboard. The runtime keeps track of it,
+// once per frame before the script runs (core-libs/petal-ui/src/focus.rs):
+//
+//   has_focus(id)       whether `id` has the keyboard this frame
+//   focus_owner()       the id that has it, "" for nobody
+//   focus_request(id)   give `id` the keyboard from the next frame (nil:
+//                       nobody); the last request in a frame wins
+//   shortcut(chord)     whether `chord` ("cmd+z", "escape", "alt+shift+up")
+//                       was pressed this frame and is the app's: the widget
+//                       with the keyboard does not claim it
+//   shortcut(chord, id) whether it was pressed while `id` has the keyboard
+//
+// A press on a rect that declared `{text: true}` or `{focus: true}` (see
+// `interact`) gives it the keyboard on that same frame; every text field
+// declares `text`. A press anywhere else takes the keyboard away, unless it
+// lands on a layer above the focused widget (a menu opened from a field).
+//
+// A widget that takes text claims every key without Cmd/Ctrl and the
+// editing chords (Cmd+A/C/X/V/Z…), so `shortcut("v")` is quiet while the
+// user types and `shortcut("cmd+s")` is not. In a chord, `cmd` is Cmd or
+// Ctrl, and the modifiers must match exactly.
+//
+// The older registry below threads a record by hand (`state fc =
+// focus_state()`, `fc` in and `.focus` out of every field). It still works:
+// `focus_set` and `focus_clear` also make a `focus_request`, so the
+// runtime's focus follows it. An id there is any value you compare with ==;
+// only a string or an int reaches the runtime.
+
+native fn _ui_focus() = "ui_focus"
+native fn _ui_focus_request(id) = "ui_focus_request"
+native fn _ui_shortcut(chord, scope?) = "ui_shortcut"
+
+pub fn has_focus(id)
+  id != nil && _ui_focus() == str(id)
+end
+
+pub fn focus_owner()
+  _ui_focus()
+end
+
+pub fn focus_request(id)
+  _ui_focus_request(id)
+end
+
+pub fn shortcut(chord)
+  _ui_shortcut(chord)
+end
+
+pub fn shortcut(chord, id)
+  _ui_shortcut(chord, id)
+end
 
 pub fn focus_state()
   {id: ""}
@@ -2692,10 +2768,12 @@ pub fn focused(fc, id)
 end
 
 pub fn focus_set(fc, id)
+  _ui_focus_request(id)
   {id: id}
 end
 
 pub fn focus_clear(fc)
+  _ui_focus_request(nil)
   {id: ""}
 end
 
@@ -3130,7 +3208,7 @@ pub fn text_field_update(fc, id, r, buf, style)
     anchor = caret
   end
   let pointer = _get(style, "pointer", true)
-  let pressed = pointer && _hot(r, id) && mouse_pressed(0)
+  let pressed = _hot_text(r, id, pointer) && mouse_pressed(0)
   if !pressed && pointer && mouse_pressed(0) && focused(fc, id) && !pointer_captured(ui_layer()) then
     // A press somewhere else takes the focus away, as in every desktop
     // toolkit — unless something on a higher layer (a popup, a menu opened
@@ -3409,7 +3487,7 @@ pub fn text_area_update(fc, id, r, buf, style)
   let ox = r.x + inset
   let oy = r.y + inset - scroll
   let pointer = _get(style, "pointer", true)
-  let hot = pointer && _hot(r, id)
+  let hot = _hot_text(r, id, pointer)
   let pressed = hot && mouse_pressed(0)
   if !pressed && pointer && mouse_pressed(0) && focused(fc, id) && !pointer_captured(ui_layer()) then
     // A press elsewhere takes the focus away, as in `text_field_update`.

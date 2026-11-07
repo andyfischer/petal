@@ -4528,8 +4528,12 @@ pub fn number_field(fc, id, r, value, style)
     if tip != "" then tooltip(r, tip) end
   end
   if out != value then
-    if style["min"] != nil then out = max(out, style["min"]) end
-    if style["max"] != nil then out = min(out, style["max"]) end
+    // `_get`, not `style["min"]`: a missing key is an error, and most
+    // fields have no bounds.
+    let lo = _get(style, "min", nil)
+    let hi = _get(style, "max", nil)
+    if lo != nil then out = max(out, lo) end
+    if hi != nil then out = min(out, hi) end
   end
   {value: out, focus: focus, changed: out != value}
 end

@@ -137,6 +137,25 @@ fn number_field_scrubs_by_step_per_pixel_and_clamps() {
 }
 
 #[test]
+fn number_field_scrubs_without_bounds() {
+    // A style with no `min` or `max`: the clamp must not index them (a
+    // missing key is an error), which broke every editor's scrubbing.
+    let mut ui = ui("state fc = focus_state()\n\
+                     state v = 10.0\n\
+                     let res = number_field(fc, \"n\", {x: 10, y: 10, w: 80, h: 24}, v, {step: 1, places: 0})\n\
+                     fc = res.focus\n\
+                     v = res.value");
+    ui.mouse_move(40, 20);
+    ui.mouse_down(buttons::LEFT);
+    ui.frame().unwrap();
+    ui.mouse_move(46, 20);
+    ui.frame().unwrap();
+    assert_eq!(ui.state_float("v"), Some(16.0));
+    ui.mouse_up(buttons::LEFT);
+    ui.frame().unwrap();
+}
+
+#[test]
 fn number_field_types_on_double_click() {
     let mut ui = ui(NUMBER);
     double_click(&mut ui, 40, 20);

@@ -35,6 +35,20 @@
 //! released inside, having been pressed inside — does not have that leak,
 //! because by the release the registry knows about the new panel.
 //!
+//! # One owner
+//!
+//! Overlapping rects on the *same* layer used to be hot together: a list
+//! row and the button drawn over it both took the hover and the click. Now
+//! the pointer has one owner, the rect **in front** under it: the highest
+//! layer, and on that layer the one registered last (the prelude's widgets
+//! register as they draw, so the last is the one drawn on top). [`roll`]
+//! binds the open rows under the pointer as [`SYM_UI_UNDER`]; a probe whose
+//! rect is among them is hot only if it is their front one. A press belongs
+//! to the front row of its snapshot in the same way: only that rect is
+//! `down` and gets the `click`. A rect the registry does not know (new this
+//! frame, or moved) is answered as before, by the pointer and the floor.
+//! Non-blocking targets (`ui_target`) are never owners.
+//!
 //! # Who a press belongs to
 //!
 //! `click` also needs the rect to have been *there* when the button went
@@ -92,6 +106,11 @@ pub const SYM_PRESS_Y: &str = "press_y";
 /// of registry rows, or `nil` when there is nothing to check against. See
 /// "Who a press belongs to" above.
 pub const SYM_PRESS_TARGETS: &str = "ui_press_targets";
+
+/// Binding holding the rows of last frame's registry under the pointer now,
+/// open to it (not below the floor), in registration order: the last row on
+/// the highest layer is the **owner**, the one in front. See "One owner".
+pub const SYM_UI_UNDER: &str = "ui_under";
 
 /// Binding: the press frame's own registrations still have to be added to
 /// [`SYM_PRESS_TARGETS`] on the next roll.
@@ -238,6 +257,13 @@ pub fn roll(env: &mut Env, input: &InputState) {
     let floor = floor_of(&registry, input.mouse_x as f64, input.mouse_y as f64);
     let floor_sym = env.intern_symbol(SYM_UI_FLOOR);
     env.set_binding(floor_sym, floor.map_or(Value::Nil, Value::Int));
+    let under: Vec<Value> = press_rows(&registry, input.mouse_x as f64, input.mouse_y as f64)
+        .iter()
+        .map(|t| encode_row(env, t))
+        .collect();
+    let under = Value::List(env.heap_mut().alloc_list(under));
+    let under_sym = env.intern_symbol(SYM_UI_UNDER);
+    env.set_binding(under_sym, under);
     let (px, py) = input.last_press();
     let s = env.intern_symbol(SYM_PRESS_X);
     env.set_binding(s, Value::Int(px as i64));
@@ -265,7 +291,7 @@ fn press_rows(registry: &[Target], px: f64, py: f64) -> Vec<Target> {
     let floor = floor_of(registry, px, py);
     registry
         .iter()
-        .filter(|t| !t.modal && t.contains(px, py) && floor.is_none_or(|f| t.layer >= f))
+        .filter(|t| !t.modal && t.blocks && t.contains(px, py) && floor.is_none_or(|f| t.layer >= f))
         .cloned()
         .collect()
 }
@@ -342,6 +368,18 @@ pub fn targets(env: &mut Env) -> Vec<Target> {
         }
         _ => Vec::new(),
     }
+}
+
+/// Who has the pointer for the frame about to run: the rect in front under
+/// it in the rolled registry ("One owner"), or `None` over nothing. What
+/// "why didn't my click land" starts from.
+pub fn pointer_owner(env: &mut Env) -> Option<Target> {
+    let sym = env.intern_symbol(SYM_UI_UNDER);
+    let rows = match env.binding(sym) {
+        Some(Value::List(id)) => env.heap().get_list(id).to_vec(),
+        _ => return None,
+    };
+    front(&decode_rows(&rows, env.heap())).cloned()
 }
 
 /// The target registered under `id` by the most recent run — the last one, if
@@ -527,20 +565,47 @@ struct Probe {
     click: bool,
 }
 
-/// Whether the press snapshot holds this rect: a row on `layer` with the same
-/// rect (to half a pixel) or, when the rect has one, the same id. No
-/// snapshot: every rect does.
-fn held_at_press(state: &mut PetalCxt, r: &[f64; 4], layer: i64, id: Option<&str>) -> bool {
-    let rows = match state.binding_named(SYM_PRESS_TARGETS) {
-        Value::List(list) => state.heap().get_list(list).to_vec(),
-        _ => return true,
-    };
+/// Whether registry row `t` is this rect: on `layer`, with the same rect (to
+/// half a pixel) or, when the rect has one, the same id.
+fn is_row(t: &Target, r: &[f64; 4], layer: i64, id: Option<&str>) -> bool {
     let near = |a: f64, b: f64| (a - b).abs() <= 0.5;
-    decode_rows(&rows, state.heap()).iter().any(|t| {
-        t.layer == layer
-            && ((near(t.x, r[0]) && near(t.y, r[1]) && near(t.w, r[2]) && near(t.h, r[3]))
-                || (id.is_some() && t.id.as_deref() == id))
-    })
+    t.layer == layer
+        && ((near(t.x, r[0]) && near(t.y, r[1]) && near(t.w, r[2]) && near(t.h, r[3]))
+            || (id.is_some() && t.id.as_deref() == id))
+}
+
+/// The row in front: the highest layer, and the last registered on it.
+pub fn front(rows: &[Target]) -> Option<&Target> {
+    let top = rows.iter().map(|t| t.layer).max()?;
+    rows.iter().rev().find(|t| t.layer == top)
+}
+
+/// Where a rect stands among some rows (the pointer's, or the press's).
+#[derive(Clone, Copy, PartialEq)]
+enum Standing {
+    /// No rows to judge by (no snapshot): every rect may have it.
+    NoRows,
+    /// The rect is not among them (new this frame, or moved).
+    Absent,
+    /// Among them, and the one in front: the owner.
+    Owner,
+    /// Among them, behind another.
+    Behind,
+}
+
+fn standing(state: &mut PetalCxt, name: &str, r: &[f64; 4], layer: i64, id: Option<&str>) -> Standing {
+    let rows = match state.binding_named(name) {
+        Value::List(list) => state.heap().get_list(list).to_vec(),
+        _ => return Standing::NoRows,
+    };
+    let rows = decode_rows(&rows, state.heap());
+    if !rows.iter().any(|t| is_row(t, r, layer, id)) {
+        return Standing::Absent;
+    }
+    match front(&rows) {
+        Some(t) if is_row(t, r, layer, id) => Standing::Owner,
+        _ => Standing::Behind,
+    }
 }
 
 /// The shared arguments `(rect, layer, clip, floor, [id])` → the answers.
@@ -555,7 +620,20 @@ fn probe(state: &mut PetalCxt, who: &str) -> Result<Probe, String> {
     };
     let px = binding_num(state, SYM_MOUSE_X).unwrap_or(0.0);
     let py = binding_num(state, SYM_MOUSE_Y).unwrap_or(0.0);
-    let hover = open && inside(&r, px, py);
+    let id = if state.arg_count() >= 5 {
+        match state.get_value(5)? {
+            Value::String(s) => Some(state.heap().get_string(s).to_string()),
+            Value::Int(n) => Some(n.to_string()),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let id = id.as_deref();
+    // One owner: a rect behind another under the pointer is not hot.
+    let hover = open
+        && inside(&r, px, py)
+        && standing(state, SYM_UI_UNDER, &r, layer, id) != Standing::Behind;
     let pressed = hover && binding_has(state, SYM_BUTTONS_PRESSED, 0);
     // Where the press landed decides who holds it — so a held button stays
     // `down` when the pointer slides off, and a release elsewhere is no click.
@@ -567,23 +645,20 @@ fn probe(state: &mut PetalCxt, who: &str) -> Result<Probe, String> {
         // A host that binds no press point: fall back to where the pointer is.
         _ => inside(&r, px, py),
     };
-    let down = open && press_in && binding_has(state, SYM_BUTTONS_DOWN, 0);
-    let released = hover && binding_has(state, SYM_BUTTONS_RELEASED, 0);
-    // A click is the release of a press this rect held: it was there, under
-    // the press point, when the button went down — not a row that appeared
-    // there since (the panel the press opened).
-    let click = released && press_in && {
-        let id = if state.arg_count() >= 5 {
-            match state.get_value(5)? {
-                Value::String(s) => Some(state.heap().get_string(s).to_string()),
-                Value::Int(n) => Some(n.to_string()),
-                _ => None,
-            }
-        } else {
-            None
-        };
-        held_at_press(state, &r, layer, id.as_deref())
+    // The press belongs to the rect in front under it, among the rects that
+    // were there when it went down.
+    let at_press = if press_in {
+        standing(state, SYM_PRESS_TARGETS, &r, layer, id)
+    } else {
+        Standing::Absent
     };
+    let down = open && press_in && at_press != Standing::Behind && binding_has(state, SYM_BUTTONS_DOWN, 0);
+    let released = hover && binding_has(state, SYM_BUTTONS_RELEASED, 0);
+    // A click is the release of a press this rect held: it was there, in
+    // front under the press point, when the button went down — not a row
+    // that appeared there since (the panel the press opened), and not one
+    // behind it.
+    let click = released && press_in && matches!(at_press, Standing::Owner | Standing::NoRows);
     Ok(Probe {
         hover,
         down,

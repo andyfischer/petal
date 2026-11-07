@@ -172,9 +172,22 @@ before their cover. `speculate` is not needed.
   - The kit's button is now `menu_button`.
   - The same bug had been sending studio's 4-argument `stepper` call to
     ui's `stepper`.
-- **Phase 1: `dispatch` for the pointer.** Build it in `hit::roll`, move
-  `interact` and `ui_probe` onto it, and run the invariants. All of
-  petal-ui's tests, the gallery and the D2 kanban must pass unchanged.
+- **Phase 1 (done 2026-11-07): one owner for the pointer.**
+  - What shipped: `hit::roll` binds the open rows under the pointer
+    (`ui_under`) in registry order. The rect in front (the highest layer,
+    then the one registered last) is the owner. Only the owner is hot.
+  - Presses: `down` and `click` go to the front row of the press snapshot.
+    So a button over a list row takes its click alone. Before, both fired,
+    because same-layer rects did not block each other.
+  - A rect missing from last frame's registry (new or moved) is answered
+    as before. `hit::pointer_owner` and `Headless::pointer_owner` report
+    the owner.
+  - Not done yet: the whole `dispatch` record (keys, focus, dismissal) is
+    Phase 2's. The same-frame tap keeps its fallback.
+  - petal-design's canvas picks nodes by its own hit test, not by
+    registered rects. A plain click on a gallery page now goes through
+    `<section>` and `<phone_row>` to the phone or note in front, where it
+    used to pick the whole section behind them.
 - **Phase 2: keys and focus.** Add `wants`, `shortcut` and
   `focus_request`, routing in roll, and the `focus_state` shim.
 - **Phase 3: `popover`.** Port `context_menu` and `dropdown` onto it.

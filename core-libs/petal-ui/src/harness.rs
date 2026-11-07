@@ -263,6 +263,12 @@ impl Headless {
         self.click(x, y)
     }
 
+    /// The rect in front under the pointer, which alone is hot and takes a
+    /// press (`hit::pointer_owner`), as of the last input bound.
+    pub fn pointer_owner(&mut self) -> Option<crate::hit::Target> {
+        crate::hit::pointer_owner(&mut self.core.env)
+    }
+
     pub fn click(&mut self, x: i32, y: i32) -> Result<&[DrawCommand], String> {
         self.mouse_move(x, y);
         self.mouse_down(input::buttons::LEFT);

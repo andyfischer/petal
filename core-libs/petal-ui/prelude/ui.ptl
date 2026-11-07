@@ -740,9 +740,10 @@ end
 // itself opened, sitting where the press landed, gets `released` but no
 // `click`.
 //
-// Rects on the *same* layer do not block each other: two overlapping buttons
-// on one layer are both hot, as they always were. Put the one on top on a
-// higher layer.
+// Of overlapping rects, only the one in front has the pointer: the highest
+// layer, then the one registered last on it (drawn on top). A button over a
+// list row takes its click alone (core-libs/petal-ui/src/hit.rs, "One
+// owner").
 //
 // `hovered(r)` and `clicked(r)` are the raw tests — the pointer and the rect,
 // nothing else. Every widget in this file uses the layered ones.

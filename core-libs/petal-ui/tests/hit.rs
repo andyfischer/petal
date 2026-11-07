@@ -175,17 +175,58 @@ fn a_rect_on_a_higher_layer_takes_the_pointer_from_the_one_below() {
     assert!(flag(&ui, "under_hover"), "uncovered again a frame later");
 }
 
-/// Rects on one layer do not block each other — what overlapping widgets
-/// have always done.
+/// Overlapping rects on one layer: the pointer has one owner, the rect in
+/// front (registered last). The one behind is not hot where they overlap,
+/// and is hot again where it is alone. (On the first frame nothing is
+/// registered yet, and both answer by the pointer alone.)
 #[test]
-fn rects_on_the_same_layer_are_both_hot() {
+fn of_overlapping_rects_on_one_layer_only_the_front_one_is_hot() {
     let mut ui = ui("state a = false\nstate b = false\n\
                      a = ui_hot(rect(0, 0, 100, 100))\n\
                      b = ui_hot(rect(50, 50, 100, 100))");
     ui.mouse_move(60, 60);
     ui.frame().unwrap();
     ui.frame().unwrap();
-    assert!(flag(&ui, "a"));
+    assert!(!flag(&ui, "a"), "behind");
+    assert!(flag(&ui, "b"), "in front");
+    assert_eq!(ui.pointer_owner().map(|t| (t.x, t.y)), Some((50.0, 50.0)), "the host sees the owner");
+    ui.mouse_move(20, 20);
+    ui.frame().unwrap();
+    assert!(flag(&ui, "a"), "alone");
+    assert!(!flag(&ui, "b"));
+}
+
+/// A button drawn over a list row: the click is the button's alone, and a
+/// click on the rest of the row is the row's.
+#[test]
+fn a_click_on_a_button_over_a_row_is_the_button_s_alone() {
+    let mut ui = ui("state row = 0\nstate btn = 0\n\
+                     if interact(rect(0, 0, 200, 24), \"row\").click then row = row + 1 end\n\
+                     if interact(rect(170, 2, 20, 20), \"x\").click then btn = btn + 1 end");
+    ui.frame().unwrap();
+    ui.click(180, 12).unwrap();
+    ui.frame().unwrap();
+    assert_eq!(ui.state_int("btn"), Some(1));
+    assert_eq!(ui.state_int("row"), Some(0), "the row behind the button");
+    ui.click(40, 12).unwrap();
+    ui.frame().unwrap();
+    assert_eq!(ui.state_int("row"), Some(1));
+    assert_eq!(ui.state_int("btn"), Some(1));
+}
+
+/// Held: only the front rect is `down`, even when the pointer slides off.
+#[test]
+fn only_the_front_rect_holds_a_press() {
+    let mut ui = ui("state a = false\nstate b = false\n\
+                     a = interact(rect(0, 0, 100, 100)).down\n\
+                     b = interact(rect(50, 50, 100, 100)).down");
+    ui.mouse_move(60, 60);
+    ui.frame().unwrap();
+    ui.mouse_down(0);
+    ui.frame().unwrap();
+    ui.mouse_move(10, 10);
+    ui.frame().unwrap();
+    assert!(!flag(&ui, "a"));
     assert!(flag(&ui, "b"));
 }
 

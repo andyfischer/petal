@@ -366,6 +366,10 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   [Unary minus](docs/syntax/commas.md#unary-minus)).
 
 ### Fixed
+- Of overlapping rects on one layer, only the one in front (registered
+  last) is hot, is `down` and gets the `click`. They were all hot, so a
+  button drawn over a list row clicked the row too. `hit::pointer_owner`
+  and `Headless::pointer_owner` say which rect has the pointer.
 - A function with default parameters wins every argument count it takes
   when it joins an imported overload set. Only its full count replaced the
   import's, so the kit's `dropdown(r, label, id, opts = {})` lost

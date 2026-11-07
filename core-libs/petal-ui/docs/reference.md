@@ -123,9 +123,14 @@ A layer orders two things:
 - **Drawing.** The host draws lower layers first, and within a layer in the
   order drawn. A tooltip drawn in the middle of a frame on a high layer still
   comes out on top.
-- **The pointer.** A rect is hot only if nothing registered on a higher layer
-  is under the pointer and no higher layer is modal. Rects on the *same* layer
-  do not block each other.
+- **The pointer.** It has one owner: the rect **in front** under it. That
+  is the highest layer with a registered rect there (unless a higher layer
+  is modal), and on that layer the rect registered last, which is the one
+  drawn on top. Only the owner is hot, is `down` for a press, and gets the
+  `click`. So a button drawn over a list row takes its click alone, and the
+  row takes clicks on the rest of it. A rect that was not registered last
+  frame (new, or moved) is answered by the pointer and the layers alone
+  until it is.
 
 ```petal
 // A panel over the world. Its background takes the pointer; the world only

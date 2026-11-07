@@ -528,8 +528,12 @@ The rules:
   precedence order is [the tier order](../module-system.md#which-name-wins): the
   core prelude (`std`) < the file's plain imports
   < its selective imports < its own declarations.
+- **A variant with defaults counts at every argument count it takes.**
+  `fn dropdown(r, label, id, opts = {})` takes 3 and 4 arguments, so it wins
+  both counts over an imported `dropdown(r, options, current)` and
+  `dropdown(r, options, current, style)`, not only the 4.
 - **Two plain imports are the same tier**, so neither outranks the other.
-  Their sets merge when no arity is defined by both — with a compile-check warning
+  Their sets merge when no argument count reaches both (a default counts) — with a compile-check warning
   at each call through the merged name — and a shared arity makes the bare
   name ambiguous, an error where it is called. A module that itself imports
   the other one wins outright instead: its set already merged the other's

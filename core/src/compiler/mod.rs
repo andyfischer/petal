@@ -1509,15 +1509,22 @@ impl Compiler {
     }
 
     /// One overload set over every offer, when all of them are function sets
-    /// and no two define the same arity. `None` otherwise.
+    /// and no argument count reaches two of them. `None` otherwise. A variant
+    /// with defaults takes every count from its required parameters up, so
+    /// `f(a, b = 1)` and another module's `f(a)` share the count 1.
     fn merge_disjoint_sets(&mut self, name: &str, from: &[(String, TermId)]) -> Option<TermId> {
         let mut by_arity: std::collections::BTreeMap<usize, TermId> = Default::default();
+        let mut taken: HashSet<usize> = HashSet::new();
         for (_, tid) in from {
             let (_, variants) = self.overload_view(*tid)?;
             for (arity, variant) in variants {
-                if by_arity.insert(arity, variant).is_some() {
-                    return None;
+                let optional = self.optional_params(variant);
+                for count in arity.saturating_sub(optional)..=arity {
+                    if !taken.insert(count) {
+                        return None;
+                    }
                 }
+                by_arity.insert(arity, variant);
             }
         }
         let members: Vec<TermId> = by_arity.values().copied().collect();

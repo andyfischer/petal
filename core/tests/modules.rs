@@ -1121,3 +1121,30 @@ fn a_loose_file_named_like_a_package_is_a_different_module() {
     let names: Vec<String> = env.module_manifest(pid).into_iter().map(|m| m.name).collect();
     assert!(names.contains(&"json.ptl".to_string()), "{names:?}");
 }
+
+#[test]
+fn a_function_with_defaults_wins_every_count_it_takes_over_an_import() {
+    // kit's `dropdown(r, label, id, opts = {})` beside ui's
+    // `dropdown(r, options, current)` and `dropdown(r, options, current, style)`.
+    // The kit's takes 3 and 4 arguments, so it must win both counts: the
+    // merge used to replace only arity 4, and a 3-argument call ran ui's
+    // select widget (petal-design's toolbar opened its View menu every frame).
+    let ui = "pub fn dd(r, o, c)\n  dd(r, o, c, {})\nend\npub fn dd(r, o, c, s)\n  \"ui\"\nend";
+    let kit = "import ui\npub fn dd(r, l, i, o = {})\n  \"kit\"\nend";
+    let calls = "print(dd(1, 2, 3))\nprint(dd(1, 2, 3, 4))";
+    check_output(&[("ui", ui), ("kit", kit)], &format!("import kit\n{calls}"), &["kit", "kit"]);
+    check_output(&[("ui", ui), ("kit", kit)], &format!("import ui\nimport kit\n{calls}"), &["kit", "kit"]);
+    // A file's own declaration, likewise.
+    check_output(&[("ui", ui)], &format!("import ui\nfn dd(r, l, i, o = {{}})\n  \"own\"\nend\n{calls}"), &["own", "own"]);
+    // An arity below the defaulted range still reaches the import.
+    let ui3 = "pub fn dd(a)\n  \"ui1\"\nend\npub fn dd(r, o, c)\n  \"ui3\"\nend";
+    check_output(&[("ui", ui3)], "import ui\nfn dd(r, l, i, o = {})\n  \"own\"\nend\nprint(dd(1))\nprint(dd(1, 2, 3))", &["ui1", "own"]);
+}
+
+#[test]
+fn two_plain_imports_overlapping_through_a_default_are_ambiguous() {
+    let a = "pub fn f(x, y = 1)\n  \"a\"\nend";
+    let b = "pub fn f(x)\n  \"b\"\nend";
+    let msg = load_error(&[("a", a), ("b", b)], "import a\nimport b\nprint(f(1))");
+    assert!(msg.contains("ambiguous"), "{msg}");
+}

@@ -366,6 +366,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   [Unary minus](docs/syntax/commas.md#unary-minus)).
 
 ### Fixed
+- A function with default parameters wins every argument count it takes
+  when it joins an imported overload set. Only its full count replaced the
+  import's, so the kit's `dropdown(r, label, id, opts = {})` lost
+  3-argument calls to `ui`'s `dropdown(r, options, current)`. That opened
+  petal-design's View menu on every frame and swallowed every click. Two
+  plain imports whose counts overlap through a default are now ambiguous,
+  as an exact clash was.
 
 - A variant of a file's own overload set that calls its own name (the
   3-argument form forwarding to the 4-argument one) reaches the file's set

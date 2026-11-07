@@ -36,6 +36,12 @@ impl Compiler {
             .insert(tid, self.current_module.clone());
     }
 
+    /// How many trailing parameters of the closure `tid` have defaults: it
+    /// takes every argument count from `arity - optional` to `arity`.
+    pub(super) fn optional_params(&self, tid: TermId) -> usize {
+        self.overload_index.optional.get(&tid).copied().unwrap_or(0)
+    }
+
     /// Note an emitted overload set and the variants it joins.
     pub(super) fn record_fn_set(&mut self, tid: TermId, members: Vec<TermId>) {
         self.overload_index.members.insert(tid, members);
@@ -119,6 +125,15 @@ impl Compiler {
         let mut by_arity: std::collections::BTreeMap<usize, TermId> =
             outgoing.into_iter().collect();
         for (arity, tid) in &incoming_vars {
+            // A variant with defaults takes every count from its required
+            // parameters up to all of them, so it replaces the outgoing set's
+            // variants at each of those counts, not only at its full arity:
+            // kit's `dropdown(r, label, id, opts = {})` must win a 3-argument
+            // call over ui's `dropdown(r, options, current)`.
+            let optional = self.optional_params(*tid);
+            for covered in arity.saturating_sub(optional)..*arity {
+                by_arity.remove(&covered);
+            }
             by_arity.insert(*arity, *tid);
         }
         if by_arity.len() == incoming_vars.len() {

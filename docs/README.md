@@ -174,6 +174,7 @@ point-in-time status.
 | [IR Format Improvements](dev/ir-format-improvements-plan.md) | Audit of the token, AST, IR and bytecode dumps (shipped) |
 | [Experimental: IR-based Editing](dev/experimental-ir-based-editing.md) | An early, unfinished surface for building a program as IR data |
 | [Testbed Challenge](dev/testbed-challenge-plan.md) | The target list of panel apps for the Garden testbed, and which are built |
+| [Input dispatch](proposals/input-dispatch.md) | petal-ui input resolved once per frame as data: one owner per pointer event, key and focus; why the interaction regressions recur (proposed; Phase 0 done) |
 | [Improved automation](plan/improved-automation-ideas.md) | Idea: a scripted automated user, and one automation system under it (not started) |
 | [Aspirational ideas](aspirational-ideas/README.md) | Design sketches of how goal-level features should feel to use |
 

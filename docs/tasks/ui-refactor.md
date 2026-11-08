@@ -8,6 +8,91 @@ cleanups are done. It comes from a review of `core-libs/` against [docs/skills/p
 Check the current tree before acting on any item; the numbers below are from
 that date.
 
+## Remaining items
+
+This list tracks what is left of this plan, and of the work done alongside it
+on 2026-11-08: sub-pixel draw coordinates, item 1 of
+[website-improvement-ideas.md](website-improvement-ideas.md).
+
+### Owner decisions
+
+- [ ] **R2 move.** Decide whether to move the tooling into its own crate
+  anyway. The new crate would depend on `petal-ui`, and downstream would change
+  `petal_ui::harness` and the other tooling paths at its next re-vendor. See R2.
+- [ ] **`panel_stubs` home.** Either Garden exports its own stubs, or
+  `panel_stubs` is documented as a general "fake panel host". Cheesecake (22
+  uses) and worlds-fair depend on it.
+- [ ] **R4.** Decide whether `ui` or `bloom` owns the widgets. Decide before
+  many more widgets go into `ui/widgets`.
+
+### Follow-ups from R1–R3
+
+- [ ] **`ui::` qualifiers changed with R1.** Module-qualified names now follow
+  the file: `ui/widgets::button`, `ui/layout::ease_out`, `ui/_frame::_floor`.
+  This affects state-map keys, `Env::call_function` names and the "needs native
+  fns" load error. A state map saved by an older binary loses the prelude's
+  internal state, for example the theme set by `theme_set`. No downstream use
+  of the old names was found. To get `ui::` back, core would need a
+  package-level display name for internal modules.
+- [ ] **Memo misses on large `text_wrap` results.** Once a result is longer
+  than about 128 rows, it exceeds `ARG_COMPARE_BUDGET` (512), fails validation
+  every frame and wraps again. At 100k chars, `text_area` takes 13.3 ms with
+  memo on and 1.8 ms with it off. See the benchmark under "Moving native code
+  into Petal".
+- [ ] **Make the Petal wrap the specification.** Promote
+  `test/benchmarks/text_wrap/wrap_ref.ptl` to `wrap_rows_reference`, in
+  `text-layout` or `ui/text`. Turn the 880-case equivalence pass into a test
+  that checks it against the native `wrap_rows`. The native fast path stays.
+  The plan's premise was also wrong: `text-layout` already calls the natives,
+  so there is no second implementation to merge.
+- [ ] **CI.** Neither `core-libs/petal-ui`'s tests nor `test/ui-corpus`
+  (`make test-ui-corpus`) run in `.github/workflows/ci.yml`. `static_reload` and
+  `static_cache` take several minutes each.
+- [ ] **Hosts that could drop the tooling.** These could depend on `petal-ui`
+  with `default-features = false`: `integrations/petal-desktop-sdl`,
+  `integrations/petal-web-canvas/rust`, `garden/garden-web`,
+  `examples/custom-apps/petal-fps` and `examples/custom-apps/petal-fantasy-nes`.
+  None of them has been changed.
+- [ ] **Doc links without the feature.** `cargo doc --no-default-features`
+  gives 5 unresolved intra-doc links to `harness`, `scenario` and `Headless`,
+  in `lib.rs`, `frame_core.rs` and `host_data.rs`.
+- [ ] **Stale `test/ui-golden/index.json`.** It has 70 hash mismatches and 37
+  apps with no entry. This was already the case at `a7c3b453`; it was not
+  re-baselined.
+
+### Sub-pixel draw coordinates
+
+These are follow-ups to ebbd6ab7, 1c7c0d73, 476d264e and d6691da4. The contract
+is in `core-libs/petal-ui/docs/host-contract.md` under "Sub-pixel coordinates".
+
+- [ ] **Use it on petal-lang.org.** This means changing `~/biz/petal-lang.org`;
+  `build:sdk` itself needs no change.
+  - Rebuild the wasm with `build-wasm.sh`, then run `npm run build:sdk`.
+  - In `frontend/src/lib/petal/loader.ts`, add `take_draw_buffer_subpixel()`,
+    `draw_sub_indices()` and `PetalRuntime.with_subpixel(b)`. Then
+    `createRuntime` should call `with_subpixel(true)`.
+  - In `frontend/src/components/PetalCanvas.tsx`, use `decodeFrameCommands(…)`.
+  - Then drop Seedling's 2× offscreen-canvas workaround.
+- [ ] **Prelude helpers still use `int()`.** `layer()`, `snapshot()`,
+  `canvas()`, the record form `draw_canvas(id, at)` and `cached_layer`'s rect
+  stay on whole pixels even under `pixel_snap(false)`. They were left alone so
+  the memo and corpus records stay identical.
+- [ ] **Image smoothing under `pixel_snap(true)` on the web.** The renderer
+  can't tell which snap mode a command was drawn under. An image is `Px` both
+  in the default mode and under `pixel_snap(true)`, so smoothing can't be
+  turned off for pixel art. This needs a drain that also returns each
+  command's mode.
+- [ ] **SDL fill AA.** Polygon, ellipse and arc fills use the non-antialiased
+  scanline filler. Fractional vertices move which pixels fill but add no edge
+  AA. `--subpixel` has not been tried in a live or HiDPI window.
+- [ ] **Docs.**
+  - The stdlib extractor still documents geometry args as `int`, not `number`.
+  - `docs/usage/building-apps.md` doesn't mention the new SDL `Host` methods:
+    `subpixel`, `present_frame` and `render_frame_image`.
+- [ ] **C bridge.** `PB_DRAW_CAP_SUBPIXEL = 4u` is reserved. If a C host ever
+  needs sub-pixel, add `pb_draw_cmd_f`, `pb_vm_drain_draw_f` and
+  `pb_abi_check_f` alongside the existing calls.
+
 ## Summary
 
 `gpp`, `petal-query` and `petal-pkgman` are fine. `petal-ui` is the problem,

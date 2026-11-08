@@ -2,7 +2,7 @@
 # Run `make` or `make help` to see the available targets.
 
 .DEFAULT_GOAL := help
-.PHONY: help build test test-examples test-c-bridge expensive_lint_tests prove clean
+.PHONY: help build test test-examples test-ui-corpus test-c-bridge expensive_lint_tests prove clean
 
 help: ## Show this help
 	@echo "Petal — make targets:"
@@ -17,6 +17,9 @@ test: build ## Run the full vitest suite (also runs every examples/console/*.ptl
 
 test-examples: build ## Print each example program's output for manual inspection
 	./tools/test-examples.ts
+
+test-ui-corpus: ## Run the core-feature tests over the panel corpus (frame gate, memo, static cache, effect audit, DM); see test/README.md
+	cd test/ui-corpus && cargo test
 
 test-c-bridge: ## Build petal-c-bridge (C/C++ embedding) with CMake + Ninja and run its tests
 	cmake -S integrations/petal-c-bridge -B integrations/petal-c-bridge/build -G Ninja
@@ -33,3 +36,4 @@ clean: ## Remove Rust build artifacts
 	cd core && cargo clean
 	cd cli && cargo clean
 	cd core-libs/petal-pkgman && cargo clean
+	cd test/ui-corpus && cargo clean

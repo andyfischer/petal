@@ -14,6 +14,7 @@ the refactor verifier — is in [docs/dev/testing.md](../docs/dev/testing.md).
 | `test/verify-plans/` | Plans for `tools/verify.ts` | see "Verifying a refactor" in testing.md |
 | `test/benchmarks/` | Programs timed at both optimization levels | `tools/bench-opts.ts` |
 | `test/benchmarks/harness/` | Rust measurement harnesses, declared as `[[example]]`s of the `core/` crate | `cd core && cargo run --release --example <name>`; see [scripts.md](../docs/dev/scripts.md) |
+| `test/ui-corpus/` | A cargo package of tests: core features that need a UI host (frame gate, memo, static-value cache, effect audit, direct manipulation) over the panel corpus | `make test-ui-corpus`; `cd test/ui-corpus && cargo test`; see below |
 
 ## Script regression cases
 
@@ -71,3 +72,33 @@ always run.
 2. Capture the current numbers: `cd cli && cargo run -- run --dup-stats ../test/my-case/main.ptl`.
 3. Write `test/my-case/expects` with the `out:` lines and `max` ceilings.
 4. `cd core && cargo test --test script_cases`.
+
+## test/ui-corpus
+
+The tests of core features that can only be exercised by running a UI app:
+the frame gate (`petal::run_deps`), memoized scopes (`petal::memo`), the
+static-value cache (`petal::static_cache` and its classifier, audit and
+reload), the native effect audit (`petal::effect_audit`) and direct
+manipulation (`petal::dm`). They drive apps through `petal_ui::harness::Headless`,
+so they depend on `petal-ui`, but they test `core/`, not `petal-ui`; the tests
+of `petal-ui` itself stay in `core-libs/petal-ui/tests/`.
+
+It is its own cargo package (not in a workspace), depending on `core/` and
+`core-libs/petal-ui/` by path, with the dependencies optimized in dev builds
+as in petal-ui so the suite stays under a minute or so.
+
+```sh
+make test-ui-corpus                      # or: cd test/ui-corpus && cargo test
+cd test/ui-corpus && cargo test --release --test dm_study ladder -- --nocapture
+```
+
+| File | What it holds |
+|------|---------------|
+| `tests/common/mod.rs` | The corpus: every `examples/{productivity,dashboards,games,ui}/*/app.ptl` plus Garden's panels and GPP apps, and the parallel driver over it |
+| `tests/gating.rs` | The frame gate's semantics, and gate on vs off over the corpus |
+| `tests/memo.rs` | Memoized scopes' semantics, and memo on vs off over the corpus |
+| `tests/effect_audit.rs` | Every native's observed effects against its declared row, over the corpus |
+| `tests/static_classify.rs`, `static_audit.rs` | The static-value classifier against what the corpus computes |
+| `tests/static_cache.rs`, `static_in_functions.rs`, `static_reload.rs` | The static-value cache on vs off, inside function bodies, and across hot reloads |
+| `tests/dm_spec.rs`, `dm_params.rs` | Direct manipulation v2 acceptance items that need a UI host |
+| `tests/dm_study.rs` | The DM v2 examples ladder and complexity study (`--release`; see [direct-manipulation-v2-study.md](../docs/dev/direct-manipulation-v2-study.md) §7) |

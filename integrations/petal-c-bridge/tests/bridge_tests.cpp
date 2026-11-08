@@ -942,6 +942,46 @@ TEST(a_command_that_changes_a_class_in_the_run_invalidates_its_readers) {
     }
 }
 
+// The same for host data in general (pb_call_note_class_changed with
+// PB_FX_READS_HOST_DATA): an existence check such as `mesh_exists` is a read,
+// not an effect, so a helper that only checks replays; a create later in the
+// run that changes its answer bumps host data at once, so a scope that
+// checked before it is not replayed with the old answer.
+TEST(a_native_that_changes_host_data_in_the_run_invalidates_its_readers) {
+    for (const bool memo : {false, true}) {
+        petal::Vm vm;
+        int64_t made = 0, asked = 0;
+        vm.native("make", petal::fx::Effect, [&](petal::Call& c) {
+            ++made;
+            CHECK(c.note_class_changed(petal::fx::ReadsHostData));
+        });
+        vm.native("count", petal::fx::ReadsHostData | petal::fx::Contained, [&](petal::Call& c) {
+            ++asked;
+            c.result().value(made);
+        });
+        vm.load_source(
+            "import io\n"
+            "native fn make()\nnative fn count()\n"
+            "state n = 0\n"
+            "n += 1\n"
+            "fn show(tag)\n  push_output(symbol(\"out\"), float(count()))\n  nil\nend\n"
+            "show(1)\n"
+            "if n == 2 || n == 3 then make() end\n"
+            "show(2)\n");
+        vm.set_memo(memo);
+        for (int f = 1; f <= 6; ++f) {
+            const int64_t before = asked;
+            const double now = double(f >= 3 ? 2 : f >= 2 ? 1 : 0);
+            const double then = double(f >= 4 ? 2 : f >= 3 ? 1 : 0);
+            CHECK_EQ(run_out(vm), (std::vector<double>{then, now}));
+            // From frame 5 on nothing is made and both records are newer
+            // than the last change: both shows replay.
+            if (memo && f >= 5) CHECK_EQ(asked, before);
+            if (!memo) CHECK_EQ(asked, before + 2);
+        }
+    }
+}
+
 TEST(implicit_keys_reach_keyed_emitters_and_callbacks) {
     petal::Vm vm;
     std::vector<std::optional<uint64_t>> lights, kicks;

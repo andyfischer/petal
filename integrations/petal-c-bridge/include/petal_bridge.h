@@ -595,8 +595,11 @@ bool pb_call_location(pb_call* call, const char** out_file, uint32_t* out_line, 
  * makes the enclosing memo scope unrecordable. */
 bool pb_call_key(pb_call* call, uint64_t* out_key);
 /* Inside a callback: this call changed the host data of the revisioned
- * classes in `reads` (PB_FX_READS_PHYSICS, PB_FX_READS_NET; other bits are
- * ignored), as pb_vm_note_class_changed says between runs. The class's
+ * classes in `reads` (PB_FX_READS_PHYSICS, PB_FX_READS_NET), as
+ * pb_vm_note_class_changed says between runs, or host data in general
+ * (PB_FX_READS_HOST_DATA, as pb_vm_note_host_data_changed: an asset created,
+ * so an existence check made earlier answers differently); other bits are
+ * ignored. The class's
  * revision moves at once, so a memoized scope that read it earlier (in this
  * run or an earlier one) is not replayed with the old answer later in this
  * run; a run that read the class and changed it counts as not settled for

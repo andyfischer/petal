@@ -534,26 +534,29 @@ Backspace or Delete). Any widget claims the chords it listed in `keys`.
 So `shortcut("v")` and `shortcut("escape")` are quiet while the user types,
 and `shortcut("cmd+s")` still fires.
 
+The fields read this focus. Their first argument, `fc`, is the record the
+older API threads by hand; pass `nil`. A record passed there is only handed
+back as the result's `focus`, and `focused(fc, id)` is `has_focus(id)`.
+
 | Call | What it does |
 |---|---|
 | `shortcut(chord)` | Whether `chord` was pressed this frame and is the app's: the focused widget does not claim it. A chord is modifiers and a key name joined with `+`: `"cmd+shift+z"`, `"escape"`, `"alt+left"`. `cmd` is Cmd or Ctrl. The modifiers must match exactly. |
 | `shortcut(chord, id)` | Whether `chord` was pressed while `id` has the keyboard. |
 | `has_focus(id)`, `focus_owner()` | Whether `id` has the keyboard this frame; the id that has it (`""` for nobody). |
-| `focus_request(id)` | Give `id` the keyboard from the next frame (`nil`: nobody). The last request in a frame wins. |
+| `focus_request(id)` | Give `id` the keyboard from the next frame (`nil`: nobody). The rest of this run sees it already: `has_focus(id)` is true after the call. The last request in a frame wins. |
 | `focus_state()` | The record the older, threaded API keeps: `state fc = focus_state()`, passed into fields and assigned back from their `.focus`. |
-| `focused(fc, id)`, `focus_set(fc, id)`, `focus_clear(fc)` | Ask and change it. `focus_set` and `focus_clear` also make a `focus_request`, so the runtime's focus follows. |
-| `focus_next(fc, ids)`, `focus_prev(fc, ids)`, `focus_update(fc, ids)` | Move through a ring of ids; `focus_update` does Tab and Shift+Tab. |
+| `focused(fc, id)`, `focus_set(fc, id)`, `focus_clear(fc)` | The older names: `has_focus(id)`, and `focus_request` returning a record. |
+| `focus_next(fc, ids)`, `focus_prev(fc, ids)`, `focus_update(fc, ids)` | Move through a ring of ids from the one with the keyboard; `focus_update` does Tab and Shift+Tab. `fc` may be `nil`. |
 | `text_field(fc, id, r, buf, style?)` | A single-line editor with a caret, selection, clipboard and undo. Returns `{focus, text, caret, submitted, changed, blurred, cancelled, …}`: `blurred` on the frame after it lost the keyboard, `cancelled` when Escape was pressed in it. |
 | `text_field_update(fc, id, r, buf, style?)`, `draw_text_field(r, text, has, …)` | The two halves, for a field with its own chrome. |
 | `text_area(fc, id, r, buf, style?)` | A multi-line editor: wraps to its width, Return is a line break, the wheel scrolls it. Returns `{focus, text, caret, changed, sel_start, sel_end, scroll, overflow, rows, line_h, content_h, …}`. |
 | `text_area_update(fc, id, r, buf, style?)`, `draw_text_area(r, res, has, style?)` | Its two halves. |
 | `text_area_height(text, w, min_lines?, max_lines?, style?)` | The height that shows `text` in an area `w` wide, between 3 and 12 rows by default: a box that grows as it fills. |
 
-A press inside a field focuses it. A press anywhere else, while it has the
-focus, clears the focus in the `focus` it returns — unless something on a
-higher layer took the press (a popup opened from the field). So assign
-`res.focus` back every frame, and a click on the rest of the UI gives the
-keyboard back to it without wiring up Escape.
+A press inside a field focuses it. A press anywhere else takes the keyboard
+away, unless something on a higher layer took the press (a popup opened
+from the field), so a click on the rest of the UI ends the edit without
+wiring up Escape.
 
 `text_area` is `text_field` for text with line breaks, and shares its editing:
 the same selection by click, shift+click, drag, double click (a word) and
@@ -579,16 +582,15 @@ just added, whose placeholder text the next keystroke should replace).
 ```petal
 state notes = ""
 let h = text_area_height(notes, 320)
-let res = text_area(fc, "notes", rect(20, 80, 320, h), notes)
-fc = res.focus
+let res = text_area(nil, "notes", rect(20, 80, 320, h), notes)
 notes = res.text
 ```
 
 ### Inspector fields
 
-The controls of a property panel. The keyboard ones share the focus registry
-(`fc` in, `.focus` out) and apply only when an edit is done: Return, or the
-field losing the keyboard. Escape abandons the edit.
+The controls of a property panel. The keyboard ones take the keyboard from
+the runtime (pass `nil` for `fc`) and apply only when an edit is done:
+Return, or the field losing the keyboard. Escape abandons the edit.
 
 | Call | What it does |
 |---|---|

@@ -12,6 +12,14 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- petal-ui: the fields (`text_field`, `text_area`, `commit_field`,
+  `number_field`, `color_field`) take the keyboard from the runtime's
+  focus. Pass `nil` for their `fc`; a record passed there is only handed
+  back. `focused(fc, id)` is now `has_focus(id)`, and a `focus_request` is
+  seen by the rest of the run that made it, so a field opened and focused
+  in the same frame stays open. petal-design no longer threads `fc` or
+  keeps a `TYPING` flag: its shortcuts are `shortcut(chord)`
+  ([proposal](docs/proposals/input-dispatch.md), Phase 4).
 - petal-ui's `ui` package is split into modules behind an unchanged facade:
   `ui.ptl` is now a list of `pub import`s over `ui/draw`, `ui/hit`,
   `ui/text`, `ui/layout` and `ui/widgets` (plus `ui/input`, as before), which
@@ -36,7 +44,6 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
     `--version` export list does, and is unchanged).
   - `petal_ui::interface()` reads the native declarations of every module of
     the package.
-
 - A top-level `let X = tunable(…)` is a setting, exactly as `config let`
   was: hosts list it (`static_bindings`, the C bridge's
   `pb_source_bindings_json` with `"config": true` and `"range"`), the path

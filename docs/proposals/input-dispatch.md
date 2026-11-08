@@ -1,6 +1,6 @@
 # Proposal: Input dispatch, one owner per event (ID) for petal-ui
 
-Status: in progress, 2026-11-07. Phases 0 to 3 are done (see Phases).
+Status: in progress, 2026-11-08. Phases 0 to 4 are done (see Phases).
 
 ## Summary
 
@@ -238,9 +238,25 @@ before their cover. `speculate` is not needed.
     smaller screen, which moved the canvas off the scripted click points.
   - Not yet fixed: the SDL window host aborts on an event type the `sdl2`
     crate doesn't know (0x158, from SDL3 through sdl2-compat).
-- **Phase 4: port petal-design.** Delete its `fc` threading and `TYPING`,
-  and keep its GUI scenarios green. As with D2's kanban rule: if one real
-  editor does not port cleanly, stop and revise before Phase 5.
+- **Phase 4 (done 2026-11-08): port petal-design.** Delete its `fc`
+  threading and `TYPING`, and keep its GUI scenarios green. What shipped:
+  - The fields read the runtime focus. Their `fc` argument stays, so the
+    other editors keep working, but `nil` is fine and a record is only
+    handed back. `focused(fc, id)` is `has_focus(id)`.
+  - A `focus_request` is seen by the rest of the run that made it (a
+    top-level `var` in the prelude, made afresh each run). Without it, a
+    rename opened and focused in one frame read "not focused" and closed
+    on its first frame. `shortcut` still reads the focus the frame started
+    with, so a Return or Escape a field used is not also the app's.
+  - petal-design: no panel takes or returns `fc`; `TYPING`, the
+    top-of-script `focus_clear` and `menu_blocking` are gone; every
+    shortcut is `shortcut(chord)`. Space pans only from a Space press the
+    app owns. Studio's `commit_field` wrapper is `edit_field`, so its
+    argument counts don't overlap petal-ui's.
+  - It ported cleanly. All 39 GUI scenarios pass, plus a new one: keys
+    typed into a field (Backspace, Delete, R) are the field's.
+  - Phase 5 can drop `fc` from the field signatures once no caller passes
+    one.
 - **Phase 5: port the other editors** (images, movies, social) and Garden
   panels, and delete the shims.
 

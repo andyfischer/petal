@@ -169,3 +169,81 @@ fn a_bad_chord_is_an_error_not_a_quiet_false() {
     let err = ui.frame().unwrap_err();
     assert!(err.contains("not a chord"), "{err}");
 }
+
+// ── Fields that read the runtime's focus (no `fc`) ────────────────────────
+
+/// A field given `nil` for the old focus record, a request made on "f", and
+/// a rename opened on "n" that takes the keyboard as it shows.
+const RUNTIME_SRC: &str = r#"
+state buf = ""
+state before = false
+state after = false
+state renaming = false
+state renamed = ""
+let res = text_field(nil, "name", {x: 10, y: 10, w: 200, h: 24}, buf)
+buf = res.text
+before = has_focus("x")
+if key_pressed("f") then focus_request("x") end
+after = has_focus("x")
+if key_pressed("n") then renaming = true end
+if renaming then
+  let rn = commit_field(nil, "rn", {x: 10, y: 60, w: 200, h: 24}, "old", {start: true})
+  if rn.text != nil then
+    renamed = rn.text
+    renaming = false
+  end
+  if !has_focus("rn") then renaming = false end
+end
+"#;
+
+fn runtime_app() -> Headless {
+    let mut ui = Headless::with_ui(RUNTIME_SRC).unwrap_or_else(|e| panic!("compile failed: {e}"));
+    ui.frame().unwrap();
+    ui.frame().unwrap();
+    ui
+}
+
+fn flag(ui: &Headless, name: &str) -> bool {
+    ui.state().get(name).and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
+#[test]
+fn a_field_given_no_focus_record_takes_the_keyboard_from_the_runtime() {
+    let mut ui = runtime_app();
+    press(&mut ui, 50, 20);
+    assert_eq!(ui.focus(), "name");
+    ui.text("hi").unwrap();
+    ui.frame().unwrap();
+    assert_eq!(ui.state_string("buf").as_deref(), Some("hi"));
+    // A press on nothing takes the keyboard away.
+    press(&mut ui, 500, 500);
+    assert_eq!(ui.focus(), "");
+    ui.text("x").unwrap();
+    ui.frame().unwrap();
+    assert_eq!(ui.state_string("buf").as_deref(), Some("hi"));
+}
+
+#[test]
+fn a_request_is_seen_by_the_rest_of_the_run_that_made_it() {
+    let mut ui = runtime_app();
+    ui.key("f").unwrap();
+    assert!(!flag(&ui, "before"), "not before the request");
+    assert!(flag(&ui, "after"), "after it, in the same run");
+    ui.frame().unwrap();
+    assert_eq!(ui.focus(), "x");
+    assert!(flag(&ui, "before"), "the runtime has it from the next frame");
+}
+
+#[test]
+fn a_field_that_starts_focused_is_not_closed_on_the_frame_it_opens() {
+    let mut ui = runtime_app();
+    ui.key("n").unwrap();
+    assert!(flag(&ui, "renaming"), "the rename stays open on its first frame");
+    ui.frame().unwrap();
+    assert_eq!(ui.focus(), "rn");
+    ui.text("!").unwrap();
+    ui.key("return").unwrap();
+    ui.frame().unwrap();
+    assert_eq!(ui.state_string("renamed").as_deref(), Some("old!"));
+    assert_eq!(ui.focus(), "");
+}

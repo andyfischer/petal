@@ -295,22 +295,33 @@ end
 // user types and `shortcut("cmd+s")` is not. In a chord, `cmd` is Cmd or
 // Ctrl, and the modifiers must match exactly.
 //
-// The older registry below threads a record by hand (`state fc =
-// focus_state()`, `fc` in and `.focus` out of every field). It still works:
-// `focus_set` and `focus_clear` also make a `focus_request`, so the
-// runtime's focus follows it. An id there is any value you compare with ==;
-// only a string or an int reaches the runtime.
+// A request is seen by the rest of the run that made it: after
+// `focus_request("name")`, `has_focus("name")` is true for the rest of this
+// frame, and the runtime gives it the keyboard from the next.
+//
+// The fields (`text_field`, `commit_field`, `number_field`, ...) read the
+// runtime's focus. Their first argument is the older record a caller
+// threads by hand (`state fc = focus_state()`, `fc` in and `.focus` out of
+// every field); pass `nil` instead. A record passed there is only handed
+// back: `focused(fc, id)` is `has_focus(id)`, and `focus_set` and
+// `focus_clear` are `focus_request`. An id is a string or an int.
+
+// This run's last request, made afresh each run; `frame` guards a host that
+// keeps the module between frames.
+var _focus_now = {frame: -1, id: ""}
 
 pub fn has_focus(id)
-  id != nil && _ui_focus() == str(id)
+  id != nil && focus_owner() == str(id)
 end
 
 pub fn focus_owner()
-  _ui_focus()
+  let p = get _focus_now
+  if p.frame == frame_count() then p.id else _ui_focus() end
 end
 
 pub fn focus_request(id)
   _ui_focus_request(id)
+  set _focus_now = {frame: frame_count(), id: if id == nil then "" else str(id) end}
 end
 
 pub fn shortcut(chord)
@@ -326,25 +337,25 @@ pub fn focus_state()
 end
 
 pub fn focused(fc, id)
-  fc.id == id
+  has_focus(id)
 end
 
 pub fn focus_set(fc, id)
-  _ui_focus_request(id)
+  focus_request(id)
   {id: id}
 end
 
 pub fn focus_clear(fc)
-  _ui_focus_request(nil)
+  focus_request(nil)
   {id: ""}
 end
 
-// Position of `id` in the ordered list `ids`, or -1 if absent (so an unfocused
-// registry — id "" — reads as "before the first").
+// Position of the focused id in the ordered list `ids`, or -1 if absent (so
+// nothing focused reads as "before the first").
 fn _index_of(ids, id)
   let found = -1
   for i in range(0, len(ids)) do
-    if found < 0 && ids[i] == id then
+    if found < 0 && str(ids[i]) == id then
       found = i
     end
   end
@@ -357,7 +368,7 @@ pub fn focus_next(fc, ids)
   if len(ids) == 0 then
     fc
   else
-    let j = _index_of(ids, fc.id) + 1
+    let j = _index_of(ids, focus_owner()) + 1
     if j >= len(ids) then
       j = 0
     end
@@ -369,7 +380,7 @@ pub fn focus_prev(fc, ids)
   if len(ids) == 0 then
     fc
   else
-    let idx = _index_of(ids, fc.id)
+    let idx = _index_of(ids, focus_owner())
     let j = idx - 1
     if idx < 0 || j < 0 then
       j = len(ids) - 1

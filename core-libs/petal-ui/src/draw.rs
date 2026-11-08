@@ -1609,7 +1609,12 @@ fn native_draw_image(state: &mut PetalCxt) -> NativeResult {
     }
     args.push(Value::Int(opt_int(state, 6, 255)?));
     args.push(Value::Int(opt_int(state, 7, 0)?)); // radius
-    image_tail(state, &mut args)?;
+    // The extended tail (args 8–16) is optional: the call dispatches on its
+    // argument count. (Said here, not only in `image_tail`, so
+    // tools/extract-stdlib.ts still documents draw_image as variadic.)
+    if state.arg_count() >= 8 {
+        image_tail(state, &mut args)?;
+    }
     emit_draw(state, "image", args);
     state.push_nil();
     Ok(1)

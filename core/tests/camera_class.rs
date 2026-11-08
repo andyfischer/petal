@@ -295,3 +295,39 @@ twice(3)
     }
     assert_eq!(replays, 3, "the repeated frames replay");
 }
+
+/// A pure child re-executed during its parent's validation takes a branch
+/// that sets the camera and then reads it. The re-execution defers the
+/// command (its parent's replay or run issues it), so the read after it sees
+/// the camera from before: the record it leaves must not replay that answer
+/// once the command is issued.
+#[test]
+fn a_command_deferred_by_a_re_execution_does_not_leave_a_stale_read() {
+    const SRC: &str = r#"
+native fn cam_set(x)
+native fn cam_add(d)
+native fn proj(p)
+native fn inp()
+native fn put(v)
+
+fn aim(p)
+  if inp() > 1 then
+    cam_set(9)
+  end
+  put(proj(p))
+  nil
+end
+
+fn view(p)
+  aim(p)
+  nil
+end
+
+view(1)
+"#;
+    let mut off = world(SRC, false, Notes::InCall, Row::Command);
+    let mut on = world(SRC, true, Notes::InCall, Row::Command);
+    for x in [1, 1, 2, 2, 2, 1, 2] {
+        assert_eq!(off.frame(x), on.frame(x), "input {x}");
+    }
+}

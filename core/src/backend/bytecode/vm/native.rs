@@ -464,16 +464,18 @@ impl<'a> Vm<'a> {
             return self.call_native_spec(nid, args, in_place, origin);
         }
         // A command inside a speculative re-execution of a memoized child is
-        // recorded, not issued: if the child turns out unchanged its parent
-        // replays and re-issues it, and if not the parent runs and issues it
-        // (`NativeEffects::command`).
+        // not issued: the parent runs and issues it (`NativeEffects::command`).
+        // Only a pure child is re-executed, and its record holds no command,
+        // so one that issues a command now is changed whatever it does. The
+        // scopes it is in are given up rather than recorded: what the command
+        // would have changed in its call (the camera, a body: a
+        // `Dep::ClassChange`) is not known, so a read after it saw the class
+        // as it was before, and a record holding that answer would replay it
+        // after the command is issued.
         if self.memo && self.stack.memo.reexecuting > 0 && self.stack.memo.recording() {
             let effects = self.native_fns.effects(nid);
             if effects.command && !effects.effect {
-                // Not called, so it reads no key; the record keeps the key
-                // the call has here, for the replay that issues it.
-                let mark = self.stack.run_deps.changes_mark();
-                self.memo_note_native(nid, args, Value::Nil, effects, origin, None, mark);
+                self.stack.memo.note_effect();
                 return Ok(Value::Nil);
             }
         }

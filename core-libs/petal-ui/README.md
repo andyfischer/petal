@@ -58,17 +58,22 @@ input events → bind_frame_info / bind_input → clear_draw_commands
   `shadow_mesh` turns a shadow command into one non-overlapping triangle
   list, because a translucent shadow built from overlapping pieces shows
   every seam.
-- **The native interface** (the top of `prelude/ui.ptl`, and
-  `prelude/input.ptl`). Every native this
-  crate registers is declared there — `pub native fn mouse_x() -> int`,
-  `native fn _native_rect(x: num, …, a?: num) = "draw_rect"` — which is where
+- **The native interface** (`prelude/_base.ptl`, `prelude/input.ptl`, and
+  the private, renamed declarations in `prelude/_native.ptl`). Every native
+  this crate registers is declared there — `pub native fn mouse_x() -> int`,
+  `pub native fn _native_rect(x: num, …, a?: num) = "draw_rect"` — which is where
   its parameter names, optional parameters, argument types and result type
   come from: `petal lint` reads the declarations without registering
   anything, and the natives bind named arguments by them
   (`petal_ui::interface()`). A script that imports `ui` loads only into an
   `Env` that registers the natives it refers to; a test holds the declarations
   to `register_all`, both ways.
-- **The `ui` package** (`prelude/ui.ptl`, `prelude/input.ptl`). A script
+- **The `ui` package** (`prelude/`). `ui.ptl` is a facade of `pub import`s
+  over its modules: `ui/input`, `ui/draw`, `ui/hit`, `ui/text`, `ui/layout`
+  and `ui/widgets`, which stand on the internal `_native`, `_base`, `_style`
+  and `_frame` (a module that declares a per-run cell is the only one that
+  can write it, so the clip, layer and floor live together in `_frame`;
+  `ui/draw` and `ui/hit` re-export its public names). A script
   writes `import ui` and calls `button(...)`, `list_update(...)`,
   `checkbox(...)` bare (or `ui.button`). Without the import none of these
   names exist. A plain import is weak: a script's own `fn button` shadows

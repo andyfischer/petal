@@ -12,6 +12,31 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- petal-ui's `ui` package is split into modules behind an unchanged facade:
+  `ui.ptl` is now a list of `pub import`s over `ui/draw`, `ui/hit`,
+  `ui/text`, `ui/layout` and `ui/widgets` (plus `ui/input`, as before), which
+  stand on the internal `ui/_native`, `ui/_base`, `ui/_style` and
+  `ui/_frame`. `import ui` binds exactly the names it did, with the same
+  overloads; no script changes. What a host can see move:
+  - Module-qualified names of prelude code follow its new module: the
+    prelude's own state cells and function names read `ui/_frame::_floor`,
+    `ui/widgets::button` and so on in `state()` maps, observations and
+    `Env::call_function`, where they read `ui::…`. A state map saved by an
+    older build restores the script's own named state; the prelude's (the
+    theme set by `theme_set`, widget animations) starts fresh, as it does
+    whenever the prelude changes. The load error of a `ui` script in a
+    host without the natives names `ui/_base` and `ui/_native` where it
+    named `ui`.
+  - `petal_ui::package_modules()` lists twelve modules, not three.
+    `petal_ui::prelude_source()` is the concatenated text of every file the
+    `ui` module is made of; the new `petal_ui::UI_MODULES` and
+    `petal_ui::ui_module_sources()` give the files one by one. The internal
+    modules mark their shared helpers `pub`; those are all `_`-prefixed and
+    are not re-exported, so a scan for exports skips `_` names (Garden's
+    `--version` export list does, and is unchanged).
+  - `petal_ui::interface()` reads the native declarations of every module of
+    the package.
+
 - A top-level `let X = tunable(…)` is a setting, exactly as `config let`
   was: hosts list it (`static_bindings`, the C bridge's
   `pb_source_bindings_json` with `"config": true` and `"range"`), the path

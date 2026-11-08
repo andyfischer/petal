@@ -27,8 +27,8 @@
 //! longer parses fails the build instead of shipping a lying `--version`.
 //!
 //! Prelude capability is *derived*, not listed: [`prelude_exports`] scans the
-//! `ui.ptl` source compiled into this binary, so it cannot drift the way a
-//! hand-written list (or a doc) can.
+//! `ui` module source compiled into this binary (`ui.ptl` and the modules
+//! behind it), so it cannot drift the way a hand-written list (or a doc) can.
 
 use serde_json::{json, Value};
 
@@ -318,11 +318,13 @@ pub fn has_feature(name: &str) -> bool {
 /// different capabilities, which is exactly the distinction a stale binary got
 /// wrong) and a bare `name` for values. Sorted and deduped.
 ///
-/// Derived by scanning `petal_ui::prelude_source()`, so it describes the
-/// prelude compiled into *this* binary and cannot go stale. The scan is
-/// deliberately strict — a line must start with `pub fn ` / `pub let ` (or the
-/// deprecated `export` spelling of either) — on the principle that a missing
-/// entry is better than a wrong one.
+/// Derived by scanning `petal_ui::prelude_source()` (every file the `ui`
+/// module is made of), so it describes the prelude compiled into *this* binary
+/// and cannot go stale. The scan is deliberately strict — a line must start
+/// with `pub fn ` / `pub let ` (or the deprecated `export` spelling of either)
+/// — on the principle that a missing entry is better than a wrong one. A
+/// `_`-prefixed name is skipped: the package's internal modules mark the
+/// helpers they share `pub`, and `import ui` does not bind them.
 pub fn prelude_exports() -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for line in petal_ui::prelude_source().lines() {
@@ -335,7 +337,7 @@ pub fn prelude_exports() -> Vec<String> {
         if let Some(rest) = decl.strip_prefix("fn ") {
             let Some(open) = rest.find('(') else { continue };
             let name = rest[..open].trim();
-            if name.is_empty() {
+            if name.is_empty() || name.starts_with('_') {
                 continue;
             }
             let Some(close) = rest[open..].find(')') else {
@@ -353,7 +355,7 @@ pub fn prelude_exports() -> Vec<String> {
                 .split(|c: char| c == '=' || c == ':' || c.is_whitespace())
                 .find(|s| !s.is_empty())
                 .unwrap_or("");
-            if !name.is_empty() {
+            if !name.is_empty() && !name.starts_with('_') {
                 out.push(name.to_string());
             }
         }

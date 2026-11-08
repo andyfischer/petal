@@ -361,7 +361,7 @@ by `core/build.rs`, which fails the build if a directory is missing, and every
 always links. A test (`core/src/builtins/decls.rs`) holds the packages to
 exactly the natives `register_builtins` registers, and every declared form to the argument counts
 the native really takes. petal-ui's natives are declared by its `ui` package
-(`core-libs/petal-ui/prelude/ui.ptl` and `input.ptl`), which is bundled in the
+(`core-libs/petal-ui/prelude/_base.ptl`, `_native.ptl` and `input.ptl`), which is bundled in the
 binary too, so `petal lint` reads it with no host.
 
 **Every native declares what it does.** The third argument is its

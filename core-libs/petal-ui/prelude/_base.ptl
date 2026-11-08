@@ -1,0 +1,122 @@
+// petal-ui base — module `ui/_base` (internal; `ui/draw` re-exports all of it)
+//
+// The public natives a petal-ui host provides, and the geometry and timing
+// every other module of the package builds on. Everything here is `pub` and
+// reaches scripts through `ui/draw`; it is a module of its own only because
+// `./_style` and `./_frame` need it and `ui/draw` needs them.
+
+// ── The native interface ──────────────────────────────────────────────────
+// What a petal-ui host implements in Rust (core-libs/petal-ui/src), declared
+// here so scripts and `petal lint` know each native's parameter names, arity
+// and types: `native fn name(params) -> type`. A parameter written `name?`
+// may be left off; several declarations of one name are that native's call
+// forms. A host registers the natives (`petal_ui::register_all`); loading a
+// script into an `Env` that lacks one it uses is an error before any line
+// runs.
+//
+// The natives the prelude wraps in record overloads (`draw_rect`, `clip`, …)
+// are declared in `./_native` under private `_native_*` names:
+// `native fn _native_rect(…) = "draw_rect"`.
+
+// The input, timing and frame natives are declared in `./input` (module
+// `ui/input`), which `ui` re-exports beside this one.
+import ./input
+
+// Drawing that needs no overloads (core-libs/petal-ui/src/draw.rs).
+pub native fn clear(r: num, g: num, b: num)
+
+// `draw_rect` is a native in every shape — flat, mixed and record — so the
+// commonest draw call costs no Petal instructions beyond the call. A colour
+// `c` is a `{r, g, b}` record (a hex literal) or a packed RGB int (`r * 65536 + g * 256 + b`). `a` is
+// the alpha, 0–255.
+pub native fn draw_rect(x: num, y: num, w: num, h: num, r: num, g: num, b: num, a?: num)
+pub native fn draw_rect(x: num, y: num, w: num, h: num, c, a?: num)
+pub native fn draw_rect(rect, c, a?: num)
+
+// Many filled rects in one call: `rects` is five numbers per rect — x, y, w,
+// h, c — as a flat list, a packed array, or a list of `[x, y, w, h, c]`
+// lists. With a `palette` (a list of colours) `c` indexes it; without one `c`
+// is the colour itself (a packed RGB int (`r * 65536 + g * 256 + b`), or a record in the list
+// forms). `dx`, `dy` move the whole batch. See "Retained drawing" in `./_frame`.
+pub native fn draw_rects(rects, palette?, dx?: num, dy?: num)
+
+// Images (draw.rs). `image_load(source)` asks the host to have `source` ready
+// and answers whether it is; `image_size(source)` is its `{w, h}` in pixels,
+// or nil while the host does not know it. `draw_image` is in `ui/draw`.
+pub native fn image_load(source: string)
+pub native fn image_size(source: string)
+
+// Text measurement (draw.rs, text.rs). The style is a record, or a bare size
+// with an optional face name after it — each shape is its own form.
+pub native fn text_width(text: string, style) -> int
+pub native fn text_width(text: string, size, font?) -> int
+pub native fn text_advance(text: string, style) -> float
+pub native fn text_advance(text: string, size, font?) -> float
+pub native fn text_metrics(style)
+pub native fn text_metrics(size, font?)
+pub native fn text_wrap(text: string, style, max_width)
+pub native fn text_wrap(text: string, size, max_width)
+pub native fn text_wrap(text: string, size, font, max_width)
+pub native fn text_ellipsize(text: string, style, max_width, where?)
+pub native fn text_ellipsize(text: string, size, max_width, where?)
+pub native fn text_ellipsize(text: string, size, font, max_width, where?)
+pub native fn text_index_at(text: string, style, dx)
+pub native fn text_index_at(text: string, size, dx)
+pub native fn text_index_at(text: string, size, font, dx)
+pub native fn fonts()
+
+// Offscreen canvases (draw.rs).
+pub native fn create_canvas(w: num, h: num)
+pub native fn draw_to(id)
+pub native fn draw_to_screen()
+pub native fn snapshot_to(id, x, y)
+pub native fn blur_canvas(id, radius)
+
+// The host-data pull channel (core-libs/petal-ui/src/host_data.rs).
+pub native fn host_data(kind, arg)
+
+// ── Geometry + hit testing ────────────────────────────────────────────────
+
+// A rect is a `Rect` — the built-in class (fields x, y, w, h). It is still an
+// ordinary record, so every `{x, y, w, h}` written by hand keeps working
+// everywhere a rect is taken; going through the class is what earns the
+// geometry methods (`r.center_x()`, `r.inset(4)`, `r.right()` …) and makes
+// `type(r)` say "Rect". See docs/language-guide.md (Classes & Methods).
+//
+// Coordinates are kept exactly as passed — `rect(10.5, …)` is a sub-pixel rect,
+// not a truncated one — so animated and fractional layout stays smooth. The
+// draw natives are where a coordinate becomes a whole pixel.
+//
+// `rect` *is* the constructor rather than a function wrapping it, so a bad
+// argument is reported at the caller's own `rect(...)` — a wrapper would put
+// the caret on this file's line and leave the app author reading the prelude.
+pub let rect = Rect
+
+pub fn point_in(px, py, r)
+  px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h
+end
+
+// `hovered(r)` — `point_in(mouse_x(), mouse_y(), r)` — is a native
+// (core-libs/petal-ui/src/input.rs), so that memoized scopes can record it as a single
+// probe with its answer rather than as two pointer reads; see
+// docs/dev/memo-scopes.md.
+
+pub fn clicked(r)
+  hovered(r) && mouse_pressed(0)
+end
+
+// ── Timing ────────────────────────────────────────────────────────────────
+// `time()` is an absolute clock in seconds, published by the host each frame
+// (monotonic, read fresh — never a running sum of `dt()`, so it does not
+// drift). `elapsed()` reports the seconds since it was first called: it
+// captures the clock once into `state` and subtracts. That `state` is keyed by
+// the call path, so the capture is per *callsite*: every `elapsed()` in a
+// program is its own timer, started on the first frame that callsite runs —
+// which is what makes "one timer per thing being timed" the default. A call
+// inside a loop gets one timer per iteration by the same rule. For a single
+// app-global clock instead, capture it once into a top-level cell
+// (`state var t0 = time()`) and subtract.
+pub fn elapsed()
+  state start = time()
+  time() - start
+end

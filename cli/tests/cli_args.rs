@@ -128,7 +128,7 @@ fn run_refuses_a_ui_script_at_load_and_says_which_runner_takes_it() {
     let (out, err, code) = petal(&["run", "-e", src]);
     assert_eq!(code, 1);
     assert!(!out.contains("ran"), "{out}");
-    assert!(err.contains("module 'ui' needs native fns"), "{err}");
+    assert!(err.contains("module 'ui/_base' needs native fns"), "{err}");
     assert!(err.contains("petal-ui runner"), "{err}");
     // Without the import the two agree as well: the name is unknown.
     assert_eq!(petal(&["lint", "--single-file", "-e", "ui.label(\"x\", 0, 0)"]).2, 1);

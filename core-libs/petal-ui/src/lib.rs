@@ -207,9 +207,44 @@ fn bundled_ui_file(path: &str) -> &'static str {
         .unwrap_or_else(|| panic!("the petal binary bundles ui/{path}"))
 }
 
-/// The Petal source of the `ui` module.
+/// The modules the `ui` module is made of, as package-relative names
+/// (`prelude/<name>.ptl`), in load order: `ui.ptl` itself is a facade of
+/// `pub import`s over the public ones (`draw`, `hit`, `text`, `layout`,
+/// `widgets`), and the `_`-prefixed ones are internal to the package. The
+/// input half (`ui/input`, [`input_source`]) and `ui/drag` ([`drag_source`])
+/// are not among them.
+pub const UI_MODULES: [&str; 10] = [
+    "_native", "_base", "_style", "_frame", "draw", "hit", "layout", "text", "widgets", MODULE_NAME,
+];
+
+/// Each module of [`UI_MODULES`] with its Petal source.
+pub fn ui_module_sources() -> [(&'static str, &'static str); 10] {
+    UI_MODULES.map(|name| (name, bundled_ui_file(&format!("{name}.ptl"))))
+}
+
+/// The Petal source of the `ui` module: every file of [`UI_MODULES`],
+/// concatenated in load order — the text that was the single `ui.ptl` before
+/// it was split into modules behind a facade, so a scan for its declarations
+/// (`pub fn …`, `native fn …`) still sees all of them. It is not one loadable
+/// module (each file imports its siblings); [`register_prelude`] registers the
+/// files themselves ([`package_modules`]).
+///
+/// The internal modules mark their shared helpers `pub` so the package's
+/// other modules can import them; the facade does not re-export those, and
+/// they are all `_`-prefixed. A scan for what `import ui` binds skips names
+/// that start with `_`.
 pub fn prelude_source() -> &'static str {
-    bundled_ui_file("ui.ptl")
+    static SOURCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SOURCE.get_or_init(|| {
+        let mut out = String::new();
+        for (_, source) in ui_module_sources() {
+            out.push_str(source);
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+        }
+        out
+    })
 }
 
 /// Name of the input half of the interface: `import ui/input`.
@@ -234,12 +269,13 @@ pub fn drag_source() -> &'static str {
 
 /// Every module of the `ui` package, as `(package-relative name, source)` —
 /// what [`petal::env::Env::register_package`] takes.
-pub fn package_modules() -> [(&'static str, &'static str); 3] {
-    [
-        ("input", input_source()),
-        ("drag", drag_source()),
-        (MODULE_NAME, prelude_source()),
-    ]
+pub fn package_modules() -> [(&'static str, &'static str); 12] {
+    let ui = ui_module_sources();
+    std::array::from_fn(|i| match i {
+        0 => ("input", input_source()),
+        1 => ("drag", drag_source()),
+        i => ui[i - 2],
+    })
 }
 
 /// Register the `ui` interface package in memory: the `native fn`

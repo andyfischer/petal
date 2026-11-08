@@ -1,6 +1,7 @@
 //! `petal lint` cannot see this crate's registrations (the core CLI does not
 //! depend on petal-ui). What it reads instead is the `ui` package's
-//! `native fn` declarations (`prelude/ui.ptl`, `prelude/input.ptl`), which
+//! `native fn` declarations (`prelude/_base.ptl`, `prelude/_native.ptl`,
+//! `prelude/input.ptl`), which
 //! the `petal` binary bundles. These tests hold the declarations to the real
 //! registrations (`Env::verify_interface`): a native added here without
 //! being declared there cannot be reached from a script at all, and one
@@ -53,6 +54,46 @@ fn the_bundled_ui_package_is_this_crates() {
             .unwrap_or_else(|| panic!("{name}.ptl is not bundled"));
         assert_eq!(file.1, source, "{name}.ptl");
     }
+}
+
+/// `ui.ptl` is a facade of `pub import`s over the package's modules, and the
+/// internal ones (`_style`, `_frame`) are re-exported name by name, through
+/// `ui/draw` and `ui/hit`. So `import ui` binds exactly the public names of
+/// all of them: every `pub` declaration of [`petal_ui::UI_MODULES`] and of
+/// `ui/input` but the `_`-prefixed helpers the internal modules share. A
+/// `pub fn` added to an internal module and not to its re-export list fails
+/// here.
+#[test]
+fn import_ui_binds_every_public_name_of_its_modules() {
+    let mut env = Env::new();
+    petal_ui::register_prelude(&mut env);
+    let exported: BTreeSet<String> = env.exports_of("ui").expect("ui loads").into_iter().collect();
+    let mut declared = BTreeSet::new();
+    let sources = petal_ui::ui_module_sources()
+        .into_iter()
+        .chain([("input", petal_ui::input_source())]);
+    for (_, source) in sources {
+        for line in source.lines() {
+            let Some(rest) = ["pub native fn ", "pub fn ", "pub let "]
+                .iter()
+                .find_map(|prefix| line.strip_prefix(prefix))
+            else {
+                continue;
+            };
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() && !name.starts_with('_') {
+                declared.insert(name);
+            }
+        }
+    }
+    assert!(declared.len() > 250, "the scan found only {}", declared.len());
+    let missing: Vec<_> = declared.difference(&exported).collect();
+    let extra: Vec<_> = exported.difference(&declared).collect();
+    assert!(missing.is_empty(), "`import ui` does not bind: {missing:?}");
+    assert!(extra.is_empty(), "`import ui` binds names no module declares public: {extra:?}");
 }
 
 /// A host that registers only the input half answers for `ui/input` alone:
@@ -181,7 +222,7 @@ fn run_raw(src: &str) -> Result<petal::value::Value, String> {
     natives_only().run_source(&format!("{}{src}", raw_decls()))
 }
 
-/// Host native → the parameter lists `ui.ptl` declares for it, sorted.
+/// Host native → the parameter lists the `ui` package declares for it, sorted.
 fn declared_signatures() -> Vec<(String, Vec<NativeSignature>)> {
     let mut all: Vec<_> = petal_ui::interface()
         .signatures_by_host()

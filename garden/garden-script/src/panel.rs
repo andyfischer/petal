@@ -5166,7 +5166,7 @@ mod tests {
         assert_eq!(obs["sel"], 3);
         assert_eq!(obs["name"], "rows");
         // Rule 1: module-qualified keys are imports, not this script's.
-        assert!(raw.contains_key("ui::button") && raw.contains_key("std::sum"));
+        assert!(raw.contains_key("ui/widgets::button") && raw.contains_key("std::sum"));
         assert!(!obs.keys().any(|k| k.contains("::")));
         // Rule 2: the `_`-prefixed plumbing convention — including the prelude's
         // *non-callable* `_MENU_*` constants, which no other rule would catch.

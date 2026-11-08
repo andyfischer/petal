@@ -661,7 +661,7 @@ core builtins only:
 ```
 $ petal run -e 'import ui
 clear(0, 0, 0)'
-Error: module 'ui/input' needs native fns this host does not register: mouse_x, mouse_y, hovered, mouse_down, +14 more; module 'ui' needs native fns this host does not register: clear, text_width, text_metrics, text_wrap, +32 more — the program cannot run here; run it with a host that provides them (`ui` is the petal-ui interface: use a petal-ui runner such as petal-sdl; `petal run` provides the core builtins only)
+Error: module 'ui/input' needs native fns this host does not register: mouse_x, mouse_y, hovered, mouse_down, +14 more; module 'ui/_base' needs native fns this host does not register: clear, draw_rect, text_width, text_metrics, +7 more; module 'ui/_native' needs native fns this host does not register: draw_image, draw_rect_rounded, draw_rect_outline, draw_line, +39 more — the program cannot run here; run it with a host that provides them (`ui` is the petal-ui interface: use a petal-ui runner such as petal-sdl; `petal run` provides the core builtins only)
 ```
 
 A UI script runs in a petal-ui runner such as `petal-sdl`

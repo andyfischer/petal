@@ -32,7 +32,7 @@
 //                  its `native fn` declaration: the bundled `core` package
 //                  (core/packages/core/src/*.ptl, and core/packages/<name>/<name>.ptl for
 //                  the domain builtins behind an import) for the core builtins, the
-//                  `ui` module (core-libs/petal-ui/prelude/ui.ptl) for the
+//                  `ui` package (core-libs/petal-ui/prelude/*.ptl) for the
 //                  canvas ones. These are call syntax, not just documentation
 //                  — the registry binds `clamp(value: v, lo: 0, hi: 1)`
 //                  against them — so they are the source of truth for every
@@ -63,9 +63,11 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const coreModRs = join(repoRoot, "core/src/builtins/mod.rs");
 const corePackageSrc = join(repoRoot, "core/packages/core/src");
-const uiPreludePtl = join(repoRoot, "core-libs/petal-ui/prelude/ui.ptl");
-// The input half of the `ui` package (`ui/input`), which `ui` re-exports.
-const uiInputPtl = join(repoRoot, "core-libs/petal-ui/prelude/input.ptl");
+// The `ui` package: `ui.ptl` and the modules behind it, `ui/input` among them.
+// Its natives are declared in `_base.ptl`, `input.ptl` and (the private,
+// renamed ones) `_native.ptl`; every file is read, so a declaration that moves
+// between them needs no edit here.
+const uiPreludeDir = join(repoRoot, "core-libs/petal-ui/prelude");
 const petalUiDrawRs = join(repoRoot, "core-libs/petal-ui/src/draw.rs");
 const petalUiTextRs = join(repoRoot, "core-libs/petal-ui/src/text.rs");
 const petalUiInputRs = join(repoRoot, "core-libs/petal-ui/src/input.rs");
@@ -353,7 +355,12 @@ function declaredParams(): Map<string, DeclaredForm[]> {
       .sort()
       .map((f) => join(corePackageSrc, f));
     sources.push(...BUILTIN_PACKAGES.map(builtinPackagePtl));
-    sources.push(uiInputPtl, uiPreludePtl);
+    sources.push(
+      ...readdirSync(uiPreludeDir)
+        .filter((f) => f.endsWith(".ptl"))
+        .sort()
+        .map((f) => join(uiPreludeDir, f)),
+    );
     declaredParamsCache = new Map(
       sources.flatMap((path) => [...parseNativeDecls(readFileSync(path, "utf8"))]),
     );

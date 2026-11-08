@@ -85,7 +85,7 @@ print(g(fn(x) -> x + 1))`);
     const r = petalCapture(["run", "-e", src]);
     expect(r.code).toBe(1);
     expect(r.stdout).not.toContain("ran");
-    expect(r.stderr).toContain("module 'ui' needs native fns this host does not register");
+    expect(r.stderr).toContain("module 'ui/_base' needs native fns this host does not register");
     expect(r.stderr).toContain("petal-ui runner");
   });
 

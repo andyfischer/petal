@@ -1322,7 +1322,7 @@ fn rect_constructs_the_builtin_class() {
 
 /// A bad argument to `rect()` is the *app author's* mistake, so it is reported
 /// at their call. `rect` is the constructor itself rather than a prelude
-/// function wrapping it — a wrapper puts the caret on a line of ui.ptl and
+/// function wrapping it — a wrapper puts the caret on a line of the prelude and
 /// leaves the author reading library source for a typo in their own file.
 #[test]
 fn a_bad_rect_argument_is_reported_at_the_call_site() {
@@ -2405,44 +2405,62 @@ fn flat_coordinates_with_a_colour_record_match_the_packed_form() {
 /// (the new `draw_line(x1, y1, x2, y2, c)` hid the record `(a, b, c, alpha,
 /// width)`), so the prelude is checked for it: a shared count must be one
 /// overload that tells its shapes apart.
-/// Every top-level `fn` of the prelude as `(name, required, total, line)`:
-/// how many parameters it declares, and how many of them have no default.
-fn prelude_signatures() -> Vec<(String, usize, usize, usize)> {
+/// Every top-level `fn` of the `ui` module's files as `(name, required,
+/// total, at)`: how many parameters it declares, how many of them have no
+/// default, and `file:line`. A private `fn` is named `module::name`, since
+/// each module has its own.
+fn prelude_signatures() -> Vec<(String, usize, usize, String)> {
     let mut out = Vec::new();
-    for (i, line) in petal_ui::prelude_source().lines().enumerate() {
-        let rest = line
-            .strip_prefix("pub fn ")
-            .or_else(|| line.strip_prefix("pub fn "))
-            .or_else(|| line.strip_prefix("fn "));
-        let Some(rest) = rest else { continue };
-        let Some((name, args)) = rest.split_once('(') else { continue };
-        // The parameter list runs to its own closing paren; a default value
-        // (`a0 = _stop_a(c0)`) may hold parens and commas of its own.
-        let (mut depth, mut total, mut defaults, mut any) = (0, 0, 0, false);
-        for ch in args.chars() {
-            match ch {
-                '(' | '[' | '{' => depth += 1,
-                ')' if depth == 0 => break,
-                ')' | ']' | '}' => depth -= 1,
-                ',' if depth == 0 => total += 1,
-                '=' if depth == 0 => defaults += 1,
-                c if !c.is_whitespace() => any = true,
-                _ => {}
-            }
+    for (module, source) in petal_ui::ui_module_sources() {
+        for (i, line) in source.lines().enumerate() {
+            prelude_signature(module, line, &format!("{module}.ptl:{}", i + 1), &mut out);
         }
-        let total = if any { total + 1 } else { 0 };
-        out.push((name.trim().to_string(), total - defaults, total, i + 1));
     }
     out
+}
+
+fn prelude_signature(
+    module: &str,
+    line: &str,
+    at: &str,
+    out: &mut Vec<(String, usize, usize, String)>,
+) {
+    let (public, rest) = match line.strip_prefix("pub fn ") {
+        Some(rest) => (true, Some(rest)),
+        None => (false, line.strip_prefix("fn ")),
+    };
+    let Some(rest) = rest else { return };
+    let Some((name, args)) = rest.split_once('(') else { return };
+    let name = if public {
+        name.trim().to_string()
+    } else {
+        format!("{module}::{}", name.trim())
+    };
+    // The parameter list runs to its own closing paren; a default value
+    // (`a0 = _stop_a(c0)`) may hold parens and commas of its own.
+    let (mut depth, mut total, mut defaults, mut any) = (0, 0, 0, false);
+    for ch in args.chars() {
+        match ch {
+            '(' | '[' | '{' => depth += 1,
+            ')' if depth == 0 => break,
+            ')' | ']' | '}' => depth -= 1,
+            ',' if depth == 0 => total += 1,
+            '=' if depth == 0 => defaults += 1,
+            c if !c.is_whitespace() => any = true,
+            _ => {}
+        }
+    }
+    let total = if any { total + 1 } else { 0 };
+    out.push((name, total - defaults, total, at.to_string()));
 }
 
 #[test]
 fn prelude_has_no_two_overloads_with_the_same_argument_count() {
     let mut seen = std::collections::HashMap::new();
     for (name, _, count, line) in prelude_signatures() {
-        if let Some(prev) = seen.insert((name.clone(), count), line) {
+        if let Some(prev) = seen.insert((name.clone(), count), line.clone()) {
             panic!(
-                "ui.ptl:{line} redefines `{name}` with {count} arguments (first at line {prev}); \
+                "{line} redefines `{name}` with {count} arguments (first at {prev}); \
                  the later one silently wins"
             );
         }
@@ -2456,7 +2474,7 @@ fn prelude_has_no_two_overloads_with_the_same_argument_count() {
 /// write positionally is left ambiguous.
 #[test]
 fn prelude_has_no_ambiguous_positional_count() {
-    let mut sets: std::collections::BTreeMap<String, Vec<(usize, usize, usize)>> =
+    let mut sets: std::collections::BTreeMap<String, Vec<(usize, usize, String)>> =
         Default::default();
     for (name, required, total, line) in prelude_signatures() {
         sets.entry(name).or_default().push((required, total, line));
@@ -2467,15 +2485,15 @@ fn prelude_has_no_ambiguous_positional_count() {
             if variants.iter().any(|v| v.1 == count) {
                 continue;
             }
-            let accepting: Vec<usize> = variants
+            let accepting: Vec<&String> = variants
                 .iter()
                 .filter(|v| (v.0..=v.1).contains(&count))
-                .map(|v| v.2)
+                .map(|v| &v.2)
                 .collect();
             assert!(
                 accepting.len() <= 1,
                 "`{name}` called with {count} positional arguments is ambiguous between the \
-                 declarations at ui.ptl lines {accepting:?}"
+                 declarations at {accepting:?}"
             );
         }
     }

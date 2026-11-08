@@ -3,7 +3,8 @@
 //! `mouse_pressed(button: 0)`.
 //!
 //! The names are written once, in the `native fn` declarations of the `ui`
-//! module (`prelude/ui.ptl`) — the interface `petal lint` reads without ever
+//! package (`prelude/_base.ptl`, `prelude/input.ptl`, and the private ones in
+//! `prelude/_native.ptl`) — the interface `petal lint` reads without ever
 //! registering these natives. This module is what makes those declarations
 //! the ones this host actually binds against: [`register`] is how every
 //! native in this crate is registered, and it gives the native the parameter
@@ -16,21 +17,23 @@ use petal::env::Env;
 use petal::native_decl::NativeDecls;
 use petal::native_fn::{NativeEffects, NativeFn, NativeFnId, NativeSignature};
 
-/// The `native fn` declarations of the `ui` package (`ui` and `ui/input`).
+/// The `native fn` declarations of the `ui` package: those of every module
+/// in it ([`crate::package_modules`] — `ui/input`, `ui/_native`, `ui/_base`,
+/// …), public and private.
 pub fn interface() -> &'static NativeDecls {
     static DECLS: OnceLock<NativeDecls> = OnceLock::new();
     DECLS.get_or_init(|| {
-        let mut decls = NativeDecls::parse(crate::input_source())
-            .unwrap_or_else(|e| panic!("prelude/input.ptl: {e}"));
-        decls.absorb(
-            &NativeDecls::parse(crate::prelude_source())
-                .unwrap_or_else(|e| panic!("prelude/ui.ptl: {e}")),
-        );
+        let mut decls = NativeDecls::new();
+        for (name, source) in crate::package_modules() {
+            decls.absorb(
+                &NativeDecls::parse(source).unwrap_or_else(|e| panic!("prelude/{name}.ptl: {e}")),
+            );
+        }
         decls
     })
 }
 
-/// Host native → the parameter lists `ui.ptl` declares for it.
+/// Host native → the parameter lists the `ui` package declares for it.
 fn declared() -> &'static HashMap<String, Vec<NativeSignature>> {
     static BY_HOST: OnceLock<HashMap<String, Vec<NativeSignature>>> = OnceLock::new();
     BY_HOST.get_or_init(|| interface().signatures_by_host())

@@ -808,7 +808,7 @@ fn a_restored_state_map_leaves_the_module_working() {
     a.frame().unwrap();
     // Saved mid-flight: a floor raised, a clip left pushed, the layer set.
     let saved = a.state();
-    assert_eq!(saved["ui::_floor"], 7);
+    assert_eq!(saved["ui/_frame::_floor"], 7);
 
     let mut b = ui(SRC);
     let (program, stack) = (b.program_id(), b.stack_id());
@@ -819,7 +819,7 @@ fn a_restored_state_map_leaves_the_module_working() {
     // restored floor did not survive the run's reset.
     b.mouse_move(400, 400);
     b.frame().unwrap();
-    assert_eq!(b.state()["ui::_floor"], serde_json::Value::Null);
+    assert_eq!(b.state()["ui/_frame::_floor"], serde_json::Value::Null);
 }
 
 // ── The worked example ────────────────────────────────────────────────────

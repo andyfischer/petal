@@ -349,7 +349,7 @@ function pairSides(files: string[], before: Side, after: Side, notes: string[]):
 
 /**
  * Natives only a petal-ui host registers (core-libs/petal-ui/src/{input,draw}.rs) plus the
- * distinctive helpers in core-libs/petal-ui/prelude/ui.ptl. `time` and `clear` are left
+ * distinctive helpers of the `ui` package (core-libs/petal-ui/prelude). `time` and `clear` are left
  * out deliberately: they collide with names a console script legitimately uses,
  * and a false `ui` is worse than a false `console` (the console driver reports
  * the missing native by name, so the probe below recovers).

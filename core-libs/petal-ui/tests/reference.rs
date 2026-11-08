@@ -8,7 +8,10 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-/// Every `pub fn`, `pub native fn` and `pub let` of a module's source.
+/// Every `pub fn`, `pub native fn` and `pub let` of a module's source, but
+/// the `_`-prefixed ones: the `ui` package's internal modules (`_style`,
+/// `_frame`, …) mark their shared helpers `pub` for its other modules, and the
+/// facade does not re-export them.
 fn exports(source: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for line in source.lines() {
@@ -20,7 +23,7 @@ fn exports(source: &str) -> BTreeSet<String> {
                 .chars()
                 .take_while(|c| c.is_alphanumeric() || *c == '_')
                 .collect();
-            if !name.is_empty() {
+            if !name.is_empty() && !name.starts_with('_') {
                 out.insert(name);
             }
         }
@@ -66,7 +69,7 @@ fn the_reference_page_names_every_export() {
 
 #[test]
 fn the_scan_finds_what_it_should() {
-    let found = exports("pub fn a(x)\nfn _b()\npub native fn c_d() -> int\npub let E = 1\n  pub fn nested()\n");
+    let found = exports("pub fn a(x)\nfn _b()\npub native fn c_d() -> int\npub let E = 1\n  pub fn nested()\npub fn _shared()\n");
     assert_eq!(found.into_iter().collect::<Vec<_>>(), ["E", "a", "c_d"]);
     assert!(documented("| `a(x)`, `b()` |", "b"));
     assert!(documented("the `theme` record", "theme"));

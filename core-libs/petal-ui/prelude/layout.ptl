@@ -1,0 +1,246 @@
+// petal-ui layout — module `ui/layout`
+//
+// RectCut slicing, motion (smoothing and easing), and pixel-budget word wrap.
+// `ui` re-exports every name here.
+
+import ./input
+import ./_base
+
+// ── Layout: RectCut ───────────────────────────────────────────────────────
+// Slice-off-a-side layout (no constraint solver): each `cut_*` returns
+// {cut, rest} — the strip taken off `r` and what remains. Chain them to build
+// a whole pane:
+//
+//   let top = cut_top(screen, 40)      // header
+//   let side = cut_left(top.rest, 220) // sidebar
+//   ...draw into top.cut / side.cut / side.rest...
+
+pub fn cut_left(r, px)
+  {cut: rect(r.x, r.y, px, r.h), rest: rect(r.x + px, r.y, r.w - px, r.h)}
+end
+
+pub fn cut_right(r, px)
+  {cut: rect(r.x + r.w - px, r.y, px, r.h), rest: rect(r.x, r.y, r.w - px, r.h)}
+end
+
+pub fn cut_top(r, px)
+  {cut: rect(r.x, r.y, r.w, px), rest: rect(r.x, r.y + px, r.w, r.h - px)}
+end
+
+pub fn cut_bottom(r, px)
+  {cut: rect(r.x, r.y + r.h - px, r.w, px), rest: rect(r.x, r.y, r.w, r.h - px)}
+end
+
+// Split `r` into {a, b} at fraction `frac` of its width (a takes the left).
+// The optional `gap` is left empty between them.
+pub fn split_h(r, frac)
+  split_h(r, frac, 0)
+end
+
+pub fn split_h(r, frac, gap)
+  let aw = int(float(r.w - gap) * frac)
+  {a: rect(r.x, r.y, aw, r.h), b: rect(r.x + aw + gap, r.y, r.w - aw - gap, r.h)}
+end
+
+// The vertical counterpart: `a` takes the top.
+pub fn split_v(r, frac)
+  split_v(r, frac, 0)
+end
+
+pub fn split_v(r, frac, gap)
+  let ah = int(float(r.h - gap) * frac)
+  {a: rect(r.x, r.y, r.w, ah), b: rect(r.x, r.y + ah + gap, r.w, r.h - ah - gap)}
+end
+
+// Shrink `r` by a margin: pad(r, n) all sides, pad(r, h, v) horizontal /
+// vertical, pad(r, l, t, rt, b) each side.
+pub fn pad(r, n)
+  rect(r.x + n, r.y + n, r.w - n * 2, r.h - n * 2)
+end
+
+pub fn pad(r, h, v)
+  rect(r.x + h, r.y + v, r.w - h * 2, r.h - v * 2)
+end
+
+pub fn pad(r, l, t, rt, b)
+  rect(r.x + l, r.y + t, r.w - l - rt, r.h - t - b)
+end
+
+// `count` equal columns across `r`, `gap` px apart. Returns a list of rects.
+pub fn hstack(r, count)
+  hstack(r, count, 8)
+end
+
+pub fn hstack(r, count, gap)
+  let out = []
+  if count <= 0 then return out end
+  let cw = (r.w - gap * (count - 1)) / count
+  for i in range(0, count) do
+    out = append(out, rect(r.x + i * (cw + gap), r.y, cw, r.h))
+  end
+  out
+end
+
+// `count` equal rows down `r`.
+pub fn vstack(r, count)
+  vstack(r, count, 8)
+end
+
+pub fn vstack(r, count, gap)
+  let out = []
+  if count <= 0 then return out end
+  let ch = (r.h - gap * (count - 1)) / count
+  for i in range(0, count) do
+    out = append(out, rect(r.x, r.y + i * (ch + gap), r.w, ch))
+  end
+  out
+end
+
+// Distribute `r` into columns by `widths`: an int entry is fixed pixels, a
+// float entry is a weight over whatever the fixed columns and gaps leave
+// (weights need not sum to 1 — they are normalized against each other).
+//   row(bar, [80, 0.5, 0.5, 120], 8)   // fixed, two equal flexes, fixed
+pub fn row(r, widths, gap)
+  let fixed = 0
+  let weights = 0.0
+  for w in widths do
+    if type(w) == "float" then
+      weights = weights + w
+    else
+      fixed = fixed + w
+    end
+  end
+  let leftover = max(0, r.w - fixed - gap * (len(widths) - 1))
+  let out = []
+  let x = r.x
+  for w in widths do
+    let cw = 0
+    if type(w) != "float" then
+      cw = w
+    elsif weights > 0.0 then
+      cw = int(float(leftover) * w / weights)
+    end
+    out = append(out, rect(x, r.y, cw, r.h))
+    x = x + cw + gap
+  end
+  out
+end
+
+// The vertical counterpart of `row`: heights instead of widths (int = fixed
+// pixels, float = weight).
+pub fn col(r, heights, gap)
+  let fixed = 0
+  let weights = 0.0
+  for h in heights do
+    if type(h) == "float" then
+      weights = weights + h
+    else
+      fixed = fixed + h
+    end
+  end
+  let leftover = max(0, r.h - fixed - gap * (len(heights) - 1))
+  let out = []
+  let y = r.y
+  for h in heights do
+    let ch = 0
+    if type(h) != "float" then
+      ch = h
+    elsif weights > 0.0 then
+      ch = int(float(leftover) * h / weights)
+    end
+    out = append(out, rect(r.x, y, r.w, ch))
+    y = y + ch + gap
+  end
+  out
+end
+
+// ── Motion ────────────────────────────────────────────────────────────────
+// Frame-rate-independent smoothing and easing. All deterministic under the
+// headless harness (dt is fixed there), so animated widgets still trace
+// reproducibly.
+
+// Exponential approach: move `cur` toward `target` by rate `rate` (1/seconds —
+// higher is snappier; ~16 lands in ~120ms). Snaps exactly onto the target when
+// within a thousandth, so settled values stop generating churn.
+pub fn approach(cur, target, rate)
+  // Already there: answer without reading the clock, so a settled motion no
+  // longer makes the frame depend on `dt()` (and keep ticking) for nothing.
+  if abs(target - cur) < 0.001 then return target end
+  let next = cur + (target - cur) * (1.0 - exp(-rate * dt()))
+  if abs(target - next) < 0.001 then target else next end
+end
+
+// Cubic ease-out: fast start, gentle landing. t in [0, 1] (clamped).
+pub fn ease_out(t)
+  let c = clamp(float(t), 0.0, 1.0)
+  1.0 - (1.0 - c) * (1.0 - c) * (1.0 - c)
+end
+
+// Cubic ease-in-out: gentle at both ends.
+pub fn ease_in_out(t)
+  let c = clamp(float(t), 0.0, 1.0)
+  if c < 0.5 then
+    4.0 * c * c * c
+  else
+    1.0 - pow(-2.0 * c + 2.0, 3.0) / 2.0
+  end
+end
+
+// ── Pixel-budget word wrap ────────────────────────────────────────────────
+// `wrap` with a pixel budget instead of a char budget: lines measured with
+// text_width at `size` (a bare px size or a style record, like ellipsize), so
+// what fits is what actually fits. Explicit "\n"s split first; a word wider
+// than the budget is hard-broken. The pixel counterpart every drawer's local
+// `wrap2` approximated.
+pub fn wrap_px(s, avail_px, size)
+  if avail_px <= 0 then
+    [s]
+  else
+    let out = []
+    for seg in split(s, "\n") do
+      for line in _wrap_px_segment(seg, avail_px, size) do
+        out = append(out, line)
+      end
+    end
+    out
+  end
+end
+
+fn _wrap_px_segment(seg, avail_px, size)
+  let lines = []
+  let cur = ""
+  for word in split(seg, " ") do
+    let w = word
+    // A word that can never fit gets hard-broken into budget-sized pieces.
+    while len(w) > 0 && text_width(w, size) > avail_px do
+      if len(cur) > 0 then
+        lines = append(lines, cur)
+        cur = ""
+      end
+      let take = len(w)
+      while take > 1 && text_width(slice(w, 0, take), size) > avail_px do
+        take = take - 1
+      end
+      let piece = slice(w, 0, take)
+      if len(piece) == 0 then
+        // The budget is narrower than the first character: emit it whole
+        // rather than looping (a too-wide char clips at the draw side).
+        piece = w
+      end
+      lines = append(lines, piece)
+      w = slice(w, len(piece), len(w))
+    end
+    if len(cur) == 0 then
+      cur = w
+    elsif text_width(cur ++ " " ++ w, size) <= avail_px then
+      cur = cur ++ " " ++ w
+    else
+      lines = append(lines, cur)
+      cur = w
+    end
+  end
+  if len(cur) > 0 || len(lines) == 0 then
+    lines = append(lines, cur)
+  end
+  lines
+end

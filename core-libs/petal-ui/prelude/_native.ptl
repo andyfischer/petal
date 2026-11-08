@@ -1,0 +1,74 @@
+// petal-ui native declarations — module `ui/_native` (internal)
+//
+// The natives the prelude wraps, declared under private names:
+// `native fn _native_rect(…) = "draw_rect"` binds the host native `draw_rect`
+// as `_native_rect`, so a prelude function can take the public name and still
+// reach the native underneath. They are `pub` only so the other modules of
+// this package can import them; the `ui` facade does not re-export this
+// module, so a script never sees them. The natives scripts call directly are
+// declared in `./_base` (and `./input`).
+
+// ── Record overloads (./draw) ───────────────────────────────────────────────
+pub native fn _native_image(source, x, y, w, h, a?, radius?, tint?, sx?, sy?, sw?, sh?, slice_l?, slice_t?, slice_r?, slice_b?) = "draw_image"
+pub native fn _native_rect_rounded(x: num, y: num, w: num, h: num, radius: num, r: num, g: num, b: num, a?: num) = "draw_rect_rounded"
+pub native fn _native_rect_outline(x: num, y: num, w: num, h: num, r: num, g: num, b: num, a?: num, width?: num) = "draw_rect_outline"
+pub native fn _native_line(x1: num, y1: num, x2: num, y2: num, r: num, g: num, b: num, a?: num, width?: num) = "draw_line"
+pub native fn _native_circle(cx: num, cy: num, radius: num, r: num, g: num, b: num, a?: num) = "draw_circle"
+pub native fn _native_rect_rounded_outline(x: num, y: num, w: num, h: num, radius: num, r: num, g: num, b: num, a?: num, width?: num) = "draw_rect_rounded_outline"
+pub native fn _native_circle_outline(cx: num, cy: num, radius: num, r: num, g: num, b: num, a?: num, width?: num) = "draw_circle_outline"
+pub native fn _native_ellipse(cx: num, cy: num, rx: num, ry: num, r: num, g: num, b: num, a?: num) = "draw_ellipse"
+pub native fn _native_ellipse_outline(cx: num, cy: num, rx: num, ry: num, r: num, g: num, b: num, a?: num, width?: num) = "draw_ellipse_outline"
+pub native fn _native_arc(cx: num, cy: num, r_in: num, r_out: num, a0: num, a1: num, r: num, g: num, b: num, a?: num) = "fill_arc"
+pub native fn _native_triangle(x1: num, y1: num, x2: num, y2: num, x3: num, y3: num, r: num, g: num, b: num, a?: num) = "fill_triangle"
+pub native fn _native_poly(points, r, g, b, a?) = "fill_poly"
+pub native fn _native_polygon(points, r, g, b, a?) = "fill_polygon"
+pub native fn _native_fan(cx, cy, points, r, g, b, a?) = "fill_fan"
+pub native fn _native_text(text, x, y, style) = "draw_text"
+pub native fn _native_text(text, x, y, size, r, g, b, a?) = "draw_text"
+pub native fn _native_font(name) = "font"
+pub native fn _native_polyline(points, r, g?, b?, a?, width?) = "draw_polyline"
+
+// ── Clipping (./_frame) ─────────────────────────────────────────────────────
+pub native fn _native_clip(x, y, w, h, radius?) = "clip"
+pub native fn _native_clip_push(x, y, w, h, radius?, within?) = "clip_push"
+pub native fn _native_clip_pop() = "clip_pop"
+pub native fn _native_clip_none() = "clip_none"
+
+// ── Layers and hit testing (./_frame) ───────────────────────────────────────
+pub native fn _ui_register(rect, layer, clip, id?, flags?, keys?) = "ui_register"
+pub native fn _ui_mark() = "ui_mark"
+pub native fn _ui_mute(on) = "ui_mute"
+pub native fn _ui_probe(rect, layer, clip, floor, id?) = "ui_probe"
+pub native fn _ui_hot(rect, layer, clip, floor) = "ui_hot"
+pub native fn _ui_floor() = "ui_floor"
+pub native fn _ui_target_rect(id) = "ui_target_rect"
+pub native fn _draw_layer(n: num) = "draw_layer"
+
+// ── Retained drawing (./_frame) ─────────────────────────────────────────────
+pub native fn _cache_begin(id, w, h) = "cache_begin"
+pub native fn _cache_end(id) = "cache_end"
+pub native fn _cache_draw(id, x, y) = "cache_draw"
+pub native fn _cache_valid(id) = "cache_valid"
+
+// ── Gradients (./draw) ──────────────────────────────────────────────────────
+// Captured like the other primitives' natives, so the record overloads below
+// can shadow the builtin names without cutting off the flat arities.
+pub native fn _native_rect_gradient(x, y, w, h, r0, g0, b0, a0, r1, g1, b1, a1, angle) = "draw_rect_gradient"
+pub native fn _native_rect_gradient_rounded(x, y, w, h, radius, r0, g0, b0, a0, r1, g1, b1, a1, angle) = "draw_rect_gradient_rounded"
+pub native fn _native_circle_gradient(cx: num, cy: num, radius: num, r0: num, g0: num, b0: num, a0: num, r1: num, g1: num, b1: num, a1: num) = "draw_circle_gradient"
+
+// ── Shadows (./draw) ────────────────────────────────────────────────────────
+pub native fn _native_shadow(x: num, y: num, w: num, h: num, radius: num, blur: num, spread: num, dx: num, dy: num, r: num, g: num, b: num, a?: num) = "draw_shadow"
+
+// ── Offscreen canvases (./draw) ─────────────────────────────────────────────
+pub native fn _native_draw_canvas(id, x, y, a?, w?, h?) = "draw_canvas"
+
+// ── Focus (./widgets) ───────────────────────────────────────────────────────
+pub native fn _ui_focus() = "ui_focus"
+pub native fn _ui_focus_request(id) = "ui_focus_request"
+pub native fn _ui_shortcut(chord, scope?) = "ui_shortcut"
+
+// ── Popover (./widgets) ─────────────────────────────────────────────────────
+pub native fn _ui_popover() = "ui_popover"
+pub native fn _ui_popover_dismissed() = "ui_popover_dismissed"
+pub native fn _ui_popover_request(open, id) = "ui_popover_request"

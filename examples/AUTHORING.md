@@ -13,7 +13,7 @@ reference material lives elsewhere; link to it rather than guessing:
 - Builtins: [docs/Builtins.md](../docs/Builtins.md).
 - The `ui` package (widgets, theme, layout, text and color helpers; `import ui`):
   [core-libs/petal-ui/README.md](../core-libs/petal-ui/README.md) (start there; it indexes the reference, widgets and drawing guides), with
-  [core-libs/petal-ui/prelude/ui.ptl](../core-libs/petal-ui/prelude/ui.ptl) as the source of truth.
+  [core-libs/petal-ui/prelude/](../core-libs/petal-ui/prelude/) as the source of truth (`ui.ptl` lists its modules).
 - The `bloom` component library (buttons, menus, controls and overlays that
   animate by default, in pure Petal):
   [core-runtime/bloom/docs/components.md](../core-runtime/bloom/docs/components.md).
@@ -394,7 +394,7 @@ opaque color with `mix`/`lerp_color`, or use the prelude's `over`/`tint`/
 
 ### The `ui` package
 
-Start the app with `import ui` (`core-libs/petal-ui/prelude/ui.ptl`) and call its functions bare. The
+Start the app with `import ui` (`core-libs/petal-ui/prelude/`) and call its functions bare. The
 catalogue is in [reference.md](../core-libs/petal-ui/docs/reference.md): `rect`
 (the built-in `Rect` under `ui`'s name), `point_in`, `hovered`,
 `clicked`, record overloads of every `draw_*` (each callable by name:

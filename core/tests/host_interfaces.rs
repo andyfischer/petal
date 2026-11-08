@@ -115,8 +115,8 @@ fn a_ui_script_checks_anywhere_and_runs_only_where_the_natives_are() {
     let mut env = Env::new();
     let err = env.load_program(src).unwrap_err();
     assert!(
-        err.contains("module 'ui' needs a native fn this host does not register: clear")
-            || err.contains("module 'ui' needs native fns this host does not register"),
+        err.contains("module 'ui/_base' needs a native fn this host does not register: clear")
+            || err.contains("module 'ui/_base' needs native fns this host does not register: clear"),
         "{err}"
     );
     assert!(err.contains("petal-ui runner"), "{err}");

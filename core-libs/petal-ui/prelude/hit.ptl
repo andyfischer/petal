@@ -1,0 +1,13 @@
+// petal-ui hit testing — module `ui/hit`
+//
+// Layers, `interact`, targets, measuring, flow layout and retained drawing.
+// The code is in `./_frame`, beside the clip: they read and write the same
+// per-run cells, and a cell is written only by the module that declares it.
+// This module names what of it is public; `ui` re-exports every name here.
+
+pub import ./_frame: UI_LAYER_BASE, UI_LAYER_POPUP, UI_LAYER_MODAL, UI_LAYER_TOOLTIP
+pub import ./_frame: ui_layer, with_layer, ui_overlay, interact, ui_hot
+pub import ./_frame: ui_block, ui_modal, pointer_captured, ui_target, ui_target_rect
+pub import ./_frame: ui_measuring, ui_measure
+pub import ./_frame: flow_begin, flow_next, flow_space, flow_rest, flow_used, flow_end
+pub import ./_frame: cached_layer

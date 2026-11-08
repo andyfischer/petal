@@ -90,6 +90,28 @@ Each one goes in its own commit, as the skill asks for moves.
 
 ### R1. Split `ui.ptl` into modules behind an unchanged `ui` facade
 
+**Done 2026-11-08.** `prelude/ui.ptl` is a facade over `draw`, `hit`, `text`,
+`layout` and `widgets` (and `input`). Where it differs from the sketch below:
+
+- A module that declares a `state var` is the only one that can `set` it, so
+  the per-run cells and everything that writes them (clipping, layers, hit
+  testing, measuring, flow, retained drawing) share the internal `_frame`.
+  `ui/hit` is the list of its public names, and `ui/draw` re-exports the clip
+  functions. The theme lives in the internal `_style` the same way. Their
+  shared helpers (`_get`, `_hot`, …) are `pub` but `_`-prefixed and not
+  re-exported; `tests/host_natives.rs` holds `import ui` to exactly the
+  public names of every module.
+- The public natives, geometry and timing sit in the internal `_base`, below
+  `_style` and `_frame`, and `ui/draw` re-exports all of it. `_anim` moved
+  from motion into `ui/widgets`, its only user.
+- Widgets stay one module: splitting them further would need another
+  internal module for the helpers they share.
+- Module-qualified names follow the code (`ui/_frame::_floor`,
+  `ui/widgets::button` in state maps and `Env::call_function`).
+- The export set is unchanged (`import ui` names, Garden's `name/arity`
+  list, `docs/stdlib.json`), and `petal lint` over `examples/` and the
+  cheesecake games that import `ui` prints the same before and after.
+
 Low risk, and the biggest payoff. The mechanism already exists: `ui.ptl`
 does `pub import ./input`. Make `ui.ptl` a short file of `pub import`s over:
 

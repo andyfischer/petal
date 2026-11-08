@@ -50,6 +50,9 @@ pub const FX_READS_NET: u32 = 1 << 17;
 pub const FX_DECLARE: u32 = 1 << 18;
 pub const FX_COMMAND: u32 = 1 << 19;
 pub const FX_TICKS: u32 = 1 << 20;
+/// `PB_FX_READS_CAMERA`: the class bits ran out below `PB_FX_DECLARE`, so
+/// this one sits above the others and maps to [`InputClasses::CAMERA`].
+pub const FX_READS_CAMERA: u32 = 1 << 22;
 /// Bridge-only: an emitter puts the call's implicit key first in what it
 /// pushes ([`register_emitter_fx`]). Not part of the effect row.
 pub const FX_KEYED: u32 = 1 << 21;
@@ -59,8 +62,17 @@ const FX_READS_MASK: u32 = 0x3ff;
 
 /// The input classes a set of `PB_FX_READS_*` bits names.
 pub fn classes_from_flags(flags: u32) -> InputClasses {
-    InputClasses(((flags >> FX_READS_SHIFT) & FX_READS_MASK) as u16)
+    let camera = if flags & FX_READS_CAMERA != 0 {
+        InputClasses::CAMERA.0
+    } else {
+        0
+    };
+    InputClasses(((flags >> FX_READS_SHIFT) & FX_READS_MASK) as u16 | camera)
 }
+
+/// The `PB_FX_READS_*` bits of the revisioned classes, each validated by its
+/// own revision.
+const FX_READS_REVISIONED: u32 = FX_READS_PHYSICS | FX_READS_NET | FX_READS_CAMERA;
 
 /// Translate `PB_FX_*` flags into Petal's effect row.
 ///
@@ -139,8 +151,8 @@ impl HostCallback {
         if self.flags & FX_READS_HOST_DATA != 0 {
             cxt.note_host_read();
         }
-        if self.flags & (FX_READS_PHYSICS | FX_READS_NET) != 0 {
-            cxt.note_class_read(classes_from_flags(self.flags & (FX_READS_PHYSICS | FX_READS_NET)));
+        if self.flags & FX_READS_REVISIONED != 0 {
+            cxt.note_class_read(classes_from_flags(self.flags & FX_READS_REVISIONED));
         }
         if self.flags & FX_EFFECT != 0 {
             cxt.note_effect();
@@ -415,6 +427,22 @@ pub unsafe extern "C" fn pb_call_note_class_changed(call: *mut PbCall, reads: u3
         };
         cxt.note_class_changed(classes_from_flags(reads));
         true
+    })
+}
+
+/// `pb_call_set_class_revision`: this call set the revision of the
+/// revisioned classes in `reads` to `revision` ([`PetalCxt::set_class_revision`]).
+/// Whether it moved; false too when the call is not running (nothing noted).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_call_set_class_revision(call: *mut PbCall, reads: u32, revision: u64) -> bool {
+    crate::ffi::guard(false, || {
+        let Some(call) = (unsafe { call.as_mut() }) else {
+            return false;
+        };
+        let Some(cxt) = call.cxt() else {
+            return false;
+        };
+        cxt.set_class_revision(classes_from_flags(reads), revision)
     })
 }
 

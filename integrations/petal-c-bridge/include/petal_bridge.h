@@ -450,10 +450,15 @@ pb_status pb_vm_override_file(pb_vm* vm, const char* path, const char* source);
  *            the same arguments, which is what running the code again would
  *            do; a re-execution during validation defers it. Not with
  *            PB_FX_EFFECT (which makes the scope unreplayable instead).
- *   query    PB_FX_READS_PHYSICS (or PB_FX_READS_NET): reads the world. A
- *            scope that called it is valid while that class's revision is
- *            unchanged; bump it with pb_vm_note_class_changed after each
- *            physics step. The bridge notes the read for the frame gate.
+ *   query    PB_FX_READS_PHYSICS (or PB_FX_READS_NET, PB_FX_READS_CAMERA):
+ *            reads the world. A scope that called it is valid while that
+ *            class's revision is unchanged; bump it with
+ *            pb_vm_note_class_changed after each physics step (or set it,
+ *            pb_vm_set_class_revision). The bridge notes the read for the
+ *            frame gate. A command that changes the class in its call says
+ *            so (pb_call_note_class_changed, pb_call_set_class_revision), and
+ *            a scope that issued it and read the class after is checked from
+ *            the revision the class had before the command.
  *   PB_FX_TICKS     the answer of this read changes every run (a clock read
  *                   like `time`, not a fixed `dt`): a helper that calls it
  *                   on every path is not recorded at all (a hint; a wrong
@@ -486,7 +491,8 @@ enum {
     PB_FX_DECLARE = 1u << 18,       /* a keyed declaration (with EMITS) */
     PB_FX_COMMAND = 1u << 19,       /* a one-shot command, re-issued on replay */
     PB_FX_TICKS = 1u << 20,         /* a read whose answer changes every run */
-    PB_FX_KEYED = 1u << 21          /* emitter: payload starts with the implicit key */
+    PB_FX_KEYED = 1u << 21,         /* emitter: payload starts with the implicit key */
+    PB_FX_READS_CAMERA = 1u << 22   /* the frame's camera, revised by a fingerprint */
 };
 
 /* A host native. Read arguments with pb_call_arg*, build at most one result
@@ -533,6 +539,15 @@ pb_status pb_vm_note_host_data_changed(pb_vm* vm);
  * was applied (other bits are ignored). Each class has its own revision, so a
  * physics step does not invalidate what read only PB_FX_READS_HOST_DATA. */
 pb_status pb_vm_note_class_changed(pb_vm* vm, uint32_t reads);
+
+/* Set the revision of the revisioned classes in `reads` to `revision`
+ * instead of bumping it: for a class whose state the host can fingerprint,
+ * PB_FX_READS_CAMERA (the frame's camera and viewport, which the host resets
+ * before each run and the run sets again). A run that sets the camera to the
+ * one it had in the run before then reads as unchanged, and a scope that read
+ * it replays. Two different states must never get the same revision; use
+ * either this or pb_vm_note_class_changed for a class, not both. */
+pb_status pb_vm_set_class_revision(pb_vm* vm, uint32_t reads, uint64_t revision);
 
 /* The dependency classes of every function of the loaded program, judged
  * against this VM's natives, and the `never-replays` findings: which helpers
@@ -607,6 +622,14 @@ bool pb_call_key(pb_call* call, uint64_t* out_key);
  * call) that moved a body: call it only when something changed, or every
  * query after it re-runs. False (nothing noted) outside a script call. */
 bool pb_call_note_class_changed(pb_call* call, uint32_t reads);
+/* Inside a callback: this call set the revision of the revisioned classes in
+ * `reads` to `revision`, as pb_vm_set_class_revision does between runs (a
+ * camera() command that moved the camera names the camera it set). When the
+ * revision moves it is a change in the run, as pb_call_note_class_changed:
+ * a scope that read the class earlier is not replayed with the old answer.
+ * True if it moved; false (nothing noted) when it was already `revision` or
+ * outside a script call. */
+bool pb_call_set_class_revision(pb_call* call, uint32_t reads, uint64_t revision);
 /* Record an expectation of the host's own (an `expect_pixel`, say), as the
  * script's expect() does: `ok` true counts a check that held; false records a
  * failure at the position of the script call and the script carries on. The

@@ -62,8 +62,11 @@ pub enum RunReason {
 }
 
 /// The revisioned classes, each with a slot in [`RunDeps`]'s counters.
-const REVISIONED_CLASSES: [(InputClasses, &str); 2] =
-    [(InputClasses::PHYSICS, "PHYSICS"), (InputClasses::NET, "NET")];
+const REVISIONED_CLASSES: [(InputClasses, &str); 3] = [
+    (InputClasses::PHYSICS, "PHYSICS"),
+    (InputClasses::NET, "NET"),
+    (InputClasses::CAMERA, "CAMERA"),
+];
 const CLASS_SLOTS: usize = REVISIONED_CLASSES.len();
 
 /// The counter slot of a single revisioned class.
@@ -119,6 +122,13 @@ pub struct RunDeps {
     class_changed_in_run: u16,
     class_revision: [u64; CLASS_SLOTS],
     class_now: [u64; CLASS_SLOTS],
+    /// The revisioned classes a native changed during its call, each with
+    /// its revision before and after, in order: what the VM reads around a
+    /// `command` native's call to record the change in the memoized scope
+    /// (`crate::memo::Dep::ClassChange`). The VM truncates it back to where
+    /// it stood before each native call, so it holds at most the changes of
+    /// the calls in progress.
+    in_call_changes: Vec<(InputClasses, u64, u64)>,
     /// The RNG state when the run began, to detect draws.
     rng_at_start: u64,
     rng_consumed: bool,
@@ -361,11 +371,71 @@ impl RunDeps {
     /// differently): [`note_host_data_changed`](Self::note_host_data_changed)
     /// at once, and the run is not settled if it read host data.
     pub fn note_class_changed_in_run(&mut self, classes: InputClasses) {
+        for (i, (c, _)) in REVISIONED_CLASSES.iter().enumerate() {
+            if classes.intersects(*c) {
+                let from = self.class_now[i];
+                self.in_call_changes.push((*c, from, from.wrapping_add(1)));
+            }
+        }
         self.note_class_changed(classes);
         if classes.intersects(InputClasses::HOST_DATA) {
             self.note_host_data_changed();
         }
         self.class_changed_in_run |= classes.0 & (InputClasses::REVISIONED.0 | InputClasses::HOST_DATA.0);
+    }
+
+    /// Set the revision of the revisioned classes in `classes` to `revision`
+    /// between runs, instead of bumping it: a host whose class has a state it
+    /// can fingerprint (the frame's camera, [`InputClasses::CAMERA`]) names
+    /// the state, so a run that brings the class back to a state it had
+    /// before reads as unchanged. A scope that read the class is valid while
+    /// the revision is what it was then, so two states must never share a
+    /// revision: use one way or the other for a class, not both.
+    pub fn set_class_revision(&mut self, classes: InputClasses, revision: u64) {
+        for (i, (c, _)) in REVISIONED_CLASSES.iter().enumerate() {
+            if classes.intersects(*c) {
+                self.class_now[i] = revision;
+            }
+        }
+    }
+
+    /// [`set_class_revision`](Self::set_class_revision) from a native during
+    /// the run (a `camera()` command that moved the camera): as
+    /// [`note_class_changed_in_run`](Self::note_class_changed_in_run) when
+    /// the revision moves, nothing when it is already `revision`. Whether
+    /// any class's revision moved.
+    pub fn set_class_revision_in_run(&mut self, classes: InputClasses, revision: u64) -> bool {
+        let mut moved = 0;
+        for (i, (c, _)) in REVISIONED_CLASSES.iter().enumerate() {
+            if classes.intersects(*c) && self.class_now[i] != revision {
+                self.in_call_changes.push((*c, self.class_now[i], revision));
+                self.class_now[i] = revision;
+                moved |= c.0;
+            }
+        }
+        self.class_changed_in_run |= moved;
+        moved != 0
+    }
+
+    /// How many in-call changes are logged: a mark to take before a native
+    /// call, for [`changes_since`](Self::changes_since) after it.
+    #[inline]
+    pub fn changes_mark(&self) -> usize {
+        self.in_call_changes.len()
+    }
+
+    /// The revisioned classes changed since `mark`, each with its revision
+    /// before and after, in order.
+    #[inline]
+    pub fn changes_since(&self, mark: usize) -> &[(InputClasses, u64, u64)] {
+        self.in_call_changes.get(mark..).unwrap_or(&[])
+    }
+
+    /// Forget the changes logged since `mark` (the call that made them has
+    /// returned and been recorded).
+    #[inline]
+    pub fn truncate_changes(&mut self, mark: usize) {
+        self.in_call_changes.truncate(mark);
     }
 
     /// The current revision of one revisioned class (`0` for a class that
@@ -384,6 +454,7 @@ impl RunDeps {
         self.host_read = false;
         self.class_read = 0;
         self.class_changed_in_run = 0;
+        self.in_call_changes.clear();
         self.state_unsettled = false;
         self.in_place_kept = None;
         self.rng_consumed = false;

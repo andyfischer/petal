@@ -12,7 +12,7 @@
 //!
 //! A [`Deps`] is a bit set. The low bits are the native rows' input classes
 //! ([`InputClasses`]: `POINTER`, `KEYBOARD`, `CLOCK`, `VIEWPORT`,
-//! `HOST_DATA`, `RESOURCES`, `RNG`, `BINDINGS`, `PHYSICS`, `NET`); above them
+//! `HOST_DATA`, `RESOURCES`, `RNG`, `BINDINGS`, `PHYSICS`, `NET`, `CAMERA`); above them
 //! are the program's own sources of change and the kinds of output:
 //!
 //! | Bit | Set by |
@@ -399,6 +399,8 @@ impl DepClasses {
                 );
                 continue;
             }
+            // Not CAMERA: the host revises it only when the camera moves (its
+            // revision names the camera), so a reader replays while it holds.
             for class in [InputClasses::PHYSICS, InputClasses::NET] {
                 if let Some(w) = FnDeps::witness(&f.why_every, Deps::inputs(class)) {
                     let name = class.names().first().copied().unwrap_or("?");

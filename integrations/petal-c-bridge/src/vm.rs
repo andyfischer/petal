@@ -1504,6 +1504,16 @@ pub extern "C" fn pb_vm_note_class_changed(vm: *mut VmHandle, reads: u32) -> Sta
     })
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_set_class_revision(vm: *mut VmHandle, reads: u32, revision: u64) -> Status {
+    status(vm, |vm| {
+        let stack = vm.loaded()?.stack_id;
+        vm.env
+            .set_class_revision(stack, natives::classes_from_flags(reads), revision);
+        Ok(())
+    })
+}
+
 /// The dependency classes and `never-replays` findings of the loaded
 /// program, as text.
 #[unsafe(no_mangle)]

@@ -472,7 +472,8 @@ impl<'a> Vm<'a> {
             if effects.command && !effects.effect {
                 // Not called, so it reads no key; the record keeps the key
                 // the call has here, for the replay that issues it.
-                self.memo_note_native(nid, args, Value::Nil, effects, origin, None);
+                let mark = self.stack.run_deps.changes_mark();
+                self.memo_note_native(nid, args, Value::Nil, effects, origin, None, mark);
                 return Ok(Value::Nil);
             }
         }
@@ -499,6 +500,9 @@ impl<'a> Vm<'a> {
         };
         #[allow(clippy::disallowed_methods, reason = "only while profiling, which no web host turns on")]
         let timed = self.profile.enabled.then(std::time::Instant::now);
+        // The revisioned classes the call changes are logged from here
+        // (`RunDeps::changes_since`), for a command's record.
+        let changes_mark = self.stack.run_deps.changes_mark();
         let mut cxt = self.native_cxt(args, &chain, origin, in_place, false);
         let count = natives.call(nid, &mut cxt)?;
         let key_taken = cxt.key_taken;
@@ -537,8 +541,9 @@ impl<'a> Vm<'a> {
         }
         if self.memo && self.stack.memo.recording() {
             let effects = self.native_fns.effects(nid);
-            self.memo_note_native(nid, args, result, effects, origin, key_taken);
+            self.memo_note_native(nid, args, result, effects, origin, key_taken, changes_mark);
         }
+        self.stack.run_deps.truncate_changes(changes_mark);
         Ok(result)
     }
 

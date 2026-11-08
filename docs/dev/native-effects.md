@@ -38,6 +38,7 @@ that consults the resource table only when handed a `Pending` still declares
 
 From C the row is a bit set of `PB_FX_*` flags (`petal_bridge.h`), `PB_FX_PURE`
 being `0`; the newer bits are `PB_FX_READS_PHYSICS`, `PB_FX_READS_NET`,
+`PB_FX_READS_CAMERA` (bit 22, above the others),
 `PB_FX_DECLARE` (on an emitter: `pb_vm_register_emitter_fx`),
 `PB_FX_COMMAND` and `PB_FX_TICKS`. `Env::set_native_effects` replaces the row
 of a registered native.
@@ -69,6 +70,27 @@ host-data revision (`Env::note_host_data_changed`, now also
 `pb_vm_note_host_data_changed`). The revisioned classes are host data with
 counters of their own, so a physics step does not invalidate a scope that
 read only host data; the frame gate reports either as `HostDataChanged`.
+
+`CAMERA` (`PB_FX_READS_CAMERA`) is a revisioned class whose revision the
+host **sets** rather than bumps: `Env::set_class_revision`
+(`pb_vm_set_class_revision`) before a run and `PetalCxt::set_class_revision`
+(`pb_call_set_class_revision`) in a `camera()` command, to a fingerprint of
+the frame's camera. An engine resets the camera before every run and the run
+sets it again, so a counter would move twice a frame; a fingerprint names the
+camera, and a run that sets last frame's camera reads as unchanged.
+
+A command that changes a revisioned class in its call (either way) is
+recorded with the change, `Dep::ClassChange { class, from, to }`, after its
+`Command`. Validation walks a record in order, before the replay re-issues
+anything, so it follows the change: where the class is at `from` (live, or
+as an earlier change of the walk left it), the reads after it are checked
+against `to`; elsewhere they fail. A scope that sets the camera and then
+projects through it replays while it starts from the same camera, and a
+relative change (or a partial `camera(pos, target)` keeping another fov) is
+never replayed from a different start. A child is not re-executed alone
+after such a change (it would read the live class). A native that is neither
+a command nor an effect and changes a class in its call makes its scope
+effectful, since a replay would drop it.
 
 What is not built: static colliders with their own slower revision (a
 `raycast` against level geometry only, replayable across frames), and the

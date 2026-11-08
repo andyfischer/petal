@@ -265,6 +265,24 @@ impl Env {
         }
     }
 
+    /// Set the revision of the revisioned classes in `classes` on `stack_id`
+    /// to `revision` (a fingerprint of the class's state), instead of
+    /// bumping it: the frame's camera
+    /// ([`InputClasses::CAMERA`](crate::native_fn::InputClasses::CAMERA)),
+    /// which a host resets at the start of every run and a run sets again,
+    /// reads as unchanged when the run sets it to what it was before. See
+    /// [`RunDeps::set_class_revision`](crate::run_deps::RunDeps::set_class_revision).
+    pub fn set_class_revision(
+        &mut self,
+        stack_id: StackKey,
+        classes: crate::native_fn::InputClasses,
+        revision: u64,
+    ) {
+        if let Some(stack) = self.stacks.get_mut(&stack_id) {
+            stack.run_deps.set_class_revision(classes, revision);
+        }
+    }
+
     /// The dependency record of `stack_id`'s most recent run, for hosts and
     /// tools that want more than the yes/no (which bindings were read, whether
     /// host data was consulted).

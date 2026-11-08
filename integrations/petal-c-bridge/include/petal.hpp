@@ -118,6 +118,8 @@ inline constexpr uint32_t ReadsRng = PB_FX_READS_RNG;
 inline constexpr uint32_t ReadsBindings = PB_FX_READS_BINDINGS;
 inline constexpr uint32_t ReadsPhysics = PB_FX_READS_PHYSICS;
 inline constexpr uint32_t ReadsNet = PB_FX_READS_NET;
+// The frame's camera, revised by a fingerprint (Vm::set_class_revision).
+inline constexpr uint32_t ReadsCamera = PB_FX_READS_CAMERA;
 // The kinds of engine native (see petal_bridge.h): a declare is an emitter
 // (emitter_fx), a command is re-issued on replay, a query is valid while its
 // class's revision holds (note_class_changed).
@@ -504,6 +506,11 @@ public:
     // This call changed a revisioned class of host data (fx::ReadsPhysics,
     // fx::ReadsNet) during the run (see pb_call_note_class_changed).
     bool note_class_changed(uint32_t reads) const noexcept { return pb_call_note_class_changed(c_, reads); }
+    // This call set the revision of a revisioned class (fx::ReadsCamera) to
+    // `revision` (see pb_call_set_class_revision). Whether it moved.
+    bool set_class_revision(uint32_t reads, uint64_t revision) const noexcept {
+        return pb_call_set_class_revision(c_, reads, revision);
+    }
     // Record an expectation of the host's own (see pb_call_expect).
     void expect(bool ok, const std::string& message, const char* check = nullptr) const {
         pb_call_expect(c_, ok, check, message.c_str());
@@ -772,6 +779,9 @@ public:
     // a revisioned class (fx::ReadsPhysics after a physics step).
     void note_host_data_changed() { check(pb_vm_note_host_data_changed(vm_)); }
     void note_class_changed(uint32_t reads) { check(pb_vm_note_class_changed(vm_, reads)); }
+    void set_class_revision(uint32_t reads, uint64_t revision) {
+        check(pb_vm_set_class_revision(vm_, reads, revision));
+    }
     // Every function's dependency classes and why the ones that never replay
     // do not (see pb_vm_dep_classes_report).
     std::string dep_classes_report(bool all_modules = false) {

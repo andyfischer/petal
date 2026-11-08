@@ -228,6 +228,21 @@ pub enum Dep {
         class: crate::native_fn::InputClasses,
         revision: u64,
     },
+    /// A `command` native changed a revisioned class during its call (a
+    /// `camera()` that moved the camera, a push that moved a body): its
+    /// revision went from `from` to `to`. Recorded after the call's
+    /// `Command`. Validation reads it in order: when the class is at `from`
+    /// there (the live revision, or what an earlier change of the walk left),
+    /// re-issuing the command brings it to `to` again, so the reads after it
+    /// are checked against `to`; when it is not, they cannot be checked and
+    /// fail. A scope that sets the camera and then reads it replays while it
+    /// starts from the same camera, though validation runs before the replay
+    /// re-issues the command.
+    ClassChange {
+        class: crate::native_fn::InputClasses,
+        from: u64,
+        to: u64,
+    },
     /// A `command` native was issued with `args`. Not a dependency but an
     /// effect, kept in order with the writes: a replay **re-issues** it
     /// (calls the native again with the same arguments), which is what
@@ -499,6 +514,12 @@ pub struct MemoTable {
     /// call is treated as the runtime alone would): the reference a test
     /// compares the hinted run with. Off by default.
     pub no_hints: bool,
+    /// While a record is validated (`memo_validate`, children included): the
+    /// revision each revisioned class is taken to have from here on in the
+    /// walk, after a [`Dep::ClassChange`], or `None` when the walk passed a
+    /// change it could not follow (the class was not at its `from`). Empty
+    /// outside a validation, and saved and restored around a nested one.
+    pub class_overlay: SmallVec<[(crate::native_fn::InputClasses, Option<u64>); 2]>,
     /// Structural-equality answers for pairs of closures compared this run.
     /// Top-level functions are re-created every run and capture one another,
     /// so the same pairs come up for every scope that takes a callback.
@@ -853,6 +874,7 @@ fn mark_deps(deps: &[Dep], mark: &mut impl FnMut(Value)) {
             Dep::HostRead
             | Dep::ResourcesRead
             | Dep::ClassRead { .. }
+            | Dep::ClassChange { .. }
             | Dep::EnumData { .. }
             | Dep::Child { .. } => {}
         }

@@ -217,8 +217,19 @@ impl<'a> Vm<'a> {
         origin: Option<TermId>,
         // The implicit key the native read (`PetalCxt::call_key`), if it did.
         key_taken: Option<u64>,
+        // Where `RunDeps`'s log of in-call class changes stood before the
+        // call: what follows it is what this call changed.
+        changes_mark: usize,
     ) {
         if effects.effect || matches!(result, Value::Pending(_)) {
+            self.stack.memo.note_effect();
+            return;
+        }
+        let changed = !self.stack.run_deps.changes_since(changes_mark).is_empty();
+        if changed && !effects.command {
+            // Only a command is re-issued by a replay; anything else that
+            // moved a class in its call would leave the replay's later
+            // reads unchecked.
             self.stack.memo.note_effect();
             return;
         }
@@ -246,6 +257,17 @@ impl<'a> Vm<'a> {
                     key,
                 });
             }
+            // What the call did to a revisioned class, after the command,
+            // so validation can follow it (`Dep::ClassChange`).
+            if changed {
+                let changes: SmallVec<[(InputClasses, u64, u64); 2]> =
+                    self.stack.run_deps.changes_since(changes_mark).into();
+                if let Some(s) = self.stack.memo.innermost() {
+                    for (class, from, to) in changes {
+                        s.note(|| Dep::ClassChange { class, from, to });
+                    }
+                }
+            }
         }
         // A revisioned class (`PHYSICS`, `NET`) is validated by its own
         // revision; one entry per class in a row of reads.
@@ -256,7 +278,8 @@ impl<'a> Vm<'a> {
                 }
                 let revision = self.stack.run_deps.class_now(class);
                 if let Some(s) = self.stack.memo.innermost()
-                    && !matches!(s.deps.last(), Some(Dep::ClassRead { class: c, .. }) if *c == class)
+                    && !matches!(s.deps.last(), Some(Dep::ClassRead { class: c, revision: r })
+                        if *c == class && *r == revision)
                 {
                     s.note(|| Dep::ClassRead { class, revision });
                 }
@@ -467,7 +490,10 @@ impl<'a> Vm<'a> {
         }
 
         let pure = sc.deps.iter().all(|d| match d {
-            Dep::StateWrite { .. } | Dep::CellWrite { .. } | Dep::Command { .. } => false,
+            Dep::StateWrite { .. }
+            | Dep::CellWrite { .. }
+            | Dep::Command { .. }
+            | Dep::ClassChange { .. } => false,
             Dep::Child { path, .. } => self.stack.memo.get(path).is_some_and(|c| c.pure),
             _ => true,
         });
@@ -770,7 +796,15 @@ impl<'a> Vm<'a> {
             self.memo_all_eq(&recorded_args, args)
         };
         let same_call = same_fn && same_args && self.memo_all_eq(&recorded_caps, &captures);
-        if !same_call || !self.memo_validate(path) {
+        // A validation started here (a re-execution's own calls, inside an
+        // outer one) follows the live revisions, not the outer walk's.
+        let valid = same_call && {
+            let outer = std::mem::take(&mut self.stack.memo.class_overlay);
+            let valid = self.memo_validate(path);
+            self.stack.memo.class_overlay = outer;
+            valid
+        };
+        if !valid {
             self.stack.memo.stats.misses += 1;
             return None;
         }
@@ -871,7 +905,19 @@ impl<'a> Vm<'a> {
                 }
                 Dep::HostRead => self.stack.run_deps.host_data_now() == host_rev,
                 Dep::ClassRead { class, revision } => {
-                    self.stack.run_deps.class_now(*class) == *revision
+                    self.memo_class_revision(*class) == Some(*revision)
+                }
+                Dep::ClassChange { class, from, to } => {
+                    // Re-issued from the same revision, the command makes
+                    // the same change; from any other, what it makes is
+                    // unknown here, and only a read after it can tell.
+                    let next = (self.memo_class_revision(*class) == Some(*from)).then_some(*to);
+                    let overlay = &mut self.stack.memo.class_overlay;
+                    match overlay.iter_mut().find(|(c, _)| c == class) {
+                        Some(e) => e.1 = next,
+                        None => overlay.push((*class, next)),
+                    }
+                    true
                 }
                 Dep::Command { .. } => true,
                 Dep::ResourcesRead => self.resources.revision() == res_rev,
@@ -899,6 +945,16 @@ impl<'a> Vm<'a> {
         }
     }
 
+    /// The revision a revisioned class has at this point of a validation
+    /// walk: what the last `Dep::ClassChange` of the walk left (`None`: not
+    /// known), else the live one.
+    fn memo_class_revision(&self, class: InputClasses) -> Option<u64> {
+        match self.stack.memo.class_overlay.iter().find(|(c, _)| *c == class) {
+            Some((_, r)) => *r,
+            None => Some(self.stack.run_deps.class_now(class)),
+        }
+    }
+
     /// A parent's record names child `path` at record `serial`. Still good?
     /// Validate the child; if that fails and the child is pure, run it alone
     /// and see whether it produces what it produced before. Returns the
@@ -915,7 +971,10 @@ impl<'a> Vm<'a> {
             self.stack.memo.visit(path);
             return Some(serial);
         }
-        if !pure {
+        // A re-execution would read the live revisions, not the ones an
+        // earlier change of this walk stands for (the command is not
+        // re-issued until the parent replays).
+        if !pure || !self.stack.memo.class_overlay.is_empty() {
             return None;
         }
         self.memo_reexecute(path)

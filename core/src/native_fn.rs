@@ -100,6 +100,13 @@ impl InputClasses {
     /// State replicated from a network peer, revised when a message is
     /// applied. Validated by its own revision, as `PHYSICS` is.
     pub const NET: InputClasses = InputClasses(1 << 9);
+    /// The frame's camera and viewport, as a projection (`world_to_screen`,
+    /// `screen_ray`) reads them. Validated by its own revision, which the
+    /// host *sets* to a fingerprint of the camera
+    /// ([`crate::env::Env::set_class_revision`]) rather than bumping: a
+    /// camera that a run sets to what it was in the run before reads as
+    /// unchanged, though the host resets it at the start of every run.
+    pub const CAMERA: InputClasses = InputClasses(1 << 10);
 
     /// The player's input devices: [`POINTER`](Self::POINTER) and
     /// [`KEYBOARD`](Self::KEYBOARD). The dependency classes report them as one
@@ -108,10 +115,11 @@ impl InputClasses {
     /// The classes validated by a revision the host bumps (a read records the
     /// revision it saw), as opposed to by re-evaluating a probe: each has its
     /// own counter ([`crate::run_deps::RunDeps::class_now`]).
-    pub const REVISIONED: InputClasses = InputClasses(Self::PHYSICS.0 | Self::NET.0);
+    pub const REVISIONED: InputClasses =
+        InputClasses(Self::PHYSICS.0 | Self::NET.0 | Self::CAMERA.0);
 
     /// Every class, by name, in bit order: what a report prints.
-    pub const NAMED: [(InputClasses, &'static str); 10] = [
+    pub const NAMED: [(InputClasses, &'static str); 11] = [
         (Self::POINTER, "POINTER"),
         (Self::KEYBOARD, "KEYBOARD"),
         (Self::CLOCK, "CLOCK"),
@@ -122,6 +130,7 @@ impl InputClasses {
         (Self::BINDINGS, "BINDINGS"),
         (Self::PHYSICS, "PHYSICS"),
         (Self::NET, "NET"),
+        (Self::CAMERA, "CAMERA"),
     ];
 
     pub const fn union(self, other: InputClasses) -> InputClasses {
@@ -1610,6 +1619,17 @@ impl<'a> PetalCxt<'a> {
     /// it. Classes outside [`InputClasses::REVISIONED`] are ignored.
     pub fn note_class_changed(&mut self, classes: InputClasses) {
         self.run_deps.note_class_changed_in_run(classes);
+    }
+
+    /// Set the revision of a revisioned class of host data during the run,
+    /// as [`Env::set_class_revision`](crate::env::Env::set_class_revision)
+    /// does between runs: a `command` that moved the frame's camera
+    /// ([`InputClasses::CAMERA`]) names the camera it set. Nothing happens
+    /// when the revision is already `revision`; otherwise it is a change in
+    /// the run, as [`note_class_changed`](Self::note_class_changed) is.
+    /// Whether the revision moved.
+    pub fn set_class_revision(&mut self, classes: InputClasses, revision: u64) -> bool {
+        self.run_deps.set_class_revision_in_run(classes, revision)
     }
 
     /// Declare that this native did something a replay could not reproduce

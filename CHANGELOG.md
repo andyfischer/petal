@@ -124,6 +124,16 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- A revisioned input class for a host's frame camera, `CAMERA`
+  (`PB_FX_READS_CAMERA`, C++ `petal::fx::ReadsCamera`), and a way to set a
+  revisioned class's revision instead of bumping it:
+  `Env::set_class_revision` / `pb_vm_set_class_revision` between runs,
+  `PetalCxt::set_class_revision` / `pb_call_set_class_revision` in a call.
+  A command that changes a revisioned class in its call is recorded with the
+  change (`Dep::ClassChange`), and validation follows it, so a memoized scope
+  that sets the camera and then reads it replays exactly when it starts from
+  the same camera. See docs/dev/native-effects.md.
+
 - petal-ui: a `tooling` cargo feature, on by default, gates the headless
   tooling (`harness`, `scenario`, `drag_trace`, `panel_stubs` and the
   `petal-ui-run` / `petal-ui-propose-edit` binaries). Nothing changes for an

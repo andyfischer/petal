@@ -982,6 +982,53 @@ TEST(a_native_that_changes_host_data_in_the_run_invalidates_its_readers) {
     }
 }
 
+// A class whose revision the host SETS to a fingerprint of its state
+// (PB_FX_READS_CAMERA, pb_vm_set_class_revision, pb_call_set_class_revision):
+// an engine's frame camera, reset before every run and set again by a
+// `look` command. A scope that sets the camera and then reads it replays
+// while it starts from the same camera (Petal checks the read from the
+// revision before the command, through the change it recorded), and a reader
+// after it replays while the camera is the one of the run before; the
+// command is re-issued by every replay.
+TEST(a_camera_class_set_by_fingerprint_replays_while_the_camera_holds) {
+    const auto fp = [](double cam) { return uint64_t(cam * 1000.0) * 0x9e3779b97f4a7c15ull + 7; };
+    const double inputs[] = {1, 1, 2, 2, 1, 1};
+    for (const bool memo : {false, true}) {
+        petal::Vm vm;
+        double cam = 0, input = 0;
+        int64_t asked = 0, looks = 0;
+        vm.native("look", petal::fx::Command, [&](petal::Call& c) {
+            ++looks;
+            cam = c[0].number();
+            c.set_class_revision(petal::fx::ReadsCamera, fp(cam));
+        });
+        vm.native("proj", petal::fx::ReadsCamera, [&](petal::Call& c) {
+            ++asked;
+            c.result().value(cam * 10 + c[0].number());
+        });
+        vm.native("inp", petal::fx::Probe | petal::fx::ReadsPointer, [&](petal::Call& c) { c.result().value(input); });
+        vm.load_source(
+            "import io\n"
+            "native fn look(x)\nnative fn proj(p)\nnative fn inp()\n"
+            "fn shot(x, p)\n  look(x)\n  push_output(symbol(\"out\"), proj(p))\n  nil\nend\n"
+            "fn hud(p)\n  push_output(symbol(\"out\"), proj(p))\n  nil\nend\n"
+            "shot(inp(), 1.0)\n"
+            "hud(2.0)\n");
+        vm.set_memo(memo);
+        for (int f = 0; f < 6; ++f) {
+            input = inputs[f];
+            cam = 0;   // the frame's camera starts from the default
+            vm.set_class_revision(petal::fx::ReadsCamera, fp(cam));
+            const int64_t before = asked;
+            CHECK_EQ(run_out(vm), (std::vector<double>{input * 10 + 1, input * 10 + 2}));
+            CHECK_EQ(looks, f + 1);   // issued or re-issued every frame
+            // A frame with the camera of the frame before replays both.
+            const bool same = f > 0 && inputs[f] == inputs[f - 1];
+            CHECK_EQ(asked - before, (memo && same) ? 0 : 2);
+        }
+    }
+}
+
 TEST(implicit_keys_reach_keyed_emitters_and_callbacks) {
     petal::Vm vm;
     std::vector<std::optional<uint64_t>> lights, kicks;

@@ -12,6 +12,21 @@ Nothing in `~/petal` was changed while writing the demo.
 
 ## 1. Sub-pixel coordinates in draw commands
 
+**Status (2026-11-08): done — opt-in via** `register_draw_with(DrawOptions {
+subpixel: true, .. })` and the `take_frame_commands*` / `DrawWire::encode_frame`
+drains (petal-ui, ebbd6ab7); `PetalRuntime.with_subpixel(true)` +
+`take_draw_buffer_subpixel()` / `new PetalCanvas({ subpixel: true })` on the
+web (1c7c0d73); `--subpixel` / `DefaultHost::with_subpixel` in petal-sdl
+(476d264e). Curves, strokes and polygons go sub-pixel; the rect family stays
+snapped unless a script calls `pixel_snap(false)` (`pixel_snap(true)` snaps
+everything). Hosts that don't opt in are unchanged (`DrawCommand`, wire
+opcodes, `take_draw_buffer`, the C ABI). PRELUDE_LEVEL 13. Details:
+`core-libs/petal-ui/docs/host-contract.md` § "Sub-pixel coordinates". Left
+open: petal-lang.org still has to switch its loader to the sub-pixel drain;
+prelude helpers that `int()` positions (`layer`, `snapshot`, `canvas`,
+`cached_layer`) stay whole; images drawn under `pixel_snap(true)` can't yet
+be told apart from default-mode ones for smoothing.
+
 **Today.** Every `DrawCommand` position and size is `i32` or `u32`
 (`core-libs/petal-ui/src/draw.rs`). Script floats are truncated with `as`.
 A circle of radius 1.6 is drawn at radius 1. A point moving 0.3 px per frame

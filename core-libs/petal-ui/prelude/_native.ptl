@@ -27,6 +27,7 @@ pub native fn _native_text(text, x, y, style) = "draw_text"
 pub native fn _native_text(text, x, y, size, r, g, b, a?) = "draw_text"
 pub native fn _native_font(name) = "font"
 pub native fn _native_polyline(points, r, g?, b?, a?, width?) = "draw_polyline"
+pub native fn _native_pixel_snap(on) = "pixel_snap"
 
 // ── Clipping (./_frame) ─────────────────────────────────────────────────────
 pub native fn _native_clip(x, y, w, h, radius?) = "clip"

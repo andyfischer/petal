@@ -472,6 +472,24 @@ pub fn draw_text(text, x, y, style)
   end
 end
 
+// ── Pixel snapping ────────────────────────────────────────────────────────
+
+// pixel_snap(on) — how what is drawn after it lands on the pixel grid, on a
+// host that draws at fractional positions. By default rects (and images,
+// gradients, shadows, canvases, text positions) snap to whole pixels, so
+// rects that tile meet without a seam, and circles, lines, polylines and
+// polygons keep their fractions, so a slow drift moves smoothly.
+//
+//   pixel_snap(true)    snap everything: pixel art
+//   pixel_snap(false)   snap nothing
+//   pixel_snap(nil)     back to the default
+//
+// Every frame starts at the default. A host that draws only whole pixels
+// snaps everything whatever this says.
+pub fn pixel_snap(on)
+  _native_pixel_snap(on)
+end
+
 // ── Gradients ─────────────────────────────────────────────────────────────
 // A gradient stop is an ordinary color record. It may carry an `a` field, in
 // which case that is the stop's alpha — the only primitive where alpha rides

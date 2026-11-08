@@ -21,7 +21,10 @@
 //!   same buffer; those decode as [`DrawCommand::Host`] and keep their place
 //!   in the command order.
 //!
-//! Coordinates are logical pixels, `(0, 0)` at the drawable's top-left.
+//! Coordinates are logical pixels, `(0, 0)` at the drawable's top-left,
+//! whole pixels in a [`DrawCommand`]. A host that draws at fractional
+//! positions opts in with [`register_draw_with`] and drains
+//! [`SubCommand`]s with [`take_frame_commands`]; see [`crate::subpixel`].
 //! Colors are 0–255 sRGB components.
 
 use crate::params::register;
@@ -56,6 +59,13 @@ pub use crate::text::{
     TextStyle, VerticalMetrics, bind_default_font_name, bind_font_metrics,
     bind_font_variant_metrics, bind_text_advance_table, bind_text_metrics,
     bind_text_vertical_metrics, clear_font_cache, font_variant_key, swap_font_provider,
+};
+
+/// Sub-pixel draw commands, for a host registered with
+/// [`DrawOptions::subpixel`]; see [`crate::subpixel`].
+pub use crate::subpixel::{
+    FrameCommand, PixelSnap, SubCommand, take_frame_commands, take_frame_commands_for,
+    take_frame_commands_traced,
 };
 
 // The natives `register_draw` installs from that module; not re-exported,
@@ -637,7 +647,7 @@ pub(crate) fn color_of(v: &Value, heap: &Heap) -> Option<(u8, u8, u8, u8)> {
 /// carries: a `{r, g, b}` record, or a packed `0xRRGGBB` int. This is what
 /// lets `draw_rect(x, y, w, h, c)` be one native call rather than a prelude
 /// function unpacking the record first.
-fn color_arg(state: &PetalCxt, index: usize, who: &str) -> Result<[Value; 3], String> {
+pub(crate) fn color_arg(state: &PetalCxt, index: usize, who: &str) -> Result<[Value; 3], String> {
     match state.get_value(index)? {
         Value::Map(id) => {
             let map = state.heap().get_map(id);
@@ -1158,27 +1168,63 @@ impl DrawCommand {
 
 // ── Host-side: drain / clear ──────────────────────────────────────────────
 
-/// Drain the `draw_commands` output buffer and decode it into a renderable
-/// command list. Malformed commands are skipped (logged to stderr).
-pub fn take_draw_commands(env: &mut Env) -> Vec<DrawCommand> {
-    let sym = env.intern_symbol(DRAW_COMMANDS_SYMBOL);
-    let values = env.take_output_buffer(sym);
-    let mut out = Vec::with_capacity(values.len());
-    let mut kept = Vec::with_capacity(values.len());
-    for v in &values {
-        match DrawCommand::from_value(v, env.heap()) {
+/// A drained buffer, decoded: the commands that decoded, the raw value each
+/// came from, the [`PixelSnap`] mode in force where it was emitted, and its
+/// index in the raw buffer. `pixel_snap` markers are consumed here, before
+/// decoding, so they never become a [`DrawCommand::Host`]; dropping them (and
+/// any command that fails to decode) never shifts an index, because each kept
+/// command carries its own raw index.
+pub(crate) struct Drained {
+    pub cmds: Vec<DrawCommand>,
+    pub values: Vec<Value>,
+    pub snaps: Vec<PixelSnap>,
+    pub at: Vec<usize>,
+}
+
+pub(crate) fn decode_buffer(values: &[Value], heap: &Heap) -> Drained {
+    let mut d = Drained {
+        cmds: Vec::with_capacity(values.len()),
+        values: Vec::with_capacity(values.len()),
+        snaps: Vec::new(),
+        at: Vec::with_capacity(values.len()),
+    };
+    // A frame starts at the default mode; only a subpixel host's
+    // `pixel_snap` emits a marker, so `snaps` stays all-default otherwise.
+    let mut snap = PixelSnap::default();
+    for (i, v) in values.iter().enumerate() {
+        if let Some(mode) = crate::subpixel::snap_marker(v, heap) {
+            snap = mode;
+            continue;
+        }
+        match DrawCommand::from_value(v, heap) {
             Ok(cmd) => {
-                out.push(cmd);
-                kept.push(*v);
+                d.cmds.push(cmd);
+                d.values.push(*v);
+                d.snaps.push(snap);
+                d.at.push(i);
             }
             Err(e) => eprintln!("[petal-ui draw] {}", e),
         }
     }
+    d
+}
+
+/// Drain the `draw_commands` output buffer and decode it into a renderable
+/// command list. Malformed commands are skipped (logged to stderr).
+///
+/// Every coordinate is whole pixels: on a host registered with
+/// [`DrawOptions::subpixel`], a fractional coordinate is truncated here,
+/// exactly as the natives of a host without it truncate it. Such a host
+/// drains with [`take_frame_commands`] instead.
+pub fn take_draw_commands(env: &mut Env) -> Vec<DrawCommand> {
+    let sym = env.intern_symbol(DRAW_COMMANDS_SYMBOL);
+    let values = env.take_output_buffer(sym);
+    let d = decode_buffer(&values, env.heap());
     // Layers sorted, retained layers resolved, batches lowered — whatever
     // this host did not ask to handle itself (see `crate::compose`).
-    crate::compose::compose(env, None, out, kept)
+    crate::compose::compose_items(env, None, d.cmds, d.values, &d.snaps)
         .into_iter()
-        .map(|(cmd, _)| cmd)
+        .map(|item| item.cmd)
         .collect()
 }
 
@@ -1203,32 +1249,29 @@ pub fn take_draw_commands_traced(env: &mut Env) -> Vec<(DrawCommand, EmitSite)> 
     let sym = env.intern_symbol(DRAW_COMMANDS_SYMBOL);
     let values = env.take_output_buffer(sym);
     let mut origins = env.take_output_origins(sym);
-    let mut out = Vec::with_capacity(values.len());
-    let mut kept = Vec::with_capacity(values.len());
-    let mut sites = Vec::with_capacity(values.len());
-    for (i, v) in values.iter().enumerate() {
-        match DrawCommand::from_value(v, env.heap()) {
-            // Index into `origins` rather than zipping: a command that fails to
-            // decode is skipped, and zipping would silently shift every later
-            // command's attribution onto the wrong call site.
-            Ok(cmd) => {
-                let site = origins.get_mut(i).map(std::mem::take).unwrap_or_default();
-                out.push(cmd);
-                kept.push(*v);
-                sites.push(site);
-            }
-            Err(e) => eprintln!("[petal-ui draw] {}", e),
-        }
-    }
+    let d = decode_buffer(&values, env.heap());
+    // Index into `origins` by each command's raw index rather than zipping: a
+    // command that fails to decode, or a `pixel_snap` marker, is skipped, and
+    // zipping would silently shift every later command's attribution onto
+    // the wrong call site.
+    let sites = take_sites(&mut origins, &d.at);
     // A command the drain made (a retained layer's content, a lowered batch)
     // is attributed to the command it came from.
-    crate::compose::compose(env, None, out, kept)
+    crate::compose::compose_items(env, None, d.cmds, d.values, &d.snaps)
         .into_iter()
-        .map(|(cmd, from)| {
-            let site = from.and_then(|i| sites.get(i).cloned()).unwrap_or_default();
-            (cmd, site)
-        })
+        .map(|item| (item.cmd, site_of(&sites, item.from)))
         .collect()
+}
+
+/// The emit site of each kept command, by its raw index.
+pub(crate) fn take_sites(origins: &mut [EmitSite], at: &[usize]) -> Vec<EmitSite> {
+    at.iter()
+        .map(|&i| origins.get_mut(i).map(std::mem::take).unwrap_or_default())
+        .collect()
+}
+
+pub(crate) fn site_of(sites: &[EmitSite], from: Option<usize>) -> EmitSite {
+    from.and_then(|i| sites.get(i).cloned()).unwrap_or_default()
 }
 
 /// Discard any buffered draw commands (defensive clear at the top of a frame).
@@ -1243,24 +1286,13 @@ pub fn clear_draw_commands(env: &mut Env) {
 pub fn take_draw_commands_for(env: &mut Env, stack_id: StackKey) -> Vec<DrawCommand> {
     let sym = env.intern_symbol(DRAW_COMMANDS_SYMBOL);
     let values = env.take_output_buffer_for(stack_id, sym);
-    let heap = match env.heap_for(stack_id) {
-        Some(h) => h,
+    let d = match env.heap_for(stack_id) {
+        Some(heap) => decode_buffer(&values, heap),
         None => return Vec::new(),
     };
-    let mut out = Vec::with_capacity(values.len());
-    let mut kept = Vec::with_capacity(values.len());
-    for v in &values {
-        match DrawCommand::from_value(v, heap) {
-            Ok(cmd) => {
-                out.push(cmd);
-                kept.push(*v);
-            }
-            Err(e) => eprintln!("[petal-ui draw] {}", e),
-        }
-    }
-    crate::compose::compose(env, Some(stack_id), out, kept)
+    crate::compose::compose_items(env, Some(stack_id), d.cmds, d.values, &d.snaps)
         .into_iter()
-        .map(|(cmd, _)| cmd)
+        .map(|item| item.cmd)
         .collect()
 }
 
@@ -1378,6 +1410,49 @@ pub fn register_draw(env: &mut Env) {
     // never made draws nothing), which is the degradation the prelude is
     // written against — see `draw_material`.
     register_canvas(env);
+    // Last, so every native above keeps the id it has always had. On a host
+    // without sub-pixel commands it only checks its argument: every
+    // coordinate is whole pixels there whatever the script asks for.
+    register(env, "pixel_snap", native_pixel_snap, DRAW);
+}
+
+/// How a host wants the draw natives: what [`register_draw_with`] takes.
+/// The default is what [`register_draw`] registers. Construct it with
+/// `..Default::default()`, so a field added later does not break the call.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DrawOptions {
+    /// Keep fractional coordinates. The geometry natives (positions, sizes,
+    /// radii, stroke widths) put a script's number into the buffer as it is
+    /// rather than truncating it, `pixel_snap` takes effect, and the host
+    /// drains with [`take_frame_commands`] to get [`SubCommand`]s.
+    ///
+    /// [`take_draw_commands`] and every other whole-pixel drain still work on
+    /// such an env and return exactly what they return on a default one.
+    pub subpixel: bool,
+}
+
+/// [`register_draw`] with [`DrawOptions`]. With the defaults it *is*
+/// `register_draw`: the same natives, the same ids, the same raw buffer.
+///
+/// It registers the canvas natives too; a host must not call
+/// [`register_canvas`] after it, which would put the whole-pixel
+/// `draw_canvas` back.
+pub fn register_draw_with(env: &mut Env, options: DrawOptions) {
+    register_draw(env);
+    if options.subpixel {
+        crate::subpixel::register_subpixel(env);
+    }
+}
+
+/// `pixel_snap(on)` on a host without sub-pixel commands: nothing to do
+/// (every coordinate is already whole pixels), but the argument is checked
+/// the same as everywhere, so a script that is wrong on one host is wrong on
+/// all of them.
+fn native_pixel_snap(state: &mut PetalCxt) -> NativeResult {
+    let on = state.get_value(1)?;
+    crate::subpixel::PixelSnap::from_arg(&on)?;
+    state.push_nil();
+    Ok(1)
 }
 
 /// Register the offscreen-canvas natives (`create_canvas`, `draw_to`,
@@ -1504,7 +1579,7 @@ fn int_args(state: &PetalCxt, n: usize) -> Result<Vec<Value>, String> {
 /// Read an optional 1-indexed integer arg, or `default` if the caller omitted
 /// it — how the draw natives accept trailing alpha / width without breaking
 /// callers that use the short (opaque, hairline) form.
-fn opt_int(state: &PetalCxt, index: usize, default: i64) -> Result<i64, String> {
+pub(crate) fn opt_int(state: &PetalCxt, index: usize, default: i64) -> Result<i64, String> {
     if state.arg_count() >= index {
         state.get_int(index)
     } else {
@@ -1534,8 +1609,16 @@ fn native_draw_image(state: &mut PetalCxt) -> NativeResult {
     }
     args.push(Value::Int(opt_int(state, 6, 255)?));
     args.push(Value::Int(opt_int(state, 7, 0)?)); // radius
-    // The extended tail: tint, source rect, nine-slice insets. Nothing is
-    // appended for a plain call, so it emits the 7-arg command it always has.
+    image_tail(state, &mut args)?;
+    emit_draw(state, "image", args);
+    state.push_nil();
+    Ok(1)
+}
+
+/// `draw_image`'s extended tail, args 8–16: tint, source rect, nine-slice
+/// insets. Nothing is appended for a plain call, so it emits the 7-arg
+/// command it always has.
+pub(crate) fn image_tail(state: &mut PetalCxt, args: &mut Vec<Value>) -> Result<(), String> {
     let n = state.arg_count();
     if n >= 8 {
         // tint: a colour, or nil for none.
@@ -1555,9 +1638,7 @@ fn native_draw_image(state: &mut PetalCxt) -> NativeResult {
             args.push(Value::Int(opt_int(state, index, 0)?));
         }
     }
-    emit_draw(state, "image", args);
-    state.push_nil();
-    Ok(1)
+    Ok(())
 }
 
 /// `draw_rect` in its three shapes, told apart by the argument count alone:
@@ -1706,7 +1787,7 @@ fn rect_gradient_args(
 
 /// Read the two gradient stops (`r0 g0 b0 a0 r1 g1 b1 a1`) starting at
 /// 1-indexed argument `first`.
-fn gradient_stops(state: &PetalCxt, first: usize) -> Result<([i64; 4], [i64; 4]), String> {
+pub(crate) fn gradient_stops(state: &PetalCxt, first: usize) -> Result<([i64; 4], [i64; 4]), String> {
     let stop = |i: usize| -> Result<[i64; 4], String> {
         Ok([
             state.get_int(i)?,
@@ -1890,7 +1971,7 @@ fn native_draw_ellipse_outline(state: &mut PetalCxt) -> NativeResult {
 
 /// Read a 1-indexed argument as f64 — for the angle/radius args of `fill_arc`,
 /// where an int would quantize a sweep to whole radians.
-fn get_num(state: &PetalCxt, index: usize, name: &str) -> Result<f64, String> {
+pub(crate) fn get_num(state: &PetalCxt, index: usize, name: &str) -> Result<f64, String> {
     match state.get_value(index)? {
         Value::Int(n) => Ok(n as f64),
         Value::Float(f) => Ok(f),
@@ -1946,7 +2027,7 @@ fn native_fill_triangle(state: &mut PetalCxt) -> NativeResult {
 }
 
 /// The `x` and `y` fields of an `{x, y}` point record, or why it is not one.
-fn record_point(tag: &str, id: petal::heap::MapId, heap: &Heap) -> Result<(Value, Value), String> {
+pub(crate) fn record_point(tag: &str, id: petal::heap::MapId, heap: &Heap) -> Result<(Value, Value), String> {
     let map = heap.get_map(id);
     match (map.get("x"), map.get("y")) {
         (Some(x), Some(y)) => Ok((*x, *y)),
@@ -1966,7 +2047,7 @@ fn coord_to_i32(v: &Value) -> Result<i32, String> {
 /// same list when it decodes the command, so a bad point must be rejected here
 /// where the script's own call site is still on the stack). `min` is the
 /// smallest point count the shape means anything at.
-fn point_list_arg(state: &PetalCxt, index: usize, name: &str, min: usize) -> Result<Value, String> {
+pub(crate) fn point_list_arg(state: &PetalCxt, index: usize, name: &str, min: usize) -> Result<Value, String> {
     let points_value = state.get_value(index)?;
     let list_id = match points_value {
         Value::List(id) => id,
@@ -2175,7 +2256,7 @@ fn native_draw_text(state: &mut PetalCxt) -> NativeResult {
 ///
 /// A decoration's alpha is scaled by the text's own, so a fading label takes
 /// its shadow with it.
-fn text_decorations(
+pub(crate) fn text_decorations(
     state: &PetalCxt,
     style_value: &Value,
     style: &TextStyle,

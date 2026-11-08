@@ -95,6 +95,13 @@ Levels:
   focus request; a context menu is opened and dismissed by the runtime,
   so it no longer skips its opening frame (`menu_state` records carry an
   `id`).
+- 13 — sub-pixel drawing (2026-11-08): `pixel_snap(on)` (`true` snaps
+  everything, `false` nothing, `nil` restores the default of snapping the
+  rect family only) and the native `pixel_snap` behind it. It takes effect
+  on a host registered with `DrawOptions { subpixel: true }`
+  ([`draw::register_draw_with`], drained with
+  [`draw::take_frame_commands`]); on every other host it only checks its
+  argument. No behavior change for a host that does not opt in.
 
 [`prelude_source`]: ../src/lib.rs
 [`DRAG_MODULE_NAME`]: ../src/lib.rs
@@ -106,3 +113,5 @@ Levels:
 [`compose`]: ../src/compose.rs
 [`focus`]: ../src/focus.rs
 [`popover`]: ../src/popover.rs
+[`draw::register_draw_with`]: ../src/draw.rs
+[`draw::take_frame_commands`]: ../src/subpixel.rs

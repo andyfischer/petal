@@ -233,6 +233,15 @@ a trailing `a`; strokes a trailing `width`. Arguments can be named.
 | `draw_scrim(r, style?)` | A band fading to nothing, for text over an image. |
 | `draw_fade(r, style?)` | Dissolves content at the edge of a scroll region. |
 | `draw_area_fill(points, baseline_y, color, style?)` | The faded fill under a line chart. |
+| `pixel_snap(on)` | On a host that draws at fractional positions: `true` snaps everything after it to whole pixels (pixel art), `false` nothing, `nil` restores the default. See below. |
+
+Coordinates may be fractional. A host that draws only whole pixels truncates
+them. A host that draws at fractional positions (see [the host
+contract](host-contract.md#sub-pixel-coordinates)) keeps them for circles,
+ellipses, arcs, lines, polylines, triangles and polygons, and by default
+snaps the rect family (rects, outlines, rect gradients, shadows, images,
+canvases, text positions) so that touching rects meet without a seam.
+`pixel_snap` changes that for what is drawn after it, until the frame ends.
 
 ### Images
 

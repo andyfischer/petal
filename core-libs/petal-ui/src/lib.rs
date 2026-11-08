@@ -95,6 +95,7 @@ pub mod pending;
 pub mod popover;
 #[cfg(feature = "tooling")]
 pub mod scenario;
+pub mod subpixel;
 pub mod tess;
 pub mod text;
 
@@ -112,7 +113,7 @@ pub const UI_VERSION: i64 = 1;
 ///
 /// What each level added is in `docs/changelog.md` in this crate; add the
 /// new level there when you bump this.
-pub const PRELUDE_LEVEL: u32 = 12;
+pub const PRELUDE_LEVEL: u32 = 13;
 
 /// Name of the Petal-source prelude module: `import ui`.
 pub const MODULE_NAME: &str = "ui";
@@ -243,8 +244,15 @@ pub const INTERFACE_PACKAGES: &[&str] = &[MODULE_NAME];
 /// Register everything a typical host wants in one call: the input natives,
 /// the draw natives (canvas ops included), and the `ui` package (`import ui`).
 pub fn register_all(env: &mut petal::env::Env) {
+    register_all_with(env, draw::DrawOptions::default());
+}
+
+/// [`register_all`] with the draw natives registered by
+/// [`draw::register_draw_with`] — `DrawOptions { subpixel: true, .. }` for a
+/// host that draws [`draw::SubCommand`]s.
+pub fn register_all_with(env: &mut petal::env::Env, options: draw::DrawOptions) {
     input::register_input(env);
-    draw::register_draw(env);
+    draw::register_draw_with(env, options);
     host_data::register_host_data(env);
     register_prelude(env);
     provide_interface(env);

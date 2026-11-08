@@ -25,6 +25,7 @@ host did not ask for:
 | `draw_image` with `tint`, `src`, `slice` | An `image` command with three more optional fields. | Drawing them. A host that ignores them draws the whole image untinted. |
 | `image_load`, `image_size` | Requests in an output buffer; sizes read from a binding. | Registering its own natives under those names. |
 | Text `shadow` / `outline` | Extra `text` commands under the run. | Nothing. |
+| Fractional coordinates, `pixel_snap` | Whole pixels: every coordinate truncated, as ever. | `SubCommand`s with the script's fractions; see [Sub-pixel coordinates](#sub-pixel-coordinates). |
 | `ui_measure` | Nothing: the measured body's commands never reach the buffer (it runs under `speculate`); inside a script's own `speculate` call it falls back to a muted span the drain drops. | Nothing. |
 
 ## The frame
@@ -188,6 +189,82 @@ stores the content on the env (bindings named `ui_cache:<id>`), and replaces
 each `cache_draw` with `clip_push(x, y, w, h)`, the content translated by
 (`x`, `y`), and `clip_pop`. The script's saving is the same either way: the
 body does not run. The host's saving needs the capability.
+
+## Sub-pixel coordinates
+
+Scripts may pass fractional coordinates. By default every one is truncated
+toward zero, by the natives, and a host sees whole pixels. A host that can
+draw at fractional positions (a 2D canvas, an anti-aliasing rasterizer) opts
+in when it registers the natives and drains with the sub-pixel drain:
+
+```rust
+use petal_ui::draw::{DrawOptions, FrameCommand, register_draw_with, take_frame_commands};
+register_draw_with(&mut env, DrawOptions { subpixel: true, ..Default::default() });
+// (or petal_ui::register_all_with(&mut env, DrawOptions { subpixel: true, .. }))
+// … each frame:
+for cmd in take_frame_commands(&mut env) {
+    match cmd {
+        FrameCommand::Px(cmd) => draw_whole(cmd),   // a DrawCommand, as ever
+        FrameCommand::Sub(cmd) => draw_sub(cmd),    // a SubCommand: f32 geometry
+    }
+}
+```
+
+`register_draw_with` registers the canvas natives too; do not call
+`register_canvas` after it.
+
+What changes on such a host:
+
+- The geometry natives put a script's numbers in the buffer as written: an
+  int stays an int, a float a float. Positions, sizes, radii, stroke widths,
+  a shadow's blur, spread and offset, and point lists. Colours, alpha,
+  canvas ids and text sizes are still whole.
+- `take_frame_commands` (and `_traced`, `_for`) returns the frame
+  `take_draw_commands` returns, the same commands in the same order, as
+  `FrameCommand`s. A command is a `Sub` when it has a `SubCommand` twin and
+  the snap mode it was drawn under leaves it unsnapped; otherwise it is the
+  very `DrawCommand` the whole-pixel drain returns. `FrameCommand::to_px`
+  truncates a `Sub` the same way.
+- `SubCommand` has the twin's variants for `image`, `rect`, `rect_outline`,
+  `line`, `circle`, `text`, `triangle`, `poly`, `polygon`, `fan`,
+  `polyline`, `ellipse`, `ellipse_outline`, `arc`, `rect_gradient`,
+  `circle_gradient`, `shadow` and `draw_canvas`, with the same field names
+  and JSON form. Clips, `snapshot`, canvases, `rects` batches and `Host`
+  commands are always whole pixels.
+- Draw a `Sub` whose numbers are whole exactly as its `Px` twin
+  (`SubCommand::from_px` is that twin): keep whatever pixel-centre
+  convention the host already has.
+- `FrameCommand::scale` / `SubCommand::scale` magnify for a HiDPI drawable,
+  like `compose::scale`, without rounding.
+
+**Snapping.** By default the rect family (`rect`, `rect_outline`,
+`rect_gradient`, `shadow`, `image`, `draw_canvas`, and `text`'s position)
+stays whole pixels, so rects that tile still meet without an anti-aliased
+seam, and everything else is sub-pixel. A script changes that with
+`pixel_snap(true)` (everything whole: pixel art), `pixel_snap(false)`
+(nothing), or `pixel_snap(nil)` (the default again), for what it draws after
+the call. Every frame starts at the default. `pixel_snap` emits a marker
+into the raw buffer that every drain consumes; no host ever sees it, and on
+a host that did not opt in it emits nothing at all.
+
+**Retained layers.** Without the retained-layer capability, a layer's
+content is moved to its `cache_draw` in `f32`, and keeps the snap mode it
+was recorded under on every frame it is replayed. With the capability, the
+content arrives as it was drawn, in layer coordinates, as above. Layer
+positions themselves (`cached_layer`'s rect, `layer`) are whole pixels.
+
+**Wire.** `DrawWire::encode_frame(&[FrameCommand])` encodes a sub-pixel
+frame: a `Sub` uses its twin's opcode and exactly its layout, with
+fractional numbers. There are no new opcodes; `draw-wire.ts` reads every
+number as an `f64` and decodes either. `petal_ui::draw_wire::take_frame_wire`
+(and `take_frame_wire_for`) drain and encode in one call.
+`test/vitest/fixtures/draw-wire-subpixel.json` pins a sample frame.
+
+**A host that does not opt in** sees no change at all: the same natives with
+the same ids, the same raw buffer, the same `DrawCommand`s, `HostCaps` and
+wire. The whole-pixel drains on a sub-pixel env also return exactly what
+they return on a default one. The C bridge is whole pixels only; bit 4 of
+`pb_vm_set_draw_caps` is reserved for `PB_DRAW_CAP_SUBPIXEL`.
 
 ## Hit testing
 

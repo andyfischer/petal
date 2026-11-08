@@ -38,6 +38,7 @@ use petal::value::Value;
 
 use crate::draw::{BatchRect, DRAW, DrawCommand, color_of, emit_draw, num_as_f64};
 use crate::params::register;
+use crate::subpixel::{FrameCommand, PixelSnap, SubCommand};
 
 /// Binding holding the host's capabilities, as bits ([`HostCaps::bits`]).
 pub const SYM_HOST_CAPS: &str = "ui_host_caps";
@@ -142,11 +143,63 @@ pub fn compose(
     cmds: Vec<DrawCommand>,
     values: Vec<Value>,
 ) -> Vec<Composed> {
+    compose_items(env, stack, cmds, values, &[])
+        .into_iter()
+        .map(|item| (item.cmd, item.from))
+        .collect()
+}
+
+/// One command of a composed frame: the command as every host is handed it,
+/// the index of the emitted command it is attributed to, and — for a command
+/// that is a script's own (not one the drain made up) — where its exact
+/// numbers are, so [`crate::draw::take_frame_commands`] can decode it again
+/// as a [`SubCommand`].
+#[derive(Clone)]
+pub(crate) struct Item {
+    pub cmd: DrawCommand,
+    pub from: Option<usize>,
+    pub src: Option<Source>,
+}
+
+/// The raw value a command decoded from, how far the drain moved it (a
+/// retained layer's content, drawn at its `cache_draw`), and the
+/// [`PixelSnap`] mode it was emitted under.
+#[derive(Clone, Copy)]
+pub(crate) struct Source {
+    pub value: Value,
+    pub dx: i32,
+    pub dy: i32,
+    pub snap: PixelSnap,
+}
+
+impl Item {
+    fn made(cmd: DrawCommand, from: Option<usize>) -> Item {
+        Item { cmd, from, src: None }
+    }
+}
+
+/// [`compose`], keeping each command's [`Source`]. `snaps` is the mode each
+/// command was emitted under, index for index with `cmds`; empty means the
+/// default throughout (a host that never sees a `pixel_snap` marker).
+pub(crate) fn compose_items(
+    env: &mut Env,
+    stack: Option<StackKey>,
+    cmds: Vec<DrawCommand>,
+    values: Vec<Value>,
+    snaps: &[PixelSnap],
+) -> Vec<Item> {
+    let snap = |i: usize| snaps.get(i).copied().unwrap_or_default();
+    let emitted = |i: usize, cmd: DrawCommand, value: Value| Item {
+        cmd,
+        from: Some(i),
+        src: Some(Source { value, dx: 0, dy: 0, snap: snap(i) }),
+    };
     if !cmds.iter().any(is_composed) {
         return cmds
             .into_iter()
+            .zip(values)
             .enumerate()
-            .map(|(i, c)| (c, Some(i)))
+            .map(|(i, (c, v))| emitted(i, c, v))
             .collect();
     }
     let caps = host_caps(env);
@@ -163,18 +216,32 @@ pub fn compose(
             _ => {}
         }
     }
-    let mut out: Vec<Composed> = if caps.retained_layers {
-        kept.into_iter().map(|(i, c, _)| (c, Some(i))).collect()
+    let mut out: Vec<Item> = if caps.retained_layers {
+        kept.into_iter().map(|(i, c, v)| emitted(i, c, v)).collect()
     } else {
-        resolve_caches(env, stack, kept)
+        resolve_caches(env, stack, kept, &snap)
     };
-    if out.iter().any(|(c, _)| matches!(c, DrawCommand::Layer { .. })) {
+    if out.iter().any(|item| matches!(item.cmd, DrawCommand::Layer { .. })) {
         out = sort_layers(out);
     }
     if !caps.batch_rects {
         out = lower_batches(out);
     }
     out
+}
+
+/// What a subpixel host is handed for one composed command: its
+/// [`SubCommand`] when it has one and the mode it was emitted under leaves it
+/// unsnapped, the whole-pixel command otherwise. `heap` is the one the
+/// frame's values live in.
+pub(crate) fn frame_command(item: Item, heap: &petal::heap::Heap) -> FrameCommand {
+    if let Some(src) = &item.src
+        && !src.snap.snaps(&item.cmd)
+        && let Some(sub) = SubCommand::decode(&item.cmd, &src.value, heap)
+    {
+        return FrameCommand::Sub(sub.translate(src.dx as f32, src.dy as f32));
+    }
+    FrameCommand::Px(item.cmd)
 }
 
 // ── Retained layers ───────────────────────────────────────────────────────
@@ -236,14 +303,16 @@ fn resolve_caches(
     env: &mut Env,
     stack: Option<StackKey>,
     cmds: Vec<(usize, DrawCommand, Value)>,
-) -> Vec<Composed> {
+    snap: &dyn Fn(usize) -> PixelSnap,
+) -> Vec<Item> {
     let mut store = Store { env, stack };
-    // Recordings in progress: (id, w, h, the raw content so far). They nest —
-    // a retained layer may draw another — and the inner one closes first.
-    let mut open: Vec<(u32, u32, u32, Vec<Value>)> = Vec::new();
-    let mut stream: Vec<Composed> = Vec::with_capacity(cmds.len());
+    // Recordings in progress: (id, w, h, the raw content so far, the
+    // `PixelSnap` mode the content is at so far). They nest — a retained
+    // layer may draw another — and the inner one closes first.
+    let mut open: Vec<(u32, u32, u32, Vec<Value>, PixelSnap)> = Vec::new();
+    let mut stream: Vec<Item> = Vec::with_capacity(cmds.len());
     let mut used: Vec<u32> = Vec::new();
-    let close = |store: &mut Store, (id, w, h, content): (u32, u32, u32, Vec<Value>)| {
+    let close = |store: &mut Store, (id, w, h, content, _): (u32, u32, u32, Vec<Value>, PixelSnap)| {
         let mut items = vec![Value::Int(w as i64), Value::Int(h as i64)];
         items.extend(content);
         if let Some(list) = store.list(items) {
@@ -254,7 +323,7 @@ fn resolve_caches(
         match cmd {
             DrawCommand::CacheBegin { id, w, h } => {
                 used.push(id);
-                open.push((id, w, h, Vec::new()));
+                open.push((id, w, h, Vec::new(), PixelSnap::default()));
             }
             DrawCommand::CacheEnd { .. } => {
                 if let Some(done) = open.pop() {
@@ -264,12 +333,26 @@ fn resolve_caches(
             other => match open.last_mut() {
                 // Inside a recording nothing is drawn where it stands, and a
                 // draw-layer marker means nothing: the layer is one object.
-                Some((_, _, _, content)) => {
+                Some((_, _, _, content, at)) => {
                     if !matches!(other, DrawCommand::Layer { .. }) {
+                        // Content keeps the mode it was drawn under, as a
+                        // bare int before the first command of each run
+                        // (which no decode mistakes for a command): it is
+                        // replayed on later frames, under whatever mode the
+                        // `cache_draw` is. A frame with no `pixel_snap`
+                        // never writes one.
+                        if snap(i) != *at {
+                            *at = snap(i);
+                            content.push(Value::Int(at.code()));
+                        }
                         content.push(value);
                     }
                 }
-                None => stream.push((other, Some(i))),
+                None => stream.push(Item {
+                    src: Some(Source { value, dx: 0, dy: 0, snap: snap(i) }),
+                    cmd: other,
+                    from: Some(i),
+                }),
             },
         }
     }
@@ -279,13 +362,13 @@ fn resolve_caches(
         close(&mut store, done);
     }
 
-    let mut out: Vec<Composed> = Vec::with_capacity(stream.len());
-    for (cmd, from) in stream {
-        match cmd {
+    let mut out: Vec<Item> = Vec::with_capacity(stream.len());
+    for item in stream {
+        match item.cmd {
             DrawCommand::CacheDraw { id, x, y } => {
-                expand(&mut store, id, x, y, 0, from, &mut out, &mut used);
+                expand(&mut store, id, x, y, 0, item.from, &mut out, &mut used);
             }
-            other => out.push((other, from)),
+            _ => out.push(item),
         }
     }
 
@@ -331,7 +414,7 @@ fn expand(
     y: i32,
     depth: usize,
     from: Option<usize>,
-    out: &mut Vec<Composed>,
+    out: &mut Vec<Item>,
     used: &mut Vec<u32>,
 ) {
     used.push(id);
@@ -346,7 +429,7 @@ fn expand(
         Value::Int(n) => (*n).max(0) as u32,
         _ => 0,
     };
-    out.push((
+    out.push(Item::made(
         DrawCommand::ClipPush {
             x,
             y,
@@ -356,7 +439,13 @@ fn expand(
         },
         from,
     ));
+    // The content's mode, from the marks `resolve_caches` left in it.
+    let mut snap = PixelSnap::default();
     for value in &items[2..] {
+        if let Value::Int(code) = value {
+            snap = PixelSnap::from_code(*code);
+            continue;
+        }
         match store.decode(value) {
             Some(DrawCommand::CacheDraw { id: inner, x: ix, y: iy }) => {
                 expand(store, inner, x + ix, y + iy, depth + 1, from, out, used);
@@ -368,10 +457,14 @@ fn expand(
                 | DrawCommand::CacheEnd { .. },
             )
             | None => {}
-            Some(cmd) => out.push((translate(cmd, x, y), from)),
+            Some(cmd) => out.push(Item {
+                cmd: translate(cmd, x, y),
+                from,
+                src: Some(Source { value: *value, dx: x, dy: y, snap }),
+            }),
         }
     }
-    out.push((DrawCommand::ClipPop, from));
+    out.push(Item::made(DrawCommand::ClipPop, from));
 }
 
 /// `cmd` moved by (`dx`, `dy`).
@@ -619,7 +712,7 @@ struct Segment {
     layer: i32,
     start: ClipState,
     end: ClipState,
-    cmds: Vec<Composed>,
+    cmds: Vec<Item>,
 }
 
 /// Sort a frame by draw layer and drop the markers.
@@ -630,7 +723,7 @@ struct Segment {
 /// the replace-clip, then the pushes). A marker inside an offscreen canvas or
 /// a retained layer's recording is ignored — those are one object, drawn where
 /// their composite is.
-fn sort_layers(cmds: Vec<Composed>) -> Vec<Composed> {
+fn sort_layers(cmds: Vec<Item>) -> Vec<Item> {
     let mut clip = ClipState::default();
     let mut segments = vec![Segment {
         layer: 0,
@@ -640,8 +733,8 @@ fn sort_layers(cmds: Vec<Composed>) -> Vec<Composed> {
     }];
     let mut target = 0u32;
     let mut recording = 0usize;
-    for (cmd, from) in cmds {
-        match &cmd {
+    for item in cmds {
+        match &item.cmd {
             DrawCommand::Layer { n } => {
                 if target == 0 && recording == 0 {
                     let last = segments.last_mut().unwrap();
@@ -663,9 +756,9 @@ fn sort_layers(cmds: Vec<Composed>) -> Vec<Composed> {
             _ => {}
         }
         if target == 0 && recording == 0 {
-            clip.apply(&cmd);
+            clip.apply(&item.cmd);
         }
-        segments.last_mut().unwrap().cmds.push((cmd, from));
+        segments.last_mut().unwrap().cmds.push(item);
     }
     // Where the frame's clip stands when it ends, in the order it was drawn.
     let frame_end = clip.clone();
@@ -690,30 +783,33 @@ fn sort_layers(cmds: Vec<Composed>) -> Vec<Composed> {
 }
 
 /// The commands that take the clip from `from` to `to`.
-fn move_clip(out: &mut Vec<Composed>, from: &ClipState, to: &ClipState) {
+fn move_clip(out: &mut Vec<Item>, from: &ClipState, to: &ClipState) {
     if from == to {
         return;
     }
     for _ in 0..from.pushes.len() {
-        out.push((DrawCommand::ClipPop, None));
+        out.push(Item::made(DrawCommand::ClipPop, None));
     }
     if from.base != to.base {
-        out.push((to.base.clone().unwrap_or(DrawCommand::ClipNone), None));
+        out.push(Item::made(to.base.clone().unwrap_or(DrawCommand::ClipNone), None));
     }
     for push in &to.pushes {
-        out.push((push.clone(), None));
+        out.push(Item::made(push.clone(), None));
     }
 }
 
 // ── Batches ───────────────────────────────────────────────────────────────
 
-fn lower_batches(cmds: Vec<Composed>) -> Vec<Composed> {
+fn lower_batches(cmds: Vec<Item>) -> Vec<Item> {
     let mut out = Vec::with_capacity(cmds.len());
-    for (cmd, from) in cmds {
-        match cmd {
+    for item in cmds {
+        let from = item.from;
+        match item.cmd {
             DrawCommand::Rects { rects } => {
+                // A batch is whole pixels for every host: its rects are
+                // lowered here, never decoded again.
                 out.extend(rects.into_iter().map(|r| {
-                    (
+                    Item::made(
                         DrawCommand::Rect {
                             x: r.x,
                             y: r.y,
@@ -729,7 +825,7 @@ fn lower_batches(cmds: Vec<Composed>) -> Vec<Composed> {
                     )
                 }));
             }
-            other => out.push((other, from)),
+            cmd => out.push(Item { cmd, ..item }),
         }
     }
     out

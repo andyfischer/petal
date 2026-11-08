@@ -1006,6 +1006,11 @@ typedef enum pb_draw_kind {
 /* What the host draws itself instead of having the bridge lower it. */
 #define PB_DRAW_CAP_BATCH_RECTS      1u  /* send PB_DRAW_RECTS */
 #define PB_DRAW_CAP_RETAINED_LAYERS  2u  /* send PB_DRAW_CACHE_BEGIN / _END / _DRAW */
+/* 4u is reserved for PB_DRAW_CAP_SUBPIXEL: fractional coordinates, which
+ * petal-ui has for Rust hosts (DrawOptions::subpixel, take_frame_commands)
+ * and which a later bridge will send as float twins of pb_draw_cmd alongside
+ * these. Today the bridge ignores the bit, as it ignores every unknown bit,
+ * and pb_draw_cmd stays whole pixels. Do not use it for anything else. */
 
 typedef struct pb_rgba { uint8_t r, g, b, a; } pb_rgba;
 

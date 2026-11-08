@@ -24,6 +24,7 @@ Hosts that embed it: Garden panels (`garden/garden-script`),
 | Use a widget well: conventions, theme tokens, each widget in depth | [docs/widgets.md](docs/widgets.md) |
 | Draw: every primitive's signatures, text measuring, tints, gradients, shadows, offscreen layers | [docs/drawing.md](docs/drawing.md) |
 | Make things draggable: reorder, snap, drop targets, animated drops (`import ui/drag`) | [docs/drag.md](docs/drag.md) |
+| See what each `PRELUDE_LEVEL` added | [docs/changelog.md](docs/changelog.md) |
 | Write a host: the frame loop, draw commands, capabilities, the hit-test registry, images, natives for a non-Rust host | [docs/host-contract.md](docs/host-contract.md) |
 | Embed the crate in Rust | [Embedding](#embedding) below |
 | Run or test a script without a window | [Running scripts headlessly](#running-scripts-headlessly), [Testing](#testing) |
@@ -198,6 +199,7 @@ argument (`--channel draw_commands --emit K --native-arg I --to V`;
   working, because a plain import's bindings are weak.
   `garden --version --json` lists the exact exports compiled into a binary
   under `prelude.exports`.
+  What each level added is in [docs/changelog.md](docs/changelog.md).
 
 ## Testing
 

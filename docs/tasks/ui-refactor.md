@@ -205,6 +205,65 @@ and it is large.
    - If Petal is too slow there, keep `text_wrap` as a native fast path, but
      make the Petal version the specification and test the two against each
      other.
+   - **Benchmark (2026-11-08).** Harness:
+     `core-libs/petal-ui/examples/bench_text_wrap.rs` (`cargo run --release
+     --example bench_text_wrap` in `core-libs/petal-ui`); Petal side
+     `test/benchmarks/text_wrap/wrap_ref.ptl`.
+     - **The premise is wrong.** `text-layout` has no Petal wrap, elide or
+       caret code: `wrap_text`, `elide`, `clamp_lines` and `caret_index` call
+       `text_wrap`, `text_ellipsize` and `text_index_at` (it has done since
+       05e4b4ec). So bloom's labels say nothing about Petal's speed, and
+       `ui/text` and `text-layout` already share one implementation, the
+       native one. To measure anything, the benchmark adds a bench-only Petal
+       `wrap_rows` (`ref_wrap_rows`). It follows `wrap_lines` + `wrap_rows`
+       closely and makes one `text_advance` call per word and per run of
+       blanks. Ellipsize and index-at were not measured: they have no Petal
+       version to compare against.
+     - **Equivalence.** The rows (`text`, `start`, `end`) are identical in
+       880 cases: 20 documents (edge cases, CRLF, tabs, non-ASCII, generated
+       prose with long URLs) × 4 styles (including letter spacing and a bare
+       size) × 11 widths (−5 to 2000 px). Two native quirks that a Petal
+       specification must keep: a paragraph's leading blanks make an over-wide
+       first word overflow instead of breaking, and a tab is measured as one
+       glyph advance. Measuring whole words with `text_advance` instead of
+       summing per character changed no break.
+     - **Per-frame ms** (p50, best of 5 × 60 frames, release, gate off,
+       pointer moving, 548 px wrap, proportional advance table). The machine
+       was heavily loaded (load average ~97), so treat the absolute numbers
+       as upper bounds; the ratios held across runs.
+
+       | chars (rows) | case | `text_area` (native) | wrap native | wrap Petal |
+       |---|---|---|---|---|
+       | 1k (15) | still, memo | 0.11 | 0.07 | 0.17 |
+       | 1k (15) | no memo / typing | 0.10 | 0.07 | 0.29–0.47 (4–7×) |
+       | 10k (153) | still, memo | 0.57 | 0.28 | 8.2 (30×) |
+       | 10k (153) | no memo / typing | 0.21–0.24 | 0.16–0.21 | 11–14 (55–85×) |
+       | 100k (1500) | still, memo | 13.3 | 2.9 | 166 (58×) |
+       | 100k (1500) | no memo / typing | 1.6–1.9 | 1.4–1.6 | 95–101 (60–70×) |
+
+       A `text_area` on the Petal wrap would cost about `area − wrap native +
+       wrap Petal`: around 11 ms a frame at 10k chars and around 100 ms at
+       100k, against 0.2 ms and 1.8 ms today.
+     - **The memo does not rescue it.** A Petal wrap makes one probe per
+       `text_advance` call. Past `MAX_SCOPE_DEPS` (8,192) the scope is given
+       up as effectful: 1,380 effectful scopes at 10k, 19,500 at 100k, and no
+       replays. Recording costs extra on top (166 vs 101 ms). A side finding,
+       not part of this task: memo on makes the *native* path slower too. The
+       `text_wrap` probe's answer (more than ~128 rows) is larger than
+       `ARG_COMPARE_BUDGET` (512), so it fails validation every frame, misses,
+       and wraps again. That is why `text_area` at 100k is 13.3 ms with memo
+       on and 1.8 ms with it off. Worth its own fix in the memo.
+     - **Recommendation: keep `text_wrap` / `wrap_rows` as the native fast
+       path.** Don't merge into one Petal implementation. Petal is fine for a
+       label or a short field (under 0.5 ms at 1k chars). But wrapping a
+       document every frame is 30–85× slower, which uses up the frame budget
+       at 10k chars. Follow the fallback bullet above: promote
+       `wrap_ref.ptl` to the specification (at that point it is a port step:
+       move it into `text-layout` or `ui/text` as `wrap_rows_reference`) and
+       turn the equivalence pass into a test that runs the native and Petal
+       versions against each other. Treat `text_ellipsize` / `text_index_at`
+       the same way if they are ever specified in Petal. They do one walk over
+       one line, so the stakes are smaller.
 2. **`hit::roll`, `focus` and `popover` (about 1,500 lines). Possible, but
    hold off.** These decisions run before the script each frame, and they're
    in Rust precisely so that no script can skip them. Porting them would need

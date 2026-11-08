@@ -223,7 +223,7 @@ fn sample(param: &str) -> &'static str {
         // packed black without one.
         "rects" => "[0, 0, 4, 4, 0]",
         "palette" => "[1]",
-        "on" => "true",
+        "on" | "open" => "true",
         _ => "1",
     }
 }

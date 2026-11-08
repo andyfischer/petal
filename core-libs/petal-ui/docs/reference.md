@@ -605,6 +605,16 @@ if res.changed then set_opacity(res.value) end
 | `menu_show(m, x, y, tag)`, `menu_open_on_right_click(m, r, tag)`, `menu_close(m)` | Open and close it. |
 | `context_menu(m, items, style?)` | Draws an open menu and resolves a choice: `{menu, index, label, tag, rect}`. Modal while open. |
 | `menu_blocking(m)`, `menu_rect(m, items, style?)`, `menu_metrics(style?)` | Whether it is open, where it will be, and the numbers it is laid out with. |
+| `popover(id, anchor, items, style?)` | A menu whose open state is the runtime's, by id: no record to thread. Under `anchor` (a rect: below it; a point: at it). Returns `{open, index, label, rect}`. |
+| `popover_open(id)`, `popover_close(id)`, `popover_shown(id)`, `popover_owner()` | Open it from the next frame, close it, whether it is open, and which one is (`""` for none). |
+
+At most one menu or popover is open: opening one closes the others. The
+runtime closes the open one before the frame runs, on Escape or a press
+outside it, and that press reaches nothing underneath. So the press that
+opened a menu can't close it, and a menu shown every frame still works.
+While one is open, `shortcut(chord)` is quiet, and an Escape that closed it
+is not also the app's. `shortcut(chord, id)` answers for the open popover.
+`menu_blocking` is no longer needed to guard the rest of the UI.
 | `modal_state()`, `modal_open(m)`, `modal_close(m)` | A dialog's state. |
 | `modal(m, w, h, title, style?)` | Backdrop, chrome, Escape and click-outside. Returns `{modal, open, rect, content}`; draw the body into `content` when `open`. Everything drawn before it is inert while it is open. |
 | `modal_blocking(m)`, `modal_rect(w, h)`, `modal_update(m, r)`, `draw_modal_backdrop(style?)`, `draw_modal(r, title, style?)` | The pieces, for a dialog with its own layout. |

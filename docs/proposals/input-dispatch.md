@@ -1,6 +1,6 @@
 # Proposal: Input dispatch, one owner per event (ID) for petal-ui
 
-Status: in progress, 2026-11-07. Phases 0, 1 and 2 are done (see Phases).
+Status: in progress, 2026-11-07. Phases 0 to 3 are done (see Phases).
 
 ## Summary
 
@@ -212,7 +212,33 @@ before their cover. `speculate` is not needed.
   - Not done yet: key routing to the topmost modal, and one `dispatch`
     record. Focus and claims are two bindings next to `ui_under` and the
     press snapshot, which answers the first open question for now.
-- **Phase 3: `popover`.** Port `context_menu` and `dropdown` onto it.
+- **Phase 3 (done 2026-11-07): `popover`.** What shipped
+  (`core-libs/petal-ui/src/popover.rs`):
+  - `hit::roll` keeps the one open popover as `ui_popover`. It applies the
+    last frame's `popover_open` / `popover_close` requests in order, then
+    closes the open one on Escape or a left or right press outside the rect
+    it registered under its id. What it closed is `ui_popover_dismissed`
+    for that frame.
+  - `popover(id, anchor, items)` draws the menu while `id` is open.
+    `context_menu` runs on the same state: each `menu_state()` record gets
+    its own id, `menu_show` and `menu_close` make requests, and a menu
+    takes input once the runtime has it open. So the `at` frame skip is
+    gone. `dropdown` is built on `context_menu` and comes along unchanged.
+  - While a popover is open, `shortcut` answers only for it, and an Escape
+    that dismissed one is not the app's.
+  - Found on the way: the press snapshot's settle step added the press
+    frame's own rows. So once a dismissing press had closed a menu, the
+    button under the menu got the release as a click. Settle now adds only
+    rows at or above the press-time floor.
+  - `menu_blocking` still says whether a menu is open. Apps no longer need
+    it as a guard, and Phase 4 removes it from petal-design. The modal
+    dialog still has its own `at` skip.
+  - petal-design's GUI scenarios were only partly checked on this commit.
+    The toolbar menu scenario passes. Others (Cmd-click, double-click,
+    drags) failed, and the window host sometimes crashed on an unknown SDL
+    event (0x158). They failed in the same way on the Phase 2 build, which
+    had passed them earlier, so the cause looks like the machine, not
+    this change. Re-run them before Phase 4.
 - **Phase 4: port petal-design.** Delete its `fc` threading and `TYPING`,
   and keep its GUI scenarios green. As with D2's kanban rule: if one real
   editor does not port cleanly, stop and revise before Phase 5.

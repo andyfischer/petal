@@ -19,7 +19,8 @@
 //! 2. it works out the **floor** for the frame about to run — the highest
 //!    layer that has a registered rect under the pointer *now*, or that
 //!    declared itself modal — and binds it as [`SYM_UI_FLOOR`];
-//! 3. it works out who has the keyboard ([`crate::focus`]).
+//! 3. it works out who has the keyboard ([`crate::focus`]) and which
+//!    popover is open ([`crate::popover`]).
 //!
 //! A rect at layer `L` is then *hot* when the pointer is inside it (and
 //! inside its clip), and `L` is not below the floor. The script side adds one
@@ -116,6 +117,12 @@ pub const SYM_UI_UNDER: &str = "ui_under";
 /// Binding: the press frame's own registrations still have to be added to
 /// [`SYM_PRESS_TARGETS`] on the next roll.
 const SYM_PRESS_SETTLE: &str = "ui_press_settle";
+
+/// Binding: the floor under the press point when the press went down. The
+/// press frame's own rows join the snapshot only on that layer or above, so
+/// a press a modal swallowed (one that closed a menu) does not become a
+/// click on what was under the menu once the menu is gone.
+const SYM_PRESS_FLOOR: &str = "ui_press_floor";
 
 /// `flags` bit: the rect blocks the pointer for lower layers.
 pub const FLAG_BLOCKS: i64 = 1;
@@ -306,6 +313,8 @@ pub fn roll(env: &mut Env, input: &InputState) {
     roll_press(env, &registry, px as f64, py as f64);
     // Who has the keyboard: last frame's requests, then this frame's press.
     crate::focus::roll_focus(env, &registry, px as f64, py as f64);
+    // Which popover is open: the requests, then Escape or a press outside.
+    crate::popover::roll_popover(env, &registry, px as f64, py as f64);
 }
 
 /// Whether the int list bound as `name` holds `button`.
@@ -380,14 +389,22 @@ fn roll_press(env: &mut Env, registry: &[Target], px: f64, py: f64) {
             let list = Value::List(env.heap_mut().alloc_list(rows));
             env.set_binding(targets_sym, list);
             env.set_binding(settle_sym, Value::Bool(true));
+            let floor = floor_of(registry, px, py).map_or(Value::Nil, Value::Int);
+            let floor_sym = env.intern_symbol(SYM_PRESS_FLOOR);
+            env.set_binding(floor_sym, floor);
         }
     } else if matches!(env.binding(settle_sym), Some(Value::Bool(true))) {
         env.set_binding(settle_sym, Value::Bool(false));
         if let Some(Value::List(id)) = env.binding(targets_sym) {
             let mut rows = env.heap().get_list(id).to_vec();
             let have = decode_rows(&rows, env.heap());
+            let floor_sym = env.intern_symbol(SYM_PRESS_FLOOR);
+            let floor = match env.binding(floor_sym) {
+                Some(Value::Int(f)) => Some(f),
+                _ => None,
+            };
             for t in press_rows(registry, px, py) {
-                if !have.contains(&t) {
+                if floor.is_none_or(|f| t.layer >= f) && !have.contains(&t) {
                     rows.push(encode_row(env, &t));
                 }
             }
@@ -465,6 +482,7 @@ pub fn register_hit(env: &mut Env) {
     register(env, "ui_floor", native_ui_floor, READS);
     register(env, "ui_target_rect", native_ui_target_rect, READS);
     crate::focus::register_focus(env);
+    crate::popover::register_popover(env);
 }
 
 /// A rect argument: an `{x, y, w, h}` record.

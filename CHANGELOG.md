@@ -95,6 +95,16 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `fc` API keeps working: `focus_set` and `focus_clear` also make a request.
   `PRELUDE_LEVEL` is 12
   ([proposal](docs/proposals/input-dispatch.md), Phase 2).
+- petal-ui: the runtime keeps the one open popover. `popover(id, anchor,
+  items)` is a menu with no record to thread, opened by `popover_open(id)`;
+  also `popover_close`, `popover_shown`, `popover_owner` and
+  `Headless::popover()`. Escape or a press outside closes the open one
+  before the frame runs, and that press reaches nothing underneath.
+  Opening one closes any other. While one is open, `shortcut(chord)` is
+  quiet, and the Escape that closed it is not also the app's.
+  `context_menu` and `dropdown` run on it: the press that opens a menu can
+  no longer close it, so a menu no longer skips its opening frame, and one
+  re-shown every frame still takes input (Phase 3).
 
 - `ui/drag`'s `between` and `vary` (D2 P2). `between(states)` slides the
   dragged element inside the hull of its positions in the states (a segment
@@ -380,6 +390,11 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   [Unary minus](docs/syntax/commas.md#unary-minus)).
 
 ### Fixed
+
+- petal-ui: a press that a modal swallowed (the press that closes a menu)
+  no longer becomes a click on the button under the menu once the menu is
+  gone. The press frame's own rows join the press snapshot only at or
+  above the layer that held the press.
 - Of overlapping rects on one layer, only the one in front (registered
   last) is hot, is `down` and gets the `click`. They were all hot, so a
   button drawn over a list row clicked the row too. `hit::pointer_owner`

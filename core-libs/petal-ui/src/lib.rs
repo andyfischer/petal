@@ -84,6 +84,7 @@ pub mod panel_stubs;
 mod params;
 pub use params::{interface, raw_declarations, script_for};
 pub mod pending;
+pub mod popover;
 pub mod scenario;
 pub mod tess;
 pub mod text;
@@ -182,9 +183,14 @@ pub const UI_VERSION: i64 = 1;
 /// - 12 — runtime focus (2026-11-07): `shortcut(chord)`,
 ///   `shortcut(chord, id)`, `has_focus`, `focus_owner`, `focus_request`,
 ///   `interact`'s `wants`, and the natives `ui_focus`, `ui_focus_request`,
-///   `ui_shortcut` ([`focus`]). Behavior change alongside it: overlapping
-///   rects have one owner, the one in front (`hit`, "One owner"), and
-///   `focus_set` / `focus_clear` also make a focus request.
+///   `ui_shortcut` ([`focus`]); `popover`, `popover_open`, `popover_close`,
+///   `popover_shown`, `popover_owner` and the natives `ui_popover`,
+///   `ui_popover_dismissed`, `ui_popover_request` ([`popover`]). Behavior
+///   changes alongside it: overlapping rects have one owner, the one in
+///   front (`hit`, "One owner"); `focus_set` / `focus_clear` also make a
+///   focus request; a context menu is opened and dismissed by the runtime,
+///   so it no longer skips its opening frame (`menu_state` records carry an
+///   `id`).
 pub const PRELUDE_LEVEL: u32 = 12;
 
 /// Name of the Petal-source prelude module: `import ui`.

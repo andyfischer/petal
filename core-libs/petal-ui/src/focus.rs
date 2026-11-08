@@ -34,6 +34,9 @@
 //! for a chord on behalf of `id` instead: it fires only while `id` has the
 //! keyboard, whatever it claims.
 //!
+//! While a popover is open it has the keys instead: `shortcut(chord)` is
+//! quiet, and `shortcut(chord, popover_id)` fires (see [`crate::popover`]).
+//!
 //! # Chords
 //!
 //! A chord is modifiers and one key name, joined with `+`: `"cmd+shift+z"`,
@@ -347,8 +350,17 @@ fn native_ui_shortcut(state: &mut PetalCxt) -> NativeResult {
         let (shift, cmd, alt) = (mods & 1 != 0, mods & (2 | 8) != 0, mods & 4 != 0);
         cmd == chord.cmd && alt == chord.alt && shift == chord.shift
     } && {
+        // An open popover has the keys (src/popover.rs); an Escape that
+        // dismissed one this frame was the popover's, not the app's.
+        let popover = cxt_string(state, crate::popover::SYM_UI_POPOVER);
+        let dismissed = cxt_string(state, crate::popover::SYM_UI_DISMISSED);
+        !(chord.key == "escape" && !dismissed.is_empty())
+            && (popover.is_empty() || scope.as_deref() == Some(popover.as_str()))
+    } && {
         let focus = cxt_string(state, SYM_UI_FOCUS);
+        let popover = cxt_string(state, crate::popover::SYM_UI_POPOVER);
         match scope {
+            Some(id) if id == popover => true,
             Some(id) => focus == id,
             None if focus.is_empty() => true,
             None => {

@@ -3698,11 +3698,14 @@ end
 //   menu = picked.menu
 //   if picked.index >= 0 then ...act on picked.label / picked.tag... end
 //
-// The two-call shape (`menu_blocking` early, `context_menu` late) is what an
-// immediate-mode pass can do about z-order: the menu must be *drawn* last to
-// sit on top, but its click must be claimed *before* the widgets underneath
-// react to the same press. So while a menu is open the rest of the UI simply
-// stands down for the frame, and the menu resolves the click at the end.
+// Draw it late, so it sits over the rest. `menu_blocking` is no longer
+// needed to keep the press that closes it from also clicking what is under
+// it: an open menu is modal, and the runtime closes it (Escape, a press
+// outside) before the frame runs (core-libs/petal-ui/src/popover.rs). It
+// still says whether the menu is open.
+//
+// At most one menu or popover is open at a time: opening one closes the
+// others. While one is open, `shortcut(chord)` is quiet.
 //
 // `tag` is any value you want handed back with the choice — the row the menu
 // was opened on, typically. It is never interpreted here.
@@ -3721,29 +3724,41 @@ pub fn menu_sep()
   {label: "", enabled: false, sep: true}
 end
 
-// `at` is the frame the menu opened on. The press that opens a menu is still
-// a live `mouse_pressed` edge when `context_menu` runs later in the *same*
-// frame, and a menu that resolved that edge would dismiss itself the instant it
-// appeared. So the opening frame is recorded and skipped when input is
-// resolved — the menu starts listening on the next one.
-pub fn menu_state()
-  {open: false, x: 0, y: 0, tag: "", hover: -1, at: -1}
+// Each menu record has its own popover id, made once where it is created
+// (`state menu = menu_state()`), so several menus coexist. `live` is whether
+// the runtime has opened it yet: a menu shown this frame is drawn at once,
+// and takes input from the next frame, after the roll has applied its open
+// request. That is why the press that opened it cannot close it.
+state var _pop_seq = 0
+fn _pop_new_id()
+  set _pop_seq = (get _pop_seq) + 1
+  "menu-" ++ str(get _pop_seq)
 end
 
-// True while the menu owns the pointer. Guard the rest of the panel's own
-// click handling with this so one press is not acted on twice.
+pub fn menu_state()
+  {open: false, x: 0, y: 0, tag: "", hover: -1, id: _pop_new_id(), live: false, waited: false}
+end
+
+// A record made before menus had ids shares the one id "menu".
+fn _menu_id(m)
+  str(_get(m, "id", "menu"))
+end
+
+// Whether the menu is open.
 pub fn menu_blocking(m)
   m.open
 end
 
 pub fn menu_close(m)
-  {open: false, x: 0, y: 0, tag: m.tag, hover: -1, at: -1}
+  if m.open then _ui_popover_request(false, _menu_id(m)) end
+  {...m, open: false, x: 0, y: 0, hover: -1, live: false, waited: false}
 end
 
 // Open (or move) the menu to `(x, y)`, remembering `tag`. Hover starts on
 // nothing, so a menu opened under the pointer highlights only once it moves.
 pub fn menu_show(m, x, y, tag)
-  {open: true, x: x, y: y, tag: tag, hover: -1, at: frame_count()}
+  _ui_popover_request(true, _menu_id(m))
+  {...m, open: true, x: x, y: y, tag: tag, hover: -1, live: popover_shown(_menu_id(m)), waited: false}
 end
 
 // The common trigger: a right press inside `r` opens the menu at the pointer.
@@ -3891,7 +3906,15 @@ end
 // radius, size, font, row_h, sep_h, pad}; omitted keys come from `ui_theme()`
 // and the menu metrics.
 pub fn context_menu(m, items, style)
-  if !m.open || len(items) == 0 then
+  let id = _menu_id(m)
+  let shown = popover_shown(id)
+  // Open in the record but not in the runtime, after it was live or after
+  // a frame of waiting: Escape, a press outside, or another menu closed it.
+  let gone = m.open && !shown && (_get(m, "live", false) || _get(m, "waited", false))
+  if gone then
+    {menu: {...m, open: false, x: 0, y: 0, hover: -1, live: false, waited: false},
+     index: -1, label: "", tag: m.tag, rect: {x: 0, y: 0, w: 0, h: 0}}
+  elsif !m.open || len(items) == 0 then
     {menu: m, index: -1, label: "", tag: m.tag, rect: {x: 0, y: 0, w: 0, h: 0}}
   else
     let t = _palette()
@@ -3900,8 +3923,8 @@ pub fn context_menu(m, items, style)
     let mx = mouse_x()
     let my = mouse_y()
     let inside = point_in(mx, my, r)
-    // The opening press is not the menu's to act on — see `menu_state`.
-    let live = m.at != frame_count()
+    // Input is the menu's once the runtime has it open — see `menu_state`.
+    let live = shown
 
     // Pointer hover wins over the keyboard highlight the moment the pointer
     // *moves* over a row — the two share one `hover`, so the menu never shows
@@ -3922,9 +3945,9 @@ pub fn context_menu(m, items, style)
       hover = _menu_step(items, hover, -1)
     end
 
-    // Resolve: a click on a choosable row takes it, Return takes the
-    // highlighted one, and anything else — a click outside, Escape, a second
-    // right-click — dismisses without choosing.
+    // Resolve: a press on a choosable row takes it, Return takes the
+    // highlighted one, and a press on the rest of the menu closes it. A press
+    // outside and Escape are the runtime's: it has already closed the menu.
     let chosen = -1
     let close = false
     if live then
@@ -3965,7 +3988,11 @@ pub fn context_menu(m, items, style)
       // tested against, and by then the menu is gone.
       if !close then
         ui_modal()
-        _reg(r, style["id"] ?? nil)
+        // Under its popover id, which is what the runtime tests a press
+        // against; a style id names it for tests too.
+        _reg(r, id)
+        let sid = _get(style, "id", nil)
+        if sid != nil then ui_target(sid, r) end
       end
       draw_elevation(r, rad, 2, {color: _get(style, "shadow", #000000)})
       draw_rect(r, bg)
@@ -3990,9 +4017,61 @@ pub fn context_menu(m, items, style)
       end
     end)
 
-    let next = if close then menu_close(m) else {open: true, x: m.x, y: m.y, tag: m.tag, hover: hover, at: m.at, px: mx, py: my} end
+    let next = if close then menu_close(m) else {...m, hover: hover, px: mx, py: my, live: live, waited: true} end
     let label = if chosen >= 0 then items[chosen].label else "" end
     {menu: next, index: chosen, label: label, tag: m.tag, rect: r}
+  end
+end
+
+// ── Popover ───────────────────────────────────────────────────────────────
+// A menu whose open state is the runtime's, by id: no record to thread.
+//
+//   if button(r, "Sort") then popover_open("sort") end
+//   let p = popover("sort", r, [menu_item("Name"), menu_item("Date")])
+//   if p.index >= 0 then ...act on p.label... end
+//
+// At most one popover (or context menu) is open: opening one closes the
+// rest. Escape and a press outside close it before the frame runs, and that
+// press reaches nothing underneath. It opens on the frame after
+// `popover_open`, and it has the keys while it is open: `shortcut(chord)`
+// is quiet, `shortcut(chord, id)` answers.
+native fn _ui_popover() = "ui_popover"
+native fn _ui_popover_dismissed() = "ui_popover_dismissed"
+native fn _ui_popover_request(open, id) = "ui_popover_request"
+
+pub fn popover_open(id)
+  _ui_popover_request(true, id)
+end
+
+pub fn popover_close(id)
+  _ui_popover_request(false, id)
+end
+
+// Whether `id` is the open popover this frame.
+pub fn popover_shown(id)
+  id != nil && _ui_popover() == str(id)
+end
+
+// The open popover's id, "" for none.
+pub fn popover_owner()
+  _ui_popover()
+end
+
+// The popover's menu, under `anchor` (a rect: below it; a point {x, y}: at
+// it). Returns {open, index, label, rect}; `index` is -1 unless an item was
+// chosen, which also closes it. `style` is `context_menu`'s.
+pub fn popover(id, anchor, items, style = {})
+  state hov = {hover: -1, px: -1, py: -1}
+  if !popover_shown(id) then
+    if hov.hover != -1 then hov = {hover: -1, px: -1, py: -1} end
+    {open: false, index: -1, label: "", rect: {x: 0, y: 0, w: 0, h: 0}}
+  else
+    let at = if _get(anchor, "h", nil) != nil then {x: anchor.x, y: anchor.y + anchor.h + 2} else anchor end
+    let m = {open: true, x: at.x, y: at.y, tag: id, hover: hov.hover, px: hov.px, py: hov.py,
+             id: str(id), live: true, waited: true}
+    let res = context_menu(m, items, style)
+    hov = {hover: res.menu.hover, px: _get(res.menu, "px", -1), py: _get(res.menu, "py", -1)}
+    {open: res.menu.open, index: res.index, label: res.label, rect: res.rect}
   end
 end
 

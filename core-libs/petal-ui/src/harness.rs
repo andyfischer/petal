@@ -275,6 +275,12 @@ impl Headless {
         crate::focus::focus(&mut self.core.env)
     }
 
+    /// The open popover for the frame about to run (`popover::open_popover`),
+    /// `""` for none.
+    pub fn popover(&mut self) -> String {
+        crate::popover::open_popover(&mut self.core.env)
+    }
+
     pub fn click(&mut self, x: i32, y: i32) -> Result<&[DrawCommand], String> {
         self.mouse_move(x, y);
         self.mouse_down(input::buttons::LEFT);

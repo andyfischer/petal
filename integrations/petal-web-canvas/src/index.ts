@@ -8,8 +8,8 @@
  * runtime type/init are re-exported for hosts that need to poke the runtime
  * directly (debug tooling, headless drivers). */
 
-export { PetalCanvas } from "./runtime";
+export { PetalCanvas, type PetalCanvasOptions } from "./runtime";
 export { onImageLoad, renderCommands, type DrawCommand } from "./canvas-renderer";
-export { decodeDrawCommands } from "./draw-wire";
+export { decodeDrawCommands, decodeFrameCommands } from "./draw-wire";
 export { InputTracker } from "./input";
 export { default as initRuntime, PetalRuntime } from "../pkg/petal_web_canvas.js";

@@ -127,6 +127,30 @@ function is keyed by the call path that reaches it, so it has no bare name:
 `getState()` returns it under a pathed key like `counter#1/count`, and
 `setProp` cannot address it. Keep host-driven values at top level.
 
+## Sub-pixel coordinates
+
+By default every coordinate a script draws at is truncated to whole pixels.
+A page that wants smooth motion opts in when it builds the canvas:
+
+```ts
+const canvas = new PetalCanvas({ subpixel: true });
+```
+
+Curves, strokes and polygons then draw at the script's fractional positions.
+The rect family (rects, gradients, shadows, images, text positions and
+offscreen-canvas draws) stays whole pixels, so rects that touch still meet
+without an anti-aliased seam. A script changes that with `pixel_snap(true)`
+(snap everything, for pixel art) or `pixel_snap(false)` (snap nothing).
+An image drawn unsnapped is always drawn with image smoothing; a snapped
+one uses the context's own setting.
+
+A host that drives `PetalRuntime` itself builds it with
+`PetalRuntime.with_subpixel(true)` and drains each frame with
+`take_draw_buffer_subpixel()`, then decodes it with
+`decodeFrameCommands(buffer, runtime.draw_strings(), runtime.draw_sub_indices())`.
+`take_draw_buffer` and `new PetalRuntime()` are unchanged. The full contract
+is in [host-contract.md](../../core-libs/petal-ui/docs/host-contract.md#sub-pixel-coordinates).
+
 ## Examples
 
 `examples/*.ptl`, listed in `src/main.ts`:

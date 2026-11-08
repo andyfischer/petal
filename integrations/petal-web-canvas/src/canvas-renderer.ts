@@ -4,7 +4,15 @@
  * `decodeDrawCommands` (`draw-wire.ts`) rebuilds them from the runtime's
  * binary draw buffer. Alpha (`a`), corner radius (`radius`), and stroke width
  * (`width`) are optional and left out when at their defaults (opaque / square
- * / hairline). */
+ * / hairline).
+ *
+ * Coordinates may be fractional (a sub-pixel frame, `decodeFrameCommands`):
+ * Canvas2D draws at any position, so every op takes them as they are, and a
+ * command whose numbers are whole draws exactly as it always has. The one
+ * difference is image resampling: an `image` or `draw_canvas` marked
+ * `subpixel` (drawn under `pixel_snap(false)`) always draws with
+ * `imageSmoothingEnabled`, since it sits between pixels; a snapped one keeps
+ * the context's own setting. */
 
 import {
   cssFont,
@@ -96,6 +104,28 @@ export interface DrawCommand {
   // blur_canvas). `draw_canvas` also carries `a` (opacity) and `w`/`h` (a
   // destination size, 0 = the canvas's own); `blur_canvas` carries `radius`.
   id?: number;
+  /** Set by `decodeFrameCommands` on a sub-pixel command: drawn under a snap
+   * mode that leaves it unsnapped, so its geometry may be fractional. Absent
+   * on every command of a whole-pixel frame. */
+  subpixel?: boolean;
+}
+
+/** Run `draw` with image smoothing on when `cmd` is sub-pixel; a snapped
+ * command (and every command of a whole-pixel frame) draws with the
+ * context's setting untouched. */
+function withSmoothing(
+  ctx: CanvasRenderingContext2D,
+  cmd: DrawCommand,
+  draw: () => void,
+): void {
+  if (!cmd.subpixel) {
+    draw();
+    return;
+  }
+  const saved = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = true;
+  draw();
+  ctx.imageSmoothingEnabled = saved;
 }
 
 function fillStyle(cmd: DrawCommand): string {
@@ -388,7 +418,7 @@ function renderPrimitive(
 
     case "image": {
       const img = imageFor(cmd.source!);
-      if (img) drawImageCmd(ctx, img, cmd);
+      if (img) withSmoothing(ctx, cmd, () => drawImageCmd(ctx, img, cmd));
       break;
     }
 
@@ -610,7 +640,7 @@ export function renderCommands(
           const a = cmd.a === undefined ? 1 : cmd.a / 255;
           const saved = dst.globalAlpha;
           dst.globalAlpha = saved * a;
-          dst.drawImage(src.canvas, cmd.x!, cmd.y!, w, h);
+          withSmoothing(dst, cmd, () => dst.drawImage(src.canvas, cmd.x!, cmd.y!, w, h));
           dst.globalAlpha = saved;
         }
         break;

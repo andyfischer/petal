@@ -2,12 +2,29 @@
 
 import init, { PetalRuntime } from "../pkg/petal_web_canvas.js";
 import { onImageLoad, renderCommands, type DrawCommand } from "./canvas-renderer";
-import { decodeDrawCommands } from "./draw-wire";
+import { decodeDrawCommands, decodeFrameCommands } from "./draw-wire";
 import { InputTracker } from "./input";
 import { bindFontMetrics } from "./text-metrics";
 
+/** How a `PetalCanvas` is built. Every field defaults to the old behaviour. */
+export interface PetalCanvasOptions {
+  /**
+   * Keep a script's fractional coordinates (default false: every coordinate
+   * is truncated to whole pixels, as ever). Curves, strokes and polygons then
+   * draw at sub-pixel positions; the rect family (rects, gradients, shadows,
+   * images, text positions, offscreen-canvas draws) stays whole pixels so
+   * touching rects meet without a seam. A script changes that with
+   * `pixel_snap(true)` (snap everything: pixel art) or `pixel_snap(false)`
+   * (snap nothing). See core-libs/petal-ui/docs/host-contract.md,
+   * "Sub-pixel coordinates".
+   */
+  subpixel?: boolean;
+}
+
 export class PetalCanvas {
   runtime: PetalRuntime | null = null;
+  /** Built with `{ subpixel: true }`: frames drain with fractions. */
+  readonly subpixel: boolean;
   private stackId: number | null = null;
   canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
@@ -56,9 +73,13 @@ export class PetalCanvas {
   framesRun = 0;
   framesSkipped = 0;
 
+  constructor(options: PetalCanvasOptions = {}) {
+    this.subpixel = options.subpixel ?? false;
+  }
+
   async init(): Promise<void> {
     await init();
-    this.runtime = new PetalRuntime();
+    this.runtime = this.subpixel ? PetalRuntime.with_subpixel(true) : new PetalRuntime();
     this.input.setRuntime(this.runtime);
     // Teach the runtime what the browser's fonts actually measure, so
     // `text_width()` agrees with what `fillText` draws.
@@ -329,8 +350,13 @@ export class PetalCanvas {
       this.frameCount++;
       this.framesRun++;
 
-      const buffer = this.runtime.take_draw_buffer();
-      const commands = decodeDrawCommands(buffer, this.runtime.draw_strings());
+      const commands = this.subpixel
+        ? decodeFrameCommands(
+            this.runtime.take_draw_buffer_subpixel(),
+            this.runtime.draw_strings(),
+            this.runtime.draw_sub_indices(),
+          )
+        : decodeDrawCommands(this.runtime.take_draw_buffer(), this.runtime.draw_strings());
       this.lastCommands = commands;
       renderCommands(this.ctx, commands, this.canvas.width, this.canvas.height);
 

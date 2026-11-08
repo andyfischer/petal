@@ -15,7 +15,8 @@ use petal::stack::StackKey;
 use petal::value::value_to_json;
 
 use petal_ui::draw::{
-    clear_draw_commands, reset_canvas_ids, take_draw_commands, take_draw_commands_for,
+    DrawOptions, FrameCommand, clear_draw_commands, reset_canvas_ids, take_draw_commands,
+    take_draw_commands_for, take_frame_commands, take_frame_commands_for,
 };
 use petal_ui::draw_wire::DrawWire;
 use petal_ui::input::{
@@ -61,12 +62,39 @@ pub struct PetalRuntime {
     /// The strings of the frame last drained by `take_draw_buffer` or
     /// `run_speculative`, served by `draw_strings`.
     draw_strings: Vec<String>,
+    /// Built by `with_subpixel(true)`: the draw natives keep a script's
+    /// fractional coordinates (`petal_ui::draw::DrawOptions::subpixel`).
+    subpixel: bool,
+    /// Which commands of the frame last drained by a `_subpixel` drain carry
+    /// fractional geometry (a `SubCommand`), by index; served by
+    /// `draw_sub_indices`. Empty after a whole-pixel drain.
+    sub_indices: Vec<u32>,
 }
 
 #[wasm_bindgen]
 impl PetalRuntime {
     #[wasm_bindgen(constructor)]
     pub fn new() -> PetalRuntime {
+        Self::build(false)
+    }
+
+    /// A runtime whose draw natives keep fractional coordinates when
+    /// `subpixel` is true (`with_subpixel(false)` is `new()`). Drain its frames
+    /// with `take_draw_buffer_subpixel` / `run_speculative_subpixel`: curves,
+    /// strokes and polygons arrive with the script's fractions, the rect
+    /// family stays whole unless the script calls `pixel_snap(false)`, and
+    /// `pixel_snap(true)` snaps everything. The whole-pixel drains still work
+    /// on it and return exactly what they return on a `new()` runtime.
+    pub fn with_subpixel(subpixel: bool) -> PetalRuntime {
+        Self::build(subpixel)
+    }
+
+    /// Whether this runtime was built with sub-pixel draw natives.
+    pub fn subpixel(&self) -> bool {
+        self.subpixel
+    }
+
+    fn build(subpixel: bool) -> PetalRuntime {
         // A Rust panic reaches the page as a bare `RuntimeError: unreachable`;
         // this logs its message and location to the console first.
         console_error_panic_hook::set_once();
@@ -75,8 +103,21 @@ impl PetalRuntime {
         // offscreen canvas ops, the `host_data` pull channel, and the `ui`
         // package, which a script reaches with `import ui`.
         petal_ui::input::register_input(&mut env);
-        petal_ui::draw::register_draw(&mut env);
-        petal_ui::draw::register_canvas(&mut env);
+        if subpixel {
+            // Registers the canvas natives too (with the sub-pixel
+            // `draw_canvas`); a `register_canvas` after it would put the
+            // whole-pixel one back.
+            petal_ui::draw::register_draw_with(
+                &mut env,
+                DrawOptions {
+                    subpixel: true,
+                    ..Default::default()
+                },
+            );
+        } else {
+            petal_ui::draw::register_draw(&mut env);
+            petal_ui::draw::register_canvas(&mut env);
+        }
         petal_ui::host_data::register_host_data(&mut env);
         petal_ui::register_prelude(&mut env);
         petal_ui::provide_interface(&mut env);
@@ -91,6 +132,8 @@ impl PetalRuntime {
             width: 0,
             height: 0,
             draw_strings: Vec::new(),
+            subpixel,
+            sub_indices: Vec::new(),
         }
     }
 
@@ -233,15 +276,48 @@ impl PetalRuntime {
         self.encode(&cmds)
     }
 
-    /// The strings of the frame last drained by `take_draw_buffer` or
-    /// `run_speculative`, indexed by that buffer.
+    /// `take_draw_buffer` for a sub-pixel host: the same frame, the same
+    /// opcodes and layout (`DrawWire::encode_frame`), with fractional numbers
+    /// where the frame has them. On a `with_subpixel(true)` runtime those are
+    /// the script's own; on any other they are already whole, and the buffer
+    /// equals `take_draw_buffer`'s. Strings are served by `draw_strings`, and
+    /// which commands are sub-pixel by `draw_sub_indices`.
+    pub fn take_draw_buffer_subpixel(&mut self) -> Vec<f64> {
+        let cmds = take_frame_commands(&mut self.env);
+        self.encode_frame(&cmds)
+    }
+
+    /// The strings of the frame last drained by `take_draw_buffer`,
+    /// `take_draw_buffer_subpixel` or a `run_speculative`, indexed by that
+    /// buffer.
     pub fn draw_strings(&self) -> Vec<String> {
         self.draw_strings.clone()
+    }
+
+    /// The indices (in decode order) of the commands of the frame last
+    /// drained by `take_draw_buffer_subpixel` or `run_speculative_subpixel`
+    /// that carry fractional geometry: drawn under a snap mode that leaves
+    /// them unsnapped. Empty after a whole-pixel drain.
+    pub fn draw_sub_indices(&self) -> Vec<u32> {
+        self.sub_indices.clone()
     }
 
     fn encode(&mut self, cmds: &[petal_ui::draw::DrawCommand]) -> Vec<f64> {
         let wire = DrawWire::encode(cmds);
         self.draw_strings = wire.strings;
+        self.sub_indices.clear();
+        wire.numbers
+    }
+
+    fn encode_frame(&mut self, cmds: &[FrameCommand]) -> Vec<f64> {
+        let wire = DrawWire::encode_frame(cmds);
+        self.draw_strings = wire.strings;
+        self.sub_indices = cmds
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| matches!(c, FrameCommand::Sub(_)))
+            .map(|(i, _)| i as u32)
+            .collect();
         wire.numbers
     }
 
@@ -415,6 +491,35 @@ impl PetalRuntime {
     /// commands, leaving the live state untouched. The result is a draw
     /// buffer like `take_draw_buffer`'s, with its strings in `draw_strings`.
     pub fn run_speculative(&mut self) -> Result<Vec<f64>, JsValue> {
+        let fork = self.begin_speculative()?;
+        let result = self
+            .env
+            .run(fork)
+            .map(|_| take_draw_commands_for(&mut self.env, fork));
+        let result = result
+            .map(|cmds| self.encode(&cmds))
+            .map_err(|e| JsValue::from_str(&e));
+        self.env.drop_fork(fork);
+        result
+    }
+
+    /// `run_speculative`, drained as `take_draw_buffer_subpixel` drains.
+    pub fn run_speculative_subpixel(&mut self) -> Result<Vec<f64>, JsValue> {
+        let fork = self.begin_speculative()?;
+        let result = self
+            .env
+            .run(fork)
+            .map(|_| take_frame_commands_for(&mut self.env, fork));
+        let result = result
+            .map(|cmds| self.encode_frame(&cmds))
+            .map_err(|e| JsValue::from_str(&e));
+        self.env.drop_fork(fork);
+        result
+    }
+
+    /// Prepare a speculative frame: a reset fork of the active stack, to be
+    /// run, drained and dropped by the caller.
+    fn begin_speculative(&mut self) -> Result<StackKey, JsValue> {
         let sid = self
             .active_stack
             .ok_or_else(|| JsValue::from_str("No active stack"))?;
@@ -435,15 +540,7 @@ impl PetalRuntime {
         self.env
             .reset_stack(fork)
             .map_err(|e| JsValue::from_str(&e))?;
-        let result = self
-            .env
-            .run(fork)
-            .map(|_| take_draw_commands_for(&mut self.env, fork));
-        let result = result
-            .map(|cmds| self.encode(&cmds))
-            .map_err(|e| JsValue::from_str(&e));
-        self.env.drop_fork(fork);
-        result
+        Ok(fork)
     }
 }
 

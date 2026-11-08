@@ -11,7 +11,14 @@
  * a field at its default (opaque alpha, zero radius, hairline width, …) is
  * left out — so the renderer and anything that inspects commands see no
  * difference. `test/vitest/draw-wire.test.ts` checks that against a fixture
- * the Rust side generates. */
+ * the Rust side generates.
+ *
+ * A sub-pixel frame (`take_draw_buffer_subpixel`, from a runtime built with
+ * `PetalRuntime.with_subpixel(true)`; `DrawWire::encode_frame` on the Rust
+ * side) uses the same opcodes and field orders, with fractional numbers where
+ * the script drew them: every number is read as the `f64` it is, so
+ * `decodeDrawCommands` reads either. `decodeFrameCommands` also marks which
+ * commands are sub-pixel. `fixtures/draw-wire-subpixel.json` pins a sample. */
 
 import type { DrawCommand } from "./canvas-renderer";
 
@@ -229,6 +236,23 @@ export function decodeDrawCommands(
         break;
     }
     out.push(cmd as DrawCommand);
+  }
+  return out;
+}
+
+/** Decode a sub-pixel frame: `decodeDrawCommands`, with `subpixel: true` set
+ * on each command whose index is in `subIndices` (the runtime's
+ * `draw_sub_indices()`): the ones drawn under a snap mode that leaves them
+ * unsnapped, which may carry fractional geometry. */
+export function decodeFrameCommands(
+  buf: ArrayLike<number>,
+  strings: readonly string[],
+  subIndices: ArrayLike<number>,
+): DrawCommand[] {
+  const out = decodeDrawCommands(buf, strings);
+  for (let k = 0; k < subIndices.length; k++) {
+    const cmd = out[subIndices[k]];
+    if (cmd) cmd.subpixel = true;
   }
   return out;
 }

@@ -51,6 +51,7 @@ With no file argument, `petal-sdl` opens a browser over the bundled examples.
 | `--no-hot-reload` | Disable file watching |
 | `--no-timeline` | Disable frame history (see [Time travel](#time-travel)) |
 | `--history <n>` | Frames of history to keep (default: 600, ten seconds) |
+| `--subpixel` | Keep fractional coordinates: circles, lines, polylines, polygons, ellipses, arcs and circle gradients draw at the script's exact numbers; the rect family, images and text stay whole pixels unless the script calls `pixel_snap(false)` (`pixel_snap(true)` snaps everything). Off by default |
 | `--agent` | Accept JSON commands on stdin (see [agent protocol](docs/agent-protocol.md)) |
 | `--headless` | No window; frames advance only on `step` commands (implies `--agent`) |
 | `--screenshot <file>` | Run headlessly, save a PNG, then exit |

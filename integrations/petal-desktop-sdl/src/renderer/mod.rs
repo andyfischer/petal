@@ -6,7 +6,7 @@ use sdl2::render::{BlendMode, Canvas, RenderTarget};
 use sdl2::surface::Surface;
 use sdl2::ttf::Font;
 
-use petal_ui::draw::DrawCommand;
+use petal_ui::draw::{DrawCommand, FrameCommand, SubCommand};
 
 use crate::font::FontBook;
 
@@ -15,8 +15,9 @@ mod surface_fx;
 mod text;
 
 use raster::{
-    PI, TAU, annular_sector, ellipse_ring, fill_circle_gradient, fill_disc_aa, fill_polygon,
-    fill_rect_gradient, fill_rounded_rect, fill_shadow, set_draw_color, stroke_line_aa,
+    PI, TAU, annular_sector, annular_sector_f, ellipse_ring, ellipse_ring_f, fill_circle_gradient,
+    fill_circle_gradient_f, fill_disc_aa, fill_polygon, fill_polygon_f, fill_rect_gradient,
+    fill_rounded_rect, fill_shadow, set_draw_color, stroke_line_aa, stroke_line_aa_f,
     stroke_rect_outline, stroke_rounded_rect_outline,
 };
 use surface_fx::{blit_surface_impl, blur_surface, snapshot_surface};
@@ -128,6 +129,23 @@ pub fn render<T: TextTarget>(
     commands: Vec<DrawCommand>,
     fonts: &mut FontBook,
 ) {
+    render_frame(canvas, commands.into_iter().map(FrameCommand::Px), fonts);
+}
+
+/// [`render`] for a sub-pixel frame (`petal_ui::draw::take_frame_commands`).
+/// A [`FrameCommand::Px`] draws exactly as [`render`] draws it. A
+/// [`FrameCommand::Sub`] curve, stroke or polygon feeds its fractional
+/// coordinates into the same coverage and scanline code, keeping the
+/// pixel-centre convention, so a `Sub` whose numbers are whole paints exactly
+/// the pixels of its `Px` twin. The rect family, images, offscreen-canvas
+/// blits and text are drawn in whole pixels here (truncated, as the
+/// whole-pixel drain truncates): SDL's rect fills, clips and glyph blits are
+/// integer.
+pub fn render_frame<T: TextTarget>(
+    canvas: &mut Canvas<T>,
+    commands: impl IntoIterator<Item = FrameCommand>,
+    fonts: &mut FontBook,
+) {
     let mut offscreen: Offscreen = HashMap::new();
     // The active render target. `0` is the main framebuffer; any other value is
     // an offscreen canvas id set via `SetTarget` (i.e. `draw_to`).
@@ -141,6 +159,14 @@ pub fn render<T: TextTarget>(
     let mut saved_clips: Vec<Option<Rect>> = Vec::new();
 
     for cmd in commands {
+        let cmd = match cmd {
+            FrameCommand::Px(cmd) => cmd,
+            FrameCommand::Sub(sub) if is_whole_pixel_primitive(&sub) => sub.to_px(),
+            FrameCommand::Sub(sub) => {
+                on_target!(canvas, offscreen, target, |dst| render_sub(dst, sub));
+                continue;
+            }
+        };
         // Resolve the stack ops into the plain `Clip`/`ClipNone` the renderer
         // already knows, so there is one clip implementation, not three.
         let cmd = match cmd {
@@ -593,6 +619,202 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
         | DrawCommand::DrawCanvas { .. }
         | DrawCommand::Snapshot { .. }
         | DrawCommand::BlurCanvas { .. } => {}
+    }
+}
+
+/// Whether this renderer draws `sub` in whole pixels after all: the rect
+/// family, images, canvas blits and text. Everything else has a fractional
+/// path in [`render_sub`].
+fn is_whole_pixel_primitive(sub: &SubCommand) -> bool {
+    matches!(
+        sub,
+        SubCommand::Image { .. }
+            | SubCommand::Rect { .. }
+            | SubCommand::RectOutline { .. }
+            | SubCommand::Text { .. }
+            | SubCommand::RectGradient { .. }
+            | SubCommand::Shadow { .. }
+            | SubCommand::DrawCanvas { .. }
+    )
+}
+
+/// A stroke width as the sub-pixel path uses it. A width that is not
+/// positive is the 1px default, as `width.max(1)` makes it in whole pixels;
+/// a fraction below 1 is kept, so a hairline can be thinner than a pixel.
+fn sub_width(width: f32) -> f64 {
+    if width > 0.0 { width as f64 } else { 1.0 }
+}
+
+fn points_f64(points: &[(f32, f32)]) -> Vec<(f64, f64)> {
+    points.iter().map(|&(x, y)| (x as f64, y as f64)).collect()
+}
+
+/// Render one sub-pixel curve, stroke or polygon: the fractional twin of the
+/// matching arm of [`render_one`]. The rect family, images, canvas blits and
+/// text never reach here (see [`is_whole_pixel_primitive`]).
+fn render_sub<T: TextTarget>(canvas: &mut Canvas<T>, cmd: SubCommand) {
+    match cmd {
+        SubCommand::Line { x1, y1, x2, y2, r, g, b, a, width } => {
+            stroke_line_aa_f(
+                canvas,
+                x1 as f64,
+                y1 as f64,
+                x2 as f64,
+                y2 as f64,
+                sub_width(width),
+                r,
+                g,
+                b,
+                a,
+            );
+        }
+        SubCommand::Circle { cx, cy, radius, r, g, b, a } => {
+            fill_disc_aa(
+                canvas,
+                cx as f64 + 0.5,
+                cy as f64 + 0.5,
+                radius as f64,
+                r,
+                g,
+                b,
+                a,
+            );
+        }
+        SubCommand::Triangle { x1, y1, x2, y2, x3, y3, r, g, b, a } => {
+            set_draw_color(canvas, r, g, b, a);
+            fill_polygon_f(
+                canvas,
+                &[
+                    (x1 as f64, y1 as f64),
+                    (x2 as f64, y2 as f64),
+                    (x3 as f64, y3 as f64),
+                ],
+            );
+        }
+        SubCommand::Poly { points, r, g, b, a } | SubCommand::Polygon { points, r, g, b, a } => {
+            set_draw_color(canvas, r, g, b, a);
+            fill_polygon_f(canvas, &points_f64(&points));
+        }
+        SubCommand::Fan { cx, cy, points, r, g, b, a } => {
+            let mut ring = Vec::with_capacity(points.len() + 1);
+            ring.push((cx as f64, cy as f64));
+            ring.extend(points_f64(&points));
+            set_draw_color(canvas, r, g, b, a);
+            fill_polygon_f(canvas, &ring);
+        }
+        SubCommand::Polyline { points, r, g, b, a, width } => {
+            let width = sub_width(width);
+            match points.as_slice() {
+                [] => {}
+                [(x, y)] => fill_disc_aa(
+                    canvas,
+                    *x as f64 + 0.5,
+                    *y as f64 + 0.5,
+                    width.max(1.0) / 2.0,
+                    r,
+                    g,
+                    b,
+                    a,
+                ),
+                pts => {
+                    for w in pts.windows(2) {
+                        stroke_line_aa_f(
+                            canvas,
+                            w[0].0 as f64,
+                            w[0].1 as f64,
+                            w[1].0 as f64,
+                            w[1].1 as f64,
+                            width,
+                            r,
+                            g,
+                            b,
+                            a,
+                        );
+                    }
+                    if width > 2.0 {
+                        for (x, y) in &pts[1..pts.len() - 1] {
+                            fill_disc_aa(
+                                canvas,
+                                *x as f64 + 0.5,
+                                *y as f64 + 0.5,
+                                width / 2.0,
+                                r,
+                                g,
+                                b,
+                                a,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        SubCommand::Ellipse { cx, cy, rx, ry, r, g, b, a } => {
+            set_draw_color(canvas, r, g, b, a);
+            fill_polygon_f(
+                canvas,
+                &ellipse_ring_f(cx as f64, cy as f64, rx as f64, ry as f64, 0.0, TAU),
+            );
+        }
+        SubCommand::EllipseOutline { cx, cy, rx, ry, r, g, b, a, width } => {
+            set_draw_color(canvas, r, g, b, a);
+            let t = sub_width(width);
+            let (rx, ry) = (rx as f64, ry as f64);
+            for (a0, a1) in [(0.0, PI), (PI, TAU)] {
+                fill_polygon_f(
+                    canvas,
+                    &annular_sector_f(
+                        cx as f64,
+                        cy as f64,
+                        (rx - t).max(0.0),
+                        rx,
+                        (ry - t).max(0.0),
+                        ry,
+                        a0,
+                        a1,
+                    ),
+                );
+            }
+        }
+        SubCommand::Arc { cx, cy, r_in, r_out, a0, a1, r, g, b, a } => {
+            set_draw_color(canvas, r, g, b, a);
+            let sweep = (a1 - a0).clamp(-TAU as f32, TAU as f32) as f64;
+            let halves = if sweep.abs() > PI { 2 } else { 1 };
+            for i in 0..halves {
+                let s0 = a0 as f64 + sweep * (i as f64) / halves as f64;
+                let s1 = a0 as f64 + sweep * ((i + 1) as f64) / halves as f64;
+                fill_polygon_f(
+                    canvas,
+                    &annular_sector_f(
+                        cx as f64,
+                        cy as f64,
+                        r_in as f64,
+                        r_out as f64,
+                        r_in as f64,
+                        r_out as f64,
+                        s0,
+                        s1,
+                    ),
+                );
+            }
+        }
+        SubCommand::CircleGradient { cx, cy, radius, r0, g0, b0, a0, r1, g1, b1, a1 } => {
+            fill_circle_gradient_f(
+                canvas,
+                cx as f64,
+                cy as f64,
+                radius as f64,
+                [r0, g0, b0, a0],
+                [r1, g1, b1, a1],
+            );
+        }
+        // Drawn in whole pixels by `render`; never reach here.
+        SubCommand::Image { .. }
+        | SubCommand::Rect { .. }
+        | SubCommand::RectOutline { .. }
+        | SubCommand::Text { .. }
+        | SubCommand::RectGradient { .. }
+        | SubCommand::Shadow { .. }
+        | SubCommand::DrawCanvas { .. } => {}
     }
 }
 
@@ -1398,5 +1620,280 @@ mod tests {
             let _ = render_frame(new_black_surface(), vec![cmd], &mut fonts);
         }
         assert_eq!(fonts.default_face().sizes(), before);
+    }
+
+    // ── Sub-pixel commands ───────────────────────────────────────────────
+
+    /// The raw bytes of a frame rendered on a fresh black surface through
+    /// [`render_frame`].
+    fn frame_pixels(commands: Vec<FrameCommand>, fonts: &mut FontBook) -> Vec<u8> {
+        let mut sc = new_black_surface().into_canvas().unwrap();
+        super::render_frame(&mut sc, commands, fonts);
+        let surface = sc.into_surface();
+        let mut out = Vec::new();
+        surface.with_lock(|pixels: &[u8]| out.extend_from_slice(pixels));
+        out
+    }
+
+    /// A small deterministic generator (an LCG), so the property test is
+    /// reproducible without a dependency.
+    struct Lcg(u64);
+
+    impl Lcg {
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            self.0 >> 33
+        }
+        /// In `lo..=hi`.
+        fn range(&mut self, lo: i32, hi: i32) -> i32 {
+            lo + (self.next() % (hi - lo + 1) as u64) as i32
+        }
+        fn byte(&mut self) -> u8 {
+            self.next() as u8
+        }
+        /// Opaque half the time (the `BlendMode::None` path), else translucent.
+        fn alpha(&mut self) -> u8 {
+            if self.next() % 2 == 0 { 255 } else { self.range(1, 254) as u8 }
+        }
+        fn pt(&mut self) -> (i32, i32) {
+            (self.range(-8, 72), self.range(-8, 72))
+        }
+        fn pts(&mut self, lo: usize, hi: usize) -> Vec<(i32, i32)> {
+            let n = self.range(lo as i32, hi as i32) as usize;
+            (0..n).map(|_| self.pt()).collect()
+        }
+    }
+
+    /// One random whole-pixel command of kind `k` — every primitive the
+    /// sub-pixel path draws, plus the rect family it draws in whole pixels.
+    fn random_px(rng: &mut Lcg, k: usize) -> DrawCommand {
+        let (r, g, b, a) = (rng.byte(), rng.byte(), rng.byte(), rng.alpha());
+        match k {
+            0 => {
+                let ((x1, y1), (x2, y2)) = (rng.pt(), rng.pt());
+                let width = rng.range(0, 9) as u32;
+                DrawCommand::Line { x1, y1, x2, y2, r, g, b, a, width }
+            }
+            1 => {
+                let (cx, cy) = rng.pt();
+                let radius = rng.range(-2, 30);
+                DrawCommand::Circle { cx, cy, radius, r, g, b, a }
+            }
+            2 => {
+                let ((x1, y1), (x2, y2), (x3, y3)) = (rng.pt(), rng.pt(), rng.pt());
+                DrawCommand::Triangle { x1, y1, x2, y2, x3, y3, r, g, b, a }
+            }
+            3 => DrawCommand::Poly { points: rng.pts(0, 7), r, g, b, a },
+            4 => DrawCommand::Polygon { points: rng.pts(0, 9), r, g, b, a },
+            5 => {
+                let (cx, cy) = rng.pt();
+                DrawCommand::Fan { cx, cy, points: rng.pts(0, 7), r, g, b, a }
+            }
+            6 => {
+                let width = rng.range(0, 9) as u32;
+                DrawCommand::Polyline { points: rng.pts(0, 6), r, g, b, a, width }
+            }
+            7 => {
+                let (cx, cy) = rng.pt();
+                let (rx, ry) = (rng.range(0, 34), rng.range(0, 34));
+                DrawCommand::Ellipse { cx, cy, rx, ry, r, g, b, a }
+            }
+            8 => {
+                let (cx, cy) = rng.pt();
+                let (rx, ry) = (rng.range(0, 34), rng.range(0, 34));
+                let width = rng.range(0, 12) as u32;
+                DrawCommand::EllipseOutline { cx, cy, rx, ry, r, g, b, a, width }
+            }
+            9 => {
+                let (cx, cy) = rng.pt();
+                let r_in = rng.range(0, 20) as f32;
+                let r_out = r_in + rng.range(0, 20) as f32;
+                let a0 = rng.range(-700, 700) as f32 / 100.0;
+                let a1 = rng.range(-700, 700) as f32 / 100.0;
+                DrawCommand::Arc { cx, cy, r_in, r_out, a0, a1, r, g, b, a }
+            }
+            10 => {
+                let (cx, cy) = rng.pt();
+                let radius = rng.range(-2, 30);
+                let (r1, g1, b1, a1) = (rng.byte(), rng.byte(), rng.byte(), rng.alpha());
+                DrawCommand::CircleGradient {
+                    cx,
+                    cy,
+                    radius,
+                    r0: r,
+                    g0: g,
+                    b0: b,
+                    a0: a,
+                    r1,
+                    g1,
+                    b1,
+                    a1,
+                }
+            }
+            11 => {
+                let (x, y) = rng.pt();
+                let (w, h) = (rng.range(0, 40) as u32, rng.range(0, 40) as u32);
+                let radius = rng.range(0, 12) as u32;
+                DrawCommand::Rect { x, y, w, h, r, g, b, a, radius }
+            }
+            12 => {
+                let (x, y) = rng.pt();
+                let (w, h) = (rng.range(1, 40) as u32, rng.range(1, 40) as u32);
+                let (width, radius) = (rng.range(0, 6) as u32, rng.range(0, 12) as u32);
+                DrawCommand::RectOutline { x, y, w, h, r, g, b, a, width, radius }
+            }
+            13 => {
+                let (x, y) = rng.pt();
+                let (w, h) = (rng.range(0, 40) as u32, rng.range(0, 40) as u32);
+                let (r1, g1, b1, a1) = (rng.byte(), rng.byte(), rng.byte(), rng.alpha());
+                DrawCommand::RectGradient {
+                    x,
+                    y,
+                    w,
+                    h,
+                    radius: rng.range(0, 10) as u32,
+                    r0: r,
+                    g0: g,
+                    b0: b,
+                    a0: a,
+                    r1,
+                    g1,
+                    b1,
+                    a1,
+                    angle: rng.range(-700, 700) as f32 / 100.0,
+                }
+            }
+            _ => {
+                let (x, y) = rng.pt();
+                let (w, h) = (rng.range(0, 30) as u32, rng.range(0, 30) as u32);
+                DrawCommand::Shadow {
+                    x,
+                    y,
+                    w,
+                    h,
+                    radius: rng.range(0, 8) as u32,
+                    blur: rng.range(0, 8) as u32,
+                    spread: rng.range(-4, 4),
+                    dx: rng.range(-4, 4),
+                    dy: rng.range(-4, 4),
+                    r,
+                    g,
+                    b,
+                    a,
+                }
+            }
+        }
+    }
+
+    const PRIMITIVE_KINDS: usize = 15;
+
+    /// The renderer half of the sub-pixel contract: a `Sub` whose numbers
+    /// are whole paints exactly the pixels of its `Px` twin, for every
+    /// geometry primitive (and the rect family, which it draws as `Px`). Each
+    /// primitive is checked alone and in stacked frames, so blending over
+    /// earlier output is covered too.
+    #[test]
+    fn whole_number_sub_renders_pixel_identical_to_px() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
+        let ttf = sdl2::ttf::init().unwrap();
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut rng = Lcg(0x5eed_5ab9_1fe1);
+        let sub_of = |cmd: &DrawCommand| {
+            FrameCommand::Sub(SubCommand::from_px(cmd).expect("every primitive here has a twin"))
+        };
+        for k in 0..PRIMITIVE_KINDS {
+            for case in 0..24 {
+                let px = random_px(&mut rng, k);
+                let a = frame_pixels(vec![FrameCommand::Px(px.clone())], &mut fonts);
+                let b = frame_pixels(vec![sub_of(&px)], &mut fonts);
+                assert!(a == b, "kind {k} case {case}: Sub differs from Px for {px:?}");
+            }
+        }
+        for frame in 0..12 {
+            let px: Vec<DrawCommand> = (0..10)
+                .map(|_| {
+                    let k = rng.range(0, PRIMITIVE_KINDS as i32 - 1) as usize;
+                    random_px(&mut rng, k)
+                })
+                .collect();
+            let a = frame_pixels(px.iter().cloned().map(FrameCommand::Px).collect(), &mut fonts);
+            let b = frame_pixels(px.iter().map(sub_of).collect(), &mut fonts);
+            assert!(a == b, "stacked frame {frame} differs: {px:?}");
+            // And `render` (the whole-pixel entry point) is `render_frame` of Px.
+            let mut sc = new_black_surface().into_canvas().unwrap();
+            render(&mut sc, px.clone(), &mut fonts);
+            let surface = sc.into_surface();
+            let mut c = Vec::new();
+            surface.with_lock(|p: &[u8]| c.extend_from_slice(p));
+            assert!(a == c, "stacked frame {frame}: render differs from render_frame");
+        }
+    }
+
+    /// A fractional radius is drawn as asked rather than truncated: a disc of
+    /// radius 10.5 covers more than one of radius 10 (the truncation), and
+    /// less than one of radius 11.
+    #[test]
+    fn a_fractional_radius_circle_differs_from_the_truncated_one() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
+        let ttf = sdl2::ttf::init().unwrap();
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let circle = |radius: f32| {
+            FrameCommand::Sub(SubCommand::Circle {
+                cx: 30.0,
+                cy: 30.0,
+                radius,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+            })
+        };
+        let ink = |pixels: &[u8]| pixels.iter().map(|&v| v as u64).sum::<u64>();
+        let frac = frame_pixels(vec![circle(10.5)], &mut fonts);
+        let trunc = frame_pixels(vec![FrameCommand::Px(circle(10.5).to_px())], &mut fonts);
+        let whole = frame_pixels(vec![circle(10.0)], &mut fonts);
+        let bigger = frame_pixels(vec![circle(11.0)], &mut fonts);
+        assert_eq!(trunc, whole, "the truncation of 10.5 is radius 10");
+        assert_ne!(frac, trunc, "radius 10.5 must not draw as radius 10");
+        assert!(ink(&frac) > ink(&trunc), "10.5 covers more than 10");
+        assert!(ink(&frac) < ink(&bigger), "10.5 covers less than 11");
+    }
+
+    /// A fractional position shifts a line's coverage: a 2px horizontal
+    /// stroke on the row boundary y = 30 fills rows 29 and 30 exactly; half a
+    /// pixel lower it fills row 30 and half-covers rows 29 and 31.
+    #[test]
+    fn a_fractional_line_shifts_its_coverage() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
+        let ttf = sdl2::ttf::init().unwrap();
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let line = |y: f32| {
+            vec![FrameCommand::Sub(SubCommand::Line {
+                x1: 4.0,
+                y1: y,
+                x2: 60.0,
+                y2: y,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+                width: 2.0,
+            })]
+        };
+        let render_rgb = |cmds: Vec<FrameCommand>, fonts: &mut FontBook| {
+            let mut sc = new_black_surface().into_canvas().unwrap();
+            super::render_frame(&mut sc, cmds, fonts);
+            sc.into_surface()
+        };
+        let at = render_rgb(line(30.0), &mut fonts);
+        let lower = render_rgb(line(30.5), &mut fonts);
+        let row = |s: &Surface, y: u32| pixel_rgb(s, 32, y).0;
+        assert_eq!((row(&at, 29), row(&at, 30), row(&at, 31)), (255, 255, 0));
+        assert_eq!(row(&lower, 30), 255, "row 30 stays covered");
+        assert!((100..160).contains(&row(&lower, 29)), "row 29 half covered: {}", row(&lower, 29));
+        assert!((100..160).contains(&row(&lower, 31)), "row 31 half covered: {}", row(&lower, 31));
     }
 }

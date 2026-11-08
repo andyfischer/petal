@@ -22,14 +22,27 @@ pub(super) fn set_draw_color<T: RenderTarget>(canvas: &mut Canvas<T>, r: u8, g: 
 /// Fill an arbitrary polygon using the even-odd scanline rule.
 /// Handles convex and concave polygons. The draw color must be set by the caller.
 pub(super) fn fill_polygon<T: RenderTarget>(canvas: &mut Canvas<T>, points: &[(i32, i32)]) {
+    let points: Vec<(f64, f64)> = points.iter().map(|&(x, y)| (x as f64, y as f64)).collect();
+    fill_polygon_f(canvas, &points);
+}
+
+/// [`fill_polygon`] over fractional vertices — the one implementation both
+/// share. Each whole-pixel row `y` is sampled where it starts (the row's top
+/// edge), and an edge's crossing is rounded to the nearest column, so whole-
+/// number vertices fill exactly the pixels the integer filler always has.
+pub(super) fn fill_polygon_f<T: RenderTarget>(canvas: &mut Canvas<T>, points: &[(f64, f64)]) {
     if points.len() < 3 {
         return;
     }
 
-    let min_y = points.iter().map(|p| p.1).min().unwrap();
-    let max_y = points.iter().map(|p| p.1).max().unwrap();
+    let min_y = points.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+    let max_y = points.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+    if !min_y.is_finite() || !max_y.is_finite() {
+        return;
+    }
 
-    for y in min_y..=max_y {
+    for y in (min_y.ceil() as i32)..=(max_y.floor() as i32) {
+        let yf = y as f64;
         // Collect x-intersections of this scanline with every polygon edge.
         let mut crossings: Vec<i32> = Vec::new();
         let n = points.len();
@@ -46,9 +59,9 @@ pub(super) fn fill_polygon<T: RenderTarget>(canvas: &mut Canvas<T>, points: &[(i
                 (y2, y1, x2, x1)
             };
             // Half-open interval [ya, yb) avoids double-counting shared vertices.
-            if y >= ya && y < yb {
-                let t = (y - ya) as f64 / (yb - ya) as f64;
-                let x = xa as f64 + t * (xb - xa) as f64;
+            if yf >= ya && yf < yb {
+                let t = (yf - ya) / (yb - ya);
+                let x = xa + t * (xb - xa);
                 crossings.push(x.round() as i32);
             }
         }
@@ -81,13 +94,41 @@ pub(super) fn stroke_line_aa<T: RenderTarget>(
     b: u8,
     a: u8,
 ) {
+    stroke_line_aa_f(
+        canvas,
+        x1 as f64,
+        y1 as f64,
+        x2 as f64,
+        y2 as f64,
+        width.max(1) as f64,
+        r,
+        g,
+        b,
+        a,
+    );
+}
+
+/// [`stroke_line_aa`] with fractional endpoints and width — the one
+/// implementation both share. Endpoints are pixel-corner coordinates (a pixel's
+/// centre is `px + 0.5`), as in the integer form; `width` is used as given.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn stroke_line_aa_f<T: RenderTarget>(
+    canvas: &mut Canvas<T>,
+    ax: f64,
+    ay: f64,
+    bx: f64,
+    by: f64,
+    width: f64,
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+) {
     canvas.set_blend_mode(BlendMode::Blend);
-    let half = width.max(1) as f64 / 2.0;
-    let (ax, ay) = (x1 as f64, y1 as f64);
-    let (bx, by) = (x2 as f64, y2 as f64);
+    let half = width / 2.0;
     let pad = half.ceil() as i32 + 1;
-    let (x0, xe) = (x1.min(x2) - pad, x1.max(x2) + pad);
-    let (y0, ye) = (y1.min(y2) - pad, y1.max(y2) + pad);
+    let (x0, xe) = (ax.min(bx).floor() as i32 - pad, ax.max(bx).ceil() as i32 + pad);
+    let (y0, ye) = (ay.min(by).floor() as i32 - pad, ay.max(by).ceil() as i32 + pad);
     for py in y0..=ye {
         for px in x0..=xe {
             let dist = dist_to_segment(px as f64 + 0.5, py as f64 + 0.5, ax, ay, bx, by);
@@ -165,6 +206,19 @@ pub(super) fn ellipse_ring(cx: i32, cy: i32, rx: f64, ry: f64, a0: f64, a1: f64)
         .collect()
 }
 
+/// [`ellipse_ring`] about a fractional centre. Each offset from the centre is
+/// rounded exactly as the integer ring rounds it, so a whole-number centre
+/// gives the integer ring's points; a fractional centre or radius moves them.
+pub(super) fn ellipse_ring_f(cx: f64, cy: f64, rx: f64, ry: f64, a0: f64, a1: f64) -> Vec<(f64, f64)> {
+    let n = conic_segments(rx.max(ry));
+    (0..=n)
+        .map(|i| {
+            let t = a0 + (a1 - a0) * (i as f64) / (n as f64);
+            (cx + (rx * t.cos()).round(), cy + (ry * t.sin()).round())
+        })
+        .collect()
+}
+
 /// The outline of one annular sector — the outer rim swept forward, the inner
 /// rim swept back — which is a *simple* polygon as long as the sweep is at most
 /// half a turn. Used for arcs, rounded-outline corners, and (as two halves) a
@@ -185,6 +239,29 @@ pub(super) fn annular_sector(
         ring.push((cx, cy));
     } else {
         let mut inner = ellipse_ring(cx, cy, rx_in, ry_in, a0, a1);
+        inner.reverse();
+        ring.extend(inner);
+    }
+    ring
+}
+
+/// [`annular_sector`] about a fractional centre, from [`ellipse_ring_f`].
+#[allow(clippy::too_many_arguments)]
+pub(super) fn annular_sector_f(
+    cx: f64,
+    cy: f64,
+    rx_in: f64,
+    rx_out: f64,
+    ry_in: f64,
+    ry_out: f64,
+    a0: f64,
+    a1: f64,
+) -> Vec<(f64, f64)> {
+    let mut ring = ellipse_ring_f(cx, cy, rx_out, ry_out, a0, a1);
+    if rx_in <= 0.0 || ry_in <= 0.0 {
+        ring.push((cx, cy));
+    } else {
+        let mut inner = ellipse_ring_f(cx, cy, rx_in, ry_in, a0, a1);
         inner.reverse();
         ring.extend(inner);
     }
@@ -358,13 +435,29 @@ pub(super) fn fill_circle_gradient<T: RenderTarget>(
     c0: [u8; 4],
     c1: [u8; 4],
 ) {
-    if radius <= 0 {
+    fill_circle_gradient_f(canvas, cx as f64, cy as f64, radius as f64, c0, c1);
+}
+
+/// [`fill_circle_gradient`] with a fractional centre and radius — the one
+/// implementation both share. (`cx`, `cy`) names a pixel, so the disc is
+/// centred on `cx + 0.5`, as the integer form always has been.
+pub(super) fn fill_circle_gradient_f<T: RenderTarget>(
+    canvas: &mut Canvas<T>,
+    cx: f64,
+    cy: f64,
+    radius: f64,
+    c0: [u8; 4],
+    c1: [u8; 4],
+) {
+    if radius <= 0.0 {
         return;
     }
     canvas.set_blend_mode(BlendMode::Blend);
-    let (fx, fy, fr) = (cx as f64 + 0.5, cy as f64 + 0.5, radius as f64);
-    for py in (cy - radius - 1)..=(cy + radius + 1) {
-        for px in (cx - radius - 1)..=(cx + radius + 1) {
+    let (fx, fy, fr) = (cx + 0.5, cy + 0.5, radius);
+    let (x0, x1) = ((cx - radius - 1.0).floor() as i32, (cx + radius + 1.0).ceil() as i32);
+    let (y0, y1) = ((cy - radius - 1.0).floor() as i32, (cy + radius + 1.0).ceil() as i32);
+    for py in y0..=y1 {
+        for px in x0..=x1 {
             let coverage = disc_coverage(px, py, fx, fy, fr);
             if coverage <= 0.0 {
                 continue;

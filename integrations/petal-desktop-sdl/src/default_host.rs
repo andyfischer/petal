@@ -20,7 +20,10 @@ use sdl2::video::Window;
 use petal::env::Env;
 use petal::stack::StackKey;
 
-use petal_ui::draw::{DrawCommand, take_draw_commands, take_draw_commands_for};
+use petal_ui::draw::{
+    DrawCommand, DrawOptions, FrameCommand, take_draw_commands, take_draw_commands_for,
+    take_frame_commands, take_frame_commands_for,
+};
 
 use crate::font::{self, FontBook};
 use crate::game_loop::{EscapeAction, Host, ScriptSwitch};
@@ -51,6 +54,11 @@ pub struct DefaultHost {
     /// `sfx`/`synth` playback: silent (but still draining requests) until
     /// `on_sdl_init` opens a device.
     sound: SoundBoard,
+    /// Draw sub-pixel coordinates (`--subpixel`): register the draw natives
+    /// with [`DrawOptions::subpixel`] and drain and render
+    /// [`FrameCommand`]s. Off by default, which is the whole-pixel path
+    /// exactly as before.
+    subpixel: bool,
 }
 
 impl DefaultHost {
@@ -83,13 +91,79 @@ impl DefaultHost {
             framebuffer: None,
             in_browser: false,
             sound: SoundBoard::new(),
+            subpixel: false,
         }
+    }
+
+    /// Opt into sub-pixel draw commands (see [`DrawOptions::subpixel`]):
+    /// curves, strokes and polygons keep a script's fractional coordinates,
+    /// and `pixel_snap` takes effect. Must be set before the host is run
+    /// (the natives are registered once, in [`Host::register`]).
+    pub fn with_subpixel(mut self, on: bool) -> Self {
+        self.subpixel = on;
+        self
+    }
+
+    /// Paint a frame (whole-pixel or sub-pixel) into the persistent
+    /// framebuffer at the drawable's scale, and present it.
+    fn present_frame_commands(
+        &mut self,
+        canvas: &mut Canvas<Window>,
+        commands: Vec<FrameCommand>,
+    ) -> Result<(), String> {
+        // The script drew in window points; paint in drawable pixels. The
+        // persistent framebuffer is made lazily at that size, and again when
+        // the size changes (the window moved to a screen of another scale).
+        let scale = Scale::of(canvas);
+        let (w, h) = scale.pixels();
+        let surface = match self.framebuffer.take() {
+            Some(s) if s.size() == (w, h) => s,
+            _ => new_framebuffer(w, h)?,
+        };
+        let commands = hidpi::scale_frame(commands, scale.factor);
+
+        // Render this frame's commands into the persistent surface, then blit
+        // the whole surface to the window. Because the surface is software-
+        // backed, pixels persist unless a `Clear` command wipes them.
+        let mut sc = surface.into_canvas().map_err(|e| e.to_string())?;
+        renderer::render_frame(
+            &mut sc,
+            commands,
+            &mut self
+                .fonts
+                .as_ref()
+                .expect("fonts for windowed present")
+                .borrow_mut(),
+        );
+        let surface = sc.into_surface();
+        let tc = canvas.texture_creator();
+        let tex = tc
+            .create_texture_from_surface(&surface)
+            .map_err(|e| e.to_string())?;
+        canvas.copy(&tex, None, None)?;
+        canvas.present();
+        self.framebuffer = Some(surface);
+        Ok(())
     }
 }
 
 impl Host for DefaultHost {
     fn register(&mut self, env: &mut Env) {
-        native_fns::register_all(env);
+        if self.subpixel {
+            native_fns::register_all_with(
+                env,
+                DrawOptions {
+                    subpixel: true,
+                    ..Default::default()
+                },
+            );
+        } else {
+            native_fns::register_all(env);
+        }
+    }
+
+    fn subpixel(&self) -> bool {
+        self.subpixel
     }
 
     fn default_source(&mut self) -> Option<ScriptSwitch> {
@@ -124,6 +198,10 @@ impl Host for DefaultHost {
     }
 
     fn present(&mut self, canvas: &mut Canvas<Window>, env: &mut Env) -> Result<(), String> {
+        if self.subpixel {
+            let commands = take_frame_commands(env);
+            return self.present_frame_commands(canvas, commands);
+        }
         let commands = take_draw_commands(env);
         self.present_commands(canvas, commands)
     }
@@ -141,41 +219,33 @@ impl Host for DefaultHost {
         canvas: &mut Canvas<Window>,
         commands: Vec<DrawCommand>,
     ) -> Result<(), String> {
-        // The script drew in window points; paint in drawable pixels. The
-        // persistent framebuffer is made lazily at that size, and again when
-        // the size changes (the window moved to a screen of another scale).
-        let scale = Scale::of(canvas);
-        let (w, h) = scale.pixels();
-        let surface = match self.framebuffer.take() {
-            Some(s) if s.size() == (w, h) => s,
-            _ => new_framebuffer(w, h)?,
-        };
-        let commands = hidpi::scale_commands(commands, scale.factor);
+        self.present_frame_commands(canvas, commands.into_iter().map(FrameCommand::Px).collect())
+    }
 
-        // Render this frame's commands into the persistent surface, then blit
-        // the whole surface to the window. Because the surface is software-
-        // backed, pixels persist unless a `Clear` command wipes them.
-        let mut sc = surface.into_canvas().map_err(|e| e.to_string())?;
-        renderer::render(
-            &mut sc,
-            commands,
-            &mut self
-                .fonts
-                .as_ref()
-                .expect("fonts for windowed present")
-                .borrow_mut(),
-        );
-        let surface = sc.into_surface();
+    fn present_frame(
+        &mut self,
+        canvas: &mut Canvas<Window>,
+        commands: Vec<FrameCommand>,
+    ) -> Result<(), String> {
+        self.present_frame_commands(canvas, commands)
+    }
 
-        let tc = canvas.texture_creator();
-        let tex = tc
-            .create_texture_from_surface(&surface)
-            .map_err(|e| e.to_string())?;
-        canvas.copy(&tex, None, None)?;
-        canvas.present();
-
-        self.framebuffer = Some(surface);
-        Ok(())
+    fn render_frame_image(
+        &mut self,
+        commands: &[FrameCommand],
+        width: u32,
+        height: u32,
+    ) -> Result<RgbImage, String> {
+        let fonts = self
+            .fonts
+            .as_ref()
+            .ok_or_else(|| "screenshot unavailable: no system font could be loaded".to_string())?;
+        Ok(render_frame_commands(
+            commands.to_vec(),
+            width,
+            height,
+            &mut fonts.borrow_mut(),
+        ))
     }
 
     fn render_image(
@@ -185,6 +255,10 @@ impl Host for DefaultHost {
         width: u32,
         height: u32,
     ) -> Result<RgbImage, String> {
+        if self.subpixel {
+            let commands = take_frame_commands_for(env, stack);
+            return self.render_frame_image(&commands, width, height);
+        }
         let commands = take_draw_commands_for(env, stack);
         self.render_commands_image(&commands, width, height)
     }
@@ -208,6 +282,10 @@ impl Host for DefaultHost {
     }
 
     fn draw_commands_json(&mut self, env: &mut Env, stack: StackKey) -> serde_json::Value {
+        if self.subpixel {
+            let commands = take_frame_commands_for(env, stack);
+            return serde_json::to_value(&commands).unwrap_or(serde_json::Value::Null);
+        }
         let commands = take_draw_commands_for(env, stack);
         serde_json::to_value(&commands).unwrap_or(serde_json::Value::Null)
     }
@@ -274,11 +352,23 @@ fn render_commands(
     height: u32,
     fonts: &mut FontBook,
 ) -> RgbImage {
+    let frame = commands.iter().cloned().map(FrameCommand::Px).collect();
+    render_frame_commands(frame, width, height, fonts)
+}
+
+/// [`render_commands`] for a sub-pixel frame, through
+/// [`renderer::render_frame`].
+fn render_frame_commands(
+    commands: Vec<FrameCommand>,
+    width: u32,
+    height: u32,
+    fonts: &mut FontBook,
+) -> RgbImage {
     let surface = new_framebuffer(width, height).expect("create screenshot surface");
     let mut sc = surface
         .into_canvas()
         .expect("screenshot surface into canvas");
-    renderer::render(&mut sc, commands.to_vec(), fonts);
+    renderer::render_frame(&mut sc, commands, fonts);
     surface_to_image(&sc.into_surface())
 }
 

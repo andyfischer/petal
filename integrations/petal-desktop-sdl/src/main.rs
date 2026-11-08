@@ -24,6 +24,7 @@ fn main() {
     let mut source_path: Option<String> = None;
     let mut timeline = true;
     let mut history: usize = petal_sdl::game_loop::DEFAULT_HISTORY;
+    let mut subpixel = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -50,6 +51,7 @@ fn main() {
                 i += 1;
                 history = args[i].parse().expect("Invalid history length");
             }
+            "--subpixel" => subpixel = true,
             "--agent" => agent = true,
             "--headless" => {
                 headless = true;
@@ -97,7 +99,7 @@ fn main() {
         timeline,
         history,
     };
-    let mut host = DefaultHost::new(examples_dir);
+    let mut host = DefaultHost::new(examples_dir).with_subpixel(subpixel);
     let sp = source_path.as_deref();
 
     let result = if let Some(ref out_path) = screenshot_path {
@@ -126,6 +128,8 @@ fn print_usage() {
     eprintln!("  --no-hot-reload   Disable file watching");
     eprintln!("  --no-timeline     Disable frame history (F5 freeze, , . scrub, F6 trail, F7 track)");
     eprintln!("  --history <n>     Frames of history to keep (default: 600)");
+    eprintln!("  --subpixel        Draw curves, strokes and polygons at fractional coordinates");
+    eprintln!("                    (rects stay whole pixels unless the script calls pixel_snap)");
     eprintln!("  --agent           Enable agent protocol (JSON over stdin/stdout)");
     eprintln!("  --headless        Headless agent mode (no window, implies --agent)");
     eprintln!("  --screenshot <f>  Run headlessly, save PNG screenshot to file, then exit");

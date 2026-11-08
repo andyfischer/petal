@@ -14,7 +14,7 @@
 //! Retina frame on a 1× screen: the framebuffer is painted at that scale and
 //! the window shows it fitted, which is also what a snapshot saves.
 
-use petal_ui::draw::DrawCommand;
+use petal_ui::draw::{DrawCommand, FrameCommand};
 use sdl2::render::Canvas;
 use sdl2::video::Window;
 
@@ -64,6 +64,16 @@ pub fn scale_override() -> Option<f32> {
 
 fn parse_override(v: &str) -> Option<f32> {
     v.trim().parse::<f32>().ok().filter(|s| s.is_finite() && *s > 0.0 && *s <= 8.0)
+}
+
+/// [`scale_commands`] for a sub-pixel frame: a `Px` command scales (and
+/// rounds) exactly as there, a `Sub` scales without rounding
+/// ([`FrameCommand::scale`]). At 1 the list is returned untouched.
+pub fn scale_frame(commands: Vec<FrameCommand>, factor: f32) -> Vec<FrameCommand> {
+    if factor == 1.0 {
+        return commands;
+    }
+    commands.into_iter().map(|c| c.scale(factor)).collect()
 }
 
 /// A frame's commands, drawn in points, as commands in pixels at `factor`

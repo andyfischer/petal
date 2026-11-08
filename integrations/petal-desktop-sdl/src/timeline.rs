@@ -41,7 +41,10 @@ use petal::provenance::{self, CallSite};
 use petal::source_map::ENTRY_FILE;
 use petal::stack::StackKey;
 
-use petal_ui::draw::{DrawCommand, clear_draw_commands, take_draw_commands_traced};
+use petal_ui::draw::{
+    DrawCommand, FrameCommand, clear_draw_commands, take_draw_commands_traced,
+    take_frame_commands_traced,
+};
 use petal_ui::input::{InputState, bind_frame_info, bind_input, bind_time};
 
 use crate::game_loop::Host;
@@ -57,6 +60,10 @@ pub struct FrameRecord {
     /// A fork of the live execution taken after this frame ran.
     pub snapshot: StackKey,
     pub commands: Vec<DrawCommand>,
+    /// The frame as a sub-pixel host draws it, index-aligned with `commands`
+    /// (which are its whole-pixel truncation, for hit-testing and the
+    /// trail). `None` unless the timeline is [`subpixel`](Timeline::subpixel).
+    pub frame: Option<Vec<FrameCommand>>,
     /// Index-aligned with `commands`; empty chains when untraced.
     pub origins: Vec<EmitSite>,
     /// Which program produced this frame (see [`Timeline::generation`]).
@@ -99,6 +106,10 @@ pub struct Timeline {
     pub show_trail: bool,
     /// Frames re-simulated by the last replay (for the status line).
     pub last_replayed: usize,
+    /// Record each frame's sub-pixel commands too
+    /// ([`FrameRecord::frame`]) — set for a host whose
+    /// [`Host::subpixel`] is `true`.
+    pub subpixel: bool,
 }
 
 impl Timeline {
@@ -111,6 +122,7 @@ impl Timeline {
             tracked: None,
             show_trail: false,
             last_replayed: 0,
+            subpixel: false,
         }
     }
 
@@ -161,7 +173,7 @@ impl Timeline {
         time: f64,
         input: &InputState,
     ) -> Result<(), String> {
-        let (commands, origins) = drain_traced(env);
+        let (commands, frame, origins) = drain_traced(env, self.subpixel);
         let snapshot = env.fork_execution(live)?;
         self.frames.push_back(FrameRecord {
             frame_count,
@@ -170,6 +182,7 @@ impl Timeline {
             input: input.clone(),
             snapshot,
             commands,
+            frame,
             origins,
             generation: self.generation,
             writes: Vec::new(),
@@ -279,6 +292,7 @@ impl Timeline {
         let start = self.frames[from - 1].snapshot;
         env.restore_execution(live, start)?;
         let generation = self.generation;
+        let subpixel = self.subpixel;
         for j in from..n {
             let rec = &mut self.frames[j];
             clear_draw_commands(env);
@@ -293,9 +307,10 @@ impl Timeline {
             }
             // What the frame printed the first time already reached stderr.
             let _ = env.take_output();
-            let (commands, origins) = drain_traced(env);
+            let (commands, frame, origins) = drain_traced(env, subpixel);
             discard_emitted(env);
             rec.commands = commands;
+            rec.frame = frame;
             rec.origins = origins;
             for (name, value) in &rec.writes {
                 if let Err(e) = env.set_state_from_json(program_id, live, name, value) {
@@ -469,6 +484,26 @@ impl Timeline {
         cmds
     }
 
+    /// [`frame_with_overlay`](Self::frame_with_overlay) for a sub-pixel
+    /// host: the recorded frame as it was drained (its whole-pixel commands,
+    /// wrapped, for a frame recorded without sub-pixel commands) plus the
+    /// overlay, which is whole pixels.
+    pub fn frame_commands_with_overlay(
+        &self,
+        env: &Env,
+        program_id: ProgramId,
+        width: i32,
+        height: i32,
+    ) -> Vec<FrameCommand> {
+        let mut cmds: Vec<FrameCommand> = match self.current() {
+            Some(FrameRecord { frame: Some(frame), .. }) => frame.clone(),
+            Some(rec) => rec.commands.iter().cloned().map(FrameCommand::Px).collect(),
+            None => Vec::new(),
+        };
+        cmds.extend(self.overlay(env, program_id, width, height).into_iter().map(FrameCommand::Px));
+        cmds
+    }
+
     /// Draw commands the host paints over the frame: the trail, the tracked
     /// shape's outline, and a timeline bar while frozen.
     pub fn overlay(&self, env: &Env, program_id: ProgramId, width: i32, height: i32) -> Vec<DrawCommand> {
@@ -619,8 +654,22 @@ impl Timeline {
     }
 }
 
-fn drain_traced(env: &mut Env) -> (Vec<DrawCommand>, Vec<EmitSite>) {
-    take_draw_commands_traced(env).into_iter().unzip()
+/// Drain the frame with its emit sites. A sub-pixel timeline drains the
+/// sub-pixel frame and keeps its whole-pixel truncation alongside (the two
+/// index-aligned), which is what hit-testing and the trail read.
+#[allow(clippy::type_complexity)]
+fn drain_traced(
+    env: &mut Env,
+    subpixel: bool,
+) -> (Vec<DrawCommand>, Option<Vec<FrameCommand>>, Vec<EmitSite>) {
+    if subpixel {
+        let (frame, origins): (Vec<FrameCommand>, Vec<EmitSite>) =
+            take_frame_commands_traced(env).into_iter().unzip();
+        let commands = frame.iter().map(FrameCommand::to_px).collect();
+        return (commands, Some(frame), origins);
+    }
+    let (commands, origins) = take_draw_commands_traced(env).into_iter().unzip();
+    (commands, None, origins)
 }
 
 /// Drop every output buffer a replayed frame filled (after its draw commands
@@ -1084,5 +1133,56 @@ mod tests {
     fn centroid_of_a_circle_is_its_centre() {
         let c = DrawCommand::Circle { cx: 30, cy: 40, radius: 10, r: 0, g: 0, b: 0, a: 255 };
         assert_eq!(centroid(&c), Some((30, 40)));
+    }
+
+    /// A sub-pixel timeline records each frame as the sub-pixel host draws
+    /// it, with its whole-pixel truncation index-aligned beside it, and keeps
+    /// both through a replay; the overlay frame wraps the recording.
+    #[test]
+    fn a_subpixel_timeline_records_and_replays_frame_commands() {
+        use petal_ui::draw::SubCommand;
+        let src = "import ui\nstate var n = 0\nset n = n + 1\n\
+                   draw_circle(n + 0.5, 10.25, 4.5, 255, 255, 255)\n\
+                   draw_rect(n, 0, 10, 10, 255, 0, 0)\n";
+        let mut host = TestHost;
+        let mut env = Env::new();
+        crate::native_fns::register_all_with(
+            &mut env,
+            petal_ui::draw::DrawOptions {
+                subpixel: true,
+                ..Default::default()
+            },
+        );
+        env.enable_emit_trace(true);
+        let pid = env.load_program(src).unwrap();
+        let live = env.create_stack(pid).unwrap();
+        petal_ui::input::bind_dimensions(&mut env, 100, 100);
+        let mut tl = Timeline::new(600);
+        tl.subpixel = true;
+        let mut frame = 0i64;
+        for _ in 0..3 {
+            run_frame(&mut env, live, &mut tl, &mut host, &mut frame);
+        }
+        let check = |tl: &Timeline| {
+            let rec = tl.get(1).unwrap();
+            let sub = rec.frame.as_ref().expect("a sub-pixel recording");
+            assert_eq!(sub.len(), rec.commands.len());
+            assert_eq!(rec.origins.len(), rec.commands.len());
+            assert!(
+                matches!(sub[0], FrameCommand::Sub(SubCommand::Circle { cx: 2.5, cy: 10.25, radius: 4.5, .. })),
+                "{:?}",
+                sub[0]
+            );
+            assert!(matches!(rec.commands[0], DrawCommand::Circle { cx: 2, cy: 10, radius: 4, .. }));
+            assert!(matches!(rec.commands[1], DrawCommand::Rect { x: 2, .. }));
+        };
+        check(&tl);
+        tl.replay(&mut env, pid, live, 1, &mut host).unwrap();
+        check(&tl);
+        tl.freeze();
+        tl.scrub_to(1);
+        let shown = tl.frame_commands_with_overlay(&env, pid, 100, 100);
+        assert_eq!(&shown[..2], &tl.get(1).unwrap().frame.as_ref().unwrap()[..]);
+        assert!(shown[2..].iter().all(|c| matches!(c, FrameCommand::Px(_))), "the overlay is whole pixels");
     }
 }

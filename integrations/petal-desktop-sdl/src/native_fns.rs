@@ -21,9 +21,24 @@ pub struct ExampleEntry {
 /// Register everything a petal-sdl script can call: the petal-ui standard
 /// set (input, draw, offscreen canvases, the `ui` package) plus the browser/file natives and the sound natives.
 pub fn register_all(env: &mut Env) {
+    register_all_with(env, petal_ui::draw::DrawOptions::default());
+}
+
+/// [`register_all`] with the draw natives registered per `options`. With
+/// `subpixel` set the geometry natives keep a script's fractions and the host
+/// drains with `petal_ui::draw::take_frame_commands`; with the defaults this
+/// is exactly `register_all`.
+pub fn register_all_with(env: &mut Env, options: petal_ui::draw::DrawOptions) {
     petal_ui::input::register_input(env);
-    petal_ui::draw::register_draw(env);
-    petal_ui::draw::register_canvas(env);
+    if options.subpixel {
+        // `register_draw_with` registers the canvas natives itself; calling
+        // `register_canvas` after it would put the whole-pixel `draw_canvas`
+        // back.
+        petal_ui::draw::register_draw_with(env, options);
+    } else {
+        petal_ui::draw::register_draw(env);
+        petal_ui::draw::register_canvas(env);
+    }
     // `ui` declares the `host_data` pull channel, so register it: with no
     // provider attached it answers a pending value.
     petal_ui::host_data::register_host_data(env);
@@ -295,6 +310,77 @@ mod tests {
         if let Err(mismatch) = env.verify_interface(INTERFACE_PACKAGES) {
             panic!("petal-sdl's natives and its interface packages disagree: {mismatch}");
         }
+    }
+
+    /// The sub-pixel registration answers for the same interfaces: it
+    /// replaces natives by name, never adds or drops one.
+    #[test]
+    fn register_all_with_subpixel_agrees_with_the_interface_packages() {
+        let mut env = Env::new();
+        register_all_with(
+            &mut env,
+            petal_ui::draw::DrawOptions {
+                subpixel: true,
+                ..Default::default()
+            },
+        );
+        if let Err(mismatch) = env.verify_interface(INTERFACE_PACKAGES) {
+            panic!("petal-sdl's sub-pixel natives and its interface packages disagree: {mismatch}");
+        }
+    }
+
+    /// On a sub-pixel env a circle keeps its fractions, a rect is still
+    /// snapped by default, and `pixel_snap(true)` snaps the circle too; the
+    /// whole-pixel drain of the same frame is what the default env gives.
+    #[test]
+    fn subpixel_registration_keeps_fractions_through_the_frame_drain() {
+        use petal_ui::draw::{FrameCommand, SubCommand, take_frame_commands};
+        let src = "import ui
+                   draw_circle(30.5, 20.25, 10.5, 255, 255, 255)
+                   draw_rect(1.5, 2.5, 3.5, 4.5, 255, 0, 0)
+";
+        let mut env = Env::new();
+        register_all_with(
+            &mut env,
+            petal_ui::draw::DrawOptions {
+                subpixel: true,
+                ..Default::default()
+            },
+        );
+        env.run_source(src).expect("runs");
+        let frame = take_frame_commands(&mut env);
+        assert_eq!(frame.len(), 2, "{frame:?}");
+        assert!(
+            matches!(
+                frame[0],
+                FrameCommand::Sub(SubCommand::Circle { cx: 30.5, cy: 20.25, radius: 10.5, .. })
+            ),
+            "{:?}",
+            frame[0]
+        );
+        assert!(
+            matches!(frame[1], FrameCommand::Px(DrawCommand::Rect { x: 1, y: 2, w: 3, h: 4, .. })),
+            "{:?}",
+            frame[1]
+        );
+
+        env.run_source(&format!("{src}pixel_snap(true)
+draw_circle(30.5, 20.25, 10.5, 255, 255, 255)
+"))
+            .expect("runs");
+        let frame = take_frame_commands(&mut env);
+        assert!(
+            matches!(frame[2], FrameCommand::Px(DrawCommand::Circle { cx: 30, cy: 20, radius: 10, .. })),
+            "{:?}",
+            frame[2]
+        );
+
+        env.run_source(src).expect("runs");
+        let px = take_draw_commands(&mut env);
+        let mut plain = Env::new();
+        register_all(&mut plain);
+        plain.run_source(src).expect("runs");
+        assert_eq!(px, take_draw_commands(&mut plain));
     }
 
     /// The runner provides the interfaces it registers, at the versions of

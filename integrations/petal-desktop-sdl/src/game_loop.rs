@@ -29,7 +29,7 @@ use petal::env::Env;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
 
-use petal_ui::draw::{DrawCommand, clear_draw_commands};
+use petal_ui::draw::{DrawCommand, FrameCommand, clear_draw_commands};
 use petal_ui::input::{InputState, bind_frame_info, bind_input, bind_time, dimensions, take_mouse_grab};
 
 use crate::timeline::Timeline;
@@ -125,6 +125,39 @@ pub trait Host {
         _commands: Vec<DrawCommand>,
     ) -> Result<(), String> {
         Err("this host cannot present a command list".to_string())
+    }
+
+    /// Whether this host drains sub-pixel frames: it registered the draw
+    /// natives with `DrawOptions { subpixel: true, .. }` and renders
+    /// [`FrameCommand`]s. When `true`, the timeline records each frame with
+    /// `take_frame_commands_traced` and hands the host
+    /// [`present_frame`](Self::present_frame) /
+    /// [`render_frame_image`](Self::render_frame_image) instead of the
+    /// whole-pixel methods. Default: `false`.
+    fn subpixel(&self) -> bool {
+        false
+    }
+
+    /// [`present_commands`](Self::present_commands) for a sub-pixel frame.
+    /// Default: truncate it to whole pixels and present that.
+    fn present_frame(
+        &mut self,
+        canvas: &mut Canvas<Window>,
+        commands: Vec<FrameCommand>,
+    ) -> Result<(), String> {
+        self.present_commands(canvas, commands.iter().map(FrameCommand::to_px).collect())
+    }
+
+    /// [`render_commands_image`](Self::render_commands_image) for a sub-pixel
+    /// frame. Default: truncate it to whole pixels and render that.
+    fn render_frame_image(
+        &mut self,
+        commands: &[FrameCommand],
+        width: u32,
+        height: u32,
+    ) -> Result<RgbImage, String> {
+        let px: Vec<DrawCommand> = commands.iter().map(FrameCommand::to_px).collect();
+        self.render_commands_image(&px, width, height)
     }
 
     /// Whether [`present_commands`](Self::present_commands) is implemented, which
@@ -355,7 +388,7 @@ pub fn run_game<H: Host>(
     let mut current = load_initial(&mut env, source_path, &config, host)?;
 
     let timeline_on = config.timeline && host.supports_timeline();
-    let mut timeline = start_timeline(&mut env, &config, timeline_on);
+    let mut timeline = start_timeline(&mut env, &config, timeline_on, host.subpixel());
 
     let mut last_frame = Instant::now();
     // The script's `time()`: simulated seconds, so a rewind rewinds it too.
@@ -563,6 +596,10 @@ fn present_timeline<H: Host>(
     host: &mut H,
 ) -> Result<(), String> {
     let (w, h) = dimensions(env);
+    if timeline.subpixel {
+        let cmds = timeline.frame_commands_with_overlay(env, current.program_id, w as i32, h as i32);
+        return host.present_frame(canvas, cmds);
+    }
     let cmds = timeline.frame_with_overlay(env, current.program_id, w as i32, h as i32);
     host.present_commands(canvas, cmds)
 }
@@ -585,7 +622,7 @@ pub fn run_agent<H: Host>(
     host.register(&mut env);
     let current = load_initial(&mut env, source_path, &config, host)?;
     let timeline_on = config.timeline && host.supports_timeline();
-    let mut timeline = start_timeline(&mut env, &config, timeline_on);
+    let mut timeline = start_timeline(&mut env, &config, timeline_on, host.subpixel());
 
     let cmd_rx = protocol::spawn_stdin_reader();
     let mut paused = false;
@@ -677,7 +714,7 @@ pub fn run_headless<H: Host>(
     // Headless has no presenter, so the timeline needs no host support: it
     // only records, rewinds and replays.
     let timeline_on = config.timeline;
-    let mut timeline = start_timeline(&mut env, &config, timeline_on);
+    let mut timeline = start_timeline(&mut env, &config, timeline_on, host.subpixel());
 
     let cmd_rx = protocol::spawn_stdin_reader();
     let mut paused = true; // Headless starts paused — the agent drives frames.
@@ -891,11 +928,13 @@ fn perform_switch<H: Host>(
 
 /// A timeline holding `config.history` frames, with the emit trace it reads
 /// turned on when the session records one.
-fn start_timeline(env: &mut Env, config: &GameConfig, on: bool) -> Timeline {
+fn start_timeline(env: &mut Env, config: &GameConfig, on: bool, subpixel: bool) -> Timeline {
     if on {
         env.enable_emit_trace(true);
     }
-    Timeline::new(config.history)
+    let mut timeline = Timeline::new(config.history);
+    timeline.subpixel = subpixel;
+    timeline
 }
 
 /// Install a hot reload if one landed, and let a recording timeline follow it.
@@ -1022,8 +1061,14 @@ fn handle_command<H: Host>(
         if let Some(t) = timeline.as_deref() {
             if *overlay || t.is_frozen() {
                 let (w, h) = dimensions(env);
-                let cmds = t.frame_with_overlay(env, current.program_id, w as i32, h as i32);
-                match host.render_commands_image(&cmds, w, h) {
+                let image = if t.subpixel {
+                    let cmds = t.frame_commands_with_overlay(env, current.program_id, w as i32, h as i32);
+                    host.render_frame_image(&cmds, w, h)
+                } else {
+                    let cmds = t.frame_with_overlay(env, current.program_id, w as i32, h as i32);
+                    host.render_commands_image(&cmds, w, h)
+                };
+                match image {
                     Ok(img) => protocol::send_response(&Response {
                         screenshot: Some(crate::screenshot::to_base64(&img)),
                         ..Response::ok()

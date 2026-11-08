@@ -1,0 +1,106 @@
+// A Petal reference for the native `text_wrap_rows` (core-libs/petal-ui/src/
+// text.rs `wrap_lines` + `wrap_rows`), for benchmarking only. It is not
+// shipped and nothing imports it: `bench_text_wrap` pastes it into its
+// scripts, checks that it answers what the native answers, and times the two.
+//
+// Same algorithm, same rows: greedy word wrap honouring hard newlines (a
+// trailing "\r" dropped), a break at the last blank run that fits with the
+// run discarded, trailing blanks not counted and trimmed, a paragraph's
+// leading blanks kept on its first row, a word wider than the box broken at
+// a character boundary, a non-positive width passing each paragraph through
+// whole. Rows are `{text, start, end}` with code point offsets into `s`.
+//
+// It measures the way a merged Petal implementation would: one `text_advance`
+// call per word and per blank run, and one per character only inside a word
+// that has to be broken. Never per character on the common path.
+
+fn _ref_blank(c)
+  c == " " || c == "\t"
+end
+
+fn _ref_row(para, base, a, b)
+  {text: char_slice(para, a, b), start: base + a, end: base + b}
+end
+
+// The rows of one paragraph (no newline in it), appended to `out0`.
+fn _ref_para(out0, para, base, ts, max_w)
+  var out = out0
+  let cs = chars(para)
+  let n = len(cs)
+  if max_w <= 0.0 then
+    return append(out, _ref_row(para, base, 0, n))
+  end
+  // The line being filled: [ls, le) of `cs`, `lw` px wide; ls < 0 is empty.
+  var ls = -1
+  var le = 0
+  var lw = 0.0
+  var i = 0
+  while i < n do
+    let g0 = i
+    while i < n && _ref_blank(cs[i]) do
+      set i = i + 1
+    end
+    let w0 = i
+    while i < n && !_ref_blank(cs[i]) do
+      set i = i + 1
+    end
+    if i > w0 then
+      let gap_w = if w0 > g0 then text_advance(char_slice(para, g0, w0), ts) else 0.0 end
+      let word_w = text_advance(char_slice(para, w0, i), ts)
+      // Whether the line is empty once the word's gap has been dealt with:
+      // only then may an over-wide word be broken (the native's quirk: a
+      // paragraph's leading blanks make the first word overflow instead).
+      var empty = false
+      if ls >= 0 && lw + gap_w + word_w > max_w then
+        set out = append(out, _ref_row(para, base, ls, le))
+        set ls = -1
+        set lw = 0.0
+        set empty = true
+      else
+        if ls < 0 then
+          set ls = g0
+          set empty = w0 == g0
+        end
+        set lw = lw + gap_w
+      end
+      if empty && word_w > max_w then
+        var ps = w0
+        var acc = 0.0
+        for k in range(w0, i) do
+          let cw = text_advance(cs[k], ts)
+          if acc + cw > max_w && k > ps then
+            set out = append(out, _ref_row(para, base, ps, k))
+            set ps = k
+            set acc = 0.0
+          end
+          set acc = acc + cw
+        end
+        set ls = ps
+        set lw = acc
+      else
+        if ls < 0 then
+          set ls = w0
+        end
+        set lw = lw + word_w
+      end
+      set le = i
+    end
+  end
+  if ls < 0 then
+    append(out, _ref_row(para, base, 0, 0))
+  else
+    append(out, _ref_row(para, base, ls, le))
+  end
+end
+
+pub fn ref_wrap_rows(s, ts, max_w)
+  var out = []
+  var base = 0
+  for raw in split(s, "\n") do
+    let n_raw = char_len(raw)
+    let para = if ends_with(raw, chr(13)) then char_slice(raw, 0, n_raw - 1) else raw end
+    set out = _ref_para(out, para, base, ts, float(max_w))
+    set base = base + n_raw + 1
+  end
+  out
+end

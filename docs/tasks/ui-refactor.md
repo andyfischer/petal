@@ -1,6 +1,9 @@
 # Reorganizing petal-ui
 
-Status: 2026-11-08. A plan, nothing done yet. It comes from a review of
+Status: 2026-11-08. R1 and R3 are done; R2 is done as a feature gate
+instead of a move (the move as written would be a dependency cycle), and the
+move itself and `panel_stubs` are left for the owner; R4 is an owner
+decision. The smaller cleanups are done. It comes from a review of
 `core-libs/` against [docs/skills/project-organization.md](../skills/project-organization.md).
 Check the current tree before acting on any item; the numbers below are from
 that date.
@@ -90,7 +93,7 @@ Each one goes in its own commit, as the skill asks for moves.
 
 ### R1. Split `ui.ptl` into modules behind an unchanged `ui` facade
 
-**Done 2026-11-08.** `prelude/ui.ptl` is a facade over `draw`, `hit`, `text`,
+**Done 2026-11-08** (39fad137). `prelude/ui.ptl` is a facade over `draw`, `hit`, `text`,
 `layout` and `widgets` (and `input`). Where it differs from the sketch below:
 
 - A module that declares a `state var` is the only one that can `set` it, so
@@ -140,6 +143,38 @@ already works this way). What has to change:
 
 ### R2. Move the headless tooling into `core-libs/petal-ui-harness`
 
+**Not done as written; a feature gate instead (2026-11-08).** As written R2
+is a dependency cycle. `harness`, `scenario`, `drag_trace` and `panel_stubs`
+are built on `petal-ui`'s internals (`hit`, `frame_core`, `draw`, `input`,
+`focus`, `popover`, `host_data`, `register_all`), so `petal-ui-harness`
+would depend on `petal-ui`, and `pub use` re-exports of it from `petal-ui`
+would need `petal-ui` to depend on it back. Keeping the old paths
+(`petal_ui::harness` and the rest) while moving the code is therefore not
+possible; a real move means every downstream import changes at once.
+
+What was done instead: the tooling (the four modules and both binaries, via
+`required-features`) is behind a `tooling` cargo feature in `petal-ui`, on by
+default. Every dependent compiles unchanged, and a host that needs only the
+host contract can depend with `default-features = false`. No host-contract
+module depends on the tooling; only `clipboard`'s unit tests used
+`Headless`, and they are gated with it. The tests and examples that drive a
+script headlessly declare `required-features = ["tooling"]`, so `cargo test
+--no-default-features` runs the rest (the unit tests, `reference`, `scale`).
+
+In-repo hosts that use none of the tooling and could switch to
+`default-features = false` (not changed): `integrations/petal-desktop-sdl`,
+`integrations/petal-web-canvas/rust`, `garden/garden-web`,
+`examples/custom-apps/petal-fps` and `examples/custom-apps/petal-fantasy-nes`.
+`garden-app` doesn't use it either, but `garden-script`, in the same
+workspace, does (`harness`, `drag_trace`, `panel_stubs`), so the feature is
+on there anyway. `integrations/petal-c-bridge` uses `scenario` and
+`test/ui-corpus` uses `harness` and `scenario`.
+
+*Open, for the owner:* whether to do the move anyway (a new crate that
+depends on `petal-ui`, with downstream changing `petal_ui::harness` to the
+new crate's path at its next re-vendor), and where `panel_stubs` lives (the
+second bullet below). The original plan follows.
+
 That covers `harness`, `scenario`, `drag_trace`, `panel_stubs` and both
 binaries. Hosts then stop pulling in tooling they don't use. `frame_core`
 stays in `petal-ui`, since Garden runs on it.
@@ -153,6 +188,9 @@ stays in `petal-ui`, since Garden runs on it.
   one.
 
 ### R3. Move the core-feature tests to a test crate
+
+**Done 2026-11-08** (b7cba348, 583cb0b0): see the note at the end of this
+section.
 
 For example `test/ui-corpus/`, depending on `petal` and `petal-ui`. Then
 `petal-ui`'s tests are about `petal-ui`, and the static-cache, gate and memo
@@ -272,6 +310,12 @@ and it is large.
    is small.
 
 ## Smaller cleanups
+
+Both done 2026-11-08: the level list is in
+`core-libs/petal-ui/docs/changelog.md`, verbatim, and the constant's doc
+comment points there; the skill's `core-libs/` definition now covers
+`petal-pkgman`, and its "Current misplacements" list records what is left of
+this plan (entry 6, the tooling).
 
 - The `PRELUDE_LEVEL` doc comment in `src/lib.rs` is about 100 lines of
   changelog. It would read better in `docs/reference.md` or a changelog, with

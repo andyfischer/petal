@@ -124,6 +124,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- petal-ui: a `tooling` cargo feature, on by default, gates the headless
+  tooling (`harness`, `scenario`, `drag_trace`, `panel_stubs` and the
+  `petal-ui-run` / `petal-ui-propose-edit` binaries). Nothing changes for an
+  existing dependent; a host that needs only the host contract can depend on
+  petal-ui with `default-features = false`.
+
 - petal-ui: the runtime keeps track of focus. `hit::roll` decides once a
   frame, before the script runs, who has the keyboard: the last
   `focus_request(id)`, then a press on a rect that declared `{text: true}`

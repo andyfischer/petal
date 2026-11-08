@@ -45,6 +45,11 @@
 //! - [`scenario`]: declarative, replayable input scripts for that driver
 //!   (hand-written or generated from a seed), used by the `petal-ui-run` CLI.
 //!
+//! `harness`, `scenario`, `drag_trace`, `panel_stubs` and the `petal-ui-run`
+//! / `petal-ui-propose-edit` binaries are the headless tooling, behind the
+//! default-on `tooling` feature. A host that needs only the host contract
+//! above can build without it (`default-features = false`).
+//!
 //! The standard owns *semantics* (what `key_pressed` means, what a drag is);
 //! the host keeps *policy* (which keys it reserves, when a script ticks,
 //! focus routing). The frame contract every host implements:
@@ -73,18 +78,22 @@ pub mod clipboard;
 pub mod compose;
 pub mod draw;
 pub mod draw_wire;
+#[cfg(feature = "tooling")]
 pub mod drag_trace;
 pub mod frame_core;
+#[cfg(feature = "tooling")]
 pub mod harness;
 pub mod focus;
 pub mod hit;
 pub mod host_data;
 pub mod input;
+#[cfg(feature = "tooling")]
 pub mod panel_stubs;
 mod params;
 pub use params::{interface, raw_declarations, script_for};
 pub mod pending;
 pub mod popover;
+#[cfg(feature = "tooling")]
 pub mod scenario;
 pub mod tess;
 pub mod text;

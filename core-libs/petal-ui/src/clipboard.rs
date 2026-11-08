@@ -147,7 +147,7 @@ fn finish_flush(env: &Env, vals: Vec<Value>) -> Option<String> {
     Some(text)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "tooling"))]
 mod tests {
     use super::*;
     use crate::harness::Headless;

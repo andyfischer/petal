@@ -111,6 +111,21 @@ env.run(...)?;
 let commands = petal_ui::draw::take_draw_commands(&mut env);
 ```
 
+### The `tooling` feature
+
+The headless tooling — `harness`, `scenario`, `drag_trace`, `panel_stubs` and
+the `petal-ui-run` / `petal-ui-propose-edit` binaries — sits behind the
+`tooling` cargo feature, which is on by default. A host that needs only the
+host contract (input, draw, hit testing, `frame_core`, …) can leave it out:
+
+```toml
+petal-ui = { path = "…/core-libs/petal-ui", default-features = false }
+```
+
+This crate's own tests and examples that drive a script headlessly declare
+`required-features = ["tooling"]`; `cargo test --no-default-features` runs
+the rest.
+
 To make the widgets paint in the host's own colors, publish a palette once at
 startup (or every frame, if it can change live):
 

@@ -250,6 +250,9 @@ pub struct FnDeps {
     pub entry: bool,
     /// The line it is declared on (1-based), when the compiler kept a span.
     pub line: Option<u32>,
+    /// The file it is declared in, as the source map names it, for a
+    /// function outside the entry file (an imported module or a package).
+    pub file: Option<String>,
     /// Everything a call may depend on or do (the body's terms, the
     /// functions it calls, what it captures), without `ARG`.
     pub may: Deps,
@@ -464,10 +467,23 @@ impl DepClasses {
             );
         }
         for x in self.findings(program, all_modules) {
-            let _ = writeln!(s, "{} {}: {}", match x.severity {
+            // Where a function outside the entry file is (the entry file's
+            // functions are found by name), so a host's report over every
+            // module tells a game's helpers from a package's.
+            let place = self
+                .function(x.function)
+                .and_then(|f| {
+                    let file = f.file.as_deref()?;
+                    Some(match f.line {
+                        Some(l) => format!(" [{file}:{l}]"),
+                        None => format!(" [{file}]"),
+                    })
+                })
+                .unwrap_or_default();
+            let _ = writeln!(s, "{} {}: {}{}", match x.severity {
                 ReplaySeverity::Never => "never replays:",
                 ReplaySeverity::Rarely => "rarely replays:",
-            }, x.name, x.reason);
+            }, x.name, x.reason, place);
         }
         s
     }
@@ -546,6 +562,11 @@ impl<'a> Pass<'a> {
                 name: base_fn_name(f.name.as_deref().unwrap_or("<anonymous>")).to_string(),
                 entry: f.span.is_some_and(|sp| sp.file == crate::source_map::ENTRY_FILE),
                 line: f.span.map(|sp| sp.start.line as u32),
+                file: f
+                    .span
+                    .as_ref()
+                    .and_then(|sp| self.p.source_map.file_name_for_span(sp))
+                    .map(str::to_string),
                 may: may[fi],
                 every: every[fi],
                 captures_static: self.captures_static(fi),

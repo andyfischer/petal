@@ -519,6 +519,38 @@ keep(1)
     assert!(findings.iter().all(|x| x.name != "keep"), "{findings:?}");
 }
 
+/// A finding in an imported module says where it is (`[helpers.ptl:3]`),
+/// so a report over every module tells a game's helpers from its packages';
+/// one in the entry file stays as it was.
+#[test]
+fn a_finding_outside_the_entry_file_names_its_file_and_line() {
+    let dir = std::env::temp_dir().join(format!("petal-dep-classes-files-{}", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(&dir).unwrap();
+    let main = dir.join("main.ptl");
+    let entry = "import ./helpers\nfn loud(x)\n  print(x)\nend\nloud(1)\nhelpers.shout(2)\n";
+    std::fs::write(&main, entry).unwrap();
+    std::fs::write(dir.join("helpers.ptl"), "// helpers\n\npub fn shout(x)\n  print(x)\nend\n").unwrap();
+    let mut env = Env::new();
+    env.set_echo(false);
+    let pid = env.load_program_at(entry, &main).unwrap();
+    let program = env.get_program(pid).unwrap();
+    let report = env.dep_classes_report(program, true);
+    let line = |name: &str| {
+        report
+            .lines()
+            .find(|l| l.starts_with(&format!("never replays: {name}:")))
+            .unwrap_or_else(|| panic!("no finding for {name}: {report}"))
+            .to_string()
+    };
+    assert!(line("shout").ends_with("[helpers.ptl:3]"), "{report}");
+    assert!(!line("loud").contains('['), "{report}");
+    let deps = env.static_analysis(program);
+    let shout = deps.dep_classes().fns.iter().find(|f| f.name == "shout").unwrap();
+    assert_eq!(shout.file.as_deref(), Some("helpers.ptl"));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// Calls `run_all` on a script without the game's natives declared at the
 /// top: the natives are registered by `world` regardless.
 fn same_three_ways(body: &str) -> (World, World, World) {

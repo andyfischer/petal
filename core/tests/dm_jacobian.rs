@@ -3,7 +3,7 @@
 //! (`petal::dm::{params, jacobian, hints}`). The acceptance list is in
 //! docs/dev/direct-manipulation-v2-plan.md §5 (M2); each test names the item
 //! it covers. Item 11's petal-ui half (the `draw_circle` overloads of the
-//! bundled `ui` prelude) is in `core-libs/petal-ui/tests/dm_params.rs`.
+//! bundled `ui` prelude) is in `test/ui-corpus/tests/dm_params.rs`.
 //!
 //! Core has no draw natives, so these tests register `draw(x, y, r)`: it
 //! emits, and reads its arguments with `get_int` exactly as petal-ui's draw

@@ -693,7 +693,7 @@ the lowering and the rules for when the cache is on are in
 [internals/static-values.md](../internals/static-values.md). This section
 records what it saves and what it costs.
 
-Over the panel corpus (`cd core-libs/petal-ui && cargo test --release --test
+Over the panel corpus (`cd test/ui-corpus && cargo test --release --test
 static_cache -- --ignored --nocapture measure`: 56 apps, 60 frames of the
 monkey scenario, every frame run, release, 16 October 2026) a frame runs
 0.1% to 26.3% fewer instructions, median 5.1%, and makes 0.9% to 45.6% fewer
@@ -793,7 +793,7 @@ The value has to read nothing of the call; the rules are in
 [internals](../internals/static-values.md#values-inside-function-bodies).
 
 Over the same corpus and scenario, the cache without these slots
-(`replay-fnstatic`) against the cache with them (`cd core-libs/petal-ui &&
+(`replay-fnstatic`) against the cache with them (`cd test/ui-corpus &&
 cargo test --release --test static_in_functions -- --ignored --nocapture
 measure_what`, 16 October 2026): 0.29% fewer instructions and 6.38% fewer
 allocations over the sum (7.07% on 13 October), and where a function builds

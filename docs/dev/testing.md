@@ -111,8 +111,13 @@ the expected output and ceilings on copies and allocations. The format is in
 [`test/README.md`](../../test/README.md#script-regression-cases).
 
 The UI library has its own suite (`cd core-libs/petal-ui && cargo test`), which
-runs the panel corpus under the headless harness; see
-[headless-ui-run.md](headless-ui-run.md). Its `dm_study` test drags every
+tests `petal-ui` itself: input, hit testing, layers, widgets, the harness.
+The core features that need a UI host to exercise — the frame gate, memoized
+scopes, the static-value cache, the effect audit and direct manipulation — are
+tested over the panel corpus by `test/ui-corpus/` (`make test-ui-corpus`, or
+`cd test/ui-corpus && cargo test`), under the headless harness; see
+[headless-ui-run.md](headless-ui-run.md) and
+[`test/README.md`](../../test/README.md#testui-corpus). Its `dm_study` test drags every
 goal of `examples/direct-manipulation-v2/` through direct manipulation v2 and
 checks the edit by hot reload. It is slow in a debug build, so run it with
 `--release`. The ignored `full_study` regenerates
@@ -232,7 +237,7 @@ checking, the three transcripts must be equal, and the check must find
 nothing. That is `same_on_and_off` and `same_through_reloads` in
 `core/tests/static_in_functions.rs`,
 `function_constants_change_nothing_across_the_corpus` in
-`core-libs/petal-ui/tests/static_in_functions.rs` (the panel corpus under
+`test/ui-corpus/tests/static_in_functions.rs` (the panel corpus under
 four policies), and a fuzzer, `core/src/backend/bytecode/static_fn_fuzz.rs`
 (`cargo test --lib static_fn_fuzz`, `PETAL_FUZZ_ITERS=<n>`): function bodies
 that mix constants with what looks like one and is a value of the call (a
@@ -281,7 +286,7 @@ rebuilds every one, `Env::set_static_follow(false)`, and a slot-by-slot
 comparison of the two tables after each frame (a slot the oracle has not
 filled yet says nothing). It is run by `core/tests/static_reload.rs` (the
 rule's own cases), by every case and both sweeps of `core/tests/hot_reload.rs`
-against `transfer_state`, by `core-libs/petal-ui/tests/static_reload.rs` over
+against `transfer_state`, by `test/ui-corpus/tests/static_reload.rs` over
 the panel corpus, and, since `fast` and `replay` follow by default, by
 `static_fuzz`'s three reloads against the cache off. To see that an oracle
 would notice, make `begin_static_follow` call nothing dirty: ten
@@ -294,7 +299,7 @@ reads after each frame is part of what is compared: the map
 That is `same_on_and_off` in `core/tests/static_cache.rs`, `follow_modules`
 in `core/tests/static_reload.rs` (with a third stack that has no cache, so
 following the diff is held to both oracles at once), both fuzzers, the two
-corpus tests of `core-libs/petal-ui/tests/static_cache.rs` and
+corpus tests of `test/ui-corpus/tests/static_cache.rs` and
 `static_reload.rs`, and `every_panel_observes_the_same_with_its_static_values_kept`
 in `garden/garden-script/src/panel.rs`, which runs Garden's panels and
 drawers under Garden's own host. `core/tests/static_observe.rs` holds the

@@ -401,7 +401,7 @@ recursion, a match guard, a method, enum data, a top-level loop), enums,
 modules, values with no declaration, chains of edits, frames that raise,
 collections, the drag, and which objects two values share (tables that
 hold one another, frozen through arbitrary names after an edit to one of
-them). `core-libs/petal-ui/tests/static_reload.rs` drives
+them). `test/ui-corpus/tests/static_reload.rs` drives
 the 55 example panels through five edits each under three policies: 275
 followed reloads, 12,768 values kept and 2,250 rebuilt, every frame and
 every table equal to the reload that rebuilds everything.

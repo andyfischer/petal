@@ -2954,7 +2954,7 @@ never made, so audit with memoization off (the `petal run` default).
 
 Under a UI host the same flags are on `petal-ui-run`
 ([headless-ui-run.md](dev/headless-ui-run.md)), which audits every frame of a
-scenario; `core-libs/petal-ui/tests/static_audit.rs` does that for the whole
+scenario; `test/ui-corpus/tests/static_audit.rs` does that for the whole
 panel corpus.
 
 `PETAL_STATIC_AUDIT=watch` in the environment starts every `Env` of the

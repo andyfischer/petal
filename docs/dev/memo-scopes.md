@@ -98,7 +98,7 @@ the host-data / resource flags, any other read is a probe when the row says
 the call is re-evaluable. The row is taken at its word — the VM does not
 look at the activity counters around the call — so a row that says less than
 the native does is a silent staleness bug. What checks the rows is the effect
-audit: `petal-ui-run --effect-audit` (and `core-libs/petal-ui/tests/effect_audit.rs`
+audit: `petal-ui-run --effect-audit` (and `test/ui-corpus/tests/effect_audit.rs`
 over the corpus) brackets every call with activity snapshots and reports
 each native seen doing a facet its row lacks, and on which facet
 (`core/src/effect_audit.rs`). A `Pending` *result* makes the scope effectful
@@ -256,7 +256,7 @@ benefits.
 
 ## Checking it
 
-`core-libs/petal-ui/tests/memo.rs` pins the semantics on small scripts and runs the
+`test/ui-corpus/tests/memo.rs` pins the semantics on small scripts and runs the
 differential oracle: every panel app in `examples/`, driven by a monkey
 scenario with the frame gate off, must produce identical commands, state and
 observations frame for frame with memoization on and off. `core/src/memo.rs`

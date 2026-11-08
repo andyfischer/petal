@@ -130,7 +130,7 @@ fail inside a scope, a scope emitting into a segmented and a flat buffer, and
 recursion past the memo depth bound; plus the identity, drop, liveness and
 reset rules) and
 `segmented_draw_buffers_reproduce_unmemoized_frames_across_the_corpus` in
-`core-libs/petal-ui/tests/memo.rs` (every panel app, its draw buffer
+`test/ui-corpus/tests/memo.rs` (every panel app, its draw buffer
 segmented, against the unmemoized run). Breaking the position rebase in the
 collapse fails both; dropping the cutoff's body reuse fails
 `a_cutoff_keeps_the_serial_the_host_has`. The bridge has

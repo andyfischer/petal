@@ -70,7 +70,7 @@ Options:
 
 ## Running the study
 
-From `core-libs/petal-ui`:
+From `test/ui-corpus`:
 
 ```sh
 cargo test --release --test dm_study ladder -- --nocapture

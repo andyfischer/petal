@@ -3,7 +3,7 @@
 // lives outside this repo — today, worlds-fair's UI (`~/worlds-fair/ui/ptl`).
 //
 // Garden is in-tree, so its panels and GPP apps are part of the cargo corpus
-// (core-libs/petal-ui/tests/common/mod.rs) and run in CI. worlds-fair is not, and it
+// (test/ui-corpus/tests/common/mod.rs) and run in CI. worlds-fair is not, and it
 // needs two things this repo cannot generate:
 //
 //   - a *bundle*. A worlds-fair fragment is delivered as one flat source

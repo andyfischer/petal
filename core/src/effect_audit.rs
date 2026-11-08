@@ -28,7 +28,7 @@
 //! declare the cache read alone and stay memoizable when the data is ready.
 //!
 //! `petal run --effect-audit` and `petal-ui-run --effect-audit` print the
-//! report to stderr; `core-libs/petal-ui/tests/effect_audit.rs` runs it over the whole
+//! report to stderr; `test/ui-corpus/tests/effect_audit.rs` runs it over the whole
 //! in-tree corpus and fails on any under-declaration.
 //!
 //! Like [`crate::profile`], this is a runtime switch on the [`Env`]: off, the

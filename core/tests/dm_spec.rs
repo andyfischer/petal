@@ -2,7 +2,7 @@
 //! (`petal::dm::spec`). The acceptance list is in
 //! docs/dev/direct-manipulation-v2-plan.md §5 (M1); each test names the item
 //! it covers. Tests 8 and 16 need petal-ui's draw natives and host data and
-//! live in `core-libs/petal-ui/tests/dm_spec.rs`.
+//! live in `test/ui-corpus/tests/dm_spec.rs`.
 
 use std::cell::Cell;
 use std::rc::Rc;

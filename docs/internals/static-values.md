@@ -461,7 +461,7 @@ Where they are:
   `static_check_env.rs`: the audit against natives that lie about being
   constant, and the two environment variables.
 - `core/tests/lint_state_const.rs`: the `state-as-constant` rule.
-- `core-libs/petal-ui/tests/static_classify.rs`, `static_audit.rs`,
+- `test/ui-corpus/tests/static_classify.rs`, `static_audit.rs`,
   `static_cache.rs`, `static_reload.rs`, `static_in_functions.rs`: the same
   oracles over the whole panel corpus under a monkey scenario. Their
   `--ignored` tests print the measurements recorded in

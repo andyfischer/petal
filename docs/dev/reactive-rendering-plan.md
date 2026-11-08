@@ -65,7 +65,7 @@ to 4 µs ([retained-scene-output.md](retained-scene-output.md)). Oracles:
 segmented drain through a `SegmentCache`, through collections, cutoffs,
 re-recordings and reloads) and
 `segmented_draw_buffers_reproduce_unmemoized_frames_across_the_corpus` in
-`core-libs/petal-ui/tests/memo.rs` (every panel app with its draw buffer
+`test/ui-corpus/tests/memo.rs` (every panel app with its draw buffer
 segmented).
 
 Open:
@@ -225,7 +225,7 @@ The proposal's hazard list, with where each stands.
 | **Aliasing a replayed result** | Handled (a327d8c): a call whose result the caller mutates in place is not a scope. |
 | **Memory growth** | Records of unvisited scopes are evicted each run; `MAX_SLOTS` caps the table; `MAX_SCOPE_DEPS` caps a record. No cap yet on retained output per scope. Persistent collections (P3) will add structure overhead. |
 | **Tooling fidelity** (`explain`, `--observe`, provenance) | Observations are re-recorded on replay. Memoization is off while the `explain` trace is on. The `baseline` run policy (`PETAL_POLICY=baseline`) disables it for differential testing. |
-| **Correctness: a missed dependency is a stale pixel** | Differential oracles (`core-libs/petal-ui/tests/gating.rs`, `core-libs/petal-ui/tests/memo.rs`) over the examples corpus. **Not yet run over Garden (`~/garden`, `~/.garden`) or worlds-fair (`~/worlds-fair/ui/ptl`) scripts**, which the proposal called for. Every new layer needs the same incremental-vs-full oracle before it lands. |
+| **Correctness: a missed dependency is a stale pixel** | Differential oracles (`test/ui-corpus/tests/gating.rs`, `test/ui-corpus/tests/memo.rs`) over the examples corpus. **Not yet run over Garden (`~/garden`, `~/.garden`) or worlds-fair (`~/worlds-fair/ui/ptl`) scripts**, which the proposal called for. Every new layer needs the same incremental-vs-full oracle before it lands. |
 | **Nearly every widget reads the mouse** | Why `hovered` is a native probe with early cutoff. Any other per-widget input read written in Petal (two pointer reads instead of one probe) will make every row re-run on every move; check `--memo-stats` when adding one. |
 | **Prelude reads that defeat gating** | Found twice (`_host_theme` cached on `frame_count()`, `approach` reading `dt()` after landing). Expect more in Garden/bloom code; `--gate-stats` shows run reasons. |
 

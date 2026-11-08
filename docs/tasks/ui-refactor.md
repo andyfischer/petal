@@ -160,6 +160,13 @@ work stops counting as churn in the UI crate. This changes no APIs; it's
 mostly moving files. The test helpers in `tests/common` may need to be
 shared.
 
+*Done 2026-11-08:* all eleven candidates (`static_*`, `gating`, `memo`,
+`effect_audit`, `dm_params`, `dm_spec`, `dm_study`) and `tests/common`, whose
+only users they were, are in `test/ui-corpus/` (`make test-ui-corpus`); see
+`test/README.md`. Each file tests a core module (`petal::static_cache` and its
+classifier/audit, the gate in `petal::run_deps`, `petal::memo`,
+`petal::effect_audit`, `petal::dm`) and uses `petal-ui` only as the host.
+
 ### R4. Decide whether `ui` or `bloom` owns the widgets
 
 This is a design decision, not a move, and it needs a decision from the

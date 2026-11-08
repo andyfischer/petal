@@ -74,7 +74,7 @@ number; it now caches on the palette record. `approach` no longer reads
 
 ## Checking it
 
-`core-libs/petal-ui/tests/gating.rs` pins the semantics on small scripts and runs the
+`test/ui-corpus/tests/gating.rs` pins the semantics on small scripts and runs the
 differential oracle: every panel app in `examples/`, driven by a monkey
 scenario, must produce identical commands and state frame-for-frame with the
 gate on and off. `petal-ui-run --gate-stats` prints frames run vs skipped and

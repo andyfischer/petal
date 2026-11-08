@@ -122,7 +122,7 @@ effect audit: 2 natives called, 0 under-declared, 0 over-declared
 | `petal run --effect-audit` | the builtins a script calls |
 | `petal-ui-run --effect-audit` | the builtins and the `petal-ui` natives; exit code 3 for a clean run with an under-declared native |
 | `Env::set_effect_audit(true)`, `Env::effect_audit_report()` | an embedder's own natives; `report.has_under_declared()` for a test |
-| `core-libs/petal-ui/tests/effect_audit.rs` | every panel app in the corpus under a monkey scenario; fails on any under-declaration, prints over-declared facets with `--nocapture` |
+| `test/ui-corpus/tests/effect_audit.rs` | every panel app in the corpus under a monkey scenario; fails on any under-declaration, prints over-declared facets with `--nocapture` |
 
 Off, it costs one branch per native call. It sees only what moves a counter:
 a native that reads a thread-local or the filesystem without calling

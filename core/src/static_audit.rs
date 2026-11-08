@@ -47,7 +47,7 @@
 //!
 //! A read of a `var` cell or of a value another statement mutates moves no
 //! counter. Those are covered by comparing values between runs
-//! (`core-libs/petal-ui/tests/static_classify.rs`), not here. A call the memo
+//! (`test/ui-corpus/tests/static_classify.rs`), not here. A call the memo
 //! replays is not made, so run the audit with memoization off to see every
 //! call.
 //!

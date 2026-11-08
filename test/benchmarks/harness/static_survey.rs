@@ -12,7 +12,7 @@
 //! registered, so it counts as dynamic and the numbers are a floor on what
 //! that host would see. How often each of these runs is the other half of
 //! the question, and needs the program running: for the panel corpus that
-//! is `core-libs/petal-ui/tests/static_in_functions.rs`.
+//! is `test/ui-corpus/tests/static_in_functions.rs`.
 
 use std::path::PathBuf;
 

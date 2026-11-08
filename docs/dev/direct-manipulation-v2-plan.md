@@ -1174,7 +1174,7 @@ Acceptance (in `core/tests/dm_spec.rs` unless noted):
 7. `frozen_state`: `state var n = 0` / `set n = n + 1` / emit `n`. Every spec
    run from the checkpoint emits the same value, and the live `n` is
    unchanged. `StateMode::Fresh` emits the initializer path.
-8. `raw_native_args_not_truncated`: under petal-ui (`core-libs/petal-ui/tests/`),
+8. `raw_native_args_not_truncated`: under petal-ui (`test/ui-corpus/tests/`),
    `draw_circle(100.3, ...)` captures raw arg 0 = 100.3 while the emitted
    command says 100.
 9. `emit_key_stable_in_loops`: five circles from one call in a loop get keys
@@ -1220,7 +1220,7 @@ Core tests cannot call `draw_circle` (§1.7). `core/tests/dm_*` register a
 test native `draw(x, y, r)` with `EMITS`, which reads its args with
 `get_int` exactly as petal-ui does. Wherever the tests below say
 `draw_circle`, they mean this native. The petal-ui variants live in
-`core-libs/petal-ui/tests/`.
+`test/ui-corpus/tests/`.
 
 Acceptance (`core/tests/dm_jacobian.rs`):
 1. `discovers_literal_inside_helper`: `fn place(i) 20 + i * 30 end` (the body on its own line) /
@@ -1687,11 +1687,11 @@ with a golden test.
 |---|---|---|---|
 | Design | done, 2026-10-23 | `c9eb67b7` | plan + [hints proposal](../proposals/dm-v2-hints.md) |
 | Design review | done, 2026-10-23 | (this commit) | adversarial review against the code, [§10](#10-review-notes) |
-| M1 speculative runner | done, 2026-10-23 | `07e81adf` | `dm::{spec,observe}`, `vm/spec.rs`, `env/spec_run.rs`; tests `core/tests/dm_spec.rs` (24), `core-libs/petal-ui/tests/dm_spec.rs` (2); deviations below |
-| M2 discovery + Jacobian + hints | done, 2026-10-24 | `43ee2820` | `dm::{params,hints,jacobian}`, `builtins/hints.rs`, `lint/dm_hints.rs`; tests `core/tests/dm_jacobian.rs` (17), `core-libs/petal-ui/tests/dm_params.rs` (1); deviations below |
+| M1 speculative runner | done, 2026-10-23 | `07e81adf` | `dm::{spec,observe}`, `vm/spec.rs`, `env/spec_run.rs`; tests `core/tests/dm_spec.rs` (24), `test/ui-corpus/tests/dm_spec.rs` (2); deviations below |
+| M2 discovery + Jacobian + hints | done, 2026-10-24 | `43ee2820` | `dm::{params,hints,jacobian}`, `builtins/hints.rs`, `lint/dm_hints.rs`; tests `core/tests/dm_jacobian.rs` (17), `test/ui-corpus/tests/dm_params.rs` (1); deviations below |
 | M3 solver + ranking + API | done, 2026-10-24 | `1c28a217` | `dm::{solve,rank,api}`, `propose_edits_v2`, `DmSession`, `apply_edits_multi`; tests `core/tests/dm_solve.rs` (27); deviations below |
 | M4 surfaces | M4a (CLI, MCP, docs) done, 2026-10-24; M4b (Garden) done, 2026-10-24 | M4a: `83cd1469`; M4b: `6da29349`, `1f565eca` | M4b: Garden drag-to-edit on v2 (`garden-script/src/panel/dm.rs`, `garden-app/src/app/manip_v2.rs`); tests `garden-script/tests/dm_drag.rs` (13), `tools/dm-drag-integration-test.ts`. M4a: `cli/dm.rs` (`propose-edit --v2`), `run --trace-emits` keys + native args, MCP `ProposeEdit`/`TraceEmits`, docs; tests `core/tests/cli_propose_edit_v2.rs` (12), `test/vitest/petal-mcp.test.ts` (5); deviations below |
-| M5 examples + study | done, 2026-10-24 | `ccc25ce7` | `examples/direct-manipulation-v2/` (27 examples, 105 goals), harness `core-libs/petal-ui/tests/dm_study.rs`, report [direct-manipulation-v2-study.md](direct-manipulation-v2-study.md) + `.json`; engine revisions in `dm::{rank,api,jacobian,spec}`; deviations below |
+| M5 examples + study | done, 2026-10-24 | `ccc25ce7` | `examples/direct-manipulation-v2/` (27 examples, 105 goals), harness `test/ui-corpus/tests/dm_study.rs`, report [direct-manipulation-v2-study.md](direct-manipulation-v2-study.md) + `.json`; engine revisions in `dm::{rank,api,jacobian,spec}`; deviations below |
 | Code review (post-M5) | done, 2026-10-24 | `0d6dae6e`, `08bc37cd`, `1e6f7913`, `4dea9231` | adversarial review of the whole change set; five bugs fixed, each pinned by `core/tests/dm_review.rs` (7); see "Code review" below |
 | Final test pass | done, 2026-10-24 | `4a8d7145`, `62be2098` (+ this commit) | every suite green, study re-run (unchanged outcomes), effect audits clean, ecosystem checked; see "Final test pass" below |
 | v2 the default | done, 2026-10-24 | (this commit) | `petal propose-edit` uses v2 unless `--v1` (`cli/args.rs`); MCP `ProposeEdit` defaults to v2 (the argv carries no engine flag); hint names `tunable`/`rigid` accepted; tests `core/tests/cli_propose_edit_v2.rs`, `test/vitest/petal-mcp.test.ts` updated; see "v2 the default" below |
@@ -2160,7 +2160,7 @@ Deviations:
 27 examples in `examples/direct-manipulation-v2/` (L0 to L10, the
 adversarial A1 to A7, and a verbatim copy of `server-monitoring`), with 105
 drag goals in their headers; the harness
-`core-libs/petal-ui/tests/dm_study.rs` (the asserted `ladder` test and the
+`test/ui-corpus/tests/dm_study.rs` (the asserted `ladder` test and the
 ignored `full_study`, which adds a scaling sweep and an external pass over
 every headless-runnable app of the ecosystem and rewrites the report); the
 report [direct-manipulation-v2-study.md](direct-manipulation-v2-study.md)

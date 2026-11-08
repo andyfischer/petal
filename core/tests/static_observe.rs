@@ -12,7 +12,7 @@
 //! The wide differentials are elsewhere and run every case twice, once
 //! observed: `same_on_and_off` in `static_cache.rs`, `follow_modules` in
 //! `static_reload.rs`, both fuzzers in `src/backend/bytecode`, and the
-//! panel corpus in `core-libs/petal-ui/tests`. Here are the cases that say
+//! panel corpus in `test/ui-corpus/tests`. Here are the cases that say
 //! what the mechanism is.
 
 use petal::env::{Env, ReloadOutcome, StaticSlotState};

@@ -18,7 +18,7 @@
 //
 // This is a *static* approximation. The real tool is the runtime audit —
 // `petal-ui-run --effect-audit`, `petal run --effect-audit`, and the corpus
-// test core-libs/petal-ui/tests/effect_audit.rs — which reports what each native was
+// test test/ui-corpus/tests/effect_audit.rs — which reports what each native was
 // *observed* doing against the effect row it declared. This script still has a
 // use the runtime one does not: it covers natives no corpus app calls, and it
 // found the five undeclared natives fixed before the runtime tool existed.

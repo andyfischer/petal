@@ -477,7 +477,7 @@ let ORDERS = [{id: "back", t: "Back"}, {id: "backward", t: "↓"},
   {id: "forward", t: "↑"}, {id: "front", t: "Front"}]
 
 let over_canvas = point_in(px: mx, py: my, r: canvas)
-let blocked = menu_blocking(menu)
+let blocked = menu.open
 let one = if len(sel) == 1 then idx_of(doc, sel[0]) else -1 end
 let rotatable = one >= 0 && doc[one].kind != "text"
 

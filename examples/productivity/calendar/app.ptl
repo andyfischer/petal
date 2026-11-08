@@ -295,7 +295,6 @@ state hidden = [false, false, false, false, false]
 state sel_id = -1
 state pop_id = -1
 state scroll_px = -1.0
-state fc = focus_state()
 state title_undo_armed = true
 state undo = []
 state redo = []
@@ -690,7 +689,7 @@ if scroll_px < 0 then
 end
 
 let P0 = plan(evs: events, v: view, fd: focus_day, d: drag, hid: hidden, scroll: scroll_px)
-let editing = focused(fc, "title")
+let editing = has_focus("title")
 let changed = false
 let before = events
 
@@ -698,7 +697,7 @@ let before = events
 let pop_hit = if pop_id >= 0 then hit_for(P0.hits, pop_id) else nil end
 if pop_id >= 0 && pop_hit == nil && drag.mode == "none" then
   pop_id = -1
-  fc = focus_clear(fc)
+  focus_request(nil)
 end
 let pop_r = if pop_hit != nil then pop_rect(pop_hit.r, pop_h(find_ev(events, pop_id))) else rect(-1000, -1000, 0, 0) end
 let pp = pop_parts(pop_r)
@@ -710,11 +709,11 @@ let title_caret = -1
 // takes one undo snapshot.
 if pop_hit != nil then
   let pe = find_ev(events, pop_id)
-  let res = text_field_update(fc, id: "title", r: pp.title, buf: pe.title, style: {size: 17, font: "ui", inset: 8})
-  if focused(res.focus, "title") && !focused(fc, "title") then
+  let had_title = has_focus("title")
+  let res = text_field_update(id: "title", r: pp.title, buf: pe.title, style: {size: 17, font: "ui", inset: 8})
+  if has_focus("title") && !had_title then
     title_undo_armed = true
   end
-  fc = res.focus
   title_caret = res.caret
   if res.text != pe.title then
     if title_undo_armed then
@@ -725,14 +724,14 @@ if pop_hit != nil then
     events = replace_ev(events, {...pe, title: res.text})
     changed = true
   end
-  if res.submitted || (focused(fc, "title") && key_pressed("escape")) then
-    fc = focus_clear(fc)
+  if res.submitted || (has_focus("title") && key_pressed("escape")) then
+    focus_request(nil)
   end
   if mouse_pressed(0) && !point_in(px: mx, py: my, r: pp.title) then
-    fc = focus_clear(fc)
+    focus_request(nil)
   end
 end
-editing = focused(fc, "title")
+editing = has_focus("title")
 
 // Popover buttons.
 if pop_hit != nil && mouse_pressed(0) && over_pop then
@@ -863,7 +862,7 @@ if !editing then
     changed = true
     sel_id = ne.id
     pop_id = ne.id
-    fc = focus_set(fc, "title")
+    focus_request("title")
     title_undo_armed = false
     if view == "month" then view = "week" end
     scroll_px = clamp(ne.start * HOUR_H / 60.0 - 120, lo: 0, hi: 24 * HOUR_H)
@@ -907,7 +906,7 @@ if mouse_pressed(0) && mx < SIDE_W then
     changed = true
     sel_id = ne.id
     pop_id = ne.id
-    fc = focus_set(fc, "title")
+    focus_request("title")
     title_undo_armed = false
     if view == "month" then view = "week" end
     scroll_px = clamp(ne.start * HOUR_H / 60.0 - 120, lo: 0, hi: 24 * HOUR_H)
@@ -1008,7 +1007,7 @@ if mouse_pressed(0) && over_main && !over_agenda && !over_pop && my > HEAD_H && 
       day: hit.ev.day, anchor: 0}
     if click_count() == 2 then
       pop_id = hit.ev.id
-      fc = focus_set(fc, "title")
+      focus_request("title")
       title_undo_armed = true
       drag.mode = "none"
     end
@@ -1029,7 +1028,7 @@ if mouse_pressed(0) && over_main && !over_agenda && !over_pop && my > HEAD_H && 
       changed = true
       sel_id = ne.id
       pop_id = ne.id
-      fc = focus_set(fc, "title")
+      focus_request("title")
       title_undo_armed = false
       drag.mode = "none"
     end
@@ -1079,7 +1078,7 @@ if mouse_released(0) && drag.mode != "none" then
       created += 1
       sel_id = ne.id
       pop_id = ne.id
-      fc = focus_set(fc, "title")
+      focus_request("title")
       title_undo_armed = false
     else
       events = replace_ev(events, Pd.pv)
@@ -1094,7 +1093,7 @@ if mouse_released(0) && drag.mode != "none" then
 end
 
 // An untitled event whose editor closed gets a name rather than a blank.
-if !focused(fc, "title") then
+if !has_focus("title") then
   let blank = filter(events, fn(e) -> e.title == "")
   for b in blank do
     if b.id != pop_id then
@@ -1730,7 +1729,7 @@ if pop_open then
 
   // Title field.
   let tf = pq.title
-  let has = focused(fc, "title")
+  let has = has_focus("title")
   if has then
     draw_rect_rounded(tf, radius: 7, c: #f7f5f0)
     draw_rect_rounded_outline(tf, radius: 7, c: c, a: 255, width: 1.5)
@@ -1803,5 +1802,5 @@ let obs_redo = len(redo)
 let obs_drag = drag.mode
 let obs_scroll = scroll_px
 let obs_hidden = hidden
-let obs_editing = focused(fc, "title")
+let obs_editing = has_focus("title")
 let obs_sel_ev = find_ev(events, sel_id)

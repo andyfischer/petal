@@ -906,7 +906,7 @@ let cmd = mod_cmd() || mod_ctrl()
 let shift = mod_shift()
 let focus0 = focus
 let renaming0 = renaming
-let blocked = menu_blocking(menu)
+let blocked = menu.open
 let modal = ql >= 0
 let free = !blocked && !modal
 
@@ -925,7 +925,7 @@ claim_key("n", "cmd+shift")
 
 let ren_i = index_of(items, renaming)
 let ren_r = if ren_i >= 0 then name_rect(item_rect(ren_i, view, scroll), view) else Rect(-50, -50, 10, 10) end
-let r_ed = text_field_update({id: focus}, "rename", ren_r, rename_buf,
+let r_ed = text_field_update("rename", ren_r, rename_buf,
   {text_style: NAME_STYLE, inset: 6, scroll: true, pointer: ren_i >= 0 && free})
 if renaming >= 0 then
   if ren_i < 0 then
@@ -946,9 +946,9 @@ if renaming >= 0 then
   end
 end
 
-let q_ed = text_field_update({id: focus}, "filter", filter_text_r, query,
+let q_ed = text_field_update("filter", filter_text_r, query,
   {text_style: FIELD_STYLE, inset: 0, scroll: true, pointer: free})
-if q_ed.focus.id == "filter" && focus != "filter" && free && mouse_pressed(0) then
+if has_focus("filter") && focus != "filter" && free && mouse_pressed(0) then
   set focus = "filter"
 end
 if q_ed.text != query && focus0 == "filter" then

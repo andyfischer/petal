@@ -8,9 +8,7 @@
 //! frame, before the script runs, and binds it as [`SYM_UI_FOCUS`]:
 //!
 //! 1. The last `focus_request(id)` the frame that just ran made applies
-//!    (`""` or `nil` clears). The prelude's `focus_set` and `focus_clear`
-//!    make one too, so code that still threads `fc` keeps the runtime's
-//!    focus in step.
+//!    (`""` or `nil` clears).
 //! 2. Then a left press, judged against last frame's registry like every
 //!    press (`crate::hit`, "One owner"). If the rect in front under it takes
 //!    focus (registered `{text: true}` or `{focus: true}` with an id), it
@@ -295,8 +293,7 @@ fn native_ui_focus(state: &mut PetalCxt) -> NativeResult {
 /// `ui_focus_request(id)` — give `id` the keyboard at the next roll (`nil`
 /// or `""`: nobody). The last request a run makes wins.
 fn native_ui_focus_request(state: &mut PetalCxt) -> NativeResult {
-    // An id that is not a string or an int (a record, from code that still
-    // threads `fc` with ids of its own) cannot be named here: no request.
+    // An id that is not a string or an int cannot be named here: no request.
     let v = match state.get_value(1)? {
         Value::Nil => Value::Nil,
         Value::String(s) if state.heap().get_string(s).is_empty() => Value::Nil,

@@ -11,13 +11,11 @@ use petal_ui::draw::DrawCommand;
 use petal_ui::harness::Headless;
 use petal_ui::input::{InputEvent, Modifiers, buttons};
 
-const SRC: &str = "state fc = focus_state()\n\
-                   state buf = \"h\u{e9}llo w\u{f6}rld\"\n\
+const SRC: &str = "state buf = \"h\u{e9}llo w\u{f6}rld\"\n\
                    state caret = -1\n\
                    state a = -1\n\
                    state b = -1\n\
-                   let res = text_field(fc, \"name\", {x: 10, y: 10, w: 200, h: 24}, buf)\n\
-                   fc = res.focus\n\
+                   let res = text_field(\"name\", {x: 10, y: 10, w: 200, h: 24}, buf)\n\
                    buf = res.text\n\
                    caret = res.caret\n\
                    a = res.sel_start\n\
@@ -297,18 +295,16 @@ fn the_email_client_search_field_selects_copies_and_undoes() {
 
 /// A focused field with a panel on a higher layer beside it. `panel` turns
 /// the panel on.
-const BLUR: &str = "state fc = focus_state()\n\
-                    state buf = \"abc\"\n\
+const BLUR: &str = "state buf = \"abc\"\n\
                     state has = false\n\
                     state panel = false\n\
                     if key_pressed(\"p\") then panel = !panel end\n\
-                    let res = text_field(fc, \"name\", {x: 10, y: 10, w: 200, h: 24}, buf)\n\
-                    fc = res.focus\n\
+                    let res = text_field(\"name\", {x: 10, y: 10, w: 200, h: 24}, buf)\n\
                     buf = res.text\n\
                     if panel then\n\
                       with_layer(10, fn() ui_block(rect(300, 0, 100, 100)) end)\n\
                     end\n\
-                    has = focused(fc, \"name\")";
+                    has = has_focus(\"name\")";
 
 fn has(ui: &Headless) -> bool {
     matches!(ui.state().get("has"), Some(serde_json::Value::Bool(true)))

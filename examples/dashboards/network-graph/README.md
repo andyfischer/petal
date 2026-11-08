@@ -167,7 +167,7 @@ groups and drops members of a hidden one.
   temperature bar, `draw_shadow`, `clip` / `clip_push` for the canvas and the
   minimap.
 - Prelude: `slider`, `text_field_update` (the logic half, with the field
-  drawn by the app), the `focus_*` registry, `menu_show` / `menu_blocking` /
+  drawn by the app), `has_focus` / `focus_request`, `menu_show` /
   `context_menu`, `over` for opaque tints, `wrap_px`, `ellipsize`,
   `hovered` / `point_in`.
 - Input: buttons 0, 1 and 2, `click_count()`, `scroll_y()`, the modifier

@@ -149,12 +149,12 @@ loops as list builders, `sort` with a comparator, closures over data
 (`filter(range(…), fn(i) -> evs[i].cat == c)`), `while` for the calendar
 walks, early `return`, `continue` in nested loops, string building with `++`.
 
-**Host and prelude.** `text_field_update` with a hand-drawn field, the focus
-registry, `clip_push` / `clip_pop` nested per lane, `draw_rect_gradient` for
-the fading bar ends, `draw_shadow`, `fill_poly`, rounded outlines, `mix` for
-opaque tints, `wrap_px` and `ellipsize` in the inspector, `approach` for all
-easing, `click_count()`, `scroll_x()` / `scroll_y()` with modifiers,
-`request_frame()`.
+**Host and prelude.** `text_field_update` with a hand-drawn field,
+`has_focus` / `focus_request`, `clip_push` / `clip_pop` nested per lane,
+`draw_rect_gradient` for the fading bar ends, `draw_shadow`, `fill_poly`,
+rounded outlines, `mix` for opaque tints, `wrap_px` and `ellipsize` in the
+inspector, `approach` for all easing, `click_count()`, `scroll_x()` /
+`scroll_y()` with modifiers, `request_frame()`.
 
 **Debug-server values** (`panes[0].panel.values`, all prefixed `obs_`):
 

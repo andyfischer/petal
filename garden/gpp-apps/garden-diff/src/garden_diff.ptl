@@ -431,8 +431,8 @@ if ready && len(err) == 0 then
   // the staleness story (the probe above is the automatic half): it is also how
   // a *stale* view with unsaved edits is finally taken, which is why it is a
   // click and not something the panel does on its own. Stands down while a
-  // context menu is open — that click belongs to the menu (`menu_blocking`).
-  if refresh_button(refresh_r, stale) && !menu_blocking(menu) then
+  // context menu is open — that click belongs to the menu (`menu.open`).
+  if refresh_button(refresh_r, stale) && !menu.open then
     invalidate("doc", scope)
     // The commit list is part of the review too — a new commit is exactly the
     // kind of thing a reload is asked for.
@@ -453,7 +453,7 @@ if ready && len(err) == 0 then
     when _ -> 0
   end
   let picked_tab = tab_bar(tabs_r, TABS, mode_idx, {size: FS})
-  if !menu_blocking(menu) && picked_tab != mode_idx then
+  if !menu.open && picked_tab != mode_idx then
     mode = TABS[int(picked_tab)]
   end
   if mode == "unified" then
@@ -583,7 +583,7 @@ else
     // the already-selected row jumps again — so the pressed row is derived
     // here rather than from the prelude list's selection delta.
     let pressed_row = -1
-    if mouse_pressed(0) && point_in(mx, my, list_rect) && !menu_blocking(menu) then
+    if mouse_pressed(0) && point_in(mx, my, list_rect) && !menu.open then
       let prow = int(flist.scroll) + int(float(my - body_top) / list_row_h)
       if prow >= 0 && prow < list_rows then pressed_row = prow end
     end
@@ -705,8 +705,8 @@ else
 
         // A left press scopes to this commit; a right press opens the menu on
         // it. Both stand down while a menu is already open — that press is the
-        // menu's to resolve (see `menu_blocking`).
-        if !menu_blocking(menu) && mouse_pressed(0) && point_in(mx, my, row_r) then
+        // menu's to resolve (see `menu.open`).
+        if !menu.open && mouse_pressed(0) && point_in(mx, my, row_r) then
           csel = idx
           want_scope = "commit:{c.sha}"
           want_label = "{c.short} {c.subject}"
@@ -920,12 +920,12 @@ end
 // ── context menu ─────────────────────────────────────────────────────────────
 // Drawn last so it sits over every view, and resolved last so the click that
 // picks an item is not also handled by whatever is underneath (every other
-// click handler above stands down while `menu_blocking` is true).
+// click handler above stands down while `menu.open` is true).
 //
 // The menu is opened on a commit row and carries that row's index as its tag,
 // so the actions below know which commit they are about even after the pointer
 // has moved off it.
-if menu_blocking(menu) then
+if menu.open then
   let mi = menu.tag
   let mc = commits[mi]
   let picked = context_menu(menu, [
@@ -980,7 +980,7 @@ end
 //
 // The header hit targets are bound with the tab geometry near the top, and each
 // body region binds its own x/y where the notice / PR bands have settled it.
-let menu_open = menu_blocking(menu)
+let menu_open = menu.open
 let has_error = len(err) > 0
 let files = len(doc.files)
 if has_pr then

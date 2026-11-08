@@ -12,10 +12,34 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **Breaking**, petal-ui (the `ui` package is now 0.2.0): focus belongs to
+  the runtime, and the threaded focus record is gone
+  ([proposal](docs/proposals/input-dispatch.md), Phase 5).
+  - The fields lose their leading `fc`: `text_field(id, r, buf, style?)`,
+    `text_field_update`, `text_area`, `text_area_update`,
+    `commit_field(id, r, current, style?)`, `number_field(id, r, value,
+    style?)`, `color_field(id, r, color, style?)`. Their results no longer
+    carry `focus`.
+  - `focus_next(ids)`, `focus_prev(ids)` and `focus_update(ids)` lose `fc`
+    and return nothing.
+  - Removed: `focus_state`, `focused(fc, id)` (use `has_focus(id)`),
+    `focus_set(fc, id)` and `focus_clear(fc)` (use `focus_request(id)` and
+    `focus_request(nil)`), and `menu_blocking(m)` (use `m.open`).
+  - A 4-argument call written for the old API, `text_field(fc, id, r,
+    buf)`, still matches the new 4-argument overload, so it fails at run
+    time rather than at load: search for the old calls.
+  - Every example, Garden panel, the SDL examples and petal-creative's
+    editors are ported.
+  - Fixed: since the fields began reading the runtime focus (Phase 4), an
+    example that moves focus with an id of its own no longer put the
+    keyboard in the field it named: the email client's `/` and Tab, the
+    chat composer it starts in, settings' `/`, stock-trading's `q`. Each
+    now hands its moves to the runtime with `focus_request`. The
+    calendar's title again arms its undo snapshot when it takes the
+    keyboard.
 - petal-ui: the fields (`text_field`, `text_area`, `commit_field`,
   `number_field`, `color_field`) take the keyboard from the runtime's
-  focus. Pass `nil` for their `fc`; a record passed there is only handed
-  back. `focused(fc, id)` is now `has_focus(id)`, and a `focus_request` is
+  focus (Phase 5 then removed their `fc`, above). A `focus_request` is
   seen by the rest of the run that made it, so a field opened and focused
   in the same frame stays open. petal-design no longer threads `fc` or
   keeps a `TYPING` flag: its shortcuts are `shortcut(chord)`

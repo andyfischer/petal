@@ -289,9 +289,9 @@ Three things `ui` also covers:
 - **Drag and drop.** `drag_state()` plus one `drag_update(ds, id, rect)` per
   draggable item yields `{dragging, id, dx, dy, dropped}`;
   `insertion_index(rects, y)` turns a drop position into a list index.
-- **Text fields.** `text_field(fc, id, r, buf)` is a one-line field with a
-  caret, a selection, cut/copy/paste and undo. `text_field_update(fc, id, r,
-  buf)` is the input half with no pixels of its own, and
+- **Text fields.** `text_field(id, r, buf)` is a one-line field with a
+  caret, a selection, cut/copy/paste and undo. `text_field_update(id, r, buf)`
+  is the input half with no pixels of its own, and
   `draw_text_field(r, text, has_focus, caret, view[, style])` is the stock
   look. Its Cmd shortcuts reach a panel only if the panel claims them (see
   [`claim_key`](#claim_key-a-panels-own-command-keyspace)). `clipboard_get()`
@@ -315,7 +315,7 @@ A context menu is two calls, because an immediate-mode pass has to reconcile
 z-order with input order: the menu must be drawn last to sit on top, but its
 click must be claimed before the widgets underneath react to the same press.
 
-- `menu_blocking(m)` is an input guard. Put it above the panel's own click
+- `m.open` is an input guard. Check it above the panel's own click
   handling.
 - `context_menu(m, items)` is a draw call. It must come after the panel's
   last drawing call. Since [draw order is call order](#draw-order), calling
@@ -328,7 +328,7 @@ import ui
 state menu = menu_state()
 
 // input, near the top, before the panel's own click handling:
-if !menu_blocking(menu) && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), row) then … end
+if !menu.open && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), row) then … end
 menu = menu_open_on_right_click(menu, row, i)   // right-click arms it, tagged with `i`
 
 …all of the panel's drawing…

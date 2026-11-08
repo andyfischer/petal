@@ -129,7 +129,7 @@ the visibility / lock toggles.
 `rect` / `Rect` methods (`inset`), `point_in`, `hovered`, `clicked`,
 `ellipsize`, `draw_text_right`, `draw_text_center`, `scroll_update`,
 `draw_scrollbar`, and the whole context-menu family (`menu_state`,
-`menu_blocking`, `menu_open_on_right_click`, `menu_item`, `menu_sep`,
+`menu_open_on_right_click`, `menu_item`, `menu_sep`,
 `context_menu`).
 
 **Language**

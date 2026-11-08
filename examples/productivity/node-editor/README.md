@@ -108,7 +108,7 @@ to cut it), the live output value, fan-out count, and duplicate/delete.
 - Text: `draw_text` with style records (`ui` and `mono` faces), `text_width`
   for right-aligned values, `wrap_px` for the description.
 - Prelude widgets: `slider` (positional `state` inside the prelude gives each
-  inspector row its own drag slot), `menu_state`/`menu_show`/`menu_blocking`/
+  inspector row its own drag slot), `menu_state`/`menu_show`/
   `context_menu`, `rect`/`point_in`/`hovered`/`clicked`, `Rect.inset`.
 - Input: `mouse_pressed`/`mouse_down`/`mouse_released` on buttons 0, 1 and 2,
   `scroll_x`/`scroll_y`, `key_down("space")` as a pan modifier, the four

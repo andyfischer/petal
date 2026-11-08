@@ -8,7 +8,7 @@
 //
 // While a menu is open it *captures* input (see bloom/interact), so the panel
 // underneath goes inert for exactly as long as the menu is up — no ordering
-// discipline, no `if !menu_blocking()` around every other control.
+// discipline, no `if !m.open` around every other control.
 //
 // An item is a string, or a record:
 //   {label, hint, icon, disabled, sep, danger}

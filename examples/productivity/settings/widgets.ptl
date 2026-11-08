@@ -403,6 +403,17 @@ end
 
 // ── Text input ─────────────────────────────────────────────────────────────
 
+// Who holds the keyboard after a prelude field ran, as the app's own `focus`
+// id: a press inside the field takes it (`has_focus` says so afterwards), a
+// press elsewhere lets go of it. `had` is `has_focus(key)` before the field.
+fn field_focus(key: string, focus: string, had: bool, pointer: bool) -> string
+  if !pointer || !mouse_pressed(0) then focus
+  elsif has_focus(key) then key
+  elsif had then ""
+  else focus
+  end
+end
+
 // The editing is the `ui` prelude's `text_field_update`: caret, selection,
 // clipboard, word movement and undo. The paint is ours. `focus` is the id of
 // the field holding the keyboard ("" for none); the result's `focus` is the
@@ -414,9 +425,11 @@ pub fn input(key: string, r: record, buf: string, focus: string, o: record) -> r
   let lead = field(o, "lead", 0)
   let style = ts(13, t.text)
   let inset = 11 + lead
-  let res = text_field_update({id: focus}, key, r, buf,
-    {text_style: style, inset: inset, scroll: true, pointer: enabled && field(o, "pointer", true)})
-  let has = res.focus.id == key
+  let pointer = enabled && field(o, "pointer", true)
+  let had = has_focus(key)
+  let res = text_field_update(key, r, buf, {text_style: style, inset: inset, scroll: true, pointer: pointer})
+  let owner = field_focus(key, focus, had, pointer)
+  let has = owner == key
   let p = bloom.probe(r, enabled)
   let k = anim(flag(has), 24.0)
   let b = anim(flag(bad), 20.0)
@@ -465,7 +478,7 @@ pub fn input(key: string, r: record, buf: string, focus: string, o: record) -> r
     end
   end
   clip_pop()
-  {text: res.text, focus: res.focus.id, has: has, submitted: res.submitted, changed: res.changed}
+  {text: res.text, focus: owner, has: has, submitted: res.submitted, changed: res.changed}
 end
 
 // ── Small buttons ──────────────────────────────────────────────────────────

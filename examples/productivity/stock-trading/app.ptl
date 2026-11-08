@@ -881,6 +881,14 @@ let buying_power = cash - reserved_cash
 txt("QUANTITY", Rect(tx, r_ticket.y + 152, 120, 20), lk.caps(lk.MUTED))
 txt(if held > 0 then "holding {nf.commas(held)}" else "no position" end, Rect(tx, r_ticket.y + 152, tw, 20),
   lk.ui(11, lk.DIM), "right")
+// The fields read the runtime's focus. This app moves its own focus id
+// itself ("q", Tab, a fill), so a move is handed to the runtime
+// before the fields run. A press on a field is already the runtime's.
+state synced_edit = ""
+if edit != synced_edit then
+  focus_request(if edit == "" then nil else edit end)
+  synced_edit = edit
+end
 let qty_now = parse_int(qty_text) ?? 0
 let qty_step = if mod_shift() then 100 else 10 end
 if edit == "qty" then

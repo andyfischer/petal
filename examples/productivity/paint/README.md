@@ -98,7 +98,7 @@ including *Clear* and every context-menu action.
 
 `rect` / `Rect` methods (`inset`), `point_in`, `hovered`, `clicked`,
 `draw_text_right`, `draw_text_center`, `fit_parts`, and the whole context-menu
-family (`menu_state`, `menu_blocking`, `menu_open_on_right_click`,
+family (`menu_state`, `menu_open_on_right_click`,
 `menu_item`, `menu_sep`, `context_menu`).
 
 **Language**

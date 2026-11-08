@@ -769,12 +769,10 @@ fn load_poll_restarts_when_the_key_changes() {
 
 // ── Text field caret editing ───────────────────────────────────────────────
 
-const CARET_SRC: &str = "state fc = focus_state()\n\
-                         state buf = \"hello world\"\n\
+const CARET_SRC: &str = "state buf = \"hello world\"\n\
                          state caret = -1\n\
                          let r = {x: 10, y: 10, w: 200, h: 24}\n\
-                         let res = text_field(fc, \"name\", r, buf)\n\
-                         fc = res.focus\n\
+                         let res = text_field(\"name\", r, buf)\n\
                          buf = res.text\n\
                          caret = res.caret";
 
@@ -857,14 +855,12 @@ fn word_backspace_deletes_back_to_the_word_start() {
 
 #[test]
 fn caret_clamps_when_the_buffer_shrinks_externally() {
-    let src = "state fc = focus_state()\n\
-               state buf = \"abcdef\"\n\
+    let src = "state buf = \"abcdef\"\n\
                state caret = -1\n\
                state n = 0\n\
                n = n + 1\n\
                if n == 3 then buf = \"xy\" end\n\
-               let res = text_field(fc, \"f\", {x: 0, y: 0, w: 200, h: 24}, buf)\n\
-               fc = res.focus\n\
+               let res = text_field(\"f\", {x: 0, y: 0, w: 200, h: 24}, buf)\n\
                if n != 3 then buf = res.text end\n\
                caret = res.caret";
     run_headless(src, |ui| {

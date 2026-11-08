@@ -209,6 +209,17 @@ pub fn step_cell(r: record, plus: bool, enabled: bool) -> bool
   enabled && press(r)
 end
 
+// Who holds the keyboard after a prelude field ran, as the app's own `focus`
+// id: a press inside the field takes it (`has_focus` says so afterwards), a
+// press elsewhere lets go of it. `had` is `has_focus(key)` before the field.
+fn field_focus(key: string, focus: string, had: bool, pointer: bool) -> string
+  if !pointer || !mouse_pressed(0) then focus
+  elsif has_focus(key) then key
+  elsif had then ""
+  else focus
+  end
+end
+
 // A one-line number field. The editing (caret, selection, clipboard, undo)
 // is the `ui` prelude's `text_field_update`; the paint is ours. `focus` is
 // the id of the field holding the keyboard ("" for none). `o` carries
@@ -223,9 +234,10 @@ pub fn num_field(key: string, r: record, buf: string, focus: string, o: record) 
   let lead = if prefix == "" then 0 else text_width(prefix, style) + 4 end
   let inset = 12 + lead
   let box = Rect(r.x, r.y, r.w - trail, r.h)
-  let res = text_field_update({id: focus}, key, box, buf,
-    {text_style: style, inset: inset, scroll: true, pointer: enabled})
-  let has = enabled && res.focus.id == key
+  let had = has_focus(key)
+  let res = text_field_update(key, box, buf, {text_style: style, inset: inset, scroll: true, pointer: enabled})
+  let owner = field_focus(key, focus, had, enabled)
+  let has = enabled && owner == key
   let k = ease_flag(has, 24.0)
   let b = ease_flag(bad && enabled, 20.0)
   let hot = ease_flag(enabled && hovered(r))
@@ -268,6 +280,6 @@ pub fn num_field(key: string, r: record, buf: string, focus: string, o: record) 
     set _busy = true
   end
   clip_pop()
-  {text: res.text, focus: if enabled then res.focus.id else focus end, has: has, submitted: has && res.submitted,
+  {text: res.text, focus: if enabled then owner else focus end, has: has, submitted: has && res.submitted,
     changed: res.changed}
 end

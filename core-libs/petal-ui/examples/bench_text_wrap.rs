@@ -330,10 +330,8 @@ fn script(kind: &str, doc: &str, typing: bool) -> String {
     };
     let body = match kind {
         "area" => format!(
-            "state fc = focus_state()\n\
-             state nrows = 0\n\
-             let res = text_area(fc, \"doc\", {{x: 10, y: 10, w: {AREA_W}, h: 780}}, {text}, {{size: 14}})\n\
-             fc = res.focus\n\
+            "state nrows = 0\n\
+             let res = text_area(\"doc\", {{x: 10, y: 10, w: {AREA_W}, h: 780}}, {text}, {{size: 14}})\n\
              nrows = len(res.rows)\n"
         ),
         "native" => format!(

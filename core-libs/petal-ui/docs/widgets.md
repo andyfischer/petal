@@ -150,12 +150,13 @@ visible)` adds a reader's keys for the region with the keyboard: j/k or
 down/up a line, space a page, home/end.
 
 ### Focus registry
-`focus_state()`, `focused(fc, id)`, `focus_set/clear`, `focus_next/prev(fc,
-ids)`, `focus_update(fc, ids)` (Tab / Shift+Tab over the ring).
+The runtime holds the focus: `has_focus(id)`, `focus_owner()`,
+`focus_request(id)` (`nil` clears), `focus_next/prev(ids)`,
+`focus_update(ids)` (Tab / Shift+Tab over the ring).
 `section_label(label, x, y, active, style)` marks the focused region.
 
 ### Text field (caret, selection, clipboard, undo)
-`text_field(fc, id, r, buf, style)` → `{focus, text, caret, submitted,
+`text_field(id, r, buf, style)` → `{text, caret, submitted,
 changed, anchor, sel_start, sel_end, scroll, overflow, blurred, cancelled}`.
 `blurred` is true on the frame after the field lost the keyboard (the cue to
 apply an edit on blur) and `cancelled` when Escape was pressed in it; the
@@ -168,7 +169,7 @@ so non-ASCII text needs no care; `sel_start == sel_end` means no selection.
 | Input | Does |
 |---|---|
 | click / shift+click / drag | focus and place the caret / extend the selection / select |
-| a press anywhere else | gives the focus up (`res.focus` comes back cleared), unless a higher layer took the press |
+| a press anywhere else | gives the focus up, unless a higher layer took the press |
 | double click / triple click | select the word / everything |
 | left, right, home, end | move the caret; with shift, extend the selection |
 | alt or ctrl + left/right | by word; cmd + left/right goes to either end |
@@ -189,7 +190,7 @@ panel with a text field states, near the top of the frame, the ones it wants:
 `for k in ["a", "c", "x", "v", "z", "y"] do claim_key(k, "cmd") end`.
 
 Split forms, for an app that draws its own box:
-`text_field_update(fc, id, r, buf, style)` is the logic alone and returns the
+`text_field_update(id, r, buf, style)` is the logic alone and returns the
 same record. It reads `{size, font, inset, text_style, pointer, scroll}` from
 `style`: the type keys must match what is drawn (`text_style` is a whole style
 record, for an app with its own type ramp); `pointer: false` keeps the mouse
@@ -202,8 +203,7 @@ it draw a caret only. Style adds `selection` (the highlight colour) and
 `placeholder` (dim text while empty).
 
 ```petal
-let res = text_field_update(fc, "name", r, buf, {text_style: MY_STYLE, inset: 0})
-fc = res.focus
+let res = text_field_update("name", r, buf, {text_style: MY_STYLE, inset: 0})
 buf = res.text
 for q in text_range_rects(buf, MY_STYLE, res.sel_start, res.sel_end) do
   draw_rect(r.x + q.x, r.y + q.y, q.w, q.h, MY_HIGHLIGHT)
@@ -212,9 +212,9 @@ draw_text(buf, {x: r.x, y: r.y}, MY_STYLE)
 ```
 
 ### Text area (multi-line)
-`text_area(fc, id, r, buf, style)` is `text_field` for text with line breaks,
+`text_area(id, r, buf, style)` is `text_field` for text with line breaks,
 with the same selection, clipboard, undo and focus rules (the editing keys are
-one shared implementation). It returns `{focus, text, caret, changed, anchor,
+one shared implementation). It returns `{text, caret, changed, anchor,
 sel_start, sel_end, scroll, overflow, rows, line_h, content_h}` — no
 `submitted`, since Return is a line break.
 
@@ -233,7 +233,7 @@ scroll away from it. A paste keeps its line breaks. Style keys are the
 field's plus `line_gap` (pixels added to the face's line height, default 2)
 and `select_all` (select the whole text on this frame, for text the next
 keystroke should replace).
-Split forms: `text_area_update(fc, id, r, buf, style)` and
+Split forms: `text_area_update(id, r, buf, style)` and
 `draw_text_area(r, res, has, style)`. `text_area_height(text, w, min_lines,
 max_lines, style)` sizes a box that grows with its text (3 to 12 rows by
 default).
@@ -293,14 +293,14 @@ The controls of a property panel, which document editors used to copy. The
 keyboard ones take and return the focus registry and apply an edit only when
 it is done (Return, or the field losing the keyboard); Escape drops it.
 
-- `commit_field(fc, id, r, current, style)` → `{text, focus, editing}`: a
+- `commit_field(id, r, current, style)` → `{text, editing}`: a
   line of text, `text` nil except on the frame it applies.
-- `number_field(fc, id, r, value, style)` → `{value, focus, changed}`: drag
+- `number_field(id, r, value, style)` → `{value, changed}`: drag
   sideways to scrub by `style.step` per pixel (× `style.fine`, 0.1, with
   shift), double-click to type; `places` (2) decimals, optional `min`/`max`,
   `tip` the hover hint (`""` for none). The drag is measured from
   `mouse_x()`, so it scrubs in every host.
-- `color_field(fc, id, r, color, style)` → `{color, focus}`: a chip and its
+- `color_field(id, r, color, style)` → `{color}`: a chip and its
   hex; `color` is nil unless a valid new one was typed. `color_to_hex(c)`,
   `color_from_hex(text)` and `same_color(a, b)` are the helpers it uses.
 - `swatches(r, colors, current, style)` → the colour clicked or nil; chips
@@ -386,6 +386,7 @@ paints spinner/error/idle into `r` and returns true when ready.
 
 ### Context menu / drag & drop
 `menu_state`/`menu_item`/`menu_sep`/`menu_open_on_right_click`/
-`menu_blocking`/`context_menu` (draw the menu late in the frame and guard
-your own input with `menu_blocking` early; see the comment in widgets.ptl), and
+`context_menu` (draw the menu late in the frame; an open menu is modal, so
+only code that reads the mouse itself stands down while `menu.open`; see the
+comment in widgets.ptl), and
 `drag_state`/`drag_update`/`insertion_index(_x)`.

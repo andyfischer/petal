@@ -167,7 +167,7 @@ end
 // Focus-gated form: keyboard navigation only runs when `active` is true, so a
 // list can share the keyboard with other widgets (see the focus registry).
 // Mouse click still selects a row regardless — the caller pairs that click
-// with `focus_set` to make the list focused.
+// with `focus_request` to make the list focused.
 //
 // The wheel scrolls the window freely, unclamped by the selection (like gitk /
 // native list widgets): only keyboard navigation re-runs `ensure_visible` to
@@ -232,7 +232,7 @@ end
 // Focus-gated form (mirrors list_update's): the wheel stays hover-scoped, but
 // pageup/pagedown only page when `active` is true. In a multi-region panel
 // built on the focus registry this stops PageDown in the focused region from
-// paging every other scroll region on screen — gate on focused(fc, id).
+// paging every other scroll region on screen — gate on has_focus(id).
 pub fn scroll_update(offset, total_lines, visible_lines, r, active)
   let off = offset
   if _hot(r, nil) then
@@ -300,11 +300,8 @@ end
 // frame, and the runtime gives it the keyboard from the next.
 //
 // The fields (`text_field`, `commit_field`, `number_field`, ...) read the
-// runtime's focus. Their first argument is the older record a caller
-// threads by hand (`state fc = focus_state()`, `fc` in and `.focus` out of
-// every field); pass `nil` instead. A record passed there is only handed
-// back: `focused(fc, id)` is `has_focus(id)`, and `focus_set` and
-// `focus_clear` are `focus_request`. An id is a string or an int.
+// runtime's focus, so an app keeps no focus record of its own. An id is a
+// string or an int.
 
 // This run's last request, made afresh each run; `frame` guards a host that
 // keeps the module between frames.
@@ -332,24 +329,6 @@ pub fn shortcut(chord, id)
   _ui_shortcut(chord, id)
 end
 
-pub fn focus_state()
-  {id: ""}
-end
-
-pub fn focused(fc, id)
-  has_focus(id)
-end
-
-pub fn focus_set(fc, id)
-  focus_request(id)
-  {id: id}
-end
-
-pub fn focus_clear(fc)
-  focus_request(nil)
-  {id: ""}
-end
-
 // Position of the focused id in the ordered list `ids`, or -1 if absent (so
 // nothing focused reads as "before the first").
 fn _index_of(ids, id)
@@ -364,48 +343,42 @@ end
 
 // Move focus to the next / previous id in the ordered ring `ids`. From nothing
 // focused, next lands on the first and prev on the last; both wrap.
-pub fn focus_next(fc, ids)
-  if len(ids) == 0 then
-    fc
-  else
+pub fn focus_next(ids)
+  if len(ids) > 0 then
     let j = _index_of(ids, focus_owner()) + 1
     if j >= len(ids) then
       j = 0
     end
-    focus_set(fc, ids[j])
+    focus_request(ids[j])
   end
 end
 
-pub fn focus_prev(fc, ids)
-  if len(ids) == 0 then
-    fc
-  else
+pub fn focus_prev(ids)
+  if len(ids) > 0 then
     let idx = _index_of(ids, focus_owner())
     let j = idx - 1
     if idx < 0 || j < 0 then
       j = len(ids) - 1
     end
-    focus_set(fc, ids[j])
+    focus_request(ids[j])
   end
 end
 
 // Convenience: Tab advances focus, Shift+Tab reverses it. Call once per frame
 // with the ring of focusable widget ids.
-pub fn focus_update(fc, ids)
+pub fn focus_update(ids)
   if key_pressed("tab") then
     if mod_shift() then
-      focus_prev(fc, ids)
+      focus_prev(ids)
     else
-      focus_next(fc, ids)
+      focus_next(ids)
     end
-  else
-    fc
   end
 end
 
 // A section heading that shows which region owns the keyboard: accent-colored
 // with an underline when `active`, dim otherwise. Pairs with the focus
-// registry — pass `focused(fc, id)` as `active` to label each focusable region.
+// registry — pass `has_focus(id)` as `active` to label each focusable region.
 pub fn section_label(label, x, y, active)
   section_label(label, x, y, active, {})
 end
@@ -433,14 +406,14 @@ end
 // widget-internal `state`, keyed per callsite like every other in-function
 // state.
 //
-//   let res = text_field(fc, "name", r, buf)
-//   fc = res.focus  buf = res.text
+//   let res = text_field("name", r, buf)
+//   buf = res.text
 //   if res.submitted then ... end
 //
 // Mouse: a click focuses the field and places the caret, shift+click extends
 // the selection to the click, a drag selects, a double click selects the
 // word and a triple click everything. A press anywhere else gives the focus
-// up (the result's `focus` is cleared), unless a higher layer took it.
+// up, unless a higher layer took it.
 //
 // Keys, while focused (cmd and ctrl are interchangeable for the shortcuts):
 //   left / right / home / end     move the caret; with shift, extend the selection
@@ -457,9 +430,9 @@ end
 // Typing replaces the selection. A run of typing undoes as one step, a word
 // at a time. Pasted text loses its line breaks (the field is one line).
 //
-// Returns {focus, text, caret, submitted, changed, anchor, sel_start, sel_end,
+// Returns {text, caret, submitted, changed, anchor, sel_start, sel_end,
 // scroll, overflow, blurred, cancelled}. `blurred` is true on the frame after
-// the field lost the keyboard (a click elsewhere, Tab, a `focus_clear`), the
+// the field lost the keyboard (a click elsewhere, Tab, a `focus_request`), the
 // cue to apply an edit on blur; `commit_field` below does exactly that.
 // `caret` and the selection are character offsets;
 // `sel_start == sel_end` means nothing is selected, and `anchor` is the end of
@@ -639,15 +612,15 @@ end
 // An app with its own palette keeps the editing logic — which is the fiddly
 // part — and draws the box itself:
 //
-//   let res = text_field_update(fc, "name", r, buf)
-//   fc = res.focus  buf = res.text
+//   let res = text_field_update("name", r, buf)
+//   buf = res.text
 //   ...my own box, my own caret (at char index res.caret), my own selection
 //   (text_range_rects(res.text, style, res.sel_start, res.sel_end))...
 //
-// Pair it with `draw_text_field(r, res.text, focused(fc, "name"), res.caret,
+// Pair it with `draw_text_field(r, res.text, has_focus("name"), res.caret,
 // res, style)` to get the stock look back.
-pub fn text_field_update(fc, id, r, buf)
-  text_field_update(fc, id, r, buf, {})
+pub fn text_field_update(id, r, buf)
+  text_field_update(id, r, buf, {})
 end
 
 // The update half reads {size, font, inset, text_style, pointer, scroll} from
@@ -661,7 +634,7 @@ end
 // scrolling: the result's `scroll` is how far the text is shifted left to
 // keep the caret inside the box, and the draw half must shift by it too.
 // `text_field` turns it on; a caller that draws for itself opts in.
-pub fn text_field_update(fc, id, r, buf, style)
+pub fn text_field_update(id, r, buf, style)
   let t = _palette()
   let ts = _field_measure(t, style)
   let inset = _get(style, "inset", 6)
@@ -679,7 +652,6 @@ pub fn text_field_update(fc, id, r, buf, style)
   state redo = []
   state typing = false
   state last_text = ""
-  let f = fc
   let text = buf
   let n = char_len(text)
   if text != last_text then
@@ -695,15 +667,15 @@ pub fn text_field_update(fc, id, r, buf, style)
   end
   let pointer = _get(style, "pointer", true)
   let pressed = _hot_text(r, id, pointer) && mouse_pressed(0)
-  if !pressed && pointer && mouse_pressed(0) && focused(fc, id) && !pointer_captured(ui_layer()) then
+  if !pressed && pointer && mouse_pressed(0) && has_focus(id) && !pointer_captured(ui_layer()) then
     // A press somewhere else takes the focus away, as in every desktop
     // toolkit — unless something on a higher layer (a popup, a menu opened
     // from this field) took the press.
-    f = focus_clear(fc)
+    focus_request(nil)
     dragging = false
   end
   if pressed then
-    f = focus_set(fc, id)
+    focus_request(id)
     let at = text_index_at(text, ts, float(mouse_x() - (r.x + inset) + scroll))
     let clicks = click_count()
     if clicks >= 3 then
@@ -728,7 +700,7 @@ pub fn text_field_update(fc, id, r, buf, style)
       dragging = false
     end
   end
-  let has = focused(f, id)
+  let has = has_focus(id)
   let submitted = false
   if has && !had_focus && !pressed then
     // Focus arrived by keyboard (Tab, a shortcut): start at the end.
@@ -736,7 +708,7 @@ pub fn text_field_update(fc, id, r, buf, style)
     anchor = n
   end
   // Lost the keyboard since the last frame (a click elsewhere, Tab, the
-  // caller's focus_clear): the cue a commit-on-blur field applies on.
+  // caller's focus_request): the cue a commit-on-blur field applies on.
   let blurred = had_focus && !has
   had_focus = has
   if has then
@@ -795,7 +767,7 @@ pub fn text_field_update(fc, id, r, buf, style)
   end
   let changed = text != buf
   last_text = text
-  {focus: f, text: text, caret: caret, submitted: submitted, changed: changed, anchor: anchor,
+  {text: text, caret: caret, submitted: submitted, changed: changed, anchor: anchor,
    sel_start: min(caret, anchor), sel_end: max(caret, anchor), scroll: scroll, overflow: overflow,
    blurred: blurred, cancelled: has && key_pressed("escape")}
 end
@@ -865,13 +837,13 @@ pub fn draw_text_field(r, text, has, caret, view, style)
   end
 end
 
-pub fn text_field(fc, id, r, buf)
-  text_field(fc, id, r, buf, {})
+pub fn text_field(id, r, buf)
+  text_field(id, r, buf, {})
 end
 
-pub fn text_field(fc, id, r, buf, style)
-  let res = text_field_update(fc, id, r, buf, {...style, scroll: true})
-  draw_text_field(r, res.text, focused(res.focus, id), res.caret, res, style)
+pub fn text_field(id, r, buf, style)
+  let res = text_field_update(id, r, buf, {...style, scroll: true})
+  draw_text_field(r, res.text, has_focus(id), res.caret, res, style)
   res
 end
 
@@ -883,8 +855,8 @@ end
 // (line breaks kept) and undo, a run of typing undone a word at a time.
 //
 //   state notes = ""
-//   let res = text_area(fc, "notes", r, notes)
-//   fc = res.focus  notes = res.text
+//   let res = text_area("notes", r, notes)
+//   notes = res.text
 //
 // Mouse: as `text_field` — click, shift+click, drag, double click (word),
 // triple click (everything), a press elsewhere gives the focus up — plus the
@@ -896,7 +868,7 @@ end
 //   home / end, cmd + left / right    to the start or end of the row
 //   return                        a line break (there is no `submitted`)
 //
-// Returns {focus, text, caret, changed, anchor, sel_start, sel_end, scroll,
+// Returns {text, caret, changed, anchor, sel_start, sel_end, scroll,
 // overflow, rows, line_h, content_h}: `rows` is the wrap (`text_wrap_rows`
 // rows relative to the text), `scroll` how many pixels the text is shifted
 // up, `content_h` its whole height.
@@ -931,11 +903,11 @@ end
 // The input half, with no pixels of its own (see `text_field_update`). Reads
 // {size, font, inset, text_style, line_gap, pointer} from `style`; they must
 // match what the draw half uses.
-pub fn text_area_update(fc, id, r, buf)
-  text_area_update(fc, id, r, buf, {})
+pub fn text_area_update(id, r, buf)
+  text_area_update(id, r, buf, {})
 end
 
-pub fn text_area_update(fc, id, r, buf, style)
+pub fn text_area_update(id, r, buf, style)
   let t = _palette()
   let ts = _field_measure(t, style)
   let inset = _get(style, "inset", 6)
@@ -955,7 +927,6 @@ pub fn text_area_update(fc, id, r, buf, style)
   // The x an up/down run keeps to, so a short row in between does not pull
   // the caret left for good. -1: none.
   state goal_x = -1
-  let f = fc
   let text = buf
   let n = char_len(text)
   if text != last_text then
@@ -975,13 +946,13 @@ pub fn text_area_update(fc, id, r, buf, style)
   let pointer = _get(style, "pointer", true)
   let hot = _hot_text(r, id, pointer)
   let pressed = hot && mouse_pressed(0)
-  if !pressed && pointer && mouse_pressed(0) && focused(fc, id) && !pointer_captured(ui_layer()) then
+  if !pressed && pointer && mouse_pressed(0) && has_focus(id) && !pointer_captured(ui_layer()) then
     // A press elsewhere takes the focus away, as in `text_field_update`.
-    f = focus_clear(fc)
+    focus_request(nil)
     dragging = false
   end
   if pressed then
-    f = focus_set(fc, id)
+    focus_request(id)
     let at = _area_index_at(rows, ts, mouse_x() - ox, mouse_y() - oy, lh)
     let clicks = click_count()
     if clicks >= 3 then
@@ -1010,7 +981,7 @@ pub fn text_area_update(fc, id, r, buf, style)
   if hot && scroll_y() != 0 then
     scroll = scroll + scroll_y() * lh
   end
-  let has = focused(f, id)
+  let has = has_focus(id)
   let arrived = has && !had_focus
   if arrived && !pressed then
     // Focus arrived by keyboard: start at the end.
@@ -1091,7 +1062,7 @@ pub fn text_area_update(fc, id, r, buf, style)
   scroll = clamp(scroll, 0, max(0, content_h - inner_h))
   last_caret = caret
   last_text = text
-  {focus: f, text: text, caret: caret, changed: text != buf, anchor: anchor,
+  {text: text, caret: caret, changed: text != buf, anchor: anchor,
    sel_start: min(caret, anchor), sel_end: max(caret, anchor), scroll: scroll,
    overflow: content_h > inner_h, rows: rows, line_h: lh, content_h: content_h}
 end
@@ -1147,13 +1118,13 @@ pub fn draw_text_area(r, res, has, style)
   end
 end
 
-pub fn text_area(fc, id, r, buf)
-  text_area(fc, id, r, buf, {})
+pub fn text_area(id, r, buf)
+  text_area(id, r, buf, {})
 end
 
-pub fn text_area(fc, id, r, buf, style)
-  let res = text_area_update(fc, id, r, buf, style)
-  draw_text_area(r, res, focused(res.focus, id), style)
+pub fn text_area(id, r, buf, style)
+  let res = text_area_update(id, r, buf, style)
+  draw_text_area(r, res, has_focus(id), style)
   res
 end
 
@@ -1174,8 +1145,6 @@ end
 //
 //   state menu = menu_state()
 //   ...
-//   // near the TOP of the frame, before the app's own click handling:
-//   if !menu_blocking(menu) then ...normal left-click handling... end
 //   menu = menu_open_on_right_click(menu, row_rect, "row:{i}")
 //   ...
 //   // near the BOTTOM, so it draws over everything else:
@@ -1184,11 +1153,11 @@ end
 //   menu = picked.menu
 //   if picked.index >= 0 then ...act on picked.label / picked.tag... end
 //
-// Draw it late, so it sits over the rest. `menu_blocking` is no longer
-// needed to keep the press that closes it from also clicking what is under
-// it: an open menu is modal, and the runtime closes it (Escape, a press
-// outside) before the frame runs (core-libs/petal-ui/src/popover.rs). It
-// still says whether the menu is open.
+// Draw it late, so it sits over the rest. An open menu is modal, and the
+// runtime closes it (Escape, a press outside) before the frame runs
+// (core-libs/petal-ui/src/popover.rs), so the press that closes it reaches
+// no widget under it. Code that reads the mouse itself (`mouse_pressed`
+// and `point_in`) is not covered by that, and stands down while `menu.open`.
 //
 // At most one menu or popover is open at a time: opening one closes the
 // others. While one is open, `shortcut(chord)` is quiet.
@@ -1228,11 +1197,6 @@ end
 // A record made before menus had ids shares the one id "menu".
 fn _menu_id(m)
   str(_get(m, "id", "menu"))
-end
-
-// Whether the menu is open.
-pub fn menu_blocking(m)
-  m.open
 end
 
 pub fn menu_close(m)
@@ -1854,8 +1818,7 @@ end
 // that scrubs, a hex colour, a row of colour chips, a ‹ value › stepper, a
 // segmented control and a dropdown.
 //
-// The keyboard fields share the focus registry with `text_field` (`fc` in,
-// `.focus` out). Each one keeps its edit in widget `state`, which is keyed per
+// The keyboard fields take the runtime focus like `text_field`. Each one keeps its edit in widget `state`, which is keyed per
 // callsite — so in a loop, key it by the row (`for p in props key p.name do
 // ... end`) to keep an edit with its row when rows move.
 //
@@ -1866,33 +1829,33 @@ end
 
 // One line of text that applies on Return or when the field loses the
 // keyboard; Escape reverts. While unfocused it shows `current`. Returns
-// {text, focus, editing}: `text` is nil except on the frame the edit is
+// {text, editing}: `text` is nil except on the frame the edit is
 // applied. `style` is `text_field`'s ({placeholder, size, font, ...}), plus
 // `start`: take the keyboard as soon as the field shows (a rename opened by
 // a double-click), rather than on a click in it.
-pub fn commit_field(fc, id, r, current)
-  commit_field(fc, id, r, current, {})
+pub fn commit_field(id, r, current)
+  commit_field(id, r, current, {})
 end
 
-pub fn commit_field(fc, id, r, current, style)
+pub fn commit_field(id, r, current, style)
   state buf = ""
   state editing = false
   let out = nil
-  let start = _get(style, "start", false) && !editing && !focused(fc, id)
-  let fc0 = if start then focus_set(fc, id) else fc end
-  let res = text_field(fc0, id, r, if editing then buf else str(current ?? "") end, style)
-  let focus = res.focus
-  if focused(focus, id) then
+  if _get(style, "start", false) && !editing && !has_focus(id) then
+    focus_request(id)
+  end
+  let res = text_field(id, r, if editing then buf else str(current ?? "") end, style)
+  if has_focus(id) then
     if !editing then
       editing = true
     end
     buf = res.text
     if res.cancelled then
-      focus = focus_clear(focus)
+      focus_request(nil)
       editing = false
     elsif res.submitted then
       out = buf
-      focus = focus_clear(focus)
+      focus_request(nil)
       editing = false
     end
   elsif editing then
@@ -1900,45 +1863,43 @@ pub fn commit_field(fc, id, r, current, style)
     editing = false
     out = buf
   end
-  {text: out, focus: focus, editing: editing}
+  {text: out, editing: editing}
 end
 
 // A number box: drag sideways to scrub (shift for fine steps), double-click
 // to type, Return or a click away to apply the typed value, Escape to drop
-// it. Returns {value, focus, changed}: `value` is the new value (the old one
+// it. Returns {value, changed}: `value` is the new value (the old one
 // when nothing happened), `changed` whether it differs.
 //
 // `style` sets {step (1.0, per pixel of drag), places (2, decimals shown and
 // typed), min, max, fine (0.1, the shift multiplier), tip (the hover hint; ""
 // for none), size, font, bg, hover, active, fg, radius}.
-pub fn number_field(fc, id, r, value)
-  number_field(fc, id, r, value, {})
+pub fn number_field(id, r, value)
+  number_field(id, r, value, {})
 end
 
-pub fn number_field(fc, id, r, value, style)
+pub fn number_field(id, r, value, style)
   let t = _palette()
   let places = _get(style, "places", 2)
   state buf = ""
   state editing = false
   state last_x = 0
   let out = value
-  let focus = fc
-  if focused(fc, id) then
+  if has_focus(id) then
     // Typing: entered by a double-click, or by the focus arriving (Tab).
     if !editing then
       buf = fixed(float(value), places)
       editing = true
     end
-    let res = text_field(fc, id, r, buf, style)
-    focus = res.focus
+    let res = text_field(id, r, buf, style)
     buf = res.text
     if res.cancelled then
-      focus = focus_clear(focus)
+      focus_request(nil)
       editing = false
-    elsif res.submitted || !focused(focus, id) then
+    elsif res.submitted || !has_focus(id) then
       let v = parse_float(trim(buf))
       if v != nil then out = v end
-      focus = focus_clear(focus)
+      focus_request(nil)
       editing = false
     end
   else
@@ -1964,7 +1925,7 @@ pub fn number_field(fc, id, r, value, style)
     end
     last_x = mouse_x()
     if it.pressed && click_count() == 2 then
-      focus = focus_set(fc, id)
+      focus_request(id)
     end
     let tip = _get(style, "tip", "drag to change · shift for fine · double-click to type")
     if tip != "" then tooltip(r, tip) end
@@ -1977,7 +1938,7 @@ pub fn number_field(fc, id, r, value, style)
     if lo != nil then out = max(out, lo) end
     if hi != nil then out = min(out, hi) end
   end
-  {value: out, focus: focus, changed: out != value}
+  {value: out, changed: out != value}
 end
 
 let _HEX = "0123456789abcdef"
@@ -2039,14 +2000,14 @@ pub fn same_color(a, b)
 end
 
 // A colour chip and its hex, typed: Return or a click away applies, Escape
-// reverts. Returns {color, focus}: `color` is nil unless a valid new colour
+// reverts. Returns {color}: `color` is nil unless a valid new colour
 // was entered. A nil `color` shows an empty chip and field. `style` is
 // `commit_field`'s, plus {chip_radius, outline}.
-pub fn color_field(fc, id, r, color)
-  color_field(fc, id, r, color, {})
+pub fn color_field(id, r, color)
+  color_field(id, r, color, {})
 end
 
-pub fn color_field(fc, id, r, color, style)
+pub fn color_field(id, r, color, style)
   let t = _palette()
   let chip = rect(r.x, r.y + 3, r.h - 6, r.h - 6)
   let cr = _get(style, "chip_radius", 3)
@@ -2054,9 +2015,9 @@ pub fn color_field(fc, id, r, color, style)
   draw_rect_rounded_outline(chip, cr, _get(style, "outline", t.border_strong), 255, 1)
   let fr = rect(r.x + r.h, r.y, r.w - r.h, r.h)
   let shown = if color == nil then "" else color_to_hex(color) end
-  let res = commit_field(fc, id, fr, shown, {placeholder: "#rrggbb", ...style})
+  let res = commit_field(id, fr, shown, {placeholder: "#rrggbb", ...style})
   let picked = if res.text == nil then nil else color_from_hex(res.text) end
-  {color: if same_color(picked, color) then nil else picked end, focus: res.focus}
+  {color: if same_color(picked, color) then nil else picked end}
 end
 
 // A row of square colour chips, `r.h` on a side, `current` ringed; chips

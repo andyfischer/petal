@@ -3,14 +3,13 @@
 //   - text_field (click-to-focus, typing, backspace, Return submits)
 //   - the focus registry + focus_update (Tab / Shift+Tab move focus)
 //   - a focus-gated list_update (keyboard nav only while the list is focused)
-// All widgets share one panel-global focus record so exactly one holds the
-// keyboard at a time. State lives in `state` so it survives hot reload.
+// The runtime holds focus, so exactly one widget has the keyboard at a time.
+// State lives in `state` so it survives hot reload.
 
 import ui
 
 state name = ""
 state email = ""
-state fc = focus_state()
 state roles = list_state()
 state saved = ""
 
@@ -25,7 +24,7 @@ let sel = {r: 44, g: 74, b: 122}
 
 // Tab / Shift+Tab cycle focus across the two fields and the list.
 let ids = ["name", "email", "roles"]
-fc = focus_update(fc, ids)
+focus_update(ids)
 
 clear(bg.r, bg.g, bg.b)
 draw_text("PROFILE", {x: 40, y: 28}, 28, accent)
@@ -34,13 +33,11 @@ draw_text("Tab / Shift+Tab to move · click a field · type · Return saves",
 
 // Two text fields.
 draw_text("Name", {x: 40, y: 100}, 14, dim)
-let nf = text_field(fc, id: "name", r: {x: 150, y: 94, w: 380, h: 28}, buf: name)
-fc = nf.focus
+let nf = text_field(id: "name", r: {x: 150, y: 94, w: 380, h: 28}, buf: name)
 name = nf.text
 
 draw_text("Email", {x: 40, y: 140}, 14, dim)
-let ef = text_field(fc, id: "email", r: {x: 150, y: 134, w: 380, h: 28}, buf: email)
-fc = ef.focus
+let ef = text_field(id: "email", r: {x: 150, y: 134, w: 380, h: 28}, buf: email)
 email = ef.text
 
 // Focus-gated list: a role picker. Clicking it focuses it; j/k/arrows only
@@ -49,13 +46,13 @@ let role_names = ["Viewer", "Editor", "Admin", "Owner"]
 let list_r = {x: 150, y: 180, w: 380, h: 120}
 draw_text("Role", {x: 40, y: 186}, 14, dim)
 if mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r: list_r) then
-  fc = focus_set(fc, "roles")
+  focus_request("roles")
 end
-roles = list_update(roles, item_count: len(role_names), visible_rows: 4, r: list_r, active: focused(fc, "roles"))
+roles = list_update(roles, item_count: len(role_names), visible_rows: 4, r: list_r, active: has_focus("roles"))
 
 // Render the list.
 draw_rect(list_r, panel)
-let list_focused = focused(fc, "roles")
+let list_focused = has_focus("roles")
 draw_rect_outline(list_r, if list_focused then accent else outline end)
 for i in range(0, len(role_names)) do
   let rr = list_row_rect(list_r, visible_rows: 4, i: i, scroll: roles.scroll)

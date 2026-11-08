@@ -425,7 +425,7 @@ let L = build_layout(w: W, h: H, nrows: len(strokes))
 let art = L.art
 let color = INKS[ink]
 let over_art = point_in(px: mx, py: my, r: art)
-let blocked = menu_blocking(menu)
+let blocked = menu.open
 
 // ── Keyboard ─────────────────────────────────────────────────────────────
 for t in TOOLS do

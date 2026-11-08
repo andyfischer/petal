@@ -1,6 +1,7 @@
 # Proposal: Input dispatch, one owner per event (ID) for petal-ui
 
-Status: in progress, 2026-11-08. Phases 0 to 4 are done (see Phases).
+Status: in progress, 2026-11-08. Phases 0 to 5 are done (see Phases); what
+is left is listed under "Not done yet" in each phase.
 
 ## Summary
 
@@ -255,10 +256,36 @@ before their cover. `speculate` is not needed.
     argument counts don't overlap petal-ui's.
   - It ported cleanly. All 39 GUI scenarios pass, plus a new one: keys
     typed into a field (Backspace, Delete, R) are the field's.
-  - Phase 5 can drop `fc` from the field signatures once no caller passes
-    one.
-- **Phase 5: port the other editors** (images, movies, social) and Garden
-  panels, and delete the shims.
+- **Phase 5 (done 2026-11-08): port the other editors** (images, movies,
+  social) and Garden panels, and delete the shims. What shipped:
+  - The fields lost their `fc`: `text_field(id, r, buf, style?)` and the
+    rest, and their results no longer carry `focus`. `focus_next`,
+    `focus_prev` and `focus_update` take only the ring of ids.
+  - Deleted: `focus_state`, `focused(fc, id)`, `focus_set(fc, id)`,
+    `focus_clear(fc)` and `menu_blocking`. Code that reads the mouse itself
+    guards on `menu.open`, which is what `menu_blocking` returned.
+  - The `ui` package is 0.2.0, since the signatures broke. A 4-argument
+    call to the old `text_field(fc, id, r, buf)` still matches the new
+    4-argument overload, so the port was found by search, not by load
+    errors.
+  - Initial focus, which a few panels set with `state fc =
+    focus_set(focus_state(), id)`, is a one-time `focus_request` behind a
+    `state` flag.
+  - Ported: petal-images, petal-movies, petal-social-media, the design
+    studio, every example, Garden's panels and gpp apps, and the SDL
+    examples. Their traces match the old code on the old runtime, except
+    for the removed `fc` state key.
+  - Phase 4 regressions turned up and are fixed. The email client, chat,
+    settings and stock-trading keep their own focus id, and since the
+    fields stopped reading `fc` a move they made in code (`/`, Tab, `q`,
+    the composer chat starts in) no longer reached the field; each now
+    hands its moves to the runtime. The calendar compared `has_focus` with itself, so it no longer
+    saw its title take the keyboard. An app that keeps its own focus id
+    must tell the runtime when it moves it.
+  - Not done yet, carried from the earlier phases: key routing to the
+    topmost modal, one `dispatch` record, the modal dialog's `at` skip, the
+    same-frame tap fallback, and Garden's `claim_key` as `shortcut` with a
+    host scope.
 
 ## Open questions
 

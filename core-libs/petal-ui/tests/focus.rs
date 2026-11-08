@@ -11,7 +11,6 @@ const CMD_SHIFT: Modifiers = Modifiers { shift: true, ctrl: false, alt: false, c
 /// y 60..84), a popup-layer rect ("menu", x 300..400) and counters for the
 /// shortcuts the app answers.
 const SRC: &str = r#"
-state fc = focus_state()
 state buf = ""
 state saves = 0
 state undos = 0
@@ -20,8 +19,7 @@ state escapes = 0
 state downs = 0
 state owner_at_run = ""
 owner_at_run = focus_owner()
-let res = text_field(fc, "name", {x: 10, y: 10, w: 200, h: 24}, buf)
-fc = res.focus
+let res = text_field("name", {x: 10, y: 10, w: 200, h: 24}, buf)
 buf = res.text
 interact({x: 10, y: 60, w: 100, h: 24}, "go")
 interact({x: 10, y: 100, w: 100, h: 24}, "list", {focus: true, keys: ["down"]})
@@ -149,11 +147,10 @@ if n == 6 then focus_request(nil) end
 fn threading_fc_by_hand_keeps_the_runtime_in_step() {
     // Old-style code: focus moved with focus_set, never by a press.
     let src = r#"
-state fc = focus_state()
 state n = 0
 n += 1
-if n == 2 then fc = focus_set(fc, "search") end
-if n == 4 then fc = focus_clear(fc) end
+if n == 2 then focus_request("search") end
+if n == 4 then focus_request(nil) end
 "#;
     let mut ui = Headless::with_ui(src).unwrap();
     ui.frames(2).unwrap();
@@ -180,14 +177,14 @@ state before = false
 state after = false
 state renaming = false
 state renamed = ""
-let res = text_field(nil, "name", {x: 10, y: 10, w: 200, h: 24}, buf)
+let res = text_field("name", {x: 10, y: 10, w: 200, h: 24}, buf)
 buf = res.text
 before = has_focus("x")
 if key_pressed("f") then focus_request("x") end
 after = has_focus("x")
 if key_pressed("n") then renaming = true end
 if renaming then
-  let rn = commit_field(nil, "rn", {x: 10, y: 60, w: 200, h: 24}, "old", {start: true})
+  let rn = commit_field("rn", {x: 10, y: 60, w: 200, h: 24}, "old", {start: true})
   if rn.text != nil then
     renamed = rn.text
     renaming = false

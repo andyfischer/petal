@@ -405,25 +405,26 @@ and theming via `ui_theme()` / `theme_set({...})`.
 
 #### Text entry: use `text_field`, not your own caret
 
-`text_field(fc, id, r, buf)` is a one-line field with a caret, a selection
+`text_field(id, r, buf)` is a one-line field with a caret, a selection
 (shift+arrows, shift+click, drag, double click for a word, Cmd+A), the
 clipboard (Cmd+C/X/V) and undo (Cmd+Z, Cmd+Shift+Z). Do not write the editing
-loop again. An app with its own look calls `text_field_update(fc, id, r, buf,
+loop again. An app with its own look calls `text_field_update(id, r, buf,
 style)`, which is all of the behaviour and none of the pixels, and paints
-from what it returns: `caret`, `sel_start`, `sel_end`, `scroll`. An app with
-its own focus variable passes `{id: focus}` as `fc`.
-`examples/productivity/email-client/app.ptl` does both for its search, To and
-Subject fields.
+from what it returns: `caret`, `sel_start`, `sel_end`, `scroll`. The runtime
+keeps the focus: `has_focus(id)` says whether a field has the keyboard and
+`focus_request(id)` hands it over (`nil` for nobody). Prefer reading
+`has_focus` to keeping a focus id of your own; an app that does keep one must
+call `focus_request` whenever it moves it (a shortcut, Tab), or the field
+never gets the keys. `examples/productivity/email-client/app.ptl` paints its
+own search, To and Subject fields this way, and hands its moves over.
 
 ```petal
-state fc = focus_state()
 state name = ""
 claim_key("a", "cmd")                       // Garden keeps Cmd chords unless claimed
 for k in ["c", "x", "v", "z"] do claim_key(k, "cmd") end
 claim_key("z", "cmd+shift")
 
-let res = text_field(fc, "name", rect(20, 20, 240, 28), name)
-fc = res.focus
+let res = text_field("name", rect(20, 20, 240, 28), name)
 name = res.text
 if res.submitted then … end
 ```
@@ -442,7 +443,7 @@ catalogue entries are in
 
 The two menu calls sit at opposite ends of the frame:
 
-- `menu_blocking(m)` is an input guard. It belongs at the top, before the
+- `m.open` is an input guard. It belongs at the top, before the
   panel's own click handling, so the widgets underneath stand down while a
   menu is open.
 - `context_menu(m, items)` paints the menu. It must come after the very last
@@ -456,7 +457,7 @@ import ui
 state menu = menu_state()
 
 // top — input:
-if !menu_blocking(menu) && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), row) then … end
+if !menu.open && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), row) then … end
 menu = menu_open_on_right_click(menu, row, i)
 
 // …all of the panel's drawing…

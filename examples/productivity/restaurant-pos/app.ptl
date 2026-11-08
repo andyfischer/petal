@@ -171,6 +171,17 @@ state cat = 1
 state scroll = 0.0
 state focus = ""
 
+// Who holds the keyboard after a prelude field ran, as the app's own `focus`
+// id: a press inside the field takes it (`has_focus` says so afterwards), a
+// press elsewhere lets go of it. `had` is `has_focus(key)` before the field.
+fn field_focus(key: string, focus: string, had: bool, pointer: bool) -> string
+  if !pointer || !mouse_pressed(0) then focus
+  elsif has_focus(key) then key
+  elsif had then ""
+  else focus
+  end
+end
+
 // ── Actions ─────────────────────────────────────────────────────────────────
 
 fn toast(text: string, kind: string) -> nil
@@ -946,6 +957,14 @@ let close_now = false
 
 let obs_mod_missing = ""
 let obs_mod_price = 0
+// The fields read the runtime's focus. This app moves its own focus id
+// itself (closing the sheet, an action), so a move is handed to the runtime
+// before the fields run. A press on a field is already the runtime's.
+state synced_focus = ""
+if focus != synced_focus then
+  focus_request(if focus == "note" then focus else nil end)
+  synced_focus = focus
+end
 if sheet == "mods" then
   let it = mn.item_by_id(draft.item)
   let tone = mn.CATS[it.cat].tone
@@ -1028,8 +1047,9 @@ if sheet == "mods" then
   gy += 58
   let fr = Rect(x0, gy, GW, 50)
   let fstyle = lk.ui(15, lk.INK)
-  let res = text_field_update({id: focus}, "note", fr, draft.text, {text_style: fstyle, inset: 16, scroll: true})
-  focus = res.focus.id ?? ""
+  let note_had = has_focus("note")
+  let res = text_field_update("note", fr, draft.text, {text_style: fstyle, inset: 16, scroll: true})
+  focus = field_focus("note", focus, note_had, true)
   set draft.text = slice(res.text, 0, 80)
   let has = focus == "note"
   let fk = lk.ease_flag(has, 24.0)

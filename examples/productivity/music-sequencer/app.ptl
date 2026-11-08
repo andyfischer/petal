@@ -441,7 +441,7 @@ claim_key("z", "cmd+shift")
 
 let mx = mouse_x()
 let my = mouse_y()
-let blocked = menu_blocking(menu)
+let blocked = menu.open
 let snap = pats
 let changed = false
 let sel_mel = TRACKS[sel_trk].kind == "mel"

@@ -845,29 +845,28 @@ fn state_field(ui: &Headless, field: &str) -> Option<i64> {
 // ── Focus registry ──────────────────────────────────────────────────────────
 
 #[test]
-fn focus_set_focused_and_clear() {
-    let src = "state fc = focus_state()\n\
-               state none = true\n\
+fn focus_request_and_has_focus() {
+    let src = "state none = true\n\
                state a = false\n\
                state b = false\n\
-               none = focused(fc, \"a\")\n\
-               fc = focus_set(fc, \"a\")\n\
-               a = focused(fc, \"a\")\n\
-               b = focused(fc, \"b\")";
+               none = has_focus(\"a\")\n\
+               focus_request(\"a\")\n\
+               a = has_focus(\"a\")\n\
+               b = has_focus(\"b\")";
     run_headless(src, |ui| {
         ui.frame().unwrap();
         // Nothing focused by default.
         assert_eq!(ui.state()["none"], false);
-        // After focus_set("a"), a is focused and b is not.
+        // After focus_request("a"), a is focused and b is not.
         assert_eq!(ui.state()["a"], true);
         assert_eq!(ui.state()["b"], false);
 
         // Clearing focus un-focuses everything (survives across frames via state).
         let mut ui2 = Headless::with_ui(
-            "state fc = focus_set(focus_state(), \"a\")\n\
+            "focus_request(\"a\")\n\
              state cleared = true\n\
-             fc = focus_clear(fc)\n\
-             cleared = focused(fc, \"a\")",
+             focus_request(nil)\n\
+             cleared = has_focus(\"a\")",
         )
         .unwrap();
         ui2.frame().unwrap();
@@ -876,12 +875,11 @@ fn focus_set_focused_and_clear() {
     });
 }
 
-const CYCLE_SRC: &str = "state fc = focus_state()\n\
-                         let ids = [\"a\", \"b\", \"c\"]\n\
-                         if key_pressed(\"n\") then fc = focus_next(fc, ids) end\n\
-                         if key_pressed(\"p\") then fc = focus_prev(fc, ids) end\n\
+const CYCLE_SRC: &str = "let ids = [\"a\", \"b\", \"c\"]\n\
+                         if key_pressed(\"n\") then focus_next(ids) end\n\
+                         if key_pressed(\"p\") then focus_prev(ids) end\n\
                          state cur = \"\"\n\
-                         cur = fc.id";
+                         cur = focus_owner()";
 
 #[test]
 fn focus_next_and_prev_cycle_and_wrap() {
@@ -912,11 +910,10 @@ fn focus_next_and_prev_cycle_and_wrap() {
 
 #[test]
 fn focus_update_reads_tab_and_shift_tab() {
-    let src = "state fc = focus_state()\n\
-               let ids = [\"a\", \"b\", \"c\"]\n\
-               fc = focus_update(fc, ids)\n\
+    let src = "let ids = [\"a\", \"b\", \"c\"]\n\
+               focus_update(ids)\n\
                state cur = \"\"\n\
-               cur = fc.id";
+               cur = focus_owner()";
     run_headless(src, |ui| {
         // A frame with no tab leaves focus untouched.
         ui.frame().unwrap();
@@ -941,12 +938,10 @@ fn focus_update_reads_tab_and_shift_tab() {
 
 // ── Text field widget ───────────────────────────────────────────────────────
 
-const FIELD_SRC: &str = "state fc = focus_state()\n\
-                         state buf = \"\"\n\
+const FIELD_SRC: &str = "state buf = \"\"\n\
                          state submits = 0\n\
                          let r = {x: 10, y: 10, w: 200, h: 24}\n\
-                         let res = text_field(fc, \"name\", r, buf)\n\
-                         fc = res.focus\n\
+                         let res = text_field(\"name\", r, buf)\n\
                          buf = res.text\n\
                          if res.submitted then submits = submits + 1 end";
 
@@ -959,7 +954,7 @@ fn text_field_ignores_typing_until_focused() {
 
         // Click focuses the field.
         ui.click(50, 20).unwrap();
-        assert_eq!(ui.state().get("fc").unwrap()["id"], "name");
+        assert_eq!(ui.focus(), "name");
 
         // Now typing lands in the buffer.
         ui.text("hel").unwrap();
@@ -1014,12 +1009,11 @@ fn text_field_draws_caret_only_when_focused() {
 // ── Focus-gated list ────────────────────────────────────────────────────────
 
 const GATED_LIST_SRC: &str = "state lst = list_state()\n\
-                              state fc = focus_state()\n\
                               let r = {x: 0, y: 100, w: 200, h: 100}\n\
                               if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then\n\
-                                fc = focus_set(fc, \"list\")\n\
+                                focus_request(\"list\")\n\
                               end\n\
-                              lst = list_update(lst, 20, 5, r, focused(fc, \"list\"))";
+                              lst = list_update(lst, 20, 5, r, has_focus(\"list\"))";
 
 #[test]
 fn focus_gated_list_ignores_keys_until_focused() {
@@ -1034,7 +1028,9 @@ fn focus_gated_list_ignores_keys_until_focused() {
         // Rows are 20px tall from y=100; row 2 spans y 140..160.
         ui.click(50, 145).unwrap();
         assert_eq!(state_field(ui, "selected"), Some(2));
-        assert_eq!(ui.state().get("fc").unwrap()["id"], "list");
+        // The list's own `focus_request` applies at the next frame's roll.
+        ui.frame().unwrap();
+        assert_eq!(ui.focus(), "list");
 
         // Now keyboard nav works.
         ui.key("j").unwrap();
@@ -1422,7 +1418,7 @@ const MENU_SRC: &str = "state menu = menu_state()\n\
                         state tag = \"\"\n\
                         state clicks = 0\n\
                         let r = {x: 0, y: 0, w: 200, h: 40}\n\
-                        if !menu_blocking(menu) && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then\n\
+                        if !menu.open && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then\n\
                           clicks = clicks + 1\n\
                         end\n\
                         menu = menu_open_on_right_click(menu, r, \"row-7\")\n\
@@ -1477,7 +1473,7 @@ fn context_menu_opens_on_right_click_and_resolves_a_choice() {
 }
 
 /// A click outside dismisses without choosing, and — the point of
-/// `menu_blocking` — the underlying widget does not act on that press either.
+/// the guard on `menu.open` — the underlying widget does not act on that press either.
 #[test]
 fn context_menu_dismisses_without_choosing() {
     run_headless(MENU_SRC, |ui| {
@@ -1837,12 +1833,10 @@ fn aligned_text_takes_a_style_record() {
 /// palette keeps focus, typing, backspace and Return and draws the box itself.
 #[test]
 fn text_field_update_edits_without_drawing() {
-    let src = "state fc = focus_state()\n\
-               state buf = \"\"\n\
+    let src = "state buf = \"\"\n\
                state submitted = false\n\
                let r = {x: 0, y: 0, w: 200, h: 24}\n\
-               let res = text_field_update(fc, \"name\", r, buf)\n\
-               fc = res.focus\n\
+               let res = text_field_update(\"name\", r, buf)\n\
                buf = res.text\n\
                submitted = res.submitted";
     run_headless(src, |ui| {

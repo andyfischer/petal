@@ -187,14 +187,18 @@ argument (`--channel draw_commands --emit K --native-arg I --to V`;
 ## Versioning
 
 - The **interface version** is the `ui` package's version
-  (`prelude/petal.toml`, currently 0.1.0). It is what a host provides and
-  what a package's `[requires] ui = "…"` is matched against.
+  (`prelude/petal.toml`, currently 0.2.0). It is what a host provides and
+  what a package's `[requires] ui = "…"` is matched against. 0.2.0 broke
+  the fields' signatures: focus became the runtime's, so `text_field`,
+  `commit_field`, `number_field` and the rest lost their leading `fc`, and
+  `focus_state`, `focused`, `focus_set`, `focus_clear` and `menu_blocking`
+  are gone (see `docs/proposals/input-dispatch.md`, Phase 5).
 - `UI_VERSION` counts incompatible changes to the input/draw native contract.
   Scripts can read it with `ui_version()`. It is a separate integer and not
   what `[requires]` compares.
-- `PRELUDE_LEVEL` counts additions to the prelude's export surface. Levels
-  are additive: every existing export keeps its signature, so a script
-  written against an older level keeps working. Apps that shadow prelude
+- `PRELUDE_LEVEL` counts additions to the prelude's export surface. Within
+  one interface version, levels are additive: every existing export keeps
+  its signature, so a script written against an older level keeps working. Apps that shadow prelude
   names with their own (`fn spinner`, `fn draw_scrollbar`, …) also keep
   working, because a plain import's bindings are weak.
   `garden --version --json` lists the exact exports compiled into a binary

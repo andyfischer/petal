@@ -13,8 +13,7 @@ use petal_ui::input::{InputEvent, Modifiers, buttons};
 fn src(buf: &str, h: i64) -> String {
     let buf = buf.replace('\n', "\\n");
     format!(
-        "state fc = focus_state()\n\
-         state buf = \"{buf}\"\n\
+        "         state buf = \"{buf}\"\n\
          state caret = -1\n\
          state a = -1\n\
          state b = -1\n\
@@ -22,8 +21,7 @@ fn src(buf: &str, h: i64) -> String {
          state lh = 0\n\
          state nrows = 0\n\
          state has = false\n\
-         let res = text_area(fc, \"notes\", {{x: 10, y: 10, w: 200, h: {h}}}, buf)\n\
-         fc = res.focus\n\
+         let res = text_area(\"notes\", {{x: 10, y: 10, w: 200, h: {h}}}, buf)\n\
          buf = res.text\n\
          caret = res.caret\n\
          a = res.sel_start\n\
@@ -31,7 +29,7 @@ fn src(buf: &str, h: i64) -> String {
          scroll = int(res.scroll)\n\
          lh = res.line_h\n\
          nrows = len(res.rows)\n\
-         has = focused(fc, \"notes\")"
+         has = has_focus(\"notes\")"
     )
 }
 

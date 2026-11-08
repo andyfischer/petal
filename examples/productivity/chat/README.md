@@ -125,8 +125,8 @@ reacts to a channel message within two seconds.
   `group_by`, `find`, `count`, `filter`, computed record keys
   (`{...seen, [ch]: n}`), `match` over event kinds.
 - `ui` prelude: `text_area_update`, `text_wrap_rows`, `text_row_of`,
-  `text_range_rects`, `context_menu` / `menu_open_on_right_click` /
-  `menu_blocking`, `draw_shadow`, `draw_scroll_shadow`, `approach`,
+  `text_range_rects`, `context_menu` / `menu_open_on_right_click`,
+  `draw_shadow`, `draw_scroll_shadow`, `approach`,
   `clipboard_set`, `theme_set`; `text_layout.draw_text_line` /
   `draw_text_baseline`; `claim_key` for the composer's Cmd chords.
 

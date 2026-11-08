@@ -55,7 +55,11 @@ import garden
 import ui
 
 // ── panel-local UI state ─────────────────────────────────────────────────────
-state fc = focus_set(focus_state(), "commits")
+state focus_seeded = false
+if !focus_seeded then
+  focus_request("commits")
+  focus_seeded = true
+end
 state commits_lst = list_state()
 state files_lst = list_state()
 state diff_scroll = 0
@@ -182,17 +186,17 @@ let refresh_r = rect(w - PAD - refresh_w, PAD - 1, refresh_w, 23)
 let refresh_hover = hovered(refresh_r)
 
 // ── input: focus ring (Tab / Shift+Tab, click-to-focus) ──────────────────────
-fc = focus_update(fc, ["commits", "files", "diff"])
+focus_update(["commits", "files", "diff"])
 if mouse_pressed(0) && !dragging && !refresh_hover then
-  if point_in(mouse_x(), mouse_y(), commits_rect) then fc = focus_set(fc, "commits") end
-  if point_in(mouse_x(), mouse_y(), files_rect) then fc = focus_set(fc, "files") end
-  if point_in(mouse_x(), mouse_y(), diff_rect) then fc = focus_set(fc, "diff") end
+  if point_in(mouse_x(), mouse_y(), commits_rect) then focus_request("commits") end
+  if point_in(mouse_x(), mouse_y(), files_rect) then focus_request("files") end
+  if point_in(mouse_x(), mouse_y(), diff_rect) then focus_request("diff") end
 end
 
 // ── input: commit selection, lazy fetch on change ─────────────────────────────
 // The prelude list: keyboard nav gated on focus, click-select, and a wheel
 // that scrolls the window freely without dragging the selection along.
-commits_lst = list_update(commits_lst, total_rows, commits_rows, commits_rect, focused(fc, "commits"))
+commits_lst = list_update(commits_lst, total_rows, commits_rows, commits_rect, has_focus("commits"))
 let commit_selected = commits_lst.selected
 let commits_scroll = commits_lst.scroll
 
@@ -256,7 +260,7 @@ end
 
 // ── input: file selection ─────────────────────────────────────────────────────
 let file_count = len(data.files)
-files_lst = list_update(files_lst, file_count, files_rows, files_rect, focused(fc, "files"))
+files_lst = list_update(files_lst, file_count, files_rows, files_rect, has_focus("files"))
 let file_selected = files_lst.selected
 if file_selected != prev_file then
   diff_scroll = 0
@@ -268,8 +272,8 @@ end
 // the vim-style extras (j/k, space, home/end) stay app-side.
 let diff_lines = 0
 if file_count > 0 then diff_lines = len(data.files[file_selected].lines) end
-diff_scroll = scroll_update(diff_scroll, diff_lines, diff_rows, diff_rect, focused(fc, "diff"))
-if focused(fc, "diff") then
+diff_scroll = scroll_update(diff_scroll, diff_lines, diff_rows, diff_rect, has_focus("diff"))
+if has_focus("diff") then
   if key_pressed("down") || key_pressed("j") then diff_scroll += 1 end
   if key_pressed("up") || key_pressed("k") then diff_scroll -= 1 end
   if key_pressed("space") then diff_scroll += diff_rows end
@@ -286,8 +290,8 @@ diff_scroll = int(clamp(diff_scroll, 0, max(0, diff_lines - diff_rows)))
 // are therefore the test-facing API, with their real types. Only `focus` and
 // `has_error` are derived purely for that readout.
 let focus = 0
-if focused(fc, "files") then focus = 1 end
-if focused(fc, "diff") then focus = 2 end
+if has_focus("files") then focus = 1 end
+if has_focus("diff") then focus = 2 end
 // The reply's soft `error` field may be null (no error), so coalesce before
 // `len` — a bare `len(nil)` would abort the frame.
 let data_err = data.error ?? ""
@@ -335,7 +339,7 @@ fill_triangle(ix, iy - 9, ix + 8, iy - 6, ix, iy - 2, rtc.r, rtc.g, rtc.b)  // a
 draw_text(refresh_label, {x: refresh_r.x + 28, y: refresh_r.y + 3}, FS, rtc)
 
 // ── draw: commits section ─────────────────────────────────────────────────────
-section_label("COMMITS · {total_rows}", PAD, content_top, focused(fc, "commits"))
+section_label("COMMITS · {total_rows}", PAD, content_top, has_focus("commits"))
 
 // Subjects and metadata are clipped by measured width, not by an estimated
 // character count: the panel font is proportional, so `ellipsize` fills the
@@ -360,7 +364,7 @@ for i in range(0, cvis) do
   let ry = row_r.y
   if idx == commit_selected then
     let selbg = SELDIM
-    if focused(fc, "commits") then selbg = SEL end
+    if has_focus("commits") then selbg = SEL end
     draw_rect(row_r, selbg)
   else
     if hovered(row_r) then draw_rect(row_r, HOVER) end
@@ -384,7 +388,7 @@ draw_scrollbar(commits_rect, total_rows, commits_rows, commits_scroll)
 
 // ── draw: files section ───────────────────────────────────────────────────────
 // (the horizontal divider itself is drawn by the splitter above)
-section_label("FILES · {file_count}", PAD, files_label_y, focused(fc, "files"))
+section_label("FILES · {file_count}", PAD, files_label_y, has_focus("files"))
 
 if file_count == 0 then
   let msg = "no files changed"
@@ -404,7 +408,7 @@ for i in range(0, fvis) do
   let ry = row_r.y
   if idx == file_selected then
     let selbg = SELDIM
-    if focused(fc, "files") then selbg = SEL end
+    if has_focus("files") then selbg = SEL end
     draw_rect(row_r, selbg)
   else
     if hovered(row_r) then draw_rect(row_r, HOVER) end
@@ -457,7 +461,7 @@ if file_count > 0 then
   head_path_w = text_width(fp, FS)
 end
 draw_line({x: right_x, y: diff_top - 4}, {x: w - PAD, y: diff_top - 4}, LINE)
-if focused(fc, "diff") then
+if has_focus("diff") then
   draw_rect(rect(right_x, diff_top - 5, head_path_w, 2), ACCENT)
 end
 

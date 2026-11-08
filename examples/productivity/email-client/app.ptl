@@ -689,17 +689,24 @@ let ev = {
 
 // Search, To and Subject are the prelude's field: it owns the caret, the
 // selection, the clipboard shortcuts and undo, and this file only draws what
-// it reports. Focus stays the app's own string, handed over as a focus record;
-// a click on the row outside the text gives focus further down, and the field
-// then starts at its end.
-let q_ed = text_field_update({id: focus}, "q", field_rect(q_text_r), q,
+// it reports. Focus stays the app's own string; a click on the row outside the
+// text gives focus further down, and the field then starts at its end.
+// The fields read the runtime's focus, so a move the app makes itself (`/`,
+// Tab, opening the composer) is handed to the runtime on the next frame,
+// before they run. A press on a field is already the runtime's.
+state synced_focus = ""
+if focus != synced_focus then
+  focus_request(if focus == "q" || focus == "to" || focus == "subj" then focus else nil end)
+  synced_focus = focus
+end
+let q_ed = text_field_update("q", field_rect(q_text_r), q,
   {text_style: Q_STYLE, inset: 0, scroll: true, pointer: m_main})
 if q_ed.text != q then list_scroll = 0.0 end
 q = q_ed.text
-let to_ed = text_field_update({id: focus}, "to", field_rect(to_r), c_to,
+let to_ed = text_field_update("to", field_rect(to_r), c_to,
   {text_style: FIELD_STYLE, inset: 0, scroll: true, pointer: m_modal})
 c_to = to_ed.text
-let subj_ed = text_field_update({id: focus}, "subj", field_rect(subj_r), c_subj,
+let subj_ed = text_field_update("subj", field_rect(subj_r), c_subj,
   {text_style: FIELD_STYLE, inset: 0, scroll: true, pointer: m_modal})
 c_subj = subj_ed.text
 

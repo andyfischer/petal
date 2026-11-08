@@ -688,8 +688,19 @@ let t_box = rect(TX + 16, H - 28 - t_box_h, THREAD_W - 32, t_box_h)
 let t_text_r = rect(t_box.x + 14, t_box.y + 12, t_text_w, t_rows * lh)
 let TR = rect(TX, HEADER_H, THREAD_W, t_box.y - 10 - HEADER_H)
 
-let blocking = menu_blocking(menu)
+let blocking = menu.open
 let press = mouse_pressed(0) && !blocking
+
+// Who holds the keyboard after a prelude field ran, as the app's own `focus`
+// id: a press inside the field takes it (`has_focus` says so afterwards), a
+// press elsewhere lets go of it. `had` is `has_focus(key)` before the field.
+fn field_focus(key, focus, had, pointer)
+  if !pointer || !mouse_pressed(0) then focus
+  elsif has_focus(key) then key
+  elsif had then ""
+  else focus
+  end
+end
 
 // ── Text entry ───────────────────────────────────────────────────────────
 // Return sends and Shift+Return breaks the line. The text area always takes
@@ -707,15 +718,27 @@ end
 // Typing with nothing focused goes to the composer, as in every chat app.
 if focus == "" && char_len(text_input()) > 0 && !mod_cmd() && !mod_ctrl() then focus = "composer" end
 
+// The fields read the runtime's focus. This app moves its own focus id
+// itself (typing, Escape, opening a thread), so a move is handed to the runtime
+// before the fields run. A press on a field is already the runtime's.
+state synced_focus = ""
+if focus != synced_focus then
+  focus_request(if focus == "composer" || focus == "thread" then focus else nil end)
+  synced_focus = focus
+end
+
 let plain_return = key_pressed("return") && !mod_shift()
 let c_before = draft
 let t_before = thread_draft
-let c_res = text_area_update({id: focus}, "composer", c_text_r, draft,
+let c_had = has_focus("composer")
+let c_res = text_area_update("composer", c_text_r, draft,
   {text_style: ts_in, inset: 0, line_gap: LGAP, pointer: !blocking})
-let t_res = text_area_update(c_res.focus, "thread", t_text_r, thread_draft,
+let c_focus = field_focus("composer", focus, c_had, !blocking)
+let t_had = has_focus("thread")
+let t_res = text_area_update("thread", t_text_r, thread_draft,
   {text_style: ts_in, inset: 0, line_gap: LGAP, pointer: !blocking && thread_open})
 let was_focus = focus
-focus = t_res.focus.id
+focus = field_focus("thread", c_focus, t_had, !blocking && thread_open)
 draft = c_res.text
 thread_draft = t_res.text
 

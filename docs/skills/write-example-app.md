@@ -141,7 +141,7 @@ Rules that cost the most time when broken:
 - Garden owns Cmd/Ctrl chords; `claim_key("z", "cmd")` near the top of every
   frame to get one back.
 - `context_menu(...)` must be the last draw call of the frame;
-  `menu_blocking(...)` the first input check.
+  a `menu.open` guard the first input check.
 - `petal lint` does not catch a misspelled global. `status_error` in
   `/state` does.
 - Work around language and host limits in Petal and note them in the README.

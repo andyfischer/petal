@@ -576,6 +576,15 @@ end
 
 // ── the page ────────────────────────────────────────────────────────────────
 
+// The fields read the runtime's focus. This app moves its own focus id
+// itself ("/", Tab, arrows), so a move is handed to the runtime
+// before the fields run. A press on a field is already the runtime's.
+state synced_edit = ""
+if get edit != synced_edit then
+  focus_request(if get edit == "" then nil else get edit end)
+  synced_edit = get edit
+end
+
 clear(T.bg.r, T.bg.g, T.bg.b)
 
 // The first matching word of the query inside `label`, underlined in the

@@ -534,9 +534,7 @@ Backspace or Delete). Any widget claims the chords it listed in `keys`.
 So `shortcut("v")` and `shortcut("escape")` are quiet while the user types,
 and `shortcut("cmd+s")` still fires.
 
-The fields read this focus. Their first argument, `fc`, is the record the
-older API threads by hand; pass `nil`. A record passed there is only handed
-back as the result's `focus`, and `focused(fc, id)` is `has_focus(id)`.
+The fields read this focus, so an app keeps no focus record of its own.
 
 | Call | What it does |
 |---|---|
@@ -544,13 +542,11 @@ back as the result's `focus`, and `focused(fc, id)` is `has_focus(id)`.
 | `shortcut(chord, id)` | Whether `chord` was pressed while `id` has the keyboard. |
 | `has_focus(id)`, `focus_owner()` | Whether `id` has the keyboard this frame; the id that has it (`""` for nobody). |
 | `focus_request(id)` | Give `id` the keyboard from the next frame (`nil`: nobody). The rest of this run sees it already: `has_focus(id)` is true after the call. The last request in a frame wins. |
-| `focus_state()` | The record the older, threaded API keeps: `state fc = focus_state()`, passed into fields and assigned back from their `.focus`. |
-| `focused(fc, id)`, `focus_set(fc, id)`, `focus_clear(fc)` | The older names: `has_focus(id)`, and `focus_request` returning a record. |
-| `focus_next(fc, ids)`, `focus_prev(fc, ids)`, `focus_update(fc, ids)` | Move through a ring of ids from the one with the keyboard; `focus_update` does Tab and Shift+Tab. `fc` may be `nil`. |
-| `text_field(fc, id, r, buf, style?)` | A single-line editor with a caret, selection, clipboard and undo. Returns `{focus, text, caret, submitted, changed, blurred, cancelled, …}`: `blurred` on the frame after it lost the keyboard, `cancelled` when Escape was pressed in it. |
-| `text_field_update(fc, id, r, buf, style?)`, `draw_text_field(r, text, has, …)` | The two halves, for a field with its own chrome. |
-| `text_area(fc, id, r, buf, style?)` | A multi-line editor: wraps to its width, Return is a line break, the wheel scrolls it. Returns `{focus, text, caret, changed, sel_start, sel_end, scroll, overflow, rows, line_h, content_h, …}`. |
-| `text_area_update(fc, id, r, buf, style?)`, `draw_text_area(r, res, has, style?)` | Its two halves. |
+| `focus_next(ids)`, `focus_prev(ids)`, `focus_update(ids)` | Move through a ring of ids from the one with the keyboard; `focus_update` does Tab and Shift+Tab. |
+| `text_field(id, r, buf, style?)` | A single-line editor with a caret, selection, clipboard and undo. Returns `{text, caret, submitted, changed, blurred, cancelled, …}`: `blurred` on the frame after it lost the keyboard, `cancelled` when Escape was pressed in it. |
+| `text_field_update(id, r, buf, style?)`, `draw_text_field(r, text, has, …)` | The two halves, for a field with its own chrome. |
+| `text_area(id, r, buf, style?)` | A multi-line editor: wraps to its width, Return is a line break, the wheel scrolls it. Returns `{text, caret, changed, sel_start, sel_end, scroll, overflow, rows, line_h, content_h, …}`. |
+| `text_area_update(id, r, buf, style?)`, `draw_text_area(r, res, has, style?)` | Its two halves. |
 | `text_area_height(text, w, min_lines?, max_lines?, style?)` | The height that shows `text` in an area `w` wide, between 3 and 12 rows by default: a box that grows as it fills. |
 
 A press inside a field focuses it. A press anywhere else takes the keyboard
@@ -582,29 +578,28 @@ just added, whose placeholder text the next keystroke should replace).
 ```petal
 state notes = ""
 let h = text_area_height(notes, 320)
-let res = text_area(nil, "notes", rect(20, 80, 320, h), notes)
+let res = text_area("notes", rect(20, 80, 320, h), notes)
 notes = res.text
 ```
 
 ### Inspector fields
 
 The controls of a property panel. The keyboard ones take the keyboard from
-the runtime (pass `nil` for `fc`) and apply only when an edit is done:
+the runtime and apply only when an edit is done:
 Return, or the field losing the keyboard. Escape abandons the edit.
 
 | Call | What it does |
 |---|---|
-| `commit_field(fc, id, r, current, style?)` | One line of text that applies on Return or blur. Returns `{text, focus, editing}`; `text` is nil except on the frame the edit applies. |
-| `number_field(fc, id, r, value, style?)` | Drag sideways to scrub (shift for fine), double-click to type. Returns `{value, focus, changed}`. `style`: `{step, places, min, max, fine, tip, …}`. |
-| `color_field(fc, id, r, color, style?)` | A colour chip and its hex. Returns `{color, focus}`; `color` is nil unless a valid new one was entered. |
+| `commit_field(id, r, current, style?)` | One line of text that applies on Return or blur. Returns `{text, editing}`; `text` is nil except on the frame the edit applies. |
+| `number_field(id, r, value, style?)` | Drag sideways to scrub (shift for fine), double-click to type. Returns `{value, changed}`. `style`: `{step, places, min, max, fine, tip, …}`. |
+| `color_field(id, r, color, style?)` | A colour chip and its hex. Returns `{color}`; `color` is nil unless a valid new one was entered. |
 | `swatches(r, colors, current, style?)` | A row of `r.h`-square chips, `current` ringed. Returns the colour clicked, or nil. |
 | `stepper(r, options, current, style?)` | ‹ value ›: the arrows step through `options`, wrapping. Returns the chosen option. `style.labels` shows names in place of the values. |
 | `segmented(r, labels, index, style?)` | One of n as equal segments. Returns the new index. |
 | `dropdown(r, options, current, style?)` | A button that opens a menu of `options` under itself, on the popup layer. Returns the chosen option. `style.labels`, `style.placeholder`. |
 
 ```petal
-let res = number_field(fc, "opacity", rect(x, y, 64, 22), layer.opacity, {step: 0.01, places: 2, min: 0, max: 1})
-fc = res.focus
+let res = number_field("opacity", rect(x, y, 64, 22), layer.opacity, {step: 0.01, places: 2, min: 0, max: 1})
 if res.changed then set_opacity(res.value) end
 ```
 
@@ -615,7 +610,7 @@ if res.changed then set_opacity(res.value) end
 | `menu_state()`, `menu_item(label, enabled?)`, `menu_sep()` | The pieces of a context menu. |
 | `menu_show(m, x, y, tag)`, `menu_open_on_right_click(m, r, tag)`, `menu_close(m)` | Open and close it. |
 | `context_menu(m, items, style?)` | Draws an open menu and resolves a choice: `{menu, index, label, tag, rect}`. Modal while open. |
-| `menu_blocking(m)`, `menu_rect(m, items, style?)`, `menu_metrics(style?)` | Whether it is open, where it will be, and the numbers it is laid out with. |
+| `m.open`, `menu_rect(m, items, style?)`, `menu_metrics(style?)` | Whether it is open, where it will be, and the numbers it is laid out with. |
 | `popover(id, anchor, items, style?)` | A menu whose open state is the runtime's, by id: no record to thread. Under `anchor` (a rect: below it; a point: at it). Returns `{open, index, label, rect}`. |
 | `popover_open(id)`, `popover_close(id)`, `popover_shown(id)`, `popover_owner()` | Open it from the next frame, close it, whether it is open, and which one is (`""` for none). |
 
@@ -625,7 +620,9 @@ outside it, and that press reaches nothing underneath. So the press that
 opened a menu can't close it, and a menu shown every frame still works.
 While one is open, `shortcut(chord)` is quiet, and an Escape that closed it
 is not also the app's. `shortcut(chord, id)` answers for the open popover.
-`menu_blocking` is no longer needed to guard the rest of the UI.
+Widgets need no guard of their own while it is open. Code that reads the
+mouse itself (`mouse_pressed` and `point_in`) still stands down while
+`menu.open`.
 | `modal_state()`, `modal_open(m)`, `modal_close(m)` | A dialog's state. |
 | `modal(m, w, h, title, style?)` | Backdrop, chrome, Escape and click-outside. Returns `{modal, open, rect, content}`; draw the body into `content` when `open`. Everything drawn before it is inert while it is open. |
 | `modal_blocking(m)`, `modal_rect(w, h)`, `modal_update(m, r)`, `draw_modal_backdrop(style?)`, `draw_modal(r, title, style?)` | The pieces, for a dialog with its own layout. |

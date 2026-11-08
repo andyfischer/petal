@@ -42,8 +42,8 @@ Petal, with opinions `ui` deliberately does not take:
 | Lives in | a Rust crate, registered by the host | `.ptl` files, bundled in the runtime |
 | Cross-frame state | explicit records you keep (`list_state()`) | per-callsite `state` inside the component |
 | Click | on press | on **release inside**, so sliding off cancels |
-| Overlays | you guard your own input (`menu_blocking`) | the overlay **captures** input; callers need no guard |
-| Focus | a registry you thread and list | announced in draw order; Tab just works |
+| Overlays | you guard your own input (`if !m.open`) | the overlay **captures** input; callers need no guard |
+| Focus | held by the runtime; you list the Tab ring | announced in draw order; Tab just works |
 | Animation | a few widgets ease internally | every component, from one motion core |
 
 They compose: bloom draws through `ui`'s primitives and inherits its theme, so

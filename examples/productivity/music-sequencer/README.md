@@ -162,7 +162,7 @@ note.
 
 - `request_frame()` while playing or while a meter rings; `time()` deltas
   for the clock; `claim_key` for `cmd z`.
-- `context_menu` / `menu_show` / `menu_blocking`, `draw_polyline` for the
+- `context_menu` / `menu_show`, `draw_polyline` for the
   scope, `draw_rect_gradient_rounded` for the velocity bars, `mix` for every
   tint, `text_layout.draw_text_line` for centred labels.
 

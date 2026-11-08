@@ -19,9 +19,9 @@
 //!   demand. Its public items are re-exported from [`draw`].
 //! - the `ui` Petal module (Layer 1): interaction primitives written in Petal
 //!   (`hovered`, `clicked`, `button`, `list_update`, …), focus and shortcuts
-//!   (`shortcut`, `has_focus`, `focus_request`, and the older threaded
-//!   `focus_state`/`focused`/`focus_set`, `focus_next`/`focus_prev`,
-//!   `focus_update`) and the focus-aware `text_field` widget + gated
+//!   (`shortcut`, `has_focus`, `focus_owner`, `focus_request`,
+//!   `focus_next`/`focus_prev`, `focus_update`) and the focus-aware
+//!   `text_field` widget + gated
 //!   `list_update` built on it, registered with [`register_prelude`] as the
 //!   package `ui`, which a script reaches with `import ui`.
 //! - [`focus`]: who has the keyboard, decided once a frame by

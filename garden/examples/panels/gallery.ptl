@@ -15,7 +15,6 @@ import ui
 
 // ── State ─────────────────────────────────────────────────────────────────
 state tab = 0
-state fc = focus_state()
 state light = false
 state agree = true
 state notify = false
@@ -124,12 +123,10 @@ if tab == 0 then
   draw_text(spinner_glyph(), {x: right.x + 275, y: right.y + 33}, T.font_md, T.dim)
 
   label("TEXT FIELDS", x: right.x, y: right.y + 92)
-  let res = text_field(fc, id: "name", r: rect(right.x, right.y + 112, 220, 26), buf: name_buf)
-  fc = res.focus
+  let res = text_field(id: "name", r: rect(right.x, right.y + 112, 220, 26), buf: name_buf)
   name_buf = res.text
   if res.submitted then last_action = "submit: " ++ name_buf end
-  let res2 = text_field(fc, id: "filter", r: rect(right.x, right.y + 146, 220, 26), buf: filter_buf)
-  fc = res2.focus
+  let res2 = text_field(id: "filter", r: rect(right.x, right.y + 146, 220, 26), buf: filter_buf)
   filter_buf = res2.text
   draw_text("click to focus · arrows move the caret · alt-backspace", {x: right.x, y: right.y + 180}, T.font_sm, mix(T.dim, T.bg, t: 0.3))
 

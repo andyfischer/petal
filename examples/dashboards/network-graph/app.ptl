@@ -660,7 +660,6 @@ state cam = fit_cam(bounds_of(boot.px, boot.py, G.rad, for i in range(0, G.n) do
 state cam_to = {on: false, x: 0.0, y: 0.0, z: 1.0}
 state drag = {mode: "none", sx: 0.0, sy: 0.0, wx: 0.0, wy: 0.0, cx: 0.0, cy: 0.0, starts: [], id: -1, moved: false, shift: false, snap: {}}
 state menu = menu_state()
-state fc = focus_state()
 state query = ""
 state qsel = 0
 state clicks = 0          // every canvas press, for tests
@@ -677,20 +676,19 @@ let all_idx = range(0, n)
 let act = for i in all_idx do !contains(hidden, NODES[i].g) end
 sel = filter(sel, fn(i) -> act[i])
 
-let blocked = menu_blocking(menu)
+let blocked = menu.open
 
 // Search field: the logic half now, the pixels with the header.
 let field_r = rect(search_r.x + 30, search_r.y, search_r.w - 62, search_r.h)
-let was_typing = focused(fc, "search")
-let fres = text_field_update(fc, "search", field_r, query, {size: 13, font: "ui", inset: 0})
-fc = fres.focus
+let was_typing = has_focus("search")
+let fres = text_field_update("search", field_r, query, {size: 13, font: "ui", inset: 0})
 if fres.text != query then
   query = fres.text
   qsel = 0
 end
-let typing = focused(fc, "search")
+let typing = has_focus("search")
 if key_pressed("slash") && !was_typing && !blocked then
-  fc = focus_set(fc, "search")
+  focus_request("search")
 end
 
 let q = lower(query)
@@ -770,7 +768,7 @@ let pin_toggle = []           // nodes whose pin flips this frame
 
 if typing then
   if key_pressed("escape") then
-    if query != "" then query = "" else fc = focus_clear(fc) end
+    if query != "" then query = "" else focus_request(nil) end
   end
   if key_pressed("down") then qsel = min(qsel + 1, max(0, drop_n - 1)) end
   if key_pressed("up") then qsel = max(qsel - 1, 0) end
@@ -778,7 +776,7 @@ if typing then
     let pick = matches[clamp(qsel, 0, len(matches) - 1)]
     sel = [pick]
     want_focus = pick
-    fc = focus_clear(fc)
+    focus_request(nil)
   end
 end
 
@@ -921,7 +919,7 @@ if drag.mode == "none" && !ui_block then
     drag = {...drag, mode: "pan", sx: float(mx), sy: float(my), cx: cam.x, cy: cam.y, moved: false, shift: false}
   elsif over_canvas && mouse_pressed(0) then
     clicks = clicks + 1
-    if typing then fc = focus_clear(fc) end
+    if typing then focus_request(nil) end
     if hit >= 0 then
       if mod_shift() then
         sel = toggle_in(sel, hit)
@@ -1884,7 +1882,7 @@ if query != "" then
   txt_c("×", key_r.x + 10, key_r.y + 1, ts(14, if hov then TEXT else FAINT end))
   if hov && mouse_pressed(0) then
     query = ""
-    fc = focus_clear(fc)
+    focus_request(nil)
   end
 else
   draw_rect_rounded(key_r, 5, PANEL)
@@ -1893,7 +1891,7 @@ else
 end
 // a press anywhere outside the field and its dropdown lets go of the keyboard
 if typing && mouse_pressed(0) && !point_in(mx, my, search_r) && !over_drop then
-  fc = focus_clear(fc)
+  focus_request(nil)
 end
 
 // ── Draw: status bar ─────────────────────────────────────────────────────
@@ -1953,7 +1951,7 @@ if drop_n > 0 then
       sel = [i]
       cam_to = focus_target(px, py, i, z)
       auto_fit = false
-      fc = focus_clear(fc)
+      focus_request(nil)
     end
   end
 end

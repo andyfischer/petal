@@ -48,11 +48,9 @@ fn hex_round_trips_and_rejects_what_names_no_colour() {
 
 #[test]
 fn text_field_reports_blur_and_escape() {
-    let mut ui = ui("state fc = focus_state()\n\
-                     state blurs = 0\n\
+    let mut ui = ui("state blurs = 0\n\
                      state cancels = 0\n\
-                     let res = text_field(fc, \"f\", {x: 10, y: 10, w: 200, h: 24}, \"x\")\n\
-                     fc = res.focus\n\
+                     let res = text_field(\"f\", {x: 10, y: 10, w: 200, h: 24}, \"x\")\n\
                      if res.blurred then blurs += 1 end\n\
                      if res.cancelled then cancels += 1 end");
     click(&mut ui, 20, 20);
@@ -66,11 +64,9 @@ fn text_field_reports_blur_and_escape() {
 
 // ── commit_field ────────────────────────────────────────────────────────────
 
-const COMMIT: &str = "state fc = focus_state()\n\
-                      state name = \"Layer\"\n\
+const COMMIT: &str = "state name = \"Layer\"\n\
                       state applied = 0\n\
-                      let res = commit_field(fc, \"name\", {x: 10, y: 10, w: 200, h: 24}, name)\n\
-                      fc = res.focus\n\
+                      let res = commit_field(\"name\", {x: 10, y: 10, w: 200, h: 24}, name)\n\
                       if res.text != nil then\n\
                         name = res.text\n\
                         applied += 1\n\
@@ -106,10 +102,8 @@ fn commit_field_applies_on_blur_and_reverts_on_escape() {
 
 // ── number_field ────────────────────────────────────────────────────────────
 
-const NUMBER: &str = "state fc = focus_state()\n\
-                      state v = 10.0\n\
-                      let res = number_field(fc, \"n\", {x: 10, y: 10, w: 80, h: 24}, v, {step: 0.5, places: 1, min: 0, max: 50})\n\
-                      fc = res.focus\n\
+const NUMBER: &str = "state v = 10.0\n\
+                      let res = number_field(\"n\", {x: 10, y: 10, w: 80, h: 24}, v, {step: 0.5, places: 1, min: 0, max: 50})\n\
                       v = res.value";
 
 #[test]
@@ -140,10 +134,8 @@ fn number_field_scrubs_by_step_per_pixel_and_clamps() {
 fn number_field_scrubs_without_bounds() {
     // A style with no `min` or `max`: the clamp must not index them (a
     // missing key is an error), which broke every editor's scrubbing.
-    let mut ui = ui("state fc = focus_state()\n\
-                     state v = 10.0\n\
-                     let res = number_field(fc, \"n\", {x: 10, y: 10, w: 80, h: 24}, v, {step: 1, places: 0})\n\
-                     fc = res.focus\n\
+    let mut ui = ui("state v = 10.0\n\
+                     let res = number_field(\"n\", {x: 10, y: 10, w: 80, h: 24}, v, {step: 1, places: 0})\n\
                      v = res.value");
     ui.mouse_move(40, 20);
     ui.mouse_down(buttons::LEFT);
@@ -180,11 +172,9 @@ fn number_field_types_on_double_click() {
 
 #[test]
 fn color_field_applies_a_valid_hex_only() {
-    let mut ui = ui("state fc = focus_state()\n\
-                     state c = {r: 0, g: 0, b: 0}\n\
+    let mut ui = ui("state c = {r: 0, g: 0, b: 0}\n\
                      state hex = \"\"\n\
-                     let res = color_field(fc, \"c\", {x: 10, y: 10, w: 160, h: 24}, c)\n\
-                     fc = res.focus\n\
+                     let res = color_field(\"c\", {x: 10, y: 10, w: 160, h: 24}, c)\n\
                      if res.color != nil then c = res.color end\n\
                      hex = color_to_hex(c)");
     click(&mut ui, 100, 20);
@@ -275,10 +265,8 @@ fn scroll_keys_move_by_line_page_and_end() {
 
 #[test]
 fn commit_field_with_start_takes_the_keyboard_when_it_shows() {
-    let mut ui = ui("state fc = focus_state()\n\
-                     state name = \"a\"\n\
-                     let res = commit_field(fc, \"rename\", {x: 10, y: 10, w: 200, h: 24}, name, {start: true})\n\
-                     fc = res.focus\n\
+    let mut ui = ui("state name = \"a\"\n\
+                     let res = commit_field(\"rename\", {x: 10, y: 10, w: 200, h: 24}, name, {start: true})\n\
                      if res.text != nil then name = res.text end");
     ui.text("b").unwrap();
     ui.key("return").unwrap();
@@ -287,10 +275,8 @@ fn commit_field_with_start_takes_the_keyboard_when_it_shows() {
 
 #[test]
 fn color_field_shows_a_nil_colour_empty() {
-    let mut ui = ui("state fc = focus_state()\n\
-                     state hex = \"none\"\n\
-                     let res = color_field(fc, \"c\", {x: 10, y: 10, w: 160, h: 24}, nil)\n\
-                     fc = res.focus\n\
+    let mut ui = ui("state hex = \"none\"\n\
+                     let res = color_field(\"c\", {x: 10, y: 10, w: 160, h: 24}, nil)\n\
                      if res.color != nil then hex = color_to_hex(res.color) end");
     click(&mut ui, 100, 20);
     ui.text("#123").unwrap();
@@ -311,12 +297,15 @@ fn swatches_leave_out_chips_that_do_not_fit() {
 
 #[test]
 fn text_area_select_all_selects_everything_on_that_frame() {
-    let mut ui = ui("state fc = focus_set(focus_state(), \"t\")\n\
+    let mut ui = ui("state asked = false\n\
+                     if !asked then\n\
+                       focus_request(\"t\")\n\
+                       asked = true\n\
+                     end\n\
                      state buf = \"Your text\"\n\
                      state fresh = true\n\
-                     let res = text_area(fc, \"t\", {x: 10, y: 10, w: 200, h: 80}, buf, {select_all: fresh})\n\
+                     let res = text_area(\"t\", {x: 10, y: 10, w: 200, h: 80}, buf, {select_all: fresh})\n\
                      fresh = false\n\
-                     fc = res.focus\n\
                      buf = res.text");
     ui.text("Hi").unwrap();
     assert_eq!(ui.state_string("buf").as_deref(), Some("Hi"), "typing replaced the selected text");

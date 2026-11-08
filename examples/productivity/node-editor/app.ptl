@@ -570,7 +570,7 @@ claim_key("a", "cmd")
 
 let z = cam.zoom
 let over_canvas = point_in(px: mx, py: my, r: canvas)
-let blocked = menu_blocking(menu)
+let blocked = menu.open
 
 let raw_dt = dt()
 let step = min(raw_dt, 0.1)

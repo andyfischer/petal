@@ -495,8 +495,8 @@ mod tests {
             "text_field_update/4",
             "draw_text_field/3",
             "draw_text_field/4",
+            "text_field/3",
             "text_field/4",
-            "text_field/5",
         ] {
             assert!(
                 exports.iter().any(|e| e == wanted),

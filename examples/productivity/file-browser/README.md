@@ -152,7 +152,7 @@ recursion (`tree_walk`), raw strings for the seed documents, and three
 imported modules.
 
 Host and prelude: `text_field_update` for the rename editor and the filter
-box (drawn by the app), `context_menu` / `menu_show` / `menu_blocking`,
+box (drawn by the app), `context_menu` / `menu_show`,
 `claim_key`, `click_count`, modifiers on mouse and keys, `clip_push` with a
 rounded mask, `draw_shadow`, gradients, `fill_polygon`, `draw_polyline`,
 `text_layout` for every label, `text_range_rects`, `request_frame`.

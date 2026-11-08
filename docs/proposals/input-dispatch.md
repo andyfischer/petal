@@ -233,12 +233,11 @@ before their cover. `speculate` is not needed.
   - `menu_blocking` still says whether a menu is open. Apps no longer need
     it as a guard, and Phase 4 removes it from petal-design. The modal
     dialog still has its own `at` skip.
-  - petal-design's GUI scenarios were only partly checked on this commit.
-    The toolbar menu scenario passes. Others (Cmd-click, double-click,
-    drags) failed, and the window host sometimes crashed on an unknown SDL
-    event (0x158). They failed in the same way on the Phase 2 build, which
-    had passed them earlier, so the cause looks like the machine, not
-    this change. Re-run them before Phase 4.
+  - petal-design's GUI scenarios all pass on this commit (39 of 39). An
+    earlier run failed because the window was clamped below 1440x900 on a
+    smaller screen, which moved the canvas off the scripted click points.
+  - Not yet fixed: the SDL window host aborts on an event type the `sdl2`
+    crate doesn't know (0x158, from SDL3 through sdl2-compat).
 - **Phase 4: port petal-design.** Delete its `fc` threading and `TYPING`,
   and keep its GUI scenarios green. As with D2's kanban rule: if one real
   editor does not port cleanly, stop and revise before Phase 5.

@@ -2532,7 +2532,21 @@ impl Parser {
                 let value = self.parse_expr()?;
                 fields.push(crate::ast::computed_record_field(key, value));
             } else {
+                let key_pos = self.pos;
                 let key = self.expect_field_name()?;
+                if matches!(self.peek(), Token::Comma | Token::RBrace | Token::Newline) {
+                    // `{type: "rect", invert}`: a bare key. An element
+                    // attribute written bare is `true`, and in JS `{invert}`
+                    // means `{invert: invert}`, so the author meant one of
+                    // those. Petal has neither shorthand; name both spellings.
+                    return Err(self.error_at(
+                        key_pos,
+                        format!(
+                            "Record field `{key}` needs a value. Write `{key}: true` \
+                             (or `{key}: {key}` for the variable); records have no shorthand"
+                        ),
+                    ));
+                }
                 self.expect(&Token::Colon)?;
                 let value = self.parse_expr()?;
                 fields.push(RecordField::Named(key, value));
@@ -3039,7 +3053,22 @@ impl Parser {
                 }
                 Token::JsxText(text) => {
                     self.advance();
-                    children.push(JsxChild::Text(text));
+                    // Two text runs in a row only happen when a comment line
+                    // sat between them. Join them as if the line were not
+                    // there: the line breaks around it collapse to one space.
+                    if let Some(JsxChild::Text(prev)) = children.last_mut()
+                        && matches!(self.tokens[self.pos - 2], Token::JsxText(_))
+                    {
+                        prev.push(' ');
+                        prev.push_str(&text);
+                    } else {
+                        children.push(JsxChild::Text(text));
+                    }
+                }
+                Token::LBrace if matches!(self.peek_at(1), Token::RBrace) => {
+                    // `{}` or `{/* comment */}`: an empty hole is no child.
+                    self.advance();
+                    self.advance();
                 }
                 Token::LBrace => {
                     self.advance();

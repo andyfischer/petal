@@ -12,7 +12,7 @@
 //! [`SourceSpan`] with char offsets, and the lexer advances a single cursor
 //! through the source, so tokens appear in strictly non-decreasing start order.
 //! Any characters that fall *between* one token's end and the next token's
-//! start — whitespace, `//` comments, and the odd interpolation/JSX delimiter —
+//! start — whitespace, `//` and `/* */` comments, and the odd interpolation/JSX delimiter —
 //! are **trivia**. We recover them purely from the spans plus the original
 //! source, without changing the tokenizer.
 //!
@@ -46,6 +46,9 @@ pub enum TriviaKind {
     /// A `//` line comment. `text` excludes the terminating newline, which is
     /// lexed as a significant `Newline` token, not trivia.
     LineComment,
+    /// A `/* … */` block comment, delimiters included. It may span lines; the
+    /// line breaks inside it are part of the comment, not `Newline` tokens.
+    BlockComment,
     /// Characters that landed in an inter-token gap despite not being
     /// whitespace or a comment — only possible if a token's span fails to cover
     /// its own source text. With the lexer's tiling spans this never occurs; it
@@ -118,7 +121,7 @@ pub fn leading_trivia(source: &str, spans: &[SourceSpan]) -> Vec<Vec<Trivia>> {
 }
 
 /// Split a gap into typed trivia runs. With the lexer's tiling spans, gaps
-/// contain only whitespace and `//` comments; the `Other` arm is a sentinel
+/// contain only whitespace and `//` and `/* */` comments; the `Other` arm is a sentinel
 /// that fires only if some token's span stops covering its own source text.
 fn classify(gap: &[char], start_offset: u32) -> Vec<Trivia> {
     let mut out = Vec::new();
@@ -136,10 +139,17 @@ fn classify(gap: &[char], start_offset: u32) -> Vec<Trivia> {
                 i += 1;
             }
             TriviaKind::LineComment
+        } else if ch == '/' && gap.get(i + 1) == Some(&'*') {
+            i += 2;
+            while i < gap.len() && !(gap[i] == '*' && gap.get(i + 1) == Some(&'/')) {
+                i += 1;
+            }
+            i = (i + 2).min(gap.len());
+            TriviaKind::BlockComment
         } else {
             while i < gap.len()
                 && !is_ws(gap[i])
-                && !(gap[i] == '/' && gap.get(i + 1) == Some(&'/'))
+                && !(gap[i] == '/' && matches!(gap.get(i + 1), Some(&'/') | Some(&'*')))
             {
                 i += 1;
             }
@@ -183,6 +193,8 @@ mod tests {
         assert_round_trips("x = 1\n\n\n// trailing comment\n");
         assert_round_trips("let x = 1 // inline comment\nlet y = 2\n");
         assert_round_trips("// leading\n// two lines\nlet x = 1\n");
+        assert_round_trips("/* block\n   comment */ let x = 1 /* in */ + 2\n");
+        assert_round_trips("<g>\n  // c\n  hi\n  /* d */ {/* e */}\n</g>\n");
         assert_round_trips("x = 1;y = 2\n"); // semicolon separators
         assert_round_trips("let s = \"hi\"\nlet r = [1, 2, 3]\n");
         assert_round_trips("no_newline_at_eof");
@@ -217,6 +229,26 @@ mod tests {
             .find(|t| t.kind == TriviaKind::LineComment)
             .expect("a line comment should be captured");
         assert_eq!(comment.text, "// hello");
+    }
+
+    #[test]
+    fn captures_block_comments_as_trivia() {
+        let src = "let x = 1 /* a\n b */ + 2 // c\n<g>\n  // d\n</g>\n";
+        let trivia = leading_trivia(src, &spans_of(src));
+        let kinds: Vec<(&TriviaKind, &str)> = trivia
+            .iter()
+            .flatten()
+            .filter(|t| t.kind != TriviaKind::Whitespace)
+            .map(|t| (&t.kind, t.text.as_str()))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (&TriviaKind::BlockComment, "/* a\n b */"),
+                (&TriviaKind::LineComment, "// c"),
+                (&TriviaKind::LineComment, "// d"),
+            ]
+        );
     }
 
     #[test]

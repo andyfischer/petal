@@ -349,3 +349,11 @@ fn mangle_indentation(src: &str) -> Option<String> {
     }
     Some(out)
 }
+
+#[test]
+fn a_block_comment_keeps_its_inner_lines_as_written() {
+    let src = "fn f()\n/* first\n     second\n\n\n   third */\nlet x = 1 /* in */\nend\n";
+    let want = "fn f()\n  /* first\n     second\n\n\n   third */\n  let x = 1 /* in */\nend\n";
+    assert_eq!(fmt(src), want);
+    assert_eq!(fmt(want), want);
+}

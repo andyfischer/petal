@@ -246,6 +246,14 @@ impl Directives {
                 *p = true;
             }
         }
+        // The lines a `/* … */` comment runs onto are its text, not layout,
+        // so they keep their indentation and their blank lines, as the inside
+        // of a raw string does.
+        for line in block_comment_lines(source)? {
+            if let Some(p) = protected.get_mut(line) {
+                *p = true;
+            }
+        }
         Ok(Directives {
             ignore_file,
             protected,
@@ -258,6 +266,29 @@ pub(crate) fn directive_word(comment: &str) -> Option<&str> {
     let body = comment.strip_prefix("//")?.trim_start();
     let word = body.split(|c: char| c.is_whitespace() || c == ':').next()?;
     word.starts_with("petal-").then_some(word)
+}
+
+/// The 0-based lines that begin inside a multi-line `/* … */` comment: every
+/// line of one but its first.
+fn block_comment_lines(source: &str) -> Result<Vec<usize>, String> {
+    let mut lexer = Lexer::new(source);
+    lexer.tokenize()?;
+    let mut line_starts = vec![0usize];
+    for (i, c) in source.chars().enumerate() {
+        if c == '\n' {
+            line_starts.push(i + 1);
+        }
+    }
+    let line_of = |offset: usize| line_starts.partition_point(|&s| s <= offset) - 1;
+    let mut out = Vec::new();
+    for t in lexer.token_leading_trivia.iter().flatten() {
+        if t.kind == crate::trivia::TriviaKind::BlockComment {
+            let first = line_of(t.start as usize);
+            let breaks = t.text.matches('\n').count();
+            out.extend(first + 1..=first + breaks);
+        }
+    }
+    Ok(out)
 }
 
 /// Every `//` comment in `source` as (0-based line, text, is it alone on its

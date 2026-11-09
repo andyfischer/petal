@@ -61,14 +61,15 @@ facade-ambiguity messages name the right module. What is left there is the
 
 ## 5. Goal-based edits cannot reach element children
 
-[images-followup.md](images-followup.md) items 1, 3 and 5. `literal_edit`
+[images-followup.md](images-followup.md) items 1 and 3. `literal_edit`
 takes `.attr` on an element but no `children[j]` step
 (`core/src/literal_edit.rs`), so structural edits inside a `<group>` rewrite
 the whole list. That loses the comments and hand formatting between tags.
 Related:
 
 - `StaticValue::to_source` pads records as `{ x: 1 }`, unlike the files.
-- A `//` line inside element children becomes a text child.
+- A `//` line inside element children is a comment now (item 5, done
+  2026-11-09); a rewriter that edits siblings must keep such comments.
 
 Together these make a program edited by its own GUI drift from how it was
 written, which is the project's core promise.

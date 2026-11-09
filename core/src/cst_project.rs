@@ -1447,20 +1447,41 @@ impl Projector {
         let mut tag = None;
         let mut props = Vec::new();
         let mut children = Vec::new();
+        // Whether the last non-trivia element was a text run. Two runs in a
+        // row had a comment line between them; the parser joins them with a
+        // space (see `Parser::parse_jsx_element`), and so does this.
+        let mut after_text = false;
         for el in node.children() {
             match el {
                 SyntaxElement::Token(t) => match t.token() {
                     // The first tag name is the element's tag; the second (the
                     // closing tag) is validated by the parser and dropped.
-                    Some(Token::JsxTagName(name)) if tag.is_none() => tag = Some(name.clone()),
-                    Some(Token::JsxText(text)) => children.push(JsxChild::Text(text.clone())),
-                    _ => {}
+                    Some(Token::JsxTagName(name)) if tag.is_none() => {
+                        tag = Some(name.clone());
+                        after_text = false;
+                    }
+                    Some(Token::JsxText(text)) => {
+                        match children.last_mut() {
+                            Some(JsxChild::Text(prev)) if after_text => {
+                                prev.push(' ');
+                                prev.push_str(text);
+                            }
+                            _ => children.push(JsxChild::Text(text.clone())),
+                        }
+                        after_text = true;
+                    }
+                    Some(_) => after_text = false,
+                    None => {}
                 },
                 SyntaxElement::Node(n) if n.kind() == SyntaxKind::JsxAttr => {
                     props.push(self.jsx_attr(&n)?);
+                    after_text = false;
                 }
                 // Child content: a nested element or a `{expr}` hole.
-                SyntaxElement::Node(n) => children.push(JsxChild::Expr(self.expr(&n)?)),
+                SyntaxElement::Node(n) => {
+                    children.push(JsxChild::Expr(self.expr(&n)?));
+                    after_text = false;
+                }
             }
         }
         Ok(Expr {

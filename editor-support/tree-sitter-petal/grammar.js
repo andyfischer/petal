@@ -677,7 +677,11 @@ module.exports = grammar({
 
     jsx_expression: $ => seq('{', optional($._expression), '}'),
 
-    jsx_text: _ => token(prec(-1, /[^<>{}]+/)),
+    // One line of text at a time: a line in element children whose first
+    // non-blank characters are `//` or `/*` is a comment, and a line break
+    // between two runs of text is plain whitespace. Text that starts a line
+    // loses to a comment at the same spot (it has the lower precedence).
+    jsx_text: _ => token(prec(-1, /[^<>{}\n]+/)),
 
     _jsx_child: $ => choice(
       $.jsx_element,
@@ -742,6 +746,10 @@ module.exports = grammar({
       '"""',
     )),
 
-    comment: _ => token(seq('//', /[^\n]*/)),
+    // `//` to the end of the line, or a `/* … */` block (which does not nest).
+    comment: _ => token(choice(
+      seq('//', /[^\n]*/),
+      seq('/*', /[^*]*\*+([^/*][^*]*\*+)*/, '/'),
+    )),
   },
 });

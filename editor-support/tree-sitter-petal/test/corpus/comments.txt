@@ -1,0 +1,47 @@
+================================================================================
+Line and block comments
+================================================================================
+
+/* a block
+   comment */
+let x = 1 /* inline */ + 2 // trailing
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (comment)
+  (let_declaration
+    name: (identifier)
+    value: (binary_expression
+      left: (integer)
+      (comment)
+      right: (integer)))
+  (comment))
+
+================================================================================
+Comment lines inside element children
+================================================================================
+
+<group>
+  // the photo
+  <image />
+  /* a block */
+  Hello {/* inline */}
+</group>
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (jsx_element
+    (jsx_opening_element
+      name: (jsx_open_tag))
+    (comment)
+    (jsx_element
+      (jsx_self_closing_element
+        name: (jsx_open_tag)))
+    (comment)
+    (jsx_text)
+    (jsx_expression
+      (comment))
+    (jsx_closing_element
+      name: (jsx_close_tag))))

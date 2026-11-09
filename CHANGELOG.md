@@ -155,6 +155,21 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **Block comments**, `/* … */`. They can sit inside a line or span several,
+  and do not nest. `petal fmt` keeps the inside of one as written, and the
+  tree-sitter grammar (Garden's highlighter) knows them
+  ([syntax overview](docs/syntax/overview.md#comments)).
+- **Comments in element children.** A line in element children whose first
+  non-blank characters are `//` or `/*` is now a comment; before, it was a
+  text child. Anywhere else in the children, `{/* … */}` is a comment, and an
+  empty `{}` hole is no child. Text that really starts a line with `//` is
+  written `{"//"}`. Across the repo and the downstream projects this changes
+  one file, `petal-creative/petal-design/parity/cases.ptl`, whose two
+  comment lines inside `<vstack>` were becoming text
+  ([language guide](docs/language-guide.md#jsx-like-elements)).
+- A record field written without a value (`{type: "rect", invert}`) now
+  says so and names the fix (`invert: true`, or `invert: invert`) instead of
+  "Expected ':'". There is still no shorthand.
 - C bridge: **checked emitters**, `pb_vm_register_checked_emitter`
   (`petal::Vm::checked_emitter`). The host callback runs in the call and
   may fail it (reported at the script's call), then the call pushes the

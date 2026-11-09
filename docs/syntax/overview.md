@@ -14,13 +14,22 @@ the last expression of a block or function body is its implicit result
 
 ### Comments
 
-Line comments only, introduced by `//` and running to end of line. There is no
-block-comment form.
+A line comment starts with `//` and runs to the end of the line. A block
+comment is `/* … */`; it can sit inside a line or span several, and does not
+nest. Comments are ignored by the compiler and kept by `petal fmt`, which
+leaves the inside of a block comment as written.
 
 ```petal
 let x = 1   // trailing comment
 // whole-line comment
+let y = x /* inline */ + 2
+/* a comment
+   over two lines */
 ```
+
+Inside element children, a line whose first non-blank characters are `//` or
+`/*` is a comment too; elsewhere in the children, write `{/* … */}`. See
+[JSX-like elements](#jsx-like-elements).
 
 ### Identifiers and keywords
 
@@ -485,7 +494,8 @@ Builds a tree-shaped `element` value for a host to render. Attributes are
 `name={expr}` or `name="literal"`, a bare `name` is `name={true}`, and an open
 tag may put them on separate lines; `{expr}` embeds a child expression; text
 between tags is a string child (whitespace at line breaks collapses, as in
-React); `<Tag />` self-closes. See
+React); a line starting with `//` or `/*` is a comment, and `{/* … */}` is
+one anywhere in the children; `<Tag />` self-closes. See
 [JSX-like Elements](../language-guide.md#jsx-like-elements).
 
 ## Types (optional annotations)

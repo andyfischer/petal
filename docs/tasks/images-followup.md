@@ -1,7 +1,7 @@
 # petal-images follow-up: things to fix in Petal
 
-Status: 2026-10-23, re-checked against `1064dcd` on 2026-11-02: every
-item below is still open. These came out of building
+Status: 2026-10-23, re-checked against `1064dcd` on 2026-11-02. Items 5
+and 6 were done on 2026-11-09 and item 2 in part; the rest are open. These came out of building
 [`petal-creative/petal-images`](../../../petal-creative/petal-images), a layered
 image editor whose documents are `.ptl` scripts of JSX-style elements
 (`<image>`, `<text>`, `<group>`…) edited by the GUI through goal-based literal
@@ -90,41 +90,19 @@ Action:
       `span_to_byte_range(src, span)`. This ties in with the code-point
       switch ([String offsets](../Builtins.md#string-offsets)).
 
-## 5. A `//` line inside element children becomes text
+## 5. A `//` line inside element children becomes text (done)
 
-```petal
-<group>
-  // the photo
-  <image src="a.png" />
-</group>
-```
+Done 2026-11-09, both options: a line in element children whose first
+non-blank characters are `//` or `/*` is a comment, and `{/* … */}` (with
+`/* … */` block comments in code generally) is one anywhere. Comments are
+trivia between the children's tokens, so a rewriter that splices by span
+keeps them. Item 1's rewriter still has to keep them when it edits siblings.
 
-`// the photo` becomes a text child of the group. JSX does the same, but
-`//` is a comment everywhere else in Petal, and Petal has no `{/* */}` form.
-Authors comment their layer stacks constantly.
+## 6. Record fields have no shorthand for `true` (done)
 
-Action:
-- [ ] Decide on one of these:
-  - Treat a line in element children whose first non-blank characters are
-    `//` as a comment. Text that really starts with `//` would need `{"//"}`.
-  - Add `{/* … */}` and say in the error or docs that it's the way to comment
-    inside an element.
-- [ ] Either way, the rewriter has to keep these comments when it edits
-      siblings (see item 1).
-
-## 6. Record fields have no shorthand for `true`
-
-An element attribute written bare is `true` (`<text uppercase>`), but
-`mask={{type: "rect", invert}}` fails to parse with "Expected ':'".
-Documents mix attributes and option records all the time, so authors trip on
-the difference.
-
-Action:
-- [ ] At least, replace the parse error with one that names the fix: "record
-      fields need a value; did you mean `invert: true`?"
-- [ ] Decide whether `{invert}` should mean `{invert: true}` inside element
-      attributes only. JS readers would expect `{invert: invert}`, so a clear
-      error may be the better choice.
+Done 2026-11-09: no shorthand. `{type: "rect", invert}` now fails with
+"Record field `invert` needs a value. Write `invert: true` (or
+`invert: invert` for the variable); records have no shorthand".
 
 ## 7. A stale installed CLI is hard to spot
 

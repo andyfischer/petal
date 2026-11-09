@@ -534,6 +534,10 @@ impl Lexer {
                 self.skip_line_comment();
                 continue;
             }
+            if ch == '/' && self.peek_next() == Some('*') {
+                self.skip_block_comment()?;
+                continue;
+            }
 
             // Handle newlines (top-level only, not inside interpolation)
             match ch {
@@ -869,6 +873,36 @@ impl Lexer {
         }
     }
 
+    /// Skip a `/* … */` comment, the cursor on its `/`. Block comments do not
+    /// nest (as in JS and C), and the line breaks inside one are not
+    /// significant: the comment as a whole is trivia, like a `//` comment
+    /// without its newline.
+    fn skip_block_comment(&mut self) -> Result<(), String> {
+        let (line, col) = (self.line, self.col);
+        self.advance_n(2);
+        while self.pos < self.input.len() {
+            if self.input[self.pos] == '*' && self.peek_next() == Some('/') {
+                self.advance_n(2);
+                return Ok(());
+            }
+            self.advance_char();
+        }
+        Err(format!(
+            "Unterminated block comment: `/*` has no closing `*/` [line {}, column {}]",
+            line, col
+        ))
+    }
+
+    /// Whether the cursor is the first non-blank character on its line. In
+    /// element children a `//` or `/*` there starts a comment rather than text.
+    fn at_line_start(&self) -> bool {
+        self.input[..self.pos]
+            .iter()
+            .rev()
+            .take_while(|&&c| c != '\n')
+            .all(|&c| c == ' ' || c == '\t' || c == '\r')
+    }
+
     fn read_string(&mut self) -> Result<(), String> {
         self.read_string_inner(false)
     }
@@ -1173,6 +1207,10 @@ impl Lexer {
                 let start = self.current_pos();
                 self.advance_char();
                 self.push_token(Token::LBrace, start);
+            } else if ch == '/' && self.peek_next() == Some('*') {
+                // `{/* … */}` is how a comment goes inline in element
+                // children; a hole may hold nothing but one.
+                self.skip_block_comment()?;
             } else if skip_newlines && (ch == '\n' || ch == '\r') {
                 self.advance_char();
                 if ch == '\r' && self.pos < self.input.len() && self.input[self.pos] == '\n' {
@@ -1263,6 +1301,22 @@ impl Lexer {
                         text.push(ch);
                         self.advance_char();
                     }
+                }
+                '/' if matches!(self.peek_next(), Some('/') | Some('*'))
+                    && self.at_line_start() =>
+                {
+                    // A line in element children that starts with `//` or
+                    // `/*` is a comment, as it is everywhere else in Petal.
+                    // Text that really starts that way is written `{"//"}`.
+                    // The comment is trivia between two text runs; the parser
+                    // joins the runs back up (see `parse_jsx_element`).
+                    self.flush_jsx_text(&mut text, run_start);
+                    if self.peek_next() == Some('/') {
+                        self.skip_line_comment();
+                    } else {
+                        self.skip_block_comment()?;
+                    }
+                    return Ok(());
                 }
                 '{' => {
                     // Expression hole
@@ -1641,6 +1695,37 @@ mod tests {
     fn lex_skips_comments() {
         let tokens = tokenize("42 // this is a comment\n7");
         assert_eq!(tokens, vec![Token::Int(42), Token::Int(7)]);
+    }
+
+    #[test]
+    fn lex_skips_block_comments() {
+        let tokens = tokenize("42 /* one */ + /* two\nlines */ 7");
+        assert_eq!(tokens, vec![Token::Int(42), Token::Plus, Token::Int(7)]);
+        // The line break inside a block comment is not a `Newline` token.
+        let mut lexer = Lexer::new("1 /*\n*/ 2");
+        lexer.tokenize().unwrap();
+        assert!(!lexer.tokens.contains(&Token::Newline));
+    }
+
+    #[test]
+    fn lex_comment_lines_in_element_children() {
+        let tokens = tokenize("<g>\n  // c\n  hi\n  /* d */\n  {/* e */}</g>");
+        assert_eq!(
+            tokens,
+            vec![
+                Token::JsxOpenStart,
+                Token::JsxTagName("g".into()),
+                Token::Gt,
+                Token::JsxText("hi".into()),
+                Token::LBrace,
+                Token::RBrace,
+                Token::JsxCloseStart,
+                Token::JsxTagName("g".into()),
+            ]
+        );
+        // Not first on its line: still text.
+        let tokens = tokenize("<g>a // b</g>");
+        assert!(tokens.contains(&Token::JsxText("a // b".into())));
     }
 
     #[test]

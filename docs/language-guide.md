@@ -2433,6 +2433,22 @@ let page = <div class="root">
   is therefore not a child; write `<br />` (or `{"\n"}`) where one should be.
 - Self-closing tags use `<Tag />`.
 - `{expr}` embeds a Petal expression as a child.
+- A line in the children whose first non-blank characters are `//` or `/*`
+  is a comment, not text, as it is everywhere else in Petal. Anywhere else in
+  the children, write the comment in a hole: `{/* … */}`. Text that really
+  starts a line with `//` is written `{"//"}`. A comment line inside a run of
+  text drops out as if it were not there, so the lines around it still join
+  with one space.
+
+  ```petal
+  let card = <group>
+      // the photo
+      <image src="a.png" />
+      /* the caption,
+         set in the brand font */
+      <text>Summer {/* TODO: year */} sale</text>
+  </group>
+  ```
 
 Elements are runtime values of type `element`, with the fields `tag` (a
 string), `props` (a record of the attributes, in order) and `children` (a

@@ -426,11 +426,13 @@ that host has been updated.
   round-trips), the unit tests in `parse.rs`, `source_diff.rs`,
   `static_value.rs`, `direct_manipulation.rs` and the fuzzers, the C bridge's
   tests (Cheesecake reaches `config let` through them until Phase 4),
-  Garden's app tests (`garden-app` is not rebuilt for this), and
+  Garden's app tests (`garden-app` is not rebuilt for this), the
+  desktop-SDL timeline test (it needs SDL to build), and
   `a_tunable_config_is_set_by_name_without_a_recompile` in `hot_reload.rs`.
 - **One difference found.** `static_observe.rs`'s
-  `a_rebuild_put_off_keeps_its_log_with_its_values` stays on `config let K
-  = 2`. With `let K = tunable(2)`, a zero-threshold debounce defers `K`'s
+  `a_rebuild_put_off_keeps_its_log_with_its_values` and `static_reload.rs`'s
+  `DRAG` fixture (the two debounce tests) stay on `config let K = 2`. With
+  `let K = tunable(2)`, a zero-threshold debounce defers `K`'s
   own slot, because `tunable(2)` is a native call where `config let`'s `2`
   is a literal patched in place. With a real threshold the one-call slot is
   never slow enough to defer, so this is a cost, not a wrong value; it is

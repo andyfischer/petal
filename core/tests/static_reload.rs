@@ -698,8 +698,11 @@ print(defs(), bake(\"x\"), get G, get count, get last, OTHER)
     assert_eq!(caches(&report), []);
 }
 
+// Kept in the deprecated `config let` form: `tunable(2)` is still a native
+// call, so a zero-threshold debounce would defer `K`'s own slot as well
+// (docs/tasks/lifecycle-annotation-functions-refactor.md, Phase 3).
 const DRAG: &str = "\
-let K = tunable(2)
+config let K = 2
 let BIG = map([1, 2, 3, 4], fn(i) i * K end)
 let OTHER = [1, 2, 3]
 state n = 0
@@ -1243,7 +1246,7 @@ fn review_a_reload_after_a_config_value_was_set() {
     let edits = [
         DRAG.replace("n = n + 1", "n = n + 2"),
         DRAG.replace("[1, 2, 3]\n", "[1, 2, 3, 4]\n"),
-        DRAG.replace("let K = tunable(2)", "let K = tunable(9)"),
+        DRAG.replace("config let K = 2", "config let K = 9"),
         DRAG.replace("i * K", "i + K"),
         DRAG.replace("[1, 2, 3]\n", "[1, 2, 4]\n"),
         DRAG.to_string(),

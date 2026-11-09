@@ -85,6 +85,7 @@ pub(super) fn plan_hint_reports(stmts: &[Stmt], chars: &[char]) -> HintFindings 
     // Top-level `let`s: settings, and the two ways of almost writing one.
     for s in stmts {
         let StmtKind::Let { name, value, is_var, is_const, .. } = &s.kind else { continue };
+        let is_const = &crate::static_value::declares_const_let(value, *is_var, *is_const);
         if tunable_call(value).is_some() {
             if *is_var {
                 v.out.on_var.push(report(

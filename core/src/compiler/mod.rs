@@ -2920,6 +2920,10 @@ fn hoistable_const_lets(stmts: &[Stmt]) -> HashSet<String> {
     }
 
     fn is_const(e: &Expr, consts: &HashSet<String>, enums: &HashSet<&str>) -> bool {
+        // `const(e)` compiles to `e` (the intrinsic), so it hoists as `e`.
+        if let Some(inner) = crate::static_value::const_call_arg(e) {
+            return is_const(inner, consts, enums);
+        }
         match &e.kind {
             ExprKind::Literal(_) => true,
             ExprKind::Ident(n) => consts.contains(n),
@@ -3039,35 +3043,129 @@ fn builtin_class_shadows(stmts: &[Stmt], is_entry: bool) -> Vec<crate::diagnosti
 /// `const` asserts and what [`crate::static_classify`] can check; inside a
 /// function or a loop the binding is made again on every call or pass. Each
 /// is an error, and the binding still compiles as the `let` it otherwise is.
+///
+/// The annotation `const(e)` likewise
+/// (docs/tasks/lifecycle-annotation-functions-refactor.md): it means
+/// something only as the whole initializer of a top-level `let`. Around a
+/// part of one, in a function, on a `var` or a `state`, it is an error, and
+/// the compiler erases it there too. Around a setting (`const(tunable(…))`)
+/// it is an error because it would hide the `tunable`. A call of `const` with
+/// anything but one argument is an error as well.
 fn misplaced_const_decls(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
+    use crate::diagnostic::Diagnostic;
+    use crate::source_map::SourceSpan;
+    use crate::static_value::{const_call_arg, tunable_args};
+
+    /// What a misplaced `const(…)` gets told, by the statement it is in.
+    #[derive(Clone, Copy)]
+    enum Place {
+        Expr,
+        Var,
+        State,
+    }
     struct Finder {
         depth: usize,
-        out: Vec<crate::diagnostic::Diagnostic>,
+        /// The `const(…)` call that is a top-level `let`'s whole
+        /// initializer, while that `let` is walked.
+        allowed: Option<SourceSpan>,
+        place: Vec<Place>,
+        out: Vec<Diagnostic>,
     }
     impl crate::ast::ExprVisitor for Finder {
         fn visit_stmt(&mut self, s: &Stmt) {
-            if let StmtKind::Let {
-                name,
-                is_const: true,
-                ..
-            } = &s.kind
-                && self.depth > 0
-            {
-                self.out.push(crate::diagnostic::Diagnostic::error(
-                    s.span,
-                    format!(
-                        "`const {name}` must be declared at the top level of a file, not inside \
-                         a function, loop or block; use `let` here"
-                    ),
-                ));
+            let mut place = Place::Expr;
+            match &s.kind {
+                StmtKind::Let {
+                    name,
+                    is_const: true,
+                    ..
+                } if self.depth > 0 => {
+                    self.out.push(Diagnostic::error(
+                        s.span,
+                        format!(
+                            "`const {name}` must be declared at the top level of a file, not \
+                             inside a function, loop or block; use `let` here"
+                        ),
+                    ));
+                }
+                StmtKind::Let {
+                    value,
+                    is_var: false,
+                    is_config,
+                    ..
+                } if self.depth == 0 => {
+                    // `tunable(const(e))`: legal and pointless
+                    // (`config-not-data` says so when `e` is not data).
+                    if let Some(t) = tunable_args(value)
+                        && const_call_arg(t.value).is_some()
+                    {
+                        self.allowed = Some(t.value.span);
+                    }
+                    if let Some(arg) = const_call_arg(value) {
+                        self.allowed = Some(value.span);
+                        if *is_config || tunable_args(arg).is_some() {
+                            self.out.push(Diagnostic::error(
+                                value.span,
+                                "a setting of literals is already static; drop `const(…)`"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                }
+                StmtKind::Let { is_var: true, .. } => place = Place::Var,
+                StmtKind::State { .. } => place = Place::State,
+                _ => {}
             }
+            self.place.push(place);
             self.depth += 1;
             crate::ast::walk_stmt(self, s);
             self.depth -= 1;
+            self.place.pop();
+            if self.depth == 0 {
+                self.allowed = None;
+            }
+        }
+        fn visit_expr(&mut self, e: &Expr) {
+            if let ExprKind::Call { function, .. } = &e.kind
+                && matches!(&function.kind,
+                    ExprKind::Ident(f) if f == crate::parse::CONST_ANNOTATION)
+            {
+                if const_call_arg(e).is_none() {
+                    self.out.push(Diagnostic::error(
+                        e.span,
+                        "`const(…)` takes one argument, the value that must be constant"
+                            .to_string(),
+                    ));
+                } else if self.allowed != Some(e.span) || self.depth != 1 {
+                    let message = match self.place.last() {
+                        Some(Place::Var) => {
+                            "`const(…)` checks a top-level `let`; a `var` is assigned again by \
+                             definition, so it cannot be constant. Drop `const(…)`, or use `let`"
+                        }
+                        Some(Place::State) => {
+                            "`const(…)` checks a top-level `let`; a `state` slot cannot be \
+                             constant. Declare `let X = const(…)` and initialise the state \
+                             from it"
+                        }
+                        _ if self.depth > 1 => {
+                            "`const(…)` checks a top-level `let`; it cannot be used inside a \
+                             function, loop or block. Drop it here"
+                        }
+                        _ => {
+                            "`const(…)` checks a top-level `let`; it must wrap the whole \
+                             initializer (`let X = const(…)`), not a part of it"
+                        }
+                    };
+                    self.out.push(Diagnostic::error(e.span, message.to_string()));
+                }
+            }
+            crate::ast::walk_expr(self, e);
         }
     }
     let mut finder = Finder {
         depth: 0,
+        allowed: None,
+        place: Vec::new(),
         out: Vec::new(),
     };
     for stmt in stmts {

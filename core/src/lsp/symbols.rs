@@ -51,26 +51,30 @@ pub fn document_symbols(stmts: &[Stmt], source: &str) -> Vec<DocumentSymbol> {
             )),
             StmtKind::Let {
                 name,
+                value,
                 is_var,
                 is_const,
                 ..
-            } => out.push(symbol(
-                name,
-                Some(
-                    match (*is_var, *is_const) {
-                        (true, _) => "var",
-                        (false, true) => "const",
-                        (false, false) => "let",
-                    }
-                    .to_string(),
-                ),
-                if *is_const {
-                    SymbolKind::Constant
-                } else {
-                    SymbolKind::Variable
-                },
-                stmt.span,
-            )),
+            } => {
+                let is_const = crate::static_value::declares_const_let(value, *is_var, *is_const);
+                out.push(symbol(
+                    name,
+                    Some(
+                        match (*is_var, is_const) {
+                            (true, _) => "var",
+                            (false, true) => "const",
+                            (false, false) => "let",
+                        }
+                        .to_string(),
+                    ),
+                    if is_const {
+                        SymbolKind::Constant
+                    } else {
+                        SymbolKind::Variable
+                    },
+                    stmt.span,
+                ))
+            }
             StmtKind::State { name, .. } => out.push(symbol(
                 name,
                 Some("state".to_string()),

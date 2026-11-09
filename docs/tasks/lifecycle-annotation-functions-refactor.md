@@ -1,6 +1,8 @@
 # Lifecycle annotations as functions: `const(…)` and `tunable(…)` replace `const` and `config`
 
-Status: planned, 9 November 2026. Settings without `config` are half done:
+Status: Phase 1 shipped 9 November 2026 (`const(…)` reaches parity; see
+"Phase 1: what shipped" below). Phases 2 to 7 are planned. Settings without
+`config` are half done:
 Phases 1 and 2 of the old removal proposal shipped on 6 November (commits
 47e5e905 and ab5e99a7), and Cheesecake vendored them (a18ce96a). That
 proposal is folded into this file and deleted. Read it with
@@ -231,6 +233,52 @@ that host has been updated.
    and identical hot-reload construct kinds for an edit of each initializer.
    This is the gate for Phase 4.
 
+#### Phase 1: what shipped (9 November 2026)
+
+- `const` is in `RESERVED_HINT_NAMES`, typed as the identity, declared
+  `pub native fn const(value)` in `core/packages/core/src/dm.ptl` and
+  registered as an identity native (`builtins/hints.rs`), which only a
+  first-class use would reach. `Builtins.md` has an entry, and
+  `docs/stdlib.json` is regenerated.
+- The parser reads `const` followed by `(` as the name `const`, in an
+  expression, at statement start, and as a `native fn` name; the CST
+  projection does the same. The lexer still emits `Token::Const`.
+- `static_value::const_call_arg`, `declares_const_let` and `declares_const`.
+  They are used by the compiler, `is_setting`, `setting_value_expr` (so the
+  path `X` names `e`), the static evaluator, `source_diff`'s construct kind,
+  the LSP symbol kind, `apply_change`'s declaration kind (and so
+  `convert-to-var`), the shadow checker's keyword, and `dm_hints`. The other
+  readers in the list needed nothing: `cst_project.rs` and
+  `fn_introspect.rs` report the keyword flag as written, `config_data.rs`
+  goes through `is_setting`, `state_const.rs` reads the classifier's
+  `DeclKind::Const` (derived from the term), and `env/reload.rs`'s token scan
+  already matches `let NAME`.
+- The compiler erases every `const(e)` call to `e`'s terms (no call, no extra
+  source-map entry) in `compile_expr`, and a top-level `let X = const(e)`
+  marks the term `is_const`. `misplaced_const_decls` reports `const(…)` on a
+  part of an initializer, in a function, loop or block, on a `var` or a
+  `state`, around a setting (`const(tunable(…))` or `config let X =
+  const(…)`), and with other than one argument. `tunable(const(e))` is
+  allowed. The hoist looks through the call.
+- Messages (step 5): **one wording for both forms**, the existing
+  "`X` is declared `const` …". It reads correctly for `let X = const(e)`,
+  it keeps the parity test's diagnostics identical, and hosts match on it:
+  Cheesecake's `script_host.cpp:684` detects a const error by the text
+  "is declared `const`", as do its `script_host_tests.cpp` and the bridge
+  tests. Only the misplacement errors are new text.
+- `core/tests/const_parity.rs` rewrites every top-level `const` in
+  `examples/`, the `.ptl` files and the Rust string fixtures of
+  `core/tests`, and the `petal` snippets of `language-guide.md` and
+  `features/static-values.md` (74 samples, 135 declarations), and asserts
+  identical diagnostics (severity, line, message), identical IR
+  (`ir_equivalent`), identical `show-static --json` (columns left out) and
+  identical reload construct kinds for an edit of each initializer. It also
+  checks each misplacement error and a run.
+- Owner decisions taken for this phase: open question 1, keep `const`;
+  open question 2, the declaration stays in `dm.ptl` beside `tunable` and
+  `rigid` (moving all three to `annotations.ptl` is still open); open
+  question 3, the migration wraps literals (Phase 2's fixer).
+
 ### Phase 2: fixers
 
 - `const-decl-deprecated`: `const X = e` → `let X = const(e)`, and
@@ -399,16 +447,18 @@ function-body slots. That coverage is item 4 in
 1. **Owner: `const(…)` or `static(…)`?** `static` matches the docs' term
    (static value, `show-static`, `--static-audit`). `const` matches every
    error message and what readers expect. The plan says `const`.
+   **Decided 9 November 2026: `const`** (Phase 1 shipped with it).
 2. **Owner: one home for the annotations?** Move `tunable`, `rigid` and
    `const` from `core/packages/core/src/dm.ptl` into an `annotations.ptl`,
    and give `Builtins.md` an "Annotations" section. `const` has nothing to do
-   with DM, so it would read oddly in `dm.ptl`.
+   with DM, so it would read oddly in `dm.ptl`. **For Phase 1, `const` is
+   declared in `dm.ptl` beside the other two**; the move is still open.
 3. **Owner: should the migration drop `const` on literal data** (`pub const
    ART = "../art"` → `pub let ART = "../art"`) instead of wrapping it? That
    gives a smaller diff and more readable code, but it drops a check that
    only matters if someone later edits the value into something dynamic.
    The plan says wrap, and leaves `const-of-literal` for authors to apply by
-   hand.
+   hand. **Decided 9 November 2026: wrap.**
 4. **Owner, carried from the old proposal:**
    - should nested tunables (`POST.bloom` with its own range) be listed to
      hosts? This would be an additive `fields` array;

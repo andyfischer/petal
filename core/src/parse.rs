@@ -15,6 +15,9 @@ pub const CLASS_KEYWORD: &str = "class";
 /// Listed in [`crate::lexer::CONTEXTUAL_KEYWORDS`] so editor tooling still
 /// highlights it.
 pub const CONFIG_KEYWORD: &str = "config";
+/// The annotation `const(e)`: the `const` keyword read as the name of the
+/// builtin, which it is whenever a `(` follows it.
+pub const CONST_ANNOTATION: &str = "const";
 
 /// The contextual `key` clause of a `for` header (`for t in tasks key t.id
 /// do`), only recognized directly after the iterable so it stays usable as an
@@ -581,7 +584,11 @@ impl Parser {
             }
             Token::Let => self.parse_let(start, false, LetKeyword::Let, false),
             Token::Var => self.parse_let(start, false, LetKeyword::Var, false),
-            Token::Const => self.parse_let(start, false, LetKeyword::Const, false),
+            // `const(e)` is the annotation call (an expression statement);
+            // `const NAME = …` is the declaration.
+            Token::Const if !matches!(self.peek_at(1), Token::LParen) => {
+                self.parse_let(start, false, LetKeyword::Const, false)
+            }
             Token::Set => self.parse_set(start),
             // `fn(` is a lambda: an expression statement, and so the value
             // of a one-expression branch or arm (`when 1 -> fn() -> 2`).
@@ -1276,7 +1283,13 @@ impl Parser {
         }
         self.advance(); // consume the contextual `native`
         self.advance(); // consume 'fn'
-        let first = self.expect_ident()?;
+        // The core package declares the annotation `native fn const(value)`.
+        let first = if matches!(self.peek(), Token::Const) {
+            self.advance();
+            CONST_ANNOTATION.to_string()
+        } else {
+            self.expect_ident()?
+        };
         let (class, name) = if matches!(self.peek(), Token::Dot) {
             self.advance(); // consume '.'
             let method = self.expect_ident()?;
@@ -2481,6 +2494,16 @@ impl Parser {
                 let name = self.expect_ident()?;
                 self.ev_close();
                 Ok(self.mk_expr(ExprKind::Ident(name), start))
+            }
+            // `const(e)`: the builtin annotation
+            // (docs/tasks/lifecycle-annotation-functions-refactor.md). The
+            // keyword is a name when a `(` follows, as `config` is a name
+            // everywhere but before `let`.
+            Token::Const if matches!(self.peek_at(1), Token::LParen) => {
+                self.ev_open(SyntaxKind::IdentExpr);
+                self.advance();
+                self.ev_close();
+                Ok(self.mk_expr(ExprKind::Ident(CONST_ANNOTATION.to_string()), start))
             }
             Token::LParen => {
                 self.ev_open(SyntaxKind::ParenExpr);

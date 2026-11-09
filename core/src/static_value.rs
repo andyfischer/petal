@@ -703,6 +703,49 @@ pub fn tunable_args(e: &Expr) -> Option<TunableArgs<'_>> {
     })
 }
 
+/// The argument of a `const(e)` annotation call: `e`, when `e` is a call of
+/// the reserved builtin `const` with exactly one argument, positional or
+/// named `value` (docs/tasks/lifecycle-annotation-functions-refactor.md).
+/// The name cannot be bound by Petal code (`compiler::hint_names`), so the
+/// call is recognised by name, as [`tunable_args`] recognises `tunable`.
+pub fn const_call_arg(e: &Expr) -> Option<&Expr> {
+    let ExprKind::Call {
+        function,
+        args,
+        arg_names,
+    } = &e.kind
+    else {
+        return None;
+    };
+    if !matches!(&function.kind, ExprKind::Ident(f) if f == crate::parse::CONST_ANNOTATION) {
+        return None;
+    }
+    match (args.as_slice(), arg_names.first().and_then(|n| n.as_deref())) {
+        ([arg], None | Some("value")) => Some(arg),
+        _ => None,
+    }
+}
+
+/// Whether a `let` declares a constant: written `const X = e`, or
+/// `let X = const(e)` (the annotation around the whole initializer). A `var`
+/// never does; `var X = const(e)` is the compiler's misplacement error.
+pub fn declares_const_let(value: &Expr, is_var: bool, is_const: bool) -> bool {
+    is_const || (!is_var && const_call_arg(value).is_some())
+}
+
+/// [`declares_const_let`] for a statement: false for anything but a `let`.
+pub fn declares_const(stmt: &crate::ast::Stmt) -> bool {
+    match &stmt.kind {
+        crate::ast::StmtKind::Let {
+            value,
+            is_var,
+            is_const,
+            ..
+        } => declares_const_let(value, *is_var, *is_const),
+        _ => false,
+    }
+}
+
 /// Whether a top-level `let` is a *setting*: a binding hosts list, set live
 /// and override from outside. It is one when its whole initializer is a
 /// `tunable(…)` call (`let SPEED = tunable(4.0, 0, 10)`,
@@ -712,6 +755,7 @@ pub fn tunable_args(e: &Expr) -> Option<TunableArgs<'_>> {
 ///
 /// See docs/tasks/lifecycle-annotation-functions-refactor.md.
 pub fn is_setting(value: &Expr, is_config: bool, is_var: bool, is_const: bool) -> bool {
+    let is_const = declares_const_let(value, is_var, is_const);
     !is_var && (is_config || (!is_const && tunable_args(value).is_some()))
 }
 
@@ -721,8 +765,12 @@ pub fn is_setting(value: &Expr, is_config: bool, is_var: bool, is_const: bool) -
 /// setting a range; the setting is the value, so `X` names `v` to
 /// [`static_bindings`], to path edits ([`crate::literal_edit`],
 /// [`crate::rewrite::find_binding_path`]) and so to
-/// `Env::set_config_value`.
+/// `Env::set_config_value`. Likewise `let X = const(e)` names `e`, as
+/// `const X = e` does.
 pub fn setting_value_expr(value: &Expr) -> &Expr {
+    if let Some(inner) = const_call_arg(value) {
+        return inner;
+    }
     match tunable_args(value) {
         Some(args) => args.value,
         None => value,
@@ -1046,6 +1094,10 @@ pub(crate) fn eval(expr: &Expr, bindings: &[StaticBinding]) -> Result<StaticValu
 }
 
 fn eval_in(expr: &Expr, scope: &Scope) -> Result<StaticValue, String> {
+    // `const(e)` is `e` (the compiler erases the call).
+    if let Some(inner) = const_call_arg(expr) {
+        return eval_in(inner, scope);
+    }
     let bindings = scope.bindings;
     if let Some(color) = color_literal(expr) {
         return Ok(color);

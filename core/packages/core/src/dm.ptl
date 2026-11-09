@@ -14,3 +14,9 @@ pub native fn tunable(value, min?: num, max?: num, step?: num, options?: list)
 // The form a setting with choices uses: `tunable("title", options: [...])`.
 pub native fn tunable(value, options: list)
 pub native fn rigid(value)
+
+// `const(e)`: `e`, which must be static. Around the whole initializer of a
+// top-level `let` it is the `const` declaration: `let X = const(e)` means
+// `const X = e` (docs/tasks/lifecycle-annotation-functions-refactor.md). The
+// compiler erases the call. The name cannot be redefined.
+pub native fn const(value)

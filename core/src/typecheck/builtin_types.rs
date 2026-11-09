@@ -66,10 +66,10 @@ pub fn intrinsic_return_type(name: &str, args: &[Type]) -> Option<Option<Type>> 
             }
             _ => None,
         },
-        // The direct-manipulation hints are the identity on their first
-        // argument (`builtins/hints.rs`), so `let s: int = tunable(1.5)`
-        // is checked as `1.5` is.
-        "tunable" | "rigid" => match args.first() {
+        // The direct-manipulation hints and the `const(…)` annotation are
+        // the identity on their first argument (`builtins/hints.rs`), so
+        // `let s: int = tunable(1.5)` is checked as `1.5` is.
+        "tunable" | "rigid" | "const" => match args.first() {
             Some(t) if *t != Type::Any => Some(*t),
             _ => None,
         },
@@ -359,6 +359,7 @@ mod tests {
             Some(Type::Float)
         );
         assert_eq!(builtin_return_type("rigid", &[Type::Int]), Some(Type::Int));
+        assert_eq!(builtin_return_type("const", &[Type::Float]), Some(Type::Float));
         assert_eq!(builtin_return_type("tunable", &[Type::Any]), None);
     }
 

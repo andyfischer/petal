@@ -600,7 +600,7 @@ fn construct_kind(s: &Stmt) -> (ConstructKind, Option<&str>) {
             value,
             ..
         } => (
-            if *is_const {
+            if crate::static_value::declares_const_let(value, *is_var, *is_const) {
                 ConstructKind::Const
             } else if *is_config {
                 ConstructKind::ConfigLet

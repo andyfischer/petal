@@ -1,5 +1,7 @@
-//! `tunable` and `rigid` are reserved: Petal code cannot bind either name
-//! (docs/tasks/lifecycle-annotation-functions-refactor.md).
+//! `tunable`, `rigid` and `const` are reserved: Petal code cannot bind any of
+//! the three names (docs/tasks/lifecycle-annotation-functions-refactor.md).
+//! `const` is still a lexer keyword, so no program can bind it today; it is
+//! listed so the rule holds once the keyword goes.
 //!
 //! Tools read both hints by name, without running the program: a top-level
 //! `let X = tunable(v, …)` is a setting that hosts list and set
@@ -14,13 +16,17 @@ use crate::diagnostic::Diagnostic;
 use crate::source_map::SourceSpan;
 
 /// The names no Petal code may bind.
-pub(crate) const RESERVED_HINT_NAMES: [&str; 2] = ["tunable", "rigid"];
+pub(crate) const RESERVED_HINT_NAMES: [&str; 3] = ["tunable", "rigid", "const"];
 
 fn is_reserved(name: &str) -> bool {
     RESERVED_HINT_NAMES.contains(&name)
 }
 
 fn message(name: &str) -> String {
+    if name == "const" {
+        return "`const` is a builtin annotation and cannot be redefined; choose another name"
+            .to_string();
+    }
     format!(
         "`{name}` is a builtin direct-manipulation hint and cannot be redefined; \
          choose another name"

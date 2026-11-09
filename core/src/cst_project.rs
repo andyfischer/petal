@@ -148,6 +148,16 @@ fn ident_value(t: &SyntaxToken) -> Option<String> {
     }
 }
 
+/// [`ident_value`], plus the `const` keyword read as the name of the
+/// annotation `const(e)` (the parser's `CONST_ANNOTATION`): an identifier
+/// expression or a `native fn` name.
+fn name_value(t: &SyntaxToken) -> Option<String> {
+    match t.token()? {
+        Token::Const => Some(crate::parse::CONST_ANNOTATION.to_string()),
+        _ => ident_value(t),
+    }
+}
+
 /// The name spelling of a token in *member-name* position — a record key or
 /// the field of a field access. Mirrors the parser's `expect_field_name`:
 /// keywords are ordinary names there (`{when: 3}`, `r.when`).
@@ -384,7 +394,7 @@ impl Projector {
                 // name (two around a `.` for a method).
                 let idents: Vec<String> = direct_tokens(node)
                     .iter()
-                    .filter_map(ident_value)
+                    .filter_map(name_value)
                     .skip(1)
                     .collect();
                 let (class, name) = match idents.as_slice() {
@@ -855,7 +865,12 @@ impl Projector {
             SyntaxKind::ParenExpr => self.only_expr(node),
             SyntaxKind::LiteralExpr => self.literal_expr(node),
             SyntaxKind::IdentExpr => Ok(Expr {
-                kind: ExprKind::Ident(self.only_ident(node)?),
+                kind: ExprKind::Ident(
+                    direct_tokens(node)
+                        .iter()
+                        .find_map(name_value)
+                        .ok_or("IdentExpr missing an identifier token")?,
+                ),
                 span: self.node_span(node)?,
             }),
             SyntaxKind::AtVarExpr => Ok(Expr {

@@ -5,6 +5,14 @@ use super::*;
 
 impl Compiler {
     pub(super) fn compile_expr(&mut self, expr: &Expr) -> TermId {
+        // `const(e)` is a compiler intrinsic: `e`'s own terms, spans and all,
+        // and no call, so `let X = const(e)` compiles to the IR of
+        // `const X = e`. Where it means something (the whole initializer of
+        // a top-level `let`) the `let` marks the term `is_const`; anywhere
+        // else `misplaced_const_decls` reports it.
+        if let Some(inner) = crate::static_value::const_call_arg(expr) {
+            return self.compile_expr(inner);
+        }
         let span = expr.span;
         let tid = self.compile_expr_kind(&expr.kind, span);
         // Record source span for the primary term emitted by this expression

@@ -59,6 +59,11 @@ impl Compiler {
                         literals.insert(e.span);
                     });
                 }
+                // `let X = const(e)` is `const X = e`: compile `e` (the
+                // intrinsic erases the call) and mark its term.
+                let is_const =
+                    crate::static_value::declares_const_let(value, *is_var, *is_const);
+                let value = crate::static_value::const_call_arg(value).unwrap_or(value);
                 let val_tid = self.compile_bound_expr(name, value);
                 self.note_shadow(name);
                 if *is_var {
@@ -78,7 +83,7 @@ impl Compiler {
                     self.terms[val_tid.0 as usize].is_config = setting;
                     // Likewise `const`: the classifier reads it off the term
                     // that carries the declaration's value.
-                    self.terms[val_tid.0 as usize].is_const = *is_const;
+                    self.terms[val_tid.0 as usize].is_const = is_const;
                     self.scope_bind(name.clone(), val_tid);
                 }
             }

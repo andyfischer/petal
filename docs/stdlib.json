@@ -111,7 +111,7 @@
       "id": "hints",
       "title": "Direct-Manipulation Hints",
       "group": "core",
-      "doc": "Direct-manipulation hints: `tunable` and `rigid` (docs/proposals/dm-v2-hints.md, docs/dev/direct-manipulation-v2-plan.md §2.6).  Both are the identity on their first argument at run time: a dual number passes through unchanged, and the bounds of `tunable` are evaluated by the call and ignored. What they mean is static: `crate::dm::hints` reads them from the IR to decide which literals a drag may move. In a speculative run the gate (`vm::native::call_native_spec`) replays the baseline's answer of `rigid`, so nothing upstream of it receives feedback through it."
+      "doc": "Direct-manipulation hints: `tunable` and `rigid` (docs/proposals/dm-v2-hints.md, docs/dev/direct-manipulation-v2-plan.md §2.6), and the `const(…)` annotation (docs/tasks/lifecycle-annotation-functions-refactor.md).  All three are the identity on their first argument at run time: a dual number passes through unchanged, and the bounds of `tunable` are evaluated by the call and ignored. What they mean is static: `crate::dm::hints` reads them from the IR to decide which literals a drag may move. In a speculative run the gate (`vm::native::call_native_spec`) replays the baseline's answer of `rigid`, so nothing upstream of it receives feedback through it."
     },
     {
       "id": "paths",
@@ -2171,7 +2171,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 695
+        "line": 701
       }
     },
     {
@@ -2204,7 +2204,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 695
+        "line": 701
       },
       "aliasOf": "map"
     },
@@ -2246,7 +2246,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 695
+        "line": 701
       },
       "aliasOf": "map"
     },
@@ -2280,7 +2280,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 695
+        "line": 701
       },
       "aliasOf": "map"
     },
@@ -3221,7 +3221,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 695
+        "line": 701
       },
       "aliasOf": "map"
     },
@@ -3992,7 +3992,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 695
+        "line": 701
       },
       "aliasOf": "map"
     },
@@ -4018,7 +4018,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 695
+        "line": 701
       },
       "aliasOf": "map"
     },
@@ -4659,7 +4659,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 695
+        "line": 701
       },
       "aliasOf": "map"
     },
@@ -4693,7 +4693,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 695
+        "line": 701
       },
       "aliasOf": "map"
     },
@@ -4727,7 +4727,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 695
+        "line": 701
       },
       "aliasOf": "map"
     },
@@ -4803,7 +4803,7 @@
       ],
       "source": {
         "file": "core/src/builtins/hints.rs",
-        "line": 16
+        "line": 17
       }
     },
     {
@@ -4828,7 +4828,7 @@
       ],
       "source": {
         "file": "core/src/builtins/hints.rs",
-        "line": 27
+        "line": 28
       }
     },
     {
@@ -4906,6 +4906,31 @@
       }
     },
     {
+      "name": "const",
+      "category": "hints",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "value",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/hints.rs",
+        "line": 38
+      }
+    },
+    {
       "name": "speculate",
       "category": "higher-order",
       "group": "core",
@@ -4915,7 +4940,7 @@
       "signatures": [],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 695
+        "line": 701
       },
       "aliasOf": "map"
     },
@@ -4931,7 +4956,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 695
+        "line": 701
       },
       "aliasOf": "map"
     },
@@ -4965,7 +4990,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 695
+        "line": 701
       },
       "aliasOf": "map"
     },

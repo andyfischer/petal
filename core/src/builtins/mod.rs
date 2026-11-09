@@ -630,6 +630,12 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("remove_at", collections::native_remove_at, NativeEffects::CONST);
     table.register("replace", collections::native_replace, NativeEffects::CONST);
 
+    // The `const(e)` annotation
+    // (docs/tasks/lifecycle-annotation-functions-refactor.md): the identity,
+    // like the hints. The compiler erases its calls; the native is what a
+    // first-class `const` reaches. Append-only, like the rest.
+    table.register("const", hints::native_const, NativeEffects::CONST);
+
     // Hypothetical calls (docs/features/speculate.md): `speculate(f, ...args)`
     // runs `f` and puts back everything it changed; `speculating()` and
     // `speculate_place(key, value)` are what a library calls inside one. VM
@@ -799,6 +805,7 @@ mod effect_tests {
             "color_lerp",
             "commas",
             "concat",
+            "const",
             "contains",
             "cos",
             "cross",

@@ -254,13 +254,18 @@ impl ExprVisitor for Collector {
             StmtKind::FnDecl { name, .. } => Some((name, DeclKind::Fn)),
             StmtKind::Let {
                 name,
+                value,
                 is_var,
                 is_config,
                 is_const,
                 ..
             } => Some((
                 name,
-                match (*is_var, *is_config, *is_const) {
+                match (
+                    *is_var,
+                    *is_config,
+                    crate::static_value::declares_const_let(value, *is_var, *is_const),
+                ) {
                     (true, _, _) => DeclKind::Var,
                     (false, _, true) => DeclKind::Const,
                     (false, true, false) => DeclKind::ConfigLet,

@@ -136,7 +136,10 @@ impl ShadowWalker<'_> {
                 ..
             } => {
                 self.walk_expr(value);
-                let keyword = match (*is_var, *is_const) {
+                let keyword = match (
+                    *is_var,
+                    crate::static_value::declares_const_let(value, *is_var, *is_const),
+                ) {
                     (true, _) => "var",
                     (false, true) => "const",
                     (false, false) => "let",

@@ -2195,6 +2195,28 @@ Natives can say the same about their own result: an effect row marked
 that reach an output only through that native from being moved. `random`,
 `random_int`, `choose`, `noise`, `hash_int`, `hash01` and `hash_str` are.
 
+### `const(value)`
+
+Returns `value`. Not a direct-manipulation hint but an annotation of the same
+kind: it changes only what the checker does with the value. Around the whole
+initializer of a top-level `let`, it is the `const` declaration in function
+form, so `let TILES = const(build_tiles())` means
+`const TILES = build_tiles()`: the binding must be static data, built once
+([language guide, `const`](language-guide.md)), or the compile reports an
+error with the reasons. The compiler erases the call, so the program is the
+same either way. The name is reserved like `tunable` and `rigid`.
+
+```petal
+let TILES = const([{name: "grass", cost: 1}, {name: "road", cost: 0}])
+let COSTS = const(map(TILES, fn(t) -> t.cost))
+print(COSTS)                                    // [1, 0]
+```
+
+Anywhere else (inside a part of an initializer, a function body, a `var` or
+a `state`) it is an error, and so is `const(tunable(…))`, which would hide
+the setting. The `const` keyword is being replaced by this form
+([plan](tasks/lifecycle-annotation-functions-refactor.md)).
+
 ## Host I/O
 
 Needs `import io`. These are the script's side of the channels a host reads

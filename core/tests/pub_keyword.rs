@@ -21,7 +21,7 @@ const EVERY_FORM: &str = "\
 end
 {m} let limit = 10
 {m} var hits = 0
-{m} config let margin = 4
+{m} let margin = tunable(4)
 {m} state frame = 0
 {m} enum Color
   Red,

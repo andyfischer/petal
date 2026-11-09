@@ -4,7 +4,9 @@ Status: Phase 1 shipped 9 November 2026 (`const(…)` reaches parity; see
 "Phase 1: what shipped" below). Phase 2 shipped the same day (the fixers,
 opt-in and report only; see "Phase 2: what shipped"), and so did Phase 3
 (the Petal corpus, the docs and petal-lang.org; see "Phase 3: what
-shipped"). Phases 4 to 7 are planned. Settings without
+shipped"), Phase 4 (Cheesecake; "Phase 4: what landed") and Phase 5 (the
+deprecation warnings and `--fix`; "Phase 5: what shipped"). Phase 6
+(removal, one release after Phase 5) and Phase 7 are planned. Settings without
 `config` are half done:
 Phases 1 and 2 of the old removal proposal shipped on 6 November (commits
 47e5e905 and ab5e99a7), and Cheesecake vendored them (a18ce96a). That
@@ -528,12 +530,69 @@ in 187. It is the only large consumer and the only real hazard. Order:
 worlds-fair and petal-creative have no `config let`. Sweep them for `const`
 in Phase 6.
 
+#### Phase 4: what landed (9 November 2026, in Cheesecake)
+
+Done in `~/cheesecake` on its `main`, from `dd5681e` to `e413eac`:
+
+- `dd5681e` re-vendored Petal at 7a436afe (Phases 1 to 3).
+- `6c0eeff`: `config_overrides.cpp`'s text scanner is replaced by
+  `petal::Source` (`--set NAME=…` sets a setting by name, changing only its
+  value; `--set mod.NAME=…` reaches one module); `ScriptHost::set_config`
+  is `set_tunable`; `ptl::Binding` reads the bridge's `"tunable"` object,
+  and the Tuning screen offers a dropdown for `options`. Messages, `--help`
+  and the fixtures in `ide_tests.cpp` and `script_host_tests.cpp` name
+  settings.
+- `234464e`: the trailkeeper art tool writes `let X = const(…)`, and its
+  art is migrated.
+- One commit per game (`refactor(<game>): settings are tunable(…),
+  constants const(…)`), then `tests/` and the docs (`e413eac`).
+- After it, no `.ptl` file in Cheesecake declares either keyword (the two
+  grep hits are GLSL `const` inside strings, in `games/tides/weather.ptl`
+  and `engine/script/packages/cheesecake/postfx.ptl`).
+
 ### Phase 5: deprecate (after Phase 4 has landed)
 
 - `const-decl-deprecated` and `config-let-deprecated` become warnings, and
   `--fix` applies them.
 - A `CHANGELOG.md` entry, then a re-vendor of Cheesecake, which by now has
   no hits.
+
+#### Phase 5: what shipped (9 November 2026)
+
+- **Compile-check warnings.** `lint::deprecated_lifecycle_decls` (called
+  from the compiler beside the `state(key)` warning) warns about every
+  top-level `const X = e` and `config let X = v`, worded as the lint rules
+  word them and tagged `[const-decl-deprecated]` /
+  `[config-let-deprecated]`; the caret sits under `const X =`, not under
+  the initializer. Like `state-key-deprecated`, a `// petal-lint-ignore` for
+  the rule (the line before, trailing, or `-file`) silences both the
+  warning and the lint finding, and a bundled first-party package is not
+  warned about. A nested `config let` is not warned about, as the rule
+  does not report one (none exists anywhere).
+- **The lint rules run by default and `--fix` applies them.** Both
+  deprecation rules lost `opt_in` and are `Fixes::All`;
+  `APPLY_LIFECYCLE_FIXES` is gone. `const-of-literal` stays opt-in and
+  report only. `petal help lint` and `docs/CLI.md` say so.
+- **Tests:** `const_decl.rs` tests the warning, its caret and the three
+  ignore forms, and its other warning tests leave the deprecation warning
+  out; its render test is written with `let A = const(…)`. `const_parity.rs`
+  compares diagnostics less the deprecation warning (the one intended
+  difference). `lifecycle_keywords`' unit tests check a plain `petal lint`
+  reports and rewrites both keywords and that the compiler warns (and is
+  silenced). `pub_keyword.rs`'s every-form fixture writes
+  `pub let margin = tunable(4)`.
+- **The Petal-owned corpus has no hits**:
+  `the_petal_corpus_declares_neither_keyword` passes, and a grep over every
+  `.ptl` in the repo finds no declaration. The fixtures that still test the
+  deprecated forms (Phase 3's list) now see the warning, and pass.
+- **Docs:** `CHANGELOG.md` has a "Deprecated" entry (the "Added" entry for
+  the opt-in rules now names only `const-of-literal`); the language guide,
+  `features/static-values.md`, `Builtins.md`, `syntax/settings.md` and the
+  `config-let.md` stub say the compile check warns and `petal lint --fix`
+  rewrites.
+- **Cheesecake** re-vendored from this commit (see VENDORED.md there).
+- Owner decision recorded: the warnings cover top-level declarations only,
+  matching the fixer.
 
 ### Phase 6: remove (one release after Phase 5)
 

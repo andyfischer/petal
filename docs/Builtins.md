@@ -2111,8 +2111,8 @@ call is a *setting*: a binding hosts list, set live and override from
 outside, of any data type. Hosts read `let SPEED = tunable(4.0, 0, 10)` as
 the setting `4.0` with the range 0..10, and the path `SPEED` names the
 `4.0`. This replaces `config let X = v`, which still works and means the
-same but is deprecated; `petal lint --rules-include=config-let-deprecated`
-lists each one with its rewrite
+same but is deprecated: the compile check warns, and `petal lint --fix`
+rewrites each one
 ([plan](tasks/lifecycle-annotation-functions-refactor.md)).
 
 ```petal
@@ -2217,8 +2217,8 @@ print(COSTS)                                    // [1, 0]
 Anywhere else (inside a part of an initializer, a function body, a `var` or
 a `state`) it is an error, and so is `const(tunable(…))`, which would hide
 the setting. It replaces the `const NAME = e` declaration, which still works
-and means the same but is deprecated (`petal lint
---rules-include=const-decl-deprecated`;
+and means the same but is deprecated (the compile check warns, and `petal
+lint --fix` rewrites it;
 [plan](tasks/lifecycle-annotation-functions-refactor.md)).
 
 ## Host I/O

@@ -812,11 +812,13 @@ DESCRIPTION
               state(key), which is deprecated (the compile check warns too):
               never written and built from its key alone (no calls), it
               becomes memo(key); otherwise reported
-       const-decl-deprecated (opt-in, report only)
-              const X = e, which is being replaced by let X = const(e)
-       config-let-deprecated (opt-in, report only)
-              config let X = v, which is being replaced by
-              let X = tunable(v)
+       const-decl-deprecated
+              const X = e, which is deprecated (the compile check warns
+              too): it becomes let X = const(e)
+       config-let-deprecated
+              config let X = v, which is deprecated (the compile check
+              warns too): it becomes let X = tunable(v), or only config is
+              dropped when v is already a tunable(...) call
        const-of-literal (opt-in, report only)
               a const on literal data, where it checks nothing a reader
               cannot see

@@ -183,6 +183,27 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   Positions in error messages are unchanged; `PETAL_EMBED_COMMENTS=keep`
   at build time keeps the comments ([embedding-web.md](docs/usage/embedding-web.md)).
 
+### Deprecated
+
+- **`const X = e` and `config let X = v`** are deprecated in favour of the
+  annotations `let X = const(e)` and `let X = tunable(v)`
+  ([plan](docs/tasks/lifecycle-annotation-functions-refactor.md), Phase 5;
+  [settings](docs/syntax/settings.md)). Both still compile and mean what
+  they did, with a compile-check warning on each top-level declaration
+  (`[const-decl-deprecated]`, `[config-let-deprecated]`).
+  - `petal lint --fix` rewrites them: the lint rules of the same names now
+    run by default (they were opt-in and report only). A multi-line
+    initializer gets its closing `)` after its last line, trailing comments
+    keep their column, and a `config let X = tunable(…)` only loses
+    `config`. Literals are wrapped too: `pub const ART = "art"` becomes
+    `pub let ART = const("art")`.
+  - `// petal-lint-ignore const-decl-deprecated` (or
+    `config-let-deprecated`) silences both the warning and the finding.
+  - The Petal corpus, Garden's panels and Cheesecake declare neither. The
+    two forms are removed one release later (Phase 6): an old file will
+    then be a parse error that names the rewrite, and still one
+    `petal lint --fix` from working.
+
 ### Added
 
 - **Nullable types**, `T?`: a `T` or `nil`, wherever a type annotation goes
@@ -218,13 +239,9 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   - Enum-level functions (`Kind.parse(s)`) are not part of it.
   - The LSP completes and hovers a variant's methods after `.`.
   - New example `examples/console/enum_methods.ptl`.
-- `petal lint`: three opt-in, report-only rules for the move from the
-  `const` and `config` keywords to the `const(…)` and `tunable(…)`
-  annotations: `const-decl-deprecated` (`const X = e` → `let X = const(e)`),
-  `config-let-deprecated` (`config let X = v` → `let X = tunable(v)`) and
-  `const-of-literal` (a `const` on literal data). Nothing is deprecated yet:
-  they turn into default warnings with a fix after the migration
-  ([plan](docs/tasks/lifecycle-annotation-functions-refactor.md)).
+- `petal lint --rules-include=const-of-literal`: an opt-in, report-only
+  rule for a `const` on literal data, where it checks nothing a reader
+  cannot see.
 - **Block comments**, `/* … */`. They can sit inside a line or span several,
   and do not nest. `petal fmt` keeps the inside of one as written, and the
   tree-sitter grammar (Garden's highlighter) knows them

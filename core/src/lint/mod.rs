@@ -48,9 +48,12 @@
 //! 9. **`const-decl-deprecated`**, **`config-let-deprecated`** and
 //!    **`const-of-literal`** ([`lifecycle_keywords`]) — the declaration
 //!    keywords `const` and `config` becoming the annotations `const(…)` and
-//!    `tunable(…)`. Opt-in and report only until the migration
-//!    (docs/tasks/lifecycle-annotation-functions-refactor.md, Phase 5); the
-//!    rewrite they plan is [`migrate_lifecycle_keywords`].
+//!    `tunable(…)`. Since Phase 5 of
+//!    docs/tasks/lifecycle-annotation-functions-refactor.md the two
+//!    deprecation rules run by default and `--fix` applies them (the compiler
+//!    warns about the same sites, and this rule's `petal-lint-ignore`
+//!    silences both); `const-of-literal` stays opt-in and report only. The
+//!    rewrite is also [`migrate_lifecycle_keywords`].
 //!
 //! Each rule detects over a fresh parse of the previous rule's output, so a
 //! later rule sees what an earlier fix enabled and `lint --fix` is a fixed
@@ -113,6 +116,7 @@ use dm_hints::plan_hint_reports;
 use export_to_pub::plan_export_fixes;
 use lifecycle_keywords::{plan_const_of_literal_reports, plan_decl_fixes};
 pub use lifecycle_keywords::migrate_lifecycle_keywords;
+pub(crate) use lifecycle_keywords::deprecated_lifecycle_decls;
 use field_set::plan_field_set_fixes;
 use never_replays::plan_never_replays_reports;
 use typed::{plan_int_division, plan_neg_zero_fixes};
@@ -178,11 +182,6 @@ pub const CONST_DECL_DEPRECATED: &str = "const-decl-deprecated";
 pub const CONFIG_LET_DEPRECATED: &str = "config-let-deprecated";
 pub const CONST_OF_LITERAL: &str = "const-of-literal";
 
-/// Whether `--fix` applies `const-decl-deprecated` and
-/// `config-let-deprecated`. Off, and both rules opt-in, until Phase 5 of
-/// docs/tasks/lifecycle-annotation-functions-refactor.md: the corpus and
-/// Cheesecake are migrated first ([`migrate_lifecycle_keywords`]).
-const APPLY_LIFECYCLE_FIXES: bool = false;
 
 /// Every rule, in the order it runs.
 pub const RULES: &[RuleInfo] = &[
@@ -320,14 +319,14 @@ pub const RULES: &[RuleInfo] = &[
     RuleInfo {
         name: CONST_DECL_DEPRECATED,
         summary: "`const X = e` is deprecated: write `let X = const(e)`",
-        opt_in: true,
-        fixes: Fixes::None,
+        opt_in: false,
+        fixes: Fixes::All,
     },
     RuleInfo {
         name: CONFIG_LET_DEPRECATED,
         summary: "`config let X = v` is deprecated: write `let X = tunable(v)`",
-        opt_in: true,
-        fixes: Fixes::None,
+        opt_in: false,
+        fixes: Fixes::All,
     },
     RuleInfo {
         name: CONST_OF_LITERAL,
@@ -555,8 +554,8 @@ fn map_back(pos: usize, splices: &[Splice]) -> usize {
 
 /// `// petal-lint-ignore` comments: per 0-based line, the rules silenced there
 /// (an empty list silences every rule). The compiler reads them too, for the
-/// one compile warning that carries a rule id
-/// ([`crate::compiler::keyed_state`]).
+/// compile warnings that carry a rule id ([`crate::compiler::keyed_state`],
+/// and `lifecycle_keywords::deprecated_lifecycle_decls`).
 pub(crate) struct Ignores {
     file: Option<Vec<String>>,
     lines: std::collections::HashMap<usize, Vec<String>>,
@@ -692,30 +691,22 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     let (chars, stmts) = reparse(&p.text)?;
     let exports_to_pub = p.apply(PREFER_PUB, plan_export_fixes(&stmts, &chars)?);
 
-    // The lifecycle keywords: reported, and not yet rewritten (see
-    // `APPLY_LIFECYCLE_FIXES`).
+    // The lifecycle keywords (Phase 5 of
+    // docs/tasks/lifecycle-annotation-functions-refactor.md): the compiler
+    // warns about both deprecated declarations, and `--fix` rewrites them.
     if opts.rules.enabled(CONST_DECL_DEPRECATED)
         || opts.rules.enabled(CONFIG_LET_DEPRECATED)
         || opts.rules.enabled(CONST_OF_LITERAL)
     {
         let (chars, stmts) = reparse(&p.text)?;
         p.apply(CONST_OF_LITERAL, plan_const_of_literal_reports(&stmts));
-        let report_only = |fixes: Vec<Fix>| -> Vec<Fix> {
-            fixes
-                .into_iter()
-                .map(|f| Fix {
-                    splices: if APPLY_LIFECYCLE_FIXES { f.splices } else { Vec::new() },
-                    ..f
-                })
-                .collect()
-        };
         // One rule, then the other over its output: each pads trailing
         // comments against the text as it stands.
         let fixes = plan_decl_fixes(&stmts, &chars, true)?;
-        rewrites += p.apply(CONST_DECL_DEPRECATED, report_only(fixes));
+        rewrites += p.apply(CONST_DECL_DEPRECATED, fixes);
         let (chars, stmts) = reparse(&p.text)?;
         let fixes = plan_decl_fixes(&stmts, &chars, false)?;
-        rewrites += p.apply(CONFIG_LET_DEPRECATED, report_only(fixes));
+        rewrites += p.apply(CONFIG_LET_DEPRECATED, fixes);
     }
 
     // Each candidate's fix is checked by compiling the rewrite, so the rule

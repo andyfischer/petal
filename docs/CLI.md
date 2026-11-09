@@ -839,8 +839,8 @@ finding a `fixable` field. `petal lint --rules` lists them.
 | `never-replays` (opt-in) | a function whose calls are never replayed from the memo table, and why: an effect on every call (`print`, a random draw, a host write), itself or through a function it calls on every call; a read whose answer changes every run (a native declared `ticks`, such as `time`); a top-level plain `var`, a new cell every run. A read of a revisioned class (`PHYSICS`, `NET`) on every call is reported as *rarely* replayed. The same analysis as [`show-static --deps`](#--deps--dependency-classes-and-why-a-helper-never-replays) | none |
 | `prefer-pub` | the deprecated `export` modifier, on any declaration or `import` | `export` → `pub` |
 | `state-key-deprecated` | every `state(key)` declaration, which is deprecated (the compiler warns about it too, under the same rule id) | `state(k)` → `memo(k)` where the slot is never written and the initializer is plainly a pure function of the key (no calls, no `get`, no name the key does not read): not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Otherwise reported |
-| `const-decl-deprecated` (opt-in) | `const X = e` and `pub const X = e`: the keyword is deprecated in favour of the annotation ([plan](tasks/lifecycle-annotation-functions-refactor.md)) | none yet. The planned rewrite is `let X = const(e)`, literals included, with a closing `)` after a multi-line initializer and trailing comments kept in their column |
-| `config-let-deprecated` (opt-in) | `config let X = v`: the modifier is deprecated; a setting is a `let` whose whole initializer is `tunable(…)` | none yet. The planned rewrite is `let X = tunable(v)`, or only `config` dropped when `v` is already a `tunable(…)` call |
+| `const-decl-deprecated` | `const X = e` and `pub const X = e` at the top level: the keyword is deprecated in favour of the annotation (the compiler warns about it too, under the same rule id; [plan](tasks/lifecycle-annotation-functions-refactor.md)) | `let X = const(e)`, literals included, with a closing `)` after a multi-line initializer and trailing comments kept in their column |
+| `config-let-deprecated` | `config let X = v` at the top level: the modifier is deprecated; a setting is a `let` whose whole initializer is `tunable(…)` (the compiler warns too, under the same rule id) | `let X = tunable(v)`, or only `config` dropped when `v` is already a `tunable(…)` call |
 | `const-of-literal` (opt-in) | `const X = v` or `let X = const(v)` where `v` is literal data (a literal, a colour, a list or record of them): `const` checks nothing a reader cannot see | none: dropping the check is the author's call |
 | `state-as-constant` (opt-in) | a plain top-level `state` (no key, not `state var`; `pub state` included, since importers cannot write an export) that nothing in the program assigns and whose initializer is static | `state X = e` → `let X = const(e)` |
 
@@ -861,11 +861,13 @@ script that prints from a helper is not wrong, and the rule compiles the
 file. It is for a script a host runs every frame with memoization on, where
 it says which helpers re-run every frame and what to change.
 
-`const-decl-deprecated`, `config-let-deprecated` and `const-of-literal` are
-**opt-in** and report only while Cheesecake moves to `const(…)` and
-`tunable(…)` (the Petal corpus moved in Phase 3). They become default
-warnings that `--fix` applies once that migration has landed (Phase 5 of the
-[plan](tasks/lifecycle-annotation-functions-refactor.md)).
+`const-decl-deprecated` and `config-let-deprecated` run by default and
+`--fix` applies them (Phase 5 of the
+[plan](tasks/lifecycle-annotation-functions-refactor.md)). The compile check
+reports the same sites as warnings, and a `// petal-lint-ignore` naming the
+rule silences both. The declaration forms are removed one release later
+(Phase 6). `const-of-literal` stays **opt-in** and report only: dropping a
+check is the author's call.
 
 `state-as-constant` is **opt-in**: it runs only when `--rules-include` names
 it (`petal lint --rules-include=state-as-constant`, alone or with other

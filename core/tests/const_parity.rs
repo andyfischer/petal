@@ -366,6 +366,8 @@ fn compile(src: &str, origin: Option<&Path>) -> Compiled {
             let findings = program
                 .warnings
                 .iter()
+                // Only the keyword is warned about as deprecated (Phase 5).
+                .filter(|d| !d.message.ends_with("[const-decl-deprecated]"))
                 .map(|d| format!("{:?} line {}: {}", d.severity, d.span.start.line, d.message))
                 .collect();
             let mut report = env.static_report(program).to_json(false);

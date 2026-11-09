@@ -101,8 +101,8 @@ A setting holds any data. A number can carry a range (`min`, `max`,
 `step`), and `options:` lists the allowed values. See
 [Settings](syntax/settings.md) for the rules and for what tools do with
 them. The older spelling, `config let offset = 10`, still works and is
-deprecated: `petal lint --rules-include=config-let-deprecated` lists each
-one with its rewrite.
+deprecated: the compile check warns about each one, and `petal lint --fix`
+rewrites it.
 
 ### `const(…)` — a value that must be constant
 
@@ -143,7 +143,7 @@ once, kept between runs, and rebuilt when an edit changes the source it
 depends on, which a table parked in `state` never is.
 
 The older spelling, `const NAME = expr`, still works and means the same; it
-is deprecated (`petal lint --rules-include=const-decl-deprecated`).
+is deprecated (the compile check warns, and `petal lint --fix` rewrites it).
 
 The full rules, what is kept and when, how a `const(…)` built from a host's
 natives is checked, and the tools (`petal show-static`, the

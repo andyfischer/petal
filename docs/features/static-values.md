@@ -160,8 +160,9 @@ The rules:
 
 **The older spelling.** `const NAME = expr` (and `pub const`) is the same
 declaration and still works, with the same rules (`config const` is an
-error). It is deprecated: `petal lint --rules-include=const-decl-deprecated`
-reports each one with its rewrite to `let NAME = const(expr)`
+error). It is deprecated: the compile check warns about each one
+(`[const-decl-deprecated]`), and `petal lint --fix` rewrites it to
+`let NAME = const(expr)`
 ([plan](../tasks/lifecycle-annotation-functions-refactor.md)).
 
 A `const(…)` built from a host's natives is checked by the host, not by

@@ -16,10 +16,10 @@
 //! - **`const-of-literal`**: a `const` (either form) on literal data, where
 //!   it checks nothing a reader cannot see. Report only, with no planned fix.
 //!
-//! All three are opt-in and report only until Phase 5 of the plan: the
-//! deprecation rules plan their rewrites (the fixture tests and
-//! [`migrate_lifecycle_keywords`] apply them), but `petal lint --fix` does
-//! not, because the corpus and Cheesecake are migrated first (Phases 3, 4).
+//! Since Phase 5 of the plan the two deprecation rules run by default and
+//! `petal lint --fix` applies them, and the compiler warns about the same
+//! sites ([`deprecated_lifecycle_decls`]; a `petal-lint-ignore` for the rule
+//! silences both). `const-of-literal` stays opt-in and report only.
 //!
 //! Two things `prefer-pub` ([`super::export_to_pub`]) never needed:
 //!
@@ -367,10 +367,58 @@ fn is_literal_data(e: &Expr) -> bool {
     }
 }
 
+/// The compiler's deprecation warnings for the two keywords (Phase 5): one per
+/// top-level `const X = e` and `config let X = v`, worded as the lint rules
+/// word them and tagged `[const-decl-deprecated]` / `[config-let-deprecated]`.
+/// Silenced like a lint finding, with `// petal-lint-ignore <rule>` on the
+/// line before or trailing on the line (or `petal-lint-ignore-file`).
+///
+/// Only top-level statements, as the rules: a nested `const` is already an
+/// error (`misplaced_const_decls`), and a nested `config let` is not
+/// reported (the fixer does not rewrite one; none exists in the corpus).
+pub(crate) fn deprecated_lifecycle_decls(stmts: &[Stmt], source: &str) -> Vec<crate::diagnostic::Diagnostic> {
+    use super::{CONFIG_LET_DEPRECATED, CONST_DECL_DEPRECATED};
+    let mut out = Vec::new();
+    let mut ignores = None;
+    for stmt in stmts {
+        let StmtKind::Let {
+            name,
+            value,
+            is_config,
+            is_const,
+            ..
+        } = &stmt.kind
+        else {
+            continue;
+        };
+        if !is_const && !is_config {
+            continue;
+        }
+        let rule = if *is_const { CONST_DECL_DEPRECATED } else { CONFIG_LET_DEPRECATED };
+        // A file whose comments do not scan is reported in full.
+        let ignores = ignores.get_or_insert_with(|| super::Ignores::scan(source).ok());
+        let line = (stmt.span.start.line as usize).saturating_sub(1);
+        if ignores.as_ref().is_some_and(|i| i.suppresses(rule, line)) {
+            continue;
+        }
+        let already = !is_const && tunable_args(value).is_some();
+        // The caret goes under `const X =`, not under a long table.
+        let mut head = stmt.span;
+        if value.span.file == stmt.span.file && value.span.start.offset > stmt.span.start.offset {
+            head.end = value.span.start;
+        }
+        out.push(crate::diagnostic::Diagnostic::new(
+            head,
+            format!("{} [{rule}]", message(*is_const, already, name)),
+        ));
+    }
+    out
+}
+
 /// Rewrite every `const` declaration and `config let` in `source` into the
-/// annotation form, exactly as the two deprecation rules plan it. For the
-/// fixture tests now, and for the Phase 3 sweep before `--fix` applies the
-/// rules (Phase 5).
+/// annotation form, exactly as the two deprecation rules plan it. `petal lint
+/// --fix` applies the same rewrites since Phase 5; this is the library entry
+/// for a sweep and for the fixture tests.
 pub fn migrate_lifecycle_keywords(source: &str) -> Result<String, String> {
     let mut text = source.to_string();
     for consts in [true, false] {
@@ -587,5 +635,58 @@ mod tests {
         assert_eq!(found.len(), 3, "{found:?}");
         assert!(found[0].starts_with("`const A = …` on literal data"), "{found:?}");
         assert!(found[1].starts_with("`const(…)` on literal data"), "{found:?}");
+    }
+
+    #[test]
+    fn plain_lint_reports_and_fixes_both_keywords() {
+        // Phase 5: no `--rules-include` needed, and the output is rewritten.
+        let src = "const N = 4\nconfig let SPEED = 2.5 // knob\npub config let G = tunable(9.8, 0, 20)\nprint(N + SPEED + G)\n";
+        let out = super::super::lint_source(src, &super::super::LintOptions::default()).expect("lint");
+        let rules: Vec<&str> = out.findings.iter().map(|f| f.rule).collect();
+        assert_eq!(
+            rules,
+            [
+                super::super::CONST_DECL_DEPRECATED,
+                super::super::CONFIG_LET_DEPRECATED,
+                super::super::CONFIG_LET_DEPRECATED
+            ]
+        );
+        assert!(out.findings.iter().all(|f| f.fixable));
+        assert_eq!(out.output, migrate(src));
+        assert!(out.output.contains("let SPEED = tunable(2.5) // knob"), "{}", out.output);
+        // `const-of-literal` is still opt-in.
+        assert!(!out.findings.iter().any(|f| f.rule == super::super::CONST_OF_LITERAL));
+    }
+
+    #[test]
+    fn the_compiler_warns_about_both_keywords() {
+        let src = "const N = 4\nconfig let SPEED = 2.5\n// petal-lint-ignore config-let-deprecated\nconfig let QUIET = 1\npub config let G = tunable(9.8, 0, 20)\nlet OK = tunable(1)\nlet K = const(2)\nprint(N + SPEED + QUIET + G + OK + K)\n";
+        let mut env = crate::env::Env::new();
+        env.set_echo(false);
+        let pid = env.load_program(src).expect("load");
+        let found: Vec<(u32, String)> = env
+            .get_program(pid)
+            .unwrap()
+            .warnings
+            .iter()
+            .map(|d| (d.span.start.line, d.message.clone()))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                (1, "`const N = e` is deprecated; write `let N = const(e)` [const-decl-deprecated]".to_string()),
+                (
+                    2,
+                    "`config let SPEED = v` is deprecated; write `let SPEED = tunable(v)` [config-let-deprecated]"
+                        .to_string()
+                ),
+                (
+                    5,
+                    "`config let` is deprecated; `tunable(…)` already makes `G` a setting: drop `config` \
+                     [config-let-deprecated]"
+                        .to_string()
+                ),
+            ]
+        );
     }
 }

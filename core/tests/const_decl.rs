@@ -333,7 +333,7 @@ fn a_dynamic_const_still_runs_as_a_let_for_a_host_that_runs_anyway() {
 fn the_error_is_what_check_prints() {
     let mut env = quiet();
     env.set_check_only(true);
-    let pid = env.load_program("state n = 0\nconst A = n + 1\n").unwrap();
+    let pid = env.load_program("state n = 0\nlet A = const(n + 1)\n").unwrap();
     let report = env.check_program(pid);
     assert!(!report.passed());
     assert_eq!(
@@ -341,7 +341,7 @@ fn the_error_is_what_check_prints() {
         "error: `A` is declared `const` but is not constant\n  \
          = A reads n at line 2\n  \
          = n is state, which changes between runs at line 1\n \
-         --> [line 2, column 11]\n  |\n2 | const A = n + 1\n  |           ^^^^^\n"
+         --> [line 2, column 15]\n  |\n2 | let A = const(n + 1)\n  |               ^^^^^\n"
     );
 }
 
@@ -645,12 +645,51 @@ print(SQUARES[frame % 3], len(ROWS))
 
 // ── A `const` that is constant and still built on every run ────────────────
 
-/// The warnings (not the errors) of compiling `src` with no host.
+/// The warnings (not the errors) of compiling `src` with no host, less the
+/// keyword's own deprecation warning (tested on its own, below).
 fn warnings(src: &str) -> Vec<Diagnostic> {
     diagnostics_in(&mut quiet(), src)
         .into_iter()
-        .filter(|d| !d.is_error())
+        .filter(|d| !d.is_error() && !d.message.ends_with("[const-decl-deprecated]"))
         .collect()
+}
+
+// ── The keyword is deprecated (Phase 5) ────────────────────────────────────
+
+#[test]
+fn the_keyword_is_warned_about_and_the_annotation_is_not() {
+    let w: Vec<Diagnostic> = diagnostics_in(&mut quiet(), "const A = 1\npub const B = [A]\nprint(B)\n")
+        .into_iter()
+        .filter(|d| d.message.ends_with("[const-decl-deprecated]"))
+        .collect();
+    assert_eq!(w.len(), 2, "{w:?}");
+    assert!(!w[0].is_error());
+    assert_eq!(
+        w[0].message,
+        "`const A = e` is deprecated; write `let A = const(e)` [const-decl-deprecated]"
+    );
+    // The caret is under `const A =`, not the initializer.
+    assert_eq!((w[0].span.start.column, w[0].span.end.column), (1, 11));
+    assert_eq!(w[1].span.start.line, 2);
+    // The annotation draws nothing.
+    assert_eq!(
+        warnings("let A = const(1)\npub let B = const([A])\nprint(B)\n"),
+        Vec::<Diagnostic>::new()
+    );
+    let all = diagnostics_in(&mut quiet(), "let A = const(1)\nprint(A)\n");
+    assert!(all.is_empty(), "{all:?}");
+}
+
+#[test]
+fn a_lint_ignore_silences_the_deprecation_warning() {
+    for src in [
+        "// petal-lint-ignore const-decl-deprecated\nconst A = 1\nprint(A)\n",
+        "const A = 1 // petal-lint-ignore const-decl-deprecated\nprint(A)\n",
+        "// petal-lint-ignore-file const-decl-deprecated\nconst A = 1\nconst B = 2\nprint(A + B)\n",
+    ] {
+        let all = diagnostics_in(&mut quiet(), src);
+        assert!(all.is_empty(), "{src}: {all:?}");
+    }
 }
 
 #[test]

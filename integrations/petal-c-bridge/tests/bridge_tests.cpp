@@ -1082,6 +1082,171 @@ TEST(implicit_keys_reach_keyed_emitters_and_callbacks) {
     CHECK(kicks == first_kicks);
 }
 
+// A checked emitter (pb_vm_register_checked_emitter) runs its callback in
+// the call, so it can check its arguments, then emits. A memoized scope
+// that called it is replayed like one that called an emitter: the pushes
+// come back and the callback is not called again.
+TEST(a_checked_emitter_checks_in_the_call_and_replays_without_it) {
+    petal::Vm vm;
+    int64_t checked = 0, tokens = 0;
+    vm.checked_emitter("box", "scene", petal::fx::Declare, [&](petal::Call& c) {
+        ++checked;
+        if (!c[0].is_number()) throw std::runtime_error("box: size must be a number");
+    });
+    // The result form: push what the callback made (a token), nothing for nil.
+    vm.checked_emitter("mark", "scene", petal::fx::EmitResult, [&](petal::Call& c) {
+        ++checked;
+        if (c[0].number() > 0) c.result().value(++tokens * 100);
+    }, "token");
+    vm.checked_emitter("pin", "keyed", petal::fx::Declare | petal::fx::Keyed | petal::fx::EmitResult,
+                       [&](petal::Call& c) { c.result().value(c[0].number() * 2); });
+    vm.load_source(
+        "native fn box(size, name)\nnative fn mark(n)\nnative fn pin(x)\n"
+        "fn city(n)\n  for i in range(0, n) do box(float(i), \"b\") end\n  mark(1)\n  mark(0)\n  pin(4.0)\n  nil\nend\n"
+        "city(3)\n");
+    vm.set_memo(true);
+    vm.run();
+    petal::Values scene = vm.drain("scene");
+    REQUIRE(scene.size() == 4);
+    CHECK_EQ(scene[0].tag(), std::string_view("box"));
+    REQUIRE(scene[2].size() == 2);
+    CHECK_EQ(scene[2][0].number(), 2.0);
+    CHECK_EQ(scene[2][1].str(), std::string_view("b"));
+    CHECK_EQ(scene[3].tag(), std::string_view("token"));
+    REQUIRE(scene[3].size() == 1);
+    CHECK_EQ(scene[3][0].integer(), (int64_t)100);
+    petal::Values keyed = vm.drain("keyed");
+    REQUIRE(keyed.size() == 1 && keyed[0].size() == 2);
+    CHECK(keyed[0][0].is_int());
+    CHECK_EQ(keyed[0][1].number(), 8.0);
+    CHECK_EQ(checked, (int64_t)5);
+
+    // Replayed: the same pushes, the callbacks not called again.
+    vm.run();
+    scene = vm.drain("scene");
+    REQUIRE(scene.size() == 4);
+    CHECK_EQ(scene[1][0].number(), 1.0);
+    CHECK_EQ(scene[3][0].integer(), (int64_t)100);
+    CHECK_EQ(vm.drain("keyed").size(), (size_t)1);
+    CHECK_EQ(checked, (int64_t)5);
+    CHECK_EQ(tokens, (int64_t)1);
+
+    // With memo off every call runs its callback.
+    vm.set_memo(false);
+    vm.run();
+    CHECK_EQ(vm.drain("scene").size(), (size_t)4);
+    CHECK_EQ(checked, (int64_t)10);
+
+    // Flags that would make the call more than an emit are refused.
+    CHECK_THROWS_CODE(vm.checked_emitter("bad", "scene", petal::fx::Command, [](petal::Call&) {}), PB_ERR_INVALID_ARG);
+    CHECK_THROWS_CODE(vm.checked_emitter("bad", "scene", petal::fx::Effect, [](petal::Call&) {}), PB_ERR_INVALID_ARG);
+}
+
+// The callback's error is the script call's: it names the line that called
+// the native, inside a helper, not a wrapper in a package.
+TEST(a_checked_emitter_error_names_the_calling_line) {
+    petal::Vm vm;
+    vm.checked_emitter("box", "scene", petal::fx::Declare, [](petal::Call& c) {
+        if (!c[0].is_number()) throw std::runtime_error("box: size must be a number");
+    });
+    vm.register_package("shapes", {{"petal.toml", "[package]\nname = \"shapes\"\nversion = \"1.0.0\"\n"},
+                                   {"shapes", "pub native fn box(size)\n"}});
+    vm.load_source(
+        "import shapes\n"
+        "fn wall()\n"
+        "  box(1.0)\n"
+        "  box(\"big\")\n"
+        "  nil\n"
+        "end\n"
+        "wall()\n");
+    petal::Error e = CHECK_THROWS_CODE(vm.run(), PB_ERR_RUNTIME);
+    CHECK_CONTAINS(std::string(e.what()), "size must be a number");
+    CHECK_EQ(e.line(), 4u);
+    CHECK_EQ(e.column(), 3u);
+    // The push made before the error is still drainable; the failed call made none.
+    CHECK_EQ(vm.drain("scene").size(), (size_t)1);
+}
+
+// A watched counter (pb_vm_watch_class) revises its class without the host
+// noting it: a command or effect that moves the counter in its call is a
+// change in the run, and a move between runs is noted before the next run.
+// The shape of Cheesecake's physics and asset reads (retained plan A3/A7):
+// two readers around a native that moves the world; memo on must equal memo
+// off, and with memo on a reader replays once nothing moves.
+TEST(a_watched_counter_revises_its_class_in_the_call_and_between_runs) {
+    struct World {
+        double pos = 0;
+        uint64_t revision = 0;
+        uint64_t assets = 0;
+    };
+    const auto frames = [](bool memo, std::vector<int64_t>* asked_per_frame) {
+        petal::Vm vm;
+        World w;
+        int64_t asked = 0;
+        vm.watch_class(petal::fx::ReadsPhysics, &w.revision);
+        vm.watch_class(petal::fx::ReadsHostData, &w.assets);
+        vm.native("move", petal::fx::Command, [&](petal::Call& c) {
+            const double x = c[0].number();
+            if (x == w.pos) return;
+            w.pos = x;
+            ++w.revision;   // no note_class_changed: the watch sees it
+        });
+        vm.native("make", petal::fx::Effect, [&](petal::Call&) { ++w.assets; });
+        vm.native("where", petal::fx::Query, [&](petal::Call& c) {
+            ++asked;
+            c.result().value(w.pos);
+        });
+        vm.native("count", petal::fx::ReadsHostData | petal::fx::Contained, [&](petal::Call& c) {
+            ++asked;
+            c.result().value(double(w.assets));
+        });
+        vm.load_source(
+            "import io\n"
+            "native fn move(x)\nnative fn make()\nnative fn where()\nnative fn count()\n"
+            "state n = 0\n"
+            "n += 1\n"
+            "fn show(tag)\n  push_output(symbol(\"out\"), where())\n  push_output(symbol(\"out\"), count())\n  nil\nend\n"
+            "show(1)\n"
+            "move(float(min(n, 3)))\n"
+            "if n == 2 || n == 3 then make() end\n"
+            "show(2)\n");
+        vm.set_memo(memo);
+        std::vector<std::vector<double>> out;
+        for (int f = 1; f <= 8; ++f) {
+            // A physics step between runs (frame 6), and an asset made by the
+            // host outside any call (frame 7).
+            if (f == 6) { w.pos += 10; ++w.revision; }
+            if (f == 7) ++w.assets;
+            const int64_t before = asked;
+            out.push_back(run_out(vm));
+            if (asked_per_frame) asked_per_frame->push_back(asked - before);
+        }
+        return out;
+    };
+    std::vector<int64_t> asked_on;
+    const auto off = frames(false, nullptr);
+    const auto on = frames(true, &asked_on);
+    CHECK(on == off);
+    // What memo off sees: the first show reads last frame's world, the second this one's.
+    REQUIRE(off.size() == 8);
+    CHECK_EQ(off[1], (std::vector<double>{1, 0, 2, 1}));
+    CHECK_EQ(off[5], (std::vector<double>{13, 2, 3, 2}));   // stepped, then moved back
+    CHECK_EQ(off[6], (std::vector<double>{3, 3, 3, 3}));    // an asset made between runs
+    // Frame 5 moves nothing and frame 8 moves nothing either: both shows replay.
+    CHECK_EQ(asked_on[4], (int64_t)0);
+    CHECK_EQ(asked_on[7], (int64_t)0);
+    // The frames after a move between runs re-ask.
+    CHECK(asked_on[5] > 0);
+    CHECK(asked_on[6] > 0);
+
+    // Only watchable classes; a NULL counter unwatches.
+    petal::Vm vm;
+    uint64_t c = 0;
+    CHECK_THROWS_CODE(vm.watch_class(petal::fx::ReadsPointer, &c), PB_ERR_INVALID_ARG);
+    vm.watch_class(petal::fx::ReadsNet, &c);
+    vm.watch_class(petal::fx::ReadsNet, nullptr);
+}
+
 TEST(segmented_buffer_hands_a_replayed_scope_over_as_one_entry) {
     pb_vm* vm = pb_vm_create();
     CHECK_EQ(pb_vm_set_segmented(vm, "out", true), PB_OK);

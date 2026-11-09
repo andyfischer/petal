@@ -155,6 +155,21 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- C bridge: **checked emitters**, `pb_vm_register_checked_emitter`
+  (`petal::Vm::checked_emitter`). The host callback runs in the call and
+  may fail it (reported at the script's call), then the call pushes the
+  arguments, or with `PB_FX_EMIT_RESULT` the callback's result, like an
+  emitter. A memo replay re-pushes without calling the callback. A
+  declaration that checks its arguments no longer needs a Petal wrapper
+  over a checking native and an emitter.
+- C bridge: **class watches**, `pb_vm_watch_class(vm, reads, &counter)`
+  (`petal::Vm::watch_class`). The bridge compares a host counter (a physics
+  revision, an asset serial) around every effect or command callback and
+  before every run, and revises the class when it moved, in the call or
+  between runs.
+- docs: `embedding-c.md` has sections on both, and what a segment host
+  learned (recovery, emit tracing, cuts, in-place frames) plus the
+  memo-off/memo-on trace check for effect rows.
 - text-layout: `wrap_rows_reference` (`import text_layout/wrap_reference`),
   the Petal specification of the native `text_wrap_rows`; petal-ui's
   `tests/text_wrap_reference.rs` holds the two to the same rows. Not

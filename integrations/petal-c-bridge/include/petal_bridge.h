@@ -12,6 +12,8 @@
  *
  *   pb_vm_create                         one Env + one program + one stack
  *   pb_vm_register_native / _emitter     host natives (before the load that uses them)
+ *     (_checked_emitter: host code checks the call, then it emits)
+ *   pb_vm_watch_class                    host counters that revise a class
  *   pb_vm_declare_native_params          optional: names for named arguments
  *   pb_vm_load_file / _load_source       compile; errors -> pb_vm_last_error
  *   per frame:
@@ -467,7 +469,10 @@ pb_status pb_vm_override_file(pb_vm* vm, const char* path, const char* source);
  *                   pushed payload starts with the call's IMPLICIT KEY (an
  *                   int, or nil where the call has none), then the call's
  *                   arguments. See pb_call_key for what the key is; a
- *                   callback native asks pb_call_key instead. */
+ *                   callback native asks pb_call_key instead.
+ *   PB_FX_EMIT_RESULT only for pb_vm_register_checked_emitter, and not an
+ *                   effect: push the callback's result instead of the call's
+ *                   arguments. */
 enum {
     PB_FX_PURE = 0,
     PB_FX_PROBE = 1u << 0,
@@ -492,7 +497,8 @@ enum {
     PB_FX_COMMAND = 1u << 19,       /* a one-shot command, re-issued on replay */
     PB_FX_TICKS = 1u << 20,         /* a read whose answer changes every run */
     PB_FX_KEYED = 1u << 21,         /* emitter: payload starts with the implicit key */
-    PB_FX_READS_CAMERA = 1u << 22   /* the frame's camera, revised by a fingerprint */
+    PB_FX_READS_CAMERA = 1u << 22,  /* the frame's camera, revised by a fingerprint */
+    PB_FX_EMIT_RESULT = 1u << 23    /* checked emitter: push the callback's result */
 };
 
 /* A host native. Read arguments with pb_call_arg*, build at most one result
@@ -529,6 +535,41 @@ pb_status pb_vm_register_emitter(pb_vm* vm, const char* name, const char* buffer
 pb_status pb_vm_register_emitter_fx(pb_vm* vm, const char* name, const char* buffer, const char* tag,
                                     uint32_t effects);
 
+/* Register a CHECKED emitter: a native `name(args...)` that first runs the
+ * host callback `fn` in the call, then pushes into the output buffer
+ * `buffer` and returns nil. It is how a declaration that must check its
+ * arguments (an unknown mesh, a bad option) stays an emit:
+ *
+ *   - the callback reads the arguments (pb_call_arg*) and may fail the call
+ *     (pb_call_set_error, return nonzero). The error is the script call's,
+ *     reported at the line that called `name`, like any native's.
+ *   - then the call pushes `tag(args...)`, the call's arguments, as
+ *     pb_vm_register_emitter does (the callback's result is ignored); or,
+ *     with PB_FX_EMIT_RESULT, `tag(result)`, the value the callback built
+ *     into pb_call_result: a token for what it made, a decoded command. A
+ *     nil result (nothing built) pushes nothing.
+ *   - PB_FX_KEYED puts the call's implicit key first in the payload, as for
+ *     pb_vm_register_emitter_fx: `tag(key, args...)` or `tag(key, result)`.
+ *
+ * Its effect row is an emitter's: PB_FX_EMITS with the Pending-no-op policy,
+ * plus `effects` (PB_FX_DECLARE; PB_FX_READS_* for what the callback reads,
+ * which it then notes as a callback native does). So a memoized scope that
+ * called it is REPLAYED like one that called an emitter: what the call
+ * pushed is pushed again (or handed over as one segment) WITHOUT calling the
+ * callback, and in a child re-executed during validation the push is
+ * discarded with the child's other output while the callback still runs.
+ * The callback may therefore run more often than its pushes reach the
+ * buffer, and not at all on a replay: whatever it makes on the host (a
+ * decoded draw, a cache slot) must be reached through what it pushed, never
+ * kept as "the calls of this frame". `effects` may not hold PB_FX_EFFECT,
+ * PB_FX_COMMAND, PB_FX_PROBE, PB_FX_CONST, PB_FX_CONTAINED, PB_FX_TICKS or
+ * PB_FX_PENDING_ALLOW (PB_ERR_INVALID_ARG): a native that changes host state
+ * is a command or an effect, not an emit. `tag` NULL = `name`; userdata
+ * ownership is as for pb_vm_register_native. */
+pb_status pb_vm_register_checked_emitter(pb_vm* vm, const char* name, const char* buffer, const char* tag,
+                                         pb_native_fn fn, void* userdata, pb_free_fn free_userdata,
+                                         uint32_t effects);
+
 /* The host data behind PB_FX_READS_HOST_DATA natives changed: the frame gate
  * re-runs a script that read it, and a memoized scope that read it is no
  * longer replayed. Applies to the loaded program's stack. */
@@ -548,6 +589,27 @@ pb_status pb_vm_note_class_changed(pb_vm* vm, uint32_t reads);
  * it replays. Two different states must never get the same revision; use
  * either this or pb_vm_note_class_changed for a class, not both. */
 pb_status pb_vm_set_class_revision(pb_vm* vm, uint32_t reads, uint64_t revision);
+
+/* Watch a host counter for the classes in `reads` (PB_FX_READS_PHYSICS,
+ * _NET, _CAMERA or _HOST_DATA; others are PB_ERR_INVALID_ARG): a number the
+ * host moves whenever that data changes, such as a physics world's revision
+ * or an asset serial. The bridge then does what a host would otherwise do by
+ * hand, and cannot forget:
+ *   - around every PB_FX_EFFECT or PB_FX_COMMAND callback it compares the
+ *     counter, and when the call moved it, notes the change in the call
+ *     (pb_call_note_class_changed): a scope that read the class earlier in
+ *     the run is not replayed later in it with the answer from before;
+ *   - before every pb_vm_run, pb_vm_call, pb_vm_call_json and
+ *     pb_vm_test_resume it notes a counter that moved since it last looked
+ *     (pb_vm_note_class_changed, or pb_vm_note_host_data_changed for
+ *     PB_FX_READS_HOST_DATA), as after a physics step.
+ * Only whether the counter moved matters, not by how much. Each class has
+ * one counter; watching it again replaces the old one, and a NULL counter
+ * stops watching the classes in `reads`. The counter must stay valid, and be
+ * changed only on the VM's thread, while it is watched. A watch outlives
+ * reloads; register it before the first run. A watched class should not
+ * also be given revisions by pb_vm_set_class_revision. */
+pb_status pb_vm_watch_class(pb_vm* vm, uint32_t reads, const uint64_t* counter);
 
 /* The dependency classes of every function of the loaded program, judged
  * against this VM's natives, and the `never-replays` findings: which helpers

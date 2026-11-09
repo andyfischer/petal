@@ -56,6 +56,17 @@ pub const FX_READS_CAMERA: u32 = 1 << 22;
 /// Bridge-only: an emitter puts the call's implicit key first in what it
 /// pushes ([`register_emitter_fx`]). Not part of the effect row.
 pub const FX_KEYED: u32 = 1 << 21;
+/// Bridge-only: a checked emitter pushes its callback's result instead of
+/// the call's arguments ([`register_checked_emitter`]). Not part of the
+/// effect row.
+pub const FX_EMIT_RESULT: u32 = 1 << 23;
+/// The flags a checked emitter may not take: anything that would make its
+/// call more than an emit (an effect, a command, a probe, a constant).
+pub const FX_NOT_FOR_EMITTERS: u32 =
+    FX_PROBE | FX_EFFECT | FX_CONST | FX_CONTAINED | FX_COMMAND | FX_TICKS | FX_PENDING_ALLOW;
+/// The classes a host may watch with a counter ([`ClassWatch`]): the
+/// revisioned ones and host data in general.
+pub const FX_WATCHABLE: u32 = FX_READS_REVISIONED | FX_READS_HOST_DATA;
 /// The read bits, `PB_FX_READS_POINTER` to `PB_FX_READS_NET`: one per input
 /// class, in the classes' bit order.
 const FX_READS_MASK: u32 = 0x3ff;
@@ -73,6 +84,31 @@ pub fn classes_from_flags(flags: u32) -> InputClasses {
 /// The `PB_FX_READS_*` bits of the revisioned classes, each validated by its
 /// own revision.
 const FX_READS_REVISIONED: u32 = FX_READS_PHYSICS | FX_READS_NET | FX_READS_CAMERA;
+
+/// A host counter watched for a class of host data (`pb_vm_watch_class`):
+/// when it moves, the class changed. The bridge compares it around every
+/// `PB_FX_EFFECT` / `PB_FX_COMMAND` callback (a change in the call) and
+/// before every run (a change between runs).
+pub struct ClassWatch {
+    /// The `PB_FX_READS_*` bits it stands for (within [`FX_WATCHABLE`]).
+    pub flags: u32,
+    /// The host's counter. The host keeps it alive while it is watched.
+    pub counter: *const u64,
+    /// Its value when the bridge last noted it.
+    pub last: u64,
+}
+
+impl ClassWatch {
+    /// The counter's value now.
+    pub fn now(&self) -> u64 {
+        // SAFETY: the host promised (pb_vm_watch_class) to keep the counter
+        // alive while it is watched; it is only read on the VM's thread.
+        unsafe { self.counter.read_volatile() }
+    }
+}
+
+/// A VM's watches, shared with the callbacks that compare them in the call.
+pub type Watches = Rc<RefCell<Vec<ClassWatch>>>;
 
 /// Translate `PB_FX_*` flags into Petal's effect row.
 ///
@@ -117,6 +153,9 @@ pub struct HostCallback {
     /// thousands of times a frame, and building these fresh each time was
     /// most of the bridge's cost.
     scratch: RefCell<CallScratch>,
+    /// The VM's class watches, for a callback that may change host state
+    /// (`PB_FX_EFFECT` / `PB_FX_COMMAND`); `None` for every other native.
+    watches: Option<Watches>,
 }
 
 #[derive(Default)]
@@ -124,6 +163,8 @@ struct CallScratch {
     args: Vec<Value>,
     arena: ViewArena,
     result: Builder,
+    /// The watched counters before the call (only with `watches`).
+    watched: Vec<u64>,
 }
 
 impl HostCallback {
@@ -143,11 +184,32 @@ impl HostCallback {
             userdata,
             free,
             scratch: RefCell::default(),
+            watches: None,
         }
     }
 
-    /// Run the callback for one script call.
+    /// Compare the VM's class watches around each call: a callback that is
+    /// `PB_FX_EFFECT` or `PB_FX_COMMAND` and moved a watched counter changed
+    /// that class in the call ([`PetalCxt::note_class_changed`]). Other
+    /// callbacks cannot change host state, so they are left alone.
+    pub fn with_watches(mut self, watches: &Watches) -> Self {
+        if self.flags & (FX_EFFECT | FX_COMMAND) != 0 {
+            self.watches = Some(watches.clone());
+        }
+        self
+    }
+
+    /// Run the callback for one script call and push its result.
     fn call(&self, cxt: &mut PetalCxt) -> NativeResult {
+        let value = self.invoke(cxt, true)?;
+        cxt.push_value(value);
+        Ok(1)
+    }
+
+    /// Run the callback for one script call: its result as a script value
+    /// (nil when `want_result` is false, without materializing it), or the
+    /// error it failed with.
+    fn invoke(&self, cxt: &mut PetalCxt, want_result: bool) -> Result<Value, String> {
         if self.flags & FX_READS_HOST_DATA != 0 {
             cxt.note_host_read();
         }
@@ -173,6 +235,10 @@ impl HostCallback {
         let first = scratch.arena.decode(&scratch.args, cxt.heap(), &Names::NONE);
         scratch.arena.finish();
         scratch.result.clear();
+        if let Some(w) = &self.watches {
+            scratch.watched.clear();
+            scratch.watched.extend(w.borrow().iter().map(ClassWatch::now));
+        }
         let mut call = PbCall {
             name: self.name.as_ptr(),
             args: scratch.arena.node_ptr(first),
@@ -187,6 +253,21 @@ impl HostCallback {
         // SAFETY: the host's callback with the userdata it registered.
         let rc = unsafe { (self.func)(&mut call, self.userdata) };
         call.cxt = std::ptr::null_mut();
+        if let Some(w) = &self.watches {
+            // A change counts whether the call succeeded or not: the host
+            // state moved either way.
+            let mut changed = 0;
+            for (watch, before) in w.borrow_mut().iter_mut().zip(&scratch.watched) {
+                let now = watch.now();
+                if now != *before {
+                    changed |= watch.flags;
+                }
+                watch.last = now;
+            }
+            if changed != 0 {
+                cxt.note_class_changed(classes_from_flags(changed));
+            }
+        }
         let result = call.result.take_result();
         scratch.result = call.result;
         if rc != 0 || call.error.is_some() {
@@ -195,13 +276,14 @@ impl HostCallback {
             }));
         }
         let result = result.map_err(|e| e.message)?;
+        if !want_result {
+            return Ok(Value::Nil);
+        }
         let one = [result];
         let syms = builder::intern_symbols(&one, |s| cxt.intern_symbol(s));
-        let value = builder::materialize(&one, cxt.heap_mut(), &syms)
+        Ok(builder::materialize(&one, cxt.heap_mut(), &syms)
             .pop()
-            .unwrap_or(Value::Nil);
-        cxt.push_value(value);
-        Ok(1)
+            .unwrap_or(Value::Nil))
     }
 }
 
@@ -258,6 +340,61 @@ pub fn register_emitter_fx(
             Ok(1)
         },
         effects_from_flags(FX_EMITS | FX_PENDING_EFFECTFUL | (extra & !FX_KEYED)),
+    )
+}
+
+/// Register a checked emitter: `name(args...)` runs `callback` in the call
+/// (an error fails the script call at its own line), then pushes into
+/// `buffer` and returns nil:
+///
+/// - `tag(args...)`, the call's arguments, as an emitter does; or
+/// - with [`FX_EMIT_RESULT`], `tag(result)`, what the callback built, and
+///   nothing when it built nil (the call checked out but has nothing to put).
+///
+/// With [`FX_KEYED`] the payload starts with the implicit key, as for
+/// [`register_emitter_fx`]. The row is the emitter's (`Emits`, Pending
+/// no-op, `extra` such as `PB_FX_DECLARE` and `PB_FX_READS_*`), so a memo
+/// replay re-emits what the call pushed WITHOUT calling the callback, and a
+/// re-executed child's emits are discarded with it. `extra` must not hold
+/// [`FX_NOT_FOR_EMITTERS`] (the caller checks).
+pub fn register_checked_emitter(
+    env: &mut Env,
+    callback: HostCallback,
+    buffer: SymbolId,
+    tag: &str,
+    extra: u32,
+) -> NativeFnId {
+    let name = callback.name.to_string_lossy().into_owned();
+    let tag: Rc<str> = Rc::from(tag);
+    let keyed = extra & FX_KEYED != 0;
+    let emit_result = extra & FX_EMIT_RESULT != 0;
+    env.register_native_boxed(
+        &name,
+        move |cxt| {
+            let result = callback.invoke(cxt, emit_result)?;
+            let n = if emit_result { 1 } else { cxt.arg_count() };
+            let mut payload = Vec::with_capacity(n + keyed as usize);
+            if keyed {
+                payload.push(key_value(cxt.call_key()));
+            }
+            if emit_result {
+                if matches!(result, Value::Nil) {
+                    cxt.push_nil();
+                    return Ok(1);
+                }
+                payload.push(result);
+            } else {
+                for i in 1..=cxt.arg_count() {
+                    payload.push(cxt.get_value(i)?);
+                }
+            }
+            cxt.emit(buffer, &tag, payload);
+            cxt.push_nil();
+            Ok(1)
+        },
+        effects_from_flags(
+            FX_EMITS | FX_PENDING_EFFECTFUL | (extra & !(FX_KEYED | FX_EMIT_RESULT)),
+        ),
     )
 }
 

@@ -382,6 +382,70 @@ dependency classes and the helpers that never replay, with the reason (C++:
 `petal::fx::Declare`, `Command`, `Query`, `Ticks`). See
 [native-effects.md](../dev/native-effects.md#the-four-kinds-of-engine-native).
 
+### Checked emitters: check the arguments, then emit
+
+An emitter runs no host code, so it cannot reject a bad call (an unknown
+mesh, a misspelt option) where the script made it. A callback can, but a
+callback is not an emit: memoization would have to call it again on every
+replay. A **checked emitter** is both. Its callback runs in the call and may
+throw; then the call pushes into the buffer like an emitter, either the
+call's arguments or what the callback built (`fx::EmitResult`):
+
+```cpp
+// draw_mesh(mesh, opts): checked in the call, pushed as draw(token).
+vm.checked_emitter("draw_mesh", "scene", petal::fx::Declare | petal::fx::EmitResult,
+                   [&](petal::Call& c) {
+                       if (!meshes.count(std::string(c[0].str())))
+                           throw std::runtime_error("draw_mesh: no mesh `" + std::string(c[0].str()) + "`");
+                       c.result().value(keep(decode_draw(c)));   // a token for the decoded draw
+                   }, "draw");
+```
+
+- The callback's error is the script call's, reported at the line that
+  called `draw_mesh`, so the native needs no Petal wrapper in the
+  interface package (and the host need not move the error from the
+  wrapper's line to its caller's).
+- Without `fx::EmitResult` the call pushes `tag(args...)`, as `vm.emitter`
+  does, and the callback's result is ignored. With it, the call pushes
+  `tag(result)`, and a callback that builds nothing pushes nothing.
+  `fx::Keyed` puts the implicit key first in either payload.
+- It is replayed like an emitter: a memoized scope that called it pushes
+  what it pushed last time (or arrives as one segment) **without calling
+  the callback**, and in a child re-executed during validation the push is
+  discarded with the child's other output while the callback still runs.
+  So whatever the callback keeps on the host (a decoded draw, a cache slot)
+  must be found through what it pushed, as a token, and never collected as
+  "the calls of this frame". `fx::ReadsHostData` (or another read) says
+  what the check reads; `fx::Effect`, `fx::Command` and `fx::Probe` are
+  refused, since a native that changes host state is not an emit.
+
+C: `pb_vm_register_checked_emitter(vm, name, buffer, tag, fn, userdata,
+free_userdata, effects)`, with `PB_FX_EMIT_RESULT`.
+
+### Watching a class: revisions the host cannot forget
+
+A query's answer is replayed while its class's revision holds, so every
+change to what queries read must move the revision: between runs
+(`pb_vm_note_class_changed` after a physics step), and in the call of a
+command that changes it (`pb_call_note_class_changed`), or a scope that read
+the world before the command is replayed after it with the old answer. A
+host that already keeps a counter that moves with its data (a physics
+world's revision, an asset serial) can hand it to the bridge instead:
+
+```cpp
+vm.watch_class(petal::fx::ReadsPhysics, &world.revision);   // const uint64_t*
+vm.watch_class(petal::fx::ReadsHostData, &asset_serial);
+```
+
+The bridge compares each watched counter around every `fx::Effect` and
+`fx::Command` callback and, when the call moved it, notes the change in the
+call; and before every run (and `vm.call`, test step) it notes a counter
+that moved since it last looked. Only whether it moved matters. A watch
+outlives reloads, `nullptr` unwatches, and the counter must outlive the
+watch. Pure, probe and query callbacks are not wrapped, so watching costs
+nothing on the calls that cannot change anything. C:
+`pb_vm_watch_class(vm, reads, counter)`.
+
 ### Implicit keys: declarations without an id
 
 A declaration needs a key the host can reconcile it by, and a script that
@@ -462,6 +526,48 @@ In `test/benchmarks/harness/scene_frame` a host that splices segments this way s
 4 µs a frame on a static world of 24,000 declarations, against 360 µs for
 the best host that walks every value (see
 [retained-scene-output.md](../dev/retained-scene-output.md)).
+
+What a real segment host learned (Cheesecake's scene buffer, which drains
+`draw_mesh` and `point_light` tokens into a renderer's draw list):
+
+- **Recover by starting over, without memo.** A drain the host cannot
+  follow (a segment that names one it was never given, a token it no longer
+  holds) is a bug, but a recoverable one: drop the cache, call
+  `pb_vm_reset_segments`, and run the next frame with memo off
+  (`vm.set_memo(false)`, then on again). That run drops every memo record,
+  so nothing that replays afterwards names what the host forgot. Petal
+  sweeps records only when a run completes, so keep running without memo
+  until one does.
+- **A buffer is flat while emit tracing is on.** Segments do not carry the
+  origins of their values, so a run with emit tracing (`--trace-emits`, a
+  Rust host's `enable_emit_trace`) puts every value in the buffer as a
+  fresh entry. A host must handle a drain with no segments at all, which
+  is also what it gets with memo off.
+- **Output made by an unrecorded effect is placed by a cut.** A host
+  native that makes output itself (a callback flagged `PB_FX_EFFECT` that
+  appends draws) is never recorded, so its output is not in any segment and
+  would end up wherever the host appends it. Have it push a token of its
+  own (a negative number, say) that marks "everything made since the last
+  token" and place that range where the token appears. Such a token inside
+  a segment's definition is a host bug: an effect cannot be replayed.
+- **Output still contiguous from this run needs no copy.** When the tokens
+  of a frame name, in order, the ranges this run's calls appended to the
+  host's list, the list is already in frame order: walk the tokens and only
+  start copying at the first one that is out of place (spliced from a
+  segment made by an earlier run, or dropped because Petal discarded its
+  push). The frame where nothing replays then copies nothing.
+
+**Checking your effect rows.** A wrong row (a native that changes host
+state flagged pure, a query without its class) shows up as a frame that
+differs with memo on. Cheesecake's `tools/memo-oracle.ts` checks for it
+over every game: run the same frames, with the same seed and input, once
+with `set_memo(false)` and once with `set_memo(true)`, and write per frame a
+hash of **everything that leaves the host** (bodies, draws, lights, sounds,
+UI, settings), then diff the two traces line for line, and the state the
+runs end with. Run memo off twice first: if those differ, the game is
+nondeterministic and the comparison means nothing. The first frame that
+differs, and which part of it, points at the native whose row is wrong;
+`pb_vm_dep_classes_report` then says which helpers read it.
 
 ### Options records: read by position with a plan
 

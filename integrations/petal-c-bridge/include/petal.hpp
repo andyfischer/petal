@@ -128,6 +128,8 @@ inline constexpr uint32_t Command = PB_FX_COMMAND;
 inline constexpr uint32_t Query = PB_FX_READS_PHYSICS;
 inline constexpr uint32_t Ticks = PB_FX_TICKS;
 inline constexpr uint32_t Keyed = PB_FX_KEYED;
+// Vm::checked_emitter: push the callback's result instead of the arguments.
+inline constexpr uint32_t EmitResult = PB_FX_EMIT_RESULT;
 }  // namespace fx
 
 // ─── Value views ────────────────────────────────────────────────────────────
@@ -775,6 +777,25 @@ public:
         check(pb_vm_register_emitter_fx(vm_, name.c_str(), buffer.c_str(), tag.empty() ? nullptr : tag.c_str(),
                                         effects));
     }
+    // A checked emitter (see pb_vm_register_checked_emitter): `fn` runs in
+    // the call and may throw (the error is reported at the script's call),
+    // then name(args...) pushes tag(args...) into `buffer`, or with
+    // fx::EmitResult tag(result) (nothing for a nil result). Replayed like an
+    // emitter: a replay re-pushes without calling `fn`.
+    //   vm.checked_emitter("draw_mesh", "scene", fx::Declare | fx::EmitResult,
+    //                      [&](petal::Call& c) { c.result().value(make_draw(c)); });
+    void checked_emitter(const std::string& name, const std::string& buffer, uint32_t effects, NativeFn fn,
+                         const std::string& tag = {}) {
+        auto* boxed = new NativeFn(std::move(fn));
+        check(pb_vm_register_checked_emitter(vm_, name.c_str(), buffer.c_str(), tag.empty() ? nullptr : tag.c_str(),
+                                             &Vm::invoke_native, boxed, &Vm::free_native, effects));
+    }
+    // Watch a host counter for a class (fx::ReadsPhysics, fx::ReadsNet,
+    // fx::ReadsCamera, fx::ReadsHostData; see pb_vm_watch_class): the bridge
+    // notes a change made by an fx::Effect / fx::Command native in its call,
+    // and one made between runs before the next run. nullptr unwatches.
+    // `counter` must outlive the watch.
+    void watch_class(uint32_t reads, const uint64_t* counter) { check(pb_vm_watch_class(vm_, reads, counter)); }
     // Revisions for memoized scopes and the frame gate: host data changed, or
     // a revisioned class (fx::ReadsPhysics after a physics step).
     void note_host_data_changed() { check(pb_vm_note_host_data_changed(vm_)); }

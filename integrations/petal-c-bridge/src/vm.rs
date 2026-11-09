@@ -178,6 +178,9 @@ pub struct Vm {
     package_name: CString,
     /// The last `pb_vm_verify_interface` report.
     interface_report: CString,
+    /// Host counters watched per class (`pb_vm_watch_class`), shared with
+    /// the effect and command callbacks that compare them in the call.
+    watches: natives::Watches,
 }
 
 /// The allocation behind `pb_vm*`. The busy flag lives outside the
@@ -237,6 +240,7 @@ impl Vm {
             profile_memo_start: None,
             package_name: CString::default(),
             interface_report: CString::default(),
+            watches: Default::default(),
         }
     }
 
@@ -638,6 +642,7 @@ impl Vm {
             self.env.clear_output_buffer(sym);
         }
         petal_ui::draw::reset_canvas_ids(&mut self.env);
+        self.note_watched_changes(stack);
         self.env
             .reset_stack(stack)
             .map_err(|e| BridgeError::runtime(e, &name))?;
@@ -656,6 +661,7 @@ impl Vm {
         let l = self.loaded()?;
         let (stack, name) = (l.stack_id, l.entry_name.clone());
         self.clear_views();
+        self.note_watched_changes(stack);
         let args = self.host_values(args);
         let result = self
             .env
@@ -701,11 +707,60 @@ impl Vm {
             values.push(v);
         }
         let names: Vec<Option<&str>> = args.names.iter().map(Option::as_deref).collect();
+        self.note_watched_changes(stack);
         let result = self
             .env
             .call_function_named(stack, function, &values, &names)
             .map_err(|e| Self::call_error(e, &name))?;
         Ok(self.keep_view(&[result]).0)
+    }
+
+    /// Watch the host counter `counter` for the classes in `flags`
+    /// (`pb_vm_watch_class`); a NULL counter stops watching them.
+    ///
+    /// # Safety
+    /// A non-null `counter` must stay valid, and be written only on the VM's
+    /// thread, until it is unwatched or the VM is destroyed.
+    pub unsafe fn watch_class(&mut self, flags: u32, counter: *const u64) -> BResult<()> {
+        if flags == 0 || flags & !natives::FX_WATCHABLE != 0 {
+            return Err(BridgeError::invalid(
+                "pb_vm_watch_class takes PB_FX_READS_PHYSICS, _NET, _CAMERA or _HOST_DATA",
+            ));
+        }
+        let mut watches = self.watches.borrow_mut();
+        // Each class has at most one counter: a new one replaces the old.
+        for w in watches.iter_mut() {
+            w.flags &= !flags;
+        }
+        watches.retain(|w| w.flags != 0);
+        if !counter.is_null() {
+            let mut watch = natives::ClassWatch { flags, counter, last: 0 };
+            watch.last = watch.now();
+            watches.push(watch);
+        }
+        Ok(())
+    }
+
+    /// Before a run or call: a watched counter that moved since the bridge
+    /// last noted it is a change between runs, as
+    /// `pb_vm_note_class_changed` / `pb_vm_note_host_data_changed` say.
+    fn note_watched_changes(&mut self, stack: StackKey) {
+        let mut changed = 0;
+        for w in self.watches.borrow_mut().iter_mut() {
+            let now = w.now();
+            if now != w.last {
+                changed |= w.flags;
+                w.last = now;
+            }
+        }
+        if changed == 0 {
+            return;
+        }
+        if changed & natives::FX_READS_HOST_DATA != 0 {
+            self.env.note_host_data_changed(stack);
+        }
+        self.env
+            .note_class_changed(stack, natives::classes_from_flags(changed));
     }
 
     fn call_error(e: CallError, entry_name: &str) -> BridgeError {
@@ -802,6 +857,7 @@ impl Vm {
             return Err(BridgeError::invalid("no test is in progress (pb_vm_test_begin first)"));
         }
         self.clear_views();
+        self.note_watched_changes(stack);
         let bound = if max_steps == 0 { u64::MAX } else { max_steps };
         let step = self.env.test_resume_bounded(stack, bound);
         if let petal::env::TestStep::Finished(result) = &step {
@@ -1430,7 +1486,8 @@ pub unsafe extern "C" fn pb_vm_register_native(
             (Err(e), _) | (_, Err(e)) => return Err(e),
         };
         pending = None;
-        let callback = HostCallback::new(name, effects, func, userdata, free_userdata);
+        let callback = HostCallback::new(name, effects, func, userdata, free_userdata)
+            .with_watches(&vm.watches);
         natives::register_callback(&mut vm.env, callback);
         Ok(())
     });
@@ -1483,6 +1540,57 @@ pub unsafe extern "C" fn pb_vm_register_emitter_fx(
         natives::register_emitter_fx(&mut vm.env, name, sym, tag, effects);
         Ok(())
     })
+}
+
+/// `pb_vm_register_checked_emitter`: a native that runs `func` in the call
+/// and then emits (see [`natives::register_checked_emitter`]). Ownership of
+/// `userdata` is as for `pb_vm_register_native`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_register_checked_emitter(
+    vm: *mut VmHandle,
+    name: *const c_char,
+    buffer: *const c_char,
+    tag: *const c_char,
+    func: Option<PbNativeFn>,
+    userdata: *mut c_void,
+    free_userdata: Option<PbFreeFn>,
+    effects: u32,
+) -> Status {
+    let mut pending = free_userdata.map(|free| (free, userdata));
+    let st = status(vm, |vm| {
+        let name = unsafe { arg_str(name, "name") }?;
+        let buffer = unsafe { arg_str(buffer, "buffer") }?;
+        let tag = if tag.is_null() {
+            name
+        } else {
+            unsafe { arg_str(tag, "tag") }?
+        };
+        let func = func.ok_or_else(|| BridgeError::invalid("emitter callback is NULL"))?;
+        if effects & natives::FX_NOT_FOR_EMITTERS != 0 {
+            return Err(BridgeError::invalid(
+                "a checked emitter only emits: PB_FX_EFFECT, _COMMAND, _PROBE, _CONST, \
+                 _CONTAINED, _TICKS and _PENDING_ALLOW are not allowed",
+            ));
+        }
+        pending = None;
+        let callback = HostCallback::new(name, effects, func, userdata, free_userdata);
+        let sym = vm.env.intern_symbol(buffer);
+        natives::register_checked_emitter(&mut vm.env, callback, sym, tag, effects);
+        Ok(())
+    });
+    if st != Status::Reentrant
+        && let Some((free, userdata)) = pending
+    {
+        unsafe { free(userdata) };
+    }
+    st
+}
+
+/// `pb_vm_watch_class`: compare `counter` for the classes in `reads` around
+/// every effect or command callback and before every run.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_watch_class(vm: *mut VmHandle, reads: u32, counter: *const u64) -> Status {
+    status(vm, |vm| unsafe { vm.watch_class(reads, counter) })
 }
 
 #[unsafe(no_mangle)]

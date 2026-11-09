@@ -1,8 +1,9 @@
 # Wasm size improvements
 
 Status: 2026-11-08. Finished items (comment stripping in embedded sources,
-binary draw commands, `pkgman` out of the library) have been removed from
-this doc; see the log. Everything below is open.
+binary draw commands, `pkgman` out of the library, bloom/glsl/text_layout
+opt-in) have been removed from this doc; see the log. Everything below is
+open.
 
 Goal: the browser runtime under 1 MB. Compressed, the default build is under 1 MB with brotli and the `--size`
 build is under 1 MB with gzip. Live editing is a core feature, so the
@@ -18,12 +19,14 @@ the feature flags in `rust/Cargo.toml`. gzip is `-9`, brotli is quality 11.
 | Build | Raw | gzip | brotli |
 |---|---|---|---|
 | Before this work (`95571d8`) | 3.93 MB | 1.37 MB | 985 KB |
-| **Now** | **3.75 MB** | **1.31 MB** | **932 KB** |
+| **Now** (`a18ce96a`, 2026-11-08) | **3.83 MB** | **1.35 MB** | **959 KB** |
 | `--size` before (`opt-level z`, `wasm-opt -Oz`) | 2.31 MB | 886 KB | 700 KB |
 | `--size` + nightly `-Cpanic=immediate-abort -Zfmt-debug=none -Zlocation-detail=none`, before | 2.16 MB | 825 KB | 656 KB |
 
-The 2026-10-23 table in [embedding-web.md](../usage/embedding-web.md)
-(3.69 MB) predates two weeks of core growth.
+"Now" is higher than the 3.75 MB measured after items 1 and 4 on 2026-11-05:
+core grew in between (the commit just before the libraries went opt-in,
+`312651c8`, measured 3.94 MB / 1.38 MB / 980 KB). The 2026-10-23 table in
+[embedding-web.md](../usage/embedding-web.md) (3.69 MB) is older still.
 
 The other wasm build, core with `--features wasm` (petal-web-html), was about
 3.25 MB raw / 1.14 MB gzip before this work.
@@ -31,8 +34,9 @@ The other wasm build, core with `--features wasm` (petal-web-html), was about
 ## What the size is made of
 
 From `twiggy top` on the bindgen output before `wasm-opt` (4.29 MB without its
-name section), before this work. Since then `.rodata` is 367 KB (comments
-stripped), `pkgman` is gone and serde_json is a little smaller:
+name section), before this work. Since then `.rodata` has lost the comments
+(367 KB) and then bloom, glsl and text-layout, `pkgman` is gone and
+serde_json is a little smaller:
 
 | Area | Bytes | Notes |
 |---|---|---|
@@ -53,65 +57,32 @@ finished program downloads all of it.
 
 | # | Idea | Est. saving (raw / gzip) | Cost | Status |
 |---|---|---|---|---|
-| 2 | Bloom, glsl and text_layout opt-in | ~−100 KB raw (comment-stripped source) | pages that use them load them | Not started |
-| 3 | Leave `fn_introspect` out of wasm | ~−70 KB raw | `fn_info`/`fn_ast` unavailable in the browser | Not started (needs 2) |
-| 5 | Serve brotli | 1.31 MB → 932 KB transferred | hosting config | Not started (outside this repo) |
+| 3 | Leave `fn_introspect` out of wasm | ~−70 KB raw | `fn_info`/`fn_ast` unavailable in the browser | Not started |
+| 5 | Serve brotli | 1.35 MB → 959 KB transferred | hosting config | Not started (outside this repo) |
 | 6 | Size profile by default (`opt-level z` + `-Oz`) | −1.6 MB / −480 KB | frames ~1.5x slower | Available as `--size`; not the default |
 | 7 | Nightly `immediate-abort` + `fmt-debug=none` | another −155 KB / −60 KB on top of 6 | no panic messages; nightly toolchain | Not started |
 | 8 | Build the AST once (drop the parser's direct AST or `cst_project`) | ~−66 KB | refactor of the parse path | Not started |
 | 9 | Cut generic instantiations (hashbrown, drop glue) | ~−100–200 KB (guess) | broad refactor | Not started |
 
-Items 2 and 3 have no cost at run time and should land.
-
-### 2. Make bloom, glsl and text_layout opt-in
-
-They are pure Petal libraries that every Env carries (`BUNDLED_PACKAGES` in
-`core/build.rs`). Most canvas pages import none of them. Either put each
-behind a cargo feature of `petal` (on for the CLI, off for petal-web-canvas
-by default), or leave them out of the wasm build and have a page that needs
-one call the existing `register_package` with a `petal bundle` of it.
-
-What the code looks like (checked 2026-11-08):
-
-- All three are pure Petal: no `native fn`, no Rust natives, and nothing in
-  `core/src` refers to them by name except tests and help text.
-- The one seam is the `BUNDLED_PACKAGES` table in `core/build.rs`. Everything
-  else (`bundled::BUNDLED_PACKAGES`, the module registry's
-  `bundled_packages()`, lint, `strip_comments_check`) iterates that table,
-  so a package left out of it is simply absent and `import bloom` fails like
-  any unknown package.
-- `bloom` depends on `text_layout`, so they go together or `text_layout`
-  stays when `bloom` is in.
-- Every embedder (garden, petal-web-canvas, petal-web-html, petal-desktop-sdl,
-  petal-c-bridge, ui-corpus) uses `default-features = false`, so a
-  default-on feature would turn the libraries off for all of them. Garden's
-  gpp-apps import `bloom`. So the features must be named explicitly by the
-  hosts that want them (`features = ["bloom"]`), not added to `default`.
-- No web page imports them: the petal-lang.org snippets that mention them
-  are `ignore` blocks.
-
-Plan: cargo features `bloom` (implies `text_layout`), `text_layout`, `glsl`
-on `petal`; `cli/` and garden enable them; `build.rs` reads
-`CARGO_FEATURE_*` and leaves the rest out of the table. Gate the tests that
-`expect("bloom is bundled")` on the feature. Make the unknown-package error
-name the missing feature when the name is one of the three.
+Item 3 has no cost at run time and should land.
 
 ### 3. Leave `fn_introspect` out of wasm
 
 It backs the experimental `fn_info` / `fn_ast` and `Env::function_params`
 (the C bridge). The bundled `glsl` library calls `fn_info`/`fn_ast` to
-translate lambdas, so it can only leave the wasm build together with `glsl`
-(item 2). cheesecake also calls them (`engine/script/.../petal_fx.ptl`,
-`games/rivet/bg.ptl`), natively.
+translate lambdas; `glsl` is already opt-in (the `glsl` feature of `petal`,
+off in the wasm builds), so only the `fn_introspect` work is left. Turning
+on `glsl` should turn on `introspection`. cheesecake also calls them
+(`engine/script/.../petal_fx.ptl`, `games/rivet/bg.ptl`), natively.
 
-It is less separable than item 2. The 679-line module is mostly the
+It is less separable than the libraries were. The 679-line module is mostly the
 AST-to-record walker, but its `Cache` is a field of every `Program`
 (`program.introspect`, built in `compiler` and `program_analysis`, cleared in
 `env/reload.rs`), `Env::function_params` reads its parameter metadata, the
 VM dispatches the two intrinsics (`vm/introspect.rs`, `vm/native.rs`), and
 `core/packages/core/src/introspect.ptl` declares them in every file's scope.
 
-Plan: a feature `introspection` (enabled by `cli/`, the C bridge, and with
+Plan: a feature `introspection` (enabled by `cli/`, the C bridge, and by
 `glsl`). Split the module: parameter metadata (name, annotation, default
 source), which `function_params` needs, stays; the `fn_ast` walker and the
 JSON value building go behind the feature. Without it the two intrinsics stay
@@ -121,7 +92,7 @@ return an error saying the build has no introspection.
 
 ### 5. Serve brotli
 
-The default build is 932 KB brotli and 1.31 MB gzip. This is the cheapest way
+The default build is 959 KB brotli and 1.35 MB gzip. This is the cheapest way
 to get under 1 MB transferred, and it is set where the site is hosted.
 
 ### 6. Size profile by default
@@ -185,3 +156,11 @@ per-module breakdown, run `twiggy top -n 100000 --format csv` and sum
   this doc. Remaining items keep their numbers.
 - 2026-11-08: dropped item 10 (a player build without the compiler): live
   editing is a core feature. Recorded the modularity findings for 2 and 3.
+- 2026-11-08: did item 2. bloom, text_layout and glsl are cargo features of
+  `petal` (`bloom` implies `text_layout`; `libraries` turns on all three),
+  on for the CLI, Garden's native binaries, petal-desktop-sdl, the C bridge
+  (default) and petal-ui-headless (default); off for petal-web-canvas,
+  petal-web-html and garden-web. A missing one fails `import` with an error
+  naming its feature. petal-web-canvas: 3.94 → 3.83 MB raw (−109 KB),
+  1.38 → 1.35 MB gzip (−26 KB), 980 → 959 KB brotli (−21 KB), measured
+  against `312651c8`.

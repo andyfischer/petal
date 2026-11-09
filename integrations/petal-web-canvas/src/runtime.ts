@@ -355,6 +355,7 @@ export class PetalCanvas {
             this.runtime.take_draw_buffer_subpixel(),
             this.runtime.draw_strings(),
             this.runtime.draw_sub_indices(),
+            this.runtime.draw_pixel_snap_indices(),
           )
         : decodeDrawCommands(this.runtime.take_draw_buffer(), this.runtime.draw_strings());
       this.lastCommands = commands;

@@ -251,7 +251,11 @@ a host that did not opt in it emits nothing at all.
 content is moved to its `cache_draw` in `f32`, and keeps the snap mode it
 was recorded under on every frame it is replayed. With the capability, the
 content arrives as it was drawn, in layer coordinates, as above. Layer
-positions themselves (`cached_layer`'s rect, `layer`) are whole pixels.
+positions themselves (`cached_layer`'s rect, `layer`) are whole pixels, as
+are `canvas()`'s size and `snapshot`'s rect: each is a pixel buffer, and a
+fractional origin would resample all of it. `draw_canvas` with a record
+(`draw_canvas(id, {x, y, w, h})`) passes its numbers through like the flat
+form.
 
 **Wire.** `DrawWire::encode_frame(&[FrameCommand])` encodes a sub-pixel
 frame: a `Sub` uses its twin's opcode and exactly its layout, with

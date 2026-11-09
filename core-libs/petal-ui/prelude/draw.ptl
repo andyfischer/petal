@@ -896,9 +896,12 @@ pub fn draw_canvas(id, at, opts = {})
   end
 end
 
+// `at`'s numbers go through as the flat form's do: a host that truncates
+// does so in the native, and a sub-pixel host keeps the fractions under
+// `pixel_snap(false)`.
 fn _draw_canvas_at(id, at, opts)
-  _native_draw_canvas(id, int(at.x), int(at.y), _get(opts, "a", 255),
-                      int(_get(at, "w", 0)), int(_get(at, "h", 0)))
+  _native_draw_canvas(id, at.x, at.y, _get(opts, "a", 255),
+                      _get(at, "w", 0), _get(at, "h", 0))
 end
 
 // Draw `body()` into a fresh canvas the size of `r` — canvas-local

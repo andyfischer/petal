@@ -247,9 +247,24 @@ pub trait Host {
     // + default-inert hooks: on_sdl_init, default_source, on_program_loaded,
     //   prepare_frame, frame_gating, draw_commands_json, draw_stats, on_escape,
     //   after_frame, end_frame, and present_commands / render_commands_image /
-    //   supports_timeline for a host that can draw a recorded command list
+    //   supports_timeline for a host that can draw a recorded command list,
+    //   and subpixel / present_frame / render_frame_image for one that draws
+    //   fractional coordinates
 }
 ```
+
+A host that draws at fractional positions answers `true` from
+`subpixel()`: it registered the draw natives with
+`DrawOptions { subpixel: true, .. }` and renders `FrameCommand`s (see
+"Sub-pixel coordinates" in
+[`core-libs/petal-ui/docs/host-contract.md`](../../core-libs/petal-ui/docs/host-contract.md)).
+The timeline then records each frame with `take_frame_commands_traced` and
+hands the host `present_frame` (a recorded frame, for the window) and
+`render_frame_image` (the same, to pixels, for a frozen `screenshot`) in
+place of `present_commands` and `render_commands_image`. Both default to
+truncating the frame to whole pixels and calling the whole-pixel method, so
+a host only overrides them to draw the fractions. The binary's `--subpixel`
+flag turns this on for `DefaultHost`.
 
 The generic loop drives it:
 

@@ -1181,6 +1181,26 @@ pub fn take_frame_commands_traced(env: &mut Env) -> Vec<(FrameCommand, EmitSite)
         .collect()
 }
 
+/// [`take_frame_commands`] with the [`PixelSnap`] mode each command was drawn
+/// under, for a host whose rendering depends on it beyond the geometry: a
+/// `Px` image is whole pixels both by default and under `pixel_snap(true)`,
+/// but only the second asks for pixel art (no resampling smoothing). A
+/// command with no script origin (a clip a layer made) reports the default.
+pub fn take_frame_commands_snapped(env: &mut Env) -> Vec<(FrameCommand, PixelSnap)> {
+    let sym = env.intern_symbol(DRAW_COMMANDS_SYMBOL);
+    let values = env.take_output_buffer(sym);
+    let d = decode_buffer(&values, env.heap());
+    let items = compose_items(env, None, d.cmds, d.values, &d.snaps);
+    let heap = env.heap();
+    items
+        .into_iter()
+        .map(|item| {
+            let snap = item.src.as_ref().map(|s| s.snap).unwrap_or_default();
+            (frame_command(item, heap), snap)
+        })
+        .collect()
+}
+
 /// [`take_frame_commands`] for a *forked* stack, as
 /// [`take_draw_commands_for`](crate::draw::take_draw_commands_for).
 pub fn take_frame_commands_for(env: &mut Env, stack_id: StackKey) -> Vec<FrameCommand> {

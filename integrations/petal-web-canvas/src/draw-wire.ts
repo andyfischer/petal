@@ -243,16 +243,25 @@ export function decodeDrawCommands(
 /** Decode a sub-pixel frame: `decodeDrawCommands`, with `subpixel: true` set
  * on each command whose index is in `subIndices` (the runtime's
  * `draw_sub_indices()`): the ones drawn under a snap mode that leaves them
- * unsnapped, which may carry fractional geometry. */
+ * unsnapped, which may carry fractional geometry. `pixelSnapIndices` (the
+ * runtime's `draw_pixel_snap_indices()`, optional) sets `pixelSnap: true` on
+ * the ones drawn under `pixel_snap(true)`: pixel art. */
 export function decodeFrameCommands(
   buf: ArrayLike<number>,
   strings: readonly string[],
   subIndices: ArrayLike<number>,
+  pixelSnapIndices?: ArrayLike<number>,
 ): DrawCommand[] {
   const out = decodeDrawCommands(buf, strings);
   for (let k = 0; k < subIndices.length; k++) {
     const cmd = out[subIndices[k]];
     if (cmd) cmd.subpixel = true;
+  }
+  if (pixelSnapIndices) {
+    for (let k = 0; k < pixelSnapIndices.length; k++) {
+      const cmd = out[pixelSnapIndices[k]];
+      if (cmd) cmd.pixelSnap = true;
+    }
   }
   return out;
 }

@@ -11,8 +11,9 @@
  * command whose numbers are whole draws exactly as it always has. The one
  * difference is image resampling: an `image` or `draw_canvas` marked
  * `subpixel` (drawn under `pixel_snap(false)`) always draws with
- * `imageSmoothingEnabled`, since it sits between pixels; a snapped one keeps
- * the context's own setting. */
+ * `imageSmoothingEnabled`, since it sits between pixels; one marked
+ * `pixelSnap` (drawn under `pixel_snap(true)`: pixel art) always draws
+ * without it; any other keeps the context's own setting. */
 
 import {
   cssFont,
@@ -108,22 +109,25 @@ export interface DrawCommand {
    * mode that leaves it unsnapped, so its geometry may be fractional. Absent
    * on every command of a whole-pixel frame. */
   subpixel?: boolean;
+  /** Set by `decodeFrameCommands` on a command drawn under
+   * `pixel_snap(true)`: pixel art, resampled without smoothing. */
+  pixelSnap?: boolean;
 }
 
-/** Run `draw` with image smoothing on when `cmd` is sub-pixel; a snapped
- * command (and every command of a whole-pixel frame) draws with the
- * context's setting untouched. */
+/** Run `draw` with image smoothing on when `cmd` is sub-pixel and off when
+ * it is pixel art (`pixelSnap`); any other command (and every command of a
+ * whole-pixel frame) draws with the context's setting untouched. */
 function withSmoothing(
   ctx: CanvasRenderingContext2D,
   cmd: DrawCommand,
   draw: () => void,
 ): void {
-  if (!cmd.subpixel) {
+  if (!cmd.subpixel && !cmd.pixelSnap) {
     draw();
     return;
   }
   const saved = ctx.imageSmoothingEnabled;
-  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingEnabled = !cmd.pixelSnap;
   draw();
   ctx.imageSmoothingEnabled = saved;
 }

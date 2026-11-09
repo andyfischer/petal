@@ -15,8 +15,9 @@ use petal::stack::StackKey;
 use petal::value::value_to_json;
 
 use petal_ui::draw::{
-    DrawOptions, FrameCommand, clear_draw_commands, reset_canvas_ids, take_draw_commands,
-    take_draw_commands_for, take_frame_commands, take_frame_commands_for,
+    DrawOptions, FrameCommand, PixelSnap, clear_draw_commands, reset_canvas_ids,
+    take_draw_commands, take_draw_commands_for, take_frame_commands_for,
+    take_frame_commands_snapped,
 };
 use petal_ui::draw_wire::DrawWire;
 use petal_ui::input::{
@@ -69,6 +70,10 @@ pub struct PetalRuntime {
     /// fractional geometry (a `SubCommand`), by index; served by
     /// `draw_sub_indices`. Empty after a whole-pixel drain.
     sub_indices: Vec<u32>,
+    /// Which commands of the frame last drained by `take_draw_buffer_subpixel`
+    /// were drawn under `pixel_snap(true)`, by index; served by
+    /// `draw_pixel_snap_indices`. Empty after any other drain.
+    snap_all_indices: Vec<u32>,
 }
 
 #[wasm_bindgen]
@@ -134,6 +139,7 @@ impl PetalRuntime {
             draw_strings: Vec::new(),
             subpixel,
             sub_indices: Vec::new(),
+            snap_all_indices: Vec::new(),
         }
     }
 
@@ -281,10 +287,19 @@ impl PetalRuntime {
     /// where the frame has them. On a `with_subpixel(true)` runtime those are
     /// the script's own; on any other they are already whole, and the buffer
     /// equals `take_draw_buffer`'s. Strings are served by `draw_strings`, and
-    /// which commands are sub-pixel by `draw_sub_indices`.
+    /// which commands are sub-pixel by `draw_sub_indices`, and which were
+    /// drawn under `pixel_snap(true)` by `draw_pixel_snap_indices`.
     pub fn take_draw_buffer_subpixel(&mut self) -> Vec<f64> {
-        let cmds = take_frame_commands(&mut self.env);
-        self.encode_frame(&cmds)
+        let (cmds, modes): (Vec<FrameCommand>, Vec<PixelSnap>) =
+            take_frame_commands_snapped(&mut self.env).into_iter().unzip();
+        let numbers = self.encode_frame(&cmds);
+        self.snap_all_indices = modes
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| **m == PixelSnap::All)
+            .map(|(i, _)| i as u32)
+            .collect();
+        numbers
     }
 
     /// The strings of the frame last drained by `take_draw_buffer`,
@@ -302,10 +317,20 @@ impl PetalRuntime {
         self.sub_indices.clone()
     }
 
+    /// The indices (in decode order) of the commands of the frame last
+    /// drained by `take_draw_buffer_subpixel` that were drawn under
+    /// `pixel_snap(true)`: pixel art, which a renderer draws without image
+    /// smoothing. Whole pixels either way, so `draw_sub_indices` cannot tell
+    /// these from the default mode's. Empty after any other drain.
+    pub fn draw_pixel_snap_indices(&self) -> Vec<u32> {
+        self.snap_all_indices.clone()
+    }
+
     fn encode(&mut self, cmds: &[petal_ui::draw::DrawCommand]) -> Vec<f64> {
         let wire = DrawWire::encode(cmds);
         self.draw_strings = wire.strings;
         self.sub_indices.clear();
+        self.snap_all_indices.clear();
         wire.numbers
     }
 
@@ -318,6 +343,7 @@ impl PetalRuntime {
             .filter(|(_, c)| matches!(c, FrameCommand::Sub(_)))
             .map(|(i, _)| i as u32)
             .collect();
+        self.snap_all_indices.clear();
         wire.numbers
     }
 

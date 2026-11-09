@@ -13,8 +13,10 @@ use petal::value::Value;
 use petal_ui::draw::{
     DRAW_COMMANDS_SYMBOL, DrawCommand, DrawOptions, FrameCommand, SubCommand, register_draw,
     register_draw_with, take_draw_commands, take_draw_commands_for, take_draw_commands_traced,
-    take_frame_commands, take_frame_commands_for, take_frame_commands_traced,
+    take_frame_commands, take_frame_commands_for, take_frame_commands_snapped,
+    take_frame_commands_traced,
 };
+use petal_ui::subpixel::PixelSnap;
 use petal_ui::frame_core::{FrameCore, FrameRun};
 
 const SUB: DrawOptions = DrawOptions { subpixel: true };
@@ -432,6 +434,21 @@ fn pixel_snap_switches_between_three_modes_and_each_frame_starts_at_the_default(
         assert_eq!(all_px[2], all_px[0]);
         assert_eq!(frame[2], FrameCommand::Px(all_px[0].clone()));
     }
+}
+
+/// The snapped drain reports each command's mode, so a host can tell a
+/// rect drawn by default from one drawn under `pixel_snap(true)` — both `Px`.
+#[test]
+fn the_snapped_drain_reports_each_commands_mode() {
+    let body = "draw_rect(1.5, 2.5, 3.5, 4.5, 1, 2, 3)\n";
+    let script = format!("{body}pixel_snap(true)\n{body}pixel_snap(false)\n{body}");
+    let mut env = run(SUB, false, &script);
+    let frame = take_frame_commands_snapped(&mut env);
+    let modes: Vec<PixelSnap> = frame.iter().map(|(_, m)| *m).collect();
+    assert_eq!(modes, [PixelSnap::Rects, PixelSnap::All, PixelSnap::Off]);
+    assert!(matches!(frame[0].0, FrameCommand::Px(_)));
+    assert!(matches!(frame[1].0, FrameCommand::Px(_)));
+    assert!(matches!(frame[2].0, FrameCommand::Sub(_)));
 }
 
 #[test]

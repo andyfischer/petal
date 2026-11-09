@@ -2111,7 +2111,7 @@ call is a *setting*: a binding hosts list, set live and override from
 outside, of any data type. Hosts read `let SPEED = tunable(4.0, 0, 10)` as
 the setting `4.0` with the range 0..10, and the path `SPEED` names the
 `4.0`. This replaces `config let`, which still works and means the same, but
-is being removed ([proposal](proposals/remove-config-keyword.md)).
+is being removed ([plan](tasks/lifecycle-annotation-functions-refactor.md)).
 
 ```petal
 pub let SPEED = tunable(4.0, 0, 10)                                 // a number with a range

@@ -111,6 +111,12 @@ each needs a proposal (`propose-language-change`):
 Related, and deferred on 2026-10-09: amortized O(1) `++` and in-place update
 in general, which is a matter of better alias checking.
 
+Planned on 2026-11-09:
+[lifecycle-annotation-functions-refactor.md](lifecycle-annotation-functions-refactor.md)
+replaces the `const` and `config` keywords with the builtins `const(…)` and
+`tunable(…)`. Settings already work without `config`; next come `const(…)`
+parity, the fixers, and the migration of Petal and Cheesecake.
+
 ## 9. Interpreter and GC
 
 From [moses-debrief.md](moses-debrief.md), "VM":

@@ -889,7 +889,7 @@ fn setting_a_value_directly_equals_reloading_the_edited_file() {
 /// binding's own name, across zero too, and the range is not enforced. A file
 /// edit of the number inside is a value patch as well.
 /// The same without `config`: `let X = tunable(v, …)` is a setting, set by
-/// name, live and across zero (docs/proposals/remove-config-keyword.md).
+/// name, live and across zero (docs/tasks/lifecycle-annotation-functions-refactor.md).
 #[test]
 fn a_tunable_setting_is_set_by_name_without_a_recompile() {
     let old = "let SPEED = tunable(4.0, 1, 10)\npub let G = tunable(-0.5, min: -2, max: 2)\nlet MODE = tunable(\"a\", options: [\"a\", \"b\"])\nstate t = 0\nt += 1\nprint(SPEED, G, MODE, t)\n";

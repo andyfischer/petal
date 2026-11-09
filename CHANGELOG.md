@@ -77,7 +77,7 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   (`tunable("title")`, `tunable(false)`, `tunable({bloom: 0.3})`) and an
   `options:` list of the values a setting can take. This is the first step
   of removing `config let`, which still works and means the same
-  ([proposal](docs/proposals/remove-config-keyword.md)).
+  ([plan](docs/tasks/lifecycle-annotation-functions-refactor.md)).
   - `tunable` and `rigid` are reserved: binding either name (a `fn`, a
     `let`, a parameter, a loop variable) is a compile error.
   - A plain `let X = tunable(v, …)` used to read as a call to hosts, with
@@ -91,7 +91,7 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
     is the new name of `--config-strict`, which still works.
 
 - The C bridge has a `tunable` section for settings
-  ([proposal](docs/proposals/remove-config-keyword.md), Phase 2). Nothing
+  ([plan](docs/tasks/lifecycle-annotation-functions-refactor.md), Phase 2 of the old proposal). Nothing
   is removed; old hosts keep working after a re-vendor.
   - `pb_source_bindings_json`: each setting carries `"tunable": {…}` with
     the `min`, `max`, `step` and `options` written (`{}` when none are).
@@ -1053,7 +1053,7 @@ way, for code written against an earlier checkout.
   it live without a reload, across zero too. The range is advice: nothing
   clamps to it. A plain `let X = tunable(…)` is unchanged
   ([Giving a setting a range](docs/syntax/config-let.md#giving-a-setting-a-range),
-  [proposal](docs/proposals/config-let-vs-tunable.md)).
+  proposal: `git show d6fd8291:docs/proposals/config-let-vs-tunable.md`).
 - Every literal in a `config let` record, list or call is config to direct
   manipulation (the config weight, the `config` selector of `--allow`,
   Garden's `:DragAllow config` and `--config-strict`), not only a scalar
@@ -1677,7 +1677,7 @@ package changes below, `petal fix-imports` does the rewriting and
   answers to `knob`, and `--config-strict`, `config_only` and the `[config]`
   tag mean "a knob"; flags and the JSON shape are unchanged. The DM v2 study
   is unchanged in every outcome and top edit
-  ([proposal, open question 2](docs/proposals/config-let-vs-tunable.md#open-questions)).
+  (open question 2 of the removed proposal, `git show d6fd8291:docs/proposals/config-let-vs-tunable.md`).
 - In `config let X = tunable(v, …)`, the binding path `X` now names `v`
   rather than the whole `tunable(…)` call, in `static_bindings` (`value`,
   `text`), the path edits, `pb_source_expr` / `pb_source_set`,

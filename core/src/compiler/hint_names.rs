@@ -1,5 +1,5 @@
 //! `tunable` and `rigid` are reserved: Petal code cannot bind either name
-//! (docs/proposals/remove-config-keyword.md §2).
+//! (docs/tasks/lifecycle-annotation-functions-refactor.md).
 //!
 //! Tools read both hints by name, without running the program: a top-level
 //! `let X = tunable(v, …)` is a setting that hosts list and set

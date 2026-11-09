@@ -229,7 +229,7 @@ pub fn bindings_json(source: &str) -> Result<String, String> {
         // A setting (`let X = tunable(v, min, max, step, options)`, or
         // `config let`): what was written, each key omitted when it is not.
         // `"config"` and `"range"` are its deprecated mirrors
-        // (docs/proposals/remove-config-keyword.md, Phase 2).
+        // (docs/tasks/lifecycle-annotation-functions-refactor.md).
         let bounds: Vec<String> = b
             .range
             .iter()
@@ -515,7 +515,7 @@ mod tests {
         assert_eq!(json[1]["value"]["int"], 2);
         assert_eq!(json[1]["range"], serde_json::json!({"step": 1.0}));
         // No bound written, no range. Without `config` it is the same
-        // setting (docs/proposals/remove-config-keyword.md).
+        // setting (docs/tasks/lifecycle-annotation-functions-refactor.md).
         assert_eq!(json[2]["value"], 0.5);
         assert!(json[2].get("range").is_none());
         assert_eq!(json[3]["config"], true);

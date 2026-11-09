@@ -229,7 +229,7 @@ pub enum DeclKind {
     Let,
     /// A setting: `let X = tunable(…)`, or the deprecated `config let`
     /// (`crate::static_value::is_setting`). Reported as `"config let"` until
-    /// the keyword is removed (docs/proposals/remove-config-keyword.md).
+    /// the keyword is removed (docs/tasks/lifecycle-annotation-functions-refactor.md).
     #[serde(rename = "config let")]
     ConfigLet,
     /// `const NAME = …`: a `let` that must be static.

@@ -155,7 +155,7 @@ pub enum ConstructKind {
     Let,
     ConfigLet,
     /// `let NAME = tunable(…)`: a setting written without `config`
-    /// (docs/proposals/remove-config-keyword.md).
+    /// (docs/tasks/lifecycle-annotation-functions-refactor.md).
     TunableLet,
     /// `const NAME = …`: a `let` that must be static.
     Const,

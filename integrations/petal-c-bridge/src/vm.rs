@@ -590,7 +590,7 @@ impl Vm {
     }
 
     /// The old name of [`set_tunable`](Self::set_tunable), kept until
-    /// `config let` is removed (docs/proposals/remove-config-keyword.md).
+    /// `config let` is removed (docs/tasks/lifecycle-annotation-functions-refactor.md).
     pub fn set_config(
         &mut self,
         file: Option<&Path>,
@@ -3858,7 +3858,7 @@ pub config let LOOK = {step: 10, fog: 0.5}
 
     /// A `let X = tunable(…)` setting, with no `config`: set by name, and
     /// reported as `tunable` in the reload JSON
-    /// (docs/proposals/remove-config-keyword.md, Phase 2).
+    /// (docs/tasks/lifecycle-annotation-functions-refactor.md).
     #[test]
     fn a_tunable_setting_is_set_and_reported_as_tunable() {
         let dir =

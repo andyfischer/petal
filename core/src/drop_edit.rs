@@ -32,7 +32,7 @@
 //! Only plain `let` literals are targeted. `state` initializers are not (a
 //! state slot keeps its value across a reload, so editing the initializer
 //! would change nothing on screen), and `config let` is not required (it is
-//! planned for removal; see docs/proposals/remove-config-keyword.md).
+//! planned for removal; see docs/tasks/lifecycle-annotation-functions-refactor.md).
 //!
 //! Values arrive from the running program as JSON
 //! ([`crate::value::value_to_json`]); [`static_from_json`] reads them. Where

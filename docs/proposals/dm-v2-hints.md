@@ -106,8 +106,8 @@ There is no existing way to write cases 1 to 3.
 A literal under both `config let` and `tunable` gets the range. Its weight
 is the knob weight either mark gives alone: the two were separate tiers
 (0.25 for `tunable`, 0.5 for `config let`) until 24 October 2026, when they
-merged ([config-let-vs-tunable.md](config-let-vs-tunable.md), open question
-2). `config let` keeps everything it does today
+merged (open question 2 of `config-let-vs-tunable.md`, since removed:
+`git show d6fd8291:docs/proposals/config-let-vs-tunable.md`). `config let` keeps everything it does today
 (`static_bindings`, sliders, `set_config_value`). The guide recommends:
 **`config let` for top-level knobs, `tunable` for ranges and for literals
 inside functions or calls, and `rigid` to forbid.**

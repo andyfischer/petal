@@ -1,5 +1,5 @@
 //! Parity between `config let X = v` and `let X = tunable(v)`
-//! (docs/proposals/remove-config-keyword.md, Phase 1 step 6).
+//! (docs/tasks/lifecycle-annotation-functions-refactor.md).
 //!
 //! Every single-line `config let` in `examples/` and in the core's `.ptl`
 //! fixtures is rewritten into the `tunable` form, and the two files must look

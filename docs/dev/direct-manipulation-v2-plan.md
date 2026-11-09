@@ -2416,7 +2416,7 @@ up this change. `~/petal-creative` and `sample-apps` have no reference.
    paused edit).
 
 **One knob tier, 2026-10-24.** The owner reversed open question 2 of
-[config-let-vs-tunable.md](../proposals/config-let-vs-tunable.md): a literal
+`config-let-vs-tunable.md` (removed; `git show d6fd8291:docs/proposals/config-let-vs-tunable.md`): a literal
 marked by `config let` (including the literals of a config record or list),
 by `tunable(...)`, or by both now weighs the same in §2.5.2, so the ecosystem
 has one notion of a knob. What changed:

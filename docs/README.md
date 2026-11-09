@@ -170,7 +170,7 @@ point-in-time status.
 | [Direct Manipulation v2](dev/direct-manipulation-v2-plan.md) | Backpropagating a drag through function calls by speculative re-runs: architecture and milestones (shipped; the default engine) |
 | [DM v2 complexity study](dev/direct-manipulation-v2-study.md) | The examples ladder and what v2 solves on each, with runs and timings |
 | [DM hints: `tunable` / `rigid`](proposals/dm-v2-hints.md) | Identity builtins that tell direct manipulation which literals may move (implemented) |
-| [`config let` vs `tunable`](proposals/config-let-vs-tunable.md) | Whether `tunable` can replace the `config` keyword: recommends keeping both, composed, with ranges for host sliders (implemented) |
+| [Annotations as functions](tasks/lifecycle-annotation-functions-refactor.md) | Replacing the `const` and `config` keywords with the builtins `const(…)` and `tunable(…)` (settings half done; `const(…)` planned) |
 | [IR Format Improvements](dev/ir-format-improvements-plan.md) | Audit of the token, AST, IR and bytecode dumps (shipped) |
 | [Experimental: IR-based Editing](dev/experimental-ir-based-editing.md) | An early, unfinished surface for building a program as IR data |
 | [Testbed Challenge](dev/testbed-challenge-plan.md) | The target list of panel apps for the Garden testbed, and which are built |

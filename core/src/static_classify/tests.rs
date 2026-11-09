@@ -1604,7 +1604,7 @@ fn a_tunable_config_let_reports_its_range() {
     assert_eq!(decl(&r, "BOX").kind, DeclKind::ConfigLet);
     assert_eq!(decl(&r, "BOX").range, None);
     // Without `config`, `let R = tunable(…)` is the same setting
-    // (docs/proposals/remove-config-keyword.md).
+    // (docs/tasks/lifecycle-annotation-functions-refactor.md).
     assert_eq!(decl(&r, "R").kind, DeclKind::ConfigLet);
     assert_eq!(
         decl(&r, "R").range,

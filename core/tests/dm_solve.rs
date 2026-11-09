@@ -242,7 +242,7 @@ fn config_preferred_softly() {
 
 /// A literal inside a `config let` record or list is config data: it gets
 /// the config weight, matches the `config` selector, and ConfigStrict keeps
-/// it (docs/proposals/config-let-vs-tunable.md, bug 1).
+/// it (bug 1 of the removed proposal, `git show d6fd8291:docs/proposals/config-let-vs-tunable.md`).
 #[test]
 fn config_record_and_list_literals_are_config() {
     let mut t = T::new("config let BOX = {x: 140, y: 90}\nconfig let XS = [20, 30]\ndraw(BOX.x + 10, XS[1], 10)\n");
@@ -263,7 +263,7 @@ fn config_record_and_list_literals_are_config() {
 }
 
 /// The same without `config`: a `let X = tunable({…})` setting makes every
-/// number in its data a knob (docs/proposals/remove-config-keyword.md).
+/// number in its data a knob (docs/tasks/lifecycle-annotation-functions-refactor.md).
 #[test]
 fn tunable_record_and_list_settings_are_knobs() {
     let mut t = T::new("let BOX = tunable({x: 140, y: 90})\nlet XS = tunable([20, 30])\ndraw(BOX.x + 10, XS[1], 10)\n");

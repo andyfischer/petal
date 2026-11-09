@@ -318,7 +318,7 @@ fn tunable_range_recorded() {
 fn tunable_on_a_non_number_says_so() {
     // Data of any type is a valid `tunable` (a setting: a string, a bool, a
     // record); only bounds on it are reported, since they describe a number
-    // (docs/proposals/remove-config-keyword.md).
+    // (docs/tasks/lifecycle-annotation-functions-refactor.md).
     let (env, pid, _) = load(
         "let flag = true\nprint(tunable(flag), tunable(\"title\"), tunable(\"x\", 0, 1), tunable({w: 40}))\n",
     );

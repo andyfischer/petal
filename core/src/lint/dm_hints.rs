@@ -1,5 +1,5 @@
 //! Rules about the direct-manipulation hints `tunable` and `rigid`
-//! (docs/proposals/dm-v2-hints.md, docs/proposals/remove-config-keyword.md).
+//! (docs/proposals/dm-v2-hints.md, docs/tasks/lifecycle-annotation-functions-refactor.md).
 //! All of them only report: what to write instead is the author's call.
 //!
 //! **`dm-hint-not-literal`**: `tunable(e)` where `e` is computed

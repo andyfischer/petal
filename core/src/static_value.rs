@@ -612,7 +612,7 @@ pub struct StaticBinding {
     /// `false` for a `var`, a bare `name = …` rebinding, a `fn` and a `state`.
     ///
     /// The field keeps its old name until `config let` is removed
-    /// (docs/proposals/remove-config-keyword.md).
+    /// (docs/tasks/lifecycle-annotation-functions-refactor.md).
     pub is_config: bool,
     /// Written with `pub` (or `export`): other modules can import it.
     pub exported: bool,
@@ -710,7 +710,7 @@ pub fn tunable_args(e: &Expr) -> Option<TunableArgs<'_>> {
 /// it is written with the deprecated `config let`. A `var` is never a
 /// setting, and neither is a `const` (which `config` could not mark either).
 ///
-/// See docs/proposals/remove-config-keyword.md.
+/// See docs/tasks/lifecycle-annotation-functions-refactor.md.
 pub fn is_setting(value: &Expr, is_config: bool, is_var: bool, is_const: bool) -> bool {
     !is_var && (is_config || (!is_const && tunable_args(value).is_some()))
 }
@@ -1715,7 +1715,7 @@ let drag = 0.02
         assert_eq!(by_name.value, Ok(StaticValue::float(2.5)));
         assert_eq!(by_name.range, range(None, Some(5.0), None));
         // Without `config`, a `let` whose initializer is `tunable(…)` is a
-        // setting just the same (docs/proposals/remove-config-keyword.md).
+        // setting just the same (docs/tasks/lifecycle-annotation-functions-refactor.md).
         let plain = binding(src, "PLAIN");
         assert!(plain.is_config);
         assert_eq!(plain.value, Ok(StaticValue::float(1.0)));

@@ -264,10 +264,18 @@ fn the_rule_is_opt_in() {
     assert!(both.enabled(STATE_AS_CONSTANT) && both.enabled(petal::lint::PREFER_LET));
     let info = petal::lint::RULES.iter().find(|r| r.name == STATE_AS_CONSTANT).unwrap();
     assert!(info.opt_in);
-    // The other opt-in rules are `never-replays` and `int-division`.
+    // The other opt-in rules are `never-replays`, `int-division` and,
+    // until the migration, the lifecycle-keyword rules.
     let opt_in: Vec<&str> = petal::lint::RULES.iter().filter(|r| r.opt_in).map(|r| r.name).collect();
     assert_eq!(
         opt_in,
-        vec![petal::lint::NEVER_REPLAYS, petal::lint::INT_DIVISION, STATE_AS_CONSTANT]
+        vec![
+            petal::lint::NEVER_REPLAYS,
+            petal::lint::INT_DIVISION,
+            petal::lint::CONST_DECL_DEPRECATED,
+            petal::lint::CONFIG_LET_DEPRECATED,
+            petal::lint::CONST_OF_LITERAL,
+            STATE_AS_CONSTANT,
+        ]
     );
 }

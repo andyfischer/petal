@@ -208,7 +208,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   - Enum-level functions (`Kind.parse(s)`) are not part of it.
   - The LSP completes and hovers a variant's methods after `.`.
   - New example `examples/console/enum_methods.ptl`.
-
+- `petal lint`: three opt-in, report-only rules for the move from the
+  `const` and `config` keywords to the `const(…)` and `tunable(…)`
+  annotations: `const-decl-deprecated` (`const X = e` → `let X = const(e)`),
+  `config-let-deprecated` (`config let X = v` → `let X = tunable(v)`) and
+  `const-of-literal` (a `const` on literal data). Nothing is deprecated yet:
+  they turn into default warnings with a fix after the migration
+  ([plan](docs/tasks/lifecycle-annotation-functions-refactor.md)).
 - **Block comments**, `/* … */`. They can sit inside a line or span several,
   and do not nest. `petal fmt` keeps the inside of one as written, and the
   tree-sitter grammar (Garden's highlighter) knows them

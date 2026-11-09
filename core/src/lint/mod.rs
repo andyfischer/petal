@@ -45,6 +45,12 @@
 //!    is deprecated; one whose slot nothing writes becomes `memo(key)`. The
 //!    compiler reports the same sites as a warning, and this rule's
 //!    `petal-lint-ignore` silences both.
+//! 9. **`const-decl-deprecated`**, **`config-let-deprecated`** and
+//!    **`const-of-literal`** ([`lifecycle_keywords`]) — the declaration
+//!    keywords `const` and `config` becoming the annotations `const(…)` and
+//!    `tunable(…)`. Opt-in and report only until the migration
+//!    (docs/tasks/lifecycle-annotation-functions-refactor.md, Phase 5); the
+//!    rewrite they plan is [`migrate_lifecycle_keywords`].
 //!
 //! Each rule detects over a fresh parse of the previous rule's output, so a
 //! later rule sees what an earlier fix enabled and `lint --fix` is a fixed
@@ -86,6 +92,7 @@ mod config_data;
 mod dead_alias;
 mod dm_hints;
 mod export_to_pub;
+mod lifecycle_keywords;
 mod field_set;
 mod never_replays;
 mod repeat;
@@ -104,6 +111,8 @@ use config_data::plan_config_data_reports;
 use dead_alias::plan_alias_fixes;
 use dm_hints::plan_hint_reports;
 use export_to_pub::plan_export_fixes;
+use lifecycle_keywords::{plan_const_of_literal_reports, plan_decl_fixes};
+pub use lifecycle_keywords::migrate_lifecycle_keywords;
 use field_set::plan_field_set_fixes;
 use never_replays::plan_never_replays_reports;
 use typed::{plan_int_division, plan_neg_zero_fixes};
@@ -165,6 +174,15 @@ pub const TUNABLE_NOT_IN_OPTIONS: &str = "tunable-value-not-in-options";
 pub const TUNABLE_ON_VAR: &str = "tunable-on-var";
 pub const TUNABLE_NOT_WHOLE: &str = "tunable-not-whole-initializer";
 pub const NEVER_REPLAYS: &str = "never-replays";
+pub const CONST_DECL_DEPRECATED: &str = "const-decl-deprecated";
+pub const CONFIG_LET_DEPRECATED: &str = "config-let-deprecated";
+pub const CONST_OF_LITERAL: &str = "const-of-literal";
+
+/// Whether `--fix` applies `const-decl-deprecated` and
+/// `config-let-deprecated`. Off, and both rules opt-in, until Phase 5 of
+/// docs/tasks/lifecycle-annotation-functions-refactor.md: the corpus and
+/// Cheesecake are migrated first ([`migrate_lifecycle_keywords`]).
+const APPLY_LIFECYCLE_FIXES: bool = false;
 
 /// Every rule, in the order it runs.
 pub const RULES: &[RuleInfo] = &[
@@ -298,6 +316,24 @@ pub const RULES: &[RuleInfo] = &[
         summary: "the deprecated `export` modifier should be `pub`",
         opt_in: false,
         fixes: Fixes::All,
+    },
+    RuleInfo {
+        name: CONST_DECL_DEPRECATED,
+        summary: "`const X = e` is deprecated: write `let X = const(e)`",
+        opt_in: true,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: CONFIG_LET_DEPRECATED,
+        summary: "`config let X = v` is deprecated: write `let X = tunable(v)`",
+        opt_in: true,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: CONST_OF_LITERAL,
+        summary: "`const` on literal data checks nothing a reader cannot see",
+        opt_in: true,
+        fixes: Fixes::None,
     },
     RuleInfo {
         name: STATE_KEY_DEPRECATED,
@@ -655,6 +691,32 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
 
     let (chars, stmts) = reparse(&p.text)?;
     let exports_to_pub = p.apply(PREFER_PUB, plan_export_fixes(&stmts, &chars)?);
+
+    // The lifecycle keywords: reported, and not yet rewritten (see
+    // `APPLY_LIFECYCLE_FIXES`).
+    if opts.rules.enabled(CONST_DECL_DEPRECATED)
+        || opts.rules.enabled(CONFIG_LET_DEPRECATED)
+        || opts.rules.enabled(CONST_OF_LITERAL)
+    {
+        let (chars, stmts) = reparse(&p.text)?;
+        p.apply(CONST_OF_LITERAL, plan_const_of_literal_reports(&stmts));
+        let report_only = |fixes: Vec<Fix>| -> Vec<Fix> {
+            fixes
+                .into_iter()
+                .map(|f| Fix {
+                    splices: if APPLY_LIFECYCLE_FIXES { f.splices } else { Vec::new() },
+                    ..f
+                })
+                .collect()
+        };
+        // One rule, then the other over its output: each pads trailing
+        // comments against the text as it stands.
+        let fixes = plan_decl_fixes(&stmts, &chars, true)?;
+        rewrites += p.apply(CONST_DECL_DEPRECATED, report_only(fixes));
+        let (chars, stmts) = reparse(&p.text)?;
+        let fixes = plan_decl_fixes(&stmts, &chars, false)?;
+        rewrites += p.apply(CONFIG_LET_DEPRECATED, report_only(fixes));
+    }
 
     // Each candidate's fix is checked by compiling the rewrite, so the rule
     // is skipped outright when it is filtered out.

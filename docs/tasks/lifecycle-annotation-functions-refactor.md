@@ -1,7 +1,9 @@
 # Lifecycle annotations as functions: `const(…)` and `tunable(…)` replace `const` and `config`
 
 Status: Phase 1 shipped 9 November 2026 (`const(…)` reaches parity; see
-"Phase 1: what shipped" below). Phases 2 to 7 are planned. Settings without
+"Phase 1: what shipped" below). Phase 2 shipped the same day (the fixers,
+opt-in and report only; see "Phase 2: what shipped"). Phases 3 to 7 are
+planned. Settings without
 `config` are half done:
 Phases 1 and 2 of the old removal proposal shipped on 6 November (commits
 47e5e905 and ab5e99a7), and Cheesecake vendored them (a18ce96a). That
@@ -294,6 +296,69 @@ that host has been updated.
 - Tests: a fixture for each initializer shape (scalar, record, list,
   multi-line, typed `let X: T`, trailing comment, already `tunable`), and
   "the fix of a fixed file is empty".
+
+#### Phase 2: what shipped (9 November 2026)
+
+- `core/src/lint/lifecycle_keywords.rs` holds three rules, registered in
+  `lint/mod.rs` and listed in `docs/CLI.md`:
+  - `const-decl-deprecated`: `const X = e` → `let X = const(e)` (`pub` and
+    `export` kept, a type annotation kept, literals wrapped too);
+  - `config-let-deprecated`: `config let X = v` → `let X = tunable(v)`, or
+    only `config` dropped when `v` is already a `tunable(…)` call;
+  - `const-of-literal`: a `const X = v` or `let X = const(v)` whose `v` is
+    literal data (a literal, a negated number, a colour, a list or record of
+    them; a call is not, since `const` is what checks it). Report only, with
+    no planned fix (open question 3).
+- **Opt-in and report only.** All three run only under `--rules-include`,
+  and `petal lint --fix` applies nothing: the deprecation rules plan their
+  splices, and `APPLY_LIFECYCLE_FIXES` in `lint/mod.rs` (false) drops them
+  before the pipeline sees them. Opt-in, not merely report-only, so that a
+  plain `petal lint` over the corpus and Cheesecake does not print ~1,800
+  findings before the replacements are in place. Phase 5 flips the constant
+  and clears `opt_in` on the two deprecation rules (`const-of-literal`
+  stays opt-in).
+- **For Phase 3:** `petal::lint::migrate_lifecycle_keywords(source)` applies
+  both rewrites exactly as the rules plan them. There is no CLI flag for it
+  yet; a sweep can call it from a test or a small tool, or Phase 3 can flip
+  `APPLY_LIFECYCLE_FIXES` early and use `petal lint --fix
+  --rules-include=const-decl-deprecated,config-let-deprecated`.
+- **The initializer's edges** are taken from the text, not from the value's
+  span: from the first character after `=` to the end of the statement,
+  because the span leaves out grouping parens (`const S = (A) ++ B` would
+  otherwise become `(const(A) ++ B)`). The closing `)` goes at the
+  statement's end, so a multi-line table gets it after its last bracket and
+  before any trailing comment.
+- **Trailing comments** keep their column. When a rewritten line's code
+  would reach its comment, the whole aligned group (adjacent lines whose
+  comments share a column, as `petal fmt` groups them) moves right together
+  to one space past the longest code, untouched lines included. A shrinking
+  line (`config let X = tunable(…)` loses seven columns) is padded back to
+  its group's column. This differs from `plan_pub_rewrite`, which lets a
+  wholly rewritten group move left; keeping the column is the one rule for
+  both growth and shrinkage. Padding for a line goes with the fix that
+  edits that line, and an untouched line's padding with the group's first
+  rewritten site.
+- The two rules are planned one after the other, each over the text the
+  other left, so their offsets never mix when Phase 5 applies them.
+- Only top-level statements are rewritten. A nested `const` is already a
+  compile error. A `config let` inside a function body (legal, and a DM
+  preference there) is not reported; none exists in the corpus or in
+  Cheesecake.
+- Tests:
+  - `lint::lifecycle_keywords::tests` (13 fixtures): scalar, record, list,
+    multi-line (both rules), typed `let X: T`, grouping parens at either
+    edge, a trailing comment alone and in aligned groups (growing, fitting,
+    shrinking), already `tunable`, `const` in a string or a `const(…)` call
+    left alone, a rewrite that compiles to the same static values, and
+    `const-of-literal`. Every fixture asserts that the fix of the fixed file
+    is empty.
+  - `core/tests/lifecycle_migration.rs` is a dry run of Phase 3. It
+    rewrites every `.ptl` file under `examples/`, `garden/`, `core/tests`
+    and `cli/tests` that declares either keyword (29 files, 37 `const`, 147
+    `config let`), and checks that the result is a fixed point, keeps the
+    line count, leaves no keyword declaration, stays `petal fmt`-clean (28
+    files were), loads with the same diagnostics where the original loads
+    on its own (26 files), and gives identical `static_bindings`.
 
 ### Phase 3: the Petal-owned corpus and docs
 

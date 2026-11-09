@@ -314,13 +314,16 @@ effect audit, DM) to `test/ui-corpus/`. What is left is entry 6.
    crate with `pub use` re-exports from `petal-ui` is not possible as
    written: the tooling is built on `petal-ui`'s internals (`hit`,
    `frame_core`, `draw`, `input`, …), so the re-export would be a dependency
-   cycle. A separate crate means downstream (cheesecake uses `harness`,
-   `scenario` and `panel_stubs` heavily; worlds-fair uses `panel_stubs`)
-   changing its imports at a re-vendor. `panel_stubs` is also a copy of the
-   host natives and `FALLBACK_PALETTE` Garden registers, sitting in a crate
-   below Garden. *Open, for the owner:* whether to do the move, and whether
-   `panel_stubs` becomes Garden's own export or a documented general "fake
-   panel host".
+   cycle. A separate crate (`core-libs/petal-ui-headless`) means
+   downstream changes its imports at a re-vendor, but downstream's own code
+   barely uses the tooling: cheesecake's uses none of it (its hits are all
+   vendored Petal), and worlds-fair's uses only `panel_stubs`' interface
+   constants. `panel_stubs` is also a copy of the host natives and
+   `FALLBACK_PALETTE` Garden registers, sitting in a crate below Garden.
+   *Decided 2026-11-08:* `panel_stubs` moves into `garden-script`, and the
+   headless driver and CLIs take a setup hook instead of naming Garden (plan
+   in [docs/tasks/ui-refactor.md](../tasks/ui-refactor.md), R2). *Open, for
+   the owner:* whether to do the crate move.
 
 ## Procedure
 

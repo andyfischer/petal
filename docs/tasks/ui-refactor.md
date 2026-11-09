@@ -1,10 +1,10 @@
 # Reorganizing petal-ui
 
-Status: 2026-11-08. R1 and R3 are done; R2 is done as a feature gate
-instead of a move (the move as written would be a dependency cycle), and the
-move itself and `panel_stubs` are left for the owner; R4 is an owner
-decision. The smaller cleanups are done. It comes from a review of
-`core-libs/` against [docs/skills/project-organization.md](../skills/project-organization.md).
+Status: 2026-11-08. R1 and R3 are done. R2 is done as a feature gate
+instead of a move (the move as written would be a dependency cycle). The
+move itself is left for the owner; where `panel_stubs` goes is decided
+(R2) but not yet implemented. R4 is an owner decision. The smaller
+cleanups are done. It comes from a review of `core-libs/` against [docs/skills/project-organization.md](../skills/project-organization.md).
 Check the current tree before acting on any item; the numbers below are from
 that date.
 
@@ -40,13 +40,19 @@ in `core-libs/`.
 
 **2. Headless tooling.** That's `harness`, `scenario`, `drag_trace`,
 `panel_stubs`, and the `petal-ui-run` and `petal-ui-propose-edit` binaries.
-Inside this repo only `garden/garden-script` and
-`integrations/petal-c-bridge` use them. Downstream they matter a lot:
-cheesecake uses `petal_ui::harness` about 40 times, `scenario` 28 and
-`panel_stubs` 22; worlds-fair uses `scenario`, `panel_stubs` and `harness`
-too. `panel_stubs` is also a layering problem: it is a copy of the host
+Inside this repo only `garden/garden-script`,
+`integrations/petal-c-bridge` and `test/ui-corpus` use them. Downstream
+they matter less than they first appear. An earlier count had cheesecake
+using `petal_ui::harness` about 40 times, `scenario` 28 and `panel_stubs`
+22, but every one of those hits is in a vendored copy of Petal
+(`third_party/petal`) or an agent worktree. Cheesecake's own code uses none
+of the four modules (checked 2026-11-08). worlds-fair's own code uses only
+`panel_stubs::{GARDEN_INTERFACE, GARDEN_PACKAGE}`, in
+`ui/crates/wf-ui-core/src/garden_stub.rs`; its other hits are its vendored
+Petal. `panel_stubs` is also a layering problem: it is a copy of the host
 natives Garden registers, and of Garden's `FALLBACK_PALETTE`, sitting in a
-crate below Garden.
+crate below Garden, and it `include_str!`s Garden's
+`garden/garden-script/packages/garden/garden.ptl` from inside `core-libs/`.
 
 **3. Tests of core features.** `tests/static_*` (5 files), `gating`, `memo`,
 `effect_audit` and `dm_*`, about 4–5k lines. They test
@@ -141,12 +147,12 @@ already works this way). What has to change:
 - Check: the golden suites, `petal lint` over the examples, and the 110
   cheesecake game files that import `ui`.
 
-### R2. Move the headless tooling into `core-libs/petal-ui-harness`
+### R2. Move the headless tooling into `core-libs/petal-ui-headless`
 
 **Not done as written; a feature gate instead (2026-11-08).** As written R2
 is a dependency cycle. `harness`, `scenario`, `drag_trace` and `panel_stubs`
 are built on `petal-ui`'s internals (`hit`, `frame_core`, `draw`, `input`,
-`focus`, `popover`, `host_data`, `register_all`), so `petal-ui-harness`
+`focus`, `popover`, `host_data`, `register_all`), so `petal-ui-headless`
 would depend on `petal-ui`, and `pub use` re-exports of it from `petal-ui`
 would need `petal-ui` to depend on it back. Keeping the old paths
 (`petal_ui::harness` and the rest) while moving the code is therefore not
@@ -170,22 +176,78 @@ workspace, does (`harness`, `drag_trace`, `panel_stubs`), so the feature is
 on there anyway. `integrations/petal-c-bridge` uses `scenario` and
 `test/ui-corpus` uses `harness` and `scenario`.
 
-*Open, for the owner:* whether to do the move anyway (a new crate that
-depends on `petal-ui`, with downstream changing `petal_ui::harness` to the
-new crate's path at its next re-vendor), and where `panel_stubs` lives (the
-second bullet below). The original plan follows.
+*Open, for the owner:* whether to do the move anyway (a new crate,
+`petal-ui-headless`, that depends on `petal-ui`). Since downstream's own
+code barely uses the tooling (see "What's inside petal-ui"), the move costs
+little outside the vendored trees, which change at re-vendor anyway. Where
+`panel_stubs` goes is decided; see below. The original plan follows.
 
 That covers `harness`, `scenario`, `drag_trace`, `panel_stubs` and both
 binaries. Hosts then stop pulling in tooling they don't use. `frame_core`
-stays in `petal-ui`, since Garden runs on it.
+stays in `petal-ui`, since Garden runs on it. The name is `headless`, not
+`harness`: everything in it runs a UI script with no renderer attached
+(`Headless`, scenarios, the `petal-ui-run` trace), and the binaries are dev
+tools rather than a test harness.
 
-- Cheesecake and worlds-fair break at their next re-vendor. Keep `pub use`
-  re-exports in `petal-ui` behind a default-on feature for one cycle, and
-  change the downstream imports in the same pass.
-- Decide where `panel_stubs` lives. The clean option is for Garden to export
-  its own stubs. Cheesecake's heavy use of them suggests they've turned into a
-  general "fake panel host", and in that case they should be documented as
-  one.
+- Downstream's own code needs one change (worlds-fair's `garden_stub.rs`,
+  below). The vendored copies follow at re-vendor; no `pub use` cycle is
+  needed.
+- `panel_stubs` moves out of the UI crates into Garden (decided). See the
+  next subsection.
+
+#### `panel_stubs`: what needs it, and where it goes
+
+**Decided 2026-11-08; not yet implemented.** The plan below is the agreed
+direction. It doesn't depend on the crate move: the setup hook and the
+Garden runner work whether the headless tooling stays in `petal-ui` behind
+`tooling` or moves to `petal-ui-headless`.
+
+What it is for: running a script that does `import garden` (a Garden panel
+drawer, a GPP app's drawer, worlds-fair's Garden bundle) without Garden.
+Nothing else needs it. A script that doesn't import `garden` never calls a
+stub. Its users (2026-11-08):
+
+| User | Uses | What it needs |
+|---|---|---|
+| `petal-ui-run`, `petal-ui-propose-edit` | `Headless::panel_from_file_with_paths` on every run, plus `set_query_fixtures` for `--query-fixtures` | Garden drawers for the MCP tools, `tools/oracle-external.ts` (worlds-fair's Garden bundle), `tools/verify.ts` |
+| `test/ui-corpus` (11 call sites) | `panel_from_file_with_paths` | the Garden panels and GPP drawers in the corpus |
+| `core-libs/petal-ui/tests/` (`host_natives`, `run_cli`, `widgets`, `text_field`) | the stubs, or `panel_from_file_with_paths` | tests of the stubs themselves, plus two tests that load a Garden file |
+| `garden-script` | one test asserting `panel_stubs::GARDEN_INTERFACE == GARDEN_INTERFACE` | nothing; it exists only to catch drift |
+| worlds-fair `wf-ui-core/src/garden_stub.rs` | `GARDEN_INTERFACE`, `GARDEN_PACKAGE` only | the interface text; it registers its own `query`/`emit`/`navigate`/`is_ready` |
+| cheesecake | none outside vendored Petal | — |
+
+So the stubs are needed, but they're Garden's, not the UI layer's.
+`garden-script` already exports `GARDEN_INTERFACE`, `GARDEN_PACKAGE` and
+`FALLBACK_PALETTE`, and depends only on `petal`, `petal-ui` and `serde_json`.
+The refactor:
+
+1. Move `panel_stubs.rs` into `garden-script` (for example
+   `garden_script::headless::register_panel_stubs`, with `set_query_fixtures`
+   and `parse_query_fixtures`). The palette copy, the `include_str!` into
+   `garden/` and the drift test all go away, since the stubs use Garden's own
+   constants.
+2. Replace `Headless::panel_from_file_with_paths` (and `build`'s
+   `panel_stubs: bool`) with a setup hook, so the headless crate names no
+   host. For example `Headless::from_file_with_setup(path, w, h, paths,
+   |env| ...)`, which runs before the script loads.
+3. Split `petal-ui-run` / `petal-ui-propose-edit` into a library entry point
+   (`run(args, setup)`) and thin `main`s. `petal-ui-run` stays generic, with
+   no stubs and no `--query-fixtures`. Garden ships `garden-panel-run` (and a
+   propose-edit twin): the same CLI with the Garden stubs as its setup.
+   `tools/petal-mcp*.ts`, `tools/verify.ts` and `tools/oracle-external.ts`
+   pick the Garden runner for scripts that import `garden`, or always use it,
+   since the stubs are inert for scripts that don't.
+4. `test/ui-corpus` adds a `garden-script` dev-dependency and passes its
+   setup. The `petal-ui` tests of the stubs move to `garden-script`. The two
+   `petal-ui` tests that load a Garden file (`widgets.rs:938`,
+   `text_field.rs:267`) either move to `test/ui-corpus` or switch to
+   non-Garden fixtures.
+5. worlds-fair: change `use petal_ui::panel_stubs::{GARDEN_INTERFACE,
+   GARDEN_PACKAGE}` to `garden_script::`, adding `garden-script` (already
+   vendored at `vendor/petal/garden/garden-script`) to `wf-ui-core`. The
+   alternative is copying `garden.ptl` into worlds-fair, which brings back the
+   drift problem. Do this in the same pass as the re-vendor that removes
+   `petal_ui::panel_stubs`.
 
 ### R3. Move the core-feature tests to a test crate
 

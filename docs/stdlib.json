@@ -6118,19 +6118,19 @@
       "params": [
         {
           "name": "x",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "y",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "w",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "h",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "r",
@@ -6154,19 +6154,19 @@
         [
           {
             "name": "x",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "y",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "w",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "h",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "r",
@@ -6189,19 +6189,19 @@
         [
           {
             "name": "x",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "y",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "w",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "h",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "c",
@@ -6334,19 +6334,19 @@
       "params": [
         {
           "name": "x",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "y",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "w",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "h",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "r",
@@ -6375,19 +6375,19 @@
         [
           {
             "name": "x",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "y",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "w",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "h",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "r",
@@ -7006,19 +7006,19 @@
       "params": [
         {
           "name": "x1",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "y1",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "x2",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "y2",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "r",
@@ -7047,19 +7047,19 @@
         [
           {
             "name": "x1",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "y1",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "x2",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "y2",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "r",
@@ -7172,15 +7172,15 @@
       "params": [
         {
           "name": "cx",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "cy",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "radius",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "r",
@@ -7204,15 +7204,15 @@
         [
           {
             "name": "cx",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "cy",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "radius",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "r",
@@ -7332,19 +7332,19 @@
       "params": [
         {
           "name": "cx",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "cy",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "rx",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "ry",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "r",
@@ -7368,19 +7368,19 @@
         [
           {
             "name": "cx",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "cy",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "rx",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "ry",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "r",
@@ -7415,19 +7415,19 @@
       "params": [
         {
           "name": "cx",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "cy",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "rx",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "ry",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "r",
@@ -7456,19 +7456,19 @@
         [
           {
             "name": "cx",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "cy",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "rx",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "ry",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "r",
@@ -7607,27 +7607,27 @@
       "params": [
         {
           "name": "x1",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "y1",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "x2",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "y2",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "x3",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "y3",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "r",
@@ -7651,27 +7651,27 @@
         [
           {
             "name": "x1",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "y1",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "x2",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "y2",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "x3",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "y3",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "r",
@@ -8000,19 +8000,19 @@
       "params": [
         {
           "name": "x",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "y",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "w",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "h",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "radius",
@@ -8024,19 +8024,19 @@
         [
           {
             "name": "x",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "y",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "w",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "h",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "radius",
@@ -8074,19 +8074,19 @@
       "params": [
         {
           "name": "x",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "y",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "w",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "h",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "radius",
@@ -8103,19 +8103,19 @@
         [
           {
             "name": "x",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "y",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "w",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "h",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "radius",
@@ -8694,15 +8694,15 @@
       "params": [
         {
           "name": "id",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "x",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "y",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "a",
@@ -8724,15 +8724,15 @@
         [
           {
             "name": "id",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "x",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "y",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "a",
@@ -8765,30 +8765,30 @@
       "params": [
         {
           "name": "id",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "x",
-          "type": "int"
+          "type": "number"
         },
         {
           "name": "y",
-          "type": "int"
+          "type": "number"
         }
       ],
       "signatures": [
         [
           {
             "name": "id",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "x",
-            "type": "int"
+            "type": "number"
           },
           {
             "name": "y",
-            "type": "int"
+            "type": "number"
           }
         ]
       ],

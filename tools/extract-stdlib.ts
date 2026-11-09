@@ -75,7 +75,13 @@ const preludeStdPtl = join(repoRoot, "core/prelude/std.ptl");
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export type ParamType = "int" | "float" | "string" | "list" | "any";
+/**
+ * `number` is an int or a float: a draw native's geometry (positions, sizes,
+ * radii), which a sub-pixel host keeps fractional and every other host
+ * truncates. `int` is a whole number only (a colour channel, an alpha, a text
+ * size).
+ */
+export type ParamType = "int" | "float" | "number" | "string" | "list" | "any";
 
 export interface Param {
   name: string;
@@ -630,10 +636,13 @@ function extractPrelude(): {
  * for alpha/radius/width) are excluded, so the recovered arity matches the
  * native's `int_args(state, N)` count.
  *
- * Returns a map from draw-command tag (e.g. "rect") to argument names ordered by
- * their data index (e.g. ["x","y","w","h","r","g","b"]).
+ * Returns a map from draw-command tag (e.g. "rect") to its arguments ordered by
+ * their data index (e.g. x, y, w, h, r, g, b), each with its type: geometry
+ * (`i32_at` / `u32_at`) is a `number` — a sub-pixel host keeps it fractional,
+ * see core-libs/petal-ui/src/subpixel.rs — and a colour channel (`u8_at`) or a
+ * text size (`as_i64`) an `int`.
  */
-function loadDrawArgNames(drawSource: string): Map<string, string[]> {
+function loadDrawArgNames(drawSource: string): Map<string, Param[]> {
   const body = extractBlock(drawSource, /fn from_value\s*\(/);
   // Split the `match tag.as_str()` into arms: each starts with `"<tag>" =>`.
   // The catch-all `_ => DrawCommand::Host` isn't quoted, so it isn't a start.
@@ -642,23 +651,24 @@ function loadDrawArgNames(drawSource: string): Map<string, string[]> {
   for (let m; (m = armRe.exec(body)); ) {
     armStarts.push({ tag: m[1], at: m.index });
   }
-  const out = new Map<string, string[]>();
+  const out = new Map<string, Param[]>();
   // Required positional accessors: `<name>: i32_at(<i>)`, `u32_at`, `u8_at`, or
   // `<name>: as_i64(arg(<i>)…` (text's `size`). `opt_u8`/`opt_u32` are excluded.
   const fieldRe =
-    /(\w+)\s*:\s*(?:(?:i32_at|u32_at|u8_at)\(\s*(\d+)\s*\)|as_i64\(\s*arg\(\s*(\d+)\s*\))/g;
+    /(\w+)\s*:\s*(?:(i32_at|u32_at|u8_at)\(\s*(\d+)\s*\)|as_i64\(\s*arg\(\s*(\d+)\s*\))/g;
   for (let i = 0; i < armStarts.length; i++) {
     const { tag, at } = armStarts[i];
     const end = i + 1 < armStarts.length ? armStarts[i + 1].at : body.length;
     const chunk = body.slice(at, end);
-    const byIndex: Array<[number, string]> = [];
+    const byIndex: Array<[number, Param]> = [];
     for (let f; (f = fieldRe.exec(chunk)); ) {
-      byIndex.push([Number(f[2] ?? f[3]), f[1]]);
+      const type: ParamType = f[2] === "i32_at" || f[2] === "u32_at" ? "number" : "int";
+      byIndex.push([Number(f[3] ?? f[4]), { name: f[1], type }]);
     }
     if (byIndex.length) {
       out.set(
         tag,
-        byIndex.sort((a, b) => a[0] - b[0]).map(([, name]) => name),
+        byIndex.sort((a, b) => a[0] - b[0]).map(([, param]) => param),
       );
     }
   }
@@ -667,23 +677,23 @@ function loadDrawArgNames(drawSource: string): Map<string, string[]> {
 
 /**
  * If a canvas fn forwards a positional `int_args(state, N)` list straight to
- * `emit_draw(state, "<tag>", …)`, recover its signature from the tag's argument
- * names (all `int`). Returns null when the fn isn't of that shape, leaving the
+ * `emit_draw(state, "<tag>", …)`, recover its signature from the tag's
+ * arguments (geometry a `number`, colours an `int`). Returns null when the fn isn't of that shape, leaving the
  * generic `let <name> = state.get_<type>(…)` extraction in charge.
  */
 function bufferedDrawSignature(
   body: string,
-  drawArgNames: Map<string, string[]>,
+  drawArgNames: Map<string, Param[]>,
 ): { arity: number | null; variadic: boolean; params: Param[] } | null {
   const intArgs = /int_args\(\s*state\s*,\s*(\d+)\s*\)/.exec(body);
   const emit = /emit_draw\(\s*state\s*,\s*"([^"]+)"/.exec(body);
   if (!intArgs || !emit) return null;
-  const names = drawArgNames.get(emit[1]);
-  if (!names) return null;
+  const params = drawArgNames.get(emit[1]);
+  if (!params) return null;
   return {
     arity: Number(intArgs[1]),
     variadic: false,
-    params: names.map((name) => ({ name, type: "int" as ParamType })),
+    params: params.map((p) => ({ ...p })),
   };
 }
 

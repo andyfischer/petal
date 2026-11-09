@@ -51,8 +51,9 @@ describe("stdlib extractor", () => {
   });
 
   it("reads argument names + types straight from the source", () => {
-    // The names are draw_rect's declared parameters; the types come from its
-    // body's `int_args(state, 7)`.
+    // The names are draw_rect's declared parameters; the types come from how
+    // `DrawCommand::from_value` decodes its `int_args(state, 7)`: geometry is a
+    // `number` (a sub-pixel host keeps it fractional), a colour channel an `int`.
     const drawRect = required("draw_rect");
     expect(drawRect.map((p) => p.name)).toEqual([
       "x",
@@ -63,7 +64,15 @@ describe("stdlib extractor", () => {
       "g",
       "b",
     ]);
-    expect(drawRect.every((p) => p.type === "int")).toBe(true);
+    expect(drawRect.map((p) => p.type)).toEqual([
+      "number",
+      "number",
+      "number",
+      "number",
+      "int",
+      "int",
+      "int",
+    ]);
     // …and the optional alpha it also takes is there, flagged.
     expect(byName.get("draw_rect")!.params.at(-1)).toMatchObject({
       name: "a",

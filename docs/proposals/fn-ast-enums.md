@@ -135,7 +135,7 @@ are **proposed**. No prototype was built.
 
 Before (`glsl.ptl:457-473`):
 
-```petal
+```petal ignore
 fn expr(c: Ctx, node: record) -> Val
   if failed(c) then return bad() end
   match node.tag
@@ -151,7 +151,7 @@ end
 
 After:
 
-```petal
+```petal ignore
 fn expr(c: Ctx, node: record) -> Val
   if failed(c) then return bad() end
   match node.tag
@@ -172,7 +172,7 @@ also possible today with strings. `other.name` replaces `other`.
 
 Before (`glsl.ptl:128-135`, `561-600`):
 
-```petal
+```petal ignore
 let BINOPS = {
   Add: {sym: "+", prec: 5}, Sub: {sym: "-", prec: 5},
   ...
@@ -194,7 +194,7 @@ let BINOPS = {
 
 After:
 
-```petal
+```petal ignore
 let BINOPS = {
   Add: {sym: "+", prec: 5}, Sub: {sym: "-", prec: 5},
   ...
@@ -225,7 +225,7 @@ enum would make it a second source of truth.
 
 Before (`glsl.ptl:883-950`, trimmed):
 
-```petal
+```petal ignore
   let tag = node.tag
   if tag == "Let" then
     ...
@@ -241,7 +241,7 @@ Before (`glsl.ptl:883-950`, trimmed):
 
 After:
 
-```petal
+```petal ignore
   match node.tag
     when AstKind.Let -> ...
     when AstKind.Set | AstKind.Assign ->
@@ -261,7 +261,7 @@ construct as unsupported.
 
 Before (`glsl.ptl:1153-1159`):
 
-```petal
+```petal ignore
     if d.tag == "Literal" && (d.type == "float" || d.type == "int") then
       ty = Ty.float
     elsif d.tag == "UnaryOp" && d.op == "Neg" && d.operand.tag == "Literal" then
@@ -269,7 +269,7 @@ Before (`glsl.ptl:1153-1159`):
 
 After:
 
-```petal
+```petal ignore
     if d.tag == AstKind.Literal && (d.type == "float" || d.type == "int") then
       ty = Ty.float
     elsif d.tag == AstKind.UnaryOp && d.op == AstOp.Neg && d.operand.tag == AstKind.Literal then
@@ -307,7 +307,7 @@ After: the same code prints `AstKind.Lambda with 1 statement(s)`. Writing
 
 A has to be judged against the language's own rules, not just glsl.ptl:
 
-```petal
+```petal ignore
 // proposed A — pattern must list every payload field (language-guide.md, Pattern Matching)
 match node
   when AstNode.BinaryOp(op, left, right, _, _) -> ...

@@ -307,7 +307,7 @@ type DeclaredForm = Array<{ name: string; optional: boolean }>;
 function parseNativeDecls(source: string): Map<string, DeclaredForm[]> {
   const out = new Map<string, DeclaredForm[]>();
   const declRe =
-    /^(?:pub\s+)?native\s+fn\s+([A-Za-z_][\w.?]*)\s*\(([^)]*)\)(?:\s*->\s*\w+)?(?:\s*=\s*"([^"]+)")?\s*$/gm;
+    /^(?:pub\s+)?native\s+fn\s+([A-Za-z_][\w.?]*)\s*\(([^)]*)\)(?:\s*->\s*[\w.]+\??)?(?:\s*=\s*"([^"]+)")?\s*$/gm;
   for (let m; (m = declRe.exec(source)); ) {
     const host = m[3] ?? m[1];
     const parts = m[2]

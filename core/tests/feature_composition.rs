@@ -142,3 +142,30 @@ fn a_modules_rect_hides_the_builtin_only_there() {
     env.run(sid).unwrap();
     assert_eq!(env.take_output(), ["2 { q: 1 }"]);
 }
+
+/// `const(…)` (docs/tasks/lifecycle-annotation-functions-refactor.md) of an
+/// enum variant: a module enum's through a qualified, nullable annotation,
+/// and the entry file's own enum with a method. The variant is a static
+/// value, so neither is a `const` error, and its methods answer.
+#[test]
+fn const_of_an_enum_variant_keeps_its_type_and_methods() {
+    let src = "\
+import level as lv
+enum Mode
+  idle, busy,
+end
+fn Mode.label(m: Mode) -> string
+  \"mode \" ++ m.name
+end
+let P: lv.Phase = const(lv.Phase.run(2))
+let Q: lv.Phase? = const(lv.Phase.idle)
+let M = const(Mode.busy)
+print(P.label(), Q.label(), M.label())
+";
+    assert_clean(src);
+    assert_eq!(run(src), ["level run 2 level idle mode busy"]);
+    assert_warns(
+        "import level as lv\nlet P: lv.Box? = const(lv.Phase.idle)\n",
+        "declared `Box?` but assigned `Phase`",
+    );
+}

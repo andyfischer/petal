@@ -7,7 +7,7 @@ illegal peg is not in the list, so the drag cannot reach it; the disk lands on
 the nearest legal peg instead.
 
 ```
-cd core-libs/petal-ui
+cd core-libs/petal-ui-headless
 cargo run --bin petal-ui-run -- ../../examples/ui/d2-hanoi/app.ptl \
   --scenario ../../examples/ui/d2-hanoi/scenarios/drag.json
 ```

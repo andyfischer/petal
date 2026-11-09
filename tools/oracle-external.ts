@@ -15,7 +15,7 @@
 //     is `query("model", <fixture>)`. With no answer every screen draws
 //     "waiting for the game…" — two draw commands — and the differential
 //     passes while testing nothing. `wf-ui --print-fixtures` dumps the real
-//     fixture models in the shape `petal-ui-run --query-fixtures` takes.
+//     fixture models in the shape `garden-panel-run --query-fixtures` takes.
 //
 // For each fragment it runs a monkey scenario under the `baseline` run policy
 // (no optimizer, memo or gate) and under each shipped policy — `fast-memo` (the
@@ -31,10 +31,10 @@
 //
 // Usage:
 //   ./tools/oracle-external.ts [--wf <dir>] [--frames N] [--seed N]
-//                              [--runner <petal-ui-run>] [--wf-bin <wf-ui>]
+//                              [--runner <garden-panel-run>] [--wf-bin <wf-ui>]
 //
 // Prerequisites:
-//   cd core-libs/petal-ui && cargo build --release
+//   cd garden && cargo build --release -p garden-panel-run
 //   cd ~/worlds-fair/ui && cargo build --release -p wf-ui-garden
 //
 // `--runner` and `--wf-bin` name the two binaries when they were built
@@ -60,12 +60,12 @@ const flag = (name: string, fallback: string) => {
 const wfRoot = resolve(flag('--wf', join(process.env.HOME ?? '', 'worlds-fair')));
 const frames = Number(flag('--frames', '45'));
 const seed = flag('--seed', '1');
-const runner = resolve(flag('--runner', join(root, 'core-libs/petal-ui/target/release/petal-ui-run')));
+const runner = resolve(flag('--runner', join(root, 'garden/target/release/garden-panel-run')));
 const wfBin = resolve(flag('--wf-bin', join(wfRoot, 'ui/target/release/wf-ui')));
 const ptl = join(wfRoot, 'ui/ptl');
 
 for (const [what, path] of [
-  ['petal-ui-run', runner],
+  ['garden-panel-run', runner],
   ['wf-ui', wfBin],
   ['worlds-fair ptl', ptl],
 ] as const) {
@@ -89,7 +89,7 @@ const LIBS = [
 ];
 // worlds-fair vendors a Petal from before a script had to import the
 // interfaces its host natives live in, so its sources (and the bundle
-// `wf-ui-core` makes of them) name none, and today's `petal-ui-run` refuses
+// `wf-ui-core` makes of them) name none, and today's `garden-panel-run` refuses
 // the bundle as written: `unknown function \`query\``. These are the three
 // the corpus uses; `garden` is the one `petal fix-imports` cannot find for
 // itself. Drop this once worlds-fair has re-vendored and migrated.

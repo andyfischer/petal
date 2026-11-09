@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 use petal_ui::host_data::HostData;
 
 #[test]

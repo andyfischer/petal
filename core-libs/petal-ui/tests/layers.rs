@@ -3,7 +3,7 @@
 //! wrappers, and the serialized shape every host decodes.
 
 use petal_ui::draw::DrawCommand;
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 
 fn cmds(source: &str) -> Vec<DrawCommand> {
     let mut ui = Headless::with_ui(source).unwrap_or_else(|e| panic!("compile failed: {e}"));

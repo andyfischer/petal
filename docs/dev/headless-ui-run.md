@@ -2,8 +2,22 @@
 
 `petal run` cannot run a UI app: it dies at `screen_width()`, because the
 input/draw contract is the host's job. `petal-ui-run` is that host, with no
-renderer attached. It drives `petal_ui::harness::Headless` for N frames,
-feeds it a scripted input scenario, and writes one JSON line per frame.
+renderer attached. It drives `petal_ui_headless::harness::Headless` for N
+frames, feeds it a scripted input scenario, and writes one JSON line per frame.
+
+It comes in two builds of one CLI (`petal_ui_headless::run_cli`):
+
+- `petal-ui-run` (crate `core-libs/petal-ui-headless`) registers petal-ui's
+  natives and nothing else. A script that does `import garden` does not load
+  under it.
+- `garden-panel-run` (crate `garden/garden-panel-run`) adds Garden's panel
+  stubs (below) and `--query-fixtures`. The stubs are inert for a script that
+  never calls them, so it runs everything `petal-ui-run` does, and it is what
+  the tools use (`tools/verify.ts`, the MCP `DragExplain` tool,
+  `tools/oracle-external.ts`): much of `examples/` imports `garden`.
+
+`petal-ui-propose-edit` and `garden-panel-propose-edit` are the same pair for
+`propose-edit`.
 
 It exists so a UI app's behavior is comparable across a refactor: everything
 that would otherwise differ run-to-run has a knob, and the driver pins all of
@@ -12,15 +26,19 @@ them (see [refactor-verification.md](refactor-verification.md)).
 ```
 petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
              [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
-             [--query-fixtures q.json] [--out trace.jsonl]
+             [--out trace.jsonl]
              [--error-format full|bare] [-I <dir>]
              [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats] [--targets]
              [--effect-audit] [--static-audit] [--static-only]
              [--drag-trace] [--drag-trace-full] [--ui-debug <name>]
 ```
 
-Build it with `cd core-libs/petal-ui && cargo build`; the binary lands at
-`core-libs/petal-ui/target/debug/petal-ui-run`.
+`garden-panel-run` takes the same flags plus `[--query-fixtures q.json]`.
+
+Build `petal-ui-run` with `cd core-libs/petal-ui-headless && cargo build`
+(it lands at `core-libs/petal-ui-headless/target/debug/petal-ui-run`), and
+`garden-panel-run` with `cd garden && cargo build -p garden-panel-run`
+(`garden/target/debug/garden-panel-run`).
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -200,8 +218,9 @@ petal-ui-run: frame 7: drag "A": #3 of 5 (floating > closest > fixed #3), gap 0.
 petal-ui-run: frame 10: drop "A" -> ["B","C","D","A","E"]
 ```
 
-The reader is `petal_ui::drag_trace`; a host can call it on its own state
-dump.
+The reader is `petal_ui_headless::drag_trace`; a host can call it on its own
+state dump. Draining the drops is the host contract's
+(`petal_ui::drag::take_drops`), so Garden does it with no headless tooling.
 
 ### Monkey scenarios
 
@@ -212,7 +231,7 @@ same events on every platform, and a failing run is replayable from
 `(app, --seed, monkey seed)` alone.
 
 The generator is `Scenario::monkey(seed, frames, size)` in
-`core-libs/petal-ui/src/scenario.rs`; `Scenario::to_json` writes a generated scenario back
+`core-libs/petal-ui-headless/src/scenario.rs`; `Scenario::to_json` writes a generated scenario back
 out in the format above, for a repro bundle.
 
 ## Determinism
@@ -262,13 +281,14 @@ A JSON array of answers; a `(kind, arg)` with no entry answers nil.
 JSON numbers keep their int/float distinction (`42` is an `Int`, `0.42` a
 `Float`) — a truncated fraction is unrecoverable downstream.
 
-## Garden panel natives are stubbed
+## Garden panel natives are stubbed (`garden-panel-run`)
 
 A Garden panel drawer calls host natives beyond the petal-ui contract —
 `palette()`, `query`/`invalidate`, `emit`/`mutate`/`claim_key`, the
 `navigate` family, `panel_store_get/set`, and the `text_view`/`edit_view`
-regions. The driver registers inert, deterministic stand-ins for all of them
-(`petal_ui::panel_stubs`), so the drawers under `garden/examples/panels/` and
+regions. `garden-panel-run` registers inert, deterministic stand-ins for all of
+them (`garden_script::headless::register_panel_stubs`, which any `Headless`
+can take as its setup hook: `Headless::from_file_with_setup`), so the drawers under `garden/examples/panels/` and
 `garden/gpp-apps/*/src/` run headlessly. It registers the `garden` interface
 package with them, so a drawer's `import garden` resolves and links:
 
@@ -292,7 +312,7 @@ loading state here — deterministic and intended; give it its model with
 ## What runs under it
 
 Every UI app under `examples/dashboards`, `examples/games`, and
-`examples/productivity` runs clean under this driver, as do
+`examples/productivity` runs clean under `garden-panel-run`, as do
 `examples/custom-apps/diagram-canvas/examples/*` and, through the
 panel-native stubs above, the drawers under `garden/examples/panels/` and
 `garden/gpp-apps/*/src/`.

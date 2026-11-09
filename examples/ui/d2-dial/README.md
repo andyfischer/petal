@@ -9,7 +9,7 @@ rendering for the exact derivative (the knob's position is plain arithmetic
 on the angle, so duals survive to `place`).
 
 ```
-cd core-libs/petal-ui
+cd core-libs/petal-ui-headless
 cargo run --bin petal-ui-run -- ../../examples/ui/d2-dial/app.ptl \
   --scenario ../../examples/ui/d2-dial/scenarios/drag.json
 ```

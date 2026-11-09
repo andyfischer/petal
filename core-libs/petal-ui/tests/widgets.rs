@@ -6,7 +6,7 @@
 //! geometry in these tests is computed with that ruler.
 
 use petal_ui::draw::DrawCommand;
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 use petal_ui::input::{InputEvent, Modifiers};
 
 fn run_headless(source: &str, check: impl Fn(&mut Headless)) {
@@ -935,7 +935,7 @@ fn tooltip_waits_for_the_hover_delay_then_fades_in() {
 fn gallery_runs_headlessly_across_all_tabs() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../garden/examples/panels/gallery.ptl");
-    let mut ui = Headless::panel_from_file_with_paths(&path, 900, 700, &[])
+    let mut ui = Headless::from_file_with_paths(&path, 900, 700, &[])
         .unwrap_or_else(|e| panic!("gallery failed to load: {e}"));
     ui.frame()
         .unwrap_or_else(|e| panic!("gallery frame 1: {e}"));

@@ -2,7 +2,7 @@
 //! the standard host frame contract.
 
 use petal_ui::draw::DrawCommand;
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 use petal_ui::input::{InputEvent, Modifiers};
 
 fn run_headless(source: &str, check: impl Fn(&mut Headless)) {

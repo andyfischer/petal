@@ -5,7 +5,7 @@
 //! The engine (`prelude/drag.ptl`) keeps everything in ordinary `state`
 //! holding plain values — the session's resolved spec with its target table,
 //! the grab offset, the chosen leaf — so a host reads it out of the state
-//! dump ([`crate::frame_core::FrameCore::state`]) with no hook in the script.
+//! dump ([`petal_ui::frame_core::FrameCore::state`]) with no hook in the script.
 //! What is computed here (each target's distance from the dragged element,
 //! the branch down to the chosen leaf) is the same arithmetic the engine's
 //! own `drag_explain()` does, from the same data.
@@ -15,12 +15,12 @@
 
 use std::collections::HashMap;
 
-use petal::env::Env;
 use serde_json::{json, Map, Value as Json};
 
-/// The output channel `ui/drag` announces a drop on (`DRAG_DROPS_CHANNEL` in
-/// the module).
-pub const DRAG_DROPS_CHANNEL: &str = "drag_drops";
+/// The drop channel and its drain are the host contract's, in
+/// [`petal_ui::drag`]: a host that commits drops (Garden) drains them with no
+/// headless tooling.
+pub use petal_ui::drag::{DRAG_DROPS_CHANNEL, take_drops};
 
 /// The state slot of a `drag_session`: its call path ends in this.
 const SESSION_SUFFIX: &str = "ui/drag::s";
@@ -130,17 +130,6 @@ pub fn summary(explained: &Json) -> String {
         }
         None => format!("drag {key}: no target of {n}"),
     }
-}
-
-/// Drain the drops announced since the last call: `{key, model, drop}` each.
-pub fn take_drops(env: &mut Env) -> Vec<Json> {
-    let sym = env.intern_symbol(DRAG_DROPS_CHANNEL);
-    let values = env.take_output_buffer(sym);
-    let heap = env.heap();
-    values
-        .iter()
-        .map(|v| petal::value::value_to_json(v, heap))
-        .collect()
 }
 
 /// Where every key `ui/drag` has placed was last drawn: the centre of its

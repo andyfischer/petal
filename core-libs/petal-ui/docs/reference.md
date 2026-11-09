@@ -678,5 +678,5 @@ rest. The guide, with worked examples and the mistakes to avoid, is
 
 ## Testing a UI
 
-`petal_ui::harness::Headless` runs a script with no window; `petal-ui-run`
+`petal_ui_headless::harness::Headless` runs a script with no window; `petal-ui-run`
 does the same from the command line. See [the README](../README.md#testing).

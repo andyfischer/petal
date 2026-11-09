@@ -6,7 +6,7 @@
 
 use petal_ui::compose::{HostCaps, invalidate_caches, set_host_caps};
 use petal_ui::draw::{BatchRect, DrawCommand, bind_image_sizes, take_image_requests};
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 
 fn ui(src: &str) -> Headless {
     Headless::with_ui(src).unwrap_or_else(|e| panic!("compile failed: {e}"))

@@ -21,8 +21,7 @@ use common::par_corpus;
 
 use petal::policy::RunPolicy;
 use petal::static_survey::{SiteCounter, survey};
-use petal_ui::harness::Headless;
-use petal_ui::scenario::Scenario;
+use petal_ui_headless::scenario::Scenario;
 
 struct Row {
     /// Sites found in the program, and how many of them ran.
@@ -46,7 +45,7 @@ struct Row {
 
 fn drive(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64, frames: usize) -> Row {
     let size = (800, 600);
-    let mut ui = Headless::panel_from_file_with_paths(app, size.0, size.1, includes)
+    let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
     ui.env.set_echo(false);
     ui.env.set_seed(seed);
@@ -123,7 +122,7 @@ fn frames_of(
     frames: usize,
 ) -> (Vec<String>, usize, usize, Vec<String>) {
     let size = (800, 600);
-    let mut ui = Headless::panel_from_file_with_paths(app, size.0, size.1, includes)
+    let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
     ui.env.set_echo(false);
     ui.env.set_seed(1);
@@ -209,7 +208,7 @@ struct Cost {
 
 fn cost(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64, frames: usize) -> Cost {
     let size = (800, 600);
-    let mut ui = Headless::panel_from_file_with_paths(app, size.0, size.1, includes)
+    let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
     ui.env.set_echo(false);
     ui.env.set_seed(seed);

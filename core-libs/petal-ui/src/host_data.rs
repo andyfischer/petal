@@ -34,8 +34,9 @@
 //! # }
 //! ```
 //!
-//! [`crate::harness::Headless::set_data_provider`] does exactly this, so widget
-//! logic that pulls host data is unit-testable with no renderer attached.
+//! [`crate::frame_core::FrameCore::set_data_provider`] does exactly this (it is what
+//! `petal-ui-headless`'s `Headless` driver calls), so widget logic that pulls
+//! host data is unit-testable with no renderer attached.
 
 use std::cell::RefCell;
 

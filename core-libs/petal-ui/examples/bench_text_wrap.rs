@@ -25,7 +25,7 @@
 //!    `area − wrap/native + wrap/petal`.
 use std::time::Instant;
 
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 
 const REF: &str = include_str!("../../../test/benchmarks/text_wrap/wrap_ref.ptl");
 

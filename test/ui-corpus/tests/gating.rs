@@ -16,9 +16,9 @@ use common::{assert_corpus_is_live, par_corpus};
 
 use petal::policy::RunPolicy;
 use petal::run_deps::RunReason;
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 use petal_ui::host_data::fixture_provider;
-use petal_ui::scenario::Scenario;
+use petal_ui_headless::scenario::Scenario;
 
 fn ui(src: &str) -> Headless {
     let mut ui = Headless::with_ui(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
@@ -289,7 +289,7 @@ fn prelude_widgets_settle_on_a_quiet_frame() {
 
 fn drive(app: &Path, includes: &[PathBuf], gate: bool, seed: u64, frames: usize) -> (Vec<String>, u64) {
     let size = (800, 600);
-    let mut ui = Headless::panel_from_file_with_paths(app, size.0, size.1, includes)
+    let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
     ui.env.set_echo(false);
     ui.env.set_seed(seed);
@@ -378,7 +378,7 @@ fn a_quiet_corpus_idles_unless_it_reads_the_clock() {
         Restless(String),
     }
     let settled = par_corpus(|app, includes| {
-        let mut ui = Headless::panel_from_file_with_paths(app, 800, 600, includes)
+        let mut ui = petal_ui_corpus::panel(app, 800, 600, includes)
             .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
         ui.env.set_echo(false);
         ui.env.set_seed(1);

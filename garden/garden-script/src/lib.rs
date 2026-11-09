@@ -53,6 +53,7 @@
 
 pub mod bloom;
 pub mod dm_hints;
+pub mod headless;
 mod convert;
 pub mod inspect;
 mod native_fns;

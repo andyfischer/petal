@@ -350,7 +350,7 @@ registry. The rows are the same either way. The rect is already clipped to
 what was visible, so its centre is a point a click lands on. When an id was
 registered more than once, lookup by id returns the last.
 
-`petal_ui::harness::Headless` wraps these as `targets()`, `target(id)` and
+`petal_ui_headless::harness::Headless` wraps these as `targets()`, `target(id)` and
 `click_target(id)`.
 
 ## Images

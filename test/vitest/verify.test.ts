@@ -169,7 +169,7 @@ describe("verify.ts driver failures are never a pass", () => {
       ["--after-ui-bin", join(scratch, "does-not-exist")],
     );
     expect(v.status).toBe(2);
-    expect(v.stderr).toContain("no petal-ui-run binary");
+    expect(v.stderr).toContain("no UI driver binary");
     expect(v.results).toEqual([]);
   });
 

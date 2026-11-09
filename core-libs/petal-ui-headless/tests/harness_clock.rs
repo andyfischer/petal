@@ -5,7 +5,7 @@
 //! The clock is a pure function of the frame count — never the system clock —
 //! which is what keeps two runs of the same script byte-identical.
 
-use petal_ui::harness::{FRAME_DT, Headless};
+use petal_ui_headless::harness::{FRAME_DT, Headless};
 use std::process::Command;
 
 const BIN: &str = env!("CARGO_BIN_EXE_petal-ui-run");

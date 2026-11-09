@@ -19,7 +19,8 @@
 //   --before <git-ref|dir>   source A/B: a git ref is materialized under --out
 //   --after <dir>            source A/B; defaults to the working tree
 //   --before-bin/--after-bin binary A/B: two `petal` binaries
-//   --before-ui-bin/--after-ui-bin   ditto for petal-ui-run (default: the built one)
+//   --before-ui-bin/--after-ui-bin   ditto for the UI driver (default: the built
+//                            garden-panel-run, petal-ui-run with Garden's panel stubs)
 //   --out <dir>              artifacts dir (default .temp/verify-runs/<plan>-<ISO>)
 //   --only <glob>            restrict the corpus (matched against the relative path)
 //   --jobs N                 parallelism (default cpus-1)
@@ -842,7 +843,10 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
 
     const defaultPetal = join(repoRoot, 'cli', 'target', 'debug', 'petal');
-    const defaultUi = join(repoRoot, 'core-libs', 'petal-ui', 'target', 'debug', 'petal-ui-run');
+    // garden-panel-run, not the generic petal-ui-run: most of the corpus
+    // imports `garden` (an example's layout.ptl does), and the panel stubs are
+    // inert for a script that does not.
+    const defaultUi = join(repoRoot, 'garden', 'target', 'debug', 'garden-panel-run');
 
     /** `-I <dir>` pairs for one side, from the plan's `include` list. */
     const includeFor = (root: string): string[] =>
@@ -888,8 +892,8 @@ async function main() {
     if (targets.some(t => staticKind(t, mods) === 'ui')) {
         for (const s of [before, after]) {
             if (!existsSync(s.uiRun)) {
-                fail(`no petal-ui-run binary at ${s.uiRun}, and the corpus has UI apps `
-                    + `(cd core-libs/petal-ui && cargo build --bin petal-ui-run)`);
+                fail(`no UI driver binary at ${s.uiRun}, and the corpus has UI apps `
+                    + `(cd garden && cargo build -p garden-panel-run)`);
             }
             // Ask the driver whether it knows `--no-gate` (its usage line lists
             // every flag) rather than assume: an older driver rejects the flag.

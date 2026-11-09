@@ -23,8 +23,7 @@ use common::par_corpus;
 
 use petal::policy::RunPolicy;
 use petal::static_classify::{DeclClass, DeclKind, StaticSummary};
-use petal_ui::harness::Headless;
-use petal_ui::scenario::Scenario;
+use petal_ui_headless::scenario::Scenario;
 
 struct Outcome {
     summary: StaticSummary,
@@ -45,7 +44,7 @@ fn brief(value: &serde_json::Value) -> String {
 
 fn drive(app: &Path, includes: &[PathBuf], seed: u64, frames: usize) -> Outcome {
     let size = (800, 600);
-    let mut ui = Headless::panel_from_file_with_paths(app, size.0, size.1, includes)
+    let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
     ui.env.set_echo(false);
     ui.env.set_seed(seed);

@@ -21,8 +21,8 @@ mod common;
 use common::{assert_corpus_is_live, par_corpus};
 
 use petal::policy::RunPolicy;
-use petal_ui::harness::Headless;
-use petal_ui::scenario::Scenario;
+use petal_ui_headless::harness::Headless;
+use petal_ui_headless::scenario::Scenario;
 
 struct Run {
     frames: Vec<String>,
@@ -62,7 +62,7 @@ fn drive_observed(
     observe: bool,
 ) -> Run {
     let size = (800, 600);
-    let mut ui = Headless::panel_from_file_with_paths(app, size.0, size.1, includes)
+    let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
     ui.env.set_echo(false);
     ui.env.set_seed(seed);

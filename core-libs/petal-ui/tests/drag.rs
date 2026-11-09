@@ -6,7 +6,7 @@
 //! checked-in drag scenarios and must reach the states they are written to
 //! reach.
 
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 use serde_json::{Value, json};
 
 fn ui(body: &str) -> Headless {

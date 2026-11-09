@@ -669,7 +669,7 @@ is what a scenario's `{"at": N, "click_target": "End turn"}` resolves against.
 ### Input scenarios (replay)
 
 A scenario is petal-ui's declarative input script
-(`core-libs/petal-ui/src/scenario.rs`): JSON listing input events keyed by frame, plus
+(`core-libs/petal-ui-headless/src/scenario.rs`): JSON listing input events keyed by frame, plus
 an optional window size and frame count. It is the format `petal-ui-run` and
 `tools/verify.ts` use, so a repro recorded there replays in a C++ host, and
 a C++ host's headless tests can be written as data:

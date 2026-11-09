@@ -57,7 +57,7 @@ use petal::dm::{
     Alternative, DmError, DmGoal, DmRequest, DmResponse, EmitKey, Observable, PathStep, Prefer,
     apply_edits_multi, program_files, propose_edits_v2,
 };
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 use serde_json::{Value as Json, json};
 
 // ── the example format ───────────────────────────────────────────────────
@@ -305,7 +305,7 @@ struct Emit {
 /// A loaded example, run up to its checkpoint.
 fn load(ex: &Example, file: &Path) -> Result<Headless, String> {
     let mut ui = if ex.panel {
-        Headless::panel_from_file_with_paths(file, ex.size.0, ex.size.1, &[])?
+        petal_ui_corpus::panel(file, ex.size.0, ex.size.1, &[])?
     } else {
         Headless::from_file_with_size(file, ex.size.0, ex.size.1)?
     };

@@ -12,7 +12,7 @@ widget in depth. The widgets are written in Petal, in `prelude/widgets.ptl`
 The worked example showing all of it is `garden/examples/panels/gallery.ptl`:
 
 ```
-cd core-libs/petal-ui && cargo run --bin petal-ui-run -- \
+cd core-libs/petal-ui-headless && cargo run --bin petal-ui-run -- \
     ../../garden/examples/panels/gallery.ptl --frames 60
 ```
 

@@ -1265,7 +1265,7 @@ const char* pb_vm_source_text(pb_vm* vm, const char* file);
  *                 {"at": 12, "text": "hi"}, {"at": 20, "scroll": [0, -3]} ] }
  *
  * (Also mouse_move, mouse_down/up, key_down/up, mouse_relative, modifiers;
- * see core-libs/petal-ui/src/scenario.rs.) It is the same format petal-ui-run and the
+ * see core-libs/petal-ui-headless/src/scenario.rs.) It is the same format petal-ui-run and the
  * verify tooling use, so a repro recorded there replays here. A scenario is
  * independent of any VM. Replay loop:
  *

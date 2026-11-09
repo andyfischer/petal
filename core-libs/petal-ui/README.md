@@ -112,20 +112,13 @@ env.run(...)?;
 let commands = petal_ui::draw::take_draw_commands(&mut env);
 ```
 
-### The `tooling` feature
+### Headless tooling lives elsewhere
 
-The headless tooling — `harness`, `scenario`, `drag_trace`, `panel_stubs` and
-the `petal-ui-run` / `petal-ui-propose-edit` binaries — sits behind the
-`tooling` cargo feature, which is on by default. A host that needs only the
-host contract (input, draw, hit testing, `frame_core`, …) can leave it out:
-
-```toml
-petal-ui = { path = "…/core-libs/petal-ui", default-features = false }
-```
-
-This crate's own tests and examples that drive a script headlessly declare
-`required-features = ["tooling"]`; `cargo test --no-default-features` runs
-the rest.
+This crate is only the host contract. Running a script with no renderer
+attached — the `Headless` driver, input scenarios, drag tracing and the
+`petal-ui-run` / `petal-ui-propose-edit` CLIs — is
+[`petal-ui-headless`](../petal-ui-headless) (`core-libs/petal-ui-headless`),
+which depends on this crate. A host links none of it.
 
 To make the widgets paint in the host's own colors, publish a palette once at
 startup (or every frame, if it can change live):
@@ -168,12 +161,16 @@ the host side in [docs/host-contract.md](docs/host-contract.md).
 ## Running scripts headlessly
 
 ```
+cd core-libs/petal-ui-headless
 cargo run --bin petal-ui-run -- app.ptl --frames 60 --scenario monkey:1 --seed 1
 ```
 
-`petal-ui-run` runs a UI script without a window, prints the draw commands
+`petal-ui-run` (in `petal-ui-headless`) runs a UI script without a window, prints the draw commands
 and state as JSON, and replays deterministic input scenarios. See
-[headless-ui-run.md](../../docs/dev/headless-ui-run.md). The showcase script
+[headless-ui-run.md](../../docs/dev/headless-ui-run.md). A Garden panel (a
+script that does `import garden`) runs under `garden-panel-run` instead
+(`cd garden && cargo run -p garden-panel-run -- …`), the same CLI with
+Garden's panel stubs. The showcase script
 `garden/examples/panels/gallery.ptl` exercises every component and runs both
 headlessly and as a Garden panel.
 
@@ -207,7 +204,7 @@ argument (`--channel draw_commands --emit K --native-arg I --to V`;
 
 ## Testing
 
-`harness::Headless` (public) runs a script with no window. Feed it input
+`petal_ui_headless::harness::Headless` runs a script with no window. Feed it input
 (`click`, `click_target`, `key`, `text`, `mouse_move`, `scroll`), run
 `frame()`, and read state (`state_int`, `state_float`, `state_string`), the
 draw commands it returns, and the target registry (`targets()`):
@@ -222,7 +219,8 @@ assert_eq!(ui.state_int("n"), Some(1));
 `petal-ui-run` is the command-line equivalent (see
 [headless-ui-run.md](../../docs/dev/headless-ui-run.md)).
 
-This crate's own tests run with `cargo test`:
+This crate's own tests run with `cargo test` (they use `petal-ui-headless` as
+a dev-dependency):
 
 - `tests/widgets.rs`: the component library, one worked test per widget —
   synthetic clicks and keys, then assertions on state and draw commands.

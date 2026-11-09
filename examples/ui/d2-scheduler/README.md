@@ -14,7 +14,7 @@ them into as few rooms as possible without a clash (clashes are red).
   day; on release the time is rounded to five minutes.
 
 ```
-cd core-libs/petal-ui
+cd core-libs/petal-ui-headless
 cargo run --bin petal-ui-run -- ../../examples/ui/d2-scheduler/app.ptl \
   --scenario ../../examples/ui/d2-scheduler/scenarios/drag.json
 ```

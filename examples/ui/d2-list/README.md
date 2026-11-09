@@ -7,7 +7,7 @@ the slop, the hit testing, the rows sliding out of the way, the drop settling
 into its slot and Escape.
 
 ```
-cd core-libs/petal-ui
+cd core-libs/petal-ui-headless
 cargo run --bin petal-ui-run -- ../../examples/ui/d2-list/app.ptl \
   --scenario ../../examples/ui/d2-list/scenarios/drag.json
 ```

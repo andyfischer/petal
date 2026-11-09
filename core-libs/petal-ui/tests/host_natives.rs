@@ -154,24 +154,6 @@ fn a_ui_name_is_reachable_only_through_the_import() {
         .expect("runs with the import");
 }
 
-/// The panel stubs stand in for Garden's panel natives: every stub is one
-/// the `garden` interface package declares.
-#[test]
-fn panel_stubs_are_declared_by_the_garden_interface() {
-    let registered = added_by(petal_ui::panel_stubs::register_panel_stubs);
-    let declared: BTreeSet<String> =
-        petal::native_decl::NativeDecls::parse(petal_ui::panel_stubs::GARDEN_INTERFACE)
-            .expect("garden.ptl parses")
-            .host_names()
-            .into_iter()
-            .collect();
-    let undeclared: Vec<_> = registered.difference(&declared).collect();
-    assert!(
-        undeclared.is_empty(),
-        "the garden interface package lacks panel stubs: {undeclared:?}"
-    );
-}
-
 // ---------------------------------------------------------------------------
 // Parameter names (named arguments)
 // ---------------------------------------------------------------------------
@@ -382,17 +364,13 @@ fn the_only_constant_ui_native_is_ui_version() {
     use petal::native_fn::NativeConstness;
     let mut env = Env::new();
     petal_ui::register_all(&mut env);
-    petal_ui::panel_stubs::register_panel_stubs(&mut env);
-    let added = added_by(|env| {
-        petal_ui::register_all(env);
-        petal_ui::panel_stubs::register_panel_stubs(env);
-    });
+    let added = added_by(petal_ui::register_all);
     let constant: Vec<&String> = added
         .iter()
         .filter(|n| env.native_constness_of_name(n) != NativeConstness::Dynamic)
         .collect();
     assert_eq!(constant, ["ui_version"]);
-    for name in ["font", "text_width", "palette", "panel_theme", "nav_arg", "time"] {
+    for name in ["font", "text_width", "time"] {
         assert!(added.contains(name), "{name} is no longer registered");
         assert_eq!(
             env.native_constness_of_name(name),

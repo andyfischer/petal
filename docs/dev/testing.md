@@ -111,7 +111,11 @@ the expected output and ceilings on copies and allocations. The format is in
 [`test/README.md`](../../test/README.md#script-regression-cases).
 
 The UI library has its own suite (`cd core-libs/petal-ui && cargo test`), which
-tests `petal-ui` itself: input, hit testing, layers, widgets, the harness.
+tests `petal-ui` itself: input, hit testing, layers, widgets. The headless
+tooling has its own (`cd core-libs/petal-ui-headless && cargo test`: the
+harness clock, scenarios, the `petal-ui-run` and `petal-ui-propose-edit` CLIs),
+and Garden's panel stubs and runner theirs (`cd garden && cargo test -p
+garden-script -p garden-panel-run`).
 The core features that need a UI host to exercise — the frame gate, memoized
 scopes, the static-value cache, the effect audit and direct manipulation — are
 tested over the panel corpus by `test/ui-corpus/` (`make test-ui-corpus`, or
@@ -178,8 +182,8 @@ process exits non-zero if anything is `changed`, `compile-error`, or
 and failing. It is reported separately because both sides of a spawn failure
 emit the same empty output, which compares equal; without it a missing
 `petal-ui-run` would report every UI app as `identical-trace` and exit 0. A UI
-corpus checks for the driver up front (`cd core-libs/petal-ui && cargo build --bin
-petal-ui-run`).
+corpus checks for the driver up front (`cd garden && cargo build -p
+garden-panel-run`).
 
 A failure leaves a replay bundle under
 `.temp/verify-runs/<plan>-<timestamp>/<file>/`: the resolved `plan.json`, the
@@ -198,12 +202,12 @@ script. This runs every UI app in the plan with the static-value cache off
 on one side and on on the other:
 
 ```sh
-printf '#!/bin/sh\nexec %s/core-libs/petal-ui/target/debug/petal-ui-run --policy fast-static "$@"\n' "$PWD" > /tmp/ui-run-nocache.sh
+printf '#!/bin/sh\nexec %s/garden/target/debug/garden-panel-run --policy fast-static "$@"\n' "$PWD" > /tmp/ui-run-nocache.sh
 chmod +x /tmp/ui-run-nocache.sh
 ./tools/verify.ts --plan compiler \
     --before-bin cli/target/debug/petal --after-bin cli/target/debug/petal \
     --before-ui-bin /tmp/ui-run-nocache.sh \
-    --after-ui-bin core-libs/petal-ui/target/debug/petal-ui-run
+    --after-ui-bin garden/target/debug/garden-panel-run
 ```
 
 The `golden` step needs no such help: `petal-ui-run` runs the default policy,

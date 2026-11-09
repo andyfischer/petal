@@ -8,7 +8,7 @@
 
 use petal_ui::clipboard::{clipboard_text, set_clipboard_provider, set_clipboard_text};
 use petal_ui::draw::DrawCommand;
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 use petal_ui::input::{InputEvent, Modifiers, buttons};
 
 const SRC: &str = "state buf = \"h\u{e9}llo w\u{f6}rld\"\n\
@@ -254,41 +254,6 @@ fn wrap_rows_and_range_rects_work_in_characters() {
     );
     // A plain string is one row per hard newline.
     assert_eq!(ui.state_string("lines").as_deref(), Some("6,0,9,12|0,12,6,12"));
-}
-
-/// The email client's search box is `text_field_update` under the app's own
-/// focus string and its own paint: the widget's selection, clipboard and undo
-/// work there with no editing code in the app.
-#[test]
-fn the_email_client_search_field_selects_copies_and_undoes() {
-    set_clipboard_provider(None);
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let app = root.join("examples/productivity/email-client/app.ptl");
-    let mut ui = Headless::panel_from_file_with_paths(&app, 1268, 778, &[root.join("core-runtime")])
-        .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
-    let q = |ui: &Headless| ui.state_string("q").unwrap();
-    ui.frame().unwrap();
-    ui.key("slash").unwrap();
-    ui.text("caf\u{e9} from:m\u{e9}l").unwrap();
-    assert_eq!(q(&ui), "caf\u{e9} from:m\u{e9}l");
-
-    chord(&mut ui, Modifiers { shift: true, alt: true, ..Default::default() }, "left");
-    chord(&mut ui, CMD, "x");
-    assert_eq!(q(&ui), "caf\u{e9} ");
-    assert_eq!(clipboard_text(), "from:m\u{e9}l");
-    chord(&mut ui, CMD, "z");
-    assert_eq!(q(&ui), "caf\u{e9} from:m\u{e9}l");
-
-    // The search text starts at x = 278; a double click on "café" selects it,
-    // and typing replaces it.
-    ui.frames(40).unwrap();
-    ui.click(278 + 12, 34).unwrap();
-    ui.click(278 + 12, 34).unwrap();
-    ui.text("t\u{e9}").unwrap();
-    assert_eq!(q(&ui), "t\u{e9} from:m\u{e9}l");
-    chord(&mut ui, CMD, "a");
-    chord(&mut ui, CMD, "v");
-    assert_eq!(q(&ui), "from:m\u{e9}l");
 }
 
 // ── Focus and the pointer ─────────────────────────────────────────────────

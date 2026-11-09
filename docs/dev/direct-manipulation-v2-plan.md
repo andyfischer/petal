@@ -242,7 +242,7 @@ The draw natives live in the `petal-ui` crate, which the core `petal`
 binary does not link: `make_env` (`cli/handlers.rs:1720`) is `Env::new()`
 plus module paths. `draw_circle` does not exist under `petal propose-edit`
 (v1's documented examples use `push_output` channels). petal-ui scripts run
-headless under `petal-ui-run` (`core-libs/petal-ui/src/bin/petal-ui-run.rs`),
+headless under `petal-ui-run` (`core-libs/petal-ui-headless/src/run_cli.rs`),
 which already pins the clock, dt, seed, input scenario and host-data fixtures.
 That binary is the right CLI host for DM on UI scripts (§4.2), and core tests
 cannot call `draw_circle` (§5, M3).
@@ -1014,7 +1014,7 @@ See [§4](#4-surfaces).
 | R8 | Emit records: when spec capture is on, push `EmitRecord` (channel, chain, key with loop-path hash, spec seq, raw args) beside `emit_origins`. `PetalCxt::push_output`/`emit` already know the chain. Raw args are captured in `call_native_fn` before `natives.call` and attached to the emits that call produced | `vm/native.rs`, `native_fn.rs` (`push_output`, `emit` at `:1209`) | Bounded: arg conversion depth 3, lists ≤ 64 |
 | R9 | `literal_edit::float_like` becomes `pub(crate)` | `literal_edit.rs:1888` | For §2.4.4 |
 | R10 | `tunable`/`rigid` builtins (identity, `CONST`, declared in `core/packages/core` like the other builtins), identity look-through in `provenance::resolve_arg` so v1 keeps working, docs in `Builtins.md`, `stdlib.json` regen, lints `dm-hint-not-literal` / `dm-hint-state-init` / non-literal bounds | `builtins/`, `packages/core`, `provenance.rs`, `lint/` | M2. See the proposal |
-| R11 | `trait SpecHost { fn with_run_env(&mut self, env: &mut Env, f: &mut dyn FnMut(&mut Env)); }`: the host installs its thread-local providers (host data, fonts, clipboard) around a spec run exactly as around a live frame. `NoHost` for plain core. petal-ui's `Headless` and Garden's panel implement it | `dm/spec.rs`, `core-libs/petal-ui/src/harness.rs`, `garden-script/src/panel.rs` | Without it, `host_data` answers nil and `text_width` measures differently in spec runs, and every baseline mismatches |
+| R11 | `trait SpecHost { fn with_run_env(&mut self, env: &mut Env, f: &mut dyn FnMut(&mut Env)); }`: the host installs its thread-local providers (host data, fonts, clipboard) around a spec run exactly as around a live frame. `NoHost` for plain core. petal-ui's `Headless` and Garden's panel implement it | `dm/spec.rs`, `core-libs/petal-ui-headless/src/harness.rs`, `garden-script/src/panel.rs` | Without it, `host_data` answers nil and `text_width` measures differently in spec runs, and every baseline mismatches |
 | R12 | `HOST_DATA` replay in the gate: record by (native, args hash) in the baseline, replay after; unseen keys give `Nil` and `new_host_keys += 1` | `vm/spec.rs` | Keeps a perturbed key from triggering a host fetch |
 | R13 | Observed call edges: in spec mode, record `(call term, FunctionId)` for every user-function call | `vm/spec.rs`, call paths in `vm/` | Feeds §2.2 for dynamic calls and methods |
 | R14 | `apply_edits_multi` (per-file splice, §2.4.4) and `DmResponse` edits carrying `FileId` + path | `dm/api.rs` | v1 `apply_edits` unchanged |
@@ -1045,7 +1045,7 @@ Two binaries carry it, because the core `petal` binary has no draw natives
 - `petal-ui-run propose-edit [--frames N] [--size WxH] [--scenario …]
   [--host-data …]` for petal-ui scripts (shipped on 25 October 2026 as its
   own binary, `petal-ui-propose-edit`, in
-  `core-libs/petal-ui/src/bin/petal-ui-propose-edit.rs`). It runs the harness to frame
+  `core-libs/petal-ui-headless/src/propose_edit_cli.rs`). It runs the harness to frame
   `N - 1`, uses that as the checkpoint, and implements `SpecHost` (R11).
 
 ```

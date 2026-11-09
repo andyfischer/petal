@@ -13,7 +13,7 @@ use petal::dm::params::{
 use petal::dm::spec::{ObsValue, Overrides, SpecConfig, SpecSession};
 use petal::dm::{Observable, read_hints};
 use petal::program::TermId;
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 
 #[test]
 fn library_literals_never_proposed() {

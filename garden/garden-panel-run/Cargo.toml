@@ -1,0 +1,21 @@
+[package]
+name = "garden-panel-run"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "petal-ui-run and petal-ui-propose-edit for Garden panels: the same CLIs with Garden's panel stubs registered, so a script that does `import garden` runs headlessly"
+
+[dependencies]
+petal.workspace = true
+petal-ui.workspace = true
+petal-ui-headless.workspace = true
+garden-script.workspace = true
+serde_json = "1"
+
+[[bin]]
+name = "garden-panel-run"
+path = "src/bin/garden-panel-run.rs"
+
+[[bin]]
+name = "garden-panel-propose-edit"
+path = "src/bin/garden-panel-propose-edit.rs"

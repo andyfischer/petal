@@ -1,6 +1,6 @@
 //! A headless driver for testing widget logic with no renderer attached.
 //!
-//! A thin wrapper over [`crate::frame_core::FrameCore`], the same frame core
+//! A thin wrapper over [`petal_ui::frame_core::FrameCore`], the same frame core
 //! Garden's panels run on (bind input → gate → reset → run → drain), so
 //! behavior verified here matches what a real embedder sees. Time advances only through [`Headless::frame`]'s fixed `dt`,
 //! making multi-click and animation tests deterministic.
@@ -14,7 +14,7 @@
 //! tests that want every frame to execute regardless.
 //!
 //! ```no_run
-//! use petal_ui::harness::Headless;
+//! use petal_ui_headless::harness::Headless;
 //!
 //! let mut ui = Headless::new(
 //!     "import ui\n\
@@ -30,9 +30,9 @@ use std::ops::{Deref, DerefMut};
 
 use petal::env::Env;
 
-use crate::draw::{self, DrawCommand};
-use crate::frame_core::FrameCore;
-use crate::input::{self, InputEvent};
+use petal_ui::draw::{self, DrawCommand};
+use petal_ui::frame_core::FrameCore;
+use petal_ui::input::{self, InputEvent};
 
 /// Fixed per-frame dt (60 fps) so tests are deterministic.
 pub const FRAME_DT: f64 = 1.0 / 60.0;
@@ -90,7 +90,20 @@ impl Headless {
     }
 
     pub fn with_size(source: &str, width: i32, height: i32) -> Result<Self, String> {
-        Self::build(source, None, width, height, &[], false)
+        Self::build(source, None, width, height, &[], |_| {})
+    }
+
+    /// [`with_size`](Self::with_size), with `setup` run on the fresh `Env`
+    /// after the standard natives are registered and before the script
+    /// loads — the place a host registers its own natives and interface
+    /// packages, since loading links every native the script names.
+    pub fn with_setup(
+        source: &str,
+        width: i32,
+        height: i32,
+        setup: impl FnOnce(&mut Env),
+    ) -> Result<Self, String> {
+        Self::build(source, None, width, height, &[], setup)
     }
 
     /// [`new`](Self::new) for a script body that leaves out its `import ui`:
@@ -99,21 +112,6 @@ impl Headless {
     /// the prelude wants.
     pub fn with_ui(body: &str) -> Result<Self, String> {
         Self::new(&format!("import ui; {body}"))
-    }
-
-    /// Load a Garden panel script: [`from_file_with_paths`](Self::from_file_with_paths)
-    /// in an `Env` that also registers the Garden panel stubs and the
-    /// `garden` interface package ([`crate::panel_stubs`]) — before the
-    /// script loads, because loading links the natives it uses.
-    pub fn panel_from_file_with_paths(
-        path: &std::path::Path,
-        width: i32,
-        height: i32,
-        module_paths: &[std::path::PathBuf],
-    ) -> Result<Self, String> {
-        let source =
-            std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        Self::build(&source, Some(path), width, height, module_paths, true)
     }
 
     /// Load a script from a file at an explicit drawable size. Imports resolve
@@ -138,9 +136,26 @@ impl Headless {
         height: i32,
         module_paths: &[std::path::PathBuf],
     ) -> Result<Self, String> {
+        Self::from_file_with_setup(path, width, height, module_paths, |_| {})
+    }
+
+    /// [`from_file_with_paths`](Self::from_file_with_paths), with `setup`
+    /// run on the `Env` before the script loads (see
+    /// [`with_setup`](Self::with_setup)). A script written for a host with
+    /// natives of its own — a Garden panel that does `import garden` — runs
+    /// here with that host's stand-ins passed as `setup` (Garden's are
+    /// `garden_script::headless::register_panel_stubs`); this crate names
+    /// no host.
+    pub fn from_file_with_setup(
+        path: &std::path::Path,
+        width: i32,
+        height: i32,
+        module_paths: &[std::path::PathBuf],
+        setup: impl FnOnce(&mut Env),
+    ) -> Result<Self, String> {
         let source =
             std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        Self::build(&source, Some(path), width, height, module_paths, false)
+        Self::build(&source, Some(path), width, height, module_paths, setup)
     }
 
     fn build(
@@ -149,13 +164,11 @@ impl Headless {
         width: i32,
         height: i32,
         module_paths: &[std::path::PathBuf],
-        panel_stubs: bool,
+        setup: impl FnOnce(&mut Env),
     ) -> Result<Self, String> {
         let mut env = Env::new();
-        crate::register_all(&mut env);
-        if panel_stubs {
-            crate::panel_stubs::register_panel_stubs(&mut env);
-        }
+        petal_ui::register_all(&mut env);
+        setup(&mut env);
         input::bind_dimensions(&mut env, width, height);
         input::bind_frame_info(&mut env, 0.0, 0);
         if let Some(dir) = origin.and_then(|p| p.parent())
@@ -242,14 +255,14 @@ impl Headless {
     /// following frame.
     /// Every rect the script registered on the most recent frame — what
     /// `interact`, the prelude widgets and `ui_target` declared (see
-    /// [`crate::hit`]).
-    pub fn targets(&mut self) -> Vec<crate::hit::Target> {
-        crate::hit::targets(&mut self.core.env)
+    /// [`petal_ui::hit`]).
+    pub fn targets(&mut self) -> Vec<petal_ui::hit::Target> {
+        petal_ui::hit::targets(&mut self.core.env)
     }
 
     /// The rect registered under `id` on the most recent frame.
-    pub fn target(&mut self, id: &str) -> Option<crate::hit::Target> {
-        crate::hit::target(&mut self.core.env, id)
+    pub fn target(&mut self, id: &str) -> Option<petal_ui::hit::Target> {
+        petal_ui::hit::target(&mut self.core.env, id)
     }
 
     /// [`click`](Self::click) the middle of the rect registered under `id`:
@@ -265,20 +278,20 @@ impl Headless {
 
     /// The rect in front under the pointer, which alone is hot and takes a
     /// press (`hit::pointer_owner`), as of the last input bound.
-    pub fn pointer_owner(&mut self) -> Option<crate::hit::Target> {
-        crate::hit::pointer_owner(&mut self.core.env)
+    pub fn pointer_owner(&mut self) -> Option<petal_ui::hit::Target> {
+        petal_ui::hit::pointer_owner(&mut self.core.env)
     }
 
     /// Who has the keyboard for the frame about to run (`focus::focus`),
     /// `""` for nobody, as of the last input bound.
     pub fn focus(&mut self) -> String {
-        crate::focus::focus(&mut self.core.env)
+        petal_ui::focus::focus(&mut self.core.env)
     }
 
     /// The open popover for the frame about to run (`popover::open_popover`),
     /// `""` for none.
     pub fn popover(&mut self) -> String {
-        crate::popover::open_popover(&mut self.core.env)
+        petal_ui::popover::open_popover(&mut self.core.env)
     }
 
     pub fn click(&mut self, x: i32, y: i32) -> Result<&[DrawCommand], String> {
@@ -317,7 +330,7 @@ impl Headless {
         // a function of how many frames were attempted, never of the wall
         // clock.
         self.time = self.clock_at(self.frame_count);
-        if run? == crate::frame_core::FrameRun::Ran {
+        if run? == petal_ui::frame_core::FrameRun::Ran {
             self.commands = draw::take_draw_commands(&mut self.core.env);
         }
         Ok(&self.commands)

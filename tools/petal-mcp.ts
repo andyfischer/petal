@@ -311,7 +311,7 @@ server.registerTool("PendingReport", {
 server.registerTool("DragExplain", {
   title: "Explain a ui/drag drag",
   description:
-    "Runs a `ui/drag` app headlessly (petal-ui-run --drag-trace-full), performs a drag " +
+    "Runs a `ui/drag` app headlessly (garden-panel-run --drag-trace-full), performs a drag " +
     "in it, and returns what the declarative-dragging engine holds at one frame: " +
     "`sessions[]`, each with the dragged `key`, the `spec` as the app built it (data), " +
     "the target table `targets[]` ({id, kind, at: where the dragged element lands in " +

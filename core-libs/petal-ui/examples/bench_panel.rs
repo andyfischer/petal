@@ -58,12 +58,12 @@ fn main() {
     let no_memo = flags.iter().any(|a| a == "--no-memo");
     let wiggle = flags.iter().any(|a| a == "--wiggle");
     let scenario = scenario_spec.map(|spec| match spec.strip_prefix("monkey:") {
-        Some(seed) => petal_ui::scenario::Scenario::monkey(
+        Some(seed) => petal_ui_headless::scenario::Scenario::monkey(
             seed.parse().expect("monkey seed"),
             frames,
             (w, h),
         ),
-        None => petal_ui::scenario::Scenario::from_json_str(
+        None => petal_ui_headless::scenario::Scenario::from_json_str(
             &std::fs::read_to_string(&spec).expect("read scenario"),
         )
         .expect("parse scenario"),
@@ -71,7 +71,7 @@ fn main() {
 
     let src = std::fs::read_to_string(path).expect("read script");
     let compile_start = Instant::now();
-    let mut ui = petal_ui::harness::Headless::with_size(&src, w, h).expect("compile");
+    let mut ui = petal_ui_headless::harness::Headless::with_size(&src, w, h).expect("compile");
     let compile_ms = compile_start.elapsed().as_secs_f64() * 1e3;
 
     let mut policy = policy.unwrap_or_else(|| ui.policy());

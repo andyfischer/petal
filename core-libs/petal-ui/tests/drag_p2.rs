@@ -7,7 +7,7 @@
 //! P2 examples (`examples/ui/d2-switch`, `d2-dial`, `d2-scheduler`) against
 //! their checked-in drag scenarios.
 
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 use serde_json::{Value, json};
 
 fn ui(body: &str) -> Headless {

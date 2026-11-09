@@ -11,7 +11,7 @@
 //! which shape an all-positional call means.
 
 use petal_ui::draw::DrawCommand;
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 
 const PROLOGUE: &str = "import vec2; let C = {r: 11, g: 22, b: 33}\n\
                         let D = {r: 44, g: 55, b: 66, a: 77}\n\

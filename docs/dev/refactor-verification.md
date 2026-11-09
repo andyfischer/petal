@@ -73,7 +73,7 @@ Two sources:
   (`examples/games/snake/scenarios/*.json`). These reach deep state: start a
   game, lose a life, open a dialog. The verifier's `"checked-in"` scenario
   source looks for them; none exist yet.
-- **Generated "monkey" scenarios** from a seed (`core-libs/petal-ui/src/scenario.rs`):
+- **Generated "monkey" scenarios** from a seed (`core-libs/petal-ui-headless/src/scenario.rs`):
   random clicks inside the window, random keys, random text. Deterministic
   by seed, so a failing run is replayable by `(app, seed, scenario-seed)`.
 

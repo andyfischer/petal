@@ -15,7 +15,7 @@ import { existsSync } from "fs";
 import { resolve } from "path";
 
 const ROOT = resolve(__dirname, "../..");
-const UI_RUN = resolve(ROOT, "core-libs/petal-ui/target/debug/petal-ui-run");
+const UI_RUN = resolve(ROOT, "core-libs/petal-ui-headless/target/debug/petal-ui-run");
 const FIXTURES = resolve(__dirname, "fixtures/implicit-imports");
 
 interface Frame {

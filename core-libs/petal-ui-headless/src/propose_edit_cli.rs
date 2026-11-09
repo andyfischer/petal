@@ -9,8 +9,8 @@
 //! The stock `petal propose-edit` has no petal-ui natives, so a script that
 //! draws through `ui` (a HUD, a panel, the DM v2 examples ladder) cannot be
 //! dragged with it. This binary loads the app the way `petal-ui-run` does
-//! (petal-ui's natives and `ui` package, Garden's panel stubs, a fixed-`dt`
-//! clock), runs `--frames` frames (default 1) with the optional input
+//! (petal-ui's natives and `ui` package, the host's natives from its
+//! [`CliHost`], a fixed-`dt` clock), runs `--frames` frames (default 1) with the optional input
 //! `--scenario`, and takes the stack after the last one as the checkpoint.
 //! From there it is the core command: the goal and filter flags are
 //! `petal propose-edit`'s ([`petal::propose_edit::V2Parser`]), the report is
@@ -24,6 +24,10 @@
 //! channel: its key and raw native arguments) and exits, which is how to
 //! find the index to drag.
 //!
+//! As with [`crate::run_cli`], this is the library half: the
+//! `petal-ui-propose-edit` binary is [`main`] over [`crate::NoHost`], and
+//! Garden's `garden-panel-propose-edit` is the same over its panel stubs.
+//!
 //! Exit codes: 0 a report (even one with no verified alternative), 1 the
 //! proposal failed (the error is the report: `--json` prints the CLI's error
 //! object), 2 a usage, load or frame error (message on stderr).
@@ -31,23 +35,32 @@
 use std::path::PathBuf;
 
 use petal::propose_edit::{self as dm, V2Parser};
-use petal_ui::harness::Headless;
-use petal_ui::scenario::Scenario;
+use crate::CliHost;
+use crate::harness::Headless;
+use crate::scenario::Scenario;
 use serde_json::Value as Json;
 
-const USAGE: &str = "usage: petal-ui-propose-edit <app.ptl> [--size WxH] [--frames N] [--scenario s.json] \
+const USAGE: &str = "<app.ptl> [--size WxH] [--frames N] [--scenario s.json] \
 [--host-data fixtures.json] [-I <dir>] [--trace-emits] \
 --channel <name> --emit <n> (--arg|--native-arg <k> | --value) [--field <path>] (--to <v> | --by <d>) \
 [--allow S] [--deny S] [--tol T] [--alternatives N] [--explain] [--apply [--pick N]] [--seed N] [--json] …";
 
-fn main() {
-    match run() {
+/// Run the CLI over this process's arguments as `name`, and exit with its
+/// code (2 with the message on stderr when [`run`] fails).
+pub fn main(name: &str, host: &mut dyn CliHost) -> ! {
+    match run(name, host, std::env::args().skip(1).collect()) {
         Ok(code) => std::process::exit(code),
         Err(e) => {
-            eprintln!("petal-ui-propose-edit: {e}");
+            eprintln!("{name}: {e}");
             std::process::exit(2);
         }
     }
+}
+
+fn usage(name: &str, host: &dyn CliHost) -> String {
+    let extra = host.usage();
+    let sep = if extra.is_empty() { "" } else { " " };
+    format!("usage: {name} {USAGE}{sep}{extra}")
 }
 
 struct Args {
@@ -61,8 +74,8 @@ struct Args {
     parser: V2Parser,
 }
 
-fn parse_args() -> Result<Args, String> {
-    let argv: Vec<String> = std::env::args().skip(1).collect();
+fn parse_args(name: &str, host: &mut dyn CliHost, argv: Vec<String>) -> Result<Args, String> {
+    let usage = usage(name, host);
     let mut app = None;
     let mut size = (800, 600);
     let mut frames = 1;
@@ -76,11 +89,11 @@ fn parse_args() -> Result<Args, String> {
         let a = argv[i].clone();
         let value = |name: &str, i: &mut usize| -> Result<String, String> {
             *i += 1;
-            argv.get(*i).cloned().ok_or_else(|| format!("{name} needs a value\n{USAGE}"))
+            argv.get(*i).cloned().ok_or_else(|| format!("{name} needs a value\n{usage}"))
         };
         match a.as_str() {
             "-h" | "--help" => {
-                println!("{USAGE}");
+                println!("{usage}");
                 std::process::exit(0);
             }
             "--size" => size = parse_size(&value("--size", &mut i)?)?,
@@ -99,11 +112,14 @@ fn parse_args() -> Result<Args, String> {
             "--v2" => {}
             _ if parser.flag(&argv, &mut i)? => {}
             other if other.starts_with('-') && other != "-" => {
-                return Err(format!("unknown flag `{other}`\n{USAGE}"));
+                let mut value = || value(other, &mut i);
+                if !host.flag(other, &mut value)? {
+                    return Err(format!("unknown flag `{other}`\n{usage}"));
+                }
             }
             other => {
                 if app.is_some() {
-                    return Err(format!("unexpected argument `{other}`\n{USAGE}"));
+                    return Err(format!("unexpected argument `{other}`\n{usage}"));
                 }
                 app = Some(PathBuf::from(other));
             }
@@ -111,7 +127,7 @@ fn parse_args() -> Result<Args, String> {
         i += 1;
     }
     Ok(Args {
-        app: app.ok_or_else(|| format!("no script given\n{USAGE}"))?,
+        app: app.ok_or_else(|| format!("no script given\n{usage}"))?,
         size,
         frames,
         scenario,
@@ -122,8 +138,11 @@ fn parse_args() -> Result<Args, String> {
     })
 }
 
-fn run() -> Result<i32, String> {
-    let args = parse_args()?;
+/// Run the CLI over `argv` (the arguments after the program name) as `name`;
+/// the result is the exit code, and `Err` a usage, load or frame error (exit
+/// code 2).
+pub fn run(name: &str, host: &mut dyn CliHost, argv: Vec<String>) -> Result<i32, String> {
+    let args = parse_args(name, host, argv)?;
     // `--trace-emits` needs no goal; everything else does.
     let mut opts = if args.trace_emits {
         args.parser.opts.clone()
@@ -134,7 +153,9 @@ fn run() -> Result<i32, String> {
     opts.frames = args.frames;
     let seed = dm::effective_seed(opts.seed);
 
-    let mut ui = Headless::panel_from_file_with_paths(&args.app, args.size.0, args.size.1, &args.module_paths)?;
+    let mut ui = Headless::from_file_with_setup(&args.app, args.size.0, args.size.1, &args.module_paths, |env| {
+        host.setup(env)
+    })?;
     ui.env.set_echo(false);
     ui.set_seed(seed);
     if let Some(path) = &args.host_data {
@@ -187,7 +208,7 @@ fn run() -> Result<i32, String> {
             return Ok(1);
         }
         Err(e) => {
-            eprintln!("petal-ui-propose-edit: {} ({})", e.message, e.phase);
+            eprintln!("{name}: {} ({})", e.message, e.phase);
             return Ok(1);
         }
     }

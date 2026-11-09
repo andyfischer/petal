@@ -6,13 +6,17 @@ description = "Core-feature tests that need a UI host: the frame gate, memoized 
 license = "MIT"
 publish = false
 
-# Tests only: everything is under tests/. The library target is empty and
-# exists because cargo needs one.
+# Tests only: everything is under tests/. The library holds the one loader
+# they share (`src/lib.rs`).
 [dependencies]
 # The feature set petal-ui builds `petal` with, so these tests run the
 # runtime an embedder gets (no `tooling`).
 petal = { path = "../../core", default-features = false }
 petal-ui = { path = "../../core-libs/petal-ui" }
+petal-ui-headless = { path = "../../core-libs/petal-ui-headless" }
+# Garden's panel stubs (`garden_script::headless`): much of the corpus is
+# Garden panels, which `import garden`.
+garden-script = { path = "../../garden/garden-script" }
 serde_json = "1"
 
 # Mirrors petal-ui's: dependencies (the `petal` VM and compiler above all) are

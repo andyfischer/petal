@@ -1,7 +1,7 @@
 //! The runtime's focus and `shortcut` (src/focus.rs): who has the keyboard,
 //! decided once per frame before the script runs, and which keys are theirs.
 
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 use petal_ui::input::{InputEvent, Modifiers, buttons};
 
 const CMD: Modifiers = Modifiers { shift: false, ctrl: false, alt: false, cmd: true };

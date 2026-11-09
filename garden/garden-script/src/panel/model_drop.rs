@@ -46,7 +46,7 @@ pub enum ModelDropOutcome {
 impl PanelHost {
     /// Move the drops the last frame announced into the queue.
     pub(super) fn collect_model_drops(&mut self) {
-        for d in petal_ui::drag_trace::take_drops(&mut self.core.env) {
+        for d in petal_ui::drag::take_drops(&mut self.core.env) {
             self.model_drops.push(ModelDrop {
                 key: d["key"].clone(),
                 model: d["model"].clone(),

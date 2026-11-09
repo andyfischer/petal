@@ -1,13 +1,15 @@
 //! Inert, deterministic stand-ins for the host natives Garden registers on a
-//! panel script (`garden/garden-script/src/panel.rs`), so a panel drawer runs
-//! under a bare embedder — chiefly `petal-ui-run` — instead of dying at
-//! `Unknown builtin: palette` on frame 0.
+//! panel script ([`crate::panel`]), so a panel drawer — anything that does
+//! `import garden` — runs with no Garden: under `garden-panel-run` and
+//! `garden-panel-propose-edit` (`garden/garden-panel-run`), and in any
+//! `petal_ui_headless::harness::Headless` built with
+//! [`register_panel_stubs`] as its setup hook (`from_file_with_setup`).
 //!
 //! These are *stubs*, not an implementation of the Garden host:
 //!
-//! - `palette()` returns the same fallback palette Garden resolves when no
-//!   host theme is injected ([`STUB_PALETTE`], a copy of Garden's
-//!   `FALLBACK_PALETTE`), so a drawer paints in its real colors.
+//! - `palette()` returns the palette Garden resolves when no host theme is
+//!   injected (its `FALLBACK_PALETTE`), so a drawer paints in its real
+//!   colors.
 //!   `panel_theme()` returns `{}` — exactly what Garden answers with no
 //!   injected theme.
 //! - `query(kind, arg)` answers a loading `Value::Pending` every frame — the
@@ -43,40 +45,9 @@ use petal::env::Env;
 use petal::native_fn::{InputClasses, NativeClass, NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
 
-use crate::draw;
+use petal_ui::draw;
 
-/// Garden's `FALLBACK_PALETTE` (the palette `palette()` resolves when the
-/// host injects no theme), copied so headless runs of Garden drawers paint
-/// the colors they would really ship with.
-const STUB_PALETTE: &[(&str, [u8; 4])] = &[
-    ("window_bg", [0x0d, 0x11, 0x17, 0xff]),
-    ("panel", [0x10, 0x15, 0x1c, 0xff]),
-    ("panel_focused", [0x10, 0x15, 0x1c, 0xff]),
-    ("border", [0x26, 0x2c, 0x34, 0xff]),
-    ("border_focused", [0x2f, 0x5a, 0x8f, 0xff]),
-    ("text", [0xe6, 0xed, 0xf3, 0xff]),
-    ("text_mut", [0xaa, 0xb4, 0xc0, 0xff]),
-    ("text_dim", [0x7d, 0x85, 0x90, 0xff]),
-    ("text_faint", [0x54, 0x5d, 0x68, 0xff]),
-    ("cursor", [0xe6, 0xed, 0xf3, 0xff]),
-    ("accent", [0x58, 0xa6, 0xff, 0xff]),
-    ("focus", [0x2f, 0x5a, 0x8f, 0xff]),
-    ("sel", [0x1e, 0x3d, 0x63, 0xff]),
-    ("hover", [0x16, 0x1d, 0x26, 0xff]),
-    ("green", [0x3f, 0xb9, 0x50, 0xff]),
-    ("orange", [0xd2, 0x99, 0x22, 0xff]),
-    ("red", [0xf8, 0x51, 0x49, 0xff]),
-    ("purple", [0xbc, 0x8c, 0xff, 0xff]),
-    ("blue", [0x58, 0xa6, 0xff, 0xff]),
-    ("error", [0xf8, 0x51, 0x49, 0xff]),
-    ("added_bg", [0x12, 0x26, 0x1a, 0xff]),
-    ("removed_bg", [0x2d, 0x18, 0x1b, 0xff]),
-    ("hunk", [0x58, 0xa6, 0xff, 0xff]),
-    ("hunk_bg", [0x17, 0x22, 0x34, 0xff]),
-    ("hunk_bg_hover", [0x1f, 0x33, 0x50, 0xff]),
-    ("scrollbar_thumb", [0x3a, 0x42, 0x4c, 0xff]),
-    ("scrollbar_track", [0x21, 0x27, 0x2f, 0xff]),
-];
+use crate::panel::{FALLBACK_PALETTE, GARDEN_INTERFACE, GARDEN_MANIFEST, GARDEN_PACKAGE};
 
 /// Counter symbol behind the stub `mutate` handles — unique for the life of
 /// the env, like Garden's, so a drawer that keeps a handle in `state` and
@@ -84,16 +55,10 @@ const STUB_PALETTE: &[(&str, [u8; 4])] = &[
 const STUB_MUTATE_HANDLES: &str = "__stub_mutate_handles";
 
 /// Register the whole stubbed Garden-panel vocabulary and the `garden`
-/// interface package that declares it. Call before loading a program that
-/// imports `garden`: loading links its natives.
-/// The interface package of a Garden panel: `import garden`.
-pub const GARDEN_PACKAGE: &str = "garden";
-
-/// The source of the `garden` interface package — Garden's own file, so the
-/// stubs here answer to exactly the declarations Garden ships.
-pub const GARDEN_INTERFACE: &str =
-    include_str!("../../../garden/garden-script/packages/garden/garden.ptl");
-
+/// interface package that declares it (Garden's own, with its manifest). Call
+/// on an `Env` that already has petal-ui's natives (`petal_ui::register_all`)
+/// and before loading a program that imports `garden`: loading links its
+/// natives.
 pub fn register_panel_stubs(env: &mut Env) {
     // Each stub declares what *it* does, which is at most what Garden's
     // native does. Where Garden's reaches host state (the query cache, the
@@ -143,16 +108,22 @@ pub fn register_panel_stubs(env: &mut Env) {
     env.register_native("text_view_wrap", native_text_view_wrap, EMITS);
     // The interface package that declares them, so a panel's `import garden`
     // resolves here as it does inside Garden.
-    env.register_package(GARDEN_PACKAGE, [(GARDEN_PACKAGE, GARDEN_INTERFACE)])
-        .expect("the garden interface package registers");
-    // Stand in for Garden as a provider of the interface too.
-    env.provides(GARDEN_PACKAGE, "0.1.0")
-        .expect("a version");
+    // Stand in for Garden as a provider of the interface too, at its version.
+    env.register_package(
+        GARDEN_PACKAGE,
+        [
+            (GARDEN_PACKAGE, GARDEN_INTERFACE),
+            (petal::package::MANIFEST_FILE, GARDEN_MANIFEST),
+        ],
+    )
+    .expect("the garden interface package registers");
+    env.provides_package(GARDEN_PACKAGE)
+        .expect("the garden interface has a version");
 }
 
 fn native_palette(cxt: &mut PetalCxt) -> NativeResult {
-    let mut out: petal::heap::RecordMap = petal::heap::record_map_with_capacity(STUB_PALETTE.len());
-    for (key, [r, g, b, a]) in STUB_PALETTE {
+    let mut out: petal::heap::RecordMap = petal::heap::record_map_with_capacity(FALLBACK_PALETTE.len());
+    for (key, [r, g, b, a]) in FALLBACK_PALETTE {
         let mut color: petal::heap::RecordMap = petal::heap::record_map_with_capacity(4);
         color.insert("r".to_string(), Value::Int(*r as i64));
         color.insert("g".to_string(), Value::Int(*g as i64));
@@ -198,7 +169,7 @@ pub fn set_query_fixtures(fixtures: QueryFixtures) -> QueryFixtures {
 
 /// Parse the `--query-fixtures` file: a JSON array of
 /// `{"kind": ..., "arg": ..., "value": ...}`, the same shape
-/// [`crate::host_data::fixture_provider`] takes.
+/// `petal_ui::host_data::fixture_provider` takes.
 ///
 /// `arg` is matched against the argument's JSON spelling, so a string arg is
 /// written as a string (`"flight"`) and a record arg as that record.
@@ -454,4 +425,81 @@ fn native_text_view_wrap(cxt: &mut PetalCxt) -> NativeResult {
     );
     cxt.push_nil();
     Ok(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use petal::env::Env;
+
+    use super::*;
+
+    /// The names `register` adds to an `Env` that already has petal-ui's.
+    fn added_by(register: impl FnOnce(&mut Env)) -> BTreeSet<String> {
+        let mut base = Env::new();
+        petal_ui::register_all(&mut base);
+        let base: BTreeSet<String> = base.native_fn_names().into_iter().collect();
+        let mut env = Env::new();
+        petal_ui::register_all(&mut env);
+        register(&mut env);
+        env.native_fn_names()
+            .into_iter()
+            .filter(|n| !base.contains(n))
+            .collect()
+    }
+
+    /// The stubs stand in for Garden's panel natives: every stub is one the
+    /// `garden` interface package declares, and every native that package
+    /// declares has a stub, so a stubbed env verifies against the same
+    /// interface a real panel env does.
+    #[test]
+    fn the_stubs_are_exactly_the_garden_interface() {
+        let registered = added_by(register_panel_stubs);
+        let declared: BTreeSet<String> = petal::native_decl::NativeDecls::parse(GARDEN_INTERFACE)
+            .expect("garden.ptl parses")
+            .host_names()
+            .into_iter()
+            .collect();
+        let undeclared: Vec<_> = registered.difference(&declared).collect();
+        assert!(undeclared.is_empty(), "the garden interface lacks stubs: {undeclared:?}");
+        let mut env = Env::new();
+        petal_ui::register_all(&mut env);
+        register_panel_stubs(&mut env);
+        assert_eq!(env.provided_version(GARDEN_PACKAGE).as_deref(), Some("0.1.0"));
+    }
+
+    /// No stub is a constant function: each stands in for a Garden native
+    /// that answers from the editor, so a static value built from one must be
+    /// rebuilt as it is in Garden.
+    #[test]
+    fn no_stub_is_constant() {
+        use petal::native_fn::NativeConstness;
+        let mut env = Env::new();
+        petal_ui::register_all(&mut env);
+        register_panel_stubs(&mut env);
+        let added = added_by(register_panel_stubs);
+        for name in ["palette", "panel_theme", "nav_arg"] {
+            assert!(added.contains(name), "{name} is no longer stubbed");
+        }
+        let constant: Vec<&String> = added
+            .iter()
+            .filter(|n| env.native_constness_of_name(n) != NativeConstness::Dynamic)
+            .collect();
+        assert!(constant.is_empty(), "constant stubs: {constant:?}");
+    }
+
+    /// `palette()` answers Garden's fallback palette, the colors a drawer
+    /// ships with.
+    #[test]
+    fn the_stub_palette_is_gardens_fallback() {
+        let mut env = Env::new();
+        petal_ui::register_all(&mut env);
+        register_panel_stubs(&mut env);
+        env.set_echo(false);
+        env.run_source("import garden\nlet p = palette()\nprint(p.accent.r, p.accent.g, p.accent.b)\n")
+            .expect("runs");
+        let (_, [r, g, b, _]) = FALLBACK_PALETTE.iter().find(|(k, _)| *k == "accent").unwrap();
+        assert_eq!(env.take_output(), vec![format!("{r} {g} {b}")]);
+    }
 }

@@ -3,7 +3,7 @@
 //! and the prelude widgets going through them.
 
 use petal_ui::draw::DrawCommand;
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 
 fn ui(src: &str) -> Headless {
     Headless::with_ui(src).unwrap_or_else(|e| panic!("compile failed: {e}"))
@@ -762,7 +762,7 @@ fn a_flow_call_with_no_flow_open_says_so() {
 /// frame is about to run, so the scenario does not know the layout.
 #[test]
 fn a_scenario_clicks_a_target_by_name() {
-    use petal_ui::scenario::Scenario;
+    use petal_ui_headless::scenario::Scenario;
     let scenario = Scenario::from_json_str(
         r#"{"events": [{"at": 2, "click_target": "Go"}, {"at": 5, "click_target": "Nope"}]}"#,
     )
@@ -829,7 +829,7 @@ fn a_restored_state_map_leaves_the_module_working() {
 /// under it inert, and a hidden panel gives the world its clicks back.
 #[test]
 fn the_layers_example_keeps_ui_clicks_from_the_world() {
-    use petal_ui::scenario::Scenario;
+    use petal_ui_headless::scenario::Scenario;
     let app = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/ui/layers/app.ptl");
     let mut ui = Headless::from_file_with_size(&app, 800, 600)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));

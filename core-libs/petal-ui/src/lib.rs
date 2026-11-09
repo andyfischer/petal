@@ -40,15 +40,13 @@
 //!   host needs and none should re-derive.
 //! - [`frame_core`]: the shared per-frame core (env + stack, input, clock,
 //!   seed, frame gate, memo counters) every per-frame embedding runs on.
-//! - [`harness`]: a headless test driver, a thin wrapper over that core, so
-//!   widget logic is unit-testable with no renderer attached.
-//! - [`scenario`]: declarative, replayable input scripts for that driver
-//!   (hand-written or generated from a seed), used by the `petal-ui-run` CLI.
+//! - [`drag`]: the host side of `ui/drag`, draining the drops a frame
+//!   announced.
 //!
-//! `harness`, `scenario`, `drag_trace`, `panel_stubs` and the `petal-ui-run`
-//! / `petal-ui-propose-edit` binaries are the headless tooling, behind the
-//! default-on `tooling` feature. A host that needs only the host contract
-//! above can build without it (`default-features = false`).
+//! The headless tooling built on this contract — the `Headless` test driver,
+//! input scenarios, drag tracing and the `petal-ui-run` /
+//! `petal-ui-propose-edit` CLIs — is the separate `petal-ui-headless` crate
+//! (`core-libs/petal-ui-headless`), so a host links none of it.
 //!
 //! The standard owns *semantics* (what `key_pressed` means, what a drag is);
 //! the host keeps *policy* (which keys it reserves, when a script ticks,
@@ -71,30 +69,23 @@
 //! and one mid-animation keeps ticking. A host that feeds a native from data
 //! outside the binding table reports changes with
 //! [`petal::env::Env::note_host_data_changed`] (or forces a frame with
-//! [`petal::env::Env::invalidate_run`]). [`harness::Headless`] shows the
-//! sequence.
+//! [`petal::env::Env::invalidate_run`]). `petal-ui-headless`'s `Headless`
+//! driver shows the sequence.
 
 pub mod clipboard;
 pub mod compose;
 pub mod draw;
 pub mod draw_wire;
-#[cfg(feature = "tooling")]
-pub mod drag_trace;
+pub mod drag;
 pub mod frame_core;
-#[cfg(feature = "tooling")]
-pub mod harness;
 pub mod focus;
 pub mod hit;
 pub mod host_data;
 pub mod input;
-#[cfg(feature = "tooling")]
-pub mod panel_stubs;
 mod params;
 pub use params::{interface, raw_declarations, script_for};
 pub mod pending;
 pub mod popover;
-#[cfg(feature = "tooling")]
-pub mod scenario;
 pub mod subpixel;
 pub mod tess;
 pub mod text;

@@ -88,17 +88,24 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             cli/target
-            core-libs/petal-ui/target
-          key: cargo-ts-${{ runner.os }}-${{ hashFiles('cli/Cargo.lock', 'core-libs/petal-ui/Cargo.lock') }}
+            core-libs/petal-ui-headless/target
+            garden/target
+          key: cargo-ts-${{ runner.os }}-${{ hashFiles('cli/Cargo.lock', 'core-libs/petal-ui-headless/Cargo.lock', 'garden/Cargo.lock') }}
           restore-keys: cargo-ts-${{ runner.os }}-
 
       - name: Build petal binary (used by vitest)
         run: cargo build --manifest-path cli/Cargo.toml
 
       # verify.ts aborts its whole run (exit 2) when the corpus has UI apps and
-      # this driver is missing, which fails test/verify.test.ts.
-      - name: Build petal-ui-run driver (used by tools/verify.ts)
-        run: cargo build --manifest-path core-libs/petal-ui/Cargo.toml --bin petal-ui-run
+      # this driver is missing, which fails test/verify.test.ts. It and the MCP
+      # DragExplain tool use garden-panel-run (petal-ui-run with Garden's panel
+      # stubs); the implicit-imports and overload-merge tests use the generic
+      # petal-ui-run.
+      - name: Build garden-panel-run driver (used by tools/verify.ts)
+        run: cargo build --manifest-path garden/Cargo.toml -p garden-panel-run --bin garden-panel-run
+
+      - name: Build petal-ui-run driver (used by vitest)
+        run: cargo build --manifest-path core-libs/petal-ui-headless/Cargo.toml --bin petal-ui-run
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -121,6 +128,43 @@ jobs:
 
       - name: Run Vitest tests
         run: npx vitest run
+
+  # petal-ui, its headless tooling, Garden's panel runner and the core-feature
+  # tests over the panel corpus (test/ui-corpus, `make test-ui-corpus`). One
+  # shared target dir: all four build the same petal and petal-ui. The corpus's
+  # static_reload and static_cache take several minutes each.
+  rust-ui:
+    name: Rust UI (petal-ui, petal-ui-headless, garden-panel-run, ui-corpus)
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target-ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry & build (ui)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target-ui
+          key: cargo-ui-${{ runner.os }}-${{ hashFiles('core-libs/petal-ui/Cargo.lock', 'core-libs/petal-ui-headless/Cargo.lock', 'garden/Cargo.lock', 'test/ui-corpus/Cargo.lock') }}
+          restore-keys: cargo-ui-${{ runner.os }}-
+
+      - name: Test petal-ui
+        run: cargo test --manifest-path core-libs/petal-ui/Cargo.toml
+
+      - name: Test petal-ui-headless
+        run: cargo test --manifest-path core-libs/petal-ui-headless/Cargo.toml
+
+      - name: Test garden-script and garden-panel-run
+        run: cargo test --manifest-path garden/Cargo.toml -p garden-script -p garden-panel-run
+
+      - name: Test the panel corpus (test/ui-corpus)
+        run: cargo test --manifest-path test/ui-corpus/Cargo.toml
 
   rust-subprojects:
     name: Rust subprojects (petal-sdl, petal-fps)

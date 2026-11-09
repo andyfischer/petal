@@ -8,6 +8,7 @@ members = [
     "garden-render",
     "garden-script",
     "garden-app",
+    "garden-panel-run",
     "gpp-apps/directory-browser",
     "gpp-apps/garden-diff",
     "gpp-apps/git-viewers",
@@ -29,6 +30,7 @@ garden-script = { path = "garden-script" }
 gpp = { path = "../core-libs/gpp" }
 petal = { path = "../core", default-features = false }
 petal-ui = { path = "../core-libs/petal-ui" }
+petal-ui-headless = { path = "../core-libs/petal-ui-headless" }
 petal-query = { path = "../core-libs/petal-query" }
 
 # A Petal panel re-runs its whole script every frame, so the interpreter is on

@@ -18,7 +18,7 @@ From a host native. Garden's `query(kind, arg)` returns the provider's answer
 when it has one and a pending value while the fetch is in flight
 (`garden/garden-script/src/query.rs`); `petal-ui`'s panel stubs, which stand in
 for Garden in tests and in `petal-ui-run`, answer a pending value forever
-unless given a fixture (`core-libs/petal-ui/src/panel_stubs.rs`). `host_data`
+unless given a fixture (`garden/garden-script/src/headless.rs`). `host_data`
 does not: it keeps its synchronous contract and returns `nil` while data is
 unavailable.
 

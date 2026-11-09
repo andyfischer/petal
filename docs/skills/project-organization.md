@@ -93,7 +93,7 @@ Lower layers must never depend on higher ones ([Layering](#layering-rules)).
 | 0 | `core/prelude/std.ptl` | Pure-Petal helpers implicitly imported everywhere. Must cost nothing when unused. | Petal |
 | 0 | `core/src/cli/`, `lsp/`, `fmt/`, `lint/` | The `petal` command-line tool and the developer tooling every Petal user runs. `cli`, `lsp` and `fix_imports` are behind the default-on `tooling` cargo feature, which embedders turn off. | Rust |
 | 0 | `cli/`, `core-libs/petal-pkgman/` | The `petal` binary, and the package manager only it links (git dependencies, `petal.lock`, `vendor/`, bundles). Embedders do not carry either. | Rust |
-| 1 | `core-libs/<crate>/` | Shared Rust library crates that sit above `core` and below every host. Most are **host interfaces** that hosts link so they all implement it the same way: the natives plus the Petal interface package that declares them (`core-libs/petal-ui` gives `ui`), or a wire protocol and its client (`gpp`, `petal-query`). The exception is `petal-pkgman`, a library only the `petal` binary links (layer 0 above), kept here so that neither `core` nor any embedder carries it. | Rust (+ `.ptl` interface) |
+| 1 | `core-libs/<crate>/` | Shared Rust library crates that sit above `core` and below every host. Most are **host interfaces** that hosts link so they all implement it the same way: the natives plus the Petal interface package that declares them (`core-libs/petal-ui` gives `ui`), or a wire protocol and its client (`gpp`, `petal-query`). The exceptions are tooling no host links, kept here beside the interface it serves: `petal-pkgman`, a library only the `petal` binary links (layer 0 above), and `petal-ui-headless`, which runs a `ui` script with no renderer (the test driver and the `petal-ui-run` CLI). | Rust (+ `.ptl` interface) |
 | 2 | `core-runtime/<package>/` | **Pure Petal** libraries over a host interface or over `core`. No Rust, no build step. Bundled into the binary only if they meet the bundling bar below. | Petal |
 | 3 | `integrations/<host>/` | Hosts: the programs and libraries that embed Petal on one platform (SDL desktop, browser canvas, browser DOM, C/C++). Host-specific natives and that host's interface package live here, inside the host. | Rust/TS/C |
 | 4 | `garden/` | The Petal IDE. It is an application, kept here as the reference editor and the heaviest user of the embedding API. New code goes in Garden only if it is about the editor. `garden/gpp-apps/` holds only the GPP clients Garden ships as built-in commands, its test fixture and the `screens-demo` worked example. | Rust |
@@ -245,6 +245,10 @@ element-tree wasm host in `core`, the CLI, LSP and package manager compiled
 into every embedder, and two repo tools that belonged with examples. Those
 were fixed on 2026-11-05 (the package manager by moving it to
 `core-libs/petal-pkgman`, the rest of the tooling by the `tooling` feature).
+`petal-ui`'s headless tooling moved to `core-libs/petal-ui-headless` on
+2026-11-08, and Garden's panel stubs into `garden-script`
+(`garden_script::headless`), with `garden/garden-panel-run` as the Garden
+build of its CLIs.
 Decided rather than moved: `bloom` stays bundled as
 the default widget set (stated in `core-runtime/README.md`), and every
 `garden/gpp-apps/` crate stays, because each is a built-in command Garden
@@ -305,25 +309,6 @@ effect audit, DM) to `test/ui-corpus/`. What is left is entry 6.
    behind the `tooling` feature, though the binary is now its own crate
    (`cli/`). *Fix:* move them into `cli/` or a library beside it that
    depends on `petal`. Not urgent: embedders already leave them out.
-
-6. **`petal-ui` still holds its headless tooling** (`harness`, `scenario`,
-   `drag_trace`, `panel_stubs`, the `petal-ui-run` and
-   `petal-ui-propose-edit` binaries) beside the host contract. Since
-   2026-11-08 it is behind a default-on `tooling` cargo feature, so a host
-   can leave it out with `default-features = false`. Moving it to its own
-   crate with `pub use` re-exports from `petal-ui` is not possible as
-   written: the tooling is built on `petal-ui`'s internals (`hit`,
-   `frame_core`, `draw`, `input`, …), so the re-export would be a dependency
-   cycle. A separate crate (`core-libs/petal-ui-headless`) means
-   downstream changes its imports at a re-vendor, but downstream's own code
-   barely uses the tooling: cheesecake's uses none of it (its hits are all
-   vendored Petal), and worlds-fair's uses only `panel_stubs`' interface
-   constants. `panel_stubs` is also a copy of the host natives and
-   `FALLBACK_PALETTE` Garden registers, sitting in a crate below Garden.
-   *Decided 2026-11-08:* `panel_stubs` moves into `garden-script`, and the
-   headless driver and CLIs take a setup hook instead of naming Garden (plan
-   in [docs/tasks/ui-refactor.md](../tasks/ui-refactor.md), R2). *Open, for
-   the owner:* whether to do the crate move.
 
 ## Procedure
 

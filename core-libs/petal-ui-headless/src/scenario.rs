@@ -47,7 +47,7 @@ use std::collections::BTreeMap;
 use serde_json::Value as Json;
 
 use crate::harness::Headless;
-use crate::input::{self, InputEvent};
+use petal_ui::input::{self, InputEvent};
 
 /// A parsed scenario: optional window size and frame count (the CLI's flags
 /// override them), plus the normalized event list.
@@ -107,7 +107,7 @@ impl TargetDrag {
 }
 
 /// A click on the rect a script registered under `id` (`interact(r, id)`, a
-/// button's label, `ui_target(id, r)` — see [`crate::hit`]): a move to its
+/// button's label, `ui_target(id, r)` — see [`petal_ui::hit`]): a move to its
 /// centre and a press on frame `at`, the release on `at + 1`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TargetClick {
@@ -188,7 +188,7 @@ impl Scenario {
             Default::default()
         };
         let (events, missing) = self.events_at(frame, left_down, |id| {
-            crate::hit::target(&mut ui.env, id)
+            petal_ui::hit::target(&mut ui.env, id)
                 .map(|t| t.center())
                 .or_else(|| placed.get(id).copied())
         });
@@ -201,7 +201,7 @@ impl Scenario {
     /// The input events for `frame`: the scheduled ones, then, for each
     /// target click due, a move to the target's centre and a left press — and
     /// the release of a target click pressed on the frame before. `resolve`
-    /// looks a target up by id (a host passes [`crate::hit::target`]);
+    /// looks a target up by id (a host passes [`petal_ui::hit::target`]);
     /// `left_down` is whether the left button is held, so a click whose
     /// target was never found does not release a press that never happened.
     /// The second value lists the ids due on this frame that did not resolve.

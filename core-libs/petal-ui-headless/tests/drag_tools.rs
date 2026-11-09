@@ -4,8 +4,8 @@
 
 use std::process::Command;
 
-use petal_ui::harness::Headless;
-use petal_ui::scenario::Scenario;
+use petal_ui_headless::harness::Headless;
+use petal_ui_headless::scenario::Scenario;
 use serde_json::{Value, json};
 
 const BIN: &str = env!("CARGO_BIN_EXE_petal-ui-run");
@@ -119,15 +119,15 @@ fn drag_debug_draws_only_when_the_host_key_is_on_and_speculates_nothing() {
 fn a_drop_is_announced_on_the_drops_channel() {
     let mut h = ui(LIST);
     drag_down(&mut h, &[10, 60, 104]);
-    assert!(petal_ui::drag_trace::take_drops(&mut h.env).is_empty(), "no drop mid-drag");
+    assert!(petal_ui_headless::drag_trace::take_drops(&mut h.env).is_empty(), "no drop mid-drag");
     h.mouse_up(0);
     frame(&mut h);
-    let drops = petal_ui::drag_trace::take_drops(&mut h.env);
+    let drops = petal_ui_headless::drag_trace::take_drops(&mut h.env);
     assert_eq!(
         drops,
         vec![json!({"key": "A", "model": ["A", "B", "C", "D", "E"], "drop": ["B", "C", "A", "D", "E"]})]
     );
-    assert!(petal_ui::drag_trace::take_drops(&mut h.env).is_empty(), "drained");
+    assert!(petal_ui_headless::drag_trace::take_drops(&mut h.env).is_empty(), "drained");
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn the_trace_reads_the_session_out_of_the_state() {
     let mut h = ui(LIST);
     drag_down(&mut h, &[10, 60, 104]);
     let pointer = (h.input.mouse_x, h.input.mouse_y);
-    let all = petal_ui::drag_trace::explain_all(&h.state(), pointer, true);
+    let all = petal_ui_headless::drag_trace::explain_all(&h.state(), pointer, true);
     assert_eq!(all.len(), 1);
     let e = &all[0];
     assert_eq!(e["key"], "A");

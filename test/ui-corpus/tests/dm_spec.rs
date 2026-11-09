@@ -12,7 +12,7 @@ use petal::dm::{EmitKey, LiveObservation, Observable, PathStep};
 use petal::env::Env;
 use petal::program::{ProgramId, TermId, TermOp};
 use petal_ui::draw::{DRAW_COMMANDS_SYMBOL, DrawCommand};
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 use petal_ui::host_data::HostData;
 
 /// The one numeric literal of the entry file written as `text`.

@@ -1071,7 +1071,7 @@ type FileSig = (SystemTime, u64);
 pub struct PanelHost {
     /// The shared per-frame core — env, stack, input accumulator, clock, seed,
     /// the frame gate and memo counters, and the data/font providers — the same
-    /// one `petal_ui::harness::Headless` wraps. Everything below it is Garden's
+    /// one `petal_ui_headless::harness::Headless` wraps. Everything below it is Garden's
     /// extension layer, plugged into the core's frame through [`FrameHooks`].
     core: FrameCore,
     path: PathBuf,
@@ -3137,7 +3137,7 @@ fn native_panel_theme(cxt: &mut PetalCxt) -> NativeResult {
 /// (`garden_app::theme::Theme::to_panel_theme`); this table is the coherent
 /// GitHub-dark default that stands in when it doesn't, so [`palette`] always
 /// returns a complete, readable set. Order defines the returned record's order.
-const FALLBACK_PALETTE: &[(&str, [u8; 4])] = &[
+pub(crate) const FALLBACK_PALETTE: &[(&str, [u8; 4])] = &[
     ("window_bg", [0x0d, 0x11, 0x17, 0xff]),
     ("panel", [0x10, 0x15, 0x1c, 0xff]),
     ("panel_focused", [0x10, 0x15, 0x1c, 0xff]),
@@ -3611,13 +3611,6 @@ mod tests {
         if let Err(mismatch) = env.verify_interface(PANEL_INTERFACE_PACKAGES) {
             panic!("the panel natives and their interface packages disagree: {mismatch}");
         }
-    }
-
-    /// The copy of the `garden` package petal-ui's panel stubs register is
-    /// this crate's file.
-    #[test]
-    fn the_panel_stubs_register_this_crates_garden_package() {
-        assert_eq!(petal_ui::panel_stubs::GARDEN_INTERFACE, GARDEN_INTERFACE);
     }
 
     /// A panel reaches Garden's natives through `import garden`, and not

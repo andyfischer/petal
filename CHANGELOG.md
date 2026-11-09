@@ -165,11 +165,34 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   that sets the camera and then reads it replays exactly when it starts from
   the same camera. See docs/dev/native-effects.md.
 
-- petal-ui: a `tooling` cargo feature, on by default, gates the headless
-  tooling (`harness`, `scenario`, `drag_trace`, `panel_stubs` and the
-  `petal-ui-run` / `petal-ui-propose-edit` binaries). Nothing changes for an
-  existing dependent; a host that needs only the host contract can depend on
-  petal-ui with `default-features = false`.
+- **Breaking**, petal-ui (Rust API): the headless tooling moved out of
+  `petal-ui` into a new crate, `core-libs/petal-ui-headless`, so a host links
+  none of it. `petal_ui::{harness, scenario, drag_trace}` are now
+  `petal_ui_headless::{harness, scenario, drag_trace}`, and the
+  `petal-ui-run` / `petal-ui-propose-edit` binaries are that crate's.
+  - Draining `ui/drag`'s drops is the host contract's and stays:
+    `petal_ui::drag::{take_drops, DRAG_DROPS_CHANNEL}` (was
+    `petal_ui::drag_trace::…`).
+  - `petal_ui::panel_stubs` moved into Garden: `garden_script::headless::
+    {register_panel_stubs, set_query_fixtures, parse_query_fixtures}`, and
+    the interface constants are `garden_script::{GARDEN_INTERFACE,
+    GARDEN_PACKAGE}`. The stubs now use Garden's own palette and manifest.
+  - `Headless::panel_from_file_with_paths` is gone. A host's natives are a
+    setup hook: `Headless::from_file_with_setup(path, w, h, paths, setup)`
+    (and `Headless::with_setup` for source text), run before the script
+    loads. `Headless::from_file_with_setup(…,
+    garden_script::headless::register_panel_stubs)` is the old call.
+  - `petal-ui-run` and `petal-ui-propose-edit` register petal-ui's natives
+    only, so a script that does `import garden` no longer loads under them,
+    and `--query-fixtures` is gone from them. `garden/garden-panel-run` ships
+    `garden-panel-run` and `garden-panel-propose-edit`, the same CLIs with
+    Garden's panel stubs and `--query-fixtures`; `tools/verify.ts`, the MCP
+    `DragExplain` tool and `tools/oracle-external.ts` use it. The CLIs are
+    library entry points (`petal_ui_headless::run_cli::main(name, host)`,
+    `propose_edit_cli::main`) over a `CliHost`, for a host that wants its
+    own build.
+  - The C bridge's `pb_scenario` now uses `petal_ui_headless::scenario`
+    (same format).
 
 - petal-ui: the runtime keeps track of focus. `hit::roll` decides once a
   frame, before the script runs, who has the keyboard: the last

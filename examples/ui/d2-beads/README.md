@@ -7,7 +7,7 @@ state until A is at the top again; the whole ring rotates into place after
 the drop, animated by `place`.
 
 ```
-cd core-libs/petal-ui
+cd core-libs/petal-ui-headless
 cargo run --bin petal-ui-run -- ../../examples/ui/d2-beads/app.ptl \
   --scenario ../../examples/ui/d2-beads/scenarios/drag.json
 ```

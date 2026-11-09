@@ -188,7 +188,7 @@ way `wf-ui-core` does, feeds it the real fixture models (`wf-ui
 fragment under `replay --effect-audit` and fails on an under-declared native.
 
 ```bash
-cd core-libs/petal-ui && cargo build --release
+cd garden && cargo build --release -p garden-panel-run
 cd ~/worlds-fair/ui && cargo build --release -p wf-ui-garden
 ./tools/oracle-external.ts [--wf <dir>] [--frames N] [--seed N] [--runner <petal-ui-run>] [--wf-bin <wf-ui>]
 ```

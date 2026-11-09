@@ -78,7 +78,7 @@ fn main() {
             assert!(src.contains(a), "{}: no `{a}`", c.dir);
             src = src.replace(a, b);
         }
-        let scenario = petal_ui::scenario::Scenario::from_json_str(
+        let scenario = petal_ui_headless::scenario::Scenario::from_json_str(
             &std::fs::read_to_string(dir.join("scenarios/drag.json")).expect("read scenario"),
         )
         .expect("parse scenario");
@@ -89,7 +89,7 @@ fn main() {
         let frames = c.drag.1.max(c.idle.1);
         let mut best = vec![f64::INFINITY; frames];
         for _ in 0..runs {
-            let mut ui = petal_ui::harness::Headless::with_size(&src, w, h).expect("compile");
+            let mut ui = petal_ui_headless::harness::Headless::with_size(&src, w, h).expect("compile");
             ui.env.set_echo(false);
             let mut policy = ui.policy();
             policy.gate = false;

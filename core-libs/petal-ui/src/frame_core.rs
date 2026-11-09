@@ -12,7 +12,7 @@
 //!
 //! Two embeddings sit on it:
 //!
-//! - [`crate::harness::Headless`], the test driver, adds a deterministic
+//! - `petal_ui_headless::harness::Headless`, the test driver, adds a deterministic
 //!   fixed-`dt` clock and decodes draw commands verbatim.
 //! - Garden's `garden_script::PanelHost` adds its own channels (theme,
 //!   navigation, mutations, edit views, query providers, the panel store)

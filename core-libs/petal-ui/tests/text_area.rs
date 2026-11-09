@@ -7,7 +7,7 @@
 //! wide: 22 characters to a row.
 
 use petal_ui::clipboard::{clipboard_text, set_clipboard_provider, set_clipboard_text};
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 use petal_ui::input::{InputEvent, Modifiers, buttons};
 
 fn src(buf: &str, h: i64) -> String {

@@ -15,7 +15,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 export const projectRoot = resolve(import.meta.dirname, "..");
-export const uiRunBin = join(projectRoot, "core-libs/petal-ui/target/debug/petal-ui-run");
+// garden-panel-run: petal-ui-run with Garden's panel stubs, so an app that
+// does `import garden` runs too (the stubs are inert for one that does not).
+export const uiRunBin = join(projectRoot, "garden/target/debug/garden-panel-run");
 
 export type DragGesture = {
   /** Place key of the dragged element (or any registered target id). */
@@ -127,10 +129,11 @@ function run(cmd: string, args: string[], timeout: number): Promise<{ stdout: st
   });
 }
 
-/** Build petal-ui-run if needed; an error message on failure. */
+/** Build the UI driver (garden-panel-run) if needed; an error message on failure. */
 export async function ensureUiRun(): Promise<string | null> {
   const b = await run("cargo", [
-    "build", "--quiet", "--manifest-path", join(projectRoot, "core-libs/petal-ui/Cargo.toml"), "--bin", "petal-ui-run",
+    "build", "--quiet", "--manifest-path", join(projectRoot, "garden/Cargo.toml"),
+    "-p", "garden-panel-run", "--bin", "garden-panel-run",
   ], 600_000);
   return b.code === 0 ? null : `Build failed:\n${b.stderr}`;
 }

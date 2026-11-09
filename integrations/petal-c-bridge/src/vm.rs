@@ -1072,7 +1072,7 @@ impl Vm {
     /// state; returns how many. Call before `begin_frame` for that frame.
     pub fn apply_scenario(
         &mut self,
-        scenario: &petal_ui::scenario::Scenario,
+        scenario: &petal_ui_headless::scenario::Scenario,
         frame: usize,
     ) -> usize {
         // Named-target clicks resolve against what the last run registered.
@@ -3779,7 +3779,7 @@ push_output(symbol(\"out\"), if MODE == \"a\" then STEP else -STEP end)
 
     #[test]
     fn scenarios_feed_the_input_state() {
-        let scenario = petal_ui::scenario::Scenario::from_json_str(
+        let scenario = petal_ui_headless::scenario::Scenario::from_json_str(
             r#"{"events": [{"at": 1, "key": "space"}, {"at": 1, "mouse_move": [3, 4]}]}"#,
         )
         .unwrap();

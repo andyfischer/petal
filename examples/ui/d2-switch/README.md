@@ -8,7 +8,7 @@ too, so they blend between the three positions' colours by the knob's
 barycentric weights. Letting go settles on the nearest position.
 
 ```
-cd core-libs/petal-ui
+cd core-libs/petal-ui-headless
 cargo run --bin petal-ui-run -- ../../examples/ui/d2-switch/app.ptl \
   --scenario ../../examples/ui/d2-switch/scenarios/drag.json
 ```

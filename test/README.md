@@ -79,7 +79,7 @@ The tests of core features that can only be exercised by running a UI app:
 the frame gate (`petal::run_deps`), memoized scopes (`petal::memo`), the
 static-value cache (`petal::static_cache` and its classifier, audit and
 reload), the native effect audit (`petal::effect_audit`) and direct
-manipulation (`petal::dm`). They drive apps through `petal_ui::harness::Headless`,
+manipulation (`petal::dm`). They drive apps through `petal_ui_headless::harness::Headless`,
 so they depend on `petal-ui`, but they test `core/`, not `petal-ui`; the tests
 of `petal-ui` itself stay in `core-libs/petal-ui/tests/`.
 

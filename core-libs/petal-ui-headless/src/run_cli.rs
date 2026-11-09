@@ -1,5 +1,12 @@
 //! `petal-ui-run` — drive a UI script headlessly and write a JSONL frame trace.
 //!
+//! This is the library half: [`main`] and [`run`] take the program name and a
+//! [`CliHost`], so a host ships the same CLI with its natives registered
+//! (Garden's `garden-panel-run`, which adds its panel stubs and
+//! `--query-fixtures`). The `petal-ui-run` binary is [`main`] over
+//! [`crate::NoHost`]: petal-ui's natives only, so a script that does
+//! `import garden` fails to load there.
+//!
 //! ```text
 //! petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
 //!              [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
@@ -42,7 +49,7 @@
 //! `--drag-trace` adds a `drag` record to every frame: each `ui/drag` drag in
 //! flight, explained (its target table with each target's distance from the
 //! dragged element, the chosen target and the branch of the spec down to it;
-//! see `petal_ui::drag_trace`), and the drops announced that frame. A line
+//! see [`crate::drag_trace`]), and the drops announced that frame. A line
 //! per drag frame also goes to stderr. `--drag-trace-full` adds the spec as
 //! built, the base model and every target's drop state (what the
 //! `DragExplain` MCP tool reads). `--ui-debug <name>` switches on a
@@ -71,24 +78,33 @@ use serde_json::Value as Json;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use petal_ui::harness::Headless;
-use petal_ui::scenario::Scenario;
+use crate::CliHost;
+use crate::harness::Headless;
+use crate::scenario::Scenario;
 
-const USAGE: &str = "usage: petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N] \
+const USAGE: &str = "<app.ptl> [--size WxH] [--frames N] [--seed N] \
 [--scenario s.json|monkey:<seed>] [--host-data fixtures.json] \
-[--query-fixtures q.json] [--out trace.jsonl] [--error-format full|bare] [-I <dir>] [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats] [--targets] [--effect-audit] [--static-audit] [--static-only] [--drag-trace] [--drag-trace-full] [--ui-debug <name>]";
+[--out trace.jsonl] [--error-format full|bare] [-I <dir>] [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats] [--targets] [--effect-audit] [--static-audit] [--static-only] [--drag-trace] [--drag-trace-full] [--ui-debug <name>]";
 
 const DEFAULT_FRAMES: usize = 60;
 const DEFAULT_SIZE: (i32, i32) = (800, 600);
 
-fn main() {
-    match run() {
+/// Run the CLI over this process's arguments as `name`, and exit with its
+/// code (2 with the message on stderr when [`run`] fails).
+pub fn main(name: &str, host: &mut dyn CliHost) -> ! {
+    match run(name, host, std::env::args().skip(1).collect()) {
         Ok(code) => std::process::exit(code),
         Err(e) => {
-            eprintln!("petal-ui-run: {e}");
+            eprintln!("{name}: {e}");
             std::process::exit(2);
         }
     }
+}
+
+fn usage(name: &str, host: &dyn CliHost) -> String {
+    let extra = host.usage();
+    let sep = if extra.is_empty() { "" } else { " " };
+    format!("usage: {name} {USAGE}{sep}{extra}")
 }
 
 struct Args {
@@ -98,7 +114,6 @@ struct Args {
     seed: Option<u64>,
     scenario: Option<String>,
     host_data: Option<PathBuf>,
-    query_fixtures: Option<PathBuf>,
     out: Option<PathBuf>,
     bare_errors: bool,
     /// Extra module search directories (`-I`), for an app that imports a
@@ -127,14 +142,14 @@ struct Args {
     ui_debug: Vec<String>,
 }
 
-fn parse_args() -> Result<Args, String> {
+fn parse_args(name: &str, host: &mut dyn CliHost, argv: Vec<String>) -> Result<Args, String> {
+    let usage = usage(name, host);
     let mut app: Option<PathBuf> = None;
     let mut size = None;
     let mut frames = None;
     let mut seed = None;
     let mut scenario = None;
     let mut host_data = None;
-    let mut query_fixtures = None;
     let mut out = None;
     let mut bare_errors = false;
     let mut module_paths: Vec<PathBuf> = Vec::new();
@@ -149,15 +164,15 @@ fn parse_args() -> Result<Args, String> {
     // 0 off, 1 the per-frame table, 2 with the spec and every target's drop.
     let mut drag_trace = 0u8;
     let mut ui_debug = Vec::new();
-    let mut it = std::env::args().skip(1);
+    let mut it = argv.into_iter();
     while let Some(a) = it.next() {
         let mut value = |name: &str| -> Result<String, String> {
             it.next()
-                .ok_or_else(|| format!("{name} needs a value\n{USAGE}"))
+                .ok_or_else(|| format!("{name} needs a value\n{usage}"))
         };
         match a.as_str() {
             "-h" | "--help" => {
-                println!("{USAGE}");
+                println!("{usage}");
                 std::process::exit(0);
             }
             "--size" => size = Some(parse_size(&value("--size")?)?),
@@ -178,9 +193,6 @@ fn parse_args() -> Result<Args, String> {
             "--scenario" => scenario = Some(value("--scenario")?),
             "-I" | "--include" => module_paths.push(PathBuf::from(value("-I")?)),
             "--host-data" => host_data = Some(PathBuf::from(value("--host-data")?)),
-            "--query-fixtures" => {
-                query_fixtures = Some(PathBuf::from(value("--query-fixtures")?))
-            }
             "--out" => out = Some(PathBuf::from(value("--out")?)),
             "--policy" => policy = Some(petal::policy::RunPolicy::parse(&value("--policy")?)?),
             "--no-gate" => no_gate = true,
@@ -206,24 +218,26 @@ fn parse_args() -> Result<Args, String> {
                 }
             }
             other if other.starts_with('-') && other != "-" => {
-                return Err(format!("unknown flag `{other}`\n{USAGE}"));
+                let mut value = || value(other);
+                if !host.flag(other, &mut value)? {
+                    return Err(format!("unknown flag `{other}`\n{usage}"));
+                }
             }
             other => {
                 if app.is_some() {
-                    return Err(format!("unexpected argument `{other}`\n{USAGE}"));
+                    return Err(format!("unexpected argument `{other}`\n{usage}"));
                 }
                 app = Some(PathBuf::from(other));
             }
         }
     }
     Ok(Args {
-        app: app.ok_or_else(|| format!("no script given\n{USAGE}"))?,
+        app: app.ok_or_else(|| format!("no script given\n{usage}"))?,
         size,
         frames,
         seed,
         scenario,
         host_data,
-        query_fixtures,
         out,
         bare_errors,
         module_paths,
@@ -240,8 +254,11 @@ fn parse_args() -> Result<Args, String> {
     })
 }
 
-fn run() -> Result<i32, String> {
-    let args = parse_args()?;
+/// Run the CLI over `argv` (the arguments after the program name) as `name`:
+/// the trace goes to stdout or `--out`, and the result is the exit code.
+/// `Err` is a usage or load error (exit code 2).
+pub fn run(name: &str, host: &mut dyn CliHost, argv: Vec<String>) -> Result<i32, String> {
+    let args = parse_args(name, host, argv)?;
 
     let scenario = match args.scenario.as_deref() {
         None => None,
@@ -256,10 +273,11 @@ fn run() -> Result<i32, String> {
         .or_else(|| scenario.as_ref().and_then(|s| s.frames))
         .unwrap_or(DEFAULT_FRAMES);
 
-    // Garden-panel host natives (`palette`, `query`, `text_view`, …) answer
-    // as inert, deterministic stubs and `import garden` resolves, so panel
-    // drawers run headlessly (see [`petal_ui::panel_stubs`]).
-    let mut ui = Headless::panel_from_file_with_paths(&args.app, size.0, size.1, &args.module_paths)?;
+    // The host's natives (Garden's panel stubs, for `garden-panel-run`)
+    // register before the script loads.
+    let mut ui = Headless::from_file_with_setup(&args.app, size.0, size.1, &args.module_paths, |env| {
+        host.setup(env)
+    })?;
     // What `petal lint` says about the app, on stderr beside the trace.
     eprint!(
         "{}",
@@ -292,9 +310,6 @@ fn run() -> Result<i32, String> {
     }
     if let Some(path) = &args.host_data {
         ui.set_data_provider(fixture_provider(path)?);
-    }
-    if let Some(path) = &args.query_fixtures {
-        petal_ui::panel_stubs::set_query_fixtures(query_fixtures(path)?);
     }
 
     let mut out: Box<dyn Write> = match &args.out {
@@ -357,16 +372,16 @@ fn run() -> Result<i32, String> {
             "error": error,
         });
         // Drops are announced on an output channel nothing else drains.
-        let drops = petal_ui::drag_trace::take_drops(&mut ui.env);
+        let drops = crate::drag_trace::take_drops(&mut ui.env);
         if args.drag_trace > 0 {
             let pointer = (ui.input.mouse_x, ui.input.mouse_y);
             let full = args.drag_trace > 1;
-            let sessions = petal_ui::drag_trace::explain_all(&ui.state(), pointer, full);
+            let sessions = crate::drag_trace::explain_all(&ui.state(), pointer, full);
             for s in &sessions {
-                eprintln!("petal-ui-run: frame {frame}: {}", petal_ui::drag_trace::summary(s));
+                eprintln!("{name}: frame {frame}: {}", crate::drag_trace::summary(s));
             }
             for d in &drops {
-                eprintln!("petal-ui-run: frame {frame}: drop {} -> {}", d["key"], d["drop"]);
+                eprintln!("{name}: frame {frame}: drop {} -> {}", d["key"], d["drop"]);
             }
             record["drag"] = if sessions.is_empty() && drops.is_empty() {
                 Json::Null
@@ -398,7 +413,7 @@ fn run() -> Result<i32, String> {
     out.flush().map_err(|e| format!("writing trace: {e}"))?;
     if args.gate_stats {
         eprintln!(
-            "petal-ui-run: frames run {} skipped {}",
+            "{name}: frames run {} skipped {}",
             ui.frames_run, ui.frames_skipped
         );
         for (reason, n) in &reasons {
@@ -408,7 +423,7 @@ fn run() -> Result<i32, String> {
     if args.memo_stats {
         let m = ui.memo_stats();
         eprintln!(
-            "petal-ui-run: memo hits {} misses {} records {} inlined {} effectful {} reexecs {} cutoffs {} cold {} evicted {} static-skips {} static-args {} commands {} slots {}",
+            "{name}: memo hits {} misses {} records {} inlined {} effectful {} reexecs {} cutoffs {} cold {} evicted {} static-skips {} static-args {} commands {} slots {}",
             m.hits,
             m.misses,
             m.records,
@@ -427,13 +442,13 @@ fn run() -> Result<i32, String> {
     let mut under_declared = false;
     if args.effect_audit {
         let report = ui.env.effect_audit_report();
-        eprint!("petal-ui-run: {report}");
+        eprint!("{name}: {report}");
         under_declared = report.has_under_declared();
     }
     let mut static_failed = false;
     if static_audit_on {
         let report = ui.env.static_audit_report();
-        eprint!("petal-ui-run: {report}");
+        eprint!("{name}: {report}");
         static_failed = report.has_failures();
     }
     Ok(if failed {
@@ -514,17 +529,6 @@ fn strip_position(line: &str) -> &str {
     } else {
         line
     }
-}
-
-/// Read the `--query-fixtures` file (see
-/// [`petal_ui::panel_stubs::parse_query_fixtures`] for the format). This
-/// wrapper only reads the file and prefixes errors with its path.
-fn query_fixtures(path: &Path) -> Result<Vec<((String, String), Json)>, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let json: Json = serde_json::from_str(&text)
-        .map_err(|e| format!("{}: invalid JSON: {e}", path.display()))?;
-    petal_ui::panel_stubs::parse_query_fixtures(&json)
-        .map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Build a `host_data` provider from a fixture file (see

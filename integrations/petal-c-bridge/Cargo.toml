@@ -28,6 +28,8 @@ query = ["dep:petal-query"]
 [dependencies]
 petal = { path = "../../core", default-features = false }
 petal-ui = { path = "../../core-libs/petal-ui" }
+# `pb_scenario` replays petal-ui-headless's input scenarios.
+petal-ui-headless = { path = "../../core-libs/petal-ui-headless" }
 petal-query = { path = "../../core-libs/petal-query", optional = true }
 indexmap = "2"
 serde_json = "1"

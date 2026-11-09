@@ -3,7 +3,7 @@
 //! `scroll_keys`, and `text_field`'s `blurred` / `cancelled`, driven
 //! headlessly with injected input.
 
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 use petal_ui::input::{InputEvent, Modifiers, buttons};
 
 fn ui(src: &str) -> Headless {

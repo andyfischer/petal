@@ -1,7 +1,7 @@
 //! `pb_scenario`: petal-ui's declarative input scenarios over the C ABI.
 //!
 //! A scenario is JSON — input events keyed by frame number, plus an optional
-//! window size and frame count (see `petal_ui::scenario` for the format). A
+//! window size and frame count (see `petal_ui_headless::scenario` for the format). A
 //! host replays one by calling `pb_vm_apply_scenario` (in [`crate::vm`]) with
 //! the frame number before `pb_vm_begin_frame`, so headless C/C++ tests and
 //! recorded repros use exactly the input model `petal-ui-run` uses. Applying is a pure
@@ -11,7 +11,7 @@
 use std::ffi::{CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use petal_ui::scenario::Scenario;
+use petal_ui_headless::scenario::Scenario;
 
 use crate::ffi::{Status, arg_str, cstring_lossy, guard, panic_message};
 

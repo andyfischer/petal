@@ -1,7 +1,7 @@
 //! One open popover, kept by the runtime (src/popover.rs): opened by
 //! request, closed by Escape or a press outside before the frame runs.
 
-use petal_ui::harness::Headless;
+use petal_ui_headless::harness::Headless;
 use petal_ui::input::buttons;
 
 /// Two buttons that open two popovers; counters for what got through.

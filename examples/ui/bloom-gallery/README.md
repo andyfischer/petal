@@ -26,7 +26,7 @@ Or without Garden at all, through the headless UI driver (bloom is bundled
 in the runtime, so nothing has to be put on a search path):
 
 ```bash
-cd core-libs/petal-ui
+cd core-libs/petal-ui-headless
 cargo run --bin petal-ui-run -- ../../examples/ui/bloom-gallery/app.ptl \
     --frames 120 --size 1100x760
 ```

@@ -65,7 +65,7 @@ fn main() {
     let end = start + src[start..].find("\n]\n").expect("the board's closing `]`") + 3;
     let src = format!("{}{}{}", &src[..start], board(cards), &src[end..]);
     let scen_path = path.parent().unwrap().join("scenarios/drag.json");
-    let scenario = petal_ui::scenario::Scenario::from_json_str(
+    let scenario = petal_ui_headless::scenario::Scenario::from_json_str(
         &std::fs::read_to_string(&scen_path).expect("read scenarios/drag.json"),
     )
     .expect("parse scenario");
@@ -73,7 +73,7 @@ fn main() {
 
     let mut best = vec![f64::INFINITY; frames];
     for _ in 0..runs {
-        let mut ui = petal_ui::harness::Headless::with_size(&src, 1280, 850).expect("compile");
+        let mut ui = petal_ui_headless::harness::Headless::with_size(&src, 1280, 850).expect("compile");
         ui.env.set_echo(false);
         let mut policy = ui.policy();
         policy.gate = false;

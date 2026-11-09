@@ -936,6 +936,46 @@ is for hosts: the C bridge decodes a template's static fields once
 `Env::set_record_templates(false)` or `PETAL_RECORD_TEMPLATES=0` builds every
 record untagged.
 
+## Text wrap: native vs Petal
+
+Whether `text_wrap` / `wrap_rows` (`core-libs/petal-ui/src/text.rs`) could be
+Petal instead of Rust. Harness: `core-libs/petal-ui/examples/bench_text_wrap.rs`
+(`cargo run --release --example bench_text_wrap` in `core-libs/petal-ui`); the
+Petal side is `wrap_rows_reference` (`core-runtime/text-layout/src/wrap_reference.ptl`),
+which makes one `text_advance` call per word and per run of blanks. Measured
+2026-11-08, p50 per frame, release, gate off, pointer moving, 548 px wrap, a
+proportional advance table, on a heavily loaded machine (treat the absolute
+numbers as upper bounds; the ratios held across runs):
+
+| chars (rows) | case | `text_area` (native) | wrap native | wrap Petal |
+|---|---|---|---|---|
+| 1k (15) | still, memo | 0.11 | 0.07 | 0.17 |
+| 1k (15) | no memo / typing | 0.10 | 0.07 | 0.29–0.47 (4–7×) |
+| 10k (153) | still, memo | 0.57 | 0.28 | 8.2 (30×) |
+| 10k (153) | no memo / typing | 0.21–0.24 | 0.16–0.21 | 11–14 (55–85×) |
+| 100k (1500) | still, memo | 13.3 | 2.9 | 166 (58×) |
+| 100k (1500) | no memo / typing | 1.6–1.9 | 1.4–1.6 | 95–101 (60–70×) |
+
+- **The native stays.** A `text_area` on the Petal wrap would cost about
+  11 ms a frame at 10k chars and 100 ms at 100k, against 0.2 ms and 1.8 ms.
+  Petal is fine for a label or a short field (under 0.5 ms at 1k chars). The
+  Petal version is the specification instead, and
+  `core-libs/petal-ui/tests/text_wrap_reference.rs` holds the two to the same
+  rows over ~900 cases. Two native quirks it keeps: a paragraph's leading
+  blanks make an over-wide first word overflow instead of breaking, and a tab
+  is measured as one glyph advance.
+- **The memo does not rescue a Petal wrap.** It makes one probe per
+  `text_advance` call; past `MAX_SCOPE_DEPS` (8,192) the scope is given up as
+  effectful (1,380 such scopes at 10k, 19,500 at 100k).
+- **The memo used to slow the native path down.** The `text_wrap` probe's
+  answer (one record per row) ran out of `ARG_COMPARE_BUDGET` past ~128 rows,
+  failed validation every frame and wrapped again: the 13.3 ms above against
+  1.8 ms with the memo off. Probes now compare under `PROBE_COMPARE_BUDGET`,
+  and memo-on and memo-off frames cost the same.
+- `text-layout` has no wrap, elision or caret code of its own: it calls
+  `text_wrap`, `text_ellipsize` and `text_index_at`, so `ui/text` and it share
+  one (native) implementation already.
+
 ## Where the remaining headroom is
 
 Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from

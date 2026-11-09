@@ -261,7 +261,10 @@ found `gpp`, `petal-query` and `petal-pkgman` correctly placed (the
 `core-libs/` definition above was widened to cover `petal-pkgman`). In
 `petal-ui` it split the 5,600-line `ui.ptl` into modules behind an unchanged
 facade, and moved the tests of core features (static cache, frame gate, memo,
-effect audit, DM) to `test/ui-corpus/`. What is left is entry 6.
+effect audit, DM) to `test/ui-corpus/`, and moved the headless tooling to
+`core-libs/petal-ui-headless` and Garden's panel stubs into `garden-script`.
+What is left of it (whether `ui` or `bloom` owns the widgets) is an owner
+decision.
 
 ### Bundled packages that don't meet the bundling bar
 

@@ -155,6 +155,21 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- text-layout: `wrap_rows_reference` (`import text_layout/wrap_reference`),
+  the Petal specification of the native `text_wrap_rows`; petal-ui's
+  `tests/text_wrap_reference.rs` holds the two to the same rows. Not
+  re-exported by `text_layout`.
+- petal-ui: `take_frame_commands_snapped`, each sub-pixel frame command with
+  the `PixelSnap` mode it was drawn under. petal-web-canvas uses it:
+  `draw_pixel_snap_indices()`, an optional fourth argument to
+  `decodeFrameCommands`, and images and canvases drawn under
+  `pixel_snap(true)` render without image smoothing.
+- petal-sdl: a sub-pixel fill with fractional numbers (triangle, polygon,
+  fan, ellipse, ellipse outline, arc) has antialiased edges.
+- petal-ui: `draw_canvas(id, {x, y, w, h})` keeps fractional numbers under
+  `pixel_snap(false)`, as the flat form does.
+- docs/stdlib.json types a draw native's geometry `number` (was `int`).
+
 - A revisioned input class for a host's frame camera, `CAMERA`
   (`PB_FX_READS_CAMERA`, C++ `petal::fx::ReadsCamera`), and a way to set a
   revisioned class's revision instead of bumping it:
@@ -502,6 +517,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   [Unary minus](docs/syntax/commas.md#unary-minus)).
 
 ### Fixed
+
+- Memo: a probe whose answer is large (a `text_wrap_rows` of a document)
+  validated against the 512-node argument budget, failed every frame and
+  re-ran its scope; a 100k-character `text_area` was 7× slower with the memo
+  on. Probes now compare under `PROBE_COMPARE_BUDGET`.
+- `test/ui-golden/index.json` re-baselined (70 stale hashes, 37 apps with no
+  entry).
 
 - petal-ui: a press that a modal swallowed (the press that closes a menu)
   no longer becomes a click on the button under the menu once the menu is

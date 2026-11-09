@@ -1530,8 +1530,8 @@ impl<'a> Checker<'a> {
 
     /// The enum `expr` names, when that is known here: its own name where
     /// nothing has rebound it, a name no scope binds that an import brought
-    /// in, or that name through a module namespace (`town.Kind`). Enum names
-    /// are unique in a compilation, which is what lets the name alone answer.
+    /// in, or that name through a module namespace (`town.Kind`). The class
+    /// table's scope maps each spelling to the enum's identity.
     fn static_enum(&self, expr: &Expr) -> Option<crate::classes::EnumId> {
         match &expr.kind {
             ExprKind::Ident(name) => match self.lookup(name) {
@@ -1545,7 +1545,9 @@ impl<'a> Checker<'a> {
                 if self.lookup(ns).is_some() || !self.namespaces.get(ns)?.contains(field) {
                     return None;
                 }
-                self.classes.lookup_enum(field)
+                // Through the qualifier: the file may have an enum of its
+                // own, or another import's, that the bare name means.
+                self.classes.lookup_enum(&format!("{ns}.{field}"))
             }
             _ => None,
         }
@@ -1588,7 +1590,7 @@ impl<'a> Checker<'a> {
     /// when it is written in place. A name nothing answers fails whenever
     /// the line runs.
     fn check_enum_field(&mut self, id: crate::classes::EnumId, object: &Expr, field: &str, span: SourceSpan) {
-        let enum_name = self.classes.enum_name(id);
+        let enum_name = crate::program::strip_module(self.classes.enum_name(id));
         let def = self.classes.enum_def(id);
         let answers = |v: &crate::program::EnumVariantDef| {
             field == VARIANT_NAME_FIELD || v.fields.iter().any(|f| f == field) || v.data.iter().any(|d| d == field)
@@ -1667,6 +1669,7 @@ impl<'a> Checker<'a> {
                 let l = self.check_expr(left);
                 let r = self.check_expr(right);
                 self.note_arithmetic(expr, *op, left, right, l, r);
+                self.note_enum_mixing(expr.span, *op, l, r);
                 binary_type(*op, l, r)
             }
             ExprKind::UnaryOp { op, operand } => {
@@ -2053,6 +2056,31 @@ impl<'a> Checker<'a> {
 
     /// What `petal lint` wants to know about one arithmetic
     /// expression, given the types of its operands.
+    /// `a == b` (or `!=`) between variants of two different enums: always
+    /// false (true), since a variant equals only a variant of its own enum.
+    /// Two modules may each declare an enum of one name, and their variants
+    /// can print alike (`Phase.play`), so this is a mistake worth naming.
+    fn note_enum_mixing(&mut self, span: SourceSpan, op: BinOp, l: Type, r: Type) {
+        if !matches!(op, BinOp::Eq | BinOp::Ne) {
+            return;
+        }
+        let (Type::EnumOf(a), Type::EnumOf(b)) = (l, r) else {
+            return;
+        };
+        if a == b {
+            return;
+        }
+        let always = if op == BinOp::Eq { "false" } else { "true" };
+        self.warn(
+            span,
+            format!(
+                "comparing variants of two different enums (`{}` and `{}`) is always {always}",
+                self.spell(l),
+                self.spell(r)
+            ),
+        );
+    }
+
     fn note_arithmetic(
         &mut self,
         expr: &Expr,
@@ -2215,8 +2243,17 @@ impl<'a> Checker<'a> {
         if !self.namespaces.get(ns)?.contains(field) {
             return None;
         }
+        // A class constructor keeps its qualifier: the file may declare (or
+        // import) another class of the same bare name, and the class table
+        // resolves `ns.Circle` to the module's own.
+        let qualified = format!("{ns}.{field}");
+        let name = if self.classes.lookup(&qualified).is_some() {
+            qualified
+        } else {
+            field.clone()
+        };
         Some(Expr {
-            kind: ExprKind::Ident(field.clone()),
+            kind: ExprKind::Ident(name),
             span: function.span,
         })
     }

@@ -309,13 +309,12 @@ fn an_enum_is_declared_at_the_top_level_only() {
 fn duplicate_enum_names_follow_the_class_rules() {
     let e = compile_err("enum E\n  a,\nend\nenum E\n  b,\nend");
     assert!(e.contains("enum `E` is already declared"), "{e}");
-    // Across modules, naming both files.
-    let e = compile_err_with(
-        &[("lib", "pub enum E\n  a,\nend")],
-        "import lib\nenum E\n  b,\nend",
+    // Across modules it is not a duplicate: each module's `E` is its own
+    // (tests/type_identity.rs).
+    assert_eq!(
+        run_with(&[("lib", "pub enum E\n  a,\nend")], "import lib\nenum E\n  b,\nend\nprint(E.b, lib.E.a)"),
+        ["E.b E.a"]
     );
-    assert!(e.contains("enum `E` is already declared in `lib"), "{e}");
-    assert!(e.contains("may not"), "{e}");
     // A class and an enum share the one namespace of declared type names.
     let e = compile_err("class E\n  x,\nend\nenum E\n  a,\nend");
     assert!(e.contains("enum `E` has the same name as class `E`"), "{e}");
@@ -503,9 +502,14 @@ print(Kind.park == Kind.park, Kind.park == Use.park, Kind.park != Use.park)
 print(Kind.park, Use.park)
 ";
     assert_eq!(run(src), ["true false true", "Kind.park Use.park"]);
-    // …and `petal lint` has nothing to say about it, nor about a variant
-    // named like another top-level declaration.
+    // `petal lint` says only that comparing two enums' variants is always
+    // false (or, for `!=`, true) — not that the variant names repeat.
+    let w = warnings(src);
+    assert_eq!(w.len(), 2, "{w:?}");
+    assert!(w.iter().all(|m| m.contains("comparing variants of two different enums")), "{w:?}");
+    let src = "enum Kind\n  park,\nend\nenum Use\n  park,\nend\nprint(Kind.park, Use.park)";
     assert!(warnings(src).is_empty(), "{:?}", warnings(src));
+    // Nor about a variant named like another top-level declaration.
     let src = "let red = 5\nfn green()\n  1\nend\nenum Color\n  red,\n  green,\nend\nprint(red, green(), Color.red)";
     assert!(warnings(src).is_empty(), "{:?}", warnings(src));
     assert_eq!(run(src), ["5 1 Color.red"]);
@@ -1121,12 +1125,15 @@ fn a_class_may_not_take_the_name_of_an_enum_in_either_order() {
     // In one file the enum is the one reported, wherever it stands.
     let e = compile_err("enum E\n  a,\nend\nclass E\n  x,\nend");
     assert!(e.contains("enum `E` has the same name as class `E`"), "{e}");
-    // Across files, whichever is declared second.
-    let e = compile_err_with(
-        &[("lib", "pub enum Foo\n  a, b\nend\npub fn mk()\n  Foo.a\nend")],
-        "import lib\nclass Foo\n  x: int\nend\nlet f = Foo(1)",
+    // Across files they are two types: the file's own class takes the bare
+    // name, and the module's enum stays reachable through its qualifier.
+    assert_eq!(
+        run_with(
+            &[("lib", "pub enum Foo\n  a, b\nend\npub fn mk()\n  Foo.a\nend")],
+            "import lib\nclass Foo\n  x: int\nend\nprint(Foo(1).x, lib.Foo.b, mk())",
+        ),
+        ["1 Foo.b Foo.a"]
     );
-    assert!(e.contains("class `Foo` has the same name as enum `Foo`"), "{e}");
 }
 
 #[test]

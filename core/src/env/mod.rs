@@ -1464,6 +1464,14 @@ impl Env {
         let id = ProgramId(self.next_program_id);
         let program = self.compile_source(id, source, origin)?;
         self.next_program_id += 1;
+        // A host may build a variant of a module's enum by its bare tag
+        // before the program first runs (a binding, a queued event), so the
+        // bare names are known from load on; each run re-installs them from
+        // the layout it runs (`EnumTable::sync`).
+        let aliases = crate::enum_table::host_aliases(program.enums.keys().map(String::as_str));
+        if !aliases.is_empty() {
+            self.heap_mut().set_enum_aliases(std::sync::Arc::new(aliases));
+        }
         self.programs.insert(id, program);
         Ok(id)
     }

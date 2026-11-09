@@ -345,8 +345,13 @@ describe("silently wrong programs warn", () => {
 
   it("a variant two enums declare, or one named like a `let`, collides with nothing", () => {
     // Variants are members of their enum, so neither shape is a collision.
-    const two = checkJson("enum A\n  None,\nend\nenum B\n  None,\nend\nprint(A.None == B.None)");
+    const two = checkJson("enum A\n  None,\nend\nenum B\n  None,\nend\nprint(A.None, B.None)");
     expect(two.warnings).toEqual([]);
+    // Comparing them is the mistake: always false.
+    const compared = checkJson("enum A\n  None,\nend\nenum B\n  None,\nend\nprint(A.None == B.None)");
+    expect(compared.warnings.map((w: any) => w.message)).toEqual([
+      "comparing variants of two different enums (`A` and `B`) is always false",
+    ]);
     const over = checkJson("let Red = 5\nenum Color\n  Red,\nend\nprint(Red, Color.Red)");
     expect(over.warnings).toEqual([]);
   });

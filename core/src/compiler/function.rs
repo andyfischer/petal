@@ -309,9 +309,10 @@ impl Compiler {
             .iter()
             .map(|f| self.constants.intern(ConstantValue::String(f.clone())))
             .collect();
-        let class_const = self
-            .constants
-            .intern(ConstantValue::String(name.to_string()));
+        // Instances carry the class's identity, which names the declaring
+        // module for any file but the entry (`./shapes::Circle`).
+        let identity = self.classes.qualify(name);
+        let class_const = self.constants.intern(ConstantValue::String(identity));
         self.emit_term(
             TermOp::AllocMap {
                 fields: keys,
@@ -321,14 +322,16 @@ impl Compiler {
             None,
         );
 
-        self.end_function_scope(
+        let ctor = self.end_function_scope(
             Some(name.to_string()),
             &field_names,
             0,
             body_block,
             saved_block,
             None,
-        )
+        );
+        self.class_terms.insert(ctor, self.classes.qualify(name));
+        ctor
     }
 
     /// Emit the root-block statement that publishes `fn Class.method` into the
@@ -346,6 +349,13 @@ impl Compiler {
     }
 
     pub(super) fn emit_declare_method(&mut self, class: &str, method: &str, func: TermId) {
+        // `class` is as the declaration wrote it; the method attaches to the
+        // class that name means here (see `collect_type_decls`).
+        let class = self
+            .classes
+            .lookup(class)
+            .map_or_else(|| class.to_string(), |id| self.classes.name_of(id).to_string());
+        let class = class.as_str();
         // From here on, a `recv.method()` site the checker pinned to this class
         // may bind straight to the declaration instead of dispatching on the
         // receiver's tag. Recorded at *emission* order, which is source order,

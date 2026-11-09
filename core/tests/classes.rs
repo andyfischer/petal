@@ -422,19 +422,27 @@ fn a_class_named_after_a_builtin_function_is_allowed() {
     assert!(table.lookup("len").is_some());
 }
 
-/// The class namespace spans the compilation, so two modules declaring the
-/// same class name still collide — but the error has to say *where*.
+/// A class belongs to the module that declares it: two modules may each
+/// declare `Dup`, and each gets its own identity under its module's name.
 #[test]
-fn a_cross_module_duplicate_names_both_files() {
+fn two_modules_declaring_one_class_name_get_two_classes() {
     let mut table = ClassTable::new();
     let a = parse("class Dup\n  a: int\nend\n");
     let b = parse("class Dup\n  b: int\nend\n");
+    table.set_namespace(Some("./ma".to_string()));
     assert!(petal::compiler::collect_type_decls(&mut table, &a, Some("ma.ptl")).is_empty());
-    let diags = petal::compiler::collect_type_decls(&mut table, &b, Some("mb.ptl"));
+    table.set_namespace(Some("./mb".to_string()));
+    assert!(petal::compiler::collect_type_decls(&mut table, &b, Some("mb.ptl")).is_empty());
+    let a = table.lookup_anywhere("./ma::Dup").expect("ma's Dup");
+    let b = table.lookup_anywhere("./mb::Dup").expect("mb's Dup");
+    assert_ne!(a, b);
+    assert!(table.get(a).field("a").is_some());
+    assert!(table.get(b).field("b").is_some());
+    // One module declaring it twice is still a duplicate.
+    let again = parse("class Dup\n  c: int\nend\n");
+    let diags = petal::compiler::collect_type_decls(&mut table, &again, Some("mb.ptl"));
     assert_eq!(diags.len(), 1);
-    let msg = &diags[0].message;
-    assert!(msg.contains("ma.ptl"), "{msg}");
-    assert!(msg.contains("mb.ptl"), "{msg}");
+    assert!(diags[0].message.contains("already declared"), "{diags:?}");
 }
 
 /// Only classes named in the scope are resolvable — that is how a
@@ -443,7 +451,7 @@ fn a_cross_module_duplicate_names_both_files() {
 fn a_scope_hides_classes_it_does_not_name() {
     let (mut table, errs) = classes_of("class Shown\n  a: int\nend\nclass Hidden\n  b: int\nend\n");
     assert!(errs.is_empty(), "{errs:?}");
-    table.set_scope(["Shown".to_string()].into_iter().collect());
+    table.set_scope([("Shown".to_string(), "Shown".to_string())].into_iter().collect());
     assert!(table.lookup("Shown").is_some());
     assert!(table.lookup("Hidden").is_none(), "not named by the scope");
     assert!(
@@ -461,7 +469,7 @@ fn a_method_on_an_out_of_scope_class_is_rejected() {
     let mut table = ClassTable::new();
     let owner = parse("class Hidden\n  a: int\nend\n");
     assert!(petal::compiler::collect_type_decls(&mut table, &owner, Some("m.ptl")).is_empty());
-    table.set_scope(std::collections::HashSet::new()); // an importer, importing nothing
+    table.set_scope(std::collections::HashMap::new()); // an importer, importing nothing
     let importer = parse("fn Hidden.twice(h)\n  2 * h.a\nend\n");
     let diags = petal::compiler::collect_type_decls(&mut table, &importer, Some("app.ptl"));
     assert_eq!(diags.len(), 1);

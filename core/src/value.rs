@@ -243,7 +243,9 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
         Value::OverloadSet(_) => "<function>".to_string(),
         Value::NativeFunction(_) => "<native>".to_string(),
         Value::EnumVariant { tag, data } => {
-            let name = heap.tag_str(*tag);
+            // `Phase.play`, whichever module declared `Phase`: the module
+            // part of the tag (`./level::`) is identity, not display.
+            let name = crate::program::strip_module(heap.tag_str(*tag));
             let fields = heap.get_list(*data);
             if fields.is_empty() {
                 name.to_string()

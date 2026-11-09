@@ -19,14 +19,15 @@
 //! - **The name as a value.** Read on its own (`let E = Color`), the name is
 //!   a record of its members — each variant, `all` and `from` — built where
 //!   it is read. A member of such a value (`E.red`) is an ordinary field read.
-//! - **The value.** A variant value carries a tag — `"Color.red"`, enum
-//!   names being unique in a compilation — and its payload. Payload field
+//! - **The value.** A variant value carries a tag — `"Color.red"` for an
+//!   enum of the entry file, `"./paint::Color.red"` for one of another
+//!   module, enum identities being unique in a compilation — and its payload. Payload field
 //!   names live in [`Program::enums`]; constant data (`key: expr`) is
 //!   evaluated once per run, after the file's hoisted declarations, and
 //!   published with [`ENUM_DATA_BUILTIN`].
 
 use super::*;
-use crate::program::{ENUM_MEMBERS, VARIANT_NAME_FIELD};
+use crate::program::{ENUM_MEMBERS, VARIANT_NAME_FIELD, strip_module};
 
 /// What a data expression cannot use, while an enum's constant data is being
 /// compiled (see [`Compiler::emit_enum_data`]).
@@ -93,9 +94,11 @@ impl Compiler {
         if !self.classes.is_enum_declaration(name, stmt.span) {
             return;
         }
-        let tid = self.emit_phantom_term(name.clone());
+        // The phantom is named by the identity, as `Program::enums` is keyed.
+        let identity = self.classes.qualify(name);
+        let tid = self.emit_phantom_term(identity.clone());
         self.source_map.add(tid, stmt.span);
-        self.enum_terms.insert(tid, name.clone());
+        self.enum_terms.insert(tid, identity);
         self.scope_bind(name.clone(), tid);
     }
 
@@ -177,12 +180,18 @@ impl Compiler {
         unavailable: HashSet<String>,
         late_fns: &HashSet<String>,
     ) {
-        let mut items: Vec<(&str, &EnumVariant)> = Vec::new();
+        let mut items: Vec<(String, &EnumVariant)> = Vec::new();
         for stmt in stmts {
             if let StmtKind::EnumDecl { name, variants } = &stmt.kind
                 && self.classes.is_enum_declaration(name, stmt.span)
             {
-                items.extend(variants.iter().filter(|v| !v.data.is_empty()).map(|v| (name.as_str(), v)));
+                let identity = self.classes.qualify(name);
+                items.extend(
+                    variants
+                        .iter()
+                        .filter(|v| !v.data.is_empty())
+                        .map(|v| (identity.clone(), v)),
+                );
             }
         }
         if items.is_empty() {
@@ -241,12 +250,13 @@ impl Compiler {
         }
         for (first, second) in cycles {
             let message = if first == second {
-                format!("the constant data of `{}` reads itself", tags[first])
+                format!("the constant data of `{}` reads itself", strip_module(&tags[first]))
             } else {
                 format!(
                     "the constant data of `{}` and `{}` read each other, so neither can be \
                      evaluated first",
-                    tags[first], tags[second]
+                    strip_module(&tags[first]),
+                    strip_module(&tags[second])
                 )
             };
             self.error_at(items[first].1.span, message);
@@ -258,7 +268,7 @@ impl Compiler {
             late_fns,
         });
         for i in order {
-            let (name, variant) = items[i];
+            let (name, variant) = (items[i].0.as_str(), items[i].1);
             let mut keys: Vec<ConstantId> = Vec::new();
             let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
             for d in &variant.data {
@@ -434,9 +444,10 @@ impl Compiler {
                             v.fields.join(", ")
                         )
                     };
+                    let shown = strip_module(enum_name);
                     self.error_at(
                         span,
-                        format!("{enum_name}.{member} {takes}, got {}", args.len()),
+                        format!("{shown}.{member} {takes}, got {}", args.len()),
                     );
                 }
                 let payload = args.iter().map(|a| self.compile_expr(a)).collect();
@@ -477,8 +488,9 @@ impl Compiler {
         self.emit_term(TermOp::Error(cid), smallvec![], None)
     }
 
-    fn unknown_variant_message(&self, enum_name: &str, member: &str) -> String {
-        let names = self.enum_variant_names(enum_name);
+    fn unknown_variant_message(&self, identity: &str, member: &str) -> String {
+        let names = self.enum_variant_names(identity);
+        let enum_name = strip_module(identity);
         let names: Vec<&str> = names.iter().map(String::as_str).collect();
         match closest_name(member, &names) {
             Some(close) => format!(
@@ -518,11 +530,13 @@ impl Compiler {
             }
         }
         for (alias, module) in &self.module_aliases {
-            for (enum_name, _) in self.classes.enums() {
-                if let Some(v) = self.enum_variant_def(enum_name, name)
+            for (identity, _) in self.classes.enums() {
+                // The module exports the enum under its bare name.
+                let enum_name = strip_module(identity);
+                if let Some(v) = self.enum_variant_def(identity, name)
                     && self
                         .scope_lookup(&format!("{module}::{enum_name}"))
-                        .is_some_and(|tid| self.enum_terms.contains_key(&tid))
+                        .is_some_and(|tid| self.enum_terms.get(&tid).is_some_and(|e| e == identity))
                 {
                     spellings.push((other_shape(v), format!("{alias}.{enum_name}.{name}")));
                 }
@@ -630,9 +644,10 @@ impl Compiler {
                 self.error_at(
                     span,
                     format!(
-                        "the pattern `{written}{}` has {}, but {enum_name}.{variant} {shape}",
+                        "the pattern `{written}{}` has {}, but {}.{variant} {shape}",
                         if fields == 0 { "" } else { "(…)" },
                         count_noun(fields, "field"),
+                        strip_module(&enum_name),
                     ),
                 );
             }

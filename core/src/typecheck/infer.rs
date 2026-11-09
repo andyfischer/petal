@@ -380,17 +380,17 @@ pub fn class_matching_field_reads(evidence: &[Evidence], classes: &ClassTable) -
         return None;
     }
     let mut only = None;
-    for (_, def) in classes.iter() {
+    for (id, def) in classes.iter() {
         // Scope, not just existence: a module-private class cannot be named in
         // an annotation here, so it must not be named as a hint either.
-        if classes.lookup(&def.name).is_none() {
+        let Some(spelling) = classes.spelling_of(id) else {
             continue;
-        }
+        };
         if fields.iter().all(|f| def.field(f).is_some()) {
             if only.is_some() {
                 return None;
             }
-            only = Some(def.name.clone());
+            only = Some(spelling.to_string());
         }
     }
     only

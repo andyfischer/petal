@@ -70,11 +70,16 @@ pub struct Compiler {
     assign_span: Option<SourceSpan>,
     last_term_in_block: HashMap<BlockId, TermId>,
     scopes: Vec<HashMap<String, TermId>>,
-    // Every enum declared by a module compiled so far, by name (unique in a
-    // compilation, like a class name), and the term each enum's name is
-    // bound to. A name that resolves to one of those terms *is* that enum,
-    // which is what lets `Color.red` compile to the variant. See `enums.rs`.
+    // Every enum declared by a module compiled so far, by identity (`Color`
+    // in the entry file, `./paint::Color` in another module: unique in a
+    // compilation), and the term each enum's name is bound to. A name that
+    // resolves to one of those terms *is* that enum, which is what lets
+    // `Color.red` compile to the variant. See `enums.rs`.
     enum_terms: HashMap<TermId, String>,
+    // The same for classes: each class constructor's term, with the class's
+    // identity. What lets a file's imports say which `Circle` a type name
+    // means (`visible_class_names`).
+    class_terms: HashMap<TermId, String>,
     // Set while an enum's constant data is being compiled: what a data
     // expression cannot use.
     enum_data_scope: Option<enums::EnumDataScope>,
@@ -579,6 +584,7 @@ impl Compiler {
             last_term_in_block: HashMap::new(),
             scopes: Vec::new(),
             enum_terms: HashMap::new(),
+            class_terms: HashMap::new(),
             enum_data_scope: None,
             next_register: HashMap::new(),
             fn_signatures: HashMap::new(),
@@ -2156,50 +2162,91 @@ impl Compiler {
     }
 
     /// The class and enum names the file being compiled may spell — in an
-    /// annotation or in call position, which are the same name. A file sees
-    /// the classes and enums it declares plus the ones it imports; a module-private class is invisible
-    /// outside its own file, exactly as its constructor is. (Built-in classes
-    /// need no import and are added by [`ClassTable::lookup`] itself.)
+    /// annotation or in call position, which are the same name — each with
+    /// the identity it means (`./shapes::Circle`). A file sees the classes and
+    /// enums it declares plus the ones it imports; a module-private class is
+    /// invisible outside its own file, exactly as its constructor is.
+    /// (Built-in classes need no import and are added by
+    /// [`ClassTable::lookup`] itself.)
     ///
-    /// An *alias* import (`import shapes`) counts too, even though it binds no
-    /// bare name: the constructor is reachable as `shapes.Circle(…)` while a
-    /// type annotation has no qualified spelling, so restricting the type to
-    /// selective imports would make an exported class unusable in a signature.
-    fn visible_class_names(&self, module: &LoadedModule, stmts: &[Stmt]) -> HashSet<String> {
-        let mut names: HashSet<String> = stmts
-            .iter()
-            .filter_map(|s| match &s.kind {
-                StmtKind::ClassDecl { name, .. } | StmtKind::EnumDecl { name, .. } => {
-                    Some(name.clone())
-                }
-                _ => None,
-            })
-            .collect();
+    /// A bare name means what the scope binds it to after the imports, so the
+    /// import tiers and their ambiguity rule hold in type position too, and
+    /// the file's own declaration wins over every import. An import that binds
+    /// no bare name still offers its exports bare, when nothing else does: the
+    /// constructor is reachable as `shapes.Circle(…)`, and a type annotation
+    /// should reach the class as well. Each export is also reachable through
+    /// the module's qualifier, as `shapes.Circle`.
+    fn visible_class_names(
+        &self,
+        module: &LoadedModule,
+        stmts: &[Stmt],
+    ) -> HashMap<String, String> {
+        let type_of = |tid: TermId| {
+            self.enum_terms
+                .get(&tid)
+                .or_else(|| self.class_terms.get(&tid))
+                .cloned()
+        };
+        let export_type =
+            |m: &str, name: &str| self.scope_lookup(&format!("{m}::{name}")).and_then(type_of);
+        let mut names: HashMap<String, String> = HashMap::new();
+        // Bare names an import offers that the scope does not bind bare:
+        // `None` once two imports offer different types.
+        let mut unbound: HashMap<String, Option<String>> = HashMap::new();
         for import in &module.imports {
-            let Some(exports) = self.module_exports.get(&import.decl.module) else {
+            let m = &import.decl.module;
+            let Some(exports) = self.module_exports.get(m) else {
                 continue;
             };
-            match &import.decl.names {
+            let offered: Vec<&String> = match &import.decl.names {
                 // `import m: A, B` — only the names asked for.
-                Some(selected) if !import.implicit => names.extend(selected.iter().cloned()),
-                // An alias or implicit import carries the module's whole
-                // exported surface.
-                _ => names.extend(exports.iter().cloned()),
+                Some(selected) if !import.implicit => selected.iter().collect(),
+                // A plain, alias or implicit import carries the module's
+                // whole exported surface.
+                _ => exports.iter().collect(),
+            };
+            for name in offered {
+                match self.scope_lookup(name) {
+                    Some(tid) => {
+                        if let Some(identity) = type_of(tid) {
+                            names.insert(name.clone(), identity);
+                        }
+                    }
+                    None => {
+                        if let Some(identity) = export_type(m, name) {
+                            unbound
+                                .entry(name.clone())
+                                .and_modify(|seen| {
+                                    if seen.as_ref() != Some(&identity) {
+                                        *seen = None;
+                                    }
+                                })
+                                .or_insert(Some(identity));
+                        }
+                    }
+                }
+            }
+        }
+        for (name, identity) in unbound {
+            if let Some(identity) = identity {
+                names.entry(name).or_insert(identity);
+            }
+        }
+        for (alias, m) in &self.module_aliases {
+            for name in self.module_exports.get(m).into_iter().flatten() {
+                if let Some(identity) = export_type(m, name) {
+                    names.insert(format!("{alias}.{name}"), identity);
+                }
+            }
+        }
+        for stmt in stmts {
+            if let StmtKind::ClassDecl { name, .. } | StmtKind::EnumDecl { name, .. } = &stmt.kind {
+                names.insert(name.clone(), self.classes.qualify(name));
             }
         }
         names
     }
 
-    /// Each module namespace this file can spell, with the names that module
-    /// exports. `bind_imports` has already filled `module_aliases` by the time
-    /// this runs, and dependencies compile before their importers, so
-    /// `module_exports` is complete for everything reachable — including the
-    /// re-exports a facade like `bloom` collects with `pub import m`.
-    ///
-    /// This is what lets the checker treat `bloom.button(r, label)` as a call
-    /// to `button` rather than as a method on an opaque value. Without it an
-    /// annotation on a library is checked only where a caller wrote
-    /// `import bloom: button`, which is the rarer of the two call styles.
     /// The module qualifiers this file may write in a type annotation
     /// (`c: sh.Circle`), each with the module as the file spelled it, for the
     /// "module './shapes' has no export" warning. The same namespaces as
@@ -2221,6 +2268,16 @@ impl Compiler {
             .collect()
     }
 
+    /// Each module namespace this file can spell, with the names that module
+    /// exports. `bind_imports` has already filled `module_aliases` by the time
+    /// this runs, and dependencies compile before their importers, so
+    /// `module_exports` is complete for everything reachable — including the
+    /// re-exports a facade like `bloom` collects with `pub import m`.
+    ///
+    /// This is what lets the checker treat `bloom.button(r, label)` as a call
+    /// to `button` rather than as a method on an opaque value. Without it an
+    /// annotation on a library is checked only where a caller wrote
+    /// `import bloom: button`, which is the rarer of the two call styles.
     fn visible_namespaces(&self) -> HashMap<String, HashSet<String>> {
         self.module_aliases
             .iter()
@@ -2302,6 +2359,9 @@ impl Compiler {
         // Scope first: `collect_type_decls` resolves `fn Circle.diameter(...)`
         // against what this file can see, so a method on another module's
         // private class is an error rather than a silent extension.
+        // This module's types take identities under its canonical name; the
+        // entry file's keep their bare names.
+        self.classes.set_namespace(module.name.clone());
         let visible = self.visible_class_names(module, stmts);
         self.classes.set_scope(visible);
         let qualifiers = self.type_qualifiers();

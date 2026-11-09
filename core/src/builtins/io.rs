@@ -40,16 +40,29 @@ pub(crate) fn type_name_id(heap: &mut crate::heap::Heap, v: Value) -> crate::hea
     // A class instance reports its class rather than the underlying `record`:
     // the class name is the more specific true answer, and it is what a
     // `type(x) == "Rect"` test wants. Untagged records still say "record".
+    //
+    // Both report the bare name: a class or enum another module declares
+    // carries its module in its identity (`./shapes::Circle`), which `type`
+    // leaves out, so two same-named types answer alike.
     match v {
         Value::Map(id) => match heap.map_class(id) {
-            Some(class) => class,
+            Some(class) => {
+                let text = heap.get_string(class);
+                let bare = crate::program::strip_module(text);
+                if bare.len() == text.len() {
+                    class
+                } else {
+                    let bare = bare.to_string();
+                    heap.intern_str(&bare)
+                }
+            }
             None => heap.intern_str(v.type_name()),
         },
         // A variant reports its enum, as a class instance reports its class.
         Value::EnumVariant { tag, .. } => {
             match crate::program::split_enum_tag(heap.tag_str(tag)).0 {
                 Some(name) => {
-                    let name = name.to_string();
+                    let name = crate::program::strip_module(name).to_string();
                     heap.alloc_string(name)
                 }
                 None => heap.intern_str(v.type_name()),

@@ -957,6 +957,14 @@ pub struct Heap {
     /// asks about a variant: freezing a table that holds `Kind.park` does not
     /// make `Kind.lake`, which shares its empty payload, read as frozen.
     frozen_tags: Vec<u64>,
+    /// Bare enum names a host may write in a tag for an enum another module
+    /// declares, with that enum's identity: `Kind` → `./config::Kind`, so a
+    /// host's `"Kind.park"` builds the variant the program's `Kind.park` is.
+    /// Only names exactly one declared enum has, and no entry-file enum (whose
+    /// identity is already the bare name). Installed from the running
+    /// program's enums ([`set_enum_aliases`](Self::set_enum_aliases)); empty
+    /// for a program whose enums are all the entry file's.
+    enum_aliases: std::sync::Arc<std::collections::HashMap<String, String>>,
 }
 
 /// How many frozen (permanent) objects a heap holds, per kind. See
@@ -1046,6 +1054,7 @@ impl Heap {
             gray_overload_sets: Vec::new(),
             empty_payload: None,
             frozen_tags: Vec::new(),
+            enum_aliases: Default::default(),
             dup_stats: DupStats::new(),
             alloc_stats: AllocStats::new(),
         }
@@ -1855,9 +1864,40 @@ impl Heap {
     }
 
     /// The tag for a variant named `name`, interning it.
+    ///
+    /// A tag with no module part (`"Kind.park"`) whose enum name is one of
+    /// the [`enum_aliases`](Self::set_enum_aliases) becomes that enum's
+    /// qualified tag (`"./config::Kind.park"`): what a host that writes the
+    /// bare name means when exactly one enum has it.
     pub fn enum_tag_str(&mut self, name: &str) -> EnumTag {
+        if !self.enum_aliases.is_empty()
+            && let Some(qualified) = self.qualified_tag(name)
+        {
+            let id = self.intern_str(&qualified);
+            return self.enum_tag(id);
+        }
         let id = self.intern_str(name);
         self.enum_tag(id)
+    }
+
+    /// `name` with its enum's module put in, when it names an aliased enum
+    /// bare.
+    fn qualified_tag(&self, name: &str) -> Option<String> {
+        if name.contains("::") {
+            return None;
+        }
+        let (Some(enum_name), variant) = crate::program::split_enum_tag(name) else {
+            return None;
+        };
+        let identity = self.enum_aliases.get(enum_name)?;
+        Some(crate::program::enum_variant_tag(identity, variant))
+    }
+
+    /// Install the bare enum names a host-built tag may use for a module's
+    /// enum (see [`enum_tag_str`](Self::enum_tag_str)). Replaces the previous
+    /// set: called when a program's enum layout is installed.
+    pub fn set_enum_aliases(&mut self, aliases: std::sync::Arc<std::collections::HashMap<String, String>>) {
+        self.enum_aliases = aliases;
     }
 
     /// The tag `name` already is, if it is one: an interned string some

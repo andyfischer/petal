@@ -88,14 +88,19 @@ impl ClassDef {
     }
 }
 
-/// The classes of one compilation, by name.
+/// The classes of one compilation, by identity.
 ///
-/// The *namespace* spans the compilation — a [`ClassId`] means the same thing
-/// in every module, and two modules may not declare the same class name — but
-/// what a given file can *see* is narrower: a class name resolves only where
-/// its constructor does. [`ClassTable::set_scope`] installs that per-file view
-/// and [`ClassTable::lookup`] respects it, so a module-private class is not a
-/// type name in an importer either (built-in classes are always in scope).
+/// A class or enum belongs to the module that declares it: its **identity**
+/// is its bare name in the entry file (`Phase`) and `module::Name` in any
+/// other module (`./level::Phase`, `ui::Align`), the module half being the
+/// module's canonical name (see [`ClassTable::set_namespace`]). So two
+/// modules may each declare `enum Phase`, and a [`ClassId`] still means the
+/// same thing in every module. What a given file can *see*, and by which
+/// spelling, is narrower: a class name resolves only where its constructor
+/// does. [`ClassTable::set_scope`] installs that per-file view (written
+/// spelling → identity) and [`ClassTable::lookup`] respects it, so a
+/// module-private class is not a type name in an importer either (built-in
+/// classes are always in scope).
 #[derive(Debug, Clone)]
 pub struct ClassTable {
     defs: Vec<ClassDef>,
@@ -108,14 +113,19 @@ pub struct ClassTable {
     /// cross-module duplicate. Absent for built-ins and for a compilation that
     /// passes no module name.
     origins: HashMap<ClassId, String>,
-    /// The class names in scope for the file currently being compiled, or
-    /// `None` for "every declared class" — the default, which is what a
+    /// The type names in scope for the file currently being compiled, by
+    /// the spelling the file writes (`Circle`, or `sh.Circle` through a
+    /// module qualifier) to the identity it means, or `None` for "every
+    /// declared class, by identity" — the default, which is what a
     /// single-file compilation and the unit tests want.
-    scope: Option<HashSet<String>>,
+    scope: Option<HashMap<String, String>>,
+    /// The canonical name of the module whose declarations are being
+    /// collected, which prefixes their identities; `None` for the entry file.
+    namespace: Option<String>,
     /// The compilation's enums: the other kind of declared, named type. They
     /// live here so that everything holding the table to resolve or spell a
     /// type (`k: Kind`, "expected `Kind`") knows them without a second table
-    /// to pass. An enum's name is unique in a compilation, as a class's is.
+    /// to pass. An enum's identity is unique in a compilation, as a class's is.
     enums: Vec<EnumEntry>,
     enum_by_name: HashMap<String, EnumId>,
     /// The module qualifiers the current file can write in type position
@@ -162,6 +172,7 @@ impl ClassTable {
             builtin_names: HashSet::new(),
             origins: HashMap::new(),
             scope: None,
+            namespace: None,
             enums: Vec::new(),
             enum_by_name: HashMap::new(),
             qualifiers: HashMap::new(),
@@ -173,12 +184,42 @@ impl ClassTable {
         table
     }
 
-    /// Restrict [`ClassTable::lookup`] to `names` (plus the built-in classes,
-    /// which no file has to import). Called once per module, with the class
+    /// Restrict [`ClassTable::lookup`] to `names`, each a spelling the file
+    /// may write mapped to the identity it means (plus the built-in classes,
+    /// which no file has to import). Called once per module, with the type
     /// names that module declares or imports — see
     /// `Compiler::visible_class_names`.
-    pub fn set_scope(&mut self, names: HashSet<String>) {
+    pub fn set_scope(&mut self, names: HashMap<String, String>) {
         self.scope = Some(names);
+    }
+
+    /// The module whose declarations [`Self::declare`] and
+    /// [`Self::declare_enum`] take next: `Some(canonical name)` for an
+    /// imported module, `None` for the entry file. It prefixes their
+    /// identities, so `enum Phase` in `./level` is `./level::Phase`.
+    pub fn set_namespace(&mut self, namespace: Option<String>) {
+        self.namespace = namespace;
+    }
+
+    /// The identity a declaration of `name` takes in the current namespace.
+    pub fn qualify(&self, name: &str) -> String {
+        match &self.namespace {
+            Some(m) => format!("{m}::{name}"),
+            None => name.to_string(),
+        }
+    }
+
+    /// The identity `written` names in the current scope, if any.
+    fn resolve_spelling(&self, written: &str) -> Option<String> {
+        match &self.scope {
+            Some(scope) => match scope.get(written) {
+                Some(identity) => Some(identity.clone()),
+                None => self.builtin_names.contains(written).then(|| written.to_string()),
+            },
+            // Every identity is a bare name where no scope is set (one file,
+            // the entry), so a qualifier has nothing to choose between.
+            None => Some(written.rsplit('.').next().unwrap_or(written).to_string()),
+        }
     }
 
     /// Drop the per-file view: every declared class resolves again.
@@ -221,10 +262,11 @@ impl ClassTable {
     /// class could never be reached in type position: the annotation would
     /// keep meaning the primitive while the constructor produced a record, and
     /// the mismatch would print as "expected `int`, found `int`".
-    pub fn declare(&mut self, def: ClassDef, module: Option<&str>) -> Result<ClassId, String> {
+    pub fn declare(&mut self, mut def: ClassDef, module: Option<&str>) -> Result<ClassId, String> {
         if let Some(message) = self.name_taken("class", &def.name, module) {
             return Err(message);
         }
+        def.name = self.qualify(&def.name);
         if let Some(&builtin) = self.by_name.get(&def.name) {
             self.defs[builtin.0 as usize] = def;
             self.remember_origin(builtin, module);
@@ -284,28 +326,45 @@ impl ClassTable {
         Ok(())
     }
 
-    /// The class `name` refers to *in the current scope*. A name the scope
-    /// does not carry is `None` even though the table holds it — that is what
-    /// keeps a module-private class from resolving as a type in an importer.
+    /// The class `name` refers to *in the current scope*: a bare name
+    /// (`Circle`) or one through a module qualifier (`sh.Circle`). A name the
+    /// scope does not carry is `None` even though the table holds it — that
+    /// is what keeps a module-private class from resolving as a type in an
+    /// importer.
     pub fn lookup(&self, name: &str) -> Option<ClassId> {
-        let id = self.by_name.get(name).copied()?;
+        self.by_name.get(&self.resolve_spelling(name)?).copied()
+    }
+
+    /// The class whose identity is `identity` (`Rect`, `./shapes::Circle`),
+    /// ignoring the current scope. Used where the question is "which class is
+    /// this tag?" rather than "can this file see it?".
+    pub fn lookup_anywhere(&self, identity: &str) -> Option<ClassId> {
+        self.by_name.get(identity).copied()
+    }
+
+    /// How the current file spells the class `id`: its bare name, when the
+    /// scope reaches it by one. `None` for a class the file cannot name bare.
+    pub fn spelling_of(&self, id: ClassId) -> Option<&str> {
+        let identity = self.name_of(id);
         match &self.scope {
-            Some(scope) if !scope.contains(name) && !self.builtin_names.contains(name) => None,
-            _ => Some(id),
+            None => Some(crate::program::strip_module(identity)),
+            Some(scope) => scope
+                .iter()
+                .find(|(written, to)| *to == identity && !written.contains('.'))
+                .map(|(written, _)| written.as_str())
+                .or_else(|| {
+                    (self.builtin_names.contains(identity) && !scope.contains_key(identity))
+                        .then_some(identity)
+                }),
         }
     }
 
-    /// The class `name` refers to anywhere in the compilation, ignoring the
-    /// current scope. Used where the question is "does this name already
-    /// belong to a class?" rather than "can this file see it?".
-    pub fn lookup_anywhere(&self, name: &str) -> Option<ClassId> {
-        self.by_name.get(name).copied()
-    }
-
-    /// Why `name` cannot be declared as a `kind` (`class` or `enum`), if it
-    /// cannot: it is a built-in type name, or a user class or an enum already
-    /// has it. The two share the one namespace of declared type names,
-    /// whichever is declared first and in whichever file.
+    /// Why `name` cannot be declared as a `kind` (`class` or `enum`) in the
+    /// current namespace, if it cannot: it is a built-in type name, or a user
+    /// class or an enum of the same module already has it. The two share the
+    /// one namespace of declared type names within a module, whichever is
+    /// declared first. Another module's `Phase` is a different identity, so
+    /// it never collides.
     fn name_taken(&self, kind: &str, name: &str, module: Option<&str>) -> Option<String> {
         // `Foo?` in type position means "a `Foo` or nil", so a type named
         // `Foo?` could never be written (docs/proposals/nullable-types.md).
@@ -320,8 +379,9 @@ impl ClassTable {
                 "{kind} `{name}` collides with the built-in type name `{name}`: pick another name"
             ));
         }
-        let class = self.by_name.get(name).filter(|id| !self.get(**id).builtin);
-        let (taken_by, prev) = match (class, self.enum_by_name.get(name)) {
+        let identity = self.qualify(name);
+        let class = self.by_name.get(&identity).filter(|id| !self.get(**id).builtin);
+        let (taken_by, prev) = match (class, self.enum_by_name.get(&identity)) {
             (Some(id), _) => ("class", self.origins.get(id)),
             (None, Some(id)) => ("enum", self.enums[id.0 as usize].origin.as_ref()),
             (None, None) => return None,
@@ -349,10 +409,11 @@ impl ClassTable {
         if let Some(message) = self.name_taken("enum", name, module) {
             return Err(message);
         }
+        let identity = self.qualify(name);
         let id = EnumId(self.enums.len() as u32);
-        self.enum_by_name.insert(name.to_string(), id);
+        self.enum_by_name.insert(identity.clone(), id);
         self.enums.push(EnumEntry {
-            name: name.to_string(),
+            name: identity,
             def,
             origin: module.map(str::to_string),
             span,
@@ -360,21 +421,22 @@ impl ClassTable {
         Ok(id)
     }
 
-    /// The enum declared as `name` anywhere in the compilation, whatever the
-    /// current scope.
-    pub fn enum_named(&self, name: &str) -> Option<&EnumDef> {
-        self.enum_by_name.get(name).map(|id| self.enum_def(*id))
+    /// The enum whose identity is `identity` (`Phase`, `./level::Phase`),
+    /// whatever the current scope.
+    pub fn enum_named(&self, identity: &str) -> Option<&EnumDef> {
+        self.enum_by_name.get(identity).map(|id| self.enum_def(*id))
     }
 
     /// Whether the statement at `span` is the declaration of the enum `name`
-    /// — false for a redeclaration, which was refused and declares nothing.
+    /// in the current namespace — false for a redeclaration, which was
+    /// refused and declares nothing.
     pub fn is_enum_declaration(&self, name: &str, span: SourceSpan) -> bool {
         self.enum_by_name
-            .get(name)
+            .get(&self.qualify(name))
             .is_some_and(|id| self.enums[id.0 as usize].span == span)
     }
 
-    /// Every enum, in declaration order.
+    /// Every enum, by identity, in declaration order.
     pub fn enums(&self) -> impl Iterator<Item = (&str, &EnumDef)> {
         self.enums.iter().map(|e| (e.name.as_str(), &e.def))
     }
@@ -398,14 +460,18 @@ impl ClassTable {
 
     /// `q.Name` in type position: the class or enum `Name` that the module
     /// bound to qualifier `q` exports. It names the same type a bare `Name`
-    /// would (docs/proposals/module-name-collisions.md, part A), whether or
-    /// not the file's scope also carries it bare.
+    /// would where nothing else claims the bare name
+    /// (docs/proposals/module-name-collisions.md, parts A and C).
     fn qualified_type(&self, q: &str, member: &str) -> Option<Type> {
         if !self.qualifiers.get(q)?.exports.contains(member) {
             return None;
         }
-        let class = self.by_name.get(member).copied().map(Type::Class);
-        class.or_else(|| self.enum_by_name.get(member).copied().map(Type::EnumOf))
+        // The scope maps `q.Name` to the export's module-scoped identity
+        // (part C), so this is the module's own `Name` even where the file
+        // declares or imports another type of that bare name.
+        let written = format!("{q}.{member}");
+        let class = self.lookup(&written).map(Type::Class);
+        class.or_else(|| self.lookup_enum(&written).map(Type::EnumOf))
     }
 
     /// Why a qualified type name (`sh.Hidden`, `nope.Circle`) resolves to
@@ -428,11 +494,18 @@ impl ClassTable {
     /// The enum `name` refers to *in the current scope*: like a class, an
     /// enum the file neither declares nor imports is not a type it can name.
     pub fn lookup_enum(&self, name: &str) -> Option<EnumId> {
-        let id = self.enum_by_name.get(name).copied()?;
-        match &self.scope {
-            Some(scope) if !scope.contains(name) => None,
-            _ => Some(id),
-        }
+        self.enum_by_name.get(&self.resolve_spelling(name)?).copied()
+    }
+
+    /// How a diagnostic spells the type `identity`: the bare name, as a file
+    /// writes it — unless another class or enum of the compilation shares
+    /// that bare name, when "expected `Circle`, found `Circle`" would say
+    /// nothing, and the identity (`./shapes::Circle`) is spelled out.
+    pub fn display_name<'a>(&self, identity: &'a str) -> &'a str {
+        let bare = crate::program::strip_module(identity);
+        let shares = |other: &str| other != identity && crate::program::strip_module(other) == bare;
+        let shared = self.defs.iter().any(|d| shares(&d.name)) || self.enums.iter().any(|e| shares(&e.name));
+        if shared { identity } else { bare }
     }
 
     pub fn enum_name(&self, id: EnumId) -> &str {
@@ -447,8 +520,9 @@ impl ClassTable {
         &self.defs[id.0 as usize]
     }
 
-    /// The declared name of `id` — what a diagnostic prints for
-    /// [`Type::Class`](crate::types::Type::Class).
+    /// The identity of `id` (`Rect`, `./shapes::Circle`): the tag its
+    /// instances carry. A diagnostic prints [`crate::program::strip_module`]
+    /// of it.
     pub fn name_of(&self, id: ClassId) -> &str {
         &self.defs[id.0 as usize].name
     }
@@ -577,10 +651,13 @@ pub fn qualified_method_name(class: &str, method: &str) -> String {
 /// ordinary function name. The inverse of [`qualified_method_name`], and the
 /// one test for "does this function's first parameter come from a receiver the
 /// call site supplied implicitly?" — a module-qualified function uses `::`, so
-/// the dot is unambiguous.
+/// the dot is unambiguous. The class half may carry its module
+/// (`./shapes::Circle.area`, whose module path may itself hold dots); only
+/// the part after the last `::` must be a plain name.
 pub fn split_qualified_method_name(name: &str) -> Option<(&str, &str)> {
-    let (class, method) = name.split_once('.')?;
-    if class.is_empty() || method.is_empty() || method.contains('.') {
+    let (class, method) = name.rsplit_once('.')?;
+    let bare = crate::program::strip_module(class);
+    if bare.is_empty() || method.is_empty() || bare.contains('.') || method.contains(':') {
         return None;
     }
     Some((class, method))

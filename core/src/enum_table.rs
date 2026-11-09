@@ -100,6 +100,15 @@ impl EnumLayout {
             .collect()
     }
 
+    /// The bare names a host may write for the enums other modules declare,
+    /// each with the identity it means (see [`Heap::set_enum_aliases`]): a
+    /// name exactly one enum has, when that enum is not the entry file's.
+    /// Two enums sharing a name leave it out, and the host writes the
+    /// qualified tag; an entry-file enum *is* its bare name already.
+    pub fn host_aliases(&self) -> HashMap<String, String> {
+        host_aliases(self.enums.iter().map(|e| e.name.as_str()))
+    }
+
     /// The index of the enum named `name`.
     pub fn enum_index(&self, name: &str) -> Option<usize> {
         self.enums.binary_search_by(|e| e.name.as_str().cmp(name)).ok()
@@ -111,6 +120,24 @@ impl EnumLayout {
         let shape = &self.enums[self.enum_index(enum_name?)?];
         (shape.first..shape.first + shape.len).find(|&slot| self.variants[slot as usize].tag == tag)
     }
+}
+
+/// [`EnumLayout::host_aliases`] over enum identities.
+pub fn host_aliases<'a>(identities: impl Iterator<Item = &'a str>) -> HashMap<String, String> {
+    let mut by_bare: HashMap<&str, Option<&str>> = HashMap::new();
+    for identity in identities {
+        let bare = crate::program::strip_module(identity);
+        // An entry-file enum's identity is its bare name: it owns the name.
+        let module_enum = (bare.len() != identity.len()).then_some(identity);
+        by_bare
+            .entry(bare)
+            .and_modify(|seen| *seen = None)
+            .or_insert(module_enum);
+    }
+    by_bare
+        .into_iter()
+        .filter_map(|(bare, identity)| Some((bare.to_string(), identity?.to_string())))
+        .collect()
 }
 
 /// An exact map from an interned string's id to a small number: open
@@ -232,6 +259,9 @@ impl EnumTable {
     #[cold]
     fn rebuild(&mut self, layout: &Arc<EnumLayout>, heap: &mut Heap) {
         self.clear();
+        // Before the tags: none of the layout's own is bare and aliased, but
+        // a host's built from here on may be.
+        heap.set_enum_aliases(Arc::new(layout.host_aliases()));
         self.tags = layout.variants.iter().map(|v| heap.enum_tag_str(&v.tag)).collect();
         self.records = vec![None; layout.variants.len()];
         self.by_tag = IdIndex::build(&self.tags);

@@ -817,10 +817,20 @@ pub const ENUM_FROM_BUILTIN: &str = "__enum_from";
 /// builtin that returns a fresh container.
 pub const ENUM_ALL_BUILTIN: &str = "__enum_all";
 
-/// The tag a variant value carries: `"Kind.park"`. An enum name is unique in
-/// a compilation, so the tag names one variant of one enum.
+/// The tag a variant value carries: `"Kind.park"` for an enum the entry file
+/// declares, `"./level::Kind.park"` for one another module declares.
+/// `enum_name` is the enum's identity, which is unique in a compilation, so
+/// the tag names one variant of one enum.
 pub fn enum_variant_tag(enum_name: &str, variant: &str) -> String {
     format!("{enum_name}.{variant}")
+}
+
+/// A class or enum identity, or a variant tag, without its module part:
+/// `./level::Kind` → `Kind`, `./level::Kind.park` → `Kind.park`. What
+/// `print`, `str` and `type()` show. `::` never appears in an identifier, so
+/// the module part is everything up to the last one.
+pub fn strip_module(name: &str) -> &str {
+    name.rsplit_once("::").map_or(name, |(_, rest)| rest)
 }
 
 /// Split a variant value's tag into its enum's name and the variant's own.

@@ -1,0 +1,4 @@
+// One module declaring a class twice: an error, and it is the module's.
+import ./twice
+
+print(1)

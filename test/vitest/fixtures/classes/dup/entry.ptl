@@ -1,6 +1,9 @@
-// Two unrelated modules declaring the same class name: still an error (the
-// class namespace spans the compilation), but the error names both files.
+// Two unrelated modules declaring the same class name: each class belongs to
+// its own module, so both compile, and each module's `Dup` is its own.
 import ./dup_a
 import ./dup_b
 
-print(1)
+let a = dup_a.Dup(1)
+let b = dup_b.Dup(1)
+print(a, b, type(a), type(b))
+print(a == b)

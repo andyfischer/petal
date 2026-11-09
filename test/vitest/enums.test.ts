@@ -172,8 +172,13 @@ describe("variants are members of their enum", () => {
     expect(runPetalFile(selective)).toBe("3");
     const priv = project({ "shapes.ptl": shapes, "main.ptl": "import ./shapes as s\nprint(s.Hidden.h)" });
     expect(runPetalFileError(priv)).toMatch(/has no export 'Hidden'/);
-    const dup = project({ "shapes.ptl": shapes, "main.ptl": "import ./shapes\nenum Shape\n  a,\nend" });
-    expect(runPetalFileError(dup)).toMatch(/enum `Shape` is already declared in `.*shapes.*`/);
+    // The file's own `Shape` is another enum than the import's, and wins the
+    // bare name; the import's stays reachable through its qualifier.
+    const own = project({
+      "shapes.ptl": shapes,
+      "main.ptl": "import ./shapes\nenum Shape\n  a,\nend\nprint(Shape.a, shapes.Shape.dot, Shape.all)",
+    });
+    expect(runPetalFile(own)).toBe("Shape.a Shape.dot [Shape.a]");
   });
 
   it("two enums may declare one variant name; equality is enum, variant and payload", () => {
@@ -183,8 +188,12 @@ describe("variants are members of their enum", () => {
       "print(Kind.park == Kind.park, Kind.park == Use.park, Kind.park != Use.park)\n" +
       "print(Color.custom(1, 2, 3) == Color.custom(1, 2, 3), Color.custom(1, 2, 3) == Color.custom(1, 2, 4))";
     expect(lines(code)).toEqual(["true false true", "true false"]);
-    // The collisions `check` used to warn about no longer exist.
-    expect(checkJson(code).warnings).toEqual([]);
+    // The collisions `check` used to warn about no longer exist; what it
+    // says is that comparing variants of two enums is always false (true).
+    expect(checkJson(code).warnings.map((w: any) => w.message)).toEqual([
+      "comparing variants of two different enums (`Kind` and `Use`) is always false",
+      "comparing variants of two different enums (`Kind` and `Use`) is always true",
+    ]);
     expect(checkJson("let red = 5\nenum Color\n  red,\nend\nprint(red, Color.red)").warnings).toEqual([]);
   });
 });

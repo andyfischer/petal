@@ -34,7 +34,8 @@ print("== values ==")
 let k = Kind.park
 print(k, "is a", type(k), "named", k.name)
 print("shape:", k.shape, " use:", k.use, " cost:", k.cost)
-print("Kind.park == Use.park?", Kind.park == Use.park)
+// `Kind.park == Use.park` is always false, and the checker warns about it.
+print("Kind.park and Use.park share a name?", Kind.park.name == Use.park.name)
 print("Kind.park == Kind.park?", Kind.park == Kind.park)
 
 let op = Op.fight("East Tremont", true)

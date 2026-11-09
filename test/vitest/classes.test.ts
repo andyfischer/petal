@@ -501,20 +501,26 @@ describe("classes across modules", () => {
     expect(out).toBe("7");
   });
 
-  it("names both files when two modules declare the same class", () => {
-    const stderr = runPetalFileError(`${FIXTURES}/dup/entry.ptl`);
-    expect(stderr).toMatch(/class `Dup` is already declared/);
-    expect(stderr).toMatch(/dup_a\.ptl/);
-    expect(stderr).toMatch(/dup_b\.ptl/);
+  // A class belongs to the module that declares it
+  // (docs/proposals/module-name-collisions.md, part C): two modules may each
+  // declare `Dup`, and their instances are different classes that print alike.
+  it("lets two modules declare the same class name", () => {
+    const out = runPetalFile(`${FIXTURES}/dup/entry.ptl`);
+    expect(out.split("\n")).toEqual(["{ a: 1 } { b: 1 } Dup Dup", "false"]);
   });
 
-  // The error is *in* dup_b.ptl, so it must say so — and it must not underline
+  it("still rejects one module declaring a class twice", () => {
+    const stderr = runPetalFileError(`${FIXTURES}/dup-in-module/entry.ptl`);
+    expect(stderr).toMatch(/class `Dup` is already declared/);
+  });
+
+  // The error is *in* twice.ptl, so it must say so — and it must not underline
   // the entry file's line 1, which is what an unattributed span made it do:
   // the caret pointed at a comment in a different file than the message named.
   it("attributes a module's compile error to that module, not the entry file", () => {
-    const stderr = runPetalFileError(`${FIXTURES}/dup/entry.ptl`);
-    expect(stderr).toContain("dup_b.ptl:");
-    expect(stderr).not.toMatch(/Two unrelated modules/);
+    const stderr = runPetalFileError(`${FIXTURES}/dup-in-module/entry.ptl`);
+    expect(stderr).toContain("twice.ptl:");
+    expect(stderr).not.toMatch(/One module declaring/);
   });
 });
 

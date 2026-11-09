@@ -188,12 +188,22 @@ impl Compiler {
                             self.declared_methods.contains(&qname)
                                 || self.is_builtin_method(class, field)
                         })
-                        .map(|class| crate::classes::qualified_method_name(&class, field))
                         // Resolve the name the way any other reference to it
                         // would be, so a call inside a function body captures
                         // the declaration rather than pointing at a term in
-                        // someone else's block.
-                        .and_then(|qname| self.resolve_local_term(&qname));
+                        // someone else's block. A method of this file's own
+                        // class is bound under the name the file wrote
+                        // (`Box.area`); another module's is reached by its
+                        // identity (`./shapes::Box.area`).
+                        .and_then(|class| {
+                            let bare = crate::program::strip_module(&class);
+                            let local = (self.classes.qualify(bare) == class)
+                                .then(|| crate::classes::qualified_method_name(bare, field));
+                            let qname = crate::classes::qualified_method_name(&class, field);
+                            local
+                                .and_then(|l| self.resolve_local_term(&l))
+                                .or_else(|| self.resolve_local_term(&qname))
+                        });
                     let obj_tid = self.compile_expr(object);
                     let callee_text = super::callee_text(function);
                     if let Some(callee) = static_callee {

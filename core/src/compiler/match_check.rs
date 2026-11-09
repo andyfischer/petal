@@ -212,6 +212,8 @@ impl Compiler {
         if missing.is_empty() {
             return;
         }
+        // As the file writes it: the module part of a module's enum is identity.
+        let enum_name = crate::program::strip_module(enum_name);
         let names: Vec<String> = missing.iter().map(|v| format!("{enum_name}.{v}")).collect();
         // A variant the match does name, but only behind a condition.
         let partial = missing.iter().any(|v| mentioned.contains(v.as_str()));

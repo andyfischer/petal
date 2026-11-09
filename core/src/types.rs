@@ -277,8 +277,8 @@ impl Type {
             Type::OrNil(base @ (NonNil::Class(_) | NonNil::EnumOf(_))) => {
                 Cow::Owned(format!("{}?", base.ty().display(classes)))
             }
-            Type::Class(id) => Cow::Borrowed(classes.name_of(*id)),
-            Type::EnumOf(id) => Cow::Borrowed(classes.enum_name(*id)),
+            Type::Class(id) => Cow::Borrowed(classes.display_name(classes.name_of(*id))),
+            Type::EnumOf(id) => Cow::Borrowed(classes.display_name(classes.enum_name(*id))),
             other => Cow::Borrowed(other.name()),
         }
     }

@@ -1,0 +1,7 @@
+pub class Dup
+  a: int
+end
+
+pub class Dup
+  b: int
+end

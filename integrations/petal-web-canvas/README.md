@@ -15,8 +15,10 @@ The runtime shares the standard interactivity layer, [petal-ui](../../core-libs/
 with [petal-desktop-sdl](../petal-desktop-sdl/) and Garden: the same input
 contract, draw-command vocabulary, offscreen canvases, and `ui` package, so
 petal-sdl sample scripts run unchanged. A script starts with `import ui`; the
-runtime registers every petal-ui native and provides the `ui` interface, so
-`bloom` and `text_layout` (bundled in the runtime) load too. Browser events are translated to
+runtime registers every petal-ui native and provides the `ui` interface. The
+bundled libraries (`bloom`, `text_layout`, `glsl`) are left out of this build
+to keep the wasm small; a page that wants one registers it with
+`register_package`, in the form `petal bundle` emits. Browser events are translated to
 `InputEvent`s as they arrive and latched by `InputState`, so a press edge
 (`mouse_pressed`, `key_pressed`) fires even for a click that goes down and up
 between two frames.

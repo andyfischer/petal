@@ -74,9 +74,10 @@ assumption they replace. A host that measures its own face publishes it with
 
 ## Installing it in a project
 
-There is nothing to install: the library is bundled in the runtime, so
-`import text_layout` works in the `petal` CLI and in every host that embeds
-Petal. The directory is `text-layout` and the package is `text_layout` — a
+There is nothing to install where the library is bundled: the `petal` CLI,
+and every host that builds the `petal` crate with its `text_layout` (or
+`bloom`, or `libraries`) feature, so `import text_layout` works there. The
+wasm hosts leave it out. The directory is `text-layout` and the package is `text_layout` — a
 package name is the first segment of an import path, so it has to be
 spellable as an identifier.
 

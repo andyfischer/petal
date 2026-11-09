@@ -213,16 +213,24 @@ details of each step.
 
 ### Bundled packages
 
-The `petal` binary, and every embedding of the runtime, carries these:
+The `petal` binary carries all of these. An embedding of the runtime
+always carries `core`, the domain builtins and `ui`; `bloom`, `text_layout`
+and `glsl` are cargo features of the `petal` crate, off by default
+(`libraries` turns on all three; `bloom` turns on `text_layout`), so a wasm
+build carries only what it asks for. An import of a library a build leaves
+out fails with `package `glsl` is not in this build of Petal: enable the
+`glsl` feature of the `petal` crate, or register it with `register_package`
+(see `petal bundle`)`. The list lives in `core/Cargo.toml` under
+`[package.metadata.petal.bundled]`.
 
 | Package | What it is |
 | --- | --- |
 | `core` | The declarations of the global builtins. Always in scope; `import core` only adds the qualifier `core`, so `core.len(xs)` reaches a builtin a declaration of yours has shadowed. |
 | `noise`, `color`, `vec2`, `autodiff`, `json`, `io` | The domain builtins. Every runtime implements them; a script imports the package to use its names. See [Builtins](Builtins.md#which-builtins-need-an-import). |
 | `ui` | The petal-ui interface: the `native fn` declarations of every petal-ui native, and the widget library written over them. `ui/input` is its input, timing and frame half alone. Needs a petal-ui host to run. |
-| `bloom` | The component library ([core-runtime/bloom](../core-runtime/bloom)). Requires `ui`. |
-| `text_layout` | Text placement ([core-runtime/text-layout](../core-runtime/text-layout)). Requires `ui`. |
-| `glsl` | Petal to GLSL, experimental ([core-runtime/glsl](../core-runtime/glsl)). |
+| `bloom` | The component library ([core-runtime/bloom](../core-runtime/bloom)). Requires `ui`. Feature `bloom`. |
+| `text_layout` | Text placement ([core-runtime/text-layout](../core-runtime/text-layout)). Requires `ui`. Feature `text_layout`. |
+| `glsl` | Petal to GLSL, experimental ([core-runtime/glsl](../core-runtime/glsl)). Feature `glsl`. |
 
 A package of the same name found at an earlier step wins over the bundled
 copy: a host registration, a `[dependencies]` entry, a `vendor/<name>`
@@ -575,7 +583,10 @@ let program = env.load_program_at(&bundle.entry.source, Path::new(&bundle.entry.
 - `entry.path` is `null` when the entry file is not under the project's
   module directory. Such an entry's relative imports are not in the bundle.
 - Packages bundled in the binary (`ui`, `bloom`, the builtin packages) are
-  not repeated, and neither is anything reached only through `-I`.
+  not repeated, and neither is anything reached only through `-I`. For a
+  host built without a bundled library (the wasm runtimes leave out
+  `bloom`, `text_layout` and `glsl`), name it under `[dependencies]` with a
+  path to its directory and it is in the bundle like any dependency.
 - A dependency whose key renames its package (`tw = …` for `tween`) cannot
   be bundled, because an in-memory package is registered under its own name.
   The error names the key and the package.

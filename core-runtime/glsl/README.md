@@ -27,8 +27,9 @@ captures become uniforms, and what is still open.
 | `glsl_function(f, env?, opts?)` | the same as parts: `{error, kind, code, common, params, uniforms, taps, code_hash, ...}` |
 | `glsl_error_text(err)` | `"message [line L, column C]"` |
 
-The package is bundled in the runtime, so `import glsl` works with nothing
-installed. It needs no host layer and no natives beyond core Petal: it reads the function
+The package is bundled in the `petal` CLI and in any host that builds the
+`petal` crate with its `glsl` (or `libraries`) feature, as petal-c-bridge
+does by default, so `import glsl` works there with nothing installed. It needs no host layer and no natives beyond core Petal: it reads the function
 with the `fn_info` and `fn_ast` builtins
 ([docs/features/function-introspection.md](../../docs/features/function-introspection.md)) and
 never runs it.

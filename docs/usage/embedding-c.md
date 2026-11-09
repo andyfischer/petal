@@ -1107,8 +1107,11 @@ vm.add_package("path/to/petal/core-runtime/bloom");     // a package directory
 All of these affect later loads. Nothing is in a script's scope but the core
 builtins: a script names what it uses (`import ui`, `import engine`, and
 `import io` or `import vec2` for those builtins). `bloom`, `text_layout`
-and `glsl` are bundled in the runtime, so `import bloom` needs no
-registration; a package registered here wins over the bundled copy. How an
+and `glsl` are bundled in the bridge by its default `libraries` feature, so
+`import bloom` needs no registration; a host that builds the bridge with
+`--no-default-features` lists the ones it wants (`--features query,glsl`),
+and an import of one left out fails naming the feature. A package registered
+here wins over the bundled copy. How an
 import is resolved is in [../module-system.md](../module-system.md), and
 manifests, dependencies and the lookup order in
 [../packages.md](../packages.md#where-a-package-name-is-looked-up).

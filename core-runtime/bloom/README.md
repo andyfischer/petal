@@ -39,7 +39,7 @@ Petal, with opinions `ui` deliberately does not take:
 | | `ui` | bloom |
 |---|---|---|
 | Label placement | you compute a `y` | cap-height centred, through [text-layout](../text-layout/) |
-| Lives in | a Rust crate, registered by the host | `.ptl` files, bundled in the runtime |
+| Lives in | a Rust crate, registered by the host | `.ptl` files, bundled by the `bloom` feature |
 | Cross-frame state | explicit records you keep (`list_state()`) | per-callsite `state` inside the component |
 | Click | on press | on **release inside**, so sliding off cancels |
 | Overlays | you guard your own input (`if !m.open`) | the overlay **captures** input; callers need no guard |
@@ -63,9 +63,11 @@ every label with.
 
 ## Installing it in a project
 
-There is nothing to install: bloom and text-layout are bundled in the runtime,
-so `import bloom` works in the `petal` CLI and in every host that embeds
-Petal.
+There is nothing to install where bloom is bundled: the `petal` CLI, and
+every host that builds the `petal` crate with its `bloom` (or `libraries`)
+feature — petal-sdl, petal-ui-run, petal-c-bridge and Garden do. The wasm
+hosts leave it out; a page that wants it registers it with `register_package`
+(the form `petal bundle` emits).
 
 ```bash
 petal lint myapp/app.ptl                  # requires host interfaces: ui >=0.1 (bloom), ui >=0.1 (text_layout)

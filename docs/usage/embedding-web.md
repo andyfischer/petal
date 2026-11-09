@@ -38,11 +38,11 @@ Node:
 | `--size` | 2.26 MB | 0.85 MB | 9.3 ms | 2.7 ms |
 
 `opt-level = "s"` falls between them (2.71 MB, 1.00 MB gzip, frames ~1.3x
-slower). The rest of the size is mostly core's own code. The embedded library
-sources (the ui prelude, bloom, glsl, text_layout) are about 370 KB in the
-repository; a wasm build embeds them with their whole-line comments blanked
-(`core/build.rs`, `petal::bundled::COMMENTS_STRIPPED`), which takes about
-170 KB off. Set `PETAL_EMBED_COMMENTS=keep` when building to keep them. The
+slower). The rest of the size is mostly core's own code. The web builds embed
+only the ui prelude: `bloom`, `text_layout` and `glsl` are cargo features of
+the `petal` crate, off here, and a page that imports one registers it with
+`register_package`. The embedded Petal sources have their whole-line
+comments blanked (`core/build.rs`, `petal::bundled::COMMENTS_STRIPPED`). Set `PETAL_EMBED_COMMENTS=keep` when building to keep them. The
 default build measured 3.75 MB raw, 1.31 MB gzip, 0.93 MB brotli on
 2026-11-05. What the size is made of, and the plan to shrink it, is in
 [wasm-size-improvements](../tasks/wasm-size-improvements.md).

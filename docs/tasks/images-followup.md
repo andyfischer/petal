@@ -88,7 +88,7 @@ Action:
       characters.
 - [ ] Consider a `byte_offset` alongside it, or a helper
       `span_to_byte_range(src, span)`. This ties in with the code-point
-      switch in [code-point-migration.md](code-point-migration.md).
+      switch ([String offsets](../Builtins.md#string-offsets)).
 
 ## 5. A `//` line inside element children becomes text
 

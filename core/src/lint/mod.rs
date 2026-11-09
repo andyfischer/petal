@@ -36,7 +36,7 @@
 //!
 //! 7. **`state-as-constant`** ([`state_const`]) — a plain top-level `state`
 //!    that nothing assigns and whose initializer is static becomes a
-//!    `const`. The one rule that asks the compiler: it classifies the
+//!    `let NAME = const(init)`. The one rule that asks the compiler: it classifies the
 //!    program ([`crate::static_classify`]) and compiles its own rewrite. It
 //!    is also the one rule whose fix is a judgement call, because a host
 //!    can write a `state` by name where no compiler sees it, so it is
@@ -343,7 +343,7 @@ pub const RULES: &[RuleInfo] = &[
     },
     RuleInfo {
         name: STATE_AS_CONSTANT,
-        summary: "a never-assigned `state` with a constant initializer should be a `const`",
+        summary: "a never-assigned `state` with a constant initializer should be a `let … = const(…)`",
         opt_in: true,
         fixes: Fixes::All,
     },

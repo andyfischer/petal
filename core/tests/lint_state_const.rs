@@ -1,6 +1,6 @@
 //! `petal lint`'s `state-as-constant` rule (core/src/lint/state_const.rs): a
 //! plain top-level `state` that nothing assigns and whose initializer is
-//! static becomes a `const`. One test per thing the rule must leave alone.
+//! static becomes a `let NAME = const(init)`. One test per thing the rule must leave alone.
 
 use petal::lint::{LintOptions, LintOutcome, RuleFilter, STATE_AS_CONSTANT, lint_source};
 
@@ -48,10 +48,10 @@ state TILES = [
 print(TILES[0].name)
 ",
         "\
-const TILES = [
+let TILES = const([
   {name: \"grass\", cost: 1},
   {name: \"road\", cost: 0},
-]
+])
 print(TILES[0].name)
 ",
     );
@@ -65,14 +65,14 @@ fn the_finding_names_the_declaration_and_the_fix() {
     };
     assert_eq!((f.rule, f.line, f.column), (STATE_AS_CONSTANT, 2, 1));
     assert!(f.message.starts_with("`state LIMIT` is never assigned"), "{}", f.message);
-    assert!(f.message.contains("`const`"), "{}", f.message);
-    assert_eq!(out.output, "let a = 1\nconst LIMIT: int = 10\nprint(a + LIMIT)\n");
+    assert!(f.message.contains("`let LIMIT = const(…)`"), "{}", f.message);
+    assert_eq!(out.output, "let a = 1\nlet LIMIT: int = const(10)\nprint(a + LIMIT)\n");
 }
 
 #[test]
-fn it_becomes_a_const_and_not_a_let() {
+fn it_becomes_a_const_annotation_and_not_a_plain_let() {
     let out = lint("state A = [1, 2]\nprint(A)\n");
-    assert!(out.output.starts_with("const A"), "{}", out.output);
+    assert!(out.output.starts_with("let A = const([1, 2])"), "{}", out.output);
 }
 
 #[test]
@@ -90,8 +90,8 @@ print(COSTS)
 fn row(name, cost)
   {name: name, cost: cost}
 end
-const ROWS = [row(\"a\", 1), row(\"b\", 2)]
-const COSTS = map(ROWS, fn(r) -> r.cost)
+let ROWS = const([row(\"a\", 1), row(\"b\", 2)])
+let COSTS = const(map(ROWS, fn(r) -> r.cost))
 print(COSTS)
 ",
     );
@@ -102,7 +102,7 @@ fn a_chain_of_constants_is_converted_in_one_run() {
     // `SORTED` is static only once `RAW` is no longer state: the rule
     // repeats until nothing more changes, so one `lint --fix` is enough.
     let out = lint("state RAW = [3, 1, 2]\nstate SORTED = sort(RAW)\nprint(SORTED)\n");
-    assert_eq!(out.output, "const RAW = [3, 1, 2]\nconst SORTED = sort(RAW)\nprint(SORTED)\n");
+    assert_eq!(out.output, "let RAW = const([3, 1, 2])\nlet SORTED = const(sort(RAW))\nprint(SORTED)\n");
     assert_eq!(out.count(STATE_AS_CONSTANT), 2);
     let lines: Vec<usize> = out.findings.iter().map(|f| f.line).collect();
     assert_eq!(lines, [1, 2], "each reported where it is written");
@@ -164,7 +164,7 @@ fn a_host_native_in_the_initializer_is_left_alone() {
 fn a_pub_state_becomes_a_pub_const() {
     assert_fixes(
         "pub state LIMIT = 10\npub  state ROWS = [[1, LIMIT], [2, LIMIT * 2]]\nprint(LIMIT, ROWS)\n",
-        "pub const LIMIT = 10\npub  const ROWS = [[1, LIMIT], [2, LIMIT * 2]]\nprint(LIMIT, ROWS)\n",
+        "pub let LIMIT = const(10)\npub  let ROWS = const([[1, LIMIT], [2, LIMIT * 2]])\nprint(LIMIT, ROWS)\n",
     );
     assert_left_alone("pub state count = 0\ncount = count + 1\nprint(count)\n");
     assert_left_alone("pub state seen = []\nfn note(x)\n  seen = append(seen, x)\nend\nnote(1)\n");
@@ -191,7 +191,7 @@ fn the_rule_can_be_silenced_on_a_line_and_excluded() {
     );
     assert_eq!(out.count(STATE_AS_CONSTANT), 1);
     assert!(out.output.contains("state volume = 5"), "{}", out.output);
-    assert!(out.output.contains("const LIMIT = 9"), "{}", out.output);
+    assert!(out.output.contains("let LIMIT = const(9)"), "{}", out.output);
 }
 
 #[test]

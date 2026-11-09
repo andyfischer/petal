@@ -1,15 +1,18 @@
 //! Rule — a `state` that is really a constant should say so.
 //!
 //! ```text
-//! state TILES = [                       const TILES = [
+//! state TILES = [                       let TILES = const([
 //!   {name: "grass", cost: 1},     =>      {name: "grass", cost: 1},
 //!   {name: "road", cost: 0},              {name: "road", cost: 0},
-//! ]                                     ]
+//! ]                                     ])
 //! ```
+//!
+//! The rewrite is the `const(…)` annotation, not the deprecated `const X = e`
+//! declaration (docs/tasks/lifecycle-annotation-functions-refactor.md).
 //!
 //! A table parked in `state` is built once, which is why it was put there,
 //! and for the same reason never follows an edit: a hot reload keeps every
-//! `state` cell's old value. A `const` is built once too and *is* rebuilt
+//! `state` cell's old value. A `const(…)` is built once too and *is* rebuilt
 //! when its source changes (docs/language-guide.md, Constants).
 //!
 //! The rule fires on a declaration that is all of:
@@ -21,9 +24,9 @@
 //!   file compiles to, in any function or module;
 //! - **static**: the classifier ([`crate::static_classify`]) says the
 //!   initializer can only ever produce one value, *and* the declaration is
-//!   still static once it is written `const`. The second half is checked by
-//!   compiling the rewrite, so a fix never produces a `const` the compiler
-//!   then rejects.
+//!   still static once it is written `let NAME = const(init)`. The second
+//!   half is checked by compiling the rewrite, so a fix never produces a
+//!   `const(…)` the compiler then rejects.
 //!
 //! The classifier's answer is this process's: a `native fn` of a host that
 //! is not here is dynamic, so a table built with host natives is left alone.
@@ -36,7 +39,7 @@
 //! - a host can write a `state` by name, and saved state can be restored
 //!   into it;
 //! - the author may want the value to survive a reload on purpose;
-//! - a `state` initializer runs once whatever the host, and a `const` is
+//! - a `state` initializer runs once whatever the host, and a `const(…)` is
 //!   built once only where the static-value cache is on. Where it is off (a
 //!   run that records observations or a trace, the `baseline` policy) an
 //!   expensive build would run on every frame.
@@ -56,12 +59,15 @@ struct Candidate {
     name: String,
     /// Char offset of the `state` keyword.
     keyword: usize,
+    /// Char offsets of the initializer as written: from the first char after
+    /// the `=` to the end of the statement (the value's own span leaves out
+    /// grouping parens).
+    value: (usize, usize),
 }
 
 const STATE: &str = "state";
-const CONST: &str = "const";
 
-/// Plan every `state` → `const` rewrite in the file `source` (parsed as
+/// Plan every `state X = init` → `let X = const(init)` rewrite in the file `source` (parsed as
 /// `stmts`), in source order. Empty when the file declares no candidate, or
 /// does not compile here.
 pub(super) fn plan_state_fixes(
@@ -72,7 +78,7 @@ pub(super) fn plan_state_fixes(
 ) -> Vec<Fix> {
     // Cheap first: most files have no plain top-level `state` at all, and
     // those never pay for the compile below.
-    let shaped: Vec<(&Stmt, &str, usize)> = stmts
+    let shaped: Vec<(&Stmt, &str, usize, (usize, usize))> = stmts
         .iter()
         .filter_map(|s| match &s.kind {
             StmtKind::State {
@@ -80,7 +86,10 @@ pub(super) fn plan_state_fixes(
                 key: None,
                 is_var: false,
                 ..
-            } => Some((s, name.as_str(), state_keyword(chars, s)?)),
+            } => {
+                let keyword = state_keyword(chars, s)?;
+                Some((s, name.as_str(), keyword, initializer(chars, s, keyword)?))
+            }
             _ => None,
         })
         .collect();
@@ -96,7 +105,7 @@ pub(super) fn plan_state_fixes(
 
     let mut candidates: Vec<Candidate> = shaped
         .into_iter()
-        .filter(|(stmt, name, _)| {
+        .filter(|(stmt, name, _, _)| {
             // The classifier's entry for this statement: the entry file's
             // `state` of that name, written inside it.
             let (start, end) = (stmt.span.start.line, stmt.span.end.line);
@@ -108,13 +117,14 @@ pub(super) fn plan_state_fixes(
                     && !is_written(program, d.term)
             })
         })
-        .map(|(_, name, keyword)| Candidate {
+        .map(|(_, name, keyword, value)| Candidate {
             name: name.to_string(),
             keyword,
+            value,
         })
         .collect();
 
-    // A static initializer is necessary, not sufficient: as a `const` the
+    // A static initializer is necessary, not sufficient: as a `const(…)` the
     // expression runs where it is written instead of on the cell's first
     // use, which can change what a forward reference sees. Compile the
     // rewrite and keep only what the compiler accepts as constant.
@@ -143,26 +153,46 @@ pub(super) fn plan_state_fixes(
             anchor: c.keyword,
             message: format!(
                 "`state {}` is never assigned and its initializer is constant; declare it \
-                 with `const` so that it follows edits (keep `state` if a host writes it by name)",
-                c.name
+                 `let {} = const(…)` so that it follows edits (keep `state` if a host writes it \
+                 by name)",
+                c.name, c.name
             ),
-            splices: vec![keyword_splice(c.keyword)],
+            splices: candidate_splices(&c),
         })
         .collect()
 }
 
-fn keyword_splice(at: usize) -> Splice {
-    Splice {
-        start: at,
-        end: at + STATE.len(),
-        text: CONST.to_string(),
-    }
+/// `state` → `let`, and `const(` … `)` around the initializer.
+fn candidate_splices(c: &Candidate) -> Vec<Splice> {
+    let splice = |start: usize, end: usize, text: &str| Splice {
+        start,
+        end,
+        text: text.to_string(),
+    };
+    vec![
+        splice(c.keyword, c.keyword + STATE.len(), "let"),
+        splice(c.value.0, c.value.0, "const("),
+        splice(c.value.1, c.value.1, ")"),
+    ]
 }
 
 fn splices(candidates: &[Candidate]) -> Vec<Splice> {
-    let mut all: Vec<Splice> = candidates.iter().map(|c| keyword_splice(c.keyword)).collect();
+    let mut all: Vec<Splice> = candidates.iter().flat_map(candidate_splices).collect();
     all.sort_by_key(|s| s.start);
     all
+}
+
+/// The initializer of the `state` statement `stmt` whose keyword is at
+/// `keyword`, as char offsets: from the first char after the `=` to the end
+/// of the statement.
+fn initializer(chars: &[char], stmt: &Stmt, keyword: usize) -> Option<(usize, usize)> {
+    let eq = keyword + chars.get(keyword..)?.iter().position(|c| *c == '=')?;
+    let mut start = eq + 1;
+    while start < chars.len() && chars[start].is_whitespace() {
+        start += 1;
+    }
+    let end = stmt.span.end.offset as usize;
+    (start < end && end <= chars.len()).then_some((start, end))
 }
 
 /// Where the `state` keyword of `stmt` is written: at the statement's

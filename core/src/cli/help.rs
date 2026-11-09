@@ -791,7 +791,7 @@ DESCRIPTION
        dm-hint-not-literal (report only)
               tunable(e) on a computed e, which marks nothing for direct
               manipulation; on a string, bool, record or list it points to
-              config let, which exposes a setting of any type
+              a setting, let X = tunable(v), which takes any data
        dm-hint-bounds (report only)
               a tunable bound (min, max, step) that is not a literal, or a
               min above the max
@@ -799,9 +799,9 @@ DESCRIPTION
               state x = tunable(...): a drag cannot move a running state's
               initial value
        config-not-data (report only)
-              config let X = e where e needs evaluating (level.SPAWN, 2 * W):
-              hosts read config values without running the program, so they
-              see none
+              a setting, let X = tunable(e), where e needs evaluating
+              (level.SPAWN, 2 * W): hosts read settings without running the
+              program, so they see none
        int-division (opt-in, report only)
               a / b on two ints, truncated, then used as a float. Opt-in
               because a row or column index scaled by a float is the same
@@ -812,12 +812,20 @@ DESCRIPTION
               state(key), which is deprecated (the compile check warns too):
               never written and built from its key alone (no calls), it
               becomes memo(key); otherwise reported
+       const-decl-deprecated (opt-in, report only)
+              const X = e, which is being replaced by let X = const(e)
+       config-let-deprecated (opt-in, report only)
+              config let X = v, which is being replaced by
+              let X = tunable(v)
+       const-of-literal (opt-in, report only)
+              a const on literal data, where it checks nothing a reader
+              cannot see
        state-as-constant (opt-in)
               a top-level state that nothing assigns and whose initializer
-              is static becomes a const. Runs only when --rules-include
-              names it, because the fix is a judgement: a host can write a
-              state by name, and a state keeps its value across a hot reload
-              where a const is rebuilt
+              is static becomes let NAME = const(init). Runs only when
+              --rules-include names it, because the fix is a judgement: a
+              host can write a state by name, and a state keeps its value
+              across a hot reload where a const(...) is rebuilt
 
        To silence a rule, put '// petal-lint-ignore <rule> [<rule>...]' on
        the line before the finding or at the end of its line; with no rule
@@ -1128,7 +1136,8 @@ OPERATIONS
               alone.
 
               Refused when the binding is rebound with '@x' ('@' is let-only),
-              when it is a 'config let', and when a file that imports it
+              when it is a (deprecated) 'config let', and when a file that
+              imports it
               writes it.
 
 TARGET PATHS
@@ -1348,8 +1357,9 @@ DESCRIPTION
 
        static    Data that depends on nothing dynamic: literals, lists and
                  records of static parts, operators, other static
-                 declarations, 'config let', calls of constant builtins, and
-                 calls of static-pure functions with static arguments. The
+                 declarations, settings ('tunable(...)'), calls of constant
+                 builtins, and calls of static-pure functions with static
+                 arguments. The
                  line says whether dynamic code reads it (an operand of
                  dynamic code, a closure capture, or a free-standing
                  top-level statement) or only other static declarations do.
@@ -1376,7 +1386,8 @@ DESCRIPTION
        so a 'native fn' of a host is dynamic here: a host may report more as
        static than this does, never less.
 
-       A declaration written 'const' must be static. One that is not carries
+       A declaration written 'let X = const(e)' (or the deprecated
+       'const X = e') must be static. One that is not carries
        a '!' line: 'declared const but not constant: a compile error', or
        'declared const: cannot be verified without its host's natives' when
        the only thing in the way is a native this command does not register.
@@ -1557,7 +1568,7 @@ DESCRIPTION
        literal nudged, effects suppressed and random draws replayed, and
        measures how the goal moves. It solves through function calls, loops,
        records and math, verifies every answer by running it, and ranks the
-       alternatives (knobs first: config let and tunable literals, one tier;
+       alternatives (knobs first: settings and tunable literals, one tier;
        then by how little else they move). See
        docs/features/direct-manipulation.md.
 
@@ -1615,8 +1626,8 @@ FILTERS
        --allow <sel>, --deny <sel>
               (v2) Which literals may move. Selectors: a binding NAME,
               line:N, fn:NAME, knob (alias config: every literal of a
-              setting, `let X = tunable(...)` or `config let`, and every
-              tunable literal), user (all user code); one literal:
+              setting, `let X = tunable(...)` (or a deprecated `config let`),
+              and every tunable literal), user (all user code); one literal:
               at:FILE:LINE:COL (1-based, anywhere in its text; FILE is a
               path suffix such as core/level.ptl, left out for the entry
               file: at:LINE:COL) or term:N (the term id --json reports for a
@@ -1633,8 +1644,8 @@ FILTERS
 
        --knob-strict (alias --config-strict)
               (v2) v1's rule: once the program has a knob (a setting
-              `let X = tunable(...)`, a config let, or a tunable that marks
-              a literal), only knobs move when they can.
+              `let X = tunable(...)` or a deprecated config let, or a tunable
+              that marks a literal), only knobs move when they can.
 
 OPTIONS
        --alternatives N

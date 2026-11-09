@@ -339,7 +339,7 @@ impl DmSession {
                     {
                         return Eligibility {
                             screen: false,
-                            edit: Err("pinned: the program declares `config let` or `tunable` knobs (ConfigStrict)"),
+                            edit: Err("pinned: the program declares `tunable` knobs (ConfigStrict)"),
                         };
                     }
                     e

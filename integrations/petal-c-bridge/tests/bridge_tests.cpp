@@ -1420,6 +1420,48 @@ TEST(enum_variants_cross_the_bridge_by_tag_and_payload) {
     CHECK_EQ(vm.call("kind_of", bare).string(), std::string("enum"));
 }
 
+// An enum another module declares carries that module in its tag
+// (docs/proposals/module-name-collisions.md, part C). The host may still
+// build it by the bare tag while the name is unique, and reads the full tag
+// back, with pb_enum_tag_display for the printed form.
+TEST(module_enum_tags_carry_the_module) {
+    petal::Vm vm;
+    vm.register_module("cfg",
+        "pub enum Kind\n"
+        "  park, road(lanes),\n"
+        "end\n"
+        "pub fn make_road(n) Kind.road(n) end\n");
+    vm.register_module("other",
+        "pub enum Mode\n"
+        "  on,\n"
+        "end\n");
+    vm.load_source(
+        "import cfg\n"
+        "import other\n"
+        "fn is_park(k) k == cfg.Kind.park end\n"
+        "fn shown(k) \"{k}\" end\n"
+        "fn road(n) make_road(n) end\n");
+    vm.run();
+
+    petal::Builder bare;
+    bare.enum_("Kind.park", [](petal::BuilderRef&) {});
+    CHECK(vm.call("is_park", bare).boolean());
+    petal::Builder full;
+    full.enum_("cfg::Kind.park", [](petal::BuilderRef&) {});
+    CHECK(vm.call("is_park", full).boolean());
+    CHECK_EQ(vm.call("shown", full).string(), std::string("Kind.park"));
+
+    petal::Builder lanes;
+    lanes.value(int64_t(2));
+    petal::Value road = vm.call("road", lanes);
+    REQUIRE(road.is_enum());
+    CHECK_EQ(road.tag(), std::string_view("cfg::Kind.road"));
+    CHECK_EQ(road.tag_display(), std::string_view("Kind.road"));
+    CHECK_EQ(std::string_view(pb_enum_tag_display("cfg::Kind.road")), std::string_view("Kind.road"));
+    CHECK_EQ(std::string_view(pb_enum_tag_display("Kind.road")), std::string_view("Kind.road"));
+    CHECK(pb_enum_tag_display(nullptr) == nullptr);
+}
+
 TEST(missing_hook_differs_from_failing_hook) {
     // A host calling optional hooks tells "not defined" (NOT_FOUND, or
     // has_function() == false) apart from "defined and failed" (RUNTIME).

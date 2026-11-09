@@ -652,3 +652,21 @@ impl ViewArena {
         }
     }
 }
+
+/// `tag` past its module part (`"./config::Kind.park"` → `"Kind.park"`), as
+/// a pointer into `tag`; `tag` itself when it has none, NULL for NULL. See
+/// `pb_enum_tag_display` in petal_bridge.h.
+///
+/// # Safety
+/// `tag` is NULL or a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_enum_tag_display(tag: *const c_char) -> *const c_char {
+    if tag.is_null() {
+        return tag;
+    }
+    let bytes = unsafe { std::ffi::CStr::from_ptr(tag) }.to_bytes();
+    match bytes.windows(2).rposition(|w| w == b"::") {
+        Some(at) => unsafe { tag.add(at + 2) },
+        None => tag,
+    }
+}

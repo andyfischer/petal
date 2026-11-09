@@ -125,9 +125,12 @@ typedef enum pb_kind {
     PB_VEC2 = 4,     /* number = x, y = y */
     PB_STRING = 5,   /* str/str_len (UTF-8, NUL-terminated) */
     PB_LIST = 6,     /* items[count]  (f64 arrays decode as lists of PB_FLOAT) */
-    PB_MAP = 7,      /* items[count], each with key/key_len; str = class name or NULL;
+    PB_MAP = 7,      /* items[count], each with key/key_len; str = class name or NULL
+                        (module-qualified like an enum tag: see pb_enum_tag_display);
                         integer = the record's shape id (see pb_plan), never 0 */
-    PB_ENUM = 8,     /* str = variant tag ("Shape.circle"), items[count] = payload */
+    PB_ENUM = 8,     /* str = variant tag ("Shape.circle"; "./level::Shape.circle" for an
+                        enum an imported module declares: see pb_enum_tag_display),
+                        items[count] = payload */
     PB_SYMBOL = 9,   /* str = symbol name */
     PB_HANDLE = 10,  /* integer = slot, count = serial, number = class index (per VM),
                         str = handle class name */
@@ -324,8 +327,22 @@ void pb_builder_end_dict(pb_builder* b);
 /* An enum variant `tag(payload...)`; the payload values go between begin/end.
  * Under the tag "Enum.variant", with the payload in declaration order, it is
  * that variant of the script's enum (it equals the script's own and matches
- * its patterns). The tag is not checked against any program. */
+ * its patterns). The tag is not checked against any program.
+ *
+ * An enum belongs to the module that declares it. One the entry file
+ * declares has the tag "Enum.variant"; one another module declares has
+ * "<module>::Enum.variant", the module's canonical name in front
+ * ("./config::Kind.park", "ui::Align.left"). The bare "Kind.park" still
+ * means that variant while exactly one enum of the loaded program is named
+ * `Kind`; when two are, write the qualified tag. */
 void pb_builder_begin_enum(pb_builder* b, const char* tag);
+
+/* The part of a variant tag (or a class name) a script prints: `tag` past
+ * its module, "./config::Kind.park" -> "Kind.park", and `tag` itself when
+ * it has none. A pointer into `tag`, so it lives as long as `tag` does; NULL
+ * for NULL. Compare a PB_ENUM's str through this to match on the short form,
+ * or compare the full tag to tell two same-named enums apart. */
+const char* pb_enum_tag_display(const char* tag);
 void pb_builder_end_enum(pb_builder* b);
 
 /* ─── VM lifecycle and modules ────────────────────────────────────────── */

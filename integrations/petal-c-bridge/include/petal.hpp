@@ -177,8 +177,16 @@ public:
         return (v_ && v_->str) ? std::string_view(v_->str, v_->str_len) : std::string_view{};
     }
     std::string string() const { return std::string(str()); }
-    // ENUM variant tag ("" if not an enum).
+    // ENUM variant tag ("" if not an enum). The full tag: an enum an imported
+    // module declares carries the module ("./config::Kind.park").
     std::string_view tag() const noexcept { return is_enum() ? str() : std::string_view{}; }
+    // The tag as a script prints it, without the module ("Kind.park").
+    std::string_view tag_display() const noexcept { return tag_display_of(tag()); }
+    // `tag` (or a class name) past its module part, if it has one.
+    static std::string_view tag_display_of(std::string_view tag) noexcept {
+        size_t at = tag.rfind("::");
+        return at == std::string_view::npos ? tag : tag.substr(at + 2);
+    }
     // Field name when this value is a map entry.
     std::string_view key() const noexcept {
         return (v_ && v_->key) ? std::string_view(v_->key, v_->key_len) : std::string_view{};

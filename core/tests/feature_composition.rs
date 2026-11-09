@@ -169,3 +169,121 @@ print(P.label(), Q.label(), M.label())
         "declared `Box?` but assigned `Phase`",
     );
 }
+
+// ── Cross-feature scenarios (the post-merge test plan) ─────────────────────
+
+/// A second module, `hud`, imports `level` and declares its own private
+/// `Phase` with a `label` method of its own. The two `Phase`s are different
+/// types (module-scoped identity), each answers its own method, and a
+/// `lv.Phase?` slot in `hud` takes the module's variant and `nil`.
+const HUD: &str = "\
+import level as lv
+enum Phase
+  idle, run(speed),
+end
+fn Phase.label(p: Phase) -> string
+  \"hud \" ++ p.name
+end
+pub fn both(p: lv.Phase?) -> string
+  let mine = Phase.run(1)
+  let theirs = if p == nil then \"none\" else p.label() end
+  mine.label() ++ \" / \" ++ theirs
+end
+pub fn same(p: lv.Phase) -> bool
+  p == lv.Phase.idle
+end
+pub fn twin_equal() -> bool
+  Phase.idle == lv.Phase.idle
+end
+";
+
+fn env_with_hud() -> Env {
+    let mut env = env();
+    env.register_module("hud", HUD);
+    env
+}
+
+#[test]
+fn a_modules_enum_with_methods_beside_another_modules_private_twin() {
+    let src = "\
+import level as lv
+import hud
+print(hud.both(lv.Phase.run(4)))
+print(hud.both(nil))
+print(hud.same(lv.Phase.idle), hud.twin_equal())
+print(lv.Phase.idle.label())
+";
+    let outs = [RunPolicy::FAST, RunPolicy::BASELINE].map(|policy| {
+        let mut env = env_with_hud();
+        env.set_policy(policy);
+        let pid = env.load_program(src).unwrap_or_else(|e| panic!("failed: {e}"));
+        let w: Vec<String> =
+            env.get_program(pid).unwrap().warnings.iter().map(|d| d.message.clone()).collect();
+        // The one warning is the deliberate cross-twin comparison in `hud`,
+        // which names both identities.
+        assert_eq!(
+            w,
+            ["comparing variants of two different enums (`hud::Phase` and `level::Phase`) is always false"]
+        );
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap_or_else(|e| panic!("run failed: {e}"));
+        env.take_output()
+    });
+    assert_eq!(outs[0], outs[1], "FAST and BASELINE differ");
+    assert_eq!(
+        outs[0],
+        ["hud run / level run 4", "hud run / none", "true false", "level idle"]
+    );
+
+    // `hud`'s `Phase` is private: the entry file cannot reach it. The check
+    // reports it (what `petal run` refuses on), and the run fails the same way.
+    let mut env = env_with_hud();
+    env.set_check_only(true);
+    let pid = env.load_program("import hud\nprint(hud.Phase.idle)\n").expect("loads for the check");
+    let report = env.check_program(pid);
+    assert!(!report.passed());
+    let err = report.render(env.get_program(pid).unwrap());
+    assert!(err.contains("module 'hud' has no export 'Phase'"), "{err:?}");
+}
+
+/// `state` holding an imported module's variant (with a payload) across hot
+/// reloads: an edit to the entry file, then an edit to the module that
+/// changes its method's text. The kept value stays the module's type — not
+/// the entry file's same-named `Phase` — and answers the new method.
+#[test]
+fn state_holding_a_module_scoped_variant_survives_hot_reload() {
+    let v1 = "\
+import level as lv
+enum Phase
+  idle, run(speed),
+end
+state n = 0
+n += 1
+state p: lv.Phase? = nil
+if n == 1 then p = lv.Phase.run(5) end
+print(\"v1\", p.label(), p == lv.Phase.run(5), p == Phase.run(5))
+";
+    let v2 = v1.replace("\"v1\"", "\"v2\"");
+    let level2 = LEVEL.replace("\"level run {s}\"", "\"level2 run {s}\"");
+    for policy in [RunPolicy::FAST, RunPolicy::BASELINE, RunPolicy::REPLAY] {
+        let mut env = env();
+        env.set_policy(policy);
+        let pid = env.load_program(v1).expect("v1 compiles");
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(env.take_output(), ["v1 level run 5 true false"], "{policy:?}");
+
+        env.reload_program(sid, &v2, None).unwrap_or_else(|e| panic!("reload v2: {e}"));
+        env.reset_stack(sid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(env.take_output(), ["v2 level run 5 true false"], "{policy:?} after entry edit");
+
+        env.register_module("level", &level2);
+        env.reload_program(sid, &v2, None).unwrap_or_else(|e| panic!("reload level2: {e}"));
+        env.reset_stack(sid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(env.take_output(), ["v2 level2 run 5 true false"], "{policy:?} after module edit");
+        let state = serde_json::Value::Object(env.get_state_json(pid, sid)).to_string();
+        assert!(state.contains("run"), "{policy:?}: {state}");
+    }
+}

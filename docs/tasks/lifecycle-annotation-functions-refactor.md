@@ -590,7 +590,18 @@ Done in `~/cheesecake` on its `main`, from `dd5681e` to `e413eac`:
   `features/static-values.md`, `Builtins.md`, `syntax/settings.md` and the
   `config-let.md` stub say the compile check warns and `petal lint --fix`
   rewrites.
-- **Cheesecake** re-vendored from this commit (see VENDORED.md there).
+- **Cheesecake** re-vendored Petal at 07b0ad48 (`7284276` there; it also
+  takes nullable types, enum methods and module-scoped identity, and its
+  `host_call.cpp` writes `Value::tag_display()` so tools still read
+  `"Kind.park"`). Its `.ptl` files declare neither keyword. `tools/build.ts
+  test`: 598 of 601 passed on the first run; the three failures were Phase 4
+  leftovers anchored on pre-migration text (marble's and neon's live-edit
+  tests, `cheesecake_headless_config_set`'s message) plus the
+  `constant_natives` fixture, whose logged line is now the deprecation
+  warning. Fixed in `6c8e6e2` and `7284276`, and all four pass. C++ string
+  fixtures that still write `config let` (`mesh_tests.cpp`,
+  `asset_tests.cpp`, `ide_tests.cpp`, three in `script_host_tests.cpp`) pass
+  with the warning; Phase 6 must rewrite them.
 - Owner decision recorded: the warnings cover top-level declarations only,
   matching the fixer.
 

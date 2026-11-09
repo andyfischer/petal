@@ -61,8 +61,9 @@ font_size = 14        // ← this is what get_static_value returns
 ```
 
 Only **top-level** bindings are configuration. A binding inside a function body
-or a loop belongs to that scope and is invisible to the reader. `let`,
-`config let`, `const` and their `pub` forms are all bindings.
+or a loop belongs to that scope and is invisible to the reader. `let`
+(plain, a setting `let X = tunable(…)`, or `let X = const(…)`), the
+deprecated `config let` and `const`, and their `pub` forms are all bindings.
 
 ### What counts as static
 
@@ -132,9 +133,9 @@ Each `StaticBinding` carries:
 | `value` | `Ok(StaticValue)`, or `Err(reason)` — the same phrase `NotStatic` carries |
 | `text` | the right-hand side **exactly as written** (`None` for a `fn`/`state` declaration) |
 | `comment` | the comment block directly above the binding, `//` markers stripped (`None` if there is none) |
-| `is_config` | written [`config let`](../syntax/config-let.md): the author declared it a tuning knob |
+| `is_config` | a [setting](../syntax/settings.md), `let X = tunable(…)` (or the deprecated `config let`): the author declared it a tuning knob |
 | `exported` | written with `pub` |
-| `range` | for `config let X = tunable(v, min, max, step)`: the bounds written, as a `StaticRange` (`None` otherwise). `value` and `text` are then `v`'s, and the path `X` names `v` in the path edits. See [Giving a setting a range](../syntax/config-let.md#giving-a-setting-a-range) |
+| `range` | for `let X = tunable(v, min, max, step)`: the bounds written, as a `StaticRange` (`None` otherwise). `value` and `text` are then `v`'s, and the path `X` names `v` in the path edits. See [Ranges and options](../syntax/settings.md#ranges-and-options) |
 | `line` | the 1-based line the binding's statement starts on |
 
 Bindings come back in source order, one entry per name, carrying the last

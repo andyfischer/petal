@@ -84,34 +84,40 @@ written with `set m[k] = v`. See
 [Mutable state shared by several functions](syntax/var.md#mutable-state-shared-by-several-functions)
 and [Writing a container in place](syntax/var.md#writing-a-container-in-place).
 
-### `config let` — declaring a tuning knob
+### Settings: `tunable(…)` — declaring a tuning knob
 
-A `config` modifier marks a `let` binding as a value that tools and hosts are
-meant to adjust:
+A top-level `let` whose whole initializer is a `tunable(…)` call is a
+**setting**: a value that tools and hosts are meant to adjust.
 
 ```petal
-config let offset = 10
+let offset = tunable(10)
+pub let speed = tunable(4.0, 0, 10)
+let mode = tunable("title", options: ["title", "play"])
 ```
 
-The binding evaluates exactly as a plain `let`; what changes is how editors
-and live-editing hosts treat it. It combines with `pub` and applies only to
-`let`. A setting can hold any data; to give a numeric one a range, wrap the
-value in the `tunable` hint: `config let speed = tunable(4.0, 0, 10)`. See [`config let`](syntax/config-let.md) for the rules and for what
-tools do with it.
+`tunable` returns its first argument, so the binding evaluates exactly as a
+plain `let`; what changes is how editors and live-editing hosts treat it.
+A setting holds any data. A number can carry a range (`min`, `max`,
+`step`), and `options:` lists the allowed values. See
+[Settings](syntax/settings.md) for the rules and for what tools do with
+them. The older spelling, `config let offset = 10`, still works and is
+deprecated: `petal lint --rules-include=config-let-deprecated` lists each
+one with its rewrite.
 
-### `const` — a value that must be constant
+### `const(…)` — a value that must be constant
 
-`const NAME = expr` is a `let` whose value must be **static**: it can depend
-on nothing that changes between one run of the program and the next. It is
-evaluated exactly as the `let` would be; what it adds is a check.
+`let NAME = const(expr)` is a `let` whose value must be **static**: it can
+depend on nothing that changes between one run of the program and the next.
+It is evaluated exactly as the `let` would be; what `const(…)` adds is a
+check.
 
 ```petal
 fn tile(name, cost)
   {name: name, cost: cost}
 end
 
-const TILES = [tile("grass", 1), tile("road", 0)]
-const COSTS = map(TILES, fn(t) -> t.cost)
+let TILES = const([tile("grass", 1), tile("road", 0)])
+let COSTS = const(map(TILES, fn(t) -> t.cost))
 print(COSTS)
 ```
 
@@ -128,15 +134,38 @@ error: `LAB_W` is declared `const` but is not constant
   = build_label_w calls text_width, which is not declared constant at line 4
 ```
 
-A `const` is allowed at the top level only, is never assigned, and holds
-data, not a function. `pub const` exports it. A static top-level value is
-built once, kept between runs, and rebuilt when an edit changes the source
-it depends on, which a table parked in `state` never is.
+`const(…)` means something only as the whole initializer of a top-level
+`let` (`pub let` exports it). Anywhere else it is an error: around part of
+an initializer, inside a function, on a `var` or a `state`, and around a
+setting (`const(tunable(…))`, which is static already). The binding is never
+assigned and holds data, not a function. A static top-level value is built
+once, kept between runs, and rebuilt when an edit changes the source it
+depends on, which a table parked in `state` never is.
 
-The full rules, what is kept and when, how a `const` built from a host's
+The older spelling, `const NAME = expr`, still works and means the same; it
+is deprecated (`petal lint --rules-include=const-decl-deprecated`).
+
+The full rules, what is kept and when, how a `const(…)` built from a host's
 natives is checked, and the tools (`petal show-static`, the
 `state-as-constant` lint) are in
-[Static values and `const`](features/static-values.md).
+[Static values and `const(…)`](features/static-values.md).
+
+### Annotations
+
+`const`, `tunable` and `rigid` are **annotations**: reserved builtin
+functions that return their first argument and change only what the
+checker or the tools do with the value. A keyword (`let`, `var`, `state`,
+`memo`, `fn`) changes what a program does; an annotation never does.
+
+| Annotation | Checked or used by | Means something |
+|---|---|---|
+| `const(e)` | the compiler: an error unless `e` is static | as the whole initializer of a top-level `let` |
+| `tunable(v, …)` | hosts list a setting; direct manipulation prefers the knob | a top-level `let`'s whole initializer is a setting; anywhere else a hint |
+| `rigid(v)` | direct manipulation never moves `v` | anywhere |
+
+The names are reserved: a program cannot bind `const`, `tunable` or
+`rigid` as a function, variable, parameter or import alias, so every
+reader can recognise the call by its name.
 
 ## Types
 
@@ -926,7 +955,7 @@ change what it captures. A top-level `fn` stays exactly where it is written when
 - a statement above it *reads* a name it shadows — so `let old_max = max` above
   `fn max` still reads the builtin.
 
-A `let` or `const` built only from literals, operators, lists and records of
+A `let` (or `let X = const(…)`) built only from literals, operators, lists and records of
 them, enum variants and other such bindings does not count for the first rule:
 it is itself in place before the file's first statement, so a function that
 reads it is still hoisted.

@@ -727,7 +727,7 @@ edits to the file on disk do not reach the program while it stands. A
 relative import is a file, so a module registered in memory cannot stand in
 for it; this can. Tools use it to prove an edit before writing it
 (`petal apply-change`, the language server's other open documents) and an
-engine to apply a `--set NAME=VALUE` to a `config let` in an imported module.
+engine to apply a `--set NAME=VALUE` to a setting in an imported module.
 The entry file is not an import, so overriding it does nothing to the
 program loaded from it: load or reload the other text in its place. The C
 bridge's `vm.override_file` (`pb_vm_override_file`) is this call

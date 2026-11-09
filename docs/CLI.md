@@ -831,10 +831,10 @@ finding a `fixable` field. `petal lint --rules` lists them.
 | `dead-alias` | `let a = v` in a function, where `v` is a parameter or a local of that function that is not written from there on (nor in a loop around the alias, nor by any nested function) and `a` is only read | delete the `let` and read `v` (`get v` for a `var` read from a nested function). Reported only, when the `let` shares its line |
 | `shadows-builtin` | a `fn` with the name of a core builtin, a standard-prelude function, or a function of a bundled package the file imports whole, taking an argument count the existing one takes. Every call in the file reaches the new one | none (callers may be in other files) |
 | `reimplements-builtin` | a `fn` whose whole body calls one builtin with its own parameters in order, or is `if r == nil then d else field(r, k, d) end` (`field` already answers the fallback for `nil`) | none |
-| `dm-hint-not-literal` | `tunable(e)` where `e` is computed (`tunable(a + b)`): the hint marks a literal or a name bound to one, so this marks nothing. On a string, bool, record or list the message says so and points to `config let` ([Builtins](Builtins.md#direct-manipulation-hints)) | none: wrap the literal itself (`tunable(a) + b`), or declare a non-number setting with `config let` |
+| `dm-hint-not-literal` | `tunable(e)` where `e` is computed (`tunable(a + b)`): the hint marks a literal or a name bound to one, so this marks nothing. On a string, bool, record or list the message says so and points to a setting ([Builtins](Builtins.md#direct-manipulation-hints)) | none: wrap the literal itself (`tunable(a) + b`), or declare a non-number setting, `let X = tunable(v)` at the top level |
 | `dm-hint-bounds` | a `tunable` bound (`min`, `max`, `step`) that is not a number literal, or a `min` above the `max` | none |
-| `dm-hint-state-init` | `state x = tunable(…)`: a running program keeps its state across a reload, so a drag cannot move a state's initial value | none: declare the start value with `config let` and initialise the state from it |
-| `config-not-data` | `config let X = e` where `e` needs evaluating (`level.SPAWN`, `2 * W`): hosts read a config value without running the program ([config-let.md](syntax/config-let.md#what-a-config-binding-can-hold)), so they see none | none: write the value as data, or make it a plain `let` |
+| `dm-hint-state-init` | `state x = tunable(…)`: a running program keeps its state across a reload, so a drag cannot move a state's initial value | none: declare the start value as a setting, `let START = tunable(…)`, and initialise the state from it |
+| `config-not-data` | a setting, `let X = tunable(e)` (or the deprecated `config let X = e`), where `e` needs evaluating (`level.SPAWN`, `2 * W`): hosts read a setting without running the program ([settings.md](syntax/settings.md#what-a-setting-can-hold)), so they see none | none: write the value as data, or make it a plain `let` |
 | `int-division` (opt-in) | `a / b` on two proven ints, whose truncated quotient is then an operand of float arithmetic or the argument of `float(...)` | none: either reading can be meant |
 | `never-replays` (opt-in) | a function whose calls are never replayed from the memo table, and why: an effect on every call (`print`, a random draw, a host write), itself or through a function it calls on every call; a read whose answer changes every run (a native declared `ticks`, such as `time`); a top-level plain `var`, a new cell every run. A read of a revisioned class (`PHYSICS`, `NET`) on every call is reported as *rarely* replayed. The same analysis as [`show-static --deps`](#--deps--dependency-classes-and-why-a-helper-never-replays) | none |
 | `prefer-pub` | the deprecated `export` modifier, on any declaration or `import` | `export` → `pub` |
@@ -842,7 +842,7 @@ finding a `fixable` field. `petal lint --rules` lists them.
 | `const-decl-deprecated` (opt-in) | `const X = e` and `pub const X = e`: the keyword is deprecated in favour of the annotation ([plan](tasks/lifecycle-annotation-functions-refactor.md)) | none yet. The planned rewrite is `let X = const(e)`, literals included, with a closing `)` after a multi-line initializer and trailing comments kept in their column |
 | `config-let-deprecated` (opt-in) | `config let X = v`: the modifier is deprecated; a setting is a `let` whose whole initializer is `tunable(…)` | none yet. The planned rewrite is `let X = tunable(v)`, or only `config` dropped when `v` is already a `tunable(…)` call |
 | `const-of-literal` (opt-in) | `const X = v` or `let X = const(v)` where `v` is literal data (a literal, a colour, a list or record of them): `const` checks nothing a reader cannot see | none: dropping the check is the author's call |
-| `state-as-constant` (opt-in) | a plain top-level `state` (no key, not `state var`; `pub state` included, since importers cannot write an export) that nothing in the program assigns and whose initializer is static | `state` → `const` |
+| `state-as-constant` (opt-in) | a plain top-level `state` (no key, not `state var`; `pub state` included, since importers cannot write an export) that nothing in the program assigns and whose initializer is static | `state X = e` → `let X = const(e)` |
 
 Layout is not a finding: that is `fmt`. A file `--fix` changes is formatted
 afterwards, because a rewritten chain moves code between lines. Every fix is
@@ -862,9 +862,9 @@ file. It is for a script a host runs every frame with memoization on, where
 it says which helpers re-run every frame and what to change.
 
 `const-decl-deprecated`, `config-let-deprecated` and `const-of-literal` are
-**opt-in** and report only while the Petal corpus and Cheesecake move to
-`const(…)` and `tunable(…)`. They become default warnings that `--fix`
-applies once that migration has landed (Phase 5 of the
+**opt-in** and report only while Cheesecake moves to `const(…)` and
+`tunable(…)` (the Petal corpus moved in Phase 3). They become default
+warnings that `--fix` applies once that migration has landed (Phase 5 of the
 [plan](tasks/lifecycle-annotation-functions-refactor.md)).
 
 `state-as-constant` is **opt-in**: it runs only when `--rules-include` names
@@ -873,8 +873,8 @@ rules), and `petal lint --rules` marks it so. Every other rule's fix is
 another spelling of the same program; this one is a judgement. A
 never-assigned `state` is a constant as far as the program can tell, but a
 host can write a `state` by name, saved state can be restored into it, its
-value survives a hot reload where a `const` is rebuilt, and its initializer
-runs once in every host where a `const` is built once only if the host's run
+value survives a hot reload where a `const(…)` is rebuilt, and its initializer
+runs once in every host where a `const(…)` is built once only if the host's run
 keeps static values. Where any of that matters, leave the `state` and put
 `// petal-lint-ignore state-as-constant` on its line.
 
@@ -1450,7 +1450,7 @@ belong to the other binding and are not touched.
 - an `@x` rebind of the target. `@` desugars to `x = f(x)` and is `let`-only;
   write those calls out as `x = f(x)` first and they are converted to `set`;
 - a file that imports the target and writes it (see [importers](#importers));
-- a `config let` (a `var` cannot be config), a binding that is already a
+- a (deprecated) `config let` (a `var` cannot be config), a binding that is already a
   `var`, and a path that names a function.
 
 #### Target paths
@@ -1821,7 +1821,7 @@ where the position comes out of a helper:
 
 ```petal
 import io
-config let gap = 30.0
+let gap = tunable(30.0)
 fn place(i)
   return 20 + i * gap
 end
@@ -1914,8 +1914,8 @@ Goals:
 Which literals may move (v2):
 
 - `--allow <sel>` / `--deny <sel>` — selectors: a binding name, `line:N`,
-  `fn:NAME` (literals in that function's body), `config` (alias `knob`: every
-  `config let` and `tunable` literal, one tier), `user` (all user code). One
+  `fn:NAME` (literals in that function's body), `knob` (alias `config`: every
+  setting's literals and every `tunable` literal, one tier), `user` (all user code). One
   literal: `at:FILE:LINE:COL` (1-based, any column inside the literal's text;
   `FILE` is a path suffix like `core/level.ptl`, or the file's display name)
   or `at:LINE:COL` in the entry file, and `term:N`, the `term` that `--json`
@@ -1929,8 +1929,9 @@ Which literals may move (v2):
 - `--configurable <var>` / `--static <var>` — v1's spellings: under v2 (the
   default), `--allow <var>` / `--deny <var>`; under `--v1`, a variable to
   prefer / never edit.
-- `--config-strict` — v1's rule: once the program has a `config let` (or a
-  `tunable` that marks a literal), only knobs (`config let` and `tunable`
+- `--knob-strict` (alias `--config-strict`) — v1's rule: once the program has
+  a setting (`let X = tunable(…)`, or a deprecated `config let`) or a
+  `tunable` that marks a literal, only knobs (settings and `tunable`
   literals) move when they can. Without it, knobs are preferred by cost (one
   weight for both marks, or both together), and the rest are still offered.
 
@@ -2056,10 +2057,11 @@ callee's parameter name, else `push_output(arg 1)`), a record field
 (`core/level.ptl:41 rows[3].x: 40 -> 43`), and the candidate table of
 `--explain` shows it too, so rows of level data are told apart.
 
-`config_only` and a change's `config` mean a knob: a `config let` or
+`config_only` and a change's `config` mean a knob: a setting's literal or a
 `tunable` literal, which DM v2 treats as one tier (the text output tags such
-an alternative `[config]`). A candidate's `config` is the `config let` marker
-alone and its `hint` says whether it is `tunable`, so a client can show which
+an alternative `[config]`). A candidate's `config` is the setting marker
+(`let X = tunable(…)` or a deprecated `config let`) and its `hint` says
+whether a `tunable` hint marks it, so a client can show which
 marker a number carries; its `weight` is the same for either.
 
 A candidate's `distance` counts the call, definition and cell edges from
@@ -2090,9 +2092,10 @@ v1 (`--v1`) `--json` is unchanged: one entry per goal under `goals`
 there is exactly one goal; each proposal is
 `{description, variable, shared, config, span, new_text}`.
 
-Declaring knobs in the source with `config let` narrows v1 proposals without
-flags: config bindings are treated as configurable and every other binding as
-static. v2 reads `config let`, `tunable(x, min, max, step)` and `rigid(x)`
+Declaring knobs in the source as settings (`let X = tunable(…)`) narrows v1
+proposals without flags: settings are treated as configurable and every other
+binding as static. v2 reads settings, `tunable(x, min, max, step)` and
+`rigid(x)`
 (see [Builtins.md](Builtins.md#direct-manipulation-hints)).
 
 ### Dump format conventions
@@ -2829,7 +2832,7 @@ kept, and
 for what a reload does to the values it holds.
 
 ```petal
-config let SCALE = 2
+let SCALE = tunable(2)
 let W = SCALE * 3
 fn hd(a, b)
   {a: a, b: b, w: W}
@@ -2861,7 +2864,7 @@ Each declaration is one of three classes.
 
 - **static** — data that depends on nothing dynamic. A literal, a list or
   record of static parts, an operator on static operands, another static
-  declaration (a `config let` included, when its own initializer is static
+  declaration (a setting included, when its own initializer is static
   and it is never reassigned), a call of a constant builtin, or a call of a
   static-pure function with static arguments. The line says who reads it:
   *dynamic code* (an operand of a dynamic term, a closure capture, or a
@@ -2893,8 +2896,11 @@ The rules that most often decide an answer:
 | A top-level `var` or `state`, and anything that reads one, is dynamic. | |
 | One arity of an overloaded function that is not static-pure makes the whole name not static-pure. | |
 
-A declaration written [`const`](language-guide.md#const--a-value-that-must-be-constant)
-is listed with that keyword, and is expected to be static. When it is not, a
+A declaration written
+[`let X = const(…)`](language-guide.md#const--a-value-that-must-be-constant)
+(or the deprecated `const X = …`) is listed as `const`, and is expected to be
+static. A setting (`let X = tunable(…)`) is listed as `config let`, the
+kind's name until the keyword is removed. When it is not, a
 `!` line under it says which of two things is the case: `declared const but
 not constant: a compile error` (the reason chain that follows is what the
 error prints), or `declared const: cannot be verified without its host's
@@ -2997,7 +3003,7 @@ under their module-qualified names (`ui::button`). `--json` emits:
 
 | Field | Meaning |
 |---|---|
-| `kind` | `let`, `config let`, `var`, `state`, `fn`, `class` or `enum` |
+| `kind` | `let`, `config let` (a setting), `const`, `var`, `state`, `fn`, `class` or `enum` |
 | `qualified`, `module` | The module-qualified name (`lib::BASE`; the bare name in the entry file) and the module, absent for the entry file |
 | `class` | `static`, `function` or `dynamic` |
 | `static_pure` | Functions only |

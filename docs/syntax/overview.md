@@ -48,10 +48,12 @@ true  false  nil
 ```
 
 `export` is the deprecated spelling of `pub`; it stays reserved and keeps
-working.
+working. `const` is reserved too: `let X = const(e)` is an
+[annotation](../language-guide.md#annotations), and the declaration
+`const X = e` is its deprecated spelling.
 
 `as` (in `import ui as u`), `class` (in `class Rect … end`), `config` (in
-`config let x = …`), `native` (in `native fn sqrt(x: num) -> float`) and
+the deprecated `config let x = …`), `native` (in `native fn sqrt(x: num) -> float`) and
 `test` (in `test "name" do … end`) are **contextual**: recognised only in
 those positions, not globally reserved. `class` in particular stays usable as
 an ordinary identifier and as the JSX attribute `<div class="…">`.
@@ -157,7 +159,7 @@ for name resolution and exports, and [Packages](../packages.md) for
 ### `pub`
 
 `pub` before a top-level declaration makes it visible to importing files:
-`pub fn`, `pub let`, `pub const`, `pub config let`, `pub var`, `pub state`,
+`pub fn`, `pub let`, `pub var`, `pub state`,
 `pub enum`, `pub class`, and `pub import` to re-export. Everything else is
 private to its file. See [Exporting](../module-system.md#exporting).
 
@@ -168,8 +170,8 @@ let x = 10
 let name: string = "Petal"   // optional type annotation (see Types)
 x = 20                       // reassignment
 x += 5                       // compound assignment
-config let offset = 4        // a declared tuning knob
-const TILES = [1, 2, 3]      // a `let` that must be static (top level only)
+let offset = tunable(4)      // a setting: a declared tuning knob
+let TILES = const([1, 2, 3]) // a `let` that must be static (top level only)
 ```
 
 `let` declares a dataflow binding and `=` rebinds it
@@ -177,14 +179,19 @@ const TILES = [1, 2, 3]      // a `let` that must be static (top level only)
 not target a name bound outside it
 ([Cross-function assignment](var.md#cross-function-assignment)).
 
-`config let` marks a binding as a value that tools and hosts are meant to
-edit. It combines with `pub` and applies only to `let`. See
-[`config let`](config-let.md).
+`let X = tunable(v)` at the top level is a *setting*: a value that tools and
+hosts are meant to edit. See [Settings](settings.md). The deprecated
+`config let X = v` means the same.
 
-`const NAME = expr` is a `let` with a compile-time check that the value
+`let NAME = const(expr)` is a `let` with a compile-time check that the value
 depends on nothing dynamic. It is top level only, is never assigned, and
-combines with `pub` but not with `config`. See
-[`const`](../language-guide.md#const--a-value-that-must-be-constant).
+does not wrap a setting. See
+[`const(…)`](../language-guide.md#const--a-value-that-must-be-constant). The
+deprecated `const NAME = expr` means the same.
+
+`tunable`, `const` and `rigid` are [annotations](../language-guide.md#annotations):
+reserved builtins that return their argument and only inform the checker or
+the tools.
 
 ### `var`, `set` and `get`
 

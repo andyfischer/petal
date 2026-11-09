@@ -331,8 +331,8 @@ Use it for generated content that must be the same every time — placement,
 per-entity jitter, a stable pick — where `random()` would need a generator
 carried in state: `hash_int(seed, i) % n` is pick `i` of `n`, and the result
 is a seed for the next call (`hash_int(hash_int(seed, x), y)`). Both are
-constant functions, so a table built from them is a
-[`const`](language-guide.md#const--a-value-that-must-be-constant).
+constant functions, so a table built from them can be
+[`const(…)`](language-guide.md#const--a-value-that-must-be-constant).
 
 The algorithm is fixed and will not change. With `mix` one round of SplitMix64
 (`x += 0x9e3779b97f4a7c15; x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9;
@@ -2110,8 +2110,10 @@ a compile error.
 call is a *setting*: a binding hosts list, set live and override from
 outside, of any data type. Hosts read `let SPEED = tunable(4.0, 0, 10)` as
 the setting `4.0` with the range 0..10, and the path `SPEED` names the
-`4.0`. This replaces `config let`, which still works and means the same, but
-is being removed ([plan](tasks/lifecycle-annotation-functions-refactor.md)).
+`4.0`. This replaces `config let X = v`, which still works and means the
+same but is deprecated; `petal lint --rules-include=config-let-deprecated`
+lists each one with its rewrite
+([plan](tasks/lifecycle-annotation-functions-refactor.md)).
 
 ```petal
 pub let SPEED = tunable(4.0, 0, 10)                                 // a number with a range
@@ -2185,8 +2187,7 @@ print(cos(angle) * radius > -12)    // true
 On a computed value (`rigid(a + b)`) it marks no literal and is still a
 barrier: `a` and `b` can still move the output along any other path.
 
-A function of your own named `tunable` or `rigid` takes the place of the
-builtin and is not a hint. A host that registers a native named `rigid` (a
+A host that registers a native named `rigid` (a
 physics engine's rigid-body constructor) turns the hint off for that name,
 and the tools say so.
 
@@ -2198,13 +2199,14 @@ that reach an output only through that native from being moved. `random`,
 ### `const(value)`
 
 Returns `value`. Not a direct-manipulation hint but an annotation of the same
-kind: it changes only what the checker does with the value. Around the whole
-initializer of a top-level `let`, it is the `const` declaration in function
-form, so `let TILES = const(build_tiles())` means
-`const TILES = build_tiles()`: the binding must be static data, built once
-([language guide, `const`](language-guide.md)), or the compile reports an
-error with the reasons. The compiler erases the call, so the program is the
-same either way. The name is reserved like `tunable` and `rigid`.
+kind (an [annotation](language-guide.md#annotations)): it changes only what
+the checker does with the value. Around the whole initializer of a top-level
+`let`, as in `let TILES = const(build_tiles())`, the binding must be static
+data, built once
+([language guide, `const(…)`](language-guide.md#const--a-value-that-must-be-constant)),
+or the compile reports an error with the reasons. The compiler erases the
+call, so the program is the same as without it. The name is reserved like
+`tunable` and `rigid`.
 
 ```petal
 let TILES = const([{name: "grass", cost: 1}, {name: "road", cost: 0}])
@@ -2214,8 +2216,10 @@ print(COSTS)                                    // [1, 0]
 
 Anywhere else (inside a part of an initializer, a function body, a `var` or
 a `state`) it is an error, and so is `const(tunable(…))`, which would hide
-the setting. The `const` keyword is being replaced by this form
-([plan](tasks/lifecycle-annotation-functions-refactor.md)).
+the setting. It replaces the `const NAME = e` declaration, which still works
+and means the same but is deprecated (`petal lint
+--rules-include=const-decl-deprecated`;
+[plan](tasks/lifecycle-annotation-functions-refactor.md)).
 
 ## Host I/O
 

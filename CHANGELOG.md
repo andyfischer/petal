@@ -31,7 +31,17 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
     `Value::tag_display()`. See [ffi.md](docs/usage/ffi.md).
   - New checker warning: `==` or `!=` between variants of two different
     enums ("always false").
-
+- Settings and checked constants are written with annotations
+  ([plan](docs/tasks/lifecycle-annotation-functions-refactor.md), Phase 3):
+  `let X = tunable(v)` for a setting and `let X = const(e)` for a value that
+  must be static. `config let X = v` and `const X = e` still work and mean
+  the same, but the docs, the examples, Garden's sample panels and the test
+  fixtures now use the new forms. `syntax/config-let.md` is now
+  [syntax/settings.md](docs/syntax/settings.md) (the old page is a stub),
+  and the language guide has an
+  [Annotations](docs/language-guide.md#annotations) section.
+  `petal lint --rules-include=state-as-constant` rewrites
+  `state X = e` to `let X = const(e)`.
 - **Breaking**, petal-ui (the `ui` package is now 0.2.0): focus belongs to
   the runtime, and the threaded focus record is gone
   ([proposal](docs/proposals/input-dispatch.md), Phase 5).

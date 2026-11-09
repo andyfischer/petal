@@ -1,18 +1,19 @@
-# Static values and `const`
+# Static values and `const(…)`
 
 A **static value** is a value that is a function of the source text alone: it
 reads no `state`, no input, no clock and no host data, so every run of the
 program builds the same thing. Petal builds such a value once, keeps it
 between runs, and builds it again when an edit changes the source it depends
-on. `const` is the declaration that says a value must be static.
+on. `let NAME = const(e)` is the declaration that says a value must be
+static.
 
 ```petal
 fn tile(name, cost)
   {name: name, cost: cost}
 end
 
-const TILES = [tile("grass", 1), tile("road", 0), tile("water", 9)]
-const COSTS = map(TILES, fn(t) -> t.cost)
+let TILES = const([tile("grass", 1), tile("road", 0), tile("water", 9)])
+let COSTS = const(map(TILES, fn(t) -> t.cost))
 
 state frame = 0
 frame += 1
@@ -30,13 +31,13 @@ embedder see them. How the classifier, the cache and the reload are
 implemented is in [internals/static-values.md](../internals/static-values.md).
 
 - [What is static](#what-is-static)
-- [`const`](#const)
+- [`const(…)`](#const)
 - [Built once, kept between runs](#built-once-kept-between-runs)
 - [Following edits on hot reload](#following-edits-on-hot-reload)
 - [Values that cannot be kept](#values-that-cannot-be-kept)
 - [Host natives: constant or not](#host-natives-constant-or-not)
 - [Tools](#tools)
-- [`const`, `let` or `state`](#const-let-or-state)
+- [`const(…)`, `let` or `state`](#const-let-or-state)
 
 ## What is static
 
@@ -44,8 +45,8 @@ A value is static when it is built only from:
 
 - literals, and lists and records of static parts;
 - operators on static operands;
-- other static declarations: a `const`, a `let` that is itself static, a
-  `config let`, an enum's constant data;
+- other static declarations: a `const(…)`, a `let` that is itself static, a
+  setting (`let X = tunable(…)`), an enum's constant data;
 - calls of constant builtins (`len`, `map`, `sort`, `sqrt`, the string,
   collection, colour, vector and formatting builtins) with static arguments;
 - calls of **static-pure** functions with static arguments. A function is
@@ -73,12 +74,14 @@ dynamic.
 [`petal show-static`](#tools) prints the answer for every top-level
 declaration of a file, with the reason for each dynamic one.
 
-## `const`
+## `const(…)`
 
-`const NAME = expr` is a `let` whose value must be static. It is evaluated
-exactly as the `let` would be. What it adds is a check at compile time: a
-`const` that is not static is an error, with the chain of reasons down to the
-term that makes it dynamic.
+`let NAME = const(expr)` is a `let` whose value must be static. It is
+evaluated exactly as the `let` would be: `const` is an
+[annotation](../language-guide.md#annotations), a builtin that returns its
+argument, and the compiler erases the call. What it adds is a check at
+compile time: a `const(…)` that is not static is an error, with the chain of
+reasons down to the term that makes it dynamic.
 
 ```petal
 state clicks = 0
@@ -87,17 +90,17 @@ fn label(n)
   "clicked {n}"
 end
 
-const TITLE = label(clicks)
+let TITLE = const(label(clicks))
 ```
 
 ```text
 error: `TITLE` is declared `const` but is not constant
   = TITLE reads clicks at line 7
   = clicks is state, which changes between runs at line 1
- --> [line 7, column 15]
+ --> [line 7, column 19]
   |
-7 | const TITLE = label(clicks)
-  |               ^^^^^^^^^^^^^
+7 | let TITLE = const(label(clicks))
+  |                   ^^^^^^^^^^^^^
 ```
 
 `petal lint` exits non-zero on it and `petal run` does not start. A host
@@ -106,38 +109,42 @@ running, with the binding behaving as the `let` it otherwise is.
 
 A plain `let` that happens to be static is kept between runs in the same way.
 But it silently stops being kept the day someone adds a `print` to a
-constructor or reads the screen size in a helper. `const` turns that into an
-error at the declaration instead of a slowdown nobody notices.
+constructor or reads the screen size in a helper. `const(…)` turns that into
+an error at the declaration instead of a slowdown nobody notices.
 
 The rules:
 
-- **Top level only.** A `const` inside a function, a loop or a branch is an
-  error: only a top-level declaration is one value for the life of the
-  program. Use `let` there.
+- **The whole initializer of a top-level `let`.** Anywhere else `const(…)`
+  is an error: inside a function, a loop or a branch (only a top-level
+  declaration is one value for the life of the program), around part of an
+  initializer (`let T = {a: const(x)}`), on a `var` (assigned by definition)
+  or a `state` (declare `let X = const(…)` and initialise the state from
+  it).
 
   ```text
-  error: `const X` must be declared at the top level of a file, not inside a function, loop or block; use `let` here
+  error: `const(…)` checks a top-level `let`; it cannot be used inside a function, loop or block. Drop it here
   ```
 
-- **Never assigned.** `A = …`, `A[i] = …` and `A.f = …` on a `const` are the
-  same error as above, with the reason `A is assigned again (a value that is
-  mutated is never kept)`.
-- **Data, not a function.** `const f = fn(x) -> x` is an error (``is
+- **Never assigned.** `A = …`, `A[i] = …` and `A.f = …` on a `const(…)` are
+  an error, with the reason `A is assigned again (a value that is mutated is
+  never kept)`.
+- **Data, not a function.** `let f = const(fn(x) -> x)` is an error (``is
   declared `const` but is a function, not a constant value; declare it with
   `fn` or `let` ``), and so is a list or record that holds a function.
-- **`pub const`** exports it like any binding.
-- **`config const` does not exist.** A `config let` of literals is already
-  static, and `config` is about who edits the value, not about what it
-  depends on.
-- **Hoisting** is as for `let`: a `const` whose initializer is literals and
+- **`pub let X = const(…)`** exports it like any binding.
+- **Not around a setting.** `let X = const(tunable(4))` is an error: a
+  setting of literals is already static, and `tunable` is about who edits
+  the value, not about what it depends on. Without the error the `const`
+  would hide the setting from hosts.
+- **Hoisting** is as for `let`: a `const(…)` whose argument is literals and
   arithmetic is in place before the file's first statement, so a hoisted
   function that reads it can be called from above
   ([Declaration order](../language-guide.md#declaration-order-top-level-fns-are-hoisted)).
-- `const` is a keyword, so it cannot name a binding. It can still be a record
-  key or a field (`{const: 1}`, `r.const`), like every keyword.
+- The name `const` is reserved: it cannot name a binding. It can still be a
+  record key or a field (`{const: 1}`, `r.const`).
 - **Build it without `append`.** A value that may be written in place is
   never kept between runs, and `append` may write into the list it is
-  handed. So in `const ALL = append(for id in IDS do … end, EXTRA)` the
+  handed. So in `let ALL = const(append(for id in IDS do … end, EXTRA))` the
   comprehension runs on every frame although `ALL` is constant, and the
   compile warns:
 
@@ -147,11 +154,18 @@ The rules:
   ```
 
   `concat(for … end, [EXTRA])` and `(for … end) ++ [EXTRA]` build a new list
-  and are kept whole. The same warning names a `const` that is itself handed
-  to `append` at top level (`const U = append(T, x)` warns about `T`).
+  and are kept whole. The same warning names a `const(…)` that is itself
+  handed to `append` at top level (`let U = const(append(T, x))` warns about
+  `T`).
 
-A `const` built from a host's natives is checked by the host, not by `petal
-check`: see [Host natives](#host-natives-constant-or-not).
+**The older spelling.** `const NAME = expr` (and `pub const`) is the same
+declaration and still works, with the same rules (`config const` is an
+error). It is deprecated: `petal lint --rules-include=const-decl-deprecated`
+reports each one with its rewrite to `let NAME = const(expr)`
+([plan](../tasks/lifecycle-annotation-functions-refactor.md)).
+
+A `const(…)` built from a host's natives is checked by the host, not by
+`petal check`: see [Host natives](#host-natives-constant-or-not).
 
 ## Built once, kept between runs
 
@@ -162,7 +176,7 @@ raises and stores what it would with every value rebuilt on every run.
 
 What is kept:
 
-- **Top-level values** that code running on every run reads: a `const`, a
+- **Top-level values** that code running on every run reads: a `const(…)`, a
   static `let`, a static table written inside a call, an enum's constant
   data.
 - **Values built inside function bodies** that read nothing of the call: the
@@ -192,7 +206,7 @@ fn grow(xs)
   xs
 end
 
-const BASE = [1, 2, 3]
+let BASE = const([1, 2, 3])
 print(BASE, grow(BASE))   // [1, 2, 3] [99, 2, 3]
 ```
 
@@ -295,7 +309,7 @@ initializer reads something the edit changed, or was itself edited. That is
 how `state` has always behaved: an initializer runs once. The line makes it
 visible when a table reloads and a `state` built from it does not. If the
 `state` should have followed, it is a constant: see
-[`const`, `let` or `state`](#const-let-or-state).
+[`const(…)`, `let` or `state`](#const-let-or-state).
 
 A **stale cache** (`StaticReload::stale_caches`) is the same thing one step
 removed: a top-level `state` that code fills behind a test of a cell the
@@ -308,7 +322,7 @@ line names the cell and the first changed declaration its cached value is
 built from (a constant, or a function that builds it), found through the
 functions the written value calls. A cell that is written on every run is
 assigned again on the next one and is not named; neither is a cache that
-holds `nil`. The fix is usually to make the cached value a `const`, which is
+holds `nil`. The fix is usually to make the cached value a `const(…)`, which is
 rebuilt when what it reads changes.
 
 From Rust the report is `ReloadReport::statics` (counts, the rebuilt names,
@@ -344,12 +358,12 @@ warning: const TABLE (app.ptl:12) holds a pending result, which cannot be kept b
 warning: a constant in lookup (app.ptl:30) holds a host handle, so it is rebuilt on every call
 ```
 
-The second form is for a `const`, whose author asked for a constant. The
+The second form is for a `const(…)`, whose author asked for a constant. The
 third is for a value inside a function body.
 
 In practice this means a host native that was declared constant and returns
 a handle or a pending result. A script cannot get there by itself: a value
-that holds a function or reads a `var` is already dynamic, and a `const` of
+that holds a function or reads a `var` is already dynamic, and a `const(…)` of
 one is a compile error.
 
 `petal run` and the SDL host print the warnings. An embedding host collects
@@ -382,12 +396,12 @@ the API are in [ffi.md, Constant natives](../usage/ffi.md#constant-natives);
 from C the flag is `PB_FX_CONST`
 ([embedding-c.md](../usage/embedding-c.md)).
 
-**A `const` built from host natives is checked by the host.** `petal lint`,
+**A `const(…)` built from host natives is checked by the host.** `petal lint`,
 `petal lint` and the language server run without any host, so they do not
-know which of its natives are constant. For a `const` whose only obstacle is
+know which of its natives are constant. For a `const(…)` whose only obstacle is
 such a native they report nothing, and `show-static` says `declared const:
 cannot be verified without its host's natives`. The host reports the error
-when it loads the script, if the value is not constant there. A `const` that
+when it loads the script, if the value is not constant there. A `const(…)` that
 is dynamic for a reason no host could change (it reads `state`, say) is an
 error everywhere.
 
@@ -438,31 +452,31 @@ check note: …`. `Env::set_static_check(true)` does the same for one `Env`.
 
 **`petal lint --rules-include=state-as-constant`** reports a plain top-level
 `state` that nothing assigns and whose initializer is static, and `--fix`
-rewrites it as a `const`
+rewrites it as `let NAME = const(init)`
 ([inline-state.md](inline-state.md#state-is-not-a-constant)).
 
 **The language server** shows the classification on hover (`static, kept
 between runs`, `dynamic:` with the first reason, `function, static-pure`) and
-reports a `const` that is not constant as an error.
+reports a `const(…)` that is not constant as an error.
 
 **The reload report** names the constants a reload rebuilt and the stale
 seeds it left ([above](#the-reload-report)).
 
-## `const`, `let` or `state`
+## `const(…)`, `let` or `state`
 
 | Declare it | When | Built | After an edit to its source |
 |---|---|---|---|
-| `const` | The value is a table, a palette, a lookup, a set of rules: something that depends only on what is written in the file, and should stay that way. | Once, then kept. | Rebuilt. |
-| `let` | Anything else that is computed. A `let` that happens to be static is kept like a `const`, with no error if it stops being static. | Every run, unless it is static. | Rebuilt if it was kept; otherwise it is built every run anyway. |
+| `let X = const(…)` | The value is a table, a palette, a lookup, a set of rules: something that depends only on what is written in the file, and should stay that way. | Once, then kept. | Rebuilt. |
+| `let` | Anything else that is computed. A `let` that happens to be static is kept like a `const(…)`, with no error if it stops being static. | Every run, unless it is static. | Rebuilt if it was kept; otherwise it is built every run anyway. |
 | `state` | The value changes while the program runs and must be remembered: a score, a cursor, a hover timer. | Once, then it holds whatever was last assigned. | Not rebuilt: an existing slot keeps its value. |
 
-Use `const` for a table you would not want to become slow by accident. Use
+Use `const(…)` for a table you would not want to become slow by accident. Use
 `let` for small values and for anything that depends on the frame. Use
 [`state`](inline-state.md) only for what the program itself changes.
 
 A `state` that is never assigned is a constant in disguise. It is built once
 and then stops following edits to its own source, and each reload reports it
-as a stale seed. Declare it `const`; the `state-as-constant` lint finds these
+as a stale seed. Declare it `let X = const(…)`; the `state-as-constant` lint finds these
 and rewrites them. Keep `state` where a host writes the slot by name, or
 where the value is meant to survive a reload.
 

@@ -9,7 +9,7 @@ return to, and run again through edited code.
 ```petal ignore
 import ui
 
-config let SPEED = 2
+let SPEED = tunable(2)
 
 state x = 0
 x += SPEED
@@ -222,7 +222,7 @@ cursor on are what `SPEED = 10` produces from the same starting state and the
 same input. Resuming continues from the replayed cursor frame.
 
 Every kind of reload that changes behaviour triggers the replay: a patched
-literal, a `config let` value, or a recompile with
+literal, a setting's value, or a recompile with
 [state transferred](hot-reload.md#state-across-a-reload). An edit that only
 moves text (a comment, whitespace) does not. A reload that lands while the
 program is running live is applied as usual and replays nothing; the frames

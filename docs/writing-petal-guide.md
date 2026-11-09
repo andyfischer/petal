@@ -159,21 +159,22 @@ The boundary is the **function**, not the block. `=` crossing into a nested
 `fn` is the error above; `=` crossing into a `for`, `while`, `if` or `match` arm
 in the same function is just a rebind.
 
-### `const` — a top-level table that must stay constant
+### `const(…)` — a top-level table that must stay constant
 
-Write a top-level table, and anything derived from one, as `const`:
+Write a top-level table, and anything derived from one, as
+`let NAME = const(…)`:
 
 ```petal
 fn tile(name, cost)
   {name: name, cost: cost}
 end
 
-const TILES = [tile("grass", 1), tile("road", 0)]
-const COSTS = map(TILES, fn(t) -> t.cost)
+let TILES = const([tile("grass", 1), tile("road", 0)])
+let COSTS = const(map(TILES, fn(t) -> t.cost))
 print(COSTS)
 ```
 
-A `const` is a `let` that fails to compile if its value could ever differ
+A `let` wrapped in `const(…)` fails to compile if its value could ever differ
 between two runs of the same source: if it reads `state` or a `var`, the
 screen, the clock, `random()`, or calls a function that does, or one that
 prints. The error names the chain (`TILES calls tile`, `tile calls print`),
@@ -181,12 +182,14 @@ so a debugging `print` left in a constructor is caught instead of quietly
 turning a table into per-frame work. It is top level only, never assigned,
 and holds data, not functions. Scalars (`let NODE_W = 140`) gain nothing from
 it; use it where the value is a table or is computed. The full rule is in
-[`const`](language-guide.md#const--a-value-that-must-be-constant).
+[`const(…)`](language-guide.md#const--a-value-that-must-be-constant). Do not
+write the older `const NAME = …` declaration in new code: it means the same
+and is deprecated.
 
 **Do not park a constant table in `state`** to avoid rebuilding it. A `state`
 cell keeps its first value across hot reloads, so the table stops following
 your edits. `petal lint --rules-include=state-as-constant` reports these, and
-with `--fix` rewrites them to `const`.
+with `--fix` rewrites them to `let NAME = const(…)`.
 
 ### `var` / `set` / `get` — the mutable escape hatch
 
@@ -830,20 +833,23 @@ parameterized types: `list<int>` and record shapes are not expressible, so
 unknown name warns (`unknown type name \`banana\``) rather than failing. An
 `int` satisfies a `float` slot; the reverse needs an explicit `int(x)`.
 
-**Mark your tuning knobs with `config let`.** It evaluates exactly like a `let`;
-what changes is that the goal-based editing tools and live-editing hosts prefer
-to rewrite *those* bindings and leave the rest of the program alone
-([`config let`](syntax/config-let.md)).
+**Mark your tuning knobs with `tunable`.** A top-level `let X = tunable(v)`
+is a *setting*. It evaluates exactly like a `let`; what changes is that the
+goal-based editing tools and live-editing hosts prefer to rewrite *those*
+bindings and leave the rest of the program alone
+([Settings](syntax/settings.md)).
 
 ```petal
-config let offset = 10
-config let speed = tunable(4.0, 0, 10)   // a setting with a slider range
+let offset = tunable(10)
+let speed = tunable(4.0, 0, 10)   // a setting with a slider range
 ```
 
-One rule covers both marks: a setting (of any type) is a `config let`; a
-range, or a preference for a number that is not a setting, is `tunable`.
-Wrap a setting's value in `tunable(v, min, max, step)` to give it a range
-hosts and drags both see ([Giving a setting a range](syntax/config-let.md#giving-a-setting-a-range)).
+A setting holds any data. Give a number a range with
+`tunable(v, min, max, step)`, which hosts and drags both see
+([Ranges and options](syntax/settings.md#ranges-and-options)); anywhere but
+a top-level `let`'s whole initializer, `tunable` is a preference for the
+number it marks. Do not write `config let` in new code: it is the deprecated
+spelling of the same thing.
 
 **State a rule between numbers with `assert`.** A drag never proposes an edit
 that makes the program fail, so `assert(x1 >= x0)` in the function that
@@ -1091,7 +1097,7 @@ check` warns about a literal `1 / 2`.
 One rule is off unless you name it: `petal lint
 --rules-include=state-as-constant` reports a top-level `state` that nothing
 assigns and whose initializer is constant, and with `--fix` rewrites it to
-`const`. That is right for a table and wrong for a cell your host writes by
+`let NAME = const(…)`. That is right for a table and wrong for a cell your host writes by
 name; put `// petal-lint-ignore state-as-constant` on such a line. See
 [`fmt`](CLI.md#fmt--canonical-layout) and [`lint`](CLI.md#rules).
 

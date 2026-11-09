@@ -54,7 +54,7 @@ Take a row of circles placed by a helper:
 ```petal
 import ui
 
-config let gap = 30.0
+let gap = tunable(30.0)
 fn place(i)
   return 20 + i * gap
 end
@@ -72,7 +72,7 @@ circle moves 2 pixels per unit of `gap` and 1 pixel per unit of the `20`,
 and it solves for the values that put the circle where you dropped it.
 It then gives you a ranked list:
 
-1. set `gap` to 42.5 (it's a `config let`, so it's preferred; the other
+1. set `gap` to 42.5 (it's a setting, so it's preferred; the other
    circles spread out too)
 2. change the `20` in `place` to 45 (the whole row moves)
 
@@ -140,7 +140,7 @@ Petal leaves these out and says why (`--explain` lists them):
 How well this works depends on how the program is written. It's a sliding
 scale, not a yes-or-no:
 
-- **Most editable:** positions computed from `let` and `config let` values
+- **Most editable:** positions computed from `let` values and settings
   through plain functions. Every number has a clear effect.
 - **Less editable:** values that pass through `var` cells, or that build up
   over a loop (`set total = total + w`). They still work, but they cost a
@@ -155,27 +155,28 @@ scale, not a yes-or-no:
 
 You can tell Petal which numbers are meant to be adjusted.
 
-`config let` marks a top-level knob:
+A *setting*, a top-level `let` whose whole initializer is `tunable(…)`,
+marks a top-level knob:
 
 ```petal
 import ui
 
-config let offset = 10
+let offset = tunable(10)
 let x = 20
 draw_circle(x + offset, 110, 60, 200, 80, 80)
 ```
 
-Dragging the circle above changes `offset`. `config let` values are
-preferred, but other numbers are still offered further down the list (the
-legacy v1 engine leaves the other `let` bindings alone entirely once a script
-has any `config let`, and `--config-strict` does the same once it has any
-`config let` or `tunable` knob). Every
-literal in a `config let`'s data counts, so the `140` in
-`config let BOX = {x: 140, y: 90}` is preferred and matches the `config`
-selector as a scalar `config let` does. `config let` doesn't change how the
-program runs. See [syntax/config-let.md](../syntax/config-let.md).
+Dragging the circle above changes `offset`. Settings are preferred, but
+other numbers are still offered further down the list (the legacy v1 engine
+leaves the other `let` bindings alone entirely once a script has any
+setting, and `--knob-strict` does the same once it has any setting or
+`tunable` knob). Every literal in a setting's data counts, so the `140` in
+`let BOX = tunable({x: 140, y: 90})` is preferred and matches the `knob`
+selector as a scalar setting does. A setting doesn't change how the program
+runs. See [Settings](../syntax/settings.md). (The deprecated
+`config let offset = 10` means the same as `let offset = tunable(10)`.)
 
-For numbers inside functions, or with a range, use `tunable`. To say "never
+For numbers inside functions, use `tunable` on the literal. To say "never
 move this" use `rigid`:
 
 ```petal
@@ -186,21 +187,20 @@ let radius = tunable(40, 10, 80)        // preferred, kept within 10..80
 print(cos(angle) * radius)
 ```
 
-Both return their value unchanged, so they cost nothing at run time. A
+Both return their value unchanged. A
 `rigid(...)` value doesn't pass changes through to anything upstream of it.
 See [Builtins.md](../Builtins.md#direct-manipulation-hints).
 
-The two marks have separate jobs. `config let` declares a setting of any type
-that hosts list and set; `tunable` marks a number for direct manipulation,
-with a range. To give a setting a range, combine them:
-`config let radius = tunable(40, 10, 80)`. Hosts then see the setting `radius`
-with the value `40` and the range 10..80, and a drag keeps within it
-([Giving a setting a range](../syntax/config-let.md#giving-a-setting-a-range)).
-For direct manipulation the two marks are one tier: a `config let` literal, a
-`tunable` literal and one written both ways are all knobs and weigh the same,
-so adding `tunable` to a setting only adds the range. The `config` selector
-(alias `knob`), `--config-strict` and the `[config]` tag on an alternative all
-mean "a knob" in this sense.
+Where `tunable` is written decides its job. As the whole initializer of a
+top-level `let` it declares a setting of any type that hosts list and set;
+anywhere else it marks a number for direct manipulation. Either can carry a
+range: `let radius = tunable(40, 10, 80)` is the setting `radius` with the
+value `40` and the range 10..80 to hosts, and a drag keeps within it
+([Ranges and options](../syntax/settings.md#ranges-and-options)). For direct
+manipulation the two are one tier: a setting's literal and a `tunable`
+literal are both knobs and weigh the same. The `knob` selector (alias
+`config`), `--knob-strict` (alias `--config-strict`) and the `[config]` tag
+on an alternative all mean "a knob" in this sense.
 
 ### Telling Petal which numbers may move
 

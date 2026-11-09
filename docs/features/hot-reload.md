@@ -160,7 +160,7 @@ and `core/tests/class_live_edit.rs`. Enum variants kept in `state` are under
 
 ## Static values across a reload
 
-A static value is a value that depends on no dynamic data (a `const`, a table
+A static value is a value that depends on no dynamic data (a `const(…)`, a table
 of literals, a table built from one by functions that read nothing else),
 built once and kept between runs. A reload keeps the ones the edit cannot
 have changed and the next run rebuilds the rest: a value is rebuilt when the
@@ -199,15 +199,16 @@ compares the syntax trees. It returns a `FileDiff`, whose `change` is a
 - **`Values(list)`**: the trees differ only in the values of literals, each
   keeping its kind (int, float, string, bool). Every entry names the literal's
   old and new value and its span in both texts, and for a literal inside a
-  top-level `let`, `const` or `config let` its binding path: `SPEED`,
+  top-level `let` (a setting and a `const(…)` included) its binding path: `SPEED`,
   `POST.effects[2].amount`, `SUN.dir[1]` (a call's arguments count as
   elements, as in [config files](../usage/config-files.md)). A literal in a function
   body or a statement is a value change too, with no path.
 - **`Constructs(list)`**: the structure changed. Each entry names a top-level
-  construct (`fn draw`, `config let GEN`, `const TILES`, `state score`, an
-  import, a bare statement) and whether it was added, removed or changed.
-  Changing a `let` to a `const` or back is one of these: the keyword adds or
-  removes a compile-time check, so the program is recompiled.
+  construct (`fn draw`, `let GEN = tunable(…)`, `let TILES = const(…)`,
+  `state score`, an import, a bare statement) and whether it was added,
+  removed or changed. Adding or removing a `const(…)` or `tunable(…)` wrapper
+  is one of these: it changes what the checker or the hosts do with the
+  binding, so the program is recompiled.
 - **`Full(reason)`**: the new text does not parse, or the edit is one the tree
   does not show (`export` respelled `pub`, redundant parentheses added).
 
@@ -221,14 +222,14 @@ looked incremental was recompiled anyway) why.
 These are value changes:
 
 ```petal
-config let SPEED = 4.0          // 4.0 -> 5.5
-config let POST = {
+let SPEED = tunable(4.0)        // 4.0 -> 5.5
+let POST = tunable({
   bloom: 0.2,                   // any field, at any depth
   effects: [{amount: 0.3}],     // any element
   tint: rgb(255, 0, 80),        // any argument of a constructor call
   accent: #ff2e88,              // a color, component by component
   offset: -1.5,                 // -1.5 -> 1.5: see below
-}
+})
 fn area(w)
   (w + 2) * 10                  // literals in code, too
 end
@@ -278,10 +279,10 @@ reload, if it needs no recompile. So:
 It returns `ConfigSetError::NeedsReload` when the value has a different type or
 shape from what is written (an integer literal given a float, a list of a
 different length), and changes nothing. Write the file and reload for those.
-Any top-level `let` of data can be set this way; `config` is not required
-(what [`config let`](../syntax/config-let.md) adds is the sign rule above).
-In `config let SPEED = tunable(4.0, 0, 10)` the path `SPEED` names the `4.0`
-([Giving a setting a range](../syntax/config-let.md#giving-a-setting-a-range)),
+Any top-level `let` of data can be set this way; it need not be a
+[setting](../syntax/settings.md). In `let SPEED = tunable(4.0, 0, 10)` the
+path `SPEED` names the `4.0`
+([Ranges and options](../syntax/settings.md#ranges-and-options)),
 and the value is not clamped to that range.
 
 From C: `pb_vm_set_tunable(vm, file, path, value_json)` and

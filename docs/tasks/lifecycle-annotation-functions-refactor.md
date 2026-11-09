@@ -2,8 +2,9 @@
 
 Status: Phase 1 shipped 9 November 2026 (`const(…)` reaches parity; see
 "Phase 1: what shipped" below). Phase 2 shipped the same day (the fixers,
-opt-in and report only; see "Phase 2: what shipped"). Phases 3 to 7 are
-planned. Settings without
+opt-in and report only; see "Phase 2: what shipped"), and so did Phase 3
+(the Petal corpus, the docs and petal-lang.org; see "Phase 3: what
+shipped"). Phases 4 to 7 are planned. Settings without
 `config` are half done:
 Phases 1 and 2 of the old removal proposal shipped on 6 November (commits
 47e5e905 and ab5e99a7), and Cheesecake vendored them (a18ce96a). That
@@ -398,6 +399,94 @@ that host has been updated.
   - fractal-tree's "Alt-click `spread` twice" becomes "once" (Garden's
     cycle is free → tunable → rigid).
 - Re-run the DM v2 study and confirm the golden is unchanged.
+
+#### Phase 3: what shipped (9 November 2026)
+
+- **The corpus.** `migrate_in_place` (an ignored test in
+  `core/tests/lifecycle_migration.rs`; `PETAL_MIGRATE=<paths> cargo test
+  --test lifecycle_migration migrate_in_place -- --ignored`) applied
+  `migrate_lifecycle_keywords` to 31 files under `examples/`,
+  `garden/examples`, `test/` and `core/tests/dm`: 43 `const` and 147
+  `config let` (the doc's 155 counted declarations inside strings and
+  prose). Comments that named `config let` now name the setting. No
+  `.ptl` file in the repo declares either keyword, and
+  `the_petal_corpus_declares_neither_keyword` keeps it so.
+- **The tree-sitter corpus** tests `let X = const(…)` and
+  `let X = tunable(…)` (both parse as calls already), and a "Deprecated
+  const and config let declarations" test keeps the old forms, which the
+  grammar accepts until Phase 6.
+- **Rust string fixtures.** Where a fixture uses either keyword only in
+  passing, it is rewritten: `hot_reload.rs`, the `dm_*` tests, `lsp_tests`,
+  `static_reload`, `static_observe`, `static_review3`,
+  `static_in_functions`, `record_templates`, `stdlib_helpers`, the cli's
+  `cli_propose_edit_v2` and `static_cache`, petal-ui-headless's
+  `propose_edit_bin` and garden-script's `dm_drag`. Fixtures that test the
+  deprecated forms themselves stay until Phase 6: `const_decl.rs`,
+  `source_preservation.rs` (its fixtures are `export config let` text
+  round-trips), the unit tests in `parse.rs`, `source_diff.rs`,
+  `static_value.rs`, `direct_manipulation.rs` and the fuzzers, the C bridge's
+  tests (Cheesecake reaches `config let` through them until Phase 4),
+  Garden's app tests (`garden-app` is not rebuilt for this), and
+  `a_tunable_config_is_set_by_name_without_a_recompile` in `hot_reload.rs`.
+- **One difference found.** `static_observe.rs`'s
+  `a_rebuild_put_off_keeps_its_log_with_its_values` stays on `config let K
+  = 2`. With `let K = tunable(2)`, a zero-threshold debounce defers `K`'s
+  own slot, because `tunable(2)` is a native call where `config let`'s `2`
+  is a literal patched in place. With a real threshold the one-call slot is
+  never slow enough to defer, so this is a cost, not a wrong value; it is
+  the "Run-time cost of `tunable` as a call" risk, and lowering `tunable`
+  like `const` removes it.
+- **The parity tests run both ways.** `const_parity.rs` also rewrites each
+  top-level `let X = const(e)` back into `const X = e` (80 samples, 145
+  declarations), and `setting_parity.rs` each single-line
+  `let X = tunable(…)` back into `config let` (21 files, 135 settings), so
+  both still compare the two forms after the migration.
+  `lifecycle_migration.rs`'s dry run now reads its directories from
+  `PETAL_MIGRATE_DRY_RUN` (Phase 4 points it at Cheesecake).
+- **Lint and help.** `state-as-constant` rewrites `state X = e` to
+  `let X = const(e)` (its `const(` and `)` splices sit at the initializer's
+  text edges, as Phase 2's fixers do; it does not re-pad trailing comments,
+  which `petal fmt` does). `dm-hint-state-init` already suggested
+  `let START = tunable(…)`. `petal help lint` lists the three lifecycle
+  rules, and the help for `show-static`, `propose-edit` and `apply-change`
+  names settings first.
+- **Docs.** `syntax/config-let.md` is rewritten as `syntax/settings.md`,
+  with `let`/`tunable`/`const(…)`/`state` in its comparison table and a
+  section on the deprecated form; the old path is a stub. The language
+  guide's "`const(…)`: a value that must be constant" keeps its anchor
+  (`#const--a-value-that-must-be-constant`), so the links from
+  `writing-petal-guide.md`, `Builtins.md`, `CLI.md` and `overview.md` still
+  land, and a new "Annotations" section states the keyword/annotation rule.
+  Also updated: `features/static-values.md`, `Builtins.md`, `CLI.md`,
+  `syntax/overview.md` (the keyword list says `const` is reserved for the
+  annotation), `usage/config-files.md`, `features/hot-reload.md`,
+  `features/direct-manipulation.md`, `usage/embedding-c.md`,
+  `features/time-travel.md`, `features/program-modification.md`,
+  `module-system.md`, `writing-petal-guide.md` and `README.md`.
+  `docs/proposals/` and `docs/dev/` are records and keep the old forms.
+  `docs/stdlib.json` regenerates unchanged. `CHANGELOG.md` has a "Changed"
+  entry.
+- **The DM v2 study.** `dm_study.rs` counts a bare top-level `tunable(v)`
+  as a config knob (it is the migrated `config let`), and its `hint` aid
+  counts only a hint that constrains (`rigid`, or a `tunable` with a
+  bound). A full study run before and after the migration is identical in
+  every outcome, run count, edit and metric; only l01b's title changed,
+  and the golden (`direct-manipulation-v2-study.json`) has that one string
+  edited by hand. The golden is not regenerated, since a fresh run also
+  moves wall times and drops the external pass.
+- **petal-lang.org** (`~/biz/petal-lang.org`, two commits): the five DM
+  samples that used `config let` (orbits, flower, quilt, fractal-tree,
+  kite) and `dm-samples.json` (fractal-tree's `spread` now turns rigid
+  with one Alt-click), `DmStudio.tsx`'s `findKnobs` without its
+  `config let` branch, the `/manipulate` copy, a guard in
+  `check-dm-samples.mjs` that fails on `config let` or a `const`
+  declaration in a sample, and the docs re-imported with
+  `PETAL_REPO=<this worktree> pnpm import:docs`. `pnpm build:sdk` was not
+  run: its paths are fixed to `~/petal`, and the vendored garden-web
+  (built from main at ee6a1a03) already reads `tunable` settings;
+  `check-dm-samples.mjs --verbose` prints the same before and after.
+  Re-vendor after this branch merges. The home page snippet
+  (`page.tsx:281`) moved to `content/home.md` and has neither keyword.
 
 ### Phase 4: Cheesecake (`~/cheesecake`)
 

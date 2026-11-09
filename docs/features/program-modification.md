@@ -97,7 +97,7 @@ from its literals to its outputs: it re-runs it speculatively with effects
 contained and state frozen, measures how each literal moves the target, and
 solves for a change. So it reaches literals through function calls, field
 reads and loops, as long as the output moves smoothly with them. Hints
-(`tunable`, `rigid`, `config let`) and `assert` constraints steer it. The
+(`tunable`, `rigid`, settings) and `assert` constraints steer it. The
 legacy v1 engine (`--v1`) only inverts `+ - * /` and negation in the call
 that emitted the value. See
 [direct-manipulation.md](direct-manipulation.md#what-can-be-edited) and the

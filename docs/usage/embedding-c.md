@@ -1065,7 +1065,7 @@ pub let LOOK = tunable({bloom: 0.3, tint: #ff2e88})   // every number a knob
 
 `let X = tunable(v) * 2`, `var X = tunable(v)` and a `tunable` below the top
 level are not settings (`petal lint` says so). The deprecated
-[`config let X = v`](../syntax/config-let.md) is a setting with nothing
+[`config let X = v`](../syntax/settings.md#the-deprecated-config-let) is a setting with nothing
 written.
 
 In `bindings_json()` a setting carries a `"tunable"` object with what was

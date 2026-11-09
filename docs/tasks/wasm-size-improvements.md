@@ -1,10 +1,12 @@
 # Wasm size improvements
 
-Status: 2026-11-05. Two items done (embedded-source comment stripping, binary
-draw commands); the rest are open. Goal: the browser runtime under 1 MB.
-Compressed, the default build is under 1 MB with brotli and the `--size`
-build is under 1 MB with gzip. Under 1 MB raw needs the player/editor split
-(item 10).
+Status: 2026-11-08. Finished items (comment stripping in embedded sources,
+binary draw commands, `pkgman` out of the library) have been removed from
+this doc; see the log. Everything below is open.
+
+Goal: the browser runtime under 1 MB. Compressed, the default build is under 1 MB with brotli and the `--size`
+build is under 1 MB with gzip. Live editing is a core feature, so the
+compiler always ships; raw size comes down only by trimming everything.
 
 All numbers are for **petal-web-canvas**, the runtime the website and the
 diagram canvas use, built as `build-wasm.sh` builds it: release, LTO,
@@ -16,7 +18,7 @@ the feature flags in `rust/Cargo.toml`. gzip is `-9`, brotli is quality 11.
 | Build | Raw | gzip | brotli |
 |---|---|---|---|
 | Before this work (`95571d8`) | 3.93 MB | 1.37 MB | 985 KB |
-| **Now** (items 1 and 4 done) | **3.75 MB** | **1.31 MB** | **932 KB** |
+| **Now** | **3.75 MB** | **1.31 MB** | **932 KB** |
 | `--size` before (`opt-level z`, `wasm-opt -Oz`) | 2.31 MB | 886 KB | 700 KB |
 | `--size` + nightly `-Cpanic=immediate-abort -Zfmt-debug=none -Zlocation-detail=none`, before | 2.16 MB | 825 KB | 656 KB |
 
@@ -29,7 +31,8 @@ The other wasm build, core with `--features wasm` (petal-web-html), was about
 ## What the size is made of
 
 From `twiggy top` on the bindgen output before `wasm-opt` (4.29 MB without its
-name section), before this work:
+name section), before this work. Since then `.rodata` is 367 KB (comments
+stripped), `pkgman` is gone and serde_json is a little smaller:
 
 | Area | Bytes | Notes |
 |---|---|---|
@@ -50,43 +53,15 @@ finished program downloads all of it.
 
 | # | Idea | Est. saving (raw / gzip) | Cost | Status |
 |---|---|---|---|---|
-| 1 | Strip comments from embedded `.ptl` | −170 KB / −59 KB | none at run time | **Done** 2026-11-05 |
-| 2 | Bloom, glsl and text_layout opt-in | −156 KB / −45 KB of source (before 1; ~−100 KB raw after) | pages that use them load them | Not started |
-| 3 | Leave `pkgman` and `fn_introspect` out of wasm | ~−130 KB raw | `fn_info`/`fn_ast` unavailable in the browser | `pkgman` **done** 2026-11-05; `fn_introspect` not started |
-| 4 | Draw commands as binary, not JSON | −13 KB code; no per-frame JSON | API change for JS embedders | **Done** 2026-11-05 |
+| 2 | Bloom, glsl and text_layout opt-in | ~−100 KB raw (comment-stripped source) | pages that use them load them | Not started |
+| 3 | Leave `fn_introspect` out of wasm | ~−70 KB raw | `fn_info`/`fn_ast` unavailable in the browser | Not started (needs 2) |
 | 5 | Serve brotli | 1.31 MB → 932 KB transferred | hosting config | Not started (outside this repo) |
 | 6 | Size profile by default (`opt-level z` + `-Oz`) | −1.6 MB / −480 KB | frames ~1.5x slower | Available as `--size`; not the default |
 | 7 | Nightly `immediate-abort` + `fmt-debug=none` | another −155 KB / −60 KB on top of 6 | no panic messages; nightly toolchain | Not started |
 | 8 | Build the AST once (drop the parser's direct AST or `cst_project`) | ~−66 KB | refactor of the parse path | Not started |
 | 9 | Cut generic instantiations (hashbrown, drop glue) | ~−100–200 KB (guess) | broad refactor | Not started |
-| 10 | Separate "player" wasm: VM + builtins + petal_ui, no compiler | ~−1.3–1.5 MB | needs a bytecode file format; two builds | Not started |
 
-Items 1–4 have no cost at run time and should all land. Item 10 is the only
-way under 1 MB raw.
-
-### 1. Strip comments from embedded sources — done
-
-`core/build.rs` copies every embedded `.ptl` (the bundled packages, the std
-prelude, the `web` interface) to `$OUT_DIR/embedded/`, and the crate's
-`include_str!`s read the copies. For a wasm32 target the copy has every
-whole-line `//` comment blanked and trailing whitespace trimmed
-(`core/build_support/strip_comments.rs`). Native builds keep comments
-because the LSP and `petal lint` show them. `PETAL_EMBED_COMMENTS=keep|strip`
-overrides the default either way, and `petal::bundled::COMMENTS_STRIPPED`
-says which happened.
-
-- Lines are blanked, not removed, so every token keeps its line and column,
-  and error positions inside a bundled module match the repository file.
-- `src/strip_comments_check.rs` lexes every embedded file before and after
-  stripping and requires the same tokens at the same positions. The core lib
-  suite also passes with `PETAL_EMBED_COMMENTS=strip` on native.
-- petal-ui's `prelude_source()` / `input_source()` now read the bundled `ui`
-  package instead of their own `include_str!`. Otherwise the binary would
-  carry a stripped and an unstripped copy of the 198 KB prelude; LTO had
-  only been merging the two because they were identical.
-- Trailing `//` comments after code stay. Removing them safely needs the
-  real lexer; they are a small share.
-- Measured: `.rodata` 537 KB → 367 KB.
+Items 2 and 3 have no cost at run time and should land.
 
 ### 2. Make bloom, glsl and text_layout opt-in
 
@@ -96,46 +71,53 @@ behind a cargo feature of `petal` (on for the CLI, off for petal-web-canvas
 by default), or leave them out of the wasm build and have a page that needs
 one call the existing `register_package` with a `petal bundle` of it.
 
-### 3. Leave `pkgman` and `fn_introspect` out of wasm
+What the code looks like (checked 2026-11-08):
 
-**`pkgman` — done.** It installed packages from the network and the
-filesystem, and was linked in only because module loading could reach it
-(`ModuleRegistry::dependency_package`, for a git dependency of a package on
-disk), which never happens in a browser. It is now its own crate,
-`core-libs/petal-pkgman`, linked only by the `petal` binary (`cli/`). Core
-reaches it through `petal::package_manager::PackageManager`, which the
-binary registers at startup. Without one, path dependencies and
-`vendor/<name>` resolve as before and a git dependency is an error saying to
-bundle the package.
+- All three are pure Petal: no `native fn`, no Rust natives, and nothing in
+  `core/src` refers to them by name except tests and help text.
+- The one seam is the `BUNDLED_PACKAGES` table in `core/build.rs`. Everything
+  else (`bundled::BUNDLED_PACKAGES`, the module registry's
+  `bundled_packages()`, lint, `strip_comments_check`) iterates that table,
+  so a package left out of it is simply absent and `import bloom` fails like
+  any unknown package.
+- `bloom` depends on `text_layout`, so they go together or `text_layout`
+  stays when `bloom` is in.
+- Every embedder (garden, petal-web-canvas, petal-web-html, petal-desktop-sdl,
+  petal-c-bridge, ui-corpus) uses `default-features = false`, so a
+  default-on feature would turn the libraries off for all of them. Garden's
+  gpp-apps import `bloom`. So the features must be named explicitly by the
+  hosts that want them (`features = ["bloom"]`), not added to `default`.
+- No web page imports them: the petal-lang.org snippets that mention them
+  are `ignore` blocks.
 
-**`fn_introspect` — not started.** It backs the experimental `fn_info` /
-`fn_ast` and `Env::function_params` (the C bridge). The bundled `glsl`
-library calls `fn_info`/`fn_ast` to translate lambdas, so it can only leave
-the wasm build together with `glsl` (item 2); then gate it on
-`not(target_arch = "wasm32")` and have the two builtins report that they are
-not available.
+Plan: cargo features `bloom` (implies `text_layout`), `text_layout`, `glsl`
+on `petal`; `cli/` and garden enable them; `build.rs` reads
+`CARGO_FEATURE_*` and leaves the rest out of the table. Gate the tests that
+`expect("bloom is bundled")` on the feature. Make the unknown-package error
+name the missing feature when the name is one of the three.
 
-### 4. Draw commands as binary — done
+### 3. Leave `fn_introspect` out of wasm
 
-`petal_ui::draw_wire::DrawWire` encodes a frame's commands as a flat
-`Vec<f64>` plus a string table. petal-web-canvas exports `take_draw_buffer()`
-(a `Float64Array`) and `draw_strings()` in place of the JSON
-`take_draw_commands()`, and `run_speculative()` returns a buffer too.
-`decodeDrawCommands` (`integrations/petal-web-canvas/src/draw-wire.ts`)
-rebuilds the same `{ op, ...fields }` objects, so `renderCommands` did not
-change.
+It backs the experimental `fn_info` / `fn_ast` and `Env::function_params`
+(the C bridge). The bundled `glsl` library calls `fn_info`/`fn_ast` to
+translate lambdas, so it can only leave the wasm build together with `glsl`
+(item 2). cheesecake also calls them (`engine/script/.../petal_fx.ptl`,
+`games/rivet/bg.ptl`), natively.
 
-- `test/vitest/fixtures/draw-wire.json` holds one sample of every command, in
-  both encodings. The Rust test `draw_wire::tests::fixture_is_current` writes
-  it (`PETAL_UPDATE_FIXTURES=1`) and checks it is current;
-  `test/vitest/draw-wire.test.ts` decodes it and compares it with the JSON.
-- End to end, the old JSON build and the new build agreed on every command
-  of five frames of each `petal-web-canvas/examples/*.ptl` (25,176 commands).
-- Size: only −13 KB of code (`DrawCommand`'s serializer and part of
-  serde_json). serde_json stays for the other JSON exports. The bigger win is
-  per frame: no JSON string is built in wasm and parsed in JS.
-- Next step, if frame time matters: render straight from the buffer instead
-  of decoding to objects.
+It is less separable than item 2. The 679-line module is mostly the
+AST-to-record walker, but its `Cache` is a field of every `Program`
+(`program.introspect`, built in `compiler` and `program_analysis`, cleared in
+`env/reload.rs`), `Env::function_params` reads its parameter metadata, the
+VM dispatches the two intrinsics (`vm/introspect.rs`, `vm/native.rs`), and
+`core/packages/core/src/introspect.ptl` declares them in every file's scope.
+
+Plan: a feature `introspection` (enabled by `cli/`, the C bridge, and with
+`glsl`). Split the module: parameter metadata (name, annotation, default
+source), which `function_params` needs, stays; the `fn_ast` walker and the
+JSON value building go behind the feature. Without it the two intrinsics stay
+registered and declared (so programs type-check the same everywhere) but
+return an error saying the build has no introspection.
+
 
 ### 5. Serve brotli
 
@@ -156,8 +138,7 @@ inherits `-O` from `Cargo.toml`.
 -Zfmt-debug=none -Zlocation-detail=none` saved another 155 KB raw on top of
 `opt-level z`. Costs: a nightly toolchain in CI, no panic message for
 `console_error_panic_hook` to log, and `{:?}` printing nothing, which breaks
-any user-visible message built with `Debug`. Worth it only for a "player"
-build.
+any user-visible message built with `Debug`.
 
 ### 8. Build the AST once
 
@@ -173,15 +154,6 @@ hashbrown is 288K over 254 instances, and drop glue is 230K. Fewer distinct
 map key/value types (or type-erased maps on cold paths), and boxing rarely
 used large `Env` fields, would cut both. Measure with `twiggy top` and
 `twiggy dominators` per change.
-
-### 10. A "player" build without the compiler
-
-Compile programs to bytecode when the site builds, and ship a wasm with only
-the VM, builtins and petal_ui. The compiler, typecheck, static passes and
-lowering are ~1.3–1.5 MB of the 3.75 MB. Needs a serialized bytecode format
-(there is none today; `ir_serialize.rs` only has JSON helpers). Live editing,
-including the petal-lang.org snippet editor, still needs the full build, so
-this means two builds: player and editor.
 
 ## How to measure
 
@@ -207,3 +179,9 @@ per-module breakdown, run `twiggy top -n 100000 --format csv` and sum
   Did item 1 (−170 KB of `.rodata`) and item 4 (draw commands binary, −13 KB
   of code). Together: 3.93 → 3.75 MB raw, 1.37 → 1.31 MB gzip, 985 → 932 KB
   brotli.
+- 2026-11-05: moved `pkgman` into its own crate, `core-libs/petal-pkgman`,
+  linked only by the CLI (#23).
+- 2026-11-08: removed the finished items (1, 4, `pkgman` half of 3) from
+  this doc. Remaining items keep their numbers.
+- 2026-11-08: dropped item 10 (a player build without the compiler): live
+  editing is a core feature. Recorded the modularity findings for 2 and 3.

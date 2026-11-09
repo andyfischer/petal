@@ -1068,7 +1068,14 @@ impl<'a> Checker<'a> {
             fallback
         };
         match self.resolve_ann(ann) {
-            None => self.warn(span, format!("unknown type name `{}`", ann.name)),
+            None => {
+                let why = self
+                    .classes
+                    .qualified_miss(&ann.name)
+                    .map(|why| format!(": {why}"))
+                    .unwrap_or_default();
+                self.warn(span, format!("unknown type name `{}`{why}", ann.name))
+            }
             Some(Type::Nil) if ann.name == "nil?" => self.warn(
                 span,
                 "`nil?` is just `nil`; write `nil` (as a return type, `-> nil?` \

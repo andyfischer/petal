@@ -118,6 +118,20 @@ pub struct ClassTable {
     /// to pass. An enum's name is unique in a compilation, as a class's is.
     enums: Vec<EnumEntry>,
     enum_by_name: HashMap<String, EnumId>,
+    /// The module qualifiers the current file can write in type position
+    /// (`sh` in `c: sh.Circle`): each with the module as the file spelled
+    /// it, and the names that module exports. Set beside [`Self::scope`].
+    qualifiers: HashMap<String, Qualifier>,
+}
+
+/// A module qualifier usable in a type annotation — see
+/// [`ClassTable::set_qualifiers`].
+#[derive(Debug, Clone, Default)]
+pub struct Qualifier {
+    /// The module as the importing file wrote it (`./shapes`, `ui`).
+    pub module: String,
+    /// Every name the module exports.
+    pub exports: HashSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -150,6 +164,7 @@ impl ClassTable {
             scope: None,
             enums: Vec::new(),
             enum_by_name: HashMap::new(),
+            qualifiers: HashMap::new(),
         };
         for def in builtin_classes() {
             table.builtin_names.insert(def.name.clone());
@@ -169,6 +184,14 @@ impl ClassTable {
     /// Drop the per-file view: every declared class resolves again.
     pub fn clear_scope(&mut self) {
         self.scope = None;
+        self.qualifiers.clear();
+    }
+
+    /// The module qualifiers the current file binds (plain, `as` and
+    /// implicit imports), for `q.Name` in type position. Replaces the
+    /// previous file's.
+    pub fn set_qualifiers(&mut self, qualifiers: HashMap<String, Qualifier>) {
+        self.qualifiers = qualifiers;
     }
 
     fn insert(&mut self, def: ClassDef) -> ClassId {
@@ -366,8 +389,40 @@ impl ClassTable {
                 .filter(|t| !matches!(t, Type::OrNil(_)))
                 .map(Type::or_nil);
         }
+        if let Some((q, member)) = name.split_once('.') {
+            return self.qualified_type(q, member);
+        }
         let class = self.lookup(name).map(Type::Class);
         class.or_else(|| self.lookup_enum(name).map(Type::EnumOf))
+    }
+
+    /// `q.Name` in type position: the class or enum `Name` that the module
+    /// bound to qualifier `q` exports. It names the same type a bare `Name`
+    /// would (docs/proposals/module-name-collisions.md, part A), whether or
+    /// not the file's scope also carries it bare.
+    fn qualified_type(&self, q: &str, member: &str) -> Option<Type> {
+        if !self.qualifiers.get(q)?.exports.contains(member) {
+            return None;
+        }
+        let class = self.by_name.get(member).copied().map(Type::Class);
+        class.or_else(|| self.enum_by_name.get(member).copied().map(Type::EnumOf))
+    }
+
+    /// Why a qualified type name (`sh.Hidden`, `nope.Circle`) resolves to
+    /// nothing, for the `unknown type name` warning. `None` for a name that is
+    /// not qualified.
+    pub fn qualified_miss(&self, name: &str) -> Option<String> {
+        let (q, member) = name.trim_end_matches('?').split_once('.')?;
+        Some(match self.qualifiers.get(q) {
+            None => format!("no import binds the module qualifier `{q}`"),
+            Some(qual) if !qual.exports.contains(member) => {
+                format!("module '{}' has no export `{member}`", qual.module)
+            }
+            Some(qual) => format!(
+                "`{member}` exported by module '{}' is not a class or enum",
+                qual.module
+            ),
+        })
     }
 
     /// The enum `name` refers to *in the current scope*: like a class, an
@@ -471,6 +526,13 @@ fn rect_method_sig(name: &str, arity: usize) -> FnSignature {
         // exactly like an un-annotated user method.
         _ => FnSignature::untyped(arity),
     }
+}
+
+/// The built-in class named `name`, if there is one: what a user `class` or
+/// `enum` of that name would replace (docs/proposals/module-name-collisions.md,
+/// part B1).
+pub fn builtin_class(name: &str) -> Option<ClassDef> {
+    builtin_classes().into_iter().find(|def| def.name == name)
 }
 
 /// Every class built into the language. Ordering is load-bearing only in that

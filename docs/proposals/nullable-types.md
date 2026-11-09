@@ -163,7 +163,7 @@ prototype was built.
 
 Before (`core-runtime/glsl/src/glsl.ptl`, f27a7bea):
 
-```petal
+```petal ignore
 // `node` is the construct refused, or nil for the function itself.
 fn fail(c: Ctx, message: string, node) -> Val
   let ts = c.tr.read()
@@ -173,7 +173,7 @@ fn fail(c: Ctx, message: string, node) -> Val
 
 After:
 
-```petal
+```petal ignore
 fn fail(c: Ctx, message: string, node: record?) -> Val
   let ts = c.tr.read()
   if ts.err == nil then
@@ -189,7 +189,7 @@ checked at all. Phase 2 would additionally warn on `node.line` without the
 
 Before (`examples/productivity/command-palette/app.ptl:276-300`, trimmed):
 
-```petal
+```petal ignore
 fn fuzzy_from(q: list, tc: list, start: int)
   ...
     if found < 0 then return nil end
@@ -200,7 +200,7 @@ end
 
 After:
 
-```petal
+```petal ignore
 fn fuzzy_from(q: list, tc: list, start: int) -> record?
 ```
 
@@ -214,7 +214,7 @@ the shape `petal suggest` would now propose. Its caller,
 
 Before (`core/prelude/std.ptl:158`):
 
-```petal
+```petal ignore
 pub fn plural(n, one, many = nil)
   if n == 1 then
     "1 {one}"
@@ -226,7 +226,7 @@ end
 
 After:
 
-```petal
+```petal ignore
 pub fn plural(n: int, one: string, many: string? = nil) -> string
 ```
 
@@ -237,7 +237,7 @@ check nothing. Annotating them also documents the API in the LSP hover.
 
 Before (glsl.ptl, f27a7bea):
 
-```petal
+```petal ignore
 class Val
   code: string,
   ty: Ty,
@@ -248,7 +248,7 @@ class Val
 
 After:
 
-```petal
+```petal ignore
   lit: int?,
 ```
 
@@ -259,7 +259,7 @@ argument is the realistic bug here.
 
 Before (`examples/custom-apps/petal-fantasy-nes/carts/petal_quest/game.ptl:151-152`):
 
-```petal
+```petal ignore
 // `nil` is the "not built yet" sentinel — the reader function for each cell is
 // what fills it in.
 state var _pq_game = nil
@@ -268,7 +268,7 @@ state var _pq_level = nil
 
 After:
 
-```petal
+```petal ignore
 state var _pq_game: record? = nil
 state var _pq_level: record? = nil
 ```
@@ -286,7 +286,7 @@ nobody writes `-> nil?` expecting either behavior.
 
 ### 6. Where the old form is still the better choice
 
-```petal
+```petal ignore
 let name = ast.name ?? (opts?.name ?? "f")         // glsl.ptl, translate()
 let held = live.values?.[name]                     // glsl.ptl, glsl_function()
 ```

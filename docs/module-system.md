@@ -364,6 +364,24 @@ fn f(c: Circle) c.radius end   // fine — `Circle` is exported
 fn g(h: Hidden) h.a end        // warning: unknown type name `Hidden`
 ```
 
+An imported class or enum can also be named through its module qualifier,
+in any type position, like its constructor and its variants are:
+
+```petal ignore
+import ./shapes as sh
+fn area(c: sh.Circle) -> float 3.14159 * c.radius * c.radius end
+fn first(cs: list) -> sh.Circle? cs[0] end   // `?` after the whole name
+```
+
+`sh.Circle` is the same type a bare `Circle` is. The qualifier is one that a
+plain import, an `as` import or an implicit import binds; a selective import
+(`import ./shapes: Circle`) binds none. A name the module does not export, or
+a qualifier no import binds, is the `unknown type name` warning, saying which:
+
+```
+warning: unknown type name `sh.Hidden`: module './shapes' has no export `Hidden`
+```
+
 Class names are unique across the whole program, exported or not. Two files
 may not both declare `class Dup`:
 

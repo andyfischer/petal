@@ -1,6 +1,8 @@
 # Proposal: name collisions across modules
 
-Status: proposed, 2026-11-09
+Status: proposed, 2026-11-09. Parts A and B1 accepted and shipped
+2026-11-09 (see [Implementation status](#implementation-status)); C is
+proposed, and B2 and B3 are not adopted.
 
 ## Summary
 
@@ -129,7 +131,7 @@ A type annotation may be `qualifier.Name`, where `qualifier` is a module
 qualifier bound by a plain import or by `as`, and `Name` is a `pub class` or
 `pub enum` of that module:
 
-```petal
+```petal ignore
 import ./shapes as sh
 fn area(c: sh.Circle) -> float
   3.14159 * c.radius * c.radius
@@ -224,7 +226,7 @@ was built.
 
 Before (`a.ptl`, `b.ptl`, and `m.ptl` importing both):
 
-```petal
+```petal ignore
 // a.ptl
 enum Phase
   play, over,
@@ -258,7 +260,7 @@ the program. A reader may now meet two different things that both print as
 
 Before (works today, because a plain import also binds `Circle` bare):
 
-```petal
+```petal ignore
 import ./shapes
 fn f(c: Circle) -> int
   c.radius
@@ -268,7 +270,7 @@ print(f(shapes.Circle(2)))
 
 Before, with an alias (fails today):
 
-```petal
+```petal ignore
 import ./shapes as sh
 fn f(c: sh.Circle) -> int      // Error: Expected ',' between parameters
   c.radius
@@ -285,7 +287,7 @@ didn't.
 
 Before (`~/cheesecake/games/solitude/missions.ptl`, trimmed):
 
-```petal
+```petal ignore
 import ./inventory        // exports pub fn info()
 ...
 pub fn info()             // line 395: this module's own summary
@@ -302,7 +304,7 @@ choice.
 
 Before (runs today, silently):
 
-```petal
+```petal ignore
 class Rect
   q: int,
 end
@@ -510,6 +512,44 @@ In all of them, two modules' same-named types are distinct.
    and the BC-noopt vs BC-all differential unchanged.
 4. Do C before fn-ast-enums lands, or have that proposal use a prefixed name
    and an opt-in package as it already suggests.
+
+## Implementation status
+
+**A (qualified type names): shipped 2026-11-09.**
+- The parser reads `q.Name` wherever a type name goes (parameters, `let`,
+  `var`, `state`, class fields, return types), one qualifier deep, and keeps
+  it as one written name. `q.Name?` is the nullable form; the `?` follows the
+  whole name. The CST projection joins the same three tokens.
+- `ClassTable` carries the current file's qualifiers (alias → module as
+  written + its exports), set beside the per-file scope in
+  `prescan_declarations`. `declared_type` resolves `q.Name` to the class or
+  enum the module exports, ignoring the bare-name scope, so it is the same
+  type the bare name is. Everything that resolves an annotation (checker,
+  method-receiver pinning, `-> nil`) goes through it.
+- The `unknown type name` warning says why a qualified name missed: "module
+  './shapes' has no export `Hidden`", "no import binds the module qualifier
+  `nope`", or "`helper` exported by module './shapes' is not a class or
+  enum". A selective import binds no qualifier, as for expressions.
+- Under C, `qualified_type` is the one place that must look the member up
+  by (module, name) rather than by bare name.
+
+**B1 (built-in class name): shipped 2026-11-09.** A top-level `class` or
+`enum` named like a built-in class is a compile-check warning, emitted by
+the compiler beside the other per-file declaration warnings (not in
+`ClassTable::declare`, so that C's rework of the table does not have to
+carry it). Message: "class `Rect` replaces the built-in `Rect` in this
+program: its methods (`center_x`, `center_y`, …) and every library that
+takes a `Rect` now see this one — pick another name". The language guide's
+first `class` example, which declared `class Rect`, now declares `class Box`.
+
+**Ecosystem sweep for B1:** no `class Rect` or `enum Rect` in this repo's
+`.ptl` files, `sample-apps`, `garden`, `~/worlds-fair/ui/ptl`,
+`~/petal-creative`, `~/cheesecake/games` or `~/biz/petal-lang.org`. The
+website's copy of the language guide carries the old `class Rect` example
+until its next docs sync.
+
+**Tests:** `core/tests/qualified_types.rs`; CST-projection parity cases in
+`cst_project.rs`; the B1 warning in `test/vitest/classes.test.ts`.
 
 ## Open questions
 

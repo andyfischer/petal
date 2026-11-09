@@ -1721,16 +1721,16 @@ A `class` declares a **named record type**: fields with optional types, and a
 constructor bound to the class's name.
 
 ```petal
-class Rect
+class Box
   x: int,
   y: int,
   w: int,
   h: int,
 end
 
-let r = Rect(0, 0, 100, 40)
+let r = Box(0, 0, 100, 40)
 print(r.x)        // 0 — field access, exactly as on a record
-print(type(r))    // "Rect"
+print(type(r))    // "Box"
 ```
 
 Fields are comma-separated, on one line or many, and follow the
@@ -1747,13 +1747,18 @@ well as below it — so declaration order within a file never matters.
 A class name may not be a [built-in type name](#type-annotations): `class int`
 and `class list` are errors. The built-in vocabulary wins in type position, so
 such a class could never be named in an annotation — `x: int` would keep meaning
-the primitive while `int(…)` built a record.
+the primitive while `int(…)` built a record. A class or enum named like a
+[built-in class](#the-built-in-rect) (`Rect`) is allowed, with a warning.
+
+A class or enum another module exports can be named through that module's
+qualifier, `c: sh.Circle` after `import ./shapes as sh` (see
+[module-system.md](module-system.md#classes-and-methods)).
 
 An instance **is a record** — it carries a tag naming its class, and nothing
 else changes. `keys(r)`, `values(r)`, `r.x`, `r.x = 5` and printing all behave
 as they do for `{x: …, y: …}`, and any function that takes a plain rect-shaped
 record accepts one. Values stay immutable: `r.x = 5` produces a *new* instance
-(still a `Rect`) rather than mutating this one. A spread, though, builds a plain
+(still a `Box`) rather than mutating this one. A spread, though, builds a plain
 record — `{...r, label: "hi"}` is no longer that class's shape, so it loses the
 tag.
 
@@ -2001,7 +2006,9 @@ by the time the call executes.
 
 `Rect` is built into the language — no declaration and no import. Writing
 `class Rect … end` yourself is allowed and *replaces* it for that program, the
-same way a user binding shadows a builtin anywhere else. Its fields are
+same way a user binding shadows a builtin anywhere else. Because every library
+method and annotation that meant the built-in then meets yours, the compile
+check warns: ``class `Rect` replaces the built-in `Rect` in this program``. Its fields are
 `x`, `y`, `w`, `h`, and it carries the geometry that layout code otherwise
 rewrites by hand. See [Builtins.md](Builtins.md#built-in-classes) for the
 methods.

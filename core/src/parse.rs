@@ -1881,7 +1881,7 @@ impl Parser {
 
     fn expect_type_name(&mut self) -> Result<String, String> {
         let pos = self.pos;
-        let name = match self.advance() {
+        let mut name = match self.advance() {
             Token::Ident(name) => name,
             Token::Nil => "nil".to_string(),
             Token::Enum => "enum".to_string(),
@@ -1892,6 +1892,19 @@ impl Parser {
                 ));
             }
         };
+        // `sh.Circle`: a class or enum another module exports, named through
+        // the qualifier its import binds (docs/proposals/module-name-collisions.md,
+        // part A). One qualifier only; the name is kept joined, as written,
+        // and resolved against the file's imports by the class table.
+        if !name.ends_with('?')
+            && matches!(self.peek(), Token::Dot)
+            && matches!(self.peek_at(1), Token::Ident(_))
+        {
+            self.advance(); // '.'
+            if let Token::Ident(member) = self.advance() {
+                name = format!("{name}.{member}");
+            }
+        }
         // A type is a single bare name; `list<int>` and friends are not a thing
         // (type-declarations-plan.md §1). Nothing valid follows a type name with
         // `<`, so claim the token and say what is actually wrong — otherwise the

@@ -176,6 +176,12 @@ describe("class and method diagnostics", () => {
         "let r = Rect(0, 0, 100, 40)\nprint(r.center_x())"
     );
     expect(out.trim()).toBe("50");
+    // Allowed, but warned (docs/proposals/module-name-collisions.md, B1).
+    const lint = checkJsonAllowFail("class Rect\n  x: int,\nend\nprint(Rect(1))");
+    expect(
+      lint.warnings.some((w: any) => /class `Rect` replaces the built-in `Rect`/.test(w.message)),
+      JSON.stringify(lint)
+    ).toBe(true);
   });
 
   it("rejects a duplicate class declaration", () => {

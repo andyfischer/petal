@@ -1030,6 +1030,7 @@ impl Compiler {
             self.errors.push((diag, self.error_file.clone()));
         }
         self.warnings.extend(misplaced_const_decls(&stmts));
+        self.warnings.extend(builtin_class_shadows(&stmts));
         // `state(key)` is deprecated; a bundled first-party package's own
         // uses are not this program's author's to change.
         if !is_bundled_copy(module) {
@@ -2199,6 +2200,27 @@ impl Compiler {
     /// to `button` rather than as a method on an opaque value. Without it an
     /// annotation on a library is checked only where a caller wrote
     /// `import bloom: button`, which is the rarer of the two call styles.
+    /// The module qualifiers this file may write in a type annotation
+    /// (`c: sh.Circle`), each with the module as the file spelled it, for the
+    /// "module './shapes' has no export" warning. The same namespaces as
+    /// [`Self::visible_namespaces`].
+    fn type_qualifiers(&self) -> HashMap<String, crate::classes::Qualifier> {
+        self.module_aliases
+            .iter()
+            .filter_map(|(alias, m)| {
+                let exports = self.module_exports.get(m)?;
+                let module = self.alias_written.get(alias).unwrap_or(m).clone();
+                Some((
+                    alias.clone(),
+                    crate::classes::Qualifier {
+                        module,
+                        exports: exports.iter().cloned().collect(),
+                    },
+                ))
+            })
+            .collect()
+    }
+
     fn visible_namespaces(&self) -> HashMap<String, HashSet<String>> {
         self.module_aliases
             .iter()
@@ -2282,6 +2304,8 @@ impl Compiler {
         // private class is an error rather than a silent extension.
         let visible = self.visible_class_names(module, stmts);
         self.classes.set_scope(visible);
+        let qualifiers = self.type_qualifiers();
+        self.classes.set_qualifiers(qualifiers);
 
         // Classes next: a signature may name one (`fn f(p: Point)`), and a
         // method declaration has to find its class whichever order the file
@@ -2906,6 +2930,40 @@ fn hoistable_const_lets(stmts: &[Stmt]) -> HashSet<String> {
         }
     }
     consts
+}
+
+/// A top-level `class` or `enum` that takes a built-in class's name (today
+/// only `Rect`). The class table lets it, and the declaration replaces the
+/// built-in for the whole program, so every library method and annotation
+/// that meant the built-in now meets this one. A warning, not an error: the
+/// name stays the user's to choose (docs/proposals/module-name-collisions.md,
+/// part B1).
+fn builtin_class_shadows(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
+    stmts
+        .iter()
+        .filter_map(|stmt| {
+            let (kind, name) = match &stmt.kind {
+                StmtKind::ClassDecl { name, .. } => ("class", name),
+                StmtKind::EnumDecl { name, .. } => ("enum", name),
+                _ => return None,
+            };
+            let builtin = crate::classes::builtin_class(name)?;
+            let methods = match builtin.methods.as_slice() {
+                [] => String::new(),
+                [a] => format!("its method `{}` and ", a.name),
+                [a, b] => format!("its methods (`{}`, `{}`) and ", a.name, b.name),
+                [a, b, ..] => format!("its methods (`{}`, `{}`, …) and ", a.name, b.name),
+            };
+            Some(crate::diagnostic::Diagnostic::new(
+                stmt.span,
+                format!(
+                    "{kind} `{name}` replaces the built-in `{name}` in this program: \
+                     {methods}every library that takes a `{name}` now see this one — \
+                     pick another name"
+                ),
+            ))
+        })
+        .collect()
 }
 
 /// A `const` anywhere but the top level of a file. Only a top-level

@@ -182,11 +182,23 @@ impl Projector {
     /// node — the type-name identifier it wraps, preserved raw and resolved via
     /// [`Type::from_name`], mirroring the parser (see `parse_type_annotation`). An
     /// unrecognized name is kept with `resolved: None`.
+    ///
+    /// A qualified name (`sh.Circle`) is the three tokens `sh`, `.`, `Circle`,
+    /// joined back into one name whose span runs from the first to the last.
     fn type_from_annotation_node(&self, ann: &SyntaxNode) -> Option<TypeAnn> {
-        let t = direct_tokens(ann)
-            .into_iter()
-            .find(|t| type_name_value(t).is_some())?;
-        Some(TypeAnn::at(type_name_value(&t)?, self.token_span(&t)))
+        let tokens = direct_tokens(ann);
+        let at = tokens.iter().position(|t| type_name_value(t).is_some())?;
+        let first = &tokens[at];
+        let mut name = type_name_value(first)?;
+        let mut span = self.token_span(first);
+        if let (Some(dot), Some(member)) = (tokens.get(at + 1), tokens.get(at + 2))
+            && matches!(dot.token(), Some(Token::Dot))
+            && let Some(Token::Ident(member_name)) = member.token()
+        {
+            name = format!("{name}.{member_name}");
+            span.end = self.token_span(member).end;
+        }
+        Some(TypeAnn::at(name, span))
     }
 
     /// Project the parameters of a `ParamList` node, pairing each parameter name
@@ -1745,6 +1757,10 @@ mod tests {
         assert_projects("state n = 0\n"); // un-annotated
         assert_projects("state s: banana = 0\n"); // unknown type name
         assert_projects("pub state n: int = 0\n");
+        // Qualified type names (docs/proposals/module-name-collisions.md, A).
+        assert_projects("fn f(c: sh.Circle, k: sh.Kind?) -> sh.Kind\n  k\nend\n");
+        assert_projects("let c: sh.Circle = sh.Circle(1)\n");
+        assert_projects("state k: ui.Align? = nil\n");
     }
 
     #[test]

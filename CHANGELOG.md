@@ -165,6 +165,16 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `fn_info` and `fn_ast` are declared `-> record?`
   ([proposal](docs/proposals/nullable-types.md), phase 1;
   [guide](docs/language-guide.md#type-annotations)).
+- **Qualified type names**: a type annotation may name an imported class or
+  enum through its module qualifier, `fn area(c: sh.Circle)` after `import
+  ./shapes as sh`, nullable too (`sh.Circle?`). It is the same type as the
+  bare name. An unknown qualifier or a name the module does not export is the
+  `unknown type name` warning, which now says which
+  ([proposal](docs/proposals/module-name-collisions.md), part A;
+  [module system](docs/module-system.md#classes-and-methods)).
+- A `class` or `enum` named like a built-in class (`class Rect`) is now a
+  compile-check warning: it replaces the built-in for the whole program
+  ([proposal](docs/proposals/module-name-collisions.md), part B1).
 - **Block comments**, `/* … */`. They can sit inside a line or span several,
   and do not nest. `petal fmt` keeps the inside of one as written, and the
   tree-sitter grammar (Garden's highlighter) knows them

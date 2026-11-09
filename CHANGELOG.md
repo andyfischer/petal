@@ -193,7 +193,8 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   ([proposal](docs/proposals/module-name-collisions.md), part A;
   [module system](docs/module-system.md#classes-and-methods)).
 - A `class` or `enum` named like a built-in class (`class Rect`) is now a
-  compile-check warning: it replaces the built-in for the whole program
+  compile-check warning: in the entry file it replaces the built-in for the
+  whole program, and in a module it hides the built-in there
   ([proposal](docs/proposals/module-name-collisions.md), part B1).
 - Methods on enums ([proposal](docs/proposals/enum-methods.md)):
   `fn Kind.describe(k: Kind, …)` is called as `k.describe(…)` on any

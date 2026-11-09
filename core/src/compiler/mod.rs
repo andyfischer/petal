@@ -1036,7 +1036,7 @@ impl Compiler {
             self.errors.push((diag, self.error_file.clone()));
         }
         self.warnings.extend(misplaced_const_decls(&stmts));
-        self.warnings.extend(builtin_class_shadows(&stmts));
+        self.warnings.extend(builtin_class_shadows(&stmts, is_entry));
         // `state(key)` is deprecated; a bundled first-party package's own
         // uses are not this program's author's to change.
         if !is_bundled_copy(module) {
@@ -2993,12 +2993,14 @@ fn hoistable_const_lets(stmts: &[Stmt]) -> HashSet<String> {
 }
 
 /// A top-level `class` or `enum` that takes a built-in class's name (today
-/// only `Rect`). The class table lets it, and the declaration replaces the
-/// built-in for the whole program, so every library method and annotation
-/// that meant the built-in now meets this one. A warning, not an error: the
-/// name stays the user's to choose (docs/proposals/module-name-collisions.md,
-/// part B1).
-fn builtin_class_shadows(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
+/// only `Rect`). The class table lets it. In the entry file the declaration
+/// keeps the bare identity and so replaces the built-in for the whole
+/// program: every library method and annotation that meant the built-in now
+/// meets this one. In any other module it takes a module-scoped identity
+/// (part C), so it only hides the built-in within that module. A warning,
+/// not an error: the name stays the user's to choose
+/// (docs/proposals/module-name-collisions.md, part B1).
+fn builtin_class_shadows(stmts: &[Stmt], is_entry: bool) -> Vec<crate::diagnostic::Diagnostic> {
     stmts
         .iter()
         .filter_map(|stmt| {
@@ -3014,14 +3016,20 @@ fn builtin_class_shadows(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
                 [a, b] => format!("its methods (`{}`, `{}`) and ", a.name, b.name),
                 [a, b, ..] => format!("its methods (`{}`, `{}`, …) and ", a.name, b.name),
             };
-            Some(crate::diagnostic::Diagnostic::new(
-                stmt.span,
+            let message = if is_entry {
                 format!(
                     "{kind} `{name}` replaces the built-in `{name}` in this program: \
                      {methods}every library that takes a `{name}` now see this one — \
                      pick another name"
-                ),
-            ))
+                )
+            } else {
+                format!(
+                    "{kind} `{name}` hides the built-in `{name}` in this module: here \
+                     `{name}` means this one, while every library that takes a `{name}` \
+                     still expects the built-in — pick another name"
+                )
+            };
+            Some(crate::diagnostic::Diagnostic::new(stmt.span, message))
         })
         .collect()
 }

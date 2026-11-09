@@ -2076,10 +2076,13 @@ by the time the call executes.
 ### The built-in `Rect`
 
 `Rect` is built into the language — no declaration and no import. Writing
-`class Rect … end` yourself is allowed and *replaces* it for that program, the
-same way a user binding shadows a builtin anywhere else. Because every library
-method and annotation that meant the built-in then meets yours, the compile
-check warns: ``class `Rect` replaces the built-in `Rect` in this program``. Its fields are
+`class Rect … end` yourself in the entry file is allowed and *replaces* it for
+that program, the same way a user binding shadows a builtin anywhere else.
+Because every library method and annotation that meant the built-in then meets
+yours, the compile check warns: ``class `Rect` replaces the built-in `Rect` in
+this program``. In an imported module the declaration is that module's own
+type and only hides the built-in there, which warns too (``hides the built-in
+`Rect` in this module``). Its fields are
 `x`, `y`, `w`, `h`, and it carries the geometry that layout code otherwise
 rewrites by hand. See [Builtins.md](Builtins.md#built-in-classes) for the
 methods.

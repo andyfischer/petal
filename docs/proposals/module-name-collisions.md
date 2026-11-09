@@ -540,7 +540,10 @@ the compiler beside the other per-file declaration warnings (not in
 `ClassTable::declare`, so that C's rework of the table does not have to
 carry it). Message: "class `Rect` replaces the built-in `Rect` in this
 program: its methods (`center_x`, `center_y`, …) and every library that
-takes a `Rect` now see this one — pick another name". The language guide's
+takes a `Rect` now see this one — pick another name". With C, that holds for
+the entry file; in any other module the declaration is module-scoped, so the
+warning there says it "hides the built-in `Rect` in this module" while
+libraries still expect the built-in. The language guide's
 first `class` example, which declared `class Rect`, now declares `class Box`.
 
 **Ecosystem sweep for B1:** no `class Rect` or `enum Rect` in this repo's

@@ -63,13 +63,13 @@ let LEVELS = [
   {name: "Expert",  cols: 8, rows: 4},
 ]
 
-config let FLIP_T     = 0.30   // one half-turn of a card, seconds
-config let MISS_VIEW  = 0.85   // how long a missed pair stays up once it has landed
-config let DEAL_T     = 0.45   // one card's flight from the deck
-config let DEAL_STEP  = 0.035  // stagger between cards in the deal
-config let PEEK_T     = 1.6    // how long a peek shows the board
-config let PEEK_COST  = 2      // moves a peek costs
-config let WIN_DELAY  = 0.75   // pause between the last match landing and the result
+let FLIP_T     = tunable(0.30)  // one half-turn of a card, seconds
+let MISS_VIEW  = tunable(0.85)  // how long a missed pair stays up once it has landed
+let DEAL_T     = tunable(0.45)  // one card's flight from the deck
+let DEAL_STEP  = tunable(0.035) // stagger between cards in the deal
+let PEEK_T     = tunable(1.6)   // how long a peek shows the board
+let PEEK_COST  = tunable(2)     // moves a peek costs
+let WIN_DELAY  = tunable(0.75)  // pause between the last match landing and the result
 
 // ── Glyph geometry ───────────────────────────────────────────────────────
 // Every face is drawn from these unit shapes (y down, roughly -1..1), placed

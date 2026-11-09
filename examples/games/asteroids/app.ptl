@@ -47,17 +47,17 @@ let S_BADGE = {size: 10, color: C_TEXT, spacing: 2}
 
 // ── Tunables ─────────────────────────────────────────────────────────────
 
-config let start_lives   = 3
-config let turn_rate     = 4.4      // rad/s
-config let thrust_accel  = 330.0    // px/s^2
-config let max_speed     = 430.0
-config let drag          = 0.55     // fraction of velocity lost per second
-config let shot_speed    = 560.0
-config let shot_life     = 1.05     // seconds
-config let shot_cooldown = 0.16
-config let max_shots     = 5
-config let safe_secs     = 2.6      // invulnerability after a respawn
-config let warp_cooldown = 2.2
+let start_lives   = tunable(3)
+let turn_rate     = tunable(4.4)    // rad/s
+let thrust_accel  = tunable(330.0)  // px/s^2
+let max_speed     = tunable(430.0)
+let drag          = tunable(0.55)   // fraction of velocity lost per second
+let shot_speed    = tunable(560.0)
+let shot_life     = tunable(1.05)   // seconds
+let shot_cooldown = tunable(0.16)
+let max_shots     = tunable(5)
+let safe_secs     = tunable(2.6)    // invulnerability after a respawn
+let warp_cooldown = tunable(2.2)
 
 let PAD  = 30
 let HEAD = 112

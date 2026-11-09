@@ -36,17 +36,17 @@ let t = ui_theme()
 let W = screen_width()
 let H = screen_height()
 
-const COLS = 32
-const ROWS = 20
-const CELL = 14
-const PALETTES = [
+let COLS = const(32)
+let ROWS = const(20)
+let CELL = const(14)
+let PALETTES = const([
   [#1b2a41, #324a5f, #5c7a8f, #ccc9dc],
   [#2d1e2f, #5b2a47, #a23e48, #ff8c61],
   [#12261e, #1f4d3a, #3e8e5a, #c8e087]
-]
+])
 
 // The grid, as one flat run of x, y, w, h, palette index. Built once.
-const CELLS = build_cells()
+let CELLS = const(build_cells())
 fn build_cells()
   let out = []
   for row in range(0, ROWS) do

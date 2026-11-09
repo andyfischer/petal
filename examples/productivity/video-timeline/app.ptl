@@ -57,7 +57,7 @@ let SNAP_PX = 8
 
 // Media: the bin. `dur` is the source length in frames; titles are
 // generated, so theirs is generous.
-const MEDIA = [
+let MEDIA = const([
   {name: "Harbour at Dusk", file: "A014_C003_dusk.mov", kind: "video", scene: "harbor", dur: 336, color: #4c8dff},
   {name: "Lighthouse Beam", file: "A016_C011_beam.mov", kind: "video", scene: "lighthouse", dur: 288, color: #4c8dff},
   {name: "Mara — Interview", file: "B002_C001_mara.mov", kind: "video", scene: "interview", dur: 528, color: #4c8dff},
@@ -70,18 +70,18 @@ const MEDIA = [
   {name: "VO — Mara, take 3", file: "mara_vo_t03.wav", kind: "audio", scene: "vo", dur: 576, color: #4fc28a},
   {name: "Score — Tidewater", file: "tidewater_v4_mix.wav", kind: "audio", scene: "score", dur: 1200, color: #d46fd8},
   {name: "Gulls & Surf", file: "amb_harbour_gulls.wav", kind: "audio", scene: "gulls", dur: 720, color: #46b8c8},
-]
+])
 
 // Tracks, top to bottom as drawn. Picture tracks composite bottom-up
 // (V1 first), so a clip on V2 covers V1 and a title on V3 sits over both.
-const TRACKS = [
+let TRACKS = const([
   {code: "V3", name: "Titles", kind: "video", h: 42, color: #f2b766},
   {code: "V2", name: "B-roll", kind: "video", h: 46, color: #8b7cf6},
   {code: "V1", name: "Main", kind: "video", h: 46, color: #4c8dff},
   {code: "A1", name: "Dialogue", kind: "audio", h: 38, color: #4fc28a},
   {code: "A2", name: "Music", kind: "audio", h: 38, color: #d46fd8},
   {code: "A3", name: "Ambience", kind: "audio", h: 38, color: #46b8c8},
-]
+])
 let N_TRK = 6
 let BIN_TABS = ["All", "Video", "Titles", "Audio"]
 

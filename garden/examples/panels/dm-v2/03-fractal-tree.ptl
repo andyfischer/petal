@@ -27,7 +27,7 @@ import ui
 
 let trunk = 80.0
 let shrink = 0.7
-config let spread = 0.45
+let spread = tunable(0.45)
 
 fn branch(x, y, angle, len, depth)
   let x2 = x + cos(angle) * len

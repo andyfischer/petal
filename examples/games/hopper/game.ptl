@@ -4,7 +4,7 @@
 //
 //   ./examples/games/hopper/run.sh
 //
-// Everything that tunes the feel is a `config let` knob: the direct-
+// Everything that tunes the feel is a `tunable` knob: the direct-
 // manipulation tools prefer to rewrite those, and hot reload keeps the
 // player exactly where they were when you change one. The level is plain
 // data in this file, so moving a platform is editing a number.
@@ -18,18 +18,18 @@ import ui
 
 // ------------------------------ KNOBS --------------------------------
 
-config let GRAVITY    = 1800.0
-config let JUMP_VY    = -620.0
-config let JUMP_CUT   = 0.45      // vy multiplier when jump is released early
-config let RUN_SPEED  = 260.0
-config let ACCEL      = 2400.0
-config let FRICTION   = 2600.0
-config let AIR_DRAG   = 900.0
-config let MAX_FALL   = 950.0
-config let COYOTE     = 0.08
-config let CAM_LAG    = 5.0
-config let PW         = 22
-config let PH         = 30
+let GRAVITY    = tunable(1800.0)
+let JUMP_VY    = tunable(-620.0)
+let JUMP_CUT   = tunable(0.45)    // vy multiplier when jump is released early
+let RUN_SPEED  = tunable(260.0)
+let ACCEL      = tunable(2400.0)
+let FRICTION   = tunable(2600.0)
+let AIR_DRAG   = tunable(900.0)
+let MAX_FALL   = tunable(950.0)
+let COYOTE     = tunable(0.08)
+let CAM_LAG    = tunable(5.0)
+let PW         = tunable(22)
+let PH         = tunable(30)
 
 let W = screen_width()
 let H = screen_height()

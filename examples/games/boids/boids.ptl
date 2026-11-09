@@ -11,25 +11,25 @@
 
 // ---------------------------------------------------------------- tuning ---
 
-config let BOID_COUNT   = 72
-config let FRAMES       = 150
-config let SAMPLE_EVERY = 30
+let BOID_COUNT   = tunable(72)
+let FRAMES       = tunable(150)
+let SAMPLE_EVERY = tunable(30)
 
-config let FIELD_W = 96.0
-config let FIELD_H = 48.0
+let FIELD_W = tunable(96.0)
+let FIELD_H = tunable(48.0)
 
-config let VIEW_RADIUS = 14.0   // cohesion / alignment neighbourhood
-config let SEP_RADIUS  = 3.5    // personal-space neighbourhood
+let VIEW_RADIUS = tunable(14.0) // cohesion / alignment neighbourhood
+let SEP_RADIUS  = tunable(3.5)  // personal-space neighbourhood
 
-config let COHESION_W   = 0.012
-config let ALIGNMENT_W  = 0.075
-config let SEPARATION_W = 0.55
+let COHESION_W   = tunable(0.012)
+let ALIGNMENT_W  = tunable(0.075)
+let SEPARATION_W = tunable(0.55)
 
-config let MAX_SPEED = 1.1
-config let MIN_SPEED = 0.35
+let MAX_SPEED = tunable(1.1)
+let MIN_SPEED = tunable(0.35)
 
-config let GRID_W = 64
-config let GRID_H = 22
+let GRID_W = tunable(64)
+let GRID_H = tunable(22)
 
 let RAMP = [" ", ".", ":", "-", "=", "+", "*", "#", "%", "@"]
 

@@ -57,11 +57,11 @@ let S_TAB   = {size: 12, color: C_DIM, font: "ui", weight: 700}
 
 // ── Tunables ─────────────────────────────────────────────────────────────
 
-config let gravity_px  = 980.0     // px/s^2 at 1.0 g
-config let launch_gain = 5.0       // slingshot: px of pull to px/s of launch
-config let spring_hz   = 3.5       // natural frequency of a hand-drawn spring
-config let max_bodies  = 200
-config let rest_after  = 0.7       // seconds of stillness before the world sleeps
+let gravity_px  = tunable(980.0)   // px/s^2 at 1.0 g
+let launch_gain = tunable(5.0)     // slingshot: px of pull to px/s of launch
+let spring_hz   = tunable(3.5)     // natural frequency of a hand-drawn spring
+let max_bodies  = tunable(200)
+let rest_after  = tunable(0.7)     // seconds of stillness before the world sleeps
 
 let PAD  = 24
 let HEAD = 84

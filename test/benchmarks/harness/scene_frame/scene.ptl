@@ -5,9 +5,9 @@ import vec2
 native fn body(id, opts)
 native fn draw_mesh(name, opts)
 
-const N_CITY = 2000
-const N_CRATES = 400
-const N_SHIPS = 300
+let N_CITY = const(2000)
+let N_CRATES = const(400)
+let N_SHIPS = const(300)
 
 fn city_block(i)
   let x = float(i % 50) * 12.0
@@ -21,8 +21,8 @@ fn crate_decl(i)
                           pos: vec3(float(i % 20) * 2.0, 0.5, float(i / 20) * 2.0)}}
 end
 
-const CITY = map(range(0, N_CITY), city_block)
-const CRATES = map(range(0, N_CRATES), crate_decl)
+let CITY = const(map(range(0, N_CITY), city_block))
+let CRATES = const(map(range(0, N_CRATES), crate_decl))
 
 // Static scenery: same arguments every frame.
 fn draw_city(city)

@@ -65,7 +65,7 @@ fn caps(color: record) -> record
   {size: 11, color: color, font: "ui", weight: 700, spacing: 0.9}
 end
 
-const BODY = st(15, INK_2)
+let BODY = const(st(15, INK_2))
 let LINE = 22                 // a body row in the feed
 let LGAP = 3                  // the composer's extra leading
 

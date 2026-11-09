@@ -54,11 +54,11 @@ let S_H     = {size: 20, font: "ui", color: C_TEXT, weight: 700}
 
 // ── Tunables ─────────────────────────────────────────────────────────────
 
-config let speed_start   = 4.0      // simulated days per real second
-config let zoom_min      = 0.35
-config let zoom_max      = 40.0
-config let tilt_amount   = 0.42     // y scale in the three-quarter view
-config let follow_rate   = 6.0      // camera easing, 1/s
+let speed_start   = tunable(4.0)    // simulated days per real second
+let zoom_min      = tunable(0.35)
+let zoom_max      = tunable(40.0)
+let tilt_amount   = tunable(0.42)   // y scale in the three-quarter view
+let follow_rate   = tunable(6.0)    // camera easing, 1/s
 
 let PAD  = 28
 let HEAD = 104

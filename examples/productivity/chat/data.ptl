@@ -14,7 +14,7 @@ pub let ME = "jordan"
 
 // ── People ───────────────────────────────────────────────────────────────
 
-const PEOPLE = {
+let PEOPLE = const({
   jordan: {name: "Jordan Lee", role: "Product engineer", color: #4f6bed, away: false},
   maya: {name: "Maya Chen", role: "Design lead", color: #d9488f, away: false},
   theo: {name: "Theo Okafor", role: "Sync engine", color: #2f9e77, away: false},
@@ -22,7 +22,7 @@ const PEOPLE = {
   lars: {name: "Lars Becker", role: "Platform", color: #7b5bd6, away: true},
   ines: {name: "Ines Duarte", role: "Marketing", color: #d4445c, away: false},
   kenji: {name: "Kenji Watanabe", role: "Support", color: #1f8fb8, away: true},
-}
+})
 
 pub fn person(key: string) -> record
   field(PEOPLE, key, {name: key, role: "", color: #8a8f9c, away: true})
@@ -40,9 +40,9 @@ end
 
 // ── Channels ─────────────────────────────────────────────────────────────
 
-const ALL = ["jordan", "maya", "theo", "priya", "lars", "ines", "kenji"]
+let ALL = const(["jordan", "maya", "theo", "priya", "lars", "ines", "kenji"])
 
-pub const CHANNELS = [
+pub let CHANNELS = const([
   {id: "general", kind: "channel", name: "general", topic: "Company-wide news, all-hands, and the occasional cake", members: ALL},
   {id: "launch", kind: "channel", name: "launch-lumen", topic: "Lumen 2.0 ships Thursday · runbook is pinned", members: ALL},
   {id: "design", kind: "channel", name: "design", topic: "Crits, specs and Figma links", members: ["jordan", "maya", "kenji", "priya"]},
@@ -51,7 +51,7 @@ pub const CHANNELS = [
   {id: "dm-maya", kind: "dm", name: "Maya Chen", topic: "Design lead", members: ["jordan", "maya"]},
   {id: "dm-theo", kind: "dm", name: "Theo Okafor", topic: "Sync engine", members: ["jordan", "theo"]},
   {id: "dm-priya", kind: "dm", name: "Priya Natarajan", topic: "Product manager", members: ["jordan", "priya"]},
-]
+])
 
 pub fn channel(id: string) -> record
   find(CHANNELS, fn(c) -> c.id == id) ?? CHANNELS[0]
@@ -96,7 +96,7 @@ fn hm(h: int, mi: int) -> int
   h * 60 + mi
 end
 
-const SEED = [
+let SEED = const([
   m("general", "priya", 0, hm(15, 0), "Please welcome @kenji to the support team! He's spent four years at Northwind and already knows our docs better than we do 👋", [r("👋", ["maya", "theo", "lars", "ines", "jordan"]), r("🎉", ["maya", "ines"])], []),
   m("general", "ines", 1, hm(9, 0), "All-hands moved to Friday at 3pm so we can celebrate the launch properly.", [r("🙌", ["theo", "maya"])], []),
   m("general", "kenji", 1, hm(12, 5), "Lunch order for Thursday: tacos or Thai? React to vote 🌮 / 🍜", [r("🌮", ["theo", "lars", "maya", "ines", "priya"]), r("🍜", ["kenji", "jordan"])], []),
@@ -146,7 +146,7 @@ const SEED = [
   m("dm-theo", "jordan", 0, hm(18, 30), "On it first thing tomorrow.", [], []),
   m("dm-priya", "priya", 1, hm(8, 45), "Do you have ten minutes before go/no-go?", [], []),
   m("dm-priya", "jordan", 1, hm(8, 47), "Yep, grabbing coffee — five minutes.", [], []),
-]
+])
 
 pub fn seed_messages() -> list
   let out = []
@@ -177,7 +177,7 @@ fn ev(at: num, ch: string, who: string, typing: num, text: string) -> record
   {at: at, ch: ch, who: who, typing: typing, text: text, thread: ""}
 end
 
-pub const SCRIPT = [
+pub let SCRIPT = const([
   ev(6.0, "launch", "theo", 3.0, "Staging smoke tests passed on `release/2.0` ✅"),
   ev(17.0, "dm-maya", "maya", 2.5, "Got a sec? I want to walk you through the onboarding flow before I share it wider."),
   ev(29.0, "design", "kenji", 3.0, "Settings page looks great. Should the danger zone be red, or just set apart with more space?"),
@@ -188,22 +188,22 @@ pub const SCRIPT = [
   ev(101.0, "random", "maya", 2.0, "Gerald update: he has doubled in size. Concerned."),
   ev(122.0, "launch", "theo", 3.5, "Release notes PR is up — would love a second pair of eyes before the freeze."),
   ev(150.0, "dm-theo", "theo", 2.0, "Thanks for the review yesterday — merged 🙏"),
-]
+])
 
 // ── Replies ──────────────────────────────────────────────────────────────
 // A teammate answering something you wrote picks from the pool its words
 // suggest; `pick` chooses deterministically from the message number.
 
-const POOLS = [
+let POOLS = const([
   {keys: ["thank", "thx", "appreciate"], lines: ["Anytime 🙌", "Of course!", "Happy to help."]},
   {keys: ["ship", "launch", "release", "thursday"], lines: ["Thursday can't come soon enough 🚀", "Fingers crossed for a very boring launch day.", "We're in good shape. Runbook's pinned if anyone needs it."]},
   {keys: ["lunch", "coffee", "taco", "cake", "gerald"], lines: ["Count me in ☕", "Tacos. Always tacos 🌮", "I'm already in the kitchen."]},
   {keys: ["lgtm", "looks good", "great", "nice", "love"], lines: ["Thanks! Merging now.", "Appreciate it 🙏", "That means a lot — thank you."]},
   {keys: ["bug", "broken", "error", "fail", "flaky"], lines: ["Ugh. Can you drop the logs in a thread? I'll take a look.", "On it — I'll open a ticket and link it here.", "Reproduced it. Fix incoming."]},
   {keys: ["?"], lines: ["Good question — I think so, but let me double-check and get back to you.", "Yes! I'll confirm in a bit.", "Not yet. I can pick it up after the 3:30.", "I'd say yes, but Priya has the final call."]},
-]
+])
 
-const GENERIC = ["Makes sense to me.", "👍 on it.", "Noted — I'll follow up in a bit.", "Agreed. Let's do it.", "Ha, fair point.", "Sounds good, thanks for flagging."]
+let GENERIC = const(["Makes sense to me.", "👍 on it.", "Noted — I'll follow up in a bit.", "Agreed. Let's do it.", "Ha, fair point.", "Sounds good, thanks for flagging."])
 
 pub fn pick(seed: int, salt: int, n: int) -> int
   hash_int(seed, salt) % max(1, n)
@@ -244,7 +244,7 @@ pub fn reactor(c: record, not_who: string, seed: int) -> string
   if len(others) == 0 then "" else others[pick(seed, 11, len(others))] end
 end
 
-pub const QUICK = ["👍", "🎉", "👀", "🙌"]
+pub let QUICK = const(["👍", "🎉", "👀", "🙌"])
 
 // Whether `text` mentions you.
 pub fn mentions_me(text: string) -> bool

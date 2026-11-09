@@ -47,12 +47,12 @@ let S_BADGE = {size: 10, color: C_TEXT, spacing: 2}
 
 // ── Tunables ─────────────────────────────────────────────────────────────
 
-config let start_lives   = 3
-config let ball_speed_0  = 340.0
-config let ball_speed_max = 690.0
-config let drop_chance   = 0.17
-config let power_secs    = 11.0
-config let tap_hold      = 0.10
+let start_lives   = tunable(3)
+let ball_speed_0  = tunable(340.0)
+let ball_speed_max = tunable(690.0)
+let drop_chance   = tunable(0.17)
+let power_secs    = tunable(11.0)
+let tap_hold      = tunable(0.10)
 
 let COLS = 11
 let ROWS = 9

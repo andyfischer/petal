@@ -7,7 +7,7 @@
 // What to drag, and what to expect:
 // - The LAST card, sideways. Ambiguous: widening `gap` or
 //   sliding the whole row by `x0` both put it under your
-//   pointer. `gap` is a `config let` knob, so it wins; the
+//   pointer. `gap` is a `tunable` knob, so it wins; the
 //   result panel lists `x0` as alternative 2. Click it.
 // - The FIRST card, sideways. Only `x0` moves it (i = 0).
 // - Any card, up or down: `y0`, shared by every card.
@@ -22,7 +22,7 @@
 
 import ui
 
-config let gap = 24
+let gap = tunable(24)
 let x0 = 40
 let y0 = 120
 let card_w = 56

@@ -56,7 +56,7 @@ test "a computed key nests, and patterns read the result" do
   expect_eq(got, 7)
 end
 
-const TABLE = {["north" ++ "_" ++ "east"]: 1, south: 2}
+let TABLE = const({["north" ++ "_" ++ "east"]: 1, south: 2})
 
 test "a record with a computed key of constants is a const" do
   expect_eq(TABLE.north_east, 1)

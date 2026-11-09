@@ -58,18 +58,18 @@ let S_BIG   = {size: 18, font: "ui", color: C_TEXT, weight: 700}
 
 // ── Tunables ─────────────────────────────────────────────────────────────
 
-config let gravity_accel = 520.0     // px/s^2 when gravity is on
-config let drag_rate     = 0.9       // 1/s velocity decay when drag is on
-config let restitution   = 0.78      // speed kept by a bounce off a wall
-config let flow_accel    = 150.0     // px/s^2 of the noise flow field
-config let brush_gain    = 1100.0    // mouse force per px^2 of brush area
-config let well_strength = 3000000.0 // GM of a dropped well, px^3/s^2
-config let emit_rate     = 1800.0    // particles per second from the Emit tool
-config let blast_speed   = 360.0     // peak kick of a blast, px/s
-config let speed_limit   = 1400.0    // px/s
-config let speed_ref     = 190.0     // speed that maps to the middle of a ramp
-config let streak_len    = 0.028     // seconds of travel a streak covers
-config let streak_max    = 13.0      // longest streak, px
+let gravity_accel = tunable(520.0)     // px/s^2 when gravity is on
+let drag_rate     = tunable(0.9)       // 1/s velocity decay when drag is on
+let restitution   = tunable(0.78)      // speed kept by a bounce off a wall
+let flow_accel    = tunable(150.0)     // px/s^2 of the noise flow field
+let brush_gain    = tunable(1100.0)    // mouse force per px^2 of brush area
+let well_strength = tunable(3000000.0) // GM of a dropped well, px^3/s^2
+let emit_rate     = tunable(1800.0)    // particles per second from the Emit tool
+let blast_speed   = tunable(360.0)     // peak kick of a blast, px/s
+let speed_limit   = tunable(1400.0)    // px/s
+let speed_ref     = tunable(190.0)     // speed that maps to the middle of a ramp
+let streak_len    = tunable(0.028)     // seconds of travel a streak covers
+let streak_max    = tunable(13.0)      // longest streak, px
 
 let MAXP      = 12000                // the pool
 let MAX_WELLS = 6

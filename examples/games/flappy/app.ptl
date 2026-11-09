@@ -61,15 +61,15 @@ let S_BADGE = {size: 10, color: C_TEXT, spacing: 2}
 
 // ── Tunables ─────────────────────────────────────────────────────────────
 
-config let gravity       = 1650.0   // px/s^2
-config let flap_impulse  = 440.0    // px/s, upward
-config let scroll_speed  = 185.0    // px/s
-config let pipe_spacing  = 250.0    // px between pipe columns
-config let pipe_w        = 64.0
-config let gap_start     = 190.0    // gap height at score 0
-config let gap_min       = 128.0    // gap height floor
-config let gap_shrink    = 4.0      // px lost per point
-config let max_fall      = 720.0    // terminal velocity
+let gravity       = tunable(1650.0) // px/s^2
+let flap_impulse  = tunable(440.0)  // px/s, upward
+let scroll_speed  = tunable(185.0)  // px/s
+let pipe_spacing  = tunable(250.0)  // px between pipe columns
+let pipe_w        = tunable(64.0)
+let gap_start     = tunable(190.0)  // gap height at score 0
+let gap_min       = tunable(128.0)  // gap height floor
+let gap_shrink    = tunable(4.0)    // px lost per point
+let max_fall      = tunable(720.0)  // terminal velocity
 
 let PAD    = 28
 let HEAD   = 104

@@ -1,7 +1,7 @@
 // dm-title: the fractal tree with hints
 // dm-level: L7
 //
-// The same tree, annotated: `spread` is the knob (`config let`), `shrink`
+// The same tree, annotated: `spread` is the knob (a `tunable` setting), `shrink`
 // is `tunable` within [0.5, 0.8], and the trunk length is `rigid`, so no
 // drag may change it. The drags of l07 now land on the two knobs only. The
 // two marks are one knob tier (§2.5.2), so neither is preferred for its
@@ -16,7 +16,7 @@ import ui
 
 let trunk = rigid(80.0)
 let shrink = tunable(0.7, 0.5, 0.8)
-config let spread = 0.45
+let spread = tunable(0.45)
 
 fn branch(x, y, angle, len, depth)
   let x2 = x + cos(angle) * len

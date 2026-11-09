@@ -5,7 +5,7 @@
 // (both move, which is the point of naming it). Dragging the bar alone is
 // ambiguous: `cx` moves it but also the circle, while the `30` in
 // `cx - 30` moves only the bar. With no hints the engine prefers the edit
-// with no collateral; l01b-binding-config.ptl declares `cx` a `config let`
+// with no collateral; l01b-binding-config.ptl declares `cx` a `tunable` setting
 // to say "this is the knob".
 //
 // dm-goal circle-x: circle#0.0 += 20 | expect=cx

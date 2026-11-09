@@ -408,10 +408,23 @@ fn metrics(ui: &Headless, ex: &Example, emits: usize) -> Metrics {
             if starts("state ") {
                 m.states += 1;
             }
-            if starts("config let ") {
+            // `configs` counts the plain knobs: `config let X = v`, and its
+            // migrated form, a top-level `let X = tunable(v)` with no range
+            // (docs/tasks/lifecycle-annotation-functions-refactor.md, Phase
+            // 3). A ranged `tunable(…)` or a `rigid(…)` is a hint, as before.
+            let plain_setting = (starts("let ") || starts("pub let "))
+                && line == t
+                && t.split_once('=').is_some_and(|(_, v)| {
+                    v.trim()
+                        .strip_prefix("tunable(")
+                        .and_then(|a| a.split("//").next())
+                        .is_some_and(|a| a.trim_end().ends_with(')') && !a.contains(','))
+                });
+            if starts("config let ") || plain_setting {
                 m.configs += 1;
             }
-            m.hints += t.matches("tunable(").count() + t.matches("rigid(").count();
+            m.hints += t.matches("tunable(").count() + t.matches("rigid(").count()
+                - plain_setting as usize;
             m.reads_clock |= t.contains("time()") || t.contains("dt()");
             m.reads_rng |= t.contains("random") || t.contains("noise(") || t.contains("choose(");
         }
@@ -814,8 +827,19 @@ fn run_goal(ex: &Example, g: &GoalSpec, ui: &mut Headless, live: &mut Option<Liv
     if top.changes.iter().any(|c| c.config) {
         r.aids.push("config");
     }
+    // A hint that constrains the move: `rigid`, or a `tunable` with a bound.
+    // A bare `tunable(v)` setting only marks a knob, which `config` counts.
     let hinted = top.changes.iter().any(|c| {
-        resp.candidates.iter().any(|cand| cand.param.term == c.term && cand.param.hint.is_some())
+        resp.candidates.iter().any(|cand| {
+            cand.param.term == c.term
+                && match &cand.param.hint {
+                    None => false,
+                    Some(petal::dm::hints::Hint::Tunable { min, max, step }) => {
+                        min.is_some() || max.is_some() || step.is_some()
+                    }
+                    Some(_) => true,
+                }
+        })
     });
     if hinted {
         r.aids.push("hint");

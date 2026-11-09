@@ -9,11 +9,11 @@
 //   ./tools/run-petal.ts check --strict examples/games/tetris/tetris.ptl
 //   ./tools/run-petal.ts run examples/games/tetris/tetris.ptl
 
-config let WIDTH = 10
-config let HEIGHT = 20
-config let SEED = 20260830
-config let MAX_PIECES = 45
-config let TICK_LIMIT_PER_PIECE = 40
+let WIDTH = tunable(10)
+let HEIGHT = tunable(20)
+let SEED = tunable(20260830)
+let MAX_PIECES = tunable(45)
+let TICK_LIMIT_PER_PIECE = tunable(40)
 
 // ---------------------------------------------------------------- randomness
 

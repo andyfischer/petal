@@ -6,7 +6,7 @@
 // literal is nudged; `random`'s own arguments cannot receive feedback
 // (`no_feedback`), so a star's drag edits the literals around the draw:
 // `cx` (everything moves), `spread` (the scatter widens), or the `4` of
-// its radius. The two `config let`s are the intended knobs.
+// its radius. The two `tunable` settings are the intended knobs.
 //
 // dm-goal star-right: circle#4.0 += 10 | expect=cx,spread
 // dm-goal center-marker: circle#12.0 += 20 | expect=cx
@@ -15,8 +15,8 @@
 
 import ui
 
-config let cx = 200
-config let spread = 160
+let cx = tunable(200)
+let spread = tunable(160)
 let count = 12
 
 draw_rect(0, 0, 400, 300, #05060d)

@@ -80,7 +80,7 @@ as `dm-goal` lines:
 
 The format is in the
 [examples README](../../examples/direct-manipulation-v2/README.md). Where the
-plain version of an example is ambiguous, a second file adds `config let`,
+plain version of an example is ambiguous, a second file adds a `tunable` setting,
 `tunable` or `rigid` (l01b, l07b, l09c), or a goal adds a client filter. That
 measures what each kind of help buys.
 

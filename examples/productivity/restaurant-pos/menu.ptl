@@ -15,33 +15,33 @@ fn group(name: string, pick: string, req: bool, opts: list) -> record
   {name: name, pick: pick, req: req, opts: opts}
 end
 
-const TEMP = group("Temperature", "one", true,
-  [opt("Rare"), opt("Medium rare"), opt("Medium"), opt("Medium well"), opt("Well done")])
-const SIDE = group("Side", "one", true,
-  [opt("Hand-cut fries"), opt("Garlic mash"), opt("Side salad"), opt("Truffle fries", 300)])
-const STEAK_ADD = group("Sauces & toppings", "many", false,
-  [opt("Peppercorn sauce", 300), opt("Bearnaise", 300), opt("Blue cheese crust", 400), opt("Grilled prawns", 900)])
-const CHEESE = group("Cheese", "one", true, [opt("Aged cheddar"), opt("Swiss"), opt("Smoked gouda"), opt("No cheese")])
-const BURGER_ADD = group("Add-ons", "many", false,
-  [opt("Thick-cut bacon", 300), opt("Fried egg", 200), opt("Avocado", 250), opt("Caramelized onion", 150)])
-const PASTA = group("Pasta", "one", false, [opt("House-made"), opt("Gluten-free", 300)])
-const PASTA_ADD = group("Add protein", "many", false,
-  [opt("Grilled chicken", 700), opt("Garlic shrimp", 900), opt("Extra burrata", 600)])
-const FISH_SIDE = group("Side", "one", true, [opt("Lemon rice"), opt("Charred broccolini"), opt("Side salad")])
-const FLAT_ADD = group("Toppings", "many", false,
-  [opt("Prosciutto", 400), opt("Hot honey", 150), opt("Arugula", 100), opt("Extra mozzarella", 200)])
-const SPIRIT = group("Spirit", "one", true, [opt("Bourbon"), opt("Rye"), opt("Mezcal", 200)])
-const SERVE = group("Serve", "one", true, [opt("Up"), opt("On the rocks")])
-const ICE = group("Ice", "one", false, [opt("Regular ice"), opt("Light ice"), opt("No ice")])
-const MILK = group("Milk", "one", false, [opt("Whole"), opt("Oat", 75), opt("Almond", 75)])
-const SCOOP = group("Flavor", "one", true, [opt("Blood orange"), opt("Raspberry"), opt("Mango")])
-const DRESS = group("Dressing", "one", false, [opt("Lemon vinaigrette"), opt("Green goddess"), opt("On the side")])
+let TEMP = const(group("Temperature", "one", true,
+  [opt("Rare"), opt("Medium rare"), opt("Medium"), opt("Medium well"), opt("Well done")]))
+let SIDE = const(group("Side", "one", true,
+  [opt("Hand-cut fries"), opt("Garlic mash"), opt("Side salad"), opt("Truffle fries", 300)]))
+let STEAK_ADD = const(group("Sauces & toppings", "many", false,
+  [opt("Peppercorn sauce", 300), opt("Bearnaise", 300), opt("Blue cheese crust", 400), opt("Grilled prawns", 900)]))
+let CHEESE = const(group("Cheese", "one", true, [opt("Aged cheddar"), opt("Swiss"), opt("Smoked gouda"), opt("No cheese")]))
+let BURGER_ADD = const(group("Add-ons", "many", false,
+  [opt("Thick-cut bacon", 300), opt("Fried egg", 200), opt("Avocado", 250), opt("Caramelized onion", 150)]))
+let PASTA = const(group("Pasta", "one", false, [opt("House-made"), opt("Gluten-free", 300)]))
+let PASTA_ADD = const(group("Add protein", "many", false,
+  [opt("Grilled chicken", 700), opt("Garlic shrimp", 900), opt("Extra burrata", 600)]))
+let FISH_SIDE = const(group("Side", "one", true, [opt("Lemon rice"), opt("Charred broccolini"), opt("Side salad")]))
+let FLAT_ADD = const(group("Toppings", "many", false,
+  [opt("Prosciutto", 400), opt("Hot honey", 150), opt("Arugula", 100), opt("Extra mozzarella", 200)]))
+let SPIRIT = const(group("Spirit", "one", true, [opt("Bourbon"), opt("Rye"), opt("Mezcal", 200)]))
+let SERVE = const(group("Serve", "one", true, [opt("Up"), opt("On the rocks")]))
+let ICE = const(group("Ice", "one", false, [opt("Regular ice"), opt("Light ice"), opt("No ice")]))
+let MILK = const(group("Milk", "one", false, [opt("Whole"), opt("Oat", 75), opt("Almond", 75)]))
+let SCOOP = const(group("Flavor", "one", true, [opt("Blood orange"), opt("Raspberry"), opt("Mango")]))
+let DRESS = const(group("Dressing", "one", false, [opt("Lemon vinaigrette"), opt("Green goddess"), opt("On the side")]))
 
 // Quick notes: the things a server types forty times a night, one tap each,
 // per kitchen station.
-const NOTES_KITCHEN = ["No onions", "Nut allergy", "Dairy free", "Sauce on side", "Extra crispy", "Rush"]
-const NOTES_PASTRY = ["Birthday candle", "Split in two", "Nut allergy", "Dairy free", "Hold until called", "Rush"]
-const NOTES_BAR = ["Light ice", "No garnish", "Extra cold", "Less sweet", "With dessert", "Rush"]
+let NOTES_KITCHEN = const(["No onions", "Nut allergy", "Dairy free", "Sauce on side", "Extra crispy", "Rush"])
+let NOTES_PASTRY = const(["Birthday candle", "Split in two", "Nut allergy", "Dairy free", "Hold until called", "Rush"])
+let NOTES_BAR = const(["Light ice", "No garnish", "Extra cold", "Less sweet", "With dessert", "Rush"])
 
 pub fn quick_notes(station: string) -> list
   match station
@@ -54,7 +54,7 @@ end
 // ── Categories and items ────────────────────────────────────────────────────
 // `station` is the line in the kitchen the item prints to.
 
-pub const CATS = [
+pub let CATS = const([
   {name: "Starters", short: "Starters", tone: #7f9a3f, station: "Cold"},
   {name: "Mains", short: "Mains", tone: #c4532f, station: "Grill"},
   {name: "Pasta", short: "Pasta", tone: #d39a26, station: "Saute"},
@@ -62,13 +62,13 @@ pub const CATS = [
   {name: "Desserts", short: "Desserts", tone: #a2577f, station: "Pastry"},
   {name: "Drinks", short: "Drinks", tone: #3a8aa0, station: "Bar"},
   {name: "Cocktails & Wine", short: "Bar", tone: #5b5fb0, station: "Bar"},
-]
+])
 
 fn item(id: num, cat: num, name: string, cents: num, blurb: string, groups: list = [], tag: string = "") -> record
   {id: id, cat: cat, name: name, cents: cents, blurb: blurb, groups: groups, tag: tag}
 end
 
-pub const ITEMS = [
+pub let ITEMS = const([
   item(0, 0, "Burrata & Heirloom", 1600, "Heirloom tomato, basil oil, grilled sourdough", [], "Popular"),
   item(1, 0, "Crispy Calamari", 1500, "Lemon aioli, pickled chili, parsley"),
   item(2, 0, "Wood-Fired Flatbread", 1400, "San Marzano, fior di latte, basil", [FLAT_ADD]),
@@ -119,7 +119,7 @@ pub const ITEMS = [
   item(64, 6, "House Red", 1300, "Montepulciano, glass"),
   item(65, 6, "House White", 1200, "Verdicchio, glass"),
   item(66, 6, "Draft IPA", 900, "Local, 16 oz"),
-]
+])
 
 pub fn item_by_id(id: num) -> record
   find(ITEMS, fn(it) -> it.id == id)
@@ -131,11 +131,11 @@ end
 
 // ── The floor ───────────────────────────────────────────────────────────────
 
-pub const TABLES = [
+pub let TABLES = const([
   {name: "1", seats: 2}, {name: "2", seats: 2}, {name: "3", seats: 4}, {name: "4", seats: 4},
   {name: "5", seats: 4}, {name: "6", seats: 6}, {name: "7", seats: 4}, {name: "8", seats: 2},
   {name: "9", seats: 6}, {name: "10", seats: 8},
-]
+])
 
 // ── The evening so far ──────────────────────────────────────────────────────
 // A line is `{id, item, qty, mods, mod_cents, note, sent, sent_at, void}`.

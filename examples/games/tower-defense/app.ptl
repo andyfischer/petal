@@ -61,12 +61,12 @@ let S_SUB   = {size: 13, color: C_DIM, font: "ui"}
 
 // ── Tunables ─────────────────────────────────────────────────────────────
 
-config let start_gold  = 230
-config let start_lives = 20
-config let sell_rate   = 0.7      // fraction of gold spent returned by a sale
-config let dart_speed  = 11.0     // cells / second
-config let chain_jump  = 1.7      // how far lightning leaps, in cells
-config let chill_secs  = 1.8      // how long a Frostcap pulse lingers
+let start_gold  = tunable(230)
+let start_lives = tunable(20)
+let sell_rate   = tunable(0.7)    // fraction of gold spent returned by a sale
+let dart_speed  = tunable(11.0)   // cells / second
+let chain_jump  = tunable(1.7)    // how far lightning leaps, in cells
+let chill_secs  = tunable(1.8)    // how long a Frostcap pulse lingers
 
 let COLS = 21
 let ROWS = 14

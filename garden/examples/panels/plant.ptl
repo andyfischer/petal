@@ -5,16 +5,16 @@
 
 import ui
 
-config let wiggle_factor = 0.5             // how much a segment veers off straight
-config let max_segment_angle = 0.5         // veer ceiling, in multiples of pi
-config let max_segment_radius = 3.0        // trunk half-thickness at the base
-config let max_segment_length = 10.0       // a segment stops growing here
-config let max_height = 500.0              // sets how fast thickness tapers
-config let minimum_thickness = 0.3         // too thin to sprout another segment
-config let min_distance_between_branches = 30.0
-config let branch_spread_angle = 1.0       // radians between the two split branches
-config let leaf_spread_angle = 1.0         // radians between a tip's two leaves
-config let time_scale = 2.0                // growth speed multiplier
+let wiggle_factor = tunable(0.5)           // how much a segment veers off straight
+let max_segment_angle = tunable(0.5)       // veer ceiling, in multiples of pi
+let max_segment_radius = tunable(3.0)      // trunk half-thickness at the base
+let max_segment_length = tunable(10.0)     // a segment stops growing here
+let max_height = tunable(500.0)            // sets how fast thickness tapers
+let minimum_thickness = tunable(0.3)       // too thin to sprout another segment
+let min_distance_between_branches = tunable(30.0)
+let branch_spread_angle = tunable(1.0)     // radians between the two split branches
+let leaf_spread_angle = tunable(1.0)       // radians between a tip's two leaves
+let time_scale = tunable(2.0)              // growth speed multiplier
 
 let LENGTH_GROW_RATE = 40.0                // units of length per unit of plant-time
 let RADIUS_GROW_RATE = 1.0

@@ -6,7 +6,7 @@
 // dragging still jumps the cursor to the line that drew it.
 //
 // You never say which text to change: you say where the shape
-// should be, and Petal answers with the edit. The `config let`
+// should be, and Petal answers with the edit. The `tunable`
 // bindings below are how this sketch tells it which variables
 // are its tuning knobs: they are moved first. `:DragNext`
 // writes the next-best answer instead, and `:DragAllow x0`
@@ -14,8 +14,8 @@
 
 import ui
 
-config let edge = 300
-config let spacing = 78
+let edge = tunable(300)
+let spacing = tunable(78)
 
 let w = screen_width()
 let h = screen_height()

@@ -42,12 +42,12 @@ let S_SCORE = {size: 44, color: C_TEXT}
 
 // ── Tunables ─────────────────────────────────────────────────────────────
 
-config let win_score      = 7
-config let paddle_speed   = 620.0
-config let ai_speed       = 430.0
-config let ball_speed_min = 330.0
-config let ball_speed_max = 680.0
-config let tap_hold       = 0.10
+let win_score      = tunable(7)
+let paddle_speed   = tunable(620.0)
+let ai_speed       = tunable(430.0)
+let ball_speed_min = tunable(330.0)
+let ball_speed_max = tunable(680.0)
+let tap_hold       = tunable(0.10)
 
 let PW   = 13
 let PH   = 96

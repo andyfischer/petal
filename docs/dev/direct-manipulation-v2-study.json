@@ -16451,7 +16451,7 @@
           "terms": 33,
           "vars": 0
         },
-        "title": "the same, with `cx` declared `config let`"
+        "title": "the same, with `cx` declared a `tunable` setting"
       },
       {
         "file": "examples/direct-manipulation-v2/l02-helper.ptl",

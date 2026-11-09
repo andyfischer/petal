@@ -71,17 +71,17 @@ let S_UI_B  = {size: 13, font: "ui", color: C_TEXT, weight: 700}
 
 // ── Tunables ─────────────────────────────────────────────────────────────
 
-config let iter_rate    = 3600000.0 // iterations per second while you interact
-config let idle_boost   = 3.0       // times that when nothing else is happening
-config let sample_cost  = 24        // fixed overhead of one sample, in iterations
-config let fit_eps      = 0.007     // phase error a fitted gradient may make, in cycles
-config let fit_span     = 0.11      // most phase one gradient may cover, in cycles
-config let merge_eps    = 0.003     // phase two rows may differ by and still be drawn as one
-config let draw_budget  = 24000     // draw calls the image may cost per frame
-config let growth       = 3.0       // draw calls a tile gains per level, at worst
-config let pan_speed    = 620.0     // px/s while an arrow key is held
-config let wheel_gain   = 1.22      // zoom factor per wheel line
-config let cycle_speed  = 0.07      // palette cycles per second when cycling
+let iter_rate    = tunable(3600000.0) // iterations per second while you interact
+let idle_boost   = tunable(3.0)       // times that when nothing else is happening
+let sample_cost  = tunable(24)        // fixed overhead of one sample, in iterations
+let fit_eps      = tunable(0.007)     // phase error a fitted gradient may make, in cycles
+let fit_span     = tunable(0.11)      // most phase one gradient may cover, in cycles
+let merge_eps    = tunable(0.003)     // phase two rows may differ by and still be drawn as one
+let draw_budget  = tunable(24000)     // draw calls the image may cost per frame
+let growth       = tunable(3.0)       // draw calls a tile gains per level, at worst
+let pan_speed    = tunable(620.0)     // px/s while an arrow key is held
+let wheel_gain   = tunable(1.22)      // zoom factor per wheel line
+let cycle_speed  = tunable(0.07)      // palette cycles per second when cycling
 
 // ── Lattice ──────────────────────────────────────────────────────────────
 

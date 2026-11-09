@@ -8,10 +8,10 @@
 // Run:
 //   ./tools/run-petal.ts run examples/games/minesweeper/minesweeper.ptl
 
-config let width = 9
-config let height = 9
-config let mine_count = 10
-config let rng_seed = 20260830
+let width = tunable(9)
+let height = tunable(9)
+let mine_count = tunable(10)
+let rng_seed = tunable(20260830)
 
 // ---------------------------------------------------------------- board state
 

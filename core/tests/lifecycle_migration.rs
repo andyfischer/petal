@@ -30,7 +30,7 @@ fn ptl_files(dir: &Path, out: &mut Vec<PathBuf>) {
         if p.is_dir() {
             if !matches!(
                 p.file_name().and_then(|n| n.to_str()),
-                Some("target" | "node_modules" | ".git")
+                Some("target" | "node_modules" | ".git" | "build")
             ) {
                 ptl_files(&p, out);
             }

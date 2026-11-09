@@ -147,6 +147,16 @@ pub const MAX_SCOPE_FRAME_DEPTH: usize = 96;
 /// allocation every frame is deemed different, which costs a re-run.
 pub const ARG_COMPARE_BUDGET: usize = 512;
 
+/// Node budget for comparing a probe's recomputed answer with the recorded
+/// one at validation. Validation has just called the native again, so the
+/// comparison walks no more than that call built, and failing it re-runs the
+/// scope, which reads the answer again at least once. A large answer (a
+/// `text_wrap` of a document is one row record per line) therefore compares
+/// in full: under [`ARG_COMPARE_BUDGET`] it failed every frame past ~128
+/// rows, and the scope re-ran every frame for nothing. The bound only stops a
+/// pathological structure.
+pub const PROBE_COMPARE_BUDGET: usize = 1 << 20;
+
 /// Node budget for comparing a re-executed child's outputs with the cached
 /// ones, per emitted value, on top of a fixed allowance.
 pub const OUTPUT_COMPARE_PER_VALUE: usize = 24;

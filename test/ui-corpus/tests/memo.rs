@@ -88,6 +88,35 @@ fn a_probe_that_keeps_its_answer_is_a_cutoff() {
     assert!(matches!(ui.commands[6], DrawCommand::Rect { r: 9, .. }));
 }
 
+/// A probe whose answer is large still validates: `text_wrap_rows` over a
+/// document answers one row record per line, far past the argument
+/// comparison budget, and the scope that wraps must replay on a still frame
+/// rather than fail validation and wrap again every frame.
+#[test]
+fn a_probe_with_a_large_answer_still_replays() {
+    let doc = (0..400).map(|i| format!("line {i} of the document")).collect::<Vec<_>>().join("\\n");
+    let mut ui = ui(&format!(
+        "state n = 0\n\
+         fn wrapped(d)\n\
+           let rows = text_wrap_rows(d, {{size: 14}}, 300.0)\n\
+           draw_text(str(len(rows)), {{x: 0, y: 0}}, 12, {WHITE})\n\
+           len(rows)\n\
+         end\n\
+         n = wrapped(\"{doc}\")\n"
+    ));
+    ui.frame().unwrap();
+    assert_eq!(ui.state_int("n"), Some(400));
+    let before = ui.memo_stats();
+    ui.mouse_move(10, 10);
+    ui.frame().unwrap();
+    let s = ui.memo_stats();
+    assert_eq!(
+        (s.hits - before.hits, s.misses - before.misses),
+        (1, 0),
+        "the wrap's 400-row answer validated, so the scope replayed"
+    );
+}
+
 #[test]
 fn state_inside_a_replayed_widget_survives_and_keeps_counting() {
     let src = format!(

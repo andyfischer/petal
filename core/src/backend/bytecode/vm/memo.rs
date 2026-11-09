@@ -13,7 +13,7 @@ use crate::backend::RuntimeClosure;
 use crate::heap::CellId;
 use crate::memo::{
     ARG_COMPARE_BUDGET, Dep, MAX_SCOPE_DEPS, MIN_SCOPE_INSTS, MemoSlot, OUTPUT_COMPARE_PER_VALUE,
-    OpenScope, OutputSegment, PreviousRecord, ScopePath, ScopeValues, container_args_fingerprint,
+    OpenScope, OutputSegment, PROBE_COMPARE_BUDGET, PreviousRecord, ScopePath, ScopeValues, container_args_fingerprint,
     holds_local_cell,
 };
 use crate::memo::SegmentBodies;
@@ -855,7 +855,7 @@ impl<'a> Vm<'a> {
                         let answer = self.call_native_fn(*native, args, false, None);
                         self.stack.memo.suppress = false;
                         match answer {
-                            Ok(v) => self.memo_eq(v, *result, ARG_COMPARE_BUDGET),
+                            Ok(v) => self.memo_eq(v, *result, PROBE_COMPARE_BUDGET),
                             Err(_) => false,
                         }
                     }

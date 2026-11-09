@@ -372,6 +372,7 @@ fn a_package_registered_from_memory_may_carry_its_manifest() {
     assert!(err.contains("names the package 'other'"), "{err}");
 }
 
+#[cfg(feature = "bloom")]
 #[test]
 fn bundled_bloom_depends_on_text_layout_and_requires_ui() {
     let bloom = Env::bundled_packages()

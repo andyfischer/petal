@@ -15,7 +15,8 @@ name = "petal-sdl"
 path = "src/main.rs"
 
 [dependencies]
-petal = { path = "../../core", default-features = false }
+# `libraries`: a sketch host, so a sketch may import any bundled library.
+petal = { path = "../../core", default-features = false, features = ["libraries"] }
 petal-ui = { path = "../../core-libs/petal-ui" }
 sdl2 = { version = "0.37", features = ["image", "ttf"] }
 notify = "7"

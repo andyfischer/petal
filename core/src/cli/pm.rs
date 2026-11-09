@@ -368,7 +368,9 @@ DESCRIPTION
        A host registers each package (Env::register_package,
        pb_vm_register_package, or the wasm register_package(name, json)) and
        loads entry.source at entry.path. Packages bundled in the petal binary
-       (ui, bloom, the builtin packages) are not repeated in the document.
+       (ui, bloom, the builtin packages) are not repeated in the document,
+       unless the project names one under [dependencies]: a host built
+       without a bundled library (the wasm runtimes) gets it that way.
 
 OPTIONS
        -o <file>, --output <file>

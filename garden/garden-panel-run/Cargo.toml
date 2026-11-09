@@ -6,7 +6,8 @@ license.workspace = true
 description = "petal-ui-run and petal-ui-propose-edit for Garden panels: the same CLIs with Garden's panel stubs registered, so a script that does `import garden` runs headlessly"
 
 [dependencies]
-petal.workspace = true
+# Runs any panel headlessly, including ones that import a bundled library.
+petal = { workspace = true, features = ["libraries"] }
 petal-ui.workspace = true
 petal-ui-headless.workspace = true
 garden-script.workspace = true

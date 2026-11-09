@@ -17,6 +17,10 @@ petal-query = { workspace = true }
 # Read directly (not just through garden-script) so `garden --version` can
 # report the prelude actually linked into this binary — see src/version.rs.
 petal-ui.workspace = true
+# The IDE resolves every bundled library (`import glsl`, …). Turned on here,
+# not on the workspace `petal` dependency, because garden-web (a wasm build of
+# garden-script) inherits that one and imports none of them.
+petal = { workspace = true, features = ["libraries"] }
 winit = "0.30"
 crossterm = "0.29"
 serde = { version = "1", features = ["derive"] }

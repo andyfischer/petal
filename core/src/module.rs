@@ -944,6 +944,9 @@ impl ModuleRegistry {
                  and are in scope with no import. Delete this import (`petal fix-imports` does)"
             ));
         }
+        if let Some(message) = omitted_library_error(package) {
+            return Err(message);
+        }
         Err(format!(
             "there is no package named '{package}': not registered by the host, not the \
              importing file's own package or a [dependencies] entry of its petal.toml, not on \
@@ -951,6 +954,18 @@ impl ModuleRegistry {
              imported as `./{path}`"
         ))
     }
+}
+
+/// The error for an import of `package` when it is a bundled library this
+/// build of the crate leaves out (`petal::bundled::OMITTED_LIBRARIES`).
+fn omitted_library_error(package: &str) -> Option<String> {
+    let (name, feature) = crate::bundled::OMITTED_LIBRARIES
+        .iter()
+        .find(|(name, _)| *name == package)?;
+    Some(format!(
+        "package `{name}` is not in this build of Petal: enable the `{feature}` feature of \
+         the `petal` crate, or register it with `register_package` (see `petal bundle`)"
+    ))
 }
 
 /// `a, b, c, +N more`, each prefixed with the package name.
@@ -2330,9 +2345,12 @@ print(score(1, 2))")
         assert!(w[0].contains("module 'ui' exports, which hides the builtin"), "{w:?}");
         // The bundled text, registered in memory the way petal-ui does it,
         // is still the first-party package.
-        let bundled = crate::bundled::package("bloom").expect("bloom is bundled");
-        let (path, source) = bundled.sources().next().expect("bloom has sources");
-        let name = format!("bloom/{}", path.trim_end_matches(".ptl").trim_start_matches("src/"));
+        let bundled = crate::bundled::package("ui").expect("ui is bundled");
+        let (path, source) = bundled
+            .sources()
+            .find(|(path, _)| *path == "draw.ptl")
+            .expect("ui has draw.ptl");
+        let name = format!("ui/{}", path.trim_end_matches(".ptl"));
         let module = super::LoadedModule {
             name: Some(name),
             display_name: path.to_string(),
@@ -2464,6 +2482,33 @@ print(score(1, 2))")
     fn a_bare_name_is_a_package_never_a_missing_file() {
         let err = load_err(&[], "import nope\nprint(1)");
         assert!(err.contains("there is no package named 'nope'"), "{err}");
+    }
+
+    #[cfg(not(feature = "glsl"))]
+    #[test]
+    fn a_library_left_out_of_the_build_names_its_feature() {
+        assert!(crate::bundled::OMITTED_LIBRARIES.contains(&("glsl", "glsl")));
+        let err = load_err(&[], "import glsl\nprint(1)");
+        assert!(
+            err.contains(
+                "package `glsl` is not in this build of Petal: enable the `glsl` feature of the \
+                 `petal` crate, or register it with `register_package` (see `petal bundle`)"
+            ),
+            "{err}"
+        );
+        // A host that registers the package is not refused.
+        assert_eq!(
+            run(&[("glsl", "pub let v = 7")], "import glsl\nprint(v)"),
+            vec!["7"]
+        );
+    }
+
+    #[cfg(feature = "glsl")]
+    #[test]
+    fn a_library_in_the_build_resolves() {
+        assert!(crate::bundled::LIBRARIES.contains(&"glsl"));
+        assert!(crate::bundled::OMITTED_LIBRARIES.iter().all(|(name, _)| *name != "glsl"));
+        assert!(crate::bundled::package("glsl").is_some());
     }
 
     #[test]

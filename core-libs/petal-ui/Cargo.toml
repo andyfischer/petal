@@ -19,6 +19,9 @@ serde_json = "1"
 # headless crate does. (Unit tests under `src/` cannot use it — they build a
 # second copy of this crate — so nothing there does.)
 petal-ui-headless = { path = "../petal-ui-headless" }
+# The tests import bloom and text_layout, which `petal` bundles only with
+# these features; a dev-dependency does not reach crates that use petal-ui.
+petal = { path = "../../core", default-features = false, features = ["libraries"] }
 
 # Release codegen with symbols kept, for a sampling profiler (`sample`,
 # `samply`) over `bench_panel`; mirrors the `petal` crate's own profile.

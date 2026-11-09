@@ -16,6 +16,35 @@ tooling = []
 # collected in debug builds; this feature forces them on for release. See
 # `src/stats.rs`.
 dup-stats = []
+# The bundled libraries: first-party packages written in Petal whose source is
+# embedded in the crate when the feature is on. Off by default, so an embedder
+# (notably the wasm builds) carries only what it imports; the `petal` command
+# turns on `libraries`. Each is listed under [package.metadata.petal.bundled].
+text_layout = []
+bloom = ["text_layout"]
+glsl = []
+libraries = ["bloom", "text_layout", "glsl"]
+
+# The packages core/build.rs embeds (`petal::bundled`), in order: `name =
+# { dir, kind, feature }`. `dir` is relative to this crate and holds a
+# petal.toml. `kind` is `core` (the always-in-scope builtins), `builtin` (a
+# domain builtin package: natives every Env registers, in scope where
+# imported), `ui` (the petal-ui interface; always embedded) or `library`
+# (embedded only when `feature`, which must be declared above, is on). The
+# build fails if an embedded package's [dependencies] name a bundled package
+# that is left out. A new library is a directory, a line here and a feature.
+[package.metadata.petal.bundled]
+core = { dir = "packages/core", kind = "core" }
+noise = { dir = "packages/noise", kind = "builtin" }
+color = { dir = "packages/color", kind = "builtin" }
+vec2 = { dir = "packages/vec2", kind = "builtin" }
+autodiff = { dir = "packages/autodiff", kind = "builtin" }
+json = { dir = "packages/json", kind = "builtin" }
+io = { dir = "packages/io", kind = "builtin" }
+ui = { dir = "../core-libs/petal-ui/prelude", kind = "ui" }
+bloom = { dir = "../core-runtime/bloom", kind = "library", feature = "bloom" }
+text_layout = { dir = "../core-runtime/text-layout", kind = "library", feature = "text_layout" }
+glsl = { dir = "../core-runtime/glsl", kind = "library", feature = "glsl" }
 
 [dependencies]
 indexmap = { version = "2", features = ["serde"] }

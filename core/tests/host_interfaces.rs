@@ -1,8 +1,9 @@
 //! Bundled packages and host interfaces: what a host registers, what a script
 //! must import to reach it, and the check that the two agree.
 //!
-//! - the `petal` library bundles `core`, `ui`, `bloom`, `text_layout` and
-//!   `glsl`, so a check resolves them with no host and no search path;
+//! - the `petal` library bundles `core`, the domain builtins and `ui`, plus
+//!   `bloom`, `text_layout` and `glsl` when their features are on, so a check
+//!   resolves them with no host and no search path;
 //! - nothing is imported implicitly: a host's names come through `import`;
 //! - a native is reachable only through a `native fn` declaration in scope;
 //! - `Env::verify_interface` holds a host's registrations to the packages
@@ -33,15 +34,25 @@ fn run(env: &mut Env, src: &str) -> Result<Vec<String>, String> {
 // ── Bundled packages ─────────────────────────────────────────────────────
 
 #[test]
-fn the_bundled_set_is_core_the_domain_builtins_ui_bloom_text_layout_and_glsl() {
+fn the_bundled_set_is_core_the_domain_builtins_ui_and_the_enabled_libraries() {
     let names: Vec<&str> = petal::bundled::BUNDLED_PACKAGES.iter().map(|p| p.name).collect();
-    assert_eq!(
-        names,
-        [
-            "core", "noise", "color", "vec2", "autodiff", "json", "io", "ui", "bloom",
-            "text_layout", "glsl"
-        ]
-    );
+    let mut expected = vec!["core", "noise", "color", "vec2", "autodiff", "json", "io", "ui"];
+    for (library, on) in [
+        ("bloom", cfg!(feature = "bloom")),
+        ("text_layout", cfg!(feature = "text_layout")),
+        ("glsl", cfg!(feature = "glsl")),
+    ] {
+        if on {
+            expected.push(library);
+            assert!(petal::bundled::LIBRARIES.contains(&library), "{library}");
+        } else {
+            assert!(
+                petal::bundled::OMITTED_LIBRARIES.contains(&(library, library)),
+                "{library} is neither bundled nor listed as omitted"
+            );
+        }
+    }
+    assert_eq!(names, expected);
     // The domain builtins are bundled packages, each importable by name.
     for name in petal::bundled::BUILTIN_PACKAGES {
         assert!(names.contains(name), "{name} is not bundled");
@@ -65,7 +76,17 @@ fn the_bundled_set_is_core_the_domain_builtins_ui_bloom_text_layout_and_glsl() {
 
 #[test]
 fn every_bundled_package_checks_with_no_host_and_no_search_path() {
-    for import in ["ui", "ui/input", "bloom", "bloom/menu", "text_layout", "glsl", "core"] {
+    let mut imports = vec!["ui", "ui/input", "core"];
+    if cfg!(feature = "bloom") {
+        imports.extend(["bloom", "bloom/menu"]);
+    }
+    if cfg!(feature = "text_layout") {
+        imports.push("text_layout");
+    }
+    if cfg!(feature = "glsl") {
+        imports.push("glsl");
+    }
+    for import in imports {
         let mut env = Env::new();
         env.set_check_only(true);
         let pid = env
@@ -82,6 +103,7 @@ fn every_bundled_package_checks_with_no_host_and_no_search_path() {
     }
 }
 
+#[cfg(feature = "bloom")]
 #[test]
 fn bloom_reaches_ui_through_its_own_imports() {
     // bloom's modules import `ui` themselves; a script that imports only

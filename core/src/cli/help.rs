@@ -717,10 +717,11 @@ DESCRIPTION
        A name is defined by a declaration in the file, by an import, or by
        being a core builtin; no host is consulted. A script written for a
        host imports the host's interface package ('import ui'), whose
-       'native fn' declarations are all the check needs: 'ui', 'bloom',
-       'text_layout' and 'glsl' are bundled in this binary, and any other
-       host's package is found through the project's petal.toml (a path
-       under [dependencies]) or with -I (for Garden:
+       'native fn' declarations are all the check needs: 'ui' and the
+       bundled libraries ('bloom', 'text_layout' and 'glsl' in the petal
+       command; 'petal packages' lists what this binary has) need no flag,
+       and any other host's package is found through the project's
+       petal.toml (a path under [dependencies]) or with -I (for Garden:
        -I garden/garden-script/packages). A script that imports 'ui' passes
        the check and is then refused by 'petal run', because 'run' registers
        the core builtins only.

@@ -34,6 +34,9 @@ jobs:
       - name: Run Rust tests
         run: cargo test --manifest-path core/Cargo.toml
 
+      - name: Test core with the bundled libraries
+        run: cargo test --manifest-path core/Cargo.toml --features libraries
+
       # The `petal` binary and the package manager, which `core` leaves out so
       # embedded runtimes do not carry it. The CLI tests run the binary.
       - name: Run package manager tests
@@ -234,7 +237,7 @@ jobs:
         run: ctest --test-dir integrations/petal-c-bridge/build --output-on-failure
 
       - name: Build without the petal-query feature
-        run: cargo build --release --no-default-features --manifest-path integrations/petal-c-bridge/Cargo.toml
+        run: cargo build --release --no-default-features --features libraries --manifest-path integrations/petal-c-bridge/Cargo.toml
 
   web-builds:
     name: Web builds (wasm + vite)

@@ -1,14 +1,18 @@
 //! Build script: embed the bundled packages (`petal::bundled`) in the binary,
 //! and record what the binary was built from and when (`petal::version`).
 //!
-//! A bundled package is Petal source and `native fn` declarations only. Each
-//! one is read from its home in the repository; a missing directory fails the
-//! build rather than producing a binary that silently lacks a package.
+//! A bundled package is Petal source and `native fn` declarations only. They
+//! are listed in `Cargo.toml` under [package.metadata.petal.bundled]; a
+//! `library` entry is embedded only when its cargo feature is on. Each one is
+//! read from its home in the repository; a missing directory fails the build
+//! rather than producing a binary that silently lacks a package.
 
 use std::path::Path;
 
 #[path = "build_support/strip_comments.rs"]
 mod strip_comments;
+#[path = "build_support/toml_lite.rs"]
+mod toml_lite;
 
 /// Loose `.ptl` files the crate embeds outside the bundled packages, relative
 /// to this crate: each goes through [`embed_source`] to
@@ -54,26 +58,101 @@ fn embed_source(abs: &Path, rel: &str, strip: bool) -> String {
     out.display().to_string()
 }
 
-/// The packages compiled into the petal binary: `(name, directory relative to
-/// this crate)`. Each is a `petal.toml` package of Petal source and
-/// `native fn` declarations; `petal::bundled` serves them. A directory that
-/// is missing fails the build — a binary that silently lacks `core` would
-/// compile every script against an empty set of builtins.
-const BUNDLED_PACKAGES: &[(&str, &str)] = &[
-    ("core", "packages/core"),
-    // The domain builtins: natives every Env registers, in scope only where
-    // imported (`petal::bundled::BUILTIN_PACKAGES`).
-    ("noise", "packages/noise"),
-    ("color", "packages/color"),
-    ("vec2", "packages/vec2"),
-    ("autodiff", "packages/autodiff"),
-    ("json", "packages/json"),
-    ("io", "packages/io"),
-    ("ui", "../core-libs/petal-ui/prelude"),
-    ("bloom", "../core-runtime/bloom"),
-    ("text_layout", "../core-runtime/text-layout"),
-    ("glsl", "../core-runtime/glsl"),
-];
+/// The table in `Cargo.toml` that lists the bundled packages.
+const BUNDLED_TABLE: &str = "package.metadata.petal.bundled";
+
+/// One entry of [`BUNDLED_TABLE`].
+struct Bundled {
+    name: String,
+    /// Relative to this crate.
+    dir: String,
+    /// `core`, `builtin`, `ui` or `library`.
+    kind: String,
+    /// The cargo feature that embeds a `library`.
+    feature: Option<String>,
+}
+
+/// Read [`BUNDLED_TABLE`] and the [features] table from this crate's
+/// `Cargo.toml`, checking each entry. Panics (failing the build) on an entry
+/// that is malformed, of an unknown kind, or a library whose feature is not
+/// declared.
+fn bundled_manifest(manifest: &str) -> Vec<Bundled> {
+    let path = Path::new(manifest).join("Cargo.toml");
+    println!("cargo::rerun-if-changed={}", path.display());
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
+    let features: Vec<String> = toml_lite::table_entries(&text, "features")
+        .into_iter()
+        .map(|(k, _)| k)
+        .collect();
+    let entries = toml_lite::table_entries(&text, BUNDLED_TABLE);
+    if entries.is_empty() {
+        panic!("{}: no [{BUNDLED_TABLE}] entries; the petal crate needs at least `core`", path.display());
+    }
+    let mut out = Vec::new();
+    for (name, value) in entries {
+        let fields = toml_lite::inline_strings(&value).unwrap_or_else(|| {
+            panic!(
+                "[{BUNDLED_TABLE}] `{name}`: expected an inline table of strings like \
+                 `{{ dir = \"...\", kind = \"library\", feature = \"...\" }}`, got `{value}`"
+            )
+        });
+        let field = |key: &str| fields.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+        for (key, _) in &fields {
+            if !["dir", "kind", "feature"].contains(&key.as_str()) {
+                panic!("[{BUNDLED_TABLE}] `{name}`: unknown field `{key}` (dir, kind, feature)");
+            }
+        }
+        let dir = field("dir").unwrap_or_else(|| panic!("[{BUNDLED_TABLE}] `{name}`: no `dir`"));
+        let kind = field("kind").unwrap_or_else(|| panic!("[{BUNDLED_TABLE}] `{name}`: no `kind`"));
+        let feature = field("feature");
+        match (kind.as_str(), &feature) {
+            ("library", None) => {
+                panic!("[{BUNDLED_TABLE}] `{name}`: a library needs the `feature` that embeds it")
+            }
+            ("library", Some(f)) if !features.contains(f) => panic!(
+                "[{BUNDLED_TABLE}] `{name}`: its feature `{f}` is not declared in [features] of {}. \
+                 Add `{f} = []` there (and to the `libraries` umbrella).",
+                path.display()
+            ),
+            ("library", Some(_)) => {}
+            ("core" | "builtin" | "ui", None) => {}
+            ("core" | "builtin" | "ui", Some(_)) => panic!(
+                "[{BUNDLED_TABLE}] `{name}`: only a `library` is gated by a feature; \
+                 a `{kind}` package is always embedded"
+            ),
+            _ => panic!(
+                "[{BUNDLED_TABLE}] `{name}`: unknown kind `{kind}` (core, builtin, ui, library)"
+            ),
+        }
+        out.push(Bundled { name, dir, kind, feature });
+    }
+    if !out.iter().any(|b| b.kind == "core" && b.name == "core") {
+        panic!("[{BUNDLED_TABLE}]: no `core` package of kind `core`");
+    }
+    out
+}
+
+/// Whether cargo feature `feature` is on for this build.
+fn feature_enabled(feature: &str) -> bool {
+    let var = format!("CARGO_FEATURE_{}", feature.to_uppercase().replace('-', "_"));
+    std::env::var_os(var).is_some()
+}
+
+/// The import names a package's `petal.toml` lists under [dependencies]
+/// (either `name = {...}` lines or `[dependencies.name]` tables).
+fn manifest_dependencies(petal_toml: &str) -> Vec<String> {
+    let mut deps: Vec<String> = toml_lite::table_entries(petal_toml, "dependencies")
+        .into_iter()
+        .map(|(k, _)| k)
+        .collect();
+    for header in toml_lite::headers(petal_toml) {
+        if let Some(name) = header.strip_prefix("dependencies.") {
+            deps.push(name.trim_matches('"').to_string());
+        }
+    }
+    deps
+}
 
 /// Directories of a package that are not part of what it exports: its tests
 /// and examples are loose scripts beside the modules.
@@ -106,11 +185,19 @@ fn package_files(dir: &Path, rel: &str, out: &mut Vec<String>) {
     }
 }
 
-/// Write `$OUT_DIR/bundled_packages.rs`: the table `petal::bundled` includes.
+/// Write `$OUT_DIR/bundled_packages.rs` (the table `petal::bundled` includes)
+/// and `$OUT_DIR/bundled_meta.rs` (the package lists by kind, and the
+/// libraries this build leaves out).
 fn embed_bundled_packages(manifest: &str, strip: bool) {
+    let all = bundled_manifest(manifest);
+    let (included, omitted): (Vec<&Bundled>, Vec<&Bundled>) = all
+        .iter()
+        .partition(|b| b.feature.as_deref().is_none_or(feature_enabled));
+
     let mut code = String::from("&[\n");
-    for (name, rel) in BUNDLED_PACKAGES {
-        let dir = Path::new(manifest).join(rel);
+    for b in &included {
+        let name = &b.name;
+        let dir = Path::new(manifest).join(&b.dir);
         let dir = dir.canonicalize().unwrap_or_else(|e| {
             panic!(
                 "bundled package `{name}`: its source directory {} is missing ({e}). \
@@ -118,11 +205,28 @@ fn embed_bundled_packages(manifest: &str, strip: bool) {
                 dir.display()
             )
         });
-        if !dir.join("petal.toml").is_file() {
+        let petal_toml = dir.join("petal.toml");
+        let Ok(petal_toml_text) = std::fs::read_to_string(&petal_toml) else {
             panic!(
                 "bundled package `{name}`: {} has no petal.toml",
                 dir.display()
             );
+        };
+        for dep in manifest_dependencies(&petal_toml_text) {
+            if let Some(left_out) = omitted.iter().find(|o| o.name == dep) {
+                let feature = left_out.feature.as_deref().unwrap_or_default();
+                let gate = b
+                    .feature
+                    .as_deref()
+                    .map(|f| format!(" (embedded by feature `{f}`)"))
+                    .unwrap_or_default();
+                panic!(
+                    "bundled package `{name}`{gate} depends on `{dep}` ({}), which this build \
+                     leaves out. Turn on feature `{feature}` too, or make `{feature}` part of \
+                     the feature that embeds `{name}` in core/Cargo.toml [features].",
+                    petal_toml.display()
+                );
+            }
         }
         println!("cargo::rerun-if-changed={}", dir.display());
         let mut files = Vec::new();
@@ -142,8 +246,37 @@ fn embed_bundled_packages(manifest: &str, strip: bool) {
     }
     code.push_str("]\n");
     let out = std::env::var("OUT_DIR").expect("OUT_DIR");
-    std::fs::write(Path::new(&out).join("bundled_packages.rs"), code)
-        .expect("writing bundled_packages.rs");
+    write_if_changed(&Path::new(&out).join("bundled_packages.rs"), &code);
+
+    let names = |kind: &str, from: &[&Bundled]| {
+        from.iter()
+            .filter(|b| b.kind == kind)
+            .map(|b| format!("{:?}, ", b.name))
+            .collect::<String>()
+    };
+    let omitted_libs: String = omitted
+        .iter()
+        .map(|b| format!("({:?}, {:?}), ", b.name, b.feature.as_deref().unwrap_or_default()))
+        .collect();
+    let meta = format!(
+        "/// The bundled packages that declare the domain builtins (kind `builtin`).\n\
+         pub const BUILTIN_PACKAGES: &[&str] = &[{}];\n\
+         /// The bundled libraries (kind `library`) embedded in this build.\n\
+         pub const LIBRARIES: &[&str] = &[{}];\n\
+         /// The bundled libraries this build leaves out: `(package, the petal\n\
+         /// crate feature that embeds it)`.\n\
+         pub const OMITTED_LIBRARIES: &[(&str, &str)] = &[{omitted_libs}];\n",
+        names("builtin", &included),
+        names("library", &included),
+    );
+    write_if_changed(&Path::new(&out).join("bundled_meta.rs"), &meta);
+}
+
+/// Write `text` to `path` unless it already holds exactly that.
+fn write_if_changed(path: &Path, text: &str) {
+    if std::fs::read_to_string(path).ok().as_deref() != Some(text) {
+        std::fs::write(path, text).unwrap_or_else(|e| panic!("writing {}: {e}", path.display()));
+    }
 }
 
 /// Run `git <args>` in `dir` and return its trimmed stdout, or `None` when

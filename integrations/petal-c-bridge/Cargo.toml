@@ -20,7 +20,14 @@ name = "petal_bridge"
 crate-type = ["staticlib", "rlib"]
 
 [features]
-default = ["query"]
+# `libraries` keeps every bundled Petal library (bloom, text_layout, glsl) in
+# the archive, so a C/C++ host can `import glsl` with no registration. A host
+# that wants only some turns defaults off and lists them (`query`, `glsl`, …).
+default = ["query", "libraries"]
+libraries = ["petal/libraries"]
+bloom = ["petal/bloom"]
+text_layout = ["petal/text_layout"]
+glsl = ["petal/glsl"]
 # Link petal-query and report its protocol version in pb_version(). Its
 # provider/cache layer is not exposed through the C ABI yet.
 query = ["dep:petal-query"]
@@ -29,7 +36,7 @@ query = ["dep:petal-query"]
 petal = { path = "../../core", default-features = false }
 petal-ui = { path = "../../core-libs/petal-ui" }
 # `pb_scenario` replays petal-ui-headless's input scenarios.
-petal-ui-headless = { path = "../../core-libs/petal-ui-headless" }
+petal-ui-headless = { path = "../../core-libs/petal-ui-headless", default-features = false }
 petal-query = { path = "../../core-libs/petal-query", optional = true }
 indexmap = "2"
 serde_json = "1"

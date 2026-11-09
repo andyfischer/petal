@@ -6,6 +6,13 @@ description = "Run a petal-ui script with no renderer attached: the Headless dri
 license = "MIT"
 repository = "https://github.com/andyfischer/petal"
 
+[features]
+# The bundled libraries (bloom, text_layout, glsl) of the `petal` crate:
+# petal-ui-run runs the example apps, which import them. A host that links
+# this crate and wants only what it imports turns defaults off.
+default = ["libraries"]
+libraries = ["petal/libraries"]
+
 [dependencies]
 petal = { path = "../../core", default-features = false }
 petal-ui = { path = "../petal-ui" }

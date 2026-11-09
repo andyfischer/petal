@@ -2,7 +2,7 @@
 # Run `make` or `make help` to see the available targets.
 
 .DEFAULT_GOAL := help
-.PHONY: help build test test-examples test-ui-corpus test-c-bridge expensive_lint_tests prove clean
+.PHONY: help build test test-core test-examples test-ui-corpus test-c-bridge expensive_lint_tests prove clean
 
 help: ## Show this help
 	@echo "Petal — make targets:"
@@ -14,6 +14,10 @@ build: ## Build the petal binary (debug), cli/target/debug/petal
 
 test: build ## Run the full vitest suite (also runs every examples/console/*.ptl)
 	npx vitest run
+
+test-core: ## Run the petal crate's Rust tests twice: as embedders get it (no bundled libraries) and with every bundled library (--features libraries)
+	cd core && cargo test
+	cd core && cargo test --features libraries
 
 test-examples: build ## Print each example program's output for manual inspection
 	./tools/test-examples.ts
@@ -27,7 +31,7 @@ test-c-bridge: ## Build petal-c-bridge (C/C++ embedding) with CMake + Ninja and 
 	ctest --test-dir integrations/petal-c-bridge/build --output-on-failure
 
 expensive_lint_tests: ## Run the fmt/lint/CST sweeps over every .ptl in the repo (minutes of CPU; PETAL_TEST_JOBS=<n> caps the threads)
-	cd core && cargo test --lib over_repo_corpus -- --ignored
+	cd core && cargo test --features libraries --lib over_repo_corpus -- --ignored
 
 prove: ## Run the Kani proofs of the core numeric semantics (needs cargo-kani)
 	cd core && cargo kani --solver cadical

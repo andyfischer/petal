@@ -641,6 +641,10 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- `petal suggest` spells an imported module's class or enum the way the file
+  writes it: `k: lv.Kind?` under `import ./level as lv`, where it printed the
+  identity `./level::Kind?`, which is not valid in an annotation (and which
+  `--apply` then dropped). A type the file cannot name is not suggested.
 - `petal suggest --only types` no longer suggests a return type when the
   body returns a value it cannot type: `fn lookup(k)` returning `found` or
   `nil` was offered `-> nil`, which turns the implicit return off and makes

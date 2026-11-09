@@ -1635,6 +1635,56 @@ reason to keep a copy of it in a `let` or in `state`.
 
 A variant may not be named `all` or `from`.
 
+### Methods on an enum
+
+`fn Kind.describe(k: Kind, …)` declares a method on an enum, called as
+`k.describe(…)` on any of its variants. It is a [class
+method](#methods) in every respect: the receiver is the first parameter and
+the call site supplies it, methods overload by arity, they are top-level and
+hoisted, and a call whose receiver's enum is known is bound to the method at
+compile time.
+
+```petal
+enum Ty
+    float(dim: 1),
+    vec2(dim: 2),
+    named(id, dim: 0),
+end
+
+fn Ty.text(t: Ty) -> string
+    match t
+        when Ty.named(id) -> id
+        when _ -> t.name
+    end
+end
+
+fn Ty.is_vec(t: Ty) -> bool
+    t.dim > 1
+end
+
+print(Ty.vec2.text(), Ty.named("Fx").text(), Ty.vec2.is_vec())   // vec2 Fx true
+```
+
+**Data or a method?** Use [constant data](#constant-data) for a fixed value
+per variant (`park(upkeep: 2)`, read as `k.upkeep`), and a method for an
+answer computed from the variant, usually from its payload, as `text` reads
+`named`'s `id` above. A method that is a `match` returning one constant per
+variant is a table, and is better written as data.
+
+A method may not take a name the enum's variants already answer to, each a
+compile error that names the clashing declaration:
+
+- a **variant** of the enum (`fn Op.fight` beside the variant `Op.fight`);
+- a **payload field or data key** of any variant (`fn Piece.cells` beside the
+  data key `cells`), since a variant's own field would answer
+  `p.cells()` first;
+- **`name`, `all` or `from`**, which every enum and variant already has.
+
+Methods may be declared only on an enum of the same file; a method on an
+imported enum is a compile error. There are no enum-level functions:
+`Kind.parse(s)` would read as a variant named `parse`. A function that takes
+no variant stays a free function.
+
 ### Declaration rules
 
 `enum` is a top-level declaration and is hoisted, like `class`: code above
@@ -1860,13 +1910,18 @@ floats), while `inset` and `offset` return a `Rect`, so they chain.
 `value.name(args...)` tries, in order, and takes the first match:
 
 1. **A callable record field** — `r.f()` where `f` is a field holding a
-   function. Data beats declarations, and an instance is a record.
-2. **A user-declared method** for the receiver's class — `fn Rect.area(...)`.
+   function. Data beats declarations, and an instance is a record. On an enum
+   variant, a payload field or data value holding a function.
+2. **A user-declared method** for the receiver's class or enum —
+   `fn Rect.area(...)`, or `fn Kind.describe(...)` for a variant, whose enum
+   is the part of its tag before the variant's name.
 3. **A built-in method** of that class — `Rect.center_x` and friends. A user
-   declaration therefore overrides a built-in method of the same name.
-4. **The declaring slot's class**, when the label the receiver carries means
-   nothing here — see [stale labels](#when-a-label-outlives-its-class) below.
-   This is a last resort, reached only after 2 and 3 have found nothing.
+   declaration therefore overrides a built-in method of the same name. (Enums
+   have no built-in methods.)
+4. **The declaring slot's class or enum**, when the label the receiver carries
+   means nothing here — see [stale labels](#when-a-label-outlives-its-class)
+   below. This is a last resort, reached only after 2 and 3 have found
+   nothing.
 5. **A builtin**, with the receiver passed as its first argument — this
    is the [method syntax](#method-syntax) that makes `[1,2,3].len()` work.
    `p.str()` and `p.keys()` reach a class instance this way too, since an
@@ -1876,7 +1931,8 @@ floats), while `inset` and `offset` return a `Rect`, so they chain.
    `import vec2` in the file that writes the call.
 
 Calling something none of these resolve reports the class by name:
-`No method 'nope' on class Rect`. So does step 5 *failing* on a class
+`No method 'nope' on class Rect` (or `No method 'nope' on enum Kind` for a
+variant). So does step 5 *failing* on a class
 instance: `P(1).first()` is a call to a method that does not exist, not a call
 to the global `first`, so it reports `No method 'first' on class P` rather than
 the builtin's own complaint.
@@ -1992,6 +2048,15 @@ shape = Square(3)
 print(shape.area())        // 9  — still the label, not the declaration
 ```
 
+Methods on enums follow the same two rules. A variant in `state` keeps its
+tag across an edit, so after renaming `enum Mode` to `Gait` (and `fn
+Mode.label` to `fn Gait.label`), `state m: Gait = …` binds `m.label()` to
+`Gait.label`, and an un-annotated `state m = Gait.run(3)` falls back to it
+because the label `Mode` names nothing. Either way the new method runs on the
+old `Mode.run` value; its `match` arms for `Gait` do not match it, so a `when
+_` arm answers. See
+[features/hot-reload.md](features/hot-reload.md#editing-an-enum).
+
 So the two mechanisms answer different questions. An annotation says *this slot
 is a C*, and the call is bound before it ever runs — predictable, and it gives
 the dataflow tools an exact edge. The fallback says *nothing else could
@@ -2064,11 +2129,15 @@ generate for any of them:
 | two `fn Point.f(p)` | `method \`Point.f\` is already declared with 1 parameter` |
 | `fn Point.f()` | `method \`Point.f\` declares no receiver parameter` |
 | `fn Point.f(p: Other)` | `method \`Point.f\` declares its receiver \`p\` as \`Other\`, but a method on \`Point\` always receives an instance of \`Point\`` |
+| `fn Op.fight(o)` beside the variant `Op.fight` | ``method `Op.fight` has the name of the variant `Op.fight` (line 2): …`` |
+| `fn Op.cost(o)` beside the data key `cost` | ``method `Op.cost` has the name of a data key of `Op` (`Op.flee` declares `cost` on line 3): …`` |
+| `fn Phase.f(p)` on an imported enum | ``cannot declare a method on `Phase`: `Phase` is an enum of another module, …`` |
 
 Each is reported at the field or declaration that is wrong, with the source
-line and a caret under it.
+line and a caret under it. The last three apply to [methods on
+enums](#methods-on-an-enum), which are otherwise held to the class rules.
 
-The last two are the receiver rule. A method's first parameter *is* the
+The two receiver rows are the receiver rule. A method's first parameter *is* the
 receiver, and the call site supplies it, so a method must declare one. `p.f(…)`
 then only ever dispatches on a `Point`, so annotating that receiver with
 anything a `Point` cannot fill describes a call that can never happen. `Point`,

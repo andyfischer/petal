@@ -559,6 +559,8 @@ through the new declaration:
 | Its payload fields renamed, added or removed | recompiled | the payload is positional: it answers the new names as far as it reaches, a field it never had is absent, and a pattern for the new shape does not match it |
 | Its enum renamed or removed | recompiled | keeps the old tag, so it is a variant of an enum that no longer exists |
 | Its enum moved to another file | recompiled | the same as a rename: an enum another module declares has that module in its tag (`./config::Kind.park`), so moving it changes the tag, as moving a `state` declaration changes its key |
+| A method on the enum edited (`fn Kind.describe`) | patched or recompiled, as any `fn` | answers through the new body |
+| Its enum renamed, with its methods (`Mode` to `Gait`, `fn Mode.label` to `fn Gait.label`) | recompiled | `m.label()` runs `Gait.label` on the old `Mode.run` value: bound to it when `m` is annotated `: Gait`, and reached through the declaration's enum when the label `Mode` names nothing (as for [classes](../language-guide.md#when-a-label-outlives-its-class)); `Gait`'s `match` arms do not match it, so a `when _ ->` arm answers |
 
 An enum of the entry file has the tag `Kind.park`; one another module
 declares has `./config::Kind.park` ([module-system.md](../module-system.md#classes-and-methods)).

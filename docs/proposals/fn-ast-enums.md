@@ -545,7 +545,8 @@ part of this design. Each would need its own proposal or bug.
 2. **Enums cannot have methods.** `fn Ty.text(t: Ty)` is refused: "methods are
    declared on classes only". glsl.ptl uses the free function `ty_text(t)`.
    Constant data covers fixed per-variant values, but not computed ones that
-   depend on the payload (`Ty.named(id)` → `id`).
+   depend on the payload (`Ty.named(id)` → `id`). (Since 2026-11-09 enums
+   take methods: [enum-methods.md](enum-methods.md).)
 3. **No nullable types.** There is no `record?` or `Ty?`. A parameter that may
    be `nil` (glsl's `node` in `fail`, `param`, `helper`) has to stay
    unannotated, because `record` warns on a literal `nil` argument. Class

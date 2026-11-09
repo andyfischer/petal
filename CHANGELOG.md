@@ -187,14 +187,27 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   [guide](docs/language-guide.md#type-annotations)).
 - **Qualified type names**: a type annotation may name an imported class or
   enum through its module qualifier, `fn area(c: sh.Circle)` after `import
-  ./shapes as sh`, nullable too (`sh.Circle?`). It is the same type as the
-  bare name. An unknown qualifier or a name the module does not export is the
+  ./shapes as sh`, nullable too (`sh.Circle?`). It names the module's own
+  type. An unknown qualifier or a name the module does not export is the
   `unknown type name` warning, which now says which
   ([proposal](docs/proposals/module-name-collisions.md), part A;
   [module system](docs/module-system.md#classes-and-methods)).
 - A `class` or `enum` named like a built-in class (`class Rect`) is now a
   compile-check warning: it replaces the built-in for the whole program
   ([proposal](docs/proposals/module-name-collisions.md), part B1).
+- Methods on enums ([proposal](docs/proposals/enum-methods.md)):
+  `fn Kind.describe(k: Kind, …)` is called as `k.describe(…)` on any
+  variant, with the class rules (receiver first, overloads by arity, hoisted,
+  bound at compile time when the receiver's enum is known, else dispatched on
+  the enum named in the variant's tag, module-qualified tags included).
+  Before, a method on an enum was a compile error.
+  - A method may not take the name of a variant, a payload field or data key
+    of its enum, or `name`, `all` or `from` (a compile error citing the
+    clash), and may be declared only on an enum of the same file.
+  - Enum-level functions (`Kind.parse(s)`) are not part of it.
+  - The LSP completes and hovers a variant's methods after `.`.
+  - New example `examples/console/enum_methods.ptl`.
+
 - **Block comments**, `/* … */`. They can sit inside a line or span several,
   and do not nest. `petal fmt` keeps the inside of one as written, and the
   tree-sitter grammar (Garden's highlighter) knows them

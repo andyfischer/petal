@@ -1,6 +1,7 @@
 # Proposal: methods on enums
 
-Status: proposed, 2026-11-09
+Status: proposed, 2026-11-09. The recommended small version shipped
+2026-11-09; see [What shipped](#what-shipped).
 
 ## Summary
 
@@ -152,7 +153,7 @@ prototype was built.
 
 Before (`examples/console/enums.ptl:21-27`, and its call `area(s)`):
 
-```petal
+```petal ignore
 fn area(shape)
   match shape
     when Shape.Circle(r) -> 3.14159 * r * r
@@ -164,7 +165,7 @@ end
 
 After:
 
-```petal
+```petal ignore
 fn Shape.area(shape: Shape) -> float
   match shape
     when Shape.Circle(r) -> 3.14159 * r * r
@@ -185,7 +186,7 @@ spell `area(s)` must change; there is no automatic forwarding.
 Before (`core-runtime/glsl/src/glsl.ptl:54-73`, call sites like
 `fail(c, "expected " ++ ty_text(ty) ++ ", found " ++ ty_text(v.ty), node)`):
 
-```petal
+```petal ignore
 fn ty_text(t: Ty) -> string
   match t
     when Ty.named(id) -> id
@@ -201,7 +202,7 @@ end
 
 After:
 
-```petal
+```petal ignore
 fn Ty.text(t: Ty) -> string
   ...
 end
@@ -222,7 +223,7 @@ because the answer for `named` is its payload. A data function
 Before (`examples/games/tetris/tetris.ptl:64-79`, called at `:267`, `:359`,
 `:378`):
 
-```petal
+```petal ignore
 fn piece_cells(kind: Piece, rot: int) -> list
   let n = kind.box
   let cells = kind.cells
@@ -236,7 +237,7 @@ end
 
 After:
 
-```petal
+```petal ignore
 fn Piece.cells_at(kind: Piece, rot: int) -> list
   ...
 end
@@ -251,7 +252,7 @@ invented name.
 
 Before (`examples/console/enums_and_match.ptl:77-83`):
 
-```petal
+```petal ignore
 fn upkeep(kind: Kind) -> int
   match kind
     when Kind.park | Kind.plaza -> 2
@@ -498,3 +499,52 @@ Roughly a day, most of it step 1.
   package, until the collision rules are settled.
 - **Per-variant method bodies** (Java's constant-specific methods): out of
   scope. A `match` in the method covers it.
+
+## What shipped
+
+The recommended small version, on 2026-11-09: instance methods only, the
+naming rules, no enum-level functions. Decisions left open above, and where
+the implementation departs from the sketch:
+
+- **Imported enums.** Methods are accepted only on an enum declared in the
+  same *file* (its identity is the file's own, `ClassTable::qualify`). The
+  proposal said "file or package"; a sibling module of the same package is
+  refused too for now, since nothing in the class table says which modules
+  form a package. The error: "cannot declare a method on `Phase`: `Phase` is
+  an enum of another module, and methods are declared only on an enum of this
+  file".
+- **Class methods shadowed by a field** stay as they are: accepted and
+  silent. Only enums get the naming error. (Open question 1, left to the
+  language owner; nothing changed for classes.)
+- **Method table** (sketch step 1). Not one table keyed by type name: an
+  enum entry in `ClassTable` gained its own `methods` list, and both kinds go
+  through one `push_method` (duplicates, arity), `ClassTable::methods_of(ty)`
+  (what the checker pins against) and `ClassTable::type_identity(ty)` (the
+  name a method is published under at runtime). The runtime table
+  `Stack::methods` was already keyed by name and is shared as is.
+- **Module identity.** A method is published under its enum's identity
+  (`./level::Phase`), which is the enum half of the tags its variants carry,
+  so two modules' `enum Phase` keep their own `label`. Host-built bare tags
+  reach the method through the bare-tag fallback of part C of
+  [module-name-collisions.md](module-name-collisions.md).
+- **VM** (sketch step 4). Steps 2 and 4 of the resolution order find a
+  variant's enum by splitting its tag text (`split_enum_tag`) and probing
+  `Stack::methods`; the optional slot-keyed lookup through `EnumTable` was
+  not done. The probe is skipped when the program declares no methods at
+  all. The "stale label" test for a variant is "its tag's enum is not in
+  `Program::enums`"; a host-built tag with no enum part is never stale.
+- **Checker.** `check_method_call` and the dispatch hint accept
+  `Type::EnumOf`; a `state` or `var` slot initialized from a variant now
+  records its enum as the dispatch hint, which is what makes pair 5 work for
+  an un-annotated slot.
+- **LSP.** A variant (known or not) completes its enum's methods after `.`
+  (kind `Method`), and hovers and goes to them.
+- **Not done:** the optional `petal suggest` kind, and migrating glsl.ptl
+  (45 call sites) and tetris to methods. `test/benchmarks/match_dispatch.ptl`
+  gained the unpinned method-call loop but no timing was recorded here.
+
+Tests: `core/tests/enum_methods.rs` (calls, pinning, the checker, modules,
+host-built variants, pair 5 pinned and unpinned), the naming errors in
+`compiler::enum_method_decl_tests`, `backend::bytecode::tests::enum_method_calls`
+(optimized against `--no-opt`), `lsp_tests::a_variant_value_offers_its_enums_methods`,
+and the golden example `examples/console/enum_methods.ptl`.

@@ -344,6 +344,12 @@ Methods are program-wide. A module that declares `fn Rect.area(r: Rect)`
 gives every `Rect` in the program that method, and an importer can add its
 own methods to a class it imported.
 
+Enum methods (`fn Kind.describe(k: Kind)`) are program-wide too, but only
+the file that declares the enum may declare them: a method on an imported
+enum is a compile error, so two importers cannot both add `describe`. A
+variant reaches its enum's method through the identity in its tag, so a
+module's `Phase.label` and the entry file's `Phase.label` stay apart.
+
 The class *name* follows `pub`, and it is one name for both uses: the
 constructor `Circle(...)` and the type in an annotation `c: Circle`. An
 unexported class is private in both positions; using it as a type elsewhere

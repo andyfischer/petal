@@ -269,3 +269,64 @@ fn ordinary_nested_loops_get_no_advice() {
         assert!(advice(src).is_empty(), "{src}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Nullable types (docs/proposals/nullable-types.md, phase 1): a `nil` among
+// the evidence makes the slot `T?` instead of vetoing it.
+// ---------------------------------------------------------------------------
+
+/// The proposal's motivating shape (`fuzzy_from` in the command palette): a
+/// record tail with an early `return nil`.
+#[test]
+fn a_record_tail_and_a_return_nil_suggest_a_nullable_return() {
+    let src = "fn lookup(k: string)\n  if k == \"\" then return nil end\n  {key: k}\nend\nprint(lookup(\"a\"))\n";
+    let got = suggestions(src);
+    assert!(
+        got.contains(&("lookup/1".into(), "return".into(), "record?".into())),
+        "{got:?}"
+    );
+    assert!(applied(src).starts_with("fn lookup(k: string) -> record?\n"), "{}", applied(src));
+}
+
+#[test]
+fn call_sites_passing_a_value_and_nil_suggest_a_nullable_parameter() {
+    let src = "fn show(s)\n  print(s)\nend\nshow(\"a\")\nshow(nil)\n";
+    let got = suggestions(src);
+    assert!(
+        got.contains(&("show/1".into(), "s".into(), "string?".into())),
+        "{got:?}"
+    );
+}
+
+/// A `= nil` default is `nil` evidence, and the annotation lands before it.
+#[test]
+fn a_nil_default_makes_the_parameter_nullable() {
+    let src = "fn greet(name = nil)\n  print(name ?? \"you\")\nend\ngreet(\"ann\")\ngreet()\n";
+    let got = suggestions(src);
+    assert!(
+        got.contains(&("greet/1".into(), "name".into(), "string?".into())),
+        "{got:?}"
+    );
+    assert!(
+        applied(src).starts_with("fn greet(name: string? = nil)\n"),
+        "{}",
+        applied(src)
+    );
+}
+
+/// On its own a `nil` default says the parameter is optional, not that it is
+/// always nil: `name: nil` would be a wrong annotation.
+#[test]
+fn a_nil_default_alone_suggests_nothing() {
+    let got = suggestions("fn greet(name = nil)\n  print(name ?? \"you\")\nend\ngreet()\n");
+    assert!(!got.iter().any(|(f, slot, _)| f == "greet/1" && slot == "name"), "{got:?}");
+}
+
+/// The d6fd8291 veto is unchanged: an untypeable return still vetoes, `?` or
+/// not — `?` is about `nil`, not about `any`.
+#[test]
+fn an_untypeable_return_still_vetoes_a_nullable_return() {
+    let src = "fn pick(xs, k)\n  if k then return xs[0] end\n  nil\nend\nprint(pick([1], true))\n";
+    let got = suggestions(src);
+    assert!(!got.iter().any(|(f, slot, _)| f == "pick/2" && slot == "return"), "{got:?}");
+}

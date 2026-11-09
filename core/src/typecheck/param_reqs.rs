@@ -57,7 +57,7 @@ impl ParamReq {
     pub fn accepts(&self, ty: Type) -> bool {
         match self {
             ParamReq::Num => ArgSlot::Num.accepts(ty),
-            ParamReq::Field(name) => match ty {
+            ParamReq::Field(name) => match ty.strip_nil() {
                 Type::Int
                 | Type::Float
                 | Type::Num

@@ -216,6 +216,9 @@ impl ArgSlot {
 
     /// Whether an argument of static type `ty` can fill this slot.
     pub fn accepts(self, ty: Type) -> bool {
+        // A `T?` argument is taken as a `T`: phase 1 of nullable types does not
+        // track nil (docs/proposals/nullable-types.md).
+        let ty = ty.strip_nil();
         if matches!(ty, Type::Any | Type::Pending) {
             return true;
         }

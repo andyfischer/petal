@@ -246,6 +246,46 @@ hoisted) and in any file that imports it. So is the name of any
 lowercase `enum` is a variant of any enum. These names are reserved: a class
 or an enum may not take one of the lowercase built-in type names above.
 
+**Nullable types.** Add `?` to any type name to also allow `nil`: `int?` is
+"an `int` or `nil`", `Rect?` a `Rect` or `nil`. Write it wherever a type goes —
+parameters, return types, `let`, `var`, `state` and class fields. It is the
+honest annotation for the slots where `nil` means "absent":
+
+```petal
+fn plural(n: int, one: string, many: string? = nil) -> string
+  if n == 1 then "1 {one}" else "{n} {many ?? one ++ "s"}" end
+end
+
+fn lookup(k: string) -> record?        // a record, or nil when there is none
+  if k == "" then return nil end
+  {key: k}
+end
+
+class Val
+  code: string,
+  lit: int?,                            // nil unless the value is a literal
+end
+
+state var hud: record? = nil            // "not built yet"
+```
+
+`nil` and a `T` both fill a `T?` slot; anything that would not fill `T` still
+warns (`plural(3, "mouse", 2)` → ``expected `string?`, found `int` ``).
+
+**Nothing checks where nil can flow yet.** A `T?` value is accepted wherever a
+`T` is, without a warning, and a field read on a `Rect?` is checked as on a
+`Rect` — so `-> record?` documents and constrains the *non-nil* values, but
+does not make you test for `nil` before you use one. (A later phase may add
+that; see [docs/proposals/nullable-types.md](proposals/nullable-types.md).)
+Locals made by `??` and `?.` need no annotation: annotate the boundary —
+parameters, returns, fields and `state` — not the locals.
+
+`-> T?` is **not** `-> nil`: only `-> nil` turns off the implicit return, and
+`-> int?` keeps the tail as the value. `nil?` is just `nil` and `any?` just
+`any` (both warn); a type takes one `?` only (`int??` is a parse error); and
+since `Foo?` in type position means a nullable `Foo`, a class or enum may not
+be named with a trailing `?`.
+
 A type is a single bare name. There are no parameterized types (`list<int>`),
 arrow types, structural record types, or user-defined aliases — `list` and
 `record` are opaque, which is why a write through a field or index

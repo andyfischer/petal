@@ -155,6 +155,16 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **Nullable types**, `T?`: a `T` or `nil`, wherever a type annotation goes
+  (`many: string? = nil`, `-> record?`, `lit: int?`, `state var hud: Hud? =
+  nil`). `nil` and a `T` fill a `T?` slot; nothing tracks nil flow yet, so a
+  `T?` also fills a `T` slot silently. `-> T?` keeps the implicit return
+  (only `-> nil` turns it off). `petal suggest` proposes `T?` where the
+  evidence is a `T` and a `nil`, counting a `= nil` default. A class or enum
+  may no longer be named with a trailing `?`; `int??` is a parse error.
+  `fn_info` and `fn_ast` are declared `-> record?`
+  ([proposal](docs/proposals/nullable-types.md), phase 1;
+  [guide](docs/language-guide.md#type-annotations)).
 - **Block comments**, `/* … */`. They can sit inside a line or span several,
   and do not nest. `petal fmt` keeps the inside of one as written, and the
   tree-sitter grammar (Garden's highlighter) knows them

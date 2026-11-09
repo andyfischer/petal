@@ -1,6 +1,9 @@
 # Proposal: nullable types (`T?`)
 
-Status: proposed, 2026-11-09
+Status: **phase 1 accepted and shipped, 2026-11-09** (annotation only, the
+recommended version). Phase 2 (strict nil checking) stays deferred and
+undecided. See [Implementation status](#implementation-status) for what
+shipped and the open questions it settled.
 
 ## Summary
 
@@ -490,3 +493,48 @@ is new checker infrastructure.
   is checked.
 - **Encoding.** Interned `OrNil(id)` vs a restructured `Type`. This is the
   implementer's call, but it affects how cheaply union types could follow.
+
+## Implementation status
+
+Phase 1 shipped 2026-11-09, following the implementation sketch:
+
+1. **Encoding: `Type::OrNil(NonNil)`** (`core/src/types.rs`). `NonNil` is a
+   `Copy` mirror of `Type`'s variants minus `any`, `nil` and `T?` itself, so
+   `Type` stays `Copy`, needs no table to compare or assign, and neither
+   `nil?`, `any?` nor `T??` is representable. Chosen over an interned id
+   (which would have threaded the `ClassTable` into `is_assignable_to`) and
+   over a flag on every type (which touches every `Type::` match). A union
+   type would replace `OrNil` with a list of members later; nothing outside
+   `types.rs` matches on the `NonNil` payload. `Type::from_name` strips one
+   trailing `?`; `ClassTable::declared_type` does the same for class and enum
+   names. `nil?` and `any?` resolve to `nil` and `any` and warn.
+2. Class and enum names ending in `?` are refused (`ClassTable::name_taken`).
+3. `is_assignable_to`: `nil` → `T?`; `U` → `T?` iff `U` → `T`; `T?` → `U`
+   iff `T` → `U`. **`T?` → `T` stays silent** (open question settled as
+   proposed). A field read on a `T?`, and a `T?` passed to a builtin, is
+   checked as on `T`. A *method call* on a `T?` receiver is left to runtime
+   dispatch rather than pinned to the class, since a nil receiver must not
+   reach `fn Class.m` directly.
+4. `petal suggest`: the `widen(T, nil) = T?` rule lives in `conclude`
+   (`core/src/typecheck/infer.rs`) rather than `widen`, so it also composes
+   with field-read evidence (`.x` reads plus a `nil` call site give
+   `record?`). A `= nil` default is a new `Evidence::NilDefault`; it makes
+   the conclusion `T?` but never concludes `nil` by itself. The d6fd8291
+   `any` veto is unchanged and runs first.
+5. Tests: `core/tests/nullable_types.rs` (assignability, defaults, fields,
+   `state`, `-> T?` / `-> nil?` keeping the implicit return, `declares_nil`,
+   spellings, the `int??` parse error, `?`-named classes and enums),
+   `core/tests/suggest.rs` (nullable suggestions end to end), and unit tests
+   in `types.rs` and `infer.rs`.
+6. Docs: language guide (Type Annotations, "Nullable types"), the type
+   plan's vocabulary, assignability and §4, `petal help suggest`.
+7. `fn_info` / `fn_ast` are declared `-> record?`. The other natives that can
+   return nil (`last`, `first`, `find`, `argmin`/`argmax`, `json_parse`,
+   `binding`) declare no return type, so they needed no change.
+
+`declares_nil` now also requires the name not to end in `?`, so `-> nil?`
+(which resolves to the type `nil`) keeps the implicit return.
+
+Not done in phase 1, by design: annotating the corpus (glsl.ptl's nil-able
+fields, the `= nil` parameters). That is the opt-in migration above.
+

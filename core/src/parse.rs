@@ -1899,6 +1899,23 @@ impl Parser {
         // which differs by position (a missing initializer for `let`/`state`, a
         // missing comma in a param list, and an unclosed JSX element for a
         // return type, since `<int>` lexes as a tag).
+        // `int??` lexes as `int` then `??`: one `?` is the whole nullable
+        // spelling (docs/proposals/nullable-types.md), and nothing valid
+        // follows a type name with `??`, `??=` or `?.`.
+        if matches!(
+            self.peek(),
+            Token::DoubleQuestion | Token::CoalesceAssign | Token::QuestionDot
+        ) {
+            return Err(self.error_at(
+                self.pos,
+                format!(
+                    "a type takes at most one `?`: write `{}?` for \"a `{}` or nil\" \
+                     (see docs/language-guide.md#type-annotations)",
+                    name.trim_end_matches('?'),
+                    name.trim_end_matches('?')
+                ),
+            ));
+        }
         if matches!(self.peek(), Token::Lt | Token::JsxOpenStart) {
             return Err(self.error_at(
                 self.pos,

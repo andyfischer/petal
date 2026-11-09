@@ -15,8 +15,7 @@
 //!
 //! ## What counts as evidence
 //!
-//! For a **parameter**, three things, all of which pin a type without
-//! guessing:
+//! For a **parameter**, these, all of which pin a type without guessing:
 //!
 //! - [`Evidence::CallSite`] — a caller passed an argument this pass could
 //!   type. Literals make this common in un-annotated code: `ease_flag(true,
@@ -35,6 +34,9 @@
 //!   exactly this case, and it is called both ways.) Field reads therefore
 //!   conclude `record`; a call site that actually passes a class instance is
 //!   what narrows the answer to that class.
+//! - [`Evidence::NilDefault`] — the parameter defaults to `nil`, so it may
+//!   hold nil: whatever the rest concludes becomes `T?`
+//!   (docs/proposals/nullable-types.md). Alone it concludes nothing.
 //!
 //! For a **return type**, the body's tail expression and every explicit
 //! `return`.
@@ -96,6 +98,10 @@ pub enum Evidence {
     Tail { span: SourceSpan, ty: Type },
     /// An explicit `return` of this type.
     Return { span: SourceSpan, ty: Type },
+    /// The parameter's default value is `nil`: the slot may hold nil, so
+    /// whatever else its evidence agrees on, the answer is `T?`. On its own it
+    /// concludes nothing — `x: nil` is never what `x = nil` means.
+    NilDefault { span: SourceSpan },
 }
 
 impl Evidence {
@@ -105,6 +111,7 @@ impl Evidence {
             | Evidence::FlowsInto { ty, .. }
             | Evidence::Tail { ty, .. }
             | Evidence::Return { ty, .. } => Some(*ty),
+            Evidence::NilDefault { .. } => Some(Type::Nil),
             Evidence::FieldRead { .. } => None,
         }
     }
@@ -115,7 +122,8 @@ impl Evidence {
             | Evidence::FlowsInto { span, .. }
             | Evidence::FieldRead { span, .. }
             | Evidence::Tail { span, .. }
-            | Evidence::Return { span, .. } => *span,
+            | Evidence::Return { span, .. }
+            | Evidence::NilDefault { span } => *span,
         }
     }
 }
@@ -267,14 +275,33 @@ pub struct Resolved {
 ///
 /// If both tracks conclude, they must conclude the same thing.
 ///
+/// **`nil` is set aside, not counted as disagreement.** A `nil` observation
+/// (or a `T?` one, which is its `T` plus a `nil`) makes whatever the rest
+/// agrees on nullable: a tail of `record` and a `return nil` conclude
+/// `record?` (docs/proposals/nullable-types.md, phase 1). This is the
+/// `widen(T, nil) = T?` rule, applied here rather than in [`widen`] so that it
+/// composes with the field-read track too (`.x` reads and a `nil` call site
+/// conclude `record?`). Only when `nil` is *all* the evidence does the slot
+/// conclude `nil` itself — and not even then when a `= nil` default is
+/// among it.
+///
 /// `slot` decides how numbers are treated: see the module docs on
 /// preconditions and promises.
 fn conclude(evidence: &[Evidence], slot: Slot) -> Option<Type> {
     let from_fields = conclude_from_fields(evidence);
 
     let mut from_types: Option<Type> = None;
+    let mut saw_nil = false;
     for e in evidence {
         let Some(ty) = e.ty() else { continue };
+        if ty == Type::Nil {
+            saw_nil = true;
+            continue;
+        }
+        if matches!(ty, Type::OrNil(_)) {
+            saw_nil = true;
+        }
+        let ty = ty.strip_nil();
         if ty == Type::Any {
             // A value the body itself produces is not a caller this pass
             // failed to see: it is part of what the function returns, and
@@ -298,7 +325,7 @@ fn conclude(evidence: &[Evidence], slot: Slot) -> Option<Type> {
         });
     }
 
-    match (from_fields, from_types) {
+    let concluded = match (from_fields, from_types) {
         // Field reads say `record`; a call site that passed an actual class
         // instance says which one. The class is the better answer, and it is
         // compatible with what the reads proved.
@@ -310,7 +337,20 @@ fn conclude(evidence: &[Evidence], slot: Slot) -> Option<Type> {
         (Some(_), Some(_)) => None,
         (Some(a), None) => Some(a),
         (None, Some(b)) => Some(b),
+        // Nothing but nil: the slot is `nil` — unless a default is among it,
+        // which says the parameter is optional, not that it is always nil.
+        (None, None) if saw_nil => {
+            let defaulted = evidence
+                .iter()
+                .any(|e| matches!(e, Evidence::NilDefault { .. }));
+            return (!defaulted).then_some(Type::Nil);
+        }
         (None, None) => None,
+    };
+    if saw_nil {
+        concluded.map(Type::or_nil)
+    } else {
+        concluded
     }
 }
 
@@ -427,6 +467,64 @@ mod tests {
             conclude(&[tail(Type::Nil), ret(Type::Nil)], Slot::Return),
             Some(Type::Nil)
         );
+    }
+
+    /// `nil` among the evidence makes the slot `T?` rather than vetoing it
+    /// (docs/proposals/nullable-types.md); `nil` alone is still `nil`.
+    #[test]
+    fn nil_evidence_makes_the_conclusion_nullable() {
+        let ret = |ty| Evidence::Return { span: span(), ty };
+        let tail = |ty| Evidence::Tail { span: span(), ty };
+        assert_eq!(
+            conclude(&[tail(Type::Record), ret(Type::Nil)], Slot::Return),
+            Some(Type::Record.or_nil())
+        );
+        assert_eq!(
+            conclude(&[call(Type::String), call(Type::Nil)], Slot::Param(0)),
+            Some(Type::String.or_nil())
+        );
+        // Numbers still widen to `num` for a parameter, then take the `?`.
+        assert_eq!(
+            conclude(&[call(Type::Int), call(Type::Nil)], Slot::Param(0)),
+            Some(Type::Num.or_nil())
+        );
+        // A `T?` observation is its `T` and a `nil`.
+        assert_eq!(
+            conclude(&[call(Type::Bool.or_nil()), call(Type::Bool)], Slot::Param(0)),
+            Some(Type::Bool.or_nil())
+        );
+        // Disagreement among the non-nil evidence is still disagreement.
+        assert_eq!(
+            conclude(
+                &[call(Type::Bool), call(Type::String), call(Type::Nil)],
+                Slot::Param(0)
+            ),
+            None
+        );
+        // Field reads and a nil: a nullable record.
+        let read = Evidence::FieldRead { span: span(), field: "x".into() };
+        assert_eq!(
+            conclude(&[read, call(Type::Nil)], Slot::Param(0)),
+            Some(Type::Record.or_nil())
+        );
+        // The `any` veto comes first, nil or not.
+        assert_eq!(
+            conclude(&[tail(Type::Record), ret(Type::Nil), ret(Type::Any)], Slot::Return),
+            None
+        );
+    }
+
+    /// A `= nil` default joins the evidence as a `nil`, but never makes the
+    /// answer `nil` itself: `x: nil` is never what `x = nil` means.
+    #[test]
+    fn a_nil_default_is_nil_evidence_but_never_the_whole_answer() {
+        let default = || Evidence::NilDefault { span: span() };
+        assert_eq!(
+            conclude(&[default(), call(Type::String)], Slot::Param(0)),
+            Some(Type::String.or_nil())
+        );
+        assert_eq!(conclude(&[default()], Slot::Param(0)), None);
+        assert_eq!(conclude(&[default(), call(Type::Nil)], Slot::Param(0)), None);
     }
 
     /// A return type keeps the precise type its body produces, and widens

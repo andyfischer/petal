@@ -5,5 +5,5 @@
 // and types. Several declarations of one name are that native's call forms.
 // See docs/usage/ffi.md (Native interfaces).
 
-pub native fn fn_info(f: function) -> record
-pub native fn fn_ast(f: function) -> record
+pub native fn fn_info(f: function) -> record?
+pub native fn fn_ast(f: function) -> record?

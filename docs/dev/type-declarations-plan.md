@@ -85,6 +85,7 @@ list  record  function  enum  vec2  f64_array  element  symbol  dual
 handle  pending
 <any class name>
 <any enum name>
+T?          (any of the above but any/nil: "a T or nil")
 ```
 
 Every name except `any`, `num` and class and enum names is exactly what
@@ -103,6 +104,10 @@ of that enum's variants, where the lowercase `enum` is a variant of any enum.
 - `int`, `float` and `dual` are assignable to `num`. `num` narrows to
   nothing without a cast. (`dual` is included because rejecting it would warn
   on working autodiff code.)
+- `nil` is assignable to `T?`, and so is anything assignable to `T`. A `T?`
+  is assignable wherever its `T` is, **including `T` itself**, silently:
+  phase 1 of nullable types tracks no nil flow
+  ([nullable-types.md](../proposals/nullable-types.md)).
 - A class instance is assignable to `record`, not the reverse.
 - A variant of a declared enum is assignable to `enum`, and `enum` to a
   declared enum's slot (a variant whose enum is unknown is trusted, as `any`
@@ -255,9 +260,20 @@ believes about a type is by construction what the checker believes. See
 
 ## 4. Still open
 
+- **Nullable types, phase 2** (strict nil checking). Phase 1 shipped
+  2026-11-09: `T?` is in the vocabulary (`Type::OrNil(NonNil)`, a `Copy`
+  mirror of the non-nil variants, so `Type` stays `Copy` and table-free),
+  `nil`/`T` → `T?` is accepted, `T?` → `T` is silent, and `petal suggest`
+  proposes `T?` from nil evidence. Still open: inferring `T?` from
+  `if … else nil`, `?.` and `??`, narrowing after `!= nil` tests, and the
+  "may be nil here" warning — behind `--strict-nil` or the `// @strict`
+  pragma below first, after a prototype has been measured against the corpus.
+  See [nullable-types.md](../proposals/nullable-types.md).
+
 - **Structured warnings in `run --json`.** A `warnings[]` field on the run
   report would let `TestSnippet` return them as data instead of stderr text.
-- **Parameterized and richer types**, user aliases, deeper inference — all
+- **Parameterized and richer types**, user aliases, unions (`T | U`, of
+  which `T?` would become sugar for `T | nil`), deeper inference — all
   deferred by design.
 - **A per-file `// @strict` pragma** to opt a file into error-level
   enforcement. The warning channel was designed so this is a small addition.

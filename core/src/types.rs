@@ -63,6 +63,99 @@ pub enum Type {
     /// [`ClassTable`](crate::classes::ClassTable), which holds the enum's name
     /// and shape. [`Type::Enum`] stays the type of a variant of *some* enum.
     EnumOf(EnumId),
+    /// `T?`: a `T` or `nil` (docs/proposals/nullable-types.md, phase 1). The
+    /// base is a [`NonNil`], so neither `nil?`, `any?` nor `T??` can be
+    /// represented — [`Type::or_nil`] normalizes the first two away.
+    ///
+    /// Phase 1 is annotation-only: `nil` and `T` both fill a `T?` slot, and a
+    /// `T?` value fills a `T` slot silently, because nothing yet tracks where
+    /// nil can flow. Nothing infers `T?` either; it only comes from what an
+    /// author wrote (and from `petal suggest`'s widening).
+    OrNil(NonNil),
+}
+
+/// The base of a nullable type [`Type::OrNil`]: every [`Type`] except `any`
+/// and `nil` (which already include `nil`) and `T?` itself.
+///
+/// A separate `Copy` enum rather than a boxed or interned `Type`, so that
+/// [`Type`] stays `Copy` and needs no table to compare or assign. The
+/// variants mirror [`Type`]'s one for one; [`NonNil::ty`] and
+/// [`Type::non_nil`] convert, and a test pins the round trip.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize)]
+pub enum NonNil {
+    Bool,
+    Int,
+    Float,
+    Num,
+    String,
+    List,
+    Record,
+    Map,
+    Function,
+    Enum,
+    Vec2,
+    Vec3,
+    F64Array,
+    Element,
+    Symbol,
+    Dual,
+    Handle,
+    Pending,
+    Class(ClassId),
+    EnumOf(EnumId),
+}
+
+impl NonNil {
+    /// The base as a plain [`Type`].
+    pub fn ty(self) -> Type {
+        match self {
+            NonNil::Bool => Type::Bool,
+            NonNil::Int => Type::Int,
+            NonNil::Float => Type::Float,
+            NonNil::Num => Type::Num,
+            NonNil::String => Type::String,
+            NonNil::List => Type::List,
+            NonNil::Record => Type::Record,
+            NonNil::Map => Type::Map,
+            NonNil::Function => Type::Function,
+            NonNil::Enum => Type::Enum,
+            NonNil::Vec2 => Type::Vec2,
+            NonNil::Vec3 => Type::Vec3,
+            NonNil::F64Array => Type::F64Array,
+            NonNil::Element => Type::Element,
+            NonNil::Symbol => Type::Symbol,
+            NonNil::Dual => Type::Dual,
+            NonNil::Handle => Type::Handle,
+            NonNil::Pending => Type::Pending,
+            NonNil::Class(id) => Type::Class(id),
+            NonNil::EnumOf(id) => Type::EnumOf(id),
+        }
+    }
+
+    /// [`Type::name`] of `T?`: the base's name with a `?`.
+    fn nullable_name(self) -> &'static str {
+        match self {
+            NonNil::Bool => "bool?",
+            NonNil::Int => "int?",
+            NonNil::Float => "float?",
+            NonNil::Num => "num?",
+            NonNil::String => "string?",
+            NonNil::List => "list?",
+            NonNil::Record => "record?",
+            NonNil::Map => "map?",
+            NonNil::Function => "function?",
+            NonNil::Enum | NonNil::EnumOf(_) => "enum?",
+            NonNil::Vec2 => "vec2?",
+            NonNil::Vec3 => "vec3?",
+            NonNil::F64Array => "f64_array?",
+            NonNil::Element => "element?",
+            NonNil::Symbol => "symbol?",
+            NonNil::Dual => "dual?",
+            NonNil::Handle => "handle?",
+            NonNil::Pending => "pending?",
+            NonNil::Class(_) => "class?",
+        }
+    }
 }
 
 impl Type {
@@ -73,12 +166,19 @@ impl Type {
     /// - `"str"` is accepted as an alias for `"string"` (the cast builtin is
     ///   `str()` while the runtime type name is `string`).
     ///
+    /// - a trailing `?` makes the type nullable ([`Type::or_nil`]): `int?` →
+    ///   `Type::OrNil(NonNil::Int)`. `nil?` and `any?` normalize to `nil` and
+    ///   `any` (the checker warns on both spellings).
+    ///
     /// Returns `None` for an unknown name; a class name is *also* `None` here,
     /// because resolving one needs the compilation's
     /// [`ClassTable`](crate::classes::ClassTable) — see [`Type::resolve`], the
     /// context-aware form the checker uses. An unresolved name becomes a
     /// warning and is treated as `Any`.
     pub fn from_name(name: &str) -> Option<Type> {
+        if let Some(base) = name.strip_suffix('?') {
+            return Type::from_name(base).and_then(Type::nullable);
+        }
         let ty = match name {
             "any" => Type::Any,
             "nil" => Type::Nil,
@@ -113,11 +213,70 @@ impl Type {
         Type::from_name(name).or_else(|| classes.declared_type(name))
     }
 
+    /// `T?` for a written `T?` base: `None` when `self` is itself already
+    /// nullable, so that `int??` (which cannot be lexed as one name anyway)
+    /// never resolves. `nil` and `any` stay themselves — see [`Type::or_nil`].
+    fn nullable(self) -> Option<Type> {
+        match self {
+            Type::OrNil(_) => None,
+            other => Some(other.or_nil()),
+        }
+    }
+
+    /// `T?`: this type or `nil`. `nil`, `any` and an already-nullable type
+    /// include `nil` already and are returned unchanged.
+    pub fn or_nil(self) -> Type {
+        match self.non_nil() {
+            Some(base) => Type::OrNil(base),
+            None => self,
+        }
+    }
+
+    /// The base of a `T?` (`T`); any other type unchanged. A phase-1 `T?` is
+    /// read as its base wherever a value's shape matters (a field read, a
+    /// builtin's argument), because nil is not tracked yet.
+    pub fn strip_nil(self) -> Type {
+        match self {
+            Type::OrNil(base) => base.ty(),
+            other => other,
+        }
+    }
+
+    /// This type as a nullable base: `None` for `any`, `nil` and `T?`.
+    pub fn non_nil(self) -> Option<NonNil> {
+        Some(match self {
+            Type::Any | Type::Nil | Type::OrNil(_) => return None,
+            Type::Bool => NonNil::Bool,
+            Type::Int => NonNil::Int,
+            Type::Float => NonNil::Float,
+            Type::Num => NonNil::Num,
+            Type::String => NonNil::String,
+            Type::List => NonNil::List,
+            Type::Record => NonNil::Record,
+            Type::Map => NonNil::Map,
+            Type::Function => NonNil::Function,
+            Type::Enum => NonNil::Enum,
+            Type::Vec2 => NonNil::Vec2,
+            Type::Vec3 => NonNil::Vec3,
+            Type::F64Array => NonNil::F64Array,
+            Type::Element => NonNil::Element,
+            Type::Symbol => NonNil::Symbol,
+            Type::Dual => NonNil::Dual,
+            Type::Handle => NonNil::Handle,
+            Type::Pending => NonNil::Pending,
+            Type::Class(id) => NonNil::Class(id),
+            Type::EnumOf(id) => NonNil::EnumOf(id),
+        })
+    }
+
     /// How this type is spelled in a diagnostic. Identical to [`Type::name`]
     /// except for [`Type::Class`] and [`Type::EnumOf`], whose names live in
-    /// `classes`.
+    /// `classes` (and `T?` of either).
     pub fn display<'a>(&self, classes: &'a ClassTable) -> Cow<'a, str> {
         match self {
+            Type::OrNil(base @ (NonNil::Class(_) | NonNil::EnumOf(_))) => {
+                Cow::Owned(format!("{}?", base.ty().display(classes)))
+            }
             Type::Class(id) => Cow::Borrowed(classes.name_of(*id)),
             Type::EnumOf(id) => Cow::Borrowed(classes.enum_name(*id)),
             other => Cow::Borrowed(other.name()),
@@ -158,6 +317,7 @@ impl Type {
             Type::Pending => "pending",
             Type::Class(_) => "class",
             Type::EnumOf(_) => "enum",
+            Type::OrNil(base) => base.nullable_name(),
         }
     }
 
@@ -185,11 +345,18 @@ impl Type {
     /// - A variant of a declared enum satisfies an `enum` slot, and — the
     ///   dynamic boundary again — an `enum` of unknown declaration is trusted
     ///   to fill a declared enum's slot. Two declared enums never mix.
+    /// - `nil` fills a `T?` slot, and so does anything that fills `T`. A `T?`
+    ///   value fills whatever its `T` fills — including `T` itself: phase 1 of
+    ///   docs/proposals/nullable-types.md tracks no nil flow, so it cannot
+    ///   tell that a `T?` *is* nil here, and stays silent rather than guess.
     /// - Otherwise the types must be equal — two distinct classes are never
     ///   interchangeable, however alike their fields.
     pub fn is_assignable_to(&self, other: &Type) -> bool {
         match (self, other) {
             (Type::Any, _) | (_, Type::Any) => true,
+            (Type::Nil, Type::OrNil(_)) => true,
+            (Type::OrNil(base), _) => base.ty().is_assignable_to(other),
+            (_, Type::OrNil(base)) => self.is_assignable_to(&base.ty()),
             (Type::Int, Type::Float) => true,
             (Type::Int | Type::Float | Type::Dual, Type::Num) => true,
             (Type::Class(_), Type::Record) => true,
@@ -466,6 +633,88 @@ mod tests {
         assert!(!concrete_types().contains(&Type::Num));
         assert!(Value::Int(1).type_name() != Type::Num.name());
         assert!(Value::Float(1.0).type_name() != Type::Num.name());
+    }
+
+    /// Every base `T?` can take, as a plain type.
+    fn nullable_bases() -> Vec<Type> {
+        concrete_types()
+            .into_iter()
+            .chain([Type::Num, Type::Class(ClassId(0)), Type::EnumOf(EnumId(0))])
+            .filter(|t| *t != Type::Nil)
+            .collect()
+    }
+
+    #[test]
+    fn non_nil_round_trips_every_base() {
+        for ty in nullable_bases() {
+            let base = ty.non_nil().expect("a nullable base");
+            assert_eq!(base.ty(), ty, "{ty:?}");
+            assert_eq!(ty.or_nil(), Type::OrNil(base));
+            assert_eq!(ty.or_nil().strip_nil(), ty);
+        }
+        for ty in [Type::Any, Type::Nil, Type::Int.or_nil()] {
+            assert_eq!(ty.non_nil(), None, "{ty:?}");
+            assert_eq!(ty.or_nil(), ty, "{ty:?}");
+        }
+    }
+
+    #[test]
+    fn a_trailing_question_mark_makes_a_name_nullable() {
+        for ty in concrete_types().into_iter().chain([Type::Num]) {
+            if ty == Type::Nil {
+                continue;
+            }
+            let written = format!("{}?", ty.name());
+            assert_eq!(Type::from_name(&written), Some(ty.or_nil()), "{written}");
+            assert_eq!(ty.or_nil().name(), written);
+        }
+        assert_eq!(Type::from_name("str?"), Some(Type::String.or_nil()));
+        // `nil?` is just `nil`, and `any` already includes nil.
+        assert_eq!(Type::from_name("nil?"), Some(Type::Nil));
+        assert_eq!(Type::from_name("any?"), Some(Type::Any));
+        assert_eq!(Type::from_name("int??"), None);
+        assert_eq!(Type::from_name("banana?"), None);
+        assert_eq!(Type::from_name("?"), None);
+    }
+
+    #[test]
+    fn a_nullable_class_resolves_and_displays_through_the_class_table() {
+        let classes = crate::classes::ClassTable::new();
+        let rect = Type::Class(classes.lookup("Rect").unwrap());
+        assert_eq!(Type::resolve("Rect?", &classes), Some(rect.or_nil()));
+        assert_eq!(rect.or_nil().display(&classes), "Rect?");
+        assert_eq!(Type::Int.or_nil().display(&classes), "int?");
+        assert_eq!(Type::resolve("Nope?", &classes), None);
+    }
+
+    /// The phase-1 table of docs/proposals/nullable-types.md.
+    #[test]
+    fn nullable_assignability_follows_the_phase_one_rules() {
+        let int_q = Type::Int.or_nil();
+        let float_q = Type::Float.or_nil();
+        let classes = crate::classes::ClassTable::new();
+        let rect = Type::Class(classes.lookup("Rect").unwrap());
+        // nil → T?, T → T?
+        assert!(Type::Nil.is_assignable_to(&int_q));
+        assert!(Type::Int.is_assignable_to(&int_q));
+        // U → T? warns exactly when U → T does.
+        assert!(!Type::String.is_assignable_to(&int_q));
+        assert!(!Type::Float.is_assignable_to(&int_q));
+        // T? → T is silent in phase 1.
+        assert!(int_q.is_assignable_to(&Type::Int));
+        // any both ways.
+        assert!(int_q.is_assignable_to(&Type::Any));
+        assert!(Type::Any.is_assignable_to(&int_q));
+        // The existing widenings carry through.
+        assert!(Type::Int.is_assignable_to(&float_q));
+        assert!(Type::Int.is_assignable_to(&Type::Num.or_nil()));
+        assert!(rect.is_assignable_to(&Type::Record.or_nil()));
+        assert!(int_q.is_assignable_to(&float_q));
+        assert!(!float_q.is_assignable_to(&int_q));
+        assert!(!float_q.is_assignable_to(&Type::Int));
+        // A `T?` is not `nil`.
+        assert!(!int_q.is_assignable_to(&Type::Nil));
+        assert!(int_q.is_assignable_to(&int_q));
     }
 
     #[test]

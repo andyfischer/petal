@@ -284,6 +284,14 @@ impl ClassTable {
     /// has it. The two share the one namespace of declared type names,
     /// whichever is declared first and in whichever file.
     fn name_taken(&self, kind: &str, name: &str, module: Option<&str>) -> Option<String> {
+        // `Foo?` in type position means "a `Foo` or nil", so a type named
+        // `Foo?` could never be written (docs/proposals/nullable-types.md).
+        if let Some(base) = name.strip_suffix('?') {
+            return Some(format!(
+                "{kind} `{name}` may not end in `?`: `{base}?` in a type annotation \
+                 means \"a `{base}` or nil\". Pick another name"
+            ));
+        }
         if Type::from_name(name).is_some() {
             return Some(format!(
                 "{kind} `{name}` collides with the built-in type name `{name}`: pick another name"
@@ -349,8 +357,15 @@ impl ClassTable {
     }
 
     /// The class or enum that `name`, written in type position, refers to in
-    /// the current scope.
+    /// the current scope. `Foo?` is the nullable `Foo` ([`Type::or_nil`]);
+    /// no class or enum may itself be named with a trailing `?`.
     pub fn declared_type(&self, name: &str) -> Option<Type> {
+        if let Some(base) = name.strip_suffix('?') {
+            return self
+                .declared_type(base)
+                .filter(|t| !matches!(t, Type::OrNil(_)))
+                .map(Type::or_nil);
+        }
         let class = self.lookup(name).map(Type::Class);
         class.or_else(|| self.lookup_enum(name).map(Type::EnumOf))
     }

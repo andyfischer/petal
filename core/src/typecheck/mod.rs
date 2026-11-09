@@ -1056,14 +1056,29 @@ impl<'a> Checker<'a> {
     /// The warning underlines the annotation itself — `nosuch` in
     /// `fn f(a: nosuch)`, not the whole `fn … end`. `fallback` is used only for
     /// a synthesized annotation that carries no span of its own.
+    ///
+    /// Two spellings resolve but say less than they seem to, and get their own
+    /// warning (docs/proposals/nullable-types.md): `nil?` is just `nil` — and,
+    /// written as a return type, is *not* the `-> nil` statement form — and
+    /// `any?` is just `any`.
     fn check_type_ann(&mut self, ann: &TypeAnn, fallback: SourceSpan) {
-        if self.resolve_ann(ann).is_none() {
-            let span = if ann.span.start.line > 0 {
-                ann.span
-            } else {
-                fallback
-            };
-            self.warn(span, format!("unknown type name `{}`", ann.name));
+        let span = if ann.span.start.line > 0 {
+            ann.span
+        } else {
+            fallback
+        };
+        match self.resolve_ann(ann) {
+            None => self.warn(span, format!("unknown type name `{}`", ann.name)),
+            Some(Type::Nil) if ann.name == "nil?" => self.warn(
+                span,
+                "`nil?` is just `nil`; write `nil` (as a return type, `-> nil?` \
+                 keeps the implicit return, unlike `-> nil`)"
+                    .to_string(),
+            ),
+            Some(Type::Any) if ann.name == "any?" => {
+                self.warn(span, "`any` already includes `nil`; write `any`".to_string())
+            }
+            Some(_) => {}
         }
     }
 
@@ -1189,6 +1204,19 @@ impl<'a> Checker<'a> {
                 let (name, default) = crate::desugar::as_param_default(stmt).unwrap();
                 self.slot = CastSlot::Delimited;
                 let actual = self.check_expr(default);
+                // A `= nil` default says the parameter may be nil — evidence
+                // for `petal suggest` that the slot is `T?`. Only nil: other
+                // defaults are not what the parameter's callers pass.
+                if self.collect_inferences
+                    && actual == Type::Nil
+                    && let Some((key, index)) = self.lookup(name).and_then(|v| v.param_of.clone())
+                {
+                    self.inferences.note_param(
+                        key,
+                        index,
+                        infer::Evidence::NilDefault { span: default.span },
+                    );
+                }
                 let declared = self.lookup(name).and_then(|v| v.declared);
                 if let Some(dt) = declared
                     && actual != Type::Any
@@ -1877,7 +1905,9 @@ impl<'a> Checker<'a> {
                     return self.enum_member_type(id, field);
                 }
                 self.tolerant_access = tolerant;
-                let obj = self.check_expr(object);
+                // A `T?` is read as a `T`: phase 1 tracks no nil, so it has
+                // nothing to say about the nil case (nullable-types.md).
+                let obj = self.check_expr(object).strip_nil();
                 if let Type::EnumOf(id) = obj {
                     if !tolerant {
                         self.check_enum_field(id, object, field, expr.span);

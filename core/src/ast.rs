@@ -448,8 +448,15 @@ impl TypeAnn {
 /// type checker does not hold the tail to the declared type. Any other
 /// annotation, or none, leaves the tail as the function's value. See
 /// docs/syntax/implicit-return-values.md.
+///
+/// Only `-> nil` exactly: `-> nil?` resolves to the type `nil` too (the
+/// checker warns that it is just `nil`), but it is *not* this statement form,
+/// and a nullable `-> T?` never is — both keep the tail as the value. See
+/// docs/proposals/nullable-types.md.
 pub fn declares_nil(ret: Option<&TypeAnn>) -> bool {
-    ret.is_some_and(|ann| ann.resolved == Some(crate::types::Type::Nil))
+    ret.is_some_and(|ann| {
+        ann.resolved == Some(crate::types::Type::Nil) && !ann.name.ends_with('?')
+    })
 }
 
 /// One field of a `class` declaration: `x: int`. The annotation is optional

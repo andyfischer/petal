@@ -940,6 +940,13 @@ TYPE ANNOTATIONS
        this compile can see are not the callers there are. A return type is a
        promise the body actually keeps, so it stays precise.
 
+       A nil among the evidence makes the slot nullable rather than vetoing
+       it: a 'record' tail with a 'return nil' proposes '-> record?', and
+       callers passing a 'string' and a nil propose 'string?'. A '= nil'
+       default counts as a nil, but never proposes 'nil' itself — the
+       parameter is optional, not always nil. A tail or return this pass
+       cannot type still vetoes the return type, nil or not.
+
        Suggestions compound: an applied annotation is evidence for the next
        pass. Re-running until it reports nothing is the intended workflow.
 

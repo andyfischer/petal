@@ -499,6 +499,7 @@ fn because(evidence: &[Evidence], classes: &ClassTable) -> String {
     let mut fields: Vec<&str> = Vec::new();
     let mut returns: BTreeMap<String, usize> = BTreeMap::new();
     let mut tail = None;
+    let mut nil_default = false;
 
     for e in evidence {
         match e {
@@ -518,6 +519,7 @@ fn because(evidence: &[Evidence], classes: &ClassTable) -> String {
             Evidence::Return { ty, .. } => {
                 *returns.entry(ty.display(classes).into_owned()).or_default() += 1;
             }
+            Evidence::NilDefault { .. } => nil_default = true,
         }
     }
 
@@ -535,6 +537,9 @@ fn because(evidence: &[Evidence], classes: &ClassTable) -> String {
     }
     for (callee, ty) in &flows {
         parts.push(format!("passed to `{callee}`, which declares `{ty}`"));
+    }
+    if nil_default {
+        parts.push("its default is `nil`".to_string());
     }
     if !fields.is_empty() {
         let mut list: Vec<String> = fields.iter().map(|f| format!(".{f}")).collect();
@@ -588,6 +593,11 @@ fn evidence_line(e: &Evidence, classes: &ClassTable) -> EvidenceLine {
         Evidence::Return { ty, .. } => EvidenceLine {
             kind: "return",
             detail: format!("returns `{}`", ty.display(classes)),
+            line,
+        },
+        Evidence::NilDefault { .. } => EvidenceLine {
+            kind: "nil-default",
+            detail: "default value is `nil`".to_string(),
             line,
         },
     }

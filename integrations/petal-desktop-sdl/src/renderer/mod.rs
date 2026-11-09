@@ -645,6 +645,35 @@ fn sub_width(width: f32) -> f64 {
     if width > 0.0 { width as f64 } else { 1.0 }
 }
 
+/// Whether every number is whole: a sub-pixel command made only of them
+/// paints exactly its `Px` twin's pixels (the contract), so it keeps the
+/// whole-pixel filler.
+fn all_whole(xs: &[f32]) -> bool {
+    xs.iter().all(|x| x.fract() == 0.0)
+}
+
+/// Fill a sub-pixel command's rings: with [`fill_polygon_f`] when its numbers
+/// are `whole`, as its `Px` twin fills, and antialiased otherwise
+/// ([`raster::fill_polygons_aa_f`], which fills the rings as one shape).
+fn fill_sub<T: RenderTarget>(
+    canvas: &mut Canvas<T>,
+    rings: &[Vec<(f64, f64)>],
+    whole: bool,
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+) {
+    if whole {
+        set_draw_color(canvas, r, g, b, a);
+        for ring in rings {
+            fill_polygon_f(canvas, ring);
+        }
+    } else {
+        raster::fill_polygons_aa_f(canvas, rings, r, g, b, a);
+    }
+}
+
 fn points_f64(points: &[(f32, f32)]) -> Vec<(f64, f64)> {
     points.iter().map(|&(x, y)| (x as f64, y as f64)).collect()
 }
@@ -681,26 +710,24 @@ fn render_sub<T: TextTarget>(canvas: &mut Canvas<T>, cmd: SubCommand) {
             );
         }
         SubCommand::Triangle { x1, y1, x2, y2, x3, y3, r, g, b, a } => {
-            set_draw_color(canvas, r, g, b, a);
-            fill_polygon_f(
-                canvas,
-                &[
-                    (x1 as f64, y1 as f64),
-                    (x2 as f64, y2 as f64),
-                    (x3 as f64, y3 as f64),
-                ],
-            );
+            let whole = all_whole(&[x1, y1, x2, y2, x3, y3]);
+            let ring = vec![
+                (x1 as f64, y1 as f64),
+                (x2 as f64, y2 as f64),
+                (x3 as f64, y3 as f64),
+            ];
+            fill_sub(canvas, &[ring], whole, r, g, b, a);
         }
         SubCommand::Poly { points, r, g, b, a } | SubCommand::Polygon { points, r, g, b, a } => {
-            set_draw_color(canvas, r, g, b, a);
-            fill_polygon_f(canvas, &points_f64(&points));
+            let whole = points.iter().all(|&(x, y)| all_whole(&[x, y]));
+            fill_sub(canvas, &[points_f64(&points)], whole, r, g, b, a);
         }
         SubCommand::Fan { cx, cy, points, r, g, b, a } => {
+            let whole = all_whole(&[cx, cy]) && points.iter().all(|&(x, y)| all_whole(&[x, y]));
             let mut ring = Vec::with_capacity(points.len() + 1);
             ring.push((cx as f64, cy as f64));
             ring.extend(points_f64(&points));
-            set_draw_color(canvas, r, g, b, a);
-            fill_polygon_f(canvas, &ring);
+            fill_sub(canvas, &[ring], whole, r, g, b, a);
         }
         SubCommand::Polyline { points, r, g, b, a, width } => {
             let width = sub_width(width);
@@ -749,20 +776,18 @@ fn render_sub<T: TextTarget>(canvas: &mut Canvas<T>, cmd: SubCommand) {
             }
         }
         SubCommand::Ellipse { cx, cy, rx, ry, r, g, b, a } => {
-            set_draw_color(canvas, r, g, b, a);
-            fill_polygon_f(
-                canvas,
-                &ellipse_ring_f(cx as f64, cy as f64, rx as f64, ry as f64, 0.0, TAU),
-            );
+            let whole = all_whole(&[cx, cy, rx, ry]);
+            let ring = ellipse_ring_f(cx as f64, cy as f64, rx as f64, ry as f64, 0.0, TAU);
+            fill_sub(canvas, &[ring], whole, r, g, b, a);
         }
         SubCommand::EllipseOutline { cx, cy, rx, ry, r, g, b, a, width } => {
-            set_draw_color(canvas, r, g, b, a);
+            let whole = all_whole(&[cx, cy, rx, ry, width]);
             let t = sub_width(width);
             let (rx, ry) = (rx as f64, ry as f64);
-            for (a0, a1) in [(0.0, PI), (PI, TAU)] {
-                fill_polygon_f(
-                    canvas,
-                    &annular_sector_f(
+            let halves: Vec<Vec<(f64, f64)>> = [(0.0, PI), (PI, TAU)]
+                .into_iter()
+                .map(|(a0, a1)| {
+                    annular_sector_f(
                         cx as f64,
                         cy as f64,
                         (rx - t).max(0.0),
@@ -771,20 +796,22 @@ fn render_sub<T: TextTarget>(canvas: &mut Canvas<T>, cmd: SubCommand) {
                         ry,
                         a0,
                         a1,
-                    ),
-                );
-            }
+                    )
+                })
+                .collect();
+            fill_sub(canvas, &halves, whole, r, g, b, a);
         }
         SubCommand::Arc { cx, cy, r_in, r_out, a0, a1, r, g, b, a } => {
-            set_draw_color(canvas, r, g, b, a);
+            // The angles are radians, fractional either way; whole means the
+            // geometry is.
+            let whole = all_whole(&[cx, cy, r_in, r_out]);
             let sweep = (a1 - a0).clamp(-TAU as f32, TAU as f32) as f64;
             let halves = if sweep.abs() > PI { 2 } else { 1 };
-            for i in 0..halves {
-                let s0 = a0 as f64 + sweep * (i as f64) / halves as f64;
-                let s1 = a0 as f64 + sweep * ((i + 1) as f64) / halves as f64;
-                fill_polygon_f(
-                    canvas,
-                    &annular_sector_f(
+            let rings: Vec<Vec<(f64, f64)>> = (0..halves)
+                .map(|i| {
+                    let s0 = a0 as f64 + sweep * (i as f64) / halves as f64;
+                    let s1 = a0 as f64 + sweep * ((i + 1) as f64) / halves as f64;
+                    annular_sector_f(
                         cx as f64,
                         cy as f64,
                         r_in as f64,
@@ -793,9 +820,10 @@ fn render_sub<T: TextTarget>(canvas: &mut Canvas<T>, cmd: SubCommand) {
                         r_out as f64,
                         s0,
                         s1,
-                    ),
-                );
-            }
+                    )
+                })
+                .collect();
+            fill_sub(canvas, &rings, whole, r, g, b, a);
         }
         SubCommand::CircleGradient { cx, cy, radius, r0, g0, b0, a0, r1, g1, b1, a1 } => {
             fill_circle_gradient_f(
@@ -1860,6 +1888,64 @@ mod tests {
         assert_ne!(frac, trunc, "radius 10.5 must not draw as radius 10");
         assert!(ink(&frac) > ink(&trunc), "10.5 covers more than 10");
         assert!(ink(&frac) < ink(&bigger), "10.5 covers less than 11");
+    }
+
+    /// A fill with fractional vertices gets antialiased edges: a triangle
+    /// half a pixel off the grid leaves partial-coverage pixels along its
+    /// edges, where the whole-pixel filler leaves none, and its ink stays
+    /// close to its area. An arc filled in two halves has no seam where they
+    /// meet.
+    #[test]
+    fn a_fractional_fill_is_antialiased() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
+        let ttf = sdl2::ttf::init().unwrap();
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let tri = |o: f32| {
+            FrameCommand::Sub(SubCommand::Triangle {
+                x1: 5.0 + o,
+                y1: 5.0 + o,
+                x2: 55.0 + o,
+                y2: 9.0 + o,
+                x3: 20.0 + o,
+                y3: 50.0 + o,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+            })
+        };
+        let partial = |p: &[u8]| p.iter().filter(|&&v| v > 0 && v < 255).count();
+        let whole = frame_pixels(vec![tri(0.0)], &mut fonts);
+        let frac = frame_pixels(vec![tri(0.5)], &mut fonts);
+        assert_eq!(partial(&whole), 0, "a whole-number triangle keeps the hard filler");
+        assert!(partial(&frac) > 40, "edge pixels are partly covered: {}", partial(&frac));
+
+        // A full ring as two half arcs: every pixel well inside the band is
+        // fully covered, including on the line where the halves meet.
+        let mut sc = new_black_surface().into_canvas().unwrap();
+        super::render_frame(
+            &mut sc,
+            vec![FrameCommand::Sub(SubCommand::Arc {
+                cx: 32.5,
+                cy: 32.5,
+                r_in: 10.25,
+                r_out: 20.25,
+                a0: 0.0,
+                a1: TAU as f32,
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+            })],
+            &mut fonts,
+        );
+        let s = sc.into_surface();
+        for x in 46..50 {
+            assert_eq!(pixel_rgb(&s, x, 32).0, 255, "seam at ({x}, 32)");
+        }
+        for x in 15..19 {
+            assert_eq!(pixel_rgb(&s, x, 32).0, 255, "seam at ({x}, 32)");
+        }
     }
 
     /// A fractional position shifts a line's coverage: a 2px horizontal

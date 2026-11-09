@@ -78,6 +78,110 @@ pub(super) fn fill_polygon_f<T: RenderTarget>(canvas: &mut Canvas<T>, points: &[
     }
 }
 
+/// Vertical samples per pixel row in [`fill_polygons_aa_f`]. Horizontal
+/// coverage is exact (the span's overlap with each pixel), so four rows of
+/// samples give 17 coverage levels on a near-horizontal edge and exact ones
+/// on a near-vertical edge.
+const AA_ROW_SAMPLES: usize = 4;
+
+/// Fill the union of `rings` (even-odd over all their edges together, so
+/// rings that share an edge, like an arc's two halves, fill as one shape with
+/// no seam) with antialiased edges: each pixel's alpha is the fraction of it
+/// covered. For a sub-pixel frame's fractional fills; a fill whose numbers
+/// are whole keeps [`fill_polygon_f`], so it paints its `Px` twin's pixels.
+/// Fully covered runs are drawn as lines in `set_draw_color`'s mode, edge
+/// pixels blended.
+pub(super) fn fill_polygons_aa_f<T: RenderTarget>(
+    canvas: &mut Canvas<T>,
+    rings: &[Vec<(f64, f64)>],
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+) {
+    let pts = || rings.iter().filter(|ring| ring.len() >= 3).flatten();
+    let (mut x0, mut x1, mut y0, mut y1) = (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+    for &(x, y) in pts() {
+        x0 = x0.min(x);
+        x1 = x1.max(x);
+        y0 = y0.min(y);
+        y1 = y1.max(y);
+    }
+    if !(x0.is_finite() && x1.is_finite() && y0.is_finite() && y1.is_finite()) {
+        return;
+    }
+    // Only what the target can show: a fill reaching far off screen costs
+    // no more than the screen.
+    let view = canvas.viewport();
+    let (vx0, vx1) = (view.x() as f64, (view.x() + view.width() as i32) as f64);
+    let (vy0, vy1) = (view.y() as f64, (view.y() + view.height() as i32) as f64);
+    let px0 = x0.max(vx0).floor() as i32;
+    let px1 = x1.min(vx1).ceil() as i32;
+    let py0 = y0.max(vy0).floor() as i32;
+    let py1 = y1.min(vy1).ceil() as i32;
+    if px1 <= px0 || py1 <= py0 {
+        return;
+    }
+    let width = (px1 - px0) as usize;
+    let mut row = vec![0.0f64; width];
+    let mut crossings: Vec<f64> = Vec::new();
+    let color = Color::RGBA(r, g, b, a);
+    let weight = 1.0 / AA_ROW_SAMPLES as f64;
+    for py in py0..py1 {
+        row.iter_mut().for_each(|c| *c = 0.0);
+        for k in 0..AA_ROW_SAMPLES {
+            let yf = py as f64 + (k as f64 + 0.5) * weight;
+            crossings.clear();
+            for ring in rings.iter().filter(|ring| ring.len() >= 3) {
+                let n = ring.len();
+                for i in 0..n {
+                    let (xa, ya) = ring[i];
+                    let (xb, yb) = ring[(i + 1) % n];
+                    if ya == yb {
+                        continue;
+                    }
+                    let (ylo, yhi, xlo, xhi) = if ya < yb { (ya, yb, xa, xb) } else { (yb, ya, xb, xa) };
+                    if yf >= ylo && yf < yhi {
+                        crossings.push(xlo + (yf - ylo) / (yhi - ylo) * (xhi - xlo));
+                    }
+                }
+            }
+            crossings.sort_unstable_by(|p, q| p.total_cmp(q));
+            for span in crossings.chunks_exact(2) {
+                let (sa, sb) = (span[0].max(px0 as f64), span[1].min(px1 as f64));
+                if sb <= sa {
+                    continue;
+                }
+                let first = sa.floor() as i32;
+                let last = (sb.ceil() as i32 - 1).min(px1 - 1);
+                for px in first..=last {
+                    let cover = (sb.min(px as f64 + 1.0) - sa.max(px as f64)).max(0.0);
+                    row[(px - px0) as usize] += cover * weight;
+                }
+            }
+        }
+        // Full runs as lines, partial pixels blended.
+        let mut i = 0;
+        while i < width {
+            let c = row[i];
+            if c >= 1.0 - 1e-9 {
+                let start = i;
+                while i < width && row[i] >= 1.0 - 1e-9 {
+                    i += 1;
+                }
+                set_draw_color(canvas, r, g, b, a);
+                let _ = canvas.draw_line((px0 + start as i32, py), (px0 + i as i32 - 1, py));
+                continue;
+            }
+            if c > 0.0 {
+                canvas.set_blend_mode(BlendMode::Blend);
+                plot(canvas, px0 + i as i32, py, color, c.min(1.0));
+            }
+            i += 1;
+        }
+    }
+}
+
 /// Draw an antialiased line of the given stroke `width` as a distance-field
 /// capsule: a pixel's coverage is its distance to the segment against the half-
 /// width. This handles thickness and antialiasing together (round caps), and a

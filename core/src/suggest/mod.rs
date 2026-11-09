@@ -57,7 +57,7 @@ use crate::ast::{Stmt, StmtKind};
 use crate::classes::ClassTable;
 use crate::native_fn::NativeSignature;
 use crate::typecheck::infer::{Evidence, FnKey, Inferences, Resolved, Slot};
-use crate::types::Type;
+use crate::types::{NonNil, Type};
 
 pub use advice::Advice;
 pub use named_args::NamedArgs;
@@ -362,7 +362,11 @@ fn locate(
     let StmtKind::FnDecl { params, .. } = &decl.kind else {
         return None;
     };
-    let ty = r.ty.display(classes).into_owned();
+    // The annotation as this file writes it: `lv.Kind?` for an imported
+    // module's enum reached through `import ./level as lv`, never the
+    // diagnostic spelling `./level::Kind?`. A type the file cannot name (a
+    // module's private class) gives no suggestion.
+    let ty = annotation_spelling(r.ty, classes)?;
     let list = param_list(decl, chars)?;
 
     let (at, text, param) = match r.slot {
@@ -406,6 +410,21 @@ fn locate(
             .map(|e| evidence_line(e, classes))
             .collect(),
     })
+}
+
+/// How the file being suggested for writes `ty` in an annotation, or `None`
+/// when it cannot write it at all. A declared type is spelled through the
+/// file's own scope ([`ClassTable::written_name`]); everything else by its
+/// canonical name.
+fn annotation_spelling(ty: Type, classes: &ClassTable) -> Option<String> {
+    match ty {
+        Type::Class(id) => classes.written_name(classes.name_of(id)),
+        Type::EnumOf(id) => classes.written_name(classes.enum_name(id)),
+        Type::OrNil(base @ (NonNil::Class(_) | NonNil::EnumOf(_))) => {
+            Some(format!("{}?", annotation_spelling(base.ty(), classes)?))
+        }
+        other => Some(other.display(classes).into_owned()),
+    }
 }
 
 /// The character offsets of a declaration's parameter list: each parameter's

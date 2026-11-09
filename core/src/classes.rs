@@ -380,6 +380,38 @@ impl ClassTable {
         }
     }
 
+    /// How the current file writes the class or enum `identity` in an
+    /// annotation: its bare name where the scope reaches it by one, else
+    /// `q.Name` through a module qualifier the file binds (`lv.Phase` for
+    /// `./level::Phase` under `import ./level as lv`). `None` for a type the
+    /// file cannot name, such as another module's private class. Unlike
+    /// [`Self::display_name`], which spells an identity for a diagnostic,
+    /// this is source text that resolves back to `identity`.
+    pub fn written_name(&self, identity: &str) -> Option<String> {
+        let Some(scope) = &self.scope else {
+            return Some(crate::program::strip_module(identity).to_string());
+        };
+        let mut bare: Vec<&str> = Vec::new();
+        let mut qualified: Vec<&str> = Vec::new();
+        for (written, to) in scope {
+            if to == identity {
+                if written.contains('.') { qualified.push(written) } else { bare.push(written) }
+            }
+        }
+        // Several spellings can reach one type (`import m: Kind` beside
+        // `import m as q`); the shortest, then the first in order, is stable.
+        let pick = |v: &mut Vec<&str>| {
+            v.sort_by_key(|w| (w.len(), *w));
+            v.first().map(|w| w.to_string())
+        };
+        pick(&mut bare)
+            .or_else(|| {
+                (self.builtin_names.contains(identity) && !scope.contains_key(identity))
+                    .then(|| identity.to_string())
+            })
+            .or_else(|| pick(&mut qualified))
+    }
+
     /// Why `name` cannot be declared as a `kind` (`class` or `enum`) in the
     /// current namespace, if it cannot: it is a built-in type name, or a user
     /// class or an enum of the same module already has it. The two share the

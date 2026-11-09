@@ -1,18 +1,29 @@
-// A Petal reference for the native `text_wrap_rows` (core-libs/petal-ui/src/
-// text.rs `wrap_lines` + `wrap_rows`), for benchmarking only. It is not
-// shipped and nothing imports it: `bench_text_wrap` pastes it into its
-// scripts, checks that it answers what the native answers, and times the two.
+// The specification of the native `text_wrap_rows` (core-libs/petal-ui/src/
+// text.rs `wrap_lines` + `wrap_rows`), in Petal: what the rows of a wrap are.
+// The native stays the fast path — this is 30-85x slower on a document
+// (core-libs/petal-ui/examples/bench_text_wrap.rs; docs/dev/performance.md,
+// "Text wrap: native vs Petal") — and `core-libs/petal-ui/tests/text_wrap_reference.rs`
+// holds the two to the same rows over ~900 (document, style, width) cases.
+// Change one, change the other.
 //
-// Same algorithm, same rows: greedy word wrap honouring hard newlines (a
-// trailing "\r" dropped), a break at the last blank run that fits with the
-// run discarded, trailing blanks not counted and trimmed, a paragraph's
-// leading blanks kept on its first row, a word wider than the box broken at
-// a character boundary, a non-positive width passing each paragraph through
-// whole. Rows are `{text, start, end}` with code point offsets into `s`.
+//     import text_layout/wrap_reference: wrap_rows_reference
 //
-// It measures the way a merged Petal implementation would: one `text_advance`
-// call per word and per blank run, and one per character only inside a word
-// that has to be broken. Never per character on the common path.
+// The rest of text_layout does not re-export it, so `import text_layout`
+// does not compile it.
+//
+// Greedy word wrap honouring hard newlines (a trailing "\r" dropped), a break
+// at the last blank run that fits with the run discarded, trailing blanks not
+// counted and trimmed, a paragraph's leading blanks kept on its first row, a
+// word wider than the box broken at a character boundary, a non-positive
+// width passing each paragraph through whole. Two native quirks it keeps: a
+// paragraph's leading blanks make an over-wide first word overflow instead of
+// breaking, and a tab is measured as one glyph advance. Rows are
+// `{text, start, end}` with code point offsets into `s`.
+//
+// It measures one `text_advance` call per word and per blank run, and one
+// per character only inside a word that has to be broken.
+
+import ui
 
 fn _ref_blank(c)
   c == " " || c == "\t"
@@ -93,7 +104,8 @@ fn _ref_para(out0, para, base, ts, max_w)
   end
 end
 
-pub fn ref_wrap_rows(s, ts, max_w)
+// The rows `text_wrap_rows(s, ts, max_w)` answers.
+pub fn wrap_rows_reference(s, ts, max_w)
   var out = []
   var base = 0
   for raw in split(s, "\n") do

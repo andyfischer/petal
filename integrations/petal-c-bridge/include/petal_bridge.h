@@ -1129,7 +1129,14 @@ typedef struct pb_draw_cmd {
 } pb_draw_cmd;
 
 /* Drain and decode the petal-ui draw commands emitted by the last run, in
- * order. Valid until the next run/call/clear. */
+ * order. Valid until the next run/call/clear.
+ *
+ * With pb_vm_set_segmented(vm, "draw_commands", true), the bridge keeps each
+ * memo segment's draw commands decoded and copies a replayed panel's from
+ * that cache instead of decoding them again (petal-ui's DrawSegments). The
+ * list is the same either way. Drain such a buffer only with this function,
+ * not also with pb_vm_drain_segments, which would take the segment
+ * definitions the cache needs. */
 pb_status pb_vm_drain_draw(pb_vm* vm, const pb_draw_cmd** out_cmds, size_t* out_count);
 
 /* Declare which commands this host draws itself (PB_DRAW_CAP_* bits). Call

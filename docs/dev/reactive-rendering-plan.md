@@ -70,10 +70,18 @@ segmented).
 
 Open:
 
-- **Segments in the shipped hosts.** petal-ui, Garden and the canvas hosts
-  still drain flat (a segmented buffer drains flat through
-  `take_output_buffer`). Teaching `take_draw_commands` to keep decoded
-  commands per segment is the next step, and the input to damage rects.
+- **Segments in the shipped hosts.** petal-ui has the decoded-segment
+  drain: `petal_ui::draw_segments::DrawSegments` keeps each segment's
+  commands decoded (with its `pixel_snap` markers) and splices a replayed
+  scope's back instead of decoding it, then composes the frame as usual, so
+  its `take_draw_commands` / `take_frame_commands(_snapped)` equal the flat
+  drains. `Headless::set_segmented` and the C bridge's `pb_vm_drain_draw`
+  (once the host calls `pb_vm_set_segmented(vm, "draw_commands", true)`)
+  use it; the corpus memo oracle runs every panel app through it. Still
+  flat: Garden's PanelHost (it drains traced, and a traced buffer is never
+  segmented), petal-desktop-sdl and petal-web-canvas. Composition is still
+  per command, so a replayed frame saves the decode, not the walk; damage
+  rects need each segment's bounds kept next to its commands.
 - **Damage rectangles for canvas hosts.** A frame that runs still repaints the
   whole surface in SDL and web-canvas. Segments are the input to this: an
   unchanged segment is an unchanged region, once its bounds are kept.

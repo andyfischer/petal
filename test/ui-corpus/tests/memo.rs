@@ -275,28 +275,47 @@ fn the_baseline_policy_disables_memoization_with_the_other_optimizations() {
 
 
 fn drive(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64, frames: usize) -> (Vec<String>, u64) {
-    drive_with(app, includes, policy, seed, frames, false)
+    let (records, hits, _) = drive_with(app, includes, policy, seed, frames, Drain::Flat);
+    (records, hits)
 }
 
-/// `drive`, with the draw buffer in segmented mode when `segmented`
-/// (`petal::output_segments`). The harness drains it flat, so the commands
-/// must come out as they do unsegmented.
+/// How `drive_with` drains the draw buffer.
+#[derive(Clone, Copy, PartialEq)]
+enum Drain {
+    /// Unsegmented.
+    Flat,
+    /// Segmented (`petal::output_segments`), drained flat: the runtime
+    /// expands every segment.
+    SegmentedFlat,
+    /// Segmented, through petal-ui's decoded-segment cache
+    /// (`petal_ui::draw_segments`).
+    SegmentCache,
+}
+
+/// `drive`, draining the draw buffer as `drain` says. The commands must
+/// come out as they do unsegmented. The third result is how many commands
+/// the segment cache copied instead of decoding.
 fn drive_with(
     app: &Path,
     includes: &[PathBuf],
     policy: RunPolicy,
     seed: u64,
     frames: usize,
-    segmented: bool,
-) -> (Vec<String>, u64) {
+    drain: Drain,
+) -> (Vec<String>, u64, usize) {
     let size = (800, 600);
     let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
     ui.env.set_echo(false);
-    if segmented {
-        let sym = ui.env.intern_symbol(petal_ui::draw::DRAW_COMMANDS_SYMBOL);
-        ui.env.set_output_segmented(sym, true);
+    match drain {
+        Drain::Flat => {}
+        Drain::SegmentedFlat => {
+            let sym = ui.env.intern_symbol(petal_ui::draw::DRAW_COMMANDS_SYMBOL);
+            ui.env.set_output_segmented(sym, true);
+        }
+        Drain::SegmentCache => ui.set_segmented(true),
     }
+    let mut reused = 0;
     ui.env.set_seed(seed);
     // Garden panels observe every frame; a replayed scope must report the
     // same bindings a run would.
@@ -307,6 +326,10 @@ fn drive_with(
     for frame in 0..frames {
         scenario.apply(&mut ui, frame);
         let outcome = ui.frame().map(|_| ());
+        if let Some(stats) = ui.segment_stats() {
+            assert!(!stats.broken, "{}: frame {frame}: a broken segment drain", app.display());
+            reused += stats.reused;
+        }
         let record = serde_json::json!({
             "commands": ui.commands,
             "state": ui.state(),
@@ -315,7 +338,7 @@ fn drive_with(
         });
         records.push(record.to_string());
     }
-    (records, ui.memo_stats().hits)
+    (records, ui.memo_stats().hits, reused)
 }
 
 /// Where two frame records first differ, for a readable failure.
@@ -382,22 +405,32 @@ fn memoized_frames_reproduce_unmemoized_frames_across_the_corpus() {
 }
 
 /// The same oracle with the draw buffer segmented: recorded scopes move
-/// their commands into segment bodies and replays push one mark each, and
-/// the flat drain must expand them back into exactly the unmemoized frames.
+/// their commands into segment bodies and replays push one mark each. Both
+/// the flat drain (the runtime expands the segments) and petal-ui's segment
+/// cache (decoded commands kept per segment, spliced back) must give
+/// exactly the unmemoized frames.
 #[test]
 fn segmented_draw_buffers_reproduce_unmemoized_frames_across_the_corpus() {
     let frames = 45;
     let seed = 1u64;
-    par_corpus(|app, includes| {
+    let reused = par_corpus(|app, includes| {
         let (full, _) = drive(app, includes, RunPolicy::REPLAY.with_memo(false), seed, frames);
-        let (segmented, _) = drive_with(app, includes, RunPolicy::REPLAY, seed, frames, true);
-        for (i, (a, b)) in full.iter().zip(&segmented).enumerate() {
-            assert!(
-                a == b,
-                "{} seed {seed}: frame {i} differs with the draw buffer segmented: {}",
-                app.display(),
-                first_difference(a, b),
-            );
+        let mut reused = 0;
+        for drain in [Drain::SegmentedFlat, Drain::SegmentCache] {
+            let (segmented, _, r) = drive_with(app, includes, RunPolicy::REPLAY, seed, frames, drain);
+            reused += r;
+            let how = if drain == Drain::SegmentCache { "through the segment cache" } else { "drained flat" };
+            for (i, (a, b)) in full.iter().zip(&segmented).enumerate() {
+                assert!(
+                    a == b,
+                    "{} seed {seed}: frame {i} differs with the draw buffer segmented, {how}: {}",
+                    app.display(),
+                    first_difference(a, b),
+                );
+            }
         }
+        reused
     });
+    let total: usize = reused.iter().map(|(_, r)| r).sum();
+    assert!(total > 0, "the segment cache never reused a decoded command across the corpus");
 }

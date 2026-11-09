@@ -75,6 +75,7 @@
 pub mod clipboard;
 pub mod compose;
 pub mod draw;
+pub mod draw_segments;
 pub mod draw_wire;
 pub mod drag;
 pub mod frame_core;

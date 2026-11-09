@@ -181,6 +181,9 @@ pub struct Vm {
     /// Host counters watched per class (`pb_vm_watch_class`), shared with
     /// the effect and command callbacks that compare them in the call.
     watches: natives::Watches,
+    /// Decoded draw commands per memo segment, for `pb_vm_drain_draw` on a
+    /// segmented `draw_commands` buffer (a flat drain otherwise).
+    draw_segments: petal_ui::draw_segments::DrawSegments,
 }
 
 /// The allocation behind `pb_vm*`. The busy flag lives outside the
@@ -241,6 +244,7 @@ impl Vm {
             package_name: CString::default(),
             interface_report: CString::default(),
             watches: Default::default(),
+            draw_segments: Default::default(),
         }
     }
 
@@ -298,6 +302,14 @@ impl Vm {
     /// Put output buffer `buffer` in segmented mode, or take it out (see
     /// `petal::output_segments`).
     pub fn set_segmented(&mut self, buffer: &str, on: bool) {
+        if buffer == petal_ui::draw::DRAW_COMMANDS_SYMBOL {
+            // petal-ui's draw buffer: `pb_vm_drain_draw` keeps its segments.
+            match on {
+                true => self.draw_segments.enable(&mut self.env),
+                false => self.draw_segments.disable(&mut self.env),
+            }
+            return;
+        }
         let sym = self.env.intern_symbol(buffer);
         self.env.set_output_segmented(sym, on);
     }
@@ -305,6 +317,10 @@ impl Vm {
     /// Forget which segments of `buffer` the host was given: the next drain
     /// defines every segment it references again.
     pub fn reset_segments(&mut self, buffer: &str) {
+        if buffer == petal_ui::draw::DRAW_COMMANDS_SYMBOL {
+            self.draw_segments.reset(&mut self.env);
+            return;
+        }
         let sym = self.env.intern_symbol(buffer);
         self.env.reset_output_segments(sym);
     }
@@ -2198,7 +2214,7 @@ pub extern "C" fn pb_vm_drain_draw(
     out_count: *mut usize,
 ) -> Status {
     let (st, (cmds, count)) = with_vm(vm, (std::ptr::null(), 0), |vm| {
-        let commands = petal_ui::draw::take_draw_commands(&mut vm.env);
+        let commands = vm.draw_segments.take_draw_commands(&mut vm.env);
         let env = &vm.env;
         let sym = |s: petal::symbol::SymbolId| env.symbol_name(s).map(str::to_string);
         let names = Names {

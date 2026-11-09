@@ -1755,6 +1755,48 @@ TEST(ui_prelude_widgets_draw) {
     CHECK_EQ(vm.state("clicks").integer(), 1);
 }
 
+// A segmented draw buffer drained with pb_vm_drain_draw: the bridge keeps
+// each segment's commands decoded and copies a replayed panel's from that
+// cache. The commands are those of a VM that runs without memo.
+TEST(ui_draw_through_segments_matches_the_unmemoized_frames) {
+    const char* src =
+        "import ui\n"
+        "import vec2\n"
+        "state n = 0\n"
+        "n += 1\n"
+        "fn rows(k)\n"
+        "  for i in range(0, 30) do draw_rect({x: 4, y: i * 10, w: 50 + k, h: 8}, #336699) end\n"
+        "  draw_text(\"rows {k}\", vec2(4, 2), 12, #ffffff)\n"
+        "  nil\n"
+        "end\n"
+        "rows(1)\n"
+        "rows(n % 2)\n"
+        "draw_circle({x: 9, y: 9}, float(n), #ff0000)\n";
+    const auto flat_of = [](petal::Vm& vm) {
+        std::vector<std::tuple<int, int, int, int, int, std::string>> out;
+        for (const pb_draw_cmd& d : vm.drain_draw())
+            out.emplace_back(int(d.kind), d.x, d.y, d.w, d.radius, d.text ? std::string(d.text) : std::string());
+        return out;
+    };
+    petal::Vm plain, seg;
+    for (petal::Vm* vm : {&plain, &seg}) {
+        vm->set_dimensions(400, 400);
+        vm->load_source(src);
+    }
+    plain.set_memo(false);
+    seg.set_segmented("draw_commands", true);
+    for (int f = 0; f < 5; ++f) {
+        if (f == 3) seg.reset_segments("draw_commands");   // a host that lost its cache
+        plain.begin_frame(0.016, f, f * 0.016);
+        seg.begin_frame(0.016, f, f * 0.016);
+        plain.run();
+        seg.run();
+        const auto want = flat_of(plain);
+        CHECK(want.size() > 60);
+        CHECK(flat_of(seg) == want);
+    }
+}
+
 TEST(ui_keyboard_and_relative_mouse) {
     petal::Vm vm;
     vm.load_source(

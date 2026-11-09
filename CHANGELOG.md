@@ -167,6 +167,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   revision, an asset serial) around every effect or command callback and
   before every run, and revises the class when it moved, in the call or
   between runs.
+- petal-ui: `draw_segments::DrawSegments`, a drain of a segmented draw
+  buffer that keeps each memo segment's commands decoded and copies a
+  replayed scope's from the cache; the list equals `take_draw_commands` /
+  `take_frame_commands(_snapped)`. Used by `Headless::set_segmented` and by
+  the C bridge's `pb_vm_drain_draw` once the host segments
+  `"draw_commands"`.
 - docs: `embedding-c.md` has sections on both, and what a segment host
   learned (recovery, emit tracing, cuts, in-place frames) plus the
   memo-off/memo-on trace check for effect rows.

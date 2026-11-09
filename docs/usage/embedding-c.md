@@ -518,7 +518,11 @@ time a drain refers to it; `vm.reset_segments("scene")` makes the next drain
 define everything again. Only calls Petal keeps a memo record of become
 segments: top-level code, a helper that prints or draws randomness, and
 calls too small to record stay fresh values. `drain("scene")` still works
-on a segmented buffer and returns it expanded. The C declarations and the
+on a segmented buffer and returns it expanded. petal-ui's own buffer is
+the exception: segment it with `vm.set_segmented("draw_commands", true)` and
+keep draining it with `vm.drain_draw()`, which then keeps each segment's
+decoded commands itself and copies a replayed panel's from them (do not
+also `drain_segments` it). The C declarations and the
 rules are in `petal_bridge.h` ("Segmented output buffers"); the mechanism is
 [`output_segments`](../../core/src/output_segments.rs) in Petal.
 

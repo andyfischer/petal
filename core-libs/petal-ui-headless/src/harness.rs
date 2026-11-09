@@ -67,6 +67,9 @@ pub struct Headless {
     origin_frame: i64,
     /// Draw commands produced by the most recent [`frame`](Self::frame).
     pub commands: Vec<DrawCommand>,
+    /// The decoded-segment cache, while the draw buffer is segmented
+    /// ([`set_segmented`](Self::set_segmented)).
+    segments: Option<petal_ui::draw_segments::DrawSegments>,
 }
 
 impl Deref for Headless {
@@ -193,6 +196,7 @@ impl Headless {
             time_origin: 0.0,
             origin_frame: 0,
             commands: Vec::new(),
+            segments: None,
         })
     }
 
@@ -331,9 +335,37 @@ impl Headless {
         // clock.
         self.time = self.clock_at(self.frame_count);
         if run? == petal_ui::frame_core::FrameRun::Ran {
-            self.commands = draw::take_draw_commands(&mut self.core.env);
+            self.commands = match &mut self.segments {
+                Some(segs) => segs.take_draw_commands(&mut self.core.env),
+                None => draw::take_draw_commands(&mut self.core.env),
+            };
         }
         Ok(&self.commands)
+    }
+
+    /// Drain the draw buffer segmented, through a
+    /// [`DrawSegments`](petal_ui::draw_segments::DrawSegments) cache (on), or
+    /// flat (off, the default). The commands are the same either way; a
+    /// replayed scope's are copied from the cache instead of decoded.
+    pub fn set_segmented(&mut self, on: bool) {
+        match (on, self.segments.is_some()) {
+            (true, false) => {
+                let mut segs = petal_ui::draw_segments::DrawSegments::new();
+                segs.enable(&mut self.core.env);
+                self.segments = Some(segs);
+            }
+            (false, true) => {
+                if let Some(mut segs) = self.segments.take() {
+                    segs.disable(&mut self.core.env);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// What the last segmented drain did; `None` while draining flat.
+    pub fn segment_stats(&self) -> Option<petal_ui::draw_segments::SegmentStats> {
+        self.segments.as_ref().map(|s| s.stats())
     }
 
     /// Run `n` frames with no new input (animation settling, edge decay).

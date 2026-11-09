@@ -1,5 +1,8 @@
 // Benchmark: `match` dispatch — a 40-arm match on a string literal, on an
-// int literal and on an enum variant, 1,000,000 matches of each.
+// int literal and on an enum variant, 1,000,000 matches of each — and the
+// same variant match reached through a method on the enum
+// (`k.index()`), whose receiver is untyped, so each call dispatches on the
+// variant's tag before the match runs.
 //
 // With the optimizer on, each match is entered through a jump table: one
 // hash of the subject. With it off (`--no-opt`), the arms are tested one
@@ -198,6 +201,13 @@ fn by_variant(k)
   end
 end
 
+// The method form of `by_variant`. Called on a list element, which the
+// checker cannot type, so the call is not pinned: this measures dispatch on
+// the tag, the cost an unpinned enum method adds over the free function.
+fn Variant.index(k)
+  by_variant(k)
+end
+
 var total = 0
 for i in range(0, 1000000) do
   set total = total + by_string(STRINGS[i % 40])
@@ -207,5 +217,8 @@ for i in range(0, 1000000) do
 end
 for i in range(0, 1000000) do
   set total = total + by_variant(VARIANTS[i % 40])
+end
+for i in range(0, 1000000) do
+  set total = total + VARIANTS[i % 40].index()
 end
 print("match dispatch checksum:", get total)

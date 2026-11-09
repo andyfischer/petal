@@ -20,10 +20,21 @@ use crate::program::VARIANT_NAME_FIELD as NAME_FIELD;
 // Shapes: what a declaration says
 // ---------------------------------------------------------------------------
 
-/// An enum's variants, in declaration order.
+/// An enum's variants, in declaration order, and the methods its file
+/// declares on it.
 #[derive(Debug, Clone, Default)]
 pub struct EnumShape {
     pub variants: Vec<VariantShape>,
+    pub methods: Vec<MethodShape>,
+}
+
+/// One `fn Kind.name(…)` declared on an enum.
+#[derive(Debug, Clone)]
+pub struct MethodShape {
+    pub name: String,
+    /// The declaration's signature as written: `fn(k: Kind) -> string`.
+    pub signature: String,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone)]
@@ -55,7 +66,12 @@ impl EnumShape {
                     span: v.span,
                 })
                 .collect(),
+            methods: Vec::new(),
         }
+    }
+
+    pub fn method(&self, name: &str) -> Option<&MethodShape> {
+        self.methods.iter().find(|m| m.name == name)
     }
 
     pub fn variant(&self, name: &str) -> Option<&VariantShape> {
@@ -424,6 +440,7 @@ impl<'a> Member<'a> {
                     items.push(field(key, format!("{of}.{key} = {text}")));
                 }
                 items.push(field(NAME_FIELD, format!("{of}.name = \"{}\"", v.name)));
+                items.extend(method_items(e, enum_name));
                 items
             }
             Member::Value(_) => {
@@ -454,6 +471,7 @@ impl<'a> Member<'a> {
                         }
                     }
                 }
+                items.extend(method_items(e, enum_name));
                 items
             }
             // A function and a list: nothing of the enum's follows the dot.
@@ -499,7 +517,7 @@ impl<'a> Member<'a> {
                 } else if name == NAME_FIELD {
                     Some(format!("(field) {of}.name = \"{}\"", v.name))
                 } else {
-                    None
+                    method_hover(e, enum_name, name)
                 }
             }
             Member::Value(_) => {
@@ -526,7 +544,7 @@ impl<'a> Member<'a> {
                 } else if name == NAME_FIELD {
                     Some(format!("(field) name\n// the name of the {enum_name} variant, as a string"))
                 } else {
-                    None
+                    method_hover(e, enum_name, name)
                 }
             }
             Member::Constructor(..) | Member::All(_) | Member::From(_) => None,
@@ -545,12 +563,34 @@ impl<'a> Member<'a> {
                 None if name == "all" || name == "from" => e.def.span,
                 None => return None,
             },
-            Member::Variant(_, v) => Some(v).filter(declares)?.span,
+            Member::Variant(_, v) if declares(&v) => v.span,
             // The first variant that declares it; `name` is the enum's own.
             Member::Value(_) if name == NAME_FIELD => e.def.span,
-            Member::Value(_) => e.shape.variants.iter().find(declares)?.span,
+            Member::Value(_) if e.shape.variants.iter().any(|v| declares(&v)) => {
+                e.shape.variants.iter().find(declares)?.span
+            }
+            // Otherwise a method of the enum, when one has that name.
+            Member::Variant(..) | Member::Value(_) => e.shape.method(name)?.span,
             Member::Constructor(..) | Member::All(_) | Member::From(_) => return None,
         };
         Some(Declared { origin: e.origin, span })
     }
+}
+
+/// The methods declared on `e`, as completions after a variant and a `.`.
+fn method_items(e: EnumAt<'_>, enum_name: &str) -> Vec<CompletionItem> {
+    e.shape
+        .methods
+        .iter()
+        .map(|m| CompletionItem {
+            label: m.name.clone(),
+            kind: Some(CompletionItemKind::Method),
+            detail: Some(format!("{enum_name}.{} {}", m.name, m.signature)),
+        })
+        .collect()
+}
+
+fn method_hover(e: EnumAt<'_>, enum_name: &str, name: &str) -> Option<String> {
+    let m = e.shape.method(name)?;
+    Some(format!("(method) {enum_name}.{} {}", m.name, m.signature))
 }

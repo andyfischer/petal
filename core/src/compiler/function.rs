@@ -350,11 +350,14 @@ impl Compiler {
 
     pub(super) fn emit_declare_method(&mut self, class: &str, method: &str, func: TermId) {
         // `class` is as the declaration wrote it; the method attaches to the
-        // class that name means here (see `collect_type_decls`).
+        // class or enum that name means here (see `collect_type_decls`), and
+        // is published under its identity — which is also the enum half of
+        // the tags its variants carry (`./level::Phase.idle`).
         let class = self
             .classes
-            .lookup(class)
-            .map_or_else(|| class.to_string(), |id| self.classes.name_of(id).to_string());
+            .declared_type(class)
+            .and_then(|ty| self.classes.type_identity(ty))
+            .map_or_else(|| class.to_string(), str::to_string);
         let class = class.as_str();
         // From here on, a `recv.method()` site the checker pinned to this class
         // may bind straight to the declaration instead of dispatching on the

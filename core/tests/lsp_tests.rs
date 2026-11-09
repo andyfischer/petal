@@ -1022,6 +1022,32 @@ fn completion_after_a_variant_value_offers_its_fields_data_and_name() {
     );
 }
 
+/// A method declared on an enum (`fn Kind.label(x: Kind)`) completes and
+/// hovers after a variant value, and goes to its declaration.
+#[test]
+fn a_variant_value_offers_its_enums_methods() {
+    let text = format!(
+        "{}fn Kind.label(x: Kind) -> string\n  x.shape\nend\nprint(Kind.park.label())\n",
+        ENUMS.replace("  Kind.from(\"park\")\n", "  Kind.from(\"park\")\n  k.\n")
+    );
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///methods.ptl";
+    open(&mut server, uri, &text);
+    let (line, col) = position(&text, "  k.", 4, true);
+    let resp = completion(&mut server, uri, line, col);
+    assert_eq!(labels(&resp), ["shape", "use", "name", "label"]);
+    let items = resp["result"]["items"].as_array().unwrap();
+    let label = items.iter().find(|i| i["label"] == "label").unwrap();
+    assert_eq!(label["kind"], json!(2), "Method");
+    assert_eq!(label["detail"], "Kind.label fn(x: Kind) -> string");
+    // Methods are not members of the enum itself.
+    let (line, col) = position(&text, "Kind.from(\"park\")", 5, true);
+    assert!(!labels(&completion(&mut server, uri, line, col)).contains(&"label".to_string()));
+    let hover = hover_text(&mut server, uri, &text, "park.label()", 6);
+    assert!(hover.contains("(method) Kind.label fn(x: Kind) -> string"), "{hover}");
+}
+
 #[test]
 fn completion_items_carry_protocol_kinds_as_numbers() {
     let mut server = Server::new();

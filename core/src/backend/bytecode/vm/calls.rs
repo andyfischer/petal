@@ -255,8 +255,36 @@ impl<'a> Vm<'a> {
                 Some(label) => !self.program.class_names.contains(label),
                 None => true,
             },
+            // A variant's label is the enum half of its tag. A host-built
+            // variant (`"rect"`) has none, and is not stale: it was never a
+            // variant of an enum here, so the declaration cannot speak for it.
+            Value::EnumVariant { tag, .. } => {
+                match crate::program::split_enum_tag(self.heap.tag_str(tag)).0 {
+                    Some(enum_name) => !self.program.enums.contains_key(enum_name),
+                    None => false,
+                }
+            }
             _ => false,
         }
+    }
+
+    /// The method a value's *label* names: `fn Rect.area` for an instance
+    /// tagged `Rect`, `fn Kind.describe` for a variant tagged `Kind.park`
+    /// (the enum half of the tag, module and all: `./level::Kind`), from the
+    /// stack's per-run method table. `None` for any other value, and for a
+    /// label nothing is declared on.
+    fn labelled_method(&self, recv: Value, method_name: &str) -> Option<Value> {
+        if self.stack.methods.is_empty() {
+            return None;
+        }
+        let label = match recv {
+            Value::Map(id) => self.heap.map_class_name(id)?,
+            Value::EnumVariant { tag, .. } => {
+                crate::program::split_enum_tag(self.heap.tag_str(tag)).0?
+            }
+            _ => return None,
+        };
+        self.stack.methods.get(label)?.get(method_name).copied()
     }
 
     /// Method-call syntax `recv.name(args...)`. Resolution order, first match
@@ -267,8 +295,10 @@ impl<'a> Vm<'a> {
     ///    behavior is the older feature, and a class instance is a record.
     /// 2. a **user-declared method** for the receiver's class —
     ///    `fn Rect.area(r: Rect)`, published into `stack.methods` when its
-    ///    declaration ran. Ahead of the built-ins so a program can extend, or
-    ///    override, a built-in class method.
+    ///    declaration ran — or for a variant's enum, `fn Kind.describe(k:
+    ///    Kind)`, found by the enum half of the variant's tag. Ahead of the
+    ///    built-ins so a program can extend, or override, a built-in class
+    ///    method.
     /// 3. a **built-in class method** — `Rect.center_x` and friends, registered
     ///    as natives under their qualified names.
     /// 4. a **handle method**, for a handle receiver.
@@ -341,30 +371,25 @@ impl<'a> Vm<'a> {
             }
         }
 
-        // 2/3) The receiver's class, when it has one: a user-declared method
-        //      first, then the class's built-in methods. Both are keyed by the
-        //      class tag the instance carries, so an untagged record — and any
-        //      non-record — skips straight past.
+        // 2) A user-declared method of the receiver's class, or of a
+        //    variant's enum, keyed by the label the value carries. An untagged
+        //    record, a host-built variant and any other value skip past.
+        if let Some(func) = self.labelled_method(recv, method_name) {
+            return self.do_call(
+                fi,
+                dst,
+                func,
+                &with_receiver(recv, args),
+                &with_receiver_names(arg_names),
+                call_site,
+                CallMemo::ON,
+            );
+        }
+
+        // 3) The built-in methods of the receiver's class. (Enums have none.)
         if let Value::Map(map_id) = recv
             && let Some(class) = self.heap.map_class_name(map_id)
         {
-            if let Some(func) = self
-                .stack
-                .methods
-                .get(class)
-                .and_then(|m| m.get(method_name))
-                .copied()
-            {
-                return self.do_call(
-                    fi,
-                    dst,
-                    func,
-                    &with_receiver(recv, args),
-                    &with_receiver_names(arg_names),
-                    call_site,
-                    CallMemo::ON,
-                );
-            }
             if let Some(nid) = self.native_fns.lookup_class_method(class, method_name) {
                 // The receiver is the native's first parameter, and takes
                 // the leading positional slot.

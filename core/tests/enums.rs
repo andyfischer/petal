@@ -1188,9 +1188,9 @@ fn error_texts_name_what_was_written() {
     // A variant in scope beats the habit hint for `None`.
     let e = run_err("enum A\n  None,\nend\nprint(None)");
     assert!(e.contains("did you mean A.None?"), "{e}");
-    // An enum takes no methods, and the message does not suggest a class.
-    let e = compile_err("enum Kind\n  park,\nend\nfn Kind.describe(k)\n  1\nend");
-    assert!(e.contains("`Kind` is an enum, and methods are declared on classes only"), "{e}");
+    // A method on an enum is refused only by name: here, a variant's.
+    let e = compile_err("enum Kind\n  park,\nend\nfn Kind.park(k)\n  1\nend");
+    assert!(e.contains("has the name of the variant `Kind.park`"), "{e}");
     assert!(!e.contains("class Kind"), "{e}");
 }
 

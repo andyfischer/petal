@@ -1089,7 +1089,40 @@ fn collect_definitions(stmts: &[Stmt], source: &str) -> Vec<Definition> {
     for stmt in stmts {
         collect_definitions_from_stmt(stmt, src, &mut defs);
     }
+    attach_enum_methods(stmts, &mut defs);
     defs
+}
+
+/// Give each enum's shape the methods its file declares on it
+/// (`fn Kind.describe(k: Kind)`), which a variant then completes after `.`.
+/// The function's own definition (`Kind.describe`) is already in `defs`, and
+/// carries the signature.
+fn attach_enum_methods(stmts: &[Stmt], defs: &mut [Definition]) {
+    for stmt in stmts {
+        let StmtKind::FnDecl { name, class: Some(class), .. } = &stmt.kind else {
+            continue;
+        };
+        let signature = defs
+            .iter()
+            .find(|d| d.kind == DefinitionKind::Function && d.name == *name && d.span == stmt.span)
+            .and_then(|d| d.detail.clone())
+            .unwrap_or_default();
+        let Some(shape) = defs
+            .iter_mut()
+            .find(|d| d.kind == DefinitionKind::Enum && d.name == *class)
+            .and_then(|d| d.shape.as_mut())
+        else {
+            continue;
+        };
+        let method = crate::compiler::method_base_name(&stmt.kind).to_string();
+        if shape.method(&method).is_none() {
+            shape.methods.push(crate::lsp::members::MethodShape {
+                name: method,
+                signature,
+                span: stmt.span,
+            });
+        }
+    }
 }
 
 fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Definition>) {

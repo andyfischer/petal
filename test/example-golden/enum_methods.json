@@ -1,0 +1,6 @@
+{
+  "example": "enum_methods.ptl",
+  "status": 0,
+  "stdout": "circle: area 3.14159, 0 sides\nrect: area 24.0, 4 sides\ntriangle: area 12.0, 3 sides\ndoubled rect: 96.0\nlargest: rect\n",
+  "stderr": ""
+}

@@ -262,6 +262,24 @@ fn method_call_syntax() {
     assert_parity("let s = [1, 2, 3, 4].filter(fn(x) -> x > 2)");
 }
 
+/// Methods on enums (docs/proposals/enum-methods.md): pinned calls on a
+/// constructor and an annotated parameter, dispatched calls through an
+/// untyped one, overloads by arity, and the "No method" error.
+#[test]
+fn enum_method_calls() {
+    let decl = "enum Shape\n  circle(r),\n  rect(w, h),\n  unit(sides: 0),\nend\n\
+                fn Shape.area(s: Shape) -> float\n  match s\n    when Shape.circle(r) -> 3.0 * r * r\n    \
+                when Shape.rect(w, h) -> w * h\n    when _ -> 0.0\n  end\nend\n\
+                fn Shape.area(s: Shape, k) -> float\n  s.area() * k\nend\n";
+    assert_parity(&format!("{decl}let a = Shape.circle(2).area()"));
+    assert_parity(&format!("{decl}fn f(s: Shape)\n  s.area(2)\nend\nlet a = f(Shape.rect(2, 3))"));
+    assert_parity(&format!(
+        "{decl}fn g(s)\n  s.area()\nend\nlet xs = [Shape.unit, Shape.rect(1, 2), Shape.circle(1)].map(fn(s) -> g(s))"
+    ));
+    assert_parity(&format!("{decl}fn g(s)\n  s.perimeter()\nend\nlet x = g(Shape.unit)"));
+    assert_stateful_parity(&format!("{decl}state s = Shape.rect(2, 2)\nprint(s.area())"), 3);
+}
+
 #[test]
 fn builtin_calls() {
     assert_parity("let n = len([1, 2, 3])");

@@ -3304,12 +3304,13 @@ fn forward_referenced_fns(stmts: &[Stmt]) -> HashSet<String> {
 }
 
 /// Fold every `class` declaration in `stmts`, every `enum` declaration, and
-/// every method declared on a class into `classes`. `module` is the declaring
+/// every method declared on a class or an enum into `classes`. `module` is the declaring
 /// file's display name, used to name
 /// both sides of a cross-module duplicate; `None` for a single-file
 /// compilation. Returns the fatal diagnostics found — a nested `class`, a
 /// duplicate field, a redeclared class, a name that collides with a built-in
-/// type, a duplicate method, or a method on a type that does not exist. Pure
+/// type, a duplicate method, a method on a type that does not exist, or a
+/// method on an enum whose name its variants already answer to. Pure
 /// over the class table so it is unit-testable without a live [`Compiler`], and
 /// so the checker's tests can build the same table the compiler would.
 pub fn collect_type_decls(
@@ -3383,7 +3384,10 @@ pub fn collect_type_decls(
     let enum_diags = collect_enums(classes, stmts, module);
 
     // Methods last: a class declared anywhere in the file is now known, so
-    // `fn Point.shifted(...)` above `class Point` is fine.
+    // `fn Point.shifted(...)` above `class Point` is fine. A method may be
+    // declared on an enum as well (`fn Kind.describe(k: Kind)`), under the
+    // same rules plus the naming rules of `enum_method_name_clash`.
+    let mut method_diags = Vec::new();
     for stmt in stmts {
         let StmtKind::FnDecl {
             class: Some(class),
@@ -3394,29 +3398,42 @@ pub fn collect_type_decls(
         else {
             continue;
         };
-        let Some(id) = classes.lookup(class) else {
-            let is_enum = stmts
-                .iter()
-                .any(|s| matches!(&s.kind, StmtKind::EnumDecl { name, .. } if name == class))
-                || classes.lookup_enum(class).is_some();
-            err(
-                stmt.span,
-                if is_enum {
-                    format!(
-                        "cannot declare a method on `{class}`: `{class}` is an enum, and \
-                         methods are declared on classes only (write a function that takes \
-                         the variant, `fn name(v: {class}, …)`)"
-                    )
-                } else {
+        let owner = match (classes.lookup(class), classes.lookup_enum(class)) {
+            (Some(id), _) => crate::types::Type::Class(id),
+            (None, Some(id)) => crate::types::Type::EnumOf(id),
+            (None, None) => {
+                err(
+                    stmt.span,
                     format!(
                         "cannot declare a method on `{class}`: no class of that name \
                          (declare it with `class {class} … end`)"
-                    )
-                },
-            );
-            continue;
+                    ),
+                );
+                continue;
+            }
         };
         let method = method_base_name(&stmt.kind);
+        if let crate::types::Type::EnumOf(id) = owner {
+            // Only an enum this file declares takes methods: two importers of
+            // one enum could otherwise each declare the same method on it.
+            let bare = crate::program::strip_module(class.rsplit('.').next().unwrap_or(class));
+            if classes.enum_name(id) != classes.qualify(bare) {
+                err(
+                    stmt.span,
+                    format!(
+                        "cannot declare a method on `{class}`: `{class}` is an enum of \
+                         another module, and methods are declared only on an enum of this \
+                         file (write a function that takes the variant, `fn {method}(v: \
+                         {class}, …)`)"
+                    ),
+                );
+                continue;
+            }
+            if let Some(d) = enum_method_name_clash(stmts, bare, method, stmt.span) {
+                method_diags.push(d);
+                continue;
+            }
+        }
         // The receiver is the first parameter and the call site supplies it, so
         // a method with no parameters can never be called: `c.f()` passes one
         // argument to a function that takes none. Reject the declaration rather
@@ -3432,18 +3449,22 @@ pub fn collect_type_decls(
             continue;
         };
         // That receiver is whatever `recv.method(...)` dispatched on, so it is
-        // always an instance of the class the method is declared on. An
+        // always an instance of the type the method is declared on. An
         // annotation that such an instance cannot fill describes a call that
         // can never happen: the declaration is malformed, not merely suspect,
         // so this is fatal rather than one of the checker's warnings.
+        let instance = match owner {
+            crate::types::Type::EnumOf(_) => "a variant",
+            _ => "an instance",
+        };
         if let Some(declared) = resolve_ann(recv.ty.as_ref(), classes)
-            && !crate::types::Type::Class(id).is_assignable_to(&declared)
+            && !owner.is_assignable_to(&declared)
         {
             err(
                 stmt.span,
                 format!(
                     "method `{class}.{method}` declares its receiver `{}` as `{}`, \
-                     but a method on `{class}` always receives an instance of `{class}`",
+                     but a method on `{class}` always receives {instance} of `{class}`",
                     recv.name,
                     declared.display(classes),
                 ),
@@ -3460,12 +3481,92 @@ pub fn collect_type_decls(
             ret: resolve_ann(ret.as_ref(), classes),
             optional: params.iter().filter(|p| p.has_default()).count(),
         };
-        if let Err(msg) = classes.declare_method(id, method, sig) {
+        let declared = match owner {
+            crate::types::Type::Class(id) => classes.declare_method(id, method, sig),
+            crate::types::Type::EnumOf(id) => classes.declare_enum_method(id, method, sig),
+            _ => unreachable!("a method's owner is a class or an enum"),
+        };
+        if let Err(msg) = declared {
             err(stmt.span, msg);
         }
     }
+    diags.extend(method_diags);
     diags.extend(enum_diags);
     diags
+}
+
+/// Why `fn Kind.method` may not take the name `method`, if it may not: the
+/// name is already something `Kind`'s variants answer to, so the method
+/// would be unreachable or ambiguous. `enum_name` is the enum as this file
+/// declares it, and `span` the method's declaration. The refused names:
+///
+/// - a **variant** of the enum: `Op.fight(…)` builds the variant while
+///   `op.fight()` would call the method;
+/// - a **payload field or data key** of any variant: method-call dispatch
+///   tries a variant's own fields first, so the method would never run on
+///   that variant;
+/// - **`name`, `all`, `from`**: the members every enum and every variant
+///   already has.
+///
+/// The error cites the variant whose name it collides with, by line.
+fn enum_method_name_clash(
+    stmts: &[Stmt],
+    enum_name: &str,
+    method: &str,
+    span: SourceSpan,
+) -> Option<crate::diagnostic::Diagnostic> {
+    use crate::program::{ENUM_MEMBERS, VARIANT_NAME_FIELD};
+    if method == VARIANT_NAME_FIELD || ENUM_MEMBERS.contains(&method) {
+        let what = if method == VARIANT_NAME_FIELD {
+            format!("every variant's own `.{method}`")
+        } else {
+            format!("the enum's own `{enum_name}.{method}`")
+        };
+        return Some(crate::diagnostic::Diagnostic::new(
+            span,
+            format!(
+                "method `{enum_name}.{method}` has the name of {what}, which it could never \
+                 replace: pick another name"
+            ),
+        ));
+    }
+    let variants = stmts.iter().find_map(|s| match &s.kind {
+        StmtKind::EnumDecl { name, variants } if name == enum_name => Some(variants),
+        _ => None,
+    })?;
+    for v in variants {
+        if v.name == method {
+            return Some(crate::diagnostic::Diagnostic::citing(
+                span,
+                format!(
+                    "method `{enum_name}.{method}` has the name of the variant \
+                     `{enum_name}.{method}` (line {{line}}): `{enum_name}.{method}` is the \
+                     variant, and a method of its enum may not share its name — pick \
+                     another name"
+                ),
+                v.span,
+            ));
+        }
+        let what = if v.fields.iter().any(|f| f == method) {
+            "payload field"
+        } else if v.data.iter().any(|d| d.key == method) {
+            "data key"
+        } else {
+            continue;
+        };
+        return Some(crate::diagnostic::Diagnostic::citing(
+            span,
+            format!(
+                "method `{enum_name}.{method}` has the name of a {what} of `{enum_name}` \
+                 (`{enum_name}.{}` declares `{method}` on line {{line}}): `v.{method}` reads \
+                 the {what}, so the method could never be called on that variant — pick \
+                 another name",
+                v.name
+            ),
+            v.span,
+        ));
+    }
+    None
 }
 
 /// Every declaration `declares` picks out of `stmts` that is *not* at the top
@@ -3604,6 +3705,90 @@ mod import_spelling_tests {
         assert_eq!(import_spelling(Some("./user"), "./kit/button"), "./kit/button");
         assert_eq!(import_spelling(Some("./a/b/c"), "./x"), "../../x");
         assert_eq!(import_spelling(Some("./app/user"), "../shared/rng"), "../../shared/rng");
+    }
+}
+
+#[cfg(test)]
+mod enum_method_decl_tests {
+    //! The declaration rules for a method on an enum
+    //! (docs/proposals/enum-methods.md): the class rules, plus the names an
+    //! enum's variants already answer to.
+    use super::collect_type_decls;
+    use crate::classes::ClassTable;
+    use crate::rewrite::parse_ast;
+
+    const ENUM: &str = "enum Op\n  fight(cost: 0),\n  flee(cost: 2),\n  walk(steps, cost: 1),\nend\n";
+
+    /// The fatal diagnostics of `ENUM` followed by `methods`.
+    fn errors(methods: &str) -> Vec<String> {
+        let (_, stmts) = parse_ast(&format!("{ENUM}{methods}")).expect("parse");
+        let mut classes = ClassTable::new();
+        collect_type_decls(&mut classes, &stmts, None)
+            .into_iter()
+            .map(|d| d.message)
+            .collect()
+    }
+
+    fn one_error(methods: &str) -> String {
+        match errors(methods).as_slice() {
+            [one] => one.clone(),
+            other => panic!("expected one error for {methods:?}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_method_on_an_enum_is_declared() {
+        let (_, stmts) =
+            parse_ast(&format!("{ENUM}fn Op.label(o: Op) -> string\n  o.name\nend\nfn Op.label(o, x)\n  x\nend\n"))
+                .unwrap();
+        let mut classes = ClassTable::new();
+        assert!(collect_type_decls(&mut classes, &stmts, None).is_empty());
+        let id = classes.lookup_enum("Op").unwrap();
+        let arities: Vec<usize> = classes.enum_methods(id).iter().map(|m| m.arity).collect();
+        assert_eq!(arities, [1, 2], "overloads by arity, receiver included");
+    }
+
+    #[test]
+    fn a_method_may_not_take_a_variants_name() {
+        let e = one_error("fn Op.fight(o)\n  1\nend\n");
+        assert!(e.contains("has the name of the variant `Op.fight` (line 2)"), "{e}");
+    }
+
+    #[test]
+    fn a_method_may_not_take_a_payload_fields_name() {
+        let e = one_error("fn Op.steps(o)\n  1\nend\n");
+        assert!(
+            e.contains("has the name of a payload field of `Op` (`Op.walk` declares `steps` on line 4)"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn a_method_may_not_take_a_data_keys_name() {
+        let e = one_error("fn Op.cost(o)\n  1\nend\n");
+        assert!(
+            e.contains("has the name of a data key of `Op` (`Op.fight` declares `cost` on line 2)"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn a_method_may_not_take_an_enum_members_name() {
+        for name in ["name", "all", "from"] {
+            let e = one_error(&format!("fn Op.{name}(o)\n  1\nend\n"));
+            assert!(e.contains(&format!("method `Op.{name}` has the name of")), "{e}");
+            assert!(e.contains("pick another name"), "{e}");
+        }
+    }
+
+    #[test]
+    fn the_class_rules_hold_for_an_enum_method() {
+        let e = one_error("fn Op.f()\n  1\nend\n");
+        assert!(e.contains("declares no receiver parameter"), "{e}");
+        let e = one_error("fn Op.f(o: int)\n  1\nend\n");
+        assert!(e.contains("always receives a variant of `Op`"), "{e}");
+        let e = one_error("fn Op.f(o)\n  1\nend\nfn Op.f(o)\n  2\nend\n");
+        assert!(e.contains("method `Op.f` is already declared with 1 parameter"), "{e}");
     }
 }
 

@@ -51,7 +51,8 @@ struct VarType {
     /// is the right call for typing, and this is emphatically **not** a type:
     /// nothing is checked against it and it produces no warning. It is a *hint*
     /// for the one question the type cannot answer — when the class label a
-    /// value carries names nothing in the program now running, which class did
+    /// value carries names nothing in the program now running, which class (or
+    /// enum) did
     /// the code that declared the slot have in mind? See
     /// [`MethodDispatch::hints`].
     class_hint: Option<Type>,
@@ -571,7 +572,7 @@ impl<'a> Checker<'a> {
     /// Record the class a just-bound name's declaration implies, for the
     /// bindings whose *type* is deliberately `any`. See [`VarType::class_hint`].
     fn set_class_hint(&mut self, name: &str, hint: Option<Type>) {
-        let Some(hint @ Type::Class(_)) = hint else {
+        let Some(hint @ (Type::Class(_) | Type::EnumOf(_))) = hint else {
             return;
         };
         if let Some(vt) = self.scopes.last_mut().expect("a scope").get_mut(name) {
@@ -2276,21 +2277,19 @@ impl<'a> Checker<'a> {
     /// one addition: a hint is only useful if some overload actually accepts
     /// this call, since dispatch has already failed by the time it is consulted.
     fn note_dispatch_hint(&mut self, hint: Type, name: &str, args: usize, span: SourceSpan) {
-        let Type::Class(id) = hint else { return };
-        let def = self.classes.get(id);
-        if def.field(name).is_some() {
-            return;
-        }
-        if !def
-            .methods
-            .iter()
-            .any(|m| m.name == name && m.arity == args + 1)
+        if let Type::Class(id) = hint
+            && self.classes.get(id).field(name).is_some()
         {
             return;
         }
-        self.dispatch
-            .hints
-            .insert(span, self.classes.name_of(id).to_string());
+        // (An enum needs no field guard: a method may not share a name with
+        // a payload field or data key of its enum.)
+        let Some(methods) = self.classes.methods_of(hint) else { return };
+        if !methods.iter().any(|m| m.name == name && m.arity == args + 1) {
+            return;
+        }
+        let Some(identity) = self.classes.type_identity(hint) else { return };
+        self.dispatch.hints.insert(span, identity.to_string());
     }
 
     /// Check a `recv.name(args)` site and, where possible, pin it to one class.
@@ -2323,13 +2322,17 @@ impl<'a> Checker<'a> {
         args: usize,
         span: SourceSpan,
     ) -> Option<FnSignature> {
-        let Type::Class(id) = recv else { return None };
-        let def = self.classes.get(id);
-        if def.field(name).is_some() {
+        // A class receiver's field of that name outranks the method. An enum
+        // receiver needs no such guard: a method on an enum may not share a
+        // name with a payload field or data key of it (`collect_type_decls`).
+        if let Type::Class(id) = recv
+            && self.classes.get(id).field(name).is_some()
+        {
             return None;
         }
+        let Some(declared) = self.classes.methods_of(recv) else { return None };
         let mut methods: Vec<&crate::classes::MethodDef> =
-            def.methods.iter().filter(|m| m.name == name).collect();
+            declared.iter().filter(|m| m.name == name).collect();
         // No method of that name: dispatch falls through to a global native
         // with the receiver prepended (`r.len()`), which this pass knows
         // nothing about.
@@ -2354,9 +2357,8 @@ impl<'a> Checker<'a> {
             });
         if let Some(m) = chosen {
             let sig = m.sig.clone();
-            self.dispatch
-                .pinned
-                .insert(span, self.classes.name_of(id).to_string());
+            let identity = self.classes.type_identity(recv).unwrap_or_default().to_string();
+            self.dispatch.pinned.insert(span, identity);
             return Some(sig);
         }
         if !in_range.is_empty() {

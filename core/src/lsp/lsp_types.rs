@@ -221,6 +221,7 @@ pub struct CompletionParams {
 
 protocol_enum!(CompletionItemKind {
     Text = 1,
+    Method = 2,
     Function = 3,
     Field = 5,
     Variable = 6,

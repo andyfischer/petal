@@ -153,6 +153,9 @@ struct EnumEntry {
     /// The declaring statement, which tells the declaration from a refused
     /// redeclaration of the name.
     span: SourceSpan,
+    /// The methods declared on it (`fn Kind.describe(k: Kind)`), held to the
+    /// rules a class's are: see [`ClassTable::declare_enum_method`].
+    methods: Vec<MethodDef>,
 }
 
 impl Default for ClassTable {
@@ -298,32 +301,50 @@ impl ClassTable {
         sig: FnSignature,
     ) -> Result<(), String> {
         let def = &mut self.defs[id.0 as usize];
-        let arity = sig.params.len();
-        let new = MethodDef {
-            name: name.to_string(),
-            arity,
-            sig,
-            builtin: false,
-        };
-        if let Some(existing) = def
-            .methods
-            .iter_mut()
-            .find(|m| m.name == name && m.arity == arity)
-        {
-            if !existing.builtin {
-                return Err(format!(
-                    "method `{}.{}` is already declared with {} parameter{}",
-                    def.name,
-                    name,
-                    arity,
-                    if arity == 1 { "" } else { "s" }
-                ));
-            }
-            *existing = new;
-            return Ok(());
+        push_method(&def.name, &mut def.methods, name, sig)
+    }
+
+    /// Record `fn Kind.name(...)` on an already-declared enum, under the rules
+    /// [`Self::declare_method`] holds a class method to (an enum has no
+    /// built-in methods, so a second declaration of one arity is always an
+    /// error). The naming rules a method on an enum also has to meet are the
+    /// compiler's (`collect_type_decls`), which has the declaration's spans.
+    pub fn declare_enum_method(
+        &mut self,
+        id: EnumId,
+        name: &str,
+        sig: FnSignature,
+    ) -> Result<(), String> {
+        let entry = &mut self.enums[id.0 as usize];
+        push_method(&entry.name, &mut entry.methods, name, sig)
+    }
+
+    /// The methods declared on the enum `id`.
+    pub fn enum_methods(&self, id: EnumId) -> &[MethodDef] {
+        &self.enums[id.0 as usize].methods
+    }
+
+    /// The methods callable on a value of the declared type `ty` — a class's
+    /// (built-in ones included) or an enum's — or `None` for any other type.
+    /// The one list the checker pins a `recv.m()` site against, whichever
+    /// kind of declared type the receiver is.
+    pub fn methods_of(&self, ty: Type) -> Option<&[MethodDef]> {
+        match ty {
+            Type::Class(id) => Some(&self.get(id).methods),
+            Type::EnumOf(id) => Some(self.enum_methods(id)),
+            _ => None,
         }
-        def.methods.push(new);
-        Ok(())
+    }
+
+    /// The identity of the declared type `ty` (`Rect`, `./level::Phase`): the
+    /// name its methods are published under at runtime. `None` for a type
+    /// that is not a class or an enum.
+    pub fn type_identity(&self, ty: Type) -> Option<&str> {
+        match ty {
+            Type::Class(id) => Some(self.name_of(id)),
+            Type::EnumOf(id) => Some(self.enum_name(id)),
+            _ => None,
+        }
     }
 
     /// The class `name` refers to *in the current scope*: a bare name
@@ -417,6 +438,7 @@ impl ClassTable {
             def,
             origin: module.map(str::to_string),
             span,
+            methods: Vec::new(),
         });
         Ok(id)
     }
@@ -632,6 +654,39 @@ fn builtin_classes() -> Vec<ClassDef> {
             .collect(),
         builtin: true,
     }]
+}
+
+/// Add `name` to `methods`, the list of the declared type `owner`: a user
+/// declaration replaces a built-in method of the same name and arity, and a
+/// second user declaration of one is an error.
+fn push_method(
+    owner: &str,
+    methods: &mut Vec<MethodDef>,
+    name: &str,
+    sig: FnSignature,
+) -> Result<(), String> {
+    let arity = sig.params.len();
+    let new = MethodDef {
+        name: name.to_string(),
+        arity,
+        sig,
+        builtin: false,
+    };
+    if let Some(existing) = methods.iter_mut().find(|m| m.name == name && m.arity == arity) {
+        if !existing.builtin {
+            return Err(format!(
+                "method `{}.{}` is already declared with {} parameter{}",
+                owner,
+                name,
+                arity,
+                if arity == 1 { "" } else { "s" }
+            ));
+        }
+        *existing = new;
+        return Ok(());
+    }
+    methods.push(new);
+    Ok(())
 }
 
 /// The builtin the compiler emits to publish `fn Class.method` at runtime.

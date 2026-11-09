@@ -12,6 +12,26 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- A class or enum belongs to the module that declares it
+  ([proposal](docs/proposals/module-name-collisions.md), part C). Two
+  modules may each declare `enum Phase` or `class Box`, private or `pub`, and
+  a file may declare a type an import exports (its own wins the bare name;
+  `m.Box` still reaches the module's). Before, either was a compile error.
+  - The tag of an enum another module declares carries the module:
+    `"./config::Kind.park"`, `"ui::Align.left"`; so does a class instance's
+    class name. The entry file's tags are unchanged. `print`, `str`, `.name`
+    and `type()` leave the module out, so two same-named types print alike.
+  - A variant of a module's enum held in `state` by an older build goes stale
+    once in a running stack (it equals no current variant). Loaded from a
+    `--state-storage` file, or built by a host from a bare tag, it does not:
+    a bare tag names the one module enum of that name when the entry file
+    declares none.
+  - Hosts reading tags of a module's enum get the full tag; compare through
+    `petal::program::strip_module`, the new C `pb_enum_tag_display` or C++
+    `Value::tag_display()`. See [ffi.md](docs/usage/ffi.md).
+  - New checker warning: `==` or `!=` between variants of two different
+    enums ("always false").
+
 - **Breaking**, petal-ui (the `ui` package is now 0.2.0): focus belongs to
   the runtime, and the threaded focus record is gone
   ([proposal](docs/proposals/input-dispatch.md), Phase 5).

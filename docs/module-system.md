@@ -373,7 +373,8 @@ fn area(c: sh.Circle) -> float 3.14159 * c.radius * c.radius end
 fn first(cs: list) -> sh.Circle? cs[0] end   // `?` after the whole name
 ```
 
-`sh.Circle` is the same type a bare `Circle` is. The qualifier is one that a
+`sh.Circle` names the module's own `Circle`, the same type a bare `Circle`
+is when nothing else claims that name. The qualifier is one that a
 plain import, an `as` import or an implicit import binds; a selective import
 (`import ./shapes: Circle`) binds none. A name the module does not export, or
 a qualifier no import binds, is the `unknown type name` warning, saying which:
@@ -382,12 +383,40 @@ a qualifier no import binds, is the `unknown type name` warning, saying which:
 warning: unknown type name `sh.Hidden`: module './shapes' has no export `Hidden`
 ```
 
-Class names are unique across the whole program, exported or not. Two files
-may not both declare `class Dup`:
+A class or enum belongs to the module that declares it. Two files may each
+declare `class Dup` or `enum Phase`, exported or not, and they are two
+different types: a `Dup` built by one is not the other's, and `a.Phase.play
+== b.Phase.play` is false. A file may also declare a class an import exports:
+the file's own declaration wins the bare name, and the qualifier still
+reaches the other (in an annotation too, as `shapes.Circle`):
 
+```petal ignore
+import ./shapes          // exports class Circle
+class Circle
+  r: int
+end
+Circle(1)                // this file's Circle
+shapes.Circle(2)         // the module's
 ```
-Error: dup_b.ptl: class `Dup` is already declared in `dup_a.ptl`, so `dup_b.ptl` may not declare it too
-```
+
+Two plain imports that both export `Kind`, used bare, are the usual
+ambiguity error; `a.Kind` or a selective import picks one.
+
+**Identity and display.** A type's identity is its name in the entry file
+and `<module>::Name` in any other module, under the module's
+[canonical name](#module-identity): `./level::Phase`, `ui::Align`. A variant's
+tag is built from it (`./level::Phase.play`), and so is the tag a class
+instance carries. `print`, `str`, `.name` and `type()` leave the module out
+(`Phase.play`, `"play"`, `"Phase"`), so two same-named types from different
+modules print alike; runtime error messages and `petal show-ir` show the full
+identity, and a type warning spells it out when two types share a name
+(`expected \`Circle\`, found \`./shapes::Circle\``). Comparing variants of two
+different enums with `==` is a checker warning. A host that builds or reads
+tags of a module's enum: see [ffi.md](usage/ffi.md).
+
+Methods attach to the class their declaration names where it is written
+(`fn Circle.area` in `app.ptl` means `app.ptl`'s `Circle`), and stay
+program-wide for that class.
 
 ### An exported `var` is read-only to importers
 

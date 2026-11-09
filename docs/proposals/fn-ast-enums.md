@@ -436,11 +436,19 @@ value-conversion boundary.
 - There is no warning-first path, because the value changes type. Shipping
   glsl.ptl's update in the same commit is the migration.
 
-**Placement.** Enum names are global across modules. A file importing a
-package that declares `enum Node` may not declare its own `enum Node`
-("enum `Node` is already declared in `astk.ptl`…", checked with a scratch
-package). `core` is in scope in every file (`core/packages/core/petal.toml`).
-Declaring `AstKind` there would reserve the name in every program.
+**Placement.** When this was written, enum names were global across
+modules: a file importing a package that declares `enum Node` could not
+declare its own `enum Node` ("enum `Node` is already declared in
+`astk.ptl`…", checked with a scratch package). Since 2026-11-09 an enum
+belongs to the module that declares it
+([module-name-collisions.md](module-name-collisions.md), part C): a file's
+own `enum Node` wins the bare name over an import's, two modules' `Node`s are
+different enums, and a host reads the package's variants as
+`"<package>::Node.call"`. The collision below no longer breaks those four
+files. Two plain imports that both export a name are still ambiguous used
+bare, and a package's enums still carry the package in their tags, so the
+`Ast` prefix remains the friendlier name for an enum every file can see.
+`core` is in scope in every file (`core/packages/core/petal.toml`).
 
 The corpus has no `AstKind`, `AstOp` or `AstTarget`. It does have `enum Op`
 twice (`examples/console/enums_and_match.ptl:26`,

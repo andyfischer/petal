@@ -193,7 +193,14 @@ Color literals such as `#ff8800` are records `{r, g, b}` (0–255). A native
 
 An enum variant crosses as its tag and its payload. The tag is qualified
 (`Shape.circle`, with the enum's declared name whatever module it came
-through) and the payload is positional. The variant's constant data
+through) and the payload is positional. An enum another module declares has
+that module's canonical name in front too: `"./config::Kind.park"`,
+`"ui::Align.left"` (the entry file's enums do not). Compare
+`tag_display()` (C: `pb_enum_tag_display(tag)`) to match on the short form
+`"Kind.park"`, or the full `tag()` to tell two same-named enums apart. A
+class instance's `str()` is qualified the same way. When building, the bare
+`"Kind.park"` still names the variant while only one enum of the program is
+called `Kind` (see [ffi.md](ffi.md)). The variant's constant data
 (`sides` of `circle(r, sides: 0)`) and the names of its payload fields belong
 to the declaration, not to the value, so they are not in the view: read them
 in the script and hand the host what it needs. A command pushed with `emit`

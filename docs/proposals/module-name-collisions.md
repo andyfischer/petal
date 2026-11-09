@@ -1,8 +1,8 @@
 # Proposal: name collisions across modules
 
-Status: proposed, 2026-11-09. Parts A and B1 accepted and shipped
-2026-11-09 (see [Implementation status](#implementation-status)); C is
-proposed, and B2 and B3 are not adopted.
+Status: proposed, 2026-11-09. Parts A, B1 and C accepted and shipped
+2026-11-09 (see [Implementation status](#implementation-status) and
+[Part C: what shipped](#part-c-what-shipped)); B2 and B3 are not adopted.
 
 ## Summary
 
@@ -523,15 +523,16 @@ In all of them, two modules' same-named types are distinct.
 - `ClassTable` carries the current file's qualifiers (alias → module as
   written + its exports), set beside the per-file scope in
   `prescan_declarations`. `declared_type` resolves `q.Name` to the class or
-  enum the module exports, ignoring the bare-name scope, so it is the same
-  type the bare name is. Everything that resolves an annotation (checker,
+  enum the module exports. Everything that resolves an annotation (checker,
   method-receiver pinning, `-> nil`) goes through it.
 - The `unknown type name` warning says why a qualified name missed: "module
   './shapes' has no export `Hidden`", "no import binds the module qualifier
   `nope`", or "`helper` exported by module './shapes' is not a class or
   enum". A selective import binds no qualifier, as for expressions.
-- Under C, `qualified_type` is the one place that must look the member up
-  by (module, name) rather than by bare name.
+- With C merged, `qualified_type` resolves `q.Name` through the file's scope
+  (which maps `q.Name` to the module-scoped identity, e.g. `./shapes::Circle`),
+  so it names the module's own type even where the file declares or imports
+  another of that bare name.
 
 **B1 (built-in class name): shipped 2026-11-09.** A top-level `class` or
 `enum` named like a built-in class is a compile-check warning, emitted by
@@ -565,3 +566,65 @@ until its next docs sync.
   examined here.
 - **B3.** Is a better runtime error, one that names the shadowed module, enough
   instead of a lint?
+
+## Part C: what shipped
+
+Shipped 2026-11-09, following implementation sketch step 3.
+
+**Decisions on the open questions** (the proposal's defaults):
+- **Separator and display.** `::`, as proposed: a module type's identity is
+  `<canonical module>::Name` (`./level::Phase`, `ui::Align`), and an
+  entry-file type keeps its bare name. `print`, `str`, `.name` and `type()`
+  always show the bare name, never the module. Runtime error messages and
+  `petal show-ir` show the full identity. One refinement: a *type warning*
+  spells the identity when another type of the compilation shares the bare
+  name, so it reads "expected `Circle`, found `./shapes::Circle`" rather than
+  "expected `Circle`, found `Circle`".
+- **Enum mixing.** The checker did not warn before. It now warns on `==` and
+  `!=` between variants of two different enums ("comparing variants of two
+  different enums (`Kind` and `Use`) is always false"). This
+  fires in one file too. `examples/console/enums_and_match.ptl` compared
+  `Kind.park == Use.park` on purpose, and now compares their names instead.
+- **Host tags.** The bare-tag fallback is kept. `Heap::enum_tag_str` (behind
+  `pb_builder_begin_enum`, `PetalCxt::emit`, `from_json` and state loading)
+  qualifies a bare `Enum.variant` when exactly one module enum has that name
+  and the entry file declares none. The aliases are installed when a program
+  loads and again each time a stack syncs its enum table. Reading is
+  unchanged: hosts get the full tag. The bridge has `pb_enum_tag_display`
+  (C) and `Value::tag_display()` (C++). Rust hosts use
+  `petal::program::strip_module`.
+- **Methods on a built-in class.** Unchanged: program-wide.
+
+**How it is built.**
+- `ClassTable` keys classes and enums by identity. `set_namespace` names the
+  module being declared. The per-file scope maps each written spelling (`Circle`,
+  and `sh.Circle` through a qualifier, ready for part A) to an identity.
+  `Compiler::visible_class_names` builds it from the scope's bindings after the
+  imports, so the tier and ambiguity rules hold in type position. A new
+  `class_terms` map (constructor term to identity) does for classes what
+  `enum_terms` does for enums.
+- Variant tags, class tags, `Program::enums`, `class_names`, the enum
+  phantoms and `__enum_all`/`__enum_from` names all use the identity.
+  `split_enum_tag` is unchanged. `split_qualified_method_name` now splits at
+  the last `.`, so `./shapes::Circle.area` reads as a method.
+- A pinned method call binds statically to `Box.area` (own class) or to the
+  `<module>::Box.area` export.
+- `strip_module` does the display stripping in `print`/`str`, `type()`,
+  `Type::display` and the compile-time enum messages.
+
+**Tests.**
+- `core/tests/type_identity.rs` covers the `nc/` cases, `==` and `match`
+  across modules, classes with methods, own-versus-imported types, ambiguity,
+  the `==` warning, a module variant in `state` across a reload, and
+  host-built bare tags in the unique, shared and entry-owned cases.
+- The bridge has `module_enum_tags_carry_the_module`.
+- The `classes/dup` vitest fixture now expects success, and a new
+  `dup-in-module` fixture keeps the in-module duplicate error.
+- The golden corpus and the BC-noopt vs BC-all differential pass. The only
+  golden change is the `enums_and_match` line above.
+
+**Not done.**
+- `petal run --observe` and the trace viewer show the full tag in their JSON.
+  They do not yet offer a short form.
+- No benchmark was rerun (`test/benchmarks/micro/enum_reads.ptl` uses
+  entry-file enums, whose tags are unchanged).

@@ -1639,8 +1639,14 @@ A variant may not be named `all` or `from`.
 
 `enum` is a top-level declaration and is hoisted, like `class`: code above
 the declaration can use it, and an `enum` inside a function, loop or block is
-a compile error. One name can be declared as an enum only once in a program,
-and may not be the name of a class or a built-in type.
+a compile error. One name can be declared as an enum only once in a file,
+and may not be the name of a class of that file or a built-in type.
+
+An enum belongs to the module that declares it. Two modules may each declare
+`enum Phase`; their variants are different values even when they share a
+name, and both print as `Phase.play`. Comparing variants of two different
+enums with `==` is a checker warning, since it is always false. See the
+[Module System](module-system.md#classes-and-methods).
 
 The enum's name is an ordinary binding. `pub enum` exports the name, and the
 variants come with it as its members:
@@ -2038,8 +2044,9 @@ a class it imported.
 The class *name* is an ordinary binding governed by `pub`, and it is one
 name covering both positions — exporting a class exports the constructor
 `Point(…)` **and** the type `Point` in an annotation. A class its module does
-not export is private in both. Two modules still may not declare the same class
-name; the error names both files. See the
+not export is private in both. A class belongs to the module that declares
+it, so two modules may each declare `class Point`: they are two classes that
+print alike (`type(p)` is `"Point"` for both). See the
 [Module System](module-system.md#classes-and-methods).
 
 ### Errors
@@ -2050,7 +2057,6 @@ generate for any of them:
 | Mistake | Message |
 |---------|---------|
 | `class Point` twice | `class \`Point\` is already declared` |
-| `class Point` in two modules | ``class `Point` is already declared in `a.ptl`, so `b.ptl` may not declare it too`` |
 | `class` inside a function or block | ``class `Point` must be declared at the top level of a file`` |
 | `class int` (a built-in type name) | ``class `int` collides with the built-in type name `int`` `` |
 | two fields named `x` | `duplicate field \`x\` in class \`Point\`` |

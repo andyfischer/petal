@@ -504,6 +504,25 @@ declaration and are looked up in the running program. A tag the host makes up
 for an output buffer (`"rect"`, `"spawn"`) has no enum in front and belongs to
 no declared enum, so a script cannot write a pattern for it.
 
+An enum belongs to the module that declares it
+([module-system.md](../module-system.md#classes-and-methods)). The entry
+file's enums have the tags above; an enum any other module declares has its
+module's canonical name in front: `"./config::Kind.park"`, `"ui::Align.left"`.
+So:
+
+- **Building.** A host may still write the bare `"Kind.park"` while exactly
+  one enum of the loaded program is named `Kind` and the entry file declares
+  none: `heap.enum_tag_str` (and `pb_builder_begin_enum`) turns it into the
+  qualified tag. When two modules declare `Kind`, the bare tag means neither,
+  and the host writes the qualified one. An entry-file `Kind` owns the bare
+  name.
+- **Reading.** `heap.tag_str(tag)` is the full tag. A `match` on
+  `"Kind.park"` in host code must compare
+  `petal::program::strip_module(tag)` (C: `pb_enum_tag_display(tag)`, C++:
+  `value.tag_display()`), or the full tag when it has to tell two same-named
+  enums apart. A class instance's class name (`heap.map_class_name`) carries
+  the module the same way; `strip_module` applies to it too.
+
 Notes for embedders:
 
 - `Vec3` is heap-allocated (three f64s would widen every `Value`): build one

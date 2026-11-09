@@ -558,6 +558,14 @@ through the new declaration:
 | Its variant removed | recompiled | still prints as `Kind.park`, still answers `name` and `type()`, equals no variant the enum has now; a data read is the runtime error `No field 'shape' on enum variant Kind.park`, and a `match` with no `when _ ->` is `No matching pattern for value: Kind.park` |
 | Its payload fields renamed, added or removed | recompiled | the payload is positional: it answers the new names as far as it reaches, a field it never had is absent, and a pattern for the new shape does not match it |
 | Its enum renamed or removed | recompiled | keeps the old tag, so it is a variant of an enum that no longer exists |
+| Its enum moved to another file | recompiled | the same as a rename: an enum another module declares has that module in its tag (`./config::Kind.park`), so moving it changes the tag, as moving a `state` declaration changes its key |
+
+An enum of the entry file has the tag `Kind.park`; one another module
+declares has `./config::Kind.park` ([module-system.md](../module-system.md#classes-and-methods)).
+Before 2026-11-09 a module's enum had the bare tag too, so a variant of one
+saved by an older build is stale once in a running stack. Loaded from a
+`--state-storage` file (or built by a host) it is not: a bare tag that names
+exactly one module enum, and no entry-file enum, is read as that enum's.
 
 Static constant data is kept between runs like any other static value
 (`core/src/static_cache.rs`), and across a reload under the same rule: an

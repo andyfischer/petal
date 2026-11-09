@@ -273,8 +273,17 @@ fn conclude(evidence: &[Evidence], slot: Slot) -> Option<Type> {
     let from_fields = conclude_from_fields(evidence);
 
     let mut from_types: Option<Type> = None;
-    for ty in evidence.iter().filter_map(Evidence::ty) {
+    for e in evidence {
+        let Some(ty) = e.ty() else { continue };
         if ty == Type::Any {
+            // A value the body itself produces is not a caller this pass
+            // failed to see: it is part of what the function returns, and
+            // nothing can be promised about it. Concluding from the rest
+            // would be wrong, and for `-> nil` it would change the program —
+            // that annotation turns the implicit return off.
+            if matches!(e, Evidence::Tail { .. } | Evidence::Return { .. }) {
+                return None;
+            }
             continue;
         }
         // A parameter's numeric type is `num` however consistently this
@@ -397,6 +406,27 @@ mod tests {
             Some(Type::Bool)
         );
         assert_eq!(conclude(&[call(Type::Any)], Slot::Return), None);
+    }
+
+    /// An `any` the body returns is not silence: it is a value the function
+    /// hands back. `fn lookup(k) if … then return found end nil end` must not
+    /// be offered `-> nil`, which would make it return nil always.
+    #[test]
+    fn an_untypeable_return_or_tail_vetoes_the_return_type() {
+        let ret = |ty| Evidence::Return { span: span(), ty };
+        let tail = |ty| Evidence::Tail { span: span(), ty };
+        assert_eq!(
+            conclude(&[tail(Type::Nil), ret(Type::Any)], Slot::Return),
+            None
+        );
+        assert_eq!(
+            conclude(&[tail(Type::Any), ret(Type::Nil), ret(Type::Nil)], Slot::Return),
+            None
+        );
+        assert_eq!(
+            conclude(&[tail(Type::Nil), ret(Type::Nil)], Slot::Return),
+            Some(Type::Nil)
+        );
     }
 
     /// A return type keeps the precise type its body produces, and widens

@@ -554,6 +554,10 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- `petal suggest --only types` no longer suggests a return type when the
+  body returns a value it cannot type: `fn lookup(k)` returning `found` or
+  `nil` was offered `-> nil`, which turns the implicit return off and makes
+  it return nil always. `--verify` did not catch it.
 - Memo: a probe whose answer is large (a `text_wrap_rows` of a document)
   validated against the 512-node argument budget, failed every frame and
   re-ran its scope; a 100k-character `text_area` was 7× slower with the memo

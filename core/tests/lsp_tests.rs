@@ -1255,7 +1255,7 @@ fn static_hover(text: &str, line: u32, character: u32) -> String {
 
 const STATIC_DOC: &str = "\
 let TILES = [1, 2, 3]
-const LIMIT = len(TILES)
+let LIMIT = const(len(TILES))
 state frame = 0
 frame = frame + 1
 let shown = TILES[frame % LIMIT]
@@ -1267,7 +1267,7 @@ fn tick()
 end
 var v = 0
 state SCRIPT = [1, 2]
-const BAD = frame + 1
+let BAD = const(frame + 1)
 print(shown, double(2), tick(), get v, SCRIPT, BAD)
 ";
 
@@ -1314,7 +1314,7 @@ fn hover_classifies_lazily_and_once_per_change() {
 fn hover_says_whether_a_static_declaration_is_kept() {
     let doc = "\
 let ROWS = [[1, 2], [3, 4]]
-const NAMES = map(ROWS, fn(r) -> r[0])
+let NAMES = const(map(ROWS, fn(r) -> r[0]))
 let BASE = [[5], [6]]
 let ONLY_FOR_SUM = [[7], [8]]
 let SUM = [ONLY_FOR_SUM[0][0], [9]]
@@ -1385,14 +1385,14 @@ fn hover_points_out_a_state_whose_initializer_is_static() {
 
 #[test]
 fn hover_flags_a_const_that_is_not_constant() {
-    let text = static_hover(STATIC_DOC, 13, 7);
+    let text = static_hover(STATIC_DOC, 13, 5);
     assert!(text.contains("// dynamic: BAD reads frame at line 14"), "{text}");
     assert!(text.contains("(declared const: an error)"), "{text}");
 }
 
 #[test]
 fn hover_on_a_const_of_host_natives_says_it_cannot_be_verified_here() {
-    let text = static_hover("native fn tile(n)\nconst T = [tile(1)]\nprint(T)\n", 1, 6);
+    let text = static_hover("native fn tile(n)\nlet T = const([tile(1)])\nprint(T)\n", 1, 4);
     assert!(text.contains("// dynamic: T calls tile, a native that is not registered here"), "{text}");
     assert!(text.contains("(declared const: cannot be verified without its host)"), "{text}");
 }
@@ -1412,7 +1412,7 @@ fn a_const_is_a_constant_in_the_outline_and_its_error_is_a_diagnostic() {
     let msgs = open(
         &mut server,
         "file:///c.ptl",
-        "state n = 0\nconst A = n + 1\nconst B = [1]\nprint(A, B)\n",
+        "state n = 0\nlet A = const(n + 1)\nlet B = const([1])\nprint(A, B)\n",
     );
     let diags = get_diagnostics(&msgs);
     assert_eq!(diags.len(), 1, "{diags:?}");
@@ -1421,7 +1421,7 @@ fn a_const_is_a_constant_in_the_outline_and_its_error_is_a_diagnostic() {
     assert!(matches!(diags[0].severity, Some(DiagnosticSeverity::Error)));
     assert_eq!(diags[0].range.start.line, 1);
 
-    let analysis = petal::lsp::document::analyze("const B = [1]\nlet c = 2\n");
+    let analysis = petal::lsp::document::analyze("let B = const([1])\nlet c = 2\n");
     let outline = serde_json::to_value(&analysis.symbols).unwrap();
     let rows: Vec<(&str, &str, u64)> = outline
         .as_array()

@@ -330,8 +330,8 @@ fn a_reload_rebuilds_every_static_value() {
 /// constant table's revision.
 #[test]
 fn a_patched_literal_empties_every_stack_of_the_program() {
-    let old = format!("config let K = 3\nlet T = [[K, K + 1], [K * 2, K * 3]]\n{COUNTER}print(n, T)\n");
-    let new = old.replace("K = 3", "K = 7");
+    let old = format!("let K = tunable(3)\nlet T = [[K, K + 1], [K * 2, K * 3]]\n{COUNTER}print(n, T)\n");
+    let new = old.replace("K = tunable(3)", "K = tunable(7)");
     let mut w = world(&old, RunPolicy::REPLAY);
     let other = w.env.create_stack(w.pid).unwrap();
     frame(&mut w);
@@ -542,7 +542,7 @@ fn an_in_place_write_to_a_kept_value_copies() {
 #[test]
 fn a_const_is_classified_once_and_kept() {
     let src = format!(
-        "fn row(n)\n  {{n: n, sq: n * n}}\nend\nconst ROWS = [row(1), row(2), row(3)]\nlet PLAIN = [[1, 2], [3, 4]]\n{COUNTER}print(n, ROWS[n % 3].sq, PLAIN)\n"
+        "fn row(n)\n  {{n: n, sq: n * n}}\nend\nlet ROWS = const([row(1), row(2), row(3)])\nlet PLAIN = [[1, 2], [3, 4]]\n{COUNTER}print(n, ROWS[n % 3].sq, PLAIN)\n"
     );
     let before = petal::static_classify::analyses_run();
     let mut w = world(&src, RunPolicy::REPLAY);
@@ -574,7 +574,7 @@ fn a_const_is_classified_once_and_kept() {
     // dependency classes).
     let before = petal::static_classify::analyses_run();
     let mut plain = world(
-        &src.replace("const ", "let "),
+        &src.replace("const(", "("),
         RunPolicy::REPLAY.with_static_cache(false).with_memo(false),
     );
     frame(&mut plain);
@@ -595,7 +595,7 @@ fn the_lint_rewrite_of_a_state_table_is_kept() {
         ..LintOptions::default()
     };
     let fixed = lint_source(&src, &options).unwrap().output;
-    assert!(fixed.contains("const TILES = [") && fixed.contains("const ORDER = sort(RAW)"), "{fixed}");
+    assert!(fixed.contains("let TILES = const([") && fixed.contains("let ORDER = const(sort(RAW))"), "{fixed}");
 
     // The same prints before and after the rewrite, cache on and off.
     let (mut was, mut on, mut off) = (
@@ -624,7 +624,7 @@ fn the_lint_rewrite_of_a_state_table_is_kept() {
 #[test]
 fn a_const_that_cannot_be_kept_warns_once_per_load() {
     let src = format!(
-        "native fn later()\nconst BAD = [[1], [later()]]\nlet ALSO = [[2], [later()], [3]]\n{COUNTER}print(n, len(BAD[n % 2]), len(ALSO))\n"
+        "native fn later()\nlet BAD = const([[1], [later()]])\nlet ALSO = [[2], [later()], [3]]\n{COUNTER}print(n, len(BAD[n % 2]), len(ALSO))\n"
     );
     let setup = |env: &mut Env| {
         env.register_native("later", lying_pending, NativeEffects::CONST);
@@ -884,8 +884,9 @@ fn the_example_corpus_prints_the_same_with_the_cache_on_and_off() {
             let name = entry.file_name().to_string_lossy().to_string();
             if path.is_dir() {
                 // The benchmarks take seconds a run unoptimized; vitest
-                // fixtures are fragments, not programs.
-                if !matches!(name.as_str(), "benchmarks" | "vitest" | "example-golden" | "ui-golden") {
+                // fixtures are fragments, not programs; a build directory
+                // (test/ui-corpus/target) holds copies of the bundled sources.
+                if !matches!(name.as_str(), "benchmarks" | "vitest" | "example-golden" | "ui-golden" | "target") {
                     walk.push(path);
                 }
             } else if name.ends_with(".ptl") {
@@ -1040,7 +1041,7 @@ fn a_frame_that_raises_part_way_leaves_a_table_the_next_frame_can_use() {
 fn a_value_set_directly_rebuilds_what_was_built_from_it() {
     use petal::static_value::StaticValue;
     let src = format!(
-        "config let GAP = 4\nconfig let STYLE = {{pad: 2, names: [\"a\", \"b\"]}}\n\
+        "let GAP = tunable(4)\nlet STYLE = tunable({{pad: 2, names: [\"a\", \"b\"]}})\n\
          fn cell(i)\n  {{at: i * GAP, pad: STYLE.pad}}\nend\n\
          let GRID = for i in range(0, 3) do cell(i) end\nlet LABELS = map(STYLE.names, fn(s) -> s ++ \"!\")\n\
          {COUNTER}print(n, GRID, LABELS)\n"

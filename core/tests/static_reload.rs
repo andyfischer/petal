@@ -627,9 +627,9 @@ print(n, grid, sum, plain, width, TILES, OTHER)
 #[test]
 fn the_report_names_a_cache_filled_from_a_constant_that_changed() {
     let old = "\
-const GENERIC = {a: 1, b: 2}
-const RAMPS = [10, 20, 30]
-const OTHER = [1, 2, 3]
+let GENERIC = const({a: 1, b: 2})
+let RAMPS = const([10, 20, 30])
+let OTHER = const([1, 2, 3])
 fn build() {...GENERIC, c: 3} end
 state var DEFS = nil
 state var KEY = \"\"
@@ -684,7 +684,7 @@ print(defs(), bake(\"x\"), get G, get count, get last, OTHER)
     assert_eq!(caches(&report), [pair("DEFS", "build")]);
     // A cell written on every run from a constant is assigned again on the
     // next one: never named.
-    let report = follow(old, &old.replace("const OTHER = [1, 2, 3]", "const OTHER = [1, 2, 3, 4]"));
+    let report = follow(old, &old.replace("let OTHER = const([1, 2, 3])", "let OTHER = const([1, 2, 3, 4])"));
     assert_eq!(caches(&report), []);
     // An edit to the function that holds the guard, which the cached value
     // does not depend on, and to code nothing cached reads.
@@ -699,7 +699,7 @@ print(defs(), bake(\"x\"), get G, get count, get last, OTHER)
 }
 
 const DRAG: &str = "\
-config let K = 2
+let K = tunable(2)
 let BIG = map([1, 2, 3, 4], fn(i) i * K end)
 let OTHER = [1, 2, 3]
 state n = 0
@@ -889,7 +889,7 @@ print(n, HEAD, TAIL)
 #[test]
 fn what_was_built_from_a_waiting_value_is_rebuilt_with_it() {
     let src = "\
-config let K = 2
+let K = tunable(2)
 let BIG = map(range(0, 20000), fn(i) i * K + K end)
 state n = 0
 n = n + 1
@@ -930,7 +930,7 @@ print(n, K, SMALL, BIG[n % 5])
 /// dependency through. Editing the literal, by value and by shape, must
 /// reach every one of them; so must editing each function on the way.
 const ROUTES: &str = "\
-config let K = 2
+let K = tunable(2)
 let BASE = [1, 2, 3]
 fn direct(x) x * K end
 fn defaulted(x, k = K * 10) x + k end
@@ -997,7 +997,7 @@ fn every_route_from_a_literal_to_a_kept_value_is_followed() {
 
     // The literal, by value and by shape: every kept table is reached, and
     // the one that does not read it is not.
-    for new in [ROUTES.replace("config let K = 2", "config let K = 3"), ROUTES.replace("config let K = 2", "let K = 1 + 2")] {
+    for new in [ROUTES.replace("let K = tunable(2)", "let K = tunable(3)"), ROUTES.replace("let K = tunable(2)", "let K = 1 + 2")] {
         let report = follow(ROUTES, &new);
         let names = rebuilt(&report);
         for t in &kept {
@@ -1243,7 +1243,7 @@ fn review_a_reload_after_a_config_value_was_set() {
     let edits = [
         DRAG.replace("n = n + 1", "n = n + 2"),
         DRAG.replace("[1, 2, 3]\n", "[1, 2, 3, 4]\n"),
-        DRAG.replace("config let K = 2", "config let K = 9"),
+        DRAG.replace("let K = tunable(2)", "let K = tunable(9)"),
         DRAG.replace("i * K", "i + K"),
         DRAG.replace("[1, 2, 3]\n", "[1, 2, 4]\n"),
         DRAG.to_string(),
@@ -1636,8 +1636,8 @@ print(n, PAIR, LEFT, RIGHT, SUMS, FIRST, SECOND, OWN)
 #[test]
 fn review_a_drag_interrupted_by_every_kind_of_reload() {
     let src = "\
-config let K = 2
-config let J = 10
+let K = tunable(2)
+let J = tunable(10)
 let BIG = map([1, 2, 3, 4], fn(i) i * K end)
 let NEXT = [BIG[0] + J, BIG[1]]
 let LAST = [NEXT[0] * 2, J]
@@ -2000,7 +2000,7 @@ fn one_rebuilt_value_does_not_rebuild_its_neighbours() {
 fn a_dragged_expression_does_not_wait_with_its_slow_neighbour() {
     for (between, waits, rebuilt_at_once) in [("", "HEAD", "SCALED"), ("print(\"between\")\n", "BIG", "HEAD")] {
         let src = format!(
-            "config let K = 2\nlet SCALED = [K * 3, [K]]\n\
+            "let K = tunable(2)\nlet SCALED = [K * 3, [K]]\n\
              let BIG = map(range(0, 20000), fn(i) i * K + K end)\n{between}\
              let HEAD = [BIG[1], [BIG[2]]]\n{COUNT}print(n, SCALED, HEAD)\n"
         );

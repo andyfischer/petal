@@ -88,7 +88,7 @@ fn drag_through_helper_v2() {
 /// first circle of the loop is as draggable as the last.
 #[test]
 fn any_iteration_of_a_loop_is_draggable() {
-    let src = "config let spacing = 50\n\
+    let src = "let spacing = tunable(50)\n\
                let x0 = 20\n\
                clear(10, 10, 10)\n\
                for i in range(0, 3) do\n\
@@ -117,7 +117,7 @@ fn any_iteration_of_a_loop_is_draggable() {
 /// the engine would prefer the config knob.
 #[test]
 fn an_allow_list_chooses_the_variable() {
-    let src = "config let gap = 30\n\
+    let src = "let gap = tunable(30)\n\
                let x0 = 40\n\
                fn slot(i)\n\
                \x20 x0 + i * gap\n\
@@ -305,7 +305,7 @@ fn selectors_parse() {
 #[test]
 fn a_drag_stays_interactive() {
     use std::time::{Duration, Instant};
-    let src = "config let gap = 3\n\
+    let src = "let gap = tunable(3)\n\
                let x0 = 10\n\
                fn cell(i)\n\
                \x20 let col = i % 20\n\
@@ -520,7 +520,7 @@ fn recolor_solves_a_mix() {
     let src = "fn mix(a, b, t)\n\
                \x20 a + (b - a) * t\n\
                end\n\
-               config let warmth = tunable(0.25, 0, 1)\n\
+               let warmth = tunable(0.25, 0, 1)\n\
                clear(0, 0, 0)\n\
                draw_circle(100, 100, 40, mix(40, 240, warmth), mix(80, 120, warmth), mix(200, 40, warmth))\n";
     let (mut host, source) = traced(src);

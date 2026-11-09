@@ -21,7 +21,7 @@ const PETAL: &str = env!("CARGO_BIN_EXE_petal");
 /// `place(i)` computes a position through a helper; v1 cannot see into it.
 const HELPER: &str = "\
 import io
-config let gap = 30.0
+let gap = tunable(30.0)
 fn place(i)
   return 20 + i * gap
 end
@@ -223,7 +223,7 @@ fn apply_needs_a_pick_then_writes_the_file() {
     assert_eq!(r["applied"]["files"][0], p);
     let written = std::fs::read_to_string(&path).unwrap();
     assert!(written.contains("return 45 + i * gap"), "{written}");
-    assert!(written.contains("config let gap = 30.0"), "{written}");
+    assert!(written.contains("let gap = tunable(30.0)"), "{written}");
 
     // The written program meets the goal.
     let (stdout, _, ok) = run(&["run", "--trace-emits", "--json", p]);
@@ -242,7 +242,7 @@ fn apply_with_one_alternative_needs_no_pick() {
     ]);
     assert_eq!(r["alternatives"].as_array().unwrap().len(), 1, "{r:#}");
     assert_eq!(r["applied"]["pick"], 1);
-    assert!(std::fs::read_to_string(&path).unwrap().contains("config let gap = 42.5"));
+    assert!(std::fs::read_to_string(&path).unwrap().contains("let gap = tunable(42.5)"));
 }
 
 #[test]
@@ -619,7 +619,7 @@ fn frames_run_first_so_a_goal_can_address_a_value_in_state() {
 import io
 state n = 0
 n = n + 1
-config let speed = 3
+let speed = tunable(3)
 print(\"frame\")
 if n > 2 then
   push_output(symbol(\"boss\"), n * speed + 10)
@@ -649,7 +649,7 @@ end
     // `--apply` writes it; three frames of the edited program reach the goal.
     let r = run_json(&[&["propose-edit", "--json", "--frames", "2", "--apply", "--pick", "1"][..], &goal, &[p]].concat());
     assert_eq!(r["applied"]["pick"], 1);
-    assert!(std::fs::read_to_string(&path).unwrap().contains("config let speed = 10"));
+    assert!(std::fs::read_to_string(&path).unwrap().contains("let speed = tunable(10)"));
 
     let (_, stderr, ok) = run(&[&["propose-edit", "--v1", "--frames", "2"][..], &goal, &[p]].concat());
     assert!(!ok);
@@ -701,7 +701,7 @@ push_output(symbol(\"shapes\"), b.to)
 fn range_goals_on_the_command_line() {
     let src = "\
 import io
-config let lift = 3.4
+let lift = tunable(3.4)
 push_output(symbol(\"coins\"), {x: 2.0, y: lift})
 ";
     let path = scratch("ranges", src);

@@ -527,7 +527,7 @@ fn budget_stops_the_jacobian() {
 
 #[test]
 fn selectors_name_parameters() {
-    let src = "config let gap = 12\nfn layout(i)\n  i * 40 + gap\nend\nlet extra = 3\ndraw(layout(2) + extra, 0, 1)\n";
+    let src = "let gap = tunable(12)\nfn layout(i)\n  i * 40 + gap\nend\nlet extra = 3\ndraw(layout(2) + extra, 0, 1)\n";
     let s = Setup::new(src, &[(0, 0)]);
     let (gap, forty, extra) = (s.lit(1, "12"), s.lit(3, "40"), s.lit(5, "3"));
     assert!(s.param(gap).config);

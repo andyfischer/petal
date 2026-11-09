@@ -11,7 +11,11 @@
 //! - give hosts the same bindings: `static_bindings` (names, values, the
 //!   text a host writes back, settings, ranges, options, comments, lines).
 //!
-//! This is the dry run of Phase 3, which applies the rewrite to these files.
+//! This was the dry run of Phase 3, which has since applied the rewrite to
+//! these files, so the corpus no longer declares either keyword (the
+//! `the_petal_corpus_declares_neither_keyword` guard). The dry run now runs
+//! over the directories in `PETAL_MIGRATE_DRY_RUN` (Phase 4: Cheesecake), and
+//! `migrate_in_place` applies the rewrite.
 
 use std::path::{Path, PathBuf};
 
@@ -72,12 +76,62 @@ fn keyword_decls(src: &str) -> Option<(usize, usize)> {
     Some(n)
 }
 
+/// The Petal-owned `.ptl` corpus that Phase 3 migrated.
+const PETAL_CORPUS: &[&str] = &[
+    "examples",
+    "garden",
+    "core/tests",
+    "cli/tests",
+    "core/packages",
+    "test",
+    "integrations",
+    "core-libs",
+];
+
+/// Phase 3's guard: nothing in the Petal corpus declares `const X = e` or
+/// `config let`. Tests of the deprecated forms hold them in Rust strings.
 #[test]
-fn the_fixers_rewrite_the_corpus_without_changing_it() {
+fn the_petal_corpus_declares_neither_keyword() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let mut files = Vec::new();
-    for dir in ["examples", "garden", "core/tests", "cli/tests"] {
+    for dir in PETAL_CORPUS {
         ptl_files(&root.join(dir), &mut files);
+    }
+    files.sort();
+    let mut left = Vec::new();
+    for path in &files {
+        let Ok(src) = std::fs::read_to_string(path) else { continue };
+        if !src.contains("const") && !src.contains("config") {
+            continue;
+        }
+        if let Some((c, k)) = keyword_decls(&src)
+            && c + k > 0
+        {
+            let shown = path.strip_prefix(&root).unwrap_or(path).display().to_string();
+            left.push(format!("{shown}: {c} `const`, {k} `config let`"));
+        }
+    }
+    assert!(
+        left.is_empty(),
+        "declarations the migration missed (rewrite them with `migrate_in_place`):\n{}",
+        left.join("\n")
+    );
+    assert!(files.len() > 200, "the corpus went missing");
+}
+
+/// The fixers over `PETAL_MIGRATE_DRY_RUN=<dir>[:…]`, without writing: a
+/// dry run of a migration (Phase 4 points it at Cheesecake). Skipped when
+/// unset.
+#[test]
+fn the_fixers_rewrite_the_corpus_without_changing_it() {
+    let Ok(dirs) = std::env::var("PETAL_MIGRATE_DRY_RUN") else {
+        eprintln!("PETAL_MIGRATE_DRY_RUN is unset: nothing to dry-run");
+        return;
+    };
+    let root = PathBuf::from("/");
+    let mut files = Vec::new();
+    for dir in dirs.split(':').filter(|d| !d.is_empty()) {
+        ptl_files(Path::new(dir), &mut files);
     }
     files.sort();
 
@@ -162,5 +216,57 @@ fn the_fixers_rewrite_the_corpus_without_changing_it() {
          {n_loaded} loaded, {n_formatted} formatted"
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert!(n_const > 30 && n_config > 100, "the corpus went missing");
+    assert!(n_files > 0, "no file under PETAL_MIGRATE_DRY_RUN declares either keyword");
+}
+
+/// Apply the migration in place: `PETAL_MIGRATE=<file or dir>[:…]`, every
+/// `.ptl` file that declares either keyword is rewritten. Phase 3 ran it over
+/// the Petal corpus; Phase 4 runs it over Cheesecake.
+///
+/// ```text
+/// PETAL_MIGRATE=../examples:../garden cargo test --test lifecycle_migration \
+///   migrate_in_place -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore]
+fn migrate_in_place() {
+    let Ok(paths) = std::env::var("PETAL_MIGRATE") else {
+        panic!("set PETAL_MIGRATE to the files or directories to rewrite");
+    };
+    let mut files = Vec::new();
+    for p in paths.split(':').filter(|p| !p.is_empty()) {
+        let p = PathBuf::from(p);
+        if p.is_dir() {
+            ptl_files(&p, &mut files);
+        } else {
+            files.push(p);
+        }
+    }
+    files.sort();
+    let (mut n_files, mut n_const, mut n_config) = (0, 0, 0);
+    let mut failures = Vec::new();
+    for path in &files {
+        let Ok(src) = std::fs::read_to_string(path) else { continue };
+        let Some((consts, configs)) = keyword_decls(&src) else {
+            if src.contains("config let") || src.contains("const ") {
+                failures.push(format!("{}: does not parse", path.display()));
+            }
+            continue;
+        };
+        if consts + configs == 0 {
+            continue;
+        }
+        match petal::lint::migrate_lifecycle_keywords(&src) {
+            Ok(out) => {
+                std::fs::write(path, out).expect("write");
+                eprintln!("rewrote {} ({consts} const, {configs} config let)", path.display());
+                n_files += 1;
+                n_const += consts;
+                n_config += configs;
+            }
+            Err(e) => failures.push(format!("{}: {e}", path.display())),
+        }
+    }
+    eprintln!("migrated {n_files} files: {n_const} `const`, {n_config} `config let`");
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

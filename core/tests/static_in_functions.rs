@@ -590,7 +590,7 @@ fn a_dragged_value_rebuilds_the_constants_built_from_it_when_the_drag_pauses() {
     use std::time::Duration;
     // `SLOW` is built from `K` and is slow enough to be put off; `pick`
     // builds a constant from `SLOW`.
-    let src = "config let K = 3\n\
+    let src = "let K = tunable(3)\n\
          fn build(k)\n  for i in range(0, 4000) do (i * k) % 97 end\nend\n\
          let SLOW = build(K)\n\
          fn pick(a)\n  let pair = [SLOW[1], SLOW[2], len(SLOW)]\n  pair[a % 3]\nend\n\

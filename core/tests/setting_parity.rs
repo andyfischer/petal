@@ -2,7 +2,9 @@
 //! (docs/tasks/lifecycle-annotation-functions-refactor.md).
 //!
 //! Every single-line `config let` in `examples/` and in the core's `.ptl`
-//! fixtures is rewritten into the `tunable` form, and the two files must look
+//! fixtures is rewritten into the `tunable` form (and, since Phase 3 migrated
+//! the corpus, every single-line `let X = tunable(…)` back into
+//! `config let`), and the two files must look
 //! the same to everything that reads settings: `static_bindings` (value,
 //! text, range, the setting flag), path edits by name (`literal_edit`, so
 //! `set_config_value` and the C bridge), and the compiler's config marks
@@ -65,6 +67,78 @@ fn rewrite_line(line: &str) -> Option<String> {
         &line[..indent],
         decl
     ))
+}
+
+/// The reverse of [`rewrite_line`]: `[pub ]let NAME[: T] = tunable(v)  // c`
+/// → `[pub ]config let NAME[: T] = v  // c`, and a `tunable` with more than one
+/// argument keeps its call: `config let X = tunable(v, 0, 5)`.
+fn unrewrite_line(line: &str) -> Option<String> {
+    let indent = line.len() - line.trim_start().len();
+    let rest = &line[indent..];
+    let (prefix, rest) = match rest.strip_prefix("pub ") {
+        Some(r) => ("pub ", r),
+        None => ("", rest),
+    };
+    let rest = rest.strip_prefix("let ")?;
+    let eq = rest.find('=')?;
+    let (decl, after) = (&rest[..eq], &rest[eq + 1..]);
+    let (init, comment) = match comment_start(after) {
+        Some(c) => (&after[..c], &after[c..]),
+        None => (after, ""),
+    };
+    let value = init.trim();
+    let inner = value.strip_prefix("tunable(")?.strip_suffix(')')?;
+    // The call must close at the end: its argument list balances, and a
+    // top-level comma means more than one argument.
+    let (mut depth, mut in_str, mut commas) = (0i32, false, 0);
+    let mut prev = ' ';
+    for c in inner.chars() {
+        match c {
+            '"' if prev != '\\' => in_str = !in_str,
+            '(' | '[' | '{' if !in_str => depth += 1,
+            ')' | ']' | '}' if !in_str => {
+                depth -= 1;
+                if depth < 0 {
+                    return None;
+                }
+            }
+            ',' if !in_str && depth == 0 => commas += 1,
+            _ => {}
+        }
+        prev = c;
+    }
+    if depth != 0 || in_str {
+        return None;
+    }
+    let plain = if commas == 0 { inner } else { value };
+    let pad = if comment.is_empty() { "" } else { "  " };
+    Some(format!(
+        "{}{prefix}config let {}= {plain}{pad}{comment}",
+        &line[..indent],
+        decl
+    ))
+}
+
+/// The `config let` form of `src`: every single-line `let X = tunable(…)`
+/// rewritten by [`unrewrite_line`].
+fn unrewrite(src: &str) -> (String, usize) {
+    let mut out = String::new();
+    let mut n = 0;
+    for line in src.split_inclusive('\n') {
+        let (body, nl) = match line.strip_suffix('\n') {
+            Some(b) => (b, "\n"),
+            None => (line, ""),
+        };
+        match unrewrite_line(body) {
+            Some(old) => {
+                n += 1;
+                out.push_str(&old);
+            }
+            None => out.push_str(body),
+        }
+        out.push_str(nl);
+    }
+    (out, n)
 }
 
 fn rewrite(src: &str) -> (String, Vec<String>) {
@@ -147,9 +221,13 @@ fn tunable_settings_match_config_let_across_the_corpus() {
     let mut settings = 0;
     let mut compiled = 0;
     for path in files {
-        let src = std::fs::read_to_string(&path).unwrap();
+        let mut src = std::fs::read_to_string(&path).unwrap();
         if !src.contains("config let") {
-            continue;
+            // A migrated file: compare it with its `config let` form.
+            if !src.contains("tunable(") {
+                continue;
+            }
+            src = unrewrite(&src).0;
         }
         let (new, names) = rewrite(&src);
         if names.is_empty() {
@@ -214,4 +292,20 @@ fn the_rewriter_keeps_comments_and_skips_multi_line_values() {
     );
     assert_eq!(rewrite_line("config let POST = {"), None);
     assert_eq!(rewrite_line("let x = 1"), None);
+
+    assert_eq!(
+        unrewrite_line("pub let SPEED = tunable(4.0)  // m/s").as_deref(),
+        Some("pub config let SPEED = 4.0  // m/s")
+    );
+    assert_eq!(
+        unrewrite_line("let R = tunable(2, 0, 5)").as_deref(),
+        Some("config let R = tunable(2, 0, 5)")
+    );
+    assert_eq!(
+        unrewrite_line("let U = tunable(\"a, b\")").as_deref(),
+        Some("config let U = \"a, b\"")
+    );
+    assert_eq!(unrewrite_line("let P = tunable({"), None);
+    assert_eq!(unrewrite_line("let Q = tunable(1) + tunable(2)"), None);
+    assert_eq!(unrewrite_line("let x = 1"), None);
 }

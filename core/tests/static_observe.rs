@@ -300,7 +300,7 @@ fn a_patched_literal_hands_on_the_logs_the_edit_did_not_reach() {
 #[test]
 fn a_name_with_no_slot_is_not_served_from_a_stale_log() {
     let old = "\
-config let C = 16
+let C = tunable(16)
 let T = [11, 9, 7, C]
 let K9 = sum(T) % 97
 let K10 = K9
@@ -309,7 +309,7 @@ state n = 0
 n = n + 1
 print(n, G, T, K9)
 ";
-    for new in [old.replace("[11, 9, 7, C]", "[12, 9, 7, C]"), old.replace("config let C = 16", "config let C = 17")] {
+    for new in [old.replace("[11, 9, 7, C]", "[12, 9, 7, C]"), old.replace("let C = tunable(16)", "let C = tunable(17)")] {
         for policy in policies() {
             let mut on = world(old, policy);
             let mut off = world(old, policy.with_static_cache(false));
@@ -455,6 +455,10 @@ fn a_segment_that_raises_leaves_no_log() {
 /// the cost the debounce exists to avoid.
 #[test]
 fn a_rebuild_put_off_keeps_its_log_with_its_values() {
+    // Kept in the deprecated `config let` form: `tunable(2)` is still a
+    // native call, so its slot is a rebuild the zero-threshold debounce puts
+    // off too, where the literal of a `config let` is patched in place
+    // (docs/tasks/lifecycle-annotation-functions-refactor.md, Phase 3).
     let src = "\
 config let K = 2
 fn times(xs)

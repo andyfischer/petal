@@ -220,7 +220,7 @@ fn through_helper_single_goal() {
 
 #[test]
 fn config_preferred_softly() {
-    let mut t = T::new("config let offset = 10\ndraw(offset + 50, 100, 10)\n");
+    let mut t = T::new("let offset = tunable(10)\ndraw(offset + 50, 100, 10)\n");
     let resp = t.propose(&req(vec![DmGoal::to(t.arg(0, 0), 75.0)]));
     let e = all_edits(&resp);
     assert_eq!(e[0], vec!["10→25"], "{e:?}");
@@ -245,7 +245,7 @@ fn config_preferred_softly() {
 /// it (bug 1 of the removed proposal, `git show d6fd8291:docs/proposals/config-let-vs-tunable.md`).
 #[test]
 fn config_record_and_list_literals_are_config() {
-    let mut t = T::new("config let BOX = {x: 140, y: 90}\nconfig let XS = [20, 30]\ndraw(BOX.x + 10, XS[1], 10)\n");
+    let mut t = T::new("let BOX = tunable({x: 140, y: 90})\nlet XS = tunable([20, 30])\ndraw(BOX.x + 10, XS[1], 10)\n");
     let resp = t.propose(&req(vec![DmGoal::to(t.arg(0, 0), 160.0)]));
     let e = all_edits(&resp);
     assert_eq!(e[0], vec!["140→150"], "{e:?}");
@@ -799,7 +799,7 @@ fn v1_parity_on_simple_cases() {
     for (src, emit, arg, target) in [
         ("draw(120, 50, 5)\n", 0, 0, 140.0),
         ("let r = 30\ndraw(100, 50, r)\n", 0, 2, 45.0),
-        ("config let offset = 10\ndraw(offset, 50, 5)\n", 0, 0, 40.0),
+        ("let offset = tunable(10)\ndraw(offset, 50, 5)\n", 0, 0, 40.0),
         ("let w = 4.5\ndraw(10 + w * 2, 50, 5)\n", 0, 0, 40.0),
         ("let offset = 10\ndraw(offset + 2 * 15, 50, 5)\n", 0, 0, 55.0),
     ] {

@@ -78,7 +78,7 @@ fn y() -> Vec<PathStep> {
     vec![PathStep::Field("y".into())]
 }
 
-const LIFT: &str = "import io\nconfig let lift = 3.4\npush_output(symbol(\"coins\"), {x: 2.0, y: lift * 1.0})\n";
+const LIFT: &str = "import io\nlet lift = tunable(3.4)\npush_output(symbol(\"coins\"), {x: 2.0, y: lift * 1.0})\n";
 
 #[test]
 fn at_most_lands_inside_its_bound() {

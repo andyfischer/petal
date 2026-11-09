@@ -595,7 +595,7 @@ enum Kind\n  small(cost: 3, at: [1, 2]),\n  large(cost: 30, at: [3, 4]),\nend\nf
         same(&src, &frames(4));
     }
     let src = format!(
-        "config let SIZE = 4\nlet GRID = [SIZE, SIZE * 2]\nfn cell(i)\n  let dims = [[SIZE, SIZE], GRID]\n  let pad = [SIZE + 1]\n  [dims[i % 2], pad]\nend\n{COUNTER}print(n, cell(n))\n"
+        "let SIZE = tunable(4)\nlet GRID = [SIZE, SIZE * 2]\nfn cell(i)\n  let dims = [[SIZE, SIZE], GRID]\n  let pad = [SIZE + 1]\n  [dims[i % 2], pad]\nend\n{COUNTER}print(n, cell(n))\n"
     );
     let steps = vec![
         Step::Frame,
@@ -607,7 +607,7 @@ enum Kind\n  small(cost: 3, at: [1, 2]),\n  large(cost: 30, at: [3, 4]),\nend\nf
         Step::Call("cell_is_not_there"),
         Step::CallWith("cell", 1),
         Step::Frame,
-        Step::Reload(src.replace("config let SIZE = 4", "config let SIZE = 7")),
+        Step::Reload(src.replace("let SIZE = tunable(4)", "let SIZE = tunable(7)")),
         Step::CallWith("cell", 0),
         Step::Run,
         Step::Frame,

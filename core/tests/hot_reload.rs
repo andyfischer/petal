@@ -188,7 +188,7 @@ impl<'a> Case<'a> {
         // The fourth round gives both versions a `const`, so the compile
         // itself classifies the program and keeps the answer for the
         // lowering: the other way a classification comes to be kept.
-        let with_const = |src: &str| format!("{src}\nconst reload_case_const = [1, 2, 3]\n");
+        let with_const = |src: &str| format!("{src}\nlet reload_case_const = const([1, 2, 3])\n");
         let (old_const, new_const) = (with_const(self.old), with_const(self.new));
         for (policy, constant) in [
             (RunPolicy::FAST, false),
@@ -286,8 +286,8 @@ use ReloadOutcome::{Patched, Recompiled, Relocated};
 fn config_scalar_change() {
     Case::new(
         "config scalar",
-        "config let SPEED = 4\nstate x = 0\nx += SPEED\nprint(x)\n",
-        "config let SPEED = 7\nstate x = 0\nx += SPEED\nprint(x)\n",
+        "let SPEED = tunable(4)\nstate x = 0\nx += SPEED\nprint(x)\n",
+        "let SPEED = tunable(7)\nstate x = 0\nx += SPEED\nprint(x)\n",
         Patched,
     )
     .check();
@@ -297,9 +297,9 @@ fn config_scalar_change() {
 fn nested_config_field_and_element() {
     Case::new(
         "nested config",
-        "config let POST = {bloom: 0.2, effects: [{name: \"crt\", amount: 0.3}, {name: \"blur\", amount: 1.5}]}\n\
+        "let POST = tunable({bloom: 0.2, effects: [{name: \"crt\", amount: 0.3}, {name: \"blur\", amount: 1.5}]})\n\
          print(POST.bloom, POST.effects[1].amount, POST.effects[0].name)\n",
-        "config let POST = {bloom: 0.25, effects: [{name: \"scan\", amount: 0.3}, {name: \"blur\", amount: 2.5}]}\n\
+        "let POST = tunable({bloom: 0.25, effects: [{name: \"scan\", amount: 0.3}, {name: \"blur\", amount: 2.5}]})\n\
          print(POST.bloom, POST.effects[1].amount, POST.effects[0].name)\n",
         Patched,
     )
@@ -310,8 +310,8 @@ fn nested_config_field_and_element() {
 fn config_sign_flip_and_call_arguments() {
     Case::new(
         "sign flip",
-        "fn v(x, y)\n  {x: x, y: y}\nend\nconfig let DIR = v(-1.5, 2)\nconfig let N = -3\nprint(DIR.x, DIR.y, N, N * 2)\n",
-        "fn v(x, y)\n  {x: x, y: y}\nend\nconfig let DIR = v(1.5, -2)\nconfig let N = 3\nprint(DIR.x, DIR.y, N, N * 2)\n",
+        "fn v(x, y)\n  {x: x, y: y}\nend\nlet DIR = tunable(v(-1.5, 2))\nlet N = tunable(-3)\nprint(DIR.x, DIR.y, N, N * 2)\n",
+        "fn v(x, y)\n  {x: x, y: y}\nend\nlet DIR = tunable(v(1.5, -2))\nlet N = tunable(3)\nprint(DIR.x, DIR.y, N, N * 2)\n",
         Patched,
     )
     .check();
@@ -321,8 +321,8 @@ fn config_sign_flip_and_call_arguments() {
 fn config_color_and_string_and_bool() {
     Case::new(
         "color string bool",
-        "config let TINT = #ff2e88\nconfig let TITLE = \"neon\"\nconfig let ON = true\nprint(TINT.r, TINT.g, TINT.b, TITLE, ON)\n",
-        "config let TINT = #ff2e80\nconfig let TITLE = \"night\"\nconfig let ON = false\nprint(TINT.r, TINT.g, TINT.b, TITLE, ON)\n",
+        "let TINT = tunable(#ff2e88)\nlet TITLE = tunable(\"neon\")\nlet ON = tunable(true)\nprint(TINT.r, TINT.g, TINT.b, TITLE, ON)\n",
+        "let TINT = tunable(#ff2e80)\nlet TITLE = tunable(\"night\")\nlet ON = tunable(false)\nprint(TINT.r, TINT.g, TINT.b, TITLE, ON)\n",
         Patched,
     )
     .check();
@@ -332,14 +332,14 @@ fn config_color_and_string_and_bool() {
 fn config_used_by_a_closure_and_a_lambda_in_state() {
     Case::new(
         "closures",
-        "config let K = 10\n\
+        "let K = tunable(10)\n\
          fn scale(x)\n  x * K\nend\n\
          let twice = fn(x) -> scale(x) + K\n\
          state held = fn(x) -> x + K\n\
          state n = 0\n\
          n += 1\n\
          print(scale(n), twice(n), map([1, 2], fn(x) -> x + K))\n",
-        "config let K = 12\n\
+        "let K = tunable(12)\n\
          fn scale(x)\n  x * K\nend\n\
          let twice = fn(x) -> scale(x) + K\n\
          state held = fn(x) -> x + K\n\
@@ -358,13 +358,13 @@ fn config_used_by_a_closure_and_a_lambda_in_state() {
 fn a_function_held_in_state_is_called_after_a_reload() {
     Case::new(
         "held, patched",
-        "config let K = 10\n\
+        "let K = tunable(10)\n\
          state held = fn(x) -> x + K\n\
          state hooks = [{name: \"h\", run: fn(x) -> x * K}]\n\
          state n = 0\n\
          n += 1\n\
          print(n, held(n), hooks[0].run(n))\n",
-        "config let K = 12\n\
+        "let K = tunable(12)\n\
          state held = fn(x) -> x + K\n\
          state hooks = [{name: \"h\", run: fn(x) -> x * K}]\n\
          state n = 0\n\
@@ -393,8 +393,8 @@ fn config_used_by_a_state_initializer() {
     // The state was initialized from the old value; both reloads keep it.
     Case::new(
         "state initializer",
-        "config let START = 100\nstate hp = START\nstate var seen = START * 2\nhp -= 1\nprint(hp, get seen, START)\n",
-        "config let START = 50\nstate hp = START\nstate var seen = START * 2\nhp -= 1\nprint(hp, get seen, START)\n",
+        "let START = tunable(100)\nstate hp = START\nstate var seen = START * 2\nhp -= 1\nprint(hp, get seen, START)\n",
+        "let START = tunable(50)\nstate hp = START\nstate var seen = START * 2\nhp -= 1\nprint(hp, get seen, START)\n",
         Patched,
     )
     .check();
@@ -404,8 +404,8 @@ fn config_used_by_a_state_initializer() {
 fn config_used_by_a_default_parameter() {
     Case::new(
         "default parameter",
-        "config let PAD = 4\nfn box(w, pad = PAD, gap = 2)\n  w + pad * 2 + gap\nend\nprint(box(10), box(10, 1), box(10, 1, 0))\n",
-        "config let PAD = 6\nfn box(w, pad = PAD, gap = 3)\n  w + pad * 2 + gap\nend\nprint(box(10), box(10, 1), box(10, 1, 0))\n",
+        "let PAD = tunable(4)\nfn box(w, pad = PAD, gap = 2)\n  w + pad * 2 + gap\nend\nprint(box(10), box(10, 1), box(10, 1, 0))\n",
+        "let PAD = tunable(6)\nfn box(w, pad = PAD, gap = 3)\n  w + pad * 2 + gap\nend\nprint(box(10), box(10, 1), box(10, 1, 0))\n",
         Patched,
     )
     .check();
@@ -415,8 +415,8 @@ fn config_used_by_a_default_parameter() {
 fn config_used_by_other_config_lets() {
     Case::new(
         "derived config",
-        "config let SEED = 7\nconfig let GEN = {seed: SEED, half: 800.0}\nconfig let AREA = GEN.half * 2.0\nprint(GEN.seed, AREA)\n",
-        "config let SEED = 9\nconfig let GEN = {seed: SEED, half: 650.0}\nconfig let AREA = GEN.half * 2.0\nprint(GEN.seed, AREA)\n",
+        "let SEED = tunable(7)\nlet GEN = tunable({seed: SEED, half: 800.0})\nlet AREA = tunable(GEN.half * 2.0)\nprint(GEN.seed, AREA)\n",
+        "let SEED = tunable(9)\nlet GEN = tunable({seed: SEED, half: 650.0})\nlet AREA = tunable(GEN.half * 2.0)\nprint(GEN.seed, AREA)\n",
         Patched,
     )
     .check();
@@ -425,11 +425,11 @@ fn config_used_by_other_config_lets() {
 #[test]
 fn config_in_an_imported_module() {
     let old = [
-        ("cfg", "pub config let SPEED = 3\npub config let LOOK = {fog: 0.5}\n"),
+        ("cfg", "pub let SPEED = tunable(3)\npub let LOOK = tunable({fog: 0.5})\n"),
         ("mover", "import cfg\npub fn step(x)\n  x + cfg.SPEED\nend\n"),
     ];
     let new = [
-        ("cfg", "pub config let SPEED = 5\npub config let LOOK = {fog: 0.75}\n"),
+        ("cfg", "pub let SPEED = tunable(5)\npub let LOOK = tunable({fog: 0.75})\n"),
         ("mover", "import cfg\npub fn step(x)\n  x + cfg.SPEED\nend\n"),
     ];
     let entry = "import cfg\nimport mover\nimport cfg: LOOK\nstate x = 0\nx = mover.step(x)\nprint(x, cfg.SPEED, LOOK.fog)\n";
@@ -467,8 +467,8 @@ fn a_literal_a_memoized_function_reads() {
 fn a_value_edit_together_with_a_layout_edit() {
     Case::new(
         "value and layout",
-        "config let A = {x: 1, y: 22}\nfn f(v)\n  v.x + v.y\nend\nprint(f(A))\n",
-        "// tuned\n\nconfig let A = {\n  x: 1000,   // wide\n  y: 22,\n}\n\nfn f(v)\n    v.x + v.y\nend\nprint( f(A) )\n",
+        "let A = tunable({x: 1, y: 22})\nfn f(v)\n  v.x + v.y\nend\nprint(f(A))\n",
+        "// tuned\n\nlet A = tunable({\n  x: 1000,   // wide\n  y: 22,\n})\n\nfn f(v)\n    v.x + v.y\nend\nprint( f(A) )\n",
         Patched,
     )
     .check();
@@ -476,12 +476,12 @@ fn a_value_edit_together_with_a_layout_edit() {
 
 #[test]
 fn value_edits_in_two_files_at_once() {
-    let old = [("cfg", "pub config let A = 1\n")];
-    let new = [("cfg", "// new\npub config let A = 2\n")];
+    let old = [("cfg", "pub let A = tunable(1)\n")];
+    let new = [("cfg", "// new\npub let A = tunable(2)\n")];
     Case::new(
         "two files",
-        "import cfg\nconfig let B = 10\nprint(cfg.A + B)\n",
-        "import cfg\n\nconfig let B = 20\nprint(cfg.A + B)\n",
+        "import cfg\nlet B = tunable(10)\nprint(cfg.A + B)\n",
+        "import cfg\n\nlet B = tunable(20)\nprint(cfg.A + B)\n",
         Patched,
     )
     .modules(&old, &new)
@@ -494,8 +494,8 @@ fn value_edits_in_two_files_at_once() {
 fn whitespace_only() {
     Case::new(
         "whitespace",
-        "config let K = 2\nstate n = 0\nn += K\nfn show(v)\n  print(v)\nend\nshow(n)\n",
-        "config let K   =   2\n\n\nstate n = 0\nn += K\nfn show( v )\n        print( v )\nend\n\nshow(n)",
+        "let K = tunable(2)\nstate n = 0\nn += K\nfn show(v)\n  print(v)\nend\nshow(n)\n",
+        "let K   =   tunable(2)\n\n\nstate n = 0\nn += K\nfn show( v )\n        print( v )\nend\n\nshow(n)",
         Relocated,
     )
     .check();
@@ -505,8 +505,8 @@ fn whitespace_only() {
 fn comment_only() {
     Case::new(
         "comments",
-        "config let K = 2\nstate n = 0\nn += K\nprint(n)\n",
-        "// the step\nconfig let K = 2 // per frame\nstate n = 0\n// accumulate\nn += K\nprint(n)\n// done\n",
+        "let K = tunable(2)\nstate n = 0\nn += K\nprint(n)\n",
+        "// the step\nlet K = tunable(2) // per frame\nstate n = 0\n// accumulate\nn += K\nprint(n)\n// done\n",
         Relocated,
     )
     .check();
@@ -620,22 +620,22 @@ fn added_and_removed_bindings() {
 fn type_changing_config_edit() {
     Case::new(
         "int to float",
-        "config let N = 10\nprint(N / 4)\n",
-        "config let N = 10.5\nprint(N / 4)\n",
+        "let N = tunable(10)\nprint(N / 4)\n",
+        "let N = tunable(10.5)\nprint(N / 4)\n",
         Recompiled,
     )
     .check();
     Case::new(
         "scalar to record",
-        "config let N = 10\nprint(N)\n",
-        "config let N = {v: 10}\nprint(N)\n",
+        "let N = tunable(10)\nprint(N)\n",
+        "let N = tunable({v: 10})\nprint(N)\n",
         Recompiled,
     )
     .check();
     Case::new(
         "list grew",
-        "config let XS = [1, 2]\nprint(len(XS))\n",
-        "config let XS = [1, 2, 3]\nprint(len(XS))\n",
+        "let XS = tunable([1, 2])\nprint(len(XS))\n",
+        "let XS = tunable([1, 2, 3])\nprint(len(XS))\n",
         Recompiled,
     )
     .check();
@@ -694,8 +694,8 @@ fn an_unchanged_source_is_a_no_op() {
 /// does the frame that follows it.
 #[test]
 fn the_value_path_does_no_recompile() {
-    let old = "config let K = {speed: 2, tint: #102030}\nfn step(x)\n  x + K.speed\nend\nstate x = 0\nx = step(x)\nprint(x, K.tint.g)\n";
-    let new = "config let K = {speed: 5, tint: #104030}\nfn step(x)\n  x + K.speed\nend\nstate x = 0\nx = step(x)\nprint(x, K.tint.g)\n";
+    let old = "let K = tunable({speed: 2, tint: #102030})\nfn step(x)\n  x + K.speed\nend\nstate x = 0\nx = step(x)\nprint(x, K.tint.g)\n";
+    let new = "let K = tunable({speed: 5, tint: #104030})\nfn step(x)\n  x + K.speed\nend\nstate x = 0\nx = step(x)\nprint(x, K.tint.g)\n";
     let mut w = world(old, &[], RunPolicy::FAST);
     let before = w.env.work_counters();
 
@@ -756,14 +756,14 @@ fn a_layout_edit_keeps_the_gate_and_the_memo() {
 
 #[test]
 fn a_broken_edit_leaves_the_old_program_running() {
-    let old = "config let K = 3\nstate n = 0\nn += K\nprint(n)\n";
+    let old = "let K = tunable(3)\nstate n = 0\nn += K\nprint(n)\n";
     let mut w = world(old, &[], RunPolicy::FAST);
-    assert!(w.env.reload_program(w.sid, "config let K = (\n", None).is_err());
+    assert!(w.env.reload_program(w.sid, "let K = tunable(\n", None).is_err());
     assert!(frame(&mut w).starts_with("9\n"));
     // And the next good edit is diffed against the source that is running.
     let report = w
         .env
-        .reload_program(w.sid, &old.replace("K = 3", "K = 4"), None)
+        .reload_program(w.sid, &old.replace("K = tunable(3)", "K = tunable(4)"), None)
         .unwrap();
     assert_eq!(report.outcome, ReloadOutcome::Patched);
     assert!(frame(&mut w).starts_with("13\n"));
@@ -771,7 +771,7 @@ fn a_broken_edit_leaves_the_old_program_running() {
 
 #[test]
 fn the_report_names_what_changed() {
-    let old = "config let POST = {bloom: 0.2}\nfn f()\n  1\nend\nprint(POST.bloom + f())\n";
+    let old = "let POST = tunable({bloom: 0.2})\nfn f()\n  1\nend\nprint(POST.bloom + f())\n";
     let mut w = world(old, &[], RunPolicy::FAST);
     let report = w
         .env
@@ -815,7 +815,7 @@ fn a_config_file_on_disk_is_patched_and_a_missing_one_falls_back() {
     let config = dir.join("config.ptl");
     let entry = "import ./config\nstate x = 0\nx += config.SPEED\nprint(x)\n";
     std::fs::write(&main, entry).unwrap();
-    std::fs::write(&config, "pub config let SPEED = 2\n").unwrap();
+    std::fs::write(&config, "pub let SPEED = tunable(2)\n").unwrap();
 
     let mut env = Env::new();
     env.set_echo(false);
@@ -825,7 +825,7 @@ fn a_config_file_on_disk_is_patched_and_a_missing_one_falls_back() {
     frame(&mut w);
     let before = w.env.work_counters();
 
-    std::fs::write(&config, "// faster\npub config let SPEED = 10\n").unwrap();
+    std::fs::write(&config, "// faster\npub let SPEED = tunable(10)\n").unwrap();
     let report = w.env.reload_program(w.sid, entry, Some(&main)).unwrap();
     assert_eq!(report.outcome, ReloadOutcome::Patched);
     assert_eq!(report.changed_files, ["config.ptl"]);
@@ -833,7 +833,7 @@ fn a_config_file_on_disk_is_patched_and_a_missing_one_falls_back() {
     assert!(frame(&mut w).starts_with("12\n"));
     assert_eq!(
         w.env.program_source(w.pid, Some(&config)),
-        Some("// faster\npub config let SPEED = 10\n")
+        Some("// faster\npub let SPEED = tunable(10)\n")
     );
 
     // A source file that vanished cannot be diffed: the reload is the full
@@ -849,7 +849,7 @@ fn a_config_file_on_disk_is_patched_and_a_missing_one_falls_back() {
 /// `set_config_value` is a reload of the text the same edit produces.
 #[test]
 fn setting_a_value_directly_equals_reloading_the_edited_file() {
-    let old = "// knobs\nconfig let POST = {\n  bloom: 0.2,   // glow\n  effects: [{amount: 0.3}, {amount: -1.5}],\n}\nconfig let NAME = \"a\"\nstate t = 0\nt += 1\nprint(POST.bloom, POST.effects[1].amount, NAME, t)\n";
+    let old = "// knobs\nlet POST = tunable({\n  bloom: 0.2,   // glow\n  effects: [{amount: 0.3}, {amount: -1.5}],\n})\nlet NAME = tunable(\"a\")\nstate t = 0\nt += 1\nprint(POST.bloom, POST.effects[1].amount, NAME, t)\n";
     let edits: [(&str, StaticValue); 3] = [
         ("POST.bloom", StaticValue::float(0.75)),
         ("POST.effects[1].amount", StaticValue::float(2.25)),
@@ -917,6 +917,7 @@ fn a_tunable_setting_is_set_by_name_without_a_recompile() {
     );
 }
 
+/// The deprecated `config let X = tunable(…)` form behaves the same.
 #[test]
 fn a_tunable_config_is_set_by_name_without_a_recompile() {
     let old = "config let SPEED = tunable(4.0, 1, 10)\nconfig let G = tunable(-0.5, min: -2, max: 2)\nstate t = 0\nt += 1\nprint(SPEED, G, t)\n";
@@ -961,7 +962,7 @@ fn a_tunable_config_is_set_by_name_without_a_recompile() {
 
 #[test]
 fn setting_a_value_that_needs_a_recompile_is_refused_and_changes_nothing() {
-    let old = "config let N = 10\nconfig let XS = [1, 2]\nlet plain = 5\nprint(N, XS, plain)\n";
+    let old = "let N = tunable(10)\nlet XS = tunable([1, 2])\nlet plain = 5\nprint(N, XS, plain)\n";
     let mut w = world(old, &[], RunPolicy::FAST);
     let before = w.env.work_counters();
     // A different type.
@@ -999,7 +1000,7 @@ fn setting_a_value_in_a_module_finds_its_file() {
     let config = dir.join("config.ptl");
     let entry = "import ./config\nprint(config.LOOK.fog)\n";
     std::fs::write(&main, entry).unwrap();
-    std::fs::write(&config, "pub config let LOOK = {fog: 0.5}\n").unwrap();
+    std::fs::write(&config, "pub let LOOK = tunable({fog: 0.5})\n").unwrap();
     let mut env = Env::new();
     env.set_echo(false);
     let pid = env.load_program_at(entry, &main).unwrap();
@@ -1020,7 +1021,7 @@ fn setting_a_value_in_a_module_finds_its_file() {
             .is_err()
     );
     // The file on disk was never touched; reloading it restores its value.
-    assert_eq!(std::fs::read_to_string(&config).unwrap(), "pub config let LOOK = {fog: 0.5}\n");
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), "pub let LOOK = tunable({fog: 0.5})\n");
     let report = w.env.reload_program(w.sid, entry, Some(&main)).unwrap();
     assert_eq!(report.outcome, ReloadOutcome::Patched);
     assert!(frame(&mut w).starts_with("0.5\n"));
@@ -1037,7 +1038,7 @@ fn setting_a_value_in_a_module_finds_its_file() {
 #[test]
 fn a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile() {
     use std::fmt::Write;
-    let mut src = String::from("config let TUNE = {gain: 0.5, steps: 4}\n");
+    let mut src = String::from("let TUNE = tunable({gain: 0.5, steps: 4})\n");
     for i in 0..150 {
         writeln!(
             src,
@@ -1121,17 +1122,17 @@ fn parses<T>(f: impl FnOnce() -> T) -> (u64, T) {
 
 #[test]
 fn a_reload_parses_only_the_text_that_is_new() {
-    let old = "config let K = 3\nfn f(x)\n  x + K\nend\nstate n = 0\nn += f(1)\nprint(n)\n";
+    let old = "let K = tunable(3)\nfn f(x)\n  x + K\nend\nstate n = 0\nn += f(1)\nprint(n)\n";
     let mut w = world(old, &[], RunPolicy::FAST);
     // The first reload has no parse of the running text to start from.
-    let (n, report) = parses(|| w.env.reload_program(w.sid, &old.replace("K = 3", "K = 4"), None).unwrap());
+    let (n, report) = parses(|| w.env.reload_program(w.sid, &old.replace("K = tunable(3)", "K = tunable(4)"), None).unwrap());
     assert_eq!((n, report.outcome), (2, Patched));
     // From then on: one text for every kind of edit.
     let steps: [(String, ReloadOutcome); 5] = [
-        (old.replace("K = 3", "K = 5"), Patched),
-        (format!("// note\n{}", old.replace("K = 3", "K = 5")), Relocated),
+        (old.replace("K = tunable(3)", "K = tunable(5)"), Patched),
+        (format!("// note\n{}", old.replace("K = tunable(3)", "K = tunable(5)")), Relocated),
         (old.replace("x + K", "x * K"), Recompiled),
-        (old.replace("x + K", "x * K").replace("K = 3", "K = 9"), Patched),
+        (old.replace("x + K", "x * K").replace("K = tunable(3)", "K = tunable(9)"), Patched),
         (format!("{old}print(1)\n"), Recompiled),
     ];
     for (text, expect) in &steps {
@@ -1147,17 +1148,17 @@ fn a_reload_parses_only_the_text_that_is_new() {
     // A value set without a file: the text it makes is parsed, once.
     let (n, report) = parses(|| w.env.set_config_value(w.sid, None, "K", &StaticValue::int(11)).unwrap());
     assert_eq!((n, report.outcome), (1, Patched));
-    let (n, report) = parses(|| w.env.reload_program(w.sid, &format!("// saved\n{}", steps[3].0.replace("K = 9", "K = 11")), None).unwrap());
+    let (n, report) = parses(|| w.env.reload_program(w.sid, &format!("// saved\n{}", steps[3].0.replace("K = tunable(9)", "K = tunable(11)")), None).unwrap());
     assert_eq!((n, report.outcome), (1, Relocated));
 }
 
 #[test]
 fn a_reload_that_fails_does_not_cost_the_next_one_a_parse() {
-    let old = "config let K = 3\nstate n = 0\nn += K\nprint(n)\n";
+    let old = "let K = tunable(3)\nstate n = 0\nn += K\nprint(n)\n";
     let mut w = world(old, &[], RunPolicy::FAST);
-    w.env.reload_program(w.sid, &old.replace("K = 3", "K = 4"), None).unwrap();
+    w.env.reload_program(w.sid, &old.replace("K = tunable(3)", "K = tunable(4)"), None).unwrap();
     // A text that does not parse: tried once, nothing of it kept.
-    let (n, r) = parses(|| w.env.reload_program(w.sid, "config let K = (\n", None));
+    let (n, r) = parses(|| w.env.reload_program(w.sid, "let K = tunable(\n", None));
     assert!(r.is_err());
     assert_eq!(n, 1);
     // A text that parses and does not compile: the program is still the one
@@ -1166,21 +1167,21 @@ fn a_reload_that_fails_does_not_cost_the_next_one_a_parse() {
     assert!(r.is_err());
     assert_eq!(n, 1);
     assert!(frame(&mut w).starts_with("10\n"));
-    let (n, report) = parses(|| w.env.reload_program(w.sid, &old.replace("K = 3", "K = 5"), None).unwrap());
+    let (n, report) = parses(|| w.env.reload_program(w.sid, &old.replace("K = tunable(3)", "K = tunable(5)"), None).unwrap());
     assert_eq!((n, report.outcome), (1, Patched));
     assert!(frame(&mut w).starts_with("15\n"));
     // The text that did not compile, once more: it is found, and fails again.
     let (n, r) = parses(|| w.env.reload_program(w.sid, &format!("import no_such_module\n{old}"), None));
     assert!(r.is_err());
     assert!(n <= 1);
-    let (n, report) = parses(|| w.env.reload_program(w.sid, &old.replace("K = 3", "K = 6"), None).unwrap());
+    let (n, report) = parses(|| w.env.reload_program(w.sid, &old.replace("K = tunable(3)", "K = tunable(6)"), None).unwrap());
     assert_eq!((n, report.outcome), (1, Patched));
     assert!(frame(&mut w).starts_with("21\n"));
 }
 
 #[test]
 fn in_a_program_of_several_files_only_the_edited_file_is_parsed() {
-    let cfg = "pub config let SPEED = 3\n";
+    let cfg = "pub let SPEED = tunable(3)\n";
     let mover = "import cfg\npub fn step(x)\n  x + cfg.SPEED\nend\n";
     let entry = "import cfg\nimport mover\nstate x = 0\nx = mover.step(x)\nprint(x)\n";
     let mut w = world(entry, &[("cfg", cfg), ("mover", mover)], RunPolicy::FAST);
@@ -1225,12 +1226,12 @@ fn in_a_program_of_several_files_only_the_edited_file_is_parsed() {
 /// every step, compared on the report and on the program after each.
 #[test]
 fn reloads_through_kept_parses_equal_reloads_that_parse_everything() {
-    let base = "// knobs\nconfig let K = {gain: 0.5, steps: 4}\nlet T = [1, 2, 3]\nfn f(x)\n  x * K.gain + len(T)\nend\nstate n = 0\nn += f(2)\nprint(n, K.steps)\n";
+    let base = "// knobs\nlet K = tunable({gain: 0.5, steps: 4})\nlet T = [1, 2, 3]\nfn f(x)\n  x * K.gain + len(T)\nend\nstate n = 0\nn += f(2)\nprint(n, K.steps)\n";
     let texts: Vec<String> = vec![
         base.replace("gain: 0.5", "gain: 0.75"),
         base.replace("gain: 0.5", "gain: 0.75").replace("// knobs", "// knobs\n\n// more"),
         base.replace("[1, 2, 3]", "[1, 2, 3, 4]"),
-        "config let K = (\n".to_string(),
+        "let K = tunable(\n".to_string(),
         format!("import no_such_module\n{base}"),
         base.replace("[1, 2, 3]", "[1, 2, 30, 4]"),
         base.to_string(),
@@ -1289,8 +1290,8 @@ fn reloads_through_kept_parses_equal_reloads_that_parse_everything() {
 fn a_program_is_classified_once_however_many_ask() {
     use petal::static_audit::StaticAuditMode;
     let count = petal::static_classify::analyses_run;
-    let plain = "let T = [[1, 2], [3, 4]]\nconfig let K = 3\nfn f(x)\n  x + K\nend\nstate n = 0\nn += f(1)\nprint(n, T)\n";
-    let constant = plain.replace("let T", "const T");
+    let plain = "let T = [[1, 2], [3, 4]]\nlet K = tunable(3)\nfn f(x)\n  x + K\nend\nstate n = 0\nn += f(1)\nprint(n, T)\n";
+    let constant = plain.replace("let T = [[1, 2], [3, 4]]", "let T = const([[1, 2], [3, 4]])");
     for (src, what) in [(plain, "let"), (constant.as_str(), "const")] {
         for audit in [false, true] {
             let what = format!("{what}, audit {audit}");
@@ -1323,7 +1324,7 @@ fn a_program_is_classified_once_however_many_ask() {
 
             // A value edit and a layout edit: nothing.
             let before = count();
-            let text = src.replace("x + K", "x * K").replace("K = 3", "K = 4");
+            let text = src.replace("x + K", "x * K").replace("K = tunable(3)", "K = tunable(4)");
             assert_eq!(w.env.reload_program(w.sid, &text, None).unwrap().outcome, Patched);
             frame(&mut w);
             assert_eq!(w.env.reload_program(w.sid, &format!("// c\n{text}"), None).unwrap().outcome, Relocated);

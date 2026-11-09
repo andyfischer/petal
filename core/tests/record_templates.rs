@@ -227,7 +227,7 @@ const SHIPS: &str = r#"
 import vec2
 native fn put(v)
 
-const SIZE = 2.0
+let SIZE = const(2.0)
 
 fn ship(i, t)
   let a = t * 0.3 + float(i)
@@ -447,19 +447,19 @@ crates(4)
 
 #[test]
 fn a_patched_config_value_gives_its_literals_a_new_id() {
-    // An edit of a `config let` literal is patched in place (no recompile):
+    // An edit of a setting's literal is patched in place (no recompile):
     // the literal's static field changes under the same code.
     let src = r#"
 native fn put(v)
-config let SIZE = 2.0
-config let SHAPE = "box"
+let SIZE = tunable(2.0)
+let SHAPE = tunable("box")
 fn ship(i)
   put({shape: SHAPE, size: SIZE, mass: 1.0, pos: i})
 end
 for i in range(0, 3) do ship(i) end
 "#;
-    let v2 = src.replace("SIZE = 2.0", "SIZE = 3.0");
-    let v3 = v2.replace("SHAPE = \"box\"", "SHAPE = \"ball\"");
+    let v2 = src.replace("SIZE = tunable(2.0)", "SIZE = tunable(3.0)");
+    let v3 = v2.replace("SHAPE = tunable(\"box\")", "SHAPE = tunable(\"ball\")");
     let frames = same_in_every_mode(src, 2, &[&v2, &v3]);
     assert!(
         frames[5][0].0.contains("ball") && frames[5][0].0.contains("3.0"),

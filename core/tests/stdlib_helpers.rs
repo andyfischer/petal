@@ -138,10 +138,10 @@ print(fill(2, 0), hash_int(1))";
 /// The hashes are constant functions: a table built from them is a `const`.
 #[test]
 fn the_new_natives_are_constant() {
-    let src = "const JITTER = for i in range(0, 4) do hash_int(7, i) % 10 end
-const ZEROS = fill(3, 0.0)
-const AT = interp([[0, 0], [10, 5]], 4)
-const A = ord(\"A\")
+    let src = "let JITTER = const(for i in range(0, 4) do hash_int(7, i) % 10 end)
+let ZEROS = const(fill(3, 0.0))
+let AT = const(interp([[0, 0], [10, 5]], 4))
+let A = const(ord(\"A\"))
 print(JITTER, ZEROS, AT, A)";
     assert_eq!(out(src), "[8, 5, 7, 1] [0.0, 0.0, 0.0] 2.0 65");
 }

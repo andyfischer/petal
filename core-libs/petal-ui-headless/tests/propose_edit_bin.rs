@@ -12,8 +12,8 @@ const BIN: &str = env!("CARGO_BIN_EXE_petal-ui-propose-edit");
 const HUD: &str = "\
 import ui
 
-config let margin = 12
-config let bar_h = 18
+let margin = tunable(12)
+let bar_h = tunable(18)
 
 fn health_bar(x, y, frac)
   draw_rect(x, y, 120, bar_h, #303030)
@@ -76,7 +76,7 @@ fn drags_a_hud_layout_and_applies_it() {
     assert_eq!(applied["applied"]["pick"], 1, "{applied:#}");
     let text = std::fs::read_to_string(&path).unwrap();
     assert_ne!(text, HUD, "the file was not edited");
-    assert!(text.contains("config let bar_h = 18"), "{text}");
+    assert!(text.contains("let bar_h = tunable(18)"), "{text}");
 
     // And the edited file now draws the text where it was dragged to.
     let (emits, _) = run(&["--trace-emits", p]);

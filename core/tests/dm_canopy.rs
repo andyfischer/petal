@@ -73,7 +73,7 @@ fn collateral_reads_lists_of_records_and_nested_records() {
 fn relative_layout() -> String {
     let mut src = String::from(
         "import io\n\
-         config let DECO = {a: 3.25, b: 4.5, c: 5.75, d: 6.125, e: 7.375, f: 8.625, g: 9.875, h: 1.0625}\n\
+         let DECO = tunable({a: 3.25, b: 4.5, c: 5.75, d: 6.125, e: 7.375, f: 8.625, g: 9.875, h: 1.0625})\n\
          fn piece(gap, w, x0, x1)\n  {gap: gap, w: w, x0: x0, x1: x1, deco: DECO}\nend\n\
          let pieces = [\n",
     );

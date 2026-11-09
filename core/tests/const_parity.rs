@@ -5,7 +5,9 @@
 //! fixtures, in the Petal sources held by the core's Rust tests and in the
 //! `petal` snippets of `docs/language-guide.md` and
 //! `docs/features/static-values.md` is rewritten into the annotation form, and
-//! the two programs must be the same to everything that reads constants:
+//! every top-level `let X = const(e)` there (the form Phase 3 migrated the
+//! corpus to) back into the keyword form, and the two programs must be the
+//! same to everything that reads constants:
 //!
 //! - the IR, compared by [`petal::ir_equiv::ir_equivalent`] (which includes
 //!   the terms' `is_const` flags), so the static cache and the golden IR see
@@ -99,6 +101,84 @@ fn rewrite(src: &str) -> Option<(String, Vec<Rewritten>)> {
             name,
             old_value: (vs, ve),
             new_value: (new_start, new_end),
+        });
+    }
+    out.extend(&chars[at..]);
+    Some((out, done))
+}
+
+/// The reverse of [`rewrite`]: every top-level `let X = const(e)` /
+/// `pub let X = const(e)` in `src` back into `const X = e` /
+/// `pub const X = e`. Returns the keyword form and the sites, with
+/// `old_value` in the keyword form and `new_value` in `src`. `None` when `src`
+/// does not parse or has no such `let`.
+fn unwrap(src: &str) -> Option<(String, Vec<Rewritten>)> {
+    let (_, stmts) = petal::cst::parse_source(src, FileId(0)).ok()?;
+    let chars: Vec<char> = src.chars().collect();
+    // (offset of the `let` keyword, `const(` start, statement end, name)
+    let mut sites = Vec::new();
+    for s in &stmts {
+        let StmtKind::Let {
+            name,
+            value,
+            is_var: false,
+            is_const: false,
+            ..
+        } = &s.kind
+        else {
+            continue;
+        };
+        let Some(arg) = petal::static_value::const_call_arg(value) else { continue };
+        // `const(tunable(…))` is an error by design (it would hide the
+        // setting), while `const X = tunable(…)` is not: not a pair.
+        if petal::static_value::tunable_args(arg).is_some() {
+            continue;
+        }
+        let mut kw = s.span.start.offset as usize;
+        if chars[kw..].starts_with(&['p', 'u', 'b']) {
+            kw += 3;
+            while chars[kw].is_whitespace() {
+                kw += 1;
+            }
+        }
+        if !chars[kw..].starts_with(&['l', 'e', 't']) {
+            continue; // `config let X = const(…)`: an error, not a pair
+        }
+        let eq = kw + chars[kw..].iter().position(|c| *c == '=').expect("an `=`");
+        let mut vs = eq + 1;
+        while chars[vs].is_whitespace() {
+            vs += 1;
+        }
+        let ve = s.span.end.offset as usize;
+        // The whole initializer is the call: `const(` … `)`.
+        if !chars[vs..].starts_with(&['c', 'o', 'n', 's', 't', '(']) || chars[ve - 1] != ')' {
+            continue;
+        }
+        sites.push((kw, vs, ve, name.clone()));
+    }
+    if sites.is_empty() {
+        return None;
+    }
+    let mut out = String::new();
+    let mut done = Vec::new();
+    let mut at = 0;
+    let mut len = 0;
+    let push = |out: &mut String, len: &mut usize, cs: &[char]| {
+        out.extend(cs);
+        *len += cs.len();
+    };
+    for (kw, vs, ve, name) in sites {
+        push(&mut out, &mut len, &chars[at..kw]);
+        push(&mut out, &mut len, &['c', 'o', 'n', 's', 't']);
+        push(&mut out, &mut len, &chars[kw + 3..vs]);
+        let old_start = len;
+        push(&mut out, &mut len, &chars[vs + 6..ve - 1]);
+        let old_end = len;
+        at = ve;
+        done.push(Rewritten {
+            name,
+            old_value: (old_start, old_end),
+            new_value: (vs + 6, ve - 1),
         });
     }
     out.extend(&chars[at..]);
@@ -214,11 +294,18 @@ fn rust_fixtures(src: &str) -> Vec<String> {
     out
 }
 
+/// A `const X = e` line, or a `let X = const(…` line.
 fn is_const_line(line: &str) -> bool {
     let t = line.trim_start();
     let t = t.strip_prefix("pub ").unwrap_or(t);
-    t.strip_prefix("const ")
+    if t.strip_prefix("const ")
         .is_some_and(|r| r.starts_with(|c: char| c.is_alphabetic() || c == '_'))
+    {
+        return true;
+    }
+    t.strip_prefix("let ")
+        .and_then(|r| r.split_once('='))
+        .is_some_and(|(_, v)| v.trim_start().starts_with("const("))
 }
 
 /// The ```petal blocks of a Markdown file that declare a `const`.
@@ -336,8 +423,17 @@ struct Tally {
     failed_alike: usize,
 }
 
+/// Compare `src` in both forms: its `const` declarations rewritten into
+/// `const(…)`, or, when it has none, its `let X = const(e)`s rewritten back.
 fn check(shown: &str, src: &str, origin: Option<&Path>, tally: &mut Tally) {
-    let Some((new, done)) = rewrite(src) else { return };
+    let (src, new, done) = match rewrite(src) {
+        Some((new, done)) => (src.to_string(), new, done),
+        None => match unwrap(src) {
+            Some((old, done)) => (old, src.to_string(), done),
+            None => return,
+        },
+    };
+    let src = src.as_str();
     // The annotation form parses wherever the keyword form does.
     petal::cst::parse_source(&new, FileId(0))
         .unwrap_or_else(|e| panic!("{shown}: the const(…) form does not parse: {e}\n{new}"));
@@ -445,6 +541,14 @@ fn the_rewriter_wraps_the_whole_initializer() {
     );
     assert_eq!(done.len(), 2);
     assert!(rewrite("let x = 1\n").is_none());
+    // And back.
+    let (old, done) = unwrap(&new).unwrap();
+    assert_eq!(
+        old,
+        "pub const A = 1 + 2  // three\nconst B = [\n  1,\n  2,\n]\nlet c = A\n"
+    );
+    assert_eq!(done.len(), 2);
+    assert!(unwrap("let x = const(1) + 2\n").is_none());
 }
 
 /// `const(…)` outside a top-level `let`'s whole initializer is an error,

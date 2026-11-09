@@ -18,7 +18,7 @@ const SCRIPT: &str = "\
 import io
 native fn scale(x)
 native fn beep()
-config let x = 10
+let x = tunable(10)
 beep()
 push_output(symbol(\"shapes\"), scale(x))
 ";

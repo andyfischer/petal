@@ -11,6 +11,15 @@
 //! Pure and line-local: a line of text and a column in, the edits out. A hint
 //! call written across several lines is not recognized (it reads as a call the
 //! literal is merely inside, and is left alone).
+//!
+//! A hint may also be written as a declaration annotation
+//! (docs/proposals/annotation-syntax.md): `@tunable(0, 10) let x = 40` is
+//! `let x = tunable(40, 0, 10)`. On the declaration's line, when the
+//! initializer is the one literal, the annotation nearest the declaration is
+//! that literal's hint, and toggling rewrites the annotation (`@tunable(…)` →
+//! `@rigid`, or drops it) instead of wrapping the literal. An annotation on a
+//! line of its own above the declaration is not seen, like any multi-line
+//! form. Marking a free literal always writes the call form.
 
 /// What a literal is marked as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +76,9 @@ pub struct HintCall {
     pub kind: HintState,
     pub start: usize,
     pub end: usize,
+    /// Written as a declaration annotation, `@tunable(…)` at `start..end`,
+    /// rather than as a call around the literal.
+    pub annotation: bool,
 }
 
 /// A numeric literal on a line, its leading unary minus included.
@@ -87,9 +99,14 @@ impl Literal {
         self.hint.map_or(HintState::Free, |h| h.kind)
     }
 
-    /// The columns a click on it may land in: the whole hint call, if any.
+    /// The columns a click on it may land in: the whole hint call, if any
+    /// (for an annotation, from the `@` to the literal's end).
     pub fn outer(&self) -> (usize, usize) {
-        self.hint.map_or((self.start, self.end), |h| (h.start, h.end))
+        match self.hint {
+            Some(h) if h.annotation => (h.start, self.end),
+            Some(h) => (h.start, h.end),
+            None => (self.start, self.end),
+        }
     }
 }
 
@@ -258,7 +275,8 @@ pub fn literals(line: &str) -> Vec<Literal> {
             Tok::Ident(w) if w == "rigid" => HintState::Rigid,
             _ => continue,
         };
-        if k > 0 && toks[k - 1].tok == Tok::Punct('.') {
+        // `.rigid(` is a method; `@tunable(` is an annotation, read below.
+        if k > 0 && matches!(toks[k - 1].tok, Tok::Punct('.' | '@')) {
             continue;
         }
         if toks.get(k + 1).map(|t| &t.tok) != Some(&Tok::Punct('(')) {
@@ -292,6 +310,8 @@ pub fn literals(line: &str) -> Vec<Literal> {
         });
     }
 
+    let annotated = annotation_hint(&toks);
+
     lits.into_iter()
         .map(|(a, b)| {
             // The innermost call whose first argument is exactly this literal.
@@ -303,11 +323,23 @@ pub fn literals(line: &str) -> Vec<Literal> {
                     kind: c.kind,
                     start: c.start,
                     end: c.end,
+                    annotation: false,
+                })
+                .or_else(|| {
+                    annotated
+                        .as_ref()
+                        .filter(|ann| ann.literal == Some((a, b)))
+                        .and_then(|ann| ann.hint)
                 });
+            // A literal in an annotation's arguments is a bound, too.
+            let in_annotation = annotated
+                .as_ref()
+                .is_some_and(|ann| ann.args.iter().any(|&(s, e)| a > s && b < e));
             let bound = hint.is_none()
-                && calls
-                    .iter()
-                    .any(|c| a >= c.args.0 && b < c.args.1 && !(a >= c.first.0 && b < c.first.1));
+                && (in_annotation
+                    || calls
+                        .iter()
+                        .any(|c| a >= c.args.0 && b < c.args.1 && !(a >= c.first.0 && b < c.first.1)));
             Literal {
                 start: toks[a].start,
                 end: toks[b].end,
@@ -317,6 +349,94 @@ pub fn literals(line: &str) -> Vec<Literal> {
             }
         })
         .collect()
+}
+
+/// The `@` annotations a line opens with (`@tunable(0, 10) let x = 40`).
+struct Annotated {
+    /// The hint the annotation nearest the declaration gives the literal:
+    /// `None` when it is not `tunable` or `rigid` (`@const`), or when there
+    /// is no such literal.
+    hint: Option<HintCall>,
+    /// The first and last token of the declaration's initializer, when it is
+    /// one literal.
+    literal: Option<(usize, usize)>,
+    /// Token indices of each annotation's `(` and `)`.
+    args: Vec<(usize, usize)>,
+}
+
+fn annotation_hint(toks: &[Token]) -> Option<Annotated> {
+    let mut k = 0;
+    let mut last: Option<HintCall> = None;
+    let mut args = Vec::new();
+    while toks.get(k).map(|t| &t.tok) == Some(&Tok::Punct('@')) {
+        let at = &toks[k];
+        let name = match toks.get(k + 1) {
+            Some(Token { tok: Tok::Ident(w), start, .. }) if *start == at.end => w.clone(),
+            _ => return None,
+        };
+        let mut end = toks[k + 1].end;
+        k += 2;
+        if toks.get(k).map(|t| &t.tok) == Some(&Tok::Punct('(')) {
+            let open = k;
+            let mut depth = 0i32;
+            loop {
+                match toks.get(k)?.tok {
+                    Tok::Punct('(' | '[' | '{') => depth += 1,
+                    Tok::Punct(')' | ']' | '}') => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                k += 1;
+            }
+            args.push((open, k));
+            end = toks[k].end;
+            k += 1;
+        }
+        let kind = match name.as_str() {
+            "tunable" => Some(HintState::Tunable),
+            "rigid" => Some(HintState::Rigid),
+            _ => None,
+        };
+        last = kind.map(|kind| HintCall { kind, start: at.start, end, annotation: true });
+    }
+    if k == 0 {
+        return None;
+    }
+    let literal = annotated_literal(toks, k);
+    Some(Annotated { hint: literal.and(last), literal, args })
+}
+
+/// The declaration starting at token `k`, when its initializer is the rest
+/// of the line and one literal: that literal's first and last token.
+fn annotated_literal(toks: &[Token], mut k: usize) -> Option<(usize, usize)> {
+    let word = |i: usize, ws: &[&str]| matches!(toks.get(i).map(|t| &t.tok), Some(Tok::Ident(w)) if ws.contains(&w.as_str()));
+    if word(k, &["pub", "export"]) {
+        k += 1;
+    }
+    if !word(k, &["let", "var", "const", "state"]) {
+        return None;
+    }
+    k += 1;
+    if !matches!(toks.get(k).map(|t| &t.tok), Some(Tok::Ident(_))) || toks.get(k + 1).map(|t| &t.tok) != Some(&Tok::Punct('=')) {
+        return None;
+    }
+    k += 2;
+    // The rest of the line is one literal, its minus included.
+    let first = k;
+    if toks.get(k).map(|t| &t.tok) == Some(&Tok::Punct('-')) {
+        k += 1;
+    }
+    if toks.get(k).map(|t| &t.tok) != Some(&Tok::Num) || k + 1 != toks.len() {
+        return None;
+    }
+    if first != k && toks[first].end != toks[k].start {
+        return None;
+    }
+    Some((first, k))
 }
 
 /// The literal a click at `col` means: one whose text, or whose hint call,
@@ -349,6 +469,14 @@ pub fn mark(lit: &Literal, to: HintState) -> Vec<LineEdit> {
         text: text.to_string(),
     };
     match (lit.hint, to.builtin()) {
+        // `@tunable(0, 10) let x = 40`: the annotation is the hint. Dropping
+        // it takes the blank after it; changing it drops the bounds, as for
+        // the call (`rigid` takes none).
+        (Some(h), None) if h.annotation => {
+            let end = lit.start.min(h.end + 1);
+            vec![edit(h.start, end, "")]
+        }
+        (Some(h), Some(name)) if h.annotation => vec![edit(h.start, h.end, &format!("@{name}"))],
         (None, Some(name)) => vec![
             edit(lit.start, lit.start, &format!("{name}(")),
             edit(lit.end, lit.end, ")"),
@@ -386,7 +514,7 @@ pub fn cycle_at(line: &str, col: usize) -> Option<(Literal, HintState, Vec<LineE
 /// What a line-level toggle acts on: the line's literals that overlap one of
 /// `candidates` (char column ranges of the drag's candidate numbers on this
 /// line), else the literal initializer of a `let` / `config let` / `var` /
-/// `const` binding. Empty when neither.
+/// `const` binding, `@`-annotated or not. Empty when neither.
 pub fn line_targets(line: &str, candidates: &[(usize, usize)]) -> Vec<Literal> {
     let lits: Vec<Literal> = literals(line).into_iter().filter(|l| !l.bound).collect();
     let hit: Vec<Literal> = lits
@@ -399,6 +527,14 @@ pub fn line_targets(line: &str, candidates: &[(usize, usize)]) -> Vec<Literal> {
     }
     let chars: Vec<char> = line.chars().collect();
     let toks = tokenize(&chars);
+    // `@tunable let x = 40`: the annotated declaration's literal.
+    if let Some(ann) = annotation_hint(&toks) {
+        let Some((first, _)) = ann.literal else {
+            return Vec::new();
+        };
+        let start = toks[first].start;
+        return lits.into_iter().filter(|l| l.start == start).collect();
+    }
     let mut k = 0;
     if matches!(&toks.first().map(|t| &t.tok), Some(Tok::Ident(w)) if w == "config") {
         k = 1;
@@ -597,6 +733,39 @@ mod tests {
         assert_eq!(targets.len(), 2);
         assert_eq!(to, HintState::Free);
         assert_eq!(apply(line, &edits), "f(1, 2)");
+    }
+
+    #[test]
+    fn an_annotation_on_the_line_is_the_literals_hint() {
+        let line = "@tunable(0, 100) let gap = 40   // px";
+        let lits = literals(line);
+        assert_eq!(lits.len(), 3);
+        assert!(lits[0].bound && lits[1].bound, "the annotation's bounds are bounds");
+        assert_eq!(lits[2].text, "40");
+        assert_eq!(lits[2].state(), HintState::Tunable);
+        // tunable → rigid rewrites the annotation (dropping its bounds), and
+        // rigid → free drops it.
+        let col = line.find("40").unwrap();
+        let (rigid, to) = cycled(line, col);
+        assert_eq!((rigid.as_str(), to), ("@rigid let gap = 40   // px", HintState::Rigid));
+        let (free, to) = cycled(&rigid, rigid.find("40").unwrap());
+        assert_eq!((free.as_str(), to), ("let gap = 40   // px", HintState::Free));
+        // A click on the annotation means its literal.
+        assert_eq!(literal_at(line, 2).map(|l| l.text), Some("40".to_string()));
+        // The line toggle finds it too, `pub`, `-` and stacking included.
+        assert_eq!(line_targets("@tunable pub let g = -9.8", &[])[0].text, "-9.8");
+        assert_eq!(line_targets("@const @rigid let g = 2", &[])[0].state(), HintState::Rigid);
+        let (_, to, edits) = cycle_line("@const @rigid let g = 2", &[]).unwrap();
+        assert_eq!((apply("@const @rigid let g = 2", &edits), to), ("@const let g = 2".into(), HintState::Free));
+        // `@const` is no hint: a free literal, which marking wraps.
+        let c = "@const let n = 3";
+        assert_eq!(line_targets(c, &[])[0].state(), HintState::Free);
+        assert_eq!(cycled(c, c.len() - 1).0, "@const let n = tunable(3)");
+        // Not a lone literal: no annotation hint, and the annotation's
+        // arguments are never read as a hint call.
+        let computed = "@tunable(0, 10) let s = 4 * k";
+        assert!(literals(computed).iter().all(|l| l.state() == HintState::Free));
+        assert!(literals(computed)[..2].iter().all(|l| l.bound));
     }
 
     #[test]

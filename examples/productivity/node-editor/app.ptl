@@ -11,6 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import ui
+import bloom
 import garden
 import noise
 
@@ -393,7 +394,7 @@ fn pill_btn(r: Rect, label: string, active: bool) -> bool
   rr_outline(r, radius: 7, c: if active then ACCENT else OUTLINE end, a: 255, wd: 1)
   let st = ts(12, if active then TEXT else DIM end)
   draw_text(label, pos: {x: r.x + (r.w - text_width(label, st)) / 2, y: r.y + (r.h - 12) / 2 - 1}, style: st)
-  clicked(r)
+  ui.clicked(r)
 end
 
 // ── The seeded patch ─────────────────────────────────────────────────────
@@ -556,7 +557,7 @@ state hist = []
 state fut = []
 state drag = {mode: "none", x0: 0.0, y0: 0.0, cx: 0.0, cy: 0.0, node: -1, port: -1,
   dir: "out", starts: [], kind: "", moved: false}
-state menu = menu_state()
+state menu_at = {x: 0, y: 0, tag: {what: "canvas", id: -1}}   // where the menu opened, and on what
 state ops = 0
 state param_dirty = false
 state flash = {text: "", until: 0.0}
@@ -570,7 +571,7 @@ claim_key("a", "cmd")
 
 let z = cam.zoom
 let over_canvas = point_in(px: mx, py: my, r: canvas)
-let blocked = menu.open
+let blocked = bloom.menu_any_open()
 
 let raw_dt = dt()
 let step = min(raw_dt, 0.1)
@@ -818,7 +819,8 @@ if over_canvas && !blocked && drag.mode == "none" then
       sel = [hit.node]
     end
     let tag = if hit.kind == "node" then {what: "node", id: hit.node} else {what: "canvas", id: -1} end
-    menu = menu_show(m: menu, x: mx, y: my, tag: tag)
+    menu_at = {x: mx, y: my, tag: tag}
+    bloom.menu_open_at("ctx", mx, my)
   end
 end
 
@@ -1275,7 +1277,7 @@ if one >= 0 then
       let vt = fmt(np[i])
       draw_text(vt, pos: {x: ix + iw - text_width(vt, mono(12, c)), y: iy}, style: mono(12, c))
       let sr = rect(ix, iy + 20, iw, 18)
-      let nv = if blocked then np[i] else slider(sr, value: np[i], lo: p.lo, hi: p.hi, style: {fill: c, track: ELEV, knob: TEXT}) end
+      let nv = if blocked then np[i] else bloom.slider(sr, value: np[i], lo: p.lo, hi: p.hi, opts: {color: c, readout: false}) end
       if nv != np[i] then
         np[i] = nv
         changed = true
@@ -1306,7 +1308,7 @@ if one >= 0 then
         let xb = rect(wire_r.x + wire_r.w - 22, wire_r.y, 22, 18)
         if hovered(xb) then draw_rect_rounded(xb, radius: 4, c: HOVER) end
         draw_text("×", pos: {x: xb.x + 7, y: xb.y + 2}, style: ts(12, if hovered(xb) then DANGER else FAINT end))
-        if clicked(xb) && !blocked then
+        if ui.clicked(xb) && !blocked then
           hist = push_hist(hist, nodes, links)
           fut = []
           links = links_without_into(links, id: n.id, port_i: i)
@@ -1314,7 +1316,7 @@ if one >= 0 then
         end
       else
         let sr = rect(ix, iy + 20, iw, 18)
-        let nv = if blocked then ni[i] else slider(sr, value: ni[i], lo: p.lo, hi: p.hi, style: {fill: DIM, track: ELEV, knob: TEXT}) end
+        let nv = if blocked then ni[i] else bloom.slider(sr, value: ni[i], lo: p.lo, hi: p.hi, opts: {color: DIM, readout: false}) end
         if nv != ni[i] then
           ni[i] = nv
           changed = true
@@ -1523,21 +1525,22 @@ end
 
 // ── Context menu: the last draw call ─────────────────────────────────────
 
-let m_tag = menu.tag
-let is_node_menu = menu.open && m_tag.what == "node"
+let m_tag = menu_at.tag
+let is_node_menu = m_tag.what == "node"
 let items = if is_node_menu then
-  [menu_item("Duplicate"), menu_item("Disconnect all"), menu_item("Bring to front"), menu_sep(), menu_item("Delete")]
+  ["Duplicate", "Disconnect all", "Bring to front", {sep: true}, {label: "Delete", danger: true}]
 else
   let out = []
-  for k in KINDS do out = append(out, menu_item("Add " ++ k.label)) end
-  out = append(out, menu_sep())
-  out = append(out, menu_item("Fit to view"))
-  out = append(out, menu_item("Reset demo patch"))
+  for k in KINDS do out = append(out, "Add " ++ k.label) end
+  out = append(out, {sep: true})
+  out = append(out, "Fit to view")
+  out = append(out, "Reset demo patch")
   out
 end
-let picked = context_menu(menu, items)
-menu = picked.menu
-if picked.index >= 0 then
+let chosen = bloom.menu("ctx", canvas, items, {at: "point"})
+// Separators cannot be chosen, so a chosen item is one of the plain labels.
+let picked = {label: if chosen >= 0 then items[chosen] else "" end}
+if chosen >= 0 then
   if is_node_menu then
     let id = m_tag.id
     if picked.label == "Duplicate" then
@@ -1582,7 +1585,7 @@ if picked.index >= 0 then
           hist = push_hist(hist, nodes, links)
           fut = []
           let n = make_node(id: next_id, kind: k.id,
-            x: to_wx(cam, canvas, sx: menu.x) - 8.0, y: to_wy(cam, canvas, sy: menu.y) - 8.0)
+            x: to_wx(cam, canvas, sx: menu_at.x) - 8.0, y: to_wy(cam, canvas, sy: menu_at.y) - 8.0)
           nodes = append(nodes, n)
           sel = [n.id]
           next_id = next_id + 1

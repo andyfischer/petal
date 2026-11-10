@@ -11,6 +11,7 @@
 // machine.
 
 import ui
+import bloom
 
 state selected = 0
 state scroll = 0
@@ -49,7 +50,7 @@ draw_line(0, 33, screen_width(), 33, t.border.r, t.border.g, t.border.b)
 if len(families) == 0 then
   // A host that publishes no font list — every petal-ui embedder but Garden,
   // and Garden's own headless `petal-ui-run`.
-  empty_state(body, title: "No fonts", hint_text: "This host publishes no font list.")
+  bloom.empty_state(body, title: "No fonts", hint: "This host publishes no font list.")
 else
 
 // ── Selection ─────────────────────────────────────────────────────────────
@@ -69,7 +70,7 @@ for i in range(0, min(rows, len(families) - scroll)) do
   elsif hovered(r) then
     draw_rect(r, mix(t.bg, t.text, t: 0.06))
   end
-  if clicked(r) then selected = index end
+  if ui.clicked(r) then selected = index end
 
   // The family, in Garden's own face — a label, not a specimen.
   draw_text(name, pos: {x: r.x + 12, y: r.y + 8}, style: {size: t.font_sm, color: t.dim})
@@ -84,5 +85,5 @@ for i in range(0, min(rows, len(families) - scroll)) do
   )
 end
 
-draw_scrollbar(body, len(families), rows, scroll)
+bloom.scrollbar(body, len(families), rows, scroll)
 end

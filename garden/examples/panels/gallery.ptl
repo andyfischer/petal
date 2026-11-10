@@ -1,17 +1,19 @@
-// Gallery — every petal-ui prelude component on one panel, in themed
-// sections behind a tab bar. Doubles as the component library's visual
+// Gallery — the bloom components and the `ui` layout and interaction helpers
+// on one panel, in themed sections behind a tab strip. Doubles as a visual
 // fixture: it runs headlessly under petal-ui-run (no Garden natives), and in
 // Garden it picks up the host palette automatically through `ui_theme()`.
 //
 //   panel("examples/panels/gallery.ptl")                      // in a layout
 //   petal-ui-run examples/panels/gallery.ptl --frames 60      // headless
 //
-// See core-libs/petal-ui/docs/reference.md for the API of everything shown here.
+// See core-runtime/bloom/docs/components.md for the components, and
+// core-libs/petal-ui/docs/reference.md for the layout and list helpers.
 // (Sections are written inline rather than as functions: top-level `state`
 // is assigned all over, and assigning to a captured outer variable from
 // inside a function is an error by design.)
 
 import ui
+import bloom
 
 // ── State ─────────────────────────────────────────────────────────────────
 state tab = 0
@@ -24,11 +26,11 @@ state volume = 0.65
 state name_buf = "petal"
 state filter_buf = ""
 state files = list_state()
-state tbl = table_state()
-state sp = splitter_state(0.45)
-state md = modal_state()
+// The table keeps its own selection and sort; the sort it last reported is
+// kept here, because the caller owns the data and orders the rows.
+state tbl = {sort_col: -1, sort_asc: true}
+state sp = 0.45
 state ls = load_state()
-state menu = menu_state()
 state last_action = "—"
 
 // ── Demo data + pure helpers ──────────────────────────────────────────────
@@ -39,8 +41,8 @@ let FILE_ROWS = [
   ["garden_diff.ptl", 988],
 ]
 
-// Selection sort by column `ci` (string compare via str()): the table widget
-// records the sort *request*; the caller owns the data and orders the rows.
+// Selection sort by column `ci` (string compare via str()): the table
+// reports the sort *request*; the caller owns the data and orders the rows.
 fn sorted_rows(rows, ci, asc)
   if ci < 0 then return rows end
   let used = []
@@ -74,12 +76,12 @@ end
 
 // ── Theme (applies before anything draws) ─────────────────────────────────
 if light then
-  theme_set({bg: #f4f6f9, panel: #ffffff, surface: #ffffff, overlay: #e7ebf1,
+  ui.theme_set({bg: #f4f6f9, panel: #ffffff, surface: #ffffff, overlay: #e7ebf1,
              text: #23272e, muted: #4d5561, dim: #7a8390,
              outline: #d4d9e0, border: #d4d9e0, border_strong: #b9c1cc,
              hover: #eaeef4, selection: #cfe1fb})
 else
-  theme_reset()
+  ui.theme_reset()
 end
 
 let T = ui_theme()
@@ -88,7 +90,7 @@ clear(T.bg.r, T.bg.g, T.bg.b)
 let screen = rect(0, 0, screen_width(), screen_height())
 let page = pad(screen, h: 16, v: 12)
 let strip = cut_top(page, 34)
-tab = tab_bar(strip.cut, labels: ["Controls", "Data", "Layout", "Overlays", "Theme"], active: tab)
+tab = bloom.tabs(strip.cut, ["Controls", "Data", "Layout", "Overlays", "Theme"], tab)
 let body = cut_bottom(cut_top(strip.rest, 16).rest, 30).rest
 
 // ── Controls ──────────────────────────────────────────────────────────────
@@ -98,45 +100,44 @@ if tab == 0 then
   let right = halves.b
 
   label("BUTTONS", x: left.x, y: left.y)
-  if button(rect(left.x, left.y + 20, 110, 28), "Default") then
+  if bloom.button(rect(left.x, left.y + 20, 110, 28), "Default") then
     last_action = "button"
   end
-  if button(rect(left.x + 118, left.y + 20, 110, 28), label: "Accented",
-            style: {bg: T.accent, hover: mix(T.accent, T.text, t: 0.2), fg: contrast_text(T.accent), outline: T.accent}) then
+  if bloom.button(rect(left.x + 118, left.y + 20, 110, 28), "Accented", {variant: "primary"}) then
     last_action = "accent button"
   end
 
-  label("CHECKBOX + TOGGLE", x: left.x, y: left.y + 64)
-  agree = checkbox(rect(left.x, left.y + 84, 200, 22), label: "I agree to nothing", value: agree)
-  notify = checkbox(rect(left.x, left.y + 110, 200, 22), label: "Notify me", value: notify)
-  wifi = toggle(rect(left.x, left.y + 140, 40, 22), wifi)
+  label("CHECKBOX + SWITCH", x: left.x, y: left.y + 64)
+  agree = bloom.checkbox(rect(left.x, left.y + 84, 200, 22), "I agree to nothing", agree)
+  notify = bloom.checkbox(rect(left.x, left.y + 110, 200, 22), "Notify me", notify)
+  wifi = bloom.switch(rect(left.x, left.y + 140, 40, 22), wifi)
   draw_text(if wifi then "on" else "off" end, {x: left.x + 48, y: left.y + 144}, T.font_sm, T.muted)
 
   label("RADIO", x: left.x, y: left.y + 176)
-  channel = radio_group(rect(left.x, left.y + 196, 200, 72), labels: ["Stable", "Beta", "Nightly"], selected: channel)
+  channel = bloom.radio_group(rect(left.x, left.y + 196, 200, 72), ["Stable", "Beta", "Nightly"], channel)
 
   label("SLIDER + PROGRESS", x: right.x, y: right.y)
-  volume = slider(rect(right.x, right.y + 16, 220, 20), value: volume, lo: 0.0, hi: 1.0)
-  progress_bar(rect(right.x, right.y + 44, 220, 8), volume)
-  progress_bar(rect(right.x, right.y + 60, 220, 8), -1.0)
-  spinner(cx: right.x + 250, cy: right.y + 40, radius: 12)
-  draw_text(spinner_glyph(), {x: right.x + 275, y: right.y + 33}, T.font_md, T.dim)
+  volume = bloom.slider(rect(right.x, right.y + 16, 220, 20), volume, 0.0, 1.0)
+  bloom.progress(rect(right.x, right.y + 44, 220, 8), volume)
+  bloom.progress(rect(right.x, right.y + 60, 220, 8), -1.0)
+  bloom.spinner(right.x + 250, right.y + 40, 12)
+  draw_text(bloom.spinner_glyph(), {x: right.x + 275, y: right.y + 33}, T.font_md, T.dim)
 
   label("TEXT FIELDS", x: right.x, y: right.y + 92)
-  let res = text_field(id: "name", r: rect(right.x, right.y + 112, 220, 26), buf: name_buf)
+  let res = bloom.text_field(rect(right.x, right.y + 112, 220, 26), name_buf, {id: "name"})
   name_buf = res.text
   if res.submitted then last_action = "submit: " ++ name_buf end
-  let res2 = text_field(id: "filter", r: rect(right.x, right.y + 146, 220, 26), buf: filter_buf)
+  let res2 = bloom.text_field(rect(right.x, right.y + 146, 220, 26), filter_buf, {id: "filter", placeholder: "filter"})
   filter_buf = res2.text
-  draw_text("click to focus · arrows move the caret · alt-backspace", {x: right.x, y: right.y + 180}, T.font_sm, mix(T.dim, T.bg, t: 0.3))
+  draw_text("click to focus · tab moves on · shift-arrows select · cmd-z undoes", {x: right.x, y: right.y + 180}, T.font_sm, mix(T.dim, T.bg, t: 0.3))
 
   draw_text("last action: " ++ last_action, {x: left.x, y: body.y + body.h - 20}, T.font_sm, T.muted)
 end
 
 // ── Data ──────────────────────────────────────────────────────────────────
 if tab == 1 then
-  let s = splitter(sp, r: body, style: {min_a: 180, min_b: 260})
-  sp = s.state
+  let s = bloom.splitter(body, sp, {min_a: 180, min_b: 260})
+  sp = s.frac
 
   label("LIST", x: s.a.x, y: s.a.y)
   let lr = rect(s.a.x, s.a.y + 20, s.a.w, 240)
@@ -150,19 +151,20 @@ if tab == 1 then
     end
     draw_text(ellipsize(FILE_ROWS[idx][0], avail_px: rr.w - 16, size: T.font_md), {x: rr.x + 8, y: rr.y + (rr.h - T.font_md) / 2}, T.font_md, T.text)
   end
-  draw_scrollbar(lr, count: len(FILE_ROWS), rows: rows, scroll: files.scroll)
+  bloom.scrollbar(lr, len(FILE_ROWS), rows, files.scroll)
 
   label("TABLE (click a header to sort)", x: s.b.x, y: s.b.y)
   let shown = sorted_rows(rows: FILE_ROWS, ci: tbl.sort_col, asc: tbl.sort_asc)
   let tr = rect(s.b.x, s.b.y + 20, s.b.w, 28 + 6 * 26)
-  tbl = table(tb: tbl, r: tr, cols: [{label: "Name", w: 0.65}, {label: "Lines", w: 0.35}], rows_data: shown)
+  let tres = bloom.table(tr, [{label: "Name", w: 0.65}, {label: "Lines", w: 0.35}], shown)
+  tbl = {sort_col: tres.sort_col, sort_asc: tres.sort_asc}
 
   label("BADGES + LOAD STATE", x: s.b.x, y: tr.y + tr.h + 16)
   let by = tr.y + tr.h + 34
-  let b1 = badge(x: s.b.x, y: by, text: "v2.1")
-  let b2 = pill(x: b1.x + b1.w + 8, y: by, text: "passing", color: T.success)
-  let b3 = pill(x: b2.x + b2.w + 8, y: by, text: "3 warnings", color: T.warn)
-  pill(x: b3.x + b3.w + 8, y: by, text: "1 error", color: T.danger)
+  let b1 = bloom.badge(s.b.x, by, "v2.1")
+  let b2 = bloom.pill(b1.x + b1.w + 8, by, "passing", T.success)
+  let b3 = bloom.pill(b2.x + b2.w + 8, by, "3 warnings", T.warn)
+  bloom.pill(b3.x + b3.w + 8, by, "1 error", T.danger)
 
   // The blessed async pattern: loading for the first moments, then ready.
   if time() < 1.5 then
@@ -171,8 +173,8 @@ if tab == 1 then
     ls = load_ok(ls, "42 rows in 12ms")
   end
   let lbox = rect(s.b.x, by + 34, s.b.w, 54)
-  if draw_load(lbox, ls) then
-    let c = card(lbox, {pad: 8, shadow: false})
+  if bloom.load_view(lbox, ls) then
+    let c = bloom.card(lbox, {pad: 8, shadow: false})
     draw_text("Loaded: " ++ ls.value, {x: c.x, y: c.y + 4}, T.font_md, T.text)
   end
 end
@@ -212,37 +214,37 @@ end
 if tab == 3 then
   label("CARD + EMPTY STATE + TOOLTIP", x: body.x, y: body.y)
   let halves = split_h(rect(body.x, body.y + 20, body.w, 170), frac: 0.5, gap: 24)
-  let c = card(halves.a)
+  let c = bloom.card(halves.a)
   draw_text("A card", pos: {x: c.x, y: c.y}, style: {size: T.font_md, color: T.text, weight: 600})
   draw_text("Rounded border, soft shadow,", {x: c.x, y: c.y + 24}, T.font_sm, T.muted)
   draw_text("padded content rect.", {x: c.x, y: c.y + 40}, T.font_sm, T.muted)
-  empty_state(halves.b, title: "No results", hint_text: "Try a broader query")
+  bloom.empty_state(halves.b, "No results", "Try a broader query")
 
-  label("MODAL", x: body.x, y: body.y + 210)
-  if !modal_blocking(md) && button(rect(body.x, body.y + 230, 130, 28), "Open dialog…") then
-    md = modal_open(md)
+  label("DIALOG", x: body.x, y: body.y + 210)
+  // No guard needed: an open dialog captures the pointer.
+  if bloom.button(rect(body.x, body.y + 230, 130, 28), "Open dialog…") then
+    bloom.dialog_open("gallery")
   end
 
   label("CONTEXT MENU (right-click below)", x: body.x, y: body.y + 280)
   let zone = rect(body.x, body.y + 300, 260, 60)
   draw_rect_rounded(zone, radius: T.radius_sm, c: T.overlay)
   draw_text_center("right-click me", cx: zone.x + zone.w / 2, y: zone.y + 22, size: T.font_sm, c: T.dim)
-  menu = menu_open_on_right_click(m: menu, r: zone, tag: "gallery")
-  let picked = context_menu(menu, [menu_item("Copy"), menu_item("Paste"), menu_sep(), menu_item("Delete", false)])
-  menu = picked.menu
-  if picked.index >= 0 then
-    last_action = "menu: " ++ picked.label
+  let items = ["Copy", "Paste", {sep: true}, {label: "Delete", disabled: true}]
+  let picked = bloom.context_menu(zone, items)
+  if picked >= 0 then
+    last_action = "menu: " ++ items[picked]
   end
   draw_text("last action: " ++ last_action, {x: body.x, y: body.y + 380}, T.font_sm, T.muted)
 
   // The tooltip draws late so it sits over the card it annotates.
-  tooltip(halves.a, "Cards return their content rect")
+  bloom.tooltip(halves.a, "Cards return their content rect")
 end
 
 // ── Theme ─────────────────────────────────────────────────────────────────
 if tab == 4 then
   label("LIGHT / DARK", x: body.x, y: body.y)
-  light = checkbox(rect(body.x, body.y + 18, 240, 22), label: "Light theme (theme_set)", value: light)
+  light = bloom.checkbox(rect(body.x, body.y + 18, 240, 22), "Light theme (theme_set)", light)
 
   label("COLOR TOKENS", x: body.x, y: body.y + 60)
   let names = ["bg", "panel", "surface", "overlay", "text", "muted", "dim",
@@ -270,16 +272,19 @@ if tab == 4 then
   draw_rect_rounded(rect(body.x + 440, body.y + 304, 60, 36), radius: T.radius_lg, c: T.overlay)
 end
 
-// ── Chrome: hint bar + modal (last, so the dialog sits on top) ────────────
-hint_bar(rect(0, screen_height() - 26, screen_width(), 26),
-         [hint("tab", "cycle focus"), hint("j/k", "move"), hint("esc", "close dialog")])
+// ── Chrome: hint bar + dialog (last, so the dialog sits on top) ───────────
+bloom.hint_bar(rect(0, screen_height() - 26, screen_width(), 26),
+               [bloom.hint("tab", "cycle focus"), bloom.hint("j/k", "move"), bloom.hint("esc", "close dialog")])
 
-let m = modal(m: md, w: 380, h: 190, title: "A modal dialog")
-md = m.modal
+let m = bloom.dialog("gallery", 380, 190, "A dialog")
 if m.open then
   draw_text("Escape or a click outside closes it.", {x: m.content.x, y: m.content.y}, T.font_md, T.muted)
-  if button(rect(m.content.x, m.content.y + 46, 90, 28), "Done") then
-    md = modal_close(md)
-    last_action = "modal done"
+  // The dialog holds the pointer, except for what is drawn into it.
+  if bloom.button(rect(m.content.x, m.content.y + 46, 90, 28), "Done", {variant: "primary"}) then
+    bloom.dialog_close()
+    last_action = "dialog done"
   end
 end
+
+// The late layer: menus and tooltips paint over everything above.
+bloom.overlays()

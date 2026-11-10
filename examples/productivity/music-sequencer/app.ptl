@@ -16,6 +16,7 @@
 
 import text_layout
 import ui
+import bloom
 import garden
 
 // ── Palette ──────────────────────────────────────────────────────────────
@@ -184,7 +185,7 @@ state cancels = 0
 state drag = {kind: "", trk: 0, val: 0, a: 0, b: 0, idx: -1, y0: 0, v0: 0}
 // What a gesture started from, so `escape` can put it all back mid-drag.
 state g0 = {pats: [], mixer: [], undo: [], redo: [], bpm: 0, swing: 0.0, la: 0, lb: 0, lon: true, pos: 0.0}
-state menu = menu_state()
+state menu_lane = -1           // the lane the lane menu was opened on
 
 // ── Layout (recomputed every frame — the pane can resize) ────────────────
 let W = screen_width()
@@ -441,7 +442,7 @@ claim_key("z", "cmd+shift")
 
 let mx = mouse_x()
 let my = mouse_y()
-let blocked = menu.open
+let blocked = bloom.menu_any_open()
 let snap = pats
 let changed = false
 let sel_mel = TRACKS[sel_trk].kind == "mel"
@@ -570,7 +571,8 @@ let hov_note = if over_roll then note_hit(pats[cur].notes[sel_trk - 6], hov_step
 if !blocked && drag.kind == "" && mouse_pressed(1) then
   for t in range(0, N_TRK) do
     if point_in(mx, my, row_rect(t)) then
-      menu = menu_show(menu, mx, my, t)
+      menu_lane = t
+      bloom.menu_open_at("lane", mx, my)
       sel_trk = t
       sel_note = -1
     end
@@ -1400,45 +1402,44 @@ let obs_audible = audible
 let obs_undo = len(undo)
 let obs_redo = len(redo)
 let obs_drag = drag.kind
-let obs_menu = menu.open
+let obs_menu = bloom.menu_is_open("lane")
 let obs_cancels = cancels
 
 // ── Lane menu: the last draw call of the frame ───────────────────────────
-let menu_mel = menu.tag == 6 || menu.tag == 7
-let picked = context_menu(menu, [
-  menu_item("Clear lane"),
-  menu_sep(),
-  menu_item("Fill every beat", !menu_mel),
-  menu_item("Fill eighths", !menu_mel),
-  menu_item("Fill sixteenths", !menu_mel),
-  menu_sep(),
-  menu_item("Shift left"),
-  menu_item("Shift right"),
-  menu_sep(),
-  menu_item("Repeat bar 1 in bar 2"),
-])
-menu = picked.menu
-if picked.index >= 0 then
-  let t = picked.tag
+let menu_mel = menu_lane == 6 || menu_lane == 7
+let picked = bloom.menu("lane", rect(mx, my, 0, 0), [
+  "Clear lane",
+  {sep: true},
+  {label: "Fill every beat", disabled: menu_mel},
+  {label: "Fill eighths", disabled: menu_mel},
+  {label: "Fill sixteenths", disabled: menu_mel},
+  {sep: true},
+  "Shift left",
+  "Shift right",
+  {sep: true},
+  "Repeat bar 1 in bar 2",
+], {at: "point"})
+if picked >= 0 then
+  let t = menu_lane
   let before = pats
   if t >= 6 then
     let k = t - 6
-    if picked.index == 0 then pats[cur].notes[k] = [] end
-    if picked.index == 6 then pats[cur].notes[k] = notes_shift(pats[cur].notes[k], by: -1) end
-    if picked.index == 7 then pats[cur].notes[k] = notes_shift(pats[cur].notes[k], by: 1) end
-    if picked.index == 9 then pats[cur].notes[k] = notes_mirror(pats[cur].notes[k]) end
+    if picked == 0 then pats[cur].notes[k] = [] end
+    if picked == 6 then pats[cur].notes[k] = notes_shift(pats[cur].notes[k], by: -1) end
+    if picked == 7 then pats[cur].notes[k] = notes_shift(pats[cur].notes[k], by: 1) end
+    if picked == 9 then pats[cur].notes[k] = notes_mirror(pats[cur].notes[k]) end
     sel_note = -1
   else
     let l = pats[cur].drums[t]
-    if picked.index == 0 then
+    if picked == 0 then
       pats[cur].drums[t] = for i in range(0, STEPS) do 0 end
     end
-    if picked.index == 2 then pats[cur].drums[t] = lane_fill(l, every: 4) end
-    if picked.index == 3 then pats[cur].drums[t] = lane_fill(l, every: 2) end
-    if picked.index == 4 then pats[cur].drums[t] = lane_fill(l, every: 1) end
-    if picked.index == 6 then pats[cur].drums[t] = lane_shift(l, by: -1) end
-    if picked.index == 7 then pats[cur].drums[t] = lane_shift(l, by: 1) end
-    if picked.index == 9 then pats[cur].drums[t] = lane_mirror(l) end
+    if picked == 2 then pats[cur].drums[t] = lane_fill(l, every: 4) end
+    if picked == 3 then pats[cur].drums[t] = lane_fill(l, every: 2) end
+    if picked == 4 then pats[cur].drums[t] = lane_fill(l, every: 1) end
+    if picked == 6 then pats[cur].drums[t] = lane_shift(l, by: -1) end
+    if picked == 7 then pats[cur].drums[t] = lane_shift(l, by: 1) end
+    if picked == 9 then pats[cur].drums[t] = lane_mirror(l) end
   end
   if pats != before then
     undo = append(undo, before)

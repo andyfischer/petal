@@ -17,6 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import ui
+import bloom
 import garden
 
 // ── Themes ───────────────────────────────────────────────────────────────
@@ -581,7 +582,7 @@ end
 if len(toasts) > 0 then request_frame() end
 
 let T = theme_for(theme_name)
-theme_set({bg: T.bg, panel: T.panel, surface: T.surface, overlay: T.overlay,
+ui.theme_set({bg: T.bg, panel: T.panel, surface: T.surface, overlay: T.overlay,
   text: T.text, muted: T.muted, dim: T.dim, accent: T.accent,
   outline: T.line, border: T.line, hover: T.hover, selection: T.sel})
 
@@ -1001,7 +1002,7 @@ if open then
   end
   clip_pop()
   if len(rows) > VISIBLE then
-    draw_scrollbar(rect(pal.x + PW - 10, list_r.y, 6, list_r.h), count: len(rows), rows: VISIBLE, scroll: list_scroll, style: {})
+    bloom.scrollbar(rect(pal.x + PW - 10, list_r.y, 6, list_r.h), count: len(rows), rows: VISIBLE, scroll: list_scroll)
   end
 
   // Footer hints.

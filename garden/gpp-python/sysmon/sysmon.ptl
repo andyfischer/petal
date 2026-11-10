@@ -11,26 +11,23 @@
 //     proc_count: int,  cpu_total: float,  ncpu: int,
 //     load1/load5/load15: float,  rss_total_gb: float }
 //
-// Everything visual is the ui prelude component library (petal-ui docs/widgets.md):
-// table (sortable headers, keyboard nav, scrollbar), badge/pill for the
-// header stats, progress_bar as the CPU meter, load_state for the async
-// fetch, hint_bar along the bottom.
+// Everything visual is bloom (core-runtime/bloom/docs/components.md): table
+// (sortable headers, keyboard nav, scrollbar), badge/pill for the header
+// stats, progress as the CPU meter, load_view for the async fetch (over
+// `ui`'s load_state record), hint_bar along the bottom.
 //
 // The integration test drives this drawer via /state → panel.values:
 // `ready`, `row_count`, `proc_count` and `sort_spec` are its handles.
 
 import garden
 import ui
+import bloom
 
-state tbl = table_state()
-state sort_seeded = false
+// The sort the table shows, held here because it keys the query: the table
+// is handed it every frame and hands back the one a header click picked.
+// Default: CPU%, heaviest first.
+state tbl = {sort_col: 2, sort_asc: false}
 state ls = load_state()
-
-// Default sort: CPU%, heaviest first (table_state starts unsorted).
-if !sort_seeded then
-  tbl = {...tbl, sort_col: 2, sort_asc: false}
-  sort_seeded = true
-end
 
 let T = ui_theme()
 clear(T.bg.r, T.bg.g, T.bg.b)
@@ -65,7 +62,7 @@ if ready then
   row_count = len(d.procs)
 
   let by = header.y + 6
-  let b1 = badge(header.x + 92, by, str(d.proc_count) ++ " processes")
+  let b1 = bloom.badge(header.x + 92, by, str(d.proc_count) ++ " processes")
   let cpu_frac = clamp(d.cpu_total / (float(d.ncpu) * 100.0), 0.0, 1.0)
   let cpu_color = T.success
   if cpu_frac > 0.7 then
@@ -73,20 +70,20 @@ if ready then
   elsif cpu_frac > 0.35 then
     cpu_color = T.warn
   end
-  let b2 = pill(b1.x + b1.w + 8, by, "cpu " ++ str(d.cpu_total) ++ "%", cpu_color)
-  let b3 = pill(b2.x + b2.w + 8, by, "load " ++ str(d.load1) ++ " / " ++ str(d.load5) ++ " / " ++ str(d.load15), T.accent)
-  let b4 = badge(b3.x + b3.w + 8, by, "rss " ++ str(d.rss_total_gb) ++ " GB")
+  let b2 = bloom.pill(b1.x + b1.w + 8, by, "cpu " ++ str(d.cpu_total) ++ "%", cpu_color)
+  let b3 = bloom.pill(b2.x + b2.w + 8, by, "load " ++ str(d.load1) ++ " / " ++ str(d.load5) ++ " / " ++ str(d.load15), T.accent)
+  let b4 = bloom.badge(b3.x + b3.w + 8, by, "rss " ++ str(d.rss_total_gb) ++ " GB")
 
   // A CPU meter across whatever header width is left.
   let meter_x = b4.x + b4.w + 16
   let meter_w = header.x + header.w - meter_x
   if meter_w > 80 then
-    progress_bar(rect(meter_x, header.y + 14, meter_w, 8), cpu_frac)
+    bloom.progress(rect(meter_x, header.y + 14, meter_w, 8), cpu_frac)
   end
 end
 
 // ── Body: the sortable process table ─────────────────────────────────────
-if draw_load(body, ls) then
+if bloom.load_view(body, ls) then
   let cols = [
     {label: "PID", w: 70},
     {label: "USER", w: 110},
@@ -96,11 +93,12 @@ if draw_load(body, ls) then
     // No `w` = the flex share of the leftover (a `w` >= 1 would be fixed px).
     {label: "COMMAND"},
   ]
-  tbl = table(tbl, body, cols, ls.value.procs)
+  let shown = bloom.table(body, cols, ls.value.procs, {sort_col: tbl.sort_col, sort_asc: tbl.sort_asc})
+  tbl = {sort_col: shown.sort_col, sort_asc: shown.sort_asc}
 end
 
-hint_bar(split_hints.cut, [
-  hint("click header", "sort"),
-  hint("j/k", "move"),
-  hint("wheel", "scroll"),
+bloom.hint_bar(split_hints.cut, [
+  bloom.hint("click header", "sort"),
+  bloom.hint("j/k", "move"),
+  bloom.hint("wheel", "scroll"),
 ])

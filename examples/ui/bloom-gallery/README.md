@@ -2,7 +2,8 @@
 
 Every component in [bloom](../../../core-runtime/bloom/) — the component library
 written entirely in Petal — on one screen: buttons, menus, controls, overlays,
-the animation core they are built from, and the vector icon set.
+text and inspector fields, tabs, splitters and tables, the animation core they
+are built from, and the vector icon set.
 
 It doubles as the usage reference. Each section of
 [`app.ptl`](app.ptl) is the shortest honest example of the components it names,

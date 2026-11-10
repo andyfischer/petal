@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import ui
+import bloom
 
 // ── Chrome palette ───────────────────────────────────────────────────────
 let BG      = #0c0e13
@@ -369,12 +370,17 @@ fn tool_icon(tool: Tool, r: record, c: record)
   end
 end
 
-// The prelude keeps its menu rect private, and Garden's renderer draws every
-// text run above every quad — so text painted *before* the menu still shows
-// through it. Estimate the menu box and skip the text it will cover.
+// The history row menu.
+let HIST_ITEMS = ["Select on canvas", "Duplicate", "Bring to front", {sep: true},
+  {label: "Delete stroke", danger: true}]
+
+// Garden's renderer draws every text run above every quad — so text painted
+// *before* the menu still shows through it. Work out the menu box (bloom
+// measures it the same way) and skip the text it will cover.
 fn menu_est(m: record)
-  let w = 170
-  let h = 122
+  let size = bloom.menu_size(HIST_ITEMS, {})
+  let w = size.w
+  let h = size.h
   let x = m.x
   let y = m.y
   if x + w > screen_width() then x = max(0, m.x - w) end
@@ -410,7 +416,7 @@ state brush = 5
 state opacity = 255
 state grid = false
 state sel = -1
-state menu = menu_state()
+state menu_at = {x: 0, y: 0, tag: -1}   // where the history menu opened, and on which stroke
 state size_grab = false
 state alpha_grab = false
 state ops = 0
@@ -425,7 +431,7 @@ let L = build_layout(w: W, h: H, nrows: len(strokes))
 let art = L.art
 let color = INKS[ink]
 let over_art = point_in(px: mx, py: my, r: art)
-let blocked = menu.open
+let blocked = bloom.menu_any_open()
 
 // ── Keyboard ─────────────────────────────────────────────────────────────
 for t in TOOLS do
@@ -459,23 +465,26 @@ end
 
 // ── Pointer: tools, swatches, history rows, header pills ─────────────────
 for i in range(0, len(TOOLS)) do
-  if !blocked && clicked(L.tool_rects[i]) then
+  if !blocked && ui.clicked(L.tool_rects[i]) then
     tool = TOOLS[i]
   end
 end
 for i in range(0, len(INKS)) do
-  if !blocked && clicked(L.swatches[i]) then
+  if !blocked && ui.clicked(L.swatches[i]) then
     ink = i
   end
 end
 for i in range(0, len(L.rows)) do
   let idx = len(strokes) - 1 - i
-  if !blocked && clicked(L.rows[i]) then
+  if !blocked && ui.clicked(L.rows[i]) then
     sel = if sel == idx then -1 else idx end
   end
-  menu = menu_open_on_right_click(m: menu, r: L.rows[i], tag: idx)
+  if !blocked && mouse_pressed(1) && point_in(px: mx, py: my, r: L.rows[i]) then
+    menu_at = {x: mx, y: my, tag: idx}
+    bloom.menu_open_at("history", mx, my)
+  end
 end
-if !blocked && clicked(L.btn_grid) then grid = !grid end
+if !blocked && ui.clicked(L.btn_grid) then grid = !grid end
 
 // ── Painting on the artboard ─────────────────────────────────────────────
 let kind = tool
@@ -529,9 +538,9 @@ if cur.active && !mouse_down(0) then
 end
 
 // ── Undo / redo / clear ──────────────────────────────────────────────────
-let hit_undo = !blocked && clicked(L.btn_undo) && len(hist) > 0
-let hit_redo = !blocked && clicked(L.btn_redo) && len(fut) > 0
-let hit_clear = !blocked && clicked(L.btn_clear) && len(strokes) > 0
+let hit_undo = !blocked && ui.clicked(L.btn_undo) && len(hist) > 0
+let hit_redo = !blocked && ui.clicked(L.btn_redo) && len(fut) > 0
+let hit_clear = !blocked && ui.clicked(L.btn_clear) && len(strokes) > 0
 
 if (want_undo || hit_undo) && len(hist) > 0 then
   fut = append(fut, strokes)
@@ -712,7 +721,7 @@ label("HISTORY", x: L.px, y: L.lbl_hist, c: FAINT)
 if len(strokes) == 0 then
   draw_text("empty canvas", {x: L.px, y: L.list_r.y + 4}, 12, FAINT)
 end
-let mcover = if menu.open then menu_est(menu) else rect(-9999, -9999, 0, 0) end
+let mcover = if bloom.menu_is_open("history") then menu_est(menu_at) else rect(-9999, -9999, 0, 0) end
 for i in range(0, len(L.rows)) do
   let r = L.rows[i]
   let hidden = overlaps(r, mcover)
@@ -775,17 +784,10 @@ if tip >= 0 then
 end
 
 // ── History context menu (drawn last so it sits over everything) ─────────
-let picked = context_menu(menu, [
-  menu_item("Select on canvas"),
-  menu_item("Duplicate"),
-  menu_item("Bring to front"),
-  menu_sep(),
-  menu_item("Delete stroke"),
-])
-menu = picked.menu
-if picked.index >= 0 then
-  let t = picked.tag
-  if picked.index == 0 then
+let picked = bloom.menu("history", art, HIST_ITEMS, {at: "point"})
+if picked >= 0 then
+  let t = menu_at.tag
+  if picked == 0 then
     sel = t
   else
     hist = append(hist, strokes)
@@ -793,17 +795,17 @@ if picked.index >= 0 then
     let out = []
     for i in range(0, len(strokes)) do
       if i == t then
-        if picked.index == 1 then
+        if picked == 1 then
           out = append(out, strokes[i])
-        elsif picked.index == 2 then
+        elsif picked == 2 then
           continue
-        elsif picked.index == 4 then
+        elsif picked == 4 then
           continue
         end
       end
       out = append(out, strokes[i])
     end
-    if picked.index == 2 then
+    if picked == 2 then
       out = append(out, strokes[t])
     end
     strokes = out

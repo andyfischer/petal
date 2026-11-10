@@ -40,6 +40,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import ui
+import bloom
 import color
 import noise
 
@@ -561,10 +562,10 @@ tx(if paused then "PAUSED" else "LIVE" end, x: pill_r.x + 30.0, y: pill_r.y + 9.
 let rate_r = rect(pill_r.x - 78.0, 22.0, 66.0, 32.0)
 draw_rect_rounded(rate_r, radius: 16, c: RAISED)
 tx_center(RATE_NAME[rate], cx: rate_r.center_x(), y: rate_r.y + 9.0, size: T_SMALL, c: DIM)
-if clicked(rate_r) then
+if ui.clicked(rate_r) then
   rate = (rate + 1) % len(RATES)
 end
-if clicked(pill_r) then
+if ui.clicked(pill_r) then
   paused = !paused
   pause_toggles = pause_toggles + 1
 end
@@ -634,7 +635,7 @@ for k in range(0, VIS_ROWS) do
   end
 end
 clip_none()
-draw_scrollbar(list_r, count: NHOST, rows: VIS_ROWS, scroll: fleet.scroll)
+bloom.scrollbar(list_r, count: NHOST, rows: VIS_ROWS, scroll: fleet.scroll)
 
 // Fleet footer: the cluster's own load, as one bar per level band.
 draw_rect_rounded(foot_r, radius: 10, c: SURFACE)
@@ -687,7 +688,7 @@ for m in range(0, 4) do
   sparkline(rect(tr.x + 14, tr.y + 74, tr.w - 28, 20), hst: host, m: m, end_i: tick, n: 44, c: mc,
     fill_a: if active then 46 else 24 end)
 
-  if clicked(tr) then
+  if ui.clicked(tr) then
     sel_metric = m
   end
 end
@@ -943,7 +944,7 @@ for k in range(0, a_vis) do
     tx(ellipsize(al.text, avail_px: ar.w - 28, size: T_MICRO), x: ar.x + 16, y: ar.y + 27, size: T_MICRO,
       c: if al.ack then FAINT else DIM end)
 
-    if clicked(ar) then
+    if ui.clicked(ar) then
       sel_host = al.host
       sel_metric = al.metric
       fleet = {selected: al.host, scroll: ensure_visible(scroll: fleet.scroll, selected: al.host, visible_rows: VIS_ROWS)}
@@ -954,7 +955,7 @@ clip_none()
 if len(alerts) == 0 then
   tx_center("no alerts", cx: feed_r.center_x(), y: feed_r.y + feed_r.h / 2 - 8, size: T_SMALL, c: FAINT)
 end
-draw_scrollbar(feed_r, count: len(alerts), rows: a_vis, scroll: alerts_scroll)
+bloom.scrollbar(feed_r, count: len(alerts), rows: a_vis, scroll: alerts_scroll)
 
 // ── Footer hint ──────────────────────────────────────────────────────────────
 let hint = "↑↓ host    1-4 metric    space pause    [ ] rate    a ack"

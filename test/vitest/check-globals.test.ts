@@ -61,7 +61,7 @@ describe("check: unknown globals", () => {
   it("accepts core builtins bare, and the ui package through its import", () => {
     const body = `draw_rect(0, 0, 4, 4, 255, 0, 0)
 let f = mouse_x
-let b = button({x: 0, y: 0, w: 40, h: 20}, "ok")
+let b = list_row_rect({x: 0, y: 0, w: 40, h: 20}, 2, 0, 0)
 print(len([1]), theme)`;
     const r = checkStrict(`import ui\n${body}`);
     expect(r.stderr).toBe("");

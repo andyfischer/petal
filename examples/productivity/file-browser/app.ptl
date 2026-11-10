@@ -18,6 +18,7 @@ import ./fsdata as fs
 import ./icons as ic
 import ./peek as pk
 import ui
+import bloom
 import garden
 
 // ── palette and type ────────────────────────────────────────────────────────
@@ -67,7 +68,6 @@ state var scroll = 0.0
 state var tree_scroll = 0.0
 state var undo = []             // {nodes, label}: the tree is a value, so a step is a snapshot
 state var redo = []
-state var menu = menu_state()
 state var menu_ctx = {kind: "", id: -1}
 state var press = {id: -1, x: 0, y: 0, moved: false, collapse: false, twice: false}
 state var band = {on: false, x: 0.0, y: 0.0, base: []}
@@ -771,11 +771,11 @@ end
 // ── the context menu's entries ──────────────────────────────────────────────
 
 fn mi(label: string, act: string, on: bool = true) -> record
-  {label: label, enabled: on, sep: false, act: act}
+  {label: label, disabled: !on, sep: false, act: act}
 end
 
 fn msep() -> record
-  {label: "", enabled: false, sep: true, act: ""}
+  {label: "", disabled: true, sep: true, act: ""}
 end
 
 fn tick(on: bool, label: string) -> string
@@ -906,7 +906,7 @@ let cmd = mod_cmd() || mod_ctrl()
 let shift = mod_shift()
 let focus0 = focus
 let renaming0 = renaming
-let blocked = menu.open
+let blocked = bloom.menu_any_open()
 let modal = ql >= 0
 let free = !blocked && !modal
 
@@ -1230,7 +1230,7 @@ if free && mouse_pressed(1) then
   end
   if hit_side >= 0 then
     set menu_ctx = {kind: "side", id: hit_side}
-    set menu = menu_show(menu, mx, my, "side")
+    bloom.menu_open_at("ctx", mx, my)
   elsif point_in(mx, my, body) then
     set focus = "main"
     let i = item_at(mx, my)
@@ -1239,11 +1239,11 @@ if free && mouse_pressed(1) then
         select_only(items[i])
       end
       set menu_ctx = {kind: "item", id: items[i]}
-      set menu = menu_show(menu, mx, my, "item")
+      bloom.menu_open_at("ctx", mx, my)
     else
       select_none()
       set menu_ctx = {kind: "bg", id: cwd}
-      set menu = menu_show(menu, mx, my, "bg")
+      bloom.menu_open_at("ctx", mx, my)
     end
   end
 end
@@ -1951,11 +1951,9 @@ end
 
 // The context menu is the last thing drawn.
 let entries = menu_entries()
-let picked = context_menu(menu, entries, {bg: C.raised, fg: C.text, outline: mix(C.raised, #ffffff, 0.10), selection: C.accent,
-  size: 13, row_h: 26, font: "ui"})
-set menu = picked.menu
-if picked.index >= 0 then
-  run_menu(entries[picked.index].act)
+let picked = bloom.menu("ctx", rect(mx, my, 0, 0), entries, {at: "point", size: 13})
+if picked >= 0 then
+  run_menu(entries[picked].act)
 end
 
 if typing_now || (notice.text != "" && note_age < 5.2) || press.id >= 0 || band.on || (ql >= 0 && ql_t < 1.0) then
@@ -1979,8 +1977,8 @@ let obs_expanded = len(expanded)
 let obs_can_back = can_back
 let obs_can_forward = can_fwd
 let obs_history = map(hist, fn(k) -> get nodes[k].name)
-let obs_menu = if menu.open then menu_ctx.kind else "" end
-let obs_menu_items = if menu.open then map(entries, fn(e) -> e.label) else [] end
+let obs_menu = if bloom.menu_is_open("ctx") then menu_ctx.kind else "" end
+let obs_menu_items = if bloom.menu_is_open("ctx") then map(entries, fn(e) -> e.label) else [] end
 let obs_trash = map(fsx.kids[fs.TRASH], fn(k) -> get nodes[k].name)
 let obs_undo = len(undo)
 let obs_redo = len(redo)

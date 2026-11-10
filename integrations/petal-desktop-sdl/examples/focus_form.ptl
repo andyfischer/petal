@@ -1,12 +1,14 @@
 // === FOCUS FORM ===
-// Dogfoods the petal-ui focus story from the implicit `ui` module:
-//   - text_field (click-to-focus, typing, backspace, Return submits)
-//   - the focus registry + focus_update (Tab / Shift+Tab move focus)
+// Dogfoods the focus story: bloom's widgets over `ui`'s runtime focus.
+//   - bloom.text_field (click-to-focus, typing, selection, undo, Return submits)
+//   - bloom's Tab ring (Tab / Shift+Tab move focus in draw order); the list
+//     joins it with `bloom.focusable`
 //   - a focus-gated list_update (keyboard nav only while the list is focused)
 // The runtime holds focus, so exactly one widget has the keyboard at a time.
 // State lives in `state` so it survives hot reload.
 
 import ui
+import bloom
 
 state name = ""
 state email = ""
@@ -22,10 +24,6 @@ let accent = {r: 60, g: 140, b: 255}
 let outline = {r: 58, g: 64, b: 76}
 let sel = {r: 44, g: 74, b: 122}
 
-// Tab / Shift+Tab cycle focus across the two fields and the list.
-let ids = ["name", "email", "roles"]
-focus_update(ids)
-
 clear(bg.r, bg.g, bg.b)
 draw_text("PROFILE", {x: 40, y: 28}, 28, accent)
 draw_text("Tab / Shift+Tab to move · click a field · type · Return saves",
@@ -33,18 +31,20 @@ draw_text("Tab / Shift+Tab to move · click a field · type · Return saves",
 
 // Two text fields.
 draw_text("Name", {x: 40, y: 100}, 14, dim)
-let nf = text_field(id: "name", r: {x: 150, y: 94, w: 380, h: 28}, buf: name)
+let nf = bloom.text_field({x: 150, y: 94, w: 380, h: 28}, name, {id: "name"})
 name = nf.text
 
 draw_text("Email", {x: 40, y: 140}, 14, dim)
-let ef = text_field(id: "email", r: {x: 150, y: 134, w: 380, h: 28}, buf: email)
+let ef = bloom.text_field({x: 150, y: 134, w: 380, h: 28}, email, {id: "email"})
 email = ef.text
 
 // Focus-gated list: a role picker. Clicking it focuses it; j/k/arrows only
-// move the selection while it holds focus.
+// move the selection while it holds focus. Announcing it after the two
+// fields puts it third in the Tab ring.
 let role_names = ["Viewer", "Editor", "Admin", "Owner"]
 let list_r = {x: 150, y: 180, w: 380, h: 120}
 draw_text("Role", {x: 40, y: 186}, 14, dim)
+bloom.focusable("roles")
 if mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r: list_r) then
   focus_request("roles")
 end
@@ -64,7 +64,7 @@ end
 
 // Save: Return from either field, or the Save button.
 let do_save = nf.submitted || ef.submitted
-if button({x: 150, y: 320, w: 120, h: 34}, "Save") then
+if bloom.button({x: 150, y: 320, w: 120, h: 34}, "Save", {variant: "primary"}) then
   do_save = true
 end
 if do_save then

@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import ui
+import bloom
 
 let TAU = 6.28318530718
 
@@ -76,22 +77,19 @@ fn hex_of(c: record) -> string
 end
 
 // Garden draws every text run above every quad, so text painted before an
-// open context menu shows through it. The prelude keeps its menu rect
-// private, so estimate it and skip the text bands it will cover.
+// open context menu shows through it. Work out the menu box (bloom measures
+// it the same way) and skip the text bands it will cover.
 let MENU_ITEMS = ["Bring to front", "Bring forward", "Send backward",
-  "Send to back", "Duplicate", "Toggle visibility",
-  "Toggle lock", "Delete"]
+  "Send to back", {sep: true}, "Duplicate", "Toggle visibility",
+  "Toggle lock", {sep: true}, {label: "Delete", danger: true}]
 
 fn menu_est(m: record) -> Rect
-  if !m.open then
+  if !bloom.menu_is_open("layer") then
     rect(0, 0, 0, 0)
   else
-    let widest = 0
-    for s in MENU_ITEMS do
-      widest = max(widest, text_width(s, 14))
-    end
-    let w = clamp(widest + 28, lo: 120, hi: max(140, screen_width() - 24))
-    let h = 12 + len(MENU_ITEMS) * 24 + 2 * 9
+    let size = bloom.menu_size(MENU_ITEMS, {})
+    let w = size.w
+    let h = size.h
     let x = m.x
     let y = m.y
     if x + w > screen_width() then x = max(0, m.x - w) end
@@ -395,7 +393,7 @@ state drag = {mode: "none", h: -1, sx: 0.0, sy: 0.0, ang0: 0.0, base: [],
   doc0: [], moved: false, kind: "", nx: 0.0, ny: 0.0}
 state scrub = {field: "", x0: 0.0, v0: 0.0, doc0: []}
 state lscroll = 0
-state menu = menu_state()
+state menu_at = {x: 0, y: 0, tag: -1}   // where the layer menu opened, and on which shape
 state ops = 0
 state alpha_grab = false
 
@@ -477,7 +475,7 @@ let ORDERS = [{id: "back", t: "Back"}, {id: "backward", t: "↓"},
   {id: "forward", t: "↑"}, {id: "front", t: "Front"}]
 
 let over_canvas = point_in(px: mx, py: my, r: canvas)
-let blocked = menu.open
+let blocked = bloom.menu_any_open()
 let one = if len(sel) == 1 then idx_of(doc, sel[0]) else -1 end
 let rotatable = one >= 0 && doc[one].kind != "text"
 
@@ -916,18 +914,18 @@ end
 // ── Pointer: rail, header, inspector, layer rows ─────────────────────────
 
 for i in range(0, len(TOOLS)) do
-  if !blocked && clicked(tool_rects[i]) then
+  if !blocked && ui.clicked(tool_rects[i]) then
     tool = TOOLS[i].id
   end
 end
-if !blocked && clicked(btn_grid) then grid = !grid end
-if !blocked && clicked(btn_snap) then snap = !snap end
+if !blocked && ui.clicked(btn_grid) then grid = !grid end
+if !blocked && ui.clicked(btn_snap) then snap = !snap end
 
-let hit_undo = !blocked && clicked(btn_undo) && len(hist) > 0
-let hit_redo = !blocked && clicked(btn_redo) && len(fut) > 0
+let hit_undo = !blocked && ui.clicked(btn_undo) && len(hist) > 0
+let hit_redo = !blocked && ui.clicked(btn_redo) && len(fut) > 0
 
 for i in range(0, len(FILLS)) do
-  if !blocked && len(sel) > 0 && clicked(swatches[i]) then
+  if !blocked && len(sel) > 0 && ui.clicked(swatches[i]) then
     hist = push_hist(hist, doc)
     fut = []
     doc = apply_fill(doc, sel, c: FILLS[i])
@@ -937,7 +935,7 @@ end
 
 let group_b = if len(sel) > 0 then sel_bounds(doc, sel) else rect(0, 0, 0, 0) end
 for i in range(0, len(ALIGN)) do
-  if !blocked && len(sel) > 1 && clicked(align_rects[i]) then
+  if !blocked && len(sel) > 1 && ui.clicked(align_rects[i]) then
     hist = push_hist(hist, doc)
     fut = []
     doc = apply_align(doc, sel, mode: ALIGN[i], b: group_b)
@@ -947,7 +945,7 @@ end
 
 let order_now = ""
 for i in range(0, len(ORDERS)) do
-  if !blocked && len(sel) > 0 && clicked(order_rects[i]) then
+  if !blocked && len(sel) > 0 && ui.clicked(order_rects[i]) then
     order_now = ORDERS[i].id
   end
 end
@@ -980,21 +978,21 @@ for i in range(0, len(row_rects)) do
     let r = row_rects[i]
     let eye = rect(r.x + r.w - 30, r.y + 5, 22, 20)
     let lockr = rect(r.x + r.w - 56, r.y + 5, 22, 20)
-    if !blocked && clicked(eye) then
+    if !blocked && ui.clicked(eye) then
       hist = push_hist(hist, doc)
       fut = []
       let s = doc[si]
       s.vis = !s.vis
       doc = put(doc, i: si, s: s)
       ops = ops + 1
-    elsif !blocked && clicked(lockr) then
+    elsif !blocked && ui.clicked(lockr) then
       hist = push_hist(hist, doc)
       fut = []
       let s = doc[si]
       s.lock = !s.lock
       doc = put(doc, i: si, s: s)
       ops = ops + 1
-    elsif !blocked && clicked(r) then
+    elsif !blocked && ui.clicked(r) then
       let id = doc[si].id
       if mod_shift() then
         if contains(sel, id) then
@@ -1010,7 +1008,10 @@ for i in range(0, len(row_rects)) do
         sel = [id]
       end
     end
-    menu = menu_open_on_right_click(m: menu, r: r, tag: doc[si].id)
+    if !blocked && mouse_pressed(1) && point_in(px: mx, py: my, r: r) then
+      menu_at = {x: mx, y: my, tag: doc[si].id}
+      bloom.menu_open_at("layer", mx, my)
+    end
   end
 end
 
@@ -1061,7 +1062,7 @@ let one2 = if len(sel) == 1 then idx_of(doc, sel[0]) else -1 end
 //  DRAW
 // ═════════════════════════════════════════════════════════════════════════
 
-let mr = menu_est(menu)
+let mr = menu_est(menu_at)
 
 clear(BG.r, BG.g, BG.b)
 
@@ -1477,7 +1478,7 @@ for i in range(0, len(row_rects)) do
   end
 end
 clip_none()
-draw_scrollbar(list_r, count: len(doc), rows: vis_rows, scroll: lscroll)
+bloom.scrollbar(list_r, count: len(doc), rows: vis_rows, scroll: lscroll)
 
 // ── Status bar ───────────────────────────────────────────────────────────
 draw_rect(x: 0, y: H - STATUS_H, w: W, h: STATUS_H, r: PANEL.r, g: PANEL.g, b: PANEL.b)
@@ -1520,37 +1521,25 @@ end
 
 // ── Context menu ─────────────────────────────────────────────────────────
 
-let picked = context_menu(menu, [
-  menu_item("Bring to front"),
-  menu_item("Bring forward"),
-  menu_item("Send backward"),
-  menu_item("Send to back"),
-  menu_sep(),
-  menu_item("Duplicate"),
-  menu_item("Toggle visibility"),
-  menu_item("Toggle lock"),
-  menu_sep(),
-  menu_item("Delete"),
-])
-menu = picked.menu
-if picked.index >= 0 then
-  let tag = picked.tag
+let picked = bloom.menu("layer", rect(mx, my, 0, 0), MENU_ITEMS, {at: "point"})
+if picked >= 0 then
+  let tag = menu_at.tag
   if !contains(sel, tag) then
     sel = [tag]
   end
   hist = push_hist(hist, doc)
   fut = []
-  if picked.index == 0 then doc = apply_order(doc, sel, mode: "front") end
-  if picked.index == 1 then doc = apply_order(doc, sel, mode: "forward") end
-  if picked.index == 2 then doc = apply_order(doc, sel, mode: "backward") end
-  if picked.index == 3 then doc = apply_order(doc, sel, mode: "back") end
-  if picked.index == 5 then
+  if picked == 0 then doc = apply_order(doc, sel, mode: "front") end
+  if picked == 1 then doc = apply_order(doc, sel, mode: "forward") end
+  if picked == 2 then doc = apply_order(doc, sel, mode: "backward") end
+  if picked == 3 then doc = apply_order(doc, sel, mode: "back") end
+  if picked == 5 then
     let res = dup_sel(doc, sel, start_id: next_id)
     doc = res.doc
     sel = res.sel
     next_id = res.next
   end
-  if picked.index == 6 then
+  if picked == 6 then
     let nd = []
     for s in doc do
       if contains(sel, s.id) then s.vis = !s.vis end
@@ -1558,7 +1547,7 @@ if picked.index >= 0 then
     end
     doc = nd
   end
-  if picked.index == 7 then
+  if picked == 7 then
     let nd = []
     for s in doc do
       if contains(sel, s.id) then s.lock = !s.lock end
@@ -1566,7 +1555,7 @@ if picked.index >= 0 then
     end
     doc = nd
   end
-  if picked.index == 9 then
+  if picked == 9 then
     doc = del_sel(doc, sel)
     sel = []
   end

@@ -12,6 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import ui
+import bloom
 import garden
 
 let TAU = 6.28318530718
@@ -659,7 +660,7 @@ state motion = true
 state cam = fit_cam(bounds_of(boot.px, boot.py, G.rad, for i in range(0, G.n) do true end), canvas, 1.25)
 state cam_to = {on: false, x: 0.0, y: 0.0, z: 1.0}
 state drag = {mode: "none", sx: 0.0, sy: 0.0, wx: 0.0, wy: 0.0, cx: 0.0, cy: 0.0, starts: [], id: -1, moved: false, shift: false, snap: {}}
-state menu = menu_state()
+state menu_tag = {what: "canvas", id: -1}   // what the context menu was opened on
 state query = ""
 state qsel = 0
 state clicks = 0          // every canvas press, for tests
@@ -676,7 +677,7 @@ let all_idx = range(0, n)
 let act = for i in all_idx do !contains(hidden, NODES[i].g) end
 sel = filter(sel, fn(i) -> act[i])
 
-let blocked = menu.open
+let blocked = bloom.menu_is_open("graph")
 
 // Search field: the logic half now, the pixels with the header.
 let field_r = rect(search_r.x + 30, search_r.y, search_r.w - 62, search_r.h)
@@ -942,7 +943,8 @@ if drag.mode == "none" && !ui_block then
     end
   elsif over_canvas && mouse_pressed(1) then
     if hit >= 0 && !contains(sel, hit) then sel = [hit] end
-    menu = menu_show(menu, mx, my, if hit >= 0 then {what: "node", id: hit} else {what: "canvas", id: -1} end)
+    menu_tag = if hit >= 0 then {what: "node", id: hit} else {what: "canvas", id: -1} end
+    bloom.menu_open_at("graph", mx, my)
   end
 end
 
@@ -1521,17 +1523,17 @@ let nlen = force.len
 let ngrav = force.grav
 txt("Repulsion", sxl, sy, ts(12, TEXT))
 txt_r(str(int(round(force.rep))), sxl + sw, sy + 1, mono(11, ACCENT))
-let nrep_s = slider(rect(sxl - 2, sy + 19, sw + 4, 18), force.rep, 150.0, 2400.0, {fill: ACCENT, track: ELEV, knob: TEXT})
+let nrep_s = bloom.slider(rect(sxl - 2, sy + 19, sw + 4, 18), force.rep, 150.0, 2400.0, {color: ACCENT, readout: false})
 if side_live then nrep = nrep_s end
 sy = sy + 44
 txt("Link length", sxl, sy, ts(12, TEXT))
 txt_r(str(int(round(force.len))) ++ " px", sxl + sw, sy + 1, mono(11, ACCENT))
-let nlen_s = slider(rect(sxl - 2, sy + 19, sw + 4, 18), force.len, 25.0, 140.0, {fill: ACCENT, track: ELEV, knob: TEXT})
+let nlen_s = bloom.slider(rect(sxl - 2, sy + 19, sw + 4, 18), force.len, 25.0, 140.0, {color: ACCENT, readout: false})
 if side_live then nlen = nlen_s end
 sy = sy + 44
 txt("Gravity", sxl, sy, ts(12, TEXT))
 txt_r(str(round(force.grav * 100.0, 1)), sxl + sw, sy + 1, mono(11, ACCENT))
-let ngrav_s = slider(rect(sxl - 2, sy + 19, sw + 4, 18), force.grav, 0.0, 0.2, {fill: ACCENT, track: ELEV, knob: TEXT})
+let ngrav_s = bloom.slider(rect(sxl - 2, sy + 19, sw + 4, 18), force.grav, 0.0, 0.2, {color: ACCENT, readout: false})
 if side_live then ngrav = ngrav_s end
 sy = sy + 48
 if nrep != force.rep || nlen != force.len || ngrav != force.grav then
@@ -1958,17 +1960,22 @@ end
 
 // ── Context menu: the last draw call ─────────────────────────────────────
 
-let m_tag = menu.tag
-let node_menu = menu.open && m_tag.what == "node"
+// A bloom menu, opened at the pointer by the right-click above. While it is
+// open it captures bloom's input; the raw mouse handling above stands down
+// on `blocked`.
+let m_tag = menu_tag
+let node_menu = m_tag.what == "node"
 let items = if node_menu then
-  [menu_item(if pins[m_tag.id] then "Unpin" else "Pin in place" end), menu_item("Focus camera"), menu_sep(),
-    menu_item("Select neighbours"), menu_item("Select group"), menu_item("Hide group")]
+  [if pins[m_tag.id] then "Unpin" else "Pin in place" end, "Focus camera", {sep: true},
+    "Select neighbours", "Select group", "Hide group"]
 else
-  [menu_item("Fit to view"), menu_item("Reheat layout"), menu_item("Scatter"), menu_sep(),
-    menu_item("Unpin all", pin_n > 0), menu_item("Show all groups", len(hidden) > 0)]
+  ["Fit to view", "Reheat layout", "Scatter", {sep: true},
+    {label: "Unpin all", disabled: pin_n == 0}, {label: "Show all groups", disabled: len(hidden) == 0}]
 end
-let picked = context_menu(menu, items, {font: "ui", bg: ELEV, fg: TEXT, dim: FAINT, outline: LINE, rule: LINE, selection: HOVER})
-menu = picked.menu
+let picked_ix = bloom.menu("graph", canvas, items, {at: "point", size: 13})
+let picked = if picked_ix < 0 then {index: -1, label: ""} else
+  {index: picked_ix, label: if type(items[picked_ix]) == "string" then items[picked_ix] else items[picked_ix].label end}
+end
 if picked.index >= 0 then
   if node_menu then
     let id = m_tag.id

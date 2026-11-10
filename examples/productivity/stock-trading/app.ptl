@@ -23,6 +23,7 @@ import ./numfmt as nf
 import ./look as lk
 import ./pricechart as pc
 import ui
+import bloom
 import garden
 
 let N = 12                       // listings: len(mk.UNIVERSE)
@@ -732,7 +733,7 @@ if tab == 0 then
       [nf.usd_signed(pnl), lk.mono(12, pc_c), "right"], [nf.pct(ret), lk.mono(12, pc_c), "right"],
       [nf.pct(change[i]), lk.mono(12, lk.dir_color(change[i])), "right"]])
   end
-  draw_scrollbar(Rect(body.x, body.y, body.w, pos_fit * ROW_H), len(held_ix), pos_fit, pos_scroll)
+  bloom.scrollbar(Rect(body.x, body.y, body.w, pos_fit * ROW_H), len(held_ix), pos_fit, pos_scroll)
   if len(held_ix) == 0 then
     txt("No open positions. Buy something from the ticket.", Rect(body.x, body.y, body.w, body.h - FOOT),
       lk.ui(13, lk.DIM), "center")
@@ -800,7 +801,7 @@ elsif tab == 1 then
       sel = o.i
     end
   end
-  draw_scrollbar(body, len(shown), rows_fit, order_scroll)
+  bloom.scrollbar(body, len(shown), rows_fit, order_scroll)
   if len(shown) == 0 then
     txt("No orders yet.", body, lk.ui(13, lk.DIM), "center")
   end
@@ -825,7 +826,7 @@ else
       [nf.usd(f.fee), lk.mono(12, lk.MUTED), "right"],
       [pnl_text, lk.mono(12, lk.dir_color(f.pnl ?? 0)), "right"], ["#{f.id}", lk.mono(12, lk.DIM), "right"]])
   end
-  draw_scrollbar(body, len(fills), rows_fit, fill_scroll)
+  bloom.scrollbar(body, len(fills), rows_fit, fill_scroll)
   if len(fills) == 0 then
     txt("No fills this session. Orders that execute are listed here.", body, lk.ui(13, lk.DIM), "center")
   end

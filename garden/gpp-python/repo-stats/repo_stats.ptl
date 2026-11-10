@@ -9,15 +9,17 @@
 //     authors: [{name, count, frac} …],
 //     recent:  [{short, subject, author, when} …] }
 //
-// Built on the ui component library (petal-ui docs/widgets.md): cards for the three
-// sections, pill/badge header stats, split_h/cut_* RectCut layout,
-// load_state for the async fetch, empty_state for a commitless repo.
+// Built on bloom's components (core-runtime/bloom/docs/components.md): cards
+// for the three sections, pill/badge header stats, load_view and empty_state;
+// and on `ui` for the split_h/cut_* RectCut layout and the load_state record
+// behind the async fetch.
 //
 // Test handles (via /state → panel.values): `ready`, `commit_count`,
 // `author_count`, `week_count`.
 
 import garden
 import ui
+import bloom
 
 state ls = load_state()
 
@@ -46,25 +48,25 @@ if ready then
   author_count = len(d.authors)
   week_count = len(d.weeks)
   let bx = header.x + text_width(title, T.font_lg) + 16
-  let b1 = pill(bx, header.y + 6, d.branch, T.accent)
-  let b2 = badge(b1.x + b1.w + 8, header.y + 6, str(d.total) ++ " commits")
+  let b1 = bloom.pill(bx, header.y + 6, d.branch, T.accent)
+  let b2 = bloom.badge(b1.x + b1.w + 8, header.y + 6, str(d.total) ++ " commits")
   if d.sampled < d.total then
-    badge(b2.x + b2.w + 8, header.y + 6, "charting last " ++ str(d.sampled))
+    bloom.badge(b2.x + b2.w + 8, header.y + 6, "charting last " ++ str(d.sampled))
   end
 end
 
 // ── Body ─────────────────────────────────────────────────────────────────
-if draw_load(body, ls) then
+if bloom.load_view(body, ls) then
   let d = ls.value
   if d.total == 0 then
-    empty_state(body, "No commits yet", "commit something and come back")
+    bloom.empty_state(body, "No commits yet", "commit something and come back")
   else
     let split_chart = cut_top(body, 190)
     let lower = cut_top(split_chart.rest, 12).rest
     let halves = split_h(lower, 0.42, 16)
 
     // Commits per week: one bar per ISO week, hover reads the exact count.
-    let c = card(split_chart.cut)
+    let c = bloom.card(split_chart.cut)
     draw_text("Commits per week", {x: c.x, y: c.y}, {size: T.font_sm, color: T.dim, weight: 600, spacing: 0.5})
     let chart = rect(c.x, c.y + 22, c.w, c.h - 40)
     let n = len(d.weeks)
@@ -87,7 +89,7 @@ if draw_load(body, ls) then
     draw_text_right(d.weeks[n - 1].label, chart.x + chart.w, chart.y + chart.h + 6, T.font_sm, T.dim)
 
     // Top authors: name + share bar.
-    let a = card(halves.a)
+    let a = bloom.card(halves.a)
     draw_text("Top authors", {x: a.x, y: a.y}, {size: T.font_sm, color: T.dim, weight: 600, spacing: 0.5})
     let arow_h = 30
     for i in range(0, len(d.authors)) do
@@ -103,7 +105,7 @@ if draw_load(body, ls) then
     end
 
     // Recent commits.
-    let r = card(halves.b)
+    let r = bloom.card(halves.b)
     draw_text("Recent commits", {x: r.x, y: r.y}, {size: T.font_sm, color: T.dim, weight: 600, spacing: 0.5})
     let crow_h = 24
     let hash_w = 64

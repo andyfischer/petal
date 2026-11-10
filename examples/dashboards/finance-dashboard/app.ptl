@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import ui
+import bloom
 import color
 
 // ── Palette ──────────────────────────────────────────────────────────────────
@@ -1131,4 +1132,4 @@ if len(view.rows) == 0 then
   text_at("no transactions in this scope", x: tplot.x, y: t_view.y + 14,
     st: {size: T_SMALL, color: FAINT})
 end
-draw_scrollbar(t_view, count: len(view.rows), rows: t_rows_visible, scroll: table_scroll)
+bloom.scrollbar(t_view, count: len(view.rows), rows: t_rows_visible, scroll: table_scroll)

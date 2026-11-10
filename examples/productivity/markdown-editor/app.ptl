@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import ui
+import bloom
 import garden
 
 // ── Palette ──────────────────────────────────────────────────────────────
@@ -1071,7 +1072,7 @@ state escroll = 0                // editor scroll, px
 state pscroll = 0                // preview scroll, px
 state last_escroll = -1
 state dragging = false
-state sp      = splitter_state(0.5)
+state pane_frac = 0.5           // the editor pane's share of MAIN
 state undo    = []
 state redo    = []
 state last_edit = -9.0
@@ -1094,8 +1095,8 @@ let doc = doc_by_id(docs, sel_doc)
 let lines = doc.lines
 
 // ── Layout of the two panes ──────────────────────────────────────────────
-let s = splitter(sp, r: MAIN, style: {min_a: 300, min_b: 300, line: OUTLINE, active: ACCENT, band: 9, gap: 0})
-sp = s.state
+let s = bloom.splitter(MAIN, pane_frac, {min_a: 300, min_b: 300, line: OUTLINE, active: ACCENT, band: 9, gap: 0})
+pane_frac = s.frac
 let ed_r = if mode == "editor" then MAIN elsif mode == "preview" then rect(0, 0, 0, 0) else s.a end
 let pv_r = if mode == "preview" then MAIN elsif mode == "editor" then rect(0, 0, 0, 0) else s.b end
 let show_ed = mode != "preview"
@@ -1120,7 +1121,7 @@ fn hit_pos(rows: list, px: num, py: num, scroll: num) -> record
 end
 
 let text_r = rect(ed_r.x + GUT_W, ed_r.y, ed_r.w - GUT_W, ed_r.h)
-if show_ed && click && point_in(px: mx, py: my, r: text_r) && !sp.drag then
+if show_ed && click && point_in(px: mx, py: my, r: text_r) && !s.dragging then
   let p = hit_pos(rows, px: mx, py: my, scroll: escroll)
   let dbl = click_count() >= 2 || (now - click_t < 0.45 && abs(mx - click_x) < 6 && abs(my - click_y) < 6)
   click_t = now
@@ -1710,6 +1711,6 @@ draw_text(if dirty then "unsaved" elsif now - flash < 2.0 then "saved" else "up 
 let undo_n = len(undo)
 let redo_n = len(redo)
 let right_txt = if hover_link != "" then hover_link
-elsif sp.drag then "{int(sp.frac * 100)}% editor"
+elsif s.dragging then "{int(s.frac * 100)}% editor"
 else "⌘B bold · ⌘I italic · ⌘K link · ⌘Z undo · ⌘E view · {undo_n} undo · {redo_n} redo" end
 draw_text_right(right_txt, right_x: W - 16, y: sy + 7, style: {size: FS_TINY, color: if hover_link != "" then ACCENT else FAINT end})

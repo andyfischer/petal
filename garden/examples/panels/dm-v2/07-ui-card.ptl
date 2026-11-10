@@ -1,9 +1,9 @@
 // ── Drag mode 7: a settings card from the ui helpers ─────
 //   garden petal-ide examples/panels/dm-v2/07-ui-card.ptl
 //
-// A card built with the `ui` package's `pad`, `cut_top`,
-// `vstack`, `button` and `progress_bar`. Every rectangle is
-// computed by library code (the bundled prelude, never
+// A card laid out with the `ui` package's `pad`, `cut_top` and
+// `vstack`, drawn with bloom's `card`, `button` and `progress`.
+// Every rectangle is computed by library code (bundled, never
 // edited), so every edit lands in this file's few numbers.
 //
 // What to drag (drag mode on: Cmd+Shift+D):
@@ -19,6 +19,7 @@
 //   button sideways: the card moves instead.
 
 import ui
+import bloom
 
 let panel = {x: 20, y: 20, w: 320, h: 240}
 let inset = 12
@@ -30,9 +31,9 @@ let head = cut_top(inner, header_h)
 let rows = vstack(head.rest, 4, row_gap)
 
 clear(11, 13, 18)
-card(panel)
+bloom.card(panel)
 draw_text("Settings", head.cut.x, head.cut.y + 6, 16, 232, 236, 248)
-button(rows[0], "Sync now")
-button(rows[1], "Sign out")
-progress_bar(rows[2], 0.6)
+bloom.button(rows[0], "Sync now")
+bloom.button(rows[1], "Sign out")
+bloom.progress(rows[2], 0.6)
 draw_text("Storage 60%", rows[3].x, rows[3].y + 4, 12, 160, 168, 184)

@@ -100,6 +100,10 @@
 
 import garden
 import ui
+import bloom
+
+// The commit rows' right-click menu's id (bloom holds which menu is open).
+let COMMIT_MENU = "commit-menu"
 
 // The pre-load placeholder. Each editable view's `projection` starts empty: the
 // host reads every field of a projection spec with a default, so an empty record
@@ -137,7 +141,7 @@ state commits_ready = false
 state commits_asked = false
 state csel = 0               // selected commit row
 state commit_scroll = 0      // first visible commit row
-state menu = menu_state()    // the commit rows' right-click menu
+state menu_tag = -1          // the commit row the right-click menu was opened on
 state mode_applied = false   // has the launch flag's initial mode been applied yet?
 state pr_open = true         // whether the PR discussion block is expanded
 // Soft-wrap the unified view's long lines to the column width instead of
@@ -147,7 +151,7 @@ state pr_open = true         // whether the PR discussion block is expanded
 // offers it — split's two regions are row-aligned, and wrapping one would slide
 // it out of step with the other.
 state uni_wrap = true
-state flist = list_state()   // file-column list: {selected, scroll} (prelude)
+state flist = list_state()   // file-column list: {selected, scroll} (ui)
 state list_drag = false      // dragging the file column's scrollbar thumb?
 // ── staleness ──────────────────────────────────────────────────────────────
 // A review is a window onto a moving working tree: a rebase, an agent editing
@@ -163,7 +167,7 @@ state probes = 0             // completed probes; observed by name, so tests can
 
 // ── theme ─────────────────────────────────────────────────────────────────
 // `ui_theme()` resolves to Garden's palette automatically (the host binds it
-// every frame), so the prelude widgets used below and these aliases paint from
+// every frame), so the bloom widgets used below and these aliases paint from
 // the same tokens. The SCREAMING aliases just keep the body readable.
 let T = ui_theme()
 let BG = T.bg
@@ -307,7 +311,7 @@ if has_pr then title = "PR #{doc.pr.number}" end
 if ready && len(scope) > 0 then title = "diff ▸ {scope_label}" end
 if has_pr && len(scope) > 0 then title = "PR #{doc.pr.number} ▸ {scope_label}" end
 if len(err) > 0 then title = "diff error" end
-if !ready && len(err) == 0 then title = "loading diff {spinner_glyph()}" end
+if !ready && len(err) == 0 then title = "loading diff {bloom.spinner_glyph()}" end
 
 // Tabs read in the order the views are reached for: unified (the default —
 // what "show me the diff" means), then the editable split, the diagram, and
@@ -319,7 +323,7 @@ let pills_x = PAD + text_width(title, FS) + 24
 // Icon-only (28px), so the tab strip still fits a narrow header.
 let refresh_w = 28
 let refresh_r = rect(pills_x, PAD - 3, refresh_w, 23)
-// The mode switch is the prelude `tab_bar`. This geometry mirrors its layout
+// The mode switch is bloom's `tabs`. This geometry mirrors its layout
 // (each tab is its label plus 24px, with a 4px gap) so the per-tab centres can
 // be named for tests below. The strip's bottom edge sits exactly on the header
 // hairline, so the active tab's underline reads against it.
@@ -330,7 +334,7 @@ let split_w = text_width("split", FS) + 24
 let stat_w = text_width("stat", FS) + 24
 let commits_w = text_width("commits", FS) + 24
 let tabs_r = rect(tabs_x, PAD, unified_w + split_w + stat_w + commits_w + 12, 30)
-// The wrap toggle (a prelude checkbox) rides at the end of the tab strip, and
+// The wrap toggle (a bloom checkbox) rides at the end of the tab strip, and
 // only in unified mode — it is the only view that wraps.
 let wrap_w = text_width("wrap", FS) + 26
 let wrap_r = rect(tabs_r.x + tabs_r.w + 18, PAD - 3, wrap_w, 23)
@@ -353,7 +357,7 @@ let commits_x = tabs_x + unified_w + split_w + stat_w + 12 + commits_w / 2
 let wrap_x = wrap_r.x + (wrap_w / 2)
 
 // ── input ─────────────────────────────────────────────────────────────────────
-// The header controls are prelude widgets now (button / tab_bar / checkbox), so
+// The header controls are bloom widgets (button / tabs / checkbox), so
 // they handle their own clicks where they draw, in the chrome section below.
 // A press there also hands keyboard focus back from any focused region (the host
 // clears it on a press outside every region), so switching mid-edit is safe.
@@ -390,20 +394,19 @@ let content_top = PAD + header_h
 clear(BG.r, BG.g, BG.b)
 draw_text(title, {x: PAD, y: PAD}, FS, TEXT)
 // While the doc loads the body is empty: say so in the middle of it too, with
-// the prelude's arc spinner (the title already carries the text glyph).
+// bloom's arc spinner (the title already carries the text glyph).
 if !ready && len(err) == 0 then
-  spinner(w / 2, h / 2, 14)
+  bloom.spinner(w / 2, h / 2, 14)
 end
 
-// The ⟳ reload control: a prelude `button` carrying a drawn glyph (Garden's
+// The ⟳ reload control: a bloom `button` carrying a drawn glyph (Garden's
 // mono font has no ⟳) — an annular arc left open at its end and capped with an
 // arrowhead, so it reads as a circular reload arrow. Filled with the accent
 // while the view is stale: the reload is the thing to do next, so the control
 // itself is the marker. Returns the button's click. Captures the theme lets.
 fn refresh_button(r, on)
-  let sty = {}
-  if on then sty = {bg: ACCENT, hover: ACCENT, outline: ACCENT} end
-  let click = button(r, "", sty)
+  let opts = if on then {fill: ACCENT} else {} end
+  let click = bloom.button(r, "", opts)
   let glyph = DIM
   if on then
     glyph = contrast_text(ACCENT)
@@ -431,8 +434,8 @@ if ready && len(err) == 0 then
   // the staleness story (the probe above is the automatic half): it is also how
   // a *stale* view with unsaved edits is finally taken, which is why it is a
   // click and not something the panel does on its own. Stands down while a
-  // context menu is open — that click belongs to the menu (`menu.open`).
-  if refresh_button(refresh_r, stale) && !menu.open then
+  // context menu is open — that click belongs to the menu.
+  if refresh_button(refresh_r, stale) && !bloom.menu_any_open() then
     invalidate("doc", scope)
     // The commit list is part of the review too — a new commit is exactly the
     // kind of thing a reload is asked for.
@@ -443,7 +446,7 @@ if ready && len(err) == 0 then
     probing = false
     next_probe = time() + PROBE_SECS
   end
-  // The mode switch: the prelude tab bar, its underline sitting on the header
+  // The mode switch: bloom's tab strip, its underline sitting on the header
   // hairline. Its click stands down while a context menu is open, like every
   // other handler here.
   let mode_idx = match mode
@@ -452,12 +455,12 @@ if ready && len(err) == 0 then
     when "commits" -> 3
     when _ -> 0
   end
-  let picked_tab = tab_bar(tabs_r, TABS, mode_idx, {size: FS})
-  if !menu.open && picked_tab != mode_idx then
+  let picked_tab = bloom.tabs(tabs_r, TABS, mode_idx, {size: FS})
+  if !bloom.menu_any_open() && picked_tab != mode_idx then
     mode = TABS[int(picked_tab)]
   end
   if mode == "unified" then
-    uni_wrap = checkbox(wrap_r, "wrap", uni_wrap)
+    uni_wrap = bloom.checkbox(wrap_r, "wrap", uni_wrap)
   end
 
   let nfiles = "{len(doc.files)} files"
@@ -513,7 +516,7 @@ else
   if has_pr then
     let meta = "#{doc.pr.number}  {doc.pr.title}"
     draw_text(meta, {x: PAD, y: content_top}, FS, TEXT)
-    // The PR's state as a prelude status pill beside the title: open reads
+    // The PR's state as a bloom status pill beside the title: open reads
     // success, merged reads accent, closed reads danger. `gh` spells the state
     // the way GitHub's API does (`OPEN`), so it is compared lower-cased.
     if len(doc.pr.status) > 0 then
@@ -523,16 +526,16 @@ else
         when "closed" -> RED
         when _ -> DIM
       end
-      pill(PAD + text_width(meta, FS) + 12, content_top - 1, doc.pr.status, stc)
+      bloom.pill(PAD + text_width(meta, FS) + 12, content_top - 1, doc.pr.status, stc)
     end
     let sub = "@{doc.pr.author}  ·  {doc.pr.base_ref} ← {doc.pr.head_ref}"
     draw_text(sub, {x: PAD, y: content_top + 18}, FS, DIM)
-    // The discussion block's toggle: a prelude button.
+    // The discussion block's toggle: a bloom button.
     let tog = "hide discussion"
     if !pr_open then tog = "show discussion" end
     let tog_w = text_width(tog, FS) + 16
     let tog_r = rect(w - PAD - tog_w, content_top - 2, tog_w, 21)
-    if button(tog_r, tog, {size: FS}) then pr_open = !pr_open end
+    if bloom.button(tog_r, tog, {size: FS}) then pr_open = !pr_open end
     body_offset = 40
     if pr_open then
       // The description + conversation comments in their own selectable /
@@ -573,7 +576,7 @@ else
     let list_visible = max(1, int(float(body_h) / list_row_h))
     let max_scroll = max(0, list_rows - list_visible)
     // The rows' hit rect leaves the right 12px to the scrollbar, and its height
-    // is a whole number of rows so the prelude list's row math is exact.
+    // is a whole number of rows so `ui`'s list row math is exact.
     let list_rect = rect(PAD, body_top, list_w - 12, list_visible * list_row_h)
 
     draw_text("FILES", {x: PAD, y: label_y}, FS, DIM)
@@ -581,13 +584,13 @@ else
 
     // A press on a row selects it AND jumps the diff beside it — re-clicking
     // the already-selected row jumps again — so the pressed row is derived
-    // here rather than from the prelude list's selection delta.
+    // here rather than from `ui`'s list selection delta.
     let pressed_row = -1
-    if mouse_pressed(0) && point_in(mx, my, list_rect) && !menu.open then
+    if mouse_pressed(0) && point_in(mx, my, list_rect) && !bloom.menu_any_open() then
       let prow = int(flist.scroll) + int(float(my - body_top) / list_row_h)
       if prow >= 0 && prow < list_rows then pressed_row = prow end
     end
-    // The prelude list: click-select plus the hover-scoped wheel (the diff
+    // `ui`'s list: click-select plus the hover-scoped wheel (the diff
     // regions never see it — they only capture the wheel over their own rect).
     // Keyboard nav stays off (`active` false): j/k belong to the regions' vim.
     // It also clamps for us — a save reloads the doc, and the new outline can
@@ -597,8 +600,8 @@ else
     let sel = int(flist.selected)
     let list_scroll = int(flist.scroll)
 
-    // Scrollbar: prelude-drawn; the track stays grabbable (press anywhere on it
-    // to jump there, then drag) — `draw_scrollbar` paints, this block steers.
+    // Scrollbar: bloom-drawn; the track stays grabbable (press anywhere on it
+    // to jump there, then drag) — `bloom.scrollbar` paints, this block steers.
     let overflowing = list_rows > list_visible
     if overflowing then
       let track = rect(bar_x, body_top, 8, body_h)
@@ -620,7 +623,7 @@ else
           flist = {selected: sel, scroll: list_scroll}
         end
       end
-      draw_scrollbar(rect(PAD, body_top, list_w - 2, body_h), list_rows, list_visible, list_scroll, {width: 8})
+      bloom.scrollbar(rect(PAD, body_top, list_w - 2, body_h), list_rows, list_visible, list_scroll, {width: 8})
       // The track's centre line — the x a test drags the thumb along. Bound
       // rather than drawn inline, so the gesture is addressable by name.
       let list_bar_x = bar_x + 4
@@ -661,18 +664,18 @@ else
     // left over from a longer one.
     if csel >= commit_rows then csel = 0 end
     let clist_r = rect(PAD, body_top, w - 2 * PAD, body_h)
-    // The prelude scroll region: hover-scoped wheel, clamped (which also covers
+    // `ui`'s scroll region: hover-scoped wheel, clamped (which also covers
     // an offset left over from a longer list). `scroll_y()` is fractional
     // (trackpads report sub-tick deltas), so the offset is re-`int`ed — the row
     // index has to stay an integer.
     commit_scroll = int(scroll_update(commit_scroll, commit_rows, cvisible, clist_r, false))
 
     if !commits_ready then
-      draw_text("loading commits {spinner_glyph()}", {x: PAD, y: body_top + 4}, FS, DIM)
+      draw_text("loading commits {bloom.spinner_glyph()}", {x: PAD, y: body_top + 4}, FS, DIM)
     elsif commit_rows == 0 then
-      empty_state(clist_r, "no commits yet", "this review is uncommitted work vs {doc.base}")
+      bloom.empty_state(clist_r, "no commits yet", "this review is uncommitted work vs {doc.base}")
     else
-      draw_scrollbar(clist_r, commit_rows, cvisible, commit_scroll)
+      bloom.scrollbar(clist_r, commit_rows, cvisible, commit_scroll)
       let cshown = min(cvisible, commit_rows - commit_scroll)
       for i in range(0, cshown) do
         let idx = commit_scroll + i
@@ -689,7 +692,7 @@ else
         end
         // The newest commit leads the list and is what "the latest commit"
         // means, so it is worth marking rather than making the reader count —
-        // a prelude status pill, tinted with the accent.
+        // a bloom status pill, tinted with the accent.
         let sha_color = ACCENT
         if idx > 0 then sha_color = DIM end
         draw_text(c.short, {x: PAD + 8, y: y + 4}, FS, sha_color)
@@ -699,20 +702,23 @@ else
         draw_text_right(c.date, w - PAD - 8, y + 4, FS, DIM)
         draw_text("@{c.author}", {x: subj_x, y: y + 21}, FS, DIM)
         if idx == 0 then
-          pill(w - PAD - 8 - (text_width("latest", 12) + 14), y + 19, "latest", ACCENT)
+          bloom.pill(w - PAD - 8 - (text_width("latest", 12) + 14), y + 19, "latest", ACCENT)
         end
         draw_line({x: PAD, y: y + commit_row_h - 1}, {x: w - PAD, y: y + commit_row_h - 1}, LINE)
 
         // A left press scopes to this commit; a right press opens the menu on
         // it. Both stand down while a menu is already open — that press is the
-        // menu's to resolve (see `menu.open`).
-        if !menu.open && mouse_pressed(0) && point_in(mx, my, row_r) then
+        // menu's to resolve.
+        if !bloom.menu_any_open() && mouse_pressed(0) && point_in(mx, my, row_r) then
           csel = idx
           want_scope = "commit:{c.sha}"
           want_label = "{c.short} {c.subject}"
           scope_pending = true
         end
-        menu = menu_open_on_right_click(menu, row_r, idx)
+        if !bloom.menu_any_open() && mouse_pressed(1) && point_in(mx, my, row_r) then
+          menu_tag = idx
+          bloom.menu_open_at(COMMIT_MENU, mx, my)
+        end
       end
     end
   elsif mode == "split" then
@@ -787,8 +793,8 @@ else
     draw_text("STAT · changed lines per file", {x: PAD, y: label_y}, FS, DIM)
     let n = len(doc.files)
     if n == 0 then
-      // Nothing to chart: the prelude empty-state instead of a zero-row table.
-      empty_state(rect(PAD, body_top, w - 2 * PAD, body_h), "nothing to diff", "the working tree matches {doc.base}")
+      // Nothing to chart: bloom's empty-state instead of a zero-row table.
+      bloom.empty_state(rect(PAD, body_top, w - 2 * PAD, body_h), "nothing to diff", "the working tree matches {doc.base}")
     else
       let total_add = 0
       let total_del = 0
@@ -918,42 +924,44 @@ else
 end
 
 // ── context menu ─────────────────────────────────────────────────────────────
-// Drawn last so it sits over every view, and resolved last so the click that
-// picks an item is not also handled by whatever is underneath (every other
-// click handler above stands down while `menu.open` is true).
+// bloom's menu, drawn last so it sits over every view. While it is open it
+// captures the pointer, so bloom controls underneath go inert; the handlers
+// above that read the mouse themselves stand down while `menu_any_open()`.
 //
-// The menu is opened on a commit row and carries that row's index as its tag,
-// so the actions below know which commit they are about even after the pointer
-// has moved off it.
-if menu.open then
-  let mi = menu.tag
+// The menu is opened on a commit row and `menu_tag` keeps that row's index, so
+// the actions below know which commit they are about even after the pointer
+// has moved off it. `menu` is safe to call every frame: closed, it does nothing.
+if menu_tag >= 0 && menu_tag < len(commits) then
+  let mi = menu_tag
   let mc = commits[mi]
-  let picked = context_menu(menu, [
-    menu_item("Only this commit"),
-    menu_item("Everything since this commit"),
-    menu_sep(),
-    menu_item("Whole review", len(scope) > 0)
-  ])
-  menu = picked.menu
-  if picked.index == 0 then
+  let picked = bloom.menu(COMMIT_MENU, rect(0, 0, w, h), [
+    "Only this commit",
+    "Everything since this commit",
+    {sep: true},
+    {label: "Whole review", disabled: len(scope) == 0}
+  ], {at: "point", size: FS})
+  if picked == 0 then
     csel = mi
     want_scope = "commit:{mc.sha}"
     want_label = "{mc.short} {mc.subject}"
     scope_pending = true
-  elsif picked.index == 1 then
+  elsif picked == 1 then
     // Still a working-tree diff, just from a nearer base — so unlike "only this
     // commit" it stays editable.
     csel = mi
     want_scope = "since:{mc.sha}"
     want_label = "since {mc.short}"
     scope_pending = true
-  elsif picked.index == 3 then
-    // 3, not 2: `menu_sep()` occupies an index of its own in the item list.
+  elsif picked == 3 then
+    // 3, not 2: the separator occupies an index of its own in the item list.
     want_scope = ""
     want_label = ""
     scope_pending = true
   end
 end
+// The late layer: paints the menu (and any tooltip) over everything drawn
+// this frame.
+bloom.overlays()
 
 // ── apply a requested scope change ───────────────────────────────────────────
 // Last, so every handler above has had its say, and in one place so the loader
@@ -980,7 +988,7 @@ end
 //
 // The header hit targets are bound with the tab geometry near the top, and each
 // body region binds its own x/y where the notice / PR bands have settled it.
-let menu_open = menu.open
+let menu_open = bloom.menu_is_open(COMMIT_MENU)
 let has_error = len(err) > 0
 let files = len(doc.files)
 if has_pr then

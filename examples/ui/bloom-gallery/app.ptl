@@ -37,8 +37,15 @@ state pick = 0
 state progress_v = 0.35
 state loading = false
 state last_menu = "—"
+state notes = "Line one\nand a second line"
+state title = "Untitled"
+state size_px = 14
+state tint = #7c5cff
+state tab = 0
+state density = 1
+state split = 0.4
 
-let SECTIONS = ["Buttons", "Controls", "Menus", "Overlays", "Text", "Motion", "Icons"]
+let SECTIONS = ["Buttons", "Controls", "Menus", "Overlays", "Text", "Motion", "Icons", "Fields", "Panes"]
 
 clear(T.bg.r, T.bg.g, T.bg.b)
 
@@ -320,6 +327,51 @@ if section == 6 then
     bloom.text_in(icons.NAMES[i], r: rect(cell.x, cell.y + 34, cell.w, 16),
       style: bloom.ts(t: T, size: T.font_sm, color: T.dim), align: "center")
   end
+end
+
+// ── Fields ────────────────────────────────────────────────────────────────
+// The editing logic is `ui`'s (`text_field_update`, `text_area_update`):
+// selection, the clipboard and undo come with every field.
+if section == 7 then
+  let x = content.x
+  let y = content.y
+  notes = bloom.text_area(rect(x, y, 360, 90), notes, {id: "notes"}).text
+  let c = bloom.commit_field(rect(x, y + 104, 200, 30), title, {id: "title"})
+  if c.text != nil then
+    title = c.text
+    bloom.toast("Title is now {title}", "success")
+  end
+  let n = bloom.number_field(rect(x + 210, y + 104, 90, 30), size_px, {id: "size", step: 1, min: 6, max: 72})
+  if n.changed then
+    size_px = n.value
+  end
+  let cf = bloom.color_field(rect(x, y + 148, 150, 30), tint, {id: "tint"})
+  if cf.color != nil then
+    tint = cf.color
+  end
+  let picked = bloom.swatches(rect(x + 160, y + 148, 200, 30), [#7c5cff, #3c8cff, #3fb950, #d29922, #f85149], tint)
+  if picked != nil then
+    tint = picked
+  end
+  bloom.text_in("Return or a click elsewhere commits; Escape reverts; drag the number to scrub.",
+    r: rect(x, y + 192, 520, 20), style: bloom.ts(t: T, size: T.font_sm, color: T.dim))
+end
+
+// ── Panes ─────────────────────────────────────────────────────────────────
+if section == 8 then
+  let x = content.x
+  let y = content.y
+  tab = bloom.tabs(rect(x, y, 360, 30), ["Overview", "Calls", "Logs"], tab)
+  density = bloom.cycle(rect(x + 380, y, 150, 30), ["Compact", "Cozy", "Roomy"], density)
+  let sp = bloom.splitter(rect(x, y + 44, 560, 220), split)
+  split = sp.frac
+  let left = bloom.card(sp.a)
+  bloom.badge(left.x, left.y, "3 new")
+  bloom.pill(left.x + 70, left.y, "healthy", T.success)
+  bloom.empty_state(rect(left.x, left.y + 30, left.w, left.h - 30), "Nothing selected", "Pick a row on the right")
+  bloom.table(sp.b, [{label: "Service", w: 0.6}, {label: "p50", w: 60}],
+    [["api", "12 ms"], ["auth", "4 ms"], ["billing", "31 ms"], ["search", "18 ms"]])
+  bloom.hint_bar(rect(x, y + 276, 560, 26), [bloom.hint("Tab", "next field"), bloom.hint("⌘Z", "undo")])
 end
 
 // ── overlays, drawn last so they land on top ──────────────────────────────

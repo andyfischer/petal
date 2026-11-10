@@ -12,6 +12,7 @@
 // Designed for a 1200x800 pane. See README.md.
 
 import ui
+import bloom
 
 // ══ 1. formula engine ═════════════════════════════════════════════════════
 
@@ -1081,7 +1082,7 @@ if sel_r >= scroll && sel_r < scroll + VIS then
   end
 end
 
-draw_scrollbar(rect(PAD + SW - SBW, GRID_Y + HEAD_H, SBW - 3, VIS * ROW_H), count: ROWS, rows: VIS, scroll: scroll)
+bloom.scrollbar(rect(PAD + SW - SBW, GRID_Y + HEAD_H, SBW - 3, VIS * ROW_H), count: ROWS, rows: VIS, scroll: scroll)
 
 // ══ 8. the inspector rail ═════════════════════════════════════════════════
 

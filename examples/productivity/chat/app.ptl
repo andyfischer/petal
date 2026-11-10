@@ -18,6 +18,7 @@
 import text_layout
 import ./data as d
 import ui
+import bloom
 import garden
 
 // ── Palette ──────────────────────────────────────────────────────────────
@@ -108,7 +109,7 @@ state t_top = 0.0                       // the thread pane's scroll
 state t_stuck = true
 state refocus = ""                      // a composer to hand the keyboard to next frame
 state hover_id = 0                      // the message showing the action bar
-state menu = menu_state()
+state menu_tag = ""             // the message the context menu was opened on
 state toast = {msg: "", left: 0.0}
 
 // ── The scheduler ────────────────────────────────────────────────────────
@@ -590,7 +591,7 @@ end
 // Frame
 // ═════════════════════════════════════════════════════════════════════════
 
-theme_set({panel: PAPER, surface: PAPER, overlay: PAPER, text: INK, muted: MUTED, dim: FAINT,
+ui.theme_set({panel: PAPER, surface: PAPER, overlay: PAPER, text: INK, muted: MUTED, dim: FAINT,
   accent: ACCENT, outline: RULE, border: RULE, hover: ACCENT_SOFT, selection: ACCENT_SOFT})
 
 // While a composer has the keyboard its editing chords are its own.
@@ -688,7 +689,9 @@ let t_box = rect(TX + 16, H - 28 - t_box_h, THREAD_W - 32, t_box_h)
 let t_text_r = rect(t_box.x + 14, t_box.y + 12, t_text_w, t_rows * lh)
 let TR = rect(TX, HEADER_H, THREAD_W, t_box.y - 10 - HEADER_H)
 
-let blocking = menu.open
+// An open bloom menu captures its own input; the feed reads the mouse itself,
+// so it stands down while one is open.
+let blocking = bloom.menu_any_open()
 let press = mouse_pressed(0) && !blocking
 
 // Who holds the keyboard after a prelude field ran, as the app's own `focus`
@@ -886,7 +889,10 @@ for it in items do
     if fresh > 0.0 then request_frame() end
     let is_hot = m.id == hot_id
     draw_msg(it, FX, y, FW, is_hot, fresh, true, m.id == thread_id)
-    menu = menu_open_on_right_click(menu, rect(FX, y, FW, it.h), str(m.id))
+    if !blocking && mouse_pressed(1) && point_in(mouse_x(), mouse_y(), rect(FX, y, FW, it.h)) then
+      menu_tag = str(m.id)
+      bloom.menu_open_at("msg", mouse_x(), mouse_y())
+    end
     // Clicks on what the message carries.
     let by = if it.head then y + 34 else y + 2 end
     let ry = by + len(it.rows) * LINE + 6
@@ -1141,18 +1147,17 @@ end
 
 // ── Context menu: the last draw call of the frame ────────────────────────
 
-let menu_m = find(feed_msgs, fn(x) -> str(x.id) == menu.tag)
+let menu_m = find(feed_msgs, fn(x) -> str(x.id) == menu_tag)
 let mine = menu_m != nil && menu_m.who == d.ME
-let picked = context_menu(menu, [
-  menu_item("Reply in thread"),
-  menu_item("Add 👍"),
-  menu_item("Copy text"),
-  menu_sep(),
-  menu_item("Delete message", mine),
-], {radius: 8})
-menu = picked.menu
-if picked.index >= 0 && menu_m != nil then
-  match picked.index
+let picked = bloom.menu("msg", FR, [
+  "Reply in thread",
+  "Add 👍",
+  "Copy text",
+  {sep: true},
+  {label: "Delete message", disabled: !mine, danger: true},
+], {at: "point"})
+if picked >= 0 && menu_m != nil then
+  match picked
     when 0 ->
       act = "open_thread"
       act_id = menu_m.id

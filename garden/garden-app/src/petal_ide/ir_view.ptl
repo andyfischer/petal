@@ -9,7 +9,7 @@
 //   host_data("stages", "")        → [ { label } … ]   (the menu tabs)
 //   host_data("inspect", <label>)  → { text, error }    (one field empty)
 //
-// The stage menu is the prelude `tab_bar` (core-libs/petal-ui/docs/widgets.md);
+// The stage menu is bloom's `tabs` (core-runtime/bloom/docs/components.md);
 // click a tab to switch what the body shows. The body is a native, selectable,
 // scrollable text_view region. The source is re-published (and the cache
 // cleared) by the app as you type, so the IR/bytecode/AST update live — and
@@ -20,6 +20,7 @@
 
 import garden
 import ui
+import bloom
 
 let T = ui_theme()
 let FS = T.font_md
@@ -45,10 +46,10 @@ if stage < 0 then stage = 0 end
 draw_rect(rect(0, 0, w, h), T.bg)
 draw_rect(rect(0, 0, w, body_top), T.panel)
 
-// ── stage tabs (the menu): hover fade + accent underline from the prelude ─────
+// ── stage tabs (the menu): hover fade + sprung accent underline from bloom ────
 let labels = []
 for s in stages do labels = append(labels, s.label) end
-stage = tab_bar(rect(PAD, TABS_Y, w - 2 * PAD, TABS_H), labels, stage)
+stage = bloom.tabs(rect(PAD, TABS_Y, w - 2 * PAD, TABS_H), labels, stage)
 // The tab bar underlines its own span; run the hairline across the full width.
 draw_rect(rect(0, body_top, w, 1), T.outline)
 
@@ -65,11 +66,11 @@ let body_len = len(body)
 // when the body is scrolled.
 if has_error then
   let etag = "compile error"
-  pill(w - PAD - text_width(etag, T.font_sm) - 14, TABS_Y + 5, etag, T.danger)
+  bloom.pill(w - PAD - text_width(etag, T.font_sm) - 14, TABS_Y + 5, etag, T.danger)
 end
 
 if body_len == 0 then
-  empty_state(rect(0, body_top, w, h - body_top),
+  bloom.empty_state(rect(0, body_top, w, h - body_top),
               "Nothing to inspect", "start editing the sketch")
 else
   let br = rect(PAD, body_top + 6, w - 2 * PAD, h - body_top - PAD - 6)

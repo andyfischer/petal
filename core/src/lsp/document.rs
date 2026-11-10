@@ -1361,8 +1361,46 @@ pub fn annotation_at_position(source: &str, line: u32, character: u32) -> Option
             return None;
         }
     }
+    if !is_code_at(source, line, at) {
+        return None;
+    }
     let name: String = chars[at + 1..].iter().take_while(|c| is_ident_char(**c)).collect();
     crate::ast::ANNOTATION_NAMES.contains(&name.as_str()).then_some(name)
+}
+
+/// Whether the char at column `col` of line `line` is code rather than part
+/// of a string or a comment, so an `@` there can be an annotation's. The
+/// lexer decides when the document lexes; while it is being typed (an
+/// unterminated string, say) the line is scanned for quotes and `//`.
+fn is_code_at(source: &str, line: u32, col: usize) -> bool {
+    let mut lexer = crate::lexer::Lexer::new(source);
+    if lexer.tokenize().is_ok() {
+        let line_start: usize = source
+            .split_inclusive('\n')
+            .take(line as usize)
+            .map(|l| l.chars().count())
+            .sum();
+        let offset = line_start + col;
+        return lexer
+            .tokens_with_spans()
+            .any(|(t, s)| matches!(t, crate::lexer::Token::At) && s.start.offset as usize == offset);
+    }
+    let Some(text) = source.lines().nth(line as usize) else {
+        return false;
+    };
+    let chars: Vec<char> = text.chars().collect();
+    let mut in_string = false;
+    let mut i = 0;
+    while i < col.min(chars.len()) {
+        match chars[i] {
+            '\\' if in_string => i += 1,
+            '"' => in_string = !in_string,
+            '/' if !in_string && chars.get(i + 1) == Some(&'/') => return false,
+            _ => {}
+        }
+        i += 1;
+    }
+    !in_string
 }
 
 /// Whether the identifier `prefix` that ends at the cursor (empty right
@@ -1379,7 +1417,10 @@ pub fn after_at_sign(source: &str, line: u32, character: u32, prefix: &str) -> b
         start -= 1;
     }
     let typed: String = chars[start..end].iter().collect();
-    (typed == prefix || prefix.starts_with(&typed)) && start > 0 && chars[start - 1] == '@'
+    (typed == prefix || prefix.starts_with(&typed))
+        && start > 0
+        && chars[start - 1] == '@'
+        && is_code_at(source, line, start - 1)
 }
 
 /// One line about an annotation, for a completion item.

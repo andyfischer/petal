@@ -1860,3 +1860,24 @@ fn an_annotated_binding_is_a_symbol_selected_at_its_name() {
     let diags = get_diagnostics(&open(&mut server, "file:///ann2.ptl", "@tunable let x = 1\nprint(x)\n"));
     assert!(diags.is_empty(), "{diags:?}");
 }
+
+#[test]
+fn an_at_sign_in_a_string_or_a_comment_is_no_annotation() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///ann.ptl";
+    let src = "let mail = \"me@tunable.org\" // see @const\nlet n = 1\nlet s = \"a@\"\n";
+    open(&mut server, uri, src);
+    for ch in [16, 37] {
+        let resp = hover(&mut server, uri, 0, ch);
+        let text = resp["result"]["contents"]["value"].as_str().unwrap_or_default().to_string();
+        assert!(!text.contains("(annotation)"), "0:{ch}: {text}");
+    }
+    // Typing after an `@` inside a string offers no annotations.
+    let resp = completion(&mut server, uri, 2, 11);
+    let labels: Vec<String> = resp["result"]["items"]
+        .as_array()
+        .map(|a| a.iter().map(|i| i["label"].as_str().unwrap().to_string()).collect())
+        .unwrap_or_default();
+    assert!(!labels.contains(&"tunable".to_string()), "{labels:?}");
+}

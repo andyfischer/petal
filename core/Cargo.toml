@@ -102,6 +102,17 @@ path = "../test/benchmarks/harness/static_frame.rs"
 name = "static_survey"
 path = "../test/benchmarks/harness/static_survey.rs"
 
+# Dev and test builds keep line tables only: panics and backtraces still name
+# file and line, but a debugger cannot show locals. The dependencies carry no
+# debug info at all. Less to write and link, which is most of what an
+# incremental `cargo test` spends. For a debugger session, override it:
+# `CARGO_PROFILE_DEV_DEBUG=true cargo build`.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 # Optimized profile for the binaries we ship in releases: smaller, faster.
 # (`strip` removes debug symbols; `lto`/`codegen-units=1` trade build time for
 # a leaner, faster binary.)

@@ -1,5 +1,5 @@
 //! Integration tests for the text_layout placement library as a Garden panel
-//! sees it: the modules are registered (so `import text_layout` works from a
+//! sees it: the package is bundled in memory (so `import text_layout` works from a
 //! pushed drawer with no directory of its own), and the placement is checked
 //! against the host's *real* font metrics rather than an assumed proportion.
 //!
@@ -80,8 +80,9 @@ impl Ui {
 #[test]
 fn text_layout_is_importable_from_a_pushed_drawer() {
     // `from_source` has no file to resolve imports against: this passes only
-    // because Garden registers the library as a package in memory. It has to,
-    // because bloom imports it.
+    // because the library is a package bundled in memory. It is always there
+    // when bloom is, because bloom imports it (petal's `bloom` feature turns
+    // on `text_layout`).
     let ui = Ui::new("import text_layout\nlet v = text_layout.VERSION\n");
     assert_eq!(ui.int("v"), 1);
     let ui = Ui::new("import text_layout/fit: elide\nlet s = elide(\"abc\", 12, 999)\n");

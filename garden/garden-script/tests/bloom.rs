@@ -1,10 +1,10 @@
 //! Integration tests for the bloom component library as a Garden panel sees
-//! it: the modules are registered (so `import bloom` works from a pushed
+//! it: the package is bundled in memory (so `import bloom` works from a pushed
 //! drawer with no directory of its own), the components respond to real
 //! pointer and key input, and the animation settles.
 //!
 //! These are the library's tests, not Garden's. They live here because this is
-//! the host that embeds it, and driving a `PanelHost` is the closest thing to
+//! a host that embeds it, and driving a `PanelHost` is the closest thing to
 //! how a panel actually runs.
 
 use garden_script::{InputEvent, PanelHost};
@@ -110,7 +110,7 @@ impl Ui {
 #[test]
 fn bloom_is_importable_from_a_pushed_drawer() {
     // `from_source` has no file to resolve imports against: this passes only
-    // because Garden registers the library as a package in memory. `bloom` is
+    // because the library is a package bundled in memory. `bloom` is
     // the module named like the package — the facade — and `bloom/motion` &c.
     // are its siblings.
     let ui = Ui::new("import bloom\nlet v = bloom.VERSION\n");

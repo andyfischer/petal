@@ -164,3 +164,10 @@ per-module breakdown, run `twiggy top -n 100000 --format csv` and sum
   naming its feature. petal-web-canvas: 3.94 → 3.83 MB raw (−109 KB),
   1.38 → 1.35 MB gzip (−26 KB), 980 → 959 KB brotli (−21 KB), measured
   against `312651c8`.
+- 2026-11-10: garden-script stopped registering its own `include_str!`
+  copies of bloom and text_layout, which native Garden carried beside petal's
+  bundled ones and which garden-web carried in spite of building `petal`
+  without them. Native Garden now has one copy (petal's); garden-web has
+  none, since no DM gallery sample imports either. garden-web's
+  pre-`wasm-opt` release `.wasm`: 5,128,199 → 5,011,851 B (−116 KB raw),
+  1,656,434 → 1,622,193 B gzip -9 (−34 KB).

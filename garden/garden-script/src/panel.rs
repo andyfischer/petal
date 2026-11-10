@@ -1876,9 +1876,9 @@ impl PanelHost {
     }
 
     /// The disk files this program's *imported* modules came from, with their
-    /// current signatures. Modules a host registered in memory (the `ui`
-    /// prelude, the bloom library) have no origin and are skipped: nothing on
-    /// disk backs them, and they change only when Garden itself is rebuilt.
+    /// current signatures. Modules held in memory (the `ui` prelude, the
+    /// bundled bloom library) have no origin and are skipped: nothing on disk
+    /// backs them, and they change only when Garden itself is rebuilt.
     fn watch_imports(&self) -> SourceWatch {
         let entry = self.path.canonicalize().unwrap_or_else(|_| self.path.clone());
         SourceWatch::new(
@@ -2875,15 +2875,12 @@ fn is_callable_json(v: &serde_json::Value) -> bool {
 fn new_panel_env() -> Env {
     let mut env = Env::new();
     register_panel_natives(&mut env);
-    // The bloom component library, as in-memory modules a panel can `import`.
-    // Registered rather than put on the module path because a panel-mode GPP
-    // drawer arrives as pushed source with no directory of its own.
-    //
-    // text_layout goes in first because bloom imports it: every bloom label is
-    // placed through it. Registration order does not decide resolution (that
-    // is by name), but the pairing is not optional.
-    crate::text_layout::register(&mut env);
-    crate::bloom::register(&mut env);
+    // Nothing registers bloom or text_layout here: they are bundled in the
+    // `petal` crate behind its `bloom`/`text_layout` features, and an import
+    // falls through to the bundled copy (in memory, so a pushed drawer with no
+    // directory of its own reaches it too). garden-app and garden-panel-run
+    // turn the features on through `petal/libraries`; garden-web does not, so
+    // an `import bloom` there fails with petal's "not in this build" error.
     env.observations_mut().enable();
     env
 }

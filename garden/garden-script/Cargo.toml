@@ -17,6 +17,11 @@ petal-ui.workspace = true
 serde_json = "1"
 
 [dev-dependencies]
+# bloom and text_layout come from petal's bundled packages, which garden-script
+# does not turn on: garden-app and garden-panel-run enable `petal/libraries`
+# themselves, and garden-web (wasm) leaves them out. The tests drive bloom and
+# text_layout panels, so they turn the libraries on for the test build only.
+petal = { workspace = true, features = ["libraries"] }
 # Round-trip tests write generated layout source to a real temp file and load
 # it back through ScriptHost.
 tempfile = "3"

@@ -51,7 +51,6 @@
 //! runtime; the same lines (plus garden-script warnings) are also collected per
 //! run and retrievable via [`ScriptHost::take_output`].
 
-pub mod bloom;
 pub mod dm_hints;
 pub mod headless;
 mod convert;
@@ -62,7 +61,6 @@ mod panel_store;
 mod panel_trace;
 mod query;
 mod theme;
-pub mod text_layout;
 
 pub use native_fns::{CONFIG_INTERFACE, CONFIG_PACKAGE};
 pub use panel::{GARDEN_INTERFACE, GARDEN_PACKAGE, PANEL_INTERFACE_PACKAGES};

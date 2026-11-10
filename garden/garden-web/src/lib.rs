@@ -545,3 +545,19 @@ fn cmd_json(cmd: &PanelCmd) -> Value {
         _ => json!({ "op": "unsupported" }),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// garden-web builds `petal` with no bundled libraries (see README.md), so
+    /// a sketch importing one fails to compile, and says why rather than
+    /// reporting an unknown module.
+    #[test]
+    fn bundled_libraries_are_not_in_this_build() {
+        for import in ["import bloom", "import text_layout"] {
+            let err = new_host(&format!("{import}\nlet v = 1\n")).err().expect("import fails");
+            assert!(err.contains("is not in this build of Petal"), "{import}: {err}");
+        }
+    }
+}

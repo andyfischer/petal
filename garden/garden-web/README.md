@@ -20,6 +20,13 @@ It powers the direct manipulation gallery on petal-lang.org
 `frontend/public/garden/`) and checks its gallery samples against it with
 `node scripts/check-dm-samples.mjs`.
 
+It builds `petal` with none of its bundled libraries (`bloom`, `text_layout`,
+`glsl`): no gallery sample imports one, and each would add its source to the
+download. A sketch that does `import bloom` gets a compile error saying the
+package is not in this build. To ship one, turn its feature on with a direct
+`petal = { path = "../../core", default-features = false, features = ["bloom"] }`
+dependency here.
+
 ## API
 
 One class, `GardenWeb`, trading JSON strings (see `src/lib.rs` for the

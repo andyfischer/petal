@@ -243,9 +243,12 @@ it is not optional here — and a panel that draws text of its own should reach
 for it directly rather than computing a `y`.
 
 Like `ui`, it is imported explicitly: a drawer says `import bloom` (or `import bloom: button, dropdown`)
-and pays nothing otherwise. The package lives in memory rather than
-on disk, so a panel-mode GPP drawer pushed as source can import it
-too. Both packages require the `ui` interface, which Garden provides. Garden's own start screen (`gpp-apps/main-menu`) and the `screens-demo`
+and pays nothing otherwise. The package is bundled in the `petal` crate
+(its `bloom` feature, which also turns on `text_layout`), so it lives in
+memory rather than on disk and a panel-mode GPP drawer pushed as source can
+import it too. Garden's native binaries build with every bundled library;
+garden-web, the browser build behind the direct manipulation gallery, builds
+with none, and an `import bloom` there fails with "not in this build". Both packages require the `ui` interface, which Garden provides. Garden's own start screen (`gpp-apps/main-menu`) and the `screens-demo`
 app use it; the full reference is
 [core-runtime/bloom/docs/components.md](../../core-runtime/bloom/docs/components.md)
 and the showcase is `examples/ui/bloom-gallery`.

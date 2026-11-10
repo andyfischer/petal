@@ -762,6 +762,40 @@ fn annotations_keep_the_call_forms_diagnostics() {
     has("@const\nlet X = const([1, 2])\nprint(X)\n", "it must wrap the whole initializer");
 }
 
+/// A diagnostic about the call as a whole points at the `@name` written for
+/// it, not at the declared value (whose span the built call has); one about
+/// an argument points at the argument, as in the call form.
+#[test]
+fn a_call_level_diagnostic_points_at_the_annotation() {
+    let carets = |src: &str| -> Vec<(String, u32, u32, u32)> {
+        let mut env = Env::new();
+        env.set_check_only(true);
+        let pid = env.load_program(src).expect("compiles in check mode");
+        env.get_program(pid)
+            .unwrap()
+            .warnings
+            .iter()
+            .map(|d| (d.message.clone(), d.span.start.line, d.span.start.column, d.span.end.column))
+            .collect()
+    };
+    let at = |src: &str, want: &str| -> (u32, u32, u32) {
+        let got = carets(src);
+        let (_, l, c, e) = got
+            .iter()
+            .find(|(m, ..)| m.contains(want))
+            .unwrap_or_else(|| panic!("{src:?}: wanted {want:?}, got {got:?}"));
+        (*l, *c, *e)
+    };
+    assert_eq!(at("@tunable(0, 10, 1, 2, 3) let S = 4.0\nprint(S)\n", "expects 1-5 arguments"), (1, 1, 9));
+    assert_eq!(at("@rigid(0) let S = 4.0\nprint(S)\n", "expects 1 argument"), (1, 1, 7));
+    assert_eq!(at("@const @tunable let S = 4.0\nprint(S)\n", "drop `const(…)`"), (1, 1, 7));
+    assert_eq!(at("fn f()\n  @const\n  let x = 2\n  x\nend\nprint(f())\n", "inside a function"), (2, 3, 9));
+    // An argument's diagnostic stays on the argument.
+    assert_eq!(at("@tunable(\"a\", \"b\") let S = 4.0\nprint(S)\n", "argument 2 to `tunable`"), (1, 10, 13));
+    // The call form is unchanged.
+    assert_eq!(at("let S = rigid(4.0, 0)\nprint(S)\n", "expects 1 argument"), (1, 9, 22));
+}
+
 #[test]
 fn a_one_line_setting_with_named_bounds_runs_and_is_listed() {
     let src = "@tunable(min: 3.0, max: 12.0, step: 0.5) pub let RUN = 7.0  // tiles/s\n\

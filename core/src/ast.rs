@@ -245,6 +245,26 @@ pub fn is_annotation_call(e: &Expr) -> bool {
     }
 }
 
+/// Where a diagnostic about call `e` as a whole (its argument count, a
+/// misnamed argument, a misplaced `const(…)`) points: the call, or for a call
+/// built from an `@` annotation ([`is_annotation_call`]), the `@name` written
+/// for it. That call's own span is the declared value's, so a caret there
+/// would blame the value for what the annotation says.
+pub fn call_diagnostic_span(e: &Expr) -> SourceSpan {
+    match &e.kind {
+        ExprKind::Call { function, .. } if is_annotation_call(e) => {
+            let mut span = function.span;
+            // The `@` is written directly before the name.
+            if span.start.offset > 0 && span.start.column > 1 {
+                span.start.offset -= 1;
+                span.start.column -= 1;
+            }
+            span
+        }
+        _ => e.span,
+    }
+}
+
 /// The char offset past the `@` annotations a statement starting at `at`
 /// opens with (and the blanks, line breaks and comments after them): where
 /// its keyword, or its `pub`, is written. `at` itself when it has none.

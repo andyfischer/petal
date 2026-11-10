@@ -1826,7 +1826,10 @@ impl<'a> Checker<'a> {
                 {
                     self.namespace_callee = Some((callee.span, ns.clone()));
                 }
-                let result = self.check_call(callee, args, arg_names, &arg_types, expr.span);
+                // A call built from an `@` annotation is blamed at its
+                // `@name`, not at the declared value whose span it has.
+                let call_span = crate::ast::call_diagnostic_span(expr);
+                let result = self.check_call(callee, args, arg_names, &arg_types, call_span);
                 self.namespace_callee = outer;
                 result
             }

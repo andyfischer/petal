@@ -3105,7 +3105,7 @@ fn misplaced_const_decls(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
                         self.allowed = Some(value as *const Expr);
                         if *is_config || tunable_args(arg).is_some() {
                             self.out.push(Diagnostic::error(
-                                value.span,
+                                crate::ast::call_diagnostic_span(value),
                                 "a setting of literals is already static; drop `const(…)`"
                                     .to_string(),
                             ));
@@ -3132,7 +3132,7 @@ fn misplaced_const_decls(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
             {
                 if const_call_arg(e).is_none() {
                     self.out.push(Diagnostic::error(
-                        e.span,
+                        crate::ast::call_diagnostic_span(e),
                         "`const(…)` takes one argument, the value that must be constant"
                             .to_string(),
                     ));
@@ -3156,7 +3156,10 @@ fn misplaced_const_decls(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
                              initializer (`let X = const(…)`), not a part of it"
                         }
                     };
-                    self.out.push(Diagnostic::error(e.span, message.to_string()));
+                    self.out.push(Diagnostic::error(
+                        crate::ast::call_diagnostic_span(e),
+                        message.to_string(),
+                    ));
                 }
             }
             crate::ast::walk_expr(self, e);

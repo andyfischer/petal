@@ -171,3 +171,6 @@ per-module breakdown, run `twiggy top -n 100000 --format csv` and sum
   none, since no DM gallery sample imports either. garden-web's
   pre-`wasm-opt` release `.wasm`: 5,128,199 → 5,011,851 B (−116 KB raw),
   1,656,434 → 1,622,193 B gzip -9 (−34 KB).
+- 2026-11-10: `petal bundle` carries each bundled library the program
+  imports (bloom brings text_layout) with its `[requires]`, so a host built
+  without the libraries runs the bundle; `--no-libraries` leaves them out.

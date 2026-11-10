@@ -1753,7 +1753,7 @@ petal remove <name>...
 petal install [--locked]
 petal update [<name>...]
 petal vendor
-petal bundle <entry> [-o <file> | --output <file>]
+petal bundle <entry> [-o <file> | --output <file>] [--no-libraries]
 ```
 
 These work on the project of the working directory (the nearest `petal.toml`
@@ -1768,7 +1768,7 @@ reference for each command, the lockfile, the cache and `vendor/`. In short:
 | `install [--locked]` | Resolves the graph, fetches git dependencies, verifies them and writes `petal.lock`. `--locked` fails instead of changing the lockfile |
 | `update [<name>...]` | As `install`, with the named packages (or all) resolved from their sources again |
 | `vendor` | Installs, and copies each git package into `vendor/<name>` |
-| `bundle <entry> [-o <file>]` | Prints the graph as one JSON document for a host with no filesystem ([Bundles](packages.md#bundles)) |
+| `bundle <entry> [-o <file>] [--no-libraries]` | Prints the graph, plus the bundled libraries the program imports (unless `--no-libraries`), as one JSON document for a host with no filesystem ([Bundles](packages.md#bundles)) |
 
 None of them takes `--json`. `lint`, `run` and the other compiling commands
 [install on demand](packages.md#install-on-demand); `PETAL_OFFLINE=1`

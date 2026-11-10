@@ -245,6 +245,61 @@ pub fn is_annotation_call(e: &Expr) -> bool {
     }
 }
 
+/// The char offset past the `@` annotations a statement starting at `at`
+/// opens with (and the blanks, line breaks and comments after them): where
+/// its keyword, or its `pub`, is written. `at` itself when it has none.
+/// For source tools that find a declaration's keyword at its statement's
+/// start; the statement's span starts at its first annotation.
+pub fn skip_annotations(chars: &[char], at: usize) -> usize {
+    let mut i = at;
+    let is_name = |c: char| c.is_alphanumeric() || c == '_';
+    while chars.get(i) == Some(&'@') {
+        i += 1;
+        while chars.get(i).is_some_and(|c| is_name(*c)) {
+            i += 1;
+        }
+        if chars.get(i) == Some(&'(') {
+            let mut depth = 0usize;
+            while let Some(&c) = chars.get(i) {
+                i += 1;
+                match c {
+                    '(' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' => {
+                        depth = depth.saturating_sub(1);
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    '"' => {
+                        while let Some(&d) = chars.get(i) {
+                            i += 1;
+                            match d {
+                                '\\' => i += 1,
+                                '"' => break,
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // Blanks, line breaks and comments up to the next token.
+        loop {
+            match chars.get(i) {
+                Some(c) if c.is_whitespace() => i += 1,
+                Some('/') if chars.get(i + 1) == Some(&'/') => {
+                    while chars.get(i).is_some_and(|c| *c != '\n') {
+                        i += 1;
+                    }
+                }
+                _ => break,
+            }
+        }
+    }
+    i.min(chars.len())
+}
+
 /// Whether a call's `arg_names` say its last argument is a spread
 /// (`f(...args)`). The parser admits a spread only in last place, and never
 /// beside a named argument.

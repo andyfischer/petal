@@ -120,14 +120,17 @@ pub fn document_symbols(stmts: &[Stmt], source: &str) -> Vec<DocumentSymbol> {
 }
 
 /// Where `name` is written within the declaration at `span`: its first
-/// whole-word occurrence there. The start of the declaration if it cannot be
+/// whole-word occurrence there, after any `@` annotations. The start of the declaration if it cannot be
 /// found (a method's qualified name, say), which is still inside it as the
 /// protocol requires.
 fn name_range(name: &str, span: SourceSpan, src: &[char]) -> Range {
     let word: Vec<char> = name.chars().collect();
     let (start, end) = (span.start.offset as usize, (span.end.offset as usize).min(src.len()));
     let is_ident = |c: char| c.is_alphanumeric() || c == '_';
-    let found = (start..end.saturating_sub(word.len()).max(start) + 1).find(|&i| {
+    // Past the declaration's `@` annotations, whose arguments may use the
+    // name too (`@tunable(min: 1) let min = 4`).
+    let from = crate::ast::skip_annotations(src, start).min(end);
+    let found = (from..end.saturating_sub(word.len()).max(start) + 1).find(|&i| {
         src.get(i..i + word.len()) == Some(&word[..])
             && (i == 0 || !is_ident(src[i - 1]))
             && src.get(i + word.len()).is_none_or(|c| !is_ident(*c))

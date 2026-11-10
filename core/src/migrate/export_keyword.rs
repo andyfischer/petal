@@ -37,13 +37,26 @@ pub fn deprecated_export_spans(stmts: &[Stmt], chars: &[char]) -> Vec<SourceSpan
     }
     impl ExprVisitor for Finder<'_> {
         fn visit_stmt(&mut self, s: &Stmt) {
-            if s.exported && starts_with_export(self.chars, s.span.start.offset as usize) {
+            // Past any `@` annotations (`@tunable export let X = 1`).
+            let at = s.span.start.offset as usize;
+            let kw = crate::ast::skip_annotations(self.chars, at);
+            if s.exported && starts_with_export(self.chars, kw) {
+                let mut start = s.span.start;
+                for c in &self.chars[at..kw] {
+                    start.offset += 1;
+                    if *c == '\n' {
+                        start.line += 1;
+                        start.column = 1;
+                    } else {
+                        start.column += 1;
+                    }
+                }
                 let len = DEPRECATED.len() as u32;
-                let mut end = s.span.start;
+                let mut end = start;
                 end.column += len;
                 end.offset += len;
                 self.out.push(SourceSpan {
-                    start: s.span.start,
+                    start,
                     end,
                     file: s.span.file,
                 });
@@ -160,6 +173,12 @@ mod tests {
         for (i, (line, col, end)) in found.iter().enumerate() {
             assert_eq!((*line, *col, *end), (i as u32 + 1, 1, 7));
         }
+    }
+
+    #[test]
+    fn an_annotated_declaration_reports_its_modifier() {
+        assert_eq!(spans("@tunable export let a = 1\n"), vec![(1, 10, 16)]);
+        assert_eq!(spans("@tunable(0, 9)\n// c\nexport let a = 1\n"), vec![(3, 1, 7)]);
     }
 
     #[test]

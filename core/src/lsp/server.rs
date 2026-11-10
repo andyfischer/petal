@@ -174,7 +174,7 @@ impl Server {
                 hover_provider: Some(true),
                 definition_provider: Some(true),
                 completion_provider: Some(CompletionOptions {
-                    trigger_characters: Some(vec![".".to_string(), "/".to_string()]),
+                    trigger_characters: Some(vec![".".to_string(), "/".to_string(), "@".to_string()]),
                 }),
                 document_symbol_provider: Some(true),
             },
@@ -278,6 +278,23 @@ impl Server {
             None => return vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))],
         };
         let position = self.encoding.to_internal(&doc.text, p.position);
+
+        // `@tunable`, `@const`, `@rigid`: the declaration annotation.
+        if let Some(text) = document::annotation_at_position(&doc.text, position.line, position.character)
+            .and_then(|name| document::annotation_hover(&name))
+        {
+            let hover = Hover {
+                contents: MarkupContent {
+                    kind: "markdown".to_string(),
+                    value: text,
+                },
+                range: None,
+            };
+            return vec![OutgoingMessage::Response(RpcResponse::ok(
+                id,
+                serde_json::to_value(hover).unwrap(),
+            ))];
+        }
 
         let ident = match identifier_at_position(&doc.text, position.line, position.character) {
             Some(i) => i,
@@ -552,6 +569,21 @@ impl Server {
                 .unwrap(),
             ))]
         };
+
+        // After `@`: the three declaration annotations, and only those.
+        if document::after_at_sign(&doc.text, position.line, position.character, &prefix) {
+            return respond(
+                crate::ast::ANNOTATION_NAMES
+                    .iter()
+                    .filter(|n| n.starts_with(&prefix))
+                    .map(|n| CompletionItem {
+                        label: n.to_string(),
+                        kind: Some(CompletionItemKind::Keyword),
+                        detail: Some(document::annotation_detail(n).to_string()),
+                    })
+                    .collect(),
+            );
+        }
 
         // On an import line: the modules that could be named there.
         if let Some(path) =

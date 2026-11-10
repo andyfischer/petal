@@ -507,3 +507,13 @@ print(sum([1]))
 ";
     assert_eq!(findings(src), Vec::<(&str, bool)>::new());
 }
+
+// ── `@` annotations: the keyword is found past them ───────────────────────
+
+#[test]
+fn prefer_let_rewrites_the_keyword_after_an_annotation() {
+    assert_lints_to(
+        "@tunable(0, 9) var X = 1\nprint(X)\n@rigid\nvar G = 2\nprint(G)\n",
+        "@tunable(0, 9) let X = 1\nprint(X)\n@rigid\nlet G = 2\nprint(G)\n",
+    );
+}

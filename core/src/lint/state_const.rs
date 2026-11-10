@@ -63,6 +63,10 @@ struct Candidate {
     /// the `=` to the end of the statement (the value's own span leaves out
     /// grouping parens).
     value: (usize, usize),
+    /// Where the statement's `@` annotations start, when it has some
+    /// (`@rigid state A = 1`): the rewrite adds `@const` there, outermost,
+    /// as `let A = const(rigid(1))` would, instead of wrapping the value.
+    annotated: Option<usize>,
 }
 
 const STATE: &str = "state";
@@ -117,10 +121,16 @@ pub(super) fn plan_state_fixes(
                     && !is_written(program, d.term)
             })
         })
-        .map(|(_, name, keyword, value)| Candidate {
+        .map(|(stmt, name, keyword, value)| Candidate {
             name: name.to_string(),
             keyword,
             value,
+            annotated: match &stmt.kind {
+                StmtKind::State { init, .. } if crate::ast::is_annotation_call(init) => {
+                    Some(stmt.span.start.offset as usize)
+                }
+                _ => None,
+            },
         })
         .collect();
 
@@ -162,13 +172,20 @@ pub(super) fn plan_state_fixes(
         .collect()
 }
 
-/// `state` → `let`, and `const(` … `)` around the initializer.
+/// `state` → `let`, and `const(` … `)` around the initializer (or `@const`
+/// before the statement's annotations).
 fn candidate_splices(c: &Candidate) -> Vec<Splice> {
     let splice = |start: usize, end: usize, text: &str| Splice {
         start,
         end,
         text: text.to_string(),
     };
+    if let Some(at) = c.annotated {
+        return vec![
+            splice(at, at, "@const "),
+            splice(c.keyword, c.keyword + STATE.len(), "let"),
+        ];
+    }
     vec![
         splice(c.keyword, c.keyword + STATE.len(), "let"),
         splice(c.value.0, c.value.0, "const("),
@@ -201,7 +218,7 @@ fn initializer(chars: &[char], stmt: &Stmt, keyword: usize) -> Option<(usize, us
 /// compiler rejects a write to an imported name), so the writes in the
 /// declaring file are all the writes there are.
 fn state_keyword(chars: &[char], stmt: &Stmt) -> Option<usize> {
-    let mut at = stmt.span.start.offset as usize;
+    let mut at = crate::ast::skip_annotations(chars, stmt.span.start.offset as usize);
     if stmt.exported && !keyword_at(chars, at) {
         let is_pub = chars.get(at..at + 3).is_some_and(|w| w.iter().copied().eq("pub".chars()));
         if !is_pub {

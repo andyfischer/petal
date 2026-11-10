@@ -1347,6 +1347,83 @@ fn collect_definitions_from_expr(expr: &Expr, src: &[char], defs: &mut Vec<Defin
 // Identifier at position — find what word the cursor is on
 // ---------------------------------------------------------------------------
 
+/// The annotation name under the cursor when it is written `@name`
+/// (docs/proposals/annotation-syntax.md): the cursor on the `@` or on the
+/// name.
+pub fn annotation_at_position(source: &str, line: u32, character: u32) -> Option<String> {
+    let chars: Vec<char> = source.lines().nth(line as usize)?.chars().collect();
+    let mut at = (character as usize).min(chars.len().saturating_sub(1));
+    if chars.get(at) != Some(&'@') {
+        while at > 0 && chars.get(at).is_some_and(|c| is_ident_char(*c)) {
+            at -= 1;
+        }
+        if chars.get(at) != Some(&'@') {
+            return None;
+        }
+    }
+    let name: String = chars[at + 1..].iter().take_while(|c| is_ident_char(**c)).collect();
+    crate::ast::ANNOTATION_NAMES.contains(&name.as_str()).then_some(name)
+}
+
+/// Whether the identifier `prefix` that ends at the cursor (empty right
+/// after the `@`) is written directly after an `@`.
+pub fn after_at_sign(source: &str, line: u32, character: u32, prefix: &str) -> bool {
+    let Some(src_line) = source.lines().nth(line as usize) else {
+        return false;
+    };
+    let chars: Vec<char> = src_line.chars().collect();
+    let end = (character as usize).min(chars.len());
+    // The identifier under or just before the cursor starts here.
+    let mut start = end;
+    while start > 0 && is_ident_char(chars[start - 1]) {
+        start -= 1;
+    }
+    let typed: String = chars[start..end].iter().collect();
+    (typed == prefix || prefix.starts_with(&typed)) && start > 0 && chars[start - 1] == '@'
+}
+
+/// One line about an annotation, for a completion item.
+pub fn annotation_detail(name: &str) -> &'static str {
+    match name {
+        "const" => "annotation: the value must be built once, from constants",
+        "tunable" => "annotation: a setting / a direct-manipulation knob",
+        _ => "annotation: direct manipulation must never move this value",
+    }
+}
+
+/// The hover text for `@name`.
+pub fn annotation_hover(name: &str) -> Option<String> {
+    let (form, call, what) = match name {
+        "const" => (
+            "@const let X = e",
+            "let X = const(e)",
+            "Checks that `e` is built once, from constants. Top-level `let` only.",
+        ),
+        "tunable" => (
+            "@tunable(min, max, step?) let X = v",
+            "let X = tunable(v, min, max, step?)",
+            "Makes a top-level `X` a setting hosts list and set, and marks `v` as \
+             direct manipulation's preferred knob. Bounds may be named: \
+             `@tunable(min: 0, max: 10)`, `@tunable(options: [...])`.",
+        ),
+        "rigid" => (
+            "@rigid let X = v",
+            "let X = rigid(v)",
+            "Direct manipulation never moves `v`.",
+        ),
+        _ => return None,
+    };
+    Some(format!(
+        "```petal
+{form}
+// is
+{call}
+```
+(annotation) {what} The declared value is the first \
+         argument; stacked annotations apply bottom-up."
+    ))
+}
+
 pub fn identifier_at_position(source: &str, line: u32, character: u32) -> Option<String> {
     let target_line = line as usize;
     let target_col = character as usize;

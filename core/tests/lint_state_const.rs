@@ -278,3 +278,10 @@ fn the_rule_is_opt_in() {
         ]
     );
 }
+
+#[test]
+fn an_annotated_state_gets_const_outermost() {
+    // `@rigid state A = …` is `state A = rigid(…)`; the rewrite means
+    // `const(rigid(…))`, in the `@` form it was written in.
+    assert_fixes("@rigid state A = [1, 2]\nprint(A)\n", "@const @rigid let A = [1, 2]\nprint(A)\n");
+}

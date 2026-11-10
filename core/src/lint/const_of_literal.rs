@@ -35,7 +35,12 @@ pub(super) fn plan_const_of_literal_reports(stmts: &[Stmt]) -> Vec<Fix> {
         let (data, anchor, how) = if *is_const {
             (value, stmt.span.start.offset as usize, format!("const {name} = …"))
         } else if let Some(arg) = const_call_arg(value) {
-            (arg, value.span.start.offset as usize, format!("{CONST_ANNOTATION}(…)"))
+            let how = if crate::ast::is_annotation_call(value) {
+                format!("@{CONST_ANNOTATION}")
+            } else {
+                format!("{CONST_ANNOTATION}(…)")
+            };
+            (arg, value.span.start.offset as usize, how)
         } else {
             continue;
         };

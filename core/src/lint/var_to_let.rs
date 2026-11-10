@@ -189,10 +189,12 @@ fn plan_one(
     Some(splices)
 }
 
-/// `var` → `let` on the declaration. The statement starts at the keyword
-/// (the `pub` form is filtered out before this is called).
+/// `var` → `let` on the declaration. The statement starts at the keyword, or
+/// at the `@` annotations before it (the `pub` form is filtered out before
+/// this is called).
 fn var_keyword_splice(decl: &Stmt, chars: &[char]) -> Option<Splice> {
-    let start = decl.span.start.offset as usize;
+    // Past any `@` annotations (`@tunable var X = 1`).
+    let start = crate::ast::skip_annotations(chars, decl.span.start.offset as usize);
     if !is_keyword_at(chars, start, "var") {
         return None;
     }

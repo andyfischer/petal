@@ -1792,3 +1792,71 @@ fn a_broken_script_still_completes_the_hosts_implicit_imports() {
     let resp = completion(&mut server, &uri, 2, 6);
     assert!(labels(&resp).contains(&"draw_rect".to_string()), "{resp}");
 }
+
+// ---------------------------------------------------------------------------
+// `@` declaration annotations (docs/proposals/annotation-syntax.md)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn completion_after_an_at_sign_offers_the_three_annotations() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///ann.ptl";
+    open(&mut server, uri, "@\nlet x = 1\n@tu\nlet y = 2\n");
+    let labels = |resp: &Value| -> Vec<String> {
+        resp["result"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["label"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(labels(&completion(&mut server, uri, 0, 1)), ["const", "tunable", "rigid"]);
+    assert_eq!(labels(&completion(&mut server, uri, 2, 3)), ["tunable"]);
+    // `@` is a trigger character.
+    let caps = server.handle_message(&request(5, "initialize", json!({"capabilities": {}})));
+    let caps: Value = serde_json::from_str(&caps[0].to_json()).unwrap();
+    let triggers = &caps["result"]["capabilities"]["completionProvider"]["triggerCharacters"];
+    assert!(triggers.as_array().unwrap().iter().any(|t| t == "@"), "{triggers}");
+}
+
+#[test]
+fn hover_on_an_annotation_shows_the_call_it_means() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///ann.ptl";
+    open(&mut server, uri, "@tunable(min: 0, max: 10) let speed = 4\n@const\nlet T = [1]\nprint(speed, T)\n");
+    for (line, ch, want) in [(0, 0, "tunable(v, min, max"), (0, 3, "tunable(v"), (1, 2, "let X = const(e)")] {
+        let resp = hover(&mut server, uri, line, ch);
+        let text = resp["result"]["contents"]["value"].as_str().unwrap_or_default().to_string();
+        assert!(text.contains(want), "{line}:{ch}: {text}");
+        assert!(text.contains("(annotation)"), "{text}");
+    }
+    // The declared name still hovers as the variable.
+    let resp = hover(&mut server, uri, 0, 31);
+    let text = resp["result"]["contents"]["value"].as_str().unwrap();
+    assert!(text.contains("(variable) speed"), "{text}");
+}
+
+#[test]
+fn an_annotated_binding_is_a_symbol_selected_at_its_name() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///ann.ptl";
+    open(&mut server, uri, "@tunable(min: 1, max: 9)\nlet min = 4\nprint(min)\n");
+    let msgs = server.handle_message(&request(
+        4,
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": uri } }),
+    ));
+    let resp: Value = serde_json::from_str(&msgs[0].to_json()).unwrap();
+    let sym = &resp["result"][0];
+    assert_eq!(sym["name"], "min");
+    // The range covers the annotation; the selection is the name, not the
+    // `min:` argument.
+    assert_eq!(sym["range"]["start"], json!({"line": 0, "character": 0}));
+    assert_eq!(sym["selectionRange"]["start"], json!({"line": 1, "character": 4}));
+    // And there are no diagnostics.
+    let diags = get_diagnostics(&open(&mut server, "file:///ann2.ptl", "@tunable let x = 1\nprint(x)\n"));
+    assert!(diags.is_empty(), "{diags:?}");
+}

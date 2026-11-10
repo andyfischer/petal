@@ -35,6 +35,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::ast::{Expr, Stmt, StmtKind};
+use crate::lexer::Token;
 use crate::lint::Fix;
 use crate::parse::CONFIG_KEYWORD;
 use crate::rewrite::{Splice, apply_splices};
@@ -120,6 +121,9 @@ fn message(is_const: bool, already_tunable: bool, name: &str) -> String {
 
 /// The code edits for one `const` or `config let` statement.
 fn plan_site(stmt: &Stmt, name: &str, value: &Expr, is_const: bool, chars: &[char]) -> Option<Site> {
+    if crate::ast::is_annotation_call(value) {
+        return plan_annotated_site(stmt, name, value, is_const, chars);
+    }
     let start = stmt.span.start.offset as usize;
     let mut at = start;
     if stmt.exported {
@@ -174,6 +178,63 @@ fn plan_site(stmt: &Stmt, name: &str, value: &Expr, is_const: bool, chars: &[cha
             edits.push(insert(value_start, "tunable("));
             edits.push(insert(value_end, ")"));
         }
+        Kind::Config { already_tunable }
+    };
+    Some(Site {
+        kind,
+        anchor: start,
+        name: name.to_string(),
+        edits,
+    })
+}
+
+/// [`plan_site`] for a declaration written with `@` annotations
+/// (docs/proposals/annotation-syntax.md): `@tunable const X = 4` is
+/// `const X = tunable(4)`, so the rewrite keeps it in the `@` form and adds
+/// the annotation outermost, `@const @tunable let X = 4`, rather than
+/// wrapping the value (which would put `const(…)` innermost). The keyword is
+/// found in the token stream, past the annotations.
+fn plan_annotated_site(stmt: &Stmt, name: &str, value: &Expr, is_const: bool, chars: &[char]) -> Option<Site> {
+    let start = stmt.span.start.offset as usize;
+    let source: String = chars.iter().collect();
+    let mut lexer = crate::lexer::Lexer::new(&source);
+    lexer.tokenize().ok()?;
+    let tokens: Vec<(&Token, usize)> = lexer
+        .tokens_with_spans()
+        .map(|(t, span)| (t, span.start.offset as usize))
+        .skip_while(|(_, at)| *at < start)
+        .take_while(|(_, at)| *at < value.span.start.offset as usize)
+        .collect();
+    let keyword = tokens.iter().enumerate().find_map(|(i, (t, at))| {
+        let next = tokens.get(i + 1).map(|(t, _)| *t);
+        match t {
+            Token::Const if is_const && !matches!(next, Some(Token::LParen)) => Some(*at),
+            Token::Ident(w) if !is_const && w == CONFIG_KEYWORD && matches!(next, Some(Token::Let)) => {
+                Some(*at)
+            }
+            _ => None,
+        }
+    })?;
+    let mut edits = Vec::new();
+    let kind = if is_const {
+        edits.push(insert(start, "@const "));
+        edits.push(Splice {
+            start: keyword,
+            end: keyword + "const".len(),
+            text: "let".to_string(),
+        });
+        Kind::Const
+    } else {
+        let after = skip_blanks(chars, keyword + CONFIG_KEYWORD.len())?;
+        let already_tunable = tunable_args(value).is_some();
+        if !already_tunable {
+            edits.push(insert(start, "@tunable "));
+        }
+        edits.push(Splice {
+            start: keyword,
+            end: after,
+            text: String::new(),
+        });
         Kind::Config { already_tunable }
     };
     Some(Site {
@@ -528,6 +589,17 @@ mod tests {
             "let G = tunable(1)        // g\n\
              let HHHHHHHHHHHHHHHHH = 2 // h\n"
         );
+    }
+
+    #[test]
+    fn an_annotated_declaration_gets_the_annotation_outermost() {
+        // `@tunable const X = 4` is `const X = tunable(4)`: the rewrite must
+        // mean `const(tunable(4))`, so it adds `@const` in front rather than
+        // wrapping the value.
+        assert_eq!(migrate("@tunable const X = 4\n"), "@const @tunable let X = 4\n");
+        assert_eq!(migrate("@rigid\npub const G = 9.8\n"), "@const @rigid\npub let G = 9.8\n");
+        assert_eq!(migrate("@rigid config let G = 9.8\n"), "@tunable @rigid let G = 9.8\n");
+        assert_eq!(migrate("@tunable(0, 9) config let N = 4\n"), "@tunable(0, 9) let N = 4\n");
     }
 
     #[test]

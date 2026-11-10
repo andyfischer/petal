@@ -148,7 +148,7 @@ import bloom/menu         // a module of a package
   ```
   Error: cannot find module 'level' (imported by main.ptl): there is no package named
   'level' — a bare name is always a package. The file beside this one is `import ./level`
-  (`petal fix-imports` rewrites these)
+  (`petal migrate-old-code` rewrites these)
   ```
 
   [Where packages are found](#where-packages-are-found) lists the places a
@@ -250,8 +250,8 @@ file.
 
 `pub` used to be spelled `export`. The old word still works everywhere `pub`
 does, with no removal planned, and means exactly the same thing; `petal lint`
-reports it (rule `prefer-pub`), and `petal lint --fix` or `petal fmt` rewrites
-it. Both words are reserved.
+reports it (rule `old-syntax`), and `petal migrate-old-code` rewrites it
+(migration `export-to-pub`). Both words are reserved.
 
 A leading underscore carries no meaning: `fn _helper` is private because it
 lacks `pub`, not because of the name.
@@ -635,14 +635,15 @@ Stack trace:
 (A trace that stays in the entry file, and `-e` code, which has no file
 name, keep the bare `[line N, column M]`.)
 
-## Migrating with `petal fix-imports`
+## Migrating with `petal migrate-old-code`
 
 Code written before these rules does not load: it imports sibling files by
 bare name, writes `import m: *`, or uses a host's names and the domain
-builtins with no import at all. `petal fix-imports` rewrites the import
+builtins with no import at all. `petal migrate-old-code` (its `old-imports`
+migration; `petal fix-imports` runs that one alone) rewrites the import
 lines of such code and adds the imports it is missing, and changes nothing
-else. [CLI.md](CLI.md#fix-imports--migrate-imports) lists every rewrite, its
-flags, and which packages it knows about.
+else about the imports. [CLI.md](CLI.md#fix-imports--migrate-imports) lists
+every rewrite, its flags, and which packages it knows about.
 
 What it cannot do for you is decide an [ambiguity](#which-name-wins) the
 new bare binding introduced: qualify the use, or pin the name with a

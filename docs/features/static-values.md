@@ -161,7 +161,7 @@ The rules:
 **The older spelling.** `const NAME = expr` (and `pub const`) is the same
 declaration and still works, with the same rules (`config const` is an
 error). It is deprecated: the compile check warns about each one
-(`[const-decl-deprecated]`), and `petal lint --fix` rewrites it to
+(`[const-decl-deprecated]`), and `petal migrate-old-code` rewrites it to
 `let NAME = const(expr)`
 ([plan](../tasks/lifecycle-annotation-functions-refactor.md)).
 

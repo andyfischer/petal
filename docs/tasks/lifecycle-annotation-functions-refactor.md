@@ -5,7 +5,8 @@ Status: Phase 1 shipped 9 November 2026 (`const(…)` reaches parity; see
 opt-in and report only; see "Phase 2: what shipped"), and so did Phase 3
 (the Petal corpus, the docs and petal-lang.org; see "Phase 3: what
 shipped"), Phase 4 (Cheesecake; "Phase 4: what landed") and Phase 5 (the
-deprecation warnings and `--fix`; "Phase 5: what shipped"). Phase 6
+deprecation warnings; "Phase 5: what shipped", with the rewrite since moved
+from `petal lint --fix` to `petal migrate-old-code`: "Phase 5, revised"). Phase 6
 (removal, one release after Phase 5) and Phase 7 are planned. Settings without
 `config` are half done:
 Phases 1 and 2 of the old removal proposal shipped on 6 November (commits
@@ -569,7 +570,8 @@ Done in `~/cheesecake` on its `main`, from `dd5681e` to `e413eac`:
   warning and the lint finding, and a bundled first-party package is not
   warned about. A nested `config let` is not warned about, as the rule
   does not report one (none exists anywhere).
-- **The lint rules run by default and `--fix` applies them.** Both
+- **The lint rules run by default and `--fix` applies them** (moved to
+  `petal migrate-old-code` the same day; see "Phase 5, revised"). Both
   deprecation rules lost `opt_in` and are `Fixes::All`;
   `APPLY_LIFECYCLE_FIXES` is gone. `const-of-literal` stays opt-in and
   report only. `petal help lint` and `docs/CLI.md` say so.
@@ -605,14 +607,41 @@ Done in `~/cheesecake` on its `main`, from `dd5681e` to `e413eac`:
 - Owner decision recorded: the warnings cover top-level declarations only,
   matching the fixer.
 
+#### Phase 5, revised: the rewrite moved to `petal migrate-old-code` (9 November 2026)
+
+Per docs/tasks/migration-tool.md, rewriting old syntax is no longer lint's.
+The two fixers are now the migrations `const-decl-deprecated` and
+`config-let-deprecated` of `petal migrate-old-code`
+(`core/src/migrate/lifecycle_keywords.rs`; `migrate_lifecycle_keywords` is
+`petal::migrate::migrate_lifecycle_keywords`), and `petal lint --fix` no
+longer applies them; `--rules-include=const-decl-deprecated` says where the
+rule went. The compile warning names the command:
+"`const N = e` is deprecated; write `let N = const(e)`; run
+`petal migrate-old-code` [const-decl-deprecated]". The ids are unchanged, so
+`// petal-lint-ignore const-decl-deprecated` still silences the warning, and
+now keeps the migration off the site. `const-of-literal` stays a lint rule
+(`core/src/lint/const_of_literal.rs`). `core/tests/lifecycle_migration.rs`
+runs the dry run through `petal::migrate::migrate_source`; its
+`migrate_in_place` test is gone (`petal migrate-old-code --only
+const-decl-deprecated,config-let-deprecated <dir>` does that). Cheesecake
+scripts/docs that ran `petal lint --fix` for these: see the migration-tool
+task doc.
+
 ### Phase 6: remove (one release after Phase 5)
 
-- Parse errors that carry the rewrite: "`const X = e` was removed; write
-  `let X = const(e)`" and "`config let` was removed; write
-  `let X = tunable(v)`". `petal lint --fix` still rewrites both, so an old
-  file is one command from working. `config` stays an ordinary identifier.
-  `const` becomes an identifier the resolver refuses to bind (a reserved
-  hint name).
+- Parse errors that point at the tool: "`const X = e` was removed; write
+  `let X = const(e)` (`petal migrate-old-code` rewrites it)" and
+  "`config let` was removed; write `let X = tunable(v)` (`petal
+  migrate-old-code` rewrites it)". The rewrite lives only in
+  `petal migrate-old-code` (the `const-decl-deprecated` and
+  `config-let-deprecated` migrations), so an old file is one command from
+  working; nothing else (lint, fmt, the LSP) learns the old forms. The
+  migration then needs a parse that still recognises them: keep that
+  recognition inside `core/src/migrate/` (a pre-parse that finds
+  `const X =` / `config let X =` heads, or a parser mode only the migrator
+  turns on), not in the main grammar. `config` stays an ordinary
+  identifier. `const` becomes an identifier the resolver refuses to bind (a
+  reserved hint name).
 - Delete:
   - `Token::Const` and the `const` entry in the keyword list;
   - `LetKeyword::Const`;

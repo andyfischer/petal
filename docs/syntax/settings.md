@@ -306,7 +306,7 @@ print(SPEED, GRAV)
 It still works and means exactly the same, and it is deprecated
 ([plan](../tasks/lifecycle-annotation-functions-refactor.md)): the compile
 check warns about each top-level one (`[config-let-deprecated]`), and
-`petal lint --fix` rewrites it to `let X = tunable(v)` (or drops `config`
+`petal migrate-old-code` rewrites it to `let X = tunable(v)` (or drops `config`
 when the value is already a `tunable(…)` call). A
 `// petal-lint-ignore config-let-deprecated` silences both. `config` goes directly before `let` and after `pub`; it
 modifies `let` only, and `config var`, `config const`, `config state` and

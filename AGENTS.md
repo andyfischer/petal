@@ -8,6 +8,7 @@ docs/packages.md - petal.toml, dependencies, petal.lock, the package commands, a
 docs/dev/performance.md - profiling tools, what the optimizer does, where the headroom is
 docs/dev/mcp-server.md - using the local MCP server to do testing and investigation
 docs/dev/formal-verification.md - Kani proofs and exhaustive small-scope checks of the core semantics
+docs/dev/migrations.md - when a syntax change deprecates a form, the rewrite goes in `petal migrate-old-code` (core/src/migrate/), not in lint/fmt
 
 ## Commits
 

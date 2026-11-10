@@ -51,12 +51,13 @@ who asks" — React's `key=` prop, but absolute. That makes a keyed slot a
 global hidden inside a function: two calls of stateful code that pass the same
 key interfere, which breaks the rule that state is nested per path and that
 stateful code is safe to duplicate. It is therefore deprecated (compile
-warning and lint rule `state-key-deprecated`; the feature still works). Its
+warning `state-key-deprecated`, which `petal migrate-old-code` migrates; the
+feature still works). Its
 uses split three ways:
 
 - **A pure cache** (`nes.ptl`'s `_font_rows`, one build per ink for every
   caller) is a [`memo(key)`](../features/memo.md). Sharing a pure result is
-  unobservable, so an absolute key is acceptable there. `petal lint --fix`
+  unobservable, so an absolute key is acceptable there. `petal migrate-old-code`
   makes this rewrite when the slot is never written and the initializer is
   plainly a pure function of the key (no calls).
 - **Sharing on purpose** (`nes.ptl`'s `btn_repeat`, where two widgets asking

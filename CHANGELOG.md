@@ -12,6 +12,26 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **Old syntax is rewritten only by `petal migrate-old-code`.** The other
+  commands carry the current syntax only:
+  - `petal lint --fix` no longer rewrites `export`, `const X = e`,
+    `config let` or `state(key)`. The rules `prefer-pub`,
+    `const-decl-deprecated`, `config-let-deprecated` and
+    `state-key-deprecated` left lint (they are migrations now; naming one in
+    `--rules-include`/`--rules-exclude` says so). A new report-only rule,
+    `old-syntax`, reports the one old form the compiler accepts without a
+    word, the `export` spelling of `pub`, as
+    "`export` is deprecated; write `pub`; run `petal migrate-old-code`
+    [export-to-pub]".
+  - `petal fmt` no longer rewrites `export` to `pub`: it is whitespace only.
+  - The deprecation warnings for `const X = e`, `config let` and
+    `state(key)` end "; run `petal migrate-old-code`", and the errors for the
+    removed import forms name it in place of `petal fix-imports`.
+    `petal fix-imports` still works: it is the `old-imports` migration on
+    its own.
+  - `// petal-lint-ignore prefer-pub` is now `// petal-lint-ignore
+    export-to-pub` (or `old-syntax` for the lint report alone).
+
 - A class or enum belongs to the module that declares it
   ([proposal](docs/proposals/module-name-collisions.md), part C). Two
   modules may each declare `enum Phase` or `class Box`, private or `pub`, and
@@ -191,20 +211,35 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   [settings](docs/syntax/settings.md)). Both still compile and mean what
   they did, with a compile-check warning on each top-level declaration
   (`[const-decl-deprecated]`, `[config-let-deprecated]`).
-  - `petal lint --fix` rewrites them: the lint rules of the same names now
-    run by default (they were opt-in and report only). A multi-line
+  - `petal migrate-old-code` rewrites them (see "Added"; for a moment
+    this was `petal lint --fix`). A multi-line
     initializer gets its closing `)` after its last line, trailing comments
     keep their column, and a `config let X = tunable(…)` only loses
     `config`. Literals are wrapped too: `pub const ART = "art"` becomes
     `pub let ART = const("art")`.
-  - `// petal-lint-ignore const-decl-deprecated` (or
-    `config-let-deprecated`) silences both the warning and the finding.
+  - The warning ends `run `petal migrate-old-code``.
+    `// petal-lint-ignore const-decl-deprecated` (or
+    `config-let-deprecated`) silences it and keeps the migration off the
+    site.
   - The Petal corpus, Garden's panels and Cheesecake declare neither. The
     two forms are removed one release later (Phase 6): an old file will
     then be a parse error that names the rewrite, and still one
-    `petal lint --fix` from working.
+    `petal migrate-old-code` from working.
 
 ### Added
+
+- **`petal migrate-old-code`** rewrites code written in an old syntax into
+  the current one, in place ([CLI.md](docs/CLI.md#migrate-old-code--rewrite-old-syntax)).
+  `--check` (or `--dry-run`) prints the diff and exits 1 if anything would
+  change; `--only <migration>` selects; `--list` shows each migration with
+  the date it was added. It takes paths like `petal fmt` (directories
+  recurse, skipping dot-directories, `node_modules` and `target`), `-e` and
+  `-`, and running it twice changes nothing. The migrations:
+  `export-to-pub`, `const-decl-deprecated`, `config-let-deprecated`,
+  `state-key-deprecated` (a `state(key)` that can be a `memo(key)`; the
+  rest are listed for a hand edit) and `old-imports` (what `petal
+  fix-imports` does, run last over the whole batch). Future syntax changes
+  add a migration here ([docs/dev/migrations.md](docs/dev/migrations.md)).
 
 - **Nullable types**, `T?`: a `T` or `nil`, wherever a type annotation goes
   (`many: string? = nil`, `-> record?`, `lit: int?`, `state var hud: Hud? =

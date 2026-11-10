@@ -100,7 +100,8 @@ the whole list.
 | `bundle` | Emit a program's packages as one JSON document |
 | `fmt` | Rewrite files in the canonical layout |
 | `lint` | Check programs without running them, and report code with a better spelling; `--fix` applies it |
-| `fix-imports` | Migrate older code: rewrite its import lines and add the imports it is missing |
+| `migrate-old-code` | Rewrite code in an old syntax into the current one |
+| `fix-imports` | The import migration of `migrate-old-code` on its own: rewrite import lines and add the imports a file is missing |
 | `suggest` | Suggest safe refactors for a file |
 | `apply-change` | Carry out a refactor that changes behaviour |
 | `ir-equal` | Compare two files' compiled IR |
@@ -115,7 +116,7 @@ the whole list.
 | `pending-report` | Run, then report every live pending resource |
 | `propose-edit` | Propose source edits that change an emitted value |
 
-Every command except `lsp`, `fmt`, `fix-imports`, `apply-change`, `show-graph` and the
+Every command except `lsp`, `fmt`, `migrate-old-code`, `fix-imports`, `apply-change`, `show-graph` and the
 package-manager commands (`init` … `bundle`) accepts `--json` for machine-readable output.
 
 ## Commands
@@ -667,7 +668,7 @@ Error: module 'ui/input' needs native fns this host does not register: mouse_x, 
 A UI script runs in a petal-ui runner such as `petal-sdl`
 ([usage/building-apps.md](usage/building-apps.md)). A script that uses petal-ui names with
 no `import ui` gets the line from
-[`petal fix-imports`](#fix-imports--migrate-imports).
+[`petal migrate-old-code`](#migrate-old-code--rewrite-old-syntax) (its `old-imports` migration).
 
 #### Errors and warnings
 
@@ -837,10 +838,7 @@ finding a `fixable` field. `petal lint --rules` lists them.
 | `config-not-data` | a setting, `let X = tunable(e)` (or the deprecated `config let X = e`), where `e` needs evaluating (`level.SPAWN`, `2 * W`): hosts read a setting without running the program ([settings.md](syntax/settings.md#what-a-setting-can-hold)), so they see none | none: write the value as data, or make it a plain `let` |
 | `int-division` (opt-in) | `a / b` on two proven ints, whose truncated quotient is then an operand of float arithmetic or the argument of `float(...)` | none: either reading can be meant |
 | `never-replays` (opt-in) | a function whose calls are never replayed from the memo table, and why: an effect on every call (`print`, a random draw, a host write), itself or through a function it calls on every call; a read whose answer changes every run (a native declared `ticks`, such as `time`); a top-level plain `var`, a new cell every run. A read of a revisioned class (`PHYSICS`, `NET`) on every call is reported as *rarely* replayed. The same analysis as [`show-static --deps`](#--deps--dependency-classes-and-why-a-helper-never-replays) | none |
-| `prefer-pub` | the deprecated `export` modifier, on any declaration or `import` | `export` → `pub` |
-| `state-key-deprecated` | every `state(key)` declaration, which is deprecated (the compiler warns about it too, under the same rule id) | `state(k)` → `memo(k)` where the slot is never written and the initializer is plainly a pure function of the key (no calls, no `get`, no name the key does not read): not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Otherwise reported |
-| `const-decl-deprecated` | `const X = e` and `pub const X = e` at the top level: the keyword is deprecated in favour of the annotation (the compiler warns about it too, under the same rule id; [plan](tasks/lifecycle-annotation-functions-refactor.md)) | `let X = const(e)`, literals included, with a closing `)` after a multi-line initializer and trailing comments kept in their column |
-| `config-let-deprecated` | `config let X = v` at the top level: the modifier is deprecated; a setting is a `let` whose whole initializer is `tunable(…)` (the compiler warns too, under the same rule id) | `let X = tunable(v)`, or only `config` dropped when `v` is already a `tunable(…)` call |
+| `old-syntax` | a deprecated form the compiler accepts without a warning: the `export` spelling of `pub` | none: [`petal migrate-old-code`](#migrate-old-code--rewrite-old-syntax) rewrites it |
 | `const-of-literal` (opt-in) | `const X = v` or `let X = const(v)` where `v` is literal data (a literal, a colour, a list or record of them): `const` checks nothing a reader cannot see | none: dropping the check is the author's call |
 | `state-as-constant` (opt-in) | a plain top-level `state` (no key, not `state var`; `pub state` included, since importers cannot write an export) that nothing in the program assigns and whose initializer is static | `state X = e` → `let X = const(e)` |
 
@@ -861,13 +859,16 @@ script that prints from a helper is not wrong, and the rule compiles the
 file. It is for a script a host runs every frame with memoization on, where
 it says which helpers re-run every frame and what to change.
 
-`const-decl-deprecated` and `config-let-deprecated` run by default and
-`--fix` applies them (Phase 5 of the
-[plan](tasks/lifecycle-annotation-functions-refactor.md)). The compile check
-reports the same sites as warnings, and a `// petal-lint-ignore` naming the
-rule silences both. The declaration forms are removed one release later
-(Phase 6). `const-of-literal` stays **opt-in** and report only: dropping a
-check is the author's call.
+**Old syntax is not lint's.** Rewriting a deprecated or removed form into
+the current one is [`petal migrate-old-code`](#migrate-old-code--rewrite-old-syntax),
+and `--fix` leaves such forms alone. The compile check warns about most of
+them (`const X = e`, `config let`, `state(key)`) and its warning says to run
+that command; `old-syntax` reports the one it does not. Before 2026-11-09
+these were the lint rules `prefer-pub`, `const-decl-deprecated`,
+`config-let-deprecated` and `state-key-deprecated`; naming one in
+`--rules-include` or `--rules-exclude` now says where it went.
+`const-of-literal` stays **opt-in** and report only: dropping a check is the
+author's call.
 
 `state-as-constant` is **opt-in**: it runs only when `--rules-include` names
 it (`petal lint --rules-include=state-as-constant`, alone or with other
@@ -879,23 +880,6 @@ value survives a hot reload where a `const(…)` is rebuilt, and its initializer
 runs once in every host where a `const(…)` is built once only if the host's run
 keeps static values. Where any of that matters, leave the `state` and put
 `// petal-lint-ignore state-as-constant` on its line.
-
-`state-key-deprecated` reports every keyed `state`: its slot is one per key
-value, whichever caller reaches it, so it is a global hidden in a function
-(see [Deprecated: `state(key)`](features/inline-state.md#deprecated-statekey)). A slot
-nothing writes only ever holds what its initializer computed for its key,
-which is a [`memo`](features/memo.md) if the initializer is a pure function of
-its key. `--fix` respells it so only when both hold. It finds "nothing
-writes" by compiling the rewrite. It finds "pure" from the initializer's
-syntax: literals, names the key reads, operators, and list, record, field,
-index and interpolation forms. Any call, `get`, lambda, branch or other name
-keeps the site as a report without a fix. A memo is shared by every caller
-with an equal key and recomputed after a reload, so `state(k) v = k * scale`
-or `state(id) tint = random(0.0, 1.0)` would change behaviour as a memo.
-Keep such a slot (in a top-level `state var` Map, or as plain `state`) and
-silence the site with `// petal-lint-ignore state-key-deprecated`.
-The compile warning for the same site (the compile check of `petal lint`,
-`petal run`, the language server) honours that comment as well.
 
 `state-as-constant` also asks the compiler rather than the text: it
 compiles the file, classifies it as [`show-static`](#show-static--static-declarations)
@@ -923,9 +907,9 @@ works with and without `--fix`.
 | `--verify` (= `--verify=ir`, the default) | Formatting and the IR-invisible rules must not change the IR | Allowed: reported as an expected IR change, file still written |
 | `--verify=strict` | The whole rewrite must be IR-equal | Refused: exit 3, file untouched |
 
-Formatting, `prefer-compound-assign` and `prefer-pub` are meant to leave the IR unchanged.
-The cast, `match`, `var`, `repeat`, `prefer-field-set`, `neg-zero-sub`, `prefer-any`, `dead-alias`,
-`state-as-constant` and `state-key-deprecated` rules change it by design. On such a file the default mode proves
+Formatting and `prefer-compound-assign` are meant to leave the IR unchanged.
+The cast, `match`, `var`, `repeat`, `prefer-field-set`, `neg-zero-sub`, `prefer-any`, `dead-alias`
+and `state-as-constant` rules change it by design. On such a file the default mode proves
 the part it can, prints the first difference, and says that a run diff is what
 would prove the rest:
 
@@ -1005,8 +989,7 @@ files found by walking directories (dot-directories, `node_modules` and
 `target` are skipped). A file that does not parse is reported and left alone;
 the rest still run.
 
-fmt touches whitespace only (see [dev/linter-plan.md](dev/linter-plan.md)),
-with one exception listed last:
+fmt touches whitespace only (see [dev/linter-plan.md](dev/linter-plan.md)):
 
 - **Indentation** — 2 spaces per open construct, from the token stream.
 - **Spacing within a line** — one space around binary and assignment operators,
@@ -1016,8 +999,9 @@ with one exception listed last:
   Any other run of blanks becomes one space.
 - **Blank lines** — at most one in a row, none at the start or end of the file,
   exactly one final newline. Trailing whitespace goes.
-- **`export` → `pub`** — the deprecated spelling of the modifier is rewritten.
-  The two words declare the same thing, so the program does not change.
+
+An old spelling (the `export` modifier) is laid out as written: rewriting it
+is [`migrate-old-code`](#migrate-old-code--rewrite-old-syntax)'s.
 
 It keeps what the author aligned. A run of spaces that lines a token up with a
 token on the line above or below (a table of records, a column of `=`), a
@@ -1027,12 +1011,71 @@ survive, moving only as far as the line they hang from moves.
 
 It never wraps lines, reorders anything, or edits strings, raw strings or JSX
 text, and it checks every result: the output must lex to exactly the input's
-tokens (an `export` modifier counting as its `pub`), or the file is refused with a `fmt bug` error.
+tokens, or the file is refused with a `fmt bug` error.
 
 Opt out with `// petal-fmt-ignore` (the next line stays as written),
 `// petal-fmt-off` … `// petal-fmt-on` (a region), or `// petal-fmt-ignore-file`.
 
+### `migrate-old-code` — Rewrite old syntax
+
+```
+petal migrate-old-code [-I <dir>]... [<path>...]     # rewrite in place; directories recurse; default "."
+petal migrate-old-code --check [<path>...]           # write nothing; print a unified diff; exit 1 if anything would change (also --dry-run)
+petal migrate-old-code --only <name>[,<name>] ...    # run just these migrations (repeatable)
+petal migrate-old-code --list                        # the migrations, with the date each was added
+petal migrate-old-code -e '<code>'                   # print the migrated code
+petal migrate-old-code -                             # stdin to stdout
+```
+
+When the language changes a form, the rewrite from the old form to the new
+one lives here, as a named **migration**. The other commands carry logic for
+the current syntax only (`fmt` lays an old spelling out as written, `lint
+--fix` leaves it, `apply-change` plans against the current forms), so code in
+an old form is migrated first. A deprecated form the compiler still accepts
+draws a warning ending `run `petal migrate-old-code` [<migration>]`; a removed
+one is an error that names the command.
+
+| Migration | Rewrites | Old form |
+|---|---|---|
+| `export-to-pub` | `export fn f` → `pub fn f`, on any declaration or `import` (trailing comments kept in their column) | accepted without a warning; `petal lint` reports it (`old-syntax`) |
+| `const-decl-deprecated` | `const X = e` → `let X = const(e)`, literals included, with a closing `)` after a multi-line initializer and trailing comments kept in their column ([plan](tasks/lifecycle-annotation-functions-refactor.md)) | warns (Phase 5); removed in Phase 6 |
+| `config-let-deprecated` | `config let X = v` → `let X = tunable(v)`, or only `config` dropped when `v` is already a `tunable(…)` call | warns (Phase 5); removed in Phase 6 |
+| `state-key-deprecated` | `state(k) x = e` → `memo(k) x = e` where the slot is never written and `e` is plainly a pure function of the key (no calls, no `get`, no name the key does not read): not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Any other `state(key)` is listed for a hand edit ([Deprecated: `state(key)`](features/inline-state.md#deprecated-statekey)): a top-level `state var` Map for state shared on purpose, plain `state` for per-instance state | warns |
+| `old-imports` | import lines for the current module system: everything [`fix-imports`](#fix-imports--migrate-imports) does | removed: an error |
+
+They run in that order, each over the text the one before left; `old-imports`
+runs last over the whole batch, so it sees every sibling already migrated.
+Each migration edits its old form and nothing else, and the output is not
+reformatted. Running the command again changes nothing. If a file compiles
+before, it must compile after, or nothing is written for it and the error is
+reported (a migration bug). It prints each file it rewrote, with one line per
+site:
+
+```
+$ petal migrate-old-code game/
+game/main.ptl
+  1:1: export-to-pub: `export` is deprecated; write `pub`
+  4:1: const-decl-deprecated: `const N = e` is deprecated; write `let N = const(e)`
+  old-imports: line 2: `import level` -> `import ./level`
+game/hp.ptl:2:3: state-key-deprecated: `state(…) h` is deprecated: … (left for a hand edit)
+1 site(s) in an old form are left for a hand edit
+migrated 1 of 2 file(s)
+```
+
+A site left for a hand edit goes to stderr and does not change the exit
+status. To keep one site in its old form (a fixture of the deprecated form,
+say), put `// petal-lint-ignore <migration>` on the line before it or at the
+end of its line, or `// petal-lint-ignore-file <migration>` anywhere: the
+same comment silences the compiler's warning there.
+
+Adding a migration for a future syntax change: see
+[dev/migrations.md](dev/migrations.md).
+
 ### `fix-imports` — Migrate imports
+
+`petal fix-imports <paths>` is `petal migrate-old-code --only old-imports
+<paths>` with its own `--check` (a list of files) and `--diff`. Prefer
+`migrate-old-code`, which runs every migration.
 
 ```
 petal fix-imports [-I <dir>]... [<path>...]   # rewrite in place; directories recurse; default "."
@@ -1622,7 +1665,7 @@ Completion, hover and go-to-definition follow imports into other files and
 know the members of an enum (`Kind.` offers its variants, a variant value
 offers its fields and data), and completion works while the line being typed
 does not parse yet. It does not format, rename or offer code actions; use
-`petal fmt`, `petal fix-imports` and `petal apply-change` for those.
+`petal fmt`, `petal migrate-old-code` and `petal apply-change` for those.
 Columns are UTF-16 code units unless the client offers UTF-8 or UTF-32 alone
 (`positionEncoding`). A script written for a host that puts names in scope
 without an import is analyzed as that host compiles it when its project's

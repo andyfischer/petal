@@ -175,12 +175,12 @@ deprecated. `petal lint` warns about each one, under the rule
   [Sharing on purpose](#sharing-on-purpose).
 - **One slot per caller:** plain `state`.
 
-`petal lint --fix` makes the `memo` rewrite only when it can see from the
+`petal migrate-old-code` makes the `memo` rewrite only when it can see from the
 syntax that the initializer is a pure function of the key: built from
 literals, the names the key reads, operators, and list, record, field and
 index forms. It does not make the rewrite for an initializer that calls
 anything, including a pure helper such as `measure(text)`. Those sites are
-reported without a fix, and the author chooses. Silence a site you keep with
+reported for a hand edit, and the author chooses. Silence a site you keep with
 `// petal-lint-ignore state-key-deprecated`.
 
 ## State is not allowed in callbacks

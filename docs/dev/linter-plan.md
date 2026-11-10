@@ -25,11 +25,11 @@ token stream, it is lint.** Everything fmt does is re-lexed and checked
 against the original tokens, so fmt can be run blind, on save, over a whole
 tree; lint rules each carry their own argument for why the fix is an identity.
 
-The one exception is the deprecated `export` modifier, which both tools
-rewrite to `pub`: it is a lint rule (`prefer-pub`) because it changes a token,
-and fmt does it too because the two words are one declaration to everything
-after the parser, so a formatter that left the old spelling in place would be
-leaving a non-canonical file. fmt gates it separately (below).
+Old syntax is neither tool's. The deprecated `export` modifier used to be
+rewritten to `pub` by both (lint's `prefer-pub`, and a keyword pass in fmt);
+since 2026-11-09 every rewrite of an old form is `petal migrate-old-code`
+([migrations.md](migrations.md)), fmt lays `export` out as written, and lint
+only reports it (`old-syntax`).
 
 Diagnostics that describe a *bug* rather than a spelling — a discarded pure
 call (`typecheck/unused.rs`), a type mismatch — stay in the compiler, the way
@@ -60,7 +60,8 @@ compile's errors fail the lint; its warnings and the rules' findings fail only
 
 **lint** (token-changing, each with a fix): `prefer-let`, `no-redundant-cast`,
 `prefer-match`, `prefer-repeat`, `prefer-compound-assign`, `prefer-pub` (§5)
-were the first rules. There are about twenty now (`state-key-deprecated`,
+were the first rules (`prefer-pub` is now the `export-to-pub` migration). There
+are about twenty now (`state-as-constant`,
 `shadows-builtin`, `int-division`, `dm-hint-state-init`, …): `petal lint
 --rules` lists them, `core/src/lint/mod.rs` (`RULES`) is the registry, and
 [CLI.md](../CLI.md) documents each one.
@@ -143,7 +144,7 @@ each later stage's offsets back through the earlier stages' splices.
   `lint` finds nothing).
 - **`--verify`** compiles both sides and compares IR with `ir-equal`.
   `--verify=ir` (the default) proves formatting and the IR-invisible rules
-  (`prefer-compound-assign`, `prefer-pub`) and accepts the others as expected-to-differ;
+  (`prefer-compound-assign`) and accepts the others as expected-to-differ;
   `--verify=strict` demands IR equality of the whole rewrite. A rewrite that
   cannot be proven exits 3 without writing.
 

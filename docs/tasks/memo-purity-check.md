@@ -44,7 +44,7 @@ Three other kinds of impure initializer break the premise in other ways:
   value is stuck at its first frame.
 
 The same blind spot affects the `state-key-deprecated` auto-fix
-(`core/src/lint/state_key.rs`). It rewrites any never-written `state(k)` to
+(`core/src/migrate/state_key.rs`). It rewrites any never-written `state(k)` to
 `memo(k)`, including `state(id) tint = random(...)` in a script like
 `plant.ptl`, which changes behaviour.
 
@@ -103,7 +103,7 @@ Suppress with `// petal-lint-ignore memo-impure`.
 - **Wire the same check into the `state-key-deprecated` fix.** Make the
   rewrite to `memo` only when the initializer passes. Otherwise report
   without a fix and suggest `state var` + Map. Update the doc comment in
-  `core/src/lint/state_key.rs` and the inline-state.md deprecation note,
+  `core/src/migrate/state_key.rs` and the inline-state.md deprecation note,
   which currently tell authors to watch for this themselves.
 - **Run the check on the in-tree memos** and make each one clean or
   explicitly ignored. They are `nes.ptl`'s `_font_rows`, `glsl.ptl`'s
@@ -164,7 +164,7 @@ data.
    `program.terms.iter().any(|t| t.is_memo)`, so programs without a memo pay
    nothing. Honour `// petal-lint-ignore memo-impure` the way
    `keyed_state::deprecated_keyed_states` honours its rule.
-4. **Replace the syntactic gate.** Have `lint/state_key.rs` ask the same
+4. **Replace the syntactic gate.** Have `migrate/state_key.rs` ask the same
    question of the would-be memo (compile the rewrite, run step 1 on it)
    instead of `init_is_pure_of_key`. Then `state(text) w = measure(text)`
    gets its fix back when `measure` is `CONST`. Keep the syntactic gate as a

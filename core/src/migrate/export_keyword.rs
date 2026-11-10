@@ -179,6 +179,7 @@ mod tests {
     fn an_annotated_declaration_reports_its_modifier() {
         assert_eq!(spans("@tunable export let a = 1\n"), vec![(1, 10, 16)]);
         assert_eq!(spans("@tunable(0, 9)\n// c\nexport let a = 1\n"), vec![(3, 1, 7)]);
+        assert_eq!(spans("@tunable /* c */ export let a = 1\n"), vec![(1, 18, 24)]);
     }
 
     #[test]

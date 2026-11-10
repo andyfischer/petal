@@ -261,6 +261,10 @@ pub fn skip_annotations(chars: &[char], at: usize) -> usize {
         if chars.get(i) == Some(&'(') {
             let mut depth = 0usize;
             while let Some(&c) = chars.get(i) {
+                if let Some(past) = skip_comment(chars, i) {
+                    i = past;
+                    continue;
+                }
                 i += 1;
                 match c {
                     '(' | '[' | '{' => depth += 1,
@@ -288,16 +292,35 @@ pub fn skip_annotations(chars: &[char], at: usize) -> usize {
         loop {
             match chars.get(i) {
                 Some(c) if c.is_whitespace() => i += 1,
-                Some('/') if chars.get(i + 1) == Some(&'/') => {
-                    while chars.get(i).is_some_and(|c| *c != '\n') {
-                        i += 1;
-                    }
-                }
-                _ => break,
+                _ => match skip_comment(chars, i) {
+                    Some(past) => i = past,
+                    None => break,
+                },
             }
         }
     }
     i.min(chars.len())
+}
+
+/// Past the `//` or `/* … */` comment at `i`, when one starts there (a `//`
+/// comment stops before its line break).
+fn skip_comment(chars: &[char], mut i: usize) -> Option<usize> {
+    match (chars.get(i), chars.get(i + 1)) {
+        (Some('/'), Some('/')) => {
+            while chars.get(i).is_some_and(|c| *c != '\n') {
+                i += 1;
+            }
+            Some(i)
+        }
+        (Some('/'), Some('*')) => {
+            i += 2;
+            while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                i += 1;
+            }
+            Some((i + 2).min(chars.len()))
+        }
+        _ => None,
+    }
 }
 
 /// Whether a call's `arg_names` say its last argument is a spread

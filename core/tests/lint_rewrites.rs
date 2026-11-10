@@ -517,3 +517,13 @@ fn prefer_let_rewrites_the_keyword_after_an_annotation() {
         "@tunable(0, 9) let X = 1\nprint(X)\n@rigid\nlet G = 2\nprint(G)\n",
     );
 }
+
+#[test]
+fn prefer_let_finds_the_keyword_past_a_block_comment_after_an_annotation() {
+    // A `/* … */` between the annotation and the keyword is trivia, as a
+    // `//` comment is.
+    assert_lints_to(
+        "@tunable /* px */ var X = 1\nprint(X)\n@rigid(\n  /* ) */\n) var G = 2\nprint(G)\n",
+        "@tunable /* px */ let X = 1\nprint(X)\n@rigid(\n  /* ) */\n) let G = 2\nprint(G)\n",
+    );
+}

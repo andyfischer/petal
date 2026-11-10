@@ -4,13 +4,16 @@
 // The contract under test: the two words are one modifier. `pub` is accepted
 // everywhere `export` was; `export` keeps working and compiles to the same
 // program; the only places that tell them apart are the ones built to —
-// `petal lint` (the `prefer-pub` rule) and `petal fmt` (which rewrites it).
-// The compiler, and so `petal lint` and the LSP, says nothing about it.
+// `petal migrate-old-code` (the `export-to-pub` migration, which rewrites it)
+// and `petal lint`'s report-only `old-syntax` rule, which points there.
+// The compiler, and so the compile check and the LSP, says nothing about it;
+// `petal fmt` leaves it as written.
 
 use petal::diagnostic::Diagnostic;
 use petal::env::Env;
 use petal::ir_equiv::ir_equivalent;
-use petal::lint::{LintOptions, PREFER_PUB, RuleFilter, lint_source};
+use petal::lint::{LintOptions, OLD_SYNTAX, RuleFilter, lint_source};
+use petal::migrate::{EXPORT_TO_PUB, MigrateOptions, MigrateOutcome, migrate_source};
 
 /// Every declaration the modifier can sit on, written with `{m}` where it
 /// goes. `import` is first because imports form a prefix of the file.
@@ -183,8 +186,8 @@ fn a_dangling_modifier_names_the_word_that_was_written() {
 
 #[test]
 fn neither_spelling_draws_a_compile_warning() {
-    // The old spelling is lint's (`prefer-pub`) and fmt's to report and
-    // rewrite; a compile, and so `petal lint`, has nothing to say about it.
+    // The old spelling is `petal migrate-old-code`'s to rewrite; a compile
+    // has nothing to say about it.
     assert_eq!(compile_warnings(&every_form("pub")), vec![]);
     assert_eq!(compile_warnings(&every_form("export")), vec![]);
 }
@@ -205,16 +208,20 @@ fn the_lsp_does_not_flag_export() {
     assert!(analysis.diagnostics.is_empty(), "{:?}", analysis.diagnostics);
 }
 
-// ── `petal lint`: the `prefer-pub` rule ──────────────────────────
+// ── `petal migrate-old-code`: the `export-to-pub` migration ──────
+
+fn migrate(src: &str) -> MigrateOutcome {
+    migrate_source(src, &MigrateOptions::default()).expect("migrate_source should succeed")
+}
 
 fn lint(src: &str) -> petal::lint::LintOutcome {
     lint_source(src, &LintOptions::default()).expect("lint_source should succeed")
 }
 
 #[test]
-fn lint_rewrites_every_export_form() {
-    let out = lint(&every_form("export"));
-    assert_eq!(out.count(PREFER_PUB), 8);
+fn migrate_rewrites_every_export_form() {
+    let out = migrate(&every_form("export"));
+    assert_eq!(out.count(EXPORT_TO_PUB), 8);
     assert_eq!(out.output, every_form("pub"));
     // Each finding sits on its keyword, in the original text.
     let at: Vec<(usize, usize)> = out.findings.iter().map(|f| (f.line, f.column)).collect();
@@ -231,162 +238,137 @@ fn lint_rewrites_every_export_form() {
             (13, 1)
         ]
     );
-    // A fixed point: the fixed text has nothing left to report.
-    assert!(lint(&out.output).findings.is_empty());
+    // Idempotent: the migrated text has nothing left to migrate.
+    assert!(migrate(&out.output).findings.is_empty());
 }
 
 #[test]
-fn lint_leaves_pub_alone() {
+fn migrate_leaves_pub_alone() {
     let src = every_form("pub");
-    let out = lint(&src);
+    let out = migrate(&src);
     assert!(out.findings.is_empty(), "{:?}", out.findings);
     assert_eq!(out.output, src);
 }
 
 #[test]
-fn lint_fix_is_not_a_semantic_rewrite() {
-    // `--verify` holds this rule to IR equality, like `prefer-compound-assign`.
+fn the_migration_is_ir_invisible() {
     let src = "export let a = 1\nprint(a)\n";
-    let out = lint(src);
-    assert_eq!(out.count(PREFER_PUB), 1);
-    assert!(!out.has_semantic_rewrite());
-    let verdict = petal::lint::verify_rewrite(
-        src,
-        &out,
-        petal::lint::VerifyMode::Strict,
-        &LintOptions::default(),
-    );
-    assert!(matches!(verdict, Ok(petal::lint::VerifyVerdict::Equal)));
+    let out = migrate(src);
+    assert_eq!(out.count(EXPORT_TO_PUB), 1);
+    let verdict = petal::ir_equiv::sources_equivalent(src, &out.output, &[], None).unwrap();
+    assert!(verdict.is_ok());
 }
 
 #[test]
-fn lint_does_not_touch_export_used_as_a_name() {
+fn migrate_does_not_touch_export_used_as_a_name() {
     let src = "let r = {export: 1}\nprint(r.export)\n";
-    let out = lint(src);
+    let out = migrate(src);
     assert!(out.findings.is_empty(), "{:?}", out.findings);
     assert_eq!(out.output, src);
+    assert_eq!(
+        migrate("export let r = {export: 1}\nprint(r.export) // export this\n").output,
+        "pub let r = {export: 1}\nprint(r.export) // export this\n"
+    );
+    assert_eq!(migrate("let s = \"export fn f\"\n").output, "let s = \"export fn f\"\n");
 }
 
 #[test]
-fn lint_ignore_keeps_the_old_spelling_even_when_another_rule_fires() {
-    // The fixed file is formatted before it is written, and `petal fmt`
-    // rewrites `export` on its own account. Lint must not let that apply a
-    // fix the user silenced.
+fn an_ignore_comment_keeps_the_old_spelling() {
     let src = "\
-// petal-lint-ignore prefer-pub -- kept for the old toolchain
+// petal-lint-ignore export-to-pub -- kept for the old toolchain
 export let a = 1
 export let b = 2
-let n = 0
-n = n + 1
 ";
-    let out = lint(src);
-    assert_eq!(out.count(PREFER_PUB), 1, "only the un-ignored one");
-    assert!(out.output.contains("export let a = 1"), "{}", out.output);
-    assert!(out.output.contains("pub let b = 2"), "{}", out.output);
-    assert!(out.output.contains("n += 1"), "{}", out.output);
-
-    let excluded = lint_source(
+    let out = migrate(src);
+    assert_eq!(out.count(EXPORT_TO_PUB), 1, "only the un-ignored one");
+    assert_eq!(
+        out.output,
+        "// petal-lint-ignore export-to-pub -- kept for the old toolchain\nexport let a = 1\npub let b = 2\n"
+    );
+    // `--only` another migration leaves it alone.
+    let only = migrate_source(
         src,
-        &LintOptions {
-            rules: RuleFilter {
-                include: None,
-                exclude: vec![PREFER_PUB.to_string()],
-            },
+        &MigrateOptions {
+            only: Some(vec![petal::migrate::CONST_DECL_DEPRECATED.to_string()]),
             ..Default::default()
         },
     )
     .unwrap();
-    assert_eq!(excluded.count(PREFER_PUB), 0);
-    assert!(
-        excluded.output.contains("export let b = 2"),
-        "{}",
-        excluded.output
-    );
-    assert!(excluded.output.contains("n += 1"), "{}", excluded.output);
+    assert_eq!(only.output, src);
 }
 
 #[test]
-fn prefer_pub_is_a_listed_rule() {
-    assert!(petal::lint::is_rule(PREFER_PUB));
-    assert_eq!(PREFER_PUB, "prefer-pub");
-}
-
-// ── `petal fmt` normalizes the keyword ───────────────────────────
-
-fn fmt(src: &str) -> String {
-    petal::fmt::format_source(src).expect("fmt should succeed")
+fn export_to_pub_is_a_migration_not_a_lint_rule() {
+    assert!(petal::migrate::is_migration(EXPORT_TO_PUB));
+    assert!(!petal::lint::is_rule(EXPORT_TO_PUB));
+    assert!(!petal::lint::is_rule("prefer-pub"));
 }
 
 #[test]
-fn fmt_rewrites_every_export_form_and_is_idempotent() {
-    let out = fmt(&every_form("export"));
-    assert_eq!(out, every_form("pub"));
-    assert_eq!(fmt(&out), out);
-}
-
-#[test]
-fn fmt_rewrites_only_the_modifier() {
-    assert_eq!(
-        fmt("export let r = {export: 1}\nprint(r.export) // export this\n"),
-        "pub let r = {export: 1}\nprint(r.export) // export this\n"
-    );
-    assert_eq!(
-        fmt("let s = \"export fn f\"\n"),
-        "let s = \"export fn f\"\n"
-    );
-}
-
-#[test]
-fn fmt_respects_its_opt_outs() {
-    let ignored = "// petal-fmt-ignore\nexport let a = 1\nexport let b = 2\n";
-    assert_eq!(
-        fmt(ignored),
-        "// petal-fmt-ignore\nexport let a = 1\npub let b = 2\n"
-    );
-
-    let region = "// petal-fmt-off\nexport let a = 1\n// petal-fmt-on\nexport let b = 2\n";
-    assert_eq!(
-        fmt(region),
-        "// petal-fmt-off\nexport let a = 1\n// petal-fmt-on\npub let b = 2\n"
-    );
-
-    let file = "// petal-fmt-ignore-file\nexport let a = 1\n";
-    assert_eq!(fmt(file), file);
-}
-
-#[test]
-fn fmt_keeps_trailing_comments_lined_up_after_the_keyword_shrinks() {
+fn trailing_comments_stay_lined_up_after_the_keyword_shrinks() {
     // `export` → `pub` pulls each line three columns left; a comment column
     // shared with a line that did not move is still shared afterwards.
-    let src = "\
+    let mixed = "\
 export let black = 15   // $0F
 let other_name = 0      // $00
 ";
-    let out = fmt(src);
+    let out = migrate(mixed).output;
     let cols: Vec<usize> = out.lines().map(|l| l.find("//").unwrap()).collect();
     assert_eq!(cols[0], cols[1], "{out}");
     assert!(out.starts_with("pub let black = 15"), "{out}");
-}
-
-#[test]
-fn a_comment_column_moves_with_its_whole_group_or_not_at_all() {
     // Every line of the group is rewritten: the table shifts left as one.
     let all = "\
 export let black = 15   // $0F
 export let white = 48   // $30
 ";
     assert_eq!(
-        fmt(all),
+        migrate(all).output,
         "pub let black = 15   // $0F\npub let white = 48   // $30\n"
     );
     // A lone trailing comment has nothing to stay lined up with.
-    assert_eq!(fmt("export let a = 1 // one\n"), "pub let a = 1 // one\n");
-    // `lint --fix` plans the same edits, so it agrees with `fmt` on both.
-    assert_eq!(lint(all).output, fmt(all));
-    let mixed = "\
-export let black = 15   // $0F
-let other_name = 0      // $00
-";
-    assert_eq!(lint(mixed).output, fmt(mixed));
-    assert_eq!(lint(mixed).count(PREFER_PUB), 1);
+    assert_eq!(migrate("export let a = 1 // one\n").output, "pub let a = 1 // one\n");
+}
+
+// ── `petal lint` reports it and leaves it ────────────────────────
+
+#[test]
+fn lint_reports_the_old_spelling_and_does_not_fix_it() {
+    let src = "export let a = 1\nlet n = 0\nn = n + 1\nprint(a + n)\n";
+    let out = lint(src);
+    assert_eq!(out.count(OLD_SYNTAX), 1);
+    let f = out.findings.iter().find(|f| f.rule == OLD_SYNTAX).unwrap();
+    assert!(!f.fixable);
+    assert_eq!((f.line, f.column), (1, 1));
+    assert_eq!(
+        f.message,
+        "`export` is deprecated; write `pub`; run `petal migrate-old-code` [export-to-pub]"
+    );
+    // `--fix` makes its own fixes and leaves the spelling.
+    assert!(out.output.starts_with("export let a = 1\n"), "{}", out.output);
+    assert!(out.output.contains("n += 1"), "{}", out.output);
+    // Silenced under either name.
+    for rule in [OLD_SYNTAX, EXPORT_TO_PUB] {
+        let quiet = lint(&format!("// petal-lint-ignore {rule}\n{src}"));
+        assert_eq!(quiet.count(OLD_SYNTAX), 0, "{rule}");
+    }
+    let excluded = lint_source(
+        src,
+        &LintOptions {
+            rules: RuleFilter {
+                include: None,
+                exclude: vec![OLD_SYNTAX.to_string()],
+            },
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(excluded.count(OLD_SYNTAX), 0);
+}
+
+// ── `petal fmt` leaves the spelling as written ───────────────────
+
+#[test]
+fn fmt_does_not_rewrite_the_keyword() {
+    let src = every_form("export");
+    assert_eq!(petal::fmt::format_source(&src).unwrap(), src);
 }

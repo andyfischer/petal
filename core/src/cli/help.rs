@@ -47,6 +47,10 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("fmt", "Rewrite files in the canonical layout"),
             (
+                "migrate-old-code",
+                "Rewrite code in an old syntax into the current one",
+            ),
+            (
                 "fix-imports",
                 "Rewrite imports for the current module system",
             ),
@@ -151,6 +155,7 @@ fn page(name: &str) -> Option<&'static str> {
         "lint" => LINT,
         "test" => TEST,
         "fix-imports" => FIX_IMPORTS,
+        "migrate-old-code" => MIGRATE_OLD_CODE,
         "suggest" => SUGGEST,
         "apply-change" => APPLY_CHANGE,
         "ir-equal" => IR_EQUAL,
@@ -441,6 +446,12 @@ SYNOPSIS
        petal fix-imports -
 
 DESCRIPTION
+       The 'old-imports' migration of 'petal migrate-old-code' on its own:
+       'petal fix-imports <paths>' is 'petal migrate-old-code --only
+       old-imports <paths>', with this command's own --check (a list of
+       files) and --diff. Prefer 'petal migrate-old-code', which also runs
+       every other migration.
+
        Migrates every .ptl file under the given paths (directories are
        searched recursively, skipping dot-directories, node_modules and
        target; the default is the current directory) and rewrites them in
@@ -530,8 +541,98 @@ EXAMPLES
        petal fix-imports -I garden/garden-script/packages panels/ init.ptl
 
 SEE ALSO
-       petal help fmt, petal help packages, docs/module-system.md,
-       docs/packages.md
+       petal help migrate-old-code, petal help packages,
+       docs/module-system.md, docs/packages.md
+";
+
+const MIGRATE_OLD_CODE: &str = "\
+NAME
+       petal-migrate-old-code - Rewrite old syntax into the current one
+
+SYNOPSIS
+       petal migrate-old-code [--check] [--only <migration>[,...]]...
+                              [-I <dir>]... [<path>...]
+       petal migrate-old-code -e <code>
+       petal migrate-old-code -
+       petal migrate-old-code --list
+
+DESCRIPTION
+       When the language changes a form, this command rewrites code written
+       in the old form into the new one. The other commands (fmt, lint --fix,
+       apply-change) only handle the current syntax, so code in an old form
+       is migrated first. A compile warning about a deprecated form, and the
+       error for a removed one, say to run this command.
+
+       Migrates every .ptl file under the given paths (directories are
+       searched recursively, skipping dot-directories, node_modules and
+       target; the default is the current directory) and rewrites them in
+       place, printing each file it changed and what it did there. Each
+       migration rewrites only its old form and leaves everything else as
+       written (re-padding a trailing comment it would push out of its
+       column); the result is not reformatted.
+
+       The migrations run in this order ('petal migrate-old-code --list'
+       shows each with the date it was added and what it replaces):
+
+       export-to-pub
+              the deprecated modifier 'export' becomes 'pub'
+       const-decl-deprecated
+              const X = e becomes let X = const(e)
+       config-let-deprecated
+              config let X = v becomes let X = tunable(v), or only config is
+              dropped when v is already a tunable(...) call
+       state-key-deprecated
+              state(key) x = e becomes memo(key) x = e when nothing writes x
+              and e is built from its key alone (no calls). Any other
+              state(key) is reported and left for a hand edit: a top-level
+              state var holding a Map, or plain state (kept per call path)
+       old-imports
+              imports for the current module system: what 'petal
+              fix-imports' does (see 'petal help fix-imports'). It runs last,
+              over the whole batch, so it sees every file already migrated
+
+       Running it again changes nothing. If a file compiles before it is
+       migrated, it must compile after, or nothing is written for it and the
+       error is reported (a migration bug). A file that does not parse is
+       reported and skipped.
+
+       To keep one site in its old form, put
+       '// petal-lint-ignore <migration>' on the line before it or at the
+       end of its line ('// petal-lint-ignore-file <migration>' for a whole
+       file): the same comment that silences the compiler's warning there.
+
+OPTIONS
+       --check, --dry-run
+              Write nothing. Print what would change as a unified diff and
+              exit 1 if any file would change.
+
+       --only <migration>[,<migration>...]
+              Run only the named migrations. Repeatable.
+
+       --list List the migrations and exit.
+
+       -I <dir>
+              A directory of packages (or a package), as for 'petal run':
+              the compile check and old-imports resolve against it.
+
+       -e <code>
+              Migrate the given code and print the result (with --check, the
+              diff).
+
+EXIT STATUS
+       0 on success; 1 when a file could not be read, parsed or migrated,
+       or, with --check, when a file would change. Sites left for a hand
+       edit are listed on stderr and do not change the status.
+
+EXAMPLES
+       petal migrate-old-code .
+       petal migrate-old-code --check src/
+       petal migrate-old-code --only const-decl-deprecated,config-let-deprecated game/
+       petal migrate-old-code -e 'const N = 4'
+
+SEE ALSO
+       petal help fix-imports, petal help lint,
+       docs/dev/migrations.md
 ";
 
 const FMT: &str = "\
@@ -555,10 +656,8 @@ DESCRIPTION
        trailing whitespace, runs of blank lines (at most one), and the final
        newline. It never wraps lines, reorders code, or touches the inside of
        strings or JSX text. Choices about which code to write belong to
-       'petal lint'.
-
-       The one word it rewrites is the deprecated modifier 'export', which
-       becomes 'pub'. The two declare the same thing.
+       'petal lint', and rewriting an old syntax (the deprecated modifier
+       'export', say) to 'petal migrate-old-code'.
 
        Alignment is kept. A run of spaces that lines a token up with one on
        the line above or below (a table of records, a column of =), a
@@ -567,8 +666,7 @@ DESCRIPTION
        survive, moving only as far as the code they hang from moves.
 
        Every result is checked before it is written: the formatted text must
-       lex to exactly the original tokens (an 'export' modifier counting as
-       its 'pub'). A file that does not parse is
+       lex to exactly the original tokens. A file that does not parse is
        reported and left alone.
 
        To keep lines exactly as written, put '// petal-fmt-ignore' on the
@@ -806,19 +904,6 @@ DESCRIPTION
               a / b on two ints, truncated, then used as a float. Opt-in
               because a row or column index scaled by a float is the same
               shape. A literal 1 / 2 is a compile-check warning instead
-       prefer-pub
-              the deprecated export modifier becomes pub
-       state-key-deprecated
-              state(key), which is deprecated (the compile check warns too):
-              never written and built from its key alone (no calls), it
-              becomes memo(key); otherwise reported
-       const-decl-deprecated
-              const X = e, which is deprecated (the compile check warns
-              too): it becomes let X = const(e)
-       config-let-deprecated
-              config let X = v, which is deprecated (the compile check
-              warns too): it becomes let X = tunable(v), or only config is
-              dropped when v is already a tunable(...) call
        const-of-literal (opt-in, report only)
               a const on literal data, where it checks nothing a reader
               cannot see
@@ -828,6 +913,12 @@ DESCRIPTION
               --rules-include names it, because the fix is a judgement: a
               host can write a state by name, and a state keeps its value
               across a hot reload where a const(...) is rebuilt
+       old-syntax (report only)
+              a deprecated form the compiler accepts without a warning (the
+              'export' spelling of 'pub'). Rewriting old syntax is 'petal
+              migrate-old-code', not --fix; the deprecated forms the compile
+              check warns about (const X = e, config let, state(key)) are
+              the same command's
 
        To silence a rule, put '// petal-lint-ignore <rule> [<rule>...]' on
        the line before the finding or at the end of its line; with no rule
@@ -1833,6 +1924,7 @@ mod tests {
         "lint",
         "test",
         "fix-imports",
+        "migrate-old-code",
         "ir-equal",
         "explain",
         "show-ir",

@@ -1,5 +1,5 @@
-//! Rules — the declaration keywords `const` and `config` become annotation
-//! functions (docs/tasks/lifecycle-annotation-functions-refactor.md, Phase 2).
+//! Migrations — the declaration keywords `const` and `config` become
+//! annotation functions (docs/tasks/lifecycle-annotation-functions-refactor.md).
 //!
 //! ```text
 //! const COSTS = map(TILES, cost)       =>   let COSTS = const(map(TILES, cost))
@@ -13,15 +13,14 @@
 //!   question 3 of the plan).
 //! - **`config-let-deprecated`**: `config let X = v` → `let X = tunable(v)`,
 //!   or only the `config` dropped when `v` is already a `tunable(…)` call.
-//! - **`const-of-literal`**: a `const` (either form) on literal data, where
-//!   it checks nothing a reader cannot see. Report only, with no planned fix.
 //!
-//! Since Phase 5 of the plan the two deprecation rules run by default and
-//! `petal lint --fix` applies them, and the compiler warns about the same
-//! sites ([`deprecated_lifecycle_decls`]; a `petal-lint-ignore` for the rule
-//! silences both). `const-of-literal` stays opt-in and report only.
+//! Since Phase 5 of the plan the compiler warns about both forms
+//! ([`deprecated_lifecycle_decls`], pointing at `petal migrate-old-code`; a
+//! `petal-lint-ignore` naming the rule silences the warning and keeps the
+//! migration off the site). Phase 6 removes the forms from the parser; this
+//! rewrite then stays here, run on a parse that still knows them.
 //!
-//! Two things `prefer-pub` ([`super::export_to_pub`]) never needed:
+//! Two things `export-to-pub` ([`super::export_to_pub`]) never needed:
 //!
 //! - **a closing `)`** after the initializer, which may end lines below the
 //!   keyword (a multi-line table);
@@ -35,12 +34,13 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::ast::{Expr, ExprKind, Literal, RecordField, Stmt, StmtKind, UnaryOp};
-use crate::parse::{CONFIG_KEYWORD, CONST_ANNOTATION};
-use crate::static_value::{color_literal, const_call_arg, tunable_args};
+use crate::ast::{Expr, Stmt, StmtKind};
+use crate::lint::Fix;
+use crate::parse::CONFIG_KEYWORD;
+use crate::rewrite::{Splice, apply_splices};
+use crate::static_value::tunable_args;
 
-use super::Fix;
-use super::to_match::Splice;
+use super::{CONFIG_LET_DEPRECATED, CONST_DECL_DEPRECATED};
 
 /// Which rewrite a site takes.
 enum Kind {
@@ -305,79 +305,17 @@ fn plan_comment_padding(
     Ok(out)
 }
 
-/// `const-of-literal`: every top-level `const X = e` or `let X = const(e)`
-/// whose `e` is literal data. Report only.
-pub(super) fn plan_const_of_literal_reports(stmts: &[Stmt]) -> Vec<Fix> {
-    let mut out = Vec::new();
-    for stmt in stmts {
-        let StmtKind::Let {
-            name,
-            value,
-            is_var: false,
-            is_const,
-            ..
-        } = &stmt.kind
-        else {
-            continue;
-        };
-        let (data, anchor, how) = if *is_const {
-            (value, stmt.span.start.offset as usize, format!("const {name} = …"))
-        } else if let Some(arg) = const_call_arg(value) {
-            (arg, value.span.start.offset as usize, format!("{CONST_ANNOTATION}(…)"))
-        } else {
-            continue;
-        };
-        if !is_literal_data(data) {
-            continue;
-        }
-        out.push(Fix {
-            anchor,
-            message: format!(
-                "`{how}` on literal data checks nothing a reader cannot see; \
-                 `let {name} = …` says the same"
-            ),
-            splices: Vec::new(),
-        });
-    }
-    out
-}
-
-/// Literal data: a literal (a negated number included), a colour, or a list
-/// or record of literal data. A call is not, even of a constructor: `const`
-/// is what checks that the call is static.
-fn is_literal_data(e: &Expr) -> bool {
-    if color_literal(e).is_some() {
-        return true;
-    }
-    match &e.kind {
-        ExprKind::Literal(_) => true,
-        ExprKind::UnaryOp {
-            op: UnaryOp::Neg,
-            operand,
-        } => matches!(
-            operand.kind,
-            ExprKind::Literal(Literal::Int(_) | Literal::Float(_))
-        ),
-        ExprKind::List(items) => items.iter().all(is_literal_data),
-        ExprKind::Record(fields) => fields.iter().all(|f| match f {
-            RecordField::Named(_, v) => is_literal_data(v),
-            _ => false,
-        }),
-        _ => false,
-    }
-}
-
 /// The compiler's deprecation warnings for the two keywords (Phase 5): one per
-/// top-level `const X = e` and `config let X = v`, worded as the lint rules
-/// word them and tagged `[const-decl-deprecated]` / `[config-let-deprecated]`.
-/// Silenced like a lint finding, with `// petal-lint-ignore <rule>` on the
-/// line before or trailing on the line (or `petal-lint-ignore-file`).
+/// top-level `const X = e` and `config let X = v`, worded as the migrations
+/// word them, pointing at `petal migrate-old-code`, and tagged
+/// `[const-decl-deprecated]` / `[config-let-deprecated]`. Silenced with
+/// `// petal-lint-ignore <rule>` on the line before or trailing on the line
+/// (or `petal-lint-ignore-file`), which keeps the migration off it too.
 ///
-/// Only top-level statements, as the rules: a nested `const` is already an
-/// error (`misplaced_const_decls`), and a nested `config let` is not
-/// reported (the fixer does not rewrite one; none exists in the corpus).
+/// Only top-level statements, as the migrations: a nested `const` is already
+/// an error (`misplaced_const_decls`), and a nested `config let` is not
+/// reported (the migration does not rewrite one; none exists in the corpus).
 pub(crate) fn deprecated_lifecycle_decls(stmts: &[Stmt], source: &str) -> Vec<crate::diagnostic::Diagnostic> {
-    use super::{CONFIG_LET_DEPRECATED, CONST_DECL_DEPRECATED};
     let mut out = Vec::new();
     let mut ignores = None;
     for stmt in stmts {
@@ -396,7 +334,7 @@ pub(crate) fn deprecated_lifecycle_decls(stmts: &[Stmt], source: &str) -> Vec<cr
         }
         let rule = if *is_const { CONST_DECL_DEPRECATED } else { CONFIG_LET_DEPRECATED };
         // A file whose comments do not scan is reported in full.
-        let ignores = ignores.get_or_insert_with(|| super::Ignores::scan(source).ok());
+        let ignores = ignores.get_or_insert_with(|| crate::lint::Ignores::scan(source).ok());
         let line = (stmt.span.start.line as usize).saturating_sub(1);
         if ignores.as_ref().is_some_and(|i| i.suppresses(rule, line)) {
             continue;
@@ -409,16 +347,17 @@ pub(crate) fn deprecated_lifecycle_decls(stmts: &[Stmt], source: &str) -> Vec<cr
         }
         out.push(crate::diagnostic::Diagnostic::new(
             head,
-            format!("{} [{rule}]", message(*is_const, already, name)),
+            format!("{}; {} [{rule}]", message(*is_const, already, name), super::RUN_HINT),
         ));
     }
     out
 }
 
 /// Rewrite every `const` declaration and `config let` in `source` into the
-/// annotation form, exactly as the two deprecation rules plan it. `petal lint
-/// --fix` applies the same rewrites since Phase 5; this is the library entry
-/// for a sweep and for the fixture tests.
+/// annotation form, exactly as the two migrations plan it, with no compile
+/// gate and no `petal-lint-ignore`: the library entry for a sweep and for the
+/// fixture tests. `petal migrate-old-code` goes through
+/// [`super::migrate_source`].
 pub fn migrate_lifecycle_keywords(source: &str) -> Result<String, String> {
     let mut text = source.to_string();
     for consts in [true, false] {
@@ -430,7 +369,7 @@ pub fn migrate_lifecycle_keywords(source: &str) -> Result<String, String> {
             .collect();
         // Stable: a fix's own splices at one offset keep their order.
         splices.sort_by_key(|s| s.start);
-        text = super::to_match::apply_match_edits(&chars, &splices);
+        text = apply_splices(&chars, &splices);
     }
     Ok(text)
 }
@@ -606,56 +545,13 @@ mod tests {
                    config let SPEED = 4.0\n\
                    print(TABLE, SPEED)\n";
         let out = migrate(src);
-        let opts = super::super::LintOptions::default();
-        super::super::compiles(src, &opts).expect("original compiles");
-        super::super::compiles(&out, &opts).expect("rewrite compiles");
+        let opts = crate::lint::LintOptions::default();
+        crate::lint::compiles(src, &opts).expect("original compiles");
+        crate::lint::compiles(&out, &opts).expect("rewrite compiles");
         assert_eq!(
             crate::static_value::static_values(src).unwrap(),
             crate::static_value::static_values(&out).unwrap()
         );
-    }
-
-    fn literal_reports(src: &str) -> Vec<String> {
-        let (_tree, stmts) = crate::rewrite::parse_ast(src).unwrap();
-        plan_const_of_literal_reports(&stmts)
-            .into_iter()
-            .map(|f| f.message)
-            .collect()
-    }
-
-    #[test]
-    fn const_of_literal() {
-        let src = "const A = 1\n\
-                   let B = const(\"x\")\n\
-                   let C = const([1, -2.5, {k: #ff0000}])\n\
-                   const D = rgb(1, 2, 3)\n\
-                   let E = const(A + 1)\n\
-                   let F = const(\"{A}\")\n";
-        let found = literal_reports(src);
-        assert_eq!(found.len(), 3, "{found:?}");
-        assert!(found[0].starts_with("`const A = …` on literal data"), "{found:?}");
-        assert!(found[1].starts_with("`const(…)` on literal data"), "{found:?}");
-    }
-
-    #[test]
-    fn plain_lint_reports_and_fixes_both_keywords() {
-        // Phase 5: no `--rules-include` needed, and the output is rewritten.
-        let src = "const N = 4\nconfig let SPEED = 2.5 // knob\npub config let G = tunable(9.8, 0, 20)\nprint(N + SPEED + G)\n";
-        let out = super::super::lint_source(src, &super::super::LintOptions::default()).expect("lint");
-        let rules: Vec<&str> = out.findings.iter().map(|f| f.rule).collect();
-        assert_eq!(
-            rules,
-            [
-                super::super::CONST_DECL_DEPRECATED,
-                super::super::CONFIG_LET_DEPRECATED,
-                super::super::CONFIG_LET_DEPRECATED
-            ]
-        );
-        assert!(out.findings.iter().all(|f| f.fixable));
-        assert_eq!(out.output, migrate(src));
-        assert!(out.output.contains("let SPEED = tunable(2.5) // knob"), "{}", out.output);
-        // `const-of-literal` is still opt-in.
-        assert!(!out.findings.iter().any(|f| f.rule == super::super::CONST_OF_LITERAL));
     }
 
     #[test]
@@ -674,16 +570,22 @@ mod tests {
         assert_eq!(
             found,
             [
-                (1, "`const N = e` is deprecated; write `let N = const(e)` [const-decl-deprecated]".to_string()),
+                (
+                    1,
+                    "`const N = e` is deprecated; write `let N = const(e)`; run `petal migrate-old-code` \
+                     [const-decl-deprecated]"
+                        .to_string()
+                ),
                 (
                     2,
-                    "`config let SPEED = v` is deprecated; write `let SPEED = tunable(v)` [config-let-deprecated]"
+                    "`config let SPEED = v` is deprecated; write `let SPEED = tunable(v)`; run \
+                     `petal migrate-old-code` [config-let-deprecated]"
                         .to_string()
                 ),
                 (
                     5,
-                    "`config let` is deprecated; `tunable(…)` already makes `G` a setting: drop `config` \
-                     [config-let-deprecated]"
+                    "`config let` is deprecated; `tunable(…)` already makes `G` a setting: drop `config`; \
+                     run `petal migrate-old-code` [config-let-deprecated]"
                         .to_string()
                 ),
             ]

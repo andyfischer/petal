@@ -203,6 +203,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "lint" => parse_lint_args(&args[1..]),
         "test" => parse_test_args(&args[1..]),
         "fix-imports" => parse_fix_imports_args(&args[1..]),
+        "migrate-old-code" => parse_migrate_args(&args[1..]),
         "suggest" => parse_suggest_args(&args[1..]),
         "apply-change" => parse_apply_change_args(&args[1..]),
         "explain" => {
@@ -616,11 +617,71 @@ fn rule_list(value: &str) -> Vec<String> {
         .collect();
     for r in &rules {
         if !crate::lint::is_rule(r) {
-            eprintln!("Unknown lint rule '{r}'. See 'petal lint --rules'.");
+            // A rule that rewrote old syntax is a migration now.
+            let moved = if r == "prefer-pub" {
+                Some(crate::migrate::EXPORT_TO_PUB)
+            } else {
+                crate::migrate::migration(r).map(|m| m.name)
+            };
+            match moved {
+                Some(m) => eprintln!(
+                    "'{r}' is not a lint rule: rewriting old syntax is \
+                     'petal migrate-old-code' (migration '{m}'). See 'petal migrate-old-code --list'."
+                ),
+                None => eprintln!("Unknown lint rule '{r}'. See 'petal lint --rules'."),
+            }
             process::exit(1);
         }
     }
     rules
+}
+
+/// `migrate-old-code [--check] [--only <name>]… [--list] [<path>…]` — shaped
+/// like `fmt`.
+fn parse_migrate_args(args: &[String]) -> CliArgs {
+    let usage = "Usage: petal migrate-old-code [--check] [--only <migration>[,...]]... \
+                 [-I <dir>]... [<path>...]  |  petal migrate-old-code -e <code>  |  \
+                 petal migrate-old-code --list";
+    let mut opts = super::MigrateArgs::default();
+    let mut only: Vec<String> = Vec::new();
+    let mut only_given = false;
+    let p = parse_path_args(args, usage, |args, i| {
+        let arg = args[*i].as_str();
+        let value = if arg == "--only" {
+            Some(take(args, i, "Expected a migration after --only").to_string())
+        } else {
+            arg.strip_prefix("--only=").map(str::to_string)
+        };
+        if let Some(value) = value {
+            only_given = true;
+            for name in value.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+                if !crate::migrate::is_migration(name) {
+                    eprintln!(
+                        "Unknown migration '{name}'. See 'petal migrate-old-code --list'."
+                    );
+                    process::exit(1);
+                }
+                only.push(name.to_string());
+            }
+            return true;
+        }
+        match arg {
+            "--check" | "--dry-run" => opts.check = true,
+            "--list" => opts.list = true,
+            _ => return false,
+        }
+        true
+    });
+    opts.paths = p.paths;
+    opts.inline = p.inline;
+    if only_given {
+        opts.only = Some(only);
+    }
+    CliArgs {
+        command: Command::MigrateOldCode(opts),
+        source: SourceInput::Inline(String::new()),
+        include_dirs: Vec::new(),
+    }
 }
 
 /// The paths and `-e` code shared by `fmt` and `lint`. Any argument that is

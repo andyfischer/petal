@@ -4,14 +4,12 @@
 //! and parse to the same declaration, so nothing downstream of the parser can
 //! tell them apart: the AST carries one `exported` flag and the IR is
 //! identical. This module is the one place that still can. It finds every
-//! `export` written as a modifier, and two callers act on that:
-//!
-//! - `petal lint`'s `prefer-pub` rule, which reports it and rewrites it under
-//!   `--fix`;
-//! - `petal fmt`, which normalizes it.
+//! `export` written as a modifier, for the `export-to-pub` migration of
+//! `petal migrate-old-code` ([`super::export_to_pub`]), which rewrites it, and
+//! for `petal lint`'s report-only `old-syntax` rule, which points there.
 //!
 //! The compiler says nothing about the old spelling: it is a matter of
-//! spelling, which is the lint rules' and fmt's, not the compile check's.
+//! spelling, not the compile check's.
 //!
 //! A site is found from the AST rather than the token stream because
 //! `export` stays an ordinary field and record-key name (`r.export`,

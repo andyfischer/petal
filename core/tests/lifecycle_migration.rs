@@ -1,8 +1,9 @@
-//! The Phase 2 fixers of docs/tasks/lifecycle-annotation-functions-refactor.md
-//! (`const-decl-deprecated`, `config-let-deprecated`) over the Petal-owned
-//! corpus: every `.ptl` file under `examples/`, `garden/`, `core/tests` and
-//! `cli/tests` that declares a `const` or a `config let` is rewritten with
-//! [`petal::lint::migrate_lifecycle_keywords`], and the rewrite must
+//! The lifecycle migrations of docs/tasks/lifecycle-annotation-functions-refactor.md
+//! (`const-decl-deprecated`, `config-let-deprecated`, now in
+//! `petal migrate-old-code`) over a corpus: every `.ptl` file that declares a
+//! `const` or a `config let` is rewritten with [`petal::migrate::migrate_source`]
+//! (those two migrations, as `petal migrate-old-code --only` runs them), and
+//! the rewrite must
 //!
 //! - be a fixed point (the fix of a fixed file is empty) and keep its lines;
 //! - stay formatted when the original was (trailing comments re-padded);
@@ -14,8 +15,8 @@
 //! This was the dry run of Phase 3, which has since applied the rewrite to
 //! these files, so the corpus no longer declares either keyword (the
 //! `the_petal_corpus_declares_neither_keyword` guard). The dry run now runs
-//! over the directories in `PETAL_MIGRATE_DRY_RUN` (Phase 4: Cheesecake), and
-//! `migrate_in_place` applies the rewrite.
+//! over the directories in `PETAL_MIGRATE_DRY_RUN` (Phase 4: Cheesecake);
+//! `petal migrate-old-code` applies the rewrite.
 
 use std::path::{Path, PathBuf};
 
@@ -76,6 +77,19 @@ fn keyword_decls(src: &str) -> Option<(usize, usize)> {
     Some(n)
 }
 
+/// The two lifecycle migrations over `src`, as the CLI runs them on `path`.
+fn migrate(src: &str, path: &Path) -> Result<String, String> {
+    let opts = petal::migrate::MigrateOptions {
+        origin: Some(path.to_path_buf()),
+        only: Some(vec![
+            petal::migrate::CONST_DECL_DEPRECATED.to_string(),
+            petal::migrate::CONFIG_LET_DEPRECATED.to_string(),
+        ]),
+        ..Default::default()
+    };
+    petal::migrate::migrate_source(src, &opts).map(|out| out.output)
+}
+
 /// The Petal-owned `.ptl` corpus that Phase 3 migrated.
 const PETAL_CORPUS: &[&str] = &[
     "examples",
@@ -113,7 +127,7 @@ fn the_petal_corpus_declares_neither_keyword() {
     }
     assert!(
         left.is_empty(),
-        "declarations the migration missed (rewrite them with `migrate_in_place`):\n{}",
+        "declarations the migration missed (rewrite them with `petal migrate-old-code`):\n{}",
         left.join("\n")
     );
     assert!(files.len() > 200, "the corpus went missing");
@@ -147,7 +161,7 @@ fn the_fixers_rewrite_the_corpus_without_changing_it() {
             continue;
         }
         let shown = path.strip_prefix(&root).unwrap_or(path).display().to_string();
-        let out = match petal::lint::migrate_lifecycle_keywords(&src) {
+        let out = match migrate(&src, path) {
             Ok(out) => out,
             Err(e) => {
                 failures.push(format!("{shown}: {e}"));
@@ -158,7 +172,7 @@ fn the_fixers_rewrite_the_corpus_without_changing_it() {
         n_const += consts;
         n_config += configs;
 
-        if petal::lint::migrate_lifecycle_keywords(&out).as_deref() != Ok(out.as_str()) {
+        if migrate(&out, path).as_deref() != Ok(out.as_str()) {
             failures.push(format!("{shown}: the fix of the fixed file is not empty"));
         }
         if out.lines().count() != src.lines().count() {
@@ -217,56 +231,4 @@ fn the_fixers_rewrite_the_corpus_without_changing_it() {
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(n_files > 0, "no file under PETAL_MIGRATE_DRY_RUN declares either keyword");
-}
-
-/// Apply the migration in place: `PETAL_MIGRATE=<file or dir>[:…]`, every
-/// `.ptl` file that declares either keyword is rewritten. Phase 3 ran it over
-/// the Petal corpus; Phase 4 runs it over Cheesecake.
-///
-/// ```text
-/// PETAL_MIGRATE=../examples:../garden cargo test --test lifecycle_migration \
-///   migrate_in_place -- --ignored --nocapture
-/// ```
-#[test]
-#[ignore]
-fn migrate_in_place() {
-    let Ok(paths) = std::env::var("PETAL_MIGRATE") else {
-        panic!("set PETAL_MIGRATE to the files or directories to rewrite");
-    };
-    let mut files = Vec::new();
-    for p in paths.split(':').filter(|p| !p.is_empty()) {
-        let p = PathBuf::from(p);
-        if p.is_dir() {
-            ptl_files(&p, &mut files);
-        } else {
-            files.push(p);
-        }
-    }
-    files.sort();
-    let (mut n_files, mut n_const, mut n_config) = (0, 0, 0);
-    let mut failures = Vec::new();
-    for path in &files {
-        let Ok(src) = std::fs::read_to_string(path) else { continue };
-        let Some((consts, configs)) = keyword_decls(&src) else {
-            if src.contains("config let") || src.contains("const ") {
-                failures.push(format!("{}: does not parse", path.display()));
-            }
-            continue;
-        };
-        if consts + configs == 0 {
-            continue;
-        }
-        match petal::lint::migrate_lifecycle_keywords(&src) {
-            Ok(out) => {
-                std::fs::write(path, out).expect("write");
-                eprintln!("rewrote {} ({consts} const, {configs} config let)", path.display());
-                n_files += 1;
-                n_const += consts;
-                n_config += configs;
-            }
-            Err(e) => failures.push(format!("{}: {e}", path.display())),
-        }
-    }
-    eprintln!("migrated {n_files} files: {n_const} `const`, {n_config} `config let`");
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

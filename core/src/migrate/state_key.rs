@@ -1,4 +1,5 @@
-//! Rule — `state(key)` is deprecated; a never-written one is a `memo`.
+//! Migration `state-key-deprecated` — `state(key)` is deprecated; a
+//! never-written one is a `memo`.
 //!
 //! ```text
 //! fn label_width(text)                  fn label_width(text)
@@ -9,8 +10,8 @@
 //!
 //! Keyed state is one slot per key value whatever call path reaches it: a
 //! global hidden in a function ([`crate::compiler::keyed_state`], which also
-//! reports every site as a compile warning). The rule reports each
-//! declaration, and fixes the ones whose slot nothing writes *and* whose
+//! reports every site as a compile warning). The migration reports each
+//! declaration, and rewrites the ones whose slot nothing writes *and* whose
 //! initializer is plainly a pure function of the key: such a slot only ever
 //! holds what its initializer computed for that key, which is what a `memo`
 //! is.
@@ -38,8 +39,8 @@
 use crate::ast::Stmt;
 use crate::compiler::keyed_state::{KeyedState, keyed_states, message};
 
-use super::to_match::{Splice, apply_match_edits};
-use super::{Fix, LintOptions, compiles};
+use crate::lint::{Fix, LintOptions, compiles};
+use crate::rewrite::{Splice, apply_splices as apply_match_edits};
 
 const STATE: &str = "state";
 const MEMO: &str = "memo";

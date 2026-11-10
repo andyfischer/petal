@@ -143,7 +143,8 @@ fn the_formatter_treats_const_like_let() {
     let fmt = |src: &str| petal::fmt::format_source(src).unwrap();
     assert_eq!(fmt("const   A=[1,2]\n"), "const A = [1, 2]\n");
     assert_eq!(fmt("pub  const A:int=1\n"), "pub const A: int = 1\n");
-    assert_eq!(fmt("export const A = 1\n"), "pub const A = 1\n");
+    // The old spelling is `petal migrate-old-code`'s, not fmt's.
+    assert_eq!(fmt("export  const A = 1\n"), "export const A = 1\n");
     assert_eq!(
         fmt("const T = [\n{a: 1},\n{a: 2},\n]\n"),
         "const T = [\n  {a: 1},\n  {a: 2},\n]\n"
@@ -666,7 +667,8 @@ fn the_keyword_is_warned_about_and_the_annotation_is_not() {
     assert!(!w[0].is_error());
     assert_eq!(
         w[0].message,
-        "`const A = e` is deprecated; write `let A = const(e)` [const-decl-deprecated]"
+        "`const A = e` is deprecated; write `let A = const(e)`; run `petal migrate-old-code` \
+         [const-decl-deprecated]"
     );
     // The caret is under `const A =`, not the initializer.
     assert_eq!((w[0].span.start.column, w[0].span.end.column), (1, 11));

@@ -1,4 +1,4 @@
-//! Rule — spell the export modifier `pub`.
+//! Migration `export-to-pub` — spell the export modifier `pub`.
 //!
 //! ```text
 //! export fn area(r) r.w * r.h end      =>   pub fn area(r) r.w * r.h end
@@ -12,14 +12,17 @@
 //! takes — `fn`, `let`, `var`, `config let`, `state`, `enum`, `class` and
 //! `import`.
 //!
-//! The sites come from [`crate::export_keyword`], which reads them off the
+//! The sites come from [`super::export_keyword`], which reads them off the
 //! AST; `export` as a field or record-key name (`r.export`) is not one.
+//!
+//! The compiler says nothing about the old spelling, so `petal lint` reports
+//! it (report only, as `old-syntax`) and points here.
 
 use crate::ast::Stmt;
-use crate::export_keyword::{DEPRECATED, REPLACEMENT, deprecated_export_spans, plan_pub_rewrite};
+use crate::lint::Fix;
+use crate::rewrite::Splice;
 
-use super::Fix;
-use super::to_match::Splice;
+use super::export_keyword::{DEPRECATED, REPLACEMENT, deprecated_export_spans, plan_pub_rewrite};
 
 /// Plan every `export` → `pub` respelling in `stmts`, in source order.
 /// `chars` is the text they were parsed from.

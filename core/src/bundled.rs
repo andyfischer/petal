@@ -87,7 +87,7 @@ include!(concat!(env!("OUT_DIR"), "/bundled_meta.rs"));
 
 /// Bundled packages that no longer exist because `core` declares their
 /// builtins now: `import creative` names nothing, says so when it fails to
-/// resolve, and `petal fix-imports` deletes it.
+/// resolve, and `petal migrate-old-code` (`old-imports`) deletes it.
 pub const MERGED_INTO_CORE: &[&str] = &["creative"];
 
 #[cfg(test)]

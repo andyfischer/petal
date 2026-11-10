@@ -54,7 +54,7 @@ describe("petal fix-imports", () => {
     const r = petalCapture(["run", join(dir, "main.ptl"), "-I", join(dir, "libs")]);
     expect(r.code).not.toBe(0);
     expect(r.stderr).toContain("there is no package named 'level'");
-    expect(r.stderr).toContain("petal fix-imports");
+    expect(r.stderr).toContain("petal migrate-old-code");
   });
 
   it("rewrites sibling imports, star imports, and leaves package paths alone", () => {

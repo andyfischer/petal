@@ -97,11 +97,12 @@ fn a_second_source_is_refused() {
 
 #[test]
 fn the_export_spelling_is_a_style_finding_that_fails_only_a_strict_lint() {
-    // The old spelling is a rule's (`prefer-pub`), not the compile check's:
-    // plain `lint` reports it and passes…
+    // The old spelling is a rule's (`old-syntax`), not the compile check's:
+    // plain `lint` reports it, pointing at `migrate-old-code`, and passes…
     let old = "export fn f()\n  1\nend\nprint(f())\n";
     let (out, err, code) = petal(&["lint", "-e", old]);
-    assert!(out.contains("prefer-pub"), "{out}");
+    assert!(out.contains("old-syntax"), "{out}");
+    assert!(out.contains("petal migrate-old-code"), "{out}");
     assert!(!err.contains("warning:"), "{err}");
     assert_eq!(code, 0, "{err}");
     // …and `--strict` fails on it, as on any warning.

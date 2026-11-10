@@ -30,30 +30,22 @@
 //! 5. **`prefer-compound-assign`** ([`compound`]) — `x = x + e` → `x += e`.
 //!    The parser desugars the compound form back to the long one, so this
 //!    rule is IR-invisible.
-//! 6. **`prefer-pub`** ([`export_to_pub`]) — the deprecated modifier
-//!    `export` → `pub`. One keyword splice per declaration; the two words
-//!    parse to the same thing, so this rule is IR-invisible too.
-//!
-//! 7. **`state-as-constant`** ([`state_const`]) — a plain top-level `state`
+//! 6. **`state-as-constant`** ([`state_const`]) — a plain top-level `state`
 //!    that nothing assigns and whose initializer is static becomes a
 //!    `let NAME = const(init)`. The one rule that asks the compiler: it classifies the
 //!    program ([`crate::static_classify`]) and compiles its own rewrite. It
 //!    is also the one rule whose fix is a judgement call, because a host
 //!    can write a `state` by name where no compiler sees it, so it is
 //!    **opt-in**: it runs only when `--rules-include` names it.
-//! 8. **`state-key-deprecated`** ([`state_key`]) — every `state(key)`, which
-//!    is deprecated; one whose slot nothing writes becomes `memo(key)`. The
-//!    compiler reports the same sites as a warning, and this rule's
-//!    `petal-lint-ignore` silences both.
-//! 9. **`const-decl-deprecated`**, **`config-let-deprecated`** and
-//!    **`const-of-literal`** ([`lifecycle_keywords`]) — the declaration
-//!    keywords `const` and `config` becoming the annotations `const(…)` and
-//!    `tunable(…)`. Since Phase 5 of
-//!    docs/tasks/lifecycle-annotation-functions-refactor.md the two
-//!    deprecation rules run by default and `--fix` applies them (the compiler
-//!    warns about the same sites, and this rule's `petal-lint-ignore`
-//!    silences both); `const-of-literal` stays opt-in and report only. The
-//!    rewrite is also [`migrate_lifecycle_keywords`].
+//! 7. **`const-of-literal`** ([`const_of_literal`]) — a `const` on literal
+//!    data. Opt-in and report only.
+//!
+//! **Old syntax is not lint's.** Rewriting a deprecated or removed form into
+//! the current one is `petal migrate-old-code` ([`crate::migrate`]); the
+//! compiler warns about most of those forms and its warning names that
+//! command. For the ones it accepts without a word (the `export` spelling of
+//! `pub`), the report-only rule **`old-syntax`** says the same, and `--fix`
+//! leaves them alone.
 //!
 //! Each rule detects over a fresh parse of the previous rule's output, so a
 //! later rule sees what an earlier fix enabled and `lint --fix` is a fixed
@@ -93,14 +85,12 @@ mod casts;
 mod compound;
 mod config_data;
 mod dead_alias;
+mod const_of_literal;
 mod dm_hints;
-mod export_to_pub;
-mod lifecycle_keywords;
 mod field_set;
 mod never_replays;
 mod repeat;
 mod state_const;
-mod state_key;
 mod to_match;
 mod typed;
 mod util;
@@ -113,16 +103,12 @@ use compound::plan_compound_fixes;
 use config_data::plan_config_data_reports;
 use dead_alias::plan_alias_fixes;
 use dm_hints::plan_hint_reports;
-use export_to_pub::plan_export_fixes;
-use lifecycle_keywords::{plan_const_of_literal_reports, plan_decl_fixes};
-pub use lifecycle_keywords::migrate_lifecycle_keywords;
-pub(crate) use lifecycle_keywords::deprecated_lifecycle_decls;
+use const_of_literal::plan_const_of_literal_reports;
 use field_set::plan_field_set_fixes;
 use never_replays::plan_never_replays_reports;
 use typed::{plan_int_division, plan_neg_zero_fixes};
 use repeat::plan_repeat_fixes;
 use state_const::plan_state_fixes;
-use state_key::plan_state_key_fixes;
 use to_match::{Splice, apply_match_edits, plan_match_fixes};
 use var_to_let::plan_var_fixes;
 
@@ -160,9 +146,8 @@ pub const NO_REDUNDANT_CAST: &str = "no-redundant-cast";
 pub const PREFER_MATCH: &str = "prefer-match";
 pub const PREFER_COMPOUND_ASSIGN: &str = "prefer-compound-assign";
 pub const PREFER_REPEAT: &str = "prefer-repeat";
-pub const PREFER_PUB: &str = "prefer-pub";
 pub const STATE_AS_CONSTANT: &str = "state-as-constant";
-pub const STATE_KEY_DEPRECATED: &str = crate::compiler::keyed_state::RULE;
+pub const OLD_SYNTAX: &str = "old-syntax";
 pub const PREFER_FIELD_SET: &str = "prefer-field-set";
 pub const NEG_ZERO_SUB: &str = "neg-zero-sub";
 pub const PREFER_ANY: &str = "prefer-any";
@@ -178,13 +163,18 @@ pub const TUNABLE_NOT_IN_OPTIONS: &str = "tunable-value-not-in-options";
 pub const TUNABLE_ON_VAR: &str = "tunable-on-var";
 pub const TUNABLE_NOT_WHOLE: &str = "tunable-not-whole-initializer";
 pub const NEVER_REPLAYS: &str = "never-replays";
-pub const CONST_DECL_DEPRECATED: &str = "const-decl-deprecated";
-pub const CONFIG_LET_DEPRECATED: &str = "config-let-deprecated";
 pub const CONST_OF_LITERAL: &str = "const-of-literal";
 
 
 /// Every rule, in the order it runs.
 pub const RULES: &[RuleInfo] = &[
+    RuleInfo {
+        name: OLD_SYNTAX,
+        summary: "a deprecated form the compiler accepts without a warning (the `export` \
+                  spelling of `pub`): `petal migrate-old-code` rewrites it",
+        opt_in: false,
+        fixes: Fixes::None,
+    },
     RuleInfo {
         name: PREFER_LET,
         summary: "a `var` no nested function shares should be a `let`",
@@ -311,34 +301,10 @@ pub const RULES: &[RuleInfo] = &[
         fixes: Fixes::None,
     },
     RuleInfo {
-        name: PREFER_PUB,
-        summary: "the deprecated `export` modifier should be `pub`",
-        opt_in: false,
-        fixes: Fixes::All,
-    },
-    RuleInfo {
-        name: CONST_DECL_DEPRECATED,
-        summary: "`const X = e` is deprecated: write `let X = const(e)`",
-        opt_in: false,
-        fixes: Fixes::All,
-    },
-    RuleInfo {
-        name: CONFIG_LET_DEPRECATED,
-        summary: "`config let X = v` is deprecated: write `let X = tunable(v)`",
-        opt_in: false,
-        fixes: Fixes::All,
-    },
-    RuleInfo {
         name: CONST_OF_LITERAL,
         summary: "`const` on literal data checks nothing a reader cannot see",
         opt_in: true,
         fixes: Fixes::None,
-    },
-    RuleInfo {
-        name: STATE_KEY_DEPRECATED,
-        summary: "`state(key)` is deprecated; a never-written one should be `memo(key)`",
-        opt_in: false,
-        fixes: Fixes::Provable,
     },
     RuleInfo {
         name: STATE_AS_CONSTANT,
@@ -404,10 +370,10 @@ pub struct Finding {
 /// A rule's planned fix for one site, in the coordinates of the text the rule
 /// ran on: where to report it, and the splices that fix it. No splices means
 /// the site is reported only.
-struct Fix {
-    anchor: usize,
-    message: String,
-    splices: Vec<Splice>,
+pub(crate) struct Fix {
+    pub(crate) anchor: usize,
+    pub(crate) message: String,
+    pub(crate) splices: Vec<Splice>,
 }
 
 #[cfg(test)]
@@ -443,7 +409,7 @@ impl LintOutcome {
     pub fn has_semantic_rewrite(&self) -> bool {
         self.findings
             .iter()
-            .any(|f| f.fixable && f.rule != PREFER_COMPOUND_ASSIGN && f.rule != PREFER_PUB)
+            .any(|f| f.fixable && f.rule != PREFER_COMPOUND_ASSIGN)
     }
 
     /// How many findings `--fix` rewrites.
@@ -454,18 +420,23 @@ impl LintOutcome {
 
 /// The source as it moves through the rules: the current text, and the
 /// splices each earlier stage applied (to map a position back to the
-/// original).
-struct Pipeline<'a> {
+/// original). `petal migrate-old-code` runs its migrations through it too.
+pub(crate) struct Pipeline<'a> {
     line_starts: Vec<usize>,
     ignores: Ignores,
     rules: &'a RuleFilter,
-    text: String,
+    pub(crate) text: String,
     stages: Vec<Vec<Splice>>,
     findings: Vec<Finding>,
 }
 
 impl<'a> Pipeline<'a> {
-    fn new(source: &'a str, rules: &'a RuleFilter) -> Result<Self, String> {
+    /// The text after every stage, and the findings.
+    pub(crate) fn finish(self) -> (String, Vec<Finding>) {
+        (self.text, self.findings)
+    }
+
+    pub(crate) fn new(source: &'a str, rules: &'a RuleFilter) -> Result<Self, String> {
         let mut line_starts = vec![0usize];
         for (i, c) in source.chars().enumerate() {
             if c == '\n' {
@@ -485,7 +456,7 @@ impl<'a> Pipeline<'a> {
     /// Keep the fixes `rule` is allowed to make, record their findings, and
     /// apply them. Returns how many were applied (a finding with no splices
     /// is recorded and not counted).
-    fn apply(&mut self, rule: &'static str, fixes: Vec<Fix>) -> usize {
+    pub(crate) fn apply(&mut self, rule: &'static str, fixes: Vec<Fix>) -> usize {
         let mut kept: Vec<Splice> = Vec::new();
         let mut count = 0;
         if self.rules.enabled(rule) {
@@ -555,7 +526,8 @@ fn map_back(pos: usize, splices: &[Splice]) -> usize {
 /// `// petal-lint-ignore` comments: per 0-based line, the rules silenced there
 /// (an empty list silences every rule). The compiler reads them too, for the
 /// compile warnings that carry a rule id ([`crate::compiler::keyed_state`],
-/// and `lifecycle_keywords::deprecated_lifecycle_decls`).
+/// and `crate::migrate::deprecated_lifecycle_decls`), and so does
+/// `petal migrate-old-code`, under each migration's name.
 pub(crate) struct Ignores {
     file: Option<Vec<String>>,
     lines: std::collections::HashMap<usize, Vec<String>>,
@@ -603,6 +575,20 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     // Lint operates on valid programs only.
     let (chars, stmts) = reparse(source)?;
     let mut p = Pipeline::new(source, &opts.rules)?;
+
+    // First, while offsets are the original's: old forms the compiler says
+    // nothing about. Reported here, rewritten only by `petal migrate-old-code`.
+    if opts.rules.enabled(OLD_SYNTAX) {
+        let fixes = crate::migrate::silent_old_forms(source)?
+            .into_iter()
+            .map(|(anchor, f)| Fix {
+                anchor,
+                message: format!("{}; {} [{}]", f.message, crate::migrate::RUN_HINT, f.rule),
+                splices: Vec::new(),
+            })
+            .collect();
+        p.apply(OLD_SYNTAX, fixes);
+    }
 
     // `prefer-let` runs first: a `var` reads as `any` to the type checker,
     // so a cast on one only becomes provably redundant once it is a `let`.
@@ -688,33 +674,9 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         p.apply(NEVER_REPLAYS, plan_never_replays_reports(&p.text, &chars, opts));
     }
 
-    let (chars, stmts) = reparse(&p.text)?;
-    let exports_to_pub = p.apply(PREFER_PUB, plan_export_fixes(&stmts, &chars)?);
-
-    // The lifecycle keywords (Phase 5 of
-    // docs/tasks/lifecycle-annotation-functions-refactor.md): the compiler
-    // warns about both deprecated declarations, and `--fix` rewrites them.
-    if opts.rules.enabled(CONST_DECL_DEPRECATED)
-        || opts.rules.enabled(CONFIG_LET_DEPRECATED)
-        || opts.rules.enabled(CONST_OF_LITERAL)
-    {
-        let (chars, stmts) = reparse(&p.text)?;
+    if opts.rules.enabled(CONST_OF_LITERAL) {
+        let (_, stmts) = reparse(&p.text)?;
         p.apply(CONST_OF_LITERAL, plan_const_of_literal_reports(&stmts));
-        // One rule, then the other over its output: each pads trailing
-        // comments against the text as it stands.
-        let fixes = plan_decl_fixes(&stmts, &chars, true)?;
-        rewrites += p.apply(CONST_DECL_DEPRECATED, fixes);
-        let (chars, stmts) = reparse(&p.text)?;
-        let fixes = plan_decl_fixes(&stmts, &chars, false)?;
-        rewrites += p.apply(CONFIG_LET_DEPRECATED, fixes);
-    }
-
-    // Each candidate's fix is checked by compiling the rewrite, so the rule
-    // is skipped outright when it is filtered out.
-    if opts.rules.enabled(STATE_KEY_DEPRECATED) {
-        let (chars, stmts) = reparse(&p.text)?;
-        let fixes = plan_state_key_fixes(&p.text, &stmts, &chars, opts);
-        rewrites += p.apply(STATE_KEY_DEPRECATED, fixes);
     }
 
     // Last, and repeated: making one `state` a `const` can make the next
@@ -754,7 +716,6 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         || vars_to_let > 0
         || compound_assigns > 0
         || loops_to_repeat > 0
-        || exports_to_pub > 0
         || states_to_const > 0
         || rewrites > 0
     {
@@ -786,23 +747,7 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         }
     }
 
-    if exports_to_pub > 0 {
-        // Exactly the counted modifiers were respelled, and nothing else
-        // about the declarations moved.
-        let before = count_modifiers(&crate::rewrite::parse_ast(source)?.1, source);
-        let after = count_modifiers(&reparse(&rewritten)?.1, &rewritten);
-        if before.0 != after.0 || before.1 != after.1 + exports_to_pub {
-            return Err(format!(
-                "lint bug: rewriting {exports_to_pub} `export`(s) to `pub` left {} of {} — \
-                 refusing to produce output",
-                after.1, before.1
-            ));
-        }
-    }
-
-    // Layout only: `fmt`'s own `export` → `pub` pass would apply this rule's
-    // fix to the sites a `petal-lint-ignore` or `--rules-exclude` kept.
-    let output = crate::fmt::format_layout(&rewritten)?;
+    let output = crate::fmt::format_source(&rewritten)?;
     Ok(LintOutcome {
         findings,
         output,
@@ -851,7 +796,7 @@ const MAX_STATE_ROUNDS: usize = 64;
 /// aliases a file is expected to hold.
 const MAX_ALIAS_ROUNDS: usize = 16;
 
-fn reparse(source: &str) -> Result<(Vec<char>, Vec<crate::ast::Stmt>), String> {
+pub(crate) fn reparse(source: &str) -> Result<(Vec<char>, Vec<crate::ast::Stmt>), String> {
     let (_tree, stmts) = crate::rewrite::parse_ast(source)?;
     Ok((source.chars().collect(), stmts))
 }
@@ -873,28 +818,6 @@ fn count_vars(stmts: &[crate::ast::Stmt]) -> usize {
         c.visit_stmt(s);
     }
     c.0
-}
-
-/// (exported declarations, how many of them are spelled `export`) anywhere in
-/// `stmts`, parsed from `source`.
-fn count_modifiers(stmts: &[crate::ast::Stmt], source: &str) -> (usize, usize) {
-    use crate::ast::{ExprVisitor, Stmt, walk_stmt};
-    struct Counter(usize);
-    impl ExprVisitor for Counter {
-        fn visit_stmt(&mut self, s: &Stmt) {
-            if s.exported {
-                self.0 += 1;
-            }
-            walk_stmt(self, s);
-        }
-    }
-    let mut c = Counter(0);
-    for s in stmts {
-        c.visit_stmt(s);
-    }
-    let chars: Vec<char> = source.chars().collect();
-    let deprecated = crate::export_keyword::deprecated_export_spans(stmts, &chars).len();
-    (c.0, deprecated)
 }
 
 fn count_nodes(stmts: &[crate::ast::Stmt]) -> (usize, usize) {
@@ -1030,7 +953,7 @@ pub fn verify_rewrite(
 
 /// Whether `source` compiles: the does-it-still-compile gate. Nothing is
 /// kept of the program, so nothing is built from it either.
-fn compiles(source: &str, opts: &LintOptions) -> Result<(), String> {
+pub(crate) fn compiles(source: &str, opts: &LintOptions) -> Result<(), String> {
     crate::ir_equiv::compile_for_compare(source, &opts.include_dirs, opts.origin.as_deref())
         .map(|_| ())
 }

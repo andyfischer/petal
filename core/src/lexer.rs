@@ -40,8 +40,8 @@ pub enum Token {
     /// `pub` — the export modifier.
     Pub,
     /// `export` — the deprecated spelling of [`Token::Pub`]. It parses to the
-    /// same declarations; `petal lint` reports it (`prefer-pub`) and `petal fmt` /
-    /// `petal lint --fix` rewrite it.
+    /// same declarations; `petal lint` reports it (`old-syntax`) and
+    /// `petal migrate-old-code` rewrites it (`export-to-pub`).
     Export,
 
     // Operators

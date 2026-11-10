@@ -658,7 +658,7 @@ impl Parser {
     /// `export` is the deprecated spelling of the same modifier and takes
     /// every path here that `pub` does; only the error text below, which
     /// quotes whichever word was written, can tell them apart. Reporting the
-    /// old spelling is [`crate::export_keyword`]'s job.
+    /// old spelling is [`crate::migrate::export_keyword`]'s job.
     fn parse_export(&mut self, start: usize) -> Result<Stmt, String> {
         match self.tokens.get(self.pos + 1) {
             Some(Token::Fn) => self.parse_fn_decl(start, true),
@@ -946,7 +946,7 @@ impl Parser {
     /// part of what it exports — the declarative facade described in
     /// docs/module-system.md#re-exporting. `import m: *` is a form that no
     /// longer exists; it is still parsed (`star`) so the loader can say so
-    /// and `petal fix-imports` can rewrite it.
+    /// and `petal migrate-old-code` can rewrite it.
     fn parse_import(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::ImportStmt);
         if exported {
@@ -991,7 +991,7 @@ impl Parser {
                     self.skip_newlines();
                 }
                 // `: *` — the removed spelling of a plain import; kept in
-                // the AST for the loader's error and for `fix-imports`.
+                // the AST for the loader's error and for `migrate-old-code`.
                 if matches!(self.peek(), Token::Star) {
                     self.advance(); // consume '*'
                     star = true;

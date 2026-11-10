@@ -1,6 +1,6 @@
 //! The 2026-11 language features through the `petal` command, on files on
-//! disk: the `const` / `config let` deprecation and its `lint --fix` round
-//! trip over a program that uses a module's enum (with methods) through
+//! disk: the `const` / `config let` deprecation and its
+//! `migrate-old-code` round trip over a program that uses a module's enum (with methods) through
 //! qualified and nullable annotations, and `petal suggest` proposing a
 //! nullable annotation of a module-scoped type the way the file writes it.
 //! The in-memory side of the same compositions is
@@ -85,11 +85,12 @@ end
 print(show(K), show(nil), Kind.a.name, SPEED + G, lv.step())
 ";
 
-/// Compile warnings, then `lint --fix`, then the same program again: the
-/// fix removes every deprecation (the module's `const` too), the output is
-/// unchanged, and a second `lint --fix` has nothing left to do.
+/// Compile warnings, then `migrate-old-code`, then the same program again:
+/// the migration removes every deprecation (the module's `const` too), the
+/// output is unchanged, and a second run has nothing left to do. `lint --fix`
+/// leaves the old forms alone.
 #[test]
-fn deprecated_declarations_warn_and_lint_fix_round_trips() {
+fn deprecated_declarations_warn_and_migrate_old_code_round_trips() {
     let t = Tree::new("fix");
     t.write("level.ptl", LEVEL);
     t.write("main.ptl", MAIN);
@@ -98,15 +99,23 @@ fn deprecated_declarations_warn_and_lint_fix_round_trips() {
     assert_eq!(code, 0, "{warn}");
     assert_eq!(before, "b2 none a 12.3 3\n");
     for needle in [
-        "`const K = e` is deprecated; write `let K = const(e)` [const-decl-deprecated]",
-        "`config let SPEED = v` is deprecated; write `let SPEED = tunable(v)` [config-let-deprecated]",
-        "drop `config` [config-let-deprecated]",
+        "`const K = e` is deprecated; write `let K = const(e)`; run `petal migrate-old-code` \
+         [const-decl-deprecated]",
+        "`config let SPEED = v` is deprecated; write `let SPEED = tunable(v)`; run \
+         `petal migrate-old-code` [config-let-deprecated]",
+        "drop `config`; run `petal migrate-old-code` [config-let-deprecated]",
         "`const STEP = e` is deprecated",
     ] {
         assert!(warn.contains(needle), "missing {needle:?} in:\n{warn}");
     }
 
+    // `lint --fix` carries only the current syntax.
     let (out, err, code) = petal_in(&t.root, &["lint", "--fix", "."]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert_eq!(t.read("main.ptl"), MAIN);
+    assert_eq!(t.read("level.ptl"), LEVEL);
+
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "."]);
     assert_eq!(code, 0, "{out}\n{err}");
     let main = t.read("main.ptl");
     assert!(main.contains("let K = const(lv.Kind.b(2))\n"), "{main}");
@@ -120,9 +129,12 @@ fn deprecated_declarations_warn_and_lint_fix_round_trips() {
     assert!(!warn.contains("deprecated"), "{warn}");
 
     let fixed = (t.read("main.ptl"), t.read("level.ptl"));
-    let (out, err, _) = petal_in(&t.root, &["lint", "--fix", "."]);
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "--check", "."]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert!(out.is_empty(), "{out}");
+    let (out, err, _) = petal_in(&t.root, &["migrate-old-code", "."]);
     assert!(!out.contains("deprecated") && !err.contains("deprecated"), "{out}\n{err}");
-    assert_eq!((t.read("main.ptl"), t.read("level.ptl")), fixed, "a second --fix changed the files");
+    assert_eq!((t.read("main.ptl"), t.read("level.ptl")), fixed, "a second run changed the files");
 }
 
 /// `petal suggest` proposes `T?` for a parameter whose call sites pass an

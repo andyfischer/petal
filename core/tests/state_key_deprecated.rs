@@ -1,11 +1,12 @@
 //! `state(key)` is deprecated (core/src/compiler/keyed_state.rs): every
 //! keyed declaration is a compile warning carrying the rule id
 //! `state-key-deprecated`, silenced by `// petal-lint-ignore`, and
-//! `petal lint` reports the same sites, fixing the never-written ones to
-//! `memo(key)` (core/src/lint/state_key.rs). The feature itself still works.
+//! `petal migrate-old-code` reports the same sites, rewriting the
+//! never-written ones to `memo(key)` (core/src/migrate/state_key.rs). The
+//! feature itself still works.
 
 use petal::env::Env;
-use petal::lint::{LintOptions, LintOutcome, RuleFilter, STATE_KEY_DEPRECATED, lint_source};
+use petal::migrate::{MigrateOptions, MigrateOutcome, STATE_KEY_DEPRECATED, migrate_source};
 
 /// Compile `src` and return its compile-time warnings.
 fn warnings(src: &str) -> Vec<String> {
@@ -34,15 +35,12 @@ fn run(src: &str) -> String {
     env.take_output().join("\n").trim().to_string()
 }
 
-fn lint(src: &str) -> LintOutcome {
-    let opts = LintOptions {
-        rules: RuleFilter {
-            include: Some(vec![STATE_KEY_DEPRECATED.to_string()]),
-            exclude: Vec::new(),
-        },
-        ..LintOptions::default()
+fn migrate(src: &str) -> MigrateOutcome {
+    let opts = MigrateOptions {
+        only: Some(vec![STATE_KEY_DEPRECATED.to_string()]),
+        ..MigrateOptions::default()
     };
-    lint_source(src, &opts).expect("lint_source should succeed")
+    migrate_source(src, &opts).expect("migrate_source should succeed")
 }
 
 const HEALTH: &str = "\
@@ -67,6 +65,10 @@ fn a_keyed_state_is_a_deprecation_warning_naming_the_replacements() {
     for replacement in ["`memo(key)`", "`state var` holding a Map", "plain `state`"] {
         assert!(message.contains(replacement), "{message}");
     }
+    assert!(
+        message.ends_with("; run `petal migrate-old-code` [state-key-deprecated]"),
+        "{message}"
+    );
 }
 
 #[test]
@@ -170,11 +172,11 @@ fn an_imported_module_is_warned_about_where_it_is_written() {
 }
 
 // ---------------------------------------------------------------------------
-// `petal lint`
+// `petal migrate-old-code`
 // ---------------------------------------------------------------------------
 
 #[test]
-fn lint_rewrites_a_never_written_keyed_state_to_memo() {
+fn migrate_rewrites_a_never_written_keyed_state_to_memo() {
     let src = "\
 fn width(text)
   state(text) w = text.length * 8
@@ -182,7 +184,7 @@ fn width(text)
 end
 print(width(\"hi\"), width(\"hi\"))
 ";
-    let out = lint(src);
+    let out = migrate(src);
     let [f] = out.findings.as_slice() else {
         panic!("one finding: {:?}", out.findings);
     };
@@ -193,7 +195,7 @@ print(width(\"hi\"), width(\"hi\"))
     let expected = src.replace("state(text)", "memo(text)");
     assert_eq!(out.output, expected);
     // A fixed point, and the same program.
-    let again = lint(&expected);
+    let again = migrate(&expected);
     assert_eq!(again.findings.len(), 0, "{:?}", again.findings);
     assert_eq!(run(src), run(&expected));
     assert_eq!(deprecations(&expected), Vec::<String>::new());
@@ -218,9 +220,9 @@ fn an_initializer_that_may_not_be_pure_of_its_key_is_not_rewritten() {
         if Env::new().load_program(&src).is_err() {
             panic!("does not compile: {src}");
         }
-        let out = lint(&src);
+        let out = migrate(&src);
         assert_eq!(
-            (out.count(STATE_KEY_DEPRECATED), out.fixable()),
+            (out.count(STATE_KEY_DEPRECATED), out.rewritten()),
             (1, 0),
             "{init}: {}",
             out.output
@@ -238,9 +240,9 @@ fn an_initializer_built_from_its_key_alone_is_rewritten() {
         ("k", "nil"),
     ] {
         let src = format!("fn f(k, a, b)\n  state({key}) v = {init}\n  v\nend\nprint(f(1, 2, 3))\n");
-        let out = lint(&src);
+        let out = migrate(&src);
         assert_eq!(
-            (out.count(STATE_KEY_DEPRECATED), out.fixable()),
+            (out.count(STATE_KEY_DEPRECATED), out.rewritten()),
             (1, 1),
             "{key} / {init}: {:?}",
             out.findings
@@ -250,8 +252,8 @@ fn an_initializer_built_from_its_key_alone_is_rewritten() {
 }
 
 #[test]
-fn lint_reports_a_written_slot_without_a_fix() {
-    let out = lint(HEALTH);
+fn migrate_reports_a_written_slot_without_a_fix() {
+    let out = migrate(HEALTH);
     let [f] = out.findings.as_slice() else {
         panic!("one finding: {:?}", out.findings);
     };
@@ -276,31 +278,31 @@ fn every_kind_of_write_keeps_the_state() {
         if Env::new().load_program(&src).is_err() {
             continue;
         }
-        let out = lint(&src);
+        let out = migrate(&src);
         assert_eq!(
             out.count(STATE_KEY_DEPRECATED),
             1,
             "{write}: {:?}",
             out.findings
         );
-        assert_eq!(out.fixable(), 0, "{write}: {}", out.output);
+        assert_eq!(out.rewritten(), 0, "{write}: {}", out.output);
         checked += 1;
     }
     assert!(checked >= 4, "only {checked} of the writes compiled");
 }
 
 #[test]
-fn lint_leaves_a_keyed_state_var_and_a_pub_one_unfixed() {
+fn migrate_leaves_a_keyed_state_var_and_a_pub_one_unfixed() {
     let var = "fn f(id)\n  state(id) var c = 0\n  get c\nend\nprint(f(1))\n";
-    let out = lint(var);
-    assert_eq!((out.count(STATE_KEY_DEPRECATED), out.fixable()), (1, 0));
+    let out = migrate(var);
+    assert_eq!((out.count(STATE_KEY_DEPRECATED), out.rewritten()), (1, 0));
     let exported = "pub state(1) shared = 0\nprint(shared)\n";
-    let out = lint(exported);
-    assert_eq!((out.count(STATE_KEY_DEPRECATED), out.fixable()), (1, 0));
+    let out = migrate(exported);
+    assert_eq!((out.count(STATE_KEY_DEPRECATED), out.rewritten()), (1, 0));
 }
 
 #[test]
-fn lint_fixes_the_unwritten_ones_beside_a_written_one() {
+fn migrate_rewrites_the_unwritten_ones_beside_a_written_one() {
     let src = "\
 fn f(id)
   state(id) a = id * 2
@@ -310,14 +312,14 @@ fn f(id)
 end
 print(f(1))
 ";
-    let out = lint(src);
-    assert_eq!((out.count(STATE_KEY_DEPRECATED), out.fixable()), (2, 1));
+    let out = migrate(src);
+    assert_eq!((out.count(STATE_KEY_DEPRECATED), out.rewritten()), (2, 1));
     assert!(out.output.contains("memo(id) a = id * 2"), "{}", out.output);
     assert!(out.output.contains("state(id) b = 0"), "{}", out.output);
 }
 
 #[test]
-fn a_lint_ignore_silences_the_finding_and_its_fix() {
+fn a_lint_ignore_silences_the_warning_and_keeps_the_migration_off() {
     let src = "\
 fn width(text)
   // petal-lint-ignore state-key-deprecated
@@ -326,14 +328,17 @@ fn width(text)
 end
 print(width(\"hi\"))
 ";
-    let out = lint(src);
+    let out = migrate(src);
     assert_eq!(out.findings.len(), 0, "{:?}", out.findings);
     assert_eq!(out.output, src);
 }
 
 #[test]
-fn the_rule_is_on_by_default() {
-    let out = lint_source(HEALTH, &LintOptions::default()).expect("lint");
+fn the_migration_runs_by_default_and_is_not_a_lint_rule() {
+    let out = migrate_source(HEALTH, &MigrateOptions::default()).expect("migrate");
     assert_eq!(out.count(STATE_KEY_DEPRECATED), 1, "{:?}", out.findings);
-    assert!(petal::lint::is_rule(STATE_KEY_DEPRECATED));
+    assert!(petal::migrate::is_migration(STATE_KEY_DEPRECATED));
+    assert!(!petal::lint::is_rule(STATE_KEY_DEPRECATED));
+    let lint = petal::lint::lint_source(HEALTH, &petal::lint::LintOptions::default()).unwrap();
+    assert_eq!(lint.count(STATE_KEY_DEPRECATED), 0, "{:?}", lint.findings);
 }

@@ -1045,7 +1045,7 @@ impl Compiler {
             // `const X = e` and `config let X = v` are deprecated
             // (docs/tasks/lifecycle-annotation-functions-refactor.md, Phase 5).
             self.warnings
-                .extend(crate::lint::deprecated_lifecycle_decls(&stmts, &module.source));
+                .extend(crate::migrate::deprecated_lifecycle_decls(&stmts, &module.source));
         }
 
         if !is_entry {

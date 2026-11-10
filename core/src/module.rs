@@ -934,14 +934,14 @@ impl ModuleRegistry {
         {
             return Err(format!(
                 "there is no package named '{package}' — a bare name is always a package. \
-                 The file beside this one is `import ./{path}` (`petal fix-imports` rewrites \
+                 The file beside this one is `import ./{path}` (`petal migrate-old-code` rewrites \
                  these)"
             ));
         }
         if crate::bundled::MERGED_INTO_CORE.contains(&path) {
             return Err(format!(
                 "there is no package named '{package}': its builtins are declared by `core` now \
-                 and are in scope with no import. Delete this import (`petal fix-imports` does)"
+                 and are in scope with no import. Delete this import (`petal migrate-old-code` does)"
             ));
         }
         if let Some(message) = omitted_library_error(package) {
@@ -1353,7 +1353,7 @@ fn reject_star(decl: &ImportDecl, display: &str) -> Result<(), LoadError> {
         Phase::Module,
         format!(
             "{display}: `{keyword} {m}: *` is no longer a form — a plain `{keyword} {m}` \
-             binds every export of the module (`petal fix-imports` rewrites these)",
+             binds every export of the module (`petal migrate-old-code` rewrites these)",
             m = decl.module
         ),
     ))

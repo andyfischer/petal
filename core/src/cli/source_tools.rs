@@ -1,7 +1,7 @@
-//! `petal fmt`, `petal lint` and `petal apply-change`: the commands that
-//! rewrite source files.
+//! `petal fmt`, `petal lint`, `petal migrate-old-code`, `petal fix-imports`
+//! and `petal apply-change`: the commands that rewrite source files.
 //!
-//! `fmt` and `lint` take paths the way `gofmt` and `deno fmt` do — files, or directories
+//! `fmt`, `lint` and `migrate-old-code` take paths the way `gofmt` and `deno fmt` do — files, or directories
 //! searched recursively for `.ptl` (skipping dot-directories, `node_modules`
 //! and `target`), `.` when none is given, `-` for stdin — or inline code with
 //! `-e`. A file that fails is reported and skipped; the others still run.
@@ -166,25 +166,28 @@ pub(super) fn handle_fmt(paths: &[String], inline: Option<&str>, check: bool, di
 // fix-imports
 // ---------------------------------------------------------------------------
 
-pub(super) fn handle_fix_imports(
-    paths: &[String],
-    inline: Option<&str>,
-    check: bool,
-    diff: bool,
+/// The `old-imports` migration over a batch: per input (with `texts[i]` its
+/// current text, `None` to skip it), the import rewrites and their notes, or
+/// `None` when its imports could not be read (reported here, and counted in
+/// `errors`). The notes worth a line are printed here too. `named` are the
+/// paths given on the command line.
+///
+/// The import lines of every file go first, staged in memory, so that the
+/// compile that looks for missing imports sees every sibling migrated —
+/// whatever order the files come in, and whether or not anything is written.
+fn fix_imports_batch(
+    inputs: &[Input],
+    texts: &[Option<String>],
+    named: &[String],
     include_dirs: &[PathBuf],
-) {
-    let mut errors = 0usize;
-    let inputs = collect_inputs(paths, inline, &mut errors);
+    errors: &mut usize,
+) -> Vec<Option<crate::fix_imports::Fixed>> {
     let include_dirs: Vec<PathBuf> = include_dirs
         .iter()
         .map(|d| crate::module::canonical_path(d))
         .collect();
     let mut fixer = crate::fix_imports::ImportFixer::new(&include_dirs);
 
-    // The import lines of every file first, staged in memory, so that the
-    // compile that looks for missing imports sees every sibling migrated —
-    // whatever order the files come in, and whether or not anything is
-    // written.
     // `-e` code and stdin have no file. They are fixed as a file in the
     // working directory would be, so `./x` and the project's `[dependencies]`
     // (the nearest petal.toml) mean what they mean to `petal run -e`.
@@ -198,9 +201,13 @@ pub(super) fn handle_fix_imports(
         }
     };
     let mut staged: Vec<Option<crate::fix_imports::Fixed>> = Vec::new();
-    for input in &inputs {
+    for (input, text) in inputs.iter().zip(texts) {
+        let Some(text) = text else {
+            staged.push(None);
+            continue;
+        };
         let file = file_of(input);
-        match fixer.rewrite_import_lines(&input.source, file.as_deref()) {
+        match fixer.rewrite_import_lines(text, file.as_deref()) {
             Ok(mut fixed) => {
                 if input.path.is_some()
                     && let Some(file) = &file
@@ -216,16 +223,16 @@ pub(super) fn handle_fix_imports(
             }
             Err(e) => {
                 eprintln!("error: {}: {}", input.name, e);
-                errors += 1;
+                *errors += 1;
                 staged.push(None);
             }
         }
     }
 
-    let mut changed = 0usize;
-    let mut written = 0usize;
-    for (input, first) in inputs.iter().zip(staged) {
-        let Some(mut fixed) = first else {
+    let mut out = Vec::with_capacity(inputs.len());
+    for ((input, text), first) in inputs.iter().zip(texts).zip(staged) {
+        let (Some(text), Some(mut fixed)) = (text, first) else {
+            out.push(None);
             continue;
         };
         let file = file_of(input);
@@ -242,12 +249,38 @@ pub(super) fn handle_fix_imports(
         // A note about a file that does not compile is only worth printing
         // when the file was touched or asked for by name: a directory sweep
         // would otherwise repeat every host-only script's first error.
-        let touched = fixed.source != input.source;
-        if touched || input.path.is_none() || paths.iter().any(|p| *p == input.name) {
+        let touched = fixed.source != *text;
+        if touched || input.path.is_none() || named.iter().any(|p| *p == input.name) {
             for note in &fixed.notes {
                 eprintln!("note: {}: {note}", input.name);
             }
         }
+        out.push(Some(fixed));
+    }
+    out
+}
+
+/// `petal fix-imports`: the `old-imports` migration alone, with its own
+/// output (a list of files under `--check`, `--diff` for the diff).
+pub(super) fn handle_fix_imports(
+    paths: &[String],
+    inline: Option<&str>,
+    check: bool,
+    diff: bool,
+    include_dirs: &[PathBuf],
+) {
+    let mut errors = 0usize;
+    let inputs = collect_inputs(paths, inline, &mut errors);
+    let texts: Vec<Option<String>> = inputs.iter().map(|i| Some(i.source.clone())).collect();
+    let results = fix_imports_batch(&inputs, &texts, paths, include_dirs, &mut errors);
+
+    let mut changed = 0usize;
+    let mut written = 0usize;
+    for (input, fixed) in inputs.iter().zip(results) {
+        let Some(fixed) = fixed else {
+            continue;
+        };
+        let touched = fixed.source != input.source;
         let Some(path) = &input.path else {
             if check || diff {
                 if touched {
@@ -291,7 +324,7 @@ pub(super) fn handle_fix_imports(
             eprintln!(
                 "{changed} of {files} file(s) need their imports fixed{}",
                 if changed > 0 {
-                    " (run `petal fix-imports`)"
+                    " (run `petal migrate-old-code`)"
                 } else {
                     ""
                 }
@@ -302,6 +335,136 @@ pub(super) fn handle_fix_imports(
         }
     } else if files > 0 {
         eprintln!("fixed imports in {written} of {files} file(s)");
+    }
+    if errors > 0 {
+        process::exit(1);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// migrate-old-code
+// ---------------------------------------------------------------------------
+
+/// `petal migrate-old-code`: every selected migration ([`crate::migrate`])
+/// over the inputs, the text migrations per file and then `old-imports` over
+/// the batch. Rewrites files in place; `--check` prints the diff instead and
+/// exits 1 if anything would change. Sites a migration leaves for a hand
+/// edit are reported on stderr either way.
+pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]) {
+    use crate::migrate::{MIGRATIONS, MigrateOptions, OLD_IMPORTS};
+    if opts.list {
+        let width = MIGRATIONS.iter().map(|m| m.name.len()).max().unwrap_or(0);
+        for m in MIGRATIONS {
+            let partial = if m.partial { " [some sites left for a hand edit]" } else { "" };
+            println!("{:width$}  {}  {}{}", m.name, m.added, m.summary, partial);
+            println!("{:width$}              replaces {}", "", m.replaces);
+        }
+        return;
+    }
+
+    let mut errors = 0usize;
+    let inputs = collect_inputs(&opts.paths, opts.inline.as_deref(), &mut errors);
+
+    // The text migrations, file by file.
+    let mut texts: Vec<Option<String>> = Vec::with_capacity(inputs.len());
+    let mut findings: Vec<Vec<crate::migrate::Finding>> = Vec::with_capacity(inputs.len());
+    for input in &inputs {
+        let mopts = MigrateOptions {
+            include_dirs: include_dirs.to_vec(),
+            origin: input.path.clone(),
+            only: opts.only.clone(),
+        };
+        match crate::migrate::migrate_source(&input.source, &mopts) {
+            Ok(out) => {
+                texts.push(Some(out.output));
+                findings.push(out.findings);
+            }
+            Err(e) => {
+                eprintln!("error: {}: {}", input.name, e);
+                errors += 1;
+                texts.push(None);
+                findings.push(Vec::new());
+            }
+        }
+    }
+
+    // `old-imports`, over the whole batch as the text migrations left it.
+    let imports_on = opts.only.as_ref().is_none_or(|o| o.iter().any(|r| r == OLD_IMPORTS));
+    let imports: Vec<Option<crate::fix_imports::Fixed>> = if imports_on {
+        fix_imports_batch(&inputs, &texts, &opts.paths, include_dirs, &mut errors)
+    } else {
+        inputs.iter().map(|_| None).collect()
+    };
+
+    let mut changed = 0usize;
+    let mut written = 0usize;
+    let mut left = 0usize;
+    for ((input, text), (found, fixed)) in inputs.iter().zip(&texts).zip(findings.iter().zip(imports)) {
+        let Some(text) = text else {
+            continue;
+        };
+        let (output, import_changes) = match fixed {
+            Some(f) => (f.source, f.changes),
+            None => (text.clone(), Vec::new()),
+        };
+        for f in found.iter().filter(|f| !f.fixable) {
+            left += 1;
+            eprintln!(
+                "{}:{}:{}: {}: {} (left for a hand edit)",
+                input.name, f.line, f.column, f.rule, f.message
+            );
+        }
+        let touched = output != input.source;
+        let Some(path) = &input.path else {
+            if opts.check {
+                if touched {
+                    changed += 1;
+                    print!("{}", unified_diff(&input.name, &input.source, &output, "migrated"));
+                }
+            } else {
+                print!("{output}");
+            }
+            continue;
+        };
+        if !touched {
+            continue;
+        }
+        changed += 1;
+        if opts.check {
+            print!("{}", unified_diff(&input.name, &input.source, &output, "migrated"));
+            continue;
+        }
+        if let Err(e) = fs::write(path, &output) {
+            eprintln!("error: writing {}: {e}", input.name);
+            errors += 1;
+            continue;
+        }
+        written += 1;
+        println!("{}", input.name);
+        for f in found.iter().filter(|f| f.fixable) {
+            println!("  {}:{}: {}: {}", f.line, f.column, f.rule, f.message);
+        }
+        for change in &import_changes {
+            println!("  {OLD_IMPORTS}: {change}");
+        }
+    }
+
+    let files = inputs.iter().filter(|i| i.path.is_some()).count();
+    if left > 0 {
+        eprintln!("{left} site(s) in an old form are left for a hand edit");
+    }
+    if opts.check {
+        if files > 0 {
+            eprintln!(
+                "{changed} of {files} file(s) need migrating{}",
+                if changed > 0 { " (run `petal migrate-old-code`)" } else { "" }
+            );
+        }
+        if changed > 0 || errors > 0 {
+            process::exit(1);
+        }
+    } else if files > 0 {
+        eprintln!("migrated {written} of {files} file(s)");
     }
     if errors > 0 {
         process::exit(1);
@@ -450,6 +613,8 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
             eprintln!(
                 "{remaining} problem(s) in {files_with_findings} file(s) have no automatic fix"
             );
+        } else if remaining > 0 && fixable == 0 {
+            eprintln!("found {remaining} problem(s) in {files_with_findings} file(s)");
         } else if remaining > 0 && fixable == remaining {
             eprintln!(
                 "found {remaining} problem(s) in {files_with_findings} file(s); \

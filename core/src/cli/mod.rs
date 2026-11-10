@@ -186,9 +186,13 @@ pub enum Command {
     /// `test` — find the `test "name" do … end` blocks under the given paths
     /// and run them (`crate::test_runner`).
     Test(TestArgs),
-    /// `fix-imports` — rewrite old-style imports (`crate::fix_imports`).
-    /// Rewrites files in place; `--check` only lists the ones that would
-    /// change.
+    /// `migrate-old-code` — rewrite source in an old syntax into the current
+    /// one (`crate::migrate`). Rewrites files in place; `--check` prints the
+    /// diff instead.
+    MigrateOldCode(MigrateArgs),
+    /// `fix-imports` — the `old-imports` migration of `migrate-old-code` on
+    /// its own (`crate::fix_imports`). Rewrites files in place; `--check`
+    /// only lists the ones that would change.
     FixImports {
         paths: Vec<String>,
         inline: Option<String>,
@@ -322,6 +326,19 @@ pub struct TestArgs {
     pub show_output: bool,
     /// `--timeout <seconds>` per test; 0 is no limit. `None` is the default.
     pub timeout: Option<f64>,
+}
+
+/// Every flag `petal migrate-old-code` accepts.
+#[derive(Default)]
+pub struct MigrateArgs {
+    pub paths: Vec<String>,
+    pub inline: Option<String>,
+    /// Print the diff and exit 1 if anything would change; write nothing.
+    pub check: bool,
+    /// `--list`: list the migrations and exit.
+    pub list: bool,
+    /// `--only <name>` (repeatable, or comma-separated): run just these.
+    pub only: Option<Vec<String>>,
 }
 
 /// Every flag `petal lint` accepts.
@@ -611,6 +628,10 @@ pub fn execute(cli: CliArgs) {
         handlers::handle_test(opts, &include_dirs);
         return;
     }
+    if let Command::MigrateOldCode(opts) = &command {
+        source_tools::handle_migrate(opts, &include_dirs);
+        return;
+    }
     if let Command::FixImports {
         paths,
         inline,
@@ -665,6 +686,7 @@ pub fn execute(cli: CliArgs) {
         | Command::Lint(_)
         | Command::Test(_)
         | Command::ApplyChange(_)
+        | Command::MigrateOldCode(_)
         | Command::FixImports { .. } => {
             unreachable!("dispatched above")
         }

@@ -53,7 +53,7 @@ describe("module imports across files", () => {
     const err = runFileError(["run", "-e", "import palette"], FIXTURES);
     expect(err).toContain("there is no package named 'palette'");
     expect(err).toContain("`import ./palette`");
-    expect(err).toContain("petal fix-imports");
+    expect(err).toContain("petal migrate-old-code");
   });
 
   it("multi-file IR carries the file table and roundtrips", () => {

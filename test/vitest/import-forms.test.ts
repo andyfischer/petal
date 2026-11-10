@@ -76,7 +76,7 @@ describe("import forms", () => {
     );
     expect(r.code).not.toBe(0);
     expect(r.stderr).toContain("`import ./hud: *` is no longer a form");
-    expect(r.stderr).toContain("petal fix-imports");
+    expect(r.stderr).toContain("petal migrate-old-code");
   });
 });
 

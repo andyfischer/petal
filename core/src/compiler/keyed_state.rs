@@ -17,9 +17,9 @@
 //! The feature keeps working; this is a warning. It is silenced like a lint
 //! finding, with `// petal-lint-ignore state-key-deprecated` on the line before
 //! the declaration or trailing on its line (or `petal-lint-ignore-file`), and
-//! `petal lint --fix` rewrites to `memo` the never-written ones whose
+//! `petal migrate-old-code` rewrites to `memo` the never-written ones whose
 //! initializer is plainly a pure function of the key ([`init_is_pure_of_key`];
-//! `crate::lint`'s rule of the same name).
+//! `crate::migrate`'s migration of the same name).
 //!
 //! A first-party bundled package is not warned about: its author is not the
 //! reader of the warning ([`super::is_bundled_copy`]).
@@ -30,7 +30,7 @@ use crate::ast::{Expr, ExprKind, ExprVisitor, RecordField, Stmt, StmtKind, walk_
 use crate::diagnostic::Diagnostic;
 use crate::source_map::SourceSpan;
 
-/// The rule id the warning carries, and the lint rule's name.
+/// The rule id the warning carries, and the migration's name.
 pub(crate) const RULE: &str = "state-key-deprecated";
 
 /// One `state(key)` declaration, wherever it is written.
@@ -153,7 +153,8 @@ fn pure_over(e: &Expr, names: &HashSet<String>) -> bool {
 }
 
 /// The message for a keyed declaration of `name`. The compile warning adds
-/// the rule id; a lint finding is printed after it already.
+/// the hint to run `petal migrate-old-code` and the rule id; a migration
+/// finding is printed after it already.
 pub(crate) fn message(name: &str) -> String {
     format!(
         "`state(…) {name}` is deprecated: keyed state is a hidden shared global (one slot per \
@@ -180,6 +181,11 @@ pub(super) fn deprecated_keyed_states(stmts: &[Stmt], source: &str) -> Vec<Diagn
             let line = (k.span.start.line as usize).saturating_sub(1);
             !ignores.as_ref().is_some_and(|i| i.suppresses(RULE, line))
         })
-        .map(|k| Diagnostic::new(k.head, format!("{} [{RULE}]", message(&k.name))))
+        .map(|k| {
+            Diagnostic::new(
+                k.head,
+                format!("{}; {} [{RULE}]", message(&k.name), crate::migrate::RUN_HINT),
+            )
+        })
         .collect()
 }

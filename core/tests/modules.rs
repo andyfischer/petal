@@ -734,7 +734,7 @@ fn a_bare_sibling_import_is_an_error_that_says_what_to_write() {
     );
     assert!(err.contains("there is no package named 'level'"), "{err}");
     assert!(err.contains("`import ./level`"), "{err}");
-    assert!(err.contains("petal fix-imports"), "{err}");
+    assert!(err.contains("petal migrate-old-code"), "{err}");
 }
 
 #[test]

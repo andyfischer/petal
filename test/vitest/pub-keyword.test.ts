@@ -5,9 +5,9 @@ import { join } from "path";
 import { petalCapture, checkJson, checkStrict, showAstJson } from "./helpers";
 
 // `pub` and its deprecated spelling `export`, at the CLI (the library-level
-// contract is in core/tests/pub_keyword.rs). `export` keeps working; `check`
-// warns about it, `lint --fix` and `fmt` rewrite it, and `ir-equal` cannot
-// tell the two apart.
+// contract is in core/tests/pub_keyword.rs). `export` keeps working; `lint`
+// reports it (`old-syntax`), `migrate-old-code` rewrites it, `fmt` and
+// `lint --fix` leave it, and `ir-equal` cannot tell the two apart.
 
 let dir: string;
 beforeAll(() => {
@@ -56,31 +56,36 @@ describe("pub / export", () => {
     expect(checkStrict(OLD).code).toBe(1);
   });
 
-  test("lint reports prefer-pub and --fix rewrites the file", () => {
+  test("lint reports old-syntax and --fix leaves it; migrate-old-code rewrites it", () => {
     const path = file(OLD);
     const report = petalCapture(["lint", path]);
     expect(report.code).toBe(0);
-    expect(report.stdout).toContain(":1:1: prefer-pub: `export` is deprecated; write `pub`");
-    expect(report.stdout).toContain(":4:1: prefer-pub:");
+    expect(report.stdout).toContain(
+      ":1:1: old-syntax: `export` is deprecated; write `pub`; run `petal migrate-old-code` [export-to-pub]"
+    );
+    expect(report.stdout).toContain(":4:1: old-syntax:");
     expect(petalCapture(["lint", "--strict", path]).code).toBe(1);
 
-    const fix = petalCapture(["lint", "--fix", "--verify=strict", path]);
-    expect(fix.code).toBe(0);
+    expect(petalCapture(["lint", "--fix", path]).code).toBe(0);
+    expect(readFileSync(path, "utf-8")).toBe(OLD);
+
+    expect(petalCapture(["migrate-old-code", "--check", path]).code).toBe(1);
+    const migrated = petalCapture(["migrate-old-code", path]);
+    expect(migrated.code).toBe(0);
     expect(readFileSync(path, "utf-8")).toBe(NEW);
     expect(petalCapture(["lint", "--strict", path]).code).toBe(0);
+    expect(petalCapture(["migrate-old-code", "--check", path]).code).toBe(0);
   });
 
-  test("lint --rules lists prefer-pub", () => {
-    expect(petalCapture(["lint", "--rules"]).stdout).toContain("prefer-pub");
+  test("lint --rules lists old-syntax, and migrate-old-code --list lists export-to-pub", () => {
+    expect(petalCapture(["lint", "--rules"]).stdout).toContain("old-syntax");
+    expect(petalCapture(["lint", "--rules"]).stdout).not.toContain("prefer-pub");
+    expect(petalCapture(["migrate-old-code", "--list"]).stdout).toContain("export-to-pub");
   });
 
-  test("fmt normalizes export to pub, and --check flags the old spelling", () => {
-    expect(petalCapture(["fmt", "-e", OLD]).stdout).toBe(NEW);
-    const path = file(OLD);
-    expect(petalCapture(["fmt", "--check", path]).code).toBe(1);
-    expect(petalCapture(["fmt", path]).code).toBe(0);
-    expect(readFileSync(path, "utf-8")).toBe(NEW);
-    expect(petalCapture(["fmt", "--check", path]).code).toBe(0);
+  test("fmt leaves the old spelling as written", () => {
+    expect(petalCapture(["fmt", "-e", OLD]).stdout).toBe(OLD);
+    expect(petalCapture(["migrate-old-code", "-e", OLD]).stdout).toBe(NEW);
   });
 
   test("`pub` is reserved; a dangling modifier is a parse error naming it", () => {

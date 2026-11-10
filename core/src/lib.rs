@@ -37,7 +37,6 @@ pub mod error;
 pub mod error_json;
 pub mod execution_context;
 pub mod expect;
-pub mod export_keyword;
 pub mod extract;
 #[cfg(feature = "tooling")]
 pub mod fix_imports;
@@ -59,6 +58,7 @@ pub mod lint;
 #[cfg(feature = "tooling")]
 pub mod lsp;
 pub mod memo;
+pub mod migrate;
 pub mod output_segments;
 pub mod module;
 pub mod native_decl;

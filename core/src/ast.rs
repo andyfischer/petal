@@ -786,7 +786,7 @@ pub struct ImportDecl {
     pub names: Option<Vec<String>>,
     /// `import ui: *` — a form that no longer exists (a plain `import ui` is
     /// what it meant). Still parsed, so that the loader can reject it with
-    /// an error that says so and `petal fix-imports` can rewrite it.
+    /// an error that says so and `petal migrate-old-code` can rewrite it.
     #[serde(skip_serializing_if = "is_false")]
     pub star: bool,
     /// `pub import …` — what this import binds becomes part of what the

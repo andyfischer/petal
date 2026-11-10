@@ -130,6 +130,7 @@ its declaration (see [`var`, `set` and `get`](#var-set-and-get)).
 | `x \|> f(a)` | `f(x, a)` | [Pipe Operator](../language-guide.md#pipe-operator) |
 | `obj.method(a)` | `method(obj, a)` | [Method Syntax](../language-guide.md#method-syntax), [resolution order](../language-guide.md#resolution-order) |
 | `#ff8800` | `{r: 255, g: 136, b: 0}` | [Color Literals](../language-guide.md#color-literals) |
+| `@tunable(a) let X = v` | `let X = tunable(v, a)` | [Annotations](../language-guide.md#writing-an-annotation-with-) |
 
 ## Statements
 
@@ -190,7 +191,20 @@ deprecated `const NAME = expr` means the same.
 
 `tunable`, `const` and `rigid` are [annotations](../language-guide.md#annotations):
 reserved builtins that return their argument and only inform the checker or
-the tools.
+the tools. On a declaration each can also be written before it with `@`,
+which passes the declared value as the first argument:
+
+```petal
+@tunable(0, 10) let speed = 4.0   // let speed = tunable(4.0, 0, 10)
+@const
+let TABLE = [1, 2, 3]             // let TABLE = const([1, 2, 3])
+print(speed, TABLE)
+```
+
+`@` goes before `pub`, on the declaration's line or on lines of its own, and
+stacked annotations apply bottom-up. It is not an expression: inside one,
+write the call (`rigid(2.0)`). See
+[Writing an annotation with `@`](../language-guide.md#writing-an-annotation-with-).
 
 ### `var`, `set` and `get`
 

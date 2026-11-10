@@ -667,6 +667,12 @@ DESCRIPTION
        'petal lint', and rewriting an old syntax (the deprecated modifier
        'export', say) to 'petal migrate-old-code'.
 
+       Annotations stay where they were written: '@tunable(0, 10) let x = 4'
+       on one line, '@const' on a line of its own above a long table. The
+       '@' is kept tight to its name and the arguments are spaced like a
+       call's; fmt never moves an annotation onto or off its declaration's
+       line.
+
        Alignment is kept. A run of spaces that lines a token up with one on
        the line above or below (a table of records, a column of =), a
        repeated double space that groups arguments, a trailing comment's
@@ -1485,8 +1491,8 @@ DESCRIPTION
        so a 'native fn' of a host is dynamic here: a host may report more as
        static than this does, never less.
 
-       A declaration written 'let X = const(e)' (or the deprecated
-       'const X = e') must be static. One that is not carries
+       A declaration written 'let X = const(e)' (or '@const let X = e', or
+       the deprecated 'const X = e') must be static. One that is not carries
        a '!' line: 'declared const but not constant: a compile error', or
        'declared const: cannot be verified without its host's natives' when
        the only thing in the way is a native this command does not register.

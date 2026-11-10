@@ -1003,6 +1003,11 @@ fmt touches whitespace only (see [dev/linter-plan.md](dev/linter-plan.md)):
 An old spelling (the `export` modifier) is laid out as written: rewriting it
 is [`migrate-old-code`](#migrate-old-code--rewrite-old-syntax)'s.
 
+A [declaration annotation](language-guide.md#writing-an-annotation-with-)
+stays where it was written: `@tunable(0, 10) let x = 4` on one line, `@const`
+on a line of its own above a table. fmt neither joins nor splits them, and
+does not prefer the `@` form or the call form.
+
 It keeps what the author aligned. A run of spaces that lines a token up with a
 token on the line above or below (a table of records, a column of `=`), a
 double space repeated after commas to group arguments, a trailing comment's

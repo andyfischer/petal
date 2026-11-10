@@ -65,11 +65,36 @@ Everything outside the call is an ordinary
 [`let`](../language-guide.md#variables). The call's arguments are the value,
 then `min`, `max` and `step` by position or by name, and `options:` by name.
 
+### The `@tunable` spelling
+
+The same setting can be written with the annotation before the declaration
+([Writing an annotation with `@`](../language-guide.md#writing-an-annotation-with-)).
+The declared value is the call's first argument, so `@tunable(a, …)` passes
+everything after the value:
+
+```petal
+@tunable let offset = 10                          // let offset = tunable(10)
+@tunable(0, 10) let SPEED = 4.0                   // let SPEED = tunable(4.0, 0, 10)
+@tunable(min: 3.0, max: 12.0, step: 0.5)
+pub let RUN = 7.0                                 // pub let RUN = tunable(7.0, min: 3.0, max: 12.0, step: 0.5)
+@tunable(options: ["title", "select", "play"])
+let START = "title"
+print(offset, SPEED, RUN, START)
+```
+
+The two spellings are the same program to the compiler and to every tool and
+host: the parser turns the `@` form into the call. Neither is preferred.
+Named bounds read well in the `@` form, where the bounds come before the
+value: `@tunable(3.0, 12.0)` is "min 3, max 12", not "value 3".
+The annotation goes on the declaration's line or on lines of its own above
+it, and before `pub`.
+
 ## Where it is a setting
 
 | Written | Result |
 |---|---|
 | `let X = tunable(v)` at the top level | a setting |
+| `@tunable let X = v` | the same setting |
 | `pub let X = tunable(v)` | an exported setting |
 | `let X = tunable(4) * 2` | not a setting: the hint marks the `4` for direct manipulation, and hosts do not list `X` (lint `tunable-not-whole-initializer`) |
 | `var X = tunable(v)` | not a setting: a `var` is a cell, not a knob (lint `tunable-on-var`) |
@@ -110,8 +135,13 @@ match its `knob` selector exactly as `let X = tunable(140)` does.
 let SPEED = tunable(4.0, 0, 10)                       // min 0, max 10
 let GRAV = tunable(-9.8, min: -20, max: 0, step: 0.1)
 let MODE = tunable("day", options: ["day", "night"])
-print(SPEED, GRAV, MODE)   // 4.0 -9.8 day
+@tunable(min: 0, max: 1) let MIX = 0.25               // bounds by name, `@` form
+print(SPEED, GRAV, MODE, MIX)   // 4.0 -9.8 day 0.25
 ```
+
+The bounds are `min`, `max` and `step`, in that order by position, or by
+name in any order (`tunable(4.0, max: 10, min: 0)`); a positional bound may be
+followed by named ones (`tunable(4.0, 0, max: 10)`).
 
 What hosts see is the setting, not the call:
 

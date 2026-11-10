@@ -158,6 +158,21 @@ The rules:
   handed to `append` at top level (`let U = const(append(T, x))` warns about
   `T`).
 
+**The `@const` spelling.** `@const let NAME = expr` is another spelling of
+`let NAME = const(expr)`, with the same rules: the parser turns it into the
+call ([Writing an annotation with `@`](../language-guide.md#writing-an-annotation-with-)).
+On a long table it saves the closing `)` and makes adding or removing the
+check a one-line edit:
+
+```petal
+@const
+pub let KINDS = {
+  sedan: {mass: 1200.0, max_speed: 30.0},
+  van: {mass: 1800.0, max_speed: 25.0},
+}
+print(KINDS.van.mass)   // 1800.0
+```
+
 **The older spelling.** `const NAME = expr` (and `pub const`) is the same
 declaration and still works, with the same rules (`config const` is an
 error). It is deprecated: the compile check warns about each one

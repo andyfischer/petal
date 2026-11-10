@@ -2152,8 +2152,14 @@ Rules:
   reports `dm-hint-not-literal`. Wrap the literal itself: `tunable(a) + b`.
   For a setting it reports `config-not-data` instead, since hosts see no
   value.
-- `min`, `max` and `step` describe a number. On anything else they are
-  ignored, with a `dm-hint-bounds` warning.
+- `min`, `max` and `step` describe a number, and are passed by position
+  (in that order) or by name in any order: `tunable(4.0, min: 0, max: 10)`,
+  `tunable(4.0, max: 10)`. On anything else they are ignored, with a
+  `dm-hint-bounds` warning.
+- On a declaration, `@tunable(…) let X = v` means `let X = tunable(v, …)`:
+  `@tunable(0, 10) let speed = 4.0`, `@tunable(min: 0, max: 10)`. See
+  [Writing an annotation with `@`](language-guide.md#writing-an-annotation-with-).
+  `@rigid let X = v` and `@const let X = e` likewise.
 - `options:` lists the values a setting can take, for a host to offer as a
   dropdown. `petal lint` reports `tunable-value-not-in-options` when `value`
   is not one of them; nothing else enforces it, and its numbers are never

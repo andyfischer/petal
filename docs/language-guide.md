@@ -104,6 +104,15 @@ them. The older spelling, `config let offset = 10`, still works and is
 deprecated: the compile check warns about each one, and `petal
 migrate-old-code` rewrites it.
 
+The same settings can be written with the annotation before the
+declaration (see [Annotations](#annotations)); the bounds may be named:
+
+```petal
+@tunable let offset = 10
+@tunable(0, 10) pub let speed = 4.0
+@tunable(min: 0, max: 10, step: 0.5) let gain = 2.0
+```
+
 ### `const(…)` — a value that must be constant
 
 `let NAME = const(expr)` is a `let` whose value must be **static**: it can
@@ -144,6 +153,8 @@ depends on, which a table parked in `state` never is.
 
 The older spelling, `const NAME = expr`, still works and means the same; it
 is deprecated (the compile check warns, and `petal migrate-old-code` rewrites it).
+`@const let NAME = expr` is another spelling of `let NAME = const(expr)`
+(see [Annotations](#annotations)), handy on a long table: no closing `)`.
 
 The full rules, what is kept and when, how a `const(…)` built from a host's
 natives is checked, and the tools (`petal show-static`, the
@@ -166,6 +177,46 @@ checker or the tools do with the value. A keyword (`let`, `var`, `state`,
 The names are reserved: a program cannot bind `const`, `tunable` or
 `rigid` as a function, variable, parameter or import alias, so every
 reader can recognise the call by its name.
+
+#### Writing an annotation with `@`
+
+On a declaration, an annotation can be written before it with `@`, and
+means exactly the call around the whole initializer. The declared value goes
+in as the **first argument**, before the annotation's own arguments:
+
+```petal
+@tunable(0, 10) let SPEED = 4.0        // let SPEED = tunable(4.0, 0, 10)
+@tunable let KICK = 6.0                // let KICK = tunable(6.0)
+@tunable(min: 3.0, max: 12.0)
+pub let RUN = 7.0                      // pub let RUN = tunable(7.0, min: 3.0, max: 12.0)
+@rigid let G = 9.8                     // let G = rigid(9.8)
+
+@const
+let KINDS = {
+  sedan: {mass: 1200.0, max_speed: 30.0},
+  van: {mass: 1800.0, max_speed: 25.0},
+}                                      // let KINDS = const({ … })
+print(SPEED, KICK, RUN, G, KINDS.van.mass)
+```
+
+The two spellings are interchangeable and neither is preferred: the parser
+turns the `@` form into the call, so the compiler, the tools and hosts see
+the same program. The rules:
+
+- An annotation is `@const`, `@tunable` or `@rigid`, with arguments in
+  parentheses when it takes some, and no space after the `@`.
+- It goes on the declaration's line or on lines of its own above it
+  (comments and blank lines may sit in between), and **before** `pub`.
+- It annotates a `let` (and is allowed wherever the call is: `@const` on a
+  top-level `let`, `@tunable` and `@rigid` on any `let`). On a `var`,
+  `state` or `memo` it means the call there too, with the call's
+  diagnostics (`@const var X` is an error, `@tunable var X` a lint finding).
+- Stacked annotations apply bottom-up, as the nested calls would:
+  `@a @b(1) let X = v` is `let X = a(b(v, 1))`.
+- `@` is not an expression and does not go on a `fn`, `class` or `enum`.
+  Inside an expression, write the call: `apex * rigid(2.0)`. `@` on a
+  function is reserved for compile-time annotations, of which there are none
+  yet.
 
 ## Types
 

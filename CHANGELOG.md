@@ -246,6 +246,34 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **`@` declaration annotations**: `@const`, `@tunable` and `@rigid` can be
+  written before a declaration, and mean exactly the call around its whole
+  initializer, with the declared value as the first argument
+  ([guide](docs/language-guide.md#writing-an-annotation-with-),
+  [proposal](docs/proposals/annotation-syntax.md)):
+
+  ```petal
+  @tunable(0, 10) let SPEED = 4.0       // let SPEED = tunable(4.0, 0, 10)
+  @tunable(min: 3.0, max: 12.0)
+  pub let RUN = 7.0                     // pub let RUN = tunable(7.0, min: 3.0, max: 12.0)
+  @const
+  let KINDS = {sedan: {mass: 1200.0}}   // let KINDS = const({…})
+  ```
+
+  An annotation goes on the declaration's line or on lines of its own, before
+  `pub`; stacked ones apply bottom-up. It is an alternative spelling: the call
+  forms stay valid and neither is preferred, so nothing is migrated or linted
+  either way. The parser lowers it to the call, so the IR, `show-static`,
+  settings hosts see, direct manipulation and hot reload are the same for
+  both (`core/tests/annotation_parity.rs`). `@` before a `fn`, `class` or
+  `enum`, `@` in an expression and `@` with a name other than the three are
+  parse errors that say what to write. `petal fmt` keeps annotations where
+  they are written; the LSP completes and explains them; tree-sitter, vim,
+  Garden's DM hint toggler and petal-lang.org read them.
+- `tunable`'s bounds can be named, `tunable(4.0, min: 0, max: 10)`, in any
+  order and after positional ones, in the call and the `@` form. A
+  misspelled one (`minimum:`) now lists every parameter `tunable` takes.
+
 - **`petal migrate-old-code`** rewrites code written in an old syntax into
   the current one, in place ([CLI.md](docs/CLI.md#migrate-old-code--rewrite-old-syntax)).
   `--check` (or `--dry-run`) prints the diff and exits 1 if anything would

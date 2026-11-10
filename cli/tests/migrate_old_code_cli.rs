@@ -235,6 +235,114 @@ fn an_at_rebind_is_rewritten_and_one_it_cannot_lift_is_listed() {
     assert_eq!(t.read("b.ptl"), stuck);
 }
 
+/// Every old form at once, over a module and the file importing it: `@`
+/// rebinds, `export`, `const X`, both `config let` forms, a module's `const`,
+/// `state(key)` and an old import. `state(key)` needs the file to compile to
+/// prove its rewrite, which the old import (now an error) prevents until
+/// `old-imports` has run, so one run must still finish the job.
+#[test]
+fn every_old_form_over_a_module_and_its_importer_in_one_run() {
+    let t = Tree::new("all");
+    let tune = "\
+export const TABLE = {
+  slow: 1,
+  fast: 3,
+}                         // speeds
+export config let GRAVITY = 9.5
+pub config let JUMP = tunable(4.0, 0, 10)   // already a tunable
+export fn scale(x)
+  x * 2
+end
+";
+    let main = "\
+import tune: *
+const N = 4               // four
+config let SPEED = 2.5    // px/frame
+fn width(t)
+  state(t) w = t * 8
+  w
+end
+fn double(x)
+  x * 2
+end
+let a = 5
+double(@a)
+let b = 3
+let r = double(double(@b))
+print(a, b, r)
+print(N + SPEED + width(1))
+print(TABLE.fast + GRAVITY + JUMP + scale(1))
+";
+    t.write("tune.ptl", tune);
+    t.write("main.ptl", main);
+
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "--check", "."]);
+    assert_eq!(code, 1, "{out}\n{err}");
+    assert!(out.contains("-double(@a)\n+a = double(a)"), "{out}");
+    assert!(out.contains("+pub let TABLE = const({"), "{out}");
+    assert!(out.contains("+  memo(t) w = t * 8"), "{out}");
+    assert!(!err.contains("hand edit"), "{err}");
+    assert!(err.contains("2 of 2 file(s) need migrating"), "{err}");
+    assert_eq!((t.read("tune.ptl"), t.read("main.ptl")), (tune.to_string(), main.to_string()));
+
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "."]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert_eq!(
+        t.read("tune.ptl"),
+        "\
+pub let TABLE = const({
+  slow: 1,
+  fast: 3,
+})                        // speeds
+pub let GRAVITY = tunable(9.5)
+pub let JUMP = tunable(4.0, 0, 10)          // already a tunable
+pub fn scale(x)
+  x * 2
+end
+"
+    );
+    assert_eq!(
+        t.read("main.ptl"),
+        "\
+import ./tune
+let N = const(4)          // four
+let SPEED = tunable(2.5)  // px/frame
+fn width(t)
+  memo(t) w = t * 8
+  w
+end
+fn double(x)
+  x * 2
+end
+let a = 5
+a = double(a)
+let b = 3
+b = double(b)
+let r = double(b)
+print(a, b, r)
+print(N + SPEED + width(1))
+print(TABLE.fast + GRAVITY + JUMP + scale(1))
+"
+    );
+    // What the old program printed (`@` rebinds included), with no warning.
+    let (out, err, code) = petal_in(&t.root, &["run", "main.ptl"]);
+    assert_eq!((out.as_str(), code), ("10 6 12\n14.5\n18.5\n", 0), "{err}");
+    assert_eq!(err, "");
+
+    // A second run, and `--check`, find nothing.
+    let migrated = (t.read("tune.ptl"), t.read("main.ptl"));
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "."]);
+    assert_eq!((out.as_str(), code), ("", 0), "{err}");
+    assert_eq!((t.read("tune.ptl"), t.read("main.ptl")), migrated);
+    assert_eq!(petal_in(&t.root, &["migrate-old-code", "--check", "."]).2, 0);
+
+    // `lint --fix` touches none of the old forms.
+    t.write("tune.ptl", tune);
+    t.write("main.ptl", main);
+    petal_in(&t.root, &["lint", "--fix", "."]);
+    assert_eq!((t.read("tune.ptl"), t.read("main.ptl")), (tune.to_string(), main.to_string()));
+}
+
 #[test]
 fn a_file_that_does_not_parse_is_reported_and_the_rest_are_migrated() {
     let t = Tree::new("broken");

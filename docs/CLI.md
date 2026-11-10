@@ -1046,6 +1046,9 @@ one is an error that names the command.
 
 They run in that order, each over the text the one before left; `old-imports`
 runs last over the whole batch, so it sees every sibling already migrated.
+A file whose imports it changed gets a second pass of the text migrations,
+because `state-key-deprecated` only rewrites a file that compiles, and an old
+import (an error now) kept it from compiling the first time.
 Each migration edits its old form and nothing else, and the output is not
 reformatted. Running the command again changes nothing. If a file compiles
 before, it must compile after, or nothing is written for it and the error is

@@ -347,7 +347,9 @@ pub(super) fn handle_fix_imports(
 
 /// `petal migrate-old-code`: every selected migration ([`crate::migrate`])
 /// over the inputs, the text migrations per file and then `old-imports` over
-/// the batch. Rewrites files in place; `--check` prints the diff instead and
+/// the batch (and the text migrations once more over a file whose imports
+/// it changed, for the rewrites that need the file to compile). Rewrites
+/// files in place; `--check` prints the diff instead and
 /// exits 1 if anything would change. Sites a migration leaves for a hand
 /// edit are reported on stderr either way.
 pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]) {
@@ -415,10 +417,33 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
         let Some(text) = text else {
             continue;
         };
-        let (output, import_changes) = match fixed {
+        let (mut output, import_changes) = match fixed {
             Some(f) => (f.source, f.changes),
             None => (text.clone(), Vec::new()),
         };
+        // A text migration that needs the file to compile (`state(key)` →
+        // `memo`) could not prove its rewrite while an old import, which is
+        // now an error, was still in the file. With the imports fixed, give
+        // the text migrations a second pass, so one run does the whole job
+        // and the next is a no-op.
+        let mut found = found.clone();
+        if output != *text && found.iter().any(|f| !f.fixable) {
+            let mopts = MigrateOptions {
+                include_dirs: include_dirs.to_vec(),
+                origin: input.path.clone(),
+                only: opts.only.clone(),
+            };
+            if let Ok(again) = crate::migrate::migrate_source(&output, &mopts)
+                && again.output != output
+            {
+                // The second pass reports every site still in an old form;
+                // the first pass's report of the ones it left is replaced.
+                found.retain(|f| f.fixable);
+                found.extend(again.findings);
+                found.sort_by_key(|f| (f.line, f.column));
+                output = again.output;
+            }
+        }
         for f in found.iter().filter(|f| !f.fixable) {
             left += 1;
             eprintln!(

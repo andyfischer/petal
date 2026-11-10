@@ -1126,8 +1126,9 @@ manifests, dependencies and the lookup order in
 For an engine that ships scripts without a filesystem, `petal bundle <entry>`
 writes a project's installed dependency graph as JSON: each
 `packages[i].modules` object is the name/source list `register_package`
-takes, with the package's `petal.toml` among them
-([../packages.md](../packages.md#bundles)). Scripts loaded from disk find
+takes, with the package's `petal.toml` among them, and the bundled libraries
+the program imports come along (`--no-libraries` leaves them out for a bridge
+built with them; [../packages.md](../packages.md#bundles)). Scripts loaded from disk find
 their project's git dependencies in `vendor/` or the package cache, as
 `petal.lock` pins them; the bridge never fetches, so run `petal install` (or
 check `vendor/` in) before shipping.

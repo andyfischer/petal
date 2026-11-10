@@ -712,3 +712,129 @@ fn a_renamed_dependency_is_resolved_and_refused_by_bundle() {
     let err = w.fails("app", &["bundle", "main.ptl"]);
     assert!(err.contains("under the name 'e'"), "{err}");
 }
+
+// ── bundled libraries in a bundle ────────────────────────────────
+
+/// The names of a bundle's packages, in order.
+fn package_names(bundle: &serde_json::Value) -> Vec<String> {
+    bundle["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// Register every package of `bundle` in a fresh Env that provides the
+/// interfaces it requires, and load its entry — compile it, when it needs
+/// the ui natives, which this Env does not register.
+fn load_bundle(bundle: &serde_json::Value) -> Env {
+    let mut env = Env::new();
+    for required in bundle["requires"].as_array().unwrap() {
+        let interface = required["interface"].as_str().unwrap();
+        let version = Env::bundled_packages()
+            .into_iter()
+            .find(|p| p.name == interface)
+            .and_then(|p| p.version)
+            .unwrap();
+        env.provides(interface, &version).unwrap();
+    }
+    for package in bundle["packages"].as_array().unwrap() {
+        let modules: Vec<(String, String)> = package["modules"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(name, source)| (name.clone(), source.as_str().unwrap().to_string()))
+            .collect();
+        env.register_package(package["name"].as_str().unwrap(), modules)
+            .unwrap();
+    }
+    let source = bundle["entry"]["source"].as_str().unwrap();
+    let path = Path::new(bundle["entry"]["path"].as_str().unwrap());
+    if bundle["requires"].as_array().unwrap().is_empty() {
+        env.load_program_at(source, path).unwrap();
+    } else {
+        for package in bundle["packages"].as_array().unwrap() {
+            let name = package["name"].as_str().unwrap();
+            if package["modules"].get(name).is_some() {
+                env.exports_of(name).unwrap();
+            }
+        }
+    }
+    env
+}
+
+fn bundle_of(w: &World, args: &[&str]) -> serde_json::Value {
+    let mut all = vec!["bundle", "main.ptl"];
+    all.extend_from_slice(args);
+    serde_json::from_str(&w.ok("app", &all)).unwrap()
+}
+
+#[test]
+fn a_bundle_carries_the_bundled_libraries_the_program_imports() {
+    let w = World::new("bundled-libs");
+    w.write("app/petal.toml", "[package]\nname = \"game\"\nversion = \"0.1.0\"\n");
+
+    // glsl alone, imported from a module of the project, not the entry.
+    w.write("app/main.ptl", "import ./shade\nprint(shade.ok())\n");
+    w.write("app/shade.ptl", "import glsl\npub fn ok()\n  1\nend\n");
+    let bundle = bundle_of(&w, &[]);
+    assert_eq!(package_names(&bundle), ["game", "glsl"]);
+    let glsl = &bundle["packages"][1];
+    assert!(glsl["modules"]["petal.toml"].as_str().unwrap().contains("name = \"glsl\""));
+    assert!(glsl["modules"]["glsl"].is_string(), "{}", glsl["modules"]);
+    assert_eq!(glsl["version"], "0.1.0");
+    load_bundle(&bundle);
+
+    // --no-libraries leaves it out.
+    assert_eq!(package_names(&bundle_of(&w, &["--no-libraries"])), ["game"]);
+
+    // bloom brings text_layout, and both their [requires].
+    w.write("app/main.ptl", "import bloom\nprint(1)\n");
+    std::fs::remove_file(w.path("app/shade.ptl")).unwrap();
+    let bundle = bundle_of(&w, &[]);
+    assert_eq!(package_names(&bundle), ["game", "bloom", "text_layout"]);
+    let requires: Vec<(String, String)> = bundle["requires"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (r["interface"].as_str().unwrap().into(), r["package"].as_str().unwrap().into())
+        })
+        .collect();
+    assert_eq!(
+        requires,
+        [("ui".into(), "bloom".into()), ("ui".into(), "text_layout".into())]
+    );
+    load_bundle(&bundle);
+
+    // Only what every host carries: ui, a builtin package, core.
+    w.write("app/main.ptl", "import ui\nimport noise\nimport core/math\nprint(abs(-1))\n");
+    let bundle = bundle_of(&w, &[]);
+    assert_eq!(package_names(&bundle), ["game"]);
+    assert_eq!(bundle["requires"], serde_json::json!([]));
+}
+
+#[test]
+fn a_bundled_library_named_under_dependencies_is_a_package_of_the_graph() {
+    let w = World::new("bundled-libs-listed");
+    let bloom = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core-runtime/bloom");
+    let bloom = std::fs::canonicalize(bloom).unwrap();
+    w.write(
+        "app/petal.toml",
+        &format!(
+            "[package]\nname = \"game\"\n[dependencies]\nbloom = {{ path = \"{}\" }}\n",
+            bloom.display()
+        ),
+    );
+    w.write("app/main.ptl", "import bloom\nprint(1)\n");
+    let bundle = bundle_of(&w, &[]);
+    let mut names = package_names(&bundle);
+    names.sort();
+    assert_eq!(names, ["bloom", "game", "text_layout"], "each once");
+    // Listed, it is in the bundle with --no-libraries too.
+    let mut names = package_names(&bundle_of(&w, &["--no-libraries"]));
+    names.sort();
+    assert_eq!(names, ["bloom", "game", "text_layout"]);
+    load_bundle(&bundle);
+}

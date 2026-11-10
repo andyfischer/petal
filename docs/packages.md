@@ -360,12 +360,14 @@ and are not copied. See [The cache and `vendor/`](#the-cache-and-vendor).
 ### `petal bundle`
 
 ```
-petal bundle <entry> [-o <file> | --output <file>]
+petal bundle <entry> [-o <file> | --output <file>] [--no-libraries]
 ```
 
 Prints every module of the installed graph, the project's own package
-included, as one JSON document, on stdout or into `<file>`. Installs first
-if something is missing. See [Bundles](#bundles).
+included, as one JSON document, on stdout or into `<file>`, plus each
+bundled library the entry imports. Installs first if something is missing.
+`--no-libraries` leaves the bundled libraries out, for a host built with
+them. See [Bundles](#bundles).
 
 ### `petal packages`
 
@@ -582,11 +584,18 @@ let program = env.load_program_at(&bundle.entry.source, Path::new(&bundle.entry.
   so its `[requires]` are checked against what the host provides.
 - `entry.path` is `null` when the entry file is not under the project's
   module directory. Such an entry's relative imports are not in the bundle.
-- Packages bundled in the binary (`ui`, `bloom`, the builtin packages) are
-  not repeated, and neither is anything reached only through `-I`. For a
-  host built without a bundled library (the wasm runtimes leave out
-  `bloom`, `text_layout` and `glsl`), name it under `[dependencies]` with a
-  path to its directory and it is in the bundle like any dependency.
+- The bundled packages every host carries (`core`, `ui`, the builtin
+  packages) are not repeated, and neither is anything reached only through
+  `-I` or `PETAL_PATH`.
+- A bundled library (`bloom`, `text_layout`, `glsl`) is in the bundle when
+  the entry loads it, directly or through other modules, with no
+  `[dependencies]` entry needed: the wasm runtimes are built without them.
+  The libraries its manifest depends on come with it (`import bloom` brings
+  `text_layout`), and its `[requires]` are in `requires`. A library the
+  graph does not reach is left out. `--no-libraries` leaves them all out,
+  for a host built with the `libraries` feature. A library the project
+  names under `[dependencies]` is a package of the graph like any other and
+  is in the bundle either way.
 - A dependency whose key renames its package (`tw = …` for `tween`) cannot
   be bundled, because an in-memory package is registered under its own name.
   The error names the key and the package.

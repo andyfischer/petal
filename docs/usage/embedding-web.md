@@ -41,7 +41,8 @@ Node:
 slower). The rest of the size is mostly core's own code. The web builds embed
 only the ui prelude: `bloom`, `text_layout` and `glsl` are cargo features of
 the `petal` crate, off here, and a page that imports one registers it with
-`register_package`. The embedded Petal sources have their whole-line
+`register_package` (`petal bundle` puts each library a program imports in
+its document). The embedded Petal sources have their whole-line
 comments blanked (`core/build.rs`, `petal::bundled::COMMENTS_STRIPPED`). Set `PETAL_EMBED_COMMENTS=keep` when building to keep them. The
 default build measured 3.75 MB raw, 1.31 MB gzip, 0.93 MB brotli on
 2026-11-05. What the size is made of, and the plan to shrink it, is in

@@ -41,6 +41,9 @@ pub enum PmCommand {
     Bundle {
         entry: String,
         output: Option<String>,
+        /// `--no-libraries`: leave out the bundled libraries the program
+        /// imports, for a host built with them.
+        no_libraries: bool,
     },
 }
 
@@ -83,7 +86,11 @@ pub(super) fn parse(command: &str, args: &[String]) -> CliArgs {
         "install" => ("petal install [--locked]", &[], &["--locked"]),
         "update" => ("petal update [<name>...]", &[], &[]),
         "vendor" => ("petal vendor", &[], &[]),
-        "bundle" => ("petal bundle <entry> [-o <file>]", &["-o", "--output"], &[]),
+        "bundle" => (
+            "petal bundle <entry> [-o <file>] [--no-libraries]",
+            &["-o", "--output"],
+            &["--no-libraries"],
+        ),
         other => unreachable!("'{other}' is not a package-manager command"),
     };
     let mut i = 0;
@@ -177,6 +184,7 @@ pub(super) fn parse(command: &str, args: &[String]) -> CliArgs {
             PmCommand::Bundle {
                 entry,
                 output: flag("-o").or_else(|| flag("--output")),
+                no_libraries: switches.iter().any(|s| s == "--no-libraries"),
             }
         }
         _ => unreachable!(),
@@ -349,7 +357,7 @@ NAME
        petal-bundle - Emit a program's packages as one JSON document
 
 SYNOPSIS
-       petal bundle <entry> [-o <file>]
+       petal bundle <entry> [-o <file>] [--no-libraries]
 
 DESCRIPTION
        Prints every module of the project's installed dependency graph - the
@@ -367,14 +375,23 @@ DESCRIPTION
 
        A host registers each package (Env::register_package,
        pb_vm_register_package, or the wasm register_package(name, json)) and
-       loads entry.source at entry.path. Packages bundled in the petal binary
-       (ui, bloom, the builtin packages) are not repeated in the document,
-       unless the project names one under [dependencies]: a host built
-       without a bundled library (the wasm runtimes) gets it that way.
+       loads entry.source at entry.path.
+
+       The packages every host carries (core, ui, the builtin packages) are
+       not repeated in the document. A bundled library (bloom, text_layout,
+       glsl) is, when the entry imports it, directly or through other
+       modules, together with the libraries it depends on (bloom brings
+       text_layout): a host built without the libraries (the wasm runtimes)
+       gets them that way. Its requires are listed like any package's.
 
 OPTIONS
        -o <file>, --output <file>
               Write the document to <file> instead of stdout.
+
+       --no-libraries
+              Leave the bundled libraries out, for a host built with them
+              (the petal crate's libraries feature). A library the project
+              names under [dependencies] is in the document either way.
 
 SEE ALSO
        petal help vendor, docs/packages.md, docs/usage/embedding-guide.md

@@ -133,7 +133,16 @@ pub fn handle(command: &PmCommand) {
             announce: true,
             ..InstallOptions::default()
         }),
-        PmCommand::Bundle { entry, output } => match pkgman::bundle(Path::new(entry)) {
+        PmCommand::Bundle {
+            entry,
+            output,
+            no_libraries,
+        } => match pkgman::bundle_with(
+            Path::new(entry),
+            &pkgman::BundleOptions {
+                no_libraries: *no_libraries,
+            },
+        ) {
             Ok(bundle) => {
                 let text = serde_json::to_string_pretty(&bundle).expect("a bundle is plain JSON");
                 match output {

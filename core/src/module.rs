@@ -2503,6 +2503,78 @@ print(score(1, 2))")
         );
     }
 
+    /// A bundled library's directory in the form `petal bundle` writes it:
+    /// its `petal.toml` and each module's source.
+    fn library_as_bundled(dir: &str) -> Vec<(String, String)> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(dir);
+        let package = crate::package::Package::from_dir(&root).unwrap();
+        let mut modules = vec![(
+            crate::package::MANIFEST_FILE.to_string(),
+            std::fs::read_to_string(root.join(crate::package::MANIFEST_FILE)).unwrap(),
+        )];
+        for module in &package.info.modules {
+            modules.push((module.clone(), package.load(module).unwrap().source));
+        }
+        modules
+    }
+
+    /// What `petal bundle` carries for a program that imports bloom — bloom
+    /// and text_layout, registered from memory — loads in a host built
+    /// without the libraries (the wasm runtimes).
+    #[cfg(not(feature = "bloom"))]
+    #[test]
+    fn a_bundled_library_registered_from_memory_loads_where_it_is_left_out() {
+        let entry = "import bloom\nimport text_layout\nprint(1)";
+        let mut env = Env::new();
+        let err = env.load_program(entry).unwrap_err().to_string();
+        assert!(err.contains("not in this build of Petal"), "{err}");
+        env.register_package("text_layout", library_as_bundled("../core-runtime/text-layout"))
+            .unwrap();
+        env.register_package("bloom", library_as_bundled("../core-runtime/bloom"))
+            .unwrap();
+        // Their manifests ride along, so their [requires] are checked.
+        let err = env.load_program(entry).unwrap_err().to_string();
+        assert!(err.contains("requires the host interface `ui`"), "{err}");
+        let ui = crate::bundled::package("ui").unwrap().manifest();
+        let ui = crate::package::Manifest::parse(ui, std::path::Path::new("ui")).unwrap();
+        env.provides("ui", &ui.version.unwrap()).unwrap();
+        // The rest of the load wants the ui natives, which a petal-ui host
+        // registers: compiling what `import bloom` loads stops short of that.
+        let err = env.load_program(entry).unwrap_err().to_string();
+        assert!(err.contains("needs native fns this host does not register"), "{err}");
+        let (exports, modules) = env.exports_and_modules_of("bloom").unwrap();
+        assert!(exports.iter().any(|e| e == "button"), "{exports:?}");
+        assert!(modules.iter().any(|m| m.starts_with("text_layout")), "{modules:?}");
+        // Nothing comes from an embedded copy: there is none.
+        assert_eq!(env.bundled_libraries_loaded(entry, None).unwrap(), Vec::<&str>::new());
+    }
+
+    #[cfg(not(feature = "glsl"))]
+    #[test]
+    fn an_import_of_a_left_out_library_is_not_a_bundled_library_loaded() {
+        let err = Env::new()
+            .bundled_libraries_loaded("import glsl\nprint(1)", None)
+            .unwrap_err();
+        assert!(err.to_string().contains("not in this build of Petal"), "{err}");
+    }
+
+    #[cfg(feature = "libraries")]
+    #[test]
+    fn the_bundled_libraries_a_program_loads_are_named_in_bundling_order() {
+        let env = Env::new();
+        let loaded = |src: &str| env.bundled_libraries_loaded(src, None).unwrap();
+        assert_eq!(loaded("import glsl\nprint(1)"), ["glsl"]);
+        // bloom's own modules import text_layout.
+        assert_eq!(loaded("import bloom\nprint(1)"), ["bloom", "text_layout"]);
+        assert_eq!(loaded("import text_layout/fit\nprint(1)"), ["text_layout"]);
+        // Every host carries ui and the builtin packages: they are not libraries.
+        assert!(loaded("import ui\nimport noise\nprint(1)").is_empty());
+        // A host registration of the name is not the embedded copy.
+        let mut env = Env::new();
+        env.register_package("glsl", [("glsl", "pub let v = 7")]).unwrap();
+        assert!(env.bundled_libraries_loaded("import glsl\nprint(v)", None).unwrap().is_empty());
+    }
+
     #[cfg(feature = "glsl")]
     #[test]
     fn a_library_in_the_build_resolves() {

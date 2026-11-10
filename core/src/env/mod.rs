@@ -972,6 +972,32 @@ impl Env {
             .collect()
     }
 
+    /// The bundled libraries ([`crate::bundled::LIBRARIES`]: `bloom`,
+    /// `text_layout`, `glsl`) whose embedded copy the program in `source` (at
+    /// `origin`) loads, directly or through other modules, in bundling order.
+    /// A library the import resolves elsewhere — a host registration, a
+    /// `[dependencies]` entry, `vendor/`, the search path — is not one.
+    /// `petal bundle` uses it to carry these to a host built without them.
+    /// `Err` when the imports do not resolve.
+    pub fn bundled_libraries_loaded(
+        &self,
+        source: &str,
+        origin: Option<&std::path::Path>,
+    ) -> Result<Vec<&'static str>, crate::error::LoadError> {
+        let modules = crate::module::load_modules(source, origin, &self.modules, &[])?;
+        let loaded: std::collections::HashSet<&str> = modules
+            .iter()
+            .filter_map(|m| m.origin.as_deref()?.to_str())
+            .filter_map(|path| path.strip_prefix("<bundled:")?.split_once('>'))
+            .map(|(name, _)| name)
+            .collect();
+        Ok(crate::bundled::LIBRARIES
+            .iter()
+            .copied()
+            .filter(|name| loaded.contains(name))
+            .collect())
+    }
+
     /// Every package path a script could write after `import` to reach a
     /// module that is not already in scope: each registered, search-path and
     /// bundled package by its own name when it has a module of that name,

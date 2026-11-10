@@ -12,6 +12,14 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **`petal bundle` carries the bundled libraries a program imports.** A
+  program that imports `bloom`, `text_layout` or `glsl` (directly or through
+  other modules) gets that library in its bundle, with the libraries it
+  depends on (`bloom` brings `text_layout`) and their `[requires]`, without
+  a `[dependencies]` entry, so it loads in a host built without them (the
+  wasm runtimes). `core`, `ui` and the builtin packages are still left out.
+  `--no-libraries` leaves the libraries out for a host that has them.
+
 - **Old syntax is rewritten only by `petal migrate-old-code`.** The other
   commands carry the current syntax only:
   - `petal lint --fix` no longer rewrites `export`, `const X = e`,

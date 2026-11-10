@@ -1679,9 +1679,29 @@ pub fn manifest_set_dependency(text: &str, name: &str, spec: &str) -> String {
 /// `pb_vm_register_package`, the wasm `register_package(name, json)`) and
 /// loads `entry.source` at `entry.path`, which places the entry inside the
 /// project's own in-memory package so its `./x` imports resolve. `path` is
-/// null for an entry file outside the project's module directory. Packages
-/// bundled in the petal binary are not repeated here.
+/// null for an entry file outside the project's module directory.
+///
+/// Of the packages bundled in the petal binary, the ones every host carries
+/// (`core`, the builtin packages, `ui`) are never repeated here. A bundled
+/// library ([`petal::bundled::LIBRARIES`]: `bloom`, `text_layout`, `glsl`)
+/// that the entry loads, directly or through other modules, is — with the
+/// libraries its manifest depends on — because the wasm runtimes are built
+/// without them; [`BundleOptions::no_libraries`] leaves them out for a host
+/// known to have them.
 pub fn bundle(entry: &Path) -> Result<serde_json::Value, String> {
+    bundle_with(entry, &BundleOptions::default())
+}
+
+/// How [`bundle_with`] goes about it.
+#[derive(Debug, Clone, Default)]
+pub struct BundleOptions {
+    /// Leave out the bundled libraries the program imports: the host has
+    /// them (it was built with the `petal` crate's `libraries` feature).
+    pub no_libraries: bool,
+}
+
+/// [`bundle`] with options.
+pub fn bundle_with(entry: &Path, options: &BundleOptions) -> Result<serde_json::Value, String> {
     let source = std::fs::read_to_string(entry)
         .map_err(|e| format!("cannot read {}: {e}", entry.display()))?;
     let root = project_root(entry)?;
@@ -1726,8 +1746,39 @@ pub fn bundle(entry: &Path) -> Result<serde_json::Value, String> {
             "modules": modules,
         }));
     }
-    let requires: Vec<serde_json::Value> = graph
-        .requires()
+    let mut requires = graph.requires();
+    if !options.no_libraries {
+        for package in bundled_libraries(&graph, &source, &entry_file)? {
+            let mut modules = serde_json::Map::new();
+            let manifest = petal::bundled::package(&package.info.name)
+                .map(|b| b.manifest())
+                .unwrap_or_default();
+            modules.insert(MANIFEST_FILE.to_string(), manifest.into());
+            for module in &package.info.modules {
+                let loaded = package.load(module).ok_or_else(|| {
+                    format!(
+                        "cannot read module '{module}' of the bundled package '{}'",
+                        package.info.name
+                    )
+                })?;
+                modules.insert(module.clone(), loaded.source.into());
+            }
+            requires.extend(package.info.requires.iter().map(|r| {
+                petal::package::RequiredInterface {
+                    interface: r.interface.clone(),
+                    version: r.version.clone(),
+                    package: package.info.name.clone(),
+                }
+            }));
+            packages.push(serde_json::json!({
+                "name": package.info.name,
+                "version": package.info.version,
+                "modules": modules,
+            }));
+        }
+        requires.sort_by(|a, b| (&a.interface, &a.package).cmp(&(&b.interface, &b.package)));
+    }
+    let requires: Vec<serde_json::Value> = requires
         .iter()
         .map(|r| {
             serde_json::json!({
@@ -1747,6 +1798,43 @@ pub fn bundle(entry: &Path) -> Result<serde_json::Value, String> {
         "packages": packages,
         "requires": requires,
     }))
+}
+
+/// The bundled libraries a bundle of the program at `entry_file` carries:
+/// each one whose embedded copy the program loads, and the bundled
+/// libraries those depend on (`bloom` names `text_layout` under its
+/// [dependencies]), in bundling order. One the graph already holds — the
+/// project lists it under [dependencies] — is there already.
+fn bundled_libraries(
+    graph: &Graph,
+    source: &str,
+    entry_file: &Path,
+) -> Result<Vec<petal::package::Package>, String> {
+    let env = petal::env::Env::new();
+    let mut wanted: Vec<&str> = env
+        .bundled_libraries_loaded(source, Some(entry_file))
+        .map_err(|e| format!("cannot bundle {}: {e}", entry_file.display()))?;
+    let mut packages = Vec::new();
+    let mut i = 0;
+    while i < wanted.len() {
+        let name = wanted[i];
+        i += 1;
+        let bundled = petal::bundled::package(name)
+            .ok_or_else(|| format!("the bundled library '{name}' is not in this build of petal"))?;
+        let package = petal::package::Package::bundled(bundled).map_err(|e| e.to_string())?;
+        for dep in &package.info.dependencies {
+            if let Some(lib) = petal::bundled::LIBRARIES.iter().find(|l| **l == dep.name)
+                && !wanted.contains(lib)
+            {
+                wanted.push(lib);
+            }
+        }
+        packages.push(package);
+    }
+    let order = |name: &str| petal::bundled::LIBRARIES.iter().position(|l| *l == name);
+    packages.retain(|p| graph.packages.iter().all(|n| n.name != p.info.name));
+    packages.sort_by_key(|p| order(&p.info.name));
+    Ok(packages)
 }
 
 // ── the loader's view ────────────────────────────────────────────

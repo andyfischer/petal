@@ -3230,9 +3230,6 @@ impl Parser {
     }
 }
 
-/// Parse a hex color string (without '#') into (field_name, value) pairs.
-/// Supports #rgb, #rgba, #rrggbb, #rrggbbaa formats.
-/// Shared with `crate::cst_project` so the CST projection can't drift.
 /// The parse error for an `@` where an expression starts. `@` is reserved
 /// for declaration annotations (docs/proposals/annotation-syntax.md); its old
 /// meaning, the rebind operator (`f(@x)` for `x = f(x)`), was removed on
@@ -3253,6 +3250,9 @@ pub(crate) fn at_rebind_removed_message(name: Option<&str>) -> String {
     }
 }
 
+/// Parse a hex color string (without '#') into (field_name, value) pairs.
+/// Supports #rgb, #rgba, #rrggbb, #rrggbbaa formats.
+/// Shared with `crate::cst_project` so the CST projection can't drift.
 pub(crate) fn parse_color_hex(hex: &str) -> Vec<(&'static str, i64)> {
     let expand = |c: u8| -> i64 {
         let v = if c.is_ascii_digit() {

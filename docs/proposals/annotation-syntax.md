@@ -1,7 +1,10 @@
 # Proposal: `@` annotation syntax
 
-Status: proposed, 2026-11-09. Investigation only; nothing is implemented.
-Requested in `docs/tasks/annotation-syntax.md`.
+Status: proposed, 2026-11-09. Investigation only; the annotation syntax is
+not implemented. Requested in `docs/tasks/annotation-syntax.md`. The old `@`
+rebind operator this proposal inventoried was removed the same day (commit
+`f0522249`); the sections below that describe it are a record of what was
+there.
 
 ## Summary
 
@@ -11,16 +14,19 @@ use it for the static annotations `const` and `tunable`.
 
 The findings, in short:
 
-- **The `@` rebind operator still exists** (`f(@x)` means `x = f(x)`). It is
-  in the lexer, the parser, the CST, a desugar pass and about 20 readers, but
-  the Petal-using corpus barely uses it: one `.ptl` file in this repo
+- **The `@` rebind operator** (`f(@x)` meant `x = f(x)`) was in the parser,
+  the CST, a desugar pass and about 20 readers when this was written, but the
+  Petal-using corpus barely used it: one `.ptl` file in this repo
   (`test/at-arg-update/main.ptl`, 4 uses), about a dozen Rust string fixtures,
   and nothing in Cheesecake, petal-creative, worlds-fair or petal-lang.org.
-  Removing it is cheap. Another agent is removing it; the inventory is in
+  It has since been removed (`f0522249`; `petal migrate-old-code`'s
+  `at-rebind` migration rewrites it). The lexer still produces the `@`
+  token. The inventory is in
   [The old `@` rebind operator](#the-old--rebind-operator).
-- **`@` at the start of a statement is unused syntax.** Today `@d` on its own
-  line is a compile error and `@d(1)` is a parse error, so a statement-start
-  annotation cannot change what any working program means. Python uses the
+- **`@` at the start of a statement is unused syntax.** Today an `@` anywhere
+  an expression or statement starts, `@d` and `@d(1)` included, is a parse
+  error, so a statement-start annotation cannot change what any working
+  program means. Python uses the
   same trick: `@` is matrix multiplication between operands and a decorator at
   the start of a statement.
 - **Petal cannot match Python's semantics for `fn` exactly.** Python's
@@ -41,12 +47,14 @@ The findings, in short:
   convention that fits is Swift's property wrappers: the declared value goes
   in as the first argument.
 
-**Recommendation: adopt a smaller version, after the rebind operator is
+**Recommendation: adopt a smaller version, now that the rebind operator is
 removed.**
 
 1. `@name` and `@name(args)` are **declaration annotations**. They are
-   written at the start of a top-level `let` (before `pub`), and `name` must
-   be one of the reserved annotation builtins: `const`, `tunable` or `rigid`.
+   written at the start of a `let` (before `pub`), and `name` must be one of
+   the reserved annotation builtins: `const`, `tunable` or `rigid`. They are
+   allowed wherever the call form is: `@const` only on a top-level `let`,
+   `@tunable` and `@rigid` on any `let` ([D1](#d1-proposed-declaration-annotations-on-let)).
    `@f(a, b) let X = v` means exactly `let X = f(v, a, b)`. Stacked
    annotations apply bottom-up, as in Python. The parser lowers it to the
    call, so the AST, the IR, the static classifier, DM, hot reload and hosts
@@ -146,13 +154,15 @@ CPython 3.14.6 (script and `dis` output in the session scratchpad).
    `func2` while decorating gets `NameError`. The result can be anything: a
    decorator returning `42` binds `func2 = 42`.
 5. **Recursion goes through the name.** A function body refers to its own
-   name by a global lookup at call time, so it reaches the *decorated* object.
+   name by a lookup at call time (a global lookup for a module-level `def`,
+   a closure cell for a nested one), so it reaches the *decorated* object.
    This is why `@functools.lru_cache def fib` memoizes the recursive calls.
    Checked: a logging decorator on a recursive `fact` logs `call 3`, `call 2`
    and `call 1`.
 6. **Class decorators** (PEP 3129) follow the same rules on a `class`
    statement. The decorator receives the class object and its result is bound
-   to the class name (`@dataclass` returns the same class, changed).
+   to the class name (`@dataclass` returns the same class, changed, unless
+   `slots=True`, which makes a new class).
 7. **Methods.** A decorator inside a class body runs while the body executes,
    and what is stored in the class namespace is its result, often not a
    function at all (`@property`, `@staticmethod` and `@classmethod` return
@@ -170,7 +180,14 @@ CPython 3.14.6 (script and `dis` output in the session scratchpad).
 
 ### The old `@` rebind operator
 
-It still exists and works:
+**Removed on 9 November 2026 (`f0522249`).** What is left: the lexer still
+produces `Token::At` (`core/src/lexer.rs:84`, now commented "reserved for
+annotations"), and an `@` where an expression starts is a parse error from
+`parse::at_rebind_removed_message`, which says to write `x = f(x)` and run
+`petal migrate-old-code`. The `at-rebind` migration
+(`core/src/migrate/at_rebind.rs`) rewrites old code. The inventory below is
+kept as the record of what the removal touched; its line numbers are as of
+`7844902b`, before the removal.
 
 - **Lexer:** `Token::At` (`core/src/lexer.rs:84` "in-out argument marker",
   produced at `:640-643`, named at `:184`).
@@ -196,9 +213,10 @@ It still exists and works:
   `apply_change/convert_to_var.rs:692`, the comment at `lint/mod.rs:83-86`,
   and the help text at `core/src/cli/help.rs:1140`.
 - **Not in tree-sitter.** `editor-support/tree-sitter-petal/grammar.js` has
-  no rule for `@`, so editors already show `f(@x)` as an ERROR node. Neither
-  `editor-support/vim/syntax/petal.vim` nor petal-lang.org's
-  `frontend/src/lib/petal/highlight.ts` knows it either.
+  no rule for `@`, so editors already show `f(@x)` as an ERROR node.
+  petal-lang.org's `frontend/src/lib/petal/highlight.ts` does not know it
+  either. `editor-support/vim/syntax/petal.vim` only listed `@` among its
+  single-character operators (`petalOperator`); the removal took it out.
 - **Corpus.** A lexer-accurate scan (comments and strings skipped,
   interpolation holes scanned) of every `.ptl` file found:
 
@@ -228,10 +246,11 @@ It still exists and works:
   pushing code into `f(@x)` "because it reads as sugar that has to be
   learned".
 
-Removing it is a prerequisite. With the rebind operator gone, `@` means only
-"annotation" and an `@` in an expression is simply an error. Removal is
-mechanical: `f(@x)` becomes `x = f(x)`, which the desugar pass already proves
-equal, and is a `petal migrate-old-code` rule.
+Removing it was a prerequisite, and is done. With the rebind operator gone,
+`@` means only "annotation" and an `@` in an expression is simply an error.
+The removal was mechanical: `f(@x)` becomes `x = f(x)` (the nested form, a
+preceding assignment), exactly what the desugar pass produced, and the
+`at-rebind` rule of `petal migrate-old-code` does the rewrite.
 
 ### Other uses of `@` (no conflict)
 
@@ -255,22 +274,28 @@ equal, and is a `petal migrate-old-code` rule.
 
 ### Today's parse of the proposed syntax
 
-The proposed syntax is checked against today's compiler (`cli/target/debug/petal`):
+The proposed syntax is checked against today's compiler
+(`cli/target/debug/petal`, after the rebind operator's removal):
 
 ```
-@d                      error: `@d` can only be used as an argument to a call at statement level
-fn f(x) … end           (compile error, program not run)
-
-@d(1)                   Error: `@var` cannot be called as a function
+@d                      `@d` is not an expression: the `@` rebind operator was removed. …
 fn f(x) … end           (parse error)
+
+@d(1)                   the same parse error
+fn f(x) … end
+
+@tunable let X = 4      the same parse error
 ```
 
 No program that runs today has `@` at the start of a statement, so giving
-that position a meaning changes no working program. The rebind operator could
-even stay alongside it, because an annotation is at the start of a statement
-and a rebind is inside a call's argument list. Removing the rebind operator is
-still the right order, because "`@` means one thing" is what makes the
-annotation readable.
+that position a meaning changes no working program. (Before the removal,
+`@d` alone was a compile error and `@d(1)` a parse error, so this held then
+too: the rebind operator could have stayed alongside annotations, because an
+annotation is at the start of a statement and a rebind was inside a call's
+argument list. Removing it first was still the right order, because "`@`
+means one thing" is what makes the annotation readable.) When D1 lands, the
+parse error for `@` in an expression should point at the annotation syntax
+as well as at the migration.
 
 ### D1 (proposed): declaration annotations on `let`
 
@@ -429,7 +454,7 @@ today's compiler (`cli/target/debug/petal run`): output
 **1. A settings block with bounds, the common Cheesecake case**
 (`cheesecake/games/canopy/core/tune.ptl:12-15`)
 
-```petal
+```petal ignore
 // before
 pub let RUN = tunable(7.0, 3.0, 12.0)                 // top speed, tiles/s
 pub let ACCEL = tunable(60.0, 10.0, 200.0)            // on the ground, tiles/s²
@@ -449,7 +474,7 @@ is a wash. There is one new mistake to make: `@tunable(3.0, 12.0)` looks like
 **2. A plain setting** (`cheesecake/games/demo/basic.ptl:25`, one of 1,324
 one-argument `tunable`s)
 
-```petal
+```petal ignore
 // before
 let KICK = tunable(6.0)          // upward impulse of the space-bar kick (N·s)
 // after
@@ -463,7 +488,7 @@ visible" argument, and it is a modest one.
 **3. A multi-line constant table, the case the change helps most**
 (`cheesecake/games/gta/vehicles.ptl:22-29`, one of 146 multi-line sites)
 
-```petal
+```petal ignore
 // before
 pub let KINDS = const({
   sedan: {size: vec3(1.8, 0.6, 4.2), mass: 1200.0, engine_torque: 1500.0, max_speed: 30.0,
@@ -505,7 +530,7 @@ one-line rule "on a declaration, `@`; inside an expression, the call."
 **5. Interaction with `state` and hot reload** (the `START` pattern from
 `syntax/settings.md`)
 
-```petal
+```petal ignore
 // before
 let START = tunable("title", options: ["title", "select", "play"])
 state screen = START
@@ -528,7 +553,7 @@ change.
 **6. A Python-style function decorator: not proposed** (constructed; the
 corpus has none)
 
-```petal
+```petal ignore
 // what someone coming from Python will try
 @logged
 fn fact(n)
@@ -550,7 +575,7 @@ difference from Python, which is worse than a clear error.
 
 | Change | Kind |
 |---|---|
-| Rebind operator removed: `f(@x)` ⇒ `x = f(x)` (and the nested form ⇒ a preceding assignment) | mechanical; a `migrate-old-code` rule. The desugar pass is the rewrite, and its IR is already identical (`desugar.rs:494`). One `.ptl` file and about 12 Rust fixtures. |
+| Rebind operator removed: `f(@x)` ⇒ `x = f(x)` (and the nested form ⇒ a preceding assignment) | done (`f0522249`): the `at-rebind` rule of `migrate-old-code`, which writes what the desugar pass produced. One `.ptl` file and about 12 Rust fixtures were changed. |
 | `let X = const(e)` / `tunable(v, …)` / `rigid(v)` as a whole initializer ⇒ `@…` | mechanical, *if* the owner makes `@` canonical; a `migrate-old-code` rule. About 1,870 sites, 1,657 of them in Cheesecake. |
 | `const X = e`, `config let` (deprecated in Phase 5) | the existing lifecycle rules. If `@` is canonical, they could rewrite straight to `@const` / `@tunable` and skip the call form. |
 | Nested hint calls | unchanged |
@@ -643,8 +668,8 @@ difference from Python, which is worse than a clear error.
 ### Maintainability of the implementation
 
 - **Findings.** Stages touched by D1:
-  - Removing the rebind operator first deletes about 300 lines (the desugar
-    pass, `AtVar` and its about 20 arms).
+  - The rebind operator is already removed (`f0522249`: the desugar pass's
+    lifting, `AtVar` and its about 20 arms).
   - Parser: statement-start annotations, about 100 to 150 lines.
   - CST: an `Annotation` node and its projection.
   - fmt `spacing.rs`: one rule.
@@ -685,10 +710,10 @@ difference from Python, which is worse than a clear error.
   removal breaks one test file and about 12 fixtures, and a rule handles them.
   Making `@` canonical would be a second sweep of the same about 1,870
   declarations that were swept on 9 November. It would be done by the
-  `petal migrate-old-code` tool being built now (`docs/tasks/migration-tool.md`;
-  `core/src/migrate/` is appearing in the tree). It could ship as an accepted
-  alternative first and be canonicalised later. It depends on the rebind
-  removal (in progress). It closes off nothing: F1's reserved slot keeps both
+  `petal migrate-old-code` tool (`docs/tasks/migration-tool.md`,
+  `core/src/migrate/`). It could ship as an accepted alternative first and be
+  canonicalised later. It depended on the rebind removal, which is done
+  (`f0522249`). It closes off nothing: F1's reserved slot keeps both
   compile-time `fn` annotations and a later F2 possible.
 - **Opinion.** The churn is the strongest argument against. If the owner does
   canonicalise, it is best to do it before lifecycle Phase 6 removes the
@@ -736,9 +761,10 @@ difference from Python, which is worse than a clear error.
 
 Order:
 
-1. **Remove the rebind operator** (the other agent's task). Add a
-   `migrate-old-code` rule `f(@x)` ⇒ `x = f(x)`. After that, an `@` in an
-   expression is a parse error that points at the annotation syntax.
+1. **Remove the rebind operator.** Done (`f0522249`), with the
+   `migrate-old-code` rule `at-rebind` (`f(@x)` ⇒ `x = f(x)`). An `@` in an
+   expression is now a parse error that points at the migration; step 2
+   should make it point at the annotation syntax too.
 2. **Parser and CST:** `annotation+` at statement start, before `pub`/`let`.
    Lower to the call, innermost annotation nearest the value. Add the CST
    `Annotation` node and `cst_project`, plus the errors under Design. For

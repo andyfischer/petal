@@ -22,7 +22,7 @@
 // in.
 import bloom/theme: theme, ts, tone, hair, stroke, wash, rate
 import bloom/motion: ease_to, ease_out, age
-import bloom/interact: probe, focusable, is_captured
+import bloom/interact: probe, focusable, pointer_free
 import bloom/overlay: tooltip
 import text_layout: text_baseline
 import ui
@@ -43,10 +43,11 @@ fn _field_style(t: record, opts: record) -> record
 end
 
 // What `ui.text_field_update` / `ui.text_area_update` read from their style.
-// The pointer stays out while a bloom overlay holds input.
-fn _update_style(t: record, opts: record, inset: num) -> record
+// The pointer stays out while a bloom overlay holds input, unless the field
+// sits inside that overlay (a field in a dialog).
+fn _update_style(t: record, r: record, opts: record, inset: num) -> record
   {...opts, text_style: _field_style(t, opts), inset: inset,
-   pointer: field(opts, "pointer", true) && !is_captured()}
+   pointer: field(opts, "pointer", true) && pointer_free(r)}
 end
 
 // The selection tint: the accent over the field's own face.
@@ -120,7 +121,7 @@ fn text_field_impl(r: record, buf: string, opts: record) -> record
   focusable(id)
   let inset = field(opts, "inset", t.pad_x)
   let res = text_field_update(id, r, buf,
-    {..._update_style(t, opts, inset), scroll: field(opts, "scroll", true)})
+    {..._update_style(t, r, opts, inset), scroll: field(opts, "scroll", true)})
   let has = has_focus(id)
   draw_field_impl(r, res, has, opts)
   {...res, focused: has}
@@ -206,7 +207,7 @@ fn text_area_impl(r: record, buf: string, opts: record) -> record
   let id = _field_id(opts)
   focusable(id)
   let inset = field(opts, "inset", 8)
-  let res = text_area_update(id, r, buf, _update_style(t, opts, inset))
+  let res = text_area_update(id, r, buf, _update_style(t, r, opts, inset))
   let has = has_focus(id)
   draw_area_impl(r, res, has, opts)
   {...res, focused: has}
@@ -371,7 +372,7 @@ fn number_impl(r: record, value: num, opts: record) -> record
     focusable(id)
     let p = probe(r)
     let it = interact(r, id)
-    let live = !is_captured()
+    let live = pointer_free(r)
     let radius = field(opts, "radius", t.radius_sm)
     let bg = field(opts, "bg", tone(t, t.panel, 0.25))
     draw_rect_rounded(r, radius, wash(t, bg, p.hot, p.active))

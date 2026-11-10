@@ -114,7 +114,7 @@ fn bloom_is_importable_from_a_pushed_drawer() {
     // the module named like the package — the facade — and `bloom/motion` &c.
     // are its siblings.
     let ui = Ui::new("import bloom\nlet v = bloom.VERSION\n");
-    assert_eq!(ui.value("v"), Some(2));
+    assert_eq!(ui.value("v"), Some(3));
     let ui = Ui::new("import bloom/motion: ease_to\nlet v = int(ease_to(1.0, 1.0))\n");
     assert_eq!(ui.value("v"), Some(1));
 }
@@ -278,6 +278,28 @@ fn a_dialog_blocks_the_panel_and_escape_closes_it() {
     ui.tick(20);
     ui.click(60, 274);
     assert_eq!(ui.int("clicks"), Some(1), "and input comes back after");
+}
+
+#[test]
+fn a_dialogs_own_controls_work_and_the_page_under_it_does_not() {
+    // The dialog box is 200 x 120, centred in 400 x 300: x 100..300,
+    // y 90..210. "Under" sits inside that box but is drawn *before* the
+    // dialog, as the page underneath; "Inside" is drawn into the dialog's
+    // content after the call.
+    let mut ui = Ui::new(
+        "import bloom: dialog, dialog_open, button\n\
+         state under = 0\n\
+         state inside = 0\n\
+         state started = false\n\
+         if !started then dialog_open(\"d\")\n started = true end\n\
+         if button(rect(110, 170, 80, 26), \"Under\") then under += 1 end\n\
+         let d = dialog(\"d\", 200, 120, \"Title\")\n\
+         if d.open && button(rect(d.content.x, d.content.y + d.content.h - 26, 80, 26), \"Inside\") then inside += 1 end\n",
+    );
+    ui.tick(20);
+    ui.click(150, 183);
+    assert_eq!(ui.int("inside"), Some(1), "a button inside the dialog fires");
+    assert_eq!(ui.int("under"), Some(0), "the page under the box stays inert");
 }
 
 #[test]

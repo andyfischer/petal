@@ -27,12 +27,38 @@ import ui
 
 state var _owner = ""
 state var _owner_frame = -2
+// The box an overlay the app draws *into* (a dialog, a popover) claimed this
+// run, inside which probes stay live. A plain module `var` starts over every
+// run, so it is set only for the calls made after the overlay's own call in
+// this frame: the app's content inside the box. The controls painted
+// underneath, earlier in the frame, see nil and stay inert even where they
+// sit under the box.
+var _owner_area = nil
 
 // Claim the pointer for `owner` (any stable string). Call it every frame the
 // overlay is open.
 pub fn capture(owner: string)
   set _owner = owner
   set _owner_frame = frame_count()
+  set _owner_area = nil
+end
+
+// The same claim, for an overlay whose contents the app draws after it:
+// probes made later this frame that lie inside `area` stay live, so the
+// buttons and fields inside a dialog work while everything else is inert.
+pub fn capture(owner: string, area: record)
+  set _owner = owner
+  set _owner_frame = frame_count()
+  set _owner_area = area
+end
+
+// Whether the pointer is free for a control at `r`: no claim is live, or
+// `r` lies inside the box an overlay claimed earlier this frame. `probe`
+// asks this; a control that reads the mouse itself asks it too.
+pub fn pointer_free(r: record) -> bool
+  let a = get _owner_area
+  !is_captured() || (a != nil && r.x >= a.x && r.y >= a.y &&
+    r.x + r.w <= a.x + a.w && r.y + r.h <= a.y + a.h)
 end
 
 // Whether some overlay is holding input right now.
@@ -48,6 +74,7 @@ end
 pub fn capture_release()
   set _owner = ""
   set _owner_frame = -2
+  set _owner_area = nil
 end
 
 // ── Probes ────────────────────────────────────────────────────────────────
@@ -67,7 +94,7 @@ end
 // back to rest, so disabling a hovered button fades it out rather than
 // snapping.
 pub fn probe(r: record, enabled: bool) -> record
-  probe_at(r, enabled, !is_captured())
+  probe_at(r, enabled, pointer_free(r))
 end
 
 pub fn probe(r: record) -> record
@@ -99,7 +126,7 @@ end
 
 // The two shorthands, for the many places that want one bool.
 pub fn hovering(r: record)
-  !is_captured() && point_in(mouse_x(), mouse_y(), r)
+  pointer_free(r) && point_in(mouse_x(), mouse_y(), r)
 end
 
 pub fn clicked(r: record)
@@ -115,7 +142,7 @@ pub fn drag(r: record) -> record
   state on = false
   state sx = 0
   state sy = 0
-  if !is_captured() && point_in(mouse_x(), mouse_y(), r) && mouse_pressed(0) then
+  if pointer_free(r) && point_in(mouse_x(), mouse_y(), r) && mouse_pressed(0) then
     on = true
     sx = mouse_x()
     sy = mouse_y()

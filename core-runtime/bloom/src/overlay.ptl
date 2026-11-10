@@ -211,9 +211,6 @@ pub fn dialog(id: string, w: num, h: num, title: string, opts: record) -> record
   if !open && k <= 0.0 then
     {open: false, content: Rect(0, 0, 0, 0), closed: false}
   else
-    if open then
-      capture(id)
-    end
     let e = ease_out(k)
     // The backdrop is genuinely translucent (there is content under it that
     // this code did not paint), which is the one case where compositing a tint
@@ -225,6 +222,11 @@ pub fn dialog(id: string, w: num, h: num, title: string, opts: record) -> record
     // that bounces on its way out reads as a bug.
     let scale = if open then 0.94 + 0.06 * ease_back(k) else 0.96 + 0.04 * e end
     let box = scale_rect(Rect((sw - w) / 2.0, (sh - h) / 2.0 + 10.0 * (1.0 - e), w, h), scale)
+    // The claim names the box: what the app draws into it after this call
+    // (and the close button below) stays live; the page underneath does not.
+    if open then
+      capture(id, box)
+    end
     draw_shadow(box, {radius: t.radius_lg, blur: 40, spread: 0, dx: 0, dy: 18, color: #000000, a: int(90.0 * e)})
     draw_rect_rounded(box, t.radius_lg, tone(t, t.panel, 0.06), int(255.0 * e))
     stroke(t, box, t.radius_lg, hair(t), 1, tone(t, t.panel, 0.06))
@@ -285,13 +287,13 @@ pub fn popover(id: string, anchor: record, w: num, h: num) -> record
   if !open && k <= 0.0 then
     {open: false, content: Rect(0, 0, 0, 0)}
   else
-    if open then
-      capture(id)
-    end
     let e = ease_out(k)
     let x = clamp(anchor.x, 4.0, max(4.0, float(screen_width()) - w - 4.0))
     let y = anchor.y + anchor.h + 6.0 - 5.0 * (1.0 - e)
     let box = Rect(x, y, w, h * (0.96 + 0.04 * e))
+    if open then
+      capture(id, box)
+    end
     draw_shadow(box, {radius: t.radius_lg, blur: 26, spread: 0, dx: 0, dy: 10, color: #000000, a: int(70.0 * e)})
     draw_rect_rounded(box, t.radius_lg, tone(t, t.panel, 0.06), int(255.0 * e))
     stroke(t, box, t.radius_lg, hair(t), 1, tone(t, t.panel, 0.06))

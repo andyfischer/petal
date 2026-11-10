@@ -118,6 +118,7 @@ overlay's own contents.
 | `hovering(r)` / `clicked(r)` | the one-bool shorthands |
 | `drag(r)` | `{active, x, y, dx, dy, start_x, start_y}`; keeps tracking outside `r` |
 | `capture(owner)` / `is_captured()` / `capture_release()` | an overlay claims the pointer for a frame; every `probe` goes inert while a claim is live |
+| `capture(owner, area)` / `pointer_free(r)` | the claim of an overlay the app draws into (a dialog, a popover): controls drawn *after* it inside `area` stay live, the page under it does not. `pointer_free(r)` is the test `probe` makes, for a control that reads the mouse itself |
 | `focusable(id)` | announce a control in draw order (= tab order) and report whether it has focus |
 | `focused(id)` / `focus_set(id)` / `focus_clear()` / `focus_id()` | `ui`'s runtime focus: `has_focus` / `focus_request` / `focus_owner` |
 | `key(k)` / `chord(k, mods)` | a key press, ignored while an overlay holds input; `mods` is `"cmd"`, `"ctrl"`, `"alt"`, `"shift"`, or `"cmdctrl"` |
@@ -253,8 +254,9 @@ One menu is open at a time, program-wide, and the library holds that fact.
 An item is a string or a record: `{label, hint, icon, disabled, sep, danger}`.
 `sep: true` draws a divider and cannot be chosen. Menus flip up and pull left
 rather than draw off-screen, handle up/down/Return/Escape, close on an outside
-click, and **capture input** while open — so the panel underneath needs no
-guard of its own.
+click, and **capture input** while open — bloom's own probes, and, through
+`ui_modal` on a high layer, every control built on `ui.interact` — so the
+panel underneath needs no guard of its own.
 
 ## Display
 

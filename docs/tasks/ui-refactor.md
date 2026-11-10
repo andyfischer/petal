@@ -37,7 +37,7 @@ The parts of `ui/widgets` that draw nothing move to a new module
 
 Everything else in `ui/widgets` is deprecated in `ui` and has a bloom
 replacement. The old definitions stay in `ui/widgets` (still re-exported by
-`ui`) for the deprecation period; `petal lint` rule `ui-widget-moved` names
+`ui`) for the deprecation period; compile warning `[ui-widget-moved]` names
 the replacement at every call.
 
 | `ui` (deprecated) | bloom |
@@ -76,20 +76,52 @@ bloom is an opt-in cargo feature. Every host whose scripts use widgets has to
 carry it: petal-web-canvas gains the `bloom` feature (the playground's
 examples use widgets); petal-web-html and garden-web stay without it.
 
-### Steps
+### Done (2026-11-10)
 
-- [ ] P1 `ui`: split `ui/widgets` into `ui/interaction` (kept) and the
-  deprecated widgets; lint rule `ui-widget-moved`.
-- [ ] P2 bloom: focus on the `ui` runtime; `text_field` on
-  `text_field_update`; the new components; `opts.fill` / `opts.ink`;
-  docs/components.md.
-- [ ] P3 Callers in this repo: `examples/`, `garden/`, `integrations/`,
-  `test/`, `core-libs/`, plus the golden and scenario tests they feed.
-- [ ] P4 petal-web-canvas with bloom; the docs (`ui` and bloom READMEs,
-  project-organization skill).
-- [ ] P5 `~/petal-creative`. Cheesecake is not migrated: it gets the lint
-  warnings and moves during the deprecation period.
-- [ ] Later: remove the deprecated widgets from `ui/widgets`.
+`ui/interaction` split out; the compile warning `[ui-widget-moved]`
+(core/src/compiler/moved_widgets.rs, once per name per file, silenced by
+`// petal-lint-ignore ui-widget-moved`); bloom's `fields`, `display` and
+`panes` modules, `button`'s `fill` / `ink`, focus on the `ui` runtime;
+every caller in this repo and in `~/petal-creative` ported; petal-web-canvas
+built with `bloom`; worlds-fair re-vendored (it draws its own field and
+scrollbar on `ui/interaction` and does not use bloom). An open bloom dialog
+or popover keeps the controls drawn into it live (`capture(owner, area)`,
+`pointer_free(r)`), and an open bloom menu raises `ui`'s modal floor, so
+controls built on `ui.interact` underneath go inert as they did under
+`ui`'s menus.
+
+### Left
+
+- [ ] **Cheesecake** still calls the deprecated widgets (it gets the
+  warnings). Port it during the deprecation period, then re-vendor.
+- [ ] **The website.** `~/biz/petal-lang.org`'s copy of the DM sample
+  `settings-card.ptl` still uses `ui.card` / `button` / `progress_bar`, and
+  garden-web (which runs it) has no bloom. Re-run `pnpm build:sdk` and
+  `scripts/sync-examples.mjs` so the playground gets the ported examples.
+- [ ] **Remove the deprecated widgets** from `ui/widgets` once the
+  deprecation period ends, with `moved_widgets.rs`. The vitest fixture
+  `test/vitest/fixtures/implicit-imports/late_app.ptl` needs another
+  colliding `ui` name then.
+- [ ] **bloom ignores `ui`'s hit testing.** Its `probe` reads the mouse
+  directly, so bloom controls are not `interact` targets: `click_target` and
+  `--targets` cannot find them by name, and they ignore `with_layer`,
+  `ui_block` and `ui_modal` (examples/ui/layers wraps its buttons in
+  `interact` for that reason), and `bloom.dialog` does not set
+  `pointer_captured()`. Building `probe` on `interact` would make bloom a
+  proper client of `ui`'s interaction layer; it needs the dialog's content
+  drawn on the dialog's layer.
+- [ ] **Bare names from `import bloom` win over `ui`'s.** Names both export
+  (`clicked`, `ease_out`, `ease_in_out`, `theme`, `theme_set`,
+  `theme_reset`, `popover_open`, `popover_close`, `select`) silently switch
+  to bloom's when a file adds `import bloom`, with no warning; the ports pin
+  them as `ui.x`. Either rename bloom's, or have the compiler warn when a
+  second plain import changes what a bare name resolves to.
+- [ ] **Style options bloom lacks**, which ports had to drop: `menu` /
+  `context_menu` colours, `row_h`, `radius` and font; `slider` track and
+  knob colours; `progress` track and radius; `spinner` width.
+- [ ] **Regenerated reports.** `docs/dev/direct-manipulation-v2-study.{md,json}`
+  still describe the old `l10b-ui-panel` goals (re-run `full_study` with
+  `DM_STUDY_WRITE`).
 
 ## Needs a display
 

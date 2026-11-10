@@ -130,9 +130,19 @@ pub fn menu(id: string, anchor: record, items: list, opts: record)
   end
 end
 
+// The `ui` layer an open menu raises the modal floor on. bloom's own
+// controls go inert through `capture`; the floor does the same for every
+// control built on `ui.interact` (list rows, fields, an app's own hit
+// rects), which bloom's claim does not reach. It is what `ui`'s popover
+// runtime used to do for its menus.
+let _MENU_LAYER = 1000
+
 fn _draw_menu(t: record, id: string, anchor: record, items: list, opts: record, open: bool, k: num)
   if open then
     capture(id)
+    let prev = ui_layer(_MENU_LAYER)
+    ui_modal()
+    ui_layer(prev)
   end
   let size = field(opts, "size", t.font_md)
   let box = menu_size(items, opts)

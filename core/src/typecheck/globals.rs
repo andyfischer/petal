@@ -50,6 +50,33 @@ pub fn named_native_call_error(
     if sigs.iter().any(|s| s.bind(name, &indices, names).is_ok()) {
         return None;
     }
+    // A name no form has: list every parameter the forms have between them,
+    // not only the ones of the form this many arguments would pick
+    // (`tunable(4.0, minimum: 0)` is aimed at `min:`, which the two-argument
+    // `options:` form does not have).
+    if sigs.len() > 1
+        && let Some(written) = names
+            .iter()
+            .flatten()
+            .find(|w| !sigs.iter().any(|s| s.params().iter().any(|p| p == *w)))
+    {
+        // The fullest form first, so the names keep its order.
+        let mut forms: Vec<&NativeSignature> = sigs.iter().collect();
+        forms.sort_by_key(|s| std::cmp::Reverse(s.params().len()));
+        let mut known: Vec<String> = Vec::new();
+        for sig in forms {
+            for p in sig.params() {
+                let p = format!("'{p}'");
+                if !known.contains(&p) {
+                    known.push(p);
+                }
+            }
+        }
+        return Some(format!(
+            "{name}() has no parameter named '{written}' (parameters: {})",
+            known.join(", ")
+        ));
+    }
     // The form the call was aimed at, chosen as the run chooses it
     // (`native_fn::bind_native_args`): the only one, or the one with exactly
     // this many parameters. With several forms and none of that length there
@@ -329,6 +356,19 @@ mod tests {
                 "4:3 clamp() is missing a value for parameter 'lo'",
                 "5:3 slice() is missing a value for parameter 'start'",
             ]
+        );
+    }
+
+    #[test]
+    fn tunable_takes_its_bounds_by_name() {
+        let ok = "let A = tunable(4.0, min: 0, max: 10)\nlet B = tunable(4.0, max: 10, min: 0, step: 0.5)\nlet C = tunable(\"a\", options: [\"a\", \"b\"])\nlet D = tunable(4.0, 0, max: 10)\nprint(A, B, C, D)";
+        assert!(unresolved(ok).is_empty(), "{:?}", unresolved(ok));
+        // A misspelled bound lists every name `tunable` takes, not only the
+        // two-argument `options:` form's.
+        let got = unresolved("if false then tunable(4.0, minimum: 0) end");
+        assert_eq!(
+            got,
+            ["1:15 tunable() has no parameter named 'minimum' (parameters: 'value', 'min', 'max', 'step', 'options')"]
         );
     }
 

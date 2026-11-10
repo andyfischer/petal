@@ -295,6 +295,17 @@ fn tunable_range_recorded() {
     assert_eq!(s.param(st).hint, Some(Hint::Tunable { min: Some(0.0), max: Some(4.0), step: Some(0.5) }));
     assert_eq!(s.param(st).binding.as_deref(), Some("s"), "the binding of the hint call");
 
+    // The `@` form (docs/proposals/annotation-syntax.md) is the same call:
+    // the same knob, the same named bounds, the same binding.
+    let src = "@tunable(10, 80) let r = 30\n@tunable(min: 0, max: 4, step: 0.5)\nlet s = 2.5\n@rigid let k = 3\ndraw(r + s + k, 0, 1)\n";
+    let s = Setup::new(src, &[(0, 0)]);
+    let r = s.lit(1, "30");
+    assert_eq!(s.param(r).hint, Some(Hint::Tunable { min: Some(10.0), max: Some(80.0), step: None }));
+    let st = s.lit(3, "2.5");
+    assert_eq!(s.param(st).hint, Some(Hint::Tunable { min: Some(0.0), max: Some(4.0), step: Some(0.5) }));
+    assert_eq!(s.param(st).binding.as_deref(), Some("s"));
+    assert_eq!(s.param(s.lit(4, "3")).hint, Some(Hint::Rigid));
+
     // A computed value marks nothing, and says so twice: where the hints are
     // read, and in `petal lint`.
     let bad = "let a = 1.0\nlet b = 2.0\nprint(tunable(a + b), tunable(a, b, 3), tunable(1, 9, 2))\nstate n = tunable(0)\n";

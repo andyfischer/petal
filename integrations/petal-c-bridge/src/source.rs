@@ -530,6 +530,34 @@ mod tests {
     }
 
     #[test]
+    fn an_annotated_setting_reports_what_the_call_form_does() {
+        // docs/proposals/annotation-syntax.md: `@tunable(…) let X = v` is
+        // `let X = tunable(v, …)`, and bounds may be named.
+        let src = "// top speed\n@tunable(min: 3.0, max: 12.0) pub let RUN = 7.0\n\
+                   @tunable(0, 10, step: 2) let N = 4\n\
+                   @tunable(options: [\"title\", \"play\"])\nlet START = \"title\"\n\
+                   let CALL = tunable(7.0, min: 3.0, max: 12.0)\n";
+        let json: serde_json::Value = serde_json::from_str(&bindings_json(src).unwrap()).unwrap();
+        let by = |n: &str| json.as_array().unwrap().iter().find(|b| b["name"] == n).unwrap().clone();
+        let run = by("RUN");
+        assert_eq!(run["value"], 7.0);
+        assert_eq!(run["text"], "7.0");
+        assert_eq!(run["config"], true);
+        assert_eq!(run["exported"], true);
+        assert_eq!(run["comment"], "top speed");
+        assert_eq!(run["tunable"], serde_json::json!({"min": 3.0, "max": 12.0}));
+        assert_eq!(run["tunable"], by("CALL")["tunable"]);
+        assert_eq!(by("N")["tunable"], serde_json::json!({"min": 0.0, "max": 10.0, "step": 2.0}));
+        assert_eq!(by("START")["tunable"], serde_json::json!({"options": ["title", "play"]}));
+
+        let mut s = PbSource::new(src);
+        assert_eq!(s.set_value("RUN", "8.5"), Status::Ok);
+        assert_eq!(s.set_value("START", "\"play\""), Status::Ok);
+        assert!(s.text.contains("@tunable(min: 3.0, max: 12.0) pub let RUN = 8.5\n"), "{}", s.text);
+        assert!(s.text.contains("let START = \"play\"\n"), "{}", s.text);
+    }
+
+    #[test]
     fn a_setting_has_a_tunable_section_with_the_old_keys_mirrored() {
         let src = "let START = tunable(\"title\", options: [\"title\", \"select\", \"play\"])\n\
                    let SPEED = tunable(4.0, 0, 10)  // px per frame\n\

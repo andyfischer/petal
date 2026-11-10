@@ -140,7 +140,10 @@ fn blank(chars: &[char], markers: &[Marker]) -> String {
 }
 
 /// Every `@` directly followed (whitespace allowed) by an identifier. An `@`
-/// in a string or a comment is not a token, so it is not seen.
+/// in a string or a comment is not a token, so it is not seen, and neither is
+/// a declaration annotation (`@tunable let X = 4`,
+/// docs/proposals/annotation-syntax.md): its names (`const` is a keyword
+/// token; `tunable` and `rigid` cannot be bound) were never a rebind's.
 fn find_markers(source: &str) -> Result<Vec<Marker>, String> {
     if !source.contains('@') {
         return Ok(Vec::new());
@@ -154,11 +157,15 @@ fn find_markers(source: &str) -> Result<Vec<Marker>, String> {
     Ok(toks
         .windows(2)
         .filter_map(|w| match (w[0].0, w[1].0) {
-            (Token::At, Token::Ident(name)) => Some(Marker {
-                at: w[0].1,
-                ident: w[1].1,
-                name: name.clone(),
-            }),
+            (Token::At, Token::Ident(name))
+                if !crate::ast::ANNOTATION_NAMES.contains(&name.as_str()) =>
+            {
+                Some(Marker {
+                    at: w[0].1,
+                    ident: w[1].1,
+                    name: name.clone(),
+                })
+            }
             _ => None,
         })
         .collect())

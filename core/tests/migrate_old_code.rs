@@ -322,3 +322,26 @@ fn an_at_in_a_string_or_a_comment_is_not_a_rebind() {
     assert_eq!(out.output, src);
     assert!(out.findings.is_empty());
 }
+
+#[test]
+fn a_declaration_annotation_is_not_a_rebind() {
+    // `@tunable`, `@rigid` and `@const` annotate a declaration
+    // (docs/proposals/annotation-syntax.md); they never were rebinds, since
+    // those names cannot be bound. migrate-old-code leaves them alone, also
+    // beside a real rebind and a deprecated form it rewrites.
+    let src = "@tunable(0, 10) let S = 4.0\n@const\npub let T = [1, 2]\n@rigid state A = 1\n\
+               fn f(x)\n  @tunable let g = x\n  g\nend\nprint(S, T, A, f(1))\n";
+    let out = migrate_with(src, None);
+    assert_eq!(out.output, src);
+    assert!(out.findings.is_empty(), "{:?}", out.findings);
+
+    let src = "fn double(x)\n  x * 2\nend\nlet a = 1\n@tunable(0, 9) let k = 2\n\
+               @rigid const G = 9.8\ndouble(@a)\nprint(a, k, G)\n";
+    let out = migrate_with(src, None);
+    assert_eq!(
+        out.output,
+        "fn double(x)\n  x * 2\nend\nlet a = 1\n@tunable(0, 9) let k = 2\n\
+         @const @rigid let G = 9.8\na = double(a)\nprint(a, k, G)\n"
+    );
+    assert_eq!(run_out(&out.output), ["2 2 9.8"]);
+}

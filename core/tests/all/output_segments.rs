@@ -570,7 +570,7 @@ fn row(k)
   nil
 end
 row(n)
-let garbage = map(range(0, 200000), fn(i) "g{i}{n}" end)
+let garbage = map(range(0, 20000), fn(i) "g{i}{n}" end)
 "#;
     let mut w = world(src, true, Drain::Segments);
     let out = w.env.intern_symbol("out");

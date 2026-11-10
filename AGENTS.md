@@ -25,7 +25,7 @@ former test file with its module path as the filter:
 ```bash
 cd core
 cargo test --test all hot_reload::                 # one file's tests
-cargo test --test all hot_reload::reload_keeps     # tests matching a name
+cargo test --test all hot_reload::config_scalar   # tests matching a name
 cargo test --test all -- --ignored hot_reload::whole_corpus   # an ignored one
 ```
 

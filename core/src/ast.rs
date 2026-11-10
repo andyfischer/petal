@@ -171,6 +171,80 @@ pub enum ExprKind {
 /// name. See docs/language-guide.md (Calling with a list or record).
 pub const SPREAD_ARG: &str = "...";
 
+/// The names an `@` declaration annotation may take
+/// (docs/proposals/annotation-syntax.md): the three reserved annotation
+/// builtins, which Petal code cannot bind (`compiler::hint_names`).
+pub const ANNOTATION_NAMES: [&str; 3] = ["const", "tunable", "rigid"];
+
+/// One `@name` / `@name(args)` annotation, as both parse pipelines read it
+/// before lowering it with [`apply_annotations`].
+#[derive(Debug, Clone)]
+pub(crate) struct Annotation {
+    pub name: String,
+    /// The span of the name token (not the `@`).
+    pub name_span: SourceSpan,
+    pub args: Vec<Expr>,
+    /// The call convention's `arg_names`: empty when every argument is
+    /// positional.
+    pub arg_names: Vec<Option<String>>,
+}
+
+/// Lower the annotations written before a declaration onto its value:
+/// `@f(a, b) let X = v` is `let X = f(v, a, b)`, and stacked annotations apply
+/// bottom-up, so `@a @b(1) let X = v` is `let X = a(b(v, 1))`. `annotations`
+/// is in source order.
+///
+/// Each synthetic call's span is the value's span, and its callee is an
+/// [`ExprKind::Ident`] spanning the annotation's name. That is what
+/// [`is_annotation_call`] recognizes, so a tool that splices text around an
+/// initializer can tell the two spellings apart; everything else sees the
+/// call it would have seen for `let X = f(v, a, b)`.
+pub(crate) fn apply_annotations(mut value: Expr, annotations: Vec<Annotation>) -> Expr {
+    for ann in annotations.into_iter().rev() {
+        let span = value.span;
+        let mut args = Vec::with_capacity(ann.args.len() + 1);
+        args.push(value);
+        args.extend(ann.args);
+        let arg_names = if ann.arg_names.is_empty() {
+            Vec::new()
+        } else {
+            let mut names = Vec::with_capacity(args.len());
+            names.push(None);
+            names.extend(ann.arg_names);
+            names
+        };
+        value = Expr {
+            kind: ExprKind::Call {
+                function: Box::new(Expr {
+                    kind: ExprKind::Ident(ann.name),
+                    span: ann.name_span,
+                }),
+                args,
+                arg_names,
+            },
+            span,
+        };
+    }
+    value
+}
+
+/// Whether `e` is a call the parser built from an `@` annotation
+/// ([`apply_annotations`]) rather than one written as a call: its callee is
+/// written *before* the call's own span, which no written call (and no
+/// `x |> f(a)` pipe) can do. Source-preserving tools that rewrite an
+/// initializer's text use it: in `@tunable let X = 4` the text of the call is
+/// just `4`.
+pub fn is_annotation_call(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Call { function, .. } => {
+            function.span.start.offset < e.span.start.offset
+                && function.span.file == e.span.file
+                && e.span.start.line > 0
+        }
+        _ => false,
+    }
+}
+
 /// Whether a call's `arg_names` say its last argument is a spread
 /// (`f(...args)`). The parser admits a spread only in last place, and never
 /// beside a named argument.

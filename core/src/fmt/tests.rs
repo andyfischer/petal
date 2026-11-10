@@ -357,3 +357,16 @@ fn a_block_comment_keeps_its_inner_lines_as_written() {
     assert_eq!(fmt(src), want);
     assert_eq!(fmt(want), want);
 }
+
+/// `@` annotations (docs/proposals/annotation-syntax.md) keep the layout
+/// they were written in: on the declaration's line or on lines of their own.
+/// The `@` binds to its name, the argument list is spaced like a call's, and
+/// an own-line annotation is indented with its declaration.
+#[test]
+fn annotations_keep_their_lines() {
+    let src = "@tunable( 0,10 ) let S = 4.0\n@const\n\n// table\npub let T = {\na: 1,\n}\nfn f()\n@rigid\n    let g=2\n  @tunable(min:1,max:5) let h = 3\ng+h\nend\n";
+    let want = "@tunable(0, 10) let S = 4.0\n@const\n\n// table\npub let T = {\n  a: 1,\n}\nfn f()\n  @rigid\n  let g = 2\n  @tunable(min: 1, max: 5) let h = 3\n  g + h\nend\n";
+    assert_eq!(fmt(src), want);
+    assert_eq!(fmt(want), want);
+    assert_eq!(ast_shape(src), ast_shape(want));
+}

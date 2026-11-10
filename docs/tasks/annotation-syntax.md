@@ -19,3 +19,9 @@ rebind operator was removed on 9 November 2026: the parser rejects `@` where
 an expression starts and names `petal migrate-old-code`, whose `at-rebind`
 migration rewrites `f(@x)` to `x = f(x)`. Its inventory is in the proposal.
 Open questions for the owner are at the end of the proposal.
+
+Accepted and implemented on 9 November 2026 (D1): `@const`, `@tunable` and
+`@rigid` before a declaration, on its line or on lines of their own, as an
+accepted alternative to the call forms, which stay valid. `tunable` takes
+named `min:`/`max:`. The owner's decisions are recorded at the end of the
+proposal; F1 (`fn` annotations) and F2 (run-time decorators) stay deferred.

@@ -165,6 +165,15 @@ pub enum SyntaxKind {
     ForGenerator,
     /// One `name="value"` / `name={expr}` attribute of a JSX element.
     JsxAttr,
+    /// One `@name` / `@name(args)` declaration annotation
+    /// (docs/proposals/annotation-syntax.md): the `@` token, the name token
+    /// (an identifier, or the `const` keyword) and an optional
+    /// [`SyntaxKind::ArgList`]. Annotations are the first children of the
+    /// declaration node they annotate ([`SyntaxKind::LetStmt`],
+    /// [`SyntaxKind::StateStmt`], [`SyntaxKind::MemoStmt`]); the AST has no
+    /// node for them, since the parser lowers `@f(a) let X = v` to
+    /// `let X = f(v, a)`.
+    Annotation,
 }
 
 #[cfg(test)]
@@ -457,6 +466,8 @@ mod tests {
         assert_parse_round_trips("let e = <div class=\"x\">hi {name}<br/></div>\n");
         assert_parse_round_trips("print(\"sum = {2 + 2} done\")\n");
         assert_parse_round_trips("for i in [1, 2] do\n  print(i)\nend\n");
+        assert_parse_round_trips("@tunable(0, 10)  pub let S = 4.0 // speed\n");
+        assert_parse_round_trips("@const\n\n// table\nlet T = {\n  a: 1,\n}\n");
     }
 
     /// Depth-first search for the first descendant node of `kind`.
@@ -573,6 +584,31 @@ mod tests {
             find_node(&fn_decl, SyntaxKind::ReturnStmt).is_some(),
             "ReturnStmt"
         );
+    }
+
+    #[test]
+    fn parse_cst_annotations_open_the_declaration() {
+        // `@` annotations are the first children of the declaration they
+        // annotate, on its line or on lines of their own.
+        for src in [
+            "@tunable(0, 10) pub let S = 4.0\n",
+            "@const\n// the table\n@rigid\nlet T = [1]\n",
+            "fn f()\n  @tunable let g = 3\n  g\nend\n",
+            "@tunable state s = 1\n@rigid memo(k) m = 2\n",
+        ] {
+            let root = parse_root(src);
+            assert_eq!(root.text(), src);
+            let decl = find_node(&root, SyntaxKind::LetStmt)
+                .or_else(|| find_node(&root, SyntaxKind::StateStmt))
+                .expect("a declaration");
+            let kids = child_nodes(&decl);
+            assert_eq!(kids[0].kind(), SyntaxKind::Annotation, "{src:?}");
+            assert!(decl.text().trim_start().starts_with('@'), "{src:?}: {:?}", decl.text());
+        }
+        let root = parse_root("@tunable(0, 10) let S = 4.0\n");
+        let ann = find_node(&root, SyntaxKind::Annotation).expect("Annotation");
+        assert_eq!(ann.text(), "@tunable(0, 10)");
+        assert!(find_node(&ann, SyntaxKind::ArgList).is_some());
     }
 
     #[test]

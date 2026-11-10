@@ -82,6 +82,19 @@ impl EventBuilder {
         self.events.push(Event::Close);
     }
 
+    /// Move the node opened at `opened` (a checkpoint taken just before its
+    /// [`Self::open`]) so that it opens at the earlier checkpoint `to`
+    /// instead, adopting everything emitted in between as its first
+    /// children. This is how a declaration takes in the `@` annotations
+    /// written before it, which are parsed before the parser knows which
+    /// declaration follows.
+    pub fn hoist_open(&mut self, opened: Checkpoint, to: Checkpoint) {
+        debug_assert!(to.0 <= opened.0);
+        debug_assert!(matches!(self.events.get(opened.0), Some(Event::Open(_))));
+        let open = self.events.remove(opened.0);
+        self.events.insert(to.0, open);
+    }
+
     /// The recorded events.
     pub fn events(&self) -> &[Event] {
         &self.events

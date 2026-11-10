@@ -633,6 +633,7 @@ impl Parser {
             }
             Token::Import => self.parse_import(start, false),
             Token::Pub | Token::Export => self.parse_export(start),
+            Token::At => self.parse_annotated(start),
             _ => self.parse_expr_or_assign(start),
         }
     }
@@ -684,6 +685,11 @@ impl Parser {
             Some(Token::Ident(w)) if w == NATIVE_KEYWORD && self.starts_native_decl(1) => {
                 self.parse_native_fn_decl(start, true)
             }
+            // `pub @tunable let …`: the annotations come first.
+            Some(Token::At) => Err(self.error_at(
+                self.pos + 1,
+                "annotations go before `pub`: write `@… pub let NAME = …`".to_string(),
+            )),
             // `pub import m` — a re-export: the names this file imports
             // become its own exports (docs/module-system.md#re-exporting).
             Some(Token::Import) => self.parse_import(start, true),
@@ -698,6 +704,236 @@ impl Parser {
                 )))
             }
         }
+    }
+
+    /// `@name` / `@name(args)` declaration annotations and the declaration
+    /// they annotate (docs/proposals/annotation-syntax.md, D1).
+    ///
+    /// `@f(a, b) let X = v` is exactly `let X = f(v, a, b)`: the declared
+    /// value goes in as the first argument, and stacked annotations apply
+    /// bottom-up (the one nearest the declaration is innermost). `f` is one of
+    /// [`crate::ast::ANNOTATION_NAMES`]. The annotations may share the
+    /// declaration's line or sit on lines of their own above it, and they go
+    /// before `pub`.
+    ///
+    /// The AST gets the call ([`crate::ast::apply_annotations`]), so nothing
+    /// after the parser can tell the spellings apart except by spans
+    /// ([`crate::ast::is_annotation_call`]). The CST keeps each annotation as
+    /// an [`SyntaxKind::Annotation`] node, the first children of the
+    /// declaration's node.
+    ///
+    /// The declarations that take one are the bindings whose initializer the
+    /// call form can wrap: `let` (and `pub let`), and also `var`, `state`,
+    /// `memo` and the deprecated `const NAME =` / `config let`, where the
+    /// lowered call meets the diagnostics the call form meets there. `@`
+    /// before a `fn` is reserved for compile-time annotations (F1), and a
+    /// class or enum takes none.
+    fn parse_annotated(&mut self, start: usize) -> Result<Stmt, String> {
+        let outer = self.ev_checkpoint();
+        let mut annotations = Vec::new();
+        let mut positions = Vec::new();
+        while matches!(self.peek(), Token::At) {
+            positions.push(self.pos);
+            annotations.push(self.parse_annotation()?);
+            self.skip_newlines();
+        }
+        let first = &annotations[0].name;
+        // What the annotations are written on.
+        enum Target {
+            Let(bool, LetKeyword, bool),
+            State(bool),
+            Memo,
+        }
+        let config_at = |p: &Self, n: usize| {
+            matches!(p.peek_at(n), Token::Ident(w) if w == CONFIG_KEYWORD)
+                && matches!(p.peek_at(n + 1), Token::Let)
+        };
+        let target = match self.peek() {
+            Token::Let => Target::Let(false, LetKeyword::Let, false),
+            Token::Var => Target::Let(false, LetKeyword::Var, false),
+            Token::Const if !matches!(self.peek_at(1), Token::LParen) => {
+                Target::Let(false, LetKeyword::Const, false)
+            }
+            Token::State => Target::State(false),
+            Token::Memo => Target::Memo,
+            _ if config_at(self, 0) => Target::Let(false, LetKeyword::Let, true),
+            Token::Pub | Token::Export => match self.peek_at(1) {
+                Token::Let => Target::Let(true, LetKeyword::Let, false),
+                Token::Var => Target::Let(true, LetKeyword::Var, false),
+                Token::Const => Target::Let(true, LetKeyword::Const, false),
+                Token::State => Target::State(true),
+                _ if config_at(self, 1) => Target::Let(true, LetKeyword::Let, true),
+                Token::At => {
+                    return Err(self.error_at(
+                        self.pos + 1,
+                        "annotations go before `pub`: write `@… pub let NAME = …`".to_string(),
+                    ));
+                }
+                Token::Fn => return Err(self.error_at(start, annotation_on_fn_message(first))),
+                Token::Ident(w) if w == NATIVE_KEYWORD => {
+                    return Err(self.error_at(start, annotation_on_fn_message(first)));
+                }
+                Token::Enum => {
+                    return Err(self.error_at(start, annotation_on_type_message(first, "an enum")));
+                }
+                Token::Ident(w) if w == CLASS_KEYWORD => {
+                    return Err(self.error_at(start, annotation_on_type_message(first, "a class")));
+                }
+                _ => return Err(self.error_at_current(ANNOTATION_NEEDS_DECL.to_string())),
+            },
+            Token::Fn if !matches!(self.peek_at(1), Token::LParen) => {
+                return Err(self.error_at(start, annotation_on_fn_message(first)));
+            }
+            Token::Ident(w) if w == NATIVE_KEYWORD && self.starts_native_decl(0) => {
+                return Err(self.error_at(start, annotation_on_fn_message(first)));
+            }
+            Token::Enum => {
+                return Err(self.error_at(start, annotation_on_type_message(first, "an enum")));
+            }
+            Token::Ident(w) if w == CLASS_KEYWORD && self.starts_class_decl() => {
+                return Err(self.error_at(start, annotation_on_type_message(first, "a class")));
+            }
+            _ => return Err(self.error_at_current(ANNOTATION_NEEDS_DECL.to_string())),
+        };
+        // Only the reserved annotations: `@` never calls an arbitrary
+        // function. The suggestion spells the call the author can write.
+        for (ann, &pos) in annotations.iter().zip(&positions) {
+            if !crate::ast::ANNOTATION_NAMES.contains(&ann.name.as_str()) {
+                let decl = self.annotated_decl_preview(&ann.name);
+                return Err(self.error_at(
+                    pos,
+                    format!(
+                        "`@{}` is not an annotation. `@` takes `const`, `tunable` or `rigid`. \
+                         To pass the value through a function, write `{decl}`",
+                        ann.name
+                    ),
+                ));
+            }
+        }
+        let inner = self.ev_checkpoint();
+        let mut stmt = match target {
+            Target::Let(exported, keyword, is_config) => {
+                self.parse_let(start, exported, keyword, is_config)?
+            }
+            Target::State(exported) => self.parse_state(start, exported)?,
+            Target::Memo => self.parse_memo(start)?,
+        };
+        // The declaration's node takes the annotations in as its first
+        // children.
+        self.events.hoist_open(inner, outer);
+        match &mut stmt.kind {
+            StmtKind::Let { value: v, .. }
+            | StmtKind::State { init: v, .. }
+            | StmtKind::Memo { init: v, .. } => {
+                let value = std::mem::replace(
+                    v,
+                    Expr {
+                        kind: ExprKind::Literal(Literal::Nil),
+                        span: ZERO_SPAN,
+                    },
+                );
+                *v = crate::ast::apply_annotations(value, annotations);
+            }
+            _ => unreachable!("the target is a binding"),
+        }
+        Ok(stmt)
+    }
+
+    /// One `@name` or `@name(args)`, as an [`SyntaxKind::Annotation`] node.
+    /// The name is checked by the caller, which knows what is annotated.
+    fn parse_annotation(&mut self) -> Result<crate::ast::Annotation, String> {
+        self.ev_open(SyntaxKind::Annotation);
+        let at = self.pos;
+        self.advance(); // consume '@'
+        let name = match self.peek() {
+            Token::Ident(name) => name.clone(),
+            // `const` is still a keyword token.
+            Token::Const => CONST_ANNOTATION.to_string(),
+            _ => {
+                return Err(self.error_at(
+                    at,
+                    "`@` must be followed by an annotation name: `@const`, `@tunable` or \
+                     `@rigid`"
+                        .to_string(),
+                ));
+            }
+        };
+        let name_pos = self.pos;
+        let adjacent = self.token_spans.get(at).zip(self.token_spans.get(name_pos)).is_none_or(
+            |(a, n)| a.end.offset == n.start.offset,
+        );
+        if !adjacent {
+            return Err(self.error_at(
+                at,
+                format!("write the annotation `@{name}` with no space after the `@`"),
+            ));
+        }
+        self.advance(); // consume the name
+        let name_span = self.prev_span();
+        let (args, arg_names) = if matches!(self.peek(), Token::LParen) {
+            self.ev_open(SyntaxKind::ArgList);
+            self.advance();
+            let open = self.pos;
+            let (args, arg_names) = self.parse_arg_list()?;
+            self.expect(&Token::RParen)?;
+            self.ev_close(); // ArgList
+            if arg_names.iter().any(|n| n.as_deref() == Some("value")) {
+                return Err(self.error_at(
+                    open,
+                    format!(
+                        "`@{name}(…)` passes the declared value as its first argument; it \
+                         cannot also be named `value:`"
+                    ),
+                ));
+            }
+            (args, arg_names)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        self.ev_close(); // Annotation
+        Ok(crate::ast::Annotation {
+            name,
+            name_span,
+            args,
+            arg_names,
+        })
+    }
+
+    /// `let X = name(v)` for the declaration at the cursor, for the
+    /// unknown-annotation error: `v` is the initializer when it is one
+    /// literal token, else `…`.
+    fn annotated_decl_preview(&self, name: &str) -> String {
+        let mut i = 0;
+        let mut words = Vec::new();
+        loop {
+            match self.peek_at(i) {
+                Token::Pub => words.push("pub".to_string()),
+                Token::Export => words.push("export".to_string()),
+                Token::Ident(w) if w == CONFIG_KEYWORD && i < 2 => words.push(w.clone()),
+                tok => {
+                    if let Some(kw) = crate::lexer::keyword_text(tok) {
+                        words.push(kw.to_string());
+                    }
+                    break;
+                }
+            }
+            i += 1;
+        }
+        let decl_name = match self.peek_at(i + 1) {
+            Token::Ident(n) => n.clone(),
+            _ => "X".to_string(),
+        };
+        // Skip a `: type` to the `=`.
+        let mut j = i + 2;
+        while !matches!(self.peek_at(j), Token::Assign | Token::Newline | Token::Eof) {
+            j += 1;
+        }
+        let value = match (self.peek_at(j), self.peek_at(j + 1), self.peek_at(j + 2)) {
+            (Token::Assign, tok, Token::Newline | Token::Eof) => literal_token_text(tok),
+            _ => None,
+        }
+        .unwrap_or_else(|| "…".to_string());
+        format!("{} {decl_name} = {name}({value})", words.join(" "))
     }
 
     /// What is wrong with `config` in front of the binding keyword `ahead`
@@ -2475,6 +2711,7 @@ impl Parser {
             Token::At => Err(self.error_at_current(at_rebind_removed_message(
                 match self.peek_at(1) {
                     Token::Ident(name) => Some(name.as_str()),
+                    Token::Const => Some(CONST_ANNOTATION),
                     _ => None,
                 },
             ))),
@@ -3237,9 +3474,14 @@ impl Parser {
 /// is the identifier after the `@`, when there is one.
 pub(crate) fn at_rebind_removed_message(name: Option<&str>) -> String {
     match name {
+        Some(x) if crate::ast::ANNOTATION_NAMES.contains(&x) => format!(
+            "`@` annotates a declaration and goes before `let` (`@{x} let NAME = …`). Inside \
+             an expression, write the call: `{x}(…)`"
+        ),
         Some(x) => format!(
-            "`@{x}` is not an expression: the `@` rebind operator was removed. Write \
-             `{x} = f({x})` instead of `f(@{x})`; {}",
+            "`@{x}` is not an expression: `@` only annotates a declaration (`@tunable let \
+             NAME = …`), and the `@` rebind operator was removed. Write `{x} = f({x})` \
+             instead of `f(@{x})`; {}",
             crate::migrate::RUN_HINT
         ),
         None => format!(
@@ -3248,6 +3490,39 @@ pub(crate) fn at_rebind_removed_message(name: Option<&str>) -> String {
             crate::migrate::RUN_HINT
         ),
     }
+}
+
+/// The error for `@` with no declaration after it (`@const` at the end of a
+/// file, `@tunable 4`).
+const ANNOTATION_NEEDS_DECL: &str =
+    "an annotation must be followed by a declaration (`let`, `pub let`)";
+
+/// The error for `@name` on a `fn` (F1 in docs/proposals/annotation-syntax.md).
+fn annotation_on_fn_message(name: &str) -> String {
+    let what = match name {
+        "tunable" | "rigid" => format!(" `@{name}` annotates a `let`; a function is not a setting."),
+        "const" => " `@const` annotates a `let`.".to_string(),
+        _ => String::new(),
+    };
+    format!("`@` on a function is reserved for compile-time annotations; there are none yet.{what}")
+}
+
+/// The error for `@name` on a class or enum declaration.
+fn annotation_on_type_message(name: &str, what: &str) -> String {
+    format!("`@{name}` annotates a `let`; {what} declaration takes no annotations")
+}
+
+/// The source text of a literal token, for an error message.
+fn literal_token_text(tok: &Token) -> Option<String> {
+    Some(match tok {
+        Token::Int(n) => n.to_string(),
+        Token::Float(f) => format!("{f:?}"),
+        Token::String(s) => format!("{s:?}"),
+        Token::True => "true".to_string(),
+        Token::False => "false".to_string(),
+        Token::Nil => "nil".to_string(),
+        _ => return None,
+    })
 }
 
 /// Parse a hex color string (without '#') into (field_name, value) pairs.

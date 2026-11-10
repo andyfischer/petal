@@ -243,11 +243,10 @@ fn an_at_rebind_is_a_parse_error_that_names_the_tool() {
     assert!(err.contains("`@a` is not an expression"), "{err}");
     assert!(err.contains("Write `a = f(a)` instead of `f(@a)`"), "{err}");
     assert!(err.contains("petal migrate-old-code"), "{err}");
-    // `@` with no name after it, where a statement starts: the same pointer,
-    // and nothing else (`@` is reserved for annotations).
+    // Where a statement starts, `@` opens a declaration annotation
+    // (docs/proposals/annotation-syntax.md), and the error says what one is.
     let err = format!("{}", env.load_program("@ 1\n").unwrap_err());
-    assert!(err.contains("`@` is not an expression"), "{err}");
-    assert!(err.contains("petal migrate-old-code"), "{err}");
+    assert!(err.contains("`@` must be followed by an annotation name"), "{err}");
 }
 
 #[test]

@@ -66,6 +66,15 @@ struct Projector {
 
 // ---- Red-tree access helpers ----
 
+/// The child nodes of a declaration node other than its
+/// [`SyntaxKind::Annotation`]s, which [`Projector::lower_annotations`] reads.
+fn decl_child_nodes(node: &SyntaxNode) -> Vec<SyntaxNode> {
+    child_nodes(node)
+        .into_iter()
+        .filter(|n| n.kind() != SyntaxKind::Annotation)
+        .collect()
+}
+
 fn child_nodes(node: &SyntaxNode) -> Vec<SyntaxNode> {
     node.children()
         .into_iter()
@@ -330,12 +339,12 @@ impl Projector {
                         return Err(format!("{:?} missing an identifier token", node.kind()));
                     }
                 };
-                let ty = child_nodes(node)
+                let ty = decl_child_nodes(node)
                     .iter()
                     .find(|n| n.kind() == SyntaxKind::TypeAnnotation)
                     .and_then(|n| self.type_from_annotation_node(n));
                 // The value is the sole child node that isn't the type annotation.
-                let value_node = child_nodes(node)
+                let value_node = decl_child_nodes(node)
                     .into_iter()
                     .find(|n| n.kind() != SyntaxKind::TypeAnnotation)
                     .ok_or("let binding missing its value expression")?;
@@ -509,14 +518,14 @@ impl Projector {
             SyntaxKind::ContinueStmt => StmtKind::Continue,
             SyntaxKind::StateStmt => {
                 let name = self.only_ident(node)?;
-                let ty = child_nodes(node)
+                let ty = decl_child_nodes(node)
                     .iter()
                     .find(|n| n.kind() == SyntaxKind::TypeAnnotation)
                     .and_then(|n| self.type_from_annotation_node(n));
                 // The annotation is not an expression node; what remains is the
                 // init, optionally preceded by an explicit key
                 // (`state(key) name: t = init`).
-                let nodes: Vec<SyntaxNode> = child_nodes(node)
+                let nodes: Vec<SyntaxNode> = decl_child_nodes(node)
                     .into_iter()
                     .filter(|n| n.kind() != SyntaxKind::TypeAnnotation)
                     .collect();
@@ -543,13 +552,13 @@ impl Projector {
             }
             SyntaxKind::MemoStmt => {
                 let name = self.only_ident(node)?;
-                let ty = child_nodes(node)
+                let ty = decl_child_nodes(node)
                     .iter()
                     .find(|n| n.kind() == SyntaxKind::TypeAnnotation)
                     .and_then(|n| self.type_from_annotation_node(n));
                 // The key is required, so there are always exactly two
                 // expression nodes once the annotation is set aside.
-                let nodes: Vec<SyntaxNode> = child_nodes(node)
+                let nodes: Vec<SyntaxNode> = decl_child_nodes(node)
                     .into_iter()
                     .filter(|n| n.kind() != SyntaxKind::TypeAnnotation)
                     .collect();
@@ -566,6 +575,9 @@ impl Projector {
             SyntaxKind::ImportStmt => self.import_stmt(node)?,
             other => return Err(format!("expected a statement node, got {other:?}")),
         };
+        // `@f(a) let X = v` is `let X = f(v, a)`: the parser lowers the
+        // annotations onto the value, and so does the projection.
+        let kind = self.lower_annotations(node, kind)?;
         // A leading `pub` modifier (or its deprecated spelling `export`) is
         // kept as a direct token child of the decl node (fn/let/state/enum),
         // so its presence gates module exports.
@@ -578,6 +590,59 @@ impl Projector {
             exported,
             test,
         })
+    }
+
+    /// The declaration `kind` projected from `node`, with the
+    /// [`SyntaxKind::Annotation`] children of `node` applied to its value
+    /// ([`crate::ast::apply_annotations`]). Unchanged when there are none.
+    fn lower_annotations(&mut self, node: &SyntaxNode, mut kind: StmtKind) -> Result<StmtKind, String> {
+        let nodes: Vec<SyntaxNode> = child_nodes(node)
+            .into_iter()
+            .filter(|n| n.kind() == SyntaxKind::Annotation)
+            .collect();
+        if nodes.is_empty() {
+            return Ok(kind);
+        }
+        let mut annotations = Vec::with_capacity(nodes.len());
+        for ann in &nodes {
+            let name_tok = direct_tokens(ann)
+                .into_iter()
+                .find(|t| matches!(t.token(), Some(Token::Ident(_) | Token::Const)))
+                .ok_or("annotation missing its name")?;
+            let name = match name_tok.token() {
+                Some(Token::Ident(n)) => n.clone(),
+                _ => crate::parse::CONST_ANNOTATION.to_string(),
+            };
+            let (args, arg_names) = match child_nodes(ann)
+                .into_iter()
+                .find(|n| n.kind() == SyntaxKind::ArgList)
+            {
+                Some(list) => self.arg_list(&list)?,
+                None => (Vec::new(), Vec::new()),
+            };
+            annotations.push(crate::ast::Annotation {
+                name,
+                name_span: self.token_span(&name_tok),
+                args,
+                arg_names,
+            });
+        }
+        match &mut kind {
+            StmtKind::Let { value: v, .. }
+            | StmtKind::State { init: v, .. }
+            | StmtKind::Memo { init: v, .. } => {
+                let value = std::mem::replace(
+                    v,
+                    Expr {
+                        kind: ExprKind::Literal(crate::ast::Literal::Nil),
+                        span: crate::source_map::ZERO_SPAN,
+                    },
+                );
+                *v = crate::ast::apply_annotations(value, annotations);
+            }
+            _ => return Err(format!("annotations on a {:?} node", node.kind())),
+        }
+        Ok(kind)
     }
 
     /// Project an `AssignStmt` or a `SetStmt` — structurally identical, and
@@ -1142,6 +1207,25 @@ impl Projector {
             ));
         }
         let function = self.expr(callee_node)?;
+        let (args, arg_names) = self.arg_list(arg_list)?;
+        let span = SourceSpan {
+            start: function.span.start,
+            end: self.end_of(node)?,
+            file: function.span.file,
+        };
+        Ok(Expr {
+            kind: ExprKind::Call {
+                function: Box::new(function),
+                args,
+                arg_names,
+            },
+            span,
+        })
+    }
+
+    /// The arguments of an [`SyntaxKind::ArgList`] node and their
+    /// `arg_names`.
+    fn arg_list(&mut self, arg_list: &SyntaxNode) -> Result<(Vec<Expr>, Vec<Option<String>>), String> {
         // A `name: value` argument arrives wrapped in a NamedArg node; its name
         // goes to the parallel `arg_names`, which stays empty when every
         // argument is positional.
@@ -1162,19 +1246,7 @@ impl Projector {
                 args.push(self.expr(n)?);
             }
         }
-        let span = SourceSpan {
-            start: function.span.start,
-            end: self.end_of(node)?,
-            file: function.span.file,
-        };
-        Ok(Expr {
-            kind: ExprKind::Call {
-                function: Box::new(function),
-                args,
-                arg_names,
-            },
-            span,
-        })
+        Ok((args, arg_names))
     }
 
     fn field_access_object(&mut self, node: &SyntaxNode) -> Result<Expr, String> {

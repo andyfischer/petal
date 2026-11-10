@@ -1,10 +1,13 @@
 # Proposal: `@` annotation syntax
 
-Status: proposed, 2026-11-09. Investigation only; the annotation syntax is
-not implemented. Requested in `docs/tasks/annotation-syntax.md`. The old `@`
-rebind operator this proposal inventoried was removed the same day (commit
-`f0522249`); the sections below that describe it are a record of what was
-there.
+Status: **accepted** (D1), 2026-11-09, with the owner's decisions recorded
+under [Open questions](#open-questions): `@` is an accepted *alternative*
+spelling and the call forms stay fully valid; value-first insertion; `tunable`
+takes named `min:`/`max:`; one-line annotations are allowed. F1 and F2 stay
+deferred. D1 is implemented (see [Implementation](#implementation-as-built)).
+Requested in `docs/tasks/annotation-syntax.md`. The old `@` rebind operator
+this proposal inventoried was removed the same day (commit `f0522249`); the
+sections below that describe it are a record of what was there.
 
 ## Summary
 
@@ -69,10 +72,12 @@ removed.**
    is the expression form, and an expression `@` has precedence problems.
 4. Whether `@` becomes the canonical spelling, which means a second migration
    of about 1,870 declarations, is an owner decision
-   ([open question 1](#open-questions)). This proposal recommends making it
+   ([open question 1](#open-questions)). This proposal recommended making it
    canonical for whole-initializer annotations on declarations, with the call
    form kept for sub-expressions. "Defer" is a reasonable answer too, because
-   most of the gain is on 146 multi-line tables.
+   most of the gain is on 146 multi-line tables. **Decided: an accepted
+   alternative.** Both spellings are valid and neither is deprecated; there is
+   no corpus migration, no `migrate-old-code` rule and no lint either way.
 
 ## Motivation
 
@@ -782,37 +787,73 @@ Order:
 5. **Docs:** the language guide's "Annotations" section, `syntax/settings.md`,
    `Builtins.md`, `overview.md`, `features/static-values.md`, and a
    `CHANGELOG.md` "Added" entry.
-6. **If canonical** (open question 1): a `migrate-old-code` rule, then the
+6. **If canonical** (open question 1; *not taken*: `@` is an alternative, so
+   there is no migration): a `migrate-old-code` rule, then the
    corpus, petal-lang.org and Cheesecake (re-vendor, one commit per game, as in
    lifecycle Phase 4). The lint never pushes code the other way.
 
 Size: steps 2 to 5 are about 3 to 4 days, and step 6 is a day per large
 consumer.
 
+## Implementation (as built)
+
+Shipped 2026-11-09, with the decisions below.
+
+- **Parser** (`core/src/parse.rs`, `Parser::parse_annotated`): `@name` /
+  `@name(args)` at the start of a statement, any number, on the
+  declaration's line or on lines of their own (comments and blank lines may
+  sit between). The annotations are lowered onto the value by
+  `ast::apply_annotations`, innermost nearest the declaration; the synthetic
+  call's span is the value's and its callee spans the name, which is how
+  `ast::is_annotation_call` tells the spellings apart for source tools. The
+  declarations that take one are `let`/`pub let` and, so that the call form's
+  own diagnostics apply, `var`, `state`, `memo` and the deprecated
+  `const NAME =` / `config let`. The errors are the ones under Design, plus
+  "annotations go before `pub`", "no space after the `@`" and "cannot also be
+  named `value:`".
+- **CST**: `SyntaxKind::Annotation` (`@`, the name, an optional `ArgList`)
+  as the first children of the declaration node; `EventBuilder::hoist_open`
+  moves the declaration's `Open` back over them. `cst_project` lowers them
+  the same way (`Projector::lower_annotations`), so the debug-build check
+  that projection ≡ direct parse covers them.
+- **Parity**: `core/tests/annotation_parity.rs` rewrites every
+  whole-initializer `const`/`tunable`/`rigid` binding in `examples/`,
+  `core/tests` (`.ptl` and Rust fixtures) and the guide, settings,
+  static-values and Builtins snippets into the `@` form, on the same line and
+  on lines of their own, and asserts identical IR, `show-static --json`,
+  diagnostics, `static_bindings`, set-by-name results, DM knobs and reload
+  construct kinds, and that a respelling is never classified `none`.
+- **Tools**: `petal fmt` keeps annotations where they were written (no forced
+  line break; decision 4) and keeps `@` tight to its name; tree-sitter
+  (`annotation` rule, highlights, corpus), vim, LSP (completion after `@`,
+  hover, symbols), Garden's DM hint toggler (`garden-script/src/dm_hints.rs`,
+  which reads and cycles `@tunable`/`@rigid` on a declaration line) and
+  petal-lang.org's `findKnobs` and highlighter.
+
 ## Open questions
 
-1. **Owner: canonical or optional?** Should `@` become *the* spelling for
-   whole-initializer annotations on declarations (a second sweep of about 1,870
-   sites, carried by `petal migrate-old-code`), or an accepted alternative
-   with the call form canonical? The proposal leans canonical, with the call
-   kept for sub-expressions, and "defer" is defensible.
-2. **Owner: is first-argument insertion acceptable as "not Python"?** The
-   alternative that is Python-exact (curried, option A) requires renaming or
-   reshaping `tunable`'s parameters.
-3. **Owner: named bounds?** Should `tunable` accept `min:`/`max:` so that
-   `@tunable(min: 3.0, max: 12.0)` explains itself? `step:` and `options:` are
-   already named.
-4. **Owner: same-line annotations?** The proposal allows
-   `@tunable let X = 4` on one line (unlike Python). Should `petal fmt` force a
-   line of its own for long argument lists?
-5. **Owner and the effect-annotations proposal:** should F1's first `fn`
-   annotation be the native effect clause (`@pure`, `@reads(POINTER)`)? That
-   needs a joint decision with `native-effect-annotations.md`, whose syntax
-   currently puts the clause after the return type.
-6. **Later:** if a real need for run-time function decorators appears, adopt
-   F2's restricted subset (not hoisted, not overloaded, not on methods or
-   natives, recursion through the binding). It should get a separate proposal
-   with its own corpus evidence.
-7. **Lifecycle open question 2** (`annotations.ptl` as one home for
-   `const`/`tunable`/`rigid`) becomes more pressing, since `@` makes the three
-   a visible family.
+All decided by the owner on 2026-11-09.
+
+1. **Decided: an accepted alternative, not canonical.** The call forms
+   `let X = const(e)`, `tunable(…)` and `rigid(…)` stay fully valid and are not
+   deprecated. No corpus migration, no `migrate-old-code` rule, no lint pushing
+   either way. (Asked: should `@` become *the* spelling for whole-initializer
+   annotations on declarations, a second sweep of about 1,870 sites, or an
+   accepted alternative with the call form canonical?)
+2. **Decided: value-first (first-argument insertion) is approved.**
+   `@tunable(0, 10) let S = 4.0` ≡ `let S = tunable(4.0, 0, 10)`. (Asked: is
+   first-argument insertion acceptable as "not Python"?)
+3. **Decided: yes.** `tunable` takes named `min:` and `max:`, in the call form
+   and the annotation form alike, alongside `step:` and `options:`:
+   `@tunable(min: 3.0, max: 12.0) pub let RUN = 7.0`.
+4. **Decided: one-line annotations are allowed** (`@tunable let X = 4`), as is
+   an annotation on its own line above the declaration, stacking bottom-up.
+   `petal fmt` keeps the layout as written and does not force a line of its
+   own for long argument lists.
+5. **Deferred** (F1): no `fn` annotations yet; `@` before `fn` stays the
+   reserved-slot error. A joint decision with `native-effect-annotations.md`
+   comes with the first one.
+6. **Deferred** (F2): no run-time decorators; `@` in an expression stays a
+   clear error. A real need gets its own proposal.
+7. **Decided: keep the annotations where they live now** (no
+   `annotations.ptl` move).

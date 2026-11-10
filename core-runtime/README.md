@@ -6,7 +6,7 @@ Petal can use, and that you can copy into a project wholesale.
 
 | Library | What it is |
 |---------|------------|
-| [`bloom/`](bloom/) | A UI component library: buttons, menus, controls, overlays, an animation core, and a vector icon set. Built on the `petal-ui` host layer |
+| [`bloom/`](bloom/) | Petal's widget library: buttons, menus, controls, text and inspector fields, tabs, splitters, tables, overlays, an animation core, and a vector icon set. Built on the `petal-ui` host layer |
 | [`text-layout/`](text-layout/) | Placing text: cap-height centring, alignment on both axes, wrapping, elision, caret hit-testing. What bloom draws every one of its labels through |
 | [`glsl/`](glsl/) | **Experimental.** Translates a Petal function to GLSL (`to_glsl(lambda)`), for hosts that take shader hooks as Petal code. Needs no host layer; built on the core `fn_info` / `fn_ast` builtins |
 
@@ -21,10 +21,11 @@ All three are **bundled in the runtime**: the `petal` binary and every host
 that embeds Petal carry their source, so a script imports them with nothing
 installed, registered or passed on the command line.
 
-**bloom is the default widget set.** It is opinionated (one look, one
-component set), and it is bundled on purpose: it is what Garden's start
-screen and the example apps draw with, and a script that wants a button
-should not have to install one. A project that wants a different look
+**bloom is the widget set.** It is opinionated (one look, one component
+set), and it is bundled on purpose: it is what Garden's start screen and the
+example apps draw with, and a script that wants a button should not have to
+install one. `ui` stops at primitives and interaction logic; its own drawn
+widgets are deprecated in bloom's favour (docs/tasks/ui-refactor.md, R4). A project that wants a different look
 brings its own library, or its own copy of bloom (see *Using a different
 copy* below); the bundled one is only the fallback. Its API is versioned
 with the runtime, so a breaking change to bloom is a breaking change to

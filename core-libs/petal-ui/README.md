@@ -21,7 +21,7 @@ Hosts that embed it: Garden panels (`garden/garden-script`),
 |---|---|
 | Find a function: every input helper, draw call, layout helper and widget, one line each | [docs/reference.md](docs/reference.md) |
 | Understand layers, hit testing, named targets, retained drawing, flow layout | [docs/reference.md](docs/reference.md#layers-and-hit-testing) |
-| Use a widget well: conventions, theme tokens, each widget in depth | [docs/widgets.md](docs/widgets.md) |
+| The widgets themselves (bloom owns them; `ui`'s are deprecated) | [bloom's components](../../core-runtime/bloom/docs/components.md), and the deprecated [docs/widgets.md](docs/widgets.md) |
 | Draw: every primitive's signatures, text measuring, tints, gradients, shadows, offscreen layers | [docs/drawing.md](docs/drawing.md) |
 | Make things draggable: reorder, snap, drop targets, animated drops (`import ui/drag`) | [docs/drag.md](docs/drag.md) |
 | See what each `PRELUDE_LEVEL` added | [docs/changelog.md](docs/changelog.md) |
@@ -70,13 +70,16 @@ input events → bind_frame_info / bind_input → clear_draw_commands
   `Env` that registers the natives it refers to; a test holds the declarations
   to `register_all`, both ways.
 - **The `ui` package** (`prelude/`). `ui.ptl` is a facade of `pub import`s
-  over its modules: `ui/input`, `ui/draw`, `ui/hit`, `ui/text`, `ui/layout`
-  and `ui/widgets`, which stand on the internal `_native`, `_base`, `_style`
+  over its modules: `ui/input`, `ui/draw`, `ui/hit`, `ui/text`, `ui/layout`,
+  `ui/interaction` (focus, list and scroll state, the text-editing logic,
+  the popover runtime, drag and drop, the load state) and the deprecated
+  `ui/widgets` (the drawn widgets, which bloom owns now: each call warns
+  `[ui-widget-moved]`), which stand on the internal `_native`, `_base`, `_style`
   and `_frame` (a module that declares a per-run cell is the only one that
   can write it, so the clip, layer and floor live together in `_frame`;
   `ui/draw` and `ui/hit` re-export its public names). A script
-  writes `import ui` and calls `button(...)`, `list_update(...)`,
-  `checkbox(...)` bare (or `ui.button`). Without the import none of these
+  writes `import ui` and calls `list_update(...)`, `has_focus(...)`,
+  `draw_rect(...)` bare (or `ui.list_update`). Without the import none of these
   names exist. A plain import is weak: a script's own `fn button` shadows
   the package's.
   `import ui/input` is the input, timing and frame half alone, for a host

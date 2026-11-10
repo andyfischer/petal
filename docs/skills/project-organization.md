@@ -250,7 +250,7 @@ were fixed on 2026-11-05 (the package manager by moving it to
 (`garden_script::headless`), with `garden/garden-panel-run` as the Garden
 build of its CLIs.
 Decided rather than moved: `bloom` stays bundled as
-the default widget set (stated in `core-runtime/README.md`), and every
+the widget set (stated in `core-runtime/README.md`), and every
 `garden/gpp-apps/` crate stays, because each is a built-in command Garden
 ships (`directory-browser`, `git-viewers`, `garden-diff`, `sqlite-browser`,
 `main-menu`), its test fixture (`gpp-test-app`) or the protocol's worked
@@ -263,8 +263,10 @@ found `gpp`, `petal-query` and `petal-pkgman` correctly placed (the
 facade, and moved the tests of core features (static cache, frame gate, memo,
 effect audit, DM) to `test/ui-corpus/`, and moved the headless tooling to
 `core-libs/petal-ui-headless` and Garden's panel stubs into `garden-script`.
-What is left of it (whether `ui` or `bloom` owns the widgets) is an owner
-decision.
+On 2026-11-09 the owner decided that bloom owns the widgets: `ui` ends at
+primitives plus interaction (`ui/interaction`), and its drawn widgets in
+`ui/widgets` are deprecated, each with a bloom replacement. **New widgets go
+in bloom, never in `ui/widgets`.**
 
 ### Bundled packages that don't meet the bundling bar
 

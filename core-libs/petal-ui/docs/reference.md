@@ -477,6 +477,15 @@ frame (its slots under `ui_measure` are not the ones it has when drawn).
 
 ## Widgets
 
+> **Deprecated.** bloom owns the widgets now
+> ([core-runtime/bloom](../../../core-runtime/bloom/docs/components.md)).
+> The drawn widgets below stay in `ui/widgets` for a deprecation period, and
+> each call warns `[ui-widget-moved]` with its bloom replacement
+> ([table](../../../docs/tasks/ui-refactor.md)). What draws nothing — focus,
+> `list_update` / `scroll_update` / `scroll_keys`, `text_field_update` /
+> `text_area_update`, the popover runtime, drag and drop, the load state and
+> colour text — is `ui/interaction` and stays.
+
 Every widget takes an optional trailing `style`.
 
 ### Buttons and controls

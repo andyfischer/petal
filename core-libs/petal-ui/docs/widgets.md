@@ -1,5 +1,14 @@
 # Widgets guide
 
+> **Deprecated.** bloom owns the widgets now: see
+> [core-runtime/bloom/docs/components.md](../../../core-runtime/bloom/docs/components.md).
+> The drawn widgets this guide describes stay in `ui/widgets` for a
+> deprecation period; each call warns `[ui-widget-moved]` naming its bloom
+> replacement ([table](../../../docs/tasks/ui-refactor.md)). The parts that
+> draw nothing (focus, list and scroll state, the text-editing logic, drag
+> and drop, the load state) moved to `ui/interaction` and are not
+> deprecated; their sections here still apply.
+
 How the widgets in `import ui` behave and why they are shaped the way they
 are: the conventions they share, the theme, RectCut layout, motion, and each
 widget in depth. The widgets are written in Petal, in `prelude/widgets.ptl`

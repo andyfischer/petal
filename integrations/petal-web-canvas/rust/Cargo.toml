@@ -7,7 +7,10 @@ license = "MIT"
 repository = "https://github.com/andyfischer/petal"
 
 [dependencies]
-petal = { path = "../../../core", default-features = false }
+# `bloom` (which brings text_layout): bloom owns the widgets, so the
+# playground's examples import it (docs/tasks/ui-refactor.md, R4). glsl stays
+# out.
+petal = { path = "../../../core", default-features = false, features = ["bloom"] }
 petal-ui = { path = "../../../core-libs/petal-ui" }
 wasm-bindgen = "0.2"
 console_error_panic_hook = "0.1"

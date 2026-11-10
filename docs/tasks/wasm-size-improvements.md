@@ -174,3 +174,10 @@ per-module breakdown, run `twiggy top -n 100000 --format csv` and sum
 - 2026-11-10: `petal bundle` carries each bundled library the program
   imports (bloom brings text_layout) with its `[requires]`, so a host built
   without the libraries runs the bundle; `--no-libraries` leaves them out.
+- 2026-11-10: petal-web-canvas builds with `bloom` again (it brings
+  text_layout): bloom owns the widgets now (docs/tasks/ui-refactor.md, R4),
+  and the playground's examples import it. Pre-`wasm-opt` release `.wasm`:
+  4,764,601 → 4,855,569 B (+91 KB raw), 1,490,246 → 1,513,305 B gzip -9
+  (+23 KB). Removing the deprecated `ui/widgets` at the end of its
+  deprecation period takes back about half of the `ui` prelude's embedded
+  source.

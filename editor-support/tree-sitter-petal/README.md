@@ -63,8 +63,9 @@ regenerated `src/`.
 - **Newlines are insignificant.** They are treated as whitespace, like `;`.
   The real parser uses them as statement separators, but statement boundaries
   are recoverable from structure in practice.
-- **The `@` rebind operator** ([docs/syntax/rebind-operator.md](../../docs/syntax/rebind-operator.md))
-  is not modelled. Files that use it produce parse errors.
+- **`@`** is not modelled. The language has no `@` form today (the old `f(@x)`
+  rebind operator was removed on 2026-11-09, and `@` is reserved for
+  annotations), so a file with one is a parse error in both parsers.
 - **Type annotations** (`let x: int = …`, `state n: int = 0`,
   `fn f(a: int) -> int`) are `type_annotation` / `return_type` nodes wrapping a
   `type_name`. Type names are contextual identifiers, not a closed keyword set,

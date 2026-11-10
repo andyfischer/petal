@@ -979,8 +979,8 @@ impl Compiler {
     /// they land in a dedicated scope frame that is popped afterwards, its
     /// surviving bindings becoming the module's exports.
     fn compile_module(&mut self, module: &LoadedModule) -> Result<(), LoadError> {
-        // Rewrite `@`-arguments (`f(@x)` → `x = f(x)`) before anything else, so
-        // prescan and compilation only ever see the desugared form.
+        // Lower default parameter values into their bodies before anything
+        // else, so prescan and compilation only ever see the desugared form.
         let mut stmts = module.stmts.to_vec();
         crate::desugar::desugar(&mut stmts);
         // A `native fn` sharing its name with Petal `fn`s becomes ordinary
@@ -2721,7 +2721,7 @@ fn shadow_read_fn_names(stmts: &[Stmt]) -> HashSet<String> {
                 return;
             }
             match &e.kind {
-                ExprKind::Ident(name) | ExprKind::AtVar(name) | ExprKind::CellGet(name) => {
+                ExprKind::Ident(name) | ExprKind::CellGet(name) => {
                     let name = name.clone();
                     self.note(&name);
                 }
@@ -2900,12 +2900,6 @@ fn hoistable_const_lets(stmts: &[Stmt]) -> HashSet<String> {
         }
     }
     impl crate::ast::ExprVisitor for Writes<'_> {
-        fn visit_expr(&mut self, e: &Expr) {
-            if let ExprKind::AtVar(n) = &e.kind {
-                self.0.insert(n.clone());
-            }
-            crate::ast::walk_expr(self, e);
-        }
         fn visit_stmt(&mut self, s: &Stmt) {
             if let StmtKind::Assign { target, .. } | StmtKind::Set { target, .. } = &s.kind
                 && let Some(root) = target_root(target)
@@ -3310,7 +3304,7 @@ fn idents_in_stmts(stmts: &[Stmt]) -> HashSet<String> {
     impl crate::ast::ExprVisitor for Idents<'_> {
         fn visit_expr(&mut self, e: &Expr) {
             match &e.kind {
-                ExprKind::Ident(name) | ExprKind::AtVar(name) | ExprKind::CellGet(name) => {
+                ExprKind::Ident(name) | ExprKind::CellGet(name) => {
                     self.0.insert(name.clone());
                 }
                 _ => {}

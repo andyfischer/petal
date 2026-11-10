@@ -561,7 +561,6 @@ fn expr_json(e: &Expr) -> J {
     let (tag, fields) = match &e.kind {
         ExprKind::Literal(lit) => ("Literal", literal_json(lit)),
         ExprKind::Ident(name) => ("Ident", json!({"name": name})),
-        ExprKind::AtVar(name) => ("AtVar", json!({"name": name})),
         ExprKind::CellGet(name) => ("CellGet", json!({"name": name})),
         ExprKind::BinaryOp { op, left, right } => (
             "BinaryOp",

@@ -36,7 +36,11 @@ first, then everything else works on it.
    rule reports it for you. When the form is removed from the parser, its
    parse error names the command, and the migration keeps working on a parse
    that still recognises the old form (keep that recognition, or a dedicated
-   pre-parse, inside `core/src/migrate/`).
+   pre-parse, inside `core/src/migrate/`). `at_rebind.rs` is the example of
+   the second: it finds the removed `@x` with the lexer, blanks each `@` to a
+   space so the file parses with every offset unchanged, and plans its
+   rewrite on that parse. Such a migration runs first in `run()`, since the
+   ones after it need the file to parse.
 4. **Test it.** Add a fixture row to `FIXTURES` in
    `core/tests/migrate_old_code.rs` (old source → migrated source; the tests
    check it alone and with every other migration, idempotency, that both

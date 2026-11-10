@@ -227,11 +227,6 @@ impl ExprVisitor for Facts {
                     self.pattern(&arm.pattern);
                 }
             }
-            // `f(@x)` assigns `x`.
-            ExprKind::AtVar(n) => {
-                self.writes
-                    .push((n.clone(), e.span.start.offset as usize, self.fn_depth > 0));
-            }
             _ => {}
         }
         walk_expr(self, e);
@@ -501,7 +496,7 @@ impl ExprVisitor for Reads<'_> {
                 }
                 self.reads.push((start, end, self.fn_depth > 0));
             }
-            ExprKind::CellGet(n) | ExprKind::AtVar(n) if n == self.name => self.refused = true,
+            ExprKind::CellGet(n) if n == self.name => self.refused = true,
             ExprKind::Lambda { params, body } => {
                 self.nested(params, body);
                 return;

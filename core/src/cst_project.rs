@@ -873,10 +873,6 @@ impl Projector {
                 ),
                 span: self.node_span(node)?,
             }),
-            SyntaxKind::AtVarExpr => Ok(Expr {
-                kind: ExprKind::AtVar(self.only_ident(node)?),
-                span: self.node_span(node)?,
-            }),
             SyntaxKind::GetExpr => Ok(Expr {
                 kind: ExprKind::CellGet(self.only_ident(node)?),
                 span: self.node_span(node)?,
@@ -1989,7 +1985,6 @@ mod tests {
         assert_projects("[1, 2, 3]\n[1, -2, 3]\n[]\n");
         assert_projects("{ a: 1, b: f(2), ...rest }\n");
         assert_projects("nil\ntrue\nfalse\n1.5\n\"plain\"\n");
-        assert_projects("f(@x, y)\n");
         assert_projects("let c = #ff8800\nlet d = #f80\nlet e = #f808\nlet g = #ff880080\n");
     }
 

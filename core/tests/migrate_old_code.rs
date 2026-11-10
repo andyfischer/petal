@@ -6,13 +6,26 @@
 
 use petal::env::Env;
 use petal::migrate::{
-    CONFIG_LET_DEPRECATED, CONST_DECL_DEPRECATED, EXPORT_TO_PUB, MIGRATIONS, MigrateOptions,
+    AT_REBIND, CONFIG_LET_DEPRECATED, CONST_DECL_DEPRECATED, EXPORT_TO_PUB, MIGRATIONS, MigrateOptions,
     MigrateOutcome, STATE_KEY_DEPRECATED, migrate_source,
 };
 
-/// (migration, old source, migrated source). Each old source compiles, and
-/// is written only in the one old form its migration rewrites.
+/// (migration, old source, migrated source). Each old source compiles (or,
+/// for a removed form, compiled before its removal), and is written only in
+/// the one old form its migration rewrites.
 const FIXTURES: &[(&str, &str, &str)] = &[
+    // The old test of the operator (test/at-arg-update), migrated.
+    (
+        AT_REBIND,
+        "fn double(x)\n  x * 2\nend\nfn inc(x)\n  x + 1\nend\n\
+         let a = 5\ndouble(@a)\nprint(a) // 10\n\
+         let b = 3\nlet r = inc(double(@b))\nprint(b, r) // 6 7\n\
+         let c = 4\ndouble(@c)\ndouble(@ c)\nprint(c) // 16\n",
+        "fn double(x)\n  x * 2\nend\nfn inc(x)\n  x + 1\nend\n\
+         let a = 5\na = double(a)\nprint(a) // 10\n\
+         let b = 3\nb = double(b)\nlet r = inc(b)\nprint(b, r) // 6 7\n\
+         let c = 4\nc = double(c)\nc = double(c)\nprint(c) // 16\n",
+    ),
     (
         EXPORT_TO_PUB,
         "export fn double(x)\n  x * 2\nend\nexport let limit = 10 // max\nprint(double(limit))\n",
@@ -43,6 +56,26 @@ fn migrate_with(src: &str, only: Option<&[&str]>) -> MigrateOutcome {
         ..Default::default()
     };
     migrate_source(src, &opts).unwrap_or_else(|e| panic!("migrate: {e}\n{src}"))
+}
+
+/// Whether `src` compiles; a removed form is checked as the operator's
+/// desugaring would have seen it, which for `@` is "with the `@`s read as
+/// nothing" (the program the old compiler checked had the same names).
+fn compiled_before(rule: &str, src: &str) -> bool {
+    if rule == AT_REBIND {
+        !compiles(src) && compiles(&src.replace('@', " "))
+    } else {
+        compiles(src)
+    }
+}
+
+fn run_out(src: &str) -> Vec<String> {
+    let mut env = Env::new();
+    env.set_echo(false);
+    let pid = env.load_program(src).unwrap_or_else(|e| panic!("{e}\n{src}"));
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap_or_else(|e| panic!("{e}\n{src}"));
+    env.take_output()
 }
 
 fn compiles(src: &str) -> bool {
@@ -78,7 +111,7 @@ fn every_text_migration_has_a_fixture() {
 #[test]
 fn each_migration_rewrites_its_fixture_on_its_own_and_with_the_rest() {
     for (rule, before, after) in FIXTURES {
-        assert!(compiles(before), "{rule}: the old source does not compile");
+        assert!(compiled_before(rule, before), "{rule}: the old source does not compile");
         let only = migrate_with(before, Some(&[rule]));
         assert_eq!(only.output, *after, "{rule} (--only)");
         assert!(only.findings.iter().all(|f| f.rule == *rule && f.fixable), "{rule}: {:?}", only.findings);
@@ -106,6 +139,15 @@ fn migrating_twice_changes_nothing() {
 fn another_migration_leaves_a_fixture_alone() {
     for (rule, before, _) in FIXTURES {
         for (other, _, _) in FIXTURES.iter().filter(|(o, _, _)| o != rule) {
+            if *rule == AT_REBIND {
+                // Without its own migration, an `@` file does not parse.
+                let opts = MigrateOptions {
+                    only: Some(vec![other.to_string()]),
+                    ..Default::default()
+                };
+                assert!(migrate_source(before, &opts).is_err(), "--only {other}");
+                continue;
+            }
             let out = migrate_with(before, Some(&[other]));
             assert_eq!(out.output, *before, "--only {other} touched the {rule} fixture");
         }
@@ -187,4 +229,97 @@ fn the_registry_lists_old_imports_last_as_a_batch_migration() {
     assert_eq!(last.name, petal::migrate::OLD_IMPORTS);
     assert!(last.batch);
     assert!(MIGRATIONS[..MIGRATIONS.len() - 1].iter().all(|m| !m.batch));
+}
+
+// ---------------------------------------------------------------------------
+// `at-rebind`: the removed `f(@x)` operator
+// ---------------------------------------------------------------------------
+
+#[test]
+fn an_at_rebind_is_a_parse_error_that_names_the_tool() {
+    let mut env = Env::new();
+    env.set_echo(false);
+    let err = format!("{}", env.load_program("let a = [1]\nappend(@a, 2)\n").unwrap_err());
+    assert!(err.contains("`@a` is not an expression"), "{err}");
+    assert!(err.contains("Write `a = f(a)` instead of `f(@a)`"), "{err}");
+    assert!(err.contains("petal migrate-old-code"), "{err}");
+    // `@` with no name after it, where a statement starts: the same pointer,
+    // and nothing else (`@` is reserved for annotations).
+    let err = format!("{}", env.load_program("@ 1\n").unwrap_err());
+    assert!(err.contains("`@` is not an expression"), "{err}");
+    assert!(err.contains("petal migrate-old-code"), "{err}");
+}
+
+#[test]
+fn an_at_rebind_migrates_to_the_program_it_desugared_to() {
+    // The values the old operator's test expected: 10, 6 7, 16.
+    let (_, _, after) = FIXTURES.iter().find(|(r, _, _)| *r == AT_REBIND).unwrap();
+    assert_eq!(run_out(after), ["10", "6 7", "16"]);
+}
+
+#[test]
+fn an_at_rebind_lifts_within_each_block_and_keeps_its_indentation() {
+    let src = "fn double(x)\n  x * 2\nend\nfn add(x, y)\n  x + y\nend\n\
+               fn go(a, b)\n  if a > 0 then double(@a) end\n  if b > 0 then\n    \
+               let r = add(double(@a), @b) // note\n    print(r)\n  end\n  \
+               for i in [1, 2] do\n    a = add(double(@a), 1)\n  end\n  \
+               print(\"@a stays {a}\")\n  [a, b]\nend\nprint(go(1, 2))\n";
+    let out = migrate_with(src, None);
+    assert_eq!(
+        out.output,
+        "fn double(x)\n  x * 2\nend\nfn add(x, y)\n  x + y\nend\n\
+         fn go(a, b)\n  if a > 0 then a = double(a) end\n  if b > 0 then\n    \
+         a = double(a)\n    b = add(a, b)\n    let r = b // note\n    print(r)\n  end\n  \
+         for i in [1, 2] do\n    a = double(a)\n    a = add(a, 1)\n  end\n  \
+         print(\"@a stays {a}\")\n  [a, b]\nend\nprint(go(1, 2))\n"
+    );
+    assert_eq!((out.rewritten(), out.left()), (3, 0));
+    assert_eq!(run_out(&out.output), ["6", "@a stays 19", "[19, 6]"]);
+    assert_eq!(migrate_with(&out.output, None).output, out.output);
+}
+
+#[test]
+fn an_at_rebind_the_operator_could_not_lift_is_left_for_a_hand_edit() {
+    for (src, why) in [
+        ("fn add(x, y)\n  x + y\nend\nlet a = 1\nlet b = 2\nadd(@a, @b)\n", "two in one call"),
+        (
+            "fn double(x)\n  x * 2\nend\nlet a = 1\nwhile double(@a) < 10 do\n  print(a)\nend\n",
+            "a while condition",
+        ),
+        (
+            "fn double(x)\n  x * 2\nend\nlet a = 1\nlet m = match a\n  when 1 -> double(@a)\n  \
+             when _ -> 0\nend\n",
+            "a match arm",
+        ),
+        (
+            "fn double(x)\n  x * 2\nend\nlet b = 1\nif true then print(double(@b)) end\n",
+            "an assignment that would share its line",
+        ),
+    ] {
+        let out = migrate_with(src, None);
+        assert_eq!(out.output, src, "{why}");
+        assert!(out.left() > 0 && out.rewritten() == 0, "{why}: {:?}", out.findings);
+        assert!(out.findings.iter().all(|f| f.rule == AT_REBIND && !f.fixable), "{why}");
+    }
+}
+
+#[test]
+fn an_at_rebind_and_a_deprecated_form_migrate_together() {
+    let src = "fn double(x)\n  x * 2\nend\nexport let n = 2\nconst K = 3\nlet a = 1\ndouble(@a)\nprint(a + n + K)\n";
+    let out = migrate_with(src, None);
+    assert_eq!(
+        out.output,
+        "fn double(x)\n  x * 2\nend\npub let n = 2\nlet K = const(3)\nlet a = 1\na = double(a)\nprint(a + n + K)\n"
+    );
+    let rules: Vec<&str> = out.findings.iter().map(|f| f.rule).collect();
+    assert_eq!(rules, [EXPORT_TO_PUB, CONST_DECL_DEPRECATED, AT_REBIND]);
+    assert_eq!(run_out(&out.output), ["7"]);
+}
+
+#[test]
+fn an_at_in_a_string_or_a_comment_is_not_a_rebind() {
+    let src = "let a = \"@a\" // f(@a)\nprint(a)\n";
+    let out = migrate_with(src, None);
+    assert_eq!(out.output, src);
+    assert!(out.findings.is_empty());
 }

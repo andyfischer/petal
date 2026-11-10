@@ -15,6 +15,7 @@ parser to the existing `const(…)`/`tunable(…)`/`rigid(…)` calls, with the
 value inserted as the first argument (Python's curried order does not fit
 Petal's builtins). No run-time decorators on `fn` for now: they conflict with
 hoisting, direct self-recursion, overloading and method pinning. The old `@`
-rebind operator still exists (one `.ptl` file uses it); its full inventory is
-in the proposal, and it is being removed separately. Open questions for the
-owner are at the end of the proposal.
+rebind operator was removed on 9 November 2026: the parser rejects `@` where
+an expression starts and names `petal migrate-old-code`, whose `at-rebind`
+migration rewrites `f(@x)` to `x = f(x)`. Its inventory is in the proposal.
+Open questions for the owner are at the end of the proposal.

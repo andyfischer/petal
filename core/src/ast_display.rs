@@ -239,7 +239,6 @@ impl Printer {
                 self.line(depth, &format!("Literal {}", fmt_literal(lit)), span);
             }
             ExprKind::Ident(name) => self.line(depth, &format!("Ident {name}"), span),
-            ExprKind::AtVar(name) => self.line(depth, &format!("AtVar {name}"), span),
             ExprKind::CellGet(name) => self.line(depth, &format!("CellGet {name}"), span),
             ExprKind::BinaryOp { op, left, right } => {
                 self.line(depth, &format!("BinaryOp {op:?}"), span);

@@ -461,23 +461,6 @@ fn a_path_that_matches_nothing_lists_what_it_could_have_meant() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn an_at_rebind_of_the_binding_is_refused() {
-    let src = "let xs = [1]\nprint(xs)\nappend(@xs, 2)\nprint(xs)\n";
-    let err = refusal("at", src, "/xs");
-    assert!(err.contains("`@xs` rebinds the binding"), "{err}");
-    assert!(err.contains("line 3"), "{err}");
-}
-
-#[test]
-fn an_at_rebind_of_a_shadow_is_not_the_bindings_business() {
-    let src = "let xs = [1]\nfn f(xs)\n  append(@xs, 2)\n  xs\nend\nprint(f(xs))\n";
-    assert_eq!(
-        converted("at-shadow", src, "/xs"),
-        src.replace("let xs", "var xs")
-    );
-}
-
-#[test]
 fn what_cannot_be_a_var_is_refused() {
     let src =
         "var a = 1\nstate var b = 2\nconfig let c = 3\nfn d() 4 end\nprint(a + b + c + d())\n";
@@ -609,21 +592,6 @@ fn an_importer_that_writes_the_binding_is_refused() {
     assert_eq!(
         std::fs::read_to_string(&reader).unwrap(),
         "import ./tally: name\nfn f() name end\nprint(f())\n"
-    );
-}
-
-#[test]
-fn an_importer_that_rebinds_with_at_is_refused() {
-    let dir = Dir::new("importer-at");
-    let tally = dir.write("tally.ptl", "pub let names = [\"t\"]\n");
-    dir.write(
-        "writer.ptl",
-        "import ./tally: names\nappend(@names, \"z\")\nprint(names)\n",
-    );
-    let err = convert(&tally, "/names", &[]).expect_err("an importer rebinds it");
-    assert!(
-        err.contains("writer.ptl imports `names` and writes it (line 2)"),
-        "{err}"
     );
 }
 
@@ -895,15 +863,12 @@ fn without_dry_run_the_file_is_rewritten_in_place() {
 #[test]
 fn a_refusal_exits_nonzero_and_leaves_the_file_alone() {
     let dir = Dir::new("cli-refusal");
-    let src = "let xs = [1]\nappend(@xs, 2)\nprint(xs)\n";
+    let src = "var xs = [1]\nset xs = append(xs, 2)\nprint(xs)\n";
     let file = dir.write("main.ptl", src);
     let path = file.to_str().unwrap();
     let (_, stderr, ok) = petal(&["apply-change", "convert-to-var", path, "--target", "xs"]);
     assert!(!ok);
-    assert!(
-        stderr.contains("convert-to-var: refusing: `@xs`"),
-        "{stderr}"
-    );
+    assert!(stderr.contains("is already a `var`"), "{stderr}");
     assert_eq!(dir.read("main.ptl"), src);
 
     let (_, stderr, ok) = petal(&["apply-change", "convert-to-var", path]);

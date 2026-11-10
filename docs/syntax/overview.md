@@ -129,7 +129,6 @@ its declaration (see [`var`, `set` and `get`](#var-set-and-get)).
 |------|-------------|-----|
 | `x \|> f(a)` | `f(x, a)` | [Pipe Operator](../language-guide.md#pipe-operator) |
 | `obj.method(a)` | `method(obj, a)` | [Method Syntax](../language-guide.md#method-syntax), [resolution order](../language-guide.md#resolution-order) |
-| `f(@x)` | `x = f(x, ...)` | [Rebind Operator](rebind-operator.md) |
 | `#ff8800` | `{r: 255, g: 136, b: 0}` | [Color Literals](../language-guide.md#color-literals) |
 
 ## Statements
@@ -542,7 +541,6 @@ assignability rules.
 - [Implicit Return Values](implicit-return-values.md) — function tails, collecting loops, `-> nil`.
 - [Commas](commas.md) — where commas are required, and how `-` is disambiguated.
 - [Line Continuation](line-continuation.md) — breaking a long expression across lines.
-- [Rebind Operator](rebind-operator.md) — the `@` rebind operator.
 - [Inline state](../features/inline-state.md) — the `state` keyword.
 - [Module System](../module-system.md) — `import`, exports, resolution.
 - [Builtins Reference](../Builtins.md) — built-in functions.

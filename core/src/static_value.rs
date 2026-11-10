@@ -1258,7 +1258,6 @@ fn describe_expr(kind: &ExprKind) -> &'static str {
         ExprKind::Lambda { .. } => "a lambda",
         ExprKind::FieldAccess { .. } => "a field access",
         ExprKind::IndexAccess { .. } => "an index access",
-        ExprKind::AtVar(_) => "an `@` in-out marker",
         _ => "an expression",
     }
 }

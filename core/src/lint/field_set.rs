@@ -126,10 +126,6 @@ impl ExprVisitor for Shapes {
                     }
                 }
             }
-            // `f(@x)` assigns `x` whatever `f` returns.
-            ExprKind::AtVar(name) => {
-                self.other_value.insert(name.clone());
-            }
             _ => {}
         }
         walk_expr(self, e);

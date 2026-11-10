@@ -285,8 +285,6 @@ struct Arg {
     span: SourceSpan,
     /// The argument's name, when it is a bare identifier.
     ident: Option<String>,
-    /// `@x` — rewritten into an assignment before compilation; left alone.
-    at_var: bool,
     /// `fn(…) -> …` written in place.
     literal_fn: bool,
 }
@@ -323,7 +321,6 @@ impl ExprVisitor for Sites {
                             ExprKind::Ident(name) => Some(name.clone()),
                             _ => None,
                         },
-                        at_var: matches!(a.kind, ExprKind::AtVar(_)),
                         literal_fn: matches!(a.kind, ExprKind::Lambda { .. }),
                     })
                     .collect(),
@@ -504,8 +501,7 @@ impl<'a> Finder<'a> {
         for (j, &(first, last)) in slots.iter().enumerate() {
             let arg = &site.args[piped + j];
             let (start, end) = (self.tokens[first].1, self.tokens[last].2);
-            if arg.at_var
-                || (arg.span.start.offset as usize) < start
+            if (arg.span.start.offset as usize) < start
                 || (arg.span.end.offset as usize) > end
             {
                 return None;

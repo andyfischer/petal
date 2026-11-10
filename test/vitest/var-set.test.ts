@@ -106,12 +106,13 @@ set x = 1`);
     expect(err).toContain("`x` is not a `var`");
   });
 
-  it("rejects the `@` rebind sugar on a var", () => {
-    // `f(@x)` desugars to `x = f(x)`, which is an `=` form.
+  it("rejects the removed `@` rebind sugar and points at the migration", () => {
+    // `f(@x)` was sugar for `x = f(x)`; it is a parse error now.
     const err = runPetalError(`fn f(n) n + 1 end
 var x = 0
 f(@x)`);
-    expect(err).toContain("`x` is a `var`; use `set x = ...`");
+    expect(err).toContain("`@x` is not an expression");
+    expect(err).toContain("petal migrate-old-code");
   });
 
   it("does not let `set` declare a binding", () => {

@@ -365,10 +365,6 @@ impl ExprVisitor for Uses<'_> {
                     self.gets.push(e.span);
                 }
             }
-            ExprKind::AtVar(n) if n == self.name => {
-                self.mentioned = true;
-                self.refused = true;
-            }
             ExprKind::Lambda { params, body } => {
                 self.nested_fn(params, body);
                 return;

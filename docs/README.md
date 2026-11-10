@@ -43,7 +43,6 @@ When you add to the docs, extend the owner and link to it from elsewhere.
 | [Function Overloading](syntax/function-overloading.md) | How calls pick between functions and methods with the same name; named arguments and default parameters |
 | [Implicit Return Values](syntax/implicit-return-values.md) | What a function yields without `return`, where a `for` loop collects a list, and how `-> nil` turns both off |
 | [Settings](syntax/settings.md) | `let X = tunable(…)`: marking a binding as a setting that tools and hosts are meant to edit (formerly `config let`) |
-| [Rebind Operator](syntax/rebind-operator.md) | The `@` in-out argument operator: `f(@x)` means `x = f(x)` |
 | [Commas](syntax/commas.md) | Where commas are required, and how a leading `-` is read |
 | [Line Continuation](syntax/line-continuation.md) | Breaking a long expression across lines |
 

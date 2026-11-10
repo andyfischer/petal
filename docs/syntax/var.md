@@ -89,8 +89,7 @@ b = 2          // error: `b` is a `var`; use `set b = ...` to write it
 ```
 
 `set` never declares: an unknown name is an error. It takes field, index and
-compound targets (`set r.a = 1`, `set xs[0] = 1`, `set n += 1`). `@` stays a
-`let`-only [rebind](rebind-operator.md) because it desugars to `x = f(x)`.
+compound targets (`set r.a = 1`, `set xs[0] = 1`, `set n += 1`).
 
 An exported `var` is readable by importers under every import form and writable
 only by the module that declared it. There is deliberately no cross-module
@@ -367,7 +366,7 @@ so there is one cell per slot:
 Assignment to a name bound outside the current function is a compile error at
 the assignment site. It applies to every declaration site (module `let`,
 module `state`, lambda capture, enclosing fn local) and every syntactic form
-(`x =`, `xs[i] =`, `r.f =`, and `@x`, which desugars to `=`).
+(`x =`, `xs[i] =`, `r.f =`).
 
 Such an assignment would create a function-local shadow and silently leave the
 outer binding alone. `var`/`set` is exempt: a `set` really does modify the

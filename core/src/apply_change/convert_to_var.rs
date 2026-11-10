@@ -36,9 +36,7 @@
 //!
 //! # What it refuses
 //!
-//! - **`@x`** on the binding. `@` desugars to `x = f(x)` and is `let`-only;
-//!   which of the two spellings the author wants afterwards is their call.
-//! - **An importer that writes the binding** (`x = …`, `@x`, or `m.x = …`
+//! - **An importer that writes the binding** (`x = …` or `m.x = …`
 //!   through the module's name), when the binding is exported. An importer
 //!   may read an exported `var` and never write it (docs/module-system.md),
 //!   so there is no rewrite to offer.
@@ -364,8 +362,6 @@ struct Uses<'a> {
     gets: Vec<usize>,
     /// Reads in the declaring function, which stay as they are.
     bare_reads: usize,
-    /// Lines of `@name` rebinds.
-    rebinds: Vec<u32>,
     /// A span that does not hold the text the AST says it does.
     lost: Option<u32>,
 }
@@ -381,7 +377,6 @@ impl<'a> Uses<'a> {
             writes: Vec::new(),
             gets: Vec::new(),
             bare_reads: 0,
-            rebinds: Vec::new(),
             lost: None,
         }
     }
@@ -482,18 +477,10 @@ impl<'a> Uses<'a> {
         }
         if self.importer {
             let mut written: Vec<u32> = self.writes.iter().map(|w| w.1).collect();
-            written.extend(&self.rebinds);
             written.sort();
             if !written.is_empty() {
                 return Err(importer_write_refusal(file_path, name, &written));
             }
-        } else if !self.rebinds.is_empty() {
-            return Err(format!(
-                "refusing: `@{name}` rebinds the binding ({file} {}). `@` is `let`-only: it \
-                 desugars to `{name} = f({name})`, which a `var` rejects. Write those calls out \
-                 as `{name} = f({name})` first, and they will be converted to `set`",
-                lines(&self.rebinds)
-            ));
         }
         Ok(())
     }
@@ -689,7 +676,6 @@ impl ExprVisitor for Uses<'_> {
                     self.lost = Some(e.span.start.line);
                 }
             }
-            ExprKind::AtVar(n) if n == self.name => self.rebinds.push(e.span.start.line),
             ExprKind::Lambda { params, body } => self.nested_fn(params, body),
             ExprKind::If {
                 condition,

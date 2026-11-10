@@ -511,7 +511,6 @@ impl Walker<'_> {
             ExprKind::StringInterp { exprs, .. } => exprs.iter().for_each(|x| self.expr(x)),
             ExprKind::Literal(_)
             | ExprKind::Ident(_)
-            | ExprKind::AtVar(_)
             | ExprKind::CellGet(_)
             | ExprKind::OptionalAccess(_)
             | ExprKind::Lambda { .. }

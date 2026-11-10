@@ -33,6 +33,11 @@ Old-syntax rewrites that existed before, and where they are now:
 | lint `state-key-deprecated` (`lint/state_key.rs`) | `state(key)` → `memo(key)` where provable | migration of the same name (`migrate/state_key.rs`); the compile warning (`compiler/keyed_state.rs`) ends "; run `petal migrate-old-code`" |
 | `petal fix-imports` (`fix_imports.rs`) | removed import forms (bare sibling imports, `: *`, `import creative`, missing imports of moved builtins) | migration `old-imports`, run last over the batch. `petal fix-imports` stays as that one migration alone (own `--check` list and `--diff`); the module loader's errors for the removed forms now name `petal migrate-old-code` |
 
+Added since: `at-rebind` (2026-11-09), the first migration for a form the
+parser no longer reads: the `f(@x)` rebind operator, removed to free `@` for
+annotations (`migrate/at_rebind.rs`; it finds `@x` with the lexer and plans on
+a parse with the `@`s blanked).
+
 Stayed where they were, as style or correctness rules about current code:
 `const-of-literal` (now `lint/const_of_literal.rs`), `state-as-constant`,
 `config-not-data`, the `dm-hint-*` and `tunable-*` rules, and every other lint

@@ -40,7 +40,7 @@ The main files and directories under `core/src/`, grouped by pipeline stage.
 | `lexer.rs` | Source text → token stream |
 | `parse.rs`, `ast.rs`, `ast_display.rs` | Tokens → AST; AST node types; AST pretty-printer |
 | `cst/`, `cst_project.rs`, `trivia.rs` | Lossless concrete syntax tree for source-preserving edits, and its projection to the typed AST. `parse.rs` and the CST parser are kept in lockstep; unifying them is future work |
-| `desugar.rs`, `export_keyword.rs` | `@`-argument (in-out call) desugaring; `export` as the deprecated spelling of `pub` |
+| `desugar.rs`, `export_keyword.rs` | default parameter values lowered into the function body; `export` as the deprecated spelling of `pub` |
 | `module.rs`, `package.rs`, `package_manager.rs`, `bundled.rs` | Module resolution and the import walk (merges imports into one `Program`); `petal.toml` packages; the hook a package manager answers git dependencies through (the package manager itself — git dependencies, `petal.lock`, `vendor/` — is `core-libs/petal-pkgman`); the packages compiled into the binary (`core/packages/`) |
 | `native_decl.rs` | `native fn` interface declarations: what a package says about a host native |
 | `compiler/` | AST → IR term graph: `expr.rs`, `stmt.rs`, `function.rs`, `phi.rs` (phi insertion), `state_ids.rs` (state keys and callsite ids), `enums.rs`, `match_check.rs`, `native.rs`, `capture_lag.rs` |

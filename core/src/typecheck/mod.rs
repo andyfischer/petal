@@ -1662,7 +1662,6 @@ impl<'a> Checker<'a> {
                 .lookup(name)
                 .map(|v| v.effective())
                 .unwrap_or(Type::Any),
-            ExprKind::AtVar(_) => Type::Any,
             ExprKind::BinaryOp { op, left, right } => {
                 // `a.b ?? d` explicitly tolerates `b` being absent — walk the
                 // left side with the missing-field warning turned off.
@@ -2934,7 +2933,6 @@ fn is_atomic(kind: &ExprKind) -> bool {
         kind,
         ExprKind::Literal(_)
             | ExprKind::Ident(_)
-            | ExprKind::AtVar(_)
             | ExprKind::Call { .. }
             | ExprKind::FieldAccess { .. }
             | ExprKind::IndexAccess { .. }

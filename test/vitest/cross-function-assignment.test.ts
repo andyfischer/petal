@@ -80,21 +80,6 @@ f(true)`);
     expect(out.line).toBe(5);
   });
 
-  it("fires on the `@` rebind operator, which desugars to `=`", () => {
-    // `bump(@n)` is `n = bump(n)` — the `=` form, so it is caught by the same
-    // check rather than sneaking past as sugar.
-    const out = checkJsonAllowFail(`let n = 1
-fn bump(v)
-  v + 1
-end
-fn f()
-  bump(@n)
-end
-print(f())`);
-    expect(out.error).toBe(true);
-    expect(outerAssignErrors(out)).toHaveLength(1);
-  });
-
   it("is silent for same-function and top-level rebinds", () => {
     const out = checkJson(`let t = 0
 if true then t = 1 end

@@ -995,7 +995,7 @@ fmt touches whitespace only (see [dev/linter-plan.md](dev/linter-plan.md)):
 - **Spacing within a line** — one space around binary and assignment operators,
   `->` and `|>`, and after `,` and `:`; none inside `()` `[]` `{}` or a string's
   `{…}` hole, none before `,` `:` `;`, none around `.` `?.` `..`, none after a
-  unary `-` `!` or `@` or a spread `...`, and none between a callee and its `(`.
+  unary `-` `!`, an `@` or a spread `...`, and none between a callee and its `(`.
   Any other run of blanks becomes one space.
 - **Blank lines** — at most one in a row, none at the start or end of the file,
   exactly one final newline. Trailing whitespace goes.
@@ -1037,6 +1037,7 @@ one is an error that names the command.
 
 | Migration | Rewrites | Old form |
 |---|---|---|
+| `at-rebind` | the `@` rebind operator, exactly as it desugared: `f(@x)` → `x = f(x)`; an `@x` deeper in a statement lifts its nearest enclosing call into an assignment on the line before (`let r = g(f(@x))` → `x = f(x)` then `let r = g(x)`). An `@` the operator could not lift (two in one call, a `while` condition, a `match` arm, a `memo` initializer), or one whose statement shares its line with other code (`if c then g(f(@x)) end`), is listed for a hand edit. It runs first: the file does not parse until it has | removed 2026-11-09 (`@` is kept for [annotations](proposals/annotation-syntax.md)): a parse error that names the command |
 | `export-to-pub` | `export fn f` → `pub fn f`, on any declaration or `import` (trailing comments kept in their column) | accepted without a warning; `petal lint` reports it (`old-syntax`) |
 | `const-decl-deprecated` | `const X = e` → `let X = const(e)`, literals included, with a closing `)` after a multi-line initializer and trailing comments kept in their column ([plan](tasks/lifecycle-annotation-functions-refactor.md)) | warns (Phase 5); removed in Phase 6 |
 | `config-let-deprecated` | `config let X = v` → `let X = tunable(v)`, or only `config` dropped when `v` is already a `tunable(…)` call | warns (Phase 5); removed in Phase 6 |
@@ -1236,7 +1237,7 @@ Which one a function is shows in how it is called:
 | never called, or `pub` | `choose: -> list or -> nil` | skips it |
 
 A call's result is *used* when the call is bound, passed, returned, collected
-by a loop, or written with an [in-out argument](syntax/rebind-operator.md); it
+by a loop, or assigned; it
 is unused when the call is a statement. A call that is the tail of another
 un-annotated function is used exactly when *that* function's result is, and the
 analysis follows such chains. Doubt resolves toward leaving the choice to the
@@ -1492,8 +1493,6 @@ belong to the other binding and are not touched.
 
 **Refused:**
 
-- an `@x` rebind of the target. `@` desugars to `x = f(x)` and is `let`-only;
-  write those calls out as `x = f(x)` first and they are converted to `set`;
 - a file that imports the target and writes it (see [importers](#importers));
 - a (deprecated) `config let` (a `var` cannot be config), a binding that is already a
   `var`, and a path that names a function.
@@ -1555,7 +1554,7 @@ follows it into them. An importer may read an exported `var` and
 | A bare read inside a function (`import m: x`, or a plain `import m`) | gains `get` |
 | A bare read at the file's top level | left alone |
 | A qualified read, `m.x` | left alone: it reads the current value wherever it is written |
-| A write: `x = …`, `@x`, or `m.x = …` through the module's name | **the whole change is refused** |
+| A write: `x = …` or `m.x = …` through the module's name | **the whole change is refused** |
 
 Importers are looked for in one of two places. The report says which, and
 names every importer it found:
@@ -2407,7 +2406,6 @@ Consumers should treat the single key of the `kind` object as the node type
 |---------|-------|
 | `Literal` | `{"Literal": Literal}` |
 | `Ident` | `{"Ident": string}` |
-| `AtVar` | `{"AtVar": string}` — the `@x` of a [rebind](syntax/rebind-operator.md) |
 | `CellGet` | `{"CellGet": string}` — `get x`, an explicit read of a `var` |
 | `BinaryOp` | `{"BinaryOp": {"op": BinOp, "left": Expr, "right": Expr}}` |
 | `UnaryOp` | `{"UnaryOp": {"op": UnaryOp, "operand": Expr}}` |

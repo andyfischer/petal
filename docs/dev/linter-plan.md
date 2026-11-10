@@ -243,9 +243,9 @@ pieces in a loop" shape, which has no mechanical fix (the answer is a list and
 The first slice's flagship rule rewrote `x = f(x)` to `f(@x)`. It was removed
 in August 2026: the `@` sugar has to be learned before the code reads, and a
 linter that *forces* it makes every file harder for a newcomer than the
-plain assignment. Two findings from it still describe the desugarer:
-statement-level `f(@x)` desugars to exactly `x = f(x)`, and the desugarer
-does not lift `@` out of match arms or `while` conditions.
+plain assignment. The operator itself was removed on 2026-11-09 (`@` is kept
+for annotations); `petal migrate-old-code`'s `at-rebind` migration writes out
+what it desugared to.
 
 ## 6. What belongs here, and what belongs on the suggestion channel
 

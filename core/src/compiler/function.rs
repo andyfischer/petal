@@ -478,7 +478,7 @@ impl Compiler {
         impl crate::ast::ExprVisitor for Reads<'_> {
             fn visit_expr(&mut self, e: &Expr) {
                 match &e.kind {
-                    ExprKind::Ident(n) | ExprKind::CellGet(n) | ExprKind::AtVar(n)
+                    ExprKind::Ident(n) | ExprKind::CellGet(n)
                         if self.found.is_none() && self.later.contains(&n) =>
                     {
                         self.found = Some((n.clone(), e.span));

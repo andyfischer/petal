@@ -69,7 +69,7 @@ syn region petalRawString    start=+"""+ end=+"""+ keepend contains=@Spell
 
 " ---- Operators ----
 " A lone `|` separates the alternatives of an or-pattern (`when "a" | "b"`).
-syn match petalOperator "|>\|->\|++=\|??=\|++\|+=\|-=\|\*=\|/=\|%=\|==\|!=\|<=\|>=\|&&\|||\|??\|?\.\|\.\.\|[-+*/%<>=!@|]"
+syn match petalOperator "|>\|->\|++=\|??=\|++\|+=\|-=\|\*=\|/=\|%=\|==\|!=\|<=\|>=\|&&\|||\|??\|?\.\|\.\.\|[-+*/%<>=!|]"
 " `...` is defined after `..` so it wins where both match.
 syn match petalPipe     "\.\.\."
 

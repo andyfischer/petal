@@ -1158,7 +1158,7 @@ end
 enum K
   a(f: fn(x)
     let c = x
-    bump(@c)
+    c = bump(c)
     c
   end),
 end

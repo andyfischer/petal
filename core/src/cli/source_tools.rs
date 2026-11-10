@@ -391,7 +391,19 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
     // `old-imports`, over the whole batch as the text migrations left it.
     let imports_on = opts.only.as_ref().is_none_or(|o| o.iter().any(|r| r == OLD_IMPORTS));
     let imports: Vec<Option<crate::fix_imports::Fixed>> = if imports_on {
-        fix_imports_batch(&inputs, &texts, &opts.paths, include_dirs, &mut errors)
+        // A file with an `@` rebind left for a hand edit does not parse yet;
+        // its sites are listed below, and its imports wait for the next run.
+        let parseable: Vec<Option<String>> = texts
+            .iter()
+            .zip(&findings)
+            .map(|(text, found)| {
+                let stuck = found
+                    .iter()
+                    .any(|f| f.rule == crate::migrate::AT_REBIND && !f.fixable);
+                if stuck { None } else { text.clone() }
+            })
+            .collect();
+        fix_imports_batch(&inputs, &parseable, &opts.paths, include_dirs, &mut errors)
     } else {
         inputs.iter().map(|_| None).collect()
     };

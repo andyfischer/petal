@@ -507,12 +507,6 @@ impl ExprVisitor for Walker<'_> {
         let position = std::mem::replace(&mut self.expr_position, Position::Value);
         match &e.kind {
             ExprKind::Call { function, args, .. } => {
-                // `f(@x)` is sugar for `x = f(x)`: the result is assigned.
-                let position = if args.iter().any(|a| matches!(a.kind, ExprKind::AtVar(_))) {
-                    Position::Value
-                } else {
-                    position
-                };
                 match &function.kind {
                     ExprKind::Ident(name) => self.evidence.calls.push((name.clone(), position)),
                     // A method call, or a module-qualified one.
@@ -701,12 +695,6 @@ mod tests {
         let early = "fn f(xs)\n  if len(xs) == 0 then return 0 end\n  for x in xs do x end\nend\n\
                      f([1])\n";
         assert!(find_in(early).is_empty());
-    }
-
-    #[test]
-    fn an_in_out_argument_call_is_a_use() {
-        let src = "fn grow(xs)\n  for x in xs do x + 1 end\nend\nlet a = [1]\ngrow(@a)\n";
-        assert_eq!(one(src).ty, Some("list"));
     }
 
     #[test]

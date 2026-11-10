@@ -60,12 +60,6 @@ pub struct Expr {
 pub enum ExprKind {
     Literal(Literal),
     Ident(String),
-    /// `@name` — an in-out argument marker. Only ever produced by the parser;
-    /// the [`crate::desugar`] pass rewrites `f(@x)` into `x = f(x)` and strips
-    /// every `AtVar` before compilation. Any `AtVar` that survives to the
-    /// compiler is an `@` used somewhere the desugar pass can't lift (e.g. not
-    /// inside a call at statement level) and compiles to a deferred error.
-    AtVar(String),
     /// `get name` — an explicit read of a `var` cell's current contents.
     ///
     /// Required wherever the read crosses a function boundary from the
@@ -949,7 +943,7 @@ pub trait ExprVisitor {
 /// Visit every direct child expression/statement of `e` with `v`.
 pub fn walk_expr<V: ExprVisitor + ?Sized>(v: &mut V, e: &Expr) {
     match &e.kind {
-        ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::AtVar(_) | ExprKind::CellGet(_) => {}
+        ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::CellGet(_) => {}
         ExprKind::BinaryOp { left, right, .. } => {
             v.visit_expr(left);
             v.visit_expr(right);
@@ -1124,7 +1118,7 @@ pub trait ExprVisitorMut {
 /// Visit every direct child expression/statement of `e` with `v` (mutable).
 pub fn walk_expr_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, e: &mut Expr) {
     match &mut e.kind {
-        ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::AtVar(_) | ExprKind::CellGet(_) => {}
+        ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::CellGet(_) => {}
         ExprKind::BinaryOp { left, right, .. } => {
             v.visit_expr(left);
             v.visit_expr(right);

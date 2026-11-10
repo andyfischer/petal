@@ -163,7 +163,7 @@ Expressions:
 | `tag` | Fields |
 |---|---|
 | `Literal` | `type` (`"nil"`, `"bool"`, `"int"`, `"float"`, `"string"`), `value` |
-| `Ident`, `CellGet`, `AtVar` | `name` |
+| `Ident`, `CellGet` | `name` |
 | `BinaryOp` | `op`, `left`, `right`. `op` is one of `Add Sub Mul Div Mod Eq Ne Lt Le Gt Ge And Or Coalesce Concat` |
 | `UnaryOp` | `op` (`Neg`, `Not`), `operand` |
 | `Call` | `function`, `args`, `arg_names` (empty when every argument is positional). A spread argument (`f(...args)`) is the last one, under the name `"..."` |

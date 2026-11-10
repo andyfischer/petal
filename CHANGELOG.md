@@ -203,6 +203,24 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   Positions in error messages are unchanged; `PETAL_EMBED_COMMENTS=keep`
   at build time keeps the comments ([embedding-web.md](docs/usage/embedding-web.md)).
 
+### Removed
+
+- **The `@` rebind operator (`f(@x)` for `x = f(x)`) is gone,** so that `@`
+  is free for declaration annotations
+  ([proposal](docs/proposals/annotation-syntax.md)). An `@` where an
+  expression starts is now a parse error: "`@x` is not an expression: the `@`
+  rebind operator was removed. Write `x = f(x)` instead of `f(@x)`; run
+  `petal migrate-old-code`". **Run `petal migrate-old-code`**: its new
+  `at-rebind` migration rewrites each use the way the operator desugared it
+  (`double(@a)` → `a = double(a)`; `let r = inc(double(@b))` →
+  `b = double(b)` on the line before, then `let r = inc(b)`), and lists for a
+  hand edit any `@` the operator could not lift or whose statement shares its
+  line with other code. The `AtVar` AST node is gone from `petal ast --json`
+  and `fn_ast`, `apply-change convert-to-var` no longer has an `@` refusal,
+  and docs/syntax/rebind-operator.md was deleted. No `.ptl` file in this
+  repo, Cheesecake, petal-creative, worlds-fair or petal-lang.org used it
+  outside the one test of the operator itself (removed).
+
 ### Deprecated
 
 - **`const X = e` and `config let X = v`** are deprecated in favour of the

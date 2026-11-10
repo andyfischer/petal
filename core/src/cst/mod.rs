@@ -93,7 +93,6 @@ pub enum SyntaxKind {
     // === Expression nodes ===
     LiteralExpr,
     IdentExpr,
-    AtVarExpr,
     GetExpr,
     BinaryExpr,
     UnaryExpr,

@@ -987,7 +987,6 @@ impl Cmp {
                 same
             }
             (ExprKind::Ident(x), ExprKind::Ident(y))
-            | (ExprKind::AtVar(x), ExprKind::AtVar(y))
             | (ExprKind::CellGet(x), ExprKind::CellGet(y)) => x == y,
             (
                 ExprKind::BinaryOp {

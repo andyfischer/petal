@@ -878,7 +878,7 @@ items = append(items, 3)      // grow an accumulator by rebinding
 list's only holder, `append` adds to the list where it is instead of copying
 it, so building a list of `n` elements this way costs `n` appends, not
 `n²/2` element copies. That covers a `let` rebound with `=`
-(`xs = append(xs, v)`, `append(@xs, v)`), a `var` or a `state var` written
+(`xs = append(xs, v)`), a `var` or a `state var` written
 with `set` (`set xs = append(xs, v)`, `set xs = append(get xs, v)`), inside a
 function or at the top level, and with reads of the list between the
 appends. 10,000, 20,000 and 40,000 appends take 3.6, 4.0 and 4.9 ms as a

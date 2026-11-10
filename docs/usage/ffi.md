@@ -771,7 +771,7 @@ Petal values are immutable **by construction**, not by runtime check:
 - Ordinary bindings are not mutable variables. Reassignment emits a new term
   and rebinds the name.
 - Collections are value types; `append`/`set_at`/`remove` return new
-  collections (the `@` rebind operator is sugar: `append(@nums, 4)`).
+  collections (`nums = append(nums, 4)`).
 - The one mutable slot is a `var`, and it is contained: no expression ever
   evaluates to a cell, and the cell slab lives in the heap, so `Heap::fork`
   isolates it like any other object. A `set` replaces the cell's contents; it

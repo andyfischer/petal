@@ -17,7 +17,8 @@
 //! (it is idempotent, and the tests hold every rule to that).
 //!
 //! **Text migrations** ([`migrate_source`]) need one file and a parse:
-//! `export-to-pub`, `const-decl-deprecated`, `config-let-deprecated`,
+//! `at-rebind` (which reads the old `@` itself, since the parser no longer
+//! does), `export-to-pub`, `const-decl-deprecated`, `config-let-deprecated`,
 //! `state-key-deprecated`. **`old-imports`** rewrites imports for the current
 //! module system and needs every file of the batch and a module resolver; it
 //! is [`crate::fix_imports`], which the CLI runs after the text migrations
@@ -44,6 +45,7 @@
 
 use std::path::PathBuf;
 
+mod at_rebind;
 pub mod export_keyword;
 mod export_to_pub;
 mod lifecycle_keywords;
@@ -59,6 +61,7 @@ use crate::lint::{LintOptions, Pipeline, RuleFilter, compiles, reparse};
 /// that rewrites it.
 pub const RUN_HINT: &str = "run `petal migrate-old-code`";
 
+pub const AT_REBIND: &str = "at-rebind";
 pub const EXPORT_TO_PUB: &str = "export-to-pub";
 pub const CONST_DECL_DEPRECATED: &str = "const-decl-deprecated";
 pub const CONFIG_LET_DEPRECATED: &str = "config-let-deprecated";
@@ -96,6 +99,20 @@ pub struct Migration {
 
 /// Every migration, in the order it runs.
 pub const MIGRATIONS: &[Migration] = &[
+    // First: the current parser rejects its old form, and every later
+    // migration needs a parse.
+    Migration {
+        name: AT_REBIND,
+        summary: "the `@` rebind operator: `f(@x)` becomes `x = f(x)` (a nested call is \
+                  lifted to an assignment before its statement); an `@` it could not lift is \
+                  reported for a hand edit",
+        added: "2026-11-09",
+        replaces: "`f(@x)`, removed 2026-11-09 to free `@` for annotations \
+                   (docs/proposals/annotation-syntax.md)",
+        old_form: OldForm::Removed,
+        partial: true,
+        batch: false,
+    },
     Migration {
         name: EXPORT_TO_PUB,
         summary: "the export modifier `export` is spelled `pub`",
@@ -237,7 +254,6 @@ pub(crate) fn silent_old_forms(source: &str) -> Result<Vec<(usize, Finding)>, St
 }
 
 fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome, String> {
-    let (chars, stmts) = reparse(source)?;
     // Lint's pipeline: findings mapped back to the original text, and
     // `petal-lint-ignore` honoured under each migration's name.
     let filter = RuleFilter {
@@ -257,8 +273,27 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         rules: RuleFilter::default(),
     };
 
+    // `@` rebinds first: until they are gone the file does not parse.
+    let mut rebinds = 0;
+    let mut rebinds_left = 0;
+    if opts.enabled(AT_REBIND) {
+        rebinds = p.apply(AT_REBIND, at_rebind::plan_at_rebind_fixes(source)?);
+        rebinds_left = p.unfixed(AT_REBIND);
+    }
+    let (chars, stmts) = match reparse(&p.text) {
+        Ok(parsed) => parsed,
+        // An `@` left for a hand edit keeps the file from parsing: report
+        // what was done and stop.
+        Err(_) if rebinds_left > 0 => {
+            let (output, mut findings) = p.finish();
+            findings.sort_by_key(|f| (f.line, f.column));
+            return Ok(MigrateOutcome { findings, output });
+        }
+        Err(e) => return Err(e),
+    };
+
     let exports = p.apply(EXPORT_TO_PUB, export_to_pub::plan_export_fixes(&stmts, &chars)?);
-    let mut rewrites = exports;
+    let mut rewrites = rebinds + exports;
 
     // One keyword, then the other over its output: each pads trailing
     // comments against the text as it stands.
@@ -292,7 +327,16 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
     if gate {
         // Only meaningful when the original compiles here at all; a file
         // whose imports don't resolve outside its app is migrated ungated.
-        if compiles(source, &lint_opts).is_ok()
+        //
+        // A file with `@` rebinds does not parse today; it compiled before
+        // their removal if it compiles with each `@` read as nothing (the
+        // same names, read instead of written).
+        let compiled = if rebinds > 0 {
+            compiles(&at_rebind::blank_markers(source)?, &lint_opts).is_ok()
+        } else {
+            compiles(source, &lint_opts).is_ok()
+        };
+        if compiled
             && let Err(e) = compiles(&output, &lint_opts)
         {
             return Err(format!(
@@ -300,7 +344,13 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
             ));
         }
         if exports > 0 {
-            let before = count_exports(source)?;
+            // The original read with its `@` rebinds blanked, which parses
+            // and has the same declarations.
+            let before = if rebinds > 0 {
+                count_exports(&at_rebind::blank_markers(source)?)?
+            } else {
+                count_exports(source)?
+            };
             let after = count_exports(&output)?;
             if before.0 != after.0 || before.1 != after.1 + exports {
                 return Err(format!(

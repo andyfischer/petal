@@ -209,6 +209,33 @@ fn a_site_left_for_a_hand_edit_is_reported_and_does_not_fail() {
 }
 
 #[test]
+fn an_at_rebind_is_rewritten_and_one_it_cannot_lift_is_listed() {
+    let t = Tree::new("at-rebind");
+    let src = "fn double(x)\n  x * 2\nend\nlet a = 1\ndouble(@a)\nprint(a)\n";
+    t.write("a.ptl", src);
+    let (_, err, code) = petal_in(&t.root, &["run", "a.ptl"]);
+    assert_ne!(code, 0);
+    assert!(err.contains("petal migrate-old-code"), "{err}");
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "."]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert!(out.contains("5:8: at-rebind:"), "{out}");
+    assert_eq!(t.read("a.ptl"), src.replace("double(@a)", "a = double(a)"));
+    let (out, _, code) = petal_in(&t.root, &["run", "a.ptl"]);
+    assert_eq!((out.trim(), code), ("2", 0));
+
+    // Two in one call: listed, left, and the file's imports wait (no
+    // second error for the parse the import pass would have needed).
+    let stuck = "fn add(x, y)\n  x + y\nend\nlet a = 1\nlet b = 2\nadd(@a, @b)\n";
+    t.write("b.ptl", stuck);
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "--check", "b.ptl"]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert!(err.contains("b.ptl:6:5: at-rebind:"), "{err}");
+    assert!(err.contains("2 site(s) in an old form are left for a hand edit"), "{err}");
+    assert!(!err.contains("error:"), "{err}");
+    assert_eq!(t.read("b.ptl"), stuck);
+}
+
+#[test]
 fn a_file_that_does_not_parse_is_reported_and_the_rest_are_migrated() {
     let t = Tree::new("broken");
     t.write("a.ptl", OLD);

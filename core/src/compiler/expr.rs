@@ -60,19 +60,6 @@ impl Compiler {
             // `get x` — the explicit read of a cell's current contents.
             ExprKind::CellGet(name) => self.compile_cell_get(name, span),
 
-            // `@x` that the desugar pass could not lift (it wasn't a call
-            // argument at statement level). Compile to a deferred error so it
-            // only fires if actually executed, matching undefined-variable
-            // handling.
-            ExprKind::AtVar(name) => {
-                let msg = format!(
-                    "`@{}` can only be used as an argument to a call at statement level",
-                    name
-                );
-                let msg_cid = self.constants.intern(ConstantValue::String(msg));
-                self.emit_term(TermOp::Error(msg_cid), smallvec![], None)
-            }
-
             ExprKind::BinaryOp { op, left, right } => {
                 // Short-circuit ops
                 if *op == BinOp::And {

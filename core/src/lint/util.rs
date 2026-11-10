@@ -166,7 +166,7 @@ pub(super) fn is_pure(e: &Expr, bound: &HashSet<String>) -> bool {
 pub(super) fn mentions(e: &Expr, name: &str) -> bool {
     let mut found = false;
     crate::ast::for_each_expr(e, &mut |x| {
-        if let ExprKind::Ident(n) | ExprKind::CellGet(n) | ExprKind::AtVar(n) = &x.kind
+        if let ExprKind::Ident(n) | ExprKind::CellGet(n) = &x.kind
             && n == name
         {
             found = true;

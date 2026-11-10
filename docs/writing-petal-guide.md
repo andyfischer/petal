@@ -431,14 +431,8 @@ returns a new value and never mutates its argument. Capture it, e.g.
 `xs = append(xs, …)`.
 ```
 
-The `@` **rebind operator** is shorthand for `x = f(x)`:
-
-```petal
-let nums = [1, 2, 3]
-append(@nums, 4)      // same as: nums = append(nums, 4)
-```
-
-Use it where it reads well; it only works on `let` bindings.
+(Old code may write this as `append(@nums, 4)`. That `@` rebind operator was
+removed; `petal migrate-old-code` rewrites it to `nums = append(nums, 4)`.)
 
 ---
 
@@ -534,7 +528,7 @@ as `!` ``.
 | comparison | `==  !=  <  <=  >  >=` |
 | boolean | `&&  \|\|  !` — short-circuiting |
 | absent fields | `??` (fallback, and `??=`), `?.` (optional read) |
-| other | `\|>` (pipe into first argument), `@` (rebind) |
+| other | `\|>` (pipe into first argument) |
 
 **Put spaces around `<`.** Petal has a JSX-like element syntax, so a `<` with no
 space after it opens a tag: `a<b` fails with `Expected ',' between arguments`,

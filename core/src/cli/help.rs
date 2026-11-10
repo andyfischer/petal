@@ -574,6 +574,14 @@ DESCRIPTION
        The migrations run in this order ('petal migrate-old-code --list'
        shows each with the date it was added and what it replaces):
 
+       at-rebind
+              the removed rebind operator: f(@x) becomes x = f(x). An @x
+              inside a larger expression lifts its call into an assignment
+              on the line before the statement (let r = g(f(@x)) becomes
+              x = f(x), then let r = g(x)), as the operator did. An @ that
+              was not liftable (two in one call, a while condition, a match
+              arm), or whose statement shares its line with other code, is
+              reported and left for a hand edit
        export-to-pub
               the deprecated modifier 'export' becomes 'pub'
        const-decl-deprecated
@@ -1228,10 +1236,8 @@ OPERATIONS
               pattern, those mentions belong to that binding and are left
               alone.
 
-              Refused when the binding is rebound with '@x' ('@' is let-only),
-              when it is a (deprecated) 'config let', and when a file that
-              imports it
-              writes it.
+              Refused when the binding is a (deprecated) 'config let', and
+              when a file that imports it writes it.
 
 TARGET PATHS
        --target names one binding by the declarations it is written inside,
@@ -1267,7 +1273,7 @@ IMPORTERS
        the change follows it there. An importer may read an exported 'var'
        but never write it: a bare read inside one of the importer's functions
        gains 'get', a qualified read ('m.x') needs nothing, and an importer
-       that assigns the name ('x = e', '@x', 'm.x = e') stops the whole
+       that assigns the name ('x = e', 'm.x = e') stops the whole
        change.
 
        Importers are looked for in one of two places, and the report says

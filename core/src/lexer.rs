@@ -81,7 +81,7 @@ pub enum Token {
     Comma,
     Dot,
     Colon,
-    At,        // @ — in-out argument marker (see ast::ExprKind::AtVar)
+    At,        // @ — reserved for annotations; no expression uses it (parse::at_rebind_removed_message)
     Pipe,      // |>
     Bar,       // | — separates the alternatives of an or-pattern
     Arrow,     // ->

@@ -73,9 +73,8 @@
 //! chain has to be re-indented, and fmt is proven IR-invisible.
 //!
 //! A note on what is *not* here: an earlier slice rewrote `x = f(x)` to the
-//! rebind form `f(@x)`. That rule is gone. The `@` operator remains a language
-//! feature, but it reads as sugar that has to be learned, so the linter no
-//! longer pushes code into it.
+//! rebind form `f(@x)`. That rule is gone, and so is the operator (removed
+//! 2026-11-09; `petal migrate-old-code` rewrites it as `at-rebind`).
 
 use std::path::PathBuf;
 
@@ -434,6 +433,12 @@ impl<'a> Pipeline<'a> {
     /// The text after every stage, and the findings.
     pub(crate) fn finish(self) -> (String, Vec<Finding>) {
         (self.text, self.findings)
+    }
+
+    /// How many of `rule`'s sites were recorded with no fix (left for a
+    /// hand edit).
+    pub(crate) fn unfixed(&self, rule: &str) -> usize {
+        self.findings.iter().filter(|f| f.rule == rule && !f.fixable).count()
     }
 
     pub(crate) fn new(source: &'a str, rules: &'a RuleFilter) -> Result<Self, String> {

@@ -2385,9 +2385,6 @@ impl Parser {
             | ExprKind::Match { .. } => Ok(()),
 
             // Not callable: literals, operators, collections, etc.
-            ExprKind::AtVar(_) => {
-                Err(self.error_at_current("`@var` cannot be called as a function".to_string()))
-            }
             ExprKind::Literal(_) => {
                 Err(self
                     .error_at_current("Literal value cannot be called as a function".to_string()))
@@ -2471,13 +2468,16 @@ impl Parser {
                 self.ev_close();
                 Ok(self.mk_expr(ExprKind::Literal(Literal::Nil), start))
             }
-            Token::At => {
-                self.ev_open(SyntaxKind::AtVarExpr);
-                self.advance(); // consume '@'
-                let name = self.expect_ident()?;
-                self.ev_close();
-                Ok(self.mk_expr(ExprKind::AtVar(name), start))
-            }
+            // `@` is kept free for declaration annotations
+            // (docs/proposals/annotation-syntax.md). Its old meaning, the
+            // `f(@x)` rebind operator, was removed; `petal migrate-old-code`
+            // (`at-rebind`) rewrites it.
+            Token::At => Err(self.error_at_current(at_rebind_removed_message(
+                match self.peek_at(1) {
+                    Token::Ident(name) => Some(name.as_str()),
+                    _ => None,
+                },
+            ))),
             // `get x` reads a cell. Parsed in *primary* position rather than
             // as a prefix operator so the postfix loop wraps the result:
             // `get cfg.w` is `(get cfg).w`, which is what a cell holding a
@@ -3233,6 +3233,26 @@ impl Parser {
 /// Parse a hex color string (without '#') into (field_name, value) pairs.
 /// Supports #rgb, #rgba, #rrggbb, #rrggbbaa formats.
 /// Shared with `crate::cst_project` so the CST projection can't drift.
+/// The parse error for an `@` where an expression starts. `@` is reserved
+/// for declaration annotations (docs/proposals/annotation-syntax.md); its old
+/// meaning, the rebind operator (`f(@x)` for `x = f(x)`), was removed on
+/// 2026-11-09 and `petal migrate-old-code` (`at-rebind`) rewrites it. `name`
+/// is the identifier after the `@`, when there is one.
+pub(crate) fn at_rebind_removed_message(name: Option<&str>) -> String {
+    match name {
+        Some(x) => format!(
+            "`@{x}` is not an expression: the `@` rebind operator was removed. Write \
+             `{x} = f({x})` instead of `f(@{x})`; {}",
+            crate::migrate::RUN_HINT
+        ),
+        None => format!(
+            "`@` is not an expression (the old `f(@x)` rebind operator was removed: write \
+             `x = f(x)`; {})",
+            crate::migrate::RUN_HINT
+        ),
+    }
+}
+
 pub(crate) fn parse_color_hex(hex: &str) -> Vec<(&'static str, i64)> {
     let expand = |c: u8| -> i64 {
         let v = if c.is_ascii_digit() {

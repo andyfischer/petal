@@ -145,9 +145,22 @@ module.exports = grammar({
     // var, const, `config let`, state, enum, class and import — are exactly what
     // `export` may precede.
 
+    // `@tunable(0, 10)`, `@const`, `@rigid`: a declaration annotation
+    // (docs/proposals/annotation-syntax.md). Written before a `let`, `state`
+    // or `memo` (and before its `pub`), on the declaration's line or on lines
+    // of its own; the real parser lowers `@f(a) let X = v` to
+    // `let X = f(v, a)` and accepts only `const`, `tunable` and `rigid`. The
+    // name follows the `@` with no space.
+    annotation: $ => seq(
+      '@',
+      field('name', alias(token.immediate(/[a-zA-Z_][a-zA-Z0-9_]*/), $.identifier)),
+      optional(field('arguments', $.argument_list)),
+    ),
+
     // `let x = v`, its mutable twin `var x = v` and its must-be-static twin
     // `const X = v`, each with an optional `: type` annotation.
     let_declaration: $ => seq(
+      repeat(field('annotation', $.annotation)),
       optional(PUB),
       // `config let x = …` marks an edit knob for propose-edit (docs/CLI.md).
       // `config` is a contextual identifier in the real lexer, recognized only
@@ -163,6 +176,7 @@ module.exports = grammar({
     // `state name = init` or keyed `state(expr) name = init`, with the same
     // optional `: type` annotation `let`/`var` take.
     state_declaration: $ => seq(
+      repeat(field('annotation', $.annotation)),
       optional(PUB),
       'state',
       optional(seq('(', field('key', $._expression), ')')),
@@ -176,6 +190,7 @@ module.exports = grammar({
     // `memo(key) name = init`: a content-keyed cache. The key is required and
     // there is no `var` form.
     memo_declaration: $ => seq(
+      repeat(field('annotation', $.annotation)),
       'memo',
       '(', field('key', $._expression), ')',
       field('name', $.identifier),

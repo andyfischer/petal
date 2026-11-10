@@ -1,5 +1,31 @@
 [
   {
+    "type": "annotation",
+    "named": true,
+    "fields": {
+      "arguments": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "argument_list",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "argument_list",
     "named": true,
     "fields": {},
@@ -2833,6 +2859,16 @@
     "type": "let_declaration",
     "named": true,
     "fields": {
+      "annotation": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "annotation",
+            "named": true
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": true,
@@ -3288,6 +3324,16 @@
     "type": "memo_declaration",
     "named": true,
     "fields": {
+      "annotation": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "annotation",
+            "named": true
+          }
+        ]
+      },
       "key": {
         "multiple": false,
         "required": true,
@@ -5056,6 +5102,16 @@
     "type": "state_declaration",
     "named": true,
     "fields": {
+      "annotation": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "annotation",
+            "named": true
+          }
+        ]
+      },
       "key": {
         "multiple": false,
         "required": false,
@@ -5774,6 +5830,10 @@
   },
   {
     "type": "??=",
+    "named": false
+  },
+  {
+    "type": "@",
     "named": false
   },
   {

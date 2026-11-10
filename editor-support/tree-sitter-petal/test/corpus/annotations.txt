@@ -1,0 +1,64 @@
+==================
+Declaration annotations
+==================
+
+@tunable(0, 10) let speed = 4.0
+@tunable let kick = 6.0
+@tunable(min: 3.0, max: 12.0)
+pub let RUN = 7.0
+@const
+// the table
+@rigid
+let T = [1]
+@tunable state screen = "title"
+@rigid memo(k) m = 2
+
+---
+
+(source_file
+  (let_declaration
+    annotation: (annotation
+      name: (identifier)
+      arguments: (argument_list
+        (integer)
+        (integer)))
+    name: (identifier)
+    value: (float))
+  (let_declaration
+    annotation: (annotation
+      name: (identifier))
+    name: (identifier)
+    value: (float))
+  (let_declaration
+    annotation: (annotation
+      name: (identifier)
+      arguments: (argument_list
+        (named_argument
+          name: (identifier)
+          value: (float))
+        (named_argument
+          name: (identifier)
+          value: (float))))
+    name: (identifier)
+    value: (float))
+  (let_declaration
+    annotation: (annotation
+      name: (identifier))
+    (comment)
+    annotation: (annotation
+      name: (identifier))
+    name: (identifier)
+    value: (list
+      (integer)))
+  (state_declaration
+    annotation: (annotation
+      name: (identifier))
+    name: (identifier)
+    value: (string
+      (string_content)))
+  (memo_declaration
+    annotation: (annotation
+      name: (identifier))
+    key: (identifier)
+    name: (identifier)
+    value: (integer)))

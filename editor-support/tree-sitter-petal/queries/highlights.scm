@@ -76,6 +76,13 @@
 ; A quoted path (`import "./my-lib"`) names a module too.
 (module_path quoted: (string) @module)
 
+; ---- Annotations ----
+; `@tunable(0, 10) let speed = 4`: the `@` and the name are one attribute
+; (docs/proposals/annotation-syntax.md). The arguments color as any call's.
+
+(annotation "@" @attribute)
+(annotation name: (identifier) @attribute)
+
 ; ---- Functions ----
 
 (function_declaration name: (identifier) @function)

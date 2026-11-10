@@ -271,9 +271,61 @@
         ]
       }
     },
+    "annotation": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "@"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "ALIAS",
+            "content": {
+              "type": "IMMEDIATE_TOKEN",
+              "content": {
+                "type": "PATTERN",
+                "value": "[a-zA-Z_][a-zA-Z0-9_]*"
+              }
+            },
+            "named": true,
+            "value": "identifier"
+          }
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "arguments",
+              "content": {
+                "type": "SYMBOL",
+                "name": "argument_list"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        }
+      ]
+    },
     "let_declaration": {
       "type": "SEQ",
       "members": [
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "FIELD",
+            "name": "annotation",
+            "content": {
+              "type": "SYMBOL",
+              "name": "annotation"
+            }
+          }
+        },
         {
           "type": "CHOICE",
           "members": [
@@ -365,6 +417,17 @@
     "state_declaration": {
       "type": "SEQ",
       "members": [
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "FIELD",
+            "name": "annotation",
+            "content": {
+              "type": "SYMBOL",
+              "name": "annotation"
+            }
+          }
+        },
         {
           "type": "CHOICE",
           "members": [
@@ -472,6 +535,17 @@
     "memo_declaration": {
       "type": "SEQ",
       "members": [
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "FIELD",
+            "name": "annotation",
+            "content": {
+              "type": "SYMBOL",
+              "name": "annotation"
+            }
+          }
+        },
         {
           "type": "STRING",
           "value": "memo"

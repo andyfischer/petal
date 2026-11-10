@@ -73,6 +73,12 @@ syn match petalOperator "|>\|->\|++=\|??=\|++\|+=\|-=\|\*=\|/=\|%=\|==\|!=\|<=\|
 " `...` is defined after `..` so it wins where both match.
 syn match petalPipe     "\.\.\."
 
+" `@tunable(0, 10) let x = 4`, `@const`, `@rigid`: a declaration annotation
+" (docs/proposals/annotation-syntax.md). The `@` and its name; the arguments
+" highlight as any call's. The match starts at the `@`, so it takes in
+" `@const` whole before the `const` keyword is tried.
+syn match petalAnnotation "@[a-zA-Z_][a-zA-Z0-9_]*"
+
 " Expression cluster used inside string interpolation.
 syn cluster petalExpr contains=petalKeyword,petalConditional,petalBoolean,petalConstant,petalFloat,petalNumber,petalColor,petalString,petalRawString,petalOperator,petalComment
 
@@ -95,5 +101,6 @@ hi def link petalInterp      Normal
 hi def link petalInterpDelim Special
 hi def link petalOperator    Operator
 hi def link petalPipe        Operator
+hi def link petalAnnotation  PreProc
 
 let b:current_syntax = "petal"

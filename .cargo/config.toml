@@ -1,0 +1,12 @@
+# Cargo settings for every crate under this repository (core, cli, garden,
+# test/ui-corpus, the integrations). See AGENTS.md, "Running the Rust tests".
+[build]
+# Leave headroom on a 10-core machine that is in use while a build runs, so a
+# full rebuild or a test run does not make it unresponsive. Override for one
+# run with CARGO_BUILD_JOBS=<n> (or `cargo build -j <n>`).
+jobs = 6
+
+[env]
+# Threads per `cargo test` binary (the default is one per core). An explicit
+# RUST_TEST_THREADS in the environment wins, as does `-- --test-threads <n>`.
+RUST_TEST_THREADS = "6"

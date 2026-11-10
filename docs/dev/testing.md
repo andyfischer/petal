@@ -384,6 +384,12 @@ whole corpus.
 
 ### What the Rust suite costs
 
+`make test-core` (both feature configs) takes about four minutes on a 10-core
+Mac (November 2026), with cargo-nextest (every test in its own process, the
+test binaries side by side) or plain `cargo test` (binaries in turn) alike.
+Build and test parallelism are capped at six and the targets run under
+`nice`; the limits and how to lift them are in AGENTS.md.
+
 Four unit tests sweep every `.ptl` file in the repository (409 on 16 October
 2026, by `test_corpus::repo_ptl_files`, which skips `node_modules`, `target`
 and dot-directories) in a debug build, and cost more than the rest of the

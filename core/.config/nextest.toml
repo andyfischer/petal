@@ -1,0 +1,11 @@
+# cargo-nextest settings for the petal crate (`make test-core` uses nextest
+# when it is installed). See AGENTS.md, "Running the Rust tests".
+
+[profile.default]
+# Each test is its own process; six at a time leaves the machine usable.
+# Override for one run with NEXTEST_TEST_THREADS=<n> (or `-j <n>`).
+test-threads = 6
+# Report every failure rather than stopping at the first.
+fail-fast = false
+# Flag a test as slow after 60 s; nothing is killed.
+slow-timeout = { period = "60s" }

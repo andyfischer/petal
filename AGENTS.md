@@ -33,3 +33,24 @@ Add a new file under `core/tests/all/` and a `mod` line in `main.rs`. Only a
 test that changes process-wide state (an environment variable, a registered
 package manager) gets its own file directly in `core/tests/`
 (`static_audit_env.rs`), run as `cargo test --test static_audit_env`.
+
+`make test-core` runs both feature configs with
+[cargo-nextest](https://nexte.st) when it is installed
+(`cargo install cargo-nextest --locked`), plus `cargo test --doc` for the
+doctests nextest skips; without it, plain `cargo test`. With nextest, one
+file's tests are `cargo nextest run --test all hot_reload::` (or
+`-E 'test(/^hot_reload::/)'`).
+
+### CPU limits
+
+Builds and tests are capped so they do not make a 10-core machine in use
+unresponsive:
+
+| Limit | Where | Override for one run |
+| --- | --- | --- |
+| 6 parallel rustc jobs | `[build] jobs` in `.cargo/config.toml` (every crate in the repo) | `CARGO_BUILD_JOBS=10` or `cargo build -j 10` |
+| 6 test threads per `cargo test` binary | `[env] RUST_TEST_THREADS` in `.cargo/config.toml` | `RUST_TEST_THREADS=10` or `-- --test-threads 10` |
+| 6 nextest test processes | `test-threads` in `core/.config/nextest.toml` | `NEXTEST_TEST_THREADS=10` or `cargo nextest run -j 10` |
+| `nice -n 10` | the Rust test targets in the `Makefile` | `make NICE= test-core` |
+
+`make NEXTEST= test-core` runs `cargo test` even when nextest is installed.

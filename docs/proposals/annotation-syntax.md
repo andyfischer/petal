@@ -816,6 +816,12 @@ Shipped 2026-11-09, with the decisions below.
   moves the declaration's `Open` back over them. `cst_project` lowers them
   the same way (`Projector::lower_annotations`), so the debug-build check
   that projection ≡ direct parse covers them.
+- **Diagnostics**: what is said about the call as a whole (its argument
+  count, a named argument the builtin cannot take, a misplaced `const`) is
+  blamed at the `@name` (`ast::call_diagnostic_span`; the compiler also
+  places the call's IR term there), not at the declared value whose span the
+  call has. The misplaced-`const` messages name `@const` when that is what
+  was written ("drop `@const`", "`@const` takes no arguments").
 - **Parity**: `core/tests/annotation_parity.rs` rewrites every
   whole-initializer `const`/`tunable`/`rigid` binding in `examples/`,
   `core/tests` (`.ptl` and Rust fixtures) and the guide, settings,

@@ -3106,8 +3106,10 @@ fn misplaced_const_decls(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
                         if *is_config || tunable_args(arg).is_some() {
                             self.out.push(Diagnostic::error(
                                 crate::ast::call_diagnostic_span(value),
-                                "a setting of literals is already static; drop `const(…)`"
-                                    .to_string(),
+                                as_written(
+                                    value,
+                                    "a setting of literals is already static; drop `const(…)`",
+                                ),
                             ));
                         }
                     }
@@ -3131,10 +3133,15 @@ fn misplaced_const_decls(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
                     ExprKind::Ident(f) if f == crate::parse::CONST_ANNOTATION)
             {
                 if const_call_arg(e).is_none() {
+                    let message = if crate::ast::is_annotation_call(e) {
+                        "`@const` takes no arguments: the declared value is the one that must \
+                         be constant"
+                    } else {
+                        "`const(…)` takes one argument, the value that must be constant"
+                    };
                     self.out.push(Diagnostic::error(
                         crate::ast::call_diagnostic_span(e),
-                        "`const(…)` takes one argument, the value that must be constant"
-                            .to_string(),
+                        message.to_string(),
                     ));
                 } else if self.allowed != Some(e as *const Expr) || self.depth != 1 {
                     let message = match self.place.last() {
@@ -3158,11 +3165,23 @@ fn misplaced_const_decls(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
                     };
                     self.out.push(Diagnostic::error(
                         crate::ast::call_diagnostic_span(e),
-                        message.to_string(),
+                        as_written(e, message),
                     ));
                 }
             }
             crate::ast::walk_expr(self, e);
+        }
+    }
+    /// `message`, which names the call form, naming `@const` where that is
+    /// what `call` was written as: an `@const` annotation is dropped, not
+    /// `const(…)`.
+    fn as_written(call: &Expr, message: &str) -> String {
+        if crate::ast::is_annotation_call(call) {
+            message
+                .replace("`const(…)` checks", "`@const` checks")
+                .replace("rop `const(…)`", "rop `@const`")
+        } else {
+            message.to_string()
         }
     }
     let mut finder = Finder {

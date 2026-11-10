@@ -15,8 +15,17 @@ impl Compiler {
         }
         let span = expr.span;
         let tid = self.compile_expr_kind(&expr.kind, span);
-        // Record source span for the primary term emitted by this expression
-        self.source_map.add(tid, span);
+        // Record source span for the primary term emitted by this expression.
+        // A call built from an `@` annotation has the declared value's span,
+        // so its term is placed at the `@name` written for it instead: what
+        // is reported against the call term (a named argument the builtin
+        // cannot take, the run's own failure of the call) is about the
+        // annotation, not the value.
+        if crate::ast::is_annotation_call(expr) {
+            self.source_map.add(tid, crate::ast::call_diagnostic_span(expr));
+        } else {
+            self.source_map.add(tid, span);
+        }
         // A literal in a `config let`'s data (see `Compiler::config_literals`).
         if !self.config_literals.is_empty()
             && self.config_literals.contains(&span)

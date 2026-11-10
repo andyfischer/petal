@@ -362,7 +362,18 @@ struct Compiled {
 
 fn compile(src: &str, origin: Option<&Path>, lines: bool) -> Compiled {
     let line = |l: u32| if lines { l.to_string() } else { "_".to_string() };
-    let msg = |m: &str| if lines { m.to_string() } else { mask_numbers(m) };
+    // A misplaced `const` is named as written (`@const` or `const(…)`);
+    // otherwise the two forms are told the same thing.
+    let msg = |m: &str| {
+        let m = m
+            .replace("`@const` checks", "`const(…)` checks")
+            .replace("rop `@const`", "rop `const(…)`")
+            .replace(
+                "`@const` takes no arguments: the declared value is the one that must be constant",
+                "`const(…)` takes one argument, the value that must be constant",
+            );
+        if lines { m } else { mask_numbers(&m) }
+    };
     let mut env = Env::new();
     env.set_check_only(true);
     match env.load_program_diag(src, origin) {
@@ -751,7 +762,7 @@ fn annotations_keep_the_call_forms_diagnostics() {
         assert!(got.iter().any(|m| m.contains(want)), "{src:?}: wanted {want:?}, got {got:?}");
     };
     has("@const var X = 1\nprint(X)\n", "a `var` is assigned again");
-    has("@const @tunable let X = 4\nprint(X)\n", "drop `const(…)`");
+    has("@const @tunable let X = 4\nprint(X)\n", "drop `@const`");
     has("fn f()\n  @const let x = 2\n  return x\nend\nprint(f())\n", "inside a function");
     has("@const let X = random()\nprint(X)\n", "is declared `const` but is not constant");
     has("@const state s = 3\nprint(s)\n", "a `state` slot cannot be constant");
@@ -788,8 +799,19 @@ fn a_call_level_diagnostic_points_at_the_annotation() {
     };
     assert_eq!(at("@tunable(0, 10, 1, 2, 3) let S = 4.0\nprint(S)\n", "expects 1-5 arguments"), (1, 1, 9));
     assert_eq!(at("@rigid(0) let S = 4.0\nprint(S)\n", "expects 1 argument"), (1, 1, 7));
-    assert_eq!(at("@const @tunable let S = 4.0\nprint(S)\n", "drop `const(…)`"), (1, 1, 7));
+    assert_eq!(at("@const @tunable let S = 4.0\nprint(S)\n", "drop `@const`"), (1, 1, 7));
     assert_eq!(at("fn f()\n  @const\n  let x = 2\n  x\nend\nprint(f())\n", "inside a function"), (2, 3, 9));
+    // The message names the annotation that was written, not the call.
+    assert_eq!(at("fn f()\n  @const\n  let x = 2\n  x\nend\nprint(f())\n", "`@const` checks a top-level `let`"), (2, 3, 9));
+    assert_eq!(at("@const var v = 2\nprint(v)\n", "Drop `@const`, or use `let`"), (1, 1, 7));
+    assert_eq!(at("@const(1) let K = 4\nprint(K)\n", "`@const` takes no arguments"), (1, 1, 7));
+    assert_eq!(at("let K = const(4, 1)\nprint(K)\n", "`const(…)` takes one argument"), (1, 9, 20));
+    // A named argument no form of the builtin takes, or one given twice, is
+    // reported from the IR's call term: that term is blamed at the `@name`
+    // too.
+    assert_eq!(at("@tunable(bogus: 1) let S = 4.0\nprint(S)\n", "no parameter named 'bogus'"), (1, 1, 9));
+    assert_eq!(at("@tunable(min: 0, min: 1) let S = 4.0\nprint(S)\n", "named 'min', 'min'"), (1, 1, 9));
+    assert_eq!(at("@tunable(min: 0)\nlet S = 4.0\n@tunable(oops: 2) let T = 1\nprint(S + T)\n", "named 'oops'"), (3, 1, 9));
     // An argument's diagnostic stays on the argument.
     assert_eq!(at("@tunable(\"a\", \"b\") let S = 4.0\nprint(S)\n", "argument 2 to `tunable`"), (1, 10, 13));
     // The call form is unchanged.

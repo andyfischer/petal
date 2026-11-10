@@ -31,7 +31,6 @@
 //! list `X`.
 
 use crate::ast::{Expr, ExprKind, ExprVisitor, Literal, Stmt, StmtKind, walk_expr, walk_stmt};
-use crate::source_map::SourceSpan;
 
 use super::Fix;
 
@@ -96,7 +95,7 @@ pub(super) fn plan_hint_reports(stmts: &[Stmt], chars: &[char]) -> HintFindings 
                     ),
                 ));
             } else if !*is_const {
-                v.settings.push(value.span);
+                v.settings.push(value as *const Expr);
             }
         } else if !*is_var && !*is_const && wraps_tunable_operand(value) {
             v.out.not_whole.push(report(
@@ -139,9 +138,11 @@ fn wraps_tunable_operand(e: &Expr) -> bool {
 
 struct Finder<'a> {
     chars: &'a [char],
-    /// The spans of the `tunable` calls that are a top-level setting's whole
-    /// initializer.
-    settings: Vec<SourceSpan>,
+    /// The `tunable` calls that are a top-level setting's whole initializer.
+    /// By identity, not span: the call an `@tunable` annotation builds shares
+    /// its span with the value it wraps, which may be a written
+    /// `tunable(…)` (`@tunable let X = tunable(a + b)`).
+    settings: Vec<*const Expr>,
     out: HintFindings,
 }
 
@@ -219,7 +220,7 @@ impl ExprVisitor for Finder<'_> {
 
     fn visit_expr(&mut self, e: &Expr) {
         if let Some(args) = tunable_call(e) {
-            let is_setting = self.settings.contains(&e.span);
+            let is_setting = self.settings.contains(&(e as *const Expr));
             let mut positional = 0usize;
             let mut bounds: [Option<f64>; 3] = [None; 3];
             let mut any_bound = false;

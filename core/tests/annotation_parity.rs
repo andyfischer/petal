@@ -755,6 +755,11 @@ fn annotations_keep_the_call_forms_diagnostics() {
     has("fn f()\n  @const let x = 2\n  return x\nend\nprint(f())\n", "inside a function");
     has("@const let X = random()\nprint(X)\n", "is declared `const` but is not constant");
     has("@const state s = 3\nprint(s)\n", "a `state` slot cannot be constant");
+    // A written call as the declared value shares its span with the call the
+    // annotation builds: `@const let X = const(4)` is `const(const(4))`, whose
+    // inner `const(…)` is not the whole initializer.
+    has("@const let X = const(4)\nprint(X)\n", "it must wrap the whole initializer");
+    has("@const\nlet X = const([1, 2])\nprint(X)\n", "it must wrap the whole initializer");
 }
 
 #[test]

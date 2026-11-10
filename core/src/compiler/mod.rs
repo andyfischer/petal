@@ -3051,7 +3051,6 @@ fn builtin_class_shadows(stmts: &[Stmt], is_entry: bool) -> Vec<crate::diagnosti
 /// anything but one argument is an error as well.
 fn misplaced_const_decls(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
     use crate::diagnostic::Diagnostic;
-    use crate::source_map::SourceSpan;
     use crate::static_value::{const_call_arg, tunable_args};
 
     /// What a misplaced `const(…)` gets told, by the statement it is in.
@@ -3064,8 +3063,11 @@ fn misplaced_const_decls(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
     struct Finder {
         depth: usize,
         /// The `const(…)` call that is a top-level `let`'s whole
-        /// initializer, while that `let` is walked.
-        allowed: Option<SourceSpan>,
+        /// initializer, while that `let` is walked. By identity, not span:
+        /// the call an `@const` annotation builds shares its span with the
+        /// value it wraps, which may itself be a written `const(…)`
+        /// (`@const let X = const(4)`).
+        allowed: Option<*const Expr>,
         place: Vec<Place>,
         out: Vec<Diagnostic>,
     }
@@ -3097,10 +3099,10 @@ fn misplaced_const_decls(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
                     if let Some(t) = tunable_args(value)
                         && const_call_arg(t.value).is_some()
                     {
-                        self.allowed = Some(t.value.span);
+                        self.allowed = Some(t.value as *const Expr);
                     }
                     if let Some(arg) = const_call_arg(value) {
-                        self.allowed = Some(value.span);
+                        self.allowed = Some(value as *const Expr);
                         if *is_config || tunable_args(arg).is_some() {
                             self.out.push(Diagnostic::error(
                                 value.span,
@@ -3134,7 +3136,7 @@ fn misplaced_const_decls(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
                         "`const(…)` takes one argument, the value that must be constant"
                             .to_string(),
                     ));
-                } else if self.allowed != Some(e.span) || self.depth != 1 {
+                } else if self.allowed != Some(e as *const Expr) || self.depth != 1 {
                     let message = match self.place.last() {
                         Some(Place::Var) => {
                             "`const(…)` checks a top-level `let`; a `var` is assigned again by \

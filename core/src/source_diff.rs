@@ -681,10 +681,12 @@ struct Cmp {
     /// Inside a setting's initializer at all (for [`ValueChange::config`]).
     config: bool,
     /// The old tree's `tunable(v, …)` call that a setting is initialized
-    /// with, by span: its `v` has the binding's own path (as
+    /// with, by identity: its `v` has the binding's own path (as
     /// `crate::static_value::setting_value_expr` addresses it) and its
-    /// bounds and options have none.
-    config_tunable: Option<SourceSpan>,
+    /// bounds and options have none. Not by span, since the call an
+    /// `@tunable` annotation builds shares its span with the value it wraps,
+    /// which may be a written `tunable(…)`.
+    config_tunable: Option<*const Expr>,
 }
 
 impl Cmp {
@@ -742,7 +744,7 @@ impl Cmp {
                 self.config = crate::static_value::is_setting(v1, *c1, *var1, *k1);
                 self.config_tunable = (self.config
                     && crate::static_value::tunable_args(v1).is_some())
-                .then_some(v1.span);
+                .then_some(v1 as *const Expr);
                 self.path = path;
                 let same = self.expr(v1, v2);
                 self.path = None;
@@ -1040,7 +1042,7 @@ impl Cmp {
                     return false;
                 }
                 // `let X = tunable(v, …)`: `X` is `v`.
-                let tunable_value = (self.config_tunable == Some(a.span))
+                let tunable_value = (self.config_tunable == Some(a as *const Expr))
                     .then(|| crate::static_value::tunable_args(a).map(|t| t.value.span))
                     .flatten();
                 a1.iter().zip(a2).enumerate().all(|(i, (x, y))| {
@@ -1611,6 +1613,24 @@ mod tests {
             change("let x = -(1)\n", "let x = 1\n"),
             SourceChange::Constructs(_)
         ));
+    }
+
+    #[test]
+    fn an_annotation_around_a_written_call_keeps_the_call_forms_paths() {
+        // `@tunable let X = tunable(4.0, -1, 10)` is
+        // `tunable(tunable(4.0, -1, 10))`: the call the annotation builds and
+        // the written one share a span, but only the outer one is the
+        // setting's, so the literal's path is the call form's.
+        let at = values(
+            "@tunable let X = tunable(4.0, -1, 10)\n",
+            "@tunable let X = tunable(5.0, -1, 10)\n",
+        );
+        let call = values(
+            "let X = tunable(tunable(4.0, -1, 10))\n",
+            "let X = tunable(tunable(5.0, -1, 10))\n",
+        );
+        assert_eq!(at.len(), 1);
+        assert_eq!(at[0].path, call[0].path);
     }
 
     #[test]

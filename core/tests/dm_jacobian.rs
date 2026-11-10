@@ -569,3 +569,16 @@ fn state_and_var_paths_are_marked() {
     assert!(eligibility(program, s.param(four), &ParamFilter::default(), live).edit.is_err());
     assert_eq!(s.eligible(four, &ParamFilter::default()), Ok(()));
 }
+
+#[test]
+fn an_annotation_around_a_written_tunable_lints_as_the_call_form() {
+    // `@tunable let X = tunable(a + b)` is `tunable(tunable(a + b))`. The
+    // written call is not the setting (the annotation's is), so its computed
+    // argument is reported as in the call form, though the two calls share a
+    // span.
+    let lint = |src: &str| petal::lint::lint_source(src, &petal::lint::LintOptions::default()).expect("lints");
+    let at = lint("let a = 1\nlet b = 2\n@tunable let X = tunable(a + b)\nprint(X)\n");
+    let call = lint("let a = 1\nlet b = 2\nlet X = tunable(tunable(a + b))\nprint(X)\n");
+    assert_eq!(call.count("dm-hint-not-literal"), 1);
+    assert_eq!(at.count("dm-hint-not-literal"), call.count("dm-hint-not-literal"));
+}

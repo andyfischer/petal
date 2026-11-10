@@ -207,6 +207,10 @@ fn plan_annotated_site(stmt: &Stmt, name: &str, value: &Expr, is_const: bool, ch
         .collect();
     let keyword = tokens.iter().enumerate().find_map(|(i, (t, at))| {
         let next = tokens.get(i + 1).map(|(t, _)| *t);
+        // The name of an `@const` annotation is a `const` token as well.
+        if i > 0 && matches!(tokens[i - 1].0, Token::At) {
+            return None;
+        }
         match t {
             Token::Const if is_const && !matches!(next, Some(Token::LParen)) => Some(*at),
             Token::Ident(w) if !is_const && w == CONFIG_KEYWORD && matches!(next, Some(Token::Let)) => {
@@ -600,6 +604,15 @@ mod tests {
         assert_eq!(migrate("@rigid\npub const G = 9.8\n"), "@const @rigid\npub let G = 9.8\n");
         assert_eq!(migrate("@rigid config let G = 9.8\n"), "@tunable @rigid let G = 9.8\n");
         assert_eq!(migrate("@tunable(0, 9) config let N = 4\n"), "@tunable(0, 9) let N = 4\n");
+    }
+
+    #[test]
+    fn an_at_const_annotation_is_not_the_const_keyword() {
+        // The `const` of an `@const` annotation is a `const` token too; the
+        // keyword the rewrite turns into `let` is the declaration's.
+        assert_eq!(migrate("@const const X = 4\n"), "@const @const let X = 4\n");
+        assert_eq!(migrate("@const\nconst X = [1]\n"), "@const @const\nlet X = [1]\n");
+        assert_eq!(migrate("@const @tunable pub const X = 4\n"), "@const @const @tunable pub let X = 4\n");
     }
 
     #[test]

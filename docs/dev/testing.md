@@ -1,7 +1,7 @@
 # Testing
 
 Petal's tests are split between the Rust suite (`cd core && cargo test`: unit
-tests in `core/src/`, integration tests in `core/tests/`) and a vitest
+tests in `core/src/`, integration tests in `core/tests/all/`) and a vitest
 integration suite in `test/vitest/` that shells out to the compiled `petal`
 binary and asserts on its output. This document covers both and the tooling
 built around them. The commands are listed in [scripts.md](scripts.md#testing);
@@ -22,7 +22,7 @@ cd core && cargo test --test ptl_tests   # the same files, held by cargo test
 ```
 
 `core/tests/ptl_tests.rs` runs them through the runner behind `petal test`
-and also covers the command itself; `core/tests/test_blocks.rs` covers the
+and also covers the command itself; `core/tests/all/test_blocks.rs` covers the
 syntax, the expectations and the host API. Reach for a Petal test when the
 case is "this expression has this value". A test of an error message, of the
 IR or of a tool's output stays in Rust or vitest: a Petal test cannot catch
@@ -98,14 +98,20 @@ sketches in `docs/aspirational-ideas/` are not checked.
 ## Rust tests
 
 `cd core && cargo test` runs the unit tests inside `core/src/` and the
-integration tests in `core/tests/`, one file per area (`hot_reload.rs`,
-`state_call_paths.rs`, `modules.rs`, `static_cache.rs`, ...). The differential
+integration tests in `core/tests/all/`, one file per area (`hot_reload.rs`,
+`state_call_paths.rs`, `modules.rs`, ...). Those files are modules of one test
+binary, `all` (`core/tests/all/main.rs` lists them), so a run builds and links
+one binary rather than ninety; `cargo test --test all hot_reload::` runs one
+file's tests. A new file goes in `core/tests/all/` with a `mod` line in
+`main.rs`. Only a test that changes process-wide state (an environment
+variable, a registered package manager) gets a binary of its own, as
+`core/tests/static_audit_env.rs` does. The differential
 tests that hold the optimizer to the unoptimized baseline are in
 `core/src/backend/bytecode/tests.rs` and the fuzzers beside it. What the suite
 costs, and the sweeps that are not part of it, are under
 [What the Rust suite costs](#what-the-rust-suite-costs).
 
-`core/tests/script_cases.rs` runs the script regression cases: every
+`core/tests/all/script_cases.rs` runs the script regression cases: every
 `test/<case>/` directory with a `main.ptl` and an `expects` file, which gives
 the expected output and ceilings on copies and allocations. The format is in
 [`test/README.md`](../../test/README.md#script-regression-cases).
@@ -132,7 +138,7 @@ command is in that file's §7.
 
 The core numeric semantics (checked arithmetic, `==` and `<` across int and
 float, the `sort` order, state-key hashing, index and slice resolution) are
-proven for every input with the Kani model checker, and `core/tests/small_scope.rs`
+proven for every input with the Kani model checker, and `core/tests/all/small_scope.rs`
 checks every small program end to end. See
 [formal-verification.md](formal-verification.md).
 
@@ -239,7 +245,7 @@ on stderr as `static check failure: …`, since no test of a suite run that
 way reads the list). So each case is driven with the cache on, off, and on and
 checking, the three transcripts must be equal, and the check must find
 nothing. That is `same_on_and_off` and `same_through_reloads` in
-`core/tests/static_in_functions.rs`,
+`core/tests/all/static_in_functions.rs`,
 `function_constants_change_nothing_across_the_corpus` in
 `test/ui-corpus/tests/static_in_functions.rs` (the panel corpus under
 four policies), and a fuzzer, `core/src/backend/bytecode/static_fn_fuzz.rs`
@@ -261,7 +267,7 @@ loop that wrote to it wrote into that other value in place. The cache was
 the side that was right, because a kept value is immutable. When a cache
 differential fails, suspect both sides
 (`a_branch_that_rebinds_the_accumulator_to_another_value_is_not_in_place`
-in `core/tests/copy_elision.rs`).
+in `core/tests/all/copy_elision.rs`).
 
 Lists that begin as `Enum.all` have a fuzzer of their own,
 `core/src/backend/bytecode/enum_all_fuzz.rs` (`cargo test --lib
@@ -288,8 +294,8 @@ A reload keeps the static values the edit cannot have changed
 (`core/src/env/static_follow.rs`). The oracle for that is the reload that
 rebuilds every one, `Env::set_static_follow(false)`, and a slot-by-slot
 comparison of the two tables after each frame (a slot the oracle has not
-filled yet says nothing). It is run by `core/tests/static_reload.rs` (the
-rule's own cases), by every case and both sweeps of `core/tests/hot_reload.rs`
+filled yet says nothing). It is run by `core/tests/all/static_reload.rs` (the
+rule's own cases), by every case and both sweeps of `core/tests/all/hot_reload.rs`
 against `transfer_state`, by `test/ui-corpus/tests/static_reload.rs` over
 the panel corpus, and, since `fast` and `replay` follow by default, by
 `static_fuzz`'s three reloads against the cache off. To see that an oracle
@@ -301,12 +307,12 @@ differentials runs a second time with observations on, and what the host
 reads after each frame is part of what is compared: the map
 `Env::get_observations_json` returns, and the buffer itself term by term.
 That is `same_on_and_off` in `core/tests/static_cache.rs`, `follow_modules`
-in `core/tests/static_reload.rs` (with a third stack that has no cache, so
+in `core/tests/all/static_reload.rs` (with a third stack that has no cache, so
 following the diff is held to both oracles at once), both fuzzers, the two
 corpus tests of `test/ui-corpus/tests/static_cache.rs` and
 `static_reload.rs`, and `every_panel_observes_the_same_with_its_static_values_kept`
 in `garden/garden-script/src/panel.rs`, which runs Garden's panels and
-drawers under Garden's own host. `core/tests/static_observe.rs` holds the
+drawers under Garden's own host. `core/tests/all/static_observe.rs` holds the
 cases that say what the mechanism is; each part of it was removed in turn
 to see a test fail (the replay, the log's GC roots, the in-place rule, the
 log handed on by a reload, the kept value and the kept enum record put
@@ -315,7 +321,7 @@ back after a segment executes again).
 Printing cannot tell one table from an equal copy of it, and a followed
 reload must leave the same objects shared as a rebuild of everything does.
 `sharing_is_the_same_as_after_a_rebuild_of_everything` in
-`core/tests/static_reload.rs` is the oracle for that: tables that hold one
+`core/tests/all/static_reload.rs` is the oracle for that: tables that hold one
 another, an edit to one of them, and `freeze` through arbitrary names on
 later frames, with `frozen` printed through every name (40 seeds by
 default, `PETAL_FUZZ_ITERS=<n>` for more). To see that it would notice,
@@ -326,7 +332,7 @@ and `a_table_two_values_are_built_from_stays_shared` at once. With
 `an_equal_value_holding_another_object_is_not_swapped_for_the_old_one`
 fails.
 
-`core/tests/static_review3.rs` drives one list of steps (frames, reloads,
+`core/tests/all/static_review3.rs` drives one list of steps (frames, reloads,
 `set_config_value`, host calls of a function) through four worlds at once,
 under five policies, each with and without a host observing: the cache on,
 off, on and checking itself, and on with every reload rebuilding
@@ -341,7 +347,7 @@ stacks and a fork of one program, a host that starts observing after the
 values were built, and 24 ways of editing a table in place under a name
 nothing reads again.
 
-The timing test in `core/tests/hot_reload.rs`
+The timing test in `core/tests/all/hot_reload.rs`
 (`a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile`) takes
 the minimum of 12 rounds for the two edits that cost about a millisecond:
 with three it failed in release whenever the ignored whole-corpus oracle
@@ -410,7 +416,7 @@ PETAL_TEST_JOBS=2 make expensive_lint_tests     # the same, on two threads
 cd core
 cargo test --lib                                # every unit test but the sweeps
 cargo test --lib typecheck::                    # one module's unit tests
-cargo test --test check_run_agree               # one integration test file
+cargo test --test all hot_reload::              # one integration test file
 cargo test --lib fmt_is_ir_equal -- --ignored   # one sweep
 ```
 

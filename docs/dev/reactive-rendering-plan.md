@@ -61,7 +61,7 @@ nothing refers to any more. A host that keeps what it made of each segment
 splices it back, so a replayed world costs it O(scopes): the 24,000-item
 static world of `test/benchmarks/harness/scene_frame` went from 360 µs of host time
 to 4 µs ([retained-scene-output.md](retained-scene-output.md)). Oracles:
-`core/tests/output_segments.rs` (flat buffer, memo off, against the
+`core/tests/all/output_segments.rs` (flat buffer, memo off, against the
 segmented drain through a `SegmentCache`, through collections, cutoffs,
 re-recordings and reloads) and
 `segmented_draw_buffers_reproduce_unmemoized_frames_across_the_corpus` in

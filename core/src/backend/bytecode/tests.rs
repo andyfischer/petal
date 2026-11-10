@@ -1050,7 +1050,7 @@ fn inplace_analysis_fires_on_accumulators() {
 // case (the optimized engine must agree with clone-and-alloc) and a negative
 // case pinning that a live alias still blocks it. The end-to-end cost side —
 // that these shapes actually stop duplicating — lives in
-// `core/tests/copy_elision.rs`.
+// `core/tests/all/copy_elision.rs`.
 
 #[test]
 fn inplace_fires_on_bare_bound_accumulator() {
@@ -2079,7 +2079,7 @@ fn prelude_field_helpers_read_ragged_records() {
 //
 // Uniqueness of a cell's container is tracked at run time, so the analysis
 // only has to pick the reads and writes that can keep it. These pin what it
-// picks; `cell_fuzz.rs` and `tests/cell_in_place.rs` pin what running the
+// picks; `cell_fuzz.rs` and `tests/all/cell_in_place.rs` pin what running the
 // result does.
 
 /// The cell plan of `code`.

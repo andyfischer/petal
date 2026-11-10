@@ -1,0 +1,100 @@
+//! The `petal` crate's integration tests, as one test binary: each former
+//! `core/tests/<name>.rs` is a module here, so a run builds and links one
+//! binary instead of ninety. Run one file's tests with
+//! `cargo test --test all <name>::` (see AGENTS.md).
+//!
+//! A test that changes process-wide state (an environment variable, a
+//! registered package manager) stays in its own file under `core/tests/`,
+//! as `static_audit_env.rs` does.
+
+mod annotation_parity;
+mod camera_class;
+mod candidate_state;
+mod capture_lag;
+mod cell_in_place;
+mod class_live_edit;
+mod classes;
+mod comments;
+mod computed_keys;
+mod const_decl;
+mod const_parity;
+mod copy_elision;
+mod core_semantics;
+mod default_params;
+mod dep_classes;
+mod dm_canopy;
+mod dm_embed;
+mod dm_jacobian;
+mod dm_ranges;
+mod dm_solve;
+mod dm_spec;
+mod drop_edit;
+mod element_edits;
+mod enum_methods;
+mod enums;
+mod feature_composition;
+mod fn_introspection;
+mod frozen_heap;
+mod get_keyword;
+mod handles;
+mod host_embedding;
+mod host_interfaces;
+mod hot_reload;
+mod implicit_keys;
+mod implicit_return;
+mod intrinsics;
+mod json_key_order;
+mod keyword_sync;
+mod lifecycle_migration;
+mod lint_rewrites;
+mod lint_state_const;
+mod lint;
+mod lsp_tests;
+mod manifest;
+mod maps;
+mod match_arms;
+mod memo_decl;
+mod migrate_old_code;
+mod modules;
+mod named_args;
+mod native_decl;
+mod native_fn;
+mod nested_fn_decl;
+mod no_package_manager;
+mod nullable_types;
+mod output_segments;
+mod packages;
+mod parse_hints;
+mod profile_sites;
+mod pub_keyword;
+mod qualified_types;
+mod record_templates;
+mod reload_diagnostics;
+mod required_commas;
+mod script_cases;
+mod setting_parity;
+mod small_scope;
+mod sorting;
+mod source_preservation;
+mod speculate;
+mod spread_args;
+mod state_call_paths;
+mod state_decl_ids;
+mod state_in_callback_check;
+mod state_json_paths;
+mod state_key_deprecated;
+mod state_lifecycle;
+mod state_loop_keys;
+mod static_audit;
+mod static_dispatch;
+mod static_in_functions;
+mod static_observe;
+mod static_reload;
+mod static_review3;
+mod stdlib_helpers;
+mod string_code_points;
+mod suggest;
+mod test_blocks;
+mod type_annotations;
+mod type_identity;
+mod vec3;

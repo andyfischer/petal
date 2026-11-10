@@ -160,7 +160,7 @@ decide three things when the program is lowered, written into the bytecode
   reaches can change from run to run, so its captures are compared.
 
 `Env::set_memo_hints(stack, false)` ignores them all: the reference run the
-hinted one is held to (`core/tests/dep_classes.rs`). `static_skips`,
+hinted one is held to (`core/tests/all/dep_classes.rs`). `static_skips`,
 `static_args` and `commands` (re-issued) are counted in `MemoStats`.
 
 **Cold sites.** Recording is not free, and a record only pays for itself when

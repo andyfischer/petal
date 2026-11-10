@@ -552,7 +552,7 @@ first `class` example, which declared `class Rect`, now declares `class Box`.
 website's copy of the language guide carries the old `class Rect` example
 until its next docs sync.
 
-**Tests:** `core/tests/qualified_types.rs`; CST-projection parity cases in
+**Tests:** `core/tests/all/qualified_types.rs`; CST-projection parity cases in
 `cst_project.rs`; the B1 warning in `test/vitest/classes.test.ts`.
 
 ## Open questions
@@ -616,7 +616,7 @@ Shipped 2026-11-09, following implementation sketch step 3.
   `Type::display` and the compile-time enum messages.
 
 **Tests.**
-- `core/tests/type_identity.rs` covers the `nc/` cases, `==` and `match`
+- `core/tests/all/type_identity.rs` covers the `nc/` cases, `==` and `match`
   across modules, classes with methods, own-versus-imported types, ambiguity,
   the `==` warning, a module variant in `state` across a reload, and
   host-built bare tags in the unique, shared and entry-owned cases.

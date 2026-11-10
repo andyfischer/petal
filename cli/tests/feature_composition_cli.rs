@@ -4,7 +4,7 @@
 //! qualified and nullable annotations, and `petal suggest` proposing a
 //! nullable annotation of a module-scoped type the way the file writes it.
 //! The in-memory side of the same compositions is
-//! `core/tests/feature_composition.rs`.
+//! `core/tests/all/feature_composition.rs`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

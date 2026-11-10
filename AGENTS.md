@@ -15,3 +15,21 @@ docs/dev/migrations.md - when a syntax change deprecates a form, the rewrite goe
 Save a git commit after each chunk of work (a finished task, a fix, or a
 self-contained step) without waiting to be asked. Stage only the specific files you
 changed. Use conventional-commits style.
+
+## Running the Rust tests
+
+`core/tests/` builds as one integration-test binary, `all`: each file under
+`core/tests/all/` is a module listed in `core/tests/all/main.rs`. Run one
+former test file with its module path as the filter:
+
+```bash
+cd core
+cargo test --test all hot_reload::                 # one file's tests
+cargo test --test all hot_reload::reload_keeps     # tests matching a name
+cargo test --test all -- --ignored hot_reload::whole_corpus   # an ignored one
+```
+
+Add a new file under `core/tests/all/` and a `mod` line in `main.rs`. Only a
+test that changes process-wide state (an environment variable, a registered
+package manager) gets its own file directly in `core/tests/`
+(`static_audit_env.rs`), run as `cargo test --test static_audit_env`.

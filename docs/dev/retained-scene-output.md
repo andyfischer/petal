@@ -122,7 +122,7 @@ MODES="emit + memo + retained,emit + memo + VM" cargo run --release --example sc
 The `skipped/fr` column counts, for the VM-segments mode, the segment
 references spliced per frame.
 
-**Checked by** `core/tests/output_segments.rs` (each script under memo off
+**Checked by** `core/tests/all/output_segments.rs` (each script under memo off
 with a flat buffer, memo on flat, and memo on segmented drained both through
 a `SegmentCache` and flat, equal frame for frame through collections,
 re-recordings, effectful scopes, cutoffs and a reload, and also runs that
@@ -415,7 +415,7 @@ HUD), or a static argument rebuilt every run, the hints change little: with
 the cache on, a static argument is the same object every run and compares
 in one step anyway.
 
-**Checked by** `core/tests/dep_classes.rs`: a game-shaped script (a constant
+**Checked by** `core/tests/all/dep_classes.rs`: a game-shaped script (a constant
 city, ticking ships, declarations, commands, a `PHYSICS` query, a pure child
 whose command depends on the pointer, a literal argument, a printing helper)
 run frame by frame with memo off, memo on with hints and memo on without,
@@ -565,7 +565,7 @@ cmake --build <build> --target petal_bridge_scene_frame
 MODES=emit.plan.untagged,emit.plan,emit.diff.untagged,emit.tmpl <build>/petal_bridge_scene_frame
 ```
 
-**Checked by** `core/tests/record_templates.rs`: each script run frame by
+**Checked by** `core/tests/all/record_templates.rs`: each script run frame by
 frame with tagging on, off, with no static-value cache, with the cache
 checking itself, and with memoization, which must print and emit the same;
 and every pair of records with one id must agree on everything but their
@@ -676,7 +676,7 @@ declaration):
 
 MEASUREMENTS
 
-**Checked by** `core/tests/implicit_keys.rs`. Each script runs frame by frame
+**Checked by** `core/tests/all/implicit_keys.rs`. Each script runs frame by frame
 with memoization off, on with a flat buffer and on with the buffer segmented
 (drained through a `SegmentCache`), and all three must declare the same
 values under the same keys and issue the same commands with the same keys:

@@ -42,7 +42,7 @@ first, then everything else works on it.
    rewrite on that parse. Such a migration runs first in `run()`, since the
    ones after it need the file to parse.
 4. **Test it.** Add a fixture row to `FIXTURES` in
-   `core/tests/migrate_old_code.rs` (old source → migrated source; the tests
+   `core/tests/all/migrate_old_code.rs` (old source → migrated source; the tests
    check it alone and with every other migration, idempotency, that both
    sides compile, and that no deprecation warning is left), plus focused
    tests of the edge cases next to the planner. CLI behaviour (`--check`,

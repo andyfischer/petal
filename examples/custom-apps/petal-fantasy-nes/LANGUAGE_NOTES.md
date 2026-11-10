@@ -134,7 +134,7 @@ these stand out.
 referenced. The gated declarations used to attach to the entry file alone, so
 `sfx_play` compiled clean and raised `Unknown builtin: has_field` at runtime
 from inside `nes_sound.ptl`. `module.rs` now binds the gated prelude into every
-loaded module (lowest precedence), covered by tests in `core/tests/modules.rs`.
+loaded module (lowest precedence), covered by tests in `core/tests/all/modules.rs`.
 
 The lesson that stands: a host prelude authored and tested on the bare `petal`
 CLI can differ from what carts see. `tests/carts.rs` exists partly for that.

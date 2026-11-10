@@ -155,7 +155,7 @@ Method calls on such a value resolve against the new code:
   the label names no class in the running program.
 
 See [Classes & Methods](../language-guide.md#when-the-call-is-resolved-at-compile-time)
-and `core/tests/class_live_edit.rs`. Enum variants kept in `state` are under
+and `core/tests/all/class_live_edit.rs`. Enum variants kept in `state` are under
 [Editing an enum](#editing-an-enum).
 
 ## Static values across a reload
@@ -368,12 +368,12 @@ since only the compiler can say whether the warning still reads the same.
 
 **If you add a compile-time check, keep this true.** A check that reads a
 literal's value, quotes a line number, or compares lines or columns must go
-through one of the mechanisms above. `core/tests/hot_reload.rs` is where a
+through one of the mechanisms above. `core/tests/all/hot_reload.rs` is where a
 violation shows up.
 
 ## What is tested
 
-`core/tests/hot_reload.rs` runs each case twice from the same starting point,
+`core/tests/all/hot_reload.rs` runs each case twice from the same starting point,
 once through `reload_program` and once through recompile plus `transfer_state`,
 and compares what a host could tell apart: the output, value or error of the
 frames that follow (error text carries a line and column), the state after
@@ -393,7 +393,7 @@ Further tests assert that a value edit compiles nothing and lowers nothing
 Every case also compares the static values the two sides hold after each
 frame: `reload_program` keeps the ones the edit cannot have changed,
 `transfer_state` empties every one, and a slot the full side has filled must
-hold the same value on the incremental side. `core/tests/static_reload.rs`
+hold the same value on the incremental side. `core/tests/all/static_reload.rs`
 holds the rule itself to 45 more cases against `set_static_follow(false)`: a
 changed import, a shadowing declaration, an added overload, an added method,
 a literal inside a function a constant calls, one literal followed through
@@ -415,7 +415,7 @@ values. The ignored one does the same over any tree (set
 
 ```bash
 cd core
-PETAL_RELOAD_CORPUS=/path/to/scripts cargo test --release --test hot_reload -- --ignored
+PETAL_RELOAD_CORPUS=/path/to/scripts cargo test --release --test all hot_reload:: -- --ignored
 ```
 
 Over the 409 `.ptl` files of this repository it reports 274 edits relocated,

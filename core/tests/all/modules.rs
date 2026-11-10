@@ -331,7 +331,7 @@ fn runtime_error_in_module_names_the_file() {
 fn same_state_name_in_two_modules_gets_distinct_slots() {
     // The module qualifier is the outermost part of a declaration id
     // (`Compiler::state_key_for`); the rest of the name path is covered by
-    // tests/state_decl_ids.rs.
+    // tests/all/state_decl_ids.rs.
     let m1 = "state scroll = 0\nscroll += 1\npub fn get1()\n  scroll\nend";
     let m2 = "state scroll = 0\nscroll += 10\npub fn get2()\n  scroll\nend";
     check_output(

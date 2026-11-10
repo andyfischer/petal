@@ -5,7 +5,7 @@ import { join } from "path";
 import { petalCapture, checkJson, checkStrict, showAstJson } from "./helpers";
 
 // `pub` and its deprecated spelling `export`, at the CLI (the library-level
-// contract is in core/tests/pub_keyword.rs). `export` keeps working; `lint`
+// contract is in core/tests/all/pub_keyword.rs). `export` keeps working; `lint`
 // reports it (`old-syntax`), `migrate-old-code` rewrites it, `fmt` and
 // `lint --fix` leave it, and `ir-equal` cannot tell the two apart.
 

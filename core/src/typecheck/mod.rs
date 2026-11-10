@@ -459,7 +459,7 @@ impl MethodDispatch {
 /// the compiler can bind the call straight to `fn Class.name`, which is what
 /// [`Compiler::compile_expr`](crate::compiler::Compiler) does with this map.
 /// That matters most across a live edit, where the value in `state` predates
-/// the code now running — see `core/tests/class_live_edit.rs`. Resolution is as
+/// the code now running — see `core/tests/all/class_live_edit.rs`. Resolution is as
 /// shallow as the rest of the pass: a site it cannot pin down keeps the runtime
 /// dispatch it always had.
 pub fn check_module(

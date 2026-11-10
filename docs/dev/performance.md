@@ -360,7 +360,7 @@ the instruction, and the general executor runs it as the builtin call it was
 lowered from: a string to convert (`float("3.5")`), a dual number, a wrong
 type, an overflow (`abs` of the smallest int), a `Pending` to absorb. The
 results, the error text and its source position are therefore the native's.
-`core/tests/intrinsics.rs` holds the inline arms to the natives over a matrix
+`core/tests/all/intrinsics.rs` holds the inline arms to the natives over a matrix
 of values (`--policy fast-intrinsics` is the same code with the rewrite off).
 
 What it does not change:
@@ -921,7 +921,7 @@ one table per run. A constant string and a payload-free variant have always
 behaved the kept way. The tests are `freezing_a_kept_value_freezes_it_once`
 in `core/tests/static_cache.rs` and
 `freezing_what_a_function_returned_freezes_the_kept_value` in
-`core/tests/static_in_functions.rs`.
+`core/tests/all/static_in_functions.rs`.
 
 **Record templates.** With the cache on, a record literal whose fields
 are mostly static (`{shape: "box", size: 2.0, mass: 5.0, pos: p}`) is

@@ -191,7 +191,7 @@ lookup; the syntax tree is not fetched.
 Because the key is the code and not the closure, a new closure each frame
 still hits. A reload that changes the program drops every memo entry
 ([Memo and hot reload](../features/memo.md#memo-and-hot-reload)), so it
-translates once more and the frames after it hit again. Measured by `core/tests/fn_introspection.rs`
+translates once more and the frames after it hit again. Measured by `core/tests/all/fn_introspection.rs`
 (`a_script_that_translates_every_frame_translates_once_per_change`), for a
 lambda with one helper, a captured int and a captured float that changes
 every frame, with the call memo on and with it off:

@@ -8,7 +8,7 @@
 // script's path.
 //
 // The Rust side (Env::provides, resolution, the language server) is covered
-// by core/tests/manifest.rs; this file covers the CLI.
+// by core/tests/all/manifest.rs; this file covers the CLI.
 
 import { describe, it, expect } from "vitest";
 import { resolve } from "path";

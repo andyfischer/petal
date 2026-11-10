@@ -242,7 +242,7 @@ tests pick pairs that differ in one layer, so a failure names the layer.
 | `baseline` against `fast` | everything, the optimizer first | `assert_parity` and `assert_stateful_parity` in [`core/src/backend/bytecode/tests.rs`](../../core/src/backend/bytecode/tests.rs); `--no-opt` against the default in [`tools/test-examples.ts`](../../tools/test-examples.ts) |
 | `baseline` against `baseline` with one pass on | one optimizer pass | the fuzzers `fuzz.rs`, `cell_fuzz.rs` and `enum_all_fuzz.rs` in `core/src/backend/bytecode/` |
 | `replay` against `replay-static` | the static cache | `--runs 2` in `tools/test-examples.ts`; `static_fuzz.rs` and `static_fn_fuzz.rs`, which also pair `replay-memo`, `fast` and `baseline` with the cache on and off |
-| `replay` against `replay-fnstatic` | the values kept for function bodies | `core/tests/static_in_functions.rs`, `test/ui-corpus/tests/static_in_functions.rs` |
+| `replay` against `replay-fnstatic` | the values kept for function bodies | `core/tests/all/static_in_functions.rs`, `test/ui-corpus/tests/static_in_functions.rs` |
 | `replay` against `replay-memo` | the memo | `test/ui-corpus/tests/memo.rs` |
 | `fast` against `replay` | the gate | `test/ui-corpus/tests/gating.rs` |
 | `baseline` against `fast-memo`, `replay` and `fast` | each shipped policy, over UI code from another repository | [`tools/oracle-external.ts`](../../tools/oracle-external.ts), driving `petal-ui-run` |

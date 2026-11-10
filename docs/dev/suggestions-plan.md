@@ -211,7 +211,7 @@ repeated pure subexpression to a `let`" is a judgement call about naming.
 
 ```bash
 cd core && cargo test --lib typecheck::infer::   # the evidence rules
-cargo test --test suggest                        # the command, end to end
+cargo test --test all suggest::                        # the command, end to end
 cargo test --test suggest_return_types           # loop-tail return types
 
 B=core/target/debug/petal

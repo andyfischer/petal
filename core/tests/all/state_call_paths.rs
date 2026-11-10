@@ -17,7 +17,7 @@
 //   - a host call runs on a root path of its own (§2.5).
 //
 // Declaration *ids* — the other half of the key — are pinned in
-// tests/state_decl_ids.rs.
+// tests/all/state_decl_ids.rs.
 
 use std::collections::{HashMap, HashSet};
 

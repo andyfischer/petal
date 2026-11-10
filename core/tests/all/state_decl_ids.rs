@@ -14,7 +14,7 @@
 // *slot* is that id under the call path that reached it — so the way to watch
 // one declaration accumulate is to reach it the same way twice, which is what
 // `run_twice` does (the frame-loop model: same callsites, same paths, next
-// run). Per-callsite splitting itself is pinned in tests/state_call_paths.rs.
+// run). Per-callsite splitting itself is pinned in tests/all/state_call_paths.rs.
 
 use petal::compiler::Compiler;
 use petal::env::Env;

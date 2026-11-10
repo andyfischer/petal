@@ -8,7 +8,7 @@ the refactor verifier — is in [docs/dev/testing.md](../docs/dev/testing.md).
 |------|------------|---------|
 | `test/vitest/` | The vitest integration suite (`*.test.ts`) and its `fixtures/` | `npm test` |
 | `test/ptl/` | Tests written in Petal: `test "name" do … end` blocks | `petal test test/ptl`; `cd core && cargo test --test ptl_tests` |
-| `test/<case>/` | Script regression cases: a `main.ptl` plus an `expects` file (below) | `cd core && cargo test --test script_cases` |
+| `test/<case>/` | Script regression cases: a `main.ptl` plus an `expects` file (below) | `cd core && cargo test --test all script_cases::` |
 | `test/example-golden/` | Frozen stdout for every `examples/console/*.ptl` | `tools/test-examples.ts`; re-baseline with `tools/gen-example-golden.ts` |
 | `test/ui-golden/` | Hashes of each UI app's 60-frame headless trace | `tools/verify.ts` (`--update-golden` to re-baseline) |
 | `test/verify-plans/` | Plans for `tools/verify.ts` | see "Verifying a refactor" in testing.md |
@@ -26,7 +26,7 @@ test/<case>/
   expects     # expected output + performance ceilings
 ```
 
-The harness, [`core/tests/script_cases.rs`](../core/tests/script_cases.rs),
+The harness, [`core/tests/all/script_cases.rs`](../core/tests/all/script_cases.rs),
 runs as part of `cargo test`. It picks up every `test/*/` directory that
 contains a `main.ptl`, runs the program through the embedded interpreter, and
 checks the result against `expects`.
@@ -71,7 +71,7 @@ always run.
 1. `mkdir test/my-case` and write `test/my-case/main.ptl`.
 2. Capture the current numbers: `cd cli && cargo run -- run --dup-stats ../test/my-case/main.ptl`.
 3. Write `test/my-case/expects` with the `out:` lines and `max` ceilings.
-4. `cd core && cargo test --test script_cases`.
+4. `cd core && cargo test --test all script_cases::`.
 
 ## test/ui-corpus
 

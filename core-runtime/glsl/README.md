@@ -48,8 +48,8 @@ causes a translation.
 `tests/expected/` the GLSL the original Python stand-in wrote for them;
 `tests/unsupported.ptl` holds lambdas that must be refused. These files call
 shader functions (`src`, `fx_luma`, ...) that only exist in a shader, so they
-are translated, never run. `core/tests/fn_introspection.rs` checks all of it:
+are translated, never run. `core/tests/all/fn_introspection.rs` checks all of it:
 
 ```bash
-cd core && cargo test --test fn_introspection
+cd core && cargo test --test all fn_introspection::
 ```

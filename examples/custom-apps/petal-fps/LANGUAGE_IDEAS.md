@@ -172,4 +172,4 @@ Headless, screenshot, and record runs bind `time()` from a fixed clock
 
 The init expression now runs only when the slot is missing from the persistent
 store, so a large `state enemies = [...]` literal is built once. Covered by
-`core/tests/state_lifecycle.rs` and `test/vitest/state-lazy-init.test.ts`.
+`core/tests/all/state_lifecycle.rs` and `test/vitest/state-lazy-init.test.ts`.

@@ -1573,7 +1573,7 @@ fn is_ident_char(c: char) -> bool {
 /// The lexer's hard keywords plus the contextual ones (`as`, `class`,
 /// `config`, `key`, `native`, `test`), which completion should still offer. Checked against
 /// `petal::lexer::KEYWORDS` by
-/// `core/tests/keyword_sync.rs` — do not edit this list alone.
+/// `core/tests/all/keyword_sync.rs` — do not edit this list alone.
 pub const KEYWORDS: &[&str] = &[
     "let", "const", "var", "set", "get", "fn", "if", "then", "elsif", "else", "end", "for", "in", "do",
     "while", "match", "when", "return", "break", "continue", "state", "memo", "import", "pub", "export",

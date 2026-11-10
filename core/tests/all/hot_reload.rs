@@ -1558,7 +1558,7 @@ fn example_programs_reload_to_what_a_recompile_builds() {
 }
 
 /// The same over any tree of `.ptl` files: `PETAL_RELOAD_CORPUS=<dir>[:<dir>…]
-/// cargo test --release --test hot_reload -- --ignored whole_corpus`. Slow in a
+/// cargo test --release --test all -- --ignored hot_reload::whole_corpus`. Slow in a
 /// debug build, which is why it is not part of the default run.
 #[test]
 #[ignore]

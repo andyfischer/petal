@@ -386,7 +386,7 @@ fn an_embedding_host_never_fetches() {
     // Env::new() — what a host and the language server use — has install on
     // demand off: even with the package manager registered, an uninstalled
     // git dependency is an error naming the cure. (A host without it is
-    // core/tests/no_package_manager.rs.)
+    // core/tests/all/no_package_manager.rs.)
     petal_pkgman::register();
     let w = World::new("host");
     w.ease_repo();

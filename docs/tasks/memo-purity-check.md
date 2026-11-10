@@ -10,7 +10,7 @@ the soundness review of [`memo`](../features/memo.md).
   interpolation forms (`init_is_pure_of_key` in
   `core/src/compiler/keyed_state.rs`). Any call, `get`, lambda, branch or
   other name means the site is reported without a fix. Tests:
-  `core/tests/state_key_deprecated.rs`.
+  `core/tests/all/state_key_deprecated.rs`.
 - **Open:** nothing checks a hand-written `memo`. `memo(k) v = k * scale`
   still prints `20 20` with a clean `check`. The plan is below
   ([Plan](#plan)).

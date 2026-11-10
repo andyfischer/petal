@@ -195,7 +195,7 @@ In short:
   for a computed setting.
 - **Selectors:** `knob` / `--knob-strict` are canonical; `config` /
   `--config-strict` are aliases.
-- **Proven equal:** `core/tests/setting_parity.rs` rewrites every
+- **Proven equal:** `core/tests/all/setting_parity.rs` rewrites every
   single-line `config let` in `examples/` and `core/tests` into the
   `tunable` form and compares bindings, set-by-name and config-marked
   constants. It passed on 132 settings.
@@ -231,7 +231,7 @@ that host has been updated.
 5. Messages: `env/mod.rs:1094-1238` and the classifier say "`X` is declared
    `const`". Change that to name whichever form was written, or one wording
    for both, such as "`X` must be constant".
-6. **Parity test** `core/tests/const_parity.rs`, on the model of
+6. **Parity test** `core/tests/all/const_parity.rs`, on the model of
    `setting_parity.rs`. It rewrites every `const` declaration in
    `examples/`, `core/tests` and the language-guide snippets, then asserts
    for both forms: identical IR (`ir_equiv`), identical `show-static --json`
@@ -272,7 +272,7 @@ that host has been updated.
   Cheesecake's `script_host.cpp:684` detects a const error by the text
   "is declared `const`", as do its `script_host_tests.cpp` and the bridge
   tests. Only the misplacement errors are new text.
-- `core/tests/const_parity.rs` rewrites every top-level `const` in
+- `core/tests/all/const_parity.rs` rewrites every top-level `const` in
   `examples/`, the `.ptl` files and the Rust string fixtures of
   `core/tests`, and the `petal` snippets of `language-guide.md` and
   `features/static-values.md` (74 samples, 135 declarations), and asserts
@@ -356,7 +356,7 @@ that host has been updated.
     left alone, a rewrite that compiles to the same static values, and
     `const-of-literal`. Every fixture asserts that the fix of the fixed file
     is empty.
-  - `core/tests/lifecycle_migration.rs` is a dry run of Phase 3. It
+  - `core/tests/all/lifecycle_migration.rs` is a dry run of Phase 3. It
     rewrites every `.ptl` file under `examples/`, `garden/`, `core/tests`
     and `cli/tests` that declares either keyword (29 files, 37 `const`, 147
     `config let`), and checks that the result is a fixed point, keeps the
@@ -406,8 +406,8 @@ that host has been updated.
 #### Phase 3: what shipped (9 November 2026)
 
 - **The corpus.** `migrate_in_place` (an ignored test in
-  `core/tests/lifecycle_migration.rs`; `PETAL_MIGRATE=<paths> cargo test
-  --test lifecycle_migration migrate_in_place -- --ignored`) applied
+  `core/tests/all/lifecycle_migration.rs`; `PETAL_MIGRATE=<paths> cargo test
+  --test all lifecycle_migration::migrate_in_place -- --ignored`) applied
   `migrate_lifecycle_keywords` to 31 files under `examples/`,
   `garden/examples`, `test/` and `core/tests/dm`: 43 `const` and 147
   `config let` (the doc's 155 counted declarations inside strings and
@@ -620,7 +620,7 @@ rule went. The compile warning names the command:
 `petal migrate-old-code` [const-decl-deprecated]". The ids are unchanged, so
 `// petal-lint-ignore const-decl-deprecated` still silences the warning, and
 now keeps the migration off the site. `const-of-literal` stays a lint rule
-(`core/src/lint/const_of_literal.rs`). `core/tests/lifecycle_migration.rs`
+(`core/src/lint/const_of_literal.rs`). `core/tests/all/lifecycle_migration.rs`
 runs the dry run through `petal::migrate::migrate_source`; its
 `migrate_in_place` test is gone (`petal migrate-old-code --only
 const-decl-deprecated,config-let-deprecated <dir>` does that). Cheesecake

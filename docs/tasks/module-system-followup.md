@@ -15,8 +15,8 @@ still reproduces unless it says otherwise.
 ## Fix plan
 
 Causes found on 2026-11-03 by reading the loader, parser and compiler.
-Steps 1–4 landed the same day, with tests in `core/tests/parse_hints.rs`,
-`core/tests/modules.rs` and `core/tests/packages.rs`. Their issues are gone
+Steps 1–4 landed the same day, with tests in `core/tests/all/parse_hints.rs`,
+`core/tests/all/modules.rs` and `core/tests/all/packages.rs`. Their issues are gone
 from the list below; their sections stay here as the record of the cause
 and the choice made. Step 4 keeps a relative import into a nested package
 working: the file is loaded as a module of the nested package, so it still
@@ -51,7 +51,7 @@ through `parse_program`: check, run, the LSP, fmt and reload. Make the
 compiler's no-op arm an internal error as a backstop. No in-repo `.ptl` has
 an indented import.
 
-**Tests:** `core/tests/parse_hints.rs`, `test/vitest/import-forms.test.ts`.
+**Tests:** `core/tests/all/parse_hints.rs`, `test/vitest/import-forms.test.ts`.
 
 ### Step 2: misleading parse errors after an import: done 2026-11-03
 
@@ -106,7 +106,7 @@ names the nested package and suggests
 reject files the LSP or a reload adds later. Also decide whether a relative
 import from the outer package into the nested one should be rejected too.
 Nothing in-repo relies on the current behaviour. Add a test to
-`core/tests/packages.rs`.
+`core/tests/all/packages.rs`.
 
 ### Step 5: issues 6 and 7, messages that name the wrong module: done 2026-11-04
 
@@ -173,9 +173,9 @@ so check them before landing. Update `module-system.md` (the module-names
 section).
 
 **Tests:** none cover the collision. Neighbours: `module.rs` unit tests
-(`relative_module_name`, the package-identity tests), `core/tests/modules.rs`,
-`core/tests/manifest.rs`, `core/tests/state_json_paths.rs`,
-`core/tests/lsp_tests.rs`, and vitest `module-paths`, `modules`,
+(`relative_module_name`, the package-identity tests), `core/tests/all/modules.rs`,
+`core/tests/all/manifest.rs`, `core/tests/all/state_json_paths.rs`,
+`core/tests/all/lsp_tests.rs`, and vitest `module-paths`, `modules`,
 `fix-imports`.
 
 ## Open issues

@@ -492,7 +492,10 @@ fn const_annotation_matches_const_declaration_across_the_corpus() {
     let ptl_samples = tally.samples;
 
     let mut rust = Vec::new();
-    for e in std::fs::read_dir(root.join("core/tests")).unwrap().flatten() {
+    // The integration tests: `core/tests/all/` (one binary) and the few kept
+    // in their own binary beside it.
+    let dirs = [root.join("core/tests"), root.join("core/tests/all")];
+    for e in dirs.iter().flat_map(|d| std::fs::read_dir(d).unwrap().flatten()) {
         let p = e.path();
         if p.extension().is_some_and(|x| x == "rs") {
             rust.push(p);

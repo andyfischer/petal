@@ -1006,7 +1006,7 @@ See [§4](#4-surfaces).
 |---|---|---|---|
 | R1 | `SpecHooks` on the VM: `Option<&mut SpecHooks>` built in `make_vm`; holds the const override table (`Vec<Option<Value>>` indexed by `ConstantId`, consulted by `LoadConst` in **both** `vm/dispatch.rs:22` and `vm/fast.rs:138` only when `Some`), the native gate (§2.1.3), the RNG/`rigid` replay table, the emit arg capture, the loaded-param bitset and the branch fingerprint | `backend/bytecode/vm/spec.rs` (new), `vm/mod.rs`, `vm/native.rs`, `env/run.rs` | Off path: one `Option` check on `LoadConst`, which is hot. Measure with `petal bench` and `bench_panel`. If it shows up, select a spec-mode dispatch loop at `make_vm` (the fast loop is skipped under hooks already: `hooks = trace.enabled \|\| ...`) |
 | R2 | Row facets: `NativeEffects::contained: bool` (effect stays in the `ExecutionContext` or the stack), `no_feedback: bool`. Constructors `.contained()` and `.no_feedback()`. Mark **every** core row with `effect` contained (the full list is in §1.5, including `__declare_method` and the enum-data intrinsic, which the first draft missed: suppressing them breaks every program with methods or enums), with a test that fails when a new core `effect` row is not. Classify the in-repo hosts in M1 as well: petal-ui (`ui_mark`, `create_canvas`/`draw_to`/`draw_to_screen`, the panel stubs) and garden-script (`row`, `column`, `invalidate`, `mutate`, `panel_store`). Out-of-repo embedder natives with `effect` default to **escaping**. `Env::mark_handle_class_spec_safe(id)` as a side registry, not a new `HandleClass` field, so vendored embedders don't break. C bridge: `PB_FX_CONTAINED`, `PB_FX_NO_FEEDBACK` | `native_fn.rs`, `builtins/mod.rs`, `env/mod.rs`, `integrations/petal-c-bridge` | Adding fields keeps `..NativeEffects::PURE` struct literals compiling. Extend `effect_audit` to report an escaping effect seen in spec mode |
-| R3 | `Env::slot_literals(pid, &[TermId]) -> Result<(), String>`: factor the `alloc_slot` + `retarget_constants` part out of the reload patch (`reload.rs:490-510`) as a value-neutral operation | `env/reload.rs` | Must keep `core/tests/hot_reload.rs` green. A later reload of an already-slotted term takes the existing `set_slot` path |
+| R3 | `Env::slot_literals(pid, &[TermId]) -> Result<(), String>`: factor the `alloc_slot` + `retarget_constants` part out of the reload patch (`reload.rs:490-510`) as a value-neutral operation | `env/reload.rs` | Must keep `core/tests/all/hot_reload.rs` green. A later reload of an already-slotted term takes the existing `set_slot` path |
 | R4 | `Stack::drop_derived()`: clear statics, memo, enums, functions and methods, and `run_deps.force()`. Factored from `restore_execution` (`fork.rs:109-119`) and `transfer_stack_state` | `stack.rs`, `env/fork.rs` | The fork in each spec run calls it. Memo is also disabled in spec runs (`memo = false` in `make_vm`) |
 | R5 | (revised) Watched-term capture lives in `SpecHooks`, not in the Env-wide `TraceBuffer` (§1.3): a `HashSet<TermId>` of watched terms; at each traced result of a watched term, convert to `ObsValue` (strong, GC-proof) with a spec-local sequence. Spec runs switch the Env's trace, `observations` and profile off and restore them | `vm/spec.rs`, `env/run.rs` | Reuses the trace hook points (`hooks` flag) |
 | R6 | `Env::set_dm_checkpoint(stack, on)` and `Env::dm_checkpoint(stack) -> Option<StackKey>`: keep one pre-run fork, refreshed at each `run` while on | `env/run.rs`, `env/fork.rs` | Garden turns it on in IDE mode. The cost is one heap fork per frame, only while armed |
@@ -1149,7 +1149,7 @@ Scope: R1 (overrides, gate, capture, loaded set), R2 (facets, core rows,
 in-repo host rows, handle registry), R3, R4, R5 (revised), R7, R8, R11, R12,
 R13, and `dm/{mod,spec,observe}.rs`.
 
-Acceptance (in `core/tests/dm_spec.rs` unless noted):
+Acceptance (in `core/tests/all/dm_spec.rs` unless noted):
 1. `override_moves_only_that_literal`: `let a = 10` / `let b = 10` /
    `push_output(sym, a)` / `push_output(sym, b)`. Overriding `a`'s term to
    12.5 moves emit 0 only. The two `10`s were interned to one `ConstantId`
@@ -1222,7 +1222,7 @@ test native `draw(x, y, r)` with `EMITS`, which reads its args with
 `draw_circle`, they mean this native. The petal-ui variants live in
 `test/ui-corpus/tests/`.
 
-Acceptance (`core/tests/dm_jacobian.rs`):
+Acceptance (`core/tests/all/dm_jacobian.rs`):
 1. `discovers_literal_inside_helper`: `fn place(i) 20 + i * 30 end` (the body on its own line) /
    `draw(place(2), 50)`. Discovery for arg 0 includes `20` and `30` (in the
    body) and `2` (the call arg), and not `50`. Their Jacobian columns are 1,
@@ -1267,7 +1267,7 @@ Acceptance (`core/tests/dm_jacobian.rs`):
 
 Scope: `dm/{solve,rank,api}.rs`, `propose_edits_v2`.
 
-Acceptance (`core/tests/dm_solve.rs`):
+Acceptance (`core/tests/all/dm_solve.rs`):
 1. `through_helper_single_goal`: `fn place(i) 20 + i * 30 end` (the body on
    its own line), then `draw_circle(place(1.0), 100, 10, …)` and
    `draw_circle(place(2.0), 100, 10, …)`. Dragging the second circle to
@@ -1687,9 +1687,9 @@ with a golden test.
 |---|---|---|---|
 | Design | done, 2026-10-23 | `c9eb67b7` | plan + [hints proposal](../proposals/dm-v2-hints.md) |
 | Design review | done, 2026-10-23 | (this commit) | adversarial review against the code, [§10](#10-review-notes) |
-| M1 speculative runner | done, 2026-10-23 | `07e81adf` | `dm::{spec,observe}`, `vm/spec.rs`, `env/spec_run.rs`; tests `core/tests/dm_spec.rs` (24), `test/ui-corpus/tests/dm_spec.rs` (2); deviations below |
-| M2 discovery + Jacobian + hints | done, 2026-10-24 | `43ee2820` | `dm::{params,hints,jacobian}`, `builtins/hints.rs`, `lint/dm_hints.rs`; tests `core/tests/dm_jacobian.rs` (17), `test/ui-corpus/tests/dm_params.rs` (1); deviations below |
-| M3 solver + ranking + API | done, 2026-10-24 | `1c28a217` | `dm::{solve,rank,api}`, `propose_edits_v2`, `DmSession`, `apply_edits_multi`; tests `core/tests/dm_solve.rs` (27); deviations below |
+| M1 speculative runner | done, 2026-10-23 | `07e81adf` | `dm::{spec,observe}`, `vm/spec.rs`, `env/spec_run.rs`; tests `core/tests/all/dm_spec.rs` (24), `test/ui-corpus/tests/dm_spec.rs` (2); deviations below |
+| M2 discovery + Jacobian + hints | done, 2026-10-24 | `43ee2820` | `dm::{params,hints,jacobian}`, `builtins/hints.rs`, `lint/dm_hints.rs`; tests `core/tests/all/dm_jacobian.rs` (17), `test/ui-corpus/tests/dm_params.rs` (1); deviations below |
+| M3 solver + ranking + API | done, 2026-10-24 | `1c28a217` | `dm::{solve,rank,api}`, `propose_edits_v2`, `DmSession`, `apply_edits_multi`; tests `core/tests/all/dm_solve.rs` (27); deviations below |
 | M4 surfaces | M4a (CLI, MCP, docs) done, 2026-10-24; M4b (Garden) done, 2026-10-24 | M4a: `83cd1469`; M4b: `6da29349`, `1f565eca` | M4b: Garden drag-to-edit on v2 (`garden-script/src/panel/dm.rs`, `garden-app/src/app/manip_v2.rs`); tests `garden-script/tests/dm_drag.rs` (13), `tools/dm-drag-integration-test.ts`. M4a: `cli/dm.rs` (`propose-edit --v2`), `run --trace-emits` keys + native args, MCP `ProposeEdit`/`TraceEmits`, docs; tests `core/tests/cli_propose_edit_v2.rs` (12), `test/vitest/petal-mcp.test.ts` (5); deviations below |
 | M5 examples + study | done, 2026-10-24 | `ccc25ce7` | `examples/direct-manipulation-v2/` (27 examples, 105 goals), harness `test/ui-corpus/tests/dm_study.rs`, report [direct-manipulation-v2-study.md](direct-manipulation-v2-study.md) + `.json`; engine revisions in `dm::{rank,api,jacobian,spec}`; deviations below |
 | Code review (post-M5) | done, 2026-10-24 | `0d6dae6e`, `08bc37cd`, `1e6f7913`, `4dea9231` | adversarial review of the whole change set; five bugs fixed, each pinned by `core/tests/dm_review.rs` (7); see "Code review" below |
@@ -1892,7 +1892,7 @@ landed: `dm::solve` (`solve_dense`, `rank`, `linear_step`, `Bound`,
 `DmDiagnostics`, `ExplainLog`, `apply_edits_multi`, `program_files`), R9
 (`literal_edit::float_like` is `pub(crate)`), R14, the v1 fallback for
 non-numeric goals, and `SpecSession::drew_random`. Every M3 acceptance item
-has a test in `core/tests/dm_solve.rs`, which also checks each accepted
+has a test in `core/tests/all/dm_solve.rs`, which also checks each accepted
 alternative end to end (its edits applied to the text, the edited program
 compiled and run from scratch, the goal met there) and compares v2 with v1
 on v1's cases.
@@ -2226,7 +2226,7 @@ Deviations:
       1 (`rank::compress_collateral`).
    A seventh, unverifying an alternative whose flow change renumbered the
    goal call's emits, was tried and reverted (it rejected correct answers).
-   `core/tests/dm_solve.rs`: three tests updated for the new scores and
+   `core/tests/all/dm_solve.rs`: three tests updated for the new scores and
    orders (`through_helper_single_goal`, `config_preferred_softly`,
    `budget`). M3's open issue about the two-literal spread is moot: with the
    first circle gone it now ranks third, after `20 → 35`, because `30 →
@@ -2568,7 +2568,7 @@ goals are now real goals, not CLI sugar for a midpoint and a tolerance:
   already holds at the baseline (coins[0].y = 3.4 ≤ 5)`. Descriptions add
   `near[0].0 ≤ 0.6 (was 0.8448, now 0.5978)` per range goal (`keeps …` for
   one that held already); `misses` is the distance outside the range.
-- *Tests.* `core/tests/dm_ranges.rs` (each kind, already holds,
+- *Tests.* `core/tests/all/dm_ranges.rs` (each kind, already holds,
   unreachable, an equality with a `--by 0` pin and a range that joins the
   step, and a distilled #33/#34 harness: three `at_most 0.6` goals on a
   min-over-frames distance; the coin row's two knobs verify first, the

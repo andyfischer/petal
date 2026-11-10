@@ -41,7 +41,7 @@
 //! message and the splices), add a [`Migration`] row to [`MIGRATIONS`] and a
 //! call in [`run`], point the compiler's warning or the parser's error for
 //! the old form at [`RUN_HINT`], and add fixtures under
-//! core/tests/migrate_old_code.rs.
+//! core/tests/all/migrate_old_code.rs.
 
 use std::path::PathBuf;
 

@@ -310,7 +310,7 @@ fn duplicate_enum_names_follow_the_class_rules() {
     let e = compile_err("enum E\n  a,\nend\nenum E\n  b,\nend");
     assert!(e.contains("enum `E` is already declared"), "{e}");
     // Across modules it is not a duplicate: each module's `E` is its own
-    // (tests/type_identity.rs).
+    // (tests/all/type_identity.rs).
     assert_eq!(
         run_with(&[("lib", "pub enum E\n  a,\nend")], "import lib\nenum E\n  b,\nend\nprint(E.b, lib.E.a)"),
         ["E.b E.a"]

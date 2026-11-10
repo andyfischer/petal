@@ -146,7 +146,7 @@ does today.
 The "before" snippets are quoted from the files named; each runs today.
 `examples/console/enums.ptl` and `enums_and_match.ptl` run clean and are in
 `test/example-golden/`; `tetris.ptl` passes `petal lint`; glsl.ptl passes
-`core/tests/fn_introspection.rs`. The "after" snippets are **proposed**. No
+`core/tests/all/fn_introspection.rs`. The "after" snippets are **proposed**. No
 prototype was built.
 
 ### 1. The common case: a question asked of the variant
@@ -543,7 +543,7 @@ the implementation departs from the sketch:
   (45 call sites) and tetris to methods. `test/benchmarks/match_dispatch.ptl`
   gained the unpinned method-call loop but no timing was recorded here.
 
-Tests: `core/tests/enum_methods.rs` (calls, pinning, the checker, modules,
+Tests: `core/tests/all/enum_methods.rs` (calls, pinning, the checker, modules,
 host-built variants, pair 5 pinned and unpinned), the naming errors in
 `compiler::enum_method_decl_tests`, `backend::bytecode::tests::enum_method_calls`
 (optimized against `--no-opt`), `lsp_tests::a_variant_value_offers_its_enums_methods`,

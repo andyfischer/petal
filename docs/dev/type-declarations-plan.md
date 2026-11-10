@@ -212,7 +212,7 @@ two mechanisms could disagree — a field of the same name (data beats
 declarations), a method the class does not declare (a global native could
 still answer), an arity no overload accepts, or a declaration written *below*
 the call (nothing in Petal hoists). Each guard has a test in
-`core/tests/static_dispatch.rs`.
+`core/tests/all/static_dispatch.rs`.
 
 For an un-annotated `state`/`var` (typed `any`, so never pinned), the call
 carries its declaration's class as a *hint*, consulted only when the
@@ -287,8 +287,8 @@ believes about a type is by construction what the checker believes. See
 
 ```bash
 cd core && cargo test --lib typecheck::        # checker unit tests
-cargo test --test type_annotations             # the annotation grammar
-cargo test --test static_dispatch              # dispatch pinning and its guards
+cargo test --test all type_annotations::             # the annotation grammar
+cargo test --test all static_dispatch::              # dispatch pinning and its guards
 cd .. && npx vitest run test/vitest/type-annotations.test.ts test/vitest/type-warnings.test.ts
 cd editor-support/tree-sitter-petal && npx tree-sitter generate && npx tree-sitter test
 

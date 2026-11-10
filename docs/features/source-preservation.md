@@ -15,7 +15,7 @@ and constructor calls that hold them.
   ([../usage/embedding-c.md](../usage/embedding-c.md#editing-source-a-script-as-a-config-file));
   `Env::set_config_value`, which makes the same edit to the text a running
   program holds ([hot-reload.md](hot-reload.md#setting-a-value-without-writing-the-file))
-- **Tests:** [`core/tests/source_preservation.rs`](../../core/tests/source_preservation.rs),
+- **Tests:** [`core/tests/all/source_preservation.rs`](../../core/tests/all/source_preservation.rs),
   a table of before / edit / after cases plus the properties below
 
 ## What an edit guarantees

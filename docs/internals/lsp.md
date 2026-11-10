@@ -410,7 +410,7 @@ or snippet.
 
 `KEYWORDS` in `document.rs` is the lexer's keyword list plus the contextual
 ones (`as`, `class`, `config`, `native`).
-`core/tests/keyword_sync.rs` fails if it drifts from the lexer.
+`core/tests/all/keyword_sync.rs` fails if it drifts from the lexer.
 
 ## Enum members
 
@@ -482,16 +482,16 @@ JSON.
 
 | Where | What |
 |---|---|
-| [`core/tests/lsp_tests.rs`](../../core/tests/lsp_tests.rs) | the main suite: a `Server` driven through `handle_message` with JSON built by small helpers (`init`, `open`, `change`, `hover`, `definition`, `completion`). Lifecycle, diagnostics, each request, imports across files written to a temporary directory, enum members, the outline, the static-value hover. |
+| [`core/tests/all/lsp_tests.rs`](../../core/tests/all/lsp_tests.rs) | the main suite: a `Server` driven through `handle_message` with JSON built by small helpers (`init`, `open`, `change`, `hover`, `definition`, `completion`). Lifecycle, diagnostics, each request, imports across files written to a temporary directory, enum members, the outline, the static-value hover. |
 | `core/src/lsp/stdio.rs` (unit tests) | the framed loop over in-memory streams: a session end to end, `exit` with input pending, a multi-byte body, a truncated body |
 | `core/src/lsp/position.rs`, `host.rs` (unit tests) | encoding negotiation and column conversion; joining a document with its host's prelude files and mapping lines back |
 | `core/src/package.rs`, `core/src/module.rs` (unit tests) | parsing `[host]`; an implicit prelude that imports a module the script imports too |
-| `core/tests/keyword_sync.rs` | `KEYWORDS` against the lexer |
-| `core/tests/manifest.rs` | a `petal.toml` dependency resolves and completes with no configuration |
-| `core/src/check.rs`, `core/tests/pub_keyword.rs` | the server shows what `petal lint` reports |
+| `core/tests/all/keyword_sync.rs` | `KEYWORDS` against the lexer |
+| `core/tests/all/manifest.rs` | a `petal.toml` dependency resolves and completes with no configuration |
+| `core/src/check.rs`, `core/tests/all/pub_keyword.rs` | the server shows what `petal lint` reports |
 
 ```sh
-cd core && cargo test --test lsp_tests
+cd core && cargo test --test all lsp_tests::
 cd core && cargo test --lib lsp::
 ```
 
@@ -538,7 +538,7 @@ To add a request, say `textDocument/references`:
    `span_to_range`, read the text at a position by indexing the line's
    `char`s, as the existing helpers do, and convert each range in the reply
    with `range_out` (or `self.encoding.range_out` for the document itself).
-6. **Tests.** Add a helper and cases to `core/tests/lsp_tests.rs`, including
+6. **Tests.** Add a helper and cases to `core/tests/all/lsp_tests.rs`, including
    a file that does not compile and a name that comes through an import.
 7. **Docs.** Add the request to the tables on this page and to the feature
    lists in [CLI.md](../CLI.md#lsp--serve-the-language-server) and

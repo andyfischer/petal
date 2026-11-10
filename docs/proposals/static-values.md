@@ -669,7 +669,7 @@ upstreaming the frozen generation.
 
 Tests: a regression for each defect found in review; cache on versus off over
 the example corpus and the golden corpus; a reloaded run versus a cold start;
-`core/tests/hot_reload.rs` unchanged; a fuzz target in the style of
+`core/tests/all/hot_reload.rs` unchanged; a fuzz target in the style of
 `cell_fuzz.rs`.
 
 ## Open questions

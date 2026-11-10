@@ -59,7 +59,7 @@ Action:
       `StaticValue` with order kept, so hosts that write values back to
       source skip the JSON detour.
 - [x] Add a test that `props` keeps the order the attributes were written in
-      (`core/tests/json_key_order.rs`).
+      (`core/tests/all/json_key_order.rs`).
 
 petal-images can now drop its re-sort against a list of familiar keys, and
 apply effects in the order they are written.

@@ -18,7 +18,7 @@
 //!    is symmetric with `!=` its negation.
 //!
 //! Raise the bounds for a soak run, e.g.
-//! `PETAL_SMALL_SCOPE_TOKENS=4 cargo test --release --test small_scope`.
+//! `PETAL_SMALL_SCOPE_TOKENS=4 cargo test --release --test all small_scope::`.
 //! See docs/dev/formal-verification.md.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};

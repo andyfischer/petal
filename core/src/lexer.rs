@@ -221,7 +221,7 @@ impl Token {
 /// [`Token::Ident`]. This is the *authoritative* keyword set of the language;
 /// the LSP completion list, the tree-sitter grammar, the vim syntax file and
 /// the tree-sitter highlight queries are all checked against it by
-/// `core/tests/keyword_sync.rs`.
+/// `core/tests/all/keyword_sync.rs`.
 ///
 /// Keep it in sync with [`keyword_token`] — the unit tests below enforce that.
 pub const KEYWORDS: &[&str] = &[
@@ -1473,7 +1473,7 @@ mod tests {
     //
     // `KEYWORDS` is a hand-written const sitting next to a hand-written
     // `match`. A const that can drift from the match it documents would be no
-    // better than the five drifted lists `core/tests/keyword_sync.rs` exists to
+    // better than the five drifted lists `core/tests/all/keyword_sync.rs` exists to
     // police, so these two tests pin them together in both directions.
 
     #[test]

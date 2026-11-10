@@ -336,7 +336,7 @@ because the trace is a history of values that an in-place write would rewrite.
 The soundness argument and the three things outside the script that read a
 cell across a write (memo records, the frame gate, the observation buffer) are
 in the module docs of `core/src/backend/bytecode/cells.rs`. Coverage:
-`core/tests/cell_in_place.rs` and the differential fuzzer in
+`core/tests/all/cell_in_place.rs` and the differential fuzzer in
 `core/src/backend/bytecode/cell_fuzz.rs`.
 
 ## Cells
@@ -443,7 +443,7 @@ Two deliberate under-approximations: inline lambdas are exempt (a
 the author does not control a callback's parameter list, so a warning would be
 unfixable), and only module bindings are scanned.
 
-Coverage: `core/tests/capture_lag.rs`.
+Coverage: `core/tests/all/capture_lag.rs`.
 
 ## Lexical shadowing
 

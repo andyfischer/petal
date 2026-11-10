@@ -591,7 +591,7 @@ fn compare(op: TermOp, a: Value, b: Value, heap: &Heap) -> Option<Value> {
 /// The natives are `crate::builtins::math::{native_float, native_int,
 /// native_abs, native_floor, native_min, native_max}`,
 /// `creative_coding::native_clamp`, `collections::native_len` and
-/// `io::native_type`; `core/tests/intrinsics.rs` holds the two to each other
+/// `io::native_type`; `core/tests/all/intrinsics.rs` holds the two to each other
 /// over a matrix of values.
 #[inline]
 fn straight_intrinsic(
@@ -753,7 +753,7 @@ mod intrinsic_tests {
     use super::*;
 
     /// The inline arms answer for numbers (and `len`, `type`), so the calls
-    /// they stand for are not made; `core/tests/intrinsics.rs` holds the
+    /// they stand for are not made; `core/tests/all/intrinsics.rs` holds the
     /// answers to the natives'. This is the other half: that they do answer.
     #[test]
     fn numbers_are_answered_inline() {

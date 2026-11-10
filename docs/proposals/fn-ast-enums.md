@@ -128,7 +128,7 @@ Errors are the existing enum errors:
 ## Before and after
 
 All "before" snippets are quoted from `core-runtime/glsl/src/glsl.ptl` at
-f27a7bea, which passes `core/tests/fn_introspection.rs`. All "after" snippets
+f27a7bea, which passes `core/tests/all/fn_introspection.rs`. All "after" snippets
 are **proposed**. No prototype was built.
 
 ### 1. Expression dispatch: the common case

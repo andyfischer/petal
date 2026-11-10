@@ -23,11 +23,11 @@ authoritative over the Design section where they differ. The user guide is
 
 | What | Where | Run |
 |---|---|---|
-| `speculate` leaves nothing behind (7 programs × 4 frames, BASELINE and FAST), optimizer oracle, escaping/contained effects, RNG, emits, nesting error, places | `core/tests/speculate.rs` | `cd core && cargo test --test speculate` |
-| `set_in` / `get_in`, multi-generator `for` (values, errors, BASELINE vs FAST, state slots equal to hand-written nested loops, `break` refused) | `core/tests/candidate_state.rs`, `test/ptl/set_in.ptl`, `test/multi-generator-for/` | `cargo test --test candidate_state --test script_cases`; `petal test test/ptl/set_in.ptl` |
+| `speculate` leaves nothing behind (7 programs × 4 frames, BASELINE and FAST), optimizer oracle, escaping/contained effects, RNG, emits, nesting error, places | `core/tests/all/speculate.rs` | `cd core && cargo test --test all speculate::` |
+| `set_in` / `get_in`, multi-generator `for` (values, errors, BASELINE vs FAST, state slots equal to hand-written nested loops, `break` refused) | `core/tests/all/candidate_state.rs`, `test/ptl/set_in.ptl`, `test/multi-generator-for/` | `cargo test --test all -- candidate_state:: script_cases::`; `petal test test/ptl/set_in.ptl` |
 | Multi-generator `for` in the CST, formatter and grammar | `cst_project` / `fmt` unit tests, the repo-corpus sweeps, tree-sitter corpus | `cargo test --lib`; `make expensive_lint_tests` |
-| Structural drops | `core/tests/drop_edit.rs`, `garden/garden-script/tests/model_drop.rs`, garden-app tests | `cargo test --test drop_edit`; `cd garden && cargo test -p garden-script --test model_drop` |
-| DM unchanged by the `Lever` refactor | the core `dm_*` tests, garden-script `dm_drag`, `dm_study ladder` output | `cargo test --test dm_solve` etc. |
+| Structural drops | `core/tests/all/drop_edit.rs`, `garden/garden-script/tests/model_drop.rs`, garden-app tests | `cargo test --test all drop_edit::`; `cd garden && cargo test -p garden-script --test model_drop` |
+| DM unchanged by the `Lever` refactor | the core `dm_*` tests, garden-script `dm_drag`, `dm_study ladder` output | `cargo test --test all dm_solve::` etc. |
 | The engine: candidate sets, specs, reorder animation, click vs drag, Escape, release over nothing, snapping, `when_far`, stickiness, ambiguity, `switch_to`, reload mid-drag, the examples against their scenarios | `core-libs/petal-ui/tests/drag.rs` (25), `drag_p2.rs` (13), `drag_tools.rs` (6) | `cd core-libs/petal-ui && cargo test --test drag --test drag_p2 --test drag_tools` |
 | Every `ui/drag` export documented | `core-libs/petal-ui/tests/reference.rs` | `cargo test --test reference` |
 | Frame gate, memo, static values over the panel corpus (picks up `examples/ui/*`) | petal-ui `gating`, `memo`, `static_*` tests | `cargo test` in core-libs/petal-ui |
@@ -95,7 +95,7 @@ or not runnable headless; `petal lint` output over `~/petal-creative`,
    3fe1d922) and outside D2, but in the suites this pass runs: bloom's
    `dropdown(r, label, items)` forwarded to `ui`'s 4-argument `dropdown`. Such
    a name now goes through a hoisted cell, and the cell's value still merges
-   the imported set. Test: `core/tests/modules.rs`
+   the imported set. Test: `core/tests/all/modules.rs`
    `an_overload_calling_its_own_name_reaches_its_own_set_over_an_import`.
 3. **`PRELUDE_LEVEL` 10 → 11** for `ui/drag`, `ui_debug` and the `ui_measure`
    behaviour change (P0 and P4 both left it for later).

@@ -355,4 +355,4 @@ The compiler threads one flag — "is this statement's value used?" — through
 `compile_function` (`compiler/function.rs`) starts it at true, or at false for
 a `-> nil` declaration. A `for` records the answer as the `collect` flag on its
 loop term, which is what the bytecode lowers to `loop_collect`. The behaviour
-is pinned by `core/tests/implicit_return.rs`.
+is pinned by `core/tests/all/implicit_return.rs`.

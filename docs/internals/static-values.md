@@ -447,20 +447,20 @@ slot.
 Where they are:
 
 - `core/src/static_classify/tests.rs`: the classifier's rules.
-- `core/tests/const_decl.rs`: `const` parses, formats, exports, hoists and
+- `core/tests/all/const_decl.rs`: `const` parses, formats, exports, hoists and
   runs as a `let`, and errors when not static.
 - `core/tests/static_cache.rs`: the top-level cache, on against off.
-- `core/tests/static_reload.rs`: following the diff, against rebuilding
+- `core/tests/all/static_reload.rs`: following the diff, against rebuilding
   everything.
-- `core/tests/static_in_functions.rs`: function bodies, three ways.
-- `core/tests/static_observe.rs`: what a host reads from the observation
+- `core/tests/all/static_in_functions.rs`: function bodies, three ways.
+- `core/tests/all/static_observe.rs`: what a host reads from the observation
   buffer, with the cache on and off, across every kind of reload.
-- `core/tests/static_review3.rs`: lists of frames, reloads and host calls
+- `core/tests/all/static_review3.rs`: lists of frames, reloads and host calls
   through four worlds at once.
-- `core/tests/static_audit.rs`, `static_audit_env.rs`,
+- `core/tests/all/static_audit.rs`, `static_audit_env.rs`,
   `static_check_env.rs`: the audit against natives that lie about being
   constant, and the two environment variables.
-- `core/tests/lint_state_const.rs`: the `state-as-constant` rule.
+- `core/tests/all/lint_state_const.rs`: the `state-as-constant` rule.
 - `test/ui-corpus/tests/static_classify.rs`, `static_audit.rs`,
   `static_cache.rs`, `static_reload.rs`, `static_in_functions.rs`: the same
   oracles over the whole panel corpus under a monkey scenario. Their

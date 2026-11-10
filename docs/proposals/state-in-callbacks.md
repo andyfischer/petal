@@ -72,7 +72,7 @@ plus a runtime A/B with a prototype):
 - So there are no latent bugs to find (rows sharing hover state), and nothing
   relies on the shared slot. The behaviour exists only in:
   - its documentation, `inline-state.md:160-177`;
-  - the test that pins it, `core/tests/state_call_paths.rs:796`
+  - the test that pins it, `core/tests/all/state_call_paths.rs:796`
     (`a_closure_run_by_map_shares_one_slot_across_the_elements`);
   - a C-bridge test fixture that happens to use `map`
     (`integrations/petal-c-bridge/src/vm.rs:3011`, `tests/bridge_tests.cpp:891`);

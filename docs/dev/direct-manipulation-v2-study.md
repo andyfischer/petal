@@ -306,7 +306,7 @@ The before and after numbers, on the same examples and harness:
 | tree-depth 12 (12,288 emits) | spread with the root | the root alone (still wrong: §5) |
 
 The M3 tests were updated where they pinned scores or orders
-(`core/tests/dm_solve.rs`, 3 tests). The CLI (`cli_propose_edit_v2`,
+(`core/tests/all/dm_solve.rs`, 3 tests). The CLI (`cli_propose_edit_v2`,
 12 tests) and Garden (`garden-script` `dm_drag`, 13 tests) suites pass
 unchanged.
 

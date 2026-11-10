@@ -174,7 +174,7 @@ const INSPECTS_PENDING: NativeEffects =
 /// the resource table, the expectation log, the method and enum tables, the
 /// heap's frozen set), so every one is [`contained`](NativeEffects::contained):
 /// a speculative run (`crate::dm::spec`) calls it and discards what it did
-/// with the fork. `core/tests/dm_spec.rs` fails when a new effect row is
+/// with the fork. `core/tests/all/dm_spec.rs` fails when a new effect row is
 /// not.
 pub fn register_builtins(table: &mut NativeFnTable) {
     // Order matters — these must be registered in the same order as the old

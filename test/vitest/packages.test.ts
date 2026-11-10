@@ -7,7 +7,7 @@
 // fixtures/packages/broken holds a manifest that does not parse.
 //
 // The embedder API (Env::add_package / register_package) is covered by
-// core/tests/packages.rs; this file covers what the CLI does with -I.
+// core/tests/all/packages.rs; this file covers what the CLI does with -I.
 
 import { describe, it, expect } from "vitest";
 import { resolve } from "path";

@@ -32,7 +32,7 @@ seeded mode of the static classifier.
 
 Core now turns on serde_json's `preserve_order`, so `value_to_json`,
 element `props`, `json_stringify` and `json_parse` keep the written order
-(`core/tests/json_key_order.rs`). Still open from
+(`core/tests/all/json_key_order.rs`). Still open from
 [images-followup.md](images-followup.md) item 2: a `value_to_static` that
 skips JSON.
 

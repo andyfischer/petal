@@ -7,10 +7,10 @@ over the narrowest code to weakest guarantee over the widest:
 |---|---|---|---|
 | **Kani proofs** | The pure numeric kernels every operator and builtin delegates to | Holds for **every** input (bit-precise, 64-bit ints and IEEE floats) | `core/src/numeric.rs`, `core/src/proofs/` |
 | **Exhaustive value laws** | `==`, hashing and ordering over containers (lists, records, class instances, enums, maps) | Holds for every pair and triple in a bounded universe of values | `value::tests` in `core/src/value.rs` |
-| **Small-scope exhaustive programs** | Lexer, parser, compiler, type checker, optimizer and VM end to end | Holds for every program in a bounded space (every token sequence up to length N; every expression up to depth D) | `core/tests/small_scope.rs` |
+| **Small-scope exhaustive programs** | Lexer, parser, compiler, type checker, optimizer and VM end to end | Holds for every program in a bounded space (every token sequence up to length N; every expression up to depth D) | `core/tests/all/small_scope.rs` |
 
 Each bug fixed along the way also has an end-to-end regression test, a Petal
-program and its expected output, in `core/tests/core_semantics.rs`.
+program and its expected output, in `core/tests/all/core_semantics.rs`.
 
 This sits on top of the existing randomized nets: the differential fuzzer
 (`backend/bytecode/fuzz.rs`), which checks that the optimizer never changes a
@@ -124,8 +124,8 @@ bounds are kept small by default so the suite stays fast; raise them for a
 soak run:
 
 ```bash
-PETAL_SMALL_SCOPE_TOKENS=4 cargo test --release --test small_scope   # 6.3M programs, ~1 min
-PETAL_SMALL_SCOPE_DEPTH=3  cargo test --release --test small_scope   # much larger
+PETAL_SMALL_SCOPE_TOKENS=4 cargo test --release --test all small_scope::   # 6.3M programs, ~1 min
+PETAL_SMALL_SCOPE_DEPTH=3  cargo test --release --test all small_scope::   # much larger
 ```
 
 ## Adding a proof

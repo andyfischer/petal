@@ -235,7 +235,7 @@ kept as the record of what the removal touched; its line numbers are as of
 
   The one file is `test/at-arg-update/main.ptl` (with `expects`), at lines 12,
   18, 24 and 25.
-- **Rust string fixtures:** `core/tests/enums.rs:1161`,
+- **Rust string fixtures:** `core/tests/all/enums.rs:1161`,
   `cli/tests/apply_change.rs:465, 473, 621, 898`, and the unit tests in
   `desugar.rs:494-572`, `cst_project.rs:1992` and
   `suggest/return_types.rs:708`.
@@ -774,7 +774,7 @@ Order:
    Lower to the call, innermost annotation nearest the value. Add the CST
    `Annotation` node and `cst_project`, plus the errors under Design. For
    `fn`/`native fn`, add the reserved-slot error (F1).
-3. **Parity test** `core/tests/annotation_parity.rs`, on the model of
+3. **Parity test** `core/tests/all/annotation_parity.rs`, on the model of
    `const_parity.rs`/`setting_parity.rs`. Rewrite every whole-initializer
    annotation call in `examples/`, `core/tests` and the guide's snippets into
    the `@` form, then assert identical IR (`ir_equivalent`), `show-static
@@ -822,7 +822,7 @@ Shipped 2026-11-09, with the decisions below.
   places the call's IR term there), not at the declared value whose span the
   call has. The misplaced-`const` messages name `@const` when that is what
   was written ("drop `@const`", "`@const` takes no arguments").
-- **Parity**: `core/tests/annotation_parity.rs` rewrites every
+- **Parity**: `core/tests/all/annotation_parity.rs` rewrites every
   whole-initializer `const`/`tunable`/`rigid` binding in `examples/`,
   `core/tests` (`.ptl` and Rust fixtures) and the guide, settings,
   static-values and Builtins snippets into the `@` form, on the same line and

@@ -15,7 +15,7 @@
 //! the same: afterwards the program, and the stack, are what a full recompile
 //! of the new source followed by `transfer_state` would have left — same
 //! terms, same constants by value, same spans, same warnings, same state.
-//! `core/tests/hot_reload.rs` holds that to a corpus of edits.
+//! `core/tests/all/hot_reload.rs` holds that to a corpus of edits.
 //!
 //! # Late binding
 //!

@@ -156,7 +156,7 @@ is not `nil` or `any`. Effects:
 
 All "before" snippets are quoted from the corpus. Each was run, or its file
 linted, with the release binary, and the glsl ones pass
-`core/tests/fn_introspection.rs`. All "after" snippets are **proposed**: no
+`core/tests/all/fn_introspection.rs`. All "after" snippets are **proposed**: no
 prototype was built.
 
 ### 1. A parameter that may be nil
@@ -521,10 +521,10 @@ Phase 1 shipped 2026-11-09, following the implementation sketch:
    `record?`). A `= nil` default is a new `Evidence::NilDefault`; it makes
    the conclusion `T?` but never concludes `nil` by itself. The d6fd8291
    `any` veto is unchanged and runs first.
-5. Tests: `core/tests/nullable_types.rs` (assignability, defaults, fields,
+5. Tests: `core/tests/all/nullable_types.rs` (assignability, defaults, fields,
    `state`, `-> T?` / `-> nil?` keeping the implicit return, `declares_nil`,
    spellings, the `int??` parse error, `?`-named classes and enums),
-   `core/tests/suggest.rs` (nullable suggestions end to end), and unit tests
+   `core/tests/all/suggest.rs` (nullable suggestions end to end), and unit tests
    in `types.rs` and `infer.rs`.
 6. Docs: language guide (Type Annotations, "Nullable types"), the type
    plan's vocabulary, assignability and §4, `petal help suggest`.

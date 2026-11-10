@@ -3,7 +3,7 @@
 //! the directory walk (which skips `target/` and `node_modules/`), `-e`,
 //! `old-imports` running over the batch after the text migrations, and the
 //! pointers from `petal lint` to it. The library half is
-//! core/tests/migrate_old_code.rs.
+//! core/tests/all/migrate_old_code.rs.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

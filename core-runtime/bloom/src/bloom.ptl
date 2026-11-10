@@ -35,6 +35,9 @@ pub import bloom/button
 pub import bloom/controls
 pub import bloom/menu
 pub import bloom/overlay
+pub import bloom/fields
+pub import bloom/display
+pub import bloom/panes
 
 // Two names the facade spells differently from the module that defines them:
 // `on` and `NAMES` are clear inside `bloom/theme` and `bloom/icon`, and much
@@ -46,5 +49,7 @@ pub let ICONS = NAMES
 // Bumped when the export surface grows. Additive: a script written against an
 // older level keeps working. Level 2 is what the star re-exports published on
 // their own: `step` and `capture_owner`, two exports the hand-written facade
-// had been missing.
-pub let VERSION = 2
+// had been missing. Level 3 is bloom taking over `ui`'s widgets: the
+// `fields`, `display` and `panes` modules, `button`'s `fill` / `ink`, and a
+// `text_field` whose record is `ui.text_field_update`'s plus `focused`.
+pub let VERSION = 3

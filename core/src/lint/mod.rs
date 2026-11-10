@@ -531,8 +531,10 @@ fn map_back(pos: usize, splices: &[Splice]) -> usize {
 /// `// petal-lint-ignore` comments: per 0-based line, the rules silenced there
 /// (an empty list silences every rule). The compiler reads them too, for the
 /// compile warnings that carry a rule id ([`crate::compiler::keyed_state`],
+/// [`crate::compiler::moved_widgets`],
 /// and `crate::migrate::deprecated_lifecycle_decls`), and so does
 /// `petal migrate-old-code`, under each migration's name.
+#[derive(Default)]
 pub(crate) struct Ignores {
     file: Option<Vec<String>>,
     lines: std::collections::HashMap<usize, Vec<String>>,

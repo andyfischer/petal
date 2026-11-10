@@ -1,5 +1,5 @@
 // bloom/controls — the value-editing controls: switch, checkbox, radio, slider,
-// stepper, progress and the text field.
+// stepper and progress. The text fields are bloom/fields.
 //
 // Same contract as the buttons: you hand in the current value and get the new
 // one back. Nothing here holds your data — only its own animation — so two of
@@ -12,10 +12,9 @@ import bloom/theme: theme, ts, tone, hair, stroke, wash, focus_ring,
                     dur, rate, text_in
 import bloom/motion: ease_flag, ease_to, spring, impulse, ease_out, age,
                      scale_rect
-import bloom/interact: probe, drag, focusable, focused, focus_set,
-                       is_captured
+import bloom/interact: probe, drag
 import bloom/icon: icon
-import text_layout: text_baseline, text_top, draw_text_line, caret_index, caret_x
+import text_layout: text_top, draw_text_line
 import ui
 
 // ── Switch ────────────────────────────────────────────────────────────────
@@ -253,144 +252,4 @@ pub fn progress(r: record, frac: num, opts: record)
       draw_rect_rounded(Rect(r.x, r.y, r.w * f, r.h), radius, color)
     end
   end
-end
-
-// ── Text field ────────────────────────────────────────────────────────────
-
-// A single-line editor. `opts.id` is its focus id (Tab reaches it); the
-// placeholder doubles as the id when none is given, which is enough for the
-// common case of one search box.
-//
-// Returns {text, focused, submitted, changed}. There is no selection model —
-// caret, insert, delete, word-delete and Return, which is what a panel's
-// filter box and rename field need.
-pub fn text_field(r: record, buf: string) -> record
-  text_field_impl(r, buf, {})
-end
-
-pub fn text_field(r: record, buf: string, opts: record) -> record
-  text_field_impl(r, buf, opts)
-end
-
-// `text_field` is also a name in the `ui` package, which this module imports plainly
-// (`import ui`). Inside one variant's own body the name means only that
-// variant, so the short form cannot reach the long one directly — it would
-// escape outward to `ui`'s set. Both forms go through this private
-// implementation instead, which no other module can shadow.
-fn text_field_impl(r: record, buf: string, opts: record) -> record
-  let t = theme()
-  let id = field(opts, "id", field(opts, "placeholder", "field"))
-  let has = focusable(id)
-  let p = probe(r)
-  let size = field(opts, "size", t.font_md)
-  let style = ts(t, size, t.text)
-  let inset = field(opts, "inset", t.pad_x)
-  var text = buf
-  state caret = 0
-  var submitted = false
-  var changed = false
-
-  if caret > char_len(text) then
-    caret = char_len(text)
-  end
-  if p.press then
-    focus_set(id)
-    caret = _caret_at(text, style, float(mouse_x()) - (r.x + inset))
-  end
-
-  if has && !is_captured() then
-    let typed = text_input()
-    if typed != "" then
-      set text = char_slice(text, 0, caret) ++ typed ++ char_slice(text, caret, char_len(text))
-      caret = caret + char_len(typed)
-      set changed = true
-    end
-    if key_pressed("backspace") && caret > 0 then
-      let cut = if mod_alt() || mod_cmd() then _word_start(text, caret) else caret - 1 end
-      set text = char_slice(text, 0, cut) ++ char_slice(text, caret, char_len(text))
-      caret = cut
-      set changed = true
-    end
-    if key_pressed("delete") && caret < char_len(text) then
-      set text = char_slice(text, 0, caret) ++ char_slice(text, caret + 1, char_len(text))
-      set changed = true
-    end
-    if key_pressed("left") then
-      caret = max(0, caret - 1)
-    end
-    if key_pressed("right") then
-      caret = min(char_len(text), caret + 1)
-    end
-    if key_pressed("home") then
-      caret = 0
-    end
-    if key_pressed("end") then
-      caret = char_len(text)
-    end
-    if key_pressed("return") then
-      set submitted = true
-    end
-  end
-
-  // Paint. The focus underline grows from the center out, which is the one
-  // motion that reads as "this is now the field taking your keys".
-  let k = ease_to(if has then 1.0 else 0.0 end, rate(t, 20.0))
-  let radius = field(opts, "radius", t.radius)
-  stroke(t, r, radius, mix(hair(t), t.accent, k), 1, wash(t, t.panel, p.hot * 0.6, 0.0))
-  let bar_w = r.w * ease_out(k)
-  if bar_w > 1.0 then
-    let by = r.y + r.h - 1.0
-    draw_line({x: r.x + (r.w - bar_w) / 2.0, y: by}, {x: r.x + (r.w + bar_w) / 2.0, y: by},
-      t.accent, 255, 2)
-  end
-
-  clip_push(pad(r, 2), radius)
-  let tx = r.x + inset
-  // The run sits on the baseline that centers its cap height in the field, and
-  // the caret spans the line's real ink — ascent to descent — rather than a
-  // guessed `size` px around a guessed top.
-  let m = text_metrics(style)
-  let base = text_baseline(r, style)
-  let ty = base - m.baseline
-  if text == "" && !has then
-    draw_text(field(opts, "placeholder", ""), {x: tx, y: ty}, ts(t, size, t.dim))
-  else
-    draw_text(text, {x: tx, y: ty}, style)
-  end
-  if has then
-    // A dt-driven blink: it also blinks in a headless trace, where the wall
-    // clock stands still.
-    let phase = fract(age() * 1.1)
-    let cx = tx + caret_x(text, style, caret)
-    let on = if changed then 1.0 else (if phase < 0.55 then 1.0 else 0.0 end) end
-    if on > 0.0 then
-      draw_line({x: cx, y: base - m.cap_height - 2.0}, {x: cx, y: base + m.descent + 1.0},
-        t.accent, 255, 2)
-    end
-  end
-  clip_pop()
-  {text: text, focused: has, submitted: submitted, changed: changed, caret: caret}
-end
-
-// The caret index nearest `dx` pixels into the text, measured in the same
-// style it is drawn in.
-//
-// This used to be a `text_width` call per character of the field, every time
-// the field was clicked, over a string that grows as the user types. It is now
-// one walk of the host's advance table — and it snaps to the *nearer*
-// boundary, so clicking the right half of a glyph puts the caret after it
-// rather than before.
-fn _caret_at(text: string, style: record, dx: num)
-  caret_index(text, style, dx)
-end
-
-fn _word_start(text: string, caret: num) -> num
-  var i = caret
-  while i > 0 && char_at(text, i - 1) == " " do
-    set i = i - 1
-  end
-  while i > 0 && char_at(text, i - 1) != " " do
-    set i = i - 1
-  end
-  i
 end

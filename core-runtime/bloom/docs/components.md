@@ -119,7 +119,7 @@ overlay's own contents.
 | `drag(r)` | `{active, x, y, dx, dy, start_x, start_y}`; keeps tracking outside `r` |
 | `capture(owner)` / `is_captured()` / `capture_release()` | an overlay claims the pointer for a frame; every `probe` goes inert while a claim is live |
 | `focusable(id)` | announce a control in draw order (= tab order) and report whether it has focus |
-| `focused(id)` / `focus_set(id)` / `focus_clear()` / `focus_id()` | the focus cell |
+| `focused(id)` / `focus_set(id)` / `focus_clear()` / `focus_id()` | `ui`'s runtime focus: `has_focus` / `focus_request` / `focus_owner` |
 | `key(k)` / `chord(k, mods)` | a key press, ignored while an overlay holds input; `mods` is `"cmd"`, `"ctrl"`, `"alt"`, `"shift"`, or `"cmdctrl"` |
 
 Tab and Shift+Tab walk the ring the previous frame built — the only complete
@@ -150,6 +150,12 @@ bloom.button(r, label[, opts]) -> clicked?
 | `link(x, y, label[, opts])` → clicked? | underline grows from the left on hover |
 | `spinner(cx, cy, radius, color)` | the arc, for your own controls |
 
+### Your own colours
+
+`button`'s `opts` also take `fill` (the face colour, in place of the variant's;
+a solid face) and `ink` (the label and icon colour; defaults to a colour that
+reads on `fill`).
+
 ## Controls
 
 | Call | Returns |
@@ -160,11 +166,76 @@ bloom.button(r, label[, opts]) -> clicked?
 | `slider(r, value, lo, hi[, opts])` | the new float. Press-to-jump, drag keeps tracking outside; `opts.step` quantizes, and the value floats over the knob while dragging |
 | `stepper(r, value, lo, hi, step)` | the new value; the number rolls as it changes |
 | `progress(r, frac[, opts])` | — ; `frac` in [0, 1] eases toward its target, negative runs the indeterminate sweep |
-| `text_field(r, buf[, opts])` | `{text, focused, submitted, changed, caret}` |
 
-`text_field` handles typing, arrows, home/end, backspace (alt/cmd to word
-start), delete, Return, and click-to-place-caret. `opts`: `id` (focus id),
-`placeholder`, `size`, `inset`, `radius`. There is no selection model.
+The text field is in [Fields](#fields).
+
+## Fields
+
+The editing is `ui`'s: `ui.text_field_update` and `ui.text_area_update` hold
+the caret, the selection, the clipboard and undo, and own the keyboard through
+the runtime focus (`has_focus` / `focus_request`). bloom paints them and puts
+each one in its Tab ring, so a bloom field and any `ui` code beside it share
+one keyboard owner.
+
+Every field takes its focus id as **`opts.id`**. Without one it falls back to
+its placeholder, then to `"field"` — fine for a panel's one search box, wrong
+for two fields. An int id works.
+
+| Call | Returns |
+|---|---|
+| `text_field(r, buf[, opts])` | `{text, caret, submitted, changed, anchor, sel_start, sel_end, scroll, overflow, blurred, cancelled, focused}` |
+| `text_area(r, buf[, opts])` | `{text, caret, changed, anchor, sel_start, sel_end, scroll, overflow, rows, line_h, content_h, focused}` — no `submitted`; Return is a line break |
+| `draw_text_field(r, res, focused[, opts])` | `res` — the paint half, for a caller that runs `ui.text_field_update` itself |
+| `draw_text_area(r, res, focused[, opts])` | `res` — the paint half of `text_area` over `ui.text_area_update` |
+
+```petal
+state name = ""
+let res = bloom.text_field(r, name, {id: "name", placeholder: "Name"})
+name = res.text
+if res.submitted then … end
+```
+
+Mouse: a click focuses and places the caret, shift+click extends the
+selection, a drag selects, a double click selects a word and a triple click
+everything; a press elsewhere gives the focus up. Keys: the arrows (alt/ctrl
+by word, cmd to either end, shift to select), backspace / delete (alt/ctrl by
+word, cmd to the start), cmd+A/C/X/V, cmd+Z and cmd+shift+Z / cmd+Y, Return
+(`submitted`) and Escape (`cancelled`; the field keeps the focus). `blurred`
+is true on the frame after the field lost the keyboard. A text area adds
+up/down by row, cmd+up/down to either end, and wheel scrolling.
+
+| `opts` | |
+|---|---|
+| `id` | the focus id |
+| `placeholder` | drawn dim while the text is empty |
+| `size`, `color` / `text_style` | the run's style — `text_style` whole, or one built from `size` and `color` |
+| `inset` | text inset (`pad_x` for a field, 8 for an area) |
+| `radius`, `bg`, `focus`, `caret`, `selection` | the box's look |
+| `scroll` | `text_field` only, default true: the text scrolls to keep the caret in view |
+| `pointer` | false keeps the mouse out for this frame (it is out anyway while an overlay holds input) |
+| `line_gap` | `text_area` only, extra px between rows (2) |
+
+When you drive `ui.text_field_update` yourself, give it the same
+`text_style` and `inset` you pass `draw_text_field`, or the caret lands off
+the glyphs.
+
+## Inspector fields
+
+The controls of a property inspector. They apply only when the edit is done:
+the result holds the new value on the frame it is committed (Return, or the
+field losing the keyboard) and the old one, or nil, before. Escape abandons
+the edit and gives the focus up. Each keeps its edit in per-callsite `state`,
+so in a loop key it by the row (`for p in props key p.name do … end`).
+
+| Call | Returns |
+|---|---|
+| `commit_field(r, current[, opts])` | `{text, editing}` — `text` is nil except on the frame the edit applies. `opts` is `text_field`'s plus `start` (take the keyboard as soon as it shows: a rename opened by a double-click) |
+| `number_field(r, value[, opts])` | `{value, changed}`. Drag sideways to scrub (shift for fine), double-click or Tab to type. `opts`: `id`, `step` (1.0 per px), `places` (2), `min`, `max`, `fine` (0.1), `tip` (the hover hint; `""` for none), `size`, `color`, `bg`, `radius` |
+| `color_field(r, color[, opts])` | `{color}` — nil unless a valid new colour was typed (`#rrggbb` / `#rrggbbaa`). `opts` is `commit_field`'s plus `chip_radius`, `outline` |
+| `swatches(r, colors, current[, opts])` | the colour clicked (on release), or nil. Chips are `r.h` square; `current` is ringed. `opts`: `gap` (4), `radius`, `ring`, `hover` |
+
+`ui` keeps `color_to_hex`, `color_from_hex` and `same_color` for colour text
+of your own.
 
 ## Menus
 
@@ -184,6 +255,40 @@ An item is a string or a record: `{label, hint, icon, disabled, sep, danger}`.
 rather than draw off-screen, handle up/down/Return/Escape, close on an outside
 click, and **capture input** while open — so the panel underneath needs no
 guard of its own.
+
+## Display
+
+Components that show rather than take input. They were `ui`'s; the calls and
+return values are unchanged, and each `opts` takes the keys `ui`'s style record
+did.
+
+| Call | Returns / draws |
+|---|---|
+| `badge(x, y, text[, opts])` | its rect, so a row of them flows. `opts`: `size`, `bg`, `fg`, `gradient: [c0, c1]`, `gradient_angle` |
+| `pill(x, y, text, color[, opts])` | its rect. The status chip: `color` tints the fill and the text. `opts`: `size`, `on` (the surface the tint is flattened against) |
+| `card(r[, opts])` | the padded content rect. Shadow, face, hairline. `opts`: `radius`, `pad`, `bg`, `outline`, `shadow: false`, `elevation` (1) |
+| `empty_state(r, title, hint[, opts])` | — ; centred dim copy for an empty region; `hint` may be `""`. `opts`: `size`, `fg` |
+| `hint(key, label)` | `{key, label}` |
+| `hint_bar(r, hints[, opts])` | — ; key caps and labels along a bottom edge. `opts`: `bg`, `rule`, `size`, `fg`, `cap`, `cap_fg` |
+| `section_label(label, x, y, active[, opts])` | the run's width. Accent with an underline that grows in when `active` (pass `has_focus(id)`). `opts`: `active`, `inactive`, `size` |
+| `scrollbar(r, count, rows, scroll[, opts])` | — ; a thumb on `r`'s right edge, only when `count > rows`; it brightens while the pointer is over `r`. `opts`: `track`, `thumb`, `width` (4) |
+| `load_view(r, ls[, opts])` | true when `ls` (a `ui` `load_state` record) is ready — draw the value then. Otherwise a spinner while loading, the error while failed, a hint while idle. `opts`: `radius`, `error_title`, `idle_title` |
+| `spinner_glyph()` | `"|"`, `"/"`, `"-"` or `"\\"` on the frame clock, for a line of text |
+
+`spinner(cx, cy, radius[, color | opts])` (from bloom/button) takes a colour or
+an `{color}` record, and the theme accent without either.
+
+## Panes
+
+| Call | Returns |
+|---|---|
+| `tabs(r, labels, index[, opts])` | the new index. Click (release inside) switches; the underline springs to the new tab. `opts`: `size`, `gap`, `fg`, `fg_active`, `underline`, `hover`, `rule`, `on` |
+| `cycle(r, options, index[, opts])` | the new index. ‹ value ›: the arrows step and wrap, a click on the value steps forward. `opts`: `labels` (shown instead of `str(option)`), `size`, `bg`, `hover`, `fg`, `radius`, `arrow_w` (22). (`stepper` is the numeric one.) |
+| `splitter(r, frac[, opts])` | `{frac, a, b, divider, dragging}`. Pass your fraction in, store `frac`; draw into `a` (left / top) and `b`. The drag is per callsite and keeps tracking off the band. `opts`: `axis` (`"x"` side by side, the default, or `"y"`; `"h"` / `"v"` alias them), `min_a` / `min_b` (px, 80), `min` / `max` (fraction bounds, 0.02 / 0.98), `band` (9), `gap` (4), `line`, `active` |
+| `table(r, cols, rows[, opts])` | `{selected, scroll, sort_col, sort_asc, changed, clicked}`. `cols` are `{label, w}` (`w` ≥ 1 px, 0 < w < 1 a weight, missing an equal share); `rows` a list of row lists. Selection (keys, a press on a row, the wheel) and the header sort request live per callsite; the caller sorts its own rows. `opts`: `row_h` (26), `head_h` (28), `size`, `fg`, `head_bg`, `selection`, `zebra`, `rule`, `on`, `active` (keyboard on), and `selected` / `sort_col` / `sort_asc` to set those from the caller every frame |
+| `table_columns(r, cols)` | the column rects `table` uses, for drawing cells of your own |
+
+The table stands still while an open bloom menu holds the pointer.
 
 ## Overlay layering: `overlays()`
 
@@ -222,10 +327,13 @@ gallery does.
 
 ## Composing with the `ui` prelude
 
-bloom does not replace `ui`. Layout (`cut_left`, `row`, `col`, `pad`,
-`split_h`), lists and tables, the text and color helpers, gradients, layers and
-the draw primitives all still come from there, and bloom paints through them.
-Mixing the two in one script is expected:
+bloom owns the widgets; `ui` keeps the primitives and the interaction logic
+under them. Layout (`cut_left`, `row`, `col`, `pad`, `split_h`), list and
+scroll state (`list_update`, `scroll_update`), the editing logic behind a
+field (`text_field_update`, `text_area_update`), the keyboard focus
+(`has_focus`, `focus_request`, `shortcut`), drag and drop, the load state,
+gradients, layers and the draw primitives all still come from there, and
+bloom paints through them. Mixing the two in one script is expected:
 
 ```petal
 import bloom
@@ -235,6 +343,14 @@ let bar = cut_top(all, 34)                  // ui layout
 if bloom.button(bar.cut, "Run") then … end  // bloom component
 ```
 
-The one thing to keep straight is **click semantics**: `ui.button` fires on
-press, `bloom.button` on release. Two components of different families
-stacked on the same pixel would both see the same gesture.
+bloom's focus *is* `ui`'s: `bloom.focused(id)` is `has_focus(id)`, and a
+field built on `text_field_update` and a bloom control share one keyboard
+owner. bloom adds the draw-order Tab ring on top.
+
+`ui`'s own drawn widgets (`ui.button`, `ui.text_field`, `ui.context_menu`,
+…) are deprecated: each call warns `[ui-widget-moved]` with its bloom
+replacement, and they go once the deprecation period ends. The table of
+replacements is in [docs/tasks/ui-refactor.md](../../../docs/tasks/ui-refactor.md).
+They click on press where bloom clicks on release, so two components of
+different families stacked on the same pixel would both see the same
+gesture.

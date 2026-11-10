@@ -22,7 +22,10 @@
 //               retained drawing
 //   ui/text     text helpers, text on a path, text ranges and the clipboard
 //   ui/layout   RectCut, motion and pixel-budget word wrap
-//   ui/widgets  button onward
+//   ui/interaction focus, list and scroll state, text editing, the popover
+//               runtime, drag and drop, the load state and colour text
+//   ui/widgets  the drawn widgets, deprecated: bloom owns the widgets, and
+//               these are re-exported only until the deprecation period ends
 //
 // The modules whose names start with `_` are the package's internals:
 // `_native` (the private native declarations), `_base`, `_style` and
@@ -34,4 +37,5 @@ pub import ./draw
 pub import ./hit
 pub import ./text
 pub import ./layout
+pub import ./interaction
 pub import ./widgets

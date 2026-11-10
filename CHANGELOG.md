@@ -12,6 +12,26 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **bloom owns the widgets; `ui`'s drawn widgets are deprecated.** `ui` keeps
+  the primitives and the interaction logic: the parts of the old
+  `ui/widgets` that draw nothing (focus, list and scroll state,
+  `text_field_update` / `text_area_update`, the popover runtime, drag and
+  drop, the load state, colour text) are a new module `ui/interaction`,
+  still re-exported by `ui`. Every drawn widget (`button`, `text_field`,
+  `context_menu`, `tab_bar`, `modal`, `table`, …) has a bloom replacement
+  and stays in `ui/widgets` for a deprecation period; each call from
+  outside `ui` warns once per file `[ui-widget-moved]`, naming the bloom
+  call. bloom gained `text_area`, `commit_field`, `number_field`,
+  `color_field`, `swatches` (module `bloom/fields`), `badge`, `pill`,
+  `card`, `empty_state`, `hint_bar`, `section_label`, `scrollbar`,
+  `load_view`, `spinner_glyph` (`bloom/display`), `tabs`, `cycle`,
+  `splitter`, `table` (`bloom/panes`) and `button`'s `fill` / `ink`
+  options. `bloom.text_field` is rebuilt on `ui.text_field_update`
+  (selection, clipboard, undo), and bloom's focus is now `ui`'s runtime
+  focus, so the two share one keyboard owner. petal-web-canvas builds with
+  the `bloom` feature. See docs/tasks/ui-refactor.md for the replacement
+  table.
+
 - **`petal bundle` carries the bundled libraries a program imports.** A
   program that imports `bloom`, `text_layout` or `glsl` (directly or through
   other modules) gets that library in its bundle, with the libraries it

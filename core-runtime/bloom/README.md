@@ -1,8 +1,9 @@
 # bloom
 
-A UI component library written entirely in Petal: buttons, menus, controls,
-overlays, an animation core, and a vector icon set — about 2,000 lines of
-`.ptl` and not one line of Rust.
+Petal's widget library, written entirely in Petal: buttons, menus, controls,
+text fields and inspector fields, tabs, splitters, tables, overlays, an
+animation core, and a vector icon set — not one line of Rust. bloom owns the
+widgets: `ui`'s own drawn widgets are deprecated in its favour.
 
 ```petal
 import bloom
@@ -29,26 +30,29 @@ The showcase and usage reference is
 [`examples/ui/bloom-gallery`](../../examples/ui/bloom-gallery/); the API
 reference is [docs/components.md](docs/components.md).
 
-## Why it exists next to `ui`
+## How it sits on `ui`
 
 [`petal-ui`](../../core-libs/petal-ui/) is the **host layer**: a Rust crate that gives an
 embedder the input and draw natives, plus the `ui` package of primitives and
-widgets over them. bloom is a **component layer** on top of that, in pure
-Petal, with opinions `ui` deliberately does not take:
+interaction logic over them — layout, list and scroll state, the editing
+logic behind a text field, the keyboard focus, drag and drop. bloom is the
+**widget layer** on top of that, in pure Petal:
 
-| | `ui` | bloom |
-|---|---|---|
-| Label placement | you compute a `y` | cap-height centred, through [text-layout](../text-layout/) |
-| Lives in | a Rust crate, registered by the host | `.ptl` files, bundled by the `bloom` feature |
-| Cross-frame state | explicit records you keep (`list_state()`) | per-callsite `state` inside the component |
-| Click | on press | on **release inside**, so sliding off cancels |
-| Overlays | you guard your own input (`if !m.open`) | the overlay **captures** input; callers need no guard |
-| Focus | held by the runtime; you list the Tab ring | announced in draw order; Tab just works |
-| Animation | a few widgets ease internally | every component, from one motion core |
+| | bloom |
+|---|---|
+| Label placement | cap-height centred, through [text-layout](../text-layout/) |
+| Lives in | `.ptl` files, bundled by the `bloom` feature |
+| Cross-frame state | per-callsite `state` inside the component |
+| Click | on **release inside**, so sliding off cancels |
+| Overlays | the overlay **captures** input; callers need no guard |
+| Focus | `ui`'s runtime focus, with a Tab ring announced in draw order |
+| Animation | every component, from one motion core |
 
-They compose: bloom draws through `ui`'s primitives and inherits its theme, so
-a bloom panel looks native in its host on the first frame. Use both in one
-script freely.
+bloom draws through `ui`'s primitives and inherits its theme, so a bloom
+panel looks native in its host on the first frame. `ui`'s own widgets
+(`ui.button`, `ui.text_field`, …) are deprecated: each call warns
+`[ui-widget-moved]` naming its bloom replacement
+([docs/tasks/ui-refactor.md](../../docs/tasks/ui-refactor.md)).
 
 ## Requirements
 
@@ -65,9 +69,10 @@ every label with.
 
 There is nothing to install where bloom is bundled: the `petal` CLI, and
 every host that builds the `petal` crate with its `bloom` (or `libraries`)
-feature — petal-sdl, petal-ui-run, petal-c-bridge and Garden do. The wasm
-hosts leave it out; a page that wants it registers it with `register_package`
-(the form `petal bundle` emits).
+feature — petal-sdl, petal-ui-run, petal-c-bridge, Garden and
+petal-web-canvas do. petal-web-html and garden-web leave it out; a page that
+wants it there registers it with `register_package` (the form `petal bundle`
+emits).
 
 ```bash
 petal lint myapp/app.ptl                  # requires host interfaces: ui >=0.1 (bloom), ui >=0.1 (text_layout)
@@ -102,9 +107,12 @@ See [docs/packages.md](../../docs/packages.md) for the lookup order.
 | `bloom/icon` | 22 vector glyphs, drawn as strokes in a unit box |
 | `bloom/interact` | `probe` (hover/press/click + their animated twins), input capture, focus ring, drag, hotkeys |
 | `bloom/button` | `button`, `icon_button`, `segmented`, `chip`, `link`, `spinner` |
-| `bloom/controls` | `switch`, `checkbox`, `radio_group`, `slider`, `stepper`, `progress`, `text_field` |
+| `bloom/controls` | `switch`, `checkbox`, `radio_group`, `slider`, `stepper`, `progress` |
+| `bloom/fields` | `text_field`, `text_area` and their draw halves, `commit_field`, `number_field`, `color_field`, `swatches` |
 | `bloom/menu` | `menu`, `dropdown`, `select`, `menu_bar`, `context_menu` |
 | `bloom/overlay` | `tooltip`, `toast`, `dialog`, `popover`, `banner`, `skeleton` |
+| `bloom/display` | `badge`, `pill`, `card`, `empty_state`, `hint_bar`, `section_label`, `scrollbar`, `load_view`, `spinner_glyph` |
+| `bloom/panes` | `tabs`, `cycle`, `splitter`, `table`, `table_columns` |
 
 Import the facade, or a single module when you want a slice of it
 (`import bloom/motion: spring` in a game's HUD).

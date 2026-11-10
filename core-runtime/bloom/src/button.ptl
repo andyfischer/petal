@@ -15,11 +15,13 @@
 //   disabled  inert and dimmed            loading  spinner instead of the label
 //   id        makes it focusable: Tab reaches it, Return/Space fires it
 //   ripple    false to switch the click ripple off
+//   fill      the face colour, in place of the variant's (a solid face)
+//   ink       the label and icon colour, in place of the variant's
 
 // The drawing and input names used below (`rect`, `draw_rect_rounded`,
 // `mix` and friends) come from the `ui` package. This module imports it
 // itself: an import reaches only the file it is written in.
-import bloom/theme: theme, ts, tone, hair, stroke, wash, focus_ring,
+import bloom/theme: theme, ts, tone, hair, stroke, wash, focus_ring, on,
                     variant_fill, variant_ink, variant_solid, rate, dur
 import bloom/motion: ease_flag, ease_to, spring, impulse, scale_rect,
                      ease_out, age
@@ -58,9 +60,13 @@ fn button_impl(r: record, label: string, opts: record) -> bool
 
   let variant = field(opts, "variant", "default")
   let radius = if field(opts, "pill", false) then int(r.h / 2) else field(opts, "radius", t.radius) end
-  let solid = variant_solid(variant)
-  let base = variant_fill(t, variant)
-  let ink = variant_ink(t, variant)
+  // `fill` / `ink` override the variant's colours: a caller with its own
+  // palette (a `ui` style record's `bg` / `fg`) keeps its look. A custom fill
+  // is a solid face.
+  let custom_fill = field(opts, "fill", nil)
+  let solid = custom_fill != nil || variant_solid(variant)
+  let base = custom_fill ?? variant_fill(t, variant)
+  let ink = field(opts, "ink", nil) ?? (if custom_fill != nil then on(t, custom_fill) else variant_ink(t, variant) end)
 
   // The press squash: the face shrinks about its own center, the label does
   // not. A whole-control scale reads as a wobble; a face-only one reads as
@@ -277,7 +283,18 @@ fn _spinner(cx: num, cy: num, radius: num, color: record)
 end
 
 // Exposed because a panel that rolls its own control still wants bloom's
-// spinner in it.
-pub fn spinner(cx: num, cy: num, radius: num, color: record)
-  _spinner(cx, cy, radius, color)
+// spinner in it. The last argument is a colour, or an `opts` record
+// ({color}): a record with a `color` key, or without the `r` of a colour, is
+// read as opts. With no colour it is the theme's accent.
+pub fn spinner(cx: num, cy: num, radius: num)
+  _spinner(cx, cy, radius, theme().accent)
+end
+
+pub fn spinner(cx: num, cy: num, radius: num, color_or_opts: record)
+  let c = if field(color_or_opts, "color", nil) != nil || field(color_or_opts, "r", nil) == nil then
+    field(color_or_opts, "color", theme().accent)
+  else
+    color_or_opts
+  end
+  _spinner(cx, cy, radius, c)
 end

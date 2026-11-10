@@ -20,6 +20,7 @@ mod function;
 pub(crate) mod hint_names;
 pub(crate) mod keyed_state;
 mod match_check;
+pub(crate) mod moved_widgets;
 mod native;
 mod phi;
 pub(crate) use phi::assigned_names;
@@ -170,6 +171,13 @@ pub struct Compiler {
     // Non-fatal type-checker diagnostics, accumulated during compilation and
     // surfaced alongside the compiled program (a later chunk consumes them).
     warnings: Vec<crate::diagnostic::Diagnostic>,
+
+    // The deprecated `ui` widgets this module has called, so each is warned
+    // about once per file ([`moved_widgets`]), and the module's ignore
+    // comments. `None` for a module that is not warned at all: `ui`'s own,
+    // and bundled first-party copies.
+    moved_widget_warned: HashSet<String>,
+    moved_widget_ignores: Option<crate::lint::Ignores>,
 
     // Overloaded function tracking: name → number of unique arities expected
     overloaded_fns: HashMap<String, usize>,
@@ -598,6 +606,8 @@ impl Compiler {
             method_dispatch: crate::typecheck::MethodDispatch::new(),
             declared_methods: HashSet::new(),
             warnings: Vec::new(),
+            moved_widget_warned: HashSet::new(),
+            moved_widget_ignores: None,
             function_boundaries: Vec::new(),
             module_rebinds: capture_lag::ModuleRebinds::default(),
             closure_def_ends: Vec::new(),
@@ -1004,6 +1014,17 @@ impl Compiler {
 
         let is_entry = module.name.is_none();
         self.current_module = module.name.clone();
+        self.moved_widget_warned.clear();
+        let in_ui = module
+            .name
+            .as_deref()
+            .is_some_and(|n| n == "ui" || n.starts_with("ui/"));
+        self.moved_widget_ignores = if in_ui || is_bundled_copy(module) {
+            None
+        } else {
+            // A file whose comments do not scan is warned in full.
+            Some(crate::lint::Ignores::scan(&module.source).unwrap_or_default())
+        };
         if is_bundled_copy(module)
             && let Some(name) = &module.name
         {
@@ -1591,6 +1612,27 @@ impl Compiler {
     /// The warning a *call* through a bare name owes its imports: the name is
     /// an overload set stitched together from unrelated plain imports, so
     /// which module answers depends on how many arguments were written.
+    /// Warn about a call that reaches a deprecated `ui` widget
+    /// ([`moved_widgets`]): once per name per file, unless an ignore comment
+    /// covers the call's line.
+    pub(super) fn note_moved_widget(&mut self, tid: TermId, name: &str, span: SourceSpan) {
+        let Some(ignores) = &self.moved_widget_ignores else {
+            return;
+        };
+        let line = (span.start.line as usize).saturating_sub(1);
+        if ignores.suppresses(moved_widgets::RULE, line) {
+            return;
+        }
+        let Some((Some(module), _)) = self.overload_view(tid) else {
+            return;
+        };
+        if module != moved_widgets::MODULE || !self.moved_widget_warned.insert(name.to_string()) {
+            return;
+        }
+        self.warnings
+            .push(crate::diagnostic::Diagnostic::new(span, moved_widgets::message(name)));
+    }
+
     pub(super) fn check_import_call(
         &mut self,
         name: &str,
@@ -1601,6 +1643,7 @@ impl Compiler {
         let Some(tid) = self.scope_lookup(name) else {
             return;
         };
+        self.note_moved_widget(tid, name, span);
         let Some(merged) = self.merged_imports.get(&tid) else {
             // The function set an import bound, held to the counts *it*
             // takes. The checker's own pass knows functions by bare name

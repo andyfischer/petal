@@ -128,12 +128,15 @@ pub fn drag(r: record) -> record
 end
 
 // ── Focus ─────────────────────────────────────────────────────────────────
-// Focusable components announce themselves each frame in draw order, which is
-// exactly the tab order. The ring is therefore rebuilt every frame and needs
-// no registration, no ids list held by the app, and no stale entries when a
+// The keyboard owner is `ui`'s: the runtime focus (`has_focus`,
+// `focus_request`, `focus_owner`), so a bloom control and a field built on
+// `ui.text_field_update` share one owner, and a press elsewhere takes the
+// keyboard away for both. What bloom adds is the Tab ring: focusable
+// components announce themselves each frame in draw order, which is exactly
+// the tab order. The ring is therefore rebuilt every frame and needs no
+// registration, no ids list held by the app, and no stale entries when a
 // control disappears.
 
-state var _focus = ""
 // The last complete ring: it is rewritten as this frame's ring grows, so at
 // the top of a frame it still holds what the previous frame built.
 state var _ring = []
@@ -154,7 +157,7 @@ pub fn focusable(id: string) -> bool
   end
   set _building = append(get _building, id)
   set _ring = get _building
-  (get _focus) == id
+  has_focus(id)
 end
 
 // Tab / Shift+Tab are applied at the top of the next frame, against the ring
@@ -163,14 +166,14 @@ fn _begin_frame()
   let ring = get _ring
   let step = get _pending
   if step != 0 && len(ring) > 0 then
-    let at = index_of(ring, get _focus)
+    let at = index_of(ring, focus_owner())
     let n = len(ring)
     let next = if at < 0 then
       if step > 0 then 0 else n - 1 end
     else
       ((at + step) % n + n) % n
     end
-    set _focus = ring[next]
+    focus_request(ring[next])
   end
   set _pending = 0
   if key_pressed("tab") then
@@ -179,19 +182,19 @@ fn _begin_frame()
 end
 
 pub fn focused(id: string) -> bool
-  (get _focus) == id
+  has_focus(id)
 end
 
 pub fn focus_set(id: string)
-  set _focus = id
+  focus_request(id)
 end
 
 pub fn focus_clear()
-  set _focus = ""
+  focus_request(nil)
 end
 
 pub fn focus_id()
-  get _focus
+  focus_owner()
 end
 
 // ── Keys ──────────────────────────────────────────────────────────────────

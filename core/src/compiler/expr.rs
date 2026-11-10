@@ -654,6 +654,7 @@ impl Compiler {
             }
         }
         if let Some(tid) = self.scope_lookup(&qualified) {
+            self.note_moved_widget(tid, member, object.span);
             if let Some(ambiguous) = self.ambiguous_imports.get(&tid) {
                 let message = ambiguous.message_in(self.current_module.as_deref());
                 self.error_at(object.span, message);

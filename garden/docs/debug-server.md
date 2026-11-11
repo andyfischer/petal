@@ -147,9 +147,12 @@ update the client types from the sample diff.
 - `trace`: the traced draw call under the pointer on a Petal IDE canvas, or
   `null`. See [petal-ide-mode.md](petal-ide-mode.md#automation-1).
 - `dm`: drag-to-edit (feature `state.dm-drag`): `engine` (`auto` / `v1` /
-  `v2`), the `:DragAllow` / `:DragDeny` selectors (`allow`, `deny`), `active`
+  `v2`), the `:DragAllow` / `:DragDeny` selectors (`allow`, `deny`), `prefer`
+  (the sticky choice: selector labels of the last picked alternative, which
+  later drags prefer; `:DragForget` clears it), `active`
   (a solved drag is in progress), and `last`, the last solved drag: its ranked
-  `alternatives` (description, `verified`, `score`, `moves_others`, rewrites)
+  `alternatives` (description, `verified`, `preferred`, `prefer`, `score`,
+  `moves_others`, rewrites)
   and its `candidates` (every number behind the shape, with `eligible`,
   `why_not`, `moves`, and `state`: `free` / `tunable` / `rigid` / `config` /
   `fixed`, read from the editor's current text, and `mark`, where its literal

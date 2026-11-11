@@ -11,16 +11,34 @@
 //! beyond the class itself. Spans are 0-based lines and 0-based character
 //! columns, the coordinates of [`garden_script::CodeSpan`].
 //!
-//! A gesture, as the page drives it (see `PanelHost::begin_adjust_v2`):
+//! A gesture, as the page drives it (see `PanelHost::begin_adjust_v2` and
+//! "Live drags and sticky choices" in docs/dev/direct-manipulation-v2-plan.md):
 //!
 //! 1. `pin()` on press, so frames that run before the pointer moves keep the
 //!    checkpoint of the frame that was on screen.
 //! 2. `begin(index, property, filter)` once the pointer passes the slop: the
-//!    one expensive step (discovery and the Jacobian).
-//! 3. `preview_text(source, deltas)` on every move: a linear prediction, no
-//!    re-runs, applied to the press-time source.
-//! 4. `finish(deltas)` on release: verified, rounded, ranked alternatives,
-//!    each written with `alternative_text(source, k)`.
+//!    one expensive step (discovery and the Jacobian). The sticky choice
+//!    (below) is passed in as a soft preference.
+//! 3. `move_live(deltas)` on every move, at most once per animation frame:
+//!    the linear prediction applied to the press-time source, *and*
+//!    hot-reloaded into the running sketch in place (state kept, gesture kept).
+//!    Put the returned `text` in the editor and keep calling `frame()`: the
+//!    canvas shows the real result. (Do not feed the drag's pointer events to
+//!    the sketch.) `reload(text)` of the gesture's own text keeps it open.
+//! 4. `finish(deltas)` on release: verified, rounded, ranked alternatives
+//!    from the press-time source. The applied one (`applied`, the first:
+//!    the sticky choice ranks first when it verifies) is already reloaded;
+//!    its whole text is `text`, for the editor.
+//! 5. `pick(k)` when the author chooses another: the same gesture applied
+//!    that way from the press-time source, reloaded, and remembered as the
+//!    sticky choice, so later gestures prefer the same literals.
+//!    `preference()` / `set_preference(json)` / `clear_preference()` read,
+//!    set and forget it; it lives as long as this object (and `reset`).
+//! 6. `cancel()` abandons a gesture; after `move_live` it reloads the
+//!    press-time source and returns it (the page puts it back in the editor).
+//!
+//! The older per-move `preview_text(source, deltas)` (prediction only, no
+//! reload) and `alternative_text(source, k)` still work.
 
 use garden_script::dm_hints::{self, HintState};
 use garden_script::{
@@ -49,8 +67,10 @@ pub struct GardenWeb {
     cmds: Vec<PanelCmd>,
     /// The last runtime error, cleared by the next good frame.
     error: Option<String>,
-    /// The last gesture's answer, for `alternative_text`.
+    /// The last gesture's answer, for `alternative_text` and `pick`.
     alternatives: Vec<DragAlternative>,
+    /// The text the last released gesture started from, for `pick`.
+    last_source: Option<String>,
 }
 
 #[wasm_bindgen]
@@ -67,6 +87,7 @@ impl GardenWeb {
             cmds: Vec::new(),
             error: None,
             alternatives: Vec::new(),
+            last_source: None,
         })
     }
 
@@ -150,8 +171,13 @@ impl GardenWeb {
 
     /// Hot-reload `source`, keeping `state`. `{ok}` or `{error}`; on an error
     /// the running program is left as it was.
+    ///
+    /// The open gesture's own text (its press-time source, or what
+    /// `move_live` last wrote) keeps the gesture; any other text cancels it.
     pub fn reload(&mut self, source: &str) -> String {
-        self.cancel();
+        if !self.host.drag_v2_owns_text(source) {
+            self.host.cancel_drag_v2();
+        }
         match self.host.reload_source(source) {
             Ok(()) => json!({ "ok": true }),
             Err(e) => json!({ "error": e }),
@@ -167,9 +193,12 @@ impl GardenWeb {
                 if let Some(r) = &self.mono_advances {
                     host.set_font_advance_ratios(r.clone());
                 }
+                // The sticky choice outlives the restart.
+                host.set_drag_preference(self.host.drag_preference().to_vec());
                 self.host = host;
                 self.cmds.clear();
                 self.alternatives.clear();
+                self.last_source = None;
                 json!({ "ok": true })
             }
             Err(e) => json!({ "error": e }),
@@ -269,6 +298,7 @@ impl GardenWeb {
                 "axes": start.axes,
                 "candidates": start.candidates.iter().map(candidate_json).collect::<Vec<_>>(),
                 "runs": start.runs,
+                "prefer": self.preference_labels(),
             })
             .to_string(),
             Err(outcome) => self.outcome_json(outcome),
@@ -290,16 +320,119 @@ impl GardenWeb {
         json!({ "text": text, "rewrites": rewrites.iter().map(rewrite_json).collect::<Vec<_>>() }).to_string()
     }
 
-    /// Release the open gesture at `deltas`: `{alternatives, candidates}`
-    /// (best first), `{refused, candidates}` or `{stale: true}`.
-    pub fn finish(&mut self, deltas: Vec<f64>) -> String {
-        let outcome = self.host.finish_adjust_v2(&deltas);
-        self.outcome_json(outcome)
+    /// Live apply, one move of the open gesture at `deltas` (one per axis):
+    /// the linear prediction applied to the press-time source and
+    /// hot-reloaded into the running sketch in place, keeping its `state`
+    /// and the gesture. `{ok: true, text, rewrites}` (`text` is the whole
+    /// sketch, for the editor; `rewrites` are spans in the press-time
+    /// source), or `{ok: false, error}` (no gesture open, or the text did
+    /// not compile: the sketch is left as it was). Call at most once per
+    /// animation frame, then `frame()` to draw the result.
+    pub fn move_live(&mut self, deltas: Vec<f64>) -> String {
+        match self.host.live_adjust_v2(&deltas) {
+            Ok(live) => {
+                self.host.invalidate_frame();
+                json!({
+                    "ok": true,
+                    "text": live.text,
+                    "rewrites": live.rewrites.iter().filter(|r| r.file.is_none()).map(rewrite_json).collect::<Vec<_>>(),
+                })
+            }
+            Err(e) => json!({ "ok": false, "error": e }),
+        }
+        .to_string()
     }
 
-    /// Abandon an open gesture or a press that never became one.
-    pub fn cancel(&mut self) {
+    /// Release the open gesture at `deltas`, verifying from the press-time
+    /// source: `{alternatives, candidates, applied, text, prefer}` (best
+    /// first; each alternative `{verified, preferred, prefer, movesOthers,
+    /// stateful, configOnly, score, description, rewrites}`),
+    /// `{refused, candidates}` or `{stale: true}`.
+    ///
+    /// With alternatives, alternative `applied` (0: the sticky choice ranks
+    /// first when it verifies) is already reloaded into the sketch, and
+    /// `text` is its whole text for the editor; `pick(k)` shows another.
+    /// Refused or stale after `move_live`, the press-time source is
+    /// reloaded and returned as `text`.
+    pub fn finish(&mut self, deltas: Vec<f64>) -> String {
+        let source0 = self.host.drag_v2_source().map(str::to_string);
+        let outcome = self.host.finish_adjust_v2(&deltas);
+        let mut out: Value = serde_json::from_str(&self.outcome_json(outcome)).unwrap_or(Value::Null);
+        let Some(source0) = source0 else {
+            return out.to_string();
+        };
+        let shown = match self.alternative_text(&source0, 0) {
+            Some(text) if !self.alternatives.is_empty() => {
+                out["applied"] = json!(0);
+                text
+            }
+            _ => source0.clone(),
+        };
+        match self.host.reload_source(&shown) {
+            Ok(()) => out["text"] = json!(shown),
+            Err(e) => out["error"] = json!(e),
+        }
+        self.host.invalidate_frame();
+        out["prefer"] = json!(self.preference_labels());
+        self.last_source = (!self.alternatives.is_empty()).then_some(source0);
+        out.to_string()
+    }
+
+    /// The author picks alternative `k` of the last release: the same
+    /// gesture applied that way from its press-time source, reloaded, and
+    /// remembered as the sticky choice (later gestures prefer the same
+    /// literals when they reach the goal). `{ok: true, text, prefer}` or
+    /// `{ok: false, error}`.
+    pub fn pick(&mut self, k: usize) -> String {
+        let Some(source0) = self.last_source.clone() else {
+            return json!({ "ok": false, "error": "no released gesture to choose from" }).to_string();
+        };
+        let Some(text) = self.alternative_text(&source0, k) else {
+            return json!({ "ok": false, "error": "no such alternative" }).to_string();
+        };
+        if let Err(e) = self.host.reload_source(&text) {
+            return json!({ "ok": false, "error": e }).to_string();
+        }
+        self.host.invalidate_frame();
+        if let Some(alt) = self.alternatives.get(k) {
+            self.host.prefer_drag_alternative(alt);
+        }
+        json!({ "ok": true, "text": text, "prefer": self.preference_labels() }).to_string()
+    }
+
+    /// The sticky choice, as a JSON array of selector labels (`gap`,
+    /// `at:4:13`, `fn:place`).
+    pub fn preference(&self) -> String {
+        json!(self.preference_labels()).to_string()
+    }
+
+    /// Set the sticky choice from a JSON array of selector labels (as
+    /// `preference()` gives them; `[]` clears). Returns the choice now held.
+    pub fn set_preference(&mut self, labels: &str) -> String {
+        let labels: Vec<String> = serde_json::from_str(labels).unwrap_or_default();
+        self.host
+            .set_drag_preference(labels.iter().filter_map(|l| DragSelector::parse(l)).collect());
+        self.preference()
+    }
+
+    /// Forget the sticky choice.
+    pub fn clear_preference(&mut self) {
+        self.host.clear_drag_preference();
+    }
+
+    /// Abandon an open gesture or a press that never became one. After
+    /// `move_live` the press-time source is reloaded, and returned for the
+    /// editor; otherwise `undefined`.
+    pub fn cancel(&mut self) -> Option<String> {
+        let source0 = self.host.drag_v2_source().map(str::to_string);
+        let wrote = self.host.drag_v2_live_text().is_some();
         self.host.cancel_drag_v2();
+        self.host.invalidate_frame();
+        source0.filter(|_| wrote)
+    }
+
+    fn preference_labels(&self) -> Vec<String> {
+        self.host.drag_preference().iter().map(DragSelector::label).collect()
     }
 
     /// Alternative `k` of the last release written into `source` (the text
@@ -316,6 +449,8 @@ impl GardenWeb {
                 let out = json!({
                     "alternatives": alternatives.iter().map(|a| json!({
                         "verified": a.verified,
+                        "preferred": a.preferred,
+                        "prefer": a.preference().iter().map(DragSelector::label).collect::<Vec<_>>(),
                         "movesOthers": a.moves_others,
                         "stateful": a.stateful,
                         "configOnly": a.config_only,
@@ -549,6 +684,68 @@ fn cmd_json(cmd: &PanelCmd) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn parse(s: &str) -> Value {
+        serde_json::from_str(s).unwrap()
+    }
+
+    fn circle_x(frame: &Value) -> i64 {
+        frame["cmds"].as_array().unwrap().iter().find(|c| c["op"] == "circle").unwrap()["cx"].as_i64().unwrap()
+    }
+
+    /// The page's live gesture: every move reloads the sketch, the release
+    /// shows the first alternative, a pick shows another and is sticky.
+    #[test]
+    fn a_live_gesture_then_a_sticky_pick() {
+        let source = "import ui; import garden; let a = 30\nlet b = 20\nfn f()\n  a + b\nend\ndraw_circle(f(), 60, 8, 255, 255, 255)\n";
+        let mut web = GardenWeb::new(source).unwrap();
+        assert_eq!(circle_x(&parse(&web.frame(0.0, 0.0, 0.0))), 50);
+        web.pin();
+        assert_eq!(parse(&web.begin(0, "position", "{}"))["ok"], true);
+        let live = parse(&web.move_live(vec![10.0, 0.0]));
+        assert_eq!(live["ok"], true, "{live}");
+        assert_ne!(live["text"].as_str().unwrap(), source);
+        assert_eq!(circle_x(&parse(&web.frame(0.1, 0.1, 1.0))), 60, "the sketch runs the live text");
+        // Reloading the gesture's own text keeps it open.
+        assert_eq!(parse(&web.reload(live["text"].as_str().unwrap()))["ok"], true);
+
+        let out = parse(&web.finish(vec![10.0, 0.0]));
+        let alts = out["alternatives"].as_array().unwrap();
+        assert!(alts.len() >= 2, "{out}");
+        assert_eq!(out["applied"], 0);
+        assert_eq!(out["text"].as_str(), web.alternative_text(source, 0).as_deref());
+        assert_eq!(circle_x(&parse(&web.frame(0.2, 0.1, 2.0))), 60);
+
+        let picked = parse(&web.pick(1));
+        assert_eq!(picked["ok"], true, "{picked}");
+        assert_eq!(picked["text"].as_str(), web.alternative_text(source, 1).as_deref());
+        assert_eq!(picked["prefer"], alts[1]["prefer"]);
+        assert_eq!(parse(&web.preference()), alts[1]["prefer"]);
+        assert_eq!(circle_x(&parse(&web.frame(0.3, 0.1, 3.0))), 60);
+
+        // The next gesture prefers the picked literal.
+        web.pin();
+        let begun = parse(&web.begin(0, "position", "{}"));
+        assert_eq!(begun["prefer"], alts[1]["prefer"]);
+        web.move_live(vec![10.0, 0.0]);
+        let next = parse(&web.finish(vec![10.0, 0.0]));
+        assert_eq!(next["alternatives"][0]["preferred"], true, "{next}");
+        assert_eq!(next["alternatives"][0]["prefer"], alts[1]["prefer"]);
+
+        // Cancel after a live move restores the press-time text.
+        web.reload(next["text"].as_str().unwrap());
+        web.frame(0.4, 0.1, 4.0);
+        web.pin();
+        web.begin(0, "position", "{}");
+        web.move_live(vec![15.0, 0.0]);
+        let restored = web.cancel().expect("a live gesture restores its source");
+        assert_eq!(restored, next["text"].as_str().unwrap());
+        assert_eq!(circle_x(&parse(&web.frame(0.5, 0.1, 5.0))), 70);
+
+        web.clear_preference();
+        assert_eq!(web.preference(), "[]");
+        assert_eq!(web.set_preference("[\"a\"]"), "[\"a\"]");
+    }
 
     /// garden-web builds `petal` with no bundled libraries (see README.md), so
     /// a sketch importing one fails to compile, and says why rather than

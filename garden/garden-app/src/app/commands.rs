@@ -286,6 +286,7 @@ impl App {
             Command::DragNext => self.cycle_drag_alternative(1, None),
             Command::DragPrev => self.cycle_drag_alternative(-1, None),
             Command::DragPick(n) => self.cycle_drag_alternative(0, Some(n - 1)),
+            Command::DragForget => self.forget_drag_preference(),
             Command::DragEngine(arg) => self.set_drag_engine(&arg),
             Command::DragMode(arg) => self.dm_mode_command(&arg),
             Command::DragDebug(arg) => self.drag_debug_command(&arg),

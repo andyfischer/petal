@@ -232,7 +232,8 @@ fn a_record_positioned_rect_is_draggable() {
     }
 }
 
-/// Editing the program under an open drag makes its release stale rather
+/// Editing the program under an open drag (an edit not the drag's own)
+/// makes its release stale rather
 /// than writing spans that no longer describe the text.
 #[test]
 fn a_reload_under_the_drag_is_stale() {
@@ -240,6 +241,115 @@ fn a_reload_under_the_drag_is_stale() {
     host.begin_drag_v2(2, &DragFilter::default()).unwrap();
     host.reload_source(&source.replace("20 + i", "21 + i")).unwrap();
     assert_eq!(host.finish_drag_v2(25.0, 0.0), DragOutcomeV2::Stale);
+}
+
+/// A live drag reloads its own text under the drag on every move, and that
+/// is not an edit made under it: the release still verifies, from the
+/// press-time source, and leaves the program there for the host to write
+/// the alternative it shows.
+#[test]
+fn a_live_drag_reloads_each_move_and_still_releases() {
+    let (mut host, source) = traced(HELPER);
+    host.pin_dm_checkpoint();
+    host.begin_drag_v2(2, &DragFilter::default()).unwrap();
+    assert_eq!(host.drag_v2_source(), Some(source.as_str()));
+    let first = host.live_drag_v2(10.0, 0.0).unwrap();
+    assert_ne!(first.text, source, "the first move already edits the source");
+    assert!(host.drag_v2_active(), "the live reload keeps the drag");
+    let live = host.live_drag_v2(25.0, 0.0).unwrap();
+    assert_eq!(
+        live.text,
+        apply_rewrites_to(&source, &live.rewrites).unwrap(),
+        "each move is rewritten from the press-time source, not the last move"
+    );
+    // The running program is the live text: the next frame is the real result.
+    let shown = cmds(&mut host);
+    assert_eq!(circle_x(&shown[2]), 85, "{}", live.text);
+    // Reloading the drag's own text (a host's binding catching up) keeps it.
+    host.reload_source(&live.text).unwrap();
+    assert!(host.drag_v2_active());
+
+    let outcome = host.finish_drag_v2(25.0, 0.0);
+    let rewrites = top(&outcome).to_vec();
+    let (edited, after) = apply(&mut host, &source, &rewrites);
+    assert_eq!(circle_x(&after[2]), 85, "{edited}");
+}
+
+/// Cancelling a live drag takes its edit back: the program runs the
+/// press-time source again.
+#[test]
+fn cancelling_a_live_drag_restores_the_press_time_source() {
+    let (mut host, _) = traced(HELPER);
+    host.begin_drag_v2(2, &DragFilter::default()).unwrap();
+    host.live_drag_v2(25.0, 0.0).unwrap();
+    assert_eq!(circle_x(&cmds(&mut host)[2]), 85);
+    host.cancel_drag_v2();
+    assert!(!host.drag_v2_active());
+    assert_eq!(circle_x(&cmds(&mut host)[2]), 60);
+}
+
+/// Editing the program by other means under a live drag still makes its
+/// release stale.
+#[test]
+fn an_external_edit_under_a_live_drag_is_stale() {
+    let (mut host, source) = traced(HELPER);
+    host.begin_drag_v2(2, &DragFilter::default()).unwrap();
+    host.live_drag_v2(25.0, 0.0).unwrap();
+    host.reload_source(&source.replace("clear(0, 0, 0)", "clear(0, 0, 1)")).unwrap();
+    assert_eq!(host.finish_drag_v2(25.0, 0.0), DragOutcomeV2::Stale);
+}
+
+/// The sticky choice: picking an alternative makes the next drag prefer
+/// the same literal, in its live preview and its ranking, until forgotten.
+#[test]
+fn a_picked_alternative_is_sticky() {
+    let src = "let a = 30\n\
+               let b = 20\n\
+               fn f()\n\
+               \x20 a + b\n\
+               end\n\
+               draw_circle(f(), 60, 8, 255, 255, 255)\n";
+    let (mut host, source) = traced(src);
+    let var = |alt: &garden_script::DragAlternative| alt.rewrites[0].variable.clone();
+    let alternatives = match host.propose_drag_edits_v2(0, 10.0, 0.0, &DragFilter::default()) {
+        DragOutcomeV2::Alternatives { alternatives, .. } => alternatives,
+        other => panic!("{other:?}"),
+    };
+    let first = var(&alternatives[0]);
+    let other = alternatives
+        .iter()
+        .find(|a| a.verified && var(a) != first)
+        .expect("a second literal to pick")
+        .clone();
+    assert!(!alternatives.iter().any(|a| a.preferred));
+
+    // Pick the other one: written from the press-time source, and sticky.
+    host.prefer_drag_alternative(&other);
+    assert!(!host.drag_preference().is_empty());
+    let (picked, _) = apply(&mut host, &source, &other.rewrites);
+
+    // The next drag (from the picked text) previews and ranks it first.
+    host.begin_drag_v2(0, &DragFilter::default()).unwrap();
+    let live = host.live_drag_v2(10.0, 0.0).unwrap();
+    assert_eq!(live.rewrites[0].variable, var(&other), "the live preview prefers it");
+    let next = match host.finish_drag_v2(10.0, 0.0) {
+        DragOutcomeV2::Alternatives { alternatives, .. } => alternatives,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(var(&next[0]), var(&other), "{next:#?}");
+    assert!(next[0].preferred && next[0].verified);
+    host.reload_source(&picked).unwrap();
+
+    // Forgotten: back to the usual ranking.
+    host.clear_drag_preference();
+    assert!(host.drag_preference().is_empty());
+    match host.propose_drag_edits_v2(0, 10.0, 0.0, &DragFilter::default()) {
+        DragOutcomeV2::Alternatives { alternatives, .. } => {
+            assert!(!alternatives.iter().any(|a| a.preferred));
+            assert_eq!(var(&alternatives[0]), first);
+        }
+        other => panic!("{other:?}"),
+    }
 }
 
 /// A shape placed by a helper in an imported module: the edit names that

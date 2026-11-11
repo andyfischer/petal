@@ -43,7 +43,7 @@ use crate::panel::PanelCmd;
 // under its old paths.
 pub use petal_ui::edit_mode::{
     apply_rewrites_to, CodeSpan, DragAlternative, DragCandidate, DragFilter, DragOutcomeV2, DragProperty,
-    DragSelector, DragStart, SourceRewrite,
+    DragSelector, DragStart, LivePreview, SourceRewrite,
 };
 
 /// The call chain a draw command came from — an opaque handle to the runtime's

@@ -12,13 +12,19 @@
 //!   gesture, capped at `garden_script::OPEN_WALL`). The panel's live binding
 //!   is held from here to the release, so the program the session measured
 //!   stays the one running.
-//! - **Every move**: a linear preview (no runs). The editor shows the
-//!   predicted numbers (rewritten from the snapshot, so nothing accumulates),
-//!   and the canvas paints the grabbed shape moved under the pointer.
-//! - **Release**: verify, round and rank. The top alternative is written; the
-//!   others stay available to `:DragNext` / `:DragPrev` / `:DragPick N`, and
-//!   the status bar lists what else could have moved, which `:DragAllow`
-//!   restricts the next drag to (client disambiguation).
+//! - **Every move**: live apply. The linear answer (no runs) is rewritten
+//!   from the snapshot (so nothing accumulates), written into the editor
+//!   *and* hot-reloaded into the running panel, state kept: the canvas shows
+//!   the program's real result, not a ghost.
+//! - **Release**: verify, round and rank, from the snapshot. The top
+//!   alternative is written; the others stay available to `:DragNext` /
+//!   `:DragPrev` / `:DragPick N` and the result panel, each the same gesture
+//!   applied another way from the snapshot, and the status bar lists what
+//!   else could have moved, which `:DragAllow` restricts the next drag to
+//!   (client disambiguation).
+//! - **Pick**: choosing an alternative makes it the panel's sticky choice:
+//!   later drags prefer the same literals (live and at the release) when
+//!   they reach the goal, until another pick or `:DragForget`.
 
 use std::path::PathBuf;
 
@@ -150,6 +156,9 @@ fn describe(alt: &DragAlternative, k: usize, n: usize) -> String {
     if alt.stateful {
         s.push_str(" — feeds `state`");
     }
+    if alt.preferred {
+        s.push_str(" — your choice (:DragForget)");
+    }
     if n > 1 {
         s.push_str(&format!(" [{} of {n}: :DragNext]", k + 1));
     }
@@ -171,22 +180,21 @@ fn movable(candidates: &[DragCandidate], axes: (bool, bool)) -> Vec<String> {
 }
 
 impl App {
-    /// Write a v2 drag's previewed numbers into the sketch's buffer, from the
-    /// press-time snapshot `s0`.
-    pub(in crate::app) fn write_preview_v2(&mut self, editor: usize, s0: &str, rewrites: &[SourceRewrite]) {
-        let Ok(text) = garden_script::apply_rewrites_to(s0, rewrites) else {
-            return;
-        };
+    /// Write one move of a live v2 drag into the sketch's buffer: the text
+    /// the panel already runs (rewritten from the press-time snapshot, so
+    /// nothing accumulates).
+    pub(in crate::app) fn write_live_v2(&mut self, editor: usize, live: &garden_script::LivePreview) {
         if let Some(pane) = self.panes.get_mut(editor) {
-            replace_differing(&mut pane.view, &text);
+            replace_differing(&mut pane.view, &live.text);
         }
-        let preview = rewrites
+        let preview = live
+            .rewrites
             .iter()
             .filter(|r| r.file.is_none())
             .map(|r| r.description.replace('`', ""))
             .collect::<Vec<_>>();
         if !preview.is_empty() {
-            self.status_note = Some(format!("{} (preview)", preview.join(", ")));
+            self.status_note = Some(format!("{} (live)", preview.join(", ")));
         }
     }
 
@@ -423,6 +431,11 @@ impl App {
         if let Some(pane) = self.panes.get_mut(choices.editor) {
             pane.view.buffer.end_undo_run();
         }
+        // The author chose: later drags on this canvas prefer the same
+        // literals (a soft preference, never written into the code).
+        if let Some(panel) = self.panes.get_mut(choices.pane).and_then(|p| p.panel.as_mut()) {
+            panel.prefer_drag_alternative(&choices.alternatives[k]);
+        }
         self.dm_choices = Some(choices);
         self.needs_redraw = true;
     }
@@ -449,6 +462,29 @@ impl App {
         }
         self.dm_gen += 1;
         self.status_note = Some(describe_filter(&self.dm_filter));
+    }
+
+    /// The sticky choice of the canvas the last drag was on (else of the
+    /// first traced canvas), as selector labels.
+    pub(in crate::app) fn drag_preference(&self) -> Vec<String> {
+        let pane = self
+            .dm_choices
+            .as_ref()
+            .map(|c| c.pane)
+            .or_else(|| self.panes.iter().position(|p| p.panel.as_ref().is_some_and(|p| p.traces_origins())));
+        pane.and_then(|i| self.panes.get(i))
+            .and_then(|p| p.panel.as_ref())
+            .map(|p| p.drag_preference())
+            .unwrap_or_default()
+    }
+
+    /// `:DragForget`: drop the sticky choice of every canvas.
+    pub(in crate::app) fn forget_drag_preference(&mut self) {
+        for panel in self.panes.iter_mut().filter_map(|p| p.panel.as_mut()) {
+            panel.clear_drag_preference();
+        }
+        self.dm_gen += 1;
+        self.status_note = Some("drags no longer prefer a past choice".to_string());
     }
 
     /// `:DragEngine auto|v1|v2`.
@@ -482,12 +518,15 @@ impl App {
             "engine": self.dm_engine.name(),
             "allow": self.dm_filter.allow.iter().map(DragSelector::label).collect::<Vec<_>>(),
             "deny": self.dm_filter.deny.iter().map(DragSelector::label).collect::<Vec<_>>(),
+            "prefer": self.drag_preference(),
             "active": self.manip_is_v2(),
             "last": self.dm_choices.as_ref().map(|c| json!({
                 "current": c.current,
                 "alternatives": c.alternatives.iter().map(|a| json!({
                     "description": a.description,
                     "verified": a.verified,
+                    "preferred": a.preferred,
+                    "prefer": a.preference().iter().map(DragSelector::label).collect::<Vec<_>>(),
                     "score": a.score,
                     "moves_others": a.moves_others,
                     "config_only": a.config_only,

@@ -607,14 +607,11 @@ pub struct PanelView {
     /// direct-manipulation mode. Off for every ordinary panel, which therefore
     /// pays nothing for it.
     trace_origins: bool,
-    /// While a direct-manipulation v2 drag is pulling a shape: its command
-    /// index and the pointer's offset, painted as the shape moved by that much
-    /// (the "ghost") until the release writes the solved edit.
-    drag_ghost: Option<(usize, i32, i32)>,
     /// Hold the live editor binding: while set, [`reload_from_editor`](Self::reload_from_editor)
-    /// does not recompile. A v2 drag sets it so the program its session
-    /// measured stays the one running while the editor shows previewed
-    /// numbers; releasing it lets the next sync compile the final text.
+    /// does not recompile. A v2 drag sets it: the drag itself reloads the
+    /// program on every move ([`live_drag_v2`](Self::live_drag_v2)), from
+    /// the press-time text, so nothing else may swap it under the session;
+    /// releasing it lets the next sync compile the written alternative.
     hold_live_source: bool,
     /// [`ClientEvent`]s (and a data-changed flag) collected while a bounded
     /// request wait ([`await_response`](Self::await_response)) drained other
@@ -746,7 +743,6 @@ impl PanelView {
             cursor: 0,
             nav_events: Vec::new(),
             trace_origins: false,
-            drag_ghost: None,
             hold_live_source: false,
             pending_events: Vec::new(),
             pending_changed: false,
@@ -1928,14 +1924,10 @@ impl PanelView {
         garden_script::v2_draggable(self.cmds.get(index)?).then_some(index)
     }
 
-    /// The panel-local box command `index` covers, moved with a v2 drag's
-    /// ghost while one is painting it: what drag mode outlines.
+    /// The panel-local box command `index` covers: what drag mode outlines.
+    /// A v2 drag reloads the program live, so this follows the real shape.
     pub fn dm_bounds(&self, index: usize) -> Option<(i32, i32, i32, i32)> {
-        let (x, y, w, h) = garden_script::cmd_bounds(self.cmds.get(index)?)?;
-        Some(match self.drag_ghost {
-            Some((i, dx, dy)) if i == index => (x + dx, y + dy, w, h),
-            _ => (x, y, w, h),
-        })
+        garden_script::cmd_bounds(self.cmds.get(index)?)
     }
 
     /// The traced call of the command at `index`, for choosing an engine.
@@ -1961,32 +1953,59 @@ impl PanelView {
         r
     }
 
-    /// The open drag's linear answer at this pointer offset (no runs), and the
-    /// ghost moved there.
-    pub fn preview_drag_v2(&mut self, index: usize, dx: f64, dy: f64) -> Vec<garden_script::SourceRewrite> {
-        self.drag_ghost = Some((index, dx.round() as i32, dy.round() as i32));
-        self.host.preview_drag_v2(dx, dy)
+    /// Live apply, one move of the open drag at this pointer offset: the
+    /// linear answer written into the press-time text and hot-reloaded into
+    /// the running program (state and drag kept; see
+    /// [`PanelHost::live_drag_v2`](garden_script::PanelHost::live_drag_v2)).
+    /// The returned text is what the editor should now show; the binding
+    /// already counts it as compiled. The next frame draws the result.
+    pub fn live_drag_v2(&mut self, dx: f64, dy: f64) -> Result<garden_script::LivePreview, String> {
+        let live = self.host.live_drag_v2(dx, dy)?;
+        self.live_source_hash = Some(hash_text(&live.text));
+        self.reload_error = None;
+        self.frame_error = None;
+        self.note_activity(Instant::now());
+        Ok(live)
     }
 
-    /// Release the open drag: verify, round and rank. The ghost and the hold
-    /// on the live binding end with it.
+    /// Release the open drag: verify, round and rank. The hold on the live
+    /// binding ends with it. The program is back at the press-time text,
+    /// whatever the editor shows, so the next sync recompiles the editor's
+    /// text (the alternative the app writes).
     pub fn finish_drag_v2(&mut self, dx: f64, dy: f64) -> garden_script::DragOutcomeV2 {
-        self.drag_ghost = None;
         self.hold_live_source = false;
+        self.live_source_hash = None;
         self.host.finish_drag_v2(dx, dy)
     }
 
-    /// Abandon the open drag, if any.
+    /// Abandon the open drag, if any; a live drag's edit is taken back (the
+    /// program runs the press-time text again, which the app writes back).
     pub fn cancel_drag_v2(&mut self) {
-        self.drag_ghost = None;
+        if self.hold_live_source {
+            self.live_source_hash = None;
+        }
         self.hold_live_source = false;
         self.host.cancel_drag_v2();
     }
 
-    /// The ghost a v2 drag is painting: command index and offset.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn drag_ghost(&self) -> Option<(usize, i32, i32)> {
-        self.drag_ghost
+    /// The author picked `alt` of the last release: it becomes this
+    /// panel's sticky choice, preferred by later drags.
+    pub fn prefer_drag_alternative(&mut self, alt: &garden_script::DragAlternative) {
+        self.host.prefer_drag_alternative(alt);
+    }
+
+    /// The sticky choice, as selector labels.
+    pub fn drag_preference(&self) -> Vec<String> {
+        self.host
+            .drag_preference()
+            .iter()
+            .map(garden_script::DragSelector::label)
+            .collect()
+    }
+
+    /// Forget the sticky choice.
+    pub fn clear_drag_preference(&mut self) {
+        self.host.clear_drag_preference();
     }
 
     /// Reconcile the embedded editors with the `text_view(...)` regions (and
@@ -2552,6 +2571,9 @@ impl PanelView {
                 if self.host.is_virtual_clock() {
                     host.use_virtual_clock_from(0.0);
                 }
+                // So does the drag's sticky choice (it is the author's, not
+                // the script's).
+                host.set_drag_preference(self.host.drag_preference().to_vec());
                 self.host = host;
                 self.reload_error = None;
                 self.frame_error = None;
@@ -2669,14 +2691,7 @@ impl PanelView {
         // switches.
         let mut base = PanelClip::square(rect);
         let mut clips: Vec<PanelClip> = vec![base];
-        let ghost = self
-            .drag_ghost
-            .and_then(|(i, dx, dy)| Some((i, self.cmds.get(i)?.translated(dx, dy))));
-        for (cmd_index, cmd) in self.cmds.iter().enumerate() {
-            let cmd = match &ghost {
-                Some((i, moved)) if *i == cmd_index => moved,
-                _ => cmd,
-            };
+        for cmd in self.cmds.iter() {
             let cur_clip = *clips.last().unwrap_or(&base);
             // Panel-local rect → absolute pane pixels, for the clip commands.
             let local = |x: &i32, y: &i32, w: &u32, h: &u32| Rect {

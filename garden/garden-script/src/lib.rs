@@ -77,7 +77,7 @@ pub use panel_store::PanelStore;
 pub use panel_trace::{
     apply_rewrites_to, cmd_bounds, drag_handle, hit_test, ArgSource, CallRef, CodeSpan, DragAlternative,
     DragCandidate, DragFilter, DragHandle, DragOutcome, DragOutcomeV2, DragProperty, DragSelector, DragStart,
-    DrawOrigin, DrawTrace, SourceRewrite, TracedArg, v2_draggable,
+    DrawOrigin, DrawTrace, LivePreview, SourceRewrite, TracedArg, v2_draggable,
 };
 pub use query::{HostData, QueryProvider, QueryState};
 pub use theme::Theme;

@@ -166,7 +166,11 @@ pub enum Command {
     DragNext,
     DragPrev,
     /// `:DragPick N` — write alternative `N` (1-based) of the last drag.
+    /// A pick (and `:DragNext` / `:DragPrev`) is sticky: later drags prefer
+    /// the same literals.
     DragPick(usize),
+    /// `:DragForget` — drop that sticky choice.
+    DragForget,
     /// `:DragEngine [auto|v1|v2]` — which direct-manipulation engine a drag
     /// uses (empty reports the current one).
     DragEngine(String),
@@ -273,6 +277,7 @@ pub fn parse(input: &str) -> Command {
         "DragDeny" => Command::DragDeny(arg.to_string()),
         "DragNext" => Command::DragNext,
         "DragPrev" => Command::DragPrev,
+        "DragForget" => Command::DragForget,
         "DragPick" => match arg.parse::<usize>() {
             Ok(n) if n >= 1 => Command::DragPick(n),
             _ => Command::Unknown(trimmed.to_string()),
@@ -478,6 +483,7 @@ mod tests {
         assert_eq!(parse("DragDeny"), Command::DragDeny(String::new()));
         assert_eq!(parse("DragNext"), Command::DragNext);
         assert_eq!(parse("DragPrev"), Command::DragPrev);
+        assert_eq!(parse("DragForget"), Command::DragForget);
         assert_eq!(parse("DragPick 2"), Command::DragPick(2));
         assert_eq!(parse("DragPick 0"), Command::Unknown("DragPick 0".into()));
         assert_eq!(parse("DragEngine v2"), Command::DragEngine("v2".into()));

@@ -1697,7 +1697,7 @@ with a golden test.
 | v2 the default | done, 2026-10-24 | (this commit) | `petal propose-edit` uses v2 unless `--v1` (`cli/args.rs`); MCP `ProposeEdit` defaults to v2 (the argv carries no engine flag); hint names `tunable`/`rigid` accepted; tests `core/tests/cli_propose_edit_v2.rs`, `test/vitest/petal-mcp.test.ts` updated; see "v2 the default" below |
 | Garden drag mode (M4c) | done, 2026-10-24 | `58144b0d`, `43eea4ff`, `35c7ef95`, `8c9c32cb` (+ this commit) | Petal IDE drag mode (`:DragMode`, toolbar Drag, Cmd+Shift+D): modifier-free drags, the drag result panel (alternatives, candidates with state, session chips), `tunable`/`rigid` toggled by mouse as source rewrites (`garden-app/src/dm_hints.rs`), Garden `:DragEngine auto` = v2 for every shape; examples `garden/examples/panels/dm-v2/` (7); tests `dm_hints` (12), 5 `garden-app` tests, `the_drag_mode_examples_solve`, `garden/tools/dm-mode-integration-test.ts` (36 checks); see "Garden drag mode" below |
 | One knob tier | done, 2026-10-24 | (this commit) | `config let` and `tunable` share one weight, 0.5 (`rank::KNOB_WEIGHT`, `Param::is_knob`); the `config` selector gains the alias `knob`; study re-run with 0.25 and 0.5 (same outcomes; 0.5 changes no run count); test `dm_solve::config_and_tunable_are_one_tier`; see "One knob tier" below |
-| Live drags + sticky choices | core + shared layer done, 2026-11-11 | (this commit) | `EditSession::preview_live`, live text not stale, `DmRequest::preferred` / `SessionOptions::prefer`, preview agrees with the release, web-canvas `edit_live` / `edit_choose`; see "Live drags and sticky choices" below |
+| Live drags + sticky choices | core + shared layer done, 2026-11-11 | (this commit) | `EditSession::preview_live`, live text not stale, `DmRequest::preferred` / `SessionOptions::prefer`, preview agrees with the release, web-canvas `edit_live` / `edit_choose`; Garden (garden-script, garden-app, garden-web) done the same day; see "Live drags and sticky choices" below |
 
 Deviations from this plan are recorded here as they happen, with the reason.
 
@@ -2693,6 +2693,48 @@ an_inline_literal_is_named_where_the_edit_leaves_it}`; `petal-web-canvas`
 `a_live_drag_reloads_each_move_and_still_releases`,
 `an_edit_from_elsewhere_under_a_live_drag_is_stale`. Garden's drag mode,
 garden-web and the website's studio move onto this in their own phases.
+
+**Live drags and sticky choices in Garden, 2026-11-11.**
+
+- *garden-script.* `PanelHost::live_drag_v2(dx, dy)` /
+  `live_adjust_v2(deltas) -> Result<LivePreview, String>` is `preview_live`
+  plus `reload_source` of its text. `reload_source` of the open drag's own
+  text (`drag_v2_owns_text`: `source0` or the last live text) keeps the
+  drag, the checkpoint and the pinned press; any other text drops them as
+  before, and the release is `Stale`. `cancel_drag_v2` reloads `source0`
+  first when the drag wrote live text. The sticky choice lives on the
+  `PanelHost` (`prefer_drag_alternative(&alt)`, `drag_preference`,
+  `set_drag_preference`, `clear_drag_preference`) and goes into
+  `SessionOptions::prefer` on every `begin_*_v2`. New accessors:
+  `drag_v2_source`, `drag_v2_live_text`.
+- *garden-app.* The ghost and the held frame are gone. Each move writes the
+  live text into the editor (status `… (live)`), reloads the panel
+  (`PanelView::live_drag_v2` marks the text as compiled, so the editor
+  binding does not reload it again) and ticks it. The binding stays held
+  against other text until release. The release forgets the compiled hash,
+  so the next sync compiles the alternative the app writes, because finish
+  left the program at `source0`. `:DragNext` / `:DragPrev` / `:DragPick N`
+  and a click on the result panel's alternatives call
+  `prefer_drag_alternative`. The status bar marks a preferred alternative
+  `your choice (:DragForget)`. The result panel shows a `Prefers:` row with
+  a `forget` chip. `:DragForget` clears the choice on every canvas.
+  `/state`'s `dm` gains `prefer`, and each alternative gains `preferred`
+  and `prefer`. `PanelView::restart` carries the choice over.
+- *garden-web.* `move_live(deltas)`, `finish` (which now reloads the
+  applied alternative and returns `applied` and `text`), `pick(k)`,
+  `preference()`, `set_preference(json)` and `clear_preference()` are new.
+  `reload(text)` keeps a gesture whose own text it is. `cancel()` returns
+  the restored `source0` after a live gesture. See `garden/garden-web/README.md`.
+- *Not live.* An edit in an imported module (`SourceRewrite::file`) is
+  written only on release. The live text is the sketch's.
+
+Tests: `garden-script` `dm_drag::{a_live_drag_reloads_each_move_and_still_releases,
+cancelling_a_live_drag_restores_the_press_time_source,
+an_external_edit_under_a_live_drag_is_stale, a_picked_alternative_is_sticky}`;
+`garden-app` `a_v2_drag_applies_live_while_held` (was
+`a_v2_drag_previews_while_held`) and
+`a_picked_alternative_is_preferred_by_the_next_drag`; `garden-web`
+`a_live_gesture_then_a_sticky_pick`.
 
 ---
 

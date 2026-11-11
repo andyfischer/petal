@@ -127,6 +127,8 @@ pub(in crate::app) enum DmAction {
     ToggleAllow(usize),
     ToggleDeny(usize),
     ClearFilters,
+    /// Forget the sticky choice (`:DragForget`).
+    ForgetPreference,
 }
 
 impl DmAction {
@@ -139,6 +141,7 @@ impl DmAction {
             DmAction::ToggleAllow(i) => format!("only:{i}"),
             DmAction::ToggleDeny(i) => format!("never:{i}"),
             DmAction::ClearFilters => "clear".into(),
+            DmAction::ForgetPreference => "forget".into(),
         }
     }
 }
@@ -411,7 +414,7 @@ impl App {
             rows.push(Row::new(vec![if c.hints_changed {
                 Seg::text("Alternatives: hints changed since, drag again to re-solve", accent())
             } else {
-                Seg::text("Alternatives: click one to write it instead", dim)
+                Seg::text("Alternatives: click one to write it instead (later drags prefer it)", dim)
             }]));
         }
         for (k, alt) in c.alternatives.iter().enumerate() {
@@ -435,6 +438,11 @@ impl App {
             };
             row.right = vec![
                 Seg::text(others, dim),
+                if alt.preferred {
+                    Seg::text("your choice", accent())
+                } else {
+                    Seg::text("", dim)
+                },
                 if alt.verified {
                     Seg::chip("verified", Color::rgb(0.06, 0.08, 0.06), Some(CandState::Tunable.color()), None)
                 } else {
@@ -545,6 +553,16 @@ impl App {
             session.right = vec![Seg::chip("clear", theme.text, None, Some(DmAction::ClearFilters))];
         }
         rows.push(session);
+        let prefer = self.drag_preference();
+        if !prefer.is_empty() {
+            let mut sticky = Row::new(vec![
+                Seg::text("Prefers:", dim),
+                Seg::text(prefer.join(", "), theme.text),
+                Seg::text("(your last pick)", dim),
+            ]);
+            sticky.right = vec![Seg::chip("forget", theme.text, None, Some(DmAction::ForgetPreference))];
+            rows.push(sticky);
+        }
 
         // Layout: a card along the canvas's bottom edge.
         let pad = 8.0;
@@ -861,6 +879,7 @@ impl App {
                 };
                 self.dm_toggle_filter(allow, sel);
             }
+            DmAction::ForgetPreference => self.forget_drag_preference(),
             DmAction::ClearFilters => {
                 self.dm_filter = garden_script::DragFilter::default();
                 self.dm_gen += 1;

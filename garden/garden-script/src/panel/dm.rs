@@ -21,24 +21,37 @@
 //!    finds the grabbed command's emit in a speculative baseline and opens a
 //!    session on it: discovery, screening and the Jacobian, the only
 //!    expensive step, bounded by [`OPEN_RUNS`] and [`OPEN_WALL`].
-//! 4. **Every move** ([`PanelHost::preview_drag_v2`]): one linear solve
-//!    against the cached Jacobian. No runs, so it keeps up with the pointer.
+//! 4. **Every move** ([`PanelHost::live_drag_v2`]): one linear solve
+//!    against the cached Jacobian, spliced into the press-time source and
+//!    hot-reloaded into the running program in place (its literals patched,
+//!    its state kept), so the next frame is the real result. The drag stays
+//!    open: its own live text is never stale. ([`PanelHost::preview_drag_v2`]
+//!    is the same answer without the reload.)
 //! 5. **Release** ([`PanelHost::finish_drag_v2`]): verify, round and rank, with
-//!    a fresh budget of its own ([`FINISH_RUNS`], [`FINISH_WALL`]); the
+//!    a fresh budget of its own ([`FINISH_RUNS`], [`FINISH_WALL`]), from the
+//!    press-time source (the program is patched back to it first); the
 //!    session's linear answer is the warm start of the verification loop.
+//!    The host then writes and reloads the alternative it shows.
+//! 6. **Pick** ([`PanelHost::prefer_drag_alternative`]): the author chose
+//!    another alternative; its literals become the panel's sticky choice, a
+//!    soft preference every later drag ranks (and previews) first when it
+//!    reaches the goal.
 //!
 //! Everything the engine reports is converted to plain types, so the app
 //! layer still needs no Petal dependency.
 
 use petal::dm::SpecHost;
 use petal::env::Env;
-use petal_ui::edit_mode::{EditSession, GoalTarget, SessionOptions};
+use petal_ui::edit_mode::{EditSession, GoalTarget, LivePreview, SessionOptions};
 use petal_ui::frame_core::FrameSpecHost;
 
 pub use petal_ui::edit_mode::{DRAG_ALTERNATIVES, DRAG_ITERS, FINISH_RUNS, FINISH_WALL, OPEN_RUNS, OPEN_WALL};
 
 use super::{swap_edit_view_edits, swap_edit_view_texts, PanelData, PanelHost};
-use crate::panel_trace::{native_position_args, DragFilter, DragOutcomeV2, DragProperty, DragStart, SourceRewrite};
+use crate::panel_trace::{
+    native_position_args, DragAlternative, DragFilter, DragOutcomeV2, DragProperty, DragSelector, DragStart,
+    SourceRewrite,
+};
 use crate::query::{self, QueryProvider};
 
 /// A v2 drag in progress.
@@ -194,9 +207,14 @@ impl PanelHost {
             occurrence,
             raw_index,
         };
+        let prefer = self.dm_prefer.clone();
         let result = {
             let (env, mut host) = spec_parts!(&mut *self);
-            EditSession::open(env, &mut host, checkpoint, &target, filter, &SessionOptions::default())
+            let opts = SessionOptions {
+                prefer: prefer.clone(),
+                ..SessionOptions::default()
+            };
+            EditSession::open(env, &mut host, checkpoint, &target, filter, &opts)
         };
         if owned {
             self.core.env.drop_fork(checkpoint);
@@ -225,8 +243,51 @@ impl PanelHost {
         }
     }
 
+    /// Live apply: one move of the open drag `dx`, `dy` pixels from the
+    /// press. The linear answer ([`preview_drag_v2`](Self::preview_drag_v2))
+    /// is spliced into the press-time source and hot-reloaded into the
+    /// running program in place, keeping its `state`, the drag and the
+    /// checkpoint; the next frame draws the real result. Returns the whole
+    /// text (for the editor) and its rewrites (spans in the press-time
+    /// source). `Err` with no drag open, or when the text does not compile
+    /// (the program is left as it was).
+    pub fn live_drag_v2(&mut self, dx: f64, dy: f64) -> Result<LivePreview, String> {
+        self.live_adjust_v2(&[dx, dy])
+    }
+
+    /// [`live_drag_v2`](Self::live_drag_v2) for a gesture opened by
+    /// [`begin_adjust_v2`](Self::begin_adjust_v2).
+    pub fn live_adjust_v2(&mut self, deltas: &[f64]) -> Result<LivePreview, String> {
+        let drag = self.dm_drag.as_mut().ok_or("no drag is open")?;
+        let live = drag.preview_live(&self.core.env, deltas)?;
+        self.reload_source(&live.text)?;
+        Ok(live)
+    }
+
+    /// The press-time source of the open drag, if one is open: what a host
+    /// writes back when it cancels a live drag.
+    pub fn drag_v2_source(&self) -> Option<&str> {
+        self.dm_drag.as_ref().map(|d| d.source())
+    }
+
+    /// The text the open drag last wrote live ([`live_drag_v2`](Self::live_drag_v2)),
+    /// if it has.
+    pub fn drag_v2_live_text(&self) -> Option<&str> {
+        self.dm_drag.as_ref().and_then(|d| d.live_text())
+    }
+
+    /// Whether `text` is the open drag's own (its press-time source or the
+    /// text it last wrote live), so reloading it
+    /// ([`reload_source`](Self::reload_source)) keeps the drag. False with
+    /// no drag open.
+    pub fn drag_v2_owns_text(&self, text: &str) -> bool {
+        self.dm_drag.as_ref().is_some_and(|d| d.owns_text(text))
+    }
+
     /// Release the open drag `dx`, `dy` pixels from the press: verify, round
-    /// and rank. Closes the drag either way.
+    /// and rank. Closes the drag either way. After a live drag the running
+    /// program is back at the press-time source: the host writes (and
+    /// reloads) the alternative it shows, applied to that source.
     pub fn finish_drag_v2(&mut self, dx: f64, dy: f64) -> DragOutcomeV2 {
         self.finish_adjust_v2(&[dx, dy])
     }
@@ -242,13 +303,28 @@ impl PanelHost {
         drag.finish(env, &mut host, pid, deltas)
     }
 
-    /// Abandon the open drag (and a pinned press), dropping their forks.
+    /// Abandon the open drag (and a pinned press), dropping their forks. A
+    /// live drag's edit is taken back: the program is reloaded at the
+    /// press-time source ([`drag_v2_source`](Self::drag_v2_source)).
     pub fn cancel_drag_v2(&mut self) {
         self.cancel_open_session();
         self.drop_pinned();
     }
 
+    /// Close the open drag's session. A live drag's edit is taken back
+    /// first: the program is reloaded at the press-time source (the host
+    /// writes that text back into its editor).
     fn cancel_open_session(&mut self) {
+        let restore = self
+            .dm_drag
+            .as_ref()
+            .filter(|d| d.live_text().is_some_and(|t| t != d.source()))
+            .map(|d| d.source().to_string());
+        if let Some(source) = restore {
+            // A press-time source that no longer compiles cannot happen (it
+            // was running); if it somehow does, the live text stays.
+            let _ = self.reload_source(&source);
+        }
         if let Some(drag) = self.dm_drag.take() {
             drag.cancel(&mut self.core.env);
         }
@@ -258,6 +334,34 @@ impl PanelHost {
         if let Some(ck) = self.dm_pinned.take() {
             self.core.env.drop_fork(ck);
         }
+    }
+
+    /// The author picked `alt` of a release: remember its literals as the
+    /// sticky choice, preferred by every later drag on this panel (soft:
+    /// a drag it cannot move falls back to the usual ranking) until another
+    /// pick or [`clear_drag_preference`](Self::clear_drag_preference). An
+    /// alternative with no nameable literal leaves the choice as it was.
+    /// The host writes and reloads `alt`'s text itself.
+    pub fn prefer_drag_alternative(&mut self, alt: &DragAlternative) {
+        let prefer = alt.preference();
+        if !prefer.is_empty() {
+            self.dm_prefer = prefer;
+        }
+    }
+
+    /// The sticky choice: the literals later drags prefer.
+    pub fn drag_preference(&self) -> &[DragSelector] {
+        &self.dm_prefer
+    }
+
+    /// Set the sticky choice outright (empty clears it).
+    pub fn set_drag_preference(&mut self, prefer: Vec<DragSelector>) {
+        self.dm_prefer = prefer;
+    }
+
+    /// Forget the sticky choice.
+    pub fn clear_drag_preference(&mut self) {
+        self.dm_prefer.clear();
     }
 
     /// The whole v2 gesture in one call (plan §4.4's

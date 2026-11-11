@@ -1190,6 +1190,12 @@ pub struct PanelHost {
     /// The v2 drag in progress, between [`begin_drag_v2`](Self::begin_drag_v2)
     /// and [`finish_drag_v2`](Self::finish_drag_v2).
     dm_drag: Option<V2Drag>,
+    /// The sticky choice: the literals of the alternative the author last
+    /// picked ([`prefer_drag_alternative`](Self::prefer_drag_alternative)),
+    /// a soft preference for every later drag on this panel until another
+    /// pick or [`clear_drag_preference`](Self::clear_drag_preference). Never
+    /// written into the source; kept across reloads.
+    dm_prefer: Vec<crate::panel_trace::DragSelector>,
 }
 
 impl std::fmt::Debug for PanelHost {
@@ -1242,6 +1248,7 @@ impl PanelHost {
             dm_checkpoint_on: false,
             dm_checkpoint: None,
             dm_pinned: None,
+            dm_prefer: Vec::new(),
             dm_drag: None,
         };
         host.imports = host.watch_imports();
@@ -1311,6 +1318,7 @@ impl PanelHost {
             dm_checkpoint_on: false,
             dm_checkpoint: None,
             dm_pinned: None,
+            dm_prefer: Vec::new(),
             dm_drag: None,
         })
     }
@@ -1906,7 +1914,12 @@ impl PanelHost {
             .reload_program(self.core.stack_id(), source, None)
             .map_err(|e| e.to_string())?;
         self.reload_lines = crate::print_static_report(&report);
-        self.drop_dm_checkpoint();
+        // The open drag's own text (the press-time source, or what it wrote
+        // live) keeps the drag and its checkpoint: a live drag reloads it on
+        // every move. Any other text replaced what they describe.
+        if !self.drag_v2_owns_text(source) {
+            self.drop_dm_checkpoint();
+        }
         Ok(())
     }
 

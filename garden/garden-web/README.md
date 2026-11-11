@@ -41,10 +41,39 @@ shapes). Spans are 0-based `[line, col, end_line, end_col]`.
 | `reload(source)` / `reset(source)` | hot reload keeping `state` / restart |
 | `hit(x, y)`, `trace(i)`, `trace_all()` | the shape under a point; the call that drew it |
 | `pin()`, `begin(i, property, filter)` | press, then open a gesture: `property` is `position`, `size` or `color`; `filter` is `{allow, deny}` in `:DragAllow` syntax |
-| `preview_text(source, deltas)` | the linear prediction for a move, written into the press-time source |
-| `finish(deltas)`, `alternative_text(source, k)` | release: ranked, verified alternatives; write the k-th |
-| `cancel()` | abandon a press or gesture |
+| `move_live(deltas)` | live apply: the prediction for a move written into the press-time source **and hot-reloaded** (state and gesture kept): `{ok, text, rewrites}` or `{ok: false, error}` |
+| `preview_text(source, deltas)` | the prediction only, no reload (older flow) |
+| `finish(deltas)` | release: ranked, verified alternatives from the press-time source; the first (`applied`) is already reloaded: `{alternatives, candidates, applied, text, prefer}`, `{refused, candidates, text?}` or `{stale}` |
+| `pick(k)` | show alternative k of the last release (from the press-time source, reloaded) and make it the sticky choice: `{ok, text, prefer}` |
+| `alternative_text(source, k)` | the k-th alternative written into `source`, no reload |
+| `preference()`, `set_preference(json)`, `clear_preference()` | the sticky choice as selector labels (`gap`, `at:4:13`, `fn:place`) |
+| `cancel()` | abandon a press or gesture; after `move_live` reloads and returns the press-time source |
 | `hint_literals(line)`, `mark_hint(line, col, to)` | `tunable` / `rigid` hints as text (`garden_script::dm_hints`) |
+
+### A live gesture
+
+```js
+web.pin();                                   // press
+web.begin(i, "position", filter);            // past the slop (expensive, once)
+// each animation frame while held (coalesce pointer moves):
+const live = JSON.parse(web.move_live([dx, dy]));
+if (live.ok) editor.setText(live.text);      // the sketch already runs it
+draw(JSON.parse(web.frame(t, dt, n)).cmds);  // keep the frame loop running;
+                                             // don't feed it the drag's pointer
+// release:
+const out = JSON.parse(web.finish([dx, dy]));
+if (out.text != null) editor.setText(out.text);
+showChips(out.alternatives, out.applied);    // `preferred` marks the sticky one
+// a chip:
+const chosen = JSON.parse(web.pick(k));      // same gesture, the other way; sticky
+editor.setText(chosen.text);
+```
+
+`reload(text)` of the gesture's own text (its press-time source or the last
+`move_live` text) keeps it open; any other text cancels it. The sticky
+choice is a soft preference: a later gesture that cannot reach its goal with
+those literals ranks as usual. It lives as long as the `GardenWeb` (across
+`reload` and `reset`) and is never written into the source.
 
 `wasm32-unknown-unknown` has no clock: the page passes `time` to every
 frame (from `performance.now()`), and the DM engine caps a session by run

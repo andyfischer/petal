@@ -492,8 +492,15 @@ impl App {
         let Some(panel) = self.panes.get_mut(pane).and_then(|p| p.panel.as_mut()) else {
             return;
         };
-        let rewrites = panel.preview_drag_v2(index, dx, dy);
-        self.write_preview_v2(editor, &s0, &rewrites);
+        // Live apply: the edit is in the running program now, and the next
+        // frame is its real result (no ghost, no held frame).
+        match panel.live_drag_v2(dx, dy) {
+            Ok(live) => {
+                self.write_live_v2(editor, &live);
+                self.tick_panel_at(pane);
+            }
+            Err(e) => self.status_note = Some(e),
+        }
         self.needs_redraw = true;
     }
 

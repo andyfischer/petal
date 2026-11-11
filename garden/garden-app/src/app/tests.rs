@@ -682,19 +682,25 @@ fn drag_allow_and_alternatives() {
     assert_eq!(app.dm_state_json()["allow"], serde_json::json!([]));
 }
 
-/// While the pointer is down a v2 drag previews: the editor shows the
-/// predicted numbers, the canvas paints the grabbed shape under the pointer,
-/// and the live binding holds the program the session measured. The release
-/// writes the verified answer.
+/// While the pointer is down a v2 drag applies live: each move writes the
+/// predicted numbers into the editor *and* reloads the canvas with them, so
+/// it draws the program's real result (no ghost). The release writes the
+/// verified answer from the press-time text.
 #[test]
-fn a_v2_drag_previews_while_held() {
+fn a_v2_drag_applies_live_while_held() {
     let source = "fn place(i)\n\
                   \x20 20 + i * 40\n\
                   end\n\
                   for i in range(0, 4) do\n\
                   \x20 draw_circle(place(i), 50, 10, 200, 90, 90)\n\
                   end\n";
-    let (mut app, editor, canvas, _dir) = traced_pair("petal-ide-drag-preview", source);
+    let (mut app, editor, canvas, _dir) = traced_pair("petal-ide-drag-live", source);
+    let before = app.panes[editor].view.buffer.text();
+    let circle_x = |app: &App, i: usize| match &app.panes[canvas].panel.as_ref().unwrap().commands()[i] {
+        garden_script::PanelCmd::Circle { cx, .. } => *cx,
+        other => panic!("not a circle: {other:?}"),
+    };
+    assert_eq!(circle_x(&app, 1), 60);
     let rect = app.panes[canvas].rect;
     let (gx, gy) = (rect.x + 60.0, rect.y + 50.0);
     let cmd = Mods {
@@ -706,23 +712,80 @@ fn a_v2_drag_previews_while_held() {
     app.mouse_moved(gx + 25.0, gy);
     assert!(app.manip_is_v2());
     assert_eq!(app.dm_state_json()["active"], true);
-    let panel = app.panes[canvas].panel.as_ref().unwrap();
-    assert_eq!(panel.drag_ghost(), Some((1, 25, 0)), "the circle follows the pointer");
     assert!(
-        app.status_note.as_deref().is_some_and(|n| n.contains("(preview)")),
+        app.status_note.as_deref().is_some_and(|n| n.contains("(live)")),
         "{:?}",
         app.status_note
     );
-    let previewed = app.panes[editor].view.buffer.text();
-    assert!(!previewed.contains("20 + i * 40"), "the editor shows the prediction");
+    let live = app.panes[editor].view.buffer.text();
+    assert!(!live.contains("20 + i * 40"), "the editor shows the live edit");
+    assert_eq!(circle_x(&app, 1), 85, "the canvas runs it: {live}");
+    // More frames under the held drag keep running the live text.
+    app.settle_panels();
+    assert_eq!(circle_x(&app, 1), 85);
+    assert!(app.manip_is_v2(), "the live reload keeps the drag");
     app.mouse_up();
     assert!(!app.manip_is_v2());
-    assert_eq!(app.panes[canvas].panel.as_ref().unwrap().drag_ghost(), None);
     assert!(
-        !app.status_note.as_deref().unwrap_or("").contains("(preview)"),
+        !app.status_note.as_deref().unwrap_or("").contains("(live)"),
         "{:?}",
         app.status_note
     );
+    app.settle_panels();
+    assert_eq!(circle_x(&app, 1), 85, "{}", app.panes[editor].view.buffer.text());
+    assert_ne!(app.panes[editor].view.buffer.text(), before);
+}
+
+/// Picking an alternative is sticky: the next drag on the canvas prefers the
+/// same literal, live and at the release, until `:DragForget`.
+#[test]
+fn a_picked_alternative_is_preferred_by_the_next_drag() {
+    let source = "config let gap = 30\n\
+                  let x0 = 40\n\
+                  fn slot(i)\n\
+                  \x20 x0 + i * gap\n\
+                  end\n\
+                  clear(0, 0, 0)\n\
+                  for i in range(0, 3) do\n\
+                  \x20 draw_circle(slot(i), 60, 8, 255, 255, 255)\n\
+                  end\n";
+    let (mut app, editor, canvas, _dir) = traced_pair("petal-ide-drag-sticky", source);
+    cmd_drag(&mut app, canvas, (100.0, 60.0), (12.0, 0.0));
+    assert!(app.panes[editor].view.buffer.text().contains("config let gap = 36"));
+    assert_eq!(app.dm_state_json()["prefer"], serde_json::json!([]));
+    // Choose the x0 alternative instead.
+    let state = app.dm_state_json();
+    let k = state["last"]["alternatives"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|a| a["rewrites"][0]["variable"] == "x0")
+        .expect("an x0 alternative");
+    app.run_command(crate::command_line::Command::DragPick(k + 1));
+    assert_eq!(app.status_error, None);
+    assert!(app.panes[editor].view.buffer.text().contains("let x0 = 52"));
+    assert_eq!(app.dm_state_json()["prefer"], serde_json::json!(["x0"]));
+    app.settle_panels();
+
+    // The next drag (slot(2) is now 112) moves x0 again, not the knob.
+    cmd_drag(&mut app, canvas, (112.0, 60.0), (8.0, 0.0));
+    let text = app.panes[editor].view.buffer.text();
+    assert!(text.contains("let x0 = 60") && text.contains("config let gap = 30"), "{text}");
+    let state = app.dm_state_json();
+    assert_eq!(state["last"]["alternatives"][0]["preferred"], true, "{state:#}");
+    assert!(
+        app.status_note.as_deref().is_some_and(|n| n.contains("your choice")),
+        "{:?}",
+        app.status_note
+    );
+
+    // Forgotten: the knob is first again.
+    app.run_command(crate::command_line::Command::DragForget);
+    assert_eq!(app.dm_state_json()["prefer"], serde_json::json!([]));
+    app.settle_panels();
+    cmd_drag(&mut app, canvas, (120.0, 60.0), (12.0, 0.0));
+    let text = app.panes[editor].view.buffer.text();
+    assert!(text.contains("config let gap = 36") && text.contains("let x0 = 60"), "{text}");
 }
 
 /// The engine is a setting: `:DragEngine v1` keeps the old behaviour, which

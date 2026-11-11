@@ -59,6 +59,7 @@
     "engine": "auto",
     "allow": [],
     "deny": [],
+    "prefer": [],
     "active": false,
     "last": null,
     "editor": null,

@@ -331,11 +331,9 @@ shape and why it can or cannot move, and honours `tunable` bounds and
 a `tunable` range), so with v1 the result panel and the hints of
 [drag mode](#drag-mode) would work on some shapes and silently not on others.
 For a literal or a binding the v2 preview is just as exact (the measured
-sensitivity is exactly 1), and the edit is written as you pull. What v1 did
-that v2 does not: recompile the whole canvas every frame of the drag, so
-other shapes reading the same binding moved live with it. Under v2 the
-grabbed shape follows the pointer and the rest of the canvas catches up on
-release. The pause before the shape follows (opening the session) measured
+sensitivity is exactly 1), and the edit is written as you pull. Like v1, v2
+applies every move live: the canvas runs the edited code, so other shapes
+reading the same binding move with it. The pause before the shape follows (opening the session) measured
 30 to 55 ms on the [drag-mode examples](../examples/panels/dm-v2/) in a
 debug build.
 
@@ -349,13 +347,16 @@ debug build.
    (`garden_script::OPEN_WALL`); on a 300-shape sketch it takes about
    90 ms (31 re-runs of a 2.5 ms frame).
 3. *While you pull.* Each move is a linear prediction from those
-   measurements, with no re-runs. The editor shows the predicted numbers
-   (marked `(preview)` in the status bar) and the grabbed shape follows the
-   pointer. The rest of the canvas stays on the program you pressed on until
-   you let go.
-4. *Release.* Petal solves for where you let go, rounds to tidy numbers,
-   re-runs the result to verify it, and ranks the alternatives. The best one
-   is written; the canvas recompiles from it on the next frame.
+   measurements, with no re-runs, rewritten from the text as it was when you
+   pressed. It is applied live: the editor shows the predicted numbers
+   (marked `(live)` in the status bar) and the canvas is hot-reloaded with
+   them (its `state` kept), so you see the program's real result, every
+   shape that reads those numbers included. Only the sketch itself is
+   edited live; an edit in an imported module is written on release.
+4. *Release.* Petal solves for where you let go, from the text as it was
+   when you pressed, rounds to tidy numbers, re-runs the result to verify
+   it, and ranks the alternatives. The best one is written; the canvas
+   recompiles from it on the next frame.
 
 **Choosing what moves.** A drag can usually be answered several ways
 (widen the gap, or move the origin), so the answer comes ranked:
@@ -371,6 +372,13 @@ debug build.
 - **`:DragNext`, `:DragPrev` and `:DragPick N`** write another alternative
   in place of the first, from the text as it was when you pressed, so they
   never stack. They work until you edit the code by hand.
+- **A pick is sticky.** The alternative you chose is remembered for that
+  canvas: later drags prefer the same numbers (by name, else by where the
+  number is), both while you pull and in the ranking on release, and the
+  status bar says `your choice`. It is a preference, not a rule: a drag those
+  numbers cannot move is answered as usual. It lasts for the session (never
+  written into the code) until another pick; **`:DragForget`** (or `forget`
+  on the result panel) drops it.
 - **`:DragAllow NAME …`** restricts every following drag to those numbers,
   exactly; **`:DragDeny NAME …`** rules numbers out. A selector is a binding
   name (`gap`), `line:N` (any number on that line, 1-based), `fn:NAME` (the
@@ -473,7 +481,8 @@ shows the answer:
 - **Session**: the `:DragAllow` / `:DragDeny` selectors in force. Each number's
   `only` / `never` chips add it to (or take it off) the allow / deny list for
   the following drags, with no source change; `clear` empties both. A drag
-  everything is ruled out of declines, and the panel says why.
+  everything is ruled out of declines, and the panel says why. Below it,
+  **Prefers** names the sticky choice of your last pick, with `forget`.
 - `close` dismisses it. Editing the code by hand closes it too (its spans no
   longer describe the text).
 

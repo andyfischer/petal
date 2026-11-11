@@ -164,12 +164,18 @@ export interface AppState {
     engine: string;
     allow: string[];
     deny: string[];
+    /** The sticky choice: selector labels of the alternative last picked,
+     *  which later drags prefer (`:DragForget` clears). */
+    prefer: string[];
     active: boolean;
     last: {
       current: number;
       alternatives: Array<{
         description: string;
         verified: boolean;
+        /** It is the sticky choice made again. */
+        preferred: boolean;
+        prefer: string[];
         score: number;
         moves_others: number;
         config_only: boolean;

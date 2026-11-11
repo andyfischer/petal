@@ -39,6 +39,9 @@
 //! DM_STUDY_VERBOSE=1     print alternatives, scores, columns, re-run checks
 //! DM_STUDY_EXPLAIN=1     print the solver's explain log
 //! DM_STUDY_DIR=<dir>     run a ladder from another directory
+//! DM_STUDY_BEST_EFFORT=1 every request under the best-effort policy
+//! cargo test --release --test dm_study best_effort_vs_ranked -- --ignored --nocapture
+//!                        the ladder both ways, side by side
 //! ```
 //!
 //! `ladder` is a normal test: every goal not marked `xfail=` must succeed.
@@ -54,7 +57,7 @@ use petal::dm::observe::hash_str;
 use petal::dm::params::{ParamFilter, ParamSelector};
 use petal::dm::spec::{ObsValue, SpecConfig, SpecSession, StateMode};
 use petal::dm::{
-    Alternative, DmError, DmGoal, DmRequest, DmResponse, EmitKey, Observable, PathStep, Prefer,
+    Alternative, DmError, DmGoal, DmRequest, DmResponse, EmitKey, Observable, PathStep, Policy, Prefer,
     apply_edits_multi, program_files, propose_edits_v2,
 };
 use petal_ui_headless::harness::Headless;
@@ -446,6 +449,10 @@ struct GoalResult {
     status: &'static str,
     why: String,
     success: bool,
+    /// The top alternative is verified and the edited program meets the
+    /// goal after a hot reload, whatever it edits (`success` also asks for
+    /// the edits `expect=` names).
+    solved: bool,
     any_verified: bool,
     top_verified: bool,
     expect_ok: Option<bool>,
@@ -704,6 +711,18 @@ fn scratch_dir(tag: &str) -> PathBuf {
     base.join(format!("{}-{tag}", std::process::id()))
 }
 
+/// `DM_STUDY_BEST_EFFORT=1`: every request under [`Policy::BestEffort`]
+/// (docs/tasks/differentiation-rewrite.md, Phase 3a), keeping each goal's
+/// client filter. The ladder then only reports (an `expect=` names the
+/// ranked answer, which best effort need not give).
+fn best_effort_study() -> bool {
+    BEST_EFFORT.with(|b| b.get()) || std::env::var_os("DM_STUDY_BEST_EFFORT").is_some()
+}
+
+thread_local! {
+    static BEST_EFFORT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 fn run_goal(ex: &Example, g: &GoalSpec, ui: &mut Headless, live: &mut Option<LiveCopy>, emits: &[Emit]) -> GoalResult {
     let mut r = GoalResult {
         example: ex.id.clone(),
@@ -762,6 +781,9 @@ fn run_goal(ex: &Example, g: &GoalSpec, ui: &mut Headless, live: &mut Option<Liv
     }
     req.max_wall = Duration::from_secs(60);
     req.explain = std::env::var_os("DM_STUDY_EXPLAIN").is_some();
+    if best_effort_study() {
+        req.policy = Policy::BestEffort;
+    }
     let sid = ui.stack_id();
     let t0 = Instant::now();
     let resp: Result<DmResponse, DmError> = {
@@ -923,6 +945,7 @@ fn run_goal(ex: &Example, g: &GoalSpec, ui: &mut Headless, live: &mut Option<Liv
         Err(e) => r.why = format!("re-run failed: {e}"),
     }
     let rerun_ok = r.rerun_error.is_some_and(|e| e <= tol) && r.edit_matches_override != Some(false);
+    r.solved = r.top_verified && rerun_ok;
     r.success = r.top_verified && rerun_ok && r.expect_ok != Some(false);
     if !r.top_verified {
         r.why = format!("best effort only, top alternative not verified (error {:.1} τ)", top.max_error);
@@ -1497,6 +1520,48 @@ fn full_study() {
         .unwrap_or_default();
     if std::env::var_os("DM_STUDY_WRITE").is_some() {
         write_report(&ladder, &scaling, &extra, extra_dir.as_deref());
+    }
+}
+
+/// The ladder under the ranked policy and under best effort
+/// (docs/tasks/differentiation-rewrite.md, Phase 3a), side by side. A goal
+/// is *solved* when the top (best effort: the only) answer is verified and
+/// the edited, hot-reloaded program draws the goal within tolerance; *as
+/// expected* when it also edits only what the goal's `expect=` names (the
+/// ranked answer the ladder was written for). Asserts nothing; prints the
+/// table and the goals the two disagree on.
+#[test]
+#[ignore]
+fn best_effort_vs_ranked() {
+    let examples = ladder_examples();
+    let ranked: Vec<ExampleResult> = examples.iter().map(run_example).collect();
+    BEST_EFFORT.with(|b| b.set(true));
+    let best: Vec<ExampleResult> = examples.iter().map(run_example).collect();
+    BEST_EFFORT.with(|b| b.set(false));
+    let goals = |rs: &[ExampleResult]| -> Vec<GoalResult> { rs.iter().flat_map(|e| e.goals.clone()).collect() };
+    let (r, b) = (goals(&ranked), goals(&best));
+    assert_eq!(r.len(), b.len());
+    let solved = |g: &GoalResult| g.solved;
+    let count = |gs: &[GoalResult], f: &dyn Fn(&GoalResult) -> bool| gs.iter().filter(|g| f(g)).count();
+    println!("ladder: {} goals", r.len());
+    println!("                     ranked (top)   best effort");
+    println!("solved               {:>12}   {:>11}", count(&r, &solved), count(&b, &solved));
+    println!("solved as expected   {:>12}   {:>11}", count(&r, &|g| g.success), count(&b, &|g| g.success));
+    println!("no answer (an error) {:>12}   {:>11}", count(&r, &|g| g.alternatives == 0), count(&b, &|g| g.alternatives == 0));
+    println!("\nwhere they differ:");
+    for (x, y) in r.iter().zip(&b) {
+        if solved(x) != solved(y) || x.top_edits != y.top_edits {
+            println!(
+                "  {} / {}: ranked {} {:?} | best effort {} {:?}{}",
+                x.example,
+                x.goal,
+                if solved(x) { "solved" } else { "unsolved" },
+                x.top_edits,
+                if solved(y) { "solved" } else { "unsolved" },
+                y.top_edits,
+                if y.why.is_empty() { String::new() } else { format!(" — {}", y.why) }
+            );
+        }
     }
 }
 

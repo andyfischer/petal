@@ -96,7 +96,19 @@ fn a_request_reads_like_the_flags() {
         .unwrap();
     assert_eq!(o.collateral, vec![("solid".to_string(), 10.0), ("coin".to_string(), 0.5)]);
 
+    // The policy: `policy: "best_effort"`, or the flag's `best_effort: true`.
+    for req in [
+        json!({"channel": "a", "emit": 0, "value": true, "to": 1, "policy": "best_effort"}),
+        json!({"channel": "a", "emit": 0, "value": true, "to": 1, "best_effort": true}),
+    ] {
+        assert!(opts_from_json(&req).unwrap().best_effort, "{req}");
+    }
+    let o = opts_from_json(&json!({"channel": "a", "emit": 0, "value": true, "to": 1, "policy": "ranked"})).unwrap();
+    assert!(!o.best_effort);
+
     for bad in [
+        json!({"channel": "a", "emit": 0, "value": true, "to": 1, "policy": "best"}),
+        json!({"channel": "a", "emit": 0, "value": true, "to": 1, "policy": true}),
         json!({"channel": "a", "emit": 0, "native_arg": 0, "at_most": 1, "to": 2}),
         json!({"channel": "a", "emit": 0, "native_arg": 0, "at_most": "1"}),
         json!({"channel": "a", "emit": 0, "native_arg": 0, "within": [3, 1]}),

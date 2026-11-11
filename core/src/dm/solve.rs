@@ -448,7 +448,34 @@ pub fn goal_step(goals: &[GoalRow], values: &[Option<f64>], jg: &[Vec<f64>], jc:
     delta
 }
 
+/// The equal-split step (docs/tasks/differentiation-rewrite.md, decision
+/// 9): [`goal_step`] with each parameter's cost its goal column's norm
+/// `‖J_g[:, i]‖` and no collateral term. Minimizing `Σ (‖J_i‖ Δ_i)²` subject
+/// to the goals gives, for one goal, `J_i Δ_i = r / N` for each of the `N`
+/// parameters: each moves by the amount that produces `1/N` of the change on
+/// its own. With several goals, a parameter that moves only one of them
+/// (`cx` for x, `cy` for y) takes that goal's whole share, and parameters
+/// that move the same goal split it equally.
+pub fn equal_share_step(goals: &[GoalRow], values: &[Option<f64>], jg: &[Vec<f64>]) -> Vec<f64> {
+    let k = jg.first().map_or(0, Vec::len);
+    let cost: Vec<f64> = (0..k).map(|i| jg.iter().map(|row| row[i] * row[i]).sum::<f64>().sqrt()).collect();
+    goal_step(goals, values, jg, &[], &cost)
+}
+
 // ── the verification loop ──────────────────────────────────────────────────
+
+/// How a step spreads the goals' change over the parameters of a subset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Blend {
+    /// Weighted least squares: each parameter costs `d_i / s_i`, and the
+    /// collateral rows count, so the most sensitive, cheapest literal
+    /// moves most (§2.4.1).
+    #[default]
+    Weighted,
+    /// An equal split by output share ([`equal_share_step`]): the
+    /// best-effort policy's blend when several literals tie.
+    EqualShare,
+}
 
 /// The solver's settings.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -457,11 +484,13 @@ pub struct SolveOptions {
     pub max_iters: usize,
     /// Probe and solve settings; `fd.allow_respell` also governs rounding.
     pub fd: FdOptions,
+    /// How each step spreads the change.
+    pub blend: Blend,
 }
 
 impl Default for SolveOptions {
     fn default() -> Self {
-        SolveOptions { max_iters: 6, fd: FdOptions::default() }
+        SolveOptions { max_iters: 6, fd: FdOptions::default(), blend: Blend::Weighted }
     }
 }
 
@@ -594,12 +623,27 @@ impl<L: TermLever> SolveCtx<'_, L> {
     /// The step for `cols` from `rows` with Jacobian `local` ([`goal_step`]).
     pub fn step(&self, cols: &[usize], rows: &[Option<f64>], local: &[Vec<f64>]) -> Vec<f64> {
         let gr = self.jac.goal_rows;
+        if self.opts.blend == Blend::EqualShare {
+            return equal_share_step(self.goals, &rows[..gr], &local[..gr]);
+        }
         let cost: Vec<f64> = cols
             .iter()
             .map(|&c| self.weights[c] / self.base_value(c).abs().max(1.0))
             .collect();
         let jc = weigh_rows(&local[gr..], self.collateral_weights);
         goal_step(self.goals, &rows[..gr], &local[..gr], &jc, &cost)
+    }
+
+    /// The step that moves only the subset's `i`-th literal ([`goal_step`]
+    /// on its column alone): how [`solve_subset`](Self::solve_subset)
+    /// finishes an equal split that rounding has stuck.
+    fn solo_step(&self, i: usize, rows: &[Option<f64>], local: &[Vec<f64>]) -> Vec<f64> {
+        let gr = self.jac.goal_rows;
+        let jg: Vec<Vec<f64>> = local[..gr].iter().map(|row| vec![row[i]]).collect();
+        let d = goal_step(self.goals, &rows[..gr], &jg, &[], &[1.0]);
+        let mut delta = vec![0.0; local.first().map_or(0, Vec::len)];
+        delta[i] = d.first().copied().unwrap_or(0.0);
+        delta
     }
 
     /// `values + Δ` projected onto the bounds.
@@ -623,20 +667,42 @@ impl<L: TermLever> SolveCtx<'_, L> {
         let mut scale = 1.0f64;
         let mut iterations = 0;
         let mut since_measure = 0;
+        // Under the equal split, the integers and bounds a literal is held
+        // to can leave a remainder that no equal share moves (each share
+        // rounds to nothing). The remainder then goes to one literal at a
+        // time, the least sensitive first (it has the finest steps): `solo`
+        // is that literal, and `solos` the ones left to try (last first).
+        let gr = self.jac.goal_rows;
+        let norm = |k: usize| local[..gr].iter().map(|row| row[k] * row[k]).sum::<f64>().sqrt();
+        let mut solos: Vec<usize> = if self.opts.blend == Blend::EqualShare && k > 1 {
+            let mut s: Vec<usize> = (0..k).filter(|&i| norm(i) > 0.0).collect();
+            s.sort_by(|&a, &b| norm(b).total_cmp(&norm(a)));
+            s
+        } else {
+            Vec::new()
+        };
+        let mut solo: Option<usize> = None;
         while iterations < self.opts.max_iters {
             if max_error(self.goals, self.goal_values(&rows)) <= 1.0 {
                 break;
             }
-            let delta = self.step(cols, &rows, &local);
+            let delta = match solo {
+                Some(i) => self.solo_step(i, &rows, &local),
+                None => self.step(cols, &rows, &local),
+            };
             let next = self.project(cols, &values, &delta, scale);
             if next == values {
                 if scale < 1.0 {
                     // A shortened step that rounds to nothing: try a full one.
                     scale = 1.0;
                     let full = self.project(cols, &values, &delta, 1.0);
-                    if full == values {
-                        break;
+                    if full != values {
+                        continue;
                     }
+                }
+                if let Some(i) = solos.pop() {
+                    self.log(|| format!("  the equal split is stuck: the rest on column {}", cols[i]));
+                    solo = Some(i);
                     continue;
                 }
                 break;
@@ -691,6 +757,11 @@ impl<L: TermLever> SolveCtx<'_, L> {
             } else {
                 scale /= 4.0;
                 if scale < 1e-3 {
+                    if let Some(i) = solos.pop() {
+                        solo = Some(i);
+                        scale = 1.0;
+                        continue;
+                    }
                     break;
                 }
             }

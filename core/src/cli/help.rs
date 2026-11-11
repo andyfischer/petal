@@ -1658,7 +1658,7 @@ SYNOPSIS
                           [--allow <sel>]... [--deny <sel>]...
                           [--configurable <var>]... [--static <var>]...
                           [--alternatives N] [--explain] [--knob-strict]
-                          [--tol T] [--max-runs N] [--max-wall S] [--max-screen N]
+                          [--best-effort] [--tol T] [--max-runs N] [--max-wall S] [--max-screen N]
                           [--allow-respell] [--seed N] [--frames N]
                           [--collateral CHANNEL=W[,CHANNEL=W...]]...
                           [--apply [--pick N]] [--json] <file>
@@ -1751,6 +1751,14 @@ FILTERS
               (v2) v1's rule: once the program has a knob (a setting
               `let X = tunable(...)` or a deprecated config let, or a tunable
               that marks a literal), only knobs move when they can.
+
+       --best-effort
+              (v2) One answer or an error, for a host with no list of
+              alternatives: knobs only when they can reach the goal; never a
+              rigid literal or one that reaches the goal only through a
+              const binding; the cheapest tier of the rest, with the change
+              split equally when several tie; verified by re-running. A goal
+              no edit reaches is an error, and nothing is written.
 
 OPTIONS
        --alternatives N

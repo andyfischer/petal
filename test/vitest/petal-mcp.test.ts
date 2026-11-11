@@ -69,6 +69,16 @@ push_output(symbol("shapes"), x + offset)
     expect(out.alternatives.map((a: any) => a.changes[0].binding).slice(0, 2)).toEqual(["x", "offset"]);
   });
 
+  it("policy best_effort gives one answer, split equally between tied literals", () => {
+    const out = propose({ channel: "shapes", emit: 0, arg: 1, to: 42, policy: "best_effort" }, V1_SKETCH);
+    expect(out.policy).toBe("best_effort");
+    expect(out.alternatives).toHaveLength(1);
+    const top = out.alternatives[0];
+    expect(top.verified).toBe(true);
+    const edits = top.changes.map((c: any) => `${c.binding}: ${c.old_text}→${c.new_text}`).sort();
+    expect(edits).toEqual(["offset: 10→16", "x: 20→26"]);
+  });
+
   it("engine v1 keeps the legacy answer and shape", () => {
     const out = propose({ channel: "shapes", emit: 0, engine: "v1", arg: 1, to: "42.5" }, V1_SKETCH);
     expect(out.proposals.map((p: any) => p.variable)).toEqual(["x", "offset"]);

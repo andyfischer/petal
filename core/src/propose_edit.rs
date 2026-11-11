@@ -23,7 +23,7 @@ use crate::dm::params::{BudgetLimit, ParamFilter, ParamSelector};
 use crate::dm::spec::{SpecConfig, SpecHost, SpecSession};
 use crate::dm::{
     Alternative, CandidateReport, ColumnQuality, DmGoal, DmRequest, DmResponse, DmSession, EmitKey, Engine,
-    Hint, ObsValue, Observable, PathStep, Prefer, Rejection, apply_edits_multi, program_files,
+    Hint, ObsValue, Observable, PathStep, Policy, Prefer, Rejection, apply_edits_multi, program_files,
 };
 use crate::env::Env;
 use crate::program::{Program, ProgramId, TermId, TermOp};
@@ -97,6 +97,9 @@ pub struct V2Opts {
     /// `--knob-strict` (or its old name `--config-strict`): v1's knob rule
     /// ([`Prefer::ConfigStrict`]).
     pub config_strict: bool,
+    /// `--best-effort` (JSON `policy: "best_effort"`): one verified answer
+    /// or an error ([`Policy::BestEffort`]).
+    pub best_effort: bool,
     pub alternatives: usize,
     pub explain: bool,
     pub apply: bool,
@@ -130,6 +133,7 @@ impl Default for V2Opts {
             allow: Vec::new(),
             deny: Vec::new(),
             config_strict: false,
+            best_effort: false,
             alternatives: 3,
             explain: false,
             apply: false,
@@ -277,6 +281,7 @@ impl V2Parser {
             "--deny",
             "--knob-strict",
             "--config-strict",
+            "--best-effort",
             "--alternatives",
             "--explain",
             "--pick",
@@ -362,6 +367,7 @@ impl V2Parser {
             "--allow" | "--configurable" => self.opts.allow.push(value(i)?),
             "--deny" | "--static" => self.opts.deny.push(value(i)?),
             "--knob-strict" | "--config-strict" => self.opts.config_strict = true,
+            "--best-effort" => self.opts.best_effort = true,
             "--alternatives" => {
                 let v = value(i)?;
                 self.opts.alternatives = v
@@ -529,6 +535,7 @@ pub fn propose(
     }
     req.filter = filter;
     req.prefer = if opts.config_strict { Prefer::ConfigStrict } else { Prefer::Soft };
+    req.policy = if opts.best_effort { Policy::BestEffort } else { Policy::Ranked };
     req.max_alternatives = opts.alternatives.max(1);
     if let Some(n) = opts.max_runs {
         req.max_runs = n;
@@ -593,7 +600,9 @@ const GOAL_VALUE_KEYS: &[&str] = GOAL_KEYS.split_at(6).1;
 /// `within` (`[lo, hi]`, or the CLI's `"lo..hi"`). One goal may sit at the top level;
 /// several go in `goals: [...]`, each inheriting the top-level `channel` and
 /// `emit` it leaves out. The options are `allow` / `deny` (a selector or a
-/// list of them; `pins` is `deny`'s alias), `config_strict`, `alternatives`,
+/// list of them; `pins` is `deny`'s alias), `config_strict`, `policy`
+/// (`"ranked"`, the default, or `"best_effort"`: one verified answer or an
+/// error; `best_effort: true` says the same), `alternatives`,
 /// `explain`, `apply`, `pick` (1-based), `tol`, `max_runs`, `max_wall`
 /// (seconds), `max_screen`, `allow_respell`, `seed` and `collateral` (an
 /// object of channel weights, `{"solid": 10, "coin": 1}`, or the flag's
@@ -604,9 +613,10 @@ const GOAL_VALUE_KEYS: &[&str] = GOAL_KEYS.split_at(6).1;
 /// so its rules are the CLI's exactly.
 pub fn opts_from_json(req: &Json) -> Result<V2Opts, String> {
     let obj = req.as_object().ok_or("the request must be a JSON object")?;
-    const OPTION_KEYS: [&str; 18] = [
-        "goals", "allow", "deny", "pins", "knob_strict", "config_strict", "alternatives", "explain", "apply", "pick", "tol",
-        "max_runs", "max_wall", "max_screen", "allow_respell", "seed", "json", "collateral",
+    const OPTION_KEYS: [&str; 20] = [
+        "goals", "allow", "deny", "pins", "knob_strict", "config_strict", "best_effort", "policy", "alternatives",
+        "explain", "apply", "pick", "tol", "max_runs", "max_wall", "max_screen", "allow_respell", "seed", "json",
+        "collateral",
     ];
     for k in obj.keys() {
         if !GOAL_KEYS.contains(&k.as_str()) && !OPTION_KEYS.contains(&k.as_str()) {
@@ -713,6 +723,7 @@ pub fn opts_from_json(req: &Json) -> Result<V2Opts, String> {
     for (key, flag) in [
         ("knob_strict", "--knob-strict"),
         ("config_strict", "--config-strict"),
+        ("best_effort", "--best-effort"),
         ("explain", "--explain"),
         ("apply", "--apply"),
         ("allow_respell", "--allow-respell"),
@@ -720,6 +731,15 @@ pub fn opts_from_json(req: &Json) -> Result<V2Opts, String> {
         if flag_on(obj, key)? {
             args.push(flag.into());
         }
+    }
+    match obj.get("policy") {
+        None | Some(Json::Null) => {}
+        Some(Json::String(p)) => match Policy::parse(p) {
+            Some(Policy::BestEffort) => args.push("--best-effort".into()),
+            Some(Policy::Ranked) => {}
+            None => return Err(format!("`policy` is \"ranked\" or \"best_effort\", not \"{p}\"")),
+        },
+        Some(v) => return Err(format!("`policy` takes \"ranked\" or \"best_effort\", not {v}")),
     }
     for (key, flag) in [
         ("alternatives", "--alternatives"),
@@ -1374,6 +1394,7 @@ fn candidate_json(program: &Program, sites: &Sites, c: &CandidateReport) -> Json
             "through_rng": p.through_rng,
             "structural": p.structural,
             "hint_bound": p.hint_bound,
+            "through_const": p.through_const,
         },
         "loaded": c.loaded,
         "eligible": c.eligible.is_ok(),
@@ -1446,6 +1467,7 @@ fn report(
     let sites = Sites::new(program);
     json!({
         "engine": d.engine.map(engine_name).unwrap_or("v2"),
+        "policy": if opts.best_effort { Policy::BestEffort } else { Policy::Ranked }.name(),
         "seed": seed,
         "frames": opts.frames,
         "collateral_weights": opts.collateral.iter().map(|(c, w)| (c.clone(), num(*w))).collect::<serde_json::Map<_, _>>(),
@@ -1524,8 +1546,9 @@ pub fn print_text(r: &Json) {
         Some(n) if n > 0 => format!(" · after {n} frame{}", if n == 1 { "" } else { "s" }),
         _ => String::new(),
     };
+    let policy = if r["policy"].as_str() == Some("best_effort") { " · best effort" } else { "" };
     println!(
-        "engine {} · seed {}{frames} · {} run{}{stopped}",
+        "engine {}{policy} · seed {}{frames} · {} run{}{stopped}",
         r["engine"].as_str().unwrap_or("v2"),
         r["seed"],
         diag["runs"],

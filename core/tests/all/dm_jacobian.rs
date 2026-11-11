@@ -565,7 +565,7 @@ fn state_and_var_paths_are_marked() {
     // On a fresh stack an initializer literal is ordinary; from a live
     // checkpoint that holds the state it is not.
     let program = s.env.get_program(s.pid).unwrap();
-    let live = EligibilityContext { checkpoint_has_state: true };
+    let live = EligibilityContext { checkpoint_has_state: true, ..Default::default() };
     assert!(eligibility(program, s.param(four), &ParamFilter::default(), live).edit.is_err());
     assert_eq!(s.eligible(four, &ParamFilter::default()), Ok(()));
 }

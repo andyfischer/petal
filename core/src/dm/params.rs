@@ -94,6 +94,11 @@ pub struct Param {
     pub structural: bool,
     /// Every path to a goal is as a `tunable` bound (`min`/`max`/`step`).
     pub hint_bound: bool,
+    /// Every path to a goal goes through the value of a `const` binding
+    /// (`const X = …`, `let X = const(…)`): a constant the program says is
+    /// fixed. [`Policy::BestEffort`](crate::dm::Policy::BestEffort) never
+    /// moves it ([`EligibilityContext::exclude_const`]).
+    pub through_const: bool,
     /// Written as an argument of the goal's own user-frame call.
     pub in_goal_frame: bool,
     pub origin: CodeOrigin,
@@ -287,6 +292,9 @@ pub struct EligibilityContext {
     /// The checkpoint holds `state` (a live frame). On a fresh stack (the
     /// CLI's) it holds none, and initializer literals are ordinary.
     pub checkpoint_has_state: bool,
+    /// Never move a literal that reaches the goals only through a `const`
+    /// binding ([`Param::through_const`]): the best-effort policy's rule.
+    pub exclude_const: bool,
 }
 
 /// Whether a parameter is measured and whether it may be edited.
@@ -338,6 +346,9 @@ pub fn eligibility(
     }
     if p.hint == Some(Hint::Rigid) {
         return no("declared `rigid`", false);
+    }
+    if p.through_const && ctx.exclude_const {
+        return no("reaches the goal only through a `const` binding", false);
     }
     if p.state_init && ctx.checkpoint_has_state && !has(&ParamSelector::IncludeStateInit) {
         return no("a `state` initializer, which a running program has already used", false);
@@ -416,6 +427,9 @@ mod via {
     pub const BARRIER: u8 = 8;
     pub const STRUCT: u8 = 16;
     pub const HINT_BOUND: u8 = 32;
+    /// Through the value of a `const` binding (`const X = …`,
+    /// `let X = const(…)`).
+    pub const CONST: u8 = 64;
 }
 
 /// Where in the call structure the walk is, for leaving a function by its
@@ -898,6 +912,9 @@ fn walk<'p>(ix: &Index<'p>, starts: &'p [Anchor], focused: bool) -> (HashMap<Ter
             break;
         }
         let Some(t) = ix.term(id) else { continue };
+        // A `const` binding's value term: everything reached past it (the
+        // literal itself, for `const X = 10`) is reached through it.
+        let mask = if t.is_const { mask | via::CONST } else { mask };
         let chain = chains[ai as usize];
         let mut next: Vec<(TermId, Ctx, u8, i32, Want<'p>)> = Vec::new();
         let mut go = |to: TermId, c: Ctx, bits: u8, cost: i32, w: Want<'p>| {
@@ -1401,6 +1418,7 @@ fn make_param(
         through_rng: r.all & BARRIER != 0,
         structural: r.all & STRUCT != 0,
         hint_bound: r.all & HINT_BOUND != 0 || ix.hints.bounds.contains(&term),
+        through_const: r.all & CONST != 0,
         in_goal_frame: goal_frames.iter().any(|f| {
             f.file == own.file && f.start.offset <= own.start.offset && own.end.offset <= f.end.offset
         }),

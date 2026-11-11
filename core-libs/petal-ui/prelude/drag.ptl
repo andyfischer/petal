@@ -832,7 +832,7 @@ fn _eval_vary(spec, c)
     let ok = _fn(spec.constraint)
     for attempt in range(15) do
       if !done && tries < 3 then
-        let next = drag_solve_step(vs.vals, [p.x, p.y], [c.ex, c.ey], jac, spec.bounds, scale)
+        let next = gn_step(vs.vals, [p.x, p.y], [c.ex, c.ey], jac, spec.bounds, scale)
         if next == vs.vals then
           done = true
         else

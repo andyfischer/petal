@@ -123,7 +123,7 @@
       "id": "drag_math",
       "title": "Drag Math",
       "group": "core",
-      "doc": "The numeric half of `ui/drag`'s `between` and `vary` (docs/proposals/declarative-dragging.md, P2). The drag engine is Petal code, and a native cannot call a Petal closure, so the speculative runs happen in Petal and only numbers come here:  - `drag_triangulate(points)`: a Delaunay triangulation of `[[x, y], …]`, as `[[i, j, k], …]` (counter-clockwise) — `between` over 3+ targets. - `drag_weights(points, tris, x, y)`: the barycentric weights of `(x, y)` over that triangulation, one per point, clamped to the hull (a point outside is first moved to the nearest point of the hull). With no triangles — 2 points, or all on a line — the weights are the linear projection onto the nearest segment between neighbours on the line. - `drag_solve_step(values, rows, targets, jac, bounds, scale)`: one Gauss-Newton step for `vary`'s levers ([`crate::dm::lever_step`], the DM v2 solver's `goal_step` and `Bound::project`)."
+      "doc": "The numeric half of `ui/drag`'s `between` and `vary` (docs/proposals/declarative-dragging.md, P2) and of the `autodiff` package's `deriv` / `jacobian` / `solve_step` (docs/features/differentiation.md). The drag engine and the package are Petal code, and a native cannot call a Petal closure, so the speculative runs happen in Petal and only numbers come here:  - `drag_triangulate(points)`: a Delaunay triangulation of `[[x, y], …]`, as `[[i, j, k], …]` (counter-clockwise) — `between` over 3+ targets. - `drag_weights(points, tris, x, y)`: the barycentric weights of `(x, y)` over that triangulation, one per point, clamped to the hull (a point outside is first moved to the nearest point of the hull). With no triangles — 2 points, or all on a line — the weights are the linear projection onto the nearest segment between neighbours on the line. - `gn_step(values, rows, targets, jac, bounds, scale)`: one Gauss-Newton step for `vary`'s levers and `solve_step`'s inputs ([`crate::dm::lever_step`], the DM v2 solver's `goal_step` and `Bound::project`). `drag_solve_step` is its old name, kept as an alias for one release. - `fd_column(x, base, samples, opts)`: one finite-difference column, classified by DM v2's rules ([`crate::dm::column_from_samples`]), or the next point to sample."
     },
     {
       "id": "drawing",
@@ -2171,7 +2171,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 709
       }
     },
     {
@@ -2204,7 +2204,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 709
       },
       "aliasOf": "map"
     },
@@ -2246,7 +2246,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 709
       },
       "aliasOf": "map"
     },
@@ -2280,7 +2280,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 709
       },
       "aliasOf": "map"
     },
@@ -3221,7 +3221,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 709
       },
       "aliasOf": "map"
     },
@@ -3992,7 +3992,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 709
       },
       "aliasOf": "map"
     },
@@ -4018,7 +4018,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 709
       },
       "aliasOf": "map"
     },
@@ -4659,7 +4659,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 709
       },
       "aliasOf": "map"
     },
@@ -4693,7 +4693,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 709
       },
       "aliasOf": "map"
     },
@@ -4727,7 +4727,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 709
       },
       "aliasOf": "map"
     },
@@ -4940,7 +4940,7 @@
       "signatures": [],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 709
       },
       "aliasOf": "map"
     },
@@ -4956,7 +4956,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 709
       },
       "aliasOf": "map"
     },
@@ -4990,7 +4990,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 709
       },
       "aliasOf": "map"
     },
@@ -5090,7 +5090,7 @@
       ],
       "source": {
         "file": "core/src/builtins/drag_math.rs",
-        "line": 215
+        "line": 223
       }
     },
     {
@@ -5139,7 +5139,7 @@
       ],
       "source": {
         "file": "core/src/builtins/drag_math.rs",
-        "line": 227
+        "line": 235
       }
     },
     {
@@ -5204,7 +5204,122 @@
       ],
       "source": {
         "file": "core/src/builtins/drag_math.rs",
-        "line": 262
+        "line": 271
+      }
+    },
+    {
+      "name": "gn_step",
+      "category": "drag_math",
+      "group": "core",
+      "arity": 6,
+      "variadic": false,
+      "params": [
+        {
+          "name": "values",
+          "type": "any"
+        },
+        {
+          "name": "rows",
+          "type": "any"
+        },
+        {
+          "name": "targets",
+          "type": "any"
+        },
+        {
+          "name": "jac",
+          "type": "any"
+        },
+        {
+          "name": "bounds",
+          "type": "any"
+        },
+        {
+          "name": "scale",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "values",
+            "type": "any"
+          },
+          {
+            "name": "rows",
+            "type": "any"
+          },
+          {
+            "name": "targets",
+            "type": "any"
+          },
+          {
+            "name": "jac",
+            "type": "any"
+          },
+          {
+            "name": "bounds",
+            "type": "any"
+          },
+          {
+            "name": "scale",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/drag_math.rs",
+        "line": 271
+      },
+      "aliasOf": "drag_solve_step"
+    },
+    {
+      "name": "fd_column",
+      "category": "drag_math",
+      "group": "core",
+      "arity": 4,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        },
+        {
+          "name": "base",
+          "type": "any"
+        },
+        {
+          "name": "samples",
+          "type": "any"
+        },
+        {
+          "name": "opts",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          },
+          {
+            "name": "base",
+            "type": "any"
+          },
+          {
+            "name": "samples",
+            "type": "any"
+          },
+          {
+            "name": "opts",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/drag_math.rs",
+        "line": 386
       }
     },
     {

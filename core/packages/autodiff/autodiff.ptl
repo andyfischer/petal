@@ -1,14 +1,213 @@
-// Package `autodiff` — Forward-mode automatic differentiation: dual numbers (core/src/builtins/autodiff.rs).
+// Package `autodiff` — derivatives and solving by finite differences
+// (docs/features/differentiation.md).
 //
-// A bundled builtin package: the petal runtime registers these natives in
-// every Env, and `import autodiff` puts them in scope — bare (`dual(…)`), qualified
-// (`autodiff.dual(…)`) and as methods (`x.dual(…)`).
+// `deriv`, `jacobian`, `solve_step` and `solve` take a function and call it
+// with its inputs nudged, then measure how its output moved. Every probe
+// runs inside `speculate`, so the function may read and write `state`, emit
+// draw commands or call effectful natives and nothing it does is left
+// behind; when the caller is itself speculating (inside a `ui/drag`
+// candidate rendering, or a `speculate` call), the probes run directly,
+// since the outer call already puts everything back. The numbers go to two
+// natives (core/src/builtins/drag_math.rs): `fd_column`, which classifies a
+// column by direct manipulation v2's rules (smooth, kink, branch flip, step,
+// zero, errored) and asks for the points to sample, and `gn_step`, the
+// Gauss-Newton step `ui/drag`'s `vary` and DM v2 share.
 //
-// Native interface declarations: each `native fn` binds a name to the host
-// native of the same name and gives the checker its parameter names, arity
-// and types. Several declarations of one name are that native's call forms.
-// See docs/usage/ffi.md (Native interfaces).
+// A bundled builtin package: `import autodiff` puts these in scope — bare
+// (`deriv(…)`), qualified (`autodiff.deriv(…)`) and as methods.
+//
+// The dual numbers (`dual`, `value_of`, `deriv_of`) are still here and are
+// to be deprecated (docs/tasks/differentiation-rewrite.md). Their `native fn`
+// declarations bind them to the host natives of the same name; see
+// docs/usage/ffi.md (Native interfaces).
 
 pub native fn dual(value, derivative)
 pub native fn value_of(x)
 pub native fn deriv_of(x)
+
+// `f(arg)`, put back afterwards: under `speculate`, or directly when a
+// speculative call is already running (`speculate` does not nest).
+fn _run(f, arg)
+  if speculating() then f(arg) else speculate(f, arg).value end
+end
+
+// One column: ask `fd_column` for points until it has what it needs.
+// `probe(x)` is the function with the input at `x`; `base` its value at
+// `at`.
+fn _column(probe, at, base, opts)
+  let samples = []
+  let r = fd_column(at, base, samples, opts)
+  while type(r) == "float" do
+    samples = append(samples, [r, probe(r)])
+    r = fd_column(at, base, samples, opts)
+  end
+  r
+end
+
+// The `fd_column` options out of a caller's.
+fn _fd_opts(opts)
+  {h: opts.h ?? nil, mode: opts.mode ?? "central"}
+end
+
+// A number or a list of numbers, as a list.
+fn _rows(v)
+  if type(v) == "list" then v else [v] end
+end
+
+// The Euclidean distance between two lists of numbers.
+fn _dist(a, b)
+  let s = 0.0
+  for i in range(0, len(a)) do
+    let d = a[i] - b[i]
+    s += d * d
+  end
+  sqrt(s)
+end
+
+// The result of `deriv` from a column: `error` only when a probe failed.
+fn _result(c)
+  if c.quality == "errored" then
+    {value: c.value, quality: c.quality, step: c.step, error: c.error}
+  else
+    {value: c.value, quality: c.quality, step: c.step}
+  end
+end
+
+// The derivative of `f` (one number in, a number or a list of numbers out)
+// at `x`, by central differences with `h = 1e-4 * max(|x|, 1)`.
+// `{value, quality, step}`: `quality` says whether `value` can be trusted as
+// a slope ("smooth", "kink", "branch_flip", "step", "zero", "errored"), and
+// `step` is the `h` it was measured with. `opts`: `h`, and `mode`
+// ("central" or "forward").
+pub fn deriv(f, x, opts = {})
+  let x0 = float(x)
+  let base = _run(f, x0)
+  _result(_column(fn(v) _run(f, v) end, x0, base, _fd_opts(opts)))
+end
+
+// The Jacobian and the base value: `{rows, quality, step, base}`.
+fn _jacobian(f, xs, opts)
+  let x0 = map(xs, fn(v) float(v) end)
+  let base = _run(f, x0)
+  let fo = _fd_opts(opts)
+  let cols = for j in range(0, len(x0)) do
+    _column(fn(v) _run(f, set_in(x0, [j], v)) end, x0[j], base, fo)
+  end
+  let n = len(_rows(base))
+  let rows = for i in range(0, n) do
+    for c in cols do _rows(c.value)[i] end
+  end
+  {
+    rows: rows,
+    quality: map(cols, fn(c) c.quality end),
+    step: map(cols, fn(c) c.step end),
+    base: base,
+  }
+end
+
+// The Jacobian of `f` (a list of numbers in, a number or a list of numbers
+// out) at `xs`: `{rows, quality, step}`, where `rows[i][j]` is
+// `d out_i / d in_j` (a number out is one row), and `quality` and `step`
+// have one entry per input. Same options as `deriv`.
+pub fn jacobian(f, xs, opts = {})
+  let j = _jacobian(f, xs, opts)
+  {rows: j.rows, quality: j.quality, step: j.step}
+end
+
+// Clamp `v` into `b`, nil or `[lo, hi]` (either end may be nil).
+fn _bound(v, b)
+  if b == nil then
+    v
+  else
+    let lo = if b[0] == nil then v else max(v, b[0]) end
+    if b[1] == nil then lo else min(lo, b[1]) end
+  end
+end
+
+// Move from `xs` toward `next` by at most `max_step` per input (nil, a
+// number for all, or one per input; nil entries are unlimited), and keep
+// each input in its bounds.
+fn _limit(xs, next, max_step, bounds)
+  for i in range(0, len(xs)) do
+    let cap = if type(max_step) == "list" then max_step[i] else max_step end
+    let d = next[i] - xs[i]
+    let d2 = if cap == nil then d else clamp(d, -abs(cap), abs(cap)) end
+    _bound(xs[i] + d2, if bounds == nil then nil else bounds[i] end)
+  end
+end
+
+// One damped Gauss-Newton step from `xs` toward `f(xs) == target`, with the
+// Jacobian measured as `jacobian` does. A step that does not bring the
+// output closer is halved, up to four times; when none does, `xs` comes back
+// unchanged with `improved: false`. `{xs, residual, improved, stuck,
+// quality}`: `residual` is the distance from `f(xs)` to `target` at the
+// returned `xs`, `stuck` the indices of inputs that do not move the output
+// (quality "zero" or "errored"), and `quality` the Jacobian's, one per
+// input. `opts`: `bounds` (`[[lo, hi], …]`), `max_step` (a number, or one
+// per input), `damping` (the step's scale, default 1), plus `deriv`'s.
+pub fn solve_step(f, xs, target, opts = {})
+  let j = _jacobian(f, xs, opts)
+  let x0 = map(xs, fn(v) float(v) end)
+  let ts = _rows(target)
+  let ys = _rows(j.base)
+  let stuck = []
+  for i in range(0, len(j.quality)) do
+    if j.quality[i] == "zero" || j.quality[i] == "errored" then
+      stuck = append(stuck, i)
+    end
+  end
+  // A stuck column is not divided by: its sensitivities count as 0.
+  let jac = for row in j.rows do
+    for k in range(0, len(row)) do
+      if j.quality[k] == "zero" || j.quality[k] == "errored" then 0.0 else row[k] end
+    end
+  end
+  let bounds = opts.bounds ?? nil
+  let r0 = _dist(ys, ts)
+  let out = {xs: x0, residual: r0, improved: false, stuck: stuck, quality: j.quality}
+  let scale = opts.damping ?? 1.0
+  let done = false
+  for attempt in range(0, 5) do
+    if !done then
+      let next = _limit(x0, gn_step(x0, ys, ts, jac, bounds, scale), opts.max_step ?? nil, bounds)
+      if next == x0 then
+        done = true
+      else
+        let r = _dist(_rows(_run(f, next)), ts)
+        if r < r0 then
+          out.xs = next
+          out.residual = r
+          out.improved = true
+          done = true
+        end
+      end
+      scale *= 0.5
+    end
+  end
+  out
+end
+
+// `solve_step` repeated until the residual is at most `tol` (default 1e-6)
+// or `max_iter` steps (default 20) are spent, or a step stops improving.
+// `{xs, residual, improved, stuck, quality, iterations}`, where `improved`
+// says whether any step got closer and the rest are the last step's.
+pub fn solve(f, xs, target, opts = {})
+  let tol = opts.tol ?? 0.000001
+  let max_iter = opts.max_iter ?? 20
+  let r = {xs: map(xs, fn(v) float(v) end), residual: nil, improved: false, stuck: [], quality: []}
+  let improved = false
+  let iterations = 0
+  let done = false
+  for i in range(0, max_iter) do
+    if !done then
+      let s = solve_step(f, r.xs, target, opts)
+      iterations += 1
+      improved = improved || s.improved
+      r = s
+      if s.residual <= tol || !s.improved then
+        done = true
+      end
+    end
+  end
+  {...r, improved: improved, iterations: iterations}
+end

@@ -910,3 +910,32 @@ Recorded 2026-11-10:
 ## Open questions
 
 None at the moment.
+
+## Progress
+
+- **Phase 1 (2026-11-11): the new `autodiff` functions — done.**
+  `core/packages/autodiff/autodiff.ptl` adds `deriv`, `jacobian`,
+  `solve_step` and `solve` (Petal code, beside the dual natives), each probe
+  under `speculate` or direct when `speculating()`. Natives: `gn_step`
+  (renamed from `drag_solve_step`, which stays as an alias; `vary` calls
+  `gn_step`) and `fd_column`, which replays a script's samples through DM's
+  float-column rules: `dm/jacobian.rs`'s `float_column` / `escalate` are now
+  generic over a `ColumnProbe` (DM's run probe, or the replay), exposed as
+  `dm::column_from_samples`. DM's own columns are unchanged (all core DM
+  tests green). A script's `speculate` has no path fingerprint, so without
+  one a kink is re-checked at `h / 10`: a side whose difference does not
+  shrink jumped (`branch_flip`, or `step` when both did), and a gap that
+  shrinks with the step is curvature (`smooth`, e.g. `x * x` at 0, which
+  DM's path-aware rules call a kink). Only a non-number result is
+  `"errored"`; a runtime error in `f` propagates (Petal has no catch).
+  Tests: `test/ptl/autodiff.ptl` (18 cases), `core/tests/all/autodiff.rs`
+  (no emits or state leak across frames), unit tests in `dm/jacobian.rs`.
+  Docs: `features/differentiation.md` rewritten, `Builtins.md` sections,
+  CHANGELOG. Measured (release, `petal bench`, `f` =
+  `(x - 3)^2 + sin(x)`): `f(x)` 0.19 µs, `speculate(f, x).value` 0.47 µs
+  and 3 allocations, `deriv(f, x)` 4.2 µs and 15 allocations (3 runs of
+  `f`, 3 `fd_column` calls). When Phase 0's `speculate_value` lands,
+  `autodiff.ptl`'s `_run` should switch to it.
+  Pre-existing: the doc-snippet test fails on four blocks of this plan
+  (the Design §2 signature block, the two `var x` / `x = …` blocks of
+  Before/After 1, and `// 0.5, exactly`); they are proposals, not run.

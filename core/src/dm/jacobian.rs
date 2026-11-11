@@ -23,6 +23,16 @@
 //! Rows are [`Observable`]s: the goal rows first, then collateral rows
 //! ([`collateral_rows`]), the raw native arguments of every other emit, so
 //! the solver (M3) can tell what else an edit moves.
+//!
+//! The float-column rules (the smooth/kink test, the branch-flip retry and
+//! step escalation) are written once, over a [`ColumnProbe`]: DM's probe
+//! re-runs the program with a literal overridden, and
+//! [`column_from_samples`] replays the samples a script measured, which is
+//! how the `autodiff` package's `deriv` / `jacobian` classify their columns
+//! (the `fd_column` native; docs/features/differentiation.md). A script's
+//! `speculate` has no path fingerprint, so there a kink is told from a jump
+//! and from curvature by one more probe at a tenth of the step
+//! ([`ColumnProbe::sees_paths`]).
 
 use crate::dm::observe::{ObsValue, Observable, PathStep};
 use crate::dm::lever::TermLever;
@@ -293,13 +303,25 @@ pub fn collateral_rows_keeping(
 }
 
 /// One probing run, read.
-struct Sample {
+#[derive(Debug, Clone)]
+pub struct Sample {
     error: Option<String>,
     fingerprint: u64,
     values: Vec<Option<f64>>,
 }
 
 impl Sample {
+    /// A sample a script measured: one value per row, `None` where the row
+    /// was not a finite number. Script samples carry no path fingerprint.
+    pub fn measured(values: Vec<Option<f64>>) -> Sample {
+        Sample { error: None, fingerprint: 0, values }
+    }
+
+    /// A probe that failed with `why`, over `rows` rows.
+    pub fn failed(rows: usize, why: impl Into<String>) -> Sample {
+        Sample { error: Some(why.into()), fingerprint: 0, values: vec![None; rows] }
+    }
+
     fn of(run: &SpecRun, rows: &[Observable]) -> Sample {
         Sample {
             error: run.error.as_ref().map(|e| e.to_string()),
@@ -322,6 +344,59 @@ impl Sample {
 /// Why a probe was not made.
 enum NoRun {
     Budget,
+    /// A replayed probe ([`column_from_samples`]) has no sample at this
+    /// point yet: the script has to measure it.
+    Need(f64),
+}
+
+/// Where a float column's probes come from.
+trait ColumnProbe {
+    /// The sample with the parameter at `x`.
+    fn probe(&mut self, x: f64) -> Result<Sample, NoRun>;
+    /// Whether samples carry a path fingerprint, so that a side that took
+    /// another branch shows as invalid. Without one (a script's samples), a
+    /// kink is checked once more at a tenth of the step, which tells a jump
+    /// (the difference does not shrink) and curvature (the slopes' gap
+    /// shrinks with the step) from a true kink.
+    fn sees_paths(&self) -> bool;
+}
+
+/// DM's probe: a run with the lever `p` set to `x`, as a float.
+struct LeverProbe<'p, 'a, L> {
+    pr: &'p mut Prober<'a>,
+    p: &'p L,
+}
+
+impl<L: TermLever> ColumnProbe for LeverProbe<'_, '_, L> {
+    fn probe(&mut self, x: f64) -> Result<Sample, NoRun> {
+        // Floats are probed as floats even when written as ints elsewhere.
+        let v = match self.p.override_for(x) {
+            OverrideValue::Int(i) => OverrideValue::Num(i as f64),
+            other => other,
+        };
+        self.pr.probe(self.p, v)
+    }
+    fn sees_paths(&self) -> bool {
+        true
+    }
+}
+
+/// A script's probe: the samples it has measured so far, by point.
+struct Replay<'a> {
+    samples: &'a [(f64, Sample)],
+}
+
+impl ColumnProbe for Replay<'_> {
+    fn probe(&mut self, x: f64) -> Result<Sample, NoRun> {
+        self.samples
+            .iter()
+            .find(|(at, _)| at.to_bits() == x.to_bits())
+            .map(|(_, s)| s.clone())
+            .ok_or(NoRun::Need(x))
+    }
+    fn sees_paths(&self) -> bool {
+        false
+    }
 }
 
 /// The measuring context of one [`jacobian`] call.
@@ -370,10 +445,13 @@ fn still(a: &Sample, b: &Sample, goal_rows: usize) -> bool {
 }
 
 /// The measured column and its quality.
-struct Column {
-    values: Vec<f64>,
-    step: f64,
-    quality: ColumnQuality,
+#[derive(Debug, Clone, PartialEq)]
+pub struct Column {
+    /// One derivative per row.
+    pub values: Vec<f64>,
+    /// The step the column was measured with, after any escalation.
+    pub step: f64,
+    pub quality: ColumnQuality,
 }
 
 impl Column {
@@ -445,7 +523,8 @@ pub fn jacobian<L: TermLever>(
         } else if p.is_int() && cur.fract() == 0.0 {
             int_column(&mut prober, p, cur as i64, &base, goal_rows, opts)
         } else {
-            float_column(&mut prober, p, cur, &base, goal_rows, opts)
+            let h = opts.rel_step * cur.abs().max(1.0);
+            float_column(&mut LeverProbe { pr: &mut prober, p }, cur, h, &base, goal_rows, opts)
         };
         let col = match col {
             Ok(col) => col,
@@ -453,6 +532,7 @@ pub fn jacobian<L: TermLever>(
                 jac.budget_exhausted = true;
                 Column::errored(n, "run budget exhausted")
             }
+            Err(NoRun::Need(_)) => unreachable!("a run probe never replays"),
         };
         for (r, v) in col.values.iter().enumerate() {
             jac.d[r * ncols + c] = *v;
@@ -534,11 +614,12 @@ fn respell<L: TermLever>(
     Ok(())
 }
 
-/// A float literal's column (§2.3.2, §2.3.3).
-fn float_column<L: TermLever>(
-    pr: &mut Prober,
-    p: &L,
+/// A float parameter's column at `cur`, first probed at `cur ± h`
+/// (§2.3.2, §2.3.3).
+fn float_column(
+    pr: &mut impl ColumnProbe,
     cur: f64,
+    mut h: f64,
     base: &Sample,
     goal_rows: usize,
     opts: &FdOptions,
@@ -546,20 +627,13 @@ fn float_column<L: TermLever>(
     let rows = base.values.len();
     let scale = cur.abs().max(1.0);
     let cap = 0.1 * scale * (1.0 + 1e-9);
-    let set = |v: f64| p.override_for(v);
-    // Floats are probed as floats even when written as ints elsewhere.
-    let setf = |v: f64| match set(v) {
-        OverrideValue::Int(i) => OverrideValue::Num(i as f64),
-        other => other,
-    };
-    let mut h = opts.rel_step * scale;
-    let plus = pr.probe(p, setf(cur + h))?;
+    let plus = pr.probe(cur + h)?;
     if let Some(e) = &plus.error {
         return Ok(Column::errored(rows, e.clone()));
     }
     let minus = match opts.mode {
         FdMode::Central => {
-            let m = pr.probe(p, setf(cur - h))?;
+            let m = pr.probe(cur - h)?;
             if let Some(e) = &m.error {
                 return Ok(Column::errored(rows, e.clone()));
             }
@@ -576,7 +650,7 @@ fn float_column<L: TermLever>(
                 return Ok(Column { values, step: h, quality });
             }
             // The forward side changed the path: look back instead.
-            let m = pr.probe(p, setf(cur - h))?;
+            let m = pr.probe(cur - h)?;
             if m.valid(base, goal_rows) {
                 return Ok(Column {
                     values: diff(base, &m, h),
@@ -591,9 +665,13 @@ fn float_column<L: TermLever>(
         (true, true) => {
             if still(&plus, base, goal_rows) && still(base, &minus, goal_rows) {
                 // Nothing moved at this step: a step function, or nothing.
-                return escalate(pr, p, cur, base, goal_rows, opts, h, cap, setf);
+                return escalate(pr, cur, base, goal_rows, opts, h, cap);
             }
-            Ok(smooth_or_kink(&plus, base, &minus, h, goal_rows))
+            let col = smooth_or_kink(&plus, base, &minus, h, goal_rows);
+            if pr.sees_paths() || col.quality == ColumnQuality::Smooth {
+                return Ok(col);
+            }
+            blind_kink(pr, cur, h, base, &plus, &minus, goal_rows, col)
         }
         (false, false) => {
             if plus.readable(goal_rows) && minus.readable(goal_rows) {
@@ -612,8 +690,8 @@ fn float_column<L: TermLever>(
             let side = if plus_ok { Side::Right } else { Side::Left };
             for _ in 0..2 {
                 h /= 10.0;
-                let pp = pr.probe(p, setf(cur + h))?;
-                let mm = pr.probe(p, setf(cur - h))?;
+                let pp = pr.probe(cur + h)?;
+                let mm = pr.probe(cur - h)?;
                 match (pp.valid(base, goal_rows), mm.valid(base, goal_rows)) {
                     (true, true) => {
                         if still(&pp, base, goal_rows) && still(base, &mm, goal_rows) {
@@ -660,17 +738,14 @@ fn smooth_or_kink(plus: &Sample, base: &Sample, minus: &Sample, h: f64, goal_row
 /// No movement at the base step: grow it ×10 (up to `cap`) until something
 /// moves. A secant found that way is a `Step`, taken over one more ×10 when
 /// that still fits, so that it averages over at least one jump.
-#[allow(clippy::too_many_arguments)]
-fn escalate<L: TermLever>(
-    pr: &mut Prober,
-    p: &L,
+fn escalate(
+    pr: &mut impl ColumnProbe,
     cur: f64,
     base: &Sample,
     goal_rows: usize,
     opts: &FdOptions,
     mut h: f64,
     cap: f64,
-    setf: impl Fn(f64) -> OverrideValue,
 ) -> Result<Column, NoRun> {
     let rows = base.values.len();
     let mut found: Option<(Vec<f64>, f64)> = None;
@@ -679,8 +754,8 @@ fn escalate<L: TermLever>(
         if h > cap {
             break;
         }
-        let pp = pr.probe(p, setf(cur + h))?;
-        let mm = pr.probe(p, setf(cur - h))?;
+        let pp = pr.probe(cur + h)?;
+        let mm = pr.probe(cur - h)?;
         if !pp.readable(goal_rows) || !mm.readable(goal_rows) {
             break;
         }
@@ -701,4 +776,163 @@ fn escalate<L: TermLever>(
         Some((values, secant_h)) => Column { values, step: secant_h, quality: ColumnQuality::Step { secant_h } },
         None => Column { values: vec![0.0; rows], step: h, quality: ColumnQuality::Zero },
     })
+}
+
+/// A kink found without path fingerprints ([`ColumnProbe::sees_paths`]),
+/// checked at `h / 10`: a side whose difference does not shrink with the
+/// step jumped (another branch), so the column is that of the other side
+/// (`BranchFlip`), or a secant when both did (`Step`); slopes whose gap
+/// shrinks with the step are curvature (`Smooth`, as at the bottom of
+/// `x * x`); otherwise the kink stands.
+#[allow(clippy::too_many_arguments)]
+fn blind_kink(
+    pr: &mut impl ColumnProbe,
+    cur: f64,
+    h: f64,
+    base: &Sample,
+    plus: &Sample,
+    minus: &Sample,
+    goal_rows: usize,
+    kink: Column,
+) -> Result<Column, NoRun> {
+    let rows = base.values.len();
+    let hs = h / 10.0;
+    let pp = pr.probe(cur + hs)?;
+    let mm = pr.probe(cur - hs)?;
+    for s in [&pp, &mm] {
+        if let Some(e) = &s.error {
+            return Ok(Column::errored(rows, e.clone()));
+        }
+    }
+    let at = |s: &Sample, r: usize| s.values[r].unwrap_or(f64::NAN);
+    let b = |r: usize| at(base, r);
+    let tiny = |d: f64, r: usize| d.abs() <= 1e-12 * b(r).abs().max(1.0);
+    // The side's difference from the base did not shrink with the step.
+    let jumped = |big: &Sample, small: &Sample| {
+        !small.readable(goal_rows)
+            || (0..goal_rows).any(|r| {
+                let (db, ds) = (at(big, r) - b(r), at(small, r) - b(r));
+                !tiny(db, r) && ds.abs() > 0.5 * db.abs()
+            })
+    };
+    Ok(match (jumped(plus, &pp), jumped(minus, &mm)) {
+        (false, false) => {
+            // The one-sided slopes' gap: `h · f''` for a smooth row, a
+            // constant at a kink.
+            let gap = |p: &Sample, m: &Sample, h: f64, r: usize| ((at(p, r) - b(r)) - (b(r) - at(m, r))) / h;
+            let curvature = (0..goal_rows).all(|r| {
+                let (big, small) = (gap(plus, minus, h, r), gap(&pp, &mm, hs, r));
+                tiny(big * h, r) || small.abs() <= 0.5 * big.abs()
+            });
+            if curvature { Column { quality: ColumnQuality::Smooth, ..kink } } else { kink }
+        }
+        (true, false) => Column {
+            values: diff(base, &mm, hs),
+            step: hs,
+            quality: ColumnQuality::BranchFlip { side: Side::Left },
+        },
+        (false, true) => Column {
+            values: diff(&pp, base, hs),
+            step: hs,
+            quality: ColumnQuality::BranchFlip { side: Side::Right },
+        },
+        (true, true) => Column {
+            values: diff(plus, minus, 2.0 * h),
+            step: h,
+            quality: ColumnQuality::Step { secant_h: h },
+        },
+    })
+}
+
+/// A float column measured by a script: the rules DM classifies its
+/// columns by ([`float_column`]), replayed over the samples measured so far.
+/// `base` is the function at `cur`, `samples` its value at other points,
+/// and `h` the first step. Returns the column, or `Err(x)`: the point to
+/// measure next (add it to `samples` and ask again). Every row is a goal
+/// row. The samples carry no path, so a kink is checked at a tenth of the
+/// step (see [`ColumnProbe::sees_paths`]).
+pub fn column_from_samples(
+    cur: f64,
+    h: f64,
+    base: &Sample,
+    samples: &[(f64, Sample)],
+    opts: &FdOptions,
+) -> Result<Column, f64> {
+    let rows = base.values.len();
+    if let Some(e) = &base.error {
+        return Ok(Column::errored(rows, e.clone()));
+    }
+    if !base.readable(rows) {
+        return Ok(Column::errored(rows, "the function is not a finite number at the point"));
+    }
+    match float_column(&mut Replay { samples }, cur, h, base, rows, opts) {
+        Ok(col) => Ok(col),
+        Err(NoRun::Need(x)) => Err(x),
+        Err(NoRun::Budget) => unreachable!("a replayed probe has no budget"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Drive [`column_from_samples`] the way the `autodiff` package does:
+    /// measure each point it asks for until it answers. Returns the column
+    /// and how many points were measured.
+    fn drive(f: impl Fn(f64) -> f64, x: f64, h: f64, mode: FdMode) -> (Column, usize) {
+        let opts = FdOptions { mode, ..FdOptions::default() };
+        let base = Sample::measured(vec![Some(f(x)).filter(|v| v.is_finite())]);
+        let mut samples = Vec::new();
+        loop {
+            match column_from_samples(x, h, &base, &samples, &opts) {
+                Ok(col) => return (col, samples.len()),
+                Err(at) => {
+                    assert!(samples.len() < 32, "no answer after {} samples", samples.len());
+                    samples.push((at, Sample::measured(vec![Some(f(at)).filter(|v| v.is_finite())])));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_smooth_function_takes_two_samples_central_one_forward() {
+        let (col, n) = drive(|x| x * x * x, 2.0, 1e-4, FdMode::Central);
+        assert_eq!(col.quality, ColumnQuality::Smooth);
+        assert!((col.values[0] - 12.0).abs() < 1e-6, "{col:?}");
+        assert_eq!(n, 2);
+        let (col, n) = drive(|x| 3.0 * x, 2.0, 1e-4, FdMode::Forward);
+        assert_eq!(col.quality, ColumnQuality::Smooth);
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn without_paths_curvature_kinks_and_jumps_are_told_apart() {
+        // The bottom of a parabola: the one-sided slopes disagree, but their
+        // gap shrinks with the step.
+        let (col, _) = drive(|x| x * x, 0.0, 1e-4, FdMode::Central);
+        assert_eq!(col.quality, ColumnQuality::Smooth);
+        // `abs` at 0: the gap stays.
+        let (col, _) = drive(f64::abs, 0.0, 1e-4, FdMode::Central);
+        assert!(matches!(col.quality, ColumnQuality::Kink { .. }), "{col:?}");
+        // A jump on the left: the right side's slope.
+        let (col, _) = drive(|x| if x < 1.0 { x } else { x + 5.0 }, 1.0, 1e-4, FdMode::Central);
+        assert_eq!(col.quality, ColumnQuality::BranchFlip { side: Side::Right });
+        assert!((col.values[0] - 1.0).abs() < 1e-6, "{col:?}");
+        // `floor` between jumps: escalated to a secant.
+        let (col, _) = drive(f64::floor, 0.97, 1e-4, FdMode::Central);
+        assert!(matches!(col.quality, ColumnQuality::Step { .. }), "{col:?}");
+        // A constant: nothing at any scale.
+        let (col, _) = drive(|_| 7.0, 2.0, 1e-4, FdMode::Central);
+        assert_eq!(col.quality, ColumnQuality::Zero);
+        // `sqrt` at 0: the left side is not a number, so the right side's.
+        let (col, _) = drive(f64::sqrt, 0.0, 1e-4, FdMode::Central);
+        assert_eq!(col.quality, ColumnQuality::BranchFlip { side: Side::Right });
+    }
+
+    #[test]
+    fn a_failed_base_is_errored_without_samples() {
+        let base = Sample::failed(1, "boom");
+        let col = column_from_samples(1.0, 1e-4, &base, &[], &FdOptions::default()).unwrap();
+        assert_eq!(col.quality, ColumnQuality::Errored("boom".into()));
+    }
 }

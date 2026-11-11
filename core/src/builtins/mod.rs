@@ -668,7 +668,15 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // solver. Each reads only its arguments. Append-only.
     table.register("drag_triangulate", drag_math::native_drag_triangulate, NativeEffects::CONST);
     table.register("drag_weights", drag_math::native_drag_weights, NativeEffects::CONST);
-    table.register("drag_solve_step", drag_math::native_drag_solve_step, NativeEffects::CONST);
+    table.register("drag_solve_step", drag_math::native_gn_step, NativeEffects::CONST);
+
+    // The numeric half of the `autodiff` package (docs/features/differentiation.md):
+    // `gn_step` is `drag_solve_step` under its neutral name (the old one
+    // stays, an alias, for one release), and `fd_column` classifies one
+    // finite-difference column by DM v2's rules. Each reads only its
+    // arguments. Append-only.
+    table.register("gn_step", drag_math::native_gn_step, NativeEffects::CONST);
+    table.register("fd_column", drag_math::native_fd_column, NativeEffects::CONST);
 
     // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
     // ids they were just given.
@@ -823,6 +831,7 @@ mod effect_tests {
             "enumerate",
             "exp",
             "f64_array",
+            "fd_column",
             "fill",
             "fixed",
             "flat",
@@ -831,6 +840,7 @@ mod effect_tests {
             "format",
             "fract",
             "get_in",
+            "gn_step",
             "group_by_keys",
             "hash01",
             "hash_int",

@@ -1836,7 +1836,7 @@ print(drag_weights(pts, tris, 50, -40))      // [0.5, 0.5, 0.0]
 print(drag_weights([[0, 0], [100, 0]], [], 25, 30))  // [0.75, 0.25]
 ```
 
-### `drag_solve_step(values, rows, targets, jac, bounds, scale)`
+### `gn_step(values, rows, targets, jac, bounds, scale)`
 
 One Gauss-Newton step of the direct-manipulation solver (`core/src/dm`) for
 the levers `values` (`k` numbers): `rows` are the goals' current values and
@@ -1845,12 +1845,38 @@ and the pointer's), `jac` is `m` rows of `k` sensitivities, `bounds` is nil
 or one `[lo, hi]` (or nil; either end may be nil) per lever, and `scale`
 shortens the step (1 for a full one). Returns the next values, each clamped
 into its bounds. When the levers outnumber the goals, the step moves each in
-proportion to its size.
+proportion to its size. `ui/drag`'s `vary` and the `autodiff` package's
+`solve_step` take their steps through it.
 
 ```petal
 // y = 2·v, now 2 at v = 1; the pointer wants y = 10
-print(drag_solve_step([1.0], [2.0], [10.0], [[2.0]], nil, 1))       // [5.0]
-print(drag_solve_step([1.0], [2.0], [10.0], [[2.0]], [[0, 3]], 1))  // [3.0]
+print(gn_step([1.0], [2.0], [10.0], [[2.0]], nil, 1))       // [5.0]
+print(gn_step([1.0], [2.0], [10.0], [[2.0]], [[0, 3]], 1))  // [3.0]
+```
+
+### `drag_solve_step(values, rows, targets, jac, bounds, scale)`
+
+The old name of `gn_step`, kept as an alias for one release.
+
+### `fd_column(x, base, samples, opts)`
+
+One finite-difference column, classified by the direct-manipulation rules
+(`core/src/dm/jacobian.rs`): what `autodiff`'s `deriv` and `jacobian` are
+built on. `base` is the function at `x` (a number or a list of numbers),
+`samples` its values measured so far as `[[x_i, y_i], …]`, and `opts` nil or
+`{h, mode}`. Returns a float, the next point to measure (call again with it
+added to `samples`), or the finished `{value, quality, step}` (see
+[`deriv`](#derivf-x-opts)).
+
+```petal
+let f = fn(x) x * x end
+let samples = []
+let r = fd_column(3.0, f(3.0), samples, nil)
+while type(r) == "float" do
+  samples = append(samples, [r, f(r)])
+  r = fd_column(3.0, f(3.0), samples, nil)
+end
+print(r.quality)   // smooth
 ```
 
 ## Assertions
@@ -1929,40 +1955,83 @@ expect_near(sin(pi()), 0.0, 0.000001, "sin of pi")
 
 Needs `import autodiff`.
 
-The constructor and accessors for dual numbers (forward-mode automatic
-differentiation). How a derivative moves through arithmetic and through the
-other builtins, with worked examples, is in
-[features/differentiation.md](features/differentiation.md). A builtin that
-has no derivative rule raises an error when it is given a dual, so a
-derivative is never dropped without notice.
+Derivatives and solving by finite differences: each function calls `f` with
+its inputs nudged (every call inside [`speculate`](features/speculate.md), so
+nothing `f` writes or draws is left behind) and measures how the output
+moved. `f` returns a number or a list of numbers. The rules for each
+measurement's `quality`, the options and worked examples are in
+[features/differentiation.md](features/differentiation.md).
 
-### `dual(value, derivative)`
+### `deriv(f, x, opts?)`
 
-Creates a dual number from two plain numbers.
+The derivative of `f` at `x` by central differences, with
+`h = 1e-4 * max(abs(x), 1)`. Returns `{value, quality, step}`: `quality` is
+`"smooth"`, `"kink"`, `"branch_flip"`, `"step"`, `"zero"` or `"errored"`
+(the record then has `error`), and `step` is the `h` the value was measured
+with. `opts`: `h`, `mode` (`"central"` or `"forward"`).
 
 ```petal
 import autodiff
-let x = dual(3.0, 1.0)   // value = 3.0, derivative = 1.0
+print(round(deriv(fn(x) x * x end, 3.0).value, 6))   // 6.0
+print(deriv(abs, 0.0).quality)                       // kink
 ```
 
-### `value_of(x)`
+### `jacobian(f, xs, opts?)`
 
-The value part of a dual number, as a float. A plain number comes back as a float.
+The Jacobian of `f` at the list `xs`: `{rows, quality, step}`, with
+`rows[i][j]` the derivative of output `i` by input `j` (a number out is one
+row), and one `quality` and `step` per input. Options as `deriv`.
 
 ```petal
 import autodiff
-value_of(dual(3.0, 1.0))   // 3.0
-value_of(42)                // 42.0
+let j = jacobian(fn(p) [p[0] + p[1], p[0] * p[1]] end, [2.0, 3.0])
+print(j.quality)   // ["smooth", "smooth"]
 ```
 
-### `deriv_of(x)`
+### `solve_step(f, xs, target, opts?)`
 
-The derivative part of a dual number, as a float. `0.0` for a plain number.
+One damped Gauss-Newton step from `xs` toward `f(xs) == target`. Returns
+`{xs, residual, improved, stuck, quality}`: the new inputs (unchanged, with
+`improved: false`, when no step got closer), the distance to `target` there,
+the indices of inputs that do not move the output, and the Jacobian's
+quality per input. `opts`: `bounds` (`[[lo, hi], …]`), `max_step` (a number
+or one per input), `damping` (default `1.0`), and `deriv`'s.
 
 ```petal
 import autodiff
-deriv_of(dual(3.0, 1.0))   // 1.0
-deriv_of(42)                // 0.0
+let r = solve_step(fn(p) [p[0] + p[1], p[0] - p[1]] end, [0.0, 0.0], [3.0, 1.0])
+print(r.xs)   // [2.0, 1.0]
+```
+
+### `solve(f, xs, target, opts?)`
+
+`solve_step` repeated until `residual` is at most `tol` (default `1e-6`),
+`max_iter` steps (default 20) are spent, or a step stops improving. Returns
+`solve_step`'s record (with `improved` true when any step improved) plus
+`iterations`.
+
+```petal
+import autodiff
+let s = solve(fn(a) 200.0 + 80.0 * cos(a[0]) end, [0.6], 240.0)
+print(round(s.xs[0], 4))   // 1.0472
+```
+
+### `dual(value, derivative)`, `value_of(x)`, `deriv_of(x)` (to be deprecated)
+
+Dual numbers, the earlier forward-mode differentiation: still present, to be
+deprecated and then removed (see
+[features/differentiation.md](features/differentiation.md#dual-numbers-to-be-deprecated)).
+`dual` makes a number that carries a derivative through arithmetic and the
+math builtins; `value_of` and `deriv_of` read its two parts as floats (a
+plain number has derivative `0.0`). Use `deriv` instead of
+`deriv_of(f(dual(x, 1.0)))`.
+
+```petal
+import autodiff
+let y = dual(3.0, 1.0) * dual(3.0, 1.0)
+print(value_of(y))   // 9.0
+print(deriv_of(y))   // 6.0
+print(deriv_of(42))  // 0.0
 ```
 
 ## Typed Numeric Arrays

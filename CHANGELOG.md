@@ -274,6 +274,21 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **`autodiff` solves by finite differences: `deriv`, `jacobian`,
+  `solve_step` and `solve`.** Each takes a function and measures it with its
+  inputs nudged, every probe inside `speculate` (or directly when already
+  speculating), so the function may touch `state` or draw. Results are
+  records carrying the direct-manipulation column quality (`"smooth"`,
+  `"kink"`, `"branch_flip"`, `"step"`, `"zero"`, `"errored"`) and the step
+  used; `solve_step` / `solve` take `bounds`, `max_step`, `damping`, `mode`,
+  `tol` and `max_iter` and report `stuck` inputs. Two natives underneath:
+  `fd_column` (DM v2's column rules over a script's samples, shared with
+  `dm::jacobian`) and `gn_step`, the Gauss-Newton step `ui/drag`'s `vary`
+  uses, renamed from `drag_solve_step` (still there as an alias for one
+  release). The dual-number functions are still present, to be deprecated
+  ([guide](docs/features/differentiation.md),
+  [plan](docs/tasks/differentiation-rewrite.md)).
+
 - **`@` declaration annotations**: `@const`, `@tunable` and `@rigid` can be
   written before a declaration, and mean exactly the call around its whole
   initializer, with the declared value as the first argument

@@ -8,6 +8,7 @@
 //! as `static_audit_env.rs` does.
 
 mod annotation_parity;
+mod autodiff;
 mod camera_class;
 mod candidate_state;
 mod capture_lag;

@@ -39,6 +39,16 @@ changes the `100, 100` on line 4. Changing its size would edit the `40` on
 line 3, because that's where the radius actually comes from. The rest of the file
 keeps its formatting; only the numbers change.
 
+The edit is live: as you drag, the predicted change is written into the
+code and the running sketch is reloaded with it, so the canvas shows the
+real program, not a ghost of the shape. When you let go, Petal checks the
+answer by running it, ranks every way it found, and keeps the best. Picking
+another redoes the same drag that way, from the code as it was when you
+pressed. Petal remembers that pick for the rest of the session: the next
+drag prefers the same numbers when they can reach its goal, and ranks as
+usual when they can't. The preference is never written into the source,
+and you can forget it at any time.
+
 ## What can be edited
 
 Petal can edit **any number the shape depends on, through any function**,
@@ -483,7 +493,7 @@ answer or an error.
 
 | Host | Turn it on | Choosing what may change | The edit |
 |---|---|---|---|
-| Garden (`garden petal-ide`) | `Cmd+Shift+D` / `:DragMode` | `:DragAllow`, the candidate picker, gutter hints | Ranked alternatives in a panel; pick one |
+| Garden (`garden petal-ide`) | `Cmd+Shift+D` / `:DragMode` | `:DragAllow`, the candidate picker, gutter hints | Applied live while you drag; ranked alternatives in a panel on release; a pick is remembered (`:DragForget`) |
 | `petal-sdl` | `F9` | Best effort | Written to the file, then hot reloaded |
 | `petal-web-canvas` (`diagram-canvas`) | **Edit Mode** in the sidebar | The lines selected in the page's source editor; none selected (or the editor closed) is best effort | Put in the editor as one undoable change and run; the other alternatives listed to pick from |
 
@@ -509,7 +519,13 @@ checkpoint of each frame (`set_edit_checkpoint`), and answers in JSON:
 lines as the allow set, or best effort when `lines` is `[]`;
 `edit_preview(dx, dy)` is the per-move answer; `edit_finish(dx, dy)` returns
 the alternatives, each with the whole new sketch text, or `{ok: false,
-error}`. The `diagram-canvas` sample app is the reference page
+error}`. For a live drag, `edit_live(dx, dy)` writes the per-move answer
+into the press-time source and hot-reloads it in place (state and drag
+kept), and `run_checkpoint()` draws the frame on screen under it;
+`edit_finish` still verifies from the press-time source, `edit_show` puts
+the chosen text in place, and `edit_choose(k)` applies alternative `k` and
+remembers it as the sticky choice (`edit_preference`,
+`edit_clear_preference`). The `diagram-canvas` sample app is the reference page
 (`examples/custom-apps/diagram-canvas/src/edit-mode.ts`). **Edit Mode**
 freezes the frame loop after one traced frame and lays an overlay over the
 canvas, so the script stops receiving input. Clicking a shape outlines it,
@@ -532,8 +548,12 @@ examples/custom-apps/diagram-canvas` (Playwright, headless Chromium).
   frame's emit trace;
 - `EditSession::open` probes a checkpoint (a fork of the stack before the
   frame ran, with its inputs bound) and opens a `DmSession`; `preview` is the
-  per-move linear answer, `finish` verifies and returns the alternatives (one
-  under `SessionOptions::best_effort()`) or the reason for a refusal;
+  per-move linear answer, `preview_live` the same written into the
+  press-time source for a host to hot-reload under the drag (the release
+  accepts the session's own live text), `finish` verifies and returns the
+  alternatives (one under `SessionOptions::best_effort()`) or the reason for
+  a refusal; `SessionOptions::prefer` is the sticky choice, a soft
+  preference (`DragAlternative::preference` of the last pick);
 - `apply_rewrites_to` / `DragAlternative::apply_to` splice the answer into
   the source text;
 - `hit_test` / `bounds` find the drawn item under a point, and

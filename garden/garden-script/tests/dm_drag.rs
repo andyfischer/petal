@@ -275,6 +275,22 @@ fn a_live_drag_reloads_each_move_and_still_releases() {
     assert_eq!(circle_x(&after[2]), 85, "{edited}");
 }
 
+/// A live move that drags a literal across zero after `-` writes it
+/// parenthesized (`x - (-14)`). That is still a literal patch, not a
+/// recompile, so the release is not stale.
+#[test]
+fn a_live_drag_across_zero_still_releases() {
+    let (mut host, source) = traced("let x = rigid(100)\nclear(0, 0, 0)\ndraw_circle(x - 6, 50, 10, 200, 90, 90)\n");
+    host.begin_drag_v2(1, &DragFilter::default()).unwrap();
+    let live = host.live_drag_v2(20.0, 0.0).unwrap();
+    assert!(live.text.contains("x - (-14)"), "{}", live.text);
+    assert_eq!(circle_x(&cmds(&mut host)[1]), 114);
+    let outcome = host.finish_drag_v2(20.0, 0.0);
+    let rewrites = top(&outcome).to_vec();
+    let (edited, after) = apply(&mut host, &source, &rewrites);
+    assert_eq!(circle_x(&after[1]), 114, "{edited}");
+}
+
 /// Cancelling a live drag takes its edit back: the program runs the
 /// press-time source again.
 #[test]

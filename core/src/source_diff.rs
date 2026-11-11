@@ -1328,7 +1328,33 @@ impl PositionMap {
              (a respelled keyword, added or removed parentheses)"
                 .to_string()
         };
+        // Whether `p[k]` opens parentheses around exactly the literal `span`.
+        let wrapped = |p: &[(&Token, SourceSpan)], k: usize, span: &SourceSpan| {
+            if !matches!(p.get(k), Some((Token::LParen, _)))
+                || p.get(k + 1).is_none_or(|t| t.1.start.offset != span.start.offset)
+            {
+                return false;
+            }
+            let after = p[k + 1..].iter().find(|t| t.1.start.offset >= span.end.offset);
+            matches!(after, Some((Token::RParen, _)))
+        };
         while i < a.len() || j < b.len() {
+            // A changed literal may gain or lose parentheses of its own: a
+            // value dragged across zero after `-` is written `x - (-6)`. The
+            // trees do not record them, so the pair is skipped and the
+            // literal is paired as usual.
+            let (mut close_a, mut close_b) = (false, false);
+            if let Some((old_span, new_span)) = units.get(u) {
+                let ow = wrapped(&a, i, old_span);
+                let nw = wrapped(&b, j, new_span);
+                if ow && !nw {
+                    i += 1;
+                    close_a = true;
+                } else if nw && !ow {
+                    j += 1;
+                    close_b = true;
+                }
+            }
             if let Some((old_span, new_span)) = units.get(u)
                 && i < a.len()
                 && a[i].1.start.offset == old_span.start.offset
@@ -1340,6 +1366,12 @@ impl PositionMap {
                     i += 1;
                 }
                 while j < b.len() && b[j].1.end.offset <= new_span.end.offset {
+                    j += 1;
+                }
+                if close_a {
+                    i += 1;
+                }
+                if close_b {
                     j += 1;
                 }
                 pieces.push(Piece {
@@ -1756,6 +1788,31 @@ mod tests {
     #[test]
     fn an_unparsable_new_source_is_full() {
         assert!(matches!(change("let x = 1\n", "let x = (\n"), SourceChange::Full(_)));
+    }
+
+    #[test]
+    fn a_literal_that_gains_or_loses_its_own_parentheses_is_a_value_change() {
+        // A drag across zero after `-` writes `x - (-6)`, and back again.
+        let v = values("let y = x - 6 + 1\n", "let y = x - (-6) + 1\n");
+        assert_eq!(v.len(), 1);
+        assert!(matches!(v[0].new, Literal::Int(-6)));
+        let v = values("let y = x - (-6) + 1\n", "let y = x - 2 + 1\n");
+        assert!(matches!(v[0].new, Literal::Int(2)));
+        let v = values("draw(x - 6.0, 2)\n", "draw(x - (-6.5), 2)\n");
+        assert_eq!(v.len(), 1);
+        // Positions after the literal still map.
+        let d = diff_source("let y = x - 6 + z\n", "let y = x - (-6) + z\n", ENTRY_FILE);
+        let z_old = SourceSpan {
+            start: SourcePosition { line: 1, column: 17, offset: 16 },
+            end: SourcePosition { line: 1, column: 18, offset: 17 },
+            file: ENTRY_FILE,
+        };
+        assert_eq!(d.map_span(z_old).map(|s| s.start.offset), Some(19));
+        // Parentheses around more than the literal still differ.
+        assert!(matches!(
+            change("let y = x - 6 + 1\n", "let y = (x - 6) + 1\n"),
+            SourceChange::Full(_)
+        ));
     }
 
     #[test]

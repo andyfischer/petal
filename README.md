@@ -2,60 +2,213 @@
 
 Petal is a programming language for creative coding.
 
+It's an experimental
+project that supports new ways of editing code, including: live coding,
+coding by direct manipulation, programs as documents, immediate-mode support,
+and more.
+
+Most languages treat a running program as a black box. In comparison, a running Petal program
+is a living thing that can be poked, inspected, tested and manipulated.
+
 ## Goals
 
-The language goals are: Easy to use, supports live coding, good introspection & debuggability, and
-supports goal-based program manipulation.
+At a high level, the project's goals are:
 
-## Design decisions
+ - Easy to use, batteries-included for creative applications.
+ - Supports live coding.
+ - Supports coding by direct manipulation and other outcome-based coding.
+ - High introspection and debuggability.
+ - Pragmatic instead of principled.
 
-For those goals, the language has these design decisions:
+## Foundational language decisions
 
- - Hybrid functional and imperative. Encourages dataflow based computation with immutable values.
- - Does allows mutable state for practicality. Limited effects.
- - First-class persistent state support with the `state` keyword.
- - Type system with optional type annotations.
- - The runtime VM supports introspection & live editing features including: time-travel debugging, differentiation, provenance tracing, safe speculative execution, and more.
+To achieve those goals, the language design has a few core decisions:
+
+### Pure functional semantics
+
+The language embraces pure functional semantics in order to have safe replayability,
+where the runtime knows how to re-run a program in a way that has no outside effects.
+
+This means:
+ - Most functions are pure.
+ - The runtime understands which functions have effects. Functions with effects do not return values.
+ - Certain functions like `random()` are special-cased and can be replayed deterministically.
+ - Values are immutable.
+ - Most code uses dataflow semantics, without circular references.
+ - The language does pragmatically allow `var` which is a standard variable slot.
+
+Most programs can be traced as a dataflow diagram, which allows for very high program
+introspection.
+
+#### References and research
+
+ - Wadge and Ashcroft, *Lucid, the Dataflow Programming Language* (1985)
+ - Halbwachs, Caspi, Raymond and Pilaud, *The synchronous data flow programming language LUSTRE* (Proceedings of the IEEE, 1991)
+ - Elliott and Hudak, [*Functional Reactive Animation*](http://conal.net/papers/icfp97/) (ICFP 1997)
+ - Czaplicki and Chong, *Asynchronous Functional Reactive Programming for GUIs* (PLDI 2013), the Elm paper
+
+### First-class state declarations
+
+The language has a first-class way of declaring persisted state, using the `state` keyword.
+State values persist across time. This is a foundational feature which enables a lot
+of interesting editing flows, listed in more detail below.
+
+#### References and research
+
+ - React Hooks ([useState](https://overreacted.io/why-do-hooks-rely-on-call-order/))
+ - Jetpack Compose's [positional memoization](https://newsletter.jorgecastillo.dev/p/positional-memoization-in-jetpack)
+
+## Major features
+
+Building on those core design choices, here are some of the end-to-end features that the
+language enables:
+
+### Immediate-mode coding
+
+Immediate-mode is a term coined in game development for writing UIs (also called IMGUI). In this
+approach, the source code looks like a series of imperative function calls, but behind the
+scenes, those calls produce a retained structure that is automatically managed. So instead
+of the author thinking about creating and deleting a tree object to manage a GUI, the
+author just writes calls, and the runtime figures out what structures to create and destroy
+based on that.
+
+Petal has really good support for immediate-mode, supported by the `state` keyword (which enables
+nested calls to have preserved data and stored handles), and also by the smart runtime which
+helps reconcile calls and automatically do diff detection.
+
+#### References and research
+
+ - Casey Muratori, [*Immediate-Mode Graphical User Interfaces*](https://caseymuratori.com/blog_0001) (2005), the talk that named IMGUI
+ - [Dear ImGui](https://github.com/ocornut/imgui), the most widely used immediate-mode UI library
+
+### State management
+
+This section has a few features that are all related to state management. The runtime understands
+which program values should be persisted (with the `state` keyword). With that ability,
+we can build features that transfer state across programs, or freeze and rewind state, or duplicate
+state into multiple runs.
+
+#### Live code editing
+
+With live code editing, you can modify a program and see the update appear immediately as it's running.
+
+This works thanks to `state` declarations.
+When a code change is
+detected, the runtime will extract existing state values, compile the new code, and then
+insert the preserved state into the new program (in a best-effort way). As long as there
+aren't any drastic structural code changes, this approach works well at preserving the
+user's existing session across a code change.
+
+Immediate-mode coding is also helpful for supporting live coding, since programs don't
+need to worry about the lifecycle of initializing or tearing down resources. They
+just declare what should happen and the runtime takes care of the resources.
+
+##### References and research
+
+ - Tanimoto, *VIVA: A Visual Language for Image Processing* (1990), the source of the "levels of liveness"
+ - Bret Victor, [*Learnable Programming*](https://worrydream.com/LearnableProgramming/) (2012)
+ - McDirmid, *Living It Up with a Live Programming Language* (OOPSLA 2007)
+ - Rein, Ramson, Lincke, Hirschfeld and Pape, [*Exploratory and Live, Programming and Coding*](https://arxiv.org/abs/1807.08578) (The Art, Science, and Engineering of Programming, 2019), a survey of liveness across the research
+ - [React Fast Refresh](https://reactnative.dev/docs/fast-refresh)
+
+#### Time travel debugging
+
+With time-travel debugging, the runtime can take snapshots of old program states, and these can be
+restored and replayed later. This is also thanks to `state` declarations and immediate-mode coding.
+
+##### References and research
+
+ - Bil Lewis, [*Debugging Backwards in Time*](https://arxiv.org/abs/cs/0310016) (2003)
+ - Elm's [time-traveling debugger](https://elm-lang.org/news/time-travel-made-easy) (2014)
+ - Dan Abramov, [*Live React: Hot Reloading with Time Travel*](https://www.youtube.com/watch?v=xsSnOQynTHs) (2015)
+
+#### Speculative execution
+
+This feature is enabled by the same state management.
+With speculative execution, we can safely re-run the same program, maybe with slight variations,
+to explore or predict something. The system knows how to freeze and duplicate state,
+so the speculative runs are each isolated.
+
+##### References and research
+
+ - Warth, Ohshima, Kaehler and Kay, [*Worlds: Controlling the Scope of Side Effects*](https://tinlizzie.org/VPRIPapers/tr2011001_final_worlds.pdf) (ECOOP 2011)
+ - Harris, Marlow, Peyton Jones and Herlihy, *Composable Memory Transactions* (PPoPP 2005), whose undo-log approach Petal's speculative execution resembles
+ - Horowitz, Blinn and Heer, *Declarative Dragging* (UIST '26), which renders each candidate state speculatively
+
+### Outcome-based programming
+
+Outcome-based programming is an umbrella term for a few strategies for modifying
+a program's code based on its output.
+
+Usually when modifying code, the author works directly with the source code, and they have to
+use their imagination and a mental model to predict how their code change will
+affect the program's eventual behavior.
+
+With outcome-based programming, we can have edit operations that use the program's actual observed output
+as a reference point. And based on that, the author can express 'desired' or 'goal' outcomes.
+The runtime can then work backwards to resolve those goals against the program's structure,
+and figure out a code modification that satisfies them.
+
+It's not a foolproof technique. There
+are a lot of situations where solving a goal might be ambiguous or unsolvable. In most
+cases there are several possible solutions, so it becomes a back-and-forth process where the author
+needs to give restrictions on which part of the program is eligible to be modified. But
+it generally works pretty well, and often has less cognitive load than traditional programming.
+
+Here are some examples:
+
+#### Differentiable programming
+
+Differentiable programming means treating the program as a directed graph, computing the
+derivative at each element, and then using gradient descent to
+make changes to the program. With this approach, you can specify a "goal" (the value that
+you want your program to output), and then solve how to modify the source code in order
+to reach that goal. This is similar to the backpropagation algorithm used in neural networks.
+
+##### References and research
+
+ - [JAX](https://github.com/jax-ml/jax)
+ - [PyTorch](https://pytorch.org/)
+ - Swift for TensorFlow
+ - Baydin, Pearlmutter, Radul and Siskind, [*Automatic Differentiation in Machine Learning: a Survey*](https://arxiv.org/abs/1502.05767) (JMLR 2018)
+
+#### Programming by direct manipulation
+
+In this feature, the author interacts with the running program, often by clicking and dragging
+objects, and the runtime translates the drag gesture into a change to the source code.
+
+For example, dragging a circle on the canvas rewrites the numbers passed to the
+`draw_circle` call that drew it.
+Only literal values change; the rest of the file keeps its formatting
+and comments.
+
+This overlaps with differentiable programming since one way to implement this is to run
+a backpropagation pass every time the user does a mouse drag movement. But the *Declarative Dragging*
+paper also showed that you don't need differentiation to implement this.
+
+##### References and research
+
+ - Bret Victor, [*Inventing on Principle*](https://vimeo.com/906418692) (2012)
+ - Horowitz, Blinn and Heer, *Declarative Dragging* (UIST '26)
+ - Chugh, Hempel, Spradlin and Albers, [*Programmatic and Direct Manipulation, Together at Last*](https://arxiv.org/abs/1507.02988) (PLDI 2016), the Sketch-n-Sketch paper
+ - Shneiderman, *Direct Manipulation: A Step Beyond Programming Languages* (IEEE Computer, 1983)
+
+### Provenance
+
+Provenance means looking at a value and answering the question, "where did this value come from?".
+When a program is represented as a dataflow graph, it's straightforward to find an output's
+provenance. This helps with introspection and debuggability.
+
+#### References and research
+
+ - Ko and Myers, *Designing the Whyline: A Debugging Interface for Asking Questions about Program Behavior* (CHI 2004), which answers "why did" and "why didn't" questions about a run
+ - Weiser, *Program Slicing* (ICSE 1981), on finding the parts of a program that a value depends on
+ - Perera, Acar, Cheney and Levy, *Functional Programs that Explain Their Work* (ICFP 2012)
+ - Buneman, Khanna and Tan, *Why and Where: A Characterization of Data Provenance* (ICDT 2001)
 
 ## Project status
 
 This project is in an early, experimental phase. Large backwards-incompatible changes are still happening. Stability not guaranteed.
-
-### Related work
-
-A few references to existing work that Petal is inspired by:
-
- - **Dataflow and reactive languages:** [Lucid](https://en.wikipedia.org/wiki/Lucid_(programming_language)),
-   [Lustre](https://en.wikipedia.org/wiki/Lustre_(programming_language)), LabVIEW, and
-   FRP (Elm, signal graphs).
- - **Differentiable programming:** [JAX](https://github.com/jax-ml/jax),
-   [PyTorch](https://pytorch.org/), Swift for TensorFlow.
- - **Live coding and hot reloading:** [Sonic Pi](https://sonic-pi.net/),
-   [Tidal](https://tidalcycles.org/), Extempore; Smalltalk images, Erlang hot swap,
-   [React Fast Refresh](https://reactnative.dev/docs/fast-refresh).
- - **State keyed by control flow:** React Hooks ([useState](https://overreacted.io/why-do-hooks-rely-on-call-order/))
-   and Jetpack Compose's [positional memoization](https://newsletter.jorgecastillo.dev/p/positional-memoization-in-jetpack).
-
-## Quick language example
-
-```petal
-fn square(x)
-  x * x
-end
-
-// Persistent state: one slot per call path, kept across runs and hot reloads
-fn counter()
-  state count = 0
-  count += 1
-  count
-end
-
-let name = "Petal"
-print([1, 2, 3] |> map(square))   // [1, 4, 9]
-print("hello, {name}!")            // hello, Petal!
-```
-
-See the [Language Guide](docs/language-guide.md) for the full tour.
 
 ## Install
 
@@ -72,8 +225,6 @@ This puts `petal` in `~/.petal/bin` and adds it to your PATH. It needs no
 ```bash
 curl -fsSL https://petal-lang.org/uninstall.sh | sh
 ```
-
-See [docs/dev/releasing.md](docs/dev/releasing.md) for how the binaries are built and published.
 
 ## Build from source
 
@@ -94,13 +245,12 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 
 | Directory | Description |
 |-----------|-------------|
-| [`core/`](core/) | The language implementation: lexer, parser, compiler, IR, evaluator, bytecode VM |
-| [`core-libs/petal-ui/`](core-libs/petal-ui/README.md) | Helper library that implements user-interaction primitives |
-| [`core-libs/petal-query/`](core-libs/petal-query/README.md) | Helper library that implements asynchronous data fetching |
-| [`core-libs/gpp/`](core-libs/gpp/) | Wire definition of the Garden Pane Protocol, shared by Garden and its clients |
-| [`core-runtime/`](core-runtime/README.md) | Shared libraries written in Petal |
-| [`integrations/`](integrations/) | Native bindings for Petal |
-| [`garden/`](garden/README.md) | Text editor and IDE built for Petal |
+| [`core/`](core/) | The core language implementation: lexer, parser, compiler, IR, bytecode VM |
+| [`cli/`](cli/) | The `petal` command-line tool |
+| [`core-libs/`](core-libs/) | Standard native libraries for a few tasks including UI, asynchronous data, and package management |
+| [`core-runtime/`](core-runtime/README.md) | Standard libraries written in Petal |
+| [`integrations/`](integrations/) | A few native hosts for using Petal in real programs, including: SDL desktop, web HTML, web canvas, and the C bridge |
+| [`garden/`](garden/README.md) | Text editor and IDE built with and for Petal |
 | [`examples/`](examples/README.md) | Collection of runnable examples |
 | [`docs/`](docs/README.md) | Documentation |
 | [`editor-support/`](editor-support/README.md) | Files for IDEs, syntax definitions, etc. |
@@ -125,43 +275,6 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 
 The [documentation index](docs/README.md) lists everything, grouped into
 syntax, features, usage and internals.
-
-## Building a full app with Petal
-
-The repo comes with "integrations" and "apps", which come together in layers:
-
-```
-Petal Core  →  Integrations  →  Apps
-```
-
-### Core
-
-"Petal Core" is the core Rust based language implementation in `core/` which includes the compiler, runtime, type checker, and more.
-
-### Integrations
-
-An **integration** is a binding of Petal script execution to a native platform. These can be used as part of building a full application.
-
-The repo contains:
-
-  | Integration | Description |
-  |-------------|-------------|
-  | [petal-desktop-sdl](integrations/petal-desktop-sdl/README.md) | SDL2 desktop host with hot reload. See the [game dev guide](integrations/petal-desktop-sdl/docs/game-dev-guide.md) and [agent protocol](integrations/petal-desktop-sdl/docs/agent-protocol.md) |
-  | [petal-web-html](integrations/petal-web-html/README.md) | WebAssembly host that loads Petal and renders to HTML / DOM |
-  | [petal-web-canvas](integrations/petal-web-canvas/README.md) | WebAssembly host that loads Petal and renders graphics to a canvas |
-  | [petal-c-bridge](integrations/petal-c-bridge/README.md) | C ABI and C++20 wrapper for embedding Petal. See [embedding-c.md](docs/usage/embedding-c.md) |
-
-### Apps
-
-An "app" is a full runnable application that loads Petal source and does something with it.
-
-  | App | Built with | Description |
-  |-----|----------|-------------|
-  | [Garden](garden/README.md) | petal-ui | IDE and text editor built for Petal |
-  | [diagram-canvas](examples/custom-apps/diagram-canvas/README.md) | petal-web-canvas | Diagram visualization with a live source editor |
-  | [petal-fps](examples/custom-apps/petal-fps/README.md) | petal-desktop-sdl | Rust + Petal 3D first-person experiment with a software rasterizer |
-  | [petal-fantasy-nes](examples/custom-apps/petal-fantasy-nes/README.md) | petal-desktop-sdl | NES-style fantasy console driven by Petal carts |
-  | [side-scroller](examples/custom-apps/side-scroller/README.md) | petal-desktop-sdl | 2D platformer written almost entirely in Petal |
 
 ## License
 

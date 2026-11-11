@@ -215,6 +215,71 @@ can say which numbers a drag may change, and let Petal work out the values:
   them.
 - **deny** a set: everything else may move.
 
+### Best effort
+
+A host with nowhere to show a list of alternatives, and no source view to
+select lines in (a game window, a document editor, a C++ embedder), asks
+for **best effort** instead: `policy: "best_effort"` on the request,
+`--best-effort` on the command line. It answers with one verified edit or
+an error, and chooses by a fixed rule:
+
+1. **Knobs first.** If the `tunable` and setting literals can reach the
+   goal, only they move. This is a filter, not a preference: a knob wins
+   even over a number written in the drawn shape's own call.
+2. **Never `rigid`, never `const`.** A `rigid(…)` literal never moves (as
+   always), and neither does one that reaches the goal only through a
+   `const` binding (`const SIZE = 16`, `let SIZE = const(16)`). A literal
+   that also reaches the goal some other way is not excluded.
+3. **The cheapest tier, split equally.** Of the rest, the literals with the
+   lowest cost weight move: a number in the shape's own call before a
+   top-level binding, before a function body, before another file, with
+   `var`, `state` and clock penalties as in the ranking. When several tie,
+   each moves by the amount that would produce an equal share of the change
+   on its own. With `let a = 10.0`, `let b = 20.0` and `draw(a + twice(b),
+   …)`, a drag of +20 moves `a` by 10 and `b` by 5. With two goals (x and
+   y of one drag), a literal that moves only x takes x's whole share. If
+   whole numbers can't be split exactly, the remainder goes to one literal.
+4. **Verified, or the next tier.** The edit is checked by a re-run like any
+   other. If the cheapest tier can't reach the goal (an int that steps past
+   it), a dearer tier that can reach it alone is tried, up to three.
+5. **An error when nothing works.** When no literal may move, or no edit
+   reaches the goal, the request fails with the reason, and nothing is
+   written:
+
+   ```
+   $ petal propose-edit --best-effort --channel shapes --emit 0 --value --to 60 rigid.ptl
+   Error: nothing can move the goals: no editable literal moves the goals (line 2: declared `rigid`)
+   $ petal propose-edit --best-effort --channel shapes --emit 0 --value --to 200 sin.ptl
+   Error: no edit reaches the goals: set `a` to 1.0 (line 2); moves nothing else; misses the goal by 57.926
+   ```
+
+   (`sin.ptl` draws `100 + sin(a) * 50.0` with `let a = tunable(0.5, 0.0,
+   1.0)`: the knob is the only thing that moves, and its range tops out
+   short of 200.) A run an `assert` rejected is named in the message too.
+
+In an editor with a line selection, the selection decides instead ("with a
+selection, only those lines; without one, best effort").
+
+Best effort solves fewer goals than the ranked list offers. On the 105
+goals of the examples ladder (`test/ui-corpus/tests/dm_study.rs`,
+`best_effort_vs_ranked`, measured 2026-11-11):
+
+| | Ranked (top alternative) | Best effort |
+|---|---|---|
+| Solved (verified, and the edited program meets the goal after a reload) | 99 | 94 |
+| Solved with the edit the ladder expects | 91 | 64 |
+| No answer (an error) | 1 | 11 |
+
+The 5 goals only the ranking solves are ones where it moves a dearer number
+that best effort's rule passes over: a bounded knob that can't reach the
+goal while a plain literal can (`l07b-fractal-tree-hints`, twice), an
+equal split over whole numbers that ends one pixel off where moving one of
+them alone is exact (`l08-flex-row`, `big-server-monitoring`), and a goal with a `deny`
+whose cheapest remaining tier misses (`l10-bar-chart`). Where both solve, best effort
+often spreads the change over more literals (`l04-clock-hand`'s `to-4-oclock`
+moves three numbers instead of `hours` alone), which is why fewer match the
+expected edit.
+
 ### Constraints between literals: `assert`
 
 Some numbers only make sense together: a patrol ends after it starts, a
@@ -440,7 +505,9 @@ takes a JSON request with the CLI flags' fields (`{"channel": "shapes",
 "emit": 0, "native_arg": 1, "by": 25, "deny": ["x"]}`, see
 `opts_from_json`), re-runs the checkpoint speculatively with the host's
 natives (a native whose effect escapes the run is not called), and answers
-with the same document as `propose-edit --json`. C and C++ hosts get it as
+with the same document as `propose-edit --json`. Add `"policy":
+"best_effort"` for one answer or an error ([Best effort](#best-effort)),
+when the app has no list to choose from. C and C++ hosts get it as
 `pb_vm_propose_edit` in the C bridge
 ([ffi.md](../usage/ffi.md#direct-manipulation)).
 

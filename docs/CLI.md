@@ -1986,6 +1986,19 @@ Which literals may move (v2):
   `tunable` that marks a literal, only knobs (settings and `tunable`
   literals) move when they can. Without it, knobs are preferred by cost (one
   weight for both marks, or both together), and the rest are still offered.
+- `--best-effort` (v2) — one answer or an error, for a host that cannot show
+  alternatives or let the author select lines (petal-sdl's edit mode, a C
+  embedder). Knobs move alone when they can reach the goal; a `rigid`
+  literal, or one that reaches the goal only through a `const` binding,
+  never moves; of the rest, the cheapest tier (the same cost weight) moves,
+  and when several literals tie each is moved by the amount that produces an
+  equal share of the change on its own. The answer is verified by a re-run
+  like any other. A goal no edit reaches (`no edit reaches the goals: …;
+  misses the goal by 57.926`), or one no literal can move (`nothing can move
+  the goals: …`), is an error, and with `--apply` nothing is written. The
+  `--json` report says `"policy": "best_effort"`; a JSON request asks for it
+  with `"policy": "best_effort"` (or `"best_effort": true`). See
+  [direct-manipulation.md, "Best effort"](features/direct-manipulation.md#best-effort).
 
 Other options:
 

@@ -910,3 +910,41 @@ Recorded 2026-11-10:
 ## Open questions
 
 None at the moment.
+
+## Progress
+
+### Phase 3a: the best-effort policy in DM v2 (core) — done 2026-11-11
+
+- `Policy::BestEffort` on `DmRequest` (`dm/api/request.rs`); `petal
+  propose-edit --best-effort`; `"policy": "best_effort"` (or
+  `"best_effort": true`) in a JSON request, so MCP `ProposeEdit` (`policy`
+  input), `propose_json` and `pb_vm_propose_edit` all take it. The `--json`
+  report gained `policy` and each candidate's `flags.through_const`.
+- Knobs are a hard filter when their goal block has full row rank on the
+  goals that ask for a change. `Param::through_const` (a `via::CONST` bit in
+  the discovery walk, set past any term with `is_const`) and
+  `EligibilityContext::exclude_const` exclude a literal reached only through
+  a `const` binding, next to the `rigid` rule.
+- The equal split is `solve::equal_share_step` (`Blend::EqualShare`):
+  `goal_step` with each column's cost its goal-column norm and no
+  collateral, which for one goal gives `J_i Δ_i = r / N` exactly
+  (decision 9) and with several goals gives each literal its own goal's
+  share. It runs through the ordinary verification loop. Two refinements
+  were needed on the ladder: when ints or bounds round every share to
+  nothing, the remainder goes to one literal at a time (least sensitive
+  first); and when the cheapest tier's verified result misses, up to two
+  dearer tiers that reach the goals alone are tried before the error
+  (`BEST_EFFORT_SETS`). Without them best effort solved 82 of 105, then 90.
+- Errors: `DmError::NothingToMove` (no eligible literal, with the reasons)
+  and a new `DmError::Unreachable` (the cheapest try's description: what it
+  set, how far it missed, what rejected it).
+- Tests: the five cases in `core/tests/all/dm_solve.rs`
+  (`best_effort_*`), plus `dm_embed`, `cli_propose_edit_v2`, the C bridge's
+  `propose_tests` and `test/vitest/petal-mcp.test.ts`.
+- `dm_study` with the policy on (`best_effort_vs_ranked`, ignored test; or
+  `DM_STUDY_BEST_EFFORT=1`): of the 105 ladder goals, best effort solves 94
+  (verified, and the hot-reloaded edit meets the goal) against 99 for the
+  ranked policy's top alternative; 64 against 91 with the exact edit the
+  ladder's `expect=` names; 11 against 1 end with no answer. The ladder's
+  ranked outcomes are unchanged. Details in
+  [direct-manipulation.md, "Best effort"](../features/direct-manipulation.md#best-effort).

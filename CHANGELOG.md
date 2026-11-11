@@ -274,6 +274,19 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **Direct manipulation: the best-effort policy.** `petal propose-edit
+  --best-effort`, `policy: "best_effort"` in a JSON request (MCP
+  `ProposeEdit`, `pb_vm_propose_edit`, `propose_json`) and `Policy::BestEffort`
+  on a `DmRequest` answer with one verified edit or an error, for hosts with
+  no list of alternatives or line selection: knobs alone when they reach the
+  goal, never a `rigid` literal or one that reaches the goal only through a
+  `const` binding, the cheapest tier of the rest with the change split
+  equally between tied literals, and `DmError::Unreachable` when no edit
+  reaches the goal. The `--json` report gains `policy` and each candidate's
+  `flags.through_const`. See
+  [direct-manipulation.md, "Best effort"](docs/features/direct-manipulation.md#best-effort).
+  **Embedders:** `DmError` has a new variant, `Param` a new field
+  (`through_const`) and `EligibilityContext` a new field (`exclude_const`).
 - **`@` declaration annotations**: `@const`, `@tunable` and `@rigid` can be
   written before a declaration, and mean exactly the call around its whole
   initializer, with the declared value as the first argument

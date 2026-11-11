@@ -910,3 +910,26 @@ Recorded 2026-11-10:
 ## Open questions
 
 None at the moment.
+
+## Progress
+
+### Phase 0 (A): done 2026-11-11
+
+- `vm/speculate.rs` logs the random stream, noise seed, print buffer,
+  counters and output buffers on first write (`SpecSaves`, noted by the
+  `PetalCxt` writers), not on entry; the record is reused between calls
+  (`Stack::speculation_spare`), and the result records share one shape per
+  kind. Empty `emits`/`places` are `Heap::shared_empty_list()` (immutable,
+  so in-place edits copy).
+- `speculate_value(f, ...args)` is a public `core` native beside
+  `speculate` (same rules, returns only the value); `ui_measure` uses it.
+- Tests: `core/tests/all/speculate.rs` unchanged and green; unit tests in
+  `vm/speculate.rs` (an untouched call logs nothing, each touched thing is
+  logged once, counters, `speculate_value`, the shared empty list);
+  `tools/test-examples.ts` (opt vs `--no-opt`) green.
+- Measured (median, release): the Design §4 function's `speculate` fell
+  from 0.000417 to 0.000292 ms/call (3 → 1 allocations), `speculate_value`
+  0.000250 ms (0 allocations), against 0.000167 for the plain call; the
+  ten-card view's overhead fell from 1.7 µs to 0.55 µs. Details in
+  [speculate.md, Performance](../features/speculate.md#performance); the new
+  benchmark is `test/benchmarks/micro/speculate_pure.ptl`.

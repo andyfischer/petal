@@ -2171,7 +2171,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 711
       }
     },
     {
@@ -2204,7 +2204,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 711
       },
       "aliasOf": "map"
     },
@@ -2246,7 +2246,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 711
       },
       "aliasOf": "map"
     },
@@ -2280,7 +2280,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 711
       },
       "aliasOf": "map"
     },
@@ -3221,7 +3221,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 711
       },
       "aliasOf": "map"
     },
@@ -3992,7 +3992,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 711
       },
       "aliasOf": "map"
     },
@@ -4018,7 +4018,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 711
       },
       "aliasOf": "map"
     },
@@ -4659,7 +4659,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 711
       },
       "aliasOf": "map"
     },
@@ -4693,7 +4693,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 711
       },
       "aliasOf": "map"
     },
@@ -4727,7 +4727,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 711
       },
       "aliasOf": "map"
     },
@@ -4940,7 +4940,7 @@
       "signatures": [],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 711
       },
       "aliasOf": "map"
     },
@@ -4956,7 +4956,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 711
       },
       "aliasOf": "map"
     },
@@ -4990,7 +4990,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 701
+        "line": 711
       },
       "aliasOf": "map"
     },
@@ -5206,6 +5206,20 @@
         "file": "core/src/builtins/drag_math.rs",
         "line": 262
       }
+    },
+    {
+      "name": "speculate_value",
+      "category": "higher-order",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [],
+      "signatures": [],
+      "source": {
+        "file": "core/src/builtins/mod.rs",
+        "line": 711
+      },
+      "aliasOf": "map"
     },
     {
       "name": "Rect",

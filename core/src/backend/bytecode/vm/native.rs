@@ -214,6 +214,7 @@ impl<'a> Vm<'a> {
         // The intrinsics never reach the shared leaf, so they are counted here;
         // everything else is counted once, in `call_native_fn`.
         let speculate_op = nf.intrinsic_speculate == Some(nid)
+            || nf.intrinsic_speculate_value == Some(nid)
             || nf.intrinsic_speculating == Some(nid)
             || nf.intrinsic_speculate_place == Some(nid);
         if callback.is_some()
@@ -225,10 +226,13 @@ impl<'a> Vm<'a> {
         {
             self.profile.record_native(nid.0);
         }
-        // `speculate` and the two natives used inside one (`vm::speculate`).
+        // `speculate`, `speculate_value` and the two natives used inside one
+        // (`vm::speculate`).
         if speculate_op {
             return if nf.intrinsic_speculate == Some(nid) {
                 self.builtin_speculate(args, origin)
+            } else if nf.intrinsic_speculate_value == Some(nid) {
+                self.builtin_speculate_value(args, origin)
             } else if nf.intrinsic_speculating == Some(nid) {
                 self.builtin_speculating(args)
             } else {
@@ -421,6 +425,7 @@ impl<'a> Vm<'a> {
             } else {
                 None
             },
+            speculation: self.stack.speculation.as_deref_mut().map(|s| &mut s.saves),
             key: match self.stack.memo.reissue_key {
                 Some(k) => CallKeySource::Fixed(k),
                 None if self.stack.callback.is_some() => CallKeySource::None,

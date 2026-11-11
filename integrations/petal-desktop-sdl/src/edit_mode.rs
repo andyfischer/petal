@@ -31,8 +31,6 @@ use petal::dm::NoHost;
 use petal::env::Env;
 use petal::execution_context::EmitSite;
 use petal::program::ProgramId;
-use petal::provenance::{self, CallSite};
-use petal::source_map::ENTRY_FILE;
 use petal::stack::StackKey;
 use petal_ui::draw::DrawCommand;
 use petal_ui::edit_mode::{
@@ -269,19 +267,7 @@ fn item_at(tl: &Timeline, x: i32, y: i32) -> Result<(usize, EmitSite), String> {
 /// "`draw_circle` at line 7: draw_circle(x, 100, 20, …)": the call in the
 /// sketch the emit came through, and its source line.
 fn name_call(env: &Env, program_id: ProgramId, origin: &EmitSite) -> Option<String> {
-    let program = env.get_program(program_id)?;
-    let term = provenance::pick_frame(program, &origin.chain, ENTRY_FILE)?;
-    let site = CallSite::resolve(program, term)?;
-    let span = site.span?;
-    let callee = site.callee.as_deref().unwrap_or("call");
-    let text = program
-        .source_map
-        .files
-        .get(span.file.0 as usize)
-        .and_then(|f| f.source.lines().nth(span.start.line.saturating_sub(1) as usize))
-        .map(str::trim)
-        .unwrap_or("");
-    Some(format!("`{callee}` at line {}: {text}", span.start.line))
+    petal_ui::edit_mode::describe_call(env, program_id, origin).map(|c| c.label())
 }
 
 /// Drag the item under (`x`, `y`) by (`dx`, `dy`): a best-effort request

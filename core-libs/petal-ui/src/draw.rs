@@ -65,7 +65,7 @@ pub use crate::text::{
 /// [`DrawOptions::subpixel`]; see [`crate::subpixel`].
 pub use crate::subpixel::{
     FrameCommand, PixelSnap, SubCommand, take_frame_commands, take_frame_commands_for,
-    take_frame_commands_snapped, take_frame_commands_traced,
+    take_frame_commands_snapped, take_frame_commands_snapped_traced, take_frame_commands_traced,
 };
 
 // The natives `register_draw` installs from that module; not re-exported,

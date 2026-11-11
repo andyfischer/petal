@@ -40,7 +40,7 @@ pub mod spec;
 
 pub use api::{
     Alternative, CandidateReport, Collateral, CollateralItem, DmDiagnostics, DmGoal, DmRequest, DmResponse,
-    DmSession, Engine, ExplainLog, FileEdit, GoalTarget, ParamChange, Prefer, Rejection, TriedLiteral,
+    DmSession, Engine, ExplainLog, FileEdit, GoalTarget, ParamChange, Policy, Prefer, Rejection, TriedLiteral,
     apply_edits_multi, program_files,
     propose_edits_v2,
 };
@@ -74,6 +74,9 @@ pub enum DmError {
     NothingToMove { why: String },
     /// Edits could not be applied.
     Edit(String),
+    /// Under [`Policy::BestEffort`], no verified edit reaches the goals;
+    /// `why` says how close the best try came, and what rejected it.
+    Unreachable { why: String },
 }
 
 impl std::fmt::Display for DmError {
@@ -84,6 +87,7 @@ impl std::fmt::Display for DmError {
             DmError::BadObservable(e) => write!(f, "{e}"),
             DmError::NothingToMove { why } => write!(f, "nothing can move the goals: {why}"),
             DmError::Edit(e) => write!(f, "{e}"),
+            DmError::Unreachable { why } => write!(f, "no edit reaches the goals: {why}"),
         }
     }
 }

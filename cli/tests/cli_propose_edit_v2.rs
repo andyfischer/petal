@@ -86,12 +86,13 @@ fn json_shape_is_frozen() {
     assert_eq!(
         keys(&r),
         set(&[
-            "engine", "seed", "frames", "collateral_weights", "goals", "alternatives", "candidates", "diagnostics",
-            "explain", "applied",
+            "engine", "policy", "seed", "frames", "collateral_weights", "goals", "alternatives", "candidates",
+            "diagnostics", "explain", "applied",
         ])
     );
     assert_eq!(r["collateral_weights"], serde_json::json!({}));
     assert_eq!(r["engine"], "v2");
+    assert_eq!(r["policy"], "ranked");
     assert_eq!(r["seed"], 0);
     assert!(r["applied"].is_null());
 
@@ -170,7 +171,7 @@ fn json_shape_is_frozen() {
     );
     assert_eq!(
         keys(&cand["flags"]),
-        set(&["through_var", "through_state", "state_init", "through_rng", "structural", "hint_bound"])
+        set(&["through_var", "through_state", "state_init", "through_rng", "structural", "hint_bound", "through_const"])
     );
     assert_eq!(
         keys(&r["diagnostics"]),
@@ -360,6 +361,38 @@ fn v2_only_flags_are_refused_under_v1() {
     ]);
     assert!(!ok);
     assert!(stderr.contains("unknown selector"), "{stderr}");
+}
+
+#[test]
+fn best_effort_answers_once_or_fails_without_writing() {
+    // `x` and `offset` tie (top-level bindings): +12 is split, 6 each.
+    let path = scratch("best-effort", V1_SKETCH);
+    let p = path.to_str().unwrap();
+    let r = run_json(&["propose-edit", "--json", "--best-effort", "--channel", "shapes", "--emit", "0", "--arg", "1", "--to", "42", p]);
+    assert_eq!(r["policy"], "best_effort");
+    let alts = r["alternatives"].as_array().unwrap();
+    assert_eq!(alts.len(), 1, "{r:#}");
+    assert_eq!(alts[0]["kind"], "best_effort");
+    let mut moved: Vec<String> = alts[0]["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| format!("{}→{}", c["old_text"].as_str().unwrap(), c["new_text"].as_str().unwrap()))
+        .collect();
+    moved.sort();
+    assert_eq!(moved, vec!["10→16", "20→26"]);
+
+    // Out of reach: the bounded knob tops out at 50; `--apply` writes nothing.
+    let src = "import io\nlet x = tunable(20, 0, 40)\npush_output(symbol(\"shapes\"), x + 10)\n";
+    let path = scratch("best-effort-unreachable", src);
+    let p = path.to_str().unwrap();
+    let (stdout, _, ok) =
+        run(&["propose-edit", "--json", "--best-effort", "--apply", "--channel", "shapes", "--emit", "0", "--value", "--to", "90", p]);
+    assert!(!ok);
+    let r: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(r["phase"], "goal");
+    assert!(r["message"].as_str().unwrap().starts_with("no edit reaches the goals"), "{r:#}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), src);
 }
 
 #[test]

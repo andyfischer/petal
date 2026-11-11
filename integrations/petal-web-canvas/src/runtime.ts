@@ -266,6 +266,20 @@ export class PetalCanvas {
     this.resizeCanvas();
   }
 
+  /**
+   * Make the next frame run and repaint even if the frame gate would skip
+   * it (something the runtime cannot see changed: edit mode turned emit
+   * tracing on and needs a traced frame).
+   */
+  invalidate(): void {
+    if (this.runtime && this.stackId !== null) this.runtime.invalidate_frame(this.stackId);
+  }
+
+  /** The draw commands of the frame on screen. */
+  get commands(): DrawCommand[] {
+    return this.lastCommands;
+  }
+
   private resizeCanvas(): void {
     if (!this.canvas) return;
     // Assigning a canvas size clears it, so a frame the gate would otherwise

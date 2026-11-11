@@ -215,6 +215,71 @@ can say which numbers a drag may change, and let Petal work out the values:
   them.
 - **deny** a set: everything else may move.
 
+### Best effort
+
+A host with nowhere to show a list of alternatives, and no source view to
+select lines in (a game window, a document editor, a C++ embedder), asks
+for **best effort** instead: `policy: "best_effort"` on the request,
+`--best-effort` on the command line. It answers with one verified edit or
+an error, and chooses by a fixed rule:
+
+1. **Knobs first.** If the `tunable` and setting literals can reach the
+   goal, only they move. This is a filter, not a preference: a knob wins
+   even over a number written in the drawn shape's own call.
+2. **Never `rigid`, never `const`.** A `rigid(…)` literal never moves (as
+   always), and neither does one that reaches the goal only through a
+   `const` binding (`const SIZE = 16`, `let SIZE = const(16)`). A literal
+   that also reaches the goal some other way is not excluded.
+3. **The cheapest tier, split equally.** Of the rest, the literals with the
+   lowest cost weight move: a number in the shape's own call before a
+   top-level binding, before a function body, before another file, with
+   `var`, `state` and clock penalties as in the ranking. When several tie,
+   each moves by the amount that would produce an equal share of the change
+   on its own. With `let a = 10.0`, `let b = 20.0` and `draw(a + twice(b),
+   …)`, a drag of +20 moves `a` by 10 and `b` by 5. With two goals (x and
+   y of one drag), a literal that moves only x takes x's whole share. If
+   whole numbers can't be split exactly, the remainder goes to one literal.
+4. **Verified, or the next tier.** The edit is checked by a re-run like any
+   other. If the cheapest tier can't reach the goal (an int that steps past
+   it), a dearer tier that can reach it alone is tried, up to three.
+5. **An error when nothing works.** When no literal may move, or no edit
+   reaches the goal, the request fails with the reason, and nothing is
+   written:
+
+   ```
+   $ petal propose-edit --best-effort --channel shapes --emit 0 --value --to 60 rigid.ptl
+   Error: nothing can move the goals: no editable literal moves the goals (line 2: declared `rigid`)
+   $ petal propose-edit --best-effort --channel shapes --emit 0 --value --to 200 sin.ptl
+   Error: no edit reaches the goals: set `a` to 1.0 (line 2); moves nothing else; misses the goal by 57.926
+   ```
+
+   (`sin.ptl` draws `100 + sin(a) * 50.0` with `let a = tunable(0.5, 0.0,
+   1.0)`: the knob is the only thing that moves, and its range tops out
+   short of 200.) A run an `assert` rejected is named in the message too.
+
+In an editor with a line selection, the selection decides instead ("with a
+selection, only those lines; without one, best effort").
+
+Best effort solves fewer goals than the ranked list offers. On the 105
+goals of the examples ladder (`test/ui-corpus/tests/dm_study.rs`,
+`best_effort_vs_ranked`, measured 2026-11-11):
+
+| | Ranked (top alternative) | Best effort |
+|---|---|---|
+| Solved (verified, and the edited program meets the goal after a reload) | 99 | 94 |
+| Solved with the edit the ladder expects | 91 | 64 |
+| No answer (an error) | 1 | 11 |
+
+The 5 goals only the ranking solves are ones where it moves a dearer number
+that best effort's rule passes over: a bounded knob that can't reach the
+goal while a plain literal can (`l07b-fractal-tree-hints`, twice), an
+equal split over whole numbers that ends one pixel off where moving one of
+them alone is exact (`l08-flex-row`, `big-server-monitoring`), and a goal with a `deny`
+whose cheapest remaining tier misses (`l10-bar-chart`). Where both solve, best effort
+often spreads the change over more literals (`l04-clock-hand`'s `to-4-oclock`
+moves three numbers instead of `hours` alone), which is why fewer match the
+expected edit.
+
 ### Constraints between literals: `assert`
 
 Some numbers only make sense together: a patrol ends after it starts, a
@@ -401,6 +466,87 @@ raw arguments, so `--native-arg 2` of `draw_text("…", x, y, color)` is its
 `y`. The goal and filter flags, the text report and the `--json` document
 are the core command's.
 
+## Hosts
+
+Drag-to-edit is an **edit mode** in each host that draws: a mode you turn
+on, not a gesture on the running program. While it is on, the program is
+frozen (its inputs and `state` held), so input never reaches the script and
+every speculative re-run starts from the frame on screen. Clicking a drawn
+item names the call that drew it; dragging it sets a goal on its position,
+and Petal solves for an edit.
+
+Which numbers may change: in a host with a source view, the lines you
+select become the request's allow set (`line:N` selectors, for this session
+only, never written into the source). With nothing selected, or in a host
+with no source view, the request runs [best effort](#best-effort): one
+answer or an error.
+
+| Host | Turn it on | Choosing what may change | The edit |
+|---|---|---|---|
+| Garden (`garden petal-ide`) | `Cmd+Shift+D` / `:DragMode` | `:DragAllow`, the candidate picker, gutter hints | Ranked alternatives in a panel; pick one |
+| `petal-sdl` | `F9` | Best effort | Written to the file, then hot reloaded |
+| `petal-web-canvas` (`diagram-canvas`) | **Edit Mode** in the sidebar | The lines selected in the page's source editor; none selected (or the editor closed) is best effort | Put in the editor as one undoable change and run; the other alternatives listed to pick from |
+
+**petal-sdl.** `F9` turns edit mode on and freezes the timeline at the
+current frame (`F5` and `,` / `.` still scrub). Click a shape: the banner
+names its call and source line (`` `draw_rect` at line 5: draw_rect(60 + i
+* gap, …) ``), and its outline is lit. Drag it: on release the drag runs a
+best-effort request against a re-run of the frozen frame, writes the answer
+to the sketch (or the imported file the number lives in), and the hot reload
+replays the frozen frame through the edit. When no edit reaches the spot
+(every number behind the shape is `rigid`, `const` or doesn't move it), the
+banner shows the reason and nothing is written. The applied edit stays in
+the banner, `z` undoes it (when the file still holds it), and `F9` again
+leaves edit mode and resumes the game. The agent protocol has the same
+operations (`edit_mode`, `edit_pick`, `edit_drag`, `edit_undo`; see
+[petal-sdl's agent-protocol.md](../../integrations/petal-desktop-sdl/docs/agent-protocol.md#edit_mode--edit_pick--edit_drag--edit_undo)).
+
+**petal-web-canvas (`diagram-canvas`).** The wasm runtime keeps an emit
+trace while edit mode is on (`PetalRuntime.set_emit_trace`) and a pre-run
+checkpoint of each frame (`set_edit_checkpoint`), and answers in JSON:
+`edit_pick(x, y)` names the call under the pointer (`callee`, 1-based
+`line`, `bounds`); `edit_begin(index, lines)` opens a drag with the selected
+lines as the allow set, or best effort when `lines` is `[]`;
+`edit_preview(dx, dy)` is the per-move answer; `edit_finish(dx, dy)` returns
+the alternatives, each with the whole new sketch text, or `{ok: false,
+error}`. The `diagram-canvas` sample app is the reference page
+(`examples/custom-apps/diagram-canvas/src/edit-mode.ts`). **Edit Mode**
+freezes the frame loop after one traced frame and lays an overlay over the
+canvas, so the script stops receiving input. Clicking a shape outlines it,
+names its call in the edit panel and selects that line in the editor; widen
+the selection there (any lines, with the editor's own selection) and the
+panel says which lines may change, which the editor marks. Dragging a shape
+runs the request on release: the best answer goes into the editor as one
+change (so one undo takes it back) and runs at once, and with a selection
+the other alternatives are listed to pick from. A refusal shows its reason
+and changes nothing. The selection is the page's: it is never written into
+the source. Its end-to-end test is `npm run test:e2e --workspace
+examples/custom-apps/diagram-canvas` (Playwright, headless Chromium).
+
+**For host authors.** The host-independent half lives in
+`petal_ui::edit_mode` (no native-only dependencies, so it builds for wasm):
+
+- `DragFilter::allow_lines` / `allow_selection` turn a line selection into
+  the allow set;
+- `GoalTarget::at(origins, index, property)` names the grabbed emit from the
+  frame's emit trace;
+- `EditSession::open` probes a checkpoint (a fork of the stack before the
+  frame ran, with its inputs bound) and opens a `DmSession`; `preview` is the
+  per-move linear answer, `finish` verifies and returns the alternatives (one
+  under `SessionOptions::best_effort()`) or the reason for a refusal;
+- `apply_rewrites_to` / `DragAlternative::apply_to` splice the answer into
+  the source text;
+- `hit_test` / `bounds` find the drawn item under a point, and
+  `describe_call` names the call in the sketch that drew it.
+
+A host supplies the checkpoint, a `SpecHost` that installs its providers
+around each speculative run, and the UI. Garden's
+`garden-script/src/panel/dm.rs`, petal-sdl's `src/edit_mode.rs` and
+petal-web-canvas's `rust/src/lib.rs` are its users. Turning emit tracing
+on after frames have run drops the stacks' memo records (a record made
+untraced has no origins to replay), so the first traced frame attributes
+every emit.
+
 ## For AI agents
 
 The same tools are available to AI agents through the dev MCP server, as
@@ -440,7 +586,9 @@ takes a JSON request with the CLI flags' fields (`{"channel": "shapes",
 "emit": 0, "native_arg": 1, "by": 25, "deny": ["x"]}`, see
 `opts_from_json`), re-runs the checkpoint speculatively with the host's
 natives (a native whose effect escapes the run is not called), and answers
-with the same document as `propose-edit --json`. C and C++ hosts get it as
+with the same document as `propose-edit --json`. Add `"policy":
+"best_effort"` for one answer or an error ([Best effort](#best-effort)),
+when the app has no list to choose from. C and C++ hosts get it as
 `pb_vm_propose_edit` in the C bridge
 ([ffi.md](../usage/ffi.md#direct-manipulation)).
 

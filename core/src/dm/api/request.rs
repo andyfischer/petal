@@ -126,6 +126,54 @@ pub enum Prefer {
     ConfigStrict,
 }
 
+/// How a request chooses what to edit
+/// (docs/tasks/differentiation-rewrite.md, Design §3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Policy {
+    /// Rank the verified alternatives and return the best
+    /// `max_alternatives` of them, for a client that lets a person choose
+    /// (Garden's drag mode, `petal propose-edit`).
+    #[default]
+    Ranked,
+    /// One answer or an error, for a host with no way to show alternatives
+    /// or select lines (`policy: "best_effort"`, `--best-effort`):
+    ///
+    /// 1. knobs (`tunable`, settings) are a hard filter when they can reach
+    ///    the goals;
+    /// 2. a literal that reaches the goals only through a `const` binding
+    ///    never moves (nor, as always, a `rigid` one);
+    /// 3. the literals of the cheapest weight tier ([`param_weight`]) that
+    ///    can reach the goals move together, by an equal split of the
+    ///    goals' change ([`Blend::EqualShare`]), verified by re-running;
+    /// 4. a goal no edit reaches is [`DmError::Unreachable`] (no literal at
+    ///    all is [`DmError::NothingToMove`]), and nothing is proposed.
+    ///
+    /// [`param_weight`]: crate::dm::rank::param_weight
+    /// [`Blend::EqualShare`]: crate::dm::solve::Blend::EqualShare
+    /// [`DmError::Unreachable`]: crate::dm::DmError::Unreachable
+    /// [`DmError::NothingToMove`]: crate::dm::DmError::NothingToMove
+    BestEffort,
+}
+
+impl Policy {
+    /// The spelling in requests and reports: `ranked`, `best_effort`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Policy::Ranked => "ranked",
+            Policy::BestEffort => "best_effort",
+        }
+    }
+
+    /// [`name`](Self::name)'s inverse; `best-effort` is accepted too.
+    pub fn parse(s: &str) -> Option<Policy> {
+        match s {
+            "ranked" => Some(Policy::Ranked),
+            "best_effort" | "best-effort" => Some(Policy::BestEffort),
+            _ => None,
+        }
+    }
+}
+
 /// A request (§6.3).
 #[derive(Debug, Clone)]
 pub struct DmRequest {
@@ -157,6 +205,9 @@ pub struct DmRequest {
     /// scales that channel's rows by `W`; a weight below 1 discounts the
     /// channel, 0 ignores it.
     pub collateral_weights: Vec<(String, f64)>,
+    /// How the edit is chosen: ranked alternatives (the default), or
+    /// [`Policy::BestEffort`]'s single answer.
+    pub policy: Policy,
 }
 
 impl Default for DmRequest {
@@ -176,6 +227,7 @@ impl Default for DmRequest {
             explain: false,
             holds: Vec::new(),
             collateral_weights: Vec::new(),
+            policy: Policy::Ranked,
         }
     }
 }

@@ -933,3 +933,125 @@ None at the moment.
   ten-card view's overhead fell from 1.7 µs to 0.55 µs. Details in
   [speculate.md, Performance](../features/speculate.md#performance); the new
   benchmark is `test/benchmarks/micro/speculate_pure.ptl`.
+
+### Phase 3a: the best-effort policy in DM v2 (core) — done 2026-11-11
+
+- `Policy::BestEffort` on `DmRequest` (`dm/api/request.rs`); `petal
+  propose-edit --best-effort`; `"policy": "best_effort"` (or
+  `"best_effort": true`) in a JSON request, so MCP `ProposeEdit` (`policy`
+  input), `propose_json` and `pb_vm_propose_edit` all take it. The `--json`
+  report gained `policy` and each candidate's `flags.through_const`.
+- Knobs are a hard filter when their goal block has full row rank on the
+  goals that ask for a change. `Param::through_const` (a `via::CONST` bit in
+  the discovery walk, set past any term with `is_const`) and
+  `EligibilityContext::exclude_const` exclude a literal reached only through
+  a `const` binding, next to the `rigid` rule.
+- The equal split is `solve::equal_share_step` (`Blend::EqualShare`):
+  `goal_step` with each column's cost its goal-column norm and no
+  collateral, which for one goal gives `J_i Δ_i = r / N` exactly
+  (decision 9) and with several goals gives each literal its own goal's
+  share. It runs through the ordinary verification loop. Two refinements
+  were needed on the ladder: when ints or bounds round every share to
+  nothing, the remainder goes to one literal at a time (least sensitive
+  first); and when the cheapest tier's verified result misses, up to two
+  dearer tiers that reach the goals alone are tried before the error
+  (`BEST_EFFORT_SETS`). Without them best effort solved 82 of 105, then 90.
+- Errors: `DmError::NothingToMove` (no eligible literal, with the reasons)
+  and a new `DmError::Unreachable` (the cheapest try's description: what it
+  set, how far it missed, what rejected it).
+- Tests: the five cases in `core/tests/all/dm_solve.rs`
+  (`best_effort_*`), plus `dm_embed`, `cli_propose_edit_v2`, the C bridge's
+  `propose_tests` and `test/vitest/petal-mcp.test.ts`.
+- `dm_study` with the policy on (`best_effort_vs_ranked`, ignored test; or
+  `DM_STUDY_BEST_EFFORT=1`): of the 105 ladder goals, best effort solves 94
+  (verified, and the hot-reloaded edit meets the goal) against 99 for the
+  ranked policy's top alternative; 64 against 91 with the exact edit the
+  ladder's `expect=` names; 11 against 1 end with no answer. The ladder's
+  ranked outcomes are unchanged. Details in
+  [direct-manipulation.md, "Best effort"](../features/direct-manipulation.md#best-effort).
+
+### Phase 3b part 1: shared edit-mode module + petal-sdl edit mode — done 2026-11-11
+
+- The host-independent half of Garden's drag mode is
+  `petal_ui::edit_mode` (`core-libs/petal-ui/src/edit_mode.rs`, wasm-safe):
+  the plain drag vocabulary (`DragFilter`, `DragSelector`, `DragCandidate`,
+  `DragAlternative`, `DragOutcomeV2`, `SourceRewrite`, `CodeSpan`, …),
+  selection to allow set (`DragFilter::allow_lines` / `allow_selection`,
+  `line:N` selectors), the goal (`GoalTarget::at` from an emit trace,
+  `native_position_args` by native name), the session lifecycle
+  (`EditSession::open` / `preview` / `finish` / `cancel`, with
+  `SessionOptions::best_effort()`), and apply (`apply_rewrites_to`,
+  `DragAlternative::apply_to`). `Env::stack_program` became public for it.
+- Garden is its first user: `garden-script/src/panel/dm.rs` keeps only the
+  checkpoint, its `SpecHost` wrapper and the grabbed command;
+  `panel_trace` re-exports the shared types under their old paths, so
+  garden-app and garden-web are unchanged. `garden-script` tests (including
+  `tests/dm_drag.rs`, 18/18) pass. `tools/dm-mode-integration-test.ts` gives
+  24 passed / 12 failed both before this change (at 7ef8d3cf, the Phase 3a
+  tip) and after it: the 12 failures are pre-existing (01-helper-row's
+  plain drag no longer rewrites `gap`, and the knob/gutter steps that
+  follow from it; 03-fractal-tree's "the root stays").
+- petal-sdl: `F9` toggles edit mode (`src/edit_mode.rs`, state on the
+  `Timeline`), freezing the timeline; a click names the call that drew the
+  item (banner + outline); a drag runs a best-effort request against a
+  checkpoint rebuilt from the recorded frames
+  (`Timeline::checkpoint_for_current`: the previous frame's fork with the
+  frozen frame's input bound), writes the answer (sketch or imported file)
+  and the watcher's hot reload replays the frozen frame; an error is shown
+  and nothing is written; the applied edit and `z undo` show in the
+  timeline overlay; `F9`/`F5` leave and resume. Agent-protocol commands
+  `edit_mode`, `edit_pick`, `edit_drag`, `edit_undo`.
+- Tests: `game_loop::tests::edit_mode_by_scripted_input` (scripted SDL-style
+  input events through the windowed loop's key and edit handling, through
+  the real hot reload), `an_unreachable_drag_writes_nothing`, and
+  `tests/edit_mode_protocol.rs` (the headless binary over stdin).
+- Docs: "Hosts" in `docs/features/direct-manipulation.md`, petal-sdl's
+  README ("Edit mode") and `docs/agent-protocol.md`.
+- Left for part 2 (web-canvas): emit tracing in the wasm host, the mode in
+  diagram-canvas with selection in its source editor
+  (`DragFilter::allow_selection`), and a Playwright test.
+
+### Phase 3b part 2: edit mode in petal-web-canvas / diagram-canvas — done 2026-11-11
+
+- Wasm host (`integrations/petal-web-canvas/rust/src/lib.rs`):
+  `set_emit_trace` (traced drains keep the frame's whole-pixel commands and
+  origins; the sub-pixel drain uses the new
+  `petal_ui::draw::take_frame_commands_snapped_traced`),
+  `set_edit_checkpoint` (a pre-run fork per `reset_and_run`, as Garden's),
+  and JSON entry points `edit_pick`, `edit_begin(index, lines)`,
+  `edit_preview`, `edit_finish`, `edit_cancel`, `edit_drag`. A non-empty
+  line list is the allow set (`DragFilter::allow_lines`, ranked, up to three
+  alternatives); an empty one runs `SessionOptions::best_effort()`. Each
+  alternative carries the whole new sketch text. Loading a program drops the
+  drag, checkpoint and traced frame. Six native unit tests (`cargo test` in
+  `rust/`; `console_error_panic_hook` is now wasm-only so they can run).
+- Shared: `hit_test` / `bounds` moved from petal-sdl's `timeline.rs` into
+  `petal_ui::edit_mode` (re-exported there), plus `describe_call`
+  (`CallLabel`), which petal-sdl's `name_call` now uses.
+- Core fix found on the way: turning emit tracing on after frames had run
+  left memo records made untraced, whose replay attributed emits to nothing
+  (a pick named "a call with no source position"). `Env::enable_emit_trace`
+  now clears the memo of the default context's stacks when it turns tracing
+  on (`emit_trace_turned_on_late_still_attributes_memoized_calls`).
+- diagram-canvas (`examples/custom-apps/diagram-canvas`): an **Edit Mode**
+  sidebar button; `src/edit-mode.ts` freezes the frame loop after one traced
+  frame, lays an overlay canvas over the page canvas (so the script gets no
+  input), outlines and names the clicked call and selects its line in the
+  editor; the editor's non-empty selection is the allow set and is marked
+  (`src/editor.ts`, session only); a drag opens on passing the slop, previews
+  per move, and on release puts the best answer in the editor as one minimal
+  change (one undo) and runs it, listing the others; a refusal shows its
+  reason and changes nothing.
+- Test: `npm run test:e2e --workspace examples/custom-apps/diagram-canvas`
+  (`tests/edit-mode.test.mjs`, Playwright, headless Chromium or system
+  Chrome): click names `draw_circle` at line 5 and selects it; a selection
+  holding nothing that moves the shape is refused with the text unchanged;
+  selecting line 3 moves only `off` and the circle is drawn at the drop
+  point; no selection is best effort with one answer; a `rigid` shape is
+  refused; editor undo takes an edit back. `playwright` is a devDependency
+  of the app.
+- garden-web / the petal-lang.org `/manipulate` gallery: unaffected by the
+  host change (garden-web goes through garden-script, whose types are
+  unchanged; it still builds for wasm). `check-dm-samples.mjs` is green
+  against the currently vendored build; the memo fix reaches it on the next
+  re-vendor.

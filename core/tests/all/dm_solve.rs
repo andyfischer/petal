@@ -17,7 +17,7 @@ use petal::dm::params::{ParamFilter, ParamSelector};
 use petal::dm::rank::KNOB_WEIGHT;
 use petal::dm::spec::{NoHost, SpecConfig, SpecSession};
 use petal::dm::{
-    Alternative, DmError, DmGoal, DmRequest, DmResponse, DmSession, EmitKey, Engine, Observable, Prefer,
+    Alternative, DmError, DmGoal, DmRequest, DmResponse, DmSession, EmitKey, Engine, Observable, Policy, Prefer,
     apply_edits_multi, program_files, propose_edits_v2,
 };
 use petal::env::Env;
@@ -936,5 +936,126 @@ fn a_solve_that_stops_short_is_rounded() {
         r.allow_respell = respell;
         let resp = t.propose(&r);
         assert_eq!(edits(&resp.alternatives[0]), vec!["5→3"], "respell {respell}");
+    }
+}
+
+// ── the best-effort policy (docs/tasks/differentiation-rewrite.md, 3a) ────
+
+fn best_effort(goals: Vec<DmGoal>) -> DmRequest {
+    let mut r = req(goals);
+    r.policy = Policy::BestEffort;
+    r
+}
+
+/// The one answer of a best-effort request, checked end to end.
+fn best_effort_answer(t: &mut T, r: &DmRequest, emit: usize, want: f64) -> Alternative {
+    let resp = t.propose(r);
+    assert_eq!(resp.alternatives.len(), 1, "one answer: {:#?}", resp.alternatives);
+    let a = resp.alternatives[0].clone();
+    assert!(a.verified, "{}", a.description);
+    assert_eq!(a.kind, petal::dm::SubsetKind::BestEffort);
+    assert!(near(t.rerun(&a)[emit][0], want, 0.5), "{}", a.description);
+    a
+}
+
+#[test]
+fn best_effort_knob_wins_over_a_closer_plain_literal() {
+    // `50.0` is in the drawn shape's own call and moves nothing else; the
+    // knob also moves the first circle. The ranking offers both; best
+    // effort answers with the knob alone, since it reaches the goal.
+    let src = "let k = tunable(10.0)\ndraw(k, 0, 5)\ndraw(k + 50.0, 50, 5)\n";
+    let mut t = T::new(src);
+    let ranked = t.propose(&req(vec![DmGoal::to(t.arg(1, 0), 80.0)]));
+    assert!(all_edits(&ranked).contains(&vec!["50.0→70.0".to_string()]), "{:?}", all_edits(&ranked));
+    let r = best_effort(vec![DmGoal::to(t.arg(1, 0), 80.0)]);
+    let a = best_effort_answer(&mut t, &r, 1, 80.0);
+    assert_eq!(edits(&a), vec!["10.0→30.0"]);
+    assert!(a.config_only);
+    // A filter, not a weight: through a `var`, the knob weighs what `50.0`
+    // does (0.5 × 1.5 = 0.75), and still moves alone.
+    let mut t = T::new("var k = tunable(10.0)\ndraw(k + 50.0, 50, 5)\n");
+    let r = best_effort(vec![DmGoal::to(t.arg(0, 0), 80.0)]);
+    let resp = t.propose(&r);
+    let w: Vec<f64> = resp.candidates.iter().map(|c| c.weight).collect();
+    assert_eq!(w, vec![0.75, 0.75], "{:#?}", resp.candidates);
+    let a = best_effort_answer(&mut t, &r, 0, 80.0);
+    assert_eq!(edits(&a), vec!["10.0→30.0"]);
+}
+
+#[test]
+fn best_effort_never_moves_a_const_literal() {
+    for decl in ["const OFF = 30.0", "let OFF = const(30.0)"] {
+        let src = format!("{decl}\nlet b = 20.0\ndraw(OFF + b, 50, 5)\n");
+        let mut t = T::new(&src);
+        let r = best_effort(vec![DmGoal::to(t.arg(0, 0), 80.0)]);
+        let a = best_effort_answer(&mut t, &r, 0, 80.0);
+        assert_eq!(edits(&a), vec!["20.0→50.0"], "{decl}");
+        let resp = t.propose(&r);
+        let off = resp.candidates.iter().find(|c| c.param.value == 30.0).expect("OFF is discovered");
+        assert!(off.param.through_const, "{decl}");
+        assert_eq!(off.eligible, Err("reaches the goal only through a `const` binding"), "{decl}");
+        // The ranked policy does not exclude it.
+        let ranked = t.propose(&req(vec![DmGoal::to(t.arg(0, 0), 80.0)]));
+        let off = ranked.candidates.iter().find(|c| c.param.value == 30.0).unwrap();
+        assert_eq!(off.eligible, Ok(()), "{decl}");
+    }
+    // A literal that also reaches the goal past the `const` is not excluded.
+    let src = "fn twice(v)\n  v * 2.0\nend\nconst A = twice(5.0)\ndraw(A + twice(rigid(10.0)), 50, 5)\n";
+    let mut t = T::new(src);
+    let resp = t.propose(&best_effort(vec![DmGoal::to(t.arg(0, 0), 40.0)]));
+    let two = resp.candidates.iter().find(|c| c.param.value == 2.0).unwrap();
+    assert!(!two.param.through_const);
+    let five = resp.candidates.iter().find(|c| c.param.value == 5.0).unwrap();
+    assert!(five.param.through_const);
+    assert_eq!(edits(&resp.alternatives[0]), vec!["2.0→2.67"]);
+}
+
+#[test]
+fn best_effort_two_tied_literals_each_carry_half() {
+    // `a` and `b` are both top-level bindings (one tier); `b` moves the
+    // output twice as fast. Each carries half of the +20: `a` by 10, `b` by 5.
+    let src = "fn twice(v)\n  v + v\nend\nlet a = 10.0\nlet b = 20.0\ndraw(a + twice(b), 50, 5)\n";
+    let mut t = T::new(src);
+    let r = best_effort(vec![DmGoal::to(t.arg(0, 0), 70.0)]);
+    let a = best_effort_answer(&mut t, &r, 0, 70.0);
+    let mut e = edits(&a);
+    e.sort();
+    assert_eq!(e, vec!["10.0→20.0", "20.0→25.0"], "{}", a.description);
+    // Two goals: each literal takes its own goal's whole share.
+    let src = "let cx = 100.0\nlet cy = 80.0\ndraw(cx, cy, 5)\n";
+    let mut t = T::new(src);
+    let r = best_effort(vec![DmGoal::to(t.arg(0, 0), 130.0), DmGoal::to(t.arg(0, 1), 60.0)]);
+    let a = best_effort_answer(&mut t, &r, 0, 130.0);
+    let mut e = edits(&a);
+    e.sort();
+    assert_eq!(e, vec!["100.0→130.0", "80.0→60.0"]);
+}
+
+#[test]
+fn best_effort_no_eligible_literal_is_an_error_naming_why() {
+    for (src, why) in [
+        ("let a = rigid(30.0)\ndraw(a, 50, 5)\n", "rigid"),
+        ("const A = 30.0\ndraw(A, 50, 5)\n", "const"),
+    ] {
+        let mut t = T::new(src);
+        match t.try_propose(&best_effort(vec![DmGoal::to(t.arg(0, 0), 60.0)])) {
+            Err(DmError::NothingToMove { why: w }) => assert!(w.contains(why), "{src}: {w}"),
+            other => panic!("{src}: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn best_effort_goal_out_of_reach_is_an_error() {
+    // The knob reaches the goal, so only it moves; `sin` over its range
+    // tops out near 142, short of 200.
+    let mut t = T::new("let a = tunable(0.5, 0.0, 1.0)\ndraw(100 + sin(a) * 50.0, 50, 5)\n");
+    match t.try_propose(&best_effort(vec![DmGoal::to(t.arg(0, 0), 200.0)])) {
+        Err(e @ DmError::Unreachable { .. }) => {
+            let msg = e.to_string();
+            assert!(msg.contains("misses the goal"), "{msg}");
+            assert!(msg.starts_with("no edit reaches the goals"), "{msg}");
+        }
+        other => panic!("{other:?}"),
     }
 }

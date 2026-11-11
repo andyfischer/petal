@@ -34,9 +34,17 @@
 use petal::execution_context::EmitSite;
 use petal::program::{Program, TermId};
 use petal::provenance::{pick_frame, ArgKind, CallSite};
-use petal::source_map::{SourceSpan, ENTRY_FILE};
+use petal::source_map::ENTRY_FILE;
 
 use crate::panel::PanelCmd;
+
+// The plain drag vocabulary lives in `petal_ui::edit_mode`, shared with every
+// host that has an edit mode (petal-sdl, the web canvas); Garden re-exports it
+// under its old paths.
+pub use petal_ui::edit_mode::{
+    apply_rewrites_to, CodeSpan, DragAlternative, DragCandidate, DragFilter, DragOutcomeV2, DragProperty,
+    DragSelector, DragStart, SourceRewrite,
+};
 
 /// The call chain a draw command came from — an opaque handle to the runtime's
 /// attribution, resolved to source by
@@ -52,34 +60,6 @@ impl DrawOrigin {
     /// Whether this command was attributed at all.
     pub fn is_empty(&self) -> bool {
         self.0.chain.is_empty()
-    }
-}
-
-/// A source range, in the 0-based line / 0-based column coordinates Garden's
-/// editor uses. (Petal spans are 1-based on both axes; the conversion happens
-/// once, here, so no caller has to remember which convention it holds.)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CodeSpan {
-    pub start_line: usize,
-    pub start_col: usize,
-    pub end_line: usize,
-    pub end_col: usize,
-}
-
-impl CodeSpan {
-    /// Convert a Petal span. Returns `None` for the zero span — the placeholder
-    /// a term with no real source position carries, which would otherwise
-    /// highlight the start of line 1 for no reason.
-    pub(crate) fn from_petal(span: &SourceSpan) -> Option<CodeSpan> {
-        if span.start.line == 0 {
-            return None;
-        }
-        Some(CodeSpan {
-            start_line: span.start.line as usize - 1,
-            start_col: span.start.column.saturating_sub(1) as usize,
-            end_line: span.end.line.max(1) as usize - 1,
-            end_col: span.end.column.saturating_sub(1) as usize,
-        })
     }
 }
 
@@ -274,34 +254,6 @@ pub fn drag_handle(cmd: &PanelCmd, callee: &str, arity: usize) -> Option<DragHan
     }
 }
 
-/// One text replacement a drag resolved to: the runtime's answer to "this shape
-/// should have been *there*".
-///
-/// Mirrors [`petal::direct_manipulation::EditProposal`] in Garden's own
-/// coordinates, minus the term id — a host applies the text and re-traces, it
-/// never re-resolves an id that the edit has already made stale.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SourceRewrite {
-    /// The range to replace, in the editor's 0-based coordinates.
-    pub span: CodeSpan,
-    pub new_text: String,
-    /// The file the range is in when it is not the sketch itself: an
-    /// imported module (a v2 drag can solve through a helper in another
-    /// file). `None` — the sketch, the paired editor's buffer — for every v1
-    /// rewrite.
-    pub file: Option<std::path::PathBuf>,
-    /// The binding this edits, or `None` for a literal written in the call.
-    pub variable: Option<String>,
-    /// Whether other code reads the edited binding — the edit moves more than
-    /// the shape that was grabbed.
-    pub shared: bool,
-    /// The edited binding was declared `config let`: the source itself named it
-    /// a tuning knob.
-    pub config: bool,
-    /// Human-readable summary ("set `offset` to 12 (line 3)").
-    pub description: String,
-}
-
 /// What a drag gesture's goals resolved to.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DragOutcome {
@@ -328,192 +280,6 @@ pub enum DragOutcome {
 // is [`PanelHost::begin_drag_v2`](crate::PanelHost::begin_drag_v2) (mouse-down
 // side), [`preview_drag_v2`](crate::PanelHost::preview_drag_v2) (every move,
 // no runs) and [`finish_drag_v2`](crate::PanelHost::finish_drag_v2) (release).
-
-/// Which literals a v2 drag may move: the client half of disambiguation.
-/// Empty `allow` means the engine's defaults (every user literal the shape
-/// depends on, `config let` and `tunable` preferred); a non-empty one is exact.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct DragFilter {
-    pub allow: Vec<DragSelector>,
-    pub deny: Vec<DragSelector>,
-}
-
-impl DragFilter {
-    /// Whether this is the default filter (no client choice).
-    pub fn is_default(&self) -> bool {
-        self.allow.is_empty() && self.deny.is_empty()
-    }
-}
-
-/// One way to name literals for a [`DragFilter`].
-#[derive(Debug, Clone, PartialEq)]
-pub enum DragSelector {
-    /// A binding by name (`spacing`, or `module.spacing`).
-    Variable(String),
-    /// Any literal on this 0-based line of the sketch's own file.
-    Line(usize),
-    /// Literals in this function's body.
-    Function(String),
-    /// `config let` and `tunable(...)` literals.
-    ConfigOnly,
-}
-
-impl DragSelector {
-    /// Parse the selector syntax of `:DragAllow` / `:DragDeny` and the debug
-    /// server: `name`, `line:N` (1-based, as the gutter shows it),
-    /// `fn:NAME`, or `config` (alias `knob`: every `config let` and
-    /// `tunable` number, one tier).
-    pub fn parse(s: &str) -> Option<DragSelector> {
-        let s = s.trim();
-        if s.is_empty() {
-            return None;
-        }
-        if s == "config" || s == "knob" {
-            return Some(DragSelector::ConfigOnly);
-        }
-        if let Some(n) = s.strip_prefix("line:") {
-            let n: usize = n.trim().parse().ok()?;
-            return (n >= 1).then(|| DragSelector::Line(n - 1));
-        }
-        if let Some(f) = s.strip_prefix("fn:") {
-            let f = f.trim();
-            return (!f.is_empty()).then(|| DragSelector::Function(f.to_string()));
-        }
-        s.chars()
-            .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
-            .then(|| DragSelector::Variable(s.to_string()))
-    }
-
-    /// The selector in the syntax [`parse`](Self::parse) reads.
-    pub fn label(&self) -> String {
-        match self {
-            DragSelector::Variable(v) => v.clone(),
-            DragSelector::Line(l) => format!("line:{}", l + 1),
-            DragSelector::Function(f) => format!("fn:{f}"),
-            DragSelector::ConfigOnly => "config".to_string(),
-        }
-    }
-}
-
-/// One literal the v2 engine found behind the grabbed shape (the candidate
-/// report, §2.7): what a picker lists so the user can say "move this one".
-#[derive(Debug, Clone, PartialEq)]
-pub struct DragCandidate {
-    /// What to call it: the binding's name, else the literal as written.
-    pub label: String,
-    /// The binding it defines, if any.
-    pub variable: Option<String>,
-    /// The function whose body it is written in, if any.
-    pub function: Option<String>,
-    /// The literal's own text range, in the sketch's file; `None` for a
-    /// literal in an imported file.
-    pub span: Option<CodeSpan>,
-    /// Where it is, for display: `None` for the sketch itself.
-    pub file: Option<std::path::PathBuf>,
-    pub value: f64,
-    /// A `config let` knob or a `tunable(...)` literal: preferred.
-    pub config: bool,
-    /// Wrapped in `tunable(...)` (also counted in `config`).
-    pub tunable: bool,
-    /// Wrapped in `rigid(...)`: never moved.
-    pub rigid: bool,
-    /// May the drag move it; `why_not` says why not.
-    pub eligible: bool,
-    pub why_not: Option<String>,
-    /// Its measured effect on the goals, when it was measured: `false` for a
-    /// literal that turned out not to move the shape at all.
-    pub moves: bool,
-    /// Whether it moves the shape horizontally / vertically.
-    pub moves_x: bool,
-    pub moves_y: bool,
-    /// Whether it moves each axis of the gesture's [`DragProperty`] (for a
-    /// position, `[moves_x, moves_y]`; for a color, r, g and b).
-    pub moves_axes: Vec<bool>,
-    /// The selector that names exactly this candidate, for re-asking.
-    pub selector: DragSelector,
-}
-
-/// One way to put the shape where the pointer left it.
-#[derive(Debug, Clone, PartialEq)]
-pub struct DragAlternative {
-    /// The edits, back to front within each file is the caller's job; spans
-    /// are in the source the drag *started* from.
-    pub rewrites: Vec<SourceRewrite>,
-    /// Re-run with the rendered text and found to hit the goals.
-    pub verified: bool,
-    /// Other shapes this moves, measured by the verification run.
-    pub moves_others: usize,
-    /// Some edited literal feeds back through `state` from earlier frames.
-    pub stateful: bool,
-    /// Every edited literal is a `config let` or `tunable`.
-    pub config_only: bool,
-    /// Lower is better.
-    pub score: f64,
-    /// "set `gap` to 14 (line 3); moves 4 other shapes".
-    pub description: String,
-}
-
-/// What a v2 drag resolved to on release.
-#[derive(Debug, Clone, PartialEq)]
-pub enum DragOutcomeV2 {
-    /// Ranked, best first; the first is verified when any is. `candidates`
-    /// is the report a picker shows.
-    Alternatives {
-        alternatives: Vec<DragAlternative>,
-        candidates: Vec<DragCandidate>,
-    },
-    /// Nothing can move, and why.
-    Refused {
-        why: String,
-        candidates: Vec<DragCandidate>,
-    },
-    /// The session no longer matches the running program (it was reloaded
-    /// under the drag), or no drag is open.
-    Stale,
-}
-
-/// What a v2 gesture changes about the grabbed shape. A drag moves its
-/// position; the same engine answers "make it this big" and "make it this
-/// color", by stating goals on the arguments that carry those instead (see
-/// [`PanelHost::begin_adjust_v2`](crate::PanelHost::begin_adjust_v2)).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DragProperty {
-    /// Where it is: axes x, y.
-    Position,
-    /// How big it is: a circle's radius (one axis), a rectangle's or an
-    /// ellipse's width and height, a line's second endpoint, a text's size.
-    Size,
-    /// Its fill or stroke color: axes r, g, b.
-    Color,
-}
-
-impl DragProperty {
-    /// What it is called in a message.
-    pub fn noun(self) -> &'static str {
-        match self {
-            DragProperty::Position => "position",
-            DragProperty::Size => "size",
-            DragProperty::Color => "color",
-        }
-    }
-}
-
-/// What [`PanelHost::begin_drag_v2`](crate::PanelHost::begin_drag_v2) found.
-#[derive(Debug, Clone, PartialEq)]
-pub struct DragStart {
-    /// The raw native arguments a horizontal / vertical drag moves, as the
-    /// baseline run computed them (unrounded: `100.3`, where the drawn
-    /// command says `100`).
-    pub base_x: Vec<f64>,
-    pub base_y: Vec<f64>,
-    /// The baseline values per axis of the gesture's [`DragProperty`]: for a
-    /// position `[base_x, base_y]`, for a size the extents (`[radius]`,
-    /// `[w, h]`), for a color `[[r], [g], [b]]`.
-    pub axes: Vec<Vec<f64>>,
-    pub candidates: Vec<DragCandidate>,
-    /// Speculative runs opening the session took.
-    pub runs: usize,
-}
 
 /// Where a shape's position lives in the raw arguments of the native that
 /// drew it, per axis: `(argument index, field)`, where `field` is `Some("x")`
@@ -648,45 +414,6 @@ impl PanelCmd {
         }
         c
     }
-}
-
-/// Splice `rewrites` (spans in `source`'s 0-based line/char-column
-/// coordinates) into `source`. Rewrites for other files (`file: Some`) are
-/// skipped; overlapping or out-of-range ones are an error, and duplicates
-/// (two goals choosing the same edit) count once.
-pub fn apply_rewrites_to(source: &str, rewrites: &[SourceRewrite]) -> Result<String, String> {
-    // Char offset of the start of each line.
-    let chars: Vec<char> = source.chars().collect();
-    let mut line_starts = vec![0usize];
-    for (i, c) in chars.iter().enumerate() {
-        if *c == '\n' {
-            line_starts.push(i + 1);
-        }
-    }
-    let offset = |line: usize, col: usize| -> Option<usize> {
-        let start = *line_starts.get(line)?;
-        let end = line_starts.get(line + 1).map_or(chars.len(), |n| n - 1);
-        (start + col <= end).then_some(start + col)
-    };
-    let mut spans: Vec<(usize, usize, &str)> = Vec::new();
-    for r in rewrites.iter().filter(|r| r.file.is_none()) {
-        let a = offset(r.span.start_line, r.span.start_col).ok_or("rewrite out of range")?;
-        let b = offset(r.span.end_line, r.span.end_col).ok_or("rewrite out of range")?;
-        if !spans.iter().any(|&(x, y, t)| x == a && y == b && t == r.new_text) {
-            spans.push((a, b, &r.new_text));
-        }
-    }
-    spans.sort_by_key(|&(a, _, _)| std::cmp::Reverse(a));
-    for w in spans.windows(2) {
-        if w[1].1 > w[0].0 {
-            return Err("overlapping rewrites".to_string());
-        }
-    }
-    let mut out = chars;
-    for (a, b, text) in spans {
-        out.splice(a..b, text.chars());
-    }
-    Ok(out.into_iter().collect())
 }
 
 /// The topmost drawn command containing the panel-local point (`x`, `y`), as an

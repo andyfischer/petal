@@ -1201,6 +1201,27 @@ pub fn take_frame_commands_snapped(env: &mut Env) -> Vec<(FrameCommand, PixelSna
         .collect()
 }
 
+/// [`take_frame_commands_snapped`] with each command's call chain as well,
+/// as [`take_frame_commands_traced`] gives it: for a host that both renders
+/// by snap mode and keeps an emit trace (the web canvas in edit mode).
+pub fn take_frame_commands_snapped_traced(env: &mut Env) -> Vec<(FrameCommand, PixelSnap, EmitSite)> {
+    let sym = env.intern_symbol(DRAW_COMMANDS_SYMBOL);
+    let values = env.take_output_buffer(sym);
+    let mut origins = env.take_output_origins(sym);
+    let d = decode_buffer(&values, env.heap());
+    let sites = take_sites(&mut origins, &d.at);
+    let items = compose_items(env, None, d.cmds, d.values, &d.snaps);
+    let heap = env.heap();
+    items
+        .into_iter()
+        .map(|item| {
+            let snap = item.src.as_ref().map(|s| s.snap).unwrap_or_default();
+            let site = site_of(&sites, item.from);
+            (frame_command(item, heap), snap, site)
+        })
+        .collect()
+}
+
 /// [`take_frame_commands`] for a *forked* stack, as
 /// [`take_draw_commands_for`](crate::draw::take_draw_commands_for).
 pub fn take_frame_commands_for(env: &mut Env, stack_id: StackKey) -> Vec<FrameCommand> {

@@ -78,6 +78,7 @@ pub mod draw;
 pub mod draw_segments;
 pub mod draw_wire;
 pub mod drag;
+pub mod edit_mode;
 pub mod frame_core;
 pub mod focus;
 pub mod hit;

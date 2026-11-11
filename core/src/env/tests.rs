@@ -320,6 +320,37 @@ mod call_function_tests {
     /// the frame in the file it is showing — without it, a `draw_*` that a
     /// library wraps in a Petal function always attributes to the library.
     #[test]
+    fn emit_trace_turned_on_late_still_attributes_memoized_calls() {
+        // A host that turns tracing on after some frames (an edit mode) must
+        // not get the memo's replay of a call recorded untraced, which kept
+        // no origins.
+        let mut env = Env::new();
+        let pid = env
+            .load_program(
+                "import io; let s = symbol(\"draw\")\n\
+                 fn shape(x)\n\
+                   push_output(s, x)\n\
+                 end\n\
+                 shape(1)\n",
+            )
+            .unwrap();
+        let stack = env.create_stack(pid).unwrap();
+        let sym = env.intern_symbol("draw");
+        for _ in 0..3 {
+            env.reset_stack(stack).unwrap();
+            env.run(stack).unwrap();
+            let _ = env.take_output_buffer(sym);
+        }
+        env.enable_emit_trace(true);
+        env.reset_stack(stack).unwrap();
+        env.run(stack).unwrap();
+        assert_eq!(env.take_output_buffer(sym).len(), 1);
+        let sites = env.take_output_origins(sym);
+        assert_eq!(sites.len(), 1);
+        assert!(!sites[0].chain.is_empty(), "the replayed emit has its call chain");
+    }
+
+    #[test]
     fn emit_trace_records_the_whole_call_chain() {
         let mut env = Env::new();
         env.enable_emit_trace(true);

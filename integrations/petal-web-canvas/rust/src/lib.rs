@@ -9,17 +9,23 @@
 
 use wasm_bindgen::prelude::*;
 
+use petal::dm::NoHost;
 use petal::env::Env;
+use petal::execution_context::EmitSite;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
 use petal::value::value_to_json;
 
 use petal_ui::draw::{
-    DrawOptions, FrameCommand, PixelSnap, clear_draw_commands, reset_canvas_ids,
-    take_draw_commands, take_draw_commands_for, take_frame_commands_for,
-    take_frame_commands_snapped,
+    DrawCommand, DrawOptions, FrameCommand, PixelSnap, clear_draw_commands, reset_canvas_ids,
+    take_draw_commands, take_draw_commands_for, take_draw_commands_traced,
+    take_frame_commands_for, take_frame_commands_snapped, take_frame_commands_snapped_traced,
 };
 use petal_ui::draw_wire::DrawWire;
+use petal_ui::edit_mode::{
+    DragCandidate, DragFilter, DragOutcomeV2, DragProperty, EditSession, GoalTarget,
+    SessionOptions, SourceRewrite, describe_call, hit_test,
+};
 use petal_ui::input::{
     InputEvent, InputState, bind_dimensions, bind_frame_info, bind_input, bind_time, buttons,
 };
@@ -74,6 +80,19 @@ pub struct PetalRuntime {
     /// were drawn under `pixel_snap(true)`, by index; served by
     /// `draw_pixel_snap_indices`. Empty after any other drain.
     snap_all_indices: Vec<u32>,
+    /// Edit mode (docs/features/direct-manipulation.md, "Hosts"): the frame
+    /// last drained while emit tracing was on, whole-pixel, for hit-testing a
+    /// pointer against what is on screen, and each command's call chain
+    /// (index-aligned). Empty while tracing is off.
+    frame_cmds: Vec<DrawCommand>,
+    frame_origins: Vec<EmitSite>,
+    /// Keep a pre-run fork of the stack (`set_edit_checkpoint`).
+    checkpoint_on: bool,
+    /// The stack as it stood before the frame on screen ran, with that
+    /// frame's inputs bound: a speculative re-run of it draws that frame.
+    checkpoint: Option<StackKey>,
+    /// The drag in progress, between `edit_begin` and `edit_finish`.
+    edit: Option<EditSession>,
 }
 
 #[wasm_bindgen]
@@ -102,6 +121,9 @@ impl PetalRuntime {
     fn build(subpixel: bool) -> PetalRuntime {
         // A Rust panic reaches the page as a bare `RuntimeError: unreachable`;
         // this logs its message and location to the console first.
+        // (Only in the browser: natively, as in this crate's tests, it would
+        // call into a missing JS import and abort.)
+        #[cfg(target_arch = "wasm32")]
         console_error_panic_hook::set_once();
         let mut env = Env::new();
         // The standard petal-ui set: input natives, the 2D draw vocabulary,
@@ -140,6 +162,11 @@ impl PetalRuntime {
             subpixel,
             sub_indices: Vec::new(),
             snap_all_indices: Vec::new(),
+            frame_cmds: Vec::new(),
+            frame_origins: Vec::new(),
+            checkpoint_on: false,
+            checkpoint: None,
+            edit: None,
         }
     }
 
@@ -211,38 +238,19 @@ impl PetalRuntime {
     }
 
     pub fn load_program(&mut self, source: &str) -> Result<u32, JsValue> {
-        let pid = self
-            .env
-            .load_program(source)
-            .map_err(|e| JsValue::from_str(&e))?;
-        self.active_program = Some(pid);
-        Ok(pid.0)
+        self.load_program_inner(source).map_err(|e| JsValue::from_str(&e))
     }
 
     pub fn create_stack(&mut self, program_id: u32) -> Result<u32, JsValue> {
-        let sid = self
-            .env
-            .create_stack(ProgramId(program_id))
-            .map_err(|e| JsValue::from_str(&e))?;
-        self.active_stack = Some(sid);
-        Ok(sid.0)
+        self.create_stack_inner(program_id).map_err(|e| JsValue::from_str(&e))
     }
 
     pub fn run(&mut self, stack_id: u32) -> Result<String, JsValue> {
-        self.prepare_run();
-        let val = self
-            .env
-            .run(StackKey(stack_id))
-            .map_err(|e| JsValue::from_str(&e))?;
-        let json = value_to_json(&val, self.env.heap());
-        Ok(json.to_string())
+        self.run_inner(stack_id).map_err(|e| JsValue::from_str(&e))
     }
 
     pub fn reset_and_run(&mut self, stack_id: u32) -> Result<String, JsValue> {
-        self.env
-            .reset_stack(StackKey(stack_id))
-            .map_err(|e| JsValue::from_str(&e))?;
-        self.run(stack_id)
+        self.reset_and_run_inner(stack_id).map_err(|e| JsValue::from_str(&e))
     }
 
     /// The frame gate (`Env::run_needed`): whether running now could differ
@@ -278,6 +286,14 @@ impl PetalRuntime {
     /// `decodeDrawCommands` in `src/draw-wire.ts` turns the pair into the
     /// `{ op, ...fields }` objects the renderer draws.
     pub fn take_draw_buffer(&mut self) -> Vec<f64> {
+        if self.env.emit_trace_enabled() {
+            let (cmds, origins): (Vec<DrawCommand>, Vec<EmitSite>) =
+                take_draw_commands_traced(&mut self.env).into_iter().unzip();
+            self.frame_origins = origins;
+            let numbers = self.encode(&cmds);
+            self.frame_cmds = cmds;
+            return numbers;
+        }
         let cmds = take_draw_commands(&mut self.env);
         self.encode(&cmds)
     }
@@ -290,8 +306,20 @@ impl PetalRuntime {
     /// which commands are sub-pixel by `draw_sub_indices`, and which were
     /// drawn under `pixel_snap(true)` by `draw_pixel_snap_indices`.
     pub fn take_draw_buffer_subpixel(&mut self) -> Vec<f64> {
-        let (cmds, modes): (Vec<FrameCommand>, Vec<PixelSnap>) =
-            take_frame_commands_snapped(&mut self.env).into_iter().unzip();
+        let (cmds, modes): (Vec<FrameCommand>, Vec<PixelSnap>) = if self.env.emit_trace_enabled() {
+            let mut cmds = Vec::new();
+            let mut modes = Vec::new();
+            self.frame_origins.clear();
+            for (c, m, o) in take_frame_commands_snapped_traced(&mut self.env) {
+                cmds.push(c);
+                modes.push(m);
+                self.frame_origins.push(o);
+            }
+            self.frame_cmds = cmds.iter().map(FrameCommand::to_px).collect();
+            (cmds, modes)
+        } else {
+            take_frame_commands_snapped(&mut self.env).into_iter().unzip()
+        };
         let numbers = self.encode_frame(&cmds);
         self.snap_all_indices = modes
             .iter()
@@ -570,8 +598,411 @@ impl PetalRuntime {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Edit mode: drag a drawn item, get a source edit
+// ---------------------------------------------------------------------------
+//
+// The page's half of `petal_ui::edit_mode` (docs/features/direct-manipulation.md,
+// "Hosts"; docs/tasks/differentiation-rewrite.md, Design §3). The page freezes
+// its frame loop while edit mode is on, so the frame on screen, its emit trace
+// and its checkpoint stay put; the page owns the source text and the line
+// selection, and gets back whole new source texts to put in its editor.
+//
+// Every answer is a JSON string, `{ "ok": false, "error": … }` on failure.
+
+#[wasm_bindgen]
+impl PetalRuntime {
+    /// Record which call drew each command (`Env::enable_emit_trace`). While
+    /// on, `take_draw_buffer` / `take_draw_buffer_subpixel` also keep the
+    /// frame for `edit_pick`. Off by default: it costs a little per emit.
+    pub fn set_emit_trace(&mut self, on: bool) {
+        self.env.enable_emit_trace(on);
+        if !on {
+            self.frame_cmds.clear();
+            self.frame_origins.clear();
+        }
+    }
+
+    /// Whether emit tracing is on.
+    pub fn emit_trace(&self) -> bool {
+        self.env.emit_trace_enabled()
+    }
+
+    /// Keep a pre-run fork of the stack on every `reset_and_run`: the
+    /// checkpoint an edit-mode drag re-runs the frame on screen from. One heap
+    /// fork per frame that runs while on, nothing while off.
+    pub fn set_edit_checkpoint(&mut self, on: bool) {
+        self.checkpoint_on = on;
+        if !on {
+            if let Some(ck) = self.checkpoint.take() {
+                self.env.drop_fork(ck);
+            }
+        }
+    }
+
+    /// The item under (`x`, `y`) in the last traced frame, and the call in the
+    /// sketch that drew it: `{ok, index, callee, line, text, label, bounds}`
+    /// (`line` 1-based; `bounds` `[x, y, w, h]` or null).
+    pub fn edit_pick(&self, x: i32, y: i32) -> String {
+        if self.frame_cmds.is_empty() {
+            return err_json("no traced frame yet (turn on set_emit_trace and run a frame)");
+        }
+        let Some(index) = hit_test(&self.frame_cmds, x, y) else {
+            return err_json("nothing is drawn there");
+        };
+        let origin = self.frame_origins.get(index).cloned().unwrap_or_default();
+        let call = self
+            .active_program
+            .and_then(|pid| describe_call(&self.env, pid, &origin));
+        let bounds = self.frame_cmds.get(index).and_then(petal_ui::edit_mode::bounds);
+        serde_json::json!({
+            "ok": true,
+            "index": index,
+            "callee": call.as_ref().map(|c| c.callee.clone()),
+            "line": call.as_ref().map(|c| c.line),
+            "text": call.as_ref().map(|c| c.text.clone()),
+            "label": call.as_ref().map(|c| c.label()).unwrap_or_else(|| "a call with no source position".to_string()),
+            "bounds": bounds.map(|(x, y, w, h)| vec![x as i64, y as i64, w as i64, h as i64]),
+        })
+        .to_string()
+    }
+
+    /// Open a drag on command `index` of the last traced frame. `lines_json`
+    /// is the author's selection, a JSON array of 1-based sketch lines: the
+    /// request's allow set (`line:N`), so only literals on those lines move,
+    /// and up to three alternatives come back. An empty selection runs the
+    /// request best effort (`tunable` first, never `const`/`rigid`, an equal
+    /// split across ties, one answer or an error).
+    ///
+    /// Returns `{ok, policy, allow, base: [x…, y…], candidates}`; this is the
+    /// expensive step (screening and the Jacobian). Any open drag is
+    /// cancelled first.
+    pub fn edit_begin(&mut self, index: u32, lines_json: &str) -> String {
+        self.edit_cancel();
+        let lines: Vec<usize> = match serde_json::from_str::<Vec<usize>>(lines_json) {
+            Ok(l) => l.into_iter().filter(|l| *l >= 1).collect(),
+            Err(e) => return err_json(&format!("lines must be a JSON array of line numbers: {e}")),
+        };
+        let filter = DragFilter::allow_lines(lines.iter().map(|l| l - 1));
+        let opts = if filter.is_default() {
+            SessionOptions::best_effort()
+        } else {
+            SessionOptions::default()
+        };
+        let index = index as usize;
+        if index >= self.frame_cmds.len() {
+            return err_json("that item is not in the traced frame");
+        }
+        let target = GoalTarget::at(&self.frame_origins, index, DragProperty::Position);
+        // No checkpoint (edit mode armed after the last run): the live stack
+        // after the frame, right for a still sketch.
+        let Some(checkpoint) = self.checkpoint.or(self.active_stack) else {
+            return err_json("no program is running");
+        };
+        match EditSession::open(&mut self.env, &mut NoHost, checkpoint, &target, &filter, &opts) {
+            Ok(session) => {
+                let start = session.start();
+                self.edit = Some(session);
+                let base: Vec<f64> = start.base_x.iter().chain(start.base_y.iter()).copied().collect();
+                serde_json::json!({
+                    "ok": true,
+                    "policy": policy_name(&filter),
+                    "allow": filter.allow.iter().map(|s| s.label()).collect::<Vec<_>>(),
+                    "base": base,
+                    "candidates": start.candidates.iter().map(candidate_json).collect::<Vec<_>>(),
+                    "runs": start.runs,
+                })
+                .to_string()
+            }
+            Err(outcome) => outcome_json(outcome, None, Some(&filter)),
+        }
+    }
+
+    /// What the open drag would write if released `dx`, `dy` pixels from the
+    /// press: the best candidate's linear answer, with no runs. A JSON array
+    /// of `{line, new_text, description}`.
+    pub fn edit_preview(&self, dx: f64, dy: f64) -> String {
+        let Some(session) = &self.edit else {
+            return "[]".to_string();
+        };
+        let rewrites = session.preview(&self.env, &[dx, dy]);
+        serde_json::Value::Array(rewrites.iter().map(rewrite_json).collect()).to_string()
+    }
+
+    /// Release the open drag at `dx`, `dy`: verify, round and rank. Returns
+    /// `{ok, policy, alternatives, candidates}`, each alternative with the
+    /// whole new sketch text (`source`) to put in the editor, or
+    /// `{ok: false, error}` (nothing reaches the goal, or the program changed
+    /// under the drag).
+    pub fn edit_finish(&mut self, dx: f64, dy: f64) -> String {
+        let Some(session) = self.edit.take() else {
+            return err_json("no drag is open");
+        };
+        let Some(current) = self.active_program else {
+            session.cancel(&mut self.env);
+            return err_json("no program is running");
+        };
+        let source = session.source().to_string();
+        let outcome = session.finish(&mut self.env, &mut NoHost, current, &[dx, dy]);
+        outcome_json(outcome, Some(&source), None)
+    }
+
+    /// Abandon the open drag, if any.
+    pub fn edit_cancel(&mut self) {
+        if let Some(session) = self.edit.take() {
+            session.cancel(&mut self.env);
+        }
+    }
+
+    /// `edit_begin` then `edit_finish` in one call: a drag of command
+    /// `index` by (`dx`, `dy`) with the selection `lines_json`.
+    pub fn edit_drag(&mut self, index: u32, dx: f64, dy: f64, lines_json: &str) -> String {
+        let begun = self.edit_begin(index, lines_json);
+        if self.edit.is_none() {
+            return begun;
+        }
+        self.edit_finish(dx, dy)
+    }
+}
+
+impl PetalRuntime {
+    // The exported entry points with plain string errors: a `JsValue` can only
+    // be made in the browser, so the crate's native tests call these.
+
+    fn load_program_inner(&mut self, source: &str) -> Result<u32, String> {
+        // A drag and a checkpoint describe the program they were made under.
+        self.drop_edit_state();
+        let pid = self.env.load_program(source)?;
+        self.active_program = Some(pid);
+        Ok(pid.0)
+    }
+
+    fn create_stack_inner(&mut self, program_id: u32) -> Result<u32, String> {
+        let sid = self.env.create_stack(ProgramId(program_id))?;
+        self.active_stack = Some(sid);
+        Ok(sid.0)
+    }
+
+    fn run_inner(&mut self, stack_id: u32) -> Result<String, String> {
+        self.prepare_run();
+        let val = self.env.run(StackKey(stack_id))?;
+        let json = value_to_json(&val, self.env.heap());
+        Ok(json.to_string())
+    }
+
+    fn reset_and_run_inner(&mut self, stack_id: u32) -> Result<String, String> {
+        if self.checkpoint_on {
+            // The edit-mode checkpoint: the stack as it stands with this
+            // frame's inputs bound and before it runs (a re-run of the stack
+            // after the run would draw the next frame, not this one).
+            self.prepare_run();
+            if let Some(old) = self.checkpoint.take() {
+                self.env.drop_fork(old);
+            }
+            self.checkpoint = self.env.fork_execution(StackKey(stack_id)).ok();
+        }
+        self.env.reset_stack(StackKey(stack_id))?;
+        self.run_inner(stack_id)
+    }
+
+    /// Forget the drag, the checkpoint and the traced frame: a new program
+    /// replaced the one they describe.
+    fn drop_edit_state(&mut self) {
+        self.edit_cancel();
+        if let Some(ck) = self.checkpoint.take() {
+            self.env.drop_fork(ck);
+        }
+        self.frame_cmds.clear();
+        self.frame_origins.clear();
+    }
+}
+
+fn err_json(msg: &str) -> String {
+    serde_json::json!({ "ok": false, "error": msg }).to_string()
+}
+
+fn policy_name(filter: &DragFilter) -> &'static str {
+    if filter.is_default() { "best_effort" } else { "ranked" }
+}
+
+fn candidate_json(c: &DragCandidate) -> serde_json::Value {
+    serde_json::json!({
+        "label": c.label,
+        "line": c.span.map(|s| s.start_line + 1),
+        "value": c.value,
+        "config": c.config,
+        "rigid": c.rigid,
+        "eligible": c.eligible,
+        "why_not": c.why_not,
+        "moves": c.moves,
+        "selector": c.selector.label(),
+    })
+}
+
+fn rewrite_json(r: &SourceRewrite) -> serde_json::Value {
+    serde_json::json!({
+        "line": r.file.is_none().then_some(r.span.start_line + 1),
+        "file": r.file.as_ref().map(|f| f.display().to_string()),
+        "new_text": r.new_text,
+        "description": r.description,
+    })
+}
+
+fn outcome_json(outcome: DragOutcomeV2, source: Option<&str>, filter: Option<&DragFilter>) -> String {
+    match outcome {
+        DragOutcomeV2::Alternatives { alternatives, candidates } => {
+            let alts: Vec<serde_json::Value> = alternatives
+                .iter()
+                .map(|a| {
+                    let applied = source.map(|s| a.apply_to(s));
+                    serde_json::json!({
+                        "description": a.description,
+                        "verified": a.verified,
+                        "moves_others": a.moves_others,
+                        "config_only": a.config_only,
+                        "score": a.score,
+                        "sketch_only": a.sketch_only(),
+                        "rewrites": a.rewrites.iter().map(rewrite_json).collect::<Vec<_>>(),
+                        "source": applied.as_ref().and_then(|r| r.as_ref().ok()),
+                        "apply_error": applied.as_ref().and_then(|r| r.as_ref().err()),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "ok": true,
+                "alternatives": alts,
+                "candidates": candidates.iter().map(candidate_json).collect::<Vec<_>>(),
+            })
+            .to_string()
+        }
+        DragOutcomeV2::Refused { why, candidates } => serde_json::json!({
+            "ok": false,
+            "error": why,
+            "policy": filter.map(policy_name),
+            "candidates": candidates.iter().map(candidate_json).collect::<Vec<_>>(),
+        })
+        .to_string(),
+        DragOutcomeV2::Stale => err_json("the program changed under the drag; try again"),
+    }
+}
+
 impl Default for PetalRuntime {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SKETCH: &str = "import ui\nlet x = 100\nlet y = 80\ndraw_circle(x, y, 20, 200, 100, 50)\ndraw_rect(300, 40, 60, 30, 50, 100, 200)\n";
+
+    /// A runtime in edit mode with `source` loaded and one frame run.
+    /// As the page does it: the program runs a few frames untraced, then
+    /// edit mode turns tracing and the checkpoint on and runs one more.
+    fn edit_runtime(source: &str) -> PetalRuntime {
+        let mut rt = PetalRuntime::new();
+        let pid = rt.load_program_inner(source).unwrap();
+        let sid = rt.create_stack_inner(pid).unwrap();
+        let mut frame = |rt: &mut PetalRuntime, n: i32| {
+            rt.set_frame_info(1.0 / 60.0, n as f64 / 60.0, n, 640, 480);
+            rt.begin_frame();
+            rt.reset_and_run_inner(sid).unwrap();
+            rt.take_draw_buffer();
+        };
+        frame(&mut rt, 0);
+        frame(&mut rt, 1);
+        rt.set_emit_trace(true);
+        rt.set_edit_checkpoint(true);
+        frame(&mut rt, 2);
+        rt
+    }
+
+    fn json(s: &str) -> serde_json::Value {
+        serde_json::from_str(s).unwrap()
+    }
+
+    fn pick_index(rt: &PetalRuntime, x: i32, y: i32) -> u32 {
+        let p = json(&rt.edit_pick(x, y));
+        assert_eq!(p["ok"], true, "{p}");
+        p["index"].as_u64().unwrap() as u32
+    }
+
+    #[test]
+    fn pick_names_the_call_and_its_line() {
+        let rt = edit_runtime(SKETCH);
+        let p = json(&rt.edit_pick(100, 80));
+        assert_eq!(p["ok"], true, "{p}");
+        assert_eq!(p["callee"], "draw_circle");
+        assert_eq!(p["line"], 4);
+        let p = json(&rt.edit_pick(320, 50));
+        assert_eq!(p["line"], 5, "{p}");
+        let p = json(&rt.edit_pick(600, 400));
+        assert_eq!(p["ok"], false);
+    }
+
+    #[test]
+    fn a_drag_with_nothing_selected_is_best_effort() {
+        let mut rt = edit_runtime(SKETCH);
+        let index = pick_index(&rt, 100, 80);
+        let begun = json(&rt.edit_begin(index, "[]"));
+        assert_eq!(begun["policy"], "best_effort", "{begun}");
+        let out = json(&rt.edit_finish(40.0, 0.0));
+        assert_eq!(out["ok"], true, "{out}");
+        let alts = out["alternatives"].as_array().unwrap();
+        assert_eq!(alts.len(), 1, "best effort gives one answer: {out}");
+        assert!(alts[0]["source"].as_str().unwrap().contains("let x = 140"), "{out}");
+    }
+
+    #[test]
+    fn a_selection_is_the_allow_set() {
+        // Two literals move the circle horizontally: `x` on line 1 and the
+        // offset on line 3. Selecting line 3 moves only the offset.
+        let src = "import ui\nlet x = 100\nlet off = 0\ndraw_circle(x + off, 80, 20, 200, 100, 50)\n";
+        let mut rt = edit_runtime(src);
+        let index = pick_index(&rt, 100, 80);
+        let out = json(&rt.edit_drag(index, 25.0, 0.0, "[3]"));
+        assert_eq!(out["ok"], true, "{out}");
+        for alt in out["alternatives"].as_array().unwrap() {
+            let s = alt["source"].as_str().unwrap();
+            assert!(s.starts_with("import ui\nlet x = 100\n"), "line 2 is not selected: {s}");
+        }
+        let top = out["alternatives"][0]["source"].as_str().unwrap();
+        assert!(top.contains("let off = 25"), "{top}");
+        // A selection holding nothing that moves the shape is refused.
+        let out = json(&rt.edit_drag(index, 25.0, 0.0, "[1]"));
+        assert_eq!(out["ok"], false, "{out}");
+    }
+
+    #[test]
+    fn an_unreachable_goal_is_an_error() {
+        let src = "import ui\ndraw_circle(rigid(100), 80, 20, 200, 100, 50)\n";
+        let mut rt = edit_runtime(src);
+        let index = pick_index(&rt, 100, 80);
+        let out = json(&rt.edit_drag(index, 25.0, 0.0, "[]"));
+        assert_eq!(out["ok"], false, "{out}");
+        assert!(out["error"].as_str().is_some_and(|e| !e.is_empty()), "{out}");
+    }
+
+    #[test]
+    fn the_checkpoint_draws_the_frame_on_screen() {
+        // An animation: the drag re-runs the frame on screen, not the next.
+        let src = "import ui\nstate t = 0\nt = t + 10\ndraw_circle(100 + t, 80, 20, 200, 100, 50)\n";
+        let mut rt = edit_runtime(src);
+        let index = pick_index(&rt, 130, 80);
+        let begun = json(&rt.edit_begin(index, "[]"));
+        assert_eq!(begun["base"][0], 130.0, "{begun}");
+        rt.edit_cancel();
+    }
+
+    #[test]
+    fn a_new_program_drops_the_drag() {
+        let mut rt = edit_runtime(SKETCH);
+        let index = pick_index(&rt, 100, 80);
+        assert_eq!(json(&rt.edit_begin(index, "[]"))["ok"], true);
+        rt.load_program_inner(SKETCH).unwrap();
+        assert_eq!(json(&rt.edit_finish(10.0, 0.0))["ok"], false);
+        assert_eq!(json(&rt.edit_pick(100, 80))["ok"], false, "the traced frame is gone too");
     }
 }

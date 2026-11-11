@@ -1734,6 +1734,14 @@ pb_status pb_vm_take_output(pb_vm* vm, const char* const** out_lines, size_t* ou
  * {"solid": 10, "coin": 1}: what moves on a heavy channel costs more); an
  * unknown key is PB_ERR_INVALID_ARG.
  *
+ * "policy": "best_effort" (default "ranked") is for a host with no source
+ * view or list to choose from: one verified answer or an error. Knobs
+ * (tunable / settings) move alone when they can reach the goal; a rigid(...)
+ * literal, or one that reaches the goal only through a const binding, never
+ * moves; of the rest the cheapest tier moves, the change split equally when
+ * several literals tie. A goal no edit reaches is PB_ERR_RUNTIME with phase
+ * "goal" and a message saying how close it came; nothing is written.
+ *
  * The edited frame is the one after the last pb_vm_run: state as that run
  * left it, bindings and input as last bound. Petal re-runs it many times
  * with literals nudged, calling this VM's natives under their PB_FX_* flags:

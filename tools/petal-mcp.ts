@@ -281,6 +281,8 @@ server.registerTool("ProposeEdit", {
     deny: z.array(z.string()).optional().describe("v2: these may not move (same selectors)"),
     knobStrict: z.boolean().optional().describe("v2: v1's rule that knobs (tunable / settings) win outright"),
     configStrict: z.boolean().optional().describe("Deprecated name of knobStrict"),
+    policy: z.enum(["ranked", "best_effort"]).optional()
+      .describe("v2: 'best_effort' returns one verified answer or an error: knobs when they reach the goal, never rigid or const literals, the cheapest tier with the change split equally when several tie"),
     alternatives: z.number().int().min(1).optional().describe("v2: how many alternatives (default 3)"),
     explain: z.boolean().optional().describe("v2: include the pipeline log and candidate table"),
     tol: z.number().optional().describe("v2: goal tolerance"),

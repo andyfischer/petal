@@ -153,6 +153,17 @@ A host that drives `PetalRuntime` itself builds it with
 `take_draw_buffer` and `new PetalRuntime()` are unchanged. The full contract
 is in [host-contract.md](../../core-libs/petal-ui/docs/host-contract.md#sub-pixel-coordinates).
 
+## Edit mode (drag to edit the code)
+
+The runtime carries the wasm half of Petal's edit mode: `set_emit_trace(true)`
+records which call drew each command, `set_edit_checkpoint(true)` keeps a
+pre-run fork of each frame, and `edit_pick` / `edit_begin` / `edit_preview` /
+`edit_finish` turn a drag on a drawn item into proposed source edits (JSON).
+`PetalCanvas.invalidate()` forces the traced frame to run. The reference page
+is `examples/custom-apps/diagram-canvas`; the API is described under "Hosts"
+in [direct-manipulation.md](../../docs/features/direct-manipulation.md#hosts).
+The Rust side has native unit tests (`cd rust && cargo test`).
+
 ## Examples
 
 `examples/*.ptl`, listed in `src/main.ts`:

@@ -110,6 +110,10 @@ pub struct Timeline {
     /// ([`FrameRecord::frame`]) — set for a host whose
     /// [`Host::subpixel`] is `true`.
     pub subpixel: bool,
+    /// Edit mode (F9): drag a drawn item to edit the code that drew it
+    /// ([`crate::edit_mode`]). It works on the frozen frame, so it lives
+    /// with the timeline.
+    pub edit: crate::edit_mode::EditMode,
 }
 
 impl Timeline {
@@ -123,6 +127,7 @@ impl Timeline {
             show_trail: false,
             last_replayed: 0,
             subpixel: false,
+            edit: crate::edit_mode::EditMode::default(),
         }
     }
 
@@ -158,6 +163,7 @@ impl Timeline {
         }
         self.cursor = None;
         self.tracked = None;
+        self.edit = crate::edit_mode::EditMode::default();
     }
 
     // ── Recording ────────────────────────────────────────────────────────
@@ -260,6 +266,41 @@ impl Timeline {
     }
 
     // ── Replay ───────────────────────────────────────────────────────────
+
+    /// A checkpoint for a speculative re-run of the frame on screen (the
+    /// cursor while frozen, else the latest): the execution as it stood
+    /// before that frame ran, with the frame's recorded clock and input
+    /// bound, forked. A re-run of it draws exactly that frame, which is the
+    /// baseline edit mode solves against ([`crate::edit_mode`]).
+    ///
+    /// It is built the way [`replay`](Self::replay) re-runs a frame: the
+    /// live execution is restored to the previous frame's fork, the frame's
+    /// bindings are made, the fork is taken, and the live execution is put
+    /// back to the frame's own fork. The oldest recorded frame has no
+    /// predecessor, so its checkpoint is its own fork (one frame further on;
+    /// the same for a still sketch). The caller drops the fork.
+    pub fn checkpoint_for_current<H: Host>(
+        &self,
+        env: &mut Env,
+        live: StackKey,
+        host: &mut H,
+    ) -> Result<StackKey, String> {
+        let c = self.current_index().ok_or("nothing recorded yet")?;
+        let rec = &self.frames[c];
+        if c == 0 {
+            return env.fork_execution(rec.snapshot);
+        }
+        env.restore_execution(live, self.frames[c - 1].snapshot)?;
+        clear_draw_commands(env);
+        host.prepare_frame(env);
+        env.advance_frame(live);
+        bind_frame_info(env, rec.dt, rec.frame_count);
+        bind_time(env, rec.time);
+        bind_input(env, &rec.input);
+        let forked = env.fork_execution(live);
+        env.restore_execution(live, rec.snapshot)?;
+        forked
+    }
 
     /// Re-simulate frames `from..` through the program loaded *now*, starting
     /// from the fork of frame `from - 1` and feeding each frame the input
@@ -509,6 +550,7 @@ impl Timeline {
     pub fn overlay(&self, env: &Env, program_id: ProgramId, width: i32, height: i32) -> Vec<DrawCommand> {
         let mut cmds = Vec::new();
         let cur = self.current_index();
+        let edit = self.edit.overlay(self, width, height);
 
         if self.show_trail {
             let points = self.trail(env, program_id);
@@ -635,6 +677,7 @@ impl Timeline {
             }
             cmds.push(DrawCommand::plain_text(&label, 12, bar_y - 20, 14, 240, 240, 255, 255));
         }
+        cmds.extend(edit);
         cmds
     }
 
@@ -650,6 +693,7 @@ impl Timeline {
             "generation": self.generation,
             "tracking": self.tracked_label(),
             "last_replayed": self.last_replayed,
+            "edit": self.edit.status_json(),
         })
     }
 }
@@ -715,161 +759,13 @@ fn find_call_site(program: &petal::program::Program, callee: Option<&str>, line:
 
 // ── Geometry over draw commands ──────────────────────────────────────────
 
-/// Which command paints the point: the last one covering it, in paint order,
-/// honoring clips and skipping offscreen targets (see the hit-test notes in
-/// docs/features/direct-manipulation.md).
-pub fn hit_test(cmds: &[DrawCommand], x: i32, y: i32) -> Option<usize> {
-    let mut clip: Option<(i32, i32, i32, i32)> = None;
-    let mut saved: Vec<Option<(i32, i32, i32, i32)>> = Vec::new();
-    let mut target = 0u32;
-    let mut hit = None;
-    for (i, cmd) in cmds.iter().enumerate() {
-        match cmd {
-            DrawCommand::Clip { x: cx, y: cy, w, h, .. } => {
-                clip = Some((*cx, *cy, *cx + *w as i32, *cy + *h as i32));
-                continue;
-            }
-            DrawCommand::ClipNone => {
-                clip = None;
-                continue;
-            }
-            DrawCommand::ClipPush { x: cx, y: cy, w, h, .. } => {
-                saved.push(clip);
-                let want = (*cx, *cy, *cx + *w as i32, *cy + *h as i32);
-                clip = Some(match clip {
-                    Some(c) => (c.0.max(want.0), c.1.max(want.1), c.2.min(want.2), c.3.min(want.3)),
-                    None => want,
-                });
-                continue;
-            }
-            DrawCommand::ClipPop => {
-                clip = saved.pop().flatten();
-                continue;
-            }
-            DrawCommand::SetTarget { id } => {
-                target = *id;
-                continue;
-            }
-            _ => {}
-        }
-        if target != 0 {
-            continue;
-        }
-        if let Some((x0, y0, x1, y1)) = clip {
-            if x < x0 || x >= x1 || y < y0 || y >= y1 {
-                continue;
-            }
-        }
-        if contains(cmd, x, y) {
-            hit = Some(i);
-        }
-    }
-    hit
-}
-
-fn in_rect(rx: i32, ry: i32, w: u32, h: u32, x: i32, y: i32) -> bool {
-    x >= rx && x < rx + w as i32 && y >= ry && y < ry + h as i32
-}
-
-fn near_segment(x1: i32, y1: i32, x2: i32, y2: i32, x: i32, y: i32, tol: f64) -> bool {
-    let (ax, ay, bx, by, px, py) = (x1 as f64, y1 as f64, x2 as f64, y2 as f64, x as f64, y as f64);
-    let (dx, dy) = (bx - ax, by - ay);
-    let len2 = dx * dx + dy * dy;
-    let t = if len2 == 0.0 { 0.0 } else { (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0) };
-    let (qx, qy) = (ax + t * dx, ay + t * dy);
-    ((px - qx).powi(2) + (py - qy).powi(2)).sqrt() <= tol
-}
-
-fn in_polygon(points: &[(i32, i32)], x: i32, y: i32) -> bool {
-    let mut inside = false;
-    let n = points.len();
-    if n < 3 {
-        return false;
-    }
-    let (px, py) = (x as f64, y as f64);
-    let mut j = n - 1;
-    for i in 0..n {
-        let (xi, yi) = (points[i].0 as f64, points[i].1 as f64);
-        let (xj, yj) = (points[j].0 as f64, points[j].1 as f64);
-        if (yi > py) != (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi {
-            inside = !inside;
-        }
-        j = i;
-    }
-    inside
-}
-
-/// Whether one command's painted geometry covers the point. A full-canvas
-/// clear never matches, an outline is hit on its stroke, and lines get a
-/// few pixels of tolerance.
-fn contains(cmd: &DrawCommand, x: i32, y: i32) -> bool {
-    match cmd {
-        DrawCommand::Rect { x: rx, y: ry, w, h, .. }
-        | DrawCommand::RectGradient { x: rx, y: ry, w, h, .. }
-        | DrawCommand::Image { x: rx, y: ry, w, h, .. }
-        | DrawCommand::DrawCanvas { x: rx, y: ry, w, h, .. } => in_rect(*rx, *ry, *w, *h, x, y),
-        DrawCommand::RectOutline { x: rx, y: ry, w, h, width, .. } => {
-            let t = (*width).max(1) as i32 + 2;
-            in_rect(*rx - 1, *ry - 1, *w + 2, *h + 2, x, y)
-                && !in_rect(*rx + t, *ry + t, w.saturating_sub(2 * t as u32), h.saturating_sub(2 * t as u32), x, y)
-        }
-        DrawCommand::Circle { cx, cy, radius, .. } | DrawCommand::CircleGradient { cx, cy, radius, .. } => {
-            let (dx, dy) = ((x - cx) as i64, (y - cy) as i64);
-            dx * dx + dy * dy <= (*radius as i64) * (*radius as i64)
-        }
-        DrawCommand::Text { text, x: tx, y: ty, size, .. } => {
-            let w = (text.chars().count() as f64 * *size as f64 * 0.55) as u32;
-            in_rect(*tx, *ty, w.max(4), (*size as u32).max(4), x, y)
-        }
-        DrawCommand::Line { x1, y1, x2, y2, width, .. } => {
-            near_segment(*x1, *y1, *x2, *y2, x, y, 3.0 + *width as f64 / 2.0)
-        }
-        DrawCommand::Triangle { x1, y1, x2, y2, x3, y3, .. } => in_polygon(&[(*x1, *y1), (*x2, *y2), (*x3, *y3)], x, y),
-        DrawCommand::Poly { points, .. } | DrawCommand::Polygon { points, .. } => in_polygon(points, x, y),
-        _ => false,
-    }
-}
+/// Hit-testing and boxes live in the shared edit-mode module, so every host
+/// picks a drawn item the same way.
+pub use petal_ui::edit_mode::{bounds, hit_test};
 
 /// The visual centre of a command, for a trail point.
 pub fn centroid(cmd: &DrawCommand) -> Option<(i32, i32)> {
     bounds(cmd).map(|(x, y, w, h)| (x + w as i32 / 2, y + h as i32 / 2))
-}
-
-/// The axis-aligned box of a command.
-pub fn bounds(cmd: &DrawCommand) -> Option<(i32, i32, u32, u32)> {
-    match cmd {
-        DrawCommand::Rect { x, y, w, h, .. }
-        | DrawCommand::RectOutline { x, y, w, h, .. }
-        | DrawCommand::RectGradient { x, y, w, h, .. }
-        | DrawCommand::Image { x, y, w, h, .. }
-        | DrawCommand::DrawCanvas { x, y, w, h, .. } => Some((*x, *y, *w, *h)),
-        DrawCommand::Circle { cx, cy, radius, .. } | DrawCommand::CircleGradient { cx, cy, radius, .. } => {
-            Some((cx - radius, cy - radius, (*radius as u32) * 2, (*radius as u32) * 2))
-        }
-        DrawCommand::Text { text, x, y, size, .. } => {
-            let w = (text.chars().count() as f64 * *size as f64 * 0.55) as u32;
-            Some((*x, *y, w.max(1), *size as u32))
-        }
-        DrawCommand::Line { x1, y1, x2, y2, .. } => Some((
-            *x1.min(x2),
-            *y1.min(y2),
-            (x1 - x2).unsigned_abs().max(1),
-            (y1 - y2).unsigned_abs().max(1),
-        )),
-        DrawCommand::Triangle { x1, y1, x2, y2, x3, y3, .. } => {
-            poly_bounds(&[(*x1, *y1), (*x2, *y2), (*x3, *y3)])
-        }
-        DrawCommand::Poly { points, .. } | DrawCommand::Polygon { points, .. } => poly_bounds(points),
-        _ => None,
-    }
-}
-
-fn poly_bounds(points: &[(i32, i32)]) -> Option<(i32, i32, u32, u32)> {
-    let x0 = points.iter().map(|p| p.0).min()?;
-    let y0 = points.iter().map(|p| p.1).min()?;
-    let x1 = points.iter().map(|p| p.0).max()?;
-    let y1 = points.iter().map(|p| p.1).max()?;
-    Some((x0, y0, (x1 - x0).max(1) as u32, (y1 - y0).max(1) as u32))
 }
 
 #[cfg(test)]

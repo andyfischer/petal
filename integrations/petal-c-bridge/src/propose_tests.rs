@@ -132,3 +132,65 @@ fn drags_through_a_host_native_without_firing_escaping_effects() {
 
     pb_vm_destroy(vm);
 }
+
+#[test]
+fn best_effort_policy_gives_one_answer_or_an_error() {
+    let dir = std::env::temp_dir().join(format!("petal-bridge-best-effort-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("scene.ptl");
+    // Without the effect calls: the other test counts them, in parallel.
+    std::fs::write(&path, SCRIPT.replace("play_sound(1)\ntally(1)\n", "")
+        .replace("config let px = 10", "let px = 10.0\nlet off = 0.0\nconst FIXED = 0.0")
+        .replace("to_screen(px)", "to_screen(px + off + FIXED)"))
+    .unwrap();
+    let vm = vm_with(&path);
+    assert_eq!(scene(vm), vec![120.0]);
+
+    // `px` and `off` tie; `FIXED` is a const and never moves. +30 on the
+    // screen is +15 through `to_screen`, split equally.
+    let req = json!({"channel": "scene", "emit": 0, "value": true, "to": 150, "policy": "best_effort"});
+    let (st, report) = propose(vm, &req);
+    assert_eq!(st, Status::Ok, "{report:#}");
+    assert_eq!(report["policy"], json!("best_effort"));
+    let alts = report["alternatives"].as_array().unwrap();
+    assert_eq!(alts.len(), 1, "{report:#}");
+    assert_eq!(alts[0]["verified"], json!(true), "{report:#}");
+    let mut moved: Vec<(String, f64)> = alts[0]["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["binding"].as_str().unwrap().to_string(), c["new"].as_f64().unwrap()))
+        .collect();
+    moved.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(moved, vec![("off".to_string(), 7.5), ("px".to_string(), 17.5)], "{report:#}");
+
+    let fixed = report["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["binding"] == json!("FIXED"))
+        .unwrap_or_else(|| panic!("{report:#}"));
+    assert_eq!(fixed["eligible"], json!(false), "{fixed:#}");
+    assert_eq!(fixed["flags"]["through_const"], json!(true), "{fixed:#}");
+
+    // A goal no edit reaches is an error: `px` bounded to [0, 20] tops out
+    // at 160 on the screen.
+    std::fs::write(&path, std::fs::read_to_string(&path).unwrap()
+        .replace("let px = 10.0\nlet off = 0.0", "let px = tunable(10.0, 0.0, 20.0)\nlet off = 0.0"))
+    .unwrap();
+    {
+        let v = unsafe { VmHandle::vm_mut(vm) }.unwrap();
+        v.reload().unwrap();
+    }
+    assert_eq!(scene(vm), vec![120.0]);
+    let req = json!({"channel": "scene", "emit": 0, "value": true, "to": 200, "policy": "best_effort", "apply": true});
+    let (st, err) = propose(vm, &req);
+    assert_eq!((st, err["phase"].clone()), (Status::Runtime, json!("goal")), "{err:#}");
+    assert!(err["message"].as_str().unwrap().contains("no edit reaches the goals"), "{err:#}");
+    assert!(std::fs::read_to_string(&path).unwrap().contains("tunable(10.0, 0.0, 20.0)"), "nothing written");
+
+    // An unknown policy is a bad request.
+    let (st, err) = propose(vm, &json!({"channel": "scene", "emit": 0, "value": true, "to": 150, "policy": "best"}));
+    assert_eq!((st, err["phase"].clone()), (Status::InvalidArg, json!("request")), "{err:#}");
+    pb_vm_destroy(vm);
+}

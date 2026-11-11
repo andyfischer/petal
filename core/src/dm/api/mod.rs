@@ -27,6 +27,15 @@
 //!
 //! A goal whose target is not a number (a string, a bool) has no derivative:
 //! the request falls back to v1 (`crate::direct_manipulation`).
+//!
+//! Under [`Policy::BestEffort`] (docs/tasks/differentiation-rewrite.md,
+//! Design §3) step 5 forms no candidate subsets: it takes the cheapest
+//! weight tier that reaches the goals (knobs only, when they do; literals
+//! reached only through a `const` binding were already made ineligible in
+//! step 2), solves it with the equal-split blend
+//! ([`Blend::EqualShare`]), falls back to a dearer tier that reaches the
+//! goals alone when that does not verify, and answers with the first
+//! verified alternative or [`DmError::Unreachable`].
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -44,7 +53,9 @@ use crate::dm::rank::{
     ScoreFacts, ScoreWeights, ScoredChange, SubsetKind, candidate_subsets, param_weight, score, strength,
     weighted_collateral,
 };
-use crate::dm::solve::{Bound, GoalRow, SolveCtx, SolveOptions, goal_step, max_error, weigh_rows};
+use crate::dm::solve::{
+    Blend, Bound, GoalRow, SolveCtx, SolveOptions, equal_share_step, goal_step, max_error, weigh_rows,
+};
 use crate::dm::spec::{Overrides, SpecHost, SpecRun, SpecSession};
 use crate::env::Env;
 use crate::native_fn::InputClasses;
@@ -62,6 +73,10 @@ pub const MANY_COLUMNS: usize = 8;
 /// The most collateral rows a request reads (§2.3; §9 M5, revision 5).
 pub const COLLATERAL_ROWS: usize = 8192;
 
+/// The most column sets a best-effort request verifies: its cheapest tier,
+/// then dearer tiers that reach the goals alone, until one verifies.
+pub const BEST_EFFORT_SETS: usize = 3;
+
 mod literal;
 mod rejection;
 mod report;
@@ -70,7 +85,7 @@ mod response;
 mod v1_bridge;
 
 pub(crate) use request::short;
-pub use request::{DmGoal, DmRequest, GoalTarget, Prefer};
+pub use request::{DmGoal, DmRequest, GoalTarget, Policy, Prefer};
 pub use response::{
     Alternative, CandidateReport, Collateral, CollateralItem, DmDiagnostics, DmResponse, Engine, ExplainLog,
     FileEdit, ParamChange, Rejection, TriedLiteral,
@@ -263,6 +278,7 @@ impl DmSession {
     ) -> Result<(), DmError> {
         let req = self.req.clone();
         let explain = req.explain;
+        let best_effort = req.policy == Policy::BestEffort;
         let pid = spec.program();
         let goals: Vec<Observable> = req.goals.iter().map(|g| g.observable.clone()).collect();
         for (i, g) in goals.iter().enumerate() {
@@ -323,7 +339,8 @@ impl DmSession {
                 .iter()
                 .zip(&loaded)
                 .map(|(p, &ld)| {
-                    let e = eligibility(program, p, &req.filter, EligibilityContext::default());
+                    let ctx = EligibilityContext { exclude_const: best_effort, ..EligibilityContext::default() };
+                    let e = eligibility(program, p, &req.filter, ctx);
                     if !ld {
                         let why = if p.state_init {
                             "a `state` initializer whose state the checkpoint already holds"
@@ -802,6 +819,9 @@ impl DmSession {
         });
         let active = self.active_rows(&goals);
         let ga = active.len();
+        if self.req.policy == Policy::BestEffort {
+            return self.best_effort_predictions(&goals, &active);
+        }
         let subsets =
             candidate_subsets(&self.jac, &self.weights, &self.scales, &self.usable, &self.config, client, &active);
         let bounds = self.bounds();
@@ -929,6 +949,100 @@ impl DmSession {
         out
     }
 
+    /// The column sets [`Policy::BestEffort`] tries for the goal rows
+    /// `active`, in order; the first that verifies is the answer:
+    ///
+    /// - the candidates are the usable columns that move an active goal;
+    /// - only the knobs among them, when the knobs alone can reach every
+    ///   active goal (their goal block has full row rank): a hard filter;
+    /// - the first set is the cheapest weight tier ([`param_weight`]: the
+    ///   same tier, the same `var` / `state` / clock penalties), widened
+    ///   tier by tier until it can reach every active goal (or every
+    ///   candidate is in);
+    /// - then each dearer tier that can reach the goals on its own, for
+    ///   when the cheaper one's verified result misses (an int literal
+    ///   that steps past the goal), up to [`BEST_EFFORT_SETS`] sets.
+    ///
+    /// Empty when no usable column moves an active goal.
+    fn best_effort_sets(&self, active: &[usize]) -> Vec<Vec<usize>> {
+        let m = active.len();
+        let reaches = |cols: &[usize]| -> bool {
+            if cols.is_empty() {
+                return false;
+            }
+            let jg: Vec<Vec<f64>> =
+                active.iter().map(|&g| cols.iter().map(|&c| self.jac.get(g, c)).collect()).collect();
+            crate::dm::solve::rank(&jg) == m
+        };
+        let mut cand: Vec<usize> = (0..self.jac.params.len())
+            .filter(|&c| self.usable[c] && active.iter().any(|&g| self.jac.get(g, c).abs() > 0.0))
+            .collect();
+        let knobs: Vec<usize> = cand.iter().copied().filter(|&c| self.config[c]).collect();
+        if reaches(&knobs) {
+            cand = knobs;
+        }
+        let same_tier = |a: f64, b: f64| (a - b).abs() <= 1e-9 * a.abs().max(b.abs());
+        let mut tiers: Vec<f64> = cand.iter().map(|&c| self.weights[c]).collect();
+        tiers.sort_by(f64::total_cmp);
+        tiers.dedup_by(|a, b| same_tier(*a, *b));
+        let mut sets: Vec<Vec<usize>> = Vec::new();
+        let mut first: Vec<usize> = Vec::new();
+        let mut rest = tiers.iter();
+        for &w in rest.by_ref() {
+            first.extend(cand.iter().copied().filter(|&c| same_tier(self.weights[c], w)));
+            if reaches(&first) {
+                break;
+            }
+        }
+        if first.is_empty() {
+            return sets;
+        }
+        first.sort_unstable();
+        sets.push(first);
+        for &w in rest {
+            if sets.len() >= BEST_EFFORT_SETS {
+                break;
+            }
+            let tier: Vec<usize> = cand.iter().copied().filter(|&c| same_tier(self.weights[c], w)).collect();
+            if reaches(&tier) {
+                sets.push(tier);
+            }
+        }
+        sets
+    }
+
+    /// [`Policy::BestEffort`]'s subsets ([`best_effort_sets`](Self::best_effort_sets)),
+    /// in order, each with its linear answer by the equal split
+    /// ([`equal_share_step`]).
+    fn best_effort_predictions(&self, goals: &[GoalRow], active: &[usize]) -> Vec<Prediction> {
+        self.best_effort_sets(active).into_iter().map(|cols| self.equal_split_prediction(goals, cols)).collect()
+    }
+
+    /// The linear answer of `cols` by the equal split.
+    fn equal_split_prediction(&self, goals: &[GoalRow], cols: Vec<usize>) -> Prediction {
+        let gr = self.jac.goal_rows;
+        let bounds = self.bounds();
+        let local = self.jac.local(&cols);
+        let delta = equal_share_step(goals, &self.base_rows[..gr], &local[..gr]);
+        let value = |c: usize| self.params[self.jac.params[c]].value;
+        let values: Vec<f64> = cols.iter().zip(&delta).map(|(&c, &d)| bounds[c].project(value(c) + d)).collect();
+        let moved: Vec<f64> = cols.iter().zip(&values).map(|(&c, &v)| v - value(c)).collect();
+        let rows: Vec<Option<f64>> = local[..gr]
+            .iter()
+            .zip(&self.base_rows[..gr])
+            .map(|(row, b)| b.map(|b| b + row.iter().zip(&moved).map(|(j, d)| j * d).sum::<f64>()))
+            .collect();
+        let err = max_error(goals, &rows);
+        Prediction {
+            cols,
+            kind: SubsetKind::BestEffort,
+            values,
+            goals: rows.iter().map(|v| v.unwrap_or(f64::NAN)).collect(),
+            ok: err <= 1.0,
+            score: 0.0,
+        }
+    }
+
     /// The best subset's linear answer at `targets`, with no runs: what a
     /// client shows while a drag is in progress.
     pub fn preview(&self, targets: &[f64]) -> Vec<ParamChange> {
@@ -1027,6 +1141,7 @@ impl DmSession {
         let goals = self.goal_rows(targets);
         let gr = self.jac.goal_rows;
         let explain = self.req.explain;
+        let best_effort = self.req.policy == Policy::BestEffort;
         let drag = drag_norm(&goals.iter().zip(&self.base_rows[..gr]).map(|(g, v)| g.residual(*v)).collect::<Vec<_>>());
         let ga = self.active_rows(&goals).len();
         let pid = spec.program();
@@ -1063,10 +1178,31 @@ impl DmSession {
             if !self.diag.budget_exhausted {
                 return Err(DmError::NothingToMove { why: nothing_to_move(&self.candidates) });
             }
+            if best_effort {
+                return Err(DmError::NothingToMove {
+                    why: "the run budget ran out before any literal was measured".into(),
+                });
+            }
             self.diag.warnings.push("the run budget ran out before any literal was measured".into());
         } else {
             let preds = self.predictions(targets);
             self.diag.subsets_predicted = preds.len();
+            if best_effort && preds.is_empty() {
+                return Err(DmError::NothingToMove {
+                    why: "no editable literal moves the goals that ask for a change".into(),
+                });
+            }
+            if best_effort && explain {
+                for (k, p) in preds.iter().enumerate() {
+                    let names: Vec<&str> =
+                        p.cols.iter().map(|&c| self.texts[self.jac.params[c]].text.as_str()).collect();
+                    self.log.push(format!(
+                        "best effort {}: {} literal(s), split equally: {names:?}",
+                        if k == 0 { "(the cheapest tier that reaches the goals)" } else { "(if that misses)" },
+                        p.cols.len()
+                    ));
+                }
+            }
             let chosen = self.choose_to_verify(preds, &goals, ga);
             let baseline_fp = spec.baseline().fingerprint;
             let drew_random = spec.drew_random();
@@ -1076,7 +1212,11 @@ impl DmSession {
                 let i = self.jac.params[c];
                 (self.params[i].term, self.params[i].value, self.params[i].span.start.line, self.texts[i].text.clone())
             };
-            let opts = SolveOptions { max_iters: self.req.max_iters, fd: self.req.fd() };
+            let opts = SolveOptions {
+                max_iters: self.req.max_iters,
+                fd: self.req.fd(),
+                blend: if best_effort { Blend::EqualShare } else { Blend::Weighted },
+            };
             let mut ctx = SolveCtx {
                 session: spec,
                 env,
@@ -1095,6 +1235,10 @@ impl DmSession {
                 log: if explain { Some(&mut self.log) } else { None },
             };
             for pred in chosen {
+                // Best effort stops at its first verified answer.
+                if best_effort && alternatives.iter().any(|a| a.verified) {
+                    break;
+                }
                 if !ctx.budget.has_room() {
                     ctx.budget.note_stop();
                     ctx.budget_exhausted = true;
@@ -1277,6 +1421,27 @@ impl DmSession {
                 }
             }
             self.diag.budget_exhausted |= ctx.budget_exhausted;
+            // Best effort: one verified answer, or an error saying how the
+            // cheapest try went.
+            if best_effort && let Some(k) = alternatives.iter().position(|a| a.verified) {
+                alternatives = vec![alternatives.swap_remove(k)];
+            } else if best_effort {
+                let why = match alternatives.first() {
+                    Some(a) => a.description.clone(),
+                    None => {
+                        let mut why = if self.diag.budget_exhausted {
+                            "the run budget ran out before an edit was verified".to_string()
+                        } else {
+                            "no step moved the goals toward their targets".to_string()
+                        };
+                        if let Some(r) = self.diag.rejections.first() {
+                            why.push_str(&format!("; rejected: {}", r.summary()));
+                        }
+                        why
+                    }
+                };
+                return Err(DmError::Unreachable { why });
+            }
         }
         rank_alternatives(&mut alternatives, self.req.prefer, self.req.max_alternatives);
         Ok(self.respond(spec, alternatives))

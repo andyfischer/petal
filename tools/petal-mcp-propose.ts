@@ -38,6 +38,8 @@ export type ProposeInput = {
   knobStrict?: boolean;
   /** Deprecated name of `knobStrict`. */
   configStrict?: boolean;
+  /** "best_effort": one verified answer or an error (`--best-effort`). */
+  policy?: "ranked" | "best_effort";
   alternatives?: number;
   explain?: boolean;
   tol?: number;
@@ -88,6 +90,7 @@ export function proposeEditArgs(input: ProposeInput): { args: string[] } | { err
   for (const sel of input.allow ?? []) args.push("--allow", sel);
   for (const sel of input.deny ?? []) args.push("--deny", sel);
   if (input.knobStrict || input.configStrict) args.push("--knob-strict");
+  if (input.policy === "best_effort") args.push("--best-effort");
   if (input.alternatives !== undefined) args.push("--alternatives", String(input.alternatives));
   if (input.explain) args.push("--explain");
   if (input.tol !== undefined) args.push("--tol", String(input.tol));

@@ -94,6 +94,23 @@ pub enum Command {
     Track { x: i32, y: i32 },
     /// Where the tracked call drew on every recorded frame, in `trail`.
     Trail,
+
+    // ── Edit mode (see `crate::edit_mode`) ──
+    /// Turn edit mode on or off (`on` omitted: toggle). On freezes the
+    /// timeline; off resumes it when entering had frozen it.
+    EditMode {
+        #[serde(default)]
+        on: Option<bool>,
+    },
+    /// Name the call that drew the shape at `(x, y)` on the frame on screen
+    /// (entering edit mode first). Answers in `edit.picked`.
+    EditPick { x: i32, y: i32 },
+    /// Drag the shape at `(x, y)` by `(dx, dy)`: a best-effort edit of the
+    /// code that drew it, written to the file (the hot reload follows).
+    /// Answers in `edit.applied`; an error writes nothing.
+    EditDrag { x: i32, y: i32, dx: f64, dy: f64 },
+    /// Put back the files the last applied edit wrote.
+    EditUndo,
 }
 
 fn default_step_count() -> u32 {
@@ -178,6 +195,10 @@ pub struct Response {
     /// How many frames a `replay` re-simulated.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub replayed: Option<usize>,
+    /// What an edit-mode command did: `picked`, `applied` or `undone`, plus
+    /// edit mode's status (`on`, the last `error`, `undo`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edit: Option<JsonValue>,
 }
 
 impl Response {
@@ -197,6 +218,7 @@ impl Response {
             site: None,
             trail: None,
             replayed: None,
+            edit: None,
         }
     }
 
@@ -490,7 +512,11 @@ pub fn handle_command<H: Host>(
         | Command::Rewind { .. }
         | Command::Replay
         | Command::Track { .. }
-        | Command::Trail => {
+        | Command::Trail
+        | Command::EditMode { .. }
+        | Command::EditPick { .. }
+        | Command::EditDrag { .. }
+        | Command::EditUndo => {
             // Owned by the game loop, which holds the timeline; a host that
             // dispatches here directly has none.
             send_response(&Response::err("timeline commands need the game loop".to_string()));

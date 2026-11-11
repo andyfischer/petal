@@ -731,7 +731,10 @@ output buffer), one of `native_arg` / `arg` / `value: true`, an optional
 (`[lo, hi]`; a range goal, which holds anywhere inside its bounds), and the options `allow`, `deny` (alias
 `pins`), `tol`, `alternatives`, `explain`, `apply`, `pick`, `config_strict`,
 `max_runs`, `max_wall` (seconds), `max_screen`, `allow_respell`, `seed`, and
-`collateral` (channel weights, `{"solid": 10, "coin": 1}`, as `--collateral`). Several goals go in
+`collateral` (channel weights, `{"solid": 10, "coin": 1}`, as `--collateral`), and
+`policy`: `"ranked"` (the default) or `"best_effort"`, one verified answer
+or an error for a host with no list to choose from
+([direct-manipulation.md, "Best effort"](../features/direct-manipulation.md#best-effort)). Several goals go in
 `goals: [...]`. The response is the `propose-edit --json` document: the
 report, or `{"error": true, "phase", "message", …}`. A host whose natives
 need something installed around each run (a data provider, fonts) passes a

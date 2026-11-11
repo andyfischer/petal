@@ -38,7 +38,7 @@ are in [Builtins.md](../Builtins.md#automatic-differentiation).
 - [Cost](#cost)
 - [Limits](#limits)
 - [How it relates to direct manipulation](#how-it-relates-to-direct-manipulation)
-- [Dual numbers (to be deprecated)](#dual-numbers-to-be-deprecated)
+- [Migrating from `dual`, `value_of` and `deriv_of`](#migrating-from-dual-value_of-and-deriv_of)
 
 ## The functions
 
@@ -302,42 +302,23 @@ DM's path levers take their steps through one kernel, the `gn_step` native.
 The difference is what moves: `solve` returns new values for your inputs,
 while direct manipulation proposes an edit to the source.
 
-## Dual numbers (to be deprecated)
+## Migrating from `dual`, `value_of` and `deriv_of`
 
-Before these functions, `autodiff` offered forward-mode automatic
-differentiation by **dual numbers**, and those functions are still present:
+Earlier versions of `autodiff` had a number kind that carried a derivative
+through arithmetic. It was removed (docs/tasks/differentiation-rewrite.md),
+and `dual`, `value_of` and `deriv_of` are now a compile error that points
+here. The usual shapes translate directly:
 
-| Function | Result |
-|---|---|
-| `dual(value, derivative)` | A dual number: a value that carries a derivative through arithmetic |
-| `value_of(x)` | Its value part, as a float (a plain number comes back as a float) |
-| `deriv_of(x)` | Its derivative part, as a float (`0.0` for a plain number) |
-
-```petal
-import autodiff
-
-let x = dual(3.0, 1.0)
-let y = x * x + 2.0 * x
-print(value_of(y))   // 15.0
-print(deriv_of(y))   // 8.0
-```
-
-`+ - * / %`, negation and the float math builtins (`sin`, `sqrt`, `exp`,
-`pow`, `atan2`, `lerp`, `clamp`, `smoothstep`, …) carry a dual's derivative
-by the chain rule; a builtin with no rule raises an error rather than drop
-it. Comparisons use the value only. A `dual` type annotation exists for
-`petal lint`.
-
-They are to be deprecated and then removed, along with the dual value kind
-(docs/tasks/differentiation-rewrite.md): nothing that edits code uses them,
-and every numeric builtin has to carry a rule for them. New code should use
-the functions above. The usual shapes translate directly:
-
-| Dual numbers | Now |
+| Before | Now |
 |---|---|
 | `deriv_of(f(dual(x, 1.0)))` | `deriv(f, x).value` |
 | One `dual(…, 1.0)` seed per input, one pass each | `jacobian(f, xs).rows` |
 | A Newton step written by hand from `deriv_of` | `solve_step(f, xs, target)` |
+
+The answer is now a close approximation, not the exact derivative; check
+`quality` to see how far to trust it. A `state` slot saved by
+`--state-storage` with one of the old numbers in it loads as its value, with
+a warning, for one release.
 
 ## See also
 

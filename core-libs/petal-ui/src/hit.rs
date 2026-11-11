@@ -183,7 +183,7 @@ impl Target {
     }
 }
 
-/// A number field: an int, a float, or a dual number's value.
+/// A number field: an int or a float.
 fn num(v: &Value, heap: &Heap) -> Option<f64> {
     heap.num_f64(*v)
 }

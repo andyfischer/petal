@@ -77,8 +77,8 @@ impl Heap {
         }
     }
 
-    /// Require `value` to be numeric, returning it as `f64`. Accepts `Int`,
-    /// `Float`, and the primal part of a `Dual`.
+    /// Require `value` to be numeric, returning it as `f64`. Accepts `Int`
+    /// and `Float`.
     pub fn as_float(&self, value: Value) -> Result<f64, String> {
         self.num_f64(value)
             .ok_or_else(|| format!("expected a number, got {}", value.type_name()))

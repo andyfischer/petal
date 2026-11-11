@@ -6,7 +6,7 @@ use std::fmt;
 
 use crate::handle::HandleVal;
 use crate::heap::{
-    CellId, DictId, DualId, ElementId, EnumTag, F64ArrayId, ListId, MapId, StringId, Vec2Id, Vec3Id,
+    CellId, DictId, ElementId, EnumTag, F64ArrayId, ListId, MapId, StringId, Vec2Id, Vec3Id,
 };
 use crate::native_fn::NativeFnId;
 use crate::program::{ClosureId, OverloadSetId, Program, TermId};
@@ -55,10 +55,6 @@ pub enum Value {
     /// one is closure capture, which is lexically visible. See the containment
     /// invariant in docs/syntax/var.md (Containment).
     Cell(CellId),
-    /// Dual number for forward-mode automatic differentiation: a primal
-    /// value and its derivative (tangent), on the heap
-    /// ([`Heap::get_dual`](crate::heap::Heap::get_dual)).
-    Dual(DualId),
     /// 2D vector for creative coding (positions, velocities, forces). Its
     /// components are on the heap ([`Heap::get_vec2`](crate::heap::Heap::get_vec2)),
     /// immutable, so the id behaves like a value.
@@ -83,15 +79,14 @@ pub enum Value {
 // heap ids are 8 bytes (index + generation), the widest payloads are
 // `EnumVariant` (a 4-byte tag and a payload id) and `Handle`, 12 bytes each.
 // Keep it that way: every register, list slot, record field, map entry and
-// closure capture is a `Value`. It is why `Vec2`, `Dual` and `Vec3` are heap
+// closure capture is a `Value`. It is why `Vec2` and `Vec3` are heap
 // ids rather than inline f64s. See docs/proposals/value-representation.md.
 const _: () = assert!(std::mem::size_of::<Value>() == 16);
 const _: () = assert!(std::mem::size_of::<Option<Value>>() == 16);
 
 impl Value {
-    /// Truthiness, when it can be told without the heap: `None` for a vec2
-    /// or a dual number, whose components are on the heap (a zero one is
-    /// false). [`Heap::truthy`](crate::heap::Heap::truthy) answers for every
+    /// Truthiness, when it can be told without the heap: `None` for a vec2,
+    /// whose components are on the heap (a zero one is false). [`Heap::truthy`](crate::heap::Heap::truthy) answers for every
     /// value; this is its fast path.
     #[inline]
     pub fn truthy_without_heap(&self) -> Option<bool> {
@@ -100,7 +95,7 @@ impl Value {
             Value::Bool(b) => *b,
             Value::Int(n) => *n != 0,
             Value::Float(f) => *f != 0.0,
-            Value::Dual(_) | Value::Vec2(_) => return None,
+            Value::Vec2(_) => return None,
             // Always truthy, like a list or record: a vec3 never had its
             // components inline. Test a zero vector explicitly
             // (`v == vec3(0, 0, 0)`).
@@ -133,7 +128,6 @@ impl Value {
             Value::EnumVariant { .. } => "enum",
             Value::Element(_) => "element",
             Value::Cell(_) => "cell",
-            Value::Dual(_) => "dual",
             Value::Vec2(_) => "vec2",
             Value::Vec3(_) => "vec3",
             Value::Symbol(_) => "symbol",
@@ -172,7 +166,6 @@ impl fmt::Debug for Value {
             Value::Element(id) => write!(f, "Element({:?})", id),
             Value::Cell(id) => write!(f, "Cell({:?})", id),
             // The components are on the heap, which `Debug` has no access to.
-            Value::Dual(id) => write!(f, "Dual({:?})", id),
             Value::Vec2(id) => write!(f, "Vec2({:?})", id),
             Value::Vec3(id) => write!(f, "Vec3({:?})", id),
             Value::Symbol(id) => write!(f, "Symbol({})", id.0),
@@ -256,14 +249,6 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
                     .collect();
                 format!("{}({})", name, parts.join(", "))
             }
-        }
-        Value::Dual(id) => {
-            let (value, derivative) = heap.get_dual(*id);
-            format!(
-                "dual({}, {})",
-                format_float(value),
-                format_float(derivative)
-            )
         }
         Value::Vec2(id) => {
             let (x, y) = heap.get_vec2(*id);
@@ -545,10 +530,6 @@ pub fn value_to_json_ctx(
                 .collect();
             serde_json::json!({ "type": "map", "entries": entries })
         }
-        Value::Dual(id) => {
-            let (value, derivative) = heap.get_dual(*id);
-            serde_json::json!({ "type": "dual", "value": value, "derivative": derivative })
-        }
         Value::Vec2(id) => {
             let (x, y) = heap.get_vec2(*id);
             serde_json::json!({ "type": "vec2", "x": x, "y": y })
@@ -673,13 +654,12 @@ fn json_map_entries(json: &serde_json::Value) -> Option<Vec<&[serde_json::Value]
         .collect()
 }
 
-/// The numeric view of a value that `==` and `<` compare by: ints, floats, and
-/// a dual number's primal. `None` for everything else.
-pub fn as_num(v: &Value, heap: &Heap) -> Option<Num> {
+/// The numeric view of a value that `==` and `<` compare by: ints and floats.
+/// `None` for everything else.
+pub fn as_num(v: &Value, _heap: &Heap) -> Option<Num> {
     match *v {
         Value::Int(n) => Some(Num::Int(n)),
         Value::Float(f) => Some(Num::Float(f)),
-        Value::Dual(id) => Some(Num::Float(heap.get_dual(id).0)),
         _ => None,
     }
 }
@@ -823,8 +803,7 @@ fn hash_into(val: &Value, heap: &Heap, h: &mut impl std::hash::Hasher) {
 /// This is `==`. It is symmetric and transitive, and reflexive on everything
 /// but NaN (checked by the `proofs` harnesses for numbers and by the
 /// exhaustive tests in this module for containers):
-/// - numbers compare exactly across Int and Float (no rounding to f64), and a
-///   dual number compares by its primal value, against anything numeric;
+/// - numbers compare exactly across Int and Float (no rounding to f64);
 /// - lists, enum variants and elements compare element-wise; records compare
 ///   by class and by key set and values, ignoring key order; maps compare by
 ///   key set and values, ignoring insertion order;
@@ -919,8 +898,7 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
 }
 
 /// Order two Values (used by the `<`/`<=`/`>`/`>=` operators and the
-/// `min`/`max` builtins). Numeric kinds compare exactly by value (dual numbers
-/// by their primal); strings compare lexically; mismatched non-numeric kinds
+/// `min`/`max` builtins). Numeric kinds compare exactly by value; strings compare lexically; mismatched non-numeric kinds
 /// are an error. `Ok(None)` when the two are unordered — a NaN is involved —
 /// so every ordering operator on it is false, as in IEEE 754.
 pub fn compare_values_partial(
@@ -1012,7 +990,7 @@ mod tests {
     //
     // Small-scope exhaustive check: every pair and triple drawn from a universe
     // of values up to nesting depth 2 — numeric edge cases (±0, NaN, 2^53 + 1
-    // vs 2^53 as float, duals), strings allocated twice, and every container
+    // vs 2^53 as float), strings allocated twice, and every container
     // kind built from them. The numeric kernels are proven for all inputs by
     // the Kani harnesses in `crate::proofs`; this covers how containers
     // compose them. See docs/dev/formal-verification.md.
@@ -1030,8 +1008,6 @@ mod tests {
             Value::Float(1.0),
             Value::Float(9007199254740992.0),
             Value::Float(f64::NAN),
-            heap.dual_value(1.0, 5.0),
-            heap.dual_value(1.0, 0.0),
             heap.vec2_value(0.0, 1.0),
             heap.vec2_value(-0.0, 1.0),
         ];
@@ -1085,7 +1061,6 @@ mod tests {
     fn contains_nan(v: &Value, heap: &Heap) -> bool {
         match *v {
             Value::Float(f) => f.is_nan(),
-            Value::Dual(id) => heap.get_dual(id).0.is_nan(),
             Value::List(id) => heap.get_list(id).iter().any(|x| contains_nan(x, heap)),
             Value::Map(id) => heap.get_map(id).values().any(|x| contains_nan(x, heap)),
             Value::Dict(id) => heap.get_dict(id).all_values().any(|x| contains_nan(&x, heap)),

@@ -892,10 +892,6 @@ DESCRIPTION
               len(filter(xs, p)) > 0 becomes any(xs, p), and == 0 becomes
               !any(xs, p), where p is an in-place lambda with no side
               effect. Otherwise reported: any stops at the first match
-       dual-deprecated
-              deriv_of(f(dual(x, 1.0))) for a named f becomes
-              deriv(f, x).value (dual numbers are deprecated; a central
-              difference, not the exact derivative)
        vary-sensitivity
               a sensitivity key in vary's options: ui/drag removed the
               option and ignores it; the key is deleted

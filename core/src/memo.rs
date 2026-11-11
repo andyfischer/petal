@@ -959,12 +959,6 @@ impl<'a> ValueEq<'a> {
                     xs.iter().zip(ys).all(|(x, y)| x.to_bits() == y.to_bits())
                 }
             }
-            (Value::Dual(a), Value::Dual(b)) => {
-                a == b || {
-                    let ((av, ad), (bv, bd)) = (heap.get_dual(*a), heap.get_dual(*b));
-                    av.to_bits() == bv.to_bits() && ad.to_bits() == bd.to_bits()
-                }
-            }
             (Value::List(a), Value::List(b)) => {
                 if a == b {
                     return true;

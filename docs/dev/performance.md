@@ -357,7 +357,7 @@ So a positional call of `float`, `int`, `min`, `max`, `clamp`, `abs`, `floor`,
 ints and floats for the numeric ones, a list, string or float array for
 `len`, anything but a `Pending` for `type`. Everything else stops the loop at
 the instruction, and the general executor runs it as the builtin call it was
-lowered from: a string to convert (`float("3.5")`), a dual number, a wrong
+lowered from: a string to convert (`float("3.5")`), a wrong
 type, an overflow (`abs` of the smallest int), a `Pending` to absorb. The
 results, the error text and its source position are therefore the native's.
 `core/tests/all/intrinsics.rs` holds the inline arms to the natives over a matrix

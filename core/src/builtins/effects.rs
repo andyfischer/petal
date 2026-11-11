@@ -198,9 +198,6 @@ builtin_effects![
     ("cross", PURE),
     ("limit", PURE),
     ("rotate", PURE),
-    // autodiff (pure readers)
-    ("value_of", PURE),
-    ("deriv_of", PURE),
     // The Moses debrief's helpers. `fill` hands back a list of its own whose
     // every element *is* the value argument, so it is FRESH and not NO_REF
     // (the `min`/`max` shape). `group_by_keys` builds its record and every
@@ -494,7 +491,6 @@ mod tests {
                 "cos",
                 "cross",
                 "degrees",
-                "deriv_of",
                 "distance",
                 "dot",
                 "drag_solve_step",
@@ -588,7 +584,6 @@ mod tests {
                 "top_indices",
                 "trim",
                 "type",
-                "value_of",
                 "values",
                 "vec2",
                 "vec3",

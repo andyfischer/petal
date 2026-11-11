@@ -84,7 +84,7 @@ mod casts;
 mod compound;
 mod config_data;
 mod dead_alias;
-mod dual_migrate;
+mod vary_sensitivity;
 mod const_of_literal;
 mod dm_hints;
 mod field_set;
@@ -102,7 +102,7 @@ use casts::plan_cast_fixes;
 use compound::plan_compound_fixes;
 use config_data::plan_config_data_reports;
 use dead_alias::plan_alias_fixes;
-use dual_migrate::{plan_dual_fixes, plan_sensitivity_fixes};
+use vary_sensitivity::plan_sensitivity_fixes;
 use dm_hints::plan_hint_reports;
 use const_of_literal::plan_const_of_literal_reports;
 use field_set::plan_field_set_fixes;
@@ -165,7 +165,6 @@ pub const TUNABLE_ON_VAR: &str = "tunable-on-var";
 pub const TUNABLE_NOT_WHOLE: &str = "tunable-not-whole-initializer";
 pub const NEVER_REPLAYS: &str = "never-replays";
 pub const CONST_OF_LITERAL: &str = "const-of-literal";
-pub const DUAL_DEPRECATED: &str = crate::compiler::dual_deprecated::RULE;
 pub const VARY_SENSITIVITY: &str = "vary-sensitivity";
 
 
@@ -226,13 +225,6 @@ pub const RULES: &[RuleInfo] = &[
         summary: "`len(filter(xs, p)) > 0` should be `any(xs, p)`",
         opt_in: false,
         fixes: Fixes::Provable,
-    },
-    RuleInfo {
-        name: DUAL_DEPRECATED,
-        summary: "`deriv_of(f(dual(x, 1.0)))`: dual numbers are deprecated; `--fix` writes \
-                  `deriv(f, x).value` (a central difference, not the exact derivative)",
-        opt_in: false,
-        fixes: Fixes::All,
     },
     RuleInfo {
         name: VARY_SENSITIVITY,
@@ -664,9 +656,7 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     let (chars, stmts) = reparse(&p.text)?;
     rewrites += p.apply(PREFER_ANY, plan_any_fixes(&stmts, &chars));
 
-    // The migrations off dual numbers (docs/tasks/differentiation-rewrite.md).
-    let (chars, stmts) = reparse(&p.text)?;
-    rewrites += p.apply(DUAL_DEPRECATED, plan_dual_fixes(&stmts, &chars));
+    // `vary` lost its `sensitivity` option (docs/tasks/differentiation-rewrite.md).
     let (chars, stmts) = reparse(&p.text)?;
     rewrites += p.apply(VARY_SENSITIVITY, plan_sensitivity_fixes(&stmts, &chars));
 

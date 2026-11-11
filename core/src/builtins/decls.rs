@@ -235,7 +235,6 @@ fn the_domain_builtins_are_declared_by_their_packages_and_not_by_core() {
         ("vec2", "vec2"),
         ("vec3", "vec2"),
         ("normalize", "vec2"),
-        ("dual", "autodiff"),
         ("json_parse", "json"),
         ("json_stringify", "json"),
         ("symbol", "io"),

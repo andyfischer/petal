@@ -20,7 +20,7 @@ mod function;
 pub(crate) mod hint_names;
 pub(crate) mod keyed_state;
 mod match_check;
-pub(crate) mod dual_deprecated;
+mod autodiff_removed;
 pub(crate) mod moved_widgets;
 mod native;
 mod phi;
@@ -1054,6 +1054,9 @@ impl Compiler {
             .chain(native::misplaced_native_decls(&stmts))
             .chain(native::conflicting_native_decls(&stmts))
             .chain(hint_names::reserved_hint_bindings(&stmts))
+            // `dual`, `value_of` and `deriv_of` left `autodiff`
+            // (docs/tasks/differentiation-rewrite.md, Phase 5).
+            .chain(autodiff_removed::removed_dual_uses(module, &stmts))
         {
             self.errors.push((diag, self.error_file.clone()));
         }
@@ -1068,10 +1071,6 @@ impl Compiler {
             // (docs/tasks/lifecycle-annotation-functions-refactor.md, Phase 5).
             self.warnings
                 .extend(crate::migrate::deprecated_lifecycle_decls(&stmts, &module.source));
-            // `autodiff`'s dual numbers are deprecated
-            // (docs/tasks/differentiation-rewrite.md, Phase 2).
-            self.warnings
-                .extend(dual_deprecated::deprecated_dual_uses(module, &stmts));
         }
 
         if !is_entry {

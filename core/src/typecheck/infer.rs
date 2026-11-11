@@ -44,7 +44,7 @@
 //! ## What was deliberately rejected
 //!
 //! **Arithmetic.** `x * 2.0` looks like it proves `x: num`, and it does not:
-//! `vec2` and `dual` are additive and multiplicative too (`vec2(1,2) + 2.0`
+//! `vec2` and `vec3` are additive and multiplicative too (`vec2(1,2) + 2.0`
 //! is a `vec2`), so `num` would be a wrong annotation on working code. Petal's
 //! `+` is numeric-only in the sense that it rejects strings and lists, which
 //! is not the same as proving `num`.

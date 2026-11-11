@@ -133,7 +133,7 @@ pub fn propose_drop(source: &str, model: &serde_json::Value, drop: &serde_json::
 /// A runtime value's JSON ([`crate::value::value_to_json`]) as a literal:
 /// nil, bools, numbers (an integer stays an int), strings, lists and records
 /// whose field names are identifiers. `None` for anything a literal cannot
-/// spell (a `Map()`, a vector, a dual, a handle's tagged form).
+/// spell (a `Map()`, a vector, a handle's tagged form).
 pub fn static_from_json(v: &serde_json::Value) -> Option<StaticValue> {
     use serde_json::Value as J;
     Some(match v {
@@ -149,7 +149,7 @@ pub fn static_from_json(v: &serde_json::Value) -> Option<StaticValue> {
             if o.get("type").and_then(|t| t.as_str()).is_some()
                 && matches!(
                     o.get("type").and_then(|t| t.as_str()),
-                    Some("map" | "dual" | "vec2" | "vec3" | "pending" | "handle" | "function")
+                    Some("map" | "vec2" | "vec3" | "pending" | "handle" | "function")
                 )
             {
                 return None;

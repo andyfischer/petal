@@ -288,17 +288,17 @@ was-it-passed flag that the body tests before evaluating the default.
 
 `Value` is a `Copy` 16-byte enum: a tag byte and at most 12 bytes of
 payload. Heap-allocated values (strings, lists, f64 arrays, records, `map`s,
-elements, `Vec2`s, `Vec3`s, dual numbers, cells) are stored by ID into the
-`Heap` — `Value` just carries the ID. `Vec2` and `Dual` share one pair slab
-(`[f64; 2]` per slot); like `Vec3` they are immutable, so the id behaves like a
+elements, `Vec2`s, `Vec3`s, cells) are stored by ID into the
+`Heap` — `Value` just carries the ID. `Vec2`s live in the pair slab
+(`[f64; 2]` per slot); like `Vec3`s they are immutable, so the id behaves like a
 value. An `EnumVariant` is a 4-byte [`EnumTag`] (the index of its name, an
 interned string the heap keeps permanently) and its payload list id. Static
 assertions in `value.rs` keep `Value` and `Option<Value>` at 16 bytes; see
 [proposals/value-representation.md](../proposals/value-representation.md).
 
-Truthiness of a vec2 or a dual number needs the heap: `Heap::truthy(v)`
-answers for every value (`Value::truthy_without_heap` is its fast path), and
-numeric reads go through `Heap::num_f64` / `Heap::derivative_of`.
+Truthiness of a vec2 needs the heap: `Heap::truthy(v)` answers for every
+value (`Value::truthy_without_heap` is its fast path), and numeric reads go
+through `Heap::num_f64`.
 
 Every heap id (and `ClosureId`/`OverloadSetId`) is a `(slot index,
 generation)` pair naming one *allocation*, not one slot. Reusing a reclaimed
@@ -332,7 +332,6 @@ pub enum Value {
     EnumVariant { tag: EnumTag, data: ListId },
     Element(ElementId),
     Cell(CellId),
-    Dual(DualId),        // [value, derivative] in the pair slab
     Vec2(Vec2Id),        // [x, y] in the pair slab
     Vec3(Vec3Id),
     Symbol(SymbolId),
@@ -676,39 +675,25 @@ The graph walks live in `program_analysis.rs` (with the CLI handlers in
 
 ---
 
-## Differentiation (forward-mode)
+## Differentiation (finite differences)
 
-Petal has built-in forward-mode automatic differentiation via `Value::Dual`,
-a heap id for an immutable `(value, derivative)` pair (`Heap::get_dual`). Usage, and the
-list of builtins that carry or drop a derivative, is in
+Petal has no derivative-carrying value kind. The `autodiff` package
+(`core/packages/autodiff/autodiff.ptl`, Petal code) measures derivatives by
+calling a function with its input nudged, every probe under `speculate`, and
+solves for inputs with damped Gauss-Newton steps. Usage is in
 [features/differentiation.md](../features/differentiation.md).
 
-- `backend/ops.rs`: `arithmetic` hands any pair with a dual operand to
-  `dual_arith` (the sum, product and quotient rules), and `negate` has a dual
-  arm.
-- `builtins/math.rs`: `unary_float_dual` (`sqrt`, `sin`, `cos`, `tan`,
-  `asin`, `acos`, `atan`, `float`) and `unary_num_preserving` (`abs`,
-  `floor`, `ceil`, `round`) take a derivative function and apply the chain
-  rule.
-- `builtins/autodiff.rs`: the constructor and accessors (`dual`, `value_of`,
-  `deriv_of`), declared to scripts by the bundled `autodiff` package
-  (`core/packages/autodiff/`), and the helpers the multi-argument rules are
-  written in: `D` (a value and derivative pair with `add`/`sub`/`mul`/`div`/
-  `chain`), `args_d` (read the arguments as `D`s and say whether any was a
-  dual) and `push_d` (push a dual only when one came in). `exp`, `log`,
-  `pow`, `atan2`, `hypot`, `clamp`, `fract`, `sign`, `lerp`, `map_range`,
-  `smoothstep`, `radians`, `degrees`, `interp` and the scalar forms of `mag`
-  and `distance` use them.
-- A native that reads an argument with `PetalCxt::get_float` has no rule, and
-  `get_float` raises on a dual rather than hand back the value alone, so no
-  builtin or host function drops a derivative silently. `vec2` and `vec3`
-  refuse a dual component by name: a vector holds plain floats.
-- `value.rs`: `==` and ordering compare a dual by its primal. `memo.rs` keys
-  on both fields, so a memoized call never returns another seed's derivative.
+- `builtins/drag_math.rs`: `fd_column` classifies one finite-difference
+  column (smooth, kink, branch flip, step, zero, errored) with the rules of
+  `dm/jacobian.rs` (`dm::column_from_samples`), so the package and direct
+  manipulation v2 agree; `gn_step` is the Gauss-Newton step `solve_step`,
+  `ui/drag`'s `vary` and DM's levers share.
+- `compiler/autodiff_removed.rs`: the compile error for the functions the
+  package no longer has, with a pointer to their replacements.
 
-Reverse-mode (back-propagation through the dataflow graph) is a design
-goal but not yet implemented — see the [README](../../README.md#goals) for the
-project goals.
+Exact differentiation is planned to return as a symbolic analysis of the AST
+or term graph, not as a runtime value kind
+(docs/tasks/differentiation-rewrite.md).
 
 ---
 

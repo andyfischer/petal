@@ -10,8 +10,8 @@
 //!    `floor`, `ceil`, `round` and `sign` preserve int-ness
 //!    (`core/src/builtins/math.rs`, `unary_num_preserving`); `min`/`max`
 //!    return one of their operands unchanged; `clamp` is int for an all-int
-//!    call; the float functions answer a dual for a dual; the vector natives
-//!    answer in the kind they were given.
+//!    call; the float functions are known floats for a numeric argument; the
+//!    vector natives answer in the kind they were given.
 //! 2. **Argument slots with no type name** ([`intrinsic_param_slots`]):
 //!    `len` measures a list, a string, an `f64_array` or a map, and `keys`,
 //!    `values` and `entries` read a record or a map; there is no type that
@@ -39,7 +39,7 @@ use crate::types::Type;
 /// (which callers read as [`Type::Any`]). `Some(Some(ty))` — decided.
 pub fn intrinsic_return_type(name: &str, args: &[Type]) -> Option<Option<Type>> {
     let decided = match name {
-        // `unary_num_preserving`: Int -> Int, Float -> Float, Dual -> Dual.
+        // `unary_num_preserving`: Int -> Int, Float -> Float.
         "abs" | "floor" | "ceil" | "sign" => match args {
             [Type::Int] => Some(Type::Int),
             [Type::Float] => Some(Type::Float),
@@ -79,15 +79,14 @@ pub fn intrinsic_return_type(name: &str, args: &[Type]) -> Option<Option<Type>> 
             [a, b] if a == b && *a != Type::Any => Some(*a),
             _ => None,
         },
-        // `unary_float_dual`: a Dual argument propagates as a Dual, so these
-        // are only known-Float for a statically numeric argument.
+        // `unary_float`: known-Float for a statically numeric argument (the
+        // only certainty this table records; an unknown one infers nothing).
         "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" => match args {
             [Type::Int | Type::Float] => Some(Type::Float),
             _ => None,
         },
-        // The multi-argument float functions with a derivative rule
-        // (`core/src/builtins/autodiff.rs`, `args_d`): a float for numeric
-        // arguments, a dual when any argument is one.
+        // The multi-argument float functions: a float for numeric
+        // arguments.
         "atan2" | "hypot" | "pow" | "exp" | "log" | "fract" | "radians" | "degrees"
         | "map_range" | "smoothstep" => {
             if !args.is_empty() && args.iter().all(|t| matches!(t, Type::Int | Type::Float)) {
@@ -100,8 +99,7 @@ pub fn intrinsic_return_type(name: &str, args: &[Type]) -> Option<Option<Type>> 
             [_, Type::Int | Type::Float] => Some(Type::Float),
             _ => None,
         },
-        // `distance` and `mag` of vectors are floats (a vector holds no
-        // duals); of scalars, as above.
+        // `distance` and `mag` of vectors are floats; of scalars, as above.
         "distance" | "mag" => {
             if !args.is_empty()
                 && args
@@ -177,9 +175,7 @@ pub fn native_param_slots(decl: &crate::native_decl::NativeDecl, arity: usize) -
 pub enum ArgSlot {
     /// Unchecked.
     Any,
-    /// `PetalCxt::get_float`/`get_int`: an int, a float, or a dual number.
-    /// (`get_int` refuses a dual, but a dual is never inferred, and accepting
-    /// one keeps the slot sound.)
+    /// `PetalCxt::get_float`/`get_int`: an int or a float.
     Num,
     /// `PetalCxt::get_string`.
     Str,
@@ -200,8 +196,8 @@ pub enum ArgSlot {
 
 impl ArgSlot {
     /// The slot a parameter declared `: ty` on a `native fn` is. The types
-    /// with a looser runtime reading keep it: a `num` slot takes a dual (the
-    /// native reads its primal), a `record` slot a class instance.
+    /// with a looser runtime reading keep it: a `record` slot takes a class
+    /// instance.
     pub fn of(ty: Type) -> ArgSlot {
         match ty {
             Type::Any => ArgSlot::Any,
@@ -224,7 +220,7 @@ impl ArgSlot {
         }
         match self {
             ArgSlot::Any => true,
-            ArgSlot::Num => matches!(ty, Type::Int | Type::Float | Type::Num | Type::Dual),
+            ArgSlot::Num => matches!(ty, Type::Int | Type::Float | Type::Num),
             ArgSlot::Str => ty == Type::String,
             ArgSlot::List => ty == Type::List,
             ArgSlot::Record => matches!(ty, Type::Record | Type::Class(_)),
@@ -265,7 +261,6 @@ pub fn sort_key_type_ok(ty: Type) -> bool {
             | Type::Int
             | Type::Float
             | Type::Num
-            | Type::Dual
             | Type::String
     )
 }
@@ -429,7 +424,7 @@ mod tests {
             builtin_return_type("round", &[Type::Float]),
             Some(Type::Float)
         );
-        // An unknown argument could be a dual number: infer nothing.
+        // An unknown argument decides nothing: infer nothing.
         assert_eq!(builtin_return_type("round", &[Type::Any]), None);
         assert_eq!(intrinsic_return_type("round", &[Type::Any]), Some(None));
         assert_eq!(intrinsic_return_type("len", &[Type::List]), None);
@@ -446,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn dual_capable_floats_need_a_numeric_argument() {
+    fn float_unaries_need_a_numeric_argument() {
         assert_eq!(
             builtin_return_type("sqrt", &[Type::Float]),
             Some(Type::Float)

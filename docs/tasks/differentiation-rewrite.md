@@ -956,3 +956,47 @@ None at the moment.
   (`frontend/public/petal`, from `pnpm build:sdk`), which predates
   Phase 1, so the demo needs a re-vendor before the site is deployed;
   that is left to Phase 5's re-import.
+- **Phase 5 (2026-11-11): dual numbers removed — done.** Gone:
+  `Value::Dual`, `DualId`, the pair slab's dual accessors
+  (`dual_value`, `get_dual`, `derivative_of`; the slab now holds only
+  `vec2`s), `dual_arith` and the dual negation arm, every native's dual arm
+  (`math.rs`'s `unary_float_dual` became `unary_float`; `creative_coding.rs`
+  reads plain floats through a `floats::<N>` helper that
+  `tools/extract-stdlib.ts` understands), `builtins/autodiff.rs` and the
+  three natives' registrations, `Type::Dual` (and the `dual` type name),
+  `SpecOverride::Dual`, `OverrideValue::Dual`, `PetalCxt::push_dual`,
+  `AllocKind::Dual`, and the dual cases in memo, the static cache, record
+  templates, run deps, dict keys, DM observation, `drop_edit`, stats,
+  `vm/fast.rs` tests, `petal-ui`'s `hovered`, the C bridge's value view and
+  the typecheck tables. `dual`, `value_of` and `deriv_of` reached through
+  `import autodiff` are the compile error of Design §1, word for word
+  (`compiler/autodiff_removed.rs`, replacing Phase 2's warning); the
+  `dual-deprecated` lint rule went with the warning, and `vary-sensitivity`
+  moved to `lint/vary_sensitivity.rs`. State storage can hold a dual (the
+  `--state-storage` file and the C bridge's `pb_vm_load_state` document,
+  `{"$petal": "dual", …}`), so such a slot loads as its value and is named in
+  `StateStorageLoad::converted` (warned by the CLI, listed under
+  `converted` in the bridge's load report), for one release. Tests:
+  `test/vitest/autodiff.test.ts` rewritten for `deriv` / `jacobian` /
+  `solve_step` / `solve` (math builtins against closed-form derivatives
+  within 1e-6, and the error), `core/tests/all/autodiff.rs` (the error,
+  bare/qualified/aliased), a state-storage test. Docs: `ffi.md`,
+  `Architecture.md`, `syntax/overview.md`, `language-guide.md`,
+  `packages.md`, `Builtins.md`, `CLI.md`, `features/differentiation.md`
+  (a migration section the error points at), CHANGELOG (Removed, with an
+  **Embedders** note), the stale count in `proposals/value-representation.md`,
+  and the propose-language-change checklist item. Plans, proposals and
+  dated changelog entries that describe the old design were left as the
+  record they are; the three old IR fixtures under
+  `test/vitest/fixtures/ir/` still name the removed natives among their
+  builtin phantom terms and load fine. Verified: core tests (both feature
+  sets, doctests), petal-ui, petal-c-bridge, ui-corpus, vitest,
+  `tools/test-examples.ts` (opts vs no-opt and static cache on/off, 35/35),
+  `make expensive_lint_tests`, and `dm_study`'s ladder: all 105 goals have
+  the same outcome, run count and top edit as before. The Kani proofs were
+  not run (`cargo-kani` is not installed here); they have no pair-slab or
+  dual harness to update.
+- **Phase 6 (2026-11-11): README — done.** "Differentiable programming" is
+  replaced by "How goals get solved" (algebraic inversion, measured
+  sensitivities with Gauss-Newton steps, speculative search), after the
+  direct-manipulation section, whose backpropagation aside is gone.

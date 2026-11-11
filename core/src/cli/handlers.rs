@@ -311,6 +311,14 @@ fn load_state_storage(env: &mut Env, json: bool, pid: ProgramId, sid: StackKey, 
                     crate::env::state_name_list(&load.dropped)
                 );
             }
+            if !load.converted.is_empty() {
+                eprintln!(
+                    "warning: state storage '{path}' holds dual numbers ({}), which Petal no \
+                     longer has; each is loaded as its value. See \
+                     docs/features/differentiation.md.",
+                    crate::env::state_name_list(&load.converted)
+                );
+            }
         }
         Err(e) => fail(e),
     }

@@ -1,123 +1,14 @@
-//! Rules — the migration off dual numbers (docs/tasks/differentiation-rewrite.md,
-//! Phase 2).
-//!
-//! **`dual-deprecated`**: the one-input derivative written with duals, in its
-//! common shape, becomes a call of `deriv`:
-//!
-//! ```text
-//! deriv_of(f(dual(x, 1.0)))     =>     deriv(f, x).value
-//! ```
-//!
-//! `f` must be a name (a `fn`, a builtin like `atan`, or a variable holding a
-//! function) called with the one dual argument, and the seed must be the
-//! literal `1.0` (or `1`). The rewrite is not the same program: `deriv`
-//! measures a central difference, so the number it gives is a close
-//! approximation of the exact derivative the dual gave. It is the migration
-//! the deprecation asks for, so `--fix` applies it; every other use of `dual`,
-//! `value_of` or `deriv_of` is left to the compiler's warning of the same
-//! rule id ([`crate::compiler::dual_deprecated`]) and a hand edit.
-//!
-//! **`vary-sensitivity`**: `ui/drag`'s `vary` lost its `sensitivity` option
-//! (forward differences are the only mode; the key is ignored for one
-//! release). The fix deletes the key from the options record, and the whole
-//! options argument when that was its only field. That is the same program.
+//! Rule `vary-sensitivity`: `ui/drag`'s `vary` lost its `sensitivity`
+//! option (forward differences are the only mode; the key is ignored for one
+//! release, docs/tasks/differentiation-rewrite.md). The fix deletes the key
+//! from the options record, and the whole options argument when that was its
+//! only field. That is the same program.
 
-use crate::ast::{Expr, ExprKind, ExprVisitor, Literal, RecordField, Stmt, StmtKind, walk_expr};
-use crate::compiler::dual_deprecated::Reach;
+use crate::ast::{Expr, ExprKind, ExprVisitor, RecordField, Stmt, StmtKind, walk_expr};
 
 use super::Fix;
 use super::to_match::Splice;
 use super::util::{span_text, text};
-
-pub(super) fn plan_dual_fixes(stmts: &[Stmt], chars: &[char]) -> Vec<Fix> {
-    let Some(reach) = Reach::of(stmts) else {
-        return Vec::new();
-    };
-    struct Finder<'a> {
-        reach: &'a Reach,
-        chars: &'a [char],
-        fixes: Vec<Fix>,
-    }
-    impl ExprVisitor for Finder<'_> {
-        fn visit_expr(&mut self, e: &Expr) {
-            if let Some(fix) = self.one(e) {
-                // The outer call is rewritten whole; what is inside it is not
-                // visited again.
-                self.fixes.push(fix);
-                return;
-            }
-            walk_expr(self, e);
-        }
-    }
-    impl Finder<'_> {
-        fn one(&self, e: &Expr) -> Option<Fix> {
-            let (outer_fn, [inner]) = positional_call(e)? else {
-                return None;
-            };
-            if self.reach.names(outer_fn)? != "deriv_of" {
-                return None;
-            }
-            let (f, [seeded]) = positional_call(inner)? else {
-                return None;
-            };
-            let ExprKind::Ident(f_name) = &f.kind else {
-                return None;
-            };
-            if crate::compiler::dual_deprecated::NAMES.contains(&f_name.as_str()) {
-                return None;
-            }
-            let (dual_fn, [x, seed]) = positional_call(seeded)? else {
-                return None;
-            };
-            if self.reach.names(dual_fn)? != "dual" || !is_one(seed) {
-                return None;
-            }
-            // `deriv` is reached the way `deriv_of` was: bare, or through the
-            // same qualifier.
-            // A bare `deriv` must be the package's: bound by a plain import,
-            // and not a name the file declares itself.
-            let head = match &outer_fn.kind {
-                ExprKind::Ident(_) if self.reach.deriv_bare => "deriv".to_string(),
-                ExprKind::FieldAccess { object, .. } => {
-                    format!("{}.deriv", span_text(self.chars, object.span)?)
-                }
-                _ => return None,
-            };
-            let x_text = span_text(self.chars, x.span)?;
-            let start = e.span.start.offset as usize;
-            let end = e.span.end.offset as usize;
-            // The span must cover exactly the call as written.
-            let written = text(self.chars, start, end)?;
-            if !written.starts_with(span_text(self.chars, outer_fn.span)?.as_str())
-                || !written.ends_with(')')
-            {
-                return None;
-            }
-            Some(Fix {
-                anchor: start,
-                message: format!(
-                    "dual numbers are deprecated: `deriv_of({f_name}(dual(x, 1.0)))` is \
-                     `deriv({f_name}, x).value`, a central difference"
-                ),
-                splices: vec![Splice {
-                    start,
-                    end,
-                    text: format!("{head}({f_name}, {x_text}).value"),
-                }],
-            })
-        }
-    }
-    let mut finder = Finder {
-        reach: &reach,
-        chars,
-        fixes: Vec::new(),
-    };
-    for s in stmts {
-        finder.visit_stmt(s);
-    }
-    finder.fixes.sort_by_key(|f| f.anchor);
-    finder.fixes
-}
 
 /// `e` as a call with positional arguments only: its callee and arguments.
 fn positional_call(e: &Expr) -> Option<(&Expr, &[Expr])> {
@@ -129,11 +20,6 @@ fn positional_call(e: &Expr) -> Option<(&Expr, &[Expr])> {
         } if arg_names.iter().all(Option::is_none) => Some((function, args)),
         _ => None,
     }
-}
-
-fn is_one(e: &Expr) -> bool {
-    matches!(&e.kind, ExprKind::Literal(Literal::Float(v)) if *v == 1.0)
-        || matches!(&e.kind, ExprKind::Literal(Literal::Int(1)))
 }
 
 /// Whether the file imports `ui/drag`, where `vary` lives.
@@ -296,41 +182,8 @@ mod tests {
     }
 
     #[test]
-    fn deriv_of_a_seeded_call_becomes_deriv() {
-        let src = "import autodiff\n\nfn f(x)\n  x * x\nend\n\nprint(deriv_of(f(dual(3.0, 1.0))))\nprint(autodiff.deriv_of(atan(autodiff.dual(1.0, 1))))\n";
-        let (out, rules) = fixed(src);
-        assert!(out.contains("print(deriv(f, 3.0).value)"), "{out}");
-        assert!(out.contains("print(autodiff.deriv(atan, 1.0).value)"), "{out}");
-        assert_eq!(rules.iter().filter(|r| **r == "dual-deprecated").count(), 2);
-    }
-
-    #[test]
-    fn other_dual_shapes_are_left_alone() {
-        // A seed other than 1, a lambda callee, a two-argument f, and
-        // value_of are not the mechanical shape.
-        let src = "import autodiff\n\nfn g(a, b)\n  a * b\nend\n\nlet y = dual(2.0, 0.5)\nprint(deriv_of(sin(dual(1.0, 2.0))))\nprint(deriv_of(g(dual(1.0, 1.0), 2.0)))\nprint(value_of(y))\n";
-        let (out, rules) = fixed(src);
-        assert!(!out.contains("deriv("), "{out}");
-        assert!(!rules.contains(&"dual-deprecated"), "{rules:?}");
-    }
-
-    #[test]
-    fn a_selective_import_or_an_own_deriv_keeps_the_qualified_form_only() {
-        let src = "import autodiff: dual, deriv_of\n\nprint(deriv_of(sin(dual(1.0, 1.0))))\n";
-        let (out, _) = fixed(src);
-        assert!(!out.contains("deriv("), "{out}");
-    }
-
-    #[test]
-    fn without_the_import_nothing_is_reported() {
-        let src = "fn deriv_of(x)\n  x\nend\n\nfn dual(a, b)\n  a\nend\n\nprint(deriv_of(sin(dual(1.0, 1.0))))\n";
-        let (_, rules) = fixed(src);
-        assert!(!rules.contains(&"dual-deprecated"), "{rules:?}");
-    }
-
-    #[test]
     fn the_sensitivity_key_is_deleted() {
-        let src = "import ui/drag\n\nstate m = {v: 0.0}\n\nlet a = fn() vary(m, [\"v\"], {sensitivity: \"dual\"}) end\nlet b = fn() vary(m, \"v\", {bounds: [0, 1], sensitivity: \"fd\"}) end\nlet c = fn() vary(m, \"v\", {sensitivity: \"dual\", bounds: [0, 1]}) end\n";
+        let src = "import ui/drag\n\nstate m = {v: 0.0}\n\nlet a = fn() vary(m, [\"v\"], {sensitivity: \"exact\"}) end\nlet b = fn() vary(m, \"v\", {bounds: [0, 1], sensitivity: \"fd\"}) end\nlet c = fn() vary(m, \"v\", {sensitivity: \"exact\", bounds: [0, 1]}) end\n";
         let (out, rules) = fixed(src);
         assert!(out.contains("vary(m, [\"v\"])"), "{out}");
         assert!(out.contains("vary(m, \"v\", {bounds: [0, 1]})"), "{out}");

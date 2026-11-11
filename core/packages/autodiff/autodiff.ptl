@@ -16,15 +16,6 @@
 // A bundled builtin package: `import autodiff` puts these in scope — bare
 // (`deriv(…)`), qualified (`autodiff.deriv(…)`) and as methods.
 //
-// The dual numbers (`dual`, `value_of`, `deriv_of`) are still here and are
-// to be deprecated (docs/tasks/differentiation-rewrite.md). Their `native fn`
-// declarations bind them to the host natives of the same name; see
-// docs/usage/ffi.md (Native interfaces).
-
-pub native fn dual(value, derivative)
-pub native fn value_of(x)
-pub native fn deriv_of(x)
-
 // `f(arg)`, put back afterwards: under `speculate`, or directly when a
 // speculative call is already running (`speculate` does not nest).
 fn _run(f, arg)

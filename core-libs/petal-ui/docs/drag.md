@@ -273,8 +273,8 @@ draggable("knob", k, fn() vary(dial, "angle") end)
 
 The engine learns which way the numbers move the element by forward
 differences: one extra rendering per path, with that number nudged. (The
-`sensitivity` option, whose other mode used dual numbers, was removed in
-prelude level 14. The key is accepted and ignored for one release;
+`sensitivity` option, which chose another mode, was removed in prelude
+level 14. The key is accepted and ignored for one release;
 `petal lint` warns about it, rule `vary-sensitivity`, and `petal lint --fix`
 deletes it.)
 

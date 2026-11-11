@@ -24,7 +24,7 @@ use crate::value::Value;
 /// determinism check is exact and `NaN` equals itself.
 #[derive(Debug, Clone)]
 pub enum ObsValue {
-    /// A float, or the primal of a dual number.
+    /// A float.
     Num(f64),
     Int(i64),
     Bool(bool),
@@ -106,7 +106,6 @@ impl ObsValue {
             Value::Bool(b) => ObsValue::Bool(b),
             Value::Int(i) => ObsValue::Int(i),
             Value::Float(f) => ObsValue::Num(f),
-            Value::Dual(id) => ObsValue::Num(heap.get_dual(id).0),
             Value::Vec2(id) => {
                 let (x, y) = heap.get_vec2(id);
                 ObsValue::List(vec![ObsValue::Num(x), ObsValue::Num(y)])

@@ -515,7 +515,6 @@ pub fn jacobian<L: TermLever>(
             .map(|(_, v)| match v {
                 OverrideValue::Num(f) => *f,
                 OverrideValue::Int(i) => *i as f64,
-                OverrideValue::Dual(f, _) => *f,
             })
             .unwrap_or(p.value());
         let col = if base.error.is_some() || !base.readable(goal_rows) {

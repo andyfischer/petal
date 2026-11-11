@@ -69,7 +69,7 @@ a type is by construction what the compile check believes about it.
 ### Rejected sources, and why
 
 **Arithmetic.** `x * 2.0` looks like it proves `x: num`. It does not: `vec2`
-and `dual` are multiplicative too, and `vec2(1,2) + 2.0` is a `vec2`. Petal's
+and `vec3` are multiplicative too, and `vec2(1,2) + 2.0` is a `vec2`. Petal's
 `+` rejects strings and lists, which is not the same as proving `num`.
 
 **Truthiness.** `if p then …`, `!p` and `p && q` all accept any value, and the

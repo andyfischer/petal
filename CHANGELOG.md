@@ -12,17 +12,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
-- **Dual numbers are deprecated; `vary` lost `sensitivity: "dual"`.**
-  `dual`, `value_of` and `deriv_of` (`import autodiff`) still work, and a
-  file that uses them warns once per name `[dual-deprecated]`, pointing at
-  `deriv(f, x)` and `solve_step(f, xs, target)`. `petal lint --fix`
-  rewrites the common shape `deriv_of(f(dual(x, 1.0)))` (a named `f`) to
-  `deriv(f, x).value`, a central difference rather than the exact
-  derivative. `ui/drag`'s `vary` always uses forward differences: its
-  `sensitivity` key is accepted and ignored for one release, and the new
-  lint rule `vary-sensitivity` deletes it (`PRELUDE_LEVEL` 14).
-  `examples/console/differentiation.ptl` and `examples/ui/d2-dial` use the
-  new forms. See docs/tasks/differentiation-rewrite.md (Phase 2).
+- **`vary` lost its `sensitivity` option.** `ui/drag`'s `vary` always uses
+  forward differences: the `sensitivity` key is accepted and ignored for one
+  release, and the new lint rule `vary-sensitivity` deletes it
+  (`PRELUDE_LEVEL` 14). `examples/console/differentiation.ptl` and
+  `examples/ui/d2-dial` use the new forms. See
+  docs/tasks/differentiation-rewrite.md (Phase 2).
 
 - **bloom owns the widgets; `ui`'s drawn widgets are deprecated.** `ui` keeps
   the primitives and the interaction logic: the parts of the old
@@ -261,6 +256,32 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   repo, Cheesecake, petal-creative, worlds-fair or petal-lang.org used it
   outside the one test of the operator itself (removed).
 
+- **Dual numbers are gone.** The value kind that carried a derivative
+  through arithmetic, its `dual` type name, and `autodiff`'s `dual`,
+  `value_of` and `deriv_of` were removed; `+ - * /`, negation and the math
+  builtins (`sin`, `sqrt`, `pow`, `clamp`, `lerp`, `map_range`, `interp`,
+  …) take plain numbers only. A call to one of the three in a file that
+  imports `autodiff` is a compile error naming the replacement: "`dual` was
+  removed from `autodiff` (dual numbers are gone). Use `deriv(f, x)` for a
+  derivative, or `solve_step(f, xs, target)` to move inputs toward a goal."
+  The usual shapes: `deriv_of(f(dual(x, 1.0)))` is `deriv(f, x).value`, one
+  seed per input is `jacobian(f, xs).rows`, and a hand-written Newton step
+  is `solve_step` ([guide](docs/features/differentiation.md#migrating-from-dual-value_of-and-deriv_of)).
+  The answers are close approximations rather than exact derivatives; exact
+  differentiation is planned to return as a symbolic analysis, not a value
+  kind. A `--state-storage` file that holds one of the old numbers loads it
+  as its value, with a warning (for one release; the C bridge's load report
+  lists the slots under `converted` when there are any). The `dual-deprecated` warning and
+  lint rule went with them.
+  **Embedders**: `Value` loses a variant. `Value::Dual`, `DualId`,
+  `Heap::get_dual`, `Heap::dual_value`, `Heap::derivative_of`,
+  `PetalCxt::push_dual`, `AllocKind::Dual` (the alloc stats have 8 kinds,
+  not 9) and DM's `OverrideValue::Dual` are gone, so a `match` on `Value`
+  that names `Value::Dual` no longer compiles: delete the arm. The C
+  bridge's value view never reported a dual kind of its own (it showed the
+  value as a float), so C/C++ hosts need no change. `StateStorageLoad` gained
+  `converted`. See docs/tasks/differentiation-rewrite.md (Phase 5).
+
 ### Deprecated
 
 - **`const X = e` and `config let X = v`** are deprecated in favour of the
@@ -297,7 +318,7 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `fd_column` (DM v2's column rules over a script's samples, shared with
   `dm::jacobian`) and `gn_step`, the Gauss-Newton step `ui/drag`'s `vary`
   uses, renamed from `drag_solve_step` (still there as an alias for one
-  release). The dual-number functions are still present, to be deprecated
+  release). They replace the dual-number functions (see Removed)
   ([guide](docs/features/differentiation.md),
   [plan](docs/tasks/differentiation-rewrite.md)).
 

@@ -129,8 +129,6 @@ impl Default for SpecConfig {
 pub enum OverrideValue {
     Num(f64),
     Int(i64),
-    /// A dual number (value, derivative), for forward-mode probes.
-    Dual(f64, f64),
 }
 
 impl OverrideValue {
@@ -139,7 +137,6 @@ impl OverrideValue {
         match self {
             OverrideValue::Num(f) => SpecOverride::Value(Value::Float(f)),
             OverrideValue::Int(i) => SpecOverride::Value(Value::Int(i)),
-            OverrideValue::Dual(value, derivative) => SpecOverride::Dual(value, derivative),
         }
     }
 }
@@ -841,7 +838,6 @@ impl SpecSession {
                 OverrideValue::Int(i) => i.to_string(),
                 OverrideValue::Num(f) if *f < 0.0 => format!("({f:?})"),
                 OverrideValue::Num(f) => format!("{f:?}"),
-                OverrideValue::Dual(..) => return Err("a dual override has no source spelling".into()),
             };
             edits.push((span.start.offset as usize, span.end.offset as usize, text));
         }

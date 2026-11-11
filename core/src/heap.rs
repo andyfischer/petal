@@ -168,12 +168,6 @@ generational_id! {
     pub struct Vec2Id;
 }
 
-generational_id! {
-    /// Opaque handle to a heap-allocated **dual number** (forward-mode
-    /// autodiff): `[value, derivative]` in the heap's pair slab, immutable.
-    pub struct DualId;
-}
-
 /// The tag of an enum variant: the slab index of the variant's name, an
 /// interned string the heap has made **permanent** ([`Heap::enum_tag`]). A
 /// permanent slot is never reclaimed or reused, so the index alone names the
@@ -896,8 +890,7 @@ pub struct Heap {
     f64_arrays: Slab<Vec<f64>>,
     /// `vec3` components, inline in the slot. See [`Vec3Id`].
     vec3s: Slab<[f64; 3]>,
-    /// `vec2` components and dual numbers, inline in the slot. See
-    /// [`Vec2Id`] and [`DualId`].
+    /// `vec2` components, inline in the slot. See [`Vec2Id`].
     pairs: Slab<[f64; 2]>,
     maps: Slab<MapObj>,
     /// `map` values (`Value::Dict`). See [`DictId`].
@@ -975,7 +968,7 @@ pub struct FrozenCounts {
     pub lists: usize,
     pub f64_arrays: usize,
     pub vec3s: usize,
-    /// Frozen `vec2`s and dual numbers.
+    /// Frozen `vec2`s.
     pub pairs: usize,
     pub maps: usize,
     pub dicts: usize,
@@ -1013,7 +1006,7 @@ const SLOT_WALK_COST: u64 = 8;
 /// Payload bytes of one `vec3` slot (three `f64`s).
 const VEC3_BYTES: usize = 3 * std::mem::size_of::<f64>();
 
-/// Payload bytes of one pair slot (a `vec2` or a dual number).
+/// Payload bytes of one pair slot (a `vec2`).
 const PAIR_BYTES: usize = 2 * std::mem::size_of::<f64>();
 
 /// Floor on the work budget between collections. Below this the heap is small
@@ -1388,7 +1381,6 @@ impl Heap {
             Value::F64Array(id) => self.f64_arrays.is_live(id.raw()),
             Value::Vec3(id) => self.vec3s.is_live(id.raw()),
             Value::Vec2(id) => self.pairs.is_live(id.raw()),
-            Value::Dual(id) => self.pairs.is_live(id.raw()),
             Value::Map(id) => self.maps.is_live(id.raw()),
             Value::Dict(id) => self.dicts.is_live(id.raw()),
             Value::Element(id) => self.elements.is_live(id.raw()),
@@ -1776,9 +1768,9 @@ impl Heap {
         *self.vec3s.get(id.raw())
     }
 
-    // --- vec2 and dual numbers ---
+    // --- vec2 ---
     //
-    // Both are two `f64`s in the pair slab, immutable once built: every
+    // Two `f64`s in the pair slab, immutable once built: every
     // operation allocates a fresh one, as for a vec3. After warm-up an
     // allocation is a free-list pop.
 
@@ -1795,37 +1787,14 @@ impl Heap {
         (x, y)
     }
 
-    /// A new dual number `value + derivative·ε`.
-    pub fn dual_value(&mut self, value: f64, derivative: f64) -> Value {
-        self.tick_alloc(AllocKind::Dual, PAIR_BYTES as u64);
-        Value::Dual(DualId::from_raw(self.pairs.alloc([value, derivative])))
-    }
-
-    /// The `(value, derivative)` of a dual number.
-    #[inline]
-    pub fn get_dual(&self, id: DualId) -> (f64, f64) {
-        let [v, d] = *self.pairs.get(id.raw());
-        (v, d)
-    }
-
-    /// `v` as a number: an int, a float, or a dual number's value. What
+    /// `v` as a number: an int or a float. What
     /// arithmetic and the math builtins read their operands with.
     #[inline]
     pub fn num_f64(&self, v: Value) -> Option<f64> {
         match v {
             Value::Int(n) => Some(n as f64),
             Value::Float(f) => Some(f),
-            Value::Dual(id) => Some(self.get_dual(id).0),
             _ => None,
-        }
-    }
-
-    /// The derivative part of `v`: a dual number's, and 0 for anything else.
-    #[inline]
-    pub fn derivative_of(&self, v: Value) -> f64 {
-        match v {
-            Value::Dual(id) => self.get_dual(id).1,
-            _ => 0.0,
         }
     }
 
@@ -1839,8 +1808,7 @@ impl Heap {
     }
 
     /// Truthiness, including the values whose answer lives on the heap: a
-    /// zero vec2 and a dual number whose value is zero are false, as when
-    /// they were inline. Everything else answers as
+    /// zero vec2 is false, as when it was inline. Everything else answers as
     /// [`Value::is_truthy`](crate::value::Value::is_truthy).
     #[inline]
     pub fn truthy(&self, v: Value) -> bool {
@@ -1849,7 +1817,6 @@ impl Heap {
                 let (x, y) = self.get_vec2(id);
                 x != 0.0 || y != 0.0
             }
-            Value::Dual(id) => self.get_dual(id).0 != 0.0,
             _ => v.truthy_without_heap().unwrap_or(true),
         }
     }
@@ -2501,11 +2468,6 @@ impl Heap {
                         visited.push(Obj::P(id.raw()));
                     }
                 }
-                Value::Dual(id) => {
-                    if self.pairs.visit_for_freeze(id.raw()) {
-                        visited.push(Obj::P(id.raw()));
-                    }
-                }
                 Value::Map(id) => {
                     if self.maps.visit_for_freeze(id.raw()) {
                         visited.push(Obj::M(id.raw()));
@@ -2660,7 +2622,6 @@ impl Heap {
             Value::F64Array(id) => self.f64_arrays.is_permanent(id.raw()),
             Value::Vec3(id) => self.vec3s.is_permanent(id.raw()),
             Value::Vec2(id) => self.pairs.is_permanent(id.raw()),
-            Value::Dual(id) => self.pairs.is_permanent(id.raw()),
             Value::Map(id) => self.maps.is_permanent(id.raw()),
             Value::Dict(id) => self.dicts.is_permanent(id.raw()),
             Value::Element(id) => self.elements.is_permanent(id.raw()),
@@ -2793,7 +2754,6 @@ impl Heap {
                 | Value::Vec3(_)
                 | Value::NativeFunction(_)
                 | Value::Vec2(_)
-                | Value::Dual(_)
                 | Value::Symbol(_) => {}
             }
             if error.is_some() {
@@ -2859,9 +2819,6 @@ impl Heap {
                 self.vec3s.mark(id.raw());
             }
             Value::Vec2(id) => {
-                self.pairs.mark(id.raw());
-            }
-            Value::Dual(id) => {
                 self.pairs.mark(id.raw());
             }
             Value::Map(id) => self.mark_map(id),

@@ -1,7 +1,7 @@
 //! Builtins - Built-in function implementations registered via native FFI.
 //!
 //! The built-in functions are split across topic submodules (math, collections,
-//! creative_coding, noise, color, vec2, autodiff, io). `register_builtins`
+//! creative_coding, noise, color, vec2, io). `register_builtins`
 //! below is the single entry point that wires them all into the
 //! `NativeFnTable`. The registration *order* is load-bearing: phantom term
 //! indices in the IR are assigned in this order, so the test snapshots and
@@ -10,7 +10,6 @@
 
 use crate::native_fn::{InputClasses, NativeClass, NativeEffects, NativeFnTable, PetalCxt};
 
-mod autodiff;
 mod classes;
 mod collections;
 mod color;
@@ -212,9 +211,6 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("min", math::native_min, NativeEffects::CONST);
     table.register("max", math::native_max, NativeEffects::CONST);
     table.register("round", math::native_round, NativeEffects::CONST);
-    table.register("dual", autodiff::native_dual, NativeEffects::CONST);
-    table.register("value_of", autodiff::native_value_of, NativeEffects::CONST);
-    table.register("deriv_of", autodiff::native_deriv_of, NativeEffects::CONST);
     // Not CONST as a row: `sort(xs, cmp)` runs a user comparator. Its
     // constness is `ConstIfCallbacksAre` (see `NativeFnTable::constness`),
     // which `sort(xs)` satisfies vacuously.
@@ -818,14 +814,12 @@ mod effect_tests {
             "cos",
             "cross",
             "degrees",
-            "deriv_of",
             "distance",
             "dot",
             "drag_solve_step",
             "drag_triangulate",
             "drag_weights",
             "drop_last",
-            "dual",
             "ends_with",
             "entries",
             "enumerate",
@@ -908,7 +902,6 @@ mod effect_tests {
             "tunable",
             "type",
             "upper",
-            "value_of",
             "values",
             "vec2",
             "vec3",

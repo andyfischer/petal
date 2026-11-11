@@ -361,12 +361,6 @@ fn hash_exact(v: Value, heap: &Heap, h: &mut impl Hasher) -> Option<()> {
             heap.tag_str(tag).hash(h);
             hash_exact(Value::List(data), heap, h)?;
         }
-        Value::Dual(id) => {
-            12u8.hash(h);
-            let (value, derivative) = heap.get_dual(id);
-            value.to_bits().hash(h);
-            derivative.to_bits().hash(h);
-        }
         Value::Dict(id) => {
             13u8.hash(h);
             let d = heap.get_dict(id);

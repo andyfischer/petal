@@ -829,7 +829,6 @@ finding a `fixable` field. `petal lint --rules` lists them.
 | `prefer-compound-assign` | `x = x op e` for an operator with a compound form; also a field or element written twice, `set xs[i] = get xs[i] + d`, `r.n = r.n * 2`, where the place is names, literals and operators only | `x op= e`, `set xs[i] += d` |
 | `neg-zero-sub` | `0 - x` and `0.0 - x` | `-x` where the zero is `0` and `x` is a proven `int`. Otherwise reported: `0.0 - 0.0` is `0.0` and `-0.0` is not (`atan2` and a division tell them apart), and `0.0 - n` makes a float of an int |
 | `prefer-any` | `len(filter(xs, p)) > 0` (also `!= 0`, `>= 1`; and `== 0`, `< 1`, `<= 0` for `!any`) | `any(xs, p)`, which stops at the first match. Applied where `p` is a lambda written in place whose body is one expression with no call but to pure builtins; otherwise reported, since `any` does not call `p` on the rest. (A pure body can still raise on a later element, such as `x.v` of an int: the fixed program then finishes where the old one raised, never the reverse.) |
-| `dual-deprecated` | `deriv_of(f(dual(x, 1.0)))` in a file that imports `autodiff`, where `f` is a name called with the one dual argument and the seed is the literal `1.0` (or `1`). Dual numbers are deprecated ([differentiation.md](features/differentiation.md)); every other use of `dual`, `value_of` or `deriv_of` gets the compiler's warning of the same name | `deriv(f, x).value`. Not the same number: `deriv` measures a central difference, a close approximation of the exact derivative the dual gave |
 | `vary-sensitivity` | `vary(st, paths, {…, sensitivity: …})` in a file that imports `ui/drag` or `ui`: the option was removed and the key is ignored | delete the key, and the options argument when it was the only field |
 | `dead-alias` | `let a = v` in a function, where `v` is a parameter or a local of that function that is not written from there on (nor in a loop around the alias, nor by any nested function) and `a` is only read | delete the `let` and read `v` (`get v` for a `var` read from a nested function). Reported only, when the `let` shares its line |
 | `shadows-builtin` | a `fn` with the name of a core builtin, a standard-prelude function, or a function of a bundled package the file imports whole, taking an argument count the existing one takes. Every call in the file reaches the new one | none (callers may be in other files) |
@@ -910,7 +909,7 @@ works with and without `--fix`.
 | `--verify=strict` | The whole rewrite must be IR-equal | Refused: exit 3, file untouched |
 
 Formatting and `prefer-compound-assign` are meant to leave the IR unchanged.
-The cast, `match`, `var`, `repeat`, `prefer-field-set`, `neg-zero-sub`, `prefer-any`, `dual-deprecated`,
+The cast, `match`, `var`, `repeat`, `prefer-field-set`, `neg-zero-sub`, `prefer-any`,
 `vary-sensitivity`, `dead-alias` and `state-as-constant` rules change it by design. On such a file the default mode proves
 the part it can, prints the first difference, and says that a run diff is what
 would prove the rest:
@@ -2438,7 +2437,7 @@ Consumers should treat the single key of the `kind` object as the node type
 
 **TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type (omitted when unrecognized)}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (omitted for an unrecognized name, e.g. `{"name": "banana"}`). An absent annotation omits the `ty`/`ret` field entirely. Annotations appear on `Let`, `State`, `Memo`, `Param`, `ClassField`, and `FnDecl.ret`; a class name resolves to a static type too, but only against the compilation's class table, so a `TypeAnn` naming one carries no `resolved` in the AST dump; they are type-checked (warnings only — see [`lint`](#lint--check-programs-without-running-them)) and dropped before codegen, so they never appear in the IR.
 
-**Type**: a string naming the recognized static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"Num"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"Vec3"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Dual"`, `"Handle"`, `"Pending"`. Appears as the `resolved` field of a **TypeAnn**.
+**Type**: a string naming the recognized static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"Num"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"Vec3"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Handle"`, `"Pending"`. Appears as the `resolved` field of a **TypeAnn**.
 
 **RecordField**: `{"Named": [string, Expr]}` or `{"Spread": Expr}`.
 

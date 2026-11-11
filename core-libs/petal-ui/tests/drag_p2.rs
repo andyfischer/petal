@@ -125,13 +125,12 @@ fn vary_solves_two_levers_for_a_point() {
 #[test]
 fn a_dial_follows_the_pointer_and_the_removed_sensitivity_key_is_ignored() {
     // A dial: the knob on a circle. Forward differences follow the pointer
-    // round a quarter turn. The removed `sensitivity` option (dual numbers
-    // were its other mode) is accepted and ignored for one release: the
-    // drag is the same with it.
+    // round a quarter turn. The removed `sensitivity` option is accepted and
+    // ignored for one release: the drag is the same with it.
     let pos = "{x: 200 + cos(m.v) * 100 - 8, y: 200 + sin(m.v) * 100 - 8, w: 16, h: 16}";
     let path = [(300, 210), (296, 240), (280, 270), (250, 290), (220, 297), (200, 300), (200, 300)];
     let mut angles = Vec::new();
-    for spec in [r#"vary(m, "v")"#, r#"vary(m, "v", {sensitivity: "dual"})"#] {
+    for spec in [r#"vary(m, "v")"#, r#"vary(m, "v", {sensitivity: "fd"})"#] {
         let mut h = knob_app(pos, spec);
         press_and_move(&mut h, 300, 200, &path);
         let s = state(&h, "shown");

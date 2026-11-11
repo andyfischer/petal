@@ -684,12 +684,6 @@ fn hash_content(
                 h.write_u64(f.to_bits());
             }
         }
-        Value::Dual(id) => {
-            h.write_u8(10);
-            let (value, derivative) = heap.get_dual(*id);
-            h.write_u64(value.to_bits());
-            h.write_u64(derivative.to_bits());
-        }
         Value::Symbol(s) => {
             h.write_u8(11);
             h.write_u32(s.0);

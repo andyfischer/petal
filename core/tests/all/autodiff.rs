@@ -62,3 +62,30 @@ assert(abs(s.xs[0] - 2.0) < 0.000001)";
     assert_eq!(with, without);
     assert_eq!(with.0[2], ["live 3"]);
 }
+
+/// The removed functions of `autodiff` are a compile error that names the
+/// replacement, reached bare or qualified; a file's own function of the same
+/// name is untouched.
+#[test]
+fn the_removed_functions_are_a_compile_error_naming_the_replacement() {
+    for (src, name) in [
+        ("import autodiff\nprint(dual(1.0, 1.0))\n", "dual"),
+        ("import autodiff\nprint(value_of(2.0))\n", "value_of"),
+        ("import autodiff\nprint(autodiff.deriv_of(2.0))\n", "deriv_of"),
+        ("import autodiff as ad\nprint(ad.dual(1.0, 1.0))\n", "dual"),
+    ] {
+        let err = Env::new().load_program(src).map(|_| ()).unwrap_err();
+        let expected = format!(
+            "`{name}` was removed from `autodiff` (dual numbers are gone).\n  Use `deriv(f, x)` \
+             for a derivative, or `solve_step(f, xs, target)` to move\n  inputs toward a goal. \
+             See docs/features/differentiation.md."
+        );
+        assert!(err.contains(&expected), "{src}: {err}");
+    }
+    let mut env = Env::new();
+    let src = "import autodiff\nfn dual(a, b)\n  a + b\nend\nprint(dual(1, 2), deriv(sin, 0.0).quality)\n";
+    let pid = env.load_program(src).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["3 smooth"]);
+}

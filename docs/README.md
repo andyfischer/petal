@@ -64,7 +64,7 @@ goal-based program manipulation.
 | [Provenance](features/provenance.md) | `petal explain` and `petal graph`: why a value is what it is, what it depends on, and what a change would reach |
 | [Direct Manipulation](features/direct-manipulation.md) | Tracing a drawn shape or emitted value back to the call that produced it, then editing that call |
 | [Time Travel](features/time-travel.md) | Forking and replaying an execution, and the petal-sdl timeline: freeze, scrub, rewind, replay through an edit |
-| [Differentiation](features/differentiation.md) | Automatic differentiation with dual numbers: the `autodiff` package |
+| [Differentiation](features/differentiation.md) | Derivatives and goal solving by finite differences: the `autodiff` package |
 | [Function Introspection](features/function-introspection.md) | **Experimental.** `fn_info` and `fn_ast`: reading a function's parameters, captures and syntax tree from Petal code |
 
 ## Usage

@@ -79,6 +79,11 @@ pub struct StateStorageLoad {
     /// Display names of the slots the program has no declaration for. They are
     /// not loaded, so the next save drops them.
     pub dropped: Vec<String>,
+    /// Display names of the slots that held a value this build no longer has
+    /// and that were loaded as their nearest equivalent: a dual number
+    /// (`{"$petal": "dual", …}`, written before dual numbers were removed)
+    /// comes back as its value, a plain float. Kept for one release.
+    pub converted: Vec<String>,
 }
 
 impl Env {
@@ -298,6 +303,7 @@ impl Env {
         let ck = self.ctx_for(stack_id).ok_or("Stack not found")?;
         let mut restored: Vec<(RuntimeStateKey, Value)> = Vec::new();
         let mut dropped = Vec::new();
+        let mut converted = Vec::new();
         for (i, slot) in slots.iter().enumerate() {
             let n = i + 1;
             let slot = slot
@@ -349,6 +355,9 @@ impl Env {
                 continue;
             };
 
+            if holds_legacy_dual(value) {
+                converted.push(name.map(str::to_string).unwrap_or_else(|| label.clone()));
+            }
             let ctx = self.contexts.get_mut(&ck).expect("context exists");
             let mut val = decode(value, &mut ctx.heap, &mut self.symbols)
                 .map_err(|e| format!("{label}: {e}"))?;
@@ -377,7 +386,21 @@ impl Env {
         Ok(StateStorageLoad {
             restored: count,
             dropped,
+            converted,
         })
+    }
+}
+
+/// Whether a stored value holds a dual number anywhere (the tagged form older
+/// builds wrote), which [`decode`] turns into its value.
+fn holds_legacy_dual(json: &Json) -> bool {
+    match json {
+        Json::Array(items) => items.iter().any(holds_legacy_dual),
+        Json::Object(obj) => {
+            obj.get(TAG).and_then(Json::as_str) == Some("dual")
+                || obj.values().any(holds_legacy_dual)
+        }
+        _ => false,
     }
 }
 
@@ -449,7 +472,6 @@ fn parse_id(v: &Json) -> Result<u64, String> {
 /// | map (`Map()`) | `{"$petal": "map", "entries": [[key, value], …]}` |
 /// | f64 array | `{"$petal": "f64_array", "values": […]}` |
 /// | `vec2` / `vec3` | `{"$petal": "vec2", "x": …, "y": …}` |
-/// | dual number | `{"$petal": "dual", "value": …, "derivative": …}` |
 /// | symbol | `{"$petal": "symbol", "name": …}` |
 ///
 /// The ordered record form exists because a JSON object here is a sorted map:
@@ -504,14 +526,6 @@ fn encode(val: &Value, heap: &Heap, symbols: &SymbolTable) -> Result<Json, Strin
             "tag": heap.tag_str(*tag),
             "data": encode_all(heap.get_list(*data), heap, symbols)?,
         }),
-        Value::Dual(id) => {
-            let (value, derivative) = heap.get_dual(*id);
-            json!({
-                TAG: "dual",
-                "value": encode_float(value),
-                "derivative": encode_float(derivative),
-            })
-        }
         Value::Vec2(id) => {
             let (x, y) = heap.get_vec2(*id);
             json!({ TAG: "vec2", "x": encode_float(x), "y": encode_float(y) })
@@ -649,10 +663,11 @@ fn decode_tagged(
                 data: heap.alloc_list(data),
             }
         }
-        "dual" => {
-            let (value, derivative) = (float("value")?, float("derivative")?);
-            heap.dual_value(value, derivative)
-        }
+        // Dual numbers were removed (docs/tasks/differentiation-rewrite.md).
+        // A document written before then restores the slot as the dual's
+        // value; the load names it in `StateStorageLoad::converted`. For one
+        // release.
+        "dual" => Value::Float(float("value")?),
         "vec2" => {
             let (x, y) = (float("x")?, float("y")?);
             heap.vec2_value(x, y)
@@ -915,6 +930,29 @@ end
             let err = load_err(src, doc.clone());
             assert!(err.contains(expected), "{doc} gave: {err}");
         }
+    }
+
+    /// A slot saved before dual numbers were removed comes back as the dual's
+    /// value, a float, and the load names it so the host can warn.
+    #[test]
+    fn a_stored_dual_restores_as_its_value() {
+        let src = "state x = 0.0\nstate r = {}\nprint(\"{x} {r}\")\n";
+        let doc = json!({ "format": "petal-state", "version": 1, "slots": [
+            { "name": "x", "value": { "$petal": "dual", "value": 2.5, "derivative": 1.0 } },
+            { "name": "r", "value": { "$petal": "record", "fields": [
+                ["d", { "$petal": "dual", "value": -1.0, "derivative": 3.0 }]] } },
+        ]});
+        let mut env = Env::new();
+        let pid = env.load_program(src).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let load = env.load_state_storage(pid, sid, &doc).unwrap();
+        assert_eq!(load.restored, 2);
+        assert_eq!(load.converted, ["x".to_string(), "r".to_string()]);
+        env.run(sid).unwrap();
+        assert_eq!(env.take_output().join("\n"), "2.5 { d: -1.0 }");
+        // Saved again, it is a plain float.
+        let saved = env.save_state_storage(pid, sid);
+        assert!(!saved.document.to_string().contains("dual"), "{}", saved.document);
     }
 
     #[test]

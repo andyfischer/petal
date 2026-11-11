@@ -50,7 +50,6 @@ pub enum Type {
     F64Array,
     Element,
     Symbol,
-    Dual,
     Handle,
     Pending,
     /// An instance of a declared `class` — a record carrying that class's tag.
@@ -98,7 +97,6 @@ pub enum NonNil {
     F64Array,
     Element,
     Symbol,
-    Dual,
     Handle,
     Pending,
     Class(ClassId),
@@ -124,7 +122,6 @@ impl NonNil {
             NonNil::F64Array => Type::F64Array,
             NonNil::Element => Type::Element,
             NonNil::Symbol => Type::Symbol,
-            NonNil::Dual => Type::Dual,
             NonNil::Handle => Type::Handle,
             NonNil::Pending => Type::Pending,
             NonNil::Class(id) => Type::Class(id),
@@ -150,7 +147,6 @@ impl NonNil {
             NonNil::F64Array => "f64_array?",
             NonNil::Element => "element?",
             NonNil::Symbol => "symbol?",
-            NonNil::Dual => "dual?",
             NonNil::Handle => "handle?",
             NonNil::Pending => "pending?",
             NonNil::Class(_) => "class?",
@@ -197,7 +193,6 @@ impl Type {
             "f64_array" => Type::F64Array,
             "element" => Type::Element,
             "symbol" => Type::Symbol,
-            "dual" => Type::Dual,
             "handle" => Type::Handle,
             "pending" => Type::Pending,
             _ => return None,
@@ -261,7 +256,6 @@ impl Type {
             Type::F64Array => NonNil::F64Array,
             Type::Element => NonNil::Element,
             Type::Symbol => NonNil::Symbol,
-            Type::Dual => NonNil::Dual,
             Type::Handle => NonNil::Handle,
             Type::Pending => NonNil::Pending,
             Type::Class(id) => NonNil::Class(id),
@@ -312,7 +306,6 @@ impl Type {
             Type::F64Array => "f64_array",
             Type::Element => "element",
             Type::Symbol => "symbol",
-            Type::Dual => "dual",
             Type::Handle => "handle",
             Type::Pending => "pending",
             Type::Class(_) => "class",
@@ -330,15 +323,9 @@ impl Type {
     /// - `int` is assignable to a `float` slot (documented numeric promotion),
     ///   but `float` is **not** assignable to `int` — that needs an explicit
     ///   `int()` cast (no implicit casting).
-    /// - `int`, `float` and `dual` all satisfy a [`Type::Num`] slot, and `num`
-    ///   satisfies **none** of them: it is a widening only, and narrowing back
+    /// - `int` and `float` both satisfy a [`Type::Num`] slot, and `num`
+    ///   satisfies **neither**: it is a widening only, and narrowing back
     ///   needs an explicit cast for the same reason `float`→`int` does.
-    ///   `dual` is included deliberately — a dual is a number every arithmetic
-    ///   path accepts, so rejecting one would warn on working autodiff code,
-    ///   which is the outcome this pass exists to avoid. The runtime `number()`
-    ///   guard on the built-in `Rect` is narrower (int/float only), so a rect
-    ///   built from duals is a miss here rather than a false alarm — the
-    ///   direction this checker always errs in.
     /// - A class instance *is* a record at runtime, so `Class(_)` satisfies a
     ///   `record` slot. The reverse is not true: a bare `{x: 1}` carries no
     ///   class tag, so it cannot fill a `Rect` slot.
@@ -358,7 +345,7 @@ impl Type {
             (Type::OrNil(base), _) => base.ty().is_assignable_to(other),
             (_, Type::OrNil(base)) => self.is_assignable_to(&base.ty()),
             (Type::Int, Type::Float) => true,
-            (Type::Int | Type::Float | Type::Dual, Type::Num) => true,
+            (Type::Int | Type::Float, Type::Num) => true,
             (Type::Class(_), Type::Record) => true,
             (Type::EnumOf(_), Type::Enum) | (Type::Enum, Type::EnumOf(_)) => true,
             _ => self == other,
@@ -443,7 +430,6 @@ mod tests {
             Type::F64Array,
             Type::Element,
             Type::Symbol,
-            Type::Dual,
             Type::Handle,
             Type::Pending,
         ]
@@ -479,7 +465,6 @@ mod tests {
             (Type::Int, Value::Int(1).type_name()),
             (Type::Float, Value::Float(1.0).type_name()),
             (Type::Vec2, crate::heap::Heap::new().vec2_value(0.0, 0.0).type_name()),
-            (Type::Dual, crate::heap::Heap::new().dual_value(0.0, 0.0).type_name()),
         ];
         for (ty, runtime_name) in cases {
             assert_eq!(ty.name(), *runtime_name, "{ty:?}");
@@ -595,21 +580,12 @@ mod tests {
         assert!(Type::Num.is_assignable_to(&Type::Num));
     }
 
-    /// A dual is a number that every arithmetic path accepts, so warning on one
-    /// in a `num` slot would fire on working autodiff code — the outcome this
-    /// pass avoids. See the `is_assignable_to` docs.
-    #[test]
-    fn a_dual_satisfies_num() {
-        assert!(Type::Dual.is_assignable_to(&Type::Num));
-    }
-
     /// `num` is a *widening* only. Narrowing back to a concrete numeric type
     /// needs an explicit cast, or `int(x)` would be implicit.
     #[test]
     fn num_narrows_to_nothing() {
         assert!(!Type::Num.is_assignable_to(&Type::Int));
         assert!(!Type::Num.is_assignable_to(&Type::Float));
-        assert!(!Type::Num.is_assignable_to(&Type::Dual));
     }
 
     #[test]

@@ -64,7 +64,6 @@ file that imports the package:
 | `import noise` | `noise`, `noise_seed` |
 | `import color` | `hsv`, `hsl`, `hsv_deg`, `hsl_deg`, `color_lerp` |
 | `import vec2` | `vec2`, `vec3`, `normalize`, `dot`, `cross`, `limit`, `rotate` |
-| `import autodiff` | `dual`, `value_of`, `deriv_of` |
 | `import json` | `json_stringify`, `json_parse` |
 | `import io` | `symbol`, `push_output`, `binding` |
 
@@ -297,8 +296,7 @@ degrees(pi())      // 180.0
 The piecewise-linear function through a table of `[x, y]` knots (ascending
 `x`), read at `x`: a schedule by year, a response curve, a falloff. Before
 the first knot it is the first `y` and after the last it is the last `y` — it
-clamps and never extrapolates. Always a float, or a dual for a dual `x`
-(with the slope of its segment as the derivative).
+clamps and never extrapolates. Always a float.
 
 ```petal
 let rate = [[1900, 5], [1950, 10], [2000, 0]]
@@ -2014,24 +2012,6 @@ print(r.xs)   // [2.0, 1.0]
 import autodiff
 let s = solve(fn(a) 200.0 + 80.0 * cos(a[0]) end, [0.6], 240.0)
 print(round(s.xs[0], 4))   // 1.0472
-```
-
-### `dual(value, derivative)`, `value_of(x)`, `deriv_of(x)` (to be deprecated)
-
-Dual numbers, the earlier forward-mode differentiation: still present, to be
-deprecated and then removed (see
-[features/differentiation.md](features/differentiation.md#dual-numbers-to-be-deprecated)).
-`dual` makes a number that carries a derivative through arithmetic and the
-math builtins; `value_of` and `deriv_of` read its two parts as floats (a
-plain number has derivative `0.0`). Use `deriv` instead of
-`deriv_of(f(dual(x, 1.0)))`.
-
-```petal
-import autodiff
-let y = dual(3.0, 1.0) * dual(3.0, 1.0)
-print(value_of(y))   // 9.0
-print(deriv_of(y))   // 6.0
-print(deriv_of(42))  // 0.0
 ```
 
 ## Typed Numeric Arrays

@@ -675,7 +675,7 @@ rest. The guide, with worked examples and the mistakes to avoid, is
 | `on_drop(spec, f)` | Spec: every drop state goes through `f`, applied when the spec is built (for `between`/`vary`, to each frame's drop). |
 | `switch_to(state, key, spec_fn?)` | Spec: switch to `state` at once and keep dragging `key`. |
 | `between(options)` | Spec: the element slides inside the region its positions in `options` (states) span — the segment for 2, a Delaunay triangulation for 3+ — clamped to its edge; every key all options place is drawn at their blend (rects, numbers, colours). Drops on the heaviest option. No speculation per frame. |
-| `vary(state, paths, opts?)` | Spec: solve the numbers at `paths` (one path, or a list of paths) in `state` so the element tracks the pointer, one DM-solver step a frame. `opts`: `{bounds, constraint, sensitivity}` (`"fd"` or `"dual"`). About one rendering per path plus one or two per frame. |
+| `vary(state, paths, opts?)` | Spec: solve the numbers at `paths` (one path, or a list of paths) in `state` so the element tracks the pointer, one DM-solver step a frame. `opts`: `{bounds, constraint}`; sensitivities are forward differences. About one rendering per path plus one or two per frame. |
 | `moves(xs, i)` | Candidate states: item `i` of a list at every index. |
 | `moves_nested(lists, key, field?)` | Candidate states: an item moved to every slot of every column (kanban). |
 | `tree_moves(tree, path, opts?)` | Candidate states: a tree node above, below or into every other node, never into itself. `opts`: `{children, into}`. |

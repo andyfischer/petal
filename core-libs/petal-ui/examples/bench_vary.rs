@@ -16,8 +16,7 @@
 //!
 //! `between` reads its table (no speculation per frame); `vary` renders the
 //! view hypothetically once per lever for the sensitivities plus once or
-//! twice for the step, every frame. The dial is also run with forward
-//! differences instead of dual numbers.
+//! twice for the step, every frame.
 use std::time::Instant;
 
 struct Case {
@@ -46,14 +45,7 @@ fn main() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/ui");
     let cases = [
         Case { name: "switch: between, 3 targets", dir: "d2-switch", edit: None, idle: (1, 3), drag: (6, 20) },
-        Case { name: "dial: vary, 1 lever, dual", dir: "d2-dial", edit: None, idle: (1, 3), drag: (6, 20) },
-        Case {
-            name: "dial: vary, 1 lever, differences",
-            dir: "d2-dial",
-            edit: Some((r#"{sensitivity: "dual"}"#, "{}")),
-            idle: (1, 3),
-            drag: (6, 20),
-        },
+        Case { name: "dial: vary, 1 lever", dir: "d2-dial", edit: None, idle: (1, 3), drag: (6, 20) },
         Case {
             name: "scheduler: bar, between 3 rooms",
             dir: "d2-scheduler",

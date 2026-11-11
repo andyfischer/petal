@@ -185,7 +185,7 @@ its contents become Petal code instead of three `native fn` declarations.
 Every function takes a Petal function and calls it. That is why it is Petal
 code and not natives (`drag_math.rs:2-4`).
 
-```petal
+```petal ignore
 import autodiff
 
 // The derivative of a one-number function at x, by central differences.
@@ -430,7 +430,7 @@ claim, and `aim.ptl` passes `petal lint` (three style warnings, no errors).
 
 Before:
 
-```petal
+```petal ignore
 import autodiff
 
 fn f(x)
@@ -451,7 +451,7 @@ end
 
 After (proposed):
 
-```petal
+```petal ignore
 import autodiff
 
 fn f(x)
@@ -546,7 +546,7 @@ agreement check.
 
 Before:
 
-```petal
+```petal ignore
 import autodiff
 print(deriv_of(atan(dual(1.0, 1.0))))   // 0.5, exactly
 ```
@@ -939,3 +939,20 @@ None at the moment.
   Pre-existing: the doc-snippet test fails on four blocks of this plan
   (the Design §2 signature block, the two `var x` / `x = …` blocks of
   Before/After 1, and `// 0.5, exactly`); they are proposals, not run.
+- **Phase 2 (2026-11-11): call sites migrated, dual functions deprecated — done.**
+  `examples/console/differentiation.ptl` (After §1, printing rounded; its
+  golden updated), `test/lerp-trig-random` (`abs(deriv(atan, 1.0).value -
+  0.5) < 1e-6`) and `examples/ui/d2-dial` (plain `vary`) are rewritten.
+  `ui/drag`'s `vary` lost its dual mode (`_dual_run`, `_undual`,
+  `_dual_center`, `_jac_agrees`); the `sensitivity` key is ignored, and
+  `PRELUDE_LEVEL` is 14. A compile warning `[dual-deprecated]`
+  (`compiler/dual_deprecated.rs`) fires once per name per file on `dual`,
+  `value_of` and `deriv_of` reached through `import autodiff`. Lint rules
+  (`lint/dual_migrate.rs`): `dual-deprecated` fixes
+  `deriv_of(f(dual(x, 1.0)))` → `deriv(f, x).value` for a named `f`, and
+  `vary-sensitivity` deletes the key. The four failing plan snippets above
+  are tagged `petal ignore`. Website: `aim.ptl` rewritten per After §2
+  (petal-lang.org commit). The site runs the vendored wasm
+  (`frontend/public/petal`, from `pnpm build:sdk`), which predates
+  Phase 1, so the demo needs a re-vendor before the site is deployed;
+  that is left to Phase 5's re-import.

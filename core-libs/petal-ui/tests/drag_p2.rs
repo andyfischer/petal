@@ -2,7 +2,7 @@
 //! `docs/proposals/declarative-dragging.md`), end to end under the headless
 //! harness: blending across two and three targets, clamping to the hull,
 //! `vary` tracking the pointer by one solver step a frame (forward
-//! differences and dual numbers, bounds, constraints, `on_drop`, `vary`
+//! differences, bounds, constraints, `on_drop`, `vary`
 //! under `closest`), a reload in the middle of a `vary` drag, and the three
 //! P2 examples (`examples/ui/d2-switch`, `d2-dial`, `d2-scheduler`) against
 //! their checked-in drag scenarios.
@@ -123,9 +123,11 @@ fn vary_solves_two_levers_for_a_point() {
 }
 
 #[test]
-fn dual_and_differences_give_the_same_drag() {
-    // A dial: the knob on a circle. Both sensitivities follow the pointer
-    // round a quarter turn and drop at the same angle.
+fn a_dial_follows_the_pointer_and_the_removed_sensitivity_key_is_ignored() {
+    // A dial: the knob on a circle. Forward differences follow the pointer
+    // round a quarter turn. The removed `sensitivity` option (dual numbers
+    // were its other mode) is accepted and ignored for one release: the
+    // drag is the same with it.
     let pos = "{x: 200 + cos(m.v) * 100 - 8, y: 200 + sin(m.v) * 100 - 8, w: 16, h: 16}";
     let path = [(300, 210), (296, 240), (280, 270), (250, 290), (220, 297), (200, 300), (200, 300)];
     let mut angles = Vec::new();
@@ -138,18 +140,7 @@ fn dual_and_differences_give_the_same_drag() {
         angles.push(num(&state(&h, "m")["v"]));
     }
     assert!((angles[0] - std::f64::consts::FRAC_PI_2).abs() < 0.02, "{angles:?}");
-    assert!((angles[0] - angles[1]).abs() < 0.01, "{angles:?}");
-}
-
-#[test]
-fn a_dual_that_loses_its_derivative_falls_back_to_differences() {
-    // `value_of` (as a native that needs a float would) drops the dual's
-    // derivative, while the knob does move: the check at the first frame
-    // switches to differences, and the drag still follows the pointer.
-    let mut h = knob_app("{x: 100 + 2 * value_of(m.v), y: 100, w: 20, h: 20}", r#"vary(m, "v", {sensitivity: "dual"})"#);
-    press_and_move(&mut h, 110, 110, &[(115, 110), (140, 110)]);
-    let x = num(&state(&h, "shown")["x"]);
-    assert!((x - 130.0).abs() <= 0.6, "{x}");
+    assert_eq!(angles[0], angles[1], "{angles:?}");
 }
 
 #[test]

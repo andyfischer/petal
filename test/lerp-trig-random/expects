@@ -6,7 +6,7 @@ out: { r: 128, g: 0, b: 128, a: 192 }
 out: [0.5, 15.0, 30.0]
 out: 2.0
 out: 90.0 90.0 45.0 5.0
-out: 0.5
+out: true
 out: true
 out: true
 out: true

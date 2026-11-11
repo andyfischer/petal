@@ -76,12 +76,9 @@ var _walk = nil
 var _dbg = nil
 var _spec_runs = 0
 // `vary`'s solver state per leaf id: as the session kept it from last frame
-// (in), and as this frame's solve leaves it (out). Whether the speculation
-// running is a dual-number run, in which `place` records the duals and hands
-// the view plain numbers.
+// (in), and as this frame's solve leaves it (out).
 var _vary_in = Map()
 var _vary_out = Map()
-var _dual_run = false
 
 // Across runs: a press waiting to become a drag ({key, x, y, spec} — data,
 // never a closure), the element settling after a drop, every placed key's
@@ -204,14 +201,7 @@ end
 // follows the pointer. Inside a speculation it records `value` and returns it
 // unchanged. Keys compare like `for … key` keys and must be unique on screen.
 pub fn place(key, value)
-  if speculating() then
-    if get _dual_run then
-      // `vary`'s dual-number run: record the duals, draw plain numbers.
-      speculate_place(key, value)
-      return _undual(value)
-    end
-    return speculate_place(key, value)
-  end
+  if speculating() then return speculate_place(key, value) end
   // Placing the value this run already displayed for `key` (the usual
   // `place(k, place(k, r), body)` pair) is not a new target: hand it back.
   let shown = get _shown[key]
@@ -411,16 +401,14 @@ end
 //   bounds       [lo, hi] for one path, or a list with one [lo, hi] (or nil)
 //                per path; either end may be nil
 //   constraint   fn(state) -> bool: a step to a state it refuses is shortened
-//   sensitivity  "fd" (default): forward differences, one rendering per path;
-//                "dual": a dual-number rendering per path, exact, for views
-//                whose arithmetic from the number to `place` keeps duals (no
-//                `rect()`, `int`, `round` on the way); checked against
-//                differences at the press, and replaced by them if it disagrees
+// The sensitivities are forward differences, one rendering per path. (The
+// removed `sensitivity` option is ignored for one release; `petal lint`
+// warns about it, rule `vary-sensitivity`, and `--fix` deletes it.)
 // Each frame costs one speculative rendering per path plus one or two.
 pub fn vary(st, paths, opts = {})
   let ps = _paths_of(paths)
   {d2: "vary", state: st, drop: st, paths: ps, bounds: _bounds_of(opts.bounds ?? nil, len(ps)),
-    constraint: opts.constraint ?? nil, sensitivity: opts.sensitivity ?? "fd"}
+    constraint: opts.constraint ?? nil}
 end
 
 // One path or a list of paths, as a list of paths.
@@ -705,34 +693,6 @@ fn _with_vals(st, paths, vals)
   out
 end
 
-// Plain numbers in place of duals, anywhere in a value.
-fn _undual(v)
-  let t = type(v)
-  if t == "dual" then return value_of(v) end
-  if t == "list" then return for x in v do _undual(x) end end
-  if t == "record" then
-    let o = v
-    for k in keys(v) do o[k] = _undual(v[k]) end
-    return o
-  end
-  v
-end
-
-// A placed value's centre with duals in it: {x, y, dx, dy} (the derivative
-// of the centre), or nil when it has no position.
-fn _dual_center(v)
-  if v == nil || type(v) != "record" then return nil end
-  let x = v.x ?? nil
-  let y = v.y ?? nil
-  let num = fn(a) a != nil && (type(a) == "dual" || _is_num(a)) end
-  if !num(x) || !num(y) then return nil end
-  let w = v.w ?? 0
-  let h = v.h ?? 0
-  {x: value_of(x) + value_of(w) / 2.0, y: value_of(y) + value_of(h) / 2.0,
-    dx: deriv_of(x) + deriv_of(w) / 2.0, dy: deriv_of(y) + deriv_of(h) / 2.0,
-    any: type(x) == "dual" || type(y) == "dual"}
-end
-
 fn _res_vary(spec)
   let w = get _walk
   set _leaf_n = (get _leaf_n) + 1
@@ -752,49 +712,29 @@ fn _vary_at(spec, vals)
 end
 
 // ∂centre/∂lever for every lever at `vals` (the element is at `p` there):
-// 2 rows × k. Forward differences, or dual numbers.
-fn _vary_jac(spec, vals, p, use_dual)
-  let w = get _walk
+// 2 rows × k, by forward differences.
+fn _vary_jac(spec, vals, p)
   let k = len(vals)
   let cols = for i in range(k) do
-    if use_dual then
-      let st = set_in(_with_vals(spec.state, spec.paths, vals), spec.paths[i], dual(vals[i], 1.0))
-      set _dual_run = true
-      let sp = _speculate(w.view, st)
-      set _dual_run = false
-      let dc = _dual_center(_placed(sp, w.key))
-      if dc == nil then [0.0, 0.0] else [dc.dx, dc.dy] end
-    else
-      // A step of 1e-3 of the value; nothing moving at that step (a view
-      // that rounds or snaps) tries ×10 up to the value's own size, as DM v2
-      // escalates its probes.
-      let b = if spec.bounds == nil then nil else spec.bounds[i] end
-      let hi = if b == nil then nil else b[1] end
-      let col = [0.0, 0.0]
-      let h0 = 1.0e-3 * max(abs(vals[i]), 1.0)
-      for attempt in range(4) do
-        if col[0] == 0.0 && col[1] == 0.0 then
-          let h = if hi != nil && vals[i] + h0 > hi then -h0 else h0 end
-          let nv = for j in range(k) do if j == i then vals[j] + h else vals[j] end end
-          let q = _center(_vary_at(spec, nv))
-          if q != nil then col = [(q.x - p.x) / h, (q.y - p.y) / h] end
-          h0 *= 10.0
-        end
+    // A step of 1e-3 of the value; nothing moving at that step (a view
+    // that rounds or snaps) tries ×10 up to the value's own size, as DM v2
+    // escalates its probes.
+    let b = if spec.bounds == nil then nil else spec.bounds[i] end
+    let hi = if b == nil then nil else b[1] end
+    let col = [0.0, 0.0]
+    let h0 = 1.0e-3 * max(abs(vals[i]), 1.0)
+    for attempt in range(4) do
+      if col[0] == 0.0 && col[1] == 0.0 then
+        let h = if hi != nil && vals[i] + h0 > hi then -h0 else h0 end
+        let nv = for j in range(k) do if j == i then vals[j] + h else vals[j] end end
+        let q = _center(_vary_at(spec, nv))
+        if q != nil then col = [(q.x - p.x) / h, (q.y - p.y) / h] end
+        h0 *= 10.0
       end
-      col
     end
+    col
   end
   [for c in cols do c[0] end, for c in cols do c[1] end]
-end
-
-// Whether a dual Jacobian agrees with differences (within 10%, or both ~0).
-fn _jac_agrees(a, b)
-  for r in range(2), i in range(len(a[0])) do
-    let x = a[r][i]
-    let y = b[r][i]
-    if abs(x - y) > 0.1 * max(abs(x), abs(y)) + 1.0e-6 then return false end
-  end
-  true
 end
 
 // One frame of `vary`: from last frame's numbers, one Gauss-Newton step
@@ -803,7 +743,7 @@ end
 fn _eval_vary(spec, c)
   let vin = get _vary_in
   let vs0 = vin[spec.id] ?? nil
-  let fresh = {vals: spec.vals, at: spec.at, dual: spec.sensitivity == "dual", checked: false}
+  let fresh = {vals: spec.vals, at: spec.at}
   let vs1 = if vs0 == nil || len(vs0.vals) != len(spec.vals) then fresh else vs0 end
   // After a reload the numbers are kept but where they put the element is
   // rendered again, by the new view.
@@ -813,17 +753,7 @@ fn _eval_vary(spec, c)
   let err = (p.x - c.ex) * (p.x - c.ex) + (p.y - c.ey) * (p.y - c.ey)
   let cur = vs
   if err > 0.25 then
-    let by_dual = vs.dual
-    let jac = _vary_jac(spec, vs.vals, p, by_dual)
-    if by_dual && !vs.checked then
-      // The first dual Jacobian is checked against differences once.
-      let fd = _vary_jac(spec, vs.vals, p, false)
-      if !_jac_agrees(jac, fd) then
-        by_dual = false
-        jac = fd
-      end
-    end
-    cur = {...vs, dual: by_dual, checked: true}
+    let jac = _vary_jac(spec, vs.vals, p)
     // Up to 3 renderings per frame; a state the constraint refuses costs
     // none, so the step is halved up to 12 times to reach its edge.
     let scale = 1.0

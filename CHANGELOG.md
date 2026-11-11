@@ -12,6 +12,18 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **Dual numbers are deprecated; `vary` lost `sensitivity: "dual"`.**
+  `dual`, `value_of` and `deriv_of` (`import autodiff`) still work, and a
+  file that uses them warns once per name `[dual-deprecated]`, pointing at
+  `deriv(f, x)` and `solve_step(f, xs, target)`. `petal lint --fix`
+  rewrites the common shape `deriv_of(f(dual(x, 1.0)))` (a named `f`) to
+  `deriv(f, x).value`, a central difference rather than the exact
+  derivative. `ui/drag`'s `vary` always uses forward differences: its
+  `sensitivity` key is accepted and ignored for one release, and the new
+  lint rule `vary-sensitivity` deletes it (`PRELUDE_LEVEL` 14).
+  `examples/console/differentiation.ptl` and `examples/ui/d2-dial` use the
+  new forms. See docs/tasks/differentiation-rewrite.md (Phase 2).
+
 - **bloom owns the widgets; `ui`'s drawn widgets are deprecated.** `ui` keeps
   the primitives and the interaction logic: the parts of the old
   `ui/widgets` that draw nothing (focus, list and scroll state,

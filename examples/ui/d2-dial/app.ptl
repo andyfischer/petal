@@ -3,11 +3,8 @@
 // The model is one angle. The view puts the knob on a circle at that angle;
 // nothing in the app turns a pointer position back into an angle. `vary`
 // solves for the angle that puts the knob under the pointer, one solver
-// step per frame, by rendering the view hypothetically. The knob's position
-// is built from the angle with plain arithmetic, so the solver can use
-// dual numbers for the exact derivative (`sensitivity: "dual"`); a view
-// that goes through `rect()` or rounding would leave that option out and
-// get forward differences.
+// step per frame, by rendering the view hypothetically: once with the
+// angle nudged, to measure which way the knob moves, then at the step.
 import ui
 import ui/drag
 
@@ -30,7 +27,7 @@ fn view(dial)
       {x: C.x + cos(t) * (R - 4), y: C.y + sin(t) * (R - 4)}, #8a8f9c, 255, 2)
   end
   let k = place("knob", knob_at(dial.angle))
-  draggable("knob", k, fn() vary(dial, ["angle"], {sensitivity: "dual"}) end)
+  draggable("knob", k, fn() vary(dial, ["angle"]) end)
   let mid = {x: k.x + KNOB, y: k.y + KNOB}
   draw_line(C, mid, #f0b429, 255, 3)
   draw_circle(mid, KNOB, #f0b429)

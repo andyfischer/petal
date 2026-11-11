@@ -20,6 +20,7 @@ mod function;
 pub(crate) mod hint_names;
 pub(crate) mod keyed_state;
 mod match_check;
+pub(crate) mod dual_deprecated;
 pub(crate) mod moved_widgets;
 mod native;
 mod phi;
@@ -1067,6 +1068,10 @@ impl Compiler {
             // (docs/tasks/lifecycle-annotation-functions-refactor.md, Phase 5).
             self.warnings
                 .extend(crate::migrate::deprecated_lifecycle_decls(&stmts, &module.source));
+            // `autodiff`'s dual numbers are deprecated
+            // (docs/tasks/differentiation-rewrite.md, Phase 2).
+            self.warnings
+                .extend(dual_deprecated::deprecated_dual_uses(module, &stmts));
         }
 
         if !is_entry {

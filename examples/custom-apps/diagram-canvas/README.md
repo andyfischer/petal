@@ -55,6 +55,24 @@ npm run preview --workspace examples/custom-apps/diagram-canvas   # serve the bu
 Pick an example from the dropdown in the sidebar. Click **View Source** to open
 the editor; edits update the diagram live.
 
+## Edit mode
+
+Click **Edit Mode** to edit the program by dragging what it draws. The frame
+loop freezes; click a shape to see which call drew it (its line is selected in
+the editor), then drag it. The lines selected in the editor are the lines
+whose numbers may change; with nothing selected the drag runs best effort
+(`tunable` numbers first, never `const` or `rigid`). The best answer goes
+into the editor as one undoable change; other answers are listed in the edit
+panel. See "Hosts" in
+[docs/features/direct-manipulation.md](../../../docs/features/direct-manipulation.md#hosts).
+
+Its end-to-end test drives the page in headless Chromium (Playwright's own
+browser, or a system Chrome):
+
+```bash
+npm run test:e2e --workspace examples/custom-apps/diagram-canvas
+```
+
 ## How it works
 
 - `petal-web-canvas` provides the WASM `PetalRuntime`, the `PetalCanvas` frame

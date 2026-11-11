@@ -989,3 +989,48 @@ None at the moment.
 - Left for part 2 (web-canvas): emit tracing in the wasm host, the mode in
   diagram-canvas with selection in its source editor
   (`DragFilter::allow_selection`), and a Playwright test.
+
+### Phase 3b part 2: edit mode in petal-web-canvas / diagram-canvas — done 2026-11-11
+
+- Wasm host (`integrations/petal-web-canvas/rust/src/lib.rs`):
+  `set_emit_trace` (traced drains keep the frame's whole-pixel commands and
+  origins; the sub-pixel drain uses the new
+  `petal_ui::draw::take_frame_commands_snapped_traced`),
+  `set_edit_checkpoint` (a pre-run fork per `reset_and_run`, as Garden's),
+  and JSON entry points `edit_pick`, `edit_begin(index, lines)`,
+  `edit_preview`, `edit_finish`, `edit_cancel`, `edit_drag`. A non-empty
+  line list is the allow set (`DragFilter::allow_lines`, ranked, up to three
+  alternatives); an empty one runs `SessionOptions::best_effort()`. Each
+  alternative carries the whole new sketch text. Loading a program drops the
+  drag, checkpoint and traced frame. Six native unit tests (`cargo test` in
+  `rust/`; `console_error_panic_hook` is now wasm-only so they can run).
+- Shared: `hit_test` / `bounds` moved from petal-sdl's `timeline.rs` into
+  `petal_ui::edit_mode` (re-exported there), plus `describe_call`
+  (`CallLabel`), which petal-sdl's `name_call` now uses.
+- Core fix found on the way: turning emit tracing on after frames had run
+  left memo records made untraced, whose replay attributed emits to nothing
+  (a pick named "a call with no source position"). `Env::enable_emit_trace`
+  now clears the memo of the default context's stacks when it turns tracing
+  on (`emit_trace_turned_on_late_still_attributes_memoized_calls`).
+- diagram-canvas (`examples/custom-apps/diagram-canvas`): an **Edit Mode**
+  sidebar button; `src/edit-mode.ts` freezes the frame loop after one traced
+  frame, lays an overlay canvas over the page canvas (so the script gets no
+  input), outlines and names the clicked call and selects its line in the
+  editor; the editor's non-empty selection is the allow set and is marked
+  (`src/editor.ts`, session only); a drag opens on passing the slop, previews
+  per move, and on release puts the best answer in the editor as one minimal
+  change (one undo) and runs it, listing the others; a refusal shows its
+  reason and changes nothing.
+- Test: `npm run test:e2e --workspace examples/custom-apps/diagram-canvas`
+  (`tests/edit-mode.test.mjs`, Playwright, headless Chromium or system
+  Chrome): click names `draw_circle` at line 5 and selects it; a selection
+  holding nothing that moves the shape is refused with the text unchanged;
+  selecting line 3 moves only `off` and the circle is drawn at the drop
+  point; no selection is best effort with one answer; a `rigid` shape is
+  refused; editor undo takes an edit back. `playwright` is a devDependency
+  of the app.
+- garden-web / the petal-lang.org `/manipulate` gallery: unaffected by the
+  host change (garden-web goes through garden-script, whose types are
+  unchanged; it still builds for wasm). `check-dm-samples.mjs` is green
+  against the currently vendored build; the memo fix reaches it on the next
+  re-vendor.

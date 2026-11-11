@@ -3,6 +3,7 @@ import { SourceEditor } from "./editor.js";
 import { PetalDebugAPI, DebugController } from "./debug.js";
 import { DebugPanel, injectDebugStyles } from "./debug-panel.js";
 import { connectDebugWebSocket } from "./debug-ws.js";
+import { EditMode } from "./edit-mode.js";
 
 const EXAMPLES = [
   { name: "Flowchart", path: "/examples/flowchart.ptl" },
@@ -16,8 +17,11 @@ async function main() {
   const picker = document.getElementById("example-picker") as HTMLSelectElement;
   const toggleBtn = document.getElementById("toggle-source") as HTMLButtonElement;
   const toggleDebugBtn = document.getElementById("toggle-debug") as HTMLButtonElement;
+  const toggleEditBtn = document.getElementById("toggle-edit") as HTMLButtonElement;
   const editorPanel = document.getElementById("editor-panel") as HTMLElement;
   const debugPanelEl = document.getElementById("debug-panel") as HTMLElement;
+  const editOverlay = document.getElementById("edit-overlay") as HTMLCanvasElement;
+  const editPanelEl = document.getElementById("edit-panel") as HTMLElement;
 
   // Populate example picker
   for (const ex of EXAMPLES) {
@@ -27,13 +31,37 @@ async function main() {
     picker.appendChild(opt);
   }
 
+  // Current source tracking
+  let currentSource = "";
+  let editor: SourceEditor | null = null;
+  let sourceVisible = false;
+
   // Init runtime. The debug controller gates the shared frame loop for
-  // pause/step; the shared PetalCanvas has no debug notion of its own.
+  // pause/step, and edit mode freezes it; the shared PetalCanvas has no
+  // debug notion of its own.
   const debug = new DebugController();
   const petal = new PetalCanvas();
-  petal.frameGate = (dt) => debug.shouldRunFrame(dt);
+  const editMode = new EditMode(petal, editOverlay, editPanelEl, {
+    editor: () => (sourceVisible ? editor : null),
+    source: () => currentSource,
+    applySource: (source) => {
+      // Into the editor first (as one undoable change), then run it now
+      // rather than after the editor's debounce.
+      if (editor) editor.replaceSource(source);
+      run(source);
+    },
+  });
+  petal.frameGate = (dt) => (editMode.active ? editMode.gate() : debug.shouldRunFrame(dt));
   await petal.init();
   petal.start(canvas, errorEl);
+
+  /** Load `source` as the running program (a no-op when it already is). */
+  function run(source: string, force = false): void {
+    if (!force && source === currentSource) return;
+    currentSource = source;
+    petal.load(source);
+    editMode.reloaded();
+  }
 
   // --- Debug API ---
   const debugApi = new PetalDebugAPI({
@@ -44,8 +72,18 @@ async function main() {
     getFrameCount: () => petal.frameCount,
   });
 
-  // Expose on window for console access
+  // Expose on window for console access (and for tests: `petalEdit`).
   (window as any).petalDebug = debugApi;
+  (window as any).petalEdit = editMode;
+  (window as any).petalDiagram = {
+    /** Run `source` (and show it in the editor, when open). */
+    load: (source: string) => {
+      run(source, true);
+      if (editor && sourceVisible) editor.setSource(source);
+    },
+    source: () => currentSource,
+    editorText: () => editor?.getSource() ?? null,
+  };
 
   // --- Debug panel ---
   injectDebugStyles();
@@ -55,6 +93,7 @@ async function main() {
   // Refresh debug panel after each frame
   petal.onFrameComplete = () => {
     if (debugVisible) debugPanel.refresh();
+    if (editMode.active) editMode.render();
   };
 
   toggleDebugBtn.addEventListener("click", () => {
@@ -65,13 +104,14 @@ async function main() {
     requestAnimationFrame(() => petal.resize());
   });
 
+  // --- Edit mode ---
+  toggleEditBtn.addEventListener("click", () => {
+    editMode.toggle();
+    toggleEditBtn.classList.toggle("active", editMode.active);
+  });
+
   // --- WebSocket bridge ---
   connectDebugWebSocket(debugApi, 4012);
-
-  // Current source tracking
-  let currentSource = "";
-  let editor: SourceEditor | null = null;
-  let sourceVisible = false;
 
   // Load example on selection
   picker.addEventListener("change", async () => {
@@ -79,8 +119,8 @@ async function main() {
     if (!path) return;
     try {
       const resp = await fetch(path);
-      currentSource = await resp.text();
-      petal.load(currentSource);
+      const source = await resp.text();
+      run(source, true);
       if (editor && sourceVisible) {
         editor.setSource(currentSource);
       }
@@ -98,18 +138,21 @@ async function main() {
     if (sourceVisible) {
       editorPanel.classList.add("visible");
       if (!editor) {
-        editor = new SourceEditor(editorPanel, (source) => {
-          currentSource = source;
-          petal.load(source);
-        });
+        editor = new SourceEditor(editorPanel, (source) => run(source));
+        editor.onSelectionChange(() => editMode.render());
       }
       editor.setSource(currentSource);
+      editor.setEditMode(editMode.active);
     } else {
       editorPanel.classList.remove("visible");
     }
+    editMode.render();
 
     // Let layout settle, then resize canvas
-    requestAnimationFrame(() => petal.resize());
+    requestAnimationFrame(() => {
+      petal.resize();
+      if (editMode.active) editMode.requestFrame();
+    });
   });
 
   // Auto-load first example

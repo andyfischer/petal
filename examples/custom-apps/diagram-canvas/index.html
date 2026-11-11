@@ -111,6 +111,56 @@
       height: 100%;
     }
 
+    /* Edit mode: an overlay over the canvas takes the pointer while it is on */
+    #canvas-wrap #edit-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      display: none;
+    }
+    #canvas-wrap #edit-overlay.active {
+      display: block;
+      pointer-events: auto;
+      cursor: crosshair;
+    }
+    #edit-panel {
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      max-width: min(460px, calc(100% - 16px));
+      z-index: 5;
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #ffd23c;
+      background: rgba(16, 16, 30, 0.92);
+      font-size: 12px;
+      line-height: 1.4;
+      pointer-events: auto;
+    }
+    #edit-panel.visible { display: flex; }
+    #edit-panel .edit-title { color: #ffd23c; font-weight: 600; }
+    #edit-panel .edit-scope { color: #b8b8d0; }
+    #edit-panel .edit-picked,
+    #edit-panel .edit-preview { font-family: monospace; color: #e8e8ff; }
+    #edit-panel .edit-note.ok { color: #78e68c; }
+    #edit-panel .edit-note.error { color: #ff7a6e; }
+    #edit-panel .edit-alts { display: flex; flex-direction: column; gap: 3px; }
+    #edit-panel .edit-alt {
+      text-align: left;
+      padding: 3px 6px;
+      border-radius: 4px;
+      border: 1px solid #444;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #edit-panel .edit-alt:hover { border-color: #888; }
+    #edit-panel .edit-alt.applied { border-color: #78e68c; }
+
     /* Error display */
     #error-display {
       position: absolute;
@@ -175,12 +225,18 @@
           <span class="toggle-indicator"></span>
           Debug
         </button>
+        <button id="toggle-edit" class="toggle-btn" title="Drag a drawn shape to edit the code that drew it">
+          <span class="toggle-indicator"></span>
+          Edit Mode
+        </button>
       </div>
     </div>
     <div id="main">
       <div id="editor-panel"></div>
       <div id="canvas-wrap">
         <canvas id="canvas"></canvas>
+        <canvas id="edit-overlay"></canvas>
+        <div id="edit-panel" data-testid="edit-panel"></div>
         <div id="error-display"></div>
       </div>
       <div id="debug-panel"></div>

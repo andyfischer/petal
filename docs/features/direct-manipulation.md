@@ -485,6 +485,7 @@ answer or an error.
 |---|---|---|---|
 | Garden (`garden petal-ide`) | `Cmd+Shift+D` / `:DragMode` | `:DragAllow`, the candidate picker, gutter hints | Ranked alternatives in a panel; pick one |
 | `petal-sdl` | `F9` | Best effort | Written to the file, then hot reloaded |
+| `petal-web-canvas` (`diagram-canvas`) | **Edit Mode** in the sidebar | The lines selected in the page's source editor; none selected (or the editor closed) is best effort | Put in the editor as one undoable change and run; the other alternatives listed to pick from |
 
 **petal-sdl.** `F9` turns edit mode on and freezes the timeline at the
 current frame (`F5` and `,` / `.` still scrub). Click a shape: the banner
@@ -500,6 +501,28 @@ leaves edit mode and resumes the game. The agent protocol has the same
 operations (`edit_mode`, `edit_pick`, `edit_drag`, `edit_undo`; see
 [petal-sdl's agent-protocol.md](../../integrations/petal-desktop-sdl/docs/agent-protocol.md#edit_mode--edit_pick--edit_drag--edit_undo)).
 
+**petal-web-canvas (`diagram-canvas`).** The wasm runtime keeps an emit
+trace while edit mode is on (`PetalRuntime.set_emit_trace`) and a pre-run
+checkpoint of each frame (`set_edit_checkpoint`), and answers in JSON:
+`edit_pick(x, y)` names the call under the pointer (`callee`, 1-based
+`line`, `bounds`); `edit_begin(index, lines)` opens a drag with the selected
+lines as the allow set, or best effort when `lines` is `[]`;
+`edit_preview(dx, dy)` is the per-move answer; `edit_finish(dx, dy)` returns
+the alternatives, each with the whole new sketch text, or `{ok: false,
+error}`. The `diagram-canvas` sample app is the reference page
+(`examples/custom-apps/diagram-canvas/src/edit-mode.ts`). **Edit Mode**
+freezes the frame loop after one traced frame and lays an overlay over the
+canvas, so the script stops receiving input. Clicking a shape outlines it,
+names its call in the edit panel and selects that line in the editor; widen
+the selection there (any lines, with the editor's own selection) and the
+panel says which lines may change, which the editor marks. Dragging a shape
+runs the request on release: the best answer goes into the editor as one
+change (so one undo takes it back) and runs at once, and with a selection
+the other alternatives are listed to pick from. A refusal shows its reason
+and changes nothing. The selection is the page's: it is never written into
+the source. Its end-to-end test is `npm run test:e2e --workspace
+examples/custom-apps/diagram-canvas` (Playwright, headless Chromium).
+
 **For host authors.** The host-independent half lives in
 `petal_ui::edit_mode` (no native-only dependencies, so it builds for wasm):
 
@@ -512,12 +535,17 @@ operations (`edit_mode`, `edit_pick`, `edit_drag`, `edit_undo`; see
   per-move linear answer, `finish` verifies and returns the alternatives (one
   under `SessionOptions::best_effort()`) or the reason for a refusal;
 - `apply_rewrites_to` / `DragAlternative::apply_to` splice the answer into
-  the source text.
+  the source text;
+- `hit_test` / `bounds` find the drawn item under a point, and
+  `describe_call` names the call in the sketch that drew it.
 
 A host supplies the checkpoint, a `SpecHost` that installs its providers
-around each speculative run, the hit test, and the UI. Garden's
-`garden-script/src/panel/dm.rs` and petal-sdl's `src/edit_mode.rs` are the
-two users.
+around each speculative run, and the UI. Garden's
+`garden-script/src/panel/dm.rs`, petal-sdl's `src/edit_mode.rs` and
+petal-web-canvas's `rust/src/lib.rs` are its users. Turning emit tracing
+on after frames have run drops the stacks' memo records (a record made
+untraced has no origins to replay), so the first traced frame attributes
+every emit.
 
 ## For AI agents
 

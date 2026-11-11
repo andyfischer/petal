@@ -114,6 +114,7 @@ re-simulated through an edit. Nothing in the script opts in.
 | `,` / `.` | While frozen: scrub one frame back / forward. Hold for real time, `shift` for 5× |
 | `F6` | Toggle the trail overlay |
 | `F7` | Track the shape under the pointer: its `draw_*` call is followed through every recorded frame and drawn as a path |
+| `F9` | Edit mode (below): freezes the game; drag a shape to edit the code that drew it |
 
 `F8` (any time, not only with the timeline) switches the `ui/drag` drag
 debugger on and off: an app that drags with `ui/drag` shows its drop zones,
@@ -135,6 +136,22 @@ The same operations are agent-protocol commands (`freeze`, `scrub`,
 overlay. Recording costs one heap copy per frame (about 2 ms on a small
 game in a release build); `--no-timeline` turns it off, `--history` sets the
 length. `examples/games/hopper/` in the repo root is a game written for it.
+
+## Edit mode
+
+`F9` turns on edit mode and freezes the game at the frame on screen. Click a
+shape and the overlay names the call that drew it (`` `draw_rect` at line 5:
+… ``). Drag it, and Petal finds an edit of the script's numbers that puts it
+where you dropped it, writes the file, and the hot reload replays the frozen
+frame through the new code. There is no source view to choose which numbers
+may change, so it works **best effort**: a `tunable(…)` number moves first,
+a `const(…)` or `rigid(…)` one never does, and when several numbers tie the
+move is split equally between them. When no edit reaches the spot, the
+overlay says why and nothing is written. The applied edit stays in the
+overlay; `z` undoes it. `F9` again (or `F5`) resumes the game. See
+[direct-manipulation.md](../../docs/features/direct-manipulation.md#hosts);
+the agent protocol has the same operations (`edit_mode`, `edit_pick`,
+`edit_drag`, `edit_undo`).
 
 ## Use as a library
 

@@ -3,6 +3,11 @@
 //! §4.4), so a shape placed through any number of function calls can be
 //! dragged.
 //!
+//! The host-independent half (the probe, the session, the conversion of the
+//! engine's answers to rewrites) is [`petal_ui::edit_mode`], shared with every
+//! host that has an edit mode; this module is Garden's half: the checkpoint,
+//! its speculative-run wrapper, and which command was grabbed.
+//!
 //! The pieces, in the order a gesture uses them:
 //!
 //! 1. **Checkpoint** ([`PanelHost::set_dm_checkpoint`]). While armed, every
@@ -12,76 +17,32 @@
 //! 2. **Press** ([`PanelHost::pin_dm_checkpoint`]): the drag takes that fork
 //!    for itself, so the frames that run before the pointer moves cannot
 //!    replace it.
-//! 3. **First move** ([`PanelHost::begin_drag_v2`]): one probe run finds the
-//!    grabbed command's [`EmitKey`] in the speculative baseline, and a
-//!    [`DmSession`] opens on it: discovery, screening and the Jacobian — the
-//!    only expensive step, bounded by [`OPEN_RUNS`] and [`OPEN_WALL`].
+//! 3. **First move** ([`PanelHost::begin_drag_v2`]): [`EditSession::open`]
+//!    finds the grabbed command's emit in a speculative baseline and opens a
+//!    session on it: discovery, screening and the Jacobian, the only
+//!    expensive step, bounded by [`OPEN_RUNS`] and [`OPEN_WALL`].
 //! 4. **Every move** ([`PanelHost::preview_drag_v2`]): one linear solve
 //!    against the cached Jacobian. No runs, so it keeps up with the pointer.
 //! 5. **Release** ([`PanelHost::finish_drag_v2`]): verify, round and rank, with
 //!    a fresh budget of its own ([`FINISH_RUNS`], [`FINISH_WALL`]); the
 //!    session's linear answer is the warm start of the verification loop.
 //!
-//! Everything the engine reports is converted to plain `garden-script`
-//! types here, so the app layer still needs no Petal dependency.
+//! Everything the engine reports is converted to plain types, so the app
+//! layer still needs no Petal dependency.
 
-use std::time::Duration;
-
-use petal::dm::spec::SpecSession;
-use petal::dm::{
-    CandidateReport, DmGoal, DmRequest, DmSession, EmitKey, Observable, ParamChange, ParamFilter,
-    ParamSelector, PathStep, SpecConfig, SpecHost,
-};
+use petal::dm::SpecHost;
 use petal::env::Env;
-use petal::program::Program;
-use petal::source_map::{FileId, ENTRY_FILE};
-use petal::stack::StackKey;
+use petal_ui::edit_mode::{EditSession, GoalTarget, SessionOptions};
 use petal_ui::frame_core::FrameSpecHost;
 
+pub use petal_ui::edit_mode::{DRAG_ALTERNATIVES, DRAG_ITERS, FINISH_RUNS, FINISH_WALL, OPEN_RUNS, OPEN_WALL};
+
 use super::{swap_edit_view_edits, swap_edit_view_texts, PanelData, PanelHost};
-use crate::panel_trace::{
-    native_position_args, CodeSpan, DragAlternative, DragCandidate, DragFilter, DragOutcomeV2,
-    DragProperty, DragSelector, DragStart, SourceRewrite,
-};
+use crate::panel_trace::{native_position_args, DragFilter, DragOutcomeV2, DragProperty, DragStart, SourceRewrite};
 use crate::query::{self, QueryProvider};
 
-/// Speculative runs opening a drag may take (screening and the Jacobian).
-pub const OPEN_RUNS: usize = 96;
-/// Wall-clock cap on opening a drag: the pause between the pointer passing
-/// the drag slop and the drag following it.
-pub const OPEN_WALL: Duration = Duration::from_millis(400);
-/// Runs the release may take to verify, round and rank.
-pub const FINISH_RUNS: usize = 48;
-/// Wall-clock cap on the release.
-pub const FINISH_WALL: Duration = Duration::from_millis(400);
-/// Verification steps per candidate subset (the engine's default is 6; a
-/// drag lands on a whole pixel, and a linear prediction from a Jacobian
-/// measured a moment ago is usually within it).
-pub const DRAG_ITERS: usize = 3;
-/// Verification steps for a color: a color is usually computed nonlinearly
-/// (a hue wheel, a mix), and a picked color lands far from the one on
-/// screen, where a linear prediction is a poor first guess.
-pub const COLOR_ITERS: usize = 8;
-/// Alternatives a release reports.
-pub const DRAG_ALTERNATIVES: usize = 3;
-/// The cap on one speculative run of the frame.
-const RUN_WALL: Duration = Duration::from_millis(250);
-
 /// A v2 drag in progress.
-pub(super) struct V2Drag {
-    session: DmSession,
-    /// Each goal's axis: the index into the deltas a move is given (for a
-    /// position 0 is horizontal and 1 vertical; see [`DragProperty`]).
-    axis: Vec<usize>,
-    /// How many axes the gesture has.
-    n_axes: usize,
-    /// Each goal's baseline value.
-    base: Vec<f64>,
-    /// The entry file's text when the session opened: a release against
-    /// any other text is stale.
-    source: String,
-    candidates: Vec<DragCandidate>,
-}
+pub(super) type V2Drag = EditSession;
 
 /// Garden's speculative-run wrapper (plan R11): the frame core's providers
 /// (host data, fonts) plus Garden's own channels (the query provider, the
@@ -182,11 +143,7 @@ impl PanelHost {
     ///
     /// `Err` is the outcome to report instead (`Refused` with the reason, or
     /// `Stale`). Any open drag is cancelled first.
-    pub fn begin_drag_v2(
-        &mut self,
-        cmd_index: usize,
-        filter: &DragFilter,
-    ) -> Result<DragStart, DragOutcomeV2> {
+    pub fn begin_drag_v2(&mut self, cmd_index: usize, filter: &DragFilter) -> Result<DragStart, DragOutcomeV2> {
         self.begin_adjust_v2(cmd_index, DragProperty::Position, filter)
     }
 
@@ -219,17 +176,10 @@ impl PanelHost {
         // command's chain, k counted among the frame's commands; without
         // tracing it is the raw command index.
         let origin = self.frame_origins.get(cmd_index).cloned();
-        let occurrence = origin.as_ref().map(|o| {
-            self.frame_origins[..cmd_index]
-                .iter()
-                .filter(|p| *p == o)
-                .count()
-        });
-        let raw_index = self
-            .frame_raw_index
-            .get(cmd_index)
-            .copied()
-            .unwrap_or(cmd_index);
+        let occurrence = origin
+            .as_ref()
+            .map(|o| self.frame_origins[..cmd_index].iter().filter(|p| *p == o).count());
+        let raw_index = self.frame_raw_index.get(cmd_index).copied().unwrap_or(cmd_index);
 
         let (checkpoint, owned) = match self.dm_pinned.take().or_else(|| self.dm_checkpoint.take()) {
             Some(ck) => (ck, true),
@@ -240,144 +190,21 @@ impl PanelHost {
         let target = GoalTarget {
             property,
             position,
-            origin,
+            origin: origin.map(|o| o.0),
             occurrence,
             raw_index,
         };
-        let result = self.open_session(checkpoint, &target, filter);
+        let result = {
+            let (env, mut host) = spec_parts!(&mut *self);
+            EditSession::open(env, &mut host, checkpoint, &target, filter, &SessionOptions::default())
+        };
         if owned {
             self.core.env.drop_fork(checkpoint);
         }
         let drag = result?;
-        let on_axis = |k: usize| -> Vec<f64> {
-            drag.base
-                .iter()
-                .zip(&drag.axis)
-                .filter(|(_, a)| **a == k)
-                .map(|(b, _)| *b)
-                .collect()
-        };
-        let axes: Vec<Vec<f64>> = (0..drag.n_axes).map(on_axis).collect();
-        let start = DragStart {
-            base_x: if property == DragProperty::Position { on_axis(0) } else { Vec::new() },
-            base_y: if property == DragProperty::Position { on_axis(1) } else { Vec::new() },
-            axes,
-            candidates: drag.candidates.clone(),
-            runs: drag.session.runs_used(),
-        };
+        let start = drag.start();
         self.dm_drag = Some(drag);
         Ok(start)
-    }
-
-    fn open_session(
-        &mut self,
-        checkpoint: StackKey,
-        target: &GoalTarget,
-        filter: &DragFilter,
-    ) -> Result<V2Drag, DragOutcomeV2> {
-        let pid = self.core.program_id();
-        let draw = self
-            .core
-            .env
-            .intern_symbol(petal_ui::draw::DRAW_COMMANDS_SYMBOL);
-        let spec_cfg = SpecConfig {
-            max_wall: RUN_WALL,
-            ..SpecConfig::default()
-        };
-        let refused = |why: String| DragOutcomeV2::Refused {
-            why,
-            candidates: Vec::new(),
-        };
-
-        // The probe: one baseline to learn the emit's key, which native drew
-        // it, and the raw values of the arguments the gesture moves.
-        let (goals, base, axis) = {
-            let (env, mut host) = spec_parts!(&mut *self);
-            let probe = SpecSession::begin(env, &mut host, checkpoint, &[], spec_cfg.clone(), None)
-                .map_err(|e| refused(format!("could not re-run this frame: {e}")))?;
-            let emits: Vec<_> = probe.baseline().channel(draw).collect();
-            let found = match (&target.origin, target.occurrence) {
-                (Some(o), Some(k)) => emits.iter().filter(|e| e.chain == o.0).nth(k).copied(),
-                _ => None,
-            }
-            .or_else(|| emits.get(target.raw_index).copied());
-            let native = found
-                .and_then(|e| e.native)
-                .map(|id| env.native_table().get_name(id).to_string());
-            let goals = found.and_then(|e| match (&target.position, target.property) {
-                (Some((xs, ys)), DragProperty::Position) => {
-                    position_observables(probe.baseline(), e.key, xs, ys)
-                }
-                _ => property_observables(probe.baseline(), e.key, native.as_deref()?, target.property),
-            });
-            let found = found.is_some();
-            probe.end(env);
-            match goals {
-                Some(g) => g,
-                None if found => {
-                    return Err(refused(format!(
-                        "this shape has no {} to change",
-                        target.property.noun()
-                    )))
-                }
-                None => {
-                    return Err(refused(
-                        "this shape is not in a re-run of the frame (it depends on input the re-run cannot see)"
-                            .to_string(),
-                    ))
-                }
-            }
-        };
-        let n_axes = axis.iter().max().map_or(0, |m| m + 1);
-        let request = DmRequest {
-            goals: goals
-                .into_iter()
-                .zip(&base)
-                .map(|(o, &b)| DmGoal::to(o, b))
-                .collect(),
-            filter: param_filter(filter),
-            max_alternatives: DRAG_ALTERNATIVES,
-            max_runs: OPEN_RUNS,
-            max_wall: OPEN_WALL,
-            max_iters: if target.property == DragProperty::Color { COLOR_ITERS } else { DRAG_ITERS },
-            spec: spec_cfg,
-            ..DmRequest::default()
-        };
-        let source = self
-            .core
-            .env
-            .get_program(pid)
-            .and_then(|p| p.source_map.files.first())
-            .map(|f| f.source.clone())
-            .unwrap_or_default();
-        let (env, mut host) = spec_parts!(&mut *self);
-        let session = DmSession::open(env, &mut host, checkpoint, &request).map_err(|e| refused(e.to_string()))?;
-        let candidates = {
-            let program = self.core.env.get_program(pid).ok_or(DragOutcomeV2::Stale)?;
-            session
-                .candidates()
-                .iter()
-                .map(|c| candidate(program, c, &axis))
-                .collect()
-        };
-        Ok(V2Drag {
-            session,
-            axis,
-            n_axes,
-            base,
-            source,
-            candidates,
-        })
-    }
-
-    /// The targets of an open drag moved by `deltas`, one per axis (a
-    /// missing axis does not move).
-    fn drag_targets(drag: &V2Drag, deltas: &[f64]) -> Vec<f64> {
-        drag.base
-            .iter()
-            .zip(&drag.axis)
-            .map(|(b, a)| b + deltas.get(*a).copied().unwrap_or(0.0))
-            .collect()
     }
 
     /// What the open drag would write if the pointer were released `dx`,
@@ -392,18 +219,10 @@ impl PanelHost {
     /// [`begin_adjust_v2`](Self::begin_adjust_v2): `deltas` has one entry per
     /// axis of its property.
     pub fn preview_adjust_v2(&self, deltas: &[f64]) -> Vec<SourceRewrite> {
-        let Some(drag) = self.dm_drag.as_ref() else {
-            return Vec::new();
-        };
-        let Some(program) = self.core.env.get_program(self.core.program_id()) else {
-            return Vec::new();
-        };
-        let targets = Self::drag_targets(drag, deltas);
-        drag.session
-            .preview(&targets)
-            .iter()
-            .filter_map(|c| rewrite_of(program, c, None))
-            .collect()
+        match self.dm_drag.as_ref() {
+            Some(drag) => drag.preview(&self.core.env, deltas),
+            None => Vec::new(),
+        }
     }
 
     /// Release the open drag `dx`, `dy` pixels from the press: verify, round
@@ -415,74 +234,12 @@ impl PanelHost {
     /// [`finish_drag_v2`](Self::finish_drag_v2) for a gesture opened by
     /// [`begin_adjust_v2`](Self::begin_adjust_v2).
     pub fn finish_adjust_v2(&mut self, deltas: &[f64]) -> DragOutcomeV2 {
-        let Some(mut drag) = self.dm_drag.take() else {
+        let Some(drag) = self.dm_drag.take() else {
             return DragOutcomeV2::Stale;
         };
         let pid = self.core.program_id();
-        let now = self
-            .core
-            .env
-            .get_program(pid)
-            .and_then(|p| p.source_map.files.first())
-            .map(|f| f.source.as_str());
-        if now != Some(drag.source.as_str()) {
-            drag.session.cancel(&mut self.core.env);
-            return DragOutcomeV2::Stale;
-        }
-        let targets = Self::drag_targets(&drag, deltas);
-        drag.session.renew_budget(FINISH_RUNS, FINISH_WALL);
-        let candidates = drag.candidates;
         let (env, mut host) = spec_parts!(&mut *self);
-        let response = match drag.session.finish(env, &mut host, &targets) {
-            Ok(r) => r,
-            Err(e) => {
-                return DragOutcomeV2::Refused {
-                    why: e.to_string(),
-                    candidates,
-                }
-            }
-        };
-        let Some(program) = self.core.env.get_program(pid) else {
-            return DragOutcomeV2::Stale;
-        };
-        let alternatives: Vec<DragAlternative> = response
-            .alternatives
-            .iter()
-            .filter_map(|alt| {
-                let rewrites: Vec<SourceRewrite> = alt
-                    .edits
-                    .iter()
-                    .filter_map(|e| {
-                        let change = alt.changes.iter().find(|c| c.span == e.edit.span && c.file == e.file)?;
-                        let mut r = rewrite_of(program, change, Some(alt.collateral.items.len()))?;
-                        r.new_text = e.edit.new_text.clone();
-                        Some(r)
-                    })
-                    .collect();
-                (!rewrites.is_empty()).then(|| DragAlternative {
-                    rewrites,
-                    verified: alt.verified,
-                    moves_others: alt.collateral.items.len(),
-                    stateful: alt.stateful,
-                    config_only: alt.config_only,
-                    score: alt.score,
-                    description: alt.description.clone(),
-                })
-            })
-            .collect();
-        if alternatives.is_empty() {
-            let why = response
-                .diagnostics
-                .warnings
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "nothing the shape depends on can move it there".to_string());
-            return DragOutcomeV2::Refused { why, candidates };
-        }
-        DragOutcomeV2::Alternatives {
-            alternatives,
-            candidates,
-        }
+        drag.finish(env, &mut host, pid, deltas)
     }
 
     /// Abandon the open drag (and a pinned press), dropping their forks.
@@ -493,7 +250,7 @@ impl PanelHost {
 
     fn cancel_open_session(&mut self) {
         if let Some(drag) = self.dm_drag.take() {
-            drag.session.cancel(&mut self.core.env);
+            drag.cancel(&mut self.core.env);
         }
     }
 
@@ -508,256 +265,10 @@ impl PanelHost {
     /// (`dx`, `dy`). For automation and tests; an interactive drag uses
     /// [`begin_drag_v2`](Self::begin_drag_v2) and keeps the session across
     /// moves.
-    pub fn propose_drag_edits_v2(
-        &mut self,
-        cmd_index: usize,
-        dx: f64,
-        dy: f64,
-        filter: &DragFilter,
-    ) -> DragOutcomeV2 {
+    pub fn propose_drag_edits_v2(&mut self, cmd_index: usize, dx: f64, dy: f64, filter: &DragFilter) -> DragOutcomeV2 {
         if let Err(outcome) = self.begin_drag_v2(cmd_index, filter) {
             return outcome;
         }
         self.finish_drag_v2(dx, dy)
     }
-}
-
-/// What a gesture is aimed at: the grabbed command's property and how to find
-/// its emit in a re-run of the frame.
-struct GoalTarget {
-    property: DragProperty,
-    /// The command's position arguments, when it has any.
-    position: Option<(Vec<usize>, Vec<usize>)>,
-    origin: Option<crate::panel_trace::DrawOrigin>,
-    occurrence: Option<usize>,
-    raw_index: usize,
-}
-
-/// A gesture's goals: each observable, its baseline value and its axis.
-type Goals = (Vec<Observable>, Vec<f64>, Vec<usize>);
-
-/// The observables of a command's position arguments, and their baseline
-/// values: x goals first, then y. A number argument is read as it is; a
-/// record argument (`draw_rect(rect, color)`) through its `x` / `y` field.
-fn position_observables(base: &petal::dm::SpecRun, key: EmitKey, xs: &[usize], ys: &[usize]) -> Option<Goals> {
-    let at = |arg: usize, path: Vec<PathStep>| Observable::EmitArg { key, arg, path };
-    let mut x_goals = Vec::new();
-    let mut y_goals = Vec::new();
-    for (&x, &y) in xs.iter().zip(ys) {
-        let (ox, oy) = match (base.read(&at(x, vec![])), base.read(&at(y, vec![]))) {
-            (Some(_), Some(_)) => (at(x, vec![]), at(y, vec![])),
-            // One record carries both axes.
-            (None, _) => (
-                at(x, vec![PathStep::Field("x".into())]),
-                at(x, vec![PathStep::Field("y".into())]),
-            ),
-            (Some(_), None) => return None,
-        };
-        let (vx, vy) = (base.read(&ox)?, base.read(&oy)?);
-        x_goals.push((ox, vx, 0));
-        y_goals.push((oy, vy, 1));
-    }
-    let mut goals: Goals = Default::default();
-    for (o, v, a) in x_goals.into_iter().chain(y_goals) {
-        goals.0.push(o);
-        goals.1.push(v);
-        goals.2.push(a);
-    }
-    Some(goals)
-}
-
-/// One way a native's raw arguments can carry a property: `(argument, field
-/// path, axis)` per goal, where the path reads into a record argument.
-type Layout = &'static [(usize, &'static [&'static str], usize)];
-
-/// Where a size or a color lives in the raw arguments of the native named
-/// `native`, as the layouts its overloads use, tried in order (the first one
-/// the run's arguments fully answer is the call's).
-///
-/// A size is the shape's extent from its anchor: a circle's radius (one
-/// axis), a rectangle's or an ellipse's width and height, a line's second
-/// endpoint (so "resizing" a line drags its end), a text's font size. A
-/// color is its `r`, `g`, `b` (axes 0, 1, 2).
-fn property_layouts(native: &str, property: DragProperty) -> &'static [Layout] {
-    const fn rgb(r: usize) -> [(usize, &'static [&'static str], usize); 3] {
-        [(r, &[], 0), (r + 1, &[], 1), (r + 2, &[], 2)]
-    }
-    const RGB1: Layout = &rgb(1);
-    const RGB3: Layout = &rgb(3);
-    const RGB4: Layout = &rgb(4);
-    const RGB5: Layout = &rgb(5);
-    const RGB6: Layout = &rgb(6);
-    const WH2: Layout = &[(2, &[], 0), (3, &[], 1)];
-    match property {
-        DragProperty::Position => &[],
-        DragProperty::Size => match native {
-            "draw_circle" | "draw_circle_outline" => &[&[(2, &[], 0)]],
-            // `draw_rect` is a native itself, with a record overload.
-            "draw_rect" => &[WH2, &[(0, &["w"], 0), (0, &["h"], 1)]],
-            "draw_rect_rounded" | "draw_rect_outline" | "draw_rect_rounded_outline" | "draw_ellipse"
-            | "draw_ellipse_outline" | "draw_line" => &[WH2],
-            "draw_image" => &[&[(3, &[], 0), (4, &[], 1)]],
-            "fill_arc" => &[&[(3, &[], 0)]],
-            "draw_text" => &[&[(3, &[], 0)], &[(3, &["size"], 0)]],
-            _ => &[],
-        },
-        DragProperty::Color => match native {
-            "fill_poly" | "fill_polygon" => &[RGB1],
-            "draw_circle" | "draw_circle_outline" | "fill_fan" => &[RGB3],
-            // `(x, y, w, h, r, g, b)`, `(x, y, w, h, color)`, `(rect, color)`.
-            "draw_rect" => &[
-                RGB4,
-                &[(4, &["r"], 0), (4, &["g"], 1), (4, &["b"], 2)],
-                &[(1, &["r"], 0), (1, &["g"], 1), (1, &["b"], 2)],
-            ],
-            "draw_rect_outline" | "draw_line" | "draw_ellipse" | "draw_ellipse_outline" | "draw_text" => &[RGB4],
-            "draw_rect_rounded" | "draw_rect_rounded_outline" => &[RGB5],
-            "fill_arc" | "fill_triangle" => &[RGB6],
-            _ => &[],
-        },
-    }
-}
-
-/// The observables of a command's size or color (see [`property_layouts`])
-/// and their baseline values. `None` when the native has no such property,
-/// or the run did not hand it numbers where any layout says (`draw_text`
-/// with a style record carries no color arguments).
-fn property_observables(
-    base: &petal::dm::SpecRun,
-    key: EmitKey,
-    native: &str,
-    property: DragProperty,
-) -> Option<Goals> {
-    property_layouts(native, property).iter().find_map(|layout| {
-        let mut goals: Goals = Default::default();
-        for &(arg, path, axis) in layout.iter() {
-            let path = path.iter().map(|f| PathStep::Field((*f).into())).collect();
-            let o = Observable::EmitArg { key, arg, path };
-            goals.1.push(base.read(&o)?);
-            goals.0.push(o);
-            goals.2.push(axis);
-        }
-        Some(goals)
-    })
-}
-
-/// A [`DragFilter`] in the engine's terms.
-fn param_filter(filter: &DragFilter) -> ParamFilter {
-    let sel = |s: &DragSelector| match s {
-        DragSelector::Variable(v) => ParamSelector::Variable(v.clone()),
-        DragSelector::Line(l) => ParamSelector::Line(*l as u32 + 1),
-        DragSelector::Function(f) => ParamSelector::Function(f.clone()),
-        DragSelector::ConfigOnly => ParamSelector::ConfigOnly,
-    };
-    ParamFilter {
-        allow: (!filter.allow.is_empty()).then(|| filter.allow.iter().map(sel).collect()),
-        deny: filter.deny.iter().map(sel).collect(),
-    }
-}
-
-/// Where a file of the program is, when it is not the sketch itself.
-fn file_path(program: &Program, file: FileId) -> Option<std::path::PathBuf> {
-    if file == ENTRY_FILE {
-        return None;
-    }
-    program
-        .source_map
-        .files
-        .get(file.0 as usize)
-        .and_then(|f| f.origin.clone())
-        .or_else(|| Some(std::path::PathBuf::from(format!("<file {}>", file.0))))
-}
-
-/// The text of `span` in its file (spans count characters).
-fn span_text(program: &Program, span: &petal::source_map::SourceSpan) -> String {
-    program
-        .source_map
-        .files
-        .get(span.file.0 as usize)
-        .map(|f| {
-            f.source
-                .chars()
-                .skip(span.start.offset as usize)
-                .take(span.end.offset.saturating_sub(span.start.offset) as usize)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// One engine candidate, for a picker. `axis` is each goal's axis.
-fn candidate(program: &Program, c: &CandidateReport, axis: &[usize]) -> DragCandidate {
-    let p = &c.param;
-    let variable = p
-        .binding
-        .as_ref()
-        .map(|b| b.rsplit("::").next().unwrap_or(b).to_string());
-    let function = p
-        .function
-        .and_then(|f| program.functions.get(f.0 as usize))
-        .and_then(|d| d.name.clone())
-        .map(|n| {
-            let n = petal::program::base_fn_name(&n).to_string();
-            n.rsplit("::").next().unwrap_or(&n).to_string()
-        });
-    let span = (p.file == ENTRY_FILE)
-        .then(|| CodeSpan::from_petal(&p.span))
-        .flatten();
-    let selector = match (&variable, span) {
-        (Some(v), _) => DragSelector::Variable(v.clone()),
-        (None, Some(s)) => DragSelector::Line(s.start_line),
-        (None, None) => match &function {
-            Some(f) => DragSelector::Function(f.clone()),
-            None => DragSelector::Line(p.span.start.line.saturating_sub(1) as usize),
-        },
-    };
-    DragCandidate {
-        label: variable.clone().unwrap_or_else(|| span_text(program, &p.span)),
-        variable,
-        function,
-        span,
-        file: file_path(program, p.file),
-        value: p.value,
-        config: p.is_knob(),
-        tunable: matches!(p.hint, Some(petal::dm::Hint::Tunable { .. })),
-        rigid: matches!(p.hint, Some(petal::dm::Hint::Rigid)),
-        eligible: c.eligible.is_ok(),
-        why_not: c.eligible.err().map(str::to_string),
-        moves: c.column.as_ref().is_some_and(|col| col.iter().any(|v| *v != 0.0)),
-        moves_x: moves_on(c, axis, 0),
-        moves_y: moves_on(c, axis, 1),
-        moves_axes: (0..axis.iter().max().map_or(0, |m| m + 1))
-            .map(|k| moves_on(c, axis, k))
-            .collect(),
-        selector,
-    }
-}
-
-/// Whether a candidate's measured column moves any goal on axis `k`.
-fn moves_on(c: &CandidateReport, axis: &[usize], k: usize) -> bool {
-    c.column
-        .as_ref()
-        .is_some_and(|col| col.iter().zip(axis).any(|(v, a)| *a == k && *v != 0.0))
-}
-
-/// One changed literal as a rewrite. `others` is how many other shapes the
-/// alternative moves, when it was measured.
-fn rewrite_of(program: &Program, c: &ParamChange, others: Option<usize>) -> Option<SourceRewrite> {
-    let span = CodeSpan::from_petal(&c.span)?;
-    let line = c.span.start.line;
-    let description = match &c.binding {
-        Some(b) => format!("set `{b}` to {} (line {line})", c.new_text),
-        None => match &c.function {
-            Some(f) => format!("{} → {} in `{f}` (line {line})", c.old_text, c.new_text),
-            None => format!("{} → {} (line {line})", c.old_text, c.new_text),
-        },
-    };
-    Some(SourceRewrite {
-        span,
-        new_text: c.new_text.clone(),
-        file: file_path(program, c.file),
-        variable: c.binding.clone(),
-        shared: others.is_some_and(|n| n > 0),
-        config: c.config,
-        description,
-    })
 }

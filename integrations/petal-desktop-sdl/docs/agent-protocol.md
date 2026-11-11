@@ -337,6 +337,35 @@ The tracked call is re-found by source position after a hot reload, so a
 trail survives an edit. A point on a frame drawn by an older program is
 attributed against that program's ids; `track` on such a frame is refused.
 
+### edit_mode / edit_pick / edit_drag / edit_undo
+
+Edit mode (the `F9` key in a window) edits the code by dragging what it
+drew. `edit_mode` turns it on (freezing the timeline) or off (resuming the
+game when entering froze it); `on` omitted toggles. `edit_pick` names the
+call that drew the shape under `(x, y)` on the frame on screen.
+`edit_drag` drags that shape by `(dx, dy)`: a best-effort request
+(`tunable` literals first, never `const(…)` or `rigid`, an equal split
+across ties; see
+[direct-manipulation.md](../../../docs/features/direct-manipulation.md#hosts)),
+whose single answer is written to the sketch's file. The hot reload then
+replays the frozen frame through the edit. A drag no edit can satisfy is
+an error, and nothing is written. `edit_undo` puts back the files the last
+applied edit wrote, if they still hold it. `edit_pick` and `edit_drag`
+enter edit mode first.
+
+Every answer carries edit mode's status in `edit` (`on`, `picked`, the last
+`applied` or `error`, and `undo`, the edit an undo would revert), plus the
+command's own key:
+
+```json
+{"cmd": "edit_pick", "x": 190, "y": 110}
+{"ok": true, "edit": {"on": true, "picked": "`draw_rect` at line 5: draw_rect(60 + i * gap, 100, 30, 30, 70, 165, 150)", ...}, "timeline": {...}}
+{"cmd": "edit_drag", "x": 190, "y": 110, "dx": 30, "dy": 0}
+{"ok": true, "edit": {"applied": {"description": "set `gap` to 50 (line 2)", "files": ["sketch.ptl"], "call": "..."}, "undo": "set `gap` to 50 (line 2)", ...}}
+{"cmd": "edit_drag", "x": 220, "y": 110, "dx": 0, "dy": 40}
+{"ok": false, "error": "...", "edit": {"error": "...", ...}}
+```
+
 ### draw_stats
 
 Optional per-frame draw statistics in the `stats` field, for hosts built on

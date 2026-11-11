@@ -140,7 +140,7 @@ impl Env {
     }
 
     /// The program a stack runs, if the stack exists.
-    pub(crate) fn stack_program(&self, stack: StackKey) -> Option<ProgramId> {
+    pub fn stack_program(&self, stack: StackKey) -> Option<ProgramId> {
         self.stacks.get(&stack).map(|s| s.program_id)
     }
 

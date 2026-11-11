@@ -110,6 +110,10 @@ pub struct Timeline {
     /// ([`FrameRecord::frame`]) — set for a host whose
     /// [`Host::subpixel`] is `true`.
     pub subpixel: bool,
+    /// Edit mode (F9): drag a drawn item to edit the code that drew it
+    /// ([`crate::edit_mode`]). It works on the frozen frame, so it lives
+    /// with the timeline.
+    pub edit: crate::edit_mode::EditMode,
 }
 
 impl Timeline {
@@ -123,6 +127,7 @@ impl Timeline {
             show_trail: false,
             last_replayed: 0,
             subpixel: false,
+            edit: crate::edit_mode::EditMode::default(),
         }
     }
 
@@ -158,6 +163,7 @@ impl Timeline {
         }
         self.cursor = None;
         self.tracked = None;
+        self.edit = crate::edit_mode::EditMode::default();
     }
 
     // ── Recording ────────────────────────────────────────────────────────
@@ -260,6 +266,41 @@ impl Timeline {
     }
 
     // ── Replay ───────────────────────────────────────────────────────────
+
+    /// A checkpoint for a speculative re-run of the frame on screen (the
+    /// cursor while frozen, else the latest): the execution as it stood
+    /// before that frame ran, with the frame's recorded clock and input
+    /// bound, forked. A re-run of it draws exactly that frame, which is the
+    /// baseline edit mode solves against ([`crate::edit_mode`]).
+    ///
+    /// It is built the way [`replay`](Self::replay) re-runs a frame: the
+    /// live execution is restored to the previous frame's fork, the frame's
+    /// bindings are made, the fork is taken, and the live execution is put
+    /// back to the frame's own fork. The oldest recorded frame has no
+    /// predecessor, so its checkpoint is its own fork (one frame further on;
+    /// the same for a still sketch). The caller drops the fork.
+    pub fn checkpoint_for_current<H: Host>(
+        &self,
+        env: &mut Env,
+        live: StackKey,
+        host: &mut H,
+    ) -> Result<StackKey, String> {
+        let c = self.current_index().ok_or("nothing recorded yet")?;
+        let rec = &self.frames[c];
+        if c == 0 {
+            return env.fork_execution(rec.snapshot);
+        }
+        env.restore_execution(live, self.frames[c - 1].snapshot)?;
+        clear_draw_commands(env);
+        host.prepare_frame(env);
+        env.advance_frame(live);
+        bind_frame_info(env, rec.dt, rec.frame_count);
+        bind_time(env, rec.time);
+        bind_input(env, &rec.input);
+        let forked = env.fork_execution(live);
+        env.restore_execution(live, rec.snapshot)?;
+        forked
+    }
 
     /// Re-simulate frames `from..` through the program loaded *now*, starting
     /// from the fork of frame `from - 1` and feeding each frame the input
@@ -509,6 +550,7 @@ impl Timeline {
     pub fn overlay(&self, env: &Env, program_id: ProgramId, width: i32, height: i32) -> Vec<DrawCommand> {
         let mut cmds = Vec::new();
         let cur = self.current_index();
+        let edit = self.edit.overlay(self, width, height);
 
         if self.show_trail {
             let points = self.trail(env, program_id);
@@ -635,6 +677,7 @@ impl Timeline {
             }
             cmds.push(DrawCommand::plain_text(&label, 12, bar_y - 20, 14, 240, 240, 255, 255));
         }
+        cmds.extend(edit);
         cmds
     }
 
@@ -650,6 +693,7 @@ impl Timeline {
             "generation": self.generation,
             "tracking": self.tracked_label(),
             "last_replayed": self.last_replayed,
+            "edit": self.edit.status_json(),
         })
     }
 }

@@ -948,3 +948,44 @@ None at the moment.
   ladder's `expect=` names; 11 against 1 end with no answer. The ladder's
   ranked outcomes are unchanged. Details in
   [direct-manipulation.md, "Best effort"](../features/direct-manipulation.md#best-effort).
+
+### Phase 3b part 1: shared edit-mode module + petal-sdl edit mode — done 2026-11-11
+
+- The host-independent half of Garden's drag mode is
+  `petal_ui::edit_mode` (`core-libs/petal-ui/src/edit_mode.rs`, wasm-safe):
+  the plain drag vocabulary (`DragFilter`, `DragSelector`, `DragCandidate`,
+  `DragAlternative`, `DragOutcomeV2`, `SourceRewrite`, `CodeSpan`, …),
+  selection to allow set (`DragFilter::allow_lines` / `allow_selection`,
+  `line:N` selectors), the goal (`GoalTarget::at` from an emit trace,
+  `native_position_args` by native name), the session lifecycle
+  (`EditSession::open` / `preview` / `finish` / `cancel`, with
+  `SessionOptions::best_effort()`), and apply (`apply_rewrites_to`,
+  `DragAlternative::apply_to`). `Env::stack_program` became public for it.
+- Garden is its first user: `garden-script/src/panel/dm.rs` keeps only the
+  checkpoint, its `SpecHost` wrapper and the grabbed command;
+  `panel_trace` re-exports the shared types under their old paths, so
+  garden-app and garden-web are unchanged. `garden-script` tests (including
+  `tests/dm_drag.rs`, 18/18) pass. `tools/dm-mode-integration-test.ts` gives
+  24 passed / 12 failed both before this change (at 7ef8d3cf, the Phase 3a
+  tip) and after it: the 12 failures are pre-existing (01-helper-row's
+  plain drag no longer rewrites `gap`, and the knob/gutter steps that
+  follow from it; 03-fractal-tree's "the root stays").
+- petal-sdl: `F9` toggles edit mode (`src/edit_mode.rs`, state on the
+  `Timeline`), freezing the timeline; a click names the call that drew the
+  item (banner + outline); a drag runs a best-effort request against a
+  checkpoint rebuilt from the recorded frames
+  (`Timeline::checkpoint_for_current`: the previous frame's fork with the
+  frozen frame's input bound), writes the answer (sketch or imported file)
+  and the watcher's hot reload replays the frozen frame; an error is shown
+  and nothing is written; the applied edit and `z undo` show in the
+  timeline overlay; `F9`/`F5` leave and resume. Agent-protocol commands
+  `edit_mode`, `edit_pick`, `edit_drag`, `edit_undo`.
+- Tests: `game_loop::tests::edit_mode_by_scripted_input` (scripted SDL-style
+  input events through the windowed loop's key and edit handling, through
+  the real hot reload), `an_unreachable_drag_writes_nothing`, and
+  `tests/edit_mode_protocol.rs` (the headless binary over stdin).
+- Docs: "Hosts" in `docs/features/direct-manipulation.md`, petal-sdl's
+  README ("Edit mode") and `docs/agent-protocol.md`.
+- Left for part 2 (web-canvas): emit tracing in the wasm host, the mode in
+  diagram-canvas with selection in its source editor
+  (`DragFilter::allow_selection`), and a Playwright test.

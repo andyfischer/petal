@@ -441,6 +441,19 @@ pub fn run_game<H: Host>(
 
         // Frozen: nothing runs. Present the cursor frame and its overlay.
         if timeline_on && timeline.is_frozen() {
+            // Edit mode works on the frozen frame: the pointer picks and
+            // drags drawn items (the script never sees it).
+            if let Some(line) = crate::edit_mode::handle_input(
+                &mut timeline,
+                &mut env,
+                current.program_id,
+                current.stack_id,
+                current.path.as_deref(),
+                host,
+                &input,
+            ) {
+                eprintln!("[edit] {}", line);
+            }
             present_timeline(&mut timeline, &mut env, &current, &mut canvas, host)?;
             continue;
         }
@@ -526,17 +539,26 @@ fn handle_timeline_keys(
     frame_count: &mut i64,
     sim_time: &mut f64,
 ) {
-    if input.was_key_pressed("f5") {
-        if timeline.is_frozen() {
-            match timeline.unfreeze(env, current.stack_id) {
-                Ok(Some((fc, t))) => {
-                    *frame_count = fc;
-                    *sim_time = t;
-                    eprintln!("[timeline] resumed at frame {}", fc);
+    if input.was_key_pressed("f9") {
+        match crate::edit_mode::toggle(timeline) {
+            crate::edit_mode::Toggled::Entered => eprintln!(
+                "[edit] edit mode on, timeline frozen: click a shape to name its call, drag it to edit the code, z undoes, F9 leaves"
+            ),
+            crate::edit_mode::Toggled::Left { resume } => {
+                eprintln!("[edit] edit mode off");
+                if resume {
+                    resume_timeline(timeline, env, current, frame_count, sim_time);
                 }
-                Ok(None) => {}
-                Err(e) => eprintln!("[timeline] {}", e),
             }
+        }
+    }
+    if input.was_key_pressed("f5") {
+        // F5 resumes the game, which ends edit mode too.
+        if timeline.edit.is_on() {
+            crate::edit_mode::toggle(timeline);
+        }
+        if timeline.is_frozen() {
+            resume_timeline(timeline, env, current, frame_count, sim_time);
         } else {
             timeline.freeze();
             eprintln!(
@@ -569,6 +591,25 @@ fn handle_timeline_keys(
         if input.is_key_down("period") {
             timeline.scrub_by(step);
         }
+    }
+}
+
+/// Unfreeze at the cursor and move the windowed loop's clock to it.
+fn resume_timeline(
+    timeline: &mut Timeline,
+    env: &mut Env,
+    current: &Loaded,
+    frame_count: &mut i64,
+    sim_time: &mut f64,
+) {
+    match timeline.unfreeze(env, current.stack_id) {
+        Ok(Some((fc, t))) => {
+            *frame_count = fc;
+            *sim_time = t;
+            eprintln!("[timeline] resumed at frame {}", fc);
+        }
+        Ok(None) => {}
+        Err(e) => eprintln!("[timeline] {}", e),
     }
 }
 
@@ -1097,7 +1138,11 @@ fn handle_command<H: Host>(
         | Command::Rewind { .. }
         | Command::Replay
         | Command::Track { .. }
-        | Command::Trail => match timeline {
+        | Command::Trail
+        | Command::EditMode { .. }
+        | Command::EditPick { .. }
+        | Command::EditDrag { .. }
+        | Command::EditUndo => match timeline {
             Some(t) => timeline_command(cmd, t, env, current, paused, frame_count, clock, host),
             None => protocol::send_response(&Response::err(
                 "the timeline is off for this session (--no-timeline, or a host without it)"
@@ -1215,9 +1260,70 @@ fn timeline_command<H: Host>(
             let points = timeline.trail(env, current.program_id);
             resp.trail = Some(serde_json::to_value(points).unwrap_or(serde_json::Value::Null));
         }
+        Command::EditMode { on } => {
+            if on != Some(timeline.edit.is_on()) {
+                if let crate::edit_mode::Toggled::Left { resume: true } = crate::edit_mode::toggle(timeline) {
+                    let restored = timeline.unfreeze(env, current.stack_id);
+                    if let Err(e) = restore_clock(restored, frame_count, clock) {
+                        return protocol::send_response(&Response::err(e));
+                    }
+                }
+            }
+            if timeline.is_frozen() {
+                *paused = true;
+                resp.paused = Some(true);
+            }
+            resp.edit = Some(timeline.edit.status_json());
+        }
+        Command::EditPick { x, y } => {
+            let r = crate::edit_mode::pick(timeline, env, current.program_id, x, y);
+            *paused = true;
+            return send_edit(r.map(|label| ("picked", serde_json::json!(label))), timeline, *frame_count);
+        }
+        Command::EditDrag { x, y, dx, dy } => {
+            let r = crate::edit_mode::drag(
+                timeline,
+                env,
+                current.program_id,
+                current.stack_id,
+                current.path.as_deref(),
+                host,
+                (x, y),
+                (dx, dy),
+            );
+            *paused = true;
+            let r = r.map(|a| ("applied", serde_json::to_value(a).unwrap_or_default()));
+            return send_edit(r, timeline, *frame_count);
+        }
+        Command::EditUndo => {
+            let r = crate::edit_mode::undo(timeline).map(|m| ("undone", serde_json::json!(m)));
+            return send_edit(r, timeline, *frame_count);
+        }
         _ => unreachable!("not a timeline command"),
     }
     resp.frame = Some(*frame_count);
+    resp.timeline = Some(timeline.status_json());
+    protocol::send_response(&resp);
+}
+
+/// Answer an edit-mode command: `edit` carries edit mode's status plus the
+/// command's own key (`picked`, `applied`, `undone`); an error is an error
+/// response that still carries the status (`edit.error` is the reason).
+fn send_edit(
+    result: Result<(&str, serde_json::Value), String>,
+    timeline: &Timeline,
+    frame: i64,
+) {
+    let mut status = timeline.edit.status_json();
+    let mut resp = match result {
+        Ok((key, value)) => {
+            status[key] = value;
+            Response::ok()
+        }
+        Err(e) => Response::err(e),
+    };
+    resp.edit = Some(status);
+    resp.frame = Some(frame);
     resp.timeline = Some(timeline.status_json());
     protocol::send_response(&resp);
 }
@@ -1253,6 +1359,11 @@ fn step_frames<H: Host>(
     let mut last_frame = 0i64;
     // A step while frozen resumes from the cursor first, so stepping out of a
     // rewound moment continues from that moment.
+    if let Some(t) = timeline.as_deref_mut()
+        && t.edit.is_on()
+    {
+        crate::edit_mode::toggle(t);
+    }
     if let Some(t) = timeline.as_deref_mut()
         && let Err(e) = restore_clock(t.unfreeze(env, stack_id), frame_count, clock)
     {
@@ -1385,5 +1496,180 @@ mod tests {
         go(r#"{"cmd":"unfreeze"}"#, &mut env, &mut tl, &mut frame, &mut clock);
         go(r#"{"cmd":"step"}"#, &mut env, &mut tl, &mut frame, &mut clock);
         assert_eq!(state(&env, &current)["n"].as_i64(), Some(101));
+    }
+
+    /// One pass of the windowed loop (`run_game`) without a window: input
+    /// edges, the timeline and edit-mode keys, hot reload, then either the
+    /// frozen frame's edit-mode input or a live frame recorded.
+    #[allow(clippy::too_many_arguments)]
+    fn windowed_tick(
+        env: &mut Env,
+        current: &Loaded,
+        tl: &mut Timeline,
+        input: &mut InputState,
+        frame_count: &mut i64,
+        sim_time: &mut f64,
+        host: &mut TestHost,
+    ) -> Option<String> {
+        let dt = 1.0 / 60.0;
+        input.begin_frame(dt);
+        handle_timeline_keys(tl, env, current, input, frame_count, sim_time);
+        poll_reload(env, current, Some(&mut *tl), host);
+        if tl.is_frozen() {
+            return crate::edit_mode::handle_input(
+                tl,
+                env,
+                current.program_id,
+                current.stack_id,
+                current.path.as_deref(),
+                host,
+                input,
+            );
+        }
+        *frame_count += 1;
+        *sim_time += dt;
+        env.advance_frame(current.stack_id);
+        bind_frame_info(env, dt, *frame_count);
+        bind_time(env, *sim_time);
+        bind_input(env, input);
+        run_live_frame(env, current.stack_id, host).unwrap();
+        tl.record(env, current.stack_id, *frame_count, dt, *sim_time, input).unwrap();
+        None
+    }
+
+    fn edit_sketch(name: &str, src: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("petal-sdl-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sketch.ptl");
+        std::fs::write(&path, src).unwrap();
+        (dir, path)
+    }
+
+    /// Edit mode driven by scripted input, the way the SDL event pump feeds
+    /// the windowed loop: F9 enters it and freezes the timeline, a press on
+    /// a shape names the call that drew it, a drag writes a best-effort edit
+    /// (the `tunable` knob moves, not the plain literal beside it) and the
+    /// hot reload replays the frozen frame through it, `z` undoes, and F9
+    /// leaves and resumes the game.
+    #[test]
+    fn edit_mode_by_scripted_input() {
+        use petal_ui::input::InputEvent;
+        let src = "import ui\nlet x0 = tunable(100)\nlet gap = 40\n\nfn dot(i)\n  draw_circle(x0 + i * gap, 120, 12, 240, 180, 60)\nend\n\nfor i in range(0, 3) do\n  dot(i)\nend\n";
+        let (dir, path) = edit_sketch("edit-mode", src);
+
+        let mut host = TestHost;
+        let mut env = Env::new();
+        host.register(&mut env);
+        let config = GameConfig::new(320, 240, "edit mode");
+        let current = load_initial(&mut env, path.to_str(), &config, &mut host).unwrap();
+        let mut tl = start_timeline(&mut env, &config, true, false);
+        let mut input = InputState::default();
+        let (mut frame, mut time) = (0i64, 0.0f64);
+        macro_rules! tick {
+            () => {
+                windowed_tick(&mut env, &current, &mut tl, &mut input, &mut frame, &mut time, &mut host)
+            };
+        }
+        let key = |input: &mut InputState, k: &str| {
+            input.event(InputEvent::KeyDown { key: k.to_string() });
+            input.event(InputEvent::KeyUp { key: k.to_string() });
+        };
+
+        for _ in 0..3 {
+            tick!();
+        }
+        key(&mut input, "f9");
+        tick!();
+        assert!(tl.edit.is_on() && tl.is_frozen(), "F9 enters edit mode and freezes the timeline");
+        let frozen_at = frame;
+
+        // Press on the middle dot (x0 + 1 * gap = 140): its call is named.
+        input.event(InputEvent::MouseMove { x: 140, y: 120 });
+        input.event(InputEvent::MouseDown { button: 0 });
+        let picked = tick!().expect("a press names the call");
+        assert!(picked.contains("`draw_circle` at line 6"), "{picked}");
+        assert_eq!(frame, frozen_at, "the program does not run in edit mode");
+
+        // Drag it 20 to the right and release.
+        input.event(InputEvent::MouseMove { x: 160, y: 120 });
+        tick!();
+        input.event(InputEvent::MouseUp { button: 0 });
+        let applied = tick!().expect("a release past the slop drags");
+        assert!(applied.starts_with("applied"), "{applied}");
+        let edited = std::fs::read_to_string(&path).unwrap();
+        assert!(edited.contains("let x0 = tunable(120)"), "the knob moved:\n{edited}");
+        assert!(edited.contains("let gap = 40"), "the plain literal did not:\n{edited}");
+        let texts: Vec<String> = tl
+            .overlay(&env, current.program_id, 320, 240)
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Text { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            texts.iter().any(|t| t.contains("applied: ") && t.contains("z undo")),
+            "the overlay shows the applied edit and the undo key: {texts:?}"
+        );
+
+        // The hot reload follows, and replays the frozen frame through the edit.
+        for _ in 0..200 {
+            if tl.generation > 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            tick!();
+        }
+        assert_eq!(tl.generation, 1, "the edit was hot reloaded");
+        let rec = tl.current().unwrap();
+        assert!(
+            crate::timeline::hit_test(&rec.commands, 160, 120).is_some(),
+            "the replayed frame draws the dot where it was dropped"
+        );
+
+        // `z` undoes.
+        key(&mut input, "z");
+        let undone = tick!().unwrap();
+        assert!(undone.starts_with("undid"), "{undone}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), src);
+
+        // F9 leaves and resumes the game.
+        key(&mut input, "f9");
+        tick!();
+        assert!(!tl.edit.is_on() && !tl.is_frozen());
+        assert_eq!(frame, frozen_at + 1, "the game runs again from the frozen frame");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A drag no edit can satisfy (every literal behind the shape is
+    /// `rigid` or `const`) writes nothing, and the overlay says why.
+    #[test]
+    fn an_unreachable_drag_writes_nothing() {
+        let src = "import ui\nlet x0 = const(100)\ndraw_circle(x0, rigid(120), 12, 240, 180, 60)\n";
+        let (dir, path) = edit_sketch("edit-none", src);
+        let mut host = TestHost;
+        let mut env = Env::new();
+        host.register(&mut env);
+        let config = GameConfig::new(320, 240, "edit mode");
+        let current = load_initial(&mut env, path.to_str(), &config, &mut host).unwrap();
+        let mut tl = start_timeline(&mut env, &config, true, false);
+        let (mut input, mut frame, mut time) = (InputState::default(), 0i64, 0.0f64);
+        for _ in 0..2 {
+            windowed_tick(&mut env, &current, &mut tl, &mut input, &mut frame, &mut time, &mut host);
+        }
+        let r = crate::edit_mode::drag(
+            &mut tl,
+            &mut env,
+            current.program_id,
+            current.stack_id,
+            current.path.as_deref(),
+            &mut host,
+            (100, 120),
+            (15.0, 10.0),
+        );
+        assert!(r.is_err(), "{r:?}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), src, "nothing was written");
+        assert!(tl.edit.status_json()["error"].is_string());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

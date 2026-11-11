@@ -466,6 +466,59 @@ raw arguments, so `--native-arg 2` of `draw_text("…", x, y, color)` is its
 `y`. The goal and filter flags, the text report and the `--json` document
 are the core command's.
 
+## Hosts
+
+Drag-to-edit is an **edit mode** in each host that draws: a mode you turn
+on, not a gesture on the running program. While it is on, the program is
+frozen (its inputs and `state` held), so input never reaches the script and
+every speculative re-run starts from the frame on screen. Clicking a drawn
+item names the call that drew it; dragging it sets a goal on its position,
+and Petal solves for an edit.
+
+Which numbers may change: in a host with a source view, the lines you
+select become the request's allow set (`line:N` selectors, for this session
+only, never written into the source). With nothing selected, or in a host
+with no source view, the request runs [best effort](#best-effort): one
+answer or an error.
+
+| Host | Turn it on | Choosing what may change | The edit |
+|---|---|---|---|
+| Garden (`garden petal-ide`) | `Cmd+Shift+D` / `:DragMode` | `:DragAllow`, the candidate picker, gutter hints | Ranked alternatives in a panel; pick one |
+| `petal-sdl` | `F9` | Best effort | Written to the file, then hot reloaded |
+
+**petal-sdl.** `F9` turns edit mode on and freezes the timeline at the
+current frame (`F5` and `,` / `.` still scrub). Click a shape: the banner
+names its call and source line (`` `draw_rect` at line 5: draw_rect(60 + i
+* gap, …) ``), and its outline is lit. Drag it: on release the drag runs a
+best-effort request against a re-run of the frozen frame, writes the answer
+to the sketch (or the imported file the number lives in), and the hot reload
+replays the frozen frame through the edit. When no edit reaches the spot
+(every number behind the shape is `rigid`, `const` or doesn't move it), the
+banner shows the reason and nothing is written. The applied edit stays in
+the banner, `z` undoes it (when the file still holds it), and `F9` again
+leaves edit mode and resumes the game. The agent protocol has the same
+operations (`edit_mode`, `edit_pick`, `edit_drag`, `edit_undo`; see
+[petal-sdl's agent-protocol.md](../../integrations/petal-desktop-sdl/docs/agent-protocol.md#edit_mode--edit_pick--edit_drag--edit_undo)).
+
+**For host authors.** The host-independent half lives in
+`petal_ui::edit_mode` (no native-only dependencies, so it builds for wasm):
+
+- `DragFilter::allow_lines` / `allow_selection` turn a line selection into
+  the allow set;
+- `GoalTarget::at(origins, index, property)` names the grabbed emit from the
+  frame's emit trace;
+- `EditSession::open` probes a checkpoint (a fork of the stack before the
+  frame ran, with its inputs bound) and opens a `DmSession`; `preview` is the
+  per-move linear answer, `finish` verifies and returns the alternatives (one
+  under `SessionOptions::best_effort()`) or the reason for a refusal;
+- `apply_rewrites_to` / `DragAlternative::apply_to` splice the answer into
+  the source text.
+
+A host supplies the checkpoint, a `SpecHost` that installs its providers
+around each speculative run, the hit test, and the UI. Garden's
+`garden-script/src/panel/dm.rs` and petal-sdl's `src/edit_mode.rs` are the
+two users.
+
 ## For AI agents
 
 The same tools are available to AI agents through the dev MCP server, as

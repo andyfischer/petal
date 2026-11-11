@@ -24,6 +24,7 @@
 
 pub mod audio;
 pub mod default_host;
+pub mod edit_mode;
 pub mod events;
 pub mod font;
 pub mod game_loop;

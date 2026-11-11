@@ -1226,12 +1226,6 @@ fn same(a: Value, b: Value, heap: &Heap, private: bool, frozen_too: bool) -> boo
                 frozen(a, b) && p.iter().zip(&q).all(|(m, n)| m.to_bits() == n.to_bits())
             }
         }
-        (Value::Dual(x), Value::Dual(y)) => {
-            x == y || {
-                let ((av, ad), (bv, bd)) = (heap.get_dual(x), heap.get_dual(y));
-                frozen(a, b) && av.to_bits() == bv.to_bits() && ad.to_bits() == bd.to_bits()
-            }
-        }
         (Value::List(x), Value::List(y)) => {
             if x == y {
                 return true;

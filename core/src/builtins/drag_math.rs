@@ -1,7 +1,9 @@
 //! The numeric half of `ui/drag`'s `between` and `vary`
-//! (docs/proposals/declarative-dragging.md, P2). The drag engine is Petal
-//! code, and a native cannot call a Petal closure, so the speculative runs
-//! happen in Petal and only numbers come here:
+//! (docs/proposals/declarative-dragging.md, P2) and of the `autodiff`
+//! package's `deriv` / `jacobian` / `solve_step` (docs/features/differentiation.md).
+//! The drag engine and the package are Petal code, and a native cannot call
+//! a Petal closure, so the speculative runs happen in Petal and only numbers
+//! come here:
 //!
 //! - `drag_triangulate(points)`: a Delaunay triangulation of `[[x, y], …]`,
 //!   as `[[i, j, k], …]` (counter-clockwise) — `between` over 3+ targets.
@@ -10,10 +12,16 @@
 //!   outside is first moved to the nearest point of the hull). With no
 //!   triangles — 2 points, or all on a line — the weights are the linear
 //!   projection onto the nearest segment between neighbours on the line.
-//! - `drag_solve_step(values, rows, targets, jac, bounds, scale)`: one
-//!   Gauss-Newton step for `vary`'s levers ([`crate::dm::lever_step`], the
-//!   DM v2 solver's `goal_step` and `Bound::project`).
+//! - `gn_step(values, rows, targets, jac, bounds, scale)`: one Gauss-Newton
+//!   step for `vary`'s levers and `solve_step`'s inputs
+//!   ([`crate::dm::lever_step`], the DM v2 solver's `goal_step` and
+//!   `Bound::project`). `drag_solve_step` is its old name, kept as an alias
+//!   for one release.
+//! - `fd_column(x, base, samples, opts)`: one finite-difference column,
+//!   classified by DM v2's rules ([`crate::dm::column_from_samples`]), or the
+//!   next point to sample.
 
+use crate::dm::jacobian::{Column, ColumnQuality, FdMode, FdOptions, Sample, column_from_samples};
 use crate::dm::lever::{PathLever, lever_step};
 use crate::dm::solve::{Bound, GoalRow};
 use crate::heap::Heap;
@@ -246,7 +254,8 @@ pub(super) fn native_drag_weights(state: &mut PetalCxt) -> Result<u32, String> {
     Ok(1)
 }
 
-/// `drag_solve_step(values, rows, targets, jac, bounds, scale)`:
+/// `gn_step(values, rows, targets, jac, bounds, scale)` (also
+/// `drag_solve_step`, its old name):
 ///
 /// - `values`: the levers' current values (`k`);
 /// - `rows` / `targets`: each goal's current value and where it should be
@@ -259,30 +268,30 @@ pub(super) fn native_drag_weights(state: &mut PetalCxt) -> Result<u32, String> {
 /// Returns the next values. Goals are equalities with a 0.5 tolerance; each
 /// lever's cost is `1 / max(|v|, 1)` (DM v2's `d_i / s_i` with `d_i = 1`), so
 /// a step that has a choice moves the levers in proportion to their size.
-pub(super) fn native_drag_solve_step(state: &mut PetalCxt) -> Result<u32, String> {
-    require_args(state, 6, "drag_solve_step")?;
+pub(super) fn native_gn_step(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 6, "gn_step")?;
     let heap = state.heap();
-    let values = nums(heap, state.get_value(1)?, "drag_solve_step(): values")?;
-    let rows = nums(heap, state.get_value(2)?, "drag_solve_step(): rows")?;
-    let targets = nums(heap, state.get_value(3)?, "drag_solve_step(): targets")?;
+    let values = nums(heap, state.get_value(1)?, "gn_step(): values")?;
+    let rows = nums(heap, state.get_value(2)?, "gn_step(): rows")?;
+    let targets = nums(heap, state.get_value(3)?, "gn_step(): targets")?;
     let k = values.len();
     let m = rows.len();
     if targets.len() != m {
-        return Err(format!("drag_solve_step(): {m} rows but {} targets", targets.len()));
+        return Err(format!("gn_step(): {m} rows but {} targets", targets.len()));
     }
-    let jac: Vec<Vec<f64>> = list(heap, state.get_value(4)?, "drag_solve_step(): jac")?
+    let jac: Vec<Vec<f64>> = list(heap, state.get_value(4)?, "gn_step(): jac")?
         .into_iter()
-        .map(|r| nums(heap, r, "drag_solve_step(): a jac row"))
+        .map(|r| nums(heap, r, "gn_step(): a jac row"))
         .collect::<Result<_, _>>()?;
     if jac.len() != m || jac.iter().any(|r| r.len() != k) {
-        return Err(format!("drag_solve_step(): jac must be {m} rows of {k} numbers"));
+        return Err(format!("gn_step(): jac must be {m} rows of {k} numbers"));
     }
     let bounds: Vec<Bound> = match state.get_value(5)? {
         Value::Nil => vec![Bound::default(); k],
         v => {
-            let bs = list(heap, v, "drag_solve_step(): bounds")?;
+            let bs = list(heap, v, "gn_step(): bounds")?;
             if bs.len() != k {
-                return Err(format!("drag_solve_step(): {k} values but {} bounds", bs.len()));
+                return Err(format!("gn_step(): {k} values but {} bounds", bs.len()));
             }
             bs.into_iter()
                 .enumerate()
@@ -292,19 +301,19 @@ pub(super) fn native_drag_solve_step(state: &mut PetalCxt) -> Result<u32, String
                         let ends = heap.get_list(id);
                         let end = |j: usize| match ends.get(j) {
                             None | Some(Value::Nil) => Ok(None),
-                            Some(v) => num(*v, &format!("drag_solve_step(): bounds[{i}][{j}]")).map(Some),
+                            Some(v) => num(*v, &format!("gn_step(): bounds[{i}][{j}]")).map(Some),
                         };
                         if ends.len() != 2 {
-                            return Err(format!("drag_solve_step(): bounds[{i}] must be [lo, hi]"));
+                            return Err(format!("gn_step(): bounds[{i}] must be [lo, hi]"));
                         }
                         Ok(Bound { min: end(0)?, max: end(1)?, step: None, int: false })
                     }
-                    other => Err(format!("drag_solve_step(): bounds[{i}] must be nil or [lo, hi], got {}", other.type_name())),
+                    other => Err(format!("gn_step(): bounds[{i}] must be nil or [lo, hi], got {}", other.type_name())),
                 })
                 .collect::<Result<_, _>>()?
         }
     };
-    let scale = num(state.get_value(6)?, "drag_solve_step(): scale")?;
+    let scale = num(state.get_value(6)?, "gn_step(): scale")?;
     let levers: Vec<PathLever> = values.iter().zip(&bounds).map(|(&value, &bound)| PathLever { value, bound }).collect();
     let goals: Vec<GoalRow> = targets.iter().map(|&t| GoalRow::eq(t, 0.5, 1.0)).collect();
     let cur: Vec<Option<f64>> = rows.iter().map(|&r| Some(r)).collect();
@@ -317,6 +326,140 @@ pub(super) fn native_drag_solve_step(state: &mut PetalCxt) -> Result<u32, String
         levers.iter().map(|l| l.bound.project(l.value)).collect()
     };
     state.push_list(floats(&next));
+    Ok(1)
+}
+
+// ── fd_column: a script's finite-difference column ────────────────────────
+
+/// One measured output of the function: a number, or a list of numbers.
+/// `None` is "not a number" (the probe failed), with why.
+fn sample_rows(heap: &Heap, v: Value) -> Result<Vec<Option<f64>>, String> {
+    let one = |x: Value| match x {
+        Value::Int(n) => Ok(Some(n as f64)),
+        Value::Float(f) => Ok(f.is_finite().then_some(f)),
+        other => Err(format!("the function returned a {}, not a number", other.type_name())),
+    };
+    match v {
+        Value::List(id) => heap.get_list(id).iter().map(|&x| one(x)).collect(),
+        other => one(other).map(|x| vec![x]),
+    }
+}
+
+/// `y` read as a sample of `rows` rows.
+fn sample_of(heap: &Heap, y: Value, rows: usize) -> Sample {
+    match sample_rows(heap, y) {
+        Ok(values) if values.len() == rows => Sample::measured(values),
+        Ok(values) => Sample::failed(
+            rows,
+            format!("the function returned {} values here and {rows} at the point", values.len()),
+        ),
+        Err(why) => Sample::failed(rows, why),
+    }
+}
+
+/// The `quality` string of a column (docs/features/differentiation.md).
+fn quality_name(q: &ColumnQuality) -> &'static str {
+    match q {
+        ColumnQuality::Smooth => "smooth",
+        ColumnQuality::Kink { .. } => "kink",
+        ColumnQuality::BranchFlip { .. } => "branch_flip",
+        ColumnQuality::Step { .. } | ColumnQuality::Discrete => "step",
+        ColumnQuality::Zero => "zero",
+        ColumnQuality::Errored(_) => "errored",
+    }
+}
+
+/// `fd_column(x, base, samples, opts)`: the derivative of a function at `x`
+/// by finite differences, classified by DM v2's column rules
+/// ([`column_from_samples`]).
+///
+/// - `base`: the function at `x`, a number or a list of numbers (one row
+///   each);
+/// - `samples`: `[[x_i, y_i], …]`, the function at the points measured so
+///   far;
+/// - `opts`: nil or `{h, mode}`: the first step (default
+///   `1e-4 * max(|x|, 1)`) and `"central"` (default) or `"forward"`.
+///
+/// Returns a float, the next point to measure (call again with it added to
+/// `samples`), or the record `{value, quality, step}` (and `error` when a
+/// probe failed): `value` is a number for a number `base`, else one per row.
+pub(super) fn native_fd_column(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 4, "fd_column")?;
+    let heap = state.heap();
+    let x = num(state.get_value(1)?, "fd_column(): x")?;
+    let base_v = state.get_value(2)?;
+    let scalar = !matches!(base_v, Value::List(_));
+    let base = match sample_rows(heap, base_v) {
+        Ok(values) => Sample::measured(values),
+        Err(why) => Sample::failed(1, why),
+    };
+    let rows = match base_v {
+        Value::List(id) => heap.get_list(id).len(),
+        _ => 1,
+    };
+    let samples: Vec<(f64, Sample)> = list(heap, state.get_value(3)?, "fd_column(): samples")?
+        .into_iter()
+        .enumerate()
+        .map(|(i, s)| match s {
+            Value::List(id) if heap.get_list(id).len() == 2 => {
+                let pair = heap.get_list(id);
+                Ok((num(pair[0], &format!("fd_column(): samples[{i}][0]"))?, sample_of(heap, pair[1], rows)))
+            }
+            _ => Err(format!("fd_column(): samples[{i}] must be [x, y]")),
+        })
+        .collect::<Result<_, String>>()?;
+    let mut opts = FdOptions::default();
+    let mut h = 1e-4 * x.abs().max(1.0);
+    match state.get_value(4)? {
+        Value::Nil => {}
+        Value::Map(id) => {
+            let o = heap.get_map(id);
+            if let Some(v) = o.get("h").copied().filter(|v| !matches!(v, Value::Nil)) {
+                h = num(v, "fd_column(): opts.h")?;
+                if !(h.is_finite() && h > 0.0) {
+                    return Err(format!("fd_column(): opts.h must be a positive number, got {h}"));
+                }
+            }
+            match o.get("mode").copied() {
+                None | Some(Value::Nil) => {}
+                Some(Value::String(s)) => match heap.get_string(s) {
+                    "central" => opts.mode = FdMode::Central,
+                    "forward" => opts.mode = FdMode::Forward,
+                    other => {
+                        return Err(format!("fd_column(): opts.mode must be \"central\" or \"forward\", got \"{other}\""));
+                    }
+                },
+                Some(other) => return Err(format!("fd_column(): opts.mode must be a string, got {}", other.type_name())),
+            }
+        }
+        other => return Err(format!("fd_column(): opts must be a record or nil, got {}", other.type_name())),
+    }
+    if !x.is_finite() {
+        return Err(format!("fd_column(): x must be finite, got {x}"));
+    }
+    let Column { values, step, quality } = match column_from_samples(x, h, &base, &samples, &opts) {
+        Ok(col) => col,
+        Err(next) => {
+            state.push_float(next);
+            return Ok(1);
+        }
+    };
+    let mut rec = crate::heap::RecordMap::default();
+    let value = if scalar {
+        Value::Float(values.first().copied().unwrap_or(0.0))
+    } else {
+        Value::List(state.heap_mut().alloc_list(floats(&values)))
+    };
+    rec.insert("value".to_string(), value);
+    let q = state.heap_mut().alloc_string(quality_name(&quality).to_string());
+    rec.insert("quality".to_string(), Value::String(q));
+    rec.insert("step".to_string(), Value::Float(step));
+    if let ColumnQuality::Errored(why) = &quality {
+        let e = state.heap_mut().alloc_string(why.clone());
+        rec.insert("error".to_string(), Value::String(e));
+    }
+    let id = state.heap_mut().alloc_map(rec);
+    state.push_value(Value::Map(id));
     Ok(1)
 }
 

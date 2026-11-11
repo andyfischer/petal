@@ -985,11 +985,17 @@ impl Vm {
             .restore_state_storage(pid, stack, &json)
             .map_err(|e| BridgeError::invalid(format!("cannot load state: {e}")))?;
         self.clear_views();
-        self.set_state_report(serde_json::json!({
+        let mut report = serde_json::json!({
             "op": "load",
             "slots": load.restored,
             "dropped": load.dropped,
-        }));
+        });
+        // Slots that held a removed value kind (a dual number) and were
+        // loaded as their nearest equivalent; listed only when there are any.
+        if !load.converted.is_empty() {
+            report["converted"] = serde_json::json!(load.converted);
+        }
+        self.set_state_report(report);
         Ok(())
     }
 

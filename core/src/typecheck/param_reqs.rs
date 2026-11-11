@@ -61,7 +61,6 @@ impl ParamReq {
                 Type::Int
                 | Type::Float
                 | Type::Num
-                | Type::Dual
                 | Type::Bool
                 | Type::Nil
                 | Type::Function

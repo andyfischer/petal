@@ -124,8 +124,11 @@ change, work through them yourself.
 - Does the reloaded program still equal a fresh compile (`docs/features/hot-reload.md`)?
 
 **Introspection, debugging and program manipulation**
-- Does provenance, `explain`, slicing, time travel and autodiff still see
-  through it? Does the term graph stay analyzable?
+- Does provenance, `explain`, slicing and time travel still see through it?
+  Can the finite-difference sensitivities (DM v2's Jacobian, `autodiff`'s
+  `deriv` / `jacobian`, all re-running code under `speculate`) still measure
+  through it, and does the term graph stay analyzable (for the symbolic
+  differentiation planned later)?
 - Can goal-based editing, `propose-edit`, source preservation and direct
   manipulation still trace a value back to source and rewrite it?
 

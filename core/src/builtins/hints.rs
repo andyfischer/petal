@@ -3,8 +3,7 @@
 //! §2.6), and the `const(…)` annotation
 //! (docs/tasks/lifecycle-annotation-functions-refactor.md).
 //!
-//! All three are the identity on their first argument at run time: a dual number
-//! passes through unchanged, and the bounds of `tunable` are evaluated by the
+//! All three are the identity on their first argument at run time, and the bounds of `tunable` are evaluated by the
 //! call and ignored. What they mean is static: `crate::dm::hints` reads
 //! them from the IR to decide which literals a drag may move. In a
 //! speculative run the gate (`vm::native::call_native_spec`) replays the

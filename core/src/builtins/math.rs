@@ -6,41 +6,23 @@ use crate::native_fn::PetalCxt;
 use crate::numeric::{self, IntArithError};
 use crate::value::{Value, compare_values};
 
-use super::autodiff::{D, arg_d, args_d, push_d};
 use super::require_args;
 
-/// Apply a differentiable unary float function: on a dual number, propagate the
-/// primal through `primal` and the derivative through `deriv` (the chain-rule
-/// multiplier `df/dx`); otherwise coerce the argument to f64 and push `primal`.
-fn unary_float_dual(
-    state: &mut PetalCxt,
-    name: &str,
-    primal: fn(f64) -> f64,
-    deriv: fn(f64) -> f64,
-) -> Result<u32, String> {
+/// Apply a unary float function: coerce the argument to f64 and push `f(x)`.
+fn unary_float(state: &mut PetalCxt, name: &str, f: fn(f64) -> f64) -> Result<u32, String> {
     require_args(state, 1, name)?;
-    match state.get_value(1)? {
-        Value::Dual(id) => {
-            let (value, derivative) = state.heap().get_dual(id);
-            state.push_dual(primal(value), deriv(value) * derivative);
-        }
-        _ => {
-            let n = state.get_float(1)?;
-            state.push_float(primal(n));
-        }
-    }
+    let n = state.get_float(1)?;
+    state.push_float(f(n));
     Ok(1)
 }
 
 /// Apply a unary numeric function that preserves integer arguments: `Int` maps
-/// through `int_fn`, `Float` through `float_fn`, a dual number propagates
-/// `float_fn` with chain-rule multiplier `deriv`; anything else is an error.
+/// through `int_fn`, `Float` through `float_fn`; anything else is an error.
 fn unary_num_preserving(
     state: &mut PetalCxt,
     name: &str,
     int_fn: fn(i64) -> Result<i64, IntArithError>,
     float_fn: fn(f64) -> f64,
-    deriv: fn(f64) -> f64,
 ) -> Result<u32, String> {
     require_args(state, 1, name)?;
     match state.get_value(1)? {
@@ -48,43 +30,25 @@ fn unary_num_preserving(
             state.push_int(int_fn(n).map_err(|_| format!("Integer overflow in {}()", name))?)
         }
         Value::Float(f) => state.push_float(float_fn(f)),
-        Value::Dual(id) => {
-            let (value, derivative) = state.heap().get_dual(id);
-            state.push_dual(float_fn(value), deriv(value) * derivative);
-        }
         _ => return Err(format!("{}() expects a number", name)),
     }
     Ok(1)
 }
 
 pub(super) fn native_abs(state: &mut PetalCxt) -> Result<u32, String> {
-    // d/dx |x| = sign(x), with the derivative pinned to 0 at exactly 0
-    unary_num_preserving(state, "abs", numeric::int_abs, f64::abs, |x| {
-        if x > 0.0 {
-            1.0
-        } else if x < 0.0 {
-            -1.0
-        } else {
-            0.0
-        }
-    })
+    unary_num_preserving(state, "abs", numeric::int_abs, f64::abs)
 }
 
 pub(super) fn native_sqrt(state: &mut PetalCxt) -> Result<u32, String> {
-    // d/dx sqrt(x) = 1 / (2 * sqrt(x)), guarding sqrt(x) == 0
-    unary_float_dual(state, "sqrt", f64::sqrt, |x| {
-        let s = x.sqrt();
-        if s == 0.0 { 0.0 } else { 1.0 / (2.0 * s) }
-    })
+    unary_float(state, "sqrt", f64::sqrt)
 }
 
 pub(super) fn native_floor(state: &mut PetalCxt) -> Result<u32, String> {
-    // floor is a step function: derivative is 0 almost everywhere
-    unary_num_preserving(state, "floor", Ok, f64::floor, |_| 0.0)
+    unary_num_preserving(state, "floor", Ok, f64::floor)
 }
 
 pub(super) fn native_ceil(state: &mut PetalCxt) -> Result<u32, String> {
-    unary_num_preserving(state, "ceil", Ok, f64::ceil, |_| 0.0)
+    unary_num_preserving(state, "ceil", Ok, f64::ceil)
 }
 
 /// Parse `s` as a float the way `float`/`parse_float` accept it: surrounding
@@ -100,7 +64,7 @@ fn parse_f64(s: &str) -> Option<f64> {
 
 pub(super) fn native_float(state: &mut PetalCxt) -> Result<u32, String> {
     // A numeric string converts, mirroring `int("42")`; anything else falls
-    // through to the dual-aware numeric path.
+    // through to the numeric path.
     if state.arg_count() == 1 {
         if let Value::String(id) = state.get_value(1)? {
             let s = state.heap().get_string(id).to_string();
@@ -113,7 +77,7 @@ pub(super) fn native_float(state: &mut PetalCxt) -> Result<u32, String> {
             };
         }
     }
-    unary_float_dual(state, "float", |x| x, |_| 1.0)
+    unary_float(state, "float", |x| x)
 }
 
 /// `parse_float(s)` — the failable counterpart of `float`: `nil` instead of an
@@ -263,69 +227,50 @@ pub(super) fn native_round(state: &mut PetalCxt) -> Result<u32, String> {
                 state.push_float(round_to_places(f, places));
                 Ok(1)
             }
-            Value::Dual(id) => {
-                // Rounding is a step function: derivative 0 almost everywhere.
-                let (value, derivative) = state.heap().get_dual(id);
-                state.push_dual(round_to_places(value, places), 0.0 * derivative);
-                Ok(1)
-            }
             _ => Err("round() expects a number".to_string()),
         };
     }
-    unary_num_preserving(state, "round", Ok, f64::round, |_| 0.0)
+    unary_num_preserving(state, "round", Ok, f64::round)
 }
 
 pub(super) fn native_sin(state: &mut PetalCxt) -> Result<u32, String> {
-    // d/dx sin(x) = cos(x)
-    unary_float_dual(state, "sin", f64::sin, f64::cos)
+    unary_float(state, "sin", f64::sin)
 }
 
 pub(super) fn native_cos(state: &mut PetalCxt) -> Result<u32, String> {
-    // d/dx cos(x) = -sin(x)
-    unary_float_dual(state, "cos", f64::cos, |x| -x.sin())
+    unary_float(state, "cos", f64::cos)
 }
 
 pub(super) fn native_tan(state: &mut PetalCxt) -> Result<u32, String> {
-    // d/dx tan(x) = sec^2(x) = 1 / cos^2(x)
-    unary_float_dual(state, "tan", f64::tan, |x| {
-        let c = x.cos();
-        1.0 / (c * c)
-    })
+    unary_float(state, "tan", f64::tan)
 }
 
 pub(super) fn native_atan2(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 2, "atan2")?;
-    let ([y, x], dual) = args_d::<2>(state)?;
-    // d atan2(y, x) = (x dy - y dx) / (x^2 + y^2), and 0 at the origin.
-    let r2 = x.v * x.v + y.v * y.v;
-    let d = if r2 == 0.0 { 0.0 } else { (x.v * y.d - y.v * x.d) / r2 };
-    push_d(state, D { v: y.v.atan2(x.v), d }, dual);
+    let y = state.get_float(1)?;
+    let x = state.get_float(2)?;
+    state.push_float(y.atan2(x));
     Ok(1)
 }
 
 pub(super) fn native_asin(state: &mut PetalCxt) -> Result<u32, String> {
-    // d/dx asin(x) = 1 / sqrt(1 - x^2)
-    unary_float_dual(state, "asin", f64::asin, |x| 1.0 / (1.0 - x * x).sqrt())
+    unary_float(state, "asin", f64::asin)
 }
 
 pub(super) fn native_acos(state: &mut PetalCxt) -> Result<u32, String> {
-    // d/dx acos(x) = -1 / sqrt(1 - x^2)
-    unary_float_dual(state, "acos", f64::acos, |x| -1.0 / (1.0 - x * x).sqrt())
+    unary_float(state, "acos", f64::acos)
 }
 
 pub(super) fn native_atan(state: &mut PetalCxt) -> Result<u32, String> {
-    // d/dx atan(x) = 1 / (1 + x^2)
-    unary_float_dual(state, "atan", f64::atan, |x| 1.0 / (1.0 + x * x))
+    unary_float(state, "atan", f64::atan)
 }
 
 /// `hypot(x, y)`: `sqrt(x*x + y*y)`, without the intermediate overflow.
 pub(super) fn native_hypot(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 2, "hypot")?;
-    let ([x, y], dual) = args_d::<2>(state)?;
-    // d hypot(x, y) = (x dx + y dy) / hypot(x, y), and 0 at the origin.
-    let h = x.v.hypot(y.v);
-    let d = if h == 0.0 { 0.0 } else { (x.v * x.d + y.v * y.d) / h };
-    push_d(state, D { v: h, d }, dual);
+    let x = state.get_float(1)?;
+    let y = state.get_float(2)?;
+    state.push_float(x.hypot(y));
     Ok(1)
 }
 
@@ -337,7 +282,7 @@ pub(super) fn native_pi(state: &mut PetalCxt) -> Result<u32, String> {
 
 /// `safe_div(a, b)` — division that answers `nil` instead of aborting when the
 /// divisor is zero. Everything else about it is bare `/`: the same int/int
-/// truncation, the same float, dual and list-broadcast behaviour, and the same
+/// truncation, the same float, vec2 and list-broadcast behaviour, and the same
 /// errors for a non-numeric operand or an i64 overflow.
 ///
 /// This exists because bare `/` deliberately *aborts* on a zero divisor, which
@@ -352,14 +297,13 @@ pub(super) fn native_safe_div(state: &mut PetalCxt) -> Result<u32, String> {
     let divisor_is_zero = match b {
         Value::Int(0) => true,
         Value::Float(f) => f == 0.0,
-        Value::Dual(id) => state.heap().get_dual(id).0 == 0.0,
         _ => false,
     };
     if divisor_is_zero {
         state.push_nil();
         return Ok(1);
     }
-    // Delegate to the real `/` so every other case (dual numbers, vec2,
+    // Delegate to the real `/` so every other case (vec2,
     // list broadcast, overflow reporting) stays byte-identical to the operator.
     let v = crate::backend::ops::arithmetic(&crate::program::TermOp::Div, a, b, state.heap_mut())?;
     state.push_value(v);
@@ -393,7 +337,7 @@ pub(super) fn native_interp(state: &mut PetalCxt) -> Result<u32, String> {
     let Value::List(table) = state.get_value(1)? else {
         return Err("interp(table, x) expects a list of [x, y] entries".into());
     };
-    let (D { v: x, d: dx }, dual) = arg_d(state, 2)?;
+    let x = state.get_float(2)?;
     let n = state.heap().get_list(table).len();
     if n == 0 {
         return Err("interp(table, x) needs a table with at least one entry".into());
@@ -409,23 +353,16 @@ pub(super) fn native_interp(state: &mut PetalCxt) -> Result<u32, String> {
             hi = mid;
         }
     }
-    // The value, and the slope of the segment `x` is on (0 past either end
-    // and at a step) for a dual `x`.
-    let (y, slope) = if lo == 0 {
-        (at(state, 0)?.1, 0.0)
+    let y = if lo == 0 {
+        at(state, 0)?.1
     } else if lo == n {
-        (at(state, n - 1)?.1, 0.0)
+        at(state, n - 1)?.1
     } else {
         let (x0, y0) = at(state, lo - 1)?;
         let (x1, y1) = at(state, lo)?;
-        if x1 == x0 {
-            (y1, 0.0)
-        } else {
-            let slope = (y1 - y0) / (x1 - x0);
-            (y0 + (y1 - y0) * ((x - x0) / (x1 - x0)), slope)
-        }
+        if x1 == x0 { y1 } else { y0 + (y1 - y0) * ((x - x0) / (x1 - x0)) }
     };
-    push_d(state, D { v: y, d: slope * dx }, dual);
+    state.push_float(y);
     Ok(1)
 }
 

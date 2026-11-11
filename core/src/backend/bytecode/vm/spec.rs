@@ -273,20 +273,17 @@ impl SpecTap {
     }
 }
 
-/// What a `LoadConst` loads in an overridden literal's place. A dual number
-/// lives on the heap, so it is kept as its two numbers and allocated in the
-/// run's heap when loaded.
+/// What a `LoadConst` loads in an overridden literal's place: an inline
+/// number, which needs no heap.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum SpecOverride {
     Value(Value),
-    Dual(f64, f64),
 }
 
 impl SpecOverride {
-    pub(crate) fn materialize(self, heap: &mut Heap) -> Value {
+    pub(crate) fn materialize(self, _heap: &mut Heap) -> Value {
         match self {
             SpecOverride::Value(v) => v,
-            SpecOverride::Dual(v, d) => heap.dual_value(v, d),
         }
     }
 }

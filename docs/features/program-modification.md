@@ -224,7 +224,7 @@ See [time-travel.md](time-travel.md).
 | Inject input / bindings | — | yes | `input`, `set_binding_for` |
 | Speculative variant run | yes | (forked) | `fork_execution`, `run_speculative`, `diff_state` ([time-travel.md](time-travel.md)) |
 | Rewind to a checkpoint; replay recorded input through an edit | yes | yes | `restore_execution`; `petal-sdl` timeline (`rewind`, `replay`, `trail`) ([time-travel.md](time-travel.md)) |
-| Forward-mode sensitivity | yes | — | `dual`/`deriv_of` |
+| Sensitivity of an output to an input (finite differences, under `speculate`) | yes | — | `autodiff`'s `deriv` / `jacobian` ([differentiation.md](differentiation.md)) |
 | Construct/transform IR as data | — | experimental | [../dev/experimental-ir-based-editing.md](../dev/experimental-ir-based-editing.md) |
 
 ---

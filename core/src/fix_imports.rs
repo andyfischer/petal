@@ -1145,12 +1145,12 @@ mod tests {
     fn a_moved_builtin_gets_the_import_of_its_package() {
         let mut fixer = ImportFixer::new(&[]);
         let src = "print(lerp(0, 10, 0.5))\nlet v = vec3(1, 2, 3)\nprint(noise(0.5), hsv(0, 1, 1))\n\
-                   print(json_stringify(dual(1, 1)))\npush_output(symbol(\"out\"), 1)\nprint(clamp(5, 0, 1))\n";
+                   print(json_stringify([1, 1]))\npush_output(symbol(\"out\"), 1)\nprint(clamp(5, 0, 1))\n";
         let fixed = fixer.add_missing_imports(src, None);
         assert_eq!(
             fixed.source,
             format!(
-                "import autodiff\nimport color\nimport io\nimport json\n\
+                "import color\nimport io\nimport json\n\
                  import noise\nimport vec2\n\n{src}"
             )
         );

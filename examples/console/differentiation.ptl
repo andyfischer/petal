@@ -1,8 +1,10 @@
-// Automatic Differentiation + Gradient Descent
-// Petal supports forward-mode automatic differentiation with dual numbers.
-// `dual(v, d)` carries a value and its derivative together; arithmetic on
-// dual numbers automatically propagates derivatives. `deriv_of` then pulls
-// out df/dx for whichever input was "seeded" with derivative 1.
+// Derivatives + Gradient Descent
+// `deriv(f, x)` from `import autodiff` measures how `f`'s output moves when
+// its input moves: it runs `f` a little either side of `x` (a central
+// difference) and returns a record, `{value, quality, step}`. `value` is the
+// slope, `quality` says whether to trust it ("smooth" here; "kink", "step"
+// and the rest flag functions that bend or jump), and `step` is how far
+// either side it looked. The slope is an approximation, so print it rounded.
 
 import autodiff
 
@@ -11,12 +13,11 @@ fn f(x)
   (x - 3.0) * (x - 3.0)
 end
 
-// --- Part 1: verify the derivative at a point -----------------------------
+// --- Part 1: check the derivative at a point ------------------------------
 // At x = 5, f'(x) = 2*(x-3) = 4.
-let x0 = dual(5.0, 1.0)
-let y0 = f(x0)
-print("f(5)  = {value_of(y0)}")
-print("f'(5) = {deriv_of(y0)}   (expected 4.0)")
+let d = deriv(f, 5.0)
+print("f(5)  = {f(5.0)}")
+print("f'(5) = {round(d.value, 6)}   (expected 4.0, {d.quality})")
 print("")
 
 // --- Part 2: gradient descent using the derivative ------------------------
@@ -25,13 +26,9 @@ let lr = 0.1
 print("Gradient descent on f(x) = (x - 3)^2, start x=10")
 print("=================================================")
 for step in range(0, 12) do
-  // Seed with derivative 1 so deriv_of(y) gives df/dx.
-  let xd = dual(x, 1.0)
-  let yd = f(xd)
-  let grad = deriv_of(yd)
-  let fx = value_of(yd)
-  print("step {step}: x={x}  f(x)={fx}  f'(x)={grad}")
-  x = x - lr * grad
+  let grad = deriv(f, x).value
+  print("step {step}: x={round(x, 6)}  f(x)={round(f(x), 6)}  f'(x)={round(grad, 6)}")
+  x -= lr * grad
 end
 print("")
-print("converged x = {x}  (expected ~3.0)")
+print("converged x = {round(x, 6)}  (expected ~3.0)")

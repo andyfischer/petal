@@ -1,0 +1,186 @@
+// The `autodiff` package's finite-difference functions: `deriv`,
+// `jacobian`, `solve_step` and `solve` (docs/features/differentiation.md).
+// Run with `petal test test/ptl`. That probes leave no emits in the host's
+// buffers is checked in core/tests/all/autodiff.rs.
+
+import autodiff
+import io
+
+var calls = 0
+
+fn counted(x)
+  set calls = (get calls) + 1
+  push_output(symbol("probe"), x)
+  x * 2.0
+end
+
+fn stateful(x)
+  state n = 0
+  n += 1
+  x * n
+end
+
+fn near(got, want)
+  expect_near(got, want, 0.000001)
+end
+
+test "derivatives of polynomials, trig and atan are smooth and within 1e-6" do
+  let cases = [
+    [fn(x) (x - 3.0) * (x - 3.0) end, 5.0, 4.0],
+    [fn(x) x * x * x - 2.0 * x end, 2.0, 10.0],
+    [sin, 0.5, cos(0.5)],
+    [cos, 1.2, -sin(1.2)],
+    [fn(x) sin(x) * x end, 2.0, cos(2.0) * 2.0 + sin(2.0)],
+    [atan, 1.0, 0.5],
+  ]
+  for c in cases do
+    let d = deriv(c[0], c[1])
+    near(d.value, c[2])
+    expect_eq(d.quality, "smooth")
+  end
+end
+
+test "the step is 1e-4 * max(|x|, 1), and opts.h overrides it" do
+  expect_eq(deriv(sin, 0.5).step, 0.0001)
+  expect_eq(deriv(sin, 5.0).step, 0.0005)
+  let d = deriv(fn(x) x * x end, 3.0, {h: 0.01})
+  expect_eq(d.step, 0.01)
+  near(d.value, 6.0)
+end
+
+test "an int point is probed as a float" do
+  near(deriv(fn(x) x / 2 end, 3).value, 0.5)
+end
+
+test "the bottom of a parabola is smooth, not a kink" do
+  let d = deriv(fn(x) x * x end, 0.0)
+  expect_eq(d.quality, "smooth")
+  near(d.value, 0.0)
+end
+
+test "abs at 0 is a kink, valued by the central slope" do
+  let d = deriv(abs, 0.0)
+  expect_eq(d.quality, "kink")
+  near(d.value, 0.0)
+end
+
+test "a branch is a branch flip, valued by the side that stayed" do
+  let d = deriv(fn(x) if x < 1.0 then x else x + 5.0 end end, 1.0)
+  expect_eq(d.quality, "branch_flip")
+  near(d.value, 1.0)
+end
+
+test "floor is a step, valued by a secant" do
+  let d = deriv(floor, 0.97)
+  expect_eq(d.quality, "step")
+  expect(d.value > 0, "a secant over the jump")
+  expect(d.step > 0.01, "found at an escalated step")
+end
+
+test "a constant is zero" do
+  let d = deriv(fn(x) 7.0 end, 2.0)
+  expect_eq(d.quality, "zero")
+  expect_eq(d.value, 0.0)
+end
+
+test "a function that does not return a number is errored" do
+  let d = deriv(fn(x) "x={x}" end, 1.0)
+  expect_eq(d.quality, "errored")
+  expect(contains(d.error, "string"), d.error)
+end
+
+test "forward mode takes one probe per input, central two" do
+  // Inside speculate the probes run directly, so the outer call sees one
+  // emit per run of `counted`: the base point, then the probes.
+  let fwd = speculate(fn() deriv(counted, 1.0, {mode: "forward"}) end)
+  near(fwd.value.value, 2.0)
+  expect_eq(fwd.value.quality, "smooth")
+  expect_eq(len(fwd.emits), 2)
+  expect_eq(len(speculate(fn() deriv(counted, 1.0) end).emits), 3)
+end
+
+test "jacobian: one row per output, one column per input" do
+  let j = jacobian(fn(p) [p[0] + p[1], p[0] * p[1]] end, [2.0, 3.0])
+  expect_eq(len(j.rows), 2)
+  near(j.rows[0][0], 1.0)
+  near(j.rows[0][1], 1.0)
+  near(j.rows[1][0], 3.0)
+  near(j.rows[1][1], 2.0)
+  expect_eq(j.quality, ["smooth", "smooth"])
+  expect_eq(len(j.step), 2)
+  // A number out is one row.
+  let s = jacobian(fn(p) p[0] * 2.0 + p[1] end, [1, 1])
+  expect_eq(len(s.rows), 1)
+  near(s.rows[0][0], 2.0)
+  near(s.rows[0][1], 1.0)
+end
+
+test "a 2x2 linear solve takes one step" do
+  let r = solve_step(fn(p) [p[0] + p[1], p[0] - p[1]] end, [0.0, 0.0], [3.0, 1.0])
+  expect(r.improved)
+  near(r.xs[0], 2.0)
+  near(r.xs[1], 1.0)
+  near(r.residual, 0.0)
+  expect_eq(r.stuck, [])
+  expect_eq(r.quality, ["smooth", "smooth"])
+end
+
+test "solve iterates a nonlinear 2x2 to the tolerance" do
+  let r = solve(fn(p) [p[0] * p[0] + p[1], p[0] * p[1]] end, [1.0, 1.0], [6.0, 4.0])
+  expect(r.residual <= 0.000001, "residual {r.residual}")
+  near(r.xs[0], 2.0)
+  near(r.xs[1], 2.0)
+  expect(r.improved)
+  expect(r.iterations >= 1 && r.iterations <= 20, "{r.iterations} iterations")
+end
+
+test "bounds hold a solve_step, and max_step and damping shorten it" do
+  let f = fn(p) 2.0 * p[0] end
+  let r = solve_step(f, [1.0], 10.0, {bounds: [[0, 3]]})
+  expect_eq(r.xs, [3.0])
+  near(r.residual, 4.0)
+  expect(r.improved)
+  near(solve_step(f, [1.0], 10.0, {max_step: 0.5}).xs[0], 1.5)
+  near(solve_step(f, [1.0], 10.0, {damping: 0.25}).xs[0], 2.0)
+  let s = solve(f, [1.0], 10.0, {bounds: [[0, 3]]})
+  expect_eq(s.xs, [3.0])
+end
+
+test "an input that does not move the output is stuck" do
+  let r = solve_step(fn(p) 2.0 * p[0] end, [1.0, 5.0], 10.0)
+  expect_eq(r.stuck, [1])
+  expect_eq(r.quality, ["smooth", "zero"])
+  near(r.xs[0], 5.0)
+  expect_eq(r.xs[1], 5.0)
+end
+
+test "a step that cannot improve leaves xs and says so" do
+  let r = solve_step(fn(p) 7.0 end, [1.0], 10.0)
+  expect(!r.improved)
+  expect_eq(r.xs, [1.0])
+  near(r.residual, 3.0)
+  expect_eq(r.stuck, [0])
+end
+
+test "an f that writes state and cells and emits leaves nothing behind" do
+  set calls = 0
+  near(deriv(counted, 1.0).value, 2.0)
+  expect_eq(get calls, 0)
+  // Each probe starts the slot from its initializer: n is 1 in every run.
+  let d = deriv(stateful, 3.0)
+  near(d.value, 1.0)
+  expect_eq(d.quality, "smooth")
+  let r = solve(fn(p) [counted(p[0]), stateful(p[1])] end, [0.0, 0.0], [4.0, 1.0])
+  near(r.xs[0], 2.0)
+  near(r.xs[1], 1.0)
+  expect_eq(get calls, 0)
+end
+
+test "deriv inside speculate runs its probes directly" do
+  let r = speculate(fn() deriv(counted, 2.0).value end)
+  near(r.value, 2.0)
+  // The outer call captured every probe's emit, the base point first.
+  expect(len(r.emits) >= 3, "{len(r.emits)} emits")
+  expect_eq(r.emits[0].value, 2.0)
+  expect_eq(get calls, 0)
+end

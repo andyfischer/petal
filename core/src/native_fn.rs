@@ -1350,20 +1350,10 @@ impl<'a> PetalCxt<'a> {
     }
 
     /// Get a float argument at 1-indexed position. An int converts.
-    ///
-    /// A dual number is an error: a native that reads its argument here has
-    /// no derivative rule, and taking the value alone would drop the
-    /// derivative without a trace. A native that has a rule matches
-    /// `Value::Dual` itself before it gets here; a script that wants the
-    /// value alone passes `value_of(x)`.
     pub fn get_float(&self, index: usize) -> Result<f64, String> {
         match self.get_value(index)? {
             Value::Float(f) => Ok(f),
             Value::Int(n) => Ok(n as f64),
-            Value::Dual(_) => Err(format!(
-                "Expected float at arg {index}, got dual: this function has no derivative \
-                 rule, so the derivative would be lost (pass value_of(x) to use the value alone)"
-            )),
             other => Err(format!(
                 "Expected float at arg {}, got {}",
                 index,
@@ -1455,12 +1445,6 @@ impl<'a> PetalCxt<'a> {
     /// Push a fresh `vec2(x, y)`.
     pub fn push_vec2(&mut self, x: f64, y: f64) {
         let v = self.heap.vec2_value(x, y);
-        self.results.push(v);
-    }
-
-    /// Push a fresh dual number.
-    pub fn push_dual(&mut self, value: f64, derivative: f64) {
-        let v = self.heap.dual_value(value, derivative);
         self.results.push(v);
     }
 

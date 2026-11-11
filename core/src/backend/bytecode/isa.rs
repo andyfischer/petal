@@ -452,7 +452,7 @@ pub enum Inst {
     /// [`BytecodeProgram::select_intrinsics`] once the native table is in
     /// hand. The fast loop computes the common cases (numbers; a list or a
     /// string for `len`; anything for `type`) inline. Every other case — an
-    /// error, a `Pending` or dual-number argument, a string to convert, a
+    /// error, a `Pending` argument, a string to convert, a
     /// profiled, traced or audited run — is the general executor's, which
     /// runs it as exactly the builtin call it was (`name` is kept for that),
     /// so results, errors and profile attribution are the builtin's.

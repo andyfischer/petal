@@ -602,9 +602,7 @@ pub const RECT_FIELDS: [&str; 4] = ["x", "y", "w", "h"];
 /// cast, which Petal does not do.
 ///
 /// The constructor still checks numeric-ness at runtime, and must: this is a
-/// warning-only projection, and it is deliberately the wider of the two checks
-/// (a `dual` satisfies `num` but not the runtime guard — see
-/// [`Type::is_assignable_to`]).
+/// warning-only projection.
 const RECT_FIELD_TYPE: Option<Type> = Some(Type::Num);
 
 /// The built-in `Rect` methods as `(name, arity-including-receiver)`. The

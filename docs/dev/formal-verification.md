@@ -94,10 +94,10 @@ fails if the bug comes back.
 | `xs[i]`, `s[i]`, `slice`, and the string-offset builtins truncate `i` on wasm32 | Kani `resolve_index_is_exact`, `clamp_slice_bound_is_exact`, `checked_index_is_exact` | `xs[2^32 + 1]` reads `xs[1]` in the browser | Checked conversion |
 
 Semantic choices made along the way (documented in the language guide):
-`2 == 2.0`, so the two share a `state` slot; a dual number compares by its
-value, ignoring the derivative, against numbers *and* other duals (comparing
-derivatives only between two duals made `==` non-transitive); functions compare
-by identity.
+`2 == 2.0`, so the two share a `state` slot; functions compare by identity.
+(While Petal had dual numbers, one compared by its value only, ignoring the
+derivative: comparing derivatives between two of them made `==`
+non-transitive. They were removed in November 2026.)
 
 ## Running
 

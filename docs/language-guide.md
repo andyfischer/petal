@@ -299,7 +299,7 @@ types every read *and* constrains every write, wherever the write is.
 
 The type names are the ones `type(value)` reports, written lowercase: `nil`,
 `bool`, `int`, `float`, `string` (alias `str`), `list`, `record`, `map`, `function`,
-`enum`, `vec2`, `vec3`, `f64_array`, `element`, `symbol`, `dual`, `handle`, `pending` —
+`enum`, `vec2`, `vec3`, `f64_array`, `element`, `symbol`, `handle`, `pending` —
 plus two that no value ever reports: `any`, the dynamic escape hatch, and
 `num`, meaning **`int` or `float`**. They are recognized only in type position,
 so `int`, `float`, and `str` remain callable as the cast builtins everywhere
@@ -381,7 +381,7 @@ let n: int = int(3.9)     // ok — explicit cast, n is 3
 let x: float = 5          // ok — int promotes to float
 ```
 
-`num` widens but never narrows: an `int`, a `float` or a `dual` all satisfy a
+`num` widens but never narrows: an `int` and a `float` both satisfy a
 `num` slot, and a `num` satisfies neither `int` nor `float` without an explicit
 cast — otherwise accepting one would be the implicit truncation the rule above
 forbids.
@@ -635,8 +635,7 @@ contents are (`{a: 1, b: 2} == {b: 2, a: 1}` is `true`; a class instance only
 equals an instance of the same class), and functions are equal only to
 themselves. Numbers compare exactly across int and float: `2 == 2.0` is `true`,
 but a large integer is never equal to a float it merely rounds to
-(`9007199254740993 == 9007199254740992.0` is `false`). A dual number compares by
-its value, ignoring the derivative. NaN is unordered: every comparison with it,
+(`9007199254740993 == 9007199254740992.0` is `false`). NaN is unordered: every comparison with it,
 including `NaN == NaN`, is `false` (and `sort` puts NaNs last).
 
 Values that are `==` are the same key everywhere keys matter — a
@@ -2757,19 +2756,25 @@ natives, including a test that waits for frames.
 
 ## Automatic Differentiation
 
-A dual number carries a derivative along with its value, and arithmetic on it
-computes both (forward-mode automatic differentiation). `dual`, `value_of`
-and `deriv_of` come from the `autodiff` package:
+The `autodiff` package measures how a function's output moves when its input
+moves, by calling it with the input nudged (finite differences), and solves
+for the inputs that reach a goal:
 
 ```petal
 import autodiff
-let x = dual(3.0, 1.0)     // the value 3, seeded as the input
-let y = x * x + 2.0 * x
+fn f(x)
+  x * x + 2.0 * x
+end
 
-print(value_of(y))  // 15.0
-print(deriv_of(y))  // 8.0
+let d = deriv(f, 3.0)
+print(round(d.value, 6), d.quality)   // 8.0 smooth
+
+// The input that makes f(x) == 15
+let s = solve(fn(xs) f(xs[0]) end, [1.0], 15.0)
+print(round(s.xs[0], 4))              // 3.0
 ```
 
-Which builtins carry a derivative and which drop it, how to differentiate a
-function of several inputs, and the limits are in
+The answer is a close approximation; `quality` says how far to trust it.
+`jacobian` handles functions of several inputs and outputs, and every probe
+runs inside `speculate`, so `f` may read `state` or draw. See
 [features/differentiation.md](features/differentiation.md).

@@ -2,11 +2,10 @@
 
 A rotary dial with declarative dragging (`import ui/drag`): the model is one
 angle, the view puts the knob on a circle at that angle, and the knob's spec
-is `vary(dial, ["angle"], {sensitivity: "dual"})`. Nothing in the app turns
-the pointer back into an angle: each frame the engine takes one solver step
-on the angle so the knob's centre goes under the pointer, using a dual-number
-rendering for the exact derivative (the knob's position is plain arithmetic
-on the angle, so duals survive to `place`).
+is `vary(dial, ["angle"])`. Nothing in the app turns the pointer back into an
+angle: each frame the engine takes one solver step on the angle so the knob's
+centre goes under the pointer, measuring how the knob moves with the angle by
+rendering the view once more with the angle nudged (a forward difference).
 
 ```
 cd core-libs/petal-ui-headless

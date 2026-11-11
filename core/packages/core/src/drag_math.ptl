@@ -6,8 +6,12 @@
 // `[[x, y], …]` as `[[i, j, k], …]`; `drag_weights(points, tris, x, y)` the
 // barycentric weights of a point over it, one per point, clamped to the hull
 // (no triangles: the projection onto the nearest segment on the line);
-// `drag_solve_step(values, rows, targets, jac, bounds, scale)` one
-// Gauss-Newton step of the DM v2 solver for levers `values`.
+// `gn_step(values, rows, targets, jac, bounds, scale)` one Gauss-Newton
+// step of the DM v2 solver for levers `values` (`drag_solve_step` is its old
+// name, kept for one release); `fd_column(x, base, samples, opts)` one
+// finite-difference column classified by DM v2's rules, or the next point to
+// sample (the `autodiff` package's `deriv`, `jacobian` and `solve_step` are
+// built on these two).
 //
 // Native interface declarations: each `native fn` binds a name to the host
 // native of the same name and gives the checker its parameter names, arity
@@ -16,3 +20,5 @@
 pub native fn drag_triangulate(points: list) -> list
 pub native fn drag_weights(points: list, tris: list, x: num, y: num) -> list
 pub native fn drag_solve_step(values: list, rows: list, targets: list, jac: list, bounds, scale: num) -> list
+pub native fn gn_step(values: list, rows: list, targets: list, jac: list, bounds, scale: num) -> list
+pub native fn fd_column(x: num, base, samples: list, opts)

@@ -273,10 +273,10 @@ import it ([../module-system.md](../module-system.md#host-interface-packages)).
   expects a number, `let s: string = mouse_x()` that an `int` is not a
   `string`, `mouse_down(btn: 0)` that there is no parameter `btn`. Annotate
   only certainties — a parameter type is a claim that the native fails on
-  anything else. A `num` parameter also takes a dual number, a `record` one a
-  class instance. A handful of builtins whose *result* depends on their
-  arguments (`abs`, `floor`, `ceil`, `round`, `sign`, `min`, `max`, `clamp`,
-  the float functions on a dual, the vector natives, `lerp`) are worked out by
+  anything else. A `record` parameter also takes a class instance. A handful
+  of builtins whose *result* depends on their arguments (`abs`, `floor`,
+  `ceil`, `round`, `sign`, `min`, `max`, `clamp`, the float functions, the
+  vector natives, `lerp`) are worked out by
   the checker itself and declare no result type; so is `len`'s argument (a
   list, a string or an `f64_array`, which no one type name says).
 - *Named arguments at run time.* Registering an interface — `register_module`,
@@ -481,18 +481,16 @@ input half, for `import ui/input`, does not call it.
 lives in the `Heap` behind a typed id (a slot index plus a generation):
 
 ```
-Nil, Bool, Int(i64), Float(f64), Vec2(Vec2Id), Dual(DualId),
+Nil, Bool, Int(i64), Float(f64), Vec2(Vec2Id),
 String(StringId), List(ListId), F64Array(F64ArrayId), Vec3(Vec3Id), Map(MapId),
 Dict(DictId), Closure(ClosureId), OverloadSet(..), NativeFunction(NativeFnId),
 EnumVariant { tag: EnumTag, data: ListId }, Element(ElementId),
 Symbol(SymbolId), Cell(CellId), Handle(HandleVal), Pending(PendingId)
 ```
 
-Vectors and dual numbers are read and built through the heap:
-`heap.get_vec2(id) -> (x, y)`, `heap.vec2_value(x, y)`, `heap.get_dual(id)`,
-`heap.dual_value(v, d)`, and `PetalCxt::push_vec2` / `push_dual`. A number
-argument that may be a dual reads with `heap.num_f64(v)`, truthiness with
-`heap.truthy(v)`. An enum tag reads with `heap.tag_str(tag)` (or
+Vectors are read and built through the heap: `heap.get_vec2(id) -> (x, y)`,
+`heap.vec2_value(x, y)` and `PetalCxt::push_vec2`. A number argument (an int
+or a float) reads with `heap.num_f64(v)`, truthiness with `heap.truthy(v)`. An enum tag reads with `heap.tag_str(tag)` (or
 `heap.tag_string(tag)` for its `StringId`) and is made with
 `heap.enum_tag_str("Shape.circle")`; tags are interned and kept for the
 heap's life.

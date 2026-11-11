@@ -84,12 +84,6 @@
       "doc": "Standard-library helpers written in Petal source (module `std`), auto-imported into every program: list reductions, predicate queries, sublists, and number helpers."
     },
     {
-      "id": "autodiff",
-      "title": "Automatic Differentiation",
-      "group": "core",
-      "doc": "Automatic differentiation (dual numbers): dual, value_of, deriv_of."
-    },
-    {
       "id": "output",
       "title": "Output & Symbols",
       "group": "core",
@@ -111,7 +105,7 @@
       "id": "hints",
       "title": "Direct-Manipulation Hints",
       "group": "core",
-      "doc": "Direct-manipulation hints: `tunable` and `rigid` (docs/proposals/dm-v2-hints.md, docs/dev/direct-manipulation-v2-plan.md §2.6), and the `const(…)` annotation (docs/tasks/lifecycle-annotation-functions-refactor.md).  All three are the identity on their first argument at run time: a dual number passes through unchanged, and the bounds of `tunable` are evaluated by the call and ignored. What they mean is static: `crate::dm::hints` reads them from the IR to decide which literals a drag may move. In a speculative run the gate (`vm::native::call_native_spec`) replays the baseline's answer of `rigid`, so nothing upstream of it receives feedback through it."
+      "doc": "Direct-manipulation hints: `tunable` and `rigid` (docs/proposals/dm-v2-hints.md, docs/dev/direct-manipulation-v2-plan.md §2.6), and the `const(…)` annotation (docs/tasks/lifecycle-annotation-functions-refactor.md).  All three are the identity on their first argument at run time, and the bounds of `tunable` are evaluated by the call and ignored. What they mean is static: `crate::dm::hints` reads them from the IR to decide which literals a drag may move. In a speculative run the gate (`vm::native::call_native_spec`) replays the baseline's answer of `rigid`, so nothing upstream of it receives feedback through it."
     },
     {
       "id": "paths",
@@ -123,7 +117,7 @@
       "id": "drag_math",
       "title": "Drag Math",
       "group": "core",
-      "doc": "The numeric half of `ui/drag`'s `between` and `vary` (docs/proposals/declarative-dragging.md, P2). The drag engine is Petal code, and a native cannot call a Petal closure, so the speculative runs happen in Petal and only numbers come here:  - `drag_triangulate(points)`: a Delaunay triangulation of `[[x, y], …]`, as `[[i, j, k], …]` (counter-clockwise) — `between` over 3+ targets. - `drag_weights(points, tris, x, y)`: the barycentric weights of `(x, y)` over that triangulation, one per point, clamped to the hull (a point outside is first moved to the nearest point of the hull). With no triangles — 2 points, or all on a line — the weights are the linear projection onto the nearest segment between neighbours on the line. - `drag_solve_step(values, rows, targets, jac, bounds, scale)`: one Gauss-Newton step for `vary`'s levers ([`crate::dm::lever_step`], the DM v2 solver's `goal_step` and `Bound::project`)."
+      "doc": "The numeric half of `ui/drag`'s `between` and `vary` (docs/proposals/declarative-dragging.md, P2) and of the `autodiff` package's `deriv` / `jacobian` / `solve_step` (docs/features/differentiation.md). The drag engine and the package are Petal code, and a native cannot call a Petal closure, so the speculative runs happen in Petal and only numbers come here:  - `drag_triangulate(points)`: a Delaunay triangulation of `[[x, y], …]`, as `[[i, j, k], …]` (counter-clockwise) — `between` over 3+ targets. - `drag_weights(points, tris, x, y)`: the barycentric weights of `(x, y)` over that triangulation, one per point, clamped to the hull (a point outside is first moved to the nearest point of the hull). With no triangles — 2 points, or all on a line — the weights are the linear projection onto the nearest segment between neighbours on the line. - `gn_step(values, rows, targets, jac, bounds, scale)`: one Gauss-Newton step for `vary`'s levers and `solve_step`'s inputs ([`crate::dm::lever_step`], the DM v2 solver's `goal_step` and `Bound::project`). `drag_solve_step` is its old name, kept as an alias for one release. - `fd_column(x, base, samples, opts)`: one finite-difference column, classified by DM v2's rules ([`crate::dm::column_from_samples`]), or the next point to sample."
     },
     {
       "id": "drawing",
@@ -306,7 +300,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 60
+        "line": 38
       }
     },
     {
@@ -331,7 +325,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 73
+        "line": 42
       }
     },
     {
@@ -356,7 +350,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 81
+        "line": 46
       }
     },
     {
@@ -381,7 +375,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 86
+        "line": 50
       }
     },
     {
@@ -406,7 +400,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 101
+        "line": 65
       }
     },
     {
@@ -431,7 +425,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 160
+        "line": 124
       }
     },
     {
@@ -471,7 +465,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 187
+        "line": 151
       }
     },
     {
@@ -670,7 +664,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 203
+        "line": 167
       }
     },
     {
@@ -703,7 +697,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 219
+        "line": 183
       }
     },
     {
@@ -738,94 +732,8 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 247
+        "line": 211
       }
-    },
-    {
-      "name": "dual",
-      "category": "autodiff",
-      "group": "core",
-      "arity": 2,
-      "variadic": false,
-      "params": [
-        {
-          "name": "value",
-          "type": "any"
-        },
-        {
-          "name": "derivative",
-          "type": "any"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "value",
-            "type": "any"
-          },
-          {
-            "name": "derivative",
-            "type": "any"
-          }
-        ]
-      ],
-      "source": {
-        "file": "core/src/builtins/autodiff.rs",
-        "line": 8
-      },
-      "import": "autodiff"
-    },
-    {
-      "name": "value_of",
-      "category": "autodiff",
-      "group": "core",
-      "arity": 1,
-      "variadic": false,
-      "params": [
-        {
-          "name": "x",
-          "type": "any"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "x",
-            "type": "any"
-          }
-        ]
-      ],
-      "source": {
-        "file": "core/src/builtins/autodiff.rs",
-        "line": 24
-      },
-      "import": "autodiff"
-    },
-    {
-      "name": "deriv_of",
-      "category": "autodiff",
-      "group": "core",
-      "arity": 1,
-      "variadic": false,
-      "params": [
-        {
-          "name": "x",
-          "type": "any"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "x",
-            "type": "any"
-          }
-        ]
-      ],
-      "source": {
-        "file": "core/src/builtins/autodiff.rs",
-        "line": 44
-      },
-      "import": "autodiff"
     },
     {
       "name": "sort",
@@ -1185,7 +1093,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 278
+        "line": 236
       }
     },
     {
@@ -1210,7 +1118,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 283
+        "line": 240
       }
     },
     {
@@ -1235,7 +1143,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 288
+        "line": 244
       }
     },
     {
@@ -1268,7 +1176,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 296
+        "line": 248
       }
     },
     {
@@ -1283,7 +1191,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 332
+        "line": 277
       }
     },
     {
@@ -1324,7 +1232,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 12
+        "line": 11
       }
     },
     {
@@ -1365,7 +1273,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 41
+        "line": 38
       }
     },
     {
@@ -1422,7 +1330,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 245
+        "line": 223
       }
     },
     {
@@ -1481,7 +1389,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 257
+        "line": 235
       }
     },
     {
@@ -1530,7 +1438,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 293
+        "line": 271
       }
     },
     {
@@ -1563,7 +1471,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 331
+        "line": 308
       }
     },
     {
@@ -1588,7 +1496,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 349
+        "line": 315
       }
     },
     {
@@ -1613,7 +1521,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 389
+        "line": 342
       }
     },
     {
@@ -1654,7 +1562,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 397
+        "line": 349
       }
     },
     {
@@ -1679,7 +1587,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 417
+        "line": 368
       }
     },
     {
@@ -1704,7 +1612,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 424
+        "line": 375
       }
     },
     {
@@ -1729,7 +1637,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 431
+        "line": 382
       }
     },
     {
@@ -1754,7 +1662,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 439
+        "line": 389
       }
     },
     {
@@ -1859,7 +1767,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 446
+        "line": 396
       }
     },
     {
@@ -1884,7 +1792,7 @@
       ],
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
-        "line": 461
+        "line": 411
       }
     },
     {
@@ -2043,7 +1951,7 @@
       ],
       "source": {
         "file": "core/src/builtins/vec2.rs",
-        "line": 28
+        "line": 13
       },
       "import": "vec2"
     },
@@ -2069,7 +1977,7 @@
       ],
       "source": {
         "file": "core/src/builtins/vec2.rs",
-        "line": 70
+        "line": 53
       },
       "import": "vec2"
     },
@@ -2103,7 +2011,7 @@
       ],
       "source": {
         "file": "core/src/builtins/vec2.rs",
-        "line": 100
+        "line": 83
       },
       "import": "vec2"
     },
@@ -2137,7 +2045,7 @@
       ],
       "source": {
         "file": "core/src/builtins/vec2.rs",
-        "line": 136
+        "line": 119
       },
       "import": "vec2"
     },
@@ -2171,7 +2079,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 711
+        "line": 715
       }
     },
     {
@@ -2204,7 +2112,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 711
+        "line": 715
       },
       "aliasOf": "map"
     },
@@ -2246,7 +2154,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 711
+        "line": 715
       },
       "aliasOf": "map"
     },
@@ -2280,7 +2188,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 711
+        "line": 715
       },
       "aliasOf": "map"
     },
@@ -2994,7 +2902,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 122
+        "line": 86
       }
     },
     {
@@ -3019,7 +2927,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 143
+        "line": 107
       }
     },
     {
@@ -3221,7 +3129,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 711
+        "line": 715
       },
       "aliasOf": "map"
     },
@@ -3323,7 +3231,7 @@
       ],
       "source": {
         "file": "core/src/builtins/format.rs",
-        "line": 93
+        "line": 92
       }
     },
     {
@@ -3358,7 +3266,7 @@
       ],
       "source": {
         "file": "core/src/builtins/format.rs",
-        "line": 113
+        "line": 112
       }
     },
     {
@@ -3401,7 +3309,7 @@
       ],
       "source": {
         "file": "core/src/builtins/format.rs",
-        "line": 191
+        "line": 190
       }
     },
     {
@@ -3444,7 +3352,7 @@
       ],
       "source": {
         "file": "core/src/builtins/format.rs",
-        "line": 195
+        "line": 194
       }
     },
     {
@@ -3462,7 +3370,7 @@
       "signatures": [],
       "source": {
         "file": "core/src/builtins/format.rs",
-        "line": 279
+        "line": 278
       }
     },
     {
@@ -3495,7 +3403,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 348
+        "line": 293
       }
     },
     {
@@ -3590,7 +3498,7 @@
       ],
       "source": {
         "file": "core/src/builtins/vec2.rs",
-        "line": 171
+        "line": 154
       },
       "import": "vec2"
     },
@@ -3632,7 +3540,7 @@
       ],
       "source": {
         "file": "core/src/builtins/vec2.rs",
-        "line": 37
+        "line": 21
       },
       "import": "vec2"
     },
@@ -3666,7 +3574,7 @@
       ],
       "source": {
         "file": "core/src/builtins/vec2.rs",
-        "line": 121
+        "line": 104
       },
       "import": "vec2"
     },
@@ -3692,7 +3600,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 306
+        "line": 256
       }
     },
     {
@@ -3717,7 +3625,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 311
+        "line": 260
       }
     },
     {
@@ -3742,7 +3650,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 316
+        "line": 264
       }
     },
     {
@@ -3775,7 +3683,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 322
+        "line": 269
       }
     },
     {
@@ -3992,7 +3900,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 711
+        "line": 715
       },
       "aliasOf": "map"
     },
@@ -4018,7 +3926,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 711
+        "line": 715
       },
       "aliasOf": "map"
     },
@@ -4430,7 +4338,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 391
+        "line": 335
       }
     },
     {
@@ -4485,7 +4393,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 469
+        "line": 406
       }
     },
     {
@@ -4540,7 +4448,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 477
+        "line": 414
       }
     },
     {
@@ -4575,7 +4483,7 @@
       ],
       "source": {
         "file": "core/src/builtins/math.rs",
-        "line": 503
+        "line": 440
       }
     },
     {
@@ -4659,7 +4567,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 711
+        "line": 715
       },
       "aliasOf": "map"
     },
@@ -4693,7 +4601,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 711
+        "line": 715
       },
       "aliasOf": "map"
     },
@@ -4727,7 +4635,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 711
+        "line": 715
       },
       "aliasOf": "map"
     },
@@ -4803,7 +4711,7 @@
       ],
       "source": {
         "file": "core/src/builtins/hints.rs",
-        "line": 17
+        "line": 16
       }
     },
     {
@@ -4828,7 +4736,7 @@
       ],
       "source": {
         "file": "core/src/builtins/hints.rs",
-        "line": 28
+        "line": 27
       }
     },
     {
@@ -4927,7 +4835,7 @@
       ],
       "source": {
         "file": "core/src/builtins/hints.rs",
-        "line": 38
+        "line": 37
       }
     },
     {
@@ -4940,7 +4848,7 @@
       "signatures": [],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 711
+        "line": 715
       },
       "aliasOf": "map"
     },
@@ -4956,7 +4864,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 711
+        "line": 715
       },
       "aliasOf": "map"
     },
@@ -4990,7 +4898,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 711
+        "line": 715
       },
       "aliasOf": "map"
     },
@@ -5090,7 +4998,7 @@
       ],
       "source": {
         "file": "core/src/builtins/drag_math.rs",
-        "line": 215
+        "line": 223
       }
     },
     {
@@ -5139,7 +5047,7 @@
       ],
       "source": {
         "file": "core/src/builtins/drag_math.rs",
-        "line": 227
+        "line": 235
       }
     },
     {
@@ -5204,7 +5112,122 @@
       ],
       "source": {
         "file": "core/src/builtins/drag_math.rs",
-        "line": 262
+        "line": 271
+      }
+    },
+    {
+      "name": "gn_step",
+      "category": "drag_math",
+      "group": "core",
+      "arity": 6,
+      "variadic": false,
+      "params": [
+        {
+          "name": "values",
+          "type": "any"
+        },
+        {
+          "name": "rows",
+          "type": "any"
+        },
+        {
+          "name": "targets",
+          "type": "any"
+        },
+        {
+          "name": "jac",
+          "type": "any"
+        },
+        {
+          "name": "bounds",
+          "type": "any"
+        },
+        {
+          "name": "scale",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "values",
+            "type": "any"
+          },
+          {
+            "name": "rows",
+            "type": "any"
+          },
+          {
+            "name": "targets",
+            "type": "any"
+          },
+          {
+            "name": "jac",
+            "type": "any"
+          },
+          {
+            "name": "bounds",
+            "type": "any"
+          },
+          {
+            "name": "scale",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/drag_math.rs",
+        "line": 271
+      },
+      "aliasOf": "drag_solve_step"
+    },
+    {
+      "name": "fd_column",
+      "category": "drag_math",
+      "group": "core",
+      "arity": 4,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        },
+        {
+          "name": "base",
+          "type": "any"
+        },
+        {
+          "name": "samples",
+          "type": "any"
+        },
+        {
+          "name": "opts",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          },
+          {
+            "name": "base",
+            "type": "any"
+          },
+          {
+            "name": "samples",
+            "type": "any"
+          },
+          {
+            "name": "opts",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/drag_math.rs",
+        "line": 386
       }
     },
     {
@@ -5217,7 +5240,7 @@
       "signatures": [],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 711
+        "line": 715
       },
       "aliasOf": "map"
     },
@@ -8896,7 +8919,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 797
+        "line": 796
       }
     },
     {
@@ -8936,7 +8959,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 801
+        "line": 800
       }
     },
     {
@@ -8951,7 +8974,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 805
+        "line": 804
       }
     },
     {
@@ -8976,7 +8999,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 809
+        "line": 808
       }
     },
     {
@@ -9001,7 +9024,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 816
+        "line": 815
       }
     },
     {
@@ -9026,7 +9049,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 823
+        "line": 822
       }
     },
     {
@@ -9041,7 +9064,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 830
+        "line": 829
       }
     },
     {
@@ -9056,7 +9079,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 834
+        "line": 833
       }
     },
     {
@@ -9081,7 +9104,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 845
+        "line": 844
       }
     },
     {
@@ -9106,7 +9129,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 852
+        "line": 851
       }
     },
     {
@@ -9131,7 +9154,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 859
+        "line": 858
       }
     },
     {
@@ -9146,7 +9169,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 866
+        "line": 865
       }
     },
     {
@@ -9161,7 +9184,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 870
+        "line": 869
       }
     },
     {
@@ -9176,7 +9199,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 874
+        "line": 873
       }
     },
     {
@@ -9191,7 +9214,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 878
+        "line": 877
       }
     },
     {
@@ -9206,7 +9229,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 882
+        "line": 881
       }
     },
     {
@@ -9221,7 +9244,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 886
+        "line": 885
       }
     },
     {
@@ -9236,7 +9259,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 890
+        "line": 889
       }
     },
     {
@@ -9251,7 +9274,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 894
+        "line": 893
       }
     },
     {
@@ -9266,7 +9289,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 898
+        "line": 897
       }
     },
     {
@@ -9281,7 +9304,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 907
+        "line": 906
       }
     },
     {
@@ -9296,7 +9319,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 914
+        "line": 913
       }
     },
     {
@@ -9311,7 +9334,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 921
+        "line": 920
       }
     },
     {
@@ -9326,7 +9349,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 930
+        "line": 929
       }
     },
     {
@@ -9341,7 +9364,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 936
+        "line": 935
       }
     },
     {
@@ -9356,7 +9379,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 940
+        "line": 939
       }
     },
     {
@@ -9371,7 +9394,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 944
+        "line": 943
       }
     },
     {
@@ -9386,7 +9409,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 948
+        "line": 947
       }
     },
     {
@@ -9411,7 +9434,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/input.rs",
-        "line": 838
+        "line": 837
       }
     }
   ]

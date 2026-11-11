@@ -185,7 +185,7 @@ its contents become Petal code instead of three `native fn` declarations.
 Every function takes a Petal function and calls it. That is why it is Petal
 code and not natives (`drag_math.rs:2-4`).
 
-```petal
+```petal ignore
 import autodiff
 
 // The derivative of a one-number function at x, by central differences.
@@ -430,7 +430,7 @@ claim, and `aim.ptl` passes `petal lint` (three style warnings, no errors).
 
 Before:
 
-```petal
+```petal ignore
 import autodiff
 
 fn f(x)
@@ -451,7 +451,7 @@ end
 
 After (proposed):
 
-```petal
+```petal ignore
 import autodiff
 
 fn f(x)
@@ -546,7 +546,7 @@ agreement check.
 
 Before:
 
-```petal
+```petal ignore
 import autodiff
 print(deriv_of(atan(dual(1.0, 1.0))))   // 0.5, exactly
 ```
@@ -1055,3 +1055,93 @@ None at the moment.
   unchanged; it still builds for wasm). `check-dm-samples.mjs` is green
   against the currently vendored build; the memo fix reaches it on the next
   re-vendor.
+
+### Phases 1, 2, 5 and 6
+
+- **Phase 1 (2026-11-11): the new `autodiff` functions — done.**
+  `core/packages/autodiff/autodiff.ptl` adds `deriv`, `jacobian`,
+  `solve_step` and `solve` (Petal code, beside the dual natives), each probe
+  under `speculate` or direct when `speculating()`. Natives: `gn_step`
+  (renamed from `drag_solve_step`, which stays as an alias; `vary` calls
+  `gn_step`) and `fd_column`, which replays a script's samples through DM's
+  float-column rules: `dm/jacobian.rs`'s `float_column` / `escalate` are now
+  generic over a `ColumnProbe` (DM's run probe, or the replay), exposed as
+  `dm::column_from_samples`. DM's own columns are unchanged (all core DM
+  tests green). A script's `speculate` has no path fingerprint, so without
+  one a kink is re-checked at `h / 10`: a side whose difference does not
+  shrink jumped (`branch_flip`, or `step` when both did), and a gap that
+  shrinks with the step is curvature (`smooth`, e.g. `x * x` at 0, which
+  DM's path-aware rules call a kink). Only a non-number result is
+  `"errored"`; a runtime error in `f` propagates (Petal has no catch).
+  Tests: `test/ptl/autodiff.ptl` (18 cases), `core/tests/all/autodiff.rs`
+  (no emits or state leak across frames), unit tests in `dm/jacobian.rs`.
+  Docs: `features/differentiation.md` rewritten, `Builtins.md` sections,
+  CHANGELOG. Measured (release, `petal bench`, `f` =
+  `(x - 3)^2 + sin(x)`): `f(x)` 0.19 µs, `speculate(f, x).value` 0.47 µs
+  and 3 allocations, `deriv(f, x)` 4.2 µs and 15 allocations (3 runs of
+  `f`, 3 `fd_column` calls). When Phase 0's `speculate_value` lands,
+  `autodiff.ptl`'s `_run` should switch to it.
+  Pre-existing: the doc-snippet test fails on four blocks of this plan
+  (the Design §2 signature block, the two `var x` / `x = …` blocks of
+  Before/After 1, and `// 0.5, exactly`); they are proposals, not run.
+- **Phase 2 (2026-11-11): call sites migrated, dual functions deprecated — done.**
+  `examples/console/differentiation.ptl` (After §1, printing rounded; its
+  golden updated), `test/lerp-trig-random` (`abs(deriv(atan, 1.0).value -
+  0.5) < 1e-6`) and `examples/ui/d2-dial` (plain `vary`) are rewritten.
+  `ui/drag`'s `vary` lost its dual mode (`_dual_run`, `_undual`,
+  `_dual_center`, `_jac_agrees`); the `sensitivity` key is ignored, and
+  `PRELUDE_LEVEL` is 14. A compile warning `[dual-deprecated]`
+  (`compiler/dual_deprecated.rs`) fires once per name per file on `dual`,
+  `value_of` and `deriv_of` reached through `import autodiff`. Lint rules
+  (`lint/dual_migrate.rs`): `dual-deprecated` fixes
+  `deriv_of(f(dual(x, 1.0)))` → `deriv(f, x).value` for a named `f`, and
+  `vary-sensitivity` deletes the key. The four failing plan snippets above
+  are tagged `petal ignore`. Website: `aim.ptl` rewritten per After §2
+  (petal-lang.org commit). The site runs the vendored wasm
+  (`frontend/public/petal`, from `pnpm build:sdk`), which predates
+  Phase 1, so the demo needs a re-vendor before the site is deployed;
+  that is left to Phase 5's re-import.
+- **Phase 5 (2026-11-11): dual numbers removed — done.** Gone:
+  `Value::Dual`, `DualId`, the pair slab's dual accessors
+  (`dual_value`, `get_dual`, `derivative_of`; the slab now holds only
+  `vec2`s), `dual_arith` and the dual negation arm, every native's dual arm
+  (`math.rs`'s `unary_float_dual` became `unary_float`; `creative_coding.rs`
+  reads plain floats through a `floats::<N>` helper that
+  `tools/extract-stdlib.ts` understands), `builtins/autodiff.rs` and the
+  three natives' registrations, `Type::Dual` (and the `dual` type name),
+  `SpecOverride::Dual`, `OverrideValue::Dual`, `PetalCxt::push_dual`,
+  `AllocKind::Dual`, and the dual cases in memo, the static cache, record
+  templates, run deps, dict keys, DM observation, `drop_edit`, stats,
+  `vm/fast.rs` tests, `petal-ui`'s `hovered`, the C bridge's value view and
+  the typecheck tables. `dual`, `value_of` and `deriv_of` reached through
+  `import autodiff` are the compile error of Design §1, word for word
+  (`compiler/autodiff_removed.rs`, replacing Phase 2's warning); the
+  `dual-deprecated` lint rule went with the warning, and `vary-sensitivity`
+  moved to `lint/vary_sensitivity.rs`. State storage can hold a dual (the
+  `--state-storage` file and the C bridge's `pb_vm_load_state` document,
+  `{"$petal": "dual", …}`), so such a slot loads as its value and is named in
+  `StateStorageLoad::converted` (warned by the CLI, listed under
+  `converted` in the bridge's load report), for one release. Tests:
+  `test/vitest/autodiff.test.ts` rewritten for `deriv` / `jacobian` /
+  `solve_step` / `solve` (math builtins against closed-form derivatives
+  within 1e-6, and the error), `core/tests/all/autodiff.rs` (the error,
+  bare/qualified/aliased), a state-storage test. Docs: `ffi.md`,
+  `Architecture.md`, `syntax/overview.md`, `language-guide.md`,
+  `packages.md`, `Builtins.md`, `CLI.md`, `features/differentiation.md`
+  (a migration section the error points at), CHANGELOG (Removed, with an
+  **Embedders** note), the stale count in `proposals/value-representation.md`,
+  and the propose-language-change checklist item. Plans, proposals and
+  dated changelog entries that describe the old design were left as the
+  record they are; the three old IR fixtures under
+  `test/vitest/fixtures/ir/` still name the removed natives among their
+  builtin phantom terms and load fine. Verified: core tests (both feature
+  sets, doctests), petal-ui, petal-c-bridge, ui-corpus, vitest,
+  `tools/test-examples.ts` (opts vs no-opt and static cache on/off, 35/35),
+  `make expensive_lint_tests`, and `dm_study`'s ladder: all 105 goals have
+  the same outcome, run count and top edit as before. The Kani proofs were
+  not run (`cargo-kani` is not installed here); they have no pair-slab or
+  dual harness to update.
+- **Phase 6 (2026-11-11): README — done.** "Differentiable programming" is
+  replaced by "How goals get solved" (algebraic inversion, measured
+  sensitivities with Gauss-Newton steps, speculative search), after the
+  direct-manipulation section, whose backpropagation aside is gone.

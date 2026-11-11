@@ -14,7 +14,7 @@ this was decided; `core/src/value.rs` asserts its size: every register, list
 slot, record entry and closure capture is a `Value`, so widening it costs
 memory bandwidth everywhere, for every program, whether it uses vectors or
 not. Three `f64`s (24 bytes) did not fit. (Since November 2026 `Value` is 16
-bytes and `vec2` and dual numbers are heap objects too, on the strength of the
+bytes and `vec2` is a heap object too, on the strength of the
 measurement below; see
 [proposals/value-representation.md](../proposals/value-representation.md).)
 

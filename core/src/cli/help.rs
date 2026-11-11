@@ -892,6 +892,9 @@ DESCRIPTION
               len(filter(xs, p)) > 0 becomes any(xs, p), and == 0 becomes
               !any(xs, p), where p is an in-place lambda with no side
               effect. Otherwise reported: any stops at the first match
+       vary-sensitivity
+              a sensitivity key in vary's options: ui/drag removed the
+              option and ignores it; the key is deleted
        dead-alias
               let a = v in a function, where a is only read and the local v
               does not change afterwards: the let goes and v is read

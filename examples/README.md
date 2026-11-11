@@ -77,7 +77,7 @@ example and asserts it exits cleanly.
 | `vec3_demo.ptl` | 3D vectors: a bouncing ball and a camera basis | `vec3`, `cross`, `dot`, `normalize`, `lerp`, `limit`, operator overloads |
 | `color_gradient.ptl` | HSV + color interpolation | `hsv`, `color_lerp`, `lerp` |
 | `map_range_demo.ptl` | Remapping values | `map_range`, `clamp` |
-| `differentiation.ptl` | Gradient descent with dual numbers | `dual`, `value_of`, `deriv_of` |
+| `differentiation.ptl` | Gradient descent with finite-difference derivatives | `deriv` from `autodiff` |
 | `imports.ptl` | Module imports | `import`, qualified/selective forms |
 | `text_utils.ptl` | Library module imported by `imports.ptl` | `fn` exports (no standalone output) |
 

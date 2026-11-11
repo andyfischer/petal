@@ -1,7 +1,7 @@
 //! Builtins - Built-in function implementations registered via native FFI.
 //!
 //! The built-in functions are split across topic submodules (math, collections,
-//! creative_coding, noise, color, vec2, autodiff, io). `register_builtins`
+//! creative_coding, noise, color, vec2, io). `register_builtins`
 //! below is the single entry point that wires them all into the
 //! `NativeFnTable`. The registration *order* is load-bearing: phantom term
 //! indices in the IR are assigned in this order, so the test snapshots and
@@ -10,7 +10,6 @@
 
 use crate::native_fn::{InputClasses, NativeClass, NativeEffects, NativeFnTable, PetalCxt};
 
-mod autodiff;
 mod classes;
 mod collections;
 mod color;
@@ -212,9 +211,6 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("min", math::native_min, NativeEffects::CONST);
     table.register("max", math::native_max, NativeEffects::CONST);
     table.register("round", math::native_round, NativeEffects::CONST);
-    table.register("dual", autodiff::native_dual, NativeEffects::CONST);
-    table.register("value_of", autodiff::native_value_of, NativeEffects::CONST);
-    table.register("deriv_of", autodiff::native_deriv_of, NativeEffects::CONST);
     // Not CONST as a row: `sort(xs, cmp)` runs a user comparator. Its
     // constness is `ConstIfCallbacksAre` (see `NativeFnTable::constness`),
     // which `sort(xs)` satisfies vacuously.
@@ -668,7 +664,15 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // solver. Each reads only its arguments. Append-only.
     table.register("drag_triangulate", drag_math::native_drag_triangulate, NativeEffects::CONST);
     table.register("drag_weights", drag_math::native_drag_weights, NativeEffects::CONST);
-    table.register("drag_solve_step", drag_math::native_drag_solve_step, NativeEffects::CONST);
+    table.register("drag_solve_step", drag_math::native_gn_step, NativeEffects::CONST);
+
+    // The numeric half of the `autodiff` package (docs/features/differentiation.md):
+    // `gn_step` is `drag_solve_step` under its neutral name (the old one
+    // stays, an alias, for one release), and `fd_column` classifies one
+    // finite-difference column by DM v2's rules. Each reads only its
+    // arguments. Append-only.
+    table.register("gn_step", drag_math::native_gn_step, NativeEffects::CONST);
+    table.register("fd_column", drag_math::native_fd_column, NativeEffects::CONST);
 
     // `speculate_value(f, ...args)`: `speculate(f, ...args).value` without
     // the record (`vm::speculate`), for callers that want only the value
@@ -820,19 +824,18 @@ mod effect_tests {
             "cos",
             "cross",
             "degrees",
-            "deriv_of",
             "distance",
             "dot",
             "drag_solve_step",
             "drag_triangulate",
             "drag_weights",
             "drop_last",
-            "dual",
             "ends_with",
             "entries",
             "enumerate",
             "exp",
             "f64_array",
+            "fd_column",
             "fill",
             "fixed",
             "flat",
@@ -841,6 +844,7 @@ mod effect_tests {
             "format",
             "fract",
             "get_in",
+            "gn_step",
             "group_by_keys",
             "hash01",
             "hash_int",
@@ -908,7 +912,6 @@ mod effect_tests {
             "tunable",
             "type",
             "upper",
-            "value_of",
             "values",
             "vec2",
             "vec3",

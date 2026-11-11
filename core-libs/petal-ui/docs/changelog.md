@@ -102,6 +102,13 @@ Levels:
   ([`draw::register_draw_with`], drained with
   [`draw::take_frame_commands`]); on every other host it only checks its
   argument. No behavior change for a host that does not opt in.
+- 14 — `vary` without dual numbers (2026-11-11,
+  docs/tasks/differentiation-rewrite.md Phase 2): `ui/drag`'s `vary` always
+  learns its sensitivities by forward differences. The `sensitivity` option
+  (`"fd"` or `"dual"`) is gone: the key is accepted and ignored for one
+  release, `petal lint` warns about it (`vary-sensitivity`) and `--fix`
+  deletes it. A view that asked for `"dual"` now gets differences, with the
+  same number of renderings per frame.
 
 [`prelude_source`]: ../src/lib.rs
 [`DRAG_MODULE_NAME`]: ../src/lib.rs

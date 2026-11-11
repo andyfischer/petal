@@ -1273,8 +1273,8 @@ mod pending_value_chunk_a_tests {
 
 /// Chunk B of the pending-values feature: `Value::Pending` must be *absorbed*
 /// through the primitive OPERATORS in `backend/ops.rs` (arithmetic, comparison,
-/// unary not/negate, string concat/interpolation, field/index access), mirroring
-/// the existing `Value::Dual` propagation pattern — plus the one hard-error
+/// unary not/negate, string concat/interpolation, field/index access) — plus the
+/// one hard-error
 /// position (a Pending used as a map KEY).
 ///
 /// These are TDD tests written BEFORE the implementation: they encode the

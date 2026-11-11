@@ -102,6 +102,10 @@ builtin_effects![
     ("drag_triangulate", FRESH | NO_REF | PURE),
     ("drag_weights", FRESH | NO_REF | PURE),
     ("drag_solve_step", FRESH | NO_REF | PURE),
+    // The `autodiff` package's numeric half: `gn_step` builds a new list of
+    // numbers; `fd_column` a float or a new record.
+    ("gn_step", FRESH | NO_REF | PURE),
+    ("fd_column", NO_REF | PURE),
     // character-indexed strings: each builds a brand-new string or list, and
     // strings are immutable, so nothing aliases the argument afterwards.
     ("chars", FRESH | NO_REF | PURE),
@@ -194,9 +198,6 @@ builtin_effects![
     ("cross", PURE),
     ("limit", PURE),
     ("rotate", PURE),
-    // autodiff (pure readers)
-    ("value_of", PURE),
-    ("deriv_of", PURE),
     // The Moses debrief's helpers. `fill` hands back a list of its own whose
     // every element *is* the value argument, so it is FRESH and not NO_REF
     // (the `min`/`max` shape). `group_by_keys` builds its record and every
@@ -376,6 +377,7 @@ mod tests {
                 "f64_array",
                 "fill",
                 "flat",
+                "gn_step",
                 "json_parse",
                 "keys",
                 "prepend",
@@ -415,10 +417,12 @@ mod tests {
                 "ends_with",
                 "entries",
                 "enumerate",
+                "fd_column",
                 "fixed",
                 "flat",
                 "format",
                 "frozen",
+                "gn_step",
                 "group_by_keys",
                 "hash_str",
                 "includes",
@@ -487,7 +491,6 @@ mod tests {
                 "cos",
                 "cross",
                 "degrees",
-                "deriv_of",
                 "distance",
                 "dot",
                 "drag_solve_step",
@@ -500,6 +503,7 @@ mod tests {
                 "enumerate",
                 "exp",
                 "f64_array",
+                "fd_column",
                 "fill",
                 "first",
                 "fixed",
@@ -509,6 +513,7 @@ mod tests {
                 "format",
                 "fract",
                 "get_in",
+                "gn_step",
                 "group_by_keys",
                 "hash01",
                 "hash_int",
@@ -579,7 +584,6 @@ mod tests {
                 "top_indices",
                 "trim",
                 "type",
-                "value_of",
                 "values",
                 "vec2",
                 "vec3",

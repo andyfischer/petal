@@ -106,7 +106,7 @@ pub const UI_VERSION: i64 = 1;
 ///
 /// What each level added is in `docs/changelog.md` in this crate; add the
 /// new level there when you bump this.
-pub const PRELUDE_LEVEL: u32 = 13;
+pub const PRELUDE_LEVEL: u32 = 14;
 
 /// Name of the Petal-source prelude module: `import ui`.
 pub const MODULE_NAME: &str = "ui";

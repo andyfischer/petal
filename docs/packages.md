@@ -226,7 +226,8 @@ out fails with `package `glsl` is not in this build of Petal: enable the
 | Package | What it is |
 | --- | --- |
 | `core` | The declarations of the global builtins. Always in scope; `import core` only adds the qualifier `core`, so `core.len(xs)` reaches a builtin a declaration of yours has shadowed. |
-| `noise`, `color`, `vec2`, `autodiff`, `json`, `io` | The domain builtins. Every runtime implements them; a script imports the package to use its names. See [Builtins](Builtins.md#which-builtins-need-an-import). |
+| `noise`, `color`, `vec2`, `json`, `io` | The domain builtins. Every runtime implements them; a script imports the package to use its names. See [Builtins](Builtins.md#which-builtins-need-an-import). |
+| `autodiff` | Derivatives and solving by finite differences (`deriv`, `jacobian`, `solve_step`, `solve`), written in Petal over core natives. See [Differentiation](features/differentiation.md). |
 | `ui` | The petal-ui interface: the `native fn` declarations of every petal-ui native, and the widget library written over them. `ui/input` is its input, timing and frame half alone. Needs a petal-ui host to run. |
 | `bloom` | The component library ([core-runtime/bloom](../core-runtime/bloom)). Requires `ui`. Feature `bloom`. |
 | `text_layout` | Text placement ([core-runtime/text-layout](../core-runtime/text-layout)). Requires `ui`. Feature `text_layout`. |

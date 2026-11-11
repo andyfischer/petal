@@ -542,7 +542,7 @@ and checked by `petal lint` as warnings, with no effect at runtime except
 A type is a single bare name: `int`, `float`, `num` (either of the two),
 `bool`, `string` (alias `str`), `list`, `record`, `map`, `function`, `enum`, `nil`,
 `any`, host types such as `vec2`, `vec3`, `f64_array`, `element`, `symbol`,
-`dual`, `handle`, `pending`, and the name of any class or enum in scope. There
+`handle`, `pending`, and the name of any class or enum in scope. There
 are no parameterized, arrow, or structural forms. See
 [Type Annotations](../language-guide.md#type-annotations) for the
 assignability rules.

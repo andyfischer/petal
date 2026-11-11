@@ -71,13 +71,12 @@ fn group_thousands(s: &str) -> String {
     format!("{sign}{grouped}{frac_part}")
 }
 
-/// Coerce a formatting argument to f64. Accepts the numeric values and the
-/// dual-number primal; anything else is a caller error worth naming.
-fn as_number(heap: &crate::heap::Heap, v: Value, who: &str) -> Result<f64, String> {
+/// Coerce a formatting argument to f64. Accepts the numeric values (and a
+/// bool, as 0 or 1); anything else is a caller error worth naming.
+fn as_number(_heap: &crate::heap::Heap, v: Value, who: &str) -> Result<f64, String> {
     match v {
         Value::Int(n) => Ok(n as f64),
         Value::Float(f) => Ok(f),
-        Value::Dual(id) => Ok(heap.get_dual(id).0),
         Value::Bool(b) => Ok(if b { 1.0 } else { 0.0 }),
         other => Err(format!(
             "{}() expects a number, got {}",

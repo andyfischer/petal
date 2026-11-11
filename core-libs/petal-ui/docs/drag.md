@@ -261,7 +261,7 @@ in; so is the drop. Nothing in the app inverts the view.
 ```petal ignore
 // examples/ui/d2-dial: the knob on a circle at angle a
 let k = place("knob", {x: C.x + cos(a) * R - 16, y: C.y + sin(a) * R - 16, w: 32, h: 32})
-draggable("knob", k, fn() vary(dial, "angle", {sensitivity: "dual"}) end)
+draggable("knob", k, fn() vary(dial, "angle") end)
 ```
 
 `opts`:
@@ -270,7 +270,13 @@ draggable("knob", k, fn() vary(dial, "angle", {sensitivity: "dual"}) end)
 |---|---|
 | `bounds` | `[lo, hi]` for a single path, or one `[lo, hi]` (or nil) per path; either end may be nil. A step is clamped into them. |
 | `constraint` | `fn(state) -> bool`. A step to a state it refuses is halved until one passes, so the element stops at the constraint's edge (a meeting's end cannot pass its start). Checking it costs no rendering. |
-| `sensitivity` | How the engine learns which way the numbers move the element. `"fd"` (the default): forward differences, one extra rendering per path. `"dual"`: one rendering per path with the number replaced by a dual number, which gives the exact derivative — only for views whose arithmetic from the number to `place` keeps duals (see the rules). Checked against differences on the first frame and replaced by them if it disagrees. |
+
+The engine learns which way the numbers move the element by forward
+differences: one extra rendering per path, with that number nudged. (The
+`sensitivity` option, which chose another mode, was removed in prelude
+level 14. The key is accepted and ignored for one release;
+`petal lint` warns about it, rule `vary-sensitivity`, and `petal lint --fix`
+deletes it.)
 
 `paths` is one path or a list of paths: `"v"`, `["v"]` and
 `["meetings", 2, "start"]` are one path each; two levers are
@@ -389,12 +395,9 @@ the number and `vary(st, "value", {bounds: [0, 1]})`.
     and draw with `view(d.preview, scrolls, sel_id)`.
 12. **`vary`'s numbers must reach `place` by arithmetic** the solver can
     follow: the element should move smoothly (or in small steps) as the
-    number changes. Under `sensitivity: "dual"` the path from the number to
-    `place` must also keep dual numbers: plain records and maths (`cos`,
-    `+`, `*`, `max`) do; `rect()`, `int`, `round`, string formatting and most
-    natives refuse a dual, and that is an error, which cannot be caught —
-    leave `sensitivity` at its default for such views. `place` hands the rest
-    of the view plain numbers, so drawing after it is fine.
+    number changes. A view that rounds or snaps still works (a difference
+    that moves nothing is retried at a larger step), but between snaps the
+    element sits still while the pointer moves.
 13. **`between` takes states.** Its options are model states (or
     `fixed_state`), and the blend covers what `place` marks, not every draw
     call: place the colours and numbers you want to cross fade.
@@ -532,8 +535,7 @@ off, Apple silicon; "worst" is the slowest frame while held):
 | Drag | Idle frame | Frame while dragging (median) | Worst frame while dragging |
 |---|---|---|---|
 | switch: `between`, 3 states | 0.13 ms | 0.09 ms | 0.21 ms |
-| dial: `vary`, 1 path, dual | 0.13 ms | 0.17 ms | 0.31 ms |
-| dial: `vary`, 1 path, differences | 0.14 ms | 0.18 ms | 0.32 ms |
+| dial: `vary`, 1 path | 0.14 ms | 0.18 ms | 0.32 ms |
 | scheduler bar: `between`, 3 rooms | 0.30 ms | 0.22 ms | 0.48 ms |
 | scheduler end: `vary` + constraint | 0.29 ms | 0.39 ms | 0.74 ms |
 

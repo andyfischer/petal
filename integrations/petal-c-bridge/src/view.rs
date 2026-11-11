@@ -424,15 +424,6 @@ impl ViewArena {
                 node.number = f;
                 node.integer = f as i64;
             }
-            Value::Dual(id) => {
-                node = PbValue::scalar(Kind::Float);
-                // A stale id decodes as zero, like a stale vec3.
-                if heap.is_live(*v) {
-                    let (value, _) = heap.get_dual(id);
-                    node.number = value;
-                    node.integer = value as i64;
-                }
-            }
             Value::Vec2(id) => {
                 node = PbValue::scalar(Kind::Vec2);
                 if heap.is_live(*v) {

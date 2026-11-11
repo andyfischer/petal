@@ -583,7 +583,7 @@ fn compare(op: TermOp, a: Value, b: Value, heap: &Heap) -> Option<Value> {
 /// What a trivial builtin returns for arguments it needs no native for:
 /// numbers (`Int` and `Float` only), a list, a string or a float array for
 /// `len`, and anything but a `Pending` for `type`. `None` is everything else
-/// — a wrong type, a dual number, a string to convert, an overflow, a
+/// — a wrong type, a string to convert, an overflow, a
 /// `Pending` — which the general executor runs as the builtin call, so each
 /// arm here has to agree with its native only where it answers. `b` and `c`
 /// are the second and third arguments where the builtin has them.
@@ -802,32 +802,31 @@ mod intrinsic_tests {
         }
     }
 
-    /// What the natives have to see: errors, conversions, overflow, duals
-    /// and `Pending`s.
+    /// What the natives have to see: errors, conversions, overflow and
+    /// `Pending`s.
     #[test]
     fn everything_else_is_left_to_the_native() {
         let mut heap = Heap::new();
         let text = Value::String(heap.intern_str("12"));
         let list = Value::List(heap.alloc_list(Vec::new()));
-        let dual = heap.dual_value(1.0, 1.0);
         let pending = Value::Pending(crate::value::PendingId(0));
         let nil = Value::Nil;
         let one = Value::Int(1);
         use IntrinsicOp::*;
         for op in [Float, Int, Abs, Floor] {
-            for v in [text, list, dual, pending, nil, Value::Bool(true)] {
+            for v in [text, list, pending, nil, Value::Bool(true)] {
                 assert_eq!(straight_intrinsic(&mut heap, op, v, nil, nil), None, "{op:?}");
             }
         }
         assert_eq!(straight_intrinsic(&mut heap, Abs, Value::Int(i64::MIN), nil, nil), None);
-        for v in [text, list, dual, pending, nil] {
+        for v in [text, list, pending, nil] {
             for op in [Min, Max, Clamp] {
                 assert_eq!(straight_intrinsic(&mut heap, op, v, one, one), None, "{op:?}");
                 assert_eq!(straight_intrinsic(&mut heap, op, one, v, one), None, "{op:?}");
             }
             assert_eq!(straight_intrinsic(&mut heap, Clamp, one, one, v), None);
         }
-        for v in [nil, one, dual, pending] {
+        for v in [nil, one, pending] {
             assert_eq!(straight_intrinsic(&mut heap, Len, v, nil, nil), None);
         }
         assert_eq!(straight_intrinsic(&mut heap, Type, pending, nil, nil), None);

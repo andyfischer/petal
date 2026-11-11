@@ -43,19 +43,18 @@ pub fn constant_to_value(program: &Program, heap: &mut Heap, cid: ConstantId) ->
 // Arithmetic
 // ---------------------------------------------------------------------------
 
-/// Arithmetic on Int/Float pairs, with dual-number (forward-mode AD), vec2 and
-/// vec3 operands delegated to their own handlers. `op` must be one of
+/// Arithmetic on Int/Float pairs, with vec2, vec3 and list operands delegated
+/// to their own handlers. `op` must be one of
 /// `Add`/`Sub`/`Mul`/`Div`/`Mod`.
 pub fn arithmetic(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result<Value, String> {
     // Pending is strict-absorbing: any Pending operand short-circuits the whole
     // op to that Pending (leftmost wins). Checked before the div-by-zero guard
-    // so `pending / 0` yields the Pending, not a spurious error. Mirrors the
-    // Value::Dual precedent below, but absorbs rather than threading a payload.
+    // so `pending / 0` yields the Pending, not a spurious error.
     if let Some(p) = leftmost_pending(a, b) {
         return Ok(p);
     }
-    // Guard integer/float division by zero up front (dual/vec2 handlers do
-    // their own checks, so this only fires for scalar operands). Skip it when
+    // Guard integer/float division by zero up front (the vec2 handler does
+    // its own checks, so this only fires for scalar operands). Skip it when
     // either operand is a List so per-element broadcast semantics hold: `[] / 0`
     // yields `[]` (no element is divided), while `[1, 2] / 0` still errors per
     // element inside `list_scalar_arith` (which re-checks via `arithmetic`).
@@ -67,7 +66,6 @@ pub fn arithmetic(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result<Va
         }
     }
     match (a, b) {
-        (Value::Dual(_), _) | (_, Value::Dual(_)) => dual_arith(op, a, b, heap),
         (Value::Vec2(_), _) | (_, Value::Vec2(_)) => vec2_arith(op, a, b, heap),
         (Value::Vec3(..), _) | (_, Value::Vec3(..)) => vec3_arith(op, a, b, heap),
         (Value::List(..), _) | (_, Value::List(..)) => list_scalar_arith(op, a, b, heap),
@@ -102,39 +100,6 @@ fn leftmost_pending(a: Value, b: Value) -> Option<Value> {
         (p @ Value::Pending(_), _) | (_, p @ Value::Pending(_)) => Some(p),
         _ => None,
     }
-}
-
-/// Forward-mode AD arithmetic for Dual numbers.
-fn dual_arith(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result<Value, String> {
-    let (Some(a_val), Some(b_val)) = (heap.num_f64(a), heap.num_f64(b)) else {
-        return Err(format!(
-            "Cannot perform arithmetic on {} and {}",
-            a.type_name(),
-            b.type_name()
-        ));
-    };
-    let a_deriv = heap.derivative_of(a);
-    let b_deriv = heap.derivative_of(b);
-
-    let (value, derivative) = match op {
-        TermOp::Add => (a_val + b_val, a_deriv + b_deriv),
-        TermOp::Sub => (a_val - b_val, a_deriv - b_deriv),
-        TermOp::Mul => (a_val * b_val, a_deriv * b_val + a_val * b_deriv),
-        TermOp::Div => {
-            if b_val == 0.0 {
-                return Err("Division by zero".into());
-            }
-            (
-                a_val / b_val,
-                (a_deriv * b_val - a_val * b_deriv) / (b_val * b_val),
-            )
-        }
-        // Mod derivative: d(a%b)/da = 1, d(a%b)/db is complex; approximate.
-        TermOp::Mod => (a_val % b_val, a_deriv),
-        _ => return Err("Unsupported dual operation".into()),
-    };
-
-    Ok(heap.dual_value(value, derivative))
 }
 
 /// Vec2 arithmetic: component-wise between vectors, scalar broadcast otherwise.
@@ -415,7 +380,7 @@ pub fn not(v: Value, heap: &Heap) -> Value {
     Value::Bool(!heap.truthy(v))
 }
 
-/// Unary negation for numbers, dual numbers, vec2 and vec3 (which allocates
+/// Unary negation for numbers, vec2 and vec3 (which allocates
 /// its result, hence the heap).
 pub fn negate(v: Value, heap: &mut Heap) -> Result<Value, String> {
     match v {
@@ -427,10 +392,6 @@ pub fn negate(v: Value, heap: &mut Heap) -> Result<Value, String> {
             .map(Value::Int)
             .map_err(|_| "Integer overflow when trying to negate".to_string()),
         Value::Float(f) => Ok(Value::Float(-f)),
-        Value::Dual(id) => {
-            let (value, derivative) = heap.get_dual(id);
-            Ok(heap.dual_value(-value, -derivative))
-        }
         Value::Vec2(id) => {
             let (x, y) = heap.get_vec2(id);
             Ok(heap.vec2_value(-x, -y))

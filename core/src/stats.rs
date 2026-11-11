@@ -84,12 +84,11 @@ pub enum AllocKind {
     Cell,
     Vec3,
     Vec2,
-    Dual,
 }
 
 impl AllocKind {
     /// Number of distinct kinds — the width of the [`AllocStats`] backing array.
-    pub const COUNT: usize = 9;
+    pub const COUNT: usize = 8;
 
     /// Every kind, in display order. Indexes line up with [`AllocKind::index`].
     pub const ALL: [AllocKind; Self::COUNT] = [
@@ -101,7 +100,6 @@ impl AllocKind {
         AllocKind::Cell,
         AllocKind::Vec3,
         AllocKind::Vec2,
-        AllocKind::Dual,
     ];
 
     const fn index(self) -> usize {
@@ -114,7 +112,6 @@ impl AllocKind {
             AllocKind::Cell => 5,
             AllocKind::Vec3 => 6,
             AllocKind::Vec2 => 7,
-            AllocKind::Dual => 8,
         }
     }
 
@@ -128,7 +125,6 @@ impl AllocKind {
             AllocKind::Cell => "cell",
             AllocKind::Vec3 => "vec3",
             AllocKind::Vec2 => "vec2",
-            AllocKind::Dual => "dual",
         }
     }
 }

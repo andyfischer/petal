@@ -157,21 +157,6 @@ it generally works pretty well, and often has less cognitive load than tradition
 
 Here are some examples:
 
-#### Differentiable programming
-
-Differentiable programming means treating the program as a directed graph, computing the
-derivative at each element, and then using gradient descent to
-make changes to the program. With this approach, you can specify a "goal" (the value that
-you want your program to output), and then solve how to modify the source code in order
-to reach that goal. This is similar to the backpropagation algorithm used in neural networks.
-
-##### References and research
-
- - [JAX](https://github.com/jax-ml/jax)
- - [PyTorch](https://pytorch.org/)
- - Swift for TensorFlow
- - Baydin, Pearlmutter, Radul and Siskind, [*Automatic Differentiation in Machine Learning: a Survey*](https://arxiv.org/abs/1502.05767) (JMLR 2018)
-
 #### Programming by direct manipulation
 
 In this feature, the author interacts with the running program, often by clicking and dragging
@@ -182,9 +167,8 @@ For example, dragging a circle on the canvas rewrites the numbers passed to the
 Only literal values change; the rest of the file keeps its formatting
 and comments.
 
-This overlaps with differentiable programming since one way to implement this is to run
-a backpropagation pass every time the user does a mouse drag movement. But the *Declarative Dragging*
-paper also showed that you don't need differentiation to implement this.
+The *Declarative Dragging* paper showed that this needs no differentiation
+built into the language: re-running the code and watching what moves is enough.
 
 ##### References and research
 
@@ -192,6 +176,31 @@ paper also showed that you don't need differentiation to implement this.
  - Horowitz, Blinn and Heer, *Declarative Dragging* (UIST '26)
  - Chugh, Hempel, Spradlin and Albers, [*Programmatic and Direct Manipulation, Together at Last*](https://arxiv.org/abs/1507.02988) (PLDI 2016), the Sketch-n-Sketch paper
  - Shneiderman, *Direct Manipulation: A Step Beyond Programming Languages* (IEEE Computer, 1983)
+
+#### How goals get solved
+
+Petal works a goal back to the source with three tools:
+
+ - **Algebraic inversion.** When the value runs through a chain of `+ - * /`, the
+   literal that makes it hit the goal can be solved for exactly, with no iteration.
+ - **Measured sensitivities and Gauss-Newton steps.** In general, Petal re-runs the
+   code with each candidate literal nudged, measures how the output moved (finite
+   differences), and takes damped Gauss-Newton steps toward the goal, re-running to
+   verify each one. Each measurement also says how far to trust it: smooth, a kink,
+   a branch that flipped, a step. Scripts get the same machinery through the
+   `autodiff` package (`deriv`, `jacobian`, `solve_step`, `solve`).
+ - **Speculative search.** Every probe runs speculatively: its `state` writes and
+   drawing are put back afterwards, so a whole view or simulation step can be tried
+   as a candidate without disturbing the running program.
+
+Exact derivatives are planned to come back as a symbolic analysis of the program's
+term graph, with differences as the fallback for what it can't differentiate.
+
+##### References and research
+
+ - Spreadsheet goal seek and `scipy.optimize`, which default to finite differences
+ - Nocedal and Wright, *Numerical Optimization* (Springer, 2006), for Gauss-Newton and damping
+ - Baydin, Pearlmutter, Radul and Siskind, [*Automatic Differentiation in Machine Learning: a Survey*](https://arxiv.org/abs/1502.05767) (JMLR 2018), for the symbolic route
 
 ### Provenance
 

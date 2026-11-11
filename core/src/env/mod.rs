@@ -1900,8 +1900,18 @@ impl Env {
     /// most usefully — back to the code that produced them, and reads the result
     /// with [`take_output_origins`](Self::take_output_origins). Off by default,
     /// so a production run never pays for it.
+    ///
+    /// Turning it on drops the memo records of every stack in the default
+    /// context: a record made while tracing was off kept no origins, and a
+    /// replay of it would hand back emits attributed to nothing. The next run
+    /// re-runs those calls and records them with their origins.
     pub fn enable_emit_trace(&mut self, on: bool) {
         let ck = self.default_context;
+        if on && !self.ctx(ck).trace_emit {
+            for stack in self.stacks.values_mut().filter(|s| s.context == ck) {
+                stack.memo.clear();
+            }
+        }
         self.ctx_mut(ck).enable_emit_trace(on);
     }
 

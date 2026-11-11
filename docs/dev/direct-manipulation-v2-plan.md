@@ -1697,6 +1697,7 @@ with a golden test.
 | v2 the default | done, 2026-10-24 | (this commit) | `petal propose-edit` uses v2 unless `--v1` (`cli/args.rs`); MCP `ProposeEdit` defaults to v2 (the argv carries no engine flag); hint names `tunable`/`rigid` accepted; tests `core/tests/cli_propose_edit_v2.rs`, `test/vitest/petal-mcp.test.ts` updated; see "v2 the default" below |
 | Garden drag mode (M4c) | done, 2026-10-24 | `58144b0d`, `43eea4ff`, `35c7ef95`, `8c9c32cb` (+ this commit) | Petal IDE drag mode (`:DragMode`, toolbar Drag, Cmd+Shift+D): modifier-free drags, the drag result panel (alternatives, candidates with state, session chips), `tunable`/`rigid` toggled by mouse as source rewrites (`garden-app/src/dm_hints.rs`), Garden `:DragEngine auto` = v2 for every shape; examples `garden/examples/panels/dm-v2/` (7); tests `dm_hints` (12), 5 `garden-app` tests, `the_drag_mode_examples_solve`, `garden/tools/dm-mode-integration-test.ts` (36 checks); see "Garden drag mode" below |
 | One knob tier | done, 2026-10-24 | (this commit) | `config let` and `tunable` share one weight, 0.5 (`rank::KNOB_WEIGHT`, `Param::is_knob`); the `config` selector gains the alias `knob`; study re-run with 0.25 and 0.5 (same outcomes; 0.5 changes no run count); test `dm_solve::config_and_tunable_are_one_tier`; see "One knob tier" below |
+| Live drags + sticky choices | core + shared layer done, 2026-11-11 | (this commit) | `EditSession::preview_live`, live text not stale, `DmRequest::preferred` / `SessionOptions::prefer`, preview agrees with the release, web-canvas `edit_live` / `edit_choose`; see "Live drags and sticky choices" below |
 
 Deviations from this plan are recorded here as they happen, with the reason.
 
@@ -2620,6 +2621,78 @@ weighted channels are kept ahead of the goals' channels
 warning. The report echoes `collateral_weights` and each item's `weight`.
 Test `cli_propose_edit_v2::collateral_weights_change_the_top_alternative`
 (`plat_y` wins unweighted, `coin_h` at `solid=10` and at `coin=0.1`).
+
+**Live drags and sticky choices, 2026-11-11 (core and shared host
+layer).** A drag now applies its edit live: every move writes the predicted
+edit into the source and the host hot-reloads the running program with it,
+so the author sees the program's real result rather than predicted editor
+text plus a ghost until release. The release still verifies, rounds and
+ranks, and the alternatives still let the author re-apply the same gesture
+another way; the one picked is remembered as a soft preference for later
+drags.
+
+- *Anchored to the press.* The session stays on the press-time source
+  (`source0`) and its checkpoint. Each move is `preview` of `source0` plus the
+  total deltas, never of the last live text:
+  `EditSession::preview_live(&mut self, env, deltas) -> Result<LivePreview,
+  String>` (`LivePreview { text, rewrites }`) splices it into `source0` and
+  records `text` as the session's live text (`set_live_text` records text a
+  host wrote by other means; `live_text`, `owns_text`).
+- *Own text is not stale.* `EditSession::finish` accepts a running entry
+  text equal to `source0` or to the last live text; any other text is an
+  edit made elsewhere, `Stale` as before. When the host reloaded the
+  session's own program in place (`Env::reload_program`, which patches a
+  literal-only edit into the same `ProgramId`), finish first patches it back
+  to `source0` (`diff_program` + `apply_program_change` on a scratch stack:
+  literals only, never a recompile), because the verification runs re-run
+  the frame the drag started on. A live reload that recompiled (the slot
+  constants the session made at open are gone) is `Stale`. After finish the
+  program is at `source0`; the host writes the chosen alternative
+  (`DragAlternative::apply_to(source0)`) and reloads.
+- *Sticky choice.* `DmRequest::preferred: Vec<ParamSelector>` (empty by
+  default) is a soft preference: the columns it names that move an active
+  goal are solved as a subset of their own (`SubsetKind::Preferred`, always
+  verified, like config-only and client subsets), and `rank_alternatives`
+  puts a verified alternative that moves only preferred literals
+  (`Alternative::preferred`) ahead of the knob tier and the rest. Nothing is
+  filtered: when no preferred alternative verifies (or the preference names
+  nothing this drag can move) the ranking is exactly the old one. In the
+  shared layer the preference is `SessionOptions::prefer:
+  Vec<DragSelector>`, taken from the alternative the author picked
+  (`DragAlternative::preference()`, also the `selectors` field, and
+  `DragAlternative::preferred`). A literal is named the way a later drag can
+  find it *after* the pick is written: its binding, else (inline in the
+  sketch) the new selector `DragSelector::At { line, col }` (`at:L:C`,
+  1-based) at its start in the edited text, else its function. The host
+  keeps the preference for its session; it is never written into the
+  source.
+- *The preview agrees with the release.* `DmSession::preview` takes the
+  prediction the release would most likely rank first (`top_prediction`):
+  reaching the goals, then preferred, then knobs under `Prefer::Soft`, then
+  score, instead of the best score alone, which could show a non-knob edit
+  that the release then replaced with a knob. Best effort keeps its own
+  order. The predictions' own sort gains the preference after `ok`, so the
+  preferred subset is also what `choose_to_verify` sees first.
+- *Web canvas.* `petal-web-canvas` gains `edit_live(dx, dy)` (preview text
+  hot-reloaded in place, drag kept; `{ok, source, rewrites}`),
+  `run_checkpoint()` (the frame on screen re-run under the program as it is
+  now, on a fork, as a draw buffer), `edit_show(source)` (reload in place,
+  keeping the drag), `edit_choose(k)` (alternative `k` of the last release,
+  from `source0`, reloaded and remembered as the sticky choice),
+  `edit_preference()`, `edit_set_preference(json)`,
+  `edit_clear_preference()`; `edit_begin` passes the preference and echoes
+  it (`prefer`), and each alternative carries `preferred` and `prefer`.
+
+Tests: `dm_solve::a_preferred_literal_ranks_first_when_it_verifies`,
+`dm_solve::the_preview_is_what_the_release_ranks_first`; `petal-ui`
+`edit_mode::tests::{live_text_does_not_make_the_release_stale,
+an_external_edit_under_a_live_drag_is_still_stale,
+a_picked_alternative_is_preferred_on_the_next_drag,
+the_preview_agrees_with_the_releases_first_choice,
+an_inline_literal_is_named_where_the_edit_leaves_it}`; `petal-web-canvas`
+`a_live_drag_reloads_each_move_and_still_releases`,
+`an_edit_from_elsewhere_under_a_live_drag_is_stale`. Garden's drag mode,
+garden-web and the website's studio move onto this in their own phases.
 
 ---
 

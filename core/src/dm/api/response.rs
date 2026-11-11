@@ -147,6 +147,10 @@ pub struct Alternative {
     pub stateful: bool,
     /// Every change is a knob (`config let` or `tunable`, one tier).
     pub config_only: bool,
+    /// Every change is a literal the request's soft preference names
+    /// ([`DmRequest::preferred`](super::DmRequest::preferred)); always false
+    /// with no preference.
+    pub preferred: bool,
     /// The edit took another branch or re-initialized state somewhere.
     pub regime_changed: bool,
     /// Under sequential random draws the edited program draws differently.

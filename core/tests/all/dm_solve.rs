@@ -1059,3 +1059,51 @@ fn best_effort_goal_out_of_reach_is_an_error() {
         other => panic!("{other:?}"),
     }
 }
+
+// ── the sticky choice: a soft preference ─────────────────────────────────
+
+#[test]
+fn a_preferred_literal_ranks_first_when_it_verifies() {
+    let mut t = T::new(HELPER);
+    let goal = || vec![DmGoal::to(t.arg(1, 0), 95.0)];
+    let mut r = req(goal());
+    r.allow_respell = true;
+    let plain = t.propose(&r);
+    assert_eq!(edits(&plain.alternatives[0]), vec!["2.0→2.5"]);
+    assert!(plain.alternatives.iter().all(|a| !a.preferred));
+    // The author picked `20` (in `place`, line 2) last time: it comes first,
+    // the others are still listed, and the preview shows it too.
+    r.preferred = vec![ParamSelector::At { file: None, line: 2, column: 3 }];
+    let resp = t.propose(&r);
+    let all = all_edits(&resp);
+    assert_eq!(all[0], vec!["20→35"], "{all:?}");
+    assert!(resp.alternatives[0].preferred && resp.alternatives[0].verified);
+    assert!(all.contains(&vec!["2.0→2.5".to_string()]), "a preference filters nothing: {all:?}");
+    let session = DmSession::open(&mut t.env, &mut NoHost, t.sid, &r).unwrap();
+    let preview = session.preview(&[95.0]);
+    assert_eq!(preview.iter().map(|c| c.old_text.as_str()).collect::<Vec<_>>(), ["20"], "{preview:?}");
+    session.cancel(&mut t.env);
+    // A preference that cannot reach the goal falls back to the usual
+    // ranking: the `10` radius moves no x.
+    r.preferred = vec![ParamSelector::At { file: None, line: 4, column: 23 }];
+    let resp = t.propose(&r);
+    assert_eq!(all_edits(&resp), all_edits(&plain));
+}
+
+#[test]
+fn the_preview_is_what_the_release_ranks_first() {
+    for (src, emit, target) in [
+        (HELPER, 1, 95.0),
+        ("let offset = tunable(10)\ndraw(offset + 50, 100, 10)\n", 0, 75.0),
+        ("let gap = 30\nlet x0 = 20\ndraw(x0 + gap, 100, 10)\ndraw(x0 + 2 * gap, 100, 10)\n", 1, 120.0),
+    ] {
+        let mut t = T::new(src);
+        let mut r = req(vec![DmGoal::to(t.arg(emit, 0), target)]);
+        r.allow_respell = true;
+        let session = DmSession::open(&mut t.env, &mut NoHost, t.sid, &r).unwrap();
+        let preview: Vec<String> = session.preview(&[target]).iter().map(|c| c.old_text.clone()).collect();
+        let resp = session.finish(&mut t.env, &mut NoHost, &[target]).unwrap();
+        let top: Vec<String> = resp.alternatives[0].changes.iter().map(|c| c.old_text.clone()).collect();
+        assert_eq!(preview, top, "{src}: {:?}", all_edits(&resp));
+    }
+}

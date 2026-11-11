@@ -23,8 +23,8 @@ use petal_ui::draw::{
 };
 use petal_ui::draw_wire::DrawWire;
 use petal_ui::edit_mode::{
-    DragCandidate, DragFilter, DragOutcomeV2, DragProperty, EditSession, GoalTarget,
-    SessionOptions, SourceRewrite, describe_call, hit_test,
+    DragAlternative, DragCandidate, DragFilter, DragOutcomeV2, DragProperty, DragSelector,
+    EditSession, GoalTarget, SessionOptions, SourceRewrite, describe_call, hit_test,
 };
 use petal_ui::input::{
     InputEvent, InputState, bind_dimensions, bind_frame_info, bind_input, bind_time, buttons,
@@ -93,6 +93,15 @@ pub struct PetalRuntime {
     checkpoint: Option<StackKey>,
     /// The drag in progress, between `edit_begin` and `edit_finish`.
     edit: Option<EditSession>,
+    /// The last release's alternatives and the press-time source their
+    /// rewrites are spans in: what `edit_choose` re-applies.
+    last_alternatives: Vec<DragAlternative>,
+    last_source: Option<String>,
+    /// The sticky choice: the literals of the alternative the author last
+    /// picked (`edit_choose`), preferred by every later `edit_begin` until
+    /// another pick or `edit_clear_preference`. Lives as long as the
+    /// runtime; never written into the source.
+    prefer: Vec<DragSelector>,
 }
 
 #[wasm_bindgen]
@@ -167,6 +176,9 @@ impl PetalRuntime {
             checkpoint_on: false,
             checkpoint: None,
             edit: None,
+            last_alternatives: Vec::new(),
+            last_source: None,
+            prefer: Vec::new(),
         }
     }
 
@@ -684,11 +696,12 @@ impl PetalRuntime {
             Err(e) => return err_json(&format!("lines must be a JSON array of line numbers: {e}")),
         };
         let filter = DragFilter::allow_lines(lines.iter().map(|l| l - 1));
-        let opts = if filter.is_default() {
+        let mut opts = if filter.is_default() {
             SessionOptions::best_effort()
         } else {
             SessionOptions::default()
         };
+        opts.prefer = self.prefer.clone();
         let index = index as usize;
         if index >= self.frame_cmds.len() {
             return err_json("that item is not in the traced frame");
@@ -711,6 +724,7 @@ impl PetalRuntime {
                     "base": base,
                     "candidates": start.candidates.iter().map(candidate_json).collect::<Vec<_>>(),
                     "runs": start.runs,
+                    "prefer": self.prefer.iter().map(|s| s.label()).collect::<Vec<_>>(),
                 })
                 .to_string()
             }
@@ -729,11 +743,68 @@ impl PetalRuntime {
         serde_json::Value::Array(rewrites.iter().map(rewrite_json).collect()).to_string()
     }
 
-    /// Release the open drag at `dx`, `dy`: verify, round and rank. Returns
-    /// `{ok, policy, alternatives, candidates}`, each alternative with the
-    /// whole new sketch text (`source`) to put in the editor, or
+    /// Live apply: the sketch text the open drag would write if released
+    /// `dx`, `dy` pixels from the press (always computed from the press-time
+    /// source), hot-reloaded into the running program in place, keeping its
+    /// state and the drag. Returns `{ok, source, rewrites}`; draw the result
+    /// with `run_checkpoint` (the frame on screen re-run under the edited
+    /// program), and call this at most once per animation frame. A compile
+    /// error leaves the program and the drag as they were: `{ok: false,
+    /// error, source}`.
+    pub fn edit_live(&mut self, dx: f64, dy: f64) -> String {
+        let Some(session) = self.edit.as_mut() else {
+            return err_json("no drag is open");
+        };
+        let live = match session.preview_live(&self.env, &[dx, dy]) {
+            Ok(l) => l,
+            Err(e) => return err_json(&e),
+        };
+        let rewrites: Vec<serde_json::Value> = live.rewrites.iter().map(rewrite_json).collect();
+        match self.reload_in_place(&live.text) {
+            Ok(()) => serde_json::json!({ "ok": true, "source": live.text, "rewrites": rewrites }),
+            Err(e) => serde_json::json!({ "ok": false, "error": e, "source": live.text }),
+        }
+        .to_string()
+    }
+
+    /// Hot-reload `source` into the running program in place, keeping its
+    /// state and any open drag (whose live text it becomes): what the page
+    /// calls to show the alternative a release chose, or to put the
+    /// press-time source back after a cancelled live drag. Draw the result
+    /// with `run_checkpoint`, or by resuming the frame loop. `{ok}` or
+    /// `{ok: false, error}`.
+    pub fn edit_show(&mut self, source: &str) -> String {
+        match self.reload_in_place(source) {
+            Ok(()) => {
+                if let Some(session) = self.edit.as_mut() {
+                    session.set_live_text(source);
+                }
+                serde_json::json!({ "ok": true }).to_string()
+            }
+            Err(e) => err_json(&e),
+        }
+    }
+
+    /// Re-run the frame on screen (the edit checkpoint) under the program as
+    /// it is now, on a fork, and return its draw buffer as
+    /// `take_draw_buffer` does: the live view of a drag. The live state and
+    /// the checkpoint are untouched.
+    pub fn run_checkpoint(&mut self) -> Result<Vec<f64>, JsValue> {
+        let cmds = self.run_checkpoint_inner().map_err(|e| JsValue::from_str(&e))?;
+        Ok(self.encode(&cmds))
+    }
+
+    /// Release the open drag at `dx`, `dy`: verify, round and rank, against
+    /// the press-time source even when `edit_live` rewrote it under the
+    /// drag. Returns `{ok, policy, alternatives, candidates}`, each
+    /// alternative with the whole new sketch text (`source`) to put in the
+    /// editor and `preferred` (it is the sticky choice made again), or
     /// `{ok: false, error}` (nothing reaches the goal, or the program changed
-    /// under the drag).
+    /// under the drag by an edit not the drag's own).
+    ///
+    /// After a live drag the running program is back at the press-time
+    /// source: show the first alternative with `edit_show`, or another with
+    /// `edit_choose`.
     pub fn edit_finish(&mut self, dx: f64, dy: f64) -> String {
         let Some(session) = self.edit.take() else {
             return err_json("no drag is open");
@@ -744,7 +815,68 @@ impl PetalRuntime {
         };
         let source = session.source().to_string();
         let outcome = session.finish(&mut self.env, &mut NoHost, current, &[dx, dy]);
+        match &outcome {
+            DragOutcomeV2::Alternatives { alternatives, .. } => {
+                self.last_alternatives = alternatives.clone();
+                self.last_source = Some(source.clone());
+            }
+            _ => {
+                self.last_alternatives.clear();
+                self.last_source = None;
+            }
+        }
         outcome_json(outcome, Some(&source), None)
+    }
+
+    /// The author picks alternative `k` of the last release: the same
+    /// gesture applied that way, from the press-time source. It is
+    /// hot-reloaded in place (as `edit_show`) and remembered as the sticky
+    /// choice, so later drags prefer the same literals when that reaches
+    /// their goals. `{ok, source, prefer}` or `{ok: false, error}`.
+    pub fn edit_choose(&mut self, k: u32) -> String {
+        let (Some(alt), Some(source0)) = (self.last_alternatives.get(k as usize), self.last_source.as_ref()) else {
+            return err_json("no such alternative");
+        };
+        let text = match alt.apply_to(source0) {
+            Ok(t) => t,
+            Err(e) => return err_json(&e),
+        };
+        let prefer = alt.preference();
+        if let Err(e) = self.reload_in_place(&text) {
+            return err_json(&e);
+        }
+        if !prefer.is_empty() {
+            self.prefer = prefer;
+        }
+        serde_json::json!({
+            "ok": true,
+            "source": text,
+            "prefer": self.prefer.iter().map(|s| s.label()).collect::<Vec<_>>(),
+        })
+        .to_string()
+    }
+
+    /// The sticky choice, as selector labels (`gap`, `at:4:13`, `fn:place`).
+    pub fn edit_preference(&self) -> String {
+        serde_json::Value::Array(self.prefer.iter().map(|s| s.label().into()).collect()).to_string()
+    }
+
+    /// Set the sticky choice from a JSON array of selector labels (as
+    /// `edit_preference` gives them); `[]` clears it. Unparseable labels
+    /// are skipped.
+    pub fn edit_set_preference(&mut self, labels_json: &str) -> String {
+        match serde_json::from_str::<Vec<String>>(labels_json) {
+            Ok(labels) => {
+                self.prefer = labels.iter().filter_map(|l| DragSelector::parse(l)).collect();
+                self.edit_preference()
+            }
+            Err(e) => err_json(&format!("expected a JSON array of selectors: {e}")),
+        }
+    }
+
+    /// Forget the sticky choice.
+    pub fn edit_clear_preference(&mut self) {
+        self.prefer.clear();
     }
 
     /// Abandon the open drag, if any.
@@ -805,9 +937,34 @@ impl PetalRuntime {
         self.run_inner(stack_id)
     }
 
+    /// `reload_program` on the active stack: the program keeps its id, its
+    /// state and any open drag (a literal-only edit is patched in place).
+    fn reload_in_place(&mut self, source: &str) -> Result<(), String> {
+        let stack = self.active_stack.ok_or("no program is running")?;
+        self.env.reload_program(stack, source, None).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// `run_checkpoint`'s run: a reset fork of the checkpoint (else of the
+    /// active stack), run and drained. Inputs stay as the checkpoint bound
+    /// them: the frame on screen, not the pointer of the drag.
+    fn run_checkpoint_inner(&mut self) -> Result<Vec<DrawCommand>, String> {
+        let from = self.checkpoint.or(self.active_stack).ok_or("no program is running")?;
+        let fork = self.env.fork_execution(from)?;
+        let result = self
+            .env
+            .reset_stack(fork)
+            .and_then(|_| self.env.run(fork))
+            .map(|_| take_draw_commands_for(&mut self.env, fork));
+        self.env.drop_fork(fork);
+        result
+    }
+
     /// Forget the drag, the checkpoint and the traced frame: a new program
-    /// replaced the one they describe.
+    /// replaced the one they describe. The sticky choice is kept.
     fn drop_edit_state(&mut self) {
+        self.last_alternatives.clear();
+        self.last_source = None;
         self.edit_cancel();
         if let Some(ck) = self.checkpoint.take() {
             self.env.drop_fork(ck);
@@ -860,6 +1017,8 @@ fn outcome_json(outcome: DragOutcomeV2, source: Option<&str>, filter: Option<&Dr
                         "verified": a.verified,
                         "moves_others": a.moves_others,
                         "config_only": a.config_only,
+                        "preferred": a.preferred,
+                        "prefer": a.preference().iter().map(|s| s.label()).collect::<Vec<_>>(),
                         "score": a.score,
                         "sketch_only": a.sketch_only(),
                         "rewrites": a.rewrites.iter().map(rewrite_json).collect::<Vec<_>>(),
@@ -1004,5 +1163,54 @@ mod tests {
         rt.load_program_inner(SKETCH).unwrap();
         assert_eq!(json(&rt.edit_finish(10.0, 0.0))["ok"], false);
         assert_eq!(json(&rt.edit_pick(100, 80))["ok"], false, "the traced frame is gone too");
+    }
+
+    #[test]
+    fn a_live_drag_reloads_each_move_and_still_releases() {
+        let src = "import ui\nlet x = 100\nlet off = 0\ndraw_circle(x + off, 80, 20, 200, 100, 50)\n";
+        let mut rt = edit_runtime(src);
+        let index = pick_index(&rt, 100, 80);
+        assert_eq!(json(&rt.edit_begin(index, "[2, 3]"))["ok"], true);
+        for dx in [4.0, 15.0, 30.0] {
+            let live = json(&rt.edit_live(dx, 0.0));
+            assert_eq!(live["ok"], true, "{live}");
+            assert_ne!(live["source"], src);
+            // The frame on screen, re-run under the edited program.
+            let cmds = rt.run_checkpoint_inner().unwrap();
+            match &cmds[0] {
+                DrawCommand::Circle { cx, .. } => assert_eq!(*cx, 100 + dx as i32, "{cmds:?}"),
+                c => panic!("{c:?}"),
+            }
+        }
+        let out = json(&rt.edit_finish(30.0, 0.0));
+        assert_eq!(out["ok"], true, "the drag's own live text is not stale: {out}");
+        let alts = out["alternatives"].as_array().unwrap();
+        assert!(alts.len() >= 2, "{out}");
+        assert_eq!(json(&rt.edit_show(alts[0]["source"].as_str().unwrap()))["ok"], true);
+
+        // Re-apply the gesture the other way, and it sticks.
+        let other = alts[1]["source"].as_str().unwrap().to_string();
+        let chose = json(&rt.edit_choose(1));
+        assert_eq!(chose["source"], other.as_str(), "{chose}");
+        let prefer = chose["prefer"].clone();
+        assert_eq!(json(&rt.edit_preference()), prefer);
+        let index = pick_index(&rt, 100, 80);
+        let begun = json(&rt.edit_begin(index, "[2, 3]"));
+        assert_eq!(begun["prefer"], prefer, "{begun}");
+        let out = json(&rt.edit_finish(-10.0, 0.0));
+        assert_eq!(out["alternatives"][0]["preferred"], true, "{out}");
+        assert_eq!(out["alternatives"][0]["prefer"], prefer, "{out}");
+        rt.edit_clear_preference();
+        assert_eq!(rt.edit_preference(), "[]");
+    }
+
+    #[test]
+    fn an_edit_from_elsewhere_under_a_live_drag_is_stale() {
+        let mut rt = edit_runtime(SKETCH);
+        let index = pick_index(&rt, 100, 80);
+        assert_eq!(json(&rt.edit_begin(index, "[2]"))["ok"], true);
+        assert_eq!(json(&rt.edit_live(10.0, 0.0))["ok"], true);
+        rt.reload_in_place(&SKETCH.replace("let y = 80", "let y = 90")).unwrap();
+        assert_eq!(json(&rt.edit_finish(10.0, 0.0))["ok"], false);
     }
 }

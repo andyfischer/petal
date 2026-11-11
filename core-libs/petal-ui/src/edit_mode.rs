@@ -23,13 +23,22 @@
 //!    in a speculative baseline, and a [`DmSession`] opens on it: discovery,
 //!    screening and the Jacobian, the only expensive step.
 //! 3. **Every move** ([`EditSession::preview`]): one linear solve against the
-//!    cached Jacobian, no runs.
+//!    cached Jacobian, no runs. A live host calls
+//!    [`EditSession::preview_live`] instead, which splices that answer into
+//!    the press-time source and records it, and hot-reloads the running
+//!    program with the text (keeping state and the session): the release
+//!    accepts the session's own live text and is `Stale` only after an edit
+//!    made elsewhere.
 //! 4. **Release** ([`EditSession::finish`]): verify, round and rank, with a
 //!    fresh budget. The outcome is a list of alternatives (one under best
 //!    effort) or a refusal with its reason.
 //! 5. **Apply** ([`apply_rewrites_to`], [`DragAlternative::apply_to`]): the
 //!    chosen alternative's rewrites spliced into the source text. The host
 //!    writes the text (a buffer, a file) and its hot reload follows.
+//! 6. **Sticky choice** ([`DragAlternative::preference`],
+//!    [`SessionOptions::prefer`]): the alternative the author picks names its
+//!    literals; the host passes them to the next drag, whose preview and
+//!    ranking then favor the same literals when that reaches the goals.
 //!
 //! Everything the engine reports is converted to the plain types here, so a
 //! host's UI layer needs no `petal::dm` vocabulary.
@@ -43,7 +52,7 @@ use petal::dm::{
 };
 use petal::env::Env;
 use petal::execution_context::EmitSite;
-use petal::program::{Program, ProgramId};
+use petal::program::{Program, ProgramId, TermOp};
 use petal::provenance::{self, CallSite};
 use petal::source_map::{ENTRY_FILE, FileId, SourceSpan};
 use petal::stack::StackKey;
@@ -164,12 +173,7 @@ impl DragFilter {
 
     /// The filter in the engine's terms.
     pub fn to_param_filter(&self) -> ParamFilter {
-        let sel = |s: &DragSelector| match s {
-            DragSelector::Variable(v) => ParamSelector::Variable(v.clone()),
-            DragSelector::Line(l) => ParamSelector::Line(*l as u32 + 1),
-            DragSelector::Function(f) => ParamSelector::Function(f.clone()),
-            DragSelector::ConfigOnly => ParamSelector::ConfigOnly,
-        };
+        let sel = DragSelector::to_param_selector;
         ParamFilter {
             allow: (!self.allow.is_empty()).then(|| self.allow.iter().map(sel).collect()),
             deny: self.deny.iter().map(sel).collect(),
@@ -188,12 +192,17 @@ pub enum DragSelector {
     Function(String),
     /// `config let` and `tunable(...)` literals.
     ConfigOnly,
+    /// The literal written at this 0-based line and column (anywhere inside
+    /// its text) of the sketch's own file: one inline literal, where
+    /// [`Line`](Self::Line) names every literal on its line.
+    At { line: usize, col: usize },
 }
 
 impl DragSelector {
     /// Parse the selector syntax: `name`, `line:N` (1-based, as a gutter
-    /// shows it), `fn:NAME`, or `config` (alias `knob`: every `config let`
-    /// and `tunable` number, one tier).
+    /// shows it), `fn:NAME`, `at:LINE:COL` (1-based: the one literal written
+    /// there), or `config` (alias `knob`: every `config let` and `tunable`
+    /// number, one tier).
     pub fn parse(s: &str) -> Option<DragSelector> {
         let s = s.trim();
         if s.is_empty() {
@@ -210,6 +219,11 @@ impl DragSelector {
             let f = f.trim();
             return (!f.is_empty()).then(|| DragSelector::Function(f.to_string()));
         }
+        if let Some(at) = s.strip_prefix("at:") {
+            let (l, c) = at.split_once(':')?;
+            let (l, c): (usize, usize) = (l.trim().parse().ok()?, c.trim().parse().ok()?);
+            return (l >= 1 && c >= 1).then(|| DragSelector::At { line: l - 1, col: c - 1 });
+        }
         s.chars()
             .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
             .then(|| DragSelector::Variable(s.to_string()))
@@ -222,6 +236,20 @@ impl DragSelector {
             DragSelector::Line(l) => format!("line:{}", l + 1),
             DragSelector::Function(f) => format!("fn:{f}"),
             DragSelector::ConfigOnly => "config".to_string(),
+            DragSelector::At { line, col } => format!("at:{}:{}", line + 1, col + 1),
+        }
+    }
+
+    /// The selector in the engine's terms.
+    pub fn to_param_selector(&self) -> ParamSelector {
+        match self {
+            DragSelector::Variable(v) => ParamSelector::Variable(v.clone()),
+            DragSelector::Line(l) => ParamSelector::Line(*l as u32 + 1),
+            DragSelector::Function(f) => ParamSelector::Function(f.clone()),
+            DragSelector::ConfigOnly => ParamSelector::ConfigOnly,
+            DragSelector::At { line, col } => {
+                ParamSelector::At { file: None, line: *line as u32 + 1, column: *col as u32 + 1 }
+            }
         }
     }
 }
@@ -277,10 +305,20 @@ pub struct DragAlternative {
     pub stateful: bool,
     /// Every edited literal is a `config let` or `tunable`.
     pub config_only: bool,
+    /// Every edited literal is one the session's sticky preference names
+    /// ([`SessionOptions::prefer`]): this alternative is the author's
+    /// earlier choice made again.
+    pub preferred: bool,
     /// Lower is better.
     pub score: f64,
     /// "set `gap` to 14 (line 3); moves 4 other shapes".
     pub description: String,
+    /// The literals this alternative edits, named so that a later drag can
+    /// find them again *after this alternative is written*: the binding's
+    /// name, else (in the sketch) the literal's position in the edited text,
+    /// else the function it is written in. What
+    /// [`preference`](Self::preference) returns.
+    pub selectors: Vec<DragSelector>,
 }
 
 impl DragAlternative {
@@ -294,6 +332,14 @@ impl DragAlternative {
     /// imported file), so [`apply_to`](Self::apply_to) is the whole edit.
     pub fn sketch_only(&self) -> bool {
         self.rewrites.iter().all(|r| r.file.is_none())
+    }
+
+    /// The sticky choice this alternative makes when the author picks it:
+    /// pass it as [`SessionOptions::prefer`] to the next drag, so that drag
+    /// moves the same literals when that verifies (a soft preference,
+    /// never a filter). Empty when nothing it edits can be named.
+    pub fn preference(&self) -> Vec<DragSelector> {
+        self.selectors.clone()
     }
 }
 
@@ -460,6 +506,12 @@ pub struct SessionOptions {
     /// [`Policy::Ranked`] for a host that shows the alternatives;
     /// [`Policy::BestEffort`] for one that applies the single answer.
     pub policy: Policy,
+    /// The sticky choice: literals the author picked on an earlier drag
+    /// ([`DragAlternative::preference`]). A soft preference: the preview
+    /// and the ranking favor an edit of only these literals when it reaches
+    /// the goals, and fall back to the usual ranking when none does. Empty:
+    /// no preference.
+    pub prefer: Vec<DragSelector>,
 }
 
 impl Default for SessionOptions {
@@ -472,6 +524,7 @@ impl Default for SessionOptions {
             run_wall: RUN_WALL,
             alternatives: DRAG_ALTERNATIVES,
             policy: Policy::Ranked,
+            prefer: Vec::new(),
         }
     }
 }
@@ -503,9 +556,17 @@ pub struct EditSession {
     /// Each goal's baseline value.
     base: Vec<f64>,
     property: DragProperty,
-    /// The entry file's text when the session opened: a release against any
-    /// other text is stale.
+    /// The entry file's text when the session opened (`source0`): a release
+    /// against any text but this one or [`live`](Self::live) is stale.
     source: String,
+    /// The text the drag last wrote live ([`preview_live`](Self::preview_live),
+    /// [`set_live_text`](Self::set_live_text)): the session's own edit, which
+    /// the host reloads under the drag and which is therefore not stale.
+    live: Option<String>,
+    /// The literals' slot constants when the session opened: a live reload
+    /// that recompiled the program (rather than patching its literals)
+    /// leaves them behind, and the session no longer describes it.
+    slots: Vec<(petal::program::TermId, petal::constant_table::ConstantId)>,
     candidates: Vec<DragCandidate>,
     finish_runs: usize,
     finish_wall: Duration,
@@ -585,13 +646,15 @@ impl EditSession {
             max_iters: if target.property == DragProperty::Color { COLOR_ITERS } else { DRAG_ITERS },
             spec: spec_cfg,
             policy: opts.policy,
+            preferred: opts.prefer.iter().map(DragSelector::to_param_selector).collect(),
             ..DmRequest::default()
         };
         let source = entry_source(env, pid).unwrap_or_default();
         let session = DmSession::open(env, host, checkpoint, &request).map_err(|e| refused(e.to_string()))?;
-        let candidates = {
+        let (candidates, slots) = {
             let program = env.get_program(pid).ok_or(DragOutcomeV2::Stale)?;
-            session.candidates().iter().map(|c| candidate(program, c, &axis)).collect()
+            let candidates = session.candidates().iter().map(|c| candidate(program, c, &axis)).collect();
+            (candidates, slot_constants(program, session.candidates()))
         };
         Ok(EditSession {
             session,
@@ -601,6 +664,8 @@ impl EditSession {
             base,
             property: target.property,
             source,
+            live: None,
+            slots,
             candidates,
             finish_runs: opts.finish_runs,
             finish_wall: opts.finish_wall,
@@ -669,9 +734,53 @@ impl EditSession {
             .collect()
     }
 
-    /// Release at `deltas`: verify, round and rank, with a fresh budget.
-    /// `current` is the program running now: a release under any other
-    /// sketch text than the one the session opened on is `Stale`.
+    /// Live apply: the sketch text the drag would write if released at
+    /// `deltas` ([`preview`](Self::preview) spliced into the source the drag
+    /// started from), recorded as the session's live text so that a host
+    /// may reload the running program with it under the drag (keeping its
+    /// state) without the release turning `Stale`. Each move is computed
+    /// from the press-time source and the total deltas, never from the last
+    /// live text. With nothing predicted to move, the press-time source.
+    pub fn preview_live(&mut self, env: &Env, deltas: &[f64]) -> Result<LivePreview, String> {
+        let rewrites = self.preview(env, deltas);
+        let text = apply_rewrites_to(&self.source, &rewrites)?;
+        self.live = Some(text.clone());
+        Ok(LivePreview { text, rewrites })
+    }
+
+    /// Record `text` as the session's live text: a host that writes the
+    /// drag's edit under it by its own means (an alternative re-applied
+    /// mid-gesture) says so here, so the release accepts it.
+    pub fn set_live_text(&mut self, text: impl Into<String>) {
+        self.live = Some(text.into());
+    }
+
+    /// The text the drag last wrote live, if any.
+    pub fn live_text(&self) -> Option<&str> {
+        self.live.as_deref()
+    }
+
+    /// Whether `text` is the session's own: the press-time source or the
+    /// last live text. Anything else is an edit made elsewhere under the
+    /// drag.
+    pub fn owns_text(&self, text: &str) -> bool {
+        text == self.source || self.live.as_deref() == Some(text)
+    }
+
+    /// Release at `deltas`: verify, round and rank, with a fresh budget,
+    /// against the source the drag started from (rewrites are spans in it).
+    /// `current` is the program running now: a release under any sketch
+    /// text but the press-time one or the session's last live text
+    /// ([`preview_live`](Self::preview_live)) is `Stale`.
+    ///
+    /// When the host reloaded the session's own program with the live text
+    /// (an in-place hot reload), the program is first patched back to the
+    /// press-time text, since the verification runs re-run the frame the
+    /// drag started on; the host writes the chosen alternative (applied to
+    /// [`source`](Self::source)) and reloads afterwards, as it would anyway.
+    /// A live reload that had to recompile the program (rather than patch
+    /// its literals) leaves the session describing a program that is gone:
+    /// `Stale`.
     pub fn finish(
         mut self,
         env: &mut Env,
@@ -679,7 +788,8 @@ impl EditSession {
         current: ProgramId,
         deltas: &[f64],
     ) -> DragOutcomeV2 {
-        if entry_source(env, current).as_deref() != Some(self.source.as_str()) {
+        let owned = entry_source(env, current).is_some_and(|t| self.owns_text(&t));
+        if !owned || !self.restore_press_source(env) {
             self.session.cancel(env);
             return DragOutcomeV2::Stale;
         }
@@ -714,11 +824,13 @@ impl EditSession {
                     })
                     .collect();
                 (!rewrites.is_empty()).then(|| DragAlternative {
+                    selectors: selectors_after(&alt.changes, &rewrites),
                     rewrites,
                     verified: alt.verified,
                     moves_others: alt.collateral.items.len(),
                     stateful: alt.stateful,
                     config_only: alt.config_only,
+                    preferred: alt.preferred,
                     score: alt.score,
                     description: alt.description.clone(),
                 })
@@ -739,10 +851,99 @@ impl EditSession {
         }
     }
 
-    /// Abandon the drag, dropping the session's forks.
+    /// Abandon the drag, dropping the session's forks. A host that wrote
+    /// live text writes [`source`](Self::source) back itself.
     pub fn cancel(self, env: &mut Env) {
         self.session.cancel(env);
     }
+
+    /// Put the session's program back at the press-time text when a live
+    /// reload changed it in place. `false` when that cannot be done by
+    /// patching literals, or the program was recompiled under the session.
+    fn restore_press_source(&self, env: &mut Env) -> bool {
+        let Some(now) = entry_source(env, self.program) else {
+            return false;
+        };
+        if now == self.source {
+            return self.slots_intact(env);
+        }
+        if self.live.as_deref() != Some(now.as_str()) || !self.slots_intact(env) {
+            return false;
+        }
+        let Ok(stack) = env.create_stack(self.program) else {
+            return false;
+        };
+        let change = env.diff_program(self.program, &self.source);
+        let ok = env.apply_program_change(stack, &change).is_ok();
+        env.drop_fork(stack);
+        ok && entry_source(env, self.program).as_deref() == Some(self.source.as_str())
+    }
+
+    /// Whether the literals the session slotted are still the slots they
+    /// were (a recompile rebuilds the constant table).
+    fn slots_intact(&self, env: &Env) -> bool {
+        let Some(program) = env.get_program(self.program) else {
+            return false;
+        };
+        self.slots.iter().all(|&(t, c)| {
+            matches!(program.terms.get(t.0 as usize).map(|t| &t.op), Some(TermOp::Constant(now)) if *now == c)
+        })
+    }
+}
+
+/// What [`EditSession::preview_live`] predicts: the whole sketch text to
+/// reload under the drag, and the rewrites it is made of (spans in the
+/// press-time source).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LivePreview {
+    pub text: String,
+    pub rewrites: Vec<SourceRewrite>,
+}
+
+/// The slot constants of the candidates' literals, as the open left them.
+fn slot_constants(
+    program: &Program,
+    candidates: &[CandidateReport],
+) -> Vec<(petal::program::TermId, petal::constant_table::ConstantId)> {
+    candidates
+        .iter()
+        .filter_map(|c| match program.terms.get(c.param.term.0 as usize).map(|t| &t.op) {
+            Some(TermOp::Constant(k)) if program.constants.is_slot(*k) => Some((c.param.term, *k)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Selectors naming the literals `changes` edit, as they will be found in
+/// the text once `rewrites` (the same edits, in the sketch's coordinates)
+/// are written: a binding by name; an inline literal of the sketch at its
+/// start in the edited text (a rewrite earlier on the same line shifts it);
+/// else the function it is written in.
+fn selectors_after(changes: &[ParamChange], rewrites: &[SourceRewrite]) -> Vec<DragSelector> {
+    let mut out: Vec<DragSelector> = Vec::new();
+    for c in changes {
+        let sel = if let Some(b) = &c.binding {
+            Some(DragSelector::Variable(b.rsplit("::").next().unwrap_or(b).to_string()))
+        } else if c.file == ENTRY_FILE
+            && let Some(span) = CodeSpan::from_petal(&c.span)
+        {
+            let shift: isize = rewrites
+                .iter()
+                .filter(|r| r.file.is_none() && r.span.start_line == span.start_line && r.span.end_line == span.start_line)
+                .filter(|r| r.span.end_col <= span.start_col)
+                .map(|r| r.new_text.chars().count() as isize - (r.span.end_col - r.span.start_col) as isize)
+                .sum();
+            Some(DragSelector::At { line: span.start_line, col: (span.start_col as isize + shift).max(0) as usize })
+        } else {
+            c.function.clone().map(DragSelector::Function)
+        };
+        if let Some(s) = sel
+            && !out.contains(&s)
+        {
+            out.push(s);
+        }
+    }
+    out
 }
 
 /// The text of `pid`'s entry file.
@@ -1196,5 +1397,164 @@ mod tests {
         assert_eq!(native_position_args("draw_text"), Some((vec![1], vec![2])));
         assert_eq!(native_position_args("draw_line"), Some((vec![0, 2], vec![1, 3])));
         assert_eq!(native_position_args("fill_poly"), None);
+    }
+
+    // ── Live drags and sticky choices ────────────────────────────────────
+
+    use petal::dm::NoHost;
+
+    /// Two literals move the circle horizontally: `x` and `off`.
+    const TWO_WAYS: &str = "import ui\nlet x = 100\nlet off = 0\ndraw_circle(x + off, 80, 20, 200, 100, 50)\n";
+
+    /// An env running `src` for one frame: `(env, program, stack)`. The
+    /// stack after the frame is the checkpoint (a still sketch).
+    fn running(src: &str) -> (Env, ProgramId, StackKey) {
+        let mut env = Env::new();
+        crate::input::register_input(&mut env);
+        crate::draw::register_draw(&mut env);
+        crate::draw::register_canvas(&mut env);
+        crate::register_prelude(&mut env);
+        crate::provide_interface(&mut env);
+        env.set_echo(false);
+        let pid = env.load_program(src).unwrap();
+        let stack = env.create_stack(pid).unwrap();
+        frame(&mut env, stack);
+        (env, pid, stack)
+    }
+
+    fn frame(env: &mut Env, stack: StackKey) {
+        crate::draw::clear_draw_commands(env);
+        env.reset_stack(stack).unwrap();
+        env.run(stack).unwrap();
+    }
+
+    fn circle() -> GoalTarget {
+        GoalTarget { property: DragProperty::Position, position: None, origin: None, occurrence: None, raw_index: 0 }
+    }
+
+    fn open(env: &mut Env, stack: StackKey, prefer: Vec<DragSelector>) -> EditSession {
+        let opts = SessionOptions { prefer, ..SessionOptions::default() };
+        EditSession::open(env, &mut NoHost, stack, &circle(), &DragFilter::default(), &opts)
+            .unwrap_or_else(|o| panic!("open: {o:?}"))
+    }
+
+    fn alternatives(o: DragOutcomeV2) -> Vec<DragAlternative> {
+        match o {
+            DragOutcomeV2::Alternatives { alternatives, .. } => alternatives,
+            o => panic!("expected alternatives: {o:?}"),
+        }
+    }
+
+    /// The variables an alternative (or a preview) edits, sorted.
+    fn vars(rewrites: &[SourceRewrite]) -> Vec<String> {
+        let mut v: Vec<String> = rewrites.iter().filter_map(|r| r.variable.clone()).collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn live_text_does_not_make_the_release_stale() {
+        let (mut env, pid, stack) = running(TWO_WAYS);
+        let mut s = open(&mut env, stack, Vec::new());
+        // Each move reloads the running program in place with the live text.
+        let mut last = String::new();
+        for dx in [5.0, 12.0, 25.0] {
+            let live = s.preview_live(&env, &[dx, 0.0]).unwrap();
+            assert_ne!(live.text, TWO_WAYS, "a move writes an edit");
+            assert!(!live.rewrites.is_empty());
+            env.reload_program(stack, &live.text, None).unwrap();
+            frame(&mut env, stack);
+            last = live.text;
+        }
+        assert_eq!(s.live_text(), Some(last.as_str()));
+        assert!(s.owns_text(TWO_WAYS) && s.owns_text(&last) && !s.owns_text("let x = 1\n"));
+        let source0 = s.source().to_string();
+        let alts = alternatives(s.finish(&mut env, &mut NoHost, pid, &[25.0, 0.0]));
+        assert!(alts[0].verified, "{alts:?}");
+        // Spans are in the press-time source, and the program was put back
+        // there for the verification.
+        let top = alts[0].apply_to(&source0).unwrap();
+        assert!(top.contains("let x = 125") || top.contains("let off = 25"), "{top}");
+        assert_eq!(entry_source(&env, pid).as_deref(), Some(TWO_WAYS));
+        // The host then writes the choice.
+        env.reload_program(stack, &top, None).unwrap();
+        frame(&mut env, stack);
+    }
+
+    #[test]
+    fn an_external_edit_under_a_live_drag_is_still_stale() {
+        let (mut env, pid, stack) = running(TWO_WAYS);
+        let mut s = open(&mut env, stack, Vec::new());
+        let live = s.preview_live(&env, &[10.0, 0.0]).unwrap();
+        env.reload_program(stack, &live.text, None).unwrap();
+        // Someone else edits the sketch.
+        let other = TWO_WAYS.replace("let off = 0", "let off = 3");
+        env.reload_program(stack, &other, None).unwrap();
+        assert_eq!(s.finish(&mut env, &mut NoHost, pid, &[10.0, 0.0]), DragOutcomeV2::Stale);
+    }
+
+    #[test]
+    fn a_picked_alternative_is_preferred_on_the_next_drag() {
+        let (mut env, pid, stack) = running(TWO_WAYS);
+        let s = open(&mut env, stack, Vec::new());
+        let first = alternatives(s.finish(&mut env, &mut NoHost, pid, &[25.0, 0.0]));
+        assert!(first.len() >= 2, "both literals are ways to do it: {first:?}");
+        assert!(first.iter().all(|a| !a.preferred), "no preference yet");
+        let top = vars(&first[0].rewrites);
+        // The author picks another verified alternative that moves one literal.
+        let pick = first
+            .iter()
+            .find(|a| a.verified && a.rewrites.len() == 1 && vars(&a.rewrites) != top)
+            .unwrap_or_else(|| panic!("a single-literal second choice: {first:?}"));
+        let prefer = pick.preference();
+        assert_eq!(prefer.len(), 1, "{prefer:?}");
+        let picked = vars(&pick.rewrites);
+        // Written, and the program reloaded with it.
+        let text = pick.apply_to(TWO_WAYS).unwrap();
+        env.reload_program(stack, &text, None).unwrap();
+        frame(&mut env, stack);
+        // The next drag of the same shape: the pick now ranks first.
+        let s = open(&mut env, stack, prefer.clone());
+        let preview = s.preview(&env, &[-10.0, 0.0]);
+        let next = alternatives(s.finish(&mut env, &mut NoHost, pid, &[-10.0, 0.0]));
+        assert!(next[0].preferred && next[0].verified, "{next:?}");
+        assert_eq!(vars(&next[0].rewrites), picked, "{next:?}");
+        assert_eq!(vars(&preview), picked, "the live preview prefers it too");
+        // A preference that names nothing this drag can move changes
+        // nothing.
+        let s = open(&mut env, stack, vec![DragSelector::Variable("nowhere".into())]);
+        let fallback = alternatives(s.finish(&mut env, &mut NoHost, pid, &[-10.0, 0.0]));
+        assert!(fallback[0].verified && !fallback[0].preferred, "{fallback:?}");
+        assert_eq!(vars(&fallback[0].rewrites), top, "the usual ranking: {fallback:?}");
+    }
+
+    #[test]
+    fn the_preview_agrees_with_the_releases_first_choice() {
+        for src in [
+            TWO_WAYS,
+            "import ui\nlet gap = 30\nfor i in range(0, 3) do\n  draw_circle(50 + i * gap, 80, 10, 200, 100, 50)\nend\n",
+            "import ui\nconfig let left = 40\ndraw_circle(left + 60, 80, 20, 200, 100, 50)\n",
+        ] {
+            let (mut env, pid, stack) = running(src);
+            let s = open(&mut env, stack, Vec::new());
+            let preview = s.preview(&env, &[20.0, 0.0]);
+            let alts = alternatives(s.finish(&mut env, &mut NoHost, pid, &[20.0, 0.0]));
+            let spans = |r: &[SourceRewrite]| {
+                let mut v: Vec<(usize, usize)> = r.iter().map(|r| (r.span.start_line, r.span.start_col)).collect();
+                v.sort();
+                v
+            };
+            assert_eq!(spans(&preview), spans(&alts[0].rewrites), "{src}: {preview:?} vs {alts:?}");
+        }
+    }
+
+    #[test]
+    fn an_inline_literal_is_named_where_the_edit_leaves_it() {
+        let (mut env, pid, stack) = running("import ui\ndraw_circle(100, 80, 20, 200, 100, 50)\n");
+        let s = open(&mut env, stack, Vec::new());
+        let alts = alternatives(s.finish(&mut env, &mut NoHost, pid, &[905.0, 0.0]));
+        assert_eq!(alts[0].preference(), vec![DragSelector::At { line: 1, col: 12 }], "{alts:?}");
+        assert_eq!(DragSelector::parse("at:2:13"), Some(DragSelector::At { line: 1, col: 12 }));
+        assert_eq!(DragSelector::At { line: 1, col: 12 }.label(), "at:2:13");
     }
 }

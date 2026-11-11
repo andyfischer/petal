@@ -163,6 +163,9 @@ pub struct DmSession {
     usable: Vec<bool>,
     weights: Vec<f64>,
     config: Vec<bool>,
+    /// Per Jacobian column: the request's soft preference names it
+    /// ([`DmRequest::preferred`]).
+    preferred: Vec<bool>,
     scales: Vec<f64>,
     base_rows: Vec<Option<f64>>,
     /// Per collateral row (Jacobian row `goal_rows + k`): its channel's
@@ -186,6 +189,10 @@ struct Prediction {
     goals: Vec<f64>,
     ok: bool,
     score: f64,
+    /// Every literal it moves is a knob.
+    config_only: bool,
+    /// Every literal it moves is one the request prefers.
+    preferred: bool,
 }
 
 fn empty_jacobian() -> Jacobian {
@@ -239,6 +246,7 @@ impl DmSession {
             usable: Vec::new(),
             weights: Vec::new(),
             config: Vec::new(),
+            preferred: Vec::new(),
             scales: Vec::new(),
             base_rows: Vec::new(),
             coll_weights: Vec::new(),
@@ -536,6 +544,14 @@ impl DmSession {
             .iter()
             .map(|&i| params[i].is_knob())
             .collect();
+        self.preferred = match env.get_program(pid) {
+            Some(program) if !req.preferred.is_empty() => jac
+                .params
+                .iter()
+                .map(|&i| req.preferred.iter().any(|s| s.matches(program, &params[i])))
+                .collect(),
+            _ => vec![false; ncols],
+        };
         self.weights = jac.params.iter().map(|&i| param_weight(&params[i], false)).collect();
         self.usable = (0..ncols).map(|c| elig[jac.params[c]].edit.is_ok() && jac.quality[c].usable()).collect();
         if strict && (0..ncols).any(|c| self.usable[c] && self.config[c]) {
@@ -822,8 +838,21 @@ impl DmSession {
         if self.req.policy == Policy::BestEffort {
             return self.best_effort_predictions(&goals, &active);
         }
-        let subsets =
+        let mut subsets =
             candidate_subsets(&self.jac, &self.weights, &self.scales, &self.usable, &self.config, client, &active);
+        // The soft preference (the author's sticky choice) is a subset of its
+        // own, so it is solved and verified even when it is not among the
+        // strongest columns.
+        let rows: Vec<usize> = if active.is_empty() { (0..gr).collect() } else { active.clone() };
+        let pref: Vec<usize> = (0..self.jac.params.len())
+            .filter(|&c| self.usable[c] && self.preferred[c] && rows.iter().any(|&g| self.jac.get(g, c) != 0.0))
+            .collect();
+        if !pref.is_empty() {
+            match subsets.iter_mut().find(|s| s.cols == pref) {
+                Some(s) => s.kind = SubsetKind::Preferred,
+                None => subsets.push(crate::dm::rank::Subset { cols: pref, kind: SubsetKind::Preferred }),
+            }
+        }
         let bounds = self.bounds();
         let r: Vec<f64> = goals.iter().zip(&self.base_rows[..gr]).map(|(g, v)| g.residual(*v)).collect();
         let value = |c: usize| self.params[self.jac.params[c]].value;
@@ -911,6 +940,7 @@ impl DmSession {
                     ..Default::default()
                 };
                 let parts = score(&changes, &facts, &ScoreWeights::default());
+                let (config_only, preferred) = self.prediction_tiers(&s.cols, &values);
                 Prediction {
                     cols: s.cols,
                     kind: s.kind,
@@ -918,10 +948,14 @@ impl DmSession {
                     goals: rows[..gr].iter().map(|v| v.unwrap_or(f64::NAN)).collect(),
                     ok: err <= 1.0,
                     score: parts.total(),
+                    config_only,
+                    preferred,
                 }
             })
             .collect();
-        out.sort_by(|a, b| b.ok.cmp(&a.ok).then(a.score.total_cmp(&b.score)));
+        // A prediction of the preferred literals that reaches the goals comes
+        // first, so it is verified and the preview shows it.
+        out.sort_by(|a, b| b.ok.cmp(&a.ok).then(b.preferred.cmp(&a.preferred)).then(a.score.total_cmp(&b.score)));
         // A pruned spread that came down to a tuple is that tuple, and a
         // tuple whose prediction leaves one of its literals where it is is
         // the smaller tuple (§9 M5, revision 3): `(cy, len)` with `len`
@@ -1033,6 +1067,7 @@ impl DmSession {
             .map(|(row, b)| b.map(|b| b + row.iter().zip(&moved).map(|(j, d)| j * d).sum::<f64>()))
             .collect();
         let err = max_error(goals, &rows);
+        let (config_only, preferred) = self.prediction_tiers(&cols, &values);
         Prediction {
             cols,
             kind: SubsetKind::BestEffort,
@@ -1040,7 +1075,40 @@ impl DmSession {
             goals: rows.iter().map(|v| v.unwrap_or(f64::NAN)).collect(),
             ok: err <= 1.0,
             score: 0.0,
+            config_only,
+            preferred,
         }
+    }
+
+    /// Whether the literals `values` moves (of `cols`) are all knobs, and
+    /// all preferred ([`DmRequest::preferred`]). Nothing moved: neither.
+    fn prediction_tiers(&self, cols: &[usize], values: &[f64]) -> (bool, bool) {
+        let moved: Vec<usize> = cols
+            .iter()
+            .zip(values)
+            .filter(|&(&c, &v)| v != self.params[self.jac.params[c]].value)
+            .map(|(&c, _)| c)
+            .collect();
+        if moved.is_empty() {
+            return (false, false);
+        }
+        (moved.iter().all(|&c| self.config[c]), moved.iter().all(|&c| self.preferred[c]))
+    }
+
+    /// The prediction a release would most likely rank first, by the order
+    /// [`rank_alternatives`] uses: reaching the goals, then the preferred
+    /// literals, then knobs (under [`Prefer::Soft`]), then the score.
+    /// Best effort keeps its own order (its first set is its answer).
+    fn top_prediction(&self, targets: &[f64]) -> Option<Prediction> {
+        let preds = self.predictions(targets);
+        if self.req.policy == Policy::BestEffort {
+            return preds.into_iter().next();
+        }
+        let soft = self.req.prefer == Prefer::Soft;
+        preds.into_iter().min_by(|a, b| {
+            let key = |p: &Prediction| (!p.ok, rank_tier(p.preferred, soft && p.config_only));
+            key(a).cmp(&key(b)).then(a.score.total_cmp(&b.score))
+        })
     }
 
     /// The best subset's linear answer at `targets`, with no runs: what a
@@ -1049,7 +1117,7 @@ impl DmSession {
         if self.v1.is_some() || targets.len() != self.req.goals.len() {
             return Vec::new();
         }
-        let Some(best) = self.predictions(targets).into_iter().next() else { return Vec::new() };
+        let Some(best) = self.top_prediction(targets) else { return Vec::new() };
         best.cols
             .iter()
             .zip(&best.values)
@@ -1089,7 +1157,7 @@ impl DmSession {
         let mut rest: Vec<Prediction> = Vec::new();
         for p in preds {
             match p.kind {
-                SubsetKind::ConfigOnly | SubsetKind::Client => chosen.push(p),
+                SubsetKind::ConfigOnly | SubsetKind::Client | SubsetKind::Preferred => chosen.push(p),
                 _ if n_free < free => {
                     n_free += 1;
                     chosen.push(p);
@@ -1364,6 +1432,8 @@ impl DmSession {
                     .collect();
                 let stateful = rendered.iter().any(|(i, ..)| self.params[*i].through_state);
                 let config_only = changes.iter().all(|c| c.config);
+                let preferred = !rendered.is_empty()
+                    && rendered.iter().all(|(i, ..)| self.jac.col_of(*i).is_some_and(|c| self.preferred[c]));
                 let ranges: Vec<RangeNote> = self
                     .req
                     .goals
@@ -1401,6 +1471,7 @@ impl DmSession {
                     collateral,
                     stateful,
                     config_only,
+                    preferred,
                     regime_changed,
                     rng_order_changed,
                     rng_difference,
@@ -1479,17 +1550,17 @@ fn rank_alternatives(alternatives: &mut Vec<Alternative>, prefer: Prefer, max_al
             a.score = a.score_parts.total();
         }
     }
-    // Rank (§2.5.4): verified first; under the soft config preference,
-    // verified config-only alternatives first among those; then score.
+    // Rank (§2.5.4): verified first; among those, the ones that move only
+    // the literals the request prefers (the author's sticky choice), then,
+    // under the soft config preference, config-only ones; then score.
     let any_verified = alternatives.iter().any(|a| a.verified);
     let soft = prefer == Prefer::Soft;
     alternatives.sort_by(|a, b| {
         let tier = |x: &Alternative| -> u8 {
-            match (x.verified, soft && x.config_only) {
-                (true, true) => 0,
-                (true, false) => 1,
-                (false, _) if any_verified => 3,
-                (false, _) => 2,
+            match x.verified {
+                true => rank_tier(x.preferred, soft && x.config_only),
+                false if any_verified => 4,
+                false => 3,
             }
         };
         tier(a).cmp(&tier(b)).then(a.score.total_cmp(&b.score))
@@ -1509,6 +1580,17 @@ fn rank_alternatives(alternatives: &mut Vec<Alternative>, prefer: Prefer, max_al
         true
     });
     alternatives.truncate(max_alternatives.max(1));
+}
+
+/// The tier of a verified alternative (or a prediction that reaches the
+/// goals) in the ranking, lower first: the preferred literals, then knobs
+/// (`knob` is already false under [`Prefer::ConfigStrict`]), then the rest.
+fn rank_tier(preferred: bool, knob: bool) -> u8 {
+    match (preferred, knob) {
+        (true, _) => 0,
+        (false, true) => 1,
+        (false, false) => 2,
+    }
 }
 
 /// The channels of the baseline a request weighs, with their weights

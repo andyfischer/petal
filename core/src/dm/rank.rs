@@ -269,6 +269,9 @@ pub enum SubsetKind {
     /// The best-effort policy's one subset: the cheapest tier that reaches
     /// the goals, split equally ([`crate::dm::Policy::BestEffort`]).
     BestEffort,
+    /// The literals the request's soft preference names
+    /// ([`crate::dm::DmRequest::preferred`]): the author's sticky choice.
+    Preferred,
 }
 
 /// A subset of Jacobian columns to solve for.

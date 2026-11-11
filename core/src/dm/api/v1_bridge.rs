@@ -92,6 +92,7 @@ pub(super) fn v1_fallback(env: &Env, spec: &SpecSession, req: &DmRequest) -> Res
             collateral: Collateral::default(),
             stateful: false,
             config_only: props.iter().all(|p| p.config),
+            preferred: false,
             regime_changed: false,
             rng_order_changed: false,
             rng_difference: None,

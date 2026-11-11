@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use crate::dm::jacobian::FdOptions;
 use crate::dm::observe::{LiveObservation, Observable};
-use crate::dm::params::ParamFilter;
+use crate::dm::params::{ParamFilter, ParamSelector};
 use crate::dm::spec::SpecConfig;
 use crate::static_value::StaticValue;
 
@@ -208,6 +208,16 @@ pub struct DmRequest {
     /// How the edit is chosen: ranked alternatives (the default), or
     /// [`Policy::BestEffort`]'s single answer.
     pub policy: Policy,
+    /// A soft preference for which literals move: the "sticky choice" of a
+    /// drag host, set from the alternative the author last picked
+    /// (docs/dev/direct-manipulation-v2-plan.md, "Live drags and sticky
+    /// choices"). Unlike [`filter`](Self::filter) it excludes nothing: the
+    /// set these selectors name is solved as a subset of its own
+    /// ([`SubsetKind::Preferred`](crate::dm::SubsetKind::Preferred)), and an
+    /// alternative (or a preview) that moves only literals they name ranks
+    /// first among those that verify. When no such alternative verifies, the
+    /// ranking is what it would be without it. Empty: no preference.
+    pub preferred: Vec<ParamSelector>,
 }
 
 impl Default for DmRequest {
@@ -228,6 +238,7 @@ impl Default for DmRequest {
             holds: Vec::new(),
             collateral_weights: Vec::new(),
             policy: Policy::Ranked,
+            preferred: Vec::new(),
         }
     }
 }

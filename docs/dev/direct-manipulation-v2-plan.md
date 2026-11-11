@@ -1697,7 +1697,7 @@ with a golden test.
 | v2 the default | done, 2026-10-24 | (this commit) | `petal propose-edit` uses v2 unless `--v1` (`cli/args.rs`); MCP `ProposeEdit` defaults to v2 (the argv carries no engine flag); hint names `tunable`/`rigid` accepted; tests `core/tests/cli_propose_edit_v2.rs`, `test/vitest/petal-mcp.test.ts` updated; see "v2 the default" below |
 | Garden drag mode (M4c) | done, 2026-10-24 | `58144b0d`, `43eea4ff`, `35c7ef95`, `8c9c32cb` (+ this commit) | Petal IDE drag mode (`:DragMode`, toolbar Drag, Cmd+Shift+D): modifier-free drags, the drag result panel (alternatives, candidates with state, session chips), `tunable`/`rigid` toggled by mouse as source rewrites (`garden-app/src/dm_hints.rs`), Garden `:DragEngine auto` = v2 for every shape; examples `garden/examples/panels/dm-v2/` (7); tests `dm_hints` (12), 5 `garden-app` tests, `the_drag_mode_examples_solve`, `garden/tools/dm-mode-integration-test.ts` (36 checks); see "Garden drag mode" below |
 | One knob tier | done, 2026-10-24 | (this commit) | `config let` and `tunable` share one weight, 0.5 (`rank::KNOB_WEIGHT`, `Param::is_knob`); the `config` selector gains the alias `knob`; study re-run with 0.25 and 0.5 (same outcomes; 0.5 changes no run count); test `dm_solve::config_and_tunable_are_one_tier`; see "One knob tier" below |
-| Live drags + sticky choices | core + shared layer done, 2026-11-11 | (this commit) | `EditSession::preview_live`, live text not stale, `DmRequest::preferred` / `SessionOptions::prefer`, preview agrees with the release, web-canvas `edit_live` / `edit_choose`; Garden (garden-script, garden-app, garden-web) done the same day; see "Live drags and sticky choices" below |
+| Live drags + sticky choices | done, 2026-11-11 | a6d34025, c1699e42, 3b6ec05c, 909971e0 | `EditSession::preview_live`, live text not stale, `DmRequest::preferred` / `SessionOptions::prefer`, preview agrees with the release, web-canvas `edit_live` / `edit_choose`; Garden (garden-script, garden-app, garden-web) and petal-lang.org done the same day; see "Live drags and sticky choices" below |
 
 Deviations from this plan are recorded here as they happen, with the reason.
 
@@ -2735,6 +2735,32 @@ an_external_edit_under_a_live_drag_is_stale, a_picked_alternative_is_sticky}`;
 `a_v2_drag_previews_while_held`) and
 `a_picked_alternative_is_preferred_by_the_next_drag`; `garden-web`
 `a_live_gesture_then_a_sticky_pick`.
+
+**Live drags and sticky choices on petal-lang.org, 2026-11-11.** DmStudio
+(`/manipulate`), DragSketch and GoalToSource apply each move live, coalesced
+to one `move_live` (garden-web) or `edit_live` + `run_checkpoint`
+(web-canvas) per animation frame; the ghost and the held frame loop are gone.
+The release shows the alternatives, marking the applied one and `your
+choice`; a pick (`pick(k)` / `edit_choose(k)`) is remembered, and a
+`prefers: … forget` row clears it. Arrow keys and the wheel stay one-shot
+gestures. `scripts/check-dm-samples.mjs` drives every gesture through three
+live moves, fails on a stale release, and checks that a pick is preferred,
+verified, by the same gesture started from the picked text.
+
+- *Reload fix found on the way.* A live move that carries a literal across
+  zero after `-` writes `x - (-6)`; the hot-reload diff
+  (`core/src/source_diff.rs`) used to read the new parentheses as a
+  structural change and recompile, which dropped the session's slot
+  constants and made the release `Stale`. A pair of parentheses around
+  exactly one changed literal, on one side only, is now a value change
+  (`source_diff::tests::a_literal_that_gains_or_loses_its_own_parentheses_is_a_value_change`,
+  `dm_drag::a_live_drag_across_zero_still_releases`).
+- *Known gap.* The live preview is the linear prediction; when no linear
+  pick verifies, the release can still jump. On `03-fractal-tree.ptl` with
+  `rigid(200)`, a sideways leaf drag previews `spread` alone and releases
+  `spread` + `shrink` + the root's `380` (the free y literal compensates the
+  leaf's vertical drift). The live and non-live releases are identical
+  there; the jump is the solver's, not the live path's.
 
 ---
 

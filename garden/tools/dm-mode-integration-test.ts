@@ -118,8 +118,8 @@ async function shot(g: DebugClient, name: string): Promise<void> {
   await shot(g, "01-mode-on-hover.png");
 
   await drag(g, last.x, last.y, 20, 0);
-  const gapLine = await lineOf(g, "config let gap");
-  checks.check("a plain drag rewrote the knob", (await g.bufferLines(EDITOR))[gapLine], "config let gap = 29");
+  const gapLine = await lineOf(g, "let gap");
+  checks.check("a plain drag rewrote the knob", (await g.bufferLines(EDITOR))[gapLine], "let gap = tunable(29)");
   d = await dm(g);
   checks.check("the result panel is open", d.panel_open, true);
   checks.checkGe("it lists the alternatives", d.overlay?.cells.filter((c) => c.action?.startsWith("pick:")).length ?? 0, 2);
@@ -134,16 +134,14 @@ async function shot(g: DebugClient, name: string): Promise<void> {
   checks.check("alternative 2 is clickable", await clickAction(g, "pick:2"), true);
   d = await dm(g);
   checks.check("the panel wrote alternative 2", d.last?.current, 1);
-  checks.check("the knob is back at its press-time value", (await g.bufferLines(EDITOR))[gapLine], "config let gap = 24");
+  checks.check("the knob is back at its press-time value", (await g.bufferLines(EDITOR))[gapLine], "let gap = tunable(24)");
   await clickAction(g, "pick:1");
-  checks.check("alternative 1 again", (await g.bufferLines(EDITOR))[gapLine], "config let gap = 29");
+  checks.check("alternative 1 again", (await g.bufferLines(EDITOR))[gapLine], "let gap = tunable(29)");
 
-  // Mark both row knobs rigid with the mouse: gap from its gutter square,
-  // x0 by clicking its underlined number.
+  // Mark both row knobs rigid with the mouse: gap (already tunable) from its
+  // gutter square, x0 by clicking its underlined number.
   await clickEditor(g, gapLine, null);
-  checks.check("a gutter click marks the line tunable", (await g.bufferLines(EDITOR))[gapLine], "config let gap = tunable(29)");
-  await clickEditor(g, gapLine, null);
-  checks.check("a second click marks it rigid", (await g.bufferLines(EDITOR))[gapLine], "config let gap = rigid(29)");
+  checks.check("a gutter click moves the tunable line on to rigid", (await g.bufferLines(EDITOR))[gapLine], "let gap = rigid(29)");
   const x0Line = await lineOf(g, "let x0");
   const x0Col = (await g.bufferLines(EDITOR))[x0Line].indexOf("40");
   await clickEditor(g, x0Line, x0Col, ["alt"]);
@@ -158,7 +156,7 @@ async function shot(g: DebugClient, name: string): Promise<void> {
   // The next drag's solver honours them: neither knob moves.
   await drag(g, last.x, last.y, 20, 0);
   const lines = await g.bufferLines(EDITOR);
-  checks.check("rigid gap stays", lines[gapLine], "config let gap = rigid(29)");
+  checks.check("rigid gap stays", lines[gapLine], "let gap = rigid(29)");
   checks.check("rigid x0 stays", lines[x0Line], "let x0 = rigid(40)");
   checks.check("card_w moved instead", lines[await lineOf(g, "let card_w")] !== "let card_w = 56", true);
   await shot(g, "04-redrag-respects-rigid.png");
@@ -211,10 +209,11 @@ async function shot(g: DebugClient, name: string): Promise<void> {
     checks.check("Alt-click twice marks the root rigid", (await g.bufferLines(EDITOR))[root], "branch(rigid(200), 380, pi() / 2, trunk, 5)");
     await drag(g, leaf.x, leaf.y, 15, 0);
     const lines = await g.bufferLines(EDITOR);
-    checks.check("the root stays", lines[root], "branch(rigid(200), 380, pi() / 2, trunk, 5)");
+    // The rigid `200` stays put; the free `380` may still take part.
+    checks.checkContains("the rigid root stays", lines[root], "branch(rigid(200), ");
     checks.check(
       "the tree's knobs open it instead",
-      lines[await lineOf(g, "config let spread")] !== "config let spread = 0.45" ||
+      lines[await lineOf(g, "let spread")] !== "let spread = tunable(0.45)" ||
         lines[await lineOf(g, "let shrink")] !== "let shrink = 0.7",
       true,
     );

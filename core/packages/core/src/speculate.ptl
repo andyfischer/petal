@@ -8,6 +8,8 @@
 // `{value, emits, places}`. `speculating()` is true inside one;
 // `speculate_place(key, value)` records `{key, value}` into its `places` and
 // returns `value` (outside one it only returns `value`).
+// `speculate_value(f, ...args)` is `speculate(f, ...args).value` without
+// building the record: for a caller that wants only the value.
 //
 // Native interface declarations: each `native fn` binds a name to the host
 // native of the same name and gives the checker its parameter names, arity
@@ -16,3 +18,4 @@
 pub native fn speculate(f: function, ...args) -> record
 pub native fn speculating() -> bool
 pub native fn speculate_place(key, value)
+pub native fn speculate_value(f: function, ...args)

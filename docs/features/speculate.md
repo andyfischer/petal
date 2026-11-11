@@ -62,6 +62,17 @@ print(r.emits[1].value)        // 10
 Nothing the call emitted reaches the host: the buffers hold only what the
 live program pushed before and after it.
 
+When only the value is wanted, `speculate_value(f, ...args)` is
+`speculate(f, ...args).value` without the record: the same call under the
+same rules, with the emits dropped from the buffers all the same. It is
+what `ui_measure` and derivative probes use, since a call of a pure function
+through it allocates nothing.
+
+```petal
+fn square(x) x * x end
+print(speculate_value(square, 3))   // 9
+```
+
 ## What is put back
 
 Everything the call changed that outlives it:
@@ -191,9 +202,13 @@ change under the live program is a container the optimizer edits in place.
 The heap stamps each object with the speculative call it was allocated in,
 and while a call runs an in-place edit of an older object copies it instead:
 the call edits its own lists in place, at full speed, and never the live
-program's. Natives go through the gate above, emits are cut off the end of
-each buffer, and the random stream, noise seed, counters and print buffer are
-saved and restored around the call.
+program's. Natives go through the gate above, and emits are cut off the end
+of each buffer. The random stream, noise seed, counters, print buffer and
+output buffers are logged the same way as slots: by their writers, the first
+time the call changes each one, and restored on return. A call that touches
+none of them saves and restores nothing, and one that emits nothing and
+places nothing gets the heap's one shared (immutable) empty list for both
+`emits` and `places`.
 
 Because nothing is copied up front, a call costs what the code it runs costs,
 plus its writes. `fork_execution` (time travel, direct manipulation) copies
@@ -201,18 +216,44 @@ the whole heap instead, 0.9-30 ms per run.
 
 ## Performance
 
-`test/benchmarks/micro/speculate.ptl`: a ten-card view that reads state,
-keeps a slot, writes a cell and records ten places, called 200 times plainly
-and 200 times through `speculate`. Release build, `petal
-bench --fn plain --fn spec`:
+Release build, `petal bench`, median ms per call. "Before" is the version
+that snapshotted everything on entry; "after" logs on first write
+(2026-11-10, [differentiation-rewrite.md](../tasks/differentiation-rewrite.md)
+Phase 0). Figures with the optimizer off are in parentheses.
 
-| | instructions/call | ms/call (median) | allocations/call |
+**A small pure function:** `test/benchmarks/micro/speculate_pure.ptl`,
+`(x - 3.0) * (x - 3.0) + sin(x)` called 500 times each way
+(`petal bench --fn plain --fn spec --fn specv`). This is what every
+derivative probe of an arithmetic helper pays.
+
+| | before | after | allocations/call (before → after) |
 |---|---|---|---|
-| `view(cards)` | 137 | 0.0017 | 10 |
-| `speculate(view, cards).value` | 138 | 0.0034 | 23 |
+| `f(x)` | 0.000167 (0.000208) | 0.000167 (0.000208) | 0 |
+| `speculate(f, x).value` | 0.000417 (0.000458) | 0.000292 (0.000292) | 3 → 1 |
+| `speculate_value(f, x)` | n/a | 0.000250 (0.000292) | 0 |
 
-About 1.7 µs per call on top of the view: entering and leaving (saving the
-random stream, the counters and each buffer's length), logging two writes,
-and building the result record with its ten places. The instruction count is
-the same: the overlay costs nothing per instruction, only per write. With the
-optimizer off the figures are 0.0018 and 0.0036 ms.
+The fixed cost of a speculative call fell from about 0.25 µs to 0.12 µs
+(`speculate`) and 0.08 µs (`speculate_value`), measured on the means
+(0.000186 ms plain, 0.000439 → 0.000300 ms speculated, 0.000265 ms through
+`speculate_value`). What is left is entering and leaving the overlay (the
+flags, the heap's speculation epoch, the closure call) and, for
+`speculate`, the one result record.
+
+**A ten-card view:** `test/benchmarks/micro/speculate.ptl`, a view that
+reads state, keeps a slot, writes a cell and records ten places, called 200
+times plainly and 200 times through `speculate`
+(`petal bench --fn plain --fn spec`):
+
+| | instructions/call | before | after | allocations/call (before → after) |
+|---|---|---|---|---|
+| `view(cards)` | 137 | 0.0018 (0.0019) | 0.0018 (0.0019) | 10 |
+| `speculate(view, cards).value` | 138 | 0.0035 (0.0037) | 0.0024 (0.0025) | 23 → 22 |
+
+About 0.55 µs per call on top of the view, down from 1.7 µs: logging two
+writes, and building the result record with its ten places. Most of the
+saving is in the records: the result, each place and each emit share one
+record shape per kind, built once, instead of building the shape key by key
+for every record. The rest is the lazy saves (no counters map cloned, no
+buffer lengths collected on entry) and the empty `emits` list, which is now
+the heap's shared one. The instruction count is the same: the overlay costs
+nothing per instruction, only per write.

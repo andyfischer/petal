@@ -331,6 +331,10 @@ pub struct Stack {
     /// of the state slots and cells it wrote, and what it recorded. See
     /// [`crate::backend::bytecode::vm::speculate`].
     pub speculation: Option<Box<crate::backend::bytecode::vm::speculate::Speculation>>,
+    /// The record of the last speculative call, emptied, kept so the next
+    /// call starts with its allocation (and its logs' capacity) instead of a
+    /// fresh one.
+    pub speculation_spare: Option<Box<crate::backend::bytecode::vm::speculate::Speculation>>,
     /// The call sites of natives a speculative call has declined to call,
     /// so each is warned about once for the life of the stack.
     pub speculate_warned: HashSet<crate::program::TermId>,
@@ -420,6 +424,7 @@ impl Stack {
             test: None,
             loop_key_labels: HashMap::new(),
             speculation: None,
+            speculation_spare: None,
             speculate_warned: HashSet::new(),
             runtime_warnings: Vec::new(),
         }

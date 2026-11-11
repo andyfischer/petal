@@ -670,6 +670,16 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("drag_weights", drag_math::native_drag_weights, NativeEffects::CONST);
     table.register("drag_solve_step", drag_math::native_drag_solve_step, NativeEffects::CONST);
 
+    // `speculate_value(f, ...args)`: `speculate(f, ...args).value` without
+    // the record (`vm::speculate`), for callers that want only the value
+    // (`ui_measure`, `autodiff`). A VM intrinsic with `speculate`'s row.
+    // Append-only.
+    table.intrinsic_speculate_value = Some(table.register(
+        "speculate_value",
+        native_intrinsic_placeholder,
+        NativeEffects::EFFECT.contained().with_pending(NativeClass::AllowPending),
+    ));
+
     // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
     // ids they were just given.
     for op in crate::backend::bytecode::isa::IntrinsicOp::ALL {

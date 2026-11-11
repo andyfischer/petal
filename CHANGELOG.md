@@ -274,6 +274,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **`speculate_value(f, ...args)`**: `speculate(f, ...args).value` without
+  building the result record. `speculate` itself got cheaper: what it puts
+  back is now logged on first write instead of saved on entry, so a call
+  that touches nothing saves nothing (a small pure function's overhead fell
+  by about half, a ten-card view's from 1.7 µs to 0.55 µs;
+  [speculate.md](docs/features/speculate.md#performance)).
 - **`@` declaration annotations**: `@const`, `@tunable` and `@rigid` can be
   written before a declaration, and mean exactly the call around its whole
   initializer, with the declared value as the first argument

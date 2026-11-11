@@ -951,6 +951,12 @@ pub struct Heap {
     /// value (so nothing can grow it in place), and kept alive by
     /// [`sweep`](Self::sweep) itself. See [`empty_payload`](Self::empty_payload).
     empty_payload: Option<ListId>,
+    /// One empty list handed out as a value wherever an empty result needs
+    /// no list of its own (`speculate`'s `emits` and `places` when there are
+    /// none). Marked immutable, so the in-place operations copy it instead of
+    /// growing it, and kept alive by [`sweep`](Self::sweep) itself. See
+    /// [`shared_empty_list`](Self::shared_empty_list).
+    shared_empty_list: Option<ListId>,
     /// Which enum tags `freeze` has reached, by [`EnumTag`] index (bit
     /// `i % 64` of word `i / 64`). Every tag's string is permanent from the
     /// start (see [`EnumTag`]), so this is what [`is_frozen`](Self::is_frozen)
@@ -1053,6 +1059,7 @@ impl Heap {
             gray_closures: Vec::new(),
             gray_overload_sets: Vec::new(),
             empty_payload: None,
+            shared_empty_list: None,
             frozen_tags: Vec::new(),
             enum_aliases: Default::default(),
             dup_stats: DupStats::new(),
@@ -1632,6 +1639,21 @@ impl Heap {
             None => {
                 let id = self.alloc_list(Vec::new());
                 self.empty_payload = Some(id);
+                id
+            }
+        }
+    }
+
+    /// An empty list shared by every holder, allocated on first use: a
+    /// value, unlike [`empty_payload`](Self::empty_payload), and immutable,
+    /// so an in-place edit of it copies (`Slab::is_shared`).
+    pub fn shared_empty_list(&mut self) -> ListId {
+        match self.shared_empty_list {
+            Some(id) => id,
+            None => {
+                let id = self.alloc_list(Vec::new());
+                self.lists.finish_immutable(id.raw(), true);
+                self.shared_empty_list = Some(id);
                 id
             }
         }
@@ -2966,6 +2988,9 @@ impl Heap {
     pub fn sweep(&mut self) {
         // The shared empty payload is the heap's own; no root names it.
         if let Some(id) = self.empty_payload {
+            self.mark_value(Value::List(id));
+        }
+        if let Some(id) = self.shared_empty_list {
             self.mark_value(Value::List(id));
         }
         // Reclaiming a string must also drop its interned entry. Destructure to

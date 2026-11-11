@@ -1794,6 +1794,18 @@ print(speculate(view, 21).value)   // 42
 print(get calls)                   // 0
 ```
 
+### `speculate_value(f, args...)`
+
+`speculate(f, args...).value`, without building the record: the same call,
+the same rules, and what it emitted is dropped all the same. For a caller
+that wants only the value (`ui_measure`, a derivative probe), it is the
+cheaper entry: a call that touches nothing allocates nothing.
+
+```petal
+fn square(x) x * x end
+print(speculate_value(square, 3))  // 9
+```
+
 ### `speculating()`
 
 `true` while a speculative call is running, `false` otherwise.

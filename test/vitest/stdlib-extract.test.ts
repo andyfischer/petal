@@ -115,7 +115,7 @@ describe("stdlib extractor", () => {
       .filter((f) => f.signatures.length === 0)
       .map((f) => f.name)
       .sort();
-    expect(undeclared).toEqual(["__pending", "__reject", "__resolve", "format", "print", "speculate"]);
+    expect(undeclared).toEqual(["__pending", "__reject", "__resolve", "format", "print", "speculate", "speculate_value"]);
   });
 
   it("recovers arguments read through a helper, not just state.get_*", () => {

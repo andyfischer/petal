@@ -894,6 +894,8 @@ pub struct NativeFnTable {
     pub intrinsic_speculate: Option<NativeFnId>,
     pub intrinsic_speculating: Option<NativeFnId>,
     pub intrinsic_speculate_place: Option<NativeFnId>,
+    /// `speculate_value(f, ...args)`: `speculate` returning only the value.
+    pub intrinsic_speculate_value: Option<NativeFnId>,
     /// Built-in class methods, indexed `class -> method -> native`. The same
     /// natives are in `entries` under their qualified names (`Rect.inset`);
     /// this index exists so method dispatch is a two-hop lookup on borrowed
@@ -927,6 +929,7 @@ impl NativeFnTable {
             intrinsic_speculate: None,
             intrinsic_speculating: None,
             intrinsic_speculate_place: None,
+            intrinsic_speculate_value: None,
             class_methods: HashMap::new(),
             revision: 0,
         }
@@ -1242,6 +1245,11 @@ pub struct PetalCxt<'a> {
     /// random draws come from and where emits are recorded. `None` in every
     /// other run.
     pub(crate) spec: Option<&'a mut crate::backend::bytecode::vm::spec::SpecTap>,
+    /// While a speculative call (`speculate`) runs, its log of the run's
+    /// contained effects: the writers below (`print`, the random stream, the
+    /// noise seed, `push_output`, the counters) note what they are about to
+    /// change the first time, for the call to put back. `None` otherwise.
+    pub(crate) speculation: Option<&'a mut crate::backend::bytecode::vm::speculate::SpecSaves>,
     /// Where this call's implicit key comes from ([`call_key`](Self::call_key)).
     pub(crate) key: CallKeySource<'a>,
     /// The implicit key the native asked for, if it asked: the VM records it
@@ -1493,6 +1501,9 @@ impl<'a> PetalCxt<'a> {
 
     pub fn print(&mut self, line: String) {
         self.run_deps.note_effect();
+        if let Some(saves) = self.speculation.as_deref_mut() {
+            saves.note_output(self.output.len());
+        }
         if self.echo {
             println!("{}", line);
         }
@@ -1504,6 +1515,9 @@ impl<'a> PetalCxt<'a> {
     /// Draw the next uniform `f64` in [0, 1), advancing the owning context's
     /// per-run PRNG state. Backs `random`, `random_int`, and `choose`.
     pub fn rng_next_f64(&mut self) -> f64 {
+        if let Some(saves) = self.speculation.as_deref_mut() {
+            saves.note_rng(*self.rng_state);
+        }
         // A speculative run hands out the draw recorded for this place
         // (docs/dev/direct-manipulation-v2-plan.md §2.1.4).
         let raw = match self.spec.as_deref_mut() {
@@ -1521,6 +1535,9 @@ impl<'a> PetalCxt<'a> {
     /// Set the owning context's Perlin-noise seed (the `noise_seed()` builtin).
     pub fn set_noise_seed(&mut self, seed: u64) {
         self.run_deps.note_effect();
+        if let Some(saves) = self.speculation.as_deref_mut() {
+            saves.note_noise(*self.noise_seed);
+        }
         *self.noise_seed = seed;
     }
 
@@ -1555,6 +1572,13 @@ impl<'a> PetalCxt<'a> {
         self.run_deps.note_emit();
         if let Some(tap) = self.spec.as_deref_mut() {
             tap.note_emit(sym, value, self.heap);
+        }
+        if let Some(saves) = self.speculation.as_deref_mut()
+            && !saves.has_buffer(sym)
+        {
+            let len = self.output_buffers.get(&sym).map_or(0, Vec::len);
+            let origins = self.emit_origins.get(&sym).map_or(0, Vec::len);
+            saves.note_buffer(sym, len, origins);
         }
         self.output_buffers.entry(sym).or_default().push(value);
         if self.trace_emit {
@@ -1670,6 +1694,9 @@ impl<'a> PetalCxt<'a> {
     /// Used for per-run id allocation (offscreen canvases, element ids).
     pub fn next_counter(&mut self, sym: SymbolId) -> u64 {
         self.run_deps.note_effect();
+        if let Some(saves) = self.speculation.as_deref_mut() {
+            saves.note_counter(sym, self.counters.get(&sym).copied());
+        }
         let c = self.counters.entry(sym).or_insert(0);
         let v = *c;
         *c += 1;
@@ -1687,6 +1714,9 @@ impl<'a> PetalCxt<'a> {
     /// Overwrite the counter for `sym`.
     pub fn set_counter(&mut self, sym: SymbolId, value: u64) {
         self.run_deps.note_effect();
+        if let Some(saves) = self.speculation.as_deref_mut() {
+            saves.note_counter(sym, self.counters.get(&sym).copied());
+        }
         self.counters.insert(sym, value);
     }
 

@@ -233,12 +233,10 @@ write the call (`rigid(2.0)`). See
 ```petal
 var count = 0
 for i in [1, 2, 3] do
-    set count = count + i     # also `set count += i`
-end
+  set count = count + i     # also `set count += i`
 
 fn describe()
-    "count: {get count}"      # `get` is required inside a function
-end
+  "count: {get count}"      # `get` is required inside a function
 print(describe())             # count: 6
 ```
 
@@ -252,17 +250,15 @@ field or an index as its target, and the compound forms. See
 
 ```petal
 fn counter()
-    state count = 0           # initialised once, kept across runs
-    count += 1
-    count
-end
+  state count = 0           # initialised once, kept across runs
+  count += 1
+  count
 
 state var hp = Map()          # one shared cell holding a map
 
 fn hit(id)
-    set hp[id] = (get hp[id] ?? 100) - 10
-    get hp[id]
-end
+  set hp[id] = (get hp[id] ?? 100) - 10
+  get hp[id]
 ```
 
 `state` declares a binding that keeps its value from one run of the program
@@ -275,19 +271,16 @@ reached the declaration; `state var` makes the slot a cell, and a top-level
 
 ```petal
 fn add(a, b)
-    a + b
-end
+  a + b
 
 fn abs(x: int) -> int        # optional param/return type annotations
-    if x < 0 then return -x end
-    x
-end
+  if x < 0 then return -x end
+  x
 
 fn box(w, h = w, label: str = "box") "{label} {w}x{h}" end   # defaults
 
 fn show_all(xs) -> nil       # no implicit return
-    for x in xs do print(x) end
-end
+  for x in xs do print(x) end
 ```
 
 | Feature | Doc |
@@ -303,13 +296,11 @@ end
 
 ```petal
 class Point
-    x: int,
-    y: int,
-end
+  x: int,
+  y: int,
 
 fn Point.shifted(p: Point, dx: int, dy: int) -> Point
-    Point(p.x + dx, p.y + dy)
-end
+  Point(p.x + dx, p.y + dy)
 
 let p = Point(1, 2).shifted(10, 0)   # an instance is a record with a class tag
 ```
@@ -323,10 +314,9 @@ only and hoisted. `Rect` (fields `x`, `y`, `w`, `h`) is built in. See
 
 ```petal
 enum Shape
-    circle(radius, sides: 0),
-    rect(w, h, sides: 4),
-    unit(sides: 4),
-end
+  circle(radius, sides: 0),
+  rect(w, h, sides: 4),
+  unit(sides: 4),
 
 print(Shape.circle(2).radius)    # 2
 print(Shape.unit.sides)          # 4
@@ -349,9 +339,8 @@ and carry on. See [Testing](../testing.md).
 
 ```petal
 test "addition" do
-    expect_eq(1 + 1, 2)
-    expect_near(0.1 + 0.2, 0.3, 0.000001)
-end
+  expect_eq(1 + 1, 2)
+  expect_near(0.1 + 0.2, 0.3, 0.000001)
 ```
 
 ### `break` / `continue` / `return`
@@ -383,7 +372,6 @@ let label = if x > 5 then "big" else "small" end
 let color = if line.kind == "add" then GREEN
     else if line.kind == "del" then RED
     else CONTEXT
-    end
 ```
 
 ### `match` (pattern matching)
@@ -395,21 +383,19 @@ next `when` or the match's `end`. See
 
 ```petal
 enum Shape
-    circle(radius),
-    rect(w, h),
-    unit,
-end
+  circle(radius),
+  rect(w, h),
+  unit,
 
 let shape = Shape.rect(2, 3)
 
 let area = match shape
-    when Shape.circle(r)  -> 3 * r * r
-    when Shape.rect(w, h) ->
-        let a = w * h
-        print("rect of {a}")    # rect of 6
-        a
-    when Shape.unit -> 1
-end
+  when Shape.circle(r)  -> 3 * r * r
+  when Shape.rect(w, h) ->
+    let a = w * h
+    print("rect of {a}")    # rect of 6
+    a
+  when Shape.unit -> 1
 print(area)                     # 6
 ```
 
@@ -461,8 +447,7 @@ Statement-only; there is no value-collecting `while` form
 
 ```petal
 while x < 10 do
-    x += 1
-end
+  x += 1
 ```
 
 ### Lambdas
@@ -470,9 +455,8 @@ end
 ```petal
 let double = fn(x) -> x * 2          # arrow body
 let describe = fn(x)                 # block body
-    print(x)
-    x * 2
-end
+  print(x)
+  x * 2
 let answer = fn -> 42                # no parameters: the list may be dropped
 let greet = fn print("hi") end
 ```
@@ -553,8 +537,7 @@ state count: int = 0
 state var seen: list = []          # the annotation follows the name, before `=`
 
 fn scale(v: float, k: float) -> float
-    v * k
-end
+  v * k
 
 let double = fn(n: int) -> n * 2   # lambda params, but no lambda return type
 ```

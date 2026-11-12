@@ -7,12 +7,10 @@ the blocks and run them.
 ```petal
 fn after_hit(lives: int) -> int
   max(lives - 1, 0)
-end
 
 test "a hit costs one life" do
   expect_eq(after_hit(3), 2)
   expect_eq(after_hit(0), 0, "never below zero")
-end
 ```
 
 ```console
@@ -52,13 +50,11 @@ end
 
   fn award(n: int)
     set score += n
-  end
 
   test "award adds to the score" do
     award(5)
     award(2)
     expect_eq(get score, 7)
-  end
   ```
 
 - `return` leaves the test early. What the body evaluates to is ignored.
@@ -277,7 +273,6 @@ test "the door opens two seconds after the switch" do
   press_switch()
   wait_frames(120)
   expect(get door_open, "door still closed")
-end
 ```
 
 What the test sees when it resumes is what any function called later sees.

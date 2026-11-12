@@ -38,7 +38,6 @@ if ready
    && !paused
    && true then
   print("go") # go
-end
 ```
 
 Pipelines wrap the same way:

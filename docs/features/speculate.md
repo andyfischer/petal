@@ -8,9 +8,7 @@ changed is put back. What it computed comes back as a value you can look at:
 fn view(cards)
   for i in range(0, len(cards)) do
     speculate_place(cards[i], {x: 40 + i * 70})
-  end
   len(cards)
-end
 
 let r = speculate(view, ["B", "A", "C"])
 print(r.value)                 # 3
@@ -51,7 +49,6 @@ import io
 fn draw(n)
   for i in range(0, n) do push_output(symbol("cmds"), i * 10) end
   n
-end
 
 let r = speculate(draw, 2)
 print(len(r.emits))            # 2
@@ -94,7 +91,6 @@ var draws = 0
 fn view(n)
   set draws += 1
   random() * n
-end
 
 let a = random()
 let r = speculate(view, 10)
@@ -144,7 +140,6 @@ fn counter()
   state n = 0
   n += 1
   n
-end
 
 print(speculate(counter).value)   # 1
 print(speculate(counter).value)   # 1
@@ -173,7 +168,6 @@ animated rect it displays.
 ```petal ignore
 pub fn place(key, r)
   if speculating() then speculate_place(key, r) else _animate(key, r) end
-end
 ```
 
 ## Rules

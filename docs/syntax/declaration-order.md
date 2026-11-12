@@ -28,11 +28,9 @@ needs no forward declaration:
 ```petal
 fn is_even(n)
   if n == 0 then true else is_odd(n - 1) end
-end
 
 fn is_odd(n)
   if n == 0 then false else is_even(n - 1) end
-end
 
 print(is_even(10))  # true
 ```
@@ -47,12 +45,10 @@ print(Point(1, 2).x, Kind.a)    # 1 Kind.a
 class Point
   x: int,
   y: int,
-end
 
 enum Kind
   a,
   b,
-end
 ```
 
 Both are errors anywhere but the top level of a file, so the question does not
@@ -72,7 +68,6 @@ let GAP = NODE_W / 2
 
 fn width_of(n)
   n * NODE_W + (n - 1) * GAP
-end
 ```
 
 The binding itself is not hoisted. Top-level code above `let NODE_W` that
@@ -98,7 +93,6 @@ print(fit(2))
 let W = abs(-7)        # calls a function: computed at run time
 fn fit(n)
   n * W
-end
 ```
 
 ```
@@ -122,7 +116,6 @@ declaration back.
 let old_max = max
 fn max(a, b)
   "mine"
-end
 print(old_max(1, 2), max(1, 2))   # 2 mine
 ```
 

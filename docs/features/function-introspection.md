@@ -21,14 +21,11 @@ looks like.
 ```petal
 class Fx
   color: vec3,
-end
 let TAPS = 3
 fn weight(i: int, n: int) -> float
   1.0 - i / (n + 1.0)
-end
 let streak = fn(fx: Fx, amount = 0.6, tint = :1a2a6c)
   fx.color * weight(1, TAPS) * amount
-end
 let info = fn_info(streak)
 ```
 
@@ -91,11 +88,9 @@ fn describe(f)
   let info = fn_info(f)
   memo(info.code_hash) text = expensive_description(fn_ast(f))
   text
-end
 
 fn expensive_description(tree)
   "{tree.tag} with {len(tree.body)} statement(s)"
-end
 
 print(describe(fn(x) -> x + 1))   # Lambda with 1 statement(s)
 ```
@@ -112,7 +107,6 @@ key; `glsl` does this for the captured ints it writes into the GLSL text.
 let f = fn(x: float, k = 2)
   let y = x * k
   if y > 1.0 then y else 1.0 end
-end
 let tree = fn_ast(f)
 print(tree.tag, len(tree.params), len(tree.body))   # Lambda 2 2
 print(tree.body[0].tag, tree.body[0].name)          # Let y

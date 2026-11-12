@@ -45,7 +45,6 @@ written from inside a callback. Declare it `var` and write it with `set`:
 var count = 0
 for i in [1, 2, 3] do
   set count = count + i
-end
 print(count)   # 6
 ```
 
@@ -67,7 +66,6 @@ var hits = 0
 
 fn describe()
   "hits so far: {get hits}"
-end
 
 set hits = 3
 print(describe())   # hits so far: 3
@@ -123,7 +121,6 @@ check.
 ```petal
 fn tile(name, cost)
   {name: name, cost: cost}
-end
 
 let TILES = const([tile("grass", 1), tile("road", 0)])
 let COSTS = const(map(TILES, fn(t) -> t.cost))
@@ -261,17 +258,14 @@ let name: string = "Petal"        # `str` is also accepted for `string`
 
 fn area(r: float) -> float        # `:` before a param type, `->` before the return type
   3.14159 * r * r
-end
 
 fn greet(who: string)             # the return type is optional
   print("Hello, {who}!")
-end
 
 # Typed and un-annotated code mix freely — an omitted annotation is inferred
 # where possible, otherwise treated as `any` (which suppresses checking).
 fn scale(v, factor: float) -> float
   v * factor
-end
 
 let double = fn(n: int) -> n * 2  # lambda params take annotations too
 ```
@@ -312,7 +306,6 @@ for its edges, which are ints in pixel layout and floats in sub-pixel layout:
 ```petal
 fn scale_by(v: num, factor: num) -> num
   v * factor
-end
 
 scale_by(3, 2)        # ok
 scale_by(3.5, 2)      # ok
@@ -334,17 +327,14 @@ honest annotation for the slots where `nil` means "absent":
 ```petal
 fn plural(n: int, one: string, many: string? = nil) -> string
   if n == 1 then "1 {one}" else "{n} {many ?? one ++ "s"}" end
-end
 
 fn lookup(k: string) -> record?        # a record, or nil when there is none
   if k == "" then return nil end
   {key: k}
-end
 
 class Val
   code: string,
   lit: int?,                            # nil unless the value is a literal
-end
 
 state var hud: record? = nil            # "not built yet"
 ```
@@ -389,13 +379,11 @@ forbids.
 ```petal
 fn width(r: Rect) -> num
   r.w                     # ok — a rect edge is a num
-end
 
 fn pixels(n: int) n end
 fn place(x: num)
   pixels(x)               # warning: argument 1 to `pixels`: expected `int`, found `num`
   pixels(int(x))          # ok — explicit cast
-end
 ```
 
 `any` on either side of a check is always compatible, so a value flowing in from
@@ -413,7 +401,6 @@ double("hi")              # warning: argument 1 to `double`: expected `int`, fou
 
 fn greet(who: string)
   print("Hello, {who}!")
-end
 let hello = greet
 hello(7)                  # warning: argument 1 to `hello`: expected `string`, found `int`
 ```
@@ -430,13 +417,11 @@ the program and exits non-zero:
 ```petal
 fn f(a, b)
   a
-end
 f(1)            # error: `f` expects 2 arguments, got 1
 
 class Point
   x: int,
   y: int,
-end
 Point(1)        # error: `Point` expects 2 arguments, got 1
 ```
 
@@ -651,10 +636,9 @@ each run, and `m[2]` and `m[2.0]` read one map entry.
 ```petal
 let x = 10
 if x > 5 then
-    print("big")
+  print("big")
 else
-    print("small")
-end
+  print("small")
 
 # As an expression
 let label = if x > 5 then "big" else "small" end
@@ -668,15 +652,12 @@ fn classify(n)
   if n < 0 then "negative"
   else if n == 0 then "zero"
   else "positive"
-  end
-end
 
 # Reads well for the multi-way branches common in drawer code:
 let color = if line.kind == "hunk" then HUNK
   else if line.kind == "add" then GREEN
   else if line.kind == "del" then RED
   else CONTEXT
-  end
 ```
 
 `else if` on one line always continues the chain. To nest an `if` inside an
@@ -689,8 +670,6 @@ fn describe(n)
   else
     if n == 0 then print("zero!") end
     "not negative"
-  end
-end
 ```
 
 `elsif` is the old spelling of `else if`. It still works; `petal lint`
@@ -705,12 +684,10 @@ Iterate over lists or ranges:
 
 ```petal
 for item in [1, 2, 3] do
-    print(item)
-end
+  print(item)
 
 for i in range(0, 5) do
-    print(i)
-end
+  print(i)
 ```
 
 A `key` clause keys the [`state`](#state) inside each
@@ -719,8 +696,7 @@ item when the list reorders ([Keyed loops](features/inline-state.md#keyed-loops)
 
 ```petal ignore
 for t in tasks key t.id do
-    task_row(t)
-end
+  task_row(t)
 ```
 
 #### For loops as mapping expressions
@@ -733,13 +709,11 @@ branch or `match` arm whose value is used, or of another collecting loop.
 
 ```petal
 let squares = for i in range(1, 6) do
-    i * i
-end
+  i * i
 # squares == [1, 4, 9, 16, 25]
 
 fn doubled(xs)
-    for x in xs do x * 2 end        # the function's tail: [2, 4, 6] for [1, 2, 3]
-end
+  for x in xs do x * 2 end        # the function's tail: [2, 4, 6] for [1, 2, 3]
 ```
 
 A bare `for` statement runs for its side effects and builds no list. Inside a
@@ -762,8 +736,7 @@ outermost, and a later iterable may use the names before it:
 
 ```petal
 for a in [1, 2], b in ["x", "y"] do
-    print("{a}{b}")          # 1x, 1y, 2x, 2y
-end
+  print("{a}{b}")          # 1x, 1y, 2x, 2y
 
 let below = for a in range(3), b in range(a) do [a, b] end
 # below == [[1, 0], [2, 0], [2, 1]]
@@ -791,9 +764,8 @@ print(len(moves))   # 4
 ```petal
 let x = 0
 while x < 10 do
-    print(x)
-    x += 1
-end
+  print(x)
+  x += 1
 ```
 
 ### Break and Continue
@@ -802,14 +774,11 @@ end
 
 ```petal
 for i in range(0, 100) do
-    if i == 5 then
-        break       # exit the loop
-    end
-    if i % 2 == 0 then
-        continue    # skip to next iteration
-    end
-    print(i)
-end
+  if i == 5 then
+    break       # exit the loop
+  if i % 2 == 0 then
+    continue    # skip to next iteration
+  print(i)
 ```
 
 ## Functions
@@ -818,8 +787,7 @@ Functions are declared with `fn`. The last expression is the implicit return val
 
 ```petal
 fn add(a, b)
-    a + b
-end
+  a + b
 
 print(add(2, 3))  # 5
 ```
@@ -832,11 +800,9 @@ Use `return` for early exit:
 
 ```petal
 fn abs(x)
-    if x < 0 then
-        return -x
-    end
-    x
-end
+  if x < 0 then
+    return -x
+  x
 ```
 
 ### Named Arguments
@@ -847,8 +813,7 @@ methods and builtins take names too.
 
 ```petal
 fn scale(value, by, offset)
-    value * by + offset
-end
+  value * by + offset
 
 print(scale(2, by: 10, offset: 1))    # 21
 print(scale(by: 10, offset: 1, value: 2))  # 21
@@ -866,8 +831,7 @@ at declaration, and it may use the parameters declared before it.
 
 ```petal
 fn greet(name, greeting = "Hello", punct = "!")
-    "{greeting}, {name}{punct}"
-end
+  "{greeting}, {name}{punct}"
 
 print(greet("Ada"))                  # Hello, Ada!
 print(greet("Ada", "Hi"))            # Hi, Ada!
@@ -888,8 +852,7 @@ decides how they bind:
 
 ```petal
 fn toll(id: string, cents: int = 5, note = "none")
-    "{id}: {cents} ({note})"
-end
+  "{id}: {cents} ({note})"
 
 print(toll(...["bridge", 25]))                # bridge: 25 (none)
 print(toll(...{id: "bridge", note: "peak"}))  # bridge: 5 (peak)
@@ -935,24 +898,20 @@ command bus, or the tools an agent may call — with each one declared once:
 
 ```petal
 fn toll(id: string, cents: int = 5)
-    "toll on {id} is {cents}"
-end
+  "toll on {id} is {cents}"
 fn close(id: string)
-    "{id} closed"
-end
+  "{id} closed"
 
 let tools = {toll: toll, close: close}
 
 fn call_tool(name, args)
-    let f = tools[name] ?? nil
-    if f == nil then return "no tool named {name}" end
-    # The declaration is the schema: reject a key it does not have.
-    let known = fn_info(f).params.map(fn(p) -> p.name)
-    for key in keys(args) do
-        if !contains(known, key) then return "{name} has no parameter {key}" end
-    end
-    f(...args)
-end
+  let f = tools[name] ?? nil
+  if f == nil then return "no tool named {name}" end
+  # The declaration is the schema: reject a key it does not have.
+  let known = fn_info(f).params.map(fn(p) -> p.name)
+  for key in keys(args) do
+    if !contains(known, key) then return "{name} has no parameter {key}" end
+  f(...args)
 
 print(call_tool("toll", {id: "bridge", cents: 25}))  # toll on bridge is 25
 print(call_tool("close", {id: "tunnel"}))            # tunnel closed
@@ -966,10 +925,8 @@ when it runs.
 
 ```petal
 fn factorial(n)
-    if n <= 1 then 1
-    else n * factorial(n - 1)
-    end
-end
+  if n <= 1 then 1
+  else n * factorial(n - 1)
 ```
 
 Calls may nest 20,000 deep (5,000 on the way to a `state` that has no
@@ -1003,12 +960,10 @@ rule, in one table, is in [Declaration order](syntax/declaration-order.md).
 
 ```petal
 fn is_even(n)
-    if n == 0 then true else is_odd(n - 1) end
-end
+  if n == 0 then true else is_odd(n - 1) end
 
 fn is_odd(n)
-    if n == 0 then false else is_even(n - 1) end
-end
+  if n == 0 then false else is_even(n - 1) end
 
 print(is_even(10))  # true
 ```
@@ -1053,9 +1008,8 @@ no arguments may leave the parameter list out altogether:
 
 ```petal
 let describe = fn(x)
-    print(x)
-    x * 2
-end
+  print(x)
+  x * 2
 
 let answer = fn -> 42        # argless arrow lambda
 let greet = fn print("hi") end
@@ -1079,8 +1033,7 @@ Functions capture variables from their enclosing scope:
 
 ```petal
 fn make_adder(n)
-    return fn(x) -> x + n
-end
+  return fn(x) -> x + n
 
 let add5 = make_adder(5)
 print(add5(10))  # 15
@@ -1107,8 +1060,7 @@ Dot notation desugars to a function call with the receiver as the first argument
 
 ```petal
 fn greet(person)
-    print("hello, {person.name}!")
-end
+  print("hello, {person.name}!")
 
 let alice = {name: "Alice"}
 alice.greet()  # same as greet(alice)
@@ -1303,8 +1255,7 @@ as an expression — where `set r[key] = v` is the statement:
 
 ```petal
 fn index_by(xs, key)
-    reduce(xs, {}, fn(acc, x) -> {...acc, [key(x)]: x})
-end
+  reduce(xs, {}, fn(acc, x) -> {...acc, [key(x)]: x})
 
 let towns = [{id: "ames", pop: 66}, {id: "bend", pop: 99}]
 print(index_by(towns, fn(t) -> t.id).bend.pop)   # 99
@@ -1447,12 +1398,10 @@ one keeps it. A map that several functions share lives in a
 var counts = Map()
 
 fn count(word)
-    set counts[word] = (get counts[word] ?? 0) + 1
-end
+  set counts[word] = (get counts[word] ?? 0) + 1
 
 for w in ["a", "b", "a"] do
-    count(w)
-end
+  count(w)
 print(get counts)                # Map([["a", 2], ["b", 1]])
 ```
 
@@ -1467,8 +1416,7 @@ rest. `for k in m` visits the keys:
 ```petal
 let stock = Map([["pear", 4], ["fig", 0]])
 for fruit in stock do
-    print(fruit, stock[fruit])
-end
+  print(fruit, stock[fruit])
 ```
 
 Two maps are `==` when they hold the same keys with equal values, in any
@@ -1543,10 +1491,9 @@ and is always written through it: `Color.red`, never a bare `red`.
 
 ```petal
 enum Color
-    red,
-    green,
-    custom(r, g, b),
-end
+  red,
+  green,
+  custom(r, g, b),
 
 let c = Color.red
 let pink = Color.custom(255, 192, 203)
@@ -1582,10 +1529,9 @@ constructing and named when reading.
 
 ```petal
 enum Op
-    fight(place, won),
-    gift(amount),
-    rest,
-end
+  fight(place, won),
+  gift(amount),
+  rest,
 
 let op = Op.fight("bridge", true)
 print(op)                               # Op.fight("bridge", true)
@@ -1608,14 +1554,12 @@ replaces a lookup table kept beside the enum.
 
 ```petal
 enum Use
-    road,
-    green,
-end
+  road,
+  green,
 
 enum Kind
-    parkway(shape: "route", use: Use.road),
-    park(shape: "area", use: Use.green),
-end
+  parkway(shape: "route", use: Use.road),
+  park(shape: "area", use: Use.green),
 
 print(Kind.park.shape)                 # area
 print(Kind.parkway.use == Use.road)    # true
@@ -1626,9 +1570,8 @@ comes from the constructor call, the data from the declaration:
 
 ```petal
 enum Op
-    fight(place, won, tone: "bad"),
-    gift(amount, tone: "good"),
-end
+  fight(place, won, tone: "bad"),
+  gift(amount, tone: "good"),
 
 let op = Op.fight("bridge", true)
 print(op.place)             # bridge
@@ -1661,9 +1604,8 @@ evaluated first:
 
 ```petal
 enum Tier
-    gold(cost: Tier.silver.cost * 2),
-    silver(cost: 5),
-end
+  gold(cost: Tier.silver.cost * 2),
+  silver(cost: 5),
 
 print(Tier.gold.cost)    # 10
 ```
@@ -1675,9 +1617,8 @@ as it is on a record:
 
 ```petal
 enum Scale
-    double(apply: fn(n) -> n * 2),
-    same(apply: fn(n) -> n),
-end
+  double(apply: fn(n) -> n * 2),
+  same(apply: fn(n) -> n),
 
 print(Scale.double.apply(4))    # 8
 ```
@@ -1686,9 +1627,8 @@ print(Scale.double.apply(4))    # 8
 
 ```petal
 enum Op
-    fight(place, won, tone: "bad"),
-    gift(amount, tone: "good"),
-end
+  fight(place, won, tone: "bad"),
+  gift(amount, tone: "good"),
 
 let op = Op.fight("bridge", true)
 print(op.place)    # bridge    a payload field, by name
@@ -1712,17 +1652,15 @@ they do on a record. To take a variant apart by which variant it is, use
 
 ```petal
 enum Kind
-    parkway(shape: "route"),
-    park(shape: "area"),
-end
+  parkway(shape: "route"),
+  park(shape: "area"),
 
 print(Kind.all)            # [Kind.parkway, Kind.park]
 print(Kind.from("park"))   # Kind.park
 print(Kind.from("lake"))   # nil
 
 for k in Kind.all do
-    print("{k.name}: {k.shape}")
-end
+  print("{k.name}: {k.shape}")
 ```
 
 `Kind.all` lists the enum's variants in declaration order, and
@@ -1746,21 +1684,17 @@ compile time.
 
 ```petal
 enum Ty
-    float(dim: 1),
-    vec2(dim: 2),
-    named(id, dim: 0),
-end
+  float(dim: 1),
+  vec2(dim: 2),
+  named(id, dim: 0),
 
 fn Ty.text(t: Ty) -> string
-    match t
-        when Ty.named(id) -> id
-        when _ -> t.name
-    end
-end
+  match t
+    when Ty.named(id) -> id
+    when _ -> t.name
 
 fn Ty.is_vec(t: Ty) -> bool
-    t.dim > 1
-end
+  t.dim > 1
 
 print(Ty.vec2.text(), Ty.named("Fx").text(), Ty.vec2.is_vec())   # vec2 Fx true
 ```
@@ -1828,18 +1762,15 @@ holds the slot to it:
 
 ```petal
 enum Use
-    road,
-    green,
-end
+  road,
+  green,
 
 enum Kind
-    parkway(shape: "route", use: Use.road),
-    park(shape: "area", use: Use.green),
-end
+  parkway(shape: "route", use: Use.road),
+  park(shape: "area", use: Use.green),
 
 fn pick(k: Kind, wide: bool) -> Kind
-    if wide then Kind.parkway else k end
-end
+  if wide then Kind.parkway else k end
 
 pick(Kind.park, true)    # ok
 pick(Use.road, true)     # warning: argument 1 to `pick`: expected `Kind`, found `Use`
@@ -1852,17 +1783,15 @@ the enum's data keys, and the payload fields of its variants.
 
 ```petal
 enum Kind
-    parkway(shape: "route"),
-    park(shape: "area"),
-end
+  parkway(shape: "route"),
+  park(shape: "area"),
 
 fn label(k: Kind)
-    k.shap             # warning: no variant of enum `Kind` has a field `shap`
-                       #          (fields of `Kind`: shape, name)
-end
+  k.shap             # warning: no variant of enum `Kind` has a field `shap`
+  #          (fields of `Kind`: shape, name)
 
 Kind.park.colour       # warning: `Kind.park` has no field `colour`
-                       #          (it has: shape, name)
+#          (it has: shape, name)
 ```
 
 Both are warnings, like every type check, and both describe a line that fails
@@ -1882,7 +1811,6 @@ class Box
   y: int,
   w: int,
   h: int,
-end
 
 let r = Box(0, 0, 100, 40)
 print(r.x)        # 0 — field access, exactly as on a record
@@ -1926,7 +1854,6 @@ and checking follows the same warning-only rules:
 ```petal
 fn center_x(r: Rect) -> int
   r.x + r.w / 2
-end
 
 center_x("nope")   # warning: argument 1 to `center_x`: expected `Rect`, found `string`
 ```
@@ -1944,7 +1871,6 @@ name the class does not declare is a warning:
 ```petal
 fn label(r: Rect) -> string
   r.caption          # warning: class `Rect` has no field `caption`
-end
 ```
 
 A plain `record` or an un-annotated (`any`) value has no declared shape, so
@@ -1959,11 +1885,9 @@ ordinary first parameter — the call site supplies it:
 ```petal
 fn Rect.center_x(rect: Rect) -> int
   rect.x + rect.w / 2
-end
 
 fn Rect.shifted(rect: Rect, dx: int, dy: int) -> Rect
   Rect(rect.x + dx, rect.y + dy, rect.w, rect.h)
-end
 
 let r = Rect(0, 0, 100, 40)
 print(r.center_x())            # 50
@@ -1985,7 +1909,6 @@ takes the declared return type.
 ```petal
 fn Rect.scaled(rect: Rect, by: num) -> Rect
   Rect(rect.x, rect.y, rect.w * by, rect.h * by)
-end
 
 let r = Rect(0, 0, 10, 10)
 r.scaled("2")                  # warning: argument 1 to `scaled`: expected `num`, found `string`
@@ -2053,21 +1976,17 @@ carrying a class annotation**:
 ```petal
 class C
   a: int,
-end
 fn C.value(c: C)
   c.a
-end
 
 let pinned = C(1)             # pinned: the initializer says so
 state also: C = C(1)          # pinned: the annotation says so
 fn takes_one(c: C)            # pinned: the parameter is annotated
   c.value()
-end
 
 state loose = C(1)            # not pinned — un-annotated, so `any`
 fn takes_any(c)               # not pinned
   c.value()
-end
 
 print(pinned.value(), also.value(), takes_one(C(2)), loose.value(), takes_any(C(3)))
 ```
@@ -2088,10 +2007,8 @@ already live:
 # before the edit
 class C
   x: int,
-end
 fn C.value(c: C)
   c.x
-end
 state c: C = C(1)
 print(c.value())        # 1
 ```
@@ -2102,10 +2019,8 @@ print(c.value())        # 1
 # the edit lands on it.
 class D
   x: int,
-end
 fn D.value(d: D)
   d.x + 100
-end
 state c: D = D(1)
 print(c.value())        # 101, computed from the old value
 ```
@@ -2131,16 +2046,12 @@ holding different classes over time keeps working:
 ```petal
 class Circle
   r: int,
-end
 class Square
   s: int,
-end
 fn Circle.area(c: Circle)
   3 * c.r * c.r
-end
 fn Square.area(q: Square)
   q.s * q.s
-end
 
 state shape = Circle(2)
 print(shape.area())        # 12 — dispatches on the label
@@ -2261,12 +2172,10 @@ branching on a value:
 
 ```petal
 fn describe(x)
-    match x
-        when 0 -> "zero"
-        when 1 -> "one"
-        when n -> "other: {n}"
-    end
-end
+  match x
+    when 0 -> "zero"
+    when 1 -> "one"
+    when n -> "other: {n}"
 
 print(describe(0))    # zero
 print(describe(7))    # other: 7
@@ -2297,26 +2206,23 @@ same thing.
 
 ```petal
 enum Cmd
-    quit,
-    move(dx, dy),
-    say(text),
-end
+  quit,
+  move(dx, dy),
+  say(text),
 
 var x = 0
 var y = 0
 
 fn step(cmd)
-    match cmd
-        when Cmd.quit -> "bye"
-        when Cmd.move(dx, dy) ->
-            set x += dx
-            set y += dy
-            "moved to {get x}, {get y}"
-        when Cmd.say(text) ->
-            let loud = text ++ "!"
-            loud
-    end
-end
+  match cmd
+    when Cmd.quit -> "bye"
+    when Cmd.move(dx, dy) ->
+      set x += dx
+      set y += dy
+      "moved to {get x}, {get y}"
+    when Cmd.say(text) ->
+      let loud = text ++ "!"
+      loud
 
 print(step(Cmd.move(2, 3)))    # moved to 2, 3
 print(step(Cmd.say("hi")))     # hi!
@@ -2329,18 +2235,15 @@ so a match can steer the loop it sits in:
 
 ```petal
 enum Kind
-    park,
-    plaza,
-    road(lanes),
-end
+  park,
+  plaza,
+  road(lanes),
 
 var lanes = 0
 for k in [Kind.park, Kind.road(3), Kind.plaza, Kind.road(2)] do
-    match k
-        when Kind.park | Kind.plaza -> continue
-        when Kind.road(n) -> set lanes += n
-    end
-end
+  match k
+    when Kind.park | Kind.plaza -> continue
+    when Kind.road(n) -> set lanes += n
 print(get lanes)    # 5
 ```
 
@@ -2358,18 +2261,15 @@ sub-patterns match the payload fields in order.
 
 ```petal
 enum Shape
-    circle(radius),
-    rect(w, h),
-    unit,
-end
+  circle(radius),
+  rect(w, h),
+  unit,
 
 fn area(shape)
-    match shape
-        when Shape.circle(r)  -> 3 * r * r
-        when Shape.rect(w, h) -> w * h
-        when Shape.unit       -> 1
-    end
-end
+  match shape
+    when Shape.circle(r)  -> 3 * r * r
+    when Shape.rect(w, h) -> w * h
+    when Shape.unit       -> 1
 
 print(area(Shape.circle(2)))    # 12
 print(area(Shape.rect(2, 5)))   # 10
@@ -2395,25 +2295,20 @@ literals, variants or any other pattern, and may be nested inside one.
 
 ```petal
 enum Kind
-    park,
-    plaza,
-    road(lanes),
-    lane(lanes),
-end
+  park,
+  plaza,
+  road(lanes),
+  lane(lanes),
 
 fn surface(kind)
-    match kind
-        when Kind.park | Kind.plaza -> "open"
-        when Kind.road(n) | Kind.lane(n) -> "paved, {n} wide"
-    end
-end
+  match kind
+    when Kind.park | Kind.plaza -> "open"
+    when Kind.road(n) | Kind.lane(n) -> "paved, {n} wide"
 
 fn is_vowel(ch)
-    match ch
-        when "a" | "e" | "i" | "o" | "u" -> true
-        when _ -> false
-    end
-end
+  match ch
+    when "a" | "e" | "i" | "o" | "u" -> true
+    when _ -> false
 
 print(surface(Kind.plaza))      # open
 print(surface(Kind.lane(2)))    # paved, 2 wide
@@ -2460,11 +2355,9 @@ naming the value and the match's position. It does not evaluate to `nil`.
 
 ```petal
 fn rank(name)
-    match name
-        when "gold" -> 1
-        when "silver" -> 2
-    end
-end
+  match name
+    when "gold" -> 1
+    when "silver" -> 2
 
 print(rank("gold"))    # 1
 ```
@@ -2485,11 +2378,9 @@ of at least that length.
 
 ```petal
 fn first(list)
-    match list
-        when [head, ...tail] -> head
-        when []              -> nil
-    end
-end
+  match list
+    when [head, ...tail] -> head
+    when []              -> nil
 
 print(first([4, 5, 6]))    # 4
 print(first([]))           # nil
@@ -2502,13 +2393,11 @@ A record pattern matches a record that has every field it names, each written
 
 ```petal
 fn where(p)
-    match p
-        when {x: 0, y: 0} -> "origin"
-        when {x: 0, y: y} -> "on the y axis at {y}"
-        when {x: x, y: y} -> "{x}, {y}"
-        when _            -> "not a point"
-    end
-end
+  match p
+    when {x: 0, y: 0} -> "origin"
+    when {x: 0, y: y} -> "on the y axis at {y}"
+    when {x: x, y: y} -> "{x}, {y}"
+    when _            -> "not a point"
 
 print(where({x: 0, y: 0}))          # origin
 print(where({x: 0, y: 4}))          # on the y axis at 4
@@ -2523,13 +2412,11 @@ and the guard is true; the guard can use the names the pattern binds.
 
 ```petal
 fn classify(n)
-    match n
-        when x if x < 0   -> "negative"
-        when 0             -> "zero"
-        when x if x > 100 -> "big"
-        when x             -> "small positive"
-    end
-end
+  match n
+    when x if x < 0 -> "negative"
+    when 0 -> "zero"
+    when x if x > 100 -> "big"
+    when x -> "small positive"
 
 print(classify(-3))     # negative
 print(classify(500))    # big
@@ -2585,9 +2472,8 @@ path, so every caller that asks for the same key shares it.
 
 ```petal
 fn glyph_width(ch)
-    memo(ch) w = len(ch) * 7   # computed once per character
-    w
-end
+  memo(ch) w = len(ch) * 7   # computed once per character
+  w
 print(glyph_width("a") + glyph_width("a"))   # 14
 ```
 
@@ -2611,7 +2497,6 @@ fn bump()
   state n = 0
   n += 1
   speculate_place("n", n)
-end
 let r = speculate(bump)
 print(r.value)              # 1
 print(r.places[0].value)    # 1
@@ -2749,12 +2634,10 @@ a directory, runs each one on its own and reports what failed.
 ```petal
 fn after_hit(lives: int) -> int
   max(lives - 1, 0)
-end
 
 test "a hit costs one life" do
   expect_eq(after_hit(3), 2)
   expect_eq(after_hit(0), 0, "never below zero")
-end
 ```
 
 - A test is written at the top level of a file, and its name is a plain
@@ -2805,7 +2688,6 @@ for the inputs that reach a goal:
 import autodiff
 fn f(x)
   x * x + 2.0 * x
-end
 
 let d = deriv(f, 3.0)
 print(round(d.value, 6), d.quality)   # 8.0 smooth

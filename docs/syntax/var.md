@@ -29,7 +29,6 @@ that can otherwise answer "what produced this value?" (see
 var count = 0
 for i in [1, 2, 3] do
   set count = count + i
-end
 print(count)   # 6
 ```
 
@@ -45,7 +44,7 @@ var score = 0
 let doubled = map([1, 2, 3], fn(a)
   if a > 1 then set score += 10 end
   a * 2
-end)
+)
 print(doubled, score)   # [2, 4, 6] 20
 ```
 
@@ -58,9 +57,7 @@ fn counter()
   let bump = fn()
     set c = get c + 1
     get c
-  end
   bump
-end
 let a = counter()
 let b = counter()
 print(a(), a(), b())   # 1 2 1
@@ -109,7 +106,6 @@ var hits = 0
 
 fn describe()
   "hits so far: {get hits}"
-end
 
 set hits = 3
 print(describe())   # hits so far: 3
@@ -187,17 +183,13 @@ fn settle(heights: list, passes: int) -> list
     set h[a] = get h[a] - 1
     set h[b] = get h[b] + 1
     set moves += 1
-  end
 
   for pass in range(0, passes) do
     for i in range(0, len(h) - 1) do
       level(i, i + 1)
       level(i + 1, i)
-    end
-  end
   print("moves:", moves)
   h
-end
 
 print(settle([6, 0, 0, 2], 8))
 ```
@@ -221,7 +213,6 @@ fn mark(i: int)
   if get board[i] != 0 then return nil end
   set board[i] = 1 + get turn % 2
   set turn += 1
-end
 
 mark(2)
 mark(2)       # taken: nothing happens
@@ -244,7 +235,6 @@ state score = 0
 
 fn award(n)
   score = score + n   # error: `score` is bound outside this function
-end
 ```
 
 Declare it `state var score = 0` and write `set score = get score + n`, or
@@ -404,7 +394,6 @@ state scroll = 0
 
 fn row_y(r)
   GRID_Y + (r - scroll) * ROW_H   # warning: reads `scroll` one run behind
-end
 
 scroll = scroll + 3
 draw_row(row_y(2))                # uses the previous run's `scroll`
@@ -416,7 +405,6 @@ exits 0. Pass the value in when you want the current one:
 ```petal ignore
 fn row_y(r, scroll)
   GRID_Y + (r - scroll) * ROW_H
-end
 ```
 
 A `state` that is never written after the function is fine to capture, which
@@ -457,7 +445,6 @@ for i in [1, 2, 3] do
   x = 5              # targets the outer x, and reaches it
   let x = i * 10
   x = x + 1          # body-local
-end
 print(x)             # 5
 ```
 

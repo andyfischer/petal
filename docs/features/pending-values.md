@@ -127,7 +127,6 @@ else if is_error(user) then
   draw_text("could not load: {error_of(user)}", 10, 10)
 else
   draw_text(user.name, 10, 10)
-end
 draw_text(user.title ?? "…", 10, 30)
 ```
 

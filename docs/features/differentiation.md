@@ -11,7 +11,6 @@ import autodiff
 
 fn f(x)
   x * x + 2.0 * x
-end
 
 let d = deriv(f, 3.0)
 print(round(d.value, 6))   # 8.0
@@ -119,7 +118,6 @@ fn tip(p)
   let length = p[1]
   let angle = p[2]
   [cx + length * cos(angle), length * sin(angle)]
-end
 
 let j = jacobian(tip, [200.0, 80.0, 0.6])
 print(map(j.rows, fn(r) map(r, fn(v) round(v, 3) end) end))   # [[1.0, 0.825, -45.171], [0.0, 0.565, 66.027]]
@@ -138,13 +136,11 @@ fn bowl(p)
   let dx = p[0] - 1.0
   let dy = p[1] + 3.0
   dx * dx + 2.0 * dy * dy
-end
 
 let p = [0.0, 0.0]
 for step in range(0, 40) do
   let g = jacobian(bowl, p).rows[0]
   p = [p[0] - 0.2 * g[0], p[1] - 0.2 * g[1]]
-end
 print(round(p[0], 3), round(p[1], 3))   # 1.0 -3.0
 ```
 
@@ -161,7 +157,6 @@ import autodiff
 
 fn tip_x(a)
   200.0 + 80.0 * cos(a[0])
-end
 
 let s = solve(tip_x, [0.6], 240.0)
 print(round(s.xs[0], 4))   # 1.0472
@@ -214,7 +209,6 @@ var count = 0
 fn view(x)
   set count = (get count) + 1
   x * 3.0
-end
 
 print(round(deriv(view, 1.0).value, 6))   # 3.0
 print(count)                              # 0

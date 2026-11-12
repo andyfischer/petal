@@ -232,11 +232,9 @@ exports `mouse_x` like any other name, which is how a host's interface module
 # ui.ptl
 pub fn button(label)         # importable: button, ui.button, `import ui: button`
   "[" ++ label ++ "]"
-end
 
 fn helper(x)                 # private to ui.ptl
   x + 1
-end
 ```
 
 `pub` goes directly before the declaration keyword: `pub fn`, `pub let`,
@@ -400,7 +398,6 @@ reaches the other (in an annotation too, as `shapes.Circle`):
 import ./shapes          # exports class Circle
 class Circle
   r: int
-end
 Circle(1)                # this file's Circle
 shapes.Circle(2)         # the module's
 ```
@@ -448,7 +445,6 @@ print(hits)              # 2
 
 fn describe()
   "hits: {get hits}"     # live: reflects whatever `tally` has written
-end
 ```
 
 The qualified form `tally.hits` needs no `get`; it reads the current value

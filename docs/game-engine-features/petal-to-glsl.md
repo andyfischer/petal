@@ -10,7 +10,6 @@ import glsl
 let duotone = fn(fx: Fx, dark = :1b1040, light = :ffd9a0, amount = 0.6)
   let two = lerp(linear_to_srgb(dark), linear_to_srgb(light), fx_luma(fx.color))
   lerp(fx.color, two, amount)
-end
 
 let g = glsl.glsl_function(duotone, ENV)
 # g.code:
@@ -119,7 +118,6 @@ declared one or what the body implies, and the result is one GLSL function:
 ```petal ignore
 fn weight(i: int, n: int) -> float
   1.0 - abs(i) / (n + 1.0)
-end
 print(glsl.to_glsl(weight))
 # float weight(int i, int n) {
 #     return 1.0 - float(abs(i)) / (float(n) + 1.0);

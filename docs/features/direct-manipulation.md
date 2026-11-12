@@ -67,10 +67,8 @@ import ui
 let gap = tunable(30.0)
 fn place(i)
   return 20 + i * gap
-end
 for i in range(0, 4) do
   draw_circle(place(i), 100, 10, 200, 80, 80)
-end
 ```
 
 Drag the third circle 25 pixels to the right. The `x` of that
@@ -302,7 +300,6 @@ import io
 fn patrol(x0, x1)
   assert(x1 >= x0, "a patrol ends after it starts")
   return {from: x0, to: x1}
-end
 
 let beetle = patrol(3.5, 5.5)
 push_output(symbol("enemies"), beetle.to)

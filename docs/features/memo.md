@@ -7,14 +7,12 @@ computed before.
 
 ```petal
 fn slow_square(n)
-    print("computing", n)
-    n * n
-end
+  print("computing", n)
+  n * n
 
 fn square(n)
-    memo(n) sq = slow_square(n)
-    sq
-end
+  memo(n) sq = slow_square(n)
+  sq
 
 print(square(3), square(4), square(3))
 ```
@@ -44,9 +42,8 @@ annotation takes the same place it does on `let`:
 
 ```petal
 fn layout(text)
-    memo(text) width: int = len(text) * 8
-    width
-end
+  memo(text) width: int = len(text) * 8
+  width
 print(layout("hello"))   # 40
 ```
 

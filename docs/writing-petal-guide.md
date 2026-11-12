@@ -55,12 +55,10 @@ declaration order inside a file does not matter for them.
 class Task
   title: string,
   done: bool,
-end
 
 fn Task.label(t: Task) -> string
   let mark = if t.done then "x" else " " end
   "[{mark}] {t.title}"
-end
 
 let tasks = [
   Task("write guide", true),
@@ -69,7 +67,6 @@ let tasks = [
 
 for t in tasks do
   print(t.label())
-end
 ```
 
 ```
@@ -145,16 +142,13 @@ fn tally(xs)
   let total = 0
   for x in xs do
     total = total + x      # carries to the next iteration, and out of the loop
-  end
   total                    # 6 for [1, 2, 3]
-end
 
 # Threading a value through a loop works the same way — this is how you write
 # a simulation step, and why a *bare* `for` is not a dead end.
 let flock = [1, 2, 3]
 for i in range(0, 3) do
   flock = map(flock, fn(x) -> x * 2)
-end
 print(flock)               # [8, 16, 24]
 ```
 
@@ -170,7 +164,6 @@ Write a top-level table, and anything derived from one, as
 ```petal
 fn tile(name, cost)
   {name: name, cost: cost}
-end
 
 let TILES = const([tile("grass", 1), tile("road", 0)])
 let COSTS = const(map(TILES, fn(t) -> t.cost))
@@ -205,9 +198,8 @@ fn count_matching(xs, pred)
   var hits = 0
   forEach(xs, fn(x)
     if pred(x) then set hits += 1 end   # a plain `hits = …` here is an error
-  end)
+  )
   get hits
-end
 ```
 
 Declare it `var`, and say so at every use:
@@ -282,7 +274,6 @@ fn counter()
   state n = 0
   n += 1
   n
-end
 fn left()   counter() end
 fn right()  counter() end
 print(left(), right())   # 1 1 — two callsites, two independent slots
@@ -324,7 +315,6 @@ state var total = 0                          # one cell for the whole program
 fn accumulate(v)
   set total = get total + v
   get total
-end
 ```
 
 *Every* function reads a module-level `var` with `get`, plain helpers called
@@ -337,7 +327,6 @@ state var hp = Map()                         # one entry per entity id
 fn health(id, damage)
   set hp[id] = (get hp[id] ?? 100) - damage
   get hp[id]
-end
 ```
 
 `examples/console/state.ptl` and `examples/console/reactive_ui.ptl` are worth
@@ -377,7 +366,7 @@ row[0] = 99                 # row is now [99, 2, 3]
 
 let grid = for r in range(0, 3) do
   for c in range(0, 3) do 0 end
-end                         # a 3x3 of zeros — nested collecting loops
+  # a 3x3 of zeros — nested collecting loops
 grid[1][2] = 5              # one cell, by row then column
 ```
 
@@ -389,7 +378,6 @@ and `set` takes index targets too:
 ```petal
 var board = for r in range(0, 4) do
   for c in range(0, 4) do 0 end
-end
 
 fn fill(r, c)
   if r < 0 || r > 3 || c < 0 || c > 3 then return nil end
@@ -398,7 +386,6 @@ fn fill(r, c)
   fill(r + 1, c)
   fill(r, c + 1)
   nil
-end
 ```
 
 Note `get board[r][c]`: `get` binds tighter than `[]` and `.`, so it
@@ -549,8 +536,6 @@ fn classify(n)
   if n < 0 then "negative"
   else if n == 0 then "zero"
   else "positive"
-  end
-end
 ```
 
 One `end` per chain: `else if` on one line continues the same `if` and never
@@ -571,7 +556,6 @@ let tasks = [{title: "a", done: true}, {title: "b", done: false}]
 let titles = for t in tasks do
   if t.done then continue end                     # `continue` filters
   t.title
-end
 ```
 
 Inside a collecting loop `continue` filters the iteration out and `break` ends
@@ -586,7 +570,6 @@ list — that turns the implicit return off, and the loop allocates nothing:
 ```petal
 fn draw_all(items) -> nil
   for it in items do draw(it) end
-end
 ```
 
 `petal suggest` points these out, and tells `-> nil` from `-> list` by whether
@@ -616,8 +599,6 @@ fn describe(n)
     when 0 -> "zero"
     when x if x < 0 -> "negative"
     when x -> "positive: {x}"
-  end
-end
 ```
 
 Patterns cover literals, bindings, enum variants (`when Shape.circle(r) ->`), list
@@ -636,8 +617,6 @@ fn apply(cmd, pos)
       pos + dx
     when "home" -> 0
     when _ -> pos
-  end
-end
 ```
 
 The catch-all is `when _ ->` (or `when name ->` if you want the value bound).
@@ -666,7 +645,6 @@ idiom, not a workaround:
 fn slide(row)
   let shifted = filter(row, fn(x) -> x != 0)
   {row: shifted, gained: len(row) - len(shifted)}
-end
 
 let res = slide([2, 0, 0, 4])
 print(res.row, res.gained)    # [2, 4] 2
@@ -698,11 +676,9 @@ the constructor.
 ```petal
 class Circle
   radius: num,
-end
 
 fn Circle.area(c: Circle) -> num
   3.14159 * c.radius * c.radius
-end
 
 print(Circle(2).area())   # 12.56636
 ```
@@ -714,14 +690,11 @@ A variant is a member of its enum, in expressions and in patterns:
 enum Shape
   circle(radius),
   rect(w, h),
-end
 
 fn area(s)
   match s
     when Shape.circle(r) -> 3.14159 * r * r
     when Shape.rect(w, h) -> w * h
-  end
-end
 
 print(area(Shape.rect(2, 3)))   # 6
 ```
@@ -737,7 +710,6 @@ beside the enum, and an enum lists and looks up its payload-free variants:
 enum Kind
   parkway(shape: "route", lanes: 4),
   park(shape: "area", lanes: 0),
-end
 
 print(Kind.park.shape)           # area
 print(Kind.park.name)            # park
@@ -761,8 +733,6 @@ Payload fields are read by name as well (`Shape.rect(2, 3).w`). See
 fn put_doc(ds, id, nd)
   for d in ds do
     if d.id == id then nd else d end
-  end
-end
 ```
 
 **Pipe into the first argument.**
@@ -891,7 +861,6 @@ fn score(a, b, c)
   1.0 * a
   - 2.0 * b
   - 3.0 * c      # only THIS line is the return value
-end
 print(score(1, 2, 3))   # -9.0, not -12.0
 ```
 
@@ -903,7 +872,6 @@ fn score(a, b, c)
   1.0 * a -
   2.0 * b -
   3.0 * c
-end
 print(score(1, 2, 3))   # -12.0
 ```
 
@@ -972,7 +940,6 @@ is one call and needs no `var` to carry.
 let SEED = 20260830
 fn pick(i: int, limit: int) -> int
   hash_int(SEED, i) % limit
-end
 print(pick(0, 6), pick(1, 6), pick(2, 6))   # 1 2 1
 ```
 

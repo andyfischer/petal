@@ -1935,10 +1935,8 @@ import io
 let gap = tunable(30.0)
 fn place(i)
   return 20 + i * gap
-end
 for i in range(0, 4) do
   push_output(symbol("shapes"), place(i))
-end
 ```
 
 ```
@@ -2366,12 +2364,10 @@ kind (`Let var c`, `FnDecl pub f`). For this source:
 ```petal ignore
 fn square(x: number) -> number
   x * x
-end
 
 let m = match n
   when 0 -> "zero"
   when k if k > 1 -> "big"
-end
 ```
 
 the dump is:
@@ -2550,12 +2546,10 @@ Ids are never renumbered by hiding; the lines are simply omitted. Pass
 ```petal
 fn double(x)
   x * 2
-end
 let msg = match double(4)
   when 0 -> "zero"
   when n if n > 5 -> "big"
   when _ -> "small"
-end
 print(msg)
 ```
 
@@ -2959,7 +2953,6 @@ let SCALE = tunable(2)
 let W = SCALE * 3
 fn hd(a, b)
   {a: a, b: b, w: W}
-end
 let ROWS = [hd(1, 2), hd(3, 4)]
 state counter = 0
 let next = counter + 1
@@ -3157,20 +3150,15 @@ native. Nothing runs.
 var log = []
 fn shout(x)
   print("x {x}")
-end
 fn noisy(x)
   shout(x)
   x + 1
-end
 fn roll()
   random()
-end
 fn logs(x)
   set log = append(get log, x)
-end
 fn twice(x)
   x * 2
-end
 ```
 
 ```

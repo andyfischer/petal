@@ -102,8 +102,7 @@ Example:
 ```petal
 let tasks = [{id: 7, title: "write"}, {id: 3, title: "test"}]
 for t in tasks key t.id do
-    print(row(t))
-end
+  print(row(t))
 ```
 
 Specifying a key will make the contents much more stable, in
@@ -151,9 +150,8 @@ One useful approach is to store a Map in a state var:
 state var hp = Map()
 
 fn health(id, damage)
-    set hp[id] = (get hp[id] ?? 100) - damage
-    get hp[id]
-end
+  set hp[id] = (get hp[id] ?? 100) - damage
+  get hp[id]
 print(health("goblin", 10), health("orc", 30), health("goblin", 5))  # 90 70 85
 ```
 
@@ -196,10 +194,9 @@ and loops inside them. The std helpers built on them (`count`, `min_by`,
 
 ```petal
 fn seen(x)
-    state n = 0
-    n += 1
-    n
-end
+  state n = 0
+  n += 1
+  n
 print(map([10, 20, 30], seen))
 ```
 
@@ -221,10 +218,9 @@ when it runs instead:
 
 ```petal
 fn seen(x)
-    state n = 0
-    n += 1
-    n
-end
+  state n = 0
+  n += 1
+  n
 fn apply_all(xs, f) map(xs, fn(x) f(x) end) end
 print(apply_all([10, 20, 30], seen))
 ```
@@ -251,10 +247,9 @@ There are two fixes, depending on what the state was for:
 
 ```petal
 fn seen(x)
-    state n = 0
-    n += 1
-    n
-end
+  state n = 0
+  n += 1
+  n
 
 # a value per element that persists across runs: a loop
 print(for x in [10, 20, 30] do seen(x) end)   # [1, 1, 1] on the first run
@@ -282,23 +277,20 @@ state limit = 2
 state var total = 0
 
 fn over(x)
-    set total += x   # a top-level cell, shared on purpose
-    x > limit        # a top-level state read
-end
+  set total += x   # a top-level cell, shared on purpose
+  x > limit        # a top-level state read
 print(filter([1, 2, 3, 4], over), get total)   # [3, 4] 10
 
 fn label(x)
-    memo(x) s = "item " ++ str(x)
-    s
-end
+  memo(x) s = "item " ++ str(x)
+  s
 print(map([1, 2], label))   # ["item 1", "item 2"]
 
 fn framed(body) "[" ++ body() ++ "]" end
 fn clicks()
-    state n = 0
-    n += 1
-    str(n)
-end
+  state n = 0
+  n += 1
+  str(n)
 print(framed(clicks))   # [1]
 ```
 

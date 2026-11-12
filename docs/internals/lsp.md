@@ -10,15 +10,13 @@ With this file open:
 
 ```petal
 enum Kind
-    park(code: 2),
-    shop(code: 5)
-end
+  park(code: 2),
+  shop(code: 5)
 
 let LIMIT = 10
 
 fn area(w, h = 2) -> int
-    w * h
-end
+  w * h
 
 let k = Kind.park
 print(area(LIMIT), k.code)   # 20 2

@@ -848,14 +848,11 @@ declaration lists. The script
 import vec2
 fn crate(id, at)
   body(id, {size: 1.0, pos: at})
-end
 fn height_of(id)
   let hit = raycast(vec3(0.0, 20.0, 0.0), vec3(0.0, -1.0, 0.0), 50.0, {static: false})
   if hit != nil then hit.point.y else -1.0 end
-end
 for i in range(0, 3) do
   crate("crate{i}", vec3(float(i) * 3.0, 6.0, 0.0))
-end
 ```
 
 declared its crates on the first frame only: from the second frame on each

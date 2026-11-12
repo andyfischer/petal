@@ -232,7 +232,6 @@ let POST = tunable({
 })
 fn area(w)
   (w + 2) * 10                  # literals in code, too
-end
 ```
 
 These are construct changes, and recompile:

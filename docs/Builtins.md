@@ -716,7 +716,6 @@ if n == nil then
   show_error("Enter a number")
 else
   total = total + n
-end
 ```
 
 ### `json_stringify(value)` / `json_stringify(value, indent)`
@@ -775,9 +774,8 @@ enum's name:
 
 ```petal
 enum Color
-    red,
-    custom(r, g, b),
-end
+  red,
+  custom(r, g, b),
 
 print(type(Color.red))                # Color
 print(type(Color.custom(1, 2, 3)))    # Color
@@ -1324,7 +1322,6 @@ let i = index_of(line, "=")
 if i >= 0 then
   let key = slice(line, 0, i)
   let value = slice(line, i + 1)
-end
 ```
 
 ## String offsets
@@ -1787,7 +1784,6 @@ var calls = 0
 fn view(x)
   set calls += 1
   x * 2
-end
 print(speculate(view, 21).value)   # 42
 print(get calls)                   # 0
 ```
@@ -1885,7 +1881,6 @@ let r = fd_column(3.0, f(3.0), samples, nil)
 while type(r) == "float" do
   samples = append(samples, [r, f(r)])
   r = fd_column(3.0, f(3.0), samples, nil)
-end
 print(r.quality)   # smooth
 ```
 
@@ -2096,14 +2091,12 @@ nothing.
 ```petal
 fn build_table(n)
   for i in range(0, n) do
-    { id: i, name: "row " ++ str(i), tags: [i, i + 1] }
-  end
-end
+    {id: i, name: "row " ++ str(i), tags: [i, i + 1]}
 
 state table = freeze(build_table(1000))
 print(frozen(table), len(table))      # true 1000
 
-let longer = append(table, { id: 1000, name: "extra", tags: [] })
+let longer = append(table, {id: 1000, name: "extra", tags: []})
 print(frozen(longer), len(table))     # false 1000
 ```
 

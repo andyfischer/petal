@@ -68,15 +68,13 @@ Multi-line `enum` and `class` bodies carry their commas too:
 
 ```petal
 enum Shape
-    circle(radius),
-    rect(w, h),
-    unit,
-end
+  circle(radius),
+  rect(w, h),
+  unit,
 
 class Point
-    x: int,
-    y: int,
-end
+  x: int,
+  y: int,
 ```
 
 Because `end` closes these bodies rather than a bracket, a body that runs past

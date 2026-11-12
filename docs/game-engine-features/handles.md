@@ -230,8 +230,7 @@ engine may have destroyed since the script stored it:
 
 ```petal ignore
 if is_valid(target) then
-    target.take_damage(10)
-end
+  target.take_damage(10)
 ```
 
 A handle is always truthy, stale or not, so `if target then` does not do this
@@ -267,9 +266,8 @@ each entity its own script-side state:
 state var hp = Map()
 
 fn hit(e)
-    set hp[e] = (get hp[e] ?? 100) - 10
-    get hp[e]
-end
+  set hp[e] = (get hp[e] ?? 100) - 10
+  get hp[e]
 print(hit(a), hit(a), hit(b))    # 90 80 90
 ```
 
@@ -301,8 +299,7 @@ name, give the class a method that returns one.
 
 ```petal
 fn nudge(e: handle)
-    e.move_by(1.0, 0.0)
-end
+  e.move_by(1.0, 0.0)
 ```
 
 It means any handle. There is no annotation for one handle class, so the
@@ -597,13 +594,11 @@ state hero = spawn("hero", 0.0, 0.0)      # created on the first frame only
 state target = spawn("target", 3.0, 0.0)
 
 fn patrol(e: handle, speed)
-    e.move_by(speed, 0.0)
-end
+  e.move_by(speed, 0.0)
 
 patrol(hero, 1.0)
 if is_valid(target) && distance(hero, target) < 2.0 then
-    target.destroy()
-end
+  target.destroy()
 print(hero.name(), hero.x(), is_valid(target))
 ```
 

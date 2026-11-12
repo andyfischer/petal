@@ -10,7 +10,6 @@ static.
 ```petal
 fn tile(name, cost)
   {name: name, cost: cost}
-end
 
 let TILES = const([tile("grass", 1), tile("road", 0), tile("water", 9)])
 let COSTS = const(map(TILES, fn(t) -> t.cost))
@@ -88,7 +87,6 @@ state clicks = 0
 
 fn label(n)
   "clicked {n}"
-end
 
 let TITLE = const(label(clicks))
 ```
@@ -220,7 +218,6 @@ The kept value stays as it was built.
 fn grow(xs)
   xs[0] = 99
   xs
-end
 
 let BASE = const([1, 2, 3])
 print(BASE, grow(BASE))   # [1, 2, 3] [99, 2, 3]

@@ -44,9 +44,8 @@ greet("a", "b")   # hi a b
   fn box(w, h) w * h end
 
   fn outer()
-      fn box(x) 10 end   # shadows both variants, only inside outer()
-      box(3)             # 10
-  end
+    fn box(x) 10 end   # shadows both variants, only inside outer()
+    box(3)             # 10
 
   print(outer())    # 10
   print(box(3))     # 9
@@ -64,9 +63,8 @@ A common pattern is a short variant that fills in defaults and delegates:
 ```petal
 fn count(n) count(n, 0) end
 fn count(n, acc)
-    if n <= 0 then acc
-    else count(n - 1, acc + 1) end
-end
+  if n <= 0 then acc
+  else count(n - 1, acc + 1) end
 
 print(count(5))      # 5
 print(count(3, 10))  # 13
@@ -92,14 +90,11 @@ the same rule. The receiver is an ordinary first parameter and counts:
 class Point
   x: int,
   y: int,
-end
 
 fn Point.shifted(p: Point, d: int)           # 2 parameters
   Point(p.x + d, p.y + d)
-end
 fn Point.shifted(p: Point, dx: int, dy: int) # 3 parameters
   Point(p.x + dx, p.y + dy)
-end
 
 print(Point(1, 2).shifted(5))     # { x: 6, y: 7 }
 print(Point(1, 2).shifted(5, 6))  # { x: 6, y: 8 }
@@ -125,8 +120,7 @@ name rather than to its position:
 
 ```petal
 fn scale(value, by, offset)
-    value * by + offset
-end
+  value * by + offset
 
 print(scale(2, by: 10, offset: 1))    # 21
 print(scale(by: 10, offset: 1, value: 2))  # 21
@@ -256,8 +250,7 @@ argument out gets the default instead:
 
 ```petal
 fn greet(name, greeting = "Hello", punct = "!")
-    "{greeting}, {name}{punct}"
-end
+  "{greeting}, {name}{punct}"
 
 print(greet("Ada"))                  # Hello, Ada!
 print(greet("Ada", "Hi"))            # Hi, Ada!
@@ -277,8 +270,7 @@ body:
 
 ```petal
 fn tagged(item, tags = [])
-    push(tags, item)
-end
+  push(tags, item)
 
 print(tagged("a"))   # ["a"]
 print(tagged("b"))   # ["b"]    a fresh list each call — not ["a", "b"]
@@ -287,13 +279,11 @@ print(tagged("b"))   # ["b"]    a fresh list each call — not ["a", "b"]
 ```petal
 var issued = 0
 fn next_id()
-    set issued = get issued + 1
-    get issued
-end
+  set issued = get issued + 1
+  get issued
 
 fn make(label, id = next_id())
-    "{id}: {label}"
-end
+  "{id}: {label}"
 
 print(make("first"))       # 1: first
 print(make("second"))      # 2: second     next_id() ran again
@@ -312,8 +302,7 @@ captures.
 let margin = 4
 
 fn inset(w, h = w, pad = margin * 2)
-    [w - pad, h - pad]
-end
+  [w - pad, h - pad]
 
 print(inset(20))           # [12, 12]    h defaults to w
 print(inset(20, 10))       # [12, 2]
@@ -445,9 +434,8 @@ call that does not fit the exact-count variant goes there by rule 2:
 fn _is_num(v) type(v) == "int" || type(v) == "float" end
 
 fn dot(center, radius)                       # also, positionally, (cx, cy)
-    if _is_num(center) then "at {center},{radius} r=1"
-    else "at {center.x},{center.y} r={radius}" end
-end
+  if _is_num(center) then "at {center},{radius} r=1"
+  else "at {center.x},{center.y} r={radius}" end
 fn dot(cx, cy, radius = 1) "at {cx},{cy} r={radius}" end
 
 print(dot({x: 1, y: 2}, 5))            # at 1,2 r=5
@@ -508,15 +496,13 @@ one-argument default-colored form:
 import ui
 
 pub fn draw_rect(r)
-  ui.draw_rect(r, { r: 9, g: 9, b: 9 })
-end
+  ui.draw_rect(r, {r: 9, g: 9, b: 9})
 
 # every arity is callable here: the one this file added, and every
 # form `ui` declares
 pub fn paint()
-  draw_rect({ x: 0, y: 0, w: 10, h: 10 })
-  draw_rect({ x: 20, y: 0, w: 10, h: 10 }, { r: 1, g: 2, b: 3 })
-end
+  draw_rect({x: 0, y: 0, w: 10, h: 10})
+  draw_rect({x: 20, y: 0, w: 10, h: 10}, {r: 1, g: 2, b: 3})
 ```
 
 The rules:

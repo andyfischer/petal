@@ -67,7 +67,6 @@ import io
 let out = symbol("events")
 for i in range(0, 3) do
   push_output(out, {kind: "spawn", id: i})
-end
 ```
 
 - **What is pushed is a value.** Lists and records are immutable, so a later

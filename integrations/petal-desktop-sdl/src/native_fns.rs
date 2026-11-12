@@ -335,9 +335,11 @@ mod tests {
     #[test]
     fn subpixel_registration_keeps_fractions_through_the_frame_drain() {
         use petal_ui::draw::{FrameCommand, SubCommand, take_frame_commands};
+        // Every line at the left margin: the first line of a string starts
+        // at its quote, and indentation delimits blocks.
         let src = "import ui
-                   draw_circle(30.5, 20.25, 10.5, 255, 255, 255)
-                   draw_rect(1.5, 2.5, 3.5, 4.5, 255, 0, 0)
+draw_circle(30.5, 20.25, 10.5, 255, 255, 255)
+draw_rect(1.5, 2.5, 3.5, 4.5, 255, 0, 0)
 ";
         let mut env = Env::new();
         register_all_with(

@@ -7,8 +7,10 @@
 //!
 //! - [`SourceChange::None`] — the two texts parse to the same program. Either
 //!   they are byte-identical, or they differ only in whitespace, comments and
-//!   layout. Nothing has to be recompiled; the running program only needs its
-//!   source positions moved ([`FileDiff::map_span`]).
+//!   layout. Removing an `end` that indentation makes redundant is such an
+//!   edit (docs/syntax/indentation.md): the block it closed is closed by its
+//!   indentation instead. Nothing has to be recompiled; the running program
+//!   only needs its source positions moved ([`FileDiff::map_span`]).
 //! - [`SourceChange::Values`] — the only differences are the *values* of
 //!   literals (`0.35` became `0.4`, `"red"` became `"blue"`), each keeping its
 //!   kind. A literal compiles to one constant load, and nothing else in the
@@ -18,7 +20,8 @@
 //!   binding added or removed, a literal that changed type. The list says
 //!   which top-level constructs differ.
 //! - [`SourceChange::Full`] — the new text does not parse, or differs in a way
-//!   the AST does not show (`export` respelled `pub`, redundant parentheses).
+//!   the AST does not show (`export` respelled `pub`, redundant parentheses,
+//!   an `end` added to a block that had none).
 //!
 //! # What a literal's value can reach
 //!
@@ -1266,6 +1269,45 @@ fn same_pattern(a: &Pattern, b: &Pattern) -> bool {
 // Positions
 // ---------------------------------------------------------------------------
 
+/// Which of a run of consecutive `end`s in the old text the new text still
+/// writes, given the shorter run it has in their place: per old `end`,
+/// whether it is kept. `None` when the tokens do not say: the new run is the
+/// longer one, or some but not all were removed and their columns do not
+/// tell which.
+///
+/// Consecutive `end`s close nested blocks, innermost first, and each sits at
+/// the column of the line that opened its block. When only `end`s were
+/// removed the ones that stay keep their columns, so a kept `end` is found
+/// by its column, provided no two of the old run share one.
+fn kept_ends(old: &[(&Token, SourceSpan)], new: &[(&Token, SourceSpan)]) -> Option<Vec<bool>> {
+    if new.len() > old.len() {
+        return None;
+    }
+    if new.is_empty() {
+        return Some(vec![false; old.len()]);
+    }
+    let column = |t: &(&Token, SourceSpan)| t.1.start.column;
+    let distinct = old
+        .iter()
+        .enumerate()
+        .all(|(k, t)| old[..k].iter().all(|u| column(u) != column(t)));
+    if !distinct {
+        return None;
+    }
+    let mut next = 0usize;
+    let kept: Vec<bool> = old
+        .iter()
+        .map(|t| {
+            let keep = new.get(next).is_some_and(|n| column(n) == column(t));
+            if keep {
+                next += 1;
+            }
+            keep
+        })
+        .collect();
+    (next == new.len()).then_some(kept)
+}
+
 /// One stretch of the old text and where it is in the new text: a token both
 /// versions have, or a literal whose value changed.
 #[derive(Debug, Clone, Copy)]
@@ -1280,9 +1322,16 @@ struct Piece {
 }
 
 /// Old position → new position, for two texts whose token streams agree apart
-/// from the changed literals. Whitespace and comments belong to neither
-/// stream, which is how a layout edit moves every span without touching the
-/// program.
+/// from the changed literals and from `end`s the new text no longer writes.
+/// Whitespace and comments belong to neither stream, which is how a layout
+/// edit moves every span without touching the program.
+///
+/// A block's span runs to its `end`, or with none to its last token (the
+/// comma after the last member of a `class` or an `enum` included). So a
+/// removed `end` maps to the end of the token before it, which is where the
+/// block now ends. An *added* `end` has no such answer (the old position it
+/// would extend is also where the block's last statement ends), so that edit
+/// is not described here and is recompiled.
 #[derive(Debug, Clone)]
 struct PositionMap {
     /// Sorted by `old_start`; non-overlapping.
@@ -1324,6 +1373,32 @@ impl PositionMap {
 
         let mut pieces = Vec::with_capacity(a.len());
         let (mut i, mut j, mut u) = (0usize, 0usize, 0usize);
+        // Per token of `b`, and once more for the end of the stream: where
+        // the token before it ends in the new text, a comma counted (a
+        // block's span takes in the comma after its last member).
+        let mut before_new: Vec<SourcePosition> = Vec::with_capacity(b.len() + 1);
+        let mut at = SourcePosition {
+            line: 1,
+            column: 1,
+            offset: 0,
+        };
+        for (t, span) in new.tokens.iter().zip(&new.spans) {
+            match t {
+                Token::Newline | Token::Eof => {}
+                Token::Comma => at = span.end,
+                _ => {
+                    before_new.push(at);
+                    at = span.end;
+                }
+            }
+        }
+        before_new.push(at);
+        let ends = |p: &[(&Token, SourceSpan)], k: usize| {
+            p[k.min(p.len())..]
+                .iter()
+                .take_while(|t| matches!(t.0, Token::End))
+                .count()
+        };
         let differ = || {
             "the two versions differ in a way their syntax trees do not show \
              (a respelled keyword, added or removed parentheses)"
@@ -1383,6 +1458,40 @@ impl PositionMap {
                     rigid: false,
                 });
                 u += 1;
+                continue;
+            }
+            // A run of `end`s the new text writes fewer of: the trees agree,
+            // so the missing ones closed blocks that indentation now closes.
+            let (old_ends, new_ends) = (ends(&a, i), ends(&b, j));
+            if old_ends != new_ends {
+                let kept = kept_ends(&a[i..i + old_ends], &b[j..j + new_ends]).ok_or_else(|| {
+                    "the two versions differ in their `end`s in a way the token streams do \
+                     not pin down (an `end` was added, or one of several was removed)"
+                        .to_string()
+                })?;
+                for (k, kept) in kept.into_iter().enumerate() {
+                    let os = a[i + k].1;
+                    if kept {
+                        let ns = b[j].1;
+                        pieces.push(Piece {
+                            old_start: os.start.offset,
+                            old_end: os.end.offset,
+                            new_start: ns.start,
+                            new_end: ns.end,
+                            rigid: true,
+                        });
+                        j += 1;
+                    } else {
+                        pieces.push(Piece {
+                            old_start: os.start.offset,
+                            old_end: os.end.offset,
+                            new_start: before_new[j],
+                            new_end: before_new[j],
+                            rigid: false,
+                        });
+                    }
+                }
+                i += old_ends;
                 continue;
             }
             if i >= a.len() || j >= b.len() || a[i].0 != b[j].0 {
@@ -1784,6 +1893,94 @@ mod tests {
             change("let s = \"a {1} b\"\n", "let s = \"a {1} c\"\n"),
             SourceChange::Constructs(_)
         ));
+    }
+
+    /// docs/tasks/pythonic-syntax.md §6.5: deleting the `end`s indentation
+    /// makes redundant is a layout edit, and every old position has a place
+    /// in the new text.
+    #[test]
+    fn removing_redundant_ends_is_no_change() {
+        let old = "state n = 0
+fn f(a)
+  if a > 0 then
+    for i in [1] do
+      print(i)
+    end
+  else
+    print(0)
+  end
+  let g = map([1], fn(v)
+    v + a
+  end)
+  g
+end
+print(f(1))
+";
+        let new = crate::fmt::remove_block_ends(old).unwrap();
+        assert_eq!(new.removed, 4);
+        let diff = diff_source(old, &new.text, ENTRY_FILE);
+        assert_eq!(diff.change, SourceChange::None);
+        // A block's span ends where the block now ends: at its last token.
+        let (old_stmts, new_stmts) = (
+            crate::rewrite::parse_ast(old).unwrap().1,
+            crate::rewrite::parse_ast(&new.text).unwrap().1,
+        );
+        for (a, b) in old_stmts.iter().zip(&new_stmts) {
+            assert_eq!(diff.map_span(a.span), Some(b.span));
+        }
+        // Some of several, each found by its column.
+        let some = "state n = 0
+fn f(a)
+  if a > 0 then
+    for i in [1] do
+      print(i)
+  else
+    print(0)
+  let g = map([1], fn(v)
+    v + a
+  )
+  g
+end
+print(f(1))
+";
+        let diff = diff_source(old, some, ENTRY_FILE);
+        assert_eq!(diff.change, SourceChange::None);
+        let some_stmts = crate::rewrite::parse_ast(some).unwrap().1;
+        for (a, b) in old_stmts.iter().zip(&some_stmts) {
+            assert_eq!(diff.map_span(a.span), Some(b.span));
+        }
+        // Together with a value edit.
+        let valued = new.text.replace("print(0)", "print(7)");
+        assert_eq!(values(old, &valued).len(), 1);
+    }
+
+    /// An `end` added to a block that had none is the same program too, but
+    /// where the block's old end goes is not something the tokens say (the
+    /// block's last statement ends there as well), so it is recompiled.
+    #[test]
+    fn adding_an_end_is_full() {
+        let old = "fn f(a)
+  if a then
+    print(a)
+print(f(1))
+";
+        let new = "fn f(a)
+  if a then
+    print(a)
+  end
+end
+print(f(1))
+";
+        assert!(matches!(change(old, new), SourceChange::Full(_)));
+        assert_eq!(change(new, old), SourceChange::None);
+        // One of two `end`s at one column cannot be told from the other.
+        let two = "let a = [if c then 1 else 2 end, 3]
+let f = fn() if c then 1 end end
+";
+        let one = "let a = [if c then 1 else 2 end, 3]
+let f = fn() if c then 1 end
+";
+        assert!(matches!(change(two, one), SourceChange::None | SourceChange::Full(_)));
     }
 
     #[test]

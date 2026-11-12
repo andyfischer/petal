@@ -512,6 +512,85 @@ fn comment_only() {
     .check();
 }
 
+/// docs/tasks/pythonic-syntax.md §6.5: a file whose redundant `end`s are
+/// deleted (the `end-lines` migration) reloads as a layout edit. Nothing is
+/// recompiled, `state` keeps its slots and its values, and every span is
+/// where a recompile of the new text puts it.
+#[test]
+fn removing_the_ends_indentation_makes_redundant() {
+    let old = "\
+let K = tunable(2)
+state n = 0
+state seen = []
+fn bump(v, seen)
+  if v > 4 then
+    for i in [1, 2] do
+      print(v + i)
+    end
+  else if v > 2 then
+    print(v)
+  else
+    print(\"small\")
+  end
+  let pick = map(seen, fn(s)
+    s + K
+  end)
+  match len(pick)
+    when 0 -> nil
+    when _ ->
+      print(pick)
+  end
+  pick[9]
+end
+n += K
+seen = seen ++ [n]
+print(n)
+bump(n, seen)
+";
+    let new = petal::fmt::remove_block_ends(old).expect("remove ends");
+    assert_eq!(new.removed, 5, "{}", new.text);
+    assert!(!new.text.contains("end"), "{}", new.text);
+    Case::new("ends removed", old, &new.text, Relocated).check();
+
+    // The state is the state the program had: the reload dropped nothing.
+    let mut w = world(old, &[], RunPolicy::FAST);
+    let state = |w: &World| serde_json::Value::Object(w.env.get_state_json(w.pid, w.sid));
+    let before = state(&w);
+    assert_eq!(before["n"], serde_json::json!(4), "{before}");
+    let report = w.env.reload_program(w.sid, &new.text, None).expect("reload");
+    assert_eq!(report.outcome, Relocated);
+    assert_eq!(report.change, SourceChange::None);
+    assert_eq!(report.state_dropped, 0);
+    assert_eq!(state(&w), before);
+    // And the next frame goes on from it.
+    frame(&mut w);
+    assert_eq!(state(&w)["n"], serde_json::json!(6));
+
+    // Removing some of them, and removing them along with a value edit.
+    let some = old.replacen("    end\n  else if", "  else if", 1);
+    assert_ne!(some, old);
+    Case::new("one end removed", old, &some, Relocated).check();
+    let valued = new.text.replace("tunable(2)", "tunable(3)");
+    Case::new("ends removed and a value", old, &valued, Patched).check();
+}
+
+/// The other direction is the same program as well, but is recompiled: the
+/// tokens do not say where the end of a block that gained an `end` moved to.
+/// State survives it all the same, since slots are keyed by name and call
+/// path, not by position.
+#[test]
+fn adding_ends_is_recompiled_and_keeps_state() {
+    let new = "state n = 0\nfn bump(v)\n  if v > 2 then\n    print(v)\n  end\nend\nn += 1\nbump(n)\n";
+    let old = petal::fmt::remove_block_ends(new).expect("remove ends").text;
+    Case::new("ends added", &old, new, Recompiled).check();
+    let mut w = world(&old, &[], RunPolicy::FAST);
+    let state = |w: &World| serde_json::Value::Object(w.env.get_state_json(w.pid, w.sid));
+    let before = state(&w);
+    let report = w.env.reload_program(w.sid, new, None).expect("reload");
+    assert_eq!(report.state_dropped, 0);
+    assert_eq!(state(&w), before);
+}
+
 #[test]
 fn a_runtime_error_reports_its_moved_position() {
     // The frame's error text names a line and column: after a layout edit it
@@ -1520,6 +1599,19 @@ fn sweep(files: &[std::path::PathBuf]) -> [usize; 3] {
         // A structural edit that leaves every declaration as it was: the
         // reload recompiles, and following the diff keeps the static values.
         count(sweep_one(path, &old, &grow(&old)));
+        // The `end`s indentation makes redundant, removed: a layout edit
+        // (docs/tasks/pythonic-syntax.md §6.5).
+        if let Ok(stripped) = petal::fmt::remove_block_ends(&old)
+            && stripped.removed > 0
+        {
+            let outcome = sweep_one(path, &old, &stripped.text);
+            assert!(
+                matches!(outcome, None | Some(Relocated)),
+                "[{}] removing `end`s was {outcome:?}",
+                path.display()
+            );
+            count(outcome);
+        }
     }
     seen
 }

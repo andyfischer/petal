@@ -91,7 +91,7 @@ that behavior was meant to change.
 
 `test/vitest/doc-snippets.test.ts` compiles every ```` ```petal ```` code block
 in the user-facing docs with `petal lint --lenient`, and runs the blocks that
-carry `print(...) // expected` comments and compares the output. A block
+carry `print(...) # expected` comments and compares the output. A block
 tagged ```` ```petal ignore ```` is skipped. Design docs under `docs/dev/` and the
 sketches in `docs/aspirational-ideas/` are not checked.
 

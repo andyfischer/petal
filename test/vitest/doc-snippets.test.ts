@@ -5,12 +5,14 @@
 //     renamed builtins, removed syntax, and typos;
 //   • blocks whose lines are all `print(...) # expected` (plus plain bindings)
 //     are executed and their stdout asserted against the trailing-comment values.
-//     The comment may use either marker: `#`, or the deprecated `//` that the
-//     docs not yet migrated still have.
+//     (`petal migrate-old-code --markdown docs/` respelled the old
+//     `print(...) // expected` convention; a `//` comment no longer counts.)
 //
 // A block that is intentionally illustrative (pseudo-code, elided with `...`,
 // or importing a host module not available to the bare CLI) opts out with an
 // `ignore` tag on the fence: ```petal ignore
+// (`no-migrate` is a tag for `petal migrate-old-code --markdown`, which leaves
+// such a fence as written; it means nothing here.)
 //
 // Design docs under docs/dev/ and the aspirational examples are excluded — they
 // describe future/host syntax that isn't meant to compile standalone.
@@ -25,12 +27,13 @@ const repoRoot = resolve(import.meta.dirname, "..", "..");
 const EXCLUDED = [/(^|\/)dev\//, /(^|\/)examples\//];
 const SKIP_TAGS = new Set(["ignore", "no-check"]);
 const FENCE = /^```petal([^\n]*)\n([\s\S]*?)^```/gm;
-// `print(...) # expected` or `print(...) // expected`. The `.*\)` is greedy, so
-// the marker is the one after the call's last `)`: a `#` inside the arguments
-// (`print("#fff")`) or in the expected text (`// #ff8800`) is not taken for it.
-const PRINT_WITH_EXPECTED = /^\s*print\(.*\)\s*(?:\/\/|#)\s*(.+?)\s*$/;
-const COMMENT_LINE = /^\s*(?:\/\/|#)/;
+// `print(...) # expected`. The `.*\)` is greedy, so the marker is the one after
+// the call's last `)`: a `#` inside the arguments (`print("#fff")`) or in the
+// expected text (`# #ff8800`) is not taken for it.
+const PRINT_WITH_EXPECTED = /^\s*print\(.*\)\s*#\s*(.+?)\s*$/;
+const COMMENT_LINE = /^\s*#/;
 const BARE_PRINT = /^\s*print\(/;
+// (`else` covers `else if`; `elsif` is its old spelling.)
 const CONTROL_FLOW = /^\s*(for|while|if|elsif|else|match|end|fn)\b/;
 // A trailing print-comment is only asserted when it's *literal* output. These
 // signal the comment carries prose instead (a note, a type hint, an aside), so

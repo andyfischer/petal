@@ -1,6 +1,6 @@
 # Indentation-delimited blocks (Scala 3 style), `#` comments, `:hex` colours and `else if`
 
-Status: proposed plan, revised 2026-11-11. P1, P2 and P3 (parser, fmt, lint, LSP) are implemented (§3.3, §3.6, §3.7, §5.3); the `end-lines` migration and the tooling are not.
+Status: proposed plan, revised 2026-11-11. P1, P2, P3 (parser, fmt, lint, LSP) and P4 (`end-lines`, Markdown mode, this repo migrated) are implemented (§3.3, §3.6, §3.7, §5.3, §7.4); the other projects' migration and the tooling are not.
 
 Decided 2026-11-11:
 - Comments are `#`. `--` was considered and rejected.
@@ -887,6 +887,69 @@ because `end` stays valid. Migrate them for consistency, not correctness:
 
 Order: petal → website → worlds-fair → petal-creative → cheesecake. One commit
 per project holds the migration alone, so `git blame --ignore-rev` can skip it.
+
+### 7.4 As implemented (P4, done 2026-11-12)
+
+`end-lines` is `core/src/migrate/end_lines.rs`, the last text migration of
+`petal migrate-old-code`; Markdown mode is `core/src/migrate/markdown.rs`.
+User docs: [CLI.md](../CLI.md#migrate-old-code--rewrite-old-syntax).
+Fixtures: `core/tests/all/migrate_old_code.rs`,
+`cli/tests/migrate_old_code_cli.rs`. Where it settled something §7.2 and
+§7.3 leave open:
+
+- **`end,` is kept** (§7.2 step 3 would leave a line that starts with a
+  comma). This repo had three such lines. So are `end |> f`, `end.f()`, the
+  `end` of a block with no statement, an `end` before a line that starts
+  with an operator (§3.8), and any `end` whose removal changes the parse.
+- **A comment after a removed `end`** stays on a line of its own at the
+  block's column (`end # if` → `    # if`); it is not moved onto the last
+  body line.
+- **A file with no `end` at the start of a line is not formatted.** Any
+  other file is formatted whole (step 1), so the migration's diff also holds
+  what `petal fmt` changes in a file that was not formatted (spacing in
+  records, aligned `=`).
+- **fmt was changed first:** it moved a line continued by a trailing
+  operator (`a ||` / `  b`), and the second line of an `import m: a,` list,
+  to the block's column. Such a line now keeps its offset from its
+  statement, as a line that starts with an operator did.
+- **The gate is soft for `end-lines` only.** A file that fails it (fmt
+  cannot lay it out, or the AST differs) is written as the other migrations
+  left it and listed under "skipped by a gate"; the run exits 1. Any other
+  gate failure writes nothing for the file, as before.
+- **`OldForm::Optional`:** `end` is still the language, so the registry
+  marks `end-lines` as neither deprecated nor removed, and `petal lint`
+  reports nothing (open question 1).
+- **Markdown:** a fence that parses gets every selected migration; one that
+  only lexes gets `colour-literals`, `hash-comments` and `elsif-to-else-if`
+  (`MigrateOptions::fragment`); one that does not lex is left. The `ignore`
+  tag decides nothing. `no-migrate` on a fence keeps it as written.
+- **CLI:** `--except`, a summary with counts per migration, the list of
+  gate-skipped files (exit 1), and a walk that also skips `temp`, `out` and
+  `dist`. A fully legacy tree migrates in one run
+  (`a_fully_legacy_tree_migrates_in_one_run`).
+
+**This repo, 2026-11-12:** 331 of 480 `.ptl` files changed, 11,232 `end`s
+removed, 9 at the start of a line kept, no gate failure. Checked on the
+migrated tree: `cargo test` in `core` (both feature configs, and the
+ignored `over_repo_corpus` sweeps), `cli`, `garden` and `test/ui-corpus`
+(the frame-gate, memo, static-cache and DM differentials); `npx vitest run`;
+`tools/test-examples.ts` (golden corpus byte-identical, optimizer and static
+cache differentials); and `tools/verify.ts --plan lint-fix` against the tree
+before the migration (198 files `identical-ir`, none `changed`). Two things moved with the lines: `docs/stdlib.json` (line
+numbers of the prelude) and the positions asserted in
+`core/tests/all/fn_introspection.rs`. `core/tests/all/layout_probes.rs`
+reads copies of ten files taken with their `end`s
+(`core/tests/fixtures/with-ends/`).
+
+**The docs' Markdown** got the lexical migrations only (`colour-literals`,
+`hash-comments`, `elsif-to-else-if`: 52 files, so the documentation tests
+now read `print(x) # expected`). `end-lines` was **not** run over `docs/`:
+its prose is tied to the `end`s in its examples ("shares the single closing
+`end`", "this document writes the `end`"), some pages quote line numbers of
+their own snippets (docs/internals/lsp.md), and the guide indents by four.
+A dry run removes 379 `end`s from 43 files with no gate failure, so the
+command is ready when P5 rewrites the prose:
+`petal migrate-old-code --markdown --only end-lines docs/`.
 
 ## 8. Phases
 

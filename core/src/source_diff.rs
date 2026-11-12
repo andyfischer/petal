@@ -332,7 +332,8 @@ impl ParsedSource {
             std::mem::take(&mut lexer.tokens),
             std::mem::take(&mut lexer.token_spans),
         )
-        .with_tab_indentation(&lexer.token_tab_indented);
+        .with_tab_indentation(&lexer.token_tab_indented)
+        .with_layout_columns(&lexer.token_layout_column);
         let stmts = parser.parse_program()?;
         let (tokens, spans) = parser.into_tokens();
         let mut line_starts = vec![0u32];

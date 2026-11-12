@@ -123,7 +123,8 @@ fn parse_reading(
         }
     };
     lexer.tokenize().map_err(phased(Phase::Lex))?;
-    let mut parser = crate::parse::Parser::new(lexer.tokens.clone(), lexer.token_spans.clone());
+    let mut parser = crate::parse::Parser::new(lexer.tokens.clone(), lexer.token_spans.clone())
+        .with_layout_columns(&lexer.token_layout_column);
     parser = match reading {
         Reading::Layout => parser.with_tab_indentation(&lexer.token_tab_indented),
         Reading::TabColumns => parser,

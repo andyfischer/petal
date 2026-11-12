@@ -199,11 +199,13 @@ fn expand_tab_indentation(source: &str, width: usize) -> Result<String, String> 
     let chars: Vec<char> = source.chars().collect();
     let mut out = String::with_capacity(source.len());
     let mut copied = 0usize;
-    for (k, span) in lexer.token_spans.iter().enumerate() {
+    for k in 0..lexer.tokens.len() {
         if !lexer.token_tab_indented.get(k).copied().unwrap_or(false) {
             continue;
         }
-        let at = span.start.offset as usize;
+        // (A line that starts with a `/* … */` comment is indented up to
+        // the comment.)
+        let at = lexer.indentation_end(k);
         let mut start = at;
         while start > 0 && matches!(chars[start - 1], ' ' | '\t') {
             start -= 1;

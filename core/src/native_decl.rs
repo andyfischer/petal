@@ -311,6 +311,7 @@ impl NativeDecls {
         lexer.tokenize()?;
         let stmts = crate::parse::Parser::new(lexer.tokens, lexer.token_spans)
             .with_tab_indentation(&lexer.token_tab_indented)
+            .with_layout_columns(&lexer.token_layout_column)
             .parse_program()?;
         let mut decls = NativeDecls::new();
         for stmt in &stmts {

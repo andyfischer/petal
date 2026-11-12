@@ -104,7 +104,11 @@ fn parse(source: &str, legacy: bool) -> Result<Vec<u64>, String> {
         lexer = lexer.legacy();
     }
     lexer.tokenize()?;
-    let mut parser = Parser::new(lexer.tokens.clone(), lexer.token_spans.clone());
+    // Measured as the compiler measures it: tabs refused, a line that starts
+    // with a `/* … */` comment indented to the comment.
+    let mut parser = Parser::new(lexer.tokens.clone(), lexer.token_spans.clone())
+        .with_tab_indentation(&lexer.token_tab_indented)
+        .with_layout_columns(&lexer.token_layout_column);
     if std::env::var_os("LAYOUT_CORPUS_BY_END").is_some() {
         // The reading tools fall back to for old source: by its `end`s alone.
         // Against a baseline written before the layout parser, `check` must

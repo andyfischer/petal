@@ -164,7 +164,7 @@ fn b3_a_semicolon_after_an_endless_one_liner_is_an_error() {
     err_has("if c then a() else b(); d()\n", &["`;` after a one-line `else`", ambiguous]);
     err_has("for x in xs do a(x); b(x)\n", &["`;` after a one-line `do`", ambiguous]);
     err_has("while c do a(); b()\n", &["`;` after a one-line `do`", ambiguous]);
-    err_has("fn f() a(); b()\n", &["`;` after a one-line the `fn` header", ambiguous]);
+    err_has("fn f() a(); b()\n", &["`;` after a one-line `fn` body", ambiguous]);
     err_has("let g = fn() a(); b()\n", &[ambiguous]);
     err_has("match v when 1 -> a(); b()\n", &["`;` after a one-line `->`", ambiguous]);
     // Closed by an `end`, it is today's form.

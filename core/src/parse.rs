@@ -210,6 +210,9 @@ pub struct Parser {
     /// Set for the second reading of [`Parser::parse_program`]: the column
     /// the first line is read at.
     first_line_margin: Option<u32>,
+    /// For each token, the column it is measured at: its own, unless the
+    /// caller said otherwise ([`Parser::with_layout_columns`]).
+    columns: Vec<u32>,
 }
 
 /// A construct with a body, while that body is being parsed.
@@ -256,14 +259,11 @@ impl Parser {
             .iter()
             .position(|t| !matches!(t, Token::Newline))
             .unwrap_or(tokens.len());
-        let mut line_indent = Vec::with_capacity(tokens.len());
+        let columns: Vec<u32> = token_spans.iter().map(|s| s.start.column).collect();
+        let line_indent = Self::line_indents(&first_on_line, &columns);
         let mut depth = Vec::with_capacity(tokens.len());
-        let (mut indent, mut open) = (1u32, 0u32);
-        for (i, tok) in tokens.iter().enumerate() {
-            if first_on_line[i] {
-                indent = token_spans[i].start.column;
-            }
-            line_indent.push(indent);
+        let mut open = 0u32;
+        for tok in tokens.iter() {
             if matches!(tok, Token::RParen | Token::RBracket | Token::RBrace) {
                 open = open.saturating_sub(1);
             }
@@ -291,7 +291,38 @@ impl Parser {
             tab_line: Vec::new(),
             first_code,
             first_line_margin: None,
+            columns,
         }
+    }
+
+    /// For each token, the column of the first token of its line.
+    fn line_indents(first_on_line: &[bool], columns: &[u32]) -> Vec<u32> {
+        let mut indent = 1u32;
+        first_on_line
+            .iter()
+            .zip(columns)
+            .map(|(&first, &column)| {
+                if first {
+                    indent = column;
+                }
+                indent
+            })
+            .collect()
+    }
+
+    /// Tell the parser the column each token is measured at:
+    /// [`crate::lexer::Lexer::token_layout_column`], parallel to the tokens.
+    /// It differs from a token's own column only for the first token of a
+    /// line that starts with a `/* … */` comment, which is measured where
+    /// the comment starts: comments play no part in layout (B15), and
+    /// `/* note */ step()` is a line indented to its comment. A parser not
+    /// told measures every token where it starts.
+    pub fn with_layout_columns(mut self, columns: &[u32]) -> Self {
+        if columns.len() == self.tokens.len() {
+            self.columns = columns.to_vec();
+            self.line_indent = Self::line_indents(&self.first_on_line, &self.columns);
+        }
+        self
     }
 
     /// Tell the parser which lines are indented with a tab:
@@ -402,12 +433,12 @@ impl Parser {
         if !self.layout || self.first_line_margin.is_some() {
             return None;
         }
-        let first = self.token_spans.get(self.first_code)?;
+        let first = *self.columns.get(self.first_code)?;
         let later = (self.first_code + 1..self.tokens.len())
             .filter(|&i| self.first_on_line[i])
-            .map(|i| self.token_spans[i].start.column)
+            .map(|i| self.columns[i])
             .min()?;
-        (later > first.start.column).then_some(later)
+        (later > first).then_some(later)
     }
 
     /// Back to the first token, for a second reading of the same tokens.
@@ -658,7 +689,7 @@ impl Parser {
     fn column_of(&self, pos: usize) -> u32 {
         match self.first_line_margin {
             Some(margin) if pos == self.first_code => margin,
-            _ => self.token_spans.get(pos).map_or(0, |s| s.start.column),
+            _ => self.columns.get(pos).copied().unwrap_or(0),
         }
     }
 
@@ -1065,8 +1096,14 @@ impl Parser {
             return Err(self.error_at(
                 at,
                 format!(
-                    "`;` after a one-line {opener} is ambiguous; close it with `end` or use an \
-                     indented block"
+                    "`;` after a one-line {} is ambiguous; close it with `end` or use an \
+                     indented block",
+                    // "the `fn` header" names where a block goes; its
+                    // one-line body is a "`fn` body".
+                    match opener.strip_prefix("the ").and_then(|o| o.strip_suffix(" header")) {
+                        Some(keyword) => format!("{keyword} body"),
+                        None => opener.to_string(),
+                    }
                 ),
             ));
         }

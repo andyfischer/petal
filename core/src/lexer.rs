@@ -455,6 +455,22 @@ pub struct Lexer {
     /// in front of a line that only continues a bracket or an expression is
     /// harmless. Filled when [`Lexer::tokenize`] finishes.
     pub token_tab_indented: Vec<bool>,
+    /// The column each token is measured at for layout, parallel to
+    /// `tokens`: its own, except for the first token of a line that follows
+    /// `/* … */` comments, or element text. Comments play no part in
+    /// layout, and a line written `/* note */ step()` is indented to its
+    /// comment, so such a token is measured at the column of the comment
+    /// that starts its line; a `{…}` hole after element text on its line is
+    /// measured where the text starts
+    /// ([`crate::parse::Parser::with_layout_columns`]). Filled when
+    /// [`Lexer::tokenize`] finishes.
+    pub token_layout_column: Vec<u32>,
+    /// Every `/* … */` comment skipped so far, in source order: the offsets
+    /// it starts and ends at, and the column it starts at.
+    block_comments: Vec<(u32, u32, u32)>,
+    /// The tokens whose line starts with a `/* … */` comment, in order, each
+    /// with the offset that line starts at.
+    comment_led: Vec<(usize, u32)>,
 }
 
 /// Whether each token is the first on its line, from the tokens and their
@@ -564,6 +580,9 @@ impl Lexer {
             jsx_line_comments: Vec::new(),
             token_first_on_line: Vec::new(),
             token_tab_indented: Vec::new(),
+            token_layout_column: Vec::new(),
+            block_comments: Vec::new(),
+            comment_led: Vec::new(),
         }
     }
 
@@ -739,6 +758,7 @@ impl Lexer {
 
         self.token_first_on_line = first_on_line(&self.tokens, &self.token_spans);
         self.token_tab_indented = self.tab_indented_tokens();
+        self.measure_layout_columns();
 
         // Recover the trivia (whitespace/comments) between tokens from the
         // spans, so downstream tooling can reproduce the original source. This
@@ -770,6 +790,82 @@ impl Lexer {
             out[i] = tab && (at == 0 || self.input[at - 1] == '\n');
         }
         out
+    }
+
+    /// Fill `token_layout_column`, and extend `token_tab_indented` to the
+    /// same lines. A hole or a tag after element text on its line is
+    /// measured where that text starts. The first token of a line that starts with `/* … */`
+    /// comments is measured at the column of the first of them, and a tab in
+    /// front of that comment is a tab in the line's indentation. A comment
+    /// that began on an earlier line counts when it started its own line
+    /// (`/* two` / `lines */ step()` is indented to its `/*`).
+    fn measure_layout_columns(&mut self) {
+        self.token_layout_column = self.token_spans.iter().map(|s| s.start.column).collect();
+        for i in 0..self.tokens.len() {
+            if !self.token_first_on_line[i] {
+                continue;
+            }
+            let mut at = self.token_spans[i].start.offset as usize;
+            // Element text ends where the hole or tag after it starts, so
+            // that token counts as first on its line even with text in
+            // front of it (see [`first_on_line`]). Its line is indented to
+            // the text: `some text {if c then` is measured at `some`.
+            if i > 0 && matches!(self.tokens[i - 1], Token::JsxText(_)) {
+                let mut line_start = at;
+                while line_start > 0 && self.input[line_start - 1] != '\n' {
+                    line_start -= 1;
+                }
+                let text_from = (self.token_spans[i - 1].start.offset as usize).max(line_start);
+                if let Some(first) = (text_from..at).find(|&k| !self.input[k].is_whitespace())
+                    && self.input[line_start..first].iter().all(|c| c.is_whitespace())
+                {
+                    let back = (at - first) as u32;
+                    self.token_layout_column[i] = self.token_spans[i].start.column - back;
+                }
+                continue;
+            }
+            if self.block_comments.is_empty() {
+                continue;
+            }
+            let mut column = None;
+            let mut tab = false;
+            loop {
+                while at > 0 && matches!(self.input[at - 1], ' ' | '\t') {
+                    at -= 1;
+                    tab |= self.input[at] == '\t';
+                }
+                let Ok(found) = self.block_comments.binary_search_by_key(&(at as u32), |c| c.1)
+                else {
+                    break;
+                };
+                let (start, _, col) = self.block_comments[found];
+                at = start as usize;
+                column = Some(col);
+                tab = false;
+            }
+            if let Some(column) = column
+                && (at == 0 || self.input[at - 1] == '\n')
+            {
+                self.token_layout_column[i] = column;
+                self.token_tab_indented[i] = tab;
+                self.comment_led.push((i, at as u32));
+            }
+        }
+    }
+
+    /// Where the indentation of the line that token `k` is the first of
+    /// ends: the offset of the token, or of the `/* … */` comment that
+    /// starts its line.
+    pub(crate) fn indentation_end(&self, k: usize) -> usize {
+        let at = self.token_spans[k].start.offset as usize;
+        let Ok(found) = self.comment_led.binary_search_by_key(&k, |c| c.0) else {
+            return at;
+        };
+        let mut end = self.comment_led[found].1 as usize;
+        while end < at && matches!(self.input[end], ' ' | '\t') {
+            end += 1;
+        }
+        end
     }
 
     /// Tokenize a single token at the current position.
@@ -1083,10 +1179,12 @@ impl Lexer {
     /// without its newline.
     fn skip_block_comment(&mut self) -> Result<(), String> {
         let (line, col) = (self.line, self.col);
+        let start = self.pos as u32;
         self.advance_n(2);
         while self.pos < self.input.len() {
             if self.input[self.pos] == '*' && self.peek_next() == Some('/') {
                 self.advance_n(2);
+                self.block_comments.push((start, self.pos as u32, col));
                 return Ok(());
             }
             self.advance_char();
@@ -2421,6 +2519,43 @@ mod tests {
         let mut lexer = Lexer::new("<p>\n  // note\n  text // not one\n</p> // nor this\n");
         lexer.tokenize().unwrap();
         assert_eq!(lexer.jsx_line_comments, vec![6]);
+    }
+
+    #[test]
+    fn a_line_is_measured_at_the_comment_or_text_that_starts_it() {
+        let columns = |src: &str| {
+            let mut lexer = Lexer::new(src);
+            lexer.tokenize().unwrap();
+            let mut out = Vec::new();
+            for (i, tok) in lexer.tokens.iter().enumerate() {
+                if lexer.token_first_on_line[i] {
+                    out.push((format!("{tok:?}"), lexer.token_layout_column[i], lexer.token_tab_indented[i]));
+                }
+            }
+            out
+        };
+        let ident = |name: &str| format!("{:?}", Token::Ident(name.to_string()));
+        // A token is measured where it starts…
+        assert_eq!(columns("a\n  b\n"), [(ident("a"), 1, false), (ident("b"), 3, false)]);
+        // …unless `/* … */` comments start its line, on it or above it.
+        assert_eq!(
+            columns("  /* x */ /* y */ a\n /* two\nlines */ b\nc /* not\n leading */ d\n"),
+            [(ident("a"), 3, false), (ident("b"), 2, false), (ident("c"), 1, false), (ident("d"), 13, false)]
+        );
+        // A tab in front of the comment is a tab in the indentation; one
+        // between the comment and the token is not.
+        assert_eq!(
+            columns("\t/* x */ a\n  /* y */\tb\n"),
+            [(ident("a"), 2, true), (ident("b"), 3, false)]
+        );
+        // A hole after element text on its line is measured at the text.
+        let holes = columns("<p>\n    some text {x}\n  {y}\n</p>\n");
+        let braces: Vec<u32> = holes
+            .iter()
+            .filter(|(tok, _, _)| *tok == format!("{:?}", Token::LBrace))
+            .map(|(_, column, _)| *column)
+            .collect();
+        assert_eq!(braces, [5, 3]);
     }
 
     #[test]

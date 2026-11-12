@@ -414,6 +414,25 @@ handles `elsif` today (`parse.rs:2875-2908`).
   grammar, with the same no-newline condition handled by the external scanner
   that layout already needs.
 
+**As implemented (P2, done 2026-11-12):**
+
+- The merged token is `Token::ElseIf`; `Token::Elsif` remains for the old
+  spelling, and the parser takes either. The merge is skipped directly after
+  `.` or `?.` (a field named `else`).
+- The stray-`end` error (B17) carries a hint that names the line of the `end`
+  that follows the chain's own and `petal migrate-old-code` [else-if-nesting].
+- `else-if-nesting` reads the old form with `Lexer::unmerged_else_if` (also
+  part of `Lexer::legacy`) and a parse of those tokens. A file that parses
+  today has no site, so the old reading is tried only on a file today's
+  parser rejects; a file that mixes the two readings parses under neither
+  and is reported. Its IR gate compares the migrated text with the original
+  in which every site is moved to the line after `else` (the old nesting,
+  spelled for today's compiler); an AST comparison covers files that do not
+  compile on their own.
+- Both migrations run before `at-rebind`, reading through a removed `@x`.
+- `petal lint`'s `prefer-match` reads `else if` chains (it matched the
+  `elsif` text before).
+
 Why the lexer rather than the parser: one token keeps every parser site that
 handles `elsif` unchanged. It also means `else if` can never mean nesting by
 accident, so there's no lookahead special case spread through the parser.

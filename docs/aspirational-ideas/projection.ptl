@@ -61,7 +61,7 @@ let classify_prog = Program.parse("""
         if n > 0 then
             let positive_label = "positive"
             positive_label
-        elsif n == 0 then
+        else if n == 0 then
             let zero_label = "zero"
             zero_label
         else

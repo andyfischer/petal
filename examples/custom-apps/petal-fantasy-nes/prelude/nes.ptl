@@ -935,7 +935,7 @@ end
 #     if scene_entered() then reset_title() end
 #     ...
 #     if btnp("start") then set_scene("game") end
-#   elsif scene() == "game" then
+#   else if scene() == "game" then
 #     ...
 #   end
 #
